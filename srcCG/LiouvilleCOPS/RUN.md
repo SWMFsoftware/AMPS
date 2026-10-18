@@ -39,6 +39,44 @@ below. Configuration files stay local. Build files and the executable remain in 
 directory. Shell `cp` and `>` redirection require actual filesystem paths,
 not output-root-relative shorthand.
 
+### Run and fit integrity records
+
+New C++ observation runs require a new `OutputDirectory`; an existing path is
+refused before mission data are loaded. On success the directory contains:
+
+- `input.snapshot.in`, the exact input bytes used;
+- `run_manifest.json`, schema `liouville_cops.run_manifest` version 1;
+- `COPS_model.dat` and, when requested, `elements.bin` plus `kernels/`.
+
+Before writing the manifest, the solver reads its products back and checks the
+point sequence, binary versions and exact lengths, face ranges and duplicates,
+and stale extra kernels. The manifest records streamed SHA-256 identities for
+the executable, input, shape, observations, SPICE kernels, optional HK/activity
+files, and outputs. `process`, `cache`, and `scientific_review` are distinct;
+a completed/verified run remains `scientific_review=not_reviewed`.
+
+New fits likewise require a new `--out` directory and write
+`fit_manifest.json`. Before creating it, the fitter independently audits the
+entire static cache and verifies that its prior reproduces the base C++
+pressures. A pre-W01 base without `run_manifest.json` is refused unless
+`--allow-legacy-base` is supplied explicitly.
+
+Validate a base without changing it:
+
+```bash
+python3 tools/validate_cops_run.py output_fit_base
+```
+
+After generating a C++ verification run, register pressure agreement:
+
+```bash
+python3 tools/validate_cops_run.py \
+  --fit output_fit_new --verification output_fit_new_verify
+```
+
+This changes only the fit manifest's C++-agreement state. It never marks the
+optimizer converged or the result scientifically reviewed.
+
 ## COPS source comparison
 
 `tools/collect_cops_sources.py` combines the available ROSINA/COPS nude-gauge
@@ -183,6 +221,7 @@ shell-specific environment-variable assignment.
 | `tools/collect_cops_sources.py` | Compare pressure sources and export candidate fit data. | Section 2; JSON, PNGs, and selection table. |
 | `tools/digitize_cops_figures.py` | Regenerate approximate pressure traces from the three supplied images. | Section 8; five CSV files and optional check plots. |
 | `tools/fit_cops.py` | Select data, check the fit model/Jacobian, fit once, or scan regularization. | Section 9; included working file with shared output paths. |
+| `tools/validate_cops_run.py` | Strictly validate a static cache or register C++ reproduction of fitted pressures. | Run on a base, or with `--fit FIT --verification RUN`; see the integrity section above. |
 | `tools/plot_cops_model.py` | Compare modeled and observed NG/RG pressures versus time or altitude. | Section 11; interactive figure or `--save` image. |
 | `tools/plot_cops_model_altitude.py` | Same plotter, with altitude as the default horizontal axis. | Section 11; same arguments. |
 | `tools/plot_lcurve.py` | Plot the regularization scan and diagnostics. | Sections 9 and 11; interactive figure or `--save` image. |
@@ -194,8 +233,9 @@ additional supported launch commands. Saved
 `cops_fit.in` files under result directories are inputs to the same executable.
 
 No scientific result directories are currently retained inside LiouvilleCOPS.
-Output filenames are overwritten when an external destination is reused; use
-new input filenames and output directories to preserve separate runs.
+C++ runs and fits refuse existing result directories. Preprocessing, collector,
+and plot filenames can still be overwritten when explicitly reused, so use
+new names when those products must be preserved.
 The commands below are examples, not a claim that the existing scientific
 results have been regenerated.
 
@@ -287,11 +327,12 @@ opening windows.
 | CSPICE software headers/library | `make CSPICE=...` | `/home/vtenishe/SPICE/cspice` |
 | SPICE mission kernels | `KernelDirectory` and repeated `Kernel` in the `.in` file | `/home/vtenishe/SPICE/Kernels/ROSETTA/esa_2022` |
 | External COPS data root | `COPS_DATA_ROOT` | `/data/vtenishe/rosetta_data_end_of_mission_cops` |
+| SHAP5 surface mesh | `ShapeModel` in the `.in` file | `/data/vtenishe/rosetta_data_end_of_mission_cops/SHAP5_Volume.bdf` |
 | Raw COPS L2 BG files | First argument or `COPS_L2_ROOT` | `<COPS_DATA_ROOT>/data_COPS_L2/mtp35_cops_bg` |
 | L4 table and source images | collector `--sources-dir` or `COPS_SOURCES_ROOT` | `<COPS_DATA_ROOT>/sources` |
 | Processed HK table | Second argument of the HK script; then `TemperatureRGTable` in the `.in` file | `data/COPS_HK_20160930.txt` |
 | Observation times and reference pressures | `ObservationFile` in the `.in` file | `/home/vtenishe/ROS-END-OF-MISSION/AMPS/srcCG/RosinaMeasurements.h` |
-| Surface mesh | `ShapeModel` and `ShapeModelFormat` in the `.in` file | `/home/vtenishe/ROS-END-OF-MISSION/AMPS/SHAP5_Volume.bdf`, `nastran` |
+| Surface mesh | `ShapeModel` and `ShapeModelFormat` in the `.in` file | `/data/vtenishe/rosetta_data_end_of_mission_cops/SHAP5_Volume.bdf`, `nastran` |
 | Forward results | `OutputDirectory` in the `.in` file | `output` or `output_fit_base` in the supplied inputs |
 | Fit results | Fitter `--out DIR` | Default is `<run-name>_fit` under the output root |
 
@@ -314,6 +355,9 @@ export COPS_DATA_ROOT=/data/vtenishe/rosetta_data_end_of_mission_cops
 # export COPS_L2_ROOT=/another/location/data_COPS_L2
 # export COPS_SOURCES_ROOT=/another/location/sources
 ```
+`COPS_DATA_ROOT` configures the Python raw/L4/image tools. The C++ solver reads
+the literal `ShapeModel` value, so update that entry in `cops.in` and
+`fit_base.in` if the external data root is moved.
 The fitter has a separate `--hk-table FILE` option for saturation screening;
 this does not replace the gauge temperatures already saved in the base run.
 
@@ -354,13 +398,13 @@ complete standalone observation inputs.
 - Unknown or unused keys are rejected in observation mode. For example,
   when switching to `TemperatureRGMode = constant`, remove/comment
   `TemperatureRGTable` and `TemperatureRGTableColumn`.
-- Use a fresh `OutputDirectory`. Nested parent directories are created
-  recursively; existing same-named products can still be overwritten.
+- Use a fresh `OutputDirectory`. Nested parent directories are created, but
+  any existing destination is refused before the run begins.
 
-Keep the original input used to generate a fitting base. The fitter reads its
-name from the base table header and, for relative names, resolves it under
-the application root. Do not move/delete that input or edit its exclusion
-intervals after generating the base if you need a reproducible fit.
+New runs preserve `input.snapshot.in`; the fitter uses that snapshot for
+selection intervals and its generated verification input. Legacy runs lack
+the snapshot and fall back to the original input name recorded in the table,
+so moving or editing that file makes legacy provenance incomplete.
 
 ### SPICE runtime kernels
 
@@ -766,7 +810,7 @@ not a guarantee of convergence or scientific validity.
 | Parameter | Default | Meaning |
 |---|---|---|
 | Positional `run` | Required | Compatible base-run directory containing table, elements, and kernels. |
-| `--out DIR` | `<run-name>_fit` | Results directory under the output root; created if needed, existing same-named products overwritten. |
+| `--out DIR` | `<run-name>_fit` | New results directory under the output root; any existing path is refused. |
 | `--degree N` | 4 | Fitted harmonic groups through degree N, intended range 0–4; higher coefficients stay at base values. |
 | `--lambda L [L ...]` | 0 | Nonnegative regularization weight(s); multiple values create a scan. Zero means no regularization penalty. |
 | `--jobs N` | Minimum of number of lambdas and 12 | Concurrent scan fits. |
@@ -785,6 +829,7 @@ not a guarantee of convergence or scientific validity.
 | `--exclude-ng-saturated` | off | Remove NG points flagged by the HK saturation check. |
 | `--hk-table FILE` | `data/COPS_HK_20160930.txt`, output-root first | HK source for saturation checking, not a way to change cached T_RG. |
 | `--data-only` | off | Export selection plots/table after consistency checks, then stop. |
+| `--allow-legacy-base` | off | Explicitly accept an unmanifested pre-W01 base after strict structural validation; prefer a regenerated manifested base. |
 
 ### Fit output locations
 
@@ -795,13 +840,15 @@ not a guarantee of convergence or scientific validity.
 | Single fit: `<out>/ActivityFit.txt` | Three species rows of 25 activity coefficients. |
 | Single fit: `<out>/cops_fit.in` | Generated input for a full C++ verification run. |
 | Single fit: `<out>/COPS_model.dat` | Fitted total NG/RG predictions in the base table layout. |
+| Single fit: `<out>/fit_manifest.json` | Versioned hashes, cache/selection/prior/settings identities, optimizer result, and independent verification/review states. |
 | Scan: `<out>/lambda=<value>/` | The four optimization products above for each lambda; directory values use `%.3e` formatting. |
 | Scan: `<out>/lcurve.txt` | Aggregate scan diagnostics; selection exports remain in `<out>`. |
 
 The Python-fitted table is not a complete forward-model recomputation:
-species pressure/density/flux columns are set to -1, while other fields such
-as production rates and much of the header are inherited. Use the C++
-verification output for recomputed species results and production rates.
+aggregate NG/RG pressures are recomputed, while production, species
+pressure/density/flux, and below-deck diagnostic columns are explicitly
+`nan`. They are not inherited fitted quantities. Use the C++ verification
+output for complete species results and production rates.
 
 ## 10. Verify fitted parameters with C++ and test flight-time rotation
 
@@ -814,8 +861,8 @@ env OMP_NUM_THREADS=4 ./liouville_cops output_fit_new/cops_fit.in
 
 The generated input normally sets `ActivityModel = file`, points to that
 fit's `ActivityFit.txt`, inserts the fitted temperature parameters, and sets
-the destination to `output_fit_new_verify`. Check it before running; existing
-verification files would be overwritten. For a scan result, use the
+the destination to `output_fit_new_verify`. Check it before running; the
+solver refuses an existing verification directory. For a scan result, use the
 `cops_fit.in` inside the chosen `lambda=...` directory; its verification
 destination is that fit-directory path with `_verify` appended.
 

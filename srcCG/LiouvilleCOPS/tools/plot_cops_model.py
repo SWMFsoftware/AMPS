@@ -37,6 +37,7 @@ import sys
 from datetime import datetime
 
 from cops_paths import APP_ROOT, output_root, prepare_output, product_input
+from cops_io import ProductError, manifest_summary
 
 import numpy as np
 import matplotlib
@@ -82,6 +83,19 @@ class Run:
         if not rows:
             raise ValueError("%s: no data" % fname)
 
+        # New products declare a table schema.  Unknown schemas are rejected
+        # rather than plotted under legacy assumptions.  Unmanifested legacy
+        # tables remain readable and are visibly labelled below.
+        schemas = [item.split("=", 1)[1] for line in self.header for item in line.split()
+                   if item.startswith("TableSchema=")]
+        supported = {"liouville_cops_forward_v1", "liouville_cops_fit_prediction_v2"}
+        if schemas and schemas[0].rstrip(";") not in supported:
+            raise ValueError("unsupported TableSchema=%s" % schemas[0].rstrip(";"))
+        try:
+            self.kind, self.states = manifest_summary(fname)
+        except ProductError as exc:
+            raise ValueError("invalid product manifest: %s" % exc) from None
+
         self.col = {n: i for i, n in enumerate(names)}
         self.t = np.array([datetime.strptime(r[self.col["UTC"]], "%Y-%m-%dT%H:%M:%S") for r in rows])
 
@@ -117,7 +131,12 @@ class Run:
                         if k == "ShapeModel=":
                             v = os.path.basename(v)
                         out.append(k + v)
-        return " ".join(out)
+        process = self.states.get("process", "unknown")
+        optimizer = self.states.get("optimizer")
+        status = "%s process=%s" % (self.kind, process)
+        if optimizer and optimizer != "not_applicable":
+            status += " optimizer=" + optimizer
+        return status + " " + " ".join(out)
 
 
 def find_runs(args):

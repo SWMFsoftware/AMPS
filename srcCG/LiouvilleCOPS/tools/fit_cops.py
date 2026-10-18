@@ -74,7 +74,10 @@ Output of each fit (default <AMPS>/cops_output/<run-name>_fit):
    fit_result.txt   parameters, uncertainties, misfit, singular values, activity diagnostics
    ActivityFit.txt  3x25 coefficients (H2O fitted, CO2=kappa*srcCG, CO=srcCG) for ActivityModel=file
    cops_fit.in      LiouvilleCOPS input that reruns the fitted model (writes <fit dir>_verify)
-   COPS_model.dat   the fitted model in the format of LiouvilleCOPS (for the plot scripts)
+   COPS_model.dat   fitted aggregate pNG/pRG predictions. Source/species/production fields that this cached
+                    Python evaluation does not recompute are explicitly nan; use the C++ verification table.
+   fit_manifest.json versioned inputs/hashes, cache and selection identities, settings, optimizer state, and
+                    independent C++-agreement/scientific-review states
 
 Relative output paths use <AMPS>/cops_output (override: COPS_OUTPUT_ROOT).
 Product inputs prefer that root, then retained application-local files.
@@ -84,15 +87,24 @@ usage: fit_cops.py <run directory> [options]
 """
 import argparse
 import datetime as dt
+import json
 import multiprocessing
 import os
+from pathlib import Path
+import platform
 import re
 import struct
 import sys
 
+import matplotlib
+
 from cops_paths import output_path, product_input
+from cops_io import (FIT_SCHEMA, ProductError, canonical_sha256, file_identity,
+                     selection_identity, utc_now, validate_fit_base,
+                     verify_identity, write_json_atomic)
 
 import numpy as np
+import scipy
 import scipy.sparse as sp
 from scipy.optimize import least_squares
 
@@ -108,6 +120,19 @@ NBASIS = 25
 DEGREE_OF_BASIS = [0] + [1] * 3 + [2] * 5 + [3] * 7 + [4] * 9
 TNAMES = ("Tmax", "T75", "Tmin")
 FLOOR = 1e-300
+
+# The active manifest is set only after the output directory has been created.
+# Keeping it here lets the top-level exception handler mark an interrupted or
+# failed process without converting the existing user-facing validation exits
+# into tracebacks.
+ACTIVE_MANIFEST = None
+ACTIVE_MANIFEST_PATH = None
+
+
+def save_active_manifest():
+    """Atomically persist the current fit state, if a fit has started."""
+    if ACTIVE_MANIFEST is not None and ACTIVE_MANIFEST_PATH is not None:
+        write_json_atomic(ACTIVE_MANIFEST_PATH, ACTIVE_MANIFEST)
 
 
 # ------------------------------------------------------------------------------------------- input
@@ -135,7 +160,10 @@ def apply_data_file(fname, header, cols, rows):
             names = line[1:].split()
         elif line.strip() and not line.startswith("#"):
             v = line.split()
-            tab[int(v[0])] = v
+            point = int(v[0])
+            if point in tab:
+                sys.exit("Error: %s has duplicate iPoint %d" % (fname, point))
+            tab[point] = v
     if names is None:
         sys.exit("Error: %s has no column header (#iPoint ...)" % fname)
     t = {n: i for i, n in enumerate(names)}
@@ -184,12 +212,21 @@ def parse_utc(s):
     return (dt.datetime.strptime(d, "%Y-%m-%d") - dt.datetime(2016, 1, 1)).total_seconds() + 3600 * int(hh) + 60 * int(mm) + float(ss)
 
 
-def run_intervals(header, srcdir):
-    """ExcludeNG, ExcludeRG and FitInterval of the input file of the run ([(begin, end)] in s, see parse_utc)"""
-    m = re.search(r"input file: (\S+)", header[0])
-    fname = m.group(1) if m else None
-    if fname and not os.path.isabs(fname):
-        fname = os.path.join(srcdir, fname)
+def run_intervals(header, srcdir, run=None):
+    """Read selection intervals from the archived input when available.
+
+    Manifested runs carry ``input.snapshot.in``.  It is authoritative for the
+    run configuration because the original path may later be edited or moved.
+    Legacy products fall back to the filename recorded in the table header.
+    """
+    snapshot = os.path.join(run, "input.snapshot.in") if run else None
+    if snapshot and os.path.isfile(snapshot):
+        fname = snapshot
+    else:
+        m = re.search(r"input file: (\S+)", header[0])
+        fname = m.group(1) if m else None
+        if fname and not os.path.isabs(fname):
+            fname = os.path.join(srcdir, fname)
     if not fname or not os.path.exists(fname):
         sys.exit("Error: the input file of the run (%s) is not found; it is needed for the ExcludeNG intervals" % fname)
     iv = {"ExcludeNG": [], "ExcludeRG": [], "FitInterval": []}
@@ -261,11 +298,24 @@ def read_activity_coefficients(srcdir, header):
 
 
 def read_elements(fname):
+    """Load an already audited version-1 element cache.
+
+    The complete cache is validated before this function is called.  The
+    repeated exact-length checks below protect against replacement between the
+    audit and load (and give this function safe standalone behavior in tests).
+    """
     with open(fname, "rb") as f:
-        version, n, nb = struct.unpack("iii", f.read(12))
+        header = f.read(12)
+        if len(header) != 12:
+            sys.exit("Error: truncated element header %s" % fname)
+        version, n, nb = struct.unpack("<iii", header)
         if version != 1 or nb != NBASIS:
             sys.exit("Error: unsupported element file %s" % fname)
-        d = np.frombuffer(f.read(), dtype=np.float64).reshape(n, 34)
+        raw = f.read()
+        if len(raw) != n * 34 * 8:
+            sys.exit("Error: element file %s has %d data bytes; expected %d" %
+                     (fname, len(raw), n * 34 * 8))
+        d = np.frombuffer(raw, dtype="<f8").reshape(n, 34)
     return {"centroid": d[:, 0:3], "normal": d[:, 3:6], "area": d[:, 6], "Y": np.ascontiguousarray(d[:, 7:32]),
             "AH2O": d[:, 32], "ACO2": d[:, 33]}
 
@@ -274,13 +324,25 @@ REC = np.dtype([("face", "<i4"), ("Kn", "<f8"), ("KPhi", "<f8"), ("KV", "<f8"), 
 
 
 def read_kernel(fname):
+    """Load one audited static kernel with exact record-length checks."""
     with open(fname, "rb") as f:
-        version, ip = struct.unpack("ii", f.read(8))
+        prefix = f.read(8)
+        if len(prefix) != 8:
+            sys.exit("Error: truncated kernel header %s" % fname)
+        version, ip = struct.unpack("<ii", prefix)
         if version != 1:
             sys.exit("Error: %s: kernel version %d; the fit needs version 1 (FlightTimeRotation=none)" % (fname, version))
-        h = struct.unpack("10d", f.read(80))
-        (nk,) = struct.unpack("i", f.read(4))
-        rec = np.frombuffer(f.read(nk * REC.itemsize), dtype=REC)
+        raw_header = f.read(80)
+        raw_count = f.read(4)
+        if len(raw_header) != 80 or len(raw_count) != 4:
+            sys.exit("Error: truncated kernel header %s" % fname)
+        h = struct.unpack("<10d", raw_header)
+        (nk,) = struct.unpack("<i", raw_count)
+        raw = f.read()
+        if nk < 0 or len(raw) != nk * REC.itemsize:
+            sys.exit("Error: kernel %s has %d data bytes for %d records; expected %d" %
+                     (fname, len(raw), nk, max(nk, 0) * REC.itemsize))
+        rec = np.frombuffer(raw, dtype=REC)
     return ip, {"et": h[0], "VdotB": h[1], "rh": h[8], "alt": h[9]}, rec
 
 
@@ -323,6 +385,12 @@ class Model:
         for k, irow in enumerate(rowsel):
             fname = os.path.join(self.run, "kernels", "point=%04d.bin" % self.ipoint[irow])
             ip, h, rec = read_kernel(fname)
+            if ip != self.ipoint[irow]:
+                sys.exit("Error: %s stores iPoint %d; expected %d" %
+                         (fname, ip, self.ipoint[irow]))
+            if len(rec) and (np.min(rec["face"]) < 0 or np.max(rec["face"]) >= self.nfaces):
+                sys.exit("Error: %s contains a face index outside [0,%d)" %
+                         (fname, self.nfaces))
             n = len(rec)
             cnt.append(n)
             pts.append(np.full(n, k, dtype=np.int32))
@@ -567,7 +635,8 @@ def fit_one(lam, x_start=None):
     v = np.sum(rd ** 2) / max(P.ndata - peff, 1.0)
     sig = np.sqrt(np.maximum(np.diag(v * Hi), 0.0))
     sv = np.linalg.svd(np.vstack([Jd, R]), compute_uv=False)
-    return {"lam": lam, "x": x, "rd": rd, "cost": res.cost, "message": res.message, "nfev": res.nfev,
+    return {"lam": lam, "x": x, "rd": rd, "cost": res.cost, "message": res.message,
+            "success": bool(res.success), "nfev": res.nfev,
             "status": res.status, "optimality": res.optimality, "D": P.deviation(x), "peff": peff, "sig": sig, "sv": sv,
             "msNG": np.sum(rd[:P.NNG] ** 2), "msRG": np.sum(rd[P.NNG:] ** 2)}
 
@@ -684,7 +753,14 @@ def write_fit_data(out, P, rows, cols, msg):
 
 
 def write_fit(out, r, run, header, names, rows, cols, srcdir, el, seen, r0):
-    os.makedirs(out, exist_ok=True)
+    """Write one optimizer result without mislabeling inherited diagnostics.
+
+    The cached Python model evaluates only the aggregate NG/RG pressures for a
+    new parameter vector.  It does not reconstruct global production, the
+    species-resolved table fields, or the below-deck diagnostic.  Those fields
+    are therefore written as NaN, never copied from the parent run.  Running
+    ``cops_fit.in`` through the C++ solver is the supported way to obtain them.
+    """
     M, args = P.M, P.args
     a, T, kappa = P.unpack(r["x"])
     diag = activity_diagnostics(a, el, seen, P.coef)
@@ -725,8 +801,12 @@ def write_fit(out, r, run, header, names, rows, cols, srcdir, el, seen, r0):
             f.write(" ".join("%.15e" % v for v in row) + "\n")
 
     # input file that reruns the fitted model with LiouvilleCOPS
-    infile = re.search(r"input file: (\S+)", header[0]).group(1)
-    infile = infile if os.path.isabs(infile) else os.path.join(srcdir, infile)
+    snapshot = os.path.join(run, "input.snapshot.in")
+    if os.path.isfile(snapshot):
+        infile = snapshot
+    else:
+        infile = re.search(r"input file: (\S+)", header[0]).group(1)
+        infile = infile if os.path.isabs(infile) else os.path.join(srcdir, infile)
     txt = open(infile).read()
     repl = {"ActivityModel": "file", "ActivityFile": os.path.join(out, "ActivityFit.txt"),
             "ActivityFileHeliocentricModel": M.helio, "AnalyticalTmax": "%.10g" % T[0], "AnalyticalT75": "%.10g" % T[1],
@@ -739,19 +819,33 @@ def write_fit(out, r, run, header, names, rows, cols, srcdir, el, seen, r0):
     with open(os.path.join(out, "cops_fit.in"), "w") as f:
         f.write("# generated by tools/fit_cops.py from %s\n" % infile + txt)
 
-    # fitted model in the LiouvilleCOPS output format (pressure columns replaced), all points
+    # Fitted prediction table.  Geometry, observations, gauge temperature and
+    # selection are inherited inputs; aggregate pressures are recomputed.  The
+    # remaining source/transport diagnostics would be false if copied from the
+    # parent base, so schema v2 marks them unavailable as NaN.
     pNG, pRG = MF.evaluate(a, T, kappa)
     with open(os.path.join(out, "COPS_model.dat"), "w") as f:
-        f.write("# LiouvilleCOPS FIT (tools/fit_cops.py, lambda=%.3e) of the run %s; species columns are not refitted (set to -1)\n" % (r["lam"], run))
+        f.write("# LiouvilleCOPS FIT PREDICTION (tools/fit_cops.py, lambda=%.3e) of the run %s\n" % (r["lam"], run))
+        f.write("# ProductKind=fit_prediction TableSchema=liouville_cops_fit_prediction_v2 Optimizer=%s; "
+                "authoritative process/cache/verification/review states are in fit_manifest.json\n" %
+                ("converged" if r.get("success") else "not_converged"))
+        f.write("# RecomputedColumns=pNG,pRG; UnavailableColumns=Q_H2O,Q_CO2,n_H2O,n_CO2,PhiRG_H2O,PhiRG_CO2,"
+                "pNG_H2O,pNG_CO2,pRG_H2O,pRG_CO2,NGBelowDeckFraction (written as nan)\n")
+        f.write("# Run ./liouville_cops cops_fit.in to obtain a complete forward table; this prediction table is not C++ verification.\n")
         for h in header[1:]:
             f.write("# " + h + "\n")
         f.write("#" + " ".join(names) + "\n")
+        unavailable = ("Q_H2O", "Q_CO2", "n_H2O", "n_CO2", "PhiRG_H2O",
+                       "PhiRG_CO2", "pNG_H2O", "pNG_CO2", "pRG_H2O",
+                       "pRG_CO2", "NGBelowDeckFraction")
         for k, rr in enumerate(rows):
             rr = list(rr)
-            for n in ("pNG_H2O", "pNG_CO2", "pRG_H2O", "pRG_CO2", "n_H2O", "n_CO2", "PhiRG_H2O", "PhiRG_CO2"):
-                rr[cols[n]] = "-1"
+            for n in unavailable:
+                rr[cols[n]] = "nan"
             if int(rr[cols["inside"]]) == 0:
                 rr[cols["pNG"]], rr[cols["pRG"]] = "%.6e" % pNG[k], "%.6e" % pRG[k]
+            else:
+                rr[cols["pNG"]] = rr[cols["pRG"]] = "nan"
             f.write(" ".join(rr) + "\n")
     return diag
 
@@ -772,11 +866,44 @@ def max_curvature(lams, rho, eta):
 MF = None    # the model with the kernels of all points (output of the fitted model)
 
 
+def optimizer_record(result):
+    """JSON-safe optimizer state, separate from process/scientific status."""
+    return {
+        "lambda": float(result["lam"]), "success": bool(result["success"]),
+        "status": int(result["status"]), "message": str(result["message"]),
+        "nfev": int(result["nfev"]), "optimality": float(result["optimality"]),
+        "cost": float(result["cost"]), "deviation_from_prior": float(result["D"]),
+    }
+
+
+def output_identities(directory, names):
+    """Hash declared outputs only; undeclared files cannot acquire authority."""
+    result = {}
+    for name in names:
+        path = Path(directory) / name
+        if path.is_file():
+            result[name] = file_identity(path)
+    return result
+
+
+def manifest_number(value):
+    """Represent finite numbers as JSON numbers and open bounds explicitly."""
+    value = float(value)
+    if np.isposinf(value):
+        return "+inf"
+    if np.isneginf(value):
+        return "-inf"
+    if np.isnan(value):
+        return "nan"
+    return value
+
+
 def main():
-    global P, MF
+    global P, MF, ACTIVE_MANIFEST, ACTIVE_MANIFEST_PATH
+    fit_started_utc = utc_now()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run", help="LiouvilleCOPS run directory (FlightTimeRotation=none, WriteKernels=on)")
-    ap.add_argument("--out", default=None, help="output directory under cops_output or absolute path outside LiouvilleCOPS (default: <run-name>_fit)")
+    ap.add_argument("--out", default=None, help="NEW output directory under cops_output or absolute path outside LiouvilleCOPS; existing paths are refused (default: <run-name>_fit)")
     ap.add_argument("--degree", type=int, default=4, help="max degree of the fitted spherical harmonics (0..4); higher degrees keep the run values")
     ap.add_argument("--lambda", dest="lam", type=float, nargs="+", default=[0.0],
                     help="Tikhonov weight(s) of the H2O activity prior; several values: L-curve")
@@ -803,6 +930,8 @@ def main():
                     help="write and plot the data used in the fit (<out>/fit_data_used.txt, .png) and stop")
     ap.add_argument("--data", default=None, help="table of the fit data (pressures, useNG/useRG) instead of the values and flags "
                     "of the run, e.g. data/COPS_fit_data.txt of tools/collect_cops_sources.py")
+    ap.add_argument("--allow-legacy-base", action="store_true",
+                    help="explicitly accept a base without run_manifest.json after strict cache validation")
     args = ap.parse_args()
     lams = sorted(set(args.lam))
     if min(lams) < 0:
@@ -812,10 +941,25 @@ def main():
     run = product_input(args.run.rstrip("/"))
     srcdir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     out = str(output_path(args.out if args.out else os.path.basename(run) + "_fit"))
-    os.makedirs(out, exist_ok=True)
+    if os.path.lexists(out):
+        sys.exit("Error: output already exists; choose a new --out directory: %s" % out)
 
-    header, names, rows = read_model_file(os.path.join(run, "COPS_model.dat"))
-    cols = {n: i for i, n in enumerate(names)}
+    # Validate every byte-level relationship before an optimizer or output
+    # writer is started.  Old bases remain usable only by an explicit choice;
+    # their absence of provenance is recorded rather than silently repaired.
+    try:
+        base_audit = validate_fit_base(run)
+    except (OSError, ProductError) as exc:
+        sys.exit("Error: invalid fitting base: %s" % exc)
+    if base_audit["legacy_manifest"]:
+        if not args.allow_legacy_base:
+            sys.exit("Error: the base has no run_manifest.json. It passed no W01 provenance check; "
+                     "rerun the base with the current solver or explicitly use --allow-legacy-base "
+                     "to perform strict structural validation and record the limitation.")
+        print("Warning: accepting an unmanifested legacy base after strict cache validation: %s" % run,
+              file=sys.stderr)
+    header, names, rows, cols = (base_audit[key] for key in
+                                 ("headers", "names", "rows", "columns"))
     for k in ("useNG", "useRG", "T_RG"):
         if k not in cols:
             sys.exit("Error: COPS_model.dat has no column %s (rerun the model with the current code)" % k)
@@ -825,10 +969,22 @@ def main():
 
     # the stored activity factors must equal max(0, sum a_j Y_j) of the coefficients of the run
     act = np.maximum(el["Y"] @ coef[0], 0.0)
-    e = np.max(np.abs(act - el["AH2O"])) / np.max(np.abs(el["AH2O"]))
-    print("activity factors (H2O) reproduced from the coefficients: max rel. diff %.2e" % e)
-    if e > 1e-10:
+    act_co2 = np.maximum(el["Y"] @ coef[1], 0.0)
+    e = np.max(np.abs(act - el["AH2O"])) / max(np.max(np.abs(el["AH2O"])), FLOOR)
+    e_co2 = np.max(np.abs(act_co2 - el["ACO2"])) / max(np.max(np.abs(el["ACO2"])), FLOOR)
+    print("activity factors reproduced from the coefficients: max rel. diff H2O %.2e, CO2 %.2e" %
+          (e, e_co2))
+    if max(e, e_co2) > 1e-10:
         sys.exit("Error: the coefficients do not match the element file")
+    if not base_audit["legacy_manifest"] and header_value(header, "ActivityModel") == "file":
+        activity = [entry.get("file") for entry in base_audit["manifest"].get("dependencies", [])
+                    if entry.get("role") == "activity_coefficients"]
+        if len(activity) != 1:
+            sys.exit("Error: manifested ActivityModel=file base has no unique activity-coefficient identity")
+        try:
+            verify_identity(activity[0], "base activity coefficients")
+        except ProductError as exc:
+            sys.exit("Error: %s" % exc)
 
     MF = Model(run, header, cols, rows, el, coef)
 
@@ -849,7 +1005,7 @@ def main():
 
     # NG data in the ExcludeNG intervals of the run (fit_base.in: 10:24:40-10:40:00, NG emission range HIGH->LOW
     # until the impact): not blocked by default; --apply-exclude-ng blocks them
-    infile, iv = run_intervals(header, srcdir)
+    infile, iv = run_intervals(header, srcdir, run)
     tt = np.array([parse_utc(r[cols["UTC"]]) for r in rows])
     inex = np.zeros(len(rows), dtype=bool)
     for a, b, _, _ in iv["ExcludeNG"]:
@@ -902,8 +1058,124 @@ def main():
     P = Problem(M, el, coef, args)
     seen = M.seen_faces()
     print("fit data: %d NG points, %d RG points; %d parameters: %s" % (P.NNG, P.NRG, len(P.x0), " ".join(P.names)))
+
+    # Create the experiment directory only after all base/cache/data checks
+    # succeeded.  Existing directories are refused above, so this operation
+    # cannot merge a new experiment with stale or historical artifacts.
+    os.makedirs(out, exist_ok=False)
+    chosen_rows = {
+        "point_ids": [int(r[cols["iPoint"]]) for r in rows],
+        "utc": [r[cols["UTC"]] for r in rows],
+        "ref_ng": [float(r[cols["refNG"]]) for r in rows],
+        "ref_rg": [float(r[cols["refRG"]]) for r in rows],
+        "use_ng": [int(r[cols["useNG"]]) for r in rows],
+        "use_rg": [int(r[cols["useRG"]]) for r in rows],
+        "t_rg": [float(r[cols["T_RG"]]) for r in rows],
+    }
+    selection = selection_identity(
+        chosen_rows["point_ids"], chosen_rows["utc"], chosen_rows["ref_ng"],
+        chosen_rows["ref_rg"], chosen_rows["use_ng"], chosen_rows["use_rg"],
+        chosen_rows["t_rg"])
+    input_files = {
+        "base_model_table": base_audit["model_table"],
+        "base_elements": base_audit["elements"],
+        "base_input": file_identity(infile),
+        "housekeeping_table": file_identity(hk),
+    }
+    if args.data:
+        input_files["replacement_fit_data"] = file_identity(args.data)
+    run_manifest_path = Path(run) / "run_manifest.json"
+    parent = ({"kind": "manifested_run", "manifest": file_identity(run_manifest_path)}
+              if run_manifest_path.is_file() else
+              {"kind": "legacy_unmanifested_run", "path": str(Path(run).resolve()),
+               "accepted_explicitly": True})
+    ACTIVE_MANIFEST = {
+        "schema": FIT_SCHEMA,
+        "schema_version": 1,
+        "created_utc": fit_started_utc,
+        "updated_utc": utc_now(),
+        "fit_kind": "data_selection_only" if args.data_only else
+                    ("single" if len(lams) == 1 else "lambda_scan"),
+        "command": [sys.executable] + sys.argv,
+        "cwd": str(Path.cwd().resolve()),
+        "parent": parent,
+        "states": {
+            "process": "running",
+            "optimizer": "not_run",
+            "cache": "verified",
+            "base_python_cpp_agreement": "verified",
+            "cpp_prediction_agreement": "not_run",
+            "scientific_review": "not_reviewed",
+        },
+        "base_cache": {
+            "legacy_manifest": bool(base_audit["legacy_manifest"]),
+            "kernels": base_audit["kernels"],
+            "python_cpp_max_relative_difference": {"NG": float(dNG), "RG": float(dRG)},
+            "consistency_tolerance": float(args.check_tolerance),
+        },
+        "inputs": input_files,
+        "selection": selection,
+        "prior": {
+            "activity_coefficients_sha256": canonical_sha256(coef.tolist()),
+            "activity_coefficients_shape": [3, 25],
+            "temperature": {name: float(value) for name, value in zip(TNAMES, MF.T0)},
+            "co2_scale": 1.0,
+        },
+        "objective": {
+            "name": "equal_gauge_normalized_log_residuals_plus_h2o_map_tikhonov",
+            "pressure_floor_Pa": FLOOR,
+            "lambda_values": [float(value) for value in lams],
+            "selection_policy": {
+                "apply_exclude_ng": bool(args.apply_exclude_ng),
+                "exclude_ng_saturated": bool(args.exclude_ng_saturated),
+                "replacement_data": bool(args.data),
+            },
+        },
+        "parameters": {
+            "names": list(P.names), "degree": int(args.degree),
+            "fix_temperature": bool(args.fix_temperature),
+            "ordered_temperature": bool(args.ordered_temperature),
+            "fix_kappa": bool(args.fix_kappa),
+            "lower_bounds": [manifest_number(value) for value in P.lo],
+            "upper_bounds": [manifest_number(value) for value in P.hi],
+            "initial_scaled": [float(value) for value in P.x0],
+        },
+        "optimizer_settings": {
+            "method": "scipy.optimize.least_squares/trf", "x_scale": "jac",
+            "max_nfev": int(args.max_nfev), "ftol": float(args.ftol),
+            "xtol": float(args.xtol), "gtol": float(args.gtol),
+            "jobs": int(args.jobs),
+        },
+        "software": {
+            "python": platform.python_version(), "numpy": np.__version__,
+            "scipy": scipy.__version__,
+            "matplotlib": matplotlib.__version__,
+            "platform": platform.platform(),
+            "environment": {name: os.environ[name] for name in
+                            ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")
+                            if name in os.environ},
+            "fit_cops": file_identity(__file__),
+            "cops_io": file_identity(Path(__file__).with_name("cops_io.py")),
+            "srcCG_activity_tables": file_identity(Path(srcdir) / "src" / "SrcCGTables.h"),
+        },
+        "output_schema": {
+            "name": "liouville_cops_fit_prediction_v2",
+            "aggregate_pressures": "recomputed",
+            "source_and_species_diagnostics": "unavailable_nan_until_cpp_verification",
+        },
+        "optimizer_results": [],
+        "outputs": {},
+    }
+    ACTIVE_MANIFEST_PATH = str(Path(out) / "fit_manifest.json")
+    save_active_manifest()
     write_fit_data(out, P, rows, cols, msg)
     if args.data_only:
+        ACTIVE_MANIFEST["states"]["process"] = "complete"
+        ACTIVE_MANIFEST["states"]["optimizer"] = "not_requested"
+        ACTIVE_MANIFEST["updated_utc"] = utc_now()
+        ACTIVE_MANIFEST["outputs"] = output_identities(
+            out, ("fit_data_used.txt", "fit_data_used.png", "fit_profiles_used.png"))
+        save_active_manifest()
         return
     print("elements seen from the fit points: %.1f%% of the surface area" % (100 * np.sum(el["area"][seen]) / np.sum(el["area"])))
 
@@ -922,6 +1194,14 @@ def main():
             worst = max(worst, err)
             print("  d/d%-6s analytic vs finite difference: max rel. diff %.2e" % (n, err))
         print("Jacobian check (lambda %.3e): worst %.2e" % (P.lam, worst))
+        ACTIVE_MANIFEST["states"]["process"] = "complete"
+        ACTIVE_MANIFEST["states"]["optimizer"] = "not_requested"
+        ACTIVE_MANIFEST["jacobian_check"] = {"lambda": float(P.lam),
+                                              "worst_relative_difference": float(worst)}
+        ACTIVE_MANIFEST["updated_utc"] = utc_now()
+        ACTIVE_MANIFEST["outputs"] = output_identities(
+            out, ("fit_data_used.txt", "fit_data_used.png", "fit_profiles_used.png"))
+        save_active_manifest()
         return
 
     rd0 = P.data_residuals(P.x0)
@@ -931,6 +1211,14 @@ def main():
     if len(lams) == 1:
         r = fit_worker(lams[0])
         write_fit(out, r, run, header, names, rows, cols, srcdir, el, seen, r0)
+        ACTIVE_MANIFEST["optimizer_results"] = [optimizer_record(r)]
+        ACTIVE_MANIFEST["states"]["process"] = "complete"
+        ACTIVE_MANIFEST["states"]["optimizer"] = "converged" if r["success"] else "not_converged"
+        ACTIVE_MANIFEST["updated_utc"] = utc_now()
+        ACTIVE_MANIFEST["outputs"] = output_identities(
+            out, ("fit_data_used.txt", "fit_data_used.png", "fit_profiles_used.png",
+                  "fit_result.txt", "ActivityFit.txt", "cops_fit.in", "COPS_model.dat"))
+        save_active_manifest()
         print("results: %s" % out)
         print("verify with: ./liouville_cops %s" % os.path.join(out, "cops_fit.in"))
         return
@@ -941,9 +1229,13 @@ def main():
         results = pool.map(fit_worker, lams, chunksize=1)
 
     table = []
+    result_outputs = {}
     for r in results:
         d = os.path.join(out, "lambda=%.3e" % r["lam"])
+        os.makedirs(d, exist_ok=False)
         diag = write_fit(d, r, run, header, names, rows, cols, srcdir, el, seen, r0)
+        result_outputs[os.path.basename(d)] = output_identities(
+            d, ("fit_result.txt", "ActivityFit.txt", "cops_fit.in", "COPS_model.dat"))
         a, T, kappa = P.unpack(r["x"])
         table.append((r, diag, T, kappa))
 
@@ -967,8 +1259,33 @@ def main():
                 T[0], T[1], T[2], kappa, dg["activity_ratio"], dg["activity_ratio_seen"], dg["unseen_activity_fraction"],
                 dg["active_area"], r["nfev"], r["status"], r["optimality"]))
     print(open(os.path.join(out, "lcurve.txt")).read())
+    ACTIVE_MANIFEST["optimizer_results"] = [optimizer_record(result) for result in results]
+    if all(result["success"] for result in results):
+        optimizer_state = "converged"
+    elif any(result["success"] for result in results):
+        optimizer_state = "mixed"
+    else:
+        optimizer_state = "not_converged"
+    ACTIVE_MANIFEST["states"]["process"] = "complete"
+    ACTIVE_MANIFEST["states"]["optimizer"] = optimizer_state
+    ACTIVE_MANIFEST["updated_utc"] = utc_now()
+    ACTIVE_MANIFEST["outputs"] = output_identities(
+        out, ("fit_data_used.txt", "fit_data_used.png", "fit_profiles_used.png", "lcurve.txt"))
+    ACTIVE_MANIFEST["outputs"]["lambda_directories"] = result_outputs
+    save_active_manifest()
     print("results: %s" % out)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BaseException as exc:
+        # A failure after the output directory is created must remain visibly
+        # incomplete.  Preserve SystemExit's concise CLI message and keyboard
+        # interrupt semantics after recording the independent process state.
+        if ACTIVE_MANIFEST is not None and ACTIVE_MANIFEST.get("states", {}).get("process") == "running":
+            ACTIVE_MANIFEST["states"]["process"] = "failed"
+            ACTIVE_MANIFEST["updated_utc"] = utc_now()
+            ACTIVE_MANIFEST["error"] = str(exc) or exc.__class__.__name__
+            save_active_manifest()
+        raise

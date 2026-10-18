@@ -22,6 +22,7 @@
 #include "Gauges.h"
 #include "Liouville.h"
 #include "Paths.h"
+#include "Provenance.h"
 
 static void MakeDirectory(const std::string& dir) {
   std::error_code error;
@@ -327,6 +328,20 @@ int main(int argc,char **argv) {
 
   //Resolve and validate the destination before loading expensive mission data.
   std::string OutDir=CopsPaths::OutputPath(input.GetString("OutputDirectory","output"));
+  bool AllowExistingOutput=input.GetBool("AllowExistingOutputDirectory",false);
+  if (std::filesystem::exists(OutDir)) {
+    if (!AllowExistingOutput) {
+      fprintf(stderr,"Error: output directory already exists; choose a new OutputDirectory: %s\n",OutDir.c_str());
+      return EXIT_FAILURE;
+    }
+    //A trusted wrapper may create a fresh directory first to archive its own
+    //input/log.  It still cannot authorize replacement of scientific output.
+    for (const char* name : {"COPS_model.dat","elements.bin","kernels","run_manifest.json"})
+      if (std::filesystem::exists(std::filesystem::path(OutDir)/name)) {
+        fprintf(stderr,"Error: existing scientific output is never overwritten: %s/%s\n",OutDir.c_str(),name);
+        return EXIT_FAILURE;
+      }
+  }
   printf("Output directory: %s\n",OutDir.c_str());
 
   //SPICE first: the DSK shape models need the frame kernel to resolve the frame of the plates
@@ -368,6 +383,11 @@ int main(int argc,char **argv) {
   bool KernelOutput=input.GetBool("WriteKernels",true);
   bool GeometryOnly=input.GetBool("GeometryOnly",false);
   iLast=std::min(iLast,(int)obs.size()-1);
+
+  if ((iFirst<0)||(iStep<=0)||(iLast<iFirst)) {
+    fprintf(stderr,"Error: FirstPoint/LastPoint/PointStep select an invalid or empty observation sequence\n");
+    return EXIT_FAILURE;
+  }
 
   if (GeometryOnly&&KernelOutput) {
     fprintf(stderr,"Error: GeometryOnly=on requires WriteKernels=off (transport kernels are not evaluated)\n");
@@ -425,6 +445,18 @@ int main(int argc,char **argv) {
   }
 
   MakeDirectory(OutDir);
+  //Keep the exact parsed input bytes with the product.  The manifest hashes
+  //both this immutable snapshot and the original path; later edits to the
+  //original input therefore cannot silently change the identity of this run.
+  {
+    std::error_code error;
+    std::filesystem::copy_file(InputFile,std::filesystem::path(OutDir)/"input.snapshot.in",
+        std::filesystem::copy_options::none,error);
+    if (error) {
+      fprintf(stderr,"Error: cannot archive the input in '%s': %s\n",OutDir.c_str(),error.message().c_str());
+      return EXIT_FAILURE;
+    }
+  }
   if (KernelOutput) {
     MakeDirectory(OutDir+"/kernels");
     source.WriteElements(OutDir+"/elements.bin",mesh);
@@ -433,7 +465,14 @@ int main(int argc,char **argv) {
   std::string fname=OutDir+"/COPS_model.dat";
   FILE *fout=fopen(fname.c_str(),"w");
 
+  if (fout==NULL) {
+    fprintf(stderr,"Error: cannot write '%s'\n",fname.c_str());
+    return EXIT_FAILURE;
+  }
+
   fprintf(fout,"# LiouvilleCOPS %s; input file: %s\n",GeometryOnly ? "geometry-only observation table" : "model of the COPS gauge pressures",InputFile.c_str());
+  fprintf(fout,"# ProductKind=%s TableSchema=liouville_cops_forward_v1; authoritative process/cache states are in run_manifest.json\n",
+      GeometryOnly ? "geometry_only" : "forward");
   fprintf(fout,"# GeometryOnly=%s; geometry-only tables have zero transport/source/pressure columns and are not fitting bases\n",GeometryOnly ? "on" : "off");
   fprintf(fout,"# ShapeModel=%s (%s) FlightTimeRotation=%s FitInterval=%s\n",input.GetString("ShapeModel").c_str(),ShapeFormat.c_str(),lv.FlightTimeRotation.c_str(),
       input.Has("FitInterval") ? input.GetString("FitInterval").c_str() : "all");
@@ -447,8 +486,10 @@ int main(int argc,char **argv) {
   fprintf(fout,"# units: SI (m, m/s, m^-3, m^-2 s^-1, s^-1, Pa, K); reference values converted to Pa; a reference value <=0 is a data gap\n# useNG/useRG=1: the point is used in the fit (reference value >0, gauge outside the nucleus, not in Exclude<NG|RG>, inside FitInterval)\n");
   fprintf(fout,"#iPoint UTC et x y z altitude inside rh_AU VdotB_RG nVisible Q_H2O Q_CO2 n_H2O n_CO2 PhiRG_H2O PhiRG_CO2 pNG_H2O pNG_CO2 pNG pRG_H2O pRG_CO2 pRG refNG refRG NGBelowDeckFraction T_RG useNG useRG\n");
 
+  std::string RunStartedUTC=ProvenanceUTCNow();
   double t0=omp_get_wtime();
 
+  std::vector<int> completedPoints;
   for (int ip=iFirst;ip<=iLast;ip+=iStep) {
     cObservationGeometry g;
     std::vector<cSurfaceState> state;
@@ -489,12 +530,55 @@ int main(int argc,char **argv) {
       else WriteKernels(OutDir+kname,ip,g,res,state);
     }
 
+    completedPoints.push_back(ip);
+
     printf("point %4i %s alt=%9.2f m visible=%6i pNG=%.3e pRG=%.3e (ref %.3e %.3e) %s%s[%.1f s]\n",ip,obs[ip].UTC.c_str(),res.Altitude,res.nVisibleElements,
         pNG,pRG,obs[ip].NG*RefToPa,obs[ip].RG*RefToPa,GeometryOnly ? "GEOMETRY ONLY " : "",res.GaugeInsideNucleus ? "INSIDE NUCLEUS " : "",omp_get_wtime()-t1);
     fflush(stdout);
   }
 
-  fclose(fout);
+  if (ferror(fout)||fclose(fout)!=0) {
+    fprintf(stderr,"Error: failed while writing '%s'\n",fname.c_str());
+    return EXIT_FAILURE;
+  }
+
+  //Read the just-written products back before declaring the process complete.
+  //This catches truncation, stale extra kernels, wrong point IDs/versions,
+  //invalid face indices, and table/cache point-set mismatches.
+  int kernelVersion=(lv.FlightTimeRotation=="exact") ? 2 : 1;
+  cRunOutputAudit audit=AuditRunOutputs(OutDir,completedPoints,KernelOutput,kernelVersion);
+
+  //Resolve every external dependency exactly as the consumers did.  Hashing
+  //is streamed and happens once, after the expensive physical calculation.
+  std::vector<cProvenanceFile> dependencies;
+  dependencies.push_back({"shape_model",input.GetString("ShapeModel")});
+  dependencies.push_back({"observations",input.GetString("ObservationFile")});
+  std::string kernelDirectory=input.GetString("KernelDirectory");
+  for (const auto& name : input.GetAll("Kernel"))
+    dependencies.push_back({"spice_kernel",(!name.empty()&&name[0]=='/') ? name : kernelDirectory+"/"+name});
+  if (gauges.TemperatureRGMode=="hk_table")
+    dependencies.push_back({"rg_temperature_table",CopsPaths::ProductInput(input.GetString("TemperatureRGTable"))});
+  if (source.ActivityModel=="file")
+    dependencies.push_back({"activity_coefficients",CopsPaths::ProductInput(input.GetString("ActivityFile"))});
+  std::error_code executableError;
+  std::string executable=std::filesystem::read_symlink("/proc/self/exe",executableError).string();
+  if (executableError) executable=std::filesystem::absolute("liouville_cops").string();
+  std::string now=ProvenanceUTCNow();
+  try {
+    WriteRunManifest(OutDir+"/run_manifest.json",RunStartedUTC,now,
+        audit.CacheVerified ? "complete" : "failed",
+        GeometryOnly ? "geometry_only" : "forward",InputFile,executable,
+        tkvrsn_c("TOOLKIT"),input,
+        dependencies,OutDir,audit,audit.Error);
+  }
+  catch (const std::exception& exception) {
+    fprintf(stderr,"Error: cannot complete run provenance: %s\n",exception.what());
+    return EXIT_FAILURE;
+  }
+  if (!audit.CacheVerified) {
+    fprintf(stderr,"Error: post-write output audit failed: %s\n",audit.Error.c_str());
+    return EXIT_FAILURE;
+  }
   printf("Done: %s (%.1f s)\n",fname.c_str(),omp_get_wtime()-t0);
   return EXIT_SUCCESS;
 }

@@ -13,7 +13,8 @@ honored only outside LiouvilleCOPS; paths resolving inside it are rejected.
 `COPS_OUTPUT_ROOT=/absolute/path/outside/LiouvilleCOPS` overrides the root for Python and
 the rebuilt C++ executable. Generated-product readers prefer the new root,
 then existing local files; explicit absolute or `./` inputs select that location.
-Former local products have been removed. Source images/L4 data stay in the application.
+Former local products have been removed. Source images, L4 data, and the SHAP5
+mesh are external under `/data/vtenishe/rosetta_data_end_of_mission_cops` by default.
 See [RUN.md](RUN.md#output-location). `tools/cops_paths.py` is the shared path
 helper, not a standalone command.
 
@@ -24,6 +25,7 @@ helper, not a standalone command.
 | [`tools/plot_cops_model.py`](#plot_cops_modelpy-plot_cops_model_altitudepy) | compare the LiouvilleCOPS runs with the data, vs. time |
 | [`tools/plot_cops_model_altitude.py`](#plot_cops_modelpy-plot_cops_model_altitudepy) | the same, vs. altitude |
 | [`tools/fit_cops.py`](#fit_copspy) | fit the source rate and temperature to the COPS data |
+| [`tools/validate_cops_run.py`](#validate_cops_runpy) | validate a fitting cache or register C++ reproduction of fitted pressures |
 | [`tools/plot_lcurve.py`](#plot_lcurvepy) | plot the L-curve of the regularized fit |
 | [`tools/digitize_cops_figures.py`](#digitize_cops_figurespy) | digitize the published end-of-mission COPS figures |
 | [`tools/collect_cops_sources.py`](#collect_cops_sourcespy) | gather the COPS data of all sources into one JSON file and two plots; write and plot the data used in the fit |
@@ -137,6 +139,8 @@ table, temperature equations, safeguards, and tests.
   selection `useNG`/`useRG`, T_RG) and the srcCG coefficients of its `cops.in` (prior). With `--data FILE` the
   pressures and the `useNG`/`useRG` flags come from a table instead (`data/COPS_fit_data.txt` of
   `collect_cops_sources.py`, which can be edited); its points must be points of the run, with the same T_RG.
+  New bases must have a valid `run_manifest.json`. A pre-W01 base requires the explicit `--allow-legacy-base`
+  compatibility option and still receives the complete structural cache audit.
 * **NG data after the emission range change:** the `ExcludeNG` interval of the base run (`fit_base.in`:
   10:24:40-10:40:00, NG filament emission range HIGH->LOW until the impact) is **not applied by default**: its 91 NG
   points with data are used (930 NG points in total). `--apply-exclude-ng` blocks them (839 NG points, as in the fits
@@ -152,12 +156,15 @@ table, temperature equations, safeguards, and tests.
     the used NG and RG profiles. `--data-only` writes them and stops;
   * one lambda: `<run-name>_fit/` under the output root (or `--out`) with `fit_result.txt` (parameters, uncertainties, rms, p_eff, activity
     diagnostics), `ActivityFit.txt` (coefficients), `COPS_model.dat` (model at the fitted parameters) and
-    `cops_fit.in` (LiouvilleCOPS input that reruns the fitted model into `<fit dir>_verify`);
+    `cops_fit.in` (LiouvilleCOPS input that reruns the fitted model into `<fit dir>_verify`), plus
+    `fit_manifest.json` (versioned identities and independent process/optimizer/verification/review states);
   * several lambdas: `<out>/lambda=<value>/` with the same files, and `<out>/lcurve.txt` with the maximum-curvature
     lambda.
+  `--out` must name a new path. In the Python prediction table, only aggregate `pNG`/`pRG` are recomputed;
+  unrecomputed production/species/below-deck fields are `nan`, not inherited base results.
 * **Options:** `--out DIR`, `--degree N`, `--lambda L [L ...]`, `--jobs N`, `--fix-temperature`,
   `--ordered-temperature`, `--fix-kappa`, `--tbounds TMIN TMAX` (default 30 400 K), `--max-nfev`, `--ftol`, `--xtol`,
-  `--gtol`, `--check-jacobian`, `--check-tolerance`, `--data FILE`, `--apply-exclude-ng`, `--exclude-ng-saturated`, `--hk-table FILE`, `--data-only`.
+  `--gtol`, `--check-jacobian`, `--check-tolerance`, `--data FILE`, `--apply-exclude-ng`, `--exclude-ng-saturated`, `--hk-table FILE`, `--data-only`, `--allow-legacy-base`.
 * **Examples:**
 
   ```
@@ -173,6 +180,24 @@ table, temperature equations, safeguards, and tests.
   python3 tools/fit_cops.py output_fit_base --lambda 3e-3 --exclude-ng-saturated --out output_fit_base_nosat
   python3 tools/fit_cops.py output_fit_base --lambda 3e-3 --apply-exclude-ng --out output_fit_base_blockNG
   ./liouville_cops output_fit_base_fit/cops_fit.in    # verify a fit with the C++ code
+  python3 tools/validate_cops_run.py --fit output_fit_base_fit --verification output_fit_base_fit_verify
+  ```
+
+## `validate_cops_run.py`
+
+* **Purpose:** read-only validation of a static fitting base, or comparison of a Python fit prediction with its
+  full C++ rerun. It checks table widths and unique point IDs, exact binary lengths and versions, kernel/table point
+  correspondence, face bounds/duplicates, hashes, declared states, and fitted aggregate NG/RG agreement. When both
+  parent and verification runs are manifested, their non-activity input identities must match.
+* **State change:** base validation changes nothing. Fit verification atomically changes only
+  `fit_manifest.json`'s `cpp_prediction_agreement` state and records the verification identities/error maxima.
+  It never changes `scientific_review` or makes a physical-validity claim.
+* **Examples:**
+
+  ```bash
+  python3 tools/validate_cops_run.py output_fit_base
+  python3 tools/validate_cops_run.py \
+    --fit output_fit_new --verification output_fit_new_verify
   ```
 
 ## `plot_lcurve.py`

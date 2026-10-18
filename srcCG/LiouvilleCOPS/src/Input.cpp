@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include <algorithm>
 
@@ -54,11 +55,14 @@ std::string cInput::GetString(const std::string& key) const {
   }
 
   Used[key]=true;
+  Effective[key]={it->second.back()};
   return it->second.back();
 }
 
 std::string cInput::GetString(const std::string& key,const std::string& def) const {
-  return Has(key) ? GetString(key) : def;
+  if (Has(key)) return GetString(key);
+  Effective[key]={def};
+  return def;
 }
 
 double cInput::GetDouble(const std::string& key) const {
@@ -75,15 +79,24 @@ double cInput::GetDouble(const std::string& key) const {
 }
 
 double cInput::GetDouble(const std::string& key,double def) const {
-  return Has(key) ? GetDouble(key) : def;
+  if (Has(key)) return GetDouble(key);
+  std::ostringstream value;
+  value << std::setprecision(17) << def;
+  Effective[key]={value.str()};
+  return def;
 }
 
 int cInput::GetInt(const std::string& key,int def) const {
-  return Has(key) ? (int)GetDouble(key) : def;
+  if (Has(key)) return (int)GetDouble(key);
+  Effective[key]={std::to_string(def)};
+  return def;
 }
 
 bool cInput::GetBool(const std::string& key,bool def) const {
-  if (!Has(key)) return def;
+  if (!Has(key)) {
+    Effective[key]={def ? "on" : "off"};
+    return def;
+  }
 
   std::string s=GetString(key);
   std::transform(s.begin(),s.end(),s.begin(),::tolower);
@@ -96,7 +109,12 @@ bool cInput::GetBool(const std::string& key,bool def) const {
 }
 
 Vec3 cInput::GetVec3(const std::string& key,const Vec3& def) const {
-  if (!Has(key)) return def;
+  if (!Has(key)) {
+    std::ostringstream value;
+    value << std::setprecision(17) << def.x << " " << def.y << " " << def.z;
+    Effective[key]={value.str()};
+    return def;
+  }
 
   std::istringstream ss(GetString(key));
   Vec3 v;
@@ -125,6 +143,7 @@ const std::vector<std::string>& cInput::GetAll(const std::string& key) const {
   auto it=Table.find(key);
 
   Used[key]=true;
+  Effective[key]=(it==Table.end()) ? empty : it->second;
   return (it==Table.end()) ? empty : it->second;
 }
 

@@ -76,7 +76,9 @@ and commands such as `cp` do not use the application's path resolver.
 External mission inputs default to
 `/data/vtenishe/rosetta_data_end_of_mission_cops`: raw BG files are under
 `data_COPS_L2/mtp35_cops_bg`, while the L4 table and source images are under
-`sources/`. Override the common root with `COPS_DATA_ROOT`, or use
+`sources/`, and the supplied SHAP5 mesh is `SHAP5_Volume.bdf` at the root.
+`COPS_DATA_ROOT` controls the Python raw/L4/image readers; the C++ mesh path is
+set explicitly by `ShapeModel` in the input file. Override the Python common root with `COPS_DATA_ROOT`, or use
 `COPS_L2_ROOT`, `COPS_SOURCES_ROOT`, digitizer `--dir`, and collector
 `--sources-dir` for separate locations.
 
@@ -84,6 +86,68 @@ Output names below are relative to this root unless explicitly described as
 historical application-local files. See [RUN.md](RUN.md#output-location) for
 examples. `tools/cops_paths.py` and `src/Paths.h` implement these conventions;
 `tests/test_output_paths.py` checks routing and opt-in end-to-end workflows.
+
+### Provenance, integrity, and result states (W01)
+
+Every new observation-mode C++ run writes `run_manifest.json` after reading
+its completed table and binary caches back from disk. The version-1 JSON
+schema is `liouville_cops.run_manifest`. It records the exact input file,
+effective settings including defaults, executable identity, external input
+paths/sizes/SHA-256 hashes, output hashes, kernel format/count/record count,
+and independent process/cache/scientific-review states. SHA-256 is streamed
+in bounded memory; large meshes and kernel collections are not loaded merely
+to hash them. `input.snapshot.in` preserves the exact run input inside the
+output directory.
+
+Every new Python fitting operation writes `fit_manifest.json`, schema
+`liouville_cops.fit_manifest` version 1. It records the parent run, strict
+cache audit, exact selection hash/counts, prior identity, parameter names and
+bounds, objective and optimizer settings, Python/library/code identities,
+optimizer result, declared output hashes, and these separate states:
+
+| State | Meaning; what it does **not** mean |
+|---|---|
+| `process` | The command completed or failed; completion does not imply optimizer convergence. |
+| `optimizer` | `not_requested`, `converged`, `not_converged`, or `mixed` for a scan; convergence does not establish uniqueness or physical validity. |
+| `cache` | The table, elements, and kernels passed structural and correspondence checks. |
+| `base_python_cpp_agreement` | The cached Python model reproduced the base C++ aggregate pressures at the configured tolerance. |
+| `cpp_prediction_agreement` | A separate C++ rerun reproduced the fitted aggregate pressures; initially `not_run`. |
+| `scientific_review` | Always `not_reviewed` unless a later, explicit scientific review process is defined. Passing software tests never changes it. |
+
+New C++ runs and fits refuse an existing output path. This prevents merging a
+new experiment with stale kernels or historical results. The boundary rebuild
+wrapper is the one controlled exception: it creates a new directory itself,
+then explicitly permits the solver to use it while the solver still refuses
+any pre-existing scientific product in that directory.
+
+Before fitting, `tools/cops_io.py` rejects malformed rows, duplicate point IDs,
+missing/extra kernels, unsupported versions, truncated or appended
+binary data, table/kernel point or geometry disagreement, invalid record
+counts, duplicate/out-of-range face indices, non-finite cache values, and
+manifest/output hash disagreement. A base created before W01 has no manifest
+and is refused by default. `--allow-legacy-base` is an explicit compatibility
+choice: the same structural audit is performed, and the missing provenance is
+recorded in the fit manifest rather than reconstructed by assumption.
+
+Use the read-only cache validator with:
+
+```bash
+python3 tools/validate_cops_run.py output_fit_base
+```
+
+After running a fit's generated C++ input, register numerical reproduction:
+
+```bash
+./liouville_cops output_fit_new/cops_fit.in
+python3 tools/validate_cops_run.py \
+  --fit output_fit_new --verification output_fit_new_verify
+```
+
+The second command verifies declared fit outputs, the verification run
+manifest, parent dependency identities when the parent is manifested, exact
+point/UTC correspondence, and aggregate NG/RG pressures. It changes only
+`cpp_prediction_agreement`; it does not certify calibration, model adequacy,
+convergence, uniqueness, uncertainty, or publication readiness.
 
 ## 1. Directory contents and implementation map
 
@@ -102,6 +166,7 @@ examples. `tools/cops_paths.py` and `src/Paths.h` implement these conventions;
 | `tools/` | Data preparation, fitting support, and plotting scripts; inventory below. |
 | `tests/test_rebuild_cops_boundary.py` | Standard-library tests for boundary rebuilding, with an opt-in local C++/mission-data integration check. |
 | `data/` | Input-data directory; generated tables and plots have been removed. |
+| External `<COPS_DATA_ROOT>/SHAP5_Volume.bdf` | SHAP5 NASTRAN surface mesh used by `cops.in` and `fit_base.in`; the supplied inputs currently use its absolute path. |
 | External `<COPS_DATA_ROOT>/sources/` | L4 table and labels plus three source images; default root is `/data/vtenishe/rosetta_data_end_of_mission_cops`. |
 | `tools/__pycache__/` | Python bytecode cache; not an authoritative script source. |
 | `README.md`, `RUN.md`, `SCRIPTS.md`, `quick_guide.md` | Detailed description, operating guide, script overview, and fitting quick start. |
@@ -144,6 +209,7 @@ alone; removed generated fit inputs also contained obsolete absolute paths.
 | `SrcCGTables.h` | Locally embedded activity coefficient arrays and tabulated temperatures. |
 | `Gauges.cpp/.h` | NG angular response, RG acceptance, species sensitivity, pressure conversion, housekeeping temperature interpolation. |
 | `Liouville.cpp/.h` | Static geometric kernels and speed-integrated flight-time-rotation solver. |
+| `Provenance.cpp/.h` | Streaming SHA-256, run manifests, atomic JSON output, and post-write table/cache validation. |
 | `Constants.h`, `Vec3.h` | Species/constants and vector operations. |
 
 ### Python scripts
@@ -158,6 +224,8 @@ alone; removed generated fit inputs also contained obsolete absolute paths.
 | `tools/plot_cops_model_altitude.py` | Wrapper around the preceding script with altitude as the default horizontal axis. | Same. | Same. |
 | `tools/plot_lcurve.py` | Displays fit quality versus regularization, temperatures, and activity diagnostics. | `lcurve.txt`. | Interactive plot or `--save` image. |
 | `tools/fit_cops.py` | Fits the source and temperature using static kernels and uses the shared product-path handling. | Base run, kernels, elements, local coefficient tables, original input, HK table, optional replacement fit data. | Parameters, fitted activity, fitted pressures, rerun input, exact data selection; optionally an L-curve. |
+| `tools/cops_io.py` | Shared strict product parser, cache validator, streaming hashes, atomic manifests, and selection identities; imported by other tools. | Model tables, manifests, elements and static kernels. | Validated in-memory metadata; no standalone output. |
+| `tools/validate_cops_run.py` | Validates a static base or records fitted-pressure agreement with a manifested C++ verification run. | Base run, or fit plus verification run. | Diagnostic report; in verification mode, an atomic update of the fit manifest's C++-agreement state. |
 
 Both the collector and fitter are present as ordinary working files. The
 fitter's numerical implementation originated in former RCS revision 1.9;
@@ -212,7 +280,8 @@ All example commands below assume the current directory is the LiouvilleCOPS roo
 | Optional edited fit data | `<AMPS>/cops_output/data/COPS_fit_data.txt` or `fit_cops.py --data FILE`. | Generate with the collector; overrides pressures and selection at existing base-run points. |
 | L4 density | `<COPS_DATA_ROOT>/sources/COPS_L4_MTP35.ASC`; accompanying `.LBL` and `COPS_TS_TABLE.FMT`. | NG density and uncertainty for comparison. |
 | Digitized source figures | Three JPG inputs in `<COPS_DATA_ROOT>/sources/`; generated CSVs go under `<AMPS>/cops_output/data/sources/`. | Generate with `digitize_cops_figures.py` for comparisons to ESA-blog NG and EGU-slide NG/RG curves. |
-| Shape and SPICE | `ShapeModel`, `KernelDirectory`, repeated `Kernel` keys in the input files. | Forward geometry; paths remain external configuration. |
+| SHAP5 shape mesh | `/data/vtenishe/rosetta_data_end_of_mission_cops/SHAP5_Volume.bdf`, set by `ShapeModel` in `cops.in` and `fit_base.in`. | NASTRAN surface used for the standard forward and fitting-base runs; it is external and not included in this Git directory. |
+| SPICE and alternate shapes | `KernelDirectory`, repeated `Kernel` keys, and optionally `ShapeModel` in the input files. | Forward geometry; paths remain external configuration. |
 
 The raw-data location is specified when regenerating the table:
 
@@ -1290,8 +1359,8 @@ OMP_NUM_THREADS=4 ./liouville_cops selftest.in
 
 Before a new observation run, review these input settings:
 
-The supplied shape path is
-`/home/vtenishe/ROS-END-OF-MISSION/AMPS/SHAP5_Volume.bdf`, and the SPICE
+The supplied SHAP5 shape path is
+`/data/vtenishe/rosetta_data_end_of_mission_cops/SHAP5_Volume.bdf`, and the SPICE
 root is `/home/vtenishe/SPICE/Kernels/ROSETTA/esa_2022`. Commented DSK
 alternatives point to `dsk/ROS_CG_M001_OSPGDLR_N_V1.BDS` and
 `dsk/ROS_CG_M004_OSPGDLR_N_V1.BDS` under that SPICE root. These resources
@@ -1307,6 +1376,7 @@ machine used to run the application.
 | `GaugeOffsetSC` | Common gauge position offset in meters, spacecraft coordinates. |
 | `TemperatureRGMode/Table/TableColumn` | Constant or HK gauge temperature; column is 1-based, default 6. |
 | `OutputDirectory`, `WriteKernels` | Output destination; fit requires kernels and elements. |
+| `AllowExistingOutputDirectory` | `off` by default. Reserved for a trusted wrapper that already created a fresh directory; even when enabled, existing table/elements/kernels/manifest are refused. Do not use it to resume or overwrite. |
 | `GeometryOnly` | `off` by default. With `on`, write exact SPICE position, BVH nearest-surface altitude, inside flag, references, and selection flags, but skip source/transport calculations and write zero model-pressure columns. Requires `WriteKernels = off`; this output is not a fitting base. |
 | `FirstPoint/LastPoint/PointStep` | Subset of observation indices to evaluate. |
 | `FitInterval`, repeated `ExcludeNG/ExcludeRG` | C++ selection flags; Python NG override rules still apply. |
@@ -1322,11 +1392,11 @@ Relative `Kernel` paths are appended to `KernelDirectory`. Unknown/unused keys i
 mode cause an error, and conditionally irrelevant options can therefore be
 rejected. A single-valued repeated key uses its last value.
 
-The fitter also needs the original input filename recorded in the base
-table header. It resolves a relative recorded filename under the application
-root. Keep that input with the run, and do not silently change its intervals
-after producing the base table. Headers do not preserve all settings or
-hash the inputs.
+For a new manifested base, the fitter reads selection intervals and generates
+its verification input from the archived `input.snapshot.in`, not a mutable
+original pathname in the table header. Pre-W01 legacy products have no
+snapshot and retain the old fallback to the recorded input path; this is one
+reason legacy use requires explicit acknowledgement.
 
 ### 6.2 Prepare a fit base and inspect the observations
 
@@ -1339,8 +1409,11 @@ python3 tools/plot_cops_model_altitude.py output_fit_base
 ```
 
 The supplied `fit_base.in` writes `<AMPS>/cops_output/output_fit_base/`.
-Reusing that destination overwrites same-named products; use a distinct
-`OutputDirectory` for separate experiments.
+The solver refuses that destination if it already exists; use a distinct
+`OutputDirectory` for every experiment. A successful new run contains
+`input.snapshot.in` and `run_manifest.json` in addition to its scientific
+products. Validate a fitting base independently with
+`python3 tools/validate_cops_run.py output_fit_base`.
 
 Required fitting settings are `FlightTimeRotation = none`,
 `WriteKernels = on`, `TemperatureModel = analytical`, and, for Python/C++
@@ -1468,6 +1541,9 @@ Verify a newly generated fit through C++, then compare:
 ```bash
 ./liouville_cops output_fit_new/cops_fit.in
 
+python3 tools/validate_cops_run.py \
+  --fit output_fit_new --verification output_fit_new_verify
+
 python3 tools/plot_cops_model.py \
   output_fit_base output_fit_new output_fit_new_verify \
   --ref output_fit_base --save COPS_fit_comparison.png
@@ -1490,7 +1566,7 @@ directories. Newly generated fit inputs use the shared output-path handling.
 | Option | Default | Effect |
 |---|---|---|
 | Positional `run` | Required | Base directory with model table, elements, and kernels. |
-| `--out DIR` | `<run-name>_fit` | Output directory under the shared root, created if needed. Existing same-named files are overwritten. |
+| `--out DIR` | `<run-name>_fit` | New output directory under the shared root. Any existing path is refused; there is no overwrite/resume mode. |
 | `--degree N` | 4 | Frees basis groups through nominal degree N, intended range 0–4. |
 | `--lambda L [L ...]` | 0 | Regularization weight(s); multiple values produce an L-curve. |
 | `--jobs N` | min(number of lambdas, 12) | Concurrent L-curve fits. |
@@ -1507,6 +1583,7 @@ directories. Newly generated fit inputs use the shared output-path handling.
 | `--exclude-ng-saturated` | off | Removes HK plateau-flagged NG points. |
 | `--hk-table FILE` | `data/COPS_HK_20160930.txt`, output-root first | HK used to identify saturation; not a replacement for saved base-run T_RG. |
 | `--data-only` | off | Writes selected observations/plots after model checks, then stops. |
+| `--allow-legacy-base` | off | Explicitly accept a base without `run_manifest.json` after strict cache validation; the provenance limitation is recorded. Prefer regenerating the base. |
 
 ### 6.6 Change the surface boundary condition and rebuild the fitting base
 
@@ -1776,10 +1853,12 @@ Version 2 adds Omega[3] to the header and an `nSpecies` integer before
 cosSZA, temperature, and shadow. These temperature-dependent response
 kernels cannot be used by the current static fitter.
 
-The files have version tags but no complete input hashes, checksums, or
-mesh identity. Do not mix kernels, elements, and model tables from different
-runs. The fitter's consistency checks help detect mismatches but are not
-a complete provenance system.
+The binary headers retain their original compact format. New runs add
+`run_manifest.json`, which hashes inputs and outputs and identifies the kernel
+set, and the fitter independently validates every table/cache relationship.
+Do not mix kernels, elements, and tables manually: the manifest and validator
+will reject a detected mismatch. Pre-W01 runs remain explicitly identifiable
+as unmanifested legacy products.
 
 ### 7.3 Fit products
 
@@ -1798,15 +1877,17 @@ Each completed optimization writes:
 | `fit_result.txt` | Selection/options, objective, convergence diagnostics, parameters, approximate sigmas, activity diagnostics. |
 | `ActivityFit.txt` | H2O fitted coefficients, scaled CO2 coefficients, unchanged CO row. |
 | `cops_fit.in` | Input for a C++ rerun into `<fit directory>_verify`. |
-| `COPS_model.dat` | Fitted summed pressure predictions in a partly inherited base-table format. |
+| `COPS_model.dat` | Schema-v2 fitted aggregate pressure predictions; unrecomputed diagnostics are `nan`. |
+| `fit_manifest.json` | Versioned input/cache/selection/prior/settings/output identities and independent process, optimizer, C++-agreement, and review states. |
 
 **The Python-fitted model table is not a complete recomputed forward run.**
-Its summed pNG/pRG are replaced outside the nucleus; species pressure,
-density, and flux columns are set to -1. Other fields, including
-`Q_H2O/Q_CO2`, `NGBelowDeckFraction`, and much of the model header,
-are inherited from the base. They must not be interpreted as fitted
-production or complete fitted metadata. Read `fit_result.txt`,
-`ActivityFit.txt`, and the C++ verification run for those purposes.
+Its aggregate `pNG`/`pRG` are recomputed outside the nucleus. Values that the
+cached Python model does not recompute—`Q_H2O/Q_CO2`, species densities,
+species fluxes, species pressures, and `NGBelowDeckFraction`—are explicitly
+written as `nan`, never copied from the base. Geometry, observations, gauge
+temperature, and selection fields retain their documented input meanings.
+Use the C++ verification run for complete physical diagnostics, then register
+the pressure comparison with `tools/validate_cops_run.py`.
 
 For multiple lambdas, each result goes into `lambda=<value>/`;
 `lcurve.txt` and the selection exports are in the parent directory.

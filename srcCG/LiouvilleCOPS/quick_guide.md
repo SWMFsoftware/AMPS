@@ -14,8 +14,31 @@ See [RUN.md](RUN.md#output-location) for complete path conventions.
 
 External inputs default to `/data/vtenishe/rosetta_data_end_of_mission_cops`:
 raw BG data are in `data_COPS_L2/mtp35_cops_bg`, and L4/image sources are in
-`sources`. Set `COPS_DATA_ROOT` to relocate both, or use `COPS_L2_ROOT` and
-`COPS_SOURCES_ROOT` separately.
+`sources`. The standard SHAP5 mesh is
+`/data/vtenishe/rosetta_data_end_of_mission_cops/SHAP5_Volume.bdf`, selected
+by `ShapeModel` in `cops.in` and `fit_base.in`. Set `COPS_DATA_ROOT` to
+relocate the Python raw/L4/image inputs, or use `COPS_L2_ROOT` and
+`COPS_SOURCES_ROOT` separately; edit `ShapeModel` if the mesh moves.
+
+New C++ runs and fits require new output directories. C++ writes
+`input.snapshot.in` plus `run_manifest.json`; the fitter writes
+`fit_manifest.json` after validating every table, element, and static kernel.
+The manifests keep process completion, optimizer convergence, cache validity,
+C++ fitted-pressure agreement, and scientific review as separate states.
+Passing validation never sets `scientific_review`.
+
+```bash
+# Read-only fitting-base validation
+python3 tools/validate_cops_run.py output_fit_base
+
+# After ./liouville_cops output_fit_new/cops_fit.in
+python3 tools/validate_cops_run.py \
+  --fit output_fit_new --verification output_fit_new_verify
+```
+
+Pre-W01 bases without `run_manifest.json` are refused by the fitter unless
+`--allow-legacy-base` is supplied explicitly. Regenerating a manifested base
+is preferred because missing input identities cannot be reconstructed safely.
 
 For the all-source NG/RG comparison after output cleanup, regenerate every
 derived prerequisite before invoking the collector:
@@ -294,7 +317,7 @@ python3 tools/fit_cops.py output_fit_base \
 ```
 
 Here `3e-3` is an example regularization weight, not an established optimal
-value. Use a fresh output directory to avoid overwriting previous results.
+value. A fresh output directory is required; the fitter refuses an existing path.
 
 ### What is fitted?
 
@@ -389,9 +412,10 @@ parameter-count table, constraints, and fixed-physics details.
 | `--exclude-ng-saturated` | off | Remove saturation-flagged NG points. |
 | `--data FILE` | Base observations | Use a replacement pressure/selection table, such as `data/COPS_fit_data.txt`. |
 | `--hk-table FILE` | `data/COPS_HK_20160930.txt`, output-root first | Housekeeping table for saturation checking, not replacement cached gauge temperatures. |
-| `--out DIR` | `<run-name>_fit` | Destination under the output root. Existing same-named files are overwritten. |
+| `--out DIR` | `<run-name>_fit` | New destination under the output root; any existing path is refused. |
 | `--jobs N` | Minimum of number of lambdas and 12 | Concurrent fits when multiple lambda values are supplied. |
 | `--data-only` | off | Export the selection without optimization, after model checks. |
+| `--allow-legacy-base` | off | Explicitly accept a base without `run_manifest.json` after strict cache validation; prefer regenerating the base. |
 | `--check-jacobian` | off | Compare analytic derivatives with finite differences at the initial parameters, then stop. Inspect the printed differences; there is no separate derivative pass/fail threshold. |
 | `--check-tolerance VALUE` | `1e-6` | Allowed initial Python/C++ pressure discrepancy, not a Jacobian tolerance. |
 
@@ -435,27 +459,31 @@ Results appear under the directory selected by `--out`, for example
 | `fit_data_used.txt`, `fit_data_used.png`, `fit_profiles_used.png` | Actual observations selected for fitting. |
 | `COPS_model.dat` | Fitted total NG/RG pressure predictions. |
 | `cops_fit.in` | Input for full C++ verification. |
+| `fit_manifest.json` | Input/cache/selection hashes and separate process, optimizer, C++-verification, and scientific-review states. |
 
 Reaching the evaluation limit is not convergence. Inspect `fit_result.txt`
 for termination status, temperature bounds, residuals, and conditioning.
 
 The Python-fitted table is not a complete forward-model recomputation:
-species pressure/density/flux columns are set to -1, while fields such as
-production rates are inherited from the base. Use C++ verification for
-recomputed species results and production rates.
+aggregate NG/RG pressures are recomputed, while production, species
+pressure/density/flux, and below-deck fields are explicitly `nan`. Use C++
+verification for complete physical diagnostics.
 
 Review the generated input paths and output destination, then run:
 
 ```bash
 env OMP_NUM_THREADS=4 ./liouville_cops output_fit_new/cops_fit.in
 
+python3 tools/validate_cops_run.py \
+  --fit output_fit_new --verification output_fit_new_verify
+
 python3 tools/plot_cops_model.py \
   output_fit_base output_fit_new output_fit_new_verify \
   --ref output_fit_base --save fit_comparison.png
 ```
 
-The generated input normally writes `output_fit_new_verify/`; reusing that
-directory overwrites its existing products. An explicit `Threads` setting
+The generated input normally writes `output_fit_new_verify/`; the solver
+refuses to reuse an existing directory. An explicit `Threads` setting
 in the input overrides `OMP_NUM_THREADS`.
 
 The C++ rerun uses the original observation file and copied input exclusions;

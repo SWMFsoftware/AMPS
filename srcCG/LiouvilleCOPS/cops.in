@@ -2,7 +2,7 @@
 Mode = observations
 
 #---------------------------------------------------------------- data
-ShapeModel      = /home/vtenishe/ROS-END-OF-MISSION/AMPS/SHAP5_Volume.bdf
+ShapeModel      = /data/vtenishe/rosetta_data_end_of_mission_cops/SHAP5_Volume.bdf
 ShapeModelFormat = nastran        # nastran (CTRIA3 surface of a NASTRAN file) | dsk (SPICE DSK type 2)
 #ShapeModel     = /home/vtenishe/SPICE/Kernels/ROSETTA/esa_2022/dsk/ROS_CG_M001_OSPGDLR_N_V1.BDS   # 1.0M plates (ShapeModelFormat = dsk)
 #ShapeModel     = /home/vtenishe/SPICE/Kernels/ROSETTA/esa_2022/dsk/ROS_CG_M004_OSPGDLR_N_V1.BDS   # 4.0M plates (ShapeModelFormat = dsk)

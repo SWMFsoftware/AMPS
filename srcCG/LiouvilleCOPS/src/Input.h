@@ -34,9 +34,16 @@ public:
   //list of keys that were never requested (used to catch typos in the input file)
   std::vector<std::string> UnusedKeys() const;
 
+  //Every value actually requested by the running model, including defaults.
+  //Repeated keys retain their ordered values.  This is written to the run
+  //manifest so a copied input file and the effective runtime configuration
+  //remain separately auditable.
+  const std::map<std::string,std::vector<std::string> >& EffectiveValues() const {return Effective;}
+
 private:
   std::map<std::string,std::vector<std::string> > Table;
   mutable std::map<std::string,bool> Used;
+  mutable std::map<std::string,std::vector<std::string> > Effective;
 };
 
 #endif

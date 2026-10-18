@@ -5,6 +5,7 @@ env COPS_RUN_INTEGRATION=1 python3 -m unittest discover -s tests -v
 
 import hashlib
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -174,7 +175,13 @@ class ProductIntegrationTests(unittest.TestCase):
                           "\nFirstPoint = 0\nLastPoint = 1\nOutputDirectory = " + name + "\n"
                           "NGAcceptance = full\nNGHeadOnWeight = off\nThreads = 2\n")
         self.run_command([str(APP / "liouville_cops"), str(source)])
-        return self.out / name
+        base = self.out / name
+        manifest = json.loads((base / "run_manifest.json").read_text())
+        self.assertEqual(manifest["schema"], "liouville_cops.run_manifest")
+        self.assertEqual(manifest["states"]["process"], "complete")
+        self.assertEqual(manifest["states"]["cache"], "verified")
+        self.assertTrue((base / "input.snapshot.in").is_file())
+        return base
 
     def test_plot_digitize_collect_into_output_root(self):
         source_files = [p for p in cops_paths.sources_root().rglob("*") if p.is_file()]
@@ -210,12 +217,34 @@ class ProductIntegrationTests(unittest.TestCase):
         self.run_command([sys.executable, str(APP / "tools/fit_cops.py"), "output_small",
                           "--data-only", "--out", "selection_small"], cwd=self.work)
         self.assertTrue((self.out / "selection_small/fit_data_used.txt").is_file())
+        selection_manifest = json.loads((self.out / "selection_small/fit_manifest.json").read_text())
+        self.assertEqual(selection_manifest["states"]["process"], "complete")
+        self.assertEqual(selection_manifest["states"]["optimizer"], "not_requested")
+        self.assertEqual(selection_manifest["states"]["cache"], "verified")
         self.run_command([sys.executable, str(APP / "tools/fit_cops.py"), "output_small",
                           "--max-nfev", "1", "--lambda", "0.001"], cwd=self.work)
         fitted = self.out / "output_small_fit"
         self.assertTrue((fitted / "fit_result.txt").is_file())
+        fit_manifest = json.loads((fitted / "fit_manifest.json").read_text())
+        self.assertEqual(fit_manifest["states"]["process"], "complete")
+        self.assertEqual(fit_manifest["states"]["cache"], "verified")
+        self.assertEqual(fit_manifest["states"]["cpp_prediction_agreement"], "not_run")
+        lines = (fitted / "COPS_model.dat").read_text().splitlines()
+        names = next(line[1:].split() for line in lines if line.startswith("#iPoint "))
+        row = next(line.split() for line in lines if line and not line.startswith("#"))
+        values = dict(zip(names, row))
+        for name in ("Q_H2O", "Q_CO2", "n_H2O", "n_CO2", "PhiRG_H2O",
+                     "PhiRG_CO2", "pNG_H2O", "pNG_CO2", "pRG_H2O", "pRG_CO2",
+                     "NGBelowDeckFraction"):
+            self.assertEqual(values[name], "nan", name)
         self.run_command([str(APP / "liouville_cops"), "output_small_fit/cops_fit.in"])
-        self.assertTrue((self.out / "output_small_fit_verify/COPS_model.dat").is_file())
+        verified = self.out / "output_small_fit_verify"
+        self.assertTrue((verified / "COPS_model.dat").is_file())
+        self.run_command([sys.executable, str(APP / "tools/validate_cops_run.py"),
+                          "--fit", "output_small_fit", "--verification",
+                          "output_small_fit_verify"], cwd=self.work)
+        fit_manifest = json.loads((fitted / "fit_manifest.json").read_text())
+        self.assertEqual(fit_manifest["states"]["cpp_prediction_agreement"], "verified")
 
     def test_geometry_only_matches_full_geometry(self):
         full = self.make_base("output_geometry_full")
@@ -244,6 +273,21 @@ class ProductIntegrationTests(unittest.TestCase):
                 self.assertEqual(actual[key], expected[key], key)
             self.assertEqual(float(actual["pNG"]), 0.0)
             self.assertEqual(float(actual["pRG"]), 0.0)
+
+    def test_cpp_refuses_to_overwrite_manifested_run(self):
+        base = self.make_base("output_no_overwrite")
+        protected = {name: hashlib.sha256((base / name).read_bytes()).hexdigest()
+                     for name in ("COPS_model.dat", "elements.bin", "run_manifest.json")}
+        result = subprocess.run([str(APP / "liouville_cops"),
+                                 str(base / "input.snapshot.in")],
+                                env=self.env, cwd=APP, text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("output directory already exists", result.stdout)
+        self.assertEqual(protected, {
+            name: hashlib.sha256((base / name).read_bytes()).hexdigest()
+            for name in protected})
 
 
 if __name__ == "__main__":
