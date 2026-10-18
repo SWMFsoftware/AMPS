@@ -25,7 +25,9 @@ import zlib
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-DEFAULT_DESTINATION = ROOT / "tests" / "reference_crater"
+DEFAULT_DESTINATION = pathlib.Path(
+    "/data/vtenishe/shieldSim_reference_data/reference_crater"
+)
 DEFAULT_OBSERVATION = (
     ROOT / "tests" / "reference_spectra" / "observations"
     / "crater_gcr_let_spectra_v1_3.csv"

@@ -1,6 +1,19 @@
 cmake_minimum_required(VERSION 3.16)
 project(shieldSim LANGUAGES CXX)
 
+# Large Stage-8 CRaTER publications and source fixtures live outside the source
+# repository.  Keeping this as a cache path makes the external-data boundary
+# explicit and lets another installation select its own equivalent directory.
+set(_shieldSim_crater_reference_default
+    "/data/vtenishe/shieldSim_reference_data/reference_crater")
+if(DEFINED ENV{SHIELDSIM_REFERENCE_DATA_DIR})
+  set(_shieldSim_crater_reference_default
+      "$ENV{SHIELDSIM_REFERENCE_DATA_DIR}/reference_crater")
+endif()
+set(SHIELDSIM_CRATER_REFERENCE_DIR
+    "${_shieldSim_crater_reference_default}"
+    CACHE PATH "Directory containing the checksum-pinned CRaTER reference package")
+
 # Geant4 supplies compiler flags and include/library paths through Geant4_USE_FILE.
 # Build example:
 #   mkdir build && cd build
@@ -368,7 +381,8 @@ if(BUILD_TESTING)
   # reconstruction software, and explicit missing-input status from drift.
   add_test(NAME stage8_reference_inputs
     COMMAND ${Python3_EXECUTABLE}
-            ${PROJECT_SOURCE_DIR}/tests/test_crater_reference_inputs.py)
+            ${PROJECT_SOURCE_DIR}/tests/test_crater_reference_inputs.py
+            ${SHIELDSIM_CRATER_REFERENCE_DIR})
   add_executable(stage8_crater_core_tests
     tests/stage8_crater_core_tests.cc
     src/ContentHash.cc
@@ -378,11 +392,12 @@ if(BUILD_TESTING)
   target_include_directories(stage8_crater_core_tests PRIVATE ${PROJECT_SOURCE_DIR}/include)
   add_test(NAME stage8_crater_core
     COMMAND stage8_crater_core_tests ${PROJECT_SOURCE_DIR}
-            ${SHIELDSIM_VALIDATION_EVIDENCE_DIR})
+            ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}
+            ${SHIELDSIM_CRATER_REFERENCE_DIR})
   # This bounded Geant4 run proves the whole fixture can consume the pinned
   # BON2020 spectrum, sample the complete H--Ni source distribution, score
-  # D1--D6, apply the
-  # published cuts, compare with the selected observation, and render a
+  # D1--D6, apply the published cuts, compare with the selected observation,
+  # and render a
   # clearly scoped figure.  It is not an observational pass/fail test.
   add_test(NAME stage8_crater_transport
     COMMAND ${Python3_EXECUTABLE}
@@ -390,7 +405,8 @@ if(BUILD_TESTING)
             $<TARGET_FILE:shieldSimCraterBenchmark>
             ${PROJECT_SOURCE_DIR}/scripts/run_crater_parallel.py
             ${PROJECT_SOURCE_DIR} ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}
-            ${CMAKE_BINARY_DIR}/stage8_crater_runs ${Python3_EXECUTABLE})
+            ${CMAKE_BINARY_DIR}/stage8_crater_runs ${Python3_EXECUTABLE}
+            ${SHIELDSIM_CRATER_REFERENCE_DIR})
   set_tests_properties(stage8_crater_transport PROPERTIES
     ENVIRONMENT "${_geant4_test_environment}"
     TIMEOUT 1800)

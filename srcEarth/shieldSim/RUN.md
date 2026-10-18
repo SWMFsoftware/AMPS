@@ -27,7 +27,13 @@ Required to compile and run the model:
 
 `matplotlib` is additionally required for validation figures. The core model
 does not require it. No network access is needed for normal builds, tests, or
-runs because validation inputs are checksum-pinned in the repository.
+runs because validation inputs are checksum-pinned locally. The larger CRaTER
+package is intentionally outside the source repository at:
+
+```bash
+export SHIELDSIM_REFERENCE_DATA_DIR=/data/vtenishe/shieldSim_reference_data
+test -f "${SHIELDSIM_REFERENCE_DATA_DIR}/reference_crater/manifest.sha256"
+```
 
 The tested local Geant4 configuration can be selected explicitly as follows:
 
@@ -68,7 +74,8 @@ source directories or `/tmp`. A release build with all registered tests is:
 cmake -S . -B test_output/build \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_TESTING=ON \
-  -DGeant4_DIR="${Geant4_DIR}"
+  -DGeant4_DIR="${Geant4_DIR}" \
+  -DSHIELDSIM_CRATER_REFERENCE_DIR="${SHIELDSIM_REFERENCE_DATA_DIR}/reference_crater"
 cmake --build test_output/build -j 8
 ```
 
@@ -522,6 +529,12 @@ python3 scripts/plot_crater_foreground_benchmark.py \
   test_output/crater_foreground_axial/crater_bon2020_2009259_2010065__foreground_only_axial_comparison
 ```
 
+The distributed example records the requested installation path
+`/data/vtenishe/shieldSim_reference_data/reference_crater`. If that package is
+moved again, update the case's `source.path` and configure
+`SHIELDSIM_CRATER_REFERENCE_DIR` to the same directory. CTest passes the CMake
+path explicitly and does not depend on the source package being inside Git.
+
 The case's `histories` is the global history count and its accuracy field is
 the requested relative Monte Carlo uncertainty (10% in the example). The
 executable reports whether every nonzero bin from 0.5 to 10 keV/um reached that
@@ -647,10 +660,12 @@ radiation proxy is an environmental covariate, not proof of anomaly causation.
 
 ## 11. Reference data and controlled downloads
 
-Committed validation data live under `tests/reference_spectra/`,
-`tests/reference_tid/`, `tests/reference_ddd/`, `tests/reference_let/`, and
-`tests/reference_crater/` with provenance and checksums. Normal tests use those
-immutable files and do not download mutable upstream content.
+The compact committed validation data live under `tests/reference_spectra/`,
+`tests/reference_tid/`, `tests/reference_ddd/`, and `tests/reference_let/`.
+The larger CRaTER package lives at
+`/data/vtenishe/shieldSim_reference_data/reference_crater/`. Both locations
+retain provenance and checksums; normal tests use those immutable local files
+and do not download mutable upstream content.
 
 Scripts such as `scripts/download_gcr_validation_data.py` and
 `scripts/download_nist_stage4.py` are maintenance tools for a deliberate data
@@ -663,7 +678,8 @@ The Stage-8 acquisition can be independently verified or restored with:
 
 ```bash
 python3 scripts/download_crater_stage8_inputs.py
-python3 tests/test_crater_reference_inputs.py
+python3 tests/test_crater_reference_inputs.py \
+  "${SHIELDSIM_REFERENCE_DATA_DIR}/reference_crater"
 ```
 
 The downloader verifies exact upstream bytes and uses `test_output/` for
@@ -671,7 +687,7 @@ scratch files. It range-extracts the two small BON2020 spectra embedded in a
 383 MB GLACE archive instead of downloading unrelated response kernels. It
 does not download the multi-terabyte CRaTER event archive; the selected
 published LET aggregate is already pinned. See
-`tests/reference_crater/acquisition.v1.json` for the files that remain
+`${SHIELDSIM_REFERENCE_DATA_DIR}/reference_crater/acquisition.v1.json` for the files that remain
 unavailable or require preregistration.
 
 BON2020 is not used in production and is not required to run Stage 2 or Stage

@@ -13,7 +13,7 @@
     "production_cut_um": 10.0
   },
   "source": {
-    "path": "../tests/reference_crater/glace/solmin_gcr.json",
+    "path": "/data/vtenishe/shieldSim_reference_data/reference_crater/glace/solmin_gcr.json",
     "sha256": "a2c2e0125d36c5e6a13313bad8ab2972c9c9cd6951b9180d660c35dc1ee63093",
     "interpolation": "log_log"
   },

@@ -137,11 +137,46 @@ parallel runs without duplicating histories or averaging normalized spectra.
 The Stage-8 public-input acquisition gate is complete: checksum-pinned CRaTER
 observations, exact published detector cuts, time-matched BON2020 H--Ni
 spectra, instrument/method documents, NASA PDS schemas and quality tables, and
-the published CRaTER processing source are under `tests/reference_crater/`.
+the published CRaTER processing source are under
+`/data/vtenishe/shieldSim_reference_data/reference_crater/`.
 The same package records what could not be downloaded: a complete engineering
 Geant4 mass model, the withheld calibration plan, and observational bin
 covariance. The axial fixture does not substitute assumed values for those
 missing inputs, and therefore cannot close the full Stage-8 gate.
+
+### Running the CRaTER benchmark in parallel
+
+The recommended workstation launcher starts independent Geant4 processes,
+assigns each process an exact share of the global history count, merges raw
+weighted sums and sums of squares, and then creates the comparison figures.
+From the `shieldSim` source directory:
+
+```bash
+source /data/vtenishe/G4/install/bin/geant4.sh
+export SHIELDSIM_REFERENCE_DATA_DIR=/data/vtenishe/shieldSim_reference_data
+
+cmake -S . -B test_output/build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTING=ON \
+  -DGeant4_DIR=/data/vtenishe/G4/install/lib/cmake/Geant4 \
+  -DSHIELDSIM_CRATER_REFERENCE_DIR="${SHIELDSIM_REFERENCE_DATA_DIR}/reference_crater"
+cmake --build test_output/build --parallel 12 \
+  --target shieldSimCraterBenchmark stage8_crater_core_tests
+
+python3 scripts/run_crater_parallel.py \
+  --benchmark test_output/build/shieldSimCraterBenchmark \
+  --case examples/stage8_crater_foreground_axial.json \
+  --workers 12
+```
+
+The example requests 280,000 total histories; `--workers 12` does not multiply
+that count. Partial logs/results, the validated merged JSON/CSV, and PNG/SVG
+figures are written below `test_output/crater_foreground_axial/`. Use only a
+merged result whose `result_type` is `complete_parallel_merge` and whose
+`parallel.merge_status` is `complete_all_shards_present`. The executable also
+recognizes Open MPI and PMI rank/size environments for cluster launchers; see
+[`RUN.md`](RUN.md#mpi-launcher-example) and [`quick_guide.md`](quick_guide.md)
+for the complete local and `mpiexec` commands.
 
 Stage 1 is a software/correctness gate, not physical validation of every
 radiation proxy. Versioned case v1 enables its earlier `TID` and `H100/10`
@@ -158,7 +193,8 @@ physically qualified radiation-proxy model are defined in
 AMS-02 and ACE/CRIS GCR observations, GOES-16 SEP fixtures, and a CRaTER
 observational LET product are documented under `tests/reference_spectra/`.
 The supporting Stage-8 CRaTER instrument/source acquisition and its explicit
-unresolved-input record are documented under `tests/reference_crater/`.
+unresolved-input record are documented under
+`/data/vtenishe/shieldSim_reference_data/reference_crater/`.
 Dedicated Stage-2 adapters preserve their published binning,
 species, counts/uncertainties, timing, and quality semantics. They remain
 ingestion/event-integration products except for one narrow transport-test
@@ -189,6 +225,7 @@ shieldSim/
   ├── CMakeLists.txt
   ├── README.md
   ├── RUN.md                         # build/run/test operations guide
+  ├── quick_guide.md                 # CRaTER parallel-run quick start
   ├── shieldSim.cc
   ├── sourceTool.cc                  # published-source validation/conversion CLI
   ├── responseTool.cc                # response-matrix assembly/folding CLI
@@ -248,7 +285,6 @@ shieldSim/
     ├── test_stage7_published_qualification.py
     ├── test_crater_reference_inputs.py
     ├── reference_stage7/
-    ├── reference_crater/              # Stage-8 inputs and missing-input record
     ├── reference_ddd/
     ├── reference_let/                # pinned GSI ATIMA heavy-ion responses
     ├── generate_validation_figures.py
@@ -269,6 +305,11 @@ shieldSim/
     │   └── layer4/
     └── logs/
 ```
+
+The external directory
+`/data/vtenishe/shieldSim_reference_data/reference_crater/` contains the
+Stage-8 CRaTER inputs, manifest, and missing-input record. It is deliberately
+not part of the source-tree layout above.
 
 ## Automated tests
 

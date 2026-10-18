@@ -23,13 +23,15 @@ bool Near(double actual, double expected, double relative = 1.0e-11) {
 }
 
 int main(int argc, char** argv) {
-  if (argc != 3) {
-    std::cerr << "usage: stage8_crater_core_tests SOURCE_ROOT EVIDENCE_DIR\n";
+  if (argc != 4) {
+    std::cerr << "usage: stage8_crater_core_tests SOURCE_ROOT EVIDENCE_DIR "
+                 "CRATER_REFERENCE_DIR\n";
     return 2;
   }
   namespace fs = std::filesystem;
   const fs::path root = fs::absolute(argv[1]);
   const fs::path evidence = fs::absolute(argv[2]);
+  const fs::path reference = fs::absolute(argv[3]);
   fs::create_directories(evidence);
   shield_sim::Json::Array comparisons;
 
@@ -94,7 +96,7 @@ int main(int argc, char** argv) {
   Check(definition.targetRelativeStatisticalUncertainty == 0.10,
         "Stage-8 example explicitly records the approved 10% target");
   const auto source = shield_sim::LoadCraterBonSpectrum(
-      definition.sourcePath, definition.sourceSha256);
+      (reference/"glace/solmin_gcr.json").string(), definition.sourceSha256);
   Check(source.energyMeVPerNucleon.size() == 100 &&
         source.fluxByEnergy.size() == 100 &&
         source.fluxByEnergy.front().size() == 28,

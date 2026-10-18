@@ -72,11 +72,13 @@ See `development_and_validatoin.md` for the staged validation gates.
 The separate Stage-8 input-acquisition integrity gate is:
 
 ```bash
-python3 tests/test_crater_reference_inputs.py
+python3 tests/test_crater_reference_inputs.py \
+  /data/vtenishe/shieldSim_reference_data/reference_crater
 ```
 
-It checks the package under `tests/reference_crater/`: the CRaTER instrument
-and method documents, exact published background cuts, PDS record/quality
+It checks the external package under
+`/data/vtenishe/shieldSim_reference_data/reference_crater/`: the CRaTER
+instrument and method documents, exact published background cuts, PDS record/quality
 metadata and processing source, and time-matched GLACE/BON2020 H--Ni spectra.
 This test does not transport particles or compare shieldSim output with the
 observation. Its acquisition record deliberately keeps the missing engineering
@@ -536,14 +538,6 @@ tests/
 ├── test_reference_spectra.py
 ├── test_crater_reference_inputs.py
 ├── test_stage8_crater_transport.py
-├── reference_crater/
-│   ├── README.md
-│   ├── acquisition.v1.json
-│   ├── manifest.sha256
-│   ├── glace/
-│   ├── pds/
-│   ├── publications/
-│   └── zenodo/
 ├── reference_spectra/
 │   ├── README.md
 │   ├── manifest.sha256
@@ -571,6 +565,11 @@ tests/
 └── logs/
     └── .gitignore
 ```
+
+The Stage-8 CRaTER reference package is external to this tree at
+`/data/vtenishe/shieldSim_reference_data/reference_crater/`. CMake exposes it
+as `SHIELDSIM_CRATER_REFERENCE_DIR` and passes the selected path to the Stage-8
+tests.
 
 ### `run_layer1_tests.sh`
 

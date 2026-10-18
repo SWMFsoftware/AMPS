@@ -1212,7 +1212,8 @@ product contains 34 quiet-time, approximately half-year spectra from 2009 to
 2026 and is described as measurements through the CRaTER telescope behind
 9.9 g/cm2 of mostly tissue-equivalent plastic.
 
-The Stage-8 acquisition package under `tests/reference_crater/` now pins the
+The external Stage-8 acquisition package under
+`/data/vtenishe/shieldSim_reference_data/reference_crater/` now pins the
 Zenodo record/readme, instrument and method papers, exact Supporting Information
 selection logic, NASA PDS record/quality definitions, and the published CRaTER
 L0/L1/L2 pipeline source. It also recovers the GLACE example BON2020 H--Ni
@@ -1227,8 +1228,8 @@ covariance. The recovered BON2020 v2.2 spectrum has 411.143 MV modulation and
 is not the exact BON2010 417 MV input used by the older papers. Most
 importantly, no complete public machine-readable sensor-head engineering mass
 model was found. Those distinctions are recorded in
-`tests/reference_crater/acquisition.v1.json`; no missing geometry or covariance
-may be inferred.
+`/data/vtenishe/shieldSim_reference_data/reference_crater/acquisition.v1.json`;
+no missing geometry or covariance may be inferred.
 
 ## 6. Verification and validation hierarchy
 
@@ -2360,7 +2361,8 @@ found publicly, the calibration plan is explicitly withheld by PDS, the
 aggregate observation has no bin covariance, and the calibration/blind split,
 acceptance metric, uncertainty model, and independent review have not been
 completed. The exact input inventory and evidence are in
-`tests/reference_crater/acquisition.v1.json` and its README. Full Stage-8 exit
+`/data/vtenishe/shieldSim_reference_data/reference_crater/acquisition.v1.json`
+and its README. Full Stage-8 exit
 still requires the published full-response configuration or equivalent
 authoritative geometry/response evidence, lunar and spacecraft/background
 terms appropriate to the interval, preregistered decisions, blind evaluation,

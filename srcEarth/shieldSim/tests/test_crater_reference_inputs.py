@@ -14,11 +14,22 @@ import hashlib
 import json
 import math
 import pathlib
+import sys
 import zipfile
 
 
 PROJECT = pathlib.Path(__file__).resolve().parents[1]
-REFERENCE = PROJECT / "tests" / "reference_crater"
+DEFAULT_REFERENCE = pathlib.Path(
+    "/data/vtenishe/shieldSim_reference_data/reference_crater"
+)
+# CTest supplies its configured external directory explicitly.  The fallback
+# keeps direct invocation convenient on the documented development host.
+REFERENCE = (
+    pathlib.Path(sys.argv[1]).resolve() if len(sys.argv) == 2
+    else DEFAULT_REFERENCE
+)
+if len(sys.argv) > 2:
+    raise SystemExit("usage: test_crater_reference_inputs.py [REFERENCE_DIR]")
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -42,12 +53,20 @@ def check_manifest() -> None:
             raise AssertionError(f"malformed manifest line {line_number}") from error
         assert len(expected) == 64 and all(c in "0123456789abcdef" for c in expected)
         path = (REFERENCE / relative).resolve()
-        # Manifest paths may reference the shared Stage-2 observation fixture,
-        # but they may never escape the project source tree.
+        # Most entries must remain inside the external CRaTER package.  The
+        # single shared observation is intentionally retained in the smaller
+        # repository Stage-2 package, so admit exactly that path and no other
+        # traversal outside REFERENCE.
+        shared_observation = (
+            PROJECT / "tests" / "reference_spectra" / "observations"
+            / "crater_gcr_let_spectra_v1_3.csv"
+        ).resolve()
         try:
-            path.relative_to(PROJECT)
-        except ValueError as error:
-            raise AssertionError(f"manifest path escapes project: {relative}") from error
+            path.relative_to(REFERENCE.resolve())
+            admitted = True
+        except ValueError:
+            admitted = path == shared_observation
+        assert admitted, f"manifest path escapes approved roots: {relative}"
         assert path.is_file(), f"missing reference input: {relative}"
         actual = sha256(path)
         assert actual == expected, f"SHA-256 mismatch for {relative}: {actual}"

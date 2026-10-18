@@ -251,7 +251,8 @@ acceptance, shielding, lunar obstruction/albedo, time matching, and the same
 LET/lineal-energy estimator.
 
 The public supporting inputs recovered for that future comparison are pinned
-under `tests/reference_crater/`. They now include the exact published detector
+under `/data/vtenishe/shieldSim_reference_data/reference_crater/`. They now
+include the exact published detector
 cuts, a time-matched BON2020 H--Ni spectrum, instrument/method documentation,
 PDS schemas/quality tables, and the PDS processing source. The associated
 acquisition record also states the remaining unavailable/undecided inputs; this

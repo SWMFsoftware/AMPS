@@ -9,10 +9,10 @@ import pathlib
 import subprocess
 import sys
 
-if len(sys.argv) != 7:
+if len(sys.argv) != 8:
     raise SystemExit(
         "usage: test_stage8_crater_transport.py BENCHMARK PARALLEL_RUNNER SOURCE_ROOT "
-        "EVIDENCE_DIR RUN_DIR PYTHON"
+        "EVIDENCE_DIR RUN_DIR PYTHON CRATER_REFERENCE_DIR"
     )
 
 BENCHMARK = pathlib.Path(sys.argv[1]).resolve()
@@ -21,6 +21,7 @@ ROOT = pathlib.Path(sys.argv[3]).resolve()
 EVIDENCE = pathlib.Path(sys.argv[4]).resolve()
 RUN_DIR = pathlib.Path(sys.argv[5]).resolve()
 PYTHON = pathlib.Path(sys.argv[6]).resolve()
+CRATER_REFERENCE = pathlib.Path(sys.argv[7]).resolve()
 
 
 def require(condition: bool, message: str) -> None:
@@ -42,7 +43,7 @@ def main() -> int:
     case["histories"] = 560
     case["random_seed"] = 82560
     case["source"]["path"] = str(
-        ROOT / "tests/reference_crater/glace/solmin_gcr.json"
+        CRATER_REFERENCE / "glace" / "solmin_gcr.json"
     )
     case["observation"]["path"] = str(
         ROOT / "tests/reference_spectra/observations/crater_gcr_let_spectra_v1_3.csv"
