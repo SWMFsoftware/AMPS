@@ -1,0 +1,92 @@
+# LiouvilleCOPS input file: Key = Value, '#' starts a comment
+Mode = observations
+
+#---------------------------------------------------------------- data
+ShapeModel      = /home/vtenishe/ROS-END-OF-MISSION/AMPS/SHAP5_Volume.bdf
+ShapeModelFormat = nastran        # nastran (CTRIA3 surface of a NASTRAN file) | dsk (SPICE DSK type 2)
+#ShapeModel     = /home/vtenishe/SPICE/Kernels/ROSETTA/esa_2022/dsk/ROS_CG_M001_OSPGDLR_N_V1.BDS   # 1.0M plates (ShapeModelFormat = dsk)
+#ShapeModel     = /home/vtenishe/SPICE/Kernels/ROSETTA/esa_2022/dsk/ROS_CG_M004_OSPGDLR_N_V1.BDS   # 4.0M plates (ShapeModelFormat = dsk)
+RequireClosedSurface = on         # stop if the surface has open/non-manifold edges
+ObservationFile = /home/vtenishe/ROS-END-OF-MISSION/AMPS/srcCG/RosinaMeasurements.h
+ReferenceDataUnit = mbar          # Pa | mbar; the srcCG table equals the archived COPS L2 values in mbar
+                                  # (PDS ro-c-rosina-2-ext3-v2.0, mtp35/cops/bg, 2016-09-30)
+OutputDirectory = output         # relative to <AMPS>/cops_output (or COPS_OUTPUT_ROOT); paths inside LiouvilleCOPS are rejected
+WriteKernels    = on              # per-point element kernels for the later fitting (output/kernels/)
+
+# time interval of the data used in the fit (flags useNG/useRG); omit the key to use all observations
+#FitInterval = 2016-09-30T00:00:00 2016-09-30T10:40:00
+
+# reference data excluded from the comparison/fit (flags useNG/useRG in the output); repeat the key for more intervals
+ExcludeNG = 2016-09-30T10:24:40 2016-09-30T10:40:00   # NG filament emission range change HIGH->LOW and ramp until impact (COPS L2 HK)
+
+FirstPoint = 0
+LastPoint  = 1149
+PointStep  = 1
+
+#---------------------------------------------------------------- SPICE
+KernelDirectory = /home/vtenishe/SPICE/Kernels/ROSETTA/esa_2022   # ESA SPICE server, set of ROS_OPS_V350_20220906_001.TM
+Kernel = lsk/NAIF0011.TLS
+Kernel = pck/PCK00010.TPC
+Kernel = pck/ROS_CG_RAD_V10.TPC
+Kernel = fk/ROS_V38.TF
+Kernel = fk/RSSD0002.TF
+Kernel = ik/ROS_ROSINA_V12.TI
+Kernel = sclk/ROS_160929_STEP.TSC
+Kernel = spk/DE405.BSP
+Kernel = spk/CORB_DV_257_03___T19_00345.BSP
+Kernel = spk/RORB_DV_257_03___T19_00345.BSP
+Kernel = spk/ROS_STRUCT_V8.BSP
+Kernel = ck/CATT_DV_257_03_______00344.BC
+Kernel = ck/RATT_DV_257_02_04____00344.BC      # the ESA meta-kernel and the COPS L2 labels use RATT_DV_257_02_01_T6_00344.BC
+Kernel = ck/ROS_SA_2016_V0042.BC
+
+BodyFrame      = 67P/C-G_CK
+BodyName       = CHURYUMOV-GERASIMENKO
+SpacecraftName = ROSETTA
+SpacecraftFrame = ROS_SPACECRAFT
+NGInstrumentID = -226331          # ROS_ROSINA_COPS_G0 (boresight -Y)
+RGInstrumentID = -226332          # ROS_ROSINA_COPS_G1 (boresight +Z)
+GaugeOffsetSC  = 0 0 0            # COPS position relative to the spacecraft reference point, s/c frame [m]
+                                  # (ESA ROS_STRUCT_V8.BSP has a generic ROS_ROSINA point at 0.8928 -0.7447 2.6058; no COPS point)
+
+#---------------------------------------------------------------- surface source (srcCG model)
+ActivityModel   = shap5           # shap5 | shap5_1 (srcCG spherical-harmonic coefficients) | file
+#ActivityFile   = output_fit_base_fit/ActivityFit.txt   # ActivityModel=file: 3 rows (H2O, CO2, CO) x 25 coefficients
+#ActivityFileHeliocentricModel = shap5                  # r_h dependence of H2O that goes with the file (shap5 | shap5_1)
+SZAMode         = continuous      # continuous | srccg_table (integer-degree truncation of srcCG)
+CastShadows     = on              # ray-traced shadows; shadowed elements use the night-side source
+TemperatureModel = analytical     # analytical | constant | bjorn
+AnalyticalTmax  = 182.09922       # TemperatureModel=analytical (srcCG values)
+AnalyticalT75   = 136.11149
+AnalyticalTmin  = 133.0
+ConstantTemperature = 180.0       # TemperatureModel=constant
+BjornTemperatureDistanceIndex = 4 # TemperatureModel=bjorn (srcCG Comet::ndist)
+SurfaceTemperatureCorrectionFactor = 1.0
+
+#---------------------------------------------------------------- boundary condition and integration
+SurfaceBC = flat                  # flat (Lambertian) | rough (uniform over the hemisphere)
+SubdivisionAccuracy = 0.05        # sub-element size <= SubdivisionAccuracy x distance to the gauge
+MaxSubdivisionLevel = 8
+SpacecraftVelocity  = on          # spacecraft velocity correction of the RG flux
+FlightTimeRotation  = none        # none | exact: rotation of the nucleus during the flight of the molecules
+SpeedNodes          = 16          # FlightTimeRotation=exact: Gauss-Legendre nodes in x=beta v on [0,SpeedRangeMax]
+SpeedRangeMax       = 5.5
+PathTolerance       = 0.5         # FlightTimeRotation=exact: max deviation of the straight segments from the curved path [m]
+
+#---------------------------------------------------------------- gauges
+NGAcceptance   = srccg_shield     # srccg_shield | hemisphere | ik_fov | full
+NGHeadOnWeight = on               # srcCG weight (1 - l.b) for molecules arriving from the NG front
+NGShieldRmax   = 10.3             # srccg_shield geometry (units cancel; srcCG values)
+NGShieldHmax   = 33.0
+NGShieldRtube  = 20.5
+RGAcceptance   = hemisphere       # hemisphere | ik_fov
+RGPressureModel = equilibrium_sphere  # equilibrium_sphere (COPS team: Phi=p_RG/sqrt(2 pi m k T_RG), ROSINA Data Users Guide
+                                      # RO-ROS-UG-1000 pp.37-38) | calibration_srccg | dsmc_srccg
+TemperatureNG  = 293.0
+TemperatureRG  = 293.0            # TemperatureRGMode=constant
+TemperatureRGMode = hk_table      # constant | hk_table
+TemperatureRGTable = data/COPS_HK_20160930.txt   # generated under <AMPS>/cops_output by tools/cops_hk_table.py
+TemperatureRGTableColumn = 6     # ROSINA_COPS_SENSOR_TEMP [K]
+SpeciesSensitivity = on           # p = n k T / Sensitivity
+SensitivityH2O = 0.893
+SensitivityCO2 = 0.704

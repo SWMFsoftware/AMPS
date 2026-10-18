@@ -1,0 +1,79 @@
+# LiouvilleCOPS M004 geometry run for tools/collect_cops_sources.py
+# Keep its observation/SPICE settings synchronized with fit_base.in.
+Mode = observations
+
+#---------------------------------------------------------------- data
+ShapeModel = /home/vtenishe/SPICE/Kernels/ROSETTA/esa_2022/dsk/ROS_CG_M004_OSPGDLR_N_V1.BDS
+ShapeModelFormat = dsk
+RequireClosedSurface = on
+ObservationFile = /home/vtenishe/ROS-END-OF-MISSION/AMPS/srcCG/RosinaMeasurements.h
+ReferenceDataUnit = mbar
+OutputDirectory = output_M004
+WriteKernels = off                # the collector needs COPS_model.dat, not fitting kernels
+GeometryOnly = on                 # exact SPICE/M004 position and altitude; skip unused gas transport
+
+ExcludeNG = 2016-09-30T10:24:40 2016-09-30T10:40:00
+FirstPoint = 0
+LastPoint = 1149
+PointStep = 1
+
+#---------------------------------------------------------------- SPICE
+KernelDirectory = /home/vtenishe/SPICE/Kernels/ROSETTA/esa_2022
+Kernel = lsk/NAIF0011.TLS
+Kernel = pck/PCK00010.TPC
+Kernel = pck/ROS_CG_RAD_V10.TPC
+Kernel = fk/ROS_V38.TF
+Kernel = fk/RSSD0002.TF
+Kernel = ik/ROS_ROSINA_V12.TI
+Kernel = sclk/ROS_160929_STEP.TSC
+Kernel = spk/DE405.BSP
+Kernel = spk/CORB_DV_257_03___T19_00345.BSP
+Kernel = spk/RORB_DV_257_03___T19_00345.BSP
+Kernel = spk/ROS_STRUCT_V8.BSP
+Kernel = ck/CATT_DV_257_03_______00344.BC
+Kernel = ck/RATT_DV_257_02_04____00344.BC
+Kernel = ck/ROS_SA_2016_V0042.BC
+
+BodyFrame = 67P/C-G_CK
+BodyName = CHURYUMOV-GERASIMENKO
+SpacecraftName = ROSETTA
+SpacecraftFrame = ROS_SPACECRAFT
+NGInstrumentID = -226331
+RGInstrumentID = -226332
+GaugeOffsetSC = 0 0 0
+
+#---------------------------------------------------------------- surface source
+ActivityModel = shap5
+SZAMode = continuous
+CastShadows = on
+TemperatureModel = analytical
+ConstantTemperature = 180.0
+BjornTemperatureDistanceIndex = 4
+SurfaceTemperatureCorrectionFactor = 1.0
+
+#---------------------------------------------------------------- boundary condition and integration
+SurfaceBC = flat
+SubdivisionAccuracy = 0.05
+MaxSubdivisionLevel = 8
+SpacecraftVelocity = on
+FlightTimeRotation = none
+SpeedNodes = 16
+SpeedRangeMax = 5.5
+PathTolerance = 0.5
+
+#---------------------------------------------------------------- gauges
+NGAcceptance = srccg_shield
+NGHeadOnWeight = on
+NGShieldRmax = 10.3
+NGShieldHmax = 33.0
+NGShieldRtube = 20.5
+RGAcceptance = hemisphere
+RGPressureModel = equilibrium_sphere
+TemperatureNG = 293.0
+TemperatureRG = 293.0
+TemperatureRGMode = hk_table
+TemperatureRGTable = data/COPS_HK_20160930.txt
+TemperatureRGTableColumn = 6
+SpeciesSensitivity = on
+SensitivityH2O = 0.893
+SensitivityCO2 = 0.704

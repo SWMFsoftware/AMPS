@@ -1,0 +1,7 @@
+# analytic verification: uniformly emitting sphere (flat and rough boundary conditions)
+Mode = selftest
+SelfTestRadius = 1000.0
+SelfTestRefinement = 6
+SelfTestTolerance = 0.01
+SubdivisionAccuracy = 0.05
+MaxSubdivisionLevel = 8
