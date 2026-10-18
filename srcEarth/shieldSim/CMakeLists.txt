@@ -110,6 +110,21 @@ add_executable(shieldSimReferenceTool
 target_include_directories(shieldSimReferenceTool PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(shieldSimReferenceTool ${Geant4_LIBRARIES})
 
+# Stage-8's CRaTER executable is intentionally isolated from the mission proxy
+# driver.  It has a fixed, publication-traceable axial telescope definition and
+# cannot be selected accidentally by a production shieldSim case.  Conversely,
+# no five-layer spacecraft shield limit or generic slab normalization can leak
+# into this instrument-response validation fixture.
+add_executable(shieldSimCraterBenchmark
+  craterBenchmark.cc
+  src/ContentHash.cc
+  src/CraterBenchmark.cc
+  src/StrictJson.cc
+)
+target_include_directories(shieldSimCraterBenchmark PRIVATE
+  ${PROJECT_SOURCE_DIR}/include ${PROJECT_BINARY_DIR}/generated)
+target_link_libraries(shieldSimCraterBenchmark ${Geant4_LIBRARIES})
+
 include(CTest)
 if(BUILD_TESTING)
   # Analytic/observational tests write compact numerical evidence here.  A
@@ -348,12 +363,43 @@ if(BUILD_TESTING)
   set_tests_properties(stage7_published_qualification PROPERTIES
     ENVIRONMENT "${_geant4_test_environment}"
     TIMEOUT 10800)
+  # Stage 8 is not yet an observational-validation pass.  This fast offline
+  # gate protects only the recovered CRaTER documents, source spectra,
+  # reconstruction software, and explicit missing-input status from drift.
+  add_test(NAME stage8_reference_inputs
+    COMMAND ${Python3_EXECUTABLE}
+            ${PROJECT_SOURCE_DIR}/tests/test_crater_reference_inputs.py)
+  add_executable(stage8_crater_core_tests
+    tests/stage8_crater_core_tests.cc
+    src/ContentHash.cc
+    src/CraterBenchmark.cc
+    src/StrictJson.cc
+  )
+  target_include_directories(stage8_crater_core_tests PRIVATE ${PROJECT_SOURCE_DIR}/include)
+  add_test(NAME stage8_crater_core
+    COMMAND stage8_crater_core_tests ${PROJECT_SOURCE_DIR}
+            ${SHIELDSIM_VALIDATION_EVIDENCE_DIR})
+  # This bounded Geant4 run proves the whole fixture can consume the pinned
+  # BON2020 spectrum, sample the complete H--Ni source distribution, score
+  # D1--D6, apply the
+  # published cuts, compare with the selected observation, and render a
+  # clearly scoped figure.  It is not an observational pass/fail test.
+  add_test(NAME stage8_crater_transport
+    COMMAND ${Python3_EXECUTABLE}
+            ${PROJECT_SOURCE_DIR}/tests/test_stage8_crater_transport.py
+            $<TARGET_FILE:shieldSimCraterBenchmark>
+            ${PROJECT_SOURCE_DIR}/scripts/run_crater_parallel.py
+            ${PROJECT_SOURCE_DIR} ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}
+            ${CMAKE_BINARY_DIR}/stage8_crater_runs ${Python3_EXECUTABLE})
+  set_tests_properties(stage8_crater_transport PROPERTIES
+    ENVIRONMENT "${_geant4_test_environment}"
+    TIMEOUT 1800)
   add_test(NAME validation_figures
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/generate_validation_figures.py
             ${PROJECT_SOURCE_DIR} ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}
             ${SHIELDSIM_VALIDATION_FIGURE_DIR} $<TARGET_FILE:shieldSimSourceTool>)
   set_tests_properties(validation_figures PROPERTIES
-    DEPENDS "stage1_core;stage1_case_boundaries;stage1_transport_smoke;stage2_source_adapters;stage2_reference_spectra;stage2_source_tool;stage2_published_transport;stage3_core;stage3_response_weights;stage3_transport;stage4_core;stage4_nist_reference;stage4_tid_transport;stage5_core;stage5_transport;stage6_core;stage6_case_boundaries;stage6_reference;stage6_transport;stage7_core;stage7_boundaries;stage7_published_qualification")
+    DEPENDS "stage1_core;stage1_case_boundaries;stage1_transport_smoke;stage2_source_adapters;stage2_reference_spectra;stage2_source_tool;stage2_published_transport;stage3_core;stage3_response_weights;stage3_transport;stage4_core;stage4_nist_reference;stage4_tid_transport;stage5_core;stage5_transport;stage6_core;stage6_case_boundaries;stage6_reference;stage6_transport;stage7_core;stage7_boundaries;stage7_published_qualification;stage8_reference_inputs;stage8_crater_core;stage8_crater_transport")
 endif()
 
 # Copy example input files into the build tree for convenience.

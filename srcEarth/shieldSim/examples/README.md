@@ -208,6 +208,22 @@ complete structured uncertainty budget with a provenance-bearing
 remains pending independent review; this example does not validate CRaTER,
 instrument response, device response, organ dose, or crew risk.
 
+## Stage-8 foreground-only axial CRaTER benchmark
+
+`stage8_crater_foreground_axial.json` is an isolated instrument-validation
+fixture, not a production shield/absorber case. It pins the BON2020 and CRaTER
+observation SHA-256 values, the first observation interval, Shielding plus the
+current `G4EmStandardPhysics_option4` equivalent of the paper's
+`Shielding_EMZ`, a 10 um production cut, 280,000 global histories, and the
+approved 10% Monte Carlo target. Serial, local-parallel, and MPI commands are
+given in `RUN.md`.
+
+The executable owns the fixed published axial geometry and refuses any scope
+other than `foreground_only_axial`. Changing this JSON cannot add the missing
+housing, spacecraft, lunar albedo, dead layers, or side-entry response. The
+result is therefore a diagnostic model/observation comparison and cannot be
+used as an instrument-design case or a Stage-8 completion claim.
+
 ## Stage-7 time-resolved exposure example
 
 `stage7_time_resolved_exposure.json` demonstrates the strict

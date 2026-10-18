@@ -403,6 +403,7 @@ Run one stage or one test with a regular expression:
 cd test_output/build
 ctest --output-on-failure -R '^stage7_'
 ctest --output-on-failure -R '^stage7_published_qualification$'
+ctest --output-on-failure -R '^stage8_reference_inputs$'
 ctest --output-on-failure -R '^stage4_(core|nist_reference|tid_transport)$'
 cd ../..
 ```
@@ -497,7 +498,125 @@ regression drivers. Use the CTest suite for staged qualification because it
 also executes the strict analytic/reference gates and produces the unified
 figure manifest.
 
-## 9. Understanding outputs
+## 9. Foreground-only axial CRaTER benchmark
+
+This validation fixture is a separate executable, not a production shieldSim
+geometry. Build it with the rest of the project or explicitly with:
+
+```bash
+cmake --build test_output/build --parallel 8 \
+  --target shieldSimCraterBenchmark stage8_crater_core_tests
+```
+
+The example pins the first CRaTER observation interval and its time-matched
+BON2020 H--Ni spectrum. From the repository root, a serial run is:
+
+```bash
+source /path/to/geant4/bin/geant4.sh
+
+test_output/build/shieldSimCraterBenchmark \
+  examples/stage8_crater_foreground_axial.json
+
+python3 scripts/plot_crater_foreground_benchmark.py \
+  test_output/crater_foreground_axial/crater_bon2020_2009259_2010065__foreground_only_axial_result.json \
+  test_output/crater_foreground_axial/crater_bon2020_2009259_2010065__foreground_only_axial_comparison
+```
+
+The case's `histories` is the global history count and its accuracy field is
+the requested relative Monte Carlo uncertainty (10% in the example). The
+executable reports whether every nonzero bin from 0.5 to 10 keV/um reached that
+target; it never changes the event count or hides under-resolved bins. The JSON
+is authoritative. The CSV and PNG/SVG files are derived review artifacts.
+
+### Local process parallelism
+
+Use the supplied launcher on a workstation. This working four-process example
+runs four independent Geant4 processes concurrently, checks their exit status,
+merges their raw moments, and creates the comparison figure:
+
+```bash
+python3 scripts/run_crater_parallel.py \
+  --benchmark test_output/build/shieldSimCraterBenchmark \
+  --case examples/stage8_crater_foreground_axial.json \
+  --workers 4
+```
+
+The launcher inherits the current shell environment, so load `geant4.sh`
+first as shown in the serial example. An immediate
+`libG4*.so: cannot open shared object file` error means the Geant4 runtime
+environment was not loaded; no histories have run in that case. Use no more
+workers than available physical CPU capacity and memory: every worker is a
+complete Geant4 process with its own geometry, physics tables, and log.
+
+The event histories are independent, so process sharding reduces the transport
+part of elapsed time without changing the global requested history count. It
+does not make initialization, final merging, or plotting parallel. On the
+development host, the same 560-history smoke workload took 109.21 s serially
+and 65.38--68.14 s with two workers (about 1.6--1.7x faster). These values are
+an example, not a runtime guarantee; speedup depends on ion mix, secondary
+production, storage, CPU count, and concurrent system load.
+
+The launcher retains one log, partial JSON, and partial CSV per shard under
+`test_output/crater_foreground_axial/`. It then writes the same unsuffixed
+merged result/spectrum names used by the serial command. A rerun may overwrite
+files for the same case ID, so archive a completed comparison before changing
+the case or code.
+
+### MPI launcher example
+
+`shieldSimCraterBenchmark` does not link MPI. Instead it reads the standard
+Open MPI `OMPI_COMM_WORLD_RANK/SIZE` variables or the MPICH/PMI
+`PMI_RANK/SIZE` variables. This avoids an MPI build dependency while allowing
+the same executable to be distributed across nodes:
+
+```bash
+mpiexec -n 4 test_output/build/shieldSimCraterBenchmark \
+  examples/stage8_crater_foreground_axial.json
+
+python3 scripts/merge_crater_shards.py \
+  --output test_output/crater_foreground_axial/crater_bon2020_2009259_2010065__foreground_only_axial_result.json \
+  test_output/crater_foreground_axial/crater_bon2020_2009259_2010065__foreground_only_axial__shard_*_partial_result.json
+
+python3 scripts/plot_crater_foreground_benchmark.py \
+  test_output/crater_foreground_axial/crater_bon2020_2009259_2010065__foreground_only_axial_result.json \
+  test_output/crater_foreground_axial/crater_bon2020_2009259_2010065__foreground_only_axial_comparison
+```
+
+The merge tool refuses missing/duplicate ranks, different cases, source or
+observation hashes, geometry, physics, Geant4/code identity, bin definitions,
+or history totals. It also requires distinct deterministic rank seeds. It adds
+the raw importance-weight sums and sums of squares first, then recomputes the
+global rate and standard error. Averaging shard spectra or their error bars
+would be statistically wrong and is not supported.
+
+Explicit shard arguments are available for schedulers that do not export a
+recognized MPI environment:
+
+```bash
+test_output/build/shieldSimCraterBenchmark \
+  examples/stage8_crater_foreground_axial.json \
+  --shard-index=0 --shard-count=4
+```
+
+Run the command once for each index `0` through `3`, then use the same merge
+and plot commands. Histories are divided by quotient/remainder so their sum is
+exactly the case's global count. Rank `r` uses seed `random_seed + r`; these are
+distinct deterministic Geant4 pseudo-random streams. This is not a mathematical
+claim that two finite pseudo-random streams can never share a value.
+
+Do not run `mpiexec -n N` with an older executable lacking shard-aware output:
+that launches duplicate full simulations and can collide on output files. The
+current result must say `complete_parallel_merge` and
+`complete_all_shards_present` before it is used. The routine CTest gate uses
+two local workers and verifies this complete merge boundary.
+
+Every result and figure is labeled `foreground_only_axial`. It includes the
+published axial stack and D1--D6 acceptance but excludes housing, boards, dead
+layers, thermal blanket, spacecraft, lunar albedo, and out-of-aperture/side
+background. It is a diagnostic comparison, not full-instrument validation or
+Stage-8 sign-off.
+
+## 10. Understanding outputs
 
 Depending on the case, shieldSim writes a subset of:
 
@@ -526,12 +645,12 @@ For anomaly work, retain exact event-onset, event-end, interval midtime/source
 coordinates, gaps, attitude/configuration changes, and anomaly timestamps. A
 radiation proxy is an environmental covariate, not proof of anomaly causation.
 
-## 10. Reference data and controlled downloads
+## 11. Reference data and controlled downloads
 
 Committed validation data live under `tests/reference_spectra/`,
-`tests/reference_tid/`, `tests/reference_ddd/`, and `tests/reference_let/` with
-provenance and checksums. Normal tests use those immutable files and do not
-download mutable upstream content.
+`tests/reference_tid/`, `tests/reference_ddd/`, `tests/reference_let/`, and
+`tests/reference_crater/` with provenance and checksums. Normal tests use those
+immutable files and do not download mutable upstream content.
 
 Scripts such as `scripts/download_gcr_validation_data.py` and
 `scripts/download_nist_stage4.py` are maintenance tools for a deliberate data
@@ -540,12 +659,27 @@ version/licensing/semantics, new immutable filenames or versions, regenerated
 checksums/derived tables, and all affected validation gates. Never overwrite a
 pinned file merely to make a checksum test pass.
 
+The Stage-8 acquisition can be independently verified or restored with:
+
+```bash
+python3 scripts/download_crater_stage8_inputs.py
+python3 tests/test_crater_reference_inputs.py
+```
+
+The downloader verifies exact upstream bytes and uses `test_output/` for
+scratch files. It range-extracts the two small BON2020 spectra embedded in a
+383 MB GLACE archive instead of downloading unrelated response kernels. It
+does not download the multi-terabyte CRaTER event archive; the selected
+published LET aggregate is already pinned. See
+`tests/reference_crater/acquisition.v1.json` for the files that remain
+unavailable or require preregistration.
+
 BON2020 is not used in production and is not required to run Stage 2 or Stage
 7. AMPS is also not currently a runtime source. A later AMPS adapter must map a
 versioned AMPS output into the existing canonical source contract without
 changing transport or proxy equations.
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 **CMake cannot find Geant4:** set `Geant4_DIR` to the directory containing
 `Geant4Config.cmake`, remove only the failed dedicated build directory if a
@@ -586,7 +720,7 @@ may not stream them. Inspect the relevant directory below
 `test_output/build/`, or run CTest with `-V`. Do not redirect test work into
 `/tmp`.
 
-## 12. Reproducible run checklist
+## 13. Reproducible run checklist
 
 Before using a result in an anomaly analysis or preliminary assessment:
 

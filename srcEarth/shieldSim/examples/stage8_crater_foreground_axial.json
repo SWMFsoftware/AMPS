@@ -1,0 +1,28 @@
+{
+  "schema_version": "shieldSim.crater_foreground_axial_case.v1",
+  "benchmark_scope": "foreground_only_axial",
+  "case_id": "crater_bon2020_2009259_2010065",
+  "histories": 280000,
+  "random_seed": 820020,
+  "accuracy": {
+    "target_relative_statistical_uncertainty": 0.10
+  },
+  "transport": {
+    "physics_list": "Shielding",
+    "em_physics": "G4EmStandardPhysics_option4",
+    "production_cut_um": 10.0
+  },
+  "source": {
+    "path": "../tests/reference_crater/glace/solmin_gcr.json",
+    "sha256": "a2c2e0125d36c5e6a13313bad8ab2972c9c9cd6951b9180d660c35dc1ee63093",
+    "interpolation": "log_log"
+  },
+  "observation": {
+    "path": "../tests/reference_spectra/observations/crater_gcr_let_spectra_v1_3.csv",
+    "sha256": "3e6be9ca1f8ac9b39653a5cec25bc5284b0e7d2ed8832b3dece77334c1e503a3",
+    "column": "2009259-2010065"
+  },
+  "output": {
+    "directory": "../test_output/crater_foreground_axial"
+  }
+}

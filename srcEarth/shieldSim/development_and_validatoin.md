@@ -5,8 +5,10 @@ implemented and acceptance-tested, pending independent review; Stage 5
 implemented and reference-tested, pending accelerator/device validation and
 independent review; Stage 6 implemented and reference-tested, pending
 independent review; Stage 7 software framework and downloaded proton-component
-qualification implemented, formal physical GCR/SEP qualification incomplete**
-Prepared: 2026-10-16; Stage-7 implementation/evidence updated 2026-10-17
+qualification implemented, formal physical GCR/SEP qualification incomplete;
+Stage 8 public-input acquisition and a bounded foreground-only axial diagnostic
+implemented, formal observational validation incomplete**
+Prepared: 2026-10-16; Stage-8 axial benchmark updated 2026-10-18
 Requirements decisions approved: 2026-10-16 and 2026-10-17
 Scope: environment-effect radiation proxies for spacecraft-anomaly analysis
 and preliminary mission assessment; ordered multilayer shielding; slab
@@ -18,7 +20,15 @@ have registered automated gates. Stages 4 and 6 lack independent review; Stage
 5 also lacks the project-selected accelerator/device validation data set; Stage
 7 additionally lacks a complete isotope-resolved GCR scenario, the GOES
 boundary mapping, and complete source uncertainty. None may be represented as
-a formally qualified all-environment radiation-effects model.**
+a formally qualified all-environment radiation-effects model. Stage 8 now has
+the published CRaTER LET table, exact published event cuts, time-matched
+BON2020 H--Ni spectra, public instrument specifications, PDS record/quality
+definitions, and the PDS processing source. A separate executable implements
+the approved `foreground_only_axial` diagnostic and is acceptance-tested as
+software, but it does not represent the omitted instrument, spacecraft, or
+lunar foreground/background response. Stage 8 still lacks a complete public
+engineering mass model, observational covariance, a preregistered blind
+protocol, and reviewer sign-off.**
 
 The filename retains the spelling requested in the task. This document uses
 the normative words **must**, **should**, and **may** deliberately. A stage is
@@ -1202,13 +1212,23 @@ product contains 34 quiet-time, approximately half-year spectra from 2009 to
 2026 and is described as measurements through the CRaTER telescope behind
 9.9 g/cm2 of mostly tissue-equivalent plastic.
 
-This file is a future observational benchmark, not a current generic-slab
-expected answer. The published methods show that instrument geometry,
-coincidence/track selections, acceptance, lunar viewing, and the deposited
-energy-to-path estimator are integral to the product. The spectral ordinate's
-exact normalization and uncertainty representation must be recovered from the
-record/method before a statistical comparison is designed; the CSV header alone
-does not define them.
+The Stage-8 acquisition package under `tests/reference_crater/` now pins the
+Zenodo record/readme, instrument and method papers, exact Supporting Information
+selection logic, NASA PDS record/quality definitions, and the published CRaTER
+L0/L1/L2 pipeline source. It also recovers the GLACE example BON2020 H--Ni
+spectrum for exactly the first observation interval, 2009 day 259 through 2010
+day 65. The product/method defines the D5/D6 normalized-energy-deposit
+observable, 20 keV/um merge boundary, quiet-time/attitude/altitude selection,
+and Boolean D2/D4/D5/D6 cuts.
+
+The LET table remains a future observational benchmark, not a generic-slab
+expected answer. It contains central values but no per-bin uncertainty or
+covariance. The recovered BON2020 v2.2 spectrum has 411.143 MV modulation and
+is not the exact BON2010 417 MV input used by the older papers. Most
+importantly, no complete public machine-readable sensor-head engineering mass
+model was found. Those distinctions are recorded in
+`tests/reference_crater/acquisition.v1.json`; no missing geometry or covariance
+may be inferred.
 
 ## 6. Verification and validation hierarchy
 
@@ -1389,6 +1409,65 @@ surface: CRaTER observations and Geant4 simulations*, is a useful reproducibilit
 target because it explicitly combines the GCR environment, lunar albedo,
 shielding, and sensor response. Reproduce one published configuration before
 claiming independent agreement.
+
+Implemented bounded precursor (2026-10-18): the project owner approved a
+clearly labeled **foreground-only axial** benchmark while the complete
+engineering mass model remains unavailable. This precursor is deliberately
+narrower than V5a and cannot satisfy V5a by itself:
+
+1. `shieldSimCraterBenchmark` constructs the published axial sequence of the
+   two Al-6061-T6 endcaps, six silicon detectors, two A-150 tissue-equivalent
+   absorbers, and the intervening axial gaps. It uses the published detector
+   radius, detector/absorber thicknesses, material densities/compositions,
+   31.4-degree field of view, and 0.569 cm2 sr geometry factor. The
+   non-detector slabs are made computationally wider than every accepted ray;
+   that is the declared boundary of an axial foreground calculation, not a
+   claim about unpublished housing dimensions.
+2. Primary ions H through Ni are sampled from the checksum-pinned, time-matched
+   BON2020 table. The generator importance-samples atomic number uniformly and
+   energy uniformly in log energy, records the physical importance weight, and
+   samples isotropic plane-crossing directions conditioned on intersection of
+   the unperturbed D1 and D6 apertures. Absolute normalization uses the
+   published geometry factor. BON2020 is a downloaded test fixture, not a
+   production-run dependency and not an exact reproduction of the older
+   BON2010 417-MV source.
+3. The calculation scores energy deposited in D1--D6, forms the documented
+   D5/D6 normalized-deposit observable, and emits both an ideal accepted-ray
+   spectrum and the spectrum after the published D5/D6 selection and public
+   lower-level-discriminator values. The released observational table contains
+   bin centers rather than edges; plotting/integration reconstructs edges at
+   geometric midpoints, with the documented D5/D6 boundary fixed at
+   20 keV/um. This convention is serialized as a limitation and is not treated
+   as recovered calibration information.
+4. The transport uses Geant4 `Shielding` plus option-4 electromagnetic physics
+   and the case-file production cut. This is intentionally not claimed to
+   reproduce the publication's Geant4 10.5 configuration. Every result records
+   the build, physics, data hashes, random seeds, event count, geometry, source,
+   omitted response, and precision status.
+5. The comparison is diagnostic only. Housing, side shielding, boards, dead
+   layers, thermal blanket, spacecraft, lunar obstruction/albedo/secondaries,
+   out-of-aperture particles, detailed electronics resolution/saturation/dead
+   time/efficiency, and attitude/orbit selection are absent. Consequently the
+   observed spectrum is not used to tune the geometry and no goodness-of-fit
+   pass/fail claim is made.
+6. Independent-process parallelism divides the requested global histories by
+   quotient/remainder. Each shard has a distinct deterministic seed and writes
+   unnormalized weighted sums and sums of squares. The merger requires the
+   complete, unique, scientifically identical shard set, sums those raw moments,
+   and only then recomputes absolute spectra and Monte Carlo uncertainty. Both
+   a local-process launcher and MPI-launcher environment discovery are
+   documented in `RUN.md`; the executable itself has no MPI linkage.
+
+The registered `stage8_crater_core` test checks the published axial table,
+isotope map, analytic log-log interpolation, released-bin reconstruction, cut
+logic, and pinned fixtures without Geant4. `stage8_crater_transport` launches
+two shards, requires a complete raw-moment merge, checks the result boundary
+labels, and renders PNG/SVG observation comparisons. The 560-history smoke
+case is intentionally too small to meet the requested 10% per-bin precision;
+it tests execution and evidence integrity, not physical agreement. On the
+2026-10-18 development host it completed in 68.14 s with two workers, compared
+with 109.21 s for the earlier serial smoke run. Timing is host/load dependent
+and is not an acceptance threshold.
 
 #### V5b: absorbed-dose cross-checks
 
@@ -2265,6 +2344,28 @@ domains the observation supports.
 Forbidden carry-over: model parameters cannot be adjusted after blind-data
 inspection without restarting the validation protocol.
 
+Implementation status (2026-10-18): the public-input search and checksum
+package is implemented and tested by `stage8_reference_inputs`. Recovered
+inputs include the v1.3 observations, exact background cuts, time-matched
+BON2020 H--Ni spectra, instrument axial/material specifications, PDS quality
+tables, the calibrated event schema, and the MIT-licensed PDS processing
+source. The approved foreground-only axial precursor described under V5a is
+implemented by `shieldSimCraterBenchmark` and tested by
+`stage8_crater_core`/`stage8_crater_transport`; its generated comparison is
+evidence that the bounded workflow runs, not evidence that the full observation
+has been reproduced.
+
+Stage 8 remains incomplete. The full engineering Geant4 mass model was not
+found publicly, the calibration plan is explicitly withheld by PDS, the
+aggregate observation has no bin covariance, and the calibration/blind split,
+acceptance metric, uncertainty model, and independent review have not been
+completed. The exact input inventory and evidence are in
+`tests/reference_crater/acquisition.v1.json` and its README. Full Stage-8 exit
+still requires the published full-response configuration or equivalent
+authoritative geometry/response evidence, lunar and spacecraft/background
+terms appropriate to the interval, preregistered decisions, blind evaluation,
+residual diagnostics, and bounded signed conclusions.
+
 ### Stage 9 - production UI and regression qualification
 
 Entry: each exposed quantity has passed its applicable prior gates.  
@@ -2451,7 +2552,9 @@ assumption. The named capability remains disabled until its input is available:
    values, the independent reviewer must archive the instrument reconstruction,
    interval-quality rules, calibration interval(s), chronologically held-out
    blind interval(s), statistics, and acceptance criteria. The pinned product
-   is selected; the split awaits recovery of its full method/quality metadata.
+   and public method/quality metadata are now pinned. The split still awaits a
+   project decision, and missing mass-model detail and covariance remain
+   explicit rather than being filled by assumptions.
 5. **Named reviewers:** Stage 2 is exempt from an independent-reviewer sign-off
    and closes on project-owner acceptance of its pinned-source and adapter-test
    evidence. Later physical capability and observational-validation gates that
@@ -2543,7 +2646,10 @@ assumption. The named capability remains disabled until its input is available:
 - CRaTER GCR LET method: [Looper et al., 2020](https://doi.org/10.1029/2020SW002543).
 - Pinned CRaTER LET product: [Looper, version 1.3,
   2026](https://doi.org/10.5281/zenodo.22883077), CC-BY-4.0.
-- CRaTER observation/Geant4 response precedent: [Spence et al.,
+- Time-matched public BON2020 H--Ni example spectra: [GLACE v1.0,
+  DOI 10.5281/zenodo.8343472](https://doi.org/10.5281/zenodo.8343472),
+  CC-BY-4.0.
+- CRaTER observation/Geant4 response precedent: [Looper et al.,
   2013](https://doi.org/10.1002/swe.20034).
 - Candidate lunar-dose cross-check and its limitations: [Guo et al.,
   2024](https://doi.org/10.1029/2024SW004095).

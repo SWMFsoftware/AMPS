@@ -69,6 +69,35 @@ proton component reaches the normal Geant4/proxy path. Neither result is a
 claim of observational agreement or complete mission-environment coverage.
 See `development_and_validatoin.md` for the staged validation gates.
 
+The separate Stage-8 input-acquisition integrity gate is:
+
+```bash
+python3 tests/test_crater_reference_inputs.py
+```
+
+It checks the package under `tests/reference_crater/`: the CRaTER instrument
+and method documents, exact published background cuts, PDS record/quality
+metadata and processing source, and time-matched GLACE/BON2020 H--Ni spectra.
+This test does not transport particles or compare shieldSim output with the
+observation. Its acquisition record deliberately keeps the missing engineering
+mass model, calibration plan, bin covariance, preregistration, and reviewer
+sign-off visible; passing it must not be reported as Stage-8 completion.
+
+The bounded Stage-8 benchmark gates are:
+
+```bash
+ctest -R '^stage8_(reference_inputs|crater_core|crater_transport)$' --output-on-failure
+```
+
+`stage8_crater_core` protects the publication-derived 19-entry axial stack,
+132.02606 mm total length, six detector thicknesses, GLACE archive-derived
+H--Ni isotope map, analytic log--log interpolation, D5/D6 splice, and exact
+published cut logic. `stage8_crater_transport` divides one 560-history smoke
+case between two concurrent processes, verifies every shard, merges raw
+importance-weight sums and sums of squares, recomputes the global uncertainty,
+and renders PNG/SVG observation comparisons. It asserts transport, accounting,
+merging, and labeling—not observational agreement.
+
 ## Stage-2 published-source adapter tests
 
 The CTest targets `stage2_reference_spectra`, `stage2_source_adapters`, and
@@ -496,6 +525,7 @@ tests/
 ├── stage1_core_tests.cc
 ├── stage2_source_adapter_tests.cc
 ├── stage3_core_tests.cc
+├── stage8_crater_core_tests.cc
 ├── test_stage3_response_weights.py
 ├── test_stage3_transport.py
 ├── generate_validation_figures.py
@@ -504,6 +534,16 @@ tests/
 ├── test_stage2_source_tool.py
 ├── test_stage1_transport_smoke.py
 ├── test_reference_spectra.py
+├── test_crater_reference_inputs.py
+├── test_stage8_crater_transport.py
+├── reference_crater/
+│   ├── README.md
+│   ├── acquisition.v1.json
+│   ├── manifest.sha256
+│   ├── glace/
+│   ├── pds/
+│   ├── publications/
+│   └── zenodo/
 ├── reference_spectra/
 │   ├── README.md
 │   ├── manifest.sha256

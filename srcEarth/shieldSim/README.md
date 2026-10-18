@@ -121,6 +121,28 @@ is reported as `not_assessable`, never replaced by an assumed diagonal model.
 The two GOES directions remain separate and transport-disabled until their
 boundary transform and angular response are supplied.
 
+Stage 8 now contains a deliberately bounded `foreground_only_axial` CRaTER
+benchmark; it is not a completed observational validation. The isolated
+`shieldSimCraterBenchmark` executable builds the published axial stack (six
+flight detector thicknesses, both A-150 absorbers, both Al-6061 endcaps, and
+every axial gap), samples the published D1--D6 acceptance, transports the
+time-matched BON2020 H--Ni spectrum, forms the published D5/D6 normalized
+energy-deposit observable, applies the published cuts, and writes an absolute
+diagnostic comparison with the first CRaTER v1.3 interval. Its outputs are
+non-negotiably labeled `foreground_only_axial` and explicitly exclude housing,
+boards, dead layers, thermal blanket, spacecraft, lunar albedo, and side-entry
+background. Process-level sharding and raw-moment merging support local or MPI
+parallel runs without duplicating histories or averaging normalized spectra.
+
+The Stage-8 public-input acquisition gate is complete: checksum-pinned CRaTER
+observations, exact published detector cuts, time-matched BON2020 H--Ni
+spectra, instrument/method documents, NASA PDS schemas and quality tables, and
+the published CRaTER processing source are under `tests/reference_crater/`.
+The same package records what could not be downloaded: a complete engineering
+Geant4 mass model, the withheld calibration plan, and observational bin
+covariance. The axial fixture does not substitute assumed values for those
+missing inputs, and therefore cannot close the full Stage-8 gate.
+
 Stage 1 is a software/correctness gate, not physical validation of every
 radiation proxy. Versioned case v1 enables its earlier `TID` and `H100/10`
 path; case v2 adds the bounded Stage-4 TID, Stage-5 silicon damage, and Stage-6
@@ -135,6 +157,8 @@ physically qualified radiation-proxy model are defined in
 [`development_and_validatoin.md`](development_and_validatoin.md). Published
 AMS-02 and ACE/CRIS GCR observations, GOES-16 SEP fixtures, and a CRaTER
 observational LET product are documented under `tests/reference_spectra/`.
+The supporting Stage-8 CRaTER instrument/source acquisition and its explicit
+unresolved-input record are documented under `tests/reference_crater/`.
 Dedicated Stage-2 adapters preserve their published binning,
 species, counts/uncertainties, timing, and quality semantics. They remain
 ingestion/event-integration products except for one narrow transport-test
@@ -222,7 +246,9 @@ shieldSim/
     ├── stage7_core_tests.cc
     ├── test_stage7_boundaries.py
     ├── test_stage7_published_qualification.py
+    ├── test_crater_reference_inputs.py
     ├── reference_stage7/
+    ├── reference_crater/              # Stage-8 inputs and missing-input record
     ├── reference_ddd/
     ├── reference_let/                # pinned GSI ATIMA heavy-ion responses
     ├── generate_validation_figures.py
@@ -284,7 +310,8 @@ cmake -S . -B test_output/build \
   -DGeant4_DIR=/path/to/geant4/lib/cmake/Geant4
 ```
 
-Run all registered Stage-1 through Stage-7 tests from the build directory:
+Run all registered Stage-1 through Stage-7 tests plus the Stage-8 reference-
+input integrity gate from the build directory:
 
 ```bash
 cd test_output/build
@@ -306,6 +333,17 @@ strict schemas, dual event windows, sample
 timing, quality rejection, coverage accounting, direction retention,
 determinism, uncertainty-component retention, zero-count masking, and analytic
 integration/statistical-error cases.
+
+`stage8_reference_inputs` is deliberately not a Stage-8 physics pass. It
+authenticates the recovered CRaTER/GLACE/PDS package, checks the time-matched
+H--Ni array dimensions and units, verifies the observed LET table and PDS
+pipeline semantics, and preserves the unresolved mass-model/covariance/review
+boundaries. `stage8_crater_core` checks the published axial stack, isotope map,
+source interpolation, released-bin reconstruction, and cut logic without
+Geant4. `stage8_crater_transport` runs two concurrent transport shards, merges
+their raw weighted moments, and creates a clearly labeled PNG/SVG comparison.
+The comparison has no pass/fail goodness-of-fit decision because the public
+observation supplies neither covariance nor a preregistered acceptance rule.
 
 `stage3_core` checks canonical rigid transforms, exact multilayer interfaces
 and mass/path formulas, order-sensitive hashes, response identity/zero/
@@ -375,9 +413,10 @@ build/validation_figures/
 
 The figures require Python `matplotlib`. They are human-review artifacts, not
 pixel-based acceptance tests: the underlying numeric comparisons remain the
-pass/fail authority. CRaTER panels are explicitly observation-only because the
-instrument-response model required for a model-to-observation comparison has
-not been implemented.
+pass/fail authority. The original CRaTER reference panel is observation-only.
+The Stage-8 run directory also contains the model comparison figure,
+permanently labeled as a foreground-only axial diagnostic rather than a
+full-instrument validation.
 
 The standalone Layer-2 and Layer-3 runners also generate PNG/SVG review
 figures after all of their prerequisite numerical checks pass. Layer 2 covers
