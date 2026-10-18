@@ -151,6 +151,15 @@ int main(int argc,char** argv){
   const fs::path manifest=scratch/"matrix.json";
   matrix.Write(manifest.string());
   matrix=shield_sim::ResponseMatrix::Load(manifest.string());
+  const auto selectedMatrix=shield_sim::ResponseMatrix::AssembleSelected(
+      {cellA.string(),cellB.string()},{"score"});
+  Check(selectedMatrix.Cells().size()==2 &&
+        selectedMatrix.Cells().front().scores.size()==1 &&
+        selectedMatrix.Cells().front().meanCovariance.size()==1,
+        "selected-score assembly retains a complete requested covariance submatrix");
+  CheckThrows([&]{ (void)shield_sim::ResponseMatrix::AssembleSelected(
+      {cellA.string(),cellB.string()},{"absent"}); },
+      "selected-score assembly rejects an absent observable");
   CheckThrows([&]{ (void)shield_sim::ResponseMatrix::Assemble({cellA.string(),bad.string()}); },
               "incompatible response keys");
 

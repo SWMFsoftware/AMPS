@@ -1,0 +1,100 @@
+{
+  "schema_version": "shieldSim.time_resolved_exposure.v1",
+  "case_id": "stage7_synthetic_time_resolved_example",
+  "time_system": "UTC",
+  "source_qualification": {
+    "environment": "synthetic_verification",
+    "environment_completeness": "synthetic_only",
+    "goes_transport_status": "disabled_missing_boundary_mapping",
+    "transport_admission": "verification_test_only",
+    "limitations": [
+      "The rates are dimensionless verification values, not a radiation environment.",
+      "Anomaly timestamps are retained as metadata and do not alter the calculation."
+    ]
+  },
+  "integration_policy": {
+    "gap_policy": "preserve_no_fill",
+    "cadence_policy": "native_intervals_no_implicit_rebin",
+    "configuration_policy": "split_before_fold",
+    "extrapolation_policy": "refuse"
+  },
+  "anomaly_timestamps": [
+    {
+      "timestamp_id": "example_telemetry_marker",
+      "utc": "2017-09-10T16:30:00Z"
+    }
+  ],
+  "intervals": [
+    {
+      "interval_id": "before_configuration_change",
+      "start_utc": "2017-09-10T16:25:00Z",
+      "end_utc": "2017-09-10T16:30:00Z",
+      "original_time_coordinate": "synthetic_interval_start",
+      "source_id": "synthetic_constant_source",
+      "source_hash": "sha256:synthetic-source-a",
+      "response_id": "al_hdpe_silicon_response",
+      "response_hash": "sha256:synthetic-response-a",
+      "shield_stack_id": "al_then_hdpe",
+      "absorber_id": "silicon_slab",
+      "attitude_id": "fixed_local_frame_a",
+      "quality_state": "valid",
+      "coverage_fraction": 1.0,
+      "rates": [
+        {
+          "series_id": "silicon_slab/TID",
+          "quantity": "TID",
+          "rate_unit": "verification_unit/s",
+          "integrated_unit": "verification_unit",
+          "value": 2.0
+        }
+      ]
+    },
+    {
+      "interval_id": "explicit_data_gap",
+      "start_utc": "2017-09-10T16:30:00Z",
+      "end_utc": "2017-09-10T16:35:00Z",
+      "original_time_coordinate": "explicit_missing_interval",
+      "source_id": "no_valid_source",
+      "source_hash": "sha256:no-valid-source",
+      "response_id": "none",
+      "response_hash": "sha256:none",
+      "shield_stack_id": "unknown_during_gap",
+      "absorber_id": "silicon_slab",
+      "attitude_id": "unknown_during_gap",
+      "quality_state": "gap",
+      "coverage_fraction": 0.0,
+      "rates": []
+    },
+    {
+      "interval_id": "after_configuration_change",
+      "start_utc": "2017-09-10T16:35:00Z",
+      "end_utc": "2017-09-10T16:45:00Z",
+      "original_time_coordinate": "synthetic_interval_start",
+      "source_id": "synthetic_constant_source",
+      "source_hash": "sha256:synthetic-source-b",
+      "response_id": "hdpe_al_silicon_response",
+      "response_hash": "sha256:synthetic-response-b",
+      "shield_stack_id": "hdpe_then_al",
+      "absorber_id": "silicon_slab",
+      "attitude_id": "fixed_local_frame_b",
+      "quality_state": "valid",
+      "coverage_fraction": 1.0,
+      "rates": [
+        {
+          "series_id": "silicon_slab/TID",
+          "quantity": "TID",
+          "rate_unit": "verification_unit/s",
+          "integrated_unit": "verification_unit",
+          "value": 1.0
+        }
+      ]
+    }
+  ],
+  "uncertainty": {
+    "status": "incomplete",
+    "limitation": "The example supplies no physical source or response covariance.",
+    "independence_basis": "No components are combined in this incomplete example.",
+    "covariance_components": [],
+    "sampled_ensembles": []
+  }
+}

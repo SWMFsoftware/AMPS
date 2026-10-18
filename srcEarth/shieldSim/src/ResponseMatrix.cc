@@ -225,6 +225,61 @@ ResponseMatrix ResponseMatrix::Assemble(const std::vector<std::string>& paths){
   return matrix;
 }
 
+ResponseMatrix ResponseMatrix::AssembleSelected(
+    const std::vector<std::string>& paths,
+    const std::vector<std::string>& scoreIds){
+  if(scoreIds.empty())
+    throw JsonError("selected response-matrix assembly requires at least one score_id");
+  std::set<std::string> selected;
+  for(const std::string& id:scoreIds){
+    if(id.empty()) throw JsonError("selected response-matrix score_id must not be empty");
+    if(!selected.insert(id).second)
+      throw JsonError("duplicate selected response-matrix score_id '"+id+"'");
+  }
+
+  if(paths.empty()) throw JsonError("response-matrix assembly requires at least one cell");
+  ResponseMatrix matrix;
+  std::set<std::string> ids;
+  std::set<std::tuple<std::string,int,int,double,double,double>> coordinates;
+  for(const std::string& path:paths){
+    // ParseCell validates the unabridged score moments, complete covariance
+    // triangle, response key, species, and coordinates. Filter immediately
+    // afterward so only one full cell is resident at a time; large transport
+    // campaigns must not construct or hash a temporary all-score matrix.
+    ResponseCell cell=ParseCell(Json::ParseFile(path),path,matrix.responseKey_,
+                                matrix.responseKeyDocument_);
+    if(!ids.insert(cell.incidentId).second)
+      throw JsonError("duplicate incident_id '"+cell.incidentId+
+                      "' during matrix assembly");
+    if(!coordinates.emplace(cell.particle,cell.atomicNumber,cell.massNumber,
+                            cell.totalKineticEnergyMeV,cell.mu,cell.phiRad).second)
+      throw JsonError("duplicate species/energy/direction coordinate during matrix assembly");
+    for(const std::string& id:selected){
+      if(!cell.scores.count(id))
+        throw JsonError("selected score_id '"+id+"' is absent from response cell '"+
+                        cell.incidentId+"'");
+    }
+    for(auto score=cell.scores.begin();score!=cell.scores.end();){
+      if(!selected.count(score->first)) score=cell.scores.erase(score);
+      else ++score;
+    }
+    for(auto covariance=cell.meanCovariance.begin();covariance!=cell.meanCovariance.end();){
+      if(!selected.count(covariance->first.first) ||
+         !selected.count(covariance->first.second))
+        covariance=cell.meanCovariance.erase(covariance);
+      else ++covariance;
+    }
+    matrix.cells_.push_back(std::move(cell));
+  }
+  std::sort(matrix.cells_.begin(),matrix.cells_.end(),[](const auto& a,const auto& b){
+    return a.incidentId<b.incidentId;
+  });
+  // Score selection changes the canonical matrix content, so weights built
+  // for the unabridged matrix cannot be reused accidentally.
+  matrix.matrixHash_=Sha256(matrix.CanonicalDocument().DumpCanonical());
+  return matrix;
+}
+
 ResponseMatrix ResponseMatrix::Load(const std::string& path){
   const Json document=Json::ParseFile(path);
   const auto& root=document.AsObject("response matrix");

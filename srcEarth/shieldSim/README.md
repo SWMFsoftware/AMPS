@@ -15,7 +15,13 @@ silicon DDD from protons, helium-4, and neutrons and for neutron-only ASTM E722
 `n_eq`; formal Stage-5 completion is pending a project-selected accelerator or
 device-degradation validation data set and independent review. Stage 6 is
 implemented and reference-tested for generic electronic LET and primary-proton
-`H100/10`; formal Stage-6 completion is pending independent review. Stage 4 enables a bounded finite-material-slab TID
+`H100/10`; formal Stage-6 completion is pending independent review. Stage 7
+implements strict time-resolved exposure integration, response/source
+quadrature, pilot-based event allocation, and the approved downloaded AMS A=1
+proton component representative-matrix qualification. It remains explicitly
+incomplete as a physical GCR/SEP qualification because a full isotope-resolved
+GCR scenario, the GOES sensor-to-simulation angular mapping, complete physical
+uncertainty budgets, and required prior-stage reviews are unavailable. Stage 4 enables a bounded finite-material-slab TID
 capability for proton and helium-4 incidence in aluminum, silicon, and water.
 It does not validate photon TID, electrons, heavier ions, devices, organs, or
 crew dose.
@@ -101,6 +107,20 @@ natural Al, natural Si, and water; C-12 is limited to natural Si and requires
 `G4EmStandardPhysics_option4`. Values outside declared LET bins are audited and
 make the result not assessable; they are never clamped.
 
+Stage 7 adds the Geant4-free `shieldSimExposureTool` for strict UTC interval
+integration, explicit gaps and configuration segments, anomaly markers,
+covariance and sampled-ensemble propagation, adaptive spectrum/response
+quadrature, and deterministic pilot-based Neyman history allocation without
+physics biasing. Its registered transport campaign uses five seeds, both
+Al/HDPE layer orders, independent natural-Si and water slabs, full downloaded
+AMS proton bins, and direct/quadrature/response-matrix paths. Log-energy
+response interpolation cannot extrapolate; the final registered grid monitor
+must change by no more than 2%, and direct/matrix TID must satisfy both the 10%
+relative and combined two-sided 95% gates. Missing published source covariance
+is reported as `not_assessable`, never replaced by an assumed diagonal model.
+The two GOES directions remain separate and transport-disabled until their
+boundary transform and angular response are supplied.
+
 Stage 1 is a software/correctness gate, not physical validation of every
 radiation proxy. Versioned case v1 enables its earlier `TID` and `H100/10`
 path; case v2 adds the bounded Stage-4 TID, Stage-5 silicon damage, and Stage-6
@@ -135,7 +155,7 @@ components:
 - separate total, ionizing, and non-ionizing deposit ledgers,
 - versioned Stage-4 TID, Stage-5 silicon DDD/neutron-only `n_eq`, and Stage-6 LET/H100/10, plus explicitly labeled legacy diagnostics,
 - detailed help text describing input/output units and radiation-effect approximations,
-- Layer-1/2/3/4 scripts plus Stage-5/6 CTest gates with deterministic diagnostic and regression output,
+- Layer-1/2/3/4 scripts plus Stage-5/6/7 CTest gates with deterministic diagnostic and regression output,
 - optional test/numerical controls: `--dump-run-summary`, `--production-cut`, and `--max-step`.
 
 ## Directory structure
@@ -144,9 +164,11 @@ components:
 shieldSim/
   ├── CMakeLists.txt
   ├── README.md
+  ├── RUN.md                         # build/run/test operations guide
   ├── shieldSim.cc
   ├── sourceTool.cc                  # published-source validation/conversion CLI
   ├── responseTool.cc                # response-matrix assembly/folding CLI
+  ├── exposureTool.cc                # Stage-7 time/quadrature/allocation CLI
   ├── referenceTool.cc               # Stage-4 Geant4 EM table probe
 ├── include/
 │   ├── AbsorberGeometry.hh       # future-shape provider contract + slab
@@ -154,6 +176,7 @@ shieldSim/
 │   ├── CaseDefinition.hh         # strict resolved case data
 │   ├── DamageResponseLibrary.hh  # authenticated Stage-5 NIEL/E722 responses
 │   ├── Stage6Physics.hh           # LET bins, analytic hardness, Fieller ratios
+│   ├── Stage7Qualification.hh     # time, quadrature, allocation contracts
 │   ├── GeometryTransform.hh       # canonical local-to-world transforms
 │   ├── MaterialLibrary.hh        # versioned records and overrides
 │   ├── ResponseMatrix.hh         # response cell/matrix/fold contracts
@@ -178,6 +201,7 @@ shieldSim/
 │   ├── stage4_tid_case.json
 │   ├── stage5_ddd_neq_case.json
 │   ├── stage6_let_hardness_case.json
+│   ├── stage7_time_resolved_exposure.json
 │   ├── sep_spectrum.dat
 │   └── sep_spectrum.metadata.v1.json
 ├── macros/
@@ -195,6 +219,10 @@ shieldSim/
     ├── stage6_core_tests.cc
     ├── test_stage6_reference.py
     ├── test_stage6_transport.py
+    ├── stage7_core_tests.cc
+    ├── test_stage7_boundaries.py
+    ├── test_stage7_published_qualification.py
+    ├── reference_stage7/
     ├── reference_ddd/
     ├── reference_let/                # pinned GSI ATIMA heavy-ion responses
     ├── generate_validation_figures.py
@@ -237,25 +265,31 @@ tests/run_layer4_tests.sh --check
 
 ## Build
 
+The complete operational instructions—including prerequisites, Geant4 paths,
+case setup, every executable, response matrices, Stage-7 integration, tests,
+outputs, and troubleshooting—are in [`RUN.md`](RUN.md).
+
 Source your Geant4 environment first, then build with CMake:
 
 ```bash
-mkdir build
-cd build
-cmake ..
-make -j
+cmake -S . -B test_output/build -DBUILD_TESTING=ON
+cmake --build test_output/build -j
 ```
 
 If CMake cannot find Geant4 automatically, provide `Geant4_DIR`, for example:
 
 ```bash
-cmake .. -DGeant4_DIR=/path/to/geant4/lib/Geant4-11.*/
+cmake -S . -B test_output/build \
+  -DBUILD_TESTING=ON \
+  -DGeant4_DIR=/path/to/geant4/lib/cmake/Geant4
 ```
 
-Run all registered Stage-1 through Stage-4 tests from the build directory:
+Run all registered Stage-1 through Stage-7 tests from the build directory:
 
 ```bash
+cd test_output/build
 ctest --output-on-failure
+cd ../..
 ```
 
 `stage1_core` verifies canonical JSON/hashing, material resolution and

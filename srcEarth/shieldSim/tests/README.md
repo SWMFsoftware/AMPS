@@ -323,6 +323,96 @@ Stage-6 numerical evidence files are `stage6_core.json`,
 still requires the independent-review record; CRaTER remains a separate future
 instrument-response validation and is not used as generic LET truth.
 
+## Stage-7 published-component and time-integration tests
+
+Stage 7 adds three CTest gates and participates in the downstream figure gate.
+All cases, logs, response cells, selected-score matrices, weights, folds,
+exposure ledgers, and evidence stay below the configured build tree. The test
+temporary directory is also inside that tree; no Stage-7 test uses `/tmp`.
+
+`stage7_core_tests.cc` is deterministic and Geant4-free. It verifies exact
+log-energy interpolation, refusal to extrapolate, an analytic spectrum-response
+integral with adaptive refinement, exact pilot-based Neyman allocation, strict
+UTC/leap-day parsing, piecewise integration across partial coverage and an
+explicit gap, full interval covariance propagation, and a sampled-source
+ensemble. It also rejects an implicit time gap, overlap, indefinite covariance,
+a false full-GCR label on the AMS proton component, and GOES transport without
+the missing boundary mapping.
+
+`test_stage7_boundaries.py` drives all three `shieldSimExposureTool` commands.
+It checks deterministic output, strict unknown-field and timestamp handling,
+exact gap-preserving integration, no-extrapolation quadrature, and an exact
+history allocation with no physics biasing. The committed example has an
+incomplete physical uncertainty block and must therefore remain
+`not_assessable`.
+
+`test_stage7_published_qualification.py` authenticates the registered Stage-7
+plan and production source adapters. It retains both GOES directions and
+confirms their transport-disabled status. All 45 downloaded AMS A=1 proton bins
+then drive five-seed production runs for Al→HDPE and HDPE→Al stacks with
+independent 1 mm natural-silicon and water slabs. Only Stage-4-qualified TID is
+requested. For each silicon stack, an explicit energy/angle quadrature is run
+both directly and through monoenergetic response matrices. Selected-score
+assembly retains the TID primitive and primary-proton crossing monitor after
+full validation of every response cell. Independent 256-history pilots drive a
+frozen 73,728-history 12-node base allocation and a 56,320-history interleaved
+energy-refinement allocation for each of five response replicates. The
+23-node reversed-stack result passed the 10% difference gate but returned
+`z=2.078`, above the unchanged `1.96` gate. The registered corrective
+refinement therefore adds the remaining 22 published representatives with a
+separate 112,640-history allocation per replicate. Every allocation has a
+512-history-per-cell floor; the complete 45-node response campaign contains
+1,213,440 production histories per stack. The
+response uncertainty is the conservative
+larger of propagated within-replicate and empirical between-replicate standard
+error. This explicitly tests the rare TID tail instead of trusting one random
+stream's variance estimate. Pilot moments are excluded and production seeds
+are disjoint.
+
+The same maximum-within/between rule is applied to the five equal-history
+direct seeds. This is required symmetrically because the 45-node campaign
+removed energy interpolation but the reversed-stack direct seed means still
+ranged from 0.598 to 0.731 MeV/primary. Their empirical between-seed standard
+error was 20.8% larger than the pooled event estimate. The direct mean, 10%
+relative gate, and `z <= 1.96` gate are unchanged; the test also requires the
+resulting direct relative standard error to remain at or below 10%.
+
+Every full response cell is parsed by `shieldSimResponseTool` before retention.
+The driver then keeps only the registered TID and primary-crossing scores and
+their complete 2x2 covariance block, plus a content-hashed completion marker.
+The redundant full result is removed for response-only cases; published and
+direct-quadrature results remain unabridged. This compaction prevents the full
+diagnostic covariance triangles from exhausting the test filesystem without
+weakening cell validation or matrix inputs.
+
+The driver can execute independent case directories concurrently with
+`SHIELDSIM_STAGE7_WORKERS=N`. Each worker is a separate serial `shieldSim`
+process; seeds, histories, case documents, output prefixes, result ordering,
+and acceptance calculations do not depend on completion order. The default is
+one worker, invalid/nonpositive values are rejected, and the requested count
+may not exceed the CPUs visible to the process. This is task parallelism, not
+MPI or Geant4 event multithreading. Exact-identity restarts reuse only complete
+canonical cases, so an interrupted parallel campaign can be resumed safely.
+
+The registered gates require five seeds, no more than 2% change in the final
+response-grid monitor, and direct-versus-matrix TID agreement both within 10%
+and within the combined two-sided 95% statistical interval. The normal
+published sampler is also compared with the explicit quadrature. Each matrix
+row is converted to an exact 27-day exposure. Because the published source
+does not provide the covariance needed by this fold, uncertainty remains
+incomplete and accuracy remains `not_assessable`; the test never creates a
+diagonal covariance assumption.
+
+Every direct row uses 8,000 histories for each of its five seeds. This
+40,000-history total was fixed after a smaller development pilot exposed an
+unstable heavy TID tail; no acceptance threshold was relaxed.
+
+Passing these gates implements and qualifies the Stage-7 software framework
+and the downloaded proton component. It does not complete physical GCR/SEP
+qualification. Full completion still needs an approved isotope-resolved GCR
+scenario, the GOES sensor-to-simulation transform/angular response, complete
+physical uncertainty budgets, and the required earlier-stage reviews.
+
 ## Validation figures
 
 CTest target `validation_figures` depends on all current analytic and
@@ -337,7 +427,7 @@ production source tool, and writes review artifacts to:
 <build>/validation_figures/manifest.json
 ```
 
-The twenty-three figure subjects are Stage-1 core formulas, Stage-1 case boundaries,
+The twenty-six figure subjects are Stage-1 core formulas, Stage-1 case boundaries,
 Stage-1 analytic slab masses/ledger closure, original AMS primary-table
 analytic checks, the end-to-end AMS source-integral check, original AMS
 observation/adapter agreement, AMS-02 2025
@@ -349,8 +439,10 @@ Stage-3 transport/convergence comparisons, Stage-4 exact dose/covariance
 algebra, all Stage-4 NIST comparisons, Stage-4 TID
 transport/convergence/ledger comparisons, Stage-5 analytic/table folds, and
 Stage-5 full-transport absorber-entry comparisons, Stage-6 exact LET/hardness
-mathematics, Stage-6 NIST/ATIMA stopping references, and Stage-6 full-transport
-LET/hardness comparisons. The
+mathematics, Stage-6 NIST/ATIMA stopping references, Stage-6 full-transport
+LET/hardness comparisons, Stage-7 exact time/covariance/quadrature algebra,
+Stage-7 executable-boundary algebra, and Stage-7 downloaded proton-component
+direct/matrix/grid comparisons. The
 manifest records captions, byte sizes, and SHA-256 hashes.
 
 The standalone Geant4 layer runners extend that coverage. They invoke

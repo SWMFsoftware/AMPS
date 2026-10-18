@@ -88,9 +88,11 @@ void PrintHelp(){
   std::cout<<"  --case=<file.json>       Load strict shieldSim.case.v1 or case.v2.\n";
   std::cout<<"                           Geometry, materials, source, accuracy, and\n";
   std::cout<<"                           transport settings come only from this file.\n";
-  std::cout<<"                           case.v2 supports Stage-3 raw responses and the\n";
-  std::cout<<"                           bounded Stage-4 finite-slab TID capability.\n";
-  std::cout<<"                           Later proxies and device/organ claims remain disabled.\n";
+  std::cout<<"                           case.v2 supports Stage-3 raw responses, bounded\n";
+  std::cout<<"                           Stage-4 finite-slab TID, Stage-5 natural-Si\n";
+  std::cout<<"                           DDD/neutron n_eq, and Stage-6 LET/H100/10 in\n";
+  std::cout<<"                           their registered domains. Device, organ, crew,\n";
+  std::cout<<"                           and instrument-response claims remain disabled.\n";
   std::cout<<"  --validate-case=<file>   Parse, resolve, hash, and write provenance,\n";
   std::cout<<"                           but do not start Geant4 transport.\n";
   std::cout<<"  --validate-case          Use with --case for the same validation-only mode.\n";

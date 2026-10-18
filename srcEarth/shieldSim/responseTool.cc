@@ -13,7 +13,21 @@ namespace {
 void Usage(){
   std::cerr<<"usage:\n"
            <<"  shieldSimResponseTool assemble OUTPUT.json CELL.json [CELL.json ...]\n"
+           <<"  shieldSimResponseTool assemble-selected OUTPUT.json SCORE_ID[,SCORE_ID...] CELL.json [CELL.json ...]\n"
            <<"  shieldSimResponseTool fold MATRIX.json WEIGHTS.json OUTPUT.json\n";
+}
+
+std::vector<std::string> SplitScoreIds(const std::string& joined){
+  std::vector<std::string> result;
+  std::size_t begin=0;
+  while(begin<=joined.size()){
+    const std::size_t comma=joined.find(',',begin);
+    result.emplace_back(joined.substr(begin,comma==std::string::npos
+        ? std::string::npos : comma-begin));
+    if(comma==std::string::npos) break;
+    begin=comma+1;
+  }
+  return result;
 }
 }
 
@@ -25,6 +39,15 @@ int main(int argc,char** argv){
       auto matrix=shield_sim::ResponseMatrix::Assemble(cells);
       matrix.Write(argv[2]);
       std::cout<<"response matrix written: "<<argv[2]<<"\n";
+      return 0;
+    }
+    if(argc>=5 && std::string(argv[1])=="assemble-selected"){
+      std::vector<std::string> cells;
+      for(int i=4;i<argc;++i) cells.emplace_back(argv[i]);
+      auto matrix=shield_sim::ResponseMatrix::AssembleSelected(
+          cells,SplitScoreIds(argv[3]));
+      matrix.Write(argv[2]);
+      std::cout<<"selected-score response matrix written: "<<argv[2]<<"\n";
       return 0;
     }
     if(argc==5 && std::string(argv[1])=="fold"){

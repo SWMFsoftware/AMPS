@@ -4,18 +4,21 @@ Status: **Stage 0 complete; Stage 1 complete; Stage 2 complete; Stages 3 and 4
 implemented and acceptance-tested, pending independent review; Stage 5
 implemented and reference-tested, pending accelerator/device validation and
 independent review; Stage 6 implemented and reference-tested, pending
-independent review**
-Prepared: 2026-10-16; Stage-6 implementation/evidence updated 2026-10-17
+independent review; Stage 7 software framework and downloaded proton-component
+qualification implemented, formal physical GCR/SEP qualification incomplete**
+Prepared: 2026-10-16; Stage-7 implementation/evidence updated 2026-10-17
 Requirements decisions approved: 2026-10-16 and 2026-10-17
 Scope: environment-effect radiation proxies for spacecraft-anomaly analysis
 and preliminary mission assessment; ordered multilayer shielding; slab
 absorbers initially; published GCR/SEP inputs now; arbitrary absorber geometry
 and AMPS input through later adapters  
-Release status: **the Stage-4 TID, Stage-5 silicon damage, and Stage-6 generic
-LET/hardness implementations have passed their registered automated gates.
-Stages 4 and 6 lack independent review; Stage 5 also lacks the project-selected
-accelerator/device validation data set. None may be represented as a formally
-qualified radiation-effects model.**
+Release status: **the Stage-4 TID, Stage-5 silicon damage, Stage-6 generic
+LET/hardness, and Stage-7 framework/downloaded proton-component implementations
+have registered automated gates. Stages 4 and 6 lack independent review; Stage
+5 also lacks the project-selected accelerator/device validation data set; Stage
+7 additionally lacks a complete isotope-resolved GCR scenario, the GOES
+boundary mapping, and complete source uncertainty. None may be represented as
+a formally qualified all-environment radiation-effects model.**
 
 The filename retains the spelling requested in the task. This document uses
 the normative words **must**, **should**, and **may** deliberately. A stage is
@@ -231,6 +234,42 @@ open assumptions:
     provenance-bearing `physics_reference` uncertainty component. Otherwise it
     is `not_assessable`. Stage 6 may be implemented and reference-tested without
     a reviewer, but formal completion requires the independent-review record.
+21. The Stage-7 implementation decisions approved on 2026-10-17 are:
+    (a) Stage 7 may implement and qualify its software framework and the
+    available downloaded components, but formal physical GCR/SEP qualification
+    remains incomplete until the explicitly missing inputs and earlier reviews
+    exist. Every machine-readable and human-readable status must retain that
+    distinction;
+    (b) the checksum-pinned AMS-02 BR2460 A=1 proton component is the admitted
+    GCR transport fixture. It uses all 45 published bins but remains
+    `incomplete_not_full_gcr`; it may not be relabeled as a complete GCR
+    environment, a production mission scenario, or an isotope-resolved heavy-
+    ion environment;
+    (c) the two GOES-16 SGPS directions remain separate. Event integration and
+    time-ledger tests are enabled, while Geant4 transport is disabled until a
+    documented sensor-to-simulation coordinate transform and angular response
+    are supplied. Isotropizing the directional measurements is forbidden;
+    (d) the representative matrix contains both 1 mm Al followed by 2 mm HDPE
+    and the reversed order, with independent 50 mm x 50 mm x 1 mm natural-
+    silicon and water slabs. A row requests only quantities already valid for
+    that source/material pair; proton `n_eq` and water DDD remain disabled;
+    (e) response values interpolate linearly in log energy; angular quadrature
+    is declared; extrapolation is refused; and the registered high-population
+    primary-proton transmission score must change by no more than 2% at the
+    final response-grid refinement. Rare-tailed TID is judged by the direct-
+    versus-matrix statistical gate rather than misused as a deterministic 2%
+    grid oracle;
+    (f) rare-contribution history allocation uses a pilot estimate followed by
+    stratified Neyman allocation with a minimum per stratum. It changes only
+    unbiased history counts and never enables Geant4 physics biasing. An
+    unresolved high-LET or neutron tail is `not_assessable`, not zero; and
+    (g) stochastic equivalence pools five independent seeds. Direct and
+    response-matrix TID must differ by no more than 10% and the difference must
+    be covered by the combined two-sided 95% statistical interval. Time tests
+    use exact event-onset/event-end and midpoint/source coordinates; analytic
+    covariance and sampled-ensemble paths are tested. When the real published
+    covariance is unavailable, physical source uncertainty remains incomplete
+    rather than being replaced by an independence assumption.
 
 For anomaly analysis, a calculated proxy is an environmental covariate, not by
 itself proof that radiation caused an anomaly. Results must preserve time
@@ -2011,24 +2050,204 @@ or vice versa.
 
 ### Stage 7 - published-spectrum end-to-end qualification
 
-Entry: Stages 2-6 for the requested outputs.  
-Work:
+**Status: software framework and downloaded AMS A=1 proton-component
+qualification implemented on 2026-10-17; formal physical GCR/SEP qualification
+is incomplete.** The implemented label is not a waiver of missing physical
+inputs. Formal completion still requires an approved isotope-resolved full-GCR
+scenario, the GOES sensor-to-simulation transform and angular response,
+complete physical uncertainty budgets, and the independent reviews already
+required by Stages 3--6.
 
-- run approved GCR and SEP cases across a small representative shield/absorber
-  matrix;
-- generate time-resolved rates and explicitly integrated exposures for anomaly
-  windows, retaining data gaps and configuration changes;
-- validate response interpolation and source uncertainty propagation;
-- establish event allocation/variance reduction for rare high-LET and neutron
-  contributions;
-- produce machine-readable reports and human review plots.
+Entry: the Stage-2 canonical source adapters and whichever Stage-4--6 quantity
+is enabled for a requested row. Stage 7 does not enlarge an earlier quantity's
+species, material, energy, or response domain.
 
-Tests: V4, the time-series tests in Section 3.7, direct-vs-matrix comparisons,
-and independent-seed ensembles.  
-Exit evidence: complete uncertainty/provenance reports and acceptance across
-the preregistered representative matrix.  
+The registered contract is
+`tests/reference_stage7/stage7_qualification_plan.v1.json`. It freezes the
+following representative matrix and cannot be silently widened by a test:
+
+- 1 mm natural aluminum followed by 2 mm HDPE, and the reversed layer order;
+- one independent 50 mm x 50 mm x 1 mm natural-silicon slab per stack;
+- one independent 50 mm x 50 mm x 1 mm water slab per stack;
+- TID only for the admitted AMS proton-component campaign because this is the
+  quantity already validated for both absorber materials and the incident
+  species; and
+- all 45 exact published AMS BR2460 A=1 proton bins. The source is labeled
+  `incomplete_not_full_gcr` in the plan, cases, results, exposures, evidence,
+  plots, and documentation.
+
+The source plane is 2 mm upstream of the shield front for this response
+qualification. This makes the transport response boundary explicit and avoids
+mixing a long free-flight finite-plane acceptance effect into energy-grid
+convergence. The geometry remains finite: the source, shield, and slab are all
+50 mm square, so physical lateral escape and grazing-angle acceptance remain in
+the response.
+
+Implemented time/exposure boundary:
+
+1. `shieldSim.time_resolved_exposure.v1` carries a strict UTC time system,
+   exact half-open interval start/end, original time coordinate, source and
+   response IDs/hashes, stack, absorber, attitude, coverage fraction, quality
+   state, rate units, and integrated units.
+2. Intervals must be ordered and contiguous in the ledger. Missing support is
+   represented by an explicit gap with zero coverage and no rates. Hidden gaps,
+   overlaps, local-time offsets, and invalid Gregorian dates are fatal.
+3. Configuration changes are split before folding; they are never averaged
+   into an unidentified response. Event-onset/event-end and independently
+   supplied anomaly timestamps remain distinct coordinates.
+4. Integration uses exact interval duration times declared coverage. Source
+   and response covariance components propagate with the full interval
+   quadratic form. A supplied source ensemble propagates sample by sample.
+5. An incomplete uncertainty block returns a numerical integrated exposure
+   with null standard uncertainty and `not_assessable` accuracy. It does not
+   synthesize missing covariance.
+
+Implemented response/quadrature boundary:
+
+1. The reusable library functions and `shieldSimExposureTool fold-spectrum`
+   interpolate response linearly in log energy, integrate explicit source-bin
+   densities by adaptive midpoint refinement, report the final relative
+   change, and reject all extrapolation.
+2. The transport qualification ultimately builds all 45 published-bin energy
+   representatives. It retains a nested 12-node every-fourth-bin grid and a
+   23-node every-second-bin grid as convergence predecessors. The first
+   refinement was triggered when the 12-node HDPE-to-Al matrix differed from
+   direct transport by 7.09% but 2.025 standard errors. The completed 23-node
+   comparison passed the 10% relative limit (7.17%) but remained just outside
+   the unchanged two-sided 95% gate (`z=2.078`), so the remaining 22 energy
+   representatives were added instead of weakening the gate. Three
+   Gauss-Legendre `mu`
+   nodes weighted for isotropic plane crossings and three Gauss-Legendre
+   azimuth nodes on the irreducible square-symmetry interval `[0,pi/4]` form
+   the declared angular quadrature. A two-endpoint azimuth development rule
+   differed from the continuous-source reversed-stack result by 12%; the
+   quadrature was refined rather than weakening the acceptance rule.
+3. Response cells are fully parsed and validated before selected-score matrix
+   assembly retains the silicon ionizing-deposition primitive and primary-
+   proton rear-face crossing count. This prevents unrelated diagnostic
+   covariance triangles from obscuring the review artifact without weakening
+   any cell-integrity or response-key check.
+4. The primary-proton crossing count is the preregistered high-population final
+   grid monitor and must change by no more than 2%. TID has a nuclear/secondary
+   tail at this campaign size and is therefore tested by its registered
+   stochastic equivalence rule, not claimed to be a noiseless 2% interpolation
+   oracle.
+5. Matrix weights name the exact matrix hash and declare interpolation and
+   quadrature policy. Missing nodes and changed geometry/material/physics/build
+   identities are fatal. Nonlinear quantities remain folds of primitive
+   scores, never interpolated ratios.
+
+Implemented variance-allocation boundary:
+
+- `shieldSimExposureTool allocate` consumes declared source weights, pilot
+  standard deviations, a total history count, and a minimum history count per
+  stratum. It returns a deterministic integer Neyman allocation with the exact
+  requested total.
+- The registered campaign runs independent 256-history pilots for the 12-node
+  base grid, 11 even-index refinement energies, and 22 final odd-index
+  energies. Each of five production replicates receives 73,728 base-grid
+  histories plus 56,320 first-refinement histories plus 112,640 exact-node
+  refinement histories, with at least 512 per cell (1,213,440 production
+  histories per stack). Each earlier allocation remains frozen when a later
+  refinement is added, so observed outcomes cannot change their stopping
+  counts. Production seeds are disjoint and pilot moments are excluded from
+  the response matrix, preventing a pilot fluctuation used for allocation from
+  also becoming a data-dependent stopping contribution to the estimator.
+- Allocation controls only how many unbiased histories are generated in each
+  source stratum. No Geant4 cross-section/importance/weight-window biasing is
+  enabled by this stage.
+- A zero or unresolved pilot tail retains the mandatory minimum. If the final
+  rare contribution remains statistically unresolved, the corresponding
+  science output is `not_assessable`; it is not silently treated as zero.
+- Both response and equal-history direct ensembles report the larger of their
+  propagated within-replicate and empirical between-replicate standard errors.
+  This symmetric rule was made explicit after the exact 45-node HDPE-to-Al
+  comparison returned `z=2.110` using only pooled direct event variance: its
+  five direct seed means spanned 0.598--0.731 MeV/primary and demonstrated a
+  between-seed standard error 20.8% above the pooled estimate. The estimator
+  mean, 10% relative gate, and two-sided `z <= 1.96` gate are unchanged.
+
+Implemented parallel-execution boundary:
+
+- Stage-7 task parallelism launches independent serial `shieldSim` cases in
+  unique directories. `SHIELDSIM_STAGE7_WORKERS` is a positive, CPU-bounded
+  scheduling parameter; it does not alter seeds, histories, inputs, result
+  ordering, or acceptance calculations.
+- A campaign restart hashes the driver, executables, registered plan,
+  material library, base case, and published fixtures. Within an identical
+  identity, a case is reused only if its canonical input and fixed event count
+  close and its result or response completion marker is valid. Worker count is
+  deliberately absent from the physics identity because it changes only
+  launch order.
+- Full response cells and covariance triangles are parsed by the C++ response
+  tool before retention. Response-only cases are then compacted to the two
+  registered primitive scores, their complete 2x2 covariance block, and a
+  content-hashed completion marker; their duplicate full result is removed.
+  Published/direct result documents remain unabridged. Missing or corrupted
+  compact artifacts are regenerated rather than accepted.
+- The production executable still uses serial `G4RunManager`. Direct
+  `mpiexec` is forbidden because ranks are not partitioned and would collide on
+  outputs. `G4MTRunManager` or multi-node MPI requires a later implementation
+  with thread/rank-local actions, tally reduction, random-stream policy,
+  output serialization, and serial-versus-parallel validation.
+
+Registered automated gates:
+
+1. `stage7_core` compares log-energy response interpolation and the adaptive
+   spectrum fold with a closed-form analytic solution; verifies exact
+   piecewise/partial/gap time integration; verifies the full covariance
+   quadratic form and an analytic sampled ensemble; checks deterministic
+   Neyman allocation; and exercises false-GCR/GOES and time/covariance rejection
+   boundaries.
+2. `stage7_boundaries` drives all three production CLI operations, repeats the
+   analytic time/quadrature/allocation solutions, and rejects unknown fields,
+   hidden gaps, timestamp offsets, extrapolation, a false full-GCR label, and
+   GOES transport without its missing mapping.
+3. `stage7_published_qualification` reruns the production AMS and GOES
+   adapters, verifies all GOES directions/channels and disabled transport,
+   executes the four stack x absorber AMS rows, and pools five fixed independent
+   direct seeds of 8,000 histories each per row. The 40,000-history total was
+   selected after a smaller development pilot failed to resolve the heavy TID
+   tail; the acceptance limits were not changed.
+4. For both silicon stacks, five independent direct quadrature seeds are
+   compared with selected-score response matrices. Direct versus matrix TID
+   must differ by no more than 10% and zero difference must remain inside the
+   combined two-sided 95% statistical interval. Direct and response standard
+   errors each use the conservative maximum of propagated within-replicate and
+   empirical between-replicate errors and must remain within 10% of their
+   respective means. The normal published sampler is independently compared
+   with the explicit quadrature.
+5. Every published matrix row is integrated over the exact AMS 27-day average
+   support. The numeric exposure must equal rate times duration exactly within
+   floating-point tolerance, while missing published covariance must preserve
+   `not_assessable` uncertainty.
+6. `validation_figures` renders every Stage-7 analytic and transport comparison
+   in PNG and SVG only after numeric gates pass. The manifest records captions,
+   hashes, and byte sizes; figures cannot change acceptance.
+
+Exit evidence satisfied for the implemented component/framework scope:
+versioned plan; strict JSON inputs/results; source/response hashes; code/build
+provenance; exact time ledgers; independent seeds; response cells and compact
+matrices; weights/folds; acceptance JSON; and review figures under the selected
+build/test-output directory. Test-generated artifacts are not committed as
+reference truth.
+
+Explicitly incomplete items:
+
+- the AMS A=1 proton component does not include the isotope-resolved full GCR
+  population needed for a mission environment;
+- GOES SGPS data retain directions and quality/gap semantics but cannot drive
+  transport before the physical sensor-to-boundary mapping is approved;
+- the AMS fixture does not provide the source covariance required for a
+  complete folded physical uncertainty; and
+- prior capability reviews and quantity-specific missing validation evidence
+  remain prerequisites rather than being inherited as passed by Stage 7.
+
 Forbidden carry-over: results outside validated energy, species, areal-density,
-material, and angular domains must be marked extrapolations or refused.
+material, angular, time-support, and response domains are refused or explicitly
+incomplete. Passing this stage cannot turn a source component into a complete
+environment, an ingestion product into a transport boundary, or a proxy into a
+causal anomaly conclusion.
 
 ### Stage 8 - CRaTER observational validation
 
@@ -2256,7 +2475,16 @@ assumption. The named capability remains disabled until its input is available:
    reviewer name, role/affiliation, date, findings, deviations/waivers, and
    disposition. Until then Stage 4 remains pending, even though its automated
    acceptance suite passes.
-8. **AMPS contract:** When available, the AMPS owner must provide the
+8. **Stage-7 full-environment and uncertainty inputs:** The implemented
+   campaign uses the downloaded AMS BR2460 A=1 proton component and explicitly
+   qualifies only that component. Formal physical GCR qualification needs an
+   approved isotope-resolved source across every species/energy domain used by
+   the requested proxy. The GOES directional event additionally needs the
+   mapping in item 2. A complete accuracy statement needs the actual source
+   covariance or a project-approved, provenance-bearing ensemble; the current
+   fixture does not provide it and the code will not infer independence.
+   Completion also inherits the applicable Stage-3--6 review/validation items.
+9. **AMPS contract:** When available, the AMPS owner must provide the
    authoritative schema, units, coordinate frame, uncertainty semantics,
    version, and frozen example. No adapter implementation begins before then.
 

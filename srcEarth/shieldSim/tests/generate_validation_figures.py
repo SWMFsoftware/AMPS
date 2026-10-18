@@ -671,6 +671,9 @@ def main() -> int:
     stage6_core = load_evidence("stage6_core.json")
     stage6_reference = load_evidence("stage6_reference.json")
     stage6_transport = load_evidence("stage6_transport.json")
+    stage7_core = load_evidence("stage7_core.json")
+    stage7_boundaries = load_evidence("stage7_boundaries.json")
+    stage7_published = load_evidence("stage7_published_qualification.json")
     entries: list[dict] = []
 
     comparison_figure(
@@ -796,6 +799,38 @@ def main() -> int:
         "Numerical tests also enforce histogram closure and undefined zero denominators.",
         entries,
     )
+    comparison_figure(
+        stage7_core,
+        "Stage 7 time, covariance, and response-quadrature algebra",
+        "stage7_core_analytic",
+        "Log-energy response integration, piecewise time integration with an explicit gap, "
+        "full interval covariance propagation, and sampled-ensemble propagation are compared "
+        "with independent analytic values. These deterministic checks validate algebra and "
+        "strict boundaries, not a complete GCR or SEP environment.",
+        entries,
+    )
+    comparison_figure(
+        stage7_boundaries,
+        "Stage 7 executable-boundary analytic checks",
+        "stage7_boundaries_analytic",
+        "The production Stage-7 CLI is compared with exact gap-preserving time integration, "
+        "analytic adaptive response quadrature, and an exact Neyman history total. Separate "
+        "numeric assertions reject hidden gaps, extrapolation, false full-GCR labels, and GOES "
+        "transport without a boundary mapping.",
+        entries,
+    )
+    comparison_figure(
+        stage7_published,
+        "Stage 7 downloaded AMS proton-component qualification",
+        "stage7_published_component_comparisons",
+        "Five-seed direct transport, explicit energy/angle quadrature, and response-matrix folds "
+        "at all 45 published energy representatives are compared for both Al/HDPE layer orders; "
+        "the nested-grid monitors are also shown. Direct and response uncertainties use the "
+        "larger of within- and between-replicate standard errors for the rare TID tail. This "
+        "qualifies the downloaded AMS A=1 proton component only. It is not a full GCR "
+        "environment, and GOES transport remains disabled pending angular mapping.",
+        entries,
+    )
 
     # Keep transient adapter products beside the configured build artifacts.
     # This honors the repository test-output boundary and avoids hidden /tmp
@@ -910,6 +945,9 @@ def main() -> int:
         "stage6_core_analytic",
         "stage6_electronic_stopping_reference",
         "stage6_transport_comparisons",
+        "stage7_core_analytic",
+        "stage7_boundaries_analytic",
+        "stage7_published_component_comparisons",
     }
     require(
         {pathlib.Path(item["file"]).stem for item in entries} == expected_stems,

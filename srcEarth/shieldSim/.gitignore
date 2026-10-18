@@ -1,0 +1,7 @@
+# Runtime and validation artifacts are intentionally generated below the
+# project-owned test_output tree (never /tmp) but are not reference inputs.
+/test_output/
+
+# Python bytecode is never a validation artifact.
+__pycache__/
+*.py[cod]

@@ -1,5 +1,9 @@
 # Versioned case examples
 
+For compiler/runtime setup, output-directory conventions, and complete command
+sequences, see [`../RUN.md`](../RUN.md). This file concentrates on the physical
+meaning and schema boundaries of each example.
+
 `stage1_case.json` is the smallest complete science-facing Stage-1 input. It
 defines every world, source-plane, shield, placement, and absorber dimension;
 uses two ordered shield layers; and requests two **independent** slab absorber
@@ -203,3 +207,29 @@ complete structured uncertainty budget with a provenance-bearing
 `physics_reference` component. Stage 6 is implemented and reference-tested but
 remains pending independent review; this example does not validate CRaTER,
 instrument response, device response, organ dose, or crew risk.
+
+## Stage-7 time-resolved exposure example
+
+`stage7_time_resolved_exposure.json` demonstrates the strict
+`shieldSim.time_resolved_exposure.v1` contract:
+
+```bash
+mkdir -p test_output/stage7_example
+test_output/build/shieldSimExposureTool integrate \
+  examples/stage7_time_resolved_exposure.json \
+  test_output/stage7_example/exposure.json
+```
+
+It contains valid and partial intervals, an explicit gap, a shield/attitude
+configuration change, source/response hashes, and an anomaly timestamp. The
+integration ledger uses exact UTC event-onset/event-end coordinates; a gap is
+not interpolated, and the anomaly marker does not redefine an interval. The
+example intentionally has an incomplete uncertainty block, so its integrated
+exposure is calculated but its accuracy remains `not_assessable`.
+
+This is an algebra/interface example, not a physical GCR or SEP environment.
+The Stage-7 registered test separately transports all bins of the downloaded
+AMS A=1 proton component through both Al/HDPE layer orders and Si/water slabs.
+That component remains incomplete GCR. GOES directions remain separate and
+transport-disabled pending a documented sensor-to-boundary transform and
+angular response.

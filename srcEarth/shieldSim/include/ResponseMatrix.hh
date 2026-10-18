@@ -45,6 +45,17 @@ struct ResponseCell {
 class ResponseMatrix {
 public:
   static ResponseMatrix Assemble(const std::vector<std::string>& responseCellPaths);
+  // Assemble a matrix containing only the explicitly requested primitive
+  // scores.  A Geant4 response cell records many diagnostic scores and the
+  // complete score covariance triangle can dominate the matrix size.  Stage-7
+  // qualification needs only its registered dose and grid-monitor scores, so
+  // this operation validates the complete cells first and then removes all
+  // other scores and covariance pairs.  It fails if any requested score is
+  // absent from any cell; selection can therefore never create a ragged
+  // response matrix or silently substitute a different observable.
+  static ResponseMatrix AssembleSelected(
+      const std::vector<std::string>& responseCellPaths,
+      const std::vector<std::string>& scoreIds);
   static ResponseMatrix Load(const std::string& manifestPath);
 
   // Writes the canonical manifest and a long-form CSV table beside it.  JSON

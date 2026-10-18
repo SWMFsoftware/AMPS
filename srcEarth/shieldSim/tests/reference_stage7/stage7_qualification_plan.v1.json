@@ -1,0 +1,139 @@
+{
+  "schema_version": "shieldSim.stage7_qualification_plan.v1",
+  "decision_date": "2026-10-17",
+  "status": "approved_software_framework_incomplete_physical_gcr_goes_qualification",
+  "published_sources": {
+    "gcr": {
+      "dataset_id": "AMS02_BR2460_2013-11-18",
+      "component_id": "proton",
+      "transport_status": "verification_test_only",
+      "environment_completeness": "incomplete_not_full_gcr",
+      "forbidden_claim": "complete_GCR_environment"
+    },
+    "sep": {
+      "dataset_id": "GOES16_SGPS_GLE72",
+      "directions": ["-X", "+X"],
+      "transport_status": "disabled_missing_boundary_mapping",
+      "enabled_scope": "ingestion_and_time_integration_only",
+      "forbidden_transform": "isotropic"
+    }
+  },
+  "representative_matrix": {
+    "geometry": {
+      "transverse_dimensions_mm": [50.0, 50.0],
+      "source_plane_z_mm": -22.0,
+      "shield_front_z_mm": -20.0,
+      "absorber_front_z_mm": -16.0,
+      "source_to_shield_gap_mm": 2.0
+    },
+    "shield_stacks": [
+      {
+        "stack_id": "al_then_hdpe",
+        "layers": [
+          {"material": "Al", "geometric_thickness_mm": 1.0},
+          {"material": "HDPE", "geometric_thickness_mm": 2.0}
+        ]
+      },
+      {
+        "stack_id": "hdpe_then_al",
+        "layers": [
+          {"material": "HDPE", "geometric_thickness_mm": 2.0},
+          {"material": "Al", "geometric_thickness_mm": 1.0}
+        ]
+      }
+    ],
+    "absorbers": [
+      {
+        "absorber_id": "silicon_slab",
+        "material": "Si",
+        "dimensions_mm": [50.0, 50.0, 1.0],
+        "enabled_quantities": ["TID", "DDD", "LET", "H100/10"],
+        "disabled_quantities": ["n_eq_for_proton_source"]
+      },
+      {
+        "absorber_id": "water_slab",
+        "material": "Water",
+        "dimensions_mm": [50.0, 50.0, 1.0],
+        "enabled_quantities": ["TID", "LET", "H100/10"],
+        "disabled_quantities": ["DDD", "n_eq"]
+      }
+    ]
+  },
+  "response_policy": {
+    "energy_interpolation": "linear_response_in_log_energy",
+    "angular_interpolation": "bilinear_mu_periodic_phi",
+    "extrapolation": "refuse",
+    "adaptive_quadrature_relative_change_max": 0.02,
+    "source_bin_representation": "exact_edges_piecewise_constant_differential_intensity"
+  },
+  "event_allocation": {
+    "policy": "pilot_neyman_no_transport_biasing",
+    "minimum_per_stratum_required": true,
+    "unresolved_rare_output": "not_assessable"
+  },
+  "execution": {
+    "direct_seeds": [710003, 710021, 710047, 710083, 710111],
+    "direct_histories_per_seed": 8000,
+    "response_pilot_histories_per_cell": 256,
+    "response_production_replicates": 5,
+    "response_production_histories_per_replicate": 73728,
+    "response_production_total_histories_per_stack": 368640,
+    "response_production_minimum_histories_per_cell": 512,
+    "response_refinement_total_histories_per_replicate": 56320,
+    "response_refinement_total_histories_per_stack": 281600,
+    "response_refinement_minimum_histories_per_cell": 512,
+    "response_refinement_energy_indices": [2, 6, 10, 14, 18, 22, 26, 30, 34, 38, 42],
+    "response_exact_refinement_total_histories_per_replicate": 112640,
+    "response_exact_refinement_total_histories_per_stack": 563200,
+    "response_exact_refinement_minimum_histories_per_cell": 512,
+    "response_exact_refinement_energy_indices": [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37, 39, 41, 43],
+    "response_pilot_seed_base": 720001,
+    "response_production_seed_bases": [820001, 920001, 1020001, 1120001, 1220001],
+    "response_seed_rule": "replicate_base + stack_index*10000 + published_energy_index*100 + mu_index*10 + phi_index",
+    "base_published_energy_indices": [0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44],
+    "coarse_published_energy_indices": [0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44],
+    "fine_published_energy_indices": [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44],
+    "exact_published_energy_indices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44],
+    "mu_nodes": [0.1127016653792583, 0.5, 0.8872983346207417],
+    "mu_rule": "three_point_Gauss_Legendre_on_0_1_times_isotropic_plane_density_2mu",
+    "phi_nodes_rad": [0.08851568100070324, 0.39269908169872414, 0.696882482396745],
+    "phi_weights": [0.2777777777777778, 0.4444444444444444, 0.2777777777777778],
+    "phi_rule": "three_point_Gauss_Legendre_on_square_symmetry_interval_0_pi_over_4",
+    "pilot_use": "allocation_only_excluded_from_production_matrix",
+    "parallel_execution": "bounded independent serial shieldSim processes; unique case directories and unchanged per-case seeds/history counts",
+    "selected_response_scores": [
+      "absorber/silicon_slab/ionizing_deposited_energy_MeV",
+      "shield_exit/primary/proton/crossing_count"
+    ]
+  },
+  "corrective_refinement_history": {
+    "trigger": "The 23-energy-node HDPE-then-Al comparison passed the 10 percent relative gate but returned z=2.078, above the unchanged 1.96 two-sided 95 percent gate.",
+    "action": "Add the remaining 22 published energy representatives with an independent pilot and frozen allocation, then fold all 45 exact published representatives.",
+    "unchanged_acceptance": true,
+    "prior_samples_retained_without_rebudgeting": true,
+    "exact_grid_followup": "The 45-node result returned z=2.110 when direct uncertainty used only the pooled event-level estimate. The five reversed-stack direct seed means had an empirical between-seed standard error 20.8 percent larger than the pooled estimate. The already registered max-within-between rare-tail rule was therefore applied symmetrically to direct and response ensembles; means and acceptance limits remain unchanged."
+  },
+  "acceptance": {
+    "independent_seed_count": 5,
+    "direct_vs_matrix_relative_difference_max": 0.10,
+    "direct_vs_matrix_statistical_rule": "difference_covered_by_combined_two_sided_95_percent_interval",
+    "response_grid_monitor": "shield_exit/primary/proton/crossing_count",
+    "response_grid_final_refinement_relative_change_max": 0.02,
+    "response_replicate_relative_standard_error_max": 0.10,
+    "response_replicate_uncertainty_rule": "max(propagated_within_replicate_standard_error, empirical_between_replicate_standard_error)",
+    "direct_replicate_relative_standard_error_max": 0.10,
+    "direct_replicate_uncertainty_rule": "max(propagated_within_replicate_standard_error, empirical_between_replicate_standard_error)",
+    "time_integration": "analytic_exactness_with_explicit_gaps",
+    "source_uncertainty": "analytic_covariance_and_sampled_ensemble_paths",
+    "physical_source_uncertainty_status_when_covariance_unpublished": "incomplete_not_assessable"
+  },
+  "completion_boundary": {
+    "implemented_label": "stage7_software_framework_and_component_qualification_implemented",
+    "formal_completion_requires": [
+      "approved isotope-resolved full GCR scenario",
+      "GOES sensor-to-simulation transform and angular response",
+      "completed physical uncertainty budgets",
+      "required prior-stage independent reviews"
+    ]
+  }
+}
