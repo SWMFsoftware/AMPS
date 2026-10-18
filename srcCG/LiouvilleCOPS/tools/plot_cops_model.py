@@ -3,9 +3,18 @@
 
 Opens a matplotlib window with four panels: NG and RG pressure together (NG solid lines/dots, RG dashed
 lines/squares), NG pressure, RG pressure and the NG/RG ratio. The reference
-data are drawn as dots; points not used in the fit (useNG/useRG=0: data gaps, excluded intervals, gauge
-inside the nucleus) are drawn hollow. Each model run is a line; the check boxes on the right switch
+data are drawn as dots; points not selected by the run chosen with ``--ref``
+(useNG/useRG=0: data gaps, excluded intervals, gauge inside the nucleus) are
+drawn hollow. When displaying a Python fit, choose that fit with ``--ref`` so
+the markers show the fit's actual selection rather than the base input's
+selection. Each model run is a line; the check boxes on the right switch
 the runs (and the reference data) on and off. The 'All' and 'None' buttons switch all runs.
+
+Schema-v2 Python fit tables are accepted only when their bytes and associated
+fit_report.json match fit_manifest.json and their report/profile/selection/
+basis identities agree. Their labels show profile, enhancement degree, lambda,
+and a short report identity. Unmanifested historical tables are explicitly
+labelled legacy.
 
 
 DATA SOURCES
@@ -14,8 +23,8 @@ DATA SOURCES
                    converted by LiouvilleCOPS with ReferenceDataUnit = mbar). The table is identical to the ROSINA COPS
                    L2 BG housekeeping pressures of the PSA/PDS3 data set RO-C-ROSINA-2-EXT3-V2.0 (N2-equivalent
                    pressures, 20 C; time = end of each housekeeping interval). 0 in the table = no valid value
-                   (e.g. NG 10:24:42-10:33:14). useNG/useRG = 0 marks the points not used in the fit (no data,
-                   ExcludeNG/ExcludeRG/FitInterval of the run, gauge inside the shape model).
+                   (e.g. NG 10:24:42-10:33:14). useNG/useRG = 0 marks the points not selected in the run chosen by
+                   --ref (no data, its fit selection or ExcludeNG/ExcludeRG/FitInterval, gauge inside the shape).
   Model            columns pNG, pRG [Pa] (and the species columns) of each LiouvilleCOPS run, or of a fit written by
                    tools/fit_cops.py (species columns -1).
   Geometry         UTC and altitude columns: SPICE geometry of the run (altitude = distance to the nearest point of
@@ -27,17 +36,21 @@ usage:
 Without arguments, output*/COPS_model.dat under <AMPS>/cops_output is loaded;
 the legacy application directory is searched only if no new runs exist.
 Relative --save paths are written under cops_output (or COPS_OUTPUT_ROOT).
-The reference data are taken from the most recently modified run that has the useNG/useRG columns, or from
---ref RUN. With --x altitude the reference points are placed at the altitudes of that run (shape model dependent).
+The reference data, useNG/useRG marker masks, and reference geometry are taken from the most recently modified run
+that has the useNG/useRG columns, or from --ref RUN. With --x altitude the reference points are placed at the
+altitudes of that run (shape model dependent).
 """
 import argparse
 import glob
+import json
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 
 from cops_paths import APP_ROOT, output_root, prepare_output, product_input
-from cops_io import ProductError, manifest_summary
+from cops_io import (FIT_SCHEMA, RUN_SCHEMA, ProductError, load_manifest,
+                     manifest_summary, sha256_file)
 
 import numpy as np
 import matplotlib
@@ -96,6 +109,32 @@ class Run:
         except ProductError as exc:
             raise ValueError("invalid product manifest: %s" % exc) from None
 
+        def header_value(key):
+            values = [item.split("=", 1)[1].rstrip(";")
+                      for line in self.header for item in line.split()
+                      if item.startswith(key + "=")]
+            if len(set(values)) > 1:
+                raise ValueError("conflicting %s values in table header" % key)
+            return values[0] if values else None
+
+        self.table_schema = schemas[0].rstrip(";") if schemas else None
+        self.profile = header_value("FitProfile")
+        self.selection_identity = header_value("SelectionSHA256")
+        self.report_identity = header_value("ReportIdentity")
+        self.basis_id = header_value("ActivityBasisID")
+        self.enhancement_degree = header_value("EnhancementDegree")
+        self.fit_lambda = header_value("Lambda")
+        self.regularization = header_value("Regularization")
+        self.fit_manifest = None
+        self.fit_record = None
+        self.run_manifest = None
+        self.activity_identity = None
+        self.provenance_label = "legacy-unmanifested"
+        if self.table_schema == "liouville_cops_fit_prediction_v2":
+            self._load_fit_identity()
+        elif self.kind != "legacy-unmanifested":
+            self._load_forward_identity()
+
         self.col = {n: i for i, n in enumerate(names)}
         self.t = np.array([datetime.strptime(r[self.col["UTC"]], "%Y-%m-%dT%H:%M:%S") for r in rows])
 
@@ -119,6 +158,97 @@ class Run:
         self.mtime = os.path.getmtime(fname)
         self.has_flags = self.useNG is not None
 
+    def _load_fit_identity(self):
+        """Require a matching manifest/report for every schema-v2 fit table."""
+        table = Path(self.fname).resolve()
+        manifest_path = table.parent / "fit_manifest.json"
+        if not manifest_path.is_file() and table.parent.name.startswith("lambda="):
+            manifest_path = table.parent.parent / "fit_manifest.json"
+        if not manifest_path.is_file():
+            raise ValueError("fit prediction has no fit_manifest.json")
+        manifest = load_manifest(manifest_path, FIT_SCHEMA)
+        outputs = manifest.get("outputs", {})
+        if table.parent == manifest_path.parent:
+            declared = outputs
+            result_directory = "."
+        else:
+            result_directory = table.parent.name
+            declared = outputs.get("lambda_directories", {}).get(result_directory, {})
+        identity = declared.get("COPS_model.dat")
+        if identity is None:
+            raise ValueError("fit manifest does not declare this COPS_model.dat")
+        if table.stat().st_size != identity.get("size_bytes") or \
+                sha256_file(table) != identity.get("sha256"):
+            raise ValueError("COPS_model.dat does not match its fit manifest identity")
+
+        records = [record for record in manifest.get("optimizer_results", [])
+                   if record.get("result_directory", ".") == result_directory]
+        if len(records) != 1:
+            raise ValueError("fit manifest has no unique optimizer result for %s" %
+                             result_directory)
+        record = records[0]
+        manifest_report = record.get("report_identity")
+        if not self.report_identity or self.report_identity != manifest_report:
+            raise ValueError("table and manifest report identities do not agree")
+
+        report_path = table.parent / "fit_report.json"
+        report_identity_record = declared.get("fit_report.json")
+        if report_identity_record is None or not report_path.is_file():
+            raise ValueError("fit report is absent from the declared outputs")
+        if (report_path.stat().st_size != report_identity_record.get("size_bytes") or
+                sha256_file(report_path) != report_identity_record.get("sha256")):
+            raise ValueError("fit_report.json does not match its manifest identity")
+        try:
+            report = json.loads(report_path.read_text())
+        except (OSError, ValueError) as exc:
+            raise ValueError("cannot read fit_report.json: %s" % exc) from None
+        if report.get("report_identity") != self.report_identity:
+            raise ValueError("table and fit_report.json identities do not agree")
+
+        enhancement = manifest.get("activity_enhancement", {})
+        expected_basis = (enhancement.get("basis_id") if enhancement.get("enabled")
+                          else "legacy_srcCG_25")
+        if not self.basis_id or self.basis_id != expected_basis:
+            raise ValueError("table and manifest activity basis IDs do not agree")
+        expected_profile = manifest.get("selection", {}).get("profile") or \
+            "legacy_cli_selection"
+        if self.profile != expected_profile:
+            raise ValueError("table and manifest selection profiles do not agree")
+        if self.selection_identity != manifest.get("selection", {}).get("sha256"):
+            raise ValueError("table and manifest selection identities do not agree")
+
+        self.fit_manifest = manifest
+        self.fit_record = record
+        self.provenance_label = "fit manifest/report verified"
+
+    def _load_forward_identity(self):
+        """Verify and expose activity identity for a manifested C++ table."""
+        table = Path(self.fname).resolve()
+        manifest_path = table.parent / "run_manifest.json"
+        if not manifest_path.is_file():
+            raise ValueError("manifested forward table has no run_manifest.json")
+        manifest = load_manifest(manifest_path, RUN_SCHEMA)
+        identity = manifest.get("outputs", {}).get("model_table")
+        if identity is None:
+            raise ValueError("run manifest does not declare its COPS_model.dat")
+        if table.stat().st_size != identity.get("size_bytes") or \
+                sha256_file(table) != identity.get("sha256"):
+            raise ValueError("COPS_model.dat does not match its run manifest identity")
+        enhancement = manifest.get("activity_enhancement", {})
+        self.run_manifest = manifest
+        if enhancement.get("enabled"):
+            self.basis_id = enhancement.get("basis_id")
+            self.enhancement_degree = str(enhancement.get("maximum_degree"))
+            self.fit_lambda = str(enhancement.get("lambda"))
+            coefficient = enhancement.get("coefficient_file", {})
+            self.activity_identity = coefficient.get("sha256")
+            self.provenance_label = "forward manifest verified; enhancement enabled"
+        else:
+            self.basis_id = "legacy_srcCG_25"
+            self.enhancement_degree = "4"
+            self.activity_identity = enhancement.get("legacy_activity_identity")
+            self.provenance_label = "forward manifest verified; enhancement disabled"
+
     def description(self):
         keys = ("ShapeModel=", "FlightTimeRotation=", "SurfaceBC=", "TemperatureModel=", "NGAcceptance=",
                 "RGPressureModel=", "TemperatureRGMode=", "ReferenceDataUnit=", "NGHeadOnWeight=")
@@ -136,7 +266,35 @@ class Run:
         status = "%s process=%s" % (self.kind, process)
         if optimizer and optimizer != "not_applicable":
             status += " optimizer=" + optimizer
+        if self.fit_manifest is not None:
+            out.extend(["profile=" + self.profile,
+                        "basis=" + self.basis_id,
+                        "L=" + self.enhancement_degree,
+                        "lambda=" + self.fit_lambda,
+                        "regularization=" + self.regularization,
+                        "report=" + self.report_identity[:12]])
+        elif self.run_manifest is not None:
+            activity_short = str(self.activity_identity).split(":")[-1][:12]
+            out.extend(["basis=" + str(self.basis_id),
+                        "L=" + str(self.enhancement_degree),
+                        "activity=" + activity_short])
+            if self.fit_lambda is not None:
+                out.append("lambda=" + self.fit_lambda)
+        elif self.kind == "legacy-unmanifested":
+            out.append("LEGACY/UNMANIFESTED")
         return status + " " + " ".join(out)
+
+    def display_name(self):
+        """Short checkbox label that prevents silent fit-profile mixing."""
+        if self.fit_manifest is None:
+            if self.run_manifest is not None:
+                activity = str(self.activity_identity).split(":")[-1][:8]
+                return "%s [forward,L%s,activity=%s]" % (
+                    self.name, self.enhancement_degree, activity)
+            suffix = " [legacy]" if self.kind == "legacy-unmanifested" else ""
+            return self.name + suffix
+        return "%s [%s,L%s,lambda=%s]" % (
+            self.name, self.profile, self.enhancement_degree, self.fit_lambda)
 
 
 def find_runs(args):
@@ -167,12 +325,24 @@ def main(default_x="time"):
     p.add_argument("--x", choices=["time", "altitude"], default=default_x, help="horizontal axis (default: %(default)s)")
     p.add_argument("--save", default=None, help="save under cops_output (or absolute path outside LiouvilleCOPS) instead of opening a window")
     p.add_argument("--theme", choices=["light", "dark"], default="light")
-    p.add_argument("--ref", default=None, help="run that provides the reference data and their altitudes (default: newest run with useNG/useRG)")
+    p.add_argument("--ref", default=None,
+                   help="run that provides reference data, useNG/useRG marker masks, and altitudes "
+                        "(default: newest run with useNG/useRG)")
     args = p.parse_args()
 
     runs = find_runs(args.runs)
     if not runs:
         sys.exit("No model runs found")
+
+    # Directory basenames are not unique in arbitrary comparisons (lambda scan
+    # children are a common example).  Use the full scientific label as the UI
+    # key and disambiguate exact duplicates deterministically.
+    used_labels = {}
+    for run in runs:
+        base_label = run.display_name()
+        used_labels[base_label] = used_labels.get(base_label, 0) + 1
+        run.plot_label = (base_label if used_labels[base_label] == 1 else
+                          "%s #%d" % (base_label, used_labels[base_label]))
 
     flagged = [r for r in runs if r.has_flags]
     if args.ref:
@@ -183,7 +353,7 @@ def main(default_x="time"):
     else:
         ref = max(flagged, key=lambda r: r.mtime) if flagged else max(runs, key=lambda r: r.mtime)
 
-    print("Reference data from: %s" % ref.fname)
+    print("Reference data and selection masks from: %s" % ref.fname)
     print("Runs:")
     for i, r in enumerate(runs):
         print("  %2d %-24s %s" % (i, r.name, r.description()))
@@ -232,13 +402,13 @@ def main(default_x="time"):
     for i, r in enumerate(runs):
         col = pal[i % len(pal)]
         ls = LINESTYLES[(i // len(pal)) % len(LINESTYLES)]
-        colors[r.name] = (col, ls)
+        colors[r.plot_label] = (col, ls)
         kw = dict(color=col, ls=ls, lw=1.3, zorder=3)
-        artists[r.name] = [axNG.plot(X(r), r.pNG, **kw)[0],
-                           axRG.plot(X(r), r.pRG, **kw)[0],
-                           axR.plot(X(r), r.pNG / r.pRG, **kw)[0],
-                           axBoth.plot(X(r), r.pNG, color=col, ls="-", lw=1.4, zorder=3)[0],
-                           axBoth.plot(X(r), r.pRG, color=col, ls="--", lw=1.2, zorder=3)[0]]
+        artists[r.plot_label] = [axNG.plot(X(r), r.pNG, **kw)[0],
+                                 axRG.plot(X(r), r.pRG, **kw)[0],
+                                 axR.plot(X(r), r.pNG / r.pRG, **kw)[0],
+                                 axBoth.plot(X(r), r.pNG, color=col, ls="-", lw=1.4, zorder=3)[0],
+                                 axBoth.plot(X(r), r.pRG, color=col, ls="--", lw=1.2, zorder=3)[0]]
 
     from matplotlib.lines import Line2D
     keyNG = Line2D([], [], color=c["ink2"], ls="-", marker="o", ms=3.5, lw=1.4, label="NG: model solid, data dots")
@@ -270,10 +440,15 @@ def main(default_x="time"):
     for ax in (axBoth, axNG, axRG):
         plt.setp(ax.get_xticklabels(), visible=False)
 
-    axBoth.set_title("COPS reference data and LiouvilleCOPS runs (hollow: not used in the fit)", loc="left", fontsize=11, color=c["ink"])
+    ref_context = ("profile=%s, report=%s" %
+                   (ref.profile, ref.report_identity[:12])
+                   if ref.fit_manifest is not None else ref.provenance_label)
+    axBoth.set_title("COPS reference data and LiouvilleCOPS runs "
+                     "(hollow: not selected by %s; %s)" % (ref.name, ref_context),
+                     loc="left", fontsize=11, color=c["ink"])
 
     #controls: one check box per run, colored like its line
-    labels = ["reference"] + [r.name for r in runs]
+    labels = ["reference"] + [r.plot_label for r in runs]
     h = min(0.86, 0.035 * len(labels))
     axCheck = fig.add_axes([0.75, 0.96 - h, 0.24, h])
     axCheck.set_facecolor(c["surface"])
@@ -321,7 +496,15 @@ def main(default_x="time"):
 
     if args.save:
         saved = prepare_output(args.save)
-        fig.savefig(saved, dpi=130, facecolor=c["surface"])
+        identities = ",".join(
+            r.report_identity or
+            ("forward:" + str(r.activity_identity)
+             if r.run_manifest is not None else "legacy-unmanifested")
+            for r in runs)
+        fig.savefig(saved, dpi=130, facecolor=c["surface"], metadata={
+            "Title": "LiouvilleCOPS pressure comparison",
+            "Description": "report identities=" + identities,
+        })
         print("Figure written: %s" % saved)
     else:
         plt.show()

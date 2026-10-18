@@ -229,6 +229,18 @@ class ProductIntegrationTests(unittest.TestCase):
         self.assertEqual(fit_manifest["states"]["process"], "complete")
         self.assertEqual(fit_manifest["states"]["cache"], "verified")
         self.assertEqual(fit_manifest["states"]["cpp_prediction_agreement"], "not_run")
+        for name in ("fit_report.json", "activity_facets.dat",
+                     "activity_degree_power.dat", "activity_region_diagnostics.dat",
+                     "activity_maps.png", "pressure_residuals.dat",
+                     "pressure_comparison_time.png",
+                     "pressure_comparison_altitude.png", "pressure_residuals.png"):
+            self.assertTrue((fitted / name).is_file(), name)
+            self.assertIn(name, fit_manifest["outputs"])
+        report_identity = fit_manifest["optimizer_results"][0]["report_identity"]
+        self.assertEqual(json.loads((fitted / "fit_report.json").read_text())
+                         ["report_identity"], report_identity)
+        self.assertIn("ActivityFit.txt",
+                      fit_manifest["optimizer_results"][0]["coefficient_files"])
         lines = (fitted / "COPS_model.dat").read_text().splitlines()
         names = next(line[1:].split() for line in lines if line.startswith("#iPoint "))
         row = next(line.split() for line in lines if line and not line.startswith("#"))
@@ -245,6 +257,32 @@ class ProductIntegrationTests(unittest.TestCase):
                           "output_small_fit_verify"], cwd=self.work)
         fit_manifest = json.loads((fitted / "fit_manifest.json").read_text())
         self.assertEqual(fit_manifest["states"]["cpp_prediction_agreement"], "verified")
+
+        # The Stage-A4 path must preserve the same independent verification
+        # workflow while adding a legitimate enhancement dependency.  This
+        # specifically guards the validator's geometry-dependency comparison:
+        # activity files may differ, shape/observation/SPICE/HK files may not.
+        self.run_command([
+            sys.executable, str(APP / "tools/fit_cops.py"), "output_small",
+            "--enhancement-degree", "5", "--fix-legacy-activity",
+            "--fix-temperature", "--fix-kappa", "--max-nfev", "1",
+            "--lambda", "0.001", "--out", "enhanced_small"], cwd=self.work)
+        enhanced = self.out / "enhanced_small"
+        self.assertTrue((enhanced / "ActivityEnhancementFit.txt").is_file())
+        self.assertTrue((enhanced / "ActivityEnhancementFacets.dat").is_file())
+        self.run_command([
+            sys.executable, str(APP / "tools/plot_cops_model.py"),
+            "enhanced_small", "--save", "plots/enhanced_fit.png"], cwd=self.work)
+        self.assertTrue((self.out / "plots/enhanced_fit.png").is_file())
+        self.run_command([str(APP / "liouville_cops"),
+                          "enhanced_small/cops_fit.in"])
+        self.run_command([
+            sys.executable, str(APP / "tools/validate_cops_run.py"),
+            "--fit", "enhanced_small", "--verification",
+            "enhanced_small_verify"], cwd=self.work)
+        enhanced_manifest = json.loads((enhanced / "fit_manifest.json").read_text())
+        self.assertEqual(enhanced_manifest["states"]["cpp_prediction_agreement"],
+                         "verified")
 
     def test_geometry_only_matches_full_geometry(self):
         full = self.make_base("output_geometry_full")

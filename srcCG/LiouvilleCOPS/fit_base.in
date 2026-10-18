@@ -51,6 +51,11 @@ GaugeOffsetSC  = 0 0 0            # COPS position relative to the spacecraft ref
 
 #---------------------------------------------------------------- surface source (srcCG model)
 ActivityModel   = shap5           # shap5 | shap5_1   (srcCG spherical-harmonic activity coefficients)
+# Optional H2O-only degree-5--8 residual; keep disabled when constructing the legacy fitting base.
+ActivityEnhancementModel = none  # none | real_spherical_harmonics_v1
+ActivityEnhancementDegree = 4    # 4 is the explicit no-enhancement control
+#ActivityEnhancementFile = examples/activity_enhancement_zero_l5.txt
+#ActivityEnhancementScale = 1.0   # optional duplicate; must exactly match the enabled file
 SZAMode         = continuous      # continuous | srccg_table (integer-degree truncation of srcCG)
 CastShadows     = on              # ray-traced shadows; shadowed elements use the night-side source
 TemperatureModel = analytical     # analytical | constant | bjorn

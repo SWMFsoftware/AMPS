@@ -336,7 +336,7 @@ int main(int argc,char **argv) {
     }
     //A trusted wrapper may create a fresh directory first to archive its own
     //input/log.  It still cannot authorize replacement of scientific output.
-    for (const char* name : {"COPS_model.dat","elements.bin","kernels","run_manifest.json"})
+    for (const char* name : {"COPS_model.dat","elements.bin","kernels","ActivityEnhancementFacets.dat","run_manifest.json"})
       if (std::filesystem::exists(std::filesystem::path(OutDir)/name)) {
         fprintf(stderr,"Error: existing scientific output is never overwritten: %s/%s\n",OutDir.c_str(),name);
         return EXIT_FAILURE;
@@ -368,7 +368,7 @@ int main(int argc,char **argv) {
   double RefToPa=(RefUnit=="mbar") ? 100.0 : 1.0;
 
   cSourceModel source;
-  source.Init(input,mesh);
+  source.Init(input,mesh,spice.BodyFrame);
 
   cGaugeModel gauges;
   gauges.Init(input);
@@ -461,6 +461,8 @@ int main(int argc,char **argv) {
     MakeDirectory(OutDir+"/kernels");
     source.WriteElements(OutDir+"/elements.bin",mesh);
   }
+  if (!GeometryOnly&&source.Enhancement.Enabled())
+    source.WriteActivityEnhancementDiagnostics(OutDir+"/ActivityEnhancementFacets.dat",mesh);
 
   std::string fname=OutDir+"/COPS_model.dat";
   FILE *fout=fopen(fname.c_str(),"w");
@@ -480,6 +482,10 @@ int main(int argc,char **argv) {
       source.HeliocentricModel.c_str(),(source.ActivityModel=="file") ? input.GetString("ActivityFile").c_str() : "none");
   fprintf(fout,"# SurfaceBC=%s TemperatureModel=%s ActivityModel=%s SZAMode=%s CastShadows=%s SpacecraftVelocity=%s\n",
       lv.SurfaceBC.c_str(),source.TemperatureModel.c_str(),source.ActivityModel.c_str(),source.SZAMode.c_str(),source.CastShadows ? "on" : "off",lv.SpacecraftVelocity ? "on" : "off");
+  if (source.Enhancement.Enabled())
+    fprintf(fout,"# ActivityEnhancementModel=%s BasisID=%s Species=H2O MinimumDegree=5 MaximumDegree=%d Scale=%.17g Clipping=%s ActivityEnhancementFile=%s\n",
+        source.Enhancement.Model.c_str(),source.Enhancement.BasisId.c_str(),source.Enhancement.MaximumDegree,
+        source.Enhancement.Scale,source.Enhancement.Clipping.c_str(),source.Enhancement.FilePath.c_str());
   fprintf(fout,"# NGAcceptance=%s NGHeadOnWeight=%s RGAcceptance=%s RGPressureModel=%s TemperatureNG=%g TemperatureRGMode=%s SpeciesSensitivity=%s (H2O %g, CO2 %g) ReferenceDataUnit=%s\n",
       gauges.NGAcceptanceModel.c_str(),gauges.NGHeadOnWeight ? "on" : "off",gauges.RGAcceptanceModel.c_str(),gauges.RGPressureModel.c_str(),
       gauges.TemperatureNG,(gauges.TemperatureRGMode=="constant") ? (std::to_string(gauges.TemperatureRG)+"K").c_str() : "hk_table",gauges.SpeciesSensitivity ? "on" : "off",gauges.Sensitivity[0],gauges.Sensitivity[1],RefUnit.c_str());
@@ -560,6 +566,8 @@ int main(int argc,char **argv) {
     dependencies.push_back({"rg_temperature_table",CopsPaths::ProductInput(input.GetString("TemperatureRGTable"))});
   if (source.ActivityModel=="file")
     dependencies.push_back({"activity_coefficients",CopsPaths::ProductInput(input.GetString("ActivityFile"))});
+  if (source.Enhancement.Enabled())
+    dependencies.push_back({"activity_enhancement_coefficients",source.Enhancement.FilePath});
   std::error_code executableError;
   std::string executable=std::filesystem::read_symlink("/proc/self/exe",executableError).string();
   if (executableError) executable=std::filesystem::absolute("liouville_cops").string();
@@ -569,7 +577,8 @@ int main(int argc,char **argv) {
         audit.CacheVerified ? "complete" : "failed",
         GeometryOnly ? "geometry_only" : "forward",InputFile,executable,
         tkvrsn_c("TOOLKIT"),input,
-        dependencies,OutDir,audit,audit.Error);
+        dependencies,source.LegacyActivityIdentity,source.Enhancement,
+        OutDir,audit,audit.Error);
   }
   catch (const std::exception& exception) {
     fprintf(stderr,"Error: cannot complete run provenance: %s\n",exception.what());

@@ -1,0 +1,28 @@
+# Valid Stage-A3 zero-residual example for the embedded SHAP5 baseline.
+# It exercises the complete degree-5 file contract without changing activity.
+Format = liouville_cops.activity_enhancement
+FormatVersion = 1
+BasisID = liouville_cops.real_orthonormal_cs_v1
+Species = H2O
+BodyFrame = 67P/C-G_CK
+AngleConvention = theta=acos(z/r);phi=atan2(y,x)
+Ordering = increasing_l_then_m_minus_l_to_plus_l
+Clipping = max(0,legacy_linear+enhancement)
+MinimumDegree = 5
+MaximumDegree = 5
+Scale = 1.0
+ScaleInterpretation = dimensionless_multiplier_of_normalized_basis
+LegacyActivityIdentity = builtin:shap5
+Regularization = not_applicable
+Lambda = 0.0
+Coefficient = 5 -5 0.0
+Coefficient = 5 -4 0.0
+Coefficient = 5 -3 0.0
+Coefficient = 5 -2 0.0
+Coefficient = 5 -1 0.0
+Coefficient = 5 0 0.0
+Coefficient = 5 1 0.0
+Coefficient = 5 2 0.0
+Coefficient = 5 3 0.0
+Coefficient = 5 4 0.0
+Coefficient = 5 5 0.0

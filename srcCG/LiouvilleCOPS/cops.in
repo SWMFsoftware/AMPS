@@ -53,6 +53,11 @@ GaugeOffsetSC  = 0 0 0            # COPS position relative to the spacecraft ref
 ActivityModel   = shap5           # shap5 | shap5_1 (srcCG spherical-harmonic coefficients) | file
 #ActivityFile   = output_fit_base_fit/ActivityFit.txt   # ActivityModel=file: 3 rows (H2O, CO2, CO) x 25 coefficients
 #ActivityFileHeliocentricModel = shap5                  # r_h dependence of H2O that goes with the file (shap5 | shap5_1)
+# Optional H2O-only degree-5--8 residual; "none" and degree 4 preserve the legacy model.
+ActivityEnhancementModel = none  # none | real_spherical_harmonics_v1
+ActivityEnhancementDegree = 4    # 4 control, or must match enabled file's 5..8 maximum
+#ActivityEnhancementFile = examples/activity_enhancement_zero_l5.txt
+#ActivityEnhancementScale = 1.0   # optional duplicate; when given it must exactly match the file
 SZAMode         = continuous      # continuous | srccg_table (integer-degree truncation of srcCG)
 CastShadows     = on              # ray-traced shadows; shadowed elements use the night-side source
 TemperatureModel = analytical     # analytical | constant | bjorn

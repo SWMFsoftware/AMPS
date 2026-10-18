@@ -30,9 +30,15 @@ Two distinctions are essential:
 [quick_guide.md](quick_guide.md) is the fitting quick start.
 [ROADMAP.md](ROADMAP.md) gives a staged implementation and validation plan
 for future work; its proposed features are not claims of current capability.
+[amendement_development_plan.md](amendement_development_plan.md) tracks the
+localized-activity A-stages and explicitly marks A1--A3 versus future stages.
 [SCRIPTS.md](SCRIPTS.md) is a script overview. Where older descriptions or
 script comments conflict with the implementation and local-file checks described
 here, use the qualifications in this README.
+[`HARMONIC_BASIS.md`](HARMONIC_BASIS.md) and
+[`ACTIVITY_ENHANCEMENT_FILE.md`](ACTIVITY_ENHANCEMENT_FILE.md) are the
+normative mathematical and coefficient-file specifications for the optional
+higher-degree H2O forward-model component.
 
 Contents:
 
@@ -103,7 +109,11 @@ Every new Python fitting operation writes `fit_manifest.json`, schema
 `liouville_cops.fit_manifest` version 1. It records the parent run, strict
 cache audit, exact selection hash/counts, prior identity, parameter names and
 bounds, objective and optimizer settings, Python/library/code identities,
-optimizer result, declared output hashes, and these separate states:
+optimizer result, declared output hashes, and these separate states. Stage A5
+also records the profile source/reason hashes and counts, legacy coefficient
+source, enhancement basis/degree/order/scale/clipping, fixed/free component
+status, objective decomposition, data and augmented Jacobian ranks/singular
+values, coefficient-file hashes, and a per-result report identity.
 
 | State | Meaning; what it does **not** mean |
 |---|---|
@@ -162,13 +172,15 @@ convergence, uniqueness, uncertainty, or publication readiness.
 | `fit_base.in` | Forward run that writes `output_fit_base/` with kernels and surface elements for fitting. |
 | `m004.in` | Geometry-only M004 DSK run that writes `output_M004/COPS_model.dat` for the collector's exact nearest-surface altitude; gas transport and fitting kernels are disabled. |
 | `selftest.in` | Analytic/numerical verification using a generated sphere. |
+| `HARMONIC_BASIS.md`, `ACTIVITY_ENHANCEMENT_FILE.md` | Normative Stage-A2 basis and Stage-A3 coefficient-file/model contracts. |
+| `examples/activity_enhancement_zero_l5.txt` | Complete all-zero degree-5 forward-model regression example for `builtin:shap5` in `67P/C-G_CK`. |
 | `src/` | Entire C++ implementation and embedded numerical tables. |
 | `tools/` | Data preparation, fitting support, and plotting scripts; inventory below. |
 | `tests/test_rebuild_cops_boundary.py` | Standard-library tests for boundary rebuilding, with an opt-in local C++/mission-data integration check. |
+| `tests/test_a2_activity_basis.py`, `tests/test_a3_activity_enhancement.py`, `tests/test_a4_enhancement_fit.py`, `tests/test_a5_reporting.py` | Cross-language harmonic tests, strict optional-forward-model tests, fitter parameter/Jacobian/regularization tests, and report identity/table/plot tests. |
 | `data/` | Input-data directory; generated tables and plots have been removed. |
 | External `<COPS_DATA_ROOT>/SHAP5_Volume.bdf` | SHAP5 NASTRAN surface mesh used by `cops.in` and `fit_base.in`; the supplied inputs currently use its absolute path. |
 | External `<COPS_DATA_ROOT>/sources/` | L4 table and labels plus three source images; default root is `/data/vtenishe/rosetta_data_end_of_mission_cops`. |
-| `tools/__pycache__/` | Python bytecode cache; not an authoritative script source. |
 | `README.md`, `RUN.md`, `SCRIPTS.md`, `quick_guide.md` | Detailed description, operating guide, script overview, and fitting quick start. |
 | `ROADMAP.md` | Future implementation work packages, dependencies, tests, acceptance criteria, and scientific decision gates. Not an implemented feature list. |
 | `<AMPS>/cops_output/` | Destination for newly generated scientific products; outside this application. |
@@ -206,6 +218,8 @@ alone; removed generated fit inputs also contained obsolete absolute paths.
 | `BVH.cpp/.h` | Bounding-volume hierarchy for visibility and shadow ray intersections; brute-force reference traversal. |
 | `Geometry.cpp/.h` | SPICE loading, spacecraft/Sun states, body rotation, gauge pointing and field of view. |
 | `Source.cpp/.h` | Activity basis and coefficients, illumination law, shadow state, temperatures, `elements.bin`. |
+| `ActivityEnhancementBasis.cpp/.h` | Versioned normalized real spherical-harmonic evaluator through degree 8 specified in `HARMONIC_BASIS.md`. |
+| `ActivityEnhancement.cpp/.h` | Strict version-1 coefficient-file parser, frame/baseline compatibility checks, residual evaluation, and final clipping for the optional H2O forward-model enhancement. |
 | `SrcCGTables.h` | Locally embedded activity coefficient arrays and tabulated temperatures. |
 | `Gauges.cpp/.h` | NG angular response, RG acceptance, species sensitivity, pressure conversion, housekeeping temperature interpolation. |
 | `Liouville.cpp/.h` | Static geometric kernels and speed-integrated flight-time-rotation solver. |
@@ -220,10 +234,15 @@ alone; removed generated fit inputs also contained obsolete absolute paths.
 | `tools/rebuild_cops_boundary.py` | Regenerates a complete static fitting base for `flat` or `rough` surface emission; see section 6.6. | Original observation input, existing compiled solver, configured external data. | New input snapshot, table, elements, kernels, log, and completion metadata in a fresh directory. |
 | `tools/collect_cops_sources.py` | Combines local measurement sources, compares them, and constructs a candidate fit-selection table. | HK table, L4 table, digitized CSVs, SHAP5/M004 runs, base fit run. | Combined JSON, comparison plots, fit-selection table and plot, optional actual-fit profile plot. |
 | `tools/digitize_cops_figures.py` | Extracts curves from the three supplied source images. | JPG files in `<COPS_DATA_ROOT>/sources/` or `--dir`. | Five digitized CSVs; optional diagnostic PNGs. |
-| `tools/plot_cops_model.py` | Compares predicted NG/RG pressures and reference observations for one or more runs. | `COPS_model.dat` files. | Interactive four-panel plot, or `--save` image. |
+| `tools/plot_cops_model.py` | Compares predicted NG/RG pressures and reference observations; strictly verifies manifested fit/report identities and labels legacy inputs. | `COPS_model.dat` files. | Interactive four-panel plot, or `--save` image whose labels identify profile/degree/lambda. |
 | `tools/plot_cops_model_altitude.py` | Wrapper around the preceding script with altitude as the default horizontal axis. | Same. | Same. |
 | `tools/plot_lcurve.py` | Displays fit quality versus regularization, temperatures, and activity diagnostics. | `lcurve.txt`. | Interactive plot or `--save` image. |
-| `tools/fit_cops.py` | Fits the source and temperature using static kernels and uses the shared product-path handling. | Base run, kernels, elements, local coefficient tables, original input, HK table, optional replacement fit data. | Parameters, fitted activity, fitted pressures, rerun input, exact data selection; optionally an L-curve. |
+| `tools/fit_cops.py` | Fits either the legacy degree-0--4 source/temperature/CO2 parameters or the controlled degree-5--8 H2O residual using static kernels. | Base run, kernels, elements, local coefficient tables, original input, HK table, optional replacement fit data or named selection profile. | Parameters, fitted activity, fitted pressures, rerun input, exact data selection, self-identifying A5 tables/plots; enhancement exchange file when selected; optionally an L-curve. |
+| `tools/run_fit_profile.py` | Validates and runs one or all checked-in selection profiles with safe, distinct output directories. | Static fitting base and `fit_profiles/*.json`. | The normal fitter products for each requested profile. |
+| `tools/cops_selection.py` | Shared selection/profile parser used by the fitter and profile runner; not a standalone command. | Model rows, base intervals, saturation mask, and a profile JSON. | Selected flags, reason codes, counts, and a canonical reason hash. |
+| `tools/activity_basis.py` | Reference Python implementation of the versioned normalized real spherical-harmonic basis used by tests and the Stage-A4 fitter; not a standalone command. | Cartesian directions or angular coordinates supplied by callers. | Basis arrays in the exact ordering defined by `HARMONIC_BASIS.md`; no files. |
+| `tools/cops_fit_reporting.py` | Stage-A5 report writer imported by the fitter; not a standalone command. | Final facet activity, pressures, selection/reason masks, and immutable report-identity payload. | Per-facet/degree/region/residual tables, one activity-map figure, three pressure/residual figures, and `fit_report.json`. |
+| `tools/benchmark_activity_basis.py` | Measures evaluation time and memory for the Stage-A2 basis on centroids from an actual `elements.bin` without changing that cache. | A version-1 `elements.bin`, degree range, repeat count. | Console report and optional JSON report. |
 | `tools/cops_io.py` | Shared strict product parser, cache validator, streaming hashes, atomic manifests, and selection identities; imported by other tools. | Model tables, manifests, elements and static kernels. | Validated in-memory metadata; no standalone output. |
 | `tools/validate_cops_run.py` | Validates a static base or records fitted-pressure agreement with a manifested C++ verification run. | Base run, or fit plus verification run. | Diagnostic report; in verification mode, an atomic update of the fit manifest's C++-agreement state. |
 
@@ -523,6 +542,168 @@ indices 11 and 13, for example, explicitly contain
 `5*(cos(colatitude)^2 - 1)*sin(colatitude)*sin/cos(longitude)`.
 Do not substitute a library basis and reuse the coefficient arrays without
 an explicit basis transformation.
+
+#### Optional independently normalized degree-5--8 H2O residual (Stages A2--A5)
+
+The application contains a second harmonic evaluator for the localized H2O
+activity amendment. Its versioned identifier is
+`liouville_cops.real_orthonormal_cs_v1`; the normative equations are in
+[`HARMONIC_BASIS.md`](HARMONIC_BASIS.md). The authoritative implementations
+are `tools/activity_basis.py` and
+`src/ActivityEnhancementBasis.{h,cpp}`.
+
+This is a fully orthonormal **real** basis with the Condon--Shortley phase.
+For `m>0`, positive signed order is the cosine branch and negative signed
+order is the sine branch. Coefficients are ordered by increasing degree and
+then `m=-l..+l`. The supported enhancement range starts at degree 5 and contains
+11, 24, 39, or 56 coefficients through maximum degree 5, 6, 7, or 8.
+
+The evaluator uses mesh/body-frame Cartesian centroid directions:
+`theta=acos(z/r)` and `phi=atan2(y,x)`. It defines `phi=0` at the poles, where
+every nonzero-order mode vanishes. The mesh axes are interpreted as the input
+`BodyFrame`; the supplied manifested base records `67P/C-G_CK`, while the
+NASTRAN mesh itself has no independent frame metadata. Nonfinite coordinates,
+the zero vector, invalid modes, and degrees outside 0--8 are rejected.
+
+The two implementations use the same explicit associated-Legendre recurrence
+and log-gamma normalization rather than relying on differing library defaults.
+Tests cover normalization, phase, ordering, poles, axes, near-pole and generic
+points, scale invariance, invalid inputs, and every mode through degree 8. On
+the deterministic test set, the measured maximum Python/C++ absolute
+difference is `1.33e-15`; numerical quadrature's maximum deviation from the
+81-mode identity Gram matrix is `1.47e-14`. The enforced cross-language limit
+is `2e-14`, far tighter than the later pressure-agreement target of `1e-6`.
+
+An actual-cache benchmark on the current 100,000-face manifested SHAP5 base
+constructed the 100,000-by-56 degree-5--8 table in a median `0.0987 s` over
+five samples. The returned table is exactly 44,800,000 bytes (42.725 MiB); the
+measured process maximum-RSS increase was 115,688 KiB, including temporary
+arrays and allocator effects. These values describe that machine/run, not a
+portable performance guarantee.
+
+Stage A3 connects this evaluator to `cSourceModel` as a default-off, H2O-only
+residual. For a mesh centroid `x`, the solver now supports
+
+```text
+DeltaA(x) = ActivityEnhancementScale * sum b_lm Y_lm(x)
+A_H2O(x) = max(0, A0_linear(x) + DeltaA(x)).
+```
+
+The legacy field is deliberately kept linear until the residual has been
+added, and clipping occurs exactly once afterward. CO2 and CO cannot receive
+enhancement coefficients. `ActivityEnhancementModel = none` with degree 4 is
+the default. `real_spherical_harmonics_v1` reads the strict format in
+[`ACTIVITY_ENHANCEMENT_FILE.md`](ACTIVITY_ENHANCEMENT_FILE.md); it checks the
+basis ID, H2O species, body frame, complete degree/order set, scale, clipping
+rule, and identity of the active legacy map before propagation.
+
+The legacy 25 basis values and version-1 `elements.bin` layout remain
+unchanged. When enhancement is enabled, the existing `activity_H2O` value in
+that cache is the final applied (clipped) activity, and the separate
+`ActivityEnhancementFacets.dat` preserves legacy-linear, residual,
+total-linear, and final values for interpretation. When disabled, that new
+diagnostic is not written and old table/binary schemas are unchanged.
+
+Stage A4 connects the same basis to `tools/fit_cops.py`. It is intentionally a
+controlled residual-only mode: requesting degree 5--8 currently requires all
+of `--fix-legacy-activity`, `--fix-temperature`, and `--fix-kappa`. Thus the
+new free vector contains only `b_lm`; the 25 legacy H2O coefficients, the three
+analytical-temperature values, and `kappa=1` are copied exactly from the base.
+Degree 4 is an explicit zero-parameter control when the same three fix options
+are supplied. The counts through degrees 5, 6, 7, and 8 are respectively 11,
+24, 39, and 56.
+
+The fitter constructs the normalized facet table once, before optimization,
+and shares it across lambda workers. The conditioning scale is not free and
+cannot be chosen to improve a result. It is computed from the base mesh as
+
+```text
+A_scale = sqrt(sum_e area_e A0_linear(e)^2 / sum_e area_e).
+```
+
+`--enhancement-scale VALUE` is only an assertion: the supplied value must
+equal that derived value to relative tolerance `1e-12`. Coefficients start at
+zero and are unbounded. For coefficient regularization, the implemented
+dimensionless deviation is
+
+```text
+D^2 = sum_e area_e DeltaA(e)^2 / sum_e area_e A0_linear(e)^2,
+DeltaA(e) = A_scale sum_(l=5..L,m) b_lm Y_lm(e).
+```
+
+This penalty acts on the **unclipped residual** and pulls it toward zero over
+all facets, including facets not seen by the fit trajectory. The data term
+uses the once-clipped total activity. Its analytic derivative follows the
+declared subgradient: it is active only where
+`A0_linear + DeltaA > 0`, and is zero at and below the clipping boundary.
+Central finite differences are valid only while neither perturbation crosses
+that boundary; one-sided checks must be interpreted with the same convention
+at a kink.
+
+An enhanced fit writes the unchanged three-by-25 `ActivityFit.txt`, plus the
+strict C++ exchange file `ActivityEnhancementFit.txt` and the Python-side
+`ActivityEnhancementFacets.dat` with centroid, area, visibility, legacy,
+residual, total-linear, and clipped fields. The exchange file hashes the exact
+generated `ActivityFit.txt` as its legacy identity. `cops_fit.in` selects both
+files so `./liouville_cops <fit>/cops_fit.in` independently recomputes the
+result with Stage A3. The manifest records the basis/specification identities,
+scale definition/value, degrees, bounds, clipping derivative, regularization,
+and warns when `lambda=0` leaves activity unregularized. A base run that
+already has an enhancement enabled is rejected; fit from an unenhanced,
+manifested static-kernel base.
+
+#### Self-identifying diagnostics and plot integration (Stage A5)
+
+For each optimizer result, the fitter constructs one canonical report identity
+from the effective profile and its file hash, selected-point and reason hashes,
+legacy-activity hash, complete fitted parameter-vector and activity hashes,
+final temperature and CO2 scale, activity basis/degrees, derived enhancement
+scale, regularizer identifier, and lambda. This
+is schema `liouville_cops.fit_report` version 1. The full payload and identity
+are stored in `fit_report.json`; the identity is repeated in the
+`COPS_model.dat`/diagnostic-table headers, PNG text metadata, and matching
+`fit_manifest.json` optimizer record. The manifest separately hashes every
+generated file, including the exact `ActivityFit.txt` and optional
+`ActivityEnhancementFit.txt`. Consequently two results with different data
+selection, coefficients, basis, degree, or lambda cannot share a report
+identity.
+
+The following A5 products are written for both legacy and residual fits:
+
+| Product | Interpretation |
+|---|---|
+| `activity_facets.dat` | Facet centroid/area, whether the facet contributes to any selected-data kernel, legacy linear activity, fitted residual, total linear field, and once-clipped applied activity. |
+| `activity_degree_power.dat` | Coefficient and area-weighted residual power by degree. `spherical_field_power` is supplied only for the normalized enhancement basis; it is `nan` for the unnormalized legacy basis. |
+| `activity_region_diagnostics.dat` | Area fractions and area-weighted baseline/residual/total moments for all, seen, and unseen facets, including the fraction where the total linear field is clipped. Active fraction is one minus clipped fraction. |
+| `activity_maps.png` | Body-frame longitude/latitude bin averages of baseline, residual, and clipped total. These are area-weighted mesh-bin summaries, not an equal-area or shape-unwrapped map. |
+| `pressure_residuals.dat` | Every NG/RG observation and prediction, selected/saturated flags, reason code, `ln(model/observed)`, and its equal-gauge objective value divided by `sqrt(N_gauge)`; residual fields exist only where the datum entered the objective. |
+| `pressure_comparison_time.png`, `pressure_comparison_altitude.png` | Model and observations with selected points filled, excluded points hollow, saturated NG crossed, and configured instrument-transition intervals shaded. |
+| `pressure_residuals.png` | Selected-data log residuals versus UTC and altitude, with saturated NG identified. |
+
+“Seen” is a numerical contribution flag, not a proof of spatial
+identifiability: it means that the facet occurs with a nonzero response in at
+least one kernel loaded for the union of selected NG/RG points. A seen facet
+can still be weakly constrained or correlated with many others. Likewise,
+degree power measures fitted field structure; it is not evidence that a
+localized physical source is unique. Interpret it together with data and
+augmented Jacobian rank/singular values, neighboring lambdas/degrees/profiles,
+unseen-region behavior, clipping, and independent C++ reproduction.
+
+`tools/plot_cops_model.py` treats schema-v2 Python fits strictly. Before
+plotting, it verifies the table hash declared by `fit_manifest.json`, the
+`fit_report.json` hash, and agreement of report, profile, selection, and basis
+identities across all three files. A missing or incompatible fit manifest is
+an error. Check-box labels and the reference-panel title show the effective
+profile, enhancement degree, lambda, and short report identity, so comparisons
+do not silently mix configurations. Historical unmanifested forward tables
+remain readable but are visibly marked `legacy`; that label is a provenance
+warning, not verification.
+
+Manifested C++ forward/verification tables receive the same table-byte check
+against `run_manifest.json`. Their labels show basis, maximum degree, lambda
+when applicable, and a short enhancement-coefficient or legacy-activity
+identity. A Python fit and its C++ replay therefore do not appear as anonymous
+curves with potentially different activity inputs.
 
 `ActivityModel = shap5` or `shap5_1` selects local embedded coefficients.
 `file` reads three rows of 25 coefficients, for H2O, CO2, CO.
@@ -1045,6 +1226,29 @@ The Python fitter then applies additional rules:
    Without it those points are not removed.
 7. Build positive-pressure log residuals for each gauge's selected points.
 
+For new profile comparisons, prefer `--profile NAME` or
+`tools/run_fit_profile.py`. A named profile replaces steps 3--6 with one
+versioned policy implemented by `tools/cops_selection.py`; it cannot be mixed
+with `--apply-exclude-ng` or `--exclude-ng-saturated`. The checked-in profiles
+are:
+
+| Profile | NG | RG | Policy on the audited 1,150-row base |
+|---|---:|---:|---|
+| `legacy_base_mask` | 839 | 1,146 | Positive outside-shape data, base FitInterval, and base `ExcludeNG`/`ExcludeRG` intervals. |
+| `all_available` | 930 | 1,146 | Every positive outside-shape datum in the base FitInterval, including the 13 saturated and post-transition NG points. |
+| `transition_cut_100m` | 869 | 1,146 | Same candidates, but NG is excluded on the closed interval `10:24:42`--`10:37:10`; it resumes at `10:37:14` (99.48 m in the audited base). |
+
+The profiles derive flags from pressure, shape status, FitInterval, and their
+declared interval policy; they do not trust stale source `useNG/useRG` flags.
+All interval endpoints are inclusive. Each profile stores expected row/NG/RG
+counts and the fitter fails on a mismatch rather than silently accepting a
+changed dataset. `fit_data_used.txt` records a reason code for both gauges at
+every point. `selection_profile.json` preserves the effective policy, its
+source hash, reason counts, and reason hash; `fit_manifest.json` records the
+same identities. When combined with `--data`, a named profile requires the
+replacement table to contain every base-run point; it replaces pressures but
+the profile, not the table's use flags, determines selection.
+
 The HK table is read for saturation identification even when
 `--exclude-ng-saturated` is absent. The current fitter therefore needs it
 for a normal run and for `--data-only`.
@@ -1075,8 +1279,7 @@ Apart from the explicit NG exclusion switch, the fitter does not generally
 reapply all original FitInterval/ExcludeRG constraints to a custom table.
 The descriptive `reason_*` and `ng_saturated` columns are not authoritative
 fit controls: the fitter uses the flags and recomputes saturation from HK.
-The parser also stores rows by iPoint without detecting duplicates; duplicate
-entries silently overwrite earlier ones. Validate edited tables.
+Duplicate replacement-table point IDs are rejected. Validate edited tables.
 
 The collector's selection implementation is similar but not identical:
 its default re-enables points classified as `ExcludeNG`. Because exclusion
@@ -1381,13 +1584,14 @@ machine used to run the application.
 | `FirstPoint/LastPoint/PointStep` | Subset of observation indices to evaluate. |
 | `FitInterval`, repeated `ExcludeNG/ExcludeRG` | C++ selection flags; Python NG override rules still apply. |
 | `ActivityModel/File`, temperature and SZA keys | Surface source described above. |
+| `ActivityEnhancementModel/Degree/File/Scale` | Optional H2O-only residual. Default `none` requires degree 4. Enabled model is `real_spherical_harmonics_v1`; file degree/scale must agree with duplicated input values. See `ACTIVITY_ENHANCEMENT_FILE.md`. |
 | `SurfaceBC`, subdivision, velocity and rotation keys | Transport approximation and numerical accuracy. |
 | Gauge acceptance, pressure model, sensitivity keys | Instrument-response conventions. |
 | `Threads` | Optional OpenMP thread count; otherwise the OpenMP environment applies. |
 
 C++ ordinary source-data paths resolve from the process working directory,
 not from the input file's directory. `OutputDirectory` uses the shared output
-root; `TemperatureRGTable` and `ActivityFile` use generated-product lookup.
+root; `TemperatureRGTable`, `ActivityFile`, and `ActivityEnhancementFile` use generated-product lookup.
 Relative `Kernel` paths are appended to `KernelDirectory`. Unknown/unused keys in observation
 mode cause an error, and conditionally irrelevant options can therefore be
 rejected. A single-valued repeated key uses its last value.
@@ -1423,6 +1627,39 @@ sensitivities, or fixed gauge temperatures requires a compatible new base.
 
 A table alone is insufficient for fitting: point kernels are loaded for all
 base-table rows, including rows later excluded from the misfit.
+
+#### Apply an optional Stage-A3 H2O enhancement
+
+Copy an observation input to a new filename, choose a fresh
+`OutputDirectory`, and replace its disabled enhancement settings with:
+
+```ini
+ActivityEnhancementModel = real_spherical_harmonics_v1
+ActivityEnhancementDegree = 5
+ActivityEnhancementFile = examples/activity_enhancement_zero_l5.txt
+ActivityEnhancementScale = 1.0
+```
+
+Then run the same executable, for example with 14 OpenMP threads:
+
+```bash
+OMP_NUM_THREADS=14 ./liouville_cops my_enhanced_run.in
+```
+
+The checked-in file is an all-zero degree-5 regression example for
+`ActivityModel = shap5`; it must reproduce the baseline pressures. Replace it
+with a scientifically obtained file conforming to
+`ACTIVITY_ENHANCEMENT_FILE.md` to apply a nonzero residual. Degree and scale
+can be omitted from the input when enabled because the file supplies them; if
+duplicated, they must match exactly. A degree-4 file is the explicit
+zero-length control. With `ActivityEnhancementModel = none`, degree must be 4
+and file/scale settings are rejected rather than silently ignored.
+
+An enabled run writes `ActivityEnhancementFacets.dat`, records the complete
+configuration and coefficient-file hash in `run_manifest.json`, and adds an
+enhancement identity header to `COPS_model.dat`. It does not change the table
+columns or binary cache layout. Stage A4's Python fitter creates this file in
+the controlled residual-only mode described in section 4.3.
 
 ### 6.3 Multi-source pressure comparison
 
@@ -1546,13 +1783,18 @@ python3 tools/validate_cops_run.py \
 
 python3 tools/plot_cops_model.py \
   output_fit_base output_fit_new output_fit_new_verify \
-  --ref output_fit_base --save COPS_fit_comparison.png
+  --ref output_fit_new --save COPS_fit_comparison.png
 ```
 
 This C++ rerun recomputes the physics and species outputs. Its selection
 flags still follow the copied base input, not necessarily the Python
 selection used in the fit. Use `fit_data_used.txt` to identify the actual
 misfit data.
+
+The plotting command deliberately selects the Python fit with `--ref`: that
+table carries the fitter's final `useNG`/`useRG` masks. Selecting the base or
+C++ verification instead uses the copied input exclusions for hollow/filled
+markers and can make re-enabled observations look unused.
 
 For an exact-rotation check, make a separate copy of the newly generated
 input, set `FlightTimeRotation = exact` and a distinct output directory,
@@ -1814,6 +2056,18 @@ historical versions.
 Values at inside-body points are retained in the table but excluded from
 fitting. They are not valid external-coma model predictions.
 
+When Stage A3 is enabled, `ActivityEnhancementFacets.dat` contains one row per
+mesh face with
+
+```text
+face x y z area legacy_linear_h2o enhancement_h2o
+total_linear_h2o activity_h2o clipped
+```
+
+Coordinates and area are in meters and square meters; activity columns are
+dimensionless. `activity_h2o=max(0,total_linear_h2o)`. The diagnostic is not
+created when the enhancement is disabled.
+
 ### 7.2 Binary caches
 
 C++ writes native `int` and `double` values with separate writes, not
@@ -1830,7 +2084,10 @@ for each face:
 ```
 
 Each face record is 34 doubles = 272 bytes. Its face order must match every
-kernel file.
+kernel file. The 25 saved basis values always remain the legacy basis. With an
+enabled Stage-A3 residual, `activity_H2O` is the final applied activity; use
+`ActivityEnhancementFacets.dat` to distinguish its linear legacy and residual
+components.
 
 Version-1 `kernels/point=NNNN.bin`:
 
@@ -1876,9 +2133,15 @@ Each completed optimization writes:
 |---|---|
 | `fit_result.txt` | Selection/options, objective, convergence diagnostics, parameters, approximate sigmas, activity diagnostics. |
 | `ActivityFit.txt` | H2O fitted coefficients, scaled CO2 coefficients, unchanged CO row. |
+| `ActivityEnhancementFit.txt` | Strict normalized-basis residual coefficients and baseline binding; enhancement mode only. |
 | `cops_fit.in` | Input for a C++ rerun into `<fit directory>_verify`. |
 | `COPS_model.dat` | Schema-v2 fitted aggregate pressure predictions; unrecomputed diagnostics are `nan`. |
 | `fit_manifest.json` | Versioned input/cache/selection/prior/settings/output identities and independent process, optimizer, C++-agreement, and review states. |
+| `fit_report.json` | Canonical A5 report identity and the exact scientific-choice payload used to form it. |
+| `activity_facets.dat`, `activity_degree_power.dat`, `activity_region_diagnostics.dat` | Universal facet fields, residual power by degree, and all/seen/unseen area-weighted diagnostics. |
+| `activity_maps.png` | Separate legacy baseline, fitted residual, and clipped-total maps. |
+| `pressure_residuals.dat` | Per-gauge selection/reason/saturation flags, observations, predictions, and selected-only log residuals. |
+| `pressure_comparison_time.png`, `pressure_comparison_altitude.png`, `pressure_residuals.png` | Self-identifying fit comparisons and residual diagnostics. |
 
 **The Python-fitted model table is not a complete recomputed forward run.**
 Its aggregate `pNG`/`pRG` are recomputed outside the nucleus. Values that the
@@ -1932,6 +2195,14 @@ With no runs specified it loads `output*/COPS_model.dat` one level below
 the output root; if none are found, it scans the application root for legacy
 runs. It does not merge those scans. Nested lambda directories must be specified
 explicitly.
+
+For a schema-v2 Python fit, the plotter requires and verifies the matching
+fit manifest, declared table/report hashes, and the report/profile/selection/
+basis identities. It rejects mismatches. Its labels include profile, degree,
+lambda, and report ID; unmanifested historical tables are explicitly labelled
+legacy. Manifested C++ tables are also checked against their run-manifest
+table hash and labelled with their activity identity. Saved comparison PNG
+metadata lists all loaded fit report identities (or a legacy marker).
 
 Its panels show combined NG/RG, NG, RG, and NG/RG. Reference points with
 use=0 are hollow. Without `--ref`, it chooses the most recently modified
@@ -2085,6 +2356,14 @@ The initial documentation audit used only files within this application:
   including lambda=1e-3 regularization, against central finite differences.
   Worst relative column discrepancy was about 5.87e-5, for a11.
   This is a sampled check, not a full-domain proof.
+- For Stage A3, compiled and ran strict parser/application tests covering the
+  degree-4 control, zero and single-mode degree-5--8 fields, H2O-only scope,
+  frame and legacy-map identity, completeness, nonfinite values, and final
+  clipping. A fresh one-point, 100,000-facet SHAP5 run with the all-zero
+  degree-5 example matched the disabled run and the previously manifested
+  baseline data row exactly. Its facet diagnostic had all 100,000 rows and
+  its JSON manifest recorded the expected 11 modes, basis ID, scale, file
+  identity, and output hash.
 
 The built-in tests cover BVH versus brute force, flat/rough uniform-sphere
 density and flux, zero-rotation consistency, a rotating uniform sphere on

@@ -172,6 +172,10 @@ std::string ProvenanceUTCNow() {
   return text;
 }
 
+std::string ProvenanceFileSHA256(const std::string& filename) {
+  return HashFile(filename);
+}
+
 cRunOutputAudit AuditRunOutputs(const std::string& outputDirectory,
     const std::vector<int>& expectedPoints,bool writeKernels,int kernelVersion) {
   cRunOutputAudit result;
@@ -260,6 +264,8 @@ void WriteRunManifest(const std::string& filename,const std::string& createdUTC,
     const std::string& executable,const std::string& cspiceVersion,
     const cInput& input,
     const std::vector<cProvenanceFile>& dependencies,
+    const std::string& legacyActivityIdentity,
+    const ActivityEnhancement::Configuration& enhancement,
     const std::string& outputDirectory,const cRunOutputAudit& audit,
     const std::string& error) {
   fs::path target(filename),temporary=target.string()+".tmp";
@@ -299,12 +305,37 @@ void WriteRunManifest(const std::string& filename,const std::string& createdUTC,
       out << (i ? ", " : "") << "\"" << Escape(item.second[i]) << "\"";
     out << "]" << ((++keyIndex<input.EffectiveValues().size()) ? "," : "") << "\n";
   }
-  out << "  },\n  \"outputs\": {\n";
-  fs::path root(outputDirectory),model=root/"COPS_model.dat",elements=root/"elements.bin",snapshot=root/"input.snapshot.in";
+  out << "  },\n  \"activity_enhancement\": {\n"
+      << "    \"enabled\": " << (enhancement.Enabled() ? "true" : "false") << ",\n"
+      << "    \"model\": \"" << Escape(enhancement.Model) << "\",\n"
+      << "    \"legacy_activity_identity\": \"" << Escape(legacyActivityIdentity) << "\"";
+  if (enhancement.Enabled()) {
+    out << ",\n    \"file_format\": \"" << Escape(enhancement.Format) << "\",\n"
+        << "    \"file_format_version\": " << enhancement.FormatVersion << ",\n"
+        << "    \"basis_id\": \"" << Escape(enhancement.BasisId) << "\",\n"
+        << "    \"species\": \"" << Escape(enhancement.Species) << "\",\n"
+        << "    \"body_frame\": \"" << Escape(enhancement.BodyFrame) << "\",\n"
+        << "    \"angle_convention\": \"" << Escape(enhancement.AngleDefinition) << "\",\n"
+        << "    \"ordering\": \"" << Escape(enhancement.CoefficientOrdering) << "\",\n"
+        << "    \"clipping\": \"" << Escape(enhancement.Clipping) << "\",\n"
+        << "    \"minimum_degree\": " << enhancement.MinimumDegree << ",\n"
+        << "    \"maximum_degree\": " << enhancement.MaximumDegree << ",\n"
+        << "    \"coefficient_count\": " << enhancement.Coefficients.size() << ",\n"
+        << "    \"scale\": " << std::setprecision(17) << enhancement.Scale << ",\n"
+        << "    \"scale_interpretation\": \"" << Escape(enhancement.ScaleMeaning) << "\",\n"
+        << "    \"regularization\": \"" << Escape(enhancement.Regularization) << "\",\n"
+        << "    \"lambda\": " << std::setprecision(17) << enhancement.Lambda << ",\n"
+        << "    \"coefficient_file\": ";
+    FileJSON(out,enhancement.FilePath);
+  }
+  out << "\n  },\n  \"outputs\": {\n";
+  fs::path root(outputDirectory),model=root/"COPS_model.dat",elements=root/"elements.bin",snapshot=root/"input.snapshot.in",
+      enhancementFacets=root/"ActivityEnhancementFacets.dat";
   if (fs::is_regular_file(model)) {out << "    \"model_table\": "; FileJSON(out,model);}
   else out << "    \"model_table\": null";
   if (fs::is_regular_file(elements)) {out << ",\n    \"elements\": "; FileJSON(out,elements);}
   if (fs::is_regular_file(snapshot)) {out << ",\n    \"input_snapshot\": "; FileJSON(out,snapshot);}
+  if (fs::is_regular_file(enhancementFacets)) {out << ",\n    \"activity_enhancement_facets\": "; FileJSON(out,enhancementFacets);}
   out << ",\n    \"kernels\": {\"version\": " << audit.KernelVersion << ", \"count\": " << audit.nPoints
       << ", \"records\": " << audit.KernelRecords << ", \"size_bytes\": " << audit.KernelBytes
       << ", \"set_sha256\": \"" << Escape(audit.KernelSetSHA256) << "\"}\n  }";

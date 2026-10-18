@@ -1,0 +1,19 @@
+{
+  "schema": "liouville_cops.selection_profile",
+  "schema_version": 1,
+  "name": "all_available",
+  "description": "Use every positive outside-shape NG and RG datum in the base FitInterval, including saturated and post-transition NG data.",
+  "candidate_policy": "positive_outside_shape",
+  "apply_fit_interval": true,
+  "apply_run_exclusions": false,
+  "exclude_intervals": {
+    "NG": [],
+    "RG": []
+  },
+  "saturated_ng": "include",
+  "expected_counts": {
+    "rows": 1150,
+    "used_ng": 930,
+    "used_rg": 1146
+  }
+}

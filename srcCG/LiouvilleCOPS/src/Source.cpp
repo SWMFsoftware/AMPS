@@ -8,6 +8,7 @@
 #include "Source.h"
 #include "SrcCGTables.h"
 #include "Paths.h"
+#include "Provenance.h"
 
 //real spherical harmonics as defined in srcCG (Comet.cpp, sphericalHarmonic()); copied verbatim
 static double SphericalHarmonic(int i,double colatitude,double longitude) {
@@ -43,7 +44,7 @@ static double SphericalHarmonic(int i,double colatitude,double longitude) {
   exit(EXIT_FAILURE);
 }
 
-void cSourceModel::Init(const cInput& input,const cMesh& mesh) {
+void cSourceModel::Init(const cInput& input,const cMesh& mesh,const std::string& bodyFrame) {
   ActivityModel=input.GetOption("ActivityModel",{"shap5","shap5_1","file"},"shap5");
   TemperatureModel=input.GetOption("TemperatureModel",{"analytical","constant","bjorn"},"analytical");
   SZAMode=input.GetOption("SZAMode",{"continuous","srccg_table"},"continuous");
@@ -84,6 +85,11 @@ void cSourceModel::Init(const cInput& input,const cMesh& mesh) {
 
     //heliocentric dependence of the H2O production that goes with the coefficients
     HeliocentricModel=input.GetOption("ActivityFileHeliocentricModel",{"shap5","shap5_1"},"shap5");
+    try {LegacyActivityIdentity="sha256:"+ProvenanceFileSHA256(fname);}
+    catch (const std::exception& exception) {
+      fprintf(stderr,"Error: cannot identify the legacy activity file: %s\n",exception.what());
+      exit(EXIT_FAILURE);
+    }
     printf("Activity coefficients from '%s' (heliocentric model %s)\n",fname.c_str(),HeliocentricModel.c_str());
   }
   else {
@@ -91,6 +97,61 @@ void cSourceModel::Init(const cInput& input,const cMesh& mesh) {
 
     for (int s=0;s<3;s++) for (int j=0;j<25;j++) Coefficient[s][j]=Activity[s][j];
     HeliocentricModel=ActivityModel;
+    LegacyActivityIdentity="builtin:"+ActivityModel;
+  }
+
+  //The enhancement is a separate H2O residual, never an extension of the
+  //legacy three-species coefficient file.  Its default is strictly disabled.
+  const std::string enhancementModel=input.GetOption("ActivityEnhancementModel",
+      {"none",ActivityEnhancement::ModelId},"none");
+  if (enhancementModel=="none") {
+    //Degree 4 is the explicit zero-length control.  Consume it when supplied
+    //so a runner can state the control setting without triggering UnusedKeys.
+    const double requestedDegree=input.GetDouble("ActivityEnhancementDegree",4.0);
+    if (!std::isfinite(requestedDegree)||requestedDegree!=4.0) {
+      fprintf(stderr,"Error: ActivityEnhancementDegree must be 4 when ActivityEnhancementModel=none\n");
+      exit(EXIT_FAILURE);
+    }
+    if (input.Has("ActivityEnhancementFile")||input.Has("ActivityEnhancementScale")) {
+      //Read supplied values solely to mark them as recognized before issuing
+      //the more useful incompatibility message.
+      if (input.Has("ActivityEnhancementFile")) input.GetString("ActivityEnhancementFile");
+      if (input.Has("ActivityEnhancementScale")) input.GetDouble("ActivityEnhancementScale");
+      fprintf(stderr,"Error: ActivityEnhancementFile/Scale require ActivityEnhancementModel=%s\n",
+          ActivityEnhancement::ModelId);
+      exit(EXIT_FAILURE);
+    }
+    Enhancement=ActivityEnhancement::Configuration();
+  }
+  else {
+    const std::string filename=CopsPaths::ProductInput(input.GetString("ActivityEnhancementFile"));
+    try {Enhancement=ActivityEnhancement::ReadFile(filename);}
+    catch (const std::exception& exception) {
+      fprintf(stderr,"Error: %s\n",exception.what());
+      exit(EXIT_FAILURE);
+    }
+    try {ActivityEnhancement::ValidateCompatibility(Enhancement,bodyFrame,LegacyActivityIdentity);}
+    catch (const std::exception& exception) {
+      fprintf(stderr,"Error: %s\n",exception.what());
+      exit(EXIT_FAILURE);
+    }
+    const double requestedDegree=input.GetDouble("ActivityEnhancementDegree",
+        static_cast<double>(Enhancement.MaximumDegree));
+    if (!std::isfinite(requestedDegree)||std::floor(requestedDegree)!=requestedDegree||
+        requestedDegree<4.0||requestedDegree>8.0||
+        static_cast<int>(requestedDegree)!=Enhancement.MaximumDegree) {
+      fprintf(stderr,"Error: ActivityEnhancementDegree must be the integer %d supplied by the enhancement file\n",
+          Enhancement.MaximumDegree);
+      exit(EXIT_FAILURE);
+    }
+    const double requestedScale=input.GetDouble("ActivityEnhancementScale",Enhancement.Scale);
+    if (!std::isfinite(requestedScale)||requestedScale<=0.0||requestedScale!=Enhancement.Scale) {
+      fprintf(stderr,"Error: ActivityEnhancementScale must exactly match the file value %.17g\n",Enhancement.Scale);
+      exit(EXIT_FAILURE);
+    }
+    printf("Activity enhancement: model=%s species=H2O basis=%s maximum_degree=%d modes=%zu scale=%.17g\n",
+        Enhancement.Model.c_str(),Enhancement.BasisId.c_str(),Enhancement.MaximumDegree,
+        Enhancement.Coefficients.size(),Enhancement.Scale);
   }
 
   AnalyticalTmax=input.GetDouble("AnalyticalTmax",182.09922);
@@ -111,18 +172,35 @@ void cSourceModel::Init(const cInput& input,const cMesh& mesh) {
     for (int j=0;j<25;j++) Basis[25*i+j]=SphericalHarmonic(j,colatitude,longitude);
   }
 
+  if (Enhancement.Enabled()) {
+    LegacyLinearH2O.resize(mesh.Faces.size());
+    EnhancementH2O.resize(mesh.Faces.size());
+    TotalLinearH2O.resize(mesh.Faces.size());
+  }
+
   for (int s=0;s<Const::nSpecies;s++) {
     ActivityFactor[s].resize(mesh.Faces.size());
 
     for (size_t i=0;i<mesh.Faces.size();i++) {
       double factor=0.0;
       for (int j=0;j<25;j++) factor+=Coefficient[s][j]*Basis[25*i+j];
-
-      ActivityFactor[s][i]=std::max(factor,0.0);
+      if ((s==Const::H2O)&&Enhancement.Enabled()) {
+        LegacyLinearH2O[i]=factor;
+        ActivityFactor[s][i]=ActivityEnhancement::Apply(Enhancement,
+            mesh.Faces[i].Centroid,factor,&EnhancementH2O[i],&TotalLinearH2O[i]);
+      }
+      else ActivityFactor[s][i]=std::max(factor,0.0);
     }
   }
 
   printf("Source model: activity=%s, temperature=%s, SZA=%s, cast shadows=%s\n",ActivityModel.c_str(),TemperatureModel.c_str(),SZAMode.c_str(),CastShadows ? "on" : "off");
+  if (Enhancement.Enabled()) {
+    const auto residualRange=std::minmax_element(EnhancementH2O.begin(),EnhancementH2O.end());
+    const std::size_t clipped=std::count_if(TotalLinearH2O.begin(),TotalLinearH2O.end(),
+        [](double value) {return value<0.0;});
+    printf("Activity enhancement field: residual=[%.6e, %.6e], clipped facets=%zu/%zu, rule=%s\n",
+        *residualRange.first,*residualRange.second,clipped,mesh.Faces.size(),Enhancement.Clipping.c_str());
+  }
 }
 
 //srcCG: Comet::GetTotalProductionRateBjornNASTRAN()
@@ -230,6 +308,9 @@ void cSourceModel::Evaluate(const cMesh& mesh,const cBVH& bvh,const Vec3& SunDir
 
 //binary element file: int32 version(=1), int32 nFaces, int32 nBasis(=25), then for each element
 //double centroid[3], normal[3], area, Y[25], ActivityFactor_H2O, ActivityFactor_CO2
+//The layout and Y[25] remain legacy-compatible.  If Stage A3 is enabled, the
+//H2O factor is the final clipped total; its components are kept in the separate
+//ActivityEnhancementFacets.dat diagnostic rather than expanding this cache.
 void cSourceModel::WriteElements(const std::string& fname,const cMesh& mesh) const {
   FILE *f=fopen(fname.c_str(),"wb");
 
@@ -254,4 +335,40 @@ void cSourceModel::WriteElements(const std::string& fname,const cMesh& mesh) con
   }
 
   fclose(f);
+}
+
+void cSourceModel::WriteActivityEnhancementDiagnostics(const std::string& fname,
+                                                       const cMesh& mesh) const {
+  if (!Enhancement.Enabled()) return;
+  if (mesh.Faces.size()!=LegacyLinearH2O.size()||
+      mesh.Faces.size()!=EnhancementH2O.size()||
+      mesh.Faces.size()!=TotalLinearH2O.size()) {
+    fprintf(stderr,"Error: internal activity-enhancement diagnostic size mismatch\n");
+    exit(EXIT_FAILURE);
+  }
+  FILE* output=fopen(fname.c_str(),"w");
+  if (output==nullptr) {
+    fprintf(stderr,"Error: cannot write '%s'\n",fname.c_str());
+    exit(EXIT_FAILURE);
+  }
+  fprintf(output,"# LiouvilleCOPS activity-enhancement facet diagnostic v1\n");
+  fprintf(output,"# Model=%s BasisID=%s Species=H2O BodyFrame=%s MinimumDegree=5 MaximumDegree=%d Scale=%.17g\n",
+      Enhancement.Model.c_str(),Enhancement.BasisId.c_str(),Enhancement.BodyFrame.c_str(),
+      Enhancement.MaximumDegree,Enhancement.Scale);
+  fprintf(output,"# Ordering=%s Clipping=%s LegacyActivityIdentity=%s\n",
+      Enhancement.CoefficientOrdering.c_str(),Enhancement.Clipping.c_str(),
+      Enhancement.LegacyActivityIdentity.c_str());
+  fprintf(output,"# Units: centroid/area are m/m^2; all activity columns are dimensionless\n");
+  fprintf(output,"# face x y z area legacy_linear_h2o enhancement_h2o total_linear_h2o activity_h2o clipped\n");
+  for (std::size_t i=0;i<mesh.Faces.size();i++) {
+    const cTriangle& face=mesh.Faces[i];
+    fprintf(output,"%zu %.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e %d\n",
+        i,face.Centroid.x,face.Centroid.y,face.Centroid.z,face.Area,
+        LegacyLinearH2O[i],EnhancementH2O[i],TotalLinearH2O[i],
+        ActivityFactor[Const::H2O][i],TotalLinearH2O[i]<0.0 ? 1 : 0);
+  }
+  if (ferror(output)||fclose(output)!=0) {
+    fprintf(stderr,"Error: failed while writing '%s'\n",fname.c_str());
+    exit(EXIT_FAILURE);
+  }
 }

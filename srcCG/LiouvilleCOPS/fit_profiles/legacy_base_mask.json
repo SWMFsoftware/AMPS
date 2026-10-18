@@ -1,0 +1,19 @@
+{
+  "schema": "liouville_cops.selection_profile",
+  "schema_version": 1,
+  "name": "legacy_base_mask",
+  "description": "Use positive outside-shape data in the base FitInterval and honor the base run's ExcludeNG and ExcludeRG intervals.",
+  "candidate_policy": "positive_outside_shape",
+  "apply_fit_interval": true,
+  "apply_run_exclusions": true,
+  "exclude_intervals": {
+    "NG": [],
+    "RG": []
+  },
+  "saturated_ng": "include",
+  "expected_counts": {
+    "rows": 1150,
+    "used_ng": 839,
+    "used_rg": 1146
+  }
+}

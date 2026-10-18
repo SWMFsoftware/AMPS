@@ -1,0 +1,24 @@
+{
+  "schema": "liouville_cops.selection_profile",
+  "schema_version": 1,
+  "name": "transition_cut_100m",
+  "description": "Use all valid RG and all valid NG except the closed instrument-transition interval 10:24:42 through 10:37:10; NG resumes at 10:37:14 (99.48 m in the audited base).",
+  "candidate_policy": "positive_outside_shape",
+  "apply_fit_interval": true,
+  "apply_run_exclusions": false,
+  "exclude_intervals": {
+    "NG": [
+      [
+        "2016-09-30T10:24:42",
+        "2016-09-30T10:37:10"
+      ]
+    ],
+    "RG": []
+  },
+  "saturated_ng": "include",
+  "expected_counts": {
+    "rows": 1150,
+    "used_ng": 869,
+    "used_rg": 1146
+  }
+}

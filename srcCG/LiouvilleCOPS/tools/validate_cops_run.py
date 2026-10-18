@@ -83,7 +83,12 @@ def register_verification(fit, verification, tolerance):
     if parent.get("kind") == "manifested_run":
         verify_identity(parent["manifest"], "parent run manifest")
         parent_manifest = load_manifest(parent["manifest"]["path"], RUN_SCHEMA)
-        excluded_roles = {"activity_coefficients"}
+        # A verification run deliberately replaces the legacy activity file
+        # and, for Stage A4, adds a fitted enhancement file.  Neither is a
+        # geometry/observation/temperature dependency; all other ordered
+        # dependencies must remain byte-identical to the parent base.
+        excluded_roles = {"activity_coefficients",
+                          "activity_enhancement_coefficients"}
         original = [item for item in _dependencies(parent_manifest)
                     if item[0] not in excluded_roles]
         reproduced = [item for item in _dependencies(verification_manifest)
