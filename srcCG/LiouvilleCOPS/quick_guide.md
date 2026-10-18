@@ -259,6 +259,143 @@ For compilation, external paths, and the complete script inventory, see
 [RUN.md](RUN.md). For the physics, data limitations, and fitting equations,
 see [README.md](README.md).
 
+### Exact end-to-end commands used for the full literal-default fit
+
+The following is the fully explicit equivalent of the command sequence used
+for the full 10-hour observation fit named `output_fit_full_default`. Options
+that took their CLI defaults during the executed run are spelled out here so
+the numerical setup is visible. Run it from the
+`srcCG/LiouvilleCOPS` directory. It starts by regenerating a manifested static
+kernel base, performs the Python optimization, reruns the fitted model with
+the independent C++ forward solver, registers the C++/Python agreement, and
+writes comparison figures versus time and altitude.
+
+The commands assume that `liouville_cops` has already been compiled and that
+the external shape, SPICE, observation, and housekeeping inputs configured in
+`fit_base.in` exist. This definition keeps the output path portable relative
+to the current AMPS checkout:
+
+```bash
+export COPS_OUTPUT_ROOT="$(cd ../.. && pwd)/cops_output"
+```
+
+Each `--out` destination must be new. The names below are the names of the
+completed run and therefore already exist on the machine where that run was
+made; use consistently renamed base, fit, and verification directories when
+repeating it.
+
+1. Regenerate the full SHAP5 static fitting base. This runs the C++ forward
+   model for all observation points, uses the flat/Lambertian surface boundary
+   condition, writes the per-point kernels required by the fitter, and records
+   a run manifest. `--threads 16` is the C++ OpenMP thread count.
+
+```bash
+python3 tools/rebuild_cops_boundary.py \
+  --input fit_base.in \
+  --surface-bc flat \
+  --out output_fit_full_default_base \
+  --threads 16 \
+  --executable ./liouville_cops
+```
+
+2. Fit the 25 degree-0-through-4 H2O activity coefficients, the three
+   analytical surface temperatures, and the CO2 scale. The numerical defaults
+   are written explicitly here. Limiting BLAS and OpenMP to one thread avoids
+   hidden nested threading; this single-lambda optimizer itself uses one CPU
+   core.
+
+```bash
+env OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 OMP_NUM_THREADS=1 \
+  python3 tools/fit_cops.py output_fit_full_default_base \
+  --degree 4 \
+  --lambda 0 \
+  --jobs 1 \
+  --tbounds 30 400 \
+  --max-nfev 1000 \
+  --ftol 1e-10 \
+  --xtol 1e-10 \
+  --gtol 1e-10 \
+  --check-tolerance 1e-6 \
+  --hk-table "$COPS_OUTPUT_ROOT/data/COPS_HK_20160930.txt" \
+  --out output_fit_full_default
+```
+
+The omissions in this command are deliberate and define the requested
+literal-default selection and constraints:
+
+- no `--ordered-temperature`: `Tmax`, `T75`, and `Tmin` are independently
+  bounded, with no enforced ordering;
+- no `--exclude-ng-saturated`: all 13 saturation-flagged NG samples are used;
+- no `--apply-exclude-ng`: otherwise valid late NG data in the base input's
+  `ExcludeNG` interval are re-enabled (91 samples for this base);
+- no `--data`: the fit uses `refNG` and `refRG` from the base run;
+- no `--fix-temperature` or `--fix-kappa`: temperature and the CO2 multiplier
+  remain free;
+- no `--allow-legacy-base`: the regenerated manifested base is required.
+
+For this run, step 2 took about 2 hours 4 minutes. It reached
+`--max-nfev 1000` rather than satisfying the strict convergence tolerances, so
+its manifest correctly says `optimizer=not_converged`; completing the command
+is not the same as optimizer convergence.
+
+3. Run the generated fitted input through the C++ forward model. This produces
+   the complete source/species diagnostics that the cached Python prediction
+   does not calculate. The generated input contains `Threads = 16` and writes
+   `output_fit_full_default_verify`; an input-file `Threads` value takes
+   precedence over `OMP_NUM_THREADS`.
+
+```bash
+env OMP_NUM_THREADS=16 ./liouville_cops \
+  "$COPS_OUTPUT_ROOT/output_fit_full_default/cops_fit.in"
+```
+
+4. Compare the fitted Python aggregate pressures with the independent C++
+   pressures and register the result in `fit_manifest.json`. The explicit
+   tolerance allows at most a `1e-6` relative NG or RG difference; this check
+   does not mark the result scientifically reviewed.
+
+```bash
+python3 tools/validate_cops_run.py \
+  --fit output_fit_full_default \
+  --verification output_fit_full_default_verify \
+  --tolerance 1e-6
+```
+
+5. Plot the base, cached fitted prediction, independently verified C++ run,
+   and reference NG/RG measurements versus UTC. The figure is written inside
+   the fit result directory under the shared output root.
+
+```bash
+python3 tools/plot_cops_model.py \
+  output_fit_full_default_base \
+  output_fit_full_default \
+  output_fit_full_default_verify \
+  --ref output_fit_full_default_base \
+  --x time \
+  --theme light \
+  --save output_fit_full_default/comparison_time.png
+```
+
+6. Make the same comparison versus shape-model altitude.
+
+```bash
+python3 tools/plot_cops_model.py \
+  output_fit_full_default_base \
+  output_fit_full_default \
+  output_fit_full_default_verify \
+  --ref output_fit_full_default_base \
+  --x altitude \
+  --theme light \
+  --save output_fit_full_default/comparison_altitude.png
+```
+
+The principal numerical report is
+`$COPS_OUTPUT_ROOT/output_fit_full_default/fit_result.txt`; provenance and
+authoritative process/optimizer/verification states are in
+`fit_manifest.json`. The two comparison figures are `comparison_time.png` and
+`comparison_altitude.png` in that directory. The complete C++ table is
+`$COPS_OUTPUT_ROOT/output_fit_full_default_verify/COPS_model.dat`.
+
 ## 1. Check the fitter and selected data
 
 The working fitter is included with shared-output path handling:
@@ -303,6 +440,63 @@ the fitter normally re-enables otherwise valid NG points in those exclusion
 intervals and retains saturated points. The housekeeping table is needed
 even when saturation exclusion is not enabled.
 
+### Which pressure curves actually enter the fit?
+
+The default fit uses two discrete observation series, not all curves shown by
+the comparison plot:
+
+| Fitted observation | Saved column | Immediate source used by Python |
+|---|---|---|
+| COPS nude-gauge pressure | `refNG` | `output_fit_base/COPS_model.dat` |
+| COPS ram-gauge pressure | `refRG` | `output_fit_base/COPS_model.dat` |
+
+The C++ base run copies these reference values from the file named by
+`ObservationFile` in `fit_base.in`, currently
+`/home/vtenishe/ROS-END-OF-MISSION/AMPS/srcCG/RosinaMeasurements.h`, and
+converts them from mbar to Pa because `ReferenceDataUnit = mbar`. The inspected
+SHAP5 reference series has 1,150 timestamps from
+`2016-09-30T0:00:04` through `2016-09-30T10:39:26`. Nonpositive values are
+missing-data markers and do not enter the objective.
+
+For each selected sample, the residual is
+`log(p_model) - log(p_reference)`. NG residuals are divided by the square root
+of the selected NG count and RG residuals by the square root of the selected
+RG count, so the two gauges have equal aggregate weight. The inspected
+dataset gives these selection counts:
+
+| Selection | NG samples | RG samples |
+|---|---:|---:|
+| Python default, no replacement `--data` table | 930 | 1,146 |
+| Default plus `--apply-exclude-ng` | 839 | 1,146 |
+| Default plus `--exclude-ng-saturated` | 917 | 1,146 |
+| Both exclusion switches, as in the inspection command above | 826 | 1,146 |
+
+These counts describe the inspected data, shape, and intervals; they are not
+constants for another base. The 13 saturation-flagged NG samples from
+`10:23:50` through `10:24:38` are included unless
+`--exclude-ng-saturated` is supplied. Without `--apply-exclude-ng`, the fitter
+also re-enables otherwise valid NG samples in the base input's `ExcludeNG`
+interval.
+
+The L4 density-derived series, digitized ESA-blog curve, digitized EGU NG/RG
+curves, M004 comparison, and other plotted simulations are comparison sources;
+they are not silently merged into the fit. The collector's default
+`COPS_fit_data.txt` also takes its pressures from the base `refNG/refRG`
+columns. Only an explicit `--data FILE` replaces the pressures and selection
+flags, and that table must match the base point IDs, UTC strings, and saved RG
+temperatures.
+
+The saved reference series is closely related to the locally processed COPS
+L2 housekeeping pressures, but the audit documented in `README.md` found small
+numerical differences, two unmatched timestamps, and one NG missing-value
+difference. Its conversion history is not established here, so do not claim
+that it is byte-for-byte identical to the raw or processed L2 archive.
+
+`fit_data_used.txt`, `fit_data_used.png`, and `fit_profiles_used.png` produced
+by each run are the authoritative record and visualization of the curves and
+masks that actually entered that fit. In the text table, `-1` means that the
+corresponding gauge sample was not selected.
+
 ## 2. Run a fit
 
 ```bash
@@ -328,6 +522,24 @@ By default, there are 29 free parameters:
 | H2O surface activity | 25 coefficients through nominal degree 4 | `--degree 0..4` controls which harmonic groups vary. Higher-degree coefficients retain their base values. |
 | Surface temperature | `Tmax`, `T75`, `Tmin` | `--fix-temperature` keeps the base temperatures. |
 | CO2 activity | One nonnegative multiplier, `kappa` | `--fix-kappa` holds it at 1. |
+
+The fitter takes its initial physical values from the selected base run; it
+does not keep a separate, universal starting vector. With the supplied
+`fit_base.in`, which uses `ActivityModel = shap5` and does not override the
+analytical-temperature defaults, the starting point and bounds are:
+
+| Free quantity | Default initial value | Default optimizer bounds | Where/how to change it |
+|---|---|---|---|
+| `a00` through `a24` | The 25 H2O `Activity_SHAP5` coefficients in `src/SrcCGTables.h` | Unbounded | Select fewer free groups with `--degree N`. To change the initial map, create a three-row, 25-coefficient activity file, set `ActivityModel = file`, `ActivityFile = FILE`, and `ActivityFileHeliocentricModel = shap5` or `shap5_1` in a new base input, then regenerate the base. |
+| `Tmax` | 182.09922 K | 30–400 K | Change the base input's `AnalyticalTmax`; change optimizer bounds with `--tbounds LO HI`; freeze it together with the other temperatures using `--fix-temperature`. |
+| `T75` | 136.11149 K | 30–400 K | Change `AnalyticalT75` in the base input; use the same temperature controls. |
+| `Tmin` | 133.0 K | 30–400 K | Change `AnalyticalTmin` in the base input; use the same temperature controls. |
+| `kappa` | 1.0 relative to the base CO2 map | 0 to infinity | Freeze it with `--fix-kappa`. There is no command-line option for a different initial `kappa`; change the CO2 row of an `ActivityModel = file` base if a different effective starting CO2 source is required. |
+
+The coefficient variables are internally scaled by the largest absolute base
+H2O coefficient for numerical conditioning; `ActivityFit.txt` and reported
+fit values are converted back to physical coefficient values. The scaling is
+not an additional fitted parameter.
 
 The fit minimizes logarithmic NG/RG pressure discrepancies, with equal
 aggregate weight for each gauge, plus the optional H2O activity-prior
@@ -418,6 +630,48 @@ parameter-count table, constraints, and fixed-physics details.
 | `--allow-legacy-base` | off | Explicitly accept a base without `run_manifest.json` after strict cache validation; prefer regenerating the base. |
 | `--check-jacobian` | off | Compare analytic derivatives with finite differences at the initial parameters, then stop. Inspect the printed differences; there is no separate derivative pass/fail threshold. |
 | `--check-tolerance VALUE` | `1e-6` | Allowed initial Python/C++ pressure discrepancy, not a Jacobian tolerance. |
+
+These are Python fitter options and must appear after the base-run argument,
+for example:
+
+```bash
+python3 tools/fit_cops.py output_fit_base \
+  --degree 2 \
+  --lambda 3e-3 \
+  --ordered-temperature \
+  --tbounds 80 300 \
+  --fix-kappa \
+  --apply-exclude-ng \
+  --exclude-ng-saturated \
+  --out output_fit_degree2_new
+```
+
+Options alter that fit only. Initial activity and temperature values are
+properties of the C++ base and must be changed before regenerating it. Make a
+new input (and a new output name) rather than overwriting the existing base:
+
+```text
+OutputDirectory = output_fit_custom_base
+ActivityModel = file
+ActivityFile = /path/to/activity_3x25.txt
+ActivityFileHeliocentricModel = shap5
+AnalyticalTmax = 190.0
+AnalyticalT75 = 145.0
+AnalyticalTmin = 130.0
+```
+
+Then generate and fit the new base:
+
+```bash
+env OMP_NUM_THREADS=4 ./liouville_cops fit_custom.in
+python3 tools/fit_cops.py output_fit_custom_base \
+  --ordered-temperature --lambda 3e-3 \
+  --out output_fit_custom_new
+```
+
+The numerical values in this example are illustrative configuration syntax,
+not recommended physical values. Choose them only from an identified physical
+or calibration basis.
 
 Without temperature ordering, all three temperatures are independently
 bounded. With `--ordered-temperature`, only Tmin receives the specified
