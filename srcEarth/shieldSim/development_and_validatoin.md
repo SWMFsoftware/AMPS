@@ -7,8 +7,10 @@ independent review; Stage 6 implemented and reference-tested, pending
 independent review; Stage 7 software framework and downloaded proton-component
 qualification implemented, formal physical GCR/SEP qualification incomplete;
 Stage 8 public-input acquisition and a bounded foreground-only axial diagnostic
-implemented, formal observational validation incomplete**
-Prepared: 2026-10-16; Stage-8 axial benchmark updated 2026-10-18
+implemented, formal observational validation incomplete; Stage 9 interface
+framework implemented and acceptance-tested for verification workflows, formal
+production qualification incomplete**
+Prepared: 2026-10-16; Stage-8 axial benchmark and Stage-9 interface updated 2026-10-18
 Requirements decisions approved: 2026-10-16 and 2026-10-17
 Scope: environment-effect radiation proxies for spacecraft-anomaly analysis
 and preliminary mission assessment; ordered multilayer shielding; slab
@@ -28,7 +30,10 @@ the approved `foreground_only_axial` diagnostic and is acceptance-tested as
 software, but it does not represent the omitted instrument, spacecraft, or
 lunar foreground/background response. Stage 8 still lacks a complete public
 engineering mass model, observational covariance, a preregistered blind
-protocol, and reviewer sign-off.**
+protocol, and reviewer sign-off. The Stage-9 compiler/UI, preflight, manifest,
+and resumable runner are implemented and acceptance-tested, but mission/anomaly
+purposes remain disabled because the Stage-9 entry condition is not met and the
+regression snapshot has not received independent review.**
 
 The filename retains the spelling requested in the task. This document uses
 the normative words **must**, **should**, and **may** deliberately. A stage is
@@ -2369,6 +2374,28 @@ terms appropriate to the interval, preregistered decisions, blind evaluation,
 residual diagnostics, and bounded signed conclusions.
 
 ### Stage 9 - production UI and regression qualification
+
+**Status: interface framework implemented and acceptance-tested on 2026-10-18;
+verification-only, formal Stage 9 incomplete.** The implementation comprises
+`scripts/stage9_interface.py`, the loopback server and browser assets under
+`ui/stage9/`, the authoritative capability registry
+`data/stage9_capabilities.v1.json`, and the worked
+`examples/stage9_ui_request.json`. It compiles exact case-v2 inputs, embeds the
+complete request in a hashed run manifest, reports the ordered material,
+density, mass-thickness, and geometric-thickness mapping, distinguishes
+transport cases from quantity series, performs cost and uncertainty preflight,
+attaches validation badges to each run, and supports cancellation/resume at a
+documented case-file boundary. The registered `stage9_interface` test covers
+traceability, cardinality, serialization, reproducibility, guard failures,
+production C++ case parsing, and active/case-boundary cancellation and resume.
+
+The V6 snapshot at `tests/reference/stage9_candidate_baseline.v1.json` is
+explicitly `candidate_unreviewed_not_acceptance`. It may detect software drift
+but cannot satisfy the planned “reviewed regression baseline” exit criterion.
+Because Stages 3--8 retain applicable open gates, the registry enables only
+`verification_test` profiles and returns explicit reasons for disabled anomaly,
+mission, AMPS, cross-profile, non-slab, and production-regression states. This
+is an enforced boundary, not an implicit claim that the entry condition passed.
 
 Entry: each exposed quantity has passed its applicable prior gates.  
 Work:

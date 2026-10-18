@@ -1,0 +1,103 @@
+{
+  "schema_version": "shieldSim.stage9_capabilities.v1",
+  "registry_version": "1.0.0",
+  "stage9_qualification_status": "implementation_available_verification_only_entry_gates_open",
+  "scope_statement": "The Stage-9 interface may compile and execute verification cases. It is not qualified for spacecraft-anomaly or preliminary-mission decisions until every exposed quantity passes its preceding scientific gates and the Stage-9 baseline receives independent review.",
+  "profiles": [
+    {
+      "profile_id": "tid_slab_verification_v1",
+      "label": "TID slab verification",
+      "case_template": "../examples/stage4_tid_case.json",
+      "allowed_quantities": ["TID"],
+      "enabled_purposes": ["verification_test"],
+      "disabled_purpose_reasons": {
+        "spacecraft_anomaly_environment_effect_assessment": "Stage-4 TID validation and independent review are not complete.",
+        "preliminary_mission_environment_effect_assessment": "Stage-4 TID validation and independent review are not complete."
+      },
+      "validation_badges": [
+        {
+          "quantity": "TID",
+          "status": "implemented_reference_tested_not_production_qualified",
+          "evidence": "Stage-4 analytic and reference tests",
+          "reason": "remaining Stage-4 validation and independent review gates are open"
+        }
+      ]
+    },
+    {
+      "profile_id": "silicon_damage_slab_verification_v1",
+      "label": "Silicon DDD and 1-MeV neutron-equivalent verification",
+      "case_template": "../examples/stage5_ddd_neq_case.json",
+      "allowed_quantities": ["DDD", "n_eq"],
+      "enabled_purposes": ["verification_test"],
+      "disabled_purpose_reasons": {
+        "spacecraft_anomaly_environment_effect_assessment": "Stage-5 displacement-damage validation and independent review are not complete.",
+        "preliminary_mission_environment_effect_assessment": "Stage-5 displacement-damage validation and independent review are not complete."
+      },
+      "validation_badges": [
+        {
+          "quantity": "DDD",
+          "status": "implemented_reference_tested_not_production_qualified",
+          "evidence": "Stage-5 silicon response tests",
+          "reason": "accelerator/independent reference and review gates remain open"
+        },
+        {
+          "quantity": "n_eq",
+          "status": "implemented_reference_tested_not_production_qualified",
+          "evidence": "Stage-5 silicon response tests",
+          "reason": "accelerator/independent reference and review gates remain open"
+        }
+      ]
+    },
+    {
+      "profile_id": "let_hardness_slab_verification_v1",
+      "label": "Electronic LET and H100/10 slab verification",
+      "case_template": "../examples/stage6_let_hardness_case.json",
+      "allowed_quantities": ["LET", "H100/10"],
+      "enabled_purposes": ["verification_test"],
+      "disabled_purpose_reasons": {
+        "spacecraft_anomaly_environment_effect_assessment": "Stage-6 LET/hardness validation and independent review are not complete.",
+        "preliminary_mission_environment_effect_assessment": "Stage-6 LET/hardness validation and independent review are not complete."
+      },
+      "validation_badges": [
+        {
+          "quantity": "LET",
+          "status": "implemented_reference_tested_not_production_qualified",
+          "evidence": "Stage-6 analytic/reference tests",
+          "reason": "remaining Stage-6 validation and independent review gates are open"
+        },
+        {
+          "quantity": "H100/10",
+          "status": "implemented_reference_tested_not_production_qualified",
+          "evidence": "Stage-6 analytic/reference tests",
+          "reason": "remaining Stage-6 validation and independent review gates are open"
+        }
+      ]
+    }
+  ],
+  "disabled_states": [
+    {
+      "control": "purpose.spacecraft_anomaly_environment_effect_assessment",
+      "reason": "Stage-9 entry condition is not met: exposed quantities have open prior validation gates."
+    },
+    {
+      "control": "purpose.preliminary_mission_environment_effect_assessment",
+      "reason": "Stage-9 entry condition is not met: exposed quantities have open prior validation gates."
+    },
+    {
+      "control": "quantity.cross_profile_combinations",
+      "reason": "TID, silicon damage, and LET/hardness profiles use different source/response contracts and cannot be combined by a display-only UI selection."
+    },
+    {
+      "control": "absorber.geometry.non_slab",
+      "reason": "Only the explicit slab provider is admitted; arbitrary absorber shapes are gated to Stage 10."
+    },
+    {
+      "control": "source.AMPS",
+      "reason": "The versioned AMPS adapter and authoritative AMPS output contract are gated to Stage 11."
+    },
+    {
+      "control": "regression.production_acceptance",
+      "reason": "The Stage-9 regression snapshot is a candidate until it is independently reviewed."
+    }
+  ]
+}

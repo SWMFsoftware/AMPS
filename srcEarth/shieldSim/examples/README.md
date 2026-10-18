@@ -249,3 +249,30 @@ AMS A=1 proton component through both Al/HDPE layer orders and Si/water slabs.
 That component remains incomplete GCR. GOES directions remain separate and
 transport-disabled pending a documented sensor-to-boundary transform and
 angular response.
+
+## Stage-9 UI request example
+
+`stage9_ui_request.json` demonstrates `shieldSim.ui_request.v1` with two
+ordered shielding configurations, two explicit slab absorbers, the 10%
+accuracy default, and the bounded TID verification profile. Preview or compile
+it without running transport:
+
+```bash
+python3 scripts/stage9_interface.py preview \
+  --request examples/stage9_ui_request.json
+
+python3 scripts/stage9_interface.py compile \
+  --request examples/stage9_ui_request.json \
+  --output test_output/stage9_ui_jobs/example
+```
+
+The expected matrix is two shields × two absorbers = four independent
+transport cases and four TID series. The example intentionally omits a runtime
+calibration, so the preflight reports exact history bounds but does not invent
+a wall-time estimate. The resulting manifest embeds the entire UI request and
+maps every control to the generated v2 case path.
+
+Only `verification_test` is enabled. This example does not authorize TID for
+anomaly or mission decisions, and its candidate regression hash is not an
+independently reviewed production baseline. The browser and complete run,
+cancel, and resume instructions are in `RUN.md`.

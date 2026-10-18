@@ -25,6 +25,13 @@ uncertainty budgets, and required prior-stage reviews are unavailable. Stage 4 e
 capability for proton and helium-4 incidence in aluminum, silicon, and water.
 It does not validate photon TID, electrons, heavier ions, devices, organs, or
 crew dose.
+Stage 9 now has a local browser interface, a strict versioned UI-request
+compiler, preflight cost/uncertainty reporting, exact shield-by-absorber case
+mapping, immutable manifests, and case-boundary cancellation/resume. It is
+deliberately **verification-only**, not a completed production qualification:
+the interface disables anomaly/mission purposes because the Stage-9 entry
+condition and independent regression review are not satisfied. Its candidate
+regression snapshot detects software drift but is not scientific acceptance.
 Stage 2 has strict
 adapters and pinned data for the original AMS-02 proton/helium fixture, the
 2025 AMS-02 He--O solar-cycle tables, ACE/CRIS B--Ni, and the GOES-16 GLE72
@@ -144,6 +151,43 @@ Geant4 mass model, the withheld calibration plan, and observational bin
 covariance. The axial fixture does not substitute assumed values for those
 missing inputs, and therefore cannot close the full Stage-8 gate.
 
+### Stage-9 verification interface
+
+The interface maps the requested screenshot controls to
+`shieldSim.ui_request.v1` and then to strict `shieldSim.case.v2` files. It
+shows ordered source-to-absorber layers, resolved density and density
+uncertainty, input mass/geometric thickness, and the derived complementary
+thickness. It accepts one through five layers and rejects any layer whose
+derived geometric thickness exceeds 100 mm. Absorbers are explicitly labeled
+`slab`; size X, size Y, thickness, translation, and unit quaternion are all
+case data rather than material-name defaults.
+
+Start the local UI from the source directory:
+
+```bash
+python3 scripts/stage9_ui_server.py \
+  --executable test_output/build/shieldSim \
+  --output-root test_output/stage9_ui_jobs
+```
+
+Open `http://127.0.0.1:8765/`. Omit `--executable` for preview/compile-only
+operation. The server accepts only safe bundle names beneath the selected
+output root and never accepts browser-supplied commands. The equivalent CLI
+preflight is:
+
+```bash
+python3 scripts/stage9_interface.py preview \
+  --request examples/stage9_ui_request.json
+```
+
+Two shields and two absorbers are four transport cases, not eight; selecting
+two quantities would create eight output quantity series while leaving the
+transport case count four. A wall-time range is reported only when the request
+contains a measured `seconds_per_history` and its provenance. Otherwise it is
+explicitly `not_assessable_no_measured_throughput`. See
+[`RUN.md`](RUN.md#10-stage-9-verification-interface) for bundle compilation,
+validation, execution, cancellation, resume, and test commands.
+
 ### Running the CRaTER benchmark in parallel
 
 The recommended workstation launcher starts independent Geant4 processes,
@@ -225,12 +269,15 @@ shieldSim/
   ├── CMakeLists.txt
   ├── README.md
   ├── RUN.md                         # build/run/test operations guide
-  ├── quick_guide.md                 # CRaTER parallel-run quick start
+  ├── quick_guide.md                 # CRaTER and Stage-9 quick starts
   ├── shieldSim.cc
   ├── sourceTool.cc                  # published-source validation/conversion CLI
   ├── responseTool.cc                # response-matrix assembly/folding CLI
   ├── exposureTool.cc                # Stage-7 time/quadrature/allocation CLI
   ├── referenceTool.cc               # Stage-4 Geant4 EM table probe
+  ├── ui/stage9/                     # local verification UI assets
+  ├── scripts/stage9_interface.py    # request compiler + resumable runner
+  ├── scripts/stage9_ui_server.py    # loopback UI/API server
 ├── include/
 │   ├── AbsorberGeometry.hh       # future-shape provider contract + slab
 │   ├── AccuracyController.hh     # running uncertainty/stopping state

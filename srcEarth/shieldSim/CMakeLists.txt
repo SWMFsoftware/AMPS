@@ -410,6 +410,20 @@ if(BUILD_TESTING)
   set_tests_properties(stage8_crater_transport PROPERTIES
     ENVIRONMENT "${_geant4_test_environment}"
     TIMEOUT 1800)
+  # Stage 9 is presently a verification-only interface implementation: the
+  # registry keeps mission purposes disabled until the scientific entry gates
+  # and an independently reviewed baseline exist.  This gate checks the full
+  # UI-request-to-v2-case mapping, C++ case validation, exact matrix count,
+  # serialization/reproducibility, material/thickness reporting, and both
+  # active and case-boundary cancellation/resume behavior.
+  add_test(NAME stage9_interface
+    COMMAND ${Python3_EXECUTABLE}
+            ${PROJECT_SOURCE_DIR}/tests/test_stage9_interface.py
+            ${PROJECT_SOURCE_DIR} ${CMAKE_BINARY_DIR}/stage9_interface_runs
+            $<TARGET_FILE:shieldSim>)
+  set_tests_properties(stage9_interface PROPERTIES
+    ENVIRONMENT "${_geant4_test_environment}"
+    TIMEOUT 180)
   add_test(NAME validation_figures
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/generate_validation_figures.py
             ${PROJECT_SOURCE_DIR} ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>shieldSim Stage-9 verification interface</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">shieldSim / Stage 9</p>
+      <h1>Radiation proxy request</h1>
+    </div>
+    <span class="badge warning">Verification only — production gates open</span>
+  </header>
+
+  <main>
+    <section class="notice">
+      <strong>Scientific boundary:</strong> anomaly and mission-assessment purposes are
+      disabled until each quantity passes its prior validation gate. AMPS ingestion and
+      non-slab absorber shapes are not available in this interface.
+    </section>
+
+    <section class="card controls">
+      <h2>1. Calculation contract</h2>
+      <div class="grid three">
+        <label>Request ID<input id="request-id" value="stage9_ui_request"></label>
+        <label>Purpose
+          <select id="purpose">
+            <option value="verification_test">Verification test</option>
+            <option disabled>Spacecraft anomaly assessment — validation open</option>
+            <option disabled>Preliminary mission assessment — validation open</option>
+          </select>
+        </label>
+        <label>Profile<select id="profile"></select></label>
+        <label>Relative accuracy target
+          <input id="accuracy" type="number" value="0.10" min="0.001" max="0.999" step="0.01">
+        </label>
+        <label>Bundle name<input id="bundle-name" value="stage9_ui_run"></label>
+      </div>
+      <div id="quantities" class="choice-row"></div>
+      <p id="profile-reason" class="reason"></p>
+    </section>
+
+    <section class="card">
+      <div class="section-title">
+        <div><h2>2. Ordered shielding configurations</h2>
+          <p>Layers are listed source → absorber. Density and both thickness forms are resolved by the server.</p></div>
+        <button id="add-shield" type="button">Add shield</button>
+      </div>
+      <div id="shields"></div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">
+        <div><h2>3. Slab absorbers</h2>
+          <p>All three dimensions and the complete transform are mandatory.</p></div>
+        <button id="add-absorber" type="button">Add absorber</button>
+      </div>
+      <div id="absorbers"></div>
+    </section>
+
+    <section class="card actions">
+      <h2>4. Preflight and submission</h2>
+      <div class="button-row">
+        <button id="preview" class="primary">Preview &amp; validate</button>
+        <button id="compile">Compile bundle</button>
+        <button id="run">Run compiled bundle</button>
+        <button id="cancel" class="danger">Cancel</button>
+        <button id="resume">Resume</button>
+        <button id="status">Refresh status</button>
+      </div>
+      <pre id="summary">Load the example, then preview it.</pre>
+    </section>
+
+    <details class="card">
+      <summary>Canonical request JSON (advanced)</summary>
+      <p>Editing this text and choosing “Load JSON into controls” performs a serialization round trip.</p>
+      <textarea id="request-json" spellcheck="false"></textarea>
+      <button id="load-json">Load JSON into controls</button>
+    </details>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

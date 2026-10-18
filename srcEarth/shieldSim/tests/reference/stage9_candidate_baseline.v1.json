@@ -1,0 +1,20 @@
+{
+  "schema_version": "shieldSim.stage9_regression_baseline.v1",
+  "baseline_id": "stage9_example_ui_contract_candidate_1",
+  "status": "candidate_unreviewed_not_acceptance",
+  "review": {
+    "status": "not_reviewed",
+    "reviewer": null,
+    "review_date": null,
+    "reason": "No independent reviewer has approved Stage 9; this snapshot detects software drift but cannot qualify scientific production use."
+  },
+  "fixture": "examples/stage9_ui_request.json",
+  "portable_regression_contract_sha256": "672bb82aac7290ad84123d4ebb84b3b9a65b8d7718d0c0b60de1adb3ad14fa4a",
+  "expected_case_matrix": {
+    "shield_count": 2,
+    "absorber_count": 2,
+    "transport_case_count": 4
+  },
+  "acceptance_scope": "software_regression_only",
+  "forbidden_interpretation": "This candidate is not evidence that TID or the Stage-9 production UI passed scientific validation."
+}

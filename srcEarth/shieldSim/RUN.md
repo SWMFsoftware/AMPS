@@ -629,7 +629,153 @@ layers, thermal blanket, spacecraft, lunar albedo, and out-of-aperture/side
 background. It is a diagnostic comparison, not full-instrument validation or
 Stage-8 sign-off.
 
-## 10. Understanding outputs
+## 10. Stage-9 verification interface
+
+Stage 9 is implemented as a **verification-only** interface while earlier
+scientific gates remain open. The capability registry
+`data/stage9_capabilities.v1.json` is authoritative for enabled profiles,
+quantities, badges, and disabled reasons. A browser label cannot enable
+spacecraft-anomaly or preliminary-mission purposes, combine response contracts
+from different profiles, select a template material, introduce a non-slab
+shape, or select the future AMPS adapter.
+
+### 10.1 Request and preflight
+
+Start with `examples/stage9_ui_request.json`. Its top-level fields are:
+
+- `profile_id`: one bounded TID, silicon-damage, or LET/hardness verification
+  source/response contract;
+- `accuracy_target`: relative fraction; when omitted the compiler records the
+  approved 0.10 default;
+- `shield_configurations`: independent stacks, each with full transverse size,
+  transform, and one through five source-to-absorber layers;
+- `absorbers`: independent finite slabs with material, X/Y sizes, thickness,
+  and transform; and
+- `runtime_calibration`: either `not_provided`, or a measured
+  `seconds_per_history` with provenance.
+
+Layer thickness is either `geometric` in `mm`/`cm` or `areal_density` in
+`g/cm2`. The compiler resolves density through the versioned material library,
+reports its uncertainty metadata, calculates the other thickness form, and
+enforces the inclusive 100 mm derived limit. A fully documented
+`material_overrides` record can change density/composition in the request; the
+C++ material parser performs final provenance, composition, role, and status
+validation. Templates such as unresolved lunar/Mars regolith remain disabled.
+
+Run a read-only preflight:
+
+```bash
+python3 scripts/stage9_interface.py preview \
+  --request examples/stage9_ui_request.json
+```
+
+The summary separately reports:
+
+```text
+transport_case_count = number of shields * number of absorbers
+requested_quantity_series_count = transport_case_count * number of quantities
+```
+
+Minimum/maximum histories are exact. Wall time is `not_assessable` without a
+measured throughput; the compiler never invents one. Combined uncertainty is
+also `not_assessable` when its systematic budget is incomplete. A declared
+systematic coverage floor at or above the target is reported unachievable
+before submission.
+
+### 10.2 Compile, validate, and run without the browser
+
+Create a new bundle only in an empty/nonexistent directory:
+
+```bash
+python3 scripts/stage9_interface.py compile \
+  --request examples/stage9_ui_request.json \
+  --output test_output/stage9_ui_jobs/example
+
+for case_file in test_output/stage9_ui_jobs/example/cases/*.json; do
+  test_output/build/shieldSim --validate-case="${case_file}"
+done
+
+python3 scripts/stage9_interface.py run \
+  --bundle test_output/stage9_ui_jobs/example \
+  --executable test_output/build/shieldSim
+```
+
+The bundle contains `request.canonical.json`, generated v2 cases,
+`manifest.json`, `job_state.json`, and one `runs/<case_id>/` directory per
+generated shield case. The manifest embeds the complete UI request, content
+hashes, exact control-to-case JSON paths, every shield/absorber matrix mapping,
+seed rule, material/layer resolution, cost/uncertainty preflight, validation
+badges, and disabled reasons. Each run directory receives
+`stage9_provenance.json` before transport, tying its outputs to the manifest,
+case hash, matrix cells, and non-production validation badges. A subprocess
+exit code of zero is not sufficient for job completion: the runner requires
+every expected absorber-specific resolved-case/result pair and verifies their
+case/absorber/hash linkage before checkpointing that generated case.
+
+To request cancellation from a second terminal:
+
+```bash
+python3 scripts/stage9_interface.py cancel \
+  --bundle test_output/stage9_ui_jobs/example
+```
+
+The runner terminates an active subprocess and records
+`interrupted_restart_required`. It checkpoints only completed generated case
+files; it does not claim to checkpoint Geant4 histories. Resume skips completed
+cases and restarts an interrupted case from its declared seed:
+
+```bash
+python3 scripts/stage9_interface.py run \
+  --bundle test_output/stage9_ui_jobs/example \
+  --executable test_output/build/shieldSim \
+  --resume
+```
+
+### 10.3 Local browser
+
+The server uses only the Python standard library and binds to loopback by
+default:
+
+```bash
+python3 scripts/stage9_ui_server.py \
+  --host 127.0.0.1 --port 8765 \
+  --output-root test_output/stage9_ui_jobs \
+  --executable test_output/build/shieldSim
+```
+
+Open `http://127.0.0.1:8765/`. The layer editor displays density, density
+uncertainty, mass thickness, derived geometric thickness, and order. The form
+also exposes explicit shield/absorber dimensions and positions. Non-identity
+unit quaternions and full material overrides can be entered in the advanced
+versioned JSON view, then round-tripped back into the controls. `Preview`,
+`Compile`, `Run`, `Cancel`, `Resume`, and `Refresh status` call the same core
+compiler/runner used above. When `--executable` is supplied, `Compile` also
+passes every generated case through the production C++ `--validate-case`
+parser and writes `compile_validation.json`; `Run` is unavailable without that
+server option. Do not expose this development server to an
+untrusted network; it has no authentication or TLS.
+
+### 10.4 Tests and qualification boundary
+
+After configuring with `BUILD_TESTING=ON`:
+
+```bash
+cd test_output/build
+ctest --output-on-failure -R '^stage9_interface$'
+cd ../..
+```
+
+The test covers UI-control presence, JavaScript syntax when Node is available,
+serialization round-trip, exact matrix cardinality, complete UI-to-case
+traceability, deterministic hashes/seeds, material override and thickness
+conversion, every major disabled guard, C++ validation of generated cases,
+provenance badges, active cancellation, case-boundary cancellation, and
+resume. `tests/reference/stage9_candidate_baseline.v1.json` is explicitly
+`candidate_unreviewed_not_acceptance`; it protects V6 software behavior but is
+not a reviewed regression acceptance baseline. Stage 9 cannot be marked
+complete until its entry gates pass and that review exists.
+
+## 11. Understanding outputs
 
 Depending on the case, shieldSim writes a subset of:
 
@@ -658,7 +804,7 @@ For anomaly work, retain exact event-onset, event-end, interval midtime/source
 coordinates, gaps, attitude/configuration changes, and anomaly timestamps. A
 radiation proxy is an environmental covariate, not proof of anomaly causation.
 
-## 11. Reference data and controlled downloads
+## 12. Reference data and controlled downloads
 
 The compact committed validation data live under `tests/reference_spectra/`,
 `tests/reference_tid/`, `tests/reference_ddd/`, and `tests/reference_let/`.
@@ -695,7 +841,7 @@ BON2020 is not used in production and is not required to run Stage 2 or Stage
 versioned AMPS output into the existing canonical source contract without
 changing transport or proxy equations.
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
 **CMake cannot find Geant4:** set `Geant4_DIR` to the directory containing
 `Geant4Config.cmake`, remove only the failed dedicated build directory if a
@@ -736,7 +882,7 @@ may not stream them. Inspect the relevant directory below
 `test_output/build/`, or run CTest with `-V`. Do not redirect test work into
 `/tmp`.
 
-## 13. Reproducible run checklist
+## 14. Reproducible run checklist
 
 Before using a result in an anomaly analysis or preliminary assessment:
 

@@ -1,0 +1,99 @@
+{
+  "schema_version": "shieldSim.ui_request.v1",
+  "request_id": "stage9_example_tid_matrix",
+  "purpose": "verification_test",
+  "profile_id": "tid_slab_verification_v1",
+  "accuracy_target": 0.10,
+  "material_overrides": [],
+  "shield_configurations": [
+    {
+      "shield_id": "al_hdpe",
+      "label": "1 mm Al plus 2 mm HDPE",
+      "size_x": {"value": 50.0, "unit": "mm"},
+      "size_y": {"value": 50.0, "unit": "mm"},
+      "transform": {
+        "translation": {
+          "x": {"value": 0.0, "unit": "mm"},
+          "y": {"value": 0.0, "unit": "mm"},
+          "z": {"value": -20.0, "unit": "mm"}
+        },
+        "rotation_quaternion_local_to_world": {"w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0}
+      },
+      "layers": [
+        {
+          "layer_id": "outer_al",
+          "material": "Al",
+          "thickness": {"type": "geometric", "value": 1.0, "unit": "mm"}
+        },
+        {
+          "layer_id": "inner_hdpe",
+          "material": "HDPE",
+          "thickness": {"type": "areal_density", "value": 0.19, "unit": "g/cm2"}
+        }
+      ]
+    },
+    {
+      "shield_id": "al_only",
+      "label": "2 mm Al reference",
+      "size_x": {"value": 50.0, "unit": "mm"},
+      "size_y": {"value": 50.0, "unit": "mm"},
+      "transform": {
+        "translation": {
+          "x": {"value": 0.0, "unit": "mm"},
+          "y": {"value": 0.0, "unit": "mm"},
+          "z": {"value": -20.0, "unit": "mm"}
+        },
+        "rotation_quaternion_local_to_world": {"w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0}
+      },
+      "layers": [
+        {
+          "layer_id": "al",
+          "material": "Al",
+          "thickness": {"type": "geometric", "value": 2.0, "unit": "mm"}
+        }
+      ]
+    }
+  ],
+  "absorbers": [
+    {
+      "absorber_id": "silicon_proxy",
+      "label": "Silicon slab proxy",
+      "material": "Si",
+      "geometry": {
+        "type": "slab",
+        "size_x": {"value": 50.0, "unit": "mm"},
+        "size_y": {"value": 50.0, "unit": "mm"},
+        "thickness": {"value": 1.0, "unit": "mm"},
+        "transform": {
+          "translation": {
+            "x": {"value": 0.0, "unit": "mm"},
+            "y": {"value": 0.0, "unit": "mm"},
+            "z": {"value": -16.0, "unit": "mm"}
+          },
+          "rotation_quaternion_local_to_world": {"w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0}
+        }
+      }
+    },
+    {
+      "absorber_id": "water_proxy",
+      "label": "Water slab proxy",
+      "material": "Water",
+      "geometry": {
+        "type": "slab",
+        "size_x": {"value": 50.0, "unit": "mm"},
+        "size_y": {"value": 50.0, "unit": "mm"},
+        "thickness": {"value": 1.0, "unit": "mm"},
+        "transform": {
+          "translation": {
+            "x": {"value": 0.0, "unit": "mm"},
+            "y": {"value": 0.0, "unit": "mm"},
+            "z": {"value": -16.0, "unit": "mm"}
+          },
+          "rotation_quaternion_local_to_world": {"w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0}
+        }
+      }
+    }
+  ],
+  "quantities": ["TID"],
+  "runtime_calibration": {"status": "not_provided"}
+}

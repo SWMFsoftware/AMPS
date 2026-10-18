@@ -101,3 +101,25 @@ repeat the full run and could overwrite another rank's output. For detailed
 build, schema, output, troubleshooting, and scientific-boundary information,
 see [`RUN.md`](RUN.md) and
 [`development_and_validatoin.md`](development_and_validatoin.md).
+
+## Stage-9 verification-interface quick start
+
+Stage 9 is available for verification workflows only; anomaly and preliminary-
+mission submissions remain disabled until the prior scientific gates and
+independent regression review are complete.
+
+```bash
+python3 scripts/stage9_interface.py preview \
+  --request examples/stage9_ui_request.json
+
+python3 scripts/stage9_ui_server.py \
+  --host 127.0.0.1 --port 8765 \
+  --output-root test_output/stage9_ui_jobs \
+  --executable test_output/build/shieldSim
+```
+
+Open `http://127.0.0.1:8765/`, preview the request, compile a uniquely named
+bundle, and run it. Use the UI `Cancel`/`Resume` controls or the equivalent CLI
+commands documented in [`RUN.md`](RUN.md#10-stage-9-verification-interface).
+Two shields × three absorbers means six transport cases regardless of how many
+quantities are selected; quantity-series count is reported separately.
