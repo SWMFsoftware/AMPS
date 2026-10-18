@@ -390,7 +390,7 @@ Options ParseArguments(int argc, char** argv){
     o.calcLET=std::find(c.quantities.begin(),c.quantities.end(),"LET")!=c.quantities.end();
     o.scoringMaterials.clear();
     const auto& absorber=c.absorbers.front();
-    o.scoringMaterials.push_back({absorber.materialId,absorber.thicknessMm*mm});
+    o.scoringMaterials.push_back({absorber.materialId,absorber.scoringThicknessMm*mm});
   } else if(o.validateCaseOnly) {
     G4Exception("ParseArguments","BadInput",FatalException,"--validate-case requires --case=<file> or --validate-case=<file>");
   }

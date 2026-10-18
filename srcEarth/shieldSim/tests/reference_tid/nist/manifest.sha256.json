@@ -4,9 +4,17 @@
       "sha256": "4e40077ccc940e1fdde91a33e38b07550e1ca7569541399b362dace8ac22be32",
       "size_bytes": 5992
     },
+    "astar_germanium.csv": {
+      "sha256": "9061a2c624d12f44174872edd17c6d57853e21834580bce858a3da6a2579f460",
+      "size_bytes": 5894
+    },
     "astar_silicon.csv": {
       "sha256": "276e2c50382e13a79fc4bef5c1948ca0460f818de66bac4f91b330146a639838",
       "size_bytes": 5992
+    },
+    "astar_silicon_dioxide.csv": {
+      "sha256": "4fb771d1bbbdd640acddc55da72619864ca6b146834de311968906b2fb3971ff",
+      "size_bytes": 5982
     },
     "astar_water.csv": {
       "sha256": "b04860daebf0272fc68d39bb24dbe654f4cb4edc66d408605ce731e2a04e55d2",
@@ -16,9 +24,17 @@
       "sha256": "480e1df39f57c7735ea80fc45462c899b263bfd138622f6161c633e2dc214c2d",
       "size_bytes": 6463
     },
+    "pstar_germanium.csv": {
+      "sha256": "a716d51edc57596e1b68cd5c5ccb5aa187241f568067be6b5c43cf18fa1893d7",
+      "size_bytes": 6453
+    },
     "pstar_silicon.csv": {
       "sha256": "e8a612e2d0480a4aa3b64d591c70fd2393fefc776a8de8b8985eee74c4cb8e3d",
       "size_bytes": 6460
+    },
+    "pstar_silicon_dioxide.csv": {
+      "sha256": "ed95cb9d0241808b4c1af1db15d0c27632b1b6819bc3811ba43e378bfb378b73",
+      "size_bytes": 6455
     },
     "pstar_water.csv": {
       "sha256": "4f822c8817caf7d512359b7b9d5f6415ec602ca86c90f0e84d3d68e66510213b",
@@ -28,8 +44,16 @@
       "sha256": "6ab77a6583ba9ca4ec537717a1429f969859030a6cd2546f49117191cc695187",
       "size_bytes": 8568
     },
+    "raw/astar_germanium.txt": {
+      "sha256": "d8f2ff697044ca2a6604055bcb68710cb91d49dcb1b8e0aa404fdce02a0f5efb",
+      "size_bytes": 8568
+    },
     "raw/astar_silicon.txt": {
       "sha256": "35ed53f692090536bdeeb59aa858a1686336725543aeba26727574af5f9c3704",
+      "size_bytes": 8568
+    },
+    "raw/astar_silicon_dioxide.txt": {
+      "sha256": "5c53f17259445f9420745e34bd316d9f0f0244c17f545483ee524083058c9bee",
       "size_bytes": 8568
     },
     "raw/astar_water.txt": {
@@ -40,8 +64,16 @@
       "sha256": "3fe6459ec4abde6052bcb63f427ea856bbc35dd8506014191145b4eb9253db5e",
       "size_bytes": 9308
     },
+    "raw/pstar_germanium.txt": {
+      "sha256": "6f7b03dde9064d2558aaff1d54fd553b04f485386beae2447300b35f146268ec",
+      "size_bytes": 9308
+    },
     "raw/pstar_silicon.txt": {
       "sha256": "1034e6d8f1f56531b71a08fdd324e0644bc634daebaa36288e0b19171917aad1",
+      "size_bytes": 9308
+    },
+    "raw/pstar_silicon_dioxide.txt": {
+      "sha256": "4c9c21a64117314bf6ca98e4d1e718521a0e76d460dec3c1722f881f619f3af5",
       "size_bytes": 9308
     },
     "raw/pstar_water.txt": {
@@ -49,36 +81,56 @@
       "size_bytes": 9308
     },
     "raw/xcom_aluminum.html": {
-      "sha256": "1c9f7025ad1deeed9b0a353bdfe920c667bcb3675375bedfbdc407880d2a4d02",
-      "size_bytes": 7056
+      "sha256": "15fe8524ae5dd0dfb7b7c5b988112f15611974e9828efe5f4f5db5ea7638e365",
+      "size_bytes": 7055
+    },
+    "raw/xcom_germanium.html": {
+      "sha256": "8c86a83926cbe25068b7285cbfcc44d4499c898e0986d14c6553fa9ffc9b6224",
+      "size_bytes": 7058
     },
     "raw/xcom_silicon.html": {
-      "sha256": "8403ddc6e776c69a70a953477c81e7c7a154820c220f7959f1d17008e64634ab",
-      "size_bytes": 7053
+      "sha256": "a054835ad1d58618fff55f99613cb4db827852f1c013245be749c38238e5f177",
+      "size_bytes": 7052
+    },
+    "raw/xcom_silicon_dioxide.html": {
+      "sha256": "eb756b6f4b79489ac4a2859aecb67beb72c51fb5c42d467c0905590eff972323",
+      "size_bytes": 7029
     },
     "raw/xcom_water.html": {
-      "sha256": "20efedf85c95560409b3e6828413320d18877b17814f3704b6cb1a5b99fac87b",
-      "size_bytes": 7024
+      "sha256": "023429e5d419f167a46d1f42f7d71ae681995dee2c7fcaed1a3f5608cb16efe8",
+      "size_bytes": 7023
     },
     "raw/xray_aluminum.html": {
-      "sha256": "087b07ab25740b4607924bf2058e97df8b950476e22579ebc37da9a23db73dd4",
+      "sha256": "65e98e03044968d43253a4700be9e8999c1e03a72a530b006e1ec7a4ca8a537c",
       "size_bytes": 9329
     },
+    "raw/xray_germanium.html": {
+      "sha256": "b26e73a30743180fc3680c1f7c2ed65f084889e74b696f9a4cf2676187db1407",
+      "size_bytes": 10677
+    },
     "raw/xray_silicon.html": {
-      "sha256": "602b49ec0263452c51d55eab4f05ec1b0a08bc2e71e6edbf0f3c476f3fe9da37",
+      "sha256": "bdc09296e49ae08251804aa4aecadd02ca92bc20bd5b3d4d4dd2de084dad72a5",
       "size_bytes": 9333
     },
     "raw/xray_water.html": {
-      "sha256": "0a4c0c8800d3c4b2edb2db0c09eace257b742fabbfd775e867f639fa5a53f229",
+      "sha256": "47be737556b525d952f12ecd4a68ecb866729976f40a1bbca30c6e1036a246bb",
       "size_bytes": 8731
     },
     "xcom_aluminum.csv": {
       "sha256": "4efe80c99b68758f05eb3751f80a33e40897d641ef48311ad0b65ee8fc063523",
       "size_bytes": 147
     },
+    "xcom_germanium.csv": {
+      "sha256": "b47734e222dc4865e15343029877ce820c4f78cb434480da735095471ace86b8",
+      "size_bytes": 146
+    },
     "xcom_silicon.csv": {
       "sha256": "679f48b3c5e72df28877ba3461163c5fe1b3173772edaddd14ec444ddf81fbda",
       "size_bytes": 147
+    },
+    "xcom_silicon_dioxide.csv": {
+      "sha256": "acfaae5c76e9283d1aa270538658b97947281295358a4d9ee02199865a1b0995",
+      "size_bytes": 146
     },
     "xcom_water.csv": {
       "sha256": "3f20e069c7c34c8b299293e7a55867141dd5e399295d86d44c91292296b990bd",
@@ -87,6 +139,10 @@
     "xray_aluminum.csv": {
       "sha256": "1be474fab16f2c90a54845ea1a8d063da1aea083e5cd837665812a6bc595f775",
       "size_bytes": 859
+    },
+    "xray_germanium.csv": {
+      "sha256": "832c88a8d9a24698fe17ba5e461aac221a50b92e6cbee88fddd8ea8cbc117a78",
+      "size_bytes": 1078
     },
     "xray_silicon.csv": {
       "sha256": "25a571310b7682f08efb2bc04173f4df01b019ef0d359cb6dc95232b6beffc4b",
@@ -97,7 +153,7 @@
       "size_bytes": 814
     }
   },
-  "retrieval_utc": "2026-10-17T06:01:30Z",
+  "retrieval_utc": "2026-10-18T22:47:01Z",
   "schema_version": "shieldSim.nist_stage4_manifest.v1",
   "sources": {
     "PSTAR_ASTAR": "https://physics.nist.gov/cgi-bin/Star/apdata.pl",

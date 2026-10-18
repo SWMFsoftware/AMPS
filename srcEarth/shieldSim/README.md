@@ -2,9 +2,10 @@
 
 `shieldSim` is a Geant4 environment-effects model for spacecraft-anomaly
 analysis and preliminary mission assessment. It transports energetic particles
-through an ordered planar shielding stack into a finite absorber slab. It is
-not an instrument-design model, a device-response model, or an anatomical
-phantom.
+through an ordered planar shielding stack into a finite absorber. Qualified
+science-facing calculations still use slabs; Stage 10 adds a verification-only
+analytic-CSG absorber provider. It is not an instrument-design model, a
+device-response model, or an anatomical phantom.
 
 ## Implementation status
 
@@ -32,6 +33,27 @@ deliberately **verification-only**, not a completed production qualification:
 the interface disables anomaly/mission purposes because the Stage-9 entry
 condition and independent regression review are not satisfied. Its candidate
 regression snapshot detects software drift but is not scientific acceptance.
+Stage 10 now implements two bounded providers: `analytic_csg.v1` for explicitly
+framed primitives/Boolean regions and `tessellated_mesh.v1` for explicit,
+closed, consistently outward-oriented convex triangle meshes. Both support
+multiple passive material regions and one stable sensitive region, exact or
+declared mass properties, fatal overlap checks, provider-aware hashes, full
+transport tests, and comparison figures. Six directly runnable box, sphere,
+cylinder, tetrahedron, and octahedron examples are under
+`examples/stage10_shapes/`; the Boolean enclosure remains in
+`examples/stage10_analytic_csg_case.json`. Stage 10 remains
+**verification-only and formally incomplete**: no authoritative nontrivial
+spacecraft shape with an independent radiation-response reference has been
+supplied, and the mesh provider does not accept arbitrary concave CAD/STL.
+Each gallery JSON makes the ordered shield layers, sensitive absorber material,
+and requested `TID`/`DDD`/`n_eq`/`LET`/`H100/10` calculations explicit inputs;
+none is selected by the geometry implementation.
+Seven additional working selection combinations are in
+[`examples/configuration_cases/`](examples/configuration_cases/). They vary
+proton/He-4/neutron incidence, Si/water/Al absorbers, analytic and mesh shapes,
+shield footprint, one through five ordered layers, geometric and areal-density
+thicknesses, and calculation subsets. Their README explains why proton and
+neutron files are both required to exercise all five functions physically.
 Stage 2 has strict
 adapters and pinned data for the original AMS-02 proton/helium fixture, the
 2025 AMS-02 He--O solar-cycle tables, ACE/CRIS B--Ni, and the GOES-16 GLE72
@@ -51,8 +73,9 @@ dependency. The science-facing case path is a strict
   hidden geometry defaults in a versioned case;
 - one independent Geant4 world per shield × absorber calculation, so an
   absorber never shields another absorber;
-- a geometry-neutral absorber-provider contract and a current `slab.v1`
-  implementation;
+- a geometry-neutral absorber-provider contract, qualified `slab.v1`, and
+  verification-only `analytic_csg.v1` and `tessellated_mesh.v1`
+  implementations;
 - strict spectrum metadata, input-range rejection, and unknown-field
   rejection;
 - separate total, ionizing, and non-ionizing deposition ledgers;
@@ -113,6 +136,18 @@ denominators are undefined. The validated reference matrix is p/He-4 in
 natural Al, natural Si, and water; C-12 is limited to natural Si and requires
 `G4EmStandardPhysics_option4`. Values outside declared LET bins are audited and
 make the result not assessable; they are never clamped.
+
+The 2026-10-18 material-function data audit prepared, but did not silently
+enable, additional exact references: NIST PSTAR/ASTAR data for Ge and SiO2;
+SR-NIEL proton/He-4 plus ASTM-neutron data for GaAs; and charged-particle
+SR-NIEL data for Ge and Ga0.47In0.53As. Raw responses and canonical tables are
+checksum-pinned under `tests/reference_tid/nist/` and `tests/reference_ddd/`.
+The complete twelve-absorber/five-quantity status matrix, physical
+applicability boundaries, source links, and reproduction commands are in
+`tests/reference_material_functions/README.md`. Run `material_reference_data`
+to authenticate the package offline. Candidate data require a target-generic
+loader and new validation gates before production use; they are not a license
+to apply a silicon response to another material.
 
 Stage 7 adds the Geant4-free `shieldSimExposureTool` for strict UTC interval
 integration, explicit gaps and configuration segments, anomaly markers,
@@ -708,36 +743,162 @@ Combined v2 TID selects
 floor and yields `not_assessable` for combined accuracy. See the example for a
 fully expanded four-component/six-correlation record.
 
-### Adding a future arbitrary absorber shape
+### Stage-10 analytic CSG and tessellated-mesh providers
 
-`include/AbsorberGeometry.hh` is the extension boundary. Transport currently
-constructs only `SlabAbsorberGeometry`, but scorers consume the provider's
-stable region IDs and logical regions rather than a `G4Box` name or copy
-number. A provider must implement `Validate`, `Build`, `SensitiveRegionIds`,
-`MassProperties`, `BoundsAndReferenceFrame`, and
-`CanonicalGeometryDescription`; its geometry hash is part of every response
-key. This keeps source generation, ancestry/scoring, response matrices, and
-quantity algorithms independent of whether a future implementation uses CSG,
-CAD/mesh, voxels, GDML, or an application-specific spacecraft model.
+`include/AbsorberGeometry.hh` remains the extension boundary. Scorers consume
+stable provider region IDs and logical regions rather than incidental Geant4
+names or copy numbers. `DetectorConstruction` now selects qualified `slab.v1`
+or verification-only `analytic_csg.v1`/`tessellated_mesh.v1`; source generation, transport
+ledgers, response folding, and quantity algorithms do not inspect the shape.
+Every provider implements `Validate`, `Build`, `SensitiveRegionIds`,
+`MassProperties`, `BoundsAndReferenceFrame`, entry-surface methods, and
+`CanonicalGeometryDescription`.
 
-A future provider must return stable sensitive-region IDs, logical volumes,
-analytic or independently verified volumes/masses/centroids, material hashes,
-bounds/reference frame, provider version, source-file hashes, and a canonical
-geometry description. It must preserve explicit source units, scale and
-placement transform, region-to-material mapping, sensitive-region mapping,
-and any overburden. A geometry/material/region/placement change must invalidate
-the response cache even when nominal mass is unchanged.
+The `analytic_csg.v1` input contract is demonstrated by
+`examples/stage10_analytic_csg_case.json` and the `analytic_*.json` files in
+`examples/stage10_shapes/`. Its absorber omits the slab-level
+`material`; every region instead declares its own material. Geometry requires:
 
-Before it can be enabled, such a provider must reject missing or ambiguous
-units, non-finite vertices, non-watertight or self-intersecting solids,
-inconsistent surface orientation, overlaps, unmapped regions, empty sensitive
-regions, and mass/volume disagreement. Required tests include primitive
-analytic volumes and chords, analytic/mesh/voxel convergence, rotation and
-translation behavior, reference-ray boundary navigation, region ledger
-closure, harmless tessellation invariance, and direct-vs-response agreement.
-Automatic mesh repair is prohibited unless it is an explicit versioned
+- provider version `1.0.0`, right-handed `absorber_local_cartesian` coordinates,
+  `provider_origin`, explicit `mm`, and a unit-quaternion local-to-world
+  transform;
+- an inline source ID, source version, and provenance. The parser computes and
+  archives the canonical source/geometry SHA-256; callers do not supply a hash
+  that could disagree with the parsed content;
+- one or more non-overlapping sibling regions with explicit region transform,
+  material, role, solid, volume, centroid, relative tolerance, and mass-property
+  provenance; and
+- exactly one sensitive region. Multiple passive regions/materials are allowed.
+  This v1 limit is deliberate because current quantity accumulators represent
+  one detector response per independently run absorber; silently aggregating
+  several sensitive volumes would be physically ambiguous.
+
+Primitive solids are centered boxes (`size_x/y/z`), full or hollow spheres
+(`inner_radius`, `outer_radius`), and full or hollow z-axis cylinders
+(`inner_radius`, `outer_radius`, `length`). Boolean nodes have `left`, `right`,
+an explicit right-to-left transform, and a declared relationship: `union` uses
+`disjoint`, `subtraction` uses `right_fully_contained`, and `intersection` uses
+`general`. Node IDs are unique across an absorber; depth is limited to 32 and
+the total to 128. Disjoint unions with overlapping child bounds and subtraction
+children outside the left bounds are rejected. Exact volumes and centroids are
+checked for primitives, disjoint unions, and contained subtractions. General
+intersections use the required imported mass properties plus Geant4's volume
+comparison and therefore do not yet meet the independent-reference exit gate.
+
+The sensitive solid is restricted to one primitive in v1 so its Geant4 mass
+and analytic mass are exact. `mass_properties.relative_tolerance` is required
+and cannot exceed 0.05; it is a geometry-consistency tolerance, not the case's
+radiation-proxy accuracy request. All regions are built as siblings. A sampled
+Geant4 overlap check is fatal and never repairs geometry.
+
+The entry surface is part of the scoring definition and geometry hash:
+
+- `local_negative_z_face` is available for boxes and cylinders. It gives the
+  legacy planar scalar-fluence estimator `1/(A |u·n|)` and is the correct choice
+  when a target is to be equivalent to a +z-irradiated slab.
+- `entire_exterior` accepts inward crossings anywhere on a primitive and uses
+  `1/(S |u·n|)`. This is the one-sided angular fluence averaged over the whole
+  exterior surface. It is not numerically equivalent to an upstream planar
+  patch under a directional beam; for example, a thin box normalizes by all
+  six faces, not only its projected front face.
+
+#### `tessellated_mesh.v1` boundary
+
+The mesh provider uses the same absorber/region transforms, source provenance,
+materials, roles, and mass-property record. A region replaces `solid` with:
+
+```json
+"mesh": {
+  "length_unit": "mm",
+  "validation_tolerance": {"value": 1.0e-9, "unit": "mm"},
+  "vertices": [[-10, -6, -1], [10, -6, -1]],
+  "facets": [
+    {"facet_id": "zneg_a", "vertex_indices": [0, 2, 1]}
+  ]
+}
+```
+
+The abbreviated fragment above shows field form only; a working solid must
+contain all vertices and facets. See `examples/stage10_shapes/mesh_box.json`,
+`mesh_tetrahedron.json`, and `mesh_octahedron.json` for complete inputs.
+Coordinates are bare numbers only inside `vertices`, where the required
+`length_unit: "mm"` governs them. Facets are zero-based triangles and their
+winding must point outward.
+
+Provider v1 accepts one connected, watertight convex shell per region, with at
+most 10,000 vertices and 20,000 facets. Before Geant4 initialization the parser
+rejects duplicate/unreferenced vertices, invalid or repeated indices,
+zero-area/duplicate-ID facets, any edge not used exactly twice in opposite
+directions, disconnected shells, non-spherical topology (`V-E+F != 2`),
+reversed winding, concavity, and non-positive signed volume. It derives volume,
+centroid, and surface area from the oriented triangles and compares volume and
+centroid with the required declared mass properties. This convex restriction
+also makes surface self-intersection incompatible with the accepted supporting
+half-spaces; no mesh is repaired, closed, reoriented, or rescaled implicitly.
+
+A sensitive mesh uses one of two hashed entry definitions:
+
+- `{"type":"tagged_facets","facet_ids":[...]}` selects a nonempty set of
+  coplanar triangles with a common outward normal. Their summed area and the
+  projected-cosine factor define the planar entry fluence.
+- `{"type":"entire_exterior"}` uses the exact total triangle area and Geant4
+  boundary normal for one-sided whole-surface fluence.
+
+Direct STL/OBJ/GDML import is intentionally absent: those formats require an
+explicit units, material-region, repair, and provenance policy. Convert a
+known convex model to the inline contract without changing units or topology,
+or add a separately versioned provider after its policy and validation data
+are approved. General concave meshes, holes, multiple shells, non-manifold
+features, partial-volume voxels, and multiple sensitive responses are outside
+this provider version.
+
+The full canonical provider document includes transforms, region roles,
+entry-surface definition, material hashes, mass provenance, Boolean semantics,
+and computed content checksum. That document feeds the absorber geometry hash;
+the geometry hash and provider version feed every response key. Changing
+placement, material, sensitive mapping, entry surface, source provenance, or
+solid content therefore invalidates cached responses.
+
+Every Stage-10 gallery JSON, including the separate Boolean-enclosure example,
+selects its ordered shielding in `geometry.shield_stack.layers`, its absorber
+material on the region whose `role` is `sensitive`, and its calculation
+functions in the top-level `quantities` array. The committed defaults select
+Al/HDPE, natural silicon, and `TID`, `DDD`, `n_eq`, `LET`, and `H100/10`.
+Unsupported material/function combinations fail strict input validation; see
+`examples/stage10_shapes/README.md` for the current compatibility table.
+
+For compatibility, legacy tabular output still has a `TargetThickness [mm]`
+column. With either Stage-10 provider it is the sensitive region's conservative
+provider-local z extent, not the overall passive-geometry depth and not a substitute for mass. The
+resolved JSON separately records `sensitive_local_z_extent`, full provider
+bounds, and the authoritative Geant4 sensitive mass.
+
+`stage10_analytic_csg` tests exact box/sphere/cylinder masses, coextensive
+slab/CSG deposition and entry-fluence quantities, a symmetry-preserving
+rotation, response-key invalidation, a passive Boolean aluminum enclosure,
+explicit disjoint-union and general-intersection construction,
+unknown/ambiguous input rejection, analytic-volume mismatch, science-purpose
+rejection, and fatal region overlap. It writes numerical evidence and PNG/SVG
+comparison figures under the configured build tree. `stage10_tessellated_mesh`
+runs every gallery input; compares exact oriented-polyhedron volume, centroid,
+surface area, and mass; compares coextensive analytic and triangulated boxes
+through same-seed Geant4 TID, DDD, and `n_eq` paths (thereby exercising tagged
+entry facets); distinguishes response keys; and rejects
+holes, reversed facets, concavity, invalid entry tags, mass mismatch, ambiguous
+units, unsupported versions, and science-facing use. It writes its own JSON
+evidence and PNG/SVG comparison figure.
+
+These are verification results, not Stage-10 completion. The box comparison
+establishes representation equivalence for one exact convex tessellation, not
+a general mesh-resolution qualification. Broader reference-ray navigation,
+resolution convergence for curved approximations, a concave/CAD provider,
+voxel/GDML semantics, and an independent nontrivial authoritative
+shape/response remain open. Future adapters must preserve the provider contract
+and reject non-watertight/self-intersecting solids, inconsistent orientation,
+partial-volume ambiguity, unmapped material regions, and unversioned repair.
+Automatic repair is prohibited unless it is an explicit versioned
 transformation with input/output hashes. See Section 3.3.4 and Stage 10 of
-`development_and_validatoin.md` for the full gate.
+`development_and_validatoin.md` for the complete gate.
 
 ## Legacy compatibility examples
 

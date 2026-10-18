@@ -276,3 +276,19 @@ Only `verification_test` is enabled. This example does not authorize TID for
 anomaly or mission decisions, and its candidate regression hash is not an
 independently reviewed production baseline. The browser and complete run,
 cancel, and resume instructions are in `RUN.md`.
+
+## Material/species/shield/shape configuration gallery
+
+[`configuration_cases/README.md`](configuration_cases/README.md) indexes seven
+complete, runnable Stage-10 inputs that vary the incident species, sensitive
+absorber material, analytic or mesh shape, shield footprint, layer count,
+layer materials, geometric/areal thickness, and selected calculation
+functions. The gallery includes proton, He-4, and neutron cases; natural Si,
+water, and natural Al absorbers; one through five shield-layer examples; and a
+case-local material-property override.
+
+Two neutron examples calculate physically active silicon DDD and `n_eq`.
+Separate proton cases request all five output names and demonstrate the defined
+zero neutron-only `n_eq` result. This split is intentional: neutron incidence
+is outside the qualified TID source domain, so no single artificial source is
+presented as making all five outputs nonzero.

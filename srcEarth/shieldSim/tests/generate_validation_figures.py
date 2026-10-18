@@ -674,6 +674,8 @@ def main() -> int:
     stage7_core = load_evidence("stage7_core.json")
     stage7_boundaries = load_evidence("stage7_boundaries.json")
     stage7_published = load_evidence("stage7_published_qualification.json")
+    stage10_csg = load_evidence("stage10_analytic_csg.json")
+    stage10_mesh = load_evidence("stage10_tessellated_mesh.json")
     entries: list[dict] = []
 
     comparison_figure(
@@ -831,6 +833,27 @@ def main() -> int:
         "environment, and GOES transport remains disabled pending angular mapping.",
         entries,
     )
+    comparison_figure(
+        stage10_csg,
+        "Stage 10 analytic-CSG geometry verification",
+        "stage10_analytic_csg_comparisons",
+        "Exact primitive masses, legacy-slab/analytic-box transport equivalence, and a "
+        "symmetry-preserving rigid rotation are compared through the full Geant4 quantity path. "
+        "A Boolean enclosure is exercised, but no independent nontrivial spacecraft-shape "
+        "reference has been supplied; the provider remains verification-only and Stage 10 is "
+        "not complete.",
+        entries,
+    )
+    comparison_figure(
+        stage10_mesh,
+        "Stage 10 tessellated-mesh geometry verification",
+        "stage10_tessellated_mesh_comparisons",
+        "Exact oriented-polyhedron volume, centroid, surface area, and mass are checked for "
+        "box, tetrahedron, and octahedron examples. A coextensive analytic/triangulated box "
+        "comparison exercises the full transport path. Provider v1 accepts closed convex "
+        "meshes only; this does not qualify arbitrary concave CAD/STL or complete Stage 10.",
+        entries,
+    )
 
     # Keep transient adapter products beside the configured build artifacts.
     # This honors the repository test-output boundary and avoids hidden /tmp
@@ -948,6 +971,8 @@ def main() -> int:
         "stage7_core_analytic",
         "stage7_boundaries_analytic",
         "stage7_published_component_comparisons",
+        "stage10_analytic_csg_comparisons",
+        "stage10_tessellated_mesh_comparisons",
     }
     require(
         {pathlib.Path(item["file"]).stem for item in entries} == expected_stems,

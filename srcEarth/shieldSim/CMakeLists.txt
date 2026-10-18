@@ -341,6 +341,14 @@ if(BUILD_TESTING)
   set_tests_properties(stage6_reference PROPERTIES
     ENVIRONMENT "${_geant4_test_environment}"
     TIMEOUT 240)
+  # This offline gate authenticates exact NIST Ge/SiO2 additions plus the
+  # target-specific GaAs, Ge, and InGaAs candidate damage-response packages.
+  # Passing it means the downloaded bytes and coverage audit are internally
+  # consistent; it deliberately does not enable a production quantity.
+  add_test(NAME material_reference_data
+    COMMAND ${Python3_EXECUTABLE}
+            ${PROJECT_SOURCE_DIR}/tests/test_material_function_reference_data.py
+            ${PROJECT_SOURCE_DIR} ${SHIELDSIM_VALIDATION_EVIDENCE_DIR})
   add_test(NAME stage6_transport
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/test_stage6_transport.py
             $<TARGET_FILE:shieldSim> $<TARGET_FILE:shieldSimReferenceTool>
@@ -424,12 +432,56 @@ if(BUILD_TESTING)
   set_tests_properties(stage9_interface PROPERTIES
     ENVIRONMENT "${_geant4_test_environment}"
     TIMEOUT 180)
+  # Stage 10's first provider is an inline, versioned analytic-CSG geometry.
+  # The test builds boxes, spheres, cylinders, and a Boolean enclosure through
+  # the normal parser/Geant4/quantity path; verifies analytic mass and slab
+  # equivalence; checks response-key invalidation; and exercises fatal schema
+  # boundaries. It remains verification-only because no authoritative
+  # nontrivial external shape/reference has been supplied.
+  add_test(NAME stage10_analytic_csg
+    COMMAND ${Python3_EXECUTABLE}
+            ${PROJECT_SOURCE_DIR}/tests/test_stage10_analytic_csg.py
+            $<TARGET_FILE:shieldSim> ${PROJECT_SOURCE_DIR}
+            ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}
+            ${CMAKE_BINARY_DIR}/stage10_analytic_csg_runs
+            ${SHIELDSIM_VALIDATION_FIGURE_DIR})
+  set_tests_properties(stage10_analytic_csg PROPERTIES
+    ENVIRONMENT "${_geant4_test_environment}"
+    TIMEOUT 600)
+  # The second bounded provider consumes explicit closed, outward-oriented
+  # convex triangle meshes. This gate runs every committed shape example,
+  # checks exact polyhedral volume/centroid/area and analytic/mesh box TID plus
+  # tagged-entry DDD/n_eq equivalence, and proves holes, reversed faces, concavity, ambiguous units,
+  # invalid entry patches, and science-facing use are rejected.
+  add_test(NAME stage10_tessellated_mesh
+    COMMAND ${Python3_EXECUTABLE}
+            ${PROJECT_SOURCE_DIR}/tests/test_stage10_tessellated_mesh.py
+            $<TARGET_FILE:shieldSim> ${PROJECT_SOURCE_DIR}
+            ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}
+            ${CMAKE_BINARY_DIR}/stage10_tessellated_mesh_runs
+            ${SHIELDSIM_VALIDATION_FIGURE_DIR})
+  set_tests_properties(stage10_tessellated_mesh PROPERTIES
+    ENVIRONMENT "${_geant4_test_environment}"
+    TIMEOUT 600)
+  # Complete user-facing examples vary source species, absorber material,
+  # analytic/mesh shape, shield footprint, ordered layers and thickness form,
+  # and calculation selection.  Run each committed input end to end so the
+  # documentation cannot drift into a merely illustrative, non-working state.
+  add_test(NAME configuration_examples
+    COMMAND ${Python3_EXECUTABLE}
+            ${PROJECT_SOURCE_DIR}/tests/test_configuration_examples.py
+            $<TARGET_FILE:shieldSim> ${PROJECT_SOURCE_DIR}
+            ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}
+            ${CMAKE_BINARY_DIR}/configuration_example_runs)
+  set_tests_properties(configuration_examples PROPERTIES
+    ENVIRONMENT "${_geant4_test_environment}"
+    TIMEOUT 600)
   add_test(NAME validation_figures
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/generate_validation_figures.py
             ${PROJECT_SOURCE_DIR} ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}
             ${SHIELDSIM_VALIDATION_FIGURE_DIR} $<TARGET_FILE:shieldSimSourceTool>)
   set_tests_properties(validation_figures PROPERTIES
-    DEPENDS "stage1_core;stage1_case_boundaries;stage1_transport_smoke;stage2_source_adapters;stage2_reference_spectra;stage2_source_tool;stage2_published_transport;stage3_core;stage3_response_weights;stage3_transport;stage4_core;stage4_nist_reference;stage4_tid_transport;stage5_core;stage5_transport;stage6_core;stage6_case_boundaries;stage6_reference;stage6_transport;stage7_core;stage7_boundaries;stage7_published_qualification;stage8_reference_inputs;stage8_crater_core;stage8_crater_transport")
+    DEPENDS "stage1_core;stage1_case_boundaries;stage1_transport_smoke;stage2_source_adapters;stage2_reference_spectra;stage2_source_tool;stage2_published_transport;stage3_core;stage3_response_weights;stage3_transport;stage4_core;stage4_nist_reference;stage4_tid_transport;stage5_core;stage5_transport;stage6_core;stage6_case_boundaries;stage6_reference;stage6_transport;stage7_core;stage7_boundaries;stage7_published_qualification;stage8_reference_inputs;stage8_crater_core;stage8_crater_transport;stage10_analytic_csg;stage10_tessellated_mesh")
 endif()
 
 # Copy example input files into the build tree for convenience.

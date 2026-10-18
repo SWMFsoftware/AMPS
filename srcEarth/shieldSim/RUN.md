@@ -775,7 +775,399 @@ resume. `tests/reference/stage9_candidate_baseline.v1.json` is explicitly
 not a reviewed regression acceptance baseline. Stage 9 cannot be marked
 complete until its entry gates pass and that review exists.
 
-## 11. Understanding outputs
+## 11. Stage-10 analytic and tessellated-mesh absorbers
+
+Stage 10 currently provides `analytic_csg.v1` and `tessellated_mesh.v1` for
+verification work. Neither is enabled for spacecraft-anomaly or
+preliminary-mission purposes because the independent nontrivial-shape
+validation gate is open. Do not change a case's purpose merely to bypass this
+boundary.
+
+Build it with the normal executable; no optional library is required beyond
+Geant4:
+
+```bash
+source /data/vtenishe/G4/install/bin/geant4.sh
+cmake -S . -B test_output/build \
+  -DGeant4_DIR=/data/vtenishe/G4/install/lib/cmake/Geant4 \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTING=ON
+cmake --build test_output/build --target shieldSim -j 8
+```
+
+Validate the complete Boolean-enclosure example without running transport:
+
+```bash
+test_output/build/shieldSim \
+  --validate-case=examples/stage10_analytic_csg_case.json
+```
+
+Run it in a controlled output directory. Input-relative material paths resolve
+relative to the case file, while result files are written under the process
+working directory:
+
+```bash
+mkdir -p test_output/stage10_example
+cd test_output/stage10_example
+../build/shieldSim --case=../../examples/stage10_analytic_csg_case.json
+cd ../..
+```
+
+The example is a synthetic 30×30×20 mm aluminum box shell made by subtracting
+a concentric 26×26×16 mm void, with a separate 5×5×1 mm silicon sensitive box
+in the cavity. It verifies region/material/Boolean plumbing only; it is not an
+authoritative spacecraft or electronics assembly.
+
+The directly runnable shape gallery contains three analytic and three mesh
+cases:
+
+```text
+examples/stage10_shapes/analytic_box.json
+examples/stage10_shapes/analytic_cylinder.json
+examples/stage10_shapes/analytic_sphere.json
+examples/stage10_shapes/mesh_box.json
+examples/stage10_shapes/mesh_tetrahedron.json
+examples/stage10_shapes/mesh_octahedron.json
+```
+
+The complementary selection gallery under `examples/configuration_cases/`
+contains seven complete cases in which source species, absorber material,
+shape, shield footprint, layer count/material/thickness, and calculation list
+actually vary. Its detailed matrix and editable JSON fragments are in
+`examples/configuration_cases/README.md`. Validate the entire set with:
+
+```bash
+for case_file in examples/configuration_cases/*.json; do
+  test_output/build/shieldSim --validate-case="$case_file" || exit 1
+done
+```
+
+For example, run the 1.05 MeV neutron/analytic-cylinder silicon DDD and `n_eq`
+case entirely below `test_output/`:
+
+```bash
+mkdir -p test_output/configuration_cases/02_si_cylinder_neutron_damage
+cd test_output/configuration_cases/02_si_cylinder_neutron_damage
+../../build/shieldSim \
+  --case=../../../examples/configuration_cases/02_si_cylinder_neutron_damage.json
+cd ../../..
+```
+
+The proton cases selecting all five names correctly produce zero neutron-only
+`n_eq`. Use the neutron files for an active `n_eq` score; neutron nodes cannot
+be combined with TID because they are outside the qualified Stage-4 domain.
+The executable regression for all seven configurations is:
+
+```bash
+cd test_output/build
+ctest --output-on-failure -R '^configuration_examples$'
+cd ../..
+```
+
+Validate all of them without transport:
+
+```bash
+for case_file in examples/stage10_shapes/*.json; do
+  test_output/build/shieldSim --validate-case="$case_file" || exit 1
+done
+```
+
+Run one mesh case and keep every product under `test_output/`:
+
+```bash
+mkdir -p test_output/stage10_shapes/mesh_tetrahedron
+cd test_output/stage10_shapes/mesh_tetrahedron
+../../build/shieldSim \
+  --case=../../../examples/stage10_shapes/mesh_tetrahedron.json
+cd ../../..
+```
+
+Each gallery case selects its shielding at `geometry.shield_stack.layers`, its
+sensitive absorber material at
+`geometry.absorbers[0].geometry.regions[*].material`, and its calculations in
+the top-level `quantities` array. The committed default requests `TID`, `DDD`,
+`n_eq`, `LET`, and `H100/10` for natural silicon behind Al/HDPE. It uses only
+20 histories so it is a quick executable example, not a converged science
+result. Increase `accuracy.sampling` and supply a defensible uncertainty budget
+for a real verification study; the provider purpose guard still remains in
+force.
+
+Shield layers accept the screenshot material aliases `Al`, `Cu`, `W`, `Ta`,
+`HDPE`, `BPE`, `Kevlar`, `Kapton`, `Water`, and `Si`; template composites and
+regolith require an explicit project material override. Sensitive regions may
+select `Skin`, `EyeLens`, `BFO`, `CNS`, `SoftTissue`, `Si`, `SiO2`, `SiC`,
+`GaAs`, `InGaAs`, `Ge`, or `Water`, subject to the quantity-domain gates below.
+The material records and user changes remain in input files, not source code.
+
+The current validated calculation/material combinations are intentionally
+narrow: TID and LET accept Al, natural Si, or water; DDD and `n_eq` require
+natural Si; `H100/10` is a primary-proton shield-exit quantity and does not
+depend on absorber material. All five can therefore be selected together only
+with natural silicon. `DDD`/`n_eq` additionally require `damage_response`, and
+LET requires `let_response`; the supplied files include both. The parser
+rejects an unused response object, so remove `damage_response` when neither
+damage quantity is selected and remove `let_response` when LET is not selected.
+This explicit failure is preferable to silently applying a silicon response to
+a tissue or compound semiconductor.
+
+Additional downloaded reference data are staged for future expansion, not yet
+accepted by the input validator. Ge and SiO2 have exact NIST proton/He-4
+stopping tables; GaAs has candidate proton/He-4 DDD and a distinct ASTM E722
+neutron-equivalence package; Ge and Ga0.47In0.53As have candidate proton/He-4
+DDD only. Authenticate these files with:
+
+```bash
+cd test_output/build
+ctest --output-on-failure -R '^material_reference_data$'
+cd ../..
+```
+
+See `tests/reference_material_functions/README.md` before attempting to widen
+a case domain. It documents the missing neutron responses, target-specific
+conventions, and why tissue/water do not receive fabricated lattice-damage
+outputs.
+
+The separate Boolean-enclosure example
+`examples/stage10_analytic_csg_case.json` uses these same three input fields.
+One JSON case defines one ordered shielding stack; make distinct case files
+with distinct `case_id` and `output.prefix` values when comparing stacks.
+
+### 11.1 Required absorber fields
+
+An analytic-CSG absorber contains no top-level `material`. Its `geometry`
+object requires:
+
+```json
+{
+  "type": "analytic_csg",
+  "provider_version": "1.0.0",
+  "coordinate_frame": {
+    "name": "absorber_local_cartesian",
+    "handedness": "right",
+    "origin": "provider_origin",
+    "length_unit": "mm"
+  },
+  "transform": {"translation": {}, "rotation_quaternion_local_to_world": {}},
+  "source": {
+    "kind": "inline",
+    "source_id": "project-controlled ID",
+    "source_version": "project-controlled version",
+    "provenance": "where the dimensions came from"
+  },
+  "regions": []
+}
+```
+
+Use full measure objects for every translation and dimension; bare numbers are
+rejected. Quaternions are active local-to-parent rotations, scalar-first
+`w,x,y,z`, finite, and unit-normalized. The absorber transform maps provider
+coordinates into the case world; a region transform maps solid coordinates
+into provider coordinates; a Boolean `right_transform` maps its right child
+into its left-child frame.
+
+Every region requires a unique `region_id`, `role` (`passive` or `sensitive`),
+material library ID/alias, transform, solid, and:
+
+```json
+"mass_properties": {
+  "volume": {"value": 0.025, "unit": "cm3"},
+  "centroid": {
+    "x": {"value": 0.0, "unit": "mm"},
+    "y": {"value": 0.0, "unit": "mm"},
+    "z": {"value": 0.0, "unit": "mm"}
+  },
+  "relative_tolerance": 1.0e-9,
+  "provenance": "exact rectangular-prism formula"
+}
+```
+
+Centroid coordinates are in the region solid's local frame. Exactly one region
+must be sensitive. The sensitive solid must be a primitive box, sphere, or
+cylinder in provider version 1.0.0; passive regions may be Boolean. This
+restriction keeps dose mass and region meaning unambiguous with the current
+one-sensitive-region quantity accumulators.
+
+Solid forms are:
+
+- box: `node_id`, `type: "box"`, and `size_x`, `size_y`, `size_z`;
+- sphere: `node_id`, `type: "sphere"`, `inner_radius` (zero allowed), and
+  `outer_radius`;
+- cylinder: `node_id`, `type: "cylinder"`, radii, and `length`; local z is the
+  cylinder axis;
+- Boolean: `node_id`, `type`, `left`, `right`, `right_transform`, and
+  `relationship`. Use `disjoint` for union, `right_fully_contained` for
+  subtraction, and `general` for intersection.
+
+All node IDs are unique across the absorber. The parser allows at most 128
+nodes and 32 nesting levels. Exact analytic volume/centroid checks apply to
+primitives, declared-disjoint unions, and declared-contained subtractions.
+General intersections rely on the imported properties and Geant4 volume check
+and remain outside the completed validation domain. Region siblings must not
+overlap; detected Geant4 overlaps terminate the run.
+
+The sensitive region also requires `entry_surface`. Choose deliberately:
+
+- `local_negative_z_face` for a box or cylinder planar entry patch. This uses
+  `1/(A |u·n|)` and reproduces slab-v1 upstream-face normalization.
+- `entire_exterior` for a primitive closed boundary. This uses
+  `1/(S |u·n|)` and reports one-sided scalar fluence averaged over all exterior
+  surface area. It is not equivalent to a projected front face for a
+  directional source.
+
+The resolved case archives the canonical provider geometry,
+`geometry_content_sha256`, material hashes, sensitive stable ID, provider
+version, and full absorber geometry hash. The response-cell key also records
+provider/version and the geometry hash. Never reuse a response after any of
+those values changes.
+
+The legacy `TargetThickness [mm]` table field reports the sensitive primitive's
+local-z extent for CSG cases. It does not report the complete passive assembly
+depth. Use resolved bounds and `absorber_mass` in JSON for physical analysis.
+
+### 11.2 Tessellated-mesh input contract
+
+A mesh absorber uses the same provider-level coordinate frame, transform, and
+source-provenance fields as the analytic provider, but selects
+`"type":"tessellated_mesh"`. Each region has an explicit transform, material,
+role, mass properties, and this mesh object:
+
+```json
+"mesh": {
+  "length_unit": "mm",
+  "validation_tolerance": {"value": 1.0e-9, "unit": "mm"},
+  "vertices": [[0,0,0], [10,0,0], [0,10,0], [0,0,10]],
+  "facets": [
+    {"facet_id":"z0_entry", "vertex_indices":[0,2,1]},
+    {"facet_id":"y0",       "vertex_indices":[0,1,3]},
+    {"facet_id":"x0",       "vertex_indices":[0,3,2]},
+    {"facet_id":"slanted",  "vertex_indices":[1,2,3]}
+  ]
+}
+```
+
+Coordinates are governed only by the required `length_unit: "mm"`; indices
+are zero-based and triangle winding must be outward. Provider v1 accepts a
+single connected, closed, consistently oriented convex shell per region,
+limited to 10,000 vertices and 20,000 triangles. Its pre-Geant4 checks include:
+
+- finite unique vertices and unique facet IDs;
+- three distinct in-range indices and nonzero area per facet;
+- every undirected edge exactly twice, once in each direction;
+- one connected shell with Euler characteristic `V-E+F=2`;
+- every oriented triangle acting as an outward supporting plane for all
+  vertices, which enforces the v1 convexity/orientation boundary;
+- positive signed volume; and
+- exact triangle-derived volume, centroid, and surface area, with declared
+  volume/centroid agreement inside the explicit tolerances.
+
+The required `mass_properties` record has the same form as Section 11.1 and is
+in the mesh-local frame. Geant4's constructed volume and sensitive mass are
+then checked independently against the exact oriented-triangle result.
+
+A sensitive mesh requires one of:
+
+```json
+"entry_surface": {
+  "type": "tagged_facets",
+  "facet_ids": ["z0_entry"]
+}
+```
+
+or:
+
+```json
+"entry_surface": {"type": "entire_exterior"}
+```
+
+Tagged facets must form a nonempty coplanar patch with a common outward normal.
+The normal, summed triangle area, boundary point-in-triangle test, and
+`1/(A |u·n|)` projected-cosine weight define entry. `entire_exterior` uses the
+exact summed surface and `1/(S |u·n|)`. The entry definition is part of the
+canonical geometry and response key.
+
+No STL, OBJ, CAD, or GDML import occurs in v1. The model never guesses external
+units or materials and never closes holes, flips facets, merges vertices,
+repairs self-intersections, or convexifies a shape. General concave meshes,
+multiple shells, non-manifold topology, and automated repair require a later
+versioned provider and independent validation. `scripts/generate_stage10_shape_examples.py`
+reproducibly generates the six committed gallery inputs; rerun it after an
+intentional gallery change and review the resulting JSON diff.
+
+### 11.3 Run the complete Stage-10 gallery
+
+To execute all gallery cases outside CTest while isolating outputs:
+
+```bash
+for case_file in examples/stage10_shapes/*.json; do
+  case_name=$(basename "$case_file" .json)
+  output_dir="test_output/stage10_shapes/$case_name"
+  mkdir -p "$output_dir"
+  (
+    cd "$output_dir"
+    ../../build/shieldSim --case="../../../$case_file"
+  ) || exit 1
+done
+```
+
+Every result JSON reports the provider's stable sensitive ID, Geant4 mass,
+geometry hash, and the explicit Stage-10 verification-only status. The resolved
+case also archives the canonical vertices/facets, derived exact properties,
+entry tags, material hashes, and provider/content hashes.
+
+### 11.4 Stage-10 verification tests and figures
+
+Run only the bounded Stage-10 gate:
+
+```bash
+cd test_output/build
+ctest --output-on-failure -R '^stage10_(analytic_csg|tessellated_mesh)$'
+cd ../..
+```
+
+The pair took about 26 seconds on the development workstation on 2026-10-18;
+runtime depends on processor, Geant4 build, and data cache. The analytic test runs
+legacy/CSG equivalent boxes, sphere and cylinder mass cases, a rotated box,
+the Boolean enclosure, DDD/n_eq entry-surface equivalence, response-key checks,
+disjoint union/general intersection construction, and rejection cases. Evidence
+and figures are written to:
+
+```text
+test_output/build/validation_evidence/stage10_analytic_csg.json
+test_output/build/validation_figures/stage10_analytic_csg_comparisons.png
+test_output/build/validation_figures/stage10_analytic_csg_comparisons.svg
+test_output/build/stage10_analytic_csg_runs/
+test_output/build/validation_evidence/stage10_tessellated_mesh.json
+test_output/build/validation_figures/stage10_tessellated_mesh_comparisons.png
+test_output/build/validation_figures/stage10_tessellated_mesh_comparisons.svg
+test_output/build/stage10_tessellated_mesh_runs/
+```
+
+The mesh test runs every committed gallery case, checks exact box/tetrahedron/
+octahedron volume, centroid, surface area, and Geant4 mass, compares the
+analytic and triangulated boxes through same-seed TID, DDD, and `n_eq` paths,
+verifies cache separation, and exercises malformed-input rejection. The
+DDD/`n_eq` pair specifically executes the tagged-facet area, normal,
+point-in-triangle, and projected-cosine entry estimator.
+
+The Stage-10 test is serial because each bounded case is short. Launching the
+same test under `mpiexec` would duplicate it; `shieldSim` has no Stage-10 MPI
+sharding/merge contract. Use CTest's independent-test parallelism only when
+running a larger selected suite, for example `ctest -j 4 ...`, and avoid
+concurrent tests that target the same evidence filenames.
+
+Current fatal checks cover explicit units/frame/version, finite positive
+dimensions, radius ordering, unit quaternions, unique IDs, node limits,
+material mapping, exactly one nonempty sensitive region, primitive sensitive
+mass, declared mass/centroid consistency, conservative world/shield bounds,
+and sampled Geant4 overlaps, plus the mesh topology/orientation/convexity and
+entry-patch checks in Section 11.2. No geometry is automatically repaired. Open
+qualification work includes a separately specified general concave/CAD
+provider, voxel/GDML providers, deterministic exhaustive navigation/reference
+rays, curved-surface tessellation/resolution convergence, multiple sensitive
+responses, and an independent authoritative nontrivial shape and
+radiation-response comparison.
+
+## 12. Understanding outputs
 
 Depending on the case, shieldSim writes a subset of:
 
@@ -804,7 +1196,7 @@ For anomaly work, retain exact event-onset, event-end, interval midtime/source
 coordinates, gaps, attitude/configuration changes, and anomaly timestamps. A
 radiation proxy is an environmental covariate, not proof of anomaly causation.
 
-## 12. Reference data and controlled downloads
+## 13. Reference data and controlled downloads
 
 The compact committed validation data live under `tests/reference_spectra/`,
 `tests/reference_tid/`, `tests/reference_ddd/`, and `tests/reference_let/`.

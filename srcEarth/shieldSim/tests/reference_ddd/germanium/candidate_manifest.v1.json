@@ -1,0 +1,50 @@
+{
+  "charged_particle_definition": {
+    "displacement_threshold_eV": {
+      "Ge": 40.5
+    },
+    "hadronic_threshold_scaling": "none",
+    "interpolation": "log_log_between_positive_nodes",
+    "model": "SR-NIEL-7 v11.1 hadronic plus Coulomb"
+  },
+  "limitations": [
+    "candidate data are not enabled by the production loader",
+    "no extrapolation beyond the positive-node domains is permitted",
+    "no accelerator/device-degradation validation is claimed"
+  ],
+  "preparation_status": "charged_DDD_data_prepared_not_production_enabled",
+  "schema_version": "shieldSim.damage_response_candidate.v1",
+  "source": {
+    "calculator": "https://www.sr-niel.asi.it/index.php/sr-niel-web-calculators/niel-calculator-for-electrons-protons-and-ions/protons-ions-niel-calculator",
+    "parameter_provenance": "calculator page cites Campesato et al. (2019) for Ge Ed=40.5 eV",
+    "version": "SR-NIEL-7 v11.1"
+  },
+  "tables": [
+    {
+      "domain_max_MeV": 1000.0,
+      "domain_min_MeV": 0.0008,
+      "nodes": 113,
+      "path": "sr_niel_v11_1_ge_ed40p5_proton.csv",
+      "raw_response_sha256": "sha256:f01e0fa85e0348f649880e9974704160ae146427a603ccdd33741132e27e329d",
+      "sha256": "sha256:585447094c50d3458cbbdfc2f5b43915b5b67398c72cf189ed076840857f6a10",
+      "species": "proton"
+    },
+    {
+      "domain_max_MeV": 4000.0,
+      "domain_min_MeV": 0.00025,
+      "nodes": 130,
+      "path": "sr_niel_v11_1_ge_ed40p5_alpha.csv",
+      "raw_response_sha256": "sha256:08c639e5eee408436c9ddf534fffd591f8d5451426900c044e06f528e1162707",
+      "sha256": "sha256:3b4fc8dbe405b5ccef12c120a33e8fb52bc4a39b50d90b144f43426f72ccc4b2",
+      "species": "alpha"
+    }
+  ],
+  "target": {
+    "description": "natural germanium",
+    "material_id": "Ge_natural_G4_11_4"
+  },
+  "unavailable": {
+    "n_eq": "no ASTM E722 germanium 1-MeV-equivalent convention was found",
+    "neutron_DDD": "no approved germanium neutron damage function was found"
+  }
+}

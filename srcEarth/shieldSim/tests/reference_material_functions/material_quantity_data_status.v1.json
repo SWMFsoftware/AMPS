@@ -1,0 +1,99 @@
+{
+  "schema_version": "shieldSim.material_quantity_data_status.v1",
+  "audit_date": "2026-10-18",
+  "scope": "Data readiness for the twelve approved absorber labels; this is not a production-capability declaration.",
+  "status_definitions": {
+    "production_enabled": "The quantity/material pair is implemented and covered by its current production validation gates.",
+    "reference_data_prepared_pending_transport_validation": "Exact target data are pinned locally, but code integration and a predeclared transport comparison have not passed.",
+    "partial_reference_data_prepared": "Some incident-species data are pinned, but the requested quantity cannot be reported for every supported source species.",
+    "transport_scoring_available_reference_missing": "Geant4 can score the primitive, but no exact independent reference package and qualification gate exist for this material.",
+    "response_definition_missing": "The target-specific physical parameters or response table needed for this proxy have not been established.",
+    "not_defined_for_selected_convention": "No approved target-specific equivalence convention and denominator are available; a value must not be manufactured by analogy.",
+    "not_applicable_to_material_model": "The selected lattice-displacement proxy is not an appropriate output for this liquid or tissue-composition material model.",
+    "absorber_independent": "The quantity is scored at the shield rear face and does not use absorber response data."
+  },
+  "quantity_definitions": {
+    "TID": "finite-absorber ionizing energy deposition divided by absorber mass",
+    "DDD": "absorber-entry fluence folded with target- and species-specific NIEL",
+    "n_eq": "target-specific ASTM E722 neutron contribution divided by the matching 1-MeV-neutron response",
+    "LET": "finite-absorber electronic-LET distribution and registered summaries",
+    "H100/10": "primary-proton shield-exit fluence above 100 MeV divided by that above 10 MeV"
+  },
+  "materials": [
+    {
+      "label": "Skin",
+      "material_id": "Skin_ICRP_G4_11_4",
+      "quantities": {"TID": "transport_scoring_available_reference_missing", "DDD": "not_applicable_to_material_model", "n_eq": "not_defined_for_selected_convention", "LET": "transport_scoring_available_reference_missing", "H100/10": "absorber_independent"}
+    },
+    {
+      "label": "EyeLens",
+      "material_id": "EyeLens_ICRP_G4_11_4",
+      "quantities": {"TID": "transport_scoring_available_reference_missing", "DDD": "not_applicable_to_material_model", "n_eq": "not_defined_for_selected_convention", "LET": "transport_scoring_available_reference_missing", "H100/10": "absorber_independent"}
+    },
+    {
+      "label": "BFO",
+      "material_id": "BFO_soft_tissue_proxy",
+      "quantities": {"TID": "transport_scoring_available_reference_missing", "DDD": "not_applicable_to_material_model", "n_eq": "not_defined_for_selected_convention", "LET": "transport_scoring_available_reference_missing", "H100/10": "absorber_independent"}
+    },
+    {
+      "label": "CNS",
+      "material_id": "Brain_ICRP_G4_11_4",
+      "quantities": {"TID": "transport_scoring_available_reference_missing", "DDD": "not_applicable_to_material_model", "n_eq": "not_defined_for_selected_convention", "LET": "transport_scoring_available_reference_missing", "H100/10": "absorber_independent"}
+    },
+    {
+      "label": "SoftTissue",
+      "material_id": "SoftTissue_ICRU4_G4_11_4",
+      "quantities": {"TID": "transport_scoring_available_reference_missing", "DDD": "not_applicable_to_material_model", "n_eq": "not_defined_for_selected_convention", "LET": "transport_scoring_available_reference_missing", "H100/10": "absorber_independent"}
+    },
+    {
+      "label": "Si",
+      "material_id": "Si_natural_G4_11_4",
+      "quantities": {"TID": "production_enabled", "DDD": "production_enabled", "n_eq": "production_enabled", "LET": "production_enabled", "H100/10": "absorber_independent"}
+    },
+    {
+      "label": "SiO2",
+      "material_id": "SiO2_G4_11_4",
+      "quantities": {"TID": "reference_data_prepared_pending_transport_validation", "DDD": "response_definition_missing", "n_eq": "not_defined_for_selected_convention", "LET": "reference_data_prepared_pending_transport_validation", "H100/10": "absorber_independent"}
+    },
+    {
+      "label": "SiC",
+      "material_id": "SiC_6H_20C",
+      "quantities": {"TID": "transport_scoring_available_reference_missing", "DDD": "response_definition_missing", "n_eq": "not_defined_for_selected_convention", "LET": "transport_scoring_available_reference_missing", "H100/10": "absorber_independent"}
+    },
+    {
+      "label": "GaAs",
+      "material_id": "GaAs_G4_11_4",
+      "quantities": {"TID": "transport_scoring_available_reference_missing", "DDD": "reference_data_prepared_pending_transport_validation", "n_eq": "reference_data_prepared_pending_transport_validation", "LET": "transport_scoring_available_reference_missing", "H100/10": "absorber_independent"}
+    },
+    {
+      "label": "InGaAs",
+      "material_id": "Ga0p47In0p53As_300K",
+      "quantities": {"TID": "transport_scoring_available_reference_missing", "DDD": "partial_reference_data_prepared", "n_eq": "not_defined_for_selected_convention", "LET": "transport_scoring_available_reference_missing", "H100/10": "absorber_independent"}
+    },
+    {
+      "label": "Ge",
+      "material_id": "Ge_natural_G4_11_4",
+      "quantities": {"TID": "reference_data_prepared_pending_transport_validation", "DDD": "partial_reference_data_prepared", "n_eq": "not_defined_for_selected_convention", "LET": "reference_data_prepared_pending_transport_validation", "H100/10": "absorber_independent"}
+    },
+    {
+      "label": "Water",
+      "material_id": "Water_G4_11_4",
+      "quantities": {"TID": "production_enabled", "DDD": "not_applicable_to_material_model", "n_eq": "not_defined_for_selected_convention", "LET": "production_enabled", "H100/10": "absorber_independent"}
+    }
+  ],
+  "prepared_packages": {
+    "Ge_and_SiO2_electromagnetic": "tests/reference_tid/nist/manifest.sha256.json",
+    "GaAs_displacement_damage": "tests/reference_ddd/gaas/candidate_manifest.v1.json",
+    "Ge_displacement_damage": "tests/reference_ddd/germanium/candidate_manifest.v1.json",
+    "InGaAs_displacement_damage": "tests/reference_ddd/ingaas/candidate_manifest.v1.json"
+  },
+  "authoritative_sources": {
+    "NIST_STAR_material_list": "https://physics.nist.gov/PhysRefData/Star/Text/table2.html",
+    "NIST_STAR_methods": "https://physics.nist.gov/PhysRefData/Star/Text/programs.html",
+    "ASTM_E722_scope": "https://store.astm.org/e0722-19r26.html",
+    "SR_NIEL_charged_calculator": "https://www.sr-niel.asi.it/index.php/sr-niel-web-calculators/niel-calculator-for-electrons-protons-and-ions/protons-ions-niel-calculator",
+    "SR_NIEL_neutron_calculator": "https://www.sr-niel.asi.it/index.php/sr-niel-web-calculators/niel-calculator-for-neutrons-using-astm-standards/neutrons-niel-calculator",
+    "InGaAs_threshold_publication": "https://doi.org/10.1109/TNS.2020.2984133",
+    "SiC_method_context": "https://doi.org/10.1371/journal.pone.0276364"
+  }
+}

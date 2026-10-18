@@ -1422,7 +1422,10 @@ void RunAction::WriteRunSummary(G4int nEv){
   out<<"meta shield_material "<<(fSweepMode?fCurrentMat:fOpts.shieldMaterial)<<"\n";
   out<<"meta result_capability_status "
      <<(fOpts.caseDefinition
-          ? (fOpts.caseDefinition->schemaVersion=="shieldSim.case.v2" &&
+          ? (fOpts.caseDefinition->absorbers.at(fOpts.activeAbsorberIndex).provider!=
+                 "slab.v1"
+               ? "stage10_geometry_providers_verification_only_incomplete_no_independent_nontrivial_shape_validation"
+             : fOpts.caseDefinition->schemaVersion=="shieldSim.case.v2" &&
              std::find(fOpts.caseDefinition->quantities.begin(),
                        fOpts.caseDefinition->quantities.end(),"TID")!=
                  fOpts.caseDefinition->quantities.end()
@@ -1547,7 +1550,13 @@ void RunAction::WriteResultJson(G4int nEv){
       "stage5_silicon_DDD_and_neutron_only_n_eq_implemented_and_reference_tested_pending_accelerator_device_validation_and_independent_review";
   const std::string stage6ValidationStatus=
       "stage6_LET_and_H100_10_implemented_and_reference_tested_pending_independent_review";
-  const std::string validationStatus = stage6
+  const auto& absorber=c.absorbers.at(fOpts.activeAbsorberIndex);
+  const bool stage10Geometry=absorber.provider!="slab.v1";
+  const std::string stage10ValidationStatus=
+      "stage10_geometry_providers_verification_only_incomplete_no_independent_nontrivial_shape_validation";
+  const std::string validationStatus = stage10Geometry
+      ? stage10ValidationStatus
+      : stage6
       ? stage6ValidationStatus
       : stage5Damage
       ? stage5ValidationStatus
@@ -1558,7 +1567,6 @@ void RunAction::WriteResultJson(G4int nEv){
       : c.sourceFormat=="ams02_hapi_component"
       ? "stage2_published_spectrum_transport_test_not_physical_validation"
       : "implemented_not_physically_validated_stage1";
-  const auto& absorber=c.absorbers.at(fOpts.activeAbsorberIndex);
   auto finiteOrNull=[](double value)->shield_sim::Json{
     return std::isfinite(value) ? shield_sim::Json(value) : shield_sim::Json(nullptr);
   };
@@ -1716,7 +1724,8 @@ void RunAction::WriteResultJson(G4int nEv){
         {"rad_per_primary",100.0*fLastDose[i]/gray},
         {"source_normalized_unit","Gy/s"},
         {"source_normalized_value",fLastDoseRate[i]/gray},
-        {"unit","Gy/primary"}, {"validation_status",stage4Tid
+        {"unit","Gy/primary"}, {"validation_status",stage10Geometry
+            ? stage10ValidationStatus : stage4Tid
             ? stage4ValidationStatus : validationStatus},
         {"value",fLastDose[i]/gray}
       });
@@ -1752,7 +1761,7 @@ void RunAction::WriteResultJson(G4int nEv){
       {"authoritative_method","absorber-entry scalar fluence folded at exact crossing energy with pinned species/target NIEL"},
       {"definition","sum over proton, He-4, and neutron crossings of natural-silicon NIEL divided by entry area and absolute direction/surface-normal cosine"},
       {"diagnostic_Geant4_nonionizing_deposition",shield_sim::Json(shield_sim::Json::Object{
-        {"definition","Geant4 nonionizing energy deposited in the finite slab divided by slab mass; separate diagnostic, never added to table-folded DDD"},
+        {"definition","Geant4 nonionizing energy deposited in the finite sensitive region divided by its mass; separate diagnostic, never added to table-folded DDD"},
         {"unit","MeV/g/primary"},{"value",diagnostic}})},
       {"interval_95",shield_sim::Json(std::move(interval))},
       {"name","DDD"},{"normalization","per incident primary"},
@@ -1765,7 +1774,7 @@ void RunAction::WriteResultJson(G4int nEv){
       {"table_domain_status",domainComplete?"complete":"not_assessable"},
       {"unit","MeV/g/primary"},{"unsupported_species_crossings",
           static_cast<double>(fDddUnsupportedCrossings)},
-      {"validation_status",stage5ValidationStatus},
+      {"validation_status",stage10Geometry ? stage10ValidationStatus : stage5ValidationStatus},
       {"value",domainComplete?shield_sim::Json(partial):shield_sim::Json(nullptr)}
     });
   }
@@ -1803,7 +1812,8 @@ void RunAction::WriteResultJson(G4int nEv){
       {"source_normalized_value",domainComplete
           ? shield_sim::Json(partial*GetIncidentParticleRate()) : shield_sim::Json(nullptr)},
       {"table_domain_status",domainComplete?"complete":"not_assessable"},
-      {"unit","cm^-2/primary"},{"validation_status",stage5ValidationStatus},
+      {"unit","cm^-2/primary"},{"validation_status",stage10Geometry
+          ? stage10ValidationStatus : stage5ValidationStatus},
       {"value",domainComplete?shield_sim::Json(partial):shield_sim::Json(nullptr)}
     });
   }
@@ -1884,7 +1894,7 @@ void RunAction::WriteResultJson(G4int nEv){
       {"track_mean",ratioResult(track,fLETTrackMeanMoments)},
       {"underflow_fluence_cm2_per_primary",fLETUnderflow.sum/nEv},
       {"underflow_fluence_rate_cm2_per_s",fLETUnderflow.sum/nEv*GetIncidentParticleRate()},
-      {"validation_status",stage6ValidationStatus},
+      {"validation_status",stage10Geometry ? stage10ValidationStatus : stage6ValidationStatus},
       {"zero_length_charged_steps",static_cast<double>(fLETZeroLengthSteps)}});
   }
   if(fOpts.calcHardness && stage6){
@@ -1904,7 +1914,7 @@ void RunAction::WriteResultJson(G4int nEv){
       {"name","H100/10"}, {"numerator_count",fPrimaryProtonAbove100},
       {"ratio_status",shield_sim::RatioStatusName(estimate.status)},
       {"reason",estimate.reason},{"unit","1"},
-      {"validation_status",stage6ValidationStatus},
+      {"validation_status",stage10Geometry ? stage10ValidationStatus : stage6ValidationStatus},
       {"value",available?finiteOrNull(estimate.value):shield_sim::Json(nullptr)}
     });
   }
@@ -2035,7 +2045,8 @@ void RunAction::WriteResponseCellJson(G4int nEv){
   }
   shield_sim::Json::Object keyDocument{
     {"absorber_geometry_hash",absorber.geometryHash},
-    {"absorber_geometry_provider","slab.v1"},
+    {"absorber_geometry_provider",absorber.provider},
+    {"absorber_geometry_provider_version",absorber.providerVersion},
     {"build_type",shield_sim_build::BuildType},
     {"code_revision",shield_sim_build::GitRevision},
     {"compiler",shield_sim_build::Compiler},
@@ -2112,7 +2123,9 @@ void RunAction::WriteResponseCellJson(G4int nEv){
     {"score_covariance",BuildRawScoreCovarianceJson(nEv)},
     {"scores",shield_sim::Json(std::move(scores))},
     {"secondary_production_by_layer",shield_sim::Json(std::move(secondaryLedgers))},
-    {"validation_status",c.damageResponse
+    {"validation_status",absorber.provider!="slab.v1"
+        ? "stage10_geometry_providers_verification_only_incomplete_no_independent_nontrivial_shape_validation"
+        : c.damageResponse
         ? "stage5_silicon_DDD_and_neutron_only_n_eq_implemented_and_reference_tested_pending_accelerator_device_validation_and_independent_review"
         : "implemented_stage3_transport_raw_not_physically_validated"}
   });

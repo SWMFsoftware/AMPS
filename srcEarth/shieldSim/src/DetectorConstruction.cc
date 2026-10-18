@@ -147,8 +147,16 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
     // scoring.  Internal layer interfaces are never counted as shield exits.
     fShieldLV=fShieldLVs.back();
 
-    fAbsorberGeometry=std::make_unique<shield_sim::SlabAbsorberGeometry>(
-        c.absorbers[fOpts.activeAbsorberIndex]);
+    const auto& absorber=c.absorbers[fOpts.activeAbsorberIndex];
+    if(absorber.provider=="slab.v1")
+      fAbsorberGeometry=std::make_unique<shield_sim::SlabAbsorberGeometry>(absorber);
+    else if(absorber.provider=="analytic_csg.v1")
+      fAbsorberGeometry=std::make_unique<shield_sim::AnalyticCsgAbsorberGeometry>(absorber);
+    else if(absorber.provider=="tessellated_mesh.v1")
+      fAbsorberGeometry=std::make_unique<shield_sim::TessellatedMeshAbsorberGeometry>(absorber);
+    else
+      G4Exception("Detector","AbsorberProvider",FatalException,
+                  ("Unsupported absorber provider '"+absorber.provider+"'").c_str());
     const auto built=fAbsorberGeometry->Build(wLog,*fMaterialFactory,c.maxStepMm);
     for(const auto& region:built.sensitiveRegions){
       fScoringLVs.push_back(region.logicalVolume);

@@ -20,6 +20,7 @@
 #include "GeometryTransform.hh"
 #include "DamageResponseLibrary.hh"
 
+#include <array>
 #include <map>
 #include <memory>
 #include <string>
@@ -37,6 +38,76 @@ struct ShieldLayerDefinition {
   double arealDensityGPerCm2 = 0.0;
 };
 
+// Stage-10's first non-slab provider deliberately uses a small, auditable CSG
+// vocabulary.  Nodes are immutable after parsing; every dimensional member is
+// already converted to millimetres and every transform is active/local-to-
+// parent.  Primitive members irrelevant to a node type remain zero.
+struct AnalyticCsgNodeDefinition {
+  std::string nodeId;
+  std::string type; // box, sphere, cylinder, union, intersection, subtraction
+  double sizeXmm = 0.0;
+  double sizeYmm = 0.0;
+  double sizeZmm = 0.0;
+  double innerRadiusMm = 0.0;
+  double outerRadiusMm = 0.0;
+  double lengthMm = 0.0;
+  std::string relationship;
+  std::shared_ptr<AnalyticCsgNodeDefinition> left;
+  std::shared_ptr<AnalyticCsgNodeDefinition> right;
+  RigidTransform rightTransform;
+  Vector3d boundsMinimumMm;
+  Vector3d boundsMaximumMm;
+  Json canonicalJson;
+};
+
+struct AnalyticCsgRegionDefinition {
+  std::string id;
+  std::string role; // exactly one "sensitive"; remaining regions are passive
+  std::string materialId;
+  std::string materialHash;
+  double densityGPerCm3 = 0.0;
+  RigidTransform transform;
+  std::shared_ptr<AnalyticCsgNodeDefinition> solid;
+  double expectedVolumeCm3 = 0.0;
+  Vector3d expectedCentroidMm;
+  double massRelativeTolerance = 0.0;
+  std::string massPropertiesProvenance;
+  std::string entrySurface;
+  Json canonicalJson;
+};
+
+// A bounded Stage-10 surface-mesh contract. Provider v1 accepts only closed,
+// consistently outward-oriented convex polyhedra. That restriction makes
+// watertightness, orientation, self-intersection freedom, volume, centroid,
+// and surface area deterministically checkable without an implicit repair or
+// an unqualified general-purpose CAD kernel.
+struct TessellatedMeshFacetDefinition {
+  std::string id;
+  std::array<std::size_t,3> vertexIndices{{0,0,0}};
+};
+
+struct TessellatedMeshRegionDefinition {
+  std::string id;
+  std::string role;
+  std::string materialId;
+  std::string materialHash;
+  double densityGPerCm3 = 0.0;
+  RigidTransform transform;
+  std::vector<Vector3d> verticesMm;
+  std::vector<TessellatedMeshFacetDefinition> facets;
+  double validationToleranceMm = 0.0;
+  double exactVolumeCm3 = 0.0;
+  double exactSurfaceAreaCm2 = 0.0;
+  Vector3d exactCentroidMm;
+  double expectedVolumeCm3 = 0.0;
+  Vector3d expectedCentroidMm;
+  double massRelativeTolerance = 0.0;
+  std::string massPropertiesProvenance;
+  std::string entrySurfaceType;
+  std::vector<std::string> entryFacetIds;
+  Json canonicalJson;
+};
+
 struct SlabAbsorberDefinition {
   std::string id;
   std::string materialId;
@@ -45,6 +116,10 @@ struct SlabAbsorberDefinition {
   double sizeXmm = 0.0;
   double sizeYmm = 0.0;
   double thicknessMm = 0.0;
+  // Reporting-only local-z extent of the one sensitive region. It equals
+  // thicknessMm for slab.v1 but is distinct from an analytic provider's
+  // overall conservative z bound when passive overburden is present.
+  double scoringThicknessMm = 0.0;
   double frontZmm = 0.0;
   double centerXmm = 0.0;
   double centerYmm = 0.0;
@@ -52,6 +127,24 @@ struct SlabAbsorberDefinition {
   // local +z points through the slab.  The legacy scalar fields above remain
   // populated so old reporting code can read v1 cases during migration.
   RigidTransform transform;
+  // `slab.v1` preserves all Stage 1--9 behaviour. `analytic_csg.v1` and
+  // `tessellated_mesh.v1` store one or more non-overlapping material regions
+  // below. The legacy scalar
+  // material members describe the sole sensitive region, while size/thickness
+  // are conservative full-provider bounds used only for containment. The
+  // current one-sensitive-region limitation is explicit at the parser boundary.
+  std::string provider = "slab.v1";
+  std::string providerVersion = "1.0.0";
+  std::string geometrySourceId;
+  std::string geometrySourceVersion;
+  std::string geometrySourceProvenance;
+  std::string geometryContentHash;
+  std::vector<AnalyticCsgRegionDefinition> csgRegions;
+  std::vector<TessellatedMeshRegionDefinition> meshRegions;
+  std::string sensitiveRegionId;
+  Vector3d localBoundsMinimumMm;
+  Vector3d localBoundsMaximumMm;
+  Json canonicalGeometry;
   std::string geometryHash;
 };
 

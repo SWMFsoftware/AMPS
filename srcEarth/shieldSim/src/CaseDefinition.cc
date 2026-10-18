@@ -8,6 +8,7 @@
 #include <cmath>
 #include <filesystem>
 #include <limits>
+#include <map>
 #include <set>
 #include <sstream>
 #include <tuple>
@@ -205,6 +206,299 @@ double ArealDensity(const Json& value, const std::string& context) {
 
 Json Measure(double value, const std::string& unit) {
   return Json(Json::Object{{"unit", Json(unit)}, {"value", Json(value)}});
+}
+
+double VolumeCm3(const Json& value,const std::string& context){
+  const auto& object=value.AsObject(context);
+  RejectUnknownFields(object,{"value","unit"},context);
+  const double number=PositiveNumber(value.At("value",context),context+".value");
+  const std::string unit=RequiredString(object,"unit",context);
+  if(unit=="cm3") return number;
+  if(unit=="mm3") return number/1000.0;
+  throw JsonError(context+".unit must be cm3 or mm3");
+}
+
+Vector3d MeshCross(const Vector3d& a,const Vector3d& b){
+  return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};
+}
+
+double MeshNorm(const Vector3d& value){
+  return std::sqrt(Dot(value,value));
+}
+
+struct ExactMeshProperties {
+  double volumeCm3 = 0.0;
+  double surfaceAreaCm2 = 0.0;
+  Vector3d centroidMm;
+};
+
+// Validate the deliberately bounded tessellated_mesh.v1 contract and derive
+// mass properties directly from its oriented surface.  The provider accepts
+// one connected, closed, outward-oriented convex triangular 2-manifold.  This
+// is intentionally narrower than "arbitrary STL": it gives deterministic
+// answers without an undocumented mesh-repair or self-intersection heuristic.
+ExactMeshProperties ValidateAndMeasureConvexMesh(
+    const std::vector<Vector3d>& vertices,
+    const std::vector<TessellatedMeshFacetDefinition>& facets,
+    double toleranceMm,const std::string& context){
+  if(vertices.size()<4)
+    throw JsonError(context+" requires at least four vertices");
+  if(facets.size()<4)
+    throw JsonError(context+" requires at least four triangular facets");
+  if(vertices.size()>10000 || facets.size()>20000)
+    throw JsonError(context+" exceeds the tessellated_mesh.v1 limit of 10000 vertices "
+        "or 20000 facets per region");
+
+  for(std::size_t i=0;i<vertices.size();++i){
+    for(std::size_t j=i+1;j<vertices.size();++j){
+      if(MeshNorm(vertices[i]-vertices[j])<=toleranceMm)
+        throw JsonError(context+" has duplicate vertices within validation_tolerance");
+    }
+  }
+
+  using Edge=std::pair<std::size_t,std::size_t>;
+  struct EdgeUse { std::size_t facet; std::size_t from; std::size_t to; };
+  std::map<Edge,std::vector<EdgeUse>> edges;
+  std::vector<bool> vertexUsed(vertices.size(),false);
+  std::vector<std::vector<std::size_t>> facetNeighbours(facets.size());
+  double sixVolume=0.0;
+  double areaMm2=0.0;
+  Vector3d centroidNumerator;
+
+  for(std::size_t fi=0;fi<facets.size();++fi){
+    const auto& indices=facets[fi].vertexIndices;
+    if(indices[0]>=vertices.size() || indices[1]>=vertices.size() ||
+       indices[2]>=vertices.size())
+      throw JsonError(context+" facet '"+facets[fi].id+"' has an out-of-range vertex index");
+    if(indices[0]==indices[1] || indices[1]==indices[2] || indices[2]==indices[0])
+      throw JsonError(context+" facet '"+facets[fi].id+"' repeats a vertex index");
+    for(const auto index:indices) vertexUsed[index]=true;
+    const Vector3d& a=vertices[indices[0]];
+    const Vector3d& b=vertices[indices[1]];
+    const Vector3d& c=vertices[indices[2]];
+    const Vector3d normal=MeshCross(b-a,c-a);
+    const double twiceArea=MeshNorm(normal);
+    if(!std::isfinite(twiceArea) || twiceArea<=toleranceMm*toleranceMm)
+      throw JsonError(context+" facet '"+facets[fi].id+"' is degenerate at the declared "
+          "validation_tolerance");
+    areaMm2+=0.5*twiceArea;
+
+    // For an outward facet of a convex solid every vertex is on or behind its
+    // oriented supporting plane.  This simultaneously rejects reversed faces,
+    // concavity, and intersecting/non-boundary triangles in provider v1.
+    for(const auto& vertex:vertices)
+      if(Dot(normal,vertex-a)>toleranceMm*twiceArea)
+        throw JsonError(context+" facet '"+facets[fi].id+"' is not an outward supporting "
+            "face of one convex polyhedron");
+
+    const double determinant=Dot(a,MeshCross(b,c));
+    sixVolume+=determinant;
+    centroidNumerator=centroidNumerator+determinant*(a+b+c);
+    for(std::size_t edgeIndex=0;edgeIndex<3;++edgeIndex){
+      const std::size_t from=indices[edgeIndex];
+      const std::size_t to=indices[(edgeIndex+1)%3];
+      edges[{std::min(from,to),std::max(from,to)}].push_back({fi,from,to});
+    }
+  }
+  if(std::find(vertexUsed.begin(),vertexUsed.end(),false)!=vertexUsed.end())
+    throw JsonError(context+" contains an unreferenced vertex");
+
+  for(const auto& edge:edges){
+    const auto& uses=edge.second;
+    if(uses.size()!=2)
+      throw JsonError(context+" is not watertight: every undirected edge must occur exactly twice");
+    if(uses[0].from!=uses[1].to || uses[0].to!=uses[1].from)
+      throw JsonError(context+" has inconsistent facet winding across a shared edge");
+    facetNeighbours[uses[0].facet].push_back(uses[1].facet);
+    facetNeighbours[uses[1].facet].push_back(uses[0].facet);
+  }
+  if(static_cast<long long>(vertices.size())-static_cast<long long>(edges.size())+
+         static_cast<long long>(facets.size())!=2)
+    throw JsonError(context+" must have Euler characteristic V-E+F=2 for one closed convex shell");
+  std::vector<bool> visited(facets.size(),false);
+  std::vector<std::size_t> pending{0};
+  visited[0]=true;
+  while(!pending.empty()){
+    const auto current=pending.back(); pending.pop_back();
+    for(const auto next:facetNeighbours[current]) if(!visited[next]){
+      visited[next]=true; pending.push_back(next);
+    }
+  }
+  if(std::find(visited.begin(),visited.end(),false)!=visited.end())
+    throw JsonError(context+" must contain exactly one connected surface shell");
+  if(!std::isfinite(sixVolume) || sixVolume<=toleranceMm*toleranceMm*toleranceMm)
+    throw JsonError(context+" has non-positive signed volume; facet winding must be outward");
+
+  ExactMeshProperties result;
+  result.volumeCm3=(sixVolume/6.0)/1000.0;
+  result.surfaceAreaCm2=areaMm2/100.0;
+  result.centroidMm=(1.0/(4.0*sixVolume))*centroidNumerator;
+  if(!std::isfinite(result.volumeCm3) || !std::isfinite(result.surfaceAreaCm2) ||
+     !std::isfinite(result.centroidMm.x) || !std::isfinite(result.centroidMm.y) ||
+     !std::isfinite(result.centroidMm.z))
+    throw JsonError(context+" produced non-finite exact mass properties");
+  return result;
+}
+
+// Transform all eight corners of an axis-aligned bound. Boolean CSG bounds are
+// conservative by construction; Geant4's own overlap/navigation checks remain
+// the final geometry authority when the case is built.
+std::pair<Vector3d,Vector3d> TransformBounds(
+    const Vector3d& minimum,const Vector3d& maximum,const RigidTransform& transform){
+  Vector3d outMin{std::numeric_limits<double>::infinity(),
+                  std::numeric_limits<double>::infinity(),
+                  std::numeric_limits<double>::infinity()};
+  Vector3d outMax{-std::numeric_limits<double>::infinity(),
+                  -std::numeric_limits<double>::infinity(),
+                  -std::numeric_limits<double>::infinity()};
+  for(double x:{minimum.x,maximum.x}) for(double y:{minimum.y,maximum.y})
+    for(double z:{minimum.z,maximum.z}){
+      const Vector3d p=transform.TransformPoint({x,y,z});
+      outMin.x=std::min(outMin.x,p.x); outMax.x=std::max(outMax.x,p.x);
+      outMin.y=std::min(outMin.y,p.y); outMax.y=std::max(outMax.y,p.y);
+      outMin.z=std::min(outMin.z,p.z); outMax.z=std::max(outMax.z,p.z);
+    }
+  return {outMin,outMax};
+}
+
+std::shared_ptr<AnalyticCsgNodeDefinition> ParseCsgNode(
+    const Json& value,const std::string& context,std::set<std::string>& nodeIds,
+    std::size_t depth=0){
+  if(depth>32) throw JsonError(context+" exceeds the analytic_csg.v1 nesting limit of 32");
+  if(nodeIds.size()>=128)
+    throw JsonError(context+" exceeds the analytic_csg.v1 limit of 128 nodes per absorber");
+  const auto& object=value.AsObject(context);
+  auto node=std::make_shared<AnalyticCsgNodeDefinition>();
+  node->nodeId=RequiredString(object,"node_id",context);
+  if(!nodeIds.insert(node->nodeId).second)
+    throw JsonError(context+" duplicates node_id '"+node->nodeId+"'");
+  node->type=RequiredString(object,"type",context);
+  Json::Object canonical{{"node_id",node->nodeId},{"type",node->type}};
+  if(node->type=="box"){
+    RejectUnknownFields(object,{"node_id","type","size_x","size_y","size_z"},context);
+    node->sizeXmm=LengthMm(object.at("size_x"),context+".size_x");
+    node->sizeYmm=LengthMm(object.at("size_y"),context+".size_y");
+    node->sizeZmm=LengthMm(object.at("size_z"),context+".size_z");
+    node->boundsMinimumMm={-node->sizeXmm/2.0,-node->sizeYmm/2.0,-node->sizeZmm/2.0};
+    node->boundsMaximumMm={ node->sizeXmm/2.0, node->sizeYmm/2.0, node->sizeZmm/2.0};
+    canonical["size_mm"]=Json(Json::Array{node->sizeXmm,node->sizeYmm,node->sizeZmm});
+  } else if(node->type=="sphere"){
+    RejectUnknownFields(object,{"node_id","type","inner_radius","outer_radius"},context);
+    node->innerRadiusMm=LengthMm(object.at("inner_radius"),context+".inner_radius",true);
+    node->outerRadiusMm=LengthMm(object.at("outer_radius"),context+".outer_radius");
+    if(node->innerRadiusMm>=node->outerRadiusMm)
+      throw JsonError(context+".inner_radius must be smaller than outer_radius");
+    node->boundsMinimumMm={-node->outerRadiusMm,-node->outerRadiusMm,-node->outerRadiusMm};
+    node->boundsMaximumMm={ node->outerRadiusMm, node->outerRadiusMm, node->outerRadiusMm};
+    canonical["inner_radius_mm"]=node->innerRadiusMm;
+    canonical["outer_radius_mm"]=node->outerRadiusMm;
+  } else if(node->type=="cylinder"){
+    RejectUnknownFields(object,{"node_id","type","inner_radius","outer_radius","length"},context);
+    node->innerRadiusMm=LengthMm(object.at("inner_radius"),context+".inner_radius",true);
+    node->outerRadiusMm=LengthMm(object.at("outer_radius"),context+".outer_radius");
+    node->lengthMm=LengthMm(object.at("length"),context+".length");
+    if(node->innerRadiusMm>=node->outerRadiusMm)
+      throw JsonError(context+".inner_radius must be smaller than outer_radius");
+    node->boundsMinimumMm={-node->outerRadiusMm,-node->outerRadiusMm,-node->lengthMm/2.0};
+    node->boundsMaximumMm={ node->outerRadiusMm, node->outerRadiusMm, node->lengthMm/2.0};
+    canonical["inner_radius_mm"]=node->innerRadiusMm;
+    canonical["outer_radius_mm"]=node->outerRadiusMm;
+    canonical["length_mm"]=node->lengthMm;
+  } else if(node->type=="union" || node->type=="intersection" ||
+            node->type=="subtraction"){
+    RejectUnknownFields(object,{"node_id","type","left","right","right_transform","relationship"},context);
+    node->relationship=RequiredString(object,"relationship",context);
+    if((node->type=="union" && node->relationship!="disjoint") ||
+       (node->type=="subtraction" && node->relationship!="right_fully_contained") ||
+       (node->type=="intersection" && node->relationship!="general"))
+      throw JsonError(context+".relationship is incompatible with the Boolean type; "
+          "use disjoint, right_fully_contained, or general respectively");
+    node->left=ParseCsgNode(object.at("left"),context+".left",nodeIds,depth+1);
+    node->right=ParseCsgNode(object.at("right"),context+".right",nodeIds,depth+1);
+    node->rightTransform=ParseTransform(object.at("right_transform"),context+".right_transform");
+    const auto rightBounds=TransformBounds(node->right->boundsMinimumMm,
+                                           node->right->boundsMaximumMm,
+                                           node->rightTransform);
+    if(node->type=="union"){
+      const bool boundsOverlap=
+          node->left->boundsMinimumMm.x<rightBounds.second.x &&
+          node->left->boundsMaximumMm.x>rightBounds.first.x &&
+          node->left->boundsMinimumMm.y<rightBounds.second.y &&
+          node->left->boundsMaximumMm.y>rightBounds.first.y &&
+          node->left->boundsMinimumMm.z<rightBounds.second.z &&
+          node->left->boundsMaximumMm.z>rightBounds.first.z;
+      if(boundsOverlap)
+        throw JsonError(context+" declares a disjoint union but child axis-aligned bounds overlap; "
+            "analytic_csg.v1 intentionally rejects geometrically ambiguous disjoint claims");
+      node->boundsMinimumMm={std::min(node->left->boundsMinimumMm.x,rightBounds.first.x),
+                             std::min(node->left->boundsMinimumMm.y,rightBounds.first.y),
+                             std::min(node->left->boundsMinimumMm.z,rightBounds.first.z)};
+      node->boundsMaximumMm={std::max(node->left->boundsMaximumMm.x,rightBounds.second.x),
+                             std::max(node->left->boundsMaximumMm.y,rightBounds.second.y),
+                             std::max(node->left->boundsMaximumMm.z,rightBounds.second.z)};
+    } else if(node->type=="intersection"){
+      node->boundsMinimumMm={std::max(node->left->boundsMinimumMm.x,rightBounds.first.x),
+                             std::max(node->left->boundsMinimumMm.y,rightBounds.first.y),
+                             std::max(node->left->boundsMinimumMm.z,rightBounds.first.z)};
+      node->boundsMaximumMm={std::min(node->left->boundsMaximumMm.x,rightBounds.second.x),
+                             std::min(node->left->boundsMaximumMm.y,rightBounds.second.y),
+                             std::min(node->left->boundsMaximumMm.z,rightBounds.second.z)};
+      if(node->boundsMinimumMm.x>=node->boundsMaximumMm.x ||
+         node->boundsMinimumMm.y>=node->boundsMaximumMm.y ||
+         node->boundsMinimumMm.z>=node->boundsMaximumMm.z)
+        throw JsonError(context+" has empty conservative intersection bounds");
+    } else {
+      constexpr double containmentTolerance=1.0e-9;
+      if(rightBounds.first.x<node->left->boundsMinimumMm.x-containmentTolerance ||
+         rightBounds.first.y<node->left->boundsMinimumMm.y-containmentTolerance ||
+         rightBounds.first.z<node->left->boundsMinimumMm.z-containmentTolerance ||
+         rightBounds.second.x>node->left->boundsMaximumMm.x+containmentTolerance ||
+         rightBounds.second.y>node->left->boundsMaximumMm.y+containmentTolerance ||
+         rightBounds.second.z>node->left->boundsMaximumMm.z+containmentTolerance)
+        throw JsonError(context+" declares right_fully_contained but the transformed right "
+            "bounds exceed the left bounds");
+      node->boundsMinimumMm=node->left->boundsMinimumMm;
+      node->boundsMaximumMm=node->left->boundsMaximumMm;
+    }
+    canonical["left"]=node->left->canonicalJson;
+    canonical["relationship"]=node->relationship;
+    canonical["right"]=node->right->canonicalJson;
+    canonical["right_transform"]=TransformToJson(node->rightTransform);
+  } else {
+    throw JsonError(context+".type must be box, sphere, cylinder, union, intersection, or subtraction");
+  }
+  node->canonicalJson=Json(std::move(canonical));
+  return node;
+}
+
+double PrimitiveCsgVolumeCm3(const AnalyticCsgNodeDefinition& node){
+  constexpr double piValue=3.141592653589793238462643383279502884;
+  if(node.type=="box") return node.sizeXmm*node.sizeYmm*node.sizeZmm/1000.0;
+  if(node.type=="sphere")
+    return (4.0*piValue/3.0)*(std::pow(node.outerRadiusMm,3)-
+                              std::pow(node.innerRadiusMm,3))/1000.0;
+  if(node.type=="cylinder")
+    return piValue*(node.outerRadiusMm*node.outerRadiusMm-
+                    node.innerRadiusMm*node.innerRadiusMm)*node.lengthMm/1000.0;
+  return std::numeric_limits<double>::quiet_NaN();
+}
+
+std::pair<double,Vector3d> ExactCsgMassProperties(
+    const AnalyticCsgNodeDefinition& node){
+  const double primitive=PrimitiveCsgVolumeCm3(node);
+  if(std::isfinite(primitive)) return {primitive,{0.0,0.0,0.0}};
+  if(node.type=="intersection")
+    return {std::numeric_limits<double>::quiet_NaN(),{0.0,0.0,0.0}};
+  const auto left=ExactCsgMassProperties(*node.left);
+  const auto rightLocal=ExactCsgMassProperties(*node.right);
+  if(!std::isfinite(left.first) || !std::isfinite(rightLocal.first))
+    return {std::numeric_limits<double>::quiet_NaN(),{0.0,0.0,0.0}};
+  const Vector3d right=node.rightTransform.TransformPoint(rightLocal.second);
+  const double sign=node.type=="union" ? 1.0 : -1.0;
+  const double volume=left.first+sign*rightLocal.first;
+  if(volume<=0.0) throw JsonError("analytic CSG subtraction has non-positive exact volume");
+  return {volume,
+          (1.0/volume)*(left.first*left.second+sign*rightLocal.first*right)};
 }
 
 std::vector<std::string> StringArray(const Json& value, const std::string& context) {
@@ -594,40 +888,524 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
   for (std::size_t i = 0; i < absorberValues.size(); ++i) {
     const std::string context = "case.geometry.absorbers[" + std::to_string(i) + ']';
     const auto& object = absorberValues[i].AsObject(context);
-    RejectUnknownFields(object, {"absorber_id","material","geometry"}, context);
     SlabAbsorberDefinition parsed;
     parsed.id = RequiredString(object, "absorber_id", context);
     if (!absorberIds.insert(parsed.id).second) throw JsonError(context + ": duplicate absorber_id '" + parsed.id + "'");
-    const auto& material = result->materials->Resolve(RequiredString(object, "material", context), "absorber");
-    parsed.materialId = material.id;
-    parsed.materialHash = material.contentHash;
-    parsed.densityGPerCm3 = material.densityGPerCm3;
     const auto& shape = object.at("geometry").AsObject(context + ".geometry");
-    RejectUnknownFields(shape, stage3Schema
-        ? std::vector<std::string>{"type","size_x","size_y","thickness","transform"}
-        : std::vector<std::string>{"type","size_x","size_y","center_x","center_y","thickness","front_z"},
-        context + ".geometry");
-    if (RequiredString(shape, "type", context + ".geometry") != "slab")
-      throw JsonError(context + ".geometry.type must be 'slab'; future providers retain a later validation gate");
-    parsed.sizeXmm = LengthMm(shape.at("size_x"), context + ".geometry.size_x");
-    parsed.sizeYmm = LengthMm(shape.at("size_y"), context + ".geometry.size_y");
-    parsed.thicknessMm = LengthMm(shape.at("thickness"), context + ".geometry.thickness");
-    if(stage3Schema){
+    const std::string geometryType=RequiredString(shape,"type",context+".geometry");
+    if(geometryType=="slab"){
+      RejectUnknownFields(object,{"absorber_id","material","geometry"},context);
+      const auto& material=result->materials->Resolve(
+          RequiredString(object,"material",context),"absorber");
+      parsed.materialId=material.id;
+      parsed.materialHash=material.contentHash;
+      parsed.densityGPerCm3=material.densityGPerCm3;
+      RejectUnknownFields(shape, stage3Schema
+          ? std::vector<std::string>{"type","size_x","size_y","thickness","transform"}
+          : std::vector<std::string>{"type","size_x","size_y","center_x","center_y","thickness","front_z"},
+          context + ".geometry");
+      parsed.sizeXmm=LengthMm(shape.at("size_x"),context+".geometry.size_x");
+      parsed.sizeYmm=LengthMm(shape.at("size_y"),context+".geometry.size_y");
+      parsed.thicknessMm=LengthMm(shape.at("thickness"),context+".geometry.thickness");
+      parsed.scoringThicknessMm=parsed.thicknessMm;
+      if(stage3Schema){
+        parsed.transform=ParseTransform(shape.at("transform"),context+".geometry.transform");
+        parsed.centerXmm=parsed.transform.translationMm.x;
+        parsed.centerYmm=parsed.transform.translationMm.y;
+        parsed.frontZmm=parsed.transform.translationMm.z;
+      } else {
+        parsed.centerXmm=PositionMm(shape.at("center_x"),context+".geometry.center_x");
+        parsed.centerYmm=PositionMm(shape.at("center_y"),context+".geometry.center_y");
+        parsed.frontZmm=PositionMm(shape.at("front_z"),context+".geometry.front_z");
+        parsed.transform.translationMm={parsed.centerXmm,parsed.centerYmm,parsed.frontZmm};
+      }
+      parsed.localBoundsMinimumMm={-parsed.sizeXmm/2.0,-parsed.sizeYmm/2.0,0.0};
+      parsed.localBoundsMaximumMm={ parsed.sizeXmm/2.0, parsed.sizeYmm/2.0,parsed.thicknessMm};
+      Json::Object hashInput{{"absorber_id",parsed.id},
+        {"transform",TransformToJson(parsed.transform)},
+        {"material_hash",parsed.materialHash},{"size_x_mm",parsed.sizeXmm},
+        {"size_y_mm",parsed.sizeYmm},{"thickness_mm",parsed.thicknessMm},{"type","slab"}};
+      parsed.canonicalGeometry=Json(hashInput);
+      parsed.geometryContentHash=Sha256(parsed.canonicalGeometry.DumpCanonical());
+      parsed.geometryHash=parsed.geometryContentHash;
+    } else if(geometryType=="analytic_csg"){
+      if(!stage3Schema)
+        throw JsonError(context+" analytic_csg requires shieldSim.case.v2");
+      if(result->purpose!="verification_test")
+        throw JsonError(context+" analytic_csg.v1 is verification-only until the Stage-10 "
+            "independent nontrivial-shape validation gate is passed");
+      RejectUnknownFields(object,{"absorber_id","geometry"},context);
+      RejectUnknownFields(shape,{"type","provider_version","coordinate_frame","transform",
+                                "source","regions"},context+".geometry");
+      parsed.provider="analytic_csg.v1";
+      parsed.providerVersion=RequiredString(shape,"provider_version",context+".geometry");
+      if(parsed.providerVersion!="1.0.0")
+        throw JsonError(context+".geometry.provider_version must be exactly '1.0.0'");
+      const auto& providerFrame=shape.at("coordinate_frame").AsObject(
+          context+".geometry.coordinate_frame");
+      RejectUnknownFields(providerFrame,{"name","handedness","origin","length_unit"},
+                          context+".geometry.coordinate_frame");
+      if(RequiredString(providerFrame,"name",context+".geometry.coordinate_frame")!=
+             "absorber_local_cartesian" ||
+         RequiredString(providerFrame,"handedness",context+".geometry.coordinate_frame")!="right" ||
+         RequiredString(providerFrame,"origin",context+".geometry.coordinate_frame")!=
+             "provider_origin" ||
+         RequiredString(providerFrame,"length_unit",context+".geometry.coordinate_frame")!="mm")
+        throw JsonError(context+".geometry.coordinate_frame must explicitly declare "
+            "absorber_local_cartesian, right, provider_origin, and mm");
       parsed.transform=ParseTransform(shape.at("transform"),context+".geometry.transform");
       parsed.centerXmm=parsed.transform.translationMm.x;
       parsed.centerYmm=parsed.transform.translationMm.y;
       parsed.frontZmm=parsed.transform.translationMm.z;
+      const auto& sourceDescription=shape.at("source").AsObject(context+".geometry.source");
+      RejectUnknownFields(sourceDescription,{"kind","source_id","source_version","provenance"},
+                          context+".geometry.source");
+      if(RequiredString(sourceDescription,"kind",context+".geometry.source")!="inline")
+        throw JsonError(context+".geometry.source.kind must be 'inline' for analytic_csg.v1");
+      parsed.geometrySourceId=RequiredString(sourceDescription,"source_id",context+".geometry.source");
+      parsed.geometrySourceVersion=RequiredString(sourceDescription,"source_version",context+".geometry.source");
+      parsed.geometrySourceProvenance=RequiredString(sourceDescription,"provenance",context+".geometry.source");
+
+      const auto& regions=shape.at("regions").AsArray(context+".geometry.regions");
+      if(regions.empty()) throw JsonError(context+".geometry.regions must not be empty");
+      std::set<std::string> regionIds;
+      std::set<std::string> nodeIds;
+      std::size_t sensitiveCount=0;
+      Vector3d boundsMin{std::numeric_limits<double>::infinity(),
+                         std::numeric_limits<double>::infinity(),
+                         std::numeric_limits<double>::infinity()};
+      Vector3d boundsMax{-std::numeric_limits<double>::infinity(),
+                         -std::numeric_limits<double>::infinity(),
+                         -std::numeric_limits<double>::infinity()};
+      Json::Array canonicalRegions;
+      for(std::size_t j=0;j<regions.size();++j){
+        const std::string rc=context+".geometry.regions["+std::to_string(j)+"]";
+        const auto& region=regions[j].AsObject(rc);
+        RejectUnknownFields(region,{"region_id","role","material","transform","solid",
+                                    "mass_properties","entry_surface"},rc);
+        AnalyticCsgRegionDefinition parsedRegion;
+        parsedRegion.id=RequiredString(region,"region_id",rc);
+        if(!regionIds.insert(parsedRegion.id).second)
+          throw JsonError(rc+" duplicates region_id '"+parsedRegion.id+"'");
+        parsedRegion.role=RequiredString(region,"role",rc);
+        if(parsedRegion.role!="passive" && parsedRegion.role!="sensitive")
+          throw JsonError(rc+".role must be passive or sensitive");
+        if(parsedRegion.role=="sensitive"){
+          ++sensitiveCount;
+          parsed.sensitiveRegionId=parsedRegion.id;
+          parsedRegion.entrySurface=RequiredString(region,"entry_surface",rc);
+          if(parsedRegion.entrySurface!="entire_exterior" &&
+             parsedRegion.entrySurface!="local_negative_z_face")
+            throw JsonError(rc+".entry_surface must be 'entire_exterior' or "
+                "'local_negative_z_face'");
+        } else if(region.count("entry_surface")) {
+          throw JsonError(rc+" passive regions must not declare entry_surface");
+        }
+        const auto& material=result->materials->Resolve(
+            RequiredString(region,"material",rc),"absorber");
+        parsedRegion.materialId=material.id;
+        parsedRegion.materialHash=material.contentHash;
+        parsedRegion.densityGPerCm3=material.densityGPerCm3;
+        parsedRegion.transform=ParseTransform(region.at("transform"),rc+".transform");
+        parsedRegion.solid=ParseCsgNode(region.at("solid"),rc+".solid",nodeIds);
+        if(parsedRegion.role=="sensitive" &&
+           parsedRegion.solid->type!="box" && parsedRegion.solid->type!="sphere" &&
+           parsedRegion.solid->type!="cylinder")
+          throw JsonError(rc+" sensitive solid must be one analytic primitive in analytic_csg.v1; "
+              "Boolean sensitive masses require a later independently qualified provider version");
+        if(parsedRegion.role=="sensitive" &&
+           parsedRegion.entrySurface=="local_negative_z_face" &&
+           parsedRegion.solid->type!="box" && parsedRegion.solid->type!="cylinder")
+          throw JsonError(rc+" local_negative_z_face is defined only for box and cylinder "
+              "sensitive primitives");
+        const auto& mass=region.at("mass_properties").AsObject(rc+".mass_properties");
+        RejectUnknownFields(mass,{"volume","centroid","relative_tolerance","provenance"},
+                            rc+".mass_properties");
+        parsedRegion.expectedVolumeCm3=VolumeCm3(mass.at("volume"),rc+".mass_properties.volume");
+        const auto& centroid=mass.at("centroid").AsObject(rc+".mass_properties.centroid");
+        RejectUnknownFields(centroid,{"x","y","z"},rc+".mass_properties.centroid");
+        parsedRegion.expectedCentroidMm={
+          PositionMm(centroid.at("x"),rc+".mass_properties.centroid.x"),
+          PositionMm(centroid.at("y"),rc+".mass_properties.centroid.y"),
+          PositionMm(centroid.at("z"),rc+".mass_properties.centroid.z")};
+        parsedRegion.massRelativeTolerance=PositiveNumber(
+            mass.at("relative_tolerance"),rc+".mass_properties.relative_tolerance");
+        if(parsedRegion.massRelativeTolerance>0.05)
+          throw JsonError(rc+".mass_properties.relative_tolerance must be <= 0.05");
+        parsedRegion.massPropertiesProvenance=RequiredString(
+            mass,"provenance",rc+".mass_properties");
+        {
+          const auto exact=ExactCsgMassProperties(*parsedRegion.solid);
+          const double exactVolume=exact.first;
+          if(std::isfinite(exactVolume) &&
+             std::abs(exactVolume-parsedRegion.expectedVolumeCm3)>
+                 parsedRegion.massRelativeTolerance*parsedRegion.expectedVolumeCm3)
+            throw JsonError(rc+".mass_properties.volume disagrees with the exact analytic "
+                "CSG volume beyond relative_tolerance");
+          const Vector3d centroidDelta=parsedRegion.expectedCentroidMm-exact.second;
+          const double centroidMagnitude=std::sqrt(
+              centroidDelta.x*centroidDelta.x+centroidDelta.y*centroidDelta.y+
+              centroidDelta.z*centroidDelta.z);
+          const double solidScale=std::max({
+              parsedRegion.solid->boundsMaximumMm.x-parsedRegion.solid->boundsMinimumMm.x,
+              parsedRegion.solid->boundsMaximumMm.y-parsedRegion.solid->boundsMinimumMm.y,
+              parsedRegion.solid->boundsMaximumMm.z-parsedRegion.solid->boundsMinimumMm.z,1.0});
+          if(std::isfinite(exactVolume) &&
+             centroidMagnitude>parsedRegion.massRelativeTolerance*solidScale)
+            throw JsonError(rc+".mass_properties.centroid disagrees with the exact analytic "
+                "CSG centroid beyond relative_tolerance");
+        }
+        const auto transformed=TransformBounds(parsedRegion.solid->boundsMinimumMm,
+                                               parsedRegion.solid->boundsMaximumMm,
+                                               parsedRegion.transform);
+        boundsMin={std::min(boundsMin.x,transformed.first.x),
+                   std::min(boundsMin.y,transformed.first.y),
+                   std::min(boundsMin.z,transformed.first.z)};
+        boundsMax={std::max(boundsMax.x,transformed.second.x),
+                   std::max(boundsMax.y,transformed.second.y),
+                   std::max(boundsMax.z,transformed.second.z)};
+        Json::Object canonicalRegion{{"density_g_cm3",parsedRegion.densityGPerCm3},
+          {"material_hash",parsedRegion.materialHash},{"material_id",parsedRegion.materialId},
+          {"mass_properties",Json(Json::Object{
+            {"centroid_mm",Json(Json::Array{parsedRegion.expectedCentroidMm.x,
+                                             parsedRegion.expectedCentroidMm.y,
+                                             parsedRegion.expectedCentroidMm.z})},
+            {"provenance",parsedRegion.massPropertiesProvenance},
+            {"relative_tolerance",parsedRegion.massRelativeTolerance},
+            {"volume_cm3",parsedRegion.expectedVolumeCm3}})},
+          {"region_id",parsedRegion.id},{"role",parsedRegion.role},
+          {"solid",parsedRegion.solid->canonicalJson},
+          {"transform",TransformToJson(parsedRegion.transform)}};
+        if(parsedRegion.role=="sensitive")
+          canonicalRegion["entry_surface"]=parsedRegion.entrySurface;
+        parsedRegion.canonicalJson=Json(canonicalRegion);
+        canonicalRegions.emplace_back(parsedRegion.canonicalJson);
+        parsed.csgRegions.push_back(std::move(parsedRegion));
+      }
+      if(sensitiveCount!=1)
+        throw JsonError(context+".geometry.regions must contain exactly one sensitive region; "
+            "analytic_csg.v1 quantity accumulators do not combine multiple detector regions");
+      parsed.localBoundsMinimumMm=boundsMin;
+      parsed.localBoundsMaximumMm=boundsMax;
+      parsed.sizeXmm=boundsMax.x-boundsMin.x;
+      parsed.sizeYmm=boundsMax.y-boundsMin.y;
+      parsed.thicknessMm=boundsMax.z-boundsMin.z;
+      const auto sensitive=std::find_if(parsed.csgRegions.begin(),parsed.csgRegions.end(),
+          [](const auto& region){ return region.role=="sensitive"; });
+      parsed.materialId=sensitive->materialId;
+      parsed.materialHash=sensitive->materialHash;
+      parsed.densityGPerCm3=sensitive->densityGPerCm3;
+      parsed.scoringThicknessMm=sensitive->solid->boundsMaximumMm.z-
+                                sensitive->solid->boundsMinimumMm.z;
+      Json::Object canonicalSource{{"kind","inline"},{"provenance",parsed.geometrySourceProvenance},
+        {"source_id",parsed.geometrySourceId},{"source_version",parsed.geometrySourceVersion}};
+      Json::Object canonical{{"absorber_id",parsed.id},
+        {"coordinate_frame",Json(Json::Object{{"handedness","right"},{"length_unit","mm"},
+          {"name","absorber_local_cartesian"},{"origin","provider_origin"}})},
+        {"provider","analytic_csg.v1"},{"provider_version",parsed.providerVersion},
+        {"regions",Json(std::move(canonicalRegions))},{"source",Json(std::move(canonicalSource))},
+        {"transform",TransformToJson(parsed.transform)}};
+      parsed.canonicalGeometry=Json(canonical);
+      parsed.geometryContentHash=Sha256(parsed.canonicalGeometry.DumpCanonical());
+      canonical["geometry_content_sha256"]=parsed.geometryContentHash;
+      parsed.canonicalGeometry=Json(std::move(canonical));
+      parsed.geometryHash=Sha256(parsed.canonicalGeometry.DumpCanonical());
+    } else if(geometryType=="tessellated_mesh"){
+      if(!stage3Schema)
+        throw JsonError(context+" tessellated_mesh requires shieldSim.case.v2");
+      if(result->purpose!="verification_test")
+        throw JsonError(context+" tessellated_mesh.v1 is verification-only until the Stage-10 "
+            "independent nontrivial-shape validation gate is passed");
+      RejectUnknownFields(object,{"absorber_id","geometry"},context);
+      RejectUnknownFields(shape,{"type","provider_version","coordinate_frame","transform",
+                                "source","regions"},context+".geometry");
+      parsed.provider="tessellated_mesh.v1";
+      parsed.providerVersion=RequiredString(shape,"provider_version",context+".geometry");
+      if(parsed.providerVersion!="1.0.0")
+        throw JsonError(context+".geometry.provider_version must be exactly '1.0.0'");
+      const auto& providerFrame=shape.at("coordinate_frame").AsObject(
+          context+".geometry.coordinate_frame");
+      RejectUnknownFields(providerFrame,{"name","handedness","origin","length_unit"},
+                          context+".geometry.coordinate_frame");
+      if(RequiredString(providerFrame,"name",context+".geometry.coordinate_frame")!=
+             "absorber_local_cartesian" ||
+         RequiredString(providerFrame,"handedness",context+".geometry.coordinate_frame")!="right" ||
+         RequiredString(providerFrame,"origin",context+".geometry.coordinate_frame")!=
+             "provider_origin" ||
+         RequiredString(providerFrame,"length_unit",context+".geometry.coordinate_frame")!="mm")
+        throw JsonError(context+".geometry.coordinate_frame must explicitly declare "
+            "absorber_local_cartesian, right, provider_origin, and mm");
+      parsed.transform=ParseTransform(shape.at("transform"),context+".geometry.transform");
+      parsed.centerXmm=parsed.transform.translationMm.x;
+      parsed.centerYmm=parsed.transform.translationMm.y;
+      parsed.frontZmm=parsed.transform.translationMm.z;
+      const auto& sourceDescription=shape.at("source").AsObject(context+".geometry.source");
+      RejectUnknownFields(sourceDescription,{"kind","source_id","source_version","provenance"},
+                          context+".geometry.source");
+      if(RequiredString(sourceDescription,"kind",context+".geometry.source")!="inline")
+        throw JsonError(context+".geometry.source.kind must be 'inline' for tessellated_mesh.v1; "
+            "STL/CAD import and unit inference are intentionally outside provider v1");
+      parsed.geometrySourceId=RequiredString(sourceDescription,"source_id",context+".geometry.source");
+      parsed.geometrySourceVersion=RequiredString(sourceDescription,"source_version",context+".geometry.source");
+      parsed.geometrySourceProvenance=RequiredString(sourceDescription,"provenance",context+".geometry.source");
+
+      const auto& regions=shape.at("regions").AsArray(context+".geometry.regions");
+      if(regions.empty()) throw JsonError(context+".geometry.regions must not be empty");
+      std::set<std::string> regionIds;
+      std::size_t sensitiveCount=0;
+      Vector3d boundsMin{std::numeric_limits<double>::infinity(),
+                         std::numeric_limits<double>::infinity(),
+                         std::numeric_limits<double>::infinity()};
+      Vector3d boundsMax{-std::numeric_limits<double>::infinity(),
+                         -std::numeric_limits<double>::infinity(),
+                         -std::numeric_limits<double>::infinity()};
+      Json::Array canonicalRegions;
+      for(std::size_t j=0;j<regions.size();++j){
+        const std::string rc=context+".geometry.regions["+std::to_string(j)+"]";
+        const auto& region=regions[j].AsObject(rc);
+        RejectUnknownFields(region,{"region_id","role","material","transform","mesh",
+                                    "mass_properties","entry_surface"},rc);
+        TessellatedMeshRegionDefinition parsedRegion;
+        parsedRegion.id=RequiredString(region,"region_id",rc);
+        if(!regionIds.insert(parsedRegion.id).second)
+          throw JsonError(rc+" duplicates region_id '"+parsedRegion.id+"'");
+        parsedRegion.role=RequiredString(region,"role",rc);
+        if(parsedRegion.role!="passive" && parsedRegion.role!="sensitive")
+          throw JsonError(rc+".role must be passive or sensitive");
+        if(parsedRegion.role=="sensitive"){
+          ++sensitiveCount;
+          parsed.sensitiveRegionId=parsedRegion.id;
+        } else if(region.count("entry_surface")) {
+          throw JsonError(rc+" passive regions must not declare entry_surface");
+        }
+        const auto& material=result->materials->Resolve(
+            RequiredString(region,"material",rc),"absorber");
+        parsedRegion.materialId=material.id;
+        parsedRegion.materialHash=material.contentHash;
+        parsedRegion.densityGPerCm3=material.densityGPerCm3;
+        parsedRegion.transform=ParseTransform(region.at("transform"),rc+".transform");
+
+        const auto& mesh=region.at("mesh").AsObject(rc+".mesh");
+        RejectUnknownFields(mesh,{"length_unit","validation_tolerance","vertices","facets"},
+                            rc+".mesh");
+        if(RequiredString(mesh,"length_unit",rc+".mesh")!="mm")
+          throw JsonError(rc+".mesh.length_unit must be exactly 'mm'");
+        parsedRegion.validationToleranceMm=LengthMm(
+            mesh.at("validation_tolerance"),rc+".mesh.validation_tolerance");
+        if(parsedRegion.validationToleranceMm>1.0e-3)
+          throw JsonError(rc+".mesh.validation_tolerance must be <= 0.001 mm");
+        const auto& vertices=mesh.at("vertices").AsArray(rc+".mesh.vertices");
+        Json::Array canonicalVertices;
+        for(std::size_t vi=0;vi<vertices.size();++vi){
+          const std::string vc=rc+".mesh.vertices["+std::to_string(vi)+"]";
+          const auto& coordinates=vertices[vi].AsArray(vc);
+          if(coordinates.size()!=3) throw JsonError(vc+" must contain exactly x, y, z");
+          Vector3d vertex{FiniteNumber(coordinates[0],vc+"[0]"),
+                          FiniteNumber(coordinates[1],vc+"[1]"),
+                          FiniteNumber(coordinates[2],vc+"[2]")};
+          parsedRegion.verticesMm.push_back(vertex);
+          canonicalVertices.emplace_back(Json::Array{vertex.x,vertex.y,vertex.z});
+        }
+        const auto& facets=mesh.at("facets").AsArray(rc+".mesh.facets");
+        std::set<std::string> facetIds;
+        Json::Array canonicalFacets;
+        for(std::size_t fi=0;fi<facets.size();++fi){
+          const std::string fc=rc+".mesh.facets["+std::to_string(fi)+"]";
+          const auto& facet=facets[fi].AsObject(fc);
+          RejectUnknownFields(facet,{"facet_id","vertex_indices"},fc);
+          TessellatedMeshFacetDefinition parsedFacet;
+          parsedFacet.id=RequiredString(facet,"facet_id",fc);
+          if(!facetIds.insert(parsedFacet.id).second)
+            throw JsonError(fc+" duplicates facet_id '"+parsedFacet.id+"'");
+          const auto& indices=facet.at("vertex_indices").AsArray(fc+".vertex_indices");
+          if(indices.size()!=3)
+            throw JsonError(fc+".vertex_indices must contain exactly three indices");
+          Json::Array canonicalIndices;
+          for(std::size_t k=0;k<3;++k){
+            const long index=NonNegativeInteger(indices[k],fc+".vertex_indices["+
+                                                 std::to_string(k)+"]");
+            parsedFacet.vertexIndices[k]=static_cast<std::size_t>(index);
+            canonicalIndices.emplace_back(static_cast<double>(index));
+          }
+          parsedRegion.facets.push_back(parsedFacet);
+          canonicalFacets.emplace_back(Json::Object{{"facet_id",parsedFacet.id},
+                                      {"vertex_indices",Json(std::move(canonicalIndices))}});
+        }
+        const auto exact=ValidateAndMeasureConvexMesh(
+            parsedRegion.verticesMm,parsedRegion.facets,
+            parsedRegion.validationToleranceMm,rc+".mesh");
+        parsedRegion.exactVolumeCm3=exact.volumeCm3;
+        parsedRegion.exactSurfaceAreaCm2=exact.surfaceAreaCm2;
+        parsedRegion.exactCentroidMm=exact.centroidMm;
+
+        const auto& mass=region.at("mass_properties").AsObject(rc+".mass_properties");
+        RejectUnknownFields(mass,{"volume","centroid","relative_tolerance","provenance"},
+                            rc+".mass_properties");
+        parsedRegion.expectedVolumeCm3=VolumeCm3(mass.at("volume"),rc+".mass_properties.volume");
+        const auto& centroid=mass.at("centroid").AsObject(rc+".mass_properties.centroid");
+        RejectUnknownFields(centroid,{"x","y","z"},rc+".mass_properties.centroid");
+        parsedRegion.expectedCentroidMm={
+          PositionMm(centroid.at("x"),rc+".mass_properties.centroid.x"),
+          PositionMm(centroid.at("y"),rc+".mass_properties.centroid.y"),
+          PositionMm(centroid.at("z"),rc+".mass_properties.centroid.z")};
+        parsedRegion.massRelativeTolerance=PositiveNumber(
+            mass.at("relative_tolerance"),rc+".mass_properties.relative_tolerance");
+        if(parsedRegion.massRelativeTolerance>0.05)
+          throw JsonError(rc+".mass_properties.relative_tolerance must be <= 0.05");
+        parsedRegion.massPropertiesProvenance=RequiredString(
+            mass,"provenance",rc+".mass_properties");
+        if(std::abs(parsedRegion.expectedVolumeCm3-exact.volumeCm3)>
+             parsedRegion.massRelativeTolerance*parsedRegion.expectedVolumeCm3)
+          throw JsonError(rc+".mass_properties.volume disagrees with the exact oriented-mesh "
+              "volume beyond relative_tolerance");
+
+        Vector3d meshMinimum{std::numeric_limits<double>::infinity(),
+                             std::numeric_limits<double>::infinity(),
+                             std::numeric_limits<double>::infinity()};
+        Vector3d meshMaximum{-std::numeric_limits<double>::infinity(),
+                             -std::numeric_limits<double>::infinity(),
+                             -std::numeric_limits<double>::infinity()};
+        for(const auto& vertex:parsedRegion.verticesMm){
+          meshMinimum={std::min(meshMinimum.x,vertex.x),std::min(meshMinimum.y,vertex.y),
+                       std::min(meshMinimum.z,vertex.z)};
+          meshMaximum={std::max(meshMaximum.x,vertex.x),std::max(meshMaximum.y,vertex.y),
+                       std::max(meshMaximum.z,vertex.z)};
+        }
+        const double meshScale=std::max({meshMaximum.x-meshMinimum.x,
+                                         meshMaximum.y-meshMinimum.y,
+                                         meshMaximum.z-meshMinimum.z,1.0});
+        const double centroidError=MeshNorm(parsedRegion.expectedCentroidMm-exact.centroidMm);
+        if(centroidError>std::max(parsedRegion.validationToleranceMm,
+                                  parsedRegion.massRelativeTolerance*meshScale))
+          throw JsonError(rc+".mass_properties.centroid disagrees with the exact oriented-mesh "
+              "centroid beyond the declared tolerances");
+
+        Json canonicalEntry;
+        if(parsedRegion.role=="sensitive"){
+          const auto& entry=region.at("entry_surface").AsObject(rc+".entry_surface");
+          parsedRegion.entrySurfaceType=RequiredString(entry,"type",rc+".entry_surface");
+          if(parsedRegion.entrySurfaceType=="entire_exterior"){
+            RejectUnknownFields(entry,{"type"},rc+".entry_surface");
+            canonicalEntry=Json(Json::Object{{"type","entire_exterior"}});
+          } else if(parsedRegion.entrySurfaceType=="tagged_facets"){
+            RejectUnknownFields(entry,{"type","facet_ids"},rc+".entry_surface");
+            const auto& selected=entry.at("facet_ids").AsArray(rc+".entry_surface.facet_ids");
+            if(selected.empty())
+              throw JsonError(rc+".entry_surface.facet_ids must not be empty");
+            std::set<std::string> selectedIds;
+            Json::Array canonicalIds;
+            Vector3d referencePoint,referenceNormal;
+            double referenceNormalMagnitude=0.0;
+            for(std::size_t si=0;si<selected.size();++si){
+              const std::string id=selected[si].AsString(
+                  rc+".entry_surface.facet_ids["+std::to_string(si)+"]");
+              if(id.empty() || !selectedIds.insert(id).second)
+                throw JsonError(rc+".entry_surface.facet_ids must contain unique nonempty IDs");
+              const auto found=std::find_if(parsedRegion.facets.begin(),parsedRegion.facets.end(),
+                  [&](const auto& facet){ return facet.id==id; });
+              if(found==parsedRegion.facets.end())
+                throw JsonError(rc+".entry_surface references unknown facet_id '"+id+"'");
+              const Vector3d a=parsedRegion.verticesMm[found->vertexIndices[0]];
+              const Vector3d b=parsedRegion.verticesMm[found->vertexIndices[1]];
+              const Vector3d c=parsedRegion.verticesMm[found->vertexIndices[2]];
+              const Vector3d normal=MeshCross(b-a,c-a);
+              const double magnitude=MeshNorm(normal);
+              if(si==0){
+                referencePoint=a; referenceNormal=normal; referenceNormalMagnitude=magnitude;
+              } else {
+                if(Dot(referenceNormal,normal)<
+                     (1.0-1.0e-10)*referenceNormalMagnitude*magnitude ||
+                   std::abs(Dot(referenceNormal,a-referencePoint))>
+                     parsedRegion.validationToleranceMm*referenceNormalMagnitude)
+                  throw JsonError(rc+".entry_surface tagged facets must be coplanar and have "
+                      "the same outward normal");
+              }
+              parsedRegion.entryFacetIds.push_back(id);
+              canonicalIds.emplace_back(id);
+            }
+            canonicalEntry=Json(Json::Object{{"facet_ids",Json(std::move(canonicalIds))},
+                                              {"type","tagged_facets"}});
+          } else {
+            throw JsonError(rc+".entry_surface.type must be entire_exterior or tagged_facets");
+          }
+        }
+
+        const auto transformed=TransformBounds(meshMinimum,meshMaximum,parsedRegion.transform);
+        boundsMin={std::min(boundsMin.x,transformed.first.x),
+                   std::min(boundsMin.y,transformed.first.y),
+                   std::min(boundsMin.z,transformed.first.z)};
+        boundsMax={std::max(boundsMax.x,transformed.second.x),
+                   std::max(boundsMax.y,transformed.second.y),
+                   std::max(boundsMax.z,transformed.second.z)};
+        Json::Object canonicalRegion{{"density_g_cm3",parsedRegion.densityGPerCm3},
+          {"material_hash",parsedRegion.materialHash},{"material_id",parsedRegion.materialId},
+          {"mass_properties",Json(Json::Object{
+            {"centroid_mm",Json(Json::Array{parsedRegion.expectedCentroidMm.x,
+                                             parsedRegion.expectedCentroidMm.y,
+                                             parsedRegion.expectedCentroidMm.z})},
+            {"exact_centroid_mm",Json(Json::Array{parsedRegion.exactCentroidMm.x,
+                                                   parsedRegion.exactCentroidMm.y,
+                                                   parsedRegion.exactCentroidMm.z})},
+            {"exact_surface_area_cm2",parsedRegion.exactSurfaceAreaCm2},
+            {"exact_volume_cm3",parsedRegion.exactVolumeCm3},
+            {"provenance",parsedRegion.massPropertiesProvenance},
+            {"relative_tolerance",parsedRegion.massRelativeTolerance},
+            {"volume_cm3",parsedRegion.expectedVolumeCm3}})},
+          {"mesh",Json(Json::Object{{"facets",Json(std::move(canonicalFacets))},
+                                      {"length_unit","mm"},
+                                      {"validation_tolerance_mm",parsedRegion.validationToleranceMm},
+                                      {"vertices_mm",Json(std::move(canonicalVertices))}})},
+          {"region_id",parsedRegion.id},{"role",parsedRegion.role},
+          {"transform",TransformToJson(parsedRegion.transform)}};
+        if(parsedRegion.role=="sensitive") canonicalRegion["entry_surface"]=canonicalEntry;
+        parsedRegion.canonicalJson=Json(canonicalRegion);
+        canonicalRegions.emplace_back(parsedRegion.canonicalJson);
+        parsed.meshRegions.push_back(std::move(parsedRegion));
+      }
+      if(sensitiveCount!=1)
+        throw JsonError(context+".geometry.regions must contain exactly one sensitive region; "
+            "tessellated_mesh.v1 quantity accumulators do not combine detector regions");
+      parsed.localBoundsMinimumMm=boundsMin;
+      parsed.localBoundsMaximumMm=boundsMax;
+      parsed.sizeXmm=boundsMax.x-boundsMin.x;
+      parsed.sizeYmm=boundsMax.y-boundsMin.y;
+      parsed.thicknessMm=boundsMax.z-boundsMin.z;
+      const auto sensitive=std::find_if(parsed.meshRegions.begin(),parsed.meshRegions.end(),
+          [](const auto& region){ return region.role=="sensitive"; });
+      parsed.materialId=sensitive->materialId;
+      parsed.materialHash=sensitive->materialHash;
+      parsed.densityGPerCm3=sensitive->densityGPerCm3;
+      Vector3d sensitiveMin{std::numeric_limits<double>::infinity(),
+                            std::numeric_limits<double>::infinity(),
+                            std::numeric_limits<double>::infinity()};
+      Vector3d sensitiveMax{-std::numeric_limits<double>::infinity(),
+                            -std::numeric_limits<double>::infinity(),
+                            -std::numeric_limits<double>::infinity()};
+      for(const auto& vertex:sensitive->verticesMm){
+        sensitiveMin={std::min(sensitiveMin.x,vertex.x),std::min(sensitiveMin.y,vertex.y),
+                      std::min(sensitiveMin.z,vertex.z)};
+        sensitiveMax={std::max(sensitiveMax.x,vertex.x),std::max(sensitiveMax.y,vertex.y),
+                      std::max(sensitiveMax.z,vertex.z)};
+      }
+      const auto sensitiveBounds=TransformBounds(sensitiveMin,sensitiveMax,sensitive->transform);
+      parsed.scoringThicknessMm=sensitiveBounds.second.z-sensitiveBounds.first.z;
+      Json::Object canonicalSource{{"kind","inline"},{"provenance",parsed.geometrySourceProvenance},
+        {"source_id",parsed.geometrySourceId},{"source_version",parsed.geometrySourceVersion}};
+      Json::Object canonical{{"absorber_id",parsed.id},
+        {"coordinate_frame",Json(Json::Object{{"handedness","right"},{"length_unit","mm"},
+          {"name","absorber_local_cartesian"},{"origin","provider_origin"}})},
+        {"provider","tessellated_mesh.v1"},{"provider_version",parsed.providerVersion},
+        {"regions",Json(std::move(canonicalRegions))},{"source",Json(std::move(canonicalSource))},
+        {"transform",TransformToJson(parsed.transform)}};
+      parsed.canonicalGeometry=Json(canonical);
+      parsed.geometryContentHash=Sha256(parsed.canonicalGeometry.DumpCanonical());
+      canonical["geometry_content_sha256"]=parsed.geometryContentHash;
+      parsed.canonicalGeometry=Json(std::move(canonical));
+      parsed.geometryHash=Sha256(parsed.canonicalGeometry.DumpCanonical());
     } else {
-      parsed.centerXmm = PositionMm(shape.at("center_x"), context + ".geometry.center_x");
-      parsed.centerYmm = PositionMm(shape.at("center_y"), context + ".geometry.center_y");
-      parsed.frontZmm = PositionMm(shape.at("front_z"), context + ".geometry.front_z");
-      parsed.transform.translationMm={parsed.centerXmm,parsed.centerYmm,parsed.frontZmm};
+      throw JsonError(context+".geometry.type must be 'slab', 'analytic_csg', or "
+          "'tessellated_mesh'");
     }
-    Json::Object hashInput{{"absorber_id", parsed.id},
-      {"transform",TransformToJson(parsed.transform)},
-      {"material_hash", parsed.materialHash}, {"size_x_mm", parsed.sizeXmm},
-      {"size_y_mm", parsed.sizeYmm}, {"thickness_mm", parsed.thicknessMm}, {"type", "slab"}};
-    parsed.geometryHash = Sha256(Json(std::move(hashInput)).DumpCanonical());
     result->absorbers.push_back(parsed);
   }
 
@@ -1264,14 +2042,23 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
       throw JsonError("case.geometry.source_plane origin must be upstream of the shield reference surface");
     for(const auto& absorber:result->absorbers){
       RigidTransform absorberBox=absorber.transform;
-      absorberBox.translationMm=absorber.transform.TransformPoint(
-          {0.0,0.0,absorber.thicknessMm/2.0});
+      const Vector3d localCenter{
+        (absorber.localBoundsMinimumMm.x+absorber.localBoundsMaximumMm.x)/2.0,
+        (absorber.localBoundsMinimumMm.y+absorber.localBoundsMaximumMm.y)/2.0,
+        (absorber.localBoundsMinimumMm.z+absorber.localBoundsMaximumMm.z)/2.0};
+      absorberBox.translationMm=absorber.transform.TransformPoint(localCenter);
       if(!BoxInsideWorld(absorberBox,absorber.sizeXmm,absorber.sizeYmm,absorber.thicknessMm,
                          result->worldSizeXmm,result->worldSizeYmm,result->worldSizeZmm))
         throw JsonError("absorber '"+absorber.id+"' transformed bounds exceed the world");
-      if(Dot(absorber.transform.translationMm-result->shieldTransform.translationMm,
-             shieldNormal)<result->ShieldTotalThicknessMm()-1.0e-9)
-        throw JsonError("absorber '"+absorber.id+"' reference surface is not downstream of the shield");
+      double minimumDownstream=std::numeric_limits<double>::infinity();
+      for(double x:{absorber.localBoundsMinimumMm.x,absorber.localBoundsMaximumMm.x})
+        for(double y:{absorber.localBoundsMinimumMm.y,absorber.localBoundsMaximumMm.y})
+          for(double z:{absorber.localBoundsMinimumMm.z,absorber.localBoundsMaximumMm.z})
+            minimumDownstream=std::min(minimumDownstream,Dot(
+                absorber.transform.TransformPoint({x,y,z})-
+                    result->shieldTransform.translationMm,shieldNormal));
+      if(minimumDownstream<result->ShieldTotalThicknessMm()-1.0e-9)
+        throw JsonError("absorber '"+absorber.id+"' bounds are not wholly downstream of the shield");
       if(BoxesOverlap(shieldBox,{result->shieldSizeXmm/2.0,result->shieldSizeYmm/2.0,
                                  result->ShieldTotalThicknessMm()/2.0},
                       absorberBox,{absorber.sizeXmm/2.0,absorber.sizeYmm/2.0,
@@ -1298,14 +2085,36 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
   std::sort(canonicalAbsorbers.begin(),canonicalAbsorbers.end(),
             [](const auto& a,const auto& b){ return a.id<b.id; });
   for (const auto& absorber : canonicalAbsorbers) {
-    absorberJson.emplace_back(Json::Object{{"absorber_id", absorber.id},
+    Json::Object resolvedAbsorber{{"absorber_id", absorber.id},
       {"center_x",Measure(absorber.centerXmm,"mm")}, {"center_y",Measure(absorber.centerYmm,"mm")},
       {"front_z", Measure(absorber.frontZmm, "mm")},
-      {"geometry_hash", absorber.geometryHash}, {"geometry_type", "slab"}, {"material_hash", absorber.materialHash},
-      {"material_id", absorber.materialId}, {"density_g_cm3",absorber.densityGPerCm3},
-      {"size_x", Measure(absorber.sizeXmm, "mm")},
-      {"size_y", Measure(absorber.sizeYmm, "mm")}, {"thickness", Measure(absorber.thicknessMm, "mm")},
-      {"transform",TransformToJson(absorber.transform)}});
+      {"geometry_hash", absorber.geometryHash},
+      {"material_hash", absorber.materialHash},{"material_id", absorber.materialId},
+      {"density_g_cm3",absorber.densityGPerCm3},{"size_x",Measure(absorber.sizeXmm,"mm")},
+      {"size_y",Measure(absorber.sizeYmm,"mm")},{"thickness",Measure(absorber.thicknessMm,"mm")},
+      {"transform",TransformToJson(absorber.transform)}};
+    if(absorber.provider!="slab.v1"){
+      resolvedAbsorber["canonical_provider_geometry"]=absorber.canonicalGeometry;
+      resolvedAbsorber["geometry_content_sha256"]=absorber.geometryContentHash;
+      resolvedAbsorber["geometry_provider"]=absorber.provider;
+      resolvedAbsorber["local_bounds"]=Json(Json::Object{
+        {"maximum",Json(Json::Object{
+          {"x",Measure(absorber.localBoundsMaximumMm.x,"mm")},
+          {"y",Measure(absorber.localBoundsMaximumMm.y,"mm")},
+          {"z",Measure(absorber.localBoundsMaximumMm.z,"mm")}})},
+        {"minimum",Json(Json::Object{
+          {"x",Measure(absorber.localBoundsMinimumMm.x,"mm")},
+          {"y",Measure(absorber.localBoundsMinimumMm.y,"mm")},
+          {"z",Measure(absorber.localBoundsMinimumMm.z,"mm")}})}});
+      resolvedAbsorber["provider_version"]=absorber.providerVersion;
+      resolvedAbsorber["sensitive_local_z_extent"]=
+          Measure(absorber.scoringThicknessMm,"mm");
+      resolvedAbsorber["sensitive_region_id"]="absorber/"+absorber.id+"/region/"+
+                                                absorber.sensitiveRegionId;
+    } else {
+      resolvedAbsorber["geometry_type"]="slab";
+    }
+    absorberJson.emplace_back(Json(std::move(resolvedAbsorber)));
   }
   Json::Object geometryJson{
     {"absorbers", Json(std::move(absorberJson))}, {"coordinate_frame", result->coordinateFrame},

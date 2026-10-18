@@ -1,0 +1,61 @@
+{
+  "charged_particle_definition": {
+    "compound_rule": "SR-NIEL predefined In_xGa_(1-x)As, x=0.53; Bragg rule",
+    "displacement_threshold_eV": {
+      "As": 10.0,
+      "Ga": 10.0,
+      "In": 15.0
+    },
+    "hadronic_threshold_scaling": "none",
+    "interpolation": "log_log_between_positive_nodes",
+    "model": "SR-NIEL-7 v11.1 hadronic plus Coulomb"
+  },
+  "limitations": [
+    "candidate data are not enabled by the production loader",
+    "no extrapolation beyond the positive-node domains is permitted",
+    "the cited experiment found particle- and device-dependent limits to NIEL scaling",
+    "no device-degradation prediction is claimed"
+  ],
+  "preparation_status": "charged_DDD_data_prepared_not_production_enabled",
+  "schema_version": "shieldSim.damage_response_candidate.v1",
+  "sources": {
+    "calculator": "https://www.sr-niel.asi.it/index.php/sr-niel-web-calculators/niel-calculator-for-electrons-protons-and-ions/protons-ions-niel-calculator",
+    "calculator_version": "SR-NIEL-7 v11.1",
+    "threshold_reference": "Beaumel et al., IEEE TNS (2020), doi:10.1109/TNS.2020.2984133",
+    "threshold_reference_sha256": "sha256:64ed276d8eec329b46087b76e9609594c3a6d863fe5d6ed21ed513ea2e92a4a4",
+    "threshold_reference_url": "https://hal.science/hal-03075355/document"
+  },
+  "tables": [
+    {
+      "domain_max_MeV": 1000.0,
+      "domain_min_MeV": 0.0002,
+      "nodes": 125,
+      "path": "sr_niel_v11_1_ingaas_ed15_10_10_proton.csv",
+      "raw_response_sha256": "sha256:088445aa4c3975604532bf23b4dd8603f3ac787c0e573950bdc43552b8b6ba96",
+      "sha256": "sha256:7e74ecb48fff9d807880004fe298b9031191784a681727e729b3b80422454128",
+      "species": "proton"
+    },
+    {
+      "domain_max_MeV": 4000.0,
+      "domain_min_MeV": 0.0001,
+      "nodes": 133,
+      "path": "sr_niel_v11_1_ingaas_ed15_10_10_alpha.csv",
+      "raw_response_sha256": "sha256:c82b55df2191ee01051d4605c848316e0e3e0b0b4a1ca866b8f17f374271dd50",
+      "sha256": "sha256:963b1f3f273f4d0f07269981e8e2c02a3280e972e8188edd8d5371cdb081ff65",
+      "species": "alpha"
+    }
+  ],
+  "target": {
+    "description": "In0.53Ga0.47As at the material-library reference state",
+    "material_id": "Ga0p47In0p53As_300K",
+    "stoichiometry": {
+      "As": 1.0,
+      "Ga": 0.47,
+      "In": 0.53
+    }
+  },
+  "unavailable": {
+    "n_eq": "no standardized InGaAs 1-MeV-neutron-equivalent denominator was found",
+    "neutron_DDD": "the located publication shows a calculated curve but does not provide a downloadable response table"
+  }
+}

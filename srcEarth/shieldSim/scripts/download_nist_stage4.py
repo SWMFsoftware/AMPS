@@ -28,6 +28,16 @@ XCOM_ROOT = "https://physics.nist.gov/cgi-bin/Xcom"
 MATERIALS = {
     "aluminum": {"star_number": "013", "xray": "ElemTab/z13.html", "atomic_number": "13"},
     "silicon": {"star_number": "014", "xray": "ElemTab/z14.html", "atomic_number": "14"},
+    # Germanium is an exact elemental match to the absorber-library record.
+    # It is present in both PSTAR/ASTAR and the elemental photon tables.
+    "germanium": {"star_number": "032", "xray": "ElemTab/z32.html", "atomic_number": "32"},
+    # NIST PSTAR/ASTAR material 245 is the stoichiometric silicon-dioxide
+    # reference.  The X-Ray Mass Attenuation compilation does not publish a
+    # matching pre-composed SiO2 page, so only its STAR and formula-driven XCOM
+    # records are requested.  We do not substitute glass or elemental silicon.
+    "silicon_dioxide": {
+        "star_number": "245", "formula": "SiO2", "xcom_name": "silica"
+    },
     "water": {"star_number": "276", "xray": "ComTab/water.html", "formula": "H2O"},
 }
 
@@ -202,16 +212,20 @@ def main() -> int:
                 manifest,
             )
 
-        xray_url = f"{XRAY_ROOT}/{metadata['xray']}"
-        raw = fetch(xray_url)
-        write_bytes(output / "raw" / f"xray_{material}.html", raw, manifest)
-        xray_rows = parse_xray(raw)
-        write_csv(
-            output / f"xray_{material}.csv",
-            ["absorption_edge", "energy_MeV", "mass_attenuation_cm2_g", "mass_energy_absorption_cm2_g"],
-            [list(row) for row in xray_rows],
-            manifest,
-        )
+        # Not every PSTAR/ASTAR material has a corresponding tabulated X-Ray
+        # Mass Attenuation page.  Absence is explicit in MATERIALS; using a
+        # nearby composition as a silent proxy would invalidate the reference.
+        if "xray" in metadata:
+            xray_url = f"{XRAY_ROOT}/{metadata['xray']}"
+            raw = fetch(xray_url)
+            write_bytes(output / "raw" / f"xray_{material}.html", raw, manifest)
+            xray_rows = parse_xray(raw)
+            write_csv(
+                output / f"xray_{material}.csv",
+                ["absorption_edge", "energy_MeV", "mass_attenuation_cm2_g", "mass_energy_absorption_cm2_g"],
+                [list(row) for row in xray_rows],
+                manifest,
+            )
 
         xcom_common = {
             "OutOpt": "PIC",
@@ -228,7 +242,14 @@ def main() -> int:
             xcom_referer = f"{XCOM_ROOT}/xcom2?Method=Elem&Output2=Hand"
         else:
             xcom_url = f"{XCOM_ROOT}/xcom3_2"
-            xcom_payload = {**xcom_common, "Formula": metadata["formula"], "Name": material}
+            # XCOM restricts its optional title to a simple token; repository
+            # identifiers contain underscores and therefore cannot be sent as
+            # the title.  Keep the physics formula separate from that label.
+            xcom_payload = {
+                **xcom_common,
+                "Formula": metadata["formula"],
+                "Name": metadata.get("xcom_name", material),
+            }
             xcom_referer = f"{XCOM_ROOT}/xcom2?Method=Comp&Output2=Hand"
         xcom_raw = fetch(xcom_url, xcom_payload, xcom_referer)
         write_bytes(output / "raw" / f"xcom_{material}.html", xcom_raw, manifest)

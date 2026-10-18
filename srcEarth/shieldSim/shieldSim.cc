@@ -9,8 +9,8 @@
  * unit, dimension, material, source, accuracy request, and transport control
  * before Geant4 is created. A rejected case never reaches transport.
  *
- * A case contains one ordered shield stack and one or more requested absorber
- * slabs. Absorbers are alternatives, not a physical downstream stack. This
+ * A case contains one ordered shield stack and one or more requested absorbers.
+ * Absorbers are alternatives, not a physical downstream stack. This
  * driver rebuilds the geometry for each stable absorber ID, resets tallies and
  * the random seed, and writes ID-qualified outputs. Consequently an absorber
  * cannot attenuate another absorber and absorber-array permutation is exactly
@@ -23,9 +23,9 @@
  * records. MaterialFactory instantiates the resolved density, elemental or
  * explicit-isotope composition, state, temperature, and optional mean
  * excitation energy. Templates cannot transport. SlabAbsorberGeometry is the
- * current implementation of the AbsorberGeometry provider boundary; future
- * mesh/CAD/voxel providers must preserve stable sensitive-region IDs, mass
- * properties, material mappings, placement, and canonical geometry hashes.
+ * qualified provider; Stage-10 AnalyticCsgAbsorberGeometry is verification-
+ * only. Future mesh/CAD/voxel providers must preserve stable sensitive-region
+ * IDs, mass properties, material mappings, placement, and canonical hashes.
  *
  * Scoring and accuracy
  * --------------------
@@ -119,7 +119,9 @@ void WriteResolvedCase(const Options& opts){
   const bool stage4Tid=opts.caseDefinition->schemaVersion=="shieldSim.case.v2" &&
       std::find(opts.caseDefinition->quantities.begin(),opts.caseDefinition->quantities.end(),"TID")!=
       opts.caseDefinition->quantities.end();
-  manifest["run_status"]=stage4Tid
+  manifest["run_status"]=absorber.provider!="slab.v1"
+      ? "stage10_geometry_providers_verification_only_incomplete_no_independent_nontrivial_shape_validation"
+      : stage4Tid
       ? "stage4_finite_slab_tid_implemented_and_acceptance_tested_pending_independent_review"
       : opts.caseDefinition->schemaVersion=="shieldSim.case.v2"
       ? "stage3_transport_engine_implemented_and_acceptance_tested_pending_independent_review_no_science_quantity_claim"
@@ -141,7 +143,7 @@ int RunSimulation(Options opts){
     opts.outputPrefix=caseBasePrefix+"__"+SafeId(absorber.id);
     opts.dumpRunSummaryFile=opts.outputPrefix+"_run_summary.dat";
     opts.scoringMaterials.clear();
-    opts.scoringMaterials.push_back({absorber.materialId,absorber.thicknessMm*mm});
+    opts.scoringMaterials.push_back({absorber.materialId,absorber.scoringThicknessMm*mm});
   }
 
   // Optional deterministic random seed.  This is especially important for
@@ -309,7 +311,7 @@ int RunSimulation(Options opts){
       if(absorberIndex>0){
         detector->SetActiveAbsorber(absorberIndex);
         runAction->ConfigureIndependentCase(absorberIndex,prefix,absorber.materialId,
-                                            absorber.thicknessMm*mm);
+                                            absorber.scoringThicknessMm*mm);
         runManager->ReinitializeGeometry();
       }
       Options manifestOptions=opts;

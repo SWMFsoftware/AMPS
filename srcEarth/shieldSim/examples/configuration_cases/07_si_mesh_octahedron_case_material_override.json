@@ -1,0 +1,472 @@
+{
+  "schema_version": "shieldSim.case.v2",
+  "case_id": "configuration_example_07_si_mesh_octahedron_case_material_override",
+  "purpose": "verification_test",
+  "material_library": {
+    "path": "../../data/material_library.v1.json",
+    "library_id": "shieldSim.reference_materials",
+    "library_version": "1.0.0"
+  },
+  "material_overrides": [
+    {
+      "material_id": "Al_project_density_example",
+      "revision": "verification-1",
+      "extends": "Al_natural_G4_11_4@1",
+      "status": "project_specific",
+      "density": {
+        "value": 2.7,
+        "unit": "g/cm3",
+        "uncertainty": {
+          "type": "standard",
+          "value": 0.01,
+          "unit": "g/cm3"
+        },
+        "reference_condition": "synthetic configuration example"
+      },
+      "provenance": [
+        {
+          "properties": [
+            "density"
+          ],
+          "source": "synthetic verification value; replace for science use",
+          "version": "configuration-example-1"
+        }
+      ],
+      "applicability_and_limitations": "Input-schema demonstration only; not a flight alloy or lot."
+    }
+  ],
+  "geometry": {
+    "coordinate_frame": {
+      "name": "world_cartesian_mm",
+      "handedness": "right",
+      "origin": "world_center",
+      "local_surface_normal": "+z"
+    },
+    "world": {
+      "size_x": {
+        "value": 200.0,
+        "unit": "mm"
+      },
+      "size_y": {
+        "value": 200.0,
+        "unit": "mm"
+      },
+      "size_z": {
+        "value": 200.0,
+        "unit": "mm"
+      },
+      "center_x": {
+        "value": 0.0,
+        "unit": "mm"
+      },
+      "center_y": {
+        "value": 0.0,
+        "unit": "mm"
+      },
+      "center_z": {
+        "value": 0.0,
+        "unit": "mm"
+      }
+    },
+    "source_plane": {
+      "size_x": {
+        "value": 6.0,
+        "unit": "mm"
+      },
+      "size_y": {
+        "value": 6.0,
+        "unit": "mm"
+      },
+      "transform": {
+        "translation": {
+          "x": {
+            "value": 0.0,
+            "unit": "mm"
+          },
+          "y": {
+            "value": 0.0,
+            "unit": "mm"
+          },
+          "z": {
+            "value": -80.0,
+            "unit": "mm"
+          }
+        },
+        "rotation_quaternion_local_to_world": {
+          "w": 1.0,
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    "shield_stack": {
+      "size_x": {
+        "value": 65.0,
+        "unit": "mm"
+      },
+      "size_y": {
+        "value": 65.0,
+        "unit": "mm"
+      },
+      "transform": {
+        "translation": {
+          "x": {
+            "value": 0.0,
+            "unit": "mm"
+          },
+          "y": {
+            "value": 0.0,
+            "unit": "mm"
+          },
+          "z": {
+            "value": -20.0,
+            "unit": "mm"
+          }
+        },
+        "rotation_quaternion_local_to_world": {
+          "w": 1.0,
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "layers": [
+        {
+          "layer_id": "project_al",
+          "material": "Al_project_density_example",
+          "thickness": {
+            "type": "areal_density",
+            "value": 0.27,
+            "unit": "g/cm2"
+          }
+        },
+        {
+          "layer_id": "inner_hdpe",
+          "material": "HDPE",
+          "thickness": {
+            "type": "geometric",
+            "value": 2.0,
+            "unit": "mm"
+          }
+        }
+      ]
+    },
+    "absorbers": [
+      {
+        "absorber_id": "mesh_octahedron_proxy",
+        "geometry": {
+          "type": "tessellated_mesh",
+          "provider_version": "1.0.0",
+          "coordinate_frame": {
+            "name": "absorber_local_cartesian",
+            "handedness": "right",
+            "origin": "provider_origin",
+            "length_unit": "mm"
+          },
+          "transform": {
+            "translation": {
+              "x": {
+                "value": 0.0,
+                "unit": "mm"
+              },
+              "y": {
+                "value": 0.0,
+                "unit": "mm"
+              },
+              "z": {
+                "value": -10.0,
+                "unit": "mm"
+              }
+            },
+            "rotation_quaternion_local_to_world": {
+              "w": 1.0,
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "source": {
+            "kind": "inline",
+            "source_id": "regular_octahedron_example",
+            "source_version": "1.0.0",
+            "provenance": "Synthetic Stage-10 shape example with exact dimensions; not an as-built spacecraft model"
+          },
+          "regions": [
+            {
+              "region_id": "detector",
+              "role": "sensitive",
+              "material": "Si",
+              "transform": {
+                "translation": {
+                  "x": {
+                    "value": 0.0,
+                    "unit": "mm"
+                  },
+                  "y": {
+                    "value": 0.0,
+                    "unit": "mm"
+                  },
+                  "z": {
+                    "value": 0.0,
+                    "unit": "mm"
+                  }
+                },
+                "rotation_quaternion_local_to_world": {
+                  "w": 1.0,
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              "mesh": {
+                "length_unit": "mm",
+                "validation_tolerance": {
+                  "value": 1e-09,
+                  "unit": "mm"
+                },
+                "vertices": [
+                  [
+                    5.0,
+                    0,
+                    0
+                  ],
+                  [
+                    -5.0,
+                    0,
+                    0
+                  ],
+                  [
+                    0,
+                    5.0,
+                    0
+                  ],
+                  [
+                    0,
+                    -5.0,
+                    0
+                  ],
+                  [
+                    0,
+                    0,
+                    5.0
+                  ],
+                  [
+                    0,
+                    0,
+                    -5.0
+                  ]
+                ],
+                "facets": [
+                  {
+                    "facet_id": "top_pp",
+                    "vertex_indices": [
+                      0,
+                      2,
+                      4
+                    ]
+                  },
+                  {
+                    "facet_id": "top_np",
+                    "vertex_indices": [
+                      2,
+                      1,
+                      4
+                    ]
+                  },
+                  {
+                    "facet_id": "top_nn",
+                    "vertex_indices": [
+                      1,
+                      3,
+                      4
+                    ]
+                  },
+                  {
+                    "facet_id": "top_pn",
+                    "vertex_indices": [
+                      3,
+                      0,
+                      4
+                    ]
+                  },
+                  {
+                    "facet_id": "bottom_pp",
+                    "vertex_indices": [
+                      2,
+                      0,
+                      5
+                    ]
+                  },
+                  {
+                    "facet_id": "bottom_np",
+                    "vertex_indices": [
+                      1,
+                      2,
+                      5
+                    ]
+                  },
+                  {
+                    "facet_id": "bottom_nn",
+                    "vertex_indices": [
+                      3,
+                      1,
+                      5
+                    ]
+                  },
+                  {
+                    "facet_id": "bottom_pn",
+                    "vertex_indices": [
+                      0,
+                      3,
+                      5
+                    ]
+                  }
+                ]
+              },
+              "entry_surface": {
+                "type": "entire_exterior"
+              },
+              "mass_properties": {
+                "volume": {
+                  "value": 0.16666666666666666,
+                  "unit": "cm3"
+                },
+                "centroid": {
+                  "x": {
+                    "value": 0.0,
+                    "unit": "mm"
+                  },
+                  "y": {
+                    "value": 0.0,
+                    "unit": "mm"
+                  },
+                  "z": {
+                    "value": 0.0,
+                    "unit": "mm"
+                  }
+                },
+                "relative_tolerance": 1e-09,
+                "provenance": "Exact |x|+|y|+|z|<=r octahedron volume and symmetry centroid"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "source": {
+    "mode": "directional_plane",
+    "spectrum": {
+      "format": "discrete_response_nodes",
+      "nodes": [
+        {
+          "incident_id": "proton_50MeV",
+          "particle": {
+            "name": "proton",
+            "Z": 1,
+            "A": 1
+          },
+          "energy": {
+            "coordinate": "total_kinetic_energy",
+            "value": 50.0,
+            "unit": "MeV"
+          },
+          "direction": {
+            "mu": 1.0,
+            "phi": {
+              "value": 0.0,
+              "unit": "rad"
+            }
+          },
+          "weight": 0.5
+        },
+        {
+          "incident_id": "proton_150MeV",
+          "particle": {
+            "name": "proton",
+            "Z": 1,
+            "A": 1
+          },
+          "energy": {
+            "coordinate": "total_kinetic_energy",
+            "value": 150.0,
+            "unit": "MeV"
+          },
+          "direction": {
+            "mu": 1.0,
+            "phi": {
+              "value": 0.0,
+              "unit": "rad"
+            }
+          },
+          "weight": 0.5
+        }
+      ]
+    }
+  },
+  "quantities": [
+    "TID",
+    "DDD",
+    "n_eq",
+    "LET",
+    "H100/10"
+  ],
+  "let_response": {
+    "definition_id": "shieldSim.electronic_let.v1",
+    "linear_let_bins": {
+      "scale": "logarithmic",
+      "minimum": {
+        "value": 0.001,
+        "unit": "keV/um"
+      },
+      "maximum": {
+        "value": 10000.0,
+        "unit": "keV/um"
+      },
+      "bins_per_decade": 20
+    },
+    "out_of_range_policy": "not_assessable_no_clamping"
+  },
+  "accuracy": {
+    "target": 0.1,
+    "scope": "statistical",
+    "coverage": {
+      "standard_k": 1.0,
+      "standard_probability": 0.68,
+      "interval_probability": 0.95,
+      "interval_method": "fieller_event_covariance"
+    },
+    "systematic_budget": {
+      "status": "incomplete"
+    },
+    "quantity_overrides": {},
+    "sampling": {
+      "min_histories": 20,
+      "max_histories": 20,
+      "batch_size": 20
+    }
+  },
+  "transport": {
+    "physics_list": "FTFP_BERT",
+    "ion_physics": "reference_list_default",
+    "em_physics": "reference_list_default",
+    "production_cut": {
+      "value": 0.01,
+      "unit": "mm"
+    },
+    "max_step": {
+      "value": 0.01,
+      "unit": "mm"
+    },
+    "random_seed": 1020107
+  },
+  "output": {
+    "prefix": "configuration_07_si_mesh_octahedron_case_material_override"
+  },
+  "damage_response": {
+    "path": "../../data/niel/damage_response_library.v1.json",
+    "library_id": "shieldSim.silicon_displacement_damage",
+    "library_version": "1.0.0"
+  }
+}

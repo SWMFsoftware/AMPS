@@ -1,0 +1,305 @@
+{
+  "schema_version": "shieldSim.case.v2",
+  "case_id": "configuration_example_02_si_cylinder_neutron_damage",
+  "purpose": "verification_test",
+  "material_library": {
+    "path": "../../data/material_library.v1.json",
+    "library_id": "shieldSim.reference_materials",
+    "library_version": "1.0.0"
+  },
+  "material_overrides": [],
+  "geometry": {
+    "coordinate_frame": {
+      "name": "world_cartesian_mm",
+      "handedness": "right",
+      "origin": "world_center",
+      "local_surface_normal": "+z"
+    },
+    "world": {
+      "size_x": {
+        "value": 200.0,
+        "unit": "mm"
+      },
+      "size_y": {
+        "value": 200.0,
+        "unit": "mm"
+      },
+      "size_z": {
+        "value": 200.0,
+        "unit": "mm"
+      },
+      "center_x": {
+        "value": 0.0,
+        "unit": "mm"
+      },
+      "center_y": {
+        "value": 0.0,
+        "unit": "mm"
+      },
+      "center_z": {
+        "value": 0.0,
+        "unit": "mm"
+      }
+    },
+    "source_plane": {
+      "size_x": {
+        "value": 6.0,
+        "unit": "mm"
+      },
+      "size_y": {
+        "value": 6.0,
+        "unit": "mm"
+      },
+      "transform": {
+        "translation": {
+          "x": {
+            "value": 0.0,
+            "unit": "mm"
+          },
+          "y": {
+            "value": 0.0,
+            "unit": "mm"
+          },
+          "z": {
+            "value": -80.0,
+            "unit": "mm"
+          }
+        },
+        "rotation_quaternion_local_to_world": {
+          "w": 1.0,
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      }
+    },
+    "shield_stack": {
+      "size_x": {
+        "value": 45.0,
+        "unit": "mm"
+      },
+      "size_y": {
+        "value": 45.0,
+        "unit": "mm"
+      },
+      "transform": {
+        "translation": {
+          "x": {
+            "value": 0.0,
+            "unit": "mm"
+          },
+          "y": {
+            "value": 0.0,
+            "unit": "mm"
+          },
+          "z": {
+            "value": -20.0,
+            "unit": "mm"
+          }
+        },
+        "rotation_quaternion_local_to_world": {
+          "w": 1.0,
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "layers": [
+        {
+          "layer_id": "outer_al",
+          "material": "Al",
+          "thickness": {
+            "type": "geometric",
+            "value": 0.05,
+            "unit": "mm"
+          }
+        }
+      ]
+    },
+    "absorbers": [
+      {
+        "absorber_id": "analytic_cylinder_proxy",
+        "geometry": {
+          "type": "analytic_csg",
+          "provider_version": "1.0.0",
+          "coordinate_frame": {
+            "name": "absorber_local_cartesian",
+            "handedness": "right",
+            "origin": "provider_origin",
+            "length_unit": "mm"
+          },
+          "transform": {
+            "translation": {
+              "x": {
+                "value": 0.0,
+                "unit": "mm"
+              },
+              "y": {
+                "value": 0.0,
+                "unit": "mm"
+              },
+              "z": {
+                "value": -12.0,
+                "unit": "mm"
+              }
+            },
+            "rotation_quaternion_local_to_world": {
+              "w": 1.0,
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "source": {
+            "kind": "inline",
+            "source_id": "analytic_cylinder_example",
+            "source_version": "1.0.0",
+            "provenance": "Synthetic Stage-10 shape example with exact dimensions; not an as-built spacecraft model"
+          },
+          "regions": [
+            {
+              "region_id": "detector",
+              "role": "sensitive",
+              "material": "Si",
+              "transform": {
+                "translation": {
+                  "x": {
+                    "value": 0.0,
+                    "unit": "mm"
+                  },
+                  "y": {
+                    "value": 0.0,
+                    "unit": "mm"
+                  },
+                  "z": {
+                    "value": 0.0,
+                    "unit": "mm"
+                  }
+                },
+                "rotation_quaternion_local_to_world": {
+                  "w": 1.0,
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              "solid": {
+                "node_id": "detector_cylinder",
+                "type": "cylinder",
+                "inner_radius": {
+                  "value": 0.0,
+                  "unit": "mm"
+                },
+                "outer_radius": {
+                  "value": 5.0,
+                  "unit": "mm"
+                },
+                "length": {
+                  "value": 4.0,
+                  "unit": "mm"
+                }
+              },
+              "entry_surface": "local_negative_z_face",
+              "mass_properties": {
+                "volume": {
+                  "value": 0.3141592653589793,
+                  "unit": "cm3"
+                },
+                "centroid": {
+                  "x": {
+                    "value": 0.0,
+                    "unit": "mm"
+                  },
+                  "y": {
+                    "value": 0.0,
+                    "unit": "mm"
+                  },
+                  "z": {
+                    "value": 0.0,
+                    "unit": "mm"
+                  }
+                },
+                "relative_tolerance": 1e-09,
+                "provenance": "Exact closed-form geometry"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "source": {
+    "mode": "directional_plane",
+    "spectrum": {
+      "format": "discrete_response_nodes",
+      "nodes": [
+        {
+          "incident_id": "neutron_1p05MeV",
+          "particle": {
+            "name": "neutron",
+            "Z": 0,
+            "A": 1
+          },
+          "energy": {
+            "coordinate": "total_kinetic_energy",
+            "value": 1.05,
+            "unit": "MeV"
+          },
+          "direction": {
+            "mu": 1.0,
+            "phi": {
+              "value": 0.0,
+              "unit": "rad"
+            }
+          },
+          "weight": 1.0
+        }
+      ]
+    }
+  },
+  "quantities": [
+    "DDD",
+    "n_eq"
+  ],
+  "accuracy": {
+    "target": 0.1,
+    "scope": "statistical",
+    "coverage": {
+      "standard_k": 1.0,
+      "standard_probability": 0.68,
+      "interval_probability": 0.95,
+      "interval_method": "fieller_event_covariance"
+    },
+    "systematic_budget": {
+      "status": "incomplete"
+    },
+    "quantity_overrides": {},
+    "sampling": {
+      "min_histories": 20,
+      "max_histories": 20,
+      "batch_size": 20
+    }
+  },
+  "transport": {
+    "physics_list": "FTFP_BERT_HP",
+    "ion_physics": "reference_list_default",
+    "em_physics": "reference_list_default",
+    "production_cut": {
+      "value": 0.1,
+      "unit": "mm"
+    },
+    "max_step": {
+      "value": 0.1,
+      "unit": "mm"
+    },
+    "random_seed": 1020102
+  },
+  "output": {
+    "prefix": "configuration_02_si_cylinder_neutron_damage"
+  },
+  "damage_response": {
+    "path": "../../data/niel/damage_response_library.v1.json",
+    "library_id": "shieldSim.silicon_displacement_damage",
+    "library_version": "1.0.0"
+  }
+}

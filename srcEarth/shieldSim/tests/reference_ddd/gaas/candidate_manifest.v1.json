@@ -1,0 +1,75 @@
+{
+  "charged_particle_definition": {
+    "displacement_threshold_eV": {
+      "As": 21.5,
+      "Ga": 21.5
+    },
+    "hadronic_threshold_scaling": "none",
+    "interpolation": "log_log_between_positive_nodes",
+    "model": "SR-NIEL-7 v11.1 hadronic plus Coulomb"
+  },
+  "limitations": [
+    "candidate data are not enabled by the production loader",
+    "no accelerator/device-degradation validation is claimed",
+    "21.5 eV per Ga/As sublattice is distinct from the optional 24 eV effective triple-junction solar-cell convention",
+    "the E722-19 GaAs neutron response and 70 MeV-mb GaAs denominator must never be mixed with the silicon response or 95 MeV-mb denominator"
+  ],
+  "n_eq": {
+    "avogadro_constant_mol_inverse": 6.02214076e+23,
+    "convention": "ASTM_E722_19_gallium_arsenide_neutron_contribution_only",
+    "reference_damage_function_MeV_mb": 70.0,
+    "reference_niel_MeV_cm2_g": 0.0005828767444784233,
+    "supported_species": [
+      "neutron"
+    ]
+  },
+  "preparation_status": "canonical_data_prepared_not_production_enabled",
+  "schema_version": "shieldSim.damage_response_candidate.v1",
+  "sources": {
+    "charged_calculator": "https://www.sr-niel.asi.it/index.php/sr-niel-web-calculators/niel-calculator-for-electrons-protons-and-ions/protons-ions-niel-calculator",
+    "edge_source": "pinned E192 640-group edges from the existing E722-19 silicon package",
+    "edge_source_sha256": "sha256:f08ff7e7026cc2b5729c26c33e7cfcd4110efd2b876483fd58b17b6bbe475c52",
+    "gaas_reference_sha256": "sha256:fa116f8ebf4f47b187327c5d384fff6f30c6c6dc84bf70b339c266e0ab11814d",
+    "gaas_reference_url": "https://www.osti.gov/servlets/purl/1898256",
+    "gaas_reference_value": "SAND2022-15938, E722-94 GaAs response, 70 MeV-mb",
+    "neutron_calculator": "https://www.sr-niel.asi.it/index.php/sr-niel-web-calculators/niel-calculator-for-neutrons-using-astm-standards/neutrons-niel-calculator"
+  },
+  "tables": [
+    {
+      "domain_max_MeV": 1000.0,
+      "domain_min_MeV": 0.0004,
+      "nodes": 121,
+      "path": "sr_niel_v11_1_gaas_ed21p5_proton.csv",
+      "raw_response_sha256": "sha256:f97b33b5c09f9f64f4a525f28439426d1afca96d211fcef69bd9beb00ae73c00",
+      "sha256": "sha256:2b5df643929cded1527b430a89cd093bc93b4f93d266f1b15811d12690b0d8f4",
+      "species": "proton"
+    },
+    {
+      "domain_max_MeV": 4000.0,
+      "domain_min_MeV": 0.00015,
+      "nodes": 132,
+      "path": "sr_niel_v11_1_gaas_ed21p5_alpha.csv",
+      "raw_response_sha256": "sha256:773c64789e1c16ec49cb7e6f032b2b37ec3a9e029377e1dbb8bbe39495ce6350",
+      "sha256": "sha256:e289eb9e28efd6421c4c586729fcabb646f98c2a3fa6e0eab48cad2eeeb8ce95",
+      "species": "alpha"
+    },
+    {
+      "domain_max_MeV": 20.0,
+      "domain_min_MeV": 1e-10,
+      "groups": 640,
+      "path": "astm_e722_19_gaas_neutron_groups.csv",
+      "raw_response_sha256": "sha256:ea2084c9c59dc00c3f9047ad69897404b9f7be80b4010fa7e4236447e22fa702",
+      "sha256": "sha256:eded251d492ce28e0161922cb7691be8220fe77c8d6a703d2a8ef126ce412c9b",
+      "species": "neutron"
+    }
+  ],
+  "target": {
+    "atomic_weights": {
+      "As": 74.921595,
+      "Ga": 69.723
+    },
+    "average_lattice_atom_weight_g_mol": 72.32229749999999,
+    "description": "stoichiometric gallium arsenide",
+    "material_id": "GaAs_G4_11_4"
+  }
+}

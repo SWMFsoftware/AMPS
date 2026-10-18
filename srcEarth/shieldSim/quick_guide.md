@@ -123,3 +123,67 @@ bundle, and run it. Use the UI `Cancel`/`Resume` controls or the equivalent CLI
 commands documented in [`RUN.md`](RUN.md#10-stage-9-verification-interface).
 Two shields × three absorbers means six transport cases regardless of how many
 quantities are selected; quantity-series count is reported separately.
+
+## Stage-10 analytic and mesh shape examples
+
+The bounded non-slab providers support explicitly transformed analytic boxes,
+spheres, cylinders, Boolean material regions, and closed outward-oriented
+convex triangle meshes. They are verification-only and accept only
+`purpose: "verification_test"`; science-facing slab workflows are unchanged.
+
+```bash
+test_output/build/shieldSim \
+  --validate-case=examples/stage10_analytic_csg_case.json
+
+for case_file in examples/stage10_shapes/*.json; do
+  test_output/build/shieldSim --validate-case="$case_file" || exit 1
+done
+
+mkdir -p test_output/stage10_example
+cd test_output/stage10_example
+../build/shieldSim --case=../../examples/stage10_analytic_csg_case.json
+cd ../build
+ctest --output-on-failure -R '^stage10_(analytic_csg|tessellated_mesh)$'
+cd ../..
+```
+
+The test writes numerical evidence, PNG/SVG comparison figures, and all run
+artifacts under `test_output/build/`. The six gallery inputs are analytic box,
+cylinder, sphere and meshed box, tetrahedron, octahedron. Exactly one sensitive
+region is allowed; multiple non-overlapping passive material regions are
+supported. Analytic entry surfaces use `local_negative_z_face` or
+`entire_exterior`; meshes use explicit coplanar `tagged_facets` or
+`entire_exterior`. `tessellated_mesh.v1` does not import or repair STL/CAD and
+rejects concave/open/non-manifold meshes. See
+[`RUN.md`](RUN.md#11-stage-10-analytic-and-tessellated-mesh-absorbers) for the
+complete schemas, run commands, geometry/mass checks, hashing, limitations,
+and test boundaries.
+
+In every gallery JSON, select shielding in
+`geometry.shield_stack.layers`, the absorber material in the sensitive
+`geometry.absorbers[0].geometry.regions` entry, and calculations in
+`quantities`. The committed cases request all five specified functions for
+silicon. DDD/`n_eq` require `damage_response`; LET requires `let_response`.
+Unsupported material/function combinations fail validation explicitly.
+The separate `examples/stage10_analytic_csg_case.json` Boolean-enclosure
+example follows the same input-selection contract.
+
+For ready-to-edit combinations rather than one common default, use
+[`examples/configuration_cases/`](examples/configuration_cases/):
+
+```bash
+for case_file in examples/configuration_cases/*.json; do
+  test_output/build/shieldSim --validate-case="$case_file" || exit 1
+done
+
+mkdir -p test_output/configuration_cases/01_si_box_proton_all_quantities
+cd test_output/configuration_cases/01_si_box_proton_all_quantities
+../../build/shieldSim \
+  --case=../../../examples/configuration_cases/01_si_box_proton_all_quantities.json
+cd ../../..
+```
+
+The directory README maps every file to its incident species, absorber
+material/shape, shield size and ordered layers, and quantities. Proton cases
+can request all five names, but their neutron-only `n_eq` is defined as zero;
+use either neutron damage example to exercise a nonzero `n_eq` calculation.

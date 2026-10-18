@@ -49,6 +49,13 @@ struct RigidTransform {
   std::array<Vector3d,3> Axes() const;
 };
 
+// Compose two active transforms without involving Geant4.  The returned
+// transform applies `child` first and `parent` second.  Geometry providers use
+// this for absorber-local region placement, while the same routine is covered
+// by parser/core tests so placement semantics cannot drift from the hash.
+RigidTransform ComposeTransforms(const RigidTransform& parent,
+                                 const RigidTransform& child);
+
 double Dot(const Vector3d& a, const Vector3d& b);
 Vector3d operator+(const Vector3d& a, const Vector3d& b);
 Vector3d operator-(const Vector3d& a, const Vector3d& b);

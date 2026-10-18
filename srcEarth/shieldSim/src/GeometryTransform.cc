@@ -58,6 +58,19 @@ std::array<Vector3d,3> RigidTransform::Axes() const {
   return {Rotate({1.0,0.0,0.0}),Rotate({0.0,1.0,0.0}),Rotate({0.0,0.0,1.0})};
 }
 
+RigidTransform ComposeTransforms(const RigidTransform& parent,
+                                 const RigidTransform& child) {
+  const Quaterniond a=parent.rotation.Canonical();
+  const Quaterniond b=child.rotation.Canonical();
+  // Hamilton product for active rotations: R(a*b) == R(a)R(b).
+  Quaterniond product{
+    a.w*b.w-a.x*b.x-a.y*b.y-a.z*b.z,
+    a.w*b.x+a.x*b.w+a.y*b.z-a.z*b.y,
+    a.w*b.y-a.x*b.z+a.y*b.w+a.z*b.x,
+    a.w*b.z+a.x*b.y-a.y*b.x+a.z*b.w};
+  return {parent.TransformPoint(child.translationMm),product.Canonical()};
+}
+
 double Dot(const Vector3d& a,const Vector3d& b){ return a.x*b.x+a.y*b.y+a.z*b.z; }
 Vector3d operator+(const Vector3d& a,const Vector3d& b){ return {a.x+b.x,a.y+b.y,a.z+b.z}; }
 Vector3d operator-(const Vector3d& a,const Vector3d& b){ return {a.x-b.x,a.y-b.y,a.z-b.z}; }
