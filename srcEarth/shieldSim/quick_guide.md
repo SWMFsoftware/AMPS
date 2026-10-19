@@ -190,6 +190,42 @@ material/shape, shield size and ordered layers, and quantities. Proton cases
 can request all five names, but their neutron-only `n_eq` is defined as zero;
 use either neutron damage example to exercise a nonzero `n_eq` calculation.
 
+## Stage-11 calculated AMPS-spectrum input
+
+The runnable case selects the spectrum filename and component in JSON:
+
+```json
+"spectrum": {
+  "format": "spectrum_exchange_v1",
+  "path": "../tests/data/stage11_spectrum_exchange.v1.json",
+  "component_id": "local_proton_points"
+}
+```
+
+Build, validate, run, and execute the two focused tests:
+
+```bash
+cmake -S . -B test_output/build -DBUILD_TESTING=ON \
+  -DGeant4_DIR=/path/to/Geant4/lib/cmake/Geant4
+cmake --build test_output/build -j 8 \
+  --target stage11_spectrum_exchange_tests shieldSim
+
+test_output/build/shieldSim \
+  --validate-case=examples/stage11_spectrum_exchange_case.json
+test_output/build/shieldSim \
+  --case=examples/stage11_spectrum_exchange_case.json
+
+cd test_output/build
+ctest -R '^stage11_spectrum_exchange(_transport)?$' --output-on-failure
+cd ../..
+```
+
+The format is strict JSON, uses local `J_local_perMeV` rather than an already
+angular-integrated AMPS column, and currently transports one explicit proton
+or alpha component per case. See
+[`SPECTUM_INPUT_FORMAT.md`](SPECTUM_INPUT_FORMAT.md) for the complete producer
+schema, units, interpolation, quality/provenance rules, and failure boundaries.
+
 ## High-statistics BON2020 proton example: exact eight-process procedure
 
 This section records the command sequence used for the completed

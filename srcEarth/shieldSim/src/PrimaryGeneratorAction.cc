@@ -26,6 +26,68 @@
 #include <sstream>
 #include <tuple>
 
+namespace {
+
+// Evaluate one Stage-11 point-spectrum segment without changing its declared
+// interpolation when an energy limit clips the segment.  Positive-positive
+// endpoints define a power law; a segment touching zero remains linear even
+// if the retained interior happens to be strictly positive.
+double EvaluateSegment(double e0,double j0,double e1,double j1,double energy,
+                       bool logLog){
+  if(logLog){
+    const double exponent=std::log(j1/j0)/std::log(e1/e0);
+    return j0*std::pow(energy/e0,exponent);
+  }
+  return j0+(j1-j0)*(energy-e0)/(e1-e0);
+}
+
+double IntegrateSegment(double e0,double j0,double e1,double j1,bool logLog){
+  if(!logLog){
+    const long double integral=0.5L*(static_cast<long double>(j0)+j1)*(e1-e0);
+    return static_cast<double>(integral);
+  }
+  const double exponent=std::log(j1/j0)/std::log(e1/e0);
+  if(std::abs(exponent+1.0)<1.0e-12)
+    return j0*e0*std::log(e1/e0);
+  // For a power law, J*E is proportional to E^(k+1).  The endpoint form
+  // avoids an unnecessary pow() overflow for a steep but finite segment.
+  const long double numerator=static_cast<long double>(j1)*e1-
+                              static_cast<long double>(j0)*e0;
+  return static_cast<double>(numerator/(exponent+1.0));
+}
+
+double SampleSegmentEnergy(double e0,double j0,double e1,double j1,bool logLog,
+                           double uniform){
+  if(logLog){
+    const double exponent=std::log(j1/j0)/std::log(e1/e0);
+    if(std::abs(exponent+1.0)<1.0e-12)
+      return e0*std::pow(e1/e0,uniform);
+    const double power=exponent+1.0;
+    if(uniform<=0.0) return e0;
+    if(uniform>=1.0) return e1;
+    const double logEndpoint=power*std::log(e1/e0);
+    // Compute log((1-u)+u*exp(logEndpoint)) without overflowing either
+    // endpoint ratio.  Dividing that log by power gives the inverse CDF.
+    const double logMixture=logEndpoint>0.0
+        ? logEndpoint+std::log(uniform+(1.0-uniform)*std::exp(-logEndpoint))
+        : std::log((1.0-uniform)+uniform*std::exp(logEndpoint));
+    return std::max(e0,std::min(e1,e0*std::exp(logMixture/power)));
+  }
+  const double width=e1-e0;
+  const double integral=0.5*(j0+j1)*width;
+  if(integral<=0.0) return e0;
+  const double target=uniform*integral;
+  const double slope=(j1-j0)/width;
+  if(std::abs(slope)*width<=1.0e-14*std::max({1.0,j0,j1}))
+    return e0+target/j0;
+  const double discriminant=std::max(0.0,j0*j0+2.0*slope*target);
+  const double denominator=j0+std::sqrt(discriminant);
+  const double offset=denominator>0.0 ? 2.0*target/denominator : 0.0;
+  return std::max(e0,std::min(e1,e0+offset));
+}
+
+} // namespace
+
 PrimaryGeneratorAction::PrimaryGeneratorAction(const Options& opts,
                                                RunAction* ra,
                                                DetectorConstruction* det)
@@ -92,12 +154,14 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* ev) {
   G4double E; G4ParticleDefinition* pd;
   std::string species;
   if(useP){
-    E=Sample(fPRand,fEP,fPLower,fPUpper);
+    E=Sample(fPRand,fEP,fPLower,fPUpper,fPValueLower,fPValueUpper,
+             fPLogLogSegment);
     pd=G4ParticleTable::GetParticleTable()->FindParticle("proton");
     species="proton";
     RecordInput(true,E);
   } else {
-    E=Sample(fARand,fEA,fALower,fAUpper);
+    E=Sample(fARand,fEA,fALower,fAUpper,fAValueLower,fAValueUpper,
+             fALogLogSegment);
     pd=G4ParticleTable::GetParticleTable()->FindParticle("alpha");
     species="alpha";
     RecordInput(false,E);
@@ -234,19 +298,54 @@ void PrimaryGeneratorAction::ReadDataset(const shield_sim::SpectrumDataset& data
       // weight it by its retained width, and sample uniformly inside it. This
       // is the unique piecewise-constant interpretation and never invents an
       // effective bin-center energy.
+      const bool interpolated =
+          dataset.transportValueLowerPerMeV.size()==dataset.energyMeV.size() &&
+          dataset.transportValueUpperPerMeV.size()==dataset.energyMeV.size();
       const G4double pLower=std::max(dataset.transportBinLowerMeV[i],fOpts.eMinProton);
       const G4double pUpper=std::min(dataset.transportBinUpperMeV[i],fOpts.eMaxProton);
       if(pUpper>pLower && dataset.protonValue[i]>0.0){
         fEP.push_back(0.5*(pLower+pUpper));
         fPLower.push_back(pLower); fPUpper.push_back(pUpper);
-        pF.push_back(dataset.protonValue[i]*(pUpper-pLower));
+        if(interpolated){
+          const double originalLower=dataset.transportBinLowerMeV[i];
+          const double originalUpper=dataset.transportBinUpperMeV[i];
+          const double originalJLower=dataset.transportValueLowerPerMeV[i];
+          const double originalJUpper=dataset.transportValueUpperPerMeV[i];
+          const bool logLog=originalJLower>0.0 && originalJUpper>0.0;
+          const double retainedJLower=EvaluateSegment(
+              originalLower,originalJLower,originalUpper,originalJUpper,pLower,logLog);
+          const double retainedJUpper=EvaluateSegment(
+              originalLower,originalJLower,originalUpper,originalJUpper,pUpper,logLog);
+          fPValueLower.push_back(retainedJLower);
+          fPValueUpper.push_back(retainedJUpper);
+          fPLogLogSegment.push_back(logLog);
+          pF.push_back(IntegrateSegment(pLower,retainedJLower,pUpper,retainedJUpper,logLog));
+        } else {
+          pF.push_back(dataset.protonValue[i]*(pUpper-pLower));
+        }
       }
       const G4double aLower=std::max(dataset.transportBinLowerMeV[i],fOpts.eMinAlpha);
       const G4double aUpper=std::min(dataset.transportBinUpperMeV[i],fOpts.eMaxAlpha);
       if(aUpper>aLower && dataset.alphaValue[i]>0.0){
         fEA.push_back(0.5*(aLower+aUpper));
         fALower.push_back(aLower); fAUpper.push_back(aUpper);
-        aF.push_back(dataset.alphaValue[i]*(aUpper-aLower));
+        if(interpolated){
+          const double originalLower=dataset.transportBinLowerMeV[i];
+          const double originalUpper=dataset.transportBinUpperMeV[i];
+          const double originalJLower=dataset.transportValueLowerPerMeV[i];
+          const double originalJUpper=dataset.transportValueUpperPerMeV[i];
+          const bool logLog=originalJLower>0.0 && originalJUpper>0.0;
+          const double retainedJLower=EvaluateSegment(
+              originalLower,originalJLower,originalUpper,originalJUpper,aLower,logLog);
+          const double retainedJUpper=EvaluateSegment(
+              originalLower,originalJLower,originalUpper,originalJUpper,aUpper,logLog);
+          fAValueLower.push_back(retainedJLower);
+          fAValueUpper.push_back(retainedJUpper);
+          fALogLogSegment.push_back(logLog);
+          aF.push_back(IntegrateSegment(aLower,retainedJLower,aUpper,retainedJUpper,logLog));
+        } else {
+          aF.push_back(dataset.alphaValue[i]*(aUpper-aLower));
+        }
       }
     } else {
       const G4double E=dataset.energyMeV[i];
@@ -262,6 +361,9 @@ void PrimaryGeneratorAction::ReadDataset(const shield_sim::SpectrumDataset& data
 
   fTotP=0; for(auto v:pF) fTotP+=v;
   fTotA=0; for(auto v:aF) fTotA+=v;
+  if(!std::isfinite(fTotP) || !std::isfinite(fTotA))
+    G4Exception("PrimaryGeneratorAction","SpectrumFile",FatalException,
+                "Spectrum integration produced a non-finite source weight; input dynamic range is unsupported.");
 
   // RandGeneral requires a nonempty, nonzero table even for a species whose
   // physical integral is zero. A one-bin dummy is safe because species choice
@@ -293,11 +395,19 @@ void PrimaryGeneratorAction::ReadDataset(const shield_sim::SpectrumDataset& data
 G4double PrimaryGeneratorAction::Sample(CLHEP::RandGeneral* rng,
                                         const std::vector<G4double>& E,
                                         const std::vector<G4double>& lower,
-                                        const std::vector<G4double>& upper){
+                                        const std::vector<G4double>& upper,
+                                        const std::vector<G4double>& valueLower,
+                                        const std::vector<G4double>& valueUpper,
+                                        const std::vector<bool>& logLogSegment){
   if(!rng||E.empty()) return 0;
   const G4double selected=rng->shoot()*E.size();
   G4int i=static_cast<G4int>(selected);
   i=std::max(0,std::min(i,(G4int)E.size()-1));
+  if(lower.size()==E.size() && upper.size()==E.size() &&
+     valueLower.size()==E.size() && valueUpper.size()==E.size() &&
+     logLogSegment.size()==E.size())
+    return SampleSegmentEnergy(lower[i],valueLower[i],upper[i],valueUpper[i],
+                               logLogSegment[i],G4UniformRand());
   if(lower.size()==E.size() && upper.size()==E.size())
     return lower[i]+G4UniformRand()*(upper[i]-lower[i]);
   return E[i];

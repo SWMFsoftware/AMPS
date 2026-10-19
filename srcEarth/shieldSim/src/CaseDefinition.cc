@@ -1500,6 +1500,110 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
     published.components = {transportedComponent};
     result->spectrum = std::move(published);
     result->sourceComponentId = componentId;
+  } else if (result->sourceFormat == "spectrum_exchange_v1") {
+    // Stage 11 uses one neutral exchange contract on both sides of the AMPS /
+    // shieldSim boundary.  This branch intentionally knows nothing about
+    // Tecplot zones or AMPS filenames: those are producer implementation
+    // details.  The case must select one unambiguous component because the
+    // current continuous source sampler transports one explicit species at a
+    // time.
+    RejectUnknownFields(spectrum, {"format","path","component_id"},
+                        "case.source.spectrum");
+    const std::string exchangePath = ResolvePath(
+        caseDirectory, RequiredString(spectrum, "path", "case.source.spectrum"));
+    const std::string componentId = RequiredString(
+        spectrum, "component_id", "case.source.spectrum");
+    SpectrumDataset exchanged = SpectrumDataset::LoadSpectrumExchangeV1(exchangePath);
+    if (exchanged.qualityStatus != "accepted")
+      throw JsonError("spectrum_exchange_v1 refuses a dataset whose producer quality status is not accepted");
+    if (result->purpose != "verification_test" &&
+        exchanged.scienceStatus != "calculated_validation_qualified")
+      throw JsonError("a science-facing spectrum_exchange_v1 case requires science_status='calculated_validation_qualified'; calculated_unvalidated and verification_fixture inputs are verification-only");
+    const auto selected = std::find_if(exchanged.components.begin(), exchanged.components.end(),
+        [&](const SpectrumComponent& component) { return component.componentId == componentId; });
+    if (selected == exchanged.components.end())
+      throw JsonError("case.source.spectrum.component_id is absent from the spectrum exchange dataset");
+    if (result->sourceMode != "isotropic" || selected->angularRepresentation != "isotropic")
+      throw JsonError("spectrum_exchange_v1 schema v1 requires case.source.mode='isotropic'");
+    const bool isProton = selected->speciesId == "proton" &&
+        selected->geant4Particle == "proton" && selected->atomicNumber == 1 &&
+        selected->massNumber == 1;
+    const bool isAlpha = selected->speciesId == "alpha" &&
+        selected->geant4Particle == "alpha" && selected->atomicNumber == 2 &&
+        selected->massNumber == 4;
+    if (!isProton && !isAlpha)
+      throw JsonError("spectrum_exchange_v1 transport currently admits only explicit proton/1/1 or alpha/2/4 components; other species remain preserved but not transportable");
+    if (selected->valid.size() != selected->value.size() ||
+        std::find(selected->valid.begin(), selected->valid.end(), false) != selected->valid.end())
+      throw JsonError("the selected spectrum_exchange_v1 component contains an invalid sample; invalid nodes are never dropped or bridged");
+
+    // Convert once to shieldSim's canonical total kinetic energy per particle
+    // and per-total-MeV intensity.  For x=E/A, dJ/dE=(dJ/dx)/A, so this
+    // transformation conserves the integral exactly.  The exchange is SI
+    // (m^-2), whereas shieldSim's source-plane area and historical source
+    // normalization are cm2; 1 m^-2 = 1e-4 cm^-2 is therefore also applied
+    // here, once, before transport.
+    const double energyScale = selected->energyVariable == "kinetic_energy_per_nucleon"
+        ? static_cast<double>(selected->massNumber) : 1.0;
+    const double intensityScale = 1.0e-4 / energyScale;
+    exchanged.energyMeV.clear();
+    exchanged.binWidthMeV.clear();
+    exchanged.protonValue.clear();
+    exchanged.alphaValue.clear();
+    exchanged.transportBinLowerMeV.clear();
+    exchanged.transportBinUpperMeV.clear();
+    exchanged.transportValueLowerPerMeV.clear();
+    exchanged.transportValueUpperPerMeV.clear();
+    bool anyPositive = false;
+    if (!selected->representative.empty()) {
+      if (selected->representative.size() != selected->value.size())
+        throw JsonError("spectrum_exchange_v1 point component has inconsistent coordinate/value arrays");
+      for (std::size_t i = 0; i + 1 < selected->value.size(); ++i) {
+        const double lower = energyScale * selected->representative[i];
+        const double upper = energyScale * selected->representative[i + 1];
+        const double jLower = intensityScale * selected->value[i];
+        const double jUpper = intensityScale * selected->value[i + 1];
+        exchanged.transportBinLowerMeV.push_back(lower);
+        exchanged.transportBinUpperMeV.push_back(upper);
+        exchanged.transportValueLowerPerMeV.push_back(jLower);
+        exchanged.transportValueUpperPerMeV.push_back(jUpper);
+        exchanged.energyMeV.push_back(std::sqrt(lower * upper));
+        exchanged.binWidthMeV.push_back(upper - lower);
+        const double representativeValue = 0.5 * (jLower + jUpper);
+        exchanged.protonValue.push_back(isProton ? representativeValue : 0.0);
+        exchanged.alphaValue.push_back(isAlpha ? representativeValue : 0.0);
+        anyPositive = anyPositive || jLower > 0.0 || jUpper > 0.0;
+      }
+      exchanged.transportInterpolation = "log_log_positive_linear_zero";
+    } else {
+      if (selected->binLower.size() != selected->value.size() ||
+          selected->binUpper.size() != selected->value.size())
+        throw JsonError("spectrum_exchange_v1 bin component has inconsistent edge/value arrays");
+      for (std::size_t i = 0; i < selected->value.size(); ++i) {
+        const double lower = energyScale * selected->binLower[i];
+        const double upper = energyScale * selected->binUpper[i];
+        const double value = intensityScale * selected->value[i];
+        exchanged.transportBinLowerMeV.push_back(lower);
+        exchanged.transportBinUpperMeV.push_back(upper);
+        exchanged.energyMeV.push_back(0.5 * (lower + upper));
+        exchanged.binWidthMeV.push_back(upper - lower);
+        exchanged.protonValue.push_back(isProton ? value : 0.0);
+        exchanged.alphaValue.push_back(isAlpha ? value : 0.0);
+        anyPositive = anyPositive || value > 0.0;
+      }
+      exchanged.transportInterpolation = "piecewise_constant";
+    }
+    if (!anyPositive)
+      throw JsonError("selected spectrum_exchange_v1 component has zero intensity over its complete support");
+    exchanged.energyVariable = "total_kinetic_energy";
+    exchanged.energyUnit = "MeV";
+    exchanged.valueType = "differential_directional_intensity";
+    exchanged.valueUnit = "1/(cm2 sr s MeV)";
+    exchanged.angularModel = "isotropic";
+    exchanged.transportComponentId = componentId;
+    exchanged.components = {*selected};
+    result->spectrum = std::move(exchanged);
+    result->sourceComponentId = componentId;
   } else if(result->sourceFormat=="monoenergetic_response_cell") {
     if(!stage3Schema)
       throw JsonError("monoenergetic_response_cell requires shieldSim.case.v2");
@@ -1660,7 +1764,7 @@ std::shared_ptr<CaseDefinition> CaseDefinition::Load(const std::string& path) {
     if(!std::isfinite(result->alphaMinMeV))
       result->alphaMinMeV=result->alphaMaxMeV=1.0;
   } else {
-    throw JsonError("case.source.spectrum.format must be legacy_three_column, ams02_hapi_component, monoenergetic_response_cell, or discrete_response_nodes");
+    throw JsonError("case.source.spectrum.format must be legacy_three_column, ams02_hapi_component, spectrum_exchange_v1, monoenergetic_response_cell, or discrete_response_nodes");
   }
   if(!result->responseIncident.enabled && result->directIncidents.empty()){
     if(!source.count("energy_limits"))

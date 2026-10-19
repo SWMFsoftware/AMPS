@@ -676,6 +676,7 @@ def main() -> int:
     stage7_published = load_evidence("stage7_published_qualification.json")
     stage10_csg = load_evidence("stage10_analytic_csg.json")
     stage10_mesh = load_evidence("stage10_tessellated_mesh.json")
+    stage11_transport = load_evidence("stage11_spectrum_exchange_transport.json")
     entries: list[dict] = []
 
     comparison_figure(
@@ -854,6 +855,17 @@ def main() -> int:
         "meshes only; this does not qualify arbitrary concave CAD/STL or complete Stage 10.",
         entries,
     )
+    comparison_figure(
+        stage11_transport,
+        "Stage 11 calculated-spectrum exchange normalization",
+        "stage11_spectrum_exchange_analytic",
+        "The source normalization consumed by the full Geant4/proxy run is compared with an "
+        "independent analytic integral of the declared positive power-law and linear-to-zero "
+        "segments. The isotropic plane rate independently applies pi and the 25 cm2 source "
+        "area. This validates the exchange consumer and sampler, not a native AMPS export or "
+        "AMPS environmental physics.",
+        entries,
+    )
 
     # Keep transient adapter products beside the configured build artifacts.
     # This honors the repository test-output boundary and avoids hidden /tmp
@@ -973,6 +985,7 @@ def main() -> int:
         "stage7_published_component_comparisons",
         "stage10_analytic_csg_comparisons",
         "stage10_tessellated_mesh_comparisons",
+        "stage11_spectrum_exchange_analytic",
     }
     require(
         {pathlib.Path(item["file"]).stem for item in entries} == expected_stems,

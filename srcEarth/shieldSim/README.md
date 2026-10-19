@@ -48,6 +48,15 @@ supplied, and the mesh provider does not accept arbitrary concave CAD/STL.
 Each gallery JSON makes the ordered shield layers, sensitive absorber material,
 and requested `TID`/`DDD`/`n_eq`/`LET`/`H100/10` calculations explicit inputs;
 none is selected by the geometry implementation.
+Stage 11 now defines and implements the strict
+`shieldSim.spectrum_exchange.v1` JSON consumer for calculated AMPS spectra.
+It preserves explicit species, energy-coordinate and interpolation semantics,
+SI intensity units, UTC/location/frame context, conservative unresolved-
+trajectory bounds, quality counts, and provenance. Point spectra retain their
+declared log-log/linear-zero curve; per-nucleon and SI-area Jacobians are
+tested analytically and through the full Geant4/proxy path. The native
+`srcEarth` producer has not yet been changed, so Stage 11 is not formally
+complete. See [`SPECTUM_INPUT_FORMAT.md`](SPECTUM_INPUT_FORMAT.md).
 Seven additional working selection combinations are in
 [`examples/configuration_cases/`](examples/configuration_cases/). They vary
 proton/He-4/neutron incidence, Si/water/Al absorbers, analytic and mesh shapes,
@@ -657,6 +666,16 @@ contracts are:
   info, data, and interpretation paths plus `component_id: "proton"`. This
   path is validation-only; the exact contract and runnable example are in
   `examples/stage2_ams02_proton_validation_case.json`.
+- A calculated AMPS-compatible spectrum uses
+  `format: "spectrum_exchange_v1"`, one JSON `path`, and an explicit
+  `component_id`. Schema v1 requires local isotropic differential directional
+  intensity and currently transports only explicit proton or alpha components.
+  Science-facing purposes require
+  `science_status: "calculated_validation_qualified"`; unvalidated
+  calculations and fixtures remain verification-only.
+  The complete contract and runnable example are in
+  [`SPECTUM_INPUT_FORMAT.md`](SPECTUM_INPUT_FORMAT.md) and
+  `examples/stage11_spectrum_exchange_case.json`.
 
 ### Stage-3 transformed response cases
 
@@ -1327,8 +1346,9 @@ angular model, bin representation/edge rule, science status, and provenance.
 Single-row spectra must declare a bin width. Unknown fields, malformed rows,
 negative/fill/NaN values, duplicate or descending energies, and an angular-mode
 conflict are fatal. This adapter is for synthetic tests and explicitly
-qualified user data. Published AMS-02 and GOES-16 products and future AMPS
-products require their dedicated adapters; relabeling them—or an unverified
+qualified user data. Published AMS-02 and GOES-16 products require their
+dedicated adapters, while calculated AMPS products require the versioned
+Stage-11 exchange contract; relabeling any of them—or an unverified
 BON2020-named legacy file—as legacy columns is prohibited.
 
 In `beam` mode, spectrum columns are interpreted as differential pencil-beam source rates, for example:

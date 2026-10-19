@@ -1434,6 +1434,8 @@ void RunAction::WriteRunSummary(G4int nEv){
                ? "stage3_transport_engine_implemented_and_acceptance_tested_pending_independent_review_no_science_quantity_claim"
                : fOpts.caseDefinition->sourceFormat=="ams02_hapi_component"
                ? "stage2_published_spectrum_transport_test_not_physical_validation"
+               : fOpts.caseDefinition->sourceFormat=="spectrum_exchange_v1"
+               ? "stage11_exchange_consumer_implemented_and_tested_AMPS_producer_integration_pending"
                : "stage1_core_not_yet_quantity_validated")
           : "legacy_prototype")<<"\n";
   out<<"scalar events "<<nEv<<"\n";
@@ -1566,6 +1568,8 @@ void RunAction::WriteResultJson(G4int nEv){
       ? "implemented_stage3_transport_raw_acceptance_tested_pending_independent_review"
       : c.sourceFormat=="ams02_hapi_component"
       ? "stage2_published_spectrum_transport_test_not_physical_validation"
+      : c.sourceFormat=="spectrum_exchange_v1"
+      ? "stage11_exchange_consumer_implemented_and_tested_AMPS_producer_integration_pending"
       : "implemented_not_physically_validated_stage1";
   auto finiteOrNull=[](double value)->shield_sim::Json{
     return std::isfinite(value) ? shield_sim::Json(value) : shield_sim::Json(nullptr);
@@ -1995,7 +1999,8 @@ void RunAction::WriteResultJson(G4int nEv){
       {"incident_particle_rate",GetIncidentParticleRate()},
       {"incident_particle_rate_unit","1/s"},
       {"integral_no_angular",fSourceNormNoAngular},
-      {"integral_no_angular_unit",c.spectrum.valueType=="differential_intensity"
+      {"integral_no_angular_unit",c.spectrum.valueType=="differential_intensity" ||
+          c.spectrum.valueType=="differential_directional_intensity"
           ? "1/(cm2 sr s)" : "source_unit_integrated_over_energy"},
       {"source_plane_area_cm2",GetSourcePlaneAreaCM2()}})},
     {"source_science_status",c.spectrum.scienceStatus}

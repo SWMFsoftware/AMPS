@@ -637,7 +637,9 @@ scientific gates remain open. The capability registry
 quantities, badges, and disabled reasons. A browser label cannot enable
 spacecraft-anomaly or preliminary-mission purposes, combine response contracts
 from different profiles, select a template material, introduce a non-slab
-shape, or select the future AMPS adapter.
+shape, or select the Stage-11 calculated-spectrum source. The latter is
+available through direct versioned case JSON, but is not enabled in the
+Stage-9 verification UI registry.
 
 ### 10.1 Request and preflight
 
@@ -1167,6 +1169,105 @@ rays, curved-surface tessellation/resolution convergence, multiple sensitive
 responses, and an independent authoritative nontrivial shape and
 radiation-response comparison.
 
+## Stage-11 calculated spectrum exchange
+
+The complete producer and consumer contract is
+[`SPECTUM_INPUT_FORMAT.md`](SPECTUM_INPUT_FORMAT.md). The current implementation
+reads the versioned JSON and runs the selected component through the normal
+source sampler, Geant4 transport, and requested proxy calculations. Code under
+the parent `srcEarth/` tree has not been modified; its native writer still has
+to emit this contract.
+
+Configure and compile the reader, its standalone schema test, and shieldSim:
+
+```bash
+cmake -S . -B test_output/build -DBUILD_TESTING=ON \
+  -DGeant4_DIR=/path/to/Geant4/lib/cmake/Geant4
+cmake --build test_output/build -j 8 \
+  --target stage11_spectrum_exchange_tests shieldSim
+```
+
+The file is selected directly in the case input:
+
+```json
+"source": {
+  "mode": "isotropic",
+  "spectrum": {
+    "format": "spectrum_exchange_v1",
+    "path": "../calculated_spectra/point_000007_proton.json",
+    "component_id": "local_proton"
+  },
+  "energy_limits": {
+    "proton": {
+      "min": {"value": 10.0, "unit": "MeV"},
+      "max": {"value": 10.0, "unit": "GeV"}
+    },
+    "alpha": {
+      "min": {"value": 40.0, "unit": "MeV"},
+      "max": {"value": 40.0, "unit": "GeV"}
+    }
+  }
+}
+```
+
+`path` is relative to the case file unless absolute. `component_id` must match
+one component exactly. Both energy-limit blocks are required by the current
+case schema; they are total kinetic energy after any per-nucleon conversion.
+Schema v1 requires `mode: "isotropic"` and admits only explicit proton or alpha
+components to continuous transport. A science-facing purpose additionally
+requires `science_status: "calculated_validation_qualified"`; the committed
+fixture is verification-only.
+
+Validate the committed example without transport, then run it:
+
+```bash
+test_output/build/shieldSim \
+  --validate-case=examples/stage11_spectrum_exchange_case.json
+
+mkdir -p test_output/stage11_example
+cd test_output/stage11_example
+../build/shieldSim \
+  --case=../../examples/stage11_spectrum_exchange_case.json
+cd ../..
+```
+
+The example input spectrum is
+`tests/data/stage11_spectrum_exchange.v1.json`. It contains a point-sampled
+proton component and a per-nucleon, bin-averaged alpha component. The example
+case selects the proton component. To select alpha, change only `component_id`
+to `local_alpha_bins`; the existing alpha total-energy limits already cover
+the fixture's converted `[40,80] MeV` bin.
+
+Run both Stage-11 gates from inside the build directory:
+
+```bash
+cd test_output/build
+ctest -R '^stage11_spectrum_exchange(_transport)?$' --output-on-failure
+cd ../..
+```
+
+The first gate checks schema and case admission without starting Geant4. The
+second performs a 256-history Geant4/proxy run and compares source
+normalization with an independent analytic power-law plus linear-zero
+integral. On the development build the pair takes only a few seconds. Evidence
+and full run artifacts are written under:
+
+```text
+test_output/build/validation_evidence/stage11_spectrum_exchange_core.json
+test_output/build/validation_evidence/stage11_spectrum_exchange_transport.json
+test_output/build/stage11_spectrum_exchange_runs/
+test_output/build/validation_figures/stage11_spectrum_exchange_analytic.png
+test_output/build/validation_figures/stage11_spectrum_exchange_analytic.svg
+```
+
+Do not feed `J_omni_perMeV` or `J_planar_perMeV` into `value`. The exchange
+requires AMPS `J_local_perMeV`; shieldSim applies the isotropic `pi` plane
+factor. It also converts `m^-2` to its internal `cm^-2` source normalization
+and applies the exact per-nucleon Jacobian where required. A producer-rejected
+quality status, invalid node, unknown schema/version/field, missing
+interpolation, ambiguous species, non-isotropic v1 component, or unsupported
+transport species is fatal.
+
 ## 12. Understanding outputs
 
 Depending on the case, shieldSim writes a subset of:
@@ -1229,9 +1330,10 @@ published LET aggregate is already pinned. See
 unavailable or require preregistration.
 
 BON2020 is not used in production and is not required to run Stage 2 or Stage
-7. AMPS is also not currently a runtime source. A later AMPS adapter must map a
-versioned AMPS output into the existing canonical source contract without
-changing transport or proxy equations.
+7. Calculated AMPS spectra now have a tested shieldSim consumer through
+`shieldSim.spectrum_exchange.v1`; the native `srcEarth` producer remains to be
+implemented. The exchange path changes only source data/provenance and does not
+change transport or proxy equations.
 
 ## 13. Troubleshooting
 

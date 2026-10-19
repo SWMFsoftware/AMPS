@@ -127,6 +127,8 @@ void WriteResolvedCase(const Options& opts){
       ? "stage3_transport_engine_implemented_and_acceptance_tested_pending_independent_review_no_science_quantity_claim"
       : opts.caseDefinition->sourceFormat=="ams02_hapi_component"
       ? "stage2_published_spectrum_transport_test_not_physical_validation"
+      : opts.caseDefinition->sourceFormat=="spectrum_exchange_v1"
+      ? "stage11_exchange_consumer_implemented_and_tested_AMPS_producer_integration_pending"
       : "stage1_core_not_yet_quantity_validated";
   const std::string path=opts.outputPrefix+"_resolved_case.json";
   std::ofstream output(path);

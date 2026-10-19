@@ -9,9 +9,11 @@
  * The source samples species and energy from a distribution proportional to
  * J(E)dE, where J(E) is either the legacy built-in GCR-like spectrum or a
  * tabulated spectrum accepted through SpectrumDataset. Three numeric columns
- * alone are rejected: a mandatory sidecar declares energy coordinates, units,
- * angular semantics, bin edges, provenance, and science status. The integral
- * of the source spectrum is preserved as a
+ * alone are rejected: the legacy path requires a metadata sidecar, while the
+ * Stage-11 exchange file carries its version, species, energy representation,
+ * interpolation, units, angular semantics, context, quality, uncertainty, and
+ * provenance in one strict JSON document. The integral of the source spectrum
+ * is preserved as a
  * normalization factor so that RunAction can convert raw Monte Carlo counts per
  * primary into source-normalized spectra and dose rates.
  *
@@ -101,7 +103,10 @@ private:
                    const std::string& displayPath);
   G4double Sample(CLHEP::RandGeneral* rng,const std::vector<G4double>& E,
                   const std::vector<G4double>& lower,
-                  const std::vector<G4double>& upper);
+                  const std::vector<G4double>& upper,
+                  const std::vector<G4double>& valueLower,
+                  const std::vector<G4double>& valueUpper,
+                  const std::vector<bool>& logLogSegment);
   void ConfigureSourcePositionAndDirection();
   void RecordInput(bool isProton,G4double E);
   void RecordSourceDiagnostic(const std::string& species,G4double E);
@@ -116,6 +121,8 @@ private:
 
   std::vector<G4double> fEP,fEA;
   std::vector<G4double> fPLower,fPUpper,fALower,fAUpper;
+  std::vector<G4double> fPValueLower,fPValueUpper,fAValueLower,fAValueUpper;
+  std::vector<bool> fPLogLogSegment,fALogLogSegment;
   CLHEP::RandGeneral* fPRand=nullptr;
   CLHEP::RandGeneral* fARand=nullptr;
 

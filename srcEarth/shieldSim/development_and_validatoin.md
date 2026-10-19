@@ -11,8 +11,11 @@ implemented, formal observational validation incomplete; Stage 9 interface
 framework implemented and acceptance-tested for verification workflows, formal
 production qualification incomplete; Stage 10 analytic-CSG and bounded convex
 tessellated-mesh providers implemented and acceptance-tested for verification
-workflows, formal shape qualification incomplete**
-Prepared: 2026-10-16; Stages 8--10 updated 2026-10-18
+workflows, formal shape qualification incomplete; Stage 11 exchange contract,
+strict shieldSim reader, exact sampler, and end-to-end consumer tests
+implemented, native AMPS producer and frozen native-export comparison pending**
+Prepared: 2026-10-16; Stages 8--10 updated 2026-10-18; Stage 11 consumer updated
+2026-10-19
 Requirements decisions approved: 2026-10-16 and 2026-10-17
 Scope: environment-effect radiation proxies for spacecraft-anomaly analysis
 and preliminary mission assessment; ordered multilayer shielding; slab
@@ -45,7 +48,16 @@ one exact representation-equivalence case. Stage 10 remains verification-only:
 the entry condition was not met because no authoritative nontrivial shape source
 was supplied, and the exit condition still lacks independent nontrivial
 response evidence, curved-shape mesh-resolution convergence, and voxel/GDML
-equivalence.**
+equivalence.
+The Stage-11 implementation was derived by a read-only audit of the actual
+gridless/Mode3D spectrum and flux writers and their F/SA/GOES/SWMF test
+runners. `shieldSim.spectrum_exchange.v1` now makes species, point-vs-bin
+semantics, interpolation, SI units, angular normalization, UTC, location,
+frame, unresolved-trajectory bounds/counts, quality status, and provenance
+explicit. Its reader and exact continuous sampler pass analytic unit/Jacobian
+checks and a full Geant4/proxy run. The user-required no-modification boundary
+for code outside `shieldSim/` means the native AMPS writer and frozen native
+AMPS export remain open Stage-11 exit items.**
 
 The filename retains the spelling requested in the task. This document uses
 the normative words **must**, **should**, and **may** deliberately. A stage is
@@ -331,9 +343,10 @@ catalogs imply the following coverage:
 
 The following boundaries are mandatory:
 
-1. **AMPS is outside the current implementation scope.** The physics core must
-   expose a versioned spectrum contract. A later adapter will translate AMPS
-   output into that contract without changing transport or proxy algorithms.
+1. **AMPS solver/writer code is outside the shieldSim modification scope.** The
+   physics core exposes the implemented `shieldSim.spectrum_exchange.v1`
+   contract and consumer. The native AMPS writer must emit that contract later
+   without changing transport or proxy algorithms.
 2. **Each shield-configuration x absorber result is an independent
    experiment.** A shield configuration can contain many ordered layers, but
    selecting BFO and Si must not silently place Si downstream of BFO. Absorber
@@ -410,7 +423,7 @@ available only under names containing `prototype` or `surrogate`.
 
 ### 3.1 Canonical incident-environment contract
 
-All source readers, including the future AMPS reader, must create the same
+All source readers, including the Stage-11 spectrum-exchange reader, must create the same
 validated `SpectrumDataset`. At minimum it must contain:
 
 - dataset identifier, version, DOI/URL, retrieval time, license, and checksum;
@@ -455,11 +468,12 @@ Adapters must be thin, independently tested translators:
   whose particle identity, energy coordinate, value units, angular meaning,
   bin edges, and validity are sufficient for transport. The initial admission
   is the A=1 AMS-02 proton component in validation-only isotropic cases;
-- `AMPSSpectrumAdapter` (later): validates AMPS schema/version, grid,
-  normalization, species, energy variable, frame, time interval, and angular
-  representation before constructing `SpectrumDataset`.
+- `SpectrumExchangeV1Reader` (implemented): validates the producer-neutral
+  Stage-11 JSON version, grid/representation/interpolation, normalization,
+  species, energy variable, frame/location/time, quality, uncertainty bounds,
+  and angular representation before constructing `SpectrumDataset`.
 
-The AMPS adapter must be a separate library/module. No AMPS file-format logic
+The exchange reader must remain a separate library/module. No AMPS Tecplot/file-format logic
 may enter the transport, response-matrix, or quantity implementations.
 
 ### 3.3 Case definition and geometry
@@ -1203,7 +1217,7 @@ mapping has not been established. The single ACE day is adapter evidence, not
 a model holdout; a defensible time partition requires a declared comparison
 objective and an approved SEP/instrument-quality exclusion rule.
 
-Production GCR cases will use the future AMPS adapter or another explicitly
+Production GCR cases may use a validation-qualified Stage-11 exchange export or another explicitly
 selected, mission-applicable environment with the required species, epoch,
 location, and angular boundary. The downloaded observational fixtures are
 test assets, not production defaults. Existing repository files carrying a
@@ -2581,24 +2595,89 @@ science-facing runs until its own evidence passes.
 
 ### Stage 11 - AMPS adapter
 
-Entry: stable `SpectrumDataset` schema and a versioned AMPS output contract
-provided by the AMPS team.  
-Work:
+Implementation status (2026-10-19): **the versioned exchange contract,
+shieldSim reader/admission path, exact continuous sampler, unit/Jacobian tests,
+and end-to-end Geant4/proxy consumer test are implemented. The native AMPS
+producer and frozen native-export comparison remain open because this stage was
+implemented under an explicit requirement not to modify any code outside
+`shieldSim/`. Stage 11 is therefore not formally complete.**
 
-- map AMPS species, grid, energy variable, normalization, frame, direction,
-  location, time window, and uncertainties;
-- reject unsupported schema versions and conservation/unit inconsistencies;
-- compare a frozen AMPS export with an independently prepared canonical
-  fixture;
-- fold the same canonical dataset from AMPS and a test-file adapter and require
-  identical radiation-proxy results.
+Read-only source audit:
 
-Tests: adapter contract/round-trip tests, hand-calculated unit transforms,
-schema-version rejection, missing-species/direction tests, and identical-input
-end-to-end comparison.  
-Exit evidence: AMPS changes only the source provenance/values; response and
-quantity code hashes are unchanged.  
-Forbidden carry-over: do not design the adapter around an inferred AMPS format.
+- `boundary/spectrum.h/.cpp` establishes per-particle versus per-nucleon
+  energy, SI differential directional intensity, table/time policies, and
+  boundary uncertainty;
+- `gridless/DensityGridless.cpp` and `3d/DensityMode3D.cpp` write local spectra
+  as energy nodes, conservative local lower/upper curves, trajectory counts,
+  unresolved fraction, and derived `4 pi J`/`pi J` columns;
+- the corresponding flux files contain total/channel/planar integrals but are
+  not invertible to a unique spectrum; and
+- F-series, SA01--SA04, GOES01, and SWMF-coupled test runners confirm the
+  location/time binding and the positive log-log/zero-touching-linear energy
+  interpolation used to reconstruct integrals.
+
+Implemented contract and consumer:
+
+- `SPECTUM_INPUT_FORMAT.md` defines
+  `shieldSim.spectrum_exchange.v1`, one explicit time/location context per
+  document, multiple independently identified species components, point or
+  bin representations, exact interpolation/support, SI units, angular
+  meaning, conservative bounds, trajectory-quality counts, quality decision,
+  and producer provenance;
+- point spectra use exact analytic segment integration and inverse-CDF
+  sampling: power laws between positive nodes and linear segments when either
+  endpoint is zero; energy-limit clipping retains the declared interpolation;
+- bin averages use exact producer-supplied edges and piecewise-constant
+  sampling; gaps remain gaps and no center/edge is inferred;
+- total/per-nucleon conversion applies `E=A x` and `dJ/dE=(dJ/dx)/A`, while
+  SI `m^-2` intensity is explicitly converted by `1e-4` to shieldSim's `cm^-2`
+  source-plane normalization;
+- schema v1 accepts only isotropic local directional intensity. It rejects
+  `J_omni`/`J_planar` relabeling by quantity semantics and applies the
+  shieldSim plane factor `pi` exactly once;
+- all valid species may be retained in the document, but current transport
+  admits only explicit proton `(1,1)` or alpha `(2,4)` components, one selected
+  component per case; and
+- `source.spectrum` selects `format: "spectrum_exchange_v1"`, `path`, and
+  `component_id`. The canonical complete document and its SHA-256 are archived
+  in the resolved case.
+
+Implemented tests:
+
+- `stage11_spectrum_exchange` checks complete ingestion, quality/provenance
+  retention, unknown-version rejection, absent-interpolation rejection,
+  invalid-node admission rejection, component selection, point/bin distinction,
+  and the hand-calculated alpha per-nucleon plus SI-area Jacobian;
+- `stage11_spectrum_exchange_transport` runs a two-segment proton fixture
+  through the normal parser, exact sampler, Geant4, and proxy outputs. The
+  source normalization is compared with an independent analytic integral
+  (positive power-law segment plus linear-to-zero segment), and the test checks
+  the `pi` angular factor, source-plane rate, source hash/context/quality, and
+  purpose/mode/component rejection boundaries; and
+- the runnable user case is
+  `examples/stage11_spectrum_exchange_case.json`, with input fixture
+  `tests/data/stage11_spectrum_exchange.v1.json`.
+
+Remaining exit work:
+
+1. implement an atomic native producer in the AMPS gridless and/or Mode3D
+   spectrum calculations without weakening the existing Tecplot products;
+2. freeze a real native AMPS export plus its complete run/snapshot manifest;
+3. independently reconstruct that export into the contract and require
+   component values, bounds, counts, context, units, and integrated
+   total/channel fluxes to agree within preregistered tolerances;
+4. run that frozen native export through the already tested shieldSim path and
+   archive source/response/quantity code identities; and
+5. if anisotropic/directional AMPS output is required, define a new schema and
+   sampler rather than labeling it isotropic.
+
+Exit evidence: a native AMPS writer produces the frozen contract; independent
+reconstruction and integrated-flux conservation pass; AMPS changes only source
+provenance/values while response and quantity code hashes remain unchanged.
+Forbidden carry-over: do not parse the current Tecplot files directly in
+shieldSim, infer species/frame/time from filenames or zone order, treat
+conservative unresolved bounds as Gaussian errors, interpolate across invalid
+or zero nodes, or use an angularly integrated AMPS column as local intensity.
 
 ## 8. Requirement-to-test traceability starter
 
@@ -2747,9 +2826,13 @@ assumption. The named capability remains disabled until its input is available:
    covariance or a project-approved, provenance-bearing ensemble; the current
    fixture does not provide it and the code will not infer independence.
    Completion also inherits the applicable Stage-3--6 review/validation items.
-9. **AMPS contract:** When available, the AMPS owner must provide the
-   authoritative schema, units, coordinate frame, uncertainty semantics,
-   version, and frozen example. No adapter implementation begins before then.
+9. **Native AMPS producer/frozen export:** The authoritative exchange schema,
+   units, coordinate frame, uncertainty semantics, and consumer are now defined
+   in `SPECTUM_INPUT_FORMAT.md` and implemented in shieldSim. Formal Stage-11
+   completion still requires the AMPS owner to implement the native writer and
+   provide a frozen real export plus complete run/snapshot manifest. That
+   export must pass the independent reconstruction and flux-conservation gates;
+   the present hand-calculated fixture is not a substitute for it.
 
 ## 11. Primary references and source records
 

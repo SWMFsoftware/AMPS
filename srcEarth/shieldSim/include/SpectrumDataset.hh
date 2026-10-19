@@ -2,8 +2,9 @@
 #define SHIELDSIM_SPECTRUM_DATASET_HH
 
 /*
- * Canonical spectrum container shared by the Stage-1 legacy source and the
- * Stage-2 published-data adapters.
+ * Canonical spectrum container shared by the Stage-1 legacy source, the
+ * Stage-2 published-data adapters, and the Stage-11 calculated-spectrum
+ * exchange contract.
  *
  * The only Stage-1 external adapter is the explicitly labeled legacy
  * three-column adapter.  A sidecar is mandatory because the old numeric file
@@ -51,6 +52,12 @@ struct SpectrumComponent {
   std::vector<double> binUpper;
   std::vector<double> representative;
   std::vector<double> value;
+  // Absolute lower/upper curves are distinct from uncertainty magnitudes.
+  // AMPS unresolved-trajectory bounds are conservative physical envelopes,
+  // not standard deviations, so they must never be placed in the statistical
+  // uncertainty arrays below.
+  std::vector<double> lowerBound;
+  std::vector<double> upperBound;
   std::vector<double> totalUncertainty;
   // Published products often separate uncertainty components because they
   // have different correlations.  In particular, the AMS-02 time-independent
@@ -68,6 +75,15 @@ struct SpectrumComponent {
   // zero measurements.
   std::vector<double> counts;
   std::vector<bool> valid;
+
+  // Calculated AMPS spectra carry trajectory-resolution diagnostics rather
+  // than statistical counting errors.  Keep those diagnostics next to the
+  // values so a consumer never has to recover quality from a plot-oriented
+  // Tecplot file or assume that an unresolved trajectory was forbidden.
+  std::vector<double> unresolvedFraction;
+  std::vector<double> sampledDirections;
+  std::vector<double> resolvedDirections;
+  std::vector<double> allowedDirections;
 };
 
 struct SpectrumDataset {
@@ -78,6 +94,9 @@ struct SpectrumDataset {
   std::string valueUnit;
   std::string angularModel;
   std::string scienceStatus;
+  std::string qualityStatus;
+  double maximumUnresolvedFraction = 0.0;
+  double unresolvedFractionAcceptanceLimit = 0.0;
   std::string spectrumPath;
   std::string metadataPath;
   std::string contentHash;
@@ -95,6 +114,14 @@ struct SpectrumDataset {
   // its historical representative-energy sampling behavior.
   std::vector<double> transportBinLowerMeV;
   std::vector<double> transportBinUpperMeV;
+  // Empty endpoint arrays mean the bins above are piecewise constant.  When
+  // both arrays match the bin count, each interval is a point-spectrum
+  // segment: positive endpoints are joined in log(E)-log(J), while a segment
+  // touching zero is joined linearly.  PrimaryGeneratorAction integrates and
+  // samples that declared curve exactly, including clipped energy limits.
+  std::vector<double> transportValueLowerPerMeV;
+  std::vector<double> transportValueUpperPerMeV;
+  std::string transportInterpolation;
   std::string transportComponentId;
 
   // Versioned adapters populate components. The older vectors above remain a
@@ -106,6 +133,11 @@ struct SpectrumDataset {
 
   static SpectrumDataset LoadLegacyThreeColumn(const std::string& spectrumPath,
                                                const std::string& metadataPath);
+
+  // Read the strict, self-describing Stage-11 JSON exchange document.  This
+  // method performs ingestion only.  CaseDefinition separately decides
+  // whether a selected component is physically admissible for transport.
+  static SpectrumDataset LoadSpectrumExchangeV1(const std::string& spectrumPath);
 };
 
 } // namespace shield_sim

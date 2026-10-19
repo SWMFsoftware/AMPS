@@ -58,6 +58,30 @@ changing the source to `beam` is rejected. The alpha energy-limit block remains
 required by the v1 case schema but is unused because the admitted component is
 proton-only.
 
+## Stage-11 calculated-spectrum exchange case
+
+`stage11_spectrum_exchange_case.json` demonstrates how a calculated AMPS
+spectrum is selected without parsing the current Tecplot diagnostic products:
+
+```bash
+./shieldSim --validate-case=../examples/stage11_spectrum_exchange_case.json
+./shieldSim --case=../examples/stage11_spectrum_exchange_case.json
+```
+
+The case uses `format: "spectrum_exchange_v1"`, names the JSON file in `path`,
+and selects `component_id: "local_proton_points"`. Its fixture contains both
+point-sampled protons and per-nucleon bin-averaged alpha particles so unit and
+representation boundaries can be tested in one document. Only the explicitly
+selected component enters a run.
+
+Schema v1 is isotropic and the exchange `value` is local differential
+directional intensity in SI units. ShieldSim applies the `pi` plane factor,
+converts `m^-2` to its internal `cm^-2` normalization, and applies the exact
+per-nucleon Jacobian. The native AMPS writer is not yet implemented, so this is
+a hand-calculated interface fixture rather than a native AMPS result. See
+[`../SPECTUM_INPUT_FORMAT.md`](../SPECTUM_INPUT_FORMAT.md) for the normative
+producer contract and complete limitations.
+
 ## Stage-3 monoenergetic response-cell case
 
 `stage3_response_cell_case.json` demonstrates the verification-only

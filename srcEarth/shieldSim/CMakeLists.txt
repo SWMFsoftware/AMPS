@@ -476,12 +476,43 @@ if(BUILD_TESTING)
   set_tests_properties(configuration_examples PROPERTIES
     ENVIRONMENT "${_geant4_test_environment}"
     TIMEOUT 600)
+  # Stage 11 defines a producer-neutral, versioned JSON boundary for calculated
+  # AMPS spectra.  This Geant4-free gate checks strict schema rejection,
+  # component selection, trajectory-quality retention, point-vs-bin semantics,
+  # and the exact per-nucleon Jacobian before any transport is initialized.
+  add_executable(stage11_spectrum_exchange_tests
+    tests/stage11_spectrum_exchange_tests.cc
+    src/AccuracyController.cc
+    src/CaseDefinition.cc
+    src/ContentHash.cc
+    src/DamageResponseLibrary.cc
+    src/GeometryTransform.cc
+    src/MaterialLibrary.cc
+    src/PublishedSourceAdapters.cc
+    src/SpectrumDataset.cc
+    src/Stage6Physics.cc
+    src/StrictJson.cc
+  )
+  target_include_directories(stage11_spectrum_exchange_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/include)
+  add_test(NAME stage11_spectrum_exchange
+    COMMAND stage11_spectrum_exchange_tests ${PROJECT_SOURCE_DIR}
+            ${SHIELDSIM_VALIDATION_EVIDENCE_DIR})
+  add_test(NAME stage11_spectrum_exchange_transport
+    COMMAND ${Python3_EXECUTABLE}
+            ${PROJECT_SOURCE_DIR}/tests/test_stage11_spectrum_exchange_transport.py
+            $<TARGET_FILE:shieldSim> ${PROJECT_SOURCE_DIR}
+            ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}
+            ${CMAKE_BINARY_DIR}/stage11_spectrum_exchange_runs)
+  set_tests_properties(stage11_spectrum_exchange_transport PROPERTIES
+    ENVIRONMENT "${_geant4_test_environment}"
+    TIMEOUT 600)
   add_test(NAME validation_figures
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/generate_validation_figures.py
             ${PROJECT_SOURCE_DIR} ${SHIELDSIM_VALIDATION_EVIDENCE_DIR}
             ${SHIELDSIM_VALIDATION_FIGURE_DIR} $<TARGET_FILE:shieldSimSourceTool>)
   set_tests_properties(validation_figures PROPERTIES
-    DEPENDS "stage1_core;stage1_case_boundaries;stage1_transport_smoke;stage2_source_adapters;stage2_reference_spectra;stage2_source_tool;stage2_published_transport;stage3_core;stage3_response_weights;stage3_transport;stage4_core;stage4_nist_reference;stage4_tid_transport;stage5_core;stage5_transport;stage6_core;stage6_case_boundaries;stage6_reference;stage6_transport;stage7_core;stage7_boundaries;stage7_published_qualification;stage8_reference_inputs;stage8_crater_core;stage8_crater_transport;stage10_analytic_csg;stage10_tessellated_mesh")
+    DEPENDS "stage1_core;stage1_case_boundaries;stage1_transport_smoke;stage2_source_adapters;stage2_reference_spectra;stage2_source_tool;stage2_published_transport;stage3_core;stage3_response_weights;stage3_transport;stage4_core;stage4_nist_reference;stage4_tid_transport;stage5_core;stage5_transport;stage6_core;stage6_case_boundaries;stage6_reference;stage6_transport;stage7_core;stage7_boundaries;stage7_published_qualification;stage8_reference_inputs;stage8_crater_core;stage8_crater_transport;stage10_analytic_csg;stage10_tessellated_mesh;stage11_spectrum_exchange;stage11_spectrum_exchange_transport")
 endif()
 
 # Copy example input files into the build tree for convenience.

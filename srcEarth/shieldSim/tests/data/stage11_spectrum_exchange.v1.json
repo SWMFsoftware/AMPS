@@ -1,0 +1,83 @@
+{
+  "schema_version": "shieldSim.spectrum_exchange.v1",
+  "dataset_id": "stage11_two_component_verification_fixture",
+  "science_status": "verification_fixture",
+  "producer": {
+    "software": "shieldSim Stage-11 contract test",
+    "software_version": "1.0.0",
+    "code_revision": "fixture",
+    "run_id": "stage11-reader-test",
+    "created_utc": "2026-10-18T00:00:00Z",
+    "calculation_mode": "verification_fixture",
+    "source_product": "hand_calculated_stage11_contract_fixture",
+    "description": "Hand-calculated point and bin spectra; not a measured or mission environment"
+  },
+  "context": {
+    "time": {
+      "interpretation": "instantaneous_quasi_static",
+      "reference_utc": "2026-10-18T00:00:00Z"
+    },
+    "location": {
+      "location_id": "synthetic_origin",
+      "frame": "GSM",
+      "unit": "km",
+      "position": [0.0, 0.0, 0.0]
+    }
+  },
+  "quality": {
+    "status": "accepted",
+    "unresolved_semantics": "lower_forbidden_upper_allowed",
+    "maximum_unresolved_fraction": 0.01,
+    "acceptance_limit": 0.02
+  },
+  "components": [
+    {
+      "component_id": "local_proton_points",
+      "particle": {"name": "proton", "Z": 1, "A": 1},
+      "energy": {
+        "coordinate": "total_kinetic_energy",
+        "unit": "MeV",
+        "representation": "point_samples",
+        "interpolation": "log_log_positive_linear_zero",
+        "support": "closed_interval_no_extrapolation"
+      },
+      "quantity": {
+        "type": "differential_directional_intensity",
+        "unit": "m^-2 s^-1 sr^-1 MeV^-1",
+        "angular_representation": "isotropic"
+      },
+      "uncertainty": {
+        "semantics": "conservative_bounds",
+        "source": "Synthetic lower/upper envelope for parser verification"
+      },
+      "data": [
+        {"energy": 10.0, "value": 1000.0, "lower": 900.0, "upper": 1100.0, "valid": true, "unresolved_fraction": 0.0, "n_sampled": 100, "n_resolved": 100, "n_allowed": 80},
+        {"energy": 100.0, "value": 10.0, "lower": 8.0, "upper": 12.0, "valid": true, "unresolved_fraction": 0.01, "n_sampled": 100, "n_resolved": 99, "n_allowed": 60},
+        {"energy": 1000.0, "value": 0.0, "lower": 0.0, "upper": 1.0, "valid": true, "unresolved_fraction": 0.0, "n_sampled": 100, "n_resolved": 100, "n_allowed": 0}
+      ]
+    },
+    {
+      "component_id": "local_alpha_bins",
+      "particle": {"name": "alpha", "Z": 2, "A": 4},
+      "energy": {
+        "coordinate": "kinetic_energy_per_nucleon",
+        "unit": "MeV/nucleon",
+        "representation": "bin_averages",
+        "interpolation": "piecewise_constant",
+        "support": "closed_interval_no_extrapolation"
+      },
+      "quantity": {
+        "type": "differential_directional_intensity",
+        "unit": "m^-2 s^-1 sr^-1 (MeV/nucleon)^-1",
+        "angular_representation": "isotropic"
+      },
+      "uncertainty": {
+        "semantics": "not_supplied",
+        "source": "No uncertainty assigned to the synthetic alpha bin"
+      },
+      "data": [
+        {"energy_lower": 10.0, "energy_upper": 20.0, "value": 40.0, "valid": true, "unresolved_fraction": 0.0, "n_sampled": 100, "n_resolved": 100, "n_allowed": 50}
+      ]
+    }
+  ]
+}
