@@ -1,8 +1,10 @@
-# shieldSim CRaTER parallel quick guide
+# shieldSim parallel quick guide
 
-This guide runs the clearly bounded `foreground_only_axial` CRaTER benchmark.
-It is a diagnostic comparison with published observations, not a complete
-CRaTER instrument model or Stage-8 validation.
+The first part of this guide runs the clearly bounded `foreground_only_axial`
+CRaTER benchmark. It is a diagnostic comparison with published observations,
+not a complete CRaTER instrument model or Stage-8 validation. A later section
+records the exact eight-process procedure used for the high-statistics
+BON2020-proton configuration example.
 
 Run every command from the `shieldSim` source directory. Keep generated files
 under `test_output/`; do not redirect test or simulation files to `/tmp`.
@@ -187,3 +189,317 @@ The directory README maps every file to its incident species, absorber
 material/shape, shield size and ordered layers, and quantities. Proton cases
 can request all five names, but their neutron-only `n_eq` is defined as zero;
 use either neutron damage example to exercise a nonzero `n_eq` calculation.
+
+## High-statistics BON2020 proton example: exact eight-process procedure
+
+This section records the command sequence used for the completed
+`01_si_box_bon2020_proton_all_quantities_directional` test. The input is the
+prepared 400-node proton component of the checksum-pinned CRaTER BON2020 GCR
+spectrum. The simulation used 100,000 independent histories, divided into
+eight workers of 12,500 histories each. The completed run is under:
+
+```text
+test_output/configuration_cases/
+└── 01_si_box_bon2020_proton_all_quantities_directional/
+    └── parallel_100000/
+        ├── shard_0000/ ... shard_0007/
+        ├── parallel_run_manifest.json
+        ├── parallel_completion.json
+        └── pooled/
+```
+
+The generic `shieldSim` executable does **not** implement the rank/shard
+contract provided by `shieldSimCraterBenchmark`. Consequently, this case was
+not run as `mpiexec -n 8 shieldSim ...`: doing that would make every rank repeat
+the entire input and would allow ranks to overwrite the same files. Instead,
+the procedure below constructs eight independent input files, launches eight
+ordinary `shieldSim` processes concurrently, and pools only review plots and
+summary statistics after all workers succeed. Each shard result JSON remains a
+canonical result; the pooled files are explicitly visualization products and
+are not represented as one canonical merged transport result.
+
+### 1. Load the runtime and name the exact paths
+
+Run this block from the `shieldSim` source directory:
+
+```bash
+source /data/vtenishe/G4/install/bin/geant4.sh
+
+export SHIELDSIM_EXE="$PWD/test_output/build/shieldSim"
+export SHIELDSIM_CASE_ROOT="$PWD/test_output/configuration_cases/01_si_box_bon2020_proton_all_quantities_directional"
+export SHIELDSIM_BASE_CASE="${SHIELDSIM_CASE_ROOT}/01_si_box_bon2020_proton_all_quantities_directional.json"
+export SHIELDSIM_RUN_ROOT="${SHIELDSIM_CASE_ROOT}/parallel_100000"
+
+test -x "${SHIELDSIM_EXE}"
+test -f "${SHIELDSIM_BASE_CASE}"
+```
+
+`source` supplies the Geant4 shared-library and physics-data paths required at
+runtime. The four exported names prevent path changes between preparation,
+execution, checking, and plotting. The two `test` commands fail immediately if
+the executable or input case is missing.
+
+The executable had already been configured and compiled in
+`test_output/build`, so no CMake command was part of this particular execution.
+For a clean machine, perform the configure/build commands in Section 2 first
+and include the `shieldSim` target. Likewise, the BON2020 source adapter had
+already produced `SHIELDSIM_BASE_CASE`; its spectrum and adapter provenance are
+recorded beside that case in
+`bon2020_crater_solmin_proton_10MeV_50GeV.metadata.v1.json` and
+`source_adapter_manifest.json`. Those preparation products were inputs to this
+run, not files downloaded or regenerated while the eight workers were active.
+
+`SHIELDSIM_RUN_ROOT` above is the location of the completed run. Do not execute
+the preparation block below over that nonempty directory. For a new repeat,
+set it to a new name such as `parallel_100000_repeat_01`; never mix new shards
+with an earlier run.
+
+### 2. Create the eight independent shard inputs
+
+The following is the preparation command used for this run. It changes only
+the case ID, history controls, random seed, output prefix, and paths that must
+remain valid from the deeper shard directories. It does not alter the source,
+geometry, material definitions, requested quantities, physics list, cuts, or
+step limit.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 - <<'PY'
+import copy
+import json
+import os
+from pathlib import Path
+
+source_path = Path(os.environ["SHIELDSIM_BASE_CASE"]).resolve()
+run_root = Path(os.environ["SHIELDSIM_RUN_ROOT"]).resolve()
+repository = Path.cwd().resolve()
+worker_count = 8
+total_histories = 100_000
+histories_per_worker = total_histories // worker_count
+base_seed = 1_020_200
+
+if total_histories % worker_count:
+    raise SystemExit("this recorded run requires an equal integral shard size")
+if run_root.exists() and any(run_root.iterdir()):
+    raise SystemExit(f"refusing to mix with nonempty run directory: {run_root}")
+
+base_case = json.loads(source_path.read_text(encoding="utf-8"))
+run_root.mkdir(parents=True, exist_ok=True)
+
+for index in range(worker_count):
+    shard = copy.deepcopy(base_case)
+    tag = f"shard_{index:04d}_of_{worker_count:04d}"
+    shard["case_id"] = f"configuration_example_01_si_box_bon2020_proton_parallel_{tag}"
+    shard["accuracy"]["sampling"]["min_histories"] = histories_per_worker
+    shard["accuracy"]["sampling"]["max_histories"] = histories_per_worker
+    shard["accuracy"]["sampling"]["batch_size"] = histories_per_worker
+    shard["transport"]["random_seed"] = base_seed + index
+    shard["output"]["prefix"] = f"bon2020_proton_parallel_{tag}"
+
+    # The base case uses paths relative to its original directory. Absolute
+    # paths preserve the identical libraries when the case moves into a shard.
+    shard["material_library"]["path"] = str(
+        repository / "data/material_library.v1.json"
+    )
+    shard["damage_response"]["path"] = str(
+        repository / "data/niel/damage_response_library.v1.json"
+    )
+
+    shard_directory = run_root / f"shard_{index:04d}"
+    shard_directory.mkdir(parents=True, exist_ok=False)
+    (shard_directory / "case.json").write_text(
+        json.dumps(shard, indent=2) + "\n", encoding="utf-8"
+    )
+
+manifest = {
+    "schema_version": "shieldSim.parallel_visualization_run.v1",
+    "worker_count": worker_count,
+    "histories_per_worker": histories_per_worker,
+    "total_histories": total_histories,
+    "seed_strategy": "base_seed_1020200_plus_worker_index",
+    "merge_rule": (
+        "event-weighted pooling of differential per-primary spectrum bins; "
+        "workers have equal histories"
+    ),
+    "source_case": str(source_path),
+    "purpose": (
+        "higher-statistics review visualization; eight independent serial "
+        "shieldSim processes because shieldSim has no MPI shard contract"
+    ),
+}
+(run_root / "parallel_run_manifest.json").write_text(
+    json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+)
+print(run_root / "parallel_run_manifest.json")
+PY
+```
+
+Setting `min_histories`, `max_histories`, and `batch_size` to the same value
+forces each process to run exactly 12,500 histories; it disables an
+accuracy-triggered early stop that would otherwise give unequal shard sizes.
+Seeds `1020200` through `1020207` select distinct deterministic Geant4 random
+streams. Unique output prefixes and working directories prevent file-name
+collisions. `PYTHONDONTWRITEBYTECODE=1` prevents creation of `__pycache__` in
+the source tree.
+
+### 3. Launch and wait for all eight processes
+
+This is the parallel-launch command used. `subprocess.Popen` starts every
+worker before any `wait` call, so the processes execute concurrently rather
+than sequentially. Standard output and errors are kept in a separate
+`run.log` for each shard.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 - <<'PY'
+import json
+import os
+import subprocess
+import time
+from pathlib import Path
+
+executable = Path(os.environ["SHIELDSIM_EXE"]).resolve()
+run_root = Path(os.environ["SHIELDSIM_RUN_ROOT"]).resolve()
+workers = sorted(run_root.glob("shard_[0-9][0-9][0-9][0-9]"))
+if len(workers) != 8:
+    raise SystemExit(f"expected 8 shard directories, found {len(workers)}")
+
+started = time.perf_counter()
+processes = []
+logs = []
+for index, shard_directory in enumerate(workers):
+    log = (shard_directory / "run.log").open("wb")
+    logs.append(log)
+    process = subprocess.Popen(
+        [str(executable), "--case=case.json"],
+        cwd=shard_directory,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+    )
+    processes.append((index, process))
+
+exit_codes = {str(index): process.wait() for index, process in processes}
+for log in logs:
+    log.close()
+
+completion = {
+    "worker_exit_codes": exit_codes,
+    "wall_seconds": time.perf_counter() - started,
+    "complete": all(code == 0 for code in exit_codes.values()),
+}
+(run_root / "parallel_completion.json").write_text(
+    json.dumps(completion, indent=2) + "\n", encoding="utf-8"
+)
+print(json.dumps(completion, indent=2))
+if not completion["complete"]:
+    raise SystemExit("at least one shieldSim worker failed; do not pool outputs")
+PY
+```
+
+For the recorded run all eight exit codes were zero and the elapsed wall time
+was 86.104 seconds on the test host. This time is hardware- and cache-dependent
+and is evidence for this run, not a guaranteed performance requirement.
+
+### 4. Check the shard boundary before post-processing
+
+The integrity check used after execution was:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+run_root = Path(os.environ["SHIELDSIM_RUN_ROOT"])
+documents = []
+for shard_directory in sorted(run_root.glob("shard_[0-9][0-9][0-9][0-9]")):
+    result_paths = list(shard_directory.glob("*_result.json"))
+    if len(result_paths) != 1:
+        raise SystemExit(f"expected one result in {shard_directory}")
+    document = json.loads(result_paths[0].read_text(encoding="utf-8"))
+    if document["events"] != 12_500:
+        raise SystemExit(f"wrong history count in {result_paths[0]}")
+    documents.append(document)
+
+if len(documents) != 8:
+    raise SystemExit(f"expected 8 result documents, found {len(documents)}")
+if len({item["random_seed"] for item in documents}) != 8:
+    raise SystemExit("random seeds are not distinct")
+if len({item["source_hash"] for item in documents}) != 1:
+    raise SystemExit("source hashes differ")
+if len({item["geometry_hash"] for item in documents}) != 1:
+    raise SystemExit("geometry hashes differ")
+if len({item["physics_list"] for item in documents}) != 1:
+    raise SystemExit("physics-list identities differ")
+print("8 shards, 100000 histories: source, geometry, and physics identities match")
+PY
+
+if rg -n -i \
+  'fatal exception|segmentation fault|terminate called|(^|[^a-z])error([^a-z]|$)' \
+  "${SHIELDSIM_RUN_ROOT}"/shard_*/run.log; then
+  echo "fatal/error text found in a worker log" >&2
+  exit 1
+fi
+```
+
+The JSON check prevents accidental pooling of different sources, geometries,
+or physics settings and confirms both the total event count and independent
+seeds. The `rg` command searches all worker logs for fatal/error signatures;
+no match is the successful outcome.
+
+### 5. Pool review data and render the figures
+
+After the checks, the spectrum and LET text products were pooled by history
+count. For each transport-spectrum bin, the per-primary columns were combined
+as
+
+```text
+pooled bin = sum(worker histories * worker bin) / sum(worker histories).
+```
+
+The LET standard errors were not averaged. Each worker's event sum of squares
+was reconstructed from its mean, standard error, and event count; those raw
+moments were added and the standard error was recomputed for 100,000 events.
+The same event-moment rule, including numerator/denominator covariance, was
+used for the LET means and `H100/10`. The pooler first required identical bin
+edges, source hash, geometry hash, physics list, and distinct seeds. Its inputs,
+SHA-256 hashes, and pooling rule are recorded in
+`pooled/pooling_manifest.json`. This was visualization/statistical
+post-processing only: it did not combine eight result JSON files into a
+purported canonical result.
+
+The exact plot commands used on the resulting pooled text files were:
+
+```bash
+export SHIELDSIM_POOLED="${SHIELDSIM_RUN_ROOT}/pooled"
+
+python3 scripts/plot_shield_spectra.py \
+  "${SHIELDSIM_POOLED}/bon2020_proton_100000_pooled_spectra.dat" \
+  --save --format pdf --no-show
+python3 scripts/plot_shield_spectra.py \
+  "${SHIELDSIM_POOLED}/bon2020_proton_100000_pooled_spectra.dat" \
+  --save --format png --dpi 240 --no-show
+python3 scripts/plot_shield_spectra.py \
+  "${SHIELDSIM_POOLED}/bon2020_proton_100000_pooled_spectra.dat" \
+  --save --format svg --no-show
+
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/plot_let_spectrum.py \
+  "${SHIELDSIM_POOLED}/bon2020_proton_100000_pooled_let_spectrum.dat" \
+  --summary-json "${SHIELDSIM_POOLED}/pooled_quantity_summary.json" \
+  --output-prefix "${SHIELDSIM_POOLED}/bon2020_proton_100000_pooled_let_spectrum" \
+  --formats pdf png svg --dpi 240
+```
+
+The three `plot_shield_spectra.py` calls create vector PDF, high-resolution
+PNG, and vector SVG versions of the input/transmitted energy spectra.
+`--no-show` selects batch operation without an X display. The LET command
+creates the same three formats in one call; `--summary-json` adds the pooled
+track-mean and dose-mean reference lines and the second panel exposes the
+per-bin relative standard error.
+
+The recorded pooled scalar results met the requested 10% relative standard
+uncertainty for TID, track-mean LET, dose-mean LET, and `H100/10`. DDD and
+`n_eq` remained `null`/`not_assessable`, not zero, because the broad source and
+generated secondaries produced unsupported-species or out-of-table crossings.
+No clamping, extrapolation, or silent omission was used. Sparse secondary-alpha
+bins may still appear as separated segments; only 66 alpha shield-exit
+crossings occurred in 100,000 histories, and drawing through empty bins would
+misrepresent the Monte Carlo evidence.

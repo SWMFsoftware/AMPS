@@ -44,6 +44,13 @@ Examples
 import sys, os, re, argparse
 import numpy as np
 import matplotlib
+
+# Select a non-interactive backend before importing pyplot when the caller has
+# explicitly disabled display.  This keeps batch/HPC runs independent of an X
+# server while preserving the script's interactive default for desktop use.
+if "--no-show" in sys.argv:
+    matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
@@ -111,7 +118,14 @@ def parse_tecplot(path):
                 continue
             try:
                 vals = [float(v) for v in line.split()]
-                if len(vals) == 6: rows.append(vals)
+                # The original spectrum format contained the six Monte Carlo
+                # columns consumed by this plotter.  Versioned shieldSim cases
+                # retain those columns first and append five source-normalized
+                # columns.  Accept both layouts and deliberately select the
+                # per-primary Monte Carlo columns so the plotted units and
+                # transmission ratios remain consistent with the labels below.
+                if len(vals) >= 6:
+                    rows.append(vals[:6])
             except ValueError:
                 pass
     if not rows:
