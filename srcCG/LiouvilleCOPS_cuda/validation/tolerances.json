@@ -1,0 +1,109 @@
+{
+  "schema": "liouville_cops_cuda.tolerances",
+  "schema_version": 1,
+  "status": "approved_by_user_2026-10-19_except_provisional_items",
+  "proposed_utc": "2026-10-19",
+  "derived_from_capture": [
+    "cops_output/cuda_reference/c00_20261019T064536Z",
+    "cops_output/cuda_c03/gravity_20261019T171225Z"
+  ],
+  "notation": {
+    "eps": "2.220446049250313e-16 (FP64 unit roundoff * 2)",
+    "M": "per-point sum of |contribution| entering a pressure (fit/*__png_magnitude, *__prg_magnitude)",
+    "p_exact": "pressure from correctly rounded (math.fsum) sums of the reference terms"
+  },
+  "exact_equality": [
+    "observation point ids, row order, use/selection flags, selection reasons, saturation flags",
+    "facet order and geometry identities (elements.bin, BDF, gravity cache definition)",
+    "late_ng_not_rg and every NG/RG visibility mask (bitwise)",
+    "cliff masks after threshold-band facets are resolved by the CPU reference",
+    "parameter names, order, bounds, x_scale, optimizer settings",
+    "regularization rows and Gram/Cholesky factors (computed by the shared CPU code)"
+  ],
+  "fp64_evaluator": {
+    "pressure_vs_exact_sum": {
+      "abs_le": "64 * eps * M",
+      "measured_cpu_reference_max": "216 * eps * M"
+    },
+    "pressure_vs_cpu_reference": {
+      "abs_le": "512 * eps * M",
+      "rationale": "CPU sequential bincount error (measured <= 216 eps M) plus GPU fixed-order reduction (<= 64 eps M), with ~1.8x margin; RG cancellation ratio M/|p| measured 1.0"
+    },
+    "log_residual_vs_cpu_reference": {
+      "abs_le": "delta_i = w_gauge * 512 * eps * M_i / p_i",
+      "note": "r_i = w_g (ln p_i - ln p_obs_i), w_g = 1/sqrt(N_g); pressure floor applied identically"
+    },
+    "jacobian_vs_cpu_reference": {
+      "abs_le": "1e-11 * max_i |J_cpu[i, j]| per column j",
+      "provisional": "signed basis columns can cancel; C06 replaces this with an eps*magnitude bound once per-entry magnitudes are computed",
+      "status": "provisional",
+      "decision_point": "end of C06: replace by an eps*magnitude bound from per-entry magnitudes"
+    },
+    "jacobian_vs_central_difference": {
+      "note": "sanity only: reference analytic vs central difference agrees to <= 6.1e-6 on non-branch-crossing columns at h = 1e-6 max(1,|x|); branch-crossing columns are excluded, never tolerated by loosening"
+    },
+    "cpp_replay": {
+      "rel_le": 1e-06,
+      "note": "existing replay gate; measured 9.1e-10 on the subset; necessary but not sufficient"
+    },
+    "objective_vs_cpu_reference": {
+      "abs_le": "sum_i |r_i| delta_i + 0.5 * sum_i delta_i^2",
+      "replaces": "rel_le 1e-12 (amended at sign-off 2026-10-19)",
+      "reason": "a fixed relative bound fails a correct evaluator when residuals are small (rms 0.05 gives ~4e-12)",
+      "regularization_term": "computed by the shared CPU code from the same x: contributes zero"
+    }
+  },
+  "gravity_fp64": {
+    "acceleration_vs_package": {
+      "abs_le": "16 * eps * M",
+      "applies_to": "every target where the package result is finite",
+      "measured_synthetic_max": "0.33 eps M",
+      "also_rel_le": 1e-12,
+      "also_applies_to": "788k campaign targets: facets at 0.1 m / 0.05 m offset and on-surface centroids",
+      "measured_788k_rel_max": 2.26e-13,
+      "measured_package_summation_order_effect_max": 9.53e-14
+    },
+    "slope_vs_package_deg": {
+      "abs_le": 1e-09,
+      "measured_summation_order_effect_max_deg": 5.2e-12,
+      "measured_c03_max_deg": 8.53e-12
+    },
+    "threshold_band_deg": {
+      "value": 1e-06,
+      "rule": "facets with |slope - threshold| <= band are recomputed with the CPU reference and take its classification",
+      "measured_c03_full_field_facets_in_band": 0
+    },
+    "nonfinite_reference_points": "GPU NaN pattern must equal the package's; NaN points are reported and excluded, never repaired",
+    "not_numerical_allowances": {
+      "offset_halving_slope_deg": {
+        "gate": 0.25,
+        "measured_max": 0.00502
+      },
+      "cross_shape_resolution_p95_deg": 5.0
+    },
+    "term_magnitude": "M = G*rho * sum_faces[ sum_q |sigma_pq h_pq LN_pq| + h_p sum_q |sigma_pq| (|atan t0_q| + |atan t1_q|) + |sing_A| ], accumulated by kernels/gravity.cu",
+    "potential_vs_package": {
+      "abs_le": "16 * eps * M * max_target_vertex_distance"
+    },
+    "amendment_reason": "relative-to-|g| budgets are meaningless under cancellation (far field, symmetric centres): measured rel error up to 4e-10 at 50 R while |dg|/M <= 0.33 eps"
+  },
+  "repeatability": {
+    "same_configuration": "bitwise identical results for a pinned device model, launch configuration, CuPy and NVRTC version",
+    "cross_configuration": "measured and reported; must satisfy the budgets above"
+  },
+  "end_to_end_fit_fp64_provisional": {
+    "termination": "same status class (converged by ftol/xtol/gtol) or both at max_nfev",
+    "final_cost_rel_le": 1e-09,
+    "active_bound_set": "identical",
+    "parameters": "within 1e-3 Gauss-Newton posterior sigma; along null/near-null directions predictions within 1e-8 relative instead",
+    "note": "TRF amplifies 1e-13 evaluator differences along a trajectory; refine after the first C06/C07 equivalence run",
+    "status": "provisional",
+    "decision_point": "after the first full CPU-vs-GPU fit in C06/C07"
+  },
+  "mixed_precision": "no budget exists; C08 must propose and justify one, subject to separate approval",
+  "approved_utc": "2026-10-19",
+  "provisional_items": [
+    "fp64_evaluator.jacobian_vs_cpu_reference",
+    "end_to_end_fit_fp64_provisional"
+  ]
+}

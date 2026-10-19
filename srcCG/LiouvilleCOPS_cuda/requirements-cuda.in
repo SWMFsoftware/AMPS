@@ -1,0 +1,20 @@
+# Top-level requirements of the LiouvilleCOPS CUDA environment (Python 3.11).
+# requirements-cuda.lock is generated from this file with hashes:
+#   uv pip compile requirements-cuda.in --python-version 3.11 --generate-hashes -o requirements-cuda.lock
+#
+# NumPy and SciPy are pinned to the CPU reference interpreter's exact versions
+# (1.24.4 / 1.10.1) so the reused readers, regularization and SciPy TRF
+# optimizer are the same code in both environments.  CuPy 13.6 is the newest
+# CuPy that still supports NumPy 1.x (CuPy 14 requires NumPy >= 2).  CuPy uses
+# the system CUDA 12.4 toolkit (NVRTC, cuBLAS, cuSPARSE); no nvidia-* pip
+# runtime packages are installed, so a newer pip NVRTC cannot emit PTX that the
+# 550 driver (CUDA 12.4) rejects.
+numpy==1.24.4
+scipy==1.10.1
+cupy-cuda12x==13.6.0
+# Plotting only; the reference uses the system's matplotlib 3.1.2, which has
+# no Python 3.11 build.  Not part of any numerical comparison.
+matplotlib==3.7.5
+# CPU gravity reference, same release as the campaign (requirements-gravity.txt).
+polyhedral-gravity==3.3
+pytest==8.3.5
