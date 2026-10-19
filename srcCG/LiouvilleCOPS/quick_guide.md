@@ -662,6 +662,72 @@ table and report hashes plus profile, selection, report, and basis identities;
 it rejects incompatible schema-v2 fits and visibly labels unmanifested legacy
 tables. Its labels include profile, degree, lambda, and short report identity.
 
+### Validate the A1--A6 implementation
+
+Run the fast unit/synthetic gate plus the compiled C++ self-test:
+
+```bash
+python3 tools/run_a6_validation.py --threads 2
+```
+
+Before accepting a model change, also run the opt-in external-data integration
+gate and save its evidence:
+
+```bash
+python3 tools/run_a6_validation.py --integration --threads 2 \
+  --report a6_validation/validation_YYYYMMDD.json
+```
+
+The full gate checks selection profiles, Python/C++ harmonics and coefficient
+exchange, finite-difference derivatives, exact and noisy synthetic recovery,
+an intentionally unsupported mode, regularization limits, exact zero-
+enhancement numeric/cache behavior, and a Python-fit/C++-replay NG/RG
+tolerance of `1e-6`.
+An A6 pass establishes implementation consistency only; it does not establish
+physical uniqueness, instrument calibration, or validity of a full flight-data
+fit. See `A6_VALIDATION.md` for thresholds and interpretation.
+
+### Characterize performance before a scan (Stage A7)
+
+Measure the target host and the actual static base before launching many
+degrees/lambdas:
+
+```bash
+env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+  python3 tools/benchmark_fit_performance.py \
+  /absolute/path/to/output_fit_full_default_base \
+  --hk-table /absolute/path/to/COPS_HK_20160930.txt \
+  --profile all_available --degrees 5 6 7 8 --repeat 3 \
+  --jobs 1 2 4 8 14 --threads-per-process 1 \
+  --campaign-profiles 3 --campaign-lambdas 5 \
+  --campaign-max-nfev 1000 --campaign-id a7measured \
+  --json a7_performance/performance_YYYYMMDD.json \
+  --markdown a7_performance/performance_YYYYMMDD.md
+```
+
+The measured 100,000-facet base favored 8 independent processes with one
+numerical thread each; 14 processes fell below the declared 60% efficiency
+gate. This is host-specific. Relative reports remain under the configured
+`<AMPS>/cops_output`; the benchmark does not change that root. Its temporary
+one-evaluation output probes are deleted and are not scientific fits. See
+`A7_PERFORMANCE.md` for the exact resource table and campaign-estimate limits.
+
+For a geometry-resolution test, use the converted NASA PDS SPC SHAP5 BDFs.
+The least disruptive sequence is nominal 199k, then 384k, compared with the
+current 100k SHAP5 BDF. Start with one job and rebuild every geometry-dependent
+base/cache. A finer mesh does not raise the separate harmonic activity degree.
+
+The downloaded files and their PDS labels are under
+`/data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2`.
+Set `ShapeModel` to the selected `.bdf`, set `ShapeModelFormat = nastran`,
+retain `BodyFrame = 67P/C-G_CK`, and choose a fresh output directory. The BDFs
+use metre-unit `GRID*`/`CTRIA3`, matching the surface-card convention consumed
+from the original SHAP5 BDF. The raw lower four DSK reductions contain small
+zero-thickness reversed duplicate fin pairs; conversion removes exactly those
+pairs and proves closed, consistently wound topology. Exact retained counts,
+commands, and checksums are in `A7_PERFORMANCE.md`, each
+`.bdf.conversion.json`, and the local `SHA256SUMS`.
+
 The fitter takes its initial physical values from the selected base run; it
 does not keep a separate, universal starting vector. With the supplied
 `fit_base.in`, which uses `ActivityModel = shap5` and does not override the

@@ -31,14 +31,16 @@ Two distinctions are essential:
 [ROADMAP.md](ROADMAP.md) gives a staged implementation and validation plan
 for future work; its proposed features are not claims of current capability.
 [amendement_development_plan.md](amendement_development_plan.md) tracks the
-localized-activity A-stages and explicitly marks A1--A3 versus future stages.
+localized-activity A-stages and their individual implementation status.
 [SCRIPTS.md](SCRIPTS.md) is a script overview. Where older descriptions or
 script comments conflict with the implementation and local-file checks described
 here, use the qualifications in this README.
 [`HARMONIC_BASIS.md`](HARMONIC_BASIS.md) and
 [`ACTIVITY_ENHANCEMENT_FILE.md`](ACTIVITY_ENHANCEMENT_FILE.md) are the
 normative mathematical and coefficient-file specifications for the optional
-higher-degree H2O forward-model component.
+higher-degree H2O forward-model component. [`A6_VALIDATION.md`](A6_VALIDATION.md)
+defines its implementation-validation scope, tests, fixed thresholds, and
+claim limits.
 
 Contents:
 
@@ -173,11 +175,12 @@ convergence, uniqueness, uncertainty, or publication readiness.
 | `m004.in` | Geometry-only M004 DSK run that writes `output_M004/COPS_model.dat` for the collector's exact nearest-surface altitude; gas transport and fitting kernels are disabled. |
 | `selftest.in` | Analytic/numerical verification using a generated sphere. |
 | `HARMONIC_BASIS.md`, `ACTIVITY_ENHANCEMENT_FILE.md` | Normative Stage-A2 basis and Stage-A3 coefficient-file/model contracts. |
+| `A6_VALIDATION.md` | Stage-A6 validation scope, requirement-to-test map, predeclared tolerances, commands, and limits on what passing tests establish. |
 | `examples/activity_enhancement_zero_l5.txt` | Complete all-zero degree-5 forward-model regression example for `builtin:shap5` in `67P/C-G_CK`. |
 | `src/` | Entire C++ implementation and embedded numerical tables. |
 | `tools/` | Data preparation, fitting support, and plotting scripts; inventory below. |
 | `tests/test_rebuild_cops_boundary.py` | Standard-library tests for boundary rebuilding, with an opt-in local C++/mission-data integration check. |
-| `tests/test_a2_activity_basis.py`, `tests/test_a3_activity_enhancement.py`, `tests/test_a4_enhancement_fit.py`, `tests/test_a5_reporting.py` | Cross-language harmonic tests, strict optional-forward-model tests, fitter parameter/Jacobian/regularization tests, and report identity/table/plot tests. |
+| `tests/test_a2_activity_basis.py`, `tests/test_a3_activity_enhancement.py`, `tests/test_a4_enhancement_fit.py`, `tests/test_a5_reporting.py`, `tests/test_a6_validation.py` | Cross-language harmonic tests, strict optional-forward-model tests, fitter parameter/Jacobian/regularization tests, report identity/table/plot tests, and deterministic Stage-A6 synthetic recovery/observability tests. |
 | `data/` | Input-data directory; generated tables and plots have been removed. |
 | External `<COPS_DATA_ROOT>/SHAP5_Volume.bdf` | SHAP5 NASTRAN surface mesh used by `cops.in` and `fit_base.in`; the supplied inputs currently use its absolute path. |
 | External `<COPS_DATA_ROOT>/sources/` | L4 table and labels plus three source images; default root is `/data/vtenishe/rosetta_data_end_of_mission_cops`. |
@@ -239,6 +242,9 @@ alone; removed generated fit inputs also contained obsolete absolute paths.
 | `tools/plot_lcurve.py` | Displays fit quality versus regularization, temperatures, and activity diagnostics. | `lcurve.txt`. | Interactive plot or `--save` image. |
 | `tools/fit_cops.py` | Fits either the legacy degree-0--4 source/temperature/CO2 parameters or the controlled degree-5--8 H2O residual using static kernels. | Base run, kernels, elements, local coefficient tables, original input, HK table, optional replacement fit data or named selection profile. | Parameters, fitted activity, fitted pressures, rerun input, exact data selection, self-identifying A5 tables/plots; enhancement exchange file when selected; optionally an L-curve. |
 | `tools/run_fit_profile.py` | Validates and runs one or all checked-in selection profiles with safe, distinct output directories. | Static fitting base and `fit_profiles/*.json`. | The normal fitter products for each requested profile. |
+| `tools/run_a6_validation.py` | Runs the complete unit/synthetic gate, optionally enables local C++/mission-data integration tests, and runs the C++ self-test. | Compiled executable; integration mode also uses configured external shape, observation, SPICE, and source inputs. | Terminal evidence and an optional immutable JSON report; test run products stay in temporary directories. |
+| `tools/benchmark_fit_performance.py` | Measures the Stage-A7 production fitter startup, basis, residual/Jacobian, memory, independent-fit scaling, and result-package size. | A current manifested static base, matching HK table, profile/degrees/job candidates, and a declared campaign size. | Terminal resource tables plus optional new JSON/Markdown reports; temporary output probes are deleted. |
+| `tools/convert_dsk_to_bdf.py` | Converts one-segment type-2 PDS DSKs into the metre-unit NASTRAN surface format used by the original SHAP5 file, with strict topology repair/audit. | DSKs, mission frame kernel, and NAIF `dskbrief`/`dskexp`. | New `.bdf` files plus per-file conversion manifests; existing destinations are refused. |
 | `tools/cops_selection.py` | Shared selection/profile parser used by the fitter and profile runner; not a standalone command. | Model rows, base intervals, saturation mask, and a profile JSON. | Selected flags, reason codes, counts, and a canonical reason hash. |
 | `tools/activity_basis.py` | Reference Python implementation of the versioned normalized real spherical-harmonic basis used by tests and the Stage-A4 fitter; not a standalone command. | Cartesian directions or angular coordinates supplied by callers. | Basis arrays in the exact ordering defined by `HARMONIC_BASIS.md`; no files. |
 | `tools/cops_fit_reporting.py` | Stage-A5 report writer imported by the fitter; not a standalone command. | Final facet activity, pressures, selection/reason masks, and immutable report-identity payload. | Per-facet/degree/region/residual tables, one activity-map figure, three pressure/residual figures, and `fit_report.json`. |
@@ -704,6 +710,84 @@ against `run_manifest.json`. Their labels show basis, maximum degree, lambda
 when applicable, and a short enhancement-coefficient or legacy-activity
 identity. A Python fit and its C++ replay therefore do not appear as anonymous
 curves with potentially different activity inputs.
+
+#### Unit, synthetic, and integration validation (Stage A6)
+
+Stage A6 is a reproducible implementation-consistency gate, driven by
+`tools/run_a6_validation.py`. The normal gate discovers the complete Python
+suite and then runs `liouville_cops selftest.in`. The opt-in integration gate
+also enables tests that execute small real C++ bases, zero-enhancement
+regression, a Python degree-5 fit, its generated C++ replay, manifest
+validation, plotting, selection profiles, boundary rebuilding, and external
+source handling:
+
+```bash
+python3 tools/run_a6_validation.py --threads 2
+python3 tools/run_a6_validation.py --integration --threads 2 \
+  --report a6_validation/validation_YYYYMMDD.json
+```
+
+The deterministic synthetic tests use the production fitter residual and
+Jacobian. They check an exactly recoverable degree-5 mode, all degree-5--6
+Jacobian columns, several noisy modes, rank loss for a deliberately unseen
+mode, and weak/strong regularization limits. A separate round trip sends all
+56 degree-5--8 coefficients through the production Python writer and strict
+C++ reader. Existing tests cover Python/C++ basis equality, profile counts and
+reason codes, and the legacy workflows. The integration replay requires the
+maximum relative NG and RG pressure error to be no larger than `1e-6` and
+records the achieved values rather than merely assuming agreement.
+
+Passing A6 demonstrates consistency among these implementations and fixtures.
+It is not an independent validation of coma physics, COPS calibration, a
+full-descent optimizer result, or the uniqueness of a localized source. The
+complete requirements, numerical thresholds, current measured diagnostics,
+and failure interpretation are in [`A6_VALIDATION.md`](A6_VALIDATION.md).
+
+#### Performance characterization (Stage A7)
+
+Stage A7 measures the production fitter rather than extrapolating from the
+isolated harmonic-basis benchmark.  `tools/benchmark_fit_performance.py`
+loads a real manifested base in a fresh process per degree, constructs the
+same problem used by `fit_cops.py`, times repeated residual and analytic-
+Jacobian calls, records peak RSS, measures equal-work scaling across
+independent processes, and makes then deletes one-evaluation Stage-A5 output
+packages to measure their size.  Those output probes are not fitted results.
+
+On the measured 100,000-facet, 1,150-point base, degrees 5--8 required about
+89--90 s to reach a prepared problem, about 1.90--1.93 s per residual, and
+5.87--8.19 s per Jacobian.  Prepared-process peak RSS was about 11.0 GiB and
+each complete output probe was 32.4 MiB.  Independent-job efficiencies for
+1, 2, 4, 8, and 14 jobs were 1.000, 0.931, 0.774, 0.667, and 0.453.  The
+declared 60% efficiency and conservative 70%-of-available-memory gates
+therefore recommend `--jobs 8 --threads-per-process 1` on that host when at
+least eight lambdas are available.  This measured recommendation is supplied
+explicitly; it does not silently change the profile runner's portable default.
+
+For the declared planning case of three profiles, degrees 5--8, five lambdas,
+and 1,000 optimizer evaluations, the measured-rate estimate is 147.53 serial
+CPU-hours, 27.90 hours at the recommended throughput, and 1.9 GiB of output.
+It is an upper capacity scenario, not a convergence forecast: actual SciPy
+call counts, retries, C++ verification, and I/O contention are not predicted.
+
+The exact command, tables, metric definitions, safe output-name convention,
+and interpretation limits are in
+[`A7_PERFORMANCE.md`](A7_PERFORMANCE.md).  Repeat it on the target host before
+a campaign or after changing the shape, selection, kernels, libraries, or
+fitter implementation.
+
+The same document inventories higher-resolution 67P models. The current
+external SHAP5 BDF has 100,000 faces. The downloaded NASA PDS SPC SHAP5
+products at nominal 199k, 384k, 788k, 1M, and 3M resolution have been
+converted to metre-unit `GRID*`/`CTRIA3` BDFs. The raw lower four DSKs contain
+small numbers of reversed exact duplicate triangle pairs that violate the
+strict two-manifold check; the converter removes only those zero-thickness
+fin pairs, audits every remaining edge, and records exact removals and hashes
+in a manifest. Start a controlled geometry-resolution test with the converted
+199k BDF and one fitter job. Larger SHAP7/SHAP8
+PLY products are not directly supported, and no 1M-or-larger fitting-base
+memory/runtime claim has been measured.  Increasing facet count refines
+geometry, shadowing, and visibility; it does not increase the degree of the
+separate harmonic activity parameterization.
 
 `ActivityModel = shap5` or `shap5_1` selects local embedded coefficients.
 `file` reads three rows of 25 coefficients, for H2O, CO2, CO.
@@ -2392,6 +2476,22 @@ configured external shape/observation/SPICE inputs; it requires them to be
 installed. The collector test also checks that external source files are unchanged.
 Without `COPS_RUN_INTEGRATION=1`, three integration tests are skipped.
 These are routing/regression checks, not a new full-descent fit or calibration.
+
+Stage A6 was subsequently run with the current executable and all integration
+tests enabled:
+
+```bash
+python3 tools/run_a6_validation.py --integration --threads 2 \
+  --report /tmp/liouville_cops_a6_validation_20261018.json
+```
+
+All 66 Python unit, synthetic, and integration tests passed with no skips, and
+the following C++ self-test passed with zero failures. The enhanced Python fit
+and C++ replay differed by at most `5.360e-8` for NG and `5.368e-8` for RG,
+inside the predeclared `1e-6` threshold. Synthetic recovery, Jacobian,
+regularization, and unsupported-mode measurements are recorded in
+`A6_VALIDATION.md`. These results establish the tested implementation
+contracts, not a full-descent fit or independent scientific validation.
 
 ## 10. Limitations and priorities for improvement
 

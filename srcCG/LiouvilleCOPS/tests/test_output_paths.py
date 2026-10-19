@@ -92,7 +92,9 @@ class PathTests(unittest.TestCase):
         env = dict(os.environ, COPS_OUTPUT_ROOT=str(self.root))
         for script in ("cops_hk_table.py", "digitize_cops_figures.py", "collect_cops_sources.py",
                        "plot_cops_model.py", "plot_cops_model_altitude.py", "plot_lcurve.py",
-                       "rebuild_cops_boundary.py", "fit_cops.py"):
+                       "rebuild_cops_boundary.py", "fit_cops.py",
+                       "run_a6_validation.py", "benchmark_fit_performance.py",
+                       "convert_dsk_to_bdf.py"):
             with self.subTest(script=script):
                 result = subprocess.run([sys.executable, str(APP / "tools" / script), "--help"],
                                         env=env, text=True, capture_output=True, timeout=30)
@@ -183,6 +185,53 @@ class ProductIntegrationTests(unittest.TestCase):
         self.assertTrue((base / "input.snapshot.in").is_file())
         return base
 
+    @staticmethod
+    def model_rows(path):
+        """Return only numeric table rows, excluding configuration headers.
+
+        The zero-enhancement regression intentionally compares the complete
+        serialized rows.  Headers must differ because the enhanced run records
+        its optional component and coefficient identity; the physical columns
+        must not differ when every residual coefficient is exactly zero.
+        """
+        return [line for line in path.read_text().splitlines()
+                if line and not line.startswith("#")]
+
+    def test_zero_enhancement_forward_regression(self):
+        """A6 gate 1: a complete zero degree-5 file changes no prediction.
+
+        This is an actual C++/SHAP5 integration test, not the lightweight
+        parser probe.  It also proves that enabling the optional component does
+        not alter ``elements.bin`` or the static transport kernels.
+        """
+        base = self.make_base("a6_zero_base")
+        source = self.work / "a6_zero_enhancement.in"
+        source.write_text(
+            (APP / "fit_base.in").read_text() +
+            "\nFirstPoint = 0\nLastPoint = 1\n"
+            "OutputDirectory = a6_zero_enhancement\n"
+            "NGAcceptance = full\nNGHeadOnWeight = off\nThreads = 2\n"
+            "ActivityEnhancementModel = real_spherical_harmonics_v1\n"
+            "ActivityEnhancementDegree = 5\n"
+            "ActivityEnhancementFile = %s\n"
+            "ActivityEnhancementScale = 1.0\n" %
+            (APP / "examples/activity_enhancement_zero_l5.txt"))
+        self.run_command([str(APP / "liouville_cops"), str(source)])
+        enhanced = self.out / "a6_zero_enhancement"
+
+        self.assertEqual(self.model_rows(base / "COPS_model.dat"),
+                         self.model_rows(enhanced / "COPS_model.dat"))
+        self.assertEqual((base / "elements.bin").read_bytes(),
+                         (enhanced / "elements.bin").read_bytes())
+        for kernel in sorted((base / "kernels").glob("point=*.bin")):
+            self.assertEqual(kernel.read_bytes(),
+                             (enhanced / "kernels" / kernel.name).read_bytes())
+        diagnostics = enhanced / "ActivityEnhancementFacets.dat"
+        self.assertTrue(diagnostics.is_file())
+        manifest = json.loads((enhanced / "run_manifest.json").read_text())
+        self.assertTrue(manifest["activity_enhancement"]["enabled"])
+        self.assertEqual(manifest["activity_enhancement"]["coefficient_count"], 11)
+
     def test_plot_digitize_collect_into_output_root(self):
         source_files = [p for p in cops_paths.sources_root().rglob("*") if p.is_file()]
         old = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in source_files}
@@ -266,10 +315,14 @@ class ProductIntegrationTests(unittest.TestCase):
             sys.executable, str(APP / "tools/fit_cops.py"), "output_small",
             "--enhancement-degree", "5", "--fix-legacy-activity",
             "--fix-temperature", "--fix-kappa", "--max-nfev", "1",
-            "--lambda", "0.001", "--out", "enhanced_small"], cwd=self.work)
+            "--lambda", "0", "--out", "enhanced_small"], cwd=self.work)
         enhanced = self.out / "enhanced_small"
         self.assertTrue((enhanced / "ActivityEnhancementFit.txt").is_file())
         self.assertTrue((enhanced / "ActivityEnhancementFacets.dat").is_file())
+        unregularized_manifest = json.loads(
+            (enhanced / "fit_manifest.json").read_text())
+        self.assertIn("lambda=0: unregularized activity fit",
+                      unregularized_manifest["objective"]["warnings"])
         self.run_command([
             sys.executable, str(APP / "tools/plot_cops_model.py"),
             "enhanced_small", "--save", "plots/enhanced_fit.png"], cwd=self.work)
@@ -283,6 +336,13 @@ class ProductIntegrationTests(unittest.TestCase):
         enhanced_manifest = json.loads((enhanced / "fit_manifest.json").read_text())
         self.assertEqual(enhanced_manifest["states"]["cpp_prediction_agreement"],
                          "verified")
+        # The validator writes the measured differences; A6 never infers
+        # agreement merely from a successful process exit.
+        differences = enhanced_manifest["cpp_verification"]["max_relative_difference"]
+        self.assertLessEqual(differences["NG"], 1.0e-6)
+        self.assertLessEqual(differences["RG"], 1.0e-6)
+        print("A6 fitted Python/C++ pressure agreement: NG %.3e, RG %.3e" %
+              (differences["NG"], differences["RG"]))
 
     def test_geometry_only_matches_full_geometry(self):
         full = self.make_base("output_geometry_full")

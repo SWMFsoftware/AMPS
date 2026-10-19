@@ -567,6 +567,22 @@ Acceptance gate:
 
 ### Stage A6 — Unit, synthetic, and integration validation
 
+Implementation status (2026-10-18): **implemented and validated**. The executable driver
+`tools/run_a6_validation.py` runs full Python discovery plus the C++ self-test,
+and enables all external-input integration cases with `--integration`.
+`tests/test_a6_validation.py` adds production-residual exact/noisy recovery,
+all degree-5--6 finite-difference columns, deliberately rank-deficient unseen-
+mode behavior, regularization limits, and a production Python-writer/C++-
+reader round trip containing all 56 degree-5--8 coefficients. The surrounding
+A1--A5 and output-path integration tests provide the basis, selection-count/
+reason, zero-enhancement, report, and legacy-workflow coverage. The small
+enhanced fit/replay integration enforces
+and records the predeclared `1e-6` NG/RG relative-pressure tolerance.
+Requirements, fixed thresholds, commands, measured results, and claim limits
+are documented in `A6_VALIDATION.md`. This gate establishes implementation
+consistency; it does not independently validate the physics, calibration,
+full-descent fit, or source uniqueness.
+
 Goal: prove implementation consistency before fitting flight data.
 
 Required tests:
@@ -593,6 +609,17 @@ Acceptance gate:
 - Legacy tests and current runnable workflows remain green.
 
 ### Stage A7 — Performance characterization
+
+**Implementation status (2026-10-18): complete for the current 100,000-facet
+base and measured host.** `tools/benchmark_fit_performance.py` exercises the
+production model/residual/Jacobian in degree-isolated workers, measures output
+packages with deleted one-evaluation probes, benchmarks independent-job
+scaling without BLAS/OpenMP oversubscription, and emits optional immutable
+JSON/Markdown evidence. Deterministic policy/report tests are in
+`tests/test_a7_performance.py`; the measured tables, exact command, campaign
+formula, recommended 8 jobs/1 numerical thread, and interpretation limits are
+recorded in `A7_PERFORMANCE.md`. The benchmark must be rerun when the host,
+shape, selection, static base, libraries, or fitter changes.
 
 Goal: define a safe compute envelope before full scans.
 

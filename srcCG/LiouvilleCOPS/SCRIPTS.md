@@ -26,6 +26,9 @@ helper, not a standalone command.
 | [`tools/plot_cops_model_altitude.py`](#plot_cops_modelpy-plot_cops_model_altitudepy) | the same, vs. altitude |
 | [`tools/fit_cops.py`](#fit_copspy) | fit the source rate and temperature to the COPS data |
 | [`tools/run_fit_profile.py`](#run_fit_profilepy) | run one or all audited selection profiles safely |
+| [`tools/run_a6_validation.py`](#run_a6_validationpy) | run the Stage-A6 unit, synthetic, C++, and optional integration gate |
+| [`tools/benchmark_fit_performance.py`](#benchmark_fit_performancepy) | measure Stage-A7 production-fitter time, memory, output size, and independent-job scaling |
+| [`tools/convert_dsk_to_bdf.py`](#convert_dsk_to_bdfpy) | convert archived type-2 DSK shapes to validated metre-unit NASTRAN surface BDFs |
 | [`tools/benchmark_activity_basis.py`](#benchmark_activity_basispy) | benchmark the isolated degree-5--8 real-harmonic table on an element cache |
 | [`tools/validate_cops_run.py`](#validate_cops_runpy) | validate a fitting cache or register C++ reproduction of fitted pressures |
 | [`tools/plot_lcurve.py`](#plot_lcurvepy) | plot the L-curve of the regularized fit |
@@ -78,6 +81,80 @@ in `tools/activity_basis.py` and C++ in
 H2O forward-model component using the strict format in
 `ACTIVITY_ENHANCEMENT_FILE.md`; Stage A4 estimates its coefficients and Stage
 A5 reports their facet/degree/pressure diagnostics.
+
+---
+
+## `convert_dsk_to_bdf.py`
+
+* **Purpose:** convert an archived one-segment SPICE type-2 DSK to the
+  surface-only NASTRAN format consumed from the original SHAP5 BDF. Coordinates
+  are converted from kilometres to metres and written as `GRID*`; retained
+  triangular plates are written as `CTRIA3` in their original relative order.
+* **Topology policy:** reversed exact duplicate triangle pairs in the lower
+  PDS SHAP5 reductions are zero-thickness fins. The tool removes both copies
+  of only those exact pairs and then proves that every remaining edge occurs
+  exactly twice with opposite direction. Other duplicates, open/non-manifold
+  edges, bad indices, wrong counts/types/frames, and inconsistent winding are
+  fatal. It does not create `CTETRA`; LiouvilleCOPS ignores those volume cards
+  in the historical BDF.
+* **Inputs:** one or more DSKs, `--out-dir`, `--frame-kernel`, and either
+  `--cspice-root` or explicit `--dskbrief`/`--dskexp`. The expected frame
+  defaults to `67P/C-G_CK`.
+* **Outputs:** one new `.bdf` and `.bdf.conversion.json` per input. Existing
+  destinations are refused. The manifest binds source/PDS-label/output hashes,
+  DSK and retained counts, conversion scale/commands, and removed face pairs.
+* **Example:**
+
+  ```bash
+  python3 tools/convert_dsk_to_bdf.py \
+    /data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2/cg_spc_shap5_199k_cart.bds \
+    --out-dir /data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2 \
+    --frame-kernel /home/vtenishe/SPICE/Kernels/ROSETTA/esa_2022/fk/ROS_V38.TF \
+    --cspice-root /home/vtenishe/SPICE/cspice
+  ```
+
+Select the result with `ShapeModelFormat = nastran`, not `dsk`. See
+`A7_PERFORMANCE.md` for the five converted files and exact audit results.
+
+---
+
+## `benchmark_fit_performance.py`
+
+* **Purpose:** characterize the complete Stage-A7 Python fitter on an actual
+  manifested static base. It times startup, facet-basis construction,
+  production residual and analytic-Jacobian calls, measures peak RSS and
+  independent-process scaling, and estimates a declared campaign's capacity
+  and storage.
+* **Inputs:** positional manifested base; `--hk-table`; one named profile;
+  `--degrees` (default 5 6 7 8); timing `--repeat`; candidate `--jobs`
+  (default 1 2 4 8 14); and `--threads-per-process` (default 1). Campaign
+  counts are explicit planning inputs, not inferred optimizer behavior.
+* **Outputs:** resource/scaling/campaign tables on stdout. Optional `--json`
+  and `--markdown` paths must be new and are resolved through the normal
+  output root. By default, one production fit per degree is deliberately
+  stopped after one evaluation to measure a complete A5 package; these
+  temporary directories are deleted and are not scientific fits.
+* **Parallel meaning:** jobs are independent fit-like workers. The script
+  fixes OpenMP/OpenBLAS/MKL to the requested thread count inside each worker;
+  it does not parallelize a single SciPy lambda fit.
+* **Example:**
+
+  ```bash
+  env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+    python3 tools/benchmark_fit_performance.py \
+    /absolute/path/to/output_fit_full_default_base \
+    --hk-table /absolute/path/to/COPS_HK_20160930.txt \
+    --profile all_available --degrees 5 6 7 8 --repeat 3 \
+    --jobs 1 2 4 8 14 --threads-per-process 1 \
+    --campaign-profiles 3 --campaign-lambdas 5 \
+    --campaign-max-nfev 1000 --campaign-id a7measured \
+    --json a7_performance/performance_YYYYMMDD.json \
+    --markdown a7_performance/performance_YYYYMMDD.md
+  ```
+
+Use `--skip-output-probe` when product-size measurement is unnecessary. See
+[`A7_PERFORMANCE.md`](A7_PERFORMANCE.md) for measured tables, recommendation,
+limits, and the higher-resolution shape-model inventory.
 
 ---
 
@@ -276,6 +353,35 @@ temperature constraints, `kappa`, optimizer tolerances, replacement data,
 housekeeping table, Jacobian/data-only modes, and legacy-base acceptance.
 With a named profile, replacement data must include every base point and the
 profile overrides its use flags. The runner does not change the physical model.
+
+## `run_a6_validation.py`
+
+* **Purpose:** execute the complete Stage-A6 implementation-consistency gate
+  from one command. The default discovers all Python unit/synthetic tests and
+  runs `liouville_cops selftest.in`; `--integration` additionally enables the
+  local C++/mission-data workflows guarded by `COPS_RUN_INTEGRATION`.
+* **Controls:** `--threads N` sets C++ OpenMP threads (default 2),
+  `--integration` enables the external-input tests, `--skip-selftest` omits
+  the C++ self-test, and `--report FILE` writes a new JSON evidence record.
+  Numerical-library threads are fixed at one during the suite.
+* **Outputs:** test products use temporary directories. The optional report
+  records commands, environment, timings, return codes, output tails, and
+  executable/test hashes. Relative report names are under the configured
+  output root; existing reports are never overwritten.
+* **Examples:**
+
+  ```bash
+  python3 tools/run_a6_validation.py --threads 2
+  python3 tools/run_a6_validation.py --integration --threads 2 \
+    --report a6_validation/validation_YYYYMMDD.json
+  ```
+
+The integration gate includes an exact numeric-row and cache-byte zero-
+enhancement forward regression
+and a degree-5 Python-fit/C++-replay pressure check with an NG/RG relative
+tolerance of `1e-6`. Passing does not independently validate the physical
+model, instrument calibration, source localization, or a full descent fit.
+See [A6_VALIDATION.md](A6_VALIDATION.md) for every test and threshold.
 
 ## `validate_cops_run.py`
 

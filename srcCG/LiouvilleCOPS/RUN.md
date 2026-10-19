@@ -223,6 +223,9 @@ shell-specific environment-variable assignment.
 | `tools/digitize_cops_figures.py` | Regenerate approximate pressure traces from the three supplied images. | Section 8; five CSV files and optional check plots. |
 | `tools/fit_cops.py` | Select data, check the fit model/Jacobian, fit once, or scan regularization. | Section 9; included working file with shared output paths. |
 | `tools/run_fit_profile.py` | Run one or all versioned data-selection profiles through the same fitter. | Section 9; defaults to `--jobs 14`, distinct outputs, and one numerical thread per fit process. |
+| `tools/run_a6_validation.py` | Run the Stage-A6 unit/synthetic gate, C++ self-test, and optional local integration gate. | Section 6; terminal results and optional JSON report. |
+| `tools/benchmark_fit_performance.py` | Characterize Stage-A7 production-fitter time, memory, output size, and independent-fit scaling. | Section 6; terminal tables and optional new JSON/Markdown reports. |
+| `tools/convert_dsk_to_bdf.py` | Convert archived type-2 DSK meshes to the original SHAP5 NASTRAN surface convention with topology validation. | Section 5; new BDFs and conversion manifests beside external shape data. |
 | `tools/benchmark_activity_basis.py` | Build and time the isolated degree-5--8 Stage-A2 basis on a version-1 element cache. | Command below; prints JSON and does not modify the cache. |
 | `tools/validate_cops_run.py` | Strictly validate a static cache or register C++ reproduction of fitted pressures. | Run on a base, or with `--fit FIT --verification RUN`; see the integrity section above. |
 | `tools/plot_cops_model.py` | Compare modeled and observed NG/RG pressures versus time or altitude. | Section 11; interactive figure or `--save` image. |
@@ -506,6 +509,46 @@ it converts DSK kilometers to meters. NASTRAN coordinates are assumed to be
 meters. Keep `RequireClosedSurface = on` unless deliberately investigating
 mesh topology; changing it is not a substitute for fixing an invalid mesh.
 
+### Convert archived SHAP5 DSKs to the original BDF convention
+
+The original `SHAP5_Volume.bdf` uses metre-unit NASTRAN `GRID*` and `CTRIA3`
+cards. Its `CTETRA` volume cards are ignored by LiouvilleCOPS, so the converted
+products contain the complete surface cards but do not invent volume cells.
+Convert the downloaded PDS models with the authoritative NAIF readers:
+
+```bash
+python3 tools/convert_dsk_to_bdf.py \
+  /data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2/cg_spc_shap5_199k_cart.bds \
+  /data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2/cg_spc_shap5_384k_cart.bds \
+  /data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2/cg_spc_shap5_788k_cart.bds \
+  /data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2/cg_spc_shap5_001m_cart.bds \
+  /data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2/cg_spc_shap5_003m_cart.bds \
+  --out-dir /data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2 \
+  --frame-kernel /home/vtenishe/SPICE/Kernels/ROSETTA/esa_2022/fk/ROS_V38.TF \
+  --cspice-root /home/vtenishe/SPICE/cspice
+```
+
+The tool refuses existing BDF/manifest destinations. It requires exactly one
+type-2 segment in `67P/C-G_CK`, uses 17-digit `dskexp` vertices, converts km to
+m, and preserves the relative order of retained plates. The lower four PDS
+reductions contain reversed exact duplicate triangle pairs forming
+zero-thickness fins. Both copies of only those exact pairs are removed; any
+same-winding duplicate, open edge, non-manifold remainder, or inconsistent
+winding is fatal. Each `.bdf.conversion.json` records source/output hashes,
+counts, scale, commands, PDS label, and the exact removed input face IDs.
+
+Use the converted surface as follows:
+
+```ini
+ShapeModel = /data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2/cg_spc_shap5_199k_cart.bdf
+ShapeModelFormat = nastran
+BodyFrame = 67P/C-G_CK
+```
+
+Choose a fresh `OutputDirectory` and rebuild all geometry-dependent tables and
+kernels. Exact retained counts and validation results are in
+[A7_PERFORMANCE.md](A7_PERFORMANCE.md).
+
 ## 6. Smoke test and parallel execution
 
 After building:
@@ -536,6 +579,83 @@ Runtime thread control is independent of compilation parallelism:
 
 The executable prints its OpenMP maximum thread count on startup. Use
 `OMP_NUM_THREADS=1` for a one-thread run; no `mpiexec` wrapper is needed.
+
+### Stage-A6 implementation validation
+
+Run the complete fast gate after changing the fitter, harmonic basis,
+coefficient exchange, selection logic, manifests, or C++ source model:
+
+```bash
+python3 tools/run_a6_validation.py --threads 2
+```
+
+This discovers every Python test, including deterministic exact/noisy/
+unobservable synthetic recovery, Jacobian, regularization, coefficient-file,
+basis, selection, and reporting tests. It then runs the compiled C++ analytic
+and transport self-test. `--threads` sets `OMP_NUM_THREADS` for C++ work;
+BLAS and MKL are held to one thread to avoid multiplying worker counts.
+
+Before accepting an A-stage change, run the external-data integration gate:
+
+```bash
+python3 tools/run_a6_validation.py --integration --threads 2 \
+  --report a6_validation/validation_YYYYMMDD.json
+```
+
+Integration mode sets `COPS_RUN_INTEGRATION=1` and exercises small real C++
+runs, a bitwise zero-enhancement regression, a Python degree-5 fit and its
+generated C++ replay, the `1e-6` NG/RG comparison gate, plotting, profile
+selection, boundary rebuilding, and configured mission/source inputs. Test
+products are created in temporary directories and removed by their tests. An
+optional report path must be new; a relative path is placed under
+`<AMPS>/cops_output`, while an absolute path must remain outside this source
+tree. The JSON records exact commands, environment, elapsed times, return
+codes, output tails, and hashes of the executable and A6 test source.
+
+Use `--skip-selftest` only when intentionally testing the Python portion; it
+does not constitute the full gate. Passing these checks is implementation
+consistency, not independent physics, calibration, localization, or
+full-descent-fit validation. See [A6_VALIDATION.md](A6_VALIDATION.md) for the
+requirement matrix, thresholds, and interpretation.
+
+### Stage-A7 performance characterization
+
+Before a multi-degree/multi-lambda campaign, measure the actual manifested
+base on the target host.  Use absolute input paths if the retained base and HK
+table are outside the configured output root; doing so does not change where
+future relative outputs go:
+
+```bash
+env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+  python3 tools/benchmark_fit_performance.py \
+  /absolute/path/to/output_fit_full_default_base \
+  --hk-table /absolute/path/to/COPS_HK_20160930.txt \
+  --profile all_available \
+  --degrees 5 6 7 8 \
+  --repeat 3 \
+  --jobs 1 2 4 8 14 \
+  --threads-per-process 1 \
+  --campaign-profiles 3 \
+  --campaign-lambdas 5 \
+  --campaign-max-nfev 1000 \
+  --campaign-id a7measured \
+  --json a7_performance/performance_YYYYMMDD.json \
+  --markdown a7_performance/performance_YYYYMMDD.md
+```
+
+Relative report paths above are created under `<AMPS>/cops_output` (or
+`COPS_OUTPUT_ROOT`), must be new, and do not change the default output root.
+The four default output-size probes run a real production fit truncated at
+one evaluation in temporary directories and delete it afterward; they are not
+science fits.  Use `--skip-output-probe` to omit them.
+
+The measured 100,000-facet base recommended
+`--jobs 8 --threads-per-process 1` for at least eight independent lambdas.
+Fourteen jobs were faster in aggregate but fell below the declared 60%
+parallel-efficiency gate.  Repeat the measurement on another host or shape;
+do not treat that recommendation as portable.  Full tables, metric meanings,
+the campaign-estimate formula, higher-resolution shape options, and caveats
+are in [A7_PERFORMANCE.md](A7_PERFORMANCE.md).
 
 ## 7. Run the forward model and generate a fitting base
 
