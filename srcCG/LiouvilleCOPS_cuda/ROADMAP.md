@@ -21,7 +21,9 @@ the numerical policy is in `VALIDATION.md`.
 | C05 | complete: visibility masks and restart bundle (bitwise equal to the CPU builder) |
 | C06 | complete: numerical gate passed on the C00b subset and the full 1150-point set; Jacobian budget approved |
 | C07 | complete: one vs two GPUs bitwise (evaluator and a full fit), 1.9× Jacobian speedup |
-| C08 – C10 | not started |
+| C08 | complete (2026-10-20): FP64 restructure, bitwise equal to the generic kernel, Jacobian 2.6× faster (fit 1.65×); mixed precision skipped |
+| C09 | in progress: first four production fits done (not converged), packaged with inputs and rerun recipe |
+| C10 | not started |
 | C11 | planned (added 2026-10-20): GPU rebuild of the fitting base, after C10 |
 
 ## 1. Objective and scope
@@ -456,12 +458,44 @@ every manifest. Change dependencies only through the lock.
   * bounded memory;
   * measured latency and throughput.
 
-### C08: mixed precision (optional)
+### C08: FP64 evaluator restructure (replaces mixed precision; user decision 2026-10-20)
 
-FP64 is the release baseline. The inverse problem is ill-conditioned, clipped and has
-active bounds, so FP32 throughput is not evidence of scientific sufficiency. Storage
-precision is tested separately from arithmetic precision. A budget needs the user's
-approval, and failing this stage never delays a correct FP64 release.
+**Mixed precision is skipped** (user decision 2026-10-20). The profile
+(`cuda_c08/profile_20261020T052129Z`, STATUS.md) shows that the evaluator is not bound by
+FP64 arithmetic:
+* each sum costs about 3× its FP64 arithmetic;
+* `eval_partial` has a 256-byte stack frame: the runtime-indexed `double acc[32]` lives in
+  local memory;
+* once the evaluator is restructured, a fixed per-fit overhead of about 6.5 min and the
+  memory floor would dominate, so FP32 would add only about 1.3× while giving up the
+  approved budgets and optimizer reproducibility.
+
+Storage precision (FP32 kernels) may be reconsidered with C11 for much larger meshes, only
+with its own validation and approval.
+
+**Restructure:**
+1. Kernels specialized at compile time for the fixed code sets: pressures (5), pressures +
+   temperatures (14), and groups of G activity/template columns (2G sums). Accumulators
+   are fixed-size, fully unrolled arrays held in registers (verified by ptxas: no stack
+   frame, no spills).
+2. The per-record factors (`af`, `u`, `dl`, `dlx`, `dn`, the static weights) are computed
+   once per record and pass and shared by every sum of the launch.
+3. **Exactness:**
+   * every per-term expression is the current one (`--fmad=false`);
+   * the per-thread strided fold over records, the fixed shared-memory tree and the
+     block-partial order are unchanged.
+   * Results are therefore **bitwise identical** to the current tree mode. No new
+     tolerance is needed.
+   * The generic kernel stays as the fallback for arbitrary code lists, and the
+     sequential mode stays as the bitwise-CPU verification mode.
+
+**Gate:**
+* bitwise equality with the current tree mode for every fixture state and configuration
+  (synthetic tests, the C00b subset, and the full 1150-point set);
+* `c06_full_run.py` and `c07_multi_gpu_check.py` pass unchanged;
+* a full B29 fit is bitwise equal to `fit_788k_gpu_B29_n2000_r2`;
+* the speedup is measured with `profile_evaluator.py`. Target: full Jacobian ≤ 0.3 s
+  (from 0.66 s).
 
 ### C09: production matrix (replaced)
 
@@ -584,7 +618,7 @@ production run by itself.
 ```text
 repaired CPU tree + approved policy ─► C00b ─► C02 ext ─► C06 (B29 → N/C/NC) ─► C07 ─┐
 C03 field ─► [acceptance route] ─► C04 cache ─► C05 cliff bundle ────────────────────┼─► C09 ─► C10
-C08 (optional, after validated FP64)                                                  ┘
+C08 (FP64 evaluator restructure; mixed precision skipped)                             ┘
                                                                          C10 ─► C11 (GPU base rebuild)
 ```
 
@@ -628,6 +662,9 @@ directory concurrently. Integration tests are rerun at each dependency boundary.
 * **Evaluation limit:** `max_nfev` is a driver parameter: 2000 for production fits (the
   default) and 1000 for comparisons with the CPU (`--cpu-comparison`).
 * **Jacobian budget** ≤ 1024 eps·M_J per entry (approved 2026-10-19, end of C06).
+* **C08:** mixed precision is skipped. C08 is redefined as an FP64 evaluator restructure:
+  register accumulators, compile-time-specialized kernels, bitwise equal to the current
+  mode.
 * **C11:** a GPU rebuild of the fitting base (`rebuild_cops_boundary.py`) for larger surface
   models is added to the plan and scheduled after C10, because the current campaign does
   not need it.

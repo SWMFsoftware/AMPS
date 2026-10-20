@@ -9,7 +9,7 @@ identifies exactly the code that ran.
 | File | Stage | Functions | Purpose |
 |---|---|---|---|
 | `store_audit.cu` | C02 | `audit_records`, `audit_offsets` | Recount transport-kernel invariants in device memory after upload |
-| `pressure.cu` | C06 | `precompute_static`, `eval_sequential`, `eval_partial`, `eval_finish` | Per-contribution terms of `fit_cops.Model.evaluate` and their per-point sums (pressures, temperature sums, activity/template columns); verification and production reductions |
+| `pressure.cu` | C06, C08 | `precompute_static`, `eval_sequential`, `eval_partial`, `eval_finish`; C08 `eval_fused_p5`, `eval_fused_p14`, `eval_fused_c1`…`c16` (register accumulators, bitwise equal to `eval_partial`) | Per-contribution terms of `fit_cops.Model.evaluate` and their per-point sums (pressures, temperature sums, activity/template columns); verification and production reductions |
 | `gravity.cu` | C03 | `gravity_fold`, `gravity_partial`, `gravity_reduce` | **GPLv3** translation of polyhedral-gravity 3.3: exact FP64 potential and acceleration, plus the term magnitude M |
 
 Planned (ROADMAP §4): `masks.cu` (C05).

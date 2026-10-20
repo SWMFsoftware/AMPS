@@ -241,3 +241,118 @@ extern "C" __global__ void eval_finish(
     for (long long b = first_block[p]; b < first_block[p + 1]; ++b) s = s + partial[b * nsums + k];
     out[i] = s;
 }
+
+// ---------------------------------------------------------------------------
+// C08: FP64 restructure (fused, compile-time specialized; production tree mode)
+// ---------------------------------------------------------------------------
+// eval_partial keeps its accumulators in a runtime-indexed array, which ptxas
+// places in local memory (256-byte stack frame), and dispatches every term on a
+// runtime code.  The kernels below compute the SAME sums for the fixed code sets
+// the evaluator requests, with a fixed number N of accumulators known at compile
+// time (fully unrolled, held in registers):
+//   NP = 5   : pressure codes 0..4
+//   NP = 14  : pressure codes 0..4, then temperature codes 5..13
+//   G  > 0   : activity/template columns col0 .. col0+G-1: first the G NG sums
+//              (codes 1000+c), then the G RG sums (codes 2000+c)
+// Exactness: every term is written exactly as in term() (same operands, same
+// left-to-right order, --fmad=false); each accumulator folds the thread's
+// records r = begin+t, begin+t+BLOCK, ... in the same order; the shared-memory
+// tree and the partial layout partial[b*N + k] are those of eval_partial, and
+// eval_finish adds the block partials in the same order.  The per-sum results
+// are therefore bitwise identical to eval_partial for the same block table.
+template <int NP, int G>
+__device__ __forceinline__ void fused_body(
+    const long long* __restrict__ blocks, const int* __restrict__ face,
+    const double* __restrict__ wnH, const double* __restrict__ wvH, const double* __restrict__ wpH,
+    const double* __restrict__ wnC, const double* __restrict__ wvC,
+    const double* __restrict__ xlit, const unsigned char* __restrict__ lit,
+    const double* __restrict__ af_face, const unsigned char* __restrict__ active,
+    const double* __restrict__ colbasis, long long nfaces, int col0,
+    const double* __restrict__ pp, double* __restrict__ partial)
+{
+    constexpr int N = NP + 2 * G;
+    __shared__ double tree[BLOCK];
+    const Params P = load_params(pp);
+    const long long b = blockIdx.x;
+    const long long begin = blocks[3 * b + 1], end = blocks[3 * b + 2];
+    double acc[N];
+#pragma unroll
+    for (int k = 0; k < N; ++k) acc[k] = 0.0;
+    for (long long r = begin + threadIdx.x; r < end; r += BLOCK) {
+        const int f = face[r];
+        double af, u, dl, dlx, dn;
+        record_factors(r, f, af_face, xlit, lit, P, af, u, dl, dlx, dn);
+        if (NP >= 5) {
+            const double wn_h = wnH[r], wv_h = wvH[r], wp_h = wpH[r], wn_c = wnC[r], wv_c = wvC[r];
+            acc[0] = acc[0] + wn_h * af * u;                       // code 0
+            acc[1] = acc[1] + wp_h * af;                           // code 1
+            acc[2] = acc[2] + wv_h * af * u;                       // code 2
+            acc[3] = acc[3] + wn_c * u;                            // code 3
+            acc[4] = acc[4] + wv_c * u;                            // code 4
+            if (NP >= 14) {
+                const double w0 = P.cNbmH * wn_h * af + P.kcNbmC * wn_c;   // gN
+                const double w1 = P.bmH * wv_h * af;                     // (bm_H * wv_H) * af
+                const double w2 = P.bmC * wv_c;
+                acc[5] = acc[5] + w0 * dl;  acc[6] = acc[6] + w0 * dlx;  acc[7] = acc[7] + w0 * dn;
+                acc[8] = acc[8] + w1 * dl;  acc[9] = acc[9] + w1 * dlx;  acc[10] = acc[10] + w1 * dn;
+                acc[11] = acc[11] + w2 * dl; acc[12] = acc[12] + w2 * dlx; acc[13] = acc[13] + w2 * dn;
+            }
+        }
+        if (G > 0) {
+            const bool on = active[f] != 0;
+            const double wn_u = wnH[r] * u;                          // (wn_H * u), then * mb
+            const double rg = wpH[r] + P.bmH * wvH[r] * u;           // wp_H + (bm_H * wv_H) * u
+#pragma unroll
+            for (int g = 0; g < G; ++g) {
+                const double bv = colbasis[(long long)(col0 + g) * nfaces + f];
+                const double mb = on ? bv : 0.0 * bv;
+                acc[NP + g] = acc[NP + g] + wn_u * mb;
+                acc[NP + G + g] = acc[NP + G + g] + rg * mb;
+            }
+        }
+    }
+#pragma unroll
+    for (int k = 0; k < N; ++k) {
+        tree[threadIdx.x] = acc[k];
+        __syncthreads();
+        for (int width = BLOCK / 2; width > 0; width >>= 1) {
+            if (threadIdx.x < width) tree[threadIdx.x] = tree[threadIdx.x] + tree[threadIdx.x + width];
+            __syncthreads();
+        }
+        if (threadIdx.x == 0) partial[b * N + k] = tree[0];
+        __syncthreads();
+    }
+}
+
+#define COPS_FUSED_KERNEL(NAME, NP, G)                                                         \
+extern "C" __global__ void __launch_bounds__(BLOCK) NAME(                                       \
+    const long long* __restrict__ blocks, const int* __restrict__ face,                       \
+    const double* __restrict__ wnH, const double* __restrict__ wvH, const double* __restrict__ wpH, \
+    const double* __restrict__ wnC, const double* __restrict__ wvC,                           \
+    const double* __restrict__ xlit, const unsigned char* __restrict__ lit,                   \
+    const double* __restrict__ af_face, const unsigned char* __restrict__ active,             \
+    const double* __restrict__ colbasis, long long nfaces, int col0,                          \
+    const double* __restrict__ pp, double* __restrict__ partial)                              \
+{                                                                                              \
+    fused_body<NP, G>(blocks, face, wnH, wvH, wpH, wnC, wvC, xlit, lit, af_face, active,       \
+                      colbasis, nfaces, col0, pp, partial);                                    \
+}
+
+COPS_FUSED_KERNEL(eval_fused_p5, 5, 0)
+COPS_FUSED_KERNEL(eval_fused_p14, 14, 0)
+COPS_FUSED_KERNEL(eval_fused_c1, 0, 1)
+COPS_FUSED_KERNEL(eval_fused_c2, 0, 2)
+COPS_FUSED_KERNEL(eval_fused_c3, 0, 3)
+COPS_FUSED_KERNEL(eval_fused_c4, 0, 4)
+COPS_FUSED_KERNEL(eval_fused_c5, 0, 5)
+COPS_FUSED_KERNEL(eval_fused_c6, 0, 6)
+COPS_FUSED_KERNEL(eval_fused_c7, 0, 7)
+COPS_FUSED_KERNEL(eval_fused_c8, 0, 8)
+COPS_FUSED_KERNEL(eval_fused_c9, 0, 9)
+COPS_FUSED_KERNEL(eval_fused_c10, 0, 10)
+COPS_FUSED_KERNEL(eval_fused_c11, 0, 11)
+COPS_FUSED_KERNEL(eval_fused_c12, 0, 12)
+COPS_FUSED_KERNEL(eval_fused_c13, 0, 13)
+COPS_FUSED_KERNEL(eval_fused_c14, 0, 14)
+COPS_FUSED_KERNEL(eval_fused_c15, 0, 15)
+COPS_FUSED_KERNEL(eval_fused_c16, 0, 16)

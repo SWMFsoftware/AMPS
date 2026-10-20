@@ -99,7 +99,7 @@ All fits use `tools/gpu_fit.py`, which runs the unmodified `fit_cops.py`:
 | Driver option | Default | Meaning |
 |---|---|---|
 | `--device N` | 0 | GPU of a single-GPU fit |
-| `--devices 0,1` | (none) | one fit split over both GPUs: about 1.9× faster per fit, bitwise identical to one GPU |
+| `--devices 0,1` | (none) | one fit split over both GPUs: Jacobian about 1.7× faster, bitwise identical to one GPU |
 | `--max-nfev N` | **2000** | optimizer evaluation limit (user decision 2026-10-20: 2000 for fits, 1000 for CPU comparison) |
 | `--template-start C` | **1.0** | optimizer start of each template amplitude (lower bound stays 0; the prior stays 0) |
 | `--cpu-comparison` | off | exactly the CPU fitter's command: `--max-nfev 1000 --template-start 0` |
@@ -109,8 +109,8 @@ Fixed by the user's decisions:
 * use one `--lambda` value per process.
 
 Each fit needs about 21 GB on its GPU (kernel data 9 GB plus evaluator arrays 13.2 GiB,
-as measured by nvidia-smi), and roughly 18–25 min for 1000 evaluations (about twice
-that for 2000). The fit matrix runs fastest as independent single-GPU fits,
+as measured by nvidia-smi). With the C08 fused kernels a B29 fit takes about 16 min
+for 2000 evaluations; template fits take a little longer. The fit matrix runs fastest as independent single-GPU fits,
 two at a time (C07 benchmark).
 
 The common fitter arguments are:

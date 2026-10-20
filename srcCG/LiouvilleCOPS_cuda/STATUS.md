@@ -27,6 +27,84 @@ Reconciled facts, checked 2026-10-19:
 * New pending items: C00b re-freeze against the repaired tree, C02 joint extensions, and
   the C04 gravity acceptance route (a user decision).
 
+## C08: FP64 evaluator restructure. Status: COMPLETE (2026-10-20); mixed precision skipped (user)
+
+* **Implemented:**
+  * `kernels/pressure.cu`: `eval_fused_p5`, `eval_fused_p14` and `eval_fused_c1`…`c16`
+    (template `fused_body<NP, G>`). Fixed-size, fully unrolled accumulators, held in
+    registers: ptxas reports no stack frame and no spills; 37–128 registers.
+  * The per-record factors and loads are shared by every sum of a launch.
+  * Every per-term expression, the per-thread strided fold, the shared-memory tree and the
+    partial layout are those of `eval_partial`.
+  * `evaluator.CudaBackend(fused=True)` is the default in tree mode. `_fused_plan` maps the
+    standard requests onto pressures(+temperatures) plus column groups of at most 16; any
+    other code list uses the generic kernel. `identity()["fused_kernels"]` records which
+    path ran.
+* **Gate: PASS.**
+  * Tests: `tests/test_evaluator.py` checks fused against generic **bitwise** for 6
+    configurations × 4 request types × 2 block sizes, plus the plan logic. `pytest`: 145
+    passed.
+  * `tools/c08_fused_check.py` (`cuda_c08/fused_check_20261020T053223Z`): **bitwise** on
+    the full 788k set for B29/N30/NC31, all fixture states, 4 request types.
+  * `c06_full_run.py` (`cuda_c06/full_20261020T054054Z`): ALL PASS, with the same error
+    figures as before.
+  * `c07_multi_gpu_check.py` (`cuda_c07/check_20261020T055749Z`): ALL PASS; one vs two GPUs
+    bitwise.
+  * **Full B29 fit** (`fit_788k_gpu_B29_n2000_fused`): **bitwise identical** to
+    `fit_788k_gpu_B29_n2000_r2` (parameters, final cost 6.769214e-02).
+* **Speed** (one A6000):
+
+  | | Before | After | Speedup |
+  |---|---|---|---|
+  | Full Jacobian | 0.684–0.744 s | **0.261–0.279 s** | **2.6–2.7×** |
+  | Pressures | 69–77 ms | 54–59 ms | about 1.3× (host matvec 22 ms now dominates) |
+  | B29 fit, 2000 evaluations | 1,627 s | **985 s** | **1.65×** |
+
+  * In the fused fit, the Jacobians took 413 s (was 1,035 s) and the pressures 113 s; about
+    390 s is the fixed per-fit overhead.
+  * Two GPUs, full Jacobian: 0.151–0.161 s, i.e. 1.7× over one GPU.
+  * Benchmark: independent per-GPU fits 7.50 Jacobians/s against one split fit 6.60
+    Jacobians/s.
+* **Remaining costs:** the fixed per-fit overhead (the CPU fitter's base audit, TRF and the
+  writers; about 6.5 min of a 16-min fit) and the host activity matvec (22 ms per
+  evaluation). Neither depends on GPU precision.
+
+## C08 decision support: evaluator profile (2026-10-20)
+
+`tools/profile_evaluator.py`; report `cops_output/cuda_c08/profile_20261020T052129Z/report.json`.
+Full 788k B29 problem, one A6000, tree mode. Hardware counters are unavailable without
+admin rights (`RmProfilingAdminOnly=1`), so costs are separated by timing and controlled
+experiments.
+
+* **Full Jacobian 0.688 s:**
+  * `eval_partial` 0.657 s (96%), in 4 launches;
+  * host activity matvec 0.029 s;
+  * transfers and assembly about 0.03 s in total (they overlap the matvec).
+* **Pressures 0.069 s:** kernel 0.043 s, host matvec 0.022 s.
+* **Per sum:** each sum adds 7.4–10.4 ms (0.030–0.043 ns per record and sum) for every code
+  family; the per-launch base cost is 7–16 ms.
+* **Memory floor:** reading every per-record array once, plus the facet gather, takes
+  21 ms (712 GB/s, close to the 768 GB/s peak).
+* **FP64 throughput,** measured as independent mul+add chains without FMA: 267 GFLOP/s.
+  A pressure term (about 3 FP64 operations per record) would therefore cost about 2.8 ms
+  per sum if bound by FP64 arithmetic. The measured cost is 3× that.
+* **Root cause (ptxas `-v`, sm_86):** `eval_partial` has a **256-byte stack frame**: the
+  runtime-indexed `double acc[MAX_SUMS]`. Every term therefore costs a local-memory load and
+  store, plus a load and switch on `codes[k]`. The accumulators are not held in registers.
+* **Whole-fit split** (B29, 2000 evaluations, 1,627 s): Jacobians 1,035 s, pressures 138 s,
+  bind 69 s, rest 385 s. The rest is the CPU fitter's base audit (hashing 9.8 GB of
+  kernels), TRF and the output writers.
+* **Conclusion for C08:**
+  * An FP64-preserving restructure targets the dominant cost: register accumulators
+    through compile-time-specialized kernels for the fixed code sets, and one fused pass
+    sharing `u` and the loads.
+  * It keeps every per-term expression and the per-thread fold order, so its results stay
+    bitwise equal to today's tree mode.
+  * Estimate: Jacobian 0.66 s → 0.2–0.25 s; fit about 27 → 13–15 min.
+  * Mixed precision would add only about 1.3× on top (fit about 10–11 min), because the
+    fixed per-fit overhead of about 6.5 min and the memory floor then dominate. It would
+    cost the approved budgets and optimizer reproducibility.
+
 ## C09 first production fits (2026-10-20): max_nfev 2000, template start 1.0, rebuilt base and bundle
 
 Outputs: `cops_output/fit_788k_gpu_{B29,C30,N30,NC31}_n2000_r2`. Commands: `quick_guide.md` §3a.

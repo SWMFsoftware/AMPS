@@ -33,6 +33,17 @@ Modes
     Fixed blocks of records per point; strided per-thread folds; a fixed
     shared-memory tree; block partials added in order. Deterministic, within
     the approved budget (VALIDATION.md).
+``fused`` (C08, default in tree mode)
+    For the evaluator's standard requests (pressures, plus optionally the nine
+    temperature sums, plus NG/RG pairs of activity/template columns), the tree
+    mode uses compile-time-specialized kernels: ``eval_fused_p5``,
+    ``eval_fused_p14`` and ``eval_fused_c1`` … ``eval_fused_c16``. Their accumulators
+    are held in registers (ptxas: no stack frame, no spills). They use the same
+    per-term expressions, per-thread fold and tree as ``eval_partial``, so the
+    results are bitwise identical (``tests/test_evaluator.py``,
+    ``tools/c08_fused_check.py``); the full Jacobian is 2.6× faster. Any other
+    code list uses the generic ``eval_partial``. ``fused=False`` forces the
+    generic path.
 ``"sequential"`` (verification)
     One thread per point, folding records in file order, like ``np.bincount``
     and SciPy's CSR product. It reproduces the CPU sums bit for bit and proves
@@ -58,6 +69,7 @@ from .errors import IdentityError, UnsupportedConfiguration
 from .memory import DeviceBudget, MemoryPlan, human
 
 MAX_SUMS = 32                 # must equal MAX_SUMS in pressure.cu
+FUSED_MAX_COLUMNS = 16        # eval_fused_c1 .. eval_fused_c16 in pressure.cu (2G <= MAX_SUMS)
 BLOCK = 256                   # must equal BLOCK in pressure.cu
 PRESSURE_CODES = (0, 1, 2, 3, 4)
 TEMPERATURE_CODES = tuple(range(5, 14))
@@ -109,7 +121,7 @@ class CudaBackend(bk.PressureBackend):
 
     def __init__(self, model, run, enhancement_basis=None, enhancement_scale=1.0,
                  device_id=0, mode="tree", budget=None, records_per_block=4096,
-                 chunk_records=None):
+                 chunk_records=None, fused=True):
         if mode not in MODES:
             raise ValueError("mode must be one of %s" % (MODES,))
         nb = 0 if enhancement_basis is None else int(np.asarray(enhancement_basis).shape[1])
@@ -117,6 +129,8 @@ class CudaBackend(bk.PressureBackend):
         import cupy
         self.cupy = cupy
         self.mode = mode
+        # C08: compile-time-specialized tree kernels (bitwise equal to eval_partial).
+        self.fused = bool(fused) and mode == "tree"
         self.device_id = int(device_id)
         self.records_per_block = int(records_per_block)
         self.constants = HostConstants(model)
@@ -276,8 +290,76 @@ class CudaBackend(bk.PressureBackend):
             self.arrays["colbasis"][:matrix.size].set(matrix.reshape(-1))
         self._columns_cache = key
 
+    def _fused_plan(self, codes):
+        """Launches of the specialized kernels covering ``codes``, or None.
+
+        Applies when the request is the evaluator's standard set: the five
+        pressure codes, optionally the nine temperature codes, and NG/RG pairs
+        of activity/template columns (codes 1000+c and 2000+c, both present).
+        Returns [(kernel, col0, [codes in the kernel's output order]), ...].
+        Any other list (for example PhiCO2 alone, or profiling lists) uses the
+        generic kernel.
+        """
+        present = set(codes)
+        if len(present) != len(codes):
+            return None
+        pressure, temperature = set(PRESSURE_CODES), set(TEMPERATURE_CODES)
+        if not pressure <= present:
+            return None
+        rest = present - pressure
+        with_t = temperature <= rest
+        rest -= temperature if with_t else set()
+        ng = sorted(c - 1000 for c in rest if 1000 <= c < 2000)
+        rg = sorted(c - 2000 for c in rest if 2000 <= c < 3000)
+        if ng != rg or len(ng) + len(rg) != len(rest):
+            return None
+        plan = [("eval_fused_p14", 0, list(PRESSURE_CODES) + list(TEMPERATURE_CODES)) if with_t
+                else ("eval_fused_p5", 0, list(PRESSURE_CODES))]
+        # Consecutive column runs, in chunks of at most FUSED_MAX_COLUMNS.
+        k = 0
+        while k < len(ng):
+            start = k
+            while (k + 1 < len(ng) and ng[k + 1] == ng[k] + 1 and
+                   k + 1 - start < FUSED_MAX_COLUMNS):
+                k += 1
+            cols = ng[start:k + 1]
+            plan.append(("eval_fused_c%d" % len(cols), cols[0],
+                         [1000 + c for c in cols] + [2000 + c for c in cols]))
+            k += 1
+        return plan
+
+    def _run_fused(self, plan, codes, params):
+        """Run a fused plan; returns (ncodes, npt) in the order of ``codes``."""
+        cupy, a, ds = self.cupy, self.arrays, self.dataset
+        npt, nf = ds.npoints, ds.inputs.nfaces
+        order = ("Tmax", "T75", "Tmin", "KT", "cNbmH", "kcNbmC", "bmH", "bmC")
+        P = cupy.asarray(np.array([params[k] for k in order], dtype=np.float64))
+        nblocks = int(self._first_block[-1])
+        row = {code: i for i, code in enumerate(codes)}
+        out = np.empty((len(codes), npt), dtype=np.float64)
+        for name, col0, launch_codes in plan:
+            n = len(launch_codes)
+            partial = a["partial"][:nblocks * n]
+            cuda_sources.function("pressure", name, self.device_id)(
+                (nblocks,), (BLOCK,),
+                (a["blocks"], ds.arrays["kernel.face"], a["wnH"], a["wvH"], a["wpH"], a["wnC"],
+                 a["wvC"], a["xlit"], a["lit"], a["af_face"], a["active"], a["colbasis"],
+                 np.int64(nf), np.int32(col0), P, partial))
+            sums = a["sums"][:n * npt]
+            cuda_sources.function("pressure", "eval_finish", self.device_id)(
+                (-(-(n * npt) // 256),), (256,),
+                (a["first_block"], np.int64(npt), partial, np.int32(n), sums))
+            host = sums.get().reshape(n, npt)
+            for i, code in enumerate(launch_codes):
+                out[row[code]] = host[i]
+        return out
+
     def _run_sums(self, codes, params):
         """Per-point sums for the given codes, in tiles of MAX_SUMS; returns (ncodes, npt)."""
+        if self.fused and params is not None:
+            plan = self._fused_plan(codes)
+            if plan is not None:
+                return self._run_fused(plan, codes, params)
         cupy, a, ds = self.cupy, self.arrays, self.dataset
         npt, nf = ds.npoints, ds.inputs.nfaces
         out = np.empty((len(codes), npt), dtype=np.float64)
@@ -358,7 +440,7 @@ class CudaBackend(bk.PressureBackend):
     # ------------------------------------------------------------- bookkeeping
     def identity(self):
         return {"backend": self.name, "contract_version": bk.CONTRACT_VERSION,
-                "mode": self.mode, "precision": precision.POLICY_NAME,
+                "mode": self.mode, "fused_kernels": self.fused, "precision": precision.POLICY_NAME,
                 "settings": self.settings.as_dict(), "constants": bk.reference_constants(),
                 "rows": len(self.rows),
                 "rows_sha256": provenance.canonical_sha256(list(self.rows)),

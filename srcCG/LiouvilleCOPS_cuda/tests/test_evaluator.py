@@ -128,3 +128,48 @@ def test_unsupported_sza_mode_is_refused(cpu_model):
             evaluator.HostConstants(M)
     finally:
         M.SZAMode = old
+
+
+@pytest.mark.parametrize("records_per_block", [17, 4096])
+def test_fused_kernels_are_bitwise_the_generic_tree(cpu_model, records_per_block):
+    """C08: the compile-time-specialized kernels change no bit of any sum."""
+    fresh_pool()
+    from cops_cuda.memory import DeviceBudget
+    run = cpu_model["synthetic"]["run"]
+    budget = DeviceBudget(0)
+    try:
+        for config in CONFIGS:
+            P = contract.make_problem(cpu_model, config)
+            requests = [bk.PRESSURES_ONLY,
+                        bk.ColumnRequest(P.fit_j, range(P.nb), temperature=True, kappa=True),
+                        bk.ColumnRequest(P.fit_j, range(P.nb), temperature=False, kappa=True),
+                        bk.ColumnRequest((), (), temperature=True, kappa=False)]
+            with evaluator.from_problem(P, run, mode="tree", fused=False, budget=budget,
+                                        records_per_block=records_per_block) as generic, \
+                    evaluator.from_problem(P, run, mode="tree", fused=True, budget=budget,
+                                           records_per_block=records_per_block) as fused:
+                assert fused.identity()["fused_kernels"] and not generic.identity()["fused_kernels"]
+                assert fused.PhiCO2.tobytes() == generic.PhiCO2.tobytes()
+                for seed in (1, 2):
+                    state = bk.ParameterState.from_problem(P, contract.perturbed(P, seed))
+                    for request in requests:
+                        a, b = generic.evaluate(state, request), fused.evaluate(state, request)
+                        assert a.pNG.tobytes() == b.pNG.tobytes(), config["name"]
+                        assert a.pRG.tobytes() == b.pRG.tobytes(), config["name"]
+                        for key in request.keys():
+                            for u, v in zip(a.columns[key], b.columns[key]):
+                                assert u.tobytes() == v.tobytes(), (config["name"], key)
+    finally:
+        budget.close()
+
+
+def test_fused_plan_covers_the_standard_requests_only():
+    plan = evaluator.CudaBackend._fused_plan
+    fake = type("F", (), {})()
+    codes = list(range(5)) + list(range(5, 14)) + [1000 + c for c in range(25)] + [2000 + c for c in range(25)]
+    steps = plan(fake, codes)
+    assert [s[0] for s in steps] == ["eval_fused_p14", "eval_fused_c16", "eval_fused_c9"]
+    assert sorted(c for s in steps for c in s[2]) == sorted(codes)
+    assert plan(fake, [14]) is None                       # PhiCO2 alone -> generic
+    assert plan(fake, [0, 1, 2, 3, 4, 1000]) is None      # NG column without its RG pair
+    assert [s[0] for s in plan(fake, list(range(5)))] == ["eval_fused_p5"]
