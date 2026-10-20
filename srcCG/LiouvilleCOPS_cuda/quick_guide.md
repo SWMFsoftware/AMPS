@@ -259,6 +259,48 @@ cd -
 Run names are relative to `$COPS_OUTPUT_ROOT`. Add more fit directories to overlay
 several models in one figure.
 
+### 4c1. Publication figures (.eps and .png): the format of all runs since 2026-10-20
+
+The tools write these figures automatically:
+
+| Tool | Figures |
+|---|---|
+| `gpu_fit.py` | `<fit>/figures/pressures_{time,altitude}`: base, fit and data (`--no-figures` skips them) |
+| `c05_write_bundle.py` | `<bundle stem>_groundtrack_{3d,latlon}`, `_track.dat`, `_impact.json` next to the bundle (`--no-figures` skips them) |
+| `restart_tool.py plot` | `<out>_{time,altitude}` |
+| `restart_tool.py enhance` | `<out>_{time,altitude}` and the region map `<out>_region` |
+
+Combined figures and regeneration:
+
+```tcsh
+# several fits on one figure: --fit LABEL=DIR[:solid|dashed|dotted|dashdot]
+.venv/bin/python tools/pub_figures.py pressures --base $BASE --bundle $BUNDLE \
+    --fit "N30, 788k=$O/fit_788k_gpu_N30_n2000_r2:dashed" --fit "N30, 1M=$O/fit_001m_gpu_N30_n2000" \
+    --out $O/<dir>/N30_788k_vs_1m
+# end-of-mission ground track and Rosetta impact point on the base's shape model (GPU, about 30 s)
+.venv/bin/python tools/pub_figures.py groundtrack --base $BASE --bundle $BUNDLE --out $O/<dir>/groundtrack --device 0
+```
+
+Format (`cops_cuda/figures.py`):
+* Each figure is written as `.eps` (vector; rendered images embedded) and `.png` (300 dpi).
+  It uses an Okabe–Ito colour-blind safe palette and no transparency.
+* **Pressure figures.**
+  * Rows: NG, RG and NG/RG.
+  * The time figure has a full-descent column and a zoom on the last 25 min. The altitude
+    figure uses a log axis with the descent running left to right.
+  * The **late-visibility window** is shaded and labelled with its UTC and altitude ranges.
+    The window is taken from `--bundle`'s `late_ng_not_rg` interval, else `--late-start/
+    --late-stop`, else c05_write_bundle's default 10:33:10–10:39:26.
+* **Ground-track figures.** The track is the sub-spacecraft intercept: the first surface hit
+  toward the body-frame origin, as in SPICE `subpnt` INTERCEPT.
+  * `_3d` has three panels: the nucleus viewed down the final approach, the template
+    regions, and a close-up with 1-minute marks.
+  * `_latlon` has the global map and the impact area.
+  * The **Rosetta impact point** is the straight-line extrapolation of the last two rows to
+    the shape model: 10:39:26.4 UTC, lon 12.23°, lat 31.75° on SHAP5 1M and 788k.
+  * The NG-only and RG-only facets of the bundle are coloured.
+* Existing figure files are refused unless `--overwrite` is given.
+
 ## 4c2. Restart files (C12): save, restart, plot, enhance, translate
 
 Every `gpu_fit.py` fit writes `<out>/fit_restart.npz`: the fitted state, templates,
@@ -310,6 +352,38 @@ cd -
 
 The output is the same set of products as the C++ build: `elements.bin` is bitwise
 identical, and the kernels agree at rounding level. See `native/README.md`.
+
+## 4e. A new surface model, everything on the GPU (SHAP5 1M, 2026-10-20)
+
+The exact sequence used for `cg_spc_shap5_001m_cart.bdf` (1,194,250 facets). The times are
+for one A6000.
+
+```tcsh
+set SHAPE = /data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2/cg_spc_shap5_001m_cart.bdf
+set BASE  = $O/output_fit_shap5_001m_base
+# (1) fitting base (C11), 5.5 min; 356,553,303 kernel records, 14 GB
+cd ../LiouvilleCOPS
+env COPS_CUDA_DEVICE=0 python3 tools/rebuild_cops_boundary.py --input fit_base.in --surface-bc flat \
+    --shape-model $SHAPE --shape-model-format nastran --out $BASE --threads 16 \
+    --executable ../LiouvilleCOPS_cuda/native/liouville_cops_cuda >& $BASE.build.log
+cd -
+# (2) optional, no gravity needed: the NG-only/RG-only templates, so N30 can start at once
+.venv/bin/python tools/c05_write_bundle.py --run $BASE --visibility-only \
+    --out $O/cuda_c05/restart_001m/visibility_templates_shap5_001m.npz
+# (3) gravity field at all facets, 2.0 h (1.2e6 x 1.2e6 facet pairs)
+.venv/bin/python tools/c04_gravity_equivalence.py gpu --run $BASE --gravity-shape $SHAPE --device 0 \
+    >& $O/gravity_001m_gpu.log
+set EQ = <the printed cuda_c04/equivalence_<UTC> directory>
+# (4) cache (1 min) and full bundle (1 min); no CPU cache of this body exists, so no --evidence
+.venv/bin/python tools/c04_write_gpu_cache.py --field-dir $EQ --run $BASE --gravity-shape $SHAPE \
+    --out $EQ/admitted_gravity_cache_shap5_001m.npz
+.venv/bin/python tools/c05_write_bundle.py --run $BASE --gravity-cache $EQ/admitted_gravity_cache_shap5_001m.npz \
+    --gravity-shape $SHAPE --out $O/cuda_c05/restart_001m/restart_templates_shap5_001m.npz
+# (5) the four fits exactly as in 3a, with $BASE and the 1M bundle; about 25 min each
+```
+
+The GPU evaluator plan of a fit on this base is 19.2 GiB (bind 138 s), within one 48 GB A6000. B29 and N30 can run during step (3) on the other
+GPU, using the visibility bundle from (2).
 
 ## 5. Optional numerical re-checks (after a code or driver change)
 

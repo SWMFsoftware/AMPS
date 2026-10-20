@@ -8,12 +8,13 @@ Subcommands
     misfit of the stored predictions.
 
 ``plot RESTART [RESTART ...] --out PREFIX [--labels ...] [--x time|altitude|both]``
-    Comparison plots from the stored predictions, with no recomputation:
-    * NG and RG pressures against the measurements;
-    * NG/RG ratio;
-    * log residuals of the selected points.
+    Comparison plots from the stored predictions, with no recomputation, in the
+    publication format of ``cops_cuda/figures.py``: NG pressure, RG pressure and NG/RG
+    against the measurements, with the late-visibility window shaded. The window is the
+    restart's template interval, else the c05_write_bundle default.
 
-    Writes ``PREFIX_time.png`` and/or ``PREFIX_altitude.png`` and ``PREFIX_summary.json``.
+    Writes ``PREFIX_time`` and ``PREFIX_altitude`` (.eps and .png; both regardless of
+    ``--x``) and ``PREFIX_summary.json``.
 
 ``enhance RESTART --run BASE --region R (--alt-min/--alt-max and/or --utc-start/--utc-stop)
           --mode add|factor --value V --out PREFIX [--save NEW_RESTART] [--name NAME]``
@@ -110,74 +111,43 @@ def parse_utc(s):
     return dt.datetime.fromisoformat(day) + dt.timedelta(hours=int(h), minutes=int(m), seconds=float(sec))
 
 
-def plot_models(series, data, out_prefix, axes=("time", "altitude"), title=""):
-    """series: [(label, pred_ng, pred_rg)]; data: dict with utc, altitude_m, ref/use arrays."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    written = []
-    t = np.array([parse_utc(u) for u in data["utc"]])
-    for axis in axes:
-        x = t if axis == "time" else data["altitude_m"]
-        fig, ax = plt.subplots(4, 1, figsize=(11, 13), sharex=True)
-        for k, (gauge, ref, use) in enumerate((("NG", data["ref_ng"], data["use_ng"]),
-                                                ("RG", data["ref_rg"], data["use_rg"]))):
-            ok = ref > 0
-            ax[k].scatter(x[ok & (use > 0)], ref[ok & (use > 0)], s=6, c="k", label="data (selected)", zorder=3)
-            ax[k].scatter(x[ok & (use == 0)], ref[ok & (use == 0)], s=8, facecolors="none", edgecolors="k",
-                          label="data (not selected)", zorder=3)
-            for label, png, prg in series:
-                ax[k].plot(x, png if gauge == "NG" else prg, lw=1.2, label=label)
-            ax[k].set_yscale("log")
-            ax[k].set_ylabel("%s pressure [Pa]" % gauge)
-        ok = (data["ref_ng"] > 0) & (data["ref_rg"] > 0)
-        ax[2].scatter(x[ok], data["ref_ng"][ok] / data["ref_rg"][ok], s=5, c="k", label="data")
-        for label, png, prg in series:
-            ax[2].plot(x, png / prg, lw=1.2, label=label)
-        ax[2].set_yscale("log")
-        ax[2].set_ylabel("NG / RG")
-        for label, png, prg in series:
-            for gauge, pred, ref, use, mk in (("NG", png, data["ref_ng"], data["use_ng"], "o"),
-                                              ("RG", prg, data["ref_rg"], data["use_rg"], "s")):
-                sel = (use > 0) & (ref > 0)
-                ax[3].plot(x[sel], np.log(pred[sel] / ref[sel]), mk, ms=2, label="%s %s" % (label, gauge))
-        ax[3].axhline(0.0, color="grey", lw=0.8)
-        ax[3].set_ylabel("ln(model/data), selected")
-        ax[3].set_xlabel("UTC 2016-09-30" if axis == "time" else "altitude [m]")
-        if axis == "altitude":
-            for a in ax:
-                a.set_xscale("log")
-                a.invert_xaxis()
-        for a in ax:
-            a.legend(fontsize=7, loc="best")
-            a.grid(alpha=0.3)
-        fig.suptitle(title, fontsize=9)
-        fig.tight_layout()
-        path = "%s_%s.png" % (out_prefix, axis)
-        fig.savefig(path, dpi=120)
-        plt.close(fig)
-        written.append(path)
-    return written
+def late_window_of(r, table):
+    """The late-visibility window of a restart: its templates' interval, else the default."""
+    from cops_cuda import figures
+    for src in r.meta.get("templates", {}).get("sources", []) or []:
+        interval = ((src or {}).get("definition") or {}).get("interval_utc")
+        if interval:
+            return figures.late_window(table, start=interval[0], stop=interval[1])
+    return figures.late_window(table)
 
 
-def plot_region(path, centroid, area, mask, title):
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    r = np.linalg.norm(centroid, axis=1)
-    lon = np.degrees(np.arctan2(centroid[:, 1], centroid[:, 0]))
-    lat = np.degrees(np.arcsin(centroid[:, 2] / r))
-    fig, ax = plt.subplots(figsize=(11, 5.5))
-    ax.scatter(lon[~mask], lat[~mask], s=0.2, c="0.85", rasterized=True)
-    ax.scatter(lon[mask], lat[mask], s=1.0, c="crimson", rasterized=True)
-    ax.set_xlabel("longitude [deg]")
-    ax.set_ylabel("latitude [deg]")
-    ax.set_title("%s: %d facets, %.3f%% of the area" % (title, int(mask.sum()), 100 * area[mask].sum() / area.sum()),
-                 fontsize=9)
-    fig.tight_layout()
-    fig.savefig(path, dpi=120)
-    plt.close(fig)
-    return path
+def plot_models(series, data, out_prefix, axes=("time", "altitude"), title="", restart=None):
+    """Publication pressure figures (cops_cuda/figures.py) of restart predictions.
+
+    series: [(label, pred_ng, pred_rg)]; data: dict with utc, altitude_m, ref/use arrays.
+    Both ``<out_prefix>_time`` and ``_altitude`` are written, as .eps and .png; ``axes`` is
+    kept for the command line's ``--x`` and selects nothing.
+    """
+    from cops_cuda import figures
+    del axes
+    table = {"utc": list(data["utc"]), "time": np.array([figures.parse_utc(u) for u in data["utc"]]),
+             "altitude": np.asarray(data["altitude_m"], float), "refNG": np.asarray(data["ref_ng"], float),
+             "refRG": np.asarray(data["ref_rg"], float), "useNG": np.asarray(data["use_ng"], float),
+             "useRG": np.asarray(data["use_rg"], float), "iPoint": np.arange(len(data["utc"]), dtype=float)}
+    if "point_ids" in data:
+        table["iPoint"] = np.asarray(data["point_ids"], float)
+    window = late_window_of(restart, table) if restart is not None else figures.late_window(table)
+    styles = ["-", (0, (3, 1.2)), (0, (1, 1.2)), (0, (4, 1.2, 1, 1.2))]
+    series_tables = [(label, dict(table, pNG=np.asarray(png, float), pRG=np.asarray(prg, float)), styles[k % 4])
+                     for k, (label, png, prg) in enumerate(series)]
+    return figures.pressure_figures(None, series_tables, table, window, out_prefix, title=title or None)
+
+
+def plot_region(prefix, run, mask, title, device=0):
+    """Longitude/latitude map of a facet region with the ground track (cops_cuda/figures.py)."""
+    from cops_cuda import figures
+    gt = figures.groundtrack_data(run, device_id=device)
+    return figures.region_map(gt, mask, prefix, title, device_id=device)
 
 
 def not_fitted(meta, note):
@@ -188,7 +158,8 @@ def not_fitted(meta, note):
 
 
 def stored_data(r):
-    return {k: np.asarray(getattr(r, k)) for k in ("utc", "altitude_m", "ref_ng", "ref_rg", "use_ng", "use_rg")}
+    return {k: np.asarray(getattr(r, k)) for k in ("utc", "altitude_m", "ref_ng", "ref_rg", "use_ng", "use_rg",
+                                                   "point_ids")}
 
 
 # --------------------------------------------------------------------------- commands
@@ -225,7 +196,7 @@ def cmd_plot(args):
             raise SystemExit("restarts cover different observation rows; plot them separately")
     series = [(lab, np.asarray(s.pred_ng), np.asarray(s.pred_rg)) for lab, s in zip(labels, states)]
     axes = ("time", "altitude") if args.x == "both" else (args.x,)
-    written = plot_models(series, data, args.out, axes, title="restart comparison")
+    written = plot_models(series, data, args.out, axes, title="restart comparison", restart=states[0])
     summary = {lab: misfit(s.pred_ng, s.pred_rg, s.ref_ng, s.ref_rg, s.use_ng, s.use_rg)
                for lab, s in zip(labels, states)}
     with open(args.out + "_summary.json", "x") as f:
@@ -349,9 +320,10 @@ def cmd_enhance(args):
     label = "%s %s %g on %s" % (name, args.mode, args.value, args.region)
     written = plot_models([("restart state", p0[0], p0[1]), (label, p1[0], p1[1])], data, args.out,
                           title="%s; %d points selected; region %d facets (%.1f%% of its area clipped)"
-                                % (Path(args.restart).name, len(points), int(mask.sum()), 100 * clipped))
-    written.append(plot_region(args.out + "_region.png", r.centroid, r.area, mask,
-                               "%s, points %d" % (args.region, len(points))))
+                                % (Path(args.restart).name, len(points), int(mask.sum()), 100 * clipped),
+                          restart=r)
+    written += plot_region(args.out + "_region", args.run, mask, "%s, points %d" % (args.region, len(points)),
+                           args.device)
     out_rows = ~np.isin(np.asarray(r.point_ids), np.asarray(points))
     outside_change = {"NG": float(np.max(np.abs(p1[0][out_rows] / p0[0][out_rows] - 1))) if out_rows.any() else 0.0,
                       "RG": float(np.max(np.abs(p1[1][out_rows] / p0[1][out_rows] - 1))) if out_rows.any() else 0.0,

@@ -8,11 +8,8 @@ The primary fitting target is the free 29-parameter baseline (B29) and its NG-on
 template extensions (N30/C30/NC31). The fixed-baseline higher-harmonic modes are
 secondary.
 
-Stages completed:
-* C00: CPU reference and the approved tolerance policy;
-* C01: environment;
-* C02: backend contract, device layout, memory policy, provenance;
-* C03: exact FP64 polyhedral gravity on one GPU.
+Stages completed: C00–C08, C11 and C12. C09 production fits are running; C10 is pending.
+The current state of each stage is in `STATUS.md`.
 
 | File | Purpose |
 |---|---|
@@ -32,6 +29,10 @@ Stages completed:
 | `tools/derive_outward_surface.py` | exact global winding reversal of a consistently inward closed surface (for `SHAP5_Volume.bdf`), with a provenance record |
 | `tools/c04_gravity_equivalence.py` | C04: full-field CPU-builder vs GPU gravity on the same body and targets, plus the corrected 100k-vs-788k slope comparison |
 | `tools/c03_gravity_check.py` | C03 evidence: GPU gravity against the C00 fixtures, package state, difficult samples, determinism, full 788k field |
+| `tools/gpu_fit.py` | runs the unchanged `fit_cops.py` with GPU pressures and Jacobian (one or two GPUs). Writes `fit_restart.npz` and the publication pressure figures `figures/pressures_*` |
+| `tools/compare_fits.py` | compares two fit directories (termination, cost, parameters in σ, predictions) |
+| `tools/restart_tool.py` | C12 restart files: `show`, `plot`, `enhance`, `translate` |
+| `tools/pub_figures.py` | publication figures (.eps and .png, 300 dpi), the format of all runs since 2026-10-20: `pressures` (fits against the COPS data, with the late-visibility window shaded) and `groundtrack` (end-of-mission ground track and Rosetta impact point on the shape model) |
 | `tests/` | `pytest` suite; `tests/synthetic_run.py` writes small valid base runs for the tests |
 | `third_party/` | the pinned polyhedral-gravity 3.3 sdist and wheel, with their digests |
 

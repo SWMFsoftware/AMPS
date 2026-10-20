@@ -26,6 +26,10 @@ The gravity section of the metadata mirrors the builder's, so the selector's
 provenance gate applies unchanged: the cache definition (algorithm,
 orientation policy) and the cache's calculation metadata (``integrity_check``,
 ``orientation_policy``, ``topology``, ``backend``, evidence).
+
+After the bundle, the tool writes the ground-track figures of the mesh next to it
+(``cops_cuda/figures.py``; ``--no-figures`` skips them): ``<out stem>_groundtrack_3d`` and
+``_latlon`` (.eps, .png), ``_track.dat`` and ``_impact.json``.
 """
 
 import argparse
@@ -38,11 +42,40 @@ APP_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(APP_ROOT))
 
 
+def groundtrack(args, run, shape):
+    """Ground-track figures of the bundle's mesh (cops_cuda/figures.py), next to the bundle.
+
+    ``<out stem>_groundtrack_3d`` and ``_latlon`` (.eps, .png), ``_track.dat`` and
+    ``_impact.json``. The NG-only and RG-only facets of this bundle are coloured, and the
+    late-visibility window is this bundle's interval. A failure is reported, not raised:
+    the bundle is already written.
+    """
+    if args.no_figures:
+        return
+    import json
+    from cops_cuda import figures
+    out = Path(args.out).resolve()
+    prefix = out.with_name(out.stem + "_groundtrack")
+    try:
+        base = figures.read_table(run)
+        window = figures.late_window(base, out)
+        gt = figures.groundtrack_data(run, shape, out, window, args.device)
+        paths = figures.groundtrack_figures(gt, prefix, device_id=args.device)
+        impact = Path(str(prefix) + "_impact.json")
+        impact.write_text(json.dumps(dict(gt["impact"], shape=gt["shape"], base_run=str(run)), indent=1), encoding="utf-8")
+        print("ground track: %s; impact %s UTC, lon %.3f, lat %.3f" % (
+            ", ".join(paths + [str(impact)]), gt["impact"]["utc"], gt["impact"]["lon_deg"], gt["impact"]["lat_deg"]))
+    except Exception as exc:
+        print("ground-track figures not written (%s: %s)" % (exc.__class__.__name__, exc))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--run", required=True)
-    parser.add_argument("--gravity-cache", required=True, help="admitted cache (CPU format)")
-    parser.add_argument("--gravity-shape", required=True)
+    parser.add_argument("--gravity-cache", help="admitted cache (CPU format); required unless --visibility-only")
+    parser.add_argument("--gravity-shape", help="gravity BDF; required unless --visibility-only")
+    parser.add_argument("--visibility-only", action="store_true",
+                        help="write only late_ng_not_rg and late_rg_not_ng (no gravity needed)")
     parser.add_argument("--out", required=True, help="new bundle .npz (must not exist)")
     parser.add_argument("--density", type=float, default=533.0)
     parser.add_argument("--offset", type=float, default=0.1)
@@ -50,6 +83,8 @@ def main():
     parser.add_argument("--late-stop", default="2016-09-30T10:39:26")
     parser.add_argument("--cliff-threshold", type=float, action="append", default=None)
     parser.add_argument("--device", type=int, default=0)
+    parser.add_argument("--no-figures", action="store_true",
+                        help="skip the ground-track figures <out stem>_groundtrack_{3d,latlon}.{eps,png}")
     args = parser.parse_args()
     thresholds = args.cliff_threshold or [45.0, 60.0]
 
@@ -63,6 +98,14 @@ def main():
 
     # Visibility masks (GPU, integer OR).
     vis, vis_meta = masks.late_masks(run, args.late_start, args.late_stop, device_id=args.device)
+    if args.visibility_only:
+        payload = restart_bundle.build_visibility_bundle(
+            args.out, run, vis, vis_meta, writer=provenance.file_identity(Path(__file__), "tool"))
+        print("wrote %s; columns %s" % (args.out, payload["names"]))
+        groundtrack(args, run, None)
+        return 0
+    if not (args.gravity_cache and args.gravity_shape):
+        raise SystemExit("--gravity-cache and --gravity-shape are required (or use --visibility-only)")
 
     # Gravity: the builder's omega and definition, the admitted cache.
     body = gravity_body.GravityBody.from_bdf(args.gravity_shape, args.density)
@@ -96,6 +139,7 @@ def main():
                    for m in payload["templates"].values())
     print("wrote %s, %s, %s; columns %s; band facets re-resolved %d" %
           (out, out.with_suffix(".json"), out.with_suffix(".png"), payload["names"], resolved))
+    groundtrack(args, run, args.gravity_shape)
     return 0
 
 

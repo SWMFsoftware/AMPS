@@ -11,8 +11,9 @@ identifies exactly the code that ran.
 | `store_audit.cu` | C02 | `audit_records`, `audit_offsets` | Recount transport-kernel invariants in device memory after upload |
 | `pressure.cu` | C06, C08 | `precompute_static`, `eval_sequential`, `eval_partial`, `eval_finish`; C08 `eval_fused_p5`, `eval_fused_p14`, `eval_fused_c1`…`c16` (register accumulators, bitwise equal to `eval_partial`) | Per-contribution terms of `fit_cops.Model.evaluate` and their per-point sums (pressures, temperature sums, activity/template columns); verification and production reductions |
 | `gravity.cu` | C03 | `gravity_fold`, `gravity_partial`, `gravity_reduce` | **GPLv3** translation of polyhedral-gravity 3.3: exact FP64 potential and acceleration, plus the term magnitude M |
-
-Planned (ROADMAP §4): `masks.cu` (C05).
+| `masks.cu` | C05, C07 | `visibility_union`, `seen_positive` | Late-interval visibility masks (integer OR, bit-identical to the CPU predicates); facets with Kn > 0 for `seen_faces` |
+| `restart.cu` | C12 | `facet_point_shares`, `point_change_partials` | Per-facet influence of an activity change on point pressures (`restart_tool.py enhance`) |
+| `render.cu` | figures | `raster_faces`, `ray_first_hit` | Figures only, no model quantity: z-buffer rasterization of the shape model and the first ray–mesh hit (the sub-spacecraft intercept) for `cops_cuda/figures.py` |
 
 ## Conventions
 

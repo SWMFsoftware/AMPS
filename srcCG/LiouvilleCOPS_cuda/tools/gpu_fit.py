@@ -4,7 +4,8 @@
 Usage::
 
     .venv/bin/python tools/gpu_fit.py [--device N | --devices 0,1] [--max-nfev N]
-        [--template-start C] [--cpu-comparison] [--mode tree|sequential] -- <fit_cops.py arguments>
+        [--template-start C] [--cpu-comparison] [--mode tree|sequential] [--restart-from R]
+        [--no-save-restart] [--no-figures] -- <fit_cops.py arguments>
 
 Run settings decided by the user (2026-10-20):
 
@@ -46,6 +47,14 @@ What differs, inside this process only:
 Refused: several ``--lambda`` values. The fitter runs an L-curve in forked
 processes, and a forked child cannot use the parent's CUDA context. Run one
 λ per process instead.
+
+At the end of a fit the driver also writes, into ``<out>``:
+
+* ``fit_restart.npz``: the restart file (ROADMAP C12; ``--no-save-restart`` skips it);
+* ``figures/pressures_{time,altitude}.{eps,png}``: the publication pressure figures
+  (``cops_cuda/figures.py``, user request 2026-10-20). They show the base model, the fit and
+  the COPS data, with the late-visibility window shaded. ``--no-figures`` skips them, and a
+  figure failure is recorded in ``compute_backend.figures`` without failing the fit.
 
 The process-failure handling of ``fit_cops``'s ``__main__`` block is reproduced:
 after the output directory exists, a failure is recorded as
@@ -160,6 +169,35 @@ def check_restart_mesh(state, fit_args, fit_cops):
                          "tools/restart_tool.py translate" % (state.mesh_identity()[:16], identity[:16]))
 
 
+def write_figures(fit_cops, fit_args, info):
+    """Publication pressure figures of the finished fit (cops_cuda/figures.py).
+
+    Base model, this fit and the COPS data with the fit's selection; the late-visibility window
+    comes from the first ``--activity-template`` bundle, else the c05_write_bundle default.
+    A failure here is recorded in the manifest and never fails the fit.
+    """
+    from cops_cuda import figures
+    try:
+        out = Path(fit_cops.ACTIVE_MANIFEST_PATH).parent
+        base_dir = Path(fit_cops.ACTIVE_MANIFEST["inputs"]["base_elements"]["path"]).parent
+        bundle = None
+        for k, token in enumerate(fit_args[:-1]):
+            if token == "--activity-template":
+                bundle = fit_args[k + 1]
+                break
+        base = figures.read_table(base_dir)
+        fit = figures.read_table(out)
+        window = figures.late_window(base, bundle)
+        info["paths"] = figures.pressure_figures(base, [(out.name, fit)], fit, window,
+                                                 out / "figures" / "pressures", overwrite=False)
+        info["late_window"] = {k: window[k] for k in ("start", "stop", "source", "altitude_min_m",
+                                                       "altitude_max_m")}
+        print("gpu_fit: figures %s" % ", ".join(info["paths"]), flush=True)
+    except Exception as exc:                      # figures never fail a fit
+        info["error"] = "%s: %s" % (exc.__class__.__name__, exc)
+        print("gpu_fit: figures not written (%s)" % info["error"], flush=True)
+
+
 def main():
     argv = sys.argv[1:]
     if "--" not in argv:
@@ -183,6 +221,8 @@ def main():
                         help="start from a restart file (fit_restart.npz); parameters matched by name")
     parser.add_argument("--no-save-restart", action="store_true",
                         help="do not write <out>/fit_restart.npz at the end of the fit")
+    parser.add_argument("--no-figures", action="store_true",
+                        help="do not write the publication figures <out>/figures/pressures_{time,altitude}.{eps,png}")
     args = parser.parse_args(argv[:split])
     fit_args = argv[split + 1:]
     if any(a == "--max-nfev" or a.startswith("--max-nfev=") for a in fit_args):
@@ -205,6 +245,7 @@ def main():
     reference.bind()
     fit_cops = reference.load("fit_cops")
     restart_state, restart_info = None, {"save": not args.no_save_restart}
+    figures_info = {"write": not args.no_figures}
     if args.restart_from:
         restart_state = rs.read(args.restart_from)
         restart_info["loaded"] = provenance.file_identity(args.restart_from, "fit_restart")
@@ -237,6 +278,7 @@ def main():
                 "registry": gpu_model.REGISTRY.stats(),
                 "fit_start": fit_start,
                 "restart": restart_info,
+                "figures": figures_info,
             }
         original_save()
 
@@ -256,6 +298,8 @@ def main():
                 state.meta["started_from"] = restart_info["loaded"]
             restart_info["saved"] = rs.write(out / "fit_restart.npz", state)
             print("gpu_fit: restart file %s" % (out / "fit_restart.npz"), flush=True)
+        if not args.no_figures and fit_cops.ACTIVE_MANIFEST is not None:
+            write_figures(fit_cops, fit_args, figures_info)
         # A last save so the final call counts and times are recorded.
         save_with_backend()
     except BaseException as exc:

@@ -27,6 +27,97 @@ Reconciled facts, checked 2026-10-19:
 * New pending items: C00b re-freeze against the repaired tree, C02 joint extensions, and
   the C04 gravity acceptance route (a user decision).
 
+## Publication figure format (2026-10-20, user request; default for all future runs)
+
+The user asked for:
+* publication-quality plots (.eps and .png);
+* the time and altitude range of the late visibility marked;
+* the end-of-mission ground track of Rosetta with the touchdown point.
+
+The user's decisions:
+* the Rosetta impact only, not Philae's sites;
+* both 3D views and a lon/lat map;
+* this format for future runs.
+
+**Code:**
+* `cops_cuda/figures.py`: style, pressure figures, track and impact geometry, renderers;
+* `cops_cuda/kernels/render.cu`: `raster_faces` z-buffer, `ray_first_hit`;
+* `tools/pub_figures.py` (`pressures`, `groundtrack`);
+* `tests/test_figures.py` (6 tests). The full suite passes: 157 tests.
+
+**Automatic use:**
+* `gpu_fit.py` writes `<fit>/figures/pressures_*`;
+* `c05_write_bundle.py` writes `<bundle>_groundtrack_*`;
+* `restart_tool.py plot` and `enhance` use the format, and `enhance` adds a region lon/lat
+  map.
+
+A figure failure never fails a fit; it is recorded in `compute_backend.figures`.
+
+**Definitions:**
+* **Late-visibility window:** the bundle's `late_ng_not_rg` interval, 10:33:10–10:39:26 UTC.
+  * 1M: 95 points, 307.0–0.38 m altitude.
+  * 788k: 307.0–0.34 m.
+* **Ground track:** the sub-spacecraft intercept, i.e. the first surface hit toward the
+  body-frame origin.
+  * The nearest-point track (the altitude definition) jumps between the bumps of the outer
+    envelope at high altitude, so it is not plotted.
+  * It stays in `_track.dat`. On 1M it differs from the intercept by a median of 55 m (at
+    most 100 m) in the late window, and by 0.14 m at the last row.
+* **Impact point:** the straight-line extrapolation of the last two rows to the mesh.
+  * 1M: 10:39:26.4 UTC, lon 12.227°, lat 31.749°.
+  * 788k: 10:39:26.3 UTC, lon 12.228°, lat 31.750°.
+  * The last row is 0.38 m above the 1M surface at 0.89 m/s. The nearest surface point
+    of the last row is 0.05 m from the impact point.
+
+**Regenerated:**
+* `comparison_001m_vs_788k/figures/`: per-model 788k vs 1M, all 1M models, and ground track
+  on both meshes. The old `plot_cops_model` PNGs were removed.
+* `fit_001m_gpu_*_n2000/figures/`.
+* The package README, PROVENANCE and MANIFEST were updated, and the code snapshot was
+  refreshed.
+
+## C09 on the SHAP5 1M mesh (2026-10-20, user request): all products and fits on the GPU
+
+The user asked whether 788k facets are sufficient and requested a full refit on
+`cg_spc_shap5_001m_cart.bdf`.
+
+**Mesh:** 1,194,250 facets, 597,127 vertices; audit passed, Euler characteristic 2,
+volume 1.876e10 m³.
+
+**Commands:** `quick_guide.md` §4e.
+
+**Products:**
+* fitting base `output_fit_shap5_001m_base`: C11, 5.5 min, 356,553,303 records;
+* gravity field `cuda_c04/equivalence_20261020T082211Z`: 2.0 h;
+* cache `admitted_gravity_cache_shap5_001m.npz` in the same directory;
+* bundle `cuda_c05/restart_001m/restart_templates_shap5_001m.npz`;
+* fits `fit_001m_gpu_{B29,C30,N30,NC31}_n2000`;
+* comparison `comparison_001m_vs_788k/` (README, plots, table, translated states).
+
+**Not CPU-validated on this mesh:** no CPU gravity or C++ base exists for 1M. The GPU codes
+were validated on 100k and 788k.
+
+| Fit | Cost 788k → 1M | Termination 1M | Change of parameters | Notes |
+|---|---|---|---|---|
+| B29 | 0.067692 → 0.068711 | max_nfev | ≤ 0.34 σ, same bounds | T on bounds 30/400, κ 0.855 |
+| C30 | 0.067711 → 0.068664 | max_nfev | ≤ 0.34 σ | cliff60 0.22 ± 5.86 (not significant) |
+| N30 | 0.042221 → **0.041887** | **converged (ftol), nfev 1439** | ≤ 0.49 σ | late_ng 6.99 ± 4.83; T75 222.8 K; κ 0.096 |
+| NC31 | 0.067662 → 0.068664 | max_nfev | ≤ 0.36 σ (late_ng inert) | ends on the B29 branch again |
+
+**Mesh convergence:**
+* The unfitted bases differ by at most 0.07% above 10 m altitude (median 0.01–0.02%); at the
+  3 points below 10 m they differ by at most 0.52%.
+* A 1M fitted state re-evaluated on 788k (`restart_tool.py translate --evaluate`, fit
+  selection) changes the B29, C30 and NC31 data costs by 0.05%. The predictions change by at
+  most 0.45%.
+* The 1–2% cost differences between the meshes are therefore optimizer stopping points
+  (non-converged at 2000 evaluations), not resolution.
+* N30's larger transfer change (NG 8.5% and RG 20% at the last points) comes from the
+  per-mesh NG-only region definition: 500 against 379 facets, same area fraction.
+
+**Conclusion offered to the user:** 788k resolves the smooth forward model. The finer mesh
+does not change any fitted branch.
+
 ## C12: fit restart files and tools. Status: IMPLEMENTED (2026-10-20, user request)
 
 * **Code:**

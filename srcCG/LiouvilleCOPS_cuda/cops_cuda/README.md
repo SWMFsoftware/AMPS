@@ -37,6 +37,7 @@ Two words recur with different meanings:
 | `gpu_model.py` | C06→C07 | 3.11 | GPU-backed subclass of the reference `fit_cops.Model` (header-only host side; `evaluate`, Jacobian and `seen_faces` on the device). `tools/gpu_fit.py` puts it in place of `fit_cops.Model` inside one process, so the unchanged `fit_cops.main()` fits on the GPU. Backends are shared across models with equal rows |
 | `multi_gpu.py` | C07 | 3.11 | One fit on several GPUs: `MultiGpuBackend` behind the C02 contract, with persistent spawned workers (one per device, contiguous row blocks balanced by records), one host activity field in shared memory, and assembly in row order. Bitwise equal to one GPU; clean `BackendError` on worker failure |
 | `restart.py` | C12 | 3.11 | Fit restart files: write/read (digests, mesh identity), the start vector for any `fit_cops.Problem` by name, state pressures on the GPU (`StateEvaluator`). Used by `gpu_fit.py` and `tools/restart_tool.py` |
+| `figures.py` | figures | — | Publication figures (.eps and .png, 300 dpi; user request 2026-10-20): pressures with the late-visibility window shaded, and the end-of-mission ground track with the Rosetta impact point on GPU-rendered shape models. Used by `tools/pub_figures.py`, `gpu_fit.py`, `c05_write_bundle.py` and `restart_tool.py` |
 | `environment.py` | C01 | 3.11 | CUDA library and device discovery; thread policy for workers |
 | `kernels/` | C02+ | — | CUDA C sources; see `kernels/README.md` |
 

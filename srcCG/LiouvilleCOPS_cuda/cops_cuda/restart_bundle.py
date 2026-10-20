@@ -175,3 +175,50 @@ def build_bundle(out, run, body, cached, definition, gravity_cache_path, omega_i
     bundle = templates.load_bundle(out, centroid, area)
     templates.select_templates(bundle, names)
     return payload
+
+
+def build_visibility_bundle(out, run, vis, vis_meta, writer=None):
+    """Bundle with only the two visibility columns (no gravity needed); returns the payload.
+
+    Used to start NG-only/RG-only fits before a gravity cache exists. The full restart
+    bundle (with the cliff columns) is written later by ``build_bundle``. Both bundles
+    carry identical visibility columns.
+    """
+    builder = reference.load("build_physical_activity_templates")
+    templates = reference.load("activity_templates")
+    fit_cops = reference.load("fit_cops")
+    out, run = Path(out).resolve(), Path(run).resolve()
+    json_path = out.with_suffix(".json")
+    for path in (out, json_path):
+        if path.exists():
+            raise ValueError("refusing to replace %s" % path)
+    elements = fit_cops.read_elements(str(run / "elements.bin"))
+    centroid, area = elements["centroid"], elements["area"]
+    names = list(VISIBILITY)
+    columns = [np.asarray(vis[n], dtype=bool).astype(float) for n in VISIBILITY]
+    template_meta = {}
+    for name in VISIBILITY:
+        template_meta[name] = {
+            "definition": vis_meta["definitions"][name], "interval_utc": vis_meta["interval_utc"],
+            "selected_point_count": vis_meta["selected_point_count"],
+            "selected_point_ids": vis_meta["selected_point_ids"],
+            "face_count": vis_meta["face_counts"][name],
+            "area_fraction": builder.area_fraction(np.asarray(vis[name], dtype=bool), area),
+            "computed_by": vis_meta["backend"], "kernel_set_sha256": vis_meta["kernel_set_sha256"],
+            "interpretation": "geometry-defined candidate region; fitted amplitude is not proof "
+                              "of a physical source"}
+    metadata = {
+        "created_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "base_run": str(run), "base_run_manifest": provenance.file_identity(run / "run_manifest.json"),
+        "elements": provenance.file_identity(run / "elements.bin"), "templates": template_meta,
+        "restart_product": {"decision": "visibility-only bundle (no gravity); cliff columns follow in the "
+                                        "full restart bundle",
+                            "writer": writer or provenance.file_identity(Path(__file__), "module")},
+    }
+    payload = templates.write_bundle(out, names, np.column_stack(columns), centroid, area, metadata)
+    with json_path.open("x") as stream:
+        stream.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    bundle = templates.load_bundle(out, centroid, area)
+    templates.select_templates(bundle, names)
+    return payload
+
