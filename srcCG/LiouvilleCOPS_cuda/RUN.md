@@ -149,6 +149,30 @@ run under the CPU reference interpreter (about 20 min on 4 CPUs).
 # then, in ../LiouvilleCOPS: build_physical_activity_templates.py ... --gravity-cache <new cache.npz>
 ```
 
+## C05 restart bundle (gravity cache + NG/RG/cliff masks)
+
+```tcsh
+.venv/bin/python tools/c05_write_bundle.py --run $COPS_OUTPUT_ROOT/output_fit_shap5_788k_base \
+    --gravity-cache <admitted cache.npz> --gravity-shape <the cache's BDF> --out <new bundle.npz>
+# columns: late_ng_not_rg late_rg_not_ng cliff_ge_45deg cliff_ge_60deg;
+# the unchanged fitter selects each with: fit_cops.py ... --activity-template <bundle.npz> <name>
+```
+
+Facets within 1e-6° of a cliff threshold are re-resolved with the CPU reference
+package (requires `polyhedral_gravity` in `.venv`); the bundle metadata lists them.
+
+## C06 full-set evaluator run (all 1150 fit points)
+
+```tcsh
+env COPS_OUTPUT_ROOT=/data/vtenishe/rosetta_data_end_of_mission_cops/cops_output \
+    .venv/bin/python tools/c06_full_run.py --capture $COPS_OUTPUT_ROOT/cuda_reference/c00_20261019T064536Z
+```
+
+The full problem uses the header-only model (`cops_cuda/host_model.py`), so host
+memory stays small (kernel records live only on the GPU, about 22 GB on device).
+A 23-point CPU subset is the exact reference for those points of the full problem.
+`COPS_OUTPUT_ROOT` must be set: the reference path helpers resolve the base run with it.
+
 ## Threads
 
 Run CPU work that runs alone (C++ replay, CPU gravity reference) with 36 threads. A GPU

@@ -69,6 +69,10 @@ STATIC_FIELDS = ("wnH", "wvH", "wpH", "wnC", "wvC", "xlit")
 class HostConstants:
     """The reference's per-point and global constants, from a ``fit_cops.Model``.
 
+    The model may be the reference itself or the header-only subclass of
+    ``host_model.py``; both carry the same per-point data (proven bitwise in
+    ``tests/test_host_model.py``).
+
     Taking them from the CPU model guarantees identity with the reference.
     ``qmin`` and ``qmax`` are recomputed with ``Model.load_kernels``' own
     expressions, because the model keeps them only broadcast per contribution;
@@ -86,7 +90,10 @@ class HostConstants:
         self.bm = dict(model.bm)
         self.cNG = dict(model.cNG)
         self.cRG = {s: np.asarray(v, dtype=np.float64) for s, v in model.cRG.items()}
-        self.PhiCO2_cpu = np.asarray(model.PhiCO2, dtype=np.float64)   # for tests only
+        # For tests only; None for a header-only model (host_model.py), whose
+        # PhiCO2 is computed on the device alone.
+        self.PhiCO2_cpu = (None if model.PhiCO2 is None
+                           else np.asarray(model.PhiCO2, dtype=np.float64))
         # Model.load_kernels: rhA = rh / AU; Q_H2O ~ rhA**-p, Q_CO2 ~ rhA**-2
         rhA = model.rh / fit_cops.AU
         p = 4.2143229 if model.helio == "shap5" else 4.8

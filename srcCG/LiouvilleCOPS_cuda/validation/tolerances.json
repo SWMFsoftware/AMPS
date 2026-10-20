@@ -37,7 +37,13 @@
       "abs_le": "1e-11 * max_i |J_cpu[i, j]| per column j",
       "provisional": "signed basis columns can cancel; C06 replaces this with an eps*magnitude bound once per-entry magnitudes are computed",
       "status": "provisional",
-      "decision_point": "end of C06: replace by an eps*magnitude bound from per-entry magnitudes"
+      "decision_point": "end of C06: replace by an eps*magnitude bound from per-entry magnitudes",
+      "proposed_replacement": {
+        "abs_le": "1024 * eps * M_J[i, j] per entry; entries with M_J == 0 exactly 0 on both sides",
+        "magnitude": "M_J[i, j] = sum of |contribution| entering entry (i, j), reference per-contribution terms (tools/c06_jacobian_budget.py)",
+        "evidence": "cops_output/cuda_c06/jacobian_budget_20261019T223008Z/report.json: max 329 eps M_J (C00b 47-point and 23-point full-run verification subsets, B29/N30/C30/NC31/R30, all fixture states)",
+        "status": "proposed, awaiting user approval"
+      }
     },
     "jacobian_vs_central_difference": {
       "note": "sanity only: reference analytic vs central difference agrees to <= 6.1e-6 on non-branch-crossing columns at h = 1e-6 max(1,|x|); branch-crossing columns are excluded, never tolerated by loosening"

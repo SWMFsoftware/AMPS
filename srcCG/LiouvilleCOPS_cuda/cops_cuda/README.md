@@ -29,7 +29,11 @@ Two words recur with different meanings:
 | `manifest.py` | C02 | 3.11 | Software, device, runtime, precision and CUDA-source identity sections for manifests |
 | `gravity_body.py` | C03 | 3.8 + 3.11 | Gravity polyhedron: BDF reading through the reference reader, the exact topology audit that replaces HEAL, identity |
 | `gravity.py` | C03 | 3.11 | **GPLv3-derived.** Face precompute (`prepare`), bitwise equal to the package; `GravityEvaluator` (fold/split variants, memory plan, launch bound, final scaling) |
+| `gravity_cache_io.py` | C04 | 3.11 | Writes a GPU self-gravity field as a CPU-format gravity cache, using the CPU's own `make_definition`/`write_cache` and truthful CUDA metadata, so the unchanged builder and selector reuse it |
+| `masks.py` | C05 | 3.11 | GPU late-interval visibility masks (`late_ng_not_rg`, `late_rg_not_ng`, plus the seen diagnostics) by integer OR; bit-identical to the CPU predicates |
+| `restart_bundle.py` | C05 | 3.11 | The restart template bundle (NG-only, RG-only, cliff columns from the admitted cache), written with the CPU's bundle writer and checked by the unchanged loader and selector |
 | `evaluator.py` | C06 | 3.11 | `CudaBackend`: FP64 pressures and analytic-Jacobian columns behind the C02 contract, for B29/N30/C30/NC31 and the labelled extensions. `"sequential"` mode is bitwise the CPU reference; `"tree"` mode is the deterministic production mode |
+| `host_model.py` | C06 | 3.11 | Header-only subclass of the reference `fit_cops.Model`: per-point data and constants bitwise the reference's, with no kernel records on the host. Lets the unmodified `fit_cops.Problem` run on the full 788k selection with a GPU backend installed; CPU evaluation refuses |
 | `environment.py` | C01 | 3.11 | CUDA library and device discovery; thread policy for workers |
 | `kernels/` | C02+ | — | CUDA C sources; see `kernels/README.md` |
 

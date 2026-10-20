@@ -16,10 +16,10 @@ the numerical policy is in `VALIDATION.md`.
 | C00 | complete; C00b re-freeze complete |
 | C01 | complete |
 | C02 | complete, including the joint-mode extensions |
-| C03 | numerical gate complete; full-field admission via C04 |
-| C04 | in progress: 100k full-field CPU/GPU comparison running |
-| C05 | not started (the RG-only oracle exists in C00b) |
-| C06 | numerical gate passed on the C00b subset; full-set run and Jacobian budget pending |
+| C03 | complete (full-field admission passed in C04) |
+| C04 | single-GPU complete: 100k and 788k equivalence passed, admitted caches written; two-GPU in C07 |
+| C05 | complete: visibility masks and restart bundle (bitwise equal to the CPU builder) |
+| C06 | numerical gate passed on the C00b subset and the full 1150-point set; Jacobian budget proposed, awaiting approval |
 | C07 – C10 | not started |
 
 ## 1. Objective and scope

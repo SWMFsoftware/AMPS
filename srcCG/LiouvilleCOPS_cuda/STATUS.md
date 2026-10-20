@@ -27,7 +27,7 @@ Reconciled facts, checked 2026-10-19:
 * New pending items: C00b re-freeze against the repaired tree, C02 joint extensions, and
   the C04 gravity acceptance route (a user decision).
 
-## C06: single-GPU FP64 evaluator. Status: numerical gate PASSED on the C00b subset (2026-10-19); full-set run and Jacobian budget pending
+## C06: single-GPU FP64 evaluator. Status: numerical gate PASSED on the C00b subset and on the full 1150-point set (2026-10-19); Jacobian budget awaiting approval
 
 * **Implemented:**
   * `cops_cuda/evaluator.py` (`CudaBackend`, behind the C02 contract);
@@ -66,12 +66,29 @@ Reconciled facts, checked 2026-10-19:
   * `pytest`: 116 passed. `test_evaluator.py` adds bitwise sequential checks for 6
     configurations, plus tree budgets and drop-in use under `fit_cops.Problem` for B29 and
     NC31.
+* **Full-set run** (`tools/c06_full_run.py`;
+  `cops_output/cuda_c06/full_20261019T221945Z/report.json`, ALL PASS):
+  * Host-light model: `cops_cuda/host_model.py`, a header-only subclass of the reference
+    `fit_cops.Model`. The unmodified `fit_cops.Problem` is built on all 1150 fit points
+    (245,515,533 contributions) in 0.2 s, with no kernel records on the host.
+    `tests/test_host_model.py` proves its per-point data, constants and Problem are bitwise
+    the reference's, and that a backend bound from it is bitwise one bound from the full model.
+  * Verification uses per-point independence: a 23-point CPU subset (`choose_subset`, 16
+    spaced plus late rows; 3.65M contributions) is the exact reference for those points of
+    the full problem.
+  * B29/N30/NC31/R30, 3–5 fixture states each:
+    * GPU sequential on the subset is bitwise the CPU;
+    * full tree is bitwise the subset tree at the subset points (point-set invariance);
+    * full-tree pressures are ≤ 200 eps·M (budget 512);
+    * the full-tree Jacobian is ≤ 2.0e-14 × column max (provisional 1e-11).
+  * Timing on the full set (warm, tree, one A6000):
+    * pressures 52–63 ms;
+    * full Jacobian (29–31 columns) 0.66–0.72 s; `Problem.data_jacobian` through the facade is the same;
+    * CPU estimate for the same Jacobian 72–78 s (subset time per record × records), about 105×;
+    * bind 68 s (disk streaming plus audit); device plan 13.2 GiB.
 * **Pending:**
-  * Full 1150-point run and timing. The backend currently takes its constants from a CPU
-    `fit_cops.Model`, which loads every kernel on the host (tens of GB, too much while the
-    CPU campaign runs). A host-light constructor is needed (C06/C09).
-  * The Jacobian budget, replacing the provisional one from per-entry magnitudes, needs the
-    user's approval.
+  * The Jacobian budget, replacing the provisional one, needs the user's approval. Proposal
+    in VALIDATION.md §Jacobian (proposed, not approved).
   * A 1-vs-2 GPU comparison belongs to C07.
 
 ## C02 joint extensions. Status: COMPLETE (2026-10-19)
@@ -107,7 +124,7 @@ Reconciled facts, checked 2026-10-19:
   (λ = 0 and λ = 1e-4 with joint regularization), and branch-aware central differences on
   selected states.
 
-## C05: masks and effective fields. Status: visibility masks COMPLETE (2026-10-19); cliff masks wait for the admitted gravity cache
+## C05: masks and effective fields. Status: COMPLETE (2026-10-19): visibility masks and the restart bundle
 
 * **Implemented:** `cops_cuda/masks.py`, `cops_cuda/kernels/masks.cu`,
   `tools/c05_mask_check.py`.
@@ -129,10 +146,24 @@ Reconciled facts, checked 2026-10-19:
   * Control interval (10 points): both exclusive masks are empty, as in the reference.
   * GPU 5.9 s against CPU 1.8 s. Loading and hashing 95 kernel files dominates; masks are
     not a performance target.
-* **Pending:** the cliff masks from the admitted gravity cache, and the restart bundle with
-  all four template columns (C04 then C05 item 4).
+* **Restart bundle (C05 item 4):** `cops_cuda/restart_bundle.py`, with
+  `tools/c05_write_bundle.py` as the glue and `tests/test_restart_bundle.py`.
+  * Product: `cops_output/cuda_c05/restart_20261019/restart_templates_shap5_788k.{npz,json,png}`,
+    made from the admitted 788k cache (C04).
+  * Columns:
+    * `late_ng_not_rg` (379 facets);
+    * `late_rg_not_ng` (1,336 facets);
+    * `cliff_ge_45deg` (110,073);
+    * `cliff_ge_60deg` (31,212).
+  * 0 facets fell in the 1e-6° threshold band.
+  * The unchanged fitter's `load_bundle` and `select_templates` accept all four columns,
+    including the gravity provenance gate.
+  * **Bitwise identical to the unchanged CPU builder's corrected bundle**
+    (`physical_templates_shap5_788k_corrected.npz`) for every column the CPU produces
+    (`late_ng_not_rg`, `cliff_ge_45deg`, `cliff_ge_60deg`).
+  * Restart use: `fit_cops.py ... --activity-template <bundle.npz> <name>`.
 
-## C04: production gravity cache. Status: full-field CPU/GPU equivalence PASSED (2026-10-19); admitted caches and two-GPU work pending
+## C04: production gravity cache. Status: single-GPU COMPLETE (2026-10-19): 100k and 788k equivalence PASSED, admitted caches written; two-GPU partitioning pending (C07)
 
 * **User decisions (2026-10-19):**
   * test the gravity model at full-field scale with the repaired CPU builder on
@@ -189,10 +220,27 @@ Reconciled facts, checked 2026-10-19:
   * The **unchanged fitter's `select_templates` accepts its `cliff_ge_60deg` column**, and
     the metadata states the CUDA backend.
   * The restart path therefore needs no change in `../LiouvilleCOPS`.
-* **Pending:** the facet-by-facet comparison, writing the admitted caches (100k test and
-  788k production) with evidence, two-GPU partitioning and restart.
+* **788k production equivalence: PASS**
+  (`cuda_c04/equivalence_20261019T221538Z/compare_20261019T230910Z.json`). The CPU reference
+  is the corrected 788k build of the restored campaign
+  (`physical_templates_shap5_788k_corrected.gravity.npz`; 3.6 h on CPUs). On all 787,754
+  facets:
+  * |Δg| ≤ 2.45e-13 relative and ≤ 0.001 eps·M;
+  * slope ≤ 2.5e-11°;
+  * 45°/60° cliff masks identical;
+  * the CPU bundle's cliff columns equal the cache slopes.
+* **Cross-device determinism:** the GPU 1 field (3,191 s, 1.94e8 pairs/s) is **bitwise
+  identical** to the C03 field from GPU 0, for self-gravity, term magnitude and potential.
+* **Admitted caches** (CPU format, with the compare report as `evidence`):
+  * 100k test body:
+    `cuda_c04/equivalence_20261019T185043Z/admitted_gravity_cache_shap5vol100k.npz`
+    (offset-halving 0.00531°);
+  * **788k production:**
+    `cuda_c04/equivalence_20261019T221538Z/admitted_gravity_cache_shap5_788k.npz`
+    (offset-halving 0.00502°).
+* **Pending:** two-GPU partitioning (C07).
 
-## C03: single-GPU exact polyhedral gravity in FP64. Status: COMPLETE for the numerical gate (2026-10-19); the full-mask cliff comparison waits for a corrected CPU reference
+## C03: single-GPU exact polyhedral gravity in FP64. Status: COMPLETE (2026-10-19); the full-mask comparison against the corrected CPU reference passed in C04
 
 * **Implemented:**
   * `cops_cuda/gravity_body.py` (project code): BDF through the reference reader, and the

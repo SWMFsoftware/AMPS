@@ -98,6 +98,25 @@ separate approval.
   of C06, which computes per-entry magnitudes and replaces this with an eps·M bound like the
   pressure one. Until then it is a development gate only. The analytic vs central-difference
   comparison (≤ 6.1e-6 away from branch crossings) is a sanity check, never a tolerance.
+  * **Proposed replacement (C06, 2026-10-19; awaiting approval):**
+    `|J_gpu[i,j] - J_cpu[i,j]| <= 1024 eps M_J[i,j]` per entry, where `M_J[i,j]` is the sum of
+    the magnitudes of every contribution entering entry (i, j), computed from the
+    reference's own per-contribution terms (`tools/c06_jacobian_budget.py`). Entries with
+    `M_J = 0` must be exactly 0 on both sides.
+  * **Evidence:** `cops_output/cuda_c06/jacobian_budget_20261019T223008Z/report.json`.
+    * Coverage: the 47-point C00b subset and the 23-point verification subset of the full
+      run, B29/N30/C30/NC31/R30, all fixture states (7–10 each).
+    * Observed maximum 329 eps·M_J, in a temperature column (Tmax, NG, `temperature_wide`).
+      Activity columns reach 245, templates 134 and κ 233.
+    * Every zero-magnitude entry is exactly zero on both sides.
+    * Column-max-relative error ≤ 2.9e-14 everywhere, against the provisional 1e-11.
+  * **Why 1024, not 512:** the difference is dominated by the CPU's own sequential
+    summation, as for pressures (≤ 233 eps·M against fsum). That error grows with a point's
+    record count, and the CPU reference can be held only for subsets (the full 1150-point
+    reference does not fit beside the campaign). The constant 1024 gives a 3.1× margin over
+    the observation and stays ≈ 2e-13 relative to the entry magnitude, far below the
+    optimizer's sensitivity.
+  * The column-max-relative number stays in the reports as a diagnostic.
 * **End-to-end FP64 fit:** the same termination class, final cost within 1e-9 relative, an
   identical active-bound set, and parameters within 1e-3 posterior σ. Along null or
   near-null directions, predictions must agree within 1e-8 relative instead. *Decision point:*
