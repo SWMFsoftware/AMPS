@@ -29,7 +29,8 @@ orientation policy) and the cache's calculation metadata (``integrity_check``,
 
 After the bundle, the tool writes the ground-track figures of the mesh next to it
 (``cops_cuda/figures.py``; ``--no-figures`` skips them): ``<out stem>_groundtrack_3d`` and
-``_latlon`` (.eps, .png), ``_track.dat`` and ``_impact.json``.
+``_latlon`` (.eps, .png), ``_track.dat``, ``_impact.json``, and the template maps
+``<out stem>_templates`` (.eps, .png, ``_caption.txt``).
 """
 
 import argparse
@@ -43,10 +44,13 @@ sys.path.insert(0, str(APP_ROOT))
 
 
 def groundtrack(args, run, shape):
-    """Ground-track figures of the bundle's mesh (cops_cuda/figures.py), next to the bundle.
+    """Ground-track and template-map figures of the bundle's mesh (cops_cuda/figures.py),
+    next to the bundle.
 
-    ``<out stem>_groundtrack_3d`` and ``_latlon`` (.eps, .png), ``_track.dat`` and
-    ``_impact.json``. The NG-only and RG-only facets of this bundle are coloured, and the
+    ``<out stem>_groundtrack_3d`` and ``_latlon`` (.eps, .png), ``_track.dat``,
+    ``_impact.json``, and ``<out stem>_templates`` (.eps, .png, ``_caption.txt``; the
+    publication form of the bundle map, with slope and cliff rows when the bundle has a
+    gravity cache). The NG-only and RG-only facets of this bundle are coloured, and the
     late-visibility window is this bundle's interval. A failure is reported, not raised:
     the bundle is already written.
     """
@@ -61,6 +65,7 @@ def groundtrack(args, run, shape):
         window = figures.late_window(base, out)
         gt = figures.groundtrack_data(run, shape, out, window, args.device)
         paths = figures.groundtrack_figures(gt, prefix, device_id=args.device)
+        paths += figures.templates_figure(gt, out.with_name(out.stem + "_templates"), device_id=args.device)
         impact = Path(str(prefix) + "_impact.json")
         impact.write_text(json.dumps(dict(gt["impact"], shape=gt["shape"], base_run=str(run)), indent=1), encoding="utf-8")
         print("ground track: %s; impact %s UTC, lon %.3f, lat %.3f" % (

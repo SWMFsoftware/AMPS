@@ -569,8 +569,13 @@ def render_ortho(vertices, faces, normals, view, center, half_width, pixels, col
     return image, to_image, visible
 
 
-def render_lonlat(vertices, faces, normals, lon_range, lat_range, width, colors, device_id=0, ss=2):
-    """Equirectangular image of the outermost surface over a longitude/latitude box."""
+def render_lonlat(vertices, faces, normals, lon_range, lat_range, width, colors, device_id=0, ss=2,
+                  shade_weight=1.0):
+    """Equirectangular image of the outermost surface over a longitude/latitude box.
+
+    ``shade_weight`` blends the hill shading into the facet colours: 1 = full relief shading,
+    0 = the colours exactly (for quantitative colour maps).
+    """
     (lo0, lo1), (la0, la1) = lon_range, lat_range
     W = int(width) * ss
     H = int(round(width * (la1 - la0) / (lo1 - lo0))) * ss
@@ -600,7 +605,7 @@ def render_lonlat(vertices, faces, normals, lon_range, lat_range, width, colors,
     north = np.cross(up, east)
     L = np.cos(np.radians(40)) * (north - east) / np.sqrt(2) + np.sin(np.radians(40)) * up
     lam = np.clip(np.einsum("ij,ij->i", normals, L), 0.0, 1.0)
-    intensity = 0.30 + 0.70 * lam
+    intensity = 1.0 - shade_weight * (0.70 - 0.70 * lam)
     image = _shade(face, colors, intensity, ss)
 
     def to_image(lo, la):
@@ -685,7 +690,7 @@ def groundtrack_figures(gt, prefix, device_id=0, overwrite=False, title=None, pi
     written = []
     legend_extra = [Line2D([], [], marker="*", ls="none", ms=8, mfc="#F0E442", mec="k", mew=0.6,
                            label="Rosetta impact (lon %.2f°, lat %.2f°)" % (impact["lon_deg"], impact["lat_deg"])),
-                    Line2D([], [], marker=">", ls="none", ms=5, mfc="white", mec="k", mew=0.6,
+                    Line2D([], [], marker="s", ls="none", ms=4, mfc="white", mec="k", mew=0.6,
                            label="track start, %s UTC, %.1f km" % (table["time"][0].strftime("%H:%M:%S"),
                                                                     table["altitude"][0] / 1000.0))]
 
@@ -718,7 +723,7 @@ def groundtrack_figures(gt, prefix, device_id=0, overwrite=False, title=None, pi
         _colored_track(ax, gx, gy, alt, norm, cmap, 2.6, mask=vis & late, seg_mask=no_jump, zorder=5)
         lc = _colored_track(ax, gx, gy, alt, norm, cmap, 1.1, mask=vis, seg_mask=no_jump, zorder=6)
         if vis[0]:
-            ax.plot([gx[0]], [gy[0]], marker=">", ms=5, mfc="white", mec="k", mew=0.6, zorder=9)
+            ax.plot([gx[0]], [gy[0]], marker="s", ms=4, mfc="white", mec="k", mew=0.6, zorder=9)
         ix, iy, _ = to_image(ip[None, :])
         ax.plot([ix[0]], [iy[0]], marker="*", ms=9 if k < 2 else 11, mfc="#F0E442", mec="k", mew=0.6, zorder=9)
         if k < 2:                                   # outline of the next panel's area
@@ -772,7 +777,7 @@ def groundtrack_figures(gt, prefix, device_id=0, overwrite=False, title=None, pi
     _colored_track(ax, glon, glat, alt, norm, cmap, 2.6, mask=late & gt["outside"], seg_mask=no_seam, zorder=5)
     lc = _colored_track(ax, glon, glat, alt, norm, cmap, 1.0, mask=gt["outside"], seg_mask=no_seam, zorder=6)
     ax.plot([impact["lon_deg"]], [impact["lat_deg"]], marker="*", ms=9, mfc="#F0E442", mec="k", mew=0.6, zorder=9)
-    ax.plot([glon[0]], [glat[0]], marker=">", ms=5, mfc="white", mec="k", mew=0.6, zorder=9)
+    ax.plot([glon[0]], [glat[0]], marker="s", ms=4, mfc="white", mec="k", mew=0.6, zorder=9)
     ax.plot([zl[0], zl[1], zl[1], zl[0], zl[0]], [za[0], za[0], za[1], za[1], za[0]], color="k", lw=0.6, zorder=7)
     ax.set_xlim(-180, 180)
     ax.set_ylim(-90, 90)
@@ -958,6 +963,230 @@ def _minute_marks(ax, gt, late, project, label):
                     arrowprops={"arrowstyle": "-", "lw": 0.4, "color": "0.2"},
                     bbox={"facecolor": "white", "edgecolor": "none", "pad": 0.4})
         last, side = (xi, yi), -side
+
+
+# ------------------------------------------------------------------- template maps
+CLIFF45_COLOR = np.array([0x56, 0xB4, 0xE9]) / 255.0
+CLIFF60_COLOR = np.array([0x00, 0x5A, 0x8C]) / 255.0
+
+
+def gravity_slope(bundle, cache=None, nfaces=None):
+    """Per-facet effective gravitational slope [deg] from the bundle's admitted gravity cache."""
+    meta = bundle_metadata(bundle)
+    path = cache or (((meta.get("gravity") or {}).get("cache") or {}).get("file") or {}).get("path")
+    if not path or not Path(path).exists():
+        return None, None
+    with np.load(str(path), allow_pickle=False) as z:
+        slope = np.asarray(z["reference_slope_deg"], float)
+    if nfaces is not None and len(slope) != nfaces:
+        raise ValueError("gravity cache %s has %d facets, the mesh %d" % (path, len(slope), nfaces))
+    return slope, str(path)
+
+
+def late_visibility_definition(window, meta=None):
+    """Plain-language definition of the late-visibility templates (figure text and captions)."""
+    n = len(window["points"])
+    if meta:
+        n = meta.get("templates", {}).get("late_ng_not_rg", {}).get("selected_point_count", n)
+    return ("Late visibility: the %d COPS observation points of %s–%s UTC (spacecraft altitude %s–%s m). "
+            "NG-only facets are seen by the nude gauge (NG) and not by the ram gauge (RG) from at least one "
+            "of these points: Kn > 0 and KΦ = KV = 0 at the same point. RG-only facets are the reverse: "
+            "KΦ ≠ 0 or KV ≠ 0, and Kn = 0, at the same point. Kn = Σ (dS/r²) A(θ) W_NG and "
+            "KΦ, KV = Σ (dS/r²) A(θ) Acc_RG (−l·b_RG, resp. 1) are the collisionless (Liouville) transport "
+            "kernels of the facet at the gauge, summed over its parts visible from the spacecraft "
+            "(LiouvilleCOPS src/Liouville.h), so 'seen' means a nonzero instrument response, not only a line "
+            "of sight. The union is taken over the points." % (
+                n, window["start"].split("T")[1], window["stop"].split("T")[1],
+                _hm(window["altitude_max_m"]), _hm(window["altitude_min_m"])))
+
+
+def write_caption(prefix, text, overwrite=False):
+    path = Path(str(prefix) + "_caption.txt")
+    if path.exists() and not overwrite:
+        raise FileExistsError(str(path))
+    path.write_text(text.strip() + "\n", encoding="utf-8")
+    return str(path)
+
+
+def templates_figure(gt, prefix, gravity_cache=None, device_id=0, overwrite=False, title=None, pixels=900):
+    """Template maps with the ground track: the publication form of the builder's bundle map.
+
+    Rows (left: global longitude/latitude map; right: zoom on the impact area):
+    (a, b) late-visibility templates (NG-only, RG-only);
+    (c, d) effective gravitational slope from the admitted gravity cache;
+    (e, f) cliff templates (slope >= 45 deg and >= 60 deg).
+    Rows (c-f) are omitted when the bundle has no gravity cache (visibility-only bundles).
+    Writes ``<prefix>`` (.eps, .png) and ``<prefix>_caption.txt``; returns the paths.
+    """
+    plt = style()
+    import matplotlib.patheffects as pe
+    from matplotlib.colors import Normalize
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+    V, F, N = gt["vertices"], gt["faces"], gt["normals"]
+    masks, window, impact, table = gt["masks"] or {}, gt["window"], gt["impact"], gt["table"]
+    meta = bundle_metadata(gt["bundle"]) if gt["bundle"] else {}
+    slope, cache_path = gravity_slope(gt["bundle"], gravity_cache, len(F)) if gt["bundle"] else (None, None)
+    rows = ["late"] + (["slope", "cliff"] if slope is not None else [])
+    late = np.isin(table["iPoint"], window["points"])
+    glon, glat = lonlat(gt["ground"])
+    step = np.linalg.norm(np.diff(gt["ground"], axis=0), axis=1)
+    ok_seg = (np.abs(np.diff(glon)) <= 180.0) & (step <= max(150.0, 5.0 * np.median(step)))
+    # zoom box: the late track and the late-visibility regions
+    lons, lats = [glon[late]], [glat[late]]
+    for name in ("late_ng_not_rg", "late_rg_not_ng"):
+        if name in masks and masks[name].any():
+            lo, la = lonlat(V[F[masks[name]]].mean(axis=1))
+            lons.append(lo)
+            lats.append(la)
+    lons, lats = np.concatenate(lons), np.concatenate(lats)
+    pad = 0.10 * max(np.ptp(lons), np.ptp(lats), 1.0)
+    zl, za = (lons.min() - pad, lons.max() + pad), (lats.min() - pad, lats.max() + pad)
+    coslat = np.cos(np.radians(0.5 * (za[0] + za[1])))
+
+    cmap = plt.get_cmap("magma")
+    snorm = Normalize(0.0, 90.0)
+    layers = {}
+    base = face_colors(len(F), None)
+    lc = base.copy()
+    if "late_rg_not_ng" in masks:
+        lc[masks["late_rg_not_ng"]] = RG_ONLY_COLOR
+    if "late_ng_not_rg" in masks:
+        lc[masks["late_ng_not_rg"]] = NG_ONLY_COLOR
+    layers["late"] = (lc, 1.0)
+    if slope is not None:
+        layers["slope"] = (cmap(snorm(np.clip(slope, 0, 90)))[:, :3], 0.0)
+        cc = base.copy()
+        c45 = masks.get("cliff_ge_45deg", slope >= 45.0)
+        c60 = masks.get("cliff_ge_60deg", slope >= 60.0)
+        cc[c45] = CLIFF45_COLOR
+        cc[c60] = CLIFF60_COLOR
+        layers["cliff"] = (cc, 1.0)
+
+    nrow = len(rows)
+    row_h = 2.05
+    height = row_h * nrow + 1.55
+    fig = plt.figure(figsize=(DOUBLE_COLUMN_IN, height))
+    gs = fig.add_gridspec(nrow, 3, width_ratios=[2.0, 1.0, 0.05], wspace=0.10, hspace=0.30,
+                          left=0.07, right=0.93, top=1.0 - 0.10 / nrow, bottom=1.35 / height)
+    halo = [pe.Stroke(linewidth=1.5, foreground="white"), pe.Normal()]
+    halo_thick = [pe.Stroke(linewidth=2.9, foreground="white"), pe.Normal()]
+    letters = iter("abcdef")
+    row_titles = {"late": "late-visibility templates",
+                  "slope": "effective gravitational slope",
+                  "cliff": "cliff templates"}
+    for r, row in enumerate(rows):
+        colors, shade_w = layers[row]
+        for c, (lon_r, lat_r) in enumerate((((-180, 180), (-90, 90)), (zl, za))):
+            ax = fig.add_subplot(gs[r, c])
+            width = 2 * pixels if c == 0 else pixels
+            image, _ = render_lonlat(V, F, N, lon_r, lat_r, width, colors, device_id, shade_weight=shade_w)
+            ax.imshow(image, extent=(lon_r[0], lon_r[1], lat_r[0], lat_r[1]), interpolation="lanczos",
+                      aspect="equal" if c == 0 else 1.0 / coslat)
+            pts = np.column_stack((glon, glat))
+            seg = np.stack((pts[:-1], pts[1:]), axis=1)
+            keep = gt["outside"][:-1] & gt["outside"][1:] & ok_seg
+            from matplotlib.collections import LineCollection
+            ax.add_collection(LineCollection(seg[keep], colors="k", linewidths=0.8, zorder=5, path_effects=halo))
+            lk = keep & late[:-1] & late[1:]
+            ax.add_collection(LineCollection(seg[lk], colors="k", linewidths=2.0, zorder=6, path_effects=halo_thick))
+            ax.plot([impact["lon_deg"]], [impact["lat_deg"]], marker="*", ms=8 if c == 0 else 11,
+                    mfc="#F0E442", mec="k", mew=0.6, zorder=9)
+            if c == 0:
+                ax.plot([glon[0]], [glat[0]], marker="s", ms=3.6, mfc="white", mec="k", mew=0.6, zorder=9)
+                ax.plot([zl[0], zl[1], zl[1], zl[0], zl[0]], [za[0], za[0], za[1], za[1], za[0]], color="k",
+                        lw=0.6, zorder=7, path_effects=halo)
+                ax.set_xticks(range(-180, 181, 60))
+                ax.set_yticks(range(-90, 91, 45))
+                ax.set_ylabel("latitude [°]")
+                ax.set_title(row_titles[row], fontsize=8, loc="left", pad=3)
+            else:
+                _minute_marks(ax, gt, late, lambda p: lonlat(p), label=False)
+                if r == 0:
+                    ax.annotate("impact %s UTC" % impact["utc"].split("T")[1],
+                                xy=(impact["lon_deg"], impact["lat_deg"]), xytext=(18, -48),
+                                textcoords="offset points", fontsize=6.0, ha="center",
+                                arrowprops={"arrowstyle": "-|>", "lw": 0.6, "color": "k", "shrinkB": 5},
+                                bbox={"facecolor": "white", "edgecolor": "0.3", "lw": 0.4,
+                                      "boxstyle": "round,pad=0.2"}, zorder=10)
+            ax.set_xlim(*lon_r)
+            ax.set_ylim(*lat_r)
+            if r == nrow - 1:
+                ax.set_xlabel("longitude [°]")
+            ax.text(0.015, 0.96, "(%s)" % next(letters), transform=ax.transAxes, va="top", fontsize=7.5,
+                    bbox={"facecolor": "white", "edgecolor": "none", "pad": 0.8})
+        cax = fig.add_subplot(gs[r, 2])
+        if row == "slope":
+            from matplotlib.cm import ScalarMappable
+            cb = fig.colorbar(ScalarMappable(norm=snorm, cmap=cmap), cax=cax, extend="max")
+            cb.set_label("slope [°] (> 90: overhang)", fontsize=6.5)
+            cb.set_ticks([0, 15, 30, 45, 60, 75, 90])
+        else:
+            cax.axis("off")
+    handles = []
+    if "late_ng_not_rg" in masks:
+        handles.append(Patch(facecolor=NG_ONLY_COLOR, label="NG-only (%d facets, %.3f%% of area)" % (
+            int(masks["late_ng_not_rg"].sum()),
+            100 * meta.get("templates", {}).get("late_ng_not_rg", {}).get("area_fraction", np.nan))))
+    if "late_rg_not_ng" in masks:
+        handles.append(Patch(facecolor=RG_ONLY_COLOR, label="RG-only (%d facets, %.3f%% of area)" % (
+            int(masks["late_rg_not_ng"].sum()),
+            100 * meta.get("templates", {}).get("late_rg_not_ng", {}).get("area_fraction", np.nan))))
+    if slope is not None:
+        for name, col, thr in (("cliff_ge_45deg", CLIFF45_COLOR, "45–60°"), ("cliff_ge_60deg", CLIFF60_COLOR, "≥ 60°")):
+            frac = meta.get("templates", {}).get(name, {}).get("area_fraction", np.nan)
+            handles.append(Patch(facecolor=col, label="slope %s (%s: %.1f%% of area)" % (thr, name, 100 * frac)))
+        handles[-2].set_label(handles[-2].get_label().replace("of area)", "of area, incl. ≥ 60°)"))
+    handles += [Line2D([], [], color="k", lw=0.8, label="ground track (sub-spacecraft intercept)"),
+                Line2D([], [], color="k", lw=2.0, label="ground track in the late-visibility window"),
+                Line2D([], [], marker="o", ls="none", ms=3, mfc="white", mec="k", mew=0.5,
+                       label="1-min marks from %s UTC" % window["start"].split("T")[1]),
+                Line2D([], [], marker="s", ls="none", ms=3.6, mfc="white", mec="k", mew=0.6,
+                       label="track start %s UTC, %.1f km" % (table["time"][0].strftime("%H:%M:%S"),
+                                                             table["altitude"][0] / 1000)),
+                Line2D([], [], marker="*", ls="none", ms=8, mfc="#F0E442", mec="k", mew=0.6,
+                       label="Rosetta impact, lon %.2f°, lat %.2f°" % (impact["lon_deg"], impact["lat_deg"]))]
+    fig.legend(handles=handles, loc="lower left", bbox_to_anchor=(0.07, 0.0), ncol=2, fontsize=6.3,
+               frameon=False, handlelength=2.0, columnspacing=1.2)
+    defn = late_visibility_definition(window, meta)
+    fig.text(0.07, 1.0 + 0.02 / nrow,
+             "Late visibility: the %d observation points of %s–%s UTC (altitude %s–%s m).\n"
+             "NG-only = facets seen by the nude gauge (Kn > 0) and not by the ram gauge (KΦ = KV = 0) from at least "
+             "one of these points;\nRG-only = the reverse. 'Seen' = nonzero collisionless transport kernel "
+             "(visible and within the gauge acceptance)." % (
+                 len(window["points"]), window["start"].split("T")[1], window["stop"].split("T")[1],
+                 _hm(window["altitude_max_m"]), _hm(window["altitude_min_m"])),
+             fontsize=6.8, va="bottom", ha="left", linespacing=1.35)
+    if title:
+        fig.suptitle(title, fontsize=8, y=1.0 + 0.06 / nrow)
+    paths = save(fig, prefix, overwrite)
+    plt.close(fig)
+    g = meta.get("gravity", {})
+    caption = (
+        "Activity-template maps of the %s shape model (%d facets), longitude/latitude, outermost surface "
+        "where overhangs put several surface layers at one longitude/latitude. Left: global; right: the "
+        "impact area (box in the left panels). (a, b) Late-visibility templates. %s "
+        % (Path(gt["shape"]).name, len(F), defn))
+    if slope is not None:
+        caption += (
+            "(c, d) Effective gravitational slope: the angle between the inward facet normal and the effective "
+            "gravity (self-gravity of a homogeneous polyhedron, density %s kg/m³, evaluated %s m above each "
+            "facet centroid, minus the centrifugal term ω×(ω×r) of the SPICE rotation at %s). Values above "
+            "90° are overhangs. (e, f) Cliff templates: slope ≥ 45° (light) and ≥ 60° (dark). Gravity cache: %s. "
+            % (g.get("density_kg_m3", "?"), g.get("evaluation_offset_m", "?"),
+               ", ".join(g.get("omega_sample_epochs_utc", [])) or "the late interval", cache_path))
+    caption += (
+        "Line: ground track of Rosetta on 2016-09-30, the sub-spacecraft intercept (first surface hit on the "
+        "line from the spacecraft toward the body-frame origin), from %s UTC at %.1f km altitude (square) to "
+        "impact; thick within the late-visibility window, with 1-minute marks from its start. Star: Rosetta "
+        "impact point, the straight-line extrapolation of the last two observation rows (last row %s UTC, "
+        "%.2f m above the surface, %.2f m/s) to the shape model: %s UTC, longitude %.3f°, latitude %.3f° "
+        "(planetocentric, body-fixed frame of the SPICE kernels)." % (
+            table["time"][0].strftime("%H:%M:%S"), table["altitude"][0] / 1000, table["utc"][-1].split("T")[1],
+            table["altitude"][-1], impact["speed_m_s"], impact["utc"].split("T")[1], impact["lon_deg"],
+            impact["lat_deg"]))
+    paths.append(write_caption(prefix, caption, overwrite))
+    return paths
 
 
 def write_track_table(gt, path, overwrite=False):

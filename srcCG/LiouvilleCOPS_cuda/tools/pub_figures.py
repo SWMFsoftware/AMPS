@@ -29,6 +29,17 @@ writes ``<out>_3d``, ``<out>_latlon`` and ``<out>_track.dat``, plus ``<out>_impa
 * The shape defaults to the base run's ShapeModel.
 * With ``--bundle``, the NG-only and RG-only template facets are coloured.
 
+Activity-template maps (the publication form of the template builder's bundle map)::
+
+    .venv/bin/python tools/pub_figures.py templates --base $BASE --bundle <template bundle .npz> \
+        --out <dir>/templates [--gravity-cache <cache>] [--device 0]
+
+writes ``<out>`` (.eps, .png) and ``<out>_caption.txt``. Rows: late-visibility templates
+(NG-only, RG-only), effective gravitational slope, cliff templates (>= 45 and >= 60 deg);
+left: global longitude/latitude map, right: impact area. Each panel shows the ground track
+and the impact point. The caption defines "late visibility" and every quantity. The slope
+comes from the gravity cache named in the bundle's metadata (``--gravity-cache`` overrides).
+
 ``--overwrite`` replaces existing figure files; by default existing files are refused.
 """
 
@@ -85,6 +96,16 @@ def cmd_groundtrack(args):
     return 0
 
 
+def cmd_templates(args):
+    base = figures.read_table(args.base)
+    window = figures.late_window(base, args.bundle, args.late_start, args.late_stop)
+    gt = figures.groundtrack_data(args.base, args.shape, args.bundle, window, args.device)
+    paths = figures.templates_figure(gt, args.out, gravity_cache=args.gravity_cache, device_id=args.device,
+                                     overwrite=args.overwrite, title=args.title)
+    print("\n".join(paths))
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="command", required=True)
@@ -105,6 +126,11 @@ def main():
     g.add_argument("--shape", help="BDF of the base's mesh (default: the base's ShapeModel)")
     g.add_argument("--device", type=int, default=0)
     g.set_defaults(func=cmd_groundtrack)
+    m = sub.add_parser("templates", parents=[common])
+    m.add_argument("--shape", help="BDF of the base's mesh (default: the base's ShapeModel)")
+    m.add_argument("--gravity-cache", help="admitted gravity cache (default: the one named in the bundle)")
+    m.add_argument("--device", type=int, default=0)
+    m.set_defaults(func=cmd_templates)
     args = ap.parse_args()
     return args.func(args)
 

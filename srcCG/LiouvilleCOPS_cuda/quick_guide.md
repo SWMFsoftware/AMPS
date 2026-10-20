@@ -266,7 +266,7 @@ The tools write these figures automatically:
 | Tool | Figures |
 |---|---|
 | `gpu_fit.py` | `<fit>/figures/pressures_{time,altitude}`: base, fit and data (`--no-figures` skips them) |
-| `c05_write_bundle.py` | `<bundle stem>_groundtrack_{3d,latlon}`, `_track.dat`, `_impact.json` next to the bundle (`--no-figures` skips them) |
+| `c05_write_bundle.py` | `<bundle stem>_groundtrack_{3d,latlon}`, `_track.dat`, `_impact.json`, and the template maps `<bundle stem>_templates` (+ `_caption.txt`) next to the bundle (`--no-figures` skips them) |
 | `restart_tool.py plot` | `<out>_{time,altitude}` |
 | `restart_tool.py enhance` | `<out>_{time,altitude}` and the region map `<out>_region` |
 
@@ -279,6 +279,8 @@ Combined figures and regeneration:
     --out $O/<dir>/N30_788k_vs_1m
 # end-of-mission ground track and Rosetta impact point on the base's shape model (GPU, about 30 s)
 .venv/bin/python tools/pub_figures.py groundtrack --base $BASE --bundle $BUNDLE --out $O/<dir>/groundtrack --device 0
+# activity-template maps (late-visibility, slope, cliff) with ground track and impact (GPU, about 40 s)
+.venv/bin/python tools/pub_figures.py templates --base $BASE --bundle $BUNDLE --out $O/<dir>/templates --device 0
 ```
 
 Format (`cops_cuda/figures.py`):
@@ -299,6 +301,12 @@ Format (`cops_cuda/figures.py`):
   * The **Rosetta impact point** is the straight-line extrapolation of the last two rows to
     the shape model: 10:39:26.4 UTC, lon 12.23°, lat 31.75° on SHAP5 1M and 788k.
   * The NG-only and RG-only facets of the bundle are coloured.
+* **Template maps** (`templates`): the publication form of the builder's bundle map.
+  * Rows: late-visibility templates, effective gravitational slope (from the bundle's
+    gravity cache), and cliff templates. Left: global map; right: impact area.
+  * The header defines "late visibility": NG-only facets have Kn > 0 and KΦ = KV = 0 at
+    one of the window's points; RG-only facets are the reverse.
+  * `_caption.txt` gives the full definitions (kernels, slope, track, impact).
 * Existing figure files are refused unless `--overwrite` is given.
 
 ## 4c2. Restart files (C12): save, restart, plot, enhance, translate

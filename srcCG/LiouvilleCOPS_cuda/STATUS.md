@@ -69,6 +69,15 @@ A figure failure never fails a fit; it is recorded in `compute_backend.figures`.
   * The last row is 0.38 m above the 1M surface at 0.89 m/s. The nearest surface point
     of the last row is 0.05 m from the impact point.
 
+**Template maps** (follow-up request: publication form of `physical_templates_shap5_788k_corrected.png`,
+with "late visibility" defined and the ground track with the touchdown point):
+* `figures.templates_figure` and `pub_figures.py templates`;
+* rows: late templates, effective gravitational slope, cliffs; global lon/lat map plus a
+  zoom on the impact area; the track and impact point on every panel;
+* the definition is in the figure header, and the full definitions are in `_caption.txt`;
+* `c05_write_bundle.py` writes them next to every new bundle;
+* written for 1M and 788k (`figures/templates_{001m,788k}`); 158 tests pass.
+
 **Regenerated:**
 * `comparison_001m_vs_788k/figures/`: per-model 788k vs 1M, all 1M models, and ground track
   on both meshes. The old `plot_cops_model` PNGs were removed.

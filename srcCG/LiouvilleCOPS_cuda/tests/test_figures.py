@@ -123,3 +123,11 @@ def test_pressure_figures_are_written_once(tmp_path):
         assert data.startswith(b"%!PS") if p.endswith(".eps") else data.startswith(b"\x89PNG")
     with pytest.raises(FileExistsError):
         figures.pressure_figures(tb, [("fit", tb)], tb, w, tmp_path / "p")
+
+
+def test_late_visibility_definition_names_the_window():
+    tb = table()
+    w = figures.late_window(tb)
+    text = figures.late_visibility_definition(w)
+    assert "10:33:10" in text and "10:39:26" in text and "%d COPS observation points" % len(w["points"]) in text
+    assert "Kn > 0" in text and "KΦ = KV = 0" in text
