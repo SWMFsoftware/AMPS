@@ -20,8 +20,9 @@ the numerical policy is in `VALIDATION.md`.
 | C04 | single-GPU complete: 100k and 788k equivalence passed, admitted caches written; two-GPU in C07 |
 | C05 | complete: visibility masks and restart bundle (bitwise equal to the CPU builder) |
 | C06 | complete: numerical gate passed on the C00b subset and the full 1150-point set; Jacobian budget approved |
-| C07 | step 1 done: unchanged fitter on one GPU (first B29 fit, 17.5 min); two-GPU work next |
+| C07 | complete: one vs two GPUs bitwise (evaluator and a full fit), 1.9× Jacobian speedup |
 | C08 – C10 | not started |
+| C11 | planned (added 2026-10-20): GPU rebuild of the fitting base, after C10 |
 
 ## 1. Objective and scope
 
@@ -331,7 +332,7 @@ every manifest. Change dependencies only through the lock.
   * 160 difficult points; NaN parity;
   * bitwise determinism across chunking and both GPUs;
   * the full 788k field: 3150 s, 13.56% of area ≥ 45°, 3.77% ≥ 60°, no facet within 1e-6°
-    of a threshold (`cuda_c03/gravity_20261019T171225Z`).
+    of a threshold (`cuda_c03/gravity_20261020T022050Z`).
 * **Remaining (amendment):** bind the evidence to exact code, mesh and binary identities
   (the report manifest has them). Also use the reference audit `require_outward_closed_body`
   in `gravity_body`, keeping the local audit as a cross-check.
@@ -504,6 +505,55 @@ approval, and failing this stage never delays a correct FP64 release.
 * **Report:** memory, contention, failures and numerical deviations.
 * **Release:** keep the CPU fallback and release only validated configurations.
 
+### C11: GPU rebuild of the fitting base (added 2026-10-20; after C10)
+
+**Why:** `rebuild_cops_boundary.py` / `liouville_cops` (C++, OpenMP) produce the static
+fitting base: `kernels/point=NNNN.bin` (245.5M records for the 788k mesh), `elements.bin` and
+`COPS_model.dat`. For the 788k mesh the C++ rebuild takes 293 s on 16 threads (measured
+2026-10-20, byte-identical to the lost original). A GPU port is for **larger surface models**
+and for many rebuilds, such as boundary-condition or mesh scans. The current fitting campaign
+does not need it (user decision 2026-10-20: schedule after C10).
+
+**Scope** (all in `LiouvilleCOPS_cuda`; `../LiouvilleCOPS` unchanged; the same input files):
+1. **Host, per observation point:** the SPICE geometry, kept as the C++ does it (cheap), and
+   the input parsing via a snapshot of the effective settings, compared with the C++
+   `input.snapshot.in`.
+2. **Surface state per facet (`Source.cpp`):** SZA, analytical temperature, and cast shadows
+   by ray–mesh intersection against a flattened BVH on the device.
+3. **Transport kernels (`Liouville.cpp`):** one thread or warp per (point, facet).
+   * The behind-plane cull and the adaptive subdivision (`MaxSubdivisionLevel`,
+     `SubdivisionAccuracy`).
+   * The speed-node quadrature and the 6-step rotation fixed point.
+   * The surface-velocity term and the `wn > 0` test.
+   * Obstruction along the image of the inertial path in the rotating frame (up to 256
+     segments) through the device BVH.
+   * The NG (`srccg_shield` tables) and RG acceptance; the below-deck term.
+   * Records compacted **in facet order**, as the C++ writes them.
+4. **Writers:** byte-compatible `point=NNNN.bin`, `elements.bin` and `COPS_model.dat`. A
+   truthful `run_manifest.json` (CUDA backend named) that the unchanged fitter's base audit
+   accepts, and the same output audit as `AuditRunOutputs`.
+5. **Both kernel versions:** version 1 (`FlightTimeRotation=none`) first; version 2
+   (`exact`) only if requested.
+
+**Validation (policy to be proposed and approved by the user; not assumed):**
+* Bitwise identity with the C++ is not expected. libdevice and glibc differ by a few ulps
+  in transcendental functions (sqrt is correctly rounded on both), so threshold decisions (`wn > 0`, blocked or not,
+  subdivision level, behind-plane cull, shadow) can flip for near-threshold records.
+* Proposed gate:
+  * identical record sets except for flagged near-threshold decisions, each listed with
+    its margin;
+  * per-record Kn, KPhi, KV within a small eps-scaled budget;
+  * per-point pressures within the approved 512 eps·M plus the flipped records'
+    contribution, reported separately;
+  * the fitter's consistency check (≤ 1e-6) and a C06 evaluator run on the GPU-built base.
+* Meshes: the 100k derived surface, then the 788k mesh. Byte-identical C++ references
+  exist for both (`output_fit_shap5_788k_base`, rebuilt 2026-10-20).
+* **Performance:** C++ against GPU on the 788k mesh, then the scaling to a larger mesh.
+
+**Gate:** the approved validation policy on 100k and 788k; the unchanged fitter accepts
+the GPU-built base; and a B29 fit on it matches the fit on the C++-built base within the
+end-to-end budget.
+
 ## 6. Numerical acceptance policy
 
 `VALIDATION.md` / `validation/tolerances.json`, approved 2026-10-19:
@@ -535,7 +585,11 @@ production run by itself.
 repaired CPU tree + approved policy ─► C00b ─► C02 ext ─► C06 (B29 → N/C/NC) ─► C07 ─┐
 C03 field ─► [acceptance route] ─► C04 cache ─► C05 cliff bundle ────────────────────┼─► C09 ─► C10
 C08 (optional, after validated FP64)                                                  ┘
+                                                                         C10 ─► C11 (GPU base rebuild)
 ```
+
+C11 (GPU rebuild of the fitting base) is scheduled after C10; the current campaign does not
+need it (user decision 2026-10-20).
 
 Different workers never edit a shared contract or write the same output or cache
 directory concurrently. Integration tests are rerun at each dependency boundary.
@@ -564,9 +618,22 @@ directory concurrently. Integration tests are rerun at each dependency boundary.
 * **Order of work:** C00b and C02 extensions, then C06 B29. C05 masks and the C04 writer
   run alongside.
 
+**Decided by the user on 2026-10-20:**
+* **Temperature bounds:** the §3.4 trigger fired (B29 and N30 end with Tmax = 30 K and
+  T75 = 400 K on their bounds). The bounds stay 30–400 K, and the temperatures are reported
+  as boundary-limited.
+* **Template start:** template amplitudes start at c = 1 (lower bound 0) in GPU fits
+  (`gpu_fit.py --template-start`, default 1.0). Only the optimizer start changes; the prior
+  stays 0.
+* **Evaluation limit:** `max_nfev` is a driver parameter: 2000 for production fits (the
+  default) and 1000 for comparisons with the CPU (`--cpu-comparison`).
+* **Jacobian budget** ≤ 1024 eps·M_J per entry (approved 2026-10-19, end of C06).
+* **C11:** a GPU rebuild of the fitting base (`rebuild_cops_boundary.py`) for larger surface
+  models is added to the plan and scheduled after C10, because the current campaign does
+  not need it.
+
 **Still pending (not to be filled by assumption):**
-1. The physical decision if B29 again ends at temperature bounds (§3.4 trigger).
-2. The end-to-end fit budget (after the first CPU-vs-GPU fit). The Jacobian budget was
+1. The end-to-end fit budget (after the first CPU-vs-GPU fit). The Jacobian budget was
    approved on 2026-10-19 (≤ 1024 eps·M_J per entry).
 
 The amended effort is complete when:

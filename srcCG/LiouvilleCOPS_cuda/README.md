@@ -18,6 +18,7 @@ Stages completed:
 |---|---|
 | `ROADMAP.md` | development plan, revision 2 (incorporates `AMMENDED_ROADMAP.md`); `ROADMAP_v1.md` is the original |
 | `AMMENDED_ROADMAP.md`, `AMENDMENT_REVIEW.md` | the amendment (revised fitting scheme, gravity admission) and the review comments on it |
+| `quick_guide.md` | **start here**: exact commands to set up, run GPU fits (production and CPU comparison), compare, replay and plot |
 | `RUN.md` | the two interpreters, environment rebuild, doctor, C00 capture, C02 and C03 evidence commands |
 | `STATUS.md` | per-stage evidence, measurements, limitations |
 | `VALIDATION.md`, `validation/tolerances.json` | numerical acceptance policy (approved 2026-10-19; Jacobian and end-to-end fit items provisional) |

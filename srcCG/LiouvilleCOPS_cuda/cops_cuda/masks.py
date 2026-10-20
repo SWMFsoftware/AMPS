@@ -77,3 +77,24 @@ def late_masks(run, start, stop, device_id=0, budget=None, expected_kernel_diges
             "mesh_identity": identity["mesh_identity"], "backend": "cuda masks.cu (integer atomicOr)",
             "cuda_source": cuda_sources.source_identity("masks")}
     return masks, meta
+
+
+def seen_positive(dataset):
+    """``fit_cops.Model.seen_faces`` on a resident dataset (host bool array per facet).
+
+    Predicate (reference): facet ``face[r]`` is seen if ``Kn > 0 | KPhi > 0 | KV > 0``
+    for any record r of the loaded points (``kernels/masks.cu: seen_positive``).
+    """
+    import cupy
+    ds = dataset
+    with cupy.cuda.Device(ds.device_id):
+        seen = cupy.zeros(ds.inputs.nfaces, dtype=cupy.uint8)
+        a = ds.arrays
+        if ds.nrecords:
+            cuda_sources.function("masks", "seen_positive", ds.device_id)(
+                (max(1, min(65535, -(-ds.nrecords // 256))),), (256,),
+                (a["kernel.face"], a["kernel.kn"], a["kernel.kphi"], a["kernel.kv"],
+                 np.int64(ds.nrecords), seen))
+        host = seen.get().astype(bool)
+        del seen
+    return host

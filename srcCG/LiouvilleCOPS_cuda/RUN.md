@@ -127,7 +127,7 @@ taskset -c 28-35 /usr/bin/python3 tools/build_physical_activity_templates.py \
 .venv/bin/python tools/c04_gravity_equivalence.py compare --dir $COPS_OUTPUT_ROOT/cuda_c04/equivalence_<UTC> \
     --cpu-cache $COPS_OUTPUT_ROOT/physical_templates_shap5_788k_targets_shap5vol100k_gravity_test.gravity.npz \
     --cpu-bundle $COPS_OUTPUT_ROOT/physical_templates_shap5_788k_targets_shap5vol100k_gravity_test.npz \
-    --gpu-788k-field $COPS_OUTPUT_ROOT/cuda_c03/gravity_20261019T171225Z/full_field.npz
+    --gpu-788k-field $COPS_OUTPUT_ROOT/cuda_c04/equivalence_20261020T021855Z/gpu_field.npz
 ```
 
 ## C05 visibility masks and the C06 evaluator check
@@ -189,8 +189,18 @@ env COPS_OUTPUT_ROOT=/data/vtenishe/rosetta_data_end_of_mission_cops/cops_output
   fitter's own: `fit_manifest.json`, `fit_result.txt`, `ActivityFit.txt`, `cops_fit.in`, and so on.
 * The manifest has an extra `compute_backend` section that names the CUDA backend.
 * Use one `--lambda` value per process; an L-curve is refused because the fitter forks.
+* `--devices 0,1` splits one fit over both GPUs (bitwise equal to one GPU; `cops_cuda/multi_gpu.py`).
 * `--mode sequential` gives the bitwise CPU summation order. It is slow and meant only for
   verification.
+
+## C07 multi-GPU gate and benchmark
+
+```tcsh
+env COPS_OUTPUT_ROOT=/data/vtenishe/rosetta_data_end_of_mission_cops/cops_output \
+    .venv/bin/python tools/c07_multi_gpu_check.py --capture $COPS_OUTPUT_ROOT/cuda_reference/c00_20261019T064536Z
+```
+
+Both GPUs must be free of other fits for the timing to mean anything.
 
 ## Threads
 

@@ -126,6 +126,7 @@ class CudaBackend(bk.PressureBackend):
         self.enhancement_basis_sha256 = (None if enhancement_basis is None
                                          else bk.array_digest(enhancement_basis))
         self.timing = {}
+        self.activity_source = None
         self.arrays = {}
         self.reservation = None
         self.released = False
@@ -240,11 +241,22 @@ class CudaBackend(bk.PressureBackend):
                 "kcNbmC": float(kappa * c.cNG["CO2"] * c.bm["CO2"]),
                 "bmH": float(c.bm["H2O"]), "bmC": float(c.bm["CO2"])}
 
-    def _upload_activity(self, state):
-        """Host act_lin exactly as Model.evaluate, then af and the active set."""
+    def activity_linear(self, state):
+        """Host act_lin = Y a (+ A_scale B b), the expression of Model.evaluate."""
         act_lin = self.Y @ state.a
         if state.b is not None:
             act_lin = act_lin + self.enhancement_scale * (self.enhancement_basis @ state.b)
+        return act_lin
+
+    def _upload_activity(self, state):
+        """act_lin, then af and the active set (the reference's clip).
+
+        ``activity_source`` (default None) lets a multi-GPU worker take act_lin
+        from its parent (``multi_gpu.py``), so every device sees the same bytes
+        that one process would compute.
+        """
+        act_lin = (self.activity_linear(state) if self.activity_source is None
+                   else self.activity_source(state))
         self.arrays["af_face"].set(np.maximum(act_lin, 0.0))
         self.arrays["active"].set((act_lin > 0.0).astype(np.uint8))
 

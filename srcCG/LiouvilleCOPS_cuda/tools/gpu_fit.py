@@ -3,7 +3,24 @@
 
 Usage::
 
-    .venv/bin/python tools/gpu_fit.py [--device N] [--mode tree|sequential] -- <fit_cops.py arguments>
+    .venv/bin/python tools/gpu_fit.py [--device N | --devices 0,1] [--max-nfev N]
+        [--template-start C] [--cpu-comparison] [--mode tree|sequential] -- <fit_cops.py arguments>
+
+Run settings decided by the user (2026-10-20):
+
+* ``--max-nfev`` is a driver parameter: **2000 for production fits (default)** and
+  **1000 for comparisons with the CPU** (``--cpu-comparison``). It is passed to the fitter, so
+  ``--max-nfev`` must not also appear after ``--``.
+* ``--template-start C``, **default 1.0**: the optimizer starts every nonnegative
+  template amplitude at C instead of 0. The lower bound stays 0. With one clip,
+  ``max(0, baseline + c·A_scale·T)``, a template on facets the free baseline drives
+  negative has a zero derivative at c = 0 and cannot leave it (STATUS.md C07, N30).
+  Only the start of ``scipy.optimize.least_squares`` changes. ``P.x0`` stays the
+  fitter's prior (templates 0), as do the regularization, D, the "initial" column of
+  ``fit_result.txt`` and ``parameters.initial_scaled`` in the manifest. The actual start
+  vector is recorded in ``compute_backend.fit_start``.
+* ``--cpu-comparison``: ``--max-nfev 1000`` and ``--template-start 0``, i.e. exactly the
+  CPU fitter's command.
 
 Everything after ``--`` goes verbatim to ``fit_cops.main()``: the run, the
 profile, ``--out``, degrees, templates, tolerances, and so on. The fitter is the
@@ -17,6 +34,8 @@ What differs, inside this process only:
   the reference ``Model`` that reads kernel headers only and evaluates
   pressures, Jacobian columns and ``seen_faces`` on the GPU (FP64,
   approved budgets in VALIDATION.md);
+* with ``--devices 0,1`` one fit runs on both GPUs (``cops_cuda.multi_gpu``: one
+  optimizer, row-partitioned persistent workers; bitwise equal to one GPU);
 * the fit manifest gains a ``compute_backend`` section, written on every
   manifest save, which states the CUDA backend, the device and dataset
   identities, the binding events and the call counts and times. The
@@ -35,6 +54,8 @@ after the output directory exists, a failure is recorded as
 
 import argparse
 from pathlib import Path
+
+import numpy as np
 import sys
 import time
 
@@ -58,18 +79,67 @@ def lambda_count(fit_args):
     return count
 
 
+def install_template_start(fit_cops, value, record):
+    """Start the optimizer with template amplitudes at ``value``; the prior is unchanged.
+
+    ``fit_cops.fit_worker`` calls ``fit_one(lam)`` through the module global, so
+    replacing that attribute changes only the start passed to ``least_squares``.
+    Parameter layout (``fit_cops.Problem``): a (na), harmonics (nh), templates (nt), T, κ.
+    """
+    original = fit_cops.fit_one
+
+    def fit_one(lam, x_start=None):
+        P = fit_cops.P
+        if x_start is None and value != 0.0 and getattr(P, "nt", 0):
+            x_start = P.x0.copy()
+            first = P.na + P.nh
+            names = list(P.names[first:first + P.nt])
+            if names != ["c_" + n for n in P.template_names]:
+                raise RuntimeError("unexpected parameter layout %s" % names)
+            x_start[first:first + P.nt] = value
+            if not (np.all(x_start >= P.lo) and np.all(x_start <= P.hi)):
+                raise RuntimeError("template start outside the bounds")
+            record.update({"applied": True, "template_parameters": names,
+                           "x_start_scaled": [float(v) for v in x_start],
+                           "prior_x0_unchanged": True})
+        return original(lam, x_start)
+
+    fit_cops.fit_one = fit_one
+    return original
+
+
 def main():
     argv = sys.argv[1:]
     if "--" not in argv:
-        raise SystemExit("usage: gpu_fit.py [--device N] [--mode tree|sequential] -- <fit_cops args>")
+        raise SystemExit("usage: gpu_fit.py [--device N | --devices 0,1] [--mode tree|sequential] "
+                         "-- <fit_cops args>")
     split = argv.index("--")
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--device", type=int, default=0)
+    parser.add_argument("--devices", default=None,
+                        help="comma-separated devices for one fit split over several GPUs, e.g. 0,1")
     parser.add_argument("--mode", choices=("tree", "sequential"), default="tree",
                         help="tree: production; sequential: bitwise CPU order (slow, verification)")
     parser.add_argument("--records-per-block", type=int, default=4096)
+    parser.add_argument("--max-nfev", type=int, default=None,
+                        help="optimizer evaluation limit (default 2000; 1000 with --cpu-comparison)")
+    parser.add_argument("--template-start", type=float, default=None,
+                        help="optimizer start of template amplitudes (default 1.0; 0 with --cpu-comparison)")
+    parser.add_argument("--cpu-comparison", action="store_true",
+                        help="exactly the CPU fitter's command: --max-nfev 1000, --template-start 0")
     args = parser.parse_args(argv[:split])
     fit_args = argv[split + 1:]
+    if any(a == "--max-nfev" or a.startswith("--max-nfev=") for a in fit_args):
+        raise SystemExit("give --max-nfev to gpu_fit.py (before --), not to the fitter")
+    if args.cpu_comparison and (args.max_nfev not in (None, 1000) or
+                                args.template_start not in (None, 0.0)):
+        raise SystemExit("--cpu-comparison fixes --max-nfev 1000 and --template-start 0")
+    max_nfev = args.max_nfev if args.max_nfev is not None else (1000 if args.cpu_comparison else 2000)
+    template_start = (args.template_start if args.template_start is not None
+                      else (0.0 if args.cpu_comparison else 1.0))
+    if max_nfev < 1 or not template_start >= 0.0:
+        raise SystemExit("--max-nfev must be >= 1 and --template-start >= 0 (amplitudes are nonnegative)")
+    fit_args = fit_args + ["--max-nfev", str(max_nfev)]
     if lambda_count(fit_args) != 1:
         raise SystemExit("gpu_fit.py runs exactly one --lambda value per process "
                          "(the fitter forks for an L-curve; CUDA contexts do not survive fork)")
@@ -77,18 +147,24 @@ def main():
     from cops_cuda import gpu_model, manifest, provenance, reference
     reference.bind()
     fit_cops = reference.load("fit_cops")
-    gpu_model.REGISTRY.configure(args.device, args.mode, args.records_per_block)
+    devices = [int(d) for d in args.devices.split(",")] if args.devices else [args.device]
+    gpu_model.REGISTRY.configure(devices[0], args.mode, args.records_per_block, devices=devices)
     fit_cops.Model = gpu_model.gpu_model_class()
 
     started = provenance.utc_now()
-    software = manifest.backend_manifest("cuda_fp64_v1", args.device)
+    software = [manifest.backend_manifest("cuda_fp64_v1", d) for d in devices]
+    fit_start = {"template_start": template_start, "applied": False, "max_nfev": max_nfev,
+                 "cpu_comparison": bool(args.cpu_comparison),
+                 "policy": "user 2026-10-20: max_nfev 2000 for production fits, 1000 for CPU "
+                           "comparison; template amplitudes start at 1.0 (bound 0)"}
     original_save = fit_cops.save_active_manifest
 
     def save_with_backend():
         if fit_cops.ACTIVE_MANIFEST is not None:
             fit_cops.ACTIVE_MANIFEST["compute_backend"] = {
                 "kind": "cuda_fp64_v1 via LiouvilleCOPS_cuda gpu_model (fit_cops.Model replaced "
-                        "in-process; fit_cops.py unmodified)",
+                        "in-process; fit_cops.py unmodified)" +
+                        (" on devices %s (multi_gpu)" % devices if len(devices) > 1 else ""),
                 "driver": provenance.file_identity(Path(__file__), "tool"),
                 "driver_command": [sys.executable, str(Path(__file__).resolve())] + argv,
                 "fit_cops": provenance.file_identity(Path(fit_cops.__file__), "reference"),
@@ -96,10 +172,12 @@ def main():
                 "validation_policy": "VALIDATION.md (pressure <= 512 eps M, Jacobian <= 1024 eps M_J)",
                 "software": software,
                 "registry": gpu_model.REGISTRY.stats(),
+                "fit_start": fit_start,
             }
         original_save()
 
     fit_cops.save_active_manifest = save_with_backend
+    install_template_start(fit_cops, template_start, fit_start)
     sys.argv = [str(Path(fit_cops.__file__))] + fit_args
     t0 = time.perf_counter()
     try:

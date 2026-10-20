@@ -8,7 +8,7 @@ approved at the end of C06 (2026-10-19). This closes the C00 gate.
 Every number below comes from a measurement:
 * C00 capture `cops_output/cuda_reference/c00_20261019T064536Z`;
 * the C01 doctor reports;
-* C03 report `cops_output/cuda_c03/gravity_20261019T171225Z`.
+* C03 report `cops_output/cuda_c03/gravity_20261020T022050Z`.
 
 Kernels are validated against these budgets and never tuned toward them. A budget is changed
 only by a documented amendment that the user approves.
@@ -66,7 +66,7 @@ only by a documented amendment that the user approves.
     computed from the reference's own per-contribution terms
     (`tools/c06_jacobian_budget.py`, `jacobian_magnitudes`).
   * Entries with M_J = 0 must be exactly 0 on both sides.
-  * Evidence: `cops_output/cuda_c06/jacobian_budget_20261020T000812Z/report.json`.
+  * Evidence: `cops_output/cuda_c06/jacobian_budget_20261020T025421Z/report.json`.
     * Coverage: the 47-point C00b subset and the 23-point verification subset of the full
       run, B29/N30/C30/NC31/R30, all fixture states (7–10 each).
     * Observed maximum 245 eps·M_J (activity column a02, NG). Temperatures reach 236,

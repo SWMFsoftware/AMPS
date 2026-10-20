@@ -44,7 +44,7 @@ import time
 import numpy as np
 
 from . import backend as bk
-from . import cuda_sources, host_model
+from . import host_model, masks
 from .errors import IdentityError
 
 _CLASS = None
@@ -55,6 +55,7 @@ class _Registry:
 
     def __init__(self):
         self.device_id = 0
+        self.devices = [0]
         self.mode = "tree"
         self.records_per_block = 4096
         self.backends = {}            # (run, rows, device, mode) -> (backend, basis object)
@@ -63,10 +64,12 @@ class _Registry:
         self.calls = {"pressures": 0, "jacobian": 0, "seen_faces": 0}
         self.seconds = {"pressures": 0.0, "jacobian": 0.0, "bind": 0.0}
 
-    def configure(self, device_id=0, mode="tree", records_per_block=4096):
+    def configure(self, device_id=0, mode="tree", records_per_block=4096, devices=None):
+        """``devices`` with more than one entry selects ``multi_gpu.MultiGpuBackend``."""
         if self.backends:
             raise RuntimeError("configure before the first binding")
-        self.device_id, self.mode = int(device_id), str(mode)
+        self.devices = [int(d) for d in (devices if devices else [device_id])]
+        self.device_id, self.mode = self.devices[0], str(mode)
         self.records_per_block = int(records_per_block)
 
     def budget(self):
@@ -78,7 +81,7 @@ class _Registry:
     def backend_for(self, model, basis, scale):
         """A backend for ``model``'s rows; ``basis`` None means "any basis"."""
         from . import evaluator
-        key = (str(model.run), tuple(int(r) for r in model.rows), self.device_id, self.mode)
+        key = (str(model.run), tuple(int(r) for r in model.rows), tuple(self.devices), self.mode)
         entry = self.backends.get(key)
         if entry is not None:
             backend, bound = entry
@@ -88,15 +91,22 @@ class _Registry:
             del self.backends[key]
             self.events.append({"event": "rebind_for_new_basis", "rows": len(key[1])})
         t0 = time.perf_counter()
-        backend = evaluator.CudaBackend(model, model.run, basis, scale if basis is not None else 1.0,
-                                        device_id=self.device_id, mode=self.mode,
-                                        budget=self.budget(),
-                                        records_per_block=self.records_per_block)
+        scale = scale if basis is not None else 1.0
+        if len(self.devices) > 1:
+            from .multi_gpu import MultiGpuBackend
+            backend = MultiGpuBackend(model._spec, model, basis, scale, devices=self.devices,
+                                      mode=self.mode, records_per_block=self.records_per_block)
+        else:
+            backend = evaluator.CudaBackend(model, model.run, basis, scale,
+                                            device_id=self.device_id, mode=self.mode,
+                                            budget=self.budget(),
+                                            records_per_block=self.records_per_block)
         seconds = time.perf_counter() - t0
         self.seconds["bind"] += seconds
         self.backends[key] = (backend, basis)
-        self.events.append({"event": "bind", "rows": len(key[1]),
-                            "records": int(backend.dataset.nrecords),
+        self.events.append({"event": "bind", "rows": len(key[1]), "devices": list(self.devices),
+                            "records": (int(backend.dataset.nrecords) if hasattr(backend, "dataset")
+                                        else int(sum(backend.block_records))),
                             "enhancement_columns": backend.nbasis_enhancement,
                             "enhancement_basis_sha256": backend.enhancement_basis_sha256,
                             "seconds": seconds})
@@ -116,7 +126,7 @@ class _Registry:
     def stats(self):
         identities = [backend.identity() for backend, _ in self.backends.values()
                       if not backend.released]
-        return {"device_id": self.device_id, "mode": self.mode,
+        return {"device_id": self.device_id, "devices": list(self.devices), "mode": self.mode,
                 "records_per_block": self.records_per_block,
                 "calls": dict(self.calls), "seconds": dict(self.seconds),
                 "events": list(self.events), "backends": identities}
@@ -142,6 +152,14 @@ def gpu_model_class():
 
     class GpuModel(base):
         """``fit_cops.Model`` whose kernels live on a GPU (see module docstring)."""
+
+        def __init__(self, run, header, cols, rows, elements, coef):
+            # Frozen copies of the constructor inputs: a multi-GPU worker rebuilds
+            # its model from exactly these with the reference parser.
+            import copy
+            self._spec = {"run": str(run), "header": list(header), "cols": dict(cols),
+                          "rows": copy.deepcopy(rows), "coef": np.array(coef, dtype=float)}
+            super().__init__(run, header, cols, rows, elements, coef)
 
         def evaluate(self, a, T, kappa, b=None, enhancement_basis=None,
                      enhancement_scale=1.0, jac=False, basis_index=None,
@@ -171,21 +189,11 @@ def gpu_model_class():
 
         def seen_faces(self):
             """Facets contributing to a loaded point (reference predicate, on the device)."""
-            import cupy
             backend = REGISTRY.backend_for(self, None, 1.0)
-            ds = backend.dataset
             REGISTRY.calls["seen_faces"] += 1
-            with cupy.cuda.Device(ds.device_id):
-                seen = cupy.zeros(ds.inputs.nfaces, dtype=cupy.uint8)
-                a = ds.arrays
-                if ds.nrecords:
-                    cuda_sources.function("masks", "seen_positive", ds.device_id)(
-                        (max(1, min(65535, -(-ds.nrecords // 256))),), (256,),
-                        (a["kernel.face"], a["kernel.kn"], a["kernel.kphi"], a["kernel.kv"],
-                         np.int64(ds.nrecords), seen))
-                host = seen.get().astype(bool)
-                del seen
-            return host
+            if hasattr(backend, "seen_faces"):              # multi-GPU: union over workers
+                return backend.seen_faces()
+            return masks.seen_positive(backend.dataset)
 
     _CLASS = GpuModel
     return _CLASS

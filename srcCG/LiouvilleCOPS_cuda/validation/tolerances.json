@@ -5,7 +5,7 @@
   "proposed_utc": "2026-10-19",
   "derived_from_capture": [
     "cops_output/cuda_reference/c00_20261019T064536Z",
-    "cops_output/cuda_c03/gravity_20261019T171225Z"
+    "cops_output/cuda_c03/gravity_20261020T022050Z"
   ],
   "notation": {
     "eps": "2.220446049250313e-16 (FP64 unit roundoff * 2)",
@@ -36,7 +36,7 @@
     "jacobian_vs_cpu_reference": {
       "abs_le": "1024 * eps * M_J[i, j] per entry; entries with M_J == 0 exactly 0 on both sides",
       "magnitude": "M_J[i, j] = sum of |contribution| entering entry (i, j), reference per-contribution terms (tools/c06_jacobian_budget.py)",
-      "evidence": "cops_output/cuda_c06/jacobian_budget_20261020T000812Z/report.json: max 244.7 eps M_J (C00b 47-point and 23-point full-run verification subsets, B29/N30/C30/NC31/R30, all fixture states)",
+      "evidence": "cops_output/cuda_c06/jacobian_budget_20261020T025421Z/report.json: max 244.7 eps M_J (C00b 47-point and 23-point full-run verification subsets, B29/N30/C30/NC31/R30, all fixture states)",
       "status": "approved_by_user_2026-10-19 (end of C06)",
       "replaces": "provisional 1e-11 * max_i |J_cpu[i, j]| per column j (kept as a reported diagnostic)",
       "correction": "first report jacobian_budget_20261019T223008Z (329) used KT instead of |KT| (KT<0) in Tmax/T75 magnitudes; corrected 2026-10-20"

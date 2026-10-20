@@ -27,6 +27,127 @@ Reconciled facts, checked 2026-10-19:
 * New pending items: C00b re-freeze against the repaired tree, C02 joint extensions, and
   the C04 gravity acceptance route (a user decision).
 
+## C09 first production fits (2026-10-20): max_nfev 2000, template start 1.0, rebuilt base and bundle
+
+Outputs: `cops_output/fit_788k_gpu_{B29,C30,N30,NC31}_n2000_r2`. Commands: `quick_guide.md` §3a.
+All four stopped at the 2000-evaluation limit (not converged). The template start was
+applied (`compute_backend.fit_start.applied`). One GPU per fit, two fits at a time; 27–34 min each.
+
+| Fit | Final cost | rms NG | rms RG | Template amplitude(s) ± σ | Tmax / T75 / Tmin [K] | κ | Data Jacobian rank, condition number |
+|---|---|---|---|---|---|---|---|
+| B29 | 0.067692 | 0.3217 | 0.1785 | — | 30 (bound) / 400 (bound) / 44.2 | 0.845 | 29/29, 1.2e5 |
+| C30 | 0.067711 | 0.3219 | 0.1783 | cliff60: 0.38 ± 8.97 | 30 (bound) / 400 (bound) / 44.2 | 0.845 | 30/30, 1.3e5 |
+| N30 | **0.042221** | **0.2238** | 0.1854 | late_ng: **7.21 ± 5.46** | 30 (bound) / **227.4** / 69.7 | **0.105** | 30/30, 9.4e5 |
+| NC31 | 0.067662 | 0.3219 | 0.1781 | late_ng: 1.14 (σ 3.9e-13, inert); cliff60: 0.39 ± 8.95 | 30 (bound) / 400 (bound) / 44.3 | 0.845 | 30/31, 5.7e20 |
+
+Observations, for the user's scientific review (no conclusions drawn here):
+* B29 reproduces the lost run's final cost exactly (deterministic).
+* **N30 reaches a different branch.** Its cost is 38% below B29: NG rms 0.224 against 0.322,
+  RG slightly worse. T75 leaves the upper bound, Tmin rises to 70 K and κ falls to 0.105.
+* **NC31**, which contains N30 as the special case c_cliff = 0, ends on the B29 branch. Its
+  NG-only amplitude is inert again: zero gradient, σ ≈ 4e-13, rank deficiency. Which branch
+  a fit reaches therefore depends on the optimizer path. All fits are non-converged at 2000
+  evaluations.
+* The cliff ≥ 60° amplitude is not significant in C30 or NC31.
+
+## Data loss on 2026-10-20 and rebuild (complete)
+
+* **Incident:** between about 20:41 and 21:00 local, the following were removed from
+  `cops_output` by an unidentified actor: every `output_*` run directory, including the 788k
+  fitting base, and every `cuda_c02`…`cuda_c07` directory (gravity caches, restart bundle,
+  evidence reports). The `fit_*` and `physical_templates_*` products, `cuda_reference` and
+  `cuda_doctor` survived. No backup exists (user).
+* **Effect:**
+  * the GPU B29 production fit (2000 evaluations, final cost 6.7692e-02) could not write
+    its outputs, so only its log remains;
+  * C30 failed at start;
+  * the N30 and NC31 queue was stopped (user).
+* **Base rebuilt** with the documented C++ command (`rebuild_cops_boundary.py --input
+  fit_base.in --surface-bc flat --shape-model …788k_cart.bdf --threads 16`): 293 s.
+  * **Byte-identical** to the lost base, checked against the hashes recorded in the C00
+    capture and the fit manifests: `elements.bin`, `COPS_model.dat`, `input.snapshot.in`
+    and **all 1,150 kernel files**.
+  * Only `run_manifest.json` and `rebuild.json` differ (timestamps).
+* **GPU products and evidence regenerated** (2026-10-20, two GPU queues). Every check passes
+  again with the same figures, and the evidence paths in this file now point to the
+  regenerated reports:
+  * C02 load: ALL PASS.
+  * C03 gravity: ALL PASS; the full 788k field now lives in the C04 equivalence directory.
+  * C04 788k: compare PASS (relative error ≤ 2.45e-13, slopes ≤ 2.49e-11°, masks
+    identical); admitted cache written.
+  * C04 100k: compare PASS (≤ 7.8e-14); admitted cache written.
+  * C05: masks ALL PASS; the restart bundle `cuda_c05/restart_rebuilt/` is bitwise equal to
+    the CPU builder in `late_ng_not_rg`, `cliff_ge_45deg` and `cliff_ge_60deg`.
+  * C06: check, full run and Jacobian budget all pass (244.7 eps·M_J).
+  * C07: ALL PASS (1.90× Jacobian speedup).
+  * Not repeated: the CPU builder's reuse test of a GPU cache (C04).
+* **Production fits restarted** with suffix `_n2000_r2`. The earlier `fit_788k_gpu_B29_n2000`
+  (outputs not written) and `fit_788k_gpu_N30_n2000` (stopped) are left as they are,
+  marked failed or incomplete.
+
+## User decisions of 2026-10-20 and the quick guide
+
+* The temperature bounds stay 30–400 K; temperatures on the bounds are reported as
+  boundary-limited.
+* Template amplitudes start at c = 1 (bound 0): `gpu_fit.py --template-start`, default 1.0.
+  `tests/test_gpu_fit.py` checks that only the optimizer start changes and that the prior
+  `P.x0`, the regularization and D stay the fitter's.
+* `max_nfev` is a driver parameter: 2000 by default, and 1000 with `--cpu-comparison`
+  (which also sets template start 0, i.e. the CPU command exactly).
+* `quick_guide.md`: exact commands for setup, the one-time products, production and
+  comparison fits, fit comparison (`tools/compare_fits.py`), C++ replay, validation and plots.
+
+## C07: two-GPU fitting. Status: COMPLETE (2026-10-20)
+
+* **Implemented:**
+  * `cops_cuda/multi_gpu.py`: `MultiGpuBackend` behind the C02 contract.
+    * One optimizer on the host and persistent spawned workers, one per device.
+    * Each worker owns contiguous rows balanced by record count and rebuilds its model with
+      the reference parser (element cache checked by digest).
+    * One host activity field per evaluation, in shared memory.
+    * Assembly in row order.
+    * Failures and dead workers become `BackendError`; `close()` is graceful, then
+      terminates.
+  * `gpu_model`: `REGISTRY.configure(devices=[0, 1])` and `seen_faces` as the union over
+    workers.
+  * `tools/gpu_fit.py --devices 0,1`.
+  * `CudaBackend.activity_source` hook.
+  * `tests/test_multi_gpu.py`:
+    * partition;
+    * two devices bitwise equal to one in both modes;
+    * a SciPy TRF trajectory bitwise on two devices;
+    * `seen_faces` union;
+    * dead worker gives a clean error.
+    * `pytest`: 140 passed.
+* **Gate** (`tools/c07_multi_gpu_check.py`; `cops_output/cuda_c07/check_20261020T031417Z`,
+  ALL PASS), 788k base with all 1150 points:
+  * **one vs two devices bitwise identical** (pressures and every Jacobian column) for
+    B29, N30 and NC31, 13 fixture states;
+  * repeat evaluations bitwise (deterministic pinned reductions);
+  * partition 122,962,701 / 122,552,832 records;
+  * memory bounded per device: each worker owns its `DeviceBudget`, about 6.6 GiB per
+    device for one split fit.
+* **Latency** (warm medians):
+
+  | | One GPU | Two GPUs | Speedup |
+  |---|---|---|---|
+  | Full Jacobian | 0.683–0.738 s | 0.359–0.388 s | 1.89–1.90× |
+  | Pressures | 68–72 ms | 53–58 ms | small (host matvec and IPC dominate) |
+  | Bind | 68 s | 37 s | |
+
+* **Benchmark: one split fit vs independent fits (B29):**
+  * two concurrent independent fits, one per GPU: 0.682 s per Jacobian each, **2.93
+    Jacobians/s** in total, with no contention between devices;
+  * one fit split over both GPUs: **2.79 Jacobians/s**, at half the latency.
+  * **Recommendation:** run a fit matrix (C09) as independent single-GPU fits, about 5%
+    more throughput and no IPC. Use the split mode when one fit's turnaround matters.
+* **Full two-GPU fit:** `gpu_fit.py --devices 0,1`, B29 (`fit_shap5_788k_gpu2_B`).
+  **Bitwise identical** to the one-GPU fit `fit_shap5_788k_gpu_B`: every parameter and every
+  predicted NG/RG pressure (`tools/compare_fits.py`). Wall time 730 s against 1,049 s.
+  Jacobians 276 s against 523 s, bind 37 s against 69 s.
+* CPU threads: the optimizer is serial and is not parallelized
+  through thread settings (ROADMAP C07 item 3); BLAS threads stay at 1 as in the campaign.
+
 ## C07 step 1: GPU fit with the unchanged fitter. Status: first B29 fit COMPLETE (2026-10-20); CPU-vs-GPU end-to-end comparison waits for the CPU B fit
 
 * **Implemented:**
@@ -63,6 +184,34 @@ Reconciled facts, checked 2026-10-19:
   * Timing: **1,049 s wall** on one A6000.
     * 768 Jacobians took 523 s, 1,004 pressure calls 69 s, and the bind 69 s.
     * For comparison, the CPU B fit with the same command had been running for more than 5.5 h.
+* **N30 GPU fit:** the campaign's N command, with `late_ng_not_rg` from the same
+  `physical_templates_shap5_788k.npz_heal_defect` bundle as the CPU N fit. That column is
+  geometry-only and unaffected by HEAL. Output in `cops_output/fit_shap5_788k_gpu_N`.
+  * Same startup checks as B29. Wall time 1,146 s, including one rebind for the template
+    basis (2 × 68 s).
+  * Result:
+    * `max_nfev` 1000 (not converged); final cost 6.7824e-02;
+    * rms NG 0.3219, RG 0.1790;
+    * Tmax = 30 K and T75 = 400 K on their bounds, Tmin 44.3 K, κ 0.847, i.e. B29 within 1e-3.
+  * **`c_late_ng_not_rg` = 1.05e-10, at its lower bound 0.** The data Jacobian has rank 29 of
+    30 (condition number 2.8e21).
+  * **Cause (model structure, not numerics):**
+    * At the prior, all 379 template facets have positive legacy linear activity.
+    * At the final B and N states, none does: the fitted degree-4 baseline is negative
+      on every template facet.
+    * The single clip is `max(0, legacy + c·A_scale·T)`. With c ≈ 0 the template facets
+      are clipped, so ∂p/∂c = 0 exactly (the reference's `[act_lin > 0]` mask), and the
+      amplitude cannot leave its bound.
+    * It would become active only once c·A_scale exceeds the negative baseline there.
+  * This is a scientific finding for the user. With this parameterization a nonnegative
+    template on facets that the free baseline drives below zero is unidentifiable from c = 0.
+    It concerns N30, NC31 and C30, whichever the cliff facets turn out to be.
+  * Area fraction of each restart-bundle template where the B29 final baseline is positive:
+    * `late_ng_not_rg` 0.000;
+    * `late_rg_not_ng` 0.000;
+    * `cliff_ge_45deg` 0.141;
+    * `cliff_ge_60deg` 0.076.
+    The cliff amplitudes keep a nonzero gradient, but only through those minorities.
 * **Pending:**
   * End-to-end comparison with the CPU B fit (`fit_shap5_788k_restored_B`) once it finishes,
     then a proposal for the end-to-end budget. Because both fits stop at `max_nfev`, the
@@ -91,7 +240,7 @@ Reconciled facts, checked 2026-10-19:
     added in order.
 * **Supported:** `SZAMode=continuous`, all RG models, both heliocentric models, every
   derivative kind. `srccg_table` is refused explicitly.
-* **Evidence:** `cops_output/cuda_c06/check_20261019T193255Z/report.json`, ALL PASS, on
+* **Evidence:** `cops_output/cuda_c06/check_20261020T023349Z/report.json`, ALL PASS, on
   the 47-point C00b subset (8,783,677 contributions); B29/N30/C30/NC31/R30 with 9–10
   states each.
   * **sequential is bitwise identical to the CPU reference** for every state: pressures
@@ -110,7 +259,7 @@ Reconciled facts, checked 2026-10-19:
     configurations, plus tree budgets and drop-in use under `fit_cops.Problem` for B29 and
     NC31.
 * **Full-set run** (`tools/c06_full_run.py`;
-  `cops_output/cuda_c06/full_20261019T221945Z/report.json`, ALL PASS):
+  `cops_output/cuda_c06/full_20261020T024518Z/report.json`, ALL PASS):
   * Host-light model: `cops_cuda/host_model.py`, a header-only subclass of the reference
     `fit_cops.Model`. The unmodified `fit_cops.Problem` is built on all 1150 fit points
     (245,515,533 contributions) in 0.2 s, with no kernel records on the host.
@@ -131,7 +280,7 @@ Reconciled facts, checked 2026-10-19:
     * bind 68 s (disk streaming plus audit); device plan 13.2 GiB.
 * **Jacobian budget: approved by the user (2026-10-19):** ≤ 1024 eps·M_J per entry
   (VALIDATION.md). Measured maximum 244.7 eps·M_J
-  (`cuda_c06/jacobian_budget_20261020T000812Z`). The first report (329) used KT instead of
+  (`cuda_c06/jacobian_budget_20261020T025421Z`). The first report (329) used KT instead of
   |KT| in the temperature magnitudes and was corrected on 2026-10-20.
   `tests/test_evaluator.py` now asserts the per-entry budget.
   * A 1-vs-2 GPU comparison belongs to C07.
@@ -181,7 +330,7 @@ Reconciled facts, checked 2026-10-19:
   * **`late_rg_not_ng`** (user decision of 2026-10-19: facets only RG sees, same late
     interval).
 * **Point selection:** the builder's own (`parse_utc` interval, `inside == 0`).
-* **Evidence:** `cops_output/cuda_c05/masks_20261019T194835Z/report.json`, ALL PASS.
+* **Evidence:** `cops_output/cuda_c05/masks_20261020T023337Z/report.json`, ALL PASS.
   * Late interval (95 points):
     * `late_ng_not_rg` (379 facets) is **bit-identical to the unchanged reference
       `late_gauge_template`**;
@@ -193,7 +342,7 @@ Reconciled facts, checked 2026-10-19:
     not a performance target.
 * **Restart bundle (C05 item 4):** `cops_cuda/restart_bundle.py`, with
   `tools/c05_write_bundle.py` as the glue and `tests/test_restart_bundle.py`.
-  * Product: `cops_output/cuda_c05/restart_20261019/restart_templates_shap5_788k.{npz,json,png}`,
+  * Product: `cops_output/cuda_c05/restart_rebuilt/restart_templates_shap5_788k.{npz,json,png}`,
     made from the admitted 788k cache (C04).
   * Columns:
     * `late_ng_not_rg` (379 facets);
@@ -230,10 +379,10 @@ Reconciled facts, checked 2026-10-19:
   its `topology` and `orientation_policy` equal these, so a GPU-written cache can carry
   them truthfully.
 * **GPU field:** 787,754 targets × 100,000 faces in 406 s (1.94e8 pairs/s), in
-  `cuda_c04/equivalence_20261019T185043Z/`.
+  `cuda_c04/equivalence_20261020T022637Z/`.
 * **CPU reference:** the unchanged repaired builder, on CPUs 28–35 beside the user's CPU
   campaign: 5,617 s of gravity.
-* **Full-field equivalence: PASS** (`equivalence_20261019T185043Z/compare_*.json`), on all
+* **Full-field equivalence: PASS** (`cuda_c04/equivalence_20261020T022637Z/compare_*.json`, regenerated 2026-10-20), on all
   787,754 facets:
   * |Δg| ≤ 7.8e-14 relative (median 1.6e-14) and ≤ 0.003 eps·M, with M/|g| up to 1.5e5;
   * slope ≤ 1.7e-11°;
@@ -258,7 +407,7 @@ Reconciled facts, checked 2026-10-19:
     conditions, refusal for another body, and the offset-audit refusal.
   * **The unchanged CPU builder reuses a GPU-written cache:**
     `cuda_c04/equivalence_20261019T185043Z/gpu_gravity_cache_reuse_test.npz` (100k body;
-    offset-halving 0.00531°) was reused with `--gravity-cache` ("reused gravity cache …
+    offset-halving 0.00531°; removed in the 2026-10-20 data loss, test not repeated) was reused with `--gravity-cache` ("reused gravity cache …
     same reference omega"). Its SPICE ω is bit-identical to the tool's.
   * It wrote `cpu_builder_reuse_of_gpu_cache_test.npz`: 379 NG-only facets; cliff ≥45° on
     16.2% of the area and ≥60° on 5.0%.
@@ -266,7 +415,7 @@ Reconciled facts, checked 2026-10-19:
     the metadata states the CUDA backend.
   * The restart path therefore needs no change in `../LiouvilleCOPS`.
 * **788k production equivalence: PASS**
-  (`cuda_c04/equivalence_20261019T221538Z/compare_20261019T230910Z.json`). The CPU reference
+  (`cuda_c04/equivalence_20261020T021855Z/compare_20261020T031257Z.json`). The CPU reference
   is the corrected 788k build of the restored campaign
   (`physical_templates_shap5_788k_corrected.gravity.npz`; 3.6 h on CPUs). On all 787,754
   facets:
@@ -278,10 +427,10 @@ Reconciled facts, checked 2026-10-19:
   identical** to the C03 field from GPU 0, for self-gravity, term magnitude and potential.
 * **Admitted caches** (CPU format, with the compare report as `evidence`):
   * 100k test body:
-    `cuda_c04/equivalence_20261019T185043Z/admitted_gravity_cache_shap5vol100k.npz`
+    `cuda_c04/equivalence_20261020T022637Z/admitted_gravity_cache_shap5vol100k.npz`
     (offset-halving 0.00531°);
   * **788k production:**
-    `cuda_c04/equivalence_20261019T221538Z/admitted_gravity_cache_shap5_788k.npz`
+    `cuda_c04/equivalence_20261020T021855Z/admitted_gravity_cache_shap5_788k.npz`
     (offset-halving 0.00502°).
 * **Pending:** two-GPU partitioning (C07).
 
@@ -307,7 +456,7 @@ Reconciled facts, checked 2026-10-19:
   4. Acceleration and potential only.
   5. Synthetic tests.
   6. Offset-halving audit and difficult samples.
-* **Gate evidence:** `cops_output/cuda_c03/gravity_20261019T171225Z/report.json`.
+* **Gate evidence:** `cops_output/cuda_c03/gravity_20261020T022050Z/report.json`.
   * **Synthetic** (C00 fixture, campaign cp38 binary): cube, tetrahedron and icospheres L0–4,
     each original, translated, rotated and double-density. Worst case **0.33 eps·M**,
     against a budget of 16 eps·M. The NaN pattern is identical to the package's on every
@@ -393,7 +542,7 @@ Reconciled facts, checked 2026-10-19:
   * the dataset identity: table, elements, mesh identity, selection digests, loaded set
     digest, per-array digests, device audit, plan and timings.
 * **Gate evidence:**
-  * `cops_output/cuda_c02/load_20261019T165013Z/report.json`: ALL PASS. The run took
+  * `cops_output/cuda_c02/load_20261020T021843Z/report.json`: ALL PASS. The run took
     125 s on GPU 0 with host load average 2, beside the running L5 CPU fit.
   * **Subset** (47 C00 points, 8,783,677 records): every file matches its C00 digest, and
     the device arrays are bitwise equal to `fit_cops.read_kernel` output, an independent
