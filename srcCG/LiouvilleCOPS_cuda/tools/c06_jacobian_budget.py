@@ -76,8 +76,10 @@ def jacobian_magnitudes(P, M, x, request, fit_cops):
     dlx = dl * M.xlit
 
     def mags(w):
+        # KT = 1/(1 - 1/cos75) < 0: magnitudes take |KT| (the reference forms
+        # KT*s_lx + s_l and -KT*s_lx from the two separately folded sums).
         s_l, s_lx, s_n = bc(w * dl), bc(w * dlx), bc(w * dn)
-        return s_l + KT * s_lx, KT * s_lx, s_n
+        return s_l + abs(KT) * s_lx, abs(KT) * s_lx, s_n
     if request.temperature:
         # gN as the reference forms it; its magnitude bounds both of its parts.
         gN = cNG["H2O"] * bm["H2O"] * M.wn["H2O"] * af + kappa * cNG["CO2"] * bm["CO2"] * M.wn["CO2"]
@@ -151,6 +153,8 @@ def main():
                         state = bk.ParameterState.from_problem(P, x)
                         got, want = tree.evaluate(state, request), ref.evaluate(state, request)
                         mags = jacobian_magnitudes(P, M, x, request, fit_cops)
+                        if any(np.any(m < 0.0) for pair in mags.values() for m in pair):
+                            raise SystemExit("negative Jacobian magnitude (formula error)")
                         for key in request.keys():
                             for side, (g, w, m) in enumerate(zip(got.columns[key], want.columns[key],
                                                                  mags[key])):

@@ -173,6 +173,25 @@ memory stays small (kernel records live only on the GPU, about 22 GB on device).
 A 23-point CPU subset is the exact reference for those points of the full problem.
 `COPS_OUTPUT_ROOT` must be set: the reference path helpers resolve the base run with it.
 
+## GPU fit with the unchanged fitter (step 1 of C07)
+
+```tcsh
+env COPS_OUTPUT_ROOT=/data/vtenishe/rosetta_data_end_of_mission_cops/cops_output \
+    OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+    .venv/bin/python tools/gpu_fit.py --device 1 -- \
+    $COPS_OUTPUT_ROOT/output_fit_shap5_788k_base --profile all_available \
+    --out $COPS_OUTPUT_ROOT/<new fit directory> --degree 4 --enhancement-degree 4 --lambda 0 \
+    --jobs 1 --tbounds 30 400 --max-nfev 1000 --ftol 1e-10 --xtol 1e-10 --gtol 1e-10 \
+    --check-tolerance 1e-6 [--activity-template <bundle.npz> <name> ...]
+```
+
+* Everything after `--` is passed to `fit_cops.main()` unchanged, so the outputs are the
+  fitter's own: `fit_manifest.json`, `fit_result.txt`, `ActivityFit.txt`, `cops_fit.in`, and so on.
+* The manifest has an extra `compute_backend` section that names the CUDA backend.
+* Use one `--lambda` value per process; an L-curve is refused because the fitter forks.
+* `--mode sequential` gives the bitwise CPU summation order. It is slow and meant only for
+  verification.
+
 ## Threads
 
 Run CPU work that runs alone (C++ replay, CPU gravity reference) with 36 threads. A GPU

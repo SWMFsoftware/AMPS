@@ -1,7 +1,7 @@
 {
   "schema": "liouville_cops_cuda.tolerances",
   "schema_version": 1,
-  "status": "approved_by_user_2026-10-19_except_provisional_items",
+  "status": "approved_by_user_2026-10-19_except_end_to_end_fit",
   "proposed_utc": "2026-10-19",
   "derived_from_capture": [
     "cops_output/cuda_reference/c00_20261019T064536Z",
@@ -34,16 +34,12 @@
       "note": "r_i = w_g (ln p_i - ln p_obs_i), w_g = 1/sqrt(N_g); pressure floor applied identically"
     },
     "jacobian_vs_cpu_reference": {
-      "abs_le": "1e-11 * max_i |J_cpu[i, j]| per column j",
-      "provisional": "signed basis columns can cancel; C06 replaces this with an eps*magnitude bound once per-entry magnitudes are computed",
-      "status": "provisional",
-      "decision_point": "end of C06: replace by an eps*magnitude bound from per-entry magnitudes",
-      "proposed_replacement": {
-        "abs_le": "1024 * eps * M_J[i, j] per entry; entries with M_J == 0 exactly 0 on both sides",
-        "magnitude": "M_J[i, j] = sum of |contribution| entering entry (i, j), reference per-contribution terms (tools/c06_jacobian_budget.py)",
-        "evidence": "cops_output/cuda_c06/jacobian_budget_20261019T223008Z/report.json: max 329 eps M_J (C00b 47-point and 23-point full-run verification subsets, B29/N30/C30/NC31/R30, all fixture states)",
-        "status": "proposed, awaiting user approval"
-      }
+      "abs_le": "1024 * eps * M_J[i, j] per entry; entries with M_J == 0 exactly 0 on both sides",
+      "magnitude": "M_J[i, j] = sum of |contribution| entering entry (i, j), reference per-contribution terms (tools/c06_jacobian_budget.py)",
+      "evidence": "cops_output/cuda_c06/jacobian_budget_20261020T000812Z/report.json: max 244.7 eps M_J (C00b 47-point and 23-point full-run verification subsets, B29/N30/C30/NC31/R30, all fixture states)",
+      "status": "approved_by_user_2026-10-19 (end of C06)",
+      "replaces": "provisional 1e-11 * max_i |J_cpu[i, j]| per column j (kept as a reported diagnostic)",
+      "correction": "first report jacobian_budget_20261019T223008Z (329) used KT instead of |KT| (KT<0) in Tmax/T75 magnitudes; corrected 2026-10-20"
     },
     "jacobian_vs_central_difference": {
       "note": "sanity only: reference analytic vs central difference agrees to <= 6.1e-6 on non-branch-crossing columns at h = 1e-6 max(1,|x|); branch-crossing columns are excluded, never tolerated by loosening"
@@ -109,7 +105,6 @@
   "mixed_precision": "no budget exists; C08 must propose and justify one, subject to separate approval",
   "approved_utc": "2026-10-19",
   "provisional_items": [
-    "fp64_evaluator.jacobian_vs_cpu_reference",
     "end_to_end_fit_fp64_provisional"
   ]
 }

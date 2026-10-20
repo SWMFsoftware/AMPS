@@ -19,6 +19,7 @@ cp = pytest.importorskip("cupy")
 if cp.cuda.runtime.getDeviceCount() == 0:
     pytest.skip("no CUDA device", allow_module_level=True)
 from cops_cuda import evaluator  # noqa: E402
+from c06_jacobian_budget import jacobian_magnitudes  # noqa: E402
 
 EPS = np.finfo(float).eps
 cpu_model = contract.cpu_model
@@ -95,6 +96,14 @@ def test_tree_mode_within_budget_and_drop_in_for_problem(cpu_model, config):
         assert np.all(np.abs(got.pRG - ref.pRG) <= 512 * EPS * mRG)
         repeat = gpu.evaluate(state)
         assert repeat.pNG.tobytes() == got.pNG.tobytes()      # deterministic
+        # Approved Jacobian budget (VALIDATION.md): |dJ| <= 1024 eps M_J per entry.
+        request = bk.ColumnRequest.from_problem(P)
+        ref_j = bk.ReferenceBackend.from_problem(P).evaluate(state, request)
+        got_j = gpu.evaluate(state, request)
+        fit_cops = cpu_model["fit_cops"]
+        for key, mags in jacobian_magnitudes(P, P.M, x, request, fit_cops).items():
+            for g, w, m in zip(got_j.columns[key], ref_j.columns[key], mags):
+                assert np.all(np.abs(g - w) <= 1024 * EPS * m), key
         bk.install(P, gpu)
         r_gpu, J_gpu = P.data_residuals(x), P.data_jacobian(x)
     # Derived residual bound (VALIDATION.md): |dr_i| <= w * 512 eps M_i / p_i.
@@ -107,7 +116,7 @@ def test_tree_mode_within_budget_and_drop_in_for_problem(cpu_model, config):
     assert np.all(np.abs(r_gpu - r_cpu) <= delta)
     assert J_gpu.shape == J_cpu.shape
     scale = np.max(np.abs(J_cpu), axis=0)
-    assert np.all(np.abs(J_gpu - J_cpu) <= 1e-11 * scale)    # provisional Jacobian budget
+    assert np.all(np.abs(J_gpu - J_cpu) <= 1e-11 * scale)    # diagnostic (former provisional gate)
 
 
 def test_unsupported_sza_mode_is_refused(cpu_model):

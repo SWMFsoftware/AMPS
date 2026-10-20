@@ -27,7 +27,50 @@ Reconciled facts, checked 2026-10-19:
 * New pending items: C00b re-freeze against the repaired tree, C02 joint extensions, and
   the C04 gravity acceptance route (a user decision).
 
-## C06: single-GPU FP64 evaluator. Status: numerical gate PASSED on the C00b subset and on the full 1150-point set (2026-10-19); Jacobian budget awaiting approval
+## C07 step 1: GPU fit with the unchanged fitter. Status: first B29 fit COMPLETE (2026-10-20); CPU-vs-GPU end-to-end comparison waits for the CPU B fit
+
+* **Implemented:**
+  * `cops_cuda/gpu_model.py`: a GPU-backed subclass of the reference `fit_cops.Model`.
+    * Host side is header-only.
+    * `evaluate` has the reference signature and return format, including the T and κ
+      columns when `jac=True`.
+    * `seen_faces` runs on the device (`masks.cu: seen_positive`, the reference `> 0` predicate).
+    * Backends are bound lazily and shared across models with equal rows; one is rebound
+      only for a new enhancement basis.
+  * `tools/gpu_fit.py`: runs the unchanged `fit_cops.main()` with `fit_cops.Model` replaced
+    in-process; no file in `../LiouvilleCOPS` changes.
+    * Writes a `compute_backend` section into the fit manifest on every save.
+    * Reproduces the fitter's failure marking.
+    * Refuses L-curves (they need fork).
+  * `tests/test_gpu_model.py`:
+    * sequential `evaluate` and `seen_faces` bitwise equal to the reference;
+    * **a full SciPy TRF trajectory (`fit_cops.fit_one`) bitwise identical** to the CPU;
+    * tree mode within budget;
+    * backend sharing and rebinding. `pytest`: 135 passed.
+* **First GPU fit, B29:** the campaign's B command (profile `all_available`, degree 4, λ = 0,
+  tbounds 30–400, `max_nfev` 1000, tolerances 1e-10). Output in
+  `cops_output/fit_shap5_788k_gpu_B`.
+  * The fitter's own checks pass:
+    * consistency with LiouvilleCOPS ≤ 4.6e-11 (NG) and 9.9e-10 (RG) against the 1e-6 tolerance;
+    * initial cost 3.830468 and seen area 70.5%, identical to the CPU B fit's log.
+  * Result:
+    * stopped at `max_nfev = 1000` (not converged); final cost 6.7814e-02;
+    * rms ln residual NG 0.3218, RG 0.1790; optimality 4.6e-4;
+    * data Jacobian rank 29 of 29; condition number 1.3e5.
+  * **Temperatures at bounds:** Tmax = 30 K (lower) and T75 = 400 K (upper); Tmin = 44.3 K;
+    κ = 0.847. The archived B29 (930/1146 points) shows the same pattern. This is the
+    ROADMAP §3.4 trigger, a physical decision for the user.
+  * Timing: **1,049 s wall** on one A6000.
+    * 768 Jacobians took 523 s, 1,004 pressure calls 69 s, and the bind 69 s.
+    * For comparison, the CPU B fit with the same command had been running for more than 5.5 h.
+* **Pending:**
+  * End-to-end comparison with the CPU B fit (`fit_shap5_788k_restored_B`) once it finishes,
+    then a proposal for the end-to-end budget. Because both fits stop at `max_nfev`, the
+    comparison is between two 1000-evaluation trajectories. TRF amplifies 1e-13 differences
+    along them, so a parameter-space criterion may not be meaningful there.
+  * The N30 GPU fit, and the C30/NC31 fits with the restart bundle (C09 scope).
+
+## C06: single-GPU FP64 evaluator. Status: COMPLETE (2026-10-19): numerical gate passed on the C00b subset and the full 1150-point set; Jacobian budget approved
 
 * **Implemented:**
   * `cops_cuda/evaluator.py` (`CudaBackend`, behind the C02 contract);
@@ -86,9 +129,11 @@ Reconciled facts, checked 2026-10-19:
     * full Jacobian (29–31 columns) 0.66–0.72 s; `Problem.data_jacobian` through the facade is the same;
     * CPU estimate for the same Jacobian 72–78 s (subset time per record × records), about 105×;
     * bind 68 s (disk streaming plus audit); device plan 13.2 GiB.
-* **Pending:**
-  * The Jacobian budget, replacing the provisional one, needs the user's approval. Proposal
-    in VALIDATION.md §Jacobian (proposed, not approved).
+* **Jacobian budget: approved by the user (2026-10-19):** ≤ 1024 eps·M_J per entry
+  (VALIDATION.md). Measured maximum 244.7 eps·M_J
+  (`cuda_c06/jacobian_budget_20261020T000812Z`). The first report (329) used KT instead of
+  |KT| in the temperature magnitudes and was corrected on 2026-10-20.
+  `tests/test_evaluator.py` now asserts the per-entry budget.
   * A 1-vs-2 GPU comparison belongs to C07.
 
 ## C02 joint extensions. Status: COMPLETE (2026-10-19)

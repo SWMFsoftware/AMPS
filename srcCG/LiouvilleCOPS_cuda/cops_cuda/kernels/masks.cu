@@ -31,3 +31,19 @@ extern "C" __global__ void visibility_union(
         if (value) atomicOr(&bits[face[r]], value);
     }
 }
+
+// Facets that contribute to at least one loaded point, exactly as
+// fit_cops.Model.seen_faces:  m[face[(Kn > 0) | (KPhi > 0) | (KV > 0)]] = True.
+// Note the predicate is "> 0" for all three kernels (not the "!= 0" of the RG
+// visibility mask above).  Every store writes the same value 1, so concurrent
+// stores to one facet are benign and the result is schedule-independent.
+extern "C" __global__ void seen_positive(
+    const int* __restrict__ face, const double* __restrict__ kn,
+    const double* __restrict__ kphi, const double* __restrict__ kv,
+    long long nrecords, unsigned char* __restrict__ seen)
+{
+    const long long stride = (long long)gridDim.x * blockDim.x;
+    for (long long r = (long long)blockIdx.x * blockDim.x + threadIdx.x; r < nrecords; r += stride) {
+        if (kn[r] > 0.0 || kphi[r] > 0.0 || kv[r] > 0.0) seen[face[r]] = 1;
+    }
+}

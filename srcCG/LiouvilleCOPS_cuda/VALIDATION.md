@@ -2,8 +2,9 @@
 
 The machine-readable form is `validation/tolerances.json`.
 
-**Status: approved by the user on 2026-10-19**, except for two items that stay
-**provisional** until a fixed decision point (marked below). This closes the C00 gate.
+**Status: approved by the user on 2026-10-19**, except for one item that stays
+**provisional** until a fixed decision point (marked below). The Jacobian budget was
+approved at the end of C06 (2026-10-19). This closes the C00 gate.
 Every number below comes from a measurement:
 * C00 capture `cops_output/cuda_reference/c00_20261019T064536Z`;
 * the C01 doctor reports;
@@ -58,6 +59,30 @@ only by a documented amendment that the user approves.
   r_i = w_g (ln p_i − ln p_obs,i), with w_g = 1/√N_g, so
   |Δr_i| ≤ δ_i := w_g · 512 eps · M_i / p_i.
   The pressure floor is applied identically on both sides.
+* **Jacobian vs CPU (approved 2026-10-19 at the end of C06; replaces the provisional
+  1e-11 × column max):** **|J_gpu[i,j] − J_cpu[i,j]| ≤ 1024 eps · M_J[i,j]** per entry of the
+  pressure Jacobian.
+  * M_J[i,j] is the sum of the magnitudes of every contribution entering entry (i, j),
+    computed from the reference's own per-contribution terms
+    (`tools/c06_jacobian_budget.py`, `jacobian_magnitudes`).
+  * Entries with M_J = 0 must be exactly 0 on both sides.
+  * Evidence: `cops_output/cuda_c06/jacobian_budget_20261020T000812Z/report.json`.
+    * Coverage: the 47-point C00b subset and the 23-point verification subset of the full
+      run, B29/N30/C30/NC31/R30, all fixture states (7–10 each).
+    * Observed maximum 245 eps·M_J (activity column a02, NG). Temperatures reach 236,
+      templates 134 and κ 233.
+    * Every zero-magnitude entry is exactly zero on both sides.
+    * Correction (2026-10-20): the first report (`jacobian_budget_20261019T223008Z`, 329)
+      used KT instead of |KT| in the Tmax/T75 magnitudes, where KT = 1/(1 − 1/cos 75°) < 0.
+      That left T75 unmeasured and Tmax overestimated. The tool now uses |KT| and refuses
+      negative magnitudes. The approved constant 1024 is unchanged; its margin is 4.2×.
+  * Why 1024, not 512: the difference is dominated by the CPU's own sequential summation,
+    as for pressures. That error grows with a point's record count, and the CPU reference
+    can be held only for subsets. 1024 gives a 4.2× margin and is ≈ 2e-13 relative to the
+    entry magnitude.
+  * The column-max-relative error (≤ 2.9e-14 observed) stays in reports as a diagnostic.
+    The analytic vs central-difference comparison (≤ 6.1e-6 away from branch crossings) is
+    a sanity check, never a tolerance.
 * **Objective (amended at sign-off; replaces the fixed 1e-12 relative bound).** With
   cost = ½ Σ r_i² + the regularization term:
   **|Δcost| ≤ Σ_i |r_i| δ_i + ½ Σ_i δ_i²**.
@@ -91,32 +116,8 @@ device, are measured and must satisfy the budgets above.
 **Mixed precision:** no budget. C08 must propose and justify its own, and that needs a
 separate approval.
 
-## Provisional items (not yet approved)
+## Provisional item (not yet approved)
 
-* **Jacobian vs CPU: ≤ 1e-11 × max_i |J_cpu[i, j]| per column j.** This number has no
-  measurement behind it, and signed basis columns can cancel. *Decision point:* at the end
-  of C06, which computes per-entry magnitudes and replaces this with an eps·M bound like the
-  pressure one. Until then it is a development gate only. The analytic vs central-difference
-  comparison (≤ 6.1e-6 away from branch crossings) is a sanity check, never a tolerance.
-  * **Proposed replacement (C06, 2026-10-19; awaiting approval):**
-    `|J_gpu[i,j] - J_cpu[i,j]| <= 1024 eps M_J[i,j]` per entry, where `M_J[i,j]` is the sum of
-    the magnitudes of every contribution entering entry (i, j), computed from the
-    reference's own per-contribution terms (`tools/c06_jacobian_budget.py`). Entries with
-    `M_J = 0` must be exactly 0 on both sides.
-  * **Evidence:** `cops_output/cuda_c06/jacobian_budget_20261019T223008Z/report.json`.
-    * Coverage: the 47-point C00b subset and the 23-point verification subset of the full
-      run, B29/N30/C30/NC31/R30, all fixture states (7–10 each).
-    * Observed maximum 329 eps·M_J, in a temperature column (Tmax, NG, `temperature_wide`).
-      Activity columns reach 245, templates 134 and κ 233.
-    * Every zero-magnitude entry is exactly zero on both sides.
-    * Column-max-relative error ≤ 2.9e-14 everywhere, against the provisional 1e-11.
-  * **Why 1024, not 512:** the difference is dominated by the CPU's own sequential
-    summation, as for pressures (≤ 233 eps·M against fsum). That error grows with a point's
-    record count, and the CPU reference can be held only for subsets (the full 1150-point
-    reference does not fit beside the campaign). The constant 1024 gives a 3.1× margin over
-    the observation and stays ≈ 2e-13 relative to the entry magnitude, far below the
-    optimizer's sensitivity.
-  * The column-max-relative number stays in the reports as a diagnostic.
 * **End-to-end FP64 fit:** the same termination class, final cost within 1e-9 relative, an
   identical active-bound set, and parameters within 1e-3 posterior σ. Along null or
   near-null directions, predictions must agree within 1e-8 relative instead. *Decision point:*

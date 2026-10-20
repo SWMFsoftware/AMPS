@@ -6,7 +6,7 @@ import sys
 import pytest
 
 APP_ROOT = Path(__file__).resolve().parents[1]
-for path in (APP_ROOT, APP_ROOT / "tests"):
+for path in (APP_ROOT, APP_ROOT / "tests", APP_ROOT / "tools"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 

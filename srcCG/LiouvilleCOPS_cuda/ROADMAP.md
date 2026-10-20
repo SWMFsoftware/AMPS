@@ -19,8 +19,9 @@ the numerical policy is in `VALIDATION.md`.
 | C03 | complete (full-field admission passed in C04) |
 | C04 | single-GPU complete: 100k and 788k equivalence passed, admitted caches written; two-GPU in C07 |
 | C05 | complete: visibility masks and restart bundle (bitwise equal to the CPU builder) |
-| C06 | numerical gate passed on the C00b subset and the full 1150-point set; Jacobian budget proposed, awaiting approval |
-| C07 – C10 | not started |
+| C06 | complete: numerical gate passed on the C00b subset and the full 1150-point set; Jacobian budget approved |
+| C07 | step 1 done: unchanged fitter on one GPU (first B29 fit, 17.5 min); two-GPU work next |
+| C08 – C10 | not started |
 
 ## 1. Objective and scope
 
@@ -514,8 +515,8 @@ approval, and failing this stage never delays a correct FP64 release.
 * bitwise repeatability;
 * no mixed-precision budget.
 
-**Provisional:** the Jacobian budget (decided at the end of C06) and the end-to-end fit
-criteria (decided after the first full CPU-vs-GPU fit). New modes and states (C00b) use the
+**Approved at the end of C06 (2026-10-19):** the Jacobian budget, ≤ 1024 eps·M_J per entry.
+**Provisional:** the end-to-end fit criteria (decided after the first full CPU-vs-GPU fit). New modes and states (C00b) use the
 same budgets. Changes need a documented, user-approved amendment.
 
 ## 7. Execution order
@@ -565,8 +566,8 @@ directory concurrently. Integration tests are rerun at each dependency boundary.
 
 **Still pending (not to be filled by assumption):**
 1. The physical decision if B29 again ends at temperature bounds (§3.4 trigger).
-2. The Jacobian budget (end of C06, from per-entry magnitudes) and the end-to-end fit
-   budget (after the first CPU-vs-GPU fit).
+2. The end-to-end fit budget (after the first CPU-vs-GPU fit). The Jacobian budget was
+   approved on 2026-10-19 (≤ 1024 eps·M_J per entry).
 
 The amended effort is complete when:
 * the primary families are supported with truthful provenance;
