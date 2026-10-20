@@ -36,6 +36,7 @@ Two words recur with different meanings:
 | `host_model.py` | C06 | 3.11 | Header-only subclass of the reference `fit_cops.Model`: per-point data and constants bitwise the reference's, with no kernel records on the host. Lets the unmodified `fit_cops.Problem` run on the full 788k selection with a GPU backend installed; CPU evaluation refuses |
 | `gpu_model.py` | C06→C07 | 3.11 | GPU-backed subclass of the reference `fit_cops.Model` (header-only host side; `evaluate`, Jacobian and `seen_faces` on the device). `tools/gpu_fit.py` puts it in place of `fit_cops.Model` inside one process, so the unchanged `fit_cops.main()` fits on the GPU. Backends are shared across models with equal rows |
 | `multi_gpu.py` | C07 | 3.11 | One fit on several GPUs: `MultiGpuBackend` behind the C02 contract, with persistent spawned workers (one per device, contiguous row blocks balanced by records), one host activity field in shared memory, and assembly in row order. Bitwise equal to one GPU; clean `BackendError` on worker failure |
+| `restart.py` | C12 | 3.11 | Fit restart files: write/read (digests, mesh identity), the start vector for any `fit_cops.Problem` by name, state pressures on the GPU (`StateEvaluator`). Used by `gpu_fit.py` and `tools/restart_tool.py` |
 | `environment.py` | C01 | 3.11 | CUDA library and device discovery; thread policy for workers |
 | `kernels/` | C02+ | — | CUDA C sources; see `kernels/README.md` |
 

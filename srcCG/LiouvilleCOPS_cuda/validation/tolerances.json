@@ -106,5 +106,24 @@
   "approved_utc": "2026-10-19",
   "provisional_items": [
     "end_to_end_fit_fp64_provisional"
-  ]
+  ],
+  "gpu_fitting_base_c11": {
+    "status": "approved_by_user_2026-10-20",
+    "reference": "base built by the C++ liouville_cops from the same input; tools/c11_compare_bases.py",
+    "elements_bin": "bitwise",
+    "kernel_header_geometry": "bitwise except altitude <= 1e-14 relative",
+    "cos_sza_common_records": "bitwise",
+    "shadow_flags": "every mismatch listed; <= 1e-6 of lit facets",
+    "record_set": "every flipped facet listed; flipped share of each point's Kn/KPhi/KV totals <= 1e-9",
+    "common_records_per_point": "sum|dK|/sum|K| <= 1e-12",
+    "single_records": "reported",
+    "model_table_columns": "<= 2e-10 relative (one unit in the 11th printed digit)",
+    "fitter": "unchanged fitter accepts the base; consistency <= 1e-6",
+    "fit_on_gpu_base": "end-to-end budget (provisional)",
+    "evidence": [
+      "cops_output/cuda_c11/compare_20261020T063859Z/report.json",
+      "cops_output/cuda_c11/compare100k_20261020T065426Z/report.json"
+    ],
+    "note": "not bitwise by construction: the C++ binary uses GCC FMA contraction; the GPU uses FP64 --fmad=false"
+  }
 }

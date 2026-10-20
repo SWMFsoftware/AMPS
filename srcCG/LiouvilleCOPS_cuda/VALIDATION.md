@@ -116,6 +116,30 @@ device, are measured and must satisfy the budgets above.
 **Mixed precision:** no budget. C08 must propose and justify its own, and that needs a
 separate approval.
 
+## GPU-built fitting base (C11; approved by the user 2026-10-20)
+
+A base built by `native/liouville_cops_cuda` is compared with the base the C++ `liouville_cops`
+builds from the same input (`tools/c11_compare_bases.py`). Bitwise identity is impossible:
+the C++ binary contracts multiply-adds into FMA (GCC `-march=native`), while the GPU uses
+FP64 with `--fmad=false`.
+
+| Check | Bound |
+|---|---|
+| `elements.bin` | bitwise |
+| kernel header geometry | bitwise, except the altitude: ≤ 1e-14 relative |
+| CosSZA of common records | bitwise |
+| shadow flags | every mismatch listed; ≤ 1e-6 of lit facets |
+| record set | every flipped facet listed; flipped share of each point's Kn, KPhi, KV totals ≤ 1e-9 |
+| common records, per point | Σ\|ΔK\| / Σ\|K\| ≤ 1e-12 |
+| single records | reported (a subdivided facet can differ by one partially visible sample) |
+| `COPS_model.dat` model columns (11 significant digits printed) | ≤ 2e-10 relative (one unit in the last printed digit) |
+| fitter | the unchanged fitter accepts the base; consistency check ≤ 1e-6 |
+| fit on the GPU base vs the C++ base | the end-to-end budget (provisional; see below) |
+
+Evidence: `cuda_c11/compare_20261020T063859Z` (788k) and
+`cuda_c11/compare100k_20261020T065426Z` (100k). A B29 fit on the GPU-built 788k base is
+bitwise identical to the fit on the C++ base.
+
 ## Provisional item (not yet approved)
 
 * **End-to-end FP64 fit:** the same termination class, final cost within 1e-9 relative, an

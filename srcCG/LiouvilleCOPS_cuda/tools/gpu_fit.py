@@ -79,12 +79,17 @@ def lambda_count(fit_args):
     return count
 
 
-def install_template_start(fit_cops, value, record):
+def install_template_start(fit_cops, value, record, restart_state=None, captured=None):
     """Start the optimizer with template amplitudes at ``value``; the prior is unchanged.
 
     ``fit_cops.fit_worker`` calls ``fit_one(lam)`` through the module global, so
     replacing that attribute changes only the start passed to ``least_squares``.
     Parameter layout (``fit_cops.Problem``): a (na), harmonics (nh), templates (nt), T, κ.
+
+    With ``restart_state`` (``cops_cuda.restart.Restart``), every parameter the restart defines
+    (matched by name; see ``restart.start_vector``) then overrides that start; parameters
+    the restart lacks keep the template start or the fitter's start. ``captured`` (a
+    list) receives each result of ``fit_one`` (for the restart file written at the end).
     """
     original = fit_cops.fit_one
 
@@ -102,10 +107,57 @@ def install_template_start(fit_cops, value, record):
             record.update({"applied": True, "template_parameters": names,
                            "x_start_scaled": [float(v) for v in x_start],
                            "prior_x0_unchanged": True})
-        return original(lam, x_start)
+        if x_start is None and restart_state is not None:
+            x_start = P.x0.copy()
+        if restart_state is not None:
+            from cops_cuda import restart as rs
+            xr, report = rs.start_vector(P, restart_state)
+            for k, name in enumerate(P.names):
+                if name in report["from_restart"]:
+                    x_start[k] = xr[k]
+            record.update({"applied": True, "restart": report,
+                           "x_start_scaled": [float(v) for v in x_start], "prior_x0_unchanged": True})
+        result = original(lam, x_start)
+        if captured is not None:
+            captured.append(result)
+        return result
 
     fit_cops.fit_one = fit_one
     return original
+
+
+def restart_template_args(state, fit_args, info):
+    """Templates of a restart, as --activity-template arguments, unless the user gave some.
+
+    Each source bundle must still be the file the restart recorded (same SHA-256).
+    """
+    from cops_cuda import provenance
+    if any(a == "--activity-template" for a in fit_args) or not state.template_names:
+        info["templates_from_restart"] = False
+        return fit_args
+    extra = []
+    for source in state.meta["templates"]["sources"]:
+        bundle = source["bundle"]
+        path = bundle["path"]
+        if not Path(path).is_file():
+            raise SystemExit("restart template bundle is missing: %s" % path)
+        if provenance.file_identity(path)["sha256"] != bundle["sha256"]:
+            raise SystemExit("restart template bundle changed since the restart was written: %s" % path)
+        extra += ["--activity-template", path, source["name"]]
+    info["templates_from_restart"] = [s["name"] for s in state.meta["templates"]["sources"]]
+    return fit_args + extra
+
+
+def check_restart_mesh(state, fit_args, fit_cops):
+    """The restart must belong to the base run's mesh (otherwise: restart_tool.py translate)."""
+    from cops_cuda import reference
+    run = next(a for a in fit_args if not a.startswith("-"))
+    run = Path(reference.load("cops_paths").product_input(run))
+    elements = fit_cops.read_elements(str(run / "elements.bin"))
+    identity = reference.load("activity_templates").mesh_identity(elements["centroid"], elements["area"])
+    if identity != state.mesh_identity():
+        raise SystemExit("restart mesh %s differs from the base run's mesh %s; translate it with "
+                         "tools/restart_tool.py translate" % (state.mesh_identity()[:16], identity[:16]))
 
 
 def main():
@@ -127,6 +179,10 @@ def main():
                         help="optimizer start of template amplitudes (default 1.0; 0 with --cpu-comparison)")
     parser.add_argument("--cpu-comparison", action="store_true",
                         help="exactly the CPU fitter's command: --max-nfev 1000, --template-start 0")
+    parser.add_argument("--restart-from", default=None,
+                        help="start from a restart file (fit_restart.npz); parameters matched by name")
+    parser.add_argument("--no-save-restart", action="store_true",
+                        help="do not write <out>/fit_restart.npz at the end of the fit")
     args = parser.parse_args(argv[:split])
     fit_args = argv[split + 1:]
     if any(a == "--max-nfev" or a.startswith("--max-nfev=") for a in fit_args):
@@ -145,8 +201,15 @@ def main():
                          "(the fitter forks for an L-curve; CUDA contexts do not survive fork)")
 
     from cops_cuda import gpu_model, manifest, provenance, reference
+    from cops_cuda import restart as rs
     reference.bind()
     fit_cops = reference.load("fit_cops")
+    restart_state, restart_info = None, {"save": not args.no_save_restart}
+    if args.restart_from:
+        restart_state = rs.read(args.restart_from)
+        restart_info["loaded"] = provenance.file_identity(args.restart_from, "fit_restart")
+        fit_args = restart_template_args(restart_state, fit_args, restart_info)
+        check_restart_mesh(restart_state, fit_args, fit_cops)
     devices = [int(d) for d in args.devices.split(",")] if args.devices else [args.device]
     gpu_model.REGISTRY.configure(devices[0], args.mode, args.records_per_block, devices=devices)
     fit_cops.Model = gpu_model.gpu_model_class()
@@ -173,15 +236,26 @@ def main():
                 "software": software,
                 "registry": gpu_model.REGISTRY.stats(),
                 "fit_start": fit_start,
+                "restart": restart_info,
             }
         original_save()
 
     fit_cops.save_active_manifest = save_with_backend
-    install_template_start(fit_cops, template_start, fit_start)
+    captured = []
+    install_template_start(fit_cops, template_start, fit_start, restart_state, captured)
     sys.argv = [str(Path(fit_cops.__file__))] + fit_args
     t0 = time.perf_counter()
     try:
         fit_cops.main()
+        if captured and not args.no_save_restart and fit_cops.ACTIVE_MANIFEST is not None:
+            out = Path(fit_cops.ACTIVE_MANIFEST_PATH).parent
+            elements = fit_cops.read_elements(fit_cops.ACTIVE_MANIFEST["inputs"]["base_elements"]["path"])
+            state = rs.from_fit(fit_cops.P, captured[-1], out, fit_cops.ACTIVE_MANIFEST, elements)
+            if restart_state is not None:
+                state.meta["history"] = list(restart_state.meta.get("history", [])) + state.meta["history"]
+                state.meta["started_from"] = restart_info["loaded"]
+            restart_info["saved"] = rs.write(out / "fit_restart.npz", state)
+            print("gpu_fit: restart file %s" % (out / "fit_restart.npz"), flush=True)
         # A last save so the final call counts and times are recorded.
         save_with_backend()
     except BaseException as exc:

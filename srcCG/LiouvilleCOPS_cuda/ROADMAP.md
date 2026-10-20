@@ -24,7 +24,8 @@ the numerical policy is in `VALIDATION.md`.
 | C08 | complete (2026-10-20): FP64 restructure, bitwise equal to the generic kernel, Jacobian 2.6× faster (fit 1.65×); mixed precision skipped |
 | C09 | in progress: first four production fits done (not converged), packaged with inputs and rerun recipe |
 | C10 | not started |
-| C11 | planned (added 2026-10-20): GPU rebuild of the fitting base, after C10 |
+| C12 | implemented (2026-10-20, user request): fit restart files (`gpu_fit.py` save/`--restart-from`), `tools/restart_tool.py` show/plot/enhance/translate |
+| C11 | complete (2026-10-20, ahead of C10 at the user's request): `native/liouville_cops_cuda`; 788k and 100k bases pass the approved policy; a B29 fit on the GPU base is bitwise equal |
 
 ## 1. Objective and scope
 
@@ -588,6 +589,75 @@ does not need it (user decision 2026-10-20: schedule after C10).
 the GPU-built base; and a B29 fit on it matches the fit on the C++-built base within the
 end-to-end budget.
 
+**As implemented (2026-10-20; `native/README.md`):**
+* The binary links the unchanged `../LiouvilleCOPS/src` with GPU definitions of
+  `cLiouville::EvaluateKernels` and `cSourceModel::Evaluate`; the CPU definitions are
+  renamed by `-D` in their own translation units. So SPICE, the source model, the writers,
+  the audit and the manifest are the original code. This replaces the "own writers" plan
+  of scope item 4, and the input files are unchanged.
+* The BVH and the NG shield table are read from the objects main() built and cross-checked
+  at start-up.
+* The C++ binary uses GCC FMA contraction, so bitwise identity is impossible. The GPU
+  uses FP64 with `--fmad=false`.
+
+**C11 validation policy (approved by the user 2026-10-20).** Measured on 788k
+(`cuda_c11/compare_20261020T063859Z`) and 100k (`SHAP5_Volume.bdf`,
+`cuda_c11/compare100k_20261020T065426Z`):
+
+| Check | Proposed bound | Measured |
+|---|---|---|
+| `elements.bin` | bitwise | bitwise |
+| kernel header geometry | bitwise, except altitude ≤ 1e-14 relative | altitude ≤ 1.0e-15 (788k); bitwise for 1001 of 1150 points (100k) |
+| CosSZA of common records | bitwise | bitwise |
+| shadow flags | every mismatch listed; ≤ 1e-6 of lit facets | 0 |
+| record set | every flipped facet listed; flipped share of the point's Kn, KPhi, KV totals ≤ 1e-9 | 788k: 1 + 1 facets, share ≤ 4.5e-13; 100k: 0 + 2 facets, share ≤ 1.7e-12 |
+| common records, per point | Σ\|ΔK\| / Σ\|K\| ≤ 1e-12 | ≤ 1.1e-14 (788k), ≤ 1.2e-14 (100k) |
+| single records | reported (subdivided facets can differ by one partially visible sample) | ≤ 9.7e-9 (788k), ≤ 1.1e-9 (100k) |
+| `COPS_model.dat` model columns (printed with 11 significant digits) | ≤ 2e-10 relative, i.e. one unit in the last printed digit | identical (788k); ≤ 6.6e-11 (100k) |
+| fitter | unchanged fitter accepts the base; consistency ≤ 1e-6 | accepted; consistency 4.59e-11 (NG), 9.91e-10 (RG), identical to the C++ base |
+| B29 fit on the GPU base vs the C++ base | the end-to-end budget (still provisional) | **bitwise identical** fit (2000 evaluations, `fit_788k_gpu_B29_n2000_on_gpu_base`) |
+
+### C12: fit restart files and their tools (added 2026-10-20 at the user's request)
+
+1. **Restart file** (`cops_cuda/restart.py`; one self-contained `fit_restart.npz` per state):
+   * the physical state: legacy coefficients, harmonic and template amplitudes by name, T, κ;
+   * the template columns and the per-facet activity map;
+   * the mesh geometry and identity; the base and selection identities;
+   * the optimizer outcome;
+   * the measured and predicted pressures per row;
+   * an edit history.
+2. **Fitter integration** (`tools/gpu_fit.py`; the unchanged fitter):
+   * `<out>/fit_restart.npz` is written at the end of every fit (`--no-save-restart` to disable);
+   * `--restart-from FILE` starts a fit from a restart, with parameters matched by name.
+     * The start is exact for the same parameterization.
+     * Temperatures convert between the free and ordered forms.
+     * Missing names keep the problem's start.
+     * The mesh identity is checked.
+     * The restart's templates are supplied from their recorded bundles (SHA-256 checked)
+       unless `--activity-template` is given.
+     * The prior is unchanged.
+3. **Tools** (`tools/restart_tool.py`):
+   * `show`;
+   * `plot`: comparison plots from stored predictions;
+   * `enhance`: activity enhancement on a visibility region (seen by NG and not RG, by RG and
+     not NG, by NG, by RG, or by either) of the points in an altitude and/or time window. It
+     adds a new nonnegative template column (additive, or a multiplicative factor on positive
+     activity), compares the model with and without it on the GPU, and can save the edited
+     restart with a CPU-format bundle for the new column.
+   * `translate`: carries a restart to another surface mesh.
+     * Legacy, harmonic, T and κ values are carried unchanged; amplitudes are rescaled by the
+       A_scale ratio.
+     * Template columns come from a target-mesh bundle when available; otherwise they are
+       mapped by nearest facet centroid and renamed `xl_<name>`, with the mapping statistics
+       recorded.
+     * Optional GPU predictions on the target base.
+* **Gate:**
+  * round trip with corruption detection;
+  * an exact restart start for the same problem;
+  * GPU state pressures equal to the CPU reference;
+  * a refit from a restart file;
+  * enhance and translate on real data.
+
 ## 6. Numerical acceptance policy
 
 `VALIDATION.md` / `validation/tolerances.json`, approved 2026-10-19:
@@ -666,8 +736,8 @@ directory concurrently. Integration tests are rerun at each dependency boundary.
   register accumulators, compile-time-specialized kernels, bitwise equal to the current
   mode.
 * **C11:** a GPU rebuild of the fitting base (`rebuild_cops_boundary.py`) for larger surface
-  models is added to the plan and scheduled after C10, because the current campaign does
-  not need it.
+  models is added to the plan. It was implemented ahead of C10 at the user's request, and
+  its validation policy was approved on 2026-10-20.
 
 **Still pending (not to be filled by assumption):**
 1. The end-to-end fit budget (after the first CPU-vs-GPU fit). The Jacobian budget was

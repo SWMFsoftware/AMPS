@@ -259,6 +259,58 @@ cd -
 Run names are relative to `$COPS_OUTPUT_ROOT`. Add more fit directories to overlay
 several models in one figure.
 
+## 4c2. Restart files (C12): save, restart, plot, enhance, translate
+
+Every `gpu_fit.py` fit writes `<out>/fit_restart.npz`: the fitted state, templates,
+activity map, mesh identity and predictions.
+
+```tcsh
+# continue or redo a fit from a restart (same mesh); templates come from the restart unless given
+.venv/bin/python tools/gpu_fit.py --device 0 --restart-from $O/<fit>/fit_restart.npz -- $BASE $FITARGS:x --out $O/<new fit>
+# inspect, and compare several states (no recomputation)
+.venv/bin/python tools/restart_tool.py show $O/<fit>/fit_restart.npz
+.venv/bin/python tools/restart_tool.py plot $O/<fitA>/fit_restart.npz $O/<fitB>/fit_restart.npz \
+    --labels A B --out $O/<new dir>/compare
+# raise H2O activity on the facets seen by the NG and not by the RG from points below 100 m;
+# plots with and without the change; optionally save the edited restart (+ its template bundle)
+.venv/bin/python tools/restart_tool.py enhance $O/<fit>/fit_restart.npz --run $BASE \
+    --region ng_not_rg --alt-max 100 --mode add --value 2 --out $O/<new dir>/enh \
+    --save $O/<new dir>/enh_restart.npz
+# carry a restart to another mesh (prefer a bundle recomputed on the target mesh)
+.venv/bin/python tools/restart_tool.py translate $O/<fit>/fit_restart.npz --to-run <other base> \
+    --save $O/<new dir>/translated_restart.npz [--target-bundle <bundle on that mesh>] --evaluate
+```
+
+Regions are `ng_not_rg`, `rg_not_ng`, `ng_seen`, `rg_seen` and `any_seen`, selected with
+`--alt-min/--alt-max` and/or `--utc-start/--utc-stop`.
+
+Enhancement modes:
+* `add V ≥ 0`: adds V·A_scale to the linear activity. It also acts on facets whose activity
+  is clipped.
+* `factor V > 0`: multiplies the positive activity on the region by V; V < 1 reduces it.
+
+The region is confined to the window. With `--confine total` (default), the summed change of
+the kept facets alters every outside point's NG and RG pressure by at most `--epsilon`
+(default 1e-3). With `--confine facet`, each facet alone stays below ε. The summary reports
+the change inside and outside the window.
+
+A saved edit can be refit (`--restart-from`) with the new region's amplitude free.
+
+## 4d. Build the fitting base on the GPU (C11)
+
+```tcsh
+make -C native                                   # builds native/liouville_cops_cuda (CUDA 12.4, CSPICE)
+cd ../LiouvilleCOPS
+env COPS_CUDA_DEVICE=0 python3 tools/rebuild_cops_boundary.py --input fit_base.in --surface-bc flat \
+    --shape-model <BDF> --shape-model-format nastran --out <new base dir> --threads 16 \
+    --executable ../LiouvilleCOPS_cuda/native/liouville_cops_cuda
+cd -
+.venv/bin/python tools/c11_compare_bases.py <C++ base dir> <GPU base dir>       # optional comparison
+```
+
+The output is the same set of products as the C++ build: `elements.bin` is bitwise
+identical, and the kernels agree at rounding level. See `native/README.md`.
+
 ## 5. Optional numerical re-checks (after a code or driver change)
 
 ```tcsh

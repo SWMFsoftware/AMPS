@@ -46,10 +46,20 @@ def late_points(inputs, start, stop):
 
 def late_masks(run, start, stop, device_id=0, budget=None, expected_kernel_digests=None):
     """GPU masks over the interval's points; returns (masks dict, metadata)."""
-    import cupy
     from .device_store import RunInputs
     inputs = RunInputs(run)
     points = late_points(inputs, start, stop)
+    masks, meta = visibility_masks(run, points, device_id, budget, expected_kernel_digests)
+    meta["interval_utc"] = [start, stop]
+    return masks, meta
+
+
+def visibility_masks(run, points, device_id=0, budget=None, expected_kernel_digests=None):
+    """GPU masks (MASK_BITS) united over the given observation points; returns (masks, metadata)."""
+    import cupy
+    points = [int(p) for p in points]
+    if not points:
+        raise ValueError("no observation points selected")
     with DeviceDataset.load(run, point_ids=points, device_id=device_id, mesh_fields="none",
                             budget=budget, expected_kernel_digests=expected_kernel_digests) as ds:
         nf = ds.inputs.nfaces
@@ -65,7 +75,7 @@ def late_masks(run, start, stop, device_id=0, budget=None, expected_kernel_diges
             del bits
         identity = ds.identity()
     masks = {name: (host & bit) != 0 for name, bit in MASK_BITS}
-    meta = {"interval_utc": [start, stop], "selected_point_count": len(points),
+    meta = {"selected_point_count": len(points),
             "selected_point_ids": points,
             "definitions": {
                 "late_ng_not_rg": "union_over_points_of_Kn_gt_0_and_same_point_KPhi_eq_0_and_KV_eq_0",

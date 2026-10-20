@@ -27,6 +27,114 @@ Reconciled facts, checked 2026-10-19:
 * New pending items: C00b re-freeze against the repaired tree, C02 joint extensions, and
   the C04 gravity acceptance route (a user decision).
 
+## C12: fit restart files and tools. Status: IMPLEMENTED (2026-10-20, user request)
+
+* **Code:**
+  * `cops_cuda/restart.py` (format, name mapping, GPU state evaluation);
+  * `tools/gpu_fit.py` (`fit_restart.npz` written at the end of every fit; `--restart-from`;
+    `--no-save-restart`);
+  * `tools/restart_tool.py` (`show`, `plot`, `enhance`, `translate`);
+  * `masks.visibility_masks` (region masks for any set of points);
+  * `tests/test_restart.py`. `pytest`: 150 passed.
+* **Evidence on the 788k base** (`cops_output/c12_trials/`):
+  * **Save:** a 5-evaluation N30 fit wrote `fit_restart.npz`. The data cost recomputed from its
+    stored predictions (0.5734177360) matches the optimizer's (0.5734177330) to print precision.
+  * **Restart:** `--restart-from` with no template arguments.
+    * The template was supplied from the restart's bundle (SHA-256 checked).
+    * All 30 parameters were taken from the restart, none clipped.
+    * TRF's initial cost (5.7342e-01) equals the restart's final cost: the fit continued
+      exactly from the saved state, reaching 0.1422 after 5 more evaluations.
+    * The restart history shows two fit steps.
+  * **GPU state evaluation:** for the restart state, `StateEvaluator` gives cost
+    0.5734177329781822 against the optimizer's 0.5734177329781821.
+  * **Enhance** (`ng_not_rg` below 100 m, `add 2`): 29 points; 379 facets, 92.3% of their
+    area clipped in this state. The plots, the region map and the saved edited restart with its
+    CPU-format bundle were all written.
+  * **Translate** of that edited restart to the 100k base:
+    * nearest-centroid mapping, distance median 10.8 m, p95 121 m, max 387 m;
+    * amplitudes rescaled by A_scale ratio 0.989;
+    * templates renamed `xl_*`;
+    * predictions evaluated on the 100k base; history fit → enhance → translate.
+  * **Plot:** two restarts compared (5 against 5+5 evaluations).
+* **Adjustments of 2026-10-20 (user request):**
+  * `factor` accepts any V > 0; V < 1 reduces the activity. The amplitude V − 1 is stored, and
+    a refit clips a negative amplitude to 0 (reported).
+  * **Effect confined to the window.**
+    * Strict exclusion of facets seen from outside the window empties the region for every
+      low-altitude window on 788k: ≤ 1000 m keeps 19 facets; ≤ 300, 100, 30 and 10 m keep 0.
+    * The user chose a significance threshold, ε = 1e-3 by default (`--epsilon`).
+    * A per-facet bound (`--confine facet`) still let the region change outside pressures by
+      15.7% (NG) on a 24k-facet region.
+    * The default `--confine total` therefore bounds the summed change at every outside point.
+      It is exact because the pressures are linear in each facet's clipped activity
+      (`kernels/restart.cu`, `tests/test_restart.py`). The prediction agrees with the full GPU
+      evaluation to 5e-17.
+  * **Finding:** with total confinement the change inside the window is no larger than outside
+    (788k, ≤ 100 m windows, `c12_trials/v4_*`). The facets that matter for the low points are
+    also seen from the higher points, so a static activity map cannot confine a pressure change
+    to the late descent.
+* **Notes:**
+  * Edited and translated restarts keep the source optimizer record as `source_optimizer`,
+    with a `state_note`.
+  * A translated restart uses the target base table's rows and selection flags.
+  * Mapped cliff masks carry no gravity provenance; recompute them on the target mesh
+    (`--target-bundle`).
+
+## C11: GPU rebuild of the fitting base. Status: COMPLETE (2026-10-20); validation policy approved by the user
+
+Implemented ahead of C10 at the user's request.
+
+* **Implementation:** `native/` (`gpu_liouville.cu`, `access_shim.cpp`, `Makefile`,
+  `README.md`), building `native/liouville_cops_cuda`.
+  * It is the unchanged `../LiouvilleCOPS/src` with GPU definitions of
+    `cLiouville::EvaluateKernels` (transport kernels) and `cSourceModel::Evaluate` (cast
+    shadows). The CPU definitions are renamed by `-D` in their own translation units.
+  * SPICE, the shield Monte Carlo, the source model, `ApplySource`, every writer, the output
+    audit and the manifest are the original code. The manifest names the CUDA binary as the
+    executable.
+  * The BVH and the shield table are read from main()'s objects and cross-checked at
+    start-up: GPU `FirstHit` against the CPU on 4,096 rays gives 0 face mismatches, and
+    `NGWeight` agrees within ≤ 1e-12.
+  * Usage: the documented `rebuild_cops_boundary.py … --executable
+    native/liouville_cops_cuda` (device: `COPS_CUDA_DEVICE`).
+* **Not bitwise by construction:** the C++ binary uses GCC FMA contraction (40 FMAs in
+  `EvaluateKernels`, 96 in the BVH routines); the GPU uses FP64 with `--fmad=false`.
+* **Evidence:**
+  * Self-test (`Mode=selftest`): ALL PASSED, every result line identical to the C++ run.
+    Covered by `tests/test_native_liouville.py`.
+  * **788k** (`cuda_c11/compare_20261020T063859Z`):
+    * `elements.bin` bitwise;
+    * 245,515,533 records in both, 1 + 1 flipped facets (2 points, share ≤ 4.5e-13);
+    * CosSZA bitwise, 0 shadow mismatches;
+    * point sums ≤ 1.1e-14, worst record 9.7e-9;
+    * header geometry bitwise except the altitude (150 points, ≤ 1.0e-15);
+    * `COPS_model.dat` pressures identical at print precision.
+  * **100k** (`SHAP5_Volume.bdf`; `cuda_c11/compare100k_20261020T065426Z`):
+    * `elements.bin` bitwise;
+    * 31,672,361 against 31,672,363 records (0 + 2 flipped facets, share ≤ 1.7e-12);
+    * CosSZA bitwise, 0 shadow mismatches;
+    * point sums ≤ 1.2e-14, worst record 1.1e-9;
+    * `COPS_model.dat` ≤ 6.6e-11, i.e. the last printed digit.
+  * **Fitter:** the unchanged fitter accepts the GPU-built 788k base, with consistency
+    figures identical to the C++ base.
+  * **A full B29 fit on the GPU-built base is bitwise identical** to the fit on the C++-built
+    base (`fit_788k_gpu_B29_n2000_on_gpu_base` vs `fit_788k_gpu_B29_n2000_fused`).
+* **Timing,** one A6000 with 16 host threads, including the post-run C++ audit:
+
+  | Base | C++ | GPU |
+  |---|---|---|
+  | 788k | 292.5 s | **227.5 s** |
+  | 100k | 50 s | 38 s |
+
+  * GPU work about 40 s on 788k: rays about 17 s, shadows about 25 s.
+  * The rest is unchanged C++ host work that both builds share: the read-back audit
+    (`std::set` of all records, SHA-256 of 9.8 GB), `ApplySource`, per-record `fwrite`
+    and setup.
+  * The remaining gain is therefore limited by code that stays unchanged (user
+    constraint).
+* **Validation policy approved** by the user on 2026-10-20 (ROADMAP C11 table, VALIDATION.md).
+  Both meshes pass with margins of 100× or more.
+
 ## C08: FP64 evaluator restructure. Status: COMPLETE (2026-10-20); mixed precision skipped (user)
 
 * **Implemented:**
