@@ -200,7 +200,7 @@ def _region_row(name, mask, area, baseline, residual, total_linear, clipped):
 
 def write_activity_products(directory, identity, identity_label, centroid, area,
                             seen, baseline, residual, total_linear, clipped,
-                            degree_components):
+                            degree_components, template_components=()):
     """Write degree/region diagnostics and baseline-residual-total maps."""
     directory = Path(directory)
     centroid = np.asarray(centroid, dtype=float)
@@ -241,6 +241,18 @@ def write_activity_products(directory, identity, identity_label, centroid, area,
             stream.write("%d %d %.15e %.15e %.15e %.15e\n" %
                          (degree, len(coefficients), np.sum(coefficients ** 2),
                           spherical_power, mesh_power,
+                          np.sum(area * component ** 2) / baseline_power))
+
+    template_path = directory / "activity_template_power.dat"
+    with template_path.open("w") as stream:
+        _header(stream, identity,
+                "fitted localized-template amplitudes and unclipped activity power")
+        stream.write("#template coefficient mesh_area_mean_square relative_mesh_power\n")
+        for name, coefficient, component in template_components:
+            component = np.asarray(component, dtype=float)
+            mesh_power = np.sum(area * component ** 2) / np.sum(area)
+            stream.write("%s %.15e %.15e %.15e\n" %
+                         (name, coefficient, mesh_power,
                           np.sum(area * component ** 2) / baseline_power))
 
     region_path = directory / "activity_region_diagnostics.dat"
@@ -302,13 +314,15 @@ def write_activity_products(directory, identity, identity_label, centroid, area,
     fig.savefig(directory / map_name, dpi=130,
                 metadata=_metadata(identity, identity_label))
     plt.close(fig)
-    return [facet_path.name, degree_path.name, region_path.name, map_name], {
+    return [facet_path.name, degree_path.name, template_path.name,
+            region_path.name, map_name], {
         "regions": {row[0]: {
             "area_fraction": float(row[1]),
             "residual_mean_square": float(row[7]),
             "clipped_area_fraction": float(row[9]),
         } for row in rows},
         "degree_count": len(degree_components),
+        "template_count": len(template_components),
     }
 
 

@@ -132,6 +132,7 @@ from cops_fit_reporting import (REPORT_SCHEMA, REPORT_SCHEMA_VERSION,
 from activity_basis import (BASIS_ID as ENHANCEMENT_BASIS_ID,
                             evaluate_cartesian as evaluate_enhancement_basis,
                             modes as enhancement_modes)
+from activity_templates import load_bundle, select_templates
 
 import numpy as np
 import scipy
@@ -152,13 +153,17 @@ TNAMES = ("Tmax", "T75", "Tmin")
 FLOOR = 1e-300
 ENHANCEMENT_MIN_DEGREE = 5
 ENHANCEMENT_FORMAT = "liouville_cops.activity_enhancement"
+FACET_ENHANCEMENT_FORMAT = "liouville_cops.activity_enhancement_facets"
+FACET_ENHANCEMENT_MODEL = "per_facet_residual_v1"
+COMPOSITE_BASIS_ID = "real_spherical_harmonics_plus_declared_facet_templates_v1"
 ENHANCEMENT_REGULARIZATION = (
     "area_weighted_unclipped_residual_to_zero_relative_legacy_linear_power")
+JOINT_REGULARIZATION = "area_weighted_unclipped_total_change_from_run_prior_v1"
 FIT_RESULT_FILES = (
     "fit_result.txt", "ActivityFit.txt", "ActivityEnhancementFit.txt",
     "ActivityEnhancementFacets.dat", "cops_fit.in", "COPS_model.dat",
     "fit_report.json", "activity_facets.dat", "activity_degree_power.dat",
-    "activity_region_diagnostics.dat", "activity_maps.png",
+    "activity_template_power.dat", "activity_region_diagnostics.dat", "activity_maps.png",
     "pressure_residuals.dat", "pressure_comparison_time.png",
     "pressure_comparison_altitude.png", "pressure_residuals.png",
 )
@@ -601,10 +606,34 @@ class Problem:
         self.enhancement_modes = (enhancement_modes(ENHANCEMENT_MIN_DEGREE,
                                                     self.enhancement_degree)
                                   if self.enhancement_degree >= ENHANCEMENT_MIN_DEGREE else [])
-        self.enhancement_basis = (
+        harmonic_basis = (
             evaluate_enhancement_basis(el["centroid"], ENHANCEMENT_MIN_DEGREE,
                                        self.enhancement_degree)
             if self.enhancement_modes else np.empty((len(el["area"]), 0)))
+        # Localized physical hypotheses are declared per-facet fields tied to
+        # this exact mesh.  They enter the same *linear* H2O residual as the
+        # harmonics, before the one final clip, but have separate nonnegative
+        # amplitudes.  Keeping the matrices side by side gives the optimizer
+        # one analytic Jacobian and lets the regularizer include all cross
+        # terms instead of double-counting overlapping spatial structure.
+        self.template_names = list(getattr(args, "activity_template_names", []))
+        self.template_sources = list(getattr(args, "activity_template_sources", []))
+        template_basis = getattr(args, "activity_template_basis", None)
+        if template_basis is None:
+            template_basis = np.empty((len(el["area"]), 0))
+        template_basis = np.asarray(template_basis, dtype=float)
+        if template_basis.shape != (len(el["area"]), len(self.template_names)):
+            raise ValueError("activity-template matrix does not match the active mesh/names")
+        self.nh = len(self.enhancement_modes)
+        self.nt = len(self.template_names)
+        # Enhancement presence and frozen-baseline policy are distinct: joint
+        # template fits must export/replay the residual even with free legacy
+        # coefficients. The fixed degree-4 control keeps its historical flag.
+        self.enhancement_mode = bool(args.fix_legacy_activity or self.nt)
+        self.enhancement_basis = np.ascontiguousarray(
+            np.column_stack((harmonic_basis, template_basis)))
+        self.basis_id = (COMPOSITE_BASIS_ID if self.nt else
+                         ENHANCEMENT_BASIS_ID)
         self.legacy_linear = el["Y"] @ coef[0]
         self.N0 = float(np.sum(el["area"] * self.legacy_linear ** 2))
         if not np.isfinite(self.N0) or self.N0 <= 0.0:
@@ -625,6 +654,13 @@ class Problem:
         x0 += [0.0] * len(self.enhancement_modes)
         lo += [-np.inf] * len(self.enhancement_modes)
         hi += [np.inf] * len(self.enhancement_modes)
+        names += ["c_" + name for name in self.template_names]
+        x0 += [0.0] * self.nt
+        # Both requested hypotheses are enhancements, not arbitrary signed
+        # corrections.  A lower bound of zero is therefore a physical model
+        # statement and is recorded in every manifest/result.
+        lo += [0.0] * self.nt
+        hi += [np.inf] * self.nt
         if not args.fix_temperature:
             if self.ordered:
                 Tmax, T75, Tmin = M.T0
@@ -646,19 +682,42 @@ class Problem:
             hi += [np.inf]
         self.names, self.x0, self.lo, self.hi = names, np.array(x0), np.array(lo), np.array(hi)
         self.na = len(self.fit_j)
-        self.nb = len(self.enhancement_modes)
+        self.nb = self.nh + self.nt
         self.bslice = slice(self.na, self.na + self.nb)
 
         # Tikhonov operator: D^2 = (a-a0)_fit^T G (a-a0)_fit / N0, G = Y_fit^T diag(area) Y_fit = L L^T
-        if self.nb:
+        if self.nb and self.na:
+            # Penalize the TOTAL change from the run's unclipped activity,
+            # including legacy/template cross terms. Columns are derivatives
+            # with respect to optimizer coordinates, hence their two scales.
+            # An eigensquare-root supports overlapping/dependent predictors
+            # without inventing a ridge penalty in a physically null direction.
+            B = np.column_stack((el["Y"][:, self.fit_j] * self.ascale,
+                                 self.enhancement_basis * self.enhancement_scale))
+            G = B.T @ (el["area"][:, None] * B) / self.N0
+            values, vectors = np.linalg.eigh((G + G.T) * 0.5)
+            tolerance = np.finfo(float).eps * max(G.shape) * max(1.0, np.max(np.abs(values)))
+            if np.min(values) < -tolerance:
+                raise ValueError("activity Gram matrix is not positive semidefinite")
+            # Retain all positive eigenvalues, including small ones; only
+            # negative roundoff is removed. Data-rank diagnostics still expose
+            # non-identifiable coefficients independently of regularization.
+            self.Lt = np.sqrt(np.maximum(values, 0.0))[:, None] * vectors.T
+            self.reg_slice = slice(0, self.na + self.nb)
+        elif self.nb:
             # Confirmed A4 definition:
             # D^2=sum(area*DeltaA^2)/sum(area*A0_linear^2).  DeltaA is
             # unclipped and the prior is b=0.  The Cholesky factor makes this
             # a conventional least-squares residual with an exact Jacobian.
             G = self.enhancement_basis.T @ (
                 el["area"][:, None] * self.enhancement_basis)
-            self.Lt = (np.linalg.cholesky(G).T * self.enhancement_scale
-                       / np.sqrt(self.N0))
+            try:
+                factor = np.linalg.cholesky(G)
+            except np.linalg.LinAlgError:
+                raise ValueError(
+                    "combined harmonic/template activity basis is linearly dependent; "
+                    "remove a redundant template rather than fitting non-identifiable amplitudes")
+            self.Lt = (factor.T * self.enhancement_scale / np.sqrt(self.N0))
             self.reg_slice = self.bslice
         elif self.na:
             # Historical legacy-coefficient regularization is unchanged.
@@ -849,7 +908,7 @@ def activity_diagnostics(a, b, el, seen, coef, enhancement_basis,
 
 
 def write_enhancement_products(out, P, b, el, seen, lam,
-                               legacy_activity_file):
+                               legacy_activity_file, fitted_activity=None):
     """Write the strict A3 coefficient exchange file and facet diagnostics.
 
     The legacy identity is the hash of the just-written ``ActivityFit.txt``
@@ -859,29 +918,65 @@ def write_enhancement_products(out, P, b, el, seen, lam,
     identity = "sha256:" + file_identity(legacy_activity_file)["sha256"]
     body_frame = P.args.body_frame
     coefficient_file = os.path.join(out, "ActivityEnhancementFit.txt")
-    with open(coefficient_file, "w") as f:
-        f.write("# fitted by tools/fit_cops.py; residual is added to the unclipped H2O legacy field\n")
-        f.write("Format = %s\n" % ENHANCEMENT_FORMAT)
-        f.write("FormatVersion = 1\n")
-        f.write("BasisID = %s\n" % ENHANCEMENT_BASIS_ID)
-        f.write("Species = H2O\n")
-        f.write("BodyFrame = %s\n" % body_frame)
-        f.write("AngleConvention = theta=acos(z/r);phi=atan2(y,x)\n")
-        f.write("Ordering = increasing_l_then_m_minus_l_to_plus_l\n")
-        f.write("Clipping = max(0,legacy_linear+enhancement)\n")
-        f.write("MinimumDegree = 5\n")
-        f.write("MaximumDegree = %d\n" % P.enhancement_degree)
-        f.write("Scale = %.17g\n" % P.enhancement_scale)
-        f.write("ScaleInterpretation = dimensionless_multiplier_of_normalized_basis\n")
-        f.write("LegacyActivityIdentity = %s\n" % identity)
-        f.write("Regularization = %s\n" % ENHANCEMENT_REGULARIZATION)
-        f.write("Lambda = %.17g\n" % lam)
-        for (degree, order), value in zip(P.enhancement_modes, b):
-            f.write("Coefficient = %d %d %.17g\n" % (degree, order, value))
-
     delta = (P.enhancement_scale * (P.enhancement_basis @ b)
              if len(b) else np.zeros(len(el["area"])))
-    total_linear = P.legacy_linear + delta
+    with open(coefficient_file, "w") as f:
+        f.write("# fitted by tools/fit_cops.py; residual is added to the unclipped H2O legacy field\n")
+        if P.nt:
+            # A localized template generally cannot be represented by degree
+            # <=8 harmonics.  Write the evaluated combined field explicitly so
+            # the independent C++ solver replays exactly what Python fitted.
+            # Centroid and area are round-tripped at 17 digits and checked
+            # against the active mesh before any propagation.
+            f.write("Format = %s\n" % FACET_ENHANCEMENT_FORMAT)
+            f.write("FormatVersion = 1\n")
+            f.write("BasisID = %s\n" % COMPOSITE_BASIS_ID)
+            f.write("Species = H2O\n")
+            f.write("BodyFrame = %s\n" % body_frame)
+            f.write("Ordering = increasing_face_index\n")
+            f.write("Clipping = max(0,legacy_linear+enhancement)\n")
+            f.write("HarmonicMinimumDegree = 5\n")
+            f.write("HarmonicMaximumDegree = %d\n" % P.enhancement_degree)
+            f.write("Scale = 1\n")
+            f.write("ScaleInterpretation = explicit_dimensionless_residual_per_facet\n")
+            f.write("LegacyActivityIdentity = %s\n" % identity)
+            f.write("Regularization = %s\n" % (JOINT_REGULARIZATION if P.na else ENHANCEMENT_REGULARIZATION))
+            f.write("Lambda = %.17g\n" % lam)
+            f.write("FacetCount = %d\n" % len(delta))
+            for (degree, order), value in zip(P.enhancement_modes, b[:P.nh]):
+                f.write("HarmonicCoefficient = %d %d %.17g\n" %
+                        (degree, order, value))
+            for name, value in zip(P.template_names, b[P.nh:]):
+                f.write("TemplateCoefficient = %s %.17g\n" % (name, value))
+            for index, (xyz, area, value) in enumerate(
+                    zip(el["centroid"], el["area"], delta)):
+                f.write("Facet = %d %.17e %.17e %.17e %.17e %.17e\n" %
+                        (index, xyz[0], xyz[1], xyz[2], area, value))
+        else:
+            f.write("Format = %s\n" % ENHANCEMENT_FORMAT)
+            f.write("FormatVersion = 1\n")
+            f.write("BasisID = %s\n" % ENHANCEMENT_BASIS_ID)
+            f.write("Species = H2O\n")
+            f.write("BodyFrame = %s\n" % body_frame)
+            f.write("AngleConvention = theta=acos(z/r);phi=atan2(y,x)\n")
+            f.write("Ordering = increasing_l_then_m_minus_l_to_plus_l\n")
+            f.write("Clipping = max(0,legacy_linear+enhancement)\n")
+            f.write("MinimumDegree = 5\n")
+            f.write("MaximumDegree = %d\n" % P.enhancement_degree)
+            f.write("Scale = %.17g\n" % P.enhancement_scale)
+            f.write("ScaleInterpretation = dimensionless_multiplier_of_normalized_basis\n")
+            f.write("LegacyActivityIdentity = %s\n" % identity)
+            f.write("Regularization = %s\n" % ENHANCEMENT_REGULARIZATION)
+            f.write("Lambda = %.17g\n" % lam)
+            for (degree, order), value in zip(P.enhancement_modes, b):
+                f.write("Coefficient = %d %d %.17g\n" % (degree, order, value))
+
+    # Replay pairs the residual with the just-exported fitted legacy map,
+    # which differs from the prior in joint fits. The optional argument keeps
+    # older fixed-baseline callers compatible.
+    legacy_linear = (P.legacy_linear if fitted_activity is None else
+                     el["Y"] @ fitted_activity)
+    total_linear = legacy_linear + delta
     with open(os.path.join(out, "ActivityEnhancementFacets.dat"), "w") as f:
         f.write("# A4 fitted H2O activity fields at SHAP5 facet centroids; activity is dimensionless\n")
         f.write("# clipping derivative convention: active only where total_linear > 0\n")
@@ -889,7 +984,7 @@ def write_enhancement_products(out, P, b, el, seen, lam,
         for i, (xyz, area) in enumerate(zip(el["centroid"], el["area"])):
             f.write("%d %.9e %.9e %.9e %.9e %d %.15e %.15e %.15e %.15e\n" %
                     (i, xyz[0], xyz[1], xyz[2], area, int(seen[i]),
-                     P.legacy_linear[i], delta[i], total_linear[i],
+                     legacy_linear[i], delta[i], total_linear[i],
                      max(0.0, total_linear[i])))
     return coefficient_file
 
@@ -1006,10 +1101,12 @@ def fit_report_context(P, r, a, b):
                                      for value in P.transition_intervals],
         "legacy_activity_sha256": ACTIVE_MANIFEST["prior"]["activity_coefficients_sha256"],
         "enhancement_enabled": bool(P.enhancement_mode),
-        "enhancement_basis_id": ENHANCEMENT_BASIS_ID if P.enhancement_mode else None,
+        "enhancement_basis_id": P.basis_id if P.enhancement_mode else None,
         "enhancement_degree": int(P.enhancement_degree) if P.enhancement_mode else None,
+        "activity_templates": list(P.template_names),
         "legacy_degree": int(P.args.degree),
         "activity_parameter_sha256": canonical_sha256(
+            {"legacy": a.tolist(), "residual": b.tolist()} if P.na and P.nb else
             b.tolist() if P.enhancement_mode else a.tolist()),
         "optimizer_parameter_sha256": canonical_sha256(r["x"].tolist()),
         "temperature_K": {name: float(value)
@@ -1040,6 +1137,12 @@ def write_stage_a5_report(out, P, r, rows, cols, el, seen, a, b, pNG, pRG,
             degree_components.append((degree, coefficients, component,
                                       P.enhancement_scale ** 2 *
                                       np.sum(coefficients ** 2)))
+        template_components = []
+        for index, name in enumerate(P.template_names):
+            coefficient = b[P.nh + index]
+            component = (P.enhancement_scale * coefficient *
+                         P.enhancement_basis[:, P.nh + index])
+            template_components.append((name, coefficient, component))
     else:
         residual_coefficients = a - P.coef[0]
         residual = el["Y"] @ residual_coefficients
@@ -1052,12 +1155,25 @@ def write_stage_a5_report(out, P, r, rows, cols, el, seen, a, b, pNG, pRG,
             # The legacy basis is deliberately unnormalized, so no spherical
             # coefficient-power interpretation is asserted.
             degree_components.append((degree, coefficients, component, np.nan))
+        template_components = []
+    if P.na and P.nb:
+        # Joint fits change the baseline as well as adding templates. Report
+        # the total residual relative to the ORIGINAL run map; the export
+        # separately binds the template residual to the FITTED ActivityFit.
+        legacy_delta = a - P.coef[0]
+        residual += el["Y"] @ legacy_delta
+        for degree in range(P.args.degree + 1):
+            indices = [i for i, d in enumerate(DEGREE_OF_BASIS) if d == degree]
+            coefficients = legacy_delta[indices]
+            degree_components.append((degree, coefficients,
+                                      el["Y"][:, indices] @ coefficients, np.nan))
     total_linear = baseline + residual
     clipped = np.maximum(total_linear, 0.0)
 
     activity_products, activity_summary = write_activity_products(
         out, identity, label, el["centroid"], el["area"], seen, baseline,
-        residual, total_linear, clipped, degree_components)
+        residual, total_linear, clipped, degree_components,
+        template_components=template_components)
 
     point_ids = [int(row[cols["iPoint"]]) for row in rows]
     utc = [row[cols["UTC"]] for row in rows]
@@ -1114,15 +1230,20 @@ def write_fit(out, r, run, header, names, rows, cols, srcdir, el, seen, r0):
                                                                              else "not blocked (default)"))
         if P.enhancement_mode:
             activity_description = ("zero-length degree-4 enhancement control"
-                                    if P.enhancement_degree == 4 else
-                                    "H2O residual degrees 5..%d" % P.enhancement_degree)
-            f.write("# fitted: %s; all 25 legacy activity coefficients fixed%s%s\n" %
-                    (activity_description,
+                                    if P.enhancement_degree == 4 and not P.nt else
+                                    ("H2O physical residual" if P.enhancement_degree == 4 else
+                                     "H2O residual degrees 5..%d" % P.enhancement_degree))
+            if P.nt:
+                activity_description += (" plus nonnegative templates: " +
+                                         ", ".join(P.template_names))
+            f.write("# fitted: %s; " % activity_description)
+            f.write("%d free legacy activity coefficients%s%s\n" %
+                    (P.na,
                      "" if args.fix_temperature else ", temperature parameters",
                      "" if args.fix_kappa else ", kappa"))
             f.write("# A_scale = area-weighted RMS of the unclipped legacy linear field = %.17g\n" %
                     P.enhancement_scale)
-            f.write("# Tikhonov: D^2=sum(area*DeltaA^2)/sum(area*A0_linear^2), unclipped DeltaA, prior b=0\n")
+            f.write("# Tikhonov: D^2=sum(area*DeltaA^2)/sum(area*A0_linear^2); DeltaA includes all fitted legacy changes and residual templates, prior is the run map\n")
         else:
             f.write("# fitted: spherical harmonics up to degree %d%s%s\n" % (args.degree, "" if args.fix_temperature else (
                 ", Tmin T75-Tmin Tmax-T75 (ordered)" if P.ordered else ", Tmax T75 Tmin"), "" if args.fix_kappa else ", kappa"))
@@ -1149,6 +1270,12 @@ def write_fit(out, r, run, header, names, rows, cols, srcdir, el, seen, r0):
         f.write("# activity diagnostics (H2O, one clip after legacy linear + enhancement; area weighted; 'seen' = elements visible from a fit point)\n")
         for k, v in diag.items():
             f.write("%s %.6f\n" % (k, v))
+        if P.nt:
+            # The usual inverse-Hessian approximation is symmetric and does
+            # not represent a one-sided confidence interval when c_name=0 is
+            # active.  Preserve the numerical diagnostic, but state its limit
+            # in the result itself so it cannot be quoted as a detection error.
+            f.write("# template coefficients have lower bound zero; sigma below is the local unconstrained Gauss-Newton approximation and is not a two-sided uncertainty at an active bound\n")
         f.write("# parameter  initial  fitted  sigma (Gauss-Newton, posterior with the Tikhonov prior)\n")
         for k, n in enumerate(P.names):
             scale = P.ascale if n.startswith("a") else 1.0
@@ -1161,7 +1288,7 @@ def write_fit(out, r, run, header, names, rows, cols, srcdir, el, seen, r0):
         f.write("# ReportSchema=%s ReportIdentity=%s\n" %
                 (REPORT_SCHEMA, report_id))
         h2o_description = ("fixed run coefficients (enhancement is in ActivityEnhancementFit.txt)"
-                           if P.enhancement_mode else
+                           if not P.na else
                            "fitted (degree <= %d)" % args.degree)
         f.write("# H2O: %s; CO2: kappa=%.6f x run coefficients; CO: run coefficients\n" %
                 (h2o_description, kappa))
@@ -1174,7 +1301,7 @@ def write_fit(out, r, run, header, names, rows, cols, srcdir, el, seen, r0):
     enhancement_file = None
     if P.enhancement_mode:
         enhancement_file = write_enhancement_products(
-            out, P, b, el, seen, r["lam"], activity_file)
+            out, P, b, el, seen, r["lam"], activity_file, fitted_activity=a)
 
     # input file that reruns the fitted model with LiouvilleCOPS
     snapshot = os.path.join(run, "input.snapshot.in")
@@ -1183,16 +1310,19 @@ def write_fit(out, r, run, header, names, rows, cols, srcdir, el, seen, r0):
     else:
         infile = re.search(r"input file: (\S+)", header[0]).group(1)
         infile = infile if os.path.isabs(infile) else os.path.join(srcdir, infile)
-    txt = open(infile).read()
+    with open(infile) as stream:
+        txt = stream.read()
     repl = {"ActivityModel": "file", "ActivityFile": os.path.join(out, "ActivityFit.txt"),
             "ActivityFileHeliocentricModel": M.helio, "AnalyticalTmax": "%.10g" % T[0], "AnalyticalT75": "%.10g" % T[1],
             "AnalyticalTmin": "%.10g" % T[2], "OutputDirectory": out + "_verify"}
     if P.enhancement_mode:
         repl.update({
-            "ActivityEnhancementModel": "real_spherical_harmonics_v1",
+            "ActivityEnhancementModel": (FACET_ENHANCEMENT_MODEL if P.nt else
+                                         "real_spherical_harmonics_v1"),
             "ActivityEnhancementDegree": str(P.enhancement_degree),
             "ActivityEnhancementFile": enhancement_file,
-            "ActivityEnhancementScale": "%.17g" % P.enhancement_scale,
+            "ActivityEnhancementScale": ("1" if P.nt else
+                                         "%.17g" % P.enhancement_scale),
         })
     for k, v in repl.items():
         if re.search(r"^%s\s*=" % k, txt, flags=re.M):
@@ -1219,7 +1349,7 @@ def write_fit(out, r, run, header, names, rows, cols, srcdir, el, seen, r0):
                 (args.profile or "legacy_cli_selection",
                  ACTIVE_MANIFEST["selection"]["sha256"], REPORT_SCHEMA, report_id))
         f.write("# ActivityBasisID=%s EnhancementDegree=%d Lambda=%.17g Regularization=%s\n" %
-                (ENHANCEMENT_BASIS_ID if P.enhancement_mode else "legacy_srcCG_25",
+                (P.basis_id if P.enhancement_mode else "legacy_srcCG_25",
                  P.enhancement_degree if P.enhancement_mode else 4,
                  r["lam"], ACTIVE_MANIFEST["objective"]["regularization"]["identifier"]))
         f.write("# RecomputedColumns=pNG,pRG; UnavailableColumns=Q_H2O,Q_CO2,n_H2O,n_CO2,PhiRG_H2O,PhiRG_CO2,"
@@ -1331,6 +1461,9 @@ def main():
                     help="keep all 25 legacy H2O coefficients fixed (required for enhancement degrees 5..8)")
     ap.add_argument("--enhancement-scale", type=float, default=None,
                     help="assert the derived A_scale; must equal the area-weighted RMS of the legacy linear activity")
+    ap.add_argument("--activity-template", action="append", nargs=2,
+                    metavar=("BUNDLE", "NAME"), default=[],
+                    help="add one mesh-bound nonnegative H2O template amplitude; repeat for multiple declared templates")
     ap.add_argument("--lambda", dest="lam", type=float, nargs="+", default=[0.0],
                     help="Tikhonov weight(s) of the H2O activity prior; several values: L-curve")
     ap.add_argument("--jobs", type=int, default=None, help="parallel fits of the L-curve (default: min(#lambda, 12))")
@@ -1378,7 +1511,7 @@ def main():
             ap.error("--enhancement-degree 5..8 currently requires " + " ".join(missing))
     if args.fix_legacy_activity and not (args.fix_temperature and args.fix_kappa):
         ap.error("--fix-legacy-activity residual/control mode currently also requires --fix-temperature --fix-kappa")
-    if args.enhancement_degree == 4 and not args.fix_legacy_activity and args.enhancement_scale is not None:
+    if args.enhancement_degree == 4 and not args.fix_legacy_activity and not args.activity_template and args.enhancement_scale is not None:
         ap.error("--enhancement-scale is meaningful only with --fix-legacy-activity")
     lams = sorted(set(args.lam))
     if min(lams) < 0:
@@ -1423,6 +1556,45 @@ def main():
 
     coef = read_activity_coefficients(srcdir, header)
     el = read_elements(os.path.join(run, "elements.bin"))
+
+    # Resolve all bundles only after the base cache has been audited and its
+    # exact facet table is available.  Bundles are cached by absolute path so
+    # selecting two templates from one file does not decompress it twice.
+    template_cache = {}
+    template_names, template_columns, template_sources = [], [], []
+    for bundle_name, template_name in args.activity_template:
+        bundle_path = str(Path(product_input(bundle_name)).resolve())
+        if bundle_path not in template_cache:
+            try:
+                template_cache[bundle_path] = load_bundle(
+                    bundle_path, el["centroid"], el["area"])
+            except (OSError, ValueError) as exc:
+                sys.exit("Error: invalid activity-template bundle: %s" % exc)
+        bundle = template_cache[bundle_path]
+        if template_name in template_names:
+            sys.exit("Error: activity template requested more than once: %s" %
+                     template_name)
+        try:
+            column = select_templates(bundle, [template_name])[:, 0]
+        except ValueError as exc:
+            sys.exit("Error: %s" % exc)
+        if not np.any(column > 0.0):
+            sys.exit("Error: activity template %s is identically zero on this mesh" %
+                     template_name)
+        template_names.append(template_name)
+        template_columns.append(column)
+        template_sources.append({
+            "name": template_name,
+            "bundle": file_identity(bundle_path),
+            "mesh_identity": bundle["mesh_identity"],
+            "definition": bundle["metadata"].get("templates", {}).get(
+                template_name),
+        })
+    args.activity_template_names = template_names
+    args.activity_template_sources = template_sources
+    args.activity_template_basis = (np.ascontiguousarray(
+        np.column_stack(template_columns)) if template_columns else
+        np.empty((len(el["area"]), 0)))
 
     # the stored activity factors must equal max(0, sum a_j Y_j) of the coefficients of the run
     act = np.maximum(el["Y"] @ coef[0], 0.0)
@@ -1625,6 +1797,9 @@ def main():
         input_files["replacement_fit_data"] = file_identity(args.data)
     if profile_identity is not None:
         input_files["selection_profile"] = profile_identity
+    if template_sources:
+        input_files["activity_template_bundles"] = [
+            source["bundle"] for source in template_sources]
     run_manifest_path = Path(run) / "run_manifest.json"
     parent = ({"kind": "manifested_run", "manifest": file_identity(run_manifest_path)}
               if run_manifest_path.is_file() else
@@ -1677,7 +1852,7 @@ def main():
         "activity_enhancement": {
             "enabled": bool(P.enhancement_mode),
             "species": "H2O" if P.enhancement_mode else None,
-            "basis_id": ENHANCEMENT_BASIS_ID if P.enhancement_mode else None,
+            "basis_id": P.basis_id if P.enhancement_mode else None,
             "minimum_degree": (ENHANCEMENT_MIN_DEGREE if P.enhancement_degree >= 5
                                else None),
             "maximum_degree": int(P.enhancement_degree),
@@ -1690,17 +1865,21 @@ def main():
                          if P.enhancement_mode else None),
             "coefficient_file": "per_result:ActivityEnhancementFit.txt"
                                 if P.enhancement_mode else None,
+            "explicit_facet_replay": bool(P.nt),
+            "activity_templates": list(P.template_sources),
         },
         "objective": {
-            "name": ("equal_gauge_normalized_log_residuals_plus_high_degree_h2o_residual_tikhonov"
+            "name": ("equal_gauge_normalized_log_residuals_plus_joint_h2o_map_tikhonov" if P.na and P.nb else
+                     "equal_gauge_normalized_log_residuals_plus_high_degree_h2o_residual_tikhonov"
                      if P.enhancement_mode else
                      "equal_gauge_normalized_log_residuals_plus_h2o_map_tikhonov"),
             "pressure_floor_Pa": FLOOR,
             "lambda_values": [float(value) for value in lams],
             "regularization": ({
-                "identifier": ENHANCEMENT_REGULARIZATION,
-                "field": "unclipped_enhancement",
-                "prior": "zero",
+                "identifier": JOINT_REGULARIZATION if P.na else ENHANCEMENT_REGULARIZATION,
+                "field": ("unclipped_total_activity_change" if P.na else "unclipped_enhancement"),
+                "prior": ("run_legacy_map_and_zero_templates" if P.na else "zero"),
+                "includes_legacy_template_cross_terms": bool(P.na and P.nb),
                 "formula": "sum(area*DeltaA^2)/sum(area*A0_linear^2)",
             } if P.enhancement_mode else {
                 "identifier": "legacy_activity_deviation_from_run_prior",
@@ -1723,11 +1902,15 @@ def main():
             "names": list(P.names), "degree": int(args.degree),
             "enhancement_degree": int(args.enhancement_degree),
             "enhancement_coefficient_count": int(P.nb),
+            "harmonic_coefficient_count": int(P.nh),
+            "template_coefficient_count": int(P.nt),
+            "activity_template_names": list(P.template_names),
             "fix_legacy_activity": bool(args.fix_legacy_activity),
             "enhancement_scale": float(P.enhancement_scale),
             "enhancement_scale_definition": "sqrt(sum(area*A0_linear^2)/sum(area))",
             "enhancement_initial": "zero",
-            "enhancement_bounds": "unbounded",
+            "enhancement_bounds": ("harmonics_unbounded_templates_nonnegative"
+                                   if P.nt else "unbounded"),
             "clipping_derivative": "active_only_where_total_linear_activity_gt_zero",
             "fix_temperature": bool(args.fix_temperature),
             "ordered_temperature": bool(args.ordered_temperature),
@@ -1739,6 +1922,8 @@ def main():
                 "legacy_h2o_activity": "fixed" if args.fix_legacy_activity else "partly_free",
                 "enhancement_h2o_activity": ("free" if P.nb else "zero_length_control"
                                              if P.enhancement_mode else "disabled"),
+                "localized_activity_templates": ("free_nonnegative" if P.nt else
+                                                  "disabled"),
                 "analytical_temperature": "fixed" if args.fix_temperature else "free",
                 "co2_kappa": "fixed" if args.fix_kappa else "free",
             },

@@ -1,0 +1,4 @@
+# Optional dependency used only by tools/build_physical_activity_templates.py.
+# Version 3.3 is the ESA/TU Munich validated Tsoulis homogeneous-polyhedron
+# implementation used for the documented cliff/effective-slope experiment.
+polyhedral-gravity==3.3

@@ -103,7 +103,7 @@ void cSourceModel::Init(const cInput& input,const cMesh& mesh,const std::string&
   //The enhancement is a separate H2O residual, never an extension of the
   //legacy three-species coefficient file.  Its default is strictly disabled.
   const std::string enhancementModel=input.GetOption("ActivityEnhancementModel",
-      {"none",ActivityEnhancement::ModelId},"none");
+      {"none",ActivityEnhancement::ModelId,ActivityEnhancement::FacetModelId},"none");
   if (enhancementModel=="none") {
     //Degree 4 is the explicit zero-length control.  Consume it when supplied
     //so a runner can state the control setting without triggering UnusedKeys.
@@ -117,15 +117,18 @@ void cSourceModel::Init(const cInput& input,const cMesh& mesh,const std::string&
       //the more useful incompatibility message.
       if (input.Has("ActivityEnhancementFile")) input.GetString("ActivityEnhancementFile");
       if (input.Has("ActivityEnhancementScale")) input.GetDouble("ActivityEnhancementScale");
-      fprintf(stderr,"Error: ActivityEnhancementFile/Scale require ActivityEnhancementModel=%s\n",
-          ActivityEnhancement::ModelId);
+      fprintf(stderr,"Error: ActivityEnhancementFile/Scale require an enabled ActivityEnhancementModel\n");
       exit(EXIT_FAILURE);
     }
     Enhancement=ActivityEnhancement::Configuration();
   }
   else {
     const std::string filename=CopsPaths::ProductInput(input.GetString("ActivityEnhancementFile"));
-    try {Enhancement=ActivityEnhancement::ReadFile(filename);}
+    try {
+      Enhancement=(enhancementModel==ActivityEnhancement::ModelId) ?
+          ActivityEnhancement::ReadFile(filename) :
+          ActivityEnhancement::ReadFacetFile(filename,mesh);
+    }
     catch (const std::exception& exception) {
       fprintf(stderr,"Error: %s\n",exception.what());
       exit(EXIT_FAILURE);
@@ -138,10 +141,9 @@ void cSourceModel::Init(const cInput& input,const cMesh& mesh,const std::string&
     const double requestedDegree=input.GetDouble("ActivityEnhancementDegree",
         static_cast<double>(Enhancement.MaximumDegree));
     if (!std::isfinite(requestedDegree)||std::floor(requestedDegree)!=requestedDegree||
-        requestedDegree<4.0||requestedDegree>8.0||
         static_cast<int>(requestedDegree)!=Enhancement.MaximumDegree) {
-      fprintf(stderr,"Error: ActivityEnhancementDegree must be the integer %d supplied by the enhancement file\n",
-          Enhancement.MaximumDegree);
+      fprintf(stderr,"Error: ActivityEnhancementDegree must be the compatibility value %d supplied by the enhancement file\n",
+              Enhancement.MaximumDegree);
       exit(EXIT_FAILURE);
     }
     const double requestedScale=input.GetDouble("ActivityEnhancementScale",Enhancement.Scale);
@@ -149,9 +151,9 @@ void cSourceModel::Init(const cInput& input,const cMesh& mesh,const std::string&
       fprintf(stderr,"Error: ActivityEnhancementScale must exactly match the file value %.17g\n",Enhancement.Scale);
       exit(EXIT_FAILURE);
     }
-    printf("Activity enhancement: model=%s species=H2O basis=%s maximum_degree=%d modes=%zu scale=%.17g\n",
+    printf("Activity enhancement: model=%s species=H2O basis=%s maximum_degree=%d modes=%zu facets=%zu scale=%.17g\n",
         Enhancement.Model.c_str(),Enhancement.BasisId.c_str(),Enhancement.MaximumDegree,
-        Enhancement.Coefficients.size(),Enhancement.Scale);
+        Enhancement.Coefficients.size(),Enhancement.FacetResiduals.size(),Enhancement.Scale);
   }
 
   AnalyticalTmax=input.GetDouble("AnalyticalTmax",182.09922);
@@ -187,7 +189,7 @@ void cSourceModel::Init(const cInput& input,const cMesh& mesh,const std::string&
       if ((s==Const::H2O)&&Enhancement.Enabled()) {
         LegacyLinearH2O[i]=factor;
         ActivityFactor[s][i]=ActivityEnhancement::Apply(Enhancement,
-            mesh.Faces[i].Centroid,factor,&EnhancementH2O[i],&TotalLinearH2O[i]);
+            mesh.Faces[i].Centroid,factor,&EnhancementH2O[i],&TotalLinearH2O[i],i);
       }
       else ActivityFactor[s][i]=std::max(factor,0.0);
     }
@@ -352,9 +354,9 @@ void cSourceModel::WriteActivityEnhancementDiagnostics(const std::string& fname,
     exit(EXIT_FAILURE);
   }
   fprintf(output,"# LiouvilleCOPS activity-enhancement facet diagnostic v1\n");
-  fprintf(output,"# Model=%s BasisID=%s Species=H2O BodyFrame=%s MinimumDegree=5 MaximumDegree=%d Scale=%.17g\n",
+  fprintf(output,"# Model=%s BasisID=%s Species=H2O BodyFrame=%s MinimumDegree=%d MaximumDegree=%d Scale=%.17g\n",
       Enhancement.Model.c_str(),Enhancement.BasisId.c_str(),Enhancement.BodyFrame.c_str(),
-      Enhancement.MaximumDegree,Enhancement.Scale);
+      Enhancement.MinimumDegree,Enhancement.MaximumDegree,Enhancement.Scale);
   fprintf(output,"# Ordering=%s Clipping=%s LegacyActivityIdentity=%s\n",
       Enhancement.CoefficientOrdering.c_str(),Enhancement.Clipping.c_str(),
       Enhancement.LegacyActivityIdentity.c_str());

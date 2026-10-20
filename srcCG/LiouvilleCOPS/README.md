@@ -28,6 +28,11 @@ Two distinctions are essential:
 
 [RUN.md](RUN.md) covers building and running the application and its tools;
 [quick_guide.md](quick_guide.md) is the fitting quick start.
+
+For external SHAP8 PLY/BDF products, large node-ID support, and the separate
+44M collinear-triangle repair workflow, see [PLY_CONVERSION.md](PLY_CONVERSION.md).
+Forward-surface validation and gravity/cliff admission are separate checks;
+the repair does not relax the gravity topology policy.
 [ROADMAP.md](ROADMAP.md) gives a staged implementation and validation plan
 for future work; its proposed features are not claims of current capability.
 [amendement_development_plan.md](amendement_development_plan.md) tracks the
@@ -222,7 +227,7 @@ alone; removed generated fit inputs also contained obsolete absolute paths.
 | `Geometry.cpp/.h` | SPICE loading, spacecraft/Sun states, body rotation, gauge pointing and field of view. |
 | `Source.cpp/.h` | Activity basis and coefficients, illumination law, shadow state, temperatures, `elements.bin`. |
 | `ActivityEnhancementBasis.cpp/.h` | Versioned normalized real spherical-harmonic evaluator through degree 8 specified in `HARMONIC_BASIS.md`. |
-| `ActivityEnhancement.cpp/.h` | Strict version-1 coefficient-file parser, frame/baseline compatibility checks, residual evaluation, and final clipping for the optional H2O forward-model enhancement. |
+| `ActivityEnhancement.cpp/.h` | Strict version-1 harmonic and exact per-facet replay parsers, mesh/frame/baseline compatibility checks, residual evaluation, and final clipping for the optional H2O forward-model enhancement. |
 | `SrcCGTables.h` | Locally embedded activity coefficient arrays and tabulated temperatures. |
 | `Gauges.cpp/.h` | NG angular response, RG acceptance, species sensitivity, pressure conversion, housekeeping temperature interpolation. |
 | `Liouville.cpp/.h` | Static geometric kernels and speed-integrated flight-time-rotation solver. |
@@ -234,7 +239,7 @@ alone; removed generated fit inputs also contained obsolete absolute paths.
 | Script | Purpose | Main inputs | Main outputs |
 |---|---|---|---|
 | `tools/cops_hk_table.py` | Extracts pressures and housekeeping from raw L2 BG files. | Directory containing `bg_*.tab`. | User-named housekeeping table. |
-| `tools/rebuild_cops_boundary.py` | Regenerates a complete static fitting base for `flat` or `rough` surface emission; see section 6.6. | Original observation input, existing compiled solver, configured external data. | New input snapshot, table, elements, kernels, log, and completion metadata in a fresh directory. |
+| `tools/rebuild_cops_boundary.py` | Regenerates a complete static fitting base for a selected shape and `flat` or `rough` surface emission; see section 6.6. | Original observation input, existing compiled solver, selected mesh, configured external data. | New input snapshot, table, elements, kernels, log, and completion metadata in a fresh directory. |
 | `tools/collect_cops_sources.py` | Combines local measurement sources, compares them, and constructs a candidate fit-selection table. | HK table, L4 table, digitized CSVs, SHAP5/M004 runs, base fit run. | Combined JSON, comparison plots, fit-selection table and plot, optional actual-fit profile plot. |
 | `tools/digitize_cops_figures.py` | Extracts curves from the three supplied source images. | JPG files in `<COPS_DATA_ROOT>/sources/` or `--dir`. | Five digitized CSVs; optional diagnostic PNGs. |
 | `tools/plot_cops_model.py` | Compares predicted NG/RG pressures and reference observations; strictly verifies manifested fit/report identities and labels legacy inputs. | `COPS_model.dat` files. | Interactive four-panel plot, or `--save` image whose labels identify profile/degree/lambda. |
@@ -249,6 +254,10 @@ alone; removed generated fit inputs also contained obsolete absolute paths.
 | `tools/activity_basis.py` | Reference Python implementation of the versioned normalized real spherical-harmonic basis used by tests and the Stage-A4 fitter; not a standalone command. | Cartesian directions or angular coordinates supplied by callers. | Basis arrays in the exact ordering defined by `HARMONIC_BASIS.md`; no files. |
 | `tools/cops_fit_reporting.py` | Stage-A5 report writer imported by the fitter; not a standalone command. | Final facet activity, pressures, selection/reason masks, and immutable report-identity payload. | Per-facet/degree/region/residual tables, one activity-map figure, three pressure/residual figures, and `fit_report.json`. |
 | `tools/benchmark_activity_basis.py` | Measures evaluation time and memory for the Stage-A2 basis on centroids from an actual `elements.bin` without changing that cache. | A version-1 `elements.bin`, degree range, repeat count. | Console report and optional JSON report. |
+| `tools/build_physical_activity_templates.py` | Constructs mesh-bound late-NG-only visibility and effective-slope cliff hypotheses without fitting their amplitudes. | Manifested base, explicit UTC interval, homogeneous-gravity surface/density, optional resolution-check surface, and SPICE helper. | Strict `.npz` template bundle, reusable per-facet gravity cache, JSON metadata, and body-frame diagnostic map. |
+| `tools/activity_templates.py` | Strict template-bundle writer/reader imported by the builder and fitter; not a standalone command. | Per-facet fields plus the exact active `elements.bin` centroid/area sequence. | Versioned bundle or validated in-memory columns tied to one mesh identity. |
+| `tools/gravity_cache.py` | Strict reusable gravity-cache I/O imported by the physical-template builder; not a standalone command. | Exact modeled centroid/normal/area ordering, gravity shape/hash, density, offset, self gravity, and reference SPICE rotation. | Validated self, centrifugal/effective-gravity, and slope arrays; epoch-dependent fields are cheaply re-derived when rotation differs. |
+| `tools/spice_angular_velocity.cpp` | Small compiled helper using the same `Geometry.cpp` and SPICE configuration as the forward solver to obtain body-frame angular velocity. | Observation input and one or more UTC epochs. | Machine-readable angular-velocity rows on stdout. |
 | `tools/cops_io.py` | Shared strict product parser, cache validator, streaming hashes, atomic manifests, and selection identities; imported by other tools. | Model tables, manifests, elements and static kernels. | Validated in-memory metadata; no standalone output. |
 | `tools/validate_cops_run.py` | Validates a static base or records fitted-pressure agreement with a manifested C++ verification run. | Base run, or fit plus verification run. | Diagnostic report; in verification mode, an atomic update of the fit manifest's C++-agreement state. |
 
@@ -524,12 +533,14 @@ triangulated surface**, with `inside` as a separate flag. The collector
 and fit-data exporter apply a negative sign for inside points. Altitude
 is not distance from the nucleus center.
 
-The removed, audited SHAP5 base had four inside points, indices 1146–1149. The
-audited M001 and M004 tables had none; their final altitudes were about
-5.989 m and 5.928 m. This is a property of those saved geometries, not a
-universal shape-model correction. Activity coefficients are evaluated at
-each new shape's face centroids; they are not independently recalibrated
-when the shape is changed.
+The removed, audited 100k SHAP5 base had four inside points, indices
+1146–1149. The 788k SHAP5 base generated for the resolution experiment has no
+inside points and puts the final gauge position 0.340 m outside. The audited
+M001 and M004 tables had no inside points; their final altitudes were about
+5.989 m and 5.928 m. Inside status is therefore a property of each saved
+geometry, not a universal data flag or shape-model correction. Activity
+coefficients are evaluated at each new shape's face centroids; they are not
+independently recalibrated when the shape is changed.
 
 ### 4.3 Emitted source and temperature
 
@@ -788,6 +799,125 @@ PLY products are not directly supported, and no 1M-or-larger fitting-base
 memory/runtime claim has been measured.  Increasing facet count refines
 geometry, shadowing, and visibility; it does not increase the degree of the
 separate harmonic activity parameterization.
+
+#### Mesh-bound late-visibility and effective-slope hypotheses
+
+`tools/build_physical_activity_templates.py` adds two deliberately narrow,
+auditable hypotheses to the controlled residual fit. It does not infer a
+region from the pressure residual and does not fit anything itself.
+
+The `late_ng_not_rg` field is binary. For every cached observation in the
+explicit `--late-start`/`--late-stop` interval, a facet enters the union when
+its NG kernel has `Kn > 0` while that same observation has exactly
+`KPhi = KV = 0` for RG. Thus “seen” means nonzero response in the implemented
+instrument/transport kernel, not merely geometric line of sight. The union is
+evaluated observation by observation because rotation can move one facet into
+the RG aperture later. Integrated NG/RG sensitivities are saved as diagnostics
+but never used to tune or threshold this region. The interval must be declared
+from instrument evidence; the tool will not discover a favorable interval by
+looking at the fit residuals.
+
+The cliff fields are binary effective-slope thresholds. With outward facet
+normal `n`, body-frame position `r`, and SPICE angular velocity `omega`, the
+implemented acceleration and slope are
+
+```text
+g_eff(r) = g_polyhedron(r; rho) - omega x (omega x r)
+slope(r) = acos[(-n . g_eff) / |g_eff|].
+```
+
+`g_polyhedron` is the exact homogeneous-polyhedron field evaluated by the
+pinned ESA/TU Munich `polyhedral-gravity` implementation. Density is an
+explicit fixed input, not fitted. The angular velocity is evaluated at the
+start, midpoint, and stop with `spice_angular_velocity`, which compiles the
+same `Geometry.cpp` and reads the same SPICE input as LiouvilleCOPS. The
+reported median vector is used only after the tool records the maximum sampled
+variation. Evaluation is offset a declared distance along the outward normal;
+a deterministic surface-wide sample must pass an offset-halving slope test.
+An optional second gravity shape must pass a sampled resolution check. Winding
+audit, package version/backend, shape hashes, density, rotation vector,
+offset checks, slope range, and mask areas are all stored in the companion
+JSON.
+
+The production 788k experiment uses the same closed
+`cg_spc_shap5_788k_cart.bdf` for the transport surface and homogeneous gravity
+body. The older 100k `SHAP5_Volume.bdf` is not treated as an interchangeable
+reduction: its minimum-Z extent differs by about 70 m, its signed-volume
+magnitude differs by about 1.8%. Its earlier 199k gravity comparison used
+the defective package HEAL operation and is inconclusive. The comparison
+must be repeated with audited input winding and HEAL disabled. That old
+cache and the original 788k gravity/template products are quarantined with
+`_heal_defect` suffixes and must not supply cliff masks. A
+cross-shape comparison at a 0.1 m offset is meaningful only when both surfaces
+place the evaluation points on the same side of their boundaries. The
+corrected campaign uses the active 788k surface as the exact gravity boundary.
+The offset-halving audit alone cannot detect a corrupted polyhedron: both
+evaluations can use the same wrong face orientations. Independent topology,
+orientation and reference-gravity checks are required. See
+[`HEAL-corruption.md`](HEAL-corruption.md) and
+[`GRAVITY_REPAIR.md`](GRAVITY_REPAIR.md).
+
+The expensive per-facet calculation is also persisted in
+`<bundle-stem>.gravity.npz`. It contains homogeneous self gravity and the
+reference SPICE-dependent centrifugal/effective-gravity and slope arrays.
+`tools/gravity_cache.py` hashes the exact centroid, normal, and area sequence;
+the gravity-shape bytes, density, offset, and algorithm are part of the cache
+definition. A subsequent builder invocation can supply this file through
+`--gravity-cache`. Exact self gravity is reused, while centrifugal/effective
+gravity and slope are recomputed inexpensively if the requested SPICE angular
+velocity differs. A mesh, ordering, shape-file, density, offset, checksum, or
+algorithm mismatch is fatal. This cache is diagnostic/derived data and is not
+an additional fitted field.
+
+The default `cliff_ge_60deg` threshold follows the published statistical
+cliff definition. A `cliff_ge_45deg` field can be generated as a sensitivity
+case because 45--90 degree terrain has also been classified morphologically
+as cliffs. These are categorical predictors, not a claimed continuous
+production-versus-slope law: the available cited observations motivate
+testing enhanced activity at cliffs, but do not supply a calibrated gas-source
+function for this end-of-mission state.
+
+The fitter selects a bundle column with repeatable
+`--activity-template BUNDLE NAME`. Each selected field receives one
+nonnegative coefficient `c_name`. In the controlled mode,
+
+```text
+DeltaA(e) = A_scale [sum b_lm Y_lm(e) + sum c_k T_k(e)],  c_k >= 0
+A_H2O(e) = max(0, A0_linear(e) + DeltaA(e)).
+```
+
+Legacy activity, the three analytical-temperature parameters, and CO2
+`kappa` must be fixed. Harmonics and templates share one area-weighted
+regularizer, including cross terms, so an overlapping template is not granted
+an independent penalty. Exact linear dependence is rejected. The `.npz`
+bundle contains a hash of the complete ordered centroid/area table and cannot
+be loaded with another mesh. A fitted mixed field is exported as the exact
+per-facet format documented in `ACTIVITY_ENHANCEMENT_FILE.md`; C++ verifies
+every facet centroid and area before replaying it.
+
+These additions improve hypothesis testing, not spatial uniqueness. NG-only
+and cliff fields can overlap each other and the degree-5--8 harmonics, and a
+nonnegative best-fit amplitude can still be weakly constrained or pinned at
+zero. A late-NG amplitude that disappears when the instrument-transition data
+are excluded is selection sensitivity, not evidence for a surface source.
+Neither template adds thermal inertia, volatile depletion, cliff age, dust
+mantling, a sublimation energy balance, gas collisions, or a time-varying
+activity map. Those missing mechanisms must not be attributed to the fitted
+coefficient.
+
+Scientific inputs for this implementation are the globally homogeneous
+gravity interpretation of Pätzold et al.
+([Nature 530, 63--65](https://doi.org/10.1038/nature16535)); the rotating,
+uniform-density effective-slope method and 45--90 degree terrain class of
+Groussin et al. ([A&A 583, A32](https://doi.org/10.1051/0004-6361/201525660));
+the explicit slope-above-60-degree statistical cliff mask of Vincent et al.
+([MNRAS 469, S329--S338](https://doi.org/10.1093/mnras/stx1691)); and the
+observational active-cliff hypothesis of Vincent et al.
+([A&A 587, A14](https://doi.org/10.1051/0004-6361/201527159)). The numerical
+gravity evaluator is the validated ESA/TU Munich implementation described by
+Wittmann et al. ([JOSS 9, 6384](https://doi.org/10.21105/joss.06384)). These
+references motivate the declared test; none supplies a calibrated mapping
+from local slope to the H2O amplitude fitted here.
 
 `ActivityModel = shap5` or `shap5_1` selects local embedded coefficients.
 `file` reads three rows of 25 coefficients, for H2O, CO2, CO.
@@ -1316,18 +1446,21 @@ versioned policy implemented by `tools/cops_selection.py`; it cannot be mixed
 with `--apply-exclude-ng` or `--exclude-ng-saturated`. The checked-in profiles
 are:
 
-| Profile | NG | RG | Policy on the audited 1,150-row base |
+| Profile | NG/RG, 100k reference | NG/RG, 788k base | Policy on the audited 1,150 rows |
 |---|---:|---:|---|
-| `legacy_base_mask` | 839 | 1,146 | Positive outside-shape data, base FitInterval, and base `ExcludeNG`/`ExcludeRG` intervals. |
-| `all_available` | 930 | 1,146 | Every positive outside-shape datum in the base FitInterval, including the 13 saturated and post-transition NG points. |
-| `transition_cut_100m` | 869 | 1,146 | Same candidates, but NG is excluded on the closed interval `10:24:42`--`10:37:10`; it resumes at `10:37:14` (99.48 m in the audited base). |
+| `legacy_base_mask` | 839 / 1,146 | 839 / 1,150 | Positive outside-shape data, base FitInterval, and base `ExcludeNG`/`ExcludeRG` intervals. The final four NG points are already excluded by the run interval. |
+| `all_available` | 930 / 1,146 | 934 / 1,150 | Every positive outside-shape datum in the base FitInterval, including the 13 saturated and post-transition NG points. |
+| `transition_cut_100m` | 869 / 1,146 | 873 / 1,150 | Same candidates, but NG is excluded on the closed interval `10:24:42`--`10:37:10`; it resumes at `10:37:14` (99.48 m on the 100k reference, 113.75 m on the 788k shape). |
 
 The profiles derive flags from pressure, shape status, FitInterval, and their
 declared interval policy; they do not trust stale source `useNG/useRG` flags.
-All interval endpoints are inclusive. Each profile stores expected row/NG/RG
-counts and the fitter fails on a mismatch rather than silently accepting a
-changed dataset. `fit_data_used.txt` records a reason code for both gauges at
-every point. `selection_profile.json` preserves the effective policy, its
+All interval endpoints are inclusive. Each checked-in profile stores both the
+100k reference counts and shape-independent counts after all data/time/profile
+rules but before the `inside` test. The fitter permits final counts to change
+only by the number of those otherwise eligible points that the active mesh
+classifies inside. A changed pressure, timestamp, FitInterval, exclusion, or
+saturation decision remains fatal. `fit_data_used.txt` records a reason code
+for both gauges at every point. `selection_profile.json` preserves the effective policy, its
 source hash, reason counts, and reason hash; `fit_manifest.json` records the
 same identities. When combined with `--data`, a named profile requires the
 replacement table to contain every base-run point; it replaces pressures but
@@ -1894,6 +2027,10 @@ directories. Newly generated fit inputs use the shared output-path handling.
 | Positional `run` | Required | Base directory with model table, elements, and kernels. |
 | `--out DIR` | `<run-name>_fit` | New output directory under the shared root. Any existing path is refused; there is no overwrite/resume mode. |
 | `--degree N` | 4 | Frees basis groups through nominal degree N, intended range 0–4. |
+| `--enhancement-degree N` | 4 | Maximum normalized residual degree, 4–8; degree 4 is the zero-length control. Degrees 5–8 require all three fixed-physics switches below. |
+| `--fix-legacy-activity` | off | Holds all 25 legacy H2O coefficients fixed and enables the controlled residual/control parameterization. |
+| `--enhancement-scale VALUE` | derived | Optional assertion of the required area-weighted legacy-linear RMS scale; it cannot override that scale. |
+| `--activity-template BUNDLE NAME` | none | Adds one mesh-bound, nonnegative H2O template amplitude; repeatable. At enhancement degree 4 it supports jointly free legacy activity, temperatures, and `kappa`; degrees 5–8 retain their fixed-physics contract. Cliff columns require repaired gravity provenance. |
 | `--lambda L [L ...]` | 0 | Regularization weight(s); multiple values produce an L-curve. |
 | `--jobs N` | min(number of lambdas, 12) | Concurrent L-curve fits. |
 | `--fix-temperature` | off | Keeps all three base temperature parameters. |
@@ -1911,10 +2048,10 @@ directories. Newly generated fit inputs use the shared output-path handling.
 | `--data-only` | off | Writes selected observations/plots after model checks, then stops. |
 | `--allow-legacy-base` | off | Explicitly accept a base without `run_manifest.json` after strict cache validation; the provenance limitation is recorded. Prefer regenerating the base. |
 
-### 6.6 Change the surface boundary condition and rebuild the fitting base
+### 6.6 Change the surface boundary condition or shape and rebuild the fitting base
 
 `tools/rebuild_cops_boundary.py` automates the forward recalculation required
-to change `SurfaceBC`. It is a Python 3.8+ standard-library driver for the
+to change `SurfaceBC` or the surface mesh. It is a Python 3.8+ standard-library driver for the
 existing C++ executable, not another transport solver or a binary-cache
 converter. It does not compile the executable or run the optimizer. Build
 with the Makefile first if necessary, and configure the external paths in
@@ -2012,12 +2149,32 @@ python3 tools/rebuild_cops_boundary.py \
   --out output_fit_base_rough --threads 4
 ```
 
+Select the converted 199k SHAP5 surface as an explicit simulation parameter
+while retaining the flat boundary law:
+
+```bash
+python3 tools/rebuild_cops_boundary.py \
+  --input fit_base.in --surface-bc flat \
+  --shape-model /data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2/cg_spc_shap5_199k_cart.bdf \
+  --shape-model-format nastran \
+  --out output_fit_base_shap5_199k --threads 16 --dry-run
+```
+
+After reviewing the generated input, repeat without `--dry-run`. A shape
+change recomputes the facet table, BVH, signed altitude and inside/outside
+classification, illumination and shadows, visible facets, pressures, and
+every point kernel. The resulting directory is the base passed to the fitter.
+Shape is a controlled forward-model input, not a quantity optimized by
+`fit_cops.py`.
+
 | Option | Default | Meaning |
 |---|---|---|
 | `--input FILE` | `fit_base.in` | Source observation input. Use the actual input for the geometry/source you want, not just an old output directory. |
 | `--surface-bc flat\|rough` | Required | Target angular emission law. |
 | `--out DIR` | Required | New destination; any existing path, including an empty directory or a dangling symlink, is refused. No overwrite/resume switch. |
 | `--threads N` | Preserve input/environment | Positive OpenMP thread count inserted into the generated input; overrides any original `Threads`. |
+| `--shape-model FILE` | Preserve source `ShapeModel` | Surface mesh for this simulation. Relative paths resolve from the application root and are stored as absolute paths in the generated input. |
+| `--shape-model-format nastran\|dsk` | Preserve source value or `nastran` default | Select the matching C++ mesh reader. The driver deliberately does not infer format from a filename suffix. |
 | `--executable FILE` | Application-root `liouville_cops` | Existing compiled solver to execute; no automatic rebuild. |
 | `--dry-run` | off | Validate the source configuration and print the proposed input/command; create nothing and skip executable/external-file availability checks. |
 
@@ -2035,8 +2192,9 @@ with `SurfaceTemperatureCorrectionFactor = 1`. Missing keys use the same
 defaults as the C++ reader for those checks. Unsupported modes are rejected,
 not silently changed. The driver preserves the source file, comments,
 repeated kernels/exclusion intervals, source parameters, and gauge settings.
-It overrides only `SurfaceBC`, `OutputDirectory`, `WriteKernels = on`, and
-optionally `Threads`, apart from normalizing paths. Point-range settings must
+It overrides `SurfaceBC`, `OutputDirectory`, `WriteKernels = on`, and
+optionally `Threads`, `ShapeModel`, and `ShapeModelFormat`, apart from
+normalizing paths. Point-range settings must
 be nonnegative integral indices with a positive integral step.
 
 Real execution checks the executable and explicitly referenced data files

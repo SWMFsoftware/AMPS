@@ -95,16 +95,54 @@ class SelectionProfileTests(unittest.TestCase):
                 {"FitInterval": [], "ExcludeNG": [], "ExcludeRG": []},
                 [False] * 5)
 
+    def test_shape_dependent_inside_count_preserves_data_audit(self):
+        profile = self.profile(
+            expected_counts_before_inside={"used_ng": 4, "used_rg": 4})
+        selected, report = apply_selection_profile(
+            self.rows(), self.columns, profile,
+            {"FitInterval": [], "ExcludeNG": [], "ExcludeRG": []},
+            [False] * 5)
+        self.assertEqual(report["counts"]["used_ng"], 3)
+        self.assertEqual(report["counts"]["eligible_ng_before_inside"], 4)
+        self.assertEqual(report["counts"]["eligible_ng_inside"], 1)
+
+        # A refined shape can move the same valid point outside. The final
+        # count changes, while the audited pressure/time/profile candidates do
+        # not, so the profile must remain valid.
+        refined = self.rows()
+        refined[3][self.columns["inside"]] = "0"
+        _, refined_report = apply_selection_profile(
+            refined, self.columns, profile,
+            {"FitInterval": [], "ExcludeNG": [], "ExcludeRG": []},
+            [False] * 5)
+        self.assertEqual(refined_report["counts"]["used_ng"], 4)
+        self.assertEqual(refined_report["counts"]["eligible_ng_inside"], 0)
+
+        # Altering an observation remains fatal; the dynamic rule is not a
+        # blanket exemption for count changes.
+        changed_data = self.rows()
+        changed_data[2][self.columns["refNG"]] = "0"
+        with self.assertRaisesRegex(SelectionError,
+                                    "eligible_ng_before_inside=3"):
+            apply_selection_profile(
+                changed_data, self.columns, profile,
+                {"FitInterval": [], "ExcludeNG": [], "ExcludeRG": []},
+                [False] * 5)
+
     def test_checked_in_profiles_are_valid(self):
         expected = {
-            "legacy_base_mask": (839, 1146),
-            "all_available": (930, 1146),
-            "transition_cut_100m": (869, 1146),
+            "legacy_base_mask": ((839, 1146), (839, 1150)),
+            "all_available": ((930, 1146), (934, 1150)),
+            "transition_cut_100m": ((869, 1146), (873, 1150)),
         }
         for name, counts in expected.items():
             profile, identity = load_profile(name, APP / "fit_profiles")
             self.assertEqual((profile["expected_counts"]["used_ng"],
-                              profile["expected_counts"]["used_rg"]), counts)
+                              profile["expected_counts"]["used_rg"]), counts[0])
+            self.assertEqual(
+                (profile["expected_counts_before_inside"]["used_ng"],
+                 profile["expected_counts_before_inside"]["used_rg"]),
+                counts[1])
             self.assertEqual(identity["role"], "selection_profile")
 
     def test_runner_dry_run_uses_fourteen_jobs_for_every_profile(self):

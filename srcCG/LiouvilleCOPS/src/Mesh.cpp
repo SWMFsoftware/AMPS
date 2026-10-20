@@ -81,7 +81,22 @@ void cMesh::ReadNastran(const std::string& fname) {
       std::string key;
       long id,pid,n0,n1,n2;
 
-      if (!(ss >> key >> id >> pid >> n0 >> n1 >> n2)) {
+      bool parsed=bool(ss >> key >> id >> pid >> n0 >> n1 >> n2);
+      if (!parsed && line.size()>=48) {
+        // A standard small-field CTRIA3 has five eight-column integer fields.
+        // On meshes with >=10 million nodes, adjacent node IDs have no
+        // separating whitespace. Retain legacy whitespace input support,
+        // but decode the actual field boundaries when that parser fails.
+        long values[5];
+        parsed=true;
+        for (int i=0;i<5;i++) {
+          std::istringstream field(Field(line,8+8*i,8));
+          char extra;
+          if (!(field >> values[i]) || (field >> extra)) {parsed=false; break;}
+        }
+        if (parsed) {id=values[0]; pid=values[1]; n0=values[2]; n1=values[3]; n2=values[4];}
+      }
+      if (!parsed) {
         fprintf(stderr,"Error: cannot parse the CTRIA3 card: %s\n",line.c_str());
         exit(EXIT_FAILURE);
       }

@@ -59,6 +59,9 @@ def build_parser():
                         help="fix all 25 legacy activity coefficients (required for residual fits)")
     parser.add_argument("--enhancement-scale", type=float,
                         help="assert the required area-weighted legacy-linear RMS scale")
+    parser.add_argument("--activity-template", action="append", nargs=2,
+                        metavar=("BUNDLE", "NAME"), default=[],
+                        help="mesh-bound nonnegative H2O template passed to fit_cops.py; repeatable")
     parser.add_argument("--fix-temperature", action="store_true")
     parser.add_argument("--ordered-temperature", action="store_true")
     parser.add_argument("--fix-kappa", action="store_true")
@@ -122,6 +125,8 @@ def fit_command(args, profile, destination):
             command.extend([option, value])
     if args.enhancement_scale is not None:
         command.extend(["--enhancement-scale", "%.17g" % args.enhancement_scale])
+    for bundle, name in args.activity_template:
+        command.extend(["--activity-template", bundle, name])
     return command
 
 

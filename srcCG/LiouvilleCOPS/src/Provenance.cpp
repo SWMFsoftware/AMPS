@@ -321,6 +321,7 @@ void WriteRunManifest(const std::string& filename,const std::string& createdUTC,
         << "    \"minimum_degree\": " << enhancement.MinimumDegree << ",\n"
         << "    \"maximum_degree\": " << enhancement.MaximumDegree << ",\n"
         << "    \"coefficient_count\": " << enhancement.Coefficients.size() << ",\n"
+        << "    \"facet_residual_count\": " << enhancement.FacetResiduals.size() << ",\n"
         << "    \"scale\": " << std::setprecision(17) << enhancement.Scale << ",\n"
         << "    \"scale_interpretation\": \"" << Escape(enhancement.ScaleMeaning) << "\",\n"
         << "    \"regularization\": \"" << Escape(enhancement.Regularization) << "\",\n"

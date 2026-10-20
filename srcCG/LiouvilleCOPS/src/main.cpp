@@ -483,9 +483,9 @@ int main(int argc,char **argv) {
   fprintf(fout,"# SurfaceBC=%s TemperatureModel=%s ActivityModel=%s SZAMode=%s CastShadows=%s SpacecraftVelocity=%s\n",
       lv.SurfaceBC.c_str(),source.TemperatureModel.c_str(),source.ActivityModel.c_str(),source.SZAMode.c_str(),source.CastShadows ? "on" : "off",lv.SpacecraftVelocity ? "on" : "off");
   if (source.Enhancement.Enabled())
-    fprintf(fout,"# ActivityEnhancementModel=%s BasisID=%s Species=H2O MinimumDegree=5 MaximumDegree=%d Scale=%.17g Clipping=%s ActivityEnhancementFile=%s\n",
-        source.Enhancement.Model.c_str(),source.Enhancement.BasisId.c_str(),source.Enhancement.MaximumDegree,
-        source.Enhancement.Scale,source.Enhancement.Clipping.c_str(),source.Enhancement.FilePath.c_str());
+    fprintf(fout,"# ActivityEnhancementModel=%s BasisID=%s Species=H2O MinimumDegree=%d MaximumDegree=%d Scale=%.17g Clipping=%s ActivityEnhancementFile=%s\n",
+        source.Enhancement.Model.c_str(),source.Enhancement.BasisId.c_str(),source.Enhancement.MinimumDegree,
+        source.Enhancement.MaximumDegree,source.Enhancement.Scale,source.Enhancement.Clipping.c_str(),source.Enhancement.FilePath.c_str());
   fprintf(fout,"# NGAcceptance=%s NGHeadOnWeight=%s RGAcceptance=%s RGPressureModel=%s TemperatureNG=%g TemperatureRGMode=%s SpeciesSensitivity=%s (H2O %g, CO2 %g) ReferenceDataUnit=%s\n",
       gauges.NGAcceptanceModel.c_str(),gauges.NGHeadOnWeight ? "on" : "off",gauges.RGAcceptanceModel.c_str(),gauges.RGPressureModel.c_str(),
       gauges.TemperatureNG,(gauges.TemperatureRGMode=="constant") ? (std::to_string(gauges.TemperatureRG)+"K").c_str() : "hk_table",gauges.SpeciesSensitivity ? "on" : "off",gauges.Sensitivity[0],gauges.Sensitivity[1],RefUnit.c_str());

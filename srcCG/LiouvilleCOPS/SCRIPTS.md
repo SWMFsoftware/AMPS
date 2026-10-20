@@ -1,5 +1,13 @@
 # Scripts
 
+Restored-fit development: [RESTORED_BASELINE.md](RESTORED_BASELINE.md) documents
+the campaign preparation tool; [JOINT_TEMPLATE_FIT.md](JOINT_TEMPLATE_FIT.md)
+documents simultaneous baseline/temperature/CO2/template fitting.
+[GRAVITY_REPAIR.md](GRAVITY_REPAIR.md) documents the repaired builder and cache
+identity. The fitter refuses old cliff columns without repaired orientation
+provenance even if the old bundle is renamed; its geometry-only NG column is
+unaffected by the HEAL defect.
+
 This file describes the scripts in the standalone LiouvilleCOPS application.
 See [README.md](README.md) for details and [RUN.md](RUN.md) for build/path setup.
 Run examples from the LiouvilleCOPS root. Use Python 3 with NumPy/Matplotlib
@@ -21,14 +29,17 @@ helper, not a standalone command.
 | Script | Purpose |
 |---|---|
 | [`tools/cops_hk_table.py`](#cops_hk_tablepy) | make the COPS housekeeping table from the archived L2 files |
-| [`tools/rebuild_cops_boundary.py`](#rebuild_cops_boundarypy) | regenerate a static fitting base with flat or rough surface emission, preserving the old run |
+| [`tools/rebuild_cops_boundary.py`](#rebuild_cops_boundarypy) | regenerate a static fitting base with a selected shape and flat or rough surface emission, preserving the old run |
 | [`tools/plot_cops_model.py`](#plot_cops_modelpy-plot_cops_model_altitudepy) | compare the LiouvilleCOPS runs with the data, vs. time |
 | [`tools/plot_cops_model_altitude.py`](#plot_cops_modelpy-plot_cops_model_altitudepy) | the same, vs. altitude |
 | [`tools/fit_cops.py`](#fit_copspy) | fit the source rate and temperature to the COPS data |
 | [`tools/run_fit_profile.py`](#run_fit_profilepy) | run one or all audited selection profiles safely |
 | [`tools/run_a6_validation.py`](#run_a6_validationpy) | run the Stage-A6 unit, synthetic, C++, and optional integration gate |
 | [`tools/benchmark_fit_performance.py`](#benchmark_fit_performancepy) | measure Stage-A7 production-fitter time, memory, output size, and independent-job scaling |
+| [`tools/build_physical_activity_templates.py`](#build_physical_activity_templatespy) | build mesh-bound late-NG-only and effective-slope cliff hypotheses |
 | [`tools/convert_dsk_to_bdf.py`](#convert_dsk_to_bdfpy) | convert archived type-2 DSK shapes to validated metre-unit NASTRAN surface BDFs |
+| [`tools/convert_ply_to_bdf.py`](PLY_CONVERSION.md) | convert binary triangular PLY to metre-unit GRID*/CTRIA3 BDF, preserving geometry and recording the gravity topology audit |
+| [`tools/repair_collinear_ply_bdf.py`](PLY_CONVERSION.md#separate-surface-preserving-44m-repair) | repair isolated exactly collinear source triangles by checked edge flips; preserve all BDF vertices and originals, emit a separate mesh and per-face provenance; production validation is still required |
 | [`tools/benchmark_activity_basis.py`](#benchmark_activity_basispy) | benchmark the isolated degree-5--8 real-harmonic table on an element cache |
 | [`tools/validate_cops_run.py`](#validate_cops_runpy) | validate a fitting cache or register C++ reproduction of fitted pressures |
 | [`tools/plot_lcurve.py`](#plot_lcurvepy) | plot the L-curve of the regularized fit |
@@ -81,6 +92,62 @@ in `tools/activity_basis.py` and C++ in
 H2O forward-model component using the strict format in
 `ACTIVITY_ENHANCEMENT_FILE.md`; Stage A4 estimates its coefficients and Stage
 A5 reports their facet/degree/pressure diagnostics.
+
+---
+
+## `build_physical_activity_templates.py`
+
+* **Purpose:** make auditable, mesh-bound H2O predictor fields without fitting
+  their amplitudes. `late_ng_not_rg` is the union, over an explicit UTC
+  interval, of facets with `Kn > 0` and simultaneous `KPhi = KV = 0`.
+  `cliff_ge_<angle>deg` uses the angle between the inward facet normal and
+  homogeneous-polyhedron self-gravity plus centrifugal acceleration.
+* **Inputs:** a manifested static fitting base; explicit late start/stop; a
+  closed NASTRAN gravity surface and positive homogeneous density; the compiled
+  `spice_angular_velocity` helper; repeatable slope thresholds; and optionally
+  a second gravity surface for a sampled resolution check.
+* **Safeguards:** the tool records exact input hashes, evaluates the SPICE
+  angular velocity at three epochs, checks gravity-offset convergence, can
+  compare gravity-shape resolutions, and binds the output to the exact ordered
+  centroid/normal/area table. Response magnitudes are diagnostics and do not
+  set the NG-only mask.
+* **Outputs:** a new `.npz` mask bundle, companion JSON metadata, PNG map, and
+  `<bundle-stem>.gravity.npz` under the output root. The mask bundle contains
+  only finite, nonnegative template columns and cannot be loaded with another
+  mesh/order. The gravity cache preserves per-facet self gravity and reference
+  centrifugal/effective-gravity and slope arrays.
+* **Reuse:** an existing mask bundle is passed directly to the fitter. For a
+  different set of masks on the same exact modeled surface, pass the existing
+  gravity file as `--gravity-cache FILE`. The loader requires matching
+  centroid/normal/area order, gravity-shape hash, density, offset, and
+  algorithm. It can reuse self gravity and cheaply re-derive the
+  SPICE-dependent fields for a different angular velocity.
+* **Dependency:** install the pinned `polyhedral-gravity` package from
+  `requirements-gravity.txt`; `make spice_angular_velocity` builds the helper.
+* **Use in a fit:** repeat `fit_cops.py --activity-template BUNDLE NAME` (or
+  the equivalent profile-runner option). Every template gets one nonnegative
+  amplitude; the controlled fit must also fix legacy activity, temperature,
+  and `kappa`. Do not fit the nested 45- and 60-degree masks together.
+
+```bash
+COPS_GRAVITY_VENV=/absolute/path/outside/LiouvilleCOPS/liouville-cops-gravity-venv
+env OMP_NUM_THREADS=10 \
+  "$COPS_GRAVITY_VENV/bin/python3" tools/build_physical_activity_templates.py \
+  output_fit_shap5_788k_base \
+  --out physical_templates_shap5_788k.npz \
+  --late-start 2016-09-30T10:33:10 --late-stop 2016-09-30T10:39:26 \
+  --gravity-shape /data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2/cg_spc_shap5_788k_cart.bdf \
+  --density 533 --cliff-threshold 45 --cliff-threshold 60 \
+  --gravity-offset 0.1 --gravity-offset-tolerance 0.25 \
+  --gravity-resolution-tolerance 5 --gravity-chunk 2048 \
+  --omega-executable ./spice_angular_velocity
+```
+
+`tools/activity_templates.py` is the imported strict bundle I/O module, not a
+standalone program. `tools/gravity_cache.py` is the corresponding strict cache
+I/O module and is not a command. `tools/spice_angular_velocity.cpp` is also not
+a Python entry point; run its compiled target only when diagnosing the SPICE
+rate.
 
 ---
 
@@ -161,8 +228,9 @@ limits, and the higher-resolution shape-model inventory.
 ## `rebuild_cops_boundary.py`
 
 Regenerates the angular transport kernels and forward pressures when changing
-`SurfaceBC`. It runs the existing C++ solver, preserving source temperature,
-activity, geometry, and selection settings. It does not run a fit. Requires
+`SurfaceBC` and can replace the surface geometry with `--shape-model` and
+`--shape-model-format`. It runs the existing C++ solver, preserving source
+temperature, activity, and selection settings. It does not run a fit. Requires
 `Mode = observations`, `FlightTimeRotation = none`,
 `TemperatureModel = analytical`, and `SurfaceTemperatureCorrectionFactor = 1`.
 
@@ -178,10 +246,16 @@ python3 tools/rebuild_cops_boundary.py --input fit_base.in \
 
 Options: `--input FILE` (default `fit_base.in`), required
 `--surface-bc flat|rough`, required `--out DIR`, optional `--threads N`,
+`--shape-model FILE`, `--shape-model-format nastran|dsk`,
 `--executable FILE` (default `liouville_cops`), and `--dry-run` (no writes or
 execution; external files are not checked). Relative `--out` uses the shared
 output root. Other relative source paths use the application root, with
 generated input/HK/activity lookup; kernel entries use `KernelDirectory`.
+
+The format is never inferred from a suffix. A shape override is written as an
+absolute path to `boundary.in` and `rebuild.json`; the C++ run manifest also
+hashes the selected mesh. Changing the shape rebuilds all geometry-dependent
+products and requires a new fit based on that output directory.
 
 The output directory must not exist. It receives `boundary.in`, `source.in`,
 `COPS_model.dat`, `elements.bin`, `kernels/`, `rebuild.log`, and `rebuild.json`.
@@ -289,7 +363,8 @@ table, temperature equations, safeguards, and tests.
   `--out` must name a new path. In the Python prediction table, only aggregate `pNG`/`pRG` are recomputed;
   unrecomputed production/species/below-deck fields are `nan`, not inherited base results.
 * **Options:** `--out DIR`, `--degree N`, `--enhancement-degree 4..8`, `--fix-legacy-activity`,
-  `--enhancement-scale VALUE` (assertion of the derived scale), `--lambda L [L ...]`, `--jobs N`, `--fix-temperature`,
+  `--enhancement-scale VALUE` (assertion of the derived scale), repeatable
+  `--activity-template BUNDLE NAME`, `--lambda L [L ...]`, `--jobs N`, `--fix-temperature`,
   `--ordered-temperature`, `--fix-kappa`, `--tbounds TMIN TMAX` (default 30 400 K), `--max-nfev`, `--ftol`, `--xtol`,
   `--gtol`, `--check-jacobian`, `--check-tolerance`, `--data FILE`, `--profile NAME`, `--apply-exclude-ng`, `--exclude-ng-saturated`, `--hk-table FILE`, `--data-only`, `--allow-legacy-base`.
   A named profile owns the selection and cannot be combined with the two
@@ -312,6 +387,11 @@ table, temperature equations, safeguards, and tests.
   python3 tools/fit_cops.py output_fit_full_default_base --profile all_available \
           --enhancement-degree 8 --fix-legacy-activity --fix-temperature --fix-kappa \
           --lambda 1e-4 --jobs 14 --out fit_enh_l8_all_available
+  python3 tools/fit_cops.py output_fit_shap5_788k_base --profile all_available \
+          --enhancement-degree 8 --fix-legacy-activity --fix-temperature --fix-kappa \
+          --activity-template physical_templates_shap5_788k.npz late_ng_not_rg \
+          --activity-template physical_templates_shap5_788k.npz cliff_ge_60deg \
+          --lambda 1e-5 1e-4 1e-3 --jobs 3 --out fit_l8_physical_templates
   ./liouville_cops output_fit_base_fit/cops_fit.in    # verify a fit with the C++ code
   python3 tools/validate_cops_run.py --fit output_fit_base_fit --verification output_fit_base_fit_verify
   ```
@@ -321,9 +401,11 @@ table, temperature equations, safeguards, and tests.
 * **Purpose:** validate and execute the checked-in `fit_profiles/*.json`
   policies through `fit_cops.py`, with distinct output directories and exact
   commands printed before execution.
-* **Profiles:** `legacy_base_mask` (839 NG/1,146 RG), `all_available`
-  (930/1,146), and `transition_cut_100m` (869/1,146). Counts are guarded for
-  the audited 1,150-row dataset; an unexplained input change is fatal.
+* **Profiles:** on the 100k reference, `legacy_base_mask` has 839 NG/1,146 RG,
+  `all_available` 930/1,146, and `transition_cut_100m` 869/1,146. On the 788k
+  base the counts are 839/1,150, 934/1,150, and 873/1,150 because its last four
+  positions are outside. Profiles audit the 1,150 rows and selection before
+  the shape test; an unexplained data/policy change remains fatal.
 * **Parallelism:** `--jobs` defaults to 14 and controls independent lambda
   fits. Profiles run sequentially. A single lambda supplies only one optimizer
   task. Numerical-library threads default to one per worker.

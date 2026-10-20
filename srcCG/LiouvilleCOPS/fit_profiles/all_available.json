@@ -15,5 +15,9 @@
     "rows": 1150,
     "used_ng": 930,
     "used_rg": 1146
+  },
+  "expected_counts_before_inside": {
+    "used_ng": 934,
+    "used_rg": 1150
   }
 }

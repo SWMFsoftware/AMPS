@@ -10,7 +10,10 @@ Profile intervals are closed at both ends.  A datum is fundamentally usable
 only when its reference pressure is positive, the gauge is outside the shape,
 and its timestamp is inside any FitInterval declared by the base run.  A
 profile can then apply the base run's gauge exclusions, explicit intervals,
-and the independently supplied saturated-NG mask.
+and the independently supplied saturated-NG mask.  Checked-in profiles audit
+shape-independent eligible counts separately from the final selected counts:
+changing mesh resolution is allowed to change only which otherwise eligible
+points are classified inside, not the pressures, times, or policy result.
 """
 
 import datetime as dt
@@ -114,6 +117,17 @@ def validate_profile(profile, source="profile"):
         if not isinstance(value, int) or value < 0:
             raise SelectionError("%s: expected_counts.%s must be a nonnegative integer" %
                                  (source, key))
+    before_inside = profile.get("expected_counts_before_inside")
+    if before_inside is not None:
+        if not isinstance(before_inside, dict):
+            raise SelectionError(
+                "%s: expected_counts_before_inside must be an object" % source)
+        for key in ("used_ng", "used_rg"):
+            value = before_inside.get(key)
+            if not isinstance(value, int) or value < 0:
+                raise SelectionError(
+                    "%s: expected_counts_before_inside.%s must be a nonnegative integer" %
+                    (source, key))
     result = dict(profile)
     result["_parsed_exclude_intervals"] = normalized
     return result
@@ -167,6 +181,7 @@ def apply_selection_profile(rows, columns, profile, run_intervals, saturated_ng)
     fit_intervals = run_intervals.get("FitInterval", [])
     result = [list(row) for row in rows]
     reasons = {gauge: [] for gauge in GAUGES}
+    eligible_before_inside = {gauge: [] for gauge in GAUGES}
 
     for index, (row, timestamp) in enumerate(zip(result, parsed_time)):
         inside = bool(int(row[columns["inside"]]))
@@ -177,8 +192,6 @@ def apply_selection_profile(rows, columns, profile, run_intervals, saturated_ng)
             reason = "selected"
             if not pressure > 0.0:
                 reason = "nonpositive_or_missing"
-            elif inside:
-                reason = "inside_shape"
             elif not in_fit:
                 reason = "outside_fit_interval"
             elif (profile["apply_run_exclusions"] and
@@ -190,6 +203,19 @@ def apply_selection_profile(rows, columns, profile, run_intervals, saturated_ng)
             elif (gauge == "NG" and saturated_ng[index] and
                   profile["saturated_ng"] == "exclude"):
                 reason = "saturated_excluded"
+            # ``eligible`` deliberately evaluates every data/profile rule
+            # before the shape test.  This lets a higher-resolution surface
+            # move a point across the boundary without disabling the audit of
+            # observation values, UTCs, intervals, or saturation policy.
+            eligible = reason == "selected"
+            eligible_before_inside[gauge].append(eligible)
+            # Preserve the established reason precedence: after missing data,
+            # an inside point is reported as ``inside_shape`` even if a later
+            # interval/saturation rule would also exclude it.  ``eligible``
+            # above still records whether it would have passed those rules if
+            # the active shape placed it outside.
+            if pressure > 0.0 and inside:
+                reason = "inside_shape"
             row[columns["use" + gauge]] = "1" if reason == "selected" else "0"
             reasons[gauge].append(reason)
 
@@ -202,15 +228,36 @@ def apply_selection_profile(rows, columns, profile, run_intervals, saturated_ng)
             bool(value) and result[index][columns["useNG"]] == "1"
             for index, value in enumerate(saturated_ng)),
     }
+    for gauge, key in (("NG", "ng"), ("RG", "rg")):
+        counts["eligible_%s_before_inside" % key] = sum(
+            eligible_before_inside[gauge])
+        counts["eligible_%s_inside" % key] = sum(
+            eligible and bool(int(result[index][columns["inside"]]))
+            for index, eligible in enumerate(eligible_before_inside[gauge]))
     expected = profile["expected_counts"]
-    mismatch = [key for key in ("rows", "used_ng", "used_rg")
-                if counts[key] != expected[key]]
+    before_inside = profile.get("expected_counts_before_inside")
+    if before_inside is None:
+        # Compatibility for external/version-1 profiles that predate
+        # shape-resolution studies: retain their exact final-count audit.
+        compared = ((key, counts[key], expected[key])
+                    for key in ("rows", "used_ng", "used_rg"))
+    else:
+        compared = [
+            ("rows", counts["rows"], expected["rows"]),
+            ("eligible_ng_before_inside",
+             counts["eligible_ng_before_inside"], before_inside["used_ng"]),
+            ("eligible_rg_before_inside",
+             counts["eligible_rg_before_inside"], before_inside["used_rg"]),
+        ]
+    mismatch = [(key, actual, wanted) for key, actual, wanted in compared
+                if actual != wanted]
     if mismatch:
         detail = ", ".join("%s=%d (expected %d)" %
-                           (key, counts[key], expected[key]) for key in mismatch)
+                           (key, actual, wanted)
+                           for key, actual, wanted in mismatch)
         raise SelectionError(
             "selection profile %s does not match the audited dataset: %s; "
-            "review the changed inputs before updating expected_counts" %
+            "review the changed inputs before updating its expected counts" %
             (profile["name"], detail))
 
     reason_counts = {
@@ -234,4 +281,3 @@ def apply_selection_profile(rows, columns, profile, run_intervals, saturated_ng)
 def public_profile(profile):
     """Remove parsed implementation fields before writing effective JSON."""
     return {key: value for key, value in profile.items() if not key.startswith("_")}
-

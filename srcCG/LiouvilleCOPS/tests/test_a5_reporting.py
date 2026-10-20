@@ -66,12 +66,14 @@ class FitReportingTests(unittest.TestCase):
 
         self.assertEqual(set(products), {
             "activity_facets.dat", "activity_degree_power.dat",
+            "activity_template_power.dat",
             "activity_region_diagnostics.dat", "activity_maps.png",
             "pressure_residuals.dat", "pressure_comparison_time.png",
             "pressure_comparison_altitude.png", "pressure_residuals.png",
             "fit_report.json",
         })
         for name in ("activity_facets.dat", "activity_degree_power.dat",
+                     "activity_template_power.dat",
                      "activity_region_diagnostics.dat", "pressure_residuals.dat"):
             header = (self.root / name).read_text().splitlines()[0]
             self.assertIn("ReportSchema=" + REPORT_SCHEMA, header)

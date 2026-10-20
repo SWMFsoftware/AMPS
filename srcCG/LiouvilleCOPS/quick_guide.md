@@ -264,11 +264,15 @@ see [README.md](README.md).
 Use the profile runner for repeatable comparisons of the three requested data
 masks:
 
-| Profile | NG/RG points | Meaning |
-|---|---:|---|
-| `legacy_base_mask` | 839 / 1,146 | Base `ExcludeNG`/`ExcludeRG` intervals applied. |
-| `all_available` | 930 / 1,146 | All positive outside-shape data, including saturated and late NG. |
-| `transition_cut_100m` | 869 / 1,146 | All RG; NG excludes `10:24:42`--`10:37:10` inclusive and resumes at `10:37:14` (99.48 m in the audited base). |
+| Profile | 100k NG/RG | 788k NG/RG | Meaning |
+|---|---:|---:|---|
+| `legacy_base_mask` | 839 / 1,146 | 839 / 1,150 | Base `ExcludeNG`/`ExcludeRG` intervals applied. |
+| `all_available` | 930 / 1,146 | 934 / 1,150 | All positive outside-shape data, including saturated and late NG. |
+| `transition_cut_100m` | 869 / 1,146 | 873 / 1,150 | All RG; NG excludes `10:24:42`--`10:37:10` inclusive and resumes at `10:37:14`. That point is 99.48 m above the 100k reference and 113.75 m above the 788k shape. |
+
+Profiles audit the observation/time policy before the shape test, then exclude
+otherwise eligible points marked inside by that base. Thus a mesh may change
+the final count, but an unexplained data or policy change still fails.
 
 Inspect all selections without fitting:
 
@@ -635,6 +639,89 @@ argument with the printed absolute path if required. Enhanced outputs add
 three fix switches is the zero-parameter control. Degrees 5--8 contain 11,
 24, 39, and 56 free coefficients.
 
+#### Add late-NG-only and cliff hypotheses
+
+`tools/build_physical_activity_templates.py` can make two mesh-bound H2O
+predictors: the union of facets with positive NG response and zero RG response
+at the same late observations, and a cliff mask based on effective
+gravitational slope. The slope calculation uses homogeneous-polyhedron
+self-gravity plus SPICE-derived centrifugal acceleration. It does not assume a
+continuous source-rate-versus-slope law. The recommended main test uses the
+published `slope >= 60 deg` cliff definition; generate 45 degrees only as a
+separate sensitivity case.
+
+After installing `requirements-gravity.txt` in a virtual environment and
+running `make spice_angular_velocity`, build the bundle for the exact fit base:
+
+```bash
+COPS_GRAVITY_VENV=/absolute/path/outside/LiouvilleCOPS/liouville-cops-gravity-venv
+env OMP_NUM_THREADS=10 \
+  "$COPS_GRAVITY_VENV/bin/python3" tools/build_physical_activity_templates.py \
+  output_fit_shap5_788k_base \
+  --out physical_templates_shap5_788k.npz \
+  --late-start 2016-09-30T10:33:10 --late-stop 2016-09-30T10:39:26 \
+  --gravity-shape /data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2/cg_spc_shap5_788k_cart.bdf \
+  --density 533 --cliff-threshold 45 --cliff-threshold 60 \
+  --gravity-offset 0.1 --gravity-offset-tolerance 0.25 \
+  --gravity-resolution-tolerance 5 --gravity-chunk 2048 \
+  --omega-executable ./spice_angular_velocity
+```
+
+This writes the reusable masks to `physical_templates_shap5_788k.npz` and the
+full per-facet gravity calculation to
+`physical_templates_shap5_788k.gravity.npz`. The gravity cache contains self,
+reference centrifugal/effective gravity, and reference effective slope. A
+later template build for the same exact facet geometry can avoid the expensive
+polyhedral evaluation with
+`--gravity-cache physical_templates_shap5_788k.gravity.npz`; hashes of the
+facet centroid/normal/area order, gravity shape, density, offset, and algorithm
+must all match. The SPICE-dependent derived fields are recomputed cheaply if
+the angular velocity differs. Existing mask bundles can be passed directly to
+the fitter and need no rebuilding.
+
+For this campaign, use the same closed 788k surface for transport and
+homogeneous gravity. The older `SHAP5_Volume.bdf` differs materially
+(including about 70 m at minimum Z and about 1.8% in signed-volume magnitude)
+and is not used as the gravity input for the primary 788k fit. Its earlier
+failed cross-shape slope check used defective HEAL orientation handling and
+must be repeated; it is not evidence of a physical resolution error.
+
+The original 788k gravity and cliff bundle is invalid (see
+[`HEAL-corruption.md`](HEAL-corruption.md)). Regenerate with the repaired
+builder before fitting cliff templates. Geometry-only NG visibility is
+unaffected. For the restored degree-0--4 baseline and joint template workflow,
+see [`RESTORED_BASELINE.md`](RESTORED_BASELINE.md) and
+[`JOINT_TEMPLATE_FIT.md`](JOINT_TEMPLATE_FIT.md). The degree-8 example below
+is the older fixed-baseline experiment, not the restored primary workflow.
+
+Fit the two additional nonnegative amplitudes on top of the signed harmonic
+residual with repeatable `--activity-template` options:
+
+```bash
+python3 tools/run_fit_profile.py \
+  --run output_fit_shap5_788k_base --profile all_available \
+  --enhancement-degree 8 \
+  --fix-legacy-activity --fix-temperature --fix-kappa \
+  --activity-template physical_templates_shap5_788k.npz late_ng_not_rg \
+  --activity-template physical_templates_shap5_788k.npz cliff_ge_60deg \
+  --lambda 1e-6 3.162e-6 1e-5 3.162e-5 1e-4 3.162e-4 1e-3 \
+  --jobs 2 --threads-per-process 1 \
+  --max-nfev 1000 --ftol 1e-10 --xtol 1e-10 --gtol 1e-10 \
+  --check-tolerance 1e-6 \
+  --out fit_shap5_788k_l8_templates_all_available_scan
+```
+
+Repeat with `--profile transition_cut_100m` and a fresh output name. If the
+late-region amplitude is supported only by `all_available`, report an
+instrument-selection sensitivity, not a localized source detection. The
+bundle is accepted only by its exact mesh/order. Template amplitudes are
+constrained nonnegative; legacy activity, temperature, and CO2 remain fixed.
+The measured 788k prepared fitter used roughly 66--74 GiB per independent
+process on the campaign host, so this example limits the scan to two workers;
+remeasure before increasing `--jobs` on another host or implementation.
+See RUN.md for the complete base-generation and two-profile commands and
+README.md for equations and interpretation limits.
+
 ### Stage-A5 result package
 
 Every completed fit or lambda subdirectory automatically contains:
@@ -719,14 +806,31 @@ base/cache. A finer mesh does not raise the separate harmonic activity degree.
 
 The downloaded files and their PDS labels are under
 `/data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2`.
-Set `ShapeModel` to the selected `.bdf`, set `ShapeModelFormat = nastran`,
-retain `BodyFrame = 67P/C-G_CK`, and choose a fresh output directory. The BDFs
+The solver keys remain `ShapeModel` and `ShapeModelFormat`. For a fitting-base
+simulation, select them directly on the rebuild command so the tracked
+`fit_base.in` need not be edited:
+
+```bash
+python3 tools/rebuild_cops_boundary.py --input fit_base.in \
+  --surface-bc flat \
+  --shape-model /data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2/cg_spc_shap5_199k_cart.bdf \
+  --shape-model-format nastran \
+  --out output_fit_base_shap5_199k --threads 16 --dry-run
+
+# After checking the generated configuration, repeat without --dry-run.
+```
+
+Retain `BodyFrame = 67P/C-G_CK` and choose a fresh output directory. The BDFs
 use metre-unit `GRID*`/`CTRIA3`, matching the surface-card convention consumed
 from the original SHAP5 BDF. The raw lower four DSK reductions contain small
 zero-thickness reversed duplicate fin pairs; conversion removes exactly those
 pairs and proves closed, consistently wound topology. Exact retained counts,
 commands, and checksums are in `A7_PERFORMANCE.md`, each
 `.bdf.conversion.json`, and the local `SHA256SUMS`.
+
+The selected shape is part of the static fitting base, not an optimizer
+parameter. Run `fit_cops.py` or `run_fit_profile.py` against the newly created
+`output_fit_base_shap5_199k`; never mix kernels from another shape.
 
 The fitter takes its initial physical values from the selected base run; it
 does not keep a separate, universal starting vector. With the supplied
@@ -822,6 +926,7 @@ parameter-count table, constraints, and fixed-physics details.
 | `--enhancement-degree N` | `4` | Residual maximum degree, 4 for the zero-length control or 5–8 for degrees 5 through N. |
 | `--fix-legacy-activity` | off | Keep all 25 legacy H2O coefficients fixed. Required, with fixed temperature and `kappa`, for degrees 5–8. |
 | `--enhancement-scale VALUE` | derived | Optional assertion of the area-weighted legacy-linear RMS; it cannot override that definition. |
+| `--activity-template BUNDLE NAME` | none | Add one exact-mesh, nonnegative H2O template amplitude; repeat for distinct hypotheses. Enhancement degree 4 permits jointly free baseline activity, temperatures, and `kappa`; degrees 5–8 retain fixed physics. Cliff columns require repaired gravity provenance. |
 | `--fix-temperature` | off | Do not fit surface temperatures. |
 | `--ordered-temperature` | off | Enforce `Tmax >= T75 >= Tmin`. |
 | `--tbounds LO HI` | `30 400` | Temperature bounds in kelvin; see the ordered-mode caveat below. |

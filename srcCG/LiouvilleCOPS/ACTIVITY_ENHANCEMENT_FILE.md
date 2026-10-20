@@ -61,3 +61,46 @@ be finite and nonnegative. Stage A4 writes
 `area_weighted_unclipped_residual_to_zero_relative_legacy_linear_power`, whose
 exact definition is in `README.md`; any other producer must write its actual
 regularization identifier rather than claiming a convention that was not used.
+
+## Exact per-facet replay for harmonic-plus-template fits
+
+A fit that includes a mesh-bound localized template cannot, in general, be
+reduced to the degree-5--8 harmonic records above. Such a fit therefore writes
+an evaluated residual for every facet using a separate version-1 format:
+
+```text
+Format = liouville_cops.activity_enhancement_facets
+FormatVersion = 1
+BasisID = real_spherical_harmonics_plus_declared_facet_templates_v1
+Species = H2O
+BodyFrame = 67P/C-G_CK
+Ordering = increasing_face_index
+Clipping = max(0,legacy_linear+enhancement)
+HarmonicMinimumDegree = 5
+HarmonicMaximumDegree = 8
+Scale = 1
+ScaleInterpretation = explicit_dimensionless_residual_per_facet
+LegacyActivityIdentity = sha256:<hash-of-ActivityFit.txt>
+Regularization = area_weighted_unclipped_residual_to_zero_relative_legacy_linear_power
+Lambda = 0.0001
+FacetCount = 787754
+HarmonicCoefficient = 5 -5 <value>
+TemplateCoefficient = late_ng_not_rg <nonnegative-value>
+Facet = 0 <x_m> <y_m> <z_m> <area_m2> <residual>
+# ...one consecutive Facet record for every active-mesh face
+```
+
+`HarmonicCoefficient` and `TemplateCoefficient` records document how Python
+constructed the field; C++ propagation uses the `Facet` residuals. Before
+accepting the file, C++ requires consecutive indices and exact binary64
+agreement of every saved centroid and area with the active mesh. It also
+checks the face count, body frame, legacy-map hash, clipping rule, and all
+other metadata. This makes the file an exact replay artifact for one mesh and
+facet ordering, not a portable map that may be interpolated to another shape.
+
+Template coefficients are nonnegative because the implemented hypotheses are
+additional activity. Harmonic coefficients remain signed. Python combines
+all components in one linear residual, applies one final non-negativity clip,
+and uses one area-weighted quadratic penalty including cross terms between
+overlapping harmonic and template fields. `Scale = 1` in this replay format
+because each `Facet` value already includes the fitter's conditioning scale.

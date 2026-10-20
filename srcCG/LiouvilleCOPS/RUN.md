@@ -8,6 +8,13 @@ file formats, and scientific limitations.
 
 ## Output location
 
+For the restored 788k baseline and joint NG-only/cliff fitting workflow, use
+[RESTORED_BASELINE.md](RESTORED_BASELINE.md) and
+[JOINT_TEMPLATE_FIT.md](JOINT_TEMPLATE_FIT.md). Read
+[GRAVITY_REPAIR.md](GRAVITY_REPAIR.md) before rebuilding cliff products: the
+original HEAL-derived gravity and cliff masks are invalid and quarantined.
+The older degree-8 fixed-baseline examples below are separate experiments.
+
 Run commands from LiouvilleCOPS. New scientific products default to
 **`../../cops_output/`** (`<AMPS>/cops_output`), not this directory. Relative
 output arguments and C++ `OutputDirectory` are placed under that root.
@@ -218,7 +225,7 @@ shell-specific environment-variable assignment.
 | `liouville_cops fit_base.in` | Forward calculation with the cached geometry needed for fitting. | Section 7; supplied destination is `output_fit_base/`. |
 | `liouville_cops FILE.in` | Any configured forward variant or fitted-model verification. | Sections 7 and 10; destination is the input's `OutputDirectory`. |
 | `tools/cops_hk_table.py` | Convert raw L2 BG files to a housekeeping table. | Section 1; optional source directory and output filename, both with defaults. |
-| `tools/rebuild_cops_boundary.py` | Regenerate a static fitting base for flat/rough emission without overwriting existing runs. | Section 7, "Change the surface boundary condition"; new table, elements, kernels, input snapshot, log, and metadata. |
+| `tools/rebuild_cops_boundary.py` | Regenerate a static fitting base for a selected shape and flat/rough emission without overwriting existing runs. | Section 7, "Change the surface boundary condition or shape model"; new table, elements, kernels, input snapshot, log, and metadata. |
 | `tools/collect_cops_sources.py` | Compare pressure sources and export candidate fit data. | Section 2; JSON, PNGs, and selection table. |
 | `tools/digitize_cops_figures.py` | Regenerate approximate pressure traces from the three supplied images. | Section 8; five CSV files and optional check plots. |
 | `tools/fit_cops.py` | Select data, check the fit model/Jacobian, fit once, or scan regularization. | Section 9; included working file with shared output paths. |
@@ -745,7 +752,7 @@ saved binary kernels. Use distinct output directories for shape, temperature,
 or rotation comparisons. Names such as `srccg_table` refer to local model
 conventions, not execution of the surrounding srcCG application.
 
-### Change the surface boundary condition
+### Change the surface boundary condition or shape model
 
 Use the original forward input to rebuild with the other angular law. The
 script recomputes a complete static fitting base, not just the pressure table:
@@ -762,19 +769,44 @@ The first command prints the proposed input and command without writes or
 external-file checks. The second executes the existing solver. Use `flat`
 instead of `rough` and another fresh output path to rebuild the flat case.
 
+Select a different surface mesh without editing `fit_base.in` by passing the
+path and its actual reader format. This example creates the complete static
+fitting base for the converted 199k SHAP5 mesh:
+
+```bash
+python3 tools/rebuild_cops_boundary.py --input fit_base.in \
+  --surface-bc flat \
+  --shape-model /data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2/cg_spc_shap5_199k_cart.bdf \
+  --shape-model-format nastran \
+  --out output_fit_base_shap5_199k --threads 16 --dry-run
+
+python3 tools/rebuild_cops_boundary.py --input fit_base.in \
+  --surface-bc flat \
+  --shape-model /data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2/cg_spc_shap5_199k_cart.bdf \
+  --shape-model-format nastran \
+  --out output_fit_base_shap5_199k --threads 16
+```
+
+Changing the shape invalidates the old facet table, visibility, shadows,
+altitudes, pressures, and every point kernel. The subsequent fitter receives
+the shape through this new base; it must not reuse a base made for another
+mesh.
+
 | Option | Meaning |
 |---|---|
 | `--input FILE` | Source input; default `fit_base.in`. All its ordinary relative data paths are interpreted under the application root, not its own directory. |
 | `--surface-bc flat\|rough` | Required target angular emission law. |
 | `--out DIR` | Required new output directory; any existing path is refused. |
 | `--threads N` | Optional positive OpenMP thread count; otherwise preserve the source input/environment. |
+| `--shape-model FILE` | Optional surface-mesh override. Relative paths resolve from the application root; the generated input records an absolute path. |
+| `--shape-model-format nastran\|dsk` | Optional reader override. No format is inferred from the filename; when omitted, preserve the source value or the solver's `nastran` default. |
 | `--executable FILE` | Existing solver; default application-root `liouville_cops`. No compilation is performed. |
 | `--dry-run` | Show configuration and command only. |
 
 Relative `--out` resolves under the output root. Other relative CLI paths
 resolve against the application root, with generated-input fallback. The tool
 preserves temperatures, source parameters, and selection intervals, sets
-`WriteKernels = on`, and saves normalized absolute paths in
+`WriteKernels = on`, applies any explicit shape overrides, and saves normalized absolute paths in
 `<out>/boundary.in`. It requires observation mode, static transport,
 analytical surface temperature, and temperature correction factor 1;
 incompatible inputs are rejected, not silently converted.
@@ -909,13 +941,19 @@ Selection rules matter:
 ### Versioned selection profiles and the 14-process runner
 
 The three checked-in profiles use one shared implementation in
-`tools/cops_selection.py` and fail if their audited 1,150-row counts change:
+`tools/cops_selection.py`. The table shows the 100k reference counts and the
+current 788k counts; differences come only from the last four points moving
+from inside to outside the refined shape:
 
-| Profile | NG | RG | NG treatment |
+| Profile | 100k NG/RG | 788k NG/RG | NG treatment |
 |---|---:|---:|---|
-| `legacy_base_mask` | 839 | 1,146 | Apply the base gauge-exclusion intervals. |
-| `all_available` | 930 | 1,146 | Retain all valid data, including saturated and post-transition NG. |
-| `transition_cut_100m` | 869 | 1,146 | Exclude NG from `10:24:42` through `10:37:10`, inclusive. |
+| `legacy_base_mask` | 839 / 1,146 | 839 / 1,150 | Apply the base gauge-exclusion intervals. |
+| `all_available` | 930 / 1,146 | 934 / 1,150 | Retain all valid data, including saturated and post-transition NG. |
+| `transition_cut_100m` | 869 / 1,146 | 873 / 1,150 | Exclude NG from `10:24:42` through `10:37:10`, inclusive. |
+
+The audit fixes the 1,150 rows and the pre-inside policy counts, then derives
+final counts from the active shape's `inside` flags. It does not relax audits
+of pressures, times, intervals, or saturation policy.
 
 Audit all three selections without optimizing:
 
@@ -1019,6 +1057,120 @@ Do not fit from a base that already contains an enabled enhancement. The
 fitter rejects it because its cached H2O activity is no longer the legacy
 baseline required by this parameterization. `lambda=0` is allowed for a rank
 diagnostic and is explicitly labeled unregularized in the report/manifest.
+
+### Late-NG visibility and effective-slope template fit
+
+This optional controlled experiment adds two nonnegative H2O amplitudes to
+the signed degree-5--8 residual: one for facets with an NG response but no RG
+response during a declared late interval, and one for facets whose effective
+gravitational slope is at least 60 degrees. The latter includes homogeneous
+self-gravity and centrifugal acceleration; it is a categorical cliff
+hypothesis, not an assumed continuous production law.
+
+Install the pinned gravity package in an isolated environment and build the
+SPICE helper. The helper uses the same C++ geometry/SPICE implementation as
+the forward solver:
+
+```bash
+COPS_GRAVITY_VENV=/absolute/path/outside/LiouvilleCOPS/liouville-cops-gravity-venv
+python3 -m venv "$COPS_GRAVITY_VENV"
+"$COPS_GRAVITY_VENV/bin/pip" install -r requirements-gravity.txt
+make -j16 liouville_cops spice_angular_velocity
+```
+
+Generate the 788k base once. `COPS_OUTPUT_ROOT` below is an explicit example;
+choose a writable directory outside LiouvilleCOPS:
+
+```bash
+export COPS_OUTPUT_ROOT=/data/vtenishe/rosetta_data_end_of_mission_cops/cops_output
+
+python3 tools/rebuild_cops_boundary.py \
+  --input fit_base.in --surface-bc flat \
+  --shape-model /data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2/cg_spc_shap5_788k_cart.bdf \
+  --shape-model-format nastran \
+  --out output_fit_shap5_788k_base \
+  --threads 10 --executable ./liouville_cops
+```
+
+Build the template bundle. The UTC bounds, density, gravity mesh, offset, and
+validation tolerances are scientific inputs and are written to the metadata;
+do not change them merely to improve the fit:
+
+```bash
+env OMP_NUM_THREADS=10 \
+  "$COPS_GRAVITY_VENV/bin/python3" tools/build_physical_activity_templates.py \
+  output_fit_shap5_788k_base \
+  --out physical_templates_shap5_788k.npz \
+  --late-start 2016-09-30T10:33:10 \
+  --late-stop 2016-09-30T10:39:26 \
+  --gravity-shape /data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP5_PDS_V2/cg_spc_shap5_788k_cart.bdf \
+  --density 533 \
+  --cliff-threshold 45 --cliff-threshold 60 \
+  --gravity-offset 0.1 \
+  --gravity-offset-tolerance 0.25 \
+  --gravity-resolution-tolerance 5 \
+  --gravity-chunk 2048 \
+  --omega-executable ./spice_angular_velocity
+```
+
+The command writes the immutable `.npz` mask bundle, a JSON audit record, a
+body-frame PNG, and `physical_templates_shap5_788k.gravity.npz` under the
+output root. The gravity cache preserves per-facet homogeneous self gravity,
+the reference centrifugal/effective fields, and effective slope. It is bound
+to exact centroid/normal/area ordering and to the gravity-shape hash, density,
+offset, and algorithm. To build a different mask bundle on the same modeled
+surface without repeating the expensive polyhedral calculation, add:
+
+```bash
+  --gravity-cache physical_templates_shap5_788k.gravity.npz
+```
+
+The cache loader recomputes the inexpensive centrifugal/effective fields when
+the SPICE angular velocity differs and refuses any physical-input or mesh
+mismatch. Existing NG-only/cliff masks are already reusable by passing their
+bundle directly to `--activity-template`; rebuilding is unnecessary. The main
+comparison fits the 60-degree
+field; retain the 45-degree field for a separate sensitivity run rather than
+fitting two nested masks simultaneously. Run the same positive-lambda grid on
+the full profile and the profile that removes the NG transition:
+
+```bash
+python3 tools/run_fit_profile.py \
+  --run output_fit_shap5_788k_base \
+  --profile all_available \
+  --enhancement-degree 8 \
+  --fix-legacy-activity --fix-temperature --fix-kappa \
+  --activity-template physical_templates_shap5_788k.npz late_ng_not_rg \
+  --activity-template physical_templates_shap5_788k.npz cliff_ge_60deg \
+  --lambda 1e-6 3.162e-6 1e-5 3.162e-5 1e-4 3.162e-4 1e-3 \
+  --jobs 2 --threads-per-process 1 \
+  --max-nfev 1000 --ftol 1e-10 --xtol 1e-10 --gtol 1e-10 \
+  --check-tolerance 1e-6 \
+  --out fit_shap5_788k_l8_templates_all_available_scan
+
+python3 tools/run_fit_profile.py \
+  --run output_fit_shap5_788k_base \
+  --profile transition_cut_100m \
+  --enhancement-degree 8 \
+  --fix-legacy-activity --fix-temperature --fix-kappa \
+  --activity-template physical_templates_shap5_788k.npz late_ng_not_rg \
+  --activity-template physical_templates_shap5_788k.npz cliff_ge_60deg \
+  --lambda 1e-6 3.162e-6 1e-5 3.162e-5 1e-4 3.162e-4 1e-3 \
+  --jobs 2 --threads-per-process 1 \
+  --max-nfev 1000 --ftol 1e-10 --xtol 1e-10 --gtol 1e-10 \
+  --check-tolerance 1e-6 \
+  --out fit_shap5_788k_l8_templates_transition_cut_scan
+```
+
+Seven lambda values provide seven independent optimizer tasks. On the measured
+788k campaign, each prepared process occupied roughly 66--74 GiB, so only two
+are run simultaneously on the approximately 242-GiB host. `--jobs` is a
+ceiling, not a request to split one optimizer; remeasure memory before raising
+it on another system. Compare these results with a
+same-degree harmonic-only scan. A template coefficient at its lower bound has
+one-sided inference; its local covariance entry must not be interpreted as a
+two-sided detection uncertainty. The exact selected mixed field is saved in
+`ActivityEnhancementFit.txt` using the mesh-locked per-facet replay format.
 
 To make the multi-source plot match a deliberate candidate selection and
 use exactly its exported table in the fit:

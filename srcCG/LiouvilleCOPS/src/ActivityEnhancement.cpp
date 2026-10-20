@@ -12,6 +12,7 @@
 #include <stdexcept>
 
 #include "ActivityEnhancementBasis.h"
+#include "Mesh.h"
 
 namespace ActivityEnhancement {
 namespace {
@@ -189,6 +190,139 @@ Configuration ReadFile(const std::string& filename) {
   return result;
 }
 
+Configuration ReadFacetFile(const std::string& filename,const cMesh& mesh) {
+  std::ifstream input(filename);
+  if (!input) throw std::runtime_error("cannot open activity-enhancement file '"+filename+"'");
+
+  const std::set<std::string> metadataKeys={
+      "Format","FormatVersion","BasisID","Species","BodyFrame","Ordering",
+      "Clipping","Scale","ScaleInterpretation","LegacyActivityIdentity",
+      "Regularization","Lambda","FacetCount","HarmonicMinimumDegree",
+      "HarmonicMaximumDegree"};
+  std::map<std::string,std::pair<std::string,int> > fields;
+  std::vector<double> residuals;
+  std::string line;
+  int lineNumber=0;
+
+  while (std::getline(input,line)) {
+    ++lineNumber;
+    const std::size_t comment=line.find('#');
+    if (comment!=std::string::npos) line=line.substr(0,comment);
+    line=Trim(line);
+    if (line.empty()) continue;
+    const std::size_t equals=line.find('=');
+    if (equals==std::string::npos)
+      FileError(filename,lineNumber,"expected 'Key = Value'");
+    const std::string key=Trim(line.substr(0,equals));
+    const std::string value=Trim(line.substr(equals+1));
+
+    if (key=="Facet") {
+      std::istringstream values(value);
+      std::string indexText,xText,yText,zText,areaText,residualText,extra;
+      if (!(values>>indexText>>xText>>yText>>zText>>areaText>>residualText)||
+          (values>>extra))
+        FileError(filename,lineNumber,
+            "Facet must be '<index> <x> <y> <z> <area> <residual>'");
+      const int index=ParseInteger(indexText,filename,lineNumber,"facet index");
+      if (index<0||static_cast<std::size_t>(index)!=residuals.size()||
+          static_cast<std::size_t>(index)>=mesh.Faces.size())
+        FileError(filename,lineNumber,"Facet indices must be consecutive from zero and in range");
+      const double x=ParseFiniteDouble(xText,filename,lineNumber,"facet x");
+      const double y=ParseFiniteDouble(yText,filename,lineNumber,"facet y");
+      const double z=ParseFiniteDouble(zText,filename,lineNumber,"facet z");
+      const double area=ParseFiniteDouble(areaText,filename,lineNumber,"facet area");
+      const double residual=ParseFiniteDouble(residualText,filename,lineNumber,"facet residual");
+      const cTriangle& face=mesh.Faces[index];
+      //Python writes the binary64 values from elements.bin with 17 digits, so
+      //exact equality is both portable and stronger than a tolerance that
+      //could accidentally accept a different high-resolution tessellation.
+      if (x!=face.Centroid.x||y!=face.Centroid.y||z!=face.Centroid.z||
+          area!=face.Area)
+        FileError(filename,lineNumber,
+            "Facet centroid/area does not exactly match the active mesh");
+      residuals.push_back(residual);
+    }
+    else if (key=="HarmonicCoefficient") {
+      std::istringstream values(value);
+      std::string degreeText,orderText,coefficientText,extra;
+      if (!(values>>degreeText>>orderText>>coefficientText)||(values>>extra))
+        FileError(filename,lineNumber,
+            "HarmonicCoefficient must be '<degree> <order> <value>'");
+      ParseInteger(degreeText,filename,lineNumber,"harmonic degree");
+      ParseInteger(orderText,filename,lineNumber,"harmonic order");
+      ParseFiniteDouble(coefficientText,filename,lineNumber,"harmonic coefficient");
+    }
+    else if (key=="TemplateCoefficient") {
+      std::istringstream values(value);
+      std::string name,coefficientText,extra;
+      if (!(values>>name>>coefficientText)||(values>>extra)||name.empty())
+        FileError(filename,lineNumber,
+            "TemplateCoefficient must be '<name> <value>'");
+      const double coefficient=ParseFiniteDouble(
+          coefficientText,filename,lineNumber,"template coefficient");
+      if (coefficient<0.0)
+        FileError(filename,lineNumber,"template coefficient must be nonnegative");
+    }
+    else {
+      if (!metadataKeys.count(key)) FileError(filename,lineNumber,"unknown field "+key);
+      if (fields.count(key)) FileError(filename,lineNumber,"duplicate field "+key);
+      fields[key]={value,lineNumber};
+    }
+  }
+  if (!input.eof()) throw std::runtime_error("read error in activity-enhancement file '"+filename+"'");
+
+  Configuration result;
+  result.FilePath=filename;
+  result.Model=FacetModelId;
+  result.Format=Required(fields,"Format",filename);
+  result.FormatVersion=ParseInteger(Required(fields,"FormatVersion",filename),filename,
+      fields.at("FormatVersion").second,"FormatVersion");
+  result.BasisId=Required(fields,"BasisID",filename);
+  result.Species=Required(fields,"Species",filename);
+  result.BodyFrame=Required(fields,"BodyFrame",filename);
+  result.CoefficientOrdering=Required(fields,"Ordering",filename);
+  result.Clipping=Required(fields,"Clipping",filename);
+  result.Scale=ParseFiniteDouble(Required(fields,"Scale",filename),filename,
+      fields.at("Scale").second,"Scale");
+  result.ScaleMeaning=Required(fields,"ScaleInterpretation",filename);
+  result.LegacyActivityIdentity=Required(fields,"LegacyActivityIdentity",filename);
+  result.Regularization=Required(fields,"Regularization",filename);
+  result.Lambda=ParseFiniteDouble(Required(fields,"Lambda",filename),filename,
+      fields.at("Lambda").second,"Lambda");
+  result.MinimumDegree=ParseInteger(Required(fields,"HarmonicMinimumDegree",filename),
+      filename,fields.at("HarmonicMinimumDegree").second,"HarmonicMinimumDegree");
+  result.MaximumDegree=ParseInteger(Required(fields,"HarmonicMaximumDegree",filename),
+      filename,fields.at("HarmonicMaximumDegree").second,"HarmonicMaximumDegree");
+  const int facetCount=ParseInteger(Required(fields,"FacetCount",filename),filename,
+      fields.at("FacetCount").second,"FacetCount");
+
+  RequireEqual(result.Format,FacetFileFormatId,"Format",filename,fields.at("Format").second);
+  if (result.FormatVersion!=FileFormatVersion)
+    FileError(filename,fields.at("FormatVersion").second,"unsupported FormatVersion "+
+        std::to_string(result.FormatVersion));
+  RequireEqual(result.BasisId,CompositeBasisId,"BasisID",filename,fields.at("BasisID").second);
+  RequireEqual(result.Species,"H2O","Species",filename,fields.at("Species").second);
+  RequireEqual(result.CoefficientOrdering,"increasing_face_index","Ordering",filename,
+      fields.at("Ordering").second);
+  RequireEqual(result.Clipping,ClippingRule,"Clipping",filename,fields.at("Clipping").second);
+  RequireEqual(result.ScaleMeaning,"explicit_dimensionless_residual_per_facet",
+      "ScaleInterpretation",filename,fields.at("ScaleInterpretation").second);
+  if (result.Scale!=1.0)
+    FileError(filename,fields.at("Scale").second,"Scale must be exactly 1 for explicit residuals");
+  if (result.Lambda<0.0)
+    FileError(filename,fields.at("Lambda").second,"Lambda must be finite and nonnegative");
+  if (result.MinimumDegree!=5||result.MaximumDegree<4||result.MaximumDegree>8)
+    FileError(filename,fields.at("HarmonicMaximumDegree").second,
+        "harmonic degree declaration must be minimum 5 and maximum in [4,8]");
+  if (facetCount<0||static_cast<std::size_t>(facetCount)!=mesh.Faces.size()||
+      residuals.size()!=mesh.Faces.size())
+    FileError(filename,fields.at("FacetCount").second,
+        "FacetCount/data do not match the active mesh");
+  result.AngleDefinition="not_applicable_per_facet";
+  result.FacetResiduals.swap(residuals);
+  return result;
+}
+
 void ValidateCompatibility(const Configuration& configuration,
                            const std::string& bodyFrame,
                            const std::string& legacyActivityIdentity) {
@@ -202,8 +336,14 @@ void ValidateCompatibility(const Configuration& configuration,
         legacyActivityIdentity+"'");
 }
 
-double EvaluateResidual(const Configuration& configuration,const Vec3& position) {
+double EvaluateResidual(const Configuration& configuration,const Vec3& position,
+                        std::size_t faceIndex) {
   if (!configuration.Enabled()) return 0.0;
+  if (configuration.IsFacetResidual()) {
+    if (faceIndex>=configuration.FacetResiduals.size())
+      throw std::runtime_error("per-facet activity residual needs a valid active-mesh face index");
+    return configuration.FacetResiduals[faceIndex];
+  }
   if (!configuration.HasResidualModes()) return 0.0;
   const std::size_t count=ActivityEnhancementBasis::CoefficientCount(5,configuration.MaximumDegree);
   if (configuration.Coefficients.size()!=count)
@@ -220,8 +360,9 @@ double EvaluateResidual(const Configuration& configuration,const Vec3& position)
 }
 
 double Apply(const Configuration& configuration,const Vec3& position,
-             double legacyLinear,double* residual,double* totalLinear) {
-  const double delta=EvaluateResidual(configuration,position);
+             double legacyLinear,double* residual,double* totalLinear,
+             std::size_t faceIndex) {
+  const double delta=EvaluateResidual(configuration,position,faceIndex);
   const double total=legacyLinear+delta;
   if (residual!=nullptr) *residual=delta;
   if (totalLinear!=nullptr) *totalLinear=total;
