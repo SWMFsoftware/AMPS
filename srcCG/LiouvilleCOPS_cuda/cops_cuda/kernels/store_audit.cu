@@ -71,3 +71,34 @@ void audit_offsets(const long long* __restrict__ offsets, long long npoints,
         if (offsets[0] != 0 || offsets[npoints] != nrecords) atomicAdd(&counters[4], 1ULL);
     }
 }
+
+// FP32 record storage (mixed precision, precision.py "fp32"): the same audit on float fields;
+// the shadow flag is folded into cos there (no shadow array; it was checked on the host).
+__device__ __forceinline__ bool nonfinite_f(float value)
+{
+    const unsigned int bits = (unsigned int)__float_as_int(value);
+    return (bits & 0x7f800000U) == 0x7f800000U;
+}
+
+extern "C" __global__
+void audit_records_f32(const int* __restrict__ face,
+                       const float* __restrict__ kn,
+                       const float* __restrict__ kphi,
+                       const float* __restrict__ kv,
+                       const float* __restrict__ cosine,
+                       long long nrecords, int nfaces,
+                       unsigned long long* counters)
+{
+    unsigned long long bad_face = 0, bad_value = 0, bad_shadow = 0;
+    const long long stride = (long long)gridDim.x * blockDim.x;
+    for (long long r = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+         r < nrecords; r += stride) {
+        const int f = face[r];
+        bad_face += (f < 0 || f >= nfaces);
+        bad_value += (nonfinite_f(kn[r]) || nonfinite_f(kphi[r]) ||
+                      nonfinite_f(kv[r]) || nonfinite_f(cosine[r]));
+    }
+    if (bad_face) atomicAdd(&counters[0], bad_face);
+    if (bad_value) atomicAdd(&counters[1], bad_value);
+    if (bad_shadow) atomicAdd(&counters[2], bad_shadow);
+}

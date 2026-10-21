@@ -56,6 +56,8 @@ from . import provenance
 from .errors import BackendError, IdentityError
 
 DEFAULT_TIMEOUT_S = 600.0       # bind of a 788k half-dataset takes about 70 s
+BIND_S_PER_RECORD = 1e-6        # bind allowance on top: SHAP5 3M loads ~2.3e-7 s/record per worker;
+                                # SHAP8 12M (2.2e9 records per worker) exceeded the fixed 600 s
 
 
 def partition(counts, ndev):
@@ -187,7 +189,8 @@ class MultiGpuBackend(bk.PressureBackend):
                 child.close()
                 self.workers.append({"device": device, "proc": proc, "conn": parent,
                                      "positions": np.arange(a, b)})
-            self.ready = [self._receive(w, "bind") for w in self.workers]
+            self.ready = [self._receive(w, "bind", self.timeout_s + BIND_S_PER_RECORD *
+                                        max(self.block_records)) for w in self.workers]
         except BaseException:
             self.close()
             raise
@@ -208,9 +211,10 @@ class MultiGpuBackend(bk.PressureBackend):
                                (worker["device"], what, exc.__class__.__name__,
                                 worker["proc"].exitcode)) from None
 
-    def _receive(self, worker, what):
+    def _receive(self, worker, what, timeout_s=None):
         conn, proc = worker["conn"], worker["proc"]
-        deadline = time.monotonic() + self.timeout_s
+        timeout_s = self.timeout_s if timeout_s is None else float(timeout_s)
+        deadline = time.monotonic() + timeout_s
         while not conn.poll(1.0):
             if not proc.is_alive():
                 self.broken = True
@@ -219,7 +223,7 @@ class MultiGpuBackend(bk.PressureBackend):
             if time.monotonic() > deadline:
                 self.broken = True
                 raise BackendError("GPU worker on device %d: no reply to %s within %.0f s" %
-                                   (worker["device"], what, self.timeout_s))
+                                   (worker["device"], what, timeout_s))
         try:
             reply = conn.recv()
         except EOFError:

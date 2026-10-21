@@ -394,6 +394,57 @@ set EQ = <the printed cuda_c04/equivalence_<UTC> directory>
 The GPU evaluator plan of a fit on this base is 19.2 GiB (bind 138 s), within one 48 GB A6000. B29 and N30 can run during step (3) on the other
 GPU, using the visibility bundle from (2).
 
+## 4e1. Mixed precision and very large meshes (C14 experiment, SHAP8 12M, 2026-10-21)
+
+Not the validated path (VALIDATION.md covers FP64 only); every product records its precision policy.
+
+```tcsh
+set SHAPE = /data/vtenishe/rosetta_data_end_of_mission_cops/shape_models/SHAP8_MIARD/cg-spg_mspcd-shap8-v0.4cmb-12Mfacets.bdf
+set BASE  = $O/output_fit_shap8_012m_base                 # (1) base as in 4e: 4.33e9 records, 173 GB, 65 min
+# (3) mixed gravity, both GPUs, 18 min (FP64 would take ~4 days); genus 4 admitted explicitly
+.venv/bin/python tools/c04_gravity_equivalence.py gpu --run $BASE --gravity-shape $SHAPE --devices 0,1 \
+    --precision mixed --near-factor 6 --allow-genus 4 >& $O/gravity_012m_mixed.log
+# (4) cache and bundle: as in 4e, each with --allow-genus 4
+# (5) fits: FP32 records, FP64 arithmetic, both GPUs (44.9 GB each; bind 12 min)
+.venv/bin/python tools/gpu_fit.py --devices 0,1 --headroom-fraction 0.06 --precision mixed -- $BASE <3a args> ...
+```
+
+* `--precision mixed` on `gpu_fit.py` sets `COPS_CUDA_RECORD_PRECISION=fp32` (inherited by the GPU workers).
+* Fine tuning of a 12M restart: `tools/fine_tune_gpu.py ... --precision mixed --devices 0,1 --headroom-fraction 0.06`
+  (other options as in §4f). `restart_tool.py enhance|translate` evaluate on one GPU and cannot hold 12M.
+* `gpu_fit.py` validates the base with `cops_cuda/base_validation.py` (identical result to the reference's,
+  about 1 min on 12M instead of 1.8 h); `--reference-validation` runs the reference's Python loop.
+* Accuracy: gravity slope ≤ 1.1e-5° from FP64 (1M), cliff masks identical (1M, 3M); 1M B29 fit cost within
+  1.5e-7 relative, parameters within 8.8e-5 σ of FP64.
+
+## 4f. Late-interval fine tuning of a completed fit (C13, 2026-10-21)
+
+The second fitting stage of `../LiouvilleCOPS/FINE_TUNING_STEP.md`, with the kernel-response preparation on the
+GPU (`tools/fine_tune_gpu.py`; `cops_cuda/fine_tuning.py`). It freezes a fit's restart file and changes only the
+activity of facets first seen in the last `--minutes`, split into `--intervals` groups (NG-, RG-dominated, mixed).
+
+```tcsh
+# the CPU branch's method (default, user decision 2026-10-21): strict support, additive c >= 0,
+# --third-group all, CPU group_basis + fit_corrections; earlier pressures bitwise unchanged
+.venv/bin/python tools/fine_tune_gpu.py $O/output_fit_shap5_001m_base \
+    --restart-from $O/fit_001m_gpu_NC31_n2000/fit_restart.npz --minutes 5 --intervals 5 \
+    --devices 0,1 --out $O/finetune_gpu_001m_NC31_m5_n5_cpu            # add --prepare-only to stop before the fit
+# variant: multiplier + floor f*A0 + c*A_scale on disjoint groups, support by significance
+.venv/bin/python tools/fine_tune_gpu.py ... --method multiplier --confine total --epsilon 1e-3 \
+    --gauges joint --out ...                                            # or --gauges independent (NG, RG fits)
+```
+
+* Products as the CPU tool's: `fine_tuning.json`, `fine_tuning_prepared.npz`, `fine_tuning_state.npz`,
+  `pressure_comparison.txt`, `ActivityFit.txt`, `ActivityEnhancementFit.txt`, `cops_fine_tuning.in` (C++ replay:
+  `./liouville_cops <out>/cops_fine_tuning.in`), plus `figures/` in the publication format.
+* Checks: restart/base identities, the restart's pressures reproduced (rtol 1e-6), the kernel set against
+  `run_manifest.json`, exact zero early response, an independent GPU evaluation of the final field.
+* 3M needs `--devices 0,1 --headroom-fraction 0.15`. 1M on two GPUs: about 2.5 min.
+* **Result on SHAP5 1M (N30, NC31), last 5 min:** the strict support is **empty** (0 facets first seen in the window;
+  the CPU tool gives the same counts). It depends on geometry only, so it is empty for every fit on this base.
+  With `--method multiplier --confine total`, ε = 1e-3: 146 facets, late log-rms unchanged (NG 0.6039 → 0.6038);
+  ε = 1e-2: 840 facets, NG 0.6039 → 0.6005. See STATUS.md C13.
+
 ## 5. Optional numerical re-checks (after a code or driver change)
 
 ```tcsh

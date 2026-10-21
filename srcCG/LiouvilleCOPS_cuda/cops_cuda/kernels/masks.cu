@@ -47,3 +47,31 @@ extern "C" __global__ void seen_positive(
         if (kn[r] > 0.0 || kphi[r] > 0.0 || kv[r] > 0.0) seen[face[r]] = 1;
     }
 }
+
+// FP32 record storage (mixed precision): the same predicates on float fields. Zero-ness is
+// exactly that of the FP64 file values (the loader refuses any record where FP32 changes it).
+extern "C" __global__ void visibility_union_f32(
+    const int* __restrict__ face, const float* __restrict__ kn,
+    const float* __restrict__ kphi, const float* __restrict__ kv,
+    long long nrecords, unsigned int* __restrict__ bits)
+{
+    const long long stride = (long long)gridDim.x * blockDim.x;
+    for (long long r = (long long)blockIdx.x * blockDim.x + threadIdx.x; r < nrecords; r += stride) {
+        const bool ng = kn[r] > 0.0f;
+        const bool rg = (kphi[r] != 0.0f) || (kv[r] != 0.0f);
+        const unsigned int value = (ng ? 1u : 0u) | (rg ? 2u : 0u) |
+                                   ((ng && !rg) ? 4u : 0u) | ((rg && !ng) ? 8u : 0u);
+        if (value) atomicOr(&bits[face[r]], value);
+    }
+}
+
+extern "C" __global__ void seen_positive_f32(
+    const int* __restrict__ face, const float* __restrict__ kn,
+    const float* __restrict__ kphi, const float* __restrict__ kv,
+    long long nrecords, unsigned char* __restrict__ seen)
+{
+    const long long stride = (long long)gridDim.x * blockDim.x;
+    for (long long r = (long long)blockIdx.x * blockDim.x + threadIdx.x; r < nrecords; r += stride) {
+        if (kn[r] > 0.0f || kphi[r] > 0.0f || kv[r] > 0.0f) seen[face[r]] = 1;
+    }
+}

@@ -76,19 +76,21 @@ def offset_sample(n):
     return np.unique(np.linspace(0, n - 1, min(512, n), dtype=int))
 
 
-def _split_worker(shape, density, device, points, part_path, queue):
+def _split_worker(shape, density, device, points, part_path, queue, precision="fp64", near_factor=6.0,
+                  allow_genus=0):
     """One device's contiguous block of targets (spawned process; own CUDA context)."""
     try:
-        body = gravity_body.GravityBody.from_bdf(shape, density)
+        body = gravity_body.GravityBody.from_bdf(shape, density, allow_genus)
         last = [0.0]
 
         def progress(done, total, seconds):
             if seconds - last[0] >= 300.0 or done == total:
                 last[0] = seconds
                 log("  device %d: %d/%d (%.1f%%) %.0f s" % (device, done, total, 100.0 * done / total, seconds))
-        with gravity.GravityEvaluator(body, device_id=device) as ev:
+        with gravity.GravityEvaluator(body, device_id=device, precision=precision, near_factor=near_factor) as ev:
             potential, g, M = ev.evaluate(points, variant="fold", progress=progress, with_magnitude=True)
-        np.savez(part_path, potential=potential, g=g, M=M)
+            near = ev.near_counts if ev.near_counts is not None else np.zeros(0, dtype=np.int64)
+        np.savez(part_path, potential=potential, g=g, M=M, near=near)
         queue.put((device, None))
     except BaseException as exc:                          # reported to the parent
         queue.put((device, "%s: %s" % (exc.__class__.__name__, exc)))
@@ -110,7 +112,10 @@ def evaluate_split(args, points, devices, out):
         part = out / ("part_%d.npz" % k)
         parts.append(part)
         p = ctx.Process(target=_split_worker, args=(args.gravity_shape, args.density, d,
-                                                    points[bounds[k]:bounds[k + 1]], str(part), queue))
+                                                    points[bounds[k]:bounds[k + 1]], str(part), queue,
+                                                    getattr(args, "precision", "fp64"),
+                                                    getattr(args, "near_factor", 6.0),
+                                                    getattr(args, "allow_genus", 0)))
         p.start()
         procs.append(p)
     errors = [queue.get() for _ in procs]
@@ -123,9 +128,12 @@ def evaluate_split(args, points, devices, out):
     potential = np.concatenate([b["potential"] for b in blocks])
     g = np.concatenate([b["g"] for b in blocks])
     M = np.concatenate([b["M"] for b in blocks])
+    near = np.concatenate([b["near"] for b in blocks])
     for part in parts:
         part.unlink()
-    return potential, g, M, {"devices": devices, "bounds": bounds.tolist()}
+    return potential, g, M, {"devices": devices, "bounds": bounds.tolist(),
+                             "near_faces_per_target": ({"mean": float(near.mean()), "max": int(near.max()),
+                                                        "min": int(near.min())} if near.size else None)}
 
 
 def stage_gpu(args):
@@ -133,7 +141,7 @@ def stage_gpu(args):
     run = Path(args.run).resolve()
     elements = fit_cops.read_elements(str(run / "elements.bin"))
     centroid, normal = elements["centroid"], elements["normal"]
-    body = gravity_body.GravityBody.from_bdf(args.gravity_shape, args.density)
+    body = gravity_body.GravityBody.from_bdf(args.gravity_shape, args.density, args.allow_genus)
     out = provenance.make_new_directory(Path(args.output_root) / "cuda_c04" /
                                         ("equivalence_" + provenance.utc_stamp()))
     log("directory %s; body %d faces; %d targets" % (out, body.nfaces, len(centroid)))
@@ -150,15 +158,16 @@ def stage_gpu(args):
     t0 = time.perf_counter()
     devices = [int(d) for d in args.devices.split(",")] if args.devices else [args.device]
     partition = None
+    options = {"precision": args.precision, "near_factor": args.near_factor}
     if len(devices) == 1:
-        with gravity.GravityEvaluator(body, device_id=devices[0]) as ev:
+        with gravity.GravityEvaluator(body, device_id=devices[0], **options) as ev:
             potential, g, M = ev.evaluate(points, variant="fold", progress=progress,
                                           with_magnitude=True)
+            identity = ev.identity()             # near-face statistics of the full target set
             _, g_half, M_half = ev.evaluate(half, variant="fold", with_magnitude=True)
-            identity = ev.identity()
     else:
         potential, g, M, partition = evaluate_split(args, points, devices, out)
-        with gravity.GravityEvaluator(body, device_id=devices[0]) as ev:
+        with gravity.GravityEvaluator(body, device_id=devices[0], **options) as ev:
             _, g_half, M_half = ev.evaluate(half, variant="fold", with_magnitude=True)
             identity = ev.identity()
     seconds = time.perf_counter() - t0
@@ -301,6 +310,12 @@ def main():
     g.add_argument("--devices", default=None,
                    help="comma-separated devices: targets split into contiguous blocks (bitwise the one-device field)")
     g.add_argument("--output-root", default=os.environ.get("COPS_OUTPUT_ROOT", DEFAULT_OUTPUT_ROOT))
+    g.add_argument("--precision", choices=("fp64", "mixed"), default="fp64",
+                   help="fp64 (default): the exact reference; mixed (experiment, 2026-10-21): exact FP64 "
+                        "terms of faces within --near-factor circumradii, FP32 quadrature for all others")
+    g.add_argument("--near-factor", type=float, default=6.0, help="mixed precision near radius in circumradii")
+    g.add_argument("--allow-genus", type=int, default=0,
+                   help="admit a closed oriented body of genus up to this value (experiment; default 0)")
     c = sub.add_parser("compare")
     c.add_argument("--dir", required=True)
     c.add_argument("--cpu-cache", required=True)

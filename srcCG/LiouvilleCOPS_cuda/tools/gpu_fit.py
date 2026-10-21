@@ -230,6 +230,12 @@ def main():
     parser.add_argument("--headroom-fraction", type=float, default=None,
                         help="device memory never planned, fraction of total (default 0.20; 0.05-0.5). "
                              "Needed below 0.20 only for very large bases (SHAP5 3M: 0.15)")
+    parser.add_argument("--precision", choices=("fp64", "mixed"), default="fp64",
+                        help="fp64 (default, the validated path) or mixed (experiment 2026-10-21): kernel "
+                             "records stored in FP32, all arithmetic FP64 (meshes too large for FP64 records)")
+    parser.add_argument("--reference-validation", action="store_true",
+                        help="validate the base with the reference's per-record Python loop (identical "
+                             "result; default: cops_cuda.base_validation, NumPy workers, ~1.8 h less on 12M)")
     parser.add_argument("--no-figures", action="store_true",
                         help="do not write the publication figures <out>/figures/pressures_{time,altitude}.{eps,png}")
     args = parser.parse_args(argv[:split])
@@ -253,10 +259,15 @@ def main():
         from cops_cuda import memory
         os.environ[memory.HEADROOM_ENVIRONMENT] = repr(float(args.headroom_fraction))
         memory.headroom_fraction_default()            # validates the range
+    from cops_cuda import precision as cuda_precision
+    os.environ[cuda_precision.RECORD_PRECISION_ENVIRONMENT] = "fp32" if args.precision == "mixed" else "fp64"
     from cops_cuda import gpu_model, manifest, provenance, reference
     from cops_cuda import restart as rs
     reference.bind()
     fit_cops = reference.load("fit_cops")
+    from cops_cuda import base_validation
+    validation_info = ({"policy": "reference"} if args.reference_validation
+                       else base_validation.install(fit_cops))
     restart_state, restart_info = None, {"save": not args.no_save_restart}
     figures_info = {"write": not args.no_figures}
     if args.restart_from:
@@ -286,12 +297,20 @@ def main():
                 "driver_command": [sys.executable, str(Path(__file__).resolve())] + argv,
                 "fit_cops": provenance.file_identity(Path(fit_cops.__file__), "reference"),
                 "started_utc": started,
-                "validation_policy": "VALIDATION.md (pressure <= 512 eps M, Jacobian <= 1024 eps M_J)",
+                "validation_policy": ("VALIDATION.md (pressure <= 512 eps M, Jacobian <= 1024 eps M_J)"
+                                      if args.precision == "fp64" else
+                                      "EXPERIMENT mixed precision: FP32 records, FP64 arithmetic; "
+                                      "tests/test_evaluator_mixed.py (<= 1e-6 M); not VALIDATION.md"),
+                "precision": {"requested": args.precision,
+                              "record_storage": "fp32" if args.precision == "mixed" else "fp64",
+                              "policy": (cuda_precision.MIXED_POLICY_NAME if args.precision == "mixed"
+                                         else cuda_precision.POLICY_NAME)},
                 "software": software,
                 "registry": gpu_model.REGISTRY.stats(),
                 "fit_start": fit_start,
                 "restart": restart_info,
                 "figures": figures_info,
+                "base_validation": validation_info,
                 "memory_headroom_fraction": headroom_now(),
             }
         original_save()

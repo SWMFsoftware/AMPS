@@ -413,3 +413,86 @@ void gravity_reduce(const double* __restrict__ partial, long long nchunks, long 
     for (long long c = 0; c < nchunks; ++c) s = s + partial[c * NSUMS * ntargets + i];
     out[i] = s;
 }
+
+// ---------------------------------------------------------------------------
+// MIXED PRECISION (experiment, user request 2026-10-21; not the C03/C04 reference)
+//
+// The exact plane sum S_p of face_contribution is the face integral
+//     S_p = integral over face p of dS / |r - P|
+// (the line-integral form of Tsoulis 2012), and the face's terms are
+//     potential = sigma_p h_p S_p = (N . (v - P)) S_p,   acceleration = N S_p.
+// For a face far from P the closed form cancels badly (each AN is the sum of two atans
+// near +-pi/2), so FP32 cannot evaluate it. The integral itself is smooth there, and a
+// 3-point (degree-2) triangle quadrature in FP32 approximates it with an error of order
+// (size/distance)^3:
+//     S_p ~ (A/3) sum_k 1/|q_k - P|,  q_k at barycentric (2/3, 1/6, 1/6) and permutations.
+// gravity_mixed_fold uses, per face and target:
+//   * near (|c - P|^2 < rnear2 = (near_factor * circumradius)^2): the exact FP64
+//     face_contribution above, unchanged;
+//   * far: the FP32 quadrature, the face's (potential, acceleration, magnitude) in FP32,
+//     summed in FP32 over one tile of MIXED_TILE faces, and the tile sums added to the
+//     FP64 running sums.
+// The magnitude row M of far faces is S_p (|N S_p| = S_p), so M stays an upper bound
+// of the summed terms. near_count[t] counts the exact faces of target t.
+// faces32 row (FACE32_STRIDE floats): c[3] q0[3] q1[3] q2[3] N[3] wA rnear2 pad pad pad.
+
+#define FACE32_STRIDE 20
+#ifndef MIXED_TILE
+#define MIXED_TILE 64
+#endif
+
+extern "C" __global__ void __launch_bounds__(GRAVITY_BLOCK)
+gravity_mixed_fold(const double* __restrict__ faces, const float* __restrict__ faces32,
+                   long long face_begin, long long face_end,
+                   const double* __restrict__ targets, long long ntargets,
+                   double* __restrict__ acc, unsigned int* __restrict__ near_count)
+{
+    __shared__ float tile[MIXED_TILE * FACE32_STRIDE];
+    const long long t = (long long)blockIdx.x * GRAVITY_BLOCK + threadIdx.x;
+    const bool active = t < ntargets;
+    double px = 0.0, py = 0.0, pz = 0.0, sp = 0.0, sx = 0.0, sy = 0.0, sz = 0.0, sm = 0.0;
+    unsigned int nnear = 0;
+    if (active) {
+        px = targets[t]; py = targets[ntargets + t]; pz = targets[2 * ntargets + t];
+        sp = acc[t]; sx = acc[ntargets + t]; sy = acc[2 * ntargets + t]; sz = acc[3 * ntargets + t];
+        sm = acc[4 * ntargets + t];
+    }
+    const float fx = (float)px, fy = (float)py, fz = (float)pz;
+    for (long long base = face_begin; base < face_end; base += MIXED_TILE) {
+        const int count = (int)(face_end - base < MIXED_TILE ? face_end - base : MIXED_TILE);
+        __syncthreads();
+        const float* src = faces32 + base * FACE32_STRIDE;
+        for (int k = threadIdx.x; k < count * FACE32_STRIDE; k += blockDim.x) tile[k] = src[k];
+        __syncthreads();
+        if (active) {
+            float tp = 0.0f, tx = 0.0f, ty = 0.0f, tz = 0.0f, tm = 0.0f;
+            for (int i = 0; i < count; ++i) {
+                const float* f = tile + i * FACE32_STRIDE;
+                const float dx = f[0] - fx, dy = f[1] - fy, dz = f[2] - fz;
+                if (dx * dx + dy * dy + dz * dz < f[16]) {
+                    double p, a, b, c, m;
+                    face_contribution(faces + (base + i) * FACE_STRIDE, px, py, pz, p, a, b, c, m);
+                    sp = sp + p; sx = sx + a; sy = sy + b; sz = sz + c; sm = sm + m;
+                    ++nnear;
+                } else {
+                    float s = 0.0f;
+                    for (int k = 0; k < 3; ++k) {
+                        const float qx = f[3 + 3 * k] - fx, qy = f[4 + 3 * k] - fy, qz = f[5 + 3 * k] - fz;
+                        s = s + rsqrtf(qx * qx + qy * qy + qz * qz);
+                    }
+                    s = s * f[15];
+                    const float h = f[12] * dx + f[13] * dy + f[14] * dz;     // N . (c - P)
+                    tp = tp + h * s; tx = tx + f[12] * s; ty = ty + f[13] * s; tz = tz + f[14] * s;
+                    tm = tm + s;
+                }
+            }
+            sp = sp + (double)tp; sx = sx + (double)tx; sy = sy + (double)ty; sz = sz + (double)tz;
+            sm = sm + (double)tm;
+        }
+    }
+    if (active) {
+        acc[t] = sp; acc[ntargets + t] = sx; acc[2 * ntargets + t] = sy; acc[3 * ntargets + t] = sz;
+        acc[4 * ntargets + t] = sm;
+        near_count[t] += nnear;
+    }
+}

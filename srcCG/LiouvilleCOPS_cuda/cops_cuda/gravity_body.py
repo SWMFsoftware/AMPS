@@ -15,7 +15,8 @@ audit proves that winding outward and consistent:
 * every undirected edge is shared by exactly two faces (closed surface);
 * every directed edge occurs exactly once (consistent orientation: the two
   faces of an edge traverse it in opposite directions);
-* Euler characteristic V - E + F = 2 (a sphere-like surface);
+* Euler characteristic V - E + F = 2 (a sphere-like surface; ``allow_genus`` admits higher
+  genus as an explicit experiment);
 * no face has zero area;
 * signed volume > 0 (the consistent winding is outward, not inward).
 
@@ -65,16 +66,28 @@ def topology(vertices, faces):
             "max_abs_coordinate_m": float(np.max(np.abs(v)))}
 
 
-def admissible(audit):
-    """Reasons a body fails the audit (empty list: admitted)."""
+def genus(audit):
+    """Genus of a closed orientable surface from its Euler characteristic, 2 - 2 g."""
+    return (2 - audit["euler_characteristic"]) // 2
+
+
+def admissible(audit, allow_genus=0):
+    """Reasons a body fails the audit (empty list: admitted).
+
+    ``allow_genus`` > 0 (experiment, user decision 2026-10-21 for SHAP8 12M, genus 4) admits a
+    closed, consistently oriented surface of genus up to that value. The divergence-theorem form
+    of the polyhedron gravity holds for any closed orientable non-self-intersecting surface;
+    self-intersection is not tested by this audit."""
     reasons = []
     if not audit["consistently_oriented_closed_manifold"]:
         reasons.append("not a closed, consistently oriented manifold "
                        "(%d edges not shared by two faces, %d repeated directed edges)" %
                        (audit["edges_not_shared_by_exactly_two_faces"],
                         audit["directed_edges_repeated"]))
-    if audit["euler_characteristic"] != 2:
-        reasons.append("Euler characteristic %d != 2" % audit["euler_characteristic"])
+    chi = audit["euler_characteristic"]
+    if chi != 2 and not (chi < 2 and chi % 2 == 0 and genus(audit) <= allow_genus):
+        reasons.append("Euler characteristic %d != 2%s" % (
+            chi, "" if not allow_genus else " (genus %s > allowed %d)" % (genus(audit), allow_genus)))
     if audit["zero_area_faces"]:
         reasons.append("%d zero-area faces" % audit["zero_area_faces"])
     if not audit["signed_volume_m3"] > 0.0:
@@ -92,7 +105,7 @@ class GravityBody:
     with ``IdentityError``. There is no repair mode.
     """
 
-    def __init__(self, vertices, faces, density, source=None):
+    def __init__(self, vertices, faces, density, source=None, allow_genus=0):
         self.vertices = np.ascontiguousarray(vertices, dtype=np.float64)
         self.faces = np.ascontiguousarray(faces, dtype=np.int64)
         if self.vertices.ndim != 2 or self.vertices.shape[1] != 3:
@@ -107,8 +120,9 @@ class GravityBody:
         if not self.density > 0.0:
             raise ValueError("density must be positive")
         self.source = source
+        self.allow_genus = int(allow_genus)
         self.audit = topology(self.vertices, self.faces)
-        reasons = admissible(self.audit)
+        reasons = admissible(self.audit, self.allow_genus)
         if reasons:
             raise IdentityError("gravity body refused by the topology audit: " + "; ".join(reasons))
         gravity_topology = reference.load("gravity_topology")
@@ -116,11 +130,20 @@ class GravityBody:
             self.reference_audit = gravity_topology.require_outward_closed_body(
                 self.vertices, self.faces)
         except ValueError as exc:
-            raise IdentityError("gravity body refused by the reference audit: %s" % exc) from None
+            # The reference tests the genus after closure, winding, connectivity and manifold
+            # vertex links, and before the volume (which the audit above checks): a genus-only
+            # refusal therefore means all other reference checks passed.
+            text = str(exc)
+            if not (self.allow_genus and "expected genus-zero surface" in text
+                    and genus(self.audit) <= self.allow_genus):
+                raise IdentityError("gravity body refused by the reference audit: %s" % exc) from None
+            self.reference_audit = {"refused": text, "admitted_by_allow_genus": self.allow_genus,
+                                    "genus": genus(self.audit),
+                                    "note": "experiment; a cache of this body is not accepted by the CPU workflow"}
         self.orientation_policy = gravity_topology.ORIENTATION_POLICY
 
     @classmethod
-    def from_bdf(cls, path, density):
+    def from_bdf(cls, path, density, allow_genus=0):
         """Read a NASTRAN surface with the reference builder's own reader.
 
         The reader is ``build_physical_activity_templates.read_nastran_surface``.
@@ -129,7 +152,8 @@ class GravityBody:
         """
         builder = reference.load("build_physical_activity_templates")
         vertices, faces = builder.read_nastran_surface(path)
-        return cls(vertices, faces, density, source=provenance.file_identity(path, "gravity_shape"))
+        return cls(vertices, faces, density, source=provenance.file_identity(path, "gravity_shape"),
+                   allow_genus=allow_genus)
 
     @property
     def nfaces(self):
@@ -142,4 +166,5 @@ class GravityBody:
                 "faces_sha256": provenance.array_sha256(self.faces),
                 "orientation": "OUTWARDS (input winding, admitted by topology audit; no HEAL)",
                 "orientation_policy": self.orientation_policy,
-                "topology": self.audit, "reference_audit": self.reference_audit}
+                "topology": self.audit, "reference_audit": self.reference_audit,
+                "allow_genus": self.allow_genus}

@@ -67,7 +67,8 @@ def visibility_masks(run, points, device_id=0, budget=None, expected_kernel_dige
             bits = cupy.zeros(nf, dtype=cupy.uint32)
             a = ds.arrays
             if ds.nrecords:
-                cuda_sources.function("masks", "visibility_union", device_id)(
+                kernel = "visibility_union" if ds.record_precision == "fp64" else "visibility_union_f32"
+                cuda_sources.function("masks", kernel, device_id)(
                     (max(1, min(65535, -(-ds.nrecords // 256))),), (256,),
                     (a["kernel.face"], a["kernel.kn"], a["kernel.kphi"], a["kernel.kv"],
                      np.int64(ds.nrecords), bits))
@@ -101,7 +102,8 @@ def seen_positive(dataset):
         seen = cupy.zeros(ds.inputs.nfaces, dtype=cupy.uint8)
         a = ds.arrays
         if ds.nrecords:
-            cuda_sources.function("masks", "seen_positive", ds.device_id)(
+            kernel = "seen_positive" if ds.record_precision == "fp64" else "seen_positive_f32"
+            cuda_sources.function("masks", kernel, ds.device_id)(
                 (max(1, min(65535, -(-ds.nrecords // 256))),), (256,),
                 (a["kernel.face"], a["kernel.kn"], a["kernel.kphi"], a["kernel.kv"],
                  np.int64(ds.nrecords), seen))

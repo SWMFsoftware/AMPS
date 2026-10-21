@@ -59,14 +59,46 @@ FIELD_DTYPES = {
 }
 
 
-def require_device_dtype(name, dtype):
+# Record storage policies. "fp64" is the reference. "fp32" (mixed precision, experiment
+# 2026-10-21 for meshes whose FP64 records do not fit the devices) stores the four float
+# record fields in FP32; every factor, term and sum is still computed in FP64 from them
+# (kernels/pressure.cu eval_fused_m_*), and the loader refuses any value whose zero-ness or
+# finiteness FP32 would change (device_store).
+RECORD_PRECISIONS = ("fp64", "fp32")
+RECORD_FLOAT_FIELDS = ("kn", "kphi", "kv", "cos")
+RECORD_PRECISION_ENVIRONMENT = "COPS_CUDA_RECORD_PRECISION"
+MIXED_POLICY_NAME = "fp32_records_fp64_arithmetic_v1"
+
+
+def field_dtypes(record_precision="fp64"):
+    """The device dtype table for a record storage policy."""
+    if record_precision not in RECORD_PRECISIONS:
+        raise ValueError("record precision must be one of %s" % (RECORD_PRECISIONS,))
+    table = dict(FIELD_DTYPES)
+    if record_precision == "fp32":
+        for name in RECORD_FLOAT_FIELDS:
+            table[name] = np.dtype(np.float32)
+    return table
+
+
+def record_precision_default():
+    """``$COPS_CUDA_RECORD_PRECISION`` (inherited by spawned multi-GPU workers), else fp64."""
+    import os
+    value = os.environ.get(RECORD_PRECISION_ENVIRONMENT, "fp64") or "fp64"
+    if value not in RECORD_PRECISIONS:
+        raise ValueError("%s=%r: must be one of %s" % (RECORD_PRECISION_ENVIRONMENT, value,
+                                                      RECORD_PRECISIONS))
+    return value
+
+
+def require_device_dtype(name, dtype, record_precision="fp64"):
     """Refuse a field whose dtype differs from the declared policy."""
-    expected = FIELD_DTYPES.get(name)
+    expected = field_dtypes(record_precision).get(name)
     if expected is None:
         raise ValueError("field %r has no declared precision policy" % name)
     if np.dtype(dtype) != expected:
-        raise TypeError("field %r must be %s under %s; got %s" %
-                        (name, expected, POLICY_NAME, np.dtype(dtype)))
+        raise TypeError("field %r must be %s under %s (records %s); got %s" %
+                        (name, expected, POLICY_NAME, record_precision, np.dtype(dtype)))
     return expected
 
 

@@ -121,9 +121,19 @@ class CudaBackend(bk.PressureBackend):
 
     def __init__(self, model, run, enhancement_basis=None, enhancement_scale=1.0,
                  device_id=0, mode="tree", budget=None, records_per_block=4096,
-                 chunk_records=None, fused=True):
+                 chunk_records=None, fused=True, record_precision=None):
+        """``record_precision`` "fp32" (mixed precision, experiment 2026-10-21): kernel records
+        stored in FP32, factors recomputed per record and all arithmetic in FP64
+        (``pressure.cu: eval_fused_m_*``); default ``$COPS_CUDA_RECORD_PRECISION`` or fp64."""
         if mode not in MODES:
             raise ValueError("mode must be one of %s" % (MODES,))
+        self.record_precision = (precision.record_precision_default() if record_precision is None
+                                 else record_precision)
+        if self.record_precision not in precision.RECORD_PRECISIONS:
+            raise ValueError("record precision must be one of %s" % (precision.RECORD_PRECISIONS,))
+        self.mixed = self.record_precision == "fp32"
+        if self.mixed and (mode != "tree" or not fused):
+            raise UnsupportedConfiguration("FP32 record storage supports the fused tree mode only")
         nb = 0 if enhancement_basis is None else int(np.asarray(enhancement_basis).shape[1])
         super().__init__(model.rows, bk.ModelSettings.from_model(model), nb)
         import cupy
@@ -151,7 +161,8 @@ class CudaBackend(bk.PressureBackend):
         t0 = time.perf_counter()
         kwargs = {} if chunk_records is None else {"chunk_records": chunk_records}
         self.dataset = DeviceDataset.load(run, point_ids=point_ids, device_id=self.device_id,
-                                          mesh_fields=("ACO2",), budget=self.budget, **kwargs)
+                                          mesh_fields=("ACO2",), budget=self.budget,
+                                          record_precision=self.record_precision, **kwargs)
         try:
             self._check_dataset(model)
             self.timing["dataset_load_s"] = time.perf_counter() - t0
@@ -175,6 +186,8 @@ class CudaBackend(bk.PressureBackend):
             raise IdentityError("per-point record counts differ from the model's kernels")
 
     def _bind(self):
+        if self.mixed:
+            return self._bind_mixed()
         cupy, ds = self.cupy, self.dataset
         npt, nrec, nf = ds.npoints, ds.nrecords, ds.inputs.nfaces
         blocks = self._block_table(ds.scan.counts, ds.scan.offsets)
@@ -224,6 +237,41 @@ class CudaBackend(bk.PressureBackend):
             a["phiC"] = phiC
             self.PhiCO2 = self._run_sums([PHI_CO2_CODE], None)[0]
             del a["phiC"], phiC, per_point
+            self.cupy.get_default_memory_pool().free_all_blocks()
+        self.timing["bind_s"] = time.perf_counter() - t0
+
+    def _bind_mixed(self):
+        """FP32 records: no stored per-record factors; per-point constants and PhiCO2 only."""
+        cupy, ds = self.cupy, self.dataset
+        npt, nf = ds.npoints, ds.inputs.nfaces
+        blocks = self._block_table(ds.scan.counts, ds.scan.offsets)
+        self.plan = MemoryPlan("cuda evaluator (fp32 records)")
+        self.plan.add_array("eval.per_point_constants", "static", (5, npt), np.float64)
+        self.plan.add_array("eval.af_face", "scratch", (nf,), np.float64)
+        self.plan.add_array("eval.active", "scratch", (nf,), np.uint8)
+        self.plan.add_array("eval.colbasis", "basis", (max(1, 25 + self.nbasis_enhancement), nf),
+                            np.float64, "requested activity/template columns")
+        self.plan.add_array("eval.blocks", "static", (len(blocks),), np.int64)
+        self.plan.add_array("eval.first_block", "static", (npt + 1,), np.int64)
+        self.plan.add_array("eval.partial", "partial_sums", (len(blocks) // 3, MAX_SUMS), np.float64)
+        self.plan.add_array("eval.sums", "scratch", (MAX_SUMS, npt), np.float64)
+        self.reservation = self.budget.reserve(self.plan)
+        t0 = time.perf_counter()
+        with cupy.cuda.Device(self.device_id), self.budget.allocation_guard(self.plan):
+            a = self.arrays
+            c = self.constants
+            a["pt"] = cupy.asarray(np.ascontiguousarray(np.stack(
+                (c.qmin["H2O"], c.qmax["H2O"], c.qmin["CO2"], c.qmax["CO2"], c.vdotb)).astype(np.float64)))
+            a["blocks"] = cupy.asarray(blocks)
+            a["first_block"] = cupy.asarray(self._first_block)
+            a["partial"] = cupy.empty((len(blocks) // 3) * MAX_SUMS, dtype=np.float64)
+            a["sums"] = cupy.empty(MAX_SUMS * npt, dtype=np.float64)
+            a["af_face"] = cupy.zeros(nf, dtype=np.float64)
+            a["active"] = cupy.zeros(nf, dtype=np.uint8)
+            a["colbasis"] = cupy.empty(max(1, 25 + self.nbasis_enhancement) * nf, dtype=np.float64)
+            self.PhiCO2 = self._run_fused([("eval_fused_m_phic", 0, [PHI_CO2_CODE])], [PHI_CO2_CODE],
+                                          {k: 0.0 for k in ("Tmax", "T75", "Tmin", "KT", "cNbmH",
+                                                            "kcNbmC", "bmH", "bmC")})[0]
             self.cupy.get_default_memory_pool().free_all_blocks()
         self.timing["bind_s"] = time.perf_counter() - t0
 
@@ -337,14 +385,24 @@ class CudaBackend(bk.PressureBackend):
         nblocks = int(self._first_block[-1])
         row = {code: i for i, code in enumerate(codes)}
         out = np.empty((len(codes), npt), dtype=np.float64)
+        d = ds.arrays
         for name, col0, launch_codes in plan:
             n = len(launch_codes)
             partial = a["partial"][:nblocks * n]
-            cuda_sources.function("pressure", name, self.device_id)(
-                (nblocks,), (BLOCK,),
-                (a["blocks"], ds.arrays["kernel.face"], a["wnH"], a["wvH"], a["wpH"], a["wnC"],
-                 a["wvC"], a["xlit"], a["lit"], a["af_face"], a["active"], a["colbasis"],
-                 np.int64(nf), np.int32(col0), P, partial))
+            if self.mixed:
+                kernel = name if name.startswith("eval_fused_m_") else name.replace("eval_fused_", "eval_fused_m_")
+                cuda_sources.function("pressure", kernel, self.device_id)(
+                    (nblocks,), (BLOCK,),
+                    (a["blocks"], d["kernel.face"], d["kernel.kn"], d["kernel.kphi"], d["kernel.kv"],
+                     d["kernel.cos"], a["pt"], np.int64(npt), d["mesh.ACO2"],
+                     np.float64(self.constants.COS75), a["af_face"], a["active"], a["colbasis"],
+                     np.int64(nf), np.int32(col0), P, partial))
+            else:
+                cuda_sources.function("pressure", name, self.device_id)(
+                    (nblocks,), (BLOCK,),
+                    (a["blocks"], d["kernel.face"], a["wnH"], a["wvH"], a["wpH"], a["wnC"],
+                     a["wvC"], a["xlit"], a["lit"], a["af_face"], a["active"], a["colbasis"],
+                     np.int64(nf), np.int32(col0), P, partial))
             sums = a["sums"][:n * npt]
             cuda_sources.function("pressure", "eval_finish", self.device_id)(
                 (-(-(n * npt) // 256),), (256,),
@@ -360,6 +418,9 @@ class CudaBackend(bk.PressureBackend):
             plan = self._fused_plan(codes)
             if plan is not None:
                 return self._run_fused(plan, codes, params)
+        if self.mixed:
+            raise UnsupportedConfiguration("FP32 record storage evaluates the standard fused requests "
+                                           "only; got codes %s" % (list(codes),))
         cupy, a, ds = self.cupy, self.arrays, self.dataset
         npt, nf = ds.npoints, ds.inputs.nfaces
         out = np.empty((len(codes), npt), dtype=np.float64)
@@ -440,7 +501,11 @@ class CudaBackend(bk.PressureBackend):
     # ------------------------------------------------------------- bookkeeping
     def identity(self):
         return {"backend": self.name, "contract_version": bk.CONTRACT_VERSION,
-                "mode": self.mode, "fused_kernels": self.fused, "precision": precision.POLICY_NAME,
+                "mode": self.mode, "fused_kernels": self.fused,
+                "precision": (precision.POLICY_NAME if not self.mixed else
+                              {"policy": precision.MIXED_POLICY_NAME, "record_storage": "fp32",
+                               "arithmetic": "float64",
+                               "record_conversion": dict(self.dataset.conversion)}),
                 "settings": self.settings.as_dict(), "constants": bk.reference_constants(),
                 "rows": len(self.rows),
                 "rows_sha256": provenance.canonical_sha256(list(self.rows)),

@@ -27,6 +27,105 @@ Reconciled facts, checked 2026-10-19:
 * New pending items: C00b re-freeze against the repaired tree, C02 joint extensions, and
   the C04 gravity acceptance route (a user decision).
 
+## C14: mixed precision and the SHAP8 12M mesh (2026-10-21, user request): EXPERIMENT; four fits complete
+
+User request: "switch the gravity calculation and the fitter to single precision as an experiment", "12M, start with
+gravity", then "run the full fit of the 12M surface model with mixed precision"; decisions "Admit genus 4
+(experiment)", "Yes, implement and run". The FP64 paths are unchanged and stay the validated default.
+
+**Mixed gravity** (`GravityEvaluator(precision="mixed", near_factor=6)`, policy
+`mixed_near_fp64_exact_far_fp32_quad3_v1`): faces with |c − P| < 6 circumradii use the exact FP64
+`face_contribution`; far faces use an FP32 3-point quadrature of ∫dS/r; FP32 sums of 64-face tiles are added to FP64
+running sums (launches aligned to whole tiles, so results do not depend on the launch split).
+`tests/test_gravity_mixed.py` (2). 1M: 28 s against 2 h FP64, slope difference ≤ 1.1e-5°, cliff masks identical;
+3M: 117 s against 7 h, masks identical.
+
+**Mixed fitter** (`gpu_fit.py --precision mixed`, `COPS_CUDA_RECORD_PRECISION=fp32`, policy
+`fp32_records_fp64_arithmetic_v1`): Kn, KPhi, KV and cos stored in FP32 (shadow folded into cos = −2), 20 B/record,
+no stored static factors (`static_factors_m` recomputes them in FP64), fused kernels only, FP64 sums. The loader
+refuses a value FP32 cannot hold (zero-ness and finiteness must survive) and steps cos back one ulp where FP32
+rounding would cross COS75. `tests/test_evaluator_mixed.py`: pressures and every Jacobian column ≤ 1e-6 of the
+summed magnitudes. 1M B29 full fit: cost relative difference 1.5e-7, parameters ≤ 8.8e-5 σ (nfev 1892, 1582 s).
+
+**Genus admission** (`GravityBody(allow_genus=g)`, `--allow-genus` in c04/c05 tools): SHAP8 12M has genus 4
+(χ = −6); a reference-audit refusal that is due only to genus is tolerated when g matches.
+
+**SHAP8 12M** (`cg-spg_mspcd-shap8-v0.4cmb-12Mfacets.bdf`, 12,364,290 facets, Cheops frame; against SHAP5 3M:
+median 3.8 m, p99 44 m, max 103 m):
+* Base: 4,334,777,197 records, 173.4 GB, 3906 s (GPU rebuild).
+* Gravity (mixed, 2 GPUs): 1065 s, 1.44e11 pairs/s; cache offset-halving max 0.0056°; bundle written (late
+  visibility, cliffs ≥ 45°/60°, ground track).
+* Fits B29, N30, C30, NC31 (mixed, 2 GPUs, headroom 0.06, 44.9 GB per GPU): bind 715 s.
+* **B29** (`fit_012m_gpu_B29_n2000_mixed`): 7520 s wall (bind 715, pressures 1752 for 2004 calls, Jacobian 4758
+  for 1557), nfev 2000 (limit). Cost 0.066789, rms NG 0.3218, RG 0.1732, D 15.9; Tmax 30 and T75 400 at the bounds,
+  Tmin 40.8, kappa 0.820. The same branch as 788k (0.067692), 1M (0.068711) and 3M (0.067207); active area 15.2%
+  (3M 21.3%), unseen activity fraction 0.94 (3M 0.91).
+* **N30** (`fit_012m_gpu_N30_n2000_mixed`): 9630 s wall, of which 1390 s is two binds (the fitter's template-free
+  consistency evaluation, then the template basis: `rebind_for_new_basis`), nfev 2000 (limit). Cost 0.039995, rms NG
+  0.2104, RG 0.1891, D 7.3; c_late_ng_not_rg 7.25 ± 7.1 (1M 6.99, 3M 7.51). **Different temperature branch:** Tmax
+  85.3, T75 30 (bound), Tmin 51.2, kappa 0.133, against 1M/3M Tmax 30 (bound), T75 223/206, Tmin 70.0/70.5, kappa
+  0.096/0.086 (temperature sigmas 24–116 K; the branches are weakly separated by the data).
+* **C30** (`fit_012m_gpu_C30_n2000_mixed`): 9947 s wall (binds 1392 s), nfev 2000 (limit). Cost 0.068196, rms NG
+  0.3210, RG 0.1826, D 27.2; c_cliff_ge_60deg 6.71 ± 6.8 (1M 0.22, 3M 0.49); Tmax 30 (bound), T75 382, Tmin 49.0,
+  kappa 0.778 (B29 branch). **Not converged:** the cost is above the 12M B29 cost (0.066789) although C30 contains B29
+  (c = 0); 3M shows the same (C30 0.067404 > B29 0.067207). 1M C30 0.068664.
+* **NC31** (`fit_012m_gpu_NC31_n2000_mixed`): binds 1104 + 1168 s (base partly re-read from disk), optimizer
+  13:28–15:50, nfev 2000 (limit), first-order optimality 1.8e-4. **Cost 0.026600, rms NG 0.1817, RG 0.1421: the lowest
+  of all fits on any mesh** (12M N30 0.039995). c_late_ng_not_rg 59.5 ± 29.2, c_cliff_ge_60deg 5.84 ± 1.88; Tmax 144,
+  T75 30 (bound), Tmin 30 (bound), kappa 0.146; D 33.1, active area 21.8%. 1M/3M NC31 stayed on the B29 branch (cost
+  0.068664/0.067368, c_late 1.14/1.12 with σ = 0: the template sat in the clipped region, no gradient).
+* Comparison figures: `cops_output/comparison_012m_vs_003m_001m/` (README.md). In the late window 12M N30 and NC31
+  raise NG toward the data but drive RG ~4x below the flat RG data below 30 m.
+
+**Two fixes found on the 12M run:**
+* `multi_gpu`: the 600 s bind timeout (sized for 788k) failed on 2.2e9 records per worker; the bind allowance is now
+  600 s + 1 µs/record (3M binds at 0.23 µs/record).
+* `cops_cuda/base_validation.py`: the reference `validate_fit_base` unpacks every record in Python (1.8 h per 12M
+  fit). `gpu_fit.py` now runs the reference function with its two per-byte workers swapped for NumPy equivalents
+  with threaded prefetch (`--reference-validation` restores the original). `tests/test_base_validation.py` (23): the
+  audit is identical and every fault (range, duplicate, non-finite, shadow, header, elements; several faults per
+  file) gives the identical first error. 788k real base: identical audit, 6.5 s against 349 s. `cops_io.py` and
+  `fit_cops.py` are unchanged.
+
+**Fine tuning and restart evaluation with FP32 records** (so 12M restarts can be fine-tuned): `kernels/restart.cu`
+`_m` variants of facet_point_shares, point_change_partials, first_interval_scores and first_significant_row recompute
+the H2O factors in FP64 from the FP32 records as `static_factors_m` does; `first_structural_row_f32`.
+`restart.record_factor_args` selects them by `backend.mixed`. `fine_tune_gpu.py --precision mixed` and
+`restart_tool.py enhance|translate --precision mixed` (one GPU, so not for 12M). Test
+`test_fine_tuning_gpu.py::test_fp32_records_match_fp64`: first rows identical, scores, shares and point changes
+within 1e-6 of FP64. 201 tests pass. The fine tuning has not yet been run on 12M.
+
+## C13: late-interval fine tuning on the GPU (2026-10-21, user request): IMPLEMENTED
+
+The CPU branch added `tools/fine_tune_activity.py` (`../LiouvilleCOPS/FINE_TUNING_STEP.md`, commit 0ff50ac,
+not this work): a second fit on a completed restart, changing only facets first seen in the last m minutes.
+
+**Code** (CUDA tree only): `tools/fine_tune_gpu.py`, `cops_cuda/fine_tuning.py` (`SplitEvaluator`: contiguous row
+blocks on 1..N GPUs), `kernels/restart.cu` (`first_structural_row`, `first_interval_scores`,
+`first_significant_row`), `StateEvaluator(row_indices=...)`, `DeviceDataset.kernel_entries` (split kernel-set
+digest checked against `run_manifest.json`), `figures.window_label` name. Tests: `tests/test_fine_tuning_gpu.py`
+(7): first intervals, atoms and atom responses equal the CPU's `prepare_support`/`pressure_matrices`; two-GPU split
+bitwise; `--method cpu` equals the CPU pipeline (`group_basis`, `fit_corrections`) for `all` and `mixed`; confine
+total; gauge independence.
+
+**User decisions, in order (2026-10-20/21):** multiplier f > 0 (f < 1 lowers) plus an additive floor on disjoint
+groups; support by significance, confine total ε = 1e-3; then NG and RG fitted independently with ε = 1e-2; then
+both pressures in one fit (no ratio term; the objective never had one), ε = 1e-3; finally **"the same as the CPU,
+fit on top of 1M NC31"**: `--method cpu` is the default; the multiplier variant stays as `--method multiplier`.
+
+**Results, SHAP5 1M, last 5 min, 5 intervals:**
+* Strict support (CPU definition): **0 facets** first seen in the window, for N30 and NC31 (it depends on geometry
+  only): 840,458 facets first seen before the window, 353,792 never seen. The unchanged CPU tool gives the same
+  counts (`finetune_cpu_001m_N30_m5_n5_prepare`, 75 min; GPU 2.5 min). So the CPU method returns its unchanged
+  control result (`finetune_gpu_001m_NC31_m5_n5_cpu`). Last 20 min: 35 facets, no effect.
+* Every facet seen in the last 5 min (85,631) was seen earlier from higher up; one A_scale added to one of them
+  changes some earlier pressure by a median 1e-4 (max 1.3e-2).
+* `--method multiplier --confine total`: ε = 1e-3, 146 facets (5,200 m², interval 0, mixed), late log-rms NG 0.6039
+  → 0.6038, RG 0.5111 → 0.5112 (unconstrained optimum would change earlier pressures by 224%); ε = 1e-2, 840
+  facets (29,400 m², patches at lon 55–75°, lat −25–0°, far from the impact), NG-only fit 0.6039 → 0.6005.
+* Conclusion offered: the late NG/RG mismatch cannot be fitted by activity confined to surfaces seen only late;
+  the surfaces that matter late are also seen earlier.
+
 ## C09 on the SHAP5 3M mesh (2026-10-20, user request): COMPLETE; all products and fits on the GPU
 
 The user asked to repeat the full procedure on `cg_spc_shap5_003m_cart.bdf`.

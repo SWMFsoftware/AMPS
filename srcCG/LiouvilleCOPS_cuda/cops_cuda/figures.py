@@ -181,8 +181,9 @@ def _hm(seconds):
 
 
 def window_label(window):
-    return "late visibility\n%s–%s UTC\n%s–%s m" % (
-        window["start"].split("T")[1], window["stop"].split("T")[1],
+    """Shaded-window label; ``window["name"]`` (default "late visibility") names the interval."""
+    return "%s\n%s–%s UTC\n%s–%s m" % (
+        window.get("name", "late visibility"), window["start"].split("T")[1], window["stop"].split("T")[1],
         _hm(window["altitude_max_m"]), _hm(window["altitude_min_m"]))
 
 
@@ -246,8 +247,8 @@ def pressure_figures(base, series, ref, window, prefix, title=None, overwrite=Fa
                bbox={"facecolor": LATE_FILL, "edgecolor": LATE_EDGE, "lw": 0.5, "pad": 1.5})
 
     ylabels = ("NG pressure [Pa]", "RG pressure [Pa]", "NG / RG")
-    span_text = "late visibility: %s–%s UTC, %s–%s m" % (
-        window["start"].split("T")[1], window["stop"].split("T")[1],
+    span_text = "%s: %s–%s UTC, %s–%s m" % (
+        window.get("name", "late visibility"), window["start"].split("T")[1], window["stop"].split("T")[1],
         _hm(window["altitude_max_m"]), _hm(window["altitude_min_m"]))
 
     # --- time: full descent (left) and the last minutes (right)

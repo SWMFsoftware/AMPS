@@ -37,6 +37,8 @@ def main():
     parser.add_argument("--gravity-shape", required=True)
     parser.add_argument("--out", required=True, help="new cache .npz (must not exist)")
     parser.add_argument("--density", type=float, default=533.0)
+    parser.add_argument("--allow-genus", type=int, default=0,
+                        help="admit a closed oriented gravity body of genus up to this value (experiment)")
     parser.add_argument("--offset", type=float, default=0.1)
     parser.add_argument("--offset-tolerance", type=float, default=0.25)
     parser.add_argument("--late-start", default="2016-09-30T10:33:10")
@@ -52,7 +54,7 @@ def main():
     fit_cops = reference.load("fit_cops")
     run = Path(args.run).resolve()
     field_dir = Path(args.field_dir).resolve()
-    body = gravity_body.GravityBody.from_bdf(args.gravity_shape, args.density)
+    body = gravity_body.GravityBody.from_bdf(args.gravity_shape, args.density, args.allow_genus)
     elements = fit_cops.read_elements(str(run / "elements.bin"))
     centroid, normal = elements["centroid"], elements["normal"]
     sample = gravity_cache_io.offset_sample(len(centroid))

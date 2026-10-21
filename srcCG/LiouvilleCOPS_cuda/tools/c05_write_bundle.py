@@ -83,6 +83,8 @@ def main():
                         help="write only late_ng_not_rg and late_rg_not_ng (no gravity needed)")
     parser.add_argument("--out", required=True, help="new bundle .npz (must not exist)")
     parser.add_argument("--density", type=float, default=533.0)
+    parser.add_argument("--allow-genus", type=int, default=0,
+                        help="admit a closed oriented gravity body of genus up to this value (experiment)")
     parser.add_argument("--offset", type=float, default=0.1)
     parser.add_argument("--late-start", default="2016-09-30T10:33:10")
     parser.add_argument("--late-stop", default="2016-09-30T10:39:26")
@@ -113,7 +115,7 @@ def main():
         raise SystemExit("--gravity-cache and --gravity-shape are required (or use --visibility-only)")
 
     # Gravity: the builder's omega and definition, the admitted cache.
-    body = gravity_body.GravityBody.from_bdf(args.gravity_shape, args.density)
+    body = gravity_body.GravityBody.from_bdf(args.gravity_shape, args.density, args.allow_genus)
     epochs = [args.late_start, builder.utc_midpoint(args.late_start, args.late_stop), args.late_stop]
     omega, variation, command = builder.spice_omega(
         (reference.bind() / "spice_angular_velocity").resolve(), run / "input.snapshot.in", epochs)

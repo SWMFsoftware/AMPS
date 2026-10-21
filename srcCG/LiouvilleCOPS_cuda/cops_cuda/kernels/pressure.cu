@@ -356,3 +356,162 @@ COPS_FUSED_KERNEL(eval_fused_c13, 0, 13)
 COPS_FUSED_KERNEL(eval_fused_c14, 0, 14)
 COPS_FUSED_KERNEL(eval_fused_c15, 0, 15)
 COPS_FUSED_KERNEL(eval_fused_c16, 0, 16)
+
+// ---------------------------------------------------------------------------
+// MIXED PRECISION (experiment, 2026-10-21; precision.py "fp32" record storage)
+// ---------------------------------------------------------------------------
+// Kn, KPhi, KV and cos are stored in FP32, and the shadow flag is folded into cos (cos = -2
+// for shadowed records, device_store.SHADOW_FOLDED_COS; a night record's cos is never read):
+// 20 bytes per record instead of 37 plus the 57 bytes of static factors, so meshes of more
+// than 10M facets fit the devices. Each FP32
+// value is widened to FP64, and the static factors of precompute_static are recomputed per
+// record with exactly its expressions; every term and sum below is the FP64 code of
+// fused_body. The only difference from the FP64 path is the FP32 rounding of the four
+// inputs (relative 2^-24), so the results are not bitwise those of the reference.
+// Per-point constants: pt[0..4][p] = qmin_H, qmax_H, qmin_C, qmax_C, VdotB (component-major).
+
+__device__ __forceinline__ void static_factors_m(
+    long long r, long long p, int f,
+    const float* __restrict__ kn32, const float* __restrict__ kphi32,
+    const float* __restrict__ kv32, const float* __restrict__ cos32,
+    const double* __restrict__ pt, long long npt,
+    const double* __restrict__ aco2, double cos75,
+    double& wn_h, double& wv_h, double& wp_h, double& wn_c, double& wv_c, double& phi_c,
+    double& x, bool& is_lit)
+{
+    const double qmin_h = pt[p], qmax_h = pt[npt + p], qmin_c = pt[2 * npt + p],
+                 qmax_c = pt[3 * npt + p], vb = pt[4 * npt + p];
+    const double c0 = (double)cos32[r];
+    const double kn = (double)kn32[r], kphi = (double)kphi32[r], kv = (double)kv32[r];
+    const bool night = c0 <= 0.0;                  // shadow folded into cos (-2)
+    const double cz = c0 < 1.0 ? c0 : 1.0;
+    const double qh = night ? qmin_h : qmin_h + (qmax_h - qmin_h) * cz;
+    const double qc0 = night ? qmin_c : qmin_c + (qmax_c - qmin_c) * cz;
+    const double qc = qc0 * aco2[f];
+    wn_h = qh * kn;
+    wv_h = qh * vb * kv;
+    wp_h = qh * kphi;
+    wn_c = qc * kn;
+    wv_c = qc * vb * kv;
+    phi_c = qc * kphi;
+    const double clipped = c0 < -1.0 ? -1.0 : (c0 > 1.0 ? 1.0 : c0);
+    const double c = night ? -1.0 : clipped;
+    is_lit = c >= cos75;
+    x = is_lit ? 1.0 / c - 1.0 : 0.0;
+}
+
+template <int NP, int G>
+__device__ __forceinline__ void fused_body_m(
+    const long long* __restrict__ blocks, const int* __restrict__ face,
+    const float* __restrict__ kn32, const float* __restrict__ kphi32,
+    const float* __restrict__ kv32, const float* __restrict__ cos32,
+    const double* __restrict__ pt, long long npt,
+    const double* __restrict__ aco2, double cos75,
+    const double* __restrict__ af_face, const unsigned char* __restrict__ active,
+    const double* __restrict__ colbasis, long long nfaces, int col0,
+    const double* __restrict__ pp, double* __restrict__ partial)
+{
+    constexpr int N = (NP > 0 ? NP : 0) + 2 * G + (NP < 0 ? 1 : 0);
+    __shared__ double tree[BLOCK];
+    const Params P = load_params(pp);
+    const long long b = blockIdx.x;
+    const long long p = blocks[3 * b], begin = blocks[3 * b + 1], end = blocks[3 * b + 2];
+    double acc[N];
+#pragma unroll
+    for (int k = 0; k < N; ++k) acc[k] = 0.0;
+    for (long long r = begin + threadIdx.x; r < end; r += BLOCK) {
+        const int f = face[r];
+        double wn_h, wv_h, wp_h, wn_c, wv_c, phi_c, x;
+        bool is_lit;
+        static_factors_m(r, p, f, kn32, kphi32, kv32, cos32, pt, npt, aco2, cos75,
+                         wn_h, wv_h, wp_h, wn_c, wv_c, phi_c, x, is_lit);
+        if (NP < 0) {                                  // PhiCO2 = sum qC * KPhi (code 14)
+            acc[0] = acc[0] + phi_c;
+            continue;
+        }
+        // record_factors with the recomputed xlit and lit
+        const double af = af_face[f];
+        const double tl = P.Tmax + P.KT * (P.Tmax - P.T75) * x;
+        const bool use_lit = is_lit && (tl > P.Tmin);
+        const double te = use_lit ? tl : P.Tmin;
+        const double u = 1.0 / sqrt(te);
+        const double du = -0.5 * u / te;
+        const double dl = use_lit ? du : 0.0;
+        const double dn = use_lit ? 0.0 : du;
+        const double dlx = dl * x;
+        if (NP >= 5) {
+            acc[0] = acc[0] + wn_h * af * u;
+            acc[1] = acc[1] + wp_h * af;
+            acc[2] = acc[2] + wv_h * af * u;
+            acc[3] = acc[3] + wn_c * u;
+            acc[4] = acc[4] + wv_c * u;
+            if (NP >= 14) {
+                const double w0 = P.cNbmH * wn_h * af + P.kcNbmC * wn_c;
+                const double w1 = P.bmH * wv_h * af;
+                const double w2 = P.bmC * wv_c;
+                acc[5] = acc[5] + w0 * dl;  acc[6] = acc[6] + w0 * dlx;  acc[7] = acc[7] + w0 * dn;
+                acc[8] = acc[8] + w1 * dl;  acc[9] = acc[9] + w1 * dlx;  acc[10] = acc[10] + w1 * dn;
+                acc[11] = acc[11] + w2 * dl; acc[12] = acc[12] + w2 * dlx; acc[13] = acc[13] + w2 * dn;
+            }
+        }
+        if (G > 0) {
+            const bool on = active[f] != 0;
+            const double wn_u = wn_h * u;
+            const double rg = wp_h + P.bmH * wv_h * u;
+            const int base = NP > 0 ? NP : 0;
+#pragma unroll
+            for (int g = 0; g < G; ++g) {
+                const double bv = colbasis[(long long)(col0 + g) * nfaces + f];
+                const double mb = on ? bv : 0.0 * bv;
+                acc[base + g] = acc[base + g] + wn_u * mb;
+                acc[base + G + g] = acc[base + G + g] + rg * mb;
+            }
+        }
+    }
+#pragma unroll
+    for (int k = 0; k < N; ++k) {
+        tree[threadIdx.x] = acc[k];
+        __syncthreads();
+        for (int width = BLOCK / 2; width > 0; width >>= 1) {
+            if (threadIdx.x < width) tree[threadIdx.x] = tree[threadIdx.x] + tree[threadIdx.x + width];
+            __syncthreads();
+        }
+        if (threadIdx.x == 0) partial[b * N + k] = tree[0];
+        __syncthreads();
+    }
+}
+
+#define COPS_FUSED_KERNEL_M(NAME, NP, G)                                                       \
+extern "C" __global__ void __launch_bounds__(BLOCK) NAME(                                       \
+    const long long* __restrict__ blocks, const int* __restrict__ face,                       \
+    const float* __restrict__ kn32, const float* __restrict__ kphi32,                         \
+    const float* __restrict__ kv32, const float* __restrict__ cos32,                          \
+    const double* __restrict__ pt, long long npt,   \
+    const double* __restrict__ aco2, double cos75,                                            \
+    const double* __restrict__ af_face, const unsigned char* __restrict__ active,             \
+    const double* __restrict__ colbasis, long long nfaces, int col0,                          \
+    const double* __restrict__ pp, double* __restrict__ partial)                              \
+{                                                                                              \
+    fused_body_m<NP, G>(blocks, face, kn32, kphi32, kv32, cos32, pt, npt, aco2, cos75,          \
+                        af_face, active, colbasis, nfaces, col0, pp, partial);                 \
+}
+
+COPS_FUSED_KERNEL_M(eval_fused_m_phic, -1, 0)
+COPS_FUSED_KERNEL_M(eval_fused_m_p5, 5, 0)
+COPS_FUSED_KERNEL_M(eval_fused_m_p14, 14, 0)
+COPS_FUSED_KERNEL_M(eval_fused_m_c1, 0, 1)
+COPS_FUSED_KERNEL_M(eval_fused_m_c2, 0, 2)
+COPS_FUSED_KERNEL_M(eval_fused_m_c3, 0, 3)
+COPS_FUSED_KERNEL_M(eval_fused_m_c4, 0, 4)
+COPS_FUSED_KERNEL_M(eval_fused_m_c5, 0, 5)
+COPS_FUSED_KERNEL_M(eval_fused_m_c6, 0, 6)
+COPS_FUSED_KERNEL_M(eval_fused_m_c7, 0, 7)
+COPS_FUSED_KERNEL_M(eval_fused_m_c8, 0, 8)
+COPS_FUSED_KERNEL_M(eval_fused_m_c9, 0, 9)
+COPS_FUSED_KERNEL_M(eval_fused_m_c10, 0, 10)
+COPS_FUSED_KERNEL_M(eval_fused_m_c11, 0, 11)
+COPS_FUSED_KERNEL_M(eval_fused_m_c12, 0, 12)
+COPS_FUSED_KERNEL_M(eval_fused_m_c13, 0, 13)
+COPS_FUSED_KERNEL_M(eval_fused_m_c14, 0, 14)
+COPS_FUSED_KERNEL_M(eval_fused_m_c15, 0, 15)
+COPS_FUSED_KERNEL_M(eval_fused_m_c16, 0, 16)

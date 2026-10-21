@@ -287,10 +287,31 @@ def from_fit(problem, result, fit_dir, manifest, elements):
 
 
 # --------------------------------------------------------------- GPU evaluation
+def record_factor_args(backend):
+    """(kernel-name suffix, per-record factor arguments) of ``kernels/restart.cu`` for a backend.
+
+    FP64 records: the evaluator's stored factors (wnH, wvH, wpH, xlit, lit). FP32 records (C14
+    experiment, ``backend.mixed``): the records and per-point constants from which the ``_m``
+    kernels recompute the same factors in FP64, as the mixed evaluator does.
+    """
+    if getattr(backend, "mixed", False):
+        d = backend.dataset.arrays
+        return "_m", (d["kernel.kn"], d["kernel.kphi"], d["kernel.kv"], d["kernel.cos"],
+                      backend.arrays["pt"], np.int64(backend.dataset.npoints),
+                      np.float64(backend.constants.COS75))
+    a = backend.arrays
+    return "", (a["wnH"], a["wvH"], a["wpH"], a["xlit"], a["lit"])
+
+
 class StateEvaluator:
     """Pressures of restart states on a base run (one GPU backend per basis)."""
 
-    def __init__(self, run, device_id=0):
+    def __init__(self, run, device_id=0, row_indices=None):
+        """``row_indices``: optional contiguous block of table rows to load (default: all).
+
+        Per-row results (pressures, point changes) then refer to these rows, in table order;
+        ``point_ids`` are their ids. ``rows``/``cols`` stay the full table.
+        """
         from . import host_model
         self.run = Path(run).resolve()
         self.device_id = int(device_id)
@@ -300,9 +321,12 @@ class StateEvaluator:
         self.elements = fit_cops.read_elements(str(self.run / "elements.bin"))
         coef = fit_cops.read_activity_coefficients(str(reference.bind()), header)
         self.coef = coef
+        self.header = header
         self.model = host_model.header_model(self.run, header, cols, rows, self.elements, coef)
-        self.model.load_kernels(np.arange(len(rows)))
-        self.point_ids = np.asarray(self.model.ipoint, dtype=int)
+        self.row_indices = (np.arange(len(rows)) if row_indices is None
+                            else np.asarray(row_indices, dtype=int))
+        self.model.load_kernels(self.row_indices)
+        self.point_ids = np.asarray(self.model.ipoint, dtype=int)[self.row_indices]
         self.rows = rows
         self.cols = cols
         templates = reference.load("activity_templates")
@@ -360,9 +384,10 @@ class StateEvaluator:
             d_crg = cupy.asarray(np.asarray(c.cRG["H2O"], dtype=np.float64))
             max_ng = cupy.zeros(len(delta_af), dtype=cupy.uint64)
             max_rg = cupy.zeros(len(delta_af), dtype=cupy.uint64)
-            cuda_sources.function("restart", "facet_point_shares", self.device_id)(
+            suffix, factors = record_factor_args(be)
+            cuda_sources.function("restart", "facet_point_shares" + suffix, self.device_id)(
                 (nblocks,), (256,),
-                (a["blocks"], ds.arrays["kernel.face"], a["wnH"], a["wvH"], a["wpH"], a["xlit"], a["lit"],
+                (a["blocks"], ds.arrays["kernel.face"]) + factors + (
                  d_daf, d_flag, d_png, d_prg, d_crg, np.float64(c.cNG["H2O"] * c.bm["H2O"]),
                  np.float64(c.bm["H2O"]), np.float64(Tmax), np.float64(T75), np.float64(Tmin),
                  np.float64(c.KT), max_ng, max_rg))
@@ -388,9 +413,10 @@ class StateEvaluator:
             d_daf = cupy.asarray(np.asarray(delta_af, dtype=np.float64))
             d_crg = cupy.asarray(np.asarray(c.cRG["H2O"], dtype=np.float64))
             partial = cupy.empty(2 * nblocks, dtype=np.float64)
-            cuda_sources.function("restart", "point_change_partials", self.device_id)(
+            suffix, factors = record_factor_args(be)
+            cuda_sources.function("restart", "point_change_partials" + suffix, self.device_id)(
                 (nblocks,), (256,),
-                (a["blocks"], ds.arrays["kernel.face"], a["wnH"], a["wvH"], a["wpH"], a["xlit"], a["lit"],
+                (a["blocks"], ds.arrays["kernel.face"]) + factors + (
                  d_daf, d_crg, np.float64(c.cNG["H2O"] * c.bm["H2O"]), np.float64(c.bm["H2O"]),
                  np.float64(Tmax), np.float64(T75), np.float64(Tmin), np.float64(c.KT), partial))
             host = partial.get().reshape(nblocks, 2)

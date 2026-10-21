@@ -86,6 +86,16 @@ DATASET_SCHEMA_VERSION = 1
 # (device field, file field) in the order the arrays are declared/uploaded.
 RECORD_FIELDS = (("face", "face"), ("kn", "Kn"), ("kphi", "KPhi"),
                  ("kv", "KV"), ("cos", "cos"), ("shadow", "shadow"))
+# FP32 record storage folds the shadow flag into cos: the reference uses the flag only through
+# night = (cos <= 0) | shadow, and a night record's cos is never read (Model.load_kernels:
+# Q = qmin; Model.prepare: c = -1). Storing cos = -2 for shadowed records therefore gives
+# identical factors without the shadow byte (20 instead of 21 bytes per record).
+SHADOW_FOLDED_COS = -2.0
+RECORD_FIELDS_FP32 = tuple(field for field in RECORD_FIELDS if field[0] != "shadow")
+
+
+def record_fields(record_precision):
+    return RECORD_FIELDS_FP32 if record_precision == "fp32" else RECORD_FIELDS
 AUDIT_COUNTERS = ("face_out_of_range", "nonfinite_value", "invalid_shadow",
                   "decreasing_offsets", "bad_offset_endpoints")
 # Mesh fields needed by each consumer.  The evaluator (fit_cops.Model) reads
@@ -225,11 +235,12 @@ class KernelScan:
 
 
 # ------------------------------------------------------------------------ plan
-def dataset_plan(nfaces, npt, nrecords, mesh_fields, basis_columns=0):
+def dataset_plan(nfaces, npt, nrecords, mesh_fields, basis_columns=0, record_precision="fp64"):
     """Exact device memory of a dataset (static data only)."""
     plan = MemoryPlan("device dataset")
-    for name, _ in RECORD_FIELDS:
-        plan.add_array("kernel." + name, "static", (nrecords,), precision.FIELD_DTYPES[name])
+    for name, _ in record_fields(record_precision):
+        plan.add_array("kernel." + name, "static", (nrecords,),
+                       precision.field_dtypes(record_precision)[name])
     plan.add_array("kernel.offsets", "static", (npt + 1,), precision.FIELD_DTYPES["offsets"])
     plan.add_array("kernel.geometry", "static", (10, npt), precision.FIELD_DTYPES["geometry"])
     for name in mesh_fields:
@@ -253,6 +264,9 @@ class DeviceDataset:
     def __init__(self):
         self.arrays = {}
         self.host_digests = {}
+        self.record_precision = "fp64"
+        self.dtypes = precision.field_dtypes("fp64")
+        self.conversion = {"max_relative_rounding": 0.0}
         self.reservation = None
         self.budget = None
         self.owns_budget = False
@@ -266,7 +280,7 @@ class DeviceDataset:
     def load(cls, run, rows=None, point_ids=None, device_id=0, mesh_fields="evaluator",
              budget=None, enhancement_basis=None, expected_mesh_identity=None,
              expected_kernel_digests=None, chunk_records=DEFAULT_CHUNK_RECORDS,
-             audit=True):
+             audit=True, record_precision="fp64"):
         """Validate, plan, allocate and stream; see the module docstring.
 
         Parameters
@@ -284,8 +298,15 @@ class DeviceDataset:
         expected_kernel_digests : optional ``{file_name: sha256}``. Each
             streamed file is compared with it, for example the C00
             ``identities/kernel_files.json``.
+        record_precision : "fp64" (reference) or "fp32" (Kn, KPhi, KV, cos stored in FP32;
+            mixed precision, see ``precision.py``). FP32 storage refuses any record whose
+            value FP32 cannot hold with the same zero-ness and finiteness.
         """
         self = cls()
+        self.record_precision = record_precision
+        self.dtypes = precision.field_dtypes(record_precision)
+        self.conversion = {"max_relative_rounding": 0.0}
+        self.cos75 = float(reference.load("fit_cops").COS75)
         started = time.perf_counter()
         inputs = RunInputs(run, expected_mesh_identity=expected_mesh_identity)
         rows = inputs.resolve_rows(rows, point_ids)
@@ -301,7 +322,8 @@ class DeviceDataset:
         self.inputs, self.scan, self.device_id = inputs, scan, int(device_id)
         self.mesh_fields = mesh_fields
         self.plan = dataset_plan(inputs.nfaces, len(rows), scan.nrecords, mesh_fields,
-                                 0 if basis_matrix is None else basis_matrix.shape[1])
+                                 0 if basis_matrix is None else basis_matrix.shape[1],
+                                 record_precision)
         import cupy
         self.cupy = cupy
         if budget is None:
@@ -341,7 +363,8 @@ class DeviceDataset:
     # .................................................................. mesh
     def _alloc(self, name, shape, dtype):
         """Allocate one planned device array, enforcing the precision policy."""
-        precision.require_device_dtype(name.split(".", 1)[1], dtype)
+        precision.require_device_dtype(name.split(".", 1)[1], dtype,
+                                       getattr(self, "record_precision", "fp64"))
         array = self.cupy.empty(shape, dtype=dtype)
         self.arrays[name] = array
         return array
@@ -389,9 +412,10 @@ class DeviceDataset:
         cupy, scan, nfaces = self.cupy, self.scan, self.inputs.nfaces
         import cupyx
         nrec = scan.nrecords
+        fields = record_fields(self.record_precision)
         device = {}
-        for name, _ in RECORD_FIELDS:
-            device[name] = self._alloc("kernel." + name, (nrec,), precision.FIELD_DTYPES[name])
+        for name, _ in fields:
+            device[name] = self._alloc("kernel." + name, (nrec,), self.dtypes[name])
         offsets = self._alloc("kernel.offsets", scan.offsets.shape, np.int64)
         offsets.set(scan.offsets)
         geometry_host = np.ascontiguousarray(scan.geometry.T)
@@ -406,15 +430,15 @@ class DeviceDataset:
         record_size = formats.KERNEL_RECORD_DTYPE.itemsize
         # Two pinned staging sets: while the GPU copies set k, the host reads
         # and de-interleaves into set 1-k.  An event per set guards reuse.
-        staging = [{name: cupyx.empty_pinned((chunk_records,), dtype=precision.FIELD_DTYPES[name])
-                    for name, _ in RECORD_FIELDS} for _ in range(2)]
+        staging = [{name: cupyx.empty_pinned((chunk_records,), dtype=self.dtypes[name])
+                    for name, _ in fields} for _ in range(2)]
         events = [None, None]
         stream = cupy.cuda.Stream(non_blocking=True)
-        digests = {name: hashlib.sha256() for name, _ in RECORD_FIELDS}
+        digests = {name: hashlib.sha256() for name, _ in fields}
         face_seen = np.zeros(nfaces, dtype=bool)
         state = {"fill": 0, "start": 0, "set": 0}
         self.host_staging_bytes = 2 * chunk_records * sum(
-            precision.FIELD_DTYPES[name].itemsize for name, _ in RECORD_FIELDS)
+            self.dtypes[name].itemsize for name, _ in fields)
 
         def flush():
             fill = state["fill"]
@@ -424,11 +448,39 @@ class DeviceDataset:
             if events[k] is not None:
                 events[k].synchronize()
             begin = state["start"]
-            for name, file_field in RECORD_FIELDS:
+            for name, file_field in fields:
                 target = staging[k][name][:fill]
                 # shadow: int32 -> uint8 is lossless because every value was
                 # checked to be 0 or 1; the other fields keep their dtype.
                 np.copyto(target, raw[file_field][:fill], casting="unsafe")
+                if name == "cos" and target.dtype == np.float32:
+                    # Keep every decision of the reference that compares cos with a constant
+                    # (lit: c >= COS75; day: cos > 0; cz = min(cos, 1)): where FP32 rounding
+                    # crossed COS75, step the value back to the FP64 side by one ulp.
+                    source = raw["cos"][:fill]
+                    wrong = (target.astype(np.float64) >= self.cos75) != (source >= self.cos75)
+                    if wrong.any():
+                        toward = np.where(source >= self.cos75, np.float32(np.inf), np.float32(-np.inf))
+                        target[wrong] = np.nextafter(target[wrong], toward[wrong])
+                        self.conversion["lit_threshold_adjusted"] = (
+                            self.conversion.get("lit_threshold_adjusted", 0) + int(wrong.sum()))
+                    if np.any((target > 0) != (source > 0)):
+                        raise CacheFormatError("cos cannot be stored in FP32 without changing its sign")
+                    # shadow folded into cos (see SHADOW_FOLDED_COS); records were validated
+                    # (shadow is 0 or 1) by formats.validate_records before this copy.
+                    target[raw["shadow"][:fill] != 0] = SHADOW_FOLDED_COS
+                if target.dtype == np.float32 and name != "cos":
+                    # FP32 storage: refuse a value whose zero-ness or finiteness changes
+                    # (a nonzero kernel that underflows would change visibility decisions).
+                    source = raw[file_field][:fill]
+                    if np.any((target == 0) != (source == 0)) or not np.isfinite(target).all():
+                        raise CacheFormatError("kernel field %s cannot be stored in FP32 without "
+                                               "changing a zero or finite value" % file_field)
+                    nz = source != 0
+                    if nz.any():
+                        rel = float(np.max(np.abs(target[nz].astype(np.float64) / source[nz] - 1.0)))
+                        if rel > self.conversion["max_relative_rounding"]:
+                            self.conversion["max_relative_rounding"] = rel
                 digests[name].update(target)
                 device[name][begin:begin + fill].set(target, stream=stream)
             events[k] = stream.record()
@@ -485,9 +537,12 @@ class DeviceDataset:
             cupy.get_default_pinned_memory_pool().free_all_blocks()
         if state["start"] != nrec:
             raise BackendError("internal: streamed %d records, planned %d" % (state["start"], nrec))
-        for name, _ in RECORD_FIELDS:
+        for name, _ in fields:
             self.host_digests["kernel." + name] = digests[name].hexdigest()
 
+        # (file name, sha256) per loaded file in row order: datasets of contiguous row blocks
+        # on several devices combine to the full set digest (fine_tuning.SplitEvaluator).
+        self.kernel_entries = list(entries)
         self.kernel_set_sha256 = formats.kernel_set_digest(entries)
         self.file_digests_verified = verified
         self.manifest_set_verified = False
@@ -519,11 +574,17 @@ class DeviceDataset:
             blocks = int(max(1, min(-(-max(nrec, 1) // AUDIT_THREADS),
                                     32 * device.attributes["MultiProcessorCount"])))
             if nrec:
-                cuda_sources.function("store_audit", "audit_records", self.device_id)(
-                    (blocks,), (AUDIT_THREADS,),
-                    (a["kernel.face"], a["kernel.kn"], a["kernel.kphi"], a["kernel.kv"],
-                     a["kernel.cos"], a["kernel.shadow"], np.int64(nrec),
-                     np.int32(self.inputs.nfaces), counters))
+                if self.record_precision == "fp64":
+                    cuda_sources.function("store_audit", "audit_records", self.device_id)(
+                        (blocks,), (AUDIT_THREADS,),
+                        (a["kernel.face"], a["kernel.kn"], a["kernel.kphi"], a["kernel.kv"],
+                         a["kernel.cos"], a["kernel.shadow"], np.int64(nrec),
+                         np.int32(self.inputs.nfaces), counters))
+                else:
+                    cuda_sources.function("store_audit", "audit_records_f32", self.device_id)(
+                        (blocks,), (AUDIT_THREADS,),
+                        (a["kernel.face"], a["kernel.kn"], a["kernel.kphi"], a["kernel.kv"],
+                         a["kernel.cos"], np.int64(nrec), np.int32(self.inputs.nfaces), counters))
             cuda_sources.function("store_audit", "audit_offsets", self.device_id)(
                 (max(1, min(-(-max(npt, 1) // AUDIT_THREADS), 1024)),), (AUDIT_THREADS,),
                 (a["kernel.offsets"], np.int64(npt), np.int64(nrec), counters))
@@ -610,6 +671,8 @@ class DeviceDataset:
                           "point_ids_sha256": provenance.canonical_sha256(scan.point_ids),
                           "first_point": scan.point_ids[0] if scan.point_ids else None,
                           "last_point": scan.point_ids[-1] if scan.point_ids else None},
+            "record_precision": self.record_precision,
+            "record_conversion": dict(self.conversion),
             "kernels": {"version": formats.KERNEL_VERSION, "points": len(scan.rows),
                         "records": scan.nrecords,
                         "loaded_set_sha256": self.kernel_set_sha256,

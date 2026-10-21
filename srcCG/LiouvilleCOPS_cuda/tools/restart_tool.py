@@ -73,6 +73,7 @@ Subcommands
 import argparse
 import datetime as dt
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -525,7 +526,15 @@ def main():
     s.add_argument("--target-bundle", help="template bundle computed on the target mesh (preferred source)")
     s.add_argument("--evaluate", action="store_true", help="compute the predictions on the target base (GPU)")
     s.add_argument("--device", type=int, default=0)
+    for name in ("enhance", "translate"):
+        sub.choices[name].add_argument(
+            "--precision", choices=("fp64", "mixed"), default="fp64",
+            help="GPU evaluation with FP64 (default) or FP32 kernel records (C14 experiment); one GPU, "
+                 "so not for SHAP8 12M (use fine_tune_gpu.py --devices 0,1 there)")
     args = p.parse_args()
+    if getattr(args, "precision", None):
+        from cops_cuda import precision as cuda_precision
+        os.environ[cuda_precision.RECORD_PRECISION_ENVIRONMENT] = "fp32" if args.precision == "mixed" else "fp64"
     return {"show": cmd_show, "plot": cmd_plot, "enhance": cmd_enhance, "translate": cmd_translate}[args.command](args)
 
 
