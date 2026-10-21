@@ -29,6 +29,13 @@ Two distinctions are essential:
 [RUN.md](RUN.md) covers building and running the application and its tools;
 [quick_guide.md](quick_guide.md) is the fitting quick start.
 
+CPU fits and late fine tuning also write the GPU branch's pressure-result
+layout: NG, RG and NG/RG, full-descent/late-time panels and reversed log-altitude
+panels, in PNG/EPS under `<fit>/figures/`. Existing results can be plotted with
+`tools/pub_figures.py pressures` without refitting. Original A5 diagnostics
+remain unchanged. [PUBLICATION_FIGURES.md](PUBLICATION_FIGURES.md) covers
+controls, provenance checks and scope (pressure results, not CUDA mesh rendering).
+
 The CPU fitter now saves `fit_restart.npz` by default and accepts
 `--restart-from` files from either CPU or CUDA fits. The wire format matches
 the CUDA C12 version-1 format, without a CUDA runtime dependency. See

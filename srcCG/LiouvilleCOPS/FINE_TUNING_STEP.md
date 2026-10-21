@@ -1,5 +1,11 @@
 # Late-interval activity fine tuning
 
+Result visualization now also includes GPU-style NG/RG/ratio time and altitude
+PNG/EPS figures in `<out>/figures/`, overlaying frozen and corrected fits and
+shading the actual fine-tuning window. The original comparison plot is retained.
+These products do not alter the algorithm or predictions. See
+[PUBLICATION_FIGURES.md](PUBLICATION_FIGURES.md) for commands and format details.
+
 ## Purpose and scope
 
 This is an optional **second fitting stage**, applied to a completed CPU or

@@ -50,7 +50,7 @@ class JointTemplateTests(unittest.TestCase):
         rows = []
         for i in range(p.M.npt):
             row = ["1"]*len(names)
-            row[0] = str(i); row[1] = "2016-09-30T10:00:%02d" % i
+            row[0] = str(i); row[1] = "2016-09-30T10:35:%02d" % i
             row[cols["inside"]] = "0"; rows.append(row)
         manifest = dict(inputs={"housekeeping_table":{"sha256":"a"*64}},
                         selection={"sha256":"b"*64},
@@ -74,6 +74,10 @@ class JointTemplateTests(unittest.TestCase):
             np.testing.assert_allclose(report_fields[:,7],
                                        expected-elements["Y"]@coef[0], rtol=1e-14)
             self.assertTrue((root/"pressure_comparison_time.png").is_file())
+            # The automatic publication hook uses audited in-memory rows:
+            # no completed manifest exists yet at this point in the writer.
+            self.assertTrue((root/"figures/pressures_time.eps").is_file())
+            self.assertTrue((root/"figures/pressures_altitude.png").is_file())
             export = (root/"ActivityEnhancementFit.txt").read_text()
             self.assertIn("sha256:" + fit_cops.file_identity(root/"ActivityFit.txt")["sha256"], export)
             self.assertIn(fit_cops.JOINT_REGULARIZATION, export)

@@ -6,6 +6,24 @@ compilation, paths, the forward model, fitting, verification, and every Python
 entry point. See [README.md](README.md) for the model equations, data audit,
 file formats, and scientific limitations.
 
+## GPU-style pressure visualization
+
+CPU fits and fine tuning now write `figures/pressures_time.{png,eps}` and
+`figures/pressures_altitude.{png,eps}` automatically, with status metadata.
+Plot existing output without rerunning fitting:
+
+```bash
+python3 tools/pub_figures.py pressures \
+  --base output_fit_base --fit 'Fit=completed_fit:solid' \
+  --zoom-minutes 25 --out publication/pressures
+```
+
+Repeat `--fit LABEL=DIR[:style]` to compare fits or fine-tuning directories.
+`--ref` chooses observation selection; `--bundle` supplies the late window;
+paired `--late-start/--late-stop` override it. `--no-base` hides the base curve.
+Output remains outside LiouvilleCOPS. [PUBLICATION_FIGURES.md](PUBLICATION_FIGURES.md)
+documents all parameters, files, 199k examples, validation and scope.
+
 ## Fitter restarts (CPU/CUDA compatible)
 
 Optimization now saves `<out>/fit_restart.npz` by default. Resume with a new

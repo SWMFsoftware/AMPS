@@ -167,6 +167,9 @@ FIT_RESULT_FILES = (
     "activity_template_power.dat", "activity_region_diagnostics.dat", "activity_maps.png",
     "pressure_residuals.dat", "pressure_comparison_time.png",
     "pressure_comparison_altitude.png", "pressure_residuals.png",
+    "figures/pressures_time.eps", "figures/pressures_time.png",
+    "figures/pressures_altitude.eps", "figures/pressures_altitude.png",
+    "figures/pressures.json",
 )
 
 # The active manifest is set only after the output directory has been created.
@@ -1376,6 +1379,25 @@ def write_fit(out, r, run, header, names, rows, cols, srcdir, el, seen, r0):
     report_products, report_summary = write_stage_a5_report(
         out, P, r, rows, cols, el, seen, a, b, pNG, pRG,
         report_payload, report_id, report_label)
+    # The CUDA wrapper imports this fitter but owns its own figure hook.
+    # Do not create its filenames early or defeat --no-figures there.
+    if not (ACTIVE_MANIFEST or {}).get("compute_backend"):
+        from cops_publication import table_from_rows, evaluated_table, write_result_figures
+        base_table = table_from_rows(rows, cols)
+        fitted = evaluated_table(
+            base_table, [row[cols["UTC"]] for row in rows],
+            [int(row[cols["iPoint"]]) for row in rows], np.column_stack((pNG, pRG)),
+            [[float(row[cols["refNG"]]), float(row[cols["refRG"]])] for row in rows],
+            [[int(row[cols["useNG"]]), int(row[cols["useRG"]])] for row in rows])
+        interval = next((source["definition"]["interval_utc"]
+                         for source in P.template_sources
+                         if source["name"] == "late_ng_not_rg" and
+                         (source.get("definition") or {}).get("interval_utc")), None)
+        publication_products = write_result_figures(out, base_table, fitted, interval=interval)
+        report_products.extend(publication_products)
+        # Keep the A5 descriptor and authoritative fit inventory consistent.
+        write_report_descriptor(out, report_id, report_payload,
+                                [name for name in report_products if name != "fit_report.json"])
     diag["report"] = report_summary
     return diag
 
@@ -2035,6 +2057,7 @@ def main():
             "activity_basis": file_identity(Path(__file__).with_name("activity_basis.py")),
             "cops_fit_reporting": file_identity(
                 Path(__file__).with_name("cops_fit_reporting.py")),
+            "cops_publication": file_identity(Path(__file__).with_name("cops_publication.py")),
             "harmonic_basis_specification": file_identity(Path(srcdir) / "HARMONIC_BASIS.md"),
             "activity_enhancement_format": file_identity(Path(srcdir) / "ACTIVITY_ENHANCEMENT_FILE.md"),
             "srcCG_activity_tables": file_identity(Path(srcdir) / "src" / "SrcCGTables.h"),

@@ -28,6 +28,8 @@ helper, not a standalone command.
 
 | Script | Purpose |
 |---|---|
+| `tools/pub_figures.py pressures` | GPU-style NG/RG/ratio comparisons versus UTC and altitude; PNG/EPS, no refit or CUDA dependency. [Commands and parameters](PUBLICATION_FIGURES.md). |
+| `tools/cops_publication.py` | Shared CPU pressure plotting and automatic fit/fine-tuning hooks; helper module, not a CLI. |
 | [`tools/cops_hk_table.py`](#cops_hk_tablepy) | make the COPS housekeeping table from the archived L2 files |
 | [`tools/rebuild_cops_boundary.py`](#rebuild_cops_boundarypy) | regenerate a static fitting base with a selected shape and flat or rough surface emission, preserving the old run |
 | [`tools/plot_cops_model.py`](#plot_cops_modelpy-plot_cops_model_altitudepy) | compare the LiouvilleCOPS runs with the data, vs. time |

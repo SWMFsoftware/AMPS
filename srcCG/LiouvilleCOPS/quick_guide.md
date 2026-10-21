@@ -40,6 +40,29 @@ Pre-W01 bases without `run_manifest.json` are refused by the fitter unless
 `--allow-legacy-base` is supplied explicitly. Regenerating a manifested base
 is preferred because missing input identities cannot be reconstructed safely.
 
+### GPU-style pressure figures on the CPU
+
+New fits and fine-tuning runs save PNG/EPS pairs automatically in
+`<out>/figures/pressures_{time,altitude}.*`: NG, RG, NG/RG, full descent,
+last-25-minute zoom, and reversed log altitude. Existing A5 plots remain.
+To plot completed results without rerunning fitting:
+
+```bash
+python3 tools/pub_figures.py pressures \
+  --base output_fit_base --fit 'Fit=completed_fit:solid' \
+  --late-start 2016-09-30T10:33:10 --late-stop 2016-09-30T10:39:26 \
+  --zoom-minutes 25 --out publication/pressures
+```
+
+Repeat `--fit 'Label=directory:dashed'` for comparisons, including completed
+fine-tuning directories. The last fit supplies observation/selection markers;
+`--ref` overrides it. With a fine-tuning reference, omit explicit bounds to
+shade its recorded window. `--bundle FILE` chooses the template window instead.
+Outputs default to `<AMPS>/cops_output`; existing figures are refused unless
+`--overwrite` is explicit. [PUBLICATION_FIGURES.md](PUBLICATION_FIGURES.md)
+contains all controls and the complete 199k campaign command. This ports
+pressure visualization, not CUDA mesh rendering.
+
 ### Continue a CPU or CUDA fit
 
 Every ordinary fit now saves `fit_restart.npz` in its result directory.

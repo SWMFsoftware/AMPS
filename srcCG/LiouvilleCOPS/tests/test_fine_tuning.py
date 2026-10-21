@@ -176,6 +176,14 @@ class PipelineTests(unittest.TestCase):
             cli.main(args+["--out",str(first)])
             report=json.loads((first/"fine_tuning.json").read_text())
             self.assertEqual(report["state"],"complete")
+            for name in ("figures/pressures_time.png", "figures/pressures_time.eps",
+                         "figures/pressures_altitude.png", "figures/pressures_altitude.eps",
+                         "figures/pressures.json"):
+                self.assertEqual(report["outputs"][name]["sha256"],
+                                 file_identity(first/name)["sha256"])
+            figure_status = json.loads((first/"figures/pressures.json").read_text())
+            self.assertEqual(figure_status["status"], "complete")
+            self.assertEqual(figure_status["window"]["name"], "fine-tuning window")
             self.assertEqual(report["earlier_pressure_max_absolute_change"],0)
             self.assertLess(report["optimizer"]["cost"],report["optimizer"]["initial_cost"])
             with np.load(first/"fine_tuning_state.npz") as z:

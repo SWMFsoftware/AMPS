@@ -283,9 +283,22 @@ def main(argv=None):
                     " ".join("%.17e" % v for v in np.r_[refs[k], baseline[k], prediction[k]]),
                     used[k, 0], used[k, 1], state.saturated[k]))
         plot_comparison(out/"pressure_comparison.png", state.utc, refs, used, baseline, prediction, edges)
+        # Use the same evaluated rows as the optimizer, not the rounded C++
+        # replay, and explicitly show the frozen fit when no groups survive.
+        from cops_publication import (read_table, evaluated_table, fine_interval,
+                                      write_result_figures)
+        base_table = read_table(run)
+        before_table = evaluated_table(base_table, state.utc, state.point_ids, baseline, refs, used)
+        after_table = evaluated_table(base_table, state.utc, state.point_ids, prediction, refs, used)
+        figure_products = write_result_figures(
+            out, base_table, after_table,
+            series=[("frozen fit", before_table, "--"), ("fine tuning", after_table, "-")],
+            interval=fine_interval(report["end_utc"], args.minutes),
+            window_name="fine-tuning window")
         state.meta["fine_tuning_helio"] = fit_cops.header_value(header, "HeliocentricModel")
         export_cpp(out, run, el, state, final, body_frames[0], args.lam)
         report["outputs"] = {p.name: file_identity(p) for p in out.iterdir() if p.is_file() and p != manifest}
+        report["outputs"].update({name: file_identity(out/name) for name in figure_products})
         write_json_atomic(manifest, report)
         print("Fine tuning complete: %s; optimizer success=%s" % (out, optimizer["success"]), flush=True)
     except BaseException as exc:
