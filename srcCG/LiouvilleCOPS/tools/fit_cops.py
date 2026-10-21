@@ -133,6 +133,7 @@ from activity_basis import (BASIS_ID as ENHANCEMENT_BASIS_ID,
                             evaluate_cartesian as evaluate_enhancement_basis,
                             modes as enhancement_modes)
 from activity_templates import load_bundle, select_templates
+import fit_restart
 
 import numpy as np
 import scipy
@@ -834,7 +835,9 @@ P = None     # the problem (global so that forked worker processes share the ker
 
 def fit_one(lam, x_start=None):
     P.lam = lam
-    x_start = P.x0 if x_start is None else x_start
+    # A restart changes only the optimizer start, never the regularization
+    # prior P.x0. Forked lambda workers inherit the same independent start.
+    x_start = getattr(P, "restart_start", P.x0) if x_start is None else x_start
     if len(x_start):
         res = least_squares(P.residuals, x_start, jac=P.jacobian,
                             bounds=(P.lo, P.hi), x_scale="jac", method="trf",
@@ -1448,6 +1451,45 @@ def manifest_number(value):
     return value
 
 
+def save_fit_restart(directory, result, elements):
+    """Save a C12-compatible warm start after predictions have been written.
+
+    The CUDA driver imports this module, wraps save_active_manifest, and owns
+    its own restart writer. Recognize its explicit ownership record rather
+    than writing a duplicate file or ignoring its --no-save-restart option.
+    The immutable manifest snapshot avoids a circular hash dependency between
+    the restart and the live manifest that subsequently indexes the restart.
+    """
+    backend = ACTIVE_MANIFEST.get("compute_backend", {})
+    if "restart" in backend:
+        ACTIVE_MANIFEST["restart"]["writer"] = "external compute_backend driver"
+        return {}
+    if P.args.no_save_restart:
+        return {}
+    directory = Path(directory)
+    try:
+        snapshot = directory / "fit_restart_manifest.json"
+        if snapshot.exists():
+            raise FileExistsError("restart manifest snapshot exists: %s" % snapshot)
+        write_json_atomic(snapshot, ACTIVE_MANIFEST)
+        state = fit_restart.from_fit(P, result, directory, ACTIVE_MANIFEST,
+                                     elements, manifest_path=snapshot)
+        previous = getattr(P, "restart_state", None)
+        if previous is not None:
+            state.meta["history"] = list(previous.meta.get("history", [])) + state.meta["history"]
+            state.meta["started_from"] = ACTIVE_MANIFEST["restart"]["loaded"]
+        state.meta["producer"] = "LiouvilleCOPS CPU fitter"
+        state.meta["warm_start"] = ACTIVE_MANIFEST["restart"]
+        identity = fit_restart.write(directory / "fit_restart.npz", state)
+    except BaseException:
+        ACTIVE_MANIFEST["states"]["process"] = "failed"
+        save_active_manifest()
+        raise
+    print("restart file: %s" % identity["path"], flush=True)
+    return {"fit_restart.npz": identity,
+            "fit_restart_manifest.json": file_identity(snapshot)}
+
+
 def main():
     global P, MF, ACTIVE_MANIFEST, ACTIVE_MANIFEST_PATH
     fit_started_utc = utc_now()
@@ -1494,7 +1536,25 @@ def main():
                     "of the run, e.g. data/COPS_fit_data.txt of tools/collect_cops_sources.py")
     ap.add_argument("--allow-legacy-base", action="store_true",
                     help="explicitly accept a base without run_manifest.json after strict cache validation")
+    ap.add_argument("--restart-from", help="CPU/CUDA fit_restart.npz warm start; free parameters matched by name, prior unchanged")
+    ap.add_argument("--no-save-restart", action="store_true",
+                    help="skip the default fit_restart.npz output (one per lambda fit)")
     args = ap.parse_args()
+    restart_state = None
+    restart_info = {"save": not args.no_save_restart, "writer": "CPU fitter",
+                    "semantics": "physical-state warm start; optimizer internals are not resumed",
+                    "implementation": file_identity(fit_restart.__file__, "restart_tool"),
+                    "schema": fit_restart.SCHEMA, "schema_version": fit_restart.SCHEMA_VERSION}
+    if args.restart_from:
+        try:
+            restart_path = product_input(args.restart_from)
+            restart_state = fit_restart.read(restart_path)
+            restart_info["loaded"] = file_identity(restart_path, "fit_restart")
+            args.activity_template, restored = fit_restart.restore_template_arguments(
+                restart_state, args.activity_template)
+            restart_info["templates_from_restart"] = restored
+        except (OSError, ValueError, KeyError) as exc:
+            ap.error("invalid restart: %s" % exc)
     if args.profile and (args.apply_exclude_ng or args.exclude_ng_saturated):
         ap.error("--profile cannot be combined with --apply-exclude-ng or --exclude-ng-saturated")
     if not 0 <= args.degree <= 4:
@@ -1556,6 +1616,11 @@ def main():
 
     coef = read_activity_coefficients(srcdir, header)
     el = read_elements(os.path.join(run, "elements.bin"))
+    if restart_state is not None:
+        try:
+            fit_restart.check_mesh(restart_state, el)
+        except ValueError as exc:
+            ap.error(str(exc))
 
     # Resolve all bundles only after the base cache has been audited and its
     # exact facet table is available.  Bundles are cached by absolute path so
@@ -1723,6 +1788,21 @@ def main():
     except ValueError as exc:
         sys.exit("Error: invalid fitting parameterization: %s" % exc)
     P.saturated = np.asarray(sat, dtype=bool)
+    if restart_state is not None:
+        # A matching template name must still denote the same physical field.
+        # Explicit new names may be added and begin at the normal problem start.
+        for j, name in enumerate(P.template_names):
+            if name in restart_state.template_names:
+                old = restart_state.template_names.index(name)
+                if not np.array_equal(P.enhancement_basis[:, P.nh+j],
+                                      restart_state.template_columns[:, old]):
+                    ap.error("restart template field changed for name %s" % name)
+        P.restart_start, mapping = fit_restart.start_vector(P, restart_state)
+        P.restart_state = restart_state
+        restart_info["mapping"] = mapping
+        restart_info["x_start_scaled"] = P.restart_start.tolist()
+        restart_info["prior_x0_unchanged"] = True
+        print("restart mapping: %s" % json.dumps(mapping, sort_keys=True), flush=True)
     # A profile-specific NG interval is the most precise declaration of the
     # transition window displayed with that fit.  Profiles without one (and
     # the legacy CLI) retain the input's documented ExcludeNG event window.
@@ -1982,6 +2062,7 @@ def main():
         "outputs": {},
     }
     ACTIVE_MANIFEST_PATH = str(Path(out) / "fit_manifest.json")
+    ACTIVE_MANIFEST["restart"] = restart_info
     save_active_manifest()
     write_fit_data(out, P, rows, cols, msg, selection_report)
     if args.data_only:
@@ -1997,7 +2078,7 @@ def main():
 
     if args.check_jacobian:
         P.lam = max(lams)
-        x = P.x0
+        x = getattr(P, "restart_start", P.x0)
         Ja = P.jacobian(x)
         worst = 0.0
         for k, n in enumerate(P.names):
@@ -2054,7 +2135,9 @@ def main():
 
     rd0 = P.data_residuals(P.x0)
     r0 = 0.5 * np.sum(rd0 ** 2)
-    print("initial cost %.6e  (rms ln residual NG %.3f, RG %.3f)" % (r0, np.sqrt(np.sum(rd0[:P.NNG] ** 2)), np.sqrt(np.sum(rd0[P.NNG:] ** 2))))
+    print("%s cost %.6e  (rms ln residual NG %.3f, RG %.3f)" % (
+        "prior" if restart_state is not None else "initial", r0,
+        np.sqrt(np.sum(rd0[:P.NNG] ** 2)), np.sqrt(np.sum(rd0[P.NNG:] ** 2))))
 
     if len(lams) == 1:
         r = fit_worker(lams[0])
@@ -2068,6 +2151,8 @@ def main():
         ACTIVE_MANIFEST["outputs"] = output_identities(
             out, ("fit_data_used.txt", "fit_data_used.png", "fit_profiles_used.png", "selection_profile.json",
                   *FIT_RESULT_FILES))
+        save_active_manifest()
+        ACTIVE_MANIFEST["outputs"].update(save_fit_restart(out, r, el))
         save_active_manifest()
         print("results: %s" % out)
         print("verify with: ./liouville_cops %s" % os.path.join(out, "cops_fit.in"))
@@ -2129,6 +2214,12 @@ def main():
     ACTIVE_MANIFEST["outputs"] = output_identities(
         out, ("fit_data_used.txt", "fit_data_used.png", "fit_profiles_used.png", "selection_profile.json", "lcurve.txt"))
     ACTIVE_MANIFEST["outputs"]["lambda_directories"] = result_outputs
+    save_active_manifest()
+    # Each lambda has its own fitted state and prediction table. Never label
+    # the last worker result as a restart of the whole L-curve scan.
+    for result in results:
+        name = "lambda=%.3e" % result["lam"]
+        result_outputs[name].update(save_fit_restart(Path(out) / name, result, el))
     save_active_manifest()
     print("results: %s" % out)
 

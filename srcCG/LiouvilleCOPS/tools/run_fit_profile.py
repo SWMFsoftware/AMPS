@@ -76,6 +76,9 @@ def build_parser():
     parser.add_argument("--data", help="replacement pressure table passed to fit_cops.py")
     parser.add_argument("--hk-table", help="housekeeping table used to identify saturated NG")
     parser.add_argument("--allow-legacy-base", action="store_true")
+    parser.add_argument("--restart-from", help="CPU/CUDA fit_restart.npz warm start passed to every selected profile")
+    parser.add_argument("--no-save-restart", action="store_true",
+                        help="do not save fit_restart.npz after optimization")
     parser.add_argument("--data-only", action="store_true",
                         help="write audited selections and plots without optimizing")
     parser.add_argument("--dry-run", action="store_true",
@@ -117,10 +120,12 @@ def fit_command(args, profile, destination):
             (args.fix_kappa, "--fix-kappa"),
             (args.check_jacobian, "--check-jacobian"),
             (args.allow_legacy_base, "--allow-legacy-base"),
+            (args.no_save_restart, "--no-save-restart"),
             (args.data_only, "--data-only")):
         if enabled:
             command.append(option)
-    for value, option in ((args.data, "--data"), (args.hk_table, "--hk-table")):
+    for value, option in ((args.data, "--data"), (args.hk_table, "--hk-table"),
+                          (args.restart_from, "--restart-from")):
         if value:
             command.extend([option, value])
     if args.enhancement_scale is not None:

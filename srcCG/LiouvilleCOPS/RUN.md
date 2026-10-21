@@ -6,6 +6,54 @@ compilation, paths, the forward model, fitting, verification, and every Python
 entry point. See [README.md](README.md) for the model equations, data audit,
 file formats, and scientific limitations.
 
+## Fitter restarts (CPU/CUDA compatible)
+
+Optimization now saves `<out>/fit_restart.npz` by default. Resume with a new
+output directory, repeating the desired fit settings:
+
+```bash
+python3 tools/fit_cops.py output_fit_shap5_788k_base \
+  --profile all_available --degree 4 --lambda 0 --jobs 1 --max-nfev 1000 \
+  --restart-from previous_fit/fit_restart.npz --out resumed_fit
+```
+
+`tools/run_fit_profile.py` forwards `--restart-from` and `--no-save-restart`.
+CPU and CUDA restart files use the same format. This starts a new optimizer
+from saved physical parameters; it does not resume internal iterations or
+replace the run prior. Each lambda subdirectory receives its own restart;
+data-only and Jacobian-check modes do not save one. Template bundles are
+restored and checked unless explicitly supplied. Full details and format:
+[FIT_RESTART.md](FIT_RESTART.md).
+
+## Late-only activity fine tuning
+
+Use the original static fitting base and a completed CPU/CUDA restart from
+that base. The following example splits the last five modeled minutes into
+five intervals; choose the interval count to match your temporal resolution.
+It retains the saved observation selection and freezes every original fitted
+parameter. New amplitudes are nonnegative activity additions.
+
+```bash
+python3 tools/fine_tune_activity.py output_fit_shap5_788k_base \
+  --restart-from previous_fit/fit_restart.npz \
+  --minutes 5 --intervals 5 --dominance-ratio 1e-3 \
+  --third-group all --lambda 0 --max-nfev 1000 --out late_fine_tuning
+```
+
+The command prepares groups, fits, plots, and exports a C++ verification input.
+Results are in `<AMPS>/cops_output/late_fine_tuning/`, including
+`pressure_comparison.png`, `pressure_comparison.txt`, `fine_tuning.json`,
+`fine_tuning_prepared.npz`, and `fine_tuning_state.npz`. An existing output
+directory is refused. `--prepare-only` stops after preparing diagnostics;
+`--prepared existing_run/fine_tuning_prepared.npz` reuses validated responses.
+The standalone fine-tuning state is not an ordinary fitter restart.
+
+`--third-group all` overlaps the NG/RG subsets; `mixed` instead uses their
+disjoint remainder. Empty/redundant groups are reported rather than fitted.
+`--end-utc` overrides the default last modeled UTC. This command does not
+launch a production C++ replay automatically. Full parameters, replay commands,
+physical assumptions, and GPU-port details: [FINE_TUNING_STEP.md](FINE_TUNING_STEP.md).
+
 ## Output location
 
 For the restored 788k baseline and joint NG-only/cliff fitting workflow, use

@@ -1,0 +1,8 @@
+# The repository-wide ``*build*`` rule is intended for build products, but it
+# also matches these maintained Python source filenames.  Keep the exceptions
+# exact so other build artifacts remain ignored.
+!tools/rebuild_cops_boundary.py
+!tests/test_rebuild_cops_boundary.py
+
+# Optional compiled helper; source is tools/spice_angular_velocity.cpp.
+/spice_angular_velocity

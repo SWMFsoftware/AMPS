@@ -40,6 +40,52 @@ Pre-W01 bases without `run_manifest.json` are refused by the fitter unless
 `--allow-legacy-base` is supplied explicitly. Regenerating a manifested base
 is preferred because missing input identities cannot be reconstructed safely.
 
+### Continue a CPU or CUDA fit
+
+Every ordinary fit now saves `fit_restart.npz` in its result directory.
+Start a new optimization from it with the same base mesh and a new output:
+
+```bash
+python3 tools/run_fit_profile.py \
+  --run output_fit_shap5_788k_base --profile all_available \
+  --degree 4 --lambda 0 --jobs 1 --threads-per-process 1 --max-nfev 1000 \
+  --restart-from previous_fit/fit_restart.npz --out resumed_fit
+```
+
+Repeat the intended degree, fixed/free controls, bounds, and selection; these
+are not restored automatically. Saved template bundles are restored by default
+and revalidated. The prior remains the base-run prior. This is a warm start,
+not an iteration checkpoint; no periodic restart is written during a fit.
+`--no-save-restart` skips saving. Multi-lambda scans save one restart per lambda.
+See [FIT_RESTART.md](FIT_RESTART.md) for compatibility and safeguards.
+
+### Fine-tune newly contributing late-mission regions
+
+Freeze a completed fit and add up to three activity amplitudes per late
+interval, without changing its harmonics or temperatures:
+
+```bash
+python3 tools/fine_tune_activity.py output_fit_shap5_788k_base \
+  --restart-from previous_fit/fit_restart.npz \
+  --minutes 5 --intervals 5 --dominance-ratio 1e-3 \
+  --third-group all --lambda 0 --max-nfev 1000 --out late_fine_tuning
+```
+
+This example uses five intervals. Each group contains only facets with no
+earlier cached contribution, even at excluded observation times. The ratio
+classifies NG/RG dominance; it is not permission to change earlier pressures.
+`all` means an overlapping common enhancement; `mixed` means only the
+remaining facets. Amplitudes are nonnegative additions. The restart's data
+selection is retained, including its saturation decisions.
+
+Results and an automatically generated full/late comparison plot are under
+`<AMPS>/cops_output/late_fine_tuning/`. Inspect `fine_tuning.json` for group
+counts, convergence, rank, and before/after errors. `--prepare-only` prepares
+without fitting; `--prepared other_run/fine_tuning_prepared.npz` reuses a
+matching cache. No protection between cached times is implied, and the
+generated C++ replay still needs to be run. See
+[FINE_TUNING_STEP.md](FINE_TUNING_STEP.md) for the complete algorithm and workflow.
+
 For the all-source NG/RG comparison after output cleanup, regenerate every
 derived prerequisite before invoking the collector:
 

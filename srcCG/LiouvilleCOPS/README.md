@@ -29,6 +29,24 @@ Two distinctions are essential:
 [RUN.md](RUN.md) covers building and running the application and its tools;
 [quick_guide.md](quick_guide.md) is the fitting quick start.
 
+The CPU fitter now saves `fit_restart.npz` by default and accepts
+`--restart-from` files from either CPU or CUDA fits. The wire format matches
+the CUDA C12 version-1 format, without a CUDA runtime dependency. See
+[FIT_RESTART.md](FIT_RESTART.md) for parameter mapping, mesh/template checks,
+multi-lambda outputs, and the distinction between a warm start and an
+iteration checkpoint. The new fit's prior and selection remain unchanged.
+
+An optional second stage, `tools/fine_tune_activity.py`, freezes a completed
+fit and adds nonnegative activity on facets first contributing in successive
+late-mission intervals. Each interval has up to three amplitudes: NG-dominated,
+RG-dominated, and all newly contributing facets. No harmonic degree is raised.
+Earlier cached pressures are protected by exact structural-zero checks, not a
+small-response cutoff. Existing temperature, CO2, activity, and data-selection
+settings remain frozen. [FINE_TUNING_STEP.md](FINE_TUNING_STEP.md) documents the
+algorithm, reusable response cache, overlap/identifiability rules, commands,
+limitations, validation, and the array contract for a later GPU implementation.
+This is a separate refinement workflow, not a change to ordinary fitter defaults.
+
 For external SHAP8 PLY/BDF products, large node-ID support, and the separate
 44M collinear-triangle repair workflow, see [PLY_CONVERSION.md](PLY_CONVERSION.md).
 Forward-surface validation and gravity/cliff admission are separate checks;

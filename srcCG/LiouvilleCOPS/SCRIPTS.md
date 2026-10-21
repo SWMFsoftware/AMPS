@@ -32,8 +32,9 @@ helper, not a standalone command.
 | [`tools/rebuild_cops_boundary.py`](#rebuild_cops_boundarypy) | regenerate a static fitting base with a selected shape and flat or rough surface emission, preserving the old run |
 | [`tools/plot_cops_model.py`](#plot_cops_modelpy-plot_cops_model_altitudepy) | compare the LiouvilleCOPS runs with the data, vs. time |
 | [`tools/plot_cops_model_altitude.py`](#plot_cops_modelpy-plot_cops_model_altitudepy) | the same, vs. altitude |
-| [`tools/fit_cops.py`](#fit_copspy) | fit the source rate and temperature to the COPS data |
+| [`tools/fit_cops.py`](#fit_copspy) | fit source rate and temperature; save/read CPU/CUDA-compatible `fit_restart.npz` using `--restart-from` / `--no-save-restart` ([details](FIT_RESTART.md)) |
 | [`tools/run_fit_profile.py`](#run_fit_profilepy) | run one or all audited selection profiles safely |
+| [`tools/fine_tune_activity.py`](FINE_TUNING_STEP.md) | freeze a completed fit; prepare first-contributing late-interval NG/RG/all groups, fit nonnegative activity additions, plot comparisons, and export C++ replay inputs; `tools/fine_tuning.py` contains the shared numerical algorithms |
 | [`tools/run_a6_validation.py`](#run_a6_validationpy) | run the Stage-A6 unit, synthetic, C++, and optional integration gate |
 | [`tools/benchmark_fit_performance.py`](#benchmark_fit_performancepy) | measure Stage-A7 production-fitter time, memory, output size, and independent-job scaling |
 | [`tools/build_physical_activity_templates.py`](#build_physical_activity_templatespy) | build mesh-bound late-NG-only and effective-slope cliff hypotheses |
