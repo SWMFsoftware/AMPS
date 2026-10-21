@@ -27,6 +27,86 @@ Reconciled facts, checked 2026-10-19:
 * New pending items: C00b re-freeze against the repaired tree, C02 joint extensions, and
   the C04 gravity acceptance route (a user decision).
 
+## C09 on the SHAP5 3M mesh (2026-10-20, user request): COMPLETE; all products and fits on the GPU
+
+The user asked to repeat the full procedure on `cg_spc_shap5_003m_cart.bdf`.
+
+**Mesh:** 3,145,728 facets, 1,572,866 vertices.
+
+**Base:** `output_fit_shap5_003m_base`, built with `liouville_cops_cuda` in 12.4 min.
+856,881,542 kernel records, 33 GB; all 1,150 points checked.
+
+**Visibility templates** (`cuda_c05/restart_003m/visibility_templates_shap5_003m.npz`):
+
+| Template | Facets | Area fraction | 1M area fraction |
+|---|---|---|---|
+| NG-only | 1,130 | 4.90e-4 | 4.91e-4 |
+| RG-only | 3,791 | 1.84e-3 | 1.83e-3 |
+
+**Impact point:** 10:39:26.4 UTC, lon 12.227°, lat 31.749°, as on 1M.
+
+The mesh size forced two engineering changes. Both are documented in the code and tested:
+* **Gravity on two GPUs.** `c04_gravity_equivalence.py gpu --devices 0,1` splits the targets
+  into contiguous blocks, one per GPU, in spawned processes.
+  * The split field is bitwise the one-device field (`tests/test_gravity_split.py`): each
+    target is a fixed-order sum over all faces.
+  * The manifest records the partition.
+  * Expected about 7 h, against about 14 h on one GPU.
+* **Memory headroom as a run setting.**
+  * Every 3M fit needs both GPUs (`--devices 0,1`); one GPU would need about 50 GiB.
+  * Even then, device 0 needed 23.40 GiB of evaluator plan on top of 14.80 GiB of kernel
+    data. Under the 20% headroom policy only 22.63 GiB were usable, so the first B29 was
+    refused (`fit_003m_gpu_B29_n2000.capacity_refused.log`). That cost 22 min of the
+    fitter's kernel-file check and no fit time.
+  * New `gpu_fit.py --headroom-fraction` (range 0.05–0.5; default 0.20 unchanged). It is
+    carried to the workers by `$COPS_CUDA_HEADROOM_FRACTION` and recorded in
+    `compute_backend.memory_headroom_fraction`.
+  * The 3M fits use 0.15: about 8.7 GiB of each device stays actually free.
+  * Results do not depend on the headroom: it only changes what the budget admits, not the
+    arrays or the reduction order.
+* **Start-up time.** The unchanged fitter's start-up check reads all 33 GB of kernel files
+  at about 30 MB/s, about 22 min per fit. This is fixed overhead.
+
+**Chain** (`scratchpad/chain_003m.sh`, 11:53–22:02 CDT): B29 and N30 on both GPUs, then
+gravity on both GPUs (6.96 h), then cache and full bundle (with ground-track and template
+figures), then C30 and NC31. No step failed after the headroom change.
+
+**Products:** gravity `cuda_c04/equivalence_20261020T182655Z` (field, cache; offset halving
+changes the slope by at most 0.0059°); bundle `cuda_c05/restart_003m/restart_templates_shap5_003m.npz`
+(its `late_ng_not_rg` column is bitwise the visibility bundle's); fits
+`fit_003m_gpu_{B29,C30,N30,NC31}_n2000` with restart files and figures; package
+`comparison_003m_vs_001m_788k/` (README, figures, tables, translated states, inputs,
+expected hashes, code, PROVENANCE, MANIFEST of 1,497 files). 161 tests pass.
+
+| Fit | Cost 788k / 1M / 3M | Termination 3M | Parameter change vs 1M / 788k | Notes (3M) |
+|---|---|---|---|---|
+| B29 | 0.067692 / 0.068711 / **0.067207** | max_nfev | ≤ 0.56 σ / ≤ 0.23 σ, same bounds | T 30/400/43.8, κ 0.838 |
+| C30 | 0.067711 / 0.068664 / **0.067404** | max_nfev | ≤ 0.46 σ / ≤ 0.13 σ | cliff60 0.49 ± 6.75 (not significant) |
+| N30 | 0.042221 / 0.041887 / **0.041294** | max_nfev | ≤ 0.48 σ / ≤ 0.96 σ (κ) | late_ng 7.51 ± 5.14; T75 206.3 K; κ 0.086 |
+| NC31 | 0.067662 / 0.068664 / **0.067368** | max_nfev | ≤ 0.46 σ / ≤ 0.11 σ (late_ng inert) | B29 branch again |
+
+**Mesh convergence:**
+* Unfitted bases, 3M vs 1M: median 0.04–0.07%, at most 0.19% above 10 m (788k vs 1M was
+  0.07%); below 10 m at most 0.85%. 3M vs 788k: at most 0.26% above 10 m.
+* 3M fitted states re-evaluated on 1M and 788k (fit selection): B29, C30 and NC31 costs change
+  by −0.14% and −0.21%; predictions by at most 1.0% (at 0.4 m) and 0.7%. The 3M B29 state
+  costs 0.0671 on 1M, below the 1M fit's 0.0687: the 1–2% cost differences are optimizer
+  stopping points.
+* N30 transfer: +1.9% (1M) and +3.4% (788k); prediction changes up to 19%/37% (NG/RG) at
+  3.9–11 m, at most 1.1–1.9% above 310 m: the per-mesh NG-only region (1,130 / 500 / 379
+  facets, area fraction 4.9e-4 on all).
+* Cliff area fractions grow with resolution: ≥ 60° 3.77% / 3.92% / 4.10%, ≥ 45° 13.6% /
+  13.8% / 14.3% (788k / 1M / 3M). The cliff amplitude is consistent with zero on all meshes.
+
+**Conclusion offered to the user:** the fitted branches, active bounds and template
+amplitudes are the same on 788k, 1M and 3M; the forward model changes by ≤ 0.3% above 10 m.
+
+**Provenance note:** `LiouvilleCOPS/tools/fit_cops.py` was changed in the CPU tree at
+15:51 CDT (not by this work): optional `--restart-from` and a CPU restart writer. The 3M C30
+and NC31 fits record the new sha256 (`eb82bbbd…`), all other fits `5bd6cf12…`. Without
+`--restart-from` the optimizer path is unchanged, and the CPU writer defers to `gpu_fit.py`'s
+restart file. The package keeps both CPU code snapshots.
+
 ## Publication figure format (2026-10-20, user request; default for all future runs)
 
 The user asked for:

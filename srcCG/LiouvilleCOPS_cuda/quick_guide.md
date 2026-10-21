@@ -378,7 +378,8 @@ cd -
 # (2) optional, no gravity needed: the NG-only/RG-only templates, so N30 can start at once
 .venv/bin/python tools/c05_write_bundle.py --run $BASE --visibility-only \
     --out $O/cuda_c05/restart_001m/visibility_templates_shap5_001m.npz
-# (3) gravity field at all facets, 2.0 h (1.2e6 x 1.2e6 facet pairs)
+# (3) gravity field at all facets, 2.0 h (1.2e6 x 1.2e6 facet pairs); add --devices 0,1 to split the
+#     targets over both GPUs (bitwise the same field, half the time)
 .venv/bin/python tools/c04_gravity_equivalence.py gpu --run $BASE --gravity-shape $SHAPE --device 0 \
     >& $O/gravity_001m_gpu.log
 set EQ = <the printed cuda_c04/equivalence_<UTC> directory>

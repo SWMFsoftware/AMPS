@@ -62,6 +62,7 @@ after the output directory exists, a failure is recorded as
 """
 
 import argparse
+import os
 from pathlib import Path
 
 import numpy as np
@@ -169,6 +170,11 @@ def check_restart_mesh(state, fit_args, fit_cops):
                          "tools/restart_tool.py translate" % (state.mesh_identity()[:16], identity[:16]))
 
 
+def headroom_now():
+    from cops_cuda import memory
+    return memory.headroom_fraction_default()
+
+
 def write_figures(fit_cops, fit_args, info):
     """Publication pressure figures of the finished fit (cops_cuda/figures.py).
 
@@ -221,6 +227,9 @@ def main():
                         help="start from a restart file (fit_restart.npz); parameters matched by name")
     parser.add_argument("--no-save-restart", action="store_true",
                         help="do not write <out>/fit_restart.npz at the end of the fit")
+    parser.add_argument("--headroom-fraction", type=float, default=None,
+                        help="device memory never planned, fraction of total (default 0.20; 0.05-0.5). "
+                             "Needed below 0.20 only for very large bases (SHAP5 3M: 0.15)")
     parser.add_argument("--no-figures", action="store_true",
                         help="do not write the publication figures <out>/figures/pressures_{time,altitude}.{eps,png}")
     args = parser.parse_args(argv[:split])
@@ -240,6 +249,10 @@ def main():
         raise SystemExit("gpu_fit.py runs exactly one --lambda value per process "
                          "(the fitter forks for an L-curve; CUDA contexts do not survive fork)")
 
+    if args.headroom_fraction is not None:
+        from cops_cuda import memory
+        os.environ[memory.HEADROOM_ENVIRONMENT] = repr(float(args.headroom_fraction))
+        memory.headroom_fraction_default()            # validates the range
     from cops_cuda import gpu_model, manifest, provenance, reference
     from cops_cuda import restart as rs
     reference.bind()
@@ -279,6 +292,7 @@ def main():
                 "fit_start": fit_start,
                 "restart": restart_info,
                 "figures": figures_info,
+                "memory_headroom_fraction": headroom_now(),
             }
         original_save()
 

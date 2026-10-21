@@ -156,3 +156,15 @@ def test_plan_tiles_shrinks_columns_then_tiles():
     assert [p for t in plan.point_tiles for p in range(*t)] == list(range(50))
     with pytest.raises(CapacityError):
         memory.plan_tiles(counts, ncols=1, scratch_budget_bytes=8, records_per_block=1 << 12)
+
+
+def test_headroom_run_setting(monkeypatch):
+    """gpu_fit.py --headroom-fraction travels through the environment into every budget."""
+    monkeypatch.delenv(memory.HEADROOM_ENVIRONMENT, raising=False)
+    assert memory.headroom_fraction_default() == memory.DEFAULT_HEADROOM_FRACTION == 0.20
+    monkeypatch.setenv(memory.HEADROOM_ENVIRONMENT, "0.15")
+    assert memory.headroom_fraction_default() == 0.15
+    for bad in ("0.01", "0.7"):
+        monkeypatch.setenv(memory.HEADROOM_ENVIRONMENT, bad)
+        with pytest.raises(ValueError):
+            memory.headroom_fraction_default()

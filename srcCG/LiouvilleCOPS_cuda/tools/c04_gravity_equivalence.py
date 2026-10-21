@@ -20,7 +20,10 @@ Subcommands:
     Evaluate the GPU field and save ``gpu_field.npz`` and ``gpu_manifest.json`` in a new
     ``$COPS_OUTPUT_ROOT/cuda_c04/equivalence_<UTC>/``. The field contains the
     self-gravity, term magnitude M, potential, and the 512-sample half-offset field of
-    the offset-halving audit.
+    the offset-halving audit. ``--devices 0,1`` splits the targets into contiguous
+    blocks, one per GPU, in spawned processes. Each target is a fixed-order sum over all
+    body faces, so the field is bitwise the one-device field
+    (``tests/test_gravity_split.py``). The manifest records the partition.
 ``compare``
     Load the CPU cache through the reference ``gravity_cache.load_cache``, against the
     definition rebuilt exactly as the builder builds it, so a cache for another body,
@@ -73,6 +76,58 @@ def offset_sample(n):
     return np.unique(np.linspace(0, n - 1, min(512, n), dtype=int))
 
 
+def _split_worker(shape, density, device, points, part_path, queue):
+    """One device's contiguous block of targets (spawned process; own CUDA context)."""
+    try:
+        body = gravity_body.GravityBody.from_bdf(shape, density)
+        last = [0.0]
+
+        def progress(done, total, seconds):
+            if seconds - last[0] >= 300.0 or done == total:
+                last[0] = seconds
+                log("  device %d: %d/%d (%.1f%%) %.0f s" % (device, done, total, 100.0 * done / total, seconds))
+        with gravity.GravityEvaluator(body, device_id=device) as ev:
+            potential, g, M = ev.evaluate(points, variant="fold", progress=progress, with_magnitude=True)
+        np.savez(part_path, potential=potential, g=g, M=M)
+        queue.put((device, None))
+    except BaseException as exc:                          # reported to the parent
+        queue.put((device, "%s: %s" % (exc.__class__.__name__, exc)))
+
+
+def evaluate_split(args, points, devices, out):
+    """Targets split into contiguous blocks, one per device, evaluated in parallel.
+
+    Each target's field is a fixed-order sum over all body faces that does not depend on the
+    other targets, so the concatenated result is bitwise the single-device result
+    (tests/test_gravity_split.py). Returns potential, g, M and the partition record.
+    """
+    import multiprocessing as mp
+    ctx = mp.get_context("spawn")
+    bounds = np.linspace(0, len(points), len(devices) + 1).astype(int)
+    queue = ctx.Queue()
+    procs, parts = [], []
+    for k, d in enumerate(devices):
+        part = out / ("part_%d.npz" % k)
+        parts.append(part)
+        p = ctx.Process(target=_split_worker, args=(args.gravity_shape, args.density, d,
+                                                    points[bounds[k]:bounds[k + 1]], str(part), queue))
+        p.start()
+        procs.append(p)
+    errors = [queue.get() for _ in procs]
+    for p in procs:
+        p.join()
+    failed = [e for e in errors if e[1] is not None]
+    if failed:
+        raise RuntimeError("gravity split failed: %s" % failed)
+    blocks = [np.load(str(part)) for part in parts]
+    potential = np.concatenate([b["potential"] for b in blocks])
+    g = np.concatenate([b["g"] for b in blocks])
+    M = np.concatenate([b["M"] for b in blocks])
+    for part in parts:
+        part.unlink()
+    return potential, g, M, {"devices": devices, "bounds": bounds.tolist()}
+
+
 def stage_gpu(args):
     fit_cops = reference.load("fit_cops")
     run = Path(args.run).resolve()
@@ -93,11 +148,19 @@ def stage_gpu(args):
             last[0] = seconds
             log("  %d/%d (%.1f%%) %.0f s" % (done, total, 100.0 * done / total, seconds))
     t0 = time.perf_counter()
-    with gravity.GravityEvaluator(body, device_id=args.device) as ev:
-        potential, g, M = ev.evaluate(points, variant="fold", progress=progress,
-                                      with_magnitude=True)
-        _, g_half, M_half = ev.evaluate(half, variant="fold", with_magnitude=True)
-        identity = ev.identity()
+    devices = [int(d) for d in args.devices.split(",")] if args.devices else [args.device]
+    partition = None
+    if len(devices) == 1:
+        with gravity.GravityEvaluator(body, device_id=devices[0]) as ev:
+            potential, g, M = ev.evaluate(points, variant="fold", progress=progress,
+                                          with_magnitude=True)
+            _, g_half, M_half = ev.evaluate(half, variant="fold", with_magnitude=True)
+            identity = ev.identity()
+    else:
+        potential, g, M, partition = evaluate_split(args, points, devices, out)
+        with gravity.GravityEvaluator(body, device_id=devices[0]) as ev:
+            _, g_half, M_half = ev.evaluate(half, variant="fold", with_magnitude=True)
+            identity = ev.identity()
     seconds = time.perf_counter() - t0
     np.savez_compressed(out / "gpu_field.npz", self_gravity_m_s2=g, term_magnitude_m_s2=M,
                         potential_m2_s2=potential, offset_sample=sample,
@@ -112,7 +175,8 @@ def stage_gpu(args):
               "pairs_per_second": float(len(points)) * body.nfaces / seconds,
               "evaluator": identity,
               "field": provenance.file_identity(out / "gpu_field.npz", "gpu_field"),
-              "manifest": manifest.backend_manifest("cuda_polyhedral_gravity_v1", args.device)}
+              "devices": devices, "target_partition": partition,
+              "manifest": manifest.backend_manifest("cuda_polyhedral_gravity_v1", devices[0])}
     provenance.write_json_exclusive(out / "gpu_manifest.json", record)
     log("GPU field done in %.0f s (%.3g pairs/s): %s" % (seconds, record["pairs_per_second"], out))
     return 0
@@ -234,6 +298,8 @@ def main():
     g.add_argument("--density", type=float, default=533.0)
     g.add_argument("--offset", type=float, default=0.1)
     g.add_argument("--device", type=int, default=0)
+    g.add_argument("--devices", default=None,
+                   help="comma-separated devices: targets split into contiguous blocks (bitwise the one-device field)")
     g.add_argument("--output-root", default=os.environ.get("COPS_OUTPUT_ROOT", DEFAULT_OUTPUT_ROOT))
     c = sub.add_parser("compare")
     c.add_argument("--dir", required=True)

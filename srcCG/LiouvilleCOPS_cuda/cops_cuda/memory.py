@@ -23,7 +23,8 @@ multi-gigabyte upload.
 Headroom policy
 ---------------
 ``DEFAULT_HEADROOM_FRACTION`` (0.20) of the device's *total* memory is never
-planned. This is the initial ROADMAP policy. It leaves room for the
+planned (a run may set another fraction in [0.05, 0.5] through
+``$COPS_CUDA_HEADROOM_FRACTION``; ``headroom_fraction_default``). This is the initial ROADMAP policy. It leaves room for the
 driver, for fragmentation, for an unexpected library workspace, and for a
 second process to initialise a context. A plan must fit within
 ``free - headroom``, both at the moment of the first measurement and at the
@@ -52,12 +53,33 @@ fixed order.
 """
 
 import math
+import os
 from collections import namedtuple
 
 from .errors import CapacityError
 
 
 DEFAULT_HEADROOM_FRACTION = 0.20
+HEADROOM_ENVIRONMENT = "COPS_CUDA_HEADROOM_FRACTION"
+HEADROOM_RANGE = (0.05, 0.5)
+
+
+def headroom_fraction_default():
+    """The process's headroom fraction: ``$COPS_CUDA_HEADROOM_FRACTION`` or the default 0.20.
+
+    A run setting (``gpu_fit.py --headroom-fraction``), introduced 2026-10-20 for the SHAP5 3M
+    mesh, whose two-GPU evaluator plan exceeded the 20% policy by 0.8 GiB while 8.7 GiB of
+    the device stayed actually free. The environment carries it into spawned multi-GPU
+    workers. Values outside ``HEADROOM_RANGE`` are refused.
+    """
+    text = os.environ.get(HEADROOM_ENVIRONMENT)
+    if text is None or text == "":
+        return DEFAULT_HEADROOM_FRACTION
+    value = float(text)
+    if not HEADROOM_RANGE[0] <= value <= HEADROOM_RANGE[1]:
+        raise ValueError("%s=%s outside %s" % (HEADROOM_ENVIRONMENT, text, HEADROOM_RANGE))
+    return value
+
 POOL_GRANULE = 512                 # CuPy rounds every pool block up to 512 B
 DEFAULT_SLACK_BYTES = 64 << 20     # incidental temporaries (scalars, small reductions)
 DEFAULT_MODULE_RESERVE = 32 << 20  # compiled CUDA modules of one process (declared)
@@ -204,12 +226,13 @@ class DeviceBudget:
     filling a 48 GB device.
     """
 
-    def __init__(self, device_id=0, headroom_fraction=DEFAULT_HEADROOM_FRACTION,
+    def __init__(self, device_id=0, headroom_fraction=None,
                  slack_bytes=DEFAULT_SLACK_BYTES, capacity=None):
         import cupy
         self.cupy = cupy
         self.device_id = int(device_id)
-        self.headroom_fraction = float(headroom_fraction)
+        self.headroom_fraction = float(headroom_fraction if headroom_fraction is not None
+                                       else headroom_fraction_default())
         self.slack_bytes = pool_bytes(slack_bytes)
         self.injected_capacity = capacity
         self.reservations = []
