@@ -62,14 +62,21 @@ def canonical_sha256(value):
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
-def array_sha256(array):
-    """Hash an array's dtype, shape and C-order bytes (dtype includes byte order)."""
+def array_sha256(array, chunk_rows=1 << 20):
+    """Hash an array's dtype, shape and C-order bytes (dtype includes byte order).
+
+    A non-contiguous array (a memory-mapped column view) is hashed in row chunks: the same
+    digest without a full contiguous copy."""
     import numpy as np
-    array = np.ascontiguousarray(array)
+    array = np.asanyarray(array)
     digest = hashlib.sha256()
     digest.update(array.dtype.str.encode("ascii"))
     digest.update(repr(tuple(array.shape)).encode("ascii"))
-    digest.update(array.tobytes(order="C"))
+    if array.flags.c_contiguous or array.ndim == 0:
+        digest.update(np.ascontiguousarray(array).tobytes(order="C"))
+    else:
+        for start in range(0, array.shape[0], chunk_rows):
+            digest.update(np.ascontiguousarray(array[start:start + chunk_rows]).tobytes(order="C"))
     return digest.hexdigest()
 
 

@@ -6,7 +6,7 @@
   identical;
 * tree mode: within the approved budgets;
 * backends are shared between models with equal rows and rebound only for
-  a new enhancement basis.
+  a new enhancement basis, keeping the device records (bitwise a new backend).
 """
 
 import numpy as np
@@ -119,8 +119,33 @@ def test_backends_are_shared_and_rebound_for_a_new_basis(cpu_model, registry):
     basis = np.ones((nf, 1))
     G2.evaluate(a, T, 1.0, b=np.array([0.1]), enhancement_basis=basis, enhancement_scale=2.0)
     G1.evaluate(a, T, 1.0, b=np.array([0.1]), enhancement_basis=basis.copy(), enhancement_scale=2.0)
-    assert [e["event"] for e in registry.events] == ["bind", "rebind_for_new_basis", "bind"]
+    assert [e["event"] for e in registry.events] == ["bind", "rebind_basis_only"]   # records kept
     with pytest.raises(ValueError):
         G1.evaluate(a, T, 1.0, b=np.array([0.1]))                     # reference refusal
     stats = registry.stats()
     assert stats["calls"]["pressures"] == 4 and stats["backends"]
+
+
+@pytest.mark.parametrize("precision", ["fp64", "fp32"])
+def test_basis_rebind_is_bitwise_a_new_backend(cpu_model, clean_pool, precision):
+    """SCALING_PLAN P1: a template basis change keeps the records; results equal a fresh bind."""
+    from cops_cuda import evaluator
+    P = contract.make_problem(cpu_model, next(c for c in contract.CONFIGS if c.get("templates")))
+    run = cpu_model["synthetic"]["run"]
+    x = contract.perturbed(P, 5)
+    state = bk.ParameterState.from_problem(P, x)
+    request = bk.ColumnRequest.from_problem(P)
+    with evaluator.from_problem(P, run, mode="tree", record_precision=precision) as fresh:
+        want, want_j = fresh.evaluate(state), fresh.evaluate(state, request)
+    other = np.ones_like(P.enhancement_basis[:, :1])
+    with evaluator.CudaBackend(P.M, run, other, 3.0, mode="tree", record_precision=precision) as be:
+        dataset = be.dataset
+        be.rebind_basis(None)
+        assert be.nbasis_enhancement == 0
+        be.rebind_basis(P.enhancement_basis, P.enhancement_scale)
+        assert be.dataset is dataset and be.timing["rebind_basis_s"] >= 0
+        got, got_j = be.evaluate(state), be.evaluate(state, request)
+    assert same(got.pNG, want.pNG) and same(got.pRG, want.pRG)
+    for key in request.keys():
+        assert same(got_j.columns[key][0], want_j.columns[key][0])
+        assert same(got_j.columns[key][1], want_j.columns[key][1])

@@ -52,6 +52,7 @@ splits it over several blocks internally, combining their partial sums in a
 fixed order.
 """
 
+import contextlib
 import math
 import os
 from collections import namedtuple
@@ -292,6 +293,11 @@ class DeviceBudget:
             self.pool.free_all_blocks()
         self._apply_limit()
 
+    def available_bytes(self):
+        """Bytes a further plan could still be admitted with (ledger check of ``reserve``)."""
+        headroom = int(math.ceil(self.headroom_fraction * self.total))
+        return max(0, int(self.initial_free) - self.slack_bytes - headroom - self.reserved_total)
+
     def allocation_guard(self, plan):
         """Context manager converting CuPy OOM into ``CapacityError`` with the plan."""
         return _AllocationGuard(self, plan)
@@ -317,6 +323,31 @@ class DeviceBudget:
         with self.cupy.cuda.Device(self.device_id):
             self.pool.free_all_blocks()
             self.pool.set_limit(size=0)
+
+
+@contextlib.contextmanager
+def scratch_reservation(budget, label, arrays):
+    """Reserve per-call device scratch ``{name: (count, dtype)}`` in ``budget`` for a ``with``
+    block and release it afterwards (allocation guarded by the plan).
+
+    For per-facet work arrays that exceed the slack at large meshes (a uint32 per facet is
+    80 MB at SHAP8 20M; the slack is 64 MB). Up to half the slack the arrays stay in the slack,
+    as before, so a fully planned device is not refused for them. The caller drops its arrays
+    inside the block.
+    """
+    plan = MemoryPlan(label)
+    for name, (count, dtype) in arrays.items():
+        plan.add_array(name, "scratch", (int(count),), dtype)
+    if plan.total_bytes <= budget.slack_bytes // 2:
+        with budget.allocation_guard(plan):
+            yield plan
+        return
+    reservation = budget.reserve(plan)
+    try:
+        with budget.allocation_guard(plan):
+            yield plan
+    finally:
+        reservation.release()
 
 
 class _AllocationGuard:

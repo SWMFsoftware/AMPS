@@ -56,6 +56,8 @@ FIELD_DTYPES = {
     "AH2O": np.dtype(np.float64), "ACO2": np.dtype(np.float64),
     # per-facet activity basis bound by a fit (harmonics and templates)
     "enhancement_basis": np.dtype(np.float64),
+    # face compaction scratch (SCALING_PLAN 3.5): global -> local face index, remap buffer
+    "map": np.dtype(np.int32), "gather": np.dtype(np.int32),
 }
 
 

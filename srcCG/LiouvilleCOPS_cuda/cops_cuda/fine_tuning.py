@@ -51,6 +51,7 @@ carried from device to device, so their summation order is the CPU's.
 import numpy as np
 
 from . import formats, reference
+from .memory import scratch_reservation
 from .restart import StateEvaluator, record_factor_args
 
 SCHEMA = "liouville_cops_cuda.late_interval_fine_tuning_multiplier.v1"
@@ -135,14 +136,15 @@ class SplitEvaluator:
         best = np.full(self.nfaces, -1, dtype=np.int64)
         for part in self.parts:
             be = part._backend
-            a, d = be.arrays, be.dataset.arrays
-            with cupy.cuda.Device(part.device_id):
-                first = cupy.full(self.nfaces, UNSEEN, dtype=cupy.uint32)
+            ds = be.dataset
+            with cupy.cuda.Device(part.device_id), scratch_reservation(
+                    be.budget, "first structural row", {"first": (ds.nfaces_device, np.uint32)}):
+                first = cupy.full(ds.nfaces_device, UNSEEN, dtype=cupy.uint32)
                 name = "first_structural_row_f32" if getattr(be, "mixed", False) else "first_structural_row"
-                cuda_sources.function("restart", name, part.device_id)(
-                    (int(be._first_block[-1]),), (256,),
-                    (a["blocks"], d["kernel.face"], d["kernel.kn"], d["kernel.kphi"], d["kernel.kv"], first))
-                local = first.get()
+                fn = cuda_sources.function("restart", name, part.device_id)
+                for g0, g1, table, r in be.record_chunks():         # atomicMin: any order
+                    fn((g1 - g0,), (256,), (table, r["face"], r["kn"], r["kphi"], r["kv"], first))
+                local = ds.scatter_faces(first.get(), UNSEEN)
                 del first
             # parts are in row order: the first part that sees a facet holds its earliest row
             new = (local != UNSEEN) & (best < 0)
@@ -171,22 +173,28 @@ class SplitEvaluator:
         for part in self.parts:
             png, prg = part.pressures(restart)
             be = part._backend
-            a, d, c = be.arrays, be.dataset.arrays, be.constants
-            with cupy.cuda.Device(part.device_id):
-                first = cupy.full(self.nfaces, UNSEEN, dtype=cupy.uint32)
-                d_daf = cupy.asarray(np.asarray(delta_af, dtype=np.float64))
+            c = be.constants
+            ds = be.dataset
+            nf = ds.nfaces_device
+            with cupy.cuda.Device(part.device_id), scratch_reservation(
+                    be.budget, "first significant row", {"first": (nf, np.uint32), "dAF": (nf, np.float64)}):
+                first = cupy.full(nf, UNSEEN, dtype=cupy.uint32)
+                d_daf = cupy.asarray(ds.gather_faces(np.asarray(delta_af, dtype=np.float64)))
                 d_png, d_prg = cupy.asarray(png), cupy.asarray(prg)
                 d_crg = cupy.asarray(np.asarray(c.cRG["H2O"], dtype=np.float64))
                 use = (np.ones(len(part.row_indices), np.uint8) if row_mask is None
                        else np.asarray(row_mask[part.row_indices], dtype=np.uint8))
                 d_use = cupy.asarray(use)
-                suffix, factors = record_factor_args(be)
-                cuda_sources.function("restart", "first_significant_row" + suffix, part.device_id)(
-                    (int(be._first_block[-1]),), (256,),
-                    (a["blocks"], d_use, d["kernel.face"]) + factors + (
-                     d_daf, d_png, d_prg, d_crg, np.float64(c.cNG["H2O"] * c.bm["H2O"]), np.float64(c.bm["H2O"]),
-                     np.float64(Tmax), np.float64(T75), np.float64(Tmin), np.float64(c.KT), np.float64(tau), first))
-                local = first.get()
+                fn = None
+                for g0, g1, table, records in be.record_chunks():   # atomicMin: any order
+                    suffix, factors = record_factor_args(be, records)
+                    fn = fn or cuda_sources.function("restart", "first_significant_row" + suffix, part.device_id)
+                    fn((g1 - g0,), (256,),
+                       (table, d_use, records["face"]) + factors + (
+                        d_daf, d_png, d_prg, d_crg, np.float64(c.cNG["H2O"] * c.bm["H2O"]), np.float64(c.bm["H2O"]),
+                        np.float64(Tmax), np.float64(T75), np.float64(Tmin), np.float64(c.KT), np.float64(tau),
+                        first))
+                local = ds.scatter_faces(first.get(), UNSEEN)
                 del first, d_daf, d_png, d_prg, d_crg, d_use
             new = (local != UNSEEN) & (best < 0)
             best[new] = part.row_indices[local[new].astype(np.int64)]
@@ -202,27 +210,41 @@ class SplitEvaluator:
         Tmax, T75, Tmin = (float(v) for v in restart.T)
         for part in self.parts:
             be = part._backend
-            a, d, c = be.arrays, be.dataset.arrays, be.constants
+            c = be.constants
             local_rows = np.flatnonzero(bins[part.row_indices] >= 0)
             if not len(local_rows):
                 continue
-            suffix, factors = record_factor_args(be)
-            fn = cuda_sources.function("restart", "first_interval_scores" + suffix, part.device_id)
-            with cupy.cuda.Device(part.device_id):
-                d_first = cupy.asarray(np.asarray(first_interval, dtype=np.int32))
-                d_ng, d_rg = cupy.asarray(ng), cupy.asarray(rg)
-                stamp = cupy.zeros(self.nfaces, dtype=cupy.uint32)
+            ds = be.dataset
+            nf = ds.nfaces_device
+            first_block = np.asarray(be._first_block, dtype=np.int64)
+            with cupy.cuda.Device(part.device_id), scratch_reservation(
+                    be.budget, "first interval scores", {"first": (nf, np.int32), "ng": (nf, np.float64),
+                                                         "rg": (nf, np.float64), "stamp": (nf, np.uint32)}):
+                d_first = cupy.asarray(ds.gather_faces(np.asarray(first_interval, dtype=np.int32)))
+                d_ng, d_rg = cupy.asarray(ds.gather_faces(ng)), cupy.asarray(ds.gather_faces(rg))
+                stamp = cupy.zeros(nf, dtype=cupy.uint32)
                 flags = cupy.zeros(1, dtype=cupy.uint32)
                 crg = np.asarray(c.cRG["H2O"], dtype=np.float64)
-                for p in local_rows:                         # chronological: table order
-                    g = part.row_indices[p]
-                    b0, b1 = int(be._first_block[p]), int(be._first_block[p + 1])
-                    fn((b1 - b0,), (256,),
-                       (a["blocks"], np.int64(b0), d["kernel.face"]) + factors + (d_first, np.int32(bins[g]), np.float64(weights[g]),
-                        np.float64(crg[p]), np.float64(c.cNG["H2O"] * c.bm["H2O"]), np.float64(c.bm["H2O"]),
-                        np.float64(Tmax), np.float64(T75), np.float64(Tmin), np.float64(c.KT),
-                        d_ng, d_rg, stamp, flags))
-                ng, rg = d_ng.get(), d_rg.get()
+                fn = None
+                # Chronological: chunks in block order, rows in table order within a chunk. A facet
+                # has one record per point, so its sum runs over the points in table order also when
+                # a point spans two chunks.
+                for g0, g1, table, records in be.record_chunks():
+                    suffix, factors = record_factor_args(be, records)
+                    fn = fn or cuda_sources.function("restart", "first_interval_scores" + suffix, part.device_id)
+                    for p in local_rows:
+                        b0, b1 = max(int(first_block[p]), g0), min(int(first_block[p + 1]), g1)
+                        if b1 <= b0:
+                            continue
+                        g = part.row_indices[p]
+                        fn((b1 - b0,), (256,),
+                           (table, np.int64(b0 - g0), records["face"]) + factors + (
+                            d_first, np.int32(bins[g]), np.float64(weights[g]),
+                            np.float64(crg[p]), np.float64(c.cNG["H2O"] * c.bm["H2O"]), np.float64(c.bm["H2O"]),
+                            np.float64(Tmax), np.float64(T75), np.float64(Tmin), np.float64(c.KT),
+                            d_ng, d_rg, stamp, flags))
+                ng = ds.scatter_faces(d_ng.get(), out=ng.copy())
+                rg = ds.scatter_faces(d_rg.get(), out=rg.copy())
                 flags_all |= int(flags.get()[0])
                 del d_first, d_ng, d_rg, stamp, flags
         if flags_all & 1:

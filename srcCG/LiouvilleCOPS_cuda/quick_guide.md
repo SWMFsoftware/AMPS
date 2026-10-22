@@ -410,12 +410,62 @@ set BASE  = $O/output_fit_shap8_012m_base                 # (1) base as in 4e: 4
 ```
 
 * `--precision mixed` on `gpu_fit.py` sets `COPS_CUDA_RECORD_PRECISION=fp32` (inherited by the GPU workers).
+* FP32 record store (C15/P1): `tools/c15_record_store.py --run $BASE --out $O/cuda_c15/store_<name>_fp32`
+  once per base, then `gpu_fit.py --precision mixed --record-store <store> ...` (3M: 14x faster loading). Fits
+  validate the base once (`--audit-cache auto`, default; `--revalidate` forces a full check).
+* Streaming (C15/P2): with `--precision mixed`, records that do not fit the GPUs stay in pinned host memory and are
+  streamed each pass (automatic; results bitwise the resident ones). 20M on the local 2 A6000: about 3.7 h per fit.
 * Fine tuning of a 12M restart: `tools/fine_tune_gpu.py ... --precision mixed --devices 0,1 --headroom-fraction 0.06`
-  (other options as in §4f). `restart_tool.py enhance|translate` evaluate on one GPU and cannot hold 12M.
+  (other options as in §4f). With streaming (C15/P2b) the restart and fine-tuning kernels also run on bases larger
+  than the GPUs: `restart_tool.py enhance|translate --precision mixed` on one GPU, `fine_tune_gpu.py --precision
+  mixed` on 1–2 GPUs (bitwise the resident results; slower by the transfer).
 * `gpu_fit.py` validates the base with `cops_cuda/base_validation.py` (identical result to the reference's,
   about 1 min on 12M instead of 1.8 h); `--reference-validation` runs the reference's Python loop.
 * Accuracy: gravity slope ≤ 1.1e-5° from FP64 (1M), cliff masks identical (1M, 3M); 1M B29 fit cost within
   1.5e-7 relative, parameters within 8.8e-5 σ of FP64.
+
+## 4e2. One fit over MPI ranks, one GPU per rank (C15/P3, 2026-10-21)
+
+For several nodes (Voyager: 8 A100 per node). Every rank starts `gpu_fit.py`; rank 0 runs the fitter and the first
+block of rows, the other ranks serve their blocks. Locally, ranks map onto `--devices` (default: all visible).
+
+```tcsh
+# this machine, 2 ranks (environment forwarded with -x)
+mpirun -n 2 --bind-to none -x COPS_OUTPUT_ROOT -x OMP_NUM_THREADS .venv/bin/python tools/gpu_fit.py \
+    --transport mpi --precision mixed --record-store $STORE -- $BASE <3a args> --out $O/<name>
+# a cluster (Slurm): sbatch --nodes=N --ntasks-per-node=<GPUs per node> tools/cluster/fit_mpi.slurm \
+#     <base> <store> <out> [fit_cops args]; set its SITE lines first
+```
+
+* `--activity device` (MPI default, user decision Q3): each GPU forms the activity of its own facets; checked
+  against the host expression at the first evaluation and every 100th (`compute_backend` records the checks).
+  `--activity host` keeps the exact host field (broadcast each evaluation), bitwise the local two-GPU fit.
+* mpi4py is built against the MPI that runs the job:
+  `env MPICC=mpicc uv pip install --python .venv/bin/python --no-binary mpi4py mpi4py==4.0.3`.
+* A failure on any rank ends the whole job (`MPI_Abort`); the manifest of rank 0 records `states.process = failed`.
+
+## 4e3. A whole campaign on a cluster: the runner (C15/P0, 2026-10-22; CPU-tested, not yet run on GPUs)
+
+`tools/cluster/cops_pipeline.py` runs base → record store → bundles (gravity) → B29/N30/C30/NC31 → fine tuning for
+one surface model and emission law, resumable from one restart directory. Details: `tools/cluster/README.md`.
+
+```tcsh
+set R = $SCRATCH/shap8_020m_flat
+.venv/bin/python tools/cluster/cops_pipeline.py plan --restart-dir $R --shape <BDF> --surface-bc flat \
+    --max-nfev 2000 --fine-tune --allow-genus 4                      # stages, state, exact commands; no GPU
+.venv/bin/python tools/cluster/cops_pipeline.py run --restart-dir $R  # inside an allocation; rerun to resume
+.venv/bin/python tools/cluster/cops_pipeline.py status --restart-dir $R
+.venv/bin/python tools/cluster/cops_pipeline.py submit --restart-dir $R --nodes 3 --wall-time slurm --resubmit 5
+# bases/stores copied from this machine: --base DIR --store DIR [--visibility-bundle F --bundle F] (identity-checked)
+```
+
+* Hardware is detected at run time (Slurm, nvidia-smi/CUDA, /proc/meminfo; `--nodes --gpus-per-node --gpu-memory-gb
+  --host-memory-gb` override). `--precision auto` (default): FP64 when the records fit resident on the fit GPUs, else
+  FP32 records with streaming; refused when the pinned host buffers do not fit a node.
+* `--gravity-precision mixed` (default, user decision 2026-10-22) or `fp64`, independent of `--precision`.
+* `--wall-time HH:MM:SS|slurm` (default none): fits stop at their best state before the deadline (`gpu_fit.py
+  --deadline`, exit 75) and continue as the next segment with `--restart-from` and the remaining evaluations; a
+  segmented fit is not identical to one continuous run.
 
 ## 4f. Late-interval fine tuning of a completed fit (C13, 2026-10-21)
 

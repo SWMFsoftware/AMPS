@@ -14,6 +14,11 @@ Per evaluation, on the host (NumPy, the reference's own expressions):
   ``active = act_lin > 0`` for every facet. Clipping decisions are therefore
   bitwise those of ``fit_cops.Model.evaluate``. A device matvec could not
   reproduce the BLAS rounding, and the upload is only about 9 bytes per facet.
+  ``activity="device"`` (SCALING_PLAN 3.5, user decision Q3; the default of the
+  MPI transport) forms them on the device instead, with a fixed summation order
+  (``kernels/activity.cu``): deterministic and partition-independent, within a
+  few ulp of the terms of the host expression, checked against it at the first
+  evaluation and every ``ACTIVITY_CHECK_EVERY``-th.
 * The final assembly of pressures and derivative columns from the per-point
   sums, with the reference's constants and expressions (``Model.evaluate``).
 
@@ -58,16 +63,29 @@ SZA binning would need host-side transcendental evaluation per contribution
 to stay exact; it is added only if requested.
 """
 
+import os
 import time
 
 import numpy as np
 
 from . import backend as bk
 from . import cuda_sources, precision, provenance, reference
-from .device_store import DeviceDataset
-from .errors import IdentityError, UnsupportedConfiguration
+from .device_store import DeviceDataset, RECORD_FIELDS_FP32
+from .errors import BackendError, IdentityError, UnsupportedConfiguration
 from .memory import DeviceBudget, MemoryPlan, human
 
+COMPACT_ENVIRONMENT = "COPS_CUDA_COMPACT_FACES"
+# Streaming (SCALING_PLAN P2): records beyond the device budget stay in pinned host memory and
+# are copied through STREAM_SLOTS device slots each pass, overlapped with the kernels.
+RESIDENT_ENVIRONMENT = "COPS_CUDA_MAX_RESIDENT_RECORDS"   # cap (tests, or to force streaming)
+STREAM_CHUNK_ENVIRONMENT = "COPS_CUDA_STREAM_CHUNK_RECORDS"
+STREAM_SLOTS = 3
+STREAM_CHUNK_RECORDS = 1 << 25
+BASIS_COLUMNS_RESERVE = 8     # template columns a later rebind may add (planned when streaming)
+ACTIVITY_ENVIRONMENT = "COPS_CUDA_ACTIVITY"
+ACTIVITY_MODES = ("host", "device")
+ACTIVITY_CHECK_EVERY = 100    # device activity: compared with the host expression every N-th evaluation
+ACTIVITY_CHECK_EPS = 64       # |device - host| <= 64 eps * sum of |terms| (summation bound ~27 eps)
 MAX_SUMS = 32                 # must equal MAX_SUMS in pressure.cu
 FUSED_MAX_COLUMNS = 16        # eval_fused_c1 .. eval_fused_c16 in pressure.cu (2G <= MAX_SUMS)
 BLOCK = 256                   # must equal BLOCK in pressure.cu
@@ -121,12 +139,24 @@ class CudaBackend(bk.PressureBackend):
 
     def __init__(self, model, run, enhancement_basis=None, enhancement_scale=1.0,
                  device_id=0, mode="tree", budget=None, records_per_block=4096,
-                 chunk_records=None, fused=True, record_precision=None):
+                 chunk_records=None, fused=True, record_precision=None, compact_faces=None,
+                 record_store=None, activity=None, scratch_per_face=0):
         """``record_precision`` "fp32" (mixed precision, experiment 2026-10-21): kernel records
         stored in FP32, factors recomputed per record and all arithmetic in FP64
-        (``pressure.cu: eval_fused_m_*``); default ``$COPS_CUDA_RECORD_PRECISION`` or fp64."""
+        (``pressure.cu: eval_fused_m_*``); default ``$COPS_CUDA_RECORD_PRECISION`` or fp64.
+        ``compact_faces`` (default on; ``COPS_CUDA_COMPACT_FACES=0`` turns it off): per-face
+        arrays only for the faces that occur in the bound records (SCALING_PLAN 3.5); results
+        are bitwise those without it. ``record_store`` (default ``$COPS_CUDA_RECORD_STORE``,
+        FP32 records only): read the records from an FP32 record store of this base.
+        ``activity`` "host" (default, exact reference expression) or "device" (default
+        ``$COPS_CUDA_ACTIVITY``): where act_lin and the clip are formed (module docstring).
+        ``scratch_per_face``: bytes per device facet that callers allocate per call beyond the
+        plan (restart and fine-tuning kernels), kept free when the resident records are sized."""
         if mode not in MODES:
             raise ValueError("mode must be one of %s" % (MODES,))
+        self.activity_mode = activity or os.environ.get(ACTIVITY_ENVIRONMENT) or "host"
+        if self.activity_mode not in ACTIVITY_MODES:
+            raise ValueError("activity must be one of %s" % (ACTIVITY_MODES,))
         self.record_precision = (precision.record_precision_default() if record_precision is None
                                  else record_precision)
         if self.record_precision not in precision.RECORD_PRECISIONS:
@@ -151,6 +181,9 @@ class CudaBackend(bk.PressureBackend):
                                          else bk.array_digest(enhancement_basis))
         self.timing = {}
         self.activity_source = None
+        self.scratch_per_face = int(scratch_per_face)
+        self.activity_checks = {"checks": 0, "faces_checked": 0, "max_error_eps": 0.0,
+                                "max_ulp": 0, "active_flips": 0, "evaluations": 0}
         self.arrays = {}
         self.reservation = None
         self.released = False
@@ -160,9 +193,20 @@ class CudaBackend(bk.PressureBackend):
         self.budget = DeviceBudget(self.device_id) if budget is None else budget
         t0 = time.perf_counter()
         kwargs = {} if chunk_records is None else {"chunk_records": chunk_records}
+        if compact_faces is None:
+            compact_faces = os.environ.get(COMPACT_ENVIRONMENT, "1") != "0"
+        if record_store is None and self.mixed:
+            from .record_store import environment_store
+            record_store = environment_store()
+        if record_store is not None:
+            kwargs["record_store"] = record_store
+        resident = self._resident_records(model) if self.mixed else None
+        if resident is not None:
+            kwargs["resident_records"] = resident
         self.dataset = DeviceDataset.load(run, point_ids=point_ids, device_id=self.device_id,
                                           mesh_fields=("ACO2",), budget=self.budget,
-                                          record_precision=self.record_precision, **kwargs)
+                                          record_precision=self.record_precision,
+                                          compact_faces=bool(compact_faces), **kwargs)
         try:
             self._check_dataset(model)
             self.timing["dataset_load_s"] = time.perf_counter() - t0
@@ -170,6 +214,32 @@ class CudaBackend(bk.PressureBackend):
         except BaseException:
             self.release()
             raise
+
+    def rebind_basis(self, enhancement_basis, enhancement_scale=1.0):
+        """Change the template basis, keeping the device records (SCALING_PLAN P1).
+
+        Only the evaluator's own arrays (static factors, PhiCO2, activity and column scratch,
+        sized by the basis) are released and bound again by the same ``_bind`` as a new
+        backend, so the results are bitwise those of a backend created with this basis; the
+        dataset (the records, the expensive part) stays on the device.
+        """
+        if self.released:
+            raise BackendError("backend is released")
+        self._slots = None
+        self.arrays.clear()
+        if self.reservation is not None:
+            self.reservation.release()
+            self.reservation = None
+        self.cupy.get_default_memory_pool().free_all_blocks()
+        self.nbasis_enhancement = 0 if enhancement_basis is None else int(np.asarray(enhancement_basis).shape[1])
+        self.enhancement_basis = enhancement_basis
+        self.enhancement_scale = float(enhancement_scale) if enhancement_basis is not None else 1.0
+        self.enhancement_basis_sha256 = (None if enhancement_basis is None
+                                         else bk.array_digest(enhancement_basis))
+        self._columns_cache = None
+        t0 = time.perf_counter()
+        self._bind()
+        self.timing["rebind_basis_s"] = time.perf_counter() - t0
 
     # ------------------------------------------------------------------ binding
     def _check_dataset(self, model):
@@ -189,7 +259,7 @@ class CudaBackend(bk.PressureBackend):
         if self.mixed:
             return self._bind_mixed()
         cupy, ds = self.cupy, self.dataset
-        npt, nrec, nf = ds.npoints, ds.nrecords, ds.inputs.nfaces
+        npt, nrec, nf = ds.npoints, ds.nrecords, ds.nfaces_device
         blocks = self._block_table(ds.scan.counts, ds.scan.offsets)
         self.plan = MemoryPlan("cuda evaluator")
         for name in STATIC_FIELDS:
@@ -200,6 +270,7 @@ class CudaBackend(bk.PressureBackend):
         self.plan.add_array("eval.active", "scratch", (nf,), np.uint8)
         self.plan.add_array("eval.colbasis", "basis", (max(1, 25 + self.nbasis_enhancement), nf),
                             np.float64, "requested activity/template columns")
+        self._plan_activity(nf)
         self.plan.add_array("eval.blocks", "static", (len(blocks),), np.int64)
         self.plan.add_array("eval.first_block", "static", (npt + 1,), np.int64)
         self.plan.add_array("eval.partial", "partial_sums", (len(blocks) // 3, MAX_SUMS), np.float64)
@@ -233,6 +304,7 @@ class CudaBackend(bk.PressureBackend):
             a["af_face"] = cupy.zeros(nf, dtype=np.float64)
             a["active"] = cupy.zeros(nf, dtype=np.uint8)
             a["colbasis"] = cupy.empty(max(1, 25 + self.nbasis_enhancement) * nf, dtype=np.float64)
+            self._alloc_activity(nf)
             # The parameter-independent CO2 flux sums (Model.prepare PhiCO2).
             a["phiC"] = phiC
             self.PhiCO2 = self._run_sums([PHI_CO2_CODE], None)[0]
@@ -243,7 +315,7 @@ class CudaBackend(bk.PressureBackend):
     def _bind_mixed(self):
         """FP32 records: no stored per-record factors; per-point constants and PhiCO2 only."""
         cupy, ds = self.cupy, self.dataset
-        npt, nf = ds.npoints, ds.inputs.nfaces
+        npt, nf = ds.npoints, ds.nfaces_device
         blocks = self._block_table(ds.scan.counts, ds.scan.offsets)
         self.plan = MemoryPlan("cuda evaluator (fp32 records)")
         self.plan.add_array("eval.per_point_constants", "static", (5, npt), np.float64)
@@ -251,10 +323,15 @@ class CudaBackend(bk.PressureBackend):
         self.plan.add_array("eval.active", "scratch", (nf,), np.uint8)
         self.plan.add_array("eval.colbasis", "basis", (max(1, 25 + self.nbasis_enhancement), nf),
                             np.float64, "requested activity/template columns")
+        self._plan_activity(nf)
         self.plan.add_array("eval.blocks", "static", (len(blocks),), np.int64)
         self.plan.add_array("eval.first_block", "static", (npt + 1,), np.int64)
-        self.plan.add_array("eval.partial", "partial_sums", (len(blocks) // 3, MAX_SUMS), np.float64)
-        self.plan.add_array("eval.sums", "scratch", (MAX_SUMS, npt), np.float64)
+        # Streaming runs every tile of a request on a chunk while it is resident, so the
+        # partial sums of all tiles are kept at once (the resident path reuses one tile's).
+        nsums = (14 + 2 * (25 + self.nbasis_enhancement)) if ds.streamed else MAX_SUMS
+        self.plan.add_array("eval.partial", "partial_sums", (len(blocks) // 3, nsums), np.float64)
+        self.plan.add_array("eval.sums", "scratch", (nsums, npt), np.float64)
+        rebased = self._bind_streaming(blocks) if ds.streamed else None
         self.reservation = self.budget.reserve(self.plan)
         t0 = time.perf_counter()
         with cupy.cuda.Device(self.device_id), self.budget.allocation_guard(self.plan):
@@ -264,16 +341,296 @@ class CudaBackend(bk.PressureBackend):
                 (c.qmin["H2O"], c.qmax["H2O"], c.qmin["CO2"], c.qmax["CO2"], c.vdotb)).astype(np.float64)))
             a["blocks"] = cupy.asarray(blocks)
             a["first_block"] = cupy.asarray(self._first_block)
-            a["partial"] = cupy.empty((len(blocks) // 3) * MAX_SUMS, dtype=np.float64)
-            a["sums"] = cupy.empty(MAX_SUMS * npt, dtype=np.float64)
+            a["partial"] = cupy.empty((len(blocks) // 3) * nsums, dtype=np.float64)
+            a["sums"] = cupy.empty(nsums * npt, dtype=np.float64)
+            if rebased is not None:
+                self._alloc_streaming(rebased)
             a["af_face"] = cupy.zeros(nf, dtype=np.float64)
             a["active"] = cupy.zeros(nf, dtype=np.uint8)
             a["colbasis"] = cupy.empty(max(1, 25 + self.nbasis_enhancement) * nf, dtype=np.float64)
+            self._alloc_activity(nf)
             self.PhiCO2 = self._run_fused([("eval_fused_m_phic", 0, [PHI_CO2_CODE])], [PHI_CO2_CODE],
                                           {k: 0.0 for k in ("Tmax", "T75", "Tmin", "KT", "cNbmH",
                                                             "kcNbmC", "bmH", "bmC")})[0]
             self.cupy.get_default_memory_pool().free_all_blocks()
         self.timing["bind_s"] = time.perf_counter() - t0
+
+    # ----------------------------------------------------------- device activity
+    def _plan_activity(self, nf):
+        if self.activity_mode == "device":
+            self.plan.add_array("eval.actbasis", "basis", (self.Y.shape[1] + self.nbasis_enhancement, nf),
+                                np.float64, "Y and unscaled template columns of the device facets")
+
+    def _alloc_activity(self, nf):
+        """Upload Y and the raw template columns of the device's facets, term-major, once per bind."""
+        if self.activity_mode != "device":
+            return
+        cupy, rows = self.cupy, self.dataset.local_faces
+        ny, nb = self.Y.shape[1], self.nbasis_enhancement
+        target = self.arrays["actbasis"] = cupy.empty((ny + nb) * nf, dtype=np.float64)
+        step = 1 << 20
+        for f0 in range(0, nf, step):
+            f1 = min(nf, f0 + step)
+            sel = slice(f0, f1) if rows is None else rows[f0:f1]
+            parts = [np.asarray(self.Y[sel], dtype=np.float64)]
+            if nb:
+                parts.append(np.asarray(np.asarray(self.enhancement_basis)[sel], dtype=np.float64))
+            block = np.ascontiguousarray(np.column_stack(parts).T)        # (ny + nb, f1 - f0)
+            for j in range(ny + nb):
+                target[j * nf + f0:j * nf + f1].set(block[j])
+
+    def _device_activity(self, state, act_out=None):
+        """af and active (and act_lin into ``act_out``) on the device, kernels/activity.cu."""
+        cupy, a = self.cupy, self.arrays
+        nf, ny = self.dataset.nfaces_device, self.Y.shape[1]
+        nb = self.nbasis_enhancement if state.b is not None else 0
+        coef = np.concatenate([np.asarray(state.a, dtype=np.float64).reshape(-1),
+                               np.asarray(state.b if nb else [], dtype=np.float64).reshape(-1)])
+        if len(coef) != ny + nb:
+            raise BackendError("activity coefficients: %d values for %d columns" % (len(coef), ny + nb))
+        d_coef = cupy.asarray(coef)
+        cuda_sources.function("activity", "activity_linear_clip", self.device_id)(
+            (max(1, min(65535, -(-nf // 256))),), (256,),
+            (a["actbasis"], np.int64(nf), np.int32(ny), np.int32(nb), d_coef,
+             np.float64(self.enhancement_scale), a["af_face"], a["active"],
+             a["af_face"] if act_out is None else act_out, np.int32(act_out is not None)))
+
+    def activity_check(self, state):
+        """Device act_lin against the host expression on every device facet (invariant I7).
+
+        Error measure: |device - host| / (sum_j |Y_j a_j| + A_scale sum_k |B_k b_k|) in units of
+        eps (a summation of n terms differs by at most ~n eps of that sum). Raises BackendError
+        beyond ``ACTIVITY_CHECK_EPS`` or for an active-set flip outside that error bound.
+        """
+        from .memory import scratch_reservation
+        cupy, ds = self.cupy, self.dataset
+        nf = ds.nfaces_device
+        with cupy.cuda.Device(self.device_id), scratch_reservation(self.budget, "activity check",
+                                                                   {"act": (nf, np.float64)}):
+            act = cupy.empty(nf, dtype=np.float64)
+            self._device_activity(state, act)
+            device = act.get()
+            del act
+        rows = ds.local_faces
+        a_abs = np.abs(np.asarray(state.a, dtype=np.float64))
+        with_b = state.b is not None and self.nbasis_enhancement
+        eps = np.finfo(np.float64).eps
+        ordered = lambda x: np.where(x.view(np.int64) < 0, np.int64(-2**63) - x.view(np.int64), x.view(np.int64))
+        result = {"faces": int(nf), "max_error_eps": 0.0, "max_ulp": 0, "active_flips": 0}
+        bad = 0
+        for f0 in range(0, nf, 1 << 20):                     # host side in chunks of facets
+            f1 = min(nf, f0 + (1 << 20))
+            sel = slice(f0, f1) if rows is None else rows[f0:f1]
+            Y = self.Y[sel]
+            host, magnitude = Y @ state.a, np.abs(Y) @ a_abs
+            if with_b:
+                B = np.asarray(self.enhancement_basis)[sel]
+                host = host + self.enhancement_scale * (B @ state.b)
+                magnitude = magnitude + abs(self.enhancement_scale) * (np.abs(B) @ np.abs(state.b))
+            dev = device[f0:f1]
+            diff = np.abs(dev - host)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                err = np.where(diff == 0.0, 0.0, diff / (magnitude * eps))
+            flips = (dev > 0.0) != (host > 0.0)
+            result["max_error_eps"] = max(result["max_error_eps"], float(err.max()))
+            result["max_ulp"] = max(result["max_ulp"], int(np.abs(ordered(dev) - ordered(host)).max()))
+            result["active_flips"] += int(flips.sum())
+            bad += int((flips & (np.abs(host) > ACTIVITY_CHECK_EPS * eps * magnitude)).sum())
+            bad += int((np.isfinite(dev) != np.isfinite(host)).sum())
+        c = self.activity_checks
+        c["checks"] += 1
+        c["faces_checked"] += result["faces"]
+        c["max_error_eps"] = max(c["max_error_eps"], result["max_error_eps"])
+        c["max_ulp"] = max(c["max_ulp"], result["max_ulp"])
+        c["active_flips"] += result["active_flips"]
+        if result["max_error_eps"] > ACTIVITY_CHECK_EPS or bad:
+            raise BackendError("device activity differs from the host expression: %s (bound %d eps; "
+                               "%d flips or non-finite values outside it)" % (result, ACTIVITY_CHECK_EPS, bad))
+        return result
+
+    # ---------------------------------------------------------------- streaming
+    def _block_ends(self, counts):
+        """Global record index at the end of every block, in block order."""
+        ends, start = [], 0
+        for count in counts:
+            count = int(count)
+            nblocks = max(1, -(-count // self.records_per_block))
+            ends.extend(start + min((k + 1) * self.records_per_block, count) for k in range(nblocks))
+            start += count
+        return np.asarray(ends, dtype=np.int64)
+
+    def _stream_chunk_records(self):
+        return max(self.records_per_block,
+                   int(os.environ.get(STREAM_CHUNK_ENVIRONMENT, STREAM_CHUNK_RECORDS)))
+
+    def _resident_records(self, model):
+        """Records kept on the device; None when all fit (no streaming).
+
+        From the budget left after the evaluator's per-face, block and partial-sum arrays
+        (upper bounds: all mesh faces, ``BASIS_COLUMNS_RESERVE`` more template columns) and,
+        when streaming, the slots. Aligned down to a block end, so blocks never straddle the
+        resident/streamed boundary. ``$COPS_CUDA_MAX_RESIDENT_RECORDS`` caps it (tests).
+        """
+        counts = np.diff(np.asarray(model.indptr, dtype=np.int64))
+        nrec, npt = int(counts.sum()), len(counts)
+        ends = self._block_ends(counts)
+        nblocks, nf = len(ends), len(self.Y)
+        ncols = 25 + max(self.nbasis_enhancement, BASIS_COLUMNS_RESERVE)
+        nsums = 14 + 2 * ncols
+        common = (nf * (8 + 1 + 8 + 8 * ncols + 4) + 4 * (1 << 26) + 2 * 24 * nblocks
+                  + 8 * (npt + 1) + 8 * nsums * npt + 128 * npt + (64 << 20))
+        if self.activity_mode == "device":                 # eval.actbasis (Y and raw templates)
+            common += 8 * nf * (self.Y.shape[1] + max(self.nbasis_enhancement, BASIS_COLUMNS_RESERVE))
+        # per-call scratch beyond the plan: seen_faces (1 B), the activity check (8 B, device
+        # activity) and the restart/fine-tuning kernels' arrays (``scratch_per_face``)
+        common += nf * (1 + (8 if self.activity_mode == "device" else 0) + self.scratch_per_face)
+        avail = int(self.budget.available_bytes() * 0.99)
+        cap = os.environ.get(RESIDENT_ENVIRONMENT)
+        cap = None if cap in (None, "") else int(cap)
+        if cap is None and nrec * 20 + common + 8 * MAX_SUMS * nblocks <= avail:
+            return None
+        streaming = STREAM_SLOTS * self._stream_chunk_records() * 20 + 8 * nsums * nblocks
+        capacity = max(0, (avail - common - streaming) // 20)
+        if cap is not None:
+            capacity = min(capacity, cap)
+        if capacity >= nrec:
+            return None
+        k = int(np.searchsorted(ends, capacity, side="right"))
+        return int(ends[k - 1]) if k else 0
+
+    def _bind_streaming(self, blocks):
+        """Chunks of the streamed blocks, their rebased block tables, the slots (plan entries)."""
+        ds = self.dataset
+        table = blocks.reshape(-1, 3)
+        nres, chunk = ds.nresident, self._stream_chunk_records()
+        g_res = int(np.searchsorted(table[:, 2], nres, side="right"))
+        while g_res < len(table) and table[g_res, 1] < nres:        # never split a block
+            g_res -= 1
+        chunks, g = [], g_res
+        while g < len(table):
+            a, g1 = int(table[g, 1]), g + 1
+            while g1 < len(table) and int(table[g1, 2]) - a <= chunk:
+                g1 += 1
+            chunks.append((g, g1, a, int(table[g1 - 1, 2])))
+            g = g1
+        rebased = table[g_res:].copy()
+        for g0, g1, a, _ in chunks:
+            rebased[g0 - g_res:g1 - g_res, 1:] -= a
+        self._stream = {"g_res": g_res, "chunks": chunks,
+                        "slot_records": max([b - a for _, _, a, b in chunks] + [1])}
+        self.plan.add_array("eval.stream_blocks", "static", (rebased.size,), np.int64,
+                            "streamed blocks rebased to their chunk")
+        for k in range(STREAM_SLOTS):
+            for name, _ in RECORD_FIELDS_FP32:
+                self.plan.add_array("eval.slot%d.%s" % (k, name), "scratch",
+                                    (self._stream["slot_records"],), ds.dtypes[name])
+        return rebased.reshape(-1)
+
+    def _alloc_streaming(self, rebased):
+        cupy, ds = self.cupy, self.dataset
+        a = self.arrays
+        a["stream_blocks"] = cupy.asarray(rebased)
+        n = self._stream["slot_records"]
+        for k in range(STREAM_SLOTS):                      # in self.arrays: freed with them
+            for name, _ in RECORD_FIELDS_FP32:
+                a["slot%d.%s" % (k, name)] = cupy.empty(n, dtype=ds.dtypes[name])
+        self._slots = [{name: a["slot%d.%s" % (k, name)] for name, _ in RECORD_FIELDS_FP32}
+                       for k in range(STREAM_SLOTS)]
+        self._streams = (cupy.cuda.Stream(non_blocking=True), cupy.cuda.Stream(non_blocking=True))
+
+    def _run_fused_streamed(self, plan, codes, params):
+        """``_run_fused`` with streamed records: the same kernels, block for block, so the
+        per-block partials and their block-order reduction are bitwise those of the resident
+        path. Resident blocks run first; each streamed chunk is copied into a slot on the copy
+        stream while earlier chunks compute, and every tile of the plan runs on a chunk while
+        it is on the device (chunk-major: one transfer per pass)."""
+        cupy, a, ds = self.cupy, self.arrays, self.dataset
+        npt, nf = ds.npoints, ds.nfaces_device
+        order = ("Tmax", "T75", "Tmin", "KT", "cNbmH", "kcNbmC", "bmH", "bmC")
+        P = cupy.asarray(np.array([params[k] for k in order], dtype=np.float64))
+        nblocks = int(self._first_block[-1])
+        st, d, host = self._stream, ds.arrays, ds.host_records
+        g_res, nres = st["g_res"], ds.nresident
+        tiles, offset = [], 0
+        for name, col0, launch_codes in plan:
+            kernel = name if name.startswith("eval_fused_m_") else name.replace("eval_fused_", "eval_fused_m_")
+            n = len(launch_codes)
+            tiles.append((cuda_sources.function("pressure", kernel, self.device_id), col0, n, offset, launch_codes))
+            offset += nblocks * n
+        if offset > a["partial"].size or sum(t[2] for t in tiles) * npt > a["sums"].size:
+            raise BackendError("internal: streamed request exceeds the planned partial sums")
+        compute, copy = self._streams
+        common = lambda: (a["pt"], np.int64(npt), d["mesh.ACO2"], np.float64(self.constants.COS75),
+                          a["af_face"], a["active"], a["colbasis"], np.int64(nf))
+        cupy.cuda.Device(self.device_id).synchronize()      # activity/columns uploads are complete
+        if g_res:
+            for fn, col0, n, off, _ in tiles:
+                fn((g_res,), (BLOCK,),
+                   (a["blocks"], d["kernel.face"], d["kernel.kn"], d["kernel.kphi"], d["kernel.kv"],
+                    d["kernel.cos"]) + common() + (np.int32(col0), P, a["partial"][off:off + g_res * n]),
+                   stream=compute)
+        free = [None] * STREAM_SLOTS
+        for i, (g0, g1, r0, r1) in enumerate(st["chunks"]):
+            slot = self._slots[i % STREAM_SLOTS]
+            if free[i % STREAM_SLOTS] is not None:
+                copy.wait_event(free[i % STREAM_SLOTS])
+            if r1 > r0:
+                for name, _ in RECORD_FIELDS_FP32:
+                    slot[name][:r1 - r0].set(host[name][r0 - nres:r1 - nres], stream=copy)
+            compute.wait_event(copy.record())
+            sb = a["stream_blocks"][3 * (g0 - g_res):3 * (g1 - g_res)]
+            for fn, col0, n, off, _ in tiles:
+                fn((g1 - g0,), (BLOCK,),
+                   (sb, slot["face"], slot["kn"], slot["kphi"], slot["kv"], slot["cos"]) + common()
+                   + (np.int32(col0), P, a["partial"][off + g0 * n:off + g1 * n]), stream=compute)
+            free[i % STREAM_SLOTS] = compute.record()
+        row = {code: i for i, code in enumerate(codes)}
+        out = np.empty((len(codes), npt), dtype=np.float64)
+        finish = cuda_sources.function("pressure", "eval_finish", self.device_id)
+        base = 0
+        for fn, col0, n, off, launch_codes in tiles:
+            sums = a["sums"][base * npt:(base + n) * npt]
+            finish((-(-(n * npt) // 256),), (256,),
+                   (a["first_block"], np.int64(npt), a["partial"][off:off + nblocks * n], np.int32(n), sums),
+                   stream=compute)
+            base += n
+        compute.synchronize()
+        host_sums = a["sums"][:base * npt].get().reshape(base, npt)
+        base = 0
+        for fn, col0, n, off, launch_codes in tiles:
+            for i, code in enumerate(launch_codes):
+                out[row[code]] = host_sums[base + i]
+            base += n
+        self.timing["streamed_chunks"] = len(st["chunks"])
+        return out
+
+    def record_chunks(self):
+        """The bound records in block order, for kernels over the block table (restart, fine
+        tuning): yields ``(g0, g1, table, records)`` where ``table`` is the device block table
+        whose first block is global block g0 and ``records`` maps face/kn/kphi/kv/cos to device
+        arrays indexed as that table indexes them. Resident records come first; each streamed
+        chunk is then copied into a slot (on the current stream, before the caller's launches),
+        so a caller that indexes its per-block outputs by g0 + block sees every block once, in
+        order. Without streaming: one chunk with the dataset's own arrays.
+        """
+        ds, a, d = self.dataset, self.arrays, self.dataset.arrays
+        nblocks = int(self._first_block[-1])
+        names = [n for n, _ in RECORD_FIELDS_FP32] if self.mixed else ["face", "kn", "kphi", "kv", "cos"]
+        resident = {n: d["kernel." + n] for n in names}
+        if not ds.streamed:
+            yield 0, nblocks, a["blocks"], resident
+            return
+        st, host, nres = self._stream, ds.host_records, ds.nresident
+        g_res = st["g_res"]
+        if g_res:
+            yield 0, g_res, a["blocks"][:3 * g_res], resident
+        slot = self._slots[0]
+        for g0, g1, r0, r1 in st["chunks"]:
+            if r1 > r0:
+                for n in names:
+                    slot[n][:r1 - r0].set(host[n][r0 - nres:r1 - nres])
+            yield g0, g1, a["stream_blocks"][3 * (g0 - g_res):3 * (g1 - g_res)], slot
+        self.cupy.cuda.get_current_stream().synchronize()     # the slot is free for the evaluator
 
     def _block_table(self, counts, offsets):
         """(point, begin, end) per fixed-size block of records; fixed for a bind."""
@@ -317,8 +674,16 @@ class CudaBackend(bk.PressureBackend):
         from its parent (``multi_gpu.py``), so every device sees the same bytes
         that one process would compute.
         """
+        if self.activity_mode == "device":
+            n = self.activity_checks["evaluations"]
+            self.activity_checks["evaluations"] = n + 1
+            if n % ACTIVITY_CHECK_EVERY == 0:
+                self.activity_check(state)
+            self._device_activity(state)
+            return
         act_lin = (self.activity_linear(state) if self.activity_source is None
                    else self.activity_source(state))
+        act_lin = self.dataset.gather_faces(act_lin)          # the device's faces (compaction)
         self.arrays["af_face"].set(np.maximum(act_lin, 0.0))
         self.arrays["active"].set((act_lin > 0.0).astype(np.uint8))
 
@@ -328,11 +693,13 @@ class CudaBackend(bk.PressureBackend):
         if self._columns_cache == key:
             return
         parts = []
+        rows = self.dataset.local_faces                       # None: all faces
+        pick = (lambda m, cols: m[:, cols]) if rows is None else (lambda m, cols: m[np.ix_(rows, cols)])
         if request.basis_index:
-            parts.append(self.Y[:, list(request.basis_index)])
+            parts.append(pick(self.Y, list(request.basis_index)))
         if request.enhancement_index:
             parts.append(self.enhancement_scale *
-                         self.enhancement_basis[:, list(request.enhancement_index)])
+                         pick(self.enhancement_basis, list(request.enhancement_index)))
         if parts:
             matrix = np.ascontiguousarray(np.column_stack(parts).T)
             self.arrays["colbasis"][:matrix.size].set(matrix.reshape(-1))
@@ -378,8 +745,10 @@ class CudaBackend(bk.PressureBackend):
 
     def _run_fused(self, plan, codes, params):
         """Run a fused plan; returns (ncodes, npt) in the order of ``codes``."""
+        if self.dataset.streamed:
+            return self._run_fused_streamed(plan, codes, params)
         cupy, a, ds = self.cupy, self.arrays, self.dataset
-        npt, nf = ds.npoints, ds.inputs.nfaces
+        npt, nf = ds.npoints, ds.nfaces_device
         order = ("Tmax", "T75", "Tmin", "KT", "cNbmH", "kcNbmC", "bmH", "bmC")
         P = cupy.asarray(np.array([params[k] for k in order], dtype=np.float64))
         nblocks = int(self._first_block[-1])
@@ -422,7 +791,7 @@ class CudaBackend(bk.PressureBackend):
             raise UnsupportedConfiguration("FP32 record storage evaluates the standard fused requests "
                                            "only; got codes %s" % (list(codes),))
         cupy, a, ds = self.cupy, self.arrays, self.dataset
-        npt, nf = ds.npoints, ds.inputs.nfaces
+        npt, nf = ds.npoints, ds.nfaces_device
         out = np.empty((len(codes), npt), dtype=np.float64)
         order = ("Tmax", "T75", "Tmin", "KT", "cNbmH", "kcNbmC", "bmH", "bmC")
         values = np.zeros(len(order), dtype=np.float64)
@@ -513,6 +882,10 @@ class CudaBackend(bk.PressureBackend):
                 "enhancement_scale": self.enhancement_scale,
                 "enhancement_basis_sha256": self.enhancement_basis_sha256,
                 "records_per_block": self.records_per_block,
+                "activity": {"mode": self.activity_mode,
+                             "checks": dict(self.activity_checks) if self.activity_mode == "device" else None,
+                             "cuda_source": (cuda_sources.source_identity("activity")
+                                             if self.activity_mode == "device" else None)},
                 "cuda_source": cuda_sources.source_identity("pressure"),
                 "dataset": self.dataset.identity() if not self.dataset.released else None,
                 "memory_plan": self.plan.as_dict() if hasattr(self, "plan") else None,
@@ -527,6 +900,7 @@ class CudaBackend(bk.PressureBackend):
         if self.released:
             return
         self.released = True
+        self._slots = None
         self.arrays.clear()
         if self.reservation is not None:
             self.reservation.release()

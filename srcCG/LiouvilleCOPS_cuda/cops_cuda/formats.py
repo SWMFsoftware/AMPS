@@ -112,7 +112,60 @@ def read_element_header(path):
     return nfaces, nbasis, size
 
 
-def load_elements(path):
+ELEMENT_CHUNK_ROWS = 1 << 20      # faces per validation/hash chunk (272 MB of the file)
+
+
+def _element_table(path, nfaces):
+    """The element rows of ``path`` as a read-only memory map (page cache, not process memory)."""
+    return np.memmap(path, dtype="<f8", mode="r", offset=ELEMENT_HEADER_DTYPE.itemsize,
+                     shape=(nfaces, ELEMENT_DOUBLES))
+
+
+def _file_key(path):
+    st = Path(path).stat()
+    return (st.st_size, st.st_mtime_ns, st.st_ino)
+
+
+class LazyElementFields(dict):
+    """``load_elements(..., lazy=True)`` fields: each one a C-contiguous float64 copy made on first
+    access from the memory-mapped file, refused if the file changed since it was hashed."""
+
+    def __init__(self, path, nfaces, key):
+        super().__init__()
+        self._path, self._nfaces, self._key = Path(path), nfaces, key
+        self._columns = dict(ELEMENT_COLUMNS)
+
+    def __missing__(self, name):
+        if name not in self._columns:
+            raise KeyError(name)
+        if _file_key(self._path) != self._key:
+            raise IdentityError("element cache %s changed after it was validated" % self._path)
+        table = _element_table(self._path, self._nfaces)
+        value = np.ascontiguousarray(table[:, self._columns[name]], dtype=np.float64)
+        del table
+        self[name] = value
+        return value
+
+    def __contains__(self, name):
+        return name in self._columns
+
+    def __iter__(self):
+        return iter(self._columns)
+
+    def __len__(self):
+        return len(self._columns)
+
+    def keys(self):
+        return self._columns.keys()
+
+    def items(self):
+        return [(name, self[name]) for name in self._columns]
+
+    def values(self):
+        return [self[name] for name in self._columns]
+
+
+def load_elements(path, lazy=False):
     """Read, validate and split ``elements.bin``; return fields and identity.
 
     Returns ``(fields, identity)``. ``fields`` maps the names of
@@ -120,29 +173,56 @@ def load_elements(path):
     arrays of ``fit_cops.read_elements``. ``identity`` holds the SHA-256 of
     the whole file, which is the definition used by ``cops_io`` and recorded
     in ``run_manifest.json``.
+
+    The file is hashed and validated in chunks of rows through a memory map, so the
+    process never holds the whole file (5.4 GB at SHAP8 20M) besides the fields.
+    ``lazy=True`` makes each field only when it is first used (``LazyElementFields``):
+    a device dataset needs centroid, area and its mesh fields, not Y (4 GB at 20M).
     """
     path = Path(path)
     nfaces, nbasis, size = read_element_header(path)
-    raw = path.read_bytes()
-    if len(raw) != size:
-        raise CacheFormatError("element cache %s changed size while being read" % path)
-    table = np.frombuffer(raw, dtype="<f8", offset=ELEMENT_HEADER_DTYPE.itemsize)
-    table = table.reshape(nfaces, ELEMENT_DOUBLES)
-    finite = np.isfinite(table).all(axis=1)
-    if not finite.all():
-        raise CacheFormatError("non-finite value in %s face %d" %
-                               (path, int(np.argmin(finite))))
-    area = table[:, 6]
-    if not (area > 0.0).all():
-        raise CacheFormatError("non-positive area in %s face %d" %
-                               (path, int(np.argmin(area > 0.0))))
-    fields = {}
-    for name, columns in ELEMENT_COLUMNS:
-        fields[name] = np.ascontiguousarray(table[:, columns], dtype=np.float64)
+    key = _file_key(path)
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        digest.update(stream.read(ELEMENT_HEADER_DTYPE.itemsize))
+    table = _element_table(path, nfaces)
+    for f0 in range(0, nfaces, ELEMENT_CHUNK_ROWS):
+        chunk = np.asarray(table[f0:f0 + ELEMENT_CHUNK_ROWS])
+        digest.update(chunk.tobytes())
+        finite = np.isfinite(chunk).all(axis=1)
+        if not finite.all():
+            raise CacheFormatError("non-finite value in %s face %d" %
+                                   (path, f0 + int(np.argmin(finite))))
+        area = chunk[:, 6]
+        if not (area > 0.0).all():
+            raise CacheFormatError("non-positive area in %s face %d" %
+                                   (path, f0 + int(np.argmin(area > 0.0))))
+    if _file_key(path) != key:
+        raise CacheFormatError("element cache %s changed while being read" % path)
+    if lazy:
+        fields = LazyElementFields(path, nfaces, key)
+    else:
+        fields = {name: np.ascontiguousarray(table[:, columns], dtype=np.float64)
+                  for name, columns in ELEMENT_COLUMNS}
+    del table
     identity = {"path": str(path.resolve()), "size_bytes": size,
-                "sha256": hashlib.sha256(raw).hexdigest(),
+                "sha256": digest.hexdigest(),
                 "version": ELEMENT_VERSION, "nfaces": nfaces, "nbasis": nbasis}
     return fields, identity
+
+
+def map_elements(path):
+    """``fit_cops.read_elements``'s dict as read-only views of a memory map of ``path``.
+
+    For multi-GPU workers, whose model needs Y only to copy its own facets' columns: the values
+    are the file's bytes, as in the reference reader, but they stay in the (shared, reclaimable)
+    page cache instead of 9.4 GB of process memory per worker at SHAP8 20M (the reference
+    reader keeps the whole file plus a contiguous Y). ``Y`` is a strided view here; the
+    caller checks it against the driver's Y digest (``provenance.array_sha256``).
+    """
+    nfaces = read_element_header(path)[0]
+    table = _element_table(path, nfaces)
+    return {name: table[:, columns] for name, columns in ELEMENT_COLUMNS}
 
 
 # ---------------------------------------------------------------------- kernels

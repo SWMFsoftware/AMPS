@@ -18,3 +18,7 @@ matplotlib==3.7.5
 # CPU gravity reference, same release as the campaign (requirements-gravity.txt).
 polyhedral-gravity==3.3
 pytest==8.3.5
+# MPI transport of the multi-GPU fit (SCALING_PLAN P3). Built from source against the
+# system/cluster MPI (here Open MPI 4.0.3; on a cluster its module's mpicc):
+#   env MPICC=mpicc uv pip install --python .venv/bin/python --no-binary mpi4py mpi4py==4.0.3
+mpi4py==4.0.3

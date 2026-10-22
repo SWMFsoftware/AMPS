@@ -125,3 +125,28 @@ def test_serial_and_prefetch_identical(synthetic):
     run = synthetic["run"]
     assert (base_validation.validate_fit_base(io, run, threads=1) ==
             base_validation.validate_fit_base(io, run, threads=8) == io.validate_fit_base(run))
+
+
+def test_validate_once_cache(synthetic, tmp_path):
+    """Q4: an unchanged base reuses the first validation; a changed file is validated again."""
+    run = synthetic["run"]
+    path = tmp_path / "cache.json"
+    first = base_validation.AuditCache(path)
+    want = base_validation.validate_fit_base(io, run, cache=first)
+    assert first.summary()["validated"] == len(synthetic["point_ids"]) + 1 and first.hits == 0
+    second = base_validation.AuditCache(path)
+    assert base_validation.validate_fit_base(io, run, cache=second) == want == io.validate_fit_base(run)
+    assert second.hits == len(synthetic["point_ids"]) + 1 and second.misses == 0
+    # a kernel file rewritten with a fault: its stat changes, so it is validated (and refused) again
+    point = synthetic["point_ids"][0]
+    geometry, records = synthetic["kernels"][point]
+    records = records.copy()
+    records["Kn"][1] = np.nan
+    synthetic_run.write_kernel(synthetic_run.kernel_path(run, point), 1, point, geometry, records)
+    synthetic_run.write_manifest(run, synthetic["point_ids"])
+    third = base_validation.AuditCache(path)
+    ref, fast = both(run)
+    assert outcome(lambda r: base_validation.validate_fit_base(io, r, cache=third), run) == ref
+    assert ref[0] == "error"                    # re-read: a cached hit would have passed
+    # --revalidate ignores the cache
+    assert base_validation.AuditCache(path, revalidate=True).entries == {}

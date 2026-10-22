@@ -58,19 +58,25 @@ class _Registry:
         self.devices = [0]
         self.mode = "tree"
         self.records_per_block = 4096
+        self.transport = "local"
+        self.activity = None
         self.backends = {}            # (run, rows, device, mode) -> (backend, basis object)
         self.budgets = {}
         self.events = []
         self.calls = {"pressures": 0, "jacobian": 0, "seen_faces": 0}
         self.seconds = {"pressures": 0.0, "jacobian": 0.0, "bind": 0.0}
 
-    def configure(self, device_id=0, mode="tree", records_per_block=4096, devices=None):
-        """``devices`` with more than one entry selects ``multi_gpu.MultiGpuBackend``."""
+    def configure(self, device_id=0, mode="tree", records_per_block=4096, devices=None,
+                  transport="local", activity=None):
+        """``devices`` with more than one entry, or ``transport="mpi"`` (one GPU per MPI rank,
+        this process is rank 0), selects ``multi_gpu.MultiGpuBackend``. ``activity``: "host" or
+        "device" (None: the transport's default)."""
         if self.backends:
             raise RuntimeError("configure before the first binding")
         self.devices = [int(d) for d in (devices if devices else [device_id])]
         self.device_id, self.mode = self.devices[0], str(mode)
         self.records_per_block = int(records_per_block)
+        self.transport, self.activity = str(transport), activity
 
     def budget(self):
         from .memory import DeviceBudget
@@ -87,20 +93,32 @@ class _Registry:
             backend, bound = entry
             if basis is None or self._same_basis(backend, bound, basis, scale):
                 return backend
-            backend.release()
-            del self.backends[key]
-            self.events.append({"event": "rebind_for_new_basis", "rows": len(key[1])})
+            # A new template basis: keep the records on the device (SCALING_PLAN P1; before,
+            # the whole dataset was loaded again, 12 min per bind on SHAP8 12M).
+            t0 = time.perf_counter()
+            backend.rebind_basis(basis, scale)
+            seconds = time.perf_counter() - t0
+            self.seconds["bind"] += seconds
+            self.backends[key] = (backend, basis)
+            self.events.append({"event": "rebind_basis_only", "rows": len(key[1]),
+                                "enhancement_columns": backend.nbasis_enhancement,
+                                "enhancement_basis_sha256": backend.enhancement_basis_sha256,
+                                "seconds": seconds})
+            print("gpu_model: basis rebound on the bound records in %.1f s" % seconds, flush=True)
+            return backend
         t0 = time.perf_counter()
         scale = scale if basis is not None else 1.0
-        if len(self.devices) > 1:
+        if len(self.devices) > 1 or self.transport == "mpi":
             from .multi_gpu import MultiGpuBackend
             backend = MultiGpuBackend(model._spec, model, basis, scale, devices=self.devices,
-                                      mode=self.mode, records_per_block=self.records_per_block)
+                                      mode=self.mode, records_per_block=self.records_per_block,
+                                      transport=self.transport, activity=self.activity)
         else:
             backend = evaluator.CudaBackend(model, model.run, basis, scale,
                                             device_id=self.device_id, mode=self.mode,
                                             budget=self.budget(),
-                                            records_per_block=self.records_per_block)
+                                            records_per_block=self.records_per_block,
+                                            activity=self.activity)
         seconds = time.perf_counter() - t0
         self.seconds["bind"] += seconds
         self.backends[key] = (backend, basis)
@@ -127,6 +145,7 @@ class _Registry:
         identities = [backend.identity() for backend, _ in self.backends.values()
                       if not backend.released]
         return {"device_id": self.device_id, "devices": list(self.devices), "mode": self.mode,
+                "transport": self.transport, "activity": self.activity,
                 "records_per_block": self.records_per_block,
                 "calls": dict(self.calls), "seconds": dict(self.seconds),
                 "events": list(self.events), "backends": identities}
@@ -159,6 +178,7 @@ def gpu_model_class():
             import copy
             self._spec = {"run": str(run), "header": list(header), "cols": dict(cols),
                           "rows": copy.deepcopy(rows), "coef": np.array(coef, dtype=float)}
+            self._elements = elements          # shared, not copied: MPI rank 0's own worker
             super().__init__(run, header, cols, rows, elements, coef)
 
         def evaluate(self, a, T, kappa, b=None, enhancement_basis=None,

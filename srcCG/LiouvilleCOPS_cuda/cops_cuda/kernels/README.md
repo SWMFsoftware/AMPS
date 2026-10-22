@@ -14,6 +14,7 @@ identifies exactly the code that ran.
 | `masks.cu` | C05, C07 | `visibility_union`, `seen_positive` | Late-interval visibility masks (integer OR, bit-identical to the CPU predicates); facets with Kn > 0 for `seen_faces` |
 | `restart.cu` | C12, C13 | `facet_point_shares`, `point_change_partials`; C13 `first_structural_row`, `first_interval_scores`, `first_significant_row` | Per-facet influence of an activity change on point pressures (`restart_tool.py enhance`); late-interval fine tuning: earliest structural/significant row per facet (integer atomicMin) and first-interval NG/RG dominance scores (one launch per row, chronological; `tools/fine_tune_gpu.py`) |
 | `render.cu` | figures | `raster_faces`, `ray_first_hit` | Figures only, no model quantity: z-buffer rasterization of the shape model and the first ray–mesh hit (the sub-spacecraft intercept) for `cops_cuda/figures.py` |
+| `activity.cu` | C15 P3 | `activity_linear_clip` | Activity field on the device (`activity="device"`): act_lin = Y a (+ A_scale B b) per facet in a fixed order, NumPy's clip; deterministic and partition-independent, within the summation bound of the host BLAS expression (`CudaBackend.activity_check`) |
 
 ## Conventions
 

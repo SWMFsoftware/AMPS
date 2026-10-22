@@ -16,11 +16,15 @@ modified; ``gpu_fit.py`` installs this in its own process only.
 
 import functools
 import hashlib
+import json
+import os
 from pathlib import Path
 
 import numpy as np
 
 POLICY = "numpy_workers_in_reference_validate_fit_base_v1"
+CACHE_POLICY = "validate_once_v1"   # user decision 2026-10-21 (SCALING_PLAN Q4)
+CACHE_SCHEMA = "liouville_cops_cuda.base_audit_cache"
 KERNEL_RECORD = np.dtype({"names": ["face", "kn", "kphi", "kv", "cos", "shadow"],
                           "formats": ["<i4", "<f8", "<f8", "<f8", "<f8", "<i4"],
                           "offsets": [0, 4, 12, 20, 28, 36], "itemsize": 40})
@@ -139,6 +143,60 @@ def validate_kernel(io, path, expected_point, nfaces):
             "sha256": digest.hexdigest(), "header": values}
 
 
+def _stat_key(path):
+    st = Path(path).stat()
+    return [int(st.st_size), int(st.st_mtime_ns), int(st.st_ino)]
+
+
+class AuditCache:
+    """Validate once (``CACHE_POLICY``): per-file worker results reused while a file is unchanged.
+
+    The cache maps each kernel file (and ``elements.bin``) to its (size, mtime_ns, inode) and
+    the result of the worker that validated it the first time (full read, record checks,
+    SHA-256). A later run reuses a result only when the file's stat key and the call's
+    arguments (point, face count) are unchanged; anything else is validated again. The
+    reference ``validate_fit_base`` still runs in full on these results (table, header
+    comparisons, kernel-set digest against ``run_manifest.json``), so the audit it returns
+    is the one a full validation returns for unchanged files.
+    """
+
+    def __init__(self, path, revalidate=False):
+        self.path = Path(path)
+        self.entries, self.hits, self.misses = {}, 0, 0
+        if self.path.is_file() and not revalidate:
+            data = json.loads(self.path.read_text())
+            if data.get("schema") == CACHE_SCHEMA and data.get("policy") == CACHE_POLICY:
+                self.entries = data["entries"]
+
+    def get(self, path, args):
+        entry = self.entries.get(str(Path(path).resolve()))
+        if entry is not None and entry["stat"] == _stat_key(path) and entry["args"] == list(args):
+            self.hits += 1
+            result = dict(entry["result"])
+            if "header" in result:
+                result["header"] = tuple(result["header"])
+            return result
+        return None
+
+    def put(self, path, args, stat, result):
+        self.misses += 1
+        stored = dict(result)
+        if "header" in stored:
+            stored["header"] = list(stored["header"])
+        self.entries[str(Path(path).resolve())] = {"stat": stat, "args": list(args), "result": stored}
+
+    def save(self, run):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_name(self.path.name + ".tmp%d" % os.getpid())
+        tmp.write_text(json.dumps({"schema": CACHE_SCHEMA, "policy": CACHE_POLICY,
+                                   "run": str(Path(run).resolve()), "entries": self.entries}))
+        os.replace(tmp, self.path)
+
+    def summary(self):
+        return {"policy": CACHE_POLICY, "path": str(self.path), "reused": self.hits,
+                "validated": self.misses}
+
+
 class _Prefetch:
     """Kernel validations computed ahead on threads (hashlib and NumPy release the GIL).
 
@@ -148,14 +206,27 @@ class _Prefetch:
     answered from that work only for the identical (path, point, nfaces), and
     computed directly otherwise.  Exceptions are re-raised at the call, so
     the first error is still the one the reference order meets first.
+    With an ``AuditCache``, unchanged files are answered from it without reading them.
     """
 
-    def __init__(self, io, threads):
-        self.io, self.threads = io, int(threads)
+    def __init__(self, io, threads, cache=None):
+        self.io, self.threads, self.cache = io, int(threads), cache
         self.pool, self.futures, self.nfaces = None, {}, None
 
+    def _cached(self, fn, path, *args):
+        if self.cache is None:
+            return fn(self.io, path, *args)
+        hit = self.cache.get(path, args)
+        if hit is not None:
+            return hit
+        stat = _stat_key(path)
+        result = fn(self.io, path, *args)
+        if _stat_key(path) == stat:                  # unchanged while it was read
+            self.cache.put(path, args, stat, result)
+        return result
+
     def elements(self, path):
-        info = validate_elements(self.io, path)
+        info = self._cached(validate_elements, path)
         self.nfaces = info["nfaces"]
         if self.threads > 1:
             import concurrent.futures as cf
@@ -166,13 +237,14 @@ class _Prefetch:
                 except ValueError:
                     continue
                 key = (str(kernel), point, self.nfaces)
-                self.futures[key] = self.pool.submit(validate_kernel, self.io, kernel, point, self.nfaces)
+                self.futures[key] = self.pool.submit(self._cached, validate_kernel, kernel, point,
+                                                     self.nfaces)
         return info
 
     def kernel(self, path, expected_point, nfaces):
         future = self.futures.pop((str(Path(path)), expected_point, nfaces), None)
         if future is None:
-            return validate_kernel(self.io, path, expected_point, nfaces)
+            return self._cached(validate_kernel, path, expected_point, nfaces)
         return future.result()
 
     def close(self):
@@ -180,24 +252,54 @@ class _Prefetch:
             self.pool.shutdown(wait=True, cancel_futures=True)
 
 
-def validate_fit_base(io, run, threads=8):
-    """The reference ``io.validate_fit_base(run)`` with vectorized workers."""
+def validate_fit_base(io, run, threads=8, cache=None):
+    """The reference ``io.validate_fit_base(run)`` with vectorized workers.
+
+    ``cache``: an ``AuditCache`` (validate once); saved after a successful validation only.
+    """
     _check_structs(io)
-    prefetch = _Prefetch(io, threads)
+    prefetch = _Prefetch(io, threads, cache)
     saved = io.validate_kernel, io.validate_elements
     io.validate_kernel, io.validate_elements = prefetch.kernel, prefetch.elements
     try:
-        return io.validate_fit_base(run)
+        audit = io.validate_fit_base(run)
     finally:
         io.validate_kernel, io.validate_elements = saved
         prefetch.close()
+    if cache is not None:
+        cache.save(run)
+    return audit
 
 
-def install(fit_cops):
-    """Make ``fit_cops.main`` use the vectorized validation; returns a record for the manifest."""
+def default_cache_path(run):
+    """``$COPS_OUTPUT_ROOT/cuda_cache/base_audit/<base name>-<path digest>.json``, or None."""
+    root = os.environ.get("COPS_OUTPUT_ROOT")
+    if not root:
+        return None
+    run = Path(run).resolve()
+    tag = hashlib.sha256(str(run).encode()).hexdigest()[:12]
+    return Path(root) / "cuda_cache" / "base_audit" / ("%s-%s.json" % (run.name, tag))
+
+
+def install(fit_cops, cache="auto", revalidate=False):
+    """Make ``fit_cops.main`` use the vectorized validation; returns a record for the manifest.
+
+    ``cache``: "auto" (``default_cache_path`` of the base being validated), "off", or a path.
+    """
     import sys
     io = sys.modules[fit_cops.validate_fit_base.__module__]
     reference = fit_cops.validate_fit_base
-    fit_cops.validate_fit_base = functools.partial(validate_fit_base, io)
-    return {"policy": POLICY, "reference": "%s.%s" % (reference.__module__, reference.__name__),
-            "module": str(Path(__file__).resolve())}
+    record = {"policy": POLICY, "reference": "%s.%s" % (reference.__module__, reference.__name__),
+              "module": str(Path(__file__).resolve()), "cache": None}
+
+    def run_validation(run):
+        path = (default_cache_path(run) if cache == "auto" else None if cache in (None, "off")
+                else Path(cache))
+        audit_cache = None if path is None else AuditCache(path, revalidate)
+        audit = validate_fit_base(io, run, cache=audit_cache)
+        if audit_cache is not None:
+            record["cache"] = audit_cache.summary()
+        return audit
+
+    fit_cops.validate_fit_base = run_validation
+    return record

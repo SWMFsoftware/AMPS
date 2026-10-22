@@ -116,3 +116,23 @@ def test_dead_worker_is_a_clean_backend_error(cpu_model, registry):
         two.close()
     assert all(not w["proc"].is_alive() for w in two.workers)
     two.close()                                       # idempotent
+
+
+def test_basis_rebind_on_two_devices_is_bitwise(cpu_model, registry):
+    """SCALING_PLAN P1: workers keep their records on a basis change; equal to a fresh bind."""
+    G = make_gpu_model(cpu_model)
+    run = cpu_model["synthetic"]["run"]
+    P = contract.make_problem(dict(cpu_model, model=G), contract.CONFIGS[-1])
+    request = bk.ColumnRequest(P.fit_j, range(P.nb), temperature=True, kappa=True)
+    state = bk.ParameterState.from_problem(P, contract.perturbed(P, 4))
+    with MultiGpuBackend(G._spec, G, P.enhancement_basis, P.enhancement_scale, devices=(0, 1),
+                         records_per_block=17) as fresh:
+        want = fresh.evaluate(state, request)
+    with MultiGpuBackend(G._spec, G, None, 1.0, devices=(0, 1), records_per_block=17) as two:
+        two.rebind_basis(P.enhancement_basis, P.enhancement_scale)
+        assert two.nbasis_enhancement == P.nb and len(two.timing["rebind_basis_s"]) == 2
+        got = two.evaluate(state, request)
+    assert same(got.pNG, want.pNG) and same(got.pRG, want.pRG)
+    for key in request.keys():
+        assert same(got.columns[key][0], want.columns[key][0]), key
+        assert same(got.columns[key][1], want.columns[key][1]), key

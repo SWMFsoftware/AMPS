@@ -5,7 +5,8 @@ Usage::
 
     .venv/bin/python tools/gpu_fit.py [--device N | --devices 0,1] [--max-nfev N]
         [--template-start C] [--cpu-comparison] [--mode tree|sequential] [--restart-from R]
-        [--no-save-restart] [--no-figures] -- <fit_cops.py arguments>
+        [--no-save-restart] [--no-figures] [--wall-time HH:MM:SS|slurm | --deadline EPOCH]
+        [--wall-margin S] [--save-seconds S] [--segment K] -- <fit_cops.py arguments>
 
 Run settings decided by the user (2026-10-20):
 
@@ -37,6 +38,13 @@ What differs, inside this process only:
   approved budgets in VALIDATION.md);
 * with ``--devices 0,1`` one fit runs on both GPUs (``cops_cuda.multi_gpu``: one
   optimizer, row-partitioned persistent workers; bitwise equal to one GPU);
+* with ``--transport mpi`` (SCALING_PLAN P3) the fit runs on one GPU per MPI rank, on any
+  number of nodes: ``mpirun -n N`` / ``srun`` start this tool on every rank; rank 0 runs the
+  fitter and the first block of rows, ranks >= 1 serve their blocks. A rank's device is its rank
+  within the node modulo the visible devices (or ``--devices``). ``--activity device`` (the MPI
+  default, user decision Q3) forms the activity field on every GPU for its own facets;
+  ``--activity host`` keeps the driver's exact expression (``MPI_Bcast``). A failure on rank 0
+  ends the job with ``MPI_Abort``;
 * the fit manifest gains a ``compute_backend`` section, written on every
   manifest save, which states the CUDA backend, the device and dataset
   identities, the binding events and the call counts and times. The
@@ -56,6 +64,17 @@ At the end of a fit the driver also writes, into ``<out>``:
   the COPS data, with the late-visibility window shaded. ``--no-figures`` skips them, and a
   figure failure is recorded in ``compute_backend.figures`` without failing the fit.
 
+Wall time (user decision 2026-10-22; ``cops_cuda/wall_time.py``). ``--wall-time HH:MM:SS|slurm`` or
+``--deadline EPOCH`` (the pipeline runner) sets a deadline; default none. The driver then times every
+residual and Jacobian evaluation (it wraps ``fit_cops.least_squares``; the fitter is unchanged) and, when
+the next evaluation plus the time to save (``--save-seconds``, one more residual and Jacobian) would pass
+the deadline minus ``--wall-margin``, ends the optimizer at the best evaluated state. The fit is written as
+usual (optimizer status -2, "stopped before the wall-time deadline"), the restart file gets
+``status = "interrupted"`` and a ``segments`` record (index, nfev, cost per segment, carried over from the
+``--restart-from`` file), and the process exits with 75. Continue with ``--restart-from`` that file,
+``--max-nfev`` the remaining evaluations and ``--segment`` the next index. A segmented fit is not identical
+to one continuous run (a new ``least_squares`` run restarts the trust region and the scaling).
+
 The process-failure handling of ``fit_cops``'s ``__main__`` block is reproduced:
 after the output directory exists, a failure is recorded as
 ``states.process = "failed"`` in the manifest.
@@ -71,6 +90,7 @@ import time
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(APP_ROOT))
+STARTED = time.time()                      # --wall-time counts from the start of the process
 
 
 def lambda_count(fit_args):
@@ -213,7 +233,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--devices", default=None,
-                        help="comma-separated devices for one fit split over several GPUs, e.g. 0,1")
+                        help="comma-separated devices for one fit split over several GPUs, e.g. 0,1 "
+                             "(with --transport mpi: the devices a node's ranks are mapped onto)")
+    parser.add_argument("--transport", choices=("local", "mpi"), default="local",
+                        help="local: worker processes on this node (default); mpi: one GPU per MPI rank")
+    parser.add_argument("--activity", choices=("host", "device"), default=None,
+                        help="where the activity field is formed: host (exact; default local) or device "
+                             "(each GPU for its own facets; default mpi)")
     parser.add_argument("--mode", choices=("tree", "sequential"), default="tree",
                         help="tree: production; sequential: bitwise CPU order (slow, verification)")
     parser.add_argument("--records-per-block", type=int, default=4096)
@@ -233,11 +259,31 @@ def main():
     parser.add_argument("--precision", choices=("fp64", "mixed"), default="fp64",
                         help="fp64 (default, the validated path) or mixed (experiment 2026-10-21): kernel "
                              "records stored in FP32, all arithmetic FP64 (meshes too large for FP64 records)")
+    parser.add_argument("--record-store", default=None,
+                        help="FP32 record store of the base (tools/c15_record_store.py); needs --precision "
+                             "mixed. Records are read from it (half the bytes, no per-record conversion)")
+    parser.add_argument("--audit-cache", default="auto",
+                        help="validate once (user decision 2026-10-21): 'auto' (default; "
+                             "$COPS_OUTPUT_ROOT/cuda_cache/base_audit/), 'off', or a file. Unchanged kernel "
+                             "files (size, mtime, inode) reuse their first full validation")
+    parser.add_argument("--revalidate", action="store_true",
+                        help="ignore the audit cache and validate every file again (then refresh it)")
     parser.add_argument("--reference-validation", action="store_true",
                         help="validate the base with the reference's per-record Python loop (identical "
                              "result; default: cops_cuda.base_validation, NumPy workers, ~1.8 h less on 12M)")
     parser.add_argument("--no-figures", action="store_true",
                         help="do not write the publication figures <out>/figures/pressures_{time,altitude}.{eps,png}")
+    parser.add_argument("--wall-time", default=None,
+                        help="stop cleanly before this limit: HH:MM:SS from now, or 'slurm' (the job's end time); "
+                             "default none")
+    parser.add_argument("--deadline", type=float, default=None,
+                        help="absolute deadline (Unix seconds; the pipeline runner's form of --wall-time)")
+    parser.add_argument("--wall-margin", type=float, default=None,
+                        help="safety margin before the deadline [s] (default 300)")
+    parser.add_argument("--save-seconds", type=float, default=None,
+                        help="time reserved to write the results after stopping [s] (default 600)")
+    parser.add_argument("--segment", type=int, default=None,
+                        help="segment number of a fit split by wall time (default: 1 + the restart's segments)")
     args = parser.parse_args(argv[:split])
     fit_args = argv[split + 1:]
     if any(a == "--max-nfev" or a.startswith("--max-nfev=") for a in fit_args):
@@ -261,22 +307,99 @@ def main():
         memory.headroom_fraction_default()            # validates the range
     from cops_cuda import precision as cuda_precision
     os.environ[cuda_precision.RECORD_PRECISION_ENVIRONMENT] = "fp32" if args.precision == "mixed" else "fp64"
+    if args.record_store:
+        if args.precision != "mixed":
+            raise SystemExit("--record-store holds FP32 records: use --precision mixed")
+        os.environ["COPS_CUDA_RECORD_STORE"] = str(Path(args.record_store).resolve())
+    from cops_cuda import wall_time
+    if args.wall_time is not None and args.deadline is not None:
+        raise SystemExit("give --wall-time or --deadline, not both")
+    try:
+        deadline = wall_time.resolve_deadline(
+            args.wall_time, args.deadline,
+            wall_time.DEFAULT_MARGIN_SECONDS if args.wall_margin is None else args.wall_margin, start=STARTED)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
+    devices = [int(d) for d in args.devices.split(",")] if args.devices else None
+    comm = None
+    if args.transport == "mpi":
+        from mpi4py import MPI
+        from cops_cuda import transport
+        comm = MPI.COMM_WORLD
+        if comm.Get_rank() != 0:                       # a worker rank: serve rank 0, then leave
+            transport.mpi_worker_main(devices, comm)
+            return 0
+        devices = [transport.mpi_local_device(comm, devices)]
+    elif devices is None:
+        devices = [args.device]
+    try:
+        return drive(args, argv, fit_args, devices, max_nfev, template_start, comm, deadline)
+    except SystemExit as exc:
+        if exc.code not in (None, 0) and comm is not None and comm.Get_size() > 1:
+            sys.stderr.flush()
+            comm.Abort(1)
+        raise
+    except BaseException:
+        if comm is not None and comm.Get_size() > 1:
+            import traceback
+            traceback.print_exc()
+            sys.stderr.flush()
+            comm.Abort(1)                               # workers may be inside a request
+        raise
+
+
+def install_wall_clock(fit_cops, deadline, save_seconds, clock=time.time):
+    """Time the optimizer's evaluations and stop at the best state before ``deadline``.
+
+    ``fit_one`` calls ``least_squares`` through the module global, so replacing that attribute wraps
+    only the residual and Jacobian callables it passes; the fitter is unchanged. Returns the clock,
+    or None without a deadline (nothing is installed).
+    """
+    if deadline is None:
+        return None
+    from cops_cuda import wall_time
+    clock_state = wall_time.WallClock(deadline, save_seconds, clock)
+    fit_cops.least_squares = clock_state.least_squares_with(fit_cops.least_squares)
+    return clock_state
+
+
+def segment_record(index, result, max_nfev, clock_state, started):
+    """One segment of a fit: how it ended, the evaluations used and its cost."""
+    from cops_cuda import wall_time
+    stopped = clock_state is not None and clock_state.stopped is not None
+    return {"index": int(index), "status": "interrupted" if stopped else "complete",
+            "nfev": int(result["nfev"]), "max_nfev": int(max_nfev), "cost": float(result["cost"]),
+            "optimizer_status": int(result["status"]), "message": str(result["message"]),
+            "started_utc": wall_time.utc(started), "finished_utc": wall_time.utc(time.time()),
+            "deadline_utc": None if clock_state is None else wall_time.utc(clock_state.deadline)}
+
+
+def drive(args, argv, fit_args, devices, max_nfev, template_start, comm, deadline=None):
+    """Rank 0 (or the only process): the unchanged fitter with the GPU model."""
     from cops_cuda import gpu_model, manifest, provenance, reference
+    from cops_cuda import precision as cuda_precision
     from cops_cuda import restart as rs
+    from cops_cuda import wall_time
     reference.bind()
     fit_cops = reference.load("fit_cops")
     from cops_cuda import base_validation
     validation_info = ({"policy": "reference"} if args.reference_validation
-                       else base_validation.install(fit_cops))
+                       else base_validation.install(fit_cops, cache=args.audit_cache,
+                                                    revalidate=args.revalidate))
     restart_state, restart_info = None, {"save": not args.no_save_restart}
     figures_info = {"write": not args.no_figures}
+    save_seconds = wall_time.DEFAULT_SAVE_SECONDS if args.save_seconds is None else args.save_seconds
+    wall_info = {"deadline_utc": wall_time.utc(deadline), "save_seconds": save_seconds if deadline else None,
+                 "policy": "user 2026-10-22: stop before the deadline at the best evaluated state; resume "
+                           "with --restart-from (a segmented fit is not identical to one continuous run)"}
     if args.restart_from:
         restart_state = rs.read(args.restart_from)
         restart_info["loaded"] = provenance.file_identity(args.restart_from, "fit_restart")
         fit_args = restart_template_args(restart_state, fit_args, restart_info)
         check_restart_mesh(restart_state, fit_args, fit_cops)
-    devices = [int(d) for d in args.devices.split(",")] if args.devices else [args.device]
-    gpu_model.REGISTRY.configure(devices[0], args.mode, args.records_per_block, devices=devices)
+    activity = args.activity or ("device" if args.transport == "mpi" else "host")
+    gpu_model.REGISTRY.configure(devices[0], args.mode, args.records_per_block, devices=devices,
+                                 transport=args.transport, activity=activity)
     fit_cops.Model = gpu_model.gpu_model_class()
 
     started = provenance.utc_now()
@@ -292,7 +415,9 @@ def main():
             fit_cops.ACTIVE_MANIFEST["compute_backend"] = {
                 "kind": "cuda_fp64_v1 via LiouvilleCOPS_cuda gpu_model (fit_cops.Model replaced "
                         "in-process; fit_cops.py unmodified)" +
-                        (" on devices %s (multi_gpu)" % devices if len(devices) > 1 else ""),
+                        (" on devices %s (multi_gpu)" % devices if len(devices) > 1 else "") +
+                        (" over %d MPI ranks (multi_gpu, transport mpi)" % comm.Get_size()
+                         if comm is not None else ""),
                 "driver": provenance.file_identity(Path(__file__), "tool"),
                 "driver_command": [sys.executable, str(Path(__file__).resolve())] + argv,
                 "fit_cops": provenance.file_identity(Path(fit_cops.__file__), "reference"),
@@ -310,7 +435,9 @@ def main():
                 "fit_start": fit_start,
                 "restart": restart_info,
                 "figures": figures_info,
+                "wall_time": wall_info,
                 "base_validation": validation_info,
+                "record_store": os.environ.get("COPS_CUDA_RECORD_STORE") or None,
                 "memory_headroom_fraction": headroom_now(),
             }
         original_save()
@@ -318,10 +445,28 @@ def main():
     fit_cops.save_active_manifest = save_with_backend
     captured = []
     install_template_start(fit_cops, template_start, fit_start, restart_state, captured)
+    clock_state = install_wall_clock(fit_cops, deadline, save_seconds)
+    previous_segments = list(restart_state.meta.get("segments", [])) if restart_state is not None else []
+    segment = args.segment if args.segment is not None else len(previous_segments) + 1
     sys.argv = [str(Path(fit_cops.__file__))] + fit_args
     t0 = time.perf_counter()
+    exit_code = 0
     try:
-        fit_cops.main()
+        try:
+            fit_cops.main()
+        except wall_time.WallTimeExhausted as exc:
+            wall_info.update(exhausted=str(exc))
+            print("gpu_fit: no time for an evaluation before the deadline (%s); nothing written" % exc, flush=True)
+            raise
+        if captured:
+            wall_info.update(clock_state.record() if clock_state is not None else {})
+            wall_info["segments"] = previous_segments + [segment_record(segment, captured[-1], max_nfev,
+                                                                        clock_state, STARTED)]
+            if clock_state is not None and clock_state.stopped is not None:
+                exit_code = wall_time.EXIT_WALL_TIME
+                print("gpu_fit: stopped before the wall-time deadline (segment %d, %d evaluations, best cost "
+                      "%.6e); exit %d" % (segment, captured[-1]["nfev"], captured[-1]["cost"], exit_code),
+                      flush=True)
         if captured and not args.no_save_restart and fit_cops.ACTIVE_MANIFEST is not None:
             out = Path(fit_cops.ACTIVE_MANIFEST_PATH).parent
             elements = fit_cops.read_elements(fit_cops.ACTIVE_MANIFEST["inputs"]["base_elements"]["path"])
@@ -329,12 +474,22 @@ def main():
             if restart_state is not None:
                 state.meta["history"] = list(restart_state.meta.get("history", [])) + state.meta["history"]
                 state.meta["started_from"] = restart_info["loaded"]
+            state.meta["segments"] = wall_info["segments"]
+            state.meta["status"] = wall_info["segments"][-1]["status"]
             restart_info["saved"] = rs.write(out / "fit_restart.npz", state)
             print("gpu_fit: restart file %s" % (out / "fit_restart.npz"), flush=True)
         if not args.no_figures and fit_cops.ACTIVE_MANIFEST is not None:
             write_figures(fit_cops, fit_args, figures_info)
         # A last save so the final call counts and times are recorded.
         save_with_backend()
+    except wall_time.WallTimeExhausted as exc:
+        state = (fit_cops.ACTIVE_MANIFEST or {}).get("states", {})
+        if fit_cops.ACTIVE_MANIFEST is not None and state.get("process") == "running":
+            state["process"] = "failed"
+            fit_cops.ACTIVE_MANIFEST["updated_utc"] = fit_cops.utc_now()
+            fit_cops.ACTIVE_MANIFEST["error"] = "wall-time deadline before the first evaluation: %s" % exc
+            save_with_backend()
+        exit_code = wall_time.EXIT_WALL_TIME
     except BaseException as exc:
         state = (fit_cops.ACTIVE_MANIFEST or {}).get("states", {})
         if fit_cops.ACTIVE_MANIFEST is not None and state.get("process") == "running":
@@ -349,7 +504,10 @@ def main():
               (time.perf_counter() - t0, stats["calls"],
                {k: round(v, 1) for k, v in stats["seconds"].items()}), flush=True)
         gpu_model.REGISTRY.close()
-    return 0
+        if comm is not None:
+            from cops_cuda import transport
+            transport.mpi_release_workers(comm)
+    return exit_code
 
 
 if __name__ == "__main__":

@@ -26,6 +26,7 @@ import numpy as np
 
 from . import cuda_sources, reference
 from .device_store import DeviceDataset
+from .memory import scratch_reservation
 
 MASK_BITS = (("ng_seen", 1), ("rg_seen", 2), ("late_ng_not_rg", 4), ("late_rg_not_ng", 8))
 
@@ -63,7 +64,8 @@ def visibility_masks(run, points, device_id=0, budget=None, expected_kernel_dige
     with DeviceDataset.load(run, point_ids=points, device_id=device_id, mesh_fields="none",
                             budget=budget, expected_kernel_digests=expected_kernel_digests) as ds:
         nf = ds.inputs.nfaces
-        with cupy.cuda.Device(device_id):
+        with cupy.cuda.Device(device_id), scratch_reservation(ds.budget, "visibility masks",
+                                                              {"bits": (nf, np.uint32)}):
             bits = cupy.zeros(nf, dtype=cupy.uint32)
             a = ds.arrays
             if ds.nrecords:
@@ -98,15 +100,21 @@ def seen_positive(dataset):
     """
     import cupy
     ds = dataset
-    with cupy.cuda.Device(ds.device_id):
-        seen = cupy.zeros(ds.inputs.nfaces, dtype=cupy.uint8)
+    with cupy.cuda.Device(ds.device_id), scratch_reservation(ds.budget, "seen faces",
+                                                             {"seen": (ds.nfaces_device, np.uint8)}):
+        seen = cupy.zeros(ds.nfaces_device, dtype=cupy.uint8)
         a = ds.arrays
-        if ds.nrecords:
+        nres = ds.nresident if ds.nresident is not None else ds.nrecords
+        if nres:
             kernel = "seen_positive" if ds.record_precision == "fp64" else "seen_positive_f32"
             cuda_sources.function("masks", kernel, ds.device_id)(
-                (max(1, min(65535, -(-ds.nrecords // 256))),), (256,),
+                (max(1, min(65535, -(-nres // 256))),), (256,),
                 (a["kernel.face"], a["kernel.kn"], a["kernel.kphi"], a["kernel.kv"],
-                 np.int64(ds.nrecords), seen))
+                 np.int64(nres), seen))
         host = seen.get().astype(bool)
         del seen
-    return host
+        h = ds.host_records                      # streamed records (SCALING_PLAN P2): same predicate
+        for start in range(0, len(h.get("face", ())), 1 << 26):
+            sl = slice(start, start + (1 << 26))
+            host[h["face"][sl][(h["kn"][sl] > 0) | (h["kphi"][sl] > 0) | (h["kv"][sl] > 0)]] = True
+    return ds.scatter_faces(host, False)              # global facets (face compaction)

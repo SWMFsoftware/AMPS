@@ -35,6 +35,31 @@ def test_elements_and_kernels_parse_like_reference(synthetic):
         assert digest == synthetic_run.sha256(path)
 
 
+def test_lazy_and_mapped_elements_are_the_reference_values(synthetic):
+    """Memory use at SHAP8 20M (2026-10-21 OOM): the streamed/lazy loader and the memory-mapped
+    worker view give the reference reader's values; the strided Y hashes like a contiguous one."""
+    import os
+    from cops_cuda import provenance
+    fit_cops = reference.load("fit_cops")
+    path = synthetic["run"] / "elements.bin"
+    ref = fit_cops.read_elements(str(path))
+    eager, identity = formats.load_elements(path)
+    lazy, lazy_identity = formats.load_elements(path, lazy=True)
+    mapped = formats.map_elements(path)
+    assert identity == lazy_identity and len(lazy) == 6 and "Y" in lazy and dict.__len__(lazy) == 0
+    for name in ("centroid", "normal", "area", "Y", "AH2O", "ACO2"):
+        assert np.array_equal(eager[name], ref[name]) and eager[name].flags.c_contiguous, name
+        assert np.array_equal(lazy[name], ref[name]) and lazy[name].flags.c_contiguous, name
+        assert np.array_equal(mapped[name], ref[name]), name
+    assert not mapped["Y"].flags.c_contiguous
+    assert provenance.array_sha256(mapped["Y"], chunk_rows=7) == provenance.array_sha256(ref["Y"])
+    lazy2, _ = formats.load_elements(path, lazy=True)
+    st = path.stat()
+    os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + 1000))
+    with pytest.raises(IdentityError, match="changed after"):
+        lazy2["ACO2"]
+
+
 def _damage(path, offset, data):
     raw = bytearray(path.read_bytes())
     raw[offset:offset + len(data)] = data

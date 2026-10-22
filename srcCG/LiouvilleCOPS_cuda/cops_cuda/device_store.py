@@ -156,7 +156,9 @@ class RunInputs:
                 recorded["model_table"].get("sha256") != self.table_identity["sha256"]):
             raise IdentityError("COPS_model.dat does not match run_manifest.json")
 
-        self.elements, self.elements_identity = formats.load_elements(self.run / "elements.bin")
+        # lazy: a dataset uses centroid, area and its mesh fields (not Y)
+        self.elements, self.elements_identity = formats.load_elements(self.run / "elements.bin",
+                                                                      lazy=True)
         if recorded.get("elements") and (
                 recorded["elements"].get("sha256") != self.elements_identity["sha256"] or
                 recorded["elements"].get("size_bytes") != self.elements_identity["size_bytes"]):
@@ -235,14 +237,70 @@ class KernelScan:
 
 
 # ------------------------------------------------------------------------ plan
-def dataset_plan(nfaces, npt, nrecords, mesh_fields, basis_columns=0, record_precision="fp64"):
-    """Exact device memory of a dataset (static data only)."""
+def fp32_record_fields(raw, cos75, conversion):
+    """FP32 device fields of validated kernel records (``RECORD_FIELDS_FP32`` order).
+
+    The one definition of the FP32 storage policy, used by the loader and by the record store
+    (``tools/c15_record_store.py``):
+    * cos: where FP32 rounding would cross COS75 (lit: c >= COS75), the value is stepped back
+      to the FP64 side by one ulp, so every comparison of the reference with that constant is
+      kept (day: cos > 0 is checked to keep its sign; cz = min(cos, 1) is unaffected); a
+      shadowed record stores ``SHADOW_FOLDED_COS``;
+    * Kn, KPhi, KV: refused when FP32 would change a zero or finite value;
+    * ``conversion`` is updated in place (max relative rounding, threshold adjustments).
+    The records must have passed ``formats.validate_records`` (shadow is 0 or 1).
+    """
+    out = {"face": np.asarray(raw["face"], dtype=np.int32)}
+    for name, file_field in RECORD_FIELDS_FP32[1:]:
+        source = raw[file_field]
+        target = source.astype(np.float32)
+        if name == "cos":
+            wrong = (target.astype(np.float64) >= cos75) != (source >= cos75)
+            if wrong.any():
+                toward = np.where(source >= cos75, np.float32(np.inf), np.float32(-np.inf))
+                target[wrong] = np.nextafter(target[wrong], toward[wrong])
+                conversion["lit_threshold_adjusted"] = (
+                    conversion.get("lit_threshold_adjusted", 0) + int(wrong.sum()))
+            if np.any((target > 0) != (source > 0)):
+                raise CacheFormatError("cos cannot be stored in FP32 without changing its sign")
+            target[raw["shadow"] != 0] = SHADOW_FOLDED_COS
+        else:
+            if np.any((target == 0) != (source == 0)) or not np.isfinite(target).all():
+                raise CacheFormatError("kernel field %s cannot be stored in FP32 without "
+                                       "changing a zero or finite value" % file_field)
+            nz = source != 0
+            if nz.any():
+                rel = float(np.max(np.abs(target[nz].astype(np.float64) / source[nz] - 1.0)))
+                if rel > conversion.get("max_relative_rounding", 0.0):
+                    conversion["max_relative_rounding"] = rel
+        out[name] = target
+    return out
+
+
+COMPACT_CHUNK = 1 << 26
+BYTES_FP32_RECORD = 20        # records remapped per step by face compaction
+
+
+def dataset_plan(nfaces, npt, nrecords, mesh_fields, basis_columns=0, record_precision="fp64",
+                 compact_faces=False, nresident=None):
+    """Exact device memory of a dataset (static data only).
+
+    With ``compact_faces`` the mesh fields are planned separately after streaming (sized by
+    the faces that occur in the records), and the remap scratch is part of this plan.
+    """
     plan = MemoryPlan("device dataset")
+    nresident = nrecords if nresident is None else nresident
     for name, _ in record_fields(record_precision):
-        plan.add_array("kernel." + name, "static", (nrecords,),
-                       precision.field_dtypes(record_precision)[name])
+        plan.add_array("kernel." + name, "static", (nresident,),
+                       precision.field_dtypes(record_precision)[name],
+                       "" if nresident == nrecords else "resident part; %d records streamed" % (nrecords - nresident))
     plan.add_array("kernel.offsets", "static", (npt + 1,), precision.FIELD_DTYPES["offsets"])
     plan.add_array("kernel.geometry", "static", (10, npt), precision.FIELD_DTYPES["geometry"])
+    if compact_faces:
+        plan.add_array("compact.map", "scratch", (nfaces,), np.int32,
+                       "global -> local face index (freed after the remap)")
+        plan.add_array("compact.gather", "scratch", (min(max(nresident, 1), COMPACT_CHUNK),), np.int32)
+        mesh_fields = ()
     for name in mesh_fields:
         plan.add_array("mesh." + name, "static", _device_shape(name, nfaces),
                        precision.FIELD_DTYPES[name])
@@ -274,13 +332,21 @@ class DeviceDataset:
         self.timing = {}
         self.audit_result = None
         self.basis_identity = None
+        self.local_faces = None          # sorted global ids of the device's faces (compaction)
+        self._face_union = None
+        self.host_records = {}           # streamed records (pinned host memory), [nresident, nrecords)
+        self.nresident = None
+        self.record_source = "kernel_files"
+        self.store_identity = None
+        self.mesh_reservation = None
 
     # ...................................................................load
     @classmethod
     def load(cls, run, rows=None, point_ids=None, device_id=0, mesh_fields="evaluator",
              budget=None, enhancement_basis=None, expected_mesh_identity=None,
              expected_kernel_digests=None, chunk_records=DEFAULT_CHUNK_RECORDS,
-             audit=True, record_precision="fp64"):
+             audit=True, record_precision="fp64", compact_faces=False, record_store=None,
+             loader_threads=None, resident_records=None):
         """Validate, plan, allocate and stream; see the module docstring.
 
         Parameters
@@ -301,6 +367,20 @@ class DeviceDataset:
         record_precision : "fp64" (reference) or "fp32" (Kn, KPhi, KV, cos stored in FP32;
             mixed precision, see ``precision.py``). FP32 storage refuses any record whose
             value FP32 cannot hold with the same zero-ness and finiteness.
+        compact_faces : keep per-face data only for the faces that occur in the loaded records
+            (SCALING_PLAN.md 3.5). After streaming, ``kernel.face`` holds local indices into
+            ``local_faces`` (sorted global ids) and the mesh fields cover those faces only.
+            Records and sums are not reordered, so results are bitwise those without it.
+            Callers translate per-face arrays with ``gather_faces``/``scatter_faces``.
+        record_store : path of an FP32 record store of this base (``record_store.py``,
+            ``tools/c15_record_store.py``); requires ``record_precision="fp32"``. The records
+            are read from it (20 B/record, SHA-256 verified per point file) instead of being
+            converted from the kernel files; the device arrays are bitwise the same.
+        loader_threads : reader threads for the store (default ``$COPS_CUDA_LOADER_THREADS``
+            or 4).
+        resident_records : keep only the first this many records on the device and the rest
+            in pinned host memory, for evaluators that stream them (SCALING_PLAN P2; FP32 records
+            only). The caller aligns it to its block boundaries. Default: all resident.
         """
         self = cls()
         self.record_precision = record_precision
@@ -314,16 +394,31 @@ class DeviceDataset:
             mesh_fields = MESH_FIELD_SETS[mesh_fields]
         mesh_fields = tuple(mesh_fields)
         scan = KernelScan(inputs, rows)
+        store = store_entries = None
+        if record_store is not None:
+            if record_precision != "fp32":
+                raise ValueError("a record store holds FP32 records: use record_precision='fp32'")
+            from .record_store import Store
+            store = Store(record_store, inputs)
+            store_entries = store.check_rows(scan)
+        self.record_source = "kernel_files" if store is None else "record_store"
         self.timing["validate_and_scan_s"] = time.perf_counter() - started
         basis_matrix = None
         if enhancement_basis is not None:
             basis_matrix = self._check_basis(enhancement_basis, inputs)
+            if compact_faces:
+                raise ValueError("compact_faces does not support a dataset-resident basis")
+        self.compact = bool(compact_faces)
 
         self.inputs, self.scan, self.device_id = inputs, scan, int(device_id)
         self.mesh_fields = mesh_fields
+        nres = scan.nrecords if resident_records is None else max(0, min(int(resident_records), scan.nrecords))
+        if nres < scan.nrecords and record_precision != "fp32":
+            raise ValueError("streamed (non-resident) records require record_precision='fp32'")
+        self.nresident = nres
         self.plan = dataset_plan(inputs.nfaces, len(rows), scan.nrecords, mesh_fields,
                                  0 if basis_matrix is None else basis_matrix.shape[1],
-                                 record_precision)
+                                 record_precision, compact_faces=self.compact, nresident=nres)
         import cupy
         self.cupy = cupy
         if budget is None:
@@ -337,17 +432,37 @@ class DeviceDataset:
             self.reservation = budget.reserve(self.plan)
             with cupy.cuda.Device(self.device_id), budget.allocation_guard(self.plan):
                 t0 = time.perf_counter()
-                self._upload_mesh(mesh_fields)
+                if not self.compact:
+                    self._upload_mesh(mesh_fields)
                 if basis_matrix is not None:
                     self._upload_basis(basis_matrix, enhancement_basis)
                 self.timing["mesh_upload_s"] = time.perf_counter() - t0
                 t0 = time.perf_counter()
-                self._stream_kernels(chunk_records, expected_kernel_digests)
+                if store is None:
+                    self._stream_kernels(chunk_records, expected_kernel_digests)
+                else:
+                    self._stream_store(store, store_entries, chunk_records, expected_kernel_digests,
+                                       loader_threads)
                 self.timing["kernel_stream_s"] = time.perf_counter() - t0
                 if audit:
                     t0 = time.perf_counter()
                     self.audit()
                     self.timing["device_audit_s"] = time.perf_counter() - t0
+                if self.compact:
+                    t0 = time.perf_counter()
+                    self._compact_faces()
+                    self.timing["compact_faces_s"] = time.perf_counter() - t0
+            if self.compact and mesh_fields:
+                # Mesh fields of the local faces only: a second, exact reservation.
+                mesh_plan = MemoryPlan("device dataset mesh fields (compacted faces)")
+                for name in mesh_fields:
+                    mesh_plan.add_array("mesh." + name, "static",
+                                        _device_shape(name, len(self.local_faces)),
+                                        precision.FIELD_DTYPES[name])
+                self.mesh_reservation = budget.reserve(mesh_plan)
+                self.mesh_plan = mesh_plan
+                with cupy.cuda.Device(self.device_id), budget.allocation_guard(mesh_plan):
+                    self._upload_mesh(mesh_fields)
         except BaseException as exc:
             # The traceback keeps the failed frames alive, and with them any
             # device array held in a local variable (e.g. the per-field views
@@ -371,7 +486,7 @@ class DeviceDataset:
 
     def _upload_mesh(self, mesh_fields):
         for name in mesh_fields:
-            host = self.inputs.elements[name]
+            host = self.gather_faces(self.inputs.elements[name])
             # Component-major layout: an exact transpose, values unchanged.
             host = np.ascontiguousarray(host.T if name in COMPONENT_MAJOR else host)
             device = self._alloc("mesh." + name, host.shape, host.dtype)
@@ -407,15 +522,37 @@ class DeviceDataset:
                                "description": basis.get("description")}
 
     # ............................................................... kernels
+    def _alloc_records(self, fields):
+        """Device arrays for the resident records and pinned host arrays for the streamed ones."""
+        import cupyx
+        nres, nrec = self.nresident, self.scan.nrecords
+        device = {name: self._alloc("kernel." + name, (nres,), self.dtypes[name]) for name, _ in fields}
+        self.host_records = ({name: cupyx.empty_pinned((nrec - nres,), dtype=self.dtypes[name])
+                              for name, _ in fields} if nres < nrec else {})
+        return device
+
+    def _sink(self, device, name, begin, values, stream):
+        """Records [begin, begin+len) to the device (resident part) and/or the host (streamed)."""
+        end, nres = begin + len(values), self.nresident
+        if begin < nres:
+            m = min(end, nres) - begin
+            device[name][begin:begin + m].set(values[:m], stream=stream)
+        if end > nres:
+            s0 = max(begin, nres)
+            self.host_records[name][s0 - nres:end - nres] = values[s0 - begin:]
+
+    @property
+    def streamed(self):
+        """True when some records live in pinned host memory (``host_records``)."""
+        return self.nresident is not None and self.nresident < self.scan.nrecords
+
     def _stream_kernels(self, chunk_records, expected_digests):
         """Stream every scanned file to the device (see module docstring)."""
         cupy, scan, nfaces = self.cupy, self.scan, self.inputs.nfaces
         import cupyx
         nrec = scan.nrecords
         fields = record_fields(self.record_precision)
-        device = {}
-        for name, _ in fields:
-            device[name] = self._alloc("kernel." + name, (nrec,), self.dtypes[name])
+        device = self._alloc_records(fields)
         offsets = self._alloc("kernel.offsets", scan.offsets.shape, np.int64)
         offsets.set(scan.offsets)
         geometry_host = np.ascontiguousarray(scan.geometry.T)
@@ -436,6 +573,7 @@ class DeviceDataset:
         stream = cupy.cuda.Stream(non_blocking=True)
         digests = {name: hashlib.sha256() for name, _ in fields}
         face_seen = np.zeros(nfaces, dtype=bool)
+        self._face_union = np.zeros(nfaces, dtype=bool) if self._face_union_needed() else None
         state = {"fill": 0, "start": 0, "set": 0}
         self.host_staging_bytes = 2 * chunk_records * sum(
             self.dtypes[name].itemsize for name, _ in fields)
@@ -448,41 +586,18 @@ class DeviceDataset:
             if events[k] is not None:
                 events[k].synchronize()
             begin = state["start"]
+            converted = (fp32_record_fields(raw[:fill], self.cos75, self.conversion)
+                         if self.record_precision == "fp32" else None)
             for name, file_field in fields:
                 target = staging[k][name][:fill]
-                # shadow: int32 -> uint8 is lossless because every value was
-                # checked to be 0 or 1; the other fields keep their dtype.
-                np.copyto(target, raw[file_field][:fill], casting="unsafe")
-                if name == "cos" and target.dtype == np.float32:
-                    # Keep every decision of the reference that compares cos with a constant
-                    # (lit: c >= COS75; day: cos > 0; cz = min(cos, 1)): where FP32 rounding
-                    # crossed COS75, step the value back to the FP64 side by one ulp.
-                    source = raw["cos"][:fill]
-                    wrong = (target.astype(np.float64) >= self.cos75) != (source >= self.cos75)
-                    if wrong.any():
-                        toward = np.where(source >= self.cos75, np.float32(np.inf), np.float32(-np.inf))
-                        target[wrong] = np.nextafter(target[wrong], toward[wrong])
-                        self.conversion["lit_threshold_adjusted"] = (
-                            self.conversion.get("lit_threshold_adjusted", 0) + int(wrong.sum()))
-                    if np.any((target > 0) != (source > 0)):
-                        raise CacheFormatError("cos cannot be stored in FP32 without changing its sign")
-                    # shadow folded into cos (see SHADOW_FOLDED_COS); records were validated
-                    # (shadow is 0 or 1) by formats.validate_records before this copy.
-                    target[raw["shadow"][:fill] != 0] = SHADOW_FOLDED_COS
-                if target.dtype == np.float32 and name != "cos":
-                    # FP32 storage: refuse a value whose zero-ness or finiteness changes
-                    # (a nonzero kernel that underflows would change visibility decisions).
-                    source = raw[file_field][:fill]
-                    if np.any((target == 0) != (source == 0)) or not np.isfinite(target).all():
-                        raise CacheFormatError("kernel field %s cannot be stored in FP32 without "
-                                               "changing a zero or finite value" % file_field)
-                    nz = source != 0
-                    if nz.any():
-                        rel = float(np.max(np.abs(target[nz].astype(np.float64) / source[nz] - 1.0)))
-                        if rel > self.conversion["max_relative_rounding"]:
-                            self.conversion["max_relative_rounding"] = rel
+                if converted is not None:
+                    np.copyto(target, converted[name])
+                else:
+                    # shadow: int32 -> uint8 is lossless because every value was
+                    # checked to be 0 or 1; the other fields keep their dtype.
+                    np.copyto(target, raw[file_field][:fill], casting="unsafe")
                 digests[name].update(target)
-                device[name][begin:begin + fill].set(target, stream=stream)
+                self._sink(device, name, begin, target, stream)
             events[k] = stream.record()
             state["start"] = begin + fill
             state["fill"] = 0
@@ -517,6 +632,8 @@ class DeviceDataset:
                             flush()
                     if handle.read(1):
                         raise CacheFormatError("%s has bytes beyond its declared records" % path)
+                    if self._face_union is not None:
+                        self._face_union |= face_seen
                 name = path.name
                 digest = file_digest.hexdigest()
                 if expected_digests is not None:
@@ -556,6 +673,154 @@ class DeviceDataset:
                                     (nrec, recorded.get("records")))
             self.manifest_set_verified = True
 
+    def _stream_store(self, store, entries, chunk_records, expected_digests, threads):
+        """Stream FP32 records from a record store (reader threads + pinned double buffer)."""
+        import os
+        from concurrent.futures import ThreadPoolExecutor
+        import cupyx
+        cupy, scan, nfaces = self.cupy, self.scan, self.inputs.nfaces
+        nrec = scan.nrecords
+        fields = RECORD_FIELDS_FP32
+        device = self._alloc_records(fields)
+        offsets = self._alloc("kernel.offsets", scan.offsets.shape, np.int64)
+        offsets.set(scan.offsets)
+        geometry_host = np.ascontiguousarray(scan.geometry.T)
+        geometry = self._alloc("kernel.geometry", geometry_host.shape, np.float64)
+        geometry.set(geometry_host)
+        self.host_digests["kernel.offsets"] = hashlib.sha256(scan.offsets.tobytes()).hexdigest()
+        self.host_digests["kernel.geometry"] = hashlib.sha256(geometry_host.tobytes()).hexdigest()
+        self.conversion = dict(store.manifest["conversion"], source="record store " + str(store.path))
+        if self._face_union_needed():
+            self._face_union = np.zeros(nfaces, dtype=bool)
+        chunk_records = int(max(1, min(chunk_records, max(nrec, 1))))
+        staging = [{name: cupyx.empty_pinned((chunk_records,), dtype=self.dtypes[name])
+                    for name, _ in fields} for _ in range(2)]
+        self.host_staging_bytes = 2 * chunk_records * BYTES_FP32_RECORD
+        events = [None, None]
+        stream = cupy.cuda.Stream(non_blocking=True)
+        state = {"fill": 0, "start": 0, "set": 0}
+
+        def flush():
+            fill, k = state["fill"], state["set"]
+            if fill == 0:
+                return
+            begin = state["start"]
+            for name, _ in fields:
+                self._sink(device, name, begin, staging[k][name][:fill], stream)
+            events[k] = stream.record()
+            state.update(start=begin + fill, fill=0, set=1 - k)
+            if events[state["set"]] is not None:
+                events[state["set"]].synchronize()      # the next set's previous copy is done
+
+        threads = int(threads or os.environ.get("COPS_CUDA_LOADER_THREADS", 4))
+        window = 2 * threads
+        verified = 0
+        try:
+            with ThreadPoolExecutor(threads, thread_name_prefix="cops-store-read") as pool:
+                pending = [pool.submit(store.read_point, e) for e in entries[:window]]
+                for index, entry in enumerate(entries):
+                    point_fields = pending[index].result()
+                    pending[index] = None
+                    if index + window < len(entries):
+                        pending.append(pool.submit(store.read_point, entries[index + window]))
+                    count = entry["records"]
+                    face = point_fields["face"]
+                    if count and (int(face.min()) < 0 or int(face.max()) >= nfaces):
+                        raise CacheFormatError("record store point %d has an out-of-range face"
+                                               % entry["point"])
+                    if self._face_union is not None:
+                        self._face_union[face] = True
+                    if expected_digests is not None:
+                        if expected_digests.get(entry["kernel_file"]) != entry["kernel_sha256"]:
+                            raise IdentityError("%s sha256 differs from the expected" % entry["kernel_file"])
+                        verified += 1
+                    pos = 0
+                    while pos < count:
+                        fill = state["fill"]
+                        take = min(count - pos, chunk_records - fill)
+                        for name, _ in fields:
+                            staging[state["set"]][name][fill:fill + take] = point_fields[name][pos:pos + take]
+                        state["fill"] = fill + take
+                        pos += take
+                        if state["fill"] == chunk_records:
+                            flush()
+                flush()
+                stream.synchronize()
+        finally:
+            stream.synchronize()
+            del staging
+            cupy.get_default_pinned_memory_pool().free_all_blocks()
+        if state["start"] != nrec:
+            raise BackendError("internal: streamed %d records, planned %d" % (state["start"], nrec))
+        entries_named = [(e["kernel_file"], e["kernel_sha256"]) for e in entries]
+        self.kernel_entries = entries_named
+        self.kernel_set_sha256 = formats.kernel_set_digest(entries_named)
+        self.file_digests_verified = verified
+        self.manifest_set_verified = False
+        recorded = (self.inputs.manifest or {}).get("outputs", {}).get("kernels", {})
+        if self.inputs.is_full_table(scan.rows) and recorded.get("set_sha256"):
+            if recorded["set_sha256"] != self.kernel_set_sha256:
+                raise IdentityError("kernel set sha256 %s differs from run_manifest.json %s" %
+                                    (self.kernel_set_sha256, recorded["set_sha256"]))
+            self.manifest_set_verified = True
+        self.store_identity = {"path": str(store.path),
+                               "manifest_sha256": provenance.file_identity(store.path / "store_manifest.json")["sha256"],
+                               "points_read": len(entries), "files_sha256_verified": len(entries)}
+
+    def _face_union_needed(self):
+        return bool(getattr(self, "compact", False))
+
+    # ............................................................ compaction
+    def _compact_faces(self):
+        """Renumber ``kernel.face`` to local indices of the faces that occur (in place)."""
+        cupy = self.cupy
+        local = np.flatnonzero(self._face_union).astype(np.int64)
+        self._face_union = None
+        mapping = np.full(self.inputs.nfaces, -1, dtype=np.int32)
+        mapping[local] = np.arange(len(local), dtype=np.int32)
+        face = self.arrays["kernel.face"]
+        d_map = self._alloc("compact.map", mapping.shape, np.int32)
+        d_map.set(mapping)
+        gather = self._alloc("compact.gather", (min(max(len(face), 1), COMPACT_CHUNK),), np.int32)
+        for start in range(0, len(face), COMPACT_CHUNK):
+            stop = min(start + COMPACT_CHUNK, len(face))
+            cupy.take(d_map, face[start:stop], out=gather[:stop - start])
+            face[start:stop] = gather[:stop - start]
+        cupy.cuda.Device(self.device_id).synchronize()
+        if len(face) and int(face.min()) < 0:
+            raise BackendError("internal: a record's face is missing from the compacted set")
+        if self.host_records:
+            host = self.host_records["face"]
+            for start in range(0, len(host), COMPACT_CHUNK):
+                stop = min(start + COMPACT_CHUNK, len(host))
+                np.take(mapping, host[start:stop], out=host[start:stop])
+            if len(host) and int(host.min()) < 0:
+                raise BackendError("internal: a streamed record's face is missing from the compacted set")
+        del self.arrays["compact.map"], self.arrays["compact.gather"], d_map, gather
+        cupy.get_default_memory_pool().free_all_blocks()
+        self.local_faces = local
+
+    @property
+    def nfaces_device(self):
+        """Length of the device's per-face arrays (local faces when compacted)."""
+        return self.inputs.nfaces if self.local_faces is None else len(self.local_faces)
+
+    def gather_faces(self, values, axis=0):
+        """A global per-face host array restricted to the device's faces (identity if none)."""
+        if self.local_faces is None:
+            return values
+        return np.take(np.asarray(values), self.local_faces, axis=axis)
+
+    def scatter_faces(self, local_values, fill=0, out=None):
+        """A per-face host array of the device's faces as a global array (``fill`` elsewhere)."""
+        local_values = np.asarray(local_values)
+        if self.local_faces is None:
+            return local_values if out is None else np.copyto(out, local_values) or out
+        if out is None:
+            out = np.full(self.inputs.nfaces, fill, dtype=local_values.dtype)
+        out[self.local_faces] = local_values
+        return out
+
     # ................................................................ checks
     def audit(self):
         """Re-check record and offset invariants in device memory.
@@ -566,7 +831,7 @@ class DeviceDataset:
         cupy = self.cupy
         with cupy.cuda.Device(self.device_id):
             counters = cupy.zeros(len(AUDIT_COUNTERS), dtype=cupy.uint64)
-            nrec, npt = self.scan.nrecords, len(self.scan.rows)
+            nrec, npt = self.nresident, len(self.scan.rows)
             a = self.arrays
             device = cupy.cuda.Device(self.device_id)
             # Enough blocks to fill the device; the grid-stride loops cover
@@ -579,16 +844,23 @@ class DeviceDataset:
                         (blocks,), (AUDIT_THREADS,),
                         (a["kernel.face"], a["kernel.kn"], a["kernel.kphi"], a["kernel.kv"],
                          a["kernel.cos"], a["kernel.shadow"], np.int64(nrec),
-                         np.int32(self.inputs.nfaces), counters))
+                         np.int32(self.nfaces_device), counters))
                 else:
                     cuda_sources.function("store_audit", "audit_records_f32", self.device_id)(
                         (blocks,), (AUDIT_THREADS,),
                         (a["kernel.face"], a["kernel.kn"], a["kernel.kphi"], a["kernel.kv"],
-                         a["kernel.cos"], np.int64(nrec), np.int32(self.inputs.nfaces), counters))
+                         a["kernel.cos"], np.int64(nrec), np.int32(self.nfaces_device), counters))
             cuda_sources.function("store_audit", "audit_offsets", self.device_id)(
                 (max(1, min(-(-max(npt, 1) // AUDIT_THREADS), 1024)),), (AUDIT_THREADS,),
-                (a["kernel.offsets"], np.int64(npt), np.int64(nrec), counters))
+                (a["kernel.offsets"], np.int64(npt), np.int64(self.scan.nrecords), counters))
             values = [int(v) for v in counters.get()]
+        if self.host_records:                       # the same record checks for the streamed part
+            h = self.host_records
+            for start in range(0, len(h["face"]), COMPACT_CHUNK):
+                sl = slice(start, start + COMPACT_CHUNK)
+                f = h["face"][sl]
+                values[0] += int(np.count_nonzero((f < 0) | (f >= self.nfaces_device)))
+                values[1] += int(sum(np.count_nonzero(~np.isfinite(h[n][sl])) for n in ("kn", "kphi", "kv", "cos")))
             del counters
         result = dict(zip(AUDIT_COUNTERS, values))
         self.audit_result = result
@@ -606,7 +878,17 @@ class DeviceDataset:
                 step = max(1, chunk_bytes // max(flat.itemsize, 1))
                 digest = hashlib.sha256()
                 for start in range(0, flat.size, step):
-                    digest.update(cupy.asnumpy(flat[start:start + step]))
+                    chunk = cupy.asnumpy(flat[start:start + step])
+                    if name == "kernel.face" and self.local_faces is not None:
+                        chunk = self.local_faces[chunk].astype(np.int32)   # the uploaded global ids
+                    digest.update(chunk)
+                host = self.host_records.get(name.split(".", 1)[1]) if name.startswith("kernel.") else None
+                if host is not None:                                    # streamed records
+                    for start in range(0, len(host), step):
+                        chunk = host[start:start + step]
+                        if name == "kernel.face" and self.local_faces is not None:
+                            chunk = self.local_faces[chunk].astype(np.int32)
+                        digest.update(chunk)
                 result[name] = digest.hexdigest()
         return result
 
@@ -614,6 +896,9 @@ class DeviceDataset:
         """Prove the device bytes equal the validated host bytes, field by field."""
         t0 = time.perf_counter()
         device = self.device_digests()
+        if self.record_source == "record_store":
+            # Record fields come from SHA-256-verified store files; compare the rest.
+            device = {k: v for k, v in device.items() if k in self.host_digests}
         mismatched = sorted(name for name in self.host_digests
                             if device.get(name) != self.host_digests[name])
         if mismatched or set(device) != set(self.host_digests):
@@ -628,6 +913,13 @@ class DeviceDataset:
             return
         self.released = True
         self.arrays.clear()
+        if self.host_records:
+            self.host_records = {}
+            import cupy
+            cupy.get_default_pinned_memory_pool().free_all_blocks()
+        if self.mesh_reservation is not None:
+            self.mesh_reservation.release()
+            self.mesh_reservation = None
         if self.reservation is not None:
             self.reservation.release()
             self.reservation = None
@@ -673,12 +965,20 @@ class DeviceDataset:
                           "last_point": scan.point_ids[-1] if scan.point_ids else None},
             "record_precision": self.record_precision,
             "record_conversion": dict(self.conversion),
+            "record_source": self.record_source,
+            "resident_records": self.nresident,
+            "streamed_records": int(self.scan.nrecords - (self.nresident or 0)),
+            "record_store": self.store_identity,
             "kernels": {"version": formats.KERNEL_VERSION, "points": len(scan.rows),
                         "records": scan.nrecords,
                         "loaded_set_sha256": self.kernel_set_sha256,
                         "verified_against_run_manifest": self.manifest_set_verified,
                         "files_verified_against_expected": self.file_digests_verified},
             "mesh_fields": list(self.mesh_fields),
+            "face_compaction": (None if self.local_faces is None else
+                                {"device_faces": int(len(self.local_faces)),
+                                 "mesh_faces": int(self.inputs.nfaces),
+                                 "local_faces_sha256": provenance.array_sha256(self.local_faces)}),
             "enhancement_basis": self.basis_identity,
             "layout": self.layout(),
             "device_audit": self.audit_result,

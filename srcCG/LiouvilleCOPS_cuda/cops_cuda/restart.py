@@ -287,16 +287,26 @@ def from_fit(problem, result, fit_dir, manifest, elements):
 
 
 # --------------------------------------------------------------- GPU evaluation
-def record_factor_args(backend):
+TOOL_SCRATCH_PER_FACE = 32    # bytes per device facet of the restart/fine-tuning per-call arrays
+RECORDS_PER_BLOCK = 4096      # the evaluator's production block size (tests use small blocks)
+
+
+def record_factor_args(backend, records=None):
     """(kernel-name suffix, per-record factor arguments) of ``kernels/restart.cu`` for a backend.
 
     FP64 records: the evaluator's stored factors (wnH, wvH, wpH, xlit, lit). FP32 records (C14
     experiment, ``backend.mixed``): the records and per-point constants from which the ``_m``
-    kernels recompute the same factors in FP64, as the mixed evaluator does.
+    kernels recompute the same factors in FP64, as the mixed evaluator does. ``records``: one
+    chunk of ``CudaBackend.record_chunks()`` (required when the backend streams records).
     """
+    if records is None and getattr(backend.dataset, "streamed", False):
+        from .errors import UnsupportedConfiguration
+        raise UnsupportedConfiguration("internal: a streamed backend's records are passed chunk by chunk "
+                                       "(CudaBackend.record_chunks)")
     if getattr(backend, "mixed", False):
         d = backend.dataset.arrays
-        return "_m", (d["kernel.kn"], d["kernel.kphi"], d["kernel.kv"], d["kernel.cos"],
+        r = records or {n: d["kernel." + n] for n in ("kn", "kphi", "kv", "cos")}
+        return "_m", (r["kn"], r["kphi"], r["kv"], r["cos"],
                       backend.arrays["pt"], np.int64(backend.dataset.npoints),
                       np.float64(backend.constants.COS75))
     a = backend.arrays
@@ -353,7 +363,9 @@ class StateEvaluator:
             if self._backend is not None:
                 self._backend.release()
             self._backend = evaluator.CudaBackend(self.model, self.run, basis if has_b else None,
-                                                  scale if has_b else 1.0, device_id=self.device_id)
+                                                  scale if has_b else 1.0, device_id=self.device_id,
+                                                  records_per_block=RECORDS_PER_BLOCK,
+                                                  scratch_per_face=TOOL_SCRATCH_PER_FACE)
             self._key = key
         state = bk.ParameterState(restart.a, restart.T, float(np.asarray(restart.kappa).reshape(-1)[0]),
                                   b if has_b else None)
@@ -370,29 +382,34 @@ class StateEvaluator:
         """
         import cupy
         from . import cuda_sources
+        from .memory import scratch_reservation
         pNG, pRG = self.pressures(restart)          # binds the backend with the restart's basis
         be = self._backend
-        a, ds = be.arrays, be.dataset
+        ds = be.dataset
         flags = np.isin(self.point_ids, np.asarray(list(flagged_points), dtype=int)).astype(np.uint8)
         c = be.constants
         Tmax, T75, Tmin = (float(v) for v in restart.T)
-        nblocks = int(be._first_block[-1])
-        with cupy.cuda.Device(self.device_id):
-            d_daf = cupy.asarray(np.asarray(delta_af, dtype=np.float64))
+        nf = ds.nfaces_device
+        with cupy.cuda.Device(self.device_id), scratch_reservation(
+                be.budget, "facet point shares", {"dAF": (nf, np.float64), "max_ng": (nf, np.uint64),
+                                                  "max_rg": (nf, np.uint64)}):
+            d_daf = cupy.asarray(ds.gather_faces(np.asarray(delta_af, dtype=np.float64)))
             d_flag = cupy.asarray(flags)
             d_png, d_prg = cupy.asarray(pNG), cupy.asarray(pRG)
             d_crg = cupy.asarray(np.asarray(c.cRG["H2O"], dtype=np.float64))
-            max_ng = cupy.zeros(len(delta_af), dtype=cupy.uint64)
-            max_rg = cupy.zeros(len(delta_af), dtype=cupy.uint64)
-            suffix, factors = record_factor_args(be)
-            cuda_sources.function("restart", "facet_point_shares" + suffix, self.device_id)(
-                (nblocks,), (256,),
-                (a["blocks"], ds.arrays["kernel.face"]) + factors + (
-                 d_daf, d_flag, d_png, d_prg, d_crg, np.float64(c.cNG["H2O"] * c.bm["H2O"]),
-                 np.float64(c.bm["H2O"]), np.float64(Tmax), np.float64(T75), np.float64(Tmin),
-                 np.float64(c.KT), max_ng, max_rg))
-            share_ng = max_ng.get().view(np.float64)
-            share_rg = max_rg.get().view(np.float64)
+            max_ng = cupy.zeros(nf, dtype=cupy.uint64)
+            max_rg = cupy.zeros(nf, dtype=cupy.uint64)
+            fn = None
+            for g0, g1, table, records in be.record_chunks():     # atomicMax: any order
+                suffix, factors = record_factor_args(be, records)
+                fn = fn or cuda_sources.function("restart", "facet_point_shares" + suffix, self.device_id)
+                fn((g1 - g0,), (256,),
+                   (table, records["face"]) + factors + (
+                    d_daf, d_flag, d_png, d_prg, d_crg, np.float64(c.cNG["H2O"] * c.bm["H2O"]),
+                    np.float64(c.bm["H2O"]), np.float64(Tmax), np.float64(T75), np.float64(Tmin),
+                    np.float64(c.KT), max_ng, max_rg))
+            share_ng = ds.scatter_faces(max_ng.get().view(np.float64), 0.0)
+            share_rg = ds.scatter_faces(max_rg.get().view(np.float64), 0.0)
             del d_daf, d_flag, d_png, d_prg, d_crg, max_ng, max_rg
         return share_ng, share_rg, pNG, pRG
 
@@ -405,20 +422,26 @@ class StateEvaluator:
         """
         import cupy
         from . import cuda_sources
+        from .memory import scratch_reservation
         be = self._backend
-        a, ds, c = be.arrays, be.dataset, be.constants
+        ds, c = be.dataset, be.constants
         Tmax, T75, Tmin = (float(v) for v in restart.T)
         nblocks = int(be._first_block[-1])
-        with cupy.cuda.Device(self.device_id):
-            d_daf = cupy.asarray(np.asarray(delta_af, dtype=np.float64))
+        with cupy.cuda.Device(self.device_id), scratch_reservation(
+                be.budget, "point changes", {"dAF": (ds.nfaces_device, np.float64),
+                                             "partial": (2 * nblocks, np.float64)}):
+            d_daf = cupy.asarray(ds.gather_faces(np.asarray(delta_af, dtype=np.float64)))
             d_crg = cupy.asarray(np.asarray(c.cRG["H2O"], dtype=np.float64))
             partial = cupy.empty(2 * nblocks, dtype=np.float64)
-            suffix, factors = record_factor_args(be)
-            cuda_sources.function("restart", "point_change_partials" + suffix, self.device_id)(
-                (nblocks,), (256,),
-                (a["blocks"], ds.arrays["kernel.face"]) + factors + (
-                 d_daf, d_crg, np.float64(c.cNG["H2O"] * c.bm["H2O"]), np.float64(c.bm["H2O"]),
-                 np.float64(Tmax), np.float64(T75), np.float64(Tmin), np.float64(c.KT), partial))
+            fn = None
+            for g0, g1, table, records in be.record_chunks():     # partials by global block
+                suffix, factors = record_factor_args(be, records)
+                fn = fn or cuda_sources.function("restart", "point_change_partials" + suffix, self.device_id)
+                fn((g1 - g0,), (256,),
+                   (table, records["face"]) + factors + (
+                    d_daf, d_crg, np.float64(c.cNG["H2O"] * c.bm["H2O"]), np.float64(c.bm["H2O"]),
+                    np.float64(Tmax), np.float64(T75), np.float64(Tmin), np.float64(c.KT),
+                    partial[2 * g0:2 * g1]))
             host = partial.get().reshape(nblocks, 2)
             del d_daf, d_crg, partial
         first = np.asarray(be._first_block[:-1], dtype=np.int64)

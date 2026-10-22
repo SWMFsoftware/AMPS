@@ -27,6 +27,143 @@ Reconciled facts, checked 2026-10-19:
 * New pending items: C00b re-freeze against the repaired tree, C02 joint extensions, and
   the C04 gravity acceptance route (a user decision).
 
+## C15: scaling to SHAP8 20M/44M and the Voyager cluster (2026-10-21, user request): P1, P2 (with P2b), P3 COMPLETE
+
+Plan and decisions: `SCALING_PLAN.md` (§0a). Phase P1 (data layer), all bitwise-neutral:
+* **Template fits keep their records:** `CudaBackend.rebind_basis` and `MultiGpuBackend.rebind_basis`; the registry
+  rebinds only the evaluator's basis-sized arrays (event `rebind_basis_only`). A fresh bind before cost 12 min per
+  12M template fit. Tests: `test_gpu_model.py::test_basis_rebind_is_bitwise_a_new_backend` (FP64, FP32),
+  `test_multi_gpu.py::test_basis_rebind_on_two_devices_is_bitwise`.
+* **Face compaction (user decision):** `DeviceDataset.load(compact_faces=True)`, on by default in `CudaBackend`
+  (`COPS_CUDA_COMPACT_FACES=0` turns it off). The device holds per-face data only for the faces in its records;
+  `kernel.face` is remapped on the device; `gather_faces`/`scatter_faces` translate at every kernel call site
+  (evaluator, masks, restart, fine tuning). Measured on 12M: 74.5% of the faces occur in any record; with 8 GPUs the
+  largest rank needs 52%. Real-data check, 1M full table: 840,458 of 1,194,250 faces on the device; pressures and
+  point changes bitwise equal to uncompacted. `tests/test_face_compaction.py` (5).
+* **FP32 record store (user decision Q4):** `cops_cuda/record_store.py`, `tools/c15_record_store.py`; one file per
+  point (20 B/record), manifest tied to each kernel file (size, mtime, SHA-256) and to `run_manifest.json`; the FP32
+  conversion is one shared function (`device_store.fp32_record_fields`). Loader: `record_store=` (reader threads,
+  pinned double buffer); `gpu_fit.py --record-store`. 3M: built in 91 s (17.1 GB); half the rows loaded in 19.8 s
+  against 278 s from the kernel files, device arrays bitwise identical. `tests/test_record_store.py` (6).
+* **Validate once (user decision Q4):** `base_validation.AuditCache` (`gpu_fit.py --audit-cache auto|off|PATH`,
+  `--revalidate`): unchanged files (size, mtime, inode) reuse their first full validation; the reference
+  `validate_fit_base` still runs on these results. `test_base_validation.py::test_validate_once_cache`.
+* 216 tests pass.
+
+Phase P2 (streaming engine), FP32 records: COMPLETE for fits.
+* `CudaBackend` keeps as many records resident as the budget allows (per-face arrays, slots and partial sums
+  planned first; aligned to a block end; `COPS_CUDA_MAX_RESIDENT_RECORDS` caps it). The rest stay in pinned host
+  memory (`DeviceDataset.host_records`). Each pass runs the resident blocks, then copies chunks
+  (`COPS_CUDA_STREAM_CHUNK_RECORDS`, default 2^25 records) into 3 device slots on a copy stream while earlier chunks
+  compute, and runs every tile of the request on a chunk while it is on the device (one transfer per pass). The
+  kernels see block for block the same records, so results are **bitwise** the resident ones.
+* `seen_faces`, audit and device digests cover the streamed part. Restart/fine-tuning kernels refuse a streamed
+  backend (`UnsupportedConfiguration`) until P2b.
+* `tests/test_streaming.py` (5): caps 0..nrec-1 with 40-record chunks, compaction on/off, record store, two GPUs,
+  all bitwise; 221 tests pass.
+* 3M, one A6000 (PCIe gen3, 12.3 GB/s), from the store: resident P 0.214 s, J 1.049 s (16.7 GiB); 50% streamed
+  P 0.747 s, J 1.159 s (10.6 GiB); 88% streamed P 1.28 s, J 1.311 s (4.5 GiB); all 31 result arrays bitwise equal.
+  Pressure passes are transfer-bound; the Jacobian hides most of the transfer.
+* 20M chain started (`output_fit_shap8_020m_base` in /tmp/vtenishe; store, gravity, bundles, fits on /data;
+  fits with `--headroom-fraction 0.12 --precision mixed --record-store`).
+* 20M base: 5.06e9 records (253 per facet, 28% below the projection), 194 GB, 6271 s. Store: 101.1 GB, 354 s.
+  The first chain stopped at the visibility masks: their per-facet scratch (uint32, 80 MB at 20M) was outside every
+  plan and above the 64 MB slack. `memory.scratch_reservation` now reserves such arrays for the call (up to half
+  the slack they stay in it); `tests/test_masks_budget.py` (2). Chain restarted from that step.
+* The second chain lost B29 at 22:12 (2026-10-21) to the kernel OOM killer: other jobs had taken about 190 GB of the
+  251 GB host RAM. The GPU workers now memory-map `elements.bin` (`formats.map_elements`; RunInputs loads lazily,
+  `formats.LazyElementFields`), so a worker holds about 1.3 GB instead of about 15 GB; a 20M fit needs about 55 GB of
+  host RAM (11 GB parent, 2 x (1.3 GB + 20.2 GB pinned)). The third chain (user decision: wait for free RAM) starts
+  each fit after 10 min with at least 110 GB available, with `oom_score_adj` 1000 so the fit, not another job, is
+  killed first.
+* **20M fits complete (2026-10-22 13:42)**, `fit_020m_gpu_{B29,N30,C30,NC31}_n2000_mixed`, 3.3–4.0 h each on
+  2 A6000 (2.3–2.5 s per pressure call, 4.1–4.4 s per Jacobian, 30% of the records streamed). Comparison:
+  `cops_output/comparison_020m_vs_012m_003m_001m/` (README, cost table, figures). B29 0.066997, N30 0.039970, C30
+  0.068048: within 0.06–0.3% of 12M, same branches. **NC31 0.033252 is degenerate:** Tmin (87 K) rose above Tmax
+  (77 K) and T75 (44 K), so T = max(Tmin, lit law) = Tmin on every facet; Tmax and T75 have zero Jacobian columns
+  (data Jacobian rank 29 of 31, condition 1.6e22; their printed sigmas of about 0 are the pseudo-inverse dropping
+  them). The optimizer has no gradient out of that region; 12M NC31 reached 0.026600. Rerun from another start and
+  an optional Tmin <= T75 <= Tmax constraint: pending user decisions.
+
+Phase P2b (streaming for the restart and fine-tuning kernels): COMPLETE.
+* `CudaBackend.record_chunks()` yields the bound records in block order (resident part, then each streamed chunk
+  copied into a slot) with the matching block table; every `kernels/restart.cu` call site (facet shares, point
+  changes, first structural/significant row, first-interval scores) loops over it. Their outputs are per-facet
+  atomic max/min, per-block partials indexed by global block, or chronological per-point sums (one record per facet
+  and point), so the results are **bitwise** the resident ones (`tests/test_streaming.py`: caps 0, 50 and 130
+  records with 40-record chunks, points split over chunks and over the resident boundary).
+* Their per-facet scratch is reserved (`memory.scratch_reservation`), and `StateEvaluator` backends keep 32 B per
+  device facet free when sizing the resident records (`scratch_per_face`). Fit backends keep 1 B (seen_faces), plus
+  8 B with device activity (the check).
+* So `restart_tool.py enhance|translate --precision mixed` and `fine_tune_gpu.py --precision mixed` run on bases
+  larger than the GPUs (12M, 20M), streaming the excess. 239 tests pass.
+
+Phase P3 (distribution over MPI): COMPLETE (local `mpirun`; the cluster gates wait for an account).
+* `cops_cuda/transport.py`: `MultiGpuBackend` talks to its workers through channels with one interface: spawned
+  processes (`transport="local"`, unchanged behaviour), MPI ranks (`transport="mpi"`, mpi4py 4.0.3 built against the
+  system Open MPI 4.0.3), and rank 0's own GPU in process (its block runs while the other ranks compute). One worker
+  handler serves bind, evaluate, rebasis, seen, identity, close (the rank keeps serving later binds) and exit.
+  Template bases travel as chunked raw buffers (below MPI-3's 2^31 count). After a failure, closing drains the
+  unanswered replies, so the next bind on the same ranks is clean. A rank's device is its launcher local rank
+  (Open MPI, Slurm, MPICH, MVAPICH variables; no collective) modulo the visible devices.
+* `tools/gpu_fit.py --transport mpi [--activity host|device]`: every rank starts the tool; ranks >= 1 serve, rank 0
+  fits. A failure on rank 0 ends the job with `MPI_Abort`; at the end rank 0 releases the workers.
+* **Activity split over the GPUs (user decision Q3):** `CudaBackend(activity="device")` uploads Y and the raw template
+  columns of its own facets once per bind and forms act_lin, af and the active set on the device
+  (`kernels/activity.cu`, fixed term order, NumPy's clip). Deterministic and the same in every partition; it is not
+  the host BLAS rounding, so it is checked against the host expression at the first evaluation and every 100th
+  (error ≤ 64 eps of Σ|terms|, no active-set flip outside that bound; `BackendError` otherwise; recorded in the
+  identity). Default of the MPI transport; `host` (exact, `MPI_Bcast` of the field) stays available and is the
+  local default.
+* Partition: contiguous row blocks balanced by records. At 20M the largest block exceeds the ideal by 2.1% at
+  24 ranks (the largest point is 3.4% of a rank's share), so the block-granular split is deferred to P4.
+* Tests: `tests/test_mpi_transport.py` (8, real `mpirun -n 1..3` jobs, ranks may share a GPU): host activity 2 ranks
+  and device activity 1–3 ranks, FP64 and streamed FP32, with a basis rebind, `seen_faces` and a no-basis (B29) bind,
+  all BITWISE one GPU; a worker failure is a `BackendError` naming the rank, and the ranks serve the next bind.
+  `tests/test_activity_device.py` (5): within the bound, BITWISE across compaction, streaming, two GPUs and a rebind,
+  a corrupted device basis is caught. The existing multi-GPU tests pass unchanged on the refactored pipe transport.
+  Full suite: 236 tests pass (239 with P2b).
+* **Real-data gate, 788k B29** (FP32 records, max_nfev 4): `mpirun -n 2 gpu_fit.py --transport mpi --activity host`
+  is BITWISE the local `--devices 0,1` fit (x, a, T, κ, act_lin, predicted NG/RG). With `--activity device`: x within
+  8.8e-15 relative, the same final cost (0.8724887), predicted pressures bitwise; activity check 3.16 eps of the
+  term sum (bound 64), 0 active-set flips. (The raw ulp distance is large only where the terms cancel to near
+  zero, which is why the bound is relative to Σ|terms|.) Each fit 1.5 min wall, 75 s of it the bind.
+* Not yet: distributed base validation (validate-once makes it a one-time cost: rank 0 alone); per-rank element
+  subsets (every rank reads `elements.bin`: 4 GB of Y per rank at 20M); the Slurm template
+  `tools/cluster/fit_mpi.slurm` has SITE placeholders until the Voyager account exists.
+
+
+Phase P0 preparation (2026-10-22, user request; CPU-tested; developed in a copy while the 20M chain ran, merged into
+this tree on 2026-10-22 after the chain, full suite 267 passed including the mpirun tests): the campaign runner for Voyager.
+* `tools/cluster/cops_pipeline.py plan|run|submit|status`: the user's five settings (`--shape`, `--surface-bc
+  flat|rough`, `--restart-dir`, `--max-nfev`, `--fine-tune`) plus fits B29/N30/C30/NC31 (templates as in the 20M chain),
+  `--restart-from FIT=FILE` (template and mesh checks; `--translate-restart` for another mesh), existing products
+  (`--base`, `--store`, `--visibility-bundle`, `--bundle`, identity-checked: rebuild.json, run_manifest.json,
+  store_manifest.json, bundle sidecars). Stages base → store → visibility → gravity → cache → bundle → fits →
+  fine tuning, each with a stamp (inputs, command, code digests, hardware); failed or killed stages are moved aside
+  (`.incomplete_<UTC>`) and run again; another mesh, emission law, input, gravity body or precision request is refused.
+* Hardware is detected at run time (Slurm variables, CUDA_VISIBLE_DEVICES, nvidia-smi or the CUDA device properties,
+  /proc/meminfo; overrides `--nodes --gpus-per-node --gpu-memory-gb --host-memory-gb`); nothing is hardwired. Precision
+  `auto` (user decision): FP64 when the FP64 records fit resident on the fit GPUs, else mixed with streaming (streaming
+  stays mixed-only, user decision); the pinned host buffers must fit the node (else refused). The memory model
+  reproduces the local 20M fit: 3.56e9 records resident / 1.50e9 streamed / 54.9 GB host predicted, against 3.54e9 /
+  1.52e9 / about 54 GB measured.
+* `--gravity-precision mixed|fp64` (default mixed, user decision 2026-10-22), separate from the record precision; both
+  policies are recorded in `pipeline.json`. `plan` estimates the gravity time from recorded c04 runs (20M on 8 GPUs
+  of the A6000's rate: mixed about 12 min, fp64 about 70 h), or says unknown.
+* Wall time (user decision 2026-10-22; default none): `gpu_fit.py --wall-time HH:MM:SS|slurm | --deadline` stops the
+  unchanged fitter's `least_squares` at the best evaluated state before the deadline (`cops_cuda/wall_time.py`),
+  writes the restart file with `status = "interrupted"` and a `segments` record, exits 75; the runner continues the
+  fit as segment k+1 with `--restart-from` and the remaining evaluations. A segmented fit is not identical to one
+  continuous run. `submit --resubmit N` scripts resubmit themselves (afterany) while `status --check` says resumable.
+* `submit` writes the task/GPU lines from `--nodes` and `--gpus-per-node` (default `auto`: `sinfo -h -o %G`);
+  `tools/cluster/fit_mpi.slurm` no longer hardwires `--ntasks-per-node=8` (given at sbatch time).
+* Tests (CPU only, fake tools / fake clock): `tests/test_cops_pipeline.py` (20), `tests/test_wall_time.py` (7);
+  `tests/test_gpu_fit.py` unchanged and passing. `plan` read-only against the real 20M products: base, store and both
+  bundles accepted as external, the four fits and fine tunings pending, nothing written (8 s, 67 MB).
+* PENDING (after the 20M chain, GPUs needed): a real `run` of the runner on this machine (788k, then 20M with
+  `--wall-time` segments), a wall-time stop of a real GPU fit, MPI transport through the runner, and the cluster gates.
+
 ## C14: mixed precision and the SHAP8 12M mesh (2026-10-21, user request): EXPERIMENT; four fits complete
 
 User request: "switch the gravity calculation and the fitter to single precision as an experiment", "12M, start with
