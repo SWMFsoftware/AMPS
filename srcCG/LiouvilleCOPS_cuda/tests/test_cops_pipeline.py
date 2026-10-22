@@ -521,3 +521,13 @@ def test_hardware_detection(world, monkeypatch):
     hw = cp.detect_hardware(cp.parse_args(["plan", "--restart-dir", "x"]), request, live=False)
     assert hw["gpus_per_node"] == 2 and hw["gpus_source"] == "CUDA_VISIBLE_DEVICES"
     assert hw["host_memory_source"] == "/proc/meminfo" and hw["host_memory_bytes"] > 0
+
+
+@pytest.mark.parametrize("chunk", [7, 8, 13, 64, 1 << 20])
+def test_facet_count_is_exact_across_read_blocks(tmp_path, monkeypatch, chunk):
+    """A card ending exactly at a block boundary is counted once (the 20M BDF read 19,999,506 before)."""
+    mesh = tmp_path / "mesh.bdf"
+    cards = "".join("CTRIA3 %d 1 1 2 3\n" % k for k in range(50))
+    mesh.write_text("$ header\nGRID 1 0 0. 0. 0.\n" + cards + "ENDDATA\n")
+    monkeypatch.setattr(cp, "CHUNK", chunk)
+    assert cp.file_identity(mesh, count_facets=True)["facets"] == 50

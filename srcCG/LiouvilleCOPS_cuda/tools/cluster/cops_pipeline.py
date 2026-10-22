@@ -218,7 +218,7 @@ def file_identity(path, stored=None, count_facets=False):
                     head += block[:4096 - len(head)]
                 joined = tail + block
                 facets += joined.count(b"\nCTRIA3")
-                tail = joined[-7:]
+                tail = joined[-6:]          # one byte short of a card: a match is never counted twice
     identity = {"path": str(path), "size_bytes": st.st_size, "mtime_ns": st.st_mtime_ns,
                 "sha256": digest.hexdigest()}
     if count_facets:

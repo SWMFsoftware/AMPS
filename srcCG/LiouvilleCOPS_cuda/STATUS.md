@@ -84,6 +84,22 @@ Phase P2 (streaming engine), FP32 records: COMPLETE for fits.
   (data Jacobian rank 29 of 31, condition 1.6e22; their printed sigmas of about 0 are the pseudo-inverse dropping
   them). The optimizer has no gradient out of that region; 12M NC31 reached 0.026600. Rerun from another start and
   an optional Tmin <= T75 <= Tmax constraint: pending user decisions.
+* **20M package** (2026-10-22): `cops_output/comparison_020m_vs_012m_003m_001m/` holds the fits with their restart
+  files, every plot, the raw inputs (MiARD 20M PLY, SPICE, COPS L2, observations), the code exactly as run (archives
+  reproduce the application/reference tree digests recorded by all four fit manifests), the chain scripts, expected
+  hashes of every derived product, rerun instructions, PROVENANCE.txt and MANIFEST.sha256 (1,385 files, hard links).
+* `tools/descent3d_figures.py` (new; view per user request: the whole nucleus, uncropped, broadside to the
+  trajectory plane fitted from 09:00 UTC, tilted 20° up, plus a zoom on the impact area): trajectory coloured by
+  measured NG, altitude drop lines, nearest-point ground track; terrain coloured by cos(SZA) at the NG jump (shadow
+  map of the whole nucleus; 99.6% agreement with the forward model's shadow flags of the 1.46 million facets in that
+  point's kernel), gravitational slope, and gauge visibility; every figure marks the surface seen only by NG / only
+  by RG since the NG jump. The NG jump is the NG data gap with the largest pressure rise (x4.1), not the longest gap. Finding: at
+  the NG jump (10:33:10, 298 m, NG x4.1 after a 512 s gap) NG and RG see the same 1,464,452 facets (no NG-only or
+  RG-only facet anywhere on the nucleus). `figures.render_ortho(shade_weight=..., return_faces=...)` added
+  (defaults unchanged).
+  `_classes` / `_classes_global` (user request): facets seen by NG only, RG only, or both over the 95 points from the
+  NG jump to the end: at every point 0 / 0 / 15,192 facets; at one or more points 8,783 / 29,154 / 1,466,443 (the
+  first two equal the late templates exactly); 7,558 facets are seen at every point but switch class.
 
 Phase P2b (streaming for the restart and fine-tuning kernels): COMPLETE.
 * `CudaBackend.record_chunks()` yields the bound records in block order (resident part, then each streamed chunk

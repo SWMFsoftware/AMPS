@@ -539,8 +539,13 @@ class OrthoView:
 
 
 def render_ortho(vertices, faces, normals, view, center, half_width, pixels, colors, device_id=0, ss=2,
-                 light=None):
-    """Shaded orthographic image (H x W x 3) of the mesh around ``center``; returns image + mapper."""
+                 light=None, shade_weight=1.0, return_faces=False):
+    """Shaded orthographic image (H x W x 3) of the mesh around ``center``; returns image + mapper.
+
+    ``shade_weight`` blends the relief shading into the facet colours: 1 = full shading, smaller
+    values keep quantitative colour maps closer to their colours. With ``return_faces`` the face index
+    per supersampled pixel (-1: background) and the supersampling factor are returned as well.
+    """
     W = H = int(pixels) * ss
     sx, sy, sz = view.project(vertices - center)
     scale = W / (2.0 * half_width)
@@ -552,7 +557,7 @@ def render_ortho(vertices, faces, normals, view, center, half_width, pixels, col
     L = L / np.linalg.norm(L)
     lam = np.clip(normals @ L, 0.0, 1.0)
     facing = normals @ view.d
-    intensity = 0.30 + 0.70 * lam
+    intensity = 1.0 - shade_weight * (0.70 - 0.70 * lam)
     intensity = np.where(facing < 0, 0.25, intensity)              # back faces seen through gaps
     image = _shade(face, colors, intensity, ss)
 
@@ -567,6 +572,8 @@ def render_ortho(vertices, faces, normals, view, center, half_width, pixels, col
         inside = (ix >= 0) & (ix < W / ss) & (iy >= 0) & (iy < H / ss)
         return inside & (pz <= depth[row, col] + tol_m)
 
+    if return_faces:
+        return image, to_image, visible, face, ss
     return image, to_image, visible
 
 
