@@ -8,7 +8,142 @@
  *      Author: vtenishe
  */
 
+/*
+ * =====================================================================================
+ * STENCIL-CELL CACHE OF THE CELL-CENTERED LINEAR INTERPOLATION (added 2026-10-22)
+ * =====================================================================================
+ *
+ * 1. What is cached and why
+ * -------------------------
+ * CellCentered::Linear::InitStencil() builds the interpolation stencil of a point x in
+ * block `node` in one of three ways:
+ *   - trilinear on the 8 cell centers around x (GetTriliniarInterpolationStencil()),
+ *     used inside a block and next to neighbors of the same resolution;
+ *   - trilinear on the lattice of the coarser block, where each coarse support point
+ *     that lies in a finer block is replaced by the average of its 2x2x2 fine cells
+ *     (GetTriliniarInterpolationMutiBlockStencil()), used at coarse/fine interfaces;
+ *   - a blend of the two within one cell of the interface (continuity).
+ * It returns two representations of the stencil:
+ *   - the pointer stencil (cStencil): cDataCenterNode pointers of the local block and
+ *     its ghost cells (node->block->GetCenterNode()); used by all applications;
+ *   - the optional row stencil (cRowStencil): decomposition-independent (leaf node,
+ *     i,j,k) identifiers that do not need the block to be allocated on this rank;
+ *     used by the Mode3D cutoff-rigidity tracing of srcEarth/srcGeospace to read a
+ *     compact global field array.
+ *
+ * Building a stencil requires tree searches whose results depend only on the geometry
+ * of the AMR tree, not on x within the cell, not on the field data and not on which
+ * MPI rank owns a block:
+ *   (a) row-stencil cells: every entry is given as cell (i,j,k) of a node with
+ *       i,j,k in [-1,_BLOCK_CELLS_] (ghost indices included).  AddRowStencilCell()
+ *       converts the cell center to the leaf that contains it with
+ *       mesh->findTreeNode() and converts the coordinate to the cell index in that
+ *       leaf (LocateRowStencilCell()).  A trilinear stencil has 8 such cells, a
+ *       multiblock stencil up to 64, a blended stencil up to 72.
+ *   (b) multiblock support points: GetTriliniarInterpolationMutiBlockStencil() calls
+ *       mesh->findTreeNode() for each of its 8 support points (cell (i,j,k) of the
+ *       coarse node) to find the block that covers it.
+ *   (c) coarser-neighbor search: InitStencil() inspects up to 6 faces, 12 edges and 8
+ *       corners of the block with node->GetNeibFace()/GetNeibEdge()/GetNeibCorner().
+ *       With _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_==_OFF_AMR_MESH_ (the default)
+ *       each of these is again an integer-index tree search.
+ * A tree search climbs from the start node until the searched index lies inside the
+ * node and then descends to the leaf, i.e. several dependent memory reads per level.
+ * In Mode3D tracing every field evaluation builds a stencil, a trajectory makes
+ * 1e3-1e5 field evaluations, and the same blocks are visited again and again: the
+ * same searches are repeated millions of times with the same arguments.  A profile of
+ * Mode3D MESH tracing (srcGeospace C1 test, port of this code) attributed about 55% of
+ * the executed instructions to these searches and coordinate-to-index conversions,
+ * while the arithmetic of the trajectory integrator was below 3%.
+ *
+ * The cache stores the results of (a), (b) and (c) for recently used nodes so that a
+ * repeated request is answered by a table lookup.
+ *
+ * 2. Exactness
+ * ------------
+ * A cached value is computed by the original code at its first use and returned for
+ * every later request with the same arguments:
+ *   - (a) is filled only by AddRowStencilCell() and (b) only by
+ *     GetTriliniarInterpolationMutiBlockStencil(); each caller computes the
+ *     coordinate from (node,i,j,k) with its own expression, so a cached value is the
+ *     result of exactly the computation it replaces;
+ *   - state that is not tree geometry is NOT cached and is read at use time as before:
+ *     IsUsedInCalculationFlag of the leaf found (re-tested on every use),
+ *     RefinmentLevel and the coordinates of neighbors, node->block and the cell data
+ *     (the pointer stencil still reads node->block->GetCenterNode()), all weights.
+ * The stencils, their weights and the order in which entries are added and merged are
+ * therefore unchanged and the interpolated values are bitwise identical with and
+ * without the cache (verified: srcEarth and srcGeospace Mode3D MESH tests, 1 and 8
+ * threads, cache on/off and original code; srcGeospace engine-vs-legacy comparison of
+ * 8,888 trajectories, 0 mismatches).
+ *
+ * 3. Organization
+ * ---------------
+ *   - Per thread: every thread (OpenMP or std::thread) owns its table (thread_local),
+ *     so there are no locks and no shared writes.
+ *   - Direct-mapped table of nStencilCacheSlots=256 entries; the slot of a node is the
+ *     upper 8 bits of a 64-bit multiplicative hash of the node address.  A request for
+ *     another node mapping to the same slot evicts the previous entry.
+ *   - One entry per node holds, for each of the (_BLOCK_CELLS_X_+2)(_BLOCK_CELLS_Y_+2)
+ *     (_BLOCK_CELLS_Z_+2) cells (512 for 6x6x6 blocks): the row-cell owner and index
+ *     (a), the support-point node (b), and flags telling which of them are already
+ *     known; plus the 26 neighbors (c).  Values are filled lazily, only for the cells
+ *     and neighbors actually requested.
+ *   - Memory: about 10.5 KB per entry for 6x6x6 blocks, i.e. about 2.7 MB per thread
+ *     that interpolates; allocated at the first use by the thread, released when the
+ *     thread exits.  Independent of the mesh size.
+ *   - Host code only: the cache code is excluded from CUDA device code (__CUDA_ARCH__),
+ *     where the original searches are used.
+ *   - A pointer to an entry is never kept across a request for another node (the slot
+ *     may be reassigned in between).
+ *
+ * 4. What triggers re-caching
+ * ---------------------------
+ * An entry is valid for (mesh, node, mesh->nMeshModificationCounter).  It is cleared
+ * and refilled lazily when
+ *   - the slot is requested for another node (eviction);
+ *   - PIC::Mesh::mesh points to another mesh object;
+ *   - mesh->nMeshModificationCounter changed.  cMeshAMRgeneric increments it in
+ *     splitTreeNode() (refinement), deleteTreeNode() (coarsening), AllocateBlock()
+ *     and DeallocateBlock(), setMeshName()/generateMeshName() (mesh creation), and in
+ *     CreateNewParallelDistributionLists() (every load-balancing redistribution).
+ *     The cached values depend on none of block allocation and domain decomposition
+ *     (the tree is replicated on all ranks; allocation and redistribution change
+ *     node->block and node->Thread only), so clearing them in those cases is
+ *     conservative; the cost is the lazy refill of the entries that are used again.
+ *     An application that allocates or deallocates blocks between successive
+ *     interpolations loses part of the benefit but not the correctness.
+ * Code that changes the tree geometry (node coordinates, upNode/downNode links)
+ * without incrementing nMeshModificationCounter would leave stale entries; such code
+ * must increment the counter or run with the cache disabled.  Changes of
+ * IsUsedInCalculationFlag or of the field data need no action.
+ *
+ * 5. Control
+ * ----------
+ * Environment variable AMPS_INTERPOLATION_STENCIL_CACHE=0 disables the cache (read
+ * once per process); any other value or no value enables it.
+ *
+ * 6. Expected benefit
+ * -------------------
+ *   - Row-stencil users (srcEarth, srcGeospace with AMPS_EARTH_ENGINE=LEGACY): Mode3D
+ *     MESH trajectory tracing measured 1.65-1.68x faster on one thread and
+ *     1.53-1.64x faster with 8 threads (C1 test, 14k-36k blocks, 6x6x6 cells).
+ *     Mesh generation and field initialization are not affected.
+ *   - Applications that use only the pointer stencil: (a) does not apply (that path
+ *     reads the block's ghost cells without tree searches), so the saving is limited
+ *     to (b) and (c), i.e. to interpolation points near coarse/fine interfaces.  The
+ *     gain depends on the fraction of such points and has not been measured.
+ *   - Uniform meshes and points deep inside blocks take the trilinear path without
+ *     (b) and (c); the cache adds one table lookup per row-stencil cell there.
+ * =====================================================================================
+ */
+
 #include "pic.h"
+
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <memory>
 
 PIC::InterpolationRoutines::CellCentered::cStencil _TARGET_DEVICE_ _CUDA_MANAGED_ *PIC::InterpolationRoutines::CellCentered::StencilTable=NULL;
 PIC::InterpolationRoutines::CornerBased::cStencil _TARGET_DEVICE_ _CUDA_MANAGED_ *PIC::InterpolationRoutines::CornerBased::StencilTable=NULL;
@@ -20,6 +155,69 @@ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* PIC::InterpolationRoutines::CellCentered
 namespace {
   typedef cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> cInterpolationTreeNode;
 
+#ifndef __CUDA_ARCH__
+  /*
+   * Stencil-cell cache (host code). See "STENCIL-CELL CACHE" at the top of this file
+   * for what is cached, why, the exactness argument and what triggers re-caching.
+   * Users: AddRowStencilCell() (row cells), FindStencilSupportNode() (multiblock
+   * support points) and GetStencilNeib() (coarser-neighbor search).
+   */
+  const int nStencilCacheCells=(_BLOCK_CELLS_X_+2)*(_BLOCK_CELLS_Y_+2)*(_BLOCK_CELLS_Z_+2);
+  const int nStencilCacheSlots=256;   //the slot index is the upper 8 bits of a 64-bit hash
+  enum {StencilCacheRowKnown=1,StencilCacheSupportKnown=2};
+
+  static_assert((_BLOCK_CELLS_X_<256)&&(_BLOCK_CELLS_Y_<256)&&(_BLOCK_CELLS_Z_<256),"cell indices are stored as unsigned char");
+
+  struct cStencilCacheEntry {
+    const void *mesh;
+    unsigned long int counter;
+    const cInterpolationTreeNode *node;
+    unsigned char known[nStencilCacheCells];
+    cInterpolationTreeNode *rowNode[nStencilCacheCells];   //NULL: no row cell is added
+    unsigned char rowIjk[nStencilCacheCells][3];
+    cInterpolationTreeNode *supportNode[nStencilCacheCells];
+    bool neibKnown[26];
+    cInterpolationTreeNode *neib[26];                      //faces 0-5, edges 6-17, corners 18-25
+  };
+
+  bool StencilCacheEnabled() {
+    static const bool enabled=[] {
+      const char *e=getenv("AMPS_INTERPOLATION_STENCIL_CACHE");
+      return !((e!=NULL)&&(strcmp(e,"0")==0));
+    }();
+
+    return enabled;
+  }
+
+  /* The calling thread's cache entry of node. The returned pointer must not be kept
+   * across another call of this function (the slot may be reassigned). */
+  cStencilCacheEntry *GetStencilCacheEntry(const cInterpolationTreeNode *node) {
+    if ((node==NULL)||(StencilCacheEnabled()==false)) return NULL;
+
+    thread_local std::unique_ptr<cStencilCacheEntry[]> table;
+    if (!table) table.reset(new cStencilCacheEntry[nStencilCacheSlots]());
+
+    const uint64_t key=static_cast<uint64_t>(reinterpret_cast<uintptr_t>(node));
+    cStencilCacheEntry &e=table[(key*0x9E3779B97F4A7C15ULL)>>56];
+    const void *mesh=PIC::Mesh::mesh;
+    const unsigned long int counter=PIC::Mesh::mesh->nMeshModificationCounter;
+
+    if ((e.node!=node)||(e.mesh!=mesh)||(e.counter!=counter)) {
+      e.node=node,e.mesh=mesh,e.counter=counter;
+      memset(e.known,0,sizeof(e.known));
+      memset(e.neibKnown,0,sizeof(e.neibKnown));
+    }
+
+    return &e;
+  }
+
+  /* Index of cell (i,j,k), i,j,k in [-1,_BLOCK_CELLS_], in a cache entry; -1 otherwise. */
+  int StencilCacheCellIndex(int i,int j,int k) {
+    if ((i<-1)||(i>_BLOCK_CELLS_X_)||(j<-1)||(j>_BLOCK_CELLS_Y_)||(k<-1)||(k>_BLOCK_CELLS_Z_)) return -1;
+    return (i+1)+(_BLOCK_CELLS_X_+2)*((j+1)+(_BLOCK_CELLS_Y_+2)*(k+1));
+  }
+#endif
+
   /*
    * Add a row-stencil entry identified by a physical cell-center coordinate.
    *
@@ -30,10 +228,33 @@ namespace {
    * independent of which MPI rank owns the corresponding cDataBlockAMR.
    */
   _TARGET_HOST_ _TARGET_DEVICE_
+  bool LocateRowStencilCell(const double *xIn,cInterpolationTreeNode *StartNode,
+      cInterpolationTreeNode *&CellNode,int *ijk);
+
+  _TARGET_HOST_ _TARGET_DEVICE_
   bool AddRowStencilCellByCoordinate(PIC::InterpolationRoutines::cRowStencil *RowStencil,double Weight,
       const double *xIn,cInterpolationTreeNode *StartNode) {
     if (RowStencil==NULL) return false;
 
+    cInterpolationTreeNode *CellNode;
+    int ijk[3];
+
+    if (LocateRowStencilCell(xIn,StartNode,CellNode,ijk)==false) return false;
+    if (CellNode->IsUsedInCalculationFlag==false) return false;
+
+    RowStencil->AddCell(Weight,CellNode,ijk[0],ijk[1],ijk[2]);
+    return true;
+  }
+
+  /*
+   * The leaf and the interior (i,j,k) index that AddRowStencilCellByCoordinate()
+   * adds for xIn, without its IsUsedInCalculationFlag test (which depends on the
+   * state of the leaf, not on the tree geometry). Returns false when no cell is
+   * added for any value of that flag.
+   */
+  _TARGET_HOST_ _TARGET_DEVICE_
+  bool LocateRowStencilCell(const double *xIn,cInterpolationTreeNode *StartNode,
+      cInterpolationTreeNode *&CellNode,int *ijk) {
     double x[3]={xIn[0],xIn[1],xIn[2]};
 
     /*
@@ -57,12 +278,11 @@ namespace {
       else if ((x[d]<xmin)||(x[d]>xmax)) return false;
     }
 
-    cInterpolationTreeNode *CellNode=PIC::Mesh::mesh->findTreeNode(x,StartNode);
+    CellNode=PIC::Mesh::mesh->findTreeNode(x,StartNode);
 
-    if ((CellNode==NULL)||(CellNode->IsUsedInCalculationFlag==false)) return false;
+    if (CellNode==NULL) return false;
 
     const int nCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
-    int ijk[3];
 
     for (int d=0;d<3;d++) {
       const double blockLength=CellNode->xmax[d]-CellNode->xmin[d];
@@ -77,7 +297,6 @@ namespace {
       if ((ijk[d]<0)||(ijk[d]>=nCells[d])) return false;
     }
 
-    RowStencil->AddCell(Weight,CellNode,ijk[0],ijk[1],ijk[2]);
     return true;
   }
 
@@ -96,12 +315,89 @@ namespace {
     const int nCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
     double x[3];
 
+    #ifndef __CUDA_ARCH__
+    cStencilCacheEntry *e=GetStencilCacheEntry(SourceNode);
+    const int c=(e==NULL) ? -1 : StencilCacheCellIndex(i,j,k);
+
+    if (c>=0) {
+      if ((e->known[c]&StencilCacheRowKnown)==0) {
+        cInterpolationTreeNode *CellNode;
+        int ijkCell[3];
+
+        for (int d=0;d<3;d++) {
+          const double dx=(SourceNode->xmax[d]-SourceNode->xmin[d])/nCells[d];
+          x[d]=SourceNode->xmin[d]+(ijk[d]+0.5)*dx;
+        }
+
+        if (LocateRowStencilCell(x,SourceNode,CellNode,ijkCell)==false) CellNode=NULL;
+
+        e->rowNode[c]=CellNode;
+        if (CellNode!=NULL) for (int d=0;d<3;d++) e->rowIjk[c][d]=static_cast<unsigned char>(ijkCell[d]);
+        e->known[c]|=StencilCacheRowKnown;
+      }
+
+      cInterpolationTreeNode *CellNode=e->rowNode[c];
+
+      if ((CellNode==NULL)||(CellNode->IsUsedInCalculationFlag==false)) return false;
+
+      RowStencil->AddCell(Weight,CellNode,e->rowIjk[c][0],e->rowIjk[c][1],e->rowIjk[c][2]);
+      return true;
+    }
+    #endif
+
     for (int d=0;d<3;d++) {
       const double dx=(SourceNode->xmax[d]-SourceNode->xmin[d])/nCells[d];
       x[d]=SourceNode->xmin[d]+(ijk[d]+0.5)*dx;
     }
 
     return AddRowStencilCellByCoordinate(RowStencil,Weight,x,SourceNode);
+  }
+
+  /*
+   * findTreeNode(xLogical,node) for the support point (i,j,k) of node in
+   * GetTriliniarInterpolationMutiBlockStencil(); the caller computes xLogical from
+   * (node,i,j,k), so the cached result is that of the same search.
+   */
+  _TARGET_HOST_ _TARGET_DEVICE_
+  cInterpolationTreeNode *FindStencilSupportNode(double *xLogical,cInterpolationTreeNode *node,const int *ijk) {
+    #ifndef __CUDA_ARCH__
+    cStencilCacheEntry *e=GetStencilCacheEntry(node);
+    const int c=(e==NULL) ? -1 : StencilCacheCellIndex(ijk[0],ijk[1],ijk[2]);
+
+    if (c>=0) {
+      if ((e->known[c]&StencilCacheSupportKnown)==0) {
+        e->supportNode[c]=PIC::Mesh::mesh->findTreeNode(xLogical,node);
+        e->known[c]|=StencilCacheSupportKnown;
+      }
+
+      return e->supportNode[c];
+    }
+    #endif
+
+    return PIC::Mesh::mesh->findTreeNode(xLogical,node);
+  }
+
+  /* node->GetNeibFace(n,0,0) (n=0-5), GetNeibEdge(n-6,0) (n=6-17) and
+   * GetNeibCorner(n-18) (n=18-25) as used by InitStencil(). */
+  _TARGET_HOST_ _TARGET_DEVICE_
+  cInterpolationTreeNode *GetStencilNeib(cInterpolationTreeNode *node,int n) {
+    #ifndef __CUDA_ARCH__
+    cStencilCacheEntry *e=GetStencilCacheEntry(node);
+
+    if ((e!=NULL)&&(e->neibKnown[n]==true)) return e->neib[n];
+    #endif
+
+    cInterpolationTreeNode *res;
+
+    if (n<6) res=node->GetNeibFace(n,0,0,PIC::Mesh::mesh);
+    else if (n<18) res=node->GetNeibEdge(n-6,0,PIC::Mesh::mesh);
+    else res=node->GetNeibCorner(n-18,PIC::Mesh::mesh);
+
+    #ifndef __CUDA_ARCH__
+    if (e!=NULL) e->neib[n]=res,e->neibKnown[n]=true;
+    #endif
+
+    return res;
   }
 
   /* Build the one-cell row used by the legacy constant-interpolation fallback. */
@@ -366,7 +662,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
         }
 
         //check blocks connected through the face
-        NeibNode=node->GetNeibFace(iFace,0,0,PIC::Mesh::mesh);
+        NeibNode=GetStencilNeib(node,iFace);
 
         double xLoc[3]={iLoc,jLoc,kLoc};
 
@@ -415,7 +711,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
 
         for (int iEdge=0;iEdge<4;iEdge++) if (EdgeTestFlagTable[faceEdges[iFace][iEdge]]==false) {
           EdgeTestFlagTable[faceEdges[iFace][iEdge]]=true;
-          NeibNode=node->GetNeibEdge(faceEdges[iFace][iEdge],0,PIC::Mesh::mesh);
+          NeibNode=GetStencilNeib(node,6+faceEdges[iFace][iEdge]);
 
           if (NeibNode!=NULL) if ((NeibNode->RefinmentLevel<node->RefinmentLevel)&&(NeibNode->IsUsedInCalculationFlag==true)) {
             //found a coarser block
@@ -536,7 +832,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
 
         for (int iCorner=0;iCorner<4;iCorner++) if (CornerTestFlagTable[FaceNodeMap[iFace][iCorner]]==false) {
           CornerTestFlagTable[FaceNodeMap[iFace][iCorner]]=true;
-          NeibNode=node->GetNeibCorner(FaceNodeMap[iFace][iCorner],PIC::Mesh::mesh);
+          NeibNode=GetStencilNeib(node,18+FaceNodeMap[iFace][iCorner]);
 
           if (NeibNode!=NULL) if ((NeibNode->RefinmentLevel<node->RefinmentLevel)&&(NeibNode->IsUsedInCalculationFlag==true)) {
             //found a coarser block
@@ -991,7 +1287,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
       exit(__LINE__,__FILE__,"Error: the option is not defined");
     }
 
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *StencilNode=PIC::Mesh::mesh->findTreeNode(xLogical,node);
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *StencilNode=FindStencilSupportNode(xLogical,node,ijk);
 
     if ((StencilNode==NULL)||(StencilNode->IsUsedInCalculationFlag==false)) {
       GeometryAvailable=false;
