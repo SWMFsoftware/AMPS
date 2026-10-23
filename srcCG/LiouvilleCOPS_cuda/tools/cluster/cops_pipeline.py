@@ -124,7 +124,7 @@ FIT_TEMPLATES = {
 }
 DEFAULT_FITS = ("B29", "N30", "C30", "NC31")
 DEFAULT_FIT_ARGS = ("--profile all_available --degree 4 --enhancement-degree 4 --lambda 0 --jobs 1 "
-                    "--tbounds 30 400 --ftol 1e-10 --xtol 1e-10 --gtol 1e-10 --check-tolerance 1e-6")
+                    "--tbounds 30 250 --ftol 1e-10 --xtol 1e-10 --gtol 1e-10 --check-tolerance 1e-6")
 OWNED_FIT_ARGS = ("--out", "--max-nfev", "--activity-template", "--restart-from")
 DEFAULT_MAX_NFEV = 2000
 GROUPS = ("prepare", "fit", "finetune")

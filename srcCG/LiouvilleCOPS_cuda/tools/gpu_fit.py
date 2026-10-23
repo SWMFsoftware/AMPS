@@ -23,6 +23,10 @@ Run settings decided by the user (2026-10-20):
   vector is recorded in ``compute_backend.fit_start``.
 * ``--cpu-comparison``: ``--max-nfev 1000`` and ``--template-start 0``, i.e. exactly the
   CPU fitter's command.
+* Temperature bounds (user decision 2026-10-22): **``--tbounds 30 250``** is added to the fitter
+  arguments unless they give ``--tbounds`` (``--tbounds 30 400`` reproduces the fits before that date)
+  or ``--cpu-comparison`` is set (the fitter's own default, 30 400, as in the CPU command). With
+  ``--ordered-temperature`` the fitter bounds Tmin only; T75 - Tmin and Tmax - T75 are >= 0, unbounded.
 
 Everything after ``--`` goes verbatim to ``fit_cops.main()``: the run, the
 profile, ``--out``, degrees, templates, tolerances, and so on. The fitter is the
@@ -107,6 +111,16 @@ def lambda_count(fit_args):
         elif token.startswith("--lambda="):
             count = 1
     return count
+
+
+DEFAULT_TBOUNDS = ("30", "250")            # K; user decision 2026-10-22 (fitter default 30 400 unchanged)
+
+
+def with_default_tbounds(fit_args, cpu_comparison=False):
+    """(fitter arguments, True if ``--tbounds 30 250`` was added): only when none is given."""
+    if cpu_comparison or any(a == "--tbounds" or a.startswith("--tbounds=") for a in fit_args):
+        return list(fit_args), False
+    return list(fit_args) + ["--tbounds", *DEFAULT_TBOUNDS], True
 
 
 def install_template_start(fit_cops, value, record, restart_state=None, captured=None):
@@ -282,6 +296,10 @@ def main():
                         help="safety margin before the deadline [s] (default 300)")
     parser.add_argument("--save-seconds", type=float, default=None,
                         help="time reserved to write the results after stopping [s] (default 600)")
+    parser.add_argument("--monotonic-weight", type=float, default=None,
+                        help="soft monotonicity of the modelled NG and RG pressures along the descent: penalty "
+                             "MU * w_gauge * max(0, ln p_k - ln p_k+1) between consecutive fitted points "
+                             "(cops_cuda/monotonic.py; user decision 2026-10-22); off by default")
     parser.add_argument("--segment", type=int, default=None,
                         help="segment number of a fit split by wall time (default: 1 + the restart's segments)")
     args = parser.parse_args(argv[:split])
@@ -296,6 +314,7 @@ def main():
                       else (0.0 if args.cpu_comparison else 1.0))
     if max_nfev < 1 or not template_start >= 0.0:
         raise SystemExit("--max-nfev must be >= 1 and --template-start >= 0 (amplitudes are nonnegative)")
+    fit_args, args.default_tbounds = with_default_tbounds(fit_args, args.cpu_comparison)
     fit_args = fit_args + ["--max-nfev", str(max_nfev)]
     if lambda_count(fit_args) != 1:
         raise SystemExit("gpu_fit.py runs exactly one --lambda value per process "
@@ -406,8 +425,10 @@ def drive(args, argv, fit_args, devices, max_nfev, template_start, comm, deadlin
     software = [manifest.backend_manifest("cuda_fp64_v1", d) for d in devices]
     fit_start = {"template_start": template_start, "applied": False, "max_nfev": max_nfev,
                  "cpu_comparison": bool(args.cpu_comparison),
+                 "default_tbounds_added": bool(getattr(args, "default_tbounds", False)),
                  "policy": "user 2026-10-20: max_nfev 2000 for production fits, 1000 for CPU "
-                           "comparison; template amplitudes start at 1.0 (bound 0)"}
+                           "comparison; template amplitudes start at 1.0 (bound 0); user 2026-10-22: "
+                           "--tbounds 30 250 unless given (not with --cpu-comparison)"}
     original_save = fit_cops.save_active_manifest
 
     def save_with_backend():
@@ -436,6 +457,7 @@ def drive(args, argv, fit_args, devices, max_nfev, template_start, comm, deadlin
                 "restart": restart_info,
                 "figures": figures_info,
                 "wall_time": wall_info,
+                "monotonic": mono.record() if mono is not None else None,
                 "base_validation": validation_info,
                 "record_store": os.environ.get("COPS_CUDA_RECORD_STORE") or None,
                 "memory_headroom_fraction": headroom_now(),
@@ -446,6 +468,11 @@ def drive(args, argv, fit_args, devices, max_nfev, template_start, comm, deadlin
     captured = []
     install_template_start(fit_cops, template_start, fit_start, restart_state, captured)
     clock_state = install_wall_clock(fit_cops, deadline, save_seconds)
+    mono = None
+    if args.monotonic_weight is not None:
+        from cops_cuda import monotonic
+        mono = monotonic.Monotonic(args.monotonic_weight, lambda: fit_cops.P)
+        fit_cops.least_squares = mono.least_squares_with(fit_cops.least_squares)
     previous_segments = list(restart_state.meta.get("segments", [])) if restart_state is not None else []
     segment = args.segment if args.segment is not None else len(previous_segments) + 1
     sys.argv = [str(Path(fit_cops.__file__))] + fit_args
@@ -467,6 +494,12 @@ def drive(args, argv, fit_args, devices, max_nfev, template_start, comm, deadlin
                 print("gpu_fit: stopped before the wall-time deadline (segment %d, %d evaluations, best cost "
                       "%.6e); exit %d" % (segment, captured[-1]["nfev"], captured[-1]["cost"], exit_code),
                       flush=True)
+        if mono is not None and mono.final is not None:
+            print("gpu_fit: monotonic penalty (weight %g) at the solution: cost %.4e; %s" % (
+                mono.weight, mono.final["penalty_cost"],
+                ", ".join("%s %d of %d pairs decreasing (largest x%.3f)" % (
+                    g, v["decreasing_pairs"], v["pairs"], v["largest_decrease_factor"])
+                    for g, v in mono.final["gauges"].items())), flush=True)
         if captured and not args.no_save_restart and fit_cops.ACTIVE_MANIFEST is not None:
             out = Path(fit_cops.ACTIVE_MANIFEST_PATH).parent
             elements = fit_cops.read_elements(fit_cops.ACTIVE_MANIFEST["inputs"]["base_elements"]["path"])

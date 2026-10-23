@@ -105,7 +105,9 @@ All fits use `tools/gpu_fit.py`, which runs the unmodified `fit_cops.py`:
 | `--cpu-comparison` | off | exactly the CPU fitter's command: `--max-nfev 1000 --template-start 0` |
 
 Fixed by the user's decisions:
-* the temperature bounds stay `--tbounds 30 400` (2026-10-20);
+* the temperature bounds are `--tbounds 30 250` (2026-10-22; before: 30 400). `gpu_fit.py` adds them when
+  the fitter arguments give no `--tbounds` (not with `--cpu-comparison`); give `--tbounds 30 400` to
+  reproduce an older fit;
 * use one `--lambda` value per process.
 
 Each fit needs about 21 GB on its GPU (kernel data 9 GB plus evaluator arrays 13.2 GiB,
@@ -116,7 +118,7 @@ two at a time (C07 benchmark).
 The common fitter arguments are:
 
 ```tcsh
-set FITARGS = "--profile all_available --degree 4 --enhancement-degree 4 --lambda 0 --jobs 1 --tbounds 30 400 --ftol 1e-10 --xtol 1e-10 --gtol 1e-10 --check-tolerance 1e-6"
+set FITARGS = "--profile all_available --degree 4 --enhancement-degree 4 --lambda 0 --jobs 1 --tbounds 30 250 --ftol 1e-10 --xtol 1e-10 --gtol 1e-10 --check-tolerance 1e-6"
 ```
 
 ### 3a. Production fits (max_nfev 2000, templates start at 1)

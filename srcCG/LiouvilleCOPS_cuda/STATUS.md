@@ -180,6 +180,55 @@ this tree on 2026-10-22 after the chain, full suite 267 passed including the mpi
 * PENDING (after the 20M chain, GPUs needed): a real `run` of the runner on this machine (788k, then 20M with
   `--wall-time` segments), a wall-time stop of a real GPU fit, MPI transport through the runner, and the cluster gates.
 
+## C16: 12M refit with a monotonic penalty, ordered temperatures and a continuous slope template (2026-10-22, user request): four fits complete
+
+User decisions: (1) soft monotonicity of the modelled NG and RG pressures along the descent (the altitude decreases
+strictly with time): `cops_cuda/monotonic.py`, `gpu_fit.py --monotonic-weight MU` appends
+MU * w_gauge * max(0, ln p_k - ln p_k+1) for consecutive fitted points around the unchanged fitter's `least_squares`,
+exact Jacobian; the reported costs exclude the penalty, recorded under `compute_backend.monotonic`; MU = 10
+(`tests/test_monotonic.py`, 3); (2) continuous slope template `slope_sin` = sin(min(effective slope, 90 deg))
+(`tools/c16_slope_template.py`; the source bundle's repaired gravity provenance is carried verbatim, its cache
+SHA-256 checked) replacing the binary `cliff_ge_60deg`; cos(SZA) already enters through the production law, so it
+is not applied again (discussed with the user); (3) the fitter's existing `--ordered-temperature`
+(Tmin <= T75 <= Tmax); (4) 12M base and gravity reused, fits from the default start: B29, N30, S30 (slope),
+NS31 (late NG-only + slope), `fit_012m_gpu_*_n2000_mixed_mono10_ordered`. 788k check (8 evaluations): penalty,
+ordering and reported costs as intended. Chain `scratchpad/chain_012m_mono.sh` uses GPU 0 only when no other
+process runs on it (the user's AMPS GPU jobs), else GPU 1 alone with streaming. The chain passes `--tbounds 30 400`
+explicitly (all four fits, as started).
+
+B29 (2026-10-22 19:51, 2000 evaluations, 2 h 33 min on both GPUs): cost 0.03815 (earlier 12M B29 0.06679),
+rms NG 0.213 / RG 0.175 (0.322 / 0.173); the three temperatures collapse to 78.6 K (T75 - Tmin = Tmax - T75 = 0,
+at their bounds; earlier unordered fit Tmax 30, T75 400, Tmin 40.8 K) and kappa to 0 (earlier 0.82); penalty at
+the solution 2.0e-4, NG 93 of 933 and RG 91 of 1149 pairs still decreasing, largest x1.025 (the earlier B29 was
+already nearly monotonic: largest x1.027).
+
+All four done 2026-10-23 04:07 (after N30 the 10-min RAM hold was dropped, user request; `chain_012m_mono_rest.sh`).
+Comparison in `$COPS_OUTPUT_ROOT/comparison_012m_mono_ordered_vs_012m/` (`cost_table.txt`/`.json`, `figures/`
+pressures earlier vs C16 per model, all C16 models, best earlier NC31 vs C16 S30; `scripts/`). Data cost (rms NG/RG):
+
+| model | earlier | C16 |
+|---|---|---|
+| B29 | 0.0668 (0.322/0.173) | 0.0381 (0.213/0.175) |
+| N30 | 0.0400 (0.210/0.189) | 0.0440 (0.233/0.183) |
+| C30 / S30 | 0.0682 (0.321/0.183), cliff 6.7 +- 6.8 | **0.0310** (0.198/0.151), slope_sin 22.8 +- 7.4 |
+| NC31 / NS31 | **0.0266** (0.182/0.142) | 0.0687 (0.327/0.174), not converged |
+
+Findings: (1) the continuous slope template is significant (about 3 sigma) where the binary cliff mask was not; S30
+is the best C16 fit, the earlier NC31 still has the lowest cost overall (with an RG fall of x7.1). (2) The penalty
+on consecutive pairs (weight 10) limits each step (largest RG step x1.16) but not a gradual fall: the modelled RG
+still falls below its running maximum by x3.06 (N30) and x2.85 (S30) between about 80 m and 7 m (earlier N30 x8.56,
+NC31 x7.10; the measured pressures fall at most x1.45 RG, x1.51 NG). The sum of squared step falls shrinks when a
+fall is spread over more points; a penalty on the fall below the running maximum, or a larger weight, would bind.
+(3) NS31 is a worse local minimum than its nested S30: c_late_ng_not_rg stays at its start (1.01, zero
+sensitivity), the temperatures collapse to 66.5 K; a restart from the S30 solution should reach cost <= 0.0310.
+(4) With ordered temperatures, Tmin = T75 = 30 K (lower bound) in N30 and S30; B29 is isothermal 78.6 K, kappa 0.
+
+User decision 2026-10-22: the default temperature bounds become `--tbounds 30 250`. `gpu_fit.py` adds them when the
+fitter arguments give none (`with_default_tbounds`; not with `--cpu-comparison`, which keeps the CPU fitter's own
+30 400), recorded as `compute_backend.fit_start.default_tbounds_added`; the Voyager runner's `DEFAULT_FIT_ARGS`,
+`fit_mpi.slurm` and the quick guide use 30 250. The reference fitter's default (30 400) is unchanged. With
+`--ordered-temperature` the fitter bounds Tmin only. `tests/test_gpu_fit.py::test_default_temperature_bounds`.
+
 ## C14: mixed precision and the SHAP8 12M mesh (2026-10-21, user request): EXPERIMENT; four fits complete
 
 User request: "switch the gravity calculation and the fitter to single precision as an experiment", "12M, start with

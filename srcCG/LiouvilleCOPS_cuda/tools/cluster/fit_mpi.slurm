@@ -31,7 +31,7 @@ BASE=$1; STORE=$2; OUT=$3; shift 3
 APP=${COPS_CUDA_APP:-$SLURM_SUBMIT_DIR}          # the LiouvilleCOPS_cuda checkout
 # SITE: module load cuda/12.x openmpi/4.x (the MPI mpi4py was built against)
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1} OPENBLAS_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1} PYTHONUNBUFFERED=1
-FITARGS=${FITARGS:-"--profile all_available --degree 4 --enhancement-degree 4 --lambda 0 --jobs 1 --tbounds 30 400 --ftol 1e-10 --xtol 1e-10 --gtol 1e-10 --check-tolerance 1e-6"}
+FITARGS=${FITARGS:-"--profile all_available --degree 4 --enhancement-degree 4 --lambda 0 --jobs 1 --tbounds 30 250 --ftol 1e-10 --xtol 1e-10 --gtol 1e-10 --check-tolerance 1e-6"}
 
 echo "fit_mpi.slurm: $SLURM_JOB_NUM_NODES node(s) x $SLURM_NTASKS_PER_NODE rank(s) = $SLURM_NTASKS ranks"
 nvidia-smi topo -m > "$OUT.topology.txt" 2>&1 || true

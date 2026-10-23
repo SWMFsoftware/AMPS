@@ -4,6 +4,7 @@
   amplitudes (to the user's c = 1). The prior ``P.x0`` and everything derived
   from it stay the fitter's, and the change is recorded.
 * The driver refuses conflicting run settings before importing the fitter.
+* ``--tbounds 30 250`` is the default unless the fitter arguments give bounds (user 2026-10-22).
 """
 
 from pathlib import Path
@@ -77,3 +78,12 @@ def test_conflicting_run_settings_are_refused():
     assert r.returncode != 0 and "template-start" in r.stderr
     r = run_tool("--", "run", "--lambda", "0", "1e-3")
     assert r.returncode != 0 and "one --lambda" in r.stderr
+
+
+def test_default_temperature_bounds():
+    args, added = gpu_fit.with_default_tbounds(["run", "--lambda", "0"])
+    assert added and args[-3:] == ["--tbounds", "30", "250"]
+    args, added = gpu_fit.with_default_tbounds(["run", "--tbounds", "30", "400"])
+    assert not added and args == ["run", "--tbounds", "30", "400"]
+    args, added = gpu_fit.with_default_tbounds(["run"], cpu_comparison=True)
+    assert not added and args == ["run"]                   # the CPU fitter's own default
