@@ -135,6 +135,69 @@
  *     gain depends on the fraction of such points and has not been measured.
  *   - Uniform meshes and points deep inside blocks take the trilinear path without
  *     (b) and (c); the cache adds one table lookup per row-stencil cell there.
+ *
+ * =====================================================================================
+ * ROW-ONLY CONSTRUCTION (added 2026-10-23)
+ * =====================================================================================
+ * InitStencil(x,node,Stencil,RowStencil,BuildPointerStencil) and the trilinear and
+ * multiblock routines build the pointer stencil and, if RowStencil!=NULL, the row
+ * stencil in the same pass.  Callers that need only the row (the overload
+ * InitStencil(x,node,RowStencil), used by the srcEarth/srcGeospace Mode3D field
+ * evaluation) previously received a pointer stencil that they discarded: it was
+ * built whenever the block was allocated on the rank (cell pointers, the
+ * out-of-domain test of every cell, pointer merging, the coarse/fine blending of the
+ * pointer stencil, the constant fallbacks with an extra tree search).  With
+ * BuildPointerStencil=false all pointer-stencil steps are skipped and Stencil is
+ * returned empty; the row is built by the same code and is identical.  The parameter
+ * defaults to true, so existing callers are unchanged.
+ * Measured (srcEarth C1 Mode3D MESH tracing, with the stencil-cell cache): 1.33-1.35x
+ * on one thread, 1.18x with 8 threads.
+ *
+ * =====================================================================================
+ * ROW-STRUCTURE REUSE (row-only construction, added 2026-10-23)
+ * =====================================================================================
+ * A trilinear row is determined by (node,i0,j0,k0), the lower index of the 2x2x2
+ * support, and a multiblock row by (node,ijkStencilMin): within such a region of x
+ * only the weights change, not the cells, the order in which they are added, or which
+ * additions merge into an existing entry.  For row-only construction the trilinear
+ * and multiblock routines keep, per thread, a direct-mapped table of recorded
+ * structures (nRowStructureSlots=1024 slots, about 1.5 KB each):
+ *   - the first construction with a key runs the original code and records the
+ *     outcome of every AddRowStencilCell() call (appended as entry t, merged into
+ *     entry t, or nothing added) and IsUsedInCalculationFlag of every node whose flag
+ *     the construction read;
+ *   - later constructions with the same key compute the weights with the same code
+ *     and replay the recorded operations in the same order (append, or Weight+=w into
+ *     the recorded entry); normalization, blending and merging that follow are
+ *     unchanged.  The row is bitwise identical to the original construction.
+ *   - A structure is rebuilt when one of the recorded flags changed and is discarded
+ *     with the same triggers as the stencil-cell cache (mesh or
+ *     nMeshModificationCounter changed, slot taken by another key).  A multiblock
+ *     construction with a missing support point (the constant fallback depends on x)
+ *     is not replayed.
+ * Measured (same tests): another 1.1-1.25x.  Stencil-cell cache, row-only
+ * construction and reuse together: 2.3-2.9x of the tracing time of the original code.
+ * AMPS_INTERPOLATION_STENCIL_CACHE=0 disables the reuse as well.
+ *
+ * =====================================================================================
+ * NORMALIZATION (changed 2026-10-23)
+ * =====================================================================================
+ * The weights of a complete trilinear or multiblock stencil sum to 1.  A stencil is
+ * renormalized when, and only when, a contribution with a positive weight was not
+ * added ("dropped weight"):
+ *   - row stencil: AddRowStencilCell() added nothing (cell center outside the global
+ *     box, owning leaf not used in the calculation, index out of range);
+ *   - pointer stencil: the cell is not available in the local block or its ghost
+ *     cells (GetCenterNode()==NULL), or cStencilGeneric::AddCell() rejected it
+ *     (center outside the global box of a non-periodic mesh; AddCell() returns false).
+ * This applies to the trilinear and to the multiblock stencils.  Before, the trilinear
+ * row was normalized when Length!=8, which also normalized complete rows whose cells
+ * had merged (ghost cells resolving to one coarser cell); the trilinear pointer
+ * stencil tested StencilTable->Length, the stencil of OpenMP thread 0 rather than the
+ * one being built; and multiblock stencils were never normalized.  A multiblock
+ * pointer stencil with an unavailable cell still uses the constant fallback.  The
+ * srcGeospace trajectory engine (gpu/EngineMesh.h) applies the same rule to its port
+ * of the row stencil.
  * =====================================================================================
  */
 
@@ -400,6 +463,182 @@ namespace {
     return res;
   }
 
+#ifndef __CUDA_ARCH__
+  /*
+   * Row-structure reuse (row-only construction, host code). See "ROW-STRUCTURE
+   * REUSE" at the top of this file.
+   *
+   * A trilinear row is determined by (node,i0,j0,k0) and a multiblock row by
+   * (node,ijkStencilMin): the cells, the order in which they are added and which
+   * additions merge into an existing entry do not depend on x within that region.
+   * The first construction records, for every AddRowStencilCell() call, whether it
+   * appended an entry, merged into entry t, or added nothing; later constructions
+   * with the same key compute the weights with the same code and replay these
+   * operations. A structure also records the IsUsedInCalculationFlag of every node
+   * whose flag the construction read, and is rebuilt when one of them changed.
+   */
+  const int nRowStructureSlots=1024;   //the slot index is the upper 10 bits of a 64-bit hash
+  const int nMaxRowContributions=64;   //multiblock: 8 support points x 8 fine cells
+  const int nMaxRowChecks=nMaxRowContributions+8;
+  enum {RowStructureTrilinear=1,RowStructureMultiBlock=2};
+  enum {RowStructureEmpty=0,RowStructureReusable=1,RowStructureOriginal=2};
+  enum {RowModeOriginal=0,RowModeReplay=1,RowModeRecord=2};
+
+  struct cRowStructure {
+    const void *mesh;
+    unsigned long int counter;
+    const cInterpolationTreeNode *node;
+    int kind,i0,j0,k0;
+    int state;                       //RowStructureEmpty/Reusable/Original (run the original code)
+    bool recordOk;
+    int nContrib;
+    signed char target[nMaxRowContributions];   //entry index, -1: nothing added
+    int length;
+    cInterpolationTreeNode *entryNode[nMaxRowContributions];
+    int entryIjk[nMaxRowContributions][3];
+    unsigned char fineSupport[8];    //multiblock: the support point is represented by 8 fine cells
+    int nCheck;
+    const cInterpolationTreeNode *checkNode[nMaxRowChecks];
+    bool checkUsed[nMaxRowChecks];
+  };
+
+  /* The calling thread's structure slot of (kind,node,i0,j0,k0); NULL when the cache
+   * is disabled. The slot is reset when it holds another key or mesh state. */
+  cRowStructure *GetRowStructure(int kind,const cInterpolationTreeNode *node,int i0,int j0,int k0) {
+    if ((node==NULL)||(StencilCacheEnabled()==false)) return NULL;
+
+    thread_local std::unique_ptr<cRowStructure[]> table;
+    if (!table) table.reset(new cRowStructure[nRowStructureSlots]());
+
+    const uint64_t key=static_cast<uint64_t>(reinterpret_cast<uintptr_t>(node))*0x9E3779B97F4A7C15ULL^
+        (static_cast<uint64_t>(((kind*1024+(i0+1))*1024+(j0+1))*1024+(k0+1))*0xC2B2AE3D27D4EB4FULL);
+    cRowStructure &e=table[(key*0x9E3779B97F4A7C15ULL)>>54];
+    const void *mesh=PIC::Mesh::mesh;
+    const unsigned long int counter=PIC::Mesh::mesh->nMeshModificationCounter;
+
+    if ((e.node!=node)||(e.kind!=kind)||(e.i0!=i0)||(e.j0!=j0)||(e.k0!=k0)||(e.mesh!=mesh)||(e.counter!=counter)) {
+      e.node=node,e.kind=kind,e.i0=i0,e.j0=j0,e.k0=k0,e.mesh=mesh,e.counter=counter;
+      e.state=RowStructureEmpty;
+    }
+
+    return &e;
+  }
+
+  /* RowModeReplay/RowModeOriginal for a recorded structure whose node flags are
+   * unchanged; otherwise start recording (RowModeRecord). */
+  int StartRowStructure(cRowStructure *rs) {
+    if (rs==NULL) return RowModeOriginal;
+
+    if (rs->state!=RowStructureEmpty) {
+      bool valid=true;
+
+      for (int n=0;n<rs->nCheck;n++) if (rs->checkNode[n]->IsUsedInCalculationFlag!=rs->checkUsed[n]) {
+        valid=false;
+        break;
+      }
+
+      if (valid==true) return (rs->state==RowStructureReusable) ? RowModeReplay : RowModeOriginal;
+    }
+
+    rs->state=RowStructureEmpty,rs->recordOk=true,rs->nContrib=0,rs->length=0,rs->nCheck=0;
+    return RowModeRecord;
+  }
+
+  /* Record that the construction read IsUsedInCalculationFlag of n. */
+  void AddRowStructureCheck(cRowStructure *rs,const cInterpolationTreeNode *n) {
+    if (n==NULL) return;
+    for (int i=0;i<rs->nCheck;i++) if (rs->checkNode[i]==n) return;
+
+    if (rs->nCheck==nMaxRowChecks) {
+      rs->recordOk=false;
+      return;
+    }
+
+    rs->checkNode[rs->nCheck]=n,rs->checkUsed[rs->nCheck]=n->IsUsedInCalculationFlag;
+    rs->nCheck++;
+  }
+
+  /* Record the outcome of AddRowStencilCell(row,w,SourceNode,i,j,k), which returned
+   * `added` and found the row with LengthBefore entries. */
+  void RecordRowContribution(cRowStructure *rs,const PIC::InterpolationRoutines::cRowStencil *row,
+      int LengthBefore,bool added,const cInterpolationTreeNode *SourceNode,int i,int j,int k) {
+    if (rs->nContrib==nMaxRowContributions) {
+      rs->recordOk=false;
+      return;
+    }
+
+    //the resolution of the cell is in the stencil-cell cache (filled by AddRowStencilCell)
+    cStencilCacheEntry *e=GetStencilCacheEntry(SourceNode);
+    const int c=(e==NULL) ? -1 : StencilCacheCellIndex(i,j,k);
+
+    if ((c<0)||((e->known[c]&StencilCacheRowKnown)==0)) {
+      rs->recordOk=false;
+      return;
+    }
+
+    cInterpolationTreeNode *owner=e->rowNode[c];
+    int t=-1;
+
+    AddRowStructureCheck(rs,owner);
+
+    if (added==true) {
+      const int ijk[3]={e->rowIjk[c][0],e->rowIjk[c][1],e->rowIjk[c][2]};
+
+      if (row->Length>LengthBefore) t=LengthBefore;
+      else for (int n=0;n<row->Length;n++) {
+        const PIC::InterpolationRoutines::cRowStencil::cElement &el=row->Element[n];
+
+        if ((el.node==owner)&&(el.i==ijk[0])&&(el.j==ijk[1])&&(el.k==ijk[2])) {
+          t=n;
+          break;
+        }
+      }
+
+      if ((t<0)||(t>=nMaxRowContributions)||(row->Element[t].node!=owner)||(row->Element[t].i!=ijk[0])||
+          (row->Element[t].j!=ijk[1])||(row->Element[t].k!=ijk[2])) {
+        rs->recordOk=false;
+        return;
+      }
+
+      if (t==LengthBefore) {
+        rs->entryNode[t]=owner;
+        for (int d=0;d<3;d++) rs->entryIjk[t][d]=ijk[d];
+        rs->length=row->Length;
+      }
+    }
+
+    rs->target[rs->nContrib++]=static_cast<signed char>(t);
+  }
+
+  void EndRowStructure(cRowStructure *rs,bool reusable) {
+    rs->state=((rs->recordOk==true)&&(reusable==true)) ? RowStructureReusable : RowStructureOriginal;
+  }
+
+  /* Replay contribution c with weight w: the operation AddRowStencilCell() performed
+   * when the structure was recorded (append, merge into an entry, or nothing).
+   * Returns true when nothing is added and w>0 (a dropped weight). */
+  inline bool ApplyRowContribution(const cRowStructure *rs,int c,double w,
+      PIC::InterpolationRoutines::cRowStencil *row) {
+    const int t=rs->target[c];
+
+    if (t<0) return (w>0.0);   //true: a positive weight is dropped
+    if (w<0.0) exit(__LINE__,__FILE__,"Error: found a negative interpolation weight");
+
+    if (t==row->Length) {
+      PIC::InterpolationRoutines::cRowStencil::cElement &el=row->Element[t];
+
+      el.node=rs->entryNode[t];
+      el.i=rs->entryIjk[t][0],el.j=rs->entryIjk[t][1],el.k=rs->entryIjk[t][2];
+      el.Weight=w;
+      row->Length++;
+    }
+    else if (t<row->Length) row->Element[t].Weight+=w;
+    else exit(__LINE__,__FILE__,"Error: inconsistent row structure");
+
+    return false;
+  }
+#endif
+
   /* Build the one-cell row used by the legacy constant-interpolation fallback. */
   _TARGET_HOST_ _TARGET_DEVICE_
   void BuildConstantRowStencil(double *x,cInterpolationTreeNode *node,
@@ -417,16 +656,17 @@ namespace {
    * element alongside the row stencil.
    */
   _TARGET_HOST_ _TARGET_DEVICE_
-  void AddPhysicalStencilCell(PIC::InterpolationRoutines::CellCentered::cStencil &Stencil,
+  bool AddPhysicalStencilCell(PIC::InterpolationRoutines::CellCentered::cStencil &Stencil,
       double Weight,PIC::Mesh::cDataCenterNode *cell,int LocalCellID) {
     for (int iElement=0;iElement<Stencil.Length;iElement++) {
       if (Stencil.cell[iElement]==cell) {
         Stencil.Weight[iElement]+=Weight;
-        return;
+        return true;
       }
     }
 
-    Stencil.AddCell(Weight,cell,LocalCellID);
+    //false: the cell is outside the global domain and its weight is dropped
+    return Stencil.AddCell(Weight,cell,LocalCellID);
   }
 }
 
@@ -517,7 +757,7 @@ void PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(double *x,c
 
 //determine the stencil for the cell centered linear interpolation using interpolation library from ../share/Library/src/
 _TARGET_HOST_ _TARGET_DEVICE_
-void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn_D,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil,PIC::InterpolationRoutines::cRowStencil *RowStencil) {
+void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn_D,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil,PIC::InterpolationRoutines::cRowStencil *RowStencil,bool BuildPointerStencil) {
 
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
   int ThreadOpenMP=omp_get_thread_num();
@@ -578,19 +818,19 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
     #if _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE_ == _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE__AMPS_
     //in case the mesh is uniform (_AMR_MESH_TYPE_ == _AMR_MESH_TYPE__UNIFORM_) -> use simple trilinear interpolation
     if (_AMR_MESH_TYPE_ == _AMR_MESH_TYPE__UNIFORM_) {
-      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil,RowStencil);
+      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil,RowStencil,BuildPointerStencil);
       return;
     }
 
     //if the point of interest is deep inside the block or all neighbors of the block has the same resolution level -> use simple trilinear interpolation
     if ((node->RefinmentLevel==node->minNeibRefinmentLevel)&&(node->RefinmentLevel==node->maxNeibRefinmentLevel)) {
       //all blocks around has the same level of the resolution
-      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil,RowStencil);
+      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil,RowStencil,BuildPointerStencil);
       return;
     }
     else if ((1.0<iLoc)&&(iLoc<_BLOCK_CELLS_X_-1) && (1.0<jLoc)&&(jLoc<_BLOCK_CELLS_Y_-1) && (1.0<kLoc)&&(kLoc<_BLOCK_CELLS_Z_-1)) {
       //the point is deep inside the block
-      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil,RowStencil);
+      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil,RowStencil,BuildPointerStencil);
       return;
     }
     else if (node->RefinmentLevel==node->minNeibRefinmentLevel) {
@@ -598,7 +838,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
         //1. the point is deeper than a half cell size insode the block
         //2. the block is geometrically largest among the neibours
         //3. -> it is only the intermal points of the block that will be used in the stencil
-        GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil,RowStencil);
+        GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil,RowStencil,BuildPointerStencil);
         return;
       }
       else  {
@@ -620,7 +860,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
           xStencilMax[idim]=xStencilMin[idim]+dxCell[idim];
         }
 
-        GetTriliniarInterpolationMutiBlockStencil(XyzIn_D,xStencilMin,xStencilMax,node,Stencil,RowStencil);
+        GetTriliniarInterpolationMutiBlockStencil(XyzIn_D,xStencilMin,xStencilMax,node,Stencil,RowStencil,BuildPointerStencil);
         return;
       }
     }
@@ -942,7 +1182,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
           xStencilMax[idim]=xStencilMin[idim]+dxCell[idim];
         }
 
-        GetTriliniarInterpolationMutiBlockStencil(XyzIn_D,xStencilMin,xStencilMax,CoarserBlock,Stencil,RowStencil);
+        GetTriliniarInterpolationMutiBlockStencil(XyzIn_D,xStencilMin,xStencilMax,CoarserBlock,Stencil,RowStencil,BuildPointerStencil);
 
 
         /* the following is used to get continuous interpolsation
@@ -960,12 +1200,14 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
           PIC::InterpolationRoutines::cRowStencil FineRowStencil;
           PIC::InterpolationRoutines::cRowStencil *FineRowStencilPtr=(RowStencil==NULL) ? NULL : &FineRowStencil;
 
-          GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,FineStencil,FineRowStencilPtr);
+          GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,FineStencil,FineRowStencilPtr,BuildPointerStencil);
 
-          Stencil.MultiplyScalar(1.0-(dmin-0.5)/0.5);
-          FineStencil.MultiplyScalar((dmin-0.5)/0.5);
+          if (BuildPointerStencil==true) {
+            Stencil.MultiplyScalar(1.0-(dmin-0.5)/0.5);
+            FineStencil.MultiplyScalar((dmin-0.5)/0.5);
 
-          Stencil.Add(&FineStencil);
+            Stencil.Add(&FineStencil);
+          }
 
           /* Apply exactly the same continuous coarse/fine blending to the
            * decomposition-independent row. */
@@ -996,14 +1238,14 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
         xStencilMax[idim]=xStencilMin[idim]+dxCell[idim];
       }
 
-      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil,RowStencil);
+      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil,RowStencil,BuildPointerStencil);
       return;
     }
 
     #elif _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE_ == _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE__SWMF_
     if ( ((node->RefinmentLevel==node->minNeibRefinmentLevel)&&(node->RefinmentLevel==node->maxNeibRefinmentLevel)) ||
         (0.5<iLoc)&&(iLoc<_BLOCK_CELLS_X_-0.5) && (0.5<jLoc)&&(jLoc<_BLOCK_CELLS_Y_-0.5) && (0.5<kLoc)&&(kLoc<_BLOCK_CELLS_Z_-0.5) ) {
-      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil,RowStencil);
+      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil,RowStencil,BuildPointerStencil);
       return;
     }
 
@@ -1013,7 +1255,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
         fabs(jLoc-0.5-(long)jLoc) < PrecisionCellCenter &&
         fabs(kLoc-0.5-(long)kLoc) < PrecisionCellCenter   ){
           BuildConstantRowStencil(XyzIn_D,node,RowStencil);
-          if (node->block!=NULL) PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(XyzIn_D,node,Stencil);
+          if ((BuildPointerStencil==true)&&(node->block!=NULL)) PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(XyzIn_D,node,Stencil);
           else Stencil.flush();
           return;
     }
@@ -1075,7 +1317,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
       }
 
       //retrieve the pointer to the current cell
-      if ((StencilNode==NULL)||((block=StencilNode->block)==NULL)) {
+      if ((BuildPointerStencil==false)||(StencilNode==NULL)||((block=StencilNode->block)==NULL)) {
         PhysicalStencilAvailable=false;
         continue;
       }
@@ -1099,7 +1341,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
        * the caller explicitly requested a row for a remote containing block,
        * there is no valid local pointer stencil; return it empty while keeping
        * the complete row. */
-      if (node->block!=NULL) PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(XyzIn_D,node,Stencil);
+      if ((BuildPointerStencil==true)&&(node->block!=NULL)) PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(XyzIn_D,node,Stencil);
       else Stencil.flush();
 
       return;
@@ -1113,11 +1355,12 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
 
 //triliniar interpolation used inside blocks
 _TARGET_HOST_ _TARGET_DEVICE_
-void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil &Stencil,PIC::InterpolationRoutines::cRowStencil *RowStencil) {
+void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil &Stencil,PIC::InterpolationRoutines::cRowStencil *RowStencil,bool BuildPointerStencil) {
   PIC::Mesh::cDataCenterNode *cell;
   PIC::Mesh::cDataBlockAMR *block;
 
-  block=node->block;
+  //row-only construction (BuildPointerStencil==false): treat the block as not allocated
+  block=(BuildPointerStencil==true) ? node->block : NULL;
   if ((block==NULL)&&(RowStencil==NULL)) exit(__LINE__,__FILE__,"Error: the block is not allocated");
 
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -1142,6 +1385,21 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
   w[0]=iLoc-(i0+0.5);
   w[1]=jLoc-(j0+0.5);
   w[2]=kLoc-(k0+0.5);
+
+  //dropped-weight normalization criterion (see "NORMALIZATION" at the top of this file)
+  bool RowDropped=false,PointerDropped=false;
+
+  //row-structure reuse (row-only construction): the row is determined by (node,i0,j0,k0)
+  int RowMode=0,iContribution=0;
+
+  #ifndef __CUDA_ARCH__
+  cRowStructure *RowStructure=NULL;
+
+  if ((BuildPointerStencil==false)&&(RowStencil!=NULL)) {
+    RowStructure=GetRowStructure(RowStructureTrilinear,node,i0,j0,k0);
+    RowMode=StartRowStructure(RowStructure);
+  }
+  #endif
 
   for (i=0;i<2;i++) for (j=0;j<2;j++) for (k=0;k<2;k++) {
     nd=_getCenterNodeLocalNumber(i0+i,j0+j,k0+k);
@@ -1178,26 +1436,52 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
 
     /* Populate the topological row even if this rank has no cDataCenterNode for
      * the cell. Ghost indices are canonicalized to the owning leaf node. */
-    AddRowStencilCell(RowStencil,InterpolationWeight,node,i0+i,j0+j,k0+k);
+    #ifndef __CUDA_ARCH__
+    if (RowMode==RowModeReplay) {
+      if (ApplyRowContribution(RowStructure,iContribution,InterpolationWeight,RowStencil)==true) RowDropped=true;
+    }
+    else
+    #endif
+    {
+      const int LengthBefore=(RowStencil!=NULL) ? RowStencil->Length : 0;
+      const bool added=AddRowStencilCell(RowStencil,InterpolationWeight,node,i0+i,j0+j,k0+k);
+
+      if ((RowStencil!=NULL)&&(added==false)&&(InterpolationWeight>0.0)) RowDropped=true;
+
+      #ifndef __CUDA_ARCH__
+      if (RowMode==RowModeRecord) RecordRowContribution(RowStructure,RowStencil,LengthBefore,added,node,i0+i,j0+j,k0+k);
+      #else
+      (void)LengthBefore;
+      #endif
+    }
+
+    iContribution++;
 
     cell=(block==NULL) ? NULL : block->GetCenterNode(nd);
 
     if (cell!=NULL) {
-      Stencil.AddCell(InterpolationWeight,cell,nd);
+      if ((Stencil.AddCell(InterpolationWeight,cell,nd)==false)&&(InterpolationWeight>0.0)) PointerDropped=true;
     }
+    else if (InterpolationWeight>0.0) PointerDropped=true;
   }
 
-  /* If non-periodic support points fell outside the global box, normalize the
-   * retained physical row. Remote allocation never affects this normalization. */
-  if ((RowStencil!=NULL)&&(RowStencil->Length>0)&&(RowStencil->Length!=8)) RowStencil->Normalize();
+  #ifndef __CUDA_ARCH__
+  if (RowMode==RowModeRecord) EndRowStructure(RowStructure,true);
+  #endif
+  (void)iContribution;
+
+  /* Normalize the row when a positive weight was dropped (support point outside
+   * the global box or in a block not used in the calculation). Remote allocation
+   * never affects this normalization. */
+  if ((RowStencil!=NULL)&&(RowStencil->Length>0)&&(RowDropped==true)) RowStencil->Normalize();
 
   if (Stencil.Length==0) {
     //no local cell has been found -> retain the legacy constant fallback when possible
     if (block!=NULL) PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(x,node,Stencil);
     return;
   }
-  else if (Stencil.Length!=8) {
-    //the interpolated stencil containes less that 8 elements -> the interpolation weights have to be renormalized
+  else if (PointerDropped==true) {
+    //a positive weight was dropped (cell not available locally or outside the domain) -> renormalize
     Stencil.Normalize();
   }
 }
@@ -1205,7 +1489,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
 
 
 _TARGET_HOST_ _TARGET_DEVICE_
-void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil &Stencil,PIC::InterpolationRoutines::cRowStencil *RowStencil) {
+void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil &Stencil,PIC::InterpolationRoutines::cRowStencil *RowStencil,bool BuildPointerStencil) {
   long int nd;
   PIC::Mesh::cDataCenterNode *cell;
 
@@ -1241,6 +1525,20 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
 
   bool GeometryAvailable=true;
   bool PhysicalStencilAvailable=true;
+
+  //dropped-weight normalization criterion (see "NORMALIZATION" at the top of this file)
+  bool RowDropped=false,PointerDropped=false;
+
+  //row-structure reuse (row-only construction): the row is determined by (node,ijkStencilMin)
+  #ifndef __CUDA_ARCH__
+  int RowMode=RowModeOriginal,iContribution=0;
+  cRowStructure *RowStructure=NULL;
+
+  if ((BuildPointerStencil==false)&&(RowStencil!=NULL)) {
+    RowStructure=GetRowStructure(RowStructureMultiBlock,node,ijkStencilMin[0],ijkStencilMin[1],ijkStencilMin[2]);
+    RowMode=StartRowStructure(RowStructure);
+  }
+  #endif
 
   /*
    * Visit the eight logical coarse-lattice support points in the same order as
@@ -1287,7 +1585,28 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
       exit(__LINE__,__FILE__,"Error: the option is not defined");
     }
 
+    #ifndef __CUDA_ARCH__
+    const int iSupportPoint=4*di+2*dj+dk;
+
+    if (RowMode==RowModeReplay) {
+      if (RowStructure->fineSupport[iSupportPoint]==0) {
+        if (ApplyRowContribution(RowStructure,iContribution++,StencilElementWeight,RowStencil)==true) RowDropped=true;
+      }
+      else {
+        const double FineCellWeight=(1.0/8.0)*StencilElementWeight;
+
+        for (int q=0;q<8;q++) if (ApplyRowContribution(RowStructure,iContribution++,FineCellWeight,RowStencil)==true) RowDropped=true;
+      }
+
+      continue;
+    }
+    #endif
+
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *StencilNode=FindStencilSupportNode(xLogical,node,ijk);
+
+    #ifndef __CUDA_ARCH__
+    if (RowMode==RowModeRecord) AddRowStructureCheck(RowStructure,StencilNode);
+    #endif
 
     if ((StencilNode==NULL)||(StencilNode->IsUsedInCalculationFlag==false)) {
       GeometryAvailable=false;
@@ -1300,12 +1619,28 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
        * reference block and its ghost cells. Keep that pointer path unchanged.
        * The row path canonicalizes the possibly-ghost index to the owning node.
        */
-      AddRowStencilCell(RowStencil,StencilElementWeight,node,ijk[0],ijk[1],ijk[2]);
+      {
+        const int LengthBefore=(RowStencil!=NULL) ? RowStencil->Length : 0;
+        const bool added=AddRowStencilCell(RowStencil,StencilElementWeight,node,ijk[0],ijk[1],ijk[2]);
+
+        if ((RowStencil!=NULL)&&(added==false)&&(StencilElementWeight>0.0)) RowDropped=true;
+
+        #ifndef __CUDA_ARCH__
+        if (RowMode==RowModeRecord) {
+          RowStructure->fineSupport[iSupportPoint]=0;
+          RecordRowContribution(RowStructure,RowStencil,LengthBefore,added,node,ijk[0],ijk[1],ijk[2]);
+        }
+        #else
+        (void)LengthBefore,(void)added;
+        #endif
+      }
 
       nd=_getCenterNodeLocalNumber(ijk[0],ijk[1],ijk[2]);
-      cell=(node->block==NULL) ? NULL : node->block->GetCenterNode(nd);
+      cell=((BuildPointerStencil==false)||(node->block==NULL)) ? NULL : node->block->GetCenterNode(nd);
 
-      if (cell!=NULL) AddPhysicalStencilCell(Stencil,StencilElementWeight,cell,nd);
+      if (cell!=NULL) {
+        if ((AddPhysicalStencilCell(Stencil,StencilElementWeight,cell,nd)==false)&&(StencilElementWeight>0.0)) PointerDropped=true;
+      }
       else PhysicalStencilAvailable=false;
     }
     else {
@@ -1326,16 +1661,37 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
         const int kFine=iNeib[2]+kk;
         const double FineCellWeight=(1.0/8.0)*StencilElementWeight;
 
-        AddRowStencilCell(RowStencil,FineCellWeight,StencilNode,iFine,jFine,kFine);
+        {
+          const int LengthBefore=(RowStencil!=NULL) ? RowStencil->Length : 0;
+          const bool added=AddRowStencilCell(RowStencil,FineCellWeight,StencilNode,iFine,jFine,kFine);
+
+          if ((RowStencil!=NULL)&&(added==false)&&(FineCellWeight>0.0)) RowDropped=true;
+
+          #ifndef __CUDA_ARCH__
+          if (RowMode==RowModeRecord) {
+            RowStructure->fineSupport[iSupportPoint]=1;
+            RecordRowContribution(RowStructure,RowStencil,LengthBefore,added,StencilNode,iFine,jFine,kFine);
+          }
+          #else
+          (void)LengthBefore,(void)added;
+          #endif
+        }
 
         nd=_getCenterNodeLocalNumber(iFine,jFine,kFine);
-        cell=(StencilNode->block==NULL) ? NULL : StencilNode->block->GetCenterNode(nd);
+        cell=((BuildPointerStencil==false)||(StencilNode->block==NULL)) ? NULL : StencilNode->block->GetCenterNode(nd);
 
-        if (cell!=NULL) AddPhysicalStencilCell(Stencil,FineCellWeight,cell,nd);
+        if (cell!=NULL) {
+          if ((AddPhysicalStencilCell(Stencil,FineCellWeight,cell,nd)==false)&&(FineCellWeight>0.0)) PointerDropped=true;
+        }
         else PhysicalStencilAvailable=false;
       }
     }
   }
+
+  #ifndef __CUDA_ARCH__
+  //a structure with a missing support point is not reused: the constant fallback depends on x
+  if (RowMode==RowModeRecord) EndRowStructure(RowStructure,GeometryAvailable);
+  #endif
 
   if (GeometryAvailable==false) {
     /* The old implementation falls back to constant interpolation when any
@@ -1345,7 +1701,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
 
     BuildConstantRowStencil(x,InterpolationNode,RowStencil);
 
-    if ((InterpolationNode!=NULL)&&(InterpolationNode->block!=NULL)) {
+    if ((BuildPointerStencil==true)&&(InterpolationNode!=NULL)&&(InterpolationNode->block!=NULL)) {
       PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(x,InterpolationNode,Stencil);
     }
     else Stencil.flush();
@@ -1353,7 +1709,10 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
     return;
   }
 
-  if (PhysicalStencilAvailable==false) {
+  //a positive weight was dropped (a cell outside the global domain) -> renormalize
+  if ((RowStencil!=NULL)&&(RowStencil->Length>0)&&(RowDropped==true)) RowStencil->Normalize();
+
+  if ((PhysicalStencilAvailable==false)&&(BuildPointerStencil==true)) {
     /* Preserve the legacy constant fallback for local interpolation while the
      * optional row keeps the complete decomposition-independent linear stencil. */
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *InterpolationNode=PIC::Mesh::mesh->findTreeNode(x,node);
@@ -1363,6 +1722,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
     }
     else Stencil.flush();
   }
+  else if ((BuildPointerStencil==true)&&(Stencil.Length>0)&&(PointerDropped==true)) Stencil.Normalize();
 }
 
 //init stencil for the corner based interpolation

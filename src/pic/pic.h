@@ -7273,8 +7273,10 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
       }
 
 
+      /* Returns false when the cell is not added (its center is outside the global
+       * domain of a non-periodic mesh), true otherwise. */
       _TARGET_DEVICE_ _TARGET_HOST_  
-      void AddCell(double w,T* c,int id) {
+      bool AddCell(double w,T* c,int id) {
         if (Length==nMaxStencilLength) exit(__LINE__,__FILE__,"Error: the stencil length exeeds 'nMaxStencilLength'. Need to increase 'nMaxStencilLength'");
 	if (w<0.0) exit(__LINE__,__FILE__,"Error: found a negative interpolation weight");
 	if (c==NULL) exit(__LINE__,__FILE__,"Error: out of range");
@@ -7288,7 +7290,7 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
             const double x    = c->GetX()[d];
 
             if (x < xmin || x > xmax) {
-              return; // outside domain → exit the function without adding
+              return false; // outside domain → exit the function without adding
             }
           }
 	}
@@ -7298,6 +7300,7 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
         cell[Length]=c;
         LocalCellID[Length]=id;
         Length++;
+        return true;
       }
 
       _TARGET_DEVICE_ _TARGET_HOST_ 
@@ -7566,18 +7569,26 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
 
         //interpolation functions
         _TARGET_HOST_ _TARGET_DEVICE_
-        void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil,PIC::InterpolationRoutines::cRowStencil *RowStencil=NULL);
+        /*
+         * BuildPointerStencil=false builds only RowStencil (row-only construction):
+         * every pointer-stencil step (block->GetCenterNode(), the constant
+         * fallbacks and their tree searches, the pointer blending) is skipped and
+         * Stencil is returned empty. RowStencil is identical to the one built with
+         * BuildPointerStencil=true.
+         */
+        void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil,PIC::InterpolationRoutines::cRowStencil *RowStencil=NULL,bool BuildPointerStencil=true);
 
         /*
          * Convenience overload for callers that only need the
-         * decomposition-independent row. The temporary pointer stencil keeps
-         * all legacy construction and fallback logic in one implementation.
+         * decomposition-independent row. The construction and fallback logic is
+         * that of the general InitStencil(); the pointer stencil is not built
+         * (BuildPointerStencil=false), so the temporary stays empty.
          */
         _TARGET_HOST_ _TARGET_DEVICE_
         inline void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::cRowStencil& RowStencil) {
           PIC::InterpolationRoutines::CellCentered::cStencil LocalStencil;
 
-          InitStencil(x,node,LocalStencil,&RowStencil);
+          InitStencil(x,node,LocalStencil,&RowStencil,false);
         }
 
         _TARGET_HOST_ _TARGET_DEVICE_
@@ -7593,7 +7604,7 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
         } 
 
         _TARGET_HOST_ _TARGET_DEVICE_
-        void GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil,PIC::InterpolationRoutines::cRowStencil *RowStencil=NULL);
+        void GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil,PIC::InterpolationRoutines::cRowStencil *RowStencil=NULL,bool BuildPointerStencil=true);
 
         _TARGET_HOST_ _TARGET_DEVICE_
         inline PIC::InterpolationRoutines::CellCentered::cStencil *GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
@@ -7608,7 +7619,7 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
         }
 
         _TARGET_HOST_ _TARGET_DEVICE_
-        void GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil,PIC::InterpolationRoutines::cRowStencil *RowStencil=NULL);
+        void GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil,PIC::InterpolationRoutines::cRowStencil *RowStencil=NULL,bool BuildPointerStencil=true);
 
         _TARGET_HOST_ _TARGET_DEVICE_
         inline PIC::InterpolationRoutines::CellCentered::cStencil *GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
