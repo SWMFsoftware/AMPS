@@ -1196,7 +1196,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
     if (block!=NULL) PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(x,node,Stencil);
     return;
   }
-  else if (StencilTable->Length!=8) {
+  else if (Stencil.Length!=8) {
     //the interpolated stencil containes less that 8 elements -> the interpolation weights have to be renormalized
     Stencil.Normalize();
   }
