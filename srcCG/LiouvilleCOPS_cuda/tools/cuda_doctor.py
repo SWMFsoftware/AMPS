@@ -366,8 +366,7 @@ def _worker(device, queue):
         import cupy as cp
         cp.cuda.Device(device).use()
         data = cp.arange(10_000_000, dtype=cp.float64)
-        queue.put((device, float(cp.sum(data).get()), environment.format_uuid(
-            cp.cuda.runtime.getDeviceProperties(device)["uuid"])))
+        queue.put((device, float(cp.sum(data).get()), environment.device_uuid(device)))
     except Exception as exc:
         queue.put((device, None, repr(exc)))
 

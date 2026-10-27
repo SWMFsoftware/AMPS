@@ -70,6 +70,29 @@ def format_uuid(raw):
                                    hexed[16:20], hexed[20:32])
 
 
+def device_uuid(index, props=None):
+    """nvidia-smi style UUID of runtime device ``index``, from the driver API.
+
+    CuPy 13.6 returns ``cudaDeviceProp.uuid`` cut at its first zero byte, so a
+    UUID containing 0x00 (observed on an A100) cannot be formatted from it.
+    ``cuDeviceGetUuid_v2`` returns all 16 bytes; the CuPy value is the fallback
+    when the driver library cannot be used.
+    """
+    import ctypes
+    try:
+        driver = ctypes.CDLL("libcuda.so.1")
+        handle, raw = ctypes.c_int(), (ctypes.c_char * 16)()
+        if (driver.cuInit(0) == 0 and driver.cuDeviceGet(ctypes.byref(handle), int(index)) == 0
+                and driver.cuDeviceGetUuid_v2(raw, handle) == 0):
+            return format_uuid(raw.raw)
+    except (OSError, AttributeError):
+        pass
+    if props is None:
+        import cupy
+        props = cupy.cuda.runtime.getDeviceProperties(index)
+    return format_uuid(props.get("uuid", b""))
+
+
 def device_inventory():
     """Stable identities and capacities of every visible CUDA device."""
     import cupy
@@ -83,7 +106,7 @@ def device_inventory():
         devices.append({
             "index": index,
             "name": name.decode() if isinstance(name, bytes) else str(name),
-            "uuid": format_uuid(props.get("uuid", b"")),
+            "uuid": device_uuid(index, props),
             "pci_bus_id": runtime.deviceGetPCIBusId(index),
             "compute_capability": "%d.%d" % (props["major"], props["minor"]),
             "multiprocessors": props["multiProcessorCount"],
