@@ -42,6 +42,12 @@ my $s0;
 my $s1;
 my $s2;
 my $spec;
+my $Dimension=3;
+my $NucleusRadiusIsSet=0;
+my $DomainRadialExtentIsSet=0;
+my $DomainOuterRadiusIsSet=0;
+my $RadialCellNumberIsSet=0;
+my $SurfaceResolutionIsSet=0;
 
 
 #get the list of the species                                                   
@@ -87,7 +93,61 @@ while ($line=<InputFile>) {
   ($InputLine,$InputComment)=split(' ',$InputLine,2);
   $InputLine=~s/ //g;
   
-  if ($InputLine eq "SODIUMSTICKINGPROBABILITY") {
+  if ($InputLine eq "DIMENSION") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    $InputLine=~s/ //g;
+    $Dimension=$InputLine;
+
+    if ($Dimension eq "1") {
+      ampsConfigLib::RedefineMacro("DIM","1","pic/picGlobal.dfn");
+      ampsConfigLib::RedefineMacro("_AMR_SYMMETRY_MODE_","_AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_","meshAMR/meshAMRdef.h");
+      ampsConfigLib::RedefineMacro("_AMR__CUT_CELL__MODE_","_AMR__CUT_CELL__MODE__OFF_","meshAMR/meshAMRdef.h");
+      ampsConfigLib::RedefineMacro("_USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_","_USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_OFF_","meshAMR/meshAMRdef.h");
+      ampsConfigLib::AddLineAfterMarker2File("#include \"Exosphere_DefaultSurfaceDataStructure.h\"\n","//MARKER--add-definitions-after-this-line","meshAMR/meshAMR_UserDefinitions.h");
+
+      # The second-order mover still contains an unfinished spherical branch.
+      # Select the implemented first-order radial mover for a 1D build.
+      ampsConfigLib::RedefineMacroFunction("_PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_","(ptr,LocalTimeStep,node) PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory(ptr,LocalTimeStep,node);","pic/picGlobal.dfn");
+      ampsConfigLib::RedefineMacroFunction("_PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_","(ptr,LocalTimeStep,node,FirstBoundaryFlag) PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection(ptr,LocalTimeStep,node,FirstBoundaryFlag);","pic/picGlobal.dfn");
+      ampsConfigLib::RedefineMacroFunction("_PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_FACE_","(ptr,LocalTimeStep,node,FirstBoundaryFlag,InjectionFace) PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection(ptr,LocalTimeStep,node,FirstBoundaryFlag);","pic/picGlobal.dfn");
+
+      ampsConfigLib::SubstituteCodeLine('^MAINLIBOBJ =',"MAINLIBOBJ = RadialMesh.o RadialMeshProfile.o","main/makefile");
+      ampsConfigLib::SubstituteCodeLine('^MAINOBJ =',"MAINOBJ = RadialMain.o","main/makefile");
+      ampsConfigLib::SubstituteCodeLine('#include "Comet.h"',"// The radial mesh build does not use the 3D Comet model header.","pic/pic.h");
+    }
+    elsif ($Dimension eq "3") {
+      # The source defaults select the existing three-dimensional model.
+    }
+    else {
+      die "Hartley2 supports Dimension=1 or Dimension=3, line=$InputFileLineNumber ($InputFileName)\n";
+    }
+  }
+  elsif ($InputLine eq "NUCLEUSRADIUS") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    ampsConfigLib::ChangeValueOfVariable("double Comet::RadialModel::NucleusRadius",$InputLine,"main/RadialMesh.cpp");
+    $NucleusRadiusIsSet=1;
+  }
+  elsif ($InputLine eq "DOMAINRADIALEXTENT") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    ampsConfigLib::ChangeValueOfVariable("double Comet::RadialModel::DomainRadialExtent",$InputLine,"main/RadialMesh.cpp");
+    $DomainRadialExtentIsSet=1;
+  }
+  elsif ($InputLine eq "DOMAINOUTERRADIUS") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    ampsConfigLib::ChangeValueOfVariable("double Comet::RadialModel::DomainOuterRadius",$InputLine,"main/RadialMesh.cpp");
+    $DomainOuterRadiusIsSet=1;
+  }
+  elsif ($InputLine eq "RADIALCELLNUMBER") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    ampsConfigLib::ChangeValueOfVariable("int Comet::RadialModel::RequestedCellNumber",$InputLine,"main/RadialMesh.cpp");
+    $RadialCellNumberIsSet=1;
+  }
+  elsif ($InputLine eq "NUCLEUSSURFACERESOLUTION") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    ampsConfigLib::ChangeValueOfVariable("double Comet::RadialModel::SurfaceResolution",$InputLine,"main/RadialMesh.cpp");
+    $SurfaceResolutionIsSet=1;
+  }
+  elsif ($InputLine eq "SODIUMSTICKINGPROBABILITY") {
     ($InputLine,$InputComment)=split(' ',$InputComment,2);
     $InputLine=~s/ //g;
      
@@ -684,6 +744,14 @@ while ($line=<InputFile>) {
   else {
     die "Option is unknown, line=$InputFileLineNumber ($InputFileName)\n";
   }
+}
+
+if ($Dimension eq "1") {
+  die "Dimension=1 requires NucleusRadius\n" unless $NucleusRadiusIsSet;
+  die "Dimension=1 requires RadialCellNumber\n" unless $RadialCellNumberIsSet;
+  die "Dimension=1 requires NucleusSurfaceResolution\n" unless $SurfaceResolutionIsSet;
+  die "Dimension=1 requires exactly one of DomainRadialExtent and DomainOuterRadius\n"
+      unless ($DomainRadialExtentIsSet+$DomainOuterRadiusIsSet)==1;
 }
 
 

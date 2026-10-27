@@ -1162,10 +1162,13 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
   //the descriptors of the internal surfaces
   cInternalBoundaryConditionsDescriptor *InternalBoundaryDescriptor,*InternalBoundaryDescriptor_dtMin=NULL,*lastInternalBoundaryDescriptor=NULL;
 
+  //Body-of-rotation boundary data is also referenced by the dimension-neutral
+  //boundary switch below.
+  cInternalRotationBodyData *Nucleus;
+
   //spherical internal surface
 #if DIM == 3
   cInternalSphericalData *Sphere;
-  cInternalRotationBodyData *Nucleus;
 #elif DIM == 2
   exit(__LINE__,__FILE__,"not yet");
 #else
@@ -1610,7 +1613,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
     if (r>1.0E-20) {
       double xfinal[3];
 
-      xfinal[0]=x[0]/r,xfinal[1]=x[1]/r,xfinal[2]=x[1]/r;
+      xfinal[0]=x[0]/r,xfinal[1]=x[1]/r,xfinal[2]=x[2]/r;
       l=sqrt(pow(xfinal[0],2)+pow(xfinal[1],2));
 
       if (l>1.0E-20) {
@@ -1891,7 +1894,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
     if (r>1.0E-20) {
       double xfinal[3];
 
-      xfinal[0]=x[0]/r,xfinal[1]=x[1]/r,xfinal[2]=x[1]/r;
+      xfinal[0]=x[0]/r,xfinal[1]=x[1]/r,xfinal[2]=x[2]/r;
       l=sqrt(pow(xfinal[0],2)+pow(xfinal[1],2));
 
       if (l>1.0E-20) {
@@ -2216,7 +2219,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
   double dtMin=-1.0,dtTemp,dtMinInit2,dtMinInit;
   PIC::ParticleBuffer::byte *ParticleData;
   double vInit[3],xInit[3]={0.0,0.0,0.0},vMiddle[3],xMiddle[3],vFinal[3],xFinal[3],xminBlock[3],xmaxBlock[3];
-  int idim;
+  int idim,nface_dtMin=-1;
   //  int iNeibNode[3],neibNodeDirection;
 
   long int LocalCellNumber;
@@ -2269,10 +2272,13 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
     }
   }
 
+  //Body-of-rotation boundary data is also referenced by the dimension-neutral
+  //boundary switch below.
+  cInternalRotationBodyData *Nucleus;
+
   //spherical internal surface
 #if DIM == 3
   cInternalSphericalData *Sphere;
-  cInternalRotationBodyData *Nucleus;
 #elif DIM == 2
   exit(__LINE__,__FILE__,"not yet");
 #else
@@ -2612,19 +2618,19 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
 
     switch(_AMR_SYMMETRY_MODE_) {
     case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
-      if (fabs(v[0])>0.0) {
-        dtTemp=(xminBlock[0]-x[0])/v[0];
+      if (fabs(vMiddle[0])>0.0) {
+        dtTemp=(xminBlock[0]-xInit[0])/vMiddle[0];
         if ((0.0<dtTemp)&&(dtTemp<dtMin)) dtMin=dtTemp,nface_dtMin=0,ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
 
-        dtTemp=(xmaxBlock[0]-x[0])/v[0];
+        dtTemp=(xmaxBlock[0]-xInit[0])/vMiddle[0];
         if ((0.0<dtTemp)&&(dtTemp<dtMin)) dtMin=dtTemp,nface_dtMin=1,ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
       }
       break;
     case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
       //nface=0 -> rmin
-      a=v[0]*v[0]+v[1]*v[1]+v[2]*v[2];
-      b=2.0*v[0]*x[0];
-      c=x[0]*x[0]-xminBlock[0]*xminBlock[0];
+      a=vMiddle[0]*vMiddle[0]+vMiddle[1]*vMiddle[1]+vMiddle[2]*vMiddle[2];
+      b=2.0*vMiddle[0]*xInit[0];
+      c=xInit[0]*xInit[0]-xminBlock[0]*xminBlock[0];
       d=b*b-4.0*a*c;
 
       if (d>0.0) {
@@ -2639,7 +2645,7 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
       }
 
       //nface=1 -> rmax
-      c=x[0]*x[0]-xmaxBlock[0]*xmaxBlock[0];
+      c=xInit[0]*xInit[0]-xmaxBlock[0]*xmaxBlock[0];
       d=b*b-4.0*a*c;
 
       if (d>0.0) {
@@ -3605,7 +3611,7 @@ if (_PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIA
     if (r>1.0E-20) {
       double xfinal[3];
 
-      xfinal[0]=xFinal[0]/r,xfinal[1]=xFinal[1]/r,xfinal[2]=xFinal[1]/r;
+      xfinal[0]=xFinal[0]/r,xfinal[1]=xFinal[1]/r,xfinal[2]=xFinal[2]/r;
       l=sqrt(pow(xfinal[0],2)+pow(xfinal[1],2));
 
       if (l>1.0E-20) {

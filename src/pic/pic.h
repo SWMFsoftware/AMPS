@@ -6141,7 +6141,7 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
 
       int ParticleDataLength;
       PIC::ParticleBuffer::byte *ParticleDataBuffer;
-      cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > *mesh=PIC::Mesh::mesh;
+      cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *mesh=PIC::Mesh::mesh;
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
     };
 

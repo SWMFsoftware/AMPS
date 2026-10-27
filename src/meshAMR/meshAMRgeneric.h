@@ -441,7 +441,7 @@ public:
       break;
     }
 
-    for (int i=0;i<nTotalFaces;i++) NeibTable[i]=neibNodeFace(i,mesh_ptr);
+    for (int i=0;i<nTotalFaces;i++) NeibTable[i]=findNeibNodeFace(i,mesh_ptr);
   }
 
   template <typename T>
@@ -574,7 +574,7 @@ public:
 
    template <typename T>
    _TARGET_HOST_ _TARGET_DEVICE_
-   cTreeNodeAMR<cBlockAMR>* neibNodeFace (int i,T* mesh_ptr) {
+   cTreeNodeAMR<cBlockAMR>* findNeibNodeFace (int i,T* mesh_ptr) {
      int ix[3];
 
      //numberic patter:
@@ -630,6 +630,12 @@ public:
      int iFace,jFace;
 
      switch (_MESH_DIMENSION_) {
+     case 1:
+       if (i==0) ix[0]-=1;
+       else if (i==1) ix[0]+=NodeGeometricSizeIndex;
+       else exit(__LINE__,__FILE__,"Error: face index is out of range");
+       break;
+
      case 3:
        i-=4*nface;
        jFace=i/2;
@@ -725,18 +731,12 @@ public:
    }
 
 
-#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_ 
-  #if _MESH_DIMENSION_ == 1
+#if _MESH_DIMENSION_ == 1
   cTreeNodeAMR *neibNodeFace[2];
-  #elif _MESH_DIMENSION_ == 2
+#elif _MESH_DIMENSION_ == 2
   cTreeNodeAMR *neibNodeFace[4*2],*neibNodeCorner[4];
-  #elif _MESH_DIMENSION_ == 3
+#elif _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
   cTreeNodeAMR *neibNodeFace[6*4],*neibNodeCorner[8],*neibNodeEdge[12*2];
-  #endif
-#else
-
-  //cTreeNodeAMR *neibNodeEdge[12*2];
-
 #endif
 
 
@@ -900,7 +900,16 @@ public:
     if (nface>=2*_MESH_DIMENSION_) exit(__LINE__,__FILE__,"Error: 'nface' is out of range");
 
     #if _MESH_DIMENSION_ == 1
-    exit(__LINE__,__FILE__,"not implemented");
+    #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
+    res=1.0;
+    #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
+    {
+      const double radius=(nface==0) ? xmin[0] : xmax[0];
+      res=4.0*Pi*radius*radius;
+    }
+    #else
+    exit(__LINE__,__FILE__,"Error: symmetry mode is not supported for a one-dimensional mesh");
+    #endif
     #elif _MESH_DIMENSION_ == 2
     exit(__LINE__,__FILE__,"not implemented");
     #elif _MESH_DIMENSION_ == 3
@@ -937,7 +946,7 @@ public:
   _TARGET_HOST_ _TARGET_DEVICE_
   double GetCellFaceSurfaceArea(int nface) {
     #if _MESH_DIMENSION_ == 1
-    const static double CellSurfaceAreaMultiplyer[1]={1.0,1.0};
+    const static double CellSurfaceAreaMultiplyer[2]={1.0,1.0};
     #elif _MESH_DIMENSION_ == 2
     const static double CellSurfaceAreaMultiplyer[4]={_BLOCK_CELLS_Y_,_BLOCK_CELLS_Y_,
                                                       _BLOCK_CELLS_X_,_BLOCK_CELLS_X_};
@@ -1023,12 +1032,15 @@ public:
     minNeibRefinmentLevel=-1,maxNeibRefinmentLevel=-1;
 
     #if _MESH_DIMENSION_ == 1
-    exit(__LINE__,__FILE__,"not implemented");
+    for (i=0;i<2;i++) if ((node=findNeibNodeFace(i,mesh_ptr))!=NULL) {
+      if ((minNeibRefinmentLevel==-1)||(minNeibRefinmentLevel>node->RefinmentLevel)) minNeibRefinmentLevel=node->RefinmentLevel;
+      if (maxNeibRefinmentLevel<node->RefinmentLevel) maxNeibRefinmentLevel=node->RefinmentLevel;
+    }
     #elif _MESH_DIMENSION_ == 2
     exit(__LINE__,__FILE__,"not implemented");
     #elif _MESH_DIMENSION_ == 3
     //connections through faces
-    for (i=0;i<6*4;i++) if ((node=neibNodeFace(i,mesh_ptr))!=NULL) {
+    for (i=0;i<6*4;i++) if ((node=findNeibNodeFace(i,mesh_ptr))!=NULL) {
       if ((minNeibRefinmentLevel==-1)||(minNeibRefinmentLevel>node->RefinmentLevel)) minNeibRefinmentLevel=node->RefinmentLevel;
       if (maxNeibRefinmentLevel<node->RefinmentLevel) maxNeibRefinmentLevel=node->RefinmentLevel;
     }
@@ -1129,7 +1141,7 @@ public:
 #elif _MESH_DIMENSION_ == 2
     res=neibNodeFace[iFace+2*nface];
 #else
-    res=neibNodeFace(iFace+2*(jFace+2*nface),mesh_ptr);
+    res=findNeibNodeFace(iFace+2*(jFace+2*nface),mesh_ptr);
 #endif
 
     return res;
@@ -1994,7 +2006,15 @@ public:
     if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
       //add the local number of the allocated center nodes
       
-#if _MESH_DIMENSION_ == 3
+#if _MESH_DIMENSION_ == 1
+      const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+      const int jMin=0,jMax=0;
+      const int kMin=0,kMax=0;
+#elif _MESH_DIMENSION_ == 2
+      const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+      const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+      const int kMin=0,kMax=0;
+#elif _MESH_DIMENSION_ == 3
       const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
       const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
       const int kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
@@ -2356,8 +2376,10 @@ public:
     //check the correctness of the symmetry options
 #if _MESH_DIMENSION_ == 3
     if (_AMR_SYMMETRY_MODE_!=_AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_) exit(__LINE__,__FILE__,"The symmetry mode and the mesh dimention are not consistent: only AMR_SYMMETRY_MODE = AMR_SYMMETRY_MODE_PLANAR_SYMMETRY is allowed for MESH_DIMENSION == 3");
-#else
-    exit(__LINE__,__FILE__,"Error: the option is not found");
+#elif _MESH_DIMENSION_ == 2
+    if ((_AMR_SYMMETRY_MODE_!=_AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_)&&(_AMR_SYMMETRY_MODE_!=_AMR_SYMMETRY_MODE_AXIAL_SYMMETRY_)) exit(__LINE__,__FILE__,"The symmetry mode and the mesh dimension are not consistent");
+#elif _MESH_DIMENSION_ == 1
+    if ((_AMR_SYMMETRY_MODE_!=_AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_)&&(_AMR_SYMMETRY_MODE_!=_AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_)) exit(__LINE__,__FILE__,"The symmetry mode and the mesh dimension are not consistent");
 #endif
 
     //set the minimum value of dx
@@ -7186,8 +7208,8 @@ if (CallsCounter==83) {
       std::cout << "$PREFIX: Building mesh.....  " << std::endl << std::flush;
     }
      
-    double dx[3];
-    for (int idim=0;idim<3;idim++) {
+    double dx[DIM];
+    for (int idim=0;idim<DIM;idim++) {
       dx[idim]=xGlobalMax[idim]-xGlobalMin[idim];
     }
 
@@ -7207,9 +7229,15 @@ if (CallsCounter==83) {
       #endif
 
       if (rank==0) {
-        printf("$PREFIX: Building mesh [completed level: %i] minimum cell size:%e,%e,%e\n",level,
-	       dx[0]/_BLOCK_CELLS_X_,dx[1]/_BLOCK_CELLS_Y_,dx[2]/_BLOCK_CELLS_Z_);
-        for (int idim=0;idim<3;idim++) dx[idim]*=0.5;
+        const int BlockCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+
+        printf("$PREFIX: Building mesh [completed level: %i] minimum cell size:",level);
+        for (int idim=0;idim<DIM;idim++) {
+          printf("%s%e",(idim==0) ? "" : ",",dx[idim]/BlockCells[idim]);
+          dx[idim]*=0.5;
+        }
+
+        printf("\n");
         fflush(stdout);
       }
 
@@ -10089,7 +10117,7 @@ nMPIops++;
 //#endif
 
 //#ifdef _AMR_InitDomainBoundaryLayer_ADD_FACES_
-      for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((neibNode=node->neibNodeFace(i,this))!=NULL) if ((neibThread=neibNode->Thread)!=ThisThread) {
+      for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((neibNode=node->findNeibNodeFace(i,this))!=NULL) if ((neibThread=neibNode->Thread)!=ThisThread) {
         //check if the node is not in the list already
         found=false,tNode=DomainBoundaryLayerNodesList[neibThread];
 
@@ -10312,7 +10340,15 @@ nMPIops++;
     double Measure;
 
 
-    #if _MESH_DIMENSION_ == 3
+    #if _MESH_DIMENSION_ == 1
+    const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    const int jMin=0,jMax=0;
+    const int kMin=0,kMax=0;
+    #elif _MESH_DIMENSION_ == 2
+    const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+    const int kMin=0,kMax=0;
+    #elif _MESH_DIMENSION_ == 3
     const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
     const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
     const int kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
@@ -10402,7 +10438,15 @@ nMPIops++;
     double Measure;
 
 
-    #if _MESH_DIMENSION_ == 3
+    #if _MESH_DIMENSION_ == 1
+    const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    const int jMin=0,jMax=0;
+    const int kMin=0,kMax=0;
+    #elif _MESH_DIMENSION_ == 2
+    const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+    const int kMin=0,kMax=0;
+    #elif _MESH_DIMENSION_ == 3
     const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
     const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
     const int kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
@@ -10473,7 +10517,15 @@ nMPIops++;
     cCenterNode *CenterNode;
     char *offset;
 
-    #if _MESH_DIMENSION_ == 3
+    #if _MESH_DIMENSION_ == 1
+    const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    const int jMin=0,jMax=0;
+    const int kMin=0,kMax=0;
+    #elif _MESH_DIMENSION_ == 2
+    const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+    const int kMin=0,kMax=0;
+    #elif _MESH_DIMENSION_ == 3
     const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
     const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
     const int kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
@@ -10606,7 +10658,15 @@ nMPIops++;
     cCenterNode *CenterNode;
     char *offset;
 
-    #if _MESH_DIMENSION_ == 3
+    #if _MESH_DIMENSION_ == 1
+    const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    const int jMin=0,jMax=0;
+    const int kMin=0,kMax=0;
+    #elif _MESH_DIMENSION_ == 2
+    const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+    const int kMin=0,kMax=0;
+    #elif _MESH_DIMENSION_ == 3
     const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
     const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
     const int kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
@@ -12898,7 +12958,7 @@ if (TmpAllocationCounter==2437) {
 cTreeNodeAMR<cBlockAMR> *NeibFace; 
 
 
-         for (i=0;i<6*4;i++) if ((NeibFace=node->neibNodeFace(i,this))!=NULL) {
+         for (i=0;i<6*4;i++) if ((NeibFace=node->findNeibNodeFace(i,this))!=NULL) {
 
 
              if (NeibFace->Thread!=node->Thread) {
@@ -13018,7 +13078,7 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
           #endif  //_AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
 
            //add face-neighbors into the send list
-           for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeFace(i,this))!=NULL) if (sendNode->Thread==From) sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_FALSE_;
+           for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->findNeibNodeFace(i,this))!=NULL) if (sendNode->Thread==From) sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_FALSE_;
 
            //add the edge-neighbors to the send list
            if (_MESH_DIMENSION_==3) {
@@ -13059,7 +13119,7 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
           }
           #endif //_AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
 
-         for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeFace(i,this))!=NULL) if ((sendNode->Thread==From)&&(sendNode->nodeDescriptor.NodeProcessingFlag==_AMR_FALSE_)&&(sendNode->IsUsedInCalculationFlag==true)) {
+         for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->findNeibNodeFace(i,this))!=NULL) if ((sendNode->Thread==From)&&(sendNode->nodeDescriptor.NodeProcessingFlag==_AMR_FALSE_)&&(sendNode->IsUsedInCalculationFlag==true)) {
            sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_TRUE_;
            GetAMRnodeID(nodeid,sendNode);
 
@@ -13146,7 +13206,7 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
 
            cTreeNodeAMR<cBlockAMR>* NeibFace;
 
-           for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((NeibFace=recvNode->neibNodeFace(i,this))!=NULL) if (NeibFace->Thread==ThisThread) {
+           for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((NeibFace=recvNode->findNeibNodeFace(i,this))!=NULL) if (NeibFace->Thread==ThisThread) {
              found=true;
              fprintf(DiagnospticMessageStream,"$PREFIX:'recvNode' has neibours on 'ThisThread': (file=%s, line=%i)\n",__FILE__,__LINE__);
            }

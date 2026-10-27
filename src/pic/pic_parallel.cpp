@@ -79,14 +79,7 @@ void PIC::Parallel::ExchangeParticleData_unbuffered() {
   //set the default value inthe counters
   for (i=0;i<PIC::nTotalThreads;i++) SendMessageLengthTable[i]=0,RecvMessageLengthTable[i]=0;
 
-  #if DIM == 3
-  //  cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > :: cAMRnodeID nodeid;
   cAMRnodeID nodeid;
-  #elif DIM == 2
-  cMeshAMR2d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > :: cAMRnodeID nodeid;
-  #else
-  cMeshAMR1d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > :: cAMRnodeID nodeid;
-  #endif
 
 
   //The signals
@@ -492,14 +485,7 @@ void PIC::Parallel::ExchangeParticleData_buffered() {
   long int Particle;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *sendNode=NULL;
 
-  #if DIM == 3
-  //  cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > :: cAMRnodeID nodeid;
   cAMRnodeID nodeid;
-  #elif DIM == 2
-  cMeshAMR2d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > :: cAMRnodeID nodeid;
-  #else
-  cMeshAMR1d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > :: cAMRnodeID nodeid;
-  #endif
 
 
   //The signals
@@ -3029,5 +3015,4 @@ switch(_PIC_BC__PERIODIC_MODE_) {
     break;
 }
 }
-
 

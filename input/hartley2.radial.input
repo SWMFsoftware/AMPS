@@ -1,0 +1,49 @@
+#main
+
+SpeciesList=H2O
+
+makefile SOURCES=src
+makefile RUNDIR=run
+
+ProjectSourceDirectory=srcHartley2
+WorkingSourceDirectory=build
+SourceDirectory=src
+
+Prefix=AMPS
+DiagnosticStream=screen
+OutputDirectory=output/Hartley2-radial
+StdoutErrorLog=on
+DebuggerMode=off
+ForceRepeatableSimulationPath=on
+
+TimeStepMode=SpeciesLocalTimeStep
+ParticleWeightMode=SpeciesGlobalParticleWeight
+ParticleWeightCorrectionMode=off
+CouplerMode=off
+
+#endmain
+
+#include species.input
+
+#General
+  MaxMeshRefinmentLevel=12
+  EnforceRequestedMeshResolution=on
+  BlockCells=8,1,1
+  GhostCells=2,0,0
+  NastranSurfaceUserData=off
+#endGeneral
+
+#block ../hartley2.pl
+
+  Dimension=1
+
+  ! SI units. These are mesh-validation values; replace them with run values.
+  NucleusRadius=500.0
+  DomainRadialExtent=9500.0
+  ! DomainOuterRadius=10000.0  ! alternative to DomainRadialExtent
+  RadialCellNumber=50
+  NucleusSurfaceResolution=50.0
+
+#endblock
+
+#end
