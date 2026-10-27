@@ -173,6 +173,11 @@
 //a stack class for the mesh elements
 #define _STACK_DEFAULT_BUFFER_BUNK_SIZE_ 10
 #define _STACK_DEFAULT_BUFFER_LIST_SIZE_ 100
+//the next size of a stack's chunk-pointer lists: the lists double when full, so that filling a stack
+//with N elements copies O(N) list entries rather than O(N^2) (a fixed step of _STACK_DEFAULT_BUFFER_LIST_SIZE_
+//made the mesh setup on a single MPI process take minutes); cAssociatedDataAMRstack sizes its lists
+//from BaseElementStack.dataBufferListSize, so both stacks must grow by this macro
+#define _STACK_NEXT_LIST_SIZE_(s) ((s)+(((s)>_STACK_DEFAULT_BUFFER_LIST_SIZE_) ? (s) : _STACK_DEFAULT_BUFFER_LIST_SIZE_))
 
 //macro definition for the real and ghost blocks 
 #define _GHOST_BLOCK_ true
@@ -297,22 +302,22 @@ public:
 
     //check available space in the dataBufferList list: if needed increment the size of 'elementStackList' and 'dataBufferList' 
     if (dataBufferListPointer==dataBufferListSize) {
-      T** tmpDataList=NULL; //=new T*[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
-      amps_malloc_managed<T*>(tmpDataList,dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
+      T** tmpDataList=NULL; //=new T*[_STACK_NEXT_LIST_SIZE_(dataBufferListSize)];
+      amps_malloc_managed<T*>(tmpDataList,_STACK_NEXT_LIST_SIZE_(dataBufferListSize));
 
 
-      MemoryAllocation+=sizeof(T*)*(dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
+      MemoryAllocation+=sizeof(T*)*(_STACK_NEXT_LIST_SIZE_(dataBufferListSize));
 
-      T*** tmpStackList=NULL; //=new T**[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
-      amps_malloc_managed<T**>(tmpStackList,dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
+      T*** tmpStackList=NULL; //=new T**[_STACK_NEXT_LIST_SIZE_(dataBufferListSize)];
+      amps_malloc_managed<T**>(tmpStackList,_STACK_NEXT_LIST_SIZE_(dataBufferListSize));
 
-      MemoryAllocation+=sizeof(T**)*(dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_); 
+      MemoryAllocation+=sizeof(T**)*(_STACK_NEXT_LIST_SIZE_(dataBufferListSize)); 
 
       i=0;
      
       //copy the content of the old lists to the new ones 
       if (dataBufferList!=NULL) for (;i<dataBufferListSize;i++) tmpDataList[i]=dataBufferList[i],tmpStackList[i]=elementStackList[i];
-      for (j=0;j<_STACK_DEFAULT_BUFFER_LIST_SIZE_;j++,i++) tmpDataList[i]=NULL,tmpStackList[i]=NULL;
+      for (;i<_STACK_NEXT_LIST_SIZE_(dataBufferListSize);i++) tmpDataList[i]=NULL,tmpStackList[i]=NULL;
 
       if (dataBufferList!=NULL) {
 //        delete [] dataBufferList;
@@ -328,7 +333,7 @@ public:
 
       dataBufferList=tmpDataList;
       elementStackList=tmpStackList;
-      dataBufferListSize+=_STACK_DEFAULT_BUFFER_LIST_SIZE_;
+      dataBufferListSize=_STACK_NEXT_LIST_SIZE_(dataBufferListSize);
     }
 
     //allocate a new memory chunk for the element's data and update the stack list
@@ -692,18 +697,18 @@ public:
 
       //check available space in the dataBufferList list: if needed increment the size of 'elementStackList' and 'dataBufferList'
       if (BaseElementStack.dataBufferListPointer==BaseElementStack.dataBufferListSize) {
-        char** tmpDataList=NULL; //=new char*[BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
-        amps_malloc_managed<char*>(tmpDataList,BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
+        char** tmpDataList=NULL; //=new char*[_STACK_NEXT_LIST_SIZE_(BaseElementStack.dataBufferListSize)];
+        amps_malloc_managed<char*>(tmpDataList,_STACK_NEXT_LIST_SIZE_(BaseElementStack.dataBufferListSize));
 
-        char*** tmpStackList=NULL; //=new char**[BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
-        amps_malloc_managed<char**>(tmpStackList,BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
+        char*** tmpStackList=NULL; //=new char**[_STACK_NEXT_LIST_SIZE_(BaseElementStack.dataBufferListSize)];
+        amps_malloc_managed<char**>(tmpStackList,_STACK_NEXT_LIST_SIZE_(BaseElementStack.dataBufferListSize));
 
-        BaseElementStack.MemoryAllocation+=sizeof(char*)*(BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
-        BaseElementStack.MemoryAllocation+=sizeof(char**)*(BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
+        BaseElementStack.MemoryAllocation+=sizeof(char*)*(_STACK_NEXT_LIST_SIZE_(BaseElementStack.dataBufferListSize));
+        BaseElementStack.MemoryAllocation+=sizeof(char**)*(_STACK_NEXT_LIST_SIZE_(BaseElementStack.dataBufferListSize));
 
         //copy the content of the old lists to the new ones
         if (associatedDataBufferList!=NULL) for (;i<BaseElementStack.dataBufferListSize;i++) tmpDataList[i]=associatedDataBufferList[i],tmpStackList[i]=associatedDataStackList[i];
-        for (j=0;j<_STACK_DEFAULT_BUFFER_LIST_SIZE_;j++,i++) tmpDataList[i]=NULL,tmpStackList[i]=NULL;
+        for (;i<_STACK_NEXT_LIST_SIZE_(BaseElementStack.dataBufferListSize);i++) tmpDataList[i]=NULL,tmpStackList[i]=NULL;
 
         if (associatedDataBufferList!=NULL) {
 //          delete [] associatedDataBufferList;
@@ -934,17 +939,17 @@ public:
 
     //check available space in the dataBufferList list: if needed increment the size of 'elementStackList' and 'dataBufferList'
     if (dataBufferListPointer==dataBufferListSize) {
-      T** tmpDataList=NULL; //=new T*[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+      T** tmpDataList=NULL; //=new T*[_STACK_NEXT_LIST_SIZE_(dataBufferListSize)];
 
-      amps_malloc_managed<T*>(tmpDataList,dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
+      amps_malloc_managed<T*>(tmpDataList,_STACK_NEXT_LIST_SIZE_(dataBufferListSize));
 
-      MemoryAllocation+=sizeof(T*)*(dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
+      MemoryAllocation+=sizeof(T*)*(_STACK_NEXT_LIST_SIZE_(dataBufferListSize));
 
       i=0;
 
       //copy the content of the old lists to the new ones
       if (dataBufferList!=NULL) for (;i<dataBufferListSize;i++) tmpDataList[i]=dataBufferList[i];
-      for (j=0;j<_STACK_DEFAULT_BUFFER_LIST_SIZE_;j++,i++) tmpDataList[i]=NULL;
+      for (;i<_STACK_NEXT_LIST_SIZE_(dataBufferListSize);i++) tmpDataList[i]=NULL;
 
       if (dataBufferList!=NULL) {
 //        delete [] dataBufferList;
@@ -954,7 +959,7 @@ public:
       }
 
       dataBufferList=tmpDataList;
-      dataBufferListSize+=_STACK_DEFAULT_BUFFER_LIST_SIZE_;
+      dataBufferListSize=_STACK_NEXT_LIST_SIZE_(dataBufferListSize);
     }
 
     //allocate a new memory chunk for the element's data and update the stack list
