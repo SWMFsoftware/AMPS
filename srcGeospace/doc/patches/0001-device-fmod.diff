@@ -1,0 +1,39 @@
+--- a/app/gpu/EngineConfig.h
++++ b/app/gpu/EngineConfig.h
+@@ -163,6 +163,25 @@
+ EG_HD bool efinite(double v) { return std::isfinite(v); }
+ EG_HD bool efinite(float v) { return std::isfinite(v); }
+ 
++// std::fmod for device code.  nvc++ 24.5 has no device implementation of fmod/fmodf
++// (-gpu=nordc: "ptxas fatal: Unresolved extern function 'fmod'"; default rdc: "nvlink
++// error: Undefined reference to 'fmod'" when the device code is linked), while
++// remainder() is available.  Both fmod and remainder are exact operations:
++// remainder(x,y)=x-n*y with n=nearest integer to x/y, |r|<=|y|/2.  When r has the
++// opposite sign of x, fmod(x,y)=r+sign(x)*|y| is exactly representable, so the IEEE
++// addition returns it exactly; the result is bitwise identical to std::fmod for all
++// inputs, including zeros, infinities and NaN.  Host-compiled (g++) code keeps
++// std::fmod.
++template <class T> EG_HD T efmod(T x,T y) {
++#if EG_HAVE_OPENACC
++  const T r=std::remainder(x,y);
++  if (x>=T(0)) return (r<T(0)) ? r+std::fabs(y) : r;
++  return (r>T(0)) ? r-std::fabs(y) : r;
++#else
++  return std::fmod(x,y);
++#endif
++}
++
+ } // namespace GPU
+ } // namespace Geospace
+ 
+--- a/app/gpu/EngineTrap.h
++++ b/app/gpu/EngineTrap.h
+@@ -302,7 +302,7 @@
+     const double kTwoPi=2.0*kPi;
+     const int n=l_.nb;
+     if (n<=0) return 0;
+-    double phase=std::fmod(std::fabs(s_.driftAccumulatedAngle),kTwoPi)/kTwoPi;
++    double phase=efmod(std::fabs(s_.driftAccumulatedAngle),kTwoPi)/kTwoPi;
+     if (!std::isfinite(phase)) phase=0.0;
+     int bin=static_cast<int>(std::floor(phase*n));
+     if (bin<0) bin=0;

@@ -1,0 +1,1570 @@
+//======================================================================================
+// Mode3DForwardSWMF.cpp
+//======================================================================================
+//
+// SWMF-coupled initialization bridge for the Earth 3-D forward energetic-particle
+// branch.
+//
+// DESIGN — TWO-PHASE INITIALIZATION
+// -----------------------------------
+// The original single amps_init() was called at the END of main_lib.cpp::amps_init(),
+// after both amps_init_mesh() and amps_init() had already executed.  That ordering
+// caused six initialization gaps relative to the standalone 3d_forward path:
+//
+//   Gap 1  Geospace::ModelMode not set before amps_init_mesh()
+//          → main_lib.cpp took the cutoff-rigidity branch instead of the
+//            BoundaryInjection/MAIN_LIB_GEO branch.
+//   Gap 2  cDensity3D::ConfigureEnergyGrid() called too late
+//          → PIC::Mesh::initCellSamplingDataBuffer() allocated per-cell buffers
+//            using the wrong (compile-time default) nEnergyBins.
+//   Gap 3  Geospace::Init_AfterParser() never called
+//          → only reachable via MAIN_LIB_GEO::amps_init_mesh(), which was
+//            never entered because of Gap 1.
+//   Gap 4  BoundingBoxInjection::InitDirectionIMF() not called
+//          → main_lib.cpp::amps_init() calls it in the BoundaryInjectionMode
+//            branch, but that branch was skipped because of Gap 1.
+//   Gap 5  PIC::Mover::ProcessOutsideDomainParticles left pointing at the
+//          cutoff-rigidity handler set by the cutoff-rigidity amps_init_mesh()
+//          path; should be null for the forward mode.
+//   Gap 6  BoundingBoxInjection::SetPrm() not called before InitDirectionIMF().
+//
+// The fix splits initialization into two hooks:
+//
+//   amps_pre_init()  — called BEFORE amps_init_mesh() in main_lib.cpp
+//      Fixes Gaps 1, 2, 3, 4, 6 by setting the mode and energy grid before
+//      the mesh is built, and by registering prm before InitDirectionIMF().
+//
+//   amps_init()      — called at the END of main_lib.cpp::amps_init()
+//      Fixes Gap 5.  Continues to do all post-mesh forward-mode setup,
+//      reusing the prm parsed by amps_pre_init() (no second file read).
+//
+// The only intended physical difference from standalone 3d_forward remains the
+// source of the background state: in _PIC_COUPLER_MODE__SWMF_ builds B/u come from
+// PIC::CPLR rather than Tsyganenko/DATAFILE. Step-9 backward products are magnetic-
+// only by default; derived E=-u x B is explicitly labelled experimental.
+//
+//======================================================================================
+
+#include "Mode3DForwardSWMF.h"
+
+#include "../3d_forward/Mode3DForward.h"
+#include "../3d_forward/ForwardParticleMovers.h"
+#include "../3d_forward/Density3D.h"
+#include "../3d_forward/SphereFlux3D.h"
+#include "../3d/Mode3D.h"
+#include "../3d/CutoffRigidityMode3D.h"
+#include "../3d/DensityMode3D.h"
+#include "../3d/GlobalMagneticField.h"
+#include "../gridless/DipoleInterface.h"
+#include "../boundary/spectrum.h"
+#include "../util/amps_param_parser.h"
+#include "../util/SWMFSnapshotContract.h"
+#include "../util/SWMFCoupledAccessContract.h"
+#include "../util/SWMFCoupledProductsContract.h"
+#include "../Earth.h"
+
+#include "pic.h"
+
+#include <iostream>
+#include <fstream>
+#include <stdexcept>
+#include <sstream>
+#include <iomanip>
+#include <cmath>
+#include <algorithm>
+#include <vector>
+#include <map>
+#include <limits>
+#include <cstring>
+#include <cstdio>
+#include <cerrno>
+#include <memory>
+
+#ifndef _NO_SPICE_CALLS_
+#include "SpiceUsr.h"
+#endif
+
+namespace Geospace {
+namespace Mode3DForwardSWMF {
+
+//======================================================================================
+// Shared parsed parameters
+//======================================================================================
+// Populated once by amps_pre_init() and consumed read-only by amps_init().
+// Using a file-scope static avoids re-parsing AMPS_PARAM.in and guarantees both
+// hooks operate on an identical parameter set.
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+static GeospaceUtil::AmpsParam s_prm;
+static bool                 s_pre_initialized = false;
+static long int             s_cutoff_call_counter = 0;
+static Geospace::SWMFCoupledAccess::CadenceGate s_coupled_access_cadence_gate;
+
+// Suffix used by the most recent SWMF-coupled cutoff-rigidity output.
+//
+// The cutoff solver itself writes several products through
+// Geospace::Mode3D::SetCutoffOutputFileSuffix().  main_lib.cpp also writes the
+// coupled AMPS mesh snapshot after the cutoff calculation finishes.  Keeping
+// the last suffix here lets that mesh snapshot reuse exactly the same stamp as
+// the cutoff products, so a single coupled snapshot produces a clearly matched
+// file set.
+static std::string          s_last_cutoff_output_suffix;
+static bool                 s_last_cutoff_output_suffix_valid = false;
+#endif
+
+
+namespace {
+
+void AnalyticDipoleMagneticField_(double *xIn,double *bOut) {
+  Geospace::GridlessMode::Dipole::GetB_Tesla(xIn,bOut);
+}
+
+bool TargetRequestsCutoff_(const GeospaceUtil::AmpsParam& prm) {
+  const std::string t = GeospaceUtil::ToUpper(prm.calc.target);
+  return t.find("CUTOFF") != std::string::npos || t=="ALL" || t=="BOTH";
+}
+
+bool TargetRequestsDensityFlux_(const GeospaceUtil::AmpsParam& prm) {
+  const std::string t = GeospaceUtil::ToUpper(prm.calc.target);
+  return t.find("DENSITY") != std::string::npos || t.find("FLUX") != std::string::npos ||
+         t=="ALL" || t=="BOTH";
+}
+
+bool IsBackwardProductTarget_(const GeospaceUtil::AmpsParam& prm) {
+  // The parser default is CUTOFF_RIGIDITY for standalone backward compatibility.
+  // In coupled SWMF runs, keep requiring an explicit CALC_TARGET so old coupled
+  // 3d_forward inputs that omit #CALCULATION_MODE keep their historical forward
+  // particle-injection behavior.  Once CALC_TARGET is explicit, allow cutoff,
+  // density/flux, or both.
+  return prm.calc.targetExplicit &&
+         (TargetRequestsCutoff_(prm) || TargetRequestsDensityFlux_(prm));
+}
+
+bool IsForwardTarget_(const GeospaceUtil::AmpsParam& prm) {
+  return !IsBackwardProductTarget_(prm);
+}
+
+// Return the physical simulation-time interval, in seconds, between two
+// expensive SWMF-coupled backward-product calculations.  Backward products are
+// the particle-backtracking diagnostics handled by Mode3D in a coupled PT run:
+// cutoff rigidity, density/flux, or both.  The same helper is used by two
+// pieces of code that must stay synchronized:
+//
+//   1. main_lib.cpp::amps_time_step(), through the public
+//      GetCoupledCalculationCadenceSeconds(), uses this value to decide whether
+//      the current SWMF callback should run a new backtracking calculation or
+//      be skipped until the next requested physical time.
+//
+//   2. ConfigureBackwardProductGlobalTimeStep_(), below, writes the same value
+//      into PIC::ParticleWeightTimeStep::GlobalTimeStep[0].  In SWMF-coupled
+//      runs that array is also visible to the generic AMPS/PT time-step
+//      infrastructure.  For cutoff/density backtracking there is no forward
+//      particle population whose CFL/gyro time step should control the PT
+//      component.  Therefore species 0 is assigned the diagnostic cadence
+//      itself: one PT time step corresponds to one requested cutoff/density
+//      calculation interval.
+//
+// Units: #TEMPORAL/FIELD_UPDATE_DT is specified in minutes in AMPS_PARAM.in;
+// this helper returns seconds.  If the input does not provide a positive value,
+// preserve the historical coupled-diagnostic default of one hour.
+double BackwardProductCadenceSecondsFromPrm_(const GeospaceUtil::AmpsParam& prm) {
+  if (prm.temporal.fieldUpdateDt_min > 0.0) {
+    return 60.0*prm.temporal.fieldUpdateDt_min;
+  }
+
+  return 3600.0;
+}
+
+// Configure the AMPS/PIC global time step used by the SWMF-coupled Mode3D
+// backtracking products.  This function is intentionally private to the SWMF
+// bridge because standalone Mode3D does not use PIC::SimulationTime to schedule
+// a live coupled component; standalone snapshot looping is driven directly by
+// the parsed input file.
+//
+// Why GlobalTimeStep[0] must be set here:
+//   The cutoff and density/flux products are not advanced by a normal forward
+//   particle push.  They are instantaneous diagnostics computed by backward
+//   tracing many test trajectories through the current meshed magnetic field.
+//   In a live SWMF-coupled run the physically meaningful interval is therefore
+//   the interval between two diagnostic evaluations, not a particle CFL time
+//   step.  Assigning GlobalTimeStep[0] to that interval makes the PT component's
+//   species-0 time step consistent with the cadence gate that actually launches
+//   the calculations.
+//
+// Only species zero is modified because the backtracking products currently use
+// the proton/species-0 conventions throughout the Mode3D cutoff and density
+// modules.  Forward 3d_forward_swmf runs are not affected; they overwrite
+// GlobalTimeStep[species] later with the true forward-particle integration step.
+//
+// The function returns the value written so callers can include it in diagnostic
+// messages without recomputing or risking a mismatch.
+double ConfigureBackwardProductGlobalTimeStep_(const GeospaceUtil::AmpsParam& prm,
+                                               bool verbose) {
+  const double cadence_s = BackwardProductCadenceSecondsFromPrm_(prm);
+
+  if (!std::isfinite(cadence_s) || cadence_s <= 0.0) {
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] Invalid coupled Mode3D backward-product cadence. "
+         "#TEMPORAL/FIELD_UPDATE_DT must define a positive interval in minutes, "
+         "or be omitted to use the one-hour default.");
+  }
+
+  PIC::ParticleWeightTimeStep::GlobalTimeStep[0] = cadence_s;
+
+  if (verbose && PIC::ThisThread == 0) {
+    std::cout << "[Mode3DForwardSWMF] Set "
+              << "PIC::ParticleWeightTimeStep::GlobalTimeStep[0]="
+              << cadence_s
+              << " s for SWMF-coupled Mode3D backward products "
+              << "(cutoff and/or density/flux cadence).\n";
+    std::cout.flush();
+  }
+
+  return cadence_s;
+}
+
+void ApplyParsedDomainForCutoff_(const GeospaceUtil::AmpsParam& prm) {
+  Geospace::Mode3D::ParsedDomainActive = true;
+  Geospace::Mode3D::ParsedDomainMin[0] = prm.domain.xMin * 1000.0;
+  Geospace::Mode3D::ParsedDomainMin[1] = prm.domain.yMin * 1000.0;
+  Geospace::Mode3D::ParsedDomainMin[2] = prm.domain.zMin * 1000.0;
+  Geospace::Mode3D::ParsedDomainMax[0] = prm.domain.xMax * 1000.0;
+  Geospace::Mode3D::ParsedDomainMax[1] = prm.domain.yMax * 1000.0;
+  Geospace::Mode3D::ParsedDomainMax[2] = prm.domain.zMax * 1000.0;
+}
+
+double CurrentCutoffOutputTimeSeconds_() {
+  // Use the simulation clock maintained by AMPS/SWMF coupling, not a locally
+  // reconstructed time.  The previous implementation advanced an internal
+  // elapsed-time estimate by the configured output/coupling cadence after every
+  // cutoff call.  That was vulnerable to drift whenever the actual SWMF coupling
+  // schedule differed from the nominal cadence, or when the first/last snapshot
+  // was not exactly aligned with that cadence.
+  //
+  // PIC::SimulationTime::TimeCounter is the authoritative AMPS simulation time
+  // visible to the PT component.  Using it here makes the time part of the file
+  // stamp correspond to the exact coupled snapshot being processed.
+  const double tSim_s = PIC::SimulationTime::TimeCounter;
+
+  // File names should remain well formed even if a bad clock value is exposed
+  // during early initialization or error recovery.  Clamp only for the purpose
+  // of naming the file; the physical solver state itself is not modified here.
+  if (!std::isfinite(tSim_s)) return 0.0;
+
+  return std::max(0.0,tSim_s);
+}
+
+std::string FormatAttemptOutputSuffix_(long int callIndex) {
+  const double tSim_s = CurrentCutoffOutputTimeSeconds_();
+
+  std::ostringstream ss;
+
+  // Before compact B/u assembly there is no content-derived snapshot ID, yet a fatal
+  // gather/validation exit must still leave a FAILED marker. Label that marker as an
+  // attempt so it cannot be mistaken for a completed scientific product identity.
+  // Once assembly succeeds, the code first writes the final snapshot-named FAILED
+  // status and then removes this provisional marker. The counter therefore exists
+  // only for pre-identity failure diagnosis and never names a scientific artifact.
+  ss << ".swmf_attempt_n" << std::setw(6) << std::setfill('0') << callIndex
+     << "_t" << std::setw(12) << std::setfill('0')
+     << std::fixed << std::setprecision(3) << tSim_s << "s";
+
+  return ss.str();
+}
+
+std::string FormatCutoffOutputSuffix_(
+    const Geospace::Field::SnapshotMetadata& metadata,double simulationTime_s) {
+  // Scientific product identity is independent of callback count, MPI layout, and
+  // restart position. The exact PT time plus the content-derived Step-9 snapshot ID
+  // makes the name both human-readable and collision resistant.
+  return Geospace::SWMFCoupledAccess::BuildProductSuffix(
+      simulationTime_s,metadata.snapshotId);
+}
+
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+void RequireCollectiveStatusWriteSuccess_(int rootSucceeded,
+                                          std::string rootError) {
+  // Product callbacks are collective. If rank zero alone failed while creating the
+  // status artifact, other ranks could continue into field collectives and deadlock.
+  // Broadcast both outcome and diagnostic so all ranks take the same failure path.
+  MPI_Bcast(&rootSucceeded,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+  int messageLength=(PIC::ThisThread==0) ?
+      static_cast<int>(rootError.size()) : 0;
+  MPI_Bcast(&messageLength,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+  if (messageLength<0)
+    throw std::runtime_error("Invalid collective SWMF status error length");
+  if (PIC::ThisThread!=0)
+    rootError.assign(static_cast<std::size_t>(messageLength),'\0');
+  if (messageLength>0)
+    MPI_Bcast(&rootError[0],messageLength,MPI_CHAR,0,MPI_GLOBAL_COMMUNICATOR);
+  if (!rootSucceeded) {
+    std::string message="SWMF product-status write failed";
+    if (!rootError.empty()) message+=": "+rootError;
+    throw std::runtime_error(message);
+  }
+}
+
+std::string CurrentCoupledEpochUTC_() {
+  const std::string reference=s_prm.field.epoch.empty() ?
+      std::string("UNSPECIFIED") : s_prm.field.epoch;
+  const double offset_s=CurrentCutoffOutputTimeSeconds_();
+#ifdef _NO_SPICE_CALLS_
+  if (offset_s!=0.0)
+    throw std::runtime_error(
+        "Step-9 SWMF snapshot epoch requires SPICE to add nonzero PT simulation time");
+  return reference;
+#else
+  SpiceDouble et=0.0;
+  str2et_c(reference.c_str(),&et);
+  et+=static_cast<SpiceDouble>(offset_s);
+  char utc[64];
+  // Retain nanosecond text precision so a sub-millisecond PT clock is not rounded to
+  // another boundary-spectrum/ephemeris epoch. The exact double simulation time is
+  // also stored separately in the content fingerprint.
+  et2utc_c(et,"ISOC",9,static_cast<SpiceInt>(sizeof(utc)),utc);
+  return std::string(utc)+"Z";
+#endif
+}
+
+bool CoupledEpochsMatch_(const std::string& sampleUTC,
+                         const std::string& snapshotUTC) {
+  const double matchTolerance_s=1.0e-3;
+#ifdef _NO_SPICE_CALLS_
+  // A no-SPICE build is permitted only at zero PT offset by CurrentCoupledEpochUTC_().
+  // Accept the common optional trailing Z difference, but do not attempt calendar
+  // arithmetic or silently associate a different timestamp with the field snapshot.
+  const auto normalize=[](std::string value) {
+    if (!value.empty() && (value.back()=='Z' || value.back()=='z')) value.pop_back();
+    return value;
+  };
+  (void)matchTolerance_s;
+  return normalize(sampleUTC)==normalize(snapshotUTC);
+#else
+  SpiceDouble sampleEt=0.0,snapshotEt=0.0;
+  str2et_c(sampleUTC.c_str(),&sampleEt);
+  str2et_c(snapshotUTC.c_str(),&snapshotEt);
+  return std::fabs(static_cast<double>(sampleEt-snapshotEt))<=matchTolerance_s;
+#endif
+}
+
+GeospaceUtil::AmpsParam BuildSynchronizedCoupledProductParam_(
+    const GeospaceUtil::AmpsParam& source,const std::string& snapshotUTC) {
+  GeospaceUtil::AmpsParam synchronized=source;
+  synchronized.field.epoch=snapshotUTC;
+  if (GeospaceUtil::ToUpper(source.output.mode)!="TRAJECTORY") return synchronized;
+
+  // A live coupled field epoch must not be multiplied by every point in a multi-time
+  // ephemeris.  Select only samples whose own UTC identifies this snapshot, mirroring
+  // standalone SNAPSHOT_LIST replay.  This turns the requested timestamp/ephemeris
+  // equality into construction rather than a post-hoc label in the output.
+  synchronized.output.trajectories.clear();
+  std::map<int,int> globalToLocal;
+  int globalIndex=0,localIndex=0;
+  for (std::size_t it=0;it<source.output.trajectories.size();++it) {
+    const GeospaceUtil::SpacecraftTrajectory& input=source.output.trajectories[it];
+    GeospaceUtil::SpacecraftTrajectory selected;
+    selected.name=input.name;
+    selected.sourceFrame=input.sourceFrame;
+    for (std::size_t is=0;is<input.samples.size();++is,++globalIndex) {
+      if (!CoupledEpochsMatch_(input.samples[is].timeUTC,snapshotUTC)) continue;
+      selected.samples.push_back(input.samples[is]);
+      globalToLocal[globalIndex]=localIndex++;
+    }
+    if (!selected.samples.empty())
+      synchronized.output.trajectories.push_back(selected);
+  }
+  if (localIndex==0)
+    throw std::runtime_error(
+        "SWMF-coupled TRAJECTORY products require at least one ephemeris sample "
+        "matching the frozen field epoch within 1 ms");
+  synchronized.output.RebuildFlattenedPointsFromTrajectories();
+
+  // LOCATION-qualified directional apertures use flattened global trajectory indices.
+  // Remap only the selected epoch's apertures so a combined cutoff+flux callback keeps
+  // the same spatial product domain.  Unqualified apertures remain available at every
+  // selected location exactly as in the standalone snapshot-list adapter.
+  std::vector<GeospaceUtil::DirectionalAperture> selectedApertures;
+  for (std::size_t i=0;i<source.cutoff.dirMapApertures.size();++i) {
+    GeospaceUtil::DirectionalAperture aperture=source.cutoff.dirMapApertures[i];
+    if (aperture.locationIndex<0) selectedApertures.push_back(aperture);
+    else {
+      const std::map<int,int>::const_iterator found=
+          globalToLocal.find(aperture.locationIndex);
+      if (found!=globalToLocal.end()) {
+        aperture.locationIndex=found->second;
+        selectedApertures.push_back(aperture);
+      }
+    }
+  }
+  synchronized.cutoff.dirMapApertures.swap(selectedApertures);
+  return synchronized;
+}
+
+unsigned long long StableControlStringHash_(const std::string& value,
+                                             unsigned long long seed) {
+  // Local FNV-1a is sufficient here: the value is compared only among ranks in this
+  // executable, not persisted as scientific provenance. Include an explicit terminator
+  // so concatenated selectors cannot alias ("ab"+"c" versus "a"+"bc").
+  unsigned long long hash=seed;
+  for (std::string::const_iterator it=value.begin();it!=value.end();++it) {
+    hash^=static_cast<unsigned char>(*it);
+    hash*=1099511628211ULL;
+  }
+  hash^=0xffU;
+  hash*=1099511628211ULL;
+  return hash;
+}
+
+void RequireCollectiveCoupledProductControl_(const GeospaceUtil::AmpsParam& prm) {
+  const Geospace::SWMFCoupledProducts::ProductControl control=
+      Geospace::Mode3D::DescribeDensityFluxProductControl(prm);
+  const std::string fingerprint=
+      Geospace::SWMFCoupledProducts::ProductControlFingerprint(control);
+  unsigned long long local=StableControlStringHash_(
+      fingerprint,14695981039346656037ULL);
+  unsigned long long minimum=0,maximum=0;
+  MPI_Allreduce((void*)&local,&minimum,1,MPI_UNSIGNED_LONG_LONG,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&local,&maximum,1,MPI_UNSIGNED_LONG_LONG,MPI_MAX,
+                MPI_GLOBAL_COMMUNICATOR);
+  if (minimum!=maximum)
+    throw std::runtime_error(
+        "synchronized SWMF spectrum/channel/response/ephemeris controls differ "
+        "across MPI ranks");
+}
+
+void ValidateLiveSWMFStateCoherence_() {
+  // A coupled callback is expected to expose one logical MHD state on every rank.
+  // Boolean readiness alone is insufficient: rank-local clocks or buffer layouts could
+  // differ and still all be "ready".  Compare the exact state selectors collectively
+  // before any owner cell is copied so the compact arrays cannot combine epochs.
+  const double localTime=PIC::SimulationTime::TimeCounter;
+  double minTime=0.0,maxTime=0.0;
+  MPI_Allreduce((void*)&localTime,&minTime,1,MPI_DOUBLE,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localTime,&maxTime,1,MPI_DOUBLE,MPI_MAX,
+                MPI_GLOBAL_COMMUNICATOR);
+  if (!std::isfinite(localTime) || !std::isfinite(minTime) ||
+      !std::isfinite(maxTime) || localTime<0.0 || minTime!=maxTime)
+    throw std::runtime_error(
+        "SWMF PT simulation time is negative, non-finite, or inconsistent across MPI ranks");
+
+  // A receive may be repeated at the same epoch (restart/retry), but an older receive
+  // must never replace a newer one in the same process. Equality is intentionally
+  // allowed so restart identity remains reproducible.
+  static double lastAcceptedTime_s=-1.0;
+  if (lastAcceptedTime_s>=0.0 && localTime<lastAcceptedTime_s)
+    throw std::runtime_error(
+        "stale SWMF receive time is older than the last accepted field snapshot");
+
+  const long int selectors[3]={
+    PIC::CPLR::SWMF::MagneticFieldOffset,
+    PIC::CPLR::SWMF::BulkVelocityOffset,
+    s_cutoff_call_counter};
+  for (int n=0;n<3;++n) {
+    long int minimum=0,maximum=0;
+    MPI_Allreduce((void*)&selectors[n],&minimum,1,MPI_LONG,MPI_MIN,
+                  MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce((void*)&selectors[n],&maximum,1,MPI_LONG,MPI_MAX,
+                  MPI_GLOBAL_COMMUNICATOR);
+    if (minimum!=maximum)
+      throw std::runtime_error(
+          "SWMF B/u offsets or backward-product generation differ across MPI ranks");
+  }
+
+  // Domain faces and the electric-field release mode are physical selectors, not just
+  // input cosmetics. Exact collective agreement prevents ranks from hashing/tracing
+  // different boxes or mixing magnetic-only and experimental-E metadata.
+  const double domainValues[6]={
+    s_prm.domain.xMin,s_prm.domain.xMax,s_prm.domain.yMin,
+    s_prm.domain.yMax,s_prm.domain.zMin,s_prm.domain.zMax};
+  for (int n=0;n<6;++n) {
+    double minimum=0.0,maximum=0.0;
+    MPI_Allreduce((void*)&domainValues[n],&minimum,1,MPI_DOUBLE,MPI_MIN,
+                  MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce((void*)&domainValues[n],&maximum,1,MPI_DOUBLE,MPI_MAX,
+                  MPI_GLOBAL_COMMUNICATOR);
+    if (!std::isfinite(domainValues[n]) || minimum!=maximum)
+      throw std::runtime_error(
+          "SWMF validity domain differs across MPI ranks");
+  }
+  const int localModes[2]={
+    s_prm.field.swmfDerivedElectricFieldExperimental ? 1 : 0,
+    s_prm.field.swmfSnapshotExport ? 1 : 0};
+  for (int n=0;n<2;++n) {
+    int minimum=0,maximum=0;
+    MPI_Allreduce((void*)&localModes[n],&minimum,1,MPI_INT,MPI_MIN,
+                  MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce((void*)&localModes[n],&maximum,1,MPI_INT,MPI_MAX,
+                  MPI_GLOBAL_COMMUNICATOR);
+    if (minimum!=maximum)
+      throw std::runtime_error(
+          "SWMF electric-field or snapshot-export mode differs across MPI ranks");
+  }
+
+  // Differing product targets would send ranks into different solver collectives, and
+  // differing epoch/export strings would create contradictory provenance. Compare a
+  // stable hash of all three before gathering the field or branching on the target.
+  unsigned long long localControlHash=14695981039346656037ULL;
+  localControlHash=StableControlStringHash_(s_prm.field.epoch,localControlHash);
+  localControlHash=StableControlStringHash_(
+      s_prm.field.swmfSnapshotExportPrefix,localControlHash);
+  localControlHash=StableControlStringHash_(s_prm.calc.target,localControlHash);
+  if (TargetRequestsDensityFlux_(s_prm)) {
+    // Field coherence alone is not sufficient for Step 11.  Every rank must also fold
+    // access with the identical species, energy grid, boundary spectrum, configured
+    // channels, and detector responses.  Hash the same value-owned control object that
+    // DensityMode3D later embeds in each artifact and in the coupled manifest.
+    const Geospace::SWMFCoupledProducts::ProductControl productControl=
+        Geospace::Mode3D::DescribeDensityFluxProductControl(s_prm);
+    localControlHash=StableControlStringHash_(
+        Geospace::SWMFCoupledProducts::ProductControlFingerprint(productControl),
+        localControlHash);
+  }
+  unsigned long long minimumControlHash=0,maximumControlHash=0;
+  MPI_Allreduce((void*)&localControlHash,&minimumControlHash,1,
+                MPI_UNSIGNED_LONG_LONG,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localControlHash,&maximumControlHash,1,
+                MPI_UNSIGNED_LONG_LONG,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+  if (minimumControlHash!=maximumControlHash)
+    throw std::runtime_error(
+        "SWMF epoch, export prefix, product target, or flux-product controls differ across MPI ranks");
+  lastAcceptedTime_s=localTime;
+}
+
+Geospace::Field::SnapshotMetadata BuildSWMFFieldSnapshotMetadata_() {
+  Geospace::Field::SnapshotMetadata metadata;
+  metadata.sourceId="PIC::CPLR:SWMF";
+  metadata.modelName="SWMF";
+
+  // Convert the configured absolute reference plus the authoritative PT clock to a
+  // real ISO UTC.  Standalone replay and observation/ephemeris selection must consume
+  // a parseable physical epoch, not an implementation string such as "base+PT...".
+  metadata.epochUTC=CurrentCoupledEpochUTC_();
+  metadata.frame=Geospace::Field::CoordinateFrame::GSM;
+  metadata.interpolation=s_prm.field.swmfDerivedElectricFieldExperimental ?
+      Geospace::Field::InterpolationMode::CellCenteredLinearDerivedElectric :
+      Geospace::Field::InterpolationMode::CellCenteredLinear;
+  metadata.magneticFieldAvailable=true;
+  metadata.electricFieldAvailable=
+      s_prm.field.swmfDerivedElectricFieldExperimental;
+  metadata.immutableDuringBatch=true;
+  metadata.valid=true;
+
+  metadata.domain.enabled=true;
+  metadata.domain.minimum_m[0]=1000.0*s_prm.domain.xMin;
+  metadata.domain.minimum_m[1]=1000.0*s_prm.domain.yMin;
+  metadata.domain.minimum_m[2]=1000.0*s_prm.domain.zMin;
+  metadata.domain.maximum_m[0]=1000.0*s_prm.domain.xMax;
+  metadata.domain.maximum_m[1]=1000.0*s_prm.domain.yMax;
+  metadata.domain.maximum_m[2]=1000.0*s_prm.domain.zMax;
+
+  // This is a provisional identity used only while validating the gather request.  The
+  // compact-array publisher replaces it with the Step-9 content-derived identity after
+  // B/u have been reduced and validated.  Thus restarts and different MPI layouts get
+  // the same final ID for the same epoch/data. The call number below is provisional
+  // validation context only; no final scientific output name depends on it.
+  std::ostringstream state;
+  state << std::setprecision(17)
+        << "call=" << s_cutoff_call_counter
+        << "|time=" << CurrentCutoffOutputTimeSeconds_()
+        << "|Boffset=" << PIC::CPLR::SWMF::MagneticFieldOffset
+        << "|Voffset=" << PIC::CPLR::SWMF::BulkVelocityOffset
+        << "|xmin=" << s_prm.domain.xMin << "|xmax=" << s_prm.domain.xMax
+        << "|ymin=" << s_prm.domain.yMin << "|ymax=" << s_prm.domain.yMax
+        << "|zmin=" << s_prm.domain.zMin << "|zmax=" << s_prm.domain.zMax;
+  metadata.snapshotId=Geospace::Field::MakeSnapshotId(
+      metadata.sourceId,metadata.epochUTC,state.str());
+  return metadata;
+}
+
+std::string CoupledSnapshotExportFile_(const std::string& suffix) {
+  return s_prm.field.swmfSnapshotExport ?
+      s_prm.field.swmfSnapshotExportPrefix+suffix+".csv" : std::string();
+}
+
+std::string CoupledSnapshotStatusFile_(const std::string& suffix) {
+  return "swmf_product_status"+suffix+".json";
+}
+
+std::string CoupledAccessManifestFile_(const std::string& suffix) {
+  return "swmf_cutoff_access_manifest"+suffix+".json";
+}
+
+std::string CoupledProductsManifestFile_(const std::string& suffix) {
+  return "swmf_flux_spectrum_manifest"+suffix+".json";
+}
+
+void RemoveSupersededAttemptStatus_(const std::string& attemptFile,
+                                    const std::string& finalFile) {
+  // Keep status publication transactional. The content-identified FAILED file is
+  // written and collectively acknowledged before the provisional marker is removed.
+  // Consequently a crash can leave one or two explicit failures, but it can never
+  // leave neither. On a successful batch only the unambiguous snapshot-named status
+  // remains, avoiding a stale FAILED attempt beside a valid PASS transaction.
+  int removeSucceeded=1;
+  std::string removeError;
+  if (PIC::ThisThread==0 && attemptFile!=finalFile &&
+      std::remove(attemptFile.c_str())!=0) {
+    removeSucceeded=0;
+    removeError="cannot remove superseded SWMF attempt status '"+attemptFile+"': "+
+        std::strerror(errno);
+  }
+  RequireCollectiveStatusWriteSuccess_(removeSucceeded,removeError);
+}
+
+void WriteCoupledSnapshotStatus_(const std::string& fileName,
+                                 const std::string& status,
+                                 const Geospace::Field::SnapshotMetadata& metadata,
+                                 const std::string& suffix,
+                                 const std::string& exportedSnapshot,
+                                 const std::string& message) {
+  int writeSucceeded=1;
+  std::string writeError;
+  if (PIC::ThisThread==0) {
+    try {
+      Geospace::SWMFSnapshot::WriteProductStatus(
+          fileName,
+          Geospace::SWMFSnapshot::BuildProductStatusJson(
+              status,metadata.snapshotId,metadata.epochUTC,suffix,exportedSnapshot,
+              TargetRequestsCutoff_(s_prm),TargetRequestsDensityFlux_(s_prm),message));
+    }
+    catch (const std::exception& error) {
+      writeSucceeded=0;
+      writeError=error.what();
+    }
+    catch (...) {
+      writeSucceeded=0;
+      writeError="unknown exception";
+    }
+  }
+  RequireCollectiveStatusWriteSuccess_(writeSucceeded,writeError);
+}
+
+void VerifyAndWriteCoupledAccessManifest_(
+    const Geospace::Field::SnapshotMetadata& metadata,double simulationTime_s,
+    const std::string& suffix) {
+  // The Mode3D cutoff writer records files only after their fclose succeeds. Verify those
+  // root-owned records once more at the transaction boundary, then publish one manifest
+  // that binds the complete artifact set to the frozen SWMF snapshot.  Other ranks do
+  // not touch the filesystem; they receive the root result before proceeding to any
+  // later product collective.
+  int writeSucceeded=1;
+  std::string writeError;
+  if (PIC::ThisThread==0) {
+    try {
+      const std::vector<std::string> artifacts=
+          Geospace::Mode3D::GetLastCutoffArtifactFiles();
+      if (artifacts.empty())
+        throw std::runtime_error(
+            "coupled cutoff/access completed without a recorded output artifact");
+      for (std::vector<std::string>::const_iterator it=artifacts.begin();
+          it!=artifacts.end();++it) {
+        std::ifstream input(it->c_str(),std::ios::in|std::ios::binary|std::ios::ate);
+        if (!input || input.tellg()<=0)
+          throw std::runtime_error("missing or empty coupled cutoff artifact: "+*it);
+      }
+
+      const std::string fileName=CoupledAccessManifestFile_(suffix);
+      std::ofstream output(fileName.c_str(),std::ios::out|std::ios::trunc);
+      if (!output)
+        throw std::runtime_error("cannot write coupled cutoff manifest: "+fileName);
+      output << Geospace::SWMFCoupledAccess::BuildAccessManifestJson(
+          "PASS",metadata.snapshotId,
+          Geospace::Mode3D::GlobalMagneticField::CurrentContentFingerprint(),
+          Geospace::Mode3D::GlobalMagneticField::CurrentMeshRevision(),
+          metadata.epochUTC,simulationTime_s,s_prm.output.mode,
+          GeospaceUtil::ToUpper(s_prm.domain.boundaryType),suffix,artifacts,
+          "cutoff/access artifacts completed from one immutable SWMF snapshot");
+      output.flush();
+      if (!output)
+        throw std::runtime_error("failed while writing coupled cutoff manifest: "+fileName);
+    }
+    catch (const std::exception& error) {
+      writeSucceeded=0;
+      writeError=error.what();
+    }
+    catch (...) {
+      writeSucceeded=0;
+      writeError="unknown exception";
+    }
+  }
+  RequireCollectiveStatusWriteSuccess_(writeSucceeded,writeError);
+}
+
+void VerifyAndWriteCoupledProductsManifest_(
+    const Geospace::Field::SnapshotMetadata& metadata,double simulationTime_s,
+    const std::string& suffix) {
+  // DensityMode3D is the shared Step-6 standalone/coupled integrator.  It records an
+  // artifact only after flush+close succeeds, then exposes the same trajectory counts
+  // used in its termination file.  This adapter performs no numerical recomputation:
+  // it checks that inventory, applies the existing unresolved gate, and binds the
+  // complete set to the frozen SWMF field before the enclosing status may become PASS.
+  int writeSucceeded=1;
+  std::string writeError;
+  if (PIC::ThisThread==0) {
+    try {
+      const std::vector<std::string> artifacts=
+          Geospace::Mode3D::GetLastDensityFluxArtifactFiles();
+      Geospace::SWMFCoupledProducts::ProductRunSummary summary=
+          Geospace::Mode3D::GetLastDensityFluxRunSummary();
+      if (summary.artifacts!=artifacts)
+        throw std::runtime_error(
+            "coupled flux/spectrum run summary and closed-artifact inventory differ");
+      Geospace::SWMFCoupledProducts::ValidateRunSummary(summary,true);
+      for (std::vector<std::string>::const_iterator it=artifacts.begin();
+          it!=artifacts.end();++it) {
+        std::ifstream input(it->c_str(),std::ios::in|std::ios::binary|std::ios::ate);
+        if (!input || input.tellg()<=0)
+          throw std::runtime_error(
+              "missing or empty coupled density/flux/spectrum artifact: "+*it);
+      }
+
+      const std::string fileName=CoupledProductsManifestFile_(suffix);
+      std::ofstream output(fileName.c_str(),std::ios::out|std::ios::trunc);
+      if (!output)
+        throw std::runtime_error(
+            "cannot write coupled density/flux/spectrum manifest: "+fileName);
+      output << Geospace::SWMFCoupledProducts::BuildProductsManifestJson(
+          "PASS",metadata.snapshotId,
+          Geospace::Mode3D::GlobalMagneticField::CurrentContentFingerprint(),
+          Geospace::Mode3D::GlobalMagneticField::CurrentMeshRevision(),
+          metadata.epochUTC,simulationTime_s,
+          GeospaceUtil::ToUpper(s_prm.domain.boundaryType.empty()
+              ? std::string("BOX") : s_prm.domain.boundaryType),suffix,summary,
+          "density, local spectra, integral flux/channels, detector rates, and "
+          "termination accounting completed from one immutable SWMF snapshot");
+      output.flush();
+      if (!output)
+        throw std::runtime_error(
+            "failed while flushing coupled density/flux/spectrum manifest: "+fileName);
+      output.close();
+      if (output.fail())
+        throw std::runtime_error(
+            "failed while closing coupled density/flux/spectrum manifest: "+fileName);
+    }
+    catch (const std::exception& error) {
+      writeSucceeded=0;
+      writeError=error.what();
+    }
+    catch (...) {
+      writeSucceeded=0;
+      writeError="unknown exception";
+    }
+  }
+  RequireCollectiveStatusWriteSuccess_(writeSucceeded,writeError);
+}
+#endif
+
+//======================================================================================
+// SWMF-coupled cutoff global-field assembly is implemented by the shared
+// Geospace::Mode3D::GlobalMagneticField helper.  Both standalone and coupled paths reset
+// and assign node->Temp_ID, gather owner interior cells, and create compact global
+// arrays. No nonlocal AMR blocks or ghost-cell state vectors are allocated. For SWMF,
+// B and u are read from their authoritative offsets. The released OFF mode keeps E
+// unavailable; only explicit EXPERIMENTAL mode derives E=-u x B. In both modes u is
+// retained so export/replay and pointwise diagnostics compare the same physical state.
+//======================================================================================
+
+} // anonymous namespace
+
+//======================================================================================
+// amps_pre_init  —  MUST be called before amps_init_mesh()
+//======================================================================================
+//
+// Performs the subset of 3d_forward initialization that must precede the AMPS
+// mesh-build phase.  main_lib.cpp::amps_init_mesh() calls this at its very start
+// under a #if _PIC_COUPLER_MODE__SWMF_ guard.
+//
+// After this function returns:
+//   • Geospace::ModelMode == BoundaryInjectionMode
+//     → amps_init_mesh() routes to MAIN_LIB_GEO::amps_init_mesh(), which calls
+//       Geospace::Init_AfterParser() (fixes Gap 3).
+//   • cDensity3D::nEnergyBins/Emin_J/Emax_J reflect the input file
+//     → initCellSamplingDataBuffer() allocates correctly-sized per-cell buffers
+//       (fixes Gap 2).
+//   • BoundingBoxInjection::prm is set
+//     → main_lib.cpp::amps_init() can call InitDirectionIMF() correctly
+//       (fixes Gaps 4 and 6).
+//
+void amps_pre_init() {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  return;
+#else
+  const char* inputFile = "AMPS_PARAM.in";
+
+  if (PIC::ThisThread == 0)
+    std::cout << "[Mode3DForwardSWMF] amps_pre_init: reading '" << inputFile << "'.\n";
+
+  // Parse once.  amps_init() will use s_prm directly — no second read.
+  s_prm = GeospaceUtil::ParseAmpsParamFile(inputFile);
+
+  // Mark the parameter object as SWMF-coupled: forces field access through
+  // PIC::CPLR instead of Tsyganenko/DATAFILE in the shared 3-D helpers.
+  s_prm.field.model                       = "SWMF";
+  s_prm.calc.fieldEvalMethod              = "SWMF";
+  s_prm.mode3d.forceAnalyticMagneticField = false;
+
+  if (IsBackwardProductTarget_(s_prm)) {
+    // Coupled Mode3D backward-product mode.  Keep the regular AMPS/SWMF mesh path,
+    // but route per-coupling-step work to the Mode3D backward-product driver instead
+    // of the 3d_forward injector.  The mesh tracer will sample the current SWMF
+    // fields through the globalized PIC::CPLR magnetic-field data.
+    Geospace::ModelMode = Geospace::CutoffRigidityMode;
+    ApplyParsedDomainForCutoff_(s_prm);
+
+    s_pre_initialized = true;
+
+    if (PIC::ThisThread == 0)
+      std::cout << "[Mode3DForwardSWMF] amps_pre_init complete:"
+                << " ModelMode=CutoffRigidityMode"
+                << ", field source=PIC::CPLR/SWMF"
+                << ", output will be timestamped per amps_time_step().\n";
+    return;
+  }
+
+  // Historical coupled 3d_forward mode.
+  // ── Fix Gap 1 ────────────────────────────────────────────────────────────
+  // Set Geospace::ModelMode before amps_init_mesh() is called.
+  // main_lib.cpp::amps_init_mesh() checks this at its entry:
+  //   if (Geospace::ModelMode == BoundaryInjectionMode)  →  MAIN_LIB_GEO path
+  //   else                                            →  cutoff-rigidity path
+  // The cutoff-rigidity path misses Geospace::Init_AfterParser() and allocates
+  // GeospaceFlag cell data that 3d_forward does not use.
+  Geospace::ModelMode = Geospace::BoundaryInjectionMode;
+
+  // ── Fix Gap 2 ────────────────────────────────────────────────────────────
+  // Configure the cDensity3D energy grid before amps_init_mesh() calls
+  // PIC::Mesh::initCellSamplingDataBuffer().  That function queries
+  // cDensity3D::RequestSamplingData (already pushed into
+  // PIC::IndividualModelSampling::RequestSamplingData by the first line of
+  // amps_init_mesh()) to calculate each cell's sampling-buffer byte count:
+  //     bytes = nEnergyBins * sizeof(double)
+  // If nEnergyBins is still at its compile-time default here, every cell's
+  // buffer will be under-allocated.
+  Geospace::Mode3DForward::cDensity3D::ConfigureEnergyGrid(s_prm);
+
+  // ── Fix Gaps 4 & 6 ───────────────────────────────────────────────────────
+  // Register prm with the bounding-box injector before amps_init_mesh() and
+  // amps_init() run.  main_lib.cpp::amps_init() calls
+  // Geospace::BoundingBoxInjection::InitDirectionIMF() in the BoundaryInjectionMode
+  // branch (now reachable because of the Gap-1 fix above), and InitDirectionIMF()
+  // needs a valid prm to evaluate the background field at the domain boundary.
+  // In the SWMF build ConfigureBackgroundFieldModel() is a no-op, so
+  // InitDirectionIMF() falls through to the PIC::CPLR path or the safe default.
+  Geospace::BoundingBoxInjection::SetPrm(s_prm);
+
+  s_pre_initialized = true;
+
+  if (PIC::ThisThread == 0)
+    std::cout << "[Mode3DForwardSWMF] amps_pre_init complete:"
+              << " ModelMode=BoundaryInjectionMode"
+              << ", nEnergyBins=" << Geospace::Mode3DForward::cDensity3D::nEnergyBins
+              << ".\n";
+#endif
+}
+
+
+//======================================================================================
+// amps_init  —  called at the END of main_lib.cpp::amps_init()
+//======================================================================================
+//
+// Completes the SWMF-coupled 3d_forward runtime after the full AMPS mesh and PIC
+// core have been initialized.  Uses s_prm cached by amps_pre_init() — AMPS_PARAM.in
+// is not re-read.
+//
+void amps_init() {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  return;
+#else
+  static bool initialized = false;
+  if (initialized) {
+    if (PIC::ThisThread == 0)
+      std::cout << "[Mode3DForwardSWMF] Coupled 3d_forward runtime was already "
+                   "initialized; skipping duplicate initialization.\n";
+    return;
+  }
+  initialized = true;
+
+  // Guard: amps_pre_init() must have run first.
+  if (!s_pre_initialized)
+    exit(__LINE__, __FILE__,
+         "[Mode3DForwardSWMF] amps_init() called before amps_pre_init(). "
+         "Ensure amps_pre_init() is called at the start of amps_init_mesh().");
+
+  // Use the prm already parsed in amps_pre_init() — do not re-read the file.
+  const GeospaceUtil::AmpsParam& prm = s_prm;
+
+  if (IsBackwardProductTarget_(prm)) {
+    // Coupled Mode3D backward-product mode needs only the generic AMPS/PIC
+    // initialization already performed in main_lib.cpp before this hook is
+    // called.  Do not register forward-injection callbacks.  The requested
+    // cutoff and/or density/flux calculation is launched from amps_cutoff_time_step()
+    // each time the cadence gate accepts an SWMF/PT callback and the current MHD
+    // fields have been imported.
+    Geospace::ModelMode = Geospace::CutoffRigidityMode;
+    ApplyParsedDomainForCutoff_(prm);
+
+    for (int s=0; s<PIC::nTotalSpecies; ++s) {
+      PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(s,1.0);
+    }
+
+    // Synchronize the generic AMPS/PIC species-0 time step with the physical
+    // cadence of the SWMF-coupled backtracking diagnostics.  The cadence gate in
+    // main_lib.cpp uses exactly the same value through
+    // GetCoupledCalculationCadenceSeconds(), so the stored time step, skip/run
+    // decision, and output timestamps are all based on one common interval.
+    const double backwardProductCadence_s =
+        ConfigureBackwardProductGlobalTimeStep_(prm,/*verbose=*/true);
+
+    PIC::Mover::BackwardTimeIntegrationMode = _PIC_MODE_OFF_;
+
+    if (PIC::ThisThread == 0)
+      std::cout << "[Mode3DForwardSWMF] Initialized SWMF-coupled Mode3D "
+                << "backward-product runtime. Calculation cadence="
+                << backwardProductCadence_s
+                << " s; each accepted amps_time_step() call writes "
+                << "timestamped cutoff/density outputs as requested by CALC_TARGET.\n";
+    return;
+  }
+
+  if (PIC::ThisThread == 0)
+    std::cout << "[Mode3DForwardSWMF] amps_init: completing coupled 3d_forward setup.\n";
+
+  // Route AMPS particle motion through Geospace::ParticleMover() →
+  // Geospace3DForward::MoverManager().  Geospace::ModelMode was already set to
+  // BoundaryInjectionMode in amps_pre_init(); confirm it is still correct.
+  Geospace::ModelMode = Geospace::BoundaryInjectionMode;
+
+  if (!Geospace::Geospace3DForward::SetMoverByName(prm.mode3dForward.particleMover)) {
+    throw std::runtime_error(
+        "Unknown 3d_forward_swmf particle mover '" +
+        prm.mode3dForward.particleMover +
+        "'. Valid movers are BORIS, RK4, GC/GC4, and HYBRID.");
+  }
+
+  Geospace::Geospace3DForward::ConfigureFieldEvaluation(prm);
+
+  Geospace::Mode3DForward::sInjectionEnergyDistribution =
+      Geospace::Mode3DForward::ParseInjectionEnergyDistribution(
+          prm.mode3dForward.injectionEnergyDistribution);
+
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ != _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+  if (Geospace::Mode3DForward::sInjectionEnergyDistribution ==
+      Geospace::Mode3DForward::InjectionEnergyDistribution::LOG_UNIFORM) {
+    throw std::runtime_error(
+        "3d_forward_swmf LOG_UNIFORM injection requires AMPS to be compiled with "
+        "_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_.");
+  }
+#endif
+
+  Geospace::Mode3DForward::sInitializeParticleTrajectories =
+      prm.mode3dForward.initializeParticleTrajectories;
+  Geospace::Mode3DForward::sMaxParticleTrajectories = prm.mode3dForward.nParticleTrajectories;
+
+  // Register the 3d_forward source-rate and particle-injection callbacks.
+  // These override any BoundaryInjectionMode callbacks set by main_lib.cpp::amps_init()
+  // (LocalBlockInjectionRate / InjectionProcessor) with the correct 3d_forward ones.
+  PIC::ParticleWeightTimeStep::UserDefinedExtraSourceRate =
+      Geospace::Mode3DForward::BoundaryInjectionSourceRate;
+  PIC::BC::UserDefinedParticleInjectionFunction =
+      Geospace::Mode3DForward::InjectParticles;
+
+  // In an SWMF-coupled build this call is a deliberate no-op: it leaves the field
+  // source neutral so all field access goes through PIC::CPLR/SWMF.
+  Geospace::Mode3DForward::ConfigureBackgroundFieldModel(prm);
+
+  // The 3d_forward injector does not use the IMF direction vector b to construct
+  // particle velocities (it samples the full cosine-weighted inward hemisphere per
+  // face).  Set a safe default so diagnostic messages that print b are well-defined.
+  // Note: BoundingBoxInjection::SetPrm() was already called in amps_pre_init() and
+  // InitDirectionIMF() was called by main_lib.cpp::amps_init() for BoundaryInjectionMode.
+  Geospace::BoundingBoxInjection::b[0] = 1.0;
+  Geospace::BoundingBoxInjection::b[1] = 0.0;
+  Geospace::BoundingBoxInjection::b[2] = 0.0;
+
+#if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
+  Geospace::ParticleTracker::ConfigureRuntimeTrajectoryTracking(
+      prm.mode3dForward.initializeParticleTrajectories,
+      prm.mode3dForward.nParticleTrajectories,
+      true);
+#else
+  if (Geospace::Mode3DForward::sInitializeParticleTrajectories && PIC::ThisThread == 0) {
+    std::cerr << "[Mode3DForwardSWMF] WARNING: trajectory initialization was "
+              << "requested, but AMPS was compiled with "
+              << "_PIC_PARTICLE_TRACKER_MODE_ != _PIC_MODE_ON_. No trajectory "
+              << "records will be initialized.\n";
+  }
+#endif
+
+  // cDensity3D::ConfigureEnergyGrid() was already called in amps_pre_init().
+  // Calling it again here would be harmless but wasteful; the values are unchanged.
+
+  // Enable the AMPS per-particle sampling dispatcher and register the 3d_forward
+  // density sampler.  The duplicate-check handles the case where the generic
+  // startup path already inserted the callback (cutoff-rigidity amps_init_mesh path).
+  Geospace::Sampling::ParticleData::SamplingMode = true;
+  bool densitySamplerAlreadyRegistered = false;
+  for (auto fn : Geospace::Sampling::ParticleData::SampleParticleDataCallbacks) {
+    if (fn == Mode3DForward::cDensity3D::SampleParticleData) {
+      densitySamplerAlreadyRegistered = true;
+      break;
+    }
+  }
+  if (!densitySamplerAlreadyRegistered) {
+    Geospace::Sampling::ParticleData::SampleParticleDataCallbacks.push_back(
+        Mode3DForward::cDensity3D::SampleParticleData);
+  }
+
+  // Initialize the spectrum before evaluating the source rate and particle weight.
+  // 3d_forward convention: #SPECTRUM supplies the shape/normalization and
+  // #DENSITY_3D supplies the actual simulated energy range.
+  const auto forwardSpectrum =
+      Geospace::Mode3DForward::BuildForwardInjectionSpectrumMap(prm);
+  InitGlobalSpectrumFromKeyValueMap(forwardSpectrum);
+
+  Geospace::Mode3DForward::sSpecies = 0;
+  Geospace::Mode3DForward::sDt      = Geospace::Mode3DForward::EvaluateTimeStep(prm);
+  PIC::ParticleWeightTimeStep::GlobalTimeStep[Geospace::Mode3DForward::sSpecies] =
+      Geospace::Mode3DForward::sDt;
+
+  Geospace::Mode3DForward::sNParticlesPerIter = prm.mode3dForward.nParticlesPerIter;
+  PIC::ParticleWeightTimeStep::maxReferenceInjectedParticleNumber =
+      Geospace::Mode3DForward::sNParticlesPerIter;
+  PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(
+      Geospace::Mode3DForward::sSpecies);
+  Geospace::Mode3DForward::sParticleWeight =
+      PIC::ParticleWeightTimeStep::GlobalParticleWeight[Geospace::Mode3DForward::sSpecies];
+
+  Geospace::Mode3DForward::InitAbsorptionSphere(prm);
+
+  // ── Fix Gap 5 ────────────────────────────────────────────────────────────
+  // The cutoff-rigidity path in main_lib.cpp::amps_init_mesh() sets
+  //   PIC::Mover::ProcessOutsideDomainParticles =
+  //       Geospace::CutoffRigidity::ProcessOutsideDomainParticles
+  // With the amps_pre_init() fix, amps_init_mesh() now takes the
+  // MAIN_LIB_GEO path, which does NOT set this pointer (correct for
+  // 3d_forward).  This reset is kept as an explicit guard in case another
+  // code path sets it between amps_pre_init() and here.
+  PIC::Mover::ProcessOutsideDomainParticles = nullptr;
+
+  Mode3DForward::cDensity3D::Init(prm);
+  Mode3DForward::cSphereFlux3D::Init(
+      prm, Geospace::Mode3DForward::sAbsorptionSphere, Geospace::Mode3DForward::sDt);
+  Geospace::Mode3DForward::InitBoundaryInjectionTable();
+
+  PIC::Mover::BackwardTimeIntegrationMode = _PIC_MODE_OFF_;
+  PIC::SamplingMode = _RESTART_SAMPLING_MODE_;
+
+  if (PIC::ThisThread == 0) {
+    std::cout << "[Mode3DForwardSWMF] Initialized SWMF-coupled 3d_forward runtime. "
+              << "Field source=PIC::CPLR/SWMF"
+              << ", mover="       << Geospace::Geospace3DForward::GetMoverName()
+              << ", nParticlesPerIter=" << Geospace::Mode3DForward::sNParticlesPerIter
+              << ", particleWeight="    << Geospace::Mode3DForward::sParticleWeight
+              << ", dt="               << Geospace::Mode3DForward::sDt
+              << ", energySampling="
+              << Geospace::Mode3DForward::InjectionEnergyDistributionName(
+                     Geospace::Mode3DForward::sInjectionEnergyDistribution)
+              << ", nEnergyBins=" << Mode3DForward::cDensity3D::nEnergyBins
+              << "\n";
+  }
+#endif
+}
+
+
+bool IsForwardMode() {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  return false;
+#else
+  return s_pre_initialized && IsForwardTarget_(s_prm);
+#endif
+}
+
+bool IsCutoffRigidityMode() {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  return false;
+#else
+  return s_pre_initialized && IsBackwardProductTarget_(s_prm);
+#endif
+}
+
+
+double GetCoupledCalculationCadenceSeconds() {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  return 0.0;
+#else
+  // Keep the public cadence query bit-for-bit consistent with the value written
+  // to PIC::ParticleWeightTimeStep::GlobalTimeStep[0] in amps_init().  Do not
+  // duplicate the FIELD_UPDATE_DT parsing/default logic here; otherwise the PT
+  // scheduler time step and the cutoff/density cadence gate could drift apart
+  // after a future input-format edit.
+  return BackwardProductCadenceSecondsFromPrm_(s_prm);
+#endif
+}
+
+bool ShouldRunBackwardProductCalculation(bool verbose) {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  return false;
+#else
+  if (!s_pre_initialized || !IsBackwardProductTarget_(s_prm)) return false;
+
+  // Scheduling is itself a collective contract.  If one rank skipped while another
+  // entered the cutoff solver, the first product MPI reduction would deadlock. Check
+  // not only the clock/cadence but also the retained gate state before branching.
+  const double localTime=PIC::SimulationTime::TimeCounter;
+  const double localCadence=BackwardProductCadenceSecondsFromPrm_(s_prm);
+  const int localHasCompleted=s_coupled_access_cadence_gate.HasCompletedEpoch() ? 1 : 0;
+  const double localLast=s_coupled_access_cadence_gate.LastCompletedTimeSeconds();
+
+  double minTime=0.0,maxTime=0.0,minCadence=0.0,maxCadence=0.0;
+  double minLast=0.0,maxLast=0.0;
+  int minHas=0,maxHas=0;
+  MPI_Allreduce((void*)&localTime,&minTime,1,MPI_DOUBLE,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localTime,&maxTime,1,MPI_DOUBLE,MPI_MAX,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localCadence,&minCadence,1,MPI_DOUBLE,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localCadence,&maxCadence,1,MPI_DOUBLE,MPI_MAX,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localHasCompleted,&minHas,1,MPI_INT,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localHasCompleted,&maxHas,1,MPI_INT,MPI_MAX,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localLast,&minLast,1,MPI_DOUBLE,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localLast,&maxLast,1,MPI_DOUBLE,MPI_MAX,
+                MPI_GLOBAL_COMMUNICATOR);
+  if (!std::isfinite(localTime) || localTime<0.0 || minTime!=maxTime ||
+      minCadence!=maxCadence || minHas!=maxHas || minLast!=maxLast) {
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] Coupled cutoff cadence state differs across MPI ranks.");
+  }
+
+  Geospace::SWMFCoupledAccess::CadenceDecision decision;
+  try {
+    decision=s_coupled_access_cadence_gate.Evaluate(localTime,localCadence);
+  }
+  catch (const std::exception& error) {
+    exit(__LINE__,__FILE__,error.what());
+  }
+  const int localAction=static_cast<int>(decision.action);
+  int minAction=0,maxAction=0;
+  MPI_Allreduce((void*)&localAction,&minAction,1,MPI_INT,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localAction,&maxAction,1,MPI_INT,MPI_MAX,
+                MPI_GLOBAL_COMMUNICATOR);
+  if (minAction!=maxAction)
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] Coupled cutoff cadence decision differs across ranks.");
+  if (decision.action==Geospace::SWMFCoupledAccess::CadenceAction::RejectStaleTime)
+    exit(__LINE__,__FILE__,decision.reason.c_str());
+
+  if (verbose && PIC::ThisThread==0) {
+    if (decision.action==Geospace::SWMFCoupledAccess::CadenceAction::Run) {
+      std::cout << "[Mode3DForwardSWMF] Running cutoff/access products at PT time "
+                << std::setprecision(17) << localTime << " s: "
+                << decision.reason << ".\n";
+    }
+    else {
+      // Report a skipped callback only once for each next-due epoch.  Some SWMF
+      // configurations call PT frequently, and repeating this line at every receive
+      // would bury the rank-zero product progress without adding information.
+      static double lastReportedNextDue=-std::numeric_limits<double>::infinity();
+      if (decision.nextDueTime_s!=lastReportedNextDue) {
+        std::cout << "[Mode3DForwardSWMF] Skipping PT time "
+                  << std::setprecision(17) << localTime
+                  << " s; next cutoff/access epoch is "
+                  << decision.nextDueTime_s << " s.\n";
+        lastReportedNextDue=decision.nextDueTime_s;
+      }
+    }
+    std::cout.flush();
+  }
+  return decision.action==Geospace::SWMFCoupledAccess::CadenceAction::Run;
+#endif
+}
+
+void MarkBackwardProductCalculationComplete() {
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  const double localTime=PIC::SimulationTime::TimeCounter;
+  s_coupled_access_cadence_gate.CommitCompleted(localTime);
+
+  // This final agreement check is intentionally after all product collectives.  It
+  // proves every rank committed the same completed epoch before the next callback can
+  // make a skip/run decision.
+  const double localLast=s_coupled_access_cadence_gate.LastCompletedTimeSeconds();
+  double minLast=0.0,maxLast=0.0;
+  MPI_Allreduce((void*)&localLast,&minLast,1,MPI_DOUBLE,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&localLast,&maxLast,1,MPI_DOUBLE,MPI_MAX,
+                MPI_GLOBAL_COMMUNICATOR);
+  if (minLast!=maxLast)
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] Completed cutoff/access epoch differs across ranks.");
+#endif
+}
+
+bool ReadyForBackwardProductCalculation(bool verbose) {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  return false;
+#else
+  int preInitLocal = s_pre_initialized ? 1 : 0;
+  int meshLocal    = (PIC::Mesh::mesh != NULL) ? 1 : 0;
+  int bOffsetLocal = (PIC::CPLR::SWMF::MagneticFieldOffset >= 0) ? 1 : 0;
+  int vOffsetLocal = (PIC::CPLR::SWMF::BulkVelocityOffset >= 0) ? 1 : 0;
+  int coupledLocal = PIC::CPLR::SWMF::FirstCouplingOccured ? 1 : 0;
+
+  int preInitGlobal = 0;
+  int meshGlobal    = 0;
+  int bOffsetGlobal = 0;
+  int vOffsetGlobal = 0;
+  int coupledGlobal = 0;
+
+  MPI_Allreduce((void*)&preInitLocal,&preInitGlobal,1,MPI_INT,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&meshLocal,&meshGlobal,1,MPI_INT,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&bOffsetLocal,&bOffsetGlobal,1,MPI_INT,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&vOffsetLocal,&vOffsetGlobal,1,MPI_INT,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce((void*)&coupledLocal,&coupledGlobal,1,MPI_INT,MPI_MIN,
+                MPI_GLOBAL_COMMUNICATOR);
+
+  const bool ready =
+      (preInitGlobal == 1) &&
+      (meshGlobal    == 1) &&
+      (bOffsetGlobal == 1) &&
+      (vOffsetGlobal == 1) &&
+      (coupledGlobal == 1);
+
+  if (!ready) {
+    static bool reportedWaiting = false;
+
+    if (verbose && PIC::ThisThread == 0 && !reportedWaiting) {
+      std::cout << "[Mode3DForwardSWMF] Waiting to calculate SWMF-coupled "
+                << "Mode3D backward products until the first complete coupling "
+                << "snapshot is available: "
+                << "preInit=" << preInitGlobal
+                << ", mesh=" << meshGlobal
+                << ", magneticFieldOffset=" << bOffsetGlobal
+                << ", bulkVelocityOffset=" << vOffsetGlobal
+                << ", firstCoupling=" << coupledGlobal
+                << ".\n";
+      std::cout.flush();
+    }
+
+    reportedWaiting = true;
+    return false;
+  }
+
+  return true;
+#endif
+}
+
+// Public preparation hook called immediately before the SWMF-coupled cutoff solver.
+//
+// This routine intentionally performs all expensive globalisation work once per cutoff
+// snapshot, not inside the particle mover.  After it returns, field access during the
+// cutoff calculation is a local memory lookup/interpolation on every MPI rank.
+void PrepareGlobalSWMFCoupledMagneticFieldForCutoff(bool verbose) {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  return;
+#else
+  if (!s_pre_initialized) {
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] PrepareGlobalSWMFCoupledMagneticFieldForCutoff() called before amps_pre_init().");
+  }
+
+  if (PIC::Mesh::mesh==NULL) {
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] PrepareGlobalSWMFCoupledMagneticFieldForCutoff() called before PIC::Mesh::mesh is initialized.");
+  }
+
+  if (PIC::CPLR::SWMF::MagneticFieldOffset<0) {
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] PrepareGlobalSWMFCoupledMagneticFieldForCutoff() called before the SWMF magnetic-field buffer is allocated.");
+  }
+
+  if (PIC::CPLR::SWMF::FirstCouplingOccured==false) {
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] PrepareGlobalSWMFCoupledMagneticFieldForCutoff() called before the first SWMF coupling data receive.");
+  }
+
+  if (PIC::CPLR::SWMF::BulkVelocityOffset<0) {
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] SWMF bulk-velocity buffer is unavailable; "
+         "cannot validate/export the required frozen B/u snapshot.");
+  }
+
+  ValidateLiveSWMFStateCoherence_();
+
+  // Assemble compact fields from authoritative owner cells.  The globally replicated
+  // AMR tree supplies geometry and node->Temp_ID indexing; row-stencil interpolation
+  // later accesses these arrays without requiring remote block allocation.
+  Geospace::Mode3D::GlobalMagneticField::AssembleCellCenteredFieldsForCutoff(
+      "Mode3DForwardSWMF",
+      PIC::CPLR::SWMF::MagneticFieldOffset,
+      -1,
+      PIC::CPLR::SWMF::BulkVelocityOffset,
+      BuildSWMFFieldSnapshotMetadata_(),
+      verbose,
+      CurrentCutoffOutputTimeSeconds_());
+#endif
+}
+
+// Optional debug override.  It is deliberately not called by default in the coupled
+// cutoff path: production SWMF-coupled cutoff now uses
+// PrepareGlobalSWMFCoupledMagneticFieldForCutoff().  Call this manually when a known
+// analytic dipole is desired for debugging the cutoff machinery independently of SWMF.
+void RedefineSWMFCoupledMagneticFieldToAnalyticDipole() {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  return;
+#else
+  if (!s_pre_initialized) {
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] RedefineSWMFCoupledMagneticFieldToAnalyticDipole() called before amps_pre_init().");
+  }
+
+  if (PIC::Mesh::mesh==NULL) {
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] RedefineSWMFCoupledMagneticFieldToAnalyticDipole() called before PIC::Mesh::mesh is initialized.");
+  }
+
+  if (PIC::CPLR::SWMF::MagneticFieldOffset<0) {
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] RedefineSWMFCoupledMagneticFieldToAnalyticDipole() called before the SWMF magnetic-field buffer is allocated.");
+  }
+
+  Geospace::GridlessMode::Dipole::SetMomentScale(s_prm.field.dipoleMoment_Me);
+  Geospace::GridlessMode::Dipole::SetTiltDeg(s_prm.field.dipoleTilt_deg);
+
+  // Replace only the compact global B array.  The helper evaluates cell-center
+  // coordinates directly from tree geometry and does not allocate remote blocks.
+  const long int nCells =
+      Geospace::Mode3D::GlobalMagneticField::RedefineGlobalMagneticField(
+          "Mode3DForwardSWMF",
+          AnalyticDipoleMagneticField_,
+          false);
+
+  if (PIC::ThisThread == 0) {
+    std::cout << "[Mode3DForwardSWMF] Replaced SWMF-coupled cell-centered B field "
+              << "with analytic dipole:"
+              << " DIPOLE_MOMENT=" << s_prm.field.dipoleMoment_Me
+              << ", DIPOLE_TILT=" << s_prm.field.dipoleTilt_deg << " deg"
+              << ", updatedGlobalCells=" << nCells << ".\n";
+    std::cout.flush();
+  }
+#endif
+}
+
+void amps_cutoff_time_step() {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  return;
+#else
+  if (!s_pre_initialized) {
+    exit(__LINE__,__FILE__,
+         "[Mode3DForwardSWMF] amps_cutoff_time_step() called before amps_pre_init().");
+  }
+
+  if (!IsBackwardProductTarget_(s_prm)) return;
+
+  const long int callIndex = s_cutoff_call_counter;
+  const double   tSim_s    = CurrentCutoffOutputTimeSeconds_();
+  const std::string attemptSuffix=FormatAttemptOutputSuffix_(callIndex);
+  std::string suffix=attemptSuffix;
+  std::string exportedSnapshot;
+  const std::string attemptStatusFile=CoupledSnapshotStatusFile_(attemptSuffix);
+  std::string statusFile=attemptStatusFile;
+  s_last_cutoff_output_suffix_valid=false;
+  Geospace::Field::SnapshotMetadata batchFieldMetadata;
+  batchFieldMetadata.sourceId="PIC::CPLR:SWMF";
+  batchFieldMetadata.modelName="SWMF";
+  batchFieldMetadata.epochUTC=s_prm.field.epoch;
+
+  try {
+    // Fail closed before gathering or tracing.  Several lower-level AMPS consistency
+    // guards terminate through exit() rather than C++ exceptions; prewriting FAILED
+    // ensures such a termination still leaves an explicit non-passing artifact for
+    // this requested coupling snapshot.  PASS is written only at the end below.
+    WriteCoupledSnapshotStatus_(
+        statusFile,"FAILED",batchFieldMetadata,suffix,exportedSnapshot,
+        "snapshot calculation started but has not completed all requested products");
+
+    // Replace the fail-safe reference metadata with the precise coupled UTC/domain/
+    // mode record. The final content-derived ID is installed only after B/u assembly.
+    batchFieldMetadata=BuildSWMFFieldSnapshotMetadata_();
+
+    // The cutoff solver can run trajectories across the entire AMR domain on each
+    // MPI rank.  Assemble the distributed SWMF fields into compact global arrays
+    // before starting any backward tracing.
+    PrepareGlobalSWMFCoupledMagneticFieldForCutoff(true);
+    std::shared_ptr<Geospace::Field::IFieldProvider> batchFieldProvider=
+        Geospace::Mode3D::GlobalMagneticField::CurrentFieldProvider();
+    Geospace::Field::SnapshotRequest batchFieldRequest;
+    batchFieldRequest.epochUTC=
+        Geospace::Mode3D::GlobalMagneticField::CurrentSnapshotMetadata().epochUTC;
+    batchFieldRequest.requestId=suffix;
+    const std::shared_ptr<const Geospace::Field::IFieldSnapshot> batchFieldSnapshot=
+        batchFieldProvider->CreateSnapshot(batchFieldRequest);
+    batchFieldMetadata=batchFieldSnapshot->Metadata();
+
+    // The final filename can be constructed only after compact B/u assembly has
+    // produced its content-derived snapshot ID.  Unlike the old call-counter suffix,
+    // this identity is invariant under restart and MPI/thread layout.
+    suffix=FormatCutoffOutputSuffix_(batchFieldMetadata,tSim_s);
+    exportedSnapshot=CoupledSnapshotExportFile_(suffix);
+    statusFile=CoupledSnapshotStatusFile_(suffix);
+    Geospace::Mode3D::SetCutoffOutputFileSuffix(suffix);
+    Geospace::Mode3D::SetDensityOutputFileSuffix(suffix);
+    s_last_cutoff_output_suffix=suffix;
+    s_last_cutoff_output_suffix_valid=true;
+
+    // Replace the provisional fail-closed record with precise identity before any
+    // export or trajectory work.  A later fatal exit therefore names the exact state
+    // that did not produce a complete artifact set.
+    WriteCoupledSnapshotStatus_(
+        statusFile,"FAILED",batchFieldMetadata,suffix,exportedSnapshot,
+        "validated snapshot has not completed its requested products");
+    RemoveSupersededAttemptStatus_(attemptStatusFile,statusFile);
+
+    if (PIC::ThisThread==0) {
+      std::cout << "[Mode3DForwardSWMF] cutoff/access snapshot " << callIndex
+                << ": t_sim=" << std::setprecision(17) << tSim_s
+                << " s, snapshot_id='" << batchFieldMetadata.snapshotId
+                << "', suffix='" << suffix << "'.\n";
+      std::cout.flush();
+    }
+
+    // Freeze before export or trajectories. SWMF serializes PT callbacks, naturally
+    // queueing the next receive until this callback returns; the compact-array lease
+    // also rejects any accidental reassembly initiated from inside this batch.
+    Geospace::Mode3D::GlobalMagneticField::BeginFrozenFieldBatch(
+        batchFieldMetadata.snapshotId);
+
+    // Export only after compact-array assembly and identity publication.  The writer
+    // consumes the frozen arrays, not the mutable coupler buffers, and verifies their
+    // content fingerprint against batchFieldMetadata before rank 0 writes the file.
+    if (!exportedSnapshot.empty()) {
+      const std::string exportedFingerprint=
+          Geospace::Mode3D::GlobalMagneticField::ExportCurrentSWMFSnapshot(
+              exportedSnapshot);
+      if (exportedFingerprint!=
+          Geospace::Mode3D::GlobalMagneticField::CurrentContentFingerprint())
+        throw std::runtime_error(
+            "exported SWMF snapshot fingerprint differs from the active field state");
+    }
+    // Use a value-owned parameter block at the absolute epoch published with the
+    // frozen field.  Earlier code kept the reference epoch and added PT time only for
+    // the boundary spectrum; that could synchronize the spectrum while leaving frame
+    // rotations/ephemerides at the wrong time.  Step 9 binds every consumer to the
+    // same actual UTC, so no secondary offset is applied.
+    GeospaceUtil::AmpsParam batchProductPrm=
+        TargetRequestsDensityFlux_(s_prm)
+        ? BuildSynchronizedCoupledProductParam_(s_prm,batchFieldMetadata.epochUTC)
+        : s_prm;
+    batchProductPrm.field.epoch=batchFieldMetadata.epochUTC;
+    batchProductPrm.densitySpectrum.spectrumEpochOffsetActive=false;
+    batchProductPrm.densitySpectrum.spectrumEpochOffset_s=0.0;
+    if (TargetRequestsDensityFlux_(batchProductPrm)) {
+      // The termination table is mandatory evidence for a coupled Step-11 PASS.  This
+      // internal transaction requirement does not change DS_UNRESOLVED_TOL or any
+      // trajectory classification; it only prevents an otherwise optional writer
+      // toggle from removing the accounting needed to audit the existing gate.
+      batchProductPrm.densitySpectrum.saveTerminationSummary=true;
+      // Select a time-dependent TABLE before fingerprinting the control so rank
+      // agreement covers the actual energy/intensity nodes folded at this field UTC,
+      // not only a common filename. RunDensityAndFlux repeats this idempotent selection
+      // at its public boundary, preserving the standalone/coupled shared contract.
+      ::gSpectrum.SetEvaluationEpochUTC(batchProductPrm.field.epoch);
+      RequireCollectiveCoupledProductControl_(batchProductPrm);
+    }
+
+    // Run the products requested by CALC_TARGET. Both products share the compact SWMF
+    // B snapshot (and explicitly experimental E, if enabled), so cutoff, directional
+    // access, spectra, and flux are synchronized under one identity and suffix. The
+    // released default remains magnetic-only; no test or observation gate is relaxed.
+    if (TargetRequestsCutoff_(s_prm)) {
+      Geospace::Mode3D::RunCutoffRigidity(batchProductPrm,true);
+      Geospace::Field::RequireSameSnapshot(
+          batchFieldMetadata,
+          Geospace::Mode3D::GlobalMagneticField::CurrentSnapshotMetadata(),
+          "SWMF-coupled cutoff product");
+      VerifyAndWriteCoupledAccessManifest_(batchFieldMetadata,tSim_s,suffix);
+    }
+    if (TargetRequestsDensityFlux_(s_prm)) {
+      Geospace::Mode3D::RunDensityAndFlux(batchProductPrm);
+      Geospace::Field::RequireSameSnapshot(
+          batchFieldMetadata,
+          Geospace::Mode3D::GlobalMagneticField::CurrentSnapshotMetadata(),
+          "SWMF-coupled density/flux/spectrum product");
+      VerifyAndWriteCoupledProductsManifest_(
+          batchFieldMetadata,tSim_s,suffix);
+    }
+
+    Geospace::Mode3D::GlobalMagneticField::EndFrozenFieldBatch(
+        batchFieldMetadata.snapshotId);
+
+    WriteCoupledSnapshotStatus_(
+        statusFile,"PASS",batchFieldMetadata,suffix,exportedSnapshot,
+        "all requested cutoff/access/flux/spectrum products completed from one "
+        "immutable SWMF B/u snapshot");
+  }
+  catch (const std::exception& e) {
+    // FAILED was written collectively before field assembly. Do not start another MPI
+    // collective here: a rank-local product exception may reach this catch while peers
+    // are still inside the product, and a status broadcast would then deadlock. Rank
+    // zero may enrich the already-failing artifact on a best-effort basis; failure to
+    // do so never masks the original validation/physics error.
+    if (PIC::ThisThread==0) {
+      try {
+        Geospace::SWMFSnapshot::WriteProductStatus(
+            statusFile,
+            Geospace::SWMFSnapshot::BuildProductStatusJson(
+                "FAILED",batchFieldMetadata.snapshotId,batchFieldMetadata.epochUTC,
+                suffix,exportedSnapshot,TargetRequestsCutoff_(s_prm),
+                TargetRequestsDensityFlux_(s_prm),e.what()));
+      }
+      catch (const std::exception&) {}
+    }
+    std::ostringstream msg;
+    msg << "[Mode3DForwardSWMF] SWMF-coupled backward-product calculation failed: "
+        << e.what();
+    const std::string text = msg.str();
+    exit(__LINE__,__FILE__,text.c_str());
+  }
+
+  ++s_cutoff_call_counter;
+#endif
+}
+
+std::string GetLastCutoffOutputFileName(const char* stem,const char* extension) {
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  // This helper is meaningful only for SWMF-coupled PT runs.  In non-SWMF
+  // builds, return the conventional unstamped name so accidental calls remain
+  // harmless and backward compatible.
+  return std::string(stem ? stem : "") + std::string(extension ? extension : "");
+#else
+  // main_lib.cpp calls this immediately after amps_cutoff_time_step().  At that
+  // point s_last_cutoff_output_suffix should contain the exact suffix already
+  // passed to Geospace::Mode3D::SetCutoffOutputFileSuffix() for the cutoff products.
+  // Reusing the cached suffix is intentional: it prevents the AMPS mesh dump from
+  // observing a later TimeCounter value if the code path is ever extended to do
+  // additional work between cutoff output and mesh output.
+  const std::string safeStem      = (stem      != nullptr) ? stem      : "";
+  const std::string safeExtension = (extension != nullptr) ? extension : "";
+
+  if (!s_last_cutoff_output_suffix_valid) {
+    // Fallback for defensive robustness.  The normal cutoff branch always sets
+    // the suffix before this helper is used, but returning a valid file name is
+    // safer than failing during diagnostic output.
+    return safeStem + safeExtension;
+  }
+
+  return safeStem + s_last_cutoff_output_suffix + safeExtension;
+#endif
+}
+
+} // namespace Mode3DForwardSWMF
+} // namespace Geospace

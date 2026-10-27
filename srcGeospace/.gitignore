@@ -1,0 +1,8 @@
+# The repository .gitignore excludes *build* and *.diff.  These srcGeospace files are
+# sources (scripts, a test tool, a patch) and must be tracked.
+!/scripts/build_amps.sh
+!/scripts/build_gpu_engine.sh
+!/test/tools/compare_builds.py
+!/doc/patches/
+!/doc/patches/*.diff
+

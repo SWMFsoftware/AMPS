@@ -1,0 +1,12 @@
+P srcEarth/test/F4/tests/run_self_tests.py
+P srcEarth/test/C1/run_C1.py --mode 3d --mode3d-field-eval MESH -np 4 -nt 16 --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 3 --mode3d-mesh-coarsening LINEAR 
+P srcEarth/test/C1/run_C1.py --mode gridless -np 4 -nt 16
+P srcEarth/test/C6/run_C6.py --subtest INITIAL --solver GRIDDED --mode3d-mesh-res-earth-re 0.02 --mode3d-mesh-res-boundary-re 2 --mode3d-mesh-coarsening LINEAR -np 4 -nt 16 --dynamic-chunk 32 
+P srcEarth/test/F1/run_F1.py -np 4 -nt 16
+P srcEarth/test/F3/run_F3.py --mover HC4 --lons 0 --lats 45 --scan-n 24 --directions-per-energy 288 --max-trace-time 600 --max-steps 1000000 --boundary-refine-tol-m 10 --unresolved-tol 0.01 --retry-unresolved --dynamic-chunk 1 -np 18
+P srcEarth/test/F4/run_F4.py -np 4 -nt 16
+P srcEarth/test/F11/run_F11.py -np 4 -nt 16
+P srcEarth/test/C17/run_C17.py --amps ./amps --movers BORIS -np 4 -nt 16
+P srcEarth/test/C13/run_C13.py --profile ROUTINE --models DIPOLE --amps ./amps -nt 4 --workdir test_output/C13_dipole_nt4
+P srcEarth/test/C12/run_C12.py --profile ROUTINE --amps ./amps -np 4 -nt 16
+P srcEarth/test/C8/run_C8.py --profile ROUTINE --amps ./amps -np 4 -nt 16

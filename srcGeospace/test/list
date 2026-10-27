@@ -1,0 +1,13 @@
+# srcGeospace's own tests: the unit tests that srcEarth does not have.
+#
+# The end-to-end tests of srcGeospace are srcEarth's (srcEarth/test/list and the runners
+# next to it), run against a srcGeospace executable with srcEarth's runner; see
+# srcGeospace/test/README.md.  From the repository root (results stay outside the source
+# tree):
+#   srcGeospace/test/tools/run_srcearth_tests.sh --run-root <run root> \
+#       --amps <srcGeospace amps> --list srcGeospace/test/list
+
+# Batched engine components against the legacy code they replace, bit for bit:
+# gpu/EngineTrap.h vs util/TrajectoryTrapDetector.h and gpu/EngineMovers.h vs
+# gridless/GridlessParticleMovers.cpp.
+P srcGeospace/test/UEngineEquivalence/run_test.sh

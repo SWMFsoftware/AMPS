@@ -1,0 +1,139 @@
+#ifndef _SRC_GEOSPACE_3D_FORWARD_SWMF_MODE3DFORWARDSWMF_H_
+#define _SRC_GEOSPACE_3D_FORWARD_SWMF_MODE3DFORWARDSWMF_H_
+
+#include <string>
+
+//======================================================================================
+// Mode3DForwardSWMF.h
+//======================================================================================
+//
+// PURPOSE
+// -------
+// Thin SWMF-coupled initialization bridge for the 3d_forward energetic-particle
+// branch.
+//
+// LIFECYCLE — TWO-PHASE INITIALIZATION
+// -------------------------------------
+// The bridge is split into two hooks that must be called in order:
+//
+//   1. amps_pre_init()  — call BEFORE amps_init_mesh()
+//      Sets Geospace::ModelMode = BoundaryInjectionMode so that amps_init_mesh()
+//      takes the correct MAIN_LIB_GEO path (which calls Geospace::Init_AfterParser()),
+//      and configures the cDensity3D energy grid before
+//      PIC::Mesh::initCellSamplingDataBuffer() sizes the per-cell sampling buffer.
+//      Also registers Geospace::BoundingBoxInjection::SetPrm so that
+//      InitDirectionIMF() (called later by main_lib.cpp::amps_init()) has valid prm.
+//
+//   2. amps_init()      — call at the END of amps_init() (after amps_init_mesh())
+//      Completes mover selection, callback registration, spectrum/weight/time-step
+//      setup, and sampler initialization.  Uses the parsed parameters cached by
+//      amps_pre_init() — the input file is not re-read.
+//
+// main_lib.cpp wires both calls:
+//   amps_init_mesh():   #if SWMF  →  Mode3DForwardSWMF::amps_pre_init()
+//   amps_init() end:   #if SWMF  →  Mode3DForwardSWMF::amps_init()
+//
+//======================================================================================
+
+namespace Geospace {
+namespace Mode3DForwardSWMF {
+
+// Phase 1: called BEFORE amps_init_mesh().
+// Sets model mode and configures the cDensity3D energy grid.
+void amps_pre_init();
+
+// Phase 2: called at the END of amps_init().
+// Completes the SWMF-coupled 3d_forward runtime initialization.
+void amps_init();
+
+// Return true when AMPS_PARAM.in selects the SWMF-coupled 3-D forward solver.
+// This is the historical coupled mode.
+bool IsForwardMode();
+
+// Return true when AMPS_PARAM.in selects any backward mesh-field diagnostic product
+// handled by the Mode3D/SWMF bridge: cutoff, density/flux, or both.
+//
+// The historical function name is retained because main_lib.cpp already uses it to
+// route away from the forward-injection particle update.  In current code it should be
+// read as "is this a Mode3D backward-product mode?" rather than cutoff-only.
+bool IsCutoffRigidityMode();
+
+// Requested simulation-time cadence [s] between expensive SWMF-coupled backward-product
+// calculations.  The value is read from #TEMPORAL/FIELD_UPDATE_DT when present; a
+// non-positive return value means "run every SWMF/PT callback".
+double GetCoupledCalculationCadenceSeconds();
+
+// Evaluate the Step-10 cadence gate collectively after a complete SWMF receive.
+// Every rank compares the authoritative PT time, cadence, and its last-completed
+// scheduler state before the function returns. A stale clock or divergent rank state
+// is fatal; a normal skipped epoch returns false on every rank without entering any
+// product collective.
+bool ShouldRunBackwardProductCalculation(bool verbose=true);
+
+// Commit the current PT epoch only after amps_cutoff_time_step() completed on all
+// ranks. Skips never advance the gate, and a fresh process naturally re-evaluates its
+// first restart epoch for exact replay/parity validation.
+void MarkBackwardProductCalculationComplete();
+
+// Return true only after the SWMF-coupled backtracing products have everything
+// needed to use a valid coupled MHD snapshot.  main_lib.cpp calls this before
+// applying the cutoff/density cadence gate, so early PT callbacks that occur
+// before the first SWMF data receive do not consume the "first calculation" slot.
+//
+// The check is collective over MPI ranks and requires:
+//   * amps_pre_init() has completed;
+//   * PIC::Mesh::mesh is allocated;
+//   * PIC::CPLR::SWMF::MagneticFieldOffset is valid;
+//   * PIC::CPLR::SWMF::BulkVelocityOffset is valid;
+//   * PIC::CPLR::SWMF::FirstCouplingOccured is true on every rank.
+bool ReadyForBackwardProductCalculation(bool verbose=true);
+
+// Assemble one coherent compact global SWMF B/u/E generation before a
+// backward-product calculation.
+//
+// The routine resets and assigns deterministic node->Temp_ID values over the global
+// AMR tree, gathers owner interior-cell B and plasma velocity, and MPI-replicates only
+// the compact physical arrays.  No nonlocal cDataBlockAMR objects or ghost-cell state
+// vectors are allocated.  A direct owner-cell parity pass detects a wrong offset,
+// ghost selection, or receive-buffer mutation before publication.  Mode3D field
+// evaluation subsequently uses cRowStencil entries to address remote cells by
+// (node->Temp_ID,i,j,k).
+//
+// Step-9 provenance is published atomically with the arrays: source PIC::CPLR:SWMF,
+// authoritative PT time and absolute UTC epoch, GSM/SI units, mesh revision, complete
+// content fingerprint, declared magnetic-only or explicitly experimental E=-u x B
+// mode, and one immutable generation ID.  The caller freezes that generation across
+// export plus cutoff/access/flux/spectrum products; a later coupler receive is handled
+// by the next callback and can never be mixed into the active batch.
+void PrepareGlobalSWMFCoupledMagneticFieldForCutoff(bool verbose=true);
+
+// Replace the SWMF-coupled cell-centered magnetic field with the analytic dipole
+// configured by DIPOLE_MOMENT and DIPOLE_TILT in AMPS_PARAM.in.  The function
+// remains available as a debug override and replaces the compact global B array
+// directly from tree-derived cell-center coordinates.
+void RedefineSWMFCoupledMagneticFieldToAnalyticDipole();
+
+// Per-coupling-call backward-product driver used by main_lib.cpp::amps_time_step().
+// Depending on CALC_TARGET, this computes cutoff only, cutoff+density/flux, or
+// density/flux only from the current SWMF mesh-field snapshot.
+void amps_cutoff_time_step();
+
+// Return a file name that uses the same scientific suffix as the most recent
+// SWMF-coupled backward-product transaction.
+//
+// Step 10 creates the suffix only after compact-field assembly has produced the
+// content-derived snapshot ID. It binds the authoritative PT time at nine decimal
+// places to that complete ID and intentionally excludes callback/MPI/thread counters.
+// The exact suffix is passed to Geospace::Mode3D::SetCutoffOutputFileSuffix() before the
+// cutoff products are written. main_lib.cpp uses this helper immediately afterward to
+// name the diagnostic AMPS mesh dump as, for example,
+//
+//   amps_coupled_data.swmf_t0000000600.125000000s_sidfield-v1-....dat
+//
+// so every member of a snapshot transaction has an unambiguous common identity.
+std::string GetLastCutoffOutputFileName(const char* stem,const char* extension);
+
+} // namespace Mode3DForwardSWMF
+} // namespace Geospace
+
+#endif // _SRC_GEOSPACE_3D_FORWARD_SWMF_MODE3DFORWARDSWMF_H_
