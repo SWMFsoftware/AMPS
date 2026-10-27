@@ -214,7 +214,7 @@ double BulletLocalResolution(double *x) {
 //  return 200.0;
 }
 
-int SurfaceBoundaryCondition(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace) {
+int SurfaceBoundaryCondition(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   int spec=PIC::ParticleBuffer::GetI(ptr);
 
 #if _SAMPLE_BACKFLUX_MODE_ == _SAMPLE_BACKFLUX_MODE__OFF_
@@ -718,6 +718,7 @@ int main(int argc,char **argv) {
       double xminTECPLOT[3]={-32,-32,-32},xmaxTECPLOT[3]={16,32,32};
 
       double RotationMatrix_BATSRUS2AMPS[3][3]={ { 0.725, 0.000, 0.689}, {0.000, 1.000, 0.000}, {-0.689, 0.000, 0.725}};
+      PIC::CPLR::DATAFILE::TECPLOT::cIonFluidDescriptor IonFluid;
 
     //  0.725  0.000  0.689
     //  0.000  1.000  0.000
@@ -730,11 +731,13 @@ int main(int argc,char **argv) {
       PIC::CPLR::DATAFILE::TECPLOT::SetDomainLimitsSPHERICAL(0.0,500.0);
 
       PIC::CPLR::DATAFILE::TECPLOT::DataMode=PIC::CPLR::DATAFILE::TECPLOT::DataMode_SPHERICAL;
-      PIC::CPLR::DATAFILE::TECPLOT::SetLoadedVelocityVariableData(5,1.0E3);
-      PIC::CPLR::DATAFILE::TECPLOT::SetLoadedIonPressureVariableData(11,1.0E-9);
+      IonFluid.BulkVelocity.Set(5-1,1.0E3);
+      IonFluid.Pressure.Set(11-1,1.0E-9);
+      IonFluid.Density.Set(4,1.0E6);
+      PIC::CPLR::DATAFILE::TECPLOT::IonFluidDescriptorTable.push_back(IonFluid);
+
       PIC::CPLR::DATAFILE::TECPLOT::SetLoadedElectronPressureVariableData(11,1.0E-9);
       PIC::CPLR::DATAFILE::TECPLOT::SetLoadedMagneticFieldVariableData(8,1.0E-9);
-      PIC::CPLR::DATAFILE::TECPLOT::SetLoadedDensityVariableData(4,1.0E6);
       PIC::CPLR::DATAFILE::TECPLOT::nTotalVarlablesTECPLOT=12;
       PIC::CPLR::DATAFILE::TECPLOT::ImportData("/Users/vtenishe/Debugger/eclipse-workspace/MERCURYAMPS/AMPS/data/input/CG/3d__var_4_n00230000-extracted.plt"); //data/input/Mercury/040915-Jia/3d__var_7_t00000200_n0300072.plt
 

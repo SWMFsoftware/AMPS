@@ -6,7 +6,9 @@ use strict;
 use warnings;
 use POSIX qw(strftime);
 use List::Util qw(first);
+use Cwd qw(cwd);
 
+use lib cwd;
 use ampsConfigLib;
 
 
@@ -25,7 +27,7 @@ use ampsConfigLib;
 
 my $InputFileName=$ARGV[0]; #"cg.input.Assembled.Block";   #$ARGV[0];
 my $SpeciesFileName=$InputFileName; $SpeciesFileName =~ s/\.Block$/.Species/; #"cg.input.Assembled.Species";
-my $WorkingSourceDirectory="srcTemp";  #$ARGV[1];
+my $WorkingSourceDirectory=$ARGV[1];
 
 $ampsConfigLib::WorkingSourceDirectory=$WorkingSourceDirectory;
 

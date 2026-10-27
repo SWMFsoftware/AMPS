@@ -171,7 +171,7 @@ void Comet::CometData::LoadBinaryFile_Internal(int iSpecies,FILE* fData,cTreeNod
   int LoadVariableOffset[nTotalVariables]={NeutralsFromBinaryOffset,NeutralsFromBinaryOffset+sizeof(double),NeutralsFromBinaryOffset+sizeof(double)*2,NeutralsFromBinaryOffset+sizeof(double)*3};
 
   double data[nTotalVariables];
-  int CenterNodeAssociatedDataOffsetBegin=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
+  int CenterNodeAssociatedDataOffsetBegin=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
 
   if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
     if (startNode->block==NULL) {
