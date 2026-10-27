@@ -3,6 +3,7 @@
 # exact so other build artifacts remain ignored.
 !tools/rebuild_cops_boundary.py
 !tests/test_rebuild_cops_boundary.py
+!tools/build_physical_activity_templates.py
 
 # Optional compiled helper; source is tools/spice_angular_velocity.cpp.
 /spice_angular_velocity
