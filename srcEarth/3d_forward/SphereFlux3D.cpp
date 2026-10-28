@@ -237,7 +237,7 @@ void cSphereFlux3D::OutputSampledData(int dataOutputFileNumber) {
       constexpr double MeV_in_J = 1.602176634e-13;
       const double Re = _EARTH__RADIUS_;
 
-      char fname[512];
+      char fname[_MAX_STRING_LENGTH_PIC_ + 256];  // PIC::OutputDataFileDirectory and the file name
       std::snprintf(fname, sizeof(fname),
                     "%s/sphere_flux3d.out=%04d.dat",
                     PIC::OutputDataFileDirectory, dataOutputFileNumber);
@@ -308,7 +308,7 @@ void cSphereFlux3D::OutputSampledData(int dataOutputFileNumber) {
       }
 
       // A compact total-flux map is convenient for quick plotting and validation.
-      char fnameTotal[512];
+      char fnameTotal[_MAX_STRING_LENGTH_PIC_ + 256];
       std::snprintf(fnameTotal, sizeof(fnameTotal),
                     "%s/sphere_flux3d_total.out=%04d.dat",
                     PIC::OutputDataFileDirectory, dataOutputFileNumber);

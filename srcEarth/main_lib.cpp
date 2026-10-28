@@ -363,7 +363,7 @@ void amps_init_mesh() {
  PIC::Mesh::mesh->memoryAllocationReport();
  
  
- char mesh[512]="";
+ char mesh[_MAX_STRING_LENGTH_PIC_+256]=""; //Earth::Mesh::sign and the mesh parameters
  bool NewMeshGeneratedFlag=false;
  FILE *fmesh=NULL;
  
@@ -450,17 +450,10 @@ void amps_init_mesh() {
  PIC::Mesh::mesh->outputMeshTECPLOT("mesh->dat");
 */
  
- //if the new mesh was generated => rename created mesh->msh into amr.sig=0x%lx.mesh->bin
- if (NewMeshGeneratedFlag==true) {
-   unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
-   
-   if (PIC::Mesh::mesh->ThisThread==0) {
-     char command[300];
-     
-     sprintf(command,"mv mesh->msh amr.sig=0x%lx.mesh->bin",MeshSignature);
-     system(command);
-   }
- }
+ //A newly generated mesh is saved above both as "mesh->msh", which the other processes read,
+ //and under the cache name in 'mesh' that later runs look up, so it is not renamed here.  (The
+ //former system("mv mesh->msh amr.sig=0x%lx.mesh->bin") never worked: the shell reads "->" as
+ //an output redirection, so mv failed and only the empty files "msh" and "bin" were created.)
  
  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
  

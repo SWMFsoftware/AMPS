@@ -1,6 +1,6 @@
 # srcGeospace status
 
-As of **2026-10-27 20:30 CDT**.  Repository `/data/vtenishe/GEO/AMPS`; builds and test
+As of **2026-10-27 21:15 CDT**.  Repository `/data/vtenishe/GEO/AMPS`; builds and test
 results outside this tree in `/data/vtenishe/GEO/AMPS_runs/srcGeospace` (below `$RUNS`).
 
 This file describes the current state.  The GPU work (parked 2026-10-27) is documented in
@@ -42,20 +42,21 @@ design and build references are in [doc/](doc/README.md).
   solved.  srcGeospace compiles on its own (every file the build needs is in it) and keeps
   only what srcEarth does not have; its end-to-end tests are srcEarth's tests, run with
   srcEarth's runner (`test/tools/run_srcearth_tests.sh`).
-* **For the user to commit** (section 6): the reduced srcGeospace tree, by amending
-  `465b15b` before pushing; the srcEarth tuning, 4 files modified in the repository srcEarth
-  (copied at 20:26 at the user's request; full list validated, same pass/fail results and
-  outputs as the unmodified srcEarth; the comparison of C19 follows its rerun).
+* **Committed and pushed by the user**: srcGeospace in its reduced layout (`d6b0909`, the
+  amended `465b15b`, 20:16) and the srcEarth tuning (`b190191`, 20:41; full list
+  validated: same pass/fail results and outputs as the unmodified srcEarth, section 6).
+  Uncommitted: the final validation results in this file and handoff.md, and the fix of
+  the compiler warnings in srcEarth and srcGeospace (section 6, item 5).
 
 ## 2. Code state
 
 | item | state |
 |---|---|
-| git `HEAD` | `465b15b` (2026-10-27 02:20, srcGeospace committed by the user), on top of `bf68a2a` (srcEarth shieldSim script) and `b06e7e7` (the allocator fix).  `55ecae0` and `f9c2c00` (between `47fccd5` and `b06e7e7`) do not touch `src/` or `srcEarth/` |
+| git `HEAD` | `b190191` = `origin/master` (2026-10-27 20:41, the srcEarth tuning, committed and pushed by the user), on top of `d6b0909` (20:16, srcGeospace; the amended `465b15b` of 02:20), `bf68a2a` (srcEarth shieldSim script) and `b06e7e7` (the allocator fix).  `55ecae0` and `f9c2c00` (between `47fccd5` and `b06e7e7`) do not touch `src/` or `srcEarth/` |
 | core interpolation work | committed by the user: `b6cb6cb` (stencil-cell cache), `9698bcd` (`Stencil.Length` fix), `47fccd5` (row-only construction, row-structure reuse, dropped-weight normalization) |
 | `src/meshAMR/meshAMRdef.h` | committed by the user as `b06e7e7`: doubling growth of the AMR element stacks' chunk lists (section 3).  `src/` has no uncommitted changes |
-| `srcGeospace/` | committed by the user as `465b15b` (596 files; not pushed).  Working tree reduced on 2026-10-27 (user decision, section 2.1) to 152 files: 446 deleted (`test/` except srcGeospace's own unit test and tools, `studies/`, 56 non-build copies of srcEarth files), 2 new (`GPU_STATUS.md`, `test/tools/run_srcearth_tests.sh`), documents and tools updated; to be committed by amending `465b15b`.  `shieldSim/` removed earlier the same day (kept only in `srcEarth/shieldSim`) |
-| `srcEarth/` | numerics tuning of 2026-10-27 in the working tree (copied from the work copy `$RUNS/work/srcearth_tune/srcEarth` at 20:26 at the user's request), 4 files modified: `gridless/CutoffRigidityGridless.cpp`, `3d/GlobalMagneticField.cpp`, `3d/FieldInitializationPlan.h`, `3d/Mode3D.cpp` (section 6; `git diff srcEarth` = `$RUNS/work/srcearth_tune/srcEarth_tuning.diff`).  To be committed by the user, message `$RUNS/work/COMMIT_MSG_srcEarth_tuning.txt`.  Nothing else in srcEarth changed |
+| `srcGeospace/` | committed and pushed by the user as `d6b0909` (152 files): the reduced layout of 2026-10-27 (user decision, section 2.1) -- the first version `465b15b` (596 files, never pushed) less 446 files (`test/` except srcGeospace's own unit test and tools, `studies/`, 56 non-build copies of srcEarth files), plus `GPU_STATUS.md` and `test/tools/run_srcearth_tests.sh`.  Updated since in `b190191` and in the working tree: this file and handoff.md (validation of the srcEarth tuning).  `shieldSim/` removed earlier the same day (kept only in `srcEarth/shieldSim`) |
+| `srcEarth/` | numerics tuning of 2026-10-27 committed and pushed by the user as `b190191` (4 files: `gridless/CutoffRigidityGridless.cpp`, `3d/GlobalMagneticField.cpp`, `3d/FieldInitializationPlan.h`, `3d/Mode3D.cpp`; section 6; copied from the work copy `$RUNS/work/srcearth_tune/srcEarth` at 20:26, diff `$RUNS/work/srcearth_tune/srcEarth_tuning.diff`).  Uncommitted: the fix of the compiler warnings, 5 files (section 6, item 5) |
 | `Makefile` | modified before this work (user's state), not touched |
 
 Decisions in force (details in handoff.md sections 1, 5 and 10):
@@ -300,8 +301,7 @@ applications (section 2.1); run tests concurrently where memory allows.
 1. **srcEarth numerics tuning**, 4 files (prepared in the work copy
    `$RUNS/work/srcearth_tune/srcEarth`; copied into the repository srcEarth at 20:26 at the
    user's request, while the C19 rerun of the unmodified pass ran -- it uses only the
-   prebuilt executable and its scripts; to be committed by the user, message
-   `$RUNS/work/COMMIT_MSG_srcEarth_tuning.txt`):
+   prebuilt executable and its scripts; committed and pushed by the user as `b190191`):
    * `gridless/CutoffRigidityGridless.cpp`: the field evaluator normalized and compared the
      model name on every field evaluation (`Model()`, 69 % of F4's CPU); the canonical name
      and the branch are now fixed at construction.  The main thread of the gridless
@@ -326,16 +326,19 @@ applications (section 2.1); run tests concurrently where memory allows.
      digest) and C10 fail, as in srcEarth's own pass of 2026-10-16.
    * **Full list, unmodified** (`run_base_j12.sh`, run root `base_j12/`, build
      `srcearth_timing_base`, `-j 12` under the memory lock, 16:43-19:56): 60 of 64 as
-     listed; besides `UStep12Release` and C10, C19 (refused to start, item 3; rerun
-     running since 19:56) and C14 line 136 (collision, item 3; rerun P).
-   * **Outputs** (`compare_all.sh`; `tuned_vs_base*.csv/txt`; all but C19, 20:00): 1,711
-     files identical, 25 identical after replacing run-root paths, 198 AMR mesh-cache files
-     (they differ between runs of the unmodified build too); numeric differences only in
-     C13's timing and rank files and in F5/F11 last-bit sums (relative <= 4.2e-16 in the
-     data files; the DYNAMIC MPI scheduler, they differ between runs of the unmodified
-     build too, `doc/VALIDATION_CPU_2026-10-21.md`).  SA01-SA03, compared per run directory:
-     identical apart from the mesh cache and the time stamps and pids in their validation
-     reports.  C19: comparison after its rerun.
+     listed; besides `UStep12Release` and C10, C19 (refused to start, item 3) and C14
+     line 136 (collision, item 3), both rerun: P (C19 19:56-20:42, its metric and gate
+     lines identical to the tuned run's).  So 62 of 64 with the same two failures as the
+     tuned build.
+   * **Outputs** (`compare_all.sh` 20:43; `tuned_vs_base*.csv/txt`): run roots 1,732 files
+     identical, 28 identical after replacing run-root paths, 198 AMR mesh-cache files (they
+     differ between runs of the unmodified build too); numeric differences only in C13's
+     timing and rank files and in F5/F11 last-bit sums (relative <= 4.2e-16 in the data
+     files; the DYNAMIC MPI scheduler, they differ between runs of the unmodified build
+     too, `doc/VALIDATION_CPU_2026-10-21.md`).  SA01-SA03, compared per run directory
+     (1,575 files identical): identical apart from the mesh cache and the time stamps and
+     pids in their validation reports.  C19: 30 identical, 4 identical after paths, 2 mesh
+     cache.
    * **Fast path in verify mode** (`verify_fastpath.sh`, `AMPS_EARTH_INTERP_FASTPATH=verify`
      with `tune5`): the 9 light Mode3D mesh entries (C1 and C3 3d MESH, C6 GRIDDED x3, C11,
      C14 CROSS_SOLVER MESH, C7 GRIDDED, C15) pass, no verify abort, outputs identical to
@@ -359,8 +362,25 @@ applications (section 2.1); run tests concurrently where memory allows.
 4. **srcGeospace layout** (section 2.1): working tree reduced and checked (clean build
    `builds/srcgeospace_reduced`; `UEngineEquivalence` through `run_srcearth_tests.sh`: P;
    C1 gridless, F4, C17 of srcEarth's list: P, outputs identical to the full-tree runs,
-   `$RUNS/results/2026-10-27_srcgeospace_layout/`); the user amends `465b15b` before
-   pushing.
+   `$RUNS/results/2026-10-27_srcgeospace_layout/`); committed and pushed by the user as
+   `d6b0909` (20:16).
+5. **Compiler warnings** (user request 20:50; uncommitted in srcEarth and srcGeospace, message
+   `$RUNS/work/COMMIT_MSG_warnings_fix.txt`).  The build printed 16 compiler warnings, the
+   same in both trees (each with about 15 lines of include notes): 13 file-name buffers of
+   200-512 bytes receiving `PIC::OutputDataFileDirectory` or `<ns>::Mesh::sign`
+   (`char[_MAX_STRING_LENGTH_PIC_]`) through `%s` (`sprintf` could overflow), one `%ld` for an
+   `int`, and two ignored `system()` results.  The latter is the mesh rename
+   `system("mv mesh->msh amr.sig=0x%lx.mesh->bin")`, which never worked: the shell reads `->`
+   as a redirection, so every Mode3D run logged `mv: cannot stat 'mesh-'` and left empty
+   files `msh` and `bin`; nothing reads the intended file.  Fix (`$RUNS/work/warnings_fix/`,
+   `apply_fix.py`): buffers of `_MAX_STRING_LENGTH_PIC_+256`, `%d`, the rename removed (user
+   decision).  Clean builds `srcearth_warnfix`, `srcgeospace_warnfix`: no compiler
+   warnings.  Checks (`$RUNS/results/2026-10-27_warnings_fix/check.sh`): srcEarth's unit
+   and source-text tests on the fixed sources as in the full passes; C1 3d ANALYTIC, C1
+   and C3 3d MESH, C1 gridless, F4 with both executables P, outputs identical to
+   `base_j12` (mesh cache excepted), no `msh`/`bin`.  The remaining make message
+   "jobserver unavailable" comes from the core, `src/interface/makefile:20`
+   (`cd ${SHAREDIR}; make DEPEND`; `${MAKE}` would fix it) -- not changed (core).
 
 ## 7. Incidents of 2026-10-26
 
@@ -402,9 +422,10 @@ these passes include machine sharing; subtract the waits in `lock_events.log`.
 
 User decisions or actions:
 
-* amend `465b15b` with the reduced srcGeospace tree (section 2.1) before pushing (the user
-  commits); commit the srcEarth tuning (section 6; 4 files, message in
-  `$RUNS/work/COMMIT_MSG_srcEarth_tuning.txt`);
+* commit the fix of the compiler warnings (srcEarth and srcGeospace, 5 files each, section 6
+  item 5) and the updated `STATUS.md`/`handoff.md` (the user commits);
+* `src/interface/makefile:20`: `make DEPEND` -> `${MAKE} DEPEND` (core; removes the make
+  message "jobserver unavailable") -- awaiting approval;
 * progress bar for srcGeospace (proposal in handoff.md section 5.2) -- awaiting go-ahead;
 * rename `gpu/` -> `engine/` -- offered, not requested.
 

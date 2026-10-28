@@ -772,3 +772,40 @@ streams, each `test_runner.py -j 1`, started 16:48:
   unmodified pass was running (its run root links `srcEarth` to the repository; C19 uses
   only the prebuilt executable and its scripts).  Commit message:
   `$RUNS/work/COMMIT_MSG_srcEarth_tuning.txt` (the user commits).
+* 20:16 the user amended `465b15b` -> `d6b0909` (152 srcGeospace files: no `studies/`, 15
+  files in `test/`) and pushed it (`origin/master`).  `STATUS.md` and `handoff.md` were
+  updated afterwards and are uncommitted.
+* 20:42 C19 rerun of the unmodified pass: P (19:56-20:42; its metric and gate lines are
+  identical to the tuned run's; "observational validation: FAIL" with acceptance
+  enforcement off in both, exit 0 as listed).  So both passes: 62 of 64 as listed, the same
+  two failures.  `compare_all.sh` 20:43: run roots 1,732 files identical, 28 identical
+  after replacing paths, 198 mesh cache, numeric differences only in C13's timing/rank
+  files and the F5/F11 last-bit sums; SA01-SA03 per run directory 1,575 identical, apart
+  from the mesh cache and the time stamps in their reports; C19 30 identical, 4 after
+  paths, 2 mesh cache.  Validation of the srcEarth tuning complete; its commit message
+  `$RUNS/work/COMMIT_MSG_srcEarth_tuning.txt` final.
+* 20:41 the user committed the srcEarth tuning as `b190191` (the 4 files plus `STATUS.md` and
+  `handoff.md` as of 20:41; message: subject and change list of
+  `COMMIT_MSG_srcEarth_tuning.txt`) and pushed it (`origin/master`), one minute before the
+  C19 rerun ended.  The final results above are uncommitted.
+* **20:50 user: "compiling srcEarth triggers a lot of warnings --- analyze the cause the
+  warnings and prepare a fix".**  The clean build of the repository srcEarth
+  (`builds/srcearth_head`, log 490 lines) prints 16 compiler warnings, each with about 15
+  lines of include notes; srcGeospace prints the same 16.  Causes: 13 file-name buffers of
+  200-512 bytes fed `PIC::OutputDataFileDirectory` or `Earth::Mesh::sign` (both
+  `char[_MAX_STRING_LENGTH_PIC_]`) through `%s` (7 `sprintf`: possible stack overflow with a
+  long output directory; 6 `snprintf`: truncation); `%ld` for an `int`; two ignored
+  `system()` results -- the mesh rename `mv mesh->msh amr.sig=0x%lx.mesh->bin`, which never
+  worked (the shell reads `->` as a redirection: `mv: cannot stat 'mesh-'` in every Mode3D
+  run, empty files `msh` and `bin` in 108 run directories of the 2026-10-27 pass; nothing
+  reads the intended file).  User decisions (questions): remove the rename; fix srcEarth
+  and srcGeospace.  Fix prepared in `$RUNS/work/warnings_fix/` (`apply_fix.py`, from
+  `HEAD`): buffers `_MAX_STRING_LENGTH_PIC_+256`, `%d`, rename block replaced by a comment.
+  Clean builds of both work copies: no compiler warnings.  Checks
+  (`results/2026-10-27_warnings_fix/check.sh`): srcEarth's unit and source-text tests on
+  the fixed sources as in the full passes (`UStep12Release`, same digests); C1 3d ANALYTIC,
+  C1 and C3 3d MESH, C1 gridless, F4 with both executables P, outputs identical to
+  `base_j12` apart from the mesh cache, no `msh`/`bin`, no mv message.  21:09 the 10 files
+  copied into the repository (uncommitted); message `$RUNS/work/COMMIT_MSG_warnings_fix.txt`.
+  Not changed: the core's `src/interface/makefile:20` (`make DEPEND` without `${MAKE}`)
+  causes the remaining "make[3]: warning: jobserver unavailable".

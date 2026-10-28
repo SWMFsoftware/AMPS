@@ -1221,7 +1221,7 @@ void SampleIndividualLocations(int nMaxIterations) {
     //print out the results 
     //output directional regidity cutoff
     for (int iLocation=0;iLocation<Geospace::CutoffRigidity::IndividualLocations::xTestLocationTableLength;iLocation++) {
-      char fname[200];
+      char fname[_MAX_STRING_LENGTH_PIC_+256]; //PIC::OutputDataFileDirectory and the file name
 
       sprintf(fname,"%s/directional-rigidity-cutoff--point-%i.dat",PIC::OutputDataFileDirectory,iLocation);
       Geospace::CutoffRigidity::IndividualLocations::SamplingSphereTable[iLocation].PrintSurfaceData(fname,0,true);
@@ -1372,7 +1372,7 @@ if (PIC::nTotalSpecies!=1) exit(__LINE__,__FILE__,"Error: heen to be generalized
         //sampled energy spectrum
         FILE *fout;
         int spec,iTestsLocation,iE;
-        char fname[400];
+        char fname[_MAX_STRING_LENGTH_PIC_+256]; //PIC::OutputDataFileDirectory and the file name
 
         for (spec=0;spec<PIC::nTotalSpecies;spec++) {
           sprintf(fname,"%s/EnergySpectrum[s=%i].dat",PIC::OutputDataFileDirectory,spec);
@@ -1850,7 +1850,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
   if (PIC::ThisThread==0) {
     //sampled energy spectrum
     int spec,iTestsLocation,iE;
-    char fname[400];
+    char fname[_MAX_STRING_LENGTH_PIC_+256]; //PIC::OutputDataFileDirectory and the file name
 
     pipe.openRecvAll();
 
@@ -2669,7 +2669,7 @@ int main(int argc,char **argv) {
        }
 
       //output the particle statistics of the test run
-      char fname[300];
+      char fname[_MAX_STRING_LENGTH_PIC_+256]; //PIC::OutputDataFileDirectory and the file name
       sprintf(fname,"%s/test_Earth.dat",PIC::OutputDataFileDirectory);
       PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
     }

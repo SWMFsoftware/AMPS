@@ -216,7 +216,7 @@ void Geospace::Sampling::PrintDataStateVector(FILE* fout,long int nZenithPoint,l
 }
 
 void Geospace::Sampling::PrintManager(int nDataSet) {
-  char fname[300];
+  char fname[_MAX_STRING_LENGTH_PIC_+256]; //PIC::OutputDataFileDirectory and the file name
   int iShell,spec;
 
   for (iShell=0;iShell<nSphericalShells;iShell++) {
@@ -613,7 +613,7 @@ void Geospace::ForwardParticleModeling(int nTotalInteractions) {
     if (PIC::Mesh::mesh->ThisThread==0) {
       time_t TimeValue=time(NULL);
       tm *ct=localtime(&TimeValue);
-      printf(": (%i/%i %i:%i:%i), Iteration: %ld  (current sample length:%ld, %ld interations to the next output)\n",
+      printf(": (%i/%i %i:%i:%i), Iteration: %d  (current sample length:%ld, %ld interations to the next output)\n",
        ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,niter,
        PIC::RequiredSampleLength,
        PIC::RequiredSampleLength-PIC::CollectingSampleCounter);
