@@ -377,11 +377,11 @@ void ValidateMeshAndOffset_(const std::string& tag,long int magneticFieldDataOff
   }
 }
 
-// Validate one row-stencil element and return its compact global cell index.  A bad
-// Temp_ID after assembly means some other code reused Temp_ID while the snapshot was
-// active; continuing would read an unrelated field cell and silently corrupt particle
-// trajectories, so this is intentionally fatal.
-long int CheckedGlobalCellIndex_(cAMRNode* node,int i,int j,int k,const char* fieldName) {
+// Fatal report of a bad row-stencil element (see CheckedGlobalCellIndex_).  Kept out of
+// line so that the check itself stays a few integer comparisons that the compiler can
+// inline into the interpolation loop.
+__attribute__((noinline,cold))
+void ReportBadRowStencilCell_(cAMRNode* node,int i,int j,int k,const char* fieldName) {
   if (node==NULL) {
     std::string msg="[Mode3D::GlobalMagneticField] NULL AMR node in ";
     msg+=fieldName;
@@ -408,17 +408,40 @@ long int CheckedGlobalCellIndex_(cAMRNode* node,int i,int j,int k,const char* fi
     exit(__LINE__,__FILE__,text.c_str());
   }
 
+  std::ostringstream msg;
+  msg << "[Mode3D::GlobalMagneticField] missing compact global " << fieldName
+      << " value for Temp_ID=" << node->Temp_ID
+      << ", cell=(" << i << "," << j << "," << k << ").";
+  const std::string text=msg.str();
+  exit(__LINE__,__FILE__,text.c_str());
+}
+
+// Validate one row-stencil element and return its compact global cell index.  A bad
+// Temp_ID after assembly means some other code reused Temp_ID while the snapshot was
+// active; continuing would read an unrelated field cell and silently corrupt particle
+// trajectories, so this is intentionally fatal.
+//
+// PERFORMANCE
+//   This runs for every element of every interpolation stencil (8-72 per field
+//   evaluation, several evaluations per integration step).  It no longer reads
+//   GlobalCellPresence_: every assembly path guarantees that each cell of
+//   [0,GlobalInteriorCellCount_) is present once the fields are published (the AMPS
+//   gather aborts on any missing or duplicate cell, the SWMF snapshot replay throws if
+//   a cell is not populated, the analytic fill marks all cells present), so for an
+//   index in range the presence test could not fail, while the extra 4-byte-per-cell
+//   array added cache misses to every stencil gather.
+inline long int CheckedGlobalCellIndex_(cAMRNode* node,int i,int j,int k,const char* fieldName) {
+  if ((node==NULL) ||
+      (i<0)||(i>=_BLOCK_CELLS_X_) ||
+      (j<0)||(j>=_BLOCK_CELLS_Y_) ||
+      (k<0)||(k>=_BLOCK_CELLS_Z_) ||
+      (node->Temp_ID<0)||(node->Temp_ID>=GlobalUsedLeafBlocks_))
+    ReportBadRowStencilCell_(node,i,j,k,fieldName);
+
   const long int cellIndex=GlobalCellIndex_(node,i,j,k);
 
-  if ((cellIndex<0)||(cellIndex>=GlobalInteriorCellCount_) ||
-      (GlobalCellPresence_[static_cast<size_t>(cellIndex)]!=1)) {
-    std::ostringstream msg;
-    msg << "[Mode3D::GlobalMagneticField] missing compact global " << fieldName
-        << " value for Temp_ID=" << node->Temp_ID
-        << ", cell=(" << i << "," << j << "," << k << ").";
-    const std::string text=msg.str();
-    exit(__LINE__,__FILE__,text.c_str());
-  }
+  if ((cellIndex<0)||(cellIndex>=GlobalInteriorCellCount_))
+    ReportBadRowStencilCell_(node,i,j,k,fieldName);
 
   return cellIndex;
 }
@@ -436,6 +459,104 @@ bool GetCellCenteredField_(cAMRNode* node,int i,int j,int k,double* field,
   return true;
 }
 
+// AMPS_MODE3D_INTERP_FASTPATH: unset or any other value = interior trilinear fast path
+// on; "0" = off (always the general AMPS stencil); "verify" = run both and abort on the
+// first result that is not bitwise identical (use after any change of the AMPS
+// cell-centered stencil, src/pic/pic_interpolation_routines.cpp).
+enum InterpolationFastPathMode_ { FastPathOff_=0, FastPathOn_=1, FastPathVerify_=2 };
+
+InterpolationFastPathMode_ InterpolationFastPathMode() {
+  static const InterpolationFastPathMode_ mode=[]() {
+    const char* e=std::getenv("AMPS_MODE3D_INTERP_FASTPATH");
+    if (e==NULL) return FastPathOn_;
+    if (std::strcmp(e,"0")==0) return FastPathOff_;
+    if (std::strcmp(e,"verify")==0) return FastPathVerify_;
+    return FastPathOn_;
+  }();
+  return mode;
+}
+
+// Interior trilinear fast path of InterpolateField_.  In the most frequent case the AMPS
+// row stencil of InitStencil() is the trilinear stencil of `node` with all 8 cells
+// inside `node`, a used leaf: then each AddRowStencilCell() resolves its cell centre to
+// `node` itself and to the cell's own (i,j,k), the 8 entries are distinct and added in
+// the i/j/k loop order, nothing is dropped and the row is not normalized.  This function
+// recognizes that case with the same expressions and conditions as InitStencil() and
+// GetTriliniarInterpolationStencil() (src/pic/pic_interpolation_routines.cpp) and
+// accumulates the field with the same weights in the same order as the general loop of
+// InterpolateField_, so the result is bitwise identical, without the tree searches,
+// stencil caches and row construction of the general path.  Returns false when the case
+// does not apply; the caller then runs the general path.  These conditions must be kept
+// in step with the core (AMPS_MODE3D_INTERP_FASTPATH=verify checks it).
+inline bool InterpolateInteriorTrilinear_(const double* x,cAMRNode* node,double* field,
+                                          const std::vector<double>& storage) {
+#if _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE_ == _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE__AMPS_
+  if (_PIC_COUPLER__INTERPOLATION_MODE_ != _PIC_COUPLER__INTERPOLATION_MODE__CELL_CENTERED_LINEAR_) return false;
+  if ((node->lastBranchFlag()!=_BOTTOM_BRANCH_TREE_)||(node->IsUsedInCalculationFlag==false)||
+      (node->Temp_ID<0)||(node->Temp_ID>=GlobalUsedLeafBlocks_)) return false;
+
+  // InitStencil(): local coordinates and the choice of the trilinear stencil.
+  const double* xmin=node->xmin;
+  const double* xmax=node->xmax;
+  const double iLoc=(x[0]-xmin[0])/(xmax[0]-xmin[0])*_BLOCK_CELLS_X_;
+  const double jLoc=(x[1]-xmin[1])/(xmax[1]-xmin[1])*_BLOCK_CELLS_Y_;
+  const double kLoc=(x[2]-xmin[2])/(xmax[2]-xmin[2])*_BLOCK_CELLS_Z_;
+
+  const bool trilinear=
+      (_AMR_MESH_TYPE_ == _AMR_MESH_TYPE__UNIFORM_) ||
+      ((node->RefinmentLevel==node->minNeibRefinmentLevel)&&
+       (node->RefinmentLevel==node->maxNeibRefinmentLevel)) ||
+      ((1.0<iLoc)&&(iLoc<_BLOCK_CELLS_X_-1) && (1.0<jLoc)&&(jLoc<_BLOCK_CELLS_Y_-1) &&
+       (1.0<kLoc)&&(kLoc<_BLOCK_CELLS_Z_-1)) ||
+      ((node->RefinmentLevel==node->minNeibRefinmentLevel) &&
+       (0.5<iLoc)&&(iLoc<_BLOCK_CELLS_X_-0.5) && (0.5<jLoc)&&(jLoc<_BLOCK_CELLS_Y_-0.5) &&
+       (0.5<kLoc)&&(kLoc<_BLOCK_CELLS_Z_-0.5));
+  if (trilinear==false) return false;
+
+  // GetTriliniarInterpolationStencil(): lower cell and weights.
+  const int i0=(iLoc<0.5) ? -1 : (int)(iLoc-0.50);
+  const int j0=(jLoc<0.5) ? -1 : (int)(jLoc-0.50);
+  const int k0=(kLoc<0.5) ? -1 : (int)(kLoc-0.50);
+
+  // All 8 cells inside node (otherwise ghost cells resolve to neighbour blocks).
+  if ((i0<0)||(i0+1>=_BLOCK_CELLS_X_)||(j0<0)||(j0+1>=_BLOCK_CELLS_Y_)||
+      (k0<0)||(k0+1>=_BLOCK_CELLS_Z_)) return false;
+
+  double w[3];
+  w[0]=iLoc-(i0+0.5);
+  w[1]=jLoc-(j0+0.5);
+  w[2]=kLoc-(k0+0.5);
+
+  field[0]=field[1]=field[2]=0.0;
+
+  for (int i=0;i<2;i++) for (int j=0;j<2;j++) for (int k=0;k<2;k++) {
+    double weight;
+
+    switch (i+2*j+4*k) {
+      case 0+0*2+0*4: weight=(1.0-w[0])*(1.0-w[1])*(1.0-w[2]); break;
+      case 1+0*2+0*4: weight=w[0]*(1.0-w[1])*(1.0-w[2]); break;
+      case 0+1*2+0*4: weight=(1.0-w[0])*w[1]*(1.0-w[2]); break;
+      case 1+1*2+0*4: weight=w[0]*w[1]*(1.0-w[2]); break;
+      case 0+0*2+1*4: weight=(1.0-w[0])*(1.0-w[1])*w[2]; break;
+      case 1+0*2+1*4: weight=w[0]*(1.0-w[1])*w[2]; break;
+      case 0+1*2+1*4: weight=(1.0-w[0])*w[1]*w[2]; break;
+      default:        weight=w[0]*w[1]*w[2]; break;
+    }
+
+    const long int vectorIndex=3*GlobalCellIndex_(node,i0+i,j0+j,k0+k);
+
+    field[0]+=weight*storage[static_cast<size_t>(vectorIndex+0)];
+    field[1]+=weight*storage[static_cast<size_t>(vectorIndex+1)];
+    field[2]+=weight*storage[static_cast<size_t>(vectorIndex+2)];
+  }
+
+  return true;
+#else
+  (void)x; (void)node; (void)field; (void)storage;
+  return false;
+#endif
+}
+
 bool InterpolateField_(const double* x,cAMRNode* node,double* field,
                        const std::vector<double>& storage,const char* fieldName) {
   if ((x==NULL)||(field==NULL)||(GlobalFieldsReady_==false)) return false;
@@ -449,12 +570,31 @@ bool InterpolateField_(const double* x,cAMRNode* node,double* field,
 
   if (interpolationNode==NULL) return false;
 
+  const InterpolationFastPathMode_ fastPath=InterpolationFastPathMode();
+  double fastField[3];
+  bool fastApplied=false;
+
+  if (fastPath!=FastPathOff_) {
+    fastApplied=InterpolateInteriorTrilinear_(xLocal,interpolationNode,fastField,storage);
+
+    if ((fastApplied==true)&&(fastPath==FastPathOn_)) {
+      field[0]=fastField[0];
+      field[1]=fastField[1];
+      field[2]=fastField[2];
+      return true;
+    }
+  }
+
   // The row-only overload intentionally does not require interpolationNode->block.
   // AMPS constructs the same geometric linear/multiblock/blended stencil as the
   // legacy pointer path, but records owning nodes and interior cell indices.
   PIC::InterpolationRoutines::cRowStencil row;
   PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(
       xLocal,interpolationNode,row);
+
+  if ((row.Length<=0)&&(fastApplied==true))
+    exit(__LINE__,__FILE__,"[Mode3D::GlobalMagneticField] AMPS_MODE3D_INTERP_FASTPATH=verify: "
+         "the fast path applied but the AMPS stencil is empty");
 
   if (row.Length<=0) return false;
 
@@ -468,6 +608,18 @@ bool InterpolateField_(const double* x,cAMRNode* node,double* field,
     field[0]+=e.Weight*storage[static_cast<size_t>(vectorIndex+0)];
     field[1]+=e.Weight*storage[static_cast<size_t>(vectorIndex+1)];
     field[2]+=e.Weight*storage[static_cast<size_t>(vectorIndex+2)];
+  }
+
+  if ((fastApplied==true)&&(std::memcmp(field,fastField,sizeof(fastField))!=0)) {
+    std::ostringstream msg;
+    msg.precision(17);
+    msg << "[Mode3D::GlobalMagneticField] AMPS_MODE3D_INTERP_FASTPATH=verify: interior "
+        << "trilinear fast path differs from the AMPS stencil for " << fieldName
+        << " at x=(" << x[0] << "," << x[1] << "," << x[2] << "): fast=("
+        << fastField[0] << "," << fastField[1] << "," << fastField[2] << "), stencil=("
+        << field[0] << "," << field[1] << "," << field[2] << ")";
+    const std::string text=msg.str();
+    exit(__LINE__,__FILE__,text.c_str());
   }
 
   return true;

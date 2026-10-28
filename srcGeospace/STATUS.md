@@ -1,6 +1,6 @@
 # srcGeospace status
 
-As of **2026-10-27 20:05 CDT**.  Repository `/data/vtenishe/GEO/AMPS`; builds and test
+As of **2026-10-27 20:30 CDT**.  Repository `/data/vtenishe/GEO/AMPS`; builds and test
 results outside this tree in `/data/vtenishe/GEO/AMPS_runs/srcGeospace` (below `$RUNS`).
 
 This file describes the current state.  The GPU work (parked 2026-10-27) is documented in
@@ -43,9 +43,9 @@ design and build references are in [doc/](doc/README.md).
   only what srcEarth does not have; its end-to-end tests are srcEarth's tests, run with
   srcEarth's runner (`test/tools/run_srcearth_tests.sh`).
 * **For the user to commit** (section 6): the reduced srcGeospace tree, by amending
-  `465b15b` before pushing; the srcEarth tuning (4 files; full list validated except the
-  comparison of C19, whose rerun runs: same pass/fail results and outputs as the
-  unmodified srcEarth so far), copied into the repository srcEarth once C19 is compared.
+  `465b15b` before pushing; the srcEarth tuning, 4 files modified in the repository srcEarth
+  (copied at 20:26 at the user's request; full list validated, same pass/fail results and
+  outputs as the unmodified srcEarth; the comparison of C19 follows its rerun).
 
 ## 2. Code state
 
@@ -55,7 +55,7 @@ design and build references are in [doc/](doc/README.md).
 | core interpolation work | committed by the user: `b6cb6cb` (stencil-cell cache), `9698bcd` (`Stencil.Length` fix), `47fccd5` (row-only construction, row-structure reuse, dropped-weight normalization) |
 | `src/meshAMR/meshAMRdef.h` | committed by the user as `b06e7e7`: doubling growth of the AMR element stacks' chunk lists (section 3).  `src/` has no uncommitted changes |
 | `srcGeospace/` | committed by the user as `465b15b` (596 files; not pushed).  Working tree reduced on 2026-10-27 (user decision, section 2.1) to 152 files: 446 deleted (`test/` except srcGeospace's own unit test and tools, `studies/`, 56 non-build copies of srcEarth files), 2 new (`GPU_STATUS.md`, `test/tools/run_srcearth_tests.sh`), documents and tools updated; to be committed by amending `465b15b`.  `shieldSim/` removed earlier the same day (kept only in `srcEarth/shieldSim`) |
-| `srcEarth/` | unchanged in the repository so far.  The numerics tuning of 2026-10-27 (4 files: `gridless/CutoffRigidityGridless.cpp`, `3d/GlobalMagneticField.cpp`, `3d/FieldInitializationPlan.h`, `3d/Mode3D.cpp`; work copy `$RUNS/work/srcearth_tune/srcEarth`) is copied in once its validation is complete (section 6), to be committed by the user (message `$RUNS/work/COMMIT_MSG_srcEarth_tuning.txt`) |
+| `srcEarth/` | numerics tuning of 2026-10-27 in the working tree (copied from the work copy `$RUNS/work/srcearth_tune/srcEarth` at 20:26 at the user's request), 4 files modified: `gridless/CutoffRigidityGridless.cpp`, `3d/GlobalMagneticField.cpp`, `3d/FieldInitializationPlan.h`, `3d/Mode3D.cpp` (section 6; `git diff srcEarth` = `$RUNS/work/srcearth_tune/srcEarth_tuning.diff`).  To be committed by the user, message `$RUNS/work/COMMIT_MSG_srcEarth_tuning.txt`.  Nothing else in srcEarth changed |
 | `Makefile` | modified before this work (user's state), not touched |
 
 Decisions in force (details in handoff.md sections 1, 5 and 10):
@@ -297,9 +297,11 @@ engine in srcEarth, instead tune srcEarth's existing numerics with small changes
 timing of srcEarth and srcGeospace (done, section 5.1); roles and layout of the two
 applications (section 2.1); run tests concurrently where memory allows.
 
-1. **srcEarth numerics tuning**, 4 files (work copy `$RUNS/work/srcearth_tune/srcEarth`;
-   copied into the repository srcEarth for the user to commit once the validation is
-   complete, message `$RUNS/work/COMMIT_MSG_srcEarth_tuning.txt`):
+1. **srcEarth numerics tuning**, 4 files (prepared in the work copy
+   `$RUNS/work/srcearth_tune/srcEarth`; copied into the repository srcEarth at 20:26 at the
+   user's request, while the C19 rerun of the unmodified pass ran -- it uses only the
+   prebuilt executable and its scripts; to be committed by the user, message
+   `$RUNS/work/COMMIT_MSG_srcEarth_tuning.txt`):
    * `gridless/CutoffRigidityGridless.cpp`: the field evaluator normalized and compared the
      model name on every field evaluation (`Model()`, 69 % of F4's CPU); the canonical name
      and the branch are now fixed at construction.  The main thread of the gridless

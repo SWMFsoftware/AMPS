@@ -25,6 +25,15 @@ class UniqueFieldWriterPlan {
   std::vector<std::size_t> slots_;
 
 public:
+  // Capacity for about n distinct buffers, so that the map is not rehashed while the
+  // plan is built (the plan is built serially on the rank's main thread before the
+  // threaded field initialization; for large meshes it holds tens of millions of
+  // entries).  Only the lookup structure is affected, not the slot sequence.
+  void Reserve(std::size_t n) {
+    writers_.reserve(n);
+    slots_.reserve(n);
+  }
+
   // Visit slots in deterministic tree/index order, never in pointer/hash order.
   // Prefer the owning interior cell's coordinates over an aliasing ghost's
   // coordinates. For ghost-only storage, keep the first deterministic slot.

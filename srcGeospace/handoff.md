@@ -764,4 +764,11 @@ streams, each `test_runner.py -j 1`, started 16:48:
   after replacing run-root paths, 198 AMR mesh-cache files; numeric differences only in
   C13's timing/rank files and the F5/F11 last-bit sums; SA01-SA03 per run directory:
   identical apart from the mesh cache and the time stamps and pids in their reports.
-  The 4 files go into the repository srcEarth after the C19 comparison.
+* 20:26 user: "copy them into srcEarth now".  The 4 files copied from the work copy into the
+  repository srcEarth (the repository files were checked to equal the work copy's
+  originals first); `git status srcEarth`: these 4 modified, nothing else.
+  `srcEarth_tuning.diff` regenerated from `git diff srcEarth` (the 14:30 version, with the
+  switch's first name, kept as `srcEarth_tuning_tune5.diff`).  The C19 rerun of the
+  unmodified pass was running (its run root links `srcEarth` to the repository; C19 uses
+  only the prebuilt executable and its scripts).  Commit message:
+  `$RUNS/work/COMMIT_MSG_srcEarth_tuning.txt` (the user commits).

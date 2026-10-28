@@ -253,6 +253,7 @@
 #include <thread>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <mutex>
 #include <map>
 #include <exception>
@@ -496,6 +497,8 @@ class cFieldEvaluator : public IGridlessFieldEvaluator,
 public:
   explicit cFieldEvaluator(const EarthUtil::AmpsParam& p)
       : prm(p),
+        model_(CanonicalModel_(p.field.model)),
+        branch_(BranchOf_(model_)),
         dipoleParams_(Earth::GridlessMode::Dipole::MakeParams(
             p.field.dipoleMoment_Me,p.field.dipoleTilt_deg)) {
     // Do not call Dipole::SetMomentScale/SetTiltDeg here.  Those functions mutate
@@ -575,12 +578,33 @@ public:
   //   t04_s_ (the naming reflects intermediate research versions).
   //   "TS96" / "T96S" are CCMC/ViRBO alternate spellings of T96.
   //   "TS01" / "T01S" are alternate spellings of T01.
-  std::string Model() const {
-    const std::string u = EarthUtil::ToUpper(prm.field.model);
+  //
+  // PERFORMANCE
+  //   The canonical name is computed once, in the constructor (prm.field.model never
+  //   changes afterwards: ReinitGeopack only updates the epoch and the driver
+  //   parameters).  GetB_T runs once per integration step, and normalizing and
+  //   comparing the name there took about two thirds of the CPU time of a gridless
+  //   dipole run, several times the cost of the dipole field itself.  GetB_T therefore
+  //   dispatches on branch_, and Model() returns the cached name.
+  const std::string& Model() const { return model_; }
+
+  static std::string CanonicalModel_(const std::string& model) {
+    const std::string u = EarthUtil::ToUpper(model);
     if (u=="TS05"||u=="T05S"||u=="T04S"||u=="TS04") return "T05";
     if (u=="TS96"||u=="T96S")                        return "T96";
     if (u=="TS01"||u=="T01S")                        return "T01";
     return u;
+  }
+
+  // The branches of GetB_T that are selected before the legacy wrapper models.
+  enum class FieldBranch_ { None, Dipole, Igrf, T05, Other };
+
+  static FieldBranch_ BranchOf_(const std::string& model) {
+    if (model=="NONE")   return FieldBranch_::None;
+    if (model=="DIPOLE") return FieldBranch_::Dipole;
+    if (model=="IGRF")   return FieldBranch_::Igrf;
+    if (model=="T05")    return FieldBranch_::T05;
+    return FieldBranch_::Other;
   }
 
   // Re-initialise Geopack and, when a driver table is supplied, update the
@@ -840,13 +864,13 @@ public:
     // Explicit zero-field branch used by density/flux normalization validation.
     // With FIELD_MODEL=NONE, particles move in straight lines and any non-unity
     // transmissivity comes only from geometric loss/escape boundaries.
-    if (Model()=="NONE") {
+    if (branch_==FieldBranch_::None) {
       B_T.x=0.0; B_T.y=0.0; B_T.z=0.0;
       return;
     }
 
     // Dipole branch: internal field only, analytic, no IGRF/external field.
-    if (Model()=="DIPOLE") {
+    if (branch_==FieldBranch_::Dipole) {
       double x_arr[3]={x_m.x,x_m.y,x_m.z};
       double b_arr[3];
       Earth::GridlessMode::Dipole::GetB_Tesla(x_arr,b_arr,dipoleParams_);
@@ -859,7 +883,7 @@ public:
     // requested epoch and initialized RECALC_08.  This call evaluates only the
     // internal spherical-harmonic field; no T96/T01/T05/TA15/TA16 contribution
     // is added.  Coordinates and the returned field are both in GSM SI units.
-    if (Model()=="IGRF") {
+    if (branch_==FieldBranch_::Igrf) {
       double x_arr[3]={x_m.x,x_m.y,x_m.z};
       double b_arr[3]={0.0,0.0,0.0};
       if (!geopackContext_)
@@ -932,7 +956,7 @@ public:
     // T05 is evaluated through its reentrant Fortran entry point and the immutable
     // GEOPACK IGRF context.  No namespace-global wrapper parameter or COMMON block is
     // touched while trajectory workers are active, so different epochs may coexist.
-    if (Model()=="T05") {
+    if (branch_==FieldBranch_::T05) {
       if (!geopackContext_)
         throw std::runtime_error("Missing immutable GEOPACK context for T05 evaluation");
       double x_re[3]={x_m.x/_EARTH__RADIUS_,x_m.y/_EARTH__RADIUS_,x_m.z/_EARTH__RADIUS_};
@@ -1045,6 +1069,8 @@ private:
   // Owned copy (not a reference) so ReinitGeopack can mutate PARMOD and field
   // parameters in-place when the driver table provides per-point values.
   EarthUtil::AmpsParam prm;
+  const std::string model_;      // canonical prm.field.model, see Model()
+  const FieldBranch_ branch_;    // GetB_T branch selected by model_
   const Earth::GridlessMode::Dipole::Params dipoleParams_;
   double PARMOD[11];
   double PS;
@@ -5429,6 +5455,8 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
           1LL,std::min((long long)gridlessThreadCount,nWork)));
       std::atomic<long long> nextIndex(beginIndex);
       std::atomic<int> activeWorkers(nWorkers);
+      std::mutex activeWorkersMutex;
+      std::condition_variable allWorkersDone;
       std::vector<std::thread> workers;
       workers.reserve((std::size_t)nWorkers);
       for (int iw=0; iw<nWorkers; ++iw) {
@@ -5439,7 +5467,10 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
             if (index>=endIndex) break;
             computeOne(index,iw);
           }
-          activeWorkers.fetch_sub(1,std::memory_order_release);
+          if (activeWorkers.fetch_sub(1,std::memory_order_acq_rel)==1) {
+            std::lock_guard<std::mutex> lock(activeWorkersMutex);
+            allWorkersDone.notify_one();
+          }
         });
       }
 
@@ -5449,9 +5480,15 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
       // (the print helper itself throttles stdout to approximately once per second).
       // This gives GRIDLESS the same continuously moving user feedback expected from
       // Mode3D without allowing worker threads to enter MPI.
+      //
+      // The last worker wakes the main thread at once (allWorkersDone), so the next
+      // chunk is fetched without waiting for the rest of the 200 ms interval; with a
+      // plain sleep every chunk ended with up to 200 ms during which all workers idled.
       while (activeWorkers.load(std::memory_order_acquire)>0) {
         publishNewCompletions(false);
-        std::this_thread::sleep_for(progressPollInterval);
+        std::unique_lock<std::mutex> lock(activeWorkersMutex);
+        allWorkersDone.wait_for(lock,progressPollInterval,[&]() {
+          return activeWorkers.load(std::memory_order_acquire)==0; });
       }
       for (std::thread& worker : workers) worker.join();
       publishNewCompletions(false);

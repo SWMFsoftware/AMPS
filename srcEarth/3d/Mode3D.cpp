@@ -669,6 +669,9 @@ static void ConfigureFieldInitSharedWork(FieldInitSharedWork& shared,
   // into GlobalMagneticField. Still initialize ghost-only buffers for legacy
   // consumers; simply skipping all ghosts would leave some buffers uninitialized.
   UniqueFieldWriterPlan plan;
+  // Every interior cell is a distinct buffer; ghost-only buffers add a few more.
+  plan.Reserve(ownerBlocks.size()*static_cast<std::size_t>(
+      _BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_));
   for (std::size_t block=0;block<ownerBlocks.size();++block) {
     for (int i=shared.iMin;i<shared.iMin+shared.iCount;++i)
       for (int j=shared.jMin;j<shared.jMin+shared.jCount;++j)
