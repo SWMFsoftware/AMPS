@@ -1130,7 +1130,10 @@ bool CutCell::CheckPointInsideDomain_default(double *x,CutCell::cTriangleFace* S
    // box from any point in the domain and is independent of the coordinate
    // origin or body radius.
    xLength=0.0;
-   for (int idim=0;idim<3;idim++) {
+   // AMR domain extents contain one entry per mesh dimension.  The ray below
+   // remains a three-component geometric vector, but its required escape
+   // length must only read coordinates that exist in the selected mesh.
+   for (int idim=0;idim<_MESH_DIMENSION_;idim++) {
      const double extent=PIC::Mesh::mesh->xGlobalMax[idim]-
          PIC::Mesh::mesh->xGlobalMin[idim];
      xLength+=extent*extent;
@@ -3365,4 +3368,3 @@ cout << "printed bloks: "<< NBLOCKS << endl;
 
     return connectivityLength;
   }
-

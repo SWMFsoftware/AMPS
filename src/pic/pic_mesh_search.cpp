@@ -29,8 +29,12 @@ void PIC::Mesh::Search::ScanTree(int imin,int jmin,int kmin,int IndexInterval,cT
       for (i=0;i<IndexInterval;i++) for (j=0;j<IndexInterval;j++) for (k=0;k<IndexInterval;k++) HashTable[i+imin][j+jmin][k+kmin]=node;
     }
     else {
-      //move down along the tree
-      for (i=0;i<2;i++) for (j=0;j<2;j++) for (k=0;k<2;k++) {
+      // Move down only along axes represented by the AMR tree.  Inactive
+      // axes use child index zero; requesting their index one would address
+      // beyond the 1 << _MESH_DIMENSION_ child-pointer table.
+      const int jChildCount=(_MESH_DIMENSION_>1) ? 2 : 1;
+      const int kChildCount=(_MESH_DIMENSION_>2) ? 2 : 1;
+      for (i=0;i<2;i++) for (j=0;j<jChildCount;j++) for (k=0;k<kChildCount;k++) {
         cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* DownNode=node->GetDownNode(i,j,k);
 
         if (DownNode!=NULL) ScanTree(imin+i*IndexInterval/2,jmin+j*IndexInterval/2,kmin+k*IndexInterval/2,IndexInterval/2,DownNode);
@@ -64,8 +68,14 @@ void PIC::Mesh::Search::Init() {
   for (i=0;i<nElements;i++) for (j=0;j<nElements;j++) for (k=0;k<nElements;k++) HashTable[i][j][k]=NULL;
 
   //reset the geometry information
-  memcpy(xMinDomain,PIC::Mesh::mesh->rootTree->xmin,3*sizeof(double));
-  for (i=0;i<3;i++) dx[i]=(PIC::Mesh::mesh->rootTree->xmax[i]-PIC::Mesh::mesh->rootTree->xmin[i])/nElements;
+  // Hash coordinates are kept in three-element work arrays, but AMR node
+  // bounds contain only _MESH_DIMENSION_ values.  Initialize inactive axes to
+  // a single logical coordinate and never read them from the node.
+  for (i=0;i<3;i++) xMinDomain[i]=0.0,dx[i]=1.0;
+  for (i=0;i<_MESH_DIMENSION_;i++) {
+    xMinDomain[i]=PIC::Mesh::mesh->rootTree->xmin[i];
+    dx[i]=(PIC::Mesh::mesh->rootTree->xmax[i]-PIC::Mesh::mesh->rootTree->xmin[i])/nElements;
+  }
 
 
   //init the table with the pointers to the blocks
@@ -87,11 +97,22 @@ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* PIC::Mesh::Search::FindBlock(double *x) 
 
   if ((i<0)||(i>nElements-1)) StartBlock=NULL;
   else {
+    // In reduced-dimensional meshes the inactive hash indices are zero.
+    // Particle vectors still have three components, but those components do
+    // not identify AMR children.
+#if _MESH_DIMENSION_ > 1
     j=(x[1]-xMinDomain[1])/dx[1];
+#else
+    j=0;
+#endif
 
     if ((j<0)||(j>nElements-1)) StartBlock=NULL;
     else {
+#if _MESH_DIMENSION_ > 2
       k=(x[2]-xMinDomain[2])/dx[2];
+#else
+      k=0;
+#endif
 
       if ((k<0)||(k>nElements-1)) StartBlock=NULL;
       else
@@ -124,7 +145,6 @@ PIC::Mesh::cDataCenterNode *PIC::Mesh::Search::FindCell(double *x,cTreeNodeAMR<P
   if (node->block==NULL) return NULL;
   return node->block->GetCenterNode(nd);
 }
-
 
 
 

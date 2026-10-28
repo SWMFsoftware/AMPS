@@ -4463,7 +4463,10 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
           // full velocity vector changes tangential motion and can create
           // nonphysical scattering, especially for grazing impacts.
           double blockScale = 0.0;
-          for (idim = 0; idim < 3; idim++) {
+          // Node bounds are stored with _MESH_DIMENSION_ entries.  Velocities
+          // and cut-face normals are three-component vectors, so their loops
+          // below intentionally remain three-dimensional.
+          for (idim = 0; idim < _MESH_DIMENSION_; idim++) {
               double s = startNode->xmax[idim] - startNode->xmin[idim];
               if (s > blockScale) blockScale = s;
           }

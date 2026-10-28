@@ -151,6 +151,13 @@ species number (between reactions). Each segment is saved in the trajectory file
 #define _PIC__PARTICLE_COLLISION_MODEL__USER_DEFINED_   1
 #define _PIC__PARTICLE_COLLISION_MODEL__MF_             2
 
+// Select how the model-particle collision algorithms obtain a total cross
+// section.  The built-in path uses MolecularModels::GetTotalCrossSection;
+// the user-defined path also receives the current block and cell, which is
+// required by temperature-dependent laws such as the cometary H2O-H2O law.
+#define _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__HS_            0
+#define _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__USER_DEFINED_  1
+
 //sampling of the parallel and normal kinetic temperature
 #define _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__OFF_                                   0
 #define _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__CONSTANT_DIRECTION_ORIGIN_             1
@@ -314,5 +321,4 @@ species number (between reactions). Each segment is saved in the trajectory file
 //status flags used to set up the setting parameters of cDatum 
 #define DATUM_DO_PRINT  0b0001 
 #define DATUM_DO_DEVIDE_VOLUME_PRINT 0b0010 
-
 

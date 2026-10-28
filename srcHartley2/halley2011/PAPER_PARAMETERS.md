@@ -173,6 +173,13 @@ assigning zero or inventing a cross section. A chemically active physical run
 therefore needs a cited daughter collision dataset or an explicitly approved
 mixing prescription.
 
+The repaired AMPS user-defined collision dispatch reaches the Crifo law before
+the first sampling window has produced a cell translational temperature. The
+paper does not state whether its DSMC implementation used an instantaneous
+particle estimate, a lagged cell temperature, or an initialization value for
+that first collision step. The generic application does not silently select
+one of those numerical rules.
+
 Table 4 has been transcribed into the named `RUBIN2011` chemistry database.
 Rates are referenced to 1 AU and scale as inverse heliocentric distance
 squared. Electronic states are collapsed into the corresponding neutral
@@ -233,7 +240,9 @@ enough information to reconstruct all numerical controls. It does not state:
 - timestep/Courant policy or per-species transport-speed bounds;
 - statistical particle weights or reference injection-particle count;
 - convergence metric, tolerance, or required consecutive-window count; or
-- a complete daughter collision matrix.
+- a complete daughter collision matrix; or
+- the first-step temperature treatment for the temperature-dependent H2O-H2O
+  cross section.
 
 The input records the user-supplied or derived controls above. Convergence is
 evaluated only after a complete 500-iteration sample. For species `s` and

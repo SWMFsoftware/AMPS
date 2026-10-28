@@ -77,6 +77,34 @@ plotted. The command fails only when none of the requested files has plottable
 data. This permits shell patterns such as `PT/plots/*.dat` when some species
 are absent in an early sampling window.
 
+## Rubin et al. (2011) Halley comparison
+
+`compare_rubin2011.py` prepares the neutral-species part of the paper's Figs.
+1--17 and the water radial-velocity profile corresponding to Fig. 18. It
+selects the latest output index that is complete for every configured neutral
+species unless `--output-index` is supplied. Number densities are converted
+from the AMPS output unit of m^-3 to the paper's cm^-3, and the paper's species
+groupings and neutral-curve line styles are retained.
+
+```sh
+python3 srcHartley2/visualization/compare_rubin2011.py \
+  PT/plots --run-log halley1d.run.log
+```
+
+The default destination is `PT/plots/rubin2011_comparison`. It contains a PNG
+and EPS for each figure, a combined multipage PDF,
+`comparison_profiles.csv` at 10, 100, 1,000, 10,000, and 100,000 km, and a
+JSON provenance manifest. The manifest records the exact AMPS files, output
+index, nominal iteration, density conversion, and the convergence record for
+that output window.
+
+Figs. 2--17 in the paper also contain measured and simulated Giotto NMS mass
+channel signals. The current comet application does not model the NMS ion
+source or detector, so the comparison utility plots the modeled neutral
+profiles only and states that limit in the manifest. It does not reinterpret
+neutral density as an instrument signal. Methanol likewise remains an empty
+curve when it is disabled in `halley1d.input`.
+
 `--output NAME` always saves `NAME.png` and `NAME.eps`. If the argument has a
 different extension, such as `.pdf`, that format is saved in addition to PNG
 and EPS. After saving, the script opens the PNG in the system's desktop image

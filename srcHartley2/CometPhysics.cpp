@@ -26,9 +26,12 @@ bool Comet::Physics::Validate(std::string *error) {
 double Comet::Physics::GetNeutralCrossSection(double *v0,double *v1,
     int species0,int species1,PIC::Mesh::cDataBlockAMR *block,
     PIC::Mesh::cDataCenterNode *cell) {
-  // The current Rubin database uses velocity-independent hard-sphere values.
-  // Keep the AMPS callback arguments in this adapter so a future database can
-  // add a relative-speed law without changing the core interface.
+  // Rubin et al. (2011), Table 3, supplies hard-sphere cross sections for the
+  // configured parent neutrals.  Most pairs are constant; H2O-H2O is the one
+  // exception and uses the temperature-dependent Crifo (1989) power law below.
+  // Neither law currently depends on relative speed, but keep both velocity
+  // arguments in this adapter so a future database can add such a law without
+  // changing the AMPS core callback interface.
   (void)v0;
   (void)v1;
   (void)block;

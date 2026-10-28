@@ -29,6 +29,7 @@ Halley in `input/halley1d.input`.
 | `RadialSimulation.*` | DIM1 source injection, timestep selection, inner re-emission, outer loss, and time stepping |
 | `halley2011/derive_halley1d_controls.py` | Reproducible Halley surface-resolution, injection-count, and daughter-speed derivation |
 | `visualization/plot_1d.py` | CLI plotter for named quantities in one or more DIM1 output files |
+| `visualization/compare_rubin2011.py` | Paper-ordered neutral-density and H2O-velocity comparison artifacts for the Halley run |
 | `Comet.cpp` and legacy helpers | Existing DIM3 Hartley 2 implementation |
 
 Reusable data containers live outside the application in
@@ -40,6 +41,18 @@ Collision data follow the same separation. `PhysicsDatabase=Rubin2011` loads
 a named paper catalog, while repeated `NeutralCollision` records hold
 case-specific or supplemental cited pairs. Hartley 2's former hard-coded
 H2O/CO2 values are now explicit records in `input/hartley2.input`.
+
+The core model-particle collision adapter must also select the user-defined
+cross-section route. That route passes the current block and center cell to
+`CometPhysics`, allowing the H2O-H2O Crifo law to use temperature. A generated
+Halley build should contain the final override
+`_PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__USER_DEFINED_` in
+`build/pic/picGlobal.dfn`.
+
+Rubin Table 3 lists all 66 unordered pairs among the 11 parents but says that
+the table is only a subset; it does not print the daughter-pair values used by
+the paper model. The application does not assign zero or invent a mixing rule
+for those missing pairs.
 
 ## Radial mesh
 
@@ -128,11 +141,13 @@ sampling window and 10,000-iteration hard ceiling are explicit. The selected
 run compares the volume-weighted relative L1 change of every species' complete
 radial density profile and terminates after all species remain within 5% for
 three consecutive window-to-window comparisons. The first complete window is
-the reference, so convergence needs at least four windows. The final four-rank
-test completed one 500-step reference window, wrote 27 species files, migrated
-blocks after output, and continued normally. It was deliberately stopped after
-iteration 529, so the output is a runtime verification result rather than a
-converged Halley solution. Exact test results and earlier diagnostic controls
+the reference, so convergence needs at least four windows. Multi-rank tests
+have crossed output and block-migration boundaries, verifying runtime plumbing.
+A later audit found that those test binaries used AMPS's zero placeholder
+cross section because the Rubin callback was not connected. That dispatch is
+now fixed, but the repaired diagnostic stops at iteration 1 because no sampled
+cell temperature exists yet for the H2O law. No output currently qualifies as
+a converged physical Halley solution. Exact evidence and unresolved physics
 are recorded in `STATUS.md`.
 
 ## Visualizing DIM1 output
@@ -158,3 +173,16 @@ opens in the desktop image viewer; use `--no-show` for batch execution.
 selects an inclusive interval in the chosen radius unit. Non-positive points
 are skipped, with curve gaps, when logarithmic Y scaling is selected.
 Additional examples are documented in `visualization/README.md`.
+
+For the Halley paper case, generate the latest complete set of neutral plots,
+the combined PDF, and the numerical comparison table with:
+
+```sh
+python3 srcHartley2/visualization/compare_rubin2011.py \
+  PT/plots --run-log halley1d.run.log
+```
+
+This reproduces the neutral-species groupings and units of Rubin et al. (2011)
+Figs. 1--17 and the modeled H2O radial velocity corresponding to Fig. 18. The
+paper's Giotto NMS mass-channel curves require an instrument-response model
+that is not part of this application and are not included.

@@ -2382,8 +2382,11 @@ public:
     if ((_AMR_SYMMETRY_MODE_!=_AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_)&&(_AMR_SYMMETRY_MODE_!=_AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_)) exit(__LINE__,__FILE__,"The symmetry mode and the mesh dimension are not consistent");
 #endif
 
-    //set the minimum value of dx
-    for (int idim=0;idim<3;idim++) {
+    // Set the minimum geometric spacing only for coordinates represented by
+    // this mesh.  xGlobalMin/xGlobalMax have _MESH_DIMENSION_ entries, whereas
+    // particle position and velocity vectors intentionally retain three
+    // components in reduced-dimensional simulations.
+    for (int idim=0;idim<_MESH_DIMENSION_;idim++) {
       dx_max_refinment[idim]=(xGlobalMax[idim]-xGlobalMin[idim])/(1<<_MAX_REFINMENT_LEVEL_);
     }
 

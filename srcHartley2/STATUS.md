@@ -22,8 +22,11 @@ Branch: `1d_comet_dev`
 | Halley DIM1 one-step plumbing test | Pass with documented temporary numerical choices |
 | Halley 2,000-cell/local-weight clean build and one-step run | Pass; 373 blocks and 2,984 cells |
 | Halley DIM1 four-rank runtime | Pass through one complete 500-step output window and the following block migration |
-| Halley DIM1 convergence run | Not run; one reference window cannot test the three-window convergence criterion |
+| Halley DIM1 convergence run | Blocked before a physical result; the first attempted run used an unwired zero cross section, and the repaired build stops at iteration 1 because no initial H2O cell temperature is available |
+| Core collision cross-section dispatch | Fixed and clean-built; NTC/MF now route the selected user law with block/cell state instead of always using the zero HS placeholder |
+| Rubin collision-data coverage | Incomplete by source: Table 3 supplies 66 parent-parent pairs but omits daughter pairs |
 | DIM1 result visualization | Pass for short aliases, single-/multi-file PNG/EPS output, and viewer control |
+| Rubin paper-comparison artifact generator | Pass on completed transient output; no converged physical Halley output exists yet |
 | DIM2 axisymmetric application | Interface reserved; execution backend not implemented |
 
 The `build` directory is removed before each compilation. Hartley 2 and Halley
@@ -35,6 +38,38 @@ execution path; the final requested controls are now in the tracked input.
 The Halley runtime output path is `PT/plots`, relative to the launch directory;
 the intended launch directory is `/data/vtenishe/COMET1D/AMPS`. A compile does
 not create this runtime directory.
+
+### Collision-dispatch audit and invalidated run
+
+The first optimized 18-rank convergence attempt reached iteration 2,533 and
+wrote five complete 500-step windows, but it is **not a physical Halley
+result**. Source inspection after the run showed that every NTC cross-section
+evaluation still called
+`PIC::MolecularData::MolecularModels::GetTotalCrossSection`. Its generated
+initializer selected `HS::GetTotalCrossSection`, whose unchecked fallback is
+a `1 x 1` zero table. The application-level Rubin callback and all 66
+generated parent-pair entries were linked but unreachable. The run was stopped
+and preserved as `PT.invalid-zero-cross-section` with
+`halley1d.invalid-zero-cross-section.log`; those files must not be used for a
+paper comparison.
+
+The core collision algorithms now call one adapter selected by
+`_PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION_`. The default mode retains the
+existing HS/VHS/VSS function pointer. The user-defined mode passes velocities,
+species, block, and center cell to the application callback, so a collision
+law may depend on cell state without mutable global variables. All ten
+cross-section evaluations in the simplified/full NTC and MF implementations
+use the adapter. A clean `-O3` Halley build confirmed that the generated input
+selects the user-defined mode and links the Rubin callback.
+
+A four-rank diagnostic of that repaired binary reached the collision callback
+at iteration 1 and then stopped with `non-positive translational temperature
+for comet collision species 13`. The H2O-H2O Crifo law requires local gas
+temperature, but the AMPS center-cell sampling accumulator has no completed
+sample when the first collision step runs. No fallback temperature, temporal
+lag, or relative-speed conversion has been added because Rubin et al. do not
+specify that numerical initialization rule. This is a separate blocker from
+the missing daughter collision matrix.
 
 The first four-rank DIM1 runtime test exposed a core MPI neighbor-mask defect
 in `src/pic/pic_block_send_mask.cpp`: the exchange code scanned the six faces
@@ -58,7 +93,7 @@ positive x, y, and z faces unconditionally. They now serialize only the `DIM`
 positive faces, keeping migrated-block size calculation and unpack ordering
 valid for DIM1, DIM2, and DIM3.
 
-The final core correction was tested in two stages on four MPI ranks. A
+The dimension and MPI corrections were tested in two stages on four MPI ranks. A
 three-step diagnostic forced a sampling break on every step and exited
 normally after an actual ownership change from `98/97/94/84` blocks to
 `1/372/0/0`. The final binary then completed the configured 500-step sampling
@@ -67,10 +102,10 @@ particles. Its load balancer changed ownership from `98/97/94/84` blocks to
 `1/2/5/365`; the run continued normally through iteration 529 and was then
 stopped deliberately. Each output file has 3,011 lines and spans the full
 radial mesh. This verifies initialization, particle transport, chemistry,
-sampling output, and post-output block migration. It does not demonstrate
-profile convergence: the first complete window only establishes the reference
-profile, and at least four complete windows are needed to meet the configured
-three-consecutive-window rule.
+sampling output, and post-output block migration, but the later dispatch audit
+showed that this test was collisionless. It therefore remains valid evidence
+for MPI/runtime plumbing only. It does not demonstrate physical profile
+convergence.
 
 `visualization/plot_1d.py` provides a dimension-one result plotter that reads
 the physical quantity names from each AMPS `VARIABLES` record. It always uses
@@ -138,14 +173,246 @@ copies are listed separately below.
 | `src/models/cometary_physics/CollisionDatabase.h` | new | Adds a header-only unordered species-pair database for constant and temperature-power collision cross sections, including explicit temperature validity ranges and distinct missing-pair/out-of-range results. |
 | `src/models/cometary_physics/test_collision_database.cpp` | new | Unit-tests symmetric pair lookup, both collision laws, validation, missing pairs, and range enforcement. |
 | `src/models/cometary_physics/README.md` | new | Documents database semantics, units, validation, and the rule against silent extrapolation or undocumented zero cross sections. |
-| `src/meshAMR/meshAMRgeneric.h` | modified | Contains the largest core change. It separates the `findNeibNodeFace()` lookup method from the `neibNodeFace` storage member; implements DIM1 face lookup, spherical face area, neighbor refinement queries, dimension-specific ghost ranges, and symmetry checks; limits block allocation to `2*DIM` faces; fixes the maximum-refinement integer-width test; and makes mesh diagnostics dimension-aware. All callers of the renamed method must be reconciled together. |
+| `src/meshAMR/meshAMRgeneric.h` | modified | Contains the largest core change. It separates the `findNeibNodeFace()` lookup method from the `neibNodeFace` storage member; implements DIM1 face lookup, spherical face area, neighbor refinement queries, dimension-specific ghost ranges, and symmetry checks; limits block allocation to `2*DIM` faces; fixes the maximum-refinement integer-width test; bounds maximum-refinement spacing scans by the compiled mesh dimension; and makes mesh diagnostics dimension-aware. All callers of the renamed method must be reconciled together. |
+| `src/meshAMR/meshAMRcutcell.cpp` | modified | Bounds global-domain extent reads by `_MESH_DIMENSION_` while retaining three-component physical ray vectors. This removes optimized lower-dimensional out-of-bounds reads without changing DIM3 geometry. |
 | `src/pic/parallel/init_send_halo.cpp` | modified | Updates the DIM1/DIM2/DIM3 halo constructors to call `findNeibNodeFace()`. This is an API-following change and must be merged with `meshAMRgeneric.h`. |
 | `src/pic/pic.h` | modified | Uses the dimension-neutral `cAmpsMesh` alias in the particle tracker instead of the hard-coded `cMeshAMR3d` type, allowing the same code to compile in DIM1. |
-| `src/pic/pic_parallel.cpp` | modified | Uses the common `cAMRnodeID` alias in buffered and unbuffered particle exchange instead of selecting obsolete dimension-specific mesh types. |
+| `src/pic/picGlobalDefinitions.dfn` | modified | Defines explicit built-in and user-defined model-particle cross-section modes. These constants are required by the collision adapter and must land with `picGlobal.dfn` and `pic_particle_collision_models.cpp`. |
+| `src/pic/picGlobal.dfn` | modified | Selects the built-in molecular cross-section pointer by default. Application input can override it with the user-defined mode; Halley does so in `#General`. |
+| `src/pic/pic_particle_collision_models.cpp` | modified | Routes every full/simplified NTC and MF cross-section evaluation through a common adapter. Built-in HS/VHS/VSS behavior is retained; user-defined laws receive velocity, species, block, and cell. This fixes the previously compiled-but-unreachable Rubin callback. |
+| `src/pic/pic_parallel.cpp` | modified | Uses the common `cAMRnodeID` alias in buffered and unbuffered particle exchange, initializes three-component work vectors, and reads node coordinates/visits faces only in active dimensions. |
 | `src/pic/pic_block_send_mask.cpp` | modified | Restricts send-mask neighbor scans to the active `2*DIM` faces and the number of subface slots represented in that dimension. This removes out-of-bounds DIM1/DIM2 neighbor reads and is required for multi-rank radial runs. |
 | `src/pic/pic_mesh.cpp` | modified | Makes all four block pack/unpack and boundary send/receive paths visit positive faces only for active coordinates. Sender and receiver loop order must remain identical; this fix is required for load redistribution after a DIM1 sampling window. |
-| `src/pic/pic_mover.cpp` | modified | Moves rotation-body declarations outside a dimension-only branch, corrects three duplicated z-coordinate typos, and repairs variables used by the spherical second-order boundary-intersection calculation. The radial input still selects the tested first-order spherical mover; do not infer that the second-order spherical path is fully complete. |
+| `src/pic/pic_mesh_search.cpp` | modified | Traverses only child axes represented by the compiled mesh, copies only active node-bound components, and fixes inactive hash indices at zero. This removes optimized DIM1/DIM2 reads past node coordinate arrays. |
+| `src/pic/pic_mover.cpp` | modified | Moves rotation-body declarations outside a dimension-only branch, corrects three duplicated z-coordinate typos, repairs variables used by the spherical second-order boundary-intersection calculation, and bounds node-coordinate scale calculations by the compiled dimension. The radial input still selects the tested first-order spherical mover; do not infer that the second-order spherical path is fully complete. |
 | `src/pic/pic_field_line.cpp` | modified | Keeps physical three-component position, magnetic-field, and Sun vectors at length three even when the mesh is compiled with fewer dimensions. This is a lower-dimensional compile fix for code that still performs three-vector algebra. |
+
+### Detailed core-source change record
+
+This subsection records the core changes at symbol and dependency level so a
+future merge does not have to infer their purpose from a large branch diff.
+The comparison used here is local `master` at `cb7be2b` against branch HEAD
+`5c01ecf` plus the current working tree. At that comparison point, 13 existing
+files below `src/meshAMR` and `src/pic` differ from `master` (259 insertions and
+120 deletions). Eight of those files contain additional uncommitted work from
+the latest optimized-run audit. Recompute both the base and file counts before
+merging because they cease to be authoritative if either branch moves.
+
+#### New reusable core libraries
+
+The following are additions rather than edits to an existing AMPS execution
+path:
+
+- `src/models/chemical_solver/ReactionNetwork.h` defines `RateLaw`,
+  `cStoichiometricTerm`, `cReaction`, and `cReactionNetwork`. Validation checks
+  indices, stoichiometry, rate-law parameters, and environmental requirements.
+  `GetRateCoefficient()`, `GetReactionRate()`, and `EvaluateSourceLoss()`
+  provide a data representation and rate evaluator; `IsUnitUnimolecular()`
+  identifies the subset executed by the current particle chemistry adapter.
+  It does not replace or repair the legacy CHEMEQ2 integration path.
+- `src/models/chemical_solver/test_reaction_network.cpp` exercises validation,
+  constant/inverse-square/Arrhenius rates, reaction rates, source/loss terms,
+  and unit-unimolecular classification. Its adjacent `README.md` documents the
+  unsupported general cell-solver case.
+- `src/models/cometary_physics/CollisionDatabase.h` defines `CollisionLaw`,
+  `cCollision`, and `cCollisionDatabase`. `Validate()` rejects malformed or
+  duplicate unordered pairs, `Find()` performs symmetric lookup, and
+  `GetCrossSection()` distinguishes missing data from a temperature outside a
+  law's validity interval. The container does not choose a mixing rule or
+  silently turn an absent pair into zero.
+- `src/models/cometary_physics/test_collision_database.cpp` tests pair
+  symmetry, constant and temperature-power laws, validation, missing-pair
+  reporting, and temperature bounds. Its adjacent `README.md` records units
+  and database semantics.
+
+These headers have no AMR or PIC runtime dependency. Merge them before the
+generic comet adapters so their unit tests can be reviewed independently.
+
+#### Existing AMR and PIC files
+
+- `src/meshAMR/meshAMRgeneric.h`: the AMR node member named
+  `neibNodeFace` remains the neighbor storage, while face lookup is renamed to
+  `findNeibNodeFace()` to remove the member/function collision that prevented
+  current-core compilation. Dimension-specific implementations cover DIM1,
+  DIM2, and DIM3. DIM1 gains radial neighbor lookup and spherical face area;
+  neighbor refinement, ghost ranges, block allocation, MPI neighbor scans,
+  and diagnostics use the face/child counts represented by the compiled mesh.
+  The refinement-level guard now uses the usable bit width of `int`, and the
+  latest audit restricts global-spacing initialization to
+  `_MESH_DIMENSION_` entries instead of reading three values from a DIM1/DIM2
+  array.
+- `src/pic/parallel/init_send_halo.cpp`: all three halo constructors call
+  `findNeibNodeFace()`. This is an API-following change and cannot be omitted
+  when merging the method rename in `meshAMRgeneric.h`.
+- `src/pic/pic.h`: the particle tracker uses the common `cAmpsMesh` type rather
+  than a hard-coded `cMeshAMR3d` specialization. This is a type correction; it
+  does not change the particle data layout.
+- `src/pic/pic_block_send_mask.cpp`: `InitLayerBlockBasic()` and
+  `InitLayerBlock()` scan `2*DIM` faces and only the valid subface count for
+  that dimension. Previously DIM1 accessed faces and subfaces that do not
+  exist, causing the observed four-rank `SIGSEGV` during exchange-mask setup.
+- `src/pic/pic_mesh.cpp`: `PackBlockData_Internal()`,
+  `UnpackBlockData_Internal()`, `sendBoundaryLayerBlockData()`, and
+  `recvBoundaryLayerBlockData()` visit positive faces only along active axes.
+  The sender and receiver order remains identical. This fixed corruption when
+  a sampling break migrated DIM1 blocks between ranks.
+- `src/pic/pic_parallel.cpp`: buffered and unbuffered particle exchange use
+  the dimension-neutral `cAMRnodeID`. The latest changes zero inactive
+  components of three-vector work arrays, compute cell sizes only from node
+  coordinates that exist, and process only `2*_MESH_DIMENSION_` faces in
+  `ProcessCenterBlockBoundaryNodes()`. Physical vectors stay length three;
+  AMR bounds do not.
+- `src/pic/pic_mesh_search.cpp`: `ScanTree()` descends only through child axes
+  present in the AMR tree. `Init()` copies only active root bounds and gives
+  inactive hash coordinates safe fixed values. `FindBlock()` fixes inactive
+  hash indices at zero. These changes remove optimized DIM1/DIM2 reads past
+  node-bound and child-pointer arrays.
+- `src/meshAMR/meshAMRcutcell.cpp`:
+  `CutCell::CheckPointInsideDomain_default()` computes the escape-ray length
+  from only the domain extents stored by the mesh. Its ray and surface
+  geometry remain three-dimensional. This is an out-of-bounds correction, not
+  a conversion of cut-cell geometry to one dimension.
+- `src/pic/pic_field_line.cpp`: work arrays used for physical position,
+  magnetic field, and Sun direction remain three-component arrays even in a
+  reduced-dimensional mesh. The change prevents vector algebra from writing
+  beyond `DIM`-sized temporary arrays.
+- `src/pic/pic_mover.cpp`: body-of-rotation declarations are available to the
+  dimension-neutral boundary switch; three spherical rotations now use the
+  actual z component instead of duplicating y; the second-order spherical
+  block-intersection calculation uses `xInit` and `vMiddle` and declares its
+  selected face; and the latest cut-surface block-scale calculation reads only
+  active node-bound coordinates. The production radial path uses the
+  first-order spherical mover. The second-order path compiles but still needs
+  a dedicated runtime test before it is advertised as supported.
+
+#### Collision-dispatch core files from the latest audit
+
+These three files form one indivisible change:
+
+- `src/pic/picGlobalDefinitions.dfn` adds symbolic values for the existing
+  built-in molecular cross-section route and the cell-aware user-defined
+  route.
+- `src/pic/picGlobal.dfn` selects the built-in route by default, preserving
+  existing applications unless their generated input explicitly overrides the
+  mode.
+- `src/pic/pic_particle_collision_models.cpp` adds
+  `EvaluateCollisionCrossSection()` and routes all ten cross-section
+  evaluations in simplified/full NTC, MF, and MF-Yinsi through it. The
+  built-in branch continues to call
+  `MolecularModels::GetTotalCrossSection()`. The user branch calls
+  `ParticleCollisionModel::UserDefined::GetTotalCrossSection()` with both
+  velocities, both species, the block, and the center cell.
+
+The cell-aware branch is needed for laws such as Rubin's temperature-dependent
+H2O-H2O cross section. Before this change, the comet callback was compiled and
+linked but unreachable; NTC used the default `1 x 1` zero HS placeholder. The
+Halley input override, `CometPhysics.cpp`, and the DIM3 callback in `Comet.cpp`
+are application-side dependencies of this core change. A merge that retains
+only the core adapter or only the application callback is incomplete.
+
+#### Latest uncommitted core files
+
+At the time of this record, the following core files have working-tree changes
+after branch HEAD `5c01ecf`:
+
+```text
+src/meshAMR/meshAMRcutcell.cpp
+src/meshAMR/meshAMRgeneric.h
+src/pic/picGlobal.dfn
+src/pic/picGlobalDefinitions.dfn
+src/pic/pic_mesh_search.cpp
+src/pic/pic_mover.cpp
+src/pic/pic_parallel.cpp
+src/pic/pic_particle_collision_models.cpp
+```
+
+Do not expect a later merge of `1d_comet_dev` to include these changes until
+they have been committed on that branch.
+
+### Core merge procedure
+
+Before starting the merge, make the development branch clean and record the
+exact bases:
+
+```sh
+git switch 1d_comet_dev
+git status --short
+git rev-parse master
+git rev-parse HEAD
+git diff --name-status master...HEAD -- src/meshAMR src/pic src/models
+git diff --check
+```
+
+Commit the latest working-tree core fixes before switching branches. Keep the
+collision-dispatch trio in the same commit, and do not mix generated `build/`
+copies or run output into that commit. Once the branch is clean, merge it into
+an integration branch based on the then-current `master`; use that integration
+branch for conflict resolution and testing before updating `master`.
+
+Resolve and review the core in these dependency batches:
+
+1. **Reusable libraries:** add `ReactionNetwork.h`, `CollisionDatabase.h`,
+   their tests, and their READMEs. Run their standalone tests before any
+   application code is considered.
+2. **AMR API and geometry:** merge `meshAMRgeneric.h` together with
+   `parallel/init_send_halo.cpp` and `pic.h`. Search every caller after
+   resolving the `findNeibNodeFace()` rename. Preserve newer upstream AMR
+   behavior around the changed blocks rather than replacing the complete file
+   with the development-branch version.
+3. **MPI serialization and ownership:** merge `pic_block_send_mask.cpp`,
+   `pic_mesh.cpp`, and `pic_parallel.cpp`. Inspect sender and receiver loops as
+   a pair. A conflict resolution that changes only pack or only unpack can
+   compile and still corrupt a migrated block.
+4. **Reduced-dimensional bounds:** merge `meshAMRcutcell.cpp`,
+   `pic_mesh_search.cpp`, `pic_field_line.cpp`, and the dimension-bound parts
+   of `pic_mover.cpp`. Keep three-component loops for physical vectors and use
+   `_MESH_DIMENSION_` only for AMR coordinate/bound arrays. Replacing every
+   literal `3` mechanically would be incorrect.
+5. **Collision dispatch:** merge `picGlobalDefinitions.dfn`, `picGlobal.dfn`,
+   and `pic_particle_collision_models.cpp` together, followed by the comet
+   callback adapters and the Halley input override. Confirm that the default
+   remains the built-in route for applications that do not request a custom
+   law.
+
+Useful semantic checks after resolving conflicts are:
+
+```sh
+# Locate the old lookup spelling. The current tree has one commented example
+# in init_send_halo.cpp; no compiled call may remain after conflict resolution.
+rg '\bneibNodeFace\(' src
+
+# Sender and receiver paths must retain the same active-face ordering.
+rg -n 'PackBlockData_Internal|UnpackBlockData_Internal|sendBoundaryLayerBlockData|recvBoundaryLayerBlockData' \
+  src/pic/pic_mesh.cpp
+
+# All model-particle collision algorithms must use the common adapter.
+rg -n 'MolecularModels::GetTotalCrossSection|EvaluateCollisionCrossSection' \
+  src/pic/pic_particle_collision_models.cpp
+
+# Generated Halley configuration must end with the user-defined override.
+rg -n 'PARTICLE_COLLISION_MODEL__CROSS_SECTION' \
+  build/pic/picGlobal.dfn build/pic/picGlobalDefinitions.dfn
+```
+
+After conflict resolution, remove `build` before every configuration compile,
+as required for this application. Run the standalone reaction, collision, and
+radial-profile tests; then perform clean DIM1 and DIM3 builds. The current
+working tree has a clean optimized DIM1 build, but the latest uncommitted core
+round has not yet received a clean DIM3 regression build. Do not merge to
+`master` until that DIM3 build passes.
+
+The DIM1 MPI acceptance run must cross an output boundary and actual block
+redistribution, because a one-rank or pre-output run cannot exercise
+`pic_block_send_mask.cpp` and the pack/unpack changes. Separately verify that a
+user-defined collision case reaches its application callback. The present
+Halley diagnostic does reach the Rubin callback but then stops because the
+first collision step has no sampled H2O temperature; that expected physical
+input gap is not a collision-dispatch regression.
+
+Do not merge or commit `build/`, `PT*/`, `amps`, run logs, generated mesh and
+signature files, root-level parser/input copies, or generated application
+headers copied out of `build/main`. Regenerate those artifacts from the
+tracked input and source files after the merge.
 
 ### Generic comet application files
 
@@ -182,11 +449,11 @@ copies are listed separately below.
 | `srcHartley2/halley2011/PAPER_PARAMETERS.md` | new | Separates values stated by Rubin et al. from AMPS numerical choices and records equations and unresolved physics needed for a full paper reproduction. |
 | `srcHartley2/halley2011/derive_halley1d_controls.py` | new | Reproduces the Halley surface-resolution estimate, particle-count choice, and daughter characteristic speeds from the selected reactions and excess energies. |
 | `srcHartley2/visualization/plot_1d.py` | new | Plots named quantities from one or many DIM1 Tecplot files with aliases, radial filtering, explicit Y scaling, log-Y masking, filename legends, PNG/EPS output, and optional viewer launch. |
-| `srcHartley2/visualization/README.md` | new | Documents plotting aliases, CLI examples, output behavior, and handling of absent species on logarithmic plots. |
+| `srcHartley2/visualization/compare_rubin2011.py` | new | Selects a complete Halley output index and creates paper-ordered neutral-density panels, H2O radial velocity, PNG/EPS files, a combined PDF, a radius-sampled CSV table, and a JSON manifest. It does not synthesize the paper's NMS instrument response or unpublished curves. |
+| `srcHartley2/visualization/README.md` | new | Documents plotting aliases, CLI examples, output behavior, absent-species handling on logarithmic plots, and the Rubin comparison artifact set. |
 
-The Python bytecode file
-`srcHartley2/__pycache__/comet_shape_properties.cpython-38.pyc` is temporary,
-is covered by `.gitignore`, and must not be committed.
+No Python bytecode or temporary Python source is currently present under
+`srcHartley2`. Keep `__pycache__/` and `*.pyc` excluded from commits.
 
 ### Merge dependencies and conflict handling
 
@@ -213,7 +480,7 @@ one complete side of a conflict:
 - In `meshAMRgeneric.h`, retain new upstream AMR behavior while applying the
   dimension-aware loop bounds, DIM1 spherical geometry, integer-width check,
   and neighbor-lookup naming consistently. After resolution, search for stale
-  calls with `rg 'neibNodeFace\(' src` and inspect every result.
+  calls with `rg '\bneibNodeFace\(' src` and inspect every result.
 - In `pic_mesh.cpp`, pack, unpack, boundary-send, and boundary-receive paths
   must use the same `DIM`-bounded face order. A one-sided resolution can
   compile and still corrupt load-migration messages.
@@ -226,6 +493,11 @@ one complete side of a conflict:
   AMPS user collision callback for each dimension: `Comet.cpp` owns DIM3 and
   delegates to the adapter; `CometPhysics.cpp` owns DIM1 under its preprocessor
   guard.
+- Merge `picGlobalDefinitions.dfn`, `picGlobal.dfn`, and
+  `pic_particle_collision_models.cpp` as one collision-dispatch change. If the
+  mode constants or generated override are lost, a build can succeed while
+  silently reverting to the zero placeholder table. Verify the final generated
+  `build/pic/picGlobal.dfn` and run a callback-reaching diagnostic.
 - In `species.input`, compare names before merging blocks. Species ordering is
   an input-case choice, but generated chemistry indices always follow the
   selected `SpeciesList`; regenerate after any ordering change.
@@ -590,20 +862,25 @@ make -j8                         # DIM1 input selected
 mpirun -np 1 ./amps              # mesh-only Hartley 2 radial input
 
 rm -rf build
-make -j8                         # final halley1d.input: 500/10000, 5%, 3 windows
+make -j8 EXTRACOMPILEROPTIONS=-O3  # final halley1d.input: 500/10000, 5%, 3 windows
+
+rg 'PARTICLE_COLLISION_MODEL__CROSS_SECTION' \
+  build/pic/picGlobal.dfn build/pic/picGlobalDefinitions.dfn
 
 git diff --check
 ```
 
-The final clean Halley build generated `SamplingLength=500`,
+The final clean optimized Halley build generated `SamplingLength=500`,
 `MaxIterations=10000`, `ConvergenceTolerance=0.05`,
 `RequiredConvergedWindows=3`, and the 0.36 eV OH rate `3.0e-6 s^-1`; it linked
-successfully. The four-rank runtime verification completed one full reference
-window and the following migration, as described above; a run to convergence
-or the 10,000-iteration ceiling was not launched. The MPI compiler reports
-local socket warnings in the restricted environment; they do not prevent
-compilation or runtime. DIM3 retains legacy warnings for `register`, format
-widths, narrowing conversions, and fixed-buffer `sprintf` calls.
+successfully. Its generated cross-section macro selects the user-defined
+Rubin callback. A four-rank callback diagnostic then stopped at iteration 1
+because the first collision step has no sampled H2O translational temperature.
+The earlier multi-window output is invalid for physical comparison because it
+used the zero placeholder cross section. The MPI compiler reports local socket
+warnings in the restricted environment; they do not prevent compilation or
+runtime. DIM3 retains legacy warnings for `register`, format widths, narrowing
+conversions, and fixed-buffer `sprintf` calls.
 
 ## Remaining decisions for DIM1 science simulations
 
@@ -624,6 +901,7 @@ table for this run.
 For Halley, the paper fixes the parent sources, domain endpoints, and parent
 physics but leaves the input choices recorded in
 `halley2011/PAPER_PARAMETERS.md`. The physically blocking items are the
-daughter collision matrix and a validated DIM1 radiative cooling/internal-energy
-path. Paper-curve comparison also needs
+daughter collision matrix, an explicit initialization/evaluation rule for the
+temperature-dependent H2O collision law before cell sampling is available,
+and a validated DIM1 radiative cooling/internal-energy path. Paper-curve comparison also needs
 traceable source data or digitization with uncertainty.

@@ -14,6 +14,30 @@ double PIC::MolecularCollisions::ParticleCollisionModel::CollisionLimitingThreho
 //a user-defined function to accept a cell for modeling collisions
 PIC::MolecularCollisions::ParticleCollisionModel::fDoSimulateCellCollisions PIC::MolecularCollisions::ParticleCollisionModel::DoSimulateCellCollisions=NULL;
 
+namespace {
+
+// Route every collision algorithm through one cross-section adapter.  The
+// historical MolecularModels callback carries only species and velocities,
+// which is sufficient for HS/VHS/VSS laws.  Application databases can also
+// require cell state (for example, a temperature-dependent neutral law), so
+// the user-defined route preserves the block and cell already available to
+// NTC and MF instead of hiding them in mutable global state.
+inline double EvaluateCollisionCrossSection(int species0,double *velocity0,
+    int species1,double *velocity1,PIC::Mesh::cDataBlockAMR *block,
+    PIC::Mesh::cDataCenterNode *cell) {
+#if _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION_ == _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__USER_DEFINED_
+  return PIC::MolecularCollisions::ParticleCollisionModel::UserDefined::
+      GetTotalCrossSection(velocity0,velocity1,species0,species1,block,cell);
+#elif _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION_ == _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__HS_
+  return PIC::MolecularData::MolecularModels::GetTotalCrossSection(
+      species0,velocity0,species1,velocity1);
+#else
+#error Unknown model-particle collision cross-section mode
+#endif
+}
+
+} // namespace
+
 
 
 //request the sampling data
@@ -207,8 +231,8 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc_s
         int s1ptr = (int)(rnd()*nParticleNumber[s1]);
         
         double cr = Vector3D::Distance(s1List[s1ptr].v,s0List[s0ptr].v); 
-        double SigmaCr = cr * PIC::MolecularData::MolecularModels::GetTotalCrossSection(
-            s0, s0List[s0ptr].v, s1, s1List[s1ptr].v);
+        double SigmaCr = cr * EvaluateCollisionCrossSection(
+            s0,s0List[s0ptr].v,s1,s1List[s1ptr].v,block,cell);
         
         if (SigmaCr > SigmaCrMax) SigmaCrMax = SigmaCr;
       }
@@ -260,7 +284,8 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc_s
         cr = sqrt(cr);
 
         // Check if collision occurs
-        double SigmaCr = cr * PIC::MolecularData::MolecularModels::GetTotalCrossSection(s0, v0, s1, v1);
+        double SigmaCr = cr * EvaluateCollisionCrossSection(
+            s0,v0,s1,v1,block,cell);
         if (rnd() * SigmaCrMax >= SigmaCr) continue;
 
         //model the internal energy exchange
@@ -453,7 +478,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
           memcpy(v1,s1List[(int)(rnd()*nParticleNumber[s1])].vel,3*sizeof(double));
           cr=sqrt(pow(v1[0]-v0[0],2)+pow(v1[1]-v0[1],2)+pow(v1[2]-v0[2],2));
 
-          SigmaCr=cr*PIC::MolecularData::MolecularModels::GetTotalCrossSection(s0,v0,s1,v1);
+          SigmaCr=cr*EvaluateCollisionCrossSection(s0,v0,s1,v1,block,cell);
 
           if (SigmaCr>SigmaCrMax) SigmaCrMax=SigmaCr;
         }
@@ -514,7 +539,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
           }
 
           cr=sqrt(cr);
-          SigmaCr=cr*PIC::MolecularData::MolecularModels::GetTotalCrossSection(s0,v0,s1,v1);
+          SigmaCr=cr*EvaluateCollisionCrossSection(s0,v0,s1,v1,block,cell);
 
           if (rnd()*SigmaCrMax>=SigmaCr) continue;
 
@@ -792,7 +817,8 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_si
         int s1ptr = (int)(rnd()*nParticleNumber[s1]);
         
         double cr = Vector3D::Distance(s1List[s1ptr].v,s0List[s0ptr].v);
-        double SigmaCr = cr * PIC::MolecularData::MolecularModels::GetTotalCrossSection(s0, s0List[s0ptr].v, s1, s1List[s1ptr].v); 
+        double SigmaCr = cr * EvaluateCollisionCrossSection(
+            s0,s0List[s0ptr].v,s1,s1List[s1ptr].v,block,cell);
         
         SigmaCrMean += SigmaCr;
         if (SigmaCr > SigmaCrMax) SigmaCrMax = SigmaCr;
@@ -846,7 +872,8 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_si
         cr = sqrt(cr);
 
         // Check if collision occurs
-        double SigmaCr = cr * PIC::MolecularData::MolecularModels::GetTotalCrossSection(s0, v0, s1, v1);
+        double SigmaCr = cr * EvaluateCollisionCrossSection(
+            s0,v0,s1,v1,block,cell);
         if (rnd() * SigmaCrMax >= SigmaCr) continue;
 
 	//model the internal energy exchange
@@ -1047,7 +1074,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf(in
         memcpy(v1,s1List[(int)(rnd()*nParticleNumber[s1])].vel,3*sizeof(double));
         cr=sqrt(pow(v1[0]-v0[0],2)+pow(v1[1]-v0[1],2)+pow(v1[2]-v0[2],2));
 
-        SigmaCr=cr*PIC::MolecularData::MolecularModels::GetTotalCrossSection(s0,v0,s1,v1);
+        SigmaCr=cr*EvaluateCollisionCrossSection(s0,v0,s1,v1,block,cell);
 
         if (SigmaCr>SigmaCrMax) SigmaCrMax=SigmaCr;
           SigmaCrMean+=SigmaCr;
@@ -1113,7 +1140,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf(in
           }
 
           cr=sqrt(cr);
-          SigmaCr=cr*PIC::MolecularData::MolecularModels::GetTotalCrossSection(s0,v0,s1,v1);
+          SigmaCr=cr*EvaluateCollisionCrossSection(s0,v0,s1,v1,block,cell);
 
           if (rnd()*SigmaCrMax>=SigmaCr) continue;
 
@@ -1357,7 +1384,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yi
         memcpy(v1,s1List[(int)(rnd()*nParticleNumber[s1])].vel,3*sizeof(double));
         cr=sqrt(pow(v1[0]-v0[0],2)+pow(v1[1]-v0[1],2)+pow(v1[2]-v0[2],2));
 
-        SigmaCr=cr*PIC::MolecularData::MolecularModels::GetTotalCrossSection(s0,v0,s1,v1);
+        SigmaCr=cr*EvaluateCollisionCrossSection(s0,v0,s1,v1,block,cell);
 
         if (SigmaCr>SigmaCrMax) SigmaCrMax=SigmaCr;
           SigmaCrMean+=SigmaCr;
@@ -1441,7 +1468,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yi
           }
 
           cr=sqrt(cr);
-          SigmaCr=cr*PIC::MolecularData::MolecularModels::GetTotalCrossSection(s0,v0,s1,v1);
+          SigmaCr=cr*EvaluateCollisionCrossSection(s0,v0,s1,v1,block,cell);
 
           if (rnd()*SigmaCrMax>=SigmaCr) continue;
 
@@ -1524,4 +1551,3 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yi
   } //end simulation of collisons in a cell
 }
  
-
