@@ -7,7 +7,7 @@ ShapeModelFormat = nastran        # nastran (CTRIA3 surface of a NASTRAN file) |
 #ShapeModel     = /home/vtenishe/SPICE/Kernels/ROSETTA/esa_2022/dsk/ROS_CG_M001_OSPGDLR_N_V1.BDS   # 1.0M plates (ShapeModelFormat = dsk)
 #ShapeModel     = /home/vtenishe/SPICE/Kernels/ROSETTA/esa_2022/dsk/ROS_CG_M004_OSPGDLR_N_V1.BDS   # 4.0M plates (ShapeModelFormat = dsk)
 RequireClosedSurface = on         # stop if the surface has open/non-manifold edges
-ObservationFile = /home/vtenishe/ROS-END-OF-MISSION/AMPS/srcCG/RosinaMeasurements.h
+ObservationFile = /data001/highresolu_vt/AMPS/srcCG/RosinaMeasurements.h
 ReferenceDataUnit = mbar          # Pa | mbar; the srcCG table equals the archived COPS L2 values in mbar
                                   # (PDS ro-c-rosina-2-ext3-v2.0, mtp35/cops/bg, 2016-09-30)
 OutputDirectory = output_fit_base # relative to <AMPS>/cops_output (or COPS_OUTPUT_ROOT); paths inside LiouvilleCOPS are rejected
@@ -24,7 +24,7 @@ LastPoint  = 1149
 PointStep  = 1
 
 #---------------------------------------------------------------- SPICE
-KernelDirectory = /home/vtenishe/SPICE/Kernels/ROSETTA/esa_2022   # ESA SPICE server, set of ROS_OPS_V350_20220906_001.TM
+KernelDirectory = /home/vtenishev/SPICE/Kernels/ROSETTA/esa_2022
 Kernel = lsk/NAIF0011.TLS
 Kernel = pck/PCK00010.TPC
 Kernel = pck/ROS_CG_RAD_V10.TPC
