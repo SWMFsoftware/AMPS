@@ -17,9 +17,14 @@ extern int RequestedCellNumber;
 
 class cLogarithmicResolutionProfile {
  public:
+  // Construct the ideal N-cell sequence dr_i=dr_0*q^i whose widths sum to
+  // outerRadius-nucleusRadius.  q is solved numerically and must be >=1.
   bool Init(double nucleusRadius,double outerRadius,double surfaceResolution,
       int requestedCellNumber,const char **errorMessage=NULL);
 
+  // Return the target width of the ideal geometric cell containing radius.
+  // AMPS consumes this function as a local-resolution request and represents
+  // it with dyadic AMR blocks, so allocated cell count can exceed CellNumber.
   double GetResolution(double radius) const;
   double GetExpansionRatio() const {return ExpansionRatio;}
   double GetOuterResolution() const;
@@ -38,6 +43,8 @@ class cLogarithmicResolutionProfile {
 
 extern cLogarithmicResolutionProfile ResolutionProfile;
 
+// Validate parsed radial controls and initialize the global profile before
+// PIC::Mesh::mesh->init calls LocalResolution.
 void InitMeshProfile();
 double GetDomainOuterRadius();
 double LocalResolution(double *x);

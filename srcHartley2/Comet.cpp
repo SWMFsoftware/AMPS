@@ -12,6 +12,7 @@
 #include "pic.h"
 #include "Dust.h"
 #include "Comet.h"
+#include "CometPhysics.h"
 #include "SingleVariableDiscreteDistribution.h"
 
 //the object name and the names of the frames
@@ -1941,53 +1942,7 @@ void Comet::GetNucleusNastranInfo(cInternalNastranSurfaceData *CG) {
 }
 
 double PIC::MolecularCollisions::ParticleCollisionModel::UserDefined::GetTotalCrossSection(double *v0,double *v1,int s0,int s1,PIC::Mesh::cDataBlockAMR *block,PIC::Mesh::cDataCenterNode *cell) {
-  double T=cell->GetTranslationalTemperature(_H2O_SPEC_);
-
-  if (s0==_H2O_SPEC_ && s1==_H2O_SPEC_) return (T>1.0) ? 1.66E-19/pow(T/300.0,0.6) : 0.0;
-#if  _MULTISPECIES_ANALYTICAL_MODE_ == _MULTISPECIES_ANALYTICAL_MODE_ON_
-  else if ((s0==_H2O_SPEC_ && s1==_CO2_SPEC_) || (s0==_CO2_SPEC_ && s1==_H2O_SPEC_)) return 3.4E-19;
-  else if (s0==_CO2_SPEC_ && s1==_CO2_SPEC_) return 3.4E-19;
-  /*  else if ((s0==_H2O_SPEC_ && s1==_CO_SPEC_) || (s0==_CO_SPEC_ && s1==_H2O_SPEC_)) return 3.2E-19;
-  else if ((s0==_CO2_SPEC_ && s1==_CO_SPEC_) || (s0==_CO_SPEC_ && s1==_CO2_SPEC_)) return 3.2E-19;
-    else if (s0==_CO_SPEC_ && s1==_CO_SPEC_) return 3.2E-19;
-  */
-#if _PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
-  //  else if ((s0==_H2O_SPEC_ && s1==_OH_SPEC_) || (s1==_H2O_SPEC_ && s0==_OH_SPEC_)) return 3.2E-19;
-  //else if ((s0==_CO2_SPEC_ && s1==_OH_SPEC_) || (s1==_CO2_SPEC_ && s0==_OH_SPEC_)) return 3.2E-19;
-
-  /* //else if (s0==_OH_SPEC_ && s1==_CO_SPEC_) return 3.0E-19;
-  //else if (s0==_H2_SPEC_ && s1==_CO_SPEC_) return 3.0E-19;
-  //else if (s0==_H_SPEC_ && s1==_CO_SPEC_) return 1.5E-19;
-  //else if (s0==_O_SPEC_ && s1==_CO_SPEC_) return 1.5E-19;
-
-
-  else if ((s0==_H2O_SPEC_ && s1==_H2_SPEC_) || (s0==_H2_SPEC_ && s1==_H2O_SPEC_)) return 3.2E-19;
-  else if ((s0==_H2O_SPEC_ && s1==_H_SPEC_) || (s0==_H_SPEC_ && s1==_H2O_SPEC_)) return 1.8E-19;
-  else if ((s0==_H2O_SPEC_ && s1==_O_SPEC_) || (s0==_O_SPEC_ && s1==_H2O_SPEC_)) return 1.8E-19;
-  else if (s0==_OH_SPEC_ && s1==_OH_SPEC_) return 3.0E-19;
-  else if ((s0==_OH_SPEC_ && s1==_H2_SPEC_) || (s0==_H2_SPEC_ && s1==_OH_SPEC_)) return 3.0E-19;
-  else if ((s0==_OH_SPEC_ && s1==_H_SPEC_) || (s0==_H_SPEC_ && s1==_OH_SPEC_)) return 1.5E-19;
-  else if ((s0==_OH_SPEC_ && s1==_O_SPEC_) || (s0==_O_SPEC_ && s1==_OH_SPEC_)) return 1.5E-19;
-  else if (s0==_H2_SPEC_ && s1==_H2_SPEC_) return 3.0E-19;
-  else if ((s0==_H2_SPEC_ && s1==_H_SPEC_) || (s0==_H_SPEC_ && s1==_H2_SPEC_)) return 1.5E-19;
-  else if ((s0==_H2_SPEC_ && s1==_O_SPEC_) || (s0==_O_SPEC_ && s1==_H2_SPEC_)) return 1.5E-19;
-  else if (s0==_H_SPEC_ && s1==_H_SPEC_) return 1.2E-19;
-  else if ((s0==_H_SPEC_ && s1==_O_SPEC_) || (s0==_O_SPEC_ && s1==_H_SPEC_)) return 1.2E-19;
-  else if (s0==_O_SPEC_ && s1==_O_SPEC_) return 1.2E-19;
-
-  else if ((s0==_H2O_SPEC_ && s1==_O2_SPEC_) || (s0==_O2_SPEC_ && s1==_H2O_SPEC_)) return 3.2E-19;
-  else if ((s0==_CO2_SPEC_ && s1==_O2_SPEC_) || (s0==_O2_SPEC_ && s1==_CO2_SPEC_)) return 3.2E-19;
-  else if (s0==_O2_SPEC_ && s1==_O2_SPEC_) return 3.2E-19;
-  else if ((s0==_OH_SPEC_ && s1==_O2_SPEC_) || (s0==_O2_SPEC_ && s1==_OH_SPEC_)) return 3.0E-19;
-  else if ((s0==_H2_SPEC_ && s1==_O2_SPEC_) || (s0==_O2_SPEC_ && s1==_H2_SPEC_)) return 3.0E-19;
-  else if ((s0==_H_SPEC_ && s1==_O2_SPEC_) || (s0==_O2_SPEC_ && s1==_H_SPEC_)) return 1.5E-19;
-  else if ((s0==_O_SPEC_ && s1==_O2_SPEC_) || (s0==_O2_SPEC_ && s1==_O_SPEC_)) return 1.5E-19;
-  //  else if ((s0==_CO_SPEC_ && s1==_O2_SPEC_) || (s0==_O2_SPEC_ && s1==_CO_SPEC_)) return 3.2E-19;
-  */
-#endif
-
-#endif
-else return 0.0;
+  return Comet::Physics::GetNeutralCrossSection(v0,v1,s0,s1,block,cell);
 }
 
 unsigned int Comet::GetParticleSurfaceElement(PIC::ParticleBuffer::byte *ParticleDataStart) {
@@ -2378,4 +2333,3 @@ void Comet::Sampling::OutputDiagnosticMessage(CMPI_channel* pipe,long int nExcha
 
   DustMassEscapeRate=0.0;
 }
-

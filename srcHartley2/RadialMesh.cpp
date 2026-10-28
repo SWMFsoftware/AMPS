@@ -58,15 +58,15 @@ void Comet::RadialModel::PrintMeshDiagnostics() {
   if (PIC::ThisThread!=0) return;
 
   const double outerRadius=ResolutionProfile.GetOuterRadius();
-  std::printf("$PREFIX: Hartley2 radial mesh: nucleus radius=%e m, outer radius=%e m\n",
+  std::printf("$PREFIX: comet radial mesh: nucleus radius=%e m, outer radius=%e m\n",
       NucleusRadius,outerRadius);
-  std::printf("$PREFIX: Hartley2 radial mesh: radial extent=%e m\n",
+  std::printf("$PREFIX: comet radial mesh: radial extent=%e m\n",
       outerRadius-NucleusRadius);
-  std::printf("$PREFIX: Hartley2 radial mesh: requested surface resolution=%e m, ideal outer-cell resolution=%e m\n",
+  std::printf("$PREFIX: comet radial mesh: requested surface resolution=%e m, ideal outer-cell resolution=%e m\n",
       SurfaceResolution,ResolutionProfile.GetOuterResolution());
-  std::printf("$PREFIX: Hartley2 radial mesh: geometric cell-width ratio=%.12e\n",
+  std::printf("$PREFIX: comet radial mesh: geometric cell-width ratio=%.12e\n",
       ResolutionProfile.GetExpansionRatio());
-  std::printf("$PREFIX: Hartley2 radial mesh: requested ideal cells=%d, allocated dyadic AMR cells=%ld\n",
+  std::printf("$PREFIX: comet radial mesh: requested ideal cells=%d, allocated dyadic AMR cells=%ld\n",
       RequestedCellNumber,
       CountAllocatedRadialCells());
 }

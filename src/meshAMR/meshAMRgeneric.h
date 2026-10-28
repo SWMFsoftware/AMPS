@@ -4497,7 +4497,11 @@ void AllocateBlock(cTreeNodeAMR<cBlockAMR> *startNode) {
   };
 
 
-  for (int iface=0;iface<6;iface++) {
+  // A node stores two faces per active coordinate.  The old hard-coded six
+  // face loop indexed past the two-entry DIM1 neibNodeFace array while blocks
+  // were being allocated, producing an invalid neighbor pointer.  Limit the
+  // search to faces that exist in the compiled mesh dimension.
+  for (int iface=0;iface<2*_MESH_DIMENSION_;iface++) {
     cTreeNodeAMR<cBlockAMR> *Neib=startNode->GetNeibFace(iface,0,0,this);
 
     if (Neib==NULL) continue;
@@ -7213,8 +7217,12 @@ if (CallsCounter==83) {
       dx[idim]=xGlobalMax[idim]-xGlobalMin[idim];
     }
 
-    if (1<<sizeof(int)<=_MAX_REFINMENT_LEVEL_) {
-      exit(__LINE__,__FILE__,"Size of int is not sufficient to feep the AMR tree with the number of refingments as in _MAX_REFINMENT_LEVEL_ -> _MAX_REFINMENT_LEVEL_ should be reduced");
+    // Refinement indices use expressions of the form 1 << level.  Compare the
+    // requested level with the number of usable bits in a signed int; the old
+    // 1 << sizeof(int) test treated the byte count as a bit count and rejected
+    // every level >= 16 on platforms with a four-byte int.
+    if (_MAX_REFINMENT_LEVEL_>=8*int(sizeof(int))-1) {
+      exit(__LINE__,__FILE__,"Size of int is not sufficient to keep the AMR tree with the number of refinements in _MAX_REFINMENT_LEVEL_; reduce _MAX_REFINMENT_LEVEL_");
     }
 
 

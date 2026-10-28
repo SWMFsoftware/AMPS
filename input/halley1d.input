@@ -1,0 +1,149 @@
+! Gas-only input for the spherically symmetric Comet 1P/Halley model in
+! Rubin et al., Icarus 213 (2011) 655--677.
+!
+! Paper values and derived numerical controls are distinguished in comments
+! and in srcHartley2/halley2011/PAPER_PARAMETERS.md.  Remaining angle-bracket
+! fields require an explicit case choice and intentionally stop preprocessing.
+
+#main
+
+SpeciesList=H,H2,C,CH,CH2,N,CH3,NH,CH4,NH2,O,NH3,OH,H2O,C2,C2H,C2H2,CN,HCN,C2H4,CO,C2H5,HCO,C2H6,H2CO,CH3OH,CO2
+
+makefile SOURCES=src
+makefile RUNDIR=run
+
+! srcHartley2 is the historical directory name of the generic comet app.
+ProjectSourceDirectory=srcHartley2
+WorkingSourceDirectory=build
+SourceDirectory=src
+
+Prefix=AMPS
+DiagnosticStream=screen
+! AMPS creates this path relative to the directory from which the executable
+! is launched. A run started in the repository root therefore writes to
+! /data/vtenishe/COMET1D/AMPS/PT/plots.
+OutputDirectory=PT/plots
+StdoutErrorLog=on
+DebuggerMode=off
+ForceRepeatableSimulationPath=on
+
+TimeStepMode=SpeciesLocalTimeStep
+! Local species weights scale with the local timestep. This keeps the model
+! population per logarithmic cell approximately uniform across the domain.
+ParticleWeightMode=SpeciesLocalParticleWeight
+! Reaction products change species and therefore require individual weight
+! correction to preserve the physical weight of one dissociation event.
+ParticleWeightCorrectionMode=on
+CouplerMode=off
+
+#endmain
+
+#include species.input
+
+#General
+  ! Sixteen injection events per parent timestep give an estimated minimum of
+  ! 52.45 model particles in the first cell (CH4 is the limiting parent).
+  ReferenceInjectionParticleNumber=16
+  ! Rubin et al. report several 10^6 model particles. This five-million-slot
+  ! starting capacity must be monitored during the convergence run.
+  RequestedParticleBufferLength=5000000
+  MaxMeshRefinmentLevel=29
+  EnforceRequestedMeshResolution=on
+  BlockCells=8,1,1
+  GhostCells=2,0,0
+  NastranSurfaceUserData=off
+
+  ! Rubin et al. use hard-sphere neutral collisions with 4*pi scattering.
+  define _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION_ _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__USER_DEFINED_
+  define _PIC__PARTICLE_COLLISION_MODEL__MODE_ _PIC_MODE_ON_
+#endGeneral
+
+#block ../hartley2.pl
+
+  Dimension=1
+  Geometry=Spherical
+  HeliocentricDistanceAU=0.90
+
+  ! Parent rates are Table 2 abundances multiplied by Q(H2O)=7.0e29 s^-1.
+  ! The spherical paper case uses a uniform source, T=180 K, and zero initial
+  ! bulk speed at the top of the Knudsen layer.
+  SurfaceSource=H2O   | UNIFORM | 7.00e29 | 180.0 | 0.0
+  SurfaceSource=CO    | UNIFORM | 9.10e28 | 180.0 | 0.0
+  SurfaceSource=CO2   | UNIFORM | 1.75e28 | 180.0 | 0.0
+  SurfaceSource=CH3OH | UNIFORM | 1.19e28 | 180.0 | 0.0
+  SurfaceSource=H2CO  | UNIFORM | 1.05e28 | 180.0 | 0.0
+  SurfaceSource=NH3   | UNIFORM | 1.05e28 | 180.0 | 0.0
+  SurfaceSource=CH4   | UNIFORM | 4.20e27 | 180.0 | 0.0
+  SurfaceSource=C2H6  | UNIFORM | 2.80e27 | 180.0 | 0.0
+  SurfaceSource=C2H4  | UNIFORM | 2.10e27 | 180.0 | 0.0
+  SurfaceSource=C2H2  | UNIFORM | 2.10e27 | 180.0 | 0.0
+  SurfaceSource=HCN   | UNIFORM | 1.40e27 | 180.0 | 0.0
+
+  ! Table 4 is loaded through a named physics database. The paper prints an
+  ! interval for the ground-state OH branch and studies both states of the
+  ! methanol-to-formaldehyde branch, so each run must select them explicitly.
+  PhysicsDatabase=Rubin2011
+  Rubin2011OHGroundRate=3.0e-6
+  Rubin2011MethanolH2COBranch=OFF
+  ChemistryMode=on
+
+  ! Rubin et al. place the inner boundary at a 6 km cometocentric radius and
+  ! the outer boundary at 10^6 km cometocentric radius.
+  NucleusRadius=6000.0
+  DomainOuterRadius=1.0e9
+  RadialCellNumber=2000
+  ! Derived from the outgoing parent density and the H2O-parent Table 3
+  ! cross sections; this is a resolution estimate rather than a paper value.
+  NucleusSurfaceResolution=0.3293692849882
+
+  RadialSimulationMode=on
+  RadialCourantNumber=0.5
+  RadialInnerBoundaryTemperature=180.0
+  ! Convergence is evaluated only at complete 500-iteration sampling windows;
+  ! 10,000 iterations is the unconditional safety ceiling.
+  RadialSamplingLength=500
+  RadialMaxIterations=10000
+  ! Require every compiled species' volume-weighted radial density profile to
+  ! change by no more than 5% for three consecutive window-to-window
+  ! comparisons. The first complete window supplies only the reference.
+  RadialConvergenceTolerance=0.05
+  RadialConvergenceWindows=3
+
+  ! Direct parents begin with the supplied 400 m/s characteristic speed.
+  ! Daughter recoil bounds are propagated through Table 4 using its excess
+  ! energies and momentum conservation. A directly injected species can have
+  ! a larger final bound when another parent also produces it as a daughter.
+  RadialCharacteristicSpeed=H     | 56997
+  RadialCharacteristicSpeed=H2    | 28869
+  RadialCharacteristicSpeed=C     | 13269
+  RadialCharacteristicSpeed=CH    | 12523
+  RadialCharacteristicSpeed=CH2   | 10463
+  RadialCharacteristicSpeed=N     | 8284
+  RadialCharacteristicSpeed=CH3   | 8546
+  RadialCharacteristicSpeed=NH    | 3799
+  RadialCharacteristicSpeed=CH4   | 6260
+  RadialCharacteristicSpeed=NH2   | 1531
+  RadialCharacteristicSpeed=O     | 7349
+  RadialCharacteristicSpeed=NH3   | 400
+  RadialCharacteristicSpeed=OH    | 5558
+  RadialCharacteristicSpeed=H2O   | 400
+  RadialCharacteristicSpeed=C2    | 6670
+  RadialCharacteristicSpeed=C2H   | 5687
+  RadialCharacteristicSpeed=C2H2  | 4713
+  RadialCharacteristicSpeed=CN    | 1423
+  RadialCharacteristicSpeed=HCN   | 400
+  RadialCharacteristicSpeed=C2H4  | 2900
+  RadialCharacteristicSpeed=CO    | 3683
+  RadialCharacteristicSpeed=C2H5  | 1629
+  RadialCharacteristicSpeed=HCO   | 695
+  RadialCharacteristicSpeed=C2H6  | 400
+  RadialCharacteristicSpeed=H2CO  | 400
+  RadialCharacteristicSpeed=CH3OH | 400
+  RadialCharacteristicSpeed=CO2   | 400
+
+  ! Dust and extended sources are outside this gas-only Halley case.
+  DustMode=off
+
+#endblock
+
+#end

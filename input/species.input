@@ -113,6 +113,86 @@
   mass=1.993E-26
   charge=0
 
+! Neutral species needed by the Rubin et al. (2011) Halley network. The
+! integer masses reproduce the nominal mass channels in that paper's Table 1;
+! all are neutral ground-species containers. Electronic product states in
+! Table 4 are represented through reaction excess energy, not extra species.
+#component=CH
+  mass=13*_AMU_
+  charge=0
+
+#component=CH2
+  mass=14*_AMU_
+  charge=0
+
+#component=N
+  mass=14*_AMU_
+  charge=0
+
+#component=CH3
+  mass=15*_AMU_
+  charge=0
+
+#component=NH
+  mass=15*_AMU_
+  charge=0
+
+#component=NH2
+  mass=16*_AMU_
+  charge=0
+
+#component=NH3
+  mass=17*_AMU_
+  charge=0
+
+#component=C2
+  mass=24*_AMU_
+  charge=0
+
+#component=C2H
+  mass=25*_AMU_
+  charge=0
+
+#component=C2H2
+  mass=26*_AMU_
+  charge=0
+
+#component=CN
+  mass=26*_AMU_
+  charge=0
+
+#component=HCN
+  mass=27*_AMU_
+  charge=0
+
+#component=C2H4
+  mass=28*_AMU_
+  charge=0
+
+#component=CO
+  mass=28*_AMU_
+  charge=0
+
+#component=C2H5
+  mass=29*_AMU_
+  charge=0
+
+#component=HCO
+  mass=29*_AMU_
+  charge=0
+
+#component=C2H6
+  mass=30*_AMU_
+  charge=0
+
+#component=H2CO
+  mass=30*_AMU_
+  charge=0
+
+#component=CH3OH
+  mass=32*_AMU_
+  charge=0
+
 #component=H_PLUS
   mass=1.0*_AMU_
   charge=1.0

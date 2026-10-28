@@ -1,6 +1,6 @@
 #main
 
-SpeciesList=H2O
+SpeciesList=H2O,CO2
 
 makefile SOURCES=src
 makefile RUNDIR=run
@@ -11,7 +11,7 @@ SourceDirectory=src
 
 Prefix=AMPS
 DiagnosticStream=screen
-OutputDirectory=output/Hartley2-radial
+OutputDirectory=output/Hartley2-Shou2025-radial
 StdoutErrorLog=on
 DebuggerMode=off
 ForceRepeatableSimulationPath=on
@@ -26,7 +26,9 @@ CouplerMode=off
 #include species.input
 
 #General
-  MaxMeshRefinmentLevel=12
+  ! 10,000 km / (8 cells per root block) / 2^21 = 0.596 m,
+  ! the first level capable of enforcing the 1 m surface target.
+  MaxMeshRefinmentLevel=21
   EnforceRequestedMeshResolution=on
   BlockCells=8,1,1
   GhostCells=2,0,0
@@ -36,13 +38,32 @@ CouplerMode=off
 #block ../hartley2.pl
 
   Dimension=1
+  Geometry=Spherical
+  HeliocentricDistanceAU=1.06
+  RadialSimulationMode=off
+  ChemistryMode=off
+  DustMode=off
 
-  ! SI units. These are mesh-validation values; replace them with run values.
-  NucleusRadius=500.0
-  DomainRadialExtent=9500.0
-  ! DomainOuterRadius=10000.0  ! alternative to DomainRadialExtent
-  RadialCellNumber=50
-  NucleusSurfaceResolution=50.0
+  ! Direct nucleus rates reported by Shou et al. (2025). Spherical symmetry
+  ! makes each total rate uniform over the area-equivalent sphere. The
+  ! temperatures preserve the source-weighted thermal energy of the paper's
+  ! 1.29-AU solar-angle profile with a_night=0.1 (H2O) and 0.3 (CO2).
+  ! The zero drift reproduces the upward half-Maxwellian used by the existing
+  ! Hartley2 DSMC injector. Dust and extended gas sources are omitted.
+  SurfaceSource=H2O | UNIFORM | 2.0e27 | 188.350171377 | 0.0
+  SurfaceSource=CO2 | UNIFORM | 3.5e26 | 182.852991011 | 0.0
+
+  ! Area-equivalent radius calculated from input/hartley2.shape.nas.gz.
+  NucleusRadius=645.921714366
+
+  ! Science domain supplied for this case: 10,000 km above the surface and
+  ! 1,000 cells in the ideal logarithmic profile. The 1 m surface target is
+  ! the estimated hard-sphere mean free path for the direct H2O/CO2 mixture;
+  ! see shou2025_spherical_parameters.py and STATUS.md for its provenance.
+  DomainRadialExtent=1.0e7
+  ! DomainOuterRadius=10000645.921714366  ! alternative convention
+  RadialCellNumber=1000
+  NucleusSurfaceResolution=1.0
 
 #endblock
 

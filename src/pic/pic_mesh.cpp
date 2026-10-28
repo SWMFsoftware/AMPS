@@ -834,7 +834,10 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
       int iface,iFaceTable[3]={1,3,5};
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *NeibNode,*ThisNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*) Node;
 
-      if (nCornerNodeStateVectorIntervals!=0) for (int i=0;i<3;i++) {
+      // Only positive faces of active coordinates exist. In DIM1/DIM2,
+      // visiting the remaining entries would index beyond neibNodeFace while
+      // computing a migrated block's packed-data size.
+      if (nCornerNodeStateVectorIntervals!=0) for (int i=0;i<DIM;i++) {
         iface=iFaceTable[i];
 
         bool flag=false;
@@ -1088,7 +1091,9 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
       int iface,iFaceTable[3]={1,3,5};
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *NeibNode,*ThisNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*) Node;
 
-      if (nCornerNodeStateVectorIntervals!=0) for (int i=0;i<3;i++) {
+      // Match the dimension-aware pack layout above exactly so sender and
+      // receiver calculate the same serialized block length.
+      if (nCornerNodeStateVectorIntervals!=0) for (int i=0;i<DIM;i++) {
         iface=iFaceTable[i];
 
         if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
@@ -1260,7 +1265,10 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
   int iface,iFaceTable[3]={1,3,5};
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *NeibNode,*ThisNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*) Node;
 
-  for (int i=0;i<3;i++) {
+  // A block has a positive boundary face only for each active coordinate.
+  // Limiting this loop to DIM keeps migration size calculation valid in
+  // lower-dimensional meshes.
+  for (int i=0;i<DIM;i++) {
     iface=iFaceTable[i];
 
     bool flag=false; 
@@ -1500,7 +1508,8 @@ int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int 
   int iface,iFaceTable[3]={1,3,5};
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *NeibNode,*ThisNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*) Node;
 
-  for (int i=0;i<3;i++) {
+  // Preserve the same dimension-dependent ordering used by the send path.
+  for (int i=0;i<DIM;i++) {
     iface=iFaceTable[i];
 
     if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
@@ -2126,7 +2135,6 @@ void PIC::Mesh::GPU::CopyMeshHost2Device() {
   }
 }
 #endif
-
 
 
 

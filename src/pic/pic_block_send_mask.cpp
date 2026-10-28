@@ -58,7 +58,10 @@ void PIC::Mesh::BlockElementSendMask::InitLayerBlockBasic(cTreeNodeAMR<cDataBloc
   //Loop through the "right" boundary of the block
   int iface,iFaceTable[3]={1,3,5};
 
-   for (int ipass=0;ipass<3;ipass++) {
+   // iFaceTable contains the positive face for x, y, and z. Only the first
+   // DIM entries exist in a lower-dimensional mesh; querying the remaining
+   // entries indexes beyond cTreeNodeAMR::neibNodeFace in DIM1/DIM2.
+   for (int ipass=0;ipass<DIM;ipass++) {
     iface=iFaceTable[ipass];
 
     if ((neibNode=Node->GetNeibFace(iface,0,0,mesh))!=NULL) if (neibNode->RefinmentLevel<Node->RefinmentLevel) {
@@ -110,9 +113,17 @@ void PIC::Mesh::BlockElementSendMask::InitLayerBlock(cTreeNodeAMR<cDataBlockAMR>
   bool LowResolutionNeibCorner[8]={false,false,false,false, false,false,false,false};
 
   //1. Set the CenterNode send mask
-  //1.1 Loop through faces
-  for (iface=0;iface<6;iface++) {
-    for (i=0,flag=false;(i<2)&&(flag==false);i++) for (j=0;(j<2)&&(flag==false);j++) if ((neibNode=Node->GetNeibFace(iface,i,j,mesh))!=NULL) if (neibNode->Thread==To) {
+  //1.1 Loop through faces. A DIM-dimensional AMR node has two faces per
+  // active coordinate. A face has no transverse subdivision in DIM1, two
+  // slots in DIM2, and four slots in DIM3. These bounds must agree with the
+  // storage layout used by cTreeNodeAMR::GetNeibFace(); the former fixed
+  // 6-by-2-by-2 scan read beyond the DIM1 and DIM2 neighbor arrays.
+  constexpr int nFaces=2*DIM;
+  constexpr int nFaceSlotsI=(DIM>=2) ? 2 : 1;
+  constexpr int nFaceSlotsJ=(DIM>=3) ? 2 : 1;
+
+  for (iface=0;iface<nFaces;iface++) {
+    for (i=0,flag=false;(i<nFaceSlotsI)&&(flag==false);i++) for (j=0;(j<nFaceSlotsJ)&&(flag==false);j++) if ((neibNode=Node->GetNeibFace(iface,i,j,mesh))!=NULL) if (neibNode->Thread==To) {
       flag=true;
       if (Node->RefinmentLevel>neibNode->RefinmentLevel) LowResolutionNeibFace[iface]=true;
       neib_found=true;
@@ -503,7 +514,6 @@ void PIC::Mesh::BlockElementSendMask::InitLayerBlock(cTreeNodeAMR<cDataBlockAMR>
 
 
 }
-
 
 
 

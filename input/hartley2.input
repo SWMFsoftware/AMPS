@@ -146,6 +146,21 @@ UserDefinedSurfaceTriangulationData::mode=on,class=cSurfaceDataCG,header=Surface
 
 #block ../hartley2.pl !process settings of the moon module
 
+  Dimension=3
+  Geometry=Triangulated
+  HeliocentricDistanceAU=1.06
+  SurfaceMeshFile=hartley2.shape.nas, KM
+  ChemistryMode=off
+
+  ! Preserve the neutral collision laws formerly hard-coded in Comet.cpp as
+  ! explicit Hartley 2 case data. The H2O law and its 50--300 K validity range
+  ! are Crifo (1989), as also quoted by Rubin et al. (2011), Table 3. The CO2
+  ! values are the constants used by the historical Hartley 2 implementation.
+  PhysicsDatabase=none
+  NeutralCollision=H2O | H2O | TEMPERATURE_POWER | 1.66e-19 | 300.0 | -0.6 | 50.0 | 300.0 | Crifo (1989)
+  NeutralCollision=H2O | CO2 | CONSTANT | 3.4e-19 | historical Hartley2 Comet.cpp
+  NeutralCollision=CO2 | CO2 | CONSTANT | 3.4e-19 | historical Hartley2 Comet.cpp
+
   define _NUCLEUS_SHAPE__MODE_  _SHAP5_
 
   Gravity3D=off !on,off

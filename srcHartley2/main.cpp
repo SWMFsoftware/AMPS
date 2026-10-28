@@ -35,6 +35,7 @@
 #include "meshAMRcutcell.h"
 #include "cCutBlockSet.h"
 #include "Comet.h"
+#include "CometModel.h"
 #include "Exosphere.h"
 
 
@@ -561,7 +562,9 @@ int main(int argc,char **argv) {
   //  CutCell::ReadNastranSurfaceMeshLongFormat("CG2.bdf",xmin,xmax,1.0E-8);
 
 
-  PIC::Mesh::IrregularSurface::ReadNastranSurfaceMeshLongFormat_km("hartley2.shape.nas",PIC::UserModelInputDataPath); //hartley2_2012_cart.nas
+  PIC::Mesh::IrregularSurface::ReadNastranSurfaceMeshLongFormat(
+      Comet::Model::SurfaceMeshFileName,PIC::UserModelInputDataPath,
+      Comet::Model::SurfaceMeshLengthUnit);
 
   //PIC::Mesh::IrregularSurface::ReadNastranSurfaceMeshLongFormat("cg.Sphere.nas");
   PIC::Mesh::IrregularSurface::GetSurfaceSizeLimits(xmin,xmax);
