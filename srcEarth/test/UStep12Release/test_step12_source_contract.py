@@ -29,7 +29,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SRC_EARTH = HERE.parents[1]
-APPROVED_NORMALIZED_LIST_SHA256 = "2cf62089f3c9851cf1e961f109770f53ccd564f201c2505a508ded6774e0ac93"
+APPROVED_NORMALIZED_LIST_SHA256 = "83d3ee94491f0ac191c7950788d98a2e587f4679c2b0d0165275afccae81fa37"
 STEP12_COMMAND = "P srcEarth/test/UStep12Release/run_test.sh"
 COMMIT_RE = r"[0-9a-f]{40}"
 # Looped list entries are rewritten by test_runner.py as a brace-delimited
@@ -195,20 +195,24 @@ class Step12SourceContract(unittest.TestCase):
                          if "test/SA01/run_SA01.py" in line]
         sa02_commands = [line for line in active_commands
                          if "test/SA02/run_SA02.py" in line]
+        sa03_commands = [line for line in active_commands
+                         if "test/SA03/run_SA03.py" in line]
         self.assertTrue(c9_commands)
         self.assertTrue(c10_commands)
         self.assertTrue(all("--amps ./amps" in line for line in c9_commands + c10_commands))
         self.assertTrue(all("--output-root test_output/" in line for line in c10_commands))
 
-        # Both observational QUICK campaigns are reviewed, exclusive, end-to-end
-        # workflow gates. WORKFLOW exit handling cannot replace or retune scientific
+        # Each observational QUICK campaign is a reviewed, exclusive, end-to-end
+        # workflow gate. WORKFLOW exit handling cannot replace or retune scientific
         # qualification: each case runner records that result independently. Freeze
         # the profile, physical solver, case-specific evidence parent, and plot
         # formats. Exclusivity remains a scheduler directive immediately before each
         # command, leaving the exact registered payload independently executable.
         self.assertEqual(len(sa01_commands), 1)
         self.assertEqual(len(sa02_commands), 1)
-        for case, commands in (("SA01", sa01_commands), ("SA02", sa02_commands)):
+        self.assertEqual(len(sa03_commands), 1)
+        for case, commands in (("SA01", sa01_commands), ("SA02", sa02_commands),
+                               ("SA03", sa03_commands)):
             command = commands[0]
             for token in (
                 "--profile QUICK", "--solver GRIDDED", "--amps ./amps",

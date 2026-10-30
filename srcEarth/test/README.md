@@ -311,10 +311,11 @@ capabilities, and mutated restart inputs must fail.
 
 The companion source audit checks manifest and Tecplot identity wiring, `-h` release
 commands and limitations, complete documentation/templates, and registration in
-`test/list`. It compares the normalized list with a reviewed structural SHA-256, so
-adding either physical QUICK workflow requires an explicit digest advance and
-case-specific command assertions; runner-owned `last pass:` hashes remain the only
-normalized values. The manufactured
+`test/list`. It compares the normalized list with a reviewed structural SHA-256:
+runner-owned `last pass:` hashes are the only normalized values, so every other edit
+of `test/list`, comments included, requires an explicit digest advance in the same
+commit, and adding or enabling a physical QUICK workflow also requires case-specific
+command assertions. The manufactured
 suite validates the evaluator only; a release PASS still requires actual linked and
 observation evidence listed in `UStep12Release/README.md`.
 

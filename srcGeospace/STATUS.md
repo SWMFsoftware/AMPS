@@ -1,11 +1,11 @@
 # srcGeospace status
 
-As of **2026-10-27 21:15 CDT**.  Repository `/data/vtenishe/GEO/AMPS`; builds and test
+As of **2026-10-28 00:56 CDT**.  Repository `/data/vtenishe/GEO/AMPS`; builds and test
 results outside this tree in `/data/vtenishe/GEO/AMPS_runs/srcGeospace` (below `$RUNS`).
 
 This file describes the current state.  The GPU work (parked 2026-10-27) is documented in
 [GPU_STATUS.md](GPU_STATUS.md).  The history, the reasoning behind each decision and the
-session log are in [handoff.md](handoff.md) (sections 10 and 11 cover 2026-10-26/27); the
+session log are in [handoff.md](handoff.md) (sections 10 to 13 cover 2026-10-26 to 28); the
 design and build references are in [doc/](doc/README.md).
 
 ---------------------------------------------------------------------------------------
@@ -43,20 +43,22 @@ design and build references are in [doc/](doc/README.md).
   only what srcEarth does not have; its end-to-end tests are srcEarth's tests, run with
   srcEarth's runner (`test/tools/run_srcearth_tests.sh`).
 * **Committed and pushed by the user**: srcGeospace in its reduced layout (`d6b0909`, the
-  amended `465b15b`, 20:16) and the srcEarth tuning (`b190191`, 20:41; full list
-  validated: same pass/fail results and outputs as the unmodified srcEarth, section 6).
-  Uncommitted: the final validation results in this file and handoff.md, and the fix of
-  the compiler warnings in srcEarth and srcGeospace (section 6, item 5).
+  amended `465b15b`, 20:16), the srcEarth tuning (`b190191`, 20:41; full list validated:
+  same pass/fail results and outputs as the unmodified srcEarth, section 6), the fix of
+  the compiler warnings in srcEarth and srcGeospace (`9cbfd08`, section 6 item 5) and the
+  user's `last pass:` update of `srcEarth/test/list` (`cc80f5d`, 2026-10-28 00:34).
+  Uncommitted: the `UStep12Release` fix (section 6, item 6) and this update of this file
+  and handoff.md.
 
 ## 2. Code state
 
 | item | state |
 |---|---|
-| git `HEAD` | `b190191` = `origin/master` (2026-10-27 20:41, the srcEarth tuning, committed and pushed by the user), on top of `d6b0909` (20:16, srcGeospace; the amended `465b15b` of 02:20), `bf68a2a` (srcEarth shieldSim script) and `b06e7e7` (the allocator fix).  `55ecae0` and `f9c2c00` (between `47fccd5` and `b06e7e7`) do not touch `src/` or `srcEarth/` |
+| git `HEAD` | `cc80f5d` = `origin/master` (2026-10-28 00:34, the user's `last pass:` update of `srcEarth/test/list`), on top of `9cbfd08` (the compiler-warnings fix: the pull of 00:34 rebased the user's `d33c7f8` of 2026-10-27 21:14 onto `af48d01`), `af48d01` (10 srcCG files only), `b190191` (2026-10-27 20:41, the srcEarth tuning), `d6b0909` (20:16, srcGeospace; the amended `465b15b` of 02:20), `bf68a2a` (srcEarth shieldSim script) and `b06e7e7` (the allocator fix).  `55ecae0` and `f9c2c00` (between `47fccd5` and `b06e7e7`) do not touch `src/` or `srcEarth/` |
 | core interpolation work | committed by the user: `b6cb6cb` (stencil-cell cache), `9698bcd` (`Stencil.Length` fix), `47fccd5` (row-only construction, row-structure reuse, dropped-weight normalization) |
 | `src/meshAMR/meshAMRdef.h` | committed by the user as `b06e7e7`: doubling growth of the AMR element stacks' chunk lists (section 3).  `src/` has no uncommitted changes |
-| `srcGeospace/` | committed and pushed by the user as `d6b0909` (152 files): the reduced layout of 2026-10-27 (user decision, section 2.1) -- the first version `465b15b` (596 files, never pushed) less 446 files (`test/` except srcGeospace's own unit test and tools, `studies/`, 56 non-build copies of srcEarth files), plus `GPU_STATUS.md` and `test/tools/run_srcearth_tests.sh`.  Updated since in `b190191` and in the working tree: this file and handoff.md (validation of the srcEarth tuning).  `shieldSim/` removed earlier the same day (kept only in `srcEarth/shieldSim`) |
-| `srcEarth/` | numerics tuning of 2026-10-27 committed and pushed by the user as `b190191` (4 files: `gridless/CutoffRigidityGridless.cpp`, `3d/GlobalMagneticField.cpp`, `3d/FieldInitializationPlan.h`, `3d/Mode3D.cpp`; section 6; copied from the work copy `$RUNS/work/srcearth_tune/srcEarth` at 20:26, diff `$RUNS/work/srcearth_tune/srcEarth_tuning.diff`).  Uncommitted: the fix of the compiler warnings, 5 files (section 6, item 5) |
+| `srcGeospace/` | committed and pushed by the user as `d6b0909` (152 files): the reduced layout of 2026-10-27 (user decision, section 2.1) -- the first version `465b15b` (596 files, never pushed) less 446 files (`test/` except srcGeospace's own unit test and tools, `studies/`, 56 non-build copies of srcEarth files), plus `GPU_STATUS.md` and `test/tools/run_srcearth_tests.sh`.  Updated since in `b190191` and `9cbfd08` (this file and handoff.md; in `9cbfd08` also the compiler-warnings fix, 5 files) and in the working tree (this file and handoff.md).  `shieldSim/` removed earlier the same day (kept only in `srcEarth/shieldSim`) |
+| `srcEarth/` | numerics tuning of 2026-10-27 committed and pushed by the user as `b190191` (4 files: `gridless/CutoffRigidityGridless.cpp`, `3d/GlobalMagneticField.cpp`, `3d/FieldInitializationPlan.h`, `3d/Mode3D.cpp`; section 6; copied from the work copy `$RUNS/work/srcearth_tune/srcEarth` at 20:26, diff `$RUNS/work/srcearth_tune/srcEarth_tuning.diff`).  The compiler-warnings fix (5 files, section 6 item 5) committed by the user as `9cbfd08`.  Uncommitted: the `UStep12Release` fix, 2 files (section 6, item 6) |
 | `Makefile` | modified before this work (user's state), not touched |
 
 Decisions in force (details in handoff.md sections 1, 5 and 10):
@@ -323,7 +325,8 @@ applications (section 2.1); run tests concurrently where memory allows.
    * **Full list, tuned** (`validate.sh`, run root `tuned/`, build `srcearth_tune5`,
      `srcEarth` -> work copy so that the unit and source-text tests see the tuned sources;
      srcEarth's runner `-j 6`, 14:53-19:00): 62 of 64 as listed; `UStep12Release` (list
-     digest) and C10 fail, as in srcEarth's own pass of 2026-10-16.
+     digest; cause and fix: item 6) and C10 fail, as in srcEarth's own pass of
+     2026-10-16.
    * **Full list, unmodified** (`run_base_j12.sh`, run root `base_j12/`, build
      `srcearth_timing_base`, `-j 12` under the memory lock, 16:43-19:56): 60 of 64 as
      listed; besides `UStep12Release` and C10, C19 (refused to start, item 3) and C14
@@ -364,7 +367,7 @@ applications (section 2.1); run tests concurrently where memory allows.
    C1 gridless, F4, C17 of srcEarth's list: P, outputs identical to the full-tree runs,
    `$RUNS/results/2026-10-27_srcgeospace_layout/`); committed and pushed by the user as
    `d6b0909` (20:16).
-5. **Compiler warnings** (user request 20:50; uncommitted in srcEarth and srcGeospace, message
+5. **Compiler warnings** (user request 20:50; committed by the user as `9cbfd08`, message
    `$RUNS/work/COMMIT_MSG_warnings_fix.txt`).  The build printed 16 compiler warnings, the
    same in both trees (each with about 15 lines of include notes): 13 file-name buffers of
    200-512 bytes receiving `PIC::OutputDataFileDirectory` or `<ns>::Mesh::sign`
@@ -381,6 +384,24 @@ applications (section 2.1); run tests concurrently where memory allows.
    `base_j12` (mesh cache excepted), no `msh`/`bin`.  The remaining make message
    "jobserver unavailable" comes from the core, `src/interface/makefile:20`
    (`cd ${SHAREDIR}; make DEPEND`; `${MAKE}` would fix it) -- not changed (core).
+6. **`UStep12Release`** (user requests 2026-10-28; uncommitted, 2 files in srcEarth, message
+   `$RUNS/work/COMMIT_MSG_ustep12.txt`, scripts `$RUNS/work/ustep12_fix/`).  Its source
+   contract compares a SHA-256 of `srcEarth/test/list`, with the runner-written `last pass:`
+   hashes of active entries blanked, with `APPROVED_NORMALIZED_LIST_SHA256`.  The constant
+   matched the list of `714d40f` (2026-10-13 13:52; set in `e566c09`).  `224ecb4` (10-13
+   15:10, SA03 QUICK) and `0ff90e3` (10-15 21:10: `#` comments, since the runner reserves
+   `!` for directives; disabled SA04, MMS01 and GOES01 entries) changed the list without
+   advancing it, and SA03 did not get the case-specific command assertions that
+   `srcEarth/test/README.md` requires for a QUICK workflow, so the test failed in every
+   pass since `224ecb4` (its `last pass:` stayed `e566c09`).  Review: the lines that run
+   differ from the approved list only by the SA03 directive and command; SA03 has the
+   frozen settings of SA01/SA02 and passed in every pass.  Fix (user: "do not relax test
+   gates for the test to pass"; a step that would have taken commented `#last pass:`
+   hashes out of the digest was dropped): the digest advanced to the reviewed list
+   (`83d3ee94...`), SA03 added to the QUICK-campaign assertions, and `test/README.md`
+   states the rule for every list edit.  Checks: the suite passes in the repository; on a
+   scratch copy an added comment, a P->F change, a hash on a disabled entry and SA03
+   without `--exit-code-policy WORKFLOW` each fail, a changed runner-written hash passes.
 
 ## 7. Incidents of 2026-10-26
 
@@ -422,8 +443,13 @@ these passes include machine sharing; subtract the waits in `lock_events.log`.
 
 User decisions or actions:
 
-* commit the fix of the compiler warnings (srcEarth and srcGeospace, 5 files each, section 6
-  item 5) and the updated `STATUS.md`/`handoff.md` (the user commits);
+* commit the `UStep12Release` fix (`srcEarth/test/UStep12Release/test_step12_source_contract.py`,
+  `srcEarth/test/README.md`; section 6 item 6) and the updated `STATUS.md`/`handoff.md`
+  (the user commits);
+* the 57 `last pass:` values of `cc80f5d` name `d33c7f8`, which the pull rebased into
+  `9cbfd08` (the two differ only in 10 srcCG files) and which is now only in the local
+  reflog: replace them with `9cbfd08` (not structural, the digest ignores them) or let
+  the next pass overwrite them;
 * `src/interface/makefile:20`: `make DEPEND` -> `${MAKE} DEPEND` (core; removes the make
   message "jobserver unavailable") -- awaiting approval;
 * progress bar for srcGeospace (proposal in handoff.md section 5.2) -- awaiting go-ahead;
@@ -437,16 +463,16 @@ former `--run-root/--amps` options of srcGeospace's runner did, `sublist.py` rew
 Tasks (suggested order):
 
 1. Analyse C10 (fails in double and float, in srcEarth and in the tuned srcEarth).
-2. `UStep12Release` (srcEarth): its approved list digest no longer matches
-   `srcEarth/test/list` (fails in every pass since at least 2026-10-16); the list's
-   approval belongs to srcEarth's maintainers.
+2. `UStep12Release` (srcEarth): fixed in the working tree (section 6 item 6); after the
+   commit, the next pass records its `last pass:`.
 3. Engine: skip `BuildMeshCache` when only B changes (same geometry; C10 uploads 10
    snapshots).
 4. Documentation: `doc/VALIDATION_CPU_2026-10-21.md` section 7; a validation report of the
    2026-10-26 passes; `doc/BUILD.md` note on the allocator fix.
 5. Cleanup: obsolete builds under `$RUNS/builds` (handoff.md section 8 lists the
    deletable ones; also `srcearth_tune1`-`tune4`, `srcearth_tune5_native`,
-   `srcearth_tune5_avx2fma`, and `srcearth_tune5` once the tuning is committed),
+   `srcearth_tune5_avx2fma`, `srcearth_tune5`, and, the warnings fix being committed,
+   `srcearth_head`, `srcearth_warnfix`, `srcgeospace_warnfix`, `$RUNS/work/warnings_fix/`),
    `$RUNS/work/srcearth_port/` (the abandoned engine port; its `rename_diff.py` is
    reusable); the still unanalysed
    `$RUNS/results/2026-10-22_srcGeospace_cpu/double_vs_earlier_double.txt`.
