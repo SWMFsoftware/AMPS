@@ -1,6 +1,10 @@
 *.mod
 *.o
 *.a
+data
+output
+*.input
+table_parser
 .general.conf
 .amps.conf
 .last_input_info
