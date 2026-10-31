@@ -49,6 +49,77 @@ die "Rubin2011 collision header is missing the Crifo temperature law\n"
 die "Rubin2011 collision header is missing the published 50--300 K range\n"
     unless $collision_text=~/1\.66.*?300.*?-0\.599999.*?50.*?300/s;
 
+# The Halley production policy preserves all 66 Rubin rows, adds the 18
+# non-overlapping Combi rows, and estimates only the remaining 294 pairs from
+# CHEMKIN diameters.  The generated source strings make those tiers auditable.
+my $hierarchy_network=CometReactionNetwork->new(species=>\@species);
+my $hierarchy=CometPhysicsDatabase->new(species=>\@species);
+$hierarchy->load_rubin2011(
+    network=>$hierarchy_network,
+    oh_ground_rate=>3.0e-6,
+    methanol_h2co_branch=>'OFF');
+$hierarchy->complete_with_combi1996_chemkin_lorentz_hs();
+die "completed collision table should contain all 378 unordered pairs\n"
+    unless $hierarchy->collision_count()==378;
+my $hierarchy_header='/tmp/CometPhysics.hierarchy.generated.test.h';
+$hierarchy->write_collision_header($hierarchy_header);
+open(my $hierarchy_in,'<',$hierarchy_header)
+    or die "cannot open '$hierarchy_header': $!\n";
+my $hierarchy_text=do {local $/; <$hierarchy_in>};
+close($hierarchy_in);
+die "completed collision header has the wrong database name\n"
+    unless $hierarchy_text=~/DatabaseName\[\]="RUBIN2011\+COMBI1996\+CHEMKIN_LORENTZ_HS"/;
+my $combi_count=()=$hierarchy_text=~/Combi \(1996\), reproduced in Fougere dissertation Table 2\.1/g;
+die "completed table should contain 18 non-overlapping Combi rows, found $combi_count\n"
+    unless $combi_count==18;
+my $estimate_count=()=$hierarchy_text=~/CHEMKIN Table 5\.1 diameter with Lorentz mixing; geometric hard-sphere estimate/g;
+die "completed table should contain 294 CHEMKIN/Lorentz estimates, found $estimate_count\n"
+    unless $estimate_count==294;
+die "completion replaced the Rubin/Crifo H2O self-collision law\n"
+    unless $hierarchy_text=~/TemperaturePowerLaw.*?Crifo \(1989\), as listed in Rubin et al\. \(2011\), Table 3/s;
+
+# Check one row from each priority tier numerically. Species indices follow
+# @species above: H=0, C=2, O=10, OH=12, H2O=13, and CO=20.
+sub find_collision {
+  my ($database,$species0,$species1)=@_;
+  for my $entry (@{$database->{collisions}}) {
+    return $entry if ($entry->{species0}==$species0 &&
+                      $entry->{species1}==$species1) ||
+                     ($entry->{species0}==$species1 &&
+                      $entry->{species1}==$species0);
+  }
+  return undef;
+}
+sub relatively_equal {
+  my ($a,$b)=@_;
+  my $scale=abs($a)>abs($b) ? abs($a) : abs($b);
+  return abs($a-$b)<=1.0e-12*$scale;
+}
+
+my $rubin_h2o_co=find_collision($hierarchy,13,20);
+die "Rubin H2O-CO priority row was not preserved\n"
+    unless defined $rubin_h2o_co &&
+        $rubin_h2o_co->{source}=~/Rubin et al\./ &&
+        relatively_equal($rubin_h2o_co->{sigma},3.2e-19);
+my $combi_h_o=find_collision($hierarchy,0,10);
+die "Combi H-O row is missing or incorrect\n"
+    unless defined $combi_h_o && $combi_h_o->{source}=~/Combi \(1996\)/ &&
+        relatively_equal($combi_h_o->{sigma},1.2e-19);
+my $chemkin_c_c=find_collision($hierarchy,2,2);
+my $expected_c_c=3.14159265358979323846*3.298*3.298*1.0e-20;
+die "CHEMKIN/Lorentz C-C estimate is missing or incorrect\n"
+    unless defined $chemkin_c_c &&
+        $chemkin_c_c->{source}=~/CHEMKIN Table 5\.1/ &&
+        relatively_equal($chemkin_c_c->{sigma},$expected_c_c);
+
+# A second completion request is an input error rather than a way to append
+# duplicate estimates.
+my $completion_failed=0;
+eval {$hierarchy->complete_with_combi1996_chemkin_lorentz_hs();};
+$completion_failed=1 if $@;
+die "collision completion accepted a duplicate request\n"
+    unless $completion_failed;
+
 # Table 4's OH interval is intentionally not defaulted by the database.
 my $failed=0;
 eval {

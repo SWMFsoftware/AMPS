@@ -25,9 +25,11 @@ Halley in `input/halley1d.input`.
 | `CometModel.*` | Geometry-neutral heliocentric conditions and per-species source descriptions |
 | `CometChemistry.*` | Validated discrete execution of generated unimolecular reaction events |
 | `CometPhysics.*` | Adapter from generated neutral collision data to the AMPS collision callback |
+| `CometRadiativeCooling.*` | Species/model selection and AMPS internal-energy update for published cooling laws |
 | `RadialMesh*` | DIM1 spherical domain and logarithmically expanding target resolution |
 | `RadialSimulation.*` | DIM1 source injection, timestep selection, inner re-emission, outer loss, and time stepping |
 | `halley2011/derive_halley1d_controls.py` | Reproducible Halley surface-resolution, injection-count, and daughter-speed derivation |
+| `halley2011/digitize_rubin2011.py` and `halley2011/reference/` | Reproducible Rubin vector-curve extraction and committed neutral-profile reference data |
 | `visualization/plot_1d.py` | CLI plotter for named quantities in one or more DIM1 output files |
 | `visualization/compare_rubin2011.py` | Paper-ordered neutral-density and H2O-velocity comparison artifacts for the Halley run |
 | `Comet.cpp` and legacy helpers | Existing DIM3 Hartley 2 implementation |
@@ -42,6 +44,13 @@ a named paper catalog, while repeated `NeutralCollision` records hold
 case-specific or supplemental cited pairs. Hartley 2's former hard-coded
 H2O/CO2 values are now explicit records in `input/hartley2.input`.
 
+The Halley input separately selects
+`NeutralCollisionCompletion=COMBI1996_CHEMKIN_LORENTZ_HS`. The generator
+preserves the 66 Rubin parent rows, adds the 18 nonoverlapping Combi rows, and
+uses CHEMKIN diameters with Lorentz mixing for only the remaining 294 pairs.
+Those final rows are labeled analytical estimates in their generated source
+strings; the policy is not a generic runtime fallback.
+
 The core model-particle collision adapter must also select the user-defined
 cross-section route. That route passes the current block and center cell to
 `CometPhysics`, allowing the H2O-H2O Crifo law to use temperature. A generated
@@ -51,8 +60,22 @@ Halley build should contain the final override
 
 Rubin Table 3 lists all 66 unordered pairs among the 11 parents but says that
 the table is only a subset; it does not print the daughter-pair values used by
-the paper model. The application does not assign zero or invent a mixing rule
-for those missing pairs.
+the paper model. Without an explicit completion keyword, the application
+continues to abort on those missing pairs.
+
+For the temperature-dependent H2O self-collision law, `CometPhysics` reads
+`cDataCenterNode::GetTranslationalTemperature(H2O)`. That core accessor reads
+the completed sample, never the sample being collected. Input must provide a
+positive `CollisionTemperatureFloor`; the Halley case evaluates the law at
+`max(T_sampled,180 K)`, so the first sampling window and colder later samples
+use 180 K. The current DIM3 Hartley input explicitly selects the same rule.
+Each temperature-law record also carries its cited validity interval. Sampled
+temperatures above its maximum are evaluated at that maximum, so the Crifo
+law is capped at 300 K without extrapolation. Cases can additionally set
+`CollisionTemperatureMinimumSampleParticleNumber`; a cell whose completed-
+window mean `Particle Number` is below that input cutoff uses the temperature
+floor instead of its sampled kinetic temperature. Halley sets the cutoff to
+`1.0` model particle per cell on average.
 
 ## Radial mesh
 
@@ -98,6 +121,30 @@ approximately the same number of model particles per cell instead of growing
 with cell width. Chemistry retains exact event weights through the individual
 correction stored on every particle.
 
+## Internal energy and radiative cooling
+
+The generic input record pairs a compiled species with a named physical law:
+
+```text
+RadiativeCooling=H2O | GOMBOSI1986_H2O
+```
+
+`GOMBOSI1986_H2O` is restricted to H2O during preprocessing. The reusable
+evaluator in `src/models/cometary_physics/RadiativeCooling.h` implements the
+Crovisier/Huebner water rotational-cooling approximation printed by Gombosi
+et al. (1986), equation (48b). `CometRadiativeCooling` traverses local AMPS
+cells after each `PIC::TimeStep()`, evaluates the selected rate from the most
+recent completed H2O density and rotational-temperature sample, and subtracts
+the corresponding energy from each H2O particle's rotational state. It is
+dimension-independent and is called by both DIM1 and DIM3 mains.
+
+The Halley input enables the core Larsen-Borgnakke model, H2O's three
+rotational degrees of freedom, `Zrot=5`, RT relaxation, and a hard-sphere
+temperature index of 0.5 for every H2O collision partner. Surface injection
+and thermalized return initialize internal energy through the core IDF API.
+VT and VV relaxation are disabled because the present core VT routine exits
+as untested and unverified; the case does not claim vibrational relaxation.
+
 ## Build and verification
 
 AMPS preprocessing uses the application input and parser copies in the
@@ -134,7 +181,7 @@ radial blocks between MPI ranks.
 The checked-in Hartley 2 radial input leaves `RadialSimulationMode=off`; its
 runtime validates configuration and builds the mesh without inventing missing
 science-run controls. The Halley file records the supplied 2,000 cells,
-Courant number 0.5, 400 m/s parent baseline, disabled methanol branch, and
+Courant number 0.25, 400 m/s parent baseline, disabled methanol branch, and
 controls derived by `halley2011/derive_halley1d_controls.py`. The 500-step
 sampling window and 10,000-iteration hard ceiling are explicit. The selected
 0.36 eV OH branch uses the lower published rate, `3.0e-6 s^-1` at 1 AU. The
@@ -145,10 +192,16 @@ the reference, so convergence needs at least four windows. Multi-rank tests
 have crossed output and block-migration boundaries, verifying runtime plumbing.
 A later audit found that those test binaries used AMPS's zero placeholder
 cross section because the Rubin callback was not connected. That dispatch is
-now fixed, but the repaired diagnostic stops at iteration 1 because no sampled
-cell temperature exists yet for the H2O law. No output currently qualifies as
-a converged physical Halley solution. Exact evidence and unresolved physics
-are recorded in `STATUS.md`.
+now fixed. A new clean four-rank diagnostic used the 180 K first-window rule,
+completed the first 500-iteration sample, applied cooling from that completed
+sample during subsequent iterations, and was deliberately stopped at
+iteration 525. Its output is transient validation data, not a converged
+physical Halley result and predates the selected complete collision hierarchy.
+The earlier 0.5-Courant convergence run reached iteration 3500 but a fast
+collision product then traversed beyond the mover's one-block MPI boundary
+allocation. The input now uses 0.25; its clean four-rank restart crossed the
+first two output/load-balance boundaries. Exact evidence, live output paths,
+and remaining comparison limits are recorded in `STATUS.md`.
 
 ## Visualizing DIM1 output
 
@@ -182,7 +235,10 @@ python3 srcHartley2/visualization/compare_rubin2011.py \
   PT/plots --run-log halley1d.run.log
 ```
 
-This reproduces the neutral-species groupings and units of Rubin et al. (2011)
-Figs. 1--17 and the modeled H2O radial velocity corresponding to Fig. 18. The
-paper's Giotto NMS mass-channel curves require an instrument-response model
-that is not part of this application and are not included.
+This overlays AMPS results with vector-extracted Rubin neutral DSMC curves for
+Figs. 1--17 and the modeled H2O radial-velocity curve from Fig. 18. The default
+reference table and provenance metadata are in `halley2011/reference/`; the
+reproducible extractor is `halley2011/digitize_rubin2011.py`. The paper's
+Giotto NMS mass-channel curves require an instrument-response model that is
+not part of this application and are not mixed with the neutral-density
+comparison.

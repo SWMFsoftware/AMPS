@@ -79,31 +79,45 @@ are absent in an early sampling window.
 
 ## Rubin et al. (2011) Halley comparison
 
-`compare_rubin2011.py` prepares the neutral-species part of the paper's Figs.
-1--17 and the water radial-velocity profile corresponding to Fig. 18. It
-selects the latest output index that is complete for every configured neutral
-species unless `--output-index` is supplied. Number densities are converted
-from the AMPS output unit of m^-3 to the paper's cm^-3, and the paper's species
-groupings and neutral-curve line styles are retained.
+`compare_rubin2011.py` overlays the calculated neutral-species profiles with
+the published Rubin et al. DSMC curves from Figs. 1--17 and overlays the two
+water radial-velocity profiles corresponding to Fig. 18. It selects the latest
+output index that is complete for every configured neutral species unless
+`--output-index` is supplied. Number densities are converted from the AMPS
+output unit of m^-3 to the paper's cm^-3, and the paper's species groupings and
+neutral-curve line styles are retained.
 
 ```sh
 python3 srcHartley2/visualization/compare_rubin2011.py \
   PT/plots --run-log halley1d.run.log
 ```
 
+The default `--paper-data` table is
+`srcHartley2/halley2011/reference/rubin2011_neutral_profiles.csv`. It was
+extracted from vector paths in the local journal PDF, including the paper's
+piecewise logarithmic distance axes. The accompanying metadata JSON records
+the exact PDF SHA-256, plot bounds, source pages, curve colors, and extraction
+method. Regenerate the table from the same PDF with:
+
+```sh
+python3 srcHartley2/halley2011/digitize_rubin2011.py \
+  ~/Downloads/Rubin-2011-icarus.pdf
+```
+
 The default destination is `PT/plots/rubin2011_comparison`. It contains a PNG
 and EPS for each figure, a combined multipage PDF,
 `comparison_profiles.csv` at 10, 100, 1,000, 10,000, and 100,000 km, and a
-JSON provenance manifest. The manifest records the exact AMPS files, output
-index, nominal iteration, density conversion, and the convergence record for
-that output window.
+JSON provenance manifest. The CSV contains side-by-side AMPS and Rubin values
+at the tabulated radii. The manifest records the exact AMPS files, output
+index, nominal iteration, density conversion, convergence record, reference
+table path, and reference-table digest.
 
 Figs. 2--17 in the paper also contain measured and simulated Giotto NMS mass
 channel signals. The current comet application does not model the NMS ion
-source or detector, so the comparison utility plots the modeled neutral
-profiles only and states that limit in the manifest. It does not reinterpret
-neutral density as an instrument signal. Methanol likewise remains an empty
-curve when it is disabled in `halley1d.input`.
+source or detector, so those different observables are not overlaid with
+neutral density. The comparison contains both AMPS and Rubin neutral DSMC
+curves and states the NMS limitation in the manifest. Methanol likewise
+remains an empty AMPS curve when it is disabled in `halley1d.input`.
 
 `--output NAME` always saves `NAME.png` and `NAME.eps`. If the argument has a
 different extension, such as `.pdf`, that format is saved in addition to PNG

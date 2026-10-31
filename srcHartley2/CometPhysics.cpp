@@ -1,10 +1,14 @@
 #include "CometPhysics.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
 #include "pic.h"
 #include "CometPhysics.generated.h"
+
+double Comet::Physics::CollisionTemperatureFloor=-1.0;
+double Comet::Physics::CollisionTemperatureMinimumSampleParticleNumber=0.0;
 
 const CometaryPhysics::cCollisionDatabase&
 Comet::Physics::GetCollisionDatabase() {
@@ -20,7 +24,25 @@ const char *Comet::Physics::GetDatabaseName() {
 }
 
 bool Comet::Physics::Validate(std::string *error) {
-  return GetCollisionDatabase().Validate(error);
+  const CometaryPhysics::cCollisionDatabase &database=GetCollisionDatabase();
+  if (!database.Validate(error)) return false;
+  for (std::size_t entry=0;entry<database.GetCollisionCount();entry++)
+    if (database.GetCollision(entry).Law==
+        CometaryPhysics::CollisionLaw::TemperaturePowerLaw &&
+        (!(CollisionTemperatureFloor>0.0) ||
+         !std::isfinite(CollisionTemperatureFloor) ||
+         !(CollisionTemperatureMinimumSampleParticleNumber>=0.0) ||
+         !std::isfinite(CollisionTemperatureMinimumSampleParticleNumber))) {
+      if (error!=NULL) {
+        if (!(CollisionTemperatureFloor>0.0) ||
+            !std::isfinite(CollisionTemperatureFloor))
+          *error="a temperature-dependent comet collision law requires a positive CollisionTemperatureFloor";
+        else
+          *error="CollisionTemperatureMinimumSampleParticleNumber must be finite and non-negative";
+      }
+      return false;
+    }
+  return true;
 }
 
 double Comet::Physics::GetNeutralCrossSection(double *v0,double *v1,
@@ -65,13 +87,28 @@ double Comet::Physics::GetNeutralCrossSection(double *v0,double *v1,
           species0,species1);
       std::abort();
     }
-    temperature=cell->GetTranslationalTemperature(species0);
-    if (!(temperature>0.0)) {
-      std::fprintf(stderr,
-          "non-positive translational temperature for comet collision species %d\n",
-          species0);
-      std::abort();
+    // Both accessors read the completed AMPS sampling buffer, not the buffer
+    // currently being collected.  DatumParticleNumber is the mean number of
+    // model particles occupying this cell during that completed window; it is
+    // also the value printed in the "Particle Number" output column.  Do not
+    // interpret a noisy temperature from a case-defined undersampled cell.
+    const double sampledParticleNumber=cell->GetDatumAverage(
+        PIC::Mesh::DatumParticleNumber,species0);
+    if (CollisionTemperatureMinimumSampleParticleNumber>0.0 &&
+        sampledParticleNumber<CollisionTemperatureMinimumSampleParticleNumber)
+      temperature=CollisionTemperatureFloor;
+    else {
+      temperature=cell->GetTranslationalTemperature(species0);
+      if (!(temperature>CollisionTemperatureFloor))
+        temperature=CollisionTemperatureFloor;
     }
+
+    // The validity interval is part of the selected collision-law record.
+    // Cap a high sampled temperature at its documented upper endpoint rather
+    // than extrapolating the power law beyond the cited data.  The Halley
+    // Crifo record therefore evaluates every temperature above 300 K at 300 K.
+    if (temperature>entry->MaximumTemperature)
+      temperature=entry->MaximumTemperature;
   }
 
   bool found=false,temperatureInRange=false;

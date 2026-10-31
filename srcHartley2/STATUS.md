@@ -1,6 +1,6 @@
 # Generic comet / Hartley 2 status
 
-Date: 2026-10-27
+Date: 2026-10-31
 Branch: `1d_comet_dev`
 
 ## Current result
@@ -15,18 +15,22 @@ Branch: `1d_comet_dev`
 | Reaction database C++ unit test | Pass |
 | Reaction input/generator Perl test | Pass |
 | Collision database C++ unit test | Pass |
-| Rubin chemistry/collision generator Perl test | Pass; 66 parent pairs and Table 4 channels |
+| Rubin chemistry/collision generator Perl test | Pass; full hierarchy contains 378 pairs partitioned as 66 Rubin, 18 additional Combi, and 294 CHEMKIN/Lorentz estimates |
 | Shape-property extraction | Pass; closed 32,040-triangle surface |
 | Full DIM3 runtime | Not run; required Hartley 2 mission SPICE kernels are unavailable locally |
 | Hartley 2 DIM1 particle simulation | Backend present; input remains mesh-only pending explicit science-run controls |
 | Halley DIM1 one-step plumbing test | Pass with documented temporary numerical choices |
 | Halley 2,000-cell/local-weight clean build and one-step run | Pass; 373 blocks and 2,984 cells |
-| Halley DIM1 four-rank runtime | Pass through one complete 500-step output window and the following block migration |
-| Halley DIM1 convergence run | Blocked before a physical result; the first attempted run used an unwired zero cross section, and the repaired build stops at iteration 1 because no initial H2O cell temperature is available |
+| Halley DIM1 four-rank runtime | Reached iteration 3500 and seven complete 500-step outputs at Courant 0.5; then a fast particle traversed beyond the mover's one-block MPI boundary allocation |
+| Completed-sample kinetic temperature | Pass; the Crifo law reads `GetTranslationalTemperature()` from the completed buffer and uses `max(Tsample,180 K)` |
+| H2O internal degrees of freedom | Pass; core Larsen-Borgnakke rotation/RT relaxation enabled and initialized at injection/re-emission |
+| Generic radiative cooling | Pass; named H2O Gombosi 1986 law unit-tested, clean-built, and executed after the first completed sample |
+| Halley DIM1 convergence run | Courant-0.25 restart active; clean `-O3` four-rank run crossed four output/load-balance boundaries through iteration 2,000, currently transient at 0/3 convergence passes |
 | Core collision cross-section dispatch | Fixed and clean-built; NTC/MF now route the selected user law with block/cell state instead of always using the zero HS placeholder |
-| Rubin collision-data coverage | Incomplete by source: Table 3 supplies 66 parent-parent pairs but omits daughter pairs |
+| Halley collision-data coverage | Complete by explicit policy: 66 Rubin rows, 18 additional Combi rows, and 294 labeled CHEMKIN/Lorentz estimates |
+| Completed-hierarchy clean build and smoke test | Pass; clean `-O3` DIM1 compile/link and isolated one-rank execution through iteration 124 |
 | DIM1 result visualization | Pass for short aliases, single-/multi-file PNG/EPS output, and viewer control |
-| Rubin paper-comparison artifact generator | Pass on completed transient output; no converged physical Halley output exists yet |
+| Rubin paper-comparison artifact generator | Pass: every panel overlays AMPS with vector-extracted Rubin DSMC data; the available AMPS window is transient, not converged |
 | DIM2 axisymmetric application | Interface reserved; execution backend not implemented |
 
 The `build` directory is removed before each compilation. Hartley 2 and Halley
@@ -38,6 +42,84 @@ execution path; the final requested controls are now in the tracked input.
 The Halley runtime output path is `PT/plots`, relative to the launch directory;
 the intended launch directory is `/data/vtenishe/COMET1D/AMPS`. A compile does
 not create this runtime directory.
+
+### Courant-0.5 mover failure and restart policy
+
+The repaired, capped-temperature, four-rank hierarchy run completed seven
+500-iteration windows through iteration 3500 and wrote all 27 species for
+output indices 0--6. It held 588,275 model particles at the last completed
+window. The last available convergence records were `0/3` consecutive passes,
+with maximum relative L1 change `0.8358229` for N at iteration 3000; the data
+are therefore transient and must not be represented as a converged Halley
+solution.
+
+Immediately after the iteration-3500 output and load redistribution, the
+legacy trace mover stopped in `pic_mover.cpp` because its current node had no
+locally allocated block. The radial case uses eight cells per block and the
+local timestep is `C*cell_width/characteristic_speed`. At `C=0.5`, a particle
+moving faster than 16 times its species characteristic speed can traverse a
+whole block in one move. Hard-sphere transfer from the roughly 57 km/s H
+daughter tail can put a heavy collision partner near 6 km/s, close to 15 times
+the 400 m/s parent baseline, leaving no stochastic margin. The failure is
+therefore consistent with a collision-product tail crossing the one-block MPI
+boundary allocation rather than with a mesh, chemistry, cooling, or collision
+temperature error.
+
+The restart uses `RadialCourantNumber=0.25`. A one-block traversal then
+requires more than 32 times the configured characteristic speed, retaining
+margin above the expected H-to-heavy transfer while preserving the explicitly
+derived species characteristic speeds. The reference injection count is
+reduced from 16 to 8 with the timestep so the requested roughly 50 parent
+particles per surface cell are unchanged. The 500-iteration sampling length,
+convergence test, and 10,000-iteration ceiling are unchanged.
+The failed run and its Rubin comparison are archived rather than overwritten.
+The exact paths are `PT.failed-mover-timestep-courant-0.5-20261028`,
+`halley1d.failed-mover-timestep-courant-0.5-20261028.log`, and
+`error.log.failed-mover-timestep-courant-0.5-20261028`.
+
+After removing `build`, the Courant-0.25 case was rebuilt cleanly with `-O3`
+and restarted on four MPI ranks from the repository root on 2026-10-31. It
+crossed the complete output/load-redistribution boundaries through iteration
+2,000 without either the earlier Crifo-temperature stop or mover stop. At
+iteration 2,000 the maximum relative L1 change was `1.008269` for H2, with
+`0/3` consecutive passes, so the new data remain
+transient. The active log is
+`halley1d.courant-0.25.run.log`; runtime data and the current Rubin-overlaid
+comparison are under `PT/plots` and `PT/plots/rubin2011_comparison`.
+
+### Full-hierarchy run stopped at the Crifo temperature limit
+
+The clean optimized binary was launched from the repository root on four MPI
+ranks with the generated 378-pair Rubin--Combi--CHEMKIN/Lorentz collision
+database. It completed the sampling windows at iterations 500 and 1,000,
+wrote all 27 species files for output indices 0 and 1, and reached 152,787
+model particles. The first window established the convergence reference, so
+two windows are insufficient for the configured three-consecutive-window
+termination test.
+
+Immediately after the second output and block redistribution, the collision
+adapter encountered a completed-sample H2O temperature of
+`395.80384407760528 K`. The H2O--H2O cross section is the Crifo relation quoted
+by Rubin et al.; Rubin explicitly limits its cold-water-vapor use to
+`50--300 K`. `CometPhysics.cpp` therefore stopped instead of silently
+extrapolating. This is the intended failure mode for an undefined physical
+policy, rather than a collision-database, MPI, memory, or output failure.
+
+The second H2O output contains 41 sampled cells above 300 K, concentrated at
+roughly 31--37 km cometocentric radius. These cells are statistically sparse:
+the highest reported temperature is 487.525 K at 32.4643 km with only 0.282
+sampled model particles in that cell. At the abort temperature, direct
+extrapolation would give `1.405700619e-19 m^2`, while limiting the input
+temperature to 300 K would give `1.66e-19 m^2`; neither behavior is stated by
+Rubin et al. and must not be selected implicitly. The run is preserved as
+`PT.failed-crifo-temperature-range-20261028`, with its complete log in
+`halley1d.failed-crifo-temperature-range-20261028.log`. The selected repair
+caps the collision-law input at the record's published upper endpoint and
+uses the 180 K floor when the completed-window mean model-particle occupancy
+is below `CollisionTemperatureMinimumSampleParticleNumber`. The numerical
+Halley input sets the occupancy cutoff to `1.0`, equivalent to roughly 500
+particle observations during a 500-iteration window before accounting for
+temporal correlation.
 
 ### Collision-dispatch audit and invalidated run
 
@@ -62,14 +144,16 @@ cross-section evaluations in the simplified/full NTC and MF implementations
 use the adapter. A clean `-O3` Halley build confirmed that the generated input
 selects the user-defined mode and links the Rubin callback.
 
-A four-rank diagnostic of that repaired binary reached the collision callback
-at iteration 1 and then stopped with `non-positive translational temperature
-for comet collision species 13`. The H2O-H2O Crifo law requires local gas
-temperature, but the AMPS center-cell sampling accumulator has no completed
-sample when the first collision step runs. No fallback temperature, temporal
-lag, or relative-speed conversion has been added because Rubin et al. do not
-specify that numerical initialization rule. This is a separate blocker from
-the missing daughter collision matrix.
+A four-rank diagnostic of the first repaired binary reached the collision
+callback at iteration 1 and stopped with `non-positive translational
+temperature for comet collision species 13`. Core inspection established
+that `cDataCenterNode::GetTranslationalTemperature()` reads only
+`completedCellSampleDataPointerOffset` and returns zero while
+`PIC::LastSampleLength` is zero. The requested rule is now explicit case data:
+`CollisionTemperatureFloor=180.0`. `CometPhysics` evaluates the Crifo law at
+the completed sampled temperature when it exceeds 180 K and at 180 K
+otherwise. A clean four-rank run subsequently crossed the first 500-step
+sampling boundary and continued through iteration 525 without that failure.
 
 The first four-rank DIM1 runtime test exposed a core MPI neighbor-mask defect
 in `src/pic/pic_block_send_mask.cpp`: the exchange code scanned the six faces
@@ -153,15 +237,15 @@ copies are listed separately below.
 | File | State | Why it changed and merge dependency |
 | --- | --- | --- |
 | `Makefile` | modified | Adds `-lmpi++` to `EXTRALINKEROPTIONS_F`. This is a toolchain/link setting, not comet physics. Its necessity on the target `master` toolchain must be checked with a clean link; keep it separate from the scientific changes if the master toolchain no longer needs it. |
-| `input/hartley2.pl` | modified | Extends the historical Hartley parser into the generic comet preprocessor. It parses dimension/geometry, mesh units, source records, radial controls, chemistry, and neutral-collision data; selects DIM1 objects and spherical core options; validates required values; writes species-indexed arrays; and generates the chemistry and collision headers in the working source tree. This file depends on both new Perl modules and on the exact variable names in `CometModel.cpp`, `CometChemistry.cpp`, `CometPhysics.cpp`, `RadialMesh.cpp`, and `RadialSimulation.cpp`. Preserve the legacy Hartley keywords when resolving conflicts. |
-| `input/hartley2.input` | modified | Adds the generic DIM3 case declarations, configurable NASTRAN mesh units, heliocentric distance, disabled chemistry, and the three neutral collision laws that were formerly hard-coded in `Comet.cpp`. The remaining historical Hartley 2 settings are intentionally retained. |
+| `input/hartley2.pl` | modified | Extends the historical Hartley parser into the generic comet preprocessor. It parses dimension/geometry, mesh units, source records, radial controls, chemistry, neutral collisions and the explicit completion policy, the completed-sample collision-temperature floor, and per-species radiative-cooling models; selects DIM1 objects and spherical core options; validates required values; writes species-indexed arrays; and generates the chemistry and collision headers in the working source tree. This file depends on both new Perl modules and on the exact initialized declarations in `CometModel.cpp`, `CometChemistry.cpp`, `CometPhysics.cpp`, `CometRadiativeCooling.cpp`, `RadialMesh.cpp`, and `RadialSimulation.cpp`. Preserve the legacy Hartley keywords when resolving conflicts. |
+| `input/hartley2.input` | modified | Adds the generic DIM3 case declarations, configurable NASTRAN mesh units, heliocentric distance, disabled chemistry, the three neutral collision laws that were formerly hard-coded in `Comet.cpp`, and the explicit 180 K completed-sample collision floor. The remaining historical Hartley 2 settings are intentionally retained. |
 | `input/hartley2.radial.input` | new | Defines the mesh-only, gas-only, spherically symmetric Hartley 2/Shou 2025 DIM1 case. It contains the area-equivalent nucleus radius, 10,000 km altitude domain, 1,000-cell ideal logarithmic profile, and 1 m surface resolution estimate. It deliberately leaves `RadialSimulationMode=off`. |
-| `input/halley1d.input` | new | Defines the gas-only Rubin 2011 Halley simulation: 27 species, 11 parent sources, 6 km inner radius, `10^6 km` outer radius, 2,000 ideal cells, derived surface resolution, local weights/timesteps, generated chemistry, collisions, and convergence controls. Dust, extended sources, and the optional methanol-to-formaldehyde channel are disabled. |
-| `input/species.input` | modified | Adds the neutral species required by the Rubin network (`CH`, `CH2`, `N`, `CH3`, `NH`, `NH2`, `NH3`, `C2`, `C2H`, `C2H2`, `CN`, `HCN`, `C2H4`, `CO`, `C2H5`, `HCO`, `C2H6`, `H2CO`, and `CH3OH`). Merge by component name and avoid duplicate definitions if `master` has independently added any species. |
+| `input/halley1d.input` | new | Defines the gas-only Rubin 2011 Halley simulation: 27 species, 11 parent sources, 6 km inner radius, `10^6 km` outer radius, 2,000 ideal cells, derived surface resolution, local weights/timesteps, the explicit Rubin--Combi--CHEMKIN/Lorentz 378-pair collision hierarchy, generated chemistry, 180 K collision-temperature floor, H2O Larsen-Borgnakke rotation/RT relaxation, H2O Gombosi cooling, and convergence controls. Dust, extended sources, vibrational relaxation, and the optional methanol-to-formaldehyde channel are disabled. |
+| `input/species.input` | modified | Adds the neutral species required by the Rubin network (`CH`, `CH2`, `N`, `CH3`, `NH`, `NH2`, `NH3`, `C2`, `C2H`, `C2H2`, `CN`, `HCN`, `C2H4`, `CO`, `C2H5`, `HCO`, `C2H6`, `H2CO`, and `CH3OH`). Carbon uses exact `12*_AMU_`, consistent with the nominal integer masses of the network, so compile-time reaction mass conservation is not defeated by a rounded kilogram literal. Merge by component name and avoid duplicate definitions if `master` has independently added any species. |
 | `input/CometReactionNetwork.pm` | new | Parses arbitrary stoichiometric input reactions, resolves species names to compiled indices, validates rate-law fields, and emits `CometChemistry.generated.h`. It is the input-side producer for `ReactionNetwork.h` and `CometChemistry.cpp`. |
-| `input/CometPhysicsDatabase.pm` | new | Parses explicit collision records and supplies the named `RUBIN2011` data set. It writes 66 unordered parent-pair collision entries and adds the selected Rubin Table 4 chemistry channels to the reaction-network generator. It emits `CometPhysics.generated.h`. |
+| `input/CometPhysicsDatabase.pm` | new | Parses explicit collision records and supplies the named `RUBIN2011` data set. It writes 66 unordered parent-pair collision entries and adds the selected Rubin Table 4 chemistry channels to the reaction-network generator. Its input-selected completion preserves those rows, adds 18 nonoverlapping Combi values, and generates 294 labeled geometric hard-sphere estimates from CHEMKIN diameters and Lorentz mixing. It rejects duplicates and emits `CometPhysics.generated.h`. |
 | `input/test_comet_reaction_network.pl` | new | Tests reaction parsing, all supported rate-law syntax, loss channels, generated output, and rejection of unknown species. |
-| `input/test_comet_physics_database.pl` | new | Tests the complete Rubin parent collision count, generated chemistry/collision data, the required OH-rate choice, methanol sensitivity handling, and custom collision records. |
+| `input/test_comet_physics_database.pl` | new | Tests the Rubin parent count, full 378-pair hierarchy and its 66/18/294 provenance partition, duplicate-completion rejection, generated chemistry/collision data, the required OH-rate choice, methanol sensitivity handling, and custom collision records. |
 
 ### Reusable core and model-library files
 
@@ -172,7 +256,9 @@ copies are listed separately below.
 | `src/models/chemical_solver/README.md` | new | Documents the supported network representation and the current limitation that general multi-reactant cell execution is not yet implemented. |
 | `src/models/cometary_physics/CollisionDatabase.h` | new | Adds a header-only unordered species-pair database for constant and temperature-power collision cross sections, including explicit temperature validity ranges and distinct missing-pair/out-of-range results. |
 | `src/models/cometary_physics/test_collision_database.cpp` | new | Unit-tests symmetric pair lookup, both collision laws, validation, missing pairs, and range enforcement. |
-| `src/models/cometary_physics/README.md` | new | Documents database semantics, units, validation, and the rule against silent extrapolation or undocumented zero cross sections. |
+| `src/models/cometary_physics/RadiativeCooling.h` | new | Adds a geometry-independent, unit-documented evaluator for the Gombosi et al. (1986) analytic H2O rotational-cooling law. It returns a positive per-molecule loss in J/s and contains no AMPS particle or mesh code. |
+| `src/models/cometary_physics/test_radiative_cooling.cpp` | new | Unit-tests both temperature branches, optical-depth attenuation, SI/CGS conversion, and zero/invalid state handling. |
+| `src/models/cometary_physics/README.md` | new | Documents collision and cooling semantics, units, validation, completed-sample temperature behavior, the published daughter-pair subset, Lennard-Jones analytical-estimate option, and the rule against silent extrapolation or undocumented zero cross sections. |
 | `src/meshAMR/meshAMRgeneric.h` | modified | Contains the largest core change. It separates the `findNeibNodeFace()` lookup method from the `neibNodeFace` storage member; implements DIM1 face lookup, spherical face area, neighbor refinement queries, dimension-specific ghost ranges, and symmetry checks; limits block allocation to `2*DIM` faces; fixes the maximum-refinement integer-width test; bounds maximum-refinement spacing scans by the compiled mesh dimension; and makes mesh diagnostics dimension-aware. All callers of the renamed method must be reconciled together. |
 | `src/meshAMR/meshAMRcutcell.cpp` | modified | Bounds global-domain extent reads by `_MESH_DIMENSION_` while retaining three-component physical ray vectors. This removes optimized lower-dimensional out-of-bounds reads without changing DIM3 geometry. |
 | `src/pic/parallel/init_send_halo.cpp` | modified | Updates the DIM1/DIM2/DIM3 halo constructors to call `findNeibNodeFace()`. This is an API-following change and must be merged with `meshAMRgeneric.h`. |
@@ -397,17 +483,17 @@ rg -n 'PARTICLE_COLLISION_MODEL__CROSS_SECTION' \
 After conflict resolution, remove `build` before every configuration compile,
 as required for this application. Run the standalone reaction, collision, and
 radial-profile tests; then perform clean DIM1 and DIM3 builds. The current
-working tree has a clean optimized DIM1 build, but the latest uncommitted core
-round has not yet received a clean DIM3 regression build. Do not merge to
-`master` until that DIM3 build passes.
+working tree passed clean optimized DIM1 and DIM3 compile/link regressions
+after the sampled-temperature and radiative-cooling changes. A full DIM3
+Hartley runtime still requires the mission SPICE kernels listed above.
 
 The DIM1 MPI acceptance run must cross an output boundary and actual block
 redistribution, because a one-rank or pre-output run cannot exercise
 `pic_block_send_mask.cpp` and the pack/unpack changes. Separately verify that a
 user-defined collision case reaches its application callback. The present
-Halley diagnostic does reach the Rubin callback but then stops because the
-first collision step has no sampled H2O temperature; that expected physical
-input gap is not a collision-dispatch regression.
+Halley diagnostic reaches the Rubin callback, uses the explicit 180 K floor
+before a completed sample exists, and crosses the first 500-step output and
+redistribution boundary.
 
 Do not merge or commit `build/`, `PT*/`, `amps`, run logs, generated mesh and
 signature files, root-level parser/input copies, or generated application
@@ -418,24 +504,27 @@ tracked input and source files after the merge.
 
 | File | State | Why it changed and merge dependency |
 | --- | --- | --- |
-| `srcHartley2/makefile` | modified | Adds the generic model, chemistry, physics, radial mesh, and radial runtime objects to the application library. During DIM1 preprocessing, `hartley2.pl` replaces the DIM3 object list and main object with the smaller radial set and `RadialMain.o`; keep that substitution synchronized with this file. |
-| `srcHartley2/main.cpp` | modified | Replaces the hard-coded `hartley2.shape.nas` kilometre reader with the mesh filename and length unit from `CometModel`. This preserves DIM3 behavior while allowing future comet meshes and units to be input data. |
-| `srcHartley2/Comet.cpp` | modified | Removes the hard-coded H2O/CO2 collision table and delegates the legacy DIM3 AMPS collision callback to `Comet::Physics::GetNeutralCrossSection()`. DIM1 does not link this file, so `CometPhysics.cpp` supplies the callback only under `#if DIM == 1`; preserve that split to avoid either an undefined or duplicate symbol. |
+| `srcHartley2/makefile` | modified | Adds the generic model, chemistry, collision physics, radiative cooling, radial mesh, and radial runtime objects to the application library. During DIM1 preprocessing, `hartley2.pl` replaces the DIM3 object list and main object with the smaller radial set and `RadialMain.o`; keep that substitution synchronized with this file. |
+| `srcHartley2/main.cpp` | modified | Replaces the hard-coded `hartley2.shape.nas` kilometre reader with the mesh filename and length unit from `CometModel`; validates generated chemistry, collision physics, and the selected cooling/IDF combination; and calls the generic cooling adapter between DIM3 iterations. |
+| `srcHartley2/Comet.h` | modified | Removes declarations of the superseded Hartley-only Crovisier cooling routine and time-step wrapper. Cooling now has one geometry-neutral application interface. |
+| `srcHartley2/Comet.cpp` | modified | Removes the hard-coded H2O/CO2 collision table and the duplicate Hartley-only water-cooling implementation. It delegates the legacy DIM3 AMPS collision callback to `Comet::Physics::GetNeutralCrossSection()`. DIM1 does not link this file, so `CometPhysics.cpp` supplies the callback only under `#if DIM == 1`; preserve that split to avoid either an undefined or duplicate symbol. |
 | `srcHartley2/CometModel.h` | new | Declares geometry modes and per-species surface/extended source descriptors shared by all comet geometries. It is the stable interface between input-generated data and geometry-specific execution. |
 | `srcHartley2/CometModel.cpp` | new | Stores generated model data and validates geometry, heliocentric distance, mesh units, source rates, source modes, temperatures, and bulk speeds before a run. Its initialized declarations are substitution targets for `hartley2.pl`; retain their spelling and one-line form. |
 | `srcHartley2/CometChemistry.h` | new | Declares the generated-network adapter and the AMPS particle-reaction callback. It includes the reusable reaction header from either a generated or direct source-tree build. |
 | `srcHartley2/CometChemistry.cpp` | new | Validates the generated network and executes supported unit-unimolecular events. It selects mutually exclusive channels, expands integer product multiplicity, handles explicit sinks, preserves event weight, and assigns isotropic product velocities with center-of-mass momentum and excess-energy conservation. |
 | `srcHartley2/CometChemistry.generated.h` | new/generated template | Provides an empty source-tree fallback so direct compilation is possible. The preprocessor writes the case-specific version into `build/main`; never replace this template with a generated Halley table during conflict resolution. |
-| `srcHartley2/CometPhysics.h` | new | Declares the collision-database adapter and the neutral-collision callback used by both DIM1 and DIM3. |
-| `srcHartley2/CometPhysics.cpp` | new | Builds and validates the generated collision database, enforces missing-pair and temperature-range failures, evaluates temperature laws, and owns the AMPS callback only in DIM1. |
+| `srcHartley2/CometPhysics.h` | new | Declares the collision-database adapter, input-defined collision-temperature floor and minimum completed-sample occupancy, and neutral-collision callback used by both DIM1 and DIM3. |
+| `srcHartley2/CometPhysics.cpp` | new | Builds and validates the generated collision database, enforces missing-pair failures, evaluates temperature laws from the completed AMPS translational-temperature sample, sends input-defined undersampled cells to the floor, caps high temperatures at each law's cited maximum, and owns the AMPS callback only in DIM1. Both initialized collision-temperature control declarations are input-substitution targets. |
 | `srcHartley2/CometPhysics.generated.h` | new/generated template | Provides the empty `NONE` database for direct source-tree builds. As with the chemistry template, case data is generated into `build/main` and must not be copied back from the build directory. |
+| `srcHartley2/CometRadiativeCooling.h` | new | Declares the per-species input model array, startup validation, and geometry-neutral between-iteration cooling hook. |
+| `srcHartley2/CometRadiativeCooling.cpp` | new | Validates that cooling uses the AMPS Larsen-Borgnakke IDF model, reads completed density/rotational-temperature samples, evaluates the reusable selected law once per cell/species, and removes bounded rotational energy from locally owned particles with their species-local timestep. The initialized `SpeciesModel` array is an input-substitution target. |
 | `srcHartley2/RadialMesh.h` | new | Declares explicit radial domain controls and the ideal logarithmic resolution profile used by the DIM1 mesh callback. Exactly one of radial extent above the surface and absolute outer radius is allowed. |
 | `srcHartley2/RadialMeshProfile.cpp` | new | Solves the geometric cell-width ratio, maps cometocentric radius to ideal cell width, exposes ideal boundaries, and rejects invalid or decreasing-resolution requests. It contains no AMPS runtime dependency and is unit-testable by itself. |
 | `srcHartley2/RadialMesh.cpp` | new | Connects parsed controls to AMPS, translates the ideal profile into a local-resolution callback, counts allocated dyadic AMR cells, and prints mesh diagnostics. |
 | `srcHartley2/test_radial_mesh.cpp` | new | Tests expanding, uniform, one-cell, and invalid radial-profile configurations. |
-| `srcHartley2/RadialMain.cpp` | new | Supplies the DIM1 executable entry point. It initializes AMPS, validates model/chemistry/physics/runtime data, builds or reads the distributed radial mesh, creates load lists, and starts the particle simulation only when enabled. |
+| `srcHartley2/RadialMain.cpp` | new | Supplies the DIM1 executable entry point. It initializes AMPS, validates model/chemistry/collision/cooling/runtime data, builds or reads the distributed radial mesh, creates load lists, and starts the particle simulation only when enabled. |
 | `srcHartley2/RadialSimulation.h` | new | Declares all required numerical controls and the AMPS callbacks for local timestep, injection, and domain-boundary processing. |
-| `srcHartley2/RadialSimulation.cpp` | new | Implements spherical parent injection, species- and radius-local timesteps/weights, thermal inner re-emission, outer loss, daughter weight initialization, chemistry execution, MPI ownership synchronization, full radial-profile assembly, relative-L1 convergence, sampling-window output, load redistribution, and the hard iteration ceiling. |
+| `srcHartley2/RadialSimulation.cpp` | new | Implements spherical parent injection, AMPS internal-energy initialization at injection/re-emission, species- and radius-local timesteps/weights, thermal inner re-emission, outer loss, daughter weight initialization, chemistry execution, between-iteration cooling, MPI ownership synchronization, full radial-profile assembly, relative-L1 convergence, sampling-window output, load redistribution, and the hard iteration ceiling. |
 
 ### Documentation and reproducibility tools
 
@@ -447,9 +536,13 @@ tracked input and source files after the merge.
 | `srcHartley2/comet_shape_properties.py` | new | Reproducibly reads the Hartley NASTRAN surface and derives area, volume, topology checks, and equivalent radii. |
 | `srcHartley2/shou2025_spherical_parameters.py` | new | Reproduces the Hartley spherical source temperatures, densities, mean-free-path estimate, and mesh-related scalar parameters from the documented inputs. |
 | `srcHartley2/halley2011/PAPER_PARAMETERS.md` | new | Separates values stated by Rubin et al. from AMPS numerical choices and records equations and unresolved physics needed for a full paper reproduction. |
-| `srcHartley2/halley2011/derive_halley1d_controls.py` | new | Reproduces the Halley surface-resolution estimate, particle-count choice, and daughter characteristic speeds from the selected reactions and excess energies. |
+| `srcHartley2/halley2011/COLLISION_DATA_REVIEW.md` | new | Records the online collision-data search for all 27 Halley species, the 84 directly published cometary pair values, CHEMKIN Lennard-Jones parameters covering every species, derived geometric estimates, provenance limits, and the selected input-level completion of the remaining 294 pairs. |
+| `srcHartley2/halley2011/derive_halley1d_controls.py` | new | Reproduces the Halley surface-resolution estimate, particle-count choice, daughter characteristic speeds from the selected reactions and excess energies, and the post-failure Courant-0.25 timestep control. |
+| `srcHartley2/halley2011/digitize_rubin2011.py` | new | Reproducibly extracts the neutral DSMC vector paths in Rubin Figs. 1--17 and modeled H2O velocity in Fig. 18, including the paper's split logarithmic distance axes. It verifies the exact input PDF digest before extraction. |
+| `srcHartley2/halley2011/reference/rubin2011_neutral_profiles.csv` | new | Stores the extracted Rubin neutral density and velocity coordinates used by the overlay. This is reference plot data, not an original paper simulation table. |
+| `srcHartley2/halley2011/reference/rubin2011_neutral_profiles.metadata.json` | new | Records the source-PDF digest, pages, axes, colors, variants, and vector-extraction provenance needed to audit or regenerate the CSV. |
 | `srcHartley2/visualization/plot_1d.py` | new | Plots named quantities from one or many DIM1 Tecplot files with aliases, radial filtering, explicit Y scaling, log-Y masking, filename legends, PNG/EPS output, and optional viewer launch. |
-| `srcHartley2/visualization/compare_rubin2011.py` | new | Selects a complete Halley output index and creates paper-ordered neutral-density panels, H2O radial velocity, PNG/EPS files, a combined PDF, a radius-sampled CSV table, and a JSON manifest. It does not synthesize the paper's NMS instrument response or unpublished curves. |
+| `srcHartley2/visualization/compare_rubin2011.py` | new | Selects a complete Halley output index and overlays AMPS profiles with the committed Rubin neutral DSMC vector digitization. It creates PNG/EPS panels, H2O radial velocity, a combined PDF, paired radius-sampled CSV values, and a provenance manifest. It does not synthesize the paper's NMS instrument response. |
 | `srcHartley2/visualization/README.md` | new | Documents plotting aliases, CLI examples, output behavior, absent-species handling on logarithmic plots, and the Rubin comparison artifact set. |
 
 No Python bytecode or temporary Python source is currently present under
@@ -467,8 +560,8 @@ The safest integration order is:
    READMEs. These components have no Hartley application dependency and can be
    reviewed independently.
 3. Add the Perl generators and tests, then the generic `CometModel`,
-   `CometChemistry`, and `CometPhysics` adapters. Verify that preprocessing
-   writes headers only into `build/main`.
+   `CometChemistry`, `CometPhysics`, and `CometRadiativeCooling` adapters.
+   Verify that preprocessing writes generated headers only into `build/main`.
 4. Merge the radial mesh and runtime files, followed by the
    dimension-selecting parts of `hartley2.pl` and `srcHartley2/makefile`.
 5. Merge the Hartley DIM3, Hartley radial, and Halley inputs with the expanded
@@ -486,9 +579,10 @@ one complete side of a conflict:
   compile and still corrupt load-migration messages.
 - In `hartley2.pl`, keep upstream legacy keywords and finalization code while
   preserving generic-record parsing, validation flags, source-array writes,
-  generated-header writes, and DIM1 object selection. The variable names used
-  by `ChangeValueOfVariable` and `ChangeValueOfArray` must continue to match
-  the initialized declarations in the application `.cpp` files exactly.
+  cooling-model writes, generated-header writes, and DIM1 object selection.
+  The variable names used by `ChangeValueOfVariable` and
+  `ChangeValueOfArray` must continue to match the initialized declarations in
+  the application `.cpp` files exactly.
 - In `Comet.cpp` and `CometPhysics.cpp`, retain a single definition of the
   AMPS user collision callback for each dimension: `Comet.cpp` owns DIM3 and
   delegates to the adapter; `CometPhysics.cpp` owns DIM1 under its preprocessor
@@ -504,6 +598,10 @@ one complete side of a conflict:
 - Treat `CometChemistry.generated.h` and `CometPhysics.generated.h` in
   `srcHartley2` as empty templates. The populated copies in `build/main` are
   build products and are never merge inputs.
+- Keep `RadiativeCooling.h` in `src/models/cometary_physics` independent of
+  AMPS. Particle traversal and IDF access belong in
+  `CometRadiativeCooling.cpp`. Preserve calls after `PIC::TimeStep()` in both
+  mains so cooling runs between iterations and reads a completed sample.
 - Review the root `Makefile` linker flag independently. There is no physical
   model dependency on `-lmpi++`, and a different MPI installation may not
   provide that compatibility library.
@@ -518,7 +616,7 @@ part of the source change set.
 
 After resolving the merge, rerun the complete commands in **Verification**.
 The minimum acceptance evidence is a clean DIM1 build, a clean DIM3 build,
-all five standalone parser/database/profile tests, a multi-rank DIM1 run that
+all standalone parser/database/profile/cooling tests, a multi-rank DIM1 run that
 crosses a sampling/output/load-redistribution boundary, and
 `git diff --check`. A successful compile alone does not exercise the two MPI
 defects fixed in `pic_block_send_mask.cpp` and `pic_mesh.cpp`.
@@ -536,7 +634,8 @@ surface/extended source descriptors. `hartley2.pl` accepts:
 - `SurfaceSource` records by species;
 - `ExtendedSource` records by species;
 - `ChemistryMode` and repeated `ChemistryReaction` records;
-- `PhysicsDatabase` and its database-specific sensitivity choices; and
+- `PhysicsDatabase` and its database-specific sensitivity choices;
+- `CollisionTemperatureFloor` and per-species `RadiativeCooling` records; and
 - `RadialSimulationMode` plus explicit DIM1 numerical controls.
 
 Input species names are checked against `SpeciesList`. Rates, temperatures,
@@ -576,15 +675,57 @@ multi-reactant networks.
 `src/models/cometary_physics/CollisionDatabase.h` provides validated,
 unordered species-pair lookup for constant and temperature-power-law cross
 sections. Each temperature law contains its cited validity interval. A missing
-pair and an out-of-range temperature are separate error states; the
-application adapter aborts on either rather than assigning zero or
-extrapolating.
+pair and an out-of-range temperature are separate low-level results. The
+application adapter aborts on a missing pair. For temperature laws it applies
+the input floor, sends cells below the configured completed-window mean model-
+particle occupancy to that floor, and caps a hotter value at the law record's
+maximum instead of extrapolating.
 
 `input/CometPhysicsDatabase.pm` adds the `RUBIN2011` named database. It
 transcribes the 66 parent-parent collision pairs in Table 3 and the neutral
 photodissociation/photoionization channels in Table 4. The Crifo water
 self-collision law is restricted to its published 50--300 K interval. Table 3
-does not provide daughter-pair values, and those entries remain absent.
+does not provide daughter-pair values; the named database alone leaves them
+absent.
+
+`CometPhysics.cpp` retrieves temperature-dependent collision state through
+`cDataCenterNode::GetTranslationalTemperature()`. Core inspection confirms
+that this accessor averages the completed sampling buffer and returns zero
+when `PIC::LastSampleLength==0`. The collision adapter uses the input-defined
+floor whenever the completed value is not warmer. Halley supplies 180 K; no
+generic default is embedded in C++.
+
+The collision-data search found Combi's complete H2O/OH/H2/H/O/CO subset,
+also partially reproduced by Huang et al. (2016). Rubin and Combi together
+cover 84 of the 378 unordered pairs in the 27-species network. The CHEMKIN
+transport database supplies Lennard-Jones diameter and well-depth parameters
+for every compiled species, including C2. The Halley input now explicitly
+selects `COMBI1996_CHEMKIN_LORENTZ_HS`. The generator preserves 66 Rubin rows,
+adds 18 nonoverlapping Combi rows, and applies a Lorentz mixed diameter with
+`pi*d_ij^2` to only the remaining 294 pairs. Every estimated row is labeled in
+its source string. `halley2011/COLLISION_DATA_REVIEW.md` records the values,
+source links, provenance limits, and temperature-dependent alternatives.
+
+### Internal energy and radiative cooling
+
+`src/models/cometary_physics/RadiativeCooling.h` implements the
+Gombosi et al. (1986) equation (48b) approximation to Crovisier/Huebner H2O
+rotational cooling. The evaluator accepts K, m^-3, and m and returns a
+positive per-molecule loss in J/s. Its unit test covers the two branches at
+52 K, infrared attenuation, conversion, and invalid state.
+
+`CometRadiativeCooling.cpp` maps the input-selected model for each species to
+that reusable evaluator. It requires the AMPS Larsen-Borgnakke internal-energy
+model, reads completed H2O number-density and rotational-temperature samples,
+and removes `rate*local_timestep` from each locally owned H2O particle after
+every particle iteration, clamped at zero. The legacy duplicate routine in
+`Comet.cpp` was removed. Both DIM1 and DIM3 mains call the new adapter.
+
+`halley1d.input` configures H2O with three rotational degrees of freedom,
+`Zrot=5`, RT relaxation, and hard-sphere temperature index 0.5 against every
+compiled partner. Radial surface injection and thermal inner re-emission call
+the core IDF initializers. VT and VV remain off because the current core VT
+transition explicitly exits as untested and unverified.
 
 ### Radial particle execution
 
@@ -638,9 +779,10 @@ width is attributed to the paper.
 
 The requested 2,000 ideal cells and the `0.3293692849882 m` surface estimate
 give a geometric width ratio of `1.008573952117` and require maximum AMR
-refinement level 29. `ReferenceInjectionParticleNumber=16` gives an estimated
+refinement level 29. `ReferenceInjectionParticleNumber=8` gives an estimated
 minimum of 52.454 direct-parent particles in the surface cell. The Courant
-number is 0.5. Direct parents start from the supplied 400 m/s characteristic
+number is 0.25 after the documented mover failure at the initially supplied
+0.5 value. Direct parents start from the supplied 400 m/s characteristic
 speed; daughter recoil bounds are propagated through the reaction graph from
 Table 4 excess energies by `halley2011/derive_halley1d_controls.py`.
 
@@ -664,9 +806,9 @@ radial density-profile change is at most 5% for three consecutive completed
 window comparisons.
 
 The paper includes Crovisier/Huebner radiative cooling and collisional
-relaxation. The legacy DIM3 source contains a cooling routine, but the generic
-DIM1 path has not yet been connected and validated. This is recorded as a
-physical blocker rather than silently omitted from a claimed reproduction.
+relaxation. Both are now connected through the generic application path. The
+collision matrix is complete under the explicitly selected analytical
+completion, whose 294 estimated rows must be identified in comparisons.
 
 ### Hartley 2 paper configuration
 
@@ -849,6 +991,12 @@ g++ -std=c++17 -Wall -Wextra -pedantic \
 /tmp/test_collision_database
 
 g++ -std=c++17 -Wall -Wextra -pedantic \
+  -Isrc/models/cometary_physics \
+  src/models/cometary_physics/test_radiative_cooling.cpp \
+  -o /tmp/test_radiative_cooling
+/tmp/test_radiative_cooling
+
+g++ -std=c++17 -Wall -Wextra -pedantic \
   -IsrcHartley2 srcHartley2/RadialMeshProfile.cpp \
   srcHartley2/test_radial_mesh.cpp -o /tmp/test_radial_mesh
 /tmp/test_radial_mesh
@@ -873,14 +1021,36 @@ git diff --check
 The final clean optimized Halley build generated `SamplingLength=500`,
 `MaxIterations=10000`, `ConvergenceTolerance=0.05`,
 `RequiredConvergedWindows=3`, and the 0.36 eV OH rate `3.0e-6 s^-1`; it linked
-successfully. Its generated cross-section macro selects the user-defined
-Rubin callback. A four-rank callback diagnostic then stopped at iteration 1
-because the first collision step has no sampled H2O translational temperature.
-The earlier multi-window output is invalid for physical comparison because it
+successfully. Generated source contains the 180 K collision-temperature floor,
+assigns cooling model 1 only to H2O, enables Larsen-Borgnakke IDF and RT
+relaxation, gives H2O three rotational modes and `Zrot=5`, and selects the
+user-defined collision callback. After the collision-completion change, a
+fresh `-O3` build generated database
+`RUBIN2011+COMBI1996+CHEMKIN_LORENTZ_HS` with 378 rows: 66 source strings from
+Rubin Table 3, 18 additional Combi rows, and 294 CHEMKIN/Lorentz estimates.
+The optimized executable was launched from
+`/tmp/amps_halley_collision_smoke_o3`, built the 373-block/2,984-cell mesh, and
+ran through iteration 124 without a missing-pair or invalid-cross-section
+abort before being deliberately stopped. This isolated smoke test did not
+modify the repository `PT` directory and did not reach a complete 500-step
+sampling window.
+
+A separate clean optimized DIM3
+Hartley compile and link also passed with the same generic collision and
+cooling adapters before the tree was removed and rebuilt from
+`halley1d.input`. The new four-rank diagnostic completed
+the first 500-iteration sample with 77,482 particles, wrote all 27 outputs,
+redistributed blocks, executed 26 subsequent between-iteration cooling calls
+with the completed sample available, and was deliberately stopped at
+iteration 525. That output predates the selected collision completion and
+remains transient, so it cannot validate the newly completed model. The
+earlier multi-window output remains invalid for physical comparison because it
 used the zero placeholder cross section. The MPI compiler reports local socket
 warnings in the restricted environment; they do not prevent compilation or
-runtime. DIM3 retains legacy warnings for `register`, format widths, narrowing
-conversions, and fixed-buffer `sprintf` calls.
+runtime. The optimized core also retains warnings in inactive/general-purpose
+paths, including a `pic_fluid.cpp` aggressive-loop diagnostic. DIM3 retains
+legacy warnings for `register`, format widths, narrowing conversions, and
+fixed-buffer `sprintf` calls.
 
 ## Remaining decisions for DIM1 science simulations
 
@@ -900,8 +1070,10 @@ table for this run.
 
 For Halley, the paper fixes the parent sources, domain endpoints, and parent
 physics but leaves the input choices recorded in
-`halley2011/PAPER_PARAMETERS.md`. The physically blocking items are the
-daughter collision matrix, an explicit initialization/evaluation rule for the
-temperature-dependent H2O collision law before cell sampling is available,
-and a validated DIM1 radiative cooling/internal-energy path. Paper-curve comparison also needs
-traceable source data or digitization with uncertainty.
+`halley2011/PAPER_PARAMETERS.md`. Traceable vector-extracted Rubin DSMC curves
+and their metadata are now committed under `halley2011/reference/`, and the
+comparison utility overlays them with each completed AMPS window. A physically
+meaningful comparison still requires a converged restarted output and must
+state that 294 pair cross sections are analytical estimates outside Rubin's
+printed table. The NMS observables remain out of scope until an instrument
+response is implemented.

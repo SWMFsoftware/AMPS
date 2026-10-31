@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Create neutral-coma plots comparable to Rubin et al. (2011), Figs. 1--18.
+"""Compare AMPS neutral-coma profiles with Rubin et al. (2011), Figs. 1--18.
 
-The paper's Figs. 2--17 contain both neutral DSMC profiles and simulated or
-measured Giotto NMS mass-channel signals.  The generic comet application
-currently writes neutral-species properties only.  This script therefore
-reproduces the paper's species groupings, distance axes, density units, and
-line styles for the neutral curves; it does not manufacture an NMS response.
+The paper's neutral DSMC curves are digitized directly from vector paths in
+the journal PDF by ``halley2011/digitize_rubin2011.py``.  Each output figure
+overlays those published values with the selected AMPS sampling window.  The
+red simulated/measured Giotto NMS mass-channel signals in Figs. 2--17 are a
+different observable and are deliberately not presented as neutral density.
 
 Density is converted from the AMPS SI output (m^-3) to the paper's cm^-3.
 Figure 18 uses the sampled radial water velocity in m/s.  A CSV table at fixed
@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 import re
@@ -83,6 +84,12 @@ FILE_PATTERN = re.compile(
     r"^pic\.(?P<species>.+)\.s=(?P<species_index>\d+)\.out=(?P<output_index>\d+)\.dat$"
 )
 DEFAULT_RADII_KM = (10.0, 100.0, 1_000.0, 10_000.0, 100_000.0)
+DEFAULT_PAPER_DATA = (
+    Path(__file__).resolve().parents[1]
+    / "halley2011"
+    / "reference"
+    / "rubin2011_neutral_profiles.csv"
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -117,6 +124,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--run-log",
         type=Path,
         help="optional run log from which convergence status is copied",
+    )
+    parser.add_argument(
+        "--paper-data",
+        type=Path,
+        default=DEFAULT_PAPER_DATA,
+        help=(
+            "digitized Rubin neutral profiles (default: "
+            "srcHartley2/halley2011/reference/rubin2011_neutral_profiles.csv)"
+        ),
     )
     parser.add_argument(
         "--sampling-length",
@@ -252,18 +268,116 @@ def load_profiles(files: Dict[str, Path]) -> Dict[str, Dict[str, np.ndarray]]:
     return profiles
 
 
+PaperKey = Tuple[int, str, str]
+
+
+def load_paper_profiles(path: Path) -> Dict[PaperKey, Dict[str, np.ndarray]]:
+    """Load the committed vector digitization of the Rubin DSMC curves."""
+
+    required_columns = {
+        "figure",
+        "species",
+        "variant",
+        "quantity",
+        "radius_km",
+        "value",
+        "unit",
+    }
+    rows: Dict[PaperKey, List[Tuple[float, float]]] = {}
+    quantities: Dict[PaperKey, str] = {}
+    try:
+        with path.open(newline="", encoding="utf-8") as stream:
+            reader = csv.DictReader(stream)
+            if reader.fieldnames is None or not required_columns.issubset(reader.fieldnames):
+                missing = sorted(required_columns - set(reader.fieldnames or ()))
+                raise PlotError(
+                    f"{path}: paper-data columns are missing: {', '.join(missing)}"
+                )
+            for line_number, row in enumerate(reader, start=2):
+                try:
+                    figure = int(row["figure"])
+                    species = row["species"].strip()
+                    variant = row["variant"].strip()
+                    quantity = row["quantity"].strip()
+                    radius = float(row["radius_km"])
+                    value = float(row["value"])
+                except (TypeError, ValueError) as exc:
+                    raise PlotError(
+                        f"{path}:{line_number}: invalid digitized numeric value"
+                    ) from exc
+                if not species or not variant:
+                    raise PlotError(
+                        f"{path}:{line_number}: species and variant must be nonempty"
+                    )
+                if not (
+                    math.isfinite(radius)
+                    and radius > 0.0
+                    and math.isfinite(value)
+                    and value > 0.0
+                ):
+                    raise PlotError(
+                        f"{path}:{line_number}: radius and value must be positive and finite"
+                    )
+                key = (figure, species, variant)
+                if key in quantities and quantities[key] != quantity:
+                    raise PlotError(f"{path}:{line_number}: quantity changes within {key}")
+                quantities[key] = quantity
+                rows.setdefault(key, []).append((radius, value))
+    except OSError as exc:
+        raise PlotError(f"cannot read digitized paper data {path}: {exc}") from exc
+
+    result: Dict[PaperKey, Dict[str, np.ndarray]] = {}
+    for key, samples in rows.items():
+        samples.sort()
+        radius = np.asarray([sample[0] for sample in samples], dtype=float)
+        value = np.asarray([sample[1] for sample in samples], dtype=float)
+        if len(radius) < 2 or np.any(np.diff(radius) <= 0.0):
+            raise PlotError(f"{path}: {key} must contain increasing radii")
+        result[key] = {
+            "radius_km": radius,
+            "value": value,
+        }
+
+    for paper_figure in PAPER_DENSITY_FIGURES:
+        for curve in paper_figure.curves:
+            key = (paper_figure.number, curve.species, "nominal")
+            if key not in result:
+                raise PlotError(f"{path}: digitized paper curve is missing: {key}")
+            if quantities[key] != "number_density":
+                raise PlotError(f"{path}: {key} is not a number-density curve")
+    velocity_key = (18, "H2O", "nominal")
+    if velocity_key not in result or quantities[velocity_key] != "radial_velocity":
+        raise PlotError(f"{path}: digitized H2O velocity curve is missing")
+    return result
+
+
+def paper_variants(
+    profiles: Dict[PaperKey, Dict[str, np.ndarray]], figure: int, species: str
+) -> List[Tuple[str, Dict[str, np.ndarray]]]:
+    """Return nominal first, followed by any explicitly published variants."""
+
+    variants = [
+        (variant, profile)
+        for (candidate_figure, candidate_species, variant), profile in profiles.items()
+        if candidate_figure == figure and candidate_species == species
+    ]
+    return sorted(variants, key=lambda item: (item[0] != "nominal", item[0]))
+
+
 def density_figure(
     paper_figure: PaperFigure,
     profiles: Dict[str, Dict[str, np.ndarray]],
+    published_profiles: Dict[PaperKey, Dict[str, np.ndarray]],
     output_index: int,
     iteration: int,
     radius_range: Tuple[float, float],
 ) -> plt.Figure:
-    """Draw the neutral subset of one density figure on paper-compatible axes."""
+    """Overlay AMPS and digitized Rubin neutral densities on common axes."""
 
     figure, axes = plt.subplots(figsize=(7.2, 5.0))
     populated = 0
-    for curve in paper_figure.curves:
+    for curve_index, curve in enumerate(paper_figure.curves):
+        color = f"C{curve_index % 10}"
         profile = profiles[curve.species]
         radius = profile["radius_km"]
         density = profile["density_cm3"]
@@ -274,26 +388,56 @@ def density_figure(
             & (radius <= radius_range[1])
         )
         if not np.any(valid):
-            # Methanol is intentionally disabled in the current Halley input.
-            # Keep the missing curve visible as an annotation instead of
-            # connecting zeros on logarithmic axes or silently omitting it.
+            # Keep a statistically absent AMPS curve visible as an annotation
+            # while still plotting the digitized paper reference below.
             axes.text(
                 0.02,
-                0.04 + 0.06 * populated,
+                0.04 + 0.06 * curve_index,
                 f"{curve.species}: no positive samples in selected window",
                 transform=axes.transAxes,
                 fontsize=9,
             )
-            continue
-        axes.plot(
-            radius[valid],
-            density[valid],
-            color=f"C{populated}",
-            linestyle=curve.linestyle,
-            linewidth=1.7,
-            label=curve.species,
-        )
-        populated += 1
+        else:
+            axes.plot(
+                radius[valid],
+                density[valid],
+                color=color,
+                linestyle="-",
+                linewidth=1.8,
+                label=f"AMPS {curve.species}",
+            )
+            populated += 1
+
+        for variant, published in paper_variants(
+            published_profiles, paper_figure.number, curve.species
+        ):
+            paper_radius = published["radius_km"]
+            paper_density = published["value"]
+            paper_valid = (
+                np.isfinite(paper_density)
+                & (paper_density > 0.0)
+                & (paper_radius >= radius_range[0])
+                & (paper_radius <= radius_range[1])
+            )
+            if not np.any(paper_valid):
+                continue
+            if variant == "nominal":
+                label = f"Rubin DSMC {curve.species}"
+                linestyle = curve.linestyle
+                linewidth = 1.6
+            else:
+                label = f"Rubin DSMC {curve.species} (no CH3OH→H2CO)"
+                linestyle = ":"
+                linewidth = 1.3
+            axes.plot(
+                paper_radius[paper_valid],
+                paper_density[paper_valid],
+                color=color,
+                linestyle=linestyle,
+                linewidth=linewidth,
+                label=label,
+            )
+            populated += 1
 
     axes.set_xscale("log")
     axes.set_yscale("log")
@@ -301,7 +445,7 @@ def density_figure(
     axes.set_xlabel("Cometocentric distance [km]")
     axes.set_ylabel(r"Neutral number density [cm$^{-3}$]")
     axes.set_title(
-        f"Rubin et al. (2011) Fig. {paper_figure.number}: AMPS neutrals\n"
+        f"Rubin et al. (2011) Fig. {paper_figure.number}: AMPS vs. published DSMC\n"
         f"output {output_index}, iteration {iteration}"
     )
     axes.grid(True, which="both", color="0.85")
@@ -313,11 +457,12 @@ def density_figure(
 
 def velocity_figure(
     profiles: Dict[str, Dict[str, np.ndarray]],
+    published_profiles: Dict[PaperKey, Dict[str, np.ndarray]],
     output_index: int,
     iteration: int,
     radius_range: Tuple[float, float],
 ) -> plt.Figure:
-    """Draw the modeled water radial bulk speed corresponding to paper Fig. 18."""
+    """Overlay AMPS and digitized Rubin H2O radial bulk speeds."""
 
     profile = profiles["H2O"]
     radius = profile["radius_km"]
@@ -331,13 +476,38 @@ def velocity_figure(
         raise PlotError("H2O has no finite velocity samples in the requested range")
 
     figure, axes = plt.subplots(figsize=(7.2, 5.0))
-    axes.plot(radius[valid], velocity[valid], "-", color="C0", linewidth=1.7, label="H2O")
+    axes.plot(
+        radius[valid],
+        velocity[valid],
+        "-",
+        color="C0",
+        linewidth=1.8,
+        label="AMPS H2O",
+    )
+    published = published_profiles[(18, "H2O", "nominal")]
+    paper_radius = published["radius_km"]
+    paper_velocity = published["value"]
+    paper_valid = (
+        np.isfinite(paper_velocity)
+        & (paper_velocity > 0.0)
+        & (paper_radius >= radius_range[0])
+        & (paper_radius <= radius_range[1])
+    )
+    axes.plot(
+        paper_radius[paper_valid],
+        paper_velocity[paper_valid],
+        "--",
+        color="C1",
+        linewidth=1.6,
+        label="Rubin DSMC H2O",
+    )
     axes.set_xscale("log")
+    axes.set_yscale("log")
     axes.set_xlim(*radius_range)
     axes.set_xlabel("Cometocentric distance [km]")
     axes.set_ylabel("Radial bulk velocity [m/s]")
     axes.set_title(
-        "Rubin et al. (2011) Fig. 18: AMPS water velocity\n"
+        "Rubin et al. (2011) Fig. 18: AMPS vs. published H2O velocity\n"
         f"output {output_index}, iteration {iteration}"
     )
     axes.grid(True, which="both", color="0.85")
@@ -382,13 +552,35 @@ def finite_log_radius_interpolate(radius: np.ndarray, values: np.ndarray, target
 def write_comparison_table(
     output_path: Path,
     profiles: Dict[str, Dict[str, np.ndarray]],
+    published_profiles: Dict[PaperKey, Dict[str, np.ndarray]],
     radii_km: Iterable[float],
 ) -> None:
-    """Write numeric profiles at common paper-reading distances."""
+    """Write AMPS and published profiles at common comparison radii."""
 
     species_order = required_species()
-    fieldnames = ["radius_km"] + [f"{species}_density_cm-3" for species in species_order]
-    fieldnames.append("H2O_radial_velocity_m_s-1")
+    species_figure = {
+        curve.species: paper_figure.number
+        for paper_figure in PAPER_DENSITY_FIGURES
+        for curve in paper_figure.curves
+    }
+    fieldnames = ["radius_km"]
+    for species in species_order:
+        fieldnames.extend(
+            [
+                f"AMPS_{species}_density_cm-3",
+                f"Rubin2011_{species}_density_cm-3",
+            ]
+        )
+        if species == "H2CO":
+            fieldnames.append(
+                "Rubin2011_H2CO_no_ch3oh_photodissociation_density_cm-3"
+            )
+    fieldnames.extend(
+        [
+            "AMPS_H2O_radial_velocity_m_s-1",
+            "Rubin2011_H2O_radial_velocity_m_s-1",
+        ]
+    )
     with output_path.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=fieldnames)
         writer.writeheader()
@@ -399,13 +591,45 @@ def write_comparison_table(
                 value = positive_log_interpolate(
                     profile["radius_km"], profile["density_cm3"], radius_km
                 )
-                row[f"{species}_density_cm-3"] = "" if math.isnan(value) else f"{value:.9e}"
+                row[f"AMPS_{species}_density_cm-3"] = (
+                    "" if math.isnan(value) else f"{value:.9e}"
+                )
+                published = published_profiles[
+                    (species_figure[species], species, "nominal")
+                ]
+                paper_value = positive_log_interpolate(
+                    published["radius_km"], published["value"], radius_km
+                )
+                row[f"Rubin2011_{species}_density_cm-3"] = (
+                    "" if math.isnan(paper_value) else f"{paper_value:.9e}"
+                )
+                if species == "H2CO":
+                    alternative = published_profiles[
+                        (15, "H2CO", "no_ch3oh_photodissociation")
+                    ]
+                    alternative_value = positive_log_interpolate(
+                        alternative["radius_km"], alternative["value"], radius_km
+                    )
+                    row[
+                        "Rubin2011_H2CO_no_ch3oh_photodissociation_density_cm-3"
+                    ] = (
+                        ""
+                        if math.isnan(alternative_value)
+                        else f"{alternative_value:.9e}"
+                    )
             water = profiles["H2O"]
             velocity = finite_log_radius_interpolate(
                 water["radius_km"], water["radial_velocity_ms"], radius_km
             )
-            row["H2O_radial_velocity_m_s-1"] = (
+            row["AMPS_H2O_radial_velocity_m_s-1"] = (
                 "" if math.isnan(velocity) else f"{velocity:.9e}"
+            )
+            paper_water = published_profiles[(18, "H2O", "nominal")]
+            paper_velocity = positive_log_interpolate(
+                paper_water["radius_km"], paper_water["value"], radius_km
+            )
+            row["Rubin2011_H2O_radial_velocity_m_s-1"] = (
+                "" if math.isnan(paper_velocity) else f"{paper_velocity:.9e}"
             )
             writer.writerow(row)
 
@@ -440,6 +664,19 @@ def convergence_line_for_iteration(
     return max(matches, key=lambda item: item[0])[1] if matches else None
 
 
+def file_sha256(path: Path) -> str:
+    """Return a stable provenance digest for the digitized reference table."""
+
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+    except OSError as exc:
+        raise PlotError(f"cannot hash digitized paper data {path}: {exc}") from exc
+    return digest.hexdigest()
+
+
 def write_manifest(
     output_dir: Path,
     plots_dir: Path,
@@ -449,6 +686,7 @@ def write_manifest(
     convergence_line: Optional[str],
     density_range: Tuple[float, float],
     velocity_range: Tuple[float, float],
+    paper_data: Path,
 ) -> None:
     """Record provenance and model-to-paper comparison limits."""
 
@@ -461,11 +699,17 @@ def write_manifest(
         "density_distance_range_km": list(density_range),
         "velocity_distance_range_km": list(velocity_range),
         "density_conversion": "AMPS m^-3 multiplied by 1e-6 to obtain cm^-3",
+        "paper_data_file": str(paper_data.resolve()),
+        "paper_data_sha256": file_sha256(paper_data),
+        "paper_data_method": (
+            "vector paths extracted from the Rubin et al. PDF with its "
+            "piecewise logarithmic distance axes"
+        ),
         "convergence_record": convergence_line,
         "source_files": {species: path.name for species, path in sorted(files.items())},
         "limitations": [
-            "Figs. 2-17 in the paper also show measured and modeled Giotto NMS mass-channel signals; this output contains neutral AMPS profiles only.",
-            "The current halley1d.input intentionally disables methanol, dust, and extended sources.",
+            "Figs. 2-17 also show Giotto NMS mass-channel observables; those are not neutral number densities and are excluded from this overlay.",
+            "The current halley1d.input disables dust, extended sources, and the optional CH3OH-to-H2CO photodissociation branch.",
             "A selected output is scientifically steady only if the run log reports the required consecutive convergence windows.",
         ],
     }
@@ -493,6 +737,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         output_dir = args.output_dir or args.plots_dir / "rubin2011_comparison"
         output_dir.mkdir(parents=True, exist_ok=True)
         profiles = load_profiles(files)
+        published_profiles = load_paper_profiles(args.paper_data)
         iteration = (output_index + 1) * args.sampling_length
 
         pdf_path = output_dir / "rubin2011_neutral_profiles.pdf"
@@ -501,6 +746,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 figure = density_figure(
                     paper_figure,
                     profiles,
+                    published_profiles,
                     output_index,
                     iteration,
                     density_range,
@@ -511,14 +757,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 plt.close(figure)
 
             figure = velocity_figure(
-                profiles, output_index, iteration, velocity_range
+                profiles,
+                published_profiles,
+                output_index,
+                iteration,
+                velocity_range,
             )
             save_figure(figure, output_dir / "rubin2011_fig18_h2o_velocity", args.dpi)
             pdf.savefig(figure)
             plt.close(figure)
 
         write_comparison_table(
-            output_dir / "comparison_profiles.csv", profiles, sorted(set(args.table_radii))
+            output_dir / "comparison_profiles.csv",
+            profiles,
+            published_profiles,
+            sorted(set(args.table_radii)),
         )
         convergence_line = convergence_line_for_iteration(args.run_log, iteration)
         write_manifest(
@@ -530,6 +783,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             convergence_line,
             density_range,
             velocity_range,
+            args.paper_data,
         )
     except PlotError as exc:
         print(f"compare_rubin2011.py: error: {exc}", file=sys.stderr)

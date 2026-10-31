@@ -35,7 +35,10 @@
 #include "meshAMRcutcell.h"
 #include "cCutBlockSet.h"
 #include "Comet.h"
+#include "CometChemistry.h"
 #include "CometModel.h"
+#include "CometPhysics.h"
+#include "CometRadiativeCooling.h"
 #include "Exosphere.h"
 
 
@@ -898,6 +901,24 @@ int main(int argc,char **argv) {
 
 
   PIC::Init_AfterParser();
+  {
+    std::string validationError;
+    if (!Comet::Chemistry::Validate(&validationError)) {
+      std::fprintf(stderr,"Invalid comet chemistry: %s\n",
+          validationError.c_str());
+      return EXIT_FAILURE;
+    }
+    if (!Comet::Physics::Validate(&validationError)) {
+      std::fprintf(stderr,"Invalid comet collision physics: %s\n",
+          validationError.c_str());
+      return EXIT_FAILURE;
+    }
+    if (!Comet::RadiativeCooling::Validate(&validationError)) {
+      std::fprintf(stderr,"Invalid comet radiative cooling: %s\n",
+          validationError.c_str());
+      return EXIT_FAILURE;
+    }
+  }
   PIC::Mover::Init();
   Comet::Init_AfterParser(PIC::UserModelInputDataPath);
 
@@ -1151,9 +1172,9 @@ int main(int argc,char **argv) {
     }
 
 
-    #if _PIC_MODEL__RADIATIVECOOLING__MODE_ == _PIC_MODEL__RADIATIVECOOLING__MODE__CROVISIER_
-	Comet::StepOverTime();
-#endif
+    // The species and cooling law are compiled from the comet input.  The
+    // adapter is a no-op when no species selects radiative cooling.
+    Comet::RadiativeCooling::Apply();
   }
 
   //output the particle statistics for the nightly tests

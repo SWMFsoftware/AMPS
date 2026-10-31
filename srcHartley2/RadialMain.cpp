@@ -2,6 +2,7 @@
 #include "CometChemistry.h"
 #include "CometModel.h"
 #include "CometPhysics.h"
+#include "CometRadiativeCooling.h"
 #include "RadialMesh.h"
 #include "RadialSimulation.h"
 
@@ -34,6 +35,11 @@ int main(int argc,char **argv) {
   }
   if (!Comet::Physics::Validate(&validationError)) {
     std::fprintf(stderr,"Invalid comet physics database: %s\n",
+        validationError.c_str());
+    return EXIT_FAILURE;
+  }
+  if (!Comet::RadiativeCooling::Validate(&validationError)) {
+    std::fprintf(stderr,"Invalid comet radiative cooling: %s\n",
         validationError.c_str());
     return EXIT_FAILURE;
   }

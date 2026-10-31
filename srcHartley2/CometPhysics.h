@@ -23,6 +23,17 @@ class cDataCenterNode;
 namespace Comet {
 namespace Physics {
 
+// Input-defined lower bound used before a completed kinetic-temperature
+// sample exists.  It is required whenever the selected collision database has
+// a temperature-dependent law, so a comet case cannot inherit Halley's value.
+extern double CollisionTemperatureFloor;
+
+// Minimum completed-window mean model-particle occupancy required before a
+// sampled cell temperature is used.  A positive case value rejects noisy
+// temperature estimates in sparsely populated cells and uses the case floor
+// instead.  Zero disables this statistical filter for backward compatibility.
+extern double CollisionTemperatureMinimumSampleParticleNumber;
+
 // The generated table contains only data.  These functions provide the small
 // application adapter needed by the AMPS neutral-collision callback.
 const CometaryPhysics::cCollisionDatabase& GetCollisionDatabase();

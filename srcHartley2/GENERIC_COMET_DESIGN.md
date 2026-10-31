@@ -9,8 +9,9 @@ new code in it is comet-generic. A comet case should be defined by input data:
 2. computational dimension and surface geometry;
 3. heliocentric conditions;
 4. surface and extended source descriptions for each species; and
-5. an optional chemical reaction network; and
-6. a named or user-supplied neutral collision database.
+5. an optional chemical reaction network;
+6. a named or user-supplied neutral collision database; and
+7. per-species internal-energy loss models.
 
 The AMPS core continues to own the mesh, particle mover, collisions, sampling,
 and parallel distribution. Comet-specific code supplies geometry and physical
@@ -140,16 +141,58 @@ stops instead of interpreting missing data as a collisionless pair.
 `RUBIN2011`, containing all 66 parent-parent pairs in Rubin et al. Table 3 and
 the Table 4 photoprocesses. The H2O-H2O law is evaluated only in its published
 50--300 K range. The paper does not publish a complete daughter collision
-matrix, so those entries remain deliberately absent.
+matrix, so the named database alone leaves those entries absent.
+
+Collision completion is an independent case-input policy:
+
+```text
+NeutralCollisionCompletion=COMBI1996_CHEMKIN_LORENTZ_HS
+```
+
+This policy preserves every existing pair, adds nonoverlapping values from
+the Combi (1996) H2O/OH/H2/H/O/CO hard-sphere set, and generates a constant
+geometric hard-sphere estimate for every remaining pair from CHEMKIN Table 5.1
+diameters and Lorentz arithmetic mixing. The generated source string labels
+each estimated row. Inputs that do not select the policy retain strict missing-
+pair failure.
 
 The Rubin database also requires explicit values for its two documented
 sensitivity choices:
 
 ```text
 PhysicsDatabase=Rubin2011
+NeutralCollisionCompletion=COMBI1996_CHEMKIN_LORENTZ_HS
 Rubin2011OHGroundRate=<3e-6 through 6e-6 s^-1>
 Rubin2011MethanolH2COBranch=<ON or OFF>
 ```
+
+Temperature-dependent collision laws read the most recent completed AMPS
+cell sample. Each such case must provide `CollisionTemperatureFloor`; Halley
+uses `max(T_sampled,180 K)` for the Crifo H2O self-collision law.
+
+### Internal energy and radiative cooling
+
+`src/models/cometary_physics/RadiativeCooling.h` stores published cooling
+rate evaluators without AMPS mesh or particle dependencies.
+`CometRadiativeCooling.h/.cpp` is the application adapter: input selects one
+model per compiled species, the adapter reads completed macroscopic samples,
+and AMPS owns each particle's internal-energy state. The syntax is:
+
+```text
+RadiativeCooling=H2O | GOMBOSI1986_H2O
+```
+
+The first supported law is the Crovisier/Huebner H2O rotational-cooling
+approximation presented by Gombosi et al. (1986). The parser rejects its use
+for another species. `Apply()` is called after every `PIC::TimeStep()` in
+DIM1 and DIM3 and is a no-op before a completed sample or when every species
+is disabled. Adding a future law requires a reusable evaluator, an enum/model
+code, input-name mapping with species applicability checks, and a documented
+internal-energy reservoir; geometry-specific code is not required.
+
+The Halley case enables AMPS's Larsen-Borgnakke model for H2O rotation and RT
+relaxation. VT and VV are disabled because the current core VT transition
+routine stops as untested and unverified.
 
 ## Hartley 2 case from Shou et al. (2025)
 
@@ -249,9 +292,7 @@ explicit. A case still needs:
 
 1. a complete collision database for every pair that can coexist;
 2. explicit particle-weight, timestep, sampling, and convergence controls;
-3. validated internal-energy relaxation and radiative cooling where required;
-   and
-4. traceable reference data for plot comparisons.
+3. traceable reference data for plot comparisons.
 
 Shou et al. do not state those numerical controls. Its domain extent and cell
 count are supplied run settings; the surface width is derived from the

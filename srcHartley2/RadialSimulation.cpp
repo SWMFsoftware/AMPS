@@ -10,6 +10,7 @@
 
 #include "pic.h"
 #include "CometModel.h"
+#include "CometRadiativeCooling.h"
 
 bool Comet::RadialSimulation::Enabled=false;
 double Comet::RadialSimulation::CourantNumber=-1.0;
@@ -284,6 +285,13 @@ long int Comet::RadialSimulation::InjectBlock(
       PIC::ParticleBuffer::SetX(position,data);
       PIC::ParticleBuffer::SetV(velocity,data);
       PIC::ParticleBuffer::SetI(species,data);
+#if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
+      // A surface molecule leaves the thermalized Knudsen layer with its
+      // configured translational and internal temperatures in equilibrium.
+      // AMPS owns the Larsen-Borgnakke sampling of the internal energies.
+      PIC::IDF::InitRotTemp(Comet::Model::SurfaceTemperature[species],data);
+      PIC::IDF::InitVibTemp(Comet::Model::SurfaceTemperature[species],data);
+#endif
 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
       PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,data);
 #endif
@@ -317,6 +325,12 @@ int Comet::RadialSimulation::ProcessDomainBoundary(long int ptr,
   const double bulkVelocity[3]={0.0,0.0,0.0};
   PIC::Distribution::InjectMaxwellianDistribution(velocity,bulkVelocity,
       InnerBoundaryTemperature,const_cast<double*>(externalNormal),species,-1);
+#if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
+  PIC::ParticleBuffer::byte *data=
+      PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+  PIC::IDF::InitRotTemp(InnerBoundaryTemperature,data);
+  PIC::IDF::InitVibTemp(InnerBoundaryTemperature,data);
+#endif
   (void)node;
   return _PARTICLE_REJECTED_ON_THE_FACE_;
 }
@@ -467,6 +481,10 @@ void Comet::RadialSimulation::Run() {
 
   for (long int iteration=0;iteration<MaxIterations;iteration++) {
     PIC::TimeStep();
+    // Cooling changes particle internal energy after this iteration's
+    // transport/collisions and before the next iteration.  It deliberately
+    // uses only the previously completed macroscopic sample.
+    Comet::RadiativeCooling::Apply();
 
     if (PIC::DataOutputFileNumber==previousOutputNumber) continue;
     previousOutputNumber=PIC::DataOutputFileNumber;

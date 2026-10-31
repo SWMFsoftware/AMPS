@@ -65,9 +65,6 @@ namespace Comet {
   long int InjectionBoundaryModel_Limited();
   long int InjectionBoundaryModel_Limited(int spec);
 
-  double radiativeCoolingRate_Crovisier(PIC::Mesh::cDataCenterNode *CenterNode);
-  void StepOverTime();
-
   int RequestDataBuffer(int offset);
   void PrintVariableList(FILE* fout,int DataSetNumber);
   void PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode);
@@ -389,4 +386,3 @@ namespace Comet {
 }
       
 #endif
-

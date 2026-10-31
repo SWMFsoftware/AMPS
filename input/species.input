@@ -110,7 +110,11 @@
   charge=0
 
 #component=C
-  mass=1.993E-26
+  ! Use the nominal 12 amu mass used for the Rubin et al. neutral network.
+  ! Keeping every C/H/N/O species on the same nominal-mass convention makes
+  ! compile-time validation of each dissociation channel exact; the previous
+  ! rounded kilogram literal made CO -> C + O appear to violate mass balance.
+  mass=12*_AMU_
   charge=0
 
 ! Neutral species needed by the Rubin et al. (2011) Halley network. The

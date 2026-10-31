@@ -41,9 +41,10 @@ CouplerMode=off
 #include species.input
 
 #General
-  ! Sixteen injection events per parent timestep give an estimated minimum of
-  ! 52.45 model particles in the first cell (CH4 is the limiting parent).
-  ReferenceInjectionParticleNumber=16
+  ! Eight injection events per shortened parent timestep give an estimated
+  ! minimum of 52.45 model particles in the first cell (CH4 is limiting).
+  ! Halving both C and this count preserves the requested surface statistics.
+  ReferenceInjectionParticleNumber=8
   ! Rubin et al. report several 10^6 model particles. This five-million-slot
   ! starting capacity must be monitored during the convergence run.
   RequestedParticleBufferLength=5000000
@@ -57,6 +58,53 @@ CouplerMode=off
   define _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION_ _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__USER_DEFINED_
   define _PIC__PARTICLE_COLLISION_MODEL__MODE_ _PIC_MODE_ON_
 #endGeneral
+
+! Rubin et al. include collisional relaxation, and the Gombosi cooling law
+! removes energy from H2O rotation.  Use the AMPS Larsen-Borgnakke model with
+! the same water rotational setup as the legacy comet application.  The core
+! VT implementation is explicitly marked unverified and aborts when called,
+! so this traceable Halley case enables rotational-translational relaxation
+! only; no vibrational modes are invented here.
+#IDF
+  Model=LB
+  vtRelaxation=off
+  vvRelaxation=off
+  rtRelaxation=on
+
+  nRotModes(H2O=3)
+  RotZnum(H2O=5)
+
+  ! All current neutral collisions are hard-sphere laws.  AMPS represents
+  ! their viscosity temperature index as omega=0.5 when redistributing
+  ! translational and H2O rotational energy.
+  TemperatureIndex(H2O,H)=0.5
+  TemperatureIndex(H2O,H2)=0.5
+  TemperatureIndex(H2O,C)=0.5
+  TemperatureIndex(H2O,CH)=0.5
+  TemperatureIndex(H2O,CH2)=0.5
+  TemperatureIndex(H2O,N)=0.5
+  TemperatureIndex(H2O,CH3)=0.5
+  TemperatureIndex(H2O,NH)=0.5
+  TemperatureIndex(H2O,CH4)=0.5
+  TemperatureIndex(H2O,NH2)=0.5
+  TemperatureIndex(H2O,O)=0.5
+  TemperatureIndex(H2O,NH3)=0.5
+  TemperatureIndex(H2O,OH)=0.5
+  TemperatureIndex(H2O,H2O)=0.5
+  TemperatureIndex(H2O,C2)=0.5
+  TemperatureIndex(H2O,C2H)=0.5
+  TemperatureIndex(H2O,C2H2)=0.5
+  TemperatureIndex(H2O,CN)=0.5
+  TemperatureIndex(H2O,HCN)=0.5
+  TemperatureIndex(H2O,C2H4)=0.5
+  TemperatureIndex(H2O,CO)=0.5
+  TemperatureIndex(H2O,C2H5)=0.5
+  TemperatureIndex(H2O,HCO)=0.5
+  TemperatureIndex(H2O,C2H6)=0.5
+  TemperatureIndex(H2O,H2CO)=0.5
+  TemperatureIndex(H2O,CH3OH)=0.5
+  TemperatureIndex(H2O,CO2)=0.5
+#endIDF
 
 #block ../hartley2.pl
 
@@ -83,9 +131,26 @@ CouplerMode=off
   ! interval for the ground-state OH branch and studies both states of the
   ! methanol-to-formaldehyde branch, so each run must select them explicitly.
   PhysicsDatabase=Rubin2011
+  ! Complete Rubin's parent-only collision matrix by source priority. Preserve
+  ! Rubin Table 3, add the non-overlapping Combi (1996) H2O/OH/H2/H/O/CO
+  ! values, then use CHEMKIN Table 5.1 diameters with Lorentz mixing and
+  ! sigma=pi*d_ij^2 only for the remaining pairs. The final tier is explicitly
+  ! an analytical hard-sphere estimate rather than a measured cross section.
+  NeutralCollisionCompletion=COMBI1996_CHEMKIN_LORENTZ_HS
+  ! Before the first completed sample, and whenever the sampled kinetic
+  ! temperature is colder, evaluate the Crifo H2O law at the 180 K source
+  ! temperature.  Warmer completed-sample temperatures are used directly.
+  CollisionTemperatureFloor=180.0
+  CollisionTemperatureMinimumSampleParticleNumber=1.0
   Rubin2011OHGroundRate=3.0e-6
   Rubin2011MethanolH2COBranch=OFF
   ChemistryMode=on
+
+  ! Water rotational cooling from the analytic Crovisier/Huebner
+  ! approximation printed as equation (48b) by Gombosi et al. (1986).
+  ! Species and model are paired explicitly so other comet inputs can select
+  ! different species-specific laws without changing application code.
+  RadiativeCooling=H2O | GOMBOSI1986_H2O
 
   ! Rubin et al. place the inner boundary at a 6 km cometocentric radius and
   ! the outer boundary at 10^6 km cometocentric radius.
@@ -97,7 +162,13 @@ CouplerMode=off
   NucleusSurfaceResolution=0.3293692849882
 
   RadialSimulationMode=on
-  RadialCourantNumber=0.5
+  ! A four-rank run at C=0.5 reached iteration 3500, then a collision-product
+  ! tail particle crossed more than one eight-cell MPI boundary block in one
+  ! move and reached a remotely owned block with no local allocation.  C=0.25
+  ! keeps the maximum expected H-to-heavy hard-sphere energy-transfer speed
+  ! within one boundary block while retaining the supplied, species-specific
+  ! characteristic speeds used by the local-timestep calculation.
+  RadialCourantNumber=0.25
   RadialInnerBoundaryTemperature=180.0
   ! Convergence is evaluated only at complete 500-iteration sampling windows;
   ! 10,000 iterations is the unconditional safety ceiling.

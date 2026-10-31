@@ -59,6 +59,7 @@ my $HeliocentricDistanceAUIsSet=0;
 my $ChemistryModeIsSet=0;
 my $ConfiguredGeometry="";
 my $PhysicsDatabaseName="NONE";
+my $NeutralCollisionCompletion="NONE";
 my $Rubin2011OHGroundRate;
 my $Rubin2011MethanolH2COBranch;
 my $RadialSimulationModeIsSet=0;
@@ -99,6 +100,7 @@ my @SurfaceBulkSpeed=(-1.0)x$TotalSpeciesNumber;
 my @ExtendedProductionRate=(0)x$TotalSpeciesNumber;
 my @ExtendedDistributionMode=(0)x$TotalSpeciesNumber;
 my @RadialCharacteristicSpeed=(-1.0)x$TotalSpeciesNumber;
+my @RadiativeCoolingModel=(0)x$TotalSpeciesNumber;
 my $ReactionNetwork=CometReactionNetwork->new(species=>\@SpeciesList);
 my $PhysicsDatabase=CometPhysicsDatabase->new(species=>\@SpeciesList);
 
@@ -148,7 +150,7 @@ while ($line=<InputFile>) {
       ampsConfigLib::RedefineMacroFunction("_PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_","(ptr,LocalTimeStep,node,FirstBoundaryFlag) PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection(ptr,LocalTimeStep,node,FirstBoundaryFlag);","pic/picGlobal.dfn");
       ampsConfigLib::RedefineMacroFunction("_PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_FACE_","(ptr,LocalTimeStep,node,FirstBoundaryFlag,InjectionFace) PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection(ptr,LocalTimeStep,node,FirstBoundaryFlag);","pic/picGlobal.dfn");
 
-      ampsConfigLib::SubstituteCodeLine('^MAINLIBOBJ =',"MAINLIBOBJ = RadialMesh.o RadialMeshProfile.o RadialSimulation.o CometModel.o CometChemistry.o CometPhysics.o","main/makefile");
+      ampsConfigLib::SubstituteCodeLine('^MAINLIBOBJ =',"MAINLIBOBJ = RadialMesh.o RadialMeshProfile.o RadialSimulation.o CometModel.o CometChemistry.o CometPhysics.o CometRadiativeCooling.o","main/makefile");
       ampsConfigLib::SubstituteCodeLine('^MAINOBJ =',"MAINOBJ = RadialMain.o","main/makefile");
       ampsConfigLib::SubstituteCodeLine('#include "Comet.h"',"// The radial mesh build does not use the 3D Comet model header.","pic/pic.h");
       ampsConfigLib::ChangeValueOfVariable("int Comet::Model::GeometryMode","Comet::Model::Geometry::Spherical","main/CometModel.cpp");
@@ -281,6 +283,50 @@ while ($line=<InputFile>) {
     $value=~s/^\s*NeutralCollision\s*[=:]\s*//i;
     $PhysicsDatabase->add_collision($value,
         "$FileName:$InputFileLineNumber");
+  }
+  elsif ($InputLine eq "NEUTRALCOLLISIONCOMPLETION") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    $InputLine=~s/ //g;
+    die "NeutralCollisionCompletion must be NONE or COMBI1996_CHEMKIN_LORENTZ_HS, line=$InputFileLineNumber ($InputFileName)\n"
+        unless $InputLine eq "NONE" ||
+            $InputLine eq "COMBI1996_CHEMKIN_LORENTZ_HS";
+    $NeutralCollisionCompletion=$InputLine;
+  }
+  elsif ($InputLine eq "COLLISIONTEMPERATUREFLOOR") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    die "CollisionTemperatureFloor must be positive, line=$InputFileLineNumber ($InputFileName)\n"
+        unless isPositiveNumber($InputLine);
+    ampsConfigLib::ChangeValueOfVariable(
+        "double Comet::Physics::CollisionTemperatureFloor",$InputLine,
+        "main/CometPhysics.cpp");
+  }
+  elsif ($InputLine eq "COLLISIONTEMPERATUREMINIMUMSAMPLEPARTICLENUMBER") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    die "CollisionTemperatureMinimumSampleParticleNumber must be positive, line=$InputFileLineNumber ($InputFileName)\n"
+        unless isPositiveNumber($InputLine);
+    ampsConfigLib::ChangeValueOfVariable(
+        "double Comet::Physics::CollisionTemperatureMinimumSampleParticleNumber",
+        $InputLine,"main/CometPhysics.cpp");
+  }
+  elsif ($InputLine eq "RADIATIVECOOLING") {
+    my $value=$LineOriginal;
+    $value=~s/!.*$//;
+    $value=~s/^\s*RadiativeCooling\s*[=:]\s*//i;
+    my @field=map {trim($_)} split(/\|/,$value,-1);
+    die "RadiativeCooling expects SPECIES | MODEL, line=$InputFileLineNumber ($InputFileName)\n"
+        unless @field==2;
+    my ($name,$model)=@field;
+    $name=uc($name);
+    $model=uc($model);
+    my $species=getSpeciesNumber($name);
+    my %modelCode=("OFF"=>0,"GOMBOSI1986_H2O"=>1);
+    die "Unknown radiative-cooling model '$model', line=$InputFileLineNumber ($InputFileName)\n"
+        unless exists $modelCode{$model};
+    die "GOMBOSI1986_H2O is a water-specific law and can only be assigned to H2O, line=$InputFileLineNumber ($InputFileName)\n"
+        if $model eq "GOMBOSI1986_H2O" && $name ne "H2O";
+    die "RadiativeCooling for $name is defined more than once, line=$InputFileLineNumber ($InputFileName)\n"
+        if $RadiativeCoolingModel[$species]!=0;
+    $RadiativeCoolingModel[$species]=$modelCode{$model};
   }
   elsif ($InputLine eq "RUBIN2011OHGROUNDRATE") {
     ($InputLine,$InputComment)=split(' ',$InputComment,2);
@@ -763,6 +809,10 @@ while ($line=<InputFile>) {
       $InputLine=~s/ //g;
       if ($InputLine eq "CROVISIER") {
 	  ampsConfigLib::RedefineMacro("_PIC_MODEL__RADIATIVECOOLING__MODE_","_PIC_MODEL__RADIATIVECOOLING__MODE__CROVISIER_","pic/picGlobal.dfn");
+          my $water=getSpeciesNumber("H2O");
+          die "RadiativeCooling for H2O is defined more than once, line=$InputFileLineNumber ($InputFileName)\n"
+              if $RadiativeCoolingModel[$water]!=0;
+          $RadiativeCoolingModel[$water]=1;
       }
       elsif ($InputLine eq "OFF") {
 	  ampsConfigLib::RedefineMacro("_PIC_MODEL__RADIATIVECOOLING__MODE_","_PIC_MODEL__RADIATIVECOOLING__MODE__OFF_","pic/picGlobal.dfn");
@@ -1020,6 +1070,14 @@ if ($PhysicsDatabaseName eq "RUBIN2011") {
       methanol_h2co_branch=>$Rubin2011MethanolH2COBranch);
 }
 
+# Collision completion is a separate, explicit input selection because Rubin
+# does not specify the missing daughter matrix.  The generator preserves all
+# existing entries, supplements them with Combi values, and uses the selected
+# CHEMKIN/Lorentz estimate only for pairs that are still absent.
+if ($NeutralCollisionCompletion eq "COMBI1996_CHEMKIN_LORENTZ_HS") {
+  $PhysicsDatabase->complete_with_combi1996_chemkin_lorentz_hs();
+}
+
 die "ChemistryMode=ON requires at least one ChemistryReaction\n"
     if $ChemistryModeIsSet && $ReactionNetwork->reaction_count()==0 &&
        chemistryIsEnabled("$WorkingSourceDirectory/main/CometChemistry.cpp");
@@ -1040,6 +1098,7 @@ ampsConfigLib::ChangeValueOfArray("double Comet::Model::SurfaceBulkSpeed\\[PIC::
 ampsConfigLib::ChangeValueOfArray("double Comet::Model::ExtendedProductionRate\\[PIC::nTotalSpecies\\]",\@ExtendedProductionRate,"main/CometModel.cpp");
 ampsConfigLib::ChangeValueOfArray("int Comet::Model::ExtendedDistributionMode\\[PIC::nTotalSpecies\\]",\@ExtendedDistributionMode,"main/CometModel.cpp");
 ampsConfigLib::ChangeValueOfArray("double Comet::RadialSimulation::CharacteristicSpeed\\[PIC::nTotalSpecies\\]",\@RadialCharacteristicSpeed,"main/RadialSimulation.cpp");
+ampsConfigLib::ChangeValueOfArray("int Comet::RadiativeCooling::SpeciesModel\\[PIC::nTotalSpecies\\]",\@RadiativeCoolingModel,"main/CometRadiativeCooling.cpp");
 $ReactionNetwork->write_header(
     "$WorkingSourceDirectory/main/CometChemistry.generated.h");
 $PhysicsDatabase->write_collision_header(

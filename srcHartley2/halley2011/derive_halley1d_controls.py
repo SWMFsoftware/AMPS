@@ -28,7 +28,13 @@ OUTER_RADIUS_M = 1.0e9
 SURFACE_TEMPERATURE_K = 180.0
 RADIAL_CELL_COUNT = 2_000
 BLOCK_CELL_COUNT = 8
-COURANT_NUMBER = 0.5
+# The initial C=0.5 run failed after iteration 3500 when a collision-product
+# tail particle traversed beyond the one-block MPI boundary allocation.  With
+# eight cells per block, C=0.25 requires a speed greater than 32 times a
+# species' characteristic speed to cross an entire block in one move; this
+# leaves margin above the maximum expected H-to-heavy hard-sphere transfer
+# speed while preserving the physical characteristic-speed derivation below.
+COURANT_NUMBER = 0.25
 PRIMARY_CHARACTERISTIC_SPEED_M_S = 400.0
 TARGET_SURFACE_PARTICLES_PER_SPECIES_PER_CELL = 50.0
 

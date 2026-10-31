@@ -10,11 +10,12 @@ use warnings;
 # generated C++ tables.
 #
 # Rubin et al. (2011), Icarus 213, 655--677, is currently the first catalog.
-# Its Table 3 contains only parent-parent neutral collision cross sections;
-# missing daughter pairs remain missing and must never be replaced by guessed
-# values.  Table 4 contains photodissociation and photoionization frequencies
-# at 1 AU.  Ion products are outside the neutral model, so those channels are
-# represented by the explicit product token NONE.
+# Its Table 3 contains only parent-parent neutral collision cross sections.
+# An input can leave missing daughter pairs unresolved, or it can explicitly
+# select the documented Combi-then-CHEMKIN completion implemented below.  The
+# latter never overwrites a higher-priority entry.  Table 4 contains
+# photodissociation and photoionization frequencies at 1 AU.  Ion products are
+# outside the neutral model, so those channels use the product token NONE.
 
 sub new {
   my ($class,%args)=@_;
@@ -32,8 +33,10 @@ sub new {
 
   return bless {
     species_index=>\%species_index,
+    species_name=>[map {uc(_trim($_))} @{$args{species}}],
     collisions=>[],
     database_name=>'NONE',
+    combi_chemkin_completion_applied=>0,
   },$class;
 }
 
@@ -111,7 +114,8 @@ sub load_rubin2011 {
            $args{methanol_h2co_branch} eq 'OFF');
 
   # User records may supplement the paper's parent-only matrix with a cited
-  # daughter dataset.  Keep them and let C++ validation reject duplicates.
+  # daughter dataset.  Keep them; _add_collision rejects an unordered pair if
+  # the named paper table attempts to define the same pair again.
   $self->{database_name}=($self->{database_name} eq 'CUSTOM') ?
       'RUBIN2011+CUSTOM' : 'RUBIN2011';
   $self->_load_rubin2011_parent_collisions();
@@ -218,12 +222,113 @@ sub load_rubin2011 {
   }
 }
 
+# Complete the currently loaded collision table with the hierarchy selected
+# by the case input:
+#
+#   existing entries -> Combi (1996) -> CHEMKIN/Lorentz estimates
+#
+# For the Halley case, "existing" means Rubin et al. (2011), Table 3.  The
+# Combi values are the hard-sphere table reproduced in Fougere's dissertation,
+# Table 2.1.  The last tier uses the CHEMKIN Table 5.1 Lennard-Jones collision
+# diameters, the Lorentz arithmetic mixing rule, and a geometric hard-sphere
+# area.  It is deliberately a constant estimated cross section:
+#
+#   d_ij = (d_i+d_j)/2
+#   sigma_ij = pi*d_ij^2
+#
+# Diameters are in angstrom and 1 angstrom^2 = 1e-20 m^2.  Well depths are not
+# used because this selected model is geometric HS, not a temperature-
+# dependent Lennard-Jones transport mapping.
+sub complete_with_combi1996_chemkin_lorentz_hs {
+  my ($self)=@_;
+  die "COMBI1996_CHEMKIN_LORENTZ_HS completion was requested more than once\n"
+      if $self->{combi_chemkin_completion_applied};
+  $self->{combi_chemkin_completion_applied}=1;
+
+  my $combi_source='Combi (1996), reproduced in Fougere dissertation Table 2.1';
+
+  # Preserve the Crifo temperature dependence if this completion is used
+  # without a database that has already supplied H2O-H2O.  In Halley this row
+  # is already present in Rubin Table 3 and is therefore left unchanged.
+  if ($self->_species_is_present('H2O') &&
+      !$self->_has_collision_by_name('H2O','H2O')) {
+    $self->_add_collision('H2O','H2O','TemperaturePowerLaw',
+        1.66e-19,300.0,-0.6,50.0,300.0,
+        'Crifo (1989), reproduced in Combi (1996) hard-sphere table');
+  }
+
+  # Constant cross sections are printed in 1e-15 cm^2 by the source.  That
+  # unit equals 1e-19 m^2.  Rows absent from the compiled SpeciesList are
+  # irrelevant to that case and are skipped; present higher-priority rows are
+  # retained exactly.
+  my @combi=(
+    ['H2O','OH',3.2], ['H2O','H2',3.2], ['H2O','H',1.8],
+    ['H2O','O',1.8],  ['H2O','CO',3.2],
+    ['OH','OH',3.0],  ['OH','H2',3.0],  ['OH','H',1.5],
+    ['OH','O',1.5],   ['OH','CO',3.0],
+    ['H2','H2',3.0],  ['H2','H',1.5],   ['H2','O',1.5],
+    ['H2','CO',3.0],
+    ['H','H',1.2],    ['H','O',1.2],     ['H','CO',1.5],
+    ['O','O',1.2],    ['O','CO',1.5],    ['CO','CO',3.2],
+  );
+  for my $entry (@combi) {
+    my ($name0,$name1,$sigma_1e15_cm2)=@$entry;
+    next unless $self->_species_is_present($name0) &&
+        $self->_species_is_present($name1);
+    next if $self->_has_collision_by_name($name0,$name1);
+    $self->_add_collision($name0,$name1,'Constant',
+        $sigma_1e15_cm2*1.0e-19,1.0,0.0,0.0,0.0,$combi_source);
+  }
+
+  # Lennard-Jones collision diameters from the Ansys CHEMKIN Input Manual,
+  # Table 5.1.  H2CO is named CH2O in that table.  Every compiled species must
+  # have a traceable diameter before any estimate is generated; an unfamiliar
+  # species therefore fails preprocessing instead of receiving a silent
+  # surrogate value.
+  my %diameter_angstrom=(
+    H=>2.050, H2=>2.920, C=>3.298, CH=>2.750, CH2=>3.800,
+    N=>3.298, CH3=>3.800, NH=>2.650, CH4=>3.746, NH2=>2.650,
+    O=>2.750, NH3=>2.920, OH=>2.750, H2O=>2.605, C2=>3.621,
+    C2H=>4.100, C2H2=>4.100, CN=>3.856, HCN=>3.630,
+    C2H4=>3.971, CO=>3.650, C2H5=>4.302, HCO=>3.590,
+    C2H6=>4.302, H2CO=>3.590, CH3OH=>3.626, CO2=>3.763,
+  );
+  for my $name (@{$self->{species_name}}) {
+    die "CHEMKIN Table 5.1 has no collision diameter configured for compiled species '$name'\n"
+        unless exists $diameter_angstrom{$name};
+  }
+
+  my $pi=3.1415926535897932384626433832795;
+  my $estimate_source='CHEMKIN Table 5.1 diameter with Lorentz mixing; geometric hard-sphere estimate';
+  for (my $i=0;$i<@{$self->{species_name}};$i++) {
+    for (my $j=$i;$j<@{$self->{species_name}};$j++) {
+      next if $self->_has_collision_by_index($i,$j);
+      my $name0=$self->{species_name}->[$i];
+      my $name1=$self->{species_name}->[$j];
+      my $mixed_diameter=0.5*($diameter_angstrom{$name0}+
+          $diameter_angstrom{$name1});
+      my $sigma=$pi*$mixed_diameter*$mixed_diameter*1.0e-20;
+      $self->_add_collision($name0,$name1,'Constant',$sigma,
+          1.0,0.0,0.0,0.0,$estimate_source);
+    }
+  }
+
+  my $required=@{$self->{species_name}}*(@{$self->{species_name}}+1)/2;
+  die "collision completion generated ".scalar(@{$self->{collisions}}).
+      " rows; a complete matrix for ".scalar(@{$self->{species_name}}).
+      " species requires $required\n"
+      unless @{$self->{collisions}}==$required;
+
+  $self->{database_name}.='+COMBI1996+CHEMKIN_LORENTZ_HS';
+  $self->{database_name}=~s/^NONE\+//;
+}
+
 sub write_collision_header {
   my ($self,$path)=@_;
   open(my $out,'>',$path) or die "cannot write '$path': $!\n";
 
   print $out "// Generated from the selected comet physics database. Do not edit.\n";
-  print $out "// Missing species pairs are intentionally absent; the runtime must report them.\n";
+  print $out "// Pairs not supplied by the selected input policy remain absent and are fatal at runtime.\n";
   print $out "#ifndef _COMET_PHYSICS_GENERATED_H_\n";
   print $out "#define _COMET_PHYSICS_GENERATED_H_\n\n";
   print $out "namespace Comet { namespace Physics { namespace Generated {\n";
@@ -303,6 +408,8 @@ sub _add_collision {
       $source)=@_;
   my $species0=$self->_require_species($name0,'collision database');
   my $species1=$self->_require_species($name1,'collision database');
+  die "duplicate collision pair '$name0-$name1' in collision database\n"
+      if $self->_has_collision_by_index($species0,$species1);
   push @{$self->{collisions}}, {
     species0=>$species0,
     species1=>$species1,
@@ -314,6 +421,31 @@ sub _add_collision {
     maximum_temperature=>$maximum_temperature,
     source=>$source,
   };
+}
+
+sub _species_is_present {
+  my ($self,$name)=@_;
+  return exists $self->{species_index}->{uc($name)};
+}
+
+sub _has_collision_by_name {
+  my ($self,$name0,$name1)=@_;
+  return 0 unless $self->_species_is_present($name0) &&
+      $self->_species_is_present($name1);
+  return $self->_has_collision_by_index(
+      $self->{species_index}->{uc($name0)},
+      $self->{species_index}->{uc($name1)});
+}
+
+sub _has_collision_by_index {
+  my ($self,$species0,$species1)=@_;
+  for my $entry (@{$self->{collisions}}) {
+    return 1 if ($entry->{species0}==$species0 &&
+                 $entry->{species1}==$species1) ||
+                ($entry->{species0}==$species1 &&
+                 $entry->{species1}==$species0);
+  }
+  return 0;
 }
 
 sub _require_species {

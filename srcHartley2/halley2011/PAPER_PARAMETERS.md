@@ -108,9 +108,9 @@ For the 2,000-cell geometric profile, the result is:
 | allocated AMR blocks | `373` | clean one-process mesh construction |
 | allocated AMR cells | `2,984` | dyadic approximation to the 2,000-cell ideal profile |
 | smallest allocated cell | `0.2328292 m` | level-29 AMR cell width |
-| Courant number | `0.5` | supplied numerical control |
+| Courant number | `0.25` | reduced from the initially supplied `0.5` after a four-rank run exposed a one-step traversal beyond the mover's one-block MPI boundary allocation |
 | direct-parent baseline speed | `400 m/s` | supplied numerical control |
-| reference injection count | `16` | at least 50 parent particles in the surface cell |
+| reference injection count | `8` | at least 50 parent particles in the surface cell at Courant 0.25; reduced with the timestep so surface statistics are unchanged |
 | particle-buffer capacity | `5,000,000` | initial capacity consistent with the paper’s “several 10^6”; monitor during convergence |
 | sampling-window length | `500 iterations` | supplied numerical control |
 | hard iteration ceiling | `10,000 iterations` | supplied numerical control |
@@ -123,7 +123,7 @@ For a zero-drift parent, the expected surface-cell population is
 N_cell = N_ref V_char / (C sqrt(2 k T/(pi m))).
 ```
 
-The lightest direct parent, CH4, is limiting: `N_ref=16` gives `52.454`
+The lightest direct parent, CH4, is limiting: `N_ref=8` gives `52.454`
 particles. The other direct parents range from `54.068` for NH3 to `86.985`
 for CO2. This estimate applies to directly injected parents. Daughter
 populations are set by their production and loss rates and cannot be forced to
@@ -169,16 +169,41 @@ atoms scatter over `4*pi`.
 
 Table 3 does **not** contain the full collision matrix for the 16 daughter-only
 species. The application deliberately reports a missing pair rather than
-assigning zero or inventing a cross section. A chemically active physical run
-therefore needs a cited daughter collision dataset or an explicitly approved
-mixing prescription.
+assigning zero or inventing a cross section unless the case explicitly selects
+a documented completion policy. The Halley input now selects the approved
+Rubin--Combi--CHEMKIN/Lorentz hierarchy described below.
+
+A literature search found a useful measured/modelled subset but not the full
+Rubin network. Combi (1996), reproduced in Fougere's Table 2.1, gives all 21
+unordered pairs among H2O, OH, H2, H, O, and CO. Huang et al. (2016), ApJ
+833:160, Table 2 prints ten corresponding major-coma values. Together Rubin
+and Combi cover 84 of the 378 unordered pairs in the compiled 27-species set;
+three pairs occur in both sources. The standard CHEMKIN transport database
+contains Lennard-Jones diameters and well depths for all 27 species. Those
+transport parameters are not a measured cold-coma hard-sphere matrix.
+The input selects `COMBI1996_CHEMKIN_LORENTZ_HS`: it retains the 66 Rubin
+rows, adds the 18 nonoverlapping Combi rows, and completes the remaining 294
+pairs with the Lorentz rule `d_ij=(d_i+d_j)/2` and
+`sigma_ij=pi*d_ij^2`. The last tier is explicitly labeled as an analytical
+estimate in every generated row. The values, sources, provenance limits, and
+alternative transport mappings are recorded in
+[`COLLISION_DATA_REVIEW.md`](COLLISION_DATA_REVIEW.md).
 
 The repaired AMPS user-defined collision dispatch reaches the Crifo law before
-the first sampling window has produced a cell translational temperature. The
-paper does not state whether its DSMC implementation used an instantaneous
-particle estimate, a lagged cell temperature, or an initialization value for
-that first collision step. The generic application does not silently select
-one of those numerical rules.
+the first sampling window has produced a cell translational temperature.
+Following the requested numerical rule, `halley1d.input` sets
+`CollisionTemperatureFloor=180.0`. `CometPhysics` reads the most recent
+completed sample with `GetTranslationalTemperature(H2O)` and evaluates the
+law at `max(T_sampled,180 K)`. Thus 180 K is used before the first complete
+sample and for later samples at or below 180 K. Following the runtime finding
+that sparse outer-coma cells can report temperatures above the published
+interval, values above 300 K are capped at the Crifo record's 300 K endpoint
+rather than extrapolated. The input can also specify
+`CollisionTemperatureMinimumSampleParticleNumber`; cells below that
+completed-window mean H2O model-particle occupancy use 180 K. The Halley run
+sets this cutoff to `1.0`, corresponding to about 500 particle observations
+over a 500-iteration sampling window before temporal correlation. These are
+documented run controls, not values attributed to Rubin et al.
 
 Table 4 has been transcribed into the named `RUBIN2011` chemistry database.
 Rates are referenced to 1 AU and scale as inverse heliocentric distance
@@ -222,11 +247,29 @@ Table 4 footnote (a).
 
 Rubin et al. include collisional relaxation and the Crovisier (1984)/Huebner
 (1985) water radiative-cooling approximation presented by Gombosi et al.
-(1986). The legacy DIM3 Hartley 2 source contains an implementation, but the
-generic DIM1 execution path has not yet been connected to it and the current
-paper does not reproduce the derivation. A Halley production run must not be
-described as complete until this generic cooling path and internal degrees of
-freedom are validated.
+(1986). Rubin et al. name this model but do not reproduce its equation. The
+generic `GOMBOSI1986_H2O` evaluator implements the published equation (48b):
+
+```text
+|Qrad| = 4.4e-22 Trot^3.35 nH2O exp(-tauIR),  Trot < 52 K
+|Qrad| = 2.0e-20 Trot^2.47 nH2O exp(-tauIR),  Trot >= 52 K
+tauIR = 0.4 nH2O r (4.0e-15 cm^2)
+```
+
+`Qrad` is in erg cm^-3 s^-1 when temperature, density, and radius use K,
+cm^-3, and cm. The code converts this to a positive J s^-1 per H2O molecule.
+The input explicitly selects `RadiativeCooling=H2O | GOMBOSI1986_H2O`; the
+law cannot be assigned to another species.
+
+The Halley input enables the AMPS Larsen-Borgnakke internal-energy model with
+three H2O rotational degrees of freedom, `Zrot=5`, RT relaxation, and
+hard-sphere temperature index 0.5 for H2O with each collision partner.
+Injected and thermally re-emitted particles initialize their rotational state
+through the core IDF API. After every particle iteration, the cooling adapter
+reads H2O density and rotational temperature from the most recent completed
+sample and removes energy from each H2O particle's rotational state. It is a
+no-op before the first complete sample. VT and VV relaxation remain disabled
+because the current core VT implementation explicitly exits as unverified.
 
 This Halley case is gas-only. Dust size groups, gas-dust momentum exchange,
 gravity-limited grains, and dust instrument comparisons are not enabled.
@@ -240,9 +283,7 @@ enough information to reconstruct all numerical controls. It does not state:
 - timestep/Courant policy or per-species transport-speed bounds;
 - statistical particle weights or reference injection-particle count;
 - convergence metric, tolerance, or required consecutive-window count; or
-- a complete daughter collision matrix; or
-- the first-step temperature treatment for the temperature-dependent H2O-H2O
-  cross section.
+- a complete daughter collision matrix.
 
 The input records the user-supplied or derived controls above. Convergence is
 evaluated only after a complete 500-iteration sample. For species `s` and
@@ -265,7 +306,18 @@ velocity, remote column densities, and OH aperture counts. Figures 22–23 are
 dust results. Tables 5 and 6 describe the NMS instrument response and belong
 in a Halley validation case rather than the generic chemistry database.
 
-The PDF does not provide numerical source tables for the plotted curves or
-measurements. Reproducing those comparisons will require traceable digitized
-data (with digitization uncertainty) or the original datasets, plus the
-unresolved physical items above.
+The PDF does not provide numerical source tables for its plotted curves. The
+neutral DSMC density paths in Figs. 1--17 and the modeled H2O velocity in Fig.
+18 have therefore been extracted from the PDF's vector paths by
+`digitize_rubin2011.py`. The committed CSV and metadata under `reference/`
+record the exact source-PDF SHA-256, source pages, plot bounds, curve colors,
+piecewise logarithmic distance-axis mapping, and extraction method. These
+curves are digitized plot coordinates rather than original simulation tables;
+their precision is limited by the rendered paths and axis calibration.
+
+`compare_rubin2011.py` overlays those reference curves with AMPS output and
+writes paired values at common radii. It intentionally excludes the measured
+and simulated Giotto NMS mass-channel curves because those require an
+instrument-response model and are not neutral number densities. Any physical
+interpretation must also identify the 294 collision pairs supplied by the
+selected analytical completion rather than by Rubin et al.
