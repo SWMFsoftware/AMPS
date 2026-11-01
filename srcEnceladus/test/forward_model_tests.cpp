@@ -245,8 +245,17 @@ int InputCase(const std::string& inputFile, const std::string& sourceFile) {
         std::filesystem::path(inputFile).parent_path()/"trajectory.csv";
     if (parsed.flybyId != "E3" ||
         parsed.flybyTrajectoryFile !=
-            std::filesystem::absolute(expectedTrajectory).lexically_normal().string())
+            std::filesystem::absolute(expectedTrajectory).lexically_normal().string() ||
+        !parsed.flybyMeshRefinement ||
+        parsed.flybyRefinementTargetCellSizeM != 20000.0 ||
+        parsed.flybyRefinementRadiusM != 150000.0 ||
+        parsed.flybyRefinementTimeMinS != -120.0 ||
+        parsed.flybyRefinementTimeMaxS != 100.0)
       return Fail("flyby output controls or relative trajectory path were not parsed");
+    Value("parsed_flyby_refinement_target_cell_size_m",
+          parsed.flybyRefinementTargetCellSizeM);
+    Value("parsed_flyby_refinement_radius_m",
+          parsed.flybyRefinementRadiusM);
   } else if (!parsed.flybyId.empty() || !parsed.flybyTrajectoryFile.empty()) {
     return Fail("disabled flyby output retained dependent controls");
   }
@@ -382,7 +391,27 @@ int ValidationCase(const std::string& sourceFile) {
       status.message.find("only photolytic reactions") == std::string::npos)
     return Fail("charge exchange was not rejected by loss-only schema 2");
 
-  Value("negative_validation_checks", 15.0);
+  configuration = TestConfiguration(sourceFile);
+  configuration.flybyMeshRefinement = true;
+  configuration.flybyRefinementTargetCellSizeM = 20000.0;
+  configuration.flybyRefinementRadiusM = 150000.0;
+  configuration.flybyRefinementTimeMinS = -120.0;
+  configuration.flybyRefinementTimeMaxS = 100.0;
+  status = FM::ValidateConfiguration(configuration, distribution);
+  if (status.success ||
+      status.message.find("requires flyby_density_output") == std::string::npos)
+    return Fail("flyby mesh refinement was accepted without flyby output");
+
+  configuration.flybyDensityOutput = true;
+  configuration.flybyId = "E3";
+  configuration.flybyTrajectoryFile = "trajectory.csv";
+  configuration.flybyRefinementTimeMaxS = -120.0;
+  status = FM::ValidateConfiguration(configuration, distribution);
+  if (status.success ||
+      status.message.find("time_max_s greater") == std::string::npos)
+    return Fail("an empty flyby refinement interval was accepted");
+
+  Value("negative_validation_checks", 17.0);
   return EXIT_SUCCESS;
 }
 

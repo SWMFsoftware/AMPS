@@ -66,6 +66,17 @@ total_iterations=10000
 flyby_density_output=true
 flyby_id=E3
 flyby_trajectory_file=../srcEnceladus/standalone/figure_data/e3_spice_ground_track.csv
+
+! Refine a 150 km-radius tube around the complete in-domain E3 segment. The
+! requested maximum edge is 20 km; dyadic AMR in the current 2521 km cube is
+! expected to realize 15.75625 km cells, eight times finer than the prior
+! 126.05 km flyby cells. The time bounds are relative to the declared E3 UTC
+! reference and include all currently in-domain spacecraft points (-100:+85 s).
+flyby_mesh_refinement=true
+flyby_refinement_target_cell_size_m=20000
+flyby_refinement_radius_m=150000
+flyby_refinement_time_min_s=-120
+flyby_refinement_time_max_s=100
 random_seed=184467
 particle_splitting_merging=off
 

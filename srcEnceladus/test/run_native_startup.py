@@ -49,6 +49,7 @@ def main() -> int:
                     "sample_length_steps=1000" in default_text and
                     "total_iterations=10000" in default_text and
                     "flyby_density_output=on" in default_text and
+                    "flyby_mesh_refinement=on" in default_text and
                     "plasma_background_mode=none" in default_text)
     outcomes.append({"test": "N01_valid_default", "status":
                      "PASS" if default_pass else "FAIL",

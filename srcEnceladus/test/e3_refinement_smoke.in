@@ -1,0 +1,32 @@
+! Short native mesh/refinement smoke deck. This is not a science run: it uses
+! one 100-step window solely to verify the allocated E3 tube before the full
+! checked-in 10,000-step deck is launched.
+#begin application: enceladus
+schema_version=2
+source_distribution_file=../../input/enceladus_e3_equal_h2o_co2_sources.in
+simulated_species=H2O,CO2
+injected_species=H2O,CO2
+chemistry_species=H2O
+reaction_products=discard
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+solar_activity=active
+plasma_background_mode=none
+primary_macroparticles_per_step.H2O=100
+primary_macroparticles_per_step.CO2=100
+characteristic_speed.H2O_m_s-1=300
+characteristic_speed.CO2_m_s-1=300
+courant.H2O=0.5
+courant.CO2=0.5
+sample_length_steps=100
+total_iterations=100
+flyby_density_output=true
+flyby_id=E3
+flyby_trajectory_file=../standalone/figure_data/e3_spice_ground_track.csv
+flyby_mesh_refinement=true
+flyby_refinement_target_cell_size_m=20000
+flyby_refinement_radius_m=150000
+flyby_refinement_time_min_s=-120
+flyby_refinement_time_max_s=100
+random_seed=184467
+particle_splitting_merging=off
+#end application

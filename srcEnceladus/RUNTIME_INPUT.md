@@ -45,6 +45,11 @@ total_iterations=10000
 flyby_density_output=true
 flyby_id=E3
 flyby_trajectory_file=../srcEnceladus/standalone/figure_data/e3_spice_ground_track.csv
+flyby_mesh_refinement=true
+flyby_refinement_target_cell_size_m=20000
+flyby_refinement_radius_m=150000
+flyby_refinement_time_min_s=-120
+flyby_refinement_time_max_s=100
 random_seed=184467
 particle_splitting_merging=off
 #end application
@@ -106,13 +111,32 @@ be nonnegative, and times must increase strictly. Malformed or inaccessible
 trajectories fail before MPI initialization.
 
 At every ordinary AMPS output, the adapter evaluates the completed AMPS
-number-density sampling buffer at each spacecraft position with the native
-cell-centered linear interpolation stencil. The result is a sampling-window
-mean in m^-3, not an instantaneous particle count. MPI ownership is reduced to
-rank zero and all output zones are appended to
+number-density sampling buffer at each spacecraft position. The current build
+uses the native cell-centered constant stencil, so refinement is required to
+reduce containing-cell plateaus; the code does not claim linear interpolation.
+The result is a sampling-window mean in m^-3, not an instantaneous particle
+count. MPI ownership is reduced to rank zero and all output zones are appended to
 `PT/plots/flyby_density.FLYBY.dat`. Each Tecplot row includes time from the
 declared flyby reference, body-fixed spacecraft position, SPICE ellipsoid
-altitude, `in_domain`, the active primary densities, and their sum.
+altitude, `in_domain`, the containing leaf's maximum Cartesian edge
+`cell_max_edge_m`, the active primary densities, and their sum.
+
+`flyby_mesh_refinement=true` requires all four refinement controls shown in
+the example and requires flyby output. The selected trajectory interval is
+treated as a body-fixed polyline. AMR requests the target cell width throughout
+the union of radius-`flyby_refinement_radius_m` capsules around its segments;
+outside that tube the legacy Enceladus resolution law is unchanged. The target
+is a maximum requested edge, not a promise of an exact edge: AMR is dyadic and
+may select the next smaller realizable width. The checked-in 20 km request
+produces 15.75625 km cells along the in-domain E3 path, compared with the prior
+126.05 km cells. Setting refinement to `false` forbids all four dependent keys.
+
+The refinement interval and tube radius are numerical-domain choices, not
+instrument smoothing parameters. A resolved physical claim still requires a
+second mesh level, particle-count/seed convergence, and an observational
+response model. Reducing cell volume without increasing particle statistics
+can increase Monte Carlo variance; the output cell-width column makes that
+tradeoff explicit in retained evidence.
 
 The complete SPICE trajectory is retained even when it extends beyond the AMR
 box. Such rows have `in_domain=0` and zero placeholder density and must be

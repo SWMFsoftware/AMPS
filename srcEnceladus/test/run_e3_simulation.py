@@ -34,12 +34,16 @@ def main() -> int:
     parser.add_argument("--expected-iterations", type=int, default=10000)
     parser.add_argument("--expected-sample-length", type=int, default=1000)
     parser.add_argument("--particles-per-species-step", type=int, default=100)
+    parser.add_argument("--maximum-flyby-cell-edge-m", type=float,
+                        default=20000.0,
+                        help="maximum allowed cell edge at every in-domain flyby row")
     parser.add_argument("--skip-flyby-density-check", action="store_true",
                         help="do not require/plot the E3 flyby Tecplot product")
     args = parser.parse_args()
     if (args.ranks <= 0 or args.timeout_s <= 0 or
             args.expected_iterations <= 0 or args.expected_sample_length <= 0 or
-            args.particles_per_species_step <= 0):
+            args.particles_per_species_step <= 0 or
+            args.maximum_flyby_cell_edge_m <= 0):
         parser.error("rank, timeout, iteration, sample, and particle values must be positive")
     if args.expected_iterations % args.expected_sample_length != 0:
         parser.error("--expected-iterations must be divisible by --expected-sample-length")
@@ -106,7 +110,8 @@ def main() -> int:
           f"sample_length_steps={args.expected_sample_length}" in text and
           f"total_iterations={args.expected_iterations}" in text and
           (args.skip_flyby_density_check or
-           "flyby_density_output=on" in text),
+           ("flyby_density_output=on" in text and
+            "flyby_mesh_refinement=on" in text)),
           "expected E3 neutral/loss-only run receipt")
     dt_match = re.search(r"global_dt_s=([0-9.eE+-]+)", text)
     dt = float(dt_match.group(1)) if dt_match else None
@@ -162,7 +167,15 @@ def main() -> int:
           json.dumps(species_values, sort_keys=True))
     check("E3R07_no_plasma_output", not (output / "ices.data.dat").exists(),
           "ices.data.dat must not be created in plasma-free mode")
-    check("E3R08_clean_termination", "End of the run:" in text,
+    field_species = {
+        match.group(1)
+        for path in (output / "PT" / "plots").glob("pic.*.out=*.dat")
+        if (match := re.fullmatch(r"pic\.([^.]+)\.s=\d+\.out=\d+\.dat",
+                                 path.name)) is not None
+    }
+    check("E3R08_active_species_output", field_species == {"H2O", "CO2"},
+          f"generic_field_species={sorted(field_species)}")
+    check("E3R09_clean_termination", "End of the run:" in text,
           "native main reached MPI finalization")
 
     flyby_tecplot = output / "PT" / "plots" / "flyby_density.E3.dat"
@@ -177,24 +190,38 @@ def main() -> int:
             row_counts = [len(zone.rows) for zone in zones]
             sample_lengths = [zone.sample_steps for zone in zones]
             domain_index = variables.index("in_domain")
+            cell_edge_index = variables.index("cell_max_edge_m")
             domain_counts = [sum(row[domain_index] == 1.0
                                  for row in zone.rows) for zone in zones]
+            in_domain_cell_edges = [
+                row[cell_edge_index]
+                for zone in zones for row in zone.rows
+                if row[domain_index] == 1.0]
             tecplot_ok = (
                 len(zones) == expected_zones and
                 output_sequence == list(range(expected_zones)) and
                 all(count == 3201 for count in row_counts) and
                 sample_lengths == [args.expected_sample_length]*expected_zones and
                 bool(domain_counts) and len(set(domain_counts)) == 1 and
-                domain_counts[0] > 0)
-            check("E3R09_flyby_tecplot", tecplot_ok,
+                domain_counts[0] > 0 and bool(in_domain_cell_edges))
+            check("E3R10_flyby_tecplot", tecplot_ok,
                   f"zones={len(zones)} outputs={output_sequence} "
                   f"rows={row_counts} in_domain={domain_counts}")
+            resolution_ok = (
+                bool(in_domain_cell_edges) and
+                min(in_domain_cell_edges) > 0.0 and
+                max(in_domain_cell_edges) <=
+                    args.maximum_flyby_cell_edge_m*(1.0+1.0e-12))
+            check("E3R11_flyby_mesh_resolution", resolution_ok,
+                  f"min_cell_edge_m={min(in_domain_cell_edges) if in_domain_cell_edges else None} "
+                  f"max_cell_edge_m={max(in_domain_cell_edges) if in_domain_cell_edges else None} "
+                  f"limit_m={args.maximum_flyby_cell_edge_m}")
             plotted_zones, plotted_domain = plot_flyby_density.plot_density(
                 flyby_tecplot, flyby_png)
             png_ok = (flyby_png.is_file() and flyby_png.stat().st_size > 0 and
                       plotted_zones == expected_zones and
                       plotted_domain == domain_counts[-1])
-            check("E3R10_flyby_png", png_ok,
+            check("E3R12_flyby_png", png_ok,
                   f"zones={plotted_zones} in_domain={plotted_domain} "
                   f"bytes={flyby_png.stat().st_size if flyby_png.exists() else 0}")
             flyby_summary = {
@@ -203,11 +230,15 @@ def main() -> int:
                 "zones": len(zones),
                 "rows_per_zone": row_counts,
                 "in_domain_points_per_zone": domain_counts,
+                "minimum_in_domain_cell_edge_m": min(in_domain_cell_edges),
+                "maximum_in_domain_cell_edge_m": max(in_domain_cell_edges),
                 "variables": variables,
             }
         except Exception as exception:
-            check("E3R09_flyby_tecplot", False, repr(exception))
-            check("E3R10_flyby_png", False, "plot not generated")
+            check("E3R10_flyby_tecplot", False, repr(exception))
+            check("E3R11_flyby_mesh_resolution", False,
+                  "Tecplot resolution column not validated")
+            check("E3R12_flyby_png", False, "plot not generated")
 
     passed = all(item["status"] == "PASS" for item in checks)
     receipt = {

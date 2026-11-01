@@ -108,33 +108,20 @@ double localSphericalSurfaceResolution(double *x) {
 }
 
 double localResolution(double *x) {
-  int idim;
-  double res=0.0,r=0.0;
+  double legacyResolution=DebugRunMultiplier*rSphere*dxMaxGlobal;
+  const double radius2=x[0]*x[0]+x[1]*x[1]+x[2]*x[2];
 
+  // Preserve the legacy south-polar request, then optionally superpose the
+  // runtime E3 trajectory tube. The AMR callback returns a characteristic
+  // cell diagonal in metres; the adapter converts the user-facing target edge
+  // width exactly and never coarsens the legacy mesh outside the tube.
+  if (radius2>0.0 && x[2]<0.0 &&
+      asin(sqrt((x[0]*x[0]+x[1]*x[1])/radius2))/Pi*180.0<45.0)
+    legacyResolution=DebugRunMultiplier*0.25*
+        (dxMaxSphere+dxMinSphere)*rSphere;
 
-  if ((x[2]<0.0)&&(asin(sqrt((x[0]*x[0]+x[1]*x[1])/(x[0]*x[0]+x[1]*x[1]+x[2]*x[2])))/Pi*180.0<45.0)) return DebugRunMultiplier*0.25*(dxMaxSphere+dxMinSphere)*rSphere;
-
-  return DebugRunMultiplier*rSphere*dxMaxGlobal;
-
-
-  for (idim=0;idim<DIM;idim++) r+=pow(x[idim],2);
-
-  r=sqrt(r);
-
-  if ((3.5E6<r)&&(r<3.8E6)) return DebugRunMultiplier*100.0E3;
-  else return DebugRunMultiplier*rSphere*dxMaxGlobal;
-
-
-  /*
-  if (r>dxMinGlobal*rSphere) {
-    lnR=log(r);
-    res=dxMinGlobal+(dxMaxGlobal-dxMinGlobal)/log(xMaxDomain*rSphere)*lnR;
-  }
-  else res=dxMinGlobal;
-
-*/
-
-  return DebugRunMultiplier*rSphere*res; 
+  return Enceladus::ForwardModel::AMPS::RequestedMeshResolution(
+      x,legacyResolution);
 }
 
 //set up the local time step
@@ -294,6 +281,8 @@ int main(int argc,char **argv) {
               << " total_iterations=" << configuration.totalIterations
               << " flyby_density_output="
               << (configuration.flybyDensityOutput ? "on" : "off")
+              << " flyby_mesh_refinement="
+              << (configuration.flybyMeshRefinement ? "on" : "off")
               << " plasma_background_mode="
               << Enceladus::ForwardModel::Name(
                      configuration.plasmaBackgroundMode)
@@ -521,7 +510,11 @@ int main(int argc,char **argv) {
 
 
 //  PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
-  PIC::Mesh::mesh->outputMeshDataTECPLOT("mesh.data.dat",_DUST_SPEC_);
+  // The forward runtime does not simulate the compiled legacy dust species.
+  // Avoid a redundant full-mesh zero-dust snapshot; the ordinary mesh.dat and
+  // active H2O/CO2 AMPS outputs retain the spatial evidence needed by this run.
+  if (!Enceladus::ForwardModel::AMPS::IsInstalled())
+    PIC::Mesh::mesh->outputMeshDataTECPLOT("mesh.data.dat",_DUST_SPEC_);
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;

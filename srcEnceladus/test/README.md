@@ -46,7 +46,7 @@ The global runner executes the standalone source exporter tests, exports a
 complete 8-jet/7-stripe fixture, builds the dependency-free C++ core, and runs
 focused source-parser, runtime-parser, Burger-chemistry, Tenishev flux-law,
 canonical ID/geometry, radial stripe projection, parent-loss-only planning,
-Courant/weight, strict inactive-control, and dimensionless
+Courant/weight, conditional flyby-mesh-refinement, strict inactive-control, and dimensionless
 velocity-shift population-control tests. The source-law case compares the production K3
 moment and inverse CDF with direct composite-Simpson quadrature; it does not
 reuse the production recurrence. The chemistry case verifies that Burger's
@@ -98,3 +98,9 @@ The 2026-11-01 qualified E3 receipt passes all nine gates, but this does not
 qualify four-rank ownership, plasma/coupled chemistry, numerical convergence,
 or observational accuracy. Those integration gates remain in
 `development_and_validation_plan.md`.
+
+For the refined 10,000-step run, the runner additionally requires
+`flyby_mesh_refinement=on` in the native receipt and verifies
+`cell_max_edge_m <= 20000` for every in-domain row in every Tecplot zone. This
+is a direct check of the allocated mesh at the observation locations; it does
+not infer resolution from the requested configuration.

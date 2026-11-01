@@ -18,6 +18,14 @@ const Configuration& InstalledConfiguration();
 const SourceDistribution& InstalledDistribution();
 const NumericalPlan& InstalledNumericalPlan();
 
+// Return the requested AMR characteristic cell size at a mesh probe. When the
+// run deck enables flyby refinement, points inside the configured tube around
+// the selected trajectory interval request the 3-D diagonal corresponding to
+// the configured maximum Cartesian cell width. Elsewhere the caller's legacy
+// resolution is preserved exactly.
+double RequestedMeshResolution(const double* position,
+                               double legacyResolutionM);
+
 // Called after the final distributed AMR blocks exist. It scans the actual
 // allocated minimum cell width, computes the single global Courant step and
 // species weights, validates the generated AMPS species table, and installs

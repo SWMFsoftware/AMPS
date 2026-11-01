@@ -4,21 +4,32 @@ Last updated: 2026-11-01 (America/Chicago)
 
 ## Current outcome
 
-The requested longer E3 forward run is complete: 10,000 iterations in ten
-1,000-step sampling windows. All eleven run-level checks pass. At each AMPS
-output the completed H2O/CO2 number-density buffer was evaluated along the
-frozen 3,201-point Cassini E3 SPICE trajectory, appended as one Tecplot zone,
-and the ten zones were rendered to PNG. A separate comparison PNG now overlays
-the released E3 INMS-derived H2O and mass-44 observations without changing the
-retained model-only artifact.
+The requested refined E3 run is complete: 10,000 iterations in ten 1,000-step
+sampling windows. All 13 run-level checks pass. A trajectory-following AMR
+refinement capsule reduces the Cartesian cell edge at every in-domain E3
+spacecraft sample from 126.05 km to 15.75625 km, an eightfold linear and
+512-fold volume refinement. At each AMPS output the completed H2O/CO2
+number-density buffer was evaluated along the frozen 3,201-point Cassini E3
+SPICE trajectory and appended as one Tecplot zone. Model-only and INMS-overlay
+PNGs were regenerated from the ten refined zones.
+
+The coarse-mesh, effectively empty plateau from -14 through +10 s is removed:
+the refined profile changes on one-to-two-second scales and no longer contains
+the old 25-second, approximately 15-order-of-magnitude cellwise plateau. The
+geometry is now resolved substantially better, but the density estimate is not
+particle-converged. With the user-requested 100 injected
+macroparticles/species/iteration and no splitting, 106 of the 186 in-domain
+final-window H2O samples and 99 of 186 CO2 samples are exactly zero. In
+particular H2O is empty from -10 through +7 s in the final window and CO2 is
+empty from -8 through +4 s. These gaps are finite-particle occupancy, not a
+resolved physical zero. Increasing spatial resolution alone therefore fixes
+the cut-cell artifact but exposes Monte Carlo sparsity.
 
 This remains a one-rank neutral-transport and H2O parent-loss photolysis run,
-not a qualified observational validation or a converged production
-calculation. The direct data overlay has no instrument-response convolution.
-The flyby profile is cellwise constant on the current coarse mesh. The
-near-closest-approach depression is controlled by changes of the containing
-126.05 km cell and must not be interpreted as a resolved physical depletion or
-as evidence of agreement with INMS.
+not a qualified observational validation or a mesh/timestep/particle-converged
+production calculation. The direct data overlay has no instrument-response
+convolution. The flyby sampler uses the compiled cell-centered-constant AMPS
+stencil; it does not interpolate across neighboring cells.
 
 The qualified evidence is:
 
@@ -31,7 +42,7 @@ The qualified evidence is:
 - native startup receipt:
   `test_output/srcEnceladus/native_startup/test_receipt.json`.
 
-The new long-run evidence is:
+The retained superseded coarse long-run evidence is:
 
 - receipt: `test_output/srcEnceladus/e3_10000_run/test_receipt.json`;
 - native log: `test_output/srcEnceladus/e3_10000_run/run.log`;
@@ -44,7 +55,220 @@ The new long-run evidence is:
 - AMPS/INMS comparison PNG:
   `test_output/srcEnceladus/e3_10000_run/PT/plots/flyby_density.E3.inms_comparison.png`.
 
-## 10,000-iteration E3 run (2026-11-01)
+The current refined evidence is retained at the following absolute directory:
+
+```text
+/home/vtenishe/Mars2/AMPS/srcEnceladus/test_output/srcEnceladus/e3_10000_refined
+```
+
+- receipt: `test_output/srcEnceladus/e3_10000_refined/test_receipt.json`;
+- native log: `test_output/srcEnceladus/e3_10000_refined/run.log`;
+- exact runtime deck and equal-source startup receipt:
+  `test_output/srcEnceladus/e3_10000_refined/enceladus.in` and
+  `test_output/srcEnceladus/e3_10000_refined/enceladus_e3_equal_h2o_co2_sources.in`;
+- refined mesh: `test_output/srcEnceladus/e3_10000_refined/mesh.dat` and
+  `test_output/srcEnceladus/e3_10000_refined/mesh.msh`;
+- flyby Tecplot product:
+  `test_output/srcEnceladus/e3_10000_refined/PT/plots/flyby_density.E3.dat`;
+- model-only PNG:
+  `test_output/srcEnceladus/e3_10000_refined/PT/plots/flyby_density.E3.png`;
+- AMPS/INMS comparison PNG:
+  `test_output/srcEnceladus/e3_10000_refined/PT/plots/flyby_density.E3.inms_comparison.png`.
+
+The complete 15 GiB AMPS field-output directory remains at
+`/tmp/enceladus_e3_10000_refined_20261101`; the durable 171 MiB evidence set
+above intentionally retains the mesh, log, receipt, inputs, Tecplot profile,
+and PNGs rather than duplicating ten 742 MB volume files per active species in
+the nearly full repository filesystem.
+
+## Refined closest-approach E3 run (2026-11-01)
+
+### Refinement and output implementation
+
+Five fail-closed runtime controls were added to `input/enceladus.in`:
+
+```text
+flyby_mesh_refinement=true
+flyby_refinement_target_cell_size_m=20000
+flyby_refinement_radius_m=150000
+flyby_refinement_time_min_s=-120
+flyby_refinement_time_max_s=100
+```
+
+The mesh-resolution callback loads the selected segment of the same frozen E3
+trajectory used by the observation operator and applies the target resolution
+inside a 150 km-radius polyline capsule. The AMPS mesh builder tests a cell
+characteristic diagonal, so the callback converts the requested maximum
+Cartesian edge to its corresponding diagonal. Dyadic AMR then realizes an
+actual 15,756.25 m edge throughout the in-domain track. The legacy south-polar
+source refinement remains active outside this superposed capsule.
+
+The runtime parser requires all four dependent refinement values when the mode
+is on, rejects them when it is off, and validates positive lengths plus an
+increasing time interval. The flyby Tecplot schema now records
+`cell_max_edge_m` for each row. The integration runner requires every in-domain
+value to be positive and at most the configured 20 km limit.
+
+The refined mesh contains 3,165 leaf blocks and reaches level 5. Its minimum
+edge is 15,756.25 m, compared with 126,050 m at level 2 in the superseded
+coarse run. The global rule
+`dt=min(Courant*minimum_cell_width/characteristic_speed)` consequently gives
+`dt=26.260416666666668 s` for Courant 0.5 and characteristic speed 300 m/s.
+Each 1,000-step sampling window spans 26,260.4167 s (7.29456 h), and the full
+run spans 262,604.1667 s (3.03940 days) of model time.
+
+The compiled species union remains unchanged, but generic volume-field output
+is now enabled only for runtime-simulated species. This prevents inactive
+neutral, ion, electron, and dust fields from consuming hundreds of MB apiece
+on the refined mesh. The legacy zero-dust `mesh.data.dat` snapshot is also
+suppressed only when the forward runtime is installed. Active H2O/CO2 mover,
+sampling, chemistry, storage, and surface behavior are unchanged. Small
+generic surface diagnostic files for the compiled species union remain.
+
+### Build and staged run evidence
+
+An initial clean-build invocation was not accepted because the configuration
+generator was still running when compilation was started. No binary from that
+overlap was qualified. The complete required preflight was repeated from
+`/home/vtenishe/Mars2/AMPS`: the root and absence of active build/test processes
+were confirmed, only `build/` was removed, and the application was regenerated
+and built with the established workflow:
+
+```text
+cd /home/vtenishe/Mars2/AMPS
+rm -rf -- build
+./Config.pl -application=enceladus
+./ampsConfig.pl -input enceladus.input -no-compile
+env MAKEFLAGS="-j16" make amps
+```
+
+The final build passed. `.amps.conf` was not edited directly. Only inherited
+warnings in legacy dust, Enceladus, and filename-formatting code appeared; the
+modified forward-model sources compiled without a reported warning. Binary:
+
+- `/home/vtenishe/Mars2/AMPS/amps`;
+- 31,656,784 bytes, timestamp `2026-11-01 01:42:30.966129988 -0600`;
+- SHA-256
+  `1f3110e4447d77742f7563c683da17f67034cc6f8396308bb2f265e972499a02`.
+
+Application-independent tests pass **41/41**. They now include parsed
+refinement target/radius references and 17 typed negative configuration checks.
+Receipt SHA-256:
+`6c756838f7e607964d960d47d46678b2ae9f41a149e2a004d6327792eefbaa1b`.
+Native startup tests pass **6/6**; refined-startup receipt SHA-256:
+`84434d49d142258017a55df77e8596892e45d974219911230044dc3704163bcd`.
+
+The first 100-step refinement pilot demonstrated the correct 15,756.25 m edge,
+3,165-block mesh, and 26.2604167 s timestep, but it was deliberately stopped
+during output after generic AMPS began writing the full refined field for each
+compiled inactive species. That was an output-volume issue, not a solver
+failure. After restricting generic volume output to active H2O/CO2, the fresh
+pilot at `/tmp/enceladus_e3_refinement_smoke_active_20261101` passed all
+**13/13** gates in 246.2 s. It injected 10,000 particles of each species,
+closed both ledgers exactly, wrote only active volume fields, and verified all
+186 in-domain trajectory points at 15,756.25 m.
+
+The full command was:
+
+```text
+cd /home/vtenishe/Mars2/AMPS/srcEnceladus
+python3 test/run_e3_simulation.py \
+  --executable /home/vtenishe/Mars2/AMPS/amps \
+  --launcher mpiexec \
+  --expected-iterations 10000 \
+  --expected-sample-length 1000 \
+  --maximum-flyby-cell-edge-m 20000 \
+  --timeout-s 14400 \
+  --output /tmp/enceladus_e3_10000_refined_20261101
+```
+
+Result: **PASS, 13 checks, 0 failures**, elapsed wall time 5,235.4 s. The
+process returned zero through ordinary MPI finalization, wrote outputs 0--9
+with exactly 3,201 flyby rows and 186 in-domain positions in every zone, wrote
+only H2O/CO2 generic volume fields, produced no plasma file, and verified
+15,756.25 m as both the minimum and maximum in-domain flyby cell edge.
+
+| species | injected | photolytic loss | surface absorption | outer escape | resident | ledger residual |
+|---|---:|---:|---:|---:|---:|---:|
+| H2O | 1,000,000 | 368 | 3,234 | 990,189 | 6,209 | 0 |
+| CO2 | 1,000,000 | 0 | 6,531 | 986,230 | 7,239 | 0 |
+
+The final native particle-buffer total was 13,448, exactly the sum of the two
+independently traversed species lists. CO2 remained transport-only. H2O alone
+underwent the selected Burger (2007) parent-loss channels, with daughters
+discarded as configured.
+
+### Refined flyby result and closest approach
+
+The final 9,001--10,000 window has the following raw maxima inside the AMR
+overlap:
+
+| species | maximum density, m^-3 | E3 reference time, s | positive/186 cells |
+|---|---:|---:|---:|
+| H2O | 1.6602874525068922e14 | +27 | 80 |
+| CO2 | 6.148649007991746e11 | +33 | 87 |
+
+The nearest 1 s trajectory sample is at `t=0 s`, altitude 52.51995134 km; both
+species have zero sampled particles in its containing 15.75625 km cell in the
+final window. Selected points demonstrate the difference from the old coarse
+plateau:
+
+| E3 time, s | altitude, km | H2O, m^-3 | CO2, m^-3 |
+|---:|---:|---:|---:|
+| -14 | 111.497 | 0 | 1.438280e10 |
+| -12 | 96.321 | 9.685010e12 | 0 |
+| -11 | 89.421 | 1.245216e13 | 0 |
+| -10 | 83.021 | 0 | 1.078710e10 |
+| 0 | 52.520 | 0 | 0 |
+| +5 | 62.937 | 0 | 3.595701e9 |
+| +7 | 71.653 | 0 | 7.191402e9 |
+| +8 | 76.890 | 5.534292e12 | 1.438280e10 |
+| +11 | 95.762 | 2.628788e13 | 4.314841e10 |
+
+The old values of order `1e-4 m^-3`/`1e-6 m^-3` from -14 through +10 s no
+longer occur. Instead the finer mesh distinguishes plume-bearing and empty
+cells at roughly one-second trajectory cadence. The remaining exact zeros must
+not be interpreted physically: reducing the cell edge by eight reduces cell
+volume by 512, while the fixed-particle timestep reduction increases the
+resident macroparticle population only about eightfold. The expected local
+occupancy is therefore much lower. A statistically resolved closest-approach
+profile requires authorization to increase injected particles, enable a
+qualified splitting scheme, lengthen/ensemble the sampling, or implement a
+separately validated spatial observation estimator. None was assumed here.
+
+The refined INMS overlay was regenerated with:
+
+```text
+python3 test/plot_flyby_density.py \
+  test_output/srcEnceladus/e3_10000_refined/PT/plots/flyby_density.E3.dat \
+  --output test_output/srcEnceladus/e3_10000_refined/PT/plots/flyby_density.E3.inms_comparison.png \
+  --inms-h2o /data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1/e3_h2o_sticking_corrected.csv \
+  --inms-co2 /data/vtenishe/cassini_validation_data/data/processed/co2_fit_v1/e3_co2_density.csv \
+  --closest-approach-offset-s -0.5
+```
+
+Result: **PASS**, ten zones, 186 in-domain positions, and 123 observational
+rows loaded. The H2O observations remain outbound-only by product design, and
+the mass-44 observable remains labeled apparent CO2. No source distribution
+was fitted during this run: both species still use the equal 1/15 startup
+fixture with E3 total rates inherited from the standalone observational
+studies.
+
+Artifact identities:
+
+| artifact | bytes | SHA-256 |
+|---|---:|---|
+| run log | 2,254,848 | `cd986a979d8c3d9a26e19fa466ee8ee47699836d98e53cfb4000690bcf63a442` |
+| run receipt | 4,775 | `81518157ed1bb0ad139b00325682c5e0d9be51cd4f2017fb09dcf8cd64a6f89b` |
+| refined `mesh.dat` | 166,871,507 | `82b49cfa8693d0258d84f534c1cfacfd48a9331b08dbab4dbb67b51e537ff423` |
+| refined `mesh.msh` | 716,945 | `c54a48b70ba5b4481341f7da8b34d58ce249cfb880e9ecb5550564711017637b` |
+| runtime deck | 4,628 | `0b0e7c61579370ce6a081ef6cb5c49255b536b6d56bccee8d5be23d1dd84caca` |
+| equal-source receipt | 15,874 | `eb30bcbcf5852b60ebdd072faf740e5d4f776f01561a8b80865dded11c70986d` |
+| flyby Tecplot | 7,749,445 | `4a0770c56f6a441116f5d240efa9766584afc451e3a0d3029a3b93a6ad8f18e5` |
+| model PNG, 2160x1512 | 389,007 | `a4a5753640769b53b9d48caf09fd91ebfd4d964ebb8237eaad7d115ac861069a` |
+| INMS PNG, 2160x1512 | 465,977 | `104547f6743b6f51c4202971028351810526767369cedea40e2172e796d4cabb` |
+
+## Superseded coarse 10,000-iteration E3 run (2026-11-01)
 
 The checked-in `input/enceladus.in` now selects 10,000 total iterations,
 1,000-step sampling, and the E3 flyby density observation operator. All other
@@ -278,10 +502,10 @@ time.
   count/density consistency before plotting. `test/run_e3_simulation.py`
   checks requested iteration, sample, and particle totals plus all Tecplot
   zones and the model-only PNG artifact.
-- Application-independent tests remain **PASS, 39/39**; receipt SHA-256 is
-  `b55599e7604d7f7da8ea2b9defa94a7ad3f3770018c2b9008e609ee6c11078b5`.
-- Native startup tests remain **PASS, 6/6**; receipt SHA-256 is
-  `c5a9d4051198bb38e5693461ab2b67c5550639c2d57d4deb7b488f7b9ed1b1a7`.
+- Application-independent tests now pass **41/41**; receipt SHA-256 is
+  `6c756838f7e607964d960d47d46678b2ae9f41a149e2a004d6327792eefbaa1b`.
+- Native startup tests pass **6/6**; refined-startup receipt SHA-256 is
+  `84434d49d142258017a55df77e8596892e45d974219911230044dc3704163bcd`.
 
 The first clean rebuild exposed and stopped on an incorrect namespace for the
 generic interpolation-stencil capacity. After correcting that compile-time
@@ -433,12 +657,12 @@ Enceladus, and legacy filename-formatting code appeared; `ForwardModel.cpp`
 and `ForwardModelAMPS.cpp` compiled without a reported warning or error.
 
 - executable: `/home/vtenishe/Mars2/AMPS/amps`;
-- size: 31,522,360 bytes;
-- timestamp: 2026-11-01 01:16:57.464491013 -0500;
+- size: 31,656,784 bytes;
+- timestamp: 2026-11-01 01:42:30.966129988 -0600;
 - SHA-256:
-  `ac398e461ab52576915cf67b8028869cc1800518a88ae1df4b85f779baba3de3`;
+  `1f3110e4447d77742f7563c683da17f67034cc6f8396308bb2f265e972499a02`;
 - run deck SHA-256:
-  `cef51eb2283cb616495fca83acc3b0577e8b7b4b78c7cc3d62439b8a854e2bb9`;
+  `0b0e7c61579370ce6a081ef6cb5c49255b536b6d56bccee8d5be23d1dd84caca`;
 - `.amps.conf` SHA-256:
   `affef8bbc6d754159a42a4298faa26c43ae8de78c23a5cd89511c6d5ca0b029d`.
 
@@ -448,21 +672,23 @@ Application-independent suite:
 python3 test/run_tests.py
 ```
 
-Result: **PASS, 39 checks, 0 failures**. It includes independent quadrature,
+Result: **PASS, 41 checks, 0 failures**. It includes independent quadrature,
 source normalization, parser/reference, reaction constants, timestep/weight,
-projected-stripe, and 15 typed negative checks. Receipt SHA-256:
-`12fd71b7c07692f90541ccc3b683eb6cf18b89fdaab66ca2004390a63e638e8e`.
+projected-stripe, flyby-refinement configuration references, and 17 typed
+negative checks. Receipt SHA-256:
+`6c756838f7e607964d960d47d46678b2ae9f41a149e2a004d6327792eefbaa1b`.
 The adjacent `reference_comparison.svg` visualizes calculated/reference error.
 
 Native startup suite:
 
 ```text
 python3 test/run_native_startup.py \
-  --executable /home/vtenishe/Mars2/AMPS/amps
+  --executable /home/vtenishe/Mars2/AMPS/amps \
+  --output test_output/srcEnceladus/native_startup_refined_active_output
 ```
 
 Result: **PASS, 6 checks, 0 failures**. Receipt SHA-256:
-`a88b36a5e74268c956c401c0ddebac961f730a8f4076d4e51707b1bb9644163c`.
+`84434d49d142258017a55df77e8596892e45d974219911230044dc3704163bcd`.
 
 ### Retained superseded attempts
 
@@ -481,10 +707,10 @@ exactly.
 
 ## Limits and next validation gates
 
-- The current result is one seed, one rank, one coarse mesh, one timestep and
-  one particle count over ten 1,000-step windows. The longer duration checks
-  execution, repeated output and exact discrete bookkeeping; it is not a
-  mesh/timestep/particle convergence study.
+- The current result is one seed, one rank, one refined mesh, one timestep and
+  one particle count over ten 1,000-step windows. It checks execution, repeated
+  output, requested trajectory resolution and exact discrete bookkeeping; it
+  is not a mesh/timestep/particle convergence study.
 - Fresh particles receive chemistry beginning with the following full step;
   their initial partial-birth-step exposure is omitted. This operator-split
   error is `O(nu*dt)` and requires a timestep study or an exact birth-to-end
@@ -497,15 +723,16 @@ exactly.
 - Four-rank ownership/rank-equivalence, multiple seeds, expanded domain,
   mesh/timestep/particle convergence, an explicit spatial observation
   operator, analytic profile comparison, and observation-operator comparison
-  remain open. The current cell-centered constant flyby sampler is not
-  adequate for interpreting the closest-approach structure.
-- The many zero-valued field files for compiled-but-runtime-inactive species
-  are generic AMPS output behavior; they do not mean those species were
-  simulated or produced.
+  remain open. The 15.75625 km cell-centered-constant flyby sampler resolves
+  the old cut-cell plateau but remains too sparsely populated at 100 injected
+  particles/species/iteration to interpret exact closest-approach zeros.
+- Generic refined volume fields are now limited to runtime-active H2O and CO2.
+  Small surface files for compiled inactive species remain generic diagnostics;
+  they do not mean those species were simulated or produced.
 - `PT/amps_error.log` contains the generic pre-allocation warning that no mesh
   blocks yet existed and that connectivity-list mode was adjusted. The same
-  run subsequently allocated and advanced 64 blocks and returned process code
-  zero; the warning is retained rather than suppressed.
+  run subsequently allocated and advanced 3,165 blocks and returned process
+  code zero; the warning is retained rather than suppressed.
 
 No observational agreement, production readiness, or unique source recovery
 is claimed by the current E3 run.

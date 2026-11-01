@@ -52,6 +52,7 @@ struct FlybyPoint {
 };
 
 std::vector<FlybyPoint> gFlybyTrajectory;
+std::vector<FlybyPoint> gFlybyRefinementTrajectory;
 
 void Increment(std::vector<unsigned long long>* counters, int species) {
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -379,11 +380,14 @@ void OutputFlybyDensity(int dataOutputFileNumber) {
   const std::size_t speciesCount = gConfiguration.simulatedSpecies.size();
   std::vector<double> localDensity(pointCount*speciesCount, 0.0);
   std::vector<double> localDomain(pointCount, 0.0);
+  std::vector<double> localCellMaxEdge(pointCount, 0.0);
 
   // Only the rank owning a leaf evaluates that point. The completed AMPS
   // number-density datum is the physical-particle weight divided by cell
-  // volume and by LastSampleLength [m^-3]. Linear center-node interpolation
-  // therefore preserves both its SI units and the 1000-step time average.
+  // volume and by LastSampleLength [m^-3]. This build selects the native
+  // cell-centered constant stencil, so the value is the containing cell's
+  // sampling-window mean. Recording the cell edge makes spatial resolution an
+  // auditable part of every observation row rather than an inferred property.
   for (std::size_t pointIndex = 0; pointIndex < pointCount; ++pointIndex) {
     double position[3] = {
         gFlybyTrajectory[pointIndex].positionM[0],
@@ -394,6 +398,10 @@ void OutputFlybyDensity(int dataOutputFileNumber) {
     if (node == nullptr || !node->IsUsedInCalculationFlag ||
         node->Thread != PIC::ThisThread || node->block == nullptr) continue;
     localDomain[pointIndex] = 1.0;
+    localCellMaxEdge[pointIndex] = std::max(
+        (node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_,
+        std::max((node->xmax[1]-node->xmin[1])/_BLOCK_CELLS_Y_,
+                 (node->xmax[2]-node->xmin[2])/_BLOCK_CELLS_Z_));
     double coefficients[PIC::InterpolationRoutines::nMaxStencilLength];
     PIC::Mesh::cDataCenterNode* stencil[
         PIC::InterpolationRoutines::nMaxStencilLength];
@@ -417,11 +425,15 @@ void OutputFlybyDensity(int dataOutputFileNumber) {
 
   std::vector<double> globalDensity(pointCount*speciesCount, 0.0);
   std::vector<double> globalDomain(pointCount, 0.0);
+  std::vector<double> globalCellMaxEdge(pointCount, 0.0);
   MPI_Reduce(localDensity.data(), globalDensity.data(),
              static_cast<int>(localDensity.size()), MPI_DOUBLE, MPI_SUM, 0,
              MPI_GLOBAL_COMMUNICATOR);
   MPI_Reduce(localDomain.data(), globalDomain.data(),
              static_cast<int>(localDomain.size()), MPI_DOUBLE, MPI_SUM, 0,
+             MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(localCellMaxEdge.data(), globalCellMaxEdge.data(),
+             static_cast<int>(localCellMaxEdge.size()), MPI_DOUBLE, MPI_SUM, 0,
              MPI_GLOBAL_COMMUNICATOR);
   if (PIC::ThisThread != 0) return;
 
@@ -450,7 +462,7 @@ void OutputFlybyDensity(int dataOutputFileNumber) {
               "placeholder densities; exclude them from physical analysis.\n"
            << "VARIABLES=\"time_from_reference_s\",\"spacecraft_x_m\","
               "\"spacecraft_y_m\",\"spacecraft_z_m\",\"altitude_m\","
-              "\"in_domain\"";
+              "\"in_domain\",\"cell_max_edge_m\"";
     for (const std::string& symbol : gConfiguration.simulatedSpecies)
       output << ",\"n_" << symbol << "_m-3\"";
     output << ",\"n_total_primary_m-3\"\n";
@@ -469,7 +481,8 @@ void OutputFlybyDensity(int dataOutputFileNumber) {
     const FlybyPoint& point = gFlybyTrajectory[pointIndex];
     output << point.timeFromReferenceS << ' ' << point.positionM[0] << ' '
            << point.positionM[1] << ' ' << point.positionM[2] << ' '
-           << point.altitudeM << ' ' << globalDomain[pointIndex];
+           << point.altitudeM << ' ' << globalDomain[pointIndex] << ' '
+           << globalCellMaxEdge[pointIndex];
     double total = 0.0;
     for (std::size_t speciesSlot = 0; speciesSlot < speciesCount;
          ++speciesSlot) {
@@ -601,11 +614,77 @@ bool InstallFromInput(const std::string& inputFile, std::string* error) {
   gConfiguration = std::move(configuration);
   gDistribution = std::move(distribution);
   gFlybyTrajectory = std::move(flybyTrajectory);
+  gFlybyRefinementTrajectory.clear();
+  if (gConfiguration.flybyMeshRefinement) {
+    for (const FlybyPoint& point : gFlybyTrajectory)
+      if (point.timeFromReferenceS >=
+              gConfiguration.flybyRefinementTimeMinS &&
+          point.timeFromReferenceS <=
+              gConfiguration.flybyRefinementTimeMaxS)
+        gFlybyRefinementTrajectory.push_back(point);
+    if (gFlybyRefinementTrajectory.size() < 2) {
+      if (error != nullptr)
+        *error = "flyby refinement interval contains fewer than two trajectory points";
+      gFlybyTrajectory.clear();
+      gConfiguration = Configuration{};
+      gDistribution = SourceDistribution{};
+      return false;
+    }
+  }
   gInstalled = true;
   return true;
 }
 
 bool IsInstalled() { return gInstalled; }
+
+double RequestedMeshResolution(const double* position,
+                               double legacyResolutionM) {
+  if (!gInstalled || !gConfiguration.flybyMeshRefinement ||
+      gFlybyRefinementTrajectory.size() < 2)
+    return legacyResolutionM;
+
+  // The refinement region is the union of radius-R capsules around successive
+  // straight segments of the frozen body-fixed trajectory. For a segment
+  // a--b, the closest point is a+clamp(((x-a).(b-a))/|b-a|^2,0,1)(b-a).
+  // Coordinates and R are metres in IAU_ENCELADUS. This geometrical AMR
+  // selector changes no source, force, chemistry, or spacecraft ephemeris.
+  const double radius2 = gConfiguration.flybyRefinementRadiusM *
+                         gConfiguration.flybyRefinementRadiusM;
+  bool inside = false;
+  for (std::size_t index = 1;
+       index < gFlybyRefinementTrajectory.size(); ++index) {
+    const FlybyPoint& left = gFlybyRefinementTrajectory[index-1];
+    const FlybyPoint& right = gFlybyRefinementTrajectory[index];
+    double delta[3], relative[3];
+    double length2 = 0.0, projection = 0.0;
+    for (int dimension = 0; dimension < 3; ++dimension) {
+      delta[dimension] = right.positionM[dimension]-left.positionM[dimension];
+      relative[dimension] = position[dimension]-left.positionM[dimension];
+      length2 += delta[dimension]*delta[dimension];
+      projection += relative[dimension]*delta[dimension];
+    }
+    if (!(length2 > 0.0)) continue;
+    const double fraction = std::max(0.0, std::min(1.0, projection/length2));
+    double distance2 = 0.0;
+    for (int dimension = 0; dimension < 3; ++dimension) {
+      const double separation = relative[dimension]-fraction*delta[dimension];
+      distance2 += separation*separation;
+    }
+    if (distance2 <= radius2) {
+      inside = true;
+      break;
+    }
+  }
+  if (!inside) return legacyResolutionM;
+
+  // meshAMR compares its requested resolution with the Euclidean diagonal of
+  // a Cartesian cell, whereas the input parameter is the more user-facing
+  // maximum edge width. Multiplication by sqrt(3) is therefore the exact
+  // isotropic conversion. Dyadic AMR may produce a smaller actual edge.
+  const double requestedDiagonal = std::sqrt(3.0) *
+      gConfiguration.flybyRefinementTargetCellSizeM;
+  return std::min(legacyResolutionM, requestedDiagonal);
+}
 
 const Configuration& InstalledConfiguration() {
   if (!gInstalled) Stop("runtime configuration was not installed");
@@ -637,6 +716,19 @@ void FinalizeNumericsAfterMeshAllocation() {
   gLocalDomainEscape.assign(PIC::nTotalSpecies, 0);
   for (const std::string& symbol : gConfiguration.simulatedSpecies)
     (void)Species(symbol);
+
+  // The build contains a capability union of neutral, charged, electron, and
+  // dust species, but this runtime stage activates only selected neutral
+  // primaries. Generic AMPS defaults to writing a full mesh file for every
+  // compiled species, including inactive zero fields. On the refined E3 mesh
+  // each such file is hundreds of MB, so retain generic fields only for the
+  // explicitly simulated species. This changes output selection only: storage,
+  // mover, chemistry, and sampling behavior for active particles are untouched.
+  if (PIC::Sampling::SaveOutputDataFile == nullptr)
+    Stop("generic AMPS output-selection table is not initialized");
+  for (int species = 0; species < PIC::nTotalSpecies; ++species)
+    PIC::Sampling::SaveOutputDataFile[species] =
+        IsSimulated(ParticleSymbol(species));
 
   // The analytic recurrence used by the exact hybrid-8 source sampler is
   // independently qualified for a=s*c>=-2. Check the entire allowed outward
@@ -969,6 +1061,15 @@ void PrintReceipt() {
         << " flyby_trajectory_points=" << gFlybyTrajectory.size()
         << " flyby_trajectory_file=" << gConfiguration.flybyTrajectoryFile
         << '\n';
+  if (gConfiguration.flybyMeshRefinement)
+    out << "[srcEnceladus] flyby_mesh_refinement=on"
+        << " target_cell_size_m="
+        << gConfiguration.flybyRefinementTargetCellSizeM
+        << " tube_radius_m=" << gConfiguration.flybyRefinementRadiusM
+        << " time_min_s=" << gConfiguration.flybyRefinementTimeMinS
+        << " time_max_s=" << gConfiguration.flybyRefinementTimeMaxS
+        << " refinement_trajectory_points="
+        << gFlybyRefinementTrajectory.size() << '\n';
   if (gConfiguration.plasmaBackgroundMode != PlasmaBackgroundMode::None)
     out << "[srcEnceladus] plasma_cache_directory="
         << gConfiguration.plasmaCacheDirectory << '\n';

@@ -25,8 +25,10 @@
   "stripe_reference_radius_m": 252100.0,
   "parsed_sample_length_steps": 200.0,
   "parsed_total_iterations": 800.0,
+  "parsed_flyby_refinement_target_cell_size_m": 20000.0,
+  "parsed_flyby_refinement_radius_m": 150000.0,
   "parsed_split_position_cell_diagonal_fraction": 0.2,
   "parsed_split_velocity_thermal_speed_fraction": 0.01,
   "parsed_nonuniform_split_position_shift": 1.0,
-  "negative_validation_checks": 15.0
+  "negative_validation_checks": 17.0
 }

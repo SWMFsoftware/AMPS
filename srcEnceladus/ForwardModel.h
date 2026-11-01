@@ -103,6 +103,15 @@ struct Configuration {
   bool flybyDensityOutput = false;
   std::string flybyId;
   std::string flybyTrajectoryFile;
+  // Optional AMR tube around a declared interval of the frozen flyby
+  // trajectory. Lengths are SI metres and times use the trajectory's declared
+  // reference epoch. The target is a maximum Cartesian cell width; AMPS'
+  // refinement callback is given the corresponding 3-D cell diagonal.
+  bool flybyMeshRefinement = false;
+  double flybyRefinementTargetCellSizeM = 0.0;
+  double flybyRefinementRadiusM = 0.0;
+  double flybyRefinementTimeMinS = 0.0;
+  double flybyRefinementTimeMaxS = 0.0;
   PopulationControl populationControl = PopulationControl::Off;
   ReactionProducts reactionProducts = ReactionProducts::Discard;
   // Generic PIC SplitWithVelocityShift perturbs position by this fraction of

@@ -672,6 +672,22 @@ Status ParseConfiguration(const std::string& file, Configuration* output) {
       status = ResolveInputPath(
           inputPath, item.value, &candidate.flybyTrajectoryFile);
       if (!status.success) return InputError(item, status.message);
+    } else if (key == "flyby_mesh_refinement") {
+      if (!ParseBoolean(item.value, &candidate.flybyMeshRefinement))
+        return InputError(item, key + " must be true or false");
+    } else if (key == "flyby_refinement_target_cell_size_m") {
+      if (!ParsePositive(item.value,
+                         &candidate.flybyRefinementTargetCellSizeM))
+        return InputError(item, key + " must be finite and positive");
+    } else if (key == "flyby_refinement_radius_m") {
+      if (!ParsePositive(item.value, &candidate.flybyRefinementRadiusM))
+        return InputError(item, key + " must be finite and positive");
+    } else if (key == "flyby_refinement_time_min_s") {
+      if (!ParseFinite(item.value, &candidate.flybyRefinementTimeMinS))
+        return InputError(item, key + " must be finite");
+    } else if (key == "flyby_refinement_time_max_s") {
+      if (!ParseFinite(item.value, &candidate.flybyRefinementTimeMaxS))
+        return InputError(item, key + " must be finite");
     } else if (key == "ices_installation_directory") {
       status = ResolveInputPath(
           inputPath, item.value, &candidate.icesInstallationDirectory);
@@ -682,6 +698,24 @@ Status ParseConfiguration(const std::string& file, Configuration* output) {
         return InputError(item, "ices_case must not be empty");
     } else {
       return InputError(item, "unknown Enceladus application key '" + key + "'");
+    }
+  }
+  const std::vector<std::string> flybyRefinementControls = {
+      "flyby_refinement_target_cell_size_m",
+      "flyby_refinement_radius_m",
+      "flyby_refinement_time_min_s",
+      "flyby_refinement_time_max_s"};
+  if (candidate.flybyMeshRefinement) {
+    for (const std::string& key : flybyRefinementControls)
+      if (settings.find(key) == settings.end())
+        return BlockError(*block,
+            "flyby_mesh_refinement=true requires key '" + key + "'");
+  } else {
+    for (const std::string& key : flybyRefinementControls) {
+      const auto found = settings.find(key);
+      if (found != settings.end())
+        return InputError(*found->second,
+            "flyby refinement controls require flyby_mesh_refinement=true");
     }
   }
   *output = std::move(candidate);
@@ -778,6 +812,24 @@ Status ValidateConfiguration(const Configuration& configuration,
     return Status::Error(
         "flyby_density_output=false forbids flyby_id and "
         "flyby_trajectory_file");
+  }
+  if (configuration.flybyMeshRefinement) {
+    if (!configuration.flybyDensityOutput)
+      return Status::Error(
+          "flyby_mesh_refinement=true requires flyby_density_output=true");
+    if (!(configuration.flybyRefinementTargetCellSizeM > 0.0) ||
+        !(configuration.flybyRefinementRadiusM > 0.0) ||
+        !(configuration.flybyRefinementTimeMaxS >
+          configuration.flybyRefinementTimeMinS))
+      return Status::Error(
+          "flyby_mesh_refinement=true requires positive target cell size and "
+          "radius plus time_max_s greater than time_min_s");
+  } else if (configuration.flybyRefinementTargetCellSizeM != 0.0 ||
+             configuration.flybyRefinementRadiusM != 0.0 ||
+             configuration.flybyRefinementTimeMinS != 0.0 ||
+             configuration.flybyRefinementTimeMaxS != 0.0) {
+    return Status::Error(
+        "flyby_mesh_refinement=false forbids flyby refinement controls");
   }
   status = RequireUniqueNonempty(configuration.injectedSpecies,
                                  "injected_species");
