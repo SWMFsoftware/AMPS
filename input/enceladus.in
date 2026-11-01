@@ -1,0 +1,82 @@
+! Enceladus per-run input (schema 2: neutral parent-loss photolysis).
+!
+! This checked-in file is the 10,000-iteration E3 run requested on
+! 2026-11-01. The executable validates the complete receipt before MPI; use
+! --validate-input to perform that validation without starting a simulation.
+!
+! input/enceladus.input is a build-generator deck only.  Do not put any of
+! these per-run values there.
+
+#begin application: enceladus
+schema_version=2
+! Select one flyby-specific absolute receipt. E3 is the checked-in default;
+! use enceladus_e5_equal_h2o_co2_sources.in for E5.
+source_distribution_file=enceladus_e3_equal_h2o_co2_sources.in
+
+! Current stage: inject and transport neutral H2O and CO2. Burger (2007)
+! supplies H2O photolysis only, so CO2 is transport-only. H2O photolysis
+! removes the parent; physical products are not created as particles.
+simulated_species=H2O,CO2
+injected_species=H2O,CO2
+chemistry_species=H2O
+reaction_products=discard
+
+! All Burger (2007) H2O photo channels contribute to the total parent-loss
+! frequency. Charge exchange is rejected by application schema 2.
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+solar_activity=active
+
+! This neutral/photolysis run has no plasma. The adapter explicitly zeros all
+! allocated coupled-background fields after mesh allocation; gravity remains
+! active and no external cache or ICES process is used.
+plasma_background_mode=none
+! For a later coupled run, select cache_only or cache_or_ices and define:
+! plasma_cache_directory=REQUIRED_EXISTING_CACHE_DIRECTORY
+! ices_installation_directory=REQUIRED_FOR_cache_or_ices
+! ices_case=REQUIRED_FOR_cache_or_ices
+! The legacy ICES command adapter permits only letters, digits, /, _, -, and .
+! in the installation path; the case uses the same set except / and is one
+! non-dot path component.
+
+! Both flyby startup receipts are mode=absolute; all total_source_rate.* keys
+! are therefore forbidden. The E3 default contains H2O=2.060909950673409e28
+! molecules/s and apparent-CO2=5.356e25 molecules/s. The E5 alternative
+! contains H2O=4.520015885781454e28 and apparent-CO2=1.013e26 molecules/s.
+! E3/E5 mass-44 rates carry a documented 2-5 impact-fragmentation bracket;
+! see SOURCE_DISTRIBUTION_FILE.md before treating them as physical CO2 rates.
+
+! Inject exactly 100 global model particles of each primary per iteration.
+primary_macroparticles_per_step.H2O=100
+primary_macroparticles_per_step.CO2=100
+
+! Define a characteristic speed and Courant number in (0,1] for every member
+! of simulated_species. These examples are key syntax, not recommended values.
+characteristic_speed.H2O_m_s-1=300
+characteristic_speed.CO2_m_s-1=300
+courant.H2O=0.5
+courant.CO2=0.5
+
+! Ten complete 1,000-step sampling windows. At each normal AMPS output the
+! completed time-averaged H2O/CO2 density is interpolated at the frozen E3
+! Cassini locations. The CSV was computed with CSPICE in IAU_ENCELADUS; its
+! kernel hashes and exact event contract are retained in
+! standalone/config/e3_e5_spice_ground_tracks.json.
+sample_length_steps=1000
+total_iterations=10000
+flyby_density_output=true
+flyby_id=E3
+flyby_trajectory_file=../srcEnceladus/standalone/figure_data/e3_spice_ground_track.csv
+random_seed=184467
+particle_splitting_merging=off
+
+! Required only when particle_splitting_merging is enabled; all of these keys
+! are forbidden in off mode. scatter uses only the min/max pair and forbids the
+! velocity-shift fractions and nonuniform flag.
+! min_particles_per_cell=REQUIRED_POSITIVE_INTEGER
+! max_particles_per_cell=REQUIRED_GREATER_INTEGER
+! The two velocity_shift controls are dimensionless fractions of the local
+! cell diagonal and measured thermal speed, respectively.
+! split_position_shift_cell_diagonal_fraction=REQUIRED_FOR_velocity_shift
+! split_velocity_shift_thermal_speed_fraction=REQUIRED_FOR_velocity_shift
+! nonuniform_split_position_shift=false
+#end application

@@ -1,0 +1,292 @@
+# Enceladus forward-model runtime input
+
+`input/enceladus.input` is read only by the AMPS build/configuration workflow.
+It selects compiled capabilities and the union of available species; it is not
+a run deck. Every executable invocation reads `input/enceladus.in` by default,
+before MPI initialization. The exact `srcSEP`-compatible overrides are
+`-input FILE`, `--input FILE`, and `--input=FILE`.
+
+The checked-in `input/enceladus.in` is the requested longer E3 run deck.
+It selects the temporary equal-rate H2O+CO2 receipt, active-Sun H2O neutral
+parent loss, no plasma, 100 primaries per species per step, 300 m/s,
+Courant 0.5, ten 1,000-step sampling windows, seed 184467, and no split/merge.
+The E5 source receipt remains an explicit one-line alternative, but changing
+flyby or any numerical control creates a distinct run configuration.
+
+The forward model reads one explicit `application: enceladus` block. It uses
+the repository-wide grammar in `src/INPUT_FILE.md`; unknown or duplicated keys
+are fatal.
+
+```text
+#begin application: enceladus
+schema_version=2
+source_distribution_file=enceladus_e3_equal_h2o_co2_sources.in
+! For E5: source_distribution_file=enceladus_e5_equal_h2o_co2_sources.in
+
+simulated_species=H2O,CO2
+injected_species=H2O,CO2
+chemistry_species=H2O
+reaction_products=discard
+
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+solar_activity=active
+plasma_background_mode=none
+primary_macroparticles_per_step.H2O=100
+primary_macroparticles_per_step.CO2=100
+
+characteristic_speed.H2O_m_s-1=300
+characteristic_speed.CO2_m_s-1=300
+courant.H2O=0.5
+courant.CO2=0.5
+...one speed and Courant number for every simulated species...
+
+sample_length_steps=1000
+total_iterations=10000
+flyby_density_output=true
+flyby_id=E3
+flyby_trajectory_file=../srcEnceladus/standalone/figure_data/e3_spice_ground_track.csv
+random_seed=184467
+particle_splitting_merging=off
+#end application
+```
+
+`simulated_species` is the runtime-active subset of the compiled union.
+Schema 2 permits only primary neutral H2O and/or CO2 in both
+`simulated_species` and `injected_species`; the checked-in stage selects both.
+`chemistry_species` lists the neutral parents on which the selected reactions
+operate. `reaction_products=discard` is mandatory: a reaction event removes
+the parent and creates no daughter particle, including for tabulated
+photoionization channels. Every selected reaction must be photolytic and its
+parent must be a selected primary. Charge exchange and daughter tracking are
+typed startup errors in this schema. Use the literal `none` for both
+`chemistry_species` and `selected_reactions` in a transport-only run; listing
+chemistry species with no reactions is rejected.
+
+The global step is computed after AMR allocation:
+
+```text
+dt = min_species(courant.SPECIES * minimum_allocated_cell_size
+                 / characteristic_speed.SPECIES)
+```
+
+Every simulated species requires its own finite positive speed and Courant
+number in `(0,1]`. The limiting species and cell size are printed in the run
+receipt. For primary species, the fixed statistical weight is
+`Q * dt / primary_macroparticles_per_step`.
+
+Run-control keys are exact: source totals and primary counts for a species not
+in `injected_species`, or speed/Courant keys for a species not in
+`simulated_species`, are rejected instead of being silently ignored.
+
+The injector creates exactly that requested integer number of primary model
+particles globally on each iteration. All MPI ranks replay the same seeded
+event sequence, native AMR ownership selects the creating rank, and each
+particle receives an independent uniform birth time within the global step.
+The requested count is not a Poisson mean.
+
+For a reacting parent, the runtime sums the selected Burger photo frequencies
+and applies the exact constant-rate step probability
+`1-exp(-dt*sum(nu))`. On an event the parent is deleted. No daughter species,
+statistical weight, momentum partition, or plasma feedback is created or
+inferred.
+
+`sample_length_steps` controls the output/sampling cadence;
+`total_iterations` is the positive number of native timesteps to execute.
+They are intentionally separate. The checked-in run uses ten complete
+sampling windows.
+
+## Flyby density observation operator
+
+`flyby_density_output=true` requires both `flyby_id` and
+`flyby_trajectory_file`; setting it to `false` forbids both dependent keys.
+The trajectory path is resolved relative to the run deck. Its CSV must use the
+frozen SPICE trajectory schema documented in `standalone/README.md`, every row
+must carry the selected flyby ID, all SI values must be finite, altitude must
+be nonnegative, and times must increase strictly. Malformed or inaccessible
+trajectories fail before MPI initialization.
+
+At every ordinary AMPS output, the adapter evaluates the completed AMPS
+number-density sampling buffer at each spacecraft position with the native
+cell-centered linear interpolation stencil. The result is a sampling-window
+mean in m^-3, not an instantaneous particle count. MPI ownership is reduced to
+rank zero and all output zones are appended to
+`PT/plots/flyby_density.FLYBY.dat`. Each Tecplot row includes time from the
+declared flyby reference, body-fixed spacecraft position, SPICE ellipsoid
+altitude, `in_domain`, the active primary densities, and their sum.
+
+The complete SPICE trajectory is retained even when it extends beyond the AMR
+box. Such rows have `in_domain=0` and zero placeholder density and must be
+excluded from physical analysis. The supplied plotting utility does this
+automatically:
+
+```text
+python3 test/plot_flyby_density.py \
+  PT/plots/flyby_density.E3.dat \
+  --output PT/plots/flyby_density.E3.png
+```
+
+The plotter can also overlay the released E3 INMS observables. The INMS tables
+use time from closest approach, while the Tecplot product uses time from the
+declared reference UTC. Therefore the conversion offset is explicit and
+required; for the frozen E3 geometry, the independently resolved closest
+approach is at -0.5 s on the reference-UTC axis:
+
+```text
+python3 test/plot_flyby_density.py \
+  test_output/srcEnceladus/e3_10000_run/PT/plots/flyby_density.E3.dat \
+  --output test_output/srcEnceladus/e3_10000_run/PT/plots/flyby_density.E3.inms_comparison.png \
+  --inms-h2o /data/vtenishe/cassini_validation_data/data/processed/plume_fit_v1/e3_h2o_sticking_corrected.csv \
+  --inms-co2 /data/vtenishe/cassini_validation_data/data/processed/co2_fit_v1/e3_co2_density.csv \
+  --closest-approach-offset-s -0.5
+```
+
+The H2O input is the released, sticking-corrected, INMS-derived outbound
+profile. Its displayed bars are the independent digitization uncertainty; its
+23% common scale uncertainty is stated on the plot but is not folded into each
+bar. The E3 mass-44 data are deliberately labeled `apparent CO2`: at this
+encounter speed, impact fragmentation can enhance mass-44 counts. Their bars
+show Poisson counting uncertainty; the 15% common calibration uncertainty and
+the published factor-2-to-5 fragmentation range are stated but not plotted as
+independent point errors. A zero-count mass-44 sample is placed at the released
+one-count sensitivity with an open downward triangle, rather than being
+converted to a positive observation on the logarithmic axis.
+
+The reader fails on non-E3 rows, missing/non-finite values, non-increasing
+times, a mass channel other than 44, a CO2 interpretation other than
+`apparent_CO2`, or inconsistent zero counts. Observations and model values are
+displayed only where the final Tecplot zone is inside the current AMR domain;
+this is a direct density overlay, not an INMS response-function convolution or
+a numerical-convergence qualification.
+
+## Plasma-background authority
+
+The neutral-only mode used by the current E3 run is:
+
+```text
+plasma_background_mode=none
+```
+
+It forbids cache and ICES keys, launches no external process, reads no plasma
+file, and writes no `ices.data.dat`. After AMR allocation the adapter sets the
+entire allocated coupled DATAFILE center-node background region to zero. This
+explicit initialization is required because the compiled Boris implementation
+interpolates E and B even for a neutral particle whose charge makes the
+Lorentz acceleration zero. Enceladus gravity and surface/outer boundaries
+remain active in this mode.
+
+The later coupled modes remain available but were not used in the current run.
+They are one-way: particles read plasma density, bulk velocity, pressure,
+temperature, electric field, and magnetic field but never modify the plasma.
+Select an explicit background authority:
+
+```text
+plasma_background_mode=cache_only
+plasma_cache_directory=plasma_cache
+```
+
+`plasma_cache_directory` is resolved relative to the runtime deck and must
+already be an accessible directory. The generic AMPS data-file reader names
+the file from the exact AMR mesh signature plus the stable identity
+`ENCELADUS-BATSRUS`; therefore a cache produced for another mesh cannot be
+silently reused. In `cache_only` mode, a missing mesh-matched cache is fatal
+and no external process is launched.
+
+The existing ICES extraction path is available only when explicitly enabled:
+
+```text
+plasma_background_mode=cache_or_ices
+plasma_cache_directory=plasma_cache
+ices_installation_directory=/authoritative/path/to/ICES/Models
+ices_case=AUTHORITATIVE_CASE_NAME
+```
+
+`cache_or_ices` first loads the same mesh-matched cache when present. Only
+when it is absent does it invoke the compiled ICES coordinate/extraction
+workflow, read the resulting SWMF data, and save the cache. Both ICES values
+are mandatory in this mode and forbidden in `cache_only`; the legacy
+developer-specific ICES path and case are never used as implicit defaults.
+Because the inherited ICES routine composes an unquoted shell command, the
+installation path is restricted to letters, digits, `/`, `_`, `-`, and `.`,
+and the case must be one non-`.`/`..` component using the same set without
+`/`. Unsupported whitespace or shell metacharacters are startup errors.
+The build must also contain the established ICES coordinate-list capability,
+otherwise the fallback terminates with a typed error.
+
+## Burger 2007 reaction identifiers
+
+Photo rates are the quiet/active endpoints at 9.5 AU from Burger et al.,
+“Understanding the escape of water from Enceladus,” JGR 112 A06219 (2007),
+doi:10.1029/2006JA012086, Table 2:
+
+- `burger2007.photo.h2o_to_oh_h`
+- `burger2007.photo.h2o_to_h2_o`
+- `burger2007.photo.h2o_to_h_h_o`
+- `burger2007.photo.h2o_to_h2op_e`
+- `burger2007.photo.h2o_to_h_ohp_e`
+- `burger2007.photo.h2o_to_h2_op_e`
+- `burger2007.photo.h2o_to_oh_hp_e`
+
+The library also retains Burger Table 1 ion-neutral cross sections under
+stable IDs for later model stages and independent constant checks:
+
+- `burger2007.cx.hplus_h2o_to_h_h2op`
+- `burger2007.cx.oplus_h2o_to_o_h2op`
+- `burger2007.cx.h2op_h2o_resonant`
+- `burger2007.cx.ohplus_h2o_to_oh_h2op`
+
+They are not selectable in application schema 2. Any `burger2007.cx.*`
+identifier, charged simulated species, ion fraction, or charge-exchange weight
+reference is rejected. The H2O+ + H2O -> OH + H3O+ channel remains absent from
+the table entirely, and H3O+ remains outside the model.
+
+The loss processor is the configured AMPS user-particle pass, executed once
+before the ordinary mover. Existing particles receive the exact competing
+photo-channel probability `1-exp(-sum(nu)*dt)` for a full global step.
+Fresh primaries are injected and moved through a uniformly sampled remaining
+fraction of that step into AMPS temporary lists, so their first chemistry pass
+occurs at the start of the following step. Their reaction exposure during that
+initial partial step is therefore omitted by the current operator splitting.
+This known `O(nu*dt)` birth-time error must be measured in timestep convergence
+tests; no claim of exact continuous-time chemistry is made.
+
+Both flyby receipts contain CO2 as a neutral transport primary, while
+`chemistry_species=H2O`. No Burger-2007 CO2 photo channel exists, so a CO2
+reaction identifier is not offered and startup rejects invented CO2
+chemistry. The E3/E5 receipt values are the standalone report's apparent-CO2
+mass-44 rates, with a documented factor-2--5 fragmentation bracket. Select a
+physical value within that bracket only when an external scientific choice
+justifies the enhancement factor; the startup fixture makes no such choice.
+
+## Sampling and particle population control
+
+`sample_length_steps` sets the fixed AMPS sampling window. Population control
+is selected with `particle_splitting_merging=off|velocity_shift|scatter`.
+Enabled modes additionally require
+`min_particles_per_cell < max_particles_per_cell`. `velocity_shift` also
+requires positive dimensionless
+`split_position_shift_cell_diagonal_fraction` and
+`split_velocity_shift_thermal_speed_fraction`. The generic controller scales
+the first by the local cell diagonal and the second by the measured local
+thermal speed; they are not metres and m/s. `nonuniform_split_position_shift`
+is `true` or `false` and selects the generic controller's nonuniform radial
+position-shift proposal. These values map directly to the existing generic
+PIC split/merge controller; no Enceladus-specific algorithm replaces it.
+`particle_splitting_merging=off` forbids every split/merge parameter key, and
+`scatter` forbids the velocity-shift fractions and nonuniform-position flag,
+so inactive controls cannot remain silently in a run receipt.
+
+## Transport mover
+
+The compile deck selects generic PIC pointer-mode mover dispatch. After the
+runtime deck and mesh are validated, the adapter installs the existing Boris
+mover. The schema-2 active populations are neutral, so their trajectory uses
+Enceladus point-mass gravity and generic internal-sphere handling; no Lorentz
+force or charged daughter is present. In `none` mode the coupled-background
+storage is zeroed. In either cache mode the established one-way background is
+loaded, but it receives no particle feedback.
+
+At normal termination, the adapter reports per-species injection,
+photolytic-parent loss, surface absorption, true outer-domain escape, and
+resident counts. It traverses native cell particle lists independently and
+prints `ledger_residual = injected - photolytic - surface - escape - resident`.
+A qualified discrete run requires zero residual for every injected species.

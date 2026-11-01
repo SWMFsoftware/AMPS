@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 #include <list>
+#include <cstdint>
 #include <math.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -15,6 +16,7 @@
 #include <iostream>
 #include <iostream>
 #include <fstream>
+#include <limits>
 #include <time.h>
 
 #include <sys/time.h>
@@ -25,6 +27,7 @@
 #include "constants.h"
 
 #include "Enceladus.h"
+#include "ForwardModelAMPS.h"
 
 
 //the parameters of the domain and the sphere
@@ -237,11 +240,80 @@ int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &
 
 
 int main(int argc,char **argv) {
+  // Per-run physics and numerics never come from input/enceladus.input: that
+  // file is consumed only by the AMPS build generator.  Parse the run deck
+  // transactionally before MPI, matching srcSEP's startup ordering so an
+  // invalid deck cannot leave partially initialized distributed state.
+  std::string applicationInput="input/enceladus.in";
+  bool explicitInput=false;
+  bool validateInputOnly=false;
+  for (int argument=1;argument<argc;argument++) {
+    const std::string option(argv[argument]);
+    if ((option=="-input" || option=="--input") && argument+1<argc &&
+        !explicitInput) {
+      applicationInput=argv[++argument];
+      explicitInput=true;
+    }
+    else if (option.rfind("--input=",0)==0 && !explicitInput &&
+             option.size()>8) {
+      applicationInput=option.substr(8);
+      explicitInput=true;
+    }
+    else if (option=="--validate-input" && !validateInputOnly) {
+      validateInputOnly=true;
+    }
+    else if (option=="--help" || option=="-h") {
+      std::cout << "Usage: " << argv[0]
+                << " [--validate-input] "
+                << "[-input FILE|--input FILE|--input=FILE]\n"
+                << "Default run deck: input/enceladus.in\n";
+      return EXIT_SUCCESS;
+    }
+    else {
+      std::cerr << "Usage: " << argv[0]
+                << " [--validate-input] "
+                << "[-input FILE|--input FILE|--input=FILE]\n";
+      return EXIT_FAILURE;
+    }
+  }
+  std::string error;
+  if (!Enceladus::ForwardModel::AMPS::InstallFromInput(
+          applicationInput,&error)) {
+    std::cerr << error << '\n';
+    return EXIT_FAILURE;
+  }
+  if (validateInputOnly) {
+    const auto& configuration =
+        Enceladus::ForwardModel::AMPS::InstalledConfiguration();
+    std::cout << "[srcEnceladus] input_validation=PASS"
+              << " source_distribution="
+              << Enceladus::ForwardModel::AMPS::InstalledDistribution().name
+              << " solar_activity="
+              << Enceladus::ForwardModel::Name(configuration.solarActivity)
+              << " sample_length_steps=" << configuration.sampleLengthSteps
+              << " total_iterations=" << configuration.totalIterations
+              << " flyby_density_output="
+              << (configuration.flybyDensityOutput ? "on" : "off")
+              << " plasma_background_mode="
+              << Enceladus::ForwardModel::Name(
+                     configuration.plasmaBackgroundMode)
+              << '\n';
+    return EXIT_SUCCESS;
+  }
   PIC::InitMPI();
 
   //  MPI_Init(&argc,&argv);
 
-  rnd_seed();
+  // The runtime seed controls every stochastic parent-loss draw. Fold the
+  // 64-bit receipt into the positive int accepted by the generic generator;
+  // include rank so streams are reproducible but not duplicated across MPI.
+  const std::uint64_t runtimeSeed =
+      Enceladus::ForwardModel::AMPS::InstalledConfiguration().randomSeed;
+  const std::uint64_t rankSeed = runtimeSeed ^
+      (0x9e3779b97f4a7c15ULL *
+       static_cast<std::uint64_t>(PIC::ThisThread + 1));
+  rnd_seed(static_cast<int>(rankSeed %
+      static_cast<std::uint64_t>(std::numeric_limits<int>::max())));
 
 
 
@@ -283,10 +355,14 @@ int main(int argc,char **argv) {
   Sphere->SetSphereGeometricalParameters(sx0,rSphere);
 
   Sphere->localResolution=localSphericalSurfaceResolution;
-  Sphere->InjectionRate=Enceladus::sphereInjectionRate;
+  Sphere->InjectionRate=Enceladus::ForwardModel::AMPS::IsInstalled() ?
+      NULL : Enceladus::sphereInjectionRate;
   Sphere->faceat=0;
-  Sphere->ParticleSphereInteraction=Enceladus::ParticleSphereInteraction;
-  Sphere->InjectionBoundaryCondition=Enceladus::DustInjection__Sphere;
+  Sphere->ParticleSphereInteraction=Enceladus::ForwardModel::AMPS::IsInstalled() ?
+      Enceladus::ForwardModel::AMPS::AbsorbParticleAtSurface :
+      Enceladus::ParticleSphereInteraction;
+  Sphere->InjectionBoundaryCondition=Enceladus::ForwardModel::AMPS::IsInstalled() ?
+      NULL : Enceladus::DustInjection__Sphere;
 
   Sphere->PrintSurfaceMesh("Sphere.dat");
   Sphere->PrintSurfaceData("SpheraData.dat",0);
@@ -419,7 +495,11 @@ int main(int argc,char **argv) {
 */
 
   //set up the time step
-  PIC::ParticleWeightTimeStep::LocalTimeStep=localTimeStep;
+  PIC::ParticleWeightTimeStep::LocalTimeStep=
+      Enceladus::ForwardModel::AMPS::IsInstalled() ?
+      Enceladus::ForwardModel::AMPS::GlobalTimeStep : localTimeStep;
+  if (Enceladus::ForwardModel::AMPS::IsInstalled())
+    Enceladus::ForwardModel::AMPS::FinalizeNumericsAfterMeshAllocation();
   PIC::ParticleWeightTimeStep::initTimeStep();
 
   //set up the particle weight
@@ -428,13 +508,16 @@ int main(int argc,char **argv) {
 
   PIC::ParticleWeightTimeStep::LocalBlockInjectionRate=NULL;
 //  PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_DUST_SPEC_);
-  for (int s=0;s<PIC::nTotalSpecies;s++)  PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(s);
+  if (!Enceladus::ForwardModel::AMPS::IsInstalled())
+    for (int s=0;s<PIC::nTotalSpecies;s++)
+      PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(s);
 
 
   //setup the dust charging functions
-  for (int s=_DUST_SPEC_;s<_DUST_SPEC_+ElectricallyChargedDust::GrainVelocityGroup::nGroups;s++) {
-    PIC::ChemicalReactions::GenericParticleTranformation::SetSpeciesModel(ElectricallyChargedDust::DustChargingProcessorIndicator,ElectricallyChargedDust::DustChargingProcessor_Implicit_SecondOrder,s);
-  }
+  if (!Enceladus::ForwardModel::AMPS::IsInstalled())
+    for (int s=_DUST_SPEC_;s<_DUST_SPEC_+ElectricallyChargedDust::GrainVelocityGroup::nGroups;s++) {
+      PIC::ChemicalReactions::GenericParticleTranformation::SetSpeciesModel(ElectricallyChargedDust::DustChargingProcessorIndicator,ElectricallyChargedDust::DustChargingProcessor_Implicit_SecondOrder,s);
+    }
 
 
 //  PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
@@ -498,57 +581,49 @@ int main(int argc,char **argv) {
   //Load the plasma parameters from ICES
   //init ICES
 
-  PIC::CPLR::DATAFILE::ICES::SWMFdataPreProcessor=SWMFdataPreProcessor;
+  const bool usePlasma =
+      Enceladus::ForwardModel::AMPS::InstalledConfiguration().
+          plasmaBackgroundMode !=
+      Enceladus::ForwardModel::PlasmaBackgroundMode::None;
+  if (usePlasma)
+    PIC::CPLR::DATAFILE::ICES::SWMFdataPreProcessor=SWMFdataPreProcessor;
 
-  //load the background data from a binary file is exists
-  //other extract the data from ICES
-  if (PIC::CPLR::DATAFILE::BinaryFileExists("ENCELADUS-BATSRUS")==true)  {
-    PIC::CPLR::DATAFILE::LoadBinaryFile("ENCELADUS-BATSRUS");
-  }
-  else {
-    #ifdef _ICES_CREATE_COORDINATE_LIST_
-    #if _ICES_CREATE_COORDINATE_LIST_ == _PIC_MODE_ON_
-    PIC::CPLR::DATAFILE::ICES::createCellCenterCoordinateList();
-    PIC::CPLR::DATAFILE::ICES::retriveSWMFdata("Enceladus");
-    #endif
-    #endif //_ICES_CREATE_COORDINATE_LIST_
+  Enceladus::ForwardModel::AMPS::LoadCoupledPlasmaBackground();
 
-    PIC::CPLR::DATAFILE::ICES::readSWMFdata(1.0);
-    //  PIC::CPLR::ICES::readDSMCdata();
-    cout << __FILE__<< "@" << __LINE__ << endl;
-
-    //save the loaded background data
-    PIC::CPLR::DATAFILE::SaveBinaryFile("ENCELADUS-BATSRUS");
-  }
-
-
-  PIC::Mesh::mesh->outputMeshDataTECPLOT("ices.data.dat",0);
+  if (usePlasma) PIC::Mesh::mesh->outputMeshDataTECPLOT("ices.data.dat",0);
 /*-------------------------  END ICES --------------------------------*/
 
   //create the reference file with the extracted data
   #if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
   char fname[400];
 
-  sprintf(fname,"%s/test_ices.dat",PIC::OutputDataFileDirectory);
-  PIC::CPLR::DATAFILE::SaveTestReferenceData(fname);
+  if (usePlasma) {
+    sprintf(fname,"%s/test_ices.dat",PIC::OutputDataFileDirectory);
+    PIC::CPLR::DATAFILE::SaveTestReferenceData(fname);
+  }
   #endif
 
 
   //time step
-  int nTotalIterations=(_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_OFF_) ? 100000001 : 150;
+  const long int nTotalIterations =
+      Enceladus::ForwardModel::AMPS::InstalledConfiguration().totalIterations;
 
   for (long int niter=0;niter<nTotalIterations;niter++) {
      PIC::TimeStep();
 
      if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
-       PIC::RequiredSampleLength*=2;
-       if (PIC::RequiredSampleLength>20000) PIC::RequiredSampleLength=20000;
+       if (!Enceladus::ForwardModel::AMPS::IsInstalled()) {
+         PIC::RequiredSampleLength*=2;
+         if (PIC::RequiredSampleLength>20000) PIC::RequiredSampleLength=20000;
+       }
 
 
        LastDataOutputFileNumber=PIC::DataOutputFileNumber;
        if (PIC::Mesh::mesh->ThisThread==0) cout << "The new lample length is " << PIC::RequiredSampleLength << endl;
      }
   }
+
+  Enceladus::ForwardModel::AMPS::PrintFinalReceipt(nTotalIterations);
 
   //output the particle statistics of the test run
   #if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
@@ -563,8 +638,3 @@ int main(int argc,char **argv) {
 
   return EXIT_SUCCESS;
 }
-
-
-
-
-

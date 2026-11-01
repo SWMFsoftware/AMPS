@@ -175,4 +175,10 @@ using namespace ElectricallyChargedDust;
 
 }
 
+// Runtime-selected gas sources and chemistry use the same application header
+// injection mechanism as the legacy dust callbacks above. Keeping the adapter
+// declaration here makes generated generic-PIC callback macros visible without
+// adding an application include directly to core PIC sources.
+#include "ForwardModelAMPS.h"
+
 #endif /* ENCELADUS_H_ */

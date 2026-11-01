@@ -1,6 +1,84 @@
 # Enceladus plume, plasma, and charged-dust model: development and validation plan
 
-Revision: 2026-10-13. Status: proposed implementation roadmap, grounded in a read-only source inspection and the local Cassini inventory. No application was built or executed during preparation of this plan; no development gate below is yet qualified.
+Revision: 2026-11-01. Status: active implementation and evidence ledger. The
+long-term staged science gates below remain open. The bounded one-rank E3
+neutral/parent-loss execution gate now passes, but it is not a converged or
+observationally validated science run.
+
+### 2026-11-01 bounded forward-model implementation status
+
+Implemented:
+
+- PIC-independent schema-2 parsers for per-run `input/enceladus.in` and the
+  separate fitted-source receipt;
+- strict `tenishev2014_hybrid_8` geometry/kinematics receipts with canonical
+  ID-to-geometry binding, shape and absolute-strength modes, and a standalone
+  exporter, including the selected local-vertical projection of every raw
+  stripe direction to the 252.100 km spherical surface;
+- absolute E3 and E5 H2O+CO2 startup receipts. Their equal 15-way H2O
+  partitions preserve the checked-in independent-fit totals
+  `2.060909950673409e28` and `4.520015885781454e28 molecules/s`; their CO2
+  partitions preserve the primary shared-shape apparent-CO2 totals
+  `5.356e25` and `1.013e26 molecules/s` plus the factor-2--5 fragmentation
+  bracket. All are labeled temporary initialization distributions rather than
+  measured component partitions;
+- exact per-step primary macro-particle counts, fixed primary weights
+  `Q*dt/N`, the production-normalized Tenishev K3 direction/speed sampler, and
+  deterministic AMR-owner selection;
+- global `min(Courant*cell_size/characteristic_speed)` stepping, independent
+  runtime sampling and total-iteration controls, and generic split/merge
+  control;
+- the Burger et al. (2007) H2O photo table used as competing parent-loss
+  channels. Schema 2 permits neutral primaries only, discards all physical
+  reaction products, and rejects charge exchange; Burger Table 1 constants
+  remain versioned for later stages but are not selectable;
+- explicit `none`, `cache_only`, or `cache_or_ices` plasma authority. `none`
+  initializes every allocated coupled-background value to zero; cache modes
+  retain mesh-signature identity, no implicit developer ICES values, and
+  shell-safe validation of inherited ICES command inputs;
+- pointer-mode Boris transport with Enceladus gravity and generic
+  internal-sphere trajectory handling, plus separate final counts for surface
+  absorption, outer escape, chemistry loss, and native-list residents; and
+- an application-independent global runner, immutable numerical references,
+  focused cases, and an SVG comparison receipt.
+
+Current evidence: `python3 test/run_tests.py` passes all 39 parser, exporter,
+reaction, source-law quadrature, Courant, weight, and negative-reference
+checks. After confirming the repository root was idle, the clean native build
+removed only `build`, selected Enceladus with
+`./Config.pl -application=enceladus`, regenerated production hooks, and linked
+through the top-level `-j16` compilation successfully on
+2026-11-01 01:16:57 CDT. The native startup
+runner passes six CLI/configuration/generated-code gates, including explicit
+plasma-cache-directory rejection and final chemistry-callback dispatch. This
+is startup evidence.
+
+The first one-rank E3 integration runner then passed all nine gates over one
+800-step window. With 300 m/s and Courant 0.5, the allocated mesh produced
+`dt=210.08333333333334 s`. Exactly 80,000 H2O and 80,000 CO2 primaries were
+injected. The final ledgers were:
+
+- H2O: 28 photolytic losses, 288 surface absorptions, 78,896 outer escapes,
+  788 residents, residual zero;
+- CO2: zero photolytic losses, 568 surface absorptions, 78,513 outer escapes,
+  919 residents, residual zero.
+
+The detailed command, hashes, superseded attempts, and output paths are in
+`STATUS.md`. This closes only a bounded execution/bookkeeping gate.
+
+Open blockers and limits:
+
+- the equal 15-way E3/E5 partitions are not observational component estimates;
+  the apparent-CO2 totals also require a justified factor-2--5 fragmentation
+  correction before use as physical CO2 rates. The fixtures must be replaced
+  by the later standalone fitting receipt;
+- newly injected particles first enter the chemistry pass on the following
+  iteration, omitting reaction exposure during their initial partial birth
+  step; timestep convergence must quantify this `O(nu*dt)` splitting error;
+- four-rank injection ownership/rank equivalence, mesh/timestep/particle/seed
+  convergence, independent density/profile references, longer sampling, and
+  observational validation remain open. The one-rank ledger pass is not a
+  production or science qualification.
 
 ## 1. Objective and ordered milestones
 
