@@ -549,6 +549,7 @@ sub ReadMainBlock {
   my $SimulationTimeStepMode; #='_SINGLE_GLOBAL_TIME_STEP_';
   my $SimulationParticleWeightMode; #='_SINGLE_GLOBAL_PARTICLE_WEIGHT_';
   my $SimulationParticleWeightCorrectionMode; #='_INDIVIDUAL_PARTICLE_WEIGHT_OFF_';
+  my $LocalTimeStepFluxResamplingMode; #='_PIC_MODE_OFF_';
   
   my $CouplingMode;
   my $CouplingFileReader;
@@ -943,6 +944,25 @@ sub ReadMainBlock {
         die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
       }
     }
+    ### LOCAL TIMESTEP FLUX RESAMPLING ###
+    elsif ($s0 eq "LOCALTIMESTEPFLUXRESAMPLING") {
+      ($s0,$s1)=split(' ',$s1,2);
+
+      # This switch reserves the per-particle continuation state and activates
+      # stochastic split/roulette at local-timestep block interfaces.  Keeping
+      # it separate from TimeStepMode preserves the legacy local-timestep
+      # behavior for every existing AMPS input unless explicitly requested.
+      if ($s0 eq "ON") {
+        $LocalTimeStepFluxResamplingMode='_PIC_MODE_ON_';
+      }
+      elsif ($s0 eq "OFF") {
+        $LocalTimeStepFluxResamplingMode='_PIC_MODE_OFF_';
+      }
+      else {
+        warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+        die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+      }
+    }
     ### ERRORLOG ###
     elsif ($s0 eq "ERRORLOG") {
       chomp($line);
@@ -1045,6 +1065,7 @@ sub ReadMainBlock {
   if (defined $SimulationTimeStepMode) {ampsConfigLib::RedefineMacro("_SIMULATION_TIME_STEP_MODE_",$SimulationTimeStepMode,"pic/picGlobal.dfn");}
   if (defined $SimulationParticleWeightMode) {ampsConfigLib::RedefineMacro("_SIMULATION_PARTICLE_WEIGHT_MODE_",$SimulationParticleWeightMode,"pic/picGlobal.dfn");}
   if (defined $SimulationParticleWeightCorrectionMode) {ampsConfigLib::RedefineMacro("_INDIVIDUAL_PARTICLE_WEIGHT_MODE_",$SimulationParticleWeightCorrectionMode,"pic/picGlobal.dfn");}
+  if (defined $LocalTimeStepFluxResamplingMode) {ampsConfigLib::RedefineMacro("_PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_",$LocalTimeStepFluxResamplingMode,"pic/picGlobal.dfn");}
   
   #check intersection of particle trajectory with the boundaries of the blocks (needed with local timestepping, local weight and when the internal surface has fine fiatures)
   if (defined $TrajectoryIntegrationCheckBlockFaceIntersection) {ampsConfigLib::RedefineMacro("_PIC__PARTICLE_MOVER__CHECK_BLOCK_FACE_INTERSECTION__MODE_",$TrajectoryIntegrationCheckBlockFaceIntersection,"pic/picGlobal.dfn");}

@@ -18,6 +18,7 @@ double Comet::RadialSimulation::CharacteristicSpeed[PIC::nTotalSpecies]={0.0};
 double Comet::RadialSimulation::InnerBoundaryTemperature=-1.0;
 long int Comet::RadialSimulation::MaxIterations=-1;
 long int Comet::RadialSimulation::SamplingLength=-1;
+long int Comet::RadialSimulation::LoadBalanceInterval=-1;
 double Comet::RadialSimulation::ConvergenceTolerance=-1.0;
 int Comet::RadialSimulation::RequiredConvergedWindows=-1;
 
@@ -193,6 +194,36 @@ double EvaluateRelativeL1Change(const std::vector<double> &current,
 
   return maximumChange;
 }
+
+void RebalanceRadialDomain(long int completedIterations) {
+  // Use the core's normal block-redistribution path only after a complete
+  // outer iteration.  At this point the local-timestep continuation sweeps,
+  // particle exchange, collisions, chemistry, sampling, and radiative
+  // cooling have all finished, so every particle belongs to an ordinary cell
+  // list and the entire block (including accumulated samples and IDF state)
+  // can be migrated without changing the physical solution.
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+  const double start=MPI_Wtime();
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists(
+      _PIC_DYNAMIC_BALANCE_SEND_RECV_MESH_NODE_EXCHANGE_TAG_);
+
+  // Match the accounting performed by the core's emergency and sampling-break
+  // rebalancers.  UpdateBlockTable is essential because movers, collisions,
+  // and chemistry traverse this rank-local table on the next iteration.
+  PIC::Parallel::IterationNumberAfterRebalancing=0;
+  PIC::Parallel::CumulativeLatency=0.0;
+  PIC::DomainBlockDecomposition::UpdateBlockTable();
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+  PIC::Parallel::RebalancingTime=MPI_Wtime()-start;
+
+  if (PIC::ThisThread==0) {
+    std::fprintf(PIC::DiagnospticMessageStream,
+        "$PREFIX: radial scheduled load balance iteration=%ld interval=%ld elapsed=%e sec\n",
+        completedIterations,Comet::RadialSimulation::LoadBalanceInterval,
+        PIC::Parallel::RebalancingTime);
+    std::fflush(PIC::DiagnospticMessageStream);
+  }
+}
 }
 
 bool Comet::RadialSimulation::Validate(std::string *error) {
@@ -209,6 +240,10 @@ bool Comet::RadialSimulation::Validate(std::string *error) {
     return Fail("radial sampling length must be positive",error);
   if (SamplingLength>MaxIterations)
     return Fail("radial sampling length cannot exceed the maximum iteration count",error);
+  if (LoadBalanceInterval<=0)
+    return Fail("radial load-balance interval must be positive",error);
+  if (LoadBalanceInterval>SamplingLength)
+    return Fail("radial load-balance interval cannot exceed the sampling length",error);
   if (!(ConvergenceTolerance>0.0) || ConvergenceTolerance>1.0 ||
       !std::isfinite(ConvergenceTolerance))
     return Fail("radial convergence tolerance must be in (0,1]",error);
@@ -444,25 +479,58 @@ void Comet::RadialSimulation::Initialize() {
     }
   }
 #elif _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
-  double daughterWeight=std::numeric_limits<double>::max();
+  double daughterWeight=0.0;
   for (int species=0;species<PIC::nTotalSpecies;species++) {
     if (Comet::Model::SurfaceProductionRate[species]>0.0) {
       PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(species);
-      if (PIC::ParticleWeightTimeStep::GlobalParticleWeight[species]<daughterWeight)
+      if (PIC::ParticleWeightTimeStep::GlobalParticleWeight[species]>daughterWeight)
         daughterWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[species];
     }
   }
-  if (!(daughterWeight<std::numeric_limits<double>::max())) {
+  if (!(daughterWeight>0.0) || !std::isfinite(daughterWeight)) {
     std::fprintf(stderr,"radial comet run has no direct surface source\n");
     std::abort();
   }
+
+  // A daughter with no direct surface source needs a statistical weight even
+  // though the core injection-based initializer cannot derive one.  Use the
+  // largest direct-parent weight.  Consequently a chemistry event never has
+  // to create an unbounded burst merely because the target species inherited
+  // the smallest source weight; products are retained by unbiased roulette
+  // when their parent represents fewer molecules than this target weight.
+  // This choice changes variance, not the expected number/mass/momentum/
+  // energy source rates, which CometChemistry converts by
+  // (W_parent/dt_parent)/(W_product/dt_product).
   for (int species=0;species<PIC::nTotalSpecies;species++) {
     if (!(PIC::ParticleWeightTimeStep::GlobalParticleWeight[species]>0.0))
       PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(
           species,daughterWeight);
   }
+#elif _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SINGLE_GLOBAL_PARTICLE_WEIGHT_
+  // Compute the source-based candidate weight for every directly emitted
+  // parent.  cDataBlockAMR::SetLocalParticleWeight() stores the minimum in
+  // GlobalParticleWeight[0] in single-global mode.  Selecting the minimum is
+  // intentional: the least represented source still receives the requested
+  // ReferenceInjectionParticleNumber, while stronger sources receive more
+  // particles and every chemical daughter retains exactly the same physical
+  // weight without an individual correction field.
+  bool foundDirectSource=false;
+  for (int species=0;species<PIC::nTotalSpecies;species++) {
+    if (Comet::Model::SurfaceProductionRate[species]>0.0) {
+      PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(species);
+      foundDirectSource=true;
+    }
+  }
+  if (!foundDirectSource ||
+      !(PIC::ParticleWeightTimeStep::GlobalParticleWeight[0]>0.0) ||
+      !std::isfinite(PIC::ParticleWeightTimeStep::GlobalParticleWeight[0])) {
+    if (PIC::ThisThread==0)
+      std::fprintf(stderr,
+          "radial comet run could not initialize a common global particle weight\n");
+    std::abort();
+  }
 #else
-#error "The radial comet backend requires species-dependent particle weights"
+#error "The radial comet backend requires a supported global or local particle-weight mode"
 #endif
 
   PIC::BC::BlockInjectionBCindicatior=InjectionBlockIndicator;
@@ -485,6 +553,14 @@ void Comet::RadialSimulation::Run() {
     // transport/collisions and before the next iteration.  It deliberately
     // uses only the previously completed macroscopic sample.
     Comet::RadiativeCooling::Apply();
+
+    // PIC::PrintData already redistributes blocks at a sampling break.  Its
+    // core path resets IterationNumberAfterRebalancing to zero, so this guard
+    // avoids an immediate duplicate redistribution when a science-output
+    // iteration is also a multiple of the shorter scheduled interval.
+    if ((iteration+1)%LoadBalanceInterval==0 &&
+        PIC::Parallel::IterationNumberAfterRebalancing!=0)
+      RebalanceRadialDomain(iteration+1);
 
     if (PIC::DataOutputFileNumber==previousOutputNumber) continue;
     previousOutputNumber=PIC::DataOutputFileNumber;

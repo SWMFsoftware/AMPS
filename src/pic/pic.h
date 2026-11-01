@@ -6099,6 +6099,56 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
     void Init();
     void MoveParticles();
 
+    // The flux-resampling mover stops a trajectory at every block face.  A
+    // positive value stored in this optional particle field is the unused
+    // fraction of the destination block's full timestep.  Keeping a
+    // dimensionless fraction, rather than seconds, lets the destination rank
+    // reconstruct the correct interval after MPI migration and makes the
+    // invariant explicit:
+    //   dt_left_old/dt_old == dt_left_new/dt_new.
+    extern long int LocalTimeStepRemainderOffset;
+    double GetLocalTimeStepRemainderFraction(
+        PIC::ParticleBuffer::byte *particleData);
+    void SetLocalTimeStepRemainderFraction(double fraction,
+        PIC::ParticleBuffer::byte *particleData);
+
+    // Opt-in accounting used by the local-timestep regression driver.  The
+    // production mover does not touch these sums unless Enabled is true.
+    // Incoming and outgoing values are represented physical rates at each
+    // crossed face; Variance contains the analytic residual-resampling
+    // variance for the corresponding outgoing estimator.
+    struct cLocalTimeStepFluxDiagnostic {
+      bool Enabled;
+      long long FaceTransferCount,DestinationParticleCount;
+      long long RouletteDeletionCount,CloneCount;
+      double IncomingNumberFlux,OutgoingNumberFlux,NumberFluxVariance;
+      double IncomingMassFlux,OutgoingMassFlux,MassFluxVariance;
+      double IncomingMomentumFlux[3],OutgoingMomentumFlux[3];
+      double MomentumFluxVariance[3];
+      double IncomingKineticEnergyFlux,OutgoingKineticEnergyFlux;
+      double KineticEnergyFluxVariance;
+      double MaximumRemainderInvariantError;
+      int ContinuationSweepCount;
+      long int MaximumPendingParticleCount,FinalPendingParticleCount;
+      long int InitialPendingParticleCount,FirstPostExchangePendingParticleCount;
+      long int ContinuationMovedParticleCount,ContinuationDeletedParticleCount;
+    };
+
+    extern cLocalTimeStepFluxDiagnostic LocalTimeStepFluxDiagnostic;
+    void ResetLocalTimeStepFluxDiagnostic(bool enable);
+
+    // The compiled application continues to use its configured mover.  The
+    // validation driver can temporarily select another trace mover through
+    // this narrowly scoped override so first- and second-order implementations
+    // are exercised by the same initialized mesh and continuation manager.
+    void SetLocalTimeStepValidationMover(fSpeciesDependentParticleMover mover);
+
+    // Resume only particles that stopped at a local-timestep block face.  The
+    // ordinary mover pass must not be repeated because particles that already
+    // exhausted their step would otherwise be advanced twice.
+    long int MoveParticlesWithLocalTimeStepContinuation();
+    long int CountLocalTimeStepContinuationParticles();
+
     //simple particle mover: forces are neglected, interaction with internal/expernal boundaries is neglected
     int Simple(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
 

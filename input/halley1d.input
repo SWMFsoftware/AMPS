@@ -28,12 +28,18 @@ DebuggerMode=off
 ForceRepeatableSimulationPath=on
 
 TimeStepMode=SpeciesLocalTimeStep
-! Local species weights scale with the local timestep. This keeps the model
-! population per logarithmic cell approximately uniform across the domain.
-ParticleWeightMode=SpeciesLocalParticleWeight
-! Reaction products change species and therefore require individual weight
-! correction to preserve the physical weight of one dissociation event.
-ParticleWeightCorrectionMode=on
+! Each species has one block-independent model-particle weight.  At a block
+! face the mover uses stochastic splitting/Russian roulette to conserve W/dt
+! in expectation.  Species-changing chemistry performs the corresponding
+! (W_source/dt_source)/(W_target/dt_target) resampling explicitly.
+ParticleWeightMode=SpeciesGlobalParticleWeight
+! Transport and chemistry conserve physical flux statistically without an
+! individual correction factor on every particle.
+ParticleWeightCorrectionMode=off
+! Preserve the unused fraction of the old block step at an interface, rescale
+! it to the destination step, and complete MPI-crossing trajectories before
+! the next collision/chemistry pass.
+LocalTimeStepFluxResampling=on
 CouplerMode=off
 
 #endmain
@@ -173,6 +179,13 @@ CouplerMode=off
   ! Convergence is evaluated only at complete 500-iteration sampling windows;
   ! 10,000 iterations is the unconditional safety ceiling.
   RadialSamplingLength=500
+  ! Redistribute complete AMPS blocks more often than the science-output
+  ! window.  The first long-run attempt reached 12 million particles but
+  ! exhausted rank 17's five-million-slot local buffer at iteration 2344
+  ! because the advancing population front remained on that rank between
+  ! sampling-break rebalances.  Fifty iterations matches the core's default
+  ! minimum emergency-rebalance spacing and changes only MPI ownership.
+  RadialLoadBalanceInterval=50
   RadialMaxIterations=10000
   ! Require every compiled species' volume-weighted radial density profile to
   ! change by no more than 5% for three consecutive window-to-window

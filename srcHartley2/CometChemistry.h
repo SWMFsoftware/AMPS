@@ -25,6 +25,13 @@ extern double HeliocentricDistanceAU;
 const ChemicalSolver::cReactionNetwork& GetNetwork();
 bool Validate(std::string *error=NULL);
 
+// Exercise the production residual-resampling and product-velocity helpers for
+// every generated neutral channel after AMPS has initialized the configured
+// species weights and local timesteps.  The total event count is distributed
+// across MPI ranks for each reaction.  The returned pass/fail value is
+// collective and identical on every rank.
+bool ValidateEnsemble(long int eventsPerReaction);
+
 // AMPS calls this once for each particle during the photolytic-reaction pass.
 // The routine samples one mutually exclusive channel, creates all daughters
 // from the same event, and conserves event momentum and excess energy.

@@ -110,16 +110,76 @@ fully thermalized and re-emitted from a half-Maxwellian at
 `RadialInnerBoundaryTemperature`.
 
 The chemistry executor samples one mutually exclusive channel per decay
-event, creates all products from that event together, conserves event momentum
-and excess kinetic energy, and applies exact individual statistical-weight
-corrections. Chemistry therefore requires
-`ParticleWeightCorrectionMode=on`.
+event, creates all stoichiometric products from that event, and assigns
+velocities that conserve event momentum and excess kinetic energy. With
+individual weight correction enabled it uses one corrected model daughter per
+stoichiometric product. With `SpeciesGlobalParticleWeight` and correction
+disabled, it converts the parent particle rate `W_parent/dt_parent` to each
+product rate `W_product/dt_product` with unbiased residual split/roulette.
+Number, mass, momentum, and energy production rates are then conserved
+statistically, while event-by-event product correlations acquire Monte Carlo
+variance.
 
-For a wide logarithmic domain, `SpeciesLocalParticleWeight` scales each
-species' base weight with its local timestep. A steady radial flux then uses
-approximately the same number of model particles per cell instead of growing
-with cell width. Chemistry retains exact event weights through the individual
-correction stored on every particle.
+### Local-timestep face transport
+
+`LocalTimeStepFluxResampling=on` enables the core implementation used by the
+Halley case. It is deliberately limited to `SpeciesLocalTimeStep`, a particle
+weight that is spatially constant for each species, correction mode off, CPU
+execution, a spatial non-periodic AMR mesh, and the trace mover. Unsupported
+CUDA, field-line, and periodic configurations fail at compile time. At every
+AMR block face, the trace mover stops at the face instead of first calculating
+a final position and subsequently looking up its block.
+
+Let a particle cross from an old block with timestep `dt_old` and weight
+`W_old` to a new block with `dt_new` and `W_new`. Its expected destination
+multiplicity is
+
+```text
+mu = (W_old/dt_old) / (W_new/dt_new)
+   = W_old*dt_new/(W_new*dt_old).
+```
+
+The mover creates `floor(mu)` particles plus one with probability
+`mu-floor(mu)`. This is cloning for `mu>1` and Russian roulette for `mu<1`, and
+therefore matches the outgoing and incoming number, mass, momentum, and
+kinetic-energy fluxes in expectation without changing velocity. In the
+configured species-global mode `W_old=W_new`, so `mu=dt_new/dt_old`.
+
+If `tau_old` is the unused portion of the old block step, continuation uses
+
+```text
+tau_new = tau_old * dt_new/dt_old,
+tau_new/dt_new = tau_old/dt_old.
+```
+
+The dimensionless unfinished fraction is stored in an optional particle-data
+field. AMPS commits local lists and first exchanges particles stopped by the
+main mover. Each continuation sweep then advances only unfinished particles,
+unconditionally exchanges all particles deposited in remote boundary blocks,
+and only then performs the global pending-work reduction. The post-move
+exchange must not be conditional on a nonzero remainder: a particle may finish
+its continuation in a remote boundary block and still need ownership transfer.
+Collisions, chemistry, sampling, and generic particle splitting run only after
+all trajectory segments are complete. This ordering prevents an interface
+crossing from receiving more than one physical collision/chemistry pass in an
+outer iteration.
+
+The algorithm is a steady-state local-pseudo-time acceleration, not a
+synchronized transient integrator: different blocks advance different
+physical intervals during one outer iteration. A spatially global weight also
+means the model population needed for a steady flux grows in proportion to
+the local timestep. Across the Halley logarithmic domain that ratio is very
+large, so a long convergence run must monitor the particle buffer. A future
+production improvement should combine block-local weights with a conservative
+face reservoir or weighted-particle representation, or introduce asynchronous
+block clocks; simply capping the clone count would bias the flux.
+
+The application uses one block-independent weight per species rather than one
+weight shared by every species. Direct-parent weights retain the requested
+surface statistics. Species with no direct source use the largest parent
+weight so a reaction cannot create an enormous instantaneous clone burst;
+chemistry performs
+`(W_parent/dt_parent)/(W_product/dt_product)` split/roulette explicitly.
 
 ## Internal energy and radiative cooling
 
@@ -158,6 +218,38 @@ make -j8
 mpirun -np 1 ./amps
 ```
 
+The DIM1 executable also contains a transport-only validation mode. It uses
+the configured radial AMR mesh but does not start the comet source, chemistry,
+collision, cooling, or sampling loop:
+
+```sh
+mpirun -np 1 ./amps --validate-local-timestep \
+  --validation-particles 200000 --validation-mover both \
+  --validation-skip-multiface
+
+mpirun -np 4 ./amps --validate-local-timestep \
+  --validation-particles 200000 --validation-mover both
+```
+
+`--validation-mover` accepts `first`, `second`, or `both`. The single-face
+matrix tests timestep ratios 0.25, 0.5, 1, 2, and 2.5 in both radial directions
+on a same-owner face; ratios 0.5, 1, and 2.5 are repeated across an MPI
+ownership face when available. Four velocity groups include radial and
+transverse components. Every case checks particle-list membership, final
+block, finite state, unchanged speed, analytic radial position, zero remainder,
+continuation lifecycle counts, and number/mass/three-momentum/kinetic-energy
+flux. A stochastic moment is accepted inside the larger of a 2% relative band
+and its five-standard-deviation Monte Carlo band, so a near-zero transverse
+moment is not judged by an ill-conditioned relative denominator.
+
+The multi-face case follows 32 particles across at least three faces and, on
+three or more ranks, at least two ownership boundaries. It requires the number
+of continuation sweeps to equal the number of faces, no surviving remainder,
+the expected transfer count, and conservation of every recorded flux moment.
+This mode is an algorithm regression; the full comet acceptance gate still
+requires a long production run through sampling, load redistribution, and a
+converged Rubin comparison.
+
 Launch the Halley executable from the repository root. Its configured output
 directory is `PT/plots`, relative to that working directory, so AMPS creates
 both `/data/vtenishe/COMET1D/AMPS/PT` and its `plots` subdirectory during
@@ -190,9 +282,37 @@ radial density profile and terminates after all species remain within 5% for
 three consecutive window-to-window comparisons. The first complete window is
 the reference, so convergence needs at least four windows. Multi-rank tests
 have crossed output and block-migration boundaries, verifying runtime plumbing.
-A later audit found that those test binaries used AMPS's zero placeholder
-cross section because the Rubin callback was not connected. That dispatch is
-now fixed. A new clean four-rank diagnostic used the 180 K first-window rule,
+
+`RadialLoadBalanceInterval` is a separate numerical control and does not
+change the 500-step science window. After a complete outer iteration, the
+radial driver may redistribute whole AMPS blocks through the core's standard
+`CreateNewParallelDistributionLists()` path, reset the core rebalancing
+accounting, and rebuild the rank-local block table. Redistribution is skipped
+when the same iteration already triggered the core sampling-break path.
+Halley uses an interval of 50 iterations: an uninterrupted 18-rank validation
+with sampling-only redistribution reached about 12 million global particles,
+but its outward-moving front filled rank 17's five-million-slot local buffer
+at iteration 2344. Frequent redistribution changes only MPI ownership;
+particle state, statistical weight, local timestep, accumulated samples,
+chemistry, cooling, and internal energy move with each block. The buffer stays
+at five million particles per rank so the corrected run tests the ownership
+correction instead of masking the imbalance with additional memory. That
+18-rank run passed the old failure point and reached iteration 2699. It wrote
+five complete windows through iteration 2500, but none of the four profile
+comparisons met the 5% convergence tolerance. Population grew from 49,983 at
+the iteration-500 output to 26,220,686 at iteration 2500 and 55,330,093 in the
+iteration-2696 core diagnostic. The attempted iteration-2700 redistribution
+then filled rank 10 while migrating its new whole-block set. Scheduled
+balancing therefore fixes premature ownership localization, but does not make
+the species-global-weight population stable over the full logarithmic Halley
+domain. The last census was 99.14% direct-parent particles, so this growth is
+not a chemistry clone cascade. The detailed population history, 6,165.38 s
+wall time, and transient Rubin comparison ratios are recorded in `STATUS.md`.
+The corrected long run used the selected complete collision hierarchy. A
+later audit of the earlier smoke/test binaries cited below found that they had
+used AMPS's zero placeholder cross section because the Rubin callback was not
+connected. That dispatch is now fixed. A new clean four-rank diagnostic used
+the 180 K first-window rule,
 completed the first 500-iteration sample, applied cooling from that completed
 sample during subsequent iterations, and was deliberately stopped at
 iteration 525. Its output is transient validation data, not a converged
@@ -202,6 +322,16 @@ collision product then traversed beyond the mover's one-block MPI boundary
 allocation. The input now uses 0.25; its clean four-rank restart crossed the
 first two output/load-balance boundaries. Exact evidence, live output paths,
 and remaining comparison limits are recorded in `STATUS.md`.
+
+The completed 18-rank validation does **not** authorize merging the full
+branch into `master`: conservative face and chemistry tests pass, but
+species-global-weight population stability and converged Rubin comparison
+fail. `STATUS.md` records the gate-by-gate disposition, the required
+block-local-weight/reservoir follow-up, independently reviewable subsets, file
+dependency order, conflict checks, clean-commit requirements, and the
+integration-branch procedure. No merge should begin until the population fix
+has been validated on a clean, identified commit and the Halley run satisfies
+three consecutive 5% convergence windows without buffer exhaustion.
 
 ## Visualizing DIM1 output
 

@@ -20,6 +20,11 @@ extern double InnerBoundaryTemperature;
 // of particle steps in each statistically independent convergence window.
 extern long int MaxIterations;
 extern long int SamplingLength;
+// LoadBalanceInterval redistributes complete AMPS blocks independently of the
+// longer science-sampling interval.  This prevents a radially advancing
+// population front from exhausting one MPI rank while the global population
+// is still well within the distributed particle-buffer capacity.
+extern long int LoadBalanceInterval;
 // ConvergenceTolerance applies to the volume-weighted relative L1 change of
 // each species' complete radial number-density profile. The run stops only
 // after every species passes for RequiredConvergedWindows successive windows.

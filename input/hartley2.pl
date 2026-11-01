@@ -67,6 +67,7 @@ my $RadialCourantNumberIsSet=0;
 my $RadialInnerBoundaryTemperatureIsSet=0;
 my $RadialMaxIterationsIsSet=0;
 my $RadialSamplingLengthIsSet=0;
+my $RadialLoadBalanceIntervalIsSet=0;
 my $RadialConvergenceToleranceIsSet=0;
 my $RadialConvergenceWindowsIsSet=0;
 
@@ -150,7 +151,7 @@ while ($line=<InputFile>) {
       ampsConfigLib::RedefineMacroFunction("_PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_","(ptr,LocalTimeStep,node,FirstBoundaryFlag) PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection(ptr,LocalTimeStep,node,FirstBoundaryFlag);","pic/picGlobal.dfn");
       ampsConfigLib::RedefineMacroFunction("_PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_FACE_","(ptr,LocalTimeStep,node,FirstBoundaryFlag,InjectionFace) PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection(ptr,LocalTimeStep,node,FirstBoundaryFlag);","pic/picGlobal.dfn");
 
-      ampsConfigLib::SubstituteCodeLine('^MAINLIBOBJ =',"MAINLIBOBJ = RadialMesh.o RadialMeshProfile.o RadialSimulation.o CometModel.o CometChemistry.o CometPhysics.o CometRadiativeCooling.o","main/makefile");
+      ampsConfigLib::SubstituteCodeLine('^MAINLIBOBJ =',"MAINLIBOBJ = RadialMesh.o RadialMeshProfile.o RadialSimulation.o LocalTimeStepValidation.o CometModel.o CometChemistry.o CometPhysics.o CometRadiativeCooling.o","main/makefile");
       ampsConfigLib::SubstituteCodeLine('^MAINOBJ =',"MAINOBJ = RadialMain.o","main/makefile");
       ampsConfigLib::SubstituteCodeLine('#include "Comet.h"',"// The radial mesh build does not use the 3D Comet model header.","pic/pic.h");
       ampsConfigLib::ChangeValueOfVariable("int Comet::Model::GeometryMode","Comet::Model::Geometry::Spherical","main/CometModel.cpp");
@@ -404,6 +405,15 @@ while ($line=<InputFile>) {
         "long int Comet::RadialSimulation::SamplingLength",$InputLine,
         "main/RadialSimulation.cpp");
     $RadialSamplingLengthIsSet=1;
+  }
+  elsif ($InputLine eq "RADIALLOADBALANCEINTERVAL") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    die "RadialLoadBalanceInterval must be a positive integer, line=$InputFileLineNumber ($InputFileName)\n"
+        unless defined $InputLine && $InputLine=~/^\d+$/ && $InputLine>0;
+    ampsConfigLib::ChangeValueOfVariable(
+        "long int Comet::RadialSimulation::LoadBalanceInterval",$InputLine,
+        "main/RadialSimulation.cpp");
+    $RadialLoadBalanceIntervalIsSet=1;
   }
   elsif ($InputLine eq "RADIALCONVERGENCETOLERANCE") {
     ($InputLine,$InputComment)=split(' ',$InputComment,2);
@@ -1124,6 +1134,8 @@ if ($Dimension eq "1") {
         unless $RadialMaxIterationsIsSet;
     die "RadialSimulationMode=ON requires RadialSamplingLength\n"
         unless $RadialSamplingLengthIsSet;
+    die "RadialSimulationMode=ON requires RadialLoadBalanceInterval\n"
+        unless $RadialLoadBalanceIntervalIsSet;
     die "RadialSimulationMode=ON requires RadialConvergenceTolerance\n"
         unless $RadialConvergenceToleranceIsSet;
     die "RadialSimulationMode=ON requires RadialConvergenceWindows\n"

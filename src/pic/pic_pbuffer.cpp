@@ -362,6 +362,13 @@ long int PIC::ParticleBuffer::GetNewParticleGPU(bool RandomThread) {
   if (IsParticleAllocated(pdataptr)==true) exit(__LINE__,__FILE__,"Error: the particle is re-allocated");
   SetParticleAllocated(pdataptr);
 
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+  // Deleted particle slots retain their previous bytes.  Always clear the
+  // continuation marker when a slot is reused; clones and MPI receives copy a
+  // deliberate non-zero value afterward when one is required.
+  PIC::Mover::SetLocalTimeStepRemainderFraction(0.0,pdataptr);
+#endif
+
   return newptr;
 }
 #endif
@@ -434,6 +441,12 @@ long int PIC::ParticleBuffer::GetNewParticle(bool RandomThreadOpenMP) {
   if (IsParticleAllocated(pdataptr)==true) exit(__LINE__,__FILE__,"Error: the particle is re-allocated");
   SetParticleAllocated(pdataptr);
 //#endif
+
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+  // See the GPU allocation path above: a newly allocated physical particle is
+  // complete by default.  Only a block-face handoff may set this field.
+  PIC::Mover::SetLocalTimeStepRemainderFraction(0.0,pdataptr);
+#endif
 
   return newptr;
 }
@@ -564,6 +577,13 @@ long int PIC::ParticleBuffer::GetNewParticle(long int &ListFirstParticle,bool Ra
   if (IsParticleAllocated(pdataptr)==true) exit(__LINE__,__FILE__,"Error: the particle is re-allocated");
   SetParticleAllocated(pdataptr);
 //#endif
+
+
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+  // List-inserting allocation is used by chemistry and MPI receive.  Clear a
+  // stale marker before either caller initializes/copies the remaining state.
+  PIC::Mover::SetLocalTimeStepRemainderFraction(0.0,pdataptr);
+#endif
 
   ListFirstParticle=newptr;
   return newptr;
