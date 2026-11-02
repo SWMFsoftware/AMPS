@@ -50,24 +50,33 @@ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *FindInnerBoundaryNode(
 }
 
 #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
-void SetWeightProportionalToTimeStep(int species,double surfaceWeight,
-    double surfaceTimeStep,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+void SetWeightOverTimeStep(int species,double weightOverTimeStep,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   if (node==NULL) return;
   if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
     if (node->block!=NULL) {
       // W/dt is held constant with radius.  Because dt is proportional to the
       // local cell width, a steady spherical flux then uses approximately the
-      // same number of model particles in every logarithmic radial cell.
+      // same number of model particles in every logarithmic radial cell.  The
+      // face mover converts between any unequal neighboring W/dt values, but
+      // this radial policy deliberately makes them equal for a given species
+      // so ordinary radial transport needs neither systematic multiplication
+      // nor systematic roulette.
       const double localTimeStep=node->block->GetLocalTimeStep(species);
-      node->block->SetLocalParticleWeight(
-          surfaceWeight*localTimeStep/surfaceTimeStep,species);
+      const double localWeight=weightOverTimeStep*localTimeStep;
+      if (!(localTimeStep>0.0) || !std::isfinite(localTimeStep) ||
+          !(localWeight>0.0) || !std::isfinite(localWeight)) {
+        std::fprintf(stderr,
+            "invalid radial local weight/timestep for species %d\n",species);
+        std::abort();
+      }
+      node->block->SetLocalParticleWeight(localWeight,species);
     }
     return;
   }
 
   for (int child=0;child<(1<<DIM);child++)
-    SetWeightProportionalToTimeStep(species,surfaceWeight,surfaceTimeStep,
-        node->downNode[child]);
+    SetWeightOverTimeStep(species,weightOverTimeStep,node->downNode[child]);
 }
 #endif
 
@@ -392,10 +401,12 @@ void Comet::RadialSimulation::Initialize() {
   PIC::ParticleWeightTimeStep::LocalBlockInjectionRate=
       LocalBlockInjectionRate;
 
-  // Direct parent sources determine their statistical weights. Daughter
-  // species have no injection rate, so their base weight is tied to the
-  // smallest initialized parent weight; event processing applies an exact
-  // individual correction whenever a reaction changes species.
+  // Direct parent sources determine their surface statistical weights.
+  // Daughter species have no injection rate, so their W/dt carrier rate is
+  // tied to the largest initialized parent carrier rate.  This prevents a
+  // single parent event from requiring a large product-clone burst while the
+  // chemistry executor still conserves the physical production rate through
+  // explicit residual split/roulette whenever species carrier rates differ.
 #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *innerNode=
       FindInnerBoundaryNode(PIC::Mesh::mesh->rootTree);
@@ -422,7 +433,7 @@ void Comet::RadialSimulation::Initialize() {
   // local timestep.  Global weights would make the number of particles per
   // cell grow in proportion to the logarithmic cell width and render the
   // 10^6 km Halley domain impractical at sub-metre surface resolution.
-  double daughterWeight=std::numeric_limits<double>::max();
+  double daughterWeightOverTimeStep=0.0;
   for (int species=0;species<PIC::nTotalSpecies;species++) {
     if (Comet::Model::SurfaceProductionRate[species]>0.0) {
       PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(species);
@@ -446,35 +457,32 @@ void Comet::RadialSimulation::Initialize() {
         std::abort();
       }
 
-      SetWeightProportionalToTimeStep(species,surfaceWeight,surfaceTimeStep,
+      const double weightOverTimeStep=surfaceWeight/surfaceTimeStep;
+      if (!(weightOverTimeStep>0.0) || !std::isfinite(weightOverTimeStep)) {
+        if (PIC::ThisThread==0)
+          std::fprintf(stderr,
+              "invalid surface W/dt carrier rate for radial species %d\n",
+              species);
+        std::abort();
+      }
+      SetWeightOverTimeStep(species,weightOverTimeStep,
           PIC::Mesh::mesh->rootTree);
-      if (surfaceWeight<daughterWeight) daughterWeight=surfaceWeight;
+      if (weightOverTimeStep>daughterWeightOverTimeStep)
+        daughterWeightOverTimeStep=weightOverTimeStep;
     }
   }
-  if (!(daughterWeight<std::numeric_limits<double>::max())) {
+  if (!(daughterWeightOverTimeStep>0.0) ||
+      !std::isfinite(daughterWeightOverTimeStep)) {
     std::fprintf(stderr,"radial comet run has no direct surface source\n");
     std::abort();
   }
 
-  // Give each daughter the same surface base weight and scale it with that
-  // daughter's timestep.  A reaction's individual statistical correction
-  // still preserves the exact physical weight inherited from its parent.
+  // Give every non-source daughter the same conservative W/dt carrier rate.
+  // Its actual block weight remains species- and block-dependent because it
+  // is this carrier rate multiplied by that species' local block timestep.
   for (int species=0;species<PIC::nTotalSpecies;species++) {
     if (!(Comet::Model::SurfaceProductionRate[species]>0.0)) {
-      const double localSurfaceTimeStep=
-          innerNode!=NULL ? innerNode->block->GetLocalTimeStep(species) : 0.0;
-      double surfaceTimeStep=0.0;
-      MPI_Allreduce(&localSurfaceTimeStep,&surfaceTimeStep,1,MPI_DOUBLE,MPI_SUM,
-          MPI_GLOBAL_COMMUNICATOR);
-      if (!(surfaceTimeStep>0.0) || !std::isfinite(surfaceTimeStep)) {
-        if (PIC::ThisThread==0)
-          std::fprintf(stderr,
-              "invalid surface timestep for radial daughter species %d\n",
-              species);
-        std::abort();
-      }
-
-      SetWeightProportionalToTimeStep(species,daughterWeight,surfaceTimeStep,
+      SetWeightOverTimeStep(species,daughterWeightOverTimeStep,
           PIC::Mesh::mesh->rootTree);
     }
   }

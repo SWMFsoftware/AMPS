@@ -12,9 +12,11 @@ struct cOptions {
 };
 
 // Run controlled transport-only tests on the already initialized DIM1 comet
-// mesh.  No source, collision, chemistry, cooling, or sampling operation is
-// called.  The return value is collective: every MPI rank receives the same
-// pass/fail result.
+// mesh.  Single-face cases vary timestep and (when compiled) block-local
+// particle-weight ratios independently and audit conservation of W/dt-carried
+// number, mass, momentum, and energy flux.  No source, collision, chemistry,
+// cooling, or sampling operation is called.  The return value is collective:
+// every MPI rank receives the same pass/fail result.
 bool Run(const cOptions &options);
 
 }

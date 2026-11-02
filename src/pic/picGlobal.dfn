@@ -16,8 +16,10 @@
 // interpretation of an outer AMPS iteration: each block advances by its own
 // local pseudo-time, and a particle is split/rouletted at a block face so that
 // W/dt is conserved in expectation.  Applications enabling this mode must use
-// a local timestep, a spatially global particle weight, and no individual
-// particle-weight correction.  See PIC::Mover in pic_mover.cpp.
+// a species-local timestep, either a supported global weight or a
+// species-local block weight, and no individual particle-weight correction.
+// For local weights the multiplicity includes both W_old/W_new and
+// dt_new/dt_old.  See PIC::Mover in pic_mover.cpp.
 #define _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ _PIC_MODE_OFF_
 
 // SET OF OPTIONAL PARAMETERS CARRIED BY A PARTICLE

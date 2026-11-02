@@ -282,9 +282,10 @@ bool Comet::Chemistry::ValidateEnsemble(long int eventsPerReaction) {
   }
 
   // Every rank uses one of its actual configured blocks.  Consequently the
-  // ensemble covers several local-timestep ratios while global species weights
-  // remain exactly those used by the production Halley run.  Each reaction's
-  // requested event count is divided across ranks, not duplicated per rank.
+  // ensemble samples the same species-dependent W/dt carrier rates and
+  // block-local weights/timesteps used by the production Halley run at several
+  // radial locations.  Each reaction's requested event count is divided
+  // across ranks, not duplicated per rank.
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=
       PIC::DomainBlockDecomposition::BlockTable[0];
   const long int localEvents=eventsPerReaction/PIC::nTotalThreads+
@@ -604,17 +605,18 @@ void Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
       node->block->GetLocalParticleWeight(parentSpecies)*
       PIC::ParticleBuffer::GetIndividualStatWeightCorrection(parentData);
 #elif (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) || \
-      (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SINGLE_GLOBAL_PARTICLE_WEIGHT_)
+      (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SINGLE_GLOBAL_PARTICLE_WEIGHT_) || \
+      (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_)
   const double parentPhysicalWeight=
       node->block->GetLocalParticleWeight(parentSpecies);
 #else
-#error "Comet chemistry without individual corrections requires a spatially global particle weight"
+#error "Comet chemistry without individual corrections requires a supported global or species-local particle weight"
 #endif
 
   // Clone auxiliary fields from the parent, then replace position, velocity,
   // and species for each integer-stoichiometry product.  Individual-weight
-  // builds carry each product rate in one corrected particle.  Fixed
-  // species-global weights instead use residual split/roulette below; number,
+  // builds carry each product rate in one corrected particle.  Fixed global
+  // or block-local weights instead use residual split/roulette below; number,
   // mass, momentum, and excess-energy *rates* are conserved in expectation
   // without an individual correction field.  Event-by-event correlations
   // necessarily become statistical when weights or timesteps differ.

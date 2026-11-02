@@ -28,11 +28,14 @@ DebuggerMode=off
 ForceRepeatableSimulationPath=on
 
 TimeStepMode=SpeciesLocalTimeStep
-! Each species has one block-independent model-particle weight.  At a block
-! face the mover uses stochastic splitting/Russian roulette to conserve W/dt
-! in expectation.  Species-changing chemistry performs the corresponding
-! (W_source/dt_source)/(W_target/dt_target) resampling explicitly.
-ParticleWeightMode=SpeciesGlobalParticleWeight
+! Each species has one statistical weight per block.  The radial initializer
+! makes W proportional to the local timestep, which keeps W/dt and the
+! expected steady-flux occupancy approximately constant with radius.  At a
+! block face the mover nevertheless uses the full
+! (W_old/dt_old)/(W_new/dt_new) ratio, so arbitrary adjacent local weights are
+! connected by conservative stochastic cloning/Russian roulette.  Chemistry
+! applies the analogous source-to-product W/dt conversion.
+ParticleWeightMode=SpeciesLocalParticleWeight
 ! Transport and chemistry conserve physical flux statistically without an
 ! individual correction factor on every particle.
 ParticleWeightCorrectionMode=off
@@ -51,9 +54,13 @@ CouplerMode=off
   ! minimum of 52.45 model particles in the first cell (CH4 is limiting).
   ! Halving both C and this count preserves the requested surface statistics.
   ReferenceInjectionParticleNumber=8
-  ! Rubin et al. report several 10^6 model particles. This five-million-slot
-  ! starting capacity must be monitored during the convergence run.
-  RequestedParticleBufferLength=5000000
+  ! The superseded global-weight run reached 62.09 million particles before it
+  ! was stopped after iteration 2729.  Retain its enlarged buffer during the
+  ! local-weight validation so capacity cannot mask a transport regression.
+  ! The expected production population should now remain far below this limit;
+  ! a large renewed growth trend is a validation failure, not a reason to
+  ! increase the buffer again.
+  RequestedParticleBufferLength=20000000
   MaxMeshRefinmentLevel=29
   EnforceRequestedMeshResolution=on
   BlockCells=8,1,1

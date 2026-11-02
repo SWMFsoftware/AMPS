@@ -113,8 +113,9 @@ The chemistry executor samples one mutually exclusive channel per decay
 event, creates all stoichiometric products from that event, and assigns
 velocities that conserve event momentum and excess kinetic energy. With
 individual weight correction enabled it uses one corrected model daughter per
-stoichiometric product. With `SpeciesGlobalParticleWeight` and correction
-disabled, it converts the parent particle rate `W_parent/dt_parent` to each
+stoichiometric product. With fixed global or species-local block weights and
+correction disabled, it reads the parent and product weights from the current
+block and converts the parent particle rate `W_parent/dt_parent` to each
 product rate `W_product/dt_product` with unbiased residual split/roulette.
 Number, mass, momentum, and energy production rates are then conserved
 statistically, while event-by-event product correlations acquire Monte Carlo
@@ -123,12 +124,13 @@ variance.
 ### Local-timestep face transport
 
 `LocalTimeStepFluxResampling=on` enables the core implementation used by the
-Halley case. It is deliberately limited to `SpeciesLocalTimeStep`, a particle
-weight that is spatially constant for each species, correction mode off, CPU
-execution, a spatial non-periodic AMR mesh, and the trace mover. Unsupported
-CUDA, field-line, and periodic configurations fail at compile time. At every
-AMR block face, the trace mover stops at the face instead of first calculating
-a final position and subsequently looking up its block.
+Halley case. It is deliberately limited to `SpeciesLocalTimeStep`, either a
+supported global weight or `SpeciesLocalParticleWeight`, correction mode off,
+CPU execution, a spatial non-periodic AMR mesh, and the trace mover.
+Unsupported CUDA, field-line, periodic, individual-correction, and unsupported
+single-local-weight configurations fail at compile time. At every AMR block
+face, the trace mover stops at the face instead of first calculating a final
+position and subsequently looking up its block.
 
 Let a particle cross from an old block with timestep `dt_old` and weight
 `W_old` to a new block with `dt_new` and `W_new`. Its expected destination
@@ -142,8 +144,11 @@ mu = (W_old/dt_old) / (W_new/dt_new)
 The mover creates `floor(mu)` particles plus one with probability
 `mu-floor(mu)`. This is cloning for `mu>1` and Russian roulette for `mu<1`, and
 therefore matches the outgoing and incoming number, mass, momentum, and
-kinetic-energy fluxes in expectation without changing velocity. In the
-configured species-global mode `W_old=W_new`, so `mu=dt_new/dt_old`.
+kinetic-energy fluxes in expectation without changing velocity. The current
+Halley initializer sets each species' block weight proportional to its local
+timestep. Thus `W_new/W_old=dt_new/dt_old` and ordinary same-species radial
+transport has `mu=1`; the full expression remains necessary for arbitrary
+neighboring weights and is tested independently of the timestep ratio.
 
 If `tau_old` is the unused portion of the old block step, continuation uses
 
@@ -166,19 +171,17 @@ outer iteration.
 
 The algorithm is a steady-state local-pseudo-time acceleration, not a
 synchronized transient integrator: different blocks advance different
-physical intervals during one outer iteration. A spatially global weight also
-means the model population needed for a steady flux grows in proportion to
-the local timestep. Across the Halley logarithmic domain that ratio is very
-large, so a long convergence run must monitor the particle buffer. A future
-production improvement should combine block-local weights with a conservative
-face reservoir or weighted-particle representation, or introduce asynchronous
-block clocks; simply capping the clone count would bias the flux.
+physical intervals during one outer iteration. Block-local weights remove the
+global-weight population factor across the logarithmic domain: `W` grows with
+`dt`, keeping the expected steady-flux model population approximately uniform
+per radial cell. This does not turn the algorithm into synchronized physical
+time, and a long population/convergence run remains an acceptance requirement.
 
-The application uses one block-independent weight per species rather than one
-weight shared by every species. Direct-parent weights retain the requested
-surface statistics. Species with no direct source use the largest parent
-weight so a reaction cannot create an enormous instantaneous clone burst;
-chemistry performs
+Direct-parent surface weights retain the requested injection statistics and
+are scaled through the mesh at constant `W/dt` for that species. Species with
+no direct source use the largest direct-parent `W/dt` carrier rate to avoid
+large direct-parent-to-daughter clone bursts. Reactions between species with
+different carrier rates still perform
 `(W_parent/dt_parent)/(W_product/dt_product)` split/roulette explicitly.
 
 ## Internal energy and radiative cooling
@@ -231,11 +234,14 @@ mpirun -np 4 ./amps --validate-local-timestep \
   --validation-particles 200000 --validation-mover both
 ```
 
-`--validation-mover` accepts `first`, `second`, or `both`. The single-face
-matrix tests timestep ratios 0.25, 0.5, 1, 2, and 2.5 in both radial directions
-on a same-owner face; ratios 0.5, 1, and 2.5 are repeated across an MPI
-ownership face when available. Four velocity groups include radial and
-transverse components. Every case checks particle-list membership, final
+`--validation-mover` accepts `first`, `second`, or `both`. For local-weight
+builds, the single-face matrix tests `(dt ratio, weight ratio)` pairs
+`(0.25,1)`, `(0.5,2)`, `(1,0.4)`, `(2,0.5)`, `(2.5,2.5)`, `(0.5,0.25)`, and
+`(2,4)` in both radial directions. These give `mu` values from 0.25 through 4
+and include the production cancellation case `dt ratio = weight ratio`.
+Selected independent-ratio, clone, roulette, and cancellation cases are
+repeated across an MPI ownership face. Four velocity groups include radial
+and transverse components. Every case checks particle-list membership, final
 block, finite state, unchanged speed, analytic radial position, zero remainder,
 continuation lifecycle counts, and number/mass/three-momentum/kinetic-energy
 flux. A stochastic moment is accepted inside the larger of a 2% relative band
@@ -323,15 +329,36 @@ allocation. The input now uses 0.25; its clean four-rank restart crossed the
 first two output/load-balance boundaries. Exact evidence, live output paths,
 and remaining comparison limits are recorded in `STATUS.md`.
 
-The completed 18-rank validation does **not** authorize merging the full
-branch into `master`: conservative face and chemistry tests pass, but
-species-global-weight population stability and converged Rubin comparison
-fail. `STATUS.md` records the gate-by-gate disposition, the required
-block-local-weight/reservoir follow-up, independently reviewable subsets, file
-dependency order, conflict checks, clean-commit requirements, and the
-integration-branch procedure. No merge should begin until the population fix
-has been validated on a clean, identified commit and the Halley run satisfies
-three consecutive 5% convergence windows without buffer exhaustion.
+That global-weight run was explicitly stopped at iteration 2729 after
+reaching 62,087,575 particles. The replacement configuration uses block-local
+weights proportional to local timestep. Its clean focused regression passed
+all first-/second-order serial and four-rank MPI face cases, including
+independent weight/timestep ratios and a 95-face path through two ownership
+transitions. The four-rank chemistry ensemble also passed all 46 neutral
+reactions. A production smoke run completed outputs at iterations 500 and
+1000 with 40,841 and 78,754 particles, respectively, versus 51,576 and 172,215
+for the superseded global-weight run. In the H2O output, block weights span a
+factor of `3.355443e7` while `W/dt` is constant to `5.3e-7` relative at printed
+precision. Exact logs and paths are recorded in `STATUS.md`.
+
+The subsequent four-rank full-domain run completed all 10,000 iterations in
+approximately 3 h 18 min 41 s with 628,490 final particles and no buffer,
+mover, chemistry, or MPI failure. It produced all 20 sample windows and the
+complete Rubin PNG/EPS/PDF/CSV/manifest comparison set from output 19.
+Population stability therefore passes for block-local weights. The run is
+not converged, however: the final all-species relative L1 maximum is
+`1.719734` for sparse CH with `0/3` required consecutive windows. The
+comparison must remain labeled transient; paths, hashes, per-window metrics,
+and selected primary-species ratios are in `STATUS.md`.
+
+These focused results still do **not** authorize merging the full branch into
+`master`. `STATUS.md` records the gate-by-gate disposition, independently
+reviewable subsets, file dependency order, conflict checks, clean-commit
+requirements, and the integration-branch procedure. No merge should begin
+until a documented, statistically defensible convergence policy passes and
+the resulting steady Rubin comparison is reviewed. The block-local-weight
+run has demonstrated bounded population and no buffer exhaustion, but it did
+not satisfy the current three-consecutive-window 5% criterion.
 
 ## Visualizing DIM1 output
 

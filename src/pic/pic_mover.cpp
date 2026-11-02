@@ -17,19 +17,22 @@
 #include <omp.h>
 #endif
 
-// The first implementation is intentionally restricted to the configuration
-// for which the flux derivation is valid.  A local particle weight would add a
-// W_old/W_new factor and individual corrections would create two competing
-// representations of the same statistical weight.  CUDA continuation sweeps
-// are not implemented yet; failing at compile time is safer than silently
-// dropping the uncompleted part of a trajectory.
+// This implementation requires a species-local timestep and either a
+// spatially global weight or one species-dependent weight stored in each
+// block.  In the local-weight case the face conversion below includes the
+// full W_old/W_new factor as well as dt_new/dt_old.  Individual corrections
+// would create a second, competing representation of the same statistical
+// weight and therefore remain disallowed.  CUDA continuation sweeps are not
+// implemented yet; failing at compile time is safer than silently dropping
+// the uncompleted part of a trajectory.
 #if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
 #if _SIMULATION_TIME_STEP_MODE_ != _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
 #error "Local-timestep flux resampling requires SpeciesLocalTimeStep"
 #endif
 #if (_SIMULATION_PARTICLE_WEIGHT_MODE_ != _SINGLE_GLOBAL_PARTICLE_WEIGHT_) && \
-    (_SIMULATION_PARTICLE_WEIGHT_MODE_ != _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_)
-#error "Local-timestep flux resampling requires a spatially global particle weight"
+    (_SIMULATION_PARTICLE_WEIGHT_MODE_ != _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) && \
+    (_SIMULATION_PARTICLE_WEIGHT_MODE_ != _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_)
+#error "Local-timestep flux resampling requires a supported global or species-local particle weight"
 #endif
 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ != _INDIVIDUAL_PARTICLE_WEIGHT_OFF_
 #error "Local-timestep flux resampling requires ParticleWeightCorrectionMode=off"
@@ -211,9 +214,10 @@ namespace {
 //      = W_old*dt_new/(W_new*dt_old).
 //
 // With a spatially global weight for each species, W_old=W_new and the ratio
-// reduces to dt_new/dt_old.  Keeping the full expression documents the flux
-// invariant and permits any future spatial-weight extension to supply the
-// corresponding statistically valid W_old/W_new conversion.
+// reduces to dt_new/dt_old.  With species-local block weights, this full
+// expression is essential: using only the timestep ratio would change the
+// represented physical flux whenever the statistical weight changes across
+// the face.
 bool PrepareLocalTimeStepFaceTransfer(long int ptr,int species,
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *oldNode,
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode,

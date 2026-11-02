@@ -85,16 +85,33 @@ cFacePair FindFacePair(const std::vector<cNode*> &leaves,bool differentOwner) {
   return {};
 }
 
-void SetTimeSteps(const std::vector<cNode*> &leaves,cNode *source,
-    cNode *destination,double destinationRatio) {
+void SetFaceTransportParameters(const std::vector<cNode*> &leaves,
+    cNode *source,cNode *destination,double destinationTimeStepRatio,
+    double destinationWeightRatio) {
   // Boundary-layer copies are present only on ranks that need them.  Setting
   // every allocated copy from global node identity keeps the source and
-  // destination values identical on both sides of an MPI ownership face.
+  // destination values identical on both sides of an MPI ownership face.  A
+  // unit source value makes the configured destination values equal to the
+  // ratios printed by the regression.
   for (cNode *node:leaves) if (node->block!=NULL) {
     double timeStep=1.0;
     if (node==source) timeStep=1.0;
-    if (node==destination) timeStep=destinationRatio;
+    if (node==destination) timeStep=destinationTimeStepRatio;
     node->block->SetLocalTimeStep(timeStep,TestSpecies);
+
+#if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
+    double weight=1.0;
+    if (node==source) weight=1.0;
+    if (node==destination) weight=destinationWeightRatio;
+    node->block->SetLocalParticleWeight(weight,TestSpecies);
+#else
+    // A spatially global build cannot represent a non-unit block-to-block
+    // weight ratio.  Keep the older timestep-only validation usable, but fail
+    // loudly if a caller accidentally requests a local-weight case.
+    if (destinationWeightRatio!=1.0)
+      exit(__LINE__,__FILE__,
+          "local-weight face validation requires SpeciesLocalParticleWeight");
+#endif
   }
 }
 
@@ -361,8 +378,8 @@ bool CheckFluxes(const cDiagnostic &diagnostic) {
 }
 
 bool RunSingleFaceCase(const std::vector<cNode*> &leaves,
-    const cFacePair &pair,double ratio,int direction,long int particleNumber,
-    const char *moverName,bool mpiFace,int caseNumber) {
+    const cFacePair &pair,double timeStepRatio,double weightRatio,int direction,
+    long int particleNumber,const char *moverName,bool mpiFace,int caseNumber) {
   cNode *source=(direction>0) ? pair.Left : pair.Right;
   cNode *destination=(direction>0) ? pair.Right : pair.Left;
   const double face=pair.Left->xmax[0];
@@ -372,7 +389,8 @@ bool RunSingleFaceCase(const std::vector<cNode*> &leaves,
 
   PIC::ParticleBuffer::DeleteAllParticles();
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-  SetTimeSteps(leaves,source,destination,ratio);
+  SetFaceTransportParameters(leaves,source,destination,timeStepRatio,
+      weightRatio);
   rnd_seed(71000+caseNumber);
   InjectSingleFaceParticles(source,face,particleNumber,velocities);
 
@@ -383,7 +401,7 @@ bool RunSingleFaceCase(const std::vector<cNode*> &leaves,
 
   const double radialVelocity=velocities[0][0];
   const double expectedRadialProbe=face+direction*PIC::Mesh::mesh->EPS+
-      radialVelocity*(1.0-CrossingFraction)*ratio;
+      radialVelocity*(1.0-CrossingFraction)*timeStepRatio;
   const cParticleScan scan=
       ScanParticles(destination,&velocities,expectedRadialProbe);
 
@@ -407,9 +425,11 @@ bool RunSingleFaceCase(const std::vector<cNode*> &leaves,
 
   if (PIC::ThisThread==0) {
     std::printf("%s mover=%s face=%s direction=%s dt-ratio=%.3g "
-        "input=%ld output=%lld sweeps=%d max-pending=%ld\n",
+        "weight-ratio=%.3g mu=%.3g input=%ld output=%lld sweeps=%d "
+        "max-pending=%ld\n",
         pass ? "PASS" : "FAIL",moverName,mpiFace ? "MPI" : "local",
-        direction>0 ? "out" : "in",ratio,particleNumber,scan.Count,
+        direction>0 ? "out" : "in",timeStepRatio,weightRatio,
+        timeStepRatio/weightRatio,particleNumber,scan.Count,
         diagnostic.ContinuationSweepCount,
         diagnostic.MaximumPendingParticleCount);
     if (!pass)
@@ -474,8 +494,12 @@ bool RunMultiFaceCase(const std::vector<cNode*> &leaves,int rankCount) {
 
   PIC::ParticleBuffer::DeleteAllParticles();
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-  for (cNode *node:leaves) if (node->block!=NULL)
+  for (cNode *node:leaves) if (node->block!=NULL) {
     node->block->SetLocalTimeStep(1.0,TestSpecies);
+#if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
+    node->block->SetLocalParticleWeight(1.0,TestSpecies);
+#endif
+  }
 
   cNode *source=leaves[span.Begin],*destination=leaves[span.End];
   const double sourceWidth=source->xmax[0]-source->xmin[0];
@@ -524,17 +548,34 @@ bool RunMoverSuite(const std::vector<cNode*> &leaves,const cFacePair &localPair,
     const cFacePair &mpiPair,long int particleNumber,const char *name,
     PIC::Mover::fSpeciesDependentParticleMover mover,int &caseNumber) {
   PIC::Mover::SetLocalTimeStepValidationMover(mover);
-  const double ratios[]={0.25,0.5,1.0,2.0,2.5};
+  struct cRatioCase {double TimeStep,Weight;};
+#if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
+  // These cases independently exercise roulette and cloning caused by the
+  // timestep ratio, the weight ratio, both ratios reinforcing one another,
+  // and exact cancellation when W is proportional to dt.  The expected
+  // destination multiplicity is mu=dt_ratio/weight_ratio because the source
+  // timestep and weight are both one.
+  const cRatioCase cases[]={
+      {0.25,1.0},{0.5,2.0},{1.0,0.4},{2.0,0.5},
+      {2.5,2.5},{0.5,0.25},{2.0,4.0}};
+#else
+  const cRatioCase cases[]={
+      {0.25,1.0},{0.5,1.0},{1.0,1.0},{2.0,1.0},{2.5,1.0}};
+#endif
   bool pass=true;
-  for (double ratio:ratios) for (int direction: {-1,1})
-    pass=RunSingleFaceCase(leaves,localPair,ratio,direction,particleNumber,
-        name,false,caseNumber++) && pass;
+  for (const cRatioCase &ratio:cases) for (int direction: {-1,1})
+    pass=RunSingleFaceCase(leaves,localPair,ratio.TimeStep,ratio.Weight,
+        direction,particleNumber,name,false,caseNumber++) && pass;
 
   if (mpiPair.IsValid()) {
-    const double mpiRatios[]={0.5,1.0,2.5};
-    for (double ratio:mpiRatios) for (int direction: {-1,1})
-      pass=RunSingleFaceCase(leaves,mpiPair,ratio,direction,particleNumber,
-          name,true,caseNumber++) && pass;
+#if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
+    const cRatioCase mpiCases[]={{0.5,2.0},{1.0,0.4},{2.5,2.5}};
+#else
+    const cRatioCase mpiCases[]={{0.5,1.0},{1.0,1.0},{2.5,1.0}};
+#endif
+    for (const cRatioCase &ratio:mpiCases) for (int direction: {-1,1})
+      pass=RunSingleFaceCase(leaves,mpiPair,ratio.TimeStep,ratio.Weight,
+          direction,particleNumber,name,true,caseNumber++) && pass;
   }
   return pass;
 }

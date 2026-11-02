@@ -25,13 +25,13 @@ Branch: `1d_comet_dev`
 | Completed-sample kinetic temperature | Pass; the Crifo law reads `GetTranslationalTemperature()` from the completed buffer and uses `max(Tsample,180 K)` |
 | H2O internal degrees of freedom | Pass; core Larsen-Borgnakke rotation/RT relaxation enabled and initialized at injection/re-emission |
 | Generic radiative cooling | Pass; named H2O Gombosi 1986 law unit-tested, clean-built, and executed after the first completed sample |
-| Halley DIM1 convergence run | Courant-0.25 restart active; clean `-O3` four-rank run crossed four output/load-balance boundaries through iteration 2,000, currently transient at 0/3 convergence passes |
+| Halley DIM1 convergence run | Completed the block-local-weight run through the 10,000-iteration hard limit on four MPI ranks. Population remained bounded at 628,490 particles and no buffer or mover failure occurred, but the all-species convergence gate failed: final maximum relative L1 change `1.719734` (CH), `0/3` consecutive windows. |
 | Core collision cross-section dispatch | Fixed and clean-built; NTC/MF now route the selected user law with block/cell state instead of always using the zero HS placeholder |
 | Halley collision-data coverage | Complete by explicit policy: 66 Rubin rows, 18 additional Combi rows, and 294 labeled CHEMKIN/Lorentz estimates |
 | Completed-hierarchy clean build and smoke test | Pass; clean `-O3` DIM1 compile/link and isolated one-rank execution through iteration 124 |
 | DIM1 result visualization | Pass for short aliases, single-/multi-file PNG/EPS output, and viewer control |
-| Rubin paper-comparison artifact generator | Pass: every panel overlays AMPS with vector-extracted Rubin DSMC data; the available AMPS window is transient, not converged |
-| Local-timestep face-flux transport | Pass for clean `-O2` DIM1 compile/link and a final two-rank smoke test through the start of iteration 153. The generated mode quartet is species-local timestep, species-global weight, correction off, and face resampling on. No runtime error occurred; timeout ended the test. A 500-step/MPI-ownership-boundary/long-population test remains required. |
+| Rubin paper-comparison artifact generator | Pass as tooling and transient output: all 18 panels overlay output 19 with vector-extracted Rubin DSMC data and include PNG/EPS plus a combined PDF/CSV/manifest. Acceptance fails because the source run did not converge. |
+| Local-timestep/local-weight face-flux transport | Pass for a clean `-O3` DIM1 compile/link, 200,000-particle statistical face tests for both movers on local and MPI faces, a 95-face/two-ownership-crossing trajectory, all 46 neutral chemistry reactions, an integrated production smoke, and bounded full-domain population through iteration 10,000. The generated mode quartet is species-local timestep, species-local block weight, correction off, and face resampling on. The strict all-species convergence gate still fails. |
 | DIM2 axisymmetric application | Interface reserved; execution backend not implemented |
 
 The `build` directory is removed before each compilation. Hartley 2 and Halley
@@ -228,12 +228,16 @@ The exact paths are `PT.failed-mover-timestep-courant-0.5-20261028`,
 After removing `build`, the Courant-0.25 case was rebuilt cleanly with `-O3`
 and restarted on four MPI ranks from the repository root on 2026-10-31. It
 crossed the complete output/load-redistribution boundaries through iteration
-2,000 without either the earlier Crifo-temperature stop or mover stop. At
-iteration 2,000 the maximum relative L1 change was `1.008269` for H2, with
-`0/3` consecutive passes, so the new data remain
-transient. The active log is
-`halley1d.courant-0.25.run.log`; runtime data and the current Rubin-overlaid
-comparison are under `PT/plots` and `PT/plots/rubin2011_comparison`.
+2,000 without either the earlier Crifo-temperature stop or mover stop. During
+the 2026-11-01 process audit this legacy process was found still running from
+an already replaced/deleted executable and was stopped as required before the
+block-local-weight work. It ended at iteration 9,305 with a latest observed
+census of 750,220 particles. Its last complete convergence output was
+iteration 9,000: maximum relative L1 change `0.9631707` for CH and `0/3`
+consecutive passes. It therefore did not converge and is not evidence for the
+current implementation. The retained log is
+`halley1d.courant-0.25.run.log`; its runtime data and Rubin-overlaid comparison
+remain under `PT/plots` and `PT/plots/rubin2011_comparison`.
 
 ### Full-hierarchy run stopped at the Crifo temperature limit
 
@@ -389,7 +393,7 @@ copies are listed separately below.
 | `input/hartley2.pl` | modified | Extends the historical Hartley parser into the generic comet preprocessor. It parses dimension/geometry, mesh units, source records, radial controls, chemistry, neutral collisions and completion policy, completed-sample collision-temperature controls, and per-species cooling; selects DIM1 spherical core options; includes `LocalTimeStepValidation.o` in the radial object set; validates required values; writes species arrays; and generates chemistry/collision headers. It depends on the new Perl modules and exact initialized declarations in the model/runtime sources. Preserve legacy Hartley keywords and the validation object when resolving conflicts. |
 | `input/hartley2.input` | modified | Adds the generic DIM3 case declarations, configurable NASTRAN mesh units, heliocentric distance, disabled chemistry, the three neutral collision laws that were formerly hard-coded in `Comet.cpp`, and the explicit 180 K completed-sample collision floor. The remaining historical Hartley 2 settings are intentionally retained. |
 | `input/hartley2.radial.input` | new | Defines the mesh-only, gas-only, spherically symmetric Hartley 2/Shou 2025 DIM1 case. It contains the area-equivalent nucleus radius, 10,000 km altitude domain, 1,000-cell ideal logarithmic profile, and 1 m surface resolution estimate. It deliberately leaves `RadialSimulationMode=off`. |
-| `input/halley1d.input` | new | Defines the gas-only Rubin 2011 Halley simulation: 27 species, 11 parent sources, 6 km inner radius, `10^6 km` outer radius, 2,000 ideal cells, derived surface resolution, species-local timesteps with species-global weights and face-flux resampling, the explicit Rubin--Combi--CHEMKIN/Lorentz 378-pair collision hierarchy, generated chemistry, 180 K collision-temperature floor, H2O Larsen-Borgnakke rotation/RT relaxation, H2O Gombosi cooling, and convergence controls. Dust, extended sources, vibrational relaxation, and the optional methanol-to-formaldehyde channel are disabled. |
+| `input/halley1d.input` | new | Defines the gas-only Rubin 2011 Halley simulation: 27 species, 11 parent sources, 6 km inner radius, `10^6 km` outer radius, 2,000 ideal cells, derived surface resolution, species-local timesteps with block-local species weights and combined timestep/weight face-flux resampling, the explicit Rubin--Combi--CHEMKIN/Lorentz 378-pair collision hierarchy, generated chemistry, 180 K collision-temperature floor, H2O Larsen-Borgnakke rotation/RT relaxation, H2O Gombosi cooling, and convergence controls. Dust, extended sources, vibrational relaxation, and the optional methanol-to-formaldehyde channel are disabled. |
 | `input/species.input` | modified | Adds the neutral species required by the Rubin network (`CH`, `CH2`, `N`, `CH3`, `NH`, `NH2`, `NH3`, `C2`, `C2H`, `C2H2`, `CN`, `HCN`, `C2H4`, `CO`, `C2H5`, `HCO`, `C2H6`, `H2CO`, and `CH3OH`). Carbon uses exact `12*_AMU_`, consistent with the nominal integer masses of the network, so compile-time reaction mass conservation is not defeated by a rounded kilogram literal. Merge by component name and avoid duplicate definitions if `master` has independently added any species. |
 | `input/CometReactionNetwork.pm` | new | Parses arbitrary stoichiometric input reactions, resolves species names to compiled indices, validates rate-law fields, and emits `CometChemistry.generated.h`. It is the input-side producer for `ReactionNetwork.h` and `CometChemistry.cpp`. |
 | `input/CometPhysicsDatabase.pm` | new | Parses explicit collision records and supplies the named `RUBIN2011` data set. It writes 66 unordered parent-pair collision entries and adds the selected Rubin Table 4 chemistry channels to the reaction-network generator. Its input-selected completion preserves those rows, adds 18 nonoverlapping Combi values, and generates 294 labeled geometric hard-sphere estimates from CHEMKIN diameters and Lorentz mixing. It rejects duplicates and emits `CometPhysics.generated.h`. |
@@ -1158,13 +1162,14 @@ transition explicitly exits as untested and unverified.
 - a Poisson process samples fractional-step injection times;
 - species-local timesteps use an explicit characteristic speed and Courant
   number;
-- the current Halley case uses one block-independent weight per species and
-  performs unbiased `W/dt` split/roulette at each local-timestep block face;
+- the current Halley case uses one weight per species and block, proportional
+  to that block's species-local timestep, and performs unbiased full-ratio
+  `W/dt` split/roulette at each block face;
 - returning gas is fully thermalized and re-emitted at the inner boundary;
 - particles crossing the outer boundary are deleted; and
-- daughter species receive bounded global weights and chemistry converts
-  parent to product `W/dt` rate statistically when individual corrections are
-  off;
+- daughter species receive a bounded local `W/dt` carrier rate and chemistry
+  converts parent to product `W/dt` statistically when individual corrections
+  are off;
 - complete radial density profiles are assembled across MPI ranks after each
   sampling window using the core's spherical shell volumes; and
 - the run terminates after every species passes the configured relative L1
@@ -1601,6 +1606,335 @@ the same scaling limit and is not a physical fix. The next algorithmic stage
 must use block-local statistical weights (or an equivalent weighted-particle
 or face-reservoir formulation) while preserving conservative interface flux.
 No master-branch merge or commit was attempted.
+
+### 2026-11-01 enlarged-buffer convergence rerun
+
+At the user's request, `input/halley1d.input` now reserves 20,000,000 particle
+slots per MPI rank, four times the capacity of the iteration-2700 failure.
+The value is based on the observed 4,218,772-particle maximum rank population
+immediately before the failed redistribution and provides room for both the
+resident population and temporary whole-block migration imbalance.  With 18
+ranks this exposes up to 360 million model-particle slots; the host had about
+233 GiB available before the clean rebuild and launch.
+
+This change is deliberately isolated to `RequestedParticleBufferLength`.
+Source rates, statistical weights, species-local timesteps, 50-iteration load
+balancing, the 500-iteration sampling window, the 5%/three-window convergence
+test, and the 10,000-iteration safety ceiling remain unchanged.  Therefore a
+different convergence history can be attributed to stochastic evolution and
+additional runtime rather than a changed physical model.  The rerun must be
+built only after removing `build`, launched from a new validation directory,
+and retained with its complete log and comparison manifest.  If population
+growth fills the enlarged buffer before convergence, that outcome must be
+reported as a population-stability failure; increasing capacity again is not
+by itself a validated remedy.
+
+The clean rebuild completed successfully after deleting `build`; generated
+`build/pic/pic.cpp` was checked for the 20,000,000-slot buffer, 10,000 maximum
+iterations, 500-iteration sampling length, 5% tolerance, and three required
+consecutive windows.  The 18-rank production rerun was then started in
+`validation_runs/halley1d_lts_lb50_buf20m_convergence_20261101`; its live and
+retained log is `halley1d.convergence.log`, and its sampled data are written to
+`PT/plots` below that directory.  The first four completed windows contained
+51,576, 172,215, 660,541, and 3,874,714 particles.  Their convergence records
+were reference, 0.8129400 (NH3), 1.000000 (NH2), and 1.005519 (NH2), so no
+window through iteration 2000 met the 5% threshold and the run correctly
+continued.  This paragraph is a launch/progress record, not a claim of
+convergence; the final termination reason and replacement policy are recorded
+in the following block-local-weight section.
+
+For a later master merge, keep the enlarged buffer as a case-level resource
+choice rather than a core default.  Do not merge this input edit as evidence
+that species-global weights solve the logarithmic-domain scaling problem, and
+do not change `src/pic` buffer defaults.  The local-weight validation retains
+the value as temporary headroom; production population evidence must determine
+the final case capacity.
+
+### 2026-11-01 block-local particle-weight transport
+
+The 20-million-slot global-weight rerun was stopped at the user's request
+after completing iteration 2729.  The last core census before the interrupt
+contained 62,087,575 particles; its last complete convergence output remained
+iteration 2500 with maximum relative L1 change `1.000366` (H2) and `0/3`
+converged windows.  Exit status 130 records the requested interrupt, not a
+physics, MPI, or particle-buffer failure.  Its retained directory remains
+`validation_runs/halley1d_lts_lb50_buf20m_convergence_20261101`.
+
+The same final host audit also found the older four-rank Courant-0.25 process
+described above.  It was not the newly built block-local-weight executable:
+Linux reported its executable as deleted, and its five-million-slot startup
+record predates the current input and build.  That process group was stopped
+at iteration 9,305.  A follow-up process scan found no remaining Halley AMPS
+launcher or worker, so no production simulation is currently active.
+
+The replacement Halley configuration now combines
+`SpeciesLocalTimeStep`, `SpeciesLocalParticleWeight`, correction off, and
+`LocalTimeStepFluxResampling=on`.  For a species `s`, the radial initializer
+sets the weight in block `b` to
+
+```text
+W[s,b] = (W[s,surface]/dt[s,surface]) * dt[s,b].
+```
+
+Thus each species retains its requested surface injection statistics while
+`W/dt` is constant with radius and expected steady-flux occupancy is roughly
+constant per logarithmic radial cell.  Non-source daughters use the largest
+direct-parent `W/dt` carrier rate.  This reduces direct-parent-to-daughter
+clone bursts without changing any physical source rate; reactions into a
+direct species with a smaller carrier rate can still clone and are handled by
+the same unbiased chemistry conversion.
+
+At every crossed block face the mover reads weights and timesteps from both
+blocks and draws the destination multiplicity with mean
+
+```text
+mu = (W_old/dt_old)/(W_new/dt_new)
+   = W_old*dt_new/(W_new*dt_old).
+```
+
+The draw is `floor(mu)` plus a Bernoulli residual.  When `mu<1`, the deletion
+probability is `1-mu`; when `mu>1`, the original survives and the additional
+destination multiplicity is cloned.  Every sibling retains the same face
+position and velocity, so number, mass, momentum, and kinetic-energy flux are
+conserved in expectation.  The unused trajectory interval remains a separate
+kinematic invariant, `tau_new=tau_old*dt_new/dt_old`; particle weight changes
+the population probability, not the remaining flight fraction.
+
+#### Files changed for block-local weights
+
+| File | Modification and merge reason |
+| --- | --- |
+| `input/halley1d.input` | Selects `SpeciesLocalParticleWeight`, explains the complete `W/dt` face conversion, and retains the 20-million-slot validation buffer.  This case edit is required to activate the new path but must not be treated as a core default. |
+| `src/pic/picGlobal.dfn` | Expands the default-off mode documentation to permit species-local block weights and records that both weight and timestep ratios enter multiplicity.  The macro remains off for other applications. |
+| `src/pic/pic_mover.cpp` | Removes the former compile-time rejection of `_SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_`.  The already implemented full `W_old*dt_new/(W_new*dt_old)` expression is now active for local weights; all positive/finite checks, diagnostics, continuation storage, and unsupported-mode guards remain in force. |
+| `srcHartley2/RadialSimulation.cpp` | Replaces the surface-pair helper with explicit constant-`W/dt` initialization on every allocated block.  Direct parents preserve source-derived surface weights; daughters use the maximum direct-parent carrier rate.  Invalid local timesteps or derived weights abort at initialization. |
+| `srcHartley2/CometChemistry.cpp` | Allows correction-off chemistry with species-local block weights, reads parent and product weights from the current block, and retains the general source/product `W/dt` residual resampling.  Validation comments now describe the block-local production configuration. |
+| `srcHartley2/LocalTimeStepValidation.cpp`, `LocalTimeStepValidation.h` | Extend the focused regression to set source/destination weight ratios independently of timestep ratios.  The matrix covers roulette, cloning, reinforcement, exact integer multiplicity, and the production cancellation `W_new/W_old=dt_new/dt_old` on same-rank and MPI faces for both trace movers. |
+| `src/pic/README.md` | Documents the core local-weight face contract, deletion/cloning probability, continuation invariant, block-data ownership, and unsupported configurations. |
+| `srcHartley2/README.md` | Documents the Halley constant-`W/dt` policy, revised validation matrix, smoke evidence, and remaining production acceptance gate. |
+| `srcHartley2/halley2011/PAPER_PARAMETERS.md` | Reconciles the case table with the 20-million-slot validation capacity and correction-off local-weight policy; neither value is attributed to Rubin et al. |
+| `srcHartley2/STATUS.md` | Records the stopped global-weight run, implementation, evidence, limitations, and integration procedure in this section. |
+
+No new core source file was needed.  In particular, the existing
+`cDataBlockAMR::SetLocalParticleWeight()`/`GetLocalParticleWeight()` storage in
+`src/pic/pic.cpp`, block-associated-data migration, and complete particle
+record MPI packing were reused without modification this round.
+
+#### Verification evidence
+
+`build` was deleted before configuration.  The optimized clean build
+completed successfully, and generated `build/pic/picGlobal.dfn` contains
+species-dependent local timestep, species-dependent local particle weight,
+face resampling on, and individual correction off.  Existing aggressive-loop
+warnings in unrelated legacy DIM1 paths were unchanged; there was no new
+compile or link warning attributable to this implementation.
+
+The retained validation root is
+`validation_runs/halley1d_local_weight_face_validation_20261101`:
+
+- `serial/local-weight.serial.log`: one rank, 200,000 source particles per
+  case, both trace movers, all 28 local-face direction/ratio cases passed;
+- `mpi4/local-weight.mpi4.log`: four ranks, all local and MPI-face cases for
+  both movers passed, followed by a 95-face path crossing two MPI ownership
+  transitions with 32/32 final particles and no pending remainder;
+- `chemistry_mpi4/local-weight.chemistry.mpi4.log`: all 46 neutral reactions
+  passed 200,000-event number/mass/momentum/energy ensemble checks; 25 had
+  unequal source/product carrier rates and 23 sink reactions were identified;
+- `production_smoke/local-weight.production-smoke.log`: the full collision,
+  chemistry, cooling, sampling, and 50-iteration load-balance path completed
+  outputs at iterations 500 and 1000 before the validation smoke was
+  deliberately interrupted after iteration 1046.  Populations were 40,841
+  and 78,754, compared with 51,576
+  and 172,215 in the superseded global-weight run.  The expected transient
+  convergence record at iteration 1000 was `0.8107134`, NH3, `0/3`.
+
+The production H2O `out=1` file directly confirms spatially local weight:
+printed block weights span `1.273285e25` to `4.272435e32`, a factor of
+`3.355443e7`, while `W/dt` spans only `5.273e-7` relatively at output
+precision.  This is the intended cancellation, not evidence of a globally
+constant weight.
+
+#### Full-domain 10,000-iteration result
+
+The clean production run is retained at
+`validation_runs/halley1d_local_weight_convergence_rubin_20261101`. Before
+compilation, `build` was deleted. The frozen executable, input, and generated
+macro file are `amps.local-weight`, `halley1d.input`, and `picGlobal.dfn` in
+that directory. Their SHA-256 digests are, respectively,
+`e679021a0900b5a12e55d27e86814dee3d6f8973c5a8a4b5f440049430017c11`,
+`9c40df1cd1c4235fac25be9efac03fffee84b28dc1a03f43e54c550b5c50d757`,
+and `f4719d752c828cfa0303c8b14c1959bd73cc16aa710fcc4f0a68e77cdcea6c72`.
+The generated configuration confirms species-local timestep,
+species-local block weight, individual correction off, and face-flux
+resampling on.
+
+The command `mpirun -np 4 ./amps.local-weight` ran from 18:17:06 to 21:35:47
+on 2026-11-01, approximately 3 h 18 min 41 s wall time. It completed all 20
+500-iteration samples and wrote 540 species files (`27 species x 20
+outputs`) under `PT/plots`. The final population was 628,490 particles; no
+particle-buffer exhaustion, invalid face conversion, chemistry failure, or
+MPI error occurred. This is a successful full-domain population-stability
+test for block-local weights, not a successful steady-state test.
+
+The maximum relative L1 profile changes at iterations 500 through 10,000
+were: reference, `0.8107134`, `0.7817780`, `1.0`, `1.0`, `1.006929`,
+`1.212851`, `1.458767`, `1.312500`, `1.824477`, `1.834117`, `1.421037`,
+`1.527195`, `1.748311`, `1.776113`, `1.716863`, `1.904352`, `1.754535`,
+`1.796966`, and `1.719734`. The final limiting species was CH and no window
+met the required three consecutive all-species changes at or below 5%.
+Late windows are controlled by statistically sparse CH/CH2/CH3 daughter
+profiles. Therefore output 19 must remain labeled transient/non-converged,
+even though the direct-parent population no longer exhibits the catastrophic
+growth of the global-weight calculation.
+
+The Rubin overlay generated from output 19 is in
+`PT/plots/rubin2011_comparison` below the retained run. The combined file is
+`rubin2011_neutral_profiles.pdf`; the same directory contains 18 PNG/EPS
+panels, `comparison_profiles.csv`, and `manifest.json`. At the five exported
+comparison radii, H2O radial velocity differs from the digitized Rubin curve
+by approximately +8.8%, +3.7%, -0.07%, -5.6%, and -7.2% at 10, 100, 1,000,
+10,000, and 100,000 km. Where both H2O density curves are available, AMPS is
+0.766 times Rubin at 10,000 km and 0.911 times Rubin at 100,000 km. These
+numbers are diagnostics only: the failed convergence record is embedded in
+the manifest and prevents treating the apparent agreement as model
+validation. CO remains strongly underpredicted in the shared digitized
+range, which also requires physics/source investigation after a statistically
+appropriate convergence criterion is established.
+
+#### Remaining acceptance and later master merge
+
+The focused algorithm, MPI continuation, chemistry conversion, integrated
+run, full-domain population stability, and comparison tooling pass.
+Three-window convergence and a scientifically accepted Rubin overlay do not;
+do not merge to `master` or claim paper validation yet. The next validation
+step is to separate direct-parent convergence from the noise floor of sparse
+daughter species, while retaining explicit per-species diagnostics and a
+strict physical acceptance rule. Any replacement criterion must be
+documented and regression-tested before another production run; it must not
+silently ignore unresolved chemically important daughters.
+
+When that gate passes, integrate on a temporary branch based on current
+`master`, never directly on `master`, and stop for user review before the
+merge.  Bring the dependency set in this order: (1) core default/documentation
+and mover support (`src/pic/picGlobal.dfn`, `src/pic/pic_mover.cpp`,
+`src/pic/README.md`); (2) application initialization, chemistry, and focused
+tests; (3) Halley input and application/paper/status documentation.  Preserve
+the core macro default as off, preserve existing master behavior for global
+weights, and resolve conflicts in `PrepareLocalTimeStepFaceTransfer()` by
+retaining the complete `W_old*dt_new/(W_new*dt_old)` expression and all
+continuation/MPI fixes.  After conflict resolution, delete `build`, rebuild
+the exact Halley input, verify the four generated macros, rerun serial and
+four-rank focused regressions plus chemistry, then repeat the converged
+production comparison.  Do not copy generated `build/`, `amps`, `PT/`, mesh,
+log, or validation-run artifacts into the source commit.
+
+#### Master-integration runbook for the block-local-weight round
+
+This runbook is for future use; it does not authorize a merge. The current
+10,000-iteration run failed the convergence gate, so the procedure stops at
+the development branch until a documented convergence policy and a steady
+Rubin comparison pass. In particular, do not switch to `master`, create an
+integration branch, cherry-pick, rebase, or run `git merge` without first
+reporting the completed evidence and receiving explicit user approval.
+
+First make the development branch reviewable. Commit source changes from
+`1d_comet_dev` with explicit paths; never use `git add .` in this worktree.
+For the block-local-weight round, the intended path set is:
+
+```sh
+git switch 1d_comet_dev
+git add input/halley1d.input \
+  src/pic/picGlobal.dfn src/pic/pic_mover.cpp src/pic/README.md \
+  srcHartley2/RadialSimulation.cpp srcHartley2/CometChemistry.cpp \
+  srcHartley2/LocalTimeStepValidation.cpp \
+  srcHartley2/LocalTimeStepValidation.h \
+  srcHartley2/README.md srcHartley2/STATUS.md \
+  srcHartley2/halley2011/PAPER_PARAMETERS.md
+git diff --cached --name-status
+git diff --cached --check
+git commit -m "feat(comet): add conservative block-local particle weights"
+```
+
+The local `Makefile` edit adding `-lmpi++` is not part of this feature and
+must be justified and tested separately or left unstaged. Also exclude
+`build/`, `amps`, `PT*`, `validation_runs/`, meshes, logs, generated root
+parser/input copies, `output/`, `gitinfo.txt`, and temporary files. Before
+integration, require a clean source status or a written explanation for every
+remaining path, and audit the complete branch delta:
+
+```sh
+git status --short
+git log --reverse --oneline master..1d_comet_dev
+git diff --name-status master...1d_comet_dev
+git diff --check master...1d_comet_dev
+```
+
+**Stop here and report the commit list, file list, validation results, and
+known limitations to the user.** The following integration commands are
+permitted only after explicit approval. Fetch the current upstream state when
+available, create a disposable branch from that exact `master`, and perform a
+non-committing merge so the result can be inspected before recording it:
+
+```sh
+git fetch origin
+git switch --create integrate/comet-local-weight origin/master
+git merge --no-ff --no-commit 1d_comet_dev
+```
+
+If no remote is available, create the integration branch from the verified
+local `master` instead. Resolve conflicts by semantic dependency batch, never
+by accepting an entire side of a core source file. Preserve these invariants:
+
+1. Core defaults remain off for applications that do not select comet local
+   transport; global-timestep and global-weight behavior must be unchanged.
+2. `PrepareLocalTimeStepFaceTransfer()` retains
+   `W_old*dt_new/(W_new*dt_old)`, finite/positive checks, stochastic residual
+   multiplicity, continuation state, and local/MPI ownership handling.
+3. Sender and receiver packing retain identical active-face and block-data
+   ordering, including local timestep and local particle-weight storage.
+4. Halley direct-parent weights retain their source-derived surface rates;
+   block weights remain proportional to local timestep, and daughters use the
+   documented conservative `W/dt` carrier policy.
+5. Chemistry uses the current block's parent and product weights and performs
+   unbiased `W/dt` resampling with individual correction disabled.
+6. Do not resolve generated files. Regenerate them from the selected inputs
+   after source conflicts are resolved.
+
+Before committing the integration merge, remove `build`, compile the exact
+Halley input, and verify the generated mode quartet: species-local timestep,
+species-local block weight, individual correction off, and face-flux
+resampling on. Run the serial and four-rank 200,000-particle mover suites for
+both movers, the 46-reaction ensemble, parser/database/unit tests, a DIM3
+compile, and at least one unrelated AMPS build with the feature left off.
+Then perform the accepted long Halley run and regenerate the Rubin comparison.
+The integration branch must reproduce bounded population, have no buffer or
+continuation failure, and satisfy the approved convergence criterion. Finish
+with `git diff --check` and inspect the final source-only file list.
+
+Once those checks pass, record the pending merge on the integration branch,
+but do not update `master` yet:
+
+```sh
+git status --short
+git diff --cached --check
+git commit
+git log --oneline --decorate master..integrate/comet-local-weight
+git diff --stat master...integrate/comet-local-weight
+```
+
+**Stop a second time and request user review.** Only after a separate explicit
+approval may `master` be fast-forwarded:
+
+```sh
+git switch master
+git merge --ff-only integrate/comet-local-weight
+```
+
+If the fast-forward fails because `master` moved, do not force, reset, or
+merge directly into it. Create a new disposable integration branch from the
+new `master`, repeat conflict resolution and the full validation matrix, and
+request review again. Keep `1d_comet_dev`, the integration branch, and the
+validated run archive until post-merge DIM1/DIM3 smoke tests are complete.
 
 ## Remaining decisions for DIM1 science simulations
 

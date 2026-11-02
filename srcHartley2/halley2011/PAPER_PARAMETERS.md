@@ -111,7 +111,7 @@ For the 2,000-cell geometric profile, the result is:
 | Courant number | `0.25` | reduced from the initially supplied `0.5` after a four-rank run exposed a one-step traversal beyond the mover's one-block MPI boundary allocation |
 | direct-parent baseline speed | `400 m/s` | supplied numerical control |
 | reference injection count | `8` | at least 50 parent particles in the surface cell at Courant 0.25; reduced with the timestep so surface statistics are unchanged |
-| particle-buffer capacity | `5,000,000` | initial capacity consistent with the paper’s “several 10^6”; monitor during convergence |
+| particle-buffer capacity | `20,000,000` per MPI rank | validation headroom retained after the superseded global-weight run overflowed 5,000,000; this is not a paper value |
 | sampling-window length | `500 iterations` | supplied numerical control |
 | hard iteration ceiling | `10,000 iterations` | supplied numerical control |
 | convergence tolerance | `0.05` | supplied control; volume-weighted relative L1 density-profile change |
@@ -130,14 +130,17 @@ populations are set by their production and loss rates and cannot be forced to
 50 particles per cell through the surface injection count.
 
 Across the 2,984 allocated cells, the no-loss occupancy estimate sums to
-approximately `2.21e6` direct-parent model particles. The five-million-slot
-buffer leaves about `2.79e6` slots for transient excess and daughters, but its
-high-water mark must be measured in the convergence run.
+approximately `2.21e6` direct-parent model particles. The current
+twenty-million-slot per-rank buffer deliberately exceeds this estimate so a
+transport error is not hidden by the old five-million-slot limit; the actual
+high-water mark still must be measured in the convergence run.
 
 The input uses species-local particle weights proportional to local timestep.
 This prevents model-particle occupancy from growing with the width of the
-logarithmic cells. Individual AMPS weight corrections preserve the physical
-weight when a reaction changes species.
+logarithmic cells. Individual AMPS weight correction is disabled. Both block
+faces and species-changing chemistry instead use unbiased residual resampling
+of `(W_source/dt_source)/(W_target/dt_target)` to conserve physical rates in
+expectation.
 
 The reaction-product timestep speeds start from `400 m/s` for every directly
 injected parent. For each Table 4 channel, the maximum center-of-mass recoil

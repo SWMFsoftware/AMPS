@@ -46,6 +46,43 @@ their own established selection paths. Changing the switch does not select a
 physics model by itself; model parsing and callback registration are
 application responsibilities.
 
+## Local-timestep block-face flux resampling
+
+The opt-in `_PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_` makes the trace mover
+stop exactly at each AMR block face and complete the unused local-step fraction
+through exchange/continuation sweeps. It supports a species-dependent local
+timestep with either a supported spatially global particle weight or a
+species-dependent particle weight stored in each block. Individual particle
+weight correction, CUDA, field-line, and periodic configurations are rejected
+at compile time because those combinations do not implement this continuation
+contract.
+
+For a particle moving from block `old` to block `new`, one model particle
+carries physical flux `W/dt`. The destination multiplicity is drawn by
+residual resampling with mean
+
+```text
+mu = (W_old/dt_old)/(W_new/dt_new)
+   = W_old*dt_new/(W_new*dt_old).
+```
+
+The integer result is `floor(mu)` plus one with probability
+`mu-floor(mu)`. For `mu<1`, deletion therefore has probability `1-mu`; for
+`mu>1`, the original is retained and the remaining destination multiplicity is
+created by cloning. Position and velocity are unchanged, so number, mass,
+momentum, and kinetic-energy flux are conserved in expectation. The unused
+trajectory interval is separately scaled by `dt_new/dt_old`, preserving its
+dimensionless fraction of a local step; particle weight does not enter that
+kinematic scaling.
+
+Block-local weights are not stored in each particle record. They travel with
+the AMR block and are read from the source and destination blocks at the face;
+normal block migration already serializes the block-associated data. The
+optional per-particle continuation fraction is part of the dynamically sized
+particle record and is therefore copied by cloning, MPI exchange, and restart
+packing. Applications must initialize valid positive finite weights and
+timesteps on every allocated block copy before moving particles.
+
 ## 1. Interpolation representations
 
 AMPS now provides two complementary representations of a cell-centered interpolation stencil.
