@@ -5,7 +5,13 @@
  *      Author: vtenishe
  */
 /*
- * $Log$
+ * $Log: Mars.cpp,v $
+ * Revision 1.12  2016/09/11 20:39:17  yunilee
+ * This version is for hot O corona simulation (especially for autumnal equinox solar minimum).
+ * If ionization is OFF, it corresponds to the results in hot O paper (doi:10.1002/2015JE004890).
+ * The simulation done for hot O paper uses 3396km for the planet's radius.
+ * When using the M-GITM in the MAVEN SDC site, use 3388.25km.
+ *
  * Revision 1.10  2016/03/24 21:16:56  yunilee
  * All the functions and parameters that have required manual chnages for different model species are now merged for a target-species switch in input file.
  * Mars codes (Mars.cpp Mars.h main.cpp) are now specie-dependent.
@@ -65,12 +71,21 @@ double *newMars::IonizationRate=NULL;
 cSphericalVolumeMesh newMars::SphericalSamplingMesh;
 
 //cDataSetMTGCM newMars::Te,newMars::Ti,newMars::Tn,newMars::O,newMars::CO2,newMars::O2p,newMars::Un,newMars::Vn,newMars::Wn,newMars::COp,newMars::CO,newMars::E,newMars::TnEQU,newMars::OEQU,newMars::CO2EQU;
-cDataSetMGITM newMars::Te,newMars::Ti,newMars::Tn,newMars::O,newMars::CO2,newMars::CO,newMars::N2,newMars::O2p,newMars::Un,newMars::Vn,newMars::Wn,newMars::E;
+cDataSetMGITM newMars::Te,newMars::Ti,newMars::Tn,newMars::O,newMars::CO2,newMars::CO,newMars::N2,newMars::O2p,newMars::E,newMars::Un,newMars::Vn,newMars::Wn;
 
 //read the forward collision cross section data
 //cDiffCrossSection newMars::ForwardCollisionCrossSection;
 
 cDiffCrossSection ForwardCollisionCrossSection;
+cDiffCrossSection_OCO2 ForwardCollisionCrossSection_OCO2;
+// cDiffCrossSection_CCO2 ForwardCollisionCrossSection_CCO2;
+
+float newMars::HotOxygen::KineticEnergy1=0.0f;
+float newMars::HotOxygen::KineticEnergy2=0.0f;
+float newMars::HotOxygen::KineticEnergy3=0.0f;
+float newMars::HotOxygen::KineticEnergy4=0.0f;
+float newMars::HotOxygen::KineticEnergy=0.0f;
+
 //output sampled data to the spherical sampling mesh
 int newMars::PrintVariableListSphericalVolumeMesh(FILE* fout) {
     fprintf(fout,"\"Theoretical O Production Rate\", \"O2p density\", \"Te\", \"Local Hot O Density\", \"Numerical Source Rate\"");
@@ -187,7 +202,7 @@ int newMars::RequestStaticCellData(int offset) {
   }
 
   void newMars::PrintVariableList(FILE* fout,int DataSetNumber) {
-    fprintf(fout,", \"Maximum cell Theoretical Oxigen Production Rate\", \"Minimum cell Theoretical Oxigen Production Rate\", \"O Theoretical Production Rate\", \"O Mean Cell Numerical Production Rate\", \"Electron Temperature\", \"Electron Density\", \"O2PLUS Density\"");
+    fprintf(fout,", \"Maximum cell Theoretical Oxigen Production Rate\", \"Minimum cell Theoretical Oxigen Production Rate\", \"O Theoretical Production Rate\", \"O Mean Cell Numerical Production Rate\", \"Electron Temeprature\", \"Electron Density\", \"O2PLUS Density\"");
 
     for (int bspec=0;bspec<PIC::MolecularCollisions::BackgroundAtmosphere::GetTotalNumberBackgroundSpecies();bspec++) {
       fprintf(fout,", \"Minimum Background Desnity s=%i\", \"Maximum Background Desnity s=%i\"",bspec,bspec);
@@ -286,11 +301,11 @@ void newMars::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,double 
   //stored the interpolated data in the associated data buffer
     if (_C_SPEC_>=0) {
         *(_C_SPEC_+(double*)(sampledLocalInjectionRateOffset+PIC::Mesh::completedCellSampleDataPointerOffset+CenterNode->GetAssociatedDataBufferPointer()))=InterpoaltedLocalOxigenProductionRate;
-        *(_C_SPEC_+(double*)(PIC::Mesh::cDataCenterNode::LocalParticleVolumeInjectionRateOffset+CenterNode->GetAssociatedDataBufferPointer()))=TheoreticalOxigenInjectionRate;
+        *(_C_SPEC_+(double*)(PIC::Mesh::cDataCenterNode_static_data::LocalParticleVolumeInjectionRateOffset+CenterNode->GetAssociatedDataBufferPointer()))=TheoreticalOxigenInjectionRate;
     }
     if (_O_SPEC_>=0) {
         *(_O_SPEC_+(double*)(sampledLocalInjectionRateOffset+PIC::Mesh::completedCellSampleDataPointerOffset+CenterNode->GetAssociatedDataBufferPointer()))=InterpoaltedLocalOxigenProductionRate;
-        *(_O_SPEC_+(double*)(PIC::Mesh::cDataCenterNode::LocalParticleVolumeInjectionRateOffset+CenterNode->GetAssociatedDataBufferPointer()))=TheoreticalOxigenInjectionRate;
+        *(_O_SPEC_+(double*)(PIC::Mesh::cDataCenterNode_static_data::LocalParticleVolumeInjectionRateOffset+CenterNode->GetAssociatedDataBufferPointer()))=TheoreticalOxigenInjectionRate;
     }
 
   *((double*)(maxLocalCellOxigenProductionRateOffset+CenterNode->GetAssociatedDataBufferPointer()))=maxTheoreticalLocalInjectionRate;
@@ -339,9 +354,11 @@ void newMars::SpeciesProductionRateCaluclation(int spec,bool &InjectionFlag,doub
   for (iLevel=1;iLevel<iLevelMax;iLevel*=2) {
 #if _MARS_BACKGROUND_ATMOSPHERE_MODEL_ == _MARS_BACKGROUND_ATMOSPHERE_MODEL__MTGCM_
     switch (spec) {
+#if _C_SPEC_ >= 0
     case _C_SPEC_:
       res=Quadrature::Gauss::Cube::GaussLegendre(DIM,iLevel,ProductionRateCaluclation_HotC,xmin,xmax);
       break;
+#endif
     case _O_SPEC_:
       res=Quadrature::Gauss::Cube::GaussLegendre(DIM,iLevel,ProductionRateCaluclation_HotO,xmin,xmax);
       break;
@@ -404,9 +421,11 @@ void newMars::SpeciesProductionRateCaluclation(int spec,bool &InjectionFlag,doub
 
 #if _MARS_BACKGROUND_ATMOSPHERE_MODEL_ == _MARS_BACKGROUND_ATMOSPHERE_MODEL__MTGCM_
         switch (spec) {
+#if _C_SPEC_ >= 0
         case _C_SPEC_:
 	 c=ProductionRateCaluclation_HotC(x);
           break;
+#endif
         case _O_SPEC_:
 	 c=ProductionRateCaluclation_HotO(x);
           break;
@@ -574,12 +593,7 @@ ModelParticleInjectionRate=0.1/LocalTimeStep;
     else if (BrRatio<.64) {speed=sqrt(KineticEnergy3/massO);}
     else if (BrRatio<.95) {speed=sqrt(KineticEnergy2/massO);}
     else                  {speed=sqrt(KineticEnergy1/massO);}
-/*
-    //Determine the energy for new hot C, Branch Ration for 3 channels from dissociative recombination Rosen et al. ['98]
-    if      (BrRatio<.761) {speed=sqrt((KineticEnergy1)/((massC*massO+massC*massC)/(2*massO)));}
-    else if (BrRatio<.906) {speed=sqrt((KineticEnergy2)/((massC*massO+massC*massC)/(2*massO)));}
-    else                   {speed=sqrt((KineticEnergy3)/((massC*massO+massC*massC)/(2*massO)));}
-*/
+
 //=======================  DEBUG =============
 //test the particle injection with particular energy
 //speed=sqrt(3.0*eV2J*2.0/massO);
@@ -596,7 +610,7 @@ ModelParticleInjectionRate=0.1/LocalTimeStep;
            betaO2=massO2/(2*k*Ti.Interpolate(x));
            BGMeanFlowVelocity(bulkVelocity,x);
 #elif _MARS_BACKGROUND_ATMOSPHERE_MODEL_ == _MARS_BACKGROUND_ATMOSPHERE_MODEL__FOX_
-    betaO2=massCO/(2*k*MARS_BACKGROUND_ATMOSPHERE_J_FOX_::GetNeutralTemperature(x));
+    betaO2=massCO/(2*k*MARS_BACKGROUND_ATMOSPHERE_J_FOX_::GetNeutralTemeprature(x));
 #endif
 
 
@@ -721,6 +735,7 @@ ModelParticleInjectionRate=0.1/LocalTimeStep;
 
     return nInjectedParticles;
   }
+#if _C_SPEC_ >= 0
 long int newMars::HotCarbon::HotCProduction(int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
     long int nInjectedParticles=0;
     
@@ -745,11 +760,6 @@ long int newMars::HotCarbon::HotCProduction(int iCellIndex,int jCellIndex,int kC
     //two O particles will be produce ar the same time
     ModelParticleInjectionRate=PIC::VolumeParticleInjection::GetCellInjectionRate(_C_SPEC_,cell)/LocalParticleWeight;
     LocalTimeStep=node->block->GetLocalTimeStep(_C_SPEC_);
-    
-    
-    
-    //      return 0;
-    
     
     
     //=======================  DEBUG =============
@@ -870,7 +880,7 @@ long int newMars::HotCarbon::HotCProduction(int iCellIndex,int jCellIndex,int kC
 #endif
         
 #elif _MARS_BACKGROUND_ATMOSPHERE_MODEL_ == _MARS_BACKGROUND_ATMOSPHERE_MODEL__FOX_
-        betaO2=massCO/(2*k*MARS_BACKGROUND_ATMOSPHERE_J_FOX_::GetNeutralTemperature(x));
+        betaO2=massCO/(2*k*MARS_BACKGROUND_ATMOSPHERE_J_FOX_::GetNeutralTemeprature(x));
 #endif
         
         
@@ -994,6 +1004,11 @@ long int newMars::HotCarbon::HotCProduction(int iCellIndex,int jCellIndex,int kC
     
     return nInjectedParticles;
 }
+#else
+long int newMars::HotCarbon::HotCProduction(int,int,int,PIC::Mesh::cDataCenterNode*,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*) {
+    return 0;
+}
+#endif
 
 
 /////////////////////////Ionization////////////////////////////////////////////////////////
@@ -1004,18 +1019,17 @@ double newMars::PhotoIonizationHotOFrequency(PIC::ParticleBuffer::byte *modelPar
     double frequency=0.0;
     //const double SemiMajorDistance=1.523679; //227,939,100 km = 1.523679 AU, from Wikipedia
     const double SemiMajorDistance=1.381497; //227,939,100 km = 1.523679 AU, from Wikipedia
-    //const double SemiMajorDistance=1.665861; //227,939,100 km = 1.523679 AU, from Wikipedia
     
     const double PhotoionizationTimeSolarMin=3.7E6*pow(SemiMajorDistance,2); // [s] at 1AU: 2.2E6 from Lammer 03 or 3.7E6 from Hodges 00.
     //[s-1] at Mars: 8.89E-8 from Schunk 00 or 10.7E-8 from Modolo 05 or 11.7E-8 from Hodges 00.
     const double PhotoionizationTimeSolarMax=1.7E6*pow(SemiMajorDistance,2); // [s] at 1AU: 1.7E6 from Hodges 00.
     //[s-1] at Mars: 2.73E-7 from Schunk 00 or 2.6E-7 from Hodges 00 or 31.25E-8 from Modolo 05.
     
-    //const double PhotoionizationTime=(PhotoionizationTimeSolarMin+PhotoionizationTimeSolarMax)/2;//solar moderate
+    const double PhotoionizationTime=(PhotoionizationTimeSolarMin+PhotoionizationTimeSolarMax)/2;//solar moderate
     //const double PhotoionizationTime=PhotoionizationTimeSolarMin;//solar min
-    const double PhotoionizationTime=PhotoionizationTimeSolarMax;//solar max
+    //const double PhotoionizationTime=PhotoionizationTimeSolarMax;//solar max
     
-    double IonopauseAltitude=400000.0; // Day-side ionopause altitude assumed constant and equal to 300 km from Zhang 93
+    double IonopauseAltitude=350000.0; // Day-side ionopause altitude assumed constant and equal to 300 km from Zhang 93
     
     PIC::ParticleBuffer::GetV(v,modelParticleData);
     PIC::ParticleBuffer::GetX(x,modelParticleData);
@@ -1027,7 +1041,7 @@ double AltI=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2])-_RADIUS_(_TARGET_);
   
     //determine the positon of the subsolar point (tilt angle = 25.19 deg)
     double Lat,Lon,xsun[3],xunit[3],x_proj;
-    Lat=-25.19*Pi/180; //Aphelion=25.19, Perihelion=-25.19, Equinox=0.0
+    Lat=-24.0*Pi/180; //Aphelion=25.19, Perihelion=-25.19, Equinox=0.0
     Lon=0.0*Pi/180;
     
     //unit vector for anti-subsolar point
@@ -1055,7 +1069,7 @@ double newMars::ChargeExchangeHotOFrequency(PIC::ParticleBuffer::byte *modelPart
     double x[3]={0.0,0.0,0.0},v[3]={0.0,0.0,0.0};
     double frequency=0.0;
     double CXcrossSection=8.0E-20; //[m2] from Stebbings 64.
-    double IonopauseAltitude=400000.0; // Day-side ionopause altitude assumed constant and equal to 300 km from Zhang 93
+    double IonopauseAltitude=350000.0; // Day-side ionopause altitude assumed constant and equal to 300 km from Zhang 93
     
     
     double SolarWindProtonDensityx1EUV=2.5E6; //[m-3] from Lammer 03 from Selsis 02 or Zhang 93.
@@ -1078,7 +1092,7 @@ double AltI=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2])-_RADIUS_(_TARGET_);
     
     //determine the positon of the subsolar point (tilt angle = 25.19 deg)
     double Lat,Lon,xsun[3],xunit[3],x_proj;
-    Lat=-25.19*Pi/180; //Aphelion=25.19, Perihelion=-25.19, Equinox=0.0
+    Lat=-24.0*Pi/180; //Aphelion=25.19, Perihelion=-25.19, Equinox=0.0
     Lon=0.0*Pi/180;
     
     //unit vector for anti-subsolar point
@@ -1105,7 +1119,7 @@ double AltI=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2])-_RADIUS_(_TARGET_);
 double newMars::ElectronImpactHotOFrequency(PIC::ParticleBuffer::byte *modelParticleData) {
     double x[3]={0.0,0.0,0.0},v[3]={0.0,0.0,0.0};
     double frequency=0.0;
-    double IonopauseAltitude=400000.0; // Day-side ionopause altitude assumed constant and equal to 300 km from Zhang 93
+    double IonopauseAltitude=350000.0; // Day-side ionopause altitude assumed constant and equal to 300 km from Zhang 93
     
     double SolarWindProtonDensityx1EUV=2.5E6; //[m-3] from Lammer 03 from Selsis 02 or Zhang 93.
     //    const double SolarWindProtonDensityx3EUV=8E6; //[m-3] from Lammer 03 from Selsis 02 or 6E6 from Zhang 93.
@@ -1138,7 +1152,7 @@ double AltI=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2])-_RADIUS_(_TARGET_);
 
     //determine the positon of the subsolar point (tilt angle = 25.19 deg)
     double Lat,Lon,xsun[3],xunit[3],x_proj;
-    Lat=-25.19*Pi/180; //Aphelion=25.19, Perihelion=-25.19, Equinox=0.0
+    Lat=-24.0*Pi/180; //Aphelion=25.19, Perihelion=-25.19, Equinox=0.0
     Lon=0.0*Pi/180;
     
     //unit vector for anti-subsolar point

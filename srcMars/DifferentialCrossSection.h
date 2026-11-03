@@ -1,5 +1,5 @@
 //=====================================================
-//$Id$
+//$Id: DifferentialCrossSection.h,v 1.1 2014/10/27 16:32:03 yunilee Exp $
 //=====================================================
 //the class definition for the differectial cross section model
 

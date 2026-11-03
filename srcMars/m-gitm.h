@@ -4,7 +4,7 @@
  *  Created on: May 10, 2013
  *      Author: vtenishe
  */
-//$Id$
+//$Id: m-gitm.h,v 1.1 2016/09/11 20:25:35 yunilee Exp $
 
 
 #ifndef _M_GITM_H_
@@ -13,21 +13,18 @@
 #include "MTGCM.h"
 
 //the order of data variables in the M-GITM output file
-#define _Tn_MGITM_    3
-#define _Ti_MGITM_    4
-#define _Te_MGITM_    5
-#define _nCO2_MGITM_  6
-#define _nO_MGITM_    7
-#define _nN2_MGITM_   8
-#define _nCO_MGITM_   9
-#define _nO2_MGITM_   10
+#define _Tn_MGITM_    4
+#define _Ti_MGITM_    5
+#define _Te_MGITM_    6
+#define _nCO2_MGITM_  7
+#define _nO_MGITM_    8
+#define _nN2_MGITM_   9
+#define _nCO_MGITM_   10
 #define _nO2P_MGITM_  11
-#define _nOP_MGITM_   12
-#define _nCO2P_MGITM_ 13
-#define _Ne_MGITM_    14
-#define _UN_MGITM_    15
-#define _VN_MGITM_    16
-#define _WN_MGITM_    17
+#define _Ne_MGITM_    12
+#define _UN_MGITM_    13
+#define _VN_MGITM_    14
+#define _WN_MGITM_    15
 
 class cDataSetMGITM : public cDataSetMTGCM {
 public:
@@ -41,7 +38,14 @@ public:
 	  CiFileOperations ifile;
 	  char *endptr,str[_MTGCM_READER_STRING_LENGTH_],str1[_MTGCM_READER_STRING_LENGTH_];
 
-	  sprintf(DataFileName,"%s",fname);
+		  if (fname==NULL) exit(__LINE__,__FILE__,"Error: the M-GITM data file name is null");
+
+		  const size_t DataFileNameLength=std::strlen(fname);
+		  if (DataFileNameLength>=sizeof(DataFileName)) {
+		    exit(__LINE__,__FILE__,"Error: the M-GITM data file name is too long");
+		  }
+
+		  std::memcpy(DataFileName,fname,DataFileNameLength+1);
 	  VariableID=nvar;
 
 	  //check initialization of the basic parameters:
@@ -98,7 +102,7 @@ public:
 		  if (t>latMax) latMax=t;
 		  if ((latMin<-10.0)||(latMin>t)) latMin=t;
 
-		 // ifile.CutInputStr(str1,str);
+		  ifile.CutInputStr(str1,str);
 		  ifile.CutInputStr(str1,str);
 		  t=strtod(str1,&endptr)*1.0E3;
 		  if (t>maxAltitude) maxAltitude=t;

@@ -1,5 +1,5 @@
 //====================================================
-//$Id$
+//$Id: BackgroundAtmosphere.cpp,v 1.9 2016/09/11 20:39:17 yunilee Exp $
 //====================================================
 //define specific functions for modeling collisions with the backgound atmosphere
 
@@ -12,19 +12,13 @@
 //collison cross section of the model particles with the background atmosphere
 double PIC::MolecularCollisions::BackgroundAtmosphere::GetCollisionCrossSectionBackgoundAtmosphereParticle(int spec,int BackgroundSpecieNumber,PIC::ParticleBuffer::byte *modelParticleData,PIC::ParticleBuffer::byte *BackgroundAtmosphereParticleData,double TranslationalEnergy,double cr2) {
 #if _BACKGROUND_ATMOSPHERE_COLLISION_CROSS_SECTION_ == _BACKGROUND_ATMOSPHERE_COLLISION_CROSS_SECTION__HARD_SPHERE_
-  /* const static double BackgroundSpecieDiameter[2]={1.95E-10,4.0E-10};
-
-  const static double RefDiameter_O=2.52E-10;
-
-  return Pi*pow(0.5*(RefDiameter_O+BackgroundSpecieDiameter[BackgroundSpecieNumber]),2);*/
-
   return 3.0E-19;
 #elif _BACKGROUND_ATMOSPHERE_COLLISION_CROSS_SECTION_ == _BACKGROUND_ATMOSPHERE_COLLISION_CROSS_SECTION__FORWARD_SCATTERING_
 
   //return ForwardCollisionCrossSection.GetTotalCrossSection(TranslationalEnergy);
     
     if (BackgroundSpecieNumber==0) {return ForwardCollisionCrossSection.GetTotalCrossSection(TranslationalEnergy);}
-	else if (BackgroundSpecieNumber==1) {return 2.0E-18;}
+    else if (BackgroundSpecieNumber==1) {return ForwardCollisionCrossSection_OCO2.GetTotalCrossSection(TranslationalEnergy);}
     else {return 1.8E-18;}
     
 #endif
@@ -36,10 +30,9 @@ double PIC::MolecularCollisions::BackgroundAtmosphere::GetSigmaCrMax(int spec,in
   return 10000.0*3.0E-19;
 
 #elif _BACKGROUND_ATMOSPHERE_COLLISION_CROSS_SECTION_ == _BACKGROUND_ATMOSPHERE_COLLISION_CROSS_SECTION__FORWARD_SCATTERING_
-    //return 10000.0*ForwardCollisionCrossSection.GetMaxTotalCrossSection();
     
     if (BackgroundSpecieNumber==0) {return 10000.0*ForwardCollisionCrossSection.GetMaxTotalCrossSection();}
-	else if (BackgroundSpecieNumber==1) {return 10000.0*2.0E-18;}
+    else if (BackgroundSpecieNumber==1) {return 10000.0*ForwardCollisionCrossSection_OCO2.GetMaxTotalCrossSection();}
     else {return 10000.0*1.8E-18;}
 
 #else
@@ -50,7 +43,11 @@ double PIC::MolecularCollisions::BackgroundAtmosphere::GetSigmaCrMax(int spec,in
 
 //distribute the direction of the relative velocity of particles after collision
 double PIC::MolecularCollisions::BackgroundAtmosphere::GetCollisionScatteringAngle(double* Vrel,double TranslationalEnergy,int spec,int BackgroundSpecieNumber) {
-  return ForwardCollisionCrossSection.GetRandomScatteringAngle(TranslationalEnergy);
+  //return ForwardCollisionCrossSection.GetRandomScatteringAngle(TranslationalEnergy);
+  if (BackgroundSpecieNumber==1) {return ForwardCollisionCrossSection_OCO2.GetRandomScatteringAngle(TranslationalEnergy);}
+    else {
+        return ForwardCollisionCrossSection.GetRandomScatteringAngle(TranslationalEnergy);
+    }
 }
 
 
@@ -63,7 +60,7 @@ void PIC::MolecularCollisions::BackgroundAtmosphere::GenerateBackgoundAtmosphere
   int idim;
   double *xmin,*xmax,*xMiddle,x[3],v[3],beta;
 
-  static const double GlobalNeutalTemperature=179.0;
+  static const double GlobalNeutalTemeprature=179.0;
 
   //generate positions of the background particle in the cell
   xmin=node->xmin;
@@ -77,7 +74,7 @@ void PIC::MolecularCollisions::BackgroundAtmosphere::GenerateBackgoundAtmosphere
   PIC::ParticleBuffer::SetX(x,BackgroundAtmosphereParticleData);
 
   //generate velocity vector for a particle representing the bacground atmosphere
-  beta=GetBackgroundMolecularMass(BackgroundSpecieNumber)/(2*Kbol*GlobalNeutalTemperature);
+  beta=GetBackgroundMolecularMass(BackgroundSpecieNumber)/(2*Kbol*GlobalNeutalTemeprature);
 
   for (idim=0;idim<3;idim++) v[idim]=cos(2*Pi*rnd())*sqrt(-log(rnd())/beta);
 
@@ -92,33 +89,30 @@ double PIC::MolecularCollisions::BackgroundAtmosphere::GetBackgroundLocalNumberD
     //static MTGSM file readers
     //static cDataSetMTGCM O,CO2,CO,N2;
     static cDataSetMGITM O,CO2,CO,N2;
-    char fname[_MAX_STRING_LENGTH_PIC_];
     static bool InitFlag=false;
     
     //init the readers
     if (InitFlag==false) {
         InitFlag=true;
+        const std::string fname=newMars::GetMGITMInputFilePath();
         
         O.PlanetRadius=_RADIUS_(_TARGET_);
         O.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_SCALE_HIGHT__FORCE_POSITIVE_;
-	sprintf(fname,"%s/MTGCM_equinox_SL/MGITM_PERMAX-SDC.dat",PIC::UserModelInputDataPath);
-	O.ReadDataFile(_nO_MGITM_,fname);
+	O.ReadDataFile(_nO_MGITM_,fname.c_str());
         
         CO2.PlanetRadius=_RADIUS_(_TARGET_);
         CO2.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_SCALE_HIGHT__FORCE_POSITIVE_;
-	sprintf(fname,"%s/MTGCM_equinox_SL/MGITM_PERMAX-SDC.dat",PIC::UserModelInputDataPath);
-	CO2.ReadDataFile(_nCO2_MGITM_,fname);
+	CO2.ReadDataFile(_nCO2_MGITM_,fname.c_str());
         
         CO.PlanetRadius=_RADIUS_(_TARGET_);
         CO.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_SCALE_HIGHT__FORCE_POSITIVE_;
-	sprintf(fname,"%s/MTGCM_equinox_SL/MGITM_PERMAX-SDC.dat",PIC::UserModelInputDataPath);
-	CO.ReadDataFile(_nCO_MGITM_,fname);
+	CO.ReadDataFile(_nCO_MGITM_,fname.c_str());
         
         N2.PlanetRadius=_RADIUS_(_TARGET_);
         N2.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_SCALE_HIGHT__FORCE_POSITIVE_;
-	sprintf(fname,"%s/MTGCM_equinox_SL/MGITM_PERMAX-SDC.dat",PIC::UserModelInputDataPath);
-	N2.ReadDataFile(_nN2_MGITM_,fname);
-    }
+	N2.ReadDataFile(_nN2_MGITM_,fname.c_str());
+    
+	}
     
 #if _MARS_BACKGROUND_ATMOSPHERE_MODEL_ == _MARS_BACKGROUND_ATMOSPHERE_MODEL__MTGCM_
     switch (BackgroundSpecieNumber) {
@@ -252,17 +246,16 @@ bool  PIC::MolecularCollisions::BackgroundAtmosphere::KeepConditionModelParticle
 
     //static MTGCM/MGITM file readers
     static cDataSetMGITM Tn;
-    char fname[_MAX_STRING_LENGTH_PIC_];
     static bool InitFlag=false;
     
     //init the readers
     if (InitFlag==false) {
         InitFlag=true;
+        const std::string fname=newMars::GetMGITMInputFilePath();
         
         Tn.PlanetRadius=_RADIUS_(_TARGET_);
         Tn.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_CONSTANT_;
-	sprintf(fname,"%s/MTGCM_equinox_SL/MGITM_PERMAX-SDC.dat",PIC::UserModelInputDataPath);
-	Tn.ReadDataFile(_Tn_MGITM_,fname);
+	Tn.ReadDataFile(_Tn_MGITM_,fname.c_str());
     }
 
   //only oxigen atoms can be keeped in the system
@@ -279,11 +272,11 @@ bool  PIC::MolecularCollisions::BackgroundAtmosphere::KeepConditionModelParticle
 
 
 #if _MARS_BACKGROUND_ATMOSPHERE_MODEL_ == _MARS_BACKGROUND_ATMOSPHERE_MODEL__MTGCM_
-  const static double GlobalNeutalTemperature=179.0;
+  const static double GlobalNeutalTemeprature=179.0;
 
-  temp=(Tn.DataValueDefined(x)==true) ? Tn.Interpolate(x) : GlobalNeutalTemperature;
+  temp=(Tn.DataValueDefined(x)==true) ? Tn.Interpolate(x) : GlobalNeutalTemeprature;
 #elif _MARS_BACKGROUND_ATMOSPHERE_MODEL_ == _MARS_BACKGROUND_ATMOSPHERE_MODEL__FOX_
-  temp=MARS_BACKGROUND_ATMOSPHERE_J_FOX_::GetNeutralTemperature(x);
+  temp=MARS_BACKGROUND_ATMOSPHERE_J_FOX_::GetNeutralTemeprature(x);
 #else
         exit(__LINE__,__FILE__,"Error: the option is not defined");
 #endif

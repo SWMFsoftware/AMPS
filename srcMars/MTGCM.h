@@ -1,5 +1,5 @@
 //==========================================================================
-//$Id$
+//$Id: MTGCM.h,v 1.2 2016/09/11 20:39:17 yunilee Exp $
 //==========================================================================
 //the class provides reading and interpolation of data produced by MTGCM model
 
@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <vector>
 #include <string>
+#include <cstring>
 #include <list>
 #include <math.h>
 #include <fcntl.h>
@@ -84,7 +85,14 @@ public:
     double h,hLast=0.0,c,lonLast=0.0,latLast=0.0;
     int nx,ny,i,j,offset;
 
-    sprintf(DataFileName,"%s",fname);
+    if (fname==NULL) exit(__LINE__,__FILE__,"Error: the MTGCM data file name is null");
+
+    const size_t DataFileNameLength=std::strlen(fname);
+    if (DataFileNameLength>=sizeof(DataFileName)) {
+      exit(__LINE__,__FILE__,"Error: the MTGCM data file name is too long");
+    }
+
+    std::memcpy(DataFileName,fname,DataFileNameLength+1);
 
     //check initialization of the basic parameters:
     if (PlanetRadius<0.0) exit(__LINE__,__FILE__,"Error: the planet radiaus is not initialized");

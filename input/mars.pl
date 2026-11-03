@@ -1,14 +1,12 @@
 #!/usr/bin/perl
-#$Id$
+#$Id: mars.pl,v 1.4 2016/03/25 17:47:29 vtenishe Exp $
 #reads the "Exosphere" section of the input file and modify the exosphere model of the PIC code
 
 use strict;
 use warnings;
 use POSIX qw(strftime);
 use List::Util qw(first);
-use Cwd qw(cwd);
 
-use lib cwd;
 use ampsConfigLib;
 
 
@@ -87,7 +85,24 @@ while ($line=<InputFile>) {
   $InputLine=~s/ //g;
   
   if ($InputLine eq "CASE") {
-    print "Section CASE is obsolite and not used. The case dependent model files are selected with Congig.pl -model-data-path=[path to the model dependent data files]\n";
+    my ($s0,$s1);
+    
+    ($InputLine,$InputComment)=split('!',$line,2);
+    chomp($InputLine);
+    $InputLine=~s/[=()]/ /g;
+    ($s0,$s1,$InputLine)=split(' ',$InputLine,3);
+    
+    $s1=~s/ //g;
+    $DataCaseFiles=$DataDirectory.$s1."/*.h";
+
+    `mkdir -p $InputDirectory`;
+
+    if ( -d $DataDirectory.$s1 ) {
+	    `cp $DataCaseFiles $InputDirectory`;
+    }
+    else {
+	     die "The case selected entitled $InputLine does not exist, line=$InputFileLineNumber ($InputFileName)\n";
+    }
   }
   elsif ($InputLine eq "#ENDBLOCK") {
       last;
