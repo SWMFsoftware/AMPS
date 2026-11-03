@@ -157,6 +157,66 @@ configuration warnings. The OpenMPI socket diagnostic remains environment-only.
 | 2026-11-03 | Remove `build/`; `make -j` after supported mode definitions | Passed configuration, compilation, and final link with exit 0. Former `-Wformat-overflow` and obsolete-configuration warnings were absent; PIC user definitions remained enabled and mesh user definitions remained on. The OpenMPI environment diagnostic remained. |
 | 2026-11-03 | `file amps` and `stat` after warning fix | Verified executable 64-bit x86-64 ELF, 2,258,968 bytes. |
 
+## Active Sources Versus `newestsources`
+
+Comparison completed on 2026-11-03. `srcMars/newestsources/` is not the newest
+tree despite its name. Of 15 common top-level source files, 8 are byte-identical
+and 7 differ. The identical files are `DifferentialCrossSection.h`,
+`EnergyGridFox.h`, `ForwardScatteringCrossSection.h`,
+`Kharchenko-2000-fig-3.h`, `MarsBackgroundAtmosphereFox.cpp`,
+`MarsBackgroundAtmosphereFox.h`, `main_lib.cpp`, and `makefile`.
+
+Evidence and conclusions:
+
+- Embedded revision identifiers place most of `newestsources` between 2011 and
+  March 2016. Active `BackgroundAtmosphere.cpp`, `Mars.cpp`, `Mars.dfn`, `Mars.h`,
+  and `main.cpp` identify September 2016 revisions. The active tree also contains
+  O-CO2 differential-cross-section data labelled 2019 and 2021, plus the local
+  2026 compatibility and safety fixes.
+- `newestsources` uses the pre-pointer AMPS mesh API (`PIC::Mesh::mesh.member`),
+  so it is not source-compatible with the current AMPS core without the same
+  pointer/API migration already applied to the active tree.
+- The two trees target different M-GITM schemas. `newestsources` reads
+  `MGITM_AEQUMIN-SDC.dat` with columns 3-17, including O2, O+, and CO2+ slots.
+  The active tree reads `MGITM_PERMAX2.dat` with columns 4-15 and a different
+  altitude-token parse. These files must not be mixed without checking the data
+  header and column definitions.
+- The active tree has more collision physics for the present hot-O case: it adds
+  an energy-dependent O-CO2 angular cross section and uses it for total cross
+  section, maximum collision frequency, and scattering-angle sampling. The
+  snapshot uses a constant `2.0e-18` O-CO2 cross section and applies the O
+  scattering-angle model to non-O collisions.
+- `newestsources` retains more source physics in two other areas. Its active hot-O
+  production calculation extrapolates electron density above approximately
+  235 km and constrains it relative to O2+. It also retains an active hot-carbon
+  production model for COp dissociative recombination and CO photodissociation.
+  The active tree uses direct M-GITM electron density in the production rate and
+  comments out the old hot-carbon production-rate function; a carbon-enabled
+  build would need repair.
+- The active `OxigenTGCM()` independently calculates a related high-altitude
+  electron extrapolation for an unconditional startup diagnostic and writes an
+  approximately 834,624-row `interpolation.dat`, but that corrected density is
+  not used by `ProductionRateCaluclation_HotO()`.
+- Loss-model settings are scenario-specific rather than simply better or worse.
+  The snapshot selects solar-minimum photoionization, a 300 km ionopause, and
+  zero subsolar latitude. The active tree selects moderate photoionization, a
+  350 km ionopause, and -24 degree subsolar latitude.
+- The active O-CO2 implementation contains extensive unconditional diagnostic
+  output and integration/interpolation code that has compiled but has not been
+  exercised or scientifically validated in this workspace. Newer data alone is
+  not evidence of a better physical result.
+- No `MGITM_PERMAX2.dat` or `MGITM_AEQUMIN-SDC.dat` is present under the local
+  `InputData/` tree, and the generated model-data path currently points outside
+  this workspace. Therefore a controlled runtime comparison was not possible.
+
+Recommendation: retain active `srcMars/` as the engineering baseline for the
+hot-oxygen application because it is newer, compiles with current AMPS, has safer
+I/O, and includes the newer O-CO2 collision data. Do not replace it wholesale
+with `newestsources`. Treat the snapshot as a source of two candidate features
+to review and port selectively: the high-altitude electron-density treatment and
+the hot-carbon source model. Either port requires a defined M-GITM schema and
+numerical/physical regression tests.
+
 ## Open Questions
 
 - What concrete physical model, input data, defect, or simulation case should be
@@ -187,4 +247,8 @@ configuration warnings. The OpenMPI socket diagnostic remains environment-only.
   generated PIC and mesh user-definition modes through supported definitions.
 - Completed the required clean parallel build after the final fix; only the
   restricted-environment OpenMPI socket diagnostic remains.
+- Compared all active Mars sources with `srcMars/newestsources/`; documented
+  provenance, API and M-GITM schema differences, split physics capabilities,
+  runtime-validation blockers, and the recommendation to retain the active tree
+  while selectively reviewing the snapshot's high-altitude and hot-carbon code.
 
