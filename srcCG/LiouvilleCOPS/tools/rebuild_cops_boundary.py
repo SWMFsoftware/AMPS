@@ -23,6 +23,7 @@ import subprocess
 import sys
 
 from cops_paths import output_path, product_input
+from cops_machine import machine_names, missing_message, resolve_text
 from cops_io import file_identity, load_manifest, RUN_SCHEMA
 
 
@@ -84,6 +85,8 @@ def prepare_input(text, boundary, out, threads, shape_model=None,
     ensures that the generated input—not mutable shell state—records the exact
     geometry used to build every table and transport kernel.
     """
+    # "@ <machine>" lines (tools/cops_machine.py): the generated input keeps only this machine's lines
+    text, machine = resolve_text(text)
     values = parse_input(text)
     required = {"Mode": "observations", "FlightTimeRotation": "none",
                 "TemperatureModel": "analytical"}
@@ -97,7 +100,7 @@ def prepare_input(text, boundary, out, threads, shape_model=None,
         # A command-line mesh is a complete replacement for a missing source
         # ShapeModel.  Observation and kernel roots have no CLI replacement.
         if key not in values and not (key == "ShapeModel" and shape_model is not None):
-            raise ValueError("Missing required input key: " + key)
+            raise ValueError(missing_message(key, machine) or "Missing required input key: " + key)
     if not values.get("Kernel"):
         raise ValueError("No Kernel entries in input")
     first = integer(values, "FirstPoint", 0, 0)
@@ -148,6 +151,10 @@ def prepare_input(text, boundary, out, threads, shape_model=None,
 def preflight(values, executable):
     if not executable.is_file() or not os.access(executable, os.X_OK):
         raise ValueError("Executable missing/not executable; compile first with make: " + str(executable))
+    kernel_dir = last(values, "KernelDirectory")
+    if not kernel_dir or not Path(kernel_dir).is_dir():
+        raise ValueError("KernelDirectory does not exist or is not a directory: %s (machine %s; a path per machine: "
+                         "'KernelDirectory = <path> @ <machine>')" % (kernel_dir, ", ".join(machine_names())))
     files = [last(values, "ShapeModel"), last(values, "ObservationFile")]
     files.extend(values["Kernel"])
     if last(values, "TemperatureRGMode", "constant") == "hk_table":

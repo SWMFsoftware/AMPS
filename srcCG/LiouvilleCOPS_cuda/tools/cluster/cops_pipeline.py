@@ -274,10 +274,28 @@ def kernel_records(base):
     return total
 
 
-def parse_input(path):
-    """Key = Value lines with # comments; repeated keys keep every value (rebuild_cops_boundary rules)."""
+def machine_module(reference):
+    """``<reference>/tools/cops_machine.py`` (the "@ <machine>" lines of the input), or None in an older tree."""
+    path = Path(reference) / "tools" / "cops_machine.py"
+    if not path.is_file():
+        return None
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("cops_machine", str(path))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def parse_input(path, reference=None):
+    """Key = Value lines with # comments; repeated keys keep every value (rebuild_cops_boundary rules).
+
+    With ``reference``, the "@ <machine>" lines are resolved for this machine as the reference tools do."""
     values = {}
-    for line in Path(path).read_text().splitlines():
+    text = Path(path).read_text()
+    machine = machine_module(reference) if reference is not None else None
+    if machine is not None:
+        text, _ = machine.resolve_text(text)
+    for line in text.splitlines():
         active = line.split("#", 1)[0].strip()
         if active and "=" in active:
             key, value = (s.strip() for s in active.split("=", 1))
@@ -291,7 +309,7 @@ def input_files_missing(fit_input, reference):
     Relative paths resolve as ``rebuild_cops_boundary.py`` resolves them: from the reference tree, and
     ``Kernel`` entries from ``KernelDirectory``. ``ShapeModel`` is replaced by ``--shape``.
     """
-    values = parse_input(fit_input)
+    values = parse_input(fit_input, reference)
 
     def rooted(value, base):
         p = Path(value)

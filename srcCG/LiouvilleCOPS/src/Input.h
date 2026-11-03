@@ -2,6 +2,12 @@
 //  - '#' starts a comment
 //  - a key can be repeated (e.g. Kernel); all values are kept in the order of appearance
 //  - keys are case sensitive
+//  - a line may end with "@ <machine> [<machine> ...]" (commas and/or blanks; shell patterns; case-insensitive):
+//    it applies only on a machine with one of these names (host name and $SLURM_CLUSTER_NAME; $COPS_MACHINE,
+//    when set, replaces them).
+//    A key with at least one line for this machine takes its value(s) only from those lines (in file order);
+//    otherwise from its lines without '@'. Lines for other machines are ignored (tools/cops_machine.py: the
+//    same rule for the Python tools).
 #ifndef INPUT_H
 #define INPUT_H
 
@@ -31,6 +37,9 @@ public:
 
   const std::vector<std::string>& GetAll(const std::string& key) const;
 
+  //names this process answers to in the "@ <machine>" lines
+  static std::vector<std::string> MachineNames();
+
   //list of keys that were never requested (used to catch typos in the input file)
   std::vector<std::string> UnusedKeys() const;
 
@@ -42,6 +51,7 @@ public:
 
 private:
   std::map<std::string,std::vector<std::string> > Table;
+  std::map<std::string,std::string> OtherMachines;   //keys given only for other machines: their machine patterns
   mutable std::map<std::string,bool> Used;
   mutable std::map<std::string,std::vector<std::string> > Effective;
 };

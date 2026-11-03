@@ -4,6 +4,9 @@
 #include <iomanip>
 #include <sstream>
 #include <algorithm>
+#include <cctype>
+#include <fnmatch.h>
+#include <unistd.h>
 
 #include "Input.h"
 
@@ -15,10 +18,48 @@ static std::string Trim(const std::string& s) {
   return s.substr(b,e-b+1);
 }
 
+static std::string Lower(std::string s) {
+  std::transform(s.begin(),s.end(),s.begin(),[](unsigned char c) {return (char)std::tolower(c);});
+  return s;
+}
+
+std::vector<std::string> cInput::MachineNames() {
+  std::vector<std::string> res;
+  auto add=[&res](std::string n) {
+    n=Lower(Trim(n));
+    if (!n.empty() && std::find(res.begin(),res.end(),n)==res.end()) res.push_back(n);
+  };
+  char host[256]={0};
+
+  //$COPS_MACHINE replaces the detected names (to choose a machine's lines explicitly)
+  if ((getenv("COPS_MACHINE")!=NULL)&&(Trim(getenv("COPS_MACHINE"))!="")) {
+    add(getenv("COPS_MACHINE"));
+    return res;
+  }
+
+  if (gethostname(host,sizeof(host)-1)==0) {
+    std::string h(host);
+    add(h.substr(0,h.find('.')));
+    add(h);
+  }
+
+  if (getenv("SLURM_CLUSTER_NAME")!=NULL) add(getenv("SLURM_CLUSTER_NAME"));
+  return res;
+}
+
+static std::string JoinNames(const std::vector<std::string>& v) {
+  std::string res;
+  for (auto& s : v) res+=(res.empty() ? "" : ", ")+s;
+  return res;
+}
+
 void cInput::Read(const char* fname) {
   std::ifstream fin(fname);
   std::string line;
   int nline=0;
+  const std::vector<std::string> names=MachineNames();
+  std::map<std::string,std::vector<std::string> > generic,specific;
+  std::map<std::string,std::string> patterns;   //machine patterns of the qualified lines, per key
 
   if (!fin) {
     fprintf(stderr,"Error: cannot open the input file '%s'\n",fname);
@@ -42,7 +83,45 @@ void cInput::Read(const char* fname) {
     std::string key=Trim(line.substr(0,eq));
     std::string value=Trim(line.substr(eq+1));
 
-    Table[key].push_back(value);
+    //machine qualifier: the last '@' of the line, after a blank
+    size_t at=value.rfind('@');
+
+    if ((at!=std::string::npos)&&(at>0)&&isspace((unsigned char)value[at-1])) {
+      std::string list=value.substr(at+1);
+      value=Trim(value.substr(0,at));
+      for (auto& ch : list) if (ch==',') ch=' ';
+
+      std::istringstream ss(list);
+      std::string p;
+      bool any=false,match=false;
+
+      while (ss >> p) {
+        any=true;
+        patterns[key]+=(patterns[key].empty() ? "" : ", ")+p;
+        for (auto& n : names) if (fnmatch(Lower(p).c_str(),n.c_str(),0)==0) match=true;
+      }
+
+      if (!any) {
+        fprintf(stderr,"Error: line %i of '%s' has '@' without a machine name: %s\n",nline,fname,line.c_str());
+        exit(EXIT_FAILURE);
+      }
+
+      if (match) specific[key].push_back(value);
+      continue;
+    }
+
+    generic[key].push_back(value);
+  }
+
+  Table=generic;
+  for (auto& s : specific) Table[s.first]=s.second;
+  for (auto& p : patterns) if ((specific.count(p.first)==0)&&(generic.count(p.first)==0)) OtherMachines[p.first]=p.second;
+
+  if (!patterns.empty()) {
+    std::string applied;
+    for (auto& s : specific) applied+=(applied.empty() ? "" : ", ")+s.first;
+    printf("Input: machine %s; machine-specific values used for: %s\n",JoinNames(names).c_str(),
+        applied.empty() ? "(none)" : applied.c_str());
   }
 }
 
@@ -50,7 +129,14 @@ std::string cInput::GetString(const std::string& key) const {
   auto it=Table.find(key);
 
   if (it==Table.end()) {
-    fprintf(stderr,"Error: the required key '%s' is not found in the input file\n",key.c_str());
+    auto om=OtherMachines.find(key);
+
+    if (om!=OtherMachines.end()) {
+      fprintf(stderr,"Error: the required key '%s' is given only for the machines %s; this machine is %s "
+          "(set COPS_MACHINE to choose one)\n",key.c_str(),om->second.c_str(),JoinNames(MachineNames()).c_str());
+    }
+    else fprintf(stderr,"Error: the required key '%s' is not found in the input file\n",key.c_str());
+
     exit(EXIT_FAILURE);
   }
 

@@ -20,6 +20,10 @@
 //   at least once        : NG only at >=1 sample
 //   all the time, strict : NG only at every one of the N samples (hence seen by NG at every sample)
 //   all the time, loose  : NG only at every sample at which either gauge sees the element (seen at >=1 sample)
+//Running classification (samples.dat, after each sample k, over the samples 1..k): the number of elements NG only
+//(RG only) at every sample so far (= "all the time, strict" for an interval ending at sample k), and, for the elements
+//seen by NG at every sample so far, the largest ratio |H_RG|/H_NG so far: the number with that ratio <= epsilon,
+//10 epsilon, 100 epsilon, and its smallest value (how close the best element comes to "NG only all the time").
 //Samples: the observation times of the observation file inside the UTC and/or altitude interval (every stride-th);
 //samples with the gauge inside the nucleus are skipped and reported.
 #include <cstdio>
@@ -133,6 +137,7 @@ int main(int argc,char **argv) {
   const int s=Const::H2O;
   const double beta=sqrt(Const::SpeciesMass[s]/(2.0*Const::kBoltzmann*T));
   std::vector<uint32_t> nSeenNG(nFaces,0),nSeenRG(nFaces,0),nSeenAny(nFaces,0),nNGonly(nFaces,0),nRGonly(nFaces,0);
+  std::vector<float> maxRatio(nFaces,0.0f);   //largest |H_RG|/H_NG so far; +inf once NG did not see the element
 
   FILE *fs=fopen((OutDir+"/samples.dat").c_str(),"w");
   if (fs==NULL) {
@@ -141,7 +146,8 @@ int main(int argc,char **argv) {
   }
   fprintf(fs,"# per sample: facets seen by NG / RG / either, NG only, RG only, both above epsilon (mixed); areas [m^2]\n");
   fprintf(fs,"# epsilon=%.6g T=%.6g K (unit uniform H2O flux); RG temperature from the gauge model\n",eps,T);
-  fprintf(fs,"#iPoint UTC et altitude_m T_RG VdotB_RG nSeenNG nSeenRG nSeenAny nNGonly nRGonly nMixed areaNGonly areaRGonly areaMixed\n");
+  fprintf(fs,"#iPoint UTC et altitude_m T_RG VdotB_RG nSeenNG nSeenRG nSeenAny nNGonly nRGonly nMixed areaNGonly areaRGonly areaMixed"
+      " nNGonlySoFar nRGonlySoFar nNGseenSoFar_ratio_le_eps nNGseenSoFar_ratio_le_10eps nNGseenSoFar_ratio_le_100eps minMaxRatioSoFar areaNGonlySoFar\n");
 
   int nUsed=0;
   double t0=omp_get_wtime();
@@ -166,6 +172,7 @@ int main(int argc,char **argv) {
     long nNG=0,nRG=0,nAny=0,nN=0,nR=0,nM=0;
     double aN=0.0,aR=0.0,aM=0.0;
 
+    std::vector<uint8_t> seenNow(nFaces,0);
     for (auto& k : res.Kernels) {
       double hNG=fabs(cNG*k.Kn);
       double hRG=fabs(cRG*(k.KPhi+res.VdotB_RG*beta*Const::SqrtPi/2.0*k.KV));
@@ -173,6 +180,11 @@ int main(int argc,char **argv) {
       if (!seenNG&&!seenRG) continue;
 
       bool ngOnly=seenNG&&(hRG<=eps*hNG),rgOnly=seenRG&&(hNG<=eps*hRG);
+      if (seenNG) {
+        seenNow[k.Face]=1;
+        float ratio=(float)(hRG/hNG);
+        if (ratio>maxRatio[k.Face]) maxRatio[k.Face]=ratio;
+      }
       double area=mesh.Faces[k.Face].Area;
 
       nSeenAny[k.Face]++,nAny++;
@@ -184,8 +196,22 @@ int main(int argc,char **argv) {
     }
 
     nUsed++;
-    fprintf(fs,"%5i %s %.6f %.6e %.4f %.6e %ld %ld %ld %ld %ld %ld %.6e %.6e %.6e\n",ip,obs[ip].UTC.c_str(),g.et,res.Altitude,TRG,res.VdotB_RG,
-        nNG,nRG,nAny,nN,nR,nM,aN,aR,aM);
+    //running "since the first sample" classification
+    long nNs=0,nRs=0,r1=0,r10=0,r100=0;
+    double aNs=0.0;
+    float best=INFINITY;
+    for (int f=0;f<nFaces;f++) {
+      if (!seenNow[f]) maxRatio[f]=INFINITY;
+      if (nRGonly[f]==(uint32_t)nUsed) nRs++;
+      if (!std::isfinite(maxRatio[f])) continue;
+      if (nNGonly[f]==(uint32_t)nUsed) nNs++,aNs+=mesh.Faces[f].Area;
+      if (maxRatio[f]<=eps) r1++;
+      if (maxRatio[f]<=10*eps) r10++;
+      if (maxRatio[f]<=100*eps) r100++;
+      if (maxRatio[f]<best) best=maxRatio[f];
+    }
+    fprintf(fs,"%5i %s %.6f %.6e %.4f %.6e %ld %ld %ld %ld %ld %ld %.6e %.6e %.6e %ld %ld %ld %ld %ld %.4e %.6e\n",ip,obs[ip].UTC.c_str(),g.et,res.Altitude,TRG,res.VdotB_RG,
+        nNG,nRG,nAny,nN,nR,nM,aN,aR,aM,nNs,nRs,r1,r10,r100,(double)best,aNs);
     fflush(fs);
     printf("point %4i %s alt=%9.2f m seen NG %ld RG %ld; NG only %ld, RG only %ld, mixed %ld [%.1f s]\n",ip,obs[ip].UTC.c_str(),res.Altitude,
         nNG,nRG,nN,nR,nM,omp_get_wtime()-t1);

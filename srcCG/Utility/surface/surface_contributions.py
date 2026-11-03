@@ -99,9 +99,13 @@ def parse():
 
 
 def read_template(path):
-    """(key, value) pairs of a LiouvilleCOPS input, comments stripped, order kept."""
+    """(key, value) pairs of a LiouvilleCOPS input, comments stripped, order kept; "@ <machine>" lines resolved
+    for this machine (LiouvilleCOPS/tools/cops_machine.py)."""
+    sys.path.insert(0, str(LC / "tools"))
+    from cops_machine import resolve_text
+    sys.path.pop(0)
     pairs = []
-    for line in Path(path).read_text().splitlines():
+    for line in resolve_text(Path(path).read_text())[0].splitlines():
         line = line.split("#", 1)[0].strip()
         if "=" in line:
             k, v = (x.strip() for x in line.split("=", 1))

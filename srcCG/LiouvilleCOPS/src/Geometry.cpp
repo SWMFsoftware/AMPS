@@ -22,6 +22,15 @@ void cSpiceGeometry::Init(const cInput& input) {
   errprt_c("SET",0,(SpiceChar*)"NONE");
 
   std::string path=input.GetString("KernelDirectory");
+  struct stat dir;
+
+  if ((stat(path.c_str(),&dir)!=0)||!S_ISDIR(dir.st_mode)) {
+    std::string names;
+    for (auto& n : cInput::MachineNames()) names+=(names.empty() ? "" : ", ")+n;
+    fprintf(stderr,"Error: KernelDirectory '%s' %s (machine %s; a path per machine: 'KernelDirectory = <path> @ <machine>')\n",
+        path.c_str(),(stat(path.c_str(),&dir)!=0) ? "does not exist" : "is not a directory",names.c_str());
+    exit(EXIT_FAILURE);
+  }
 
   for (auto& k : input.GetAll("Kernel")) {
     std::string fname=(k.size()>0 && k[0]=='/') ? k : path+"/"+k;

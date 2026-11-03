@@ -528,6 +528,29 @@ complete standalone observation inputs.
 - A repeated scalar key uses its last value. Repeated `Kernel`, `ExcludeNG`,
   and `ExcludeRG` entries are meaningful lists. At most one `FitInterval`
   is supported.
+- Machine-specific lines (2026-11-03): a line ending with
+  `@ <machine> [<machine> ...]` (commas and/or blanks; shell patterns such as
+  `voyager*`; case-insensitive; the `@` follows a blank) applies only on a
+  machine with one of these names. The names are the host name and, inside a
+  Slurm job, `$SLURM_CLUSTER_NAME`; `COPS_MACHINE=<name>` replaces them. A key
+  with at least one line for this machine takes its value(s) only from those
+  lines, in file order (lists included); otherwise from its lines without `@`.
+  Lines for other machines are ignored; a required key given only for other
+  machines stops with an error naming them. `fit_base.in` sets
+  `ObservationFile` and `KernelDirectory` this way for passion and Voyager:
+
+  ```
+  KernelDirectory = /home/vtenishe/SPICE/Kernels/ROSETTA/esa_2022    @ passion
+  KernelDirectory = /home/vtenishev/SPICE/Kernels/ROSETTA/esa_2022   @ voyager*
+  ```
+
+  The same rule is applied by the C++ reader (`src/Input.cpp`) and the Python
+  tools (`tools/cops_machine.py`, used by `rebuild_cops_boundary.py`, the
+  cluster runner and `Utility/surface`). `rebuild_cops_boundary.py` writes the
+  resolved lines into the base's `input.snapshot.in` (the lines of other
+  machines become comments), so the tools that read a base see plain lines.
+- `KernelDirectory` must exist and be a directory: the SPICE loader stops
+  with an error otherwise (also when every `Kernel` entry is absolute).
 - Unknown or unused keys are rejected in observation mode. For example,
   when switching to `TemperatureRGMode = constant`, remove/comment
   `TemperatureRGTable` and `TemperatureRGTableColumn`.
