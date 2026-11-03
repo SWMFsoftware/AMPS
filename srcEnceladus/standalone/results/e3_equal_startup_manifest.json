@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "source_case": "tenishev2014_hybrid_8",
+  "distribution_name": "e3_h2o_equal_startup",
+  "mode": "absolute",
+  "species": {
+    "H2O": {
+      "jet:I_baghdad": 1.3739399671156061e27,
+      "jet:II_damascus": 1.3739399671156061e27,
+      "jet:III_damascus": 1.3739399671156061e27,
+      "jet:IV_alexandria": 1.3739399671156061e27,
+      "jet:V_cairo": 1.3739399671156061e27,
+      "jet:VI_baghdad": 1.3739399671156061e27,
+      "jet:VII_baghdad": 1.3739399671156061e27,
+      "jet:VIII_cairo": 1.3739399671156061e27,
+      "stripe:alexandria": 1.3739399671156061e27,
+      "stripe:baghdad": 1.3739399671156061e27,
+      "stripe:cairo": 1.3739399671156061e27,
+      "stripe:damascus": 1.3739399671156061e27,
+      "stripe:baghdad_extra": 1.3739399671156061e27,
+      "stripe:cairo_extra": 1.3739399671156061e27,
+      "stripe:damascus_extra": 1.3739399671156061e27
+    }
+  },
+  "fit_provenance": {
+    "flyby": "E3",
+    "species": "H2O",
+    "fit_strategy": "independent",
+    "fit_result": "standalone/results/e3_fit.json",
+    "fit_result_sha256": "66a45756cef19a5a0c5901f1111b093a21828ca490b488417ceb2cde38e9a076",
+    "fitted_total_source_rate_s-1": 2.060909950673409e28,
+    "temporary_distribution": "equal rate assigned to all 15 canonical components",
+    "warning": "The E3 inverse problem is ill-conditioned; these equal individual rates are a startup fixture and are not fitted component estimates."
+  }
+}

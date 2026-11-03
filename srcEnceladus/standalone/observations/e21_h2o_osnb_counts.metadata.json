@@ -1,0 +1,15 @@
+{
+  "comparison_role": "native-count context; no density conversion and no goodness-of-fit",
+  "event_id": "E21",
+  "excluded_count_rows_without_trajectory": 322,
+  "geometry": "linear interpolation of E21_trajectory columns 1:3 in IAU_ENCELADUS metres",
+  "mass_per_charge_u": 18,
+  "observable": "INMS open-source neutral-beaming counts per integration",
+  "required_for_quantitative_comparison": "accumulate the species phase-space distribution through the supplied velocity-, voltage-, and attitude-dependent SIMION response",
+  "rows": 704,
+  "source": "/data/vtenishe/cassini_validation_data/data/raw/external/swri_inms_modeling/extracted/E21H2Oosnb.mat",
+  "source_sha256": "b9195af090a08bce77655a50ced69d34c56b75c236908565efeeb2a1de7e5a89",
+  "species": "H2O",
+  "trajectory_source": "/data/vtenishe/cassini_validation_data/data/raw/external/swri_inms_modeling/extracted/E21_trajectoryB.mat",
+  "trajectory_source_sha256": "80b9b499ea6ccf6c83093245642501bfd4e58b71edd6d07513f9e10a2b7e341a"
+}

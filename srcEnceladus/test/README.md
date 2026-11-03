@@ -104,3 +104,61 @@ For the refined 10,000-step run, the runner additionally requires
 `cell_max_edge_m <= 20000` for every in-domain row in every Tecplot zone. This
 is a direct check of the allocated mesh at the observation locations; it does
 not infer resolution from the requested configuration.
+
+## Repeatable INMS and UVIS comparison run
+
+The checked-in runtime deck requests the currently usable INMS flybys and UVIS
+occultations through repeatable named `observation` blocks. E7 supplies a
+calibrated apparent-CO2 density comparison; E13 remains model-only; E21
+retains H2O/CO2 detector counts as display-only native context because no
+validated scalar density response exists. Additional UVIS events without
+qualified reductions/rays are deliberately not treated as comparison data.
+To add a new data set, add another block; to omit one from a run, comment its complete
+`#begin observation` through `#end observation` range. The parser contract,
+units, required columns, ray geometry, and fail-closed validation rules are
+documented in `../RUNTIME_INPUT.md`.
+
+Regenerate the repository-released E7/E21 tables and their checksummed
+provenance manifest from the validation archive with:
+
+```bash
+python3 standalone/export_forward_observations.py
+```
+
+Run the current E3 source distribution for ten 1,000-step sampling windows in
+a fresh output directory:
+
+```bash
+python3 test/run_e3_simulation.py \
+  --executable /home/vtenishe/Mars2/AMPS/amps \
+  --input /home/vtenishe/Mars2/AMPS/input/enceladus.in \
+  --output test_output/srcEnceladus/e3_10000_extended_observations \
+  --launcher direct --timeout-s 10800 \
+  --expected-iterations 10000 --expected-sample-length 1000 \
+  --expect-volume-fields off
+```
+
+Each configured request produces a ten-zone Tecplot file named
+`PT/plots/observation.<request>.dat`. Generate the final-window comparison
+PNGs and the machine-readable summary with:
+
+```bash
+python3 test/plot_observation_comparisons.py \
+  test_output/srcEnceladus/e3_10000_extended_observations/PT/plots/observation.*.dat \
+  --output-dir test_output/srcEnceladus/e3_10000_extended_observations/PT/plots/comparisons \
+  --summary test_output/srcEnceladus/e3_10000_extended_observations/PT/plots/comparisons/observation_comparison_summary.json \
+  --expected-zones 10
+```
+
+The plotter overlays observations only when the input block declares a
+response-qualified `comparison_species`. A request with
+`comparison_species=none` is either model-only or, when the three
+`context_*` keys are present, adds a third native-observable panel. Context is
+never scored against model density and is labelled explicitly in the plot and
+JSON receipt.
+UVIS panels compare the simulated line-of-sight H2O column with the optical-
+depth shape using one fitted nonnegative scale plus a signed baseline, and
+separately report the AMPS peak/published-column ratio. A plotter `PASS` means
+that all products have the requested zone count, stable row sequence, valid
+schema, and a generated PNG; it is not a claim of observational agreement or
+physical convergence.

@@ -2,7 +2,204 @@
 
 Last updated: 2026-11-01 (America/Chicago)
 
-## Current outcome
+## Current outcome — E7 density and E21 native-count observations
+
+The runtime observation mechanism now distinguishes three contracts without
+mixing units:
+
+- response-qualified local number density (`comparison_species=H2O|CO2`);
+- model-only geometry (`comparison_species=none`); and
+- native instrument context (`comparison_species=none` plus the three
+  `context_*` keys), which is displayed but never scored against density.
+
+`data_file=input:PATH` resolves a repository-released table relative to the
+runtime deck. Ordinary relative observation paths continue to resolve through
+`observation_data_root`, so future external products require only a new named
+`observation` block and no recompilation. Duplicate names, unknown keys,
+missing columns, a mixed density/context contract, invalid uncertainties, and
+nonfinite values fail before MPI. `RUNTIME_INPUT.md` contains the complete
+syntax and units.
+
+The checked-in `/home/vtenishe/Mars2/AMPS/input/enceladus.in` now requests 13
+products:
+
+- quantitative INMS H2O density for E3 and E5;
+- quantitative INMS apparent-CO2 density for E3, E5, E7, E14, E17, and E18;
+- model-only H2O/CO2 profiles on E13 geometry;
+- E21 H2O and CO2 open-source neutral-beaming counts as separate native-count
+  context products; and
+- the 2007 zeta-Orionis and 2010 E10 UVIS occultation products.
+
+### New observation releases and provenance
+
+`standalone/export_forward_observations.py` reproducibly exports the added
+tables from `/data/vtenishe/cassini_validation_data` and writes per-product
+metadata plus `release_manifest.json`.
+
+- E7: 43 mass-44 density rows from `Flybys2.mat`, matched count-for-count to
+  official PDS Level-1A geometry. The optimized time alignment is 0.321 s and
+  its maximum residual is 0.006 s. The point uncertainty propagates Poisson
+  counting error through the local density/count factor; a separate 15%
+  common calibration uncertainty is recorded but not folded into each point.
+  CSV SHA-256:
+  `1df70acf4549488aac187b0d783da01edd53c562be3181ec286b82cd0c461acb`.
+- E21 H2O: 704 native count rows with interpolated supplied trajectory
+  geometry. The 322 earlier count rows outside the supplied trajectory range
+  are excluded rather than extrapolated. CSV SHA-256:
+  `7b4507bf58b3015a23987815f68cc14b448cc4b57a3006f613ec97211ddbc292`.
+- E21 CO2: 481 native count rows, all within the supplied trajectory range.
+  CSV SHA-256:
+  `7a8e7867bef97a16df6a98f969875b0fdf854334ac718a36531741847f44f2a5`.
+
+The E21 values remain counts per integration with Poisson count uncertainty.
+A quantitative AMPS comparison needs the model phase-space distribution
+accumulated through the released velocity-, voltage-, and attitude-dependent
+SIMION response. No scalar count-to-density factor was invented.
+
+The exporter now forces LF-only records. The native validator caught the
+initial CRLF final-header token before any run; the regenerated release passes
+the strict C++ table reader on all three products.
+
+### Output control
+
+The new `volume_field_output=false` setting suppresses only the generic
+full-volume active-species AMR dumps. Completed density buffers, window resets,
+surface output, conservation ledgers, dense E3 flyby output, and all 13
+observation operators remain active. This avoids approximately 14 GiB of
+redundant H2O/CO2 field files across ten windows. A two-window native smoke run
+proved that the collecting buffer is flushed between observation-only outputs;
+memory also stayed constant at 2.889238 GiB throughout the long run.
+
+### Native 10,000-iteration run
+
+The current equal-per-source E3 distribution was transferred without
+refitting. Its 15 vertically projected sources sum to
+H2O=`2.060909950673409e28 s^-1` and apparent-CO2=`5.356e25 s^-1`.
+The one-rank neutral run used 100 injected macroparticles per species per
+iteration, the 26.260416666666668 s global timestep, H2O parent-loss-only
+photolysis, no daughter particles, no plasma, no splitting/merging, 10,000
+iterations, and ten 1,000-step sampling windows.
+
+```text
+cd /home/vtenishe/Mars2/AMPS/srcEnceladus
+python3 test/run_e3_simulation.py \
+  --executable ../amps \
+  --input ../input/enceladus.in \
+  --output test_output/srcEnceladus/e3_10000_extended_observations \
+  --launcher direct --timeout-s 10800 \
+  --expected-iterations 10000 --expected-sample-length 1000 \
+  --expect-volume-fields off
+```
+
+The process completed in **2,521.6 s** and passed all **13/13** native gates.
+Exactly 1,000,000 particles of each species were injected. Both ledgers close
+with zero residual:
+
+| Species | escaped | surface loss | photolytic loss | resident |
+| --- | ---: | ---: | ---: | ---: |
+| H2O | 990,189 | 3,234 | 368 | 6,209 |
+| CO2 | 986,230 | 6,531 | 0 | 7,239 |
+
+All 13 observation products contain ten zones. The dense E3 output contains
+3,201 rows/zone and 186 in-domain rows/zone. Every in-domain E3 sample uses an
+actual 15,756.25 m cell edge, below the requested 20 km maximum.
+
+The complete 938 MiB evidence directory is:
+
+```text
+/home/vtenishe/Mars2/AMPS/srcEnceladus/test_output/srcEnceladus/e3_10000_extended_observations
+```
+
+Important retained artifacts and hashes are:
+
+- `test_receipt.json`:
+  `bef3784396a587b24bea65fa4ab50470c95a2c78f166479d413627c5dea5c2e3`;
+- `enceladus.in`:
+  `c48fa7c5ecd6b5e9cb312098a5e0bca3446c1aeb7bd730cc01121c084a7c423f`;
+- `enceladus_e3_equal_h2o_co2_sources.in`:
+  `eb30bcbcf5852b60ebdd072faf740e5d4f776f01561a8b80865dded11c70986d`;
+- `forward_observation_release_manifest.json`:
+  `0a15046d633381823f2e7519f1484c9e597193e665bcf03fc77cae0ff6377357`;
+- `PT/plots/observation.<request>.dat` for each request;
+- `PT/plots/comparisons/observation.<request>.comparison.png` for each
+  request; and
+- `PT/plots/comparisons/observation_comparison_summary.json`:
+  `c7b1c21542f68dfbb34a8e4f1fd3b751474a4968ebfb3c466f859e4af2a43e32`.
+
+### Comparison results
+
+The plotter passed all **13/13** schema/zone/PNG gates. PASS means that a
+consistent product was generated; it is not a claim that the unrefitted E3
+source distribution agrees with every event. Final-window density metrics are:
+
+| INMS product | in-domain rows | median model/observed | chi-square/row |
+| --- | ---: | ---: | ---: |
+| E3 H2O | 16 | 1.177 | 300.54 |
+| E5 H2O | 13 | 0.499 | 89.97 |
+| E3 apparent CO2 | 44 | 3.141 | 284.15 |
+| E5 apparent CO2 | 44 | 0.390 | 226.83 |
+| E7 apparent CO2 | 43 | 2.505 | 617.98 |
+| E14 apparent CO2 | 371 | 1.665 | 721.00 |
+| E17 apparent CO2 | 377 | 1.516 | 809.76 |
+| E18 apparent CO2 | 366 | 1.266 | 588.71 |
+
+E13 has 88 in-domain model-only rows. E21 H2O contains 704 count samples, of
+which 530 lie in the current AMPS box; all 481 E21 CO2 count samples lie in the
+box. E21 reports `display_only_no_density_or_count_response` and no goodness
+of fit.
+
+| UVIS event | samples | shape chi-square/sample | AMPS peak H2O column (m^-2) | published column (m^-2) | ratio |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 2007 zeta Orionis | 97 | 9.213 | 3.366e20 | 1.400e20 | 2.404 |
+| 2010 E10 solar | 1,133 | 7.557 | 3.625e20 | 9.000e19 | 4.028 |
+
+The mismatch is real evidence that one equal-source E3 distribution is not an
+all-event fit. No observation was used to tune this rerun.
+
+### Build, smoke, and regression evidence
+
+The required native preflight was followed from
+`/home/vtenishe/Mars2/AMPS`: the working directory and inactive process state
+were checked, only `build/` was removed, `./Config.pl
+-application=enceladus` was used without editing `.amps.conf`, production
+hooks were regenerated with `./ampsConfig.pl -input enceladus.input
+-no-compile`, and the top-level `env MAKEFLAGS=-j16 make amps` build passed.
+
+The first hook-generation attempt exposed an existing packaging behavior:
+the configured application source copy recursively included the prior 18 GiB
+untracked `test_output` tree and filled the partial build. The process was
+stopped, only the failed `build/` was removed, `test_output` was moved to a
+sibling hold path during source-tree generation, and it was restored intact
+before compilation. The repeated clean workflow passed.
+
+- checked-in native input validation: **PASS**;
+- `python3 test/run_tests.py`: **PASS, 42/42**;
+- `python3 test/run_native_startup.py --executable ../amps`: **PASS, 6/6**;
+- Python syntax checks for exporter, runner, and plotter: **PASS**;
+- 200-step/two-window native smoke run: **PASS, 13/13**;
+- smoke comparison generation: **PASS, 13/13**;
+- native 10,000-step integration: **PASS, 13/13**;
+- ten-zone comparison generation: **PASS, 13/13**;
+- `git diff --check`: **PASS** after the final documentation audit.
+
+### Current scientific limitations
+
+- Only the E3 trajectory has a dedicated 20 km refinement tube. This run does
+  not establish mesh convergence for E5/E7/E13/E14/E17/E18/E21.
+- The finite box includes only 16/79 E3 and 13/79 E5 qualified H2O rows.
+- E21 has no quantitative model-count response yet; a detector convolution
+  must use phase space, voltage, attitude, and SIMION acceptance.
+- E13 has no qualified H2O/CO2 measurement and remains model-only.
+- UVIS columns include only the ray segment inside the finite AMPS domain.
+  The 2007 ray is reconstructed from the tangent track, and 308 outward 2010
+  branches lack a retained full Cassini vector.
+- Published inventories identify additional 2005, 2011, 2016, and 2017 UVIS
+  events, but the current local release lacks the qualified reduced spectra
+  and explicit ray tables needed to add them without inventing data.
+- The one-rank, 100-particle/species/step run has not passed particle-count,
+  source-rate, mesh, timestep, box-size, or multi-rank convergence studies.
+
+## Previous refined E3-only outcome
 
 The requested refined E3 run is complete: 10,000 iterations in ten 1,000-step
 sampling windows. All 13 run-level checks pass. A trajectory-following AMR

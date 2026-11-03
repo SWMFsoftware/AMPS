@@ -1,8 +1,12 @@
 ! Enceladus per-run input (schema 2: neutral parent-loss photolysis).
 !
-! This checked-in file is the 10,000-iteration E3 run requested on
-! 2026-11-01. The executable validates the complete receipt before MPI; use
-! --validate-input to perform that validation without starting a simulation.
+! This checked-in file is the 10,000-iteration E3-source-distribution run
+! requested on 2026-11-01, with every currently usable INMS density,
+! model-only, or native-count product and both fit-ready UVIS occultations.
+! Additional UVIS events require a qualified reduction and ray table before
+! they can be added. The
+! executable validates the complete receipt before MPI; use --validate-input
+! to perform that validation without starting a simulation.
 !
 ! input/enceladus.input is a build-generator deck only.  Do not put any of
 ! these per-run values there.
@@ -57,12 +61,16 @@ courant.H2O=0.5
 courant.CO2=0.5
 
 ! Ten complete 1,000-step sampling windows. At each normal AMPS output the
-! completed time-averaged H2O/CO2 density is interpolated at the frozen E3
-! Cassini locations. The CSV was computed with CSPICE in IAU_ENCELADUS; its
-! kernel hashes and exact event contract are retained in
-! standalone/config/e3_e5_spice_ground_tracks.json.
+! completed time-averaged H2O/CO2 density is evaluated for the legacy dense E3
+! profile below and for every requested observation block. The dense E3 CSV
+! was computed with CSPICE in IAU_ENCELADUS; its kernel hashes and exact event
+! contract are retained in standalone/config/e3_e5_spice_ground_tracks.json.
 sample_length_steps=1000
 total_iterations=10000
+! Observation-comparison runs retain completed AMPS density sampling but omit
+! the two 708 MB/species/window AMR dumps. Observation Tecplot files, surface
+! diagnostics, conservation receipts, and sampling-window resets remain on.
+volume_field_output=false
 flyby_density_output=true
 flyby_id=E3
 flyby_trajectory_file=../srcEnceladus/standalone/figure_data/e3_spice_ground_track.csv
@@ -79,6 +87,190 @@ flyby_refinement_time_min_s=-120
 flyby_refinement_time_max_s=100
 random_seed=184467
 particle_splitting_merging=off
+
+! Repeatable observation requests.  Add another named observation block to
+! add a future data set; comment every line from #begin through #end to omit
+! one from a particular run. Relative data_file paths are resolved below.
+observation_data_root=/data/vtenishe/cassini_validation_data/data/processed
+
+! Response-qualified local-density comparisons. E3/E5 mass 44 is explicitly
+! apparent CO2 because impact fragmentation can contribute to that channel.
+#begin observation: inms_e3_h2o
+instrument=INMS
+event_id=E3
+data_file=plume_fit_v1/e3_h2o_sticking_corrected.csv
+time_column=time_ca_s
+x_column=x_m
+y_column=y_m
+z_column=z_m
+comparison_species=H2O
+value_column=density_m3
+uncertainty_column=sigma_m3
+#end observation
+
+#begin observation: inms_e3_co2
+instrument=INMS
+event_id=E3
+data_file=co2_fit_v1/e3_co2_density.csv
+time_column=time_ca_s
+x_column=spacecraft_x_m
+y_column=spacecraft_y_m
+z_column=spacecraft_z_m
+comparison_species=CO2
+value_column=density_m3
+uncertainty_column=sigma_counting_m3
+#end observation
+
+#begin observation: inms_e5_h2o
+instrument=INMS
+event_id=E5
+data_file=plume_fit_v1/e5_h2o_sticking_corrected.csv
+time_column=time_ca_s
+x_column=x_m
+y_column=y_m
+z_column=z_m
+comparison_species=H2O
+value_column=density_m3
+uncertainty_column=sigma_m3
+#end observation
+
+#begin observation: inms_e5_co2
+instrument=INMS
+event_id=E5
+data_file=co2_fit_v1/e5_co2_density.csv
+time_column=time_ca_s
+x_column=spacecraft_x_m
+y_column=spacecraft_y_m
+z_column=spacecraft_z_m
+comparison_species=CO2
+value_column=density_m3
+uncertainty_column=sigma_counting_m3
+#end observation
+
+#begin observation: inms_e14_co2
+instrument=INMS
+event_id=E14
+data_file=co2_fit_v1/e14_co2_density.csv
+time_column=time_ca_s
+x_column=spacecraft_x_m
+y_column=spacecraft_y_m
+z_column=spacecraft_z_m
+comparison_species=CO2
+value_column=density_m3
+uncertainty_column=sigma_counting_m3
+#end observation
+
+#begin observation: inms_e17_co2
+instrument=INMS
+event_id=E17
+data_file=co2_fit_v1/e17_co2_density.csv
+time_column=time_ca_s
+x_column=spacecraft_x_m
+y_column=spacecraft_y_m
+z_column=spacecraft_z_m
+comparison_species=CO2
+value_column=density_m3
+uncertainty_column=sigma_counting_m3
+#end observation
+
+#begin observation: inms_e18_co2
+instrument=INMS
+event_id=E18
+data_file=co2_fit_v1/e18_co2_density.csv
+time_column=time_ca_s
+x_column=spacecraft_x_m
+y_column=spacecraft_y_m
+z_column=spacecraft_z_m
+comparison_species=CO2
+value_column=density_m3
+uncertainty_column=sigma_counting_m3
+#end observation
+
+! E7 has a 43-row SwRI/Perry mass-44 density product. It is matched
+! count-for-count to the official PDS geometry by the reproducible exporter in
+! srcEnceladus/standalone/export_forward_observations.py. input: resolves
+! relative to this runtime deck rather than observation_data_root.
+#begin observation: inms_e7_co2
+instrument=INMS
+event_id=E7
+data_file=input:../srcEnceladus/standalone/observations/e7_co2_density.csv
+time_column=time_ca_s
+x_column=spacecraft_x_m
+y_column=spacecraft_y_m
+z_column=spacecraft_z_m
+comparison_species=CO2
+value_column=density_m3
+uncertainty_column=sigma_counting_m3
+#end observation
+
+! E13 has archived INMS data, but its northern/distant geometry has no
+! qualified H2O/CO2 plume-density product. The mass-13 file supplies geometry
+! only; its CH4-equivalent values are not read or relabelled.
+#begin observation: inms_e13_model
+instrument=INMS
+event_id=E13
+data_file=ch4_fit_v1/e13_ch4_mass13.csv
+time_column=time_ca_s
+x_column=spacecraft_x_m
+y_column=spacecraft_y_m
+z_column=spacecraft_z_m
+comparison_species=none
+#end observation
+
+! E21 open-source neutral-beaming H2O and CO2 counts are retained in their
+! native units. comparison_species=none prevents a false count-to-density
+! comparison; the context panel is display-only until AMPS phase space is
+! accumulated through the supplied velocity/voltage/attitude SIMION response.
+#begin observation: inms_e21_h2o_counts
+instrument=INMS
+event_id=E21
+data_file=input:../srcEnceladus/standalone/observations/e21_h2o_osnb_counts.csv
+time_column=time_ca_s
+x_column=spacecraft_x_m
+y_column=spacecraft_y_m
+z_column=spacecraft_z_m
+comparison_species=none
+context_observable=INMS_OSNB_H2O_counts_per_integration
+context_value_column=counts_per_integration
+context_uncertainty_column=poisson_sigma_counts
+#end observation
+
+#begin observation: inms_e21_co2_counts
+instrument=INMS
+event_id=E21
+data_file=input:../srcEnceladus/standalone/observations/e21_co2_osnb_counts.csv
+time_column=time_ca_s
+x_column=spacecraft_x_m
+y_column=spacecraft_y_m
+z_column=spacecraft_z_m
+comparison_species=none
+context_observable=INMS_OSNB_CO2_counts_per_integration
+context_value_column=counts_per_integration
+context_uncertainty_column=poisson_sigma_counts
+#end observation
+
+! UVIS optical depth is a relative shape observable. AMPS produces the H2O
+! column along each ray; plotting fits one common response coefficient and a
+! signed reference-count baseline, while the published representative/peak
+! column below supplies the independent absolute-scale comparison.
+#begin observation: uvis_2007_zeta_orionis
+instrument=UVIS
+event_id=uvis_2007_zeta_orionis
+data_file=plume_fit_v1/uvis_2007_zeta_orionis_optical_depth.csv
+ray_geometry=infinite_chord_tangent_track_normal
+published_h2o_column_m-2=1.4e20
+published_h2o_column_sigma_m-2=1.4e19
+#end observation
+
+#begin observation: uvis_2010_e10_solar
+instrument=UVIS
+event_id=uvis_2010_e10_solar
+data_file=plume_fit_v1/uvis_2010_e10_solar_optical_depth.csv
+ray_geometry=finite_observer_to_sun
+observer_geometry_file=plume_fit_v1/uvis_2010_e10_solar_observer_range.csv
+published_h2o_column_m-2=9.0e19
+published_h2o_column_sigma_m-2=2.3e19
+#end observation
 
 ! Required only when particle_splitting_merging is enabled; all of these keys
 ! are forbidden in off mode. scatter uses only the min/max pair and forbids the

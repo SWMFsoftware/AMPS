@@ -1,0 +1,24 @@
+{
+  "contract": "E7 is a calibrated local-density comparison; E21 products retain native counts and must not be scored against AMPS density",
+  "products": [
+    {
+      "metadata": "e7_co2_density.metadata.json",
+      "path": "e7_co2_density.csv",
+      "rows": 43,
+      "sha256": "1df70acf4549488aac187b0d783da01edd53c562be3181ec286b82cd0c461acb"
+    },
+    {
+      "metadata": "e21_h2o_osnb_counts.metadata.json",
+      "path": "e21_h2o_osnb_counts.csv",
+      "rows": 704,
+      "sha256": "7b4507bf58b3015a23987815f68cc14b448cc4b57a3006f613ec97211ddbc292"
+    },
+    {
+      "metadata": "e21_co2_osnb_counts.metadata.json",
+      "path": "e21_co2_osnb_counts.csv",
+      "rows": 481,
+      "sha256": "7a8e7867bef97a16df6a98f969875b0fdf854334ac718a36531741847f44f2a5"
+    }
+  ],
+  "schema_version": 1
+}

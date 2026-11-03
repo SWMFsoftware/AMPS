@@ -37,6 +37,11 @@ enum class ReactionKind { Photo, ChargeExchange };
 // independently qualified.
 enum class ReactionProducts { Discard };
 enum class PlasmaBackgroundMode { None, CacheOnly, CacheOrIces };
+enum class ObservationInstrument { Inms, Uvis };
+enum class UvisRayGeometry {
+  InfiniteChordTangentTrackNormal,
+  FiniteObserverToSun
+};
 
 struct Vec3 {
   double x = 0.0;
@@ -81,6 +86,49 @@ struct SourceDistribution {
   std::string inputFile;
 };
 
+// One requested comparison product.  Observation blocks are deliberately
+// data-driven: the executable has no compiled list of Cassini events, so a
+// future flyby or occultation is added by supplying another named block and a
+// canonical CSV.  INMS requests sample local number density at the stated
+// spacecraft positions.  UVIS requests integrate the sampled H2O density
+// along the stated rays; optical depth remains an observed shape proxy and is
+// never relabelled as an independently calibrated column at every row.
+struct ObservationRequest {
+  std::string id;
+  ObservationInstrument instrument = ObservationInstrument::Inms;
+  std::string eventId;
+  std::string dataFile;
+
+  // INMS canonical-column mapping.  comparisonSpecies is empty for a
+  // model-only profile when no response-qualified H2O/CO2 density exists.
+  std::string timeColumn;
+  std::string xColumn;
+  std::string yColumn;
+  std::string zColumn;
+  std::string comparisonSpecies;
+  std::string valueColumn;
+  std::string uncertaintyColumn;
+
+  // A native instrument observable can be carried beside model density even
+  // when no physically qualified density/count response exists.  This is not
+  // a comparisonSpecies: no chi-square or unit conversion is permitted.  The
+  // portable observable name records the instrument, channel/species, and
+  // units in the Tecplot receipt (for example,
+  // INMS_OSNB_H2O_counts_per_integration).
+  std::string contextObservable;
+  std::string contextValueColumn;
+  std::string contextUncertaintyColumn;
+
+  // UVIS geometry and the one absolute published column constraint.  The
+  // finite-observer auxiliary table is required only by the corresponding
+  // ray mode; an infinite chord derives its direction from the tangent track.
+  UvisRayGeometry uvisRayGeometry =
+      UvisRayGeometry::InfiniteChordTangentTrackNormal;
+  std::string observerGeometryFile;
+  double publishedH2OColumnM2 = 0.0;
+  double publishedH2OColumnSigmaM2 = 0.0;
+};
+
 struct Configuration {
   int schemaVersion = 0;
   std::string inputFile;
@@ -97,6 +145,12 @@ struct Configuration {
   std::uint64_t randomSeed = 0;
   long sampleLengthSteps = 0;
   long totalIterations = 0;
+  // Observation-only long runs can suppress the very large per-species AMR
+  // volume dumps while retaining native sampling and registered observation
+  // callbacks.  The completed buffer is still consumed and reset each window.
+  bool volumeFieldOutput = true;
+  std::string observationDataRoot;
+  std::vector<ObservationRequest> observations;
   // Optional observation operator evaluated from AMPS' completed sampling
   // buffer at every normal output.  The trajectory is a frozen SPICE CSV in
   // IAU_ENCELADUS; its path is resolved relative to this run deck.
@@ -216,6 +270,8 @@ const char* Name(SolarActivity activity);
 const char* Name(PopulationControl control);
 const char* Name(ReactionProducts products);
 const char* Name(PlasmaBackgroundMode mode);
+const char* Name(ObservationInstrument instrument);
+const char* Name(UvisRayGeometry geometry);
 
 }  // namespace ForwardModel
 }  // namespace Enceladus

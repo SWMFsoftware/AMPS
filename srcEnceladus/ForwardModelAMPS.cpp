@@ -54,6 +54,22 @@ struct FlybyPoint {
 std::vector<FlybyPoint> gFlybyTrajectory;
 std::vector<FlybyPoint> gFlybyRefinementTrajectory;
 
+struct ObservationPoint {
+  double timeS = 0.0;
+  double positionM[3] = {0.0, 0.0, 0.0};
+  double observedValue = 0.0;
+  double observedSigma = 0.0;
+  double rayDirection[3] = {0.0, 0.0, 0.0};
+  double observerCoordinateM = 0.0;
+};
+
+struct LoadedObservation {
+  ObservationRequest request;
+  std::vector<ObservationPoint> points;
+};
+
+std::vector<LoadedObservation> gObservations;
+
 void Increment(std::vector<unsigned long long>* counters, int species) {
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #pragma omp atomic update
@@ -120,6 +136,301 @@ bool ParseCsvFinite(const std::string& text, double* value) {
       !std::isfinite(parsed)) return false;
   *value = parsed;
   return true;
+}
+
+std::vector<std::string> SplitCsvQuoted(const std::string& line) {
+  std::vector<std::string> fields;
+  std::string field;
+  bool quoted = false;
+  for (std::size_t i = 0; i < line.size(); ++i) {
+    const char c = line[i];
+    if (c == '"') {
+      if (quoted && i+1 < line.size() && line[i+1] == '"') {
+        field.push_back('"');
+        ++i;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (c == ',' && !quoted) {
+      fields.push_back(field);
+      field.clear();
+    } else {
+      field.push_back(c);
+    }
+  }
+  if (quoted) return {};
+  fields.push_back(field);
+  return fields;
+}
+
+Status CsvColumns(const std::string& header,
+                  std::map<std::string, std::size_t>* columns) {
+  columns->clear();
+  const std::vector<std::string> names = SplitCsvQuoted(header);
+  if (names.empty()) return Status::Error("CSV header is empty or malformed");
+  for (std::size_t i = 0; i < names.size(); ++i)
+    if (names[i].empty() || !columns->emplace(names[i], i).second)
+      return Status::Error("CSV header contains an empty or duplicate column");
+  return Status::Ok();
+}
+
+Status RequireCsvColumn(const std::map<std::string, std::size_t>& columns,
+                        const std::string& name, std::size_t* index) {
+  const auto found = columns.find(name);
+  if (found == columns.end())
+    return Status::Error("CSV is missing required column '" + name + "'");
+  *index = found->second;
+  return Status::Ok();
+}
+
+Status LoadObservation(const ObservationRequest& request,
+                       LoadedObservation* output) {
+  output->request = request;
+  output->points.clear();
+  std::ifstream input(request.dataFile);
+  if (!input)
+    return Status::Error("cannot open observation data_file: " +
+                         request.dataFile);
+  std::string line;
+  if (!std::getline(input, line))
+    return Status::Error("observation CSV is empty: " + request.dataFile);
+  std::map<std::string, std::size_t> columns;
+  Status status = CsvColumns(line, &columns);
+  if (!status.success) return status;
+
+  std::vector<std::string> required;
+  if (request.instrument == ObservationInstrument::Inms) {
+    required = {request.timeColumn, request.xColumn, request.yColumn,
+                request.zColumn};
+    if (!request.comparisonSpecies.empty()) {
+      required.push_back(request.valueColumn);
+      required.push_back(request.uncertaintyColumn);
+    } else if (!request.contextObservable.empty()) {
+      required.push_back(request.contextValueColumn);
+      required.push_back(request.contextUncertaintyColumn);
+    }
+  } else {
+    required = {"event_id", "time_source_s", "time_from_min_altitude_s",
+                "tangent_x_m", "tangent_y_m", "tangent_z_m",
+                "optical_depth_raw", "poisson_sigma_optical_depth"};
+  }
+  std::map<std::string, std::size_t> index;
+  for (const std::string& name : required) {
+    std::size_t column = 0;
+    status = RequireCsvColumn(columns, name, &column);
+    if (!status.success)
+      return Status::Error(request.id + ": " + status.message);
+    index[name] = column;
+  }
+
+  std::vector<double> rayTimes;
+  double previousTime = -std::numeric_limits<double>::infinity();
+  std::size_t rowNumber = 1;
+  while (std::getline(input, line)) {
+    ++rowNumber;
+    if (line.empty()) continue;
+    const std::vector<std::string> fields = SplitCsvQuoted(line);
+    if (fields.size() != columns.size())
+      return Status::Error(request.id + " observation row " +
+          std::to_string(rowNumber) + " has " +
+          std::to_string(fields.size()) + " fields; expected " +
+          std::to_string(columns.size()));
+    ObservationPoint point;
+    if (request.instrument == ObservationInstrument::Inms) {
+      if (!ParseCsvFinite(fields[index[request.timeColumn]], &point.timeS) ||
+          !ParseCsvFinite(fields[index[request.xColumn]],
+                          &point.positionM[0]) ||
+          !ParseCsvFinite(fields[index[request.yColumn]],
+                          &point.positionM[1]) ||
+          !ParseCsvFinite(fields[index[request.zColumn]],
+                          &point.positionM[2]))
+        return Status::Error(request.id + " observation row " +
+            std::to_string(rowNumber) +
+            " has invalid time or IAU_ENCELADUS position");
+      if (!request.comparisonSpecies.empty()) {
+        if (!ParseCsvFinite(fields[index[request.valueColumn]],
+                            &point.observedValue) ||
+            !ParseCsvFinite(fields[index[request.uncertaintyColumn]],
+                            &point.observedSigma) ||
+            point.observedValue < 0.0 || !(point.observedSigma > 0.0))
+          return Status::Error(request.id + " observation row " +
+              std::to_string(rowNumber) +
+              " requires nonnegative density and positive uncertainty");
+      } else if (!request.contextObservable.empty()) {
+        if (!ParseCsvFinite(fields[index[request.contextValueColumn]],
+                            &point.observedValue) ||
+            !ParseCsvFinite(fields[index[request.contextUncertaintyColumn]],
+                            &point.observedSigma) ||
+            point.observedValue < 0.0 || !(point.observedSigma > 0.0))
+          return Status::Error(request.id + " observation row " +
+              std::to_string(rowNumber) +
+              " requires nonnegative native observable and positive uncertainty");
+      }
+    } else {
+      if (fields[index["event_id"]] != request.eventId)
+        return Status::Error(request.id + " observation row " +
+            std::to_string(rowNumber) + " has event_id '" +
+            fields[index["event_id"]] + "', expected '" + request.eventId +
+            "'");
+      double rayTime = 0.0;
+      if (!ParseCsvFinite(fields[index["time_source_s"]], &rayTime) ||
+          !ParseCsvFinite(fields[index["time_from_min_altitude_s"]],
+                          &point.timeS) ||
+          !ParseCsvFinite(fields[index["tangent_x_m"]],
+                          &point.positionM[0]) ||
+          !ParseCsvFinite(fields[index["tangent_y_m"]],
+                          &point.positionM[1]) ||
+          !ParseCsvFinite(fields[index["tangent_z_m"]],
+                          &point.positionM[2]) ||
+          !ParseCsvFinite(fields[index["optical_depth_raw"]],
+                          &point.observedValue) ||
+          !ParseCsvFinite(fields[index["poisson_sigma_optical_depth"]],
+                          &point.observedSigma) ||
+          !(point.observedSigma > 0.0))
+        return Status::Error(request.id + " observation row " +
+            std::to_string(rowNumber) + " has invalid UVIS data");
+      rayTimes.push_back(rayTime);
+    }
+    if (!(point.timeS > previousTime))
+      return Status::Error(request.id +
+          " observation times must be strictly increasing");
+    previousTime = point.timeS;
+    const double radius = std::sqrt(
+        point.positionM[0]*point.positionM[0] +
+        point.positionM[1]*point.positionM[1] +
+        point.positionM[2]*point.positionM[2]);
+    if (!(radius > _RADIUS_(_TARGET_)))
+      return Status::Error(request.id + " observation row " +
+          std::to_string(rowNumber) +
+          " lies on or inside the reference sphere");
+    output->points.push_back(point);
+  }
+  if (output->points.size() < 2)
+    return Status::Error(request.id + " requires at least two observation rows");
+  if (request.instrument == ObservationInstrument::Inms)
+    return Status::Ok();
+
+  if (request.uvisRayGeometry ==
+      UvisRayGeometry::InfiniteChordTangentTrackNormal) {
+    if (output->points.size() < 3)
+      return Status::Error(request.id +
+          " tangent-track ray construction requires at least three rows");
+    // The SwRI reconstruction defines the stellar line of sight as the unit
+    // normal to both the body-centred tangent radius r and its measured track
+    // derivative dr/dt.  A three-point Lagrange derivative retains nonuniform
+    // sample timing; the ray sign is made continuous but has no effect on the
+    // two-sided chord integral.
+    const std::size_t count = output->points.size();
+    for (std::size_t i = 0; i < count; ++i) {
+      std::size_t a = i-1, b = i, c = i+1;
+      if (i == 0) { a = 0; b = 1; c = 2; }
+      if (i+1 == count) { a = count-3; b = count-2; c = count-1; }
+      const double t = rayTimes[i];
+      const double ta = rayTimes[a], tb = rayTimes[b], tc = rayTimes[c];
+      const double wa = (2.0*t-tb-tc)/((ta-tb)*(ta-tc));
+      const double wb = (2.0*t-ta-tc)/((tb-ta)*(tb-tc));
+      const double wc = (2.0*t-ta-tb)/((tc-ta)*(tc-tb));
+      double velocity[3];
+      for (int d = 0; d < 3; ++d)
+        velocity[d] = wa*output->points[a].positionM[d] +
+                      wb*output->points[b].positionM[d] +
+                      wc*output->points[c].positionM[d];
+      const double* r = output->points[i].positionM;
+      double* direction = output->points[i].rayDirection;
+      direction[0] = r[1]*velocity[2]-r[2]*velocity[1];
+      direction[1] = r[2]*velocity[0]-r[0]*velocity[2];
+      direction[2] = r[0]*velocity[1]-r[1]*velocity[0];
+      double norm = std::sqrt(direction[0]*direction[0] +
+                              direction[1]*direction[1] +
+                              direction[2]*direction[2]);
+      if (!(norm > 0.0) || !std::isfinite(norm))
+        return Status::Error(request.id + " has a degenerate tangent track");
+      for (double& component : output->points[i].rayDirection)
+        component /= norm;
+      if (i > 0) {
+        double continuity = 0.0;
+        for (int d = 0; d < 3; ++d)
+          continuity += output->points[i-1].rayDirection[d]*direction[d];
+        if (continuity < 0.0)
+          for (double& component : output->points[i].rayDirection)
+            component = -component;
+      }
+    }
+    return Status::Ok();
+  }
+
+  std::ifstream observer(request.observerGeometryFile);
+  if (!observer)
+    return Status::Error("cannot open observer_geometry_file: " +
+                         request.observerGeometryFile);
+  if (!std::getline(observer, line))
+    return Status::Error("observer geometry CSV is empty");
+  std::map<std::string, std::size_t> observerColumns;
+  status = CsvColumns(line, &observerColumns);
+  if (!status.success) return status;
+  const std::vector<std::string> observerRequired = {
+      "time_source_s", "observer_coordinate_from_tangent_m",
+      "ray_ux_table", "ray_uy_table", "ray_uz_table"};
+  std::map<std::string, std::size_t> oi;
+  for (const std::string& name : observerRequired) {
+    std::size_t column = 0;
+    status = RequireCsvColumn(observerColumns, name, &column);
+    if (!status.success) return status;
+    oi[name] = column;
+  }
+  std::size_t row = 0;
+  while (std::getline(observer, line)) {
+    if (line.empty()) continue;
+    if (row >= output->points.size())
+      return Status::Error(request.id + " observer geometry has extra rows");
+    const std::vector<std::string> fields = SplitCsvQuoted(line);
+    if (fields.size() != observerColumns.size())
+      return Status::Error(request.id + " observer geometry row is malformed");
+    double time = 0.0;
+    ObservationPoint& point = output->points[row];
+    if (!ParseCsvFinite(fields[oi["time_source_s"]], &time) ||
+        std::abs(time-rayTimes[row]) > 1.0e-5 ||
+        !ParseCsvFinite(fields[oi["observer_coordinate_from_tangent_m"]],
+                        &point.observerCoordinateM) ||
+        !ParseCsvFinite(fields[oi["ray_ux_table"]], &point.rayDirection[0]) ||
+        !ParseCsvFinite(fields[oi["ray_uy_table"]], &point.rayDirection[1]) ||
+        !ParseCsvFinite(fields[oi["ray_uz_table"]], &point.rayDirection[2]))
+      return Status::Error(request.id +
+          " observer geometry time/direction is invalid or misaligned");
+    double norm = 0.0;
+    for (double component : point.rayDirection) norm += component*component;
+    norm = std::sqrt(norm);
+    if (!(norm > 0.0))
+      return Status::Error(request.id + " observer ray direction is zero");
+    for (double& component : point.rayDirection) component /= norm;
+    if (point.observerCoordinateM < 0.0) {
+      double radius2 = 0.0, projection = 0.0;
+      for (int d = 0; d < 3; ++d) {
+        radius2 += point.positionM[d]*point.positionM[d];
+        projection += point.rayDirection[d]*point.positionM[d];
+      }
+      for (int d = 0; d < 3; ++d)
+        point.rayDirection[d] -=
+            projection/radius2*point.positionM[d];
+      norm = 0.0;
+      for (double component : point.rayDirection) norm += component*component;
+      norm = std::sqrt(norm);
+      if (!(norm > 0.0))
+        return Status::Error(request.id + " projected observer ray is zero");
+      for (double& component : point.rayDirection) component /= norm;
+    } else {
+      double radial = 0.0;
+      for (int d = 0; d < 3; ++d)
+        radial += point.positionM[d]*point.rayDirection[d];
+      if (radial < 0.0)
+        for (double& component : point.rayDirection) component = -component;
+    }
+    ++row;
+  }
+  if (row != output->points.size())
+    return Status::Error(request.id +
+        " observer geometry row count does not match UVIS data");
+  return Status::Ok();
 }
 
 Status LoadFlybyTrajectory(const Configuration& configuration,
@@ -503,6 +814,309 @@ void OutputFlybyDensity(int dataOutputFileNumber) {
             << " file=" << path << '\n';
 }
 
+void ObservationColumnIntegrand(
+    double* result, int resultLength, double* position,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+  const std::size_t speciesCount = gConfiguration.simulatedSpecies.size();
+  if (resultLength != static_cast<int>(speciesCount))
+    Stop("observation column integrand received an inconsistent vector size");
+  double coefficients[PIC::InterpolationRoutines::nMaxStencilLength];
+  PIC::Mesh::cDataCenterNode* stencil[
+      PIC::InterpolationRoutines::nMaxStencilLength];
+  const int stencilLength = PIC::Mesh::GetCenterNodesInterpolationCoefficients(
+      position, coefficients, stencil, node,
+      PIC::InterpolationRoutines::nMaxStencilLength);
+  if (stencilLength <= 0)
+    Stop("UVIS column integration produced an empty density stencil");
+  for (std::size_t slot = 0; slot < speciesCount; ++slot) {
+    const int species = Species(gConfiguration.simulatedSpecies[slot]);
+    double density = 0.0;
+    for (int cell = 0; cell < stencilLength; ++cell)
+      density += coefficients[cell]*stencil[cell]->GetNumberDensity(species);
+    if (!std::isfinite(density) || density < 0.0)
+      Stop("UVIS column integration produced a non-finite or negative density");
+    result[slot] = density;
+  }
+}
+
+double RayPathLengthInDomain(double* origin, double* direction) {
+  double length = 0.0, start[3], finish[3];
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode = nullptr;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* finishNode = nullptr;
+  if (!PIC::ColumnIntegration::FindIntegrationLimits(
+          origin, direction, length, start, startNode, finish, finishNode))
+    return 0.0;
+  return length;
+}
+
+void WriteInmsObservation(const LoadedObservation& observation,
+                          int dataOutputFileNumber) {
+  const std::size_t pointCount = observation.points.size();
+  const std::size_t speciesCount = gConfiguration.simulatedSpecies.size();
+  std::vector<double> localDensity(pointCount*speciesCount, 0.0);
+  std::vector<double> localDomain(pointCount, 0.0);
+  std::vector<double> localCellMaxEdge(pointCount, 0.0);
+  for (std::size_t pointIndex = 0; pointIndex < pointCount; ++pointIndex) {
+    double position[3];
+    for (int d = 0; d < 3; ++d)
+      position[d] = observation.points[pointIndex].positionM[d];
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node =
+        PIC::Mesh::mesh->findTreeNode(position);
+    if (node == nullptr || !node->IsUsedInCalculationFlag ||
+        node->Thread != PIC::ThisThread || node->block == nullptr) continue;
+    localDomain[pointIndex] = 1.0;
+    localCellMaxEdge[pointIndex] = std::max(
+        (node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_,
+        std::max((node->xmax[1]-node->xmin[1])/_BLOCK_CELLS_Y_,
+                 (node->xmax[2]-node->xmin[2])/_BLOCK_CELLS_Z_));
+    double coefficients[PIC::InterpolationRoutines::nMaxStencilLength];
+    PIC::Mesh::cDataCenterNode* stencil[
+        PIC::InterpolationRoutines::nMaxStencilLength];
+    const int stencilLength = PIC::Mesh::GetCenterNodesInterpolationCoefficients(
+        position, coefficients, stencil, node,
+        PIC::InterpolationRoutines::nMaxStencilLength);
+    if (stencilLength <= 0)
+      Stop(observation.request.id +
+           " INMS interpolation produced an empty stencil");
+    for (std::size_t slot = 0; slot < speciesCount; ++slot) {
+      const int species = Species(gConfiguration.simulatedSpecies[slot]);
+      double density = 0.0;
+      for (int cell = 0; cell < stencilLength; ++cell)
+        density += coefficients[cell]*stencil[cell]->GetNumberDensity(species);
+      if (!std::isfinite(density) || density < 0.0)
+        Stop(observation.request.id +
+             " INMS interpolation produced an invalid density");
+      localDensity[pointIndex*speciesCount+slot] = density;
+    }
+  }
+  std::vector<double> density(pointCount*speciesCount, 0.0);
+  std::vector<double> domain(pointCount, 0.0);
+  std::vector<double> cellMaxEdge(pointCount, 0.0);
+  MPI_Reduce(localDensity.data(), density.data(),
+             static_cast<int>(density.size()), MPI_DOUBLE, MPI_SUM, 0,
+             MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(localDomain.data(), domain.data(), static_cast<int>(domain.size()),
+             MPI_DOUBLE, MPI_SUM, 0, MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(localCellMaxEdge.data(), cellMaxEdge.data(),
+             static_cast<int>(cellMaxEdge.size()), MPI_DOUBLE, MPI_SUM, 0,
+             MPI_GLOBAL_COMMUNICATOR);
+  if (PIC::ThisThread != 0) return;
+
+  const std::string path = std::string(PIC::OutputDataFileDirectory) +
+      "/observation." + observation.request.id + ".dat";
+  if (dataOutputFileNumber > 0 && !fs::is_regular_file(path))
+    Stop("INMS observation file is missing before append: " + path);
+  std::ofstream output(path, dataOutputFileNumber == 0
+      ? (std::ios::out | std::ios::trunc)
+      : (std::ios::out | std::ios::app));
+  if (!output) Stop("cannot open INMS observation output: " + path);
+  output << std::scientific << std::setprecision(17);
+  if (dataOutputFileNumber == 0) {
+    output << "TITLE=\"AMPS INMS comparison " << observation.request.eventId
+           << "\"\n# request_id=" << observation.request.id
+           << " event_id=" << observation.request.eventId
+           << " data_file=" << observation.request.dataFile << "\n"
+           << "# model-only rows have no observed density columns; this is "
+              "intentional when no response-qualified H2O/CO2 product exists.\n"
+           << (observation.request.contextObservable.empty()
+                   ? std::string()
+                   : std::string("# context_observable=") +
+                         observation.request.contextObservable +
+                         " is native instrument data; it is not converted or "
+                         "scored against model density.\n")
+           << "VARIABLES=\"time_s\",\"spacecraft_x_m\","
+              "\"spacecraft_y_m\",\"spacecraft_z_m\",\"altitude_m\","
+              "\"in_domain\",\"cell_max_edge_m\"";
+    for (const std::string& symbol : gConfiguration.simulatedSpecies)
+      output << ",\"model_n_" << symbol << "_m-3\"";
+    if (!observation.request.comparisonSpecies.empty())
+      output << ",\"observed_n_" << observation.request.comparisonSpecies
+             << "_m-3\",\"observed_sigma_"
+             << observation.request.comparisonSpecies << "_m-3\"";
+    else if (!observation.request.contextObservable.empty())
+      output << ",\"observed_context_value\",\"observed_context_sigma\"";
+    output << '\n';
+  }
+  const double solutionTimeS =
+      (dataOutputFileNumber+1.0)*gConfiguration.sampleLengthSteps*
+      gPlan.globalTimeStepS;
+  output << "ZONE T=\"output=" << dataOutputFileNumber
+         << ", iterations="
+         << (dataOutputFileNumber+1)*gConfiguration.sampleLengthSteps
+         << ", sample_steps=" << PIC::LastSampleLength
+         << "\" I=" << pointCount
+         << " DATAPACKING=POINT STRANDID=1 SOLUTIONTIME="
+         << solutionTimeS << '\n';
+  std::size_t covered = 0;
+  for (std::size_t pointIndex = 0; pointIndex < pointCount; ++pointIndex) {
+    const ObservationPoint& point = observation.points[pointIndex];
+    const double radius = std::sqrt(
+        point.positionM[0]*point.positionM[0] +
+        point.positionM[1]*point.positionM[1] +
+        point.positionM[2]*point.positionM[2]);
+    if (domain[pointIndex] == 1.0) ++covered;
+    else if (domain[pointIndex] != 0.0)
+      Stop(observation.request.id + " point has more than one AMR owner");
+    output << point.timeS << ' ' << point.positionM[0] << ' '
+           << point.positionM[1] << ' ' << point.positionM[2] << ' '
+           << radius-_RADIUS_(_TARGET_) << ' ' << domain[pointIndex] << ' '
+           << cellMaxEdge[pointIndex];
+    for (std::size_t slot = 0; slot < speciesCount; ++slot)
+      output << ' ' << density[pointIndex*speciesCount+slot];
+    if (!observation.request.comparisonSpecies.empty())
+      output << ' ' << point.observedValue << ' ' << point.observedSigma;
+    else if (!observation.request.contextObservable.empty())
+      output << ' ' << point.observedValue << ' ' << point.observedSigma;
+    output << '\n';
+  }
+  output.close();
+  if (!output) Stop("failed while writing INMS observation output: " + path);
+  std::cout << "[srcEnceladus] observation_output=" << dataOutputFileNumber
+            << " instrument=INMS request=" << observation.request.id
+            << " event=" << observation.request.eventId
+            << " rows=" << pointCount << " in_domain=" << covered
+            << " file=" << path << '\n';
+}
+
+void WriteUvisObservation(const LoadedObservation& observation,
+                          int dataOutputFileNumber) {
+  const std::size_t pointCount = observation.points.size();
+  const std::size_t speciesCount = gConfiguration.simulatedSpecies.size();
+  std::vector<double> columns(pointCount*speciesCount, 0.0);
+  std::vector<double> pathLengths(pointCount, 0.0);
+  for (std::size_t pointIndex = 0; pointIndex < pointCount; ++pointIndex) {
+    const ObservationPoint& point = observation.points[pointIndex];
+    double direction[3], origin[3];
+    for (int d = 0; d < 3; ++d) {
+      direction[d] = point.rayDirection[d];
+      origin[d] = point.positionM[d];
+    }
+    std::vector<double> result(speciesCount, 0.0);
+    if (observation.request.uvisRayGeometry ==
+        UvisRayGeometry::InfiniteChordTangentTrackNormal) {
+      std::vector<double> reverse(speciesCount, 0.0);
+      pathLengths[pointIndex] = RayPathLengthInDomain(origin, direction);
+      PIC::ColumnIntegration::GetCoulumnIntegral(
+          result.data(), static_cast<int>(speciesCount), origin, direction,
+          ObservationColumnIntegrand);
+      for (double& component : direction) component = -component;
+      pathLengths[pointIndex] += RayPathLengthInDomain(origin, direction);
+      PIC::ColumnIntegration::GetCoulumnIntegral(
+          reverse.data(), static_cast<int>(speciesCount), origin, direction,
+          ObservationColumnIntegrand);
+      for (std::size_t slot = 0; slot < speciesCount; ++slot)
+        result[slot] += reverse[slot];
+    } else {
+      if (point.observerCoordinateM < 0.0)
+        for (int d = 0; d < 3; ++d)
+          origin[d] += point.observerCoordinateM*direction[d];
+      pathLengths[pointIndex] = RayPathLengthInDomain(origin, direction);
+      PIC::ColumnIntegration::GetCoulumnIntegral(
+          result.data(), static_cast<int>(speciesCount), origin, direction,
+          ObservationColumnIntegrand);
+    }
+    for (std::size_t slot = 0; slot < speciesCount; ++slot) {
+      if (!std::isfinite(result[slot]) || result[slot] < 0.0)
+        Stop(observation.request.id + " produced an invalid column density");
+      columns[pointIndex*speciesCount+slot] = result[slot];
+    }
+  }
+  if (PIC::ThisThread != 0) return;
+  const std::string path = std::string(PIC::OutputDataFileDirectory) +
+      "/observation." + observation.request.id + ".dat";
+  if (dataOutputFileNumber > 0 && !fs::is_regular_file(path))
+    Stop("UVIS observation file is missing before append: " + path);
+  std::ofstream output(path, dataOutputFileNumber == 0
+      ? (std::ios::out | std::ios::trunc)
+      : (std::ios::out | std::ios::app));
+  if (!output) Stop("cannot open UVIS observation output: " + path);
+  output << std::scientific << std::setprecision(17);
+  if (dataOutputFileNumber == 0) {
+    output << "TITLE=\"AMPS UVIS comparison " << observation.request.eventId
+           << "\"\n# request_id=" << observation.request.id
+           << " event_id=" << observation.request.eventId
+           << " ray_geometry=" << Name(observation.request.uvisRayGeometry)
+           << " data_file=" << observation.request.dataFile << "\n"
+           << "# published_h2o_column_m-2="
+           << observation.request.publishedH2OColumnM2
+           << " published_h2o_column_sigma_m-2="
+           << observation.request.publishedH2OColumnSigmaM2 << "\n"
+           << "# Optical depth is a shape proxy. The comparison plot fits "
+              "one common column-to-optical-depth coefficient and one signed "
+              "baseline; it does not convert each row into an absolute column.\n"
+           << "VARIABLES=\"time_from_min_altitude_s\",\"tangent_x_m\","
+              "\"tangent_y_m\",\"tangent_z_m\","
+              "\"integrated_path_in_domain_m\"";
+    for (const std::string& symbol : gConfiguration.simulatedSpecies)
+      output << ",\"model_column_" << symbol << "_m-2\"";
+    output << ",\"observed_optical_depth\","
+              "\"observed_sigma_optical_depth\"\n";
+  }
+  const double solutionTimeS =
+      (dataOutputFileNumber+1.0)*gConfiguration.sampleLengthSteps*
+      gPlan.globalTimeStepS;
+  output << "ZONE T=\"output=" << dataOutputFileNumber
+         << ", iterations="
+         << (dataOutputFileNumber+1)*gConfiguration.sampleLengthSteps
+         << ", sample_steps=" << PIC::LastSampleLength
+         << "\" I=" << pointCount
+         << " DATAPACKING=POINT STRANDID=1 SOLUTIONTIME="
+         << solutionTimeS << '\n';
+  for (std::size_t pointIndex = 0; pointIndex < pointCount; ++pointIndex) {
+    const ObservationPoint& point = observation.points[pointIndex];
+    output << point.timeS << ' ' << point.positionM[0] << ' '
+           << point.positionM[1] << ' ' << point.positionM[2] << ' '
+           << pathLengths[pointIndex];
+    for (std::size_t slot = 0; slot < speciesCount; ++slot)
+      output << ' ' << columns[pointIndex*speciesCount+slot];
+    output << ' ' << point.observedValue << ' ' << point.observedSigma << '\n';
+  }
+  output.close();
+  if (!output) Stop("failed while writing UVIS observation output: " + path);
+  std::cout << "[srcEnceladus] observation_output=" << dataOutputFileNumber
+            << " instrument=UVIS request=" << observation.request.id
+            << " event=" << observation.request.eventId
+            << " rays=" << pointCount << " file=" << path << '\n';
+}
+
+void OutputRequestedObservations(int dataOutputFileNumber) {
+  if (gObservations.empty()) return;
+  if (PIC::LastSampleLength != gConfiguration.sampleLengthSteps)
+    Stop("observation output received an unexpected AMPS sample length");
+  for (const LoadedObservation& observation : gObservations) {
+    if (observation.request.instrument == ObservationInstrument::Inms)
+      WriteInmsObservation(observation, dataOutputFileNumber);
+    else
+      WriteUvisObservation(observation, dataOutputFileNumber);
+  }
+}
+
+void OutputAllObservationProducts(int dataOutputFileNumber) {
+  OutputFlybyDensity(dataOutputFileNumber);
+  OutputRequestedObservations(dataOutputFileNumber);
+  if (!gConfiguration.volumeFieldOutput) {
+    // PIC switches completed/collecting sampling buffers before invoking any
+    // output routine. Generic volume output normally clears the newly active
+    // collecting buffer inside its per-species loop. With every volume file
+    // disabled, clear it here only after all observation callbacks have read
+    // the immutable completed buffer, preserving independent sampling windows.
+    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node =
+             PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread];
+         node != nullptr; node = node->nextNodeThisThread) {
+      if (node->block == nullptr) continue;
+      for (int k = 0; k < _BLOCK_CELLS_Z_; ++k) {
+        for (int j = 0; j < _BLOCK_CELLS_Y_; ++j) {
+          for (int i = 0; i < _BLOCK_CELLS_X_; ++i) {
+            const int local = _getCenterNodeLocalNumber(i, j, k);
+            PIC::Mesh::flushCollectingSamplingBuffer(
+                node->block->GetCenterNode(local));
+          }
+        }
+      }
+    }
+  }
+}
+
 }  // namespace
 
 bool InstallFromInput(const std::string& inputFile, std::string* error) {
@@ -535,6 +1149,17 @@ bool InstallFromInput(const std::string& inputFile, std::string* error) {
       if (error != nullptr) *error = status.message;
       return false;
     }
+  }
+  std::vector<LoadedObservation> observations;
+  observations.reserve(configuration.observations.size());
+  for (const ObservationRequest& request : configuration.observations) {
+    LoadedObservation observation;
+    status = LoadObservation(request, &observation);
+    if (!status.success) {
+      if (error != nullptr) *error = request.id + ": " + status.message;
+      return false;
+    }
+    observations.push_back(std::move(observation));
   }
   if (std::abs(distribution.stripeReferenceRadiusM-_RADIUS_(_TARGET_)) >
       1.0e-6) {
@@ -614,6 +1239,7 @@ bool InstallFromInput(const std::string& inputFile, std::string* error) {
   gConfiguration = std::move(configuration);
   gDistribution = std::move(distribution);
   gFlybyTrajectory = std::move(flybyTrajectory);
+  gObservations = std::move(observations);
   gFlybyRefinementTrajectory.clear();
   if (gConfiguration.flybyMeshRefinement) {
     for (const FlybyPoint& point : gFlybyTrajectory)
@@ -626,6 +1252,7 @@ bool InstallFromInput(const std::string& inputFile, std::string* error) {
       if (error != nullptr)
         *error = "flyby refinement interval contains fewer than two trajectory points";
       gFlybyTrajectory.clear();
+      gObservations.clear();
       gConfiguration = Configuration{};
       gDistribution = SourceDistribution{};
       return false;
@@ -721,14 +1348,16 @@ void FinalizeNumericsAfterMeshAllocation() {
   // dust species, but this runtime stage activates only selected neutral
   // primaries. Generic AMPS defaults to writing a full mesh file for every
   // compiled species, including inactive zero fields. On the refined E3 mesh
-  // each such file is hundreds of MB, so retain generic fields only for the
-  // explicitly simulated species. This changes output selection only: storage,
-  // mover, chemistry, and sampling behavior for active particles are untouched.
+  // each such file is hundreds of MB. When volume_field_output is true, retain
+  // generic fields only for explicitly simulated species. When false, the
+  // registered observation callback reads the same completed buffer and then
+  // resets the next collecting buffer without serializing the AMR volume.
+  // Storage, mover, chemistry, sampling, and observation values are unchanged.
   if (PIC::Sampling::SaveOutputDataFile == nullptr)
     Stop("generic AMPS output-selection table is not initialized");
   for (int species = 0; species < PIC::nTotalSpecies; ++species)
     PIC::Sampling::SaveOutputDataFile[species] =
-        IsSimulated(ParticleSymbol(species));
+        gConfiguration.volumeFieldOutput && IsSimulated(ParticleSymbol(species));
 
   // The analytic recurrence used by the exact hybrid-8 source sampler is
   // independently qualified for a=s*c>=-2. Check the entire allowed outward
@@ -799,9 +1428,10 @@ void FinalizeNumericsAfterMeshAllocation() {
   // every allocated background field before any particle can be moved.
   PIC::Mover::SetUserDefinedParticleMover(&MoveParticle);
   PIC::BC::UserDefinedParticleInjectionFunction = InjectSurfaceParticles;
-  if (gConfiguration.flybyDensityOutput)
+  if (gConfiguration.flybyDensityOutput || !gObservations.empty() ||
+      !gConfiguration.volumeFieldOutput)
     PIC::Sampling::ExternalSamplingLocalVariables::RegisterSamplingRoutine(
-        FlybySamplingNoOp, OutputFlybyDensity);
+        FlybySamplingNoOp, OutputAllObservationProducts);
   gNumericsFinalized = true;
   PrintReceipt();
 }
@@ -1053,8 +1683,11 @@ void PrintReceipt() {
       << " plasma_background_mode="
       << Name(gConfiguration.plasmaBackgroundMode)
       << " total_iterations=" << gConfiguration.totalIterations
+      << " volume_field_output="
+      << (gConfiguration.volumeFieldOutput ? "on" : "off")
       << " flyby_density_output="
       << (gConfiguration.flybyDensityOutput ? "on" : "off")
+      << " observation_requests=" << gObservations.size()
       << " plasma_back_coupling=off\n";
   if (gConfiguration.flybyDensityOutput)
     out << "[srcEnceladus] flyby_id=" << gConfiguration.flybyId
@@ -1070,6 +1703,23 @@ void PrintReceipt() {
         << " time_max_s=" << gConfiguration.flybyRefinementTimeMaxS
         << " refinement_trajectory_points="
         << gFlybyRefinementTrajectory.size() << '\n';
+  for (const LoadedObservation& observation : gObservations)
+    out << "[srcEnceladus] observation_id=" << observation.request.id
+        << " instrument=" << Name(observation.request.instrument)
+        << " event_id=" << observation.request.eventId
+        << " rows=" << observation.points.size()
+        << " comparison_species="
+        << (observation.request.comparisonSpecies.empty()
+                ? "none" : observation.request.comparisonSpecies)
+        << (observation.request.contextObservable.empty()
+                ? std::string()
+                : std::string(" context_observable=") +
+                      observation.request.contextObservable)
+        << (observation.request.instrument == ObservationInstrument::Uvis
+                ? std::string(" ray_geometry=") +
+                      Name(observation.request.uvisRayGeometry)
+                : std::string())
+        << '\n';
   if (gConfiguration.plasmaBackgroundMode != PlasmaBackgroundMode::None)
     out << "[srcEnceladus] plasma_cache_directory="
         << gConfiguration.plasmaCacheDirectory << '\n';

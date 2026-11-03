@@ -1,0 +1,36 @@
+{
+  "common_calibration_fractional_sigma_not_in_point_sigma": 0.15,
+  "density_field": "Flybys[E7].datVls[mass==44].Dens",
+  "density_source": "/data/vtenishe/cassini_validation_data/data/raw/external/swri_inms_modeling/extracted/Flybys2.mat",
+  "density_source_sha256": "982b65492d67521c09868fe9776b47ba4359ad337ea339be10f681ead57cc272",
+  "event_id": "E7",
+  "observable": "CO2 (mass-44) local number density",
+  "pds_lineage": [
+    {
+      "path": "/data/vtenishe/cassini_validation_data/data/raw/inms/E7/200930605_L1A_06.CSV",
+      "sha256": "f3503f9b47aa0da77a79df68071d76aa47eab5723c69478bed0e70d46f09b684"
+    },
+    {
+      "path": "/data/vtenishe/cassini_validation_data/data/raw/inms/E7/200930606_L1A_06.CSV",
+      "sha256": "468ccfb82c7bed5cc33e6470ba984d6890456eafe5bda0275a5c15125c86ea06"
+    },
+    {
+      "path": "/data/vtenishe/cassini_validation_data/data/raw/inms/E7/200930607_L1A_06.CSV",
+      "sha256": "5cce9f78f3eddc8e61b9860bcd74842bdbb741bc6437f99b78697f670b2e84d0"
+    },
+    {
+      "path": "/data/vtenishe/cassini_validation_data/data/raw/inms/E7/200930608_L1A_06.CSV",
+      "sha256": "3561f24820806f12a71bd86dabe3ff992d3a47d6bf96f41791a68d0b521a861f"
+    },
+    {
+      "path": "/data/vtenishe/cassini_validation_data/data/raw/inms/E7/200930609_L1A_06.CSV",
+      "sha256": "9b9ff28c4ca258d77b8f471fcd916d276612990eecc35207c02dd71a5bb31786"
+    }
+  ],
+  "point_sigma": "Poisson counting sigma propagated through local density/count factor",
+  "position_source": "exact-count-matched official PDS INMS Level-1A rows",
+  "published_to_pds_max_abs_time_residual_s": 0.005999999999998229,
+  "published_to_pds_time_lag_s": 0.32099999999999995,
+  "reference": "Perry et al. (2015), Icarus 257, 139-162",
+  "rows": 43
+}

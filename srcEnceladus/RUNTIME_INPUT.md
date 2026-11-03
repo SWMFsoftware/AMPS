@@ -42,6 +42,7 @@ courant.CO2=0.5
 
 sample_length_steps=1000
 total_iterations=10000
+volume_field_output=false
 flyby_density_output=true
 flyby_id=E3
 flyby_trajectory_file=../srcEnceladus/standalone/figure_data/e3_spice_ground_track.csv
@@ -99,6 +100,14 @@ inferred.
 `total_iterations` is the positive number of native timesteps to execute.
 They are intentionally separate. The checked-in run uses ten complete
 sampling windows.
+
+`volume_field_output` defaults to `true`. Setting it to `false` suppresses
+the generic full-volume H2O/CO2 AMR dumps while retaining completed density
+sampling, surface diagnostics, conservation ledgers, flyby/observation
+Tecplot products, and sampling-window resets. This is the checked-in mode for
+the multi-observation run: ten generic active-species dumps would otherwise
+duplicate roughly 14 GiB of fields that the observation operators do not
+consume. It is an output-storage control, not a physics or sampling switch.
 
 ## Flyby density observation operator
 
@@ -181,6 +190,154 @@ times, a mass channel other than 44, a CO2 interpretation other than
 displayed only where the final Tecplot zone is inside the current AMR domain;
 this is a direct density overlay, not an INMS response-function convolution or
 a numerical-convergence qualification.
+
+## Repeatable INMS and UVIS comparison requests
+
+The `flyby_*` keys above retain the dense frozen E3 trajectory and its AMR
+refinement contract. General comparison output is selected independently with
+repeatable named `observation` child blocks. The executable contains no list
+of allowed Cassini event names: adding a future event means preparing a CSV in
+one of the documented canonical forms and adding another uniquely named block.
+Comment every line from `#begin observation` through `#end observation` to
+omit that data set from a run. Unknown keys, duplicate block names, missing
+columns, non-finite values, non-increasing times, or a point on/inside the
+252.1 km reference sphere fail before MPI.
+
+One root makes a relocated observation archive a one-line input change.
+Ordinary relative `data_file` and `observer_geometry_file` values resolve
+against it; absolute paths are also accepted. A `data_file=input:PATH` value
+instead resolves `PATH` against the runtime deck directory. The latter keeps
+repository-released products portable without coupling them to the external
+validation archive:
+
+```text
+observation_data_root=/data/vtenishe/cassini_validation_data/data/processed
+
+#begin observation: inms_e3_h2o
+instrument=INMS
+event_id=E3
+data_file=plume_fit_v1/e3_h2o_sticking_corrected.csv
+time_column=time_ca_s
+x_column=x_m
+y_column=y_m
+z_column=z_m
+comparison_species=H2O
+value_column=density_m3
+uncertainty_column=sigma_m3
+#end observation
+
+#begin observation: uvis_2010_e10_solar
+instrument=UVIS
+event_id=uvis_2010_e10_solar
+data_file=plume_fit_v1/uvis_2010_e10_solar_optical_depth.csv
+ray_geometry=finite_observer_to_sun
+observer_geometry_file=plume_fit_v1/uvis_2010_e10_solar_observer_range.csv
+published_h2o_column_m-2=9.0e19
+published_h2o_column_sigma_m-2=2.3e19
+#end observation
+```
+
+### INMS contract
+
+`instrument=INMS` samples the completed local AMPS number-density buffer at
+the body-fixed spacecraft positions named by the four column-mapping keys.
+`comparison_species` is `H2O`, `CO2`, or `none`. A calibrated comparison
+requires value and positive-uncertainty columns. With `none`, omitting all
+observable keys creates an explicitly model-only profile. Alternatively, the
+following three keys retain a native instrument observable as a labelled
+context panel without comparing it with model density:
+
+```text
+comparison_species=none
+context_observable=INMS_OSNB_H2O_counts_per_integration
+context_value_column=counts_per_integration
+context_uncertainty_column=poisson_sigma_counts
+```
+
+Context values must be finite and nonnegative and uncertainties finite and
+positive. A request cannot declare both a density comparison and context. The
+Tecplot schema uses the unit-neutral names `observed_context_value` and
+`observed_context_sigma`; the plot/JSON label it
+`display_only_no_density_or_count_response` so a count-to-density fit cannot
+be inferred accidentally.
+
+Each request produces `PT/plots/observation.REQUEST.dat`. Every zone records
+time, position, spherical altitude, AMR ownership, cell edge, all active model
+densities, and—only when declared—the observed density and uncertainty. Rows
+outside the AMR box have `in_domain=0` and zero model placeholders.
+
+The checked-in deck requests all eight currently represented INMS plume
+flybys. Qualified H2O density exists for E3/E5; qualified CO2 or
+apparent-CO2 density exists for E3/E5/E7/E14/E17/E18. E7's 43-row mass-44
+density vector is exported from SwRI `Flybys2.mat` and matched count-for-count
+to official PDS geometry by `standalone/export_forward_observations.py`.
+E13 remains model-only because its mass-13/CH4 table supplies geometry but no
+H2O/CO2 density. E21 carries the released open-source neutral-beaming H2O and
+CO2 counts as native context; they are not scored until the AMPS phase-space
+distribution is accumulated through the supplied velocity-, voltage-, and
+attitude-dependent SIMION response. Raw counts or CH4 proxies must never be
+relabelled as density.
+
+### UVIS contract
+
+UVIS canonical optical-depth CSVs contain tangent position, source time,
+time from minimum tangent altitude, raw optical-depth proxy, and its Poisson
+uncertainty. Two ray modes are implemented:
+
+- `infinite_chord_tangent_track_normal` reconstructs the stellar line of
+  sight as the continuous unit vector parallel to
+  `r_tangent x d(r_tangent)/dt`; a nonuniform three-point derivative is used,
+  and AMPS integrates both directions from the tangent point.
+- `finite_observer_to_sun` reads a row-aligned auxiliary table containing the
+  signed observer coordinate and body-fixed ray direction. For a negative
+  coordinate the observer is `r_tangent+s_observer*l` and integration proceeds
+  toward the Sun; the direction is projected perpendicular to the tangent
+  radius exactly as in the qualified standalone geometry. Positive-coordinate
+  rows are integrated outward from the tangent point.
+
+The native AMPS column integrator uses a trapezoidal step equal to 0.3 of the
+local AMR characteristic cell size and reduces owner contributions across
+MPI. Output columns have units m^-2 and cover only the finite AMPS box; each
+row records its integrated in-domain path length. The current UVIS operator
+integrates H2O and every other active neutral but compares only H2O.
+
+The broadband optical-depth proxy is not treated as an absolute column at
+every sample. `test/plot_observation_comparisons.py` fits one nonnegative
+column-to-optical-depth coefficient plus one signed baseline for shape, while
+the two explicit published column values provide separate absolute peak-scale
+tests. The current deck requests the two fit-ready products used by the
+standalone model: the 2007 zeta Orionis stellar occultation and the 2010 E10
+solar occultation. Published inventories identify additional 2005, 2011,
+2016, and 2017 events, but the current local validation release contains no
+qualified reduced spectra plus explicit row-aligned ray tables for them.
+They are therefore not input requests: adding them first requires a
+reproducible spectral/background reduction and geometry release, not an
+assumed profile.
+
+The present ray products also retain two documented geometry limitations.
+The 2007 file has tangent positions but no row-aligned SPICE star-direction
+table, so `infinite_chord_tangent_track_normal` is a tangent-track
+reconstruction rather than a SPICE-qualified stellar ray. In the 2010
+auxiliary file, 308 of 1,133 rows have a nonnegative observer coordinate but
+do not retain the full three-dimensional Cassini position; those outward
+branches begin at the tangent point. The other 825 rows use the finite lower
+limit on the tangent-line parameter. Both products are diagnostic until those
+geometry tables are completed, and their output must not be described as
+publication-qualified occultation columns.
+
+To validate ten zones and generate one PNG per request:
+
+```text
+python3 test/plot_observation_comparisons.py \
+  test_output/srcEnceladus/e3_10000_extended_observations/PT/plots/observation.*.dat \
+  --output-dir test_output/srcEnceladus/e3_10000_extended_observations/PT/plots/comparisons \
+  --expected-zones 10
+```
+
+The JSON summary reports in-domain counts, density-qualified INMS chi-square
+and median positive model/observation ratios, display-only native-context
+counts, UVIS weighted shape fit, and model peak relative to the published
+column. These are diagnostics, not a refit or a convergence qualification.
 
 ## Plasma-background authority
 

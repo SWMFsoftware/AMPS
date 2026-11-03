@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "source_case": "tenishev2014_hybrid_8",
+  "distribution_name": "e5_h2o_co2_equal_startup",
+  "mode": "absolute",
+  "species": {
+    "H2O": {
+      "jet:I_baghdad": 3.013343923854303e27,
+      "jet:II_damascus": 3.013343923854303e27,
+      "jet:III_damascus": 3.013343923854303e27,
+      "jet:IV_alexandria": 3.013343923854303e27,
+      "jet:V_cairo": 3.013343923854303e27,
+      "jet:VI_baghdad": 3.013343923854303e27,
+      "jet:VII_baghdad": 3.013343923854303e27,
+      "jet:VIII_cairo": 3.013343923854303e27,
+      "stripe:alexandria": 3.013343923854303e27,
+      "stripe:baghdad": 3.013343923854303e27,
+      "stripe:cairo": 3.013343923854303e27,
+      "stripe:damascus": 3.013343923854303e27,
+      "stripe:baghdad_extra": 3.013343923854303e27,
+      "stripe:cairo_extra": 3.013343923854303e27,
+      "stripe:damascus_extra": 3.013343923854303e27
+    },
+    "CO2": {
+      "jet:I_baghdad": 6.753333333333333e24,
+      "jet:II_damascus": 6.753333333333333e24,
+      "jet:III_damascus": 6.753333333333333e24,
+      "jet:IV_alexandria": 6.753333333333333e24,
+      "jet:V_cairo": 6.753333333333333e24,
+      "jet:VI_baghdad": 6.753333333333333e24,
+      "jet:VII_baghdad": 6.753333333333333e24,
+      "jet:VIII_cairo": 6.753333333333333e24,
+      "stripe:alexandria": 6.753333333333333e24,
+      "stripe:baghdad": 6.753333333333333e24,
+      "stripe:cairo": 6.753333333333333e24,
+      "stripe:damascus": 6.753333333333333e24,
+      "stripe:baghdad_extra": 6.753333333333333e24,
+      "stripe:cairo_extra": 6.753333333333333e24,
+      "stripe:damascus_extra": 6.753333333333333e24
+    }
+  },
+  "fit_provenance": {
+    "flyby": "E5",
+    "temporary_distribution": "equal rate assigned to all 15 canonical components for each species",
+    "species": {
+      "H2O": {
+        "fit_strategy": "independent_each_observation",
+        "fit_result": "standalone/results/e5_fit.json",
+        "fit_result_sha256": "3311aa9a445acc253e4a37bfcbfb04e799b05bbd7ea9a625ec901f27b8ee39b7",
+        "fitted_total_source_rate_s-1": 4.520015885781454e28
+      },
+      "CO2": {
+        "fit_strategy": "shared_shape_all_co2",
+        "fit_report": "standalone/CO2.md section 5.1",
+        "reported_apparent_total_source_rate_s-1": 1.013e26,
+        "measurement_interpretation": "apparent CO2 from the E5 mass-44 channel",
+        "impact_fragmentation_enhancement_factor_range": [2.0, 5.0],
+        "physical_co2_total_bracket_s-1": [2.026e25, 5.065e25]
+      }
+    },
+    "warning": "Equal component strengths are a startup fixture, not fitted component estimates. The CO2 strengths store the reported apparent-CO2 total; an actual physical CO2 run must select and apply a justified factor in the documented 2-5 fragmentation bracket."
+  }
+}

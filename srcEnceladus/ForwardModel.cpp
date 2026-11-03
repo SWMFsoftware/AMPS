@@ -234,6 +234,183 @@ Status RequireKeys(
   return Status::Ok();
 }
 
+Status ResolveObservationPath(const fs::path& inputFile,
+                              const std::string& observationRoot,
+                              const AMPS::Input::Assignment& item,
+                              std::string* output) {
+  const std::string value = Unquote(item.value);
+  if (value.empty()) return InputError(item, "path must not be empty");
+  const bool inputRelative = value.rfind("input:", 0) == 0;
+  fs::path path = inputRelative ? fs::path(value.substr(6)) : fs::path(value);
+  if (path.empty()) return InputError(item, "input-relative path must not be empty");
+  if (inputRelative) {
+    if (path.is_absolute())
+      return InputError(item, "input: path must be relative to the runtime deck");
+    path = inputFile.parent_path() / path;
+  } else if (path.is_relative()) {
+    if (observationRoot.empty())
+      return InputError(item,
+          "relative observation path requires observation_data_root or input: prefix");
+    path = fs::path(observationRoot) / path;
+  }
+  std::error_code ec;
+  path = fs::absolute(path, ec).lexically_normal();
+  if (ec) return InputError(item, "cannot resolve observation path");
+  *output = path.string();
+  return Status::Ok();
+}
+
+Status ParseObservationBlock(const AMPS::Input::Block& block,
+                             const fs::path& inputFile,
+                             const std::string& observationRoot,
+                             ObservationRequest* output) {
+  if (output == nullptr) return Status::Error("observation output is null");
+  if (block.name.empty() || !IsPortableName(block.name))
+    return BlockError(block,
+        "observation id is required and may contain only letters, digits, "
+        "'_', '-', and '.'");
+  if (!block.blocks.empty())
+    return BlockError(block, "observation blocks cannot contain child blocks");
+  const auto settings = AssignmentMap(block);
+  Status status = RequireKeys(
+      block, settings, {"instrument", "event_id", "data_file"});
+  if (!status.success) return status;
+
+  ObservationRequest request;
+  request.id = block.name;
+  request.eventId = Unquote(settings.at("event_id")->value);
+  if (!IsPortableName(request.eventId))
+    return InputError(*settings.at("event_id"),
+        "event_id may contain only letters, digits, '_', '-', and '.'");
+  status = ResolveObservationPath(inputFile, observationRoot,
+                                  *settings.at("data_file"),
+                                  &request.dataFile);
+  if (!status.success) return status;
+
+  const std::string instrument = Unquote(settings.at("instrument")->value);
+  if (instrument == "INMS") {
+    request.instrument = ObservationInstrument::Inms;
+    status = RequireKeys(block, settings,
+        {"time_column", "x_column", "y_column", "z_column",
+         "comparison_species"});
+    if (!status.success) return status;
+    request.timeColumn = Unquote(settings.at("time_column")->value);
+    request.xColumn = Unquote(settings.at("x_column")->value);
+    request.yColumn = Unquote(settings.at("y_column")->value);
+    request.zColumn = Unquote(settings.at("z_column")->value);
+    const std::string comparison =
+        Unquote(settings.at("comparison_species")->value);
+    if (comparison != "none") {
+      if (comparison != "H2O" && comparison != "CO2")
+        return InputError(*settings.at("comparison_species"),
+            "INMS comparison_species must be H2O, CO2, or none");
+      request.comparisonSpecies = comparison;
+      status = RequireKeys(block, settings,
+                           {"value_column", "uncertainty_column"});
+      if (!status.success) return status;
+      request.valueColumn = Unquote(settings.at("value_column")->value);
+      request.uncertaintyColumn =
+          Unquote(settings.at("uncertainty_column")->value);
+    }
+    const auto context = settings.find("context_observable");
+    if (context != settings.end()) {
+      if (!request.comparisonSpecies.empty())
+        return InputError(*context->second,
+            "context_observable is only valid with comparison_species=none");
+      request.contextObservable = Unquote(context->second->value);
+      if (!IsPortableName(request.contextObservable))
+        return InputError(*context->second,
+            "context_observable must use only letters, digits, '_', '-', and '.'");
+      status = RequireKeys(block, settings,
+          {"context_value_column", "context_uncertainty_column"});
+      if (!status.success) return status;
+      request.contextValueColumn =
+          Unquote(settings.at("context_value_column")->value);
+      request.contextUncertaintyColumn =
+          Unquote(settings.at("context_uncertainty_column")->value);
+      if (request.contextValueColumn.empty() ||
+          request.contextUncertaintyColumn.empty())
+        return BlockError(block,
+            "context observation column names must not be empty");
+    }
+    const std::set<std::string> allowed = {
+        "instrument", "event_id", "data_file", "time_column", "x_column",
+        "y_column", "z_column", "comparison_species", "value_column",
+        "uncertainty_column", "context_observable", "context_value_column",
+        "context_uncertainty_column"};
+    for (const auto& item : settings)
+      if (allowed.count(item.first) == 0)
+        return InputError(*item.second,
+            "unknown INMS observation key '" + item.first + "'");
+    if (request.timeColumn.empty() || request.xColumn.empty() ||
+        request.yColumn.empty() || request.zColumn.empty())
+      return BlockError(block, "INMS column names must not be empty");
+    if (request.comparisonSpecies.empty() &&
+        (settings.count("value_column") != 0 ||
+         settings.count("uncertainty_column") != 0))
+      return BlockError(block,
+          "comparison_species=none forbids value_column and "
+          "uncertainty_column");
+    if (request.contextObservable.empty() &&
+        (settings.count("context_value_column") != 0 ||
+         settings.count("context_uncertainty_column") != 0))
+      return BlockError(block,
+          "context observation columns require context_observable");
+  } else if (instrument == "UVIS") {
+    request.instrument = ObservationInstrument::Uvis;
+    status = RequireKeys(block, settings,
+        {"ray_geometry", "published_h2o_column_m-2",
+         "published_h2o_column_sigma_m-2"});
+    if (!status.success) return status;
+    const std::string geometry =
+        Unquote(settings.at("ray_geometry")->value);
+    if (geometry == "infinite_chord_tangent_track_normal") {
+      request.uvisRayGeometry =
+          UvisRayGeometry::InfiniteChordTangentTrackNormal;
+    } else if (geometry == "finite_observer_to_sun") {
+      request.uvisRayGeometry = UvisRayGeometry::FiniteObserverToSun;
+      const auto observer = settings.find("observer_geometry_file");
+      if (observer == settings.end())
+        return BlockError(block,
+            "finite_observer_to_sun requires observer_geometry_file");
+      status = ResolveObservationPath(inputFile, observationRoot,
+                                      *observer->second,
+                                      &request.observerGeometryFile);
+      if (!status.success) return status;
+    } else {
+      return InputError(*settings.at("ray_geometry"),
+          "ray_geometry must be infinite_chord_tangent_track_normal or "
+          "finite_observer_to_sun");
+    }
+    if (!ParsePositive(settings.at("published_h2o_column_m-2")->value,
+                       &request.publishedH2OColumnM2) ||
+        !ParsePositive(
+            settings.at("published_h2o_column_sigma_m-2")->value,
+            &request.publishedH2OColumnSigmaM2))
+      return BlockError(block,
+          "published H2O column and its uncertainty must be finite and "
+          "positive in m^-2");
+    const std::set<std::string> allowed = {
+        "instrument", "event_id", "data_file", "ray_geometry",
+        "observer_geometry_file", "published_h2o_column_m-2",
+        "published_h2o_column_sigma_m-2"};
+    for (const auto& item : settings)
+      if (allowed.count(item.first) == 0)
+        return InputError(*item.second,
+            "unknown UVIS observation key '" + item.first + "'");
+    if (request.uvisRayGeometry ==
+            UvisRayGeometry::InfiniteChordTangentTrackNormal &&
+        settings.count("observer_geometry_file") != 0)
+      return InputError(*settings.at("observer_geometry_file"),
+          "observer_geometry_file is only valid for finite_observer_to_sun");
+  } else {
+    return InputError(*settings.at("instrument"),
+                      "instrument must be INMS or UVIS");
+  }
+  *output = std::move(request);
+  return Status::Ok();
+}
+
 Status ParseVertex(const AMPS::Input::Block& block, Vec3* vertex) {
   if (!block.blocks.empty())
     return BlockError(block, "vertex blocks cannot contain child blocks");
@@ -382,6 +559,13 @@ const char* Name(PlasmaBackgroundMode mode) {
   }
   return "unknown";
 }
+const char* Name(ObservationInstrument instrument) {
+  return instrument == ObservationInstrument::Inms ? "INMS" : "UVIS";
+}
+const char* Name(UvisRayGeometry geometry) {
+  return geometry == UvisRayGeometry::InfiniteChordTangentTrackNormal
+      ? "infinite_chord_tangent_track_normal" : "finite_observer_to_sun";
+}
 
 Status ParseSourceDistribution(const std::string& file,
                                SourceDistribution* output) {
@@ -516,8 +700,10 @@ Status ParseConfiguration(const std::string& file, Configuration* output) {
   }
   if (block == nullptr)
     return Status::Error(file + ": required '#begin application: enceladus' block not found");
-  if (!block->blocks.empty())
-    return BlockError(*block, "application: enceladus is a flat block");
+  for (const AMPS::Input::Block& child : block->blocks)
+    if (child.kind != "observation")
+      return BlockError(child,
+          "application: enceladus accepts only observation child blocks");
   const auto settings = AssignmentMap(*block);
   const std::vector<std::string> required = {
       "schema_version", "source_distribution_file", "simulated_species",
@@ -597,12 +783,20 @@ Status ParseConfiguration(const std::string& file, Configuration* output) {
         inputPath, plasmaCache->second->value, &candidate.plasmaCacheDirectory);
     if (!status.success) return InputError(*plasmaCache->second, status.message);
   }
+  const auto observationRoot = settings.find("observation_data_root");
+  if (observationRoot != settings.end()) {
+    status = ResolveInputPath(inputPath, observationRoot->second->value,
+                              &candidate.observationDataRoot);
+    if (!status.success)
+      return InputError(*observationRoot->second, status.message);
+  }
 
   for (const auto& entry : settings) {
     const std::string& key = entry.first;
     const AMPS::Input::Assignment& item = *entry.second;
     if (std::find(required.begin(), required.end(), key) != required.end()) continue;
-    if (key == "plasma_cache_directory") continue;
+    if (key == "plasma_cache_directory" || key == "observation_data_root")
+      continue;
     double scalar = 0.0;
     std::uint64_t count = 0;
     if (key.rfind("total_source_rate.", 0) == 0 &&
@@ -663,6 +857,9 @@ Status ParseConfiguration(const std::string& file, Configuration* output) {
     } else if (key == "flyby_density_output") {
       if (!ParseBoolean(item.value, &candidate.flybyDensityOutput))
         return InputError(item, key + " must be true or false");
+    } else if (key == "volume_field_output") {
+      if (!ParseBoolean(item.value, &candidate.volumeFieldOutput))
+        return InputError(item, key + " must be true or false");
     } else if (key == "flyby_id") {
       candidate.flybyId = Unquote(item.value);
       if (!IsPortableName(candidate.flybyId))
@@ -717,6 +914,21 @@ Status ParseConfiguration(const std::string& file, Configuration* output) {
         return InputError(*found->second,
             "flyby refinement controls require flyby_mesh_refinement=true");
     }
+  }
+  std::set<std::string> observationIds;
+  for (const AMPS::Input::Block& child : block->blocks) {
+    ObservationRequest request;
+    status = ParseObservationBlock(child, inputPath,
+                                   candidate.observationDataRoot, &request);
+    if (!status.success) return status;
+    if (!observationIds.insert(request.id).second)
+      return BlockError(child, "duplicate observation id '" + request.id + "'");
+    candidate.observations.push_back(std::move(request));
+  }
+  if (!candidate.observations.empty() && candidate.observationDataRoot.empty()) {
+    // Absolute per-observation paths remain supported, but an explicit empty
+    // root is not useful provenance and relative paths already fail above.
+    candidate.observationDataRoot = "<absolute-paths>";
   }
   *output = std::move(candidate);
   return Status::Ok();
@@ -830,6 +1042,35 @@ Status ValidateConfiguration(const Configuration& configuration,
              configuration.flybyRefinementTimeMaxS != 0.0) {
     return Status::Error(
         "flyby_mesh_refinement=false forbids flyby refinement controls");
+  }
+  std::set<std::string> observationIds;
+  for (const ObservationRequest& observation : configuration.observations) {
+    if (!IsPortableName(observation.id) ||
+        !observationIds.insert(observation.id).second ||
+        !IsPortableName(observation.eventId) || observation.dataFile.empty())
+      return Status::Error(
+          "observations require unique portable ids, portable event ids, and "
+          "nonempty data files");
+    if (observation.instrument == ObservationInstrument::Inms) {
+      if (!observation.comparisonSpecies.empty() &&
+          !Contains(configuration.simulatedSpecies,
+                    observation.comparisonSpecies))
+        return Status::Error("INMS observation " + observation.id +
+            " compares species " + observation.comparisonSpecies +
+            " which is not in simulated_species");
+      if (!observation.contextObservable.empty() &&
+          !observation.comparisonSpecies.empty())
+        return Status::Error("INMS observation " + observation.id +
+            " cannot combine native-count context with a density comparison");
+    } else {
+      if (!Contains(configuration.simulatedSpecies, "H2O"))
+        return Status::Error("UVIS observation " + observation.id +
+            " requires H2O in simulated_species");
+      if (!(observation.publishedH2OColumnM2 > 0.0) ||
+          !(observation.publishedH2OColumnSigmaM2 > 0.0))
+        return Status::Error("UVIS observation " + observation.id +
+            " requires positive published H2O column and uncertainty");
+    }
   }
   status = RequireUniqueNonempty(configuration.injectedSpecies,
                                  "injected_species");

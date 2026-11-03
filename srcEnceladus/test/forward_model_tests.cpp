@@ -250,7 +250,7 @@ int InputCase(const std::string& inputFile, const std::string& sourceFile) {
         parsed.flybyRefinementTargetCellSizeM != 20000.0 ||
         parsed.flybyRefinementRadiusM != 150000.0 ||
         parsed.flybyRefinementTimeMinS != -120.0 ||
-        parsed.flybyRefinementTimeMaxS != 100.0)
+        parsed.flybyRefinementTimeMaxS != 100.0 || parsed.volumeFieldOutput)
       return Fail("flyby output controls or relative trajectory path were not parsed");
     Value("parsed_flyby_refinement_target_cell_size_m",
           parsed.flybyRefinementTargetCellSizeM);
@@ -258,6 +258,27 @@ int InputCase(const std::string& inputFile, const std::string& sourceFile) {
           parsed.flybyRefinementRadiusM);
   } else if (!parsed.flybyId.empty() || !parsed.flybyTrajectoryFile.empty()) {
     return Fail("disabled flyby output retained dependent controls");
+  }
+  if (!parsed.observations.empty()) {
+    const std::filesystem::path expectedContext =
+        std::filesystem::path(inputFile).parent_path()/"context.csv";
+    if (parsed.observations.size() != 3 ||
+        parsed.observations[0].id != "inms_test" ||
+        parsed.observations[0].instrument != FM::ObservationInstrument::Inms ||
+        parsed.observations[0].comparisonSpecies != "H2O" ||
+        parsed.observations[1].id != "inms_context_test" ||
+        parsed.observations[1].contextObservable !=
+            "INMS_OSNB_H2O_counts_per_integration" ||
+        parsed.observations[1].dataFile !=
+            std::filesystem::absolute(expectedContext).lexically_normal().string() ||
+        parsed.observations[2].id != "uvis_test" ||
+        parsed.observations[2].instrument != FM::ObservationInstrument::Uvis ||
+        parsed.observations[2].uvisRayGeometry !=
+            FM::UvisRayGeometry::FiniteObserverToSun ||
+        parsed.observations[2].publishedH2OColumnM2 != 1.4e20)
+      return Fail("repeatable INMS/UVIS observation blocks were not parsed");
+    Value("parsed_observation_requests",
+          static_cast<double>(parsed.observations.size()));
   }
   Value("parsed_sample_length_steps", parsed.sampleLengthSteps);
   Value("parsed_total_iterations", parsed.totalIterations);

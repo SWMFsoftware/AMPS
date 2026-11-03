@@ -48,6 +48,7 @@ selected_reactions=burger2007.photo.h2o_to_oh_h
 reaction_products=discard
 sample_length_steps=200
 total_iterations=800
+volume_field_output=false
 flyby_density_output=true
 flyby_id=E3
 flyby_trajectory_file=trajectory.csv
@@ -73,6 +74,41 @@ characteristic_speed.H2O_m_s-1=2000
 characteristic_speed.CO2_m_s-1=1000
 courant.H2O=0.5
 courant.CO2=0.5
+observation_data_root=.
+#begin observation: inms_test
+instrument=INMS
+event_id=E3
+data_file=inms.csv
+time_column=time_ca_s
+x_column=x_m
+y_column=y_m
+z_column=z_m
+comparison_species=H2O
+value_column=density_m3
+uncertainty_column=sigma_m3
+#end observation
+#begin observation: inms_context_test
+instrument=INMS
+event_id=E21
+data_file=input:context.csv
+time_column=time_ca_s
+x_column=x_m
+y_column=y_m
+z_column=z_m
+comparison_species=none
+context_observable=INMS_OSNB_H2O_counts_per_integration
+context_value_column=counts
+context_uncertainty_column=sigma_counts
+#end observation
+#begin observation: uvis_test
+instrument=UVIS
+event_id=uvis_test_event
+data_file=uvis.csv
+ray_geometry=finite_observer_to_sun
+observer_geometry_file=observer.csv
+published_h2o_column_m-2=1.4e20
+published_h2o_column_sigma_m-2=1.4e19
+#end observation
 #end application
 """, encoding="utf-8")
 
@@ -160,7 +196,8 @@ def main() -> int:
     values: dict[str, object] = {}
 
     standalone = run([sys.executable, "-m", "unittest",
-                      "standalone.tests.test_export_forward_sources"])
+                      "standalone.tests.test_export_forward_sources",
+                      "standalone.tests.test_export_forward_observations"])
     outcomes.append(("U00_exporter", standalone.returncode == 0,
                      standalone.stdout + standalone.stderr))
 

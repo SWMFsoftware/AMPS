@@ -39,6 +39,9 @@ def main() -> int:
                         help="maximum allowed cell edge at every in-domain flyby row")
     parser.add_argument("--skip-flyby-density-check", action="store_true",
                         help="do not require/plot the E3 flyby Tecplot product")
+    parser.add_argument("--expect-volume-fields", choices=("on", "off"),
+                        default="on",
+                        help="expected runtime volume_field_output receipt and files")
     args = parser.parse_args()
     if (args.ranks <= 0 or args.timeout_s <= 0 or
             args.expected_iterations <= 0 or args.expected_sample_length <= 0 or
@@ -107,6 +110,7 @@ def main() -> int:
           "source_case=tenishev2014_hybrid_8" in text and
           "plasma_background_mode=none" in text and
           "reaction_products=discard" in text and
+          f"volume_field_output={args.expect_volume_fields}" in text and
           f"sample_length_steps={args.expected_sample_length}" in text and
           f"total_iterations={args.expected_iterations}" in text and
           (args.skip_flyby_density_check or
@@ -173,7 +177,10 @@ def main() -> int:
         if (match := re.fullmatch(r"pic\.([^.]+)\.s=\d+\.out=\d+\.dat",
                                  path.name)) is not None
     }
-    check("E3R08_active_species_output", field_species == {"H2O", "CO2"},
+    expected_field_species = ({"H2O", "CO2"}
+                              if args.expect_volume_fields == "on" else set())
+    check("E3R08_active_species_output",
+          field_species == expected_field_species,
           f"generic_field_species={sorted(field_species)}")
     check("E3R09_clean_termination", "End of the run:" in text,
           "native main reached MPI finalization")
