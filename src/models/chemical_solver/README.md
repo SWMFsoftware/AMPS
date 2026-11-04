@@ -31,6 +31,30 @@ mass-action event rate. It deliberately leaves time integration to the
 solver. `IsUnitUnimolecular` identifies reactions that a one-particle decay
 callback can execute without selecting additional reactant particles.
 
+## Unit-unimolecular execution index
+
+`cReactionNetwork` builds a compact, per-parent index of unit-unimolecular
+reactions when the network object is constructed. The public
+`GetUnitUnimolecularReactionCount(species)` and
+`GetUnitUnimolecularReactionIndex(species,channel)` accessors expose only
+reactions that `IsUnitUnimolecular` can execute. Channels for each parent keep
+their original input-table order, so an application can replace a full-table
+scan without changing mutually exclusive channel ordering or random-number
+selection.
+
+The index is an execution aid, not a restriction on the generic database.
+Binary and higher-order reactions remain in the main table and continue to be
+available through the general APIs. Index construction skips malformed table
+records so that `Validate()` remains responsible for returning the detailed
+diagnostic. Applications must validate the network before using the index.
+
+The comet particle executor uses this index to build one immutable rate table
+per parent species at a stage boundary. It therefore does not scan every
+reaction or allocate temporary channel/rate vectors for every model particle.
+If a runtime parameter used by a rate law changes, the application must rebuild
+its rate cache before the next particle batch; the generic network does not
+cache application state.
+
 ## Input generation
 
 `input/CometReactionNetwork.pm` parses the application record
@@ -59,6 +83,9 @@ coefficients, rate parameters, and excess energy. Application-level
 validation may be stricter. The comet particle executor, for example,
 requires one unit reactant, integer product multiplicities, neutral mass
 balance, and individual particle-weight correction.
+
+The standalone test also checks the parent index, preservation of channel
+order, exclusion of a binary reaction, and invalid species/channel sentinels.
 
 Run the standalone tests with:
 

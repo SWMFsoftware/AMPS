@@ -19,6 +19,84 @@ namespace {
 long int ChemistryProcessedFlagOffset=-1;
 bool LocalChemistryAllocationPressure=false;
 
+// Per-parent reaction dispatch is immutable during a chemistry stage.  The
+// generic network supplies applicable reaction indices in generated-table
+// order; this application cache adds the rates evaluated at the selected
+// heliocentric distance.  Constructing it outside ProcessParticle removes a
+// full-network scan and two vector allocations from every model particle.
+struct cParentReactionRateCache {
+  std::vector<std::size_t> Channels;
+  std::vector<double> Rates;
+  double TotalRate=0.0;
+};
+
+std::vector<cParentReactionRateCache> ParentReactionRates;
+double CachedHeliocentricDistanceAU=
+    std::numeric_limits<double>::quiet_NaN();
+bool ParentReactionRatesReady=false;
+
+bool RefreshParentReactionRates(std::string *error) {
+  ParentReactionRates.clear();
+  ParentReactionRates.resize(PIC::nTotalSpecies);
+  ParentReactionRatesReady=false;
+
+  if (!Comet::Chemistry::Enabled) {
+    CachedHeliocentricDistanceAU=Comet::Chemistry::HeliocentricDistanceAU;
+    ParentReactionRatesReady=true;
+    return true;
+  }
+  if (!(Comet::Chemistry::HeliocentricDistanceAU>0.0) ||
+      !std::isfinite(Comet::Chemistry::HeliocentricDistanceAU)) {
+    if (error!=NULL)
+      *error="enabled comet chemistry requires a positive finite heliocentric distance";
+    return false;
+  }
+
+  const ChemicalSolver::cReactionNetwork &network=
+      Comet::Chemistry::GetNetwork();
+  for (int species=0;species<PIC::nTotalSpecies;species++) {
+    cParentReactionRateCache &cache=ParentReactionRates[species];
+    const std::size_t channelCount=
+        network.GetUnitUnimolecularReactionCount(species);
+    cache.Channels.reserve(channelCount);
+    cache.Rates.reserve(channelCount);
+
+    // Retain input order and the original left-to-right rate accumulation.
+    // Besides preserving mutually exclusive channel semantics, this keeps the
+    // floating-point selection boundaries and random-number stream unchanged.
+    for (std::size_t channel=0;channel<channelCount;channel++) {
+      const std::size_t reaction=
+          network.GetUnitUnimolecularReactionIndex(species,channel);
+      if (reaction>=network.GetReactionCount()) {
+        if (error!=NULL)
+          *error="invalid indexed comet chemistry reaction";
+        return false;
+      }
+      const double rate=network.GetRateCoefficient(
+          reaction,0.0,Comet::Chemistry::HeliocentricDistanceAU);
+      if (!std::isfinite(rate) || rate<0.0) {
+        if (error!=NULL)
+          *error="comet chemistry produced an invalid cached reaction rate";
+        return false;
+      }
+      if (rate>0.0) {
+        cache.Channels.push_back(reaction);
+        cache.Rates.push_back(rate);
+        cache.TotalRate+=rate;
+      }
+    }
+    if (!std::isfinite(cache.TotalRate) || cache.TotalRate<0.0) {
+      if (error!=NULL)
+        *error="comet chemistry produced an invalid cached total rate";
+      return false;
+    }
+  }
+
+  CachedHeliocentricDistanceAU=Comet::Chemistry::HeliocentricDistanceAU;
+  ParentReactionRatesReady=true;
+  return true;
+}
+
 unsigned char& ChemistryProcessedFlag(
     PIC::ParticleBuffer::byte *particleData) {
   if (ChemistryProcessedFlagOffset<0) {
@@ -50,9 +128,10 @@ const ChemicalSolver::cReactionNetwork& Comet::Chemistry::GetNetwork() {
 }
 
 bool Comet::Chemistry::Validate(std::string *error) {
-  if (Enabled && !(HeliocentricDistanceAU>0.0)) {
+  if (Enabled && (!(HeliocentricDistanceAU>0.0) ||
+      !std::isfinite(HeliocentricDistanceAU))) {
     if (error!=NULL)
-      *error="enabled comet chemistry requires a positive heliocentric distance";
+      *error="enabled comet chemistry requires a positive finite heliocentric distance";
     return false;
   }
 
@@ -106,7 +185,11 @@ bool Comet::Chemistry::Validate(std::string *error) {
     }
   }
 
-  return true;
+  // Build application runtime rates only after the generic network and the
+  // particle executor's stronger mass/multiplicity contract have succeeded.
+  // A subsequent input/state change is detected at BeginBatchedModel, which is
+  // a serial stage boundary rather than a particle-parallel hot path.
+  return RefreshParentReactionRates(error);
 }
 
 namespace {
@@ -555,6 +638,16 @@ bool Comet::Chemistry::ValidateEnsemble(long int eventsPerReaction) {
 void Comet::Chemistry::BeginBatchedModel() {
   LocalChemistryAllocationPressure=false;
 
+  if (!ParentReactionRatesReady ||
+      CachedHeliocentricDistanceAU!=HeliocentricDistanceAU) {
+    std::string error;
+    if (!RefreshParentReactionRates(&error)) {
+      std::fprintf(stderr,"Cannot refresh comet chemistry rates: %s\n",
+          error.c_str());
+      std::abort();
+    }
+  }
+
   // Reset the per-stage flag on every owner particle, including particles
   // injected immediately before chemistry.  A byte is used instead of an
   // ever-growing epoch so a reused particle-buffer slot can never inherit a
@@ -645,23 +738,17 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
   const int parentSpecies=PIC::ParticleBuffer::GetI(parentData);
   const ChemicalSolver::cReactionNetwork &network=GetNetwork();
 
-  // Build the total decay rate for this parent. Selection by a single random
-  // channel below is essential: independently sampling expected daughter
-  // yields could combine products from mutually exclusive Table 4 branches.
-  std::vector<std::size_t> channels;
-  std::vector<double> rates;
-  double totalRate=0.0;
-  for (std::size_t reaction=0;reaction<network.GetReactionCount();reaction++) {
-    if (!network.IsUnitUnimolecular(reaction) ||
-        network.GetReactantTerm(reaction,0).Species!=parentSpecies) continue;
-    const double rate=network.GetRateCoefficient(
-        reaction,0.0,HeliocentricDistanceAU);
-    if (rate>0.0) {
-      channels.push_back(reaction);
-      rates.push_back(rate);
-      totalRate+=rate;
-    }
+  if (!ParentReactionRatesReady ||
+      CachedHeliocentricDistanceAU!=HeliocentricDistanceAU ||
+      parentSpecies<0 || parentSpecies>=PIC::nTotalSpecies) {
+    std::fprintf(stderr,
+        "comet chemistry rate cache is stale or particle species %d is invalid\n",
+        parentSpecies);
+    std::abort();
   }
+  const cParentReactionRateCache &parentRates=
+      ParentReactionRates[parentSpecies];
+  const double totalRate=parentRates.TotalRate;
 
   if (!(totalRate>0.0)) {
     MarkChemistryProcessed(parentData);
@@ -682,11 +769,11 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
   }
 
   double selector=rnd()*totalRate;
-  std::size_t selected=channels.back();
-  for (std::size_t i=0;i<channels.size();i++) {
-    selector-=rates[i];
+  std::size_t selected=parentRates.Channels.back();
+  for (std::size_t i=0;i<parentRates.Channels.size();i++) {
+    selector-=parentRates.Rates[i];
     if (selector<=0.0) {
-      selected=channels[i];
+      selected=parentRates.Channels[i];
       break;
     }
   }

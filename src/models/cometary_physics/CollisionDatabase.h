@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace CometaryPhysics {
 
@@ -51,7 +52,9 @@ class cCollisionDatabase {
  public:
   cCollisionDatabase(const cCollision *collisions,std::size_t collisionCount,
       int speciesCount) : Collisions(collisions),CollisionCount(collisionCount),
-      SpeciesCount(speciesCount) {}
+      SpeciesCount(speciesCount) {
+    BuildPairIndex();
+  }
 
   std::size_t GetCollisionCount() const {return CollisionCount;}
   int GetSpeciesCount() const {return SpeciesCount;}
@@ -107,12 +110,32 @@ class cCollisionDatabase {
   }
 
   const cCollision *Find(int species0,int species1) const {
-    for (std::size_t i=0;i<CollisionCount;i++)
-      if ((Collisions[i].Species0==species0 &&
-           Collisions[i].Species1==species1) ||
-          (Collisions[i].Species0==species1 &&
-           Collisions[i].Species1==species0)) return Collisions+i;
-    return NULL;
+    if (species0<0 || species0>=SpeciesCount ||
+        species1<0 || species1>=SpeciesCount || PairIndex.empty()) return NULL;
+    return PairIndex[static_cast<std::size_t>(species0)*SpeciesCount+species1];
+  }
+
+  // Evaluate an entry already returned by Find().  Keeping record evaluation
+  // separate from pair lookup prevents application adapters from paying for a
+  // second search merely to apply the selected law.  It also leaves a single
+  // documented implementation of the temperature-range contract.
+  double Evaluate(const cCollision &entry,double temperature,
+      bool *temperatureInRange=NULL) const {
+    if (temperatureInRange!=NULL) *temperatureInRange=false;
+    if (entry.Law==CollisionLaw::Constant) {
+      if (temperatureInRange!=NULL) *temperatureInRange=true;
+      return entry.ReferenceCrossSection;
+    }
+
+    // A zero result with temperatureInRange=false identifies a request outside
+    // the cited law's domain.  Application adapters can report the offending
+    // pair using the entry they already hold.
+    if (!std::isfinite(temperature) ||
+        temperature<entry.MinimumTemperature ||
+        temperature>entry.MaximumTemperature) return 0.0;
+    if (temperatureInRange!=NULL) *temperatureInRange=true;
+    return entry.ReferenceCrossSection*std::pow(
+        temperature/entry.ReferenceTemperature,entry.TemperatureExponent);
   }
 
   double GetCrossSection(int species0,int species1,double temperature,
@@ -121,28 +144,37 @@ class cCollisionDatabase {
     if (found!=NULL) *found=(entry!=NULL);
     if (temperatureInRange!=NULL) *temperatureInRange=false;
     if (entry==NULL) return 0.0;
-
-    if (entry->Law==CollisionLaw::Constant) {
-      if (temperatureInRange!=NULL) *temperatureInRange=true;
-      return entry->ReferenceCrossSection;
-    }
-
-    // A zero result with found=true and temperatureInRange=false identifies a
-    // request outside the cited law's domain.  Application adapters can then
-    // report a precise error without confusing it with a missing species pair.
-    if (!std::isfinite(temperature) ||
-        temperature<entry->MinimumTemperature ||
-        temperature>entry->MaximumTemperature) return 0.0;
-    if (temperatureInRange!=NULL) *temperatureInRange=true;
-    return entry->ReferenceCrossSection*std::pow(
-        temperature/entry->ReferenceTemperature,
-        entry->TemperatureExponent);
+    return Evaluate(*entry,temperature,temperatureInRange);
   }
 
  private:
   const cCollision *Collisions;
   std::size_t CollisionCount;
   int SpeciesCount;
+  std::vector<const cCollision*> PairIndex;
+
+  void BuildPairIndex() {
+    // Like the reaction-network index, construction must be safe even for an
+    // invalid generated table so Validate() can return the intended detailed
+    // error.  Out-of-range entries are skipped.  For duplicates, retain the
+    // first record in the index; Validate() still rejects the database before
+    // it can be used by a simulation.
+    if (SpeciesCount<=0) return;
+    PairIndex.assign(static_cast<std::size_t>(SpeciesCount)*SpeciesCount,NULL);
+    if (CollisionCount==0 || Collisions==NULL) return;
+
+    for (std::size_t i=0;i<CollisionCount;i++) {
+      const cCollision &entry=Collisions[i];
+      if (entry.Species0<0 || entry.Species0>=SpeciesCount ||
+          entry.Species1<0 || entry.Species1>=SpeciesCount) continue;
+      const std::size_t forward=
+          static_cast<std::size_t>(entry.Species0)*SpeciesCount+entry.Species1;
+      const std::size_t reverse=
+          static_cast<std::size_t>(entry.Species1)*SpeciesCount+entry.Species0;
+      if (PairIndex[forward]==NULL) PairIndex[forward]=Collisions+i;
+      if (PairIndex[reverse]==NULL) PairIndex[reverse]=Collisions+i;
+    }
+  }
 
   static bool SamePair(const cCollision &a,const cCollision &b) {
     return (a.Species0==b.Species0 && a.Species1==b.Species1) ||

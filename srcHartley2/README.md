@@ -625,6 +625,47 @@ the resulting steady Rubin comparison is reviewed. The block-local-weight
 run has demonstrated bounded population and no buffer exhaustion, but it did
 not satisfy the current three-consecutive-window 5% criterion.
 
+## Hot-loop indexes and allocation reuse
+
+The Halley production profile identified two generic database scans and
+per-cell/per-particle allocation as avoidable costs. The application and core
+now use three coordinated optimizations:
+
+- `cCollisionDatabase` constructs a symmetric dense pair index, and
+  `CometPhysics` evaluates the pointer returned by the first lookup instead of
+  searching the 378-record table a second time;
+- `cReactionNetwork` constructs a per-parent unit-unimolecular index, while
+  `CometChemistry` caches ordered channel rates and their total once per
+  heliocentric-distance state; and
+- the general core NTC routine builds reusable per-thread species buckets in
+  one cell-list traversal instead of allocating scratch arrays and rescanning
+  the linked list for each species.
+
+These changes preserve input reaction order, mutually exclusive channel
+selection, collision pair ordering, the NTC 100-probe majorant, random-number
+call order, and all block-local weight/timestep corrections. The chemistry
+cache is refreshed during validation and at a batched-stage boundary if the
+heliocentric distance changes. It contains only positive unit-unimolecular
+rates; arbitrary non-unimolecular records remain in the generic reaction
+network for other solvers.
+
+The clean 14-rank regression under
+`validation_runs/halley1d_priority_optimization_preflight_20261104/benchmark14`
+completed the full 10,000 iterations. All 540 AMPS `.dat` files are
+byte-for-byte identical to the pre-optimization baseline. The timestamp span
+from the first output file to the last fell from 3,052 s to 470 s, a 6.49x
+end-to-end speedup for this host/run configuration. The final population
+(391,034), convergence metric (1.946230, limited by CH3), and 0/3 passing
+windows are unchanged. This is a performance/equivalence result, not a claim
+that the science case converged.
+
+A post-change Callgrind sample is retained in
+`validation_runs/halley1d_priority_optimization_preflight_20261104/callgrind_optimized`.
+It contains no linear collision-table scan. Temperature-law `pow` evaluation
+is about 2.2% of sampled instructions, so no cell/state cross-section cache was
+added; such a cache would need an explicit invalidation contract and is not
+justified by the residual cost.
+
 ## Visualizing DIM1 output
 
 `visualization/plot_1d.py` reads column names directly from AMPS Tecplot

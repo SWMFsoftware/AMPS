@@ -5,6 +5,8 @@
 
 #include "pic.h"
 
+#include <vector>
+
 //sampling offset of the collision frequentcy
 int PIC::MolecularCollisions::ParticleCollisionModel::CollsionFrequentcySampling::SamplingBufferOffset=-1;
 
@@ -339,19 +341,26 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
     PIC::ParticleBuffer::byte *ParticleData;
   };
 
+  // Retain one independently reusable set of species buckets per execution
+  // thread.  The old implementation allocated two arrays for every occupied
+  // cell and repeatedly traversed the cell linked list for each species pair.
+  // CollisionModelManager may dispatch cells through OpenMP, so thread_local
+  // storage is required even though the current comet validation uses one
+  // OpenMP thread per MPI rank.  clear() preserves capacity: after a thread
+  // has encountered its largest cell, later cells do not call the allocator.
+  static thread_local std::vector<cParticleDataList>
+      ParticleDataBySpecies[PIC::nTotalSpecies];
+
   int s,s0,s1;
 
-  int nParticleNumber[PIC::nTotalSpecies],nMaxSpecParticleNumber,cnt;
+  int nParticleNumber[PIC::nTotalSpecies],cnt;
   long int FirstCellParticle,ptr;
   double cellMeasure;
   int thread;
   PIC::Mesh::cDataBlockAMR *block;
 
-  //particle lists
-  int ParticleDataListLength=100;
-  cParticleDataList *s0ParticleDataList; //=new cParticleDataList[ParticleDataListLength];
-  cParticleDataList *s1ParticleDataList; //=new cParticleDataList[ParticleDataListLength];  //s0ParticleDataList,s1ParticleDataList are used to store the actual data
-  cParticleDataList *s0List=NULL,*s1List=NULL; //s0List and s1List are used to access s0ParticleDataList and s1ParticleDataList
+  // s0List and s1List point into the thread-local species buckets above.
+  cParticleDataList *s0List=NULL,*s1List=NULL;
 
   //sampling data
   PIC::Mesh::cDataCenterNode *cell;
@@ -373,56 +382,65 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
 
   if (FirstCellParticle!=-1) {
     //simulate collision in the cell
-    //1. coalcualte the number of the model particles in the cell and re-allocate the particle lists if needed
-    for (s=0;s<PIC::nTotalSpecies;s++) nParticleNumber[s]=0;
-    for (ptr=FirstCellParticle;ptr!=-1;ptr=PIC::ParticleBuffer::GetNext(ptr)) nParticleNumber[PIC::ParticleBuffer::GetI(ptr)]++;
-    for (nMaxSpecParticleNumber=0,s=0;s<PIC::nTotalSpecies;s++) if (nMaxSpecParticleNumber<nParticleNumber[s]) nMaxSpecParticleNumber=nParticleNumber[s];
+    // 1. Bucket every particle by species in one linked-list traversal.  The
+    // velocity is copied because trial collisions operate on a compact array;
+    // ParticleData retains the authoritative AMPS record for final updates.
+    // Weight-correction extrema and sums are also species invariants within
+    // this cell collision call, so calculate them once rather than once for
+    // every (s0,s1) pair.
+    double minWeightCorrection[PIC::nTotalSpecies];
+    double sumWeightCorrection[PIC::nTotalSpecies];
+    for (s=0;s<PIC::nTotalSpecies;s++) {
+      ParticleDataBySpecies[s].clear();
+      nParticleNumber[s]=0;
+      minWeightCorrection[s]=1.0;
+      sumWeightCorrection[s]=0.0;
+    }
 
+    for (ptr=FirstCellParticle;ptr!=-1;
+         ptr=PIC::ParticleBuffer::GetNext(ptr)) {
+      const int species=PIC::ParticleBuffer::GetI(ptr);
+      PIC::ParticleBuffer::byte *ParticleData=
+          PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+      std::vector<cParticleDataList> &list=ParticleDataBySpecies[species];
+      cParticleDataList entry;
+      PIC::ParticleBuffer::GetV(entry.vel,ParticleData);
+      entry.ParticleData=ParticleData;
+      entry.ValueChangedFlag=false;
+      list.push_back(entry);
 
-    ParticleDataListLength=nMaxSpecParticleNumber;
-    s0ParticleDataList=new cParticleDataList[ParticleDataListLength];
-    s1ParticleDataList=new cParticleDataList[ParticleDataListLength];
-
+      if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ ==
+          _INDIVIDUAL_PARTICLE_WEIGHT_ON_) {
+        const double correction=
+            PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
+        if (nParticleNumber[species]==0 ||
+            correction<minWeightCorrection[species])
+          minWeightCorrection[species]=correction;
+        sumWeightCorrection[species]+=correction;
+      }
+      else sumWeightCorrection[species]+=1.0;
+      nParticleNumber[species]++;
+    }
 
     //loop through the first species
     double m0,m1,am;
     double LocalParticleWeight_s0,LocalParticleWeight_s1;
     double LocalTimeStep_s0,LocalTimeStep_s1;
     double minParticleWeightCorrection_s0,minParticleWeightCorrection_s1,sumWeightCorrection_s0,sumWeightCorrection_s1;
-    PIC::ParticleBuffer::byte *ParticleData;
 
     for (s0=0;s0<PIC::nTotalSpecies;s0++) if ((PIC::MolecularData::GetSpecieType(s0)==_PIC_SPECIE_TYPE__GAS_)&&(nParticleNumber[s0]!=0)) {
       m0=PIC::MolecularData::GetMass(s0);
       LocalParticleWeight_s0=block->GetLocalParticleWeight(s0);
       LocalTimeStep_s0=block->GetLocalTimeStep(s0);
-      minParticleWeightCorrection_s0=1,sumWeightCorrection_s0=0.0;
+      minParticleWeightCorrection_s0=minWeightCorrection[s0];
+      sumWeightCorrection_s0=sumWeightCorrection[s0];
 
-      //populate the particle list
-      s0List=s0ParticleDataList;
-
-      for (cnt=0,ptr=FirstCellParticle;ptr!=-1;ptr=PIC::ParticleBuffer::GetNext(ptr)) if (PIC::ParticleBuffer::GetI(ptr)==(unsigned)s0) {
-        ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
-
-        PIC::ParticleBuffer::GetV(s0ParticleDataList[cnt].vel,ParticleData);
-        s0ParticleDataList[cnt].ParticleData=ParticleData;
-        s0ParticleDataList[cnt].ValueChangedFlag=false;
-
-        if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_) {
-          double wc = PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
-
-          if (cnt == 0) {
-            minParticleWeightCorrection_s0 = wc;
-          } else if (wc < minParticleWeightCorrection_s0) {
-            minParticleWeightCorrection_s0 = wc;
-          }
-
-          sumWeightCorrection_s0 += wc;
-        } else {
-          sumWeightCorrection_s0 += 1.0;
-        }
-
-        cnt++;
-      }
+      // The species may already have appeared as s1 for a lower-index pair.
+      // Its compact velocities contain those committed updates; only the
+      // per-pair writeback flags need resetting before it becomes s0.
+      s0List=ParticleDataBySpecies[s0].data();
+      for (cnt=0;cnt<nParticleNumber[s0];cnt++)
+        s0List[cnt].ValueChangedFlag=false;
 
       //loop through the second speices
       for (s1=s0;s1<PIC::nTotalSpecies;s1++) if ((PIC::MolecularData::GetSpecieType(s1)==_PIC_SPECIE_TYPE__GAS_)&&(nParticleNumber[s1]!=0)) {
@@ -435,36 +453,18 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
         am=m0+m1;
         LocalParticleWeight_s1=block->GetLocalParticleWeight(s1);
         LocalTimeStep_s1=block->GetLocalTimeStep(s1);
-        sumWeightCorrection_s1=0.0;
+        sumWeightCorrection_s1=sumWeightCorrection[s1];
 
-        //populate the list
+        // Select the already-populated species bucket.  For a distinct s1,
+        // reset writeback flags just as the historical repopulation loop did;
+        // velocities remain current because every accepted collision updates
+        // this same bucket before it is committed to ParticleData.
         if (s0==s1) s1List=s0List,minParticleWeightCorrection_s1=minParticleWeightCorrection_s0,sumWeightCorrection_s1=sumWeightCorrection_s0;
         else {
-          s1List=s1ParticleDataList;
-
-          for (cnt=0,ptr=FirstCellParticle;ptr!=-1;ptr=PIC::ParticleBuffer::GetNext(ptr)) if (PIC::ParticleBuffer::GetI(ptr)==(unsigned)s1) {
-            ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
-
-            PIC::ParticleBuffer::GetV(s1ParticleDataList[cnt].vel,ParticleData);
-            s1ParticleDataList[cnt].ParticleData=ParticleData;
-            s1ParticleDataList[cnt].ValueChangedFlag=false;
-
-            if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_) {
-              double wc = PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
-
-              if (cnt == 0) {
-                minParticleWeightCorrection_s1 = wc;
-              } else if (wc < minParticleWeightCorrection_s1) {
-                minParticleWeightCorrection_s1 = wc;
-              }
-
-              sumWeightCorrection_s1 += wc;
-            } else {
-              sumWeightCorrection_s1 += 1.0;
-            }
-
-            cnt++;
-          }
+          s1List=ParticleDataBySpecies[s1].data();
+          minParticleWeightCorrection_s1=minWeightCorrection[s1];
+          for (cnt=0;cnt<nParticleNumber[s1];cnt++)
+            s1List[cnt].ValueChangedFlag=false;
         }
 
         //simulate collsions between the pair of species
@@ -610,9 +610,6 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
         PIC::ParticleBuffer::SetV(s0List[cnt].vel,s0List[cnt].ParticleData);
       }
     }
-
-    delete [] s1ParticleDataList;
-    delete [] s0ParticleDataList;
   }
 }
 

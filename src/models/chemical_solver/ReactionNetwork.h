@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace ChemicalSolver {
 
@@ -59,13 +60,18 @@ struct cReaction {
 
 class cReactionNetwork {
  public:
-  // The network is a non-owning view over generated static tables.  Keeping
-  // ownership outside this class makes the same data usable in application
-  // callbacks without dynamic initialization or geometry dependencies.
+  // The reaction and term tables remain non-owning views of generated static
+  // storage.  The network owns only a compact lookup index that is constructed
+  // once: for each parent species it records the unit-unimolecular reactions
+  // in their original table order.  Particle chemistry can therefore visit
+  // only applicable channels instead of scanning an arbitrary full network
+  // for every model particle.
   cReactionNetwork(const cStoichiometricTerm *terms,std::size_t termCount,
       const cReaction *reactions,std::size_t reactionCount,int speciesCount) :
       Terms(terms),TermCount(termCount),Reactions(reactions),
-      ReactionCount(reactionCount),SpeciesCount(speciesCount) {}
+      ReactionCount(reactionCount),SpeciesCount(speciesCount) {
+    BuildUnitUnimolecularIndex();
+  }
 
   std::size_t GetReactionCount() const {return ReactionCount;}
   std::size_t GetTermCount() const {return TermCount;}
@@ -201,12 +207,72 @@ class cReactionNetwork {
         Terms[entry.ReactantOffset].Coefficient==1.0;
   }
 
+  // Return the reactions that the discrete one-parent particle executor can
+  // apply to `species`.  These accessors deliberately expose indices rather
+  // than cReaction pointers: generated reaction tables remain the single
+  // source of truth, and consumers can continue to use GetReaction() and the
+  // existing term accessors.  Invalid species and channel indices report an
+  // empty/sentinel result instead of indexing the lookup vectors.
+  std::size_t GetUnitUnimolecularReactionCount(int species) const {
+    if (species<0 || species>=SpeciesCount ||
+        UnitUnimolecularReactionOffsets.empty()) return 0;
+    return UnitUnimolecularReactionOffsets[species+1]-
+        UnitUnimolecularReactionOffsets[species];
+  }
+
+  std::size_t GetUnitUnimolecularReactionIndex(int species,
+      std::size_t channel) const {
+    const std::size_t count=GetUnitUnimolecularReactionCount(species);
+    if (channel>=count) return ReactionCount;
+    return UnitUnimolecularReactionIndices[
+        UnitUnimolecularReactionOffsets[species]+channel];
+  }
+
  private:
   const cStoichiometricTerm *Terms;
   std::size_t TermCount;
   const cReaction *Reactions;
   std::size_t ReactionCount;
   int SpeciesCount;
+  std::vector<std::size_t> UnitUnimolecularReactionOffsets;
+  std::vector<std::size_t> UnitUnimolecularReactionIndices;
+
+  void BuildUnitUnimolecularIndex() {
+    // Construction must remain safe for malformed tables because callers use
+    // Validate() to obtain the detailed diagnostic.  Guard every table access
+    // here; invalid reactions are omitted from the acceleration index and are
+    // still rejected by Validate() before a solver is allowed to run.
+    if (SpeciesCount<=0) return;
+    UnitUnimolecularReactionOffsets.assign(
+        static_cast<std::size_t>(SpeciesCount)+1,0);
+    if (ReactionCount==0 || Reactions==NULL || Terms==NULL) return;
+
+    for (std::size_t reaction=0;reaction<ReactionCount;reaction++) {
+      const cReaction &entry=Reactions[reaction];
+      if (entry.ReactantCount!=1 || entry.ReactantOffset>=TermCount) continue;
+      const cStoichiometricTerm &parent=Terms[entry.ReactantOffset];
+      if (parent.Coefficient!=1.0 || parent.Species<0 ||
+          parent.Species>=SpeciesCount) continue;
+      UnitUnimolecularReactionOffsets[
+          static_cast<std::size_t>(parent.Species)+1]++;
+    }
+
+    for (int species=0;species<SpeciesCount;species++)
+      UnitUnimolecularReactionOffsets[species+1]+=
+          UnitUnimolecularReactionOffsets[species];
+
+    UnitUnimolecularReactionIndices.resize(
+        UnitUnimolecularReactionOffsets[SpeciesCount]);
+    std::vector<std::size_t> insertion=UnitUnimolecularReactionOffsets;
+    for (std::size_t reaction=0;reaction<ReactionCount;reaction++) {
+      const cReaction &entry=Reactions[reaction];
+      if (entry.ReactantCount!=1 || entry.ReactantOffset>=TermCount) continue;
+      const cStoichiometricTerm &parent=Terms[entry.ReactantOffset];
+      if (parent.Coefficient!=1.0 || parent.Species<0 ||
+          parent.Species>=SpeciesCount) continue;
+      UnitUnimolecularReactionIndices[insertion[parent.Species]++]=reaction;
+    }
+  }
 
   static bool Fail(const std::string &message,std::string *error) {
     if (error!=NULL) *error=message;

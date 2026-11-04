@@ -111,9 +111,9 @@ double Comet::Physics::GetNeutralCrossSection(double *v0,double *v1,
       temperature=entry->MaximumTemperature;
   }
 
-  bool found=false,temperatureInRange=false;
-  const double sigma=GetCollisionDatabase().GetCrossSection(
-      species0,species1,temperature,&found,&temperatureInRange);
+  bool temperatureInRange=false;
+  const double sigma=GetCollisionDatabase().Evaluate(
+      *entry,temperature,&temperatureInRange);
   if (!temperatureInRange) {
     std::fprintf(stderr,
         "comet collision temperature %.17g K is outside [%.17g,%.17g] K for species pair (%d,%d)\n",
@@ -121,7 +121,7 @@ double Comet::Physics::GetNeutralCrossSection(double *v0,double *v1,
         species0,species1);
     std::abort();
   }
-  if (!found || !(sigma>0.0)) {
+  if (!(sigma>0.0)) {
     std::fprintf(stderr,
         "invalid comet collision cross section for species pair (%d,%d)\n",
         species0,species1);

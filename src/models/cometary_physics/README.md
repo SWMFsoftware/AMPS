@@ -11,6 +11,20 @@ A collision entry describes an unordered species pair. Lookup of `(a,b)` and
 `(b,a)` therefore returns the same entry. Duplicate unordered pairs are
 invalid.
 
+At construction, `cCollisionDatabase` builds a dense
+`speciesCount*speciesCount` pointer index. Pair lookup is consequently O(1)
+and does not scan the collision records in the NTC inner loop. Both directions
+point to the same immutable record. The storage cost is one pointer per
+ordered pair; the 27-species Halley network uses 729 pointers.
+
+`Find()` selects the record and `Evaluate()` applies a law to an already
+selected record. Application adapters should retain the pointer returned by
+`Find()` and call `Evaluate()` rather than performing a second lookup through
+`GetCrossSection()`. Index construction safely skips malformed records and
+keeps the first duplicate only so that `Validate()` can issue the intended
+out-of-range or duplicate-pair diagnostic before simulation use. This does not
+relax validation.
+
 Cross sections use m² and temperatures use K. Two laws are supported:
 
 ```text
@@ -157,3 +171,7 @@ g++ -std=c++17 -Wall -Wextra -pedantic \
   -o /tmp/test_radiative_cooling
 /tmp/test_radiative_cooling
 ```
+
+The collision test covers unordered lookup, direct indexed lookup,
+out-of-range queries, and equality between direct `Evaluate()` and the
+combined `GetCrossSection()` path.

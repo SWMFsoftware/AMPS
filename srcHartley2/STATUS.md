@@ -3088,3 +3088,164 @@ The completed 14-rank run validates allocation stability through iteration
 This result is evidence for allocation safety, not authority to merge or a
 claim of Rubin agreement. No branch switch, integration-branch creation, or
 merge was performed while adding these instructions.
+
+## 2026-11-04: priority hot-loop acceleration implemented and validated
+
+The first acceleration phase is implemented on `1d_comet_dev`. No branch
+switch, commit, integration-branch operation, or merge was performed. Before
+compilation, the exact workspace `build/` directory was removed. The canonical
+`halley1d.input` was then preprocessed and the application rebuilt with
+`make -j8 EXTRACOMPILEROPTIONS=-O3`. The executable SHA-256 is
+`8ffab40d0bc09fc5e12c5a0288bd78efb390780dfd2009295dea94179e55e42d`;
+the input SHA-256 remains
+`5652c655e61e3d4ecbbdb5c477a60c9f89b493576f77440fa52edd079c6e346e`.
+
+### Modified source files and purpose
+
+- `src/models/cometary_physics/CollisionDatabase.h` now owns a dense symmetric
+  species-pair pointer index. `Find()` is O(1), and new `Evaluate()` applies a
+  law to the record already found. Construction tolerates malformed records
+  only long enough for `Validate()` to return its detailed error; invalid or
+  duplicate input is still rejected.
+- `src/models/cometary_physics/test_collision_database.cpp` checks direct and
+  reversed indexed lookup, invalid indices, and `Evaluate()` equivalence.
+- `srcHartley2/CometPhysics.cpp` retains the record returned by `Find()` and
+  evaluates that record, eliminating the old second database lookup. The
+  temperature floor, 300 K cap, undersampling rule, and fatal missing-pair
+  behavior are unchanged.
+- `src/models/chemical_solver/ReactionNetwork.h` now builds flat offsets and
+  reaction-index arrays grouped by valid unit-unimolecular parent species.
+  Channels preserve input order. General binary/higher-order records remain
+  available in the main network.
+- `src/models/chemical_solver/test_reaction_network.cpp` checks counts, order,
+  binary-reaction exclusion, and invalid accessor arguments.
+- `srcHartley2/CometChemistry.cpp` builds a per-parent ordered channel/rate
+  cache from the generic index. The cache is initialized after validation and
+  refreshed at a serial batched-stage boundary if heliocentric distance
+  changes. `ProcessParticle()` no longer scans all 69 reactions or constructs
+  two temporary vectors. Its occurrence and channel-selection random draws,
+  left-to-right rate sum, channel order, energy partition, and transactional
+  behavior are unchanged.
+- `src/pic/pic_particle_collision_models.cpp` changes only the general NTC
+  cell routine used by the local-weight/local-timestep Halley run. Reusable
+  `thread_local` species vectors replace per-cell arrays. A single linked-list
+  traversal fills all buckets and weight statistics. The fixed 100-probe
+  majorant, species/pair order, RNG order, acceptance rules, flag lifecycle,
+  and writeback points remain unchanged.
+
+The root `Makefile` modification shown by `git status` predates this work
+(`EXTRALINKEROPTIONS_F=-lmpi++`) and was neither created nor altered in this
+acceleration phase. Generated executables, meshes, `PT` output, and validation
+archives are evidence only and are not source changes for a future merge.
+
+### Validation evidence
+
+The standalone reaction-network and collision-database C++ tests pass. Both
+Perl generator/parser suites pass. The application chemistry ensemble passes
+20,000 events with all 46 neutral reactions, including 25 unequal
+weight/timestep and 23 sink cases. Weight-adaptation validation passes on 1,
+4, and 12 MPI ranks; the 12-rank result includes 84 ghost-weight checks plus
+all emergency, allocation-burst, sampling-population, face-carrier, and
+photochemical checks. Focused artifacts are under:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_priority_optimization_preflight_20261104
+```
+
+The `benchmark14` subdirectory is a fresh 14-rank run from iteration zero. It
+completed all 10,000 iterations and produced 20 sampling windows. Comparing
+every file matching `PT/plots/*.dat` against the prior fresh baseline found
+`total=540`, `differing=0`, and `missing_baseline=0`. The first-to-last output
+timestamp span is 470 s versus 3,052 s for
+`halley1d_allocation_burst_convergence_rubin_20261104_14mpi_fresh`, a measured
+6.4936x speedup. Final population is 391,034 in both runs; final relative L1 is
+1.946230 for CH3 with 0/3 passing windows in both runs. The byte identity is
+the strongest available check that reaction/collision order and RNG
+consumption were preserved.
+
+The pre-change clean Callgrind window recorded 3,476,809,796 instructions;
+the linear collision lookup alone accounted for about 2.09 billion. The
+post-change `callgrind_optimized/callgrind.out.2359084.1` window records
+1,791,797,371 instructions for 25 late-run timesteps. Collision processing is
+still the largest kernel because NTC requests many cross sections, but the
+linear table scan is absent. `pow` for the H2O temperature law accounts for
+about 40.1 million instructions (2.2%), so temperature caching was deliberately
+not added without a state-invalidation design.
+
+### Master-integration notes for this phase
+
+Do not merge yet, and tell the user before any attempt involving `master`.
+When the comet branch is eventually integrated, treat these as three semantic
+units after the generic database/core prerequisites are present:
+
+1. Merge `CollisionDatabase.h`, its test, and `CometPhysics.cpp` together.
+   Preserve constructor-built symmetric indexing, `Validate()` diagnostics,
+   fatal missing-pair policy, and the direct `Find()`/`Evaluate()` sequence.
+2. Merge `ReactionNetwork.h`, its test, and `CometChemistry.cpp` together.
+   Preserve input order, the general network table, cache refresh at a serial
+   stage boundary, and the exact particle RNG sequence.
+3. Merge the NTC bucket change independently. Confirm the target master path
+   still uses the same `cParticleDataList` layout and writeback rules. Keep the
+   storage `thread_local`; do not copy the optimization into specialized NTC
+   implementations without their own tests.
+
+After conflict resolution, remove only the integration worktree's `build/`,
+rebuild Halley, run both standalone/generator tests, the chemistry ensemble,
+and 1/4/12-rank weight matrix, then run a fresh deterministic 14-rank case.
+Require all 540 output data files to match the accepted development reference
+or document and review every intended physical difference. Reprofile rather
+than assuming the same hotspot distribution on newer master code. Keep the
+existing whole-branch master stop point and nonconvergence disclosure.
+
+## 2026-11-04: optimized 14-rank validation repeated
+
+The optimized production validation was repeated independently from iteration
+zero with 14 MPI ranks and one OpenMP thread per rank. The run used the same
+staged executable and input hashes documented above and completed normally at
+the 10,000-iteration ceiling with exit status zero. Its archive is:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_priority_optimization_repeat_20261104_14mpi
+```
+
+All 20 sampling windows and 540 `.dat` files were produced. Every data file is
+byte-for-byte identical to both the first optimized run and the pre-optimization
+fresh baseline: zero different and zero missing files in each comparison. The
+repeat output timestamp span is 482 s. Final adaptation again gives
+391,194 -> 391,034 particles; final relative L1 is again 1.946230 for CH3 with
+0/3 passing windows. The only stderr text is the known headless-viewer
+`No protocol specified` message. There is no AMPS, MPI, buffer, mover,
+chemistry, or allocation failure.
+
+This repetition strengthens deterministic and operational equivalence but
+does not change the scientific disposition: the run is nonconverged. No
+commit, branch switch, or merge was performed.
+
+### Rubin comparison generated from the repeated optimized run
+
+The final complete output (`out=19`, iteration 10,000) was compared with the
+digitized Rubin et al. neutral DSMC profiles. The generated directory is:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_priority_optimization_repeat_20261104_14mpi/PT/plots/rubin2011_comparison
+```
+
+It contains 18 PNG files, 18 EPS files, an 18-page PDF,
+`comparison_profiles.csv`, and `manifest.json`. A representative H2O velocity
+overlay was inspected and contains both AMPS and Rubin DSMC curves. Every
+figure visibly states `NONCONVERGED (0/3 windows)`, and the manifest records
+`scientific_status: nonconverged` and the iteration-10,000 convergence line.
+The PDF SHA-256 is
+`d6d7a9b25d4dd62a39bdf46bfd0cd50f1ae8af097da26a191698317cb3e1f35b`.
+These products are diagnostic and do not change the failed convergence gate.
+
+### Master-integration documentation extended
+
+`handoff.md` now contains "Master-integration addendum for the optimized
+model." It adds the exact uncommitted source/document set and exclusions,
+orders the collision index, reaction/rate cache, and NTC bucket changes after
+their existing comet prerequisites, lists conflict-resolution invariants, and
+adds deterministic 540-file, performance-profile, and regenerated Rubin-plot
+gates. The addendum preserves the explicit final stop before any operation
+that changes `master`. No merge-related operation was performed while adding
+it.

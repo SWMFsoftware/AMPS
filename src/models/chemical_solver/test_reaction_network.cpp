@@ -45,6 +45,21 @@ int main() {
   assert(network.GetReaction(3).ProductCount==0);
   assert(Near(network.GetRateCoefficient(1,100.0,2.0),1.0));
 
+  // The particle-chemistry acceleration index contains only unit
+  // unimolecular channels, grouped by parent while retaining input order.
+  // The binary reaction remains available through the general network but is
+  // intentionally absent from this specialized index.
+  assert(network.GetUnitUnimolecularReactionCount(0)==2);
+  assert(network.GetUnitUnimolecularReactionIndex(0,0)==0);
+  assert(network.GetUnitUnimolecularReactionIndex(0,1)==1);
+  assert(network.GetUnitUnimolecularReactionCount(1)==0);
+  assert(network.GetUnitUnimolecularReactionCount(2)==1);
+  assert(network.GetUnitUnimolecularReactionIndex(2,0)==3);
+  assert(network.GetUnitUnimolecularReactionIndex(0,2)==
+      network.GetReactionCount());
+  assert(network.GetUnitUnimolecularReactionCount(-1)==0);
+  assert(network.GetUnitUnimolecularReactionCount(3)==0);
+
   const double density[]={4.0,5.0,0.0};
   assert(Near(network.GetReactionRate(0,density,100.0,1.0),2.0));
   assert(Near(network.GetReactionRate(2,density,10.0,1.0),400.0));
@@ -73,6 +88,7 @@ int main() {
       1.0,0.0,0.0,1.0,0.0};
   cReactionNetwork invalid(badTerms,2,&badReaction,1,3);
   assert(!invalid.Validate(&error));
+  assert(invalid.GetUnitUnimolecularReactionCount(0)==0);
 
   return 0;
 }

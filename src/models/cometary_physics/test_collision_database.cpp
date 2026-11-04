@@ -24,6 +24,9 @@ int main() {
   std::string error;
   assert(database.Validate(&error));
   assert(database.Find(1,0)==entries+1);
+  assert(database.Find(0,1)==entries+1);
+  assert(database.Find(-1,0)==NULL);
+  assert(database.Find(0,3)==NULL);
   bool found=false;
   assert(Near(database.GetCrossSection(0,0,300.0,&found),1.66e-19));
   assert(found);
@@ -33,6 +36,13 @@ int main() {
   assert(database.GetCrossSection(0,0,49.0,&found,&temperatureInRange)==0.0);
   assert(found && !temperatureInRange);
   assert(Near(database.GetCrossSection(1,0,0.0),3.2e-19));
+  bool directTemperatureInRange=false;
+  assert(Near(database.Evaluate(entries[1],0.0,&directTemperatureInRange),
+      database.GetCrossSection(1,0,0.0)));
+  assert(directTemperatureInRange);
+  assert(Near(database.Evaluate(entries[0],75.0,&directTemperatureInRange),
+      database.GetCrossSection(0,0,75.0)));
+  assert(directTemperatureInRange);
   assert(database.GetCrossSection(1,2,100.0,&found)==0.0);
   assert(!found);
 

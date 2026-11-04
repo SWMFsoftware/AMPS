@@ -485,3 +485,30 @@ together; merging declarations without the null definitions/driver, or the
 driver without the callback contract, creates an incomplete core API. The
 pre-exchange hook in `pic_parallel.cpp`/`pic.h` is a separate nullable core
 primitive and should be reviewed as a second semantic unit.
+
+## 12. Reusable NTC per-species particle buckets
+
+The general `ModelCellCollisions_ntc` path used by species-local weights and
+timesteps no longer allocates two scratch arrays for every occupied cell or
+rescans the cell linked list once for every species. It owns one
+`thread_local std::vector<cParticleDataList>` per compiled species. For each
+cell, one linked-list traversal fills those buckets and accumulates the
+species particle count, minimum individual weight correction, and weight sum.
+`clear()` empties a bucket without releasing its capacity, so later cells and
+timesteps reuse the allocation. `thread_local` is required: making this state
+process-global would introduce a race in OpenMP builds.
+
+The optimization does not change NTC physics. Particle order within a species
+is the original linked-list order; the fixed 100-probe majorant construction,
+pair-loop order, acceptance logic, and random-number calls are unchanged.
+Velocity changes are retained in the common bucket, so a species used by a
+later pair observes accepted collisions from earlier pairs exactly as it did
+when the old implementation repopulated its scratch array from the particle
+buffer. Flags are reset before a species becomes the first partner, and before
+a distinct second partner, then accepted updates are written back at the same
+pair/outer-loop boundaries as before.
+
+This is intentionally limited to the general NTC routine. Specialized
+uniform-weight collision paths were not changed and should not be folded into
+this implementation during master integration without separate deterministic
+and statistical validation.
