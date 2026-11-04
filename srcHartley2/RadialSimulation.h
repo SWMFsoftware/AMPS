@@ -25,6 +25,45 @@ extern long int SamplingLength;
 // population front from exhausting one MPI rank while the global population
 // is still well within the distributed particle-buffer capacity.
 extern long int LoadBalanceInterval;
+// When enabled, the population at each completed sampling break is measured
+// independently for every species and owner block.  The block-local weight is
+// changed by an integral power of two until the expected mean population per
+// cell lies in this inclusive range.  Empty species/block populations remain
+// empty because adaptation only resamples particles that already exist.  Once
+// populated blocks have been adapted, their W/dt carrier constraints are
+// propagated by power-of-two weight increases through face-connected empty
+// neighbors.  This prevents the first particle entering a previously empty
+// block from being multiplied by an obsolete, anomalously small local weight;
+// the propagation itself never creates a particle.
+extern bool ParticleWeightAdaptationEnabled;
+extern long int MinimumParticlesPerCell;
+extern long int MaximumParticlesPerCell;
+// Emergency roulette runs immediately before the regular particle exchange
+// when either (a) any MPI rank reaches this fraction of its local particle-
+// buffer capacity or (b) the preceding sampling break found an owner block
+// whose all-species mean population per cell exceeded
+// 10*nTotalSpecies*MaximumParticlesPerCell.  The input value controls trigger
+// (a) and is a fraction in (0,1), e.g. 0.75 for 75%.
+extern double EmergencyParticleBufferUtilization;
+// Transactional allocation control stops ordinary work at the high-water
+// value above, coarsens collectively until the maximum rank is at or below
+// AllocationLowWatermark, and keeps AllocationReserveFraction of every rank's
+// particle slots unavailable to application-level chemistry transactions.
+extern double AllocationLowWatermark;
+extern double AllocationReserveFraction;
+// Maximum actual destination multiplicity at any directed block face.  A
+// value of one removes mover-side clone allocation entirely by equalizing the
+// W/dt carrier rate over each face-connected mesh component.
+extern long int MaximumFaceTransferMultiplicity;
+// A chemistry event may create several fixed-weight model daughters when the
+// parent and product carrier rates W/dt differ.  At a sampling break, every
+// reaction transitively reachable from any represented parent is inspected.
+// Product weights—whether that product is present or absent—are raised by
+// powers of two until the sum of worst-case residual-resampling allocations
+// for one selected reaction event does not exceed this hard limit.  The final
+// check uses face-propagated carrier rates, so a parent arriving from another
+// block cannot bypass the bound.  Empty cells remain empty.
+extern long int MaximumPhotochemicalProductsPerReaction;
 // ConvergenceTolerance applies to the volume-weighted relative L1 change of
 // each species' complete radial number-density profile. The run stops only
 // after every species passes for RequiredConvergedWindows successive windows.
@@ -37,6 +76,20 @@ bool Validate(std::string *error=NULL);
 // install the spherical source and boundary callbacks, and advance the run.
 void Initialize();
 void Run();
+
+// Run an integrated split/roulette regression on initialized radial blocks.
+// This is a focused validation mode: it replaces the live particle lists and
+// must therefore be invoked instead of, never during, a science run.
+bool ValidateParticleWeightAdaptation();
+
+// Collective callback installed in PIC::Parallel.  It is public only because
+// the core stores its address; application code must not call it directly.
+void EmergencyParticleWeightAdaptation();
+// Called collectively by transactional allocation stages.  It records a
+// one-shot request and invokes the same common-factor coarsening used by the
+// pre-MPI-exchange hook, but continues to AllocationLowWatermark so the
+// deferred stage can resume with deterministic headroom.
+void RequestAllocationBurstEmergency();
 
 // The following functions match AMPS callback signatures.  They are public so
 // the core can store function pointers to them; case code should normally call

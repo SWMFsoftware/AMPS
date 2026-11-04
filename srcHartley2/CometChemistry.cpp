@@ -1,6 +1,7 @@
 #include "CometChemistry.h"
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -9,9 +10,36 @@
 
 #include "pic.h"
 #include "CometChemistry.generated.h"
+#include "RadialSimulation.h"
 
 bool Comet::Chemistry::Enabled=false;
 double Comet::Chemistry::HeliocentricDistanceAU=-1.0;
+
+namespace {
+long int ChemistryProcessedFlagOffset=-1;
+bool LocalChemistryAllocationPressure=false;
+
+unsigned char& ChemistryProcessedFlag(
+    PIC::ParticleBuffer::byte *particleData) {
+  if (ChemistryProcessedFlagOffset<0) {
+    std::fprintf(stderr,
+        "comet chemistry processing flag was not reserved before particle-buffer initialization\n");
+    std::abort();
+  }
+  return *reinterpret_cast<unsigned char*>(
+      particleData+ChemistryProcessedFlagOffset);
+}
+
+void MarkChemistryProcessed(PIC::ParticleBuffer::byte *particleData) {
+  ChemistryProcessedFlag(particleData)=1;
+}
+}
+
+void Comet::Chemistry::RequestParticleData() {
+  if (!Enabled || ChemistryProcessedFlagOffset>=0) return;
+  PIC::ParticleBuffer::RequestDataStorage(ChemistryProcessedFlagOffset,
+      sizeof(unsigned char));
+}
 
 const ChemicalSolver::cReactionNetwork& Comet::Chemistry::GetNetwork() {
   static const ChemicalSolver::cReactionNetwork network(
@@ -524,11 +552,92 @@ bool Comet::Chemistry::ValidateEnsemble(long int eventsPerReaction) {
   return globalPass!=0;
 }
 
-void Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
+void Comet::Chemistry::BeginBatchedModel() {
+  LocalChemistryAllocationPressure=false;
+
+  // Reset the per-stage flag on every owner particle, including particles
+  // injected immediately before chemistry.  A byte is used instead of an
+  // ever-growing epoch so a reused particle-buffer slot can never inherit a
+  // value that accidentally marks a new physical particle as completed.
+  constexpr long int blockCellCount=
+      _BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
+  for (unsigned int blockIndex=0;
+       blockIndex<PIC::DomainBlockDecomposition::nLocalBlocks;blockIndex++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=
+        PIC::DomainBlockDecomposition::BlockTable[blockIndex];
+    if (node==NULL || node->block==NULL) continue;
+    for (long int cell=0;cell<blockCellCount;cell++)
+      for (long int ptr=node->block->FirstCellParticleTable[cell];ptr!=-1;
+           ptr=PIC::ParticleBuffer::GetNext(ptr))
+        ChemistryProcessedFlag(
+            PIC::ParticleBuffer::GetParticleDataPointer(ptr))=0;
+  }
+}
+
+bool Comet::Chemistry::IsBatchedParticleEligible(long int ptr) {
+  return ChemistryProcessedFlag(
+      PIC::ParticleBuffer::GetParticleDataPointer(ptr))==0;
+}
+
+long int Comet::Chemistry::GetBatchedParticleLimit() {
+  const long int capacity=PIC::ParticleBuffer::MaxNPart;
+  if (capacity<=0 ||
+      Comet::RadialSimulation::MaximumPhotochemicalProductsPerReaction<=0) {
+    std::fprintf(stderr,
+        "invalid particle capacity or chemistry event limit in batch controller\n");
+    std::abort();
+  }
+
+  // The high-water mark, rather than the physical end of the buffer, defines
+  // the maximum population after one pass.  Because every eligible parent is
+  // charged the hard worst-case event allocation, the pass cannot cross this
+  // point even if every tested parent reacts and every residual Bernoulli
+  // draw rounds upward.  The separately configured reserve is checked again
+  // by ProcessParticle before an individual transaction is committed.
+  const long int highWaterSlots=static_cast<long int>(std::floor(
+      Comet::RadialSimulation::EmergencyParticleBufferUtilization*capacity));
+  const long int available=highWaterSlots-PIC::ParticleBuffer::NAllPart;
+  if (available<=0) {
+    LocalChemistryAllocationPressure=true;
+    return 0;
+  }
+  const long int limit=available/
+      Comet::RadialSimulation::MaximumPhotochemicalProductsPerReaction;
+  if (limit<=0) {
+    LocalChemistryAllocationPressure=true;
+    return 0;
+  }
+  return limit;
+}
+
+void Comet::Chemistry::FinishBatchedPass(long int attemptedParents,
+    long int remainingParents) {
+  (void)attemptedParents;
+  const long long localPopulation=PIC::ParticleBuffer::NAllPart;
+  long long maximumPopulation=0;
+  MPI_Allreduce(&localPopulation,&maximumPopulation,1,MPI_LONG_LONG,MPI_MAX,
+      MPI_GLOBAL_COMMUNICATOR);
+  int localPressure=(LocalChemistryAllocationPressure ||
+      (remainingParents>0 && attemptedParents==0)) ? 1 : 0;
+  int globalPressure=0;
+  MPI_Allreduce(&localPressure,&globalPressure,1,MPI_INT,MPI_MAX,
+      MPI_GLOBAL_COMMUNICATOR);
+
+  const double maximumUtilization=static_cast<double>(maximumPopulation)/
+      PIC::ParticleBuffer::MaxNPart;
+  if (globalPressure!=0 || maximumUtilization>=
+      Comet::RadialSimulation::EmergencyParticleBufferUtilization)
+    Comet::RadialSimulation::RequestAllocationBurstEmergency();
+
+  LocalChemistryAllocationPressure=false;
+}
+
+bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   if (!Enabled) {
+    MarkChemistryProcessed(PIC::ParticleBuffer::GetParticleDataPointer(ptr));
     KeepParticle(ptr,firstParticleCell);
-    return;
+    return true;
   }
 
   PIC::ParticleBuffer::byte *parentData=
@@ -555,8 +664,9 @@ void Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
   }
 
   if (!(totalRate>0.0)) {
+    MarkChemistryProcessed(parentData);
     KeepParticle(ptr,firstParticleCell);
-    return;
+    return true;
   }
 
   const double timeStep=node->block->GetLocalTimeStep(parentSpecies);
@@ -566,8 +676,9 @@ void Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
     std::abort();
   }
   if (rnd()>=1.0-std::exp(-totalRate*timeStep)) {
+    MarkChemistryProcessed(parentData);
     KeepParticle(ptr,firstParticleCell);
-    return;
+    return true;
   }
 
   double selector=rnd()*totalRate;
@@ -613,19 +724,12 @@ void Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
 #error "Comet chemistry without individual corrections requires a supported global or species-local particle weight"
 #endif
 
-  // Clone auxiliary fields from the parent, then replace position, velocity,
-  // and species for each integer-stoichiometry product.  Individual-weight
-  // builds carry each product rate in one corrected particle.  Fixed global
-  // or block-local weights instead use residual split/roulette below; number,
-  // mass, momentum, and excess-energy *rates* are conserved in expectation
-  // without an individual correction field.  Event-by-event correlations
-  // necessarily become statistical when weights or timesteps differ.
-  char daughterTemplate[PIC::ParticleBuffer::ParticleDataLength];
-  PIC::ParticleBuffer::SetParticleAllocated(
-      reinterpret_cast<PIC::ParticleBuffer::byte*>(daughterTemplate));
-  PIC::ParticleBuffer::CloneParticle(
-      reinterpret_cast<PIC::ParticleBuffer::byte*>(daughterTemplate),parentData);
-
+  // Draw every residual multiplicity before changing the parent or allocating
+  // a daughter.  This makes the reaction a transaction: either capacity for
+  // the complete event is available, or the untouched parent is reinserted
+  // and retried after the collective batch checkpoint creates headroom.
+  std::vector<long int> daughterMultiplicity(productSpecies.size(),0);
+  long int totalDaughters=0;
   for (std::size_t product=0;product<productSpecies.size();product++) {
     const int species=productSpecies[product];
     const double baseWeight=node->block->GetLocalParticleWeight(species);
@@ -639,12 +743,77 @@ void Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
     }
 
 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
-    const long int daughterMultiplicity=1;
+    daughterMultiplicity[product]=1;
 #else
-    const long int daughterMultiplicity=
+    daughterMultiplicity[product]=
         DrawResidualMultiplicity(parentPhysicalWeight,timeStep,baseWeight,
             productTimeStep);
 #endif
+
+    if (daughterMultiplicity[product]<0 ||
+        totalDaughters>LONG_MAX-daughterMultiplicity[product]) {
+      std::fprintf(stderr,
+          "photochemical daughter allocation count overflow in reaction %s\n",
+          reaction.Id);
+      std::abort();
+    }
+    totalDaughters+=daughterMultiplicity[product];
+  }
+
+  // RadialMaxPhotochemicalProductsPerReaction is a hard actual allocation
+  // limit, not merely an expectation.  Sampling-break carrier planning is
+  // responsible for making this invariant true for present as well as absent
+  // products.  Never truncate here: truncation would bias reaction rates.
+  if (totalDaughters>
+      Comet::RadialSimulation::MaximumPhotochemicalProductsPerReaction) {
+    std::fprintf(stderr,
+        "reaction %s requests %ld model daughters; hard limit=%ld parent-species=%d W/dt=%.16e\n",
+        reaction.Id,totalDaughters,
+        Comet::RadialSimulation::MaximumPhotochemicalProductsPerReaction,
+        parentSpecies,parentPhysicalWeight/timeStep);
+    std::abort();
+  }
+
+  if (totalDaughters==0) {
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return true;
+  }
+
+  // Reuse the parent slot for the first daughter.  Only K-1 new slots are
+  // needed for a K-daughter event, which both lowers peak memory and makes the
+  // capacity preflight exact.  The reserve is a hard ceiling independent of
+  // the lower 75% checkpoint: even a future caller with a larger batch cannot
+  // consume slots retained for MPI receipt and other core operations.
+  const long int transactionCeiling=static_cast<long int>(std::floor(
+      (1.0-Comet::RadialSimulation::AllocationReserveFraction)*
+      PIC::ParticleBuffer::MaxNPart));
+  const long int requiredNewSlots=totalDaughters-1;
+  if (requiredNewSlots>transactionCeiling-PIC::ParticleBuffer::NAllPart) {
+    LocalChemistryAllocationPressure=true;
+    KeepParticle(ptr,firstParticleCell);
+    return false;
+  }
+
+  // Clone auxiliary fields from the parent, then replace position, velocity,
+  // and species for each integer-stoichiometry product.  Fixed block-local
+  // weights use residual split/roulette; number, mass, momentum, and excess-
+  // energy rates are conserved in expectation without an individual weight
+  // correction field.
+  char daughterTemplate[PIC::ParticleBuffer::ParticleDataLength];
+  PIC::ParticleBuffer::SetParticleAllocated(
+      reinterpret_cast<PIC::ParticleBuffer::byte*>(daughterTemplate));
+  PIC::ParticleBuffer::SetPrev(-1,
+      reinterpret_cast<PIC::ParticleBuffer::byte*>(daughterTemplate));
+  PIC::ParticleBuffer::SetNext(-1,
+      reinterpret_cast<PIC::ParticleBuffer::byte*>(daughterTemplate));
+  PIC::ParticleBuffer::CloneParticle(
+      reinterpret_cast<PIC::ParticleBuffer::byte*>(daughterTemplate),parentData);
+
+  bool parentSlotReused=false;
+  for (std::size_t product=0;product<productSpecies.size();product++) {
+    const int species=productSpecies[product];
+    const double baseWeight=node->block->GetLocalParticleWeight(species);
+    const double productTimeStep=node->block->GetLocalTimeStep(species);
 
     PIC::ParticleBuffer::byte *data=
         reinterpret_cast<PIC::ParticleBuffer::byte*>(daughterTemplate);
@@ -657,25 +826,36 @@ void Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
     PIC::ParticleBuffer::SetIndividualStatWeightCorrection(
         parentPhysicalWeight*productTimeStep/(baseWeight*timeStep),data);
 #endif
+    MarkChemistryProcessed(data);
 
     // Each residual-resampling sibling represents the same physical product
     // cohort and therefore starts with the same event velocity.  Subsequent
     // motion and collisions decorrelate the model particles.  Assign a fresh
     // tracker identity to every sibling rather than cloning one identity.
-    for (long int copy=0;copy<daughterMultiplicity;copy++) {
+    for (long int copy=0;copy<daughterMultiplicity[product];copy++) {
 #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
       PIC::ParticleTracker::InitParticleID(daughterTemplate);
       PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(
           xParent,productVelocity.data()+3*product,species,daughterTemplate,
           static_cast<void*>(node));
 #endif
-
-      const long int daughter=
-          PIC::ParticleBuffer::GetNewParticle(firstParticleCell);
-      PIC::ParticleBuffer::CloneParticle(
-          PIC::ParticleBuffer::GetParticleDataPointer(daughter),data);
+      if (!parentSlotReused) {
+        // Detach the parent slot's stale links before CloneParticle, which
+        // intentionally preserves the destination links.  Reinsert it into
+        // the newly rebuilt cell list exactly like an allocated daughter.
+        PIC::ParticleBuffer::SetPrev(-1,parentData);
+        PIC::ParticleBuffer::SetNext(-1,parentData);
+        PIC::ParticleBuffer::CloneParticle(parentData,data);
+        KeepParticle(ptr,firstParticleCell);
+        parentSlotReused=true;
+      }
+      else {
+        const long int daughter=
+            PIC::ParticleBuffer::GetNewParticle(firstParticleCell);
+        PIC::ParticleBuffer::CloneParticle(
+            PIC::ParticleBuffer::GetParticleDataPointer(daughter),data);
+      }
     }
   }
-
-  PIC::ParticleBuffer::DeleteParticle(ptr);
+  return true;
 }

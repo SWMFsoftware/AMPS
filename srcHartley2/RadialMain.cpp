@@ -14,7 +14,8 @@
 
 namespace {
 void PrintUsage(const char *program) {
-  std::printf("usage: %s [--validate-local-timestep | --validate-chemistry] "
+  std::printf("usage: %s [--validate-local-timestep | --validate-chemistry | "
+      "--validate-weight-adaptation] "
       "[--validation-particles N] [--validation-mover first|second|both] "
       "[--validation-skip-multiface] "
       "[--chemistry-validation-events N]\n",program);
@@ -28,6 +29,7 @@ int main(int argc,char **argv) {
 #else
   bool validateLocalTimeStep=false;
   bool validateChemistry=false;
+  bool validateWeightAdaptation=false;
   long int chemistryValidationEvents=200000;
   Comet::LocalTimeStepValidation::cOptions validationOptions;
   for (int argument=1;argument<argc;argument++) {
@@ -37,6 +39,9 @@ int main(int argc,char **argv) {
     }
     else if (option=="--validate-chemistry") {
       validateChemistry=true;
+    }
+    else if (option=="--validate-weight-adaptation") {
+      validateWeightAdaptation=true;
     }
     else if (option=="--validation-particles") {
       if (++argument>=argc) {
@@ -96,7 +101,9 @@ int main(int argc,char **argv) {
       return EXIT_FAILURE;
     }
   }
-  if (validateLocalTimeStep && validateChemistry) {
+  const int validationModeCount=(validateLocalTimeStep ? 1 : 0)+
+      (validateChemistry ? 1 : 0)+(validateWeightAdaptation ? 1 : 0);
+  if (validationModeCount>1) {
     std::fprintf(stderr,
         "select only one focused validation mode per invocation\n");
     return EXIT_FAILURE;
@@ -172,9 +179,15 @@ int main(int argc,char **argv) {
       MPI_Finalize();
       return passed ? EXIT_SUCCESS : EXIT_FAILURE;
     }
+    if (validateWeightAdaptation) {
+      const bool passed=
+          Comet::RadialSimulation::ValidateParticleWeightAdaptation();
+      MPI_Finalize();
+      return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
     Comet::RadialSimulation::Run();
   }
-  else if (validateLocalTimeStep || validateChemistry) {
+  else if (validationModeCount!=0) {
     std::fprintf(stderr,
         "focused validation requires RadialSimulationMode=on\n");
     MPI_Finalize();

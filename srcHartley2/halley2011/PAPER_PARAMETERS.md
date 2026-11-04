@@ -112,6 +112,12 @@ For the 2,000-cell geometric profile, the result is:
 | direct-parent baseline speed | `400 m/s` | supplied numerical control |
 | reference injection count | `8` | at least 50 parent particles in the surface cell at Courant 0.25; reduced with the timestep so surface statistics are unchanged |
 | particle-buffer capacity | `20,000,000` per MPI rank | validation headroom retained after the superseded global-weight run overflowed 5,000,000; this is not a paper value |
+| block-weight adaptation | enabled, `50--200` model particles per cell | supplied numerical control; applied to each species using its whole-block instantaneous mean at complete sampling breaks; subsequent hard transport and chemistry constraints may raise weights further |
+| emergency particle-buffer utilization | `0.75` per MPI rank, plus a fixed sampling alarm at `10*nSpecies*maximum requested particles per cell` | supplied numerical controls; immediately before regular particle exchange, reaching 75% on any rank or consuming a sampling-population alarm doubles every block/species weight and applies unbiased one-half roulette globally; the buffer trigger repeats until all ranks are below its threshold |
+| allocation-burst low watermark | `0.50` per MPI rank | supplied numerical control; a transactional chemistry checkpoint repeats common factor-two roulette until every rank is at or below this utilization |
+| protected allocation reserve | `0.10` per MPI rank | supplied numerical control; the final ten percent of the particle buffer is unavailable to one chemistry transaction, whose ceiling is therefore 90% |
+| maximum face-transfer multiplicity | `1` model particle | supplied numerical control; equalizes `W/dt` by power-of-two increases across every face-connected component so a crossing never allocates clones |
+| photochemical daughters per reaction | at most `20` actual allocated model particles | supplied numerical control; initialization and every sampling break close the enabled reaction graph from represented and direct-source species, then raise present or absent product weights until the sum of `coefficient*ceil(C_parent/C_product)` is no greater than 20 for every reachable selected channel |
 | sampling-window length | `500 iterations` | supplied numerical control |
 | hard iteration ceiling | `10,000 iterations` | supplied numerical control |
 | convergence tolerance | `0.05` | supplied control; volume-weighted relative L1 density-profile change |
@@ -141,6 +147,30 @@ logarithmic cells. Individual AMPS weight correction is disabled. Both block
 faces and species-changing chemistry instead use unbiased residual resampling
 of `(W_source/dt_source)/(W_target/dt_target)` to conserve physical rates in
 expectation.
+
+At each complete 500-iteration sampling break, the input also enables
+power-of-two adaptation of those block weights. The requested 50--200 range
+is interpreted independently for each species as the instantaneous number of
+particles in an owner block divided by all eight radial cells in that block;
+empty cells therefore count as zero. The population-range controller does not
+resample a zero-population block/species pair. Starting from represented
+parents and configured direct surface sources, the chemistry controller
+follows all enabled reactions transitively. It raises present or absent
+product carriers by powers of two until the actual worst-case residual
+allocation, including upward Bernoulli rounding and every stoichiometric
+product, is no greater than 20 for any reachable selected channel. This runs
+before the first injection and after each complete sampling window. It changes
+no physical reaction rate and creates no particle by itself.
+
+The same numerical controller treats all transport faces, not only entry into
+an empty block. For each species it raises weights until every member of a
+face-connected component has the same carrier `W/dt`; populated blocks use
+unbiased roulette and empty blocks remain empty. Therefore both directed face
+ratios are at most one and the mover cannot allocate a clone. This is stronger
+than independent block-local statistical optimization and can increase Monte
+Carlo variance. The 50%, 75%, 10%, one-particle, and 20-particle values and
+their controllers are AMPS numerical safeguards, not physics or parameters
+reported by Rubin et al.; every paper comparison must identify them as such.
 
 The reaction-product timestep speeds start from `400 m/s` for every directly
 injected parent. For each Table 4 channel, the maximum center-of-mass recoil

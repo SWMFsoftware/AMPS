@@ -371,6 +371,7 @@ def density_figure(
     output_index: int,
     iteration: int,
     radius_range: Tuple[float, float],
+    convergence_annotation: Optional[str],
 ) -> plt.Figure:
     """Overlay AMPS and digitized Rubin neutral densities on common axes."""
 
@@ -444,9 +445,14 @@ def density_figure(
     axes.set_xlim(*radius_range)
     axes.set_xlabel("Cometocentric distance [km]")
     axes.set_ylabel(r"Neutral number density [cm$^{-3}$]")
+    subtitle = f"output {output_index}, iteration {iteration}"
+    if convergence_annotation is not None:
+        # Put the scientific acceptance state on every raster, vector, and PDF
+        # page so a detached figure cannot be mistaken for a converged result.
+        subtitle += f" — {convergence_annotation}"
     axes.set_title(
         f"Rubin et al. (2011) Fig. {paper_figure.number}: AMPS vs. published DSMC\n"
-        f"output {output_index}, iteration {iteration}"
+        + subtitle
     )
     axes.grid(True, which="both", color="0.85")
     if populated:
@@ -461,6 +467,7 @@ def velocity_figure(
     output_index: int,
     iteration: int,
     radius_range: Tuple[float, float],
+    convergence_annotation: Optional[str],
 ) -> plt.Figure:
     """Overlay AMPS and digitized Rubin H2O radial bulk speeds."""
 
@@ -506,9 +513,12 @@ def velocity_figure(
     axes.set_xlim(*radius_range)
     axes.set_xlabel("Cometocentric distance [km]")
     axes.set_ylabel("Radial bulk velocity [m/s]")
+    subtitle = f"output {output_index}, iteration {iteration}"
+    if convergence_annotation is not None:
+        subtitle += f" — {convergence_annotation}"
     axes.set_title(
         "Rubin et al. (2011) Fig. 18: AMPS vs. published H2O velocity\n"
-        f"output {output_index}, iteration {iteration}"
+        + subtitle
     )
     axes.grid(True, which="both", color="0.85")
     axes.legend(framealpha=1.0)
@@ -664,6 +674,31 @@ def convergence_line_for_iteration(
     return max(matches, key=lambda item: item[0])[1] if matches else None
 
 
+def convergence_status_for_record(
+    convergence_line: Optional[str],
+) -> Tuple[str, Optional[str]]:
+    """Return a machine-readable state and a plot-title annotation.
+
+    The AMPS record is the only authority for whether a saved window met the
+    configured consecutive-window test.  Keeping the parser deliberately
+    narrow prevents the plotting utility from inventing convergence when a log
+    is missing or when the diagnostic format changes.
+    """
+
+    if convergence_line is None:
+        return "not_provided", "CONVERGENCE STATUS NOT PROVIDED"
+
+    match = re.search(r"\bconsecutive=(\d+)/(\d+)\b", convergence_line)
+    if match is None:
+        return "reported_but_unparsed", "CONVERGENCE STATUS UNPARSED"
+
+    completed = int(match.group(1))
+    required = int(match.group(2))
+    if required > 0 and completed >= required:
+        return "converged", f"CONVERGED ({completed}/{required} windows)"
+    return "nonconverged", f"NONCONVERGED ({completed}/{required} windows)"
+
+
 def file_sha256(path: Path) -> str:
     """Return a stable provenance digest for the digitized reference table."""
 
@@ -684,11 +719,25 @@ def write_manifest(
     iteration: int,
     files: Dict[str, Path],
     convergence_line: Optional[str],
+    convergence_status: str,
     density_range: Tuple[float, float],
     velocity_range: Tuple[float, float],
     paper_data: Path,
 ) -> None:
     """Record provenance and model-to-paper comparison limits."""
+
+    limitations = [
+        "Figs. 2-17 also show Giotto NMS mass-channel observables; those are not neutral number densities and are excluded from this overlay.",
+        "The current halley1d.input disables dust, extended sources, and the optional CH3OH-to-H2CO photodissociation branch.",
+        "A selected output is scientifically steady only if the run log reports the required consecutive convergence windows.",
+    ]
+    if convergence_status != "converged":
+        # This explicit statement complements the original AMPS record and is
+        # easier for downstream scripts and human reviewers to interpret.
+        limitations.insert(
+            0,
+            "The selected AMPS output is not a converged science result; use this comparison diagnostically only.",
+        )
 
     manifest = {
         "paper": "Rubin et al., Icarus 213 (2011) 655-677",
@@ -705,13 +754,10 @@ def write_manifest(
             "vector paths extracted from the Rubin et al. PDF with its "
             "piecewise logarithmic distance axes"
         ),
+        "scientific_status": convergence_status,
         "convergence_record": convergence_line,
         "source_files": {species: path.name for species, path in sorted(files.items())},
-        "limitations": [
-            "Figs. 2-17 also show Giotto NMS mass-channel observables; those are not neutral number densities and are excluded from this overlay.",
-            "The current halley1d.input disables dust, extended sources, and the optional CH3OH-to-H2CO photodissociation branch.",
-            "A selected output is scientifically steady only if the run log reports the required consecutive convergence windows.",
-        ],
+        "limitations": limitations,
     }
     (output_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
@@ -739,6 +785,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         profiles = load_profiles(files)
         published_profiles = load_paper_profiles(args.paper_data)
         iteration = (output_index + 1) * args.sampling_length
+        convergence_line = convergence_line_for_iteration(args.run_log, iteration)
+        convergence_status, convergence_annotation = convergence_status_for_record(
+            convergence_line
+        )
 
         pdf_path = output_dir / "rubin2011_neutral_profiles.pdf"
         with PdfPages(pdf_path) as pdf:
@@ -750,6 +800,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     output_index,
                     iteration,
                     density_range,
+                    convergence_annotation,
                 )
                 base = output_dir / f"rubin2011_fig{paper_figure.number:02d}_neutral"
                 save_figure(figure, base, args.dpi)
@@ -762,6 +813,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 output_index,
                 iteration,
                 velocity_range,
+                convergence_annotation,
             )
             save_figure(figure, output_dir / "rubin2011_fig18_h2o_velocity", args.dpi)
             pdf.savefig(figure)
@@ -773,7 +825,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             published_profiles,
             sorted(set(args.table_radii)),
         )
-        convergence_line = convergence_line_for_iteration(args.run_log, iteration)
         write_manifest(
             output_dir,
             args.plots_dir,
@@ -781,6 +832,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             iteration,
             files,
             convergence_line,
+            convergence_status,
             density_range,
             velocity_range,
             args.paper_data,

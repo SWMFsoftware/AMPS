@@ -32,10 +32,20 @@ bool Validate(std::string *error=NULL);
 // collective and identical on every rank.
 bool ValidateEnsemble(long int eventsPerReaction);
 
+// Reserve one application byte in every particle before ParticleBuffer::Init.
+// Transactional chemistry uses it only while one photochemical stage is in
+// progress to distinguish completed parents/new daughters from deferred
+// parents that must be retried after a capacity-control checkpoint.
+void RequestParticleData();
+void BeginBatchedModel();
+bool IsBatchedParticleEligible(long int ptr);
+long int GetBatchedParticleLimit();
+void FinishBatchedPass(long int attemptedParents,long int remainingParents);
+
 // AMPS calls this once for each particle during the photolytic-reaction pass.
 // The routine samples one mutually exclusive channel, creates all daughters
 // from the same event, and conserves event momentum and excess energy.
-void ProcessParticle(long int ptr,long int& firstParticleCell,
+bool ProcessParticle(long int ptr,long int& firstParticleCell,
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
 
 }

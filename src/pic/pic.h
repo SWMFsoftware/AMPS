@@ -6297,6 +6297,14 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
      typedef void (*fUserDefinedMpiModelDataExchage)();
      extern fUserDefinedMpiModelDataExchage UserDefinedMpiModelDataExchage;
 
+     // Optional application callback executed collectively immediately before
+     // every ordinary particle migration.  The callback may use MPI
+     // collectives, but it must not call ExchangeParticleData() recursively.
+     // It is intended for capacity controls that must run before the exchange
+     // allocates receive-side particle slots.
+     typedef void (*fBeforeParticleDataExchange)();
+     extern fBeforeParticleDataExchange BeforeParticleDataExchange;
+
      //the factor the trrigeres the emergency load rebalancing. The condition for the rebalancing:
      //(PIC::Parallel::CumulativeLatency>PIC::Parallel::EmergencyLoadRebalancingFactor*PIC::Parallel::RebalancingTime)
      extern double EmergencyLoadRebalancingFactor;
@@ -6344,6 +6352,8 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
      void ExchangeParticleData_buffered();
 
      inline void ExchangeParticleData() {
+       if (BeforeParticleDataExchange!=NULL) BeforeParticleDataExchange();
+
        switch (_PIC_PARTICLE_EXCHANGE_) {
        case _PIC_PARTICLE_EXCHANGE_UNBUFFERED_:
          ExchangeParticleData_unbuffered();
@@ -9162,6 +9172,28 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
 
 
       void InitProductStatWeight();
+
+      // Optional transactional batch interface.  Historical applications
+      // leave every pointer NULL and retain the original single-pass driver.
+      // An application that can create many daughters may install the full
+      // set before time stepping.  The core then processes only a bounded
+      // number of eligible parents per pass and reaches a collective-safe
+      // checkpoint between passes.  The processor must reinsert a deferred
+      // parent in FirstParticleCell and return false without otherwise
+      // changing it; returning true means that parent was completed.
+      typedef void (*fBeginBatchedModel)();
+      typedef bool (*fIsBatchedParticleEligible)(long int ptr);
+      typedef long int (*fGetBatchedParticleLimit)();
+      typedef bool (*fBatchedReactionProcessor)(long int ptr,
+          long int &FirstParticleCell,
+          cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+      typedef void (*fFinishBatchedPass)(long int attemptedParents,
+          long int remainingParents);
+      extern fBeginBatchedModel BeginBatchedModel;
+      extern fIsBatchedParticleEligible IsBatchedParticleEligible;
+      extern fGetBatchedParticleLimit GetBatchedParticleLimit;
+      extern fBatchedReactionProcessor BatchedReactionProcessor;
+      extern fFinishBatchedPass FinishBatchedPass;
 
       //the default function for processing the photolytic reactions -> the particle is removed if the reaction occured
       void PhotolyticReactionProcessor_default(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);

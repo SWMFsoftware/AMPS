@@ -112,6 +112,13 @@ at the tabulated radii. The manifest records the exact AMPS files, output
 index, nominal iteration, density conversion, convergence record, reference
 table path, and reference-table digest.
 
+When `--run-log` is supplied, the script parses the selected window's
+`consecutive=N/M` record. Every PNG, EPS, and combined-PDF page is visibly
+marked `CONVERGED` or `NONCONVERGED`; missing or unrecognized records are
+also labeled rather than silently treated as converged. The manifest stores
+the same result in `scientific_status` and adds an explicit diagnostic-only
+limitation for every state other than `converged`.
+
 Figs. 2--17 in the paper also contain measured and simulated Giotto NMS mass
 channel signals. The current comet application does not model the NMS ion
 source or detector, so those different observables are not overlaid with

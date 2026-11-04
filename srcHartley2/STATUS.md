@@ -1,6 +1,6 @@
 # Generic comet / Hartley 2 status
 
-Date: 2026-11-01
+Date: 2026-11-03
 Branch: `1d_comet_dev`
 
 ## Current result
@@ -32,6 +32,8 @@ Branch: `1d_comet_dev`
 | DIM1 result visualization | Pass for short aliases, single-/multi-file PNG/EPS output, and viewer control |
 | Rubin paper-comparison artifact generator | Pass as tooling and transient output: all 18 panels overlay output 19 with vector-extracted Rubin DSMC data and include PNG/EPS plus a combined PDF/CSV/manifest. Acceptance fails because the source run did not converge. |
 | Local-timestep/local-weight face-flux transport | Pass for a clean `-O3` DIM1 compile/link, 200,000-particle statistical face tests for both movers on local and MPI faces, a 95-face/two-ownership-crossing trajectory, all 46 neutral chemistry reactions, an integrated production smoke, and bounded full-domain population through iteration 10,000. The generated mode quartet is species-local timestep, species-local block weight, correction off, and face resampling on. The strict all-species convergence gate still fails. |
+| Sampling-break block-weight adaptation | Implemented for each species using the instantaneous whole-block mean and requested `50--200` particles/cell range. The selected `W/dt` carrier constraint is also propagated by powers of two through face-connected empty neighbors so a first arrival cannot clone against a stale low weight. Clean build and focused serial/MPI validation passed; evidence is recorded in the dated sections below. |
+| Emergency pre-exchange weight adaptation | Implemented with input threshold `0.75`; clean optimized build and integrated one-/four-/twelve-rank callback tests pass. A new long convergence run is still required. |
 | DIM2 axisymmetric application | Interface reserved; execution backend not implemented |
 
 The `build` directory is removed before each compilation. Hartley 2 and Halley
@@ -1936,6 +1938,427 @@ new `master`, repeat conflict resolution and the full validation matrix, and
 request review again. Keep `1d_comet_dev`, the integration branch, and the
 validated run archive until post-merge DIM1/DIM3 smoke tests are complete.
 
+## Species-local block-weight adaptation added on 2026-11-02
+
+This round adds an application-level controller for the already implemented
+species-local block weights. It does not change a core source file. The Halley
+case explicitly selects
+
+```text
+RadialParticleWeightAdaptation=on
+RadialParticleNumberPerCellRange=50 | 200
+```
+
+The range is interpreted separately for each species. At a complete sampling
+break, the instantaneous count of that species in an owner block is divided
+by all eight DIM1 cells in the block. Thus an empty cell contributes zero to
+the block mean. The population-range controller skips a block/species pair
+with no particles, and every clone remains in its source cell; adaptation
+never seeds an empty cell. The later 2026-11-03 enhancement below may raise
+the statistical weight of an empty photochemical daughter without creating a
+particle, preventing its first reaction event from producing a clone burst.
+
+The selected block weight is restricted to an integral power of two relative
+to its old value. If the mean is below 50, each factor-two step halves the
+weight and clones every existing particle of that species exactly once. If
+the mean is above 200, each step doubles the weight and retains each particle
+with probability `W_old/W_new=1/2`. The first operation preserves represented
+moments exactly; the second preserves them in expectation. The input parser
+requires `maximum >= 2*minimum`, which guarantees that some power-of-two
+image of every positive population lies in the inclusive requested interval.
+
+Adaptation occurs only after a full sampling output has been collected and
+used by the convergence calculation. The completed sample is therefore not
+retroactively rescaled. It is not run when convergence has already been
+accepted and the simulation is returning. Before any split, the code computes
+the exact total clone demand for the rank and verifies particle-buffer
+capacity, preventing a half-completed transaction. It also verifies that no
+particle has a pending local-timestep continuation.
+
+Only owner blocks are modified. After at least one change, the standard AMPS
+block-data exchange synchronizes local weights to MPI boundary copies. The
+legacy per-species global-minimum weight cache is then recomputed because
+adaptation can raise every local block weight, whereas the existing setter
+only lowers that cache. Future block crossings and chemical species changes
+are connected through the previously validated full `(W/dt)` source-to-target
+resampling; no individual particle-weight correction is introduced.
+
+### Files changed in this adaptation round
+
+| File | Detailed reason and merge significance |
+| --- | --- |
+| `input/hartley2.pl` | Adds the explicit ON/OFF keyword and the `MINIMUM | MAXIMUM` range, generates the three radial application variables, validates positive integral bounds and the factor-two reachability condition, and requires an explicit switch for every enabled radial simulation. Preserve the existing generic comet/chemistry/physics handlers when resolving parser conflicts. |
+| `input/halley1d.input` | Enables adaptation and records the supplied 50--200 per-cell range, species/block interpretation, factor-two mechanics, and empty-cell rule. These are numerical AMPS controls, not values attributed to Rubin et al. |
+| `srcHartley2/RadialSimulation.h` | Declares the generated controls and the focused validator. The public validator is intentionally a replacement execution mode because it destroys artificial test particles. |
+| `srcHartley2/RadialSimulation.cpp` | Implements per-species owner-block counting, power selection, exact splitting, unbiased roulette, clone-capacity preflight, continuation-state checks, MPI weight synchronization, global-minimum-cache repair, diagnostics, sampling-break invocation, and integrated split/roulette validation. It also initializes the core owner-block table before focused pre-timestep validators; normal `PIC::TimeStep()` already performs the same update. |
+| `srcHartley2/RadialMain.cpp` | Adds the mutually exclusive `--validate-weight-adaptation` CLI path after ordinary radial initialization. |
+| `srcHartley2/README.md` | Documents input syntax, equations, timing, conservation properties, empty-cell behavior, MPI synchronization, limitations, and validator commands. |
+| `srcHartley2/halley2011/PAPER_PARAMETERS.md` | Separates the 50--200 adaptation policy from published Halley parameters and states exactly how its mean is evaluated. |
+| `srcHartley2/STATUS.md` | Records this implementation, reproducible evidence, limitations, and future master-integration procedure. |
+
+No file under `src/pic/` is newly modified for this round. The controller
+deliberately reuses the core's local-weight accessors, owner-block table,
+particle-list API, block-data exchange, and previously developed local-face
+`W_old*dt_new/(W_new*dt_old)` conversion. Those earlier core changes remain a
+prerequisite and must not be dropped during a later master merge.
+
+### Focused validation evidence
+
+Before compilation, `/data/vtenishe/COMET1D/AMPS/build` was deleted. The exact
+Halley input then cleanly preprocessed, compiled, and linked with
+`make -j8 EXTRACOMPILEROPTIONS=-O3`. The known DIM1 legacy aggressive-loop
+warnings and sandbox-only OpenMPI interface notices remained, but there was no
+new compile or link error. The generated source contained adaptation enabled
+with bounds 50 and 200; the generated core configuration retained species-
+local timestep, species-local block weight, individual correction off, and
+local-face resampling on.
+
+The frozen executable, input, macro file, and logs are under
+`validation_runs/halley1d_weight_adaptation_20261102`. Their executable,
+input, and macro SHA-256 digests are respectively
+`3f1aac2c14f0f4f766c33bd5e6157a4e2e5e9df186c778e7efd8caf967c203b3`,
+`47d54396c80b17f0dc52024f6c01bb23b2252f440c7d762b787e09c52ffd2ef3`,
+and `36011722e4d1827ba0c73464dc27fb5a8b0e2efe87a3f6844beec68a9d816183`.
+
+`mpirun -np 1 ./amps.weight-adaptation --validate-weight-adaptation`
+passed. The split case changed 50 particles in one populated cell to 400,
+moving the eight-cell block mean from 6.25 to 50 by three exact steps. The
+roulette case changed 3,200 particles to 1,586, an observed mean of 198.25
+within the 50--200 band and the validator's six-sigma binomial bound. All
+other cells remained empty.
+
+`mpirun -np 4 ./amps.weight-adaptation --validate-weight-adaptation` also
+passed with one independently adapted owner block on each rank. The aggregate
+split was 200 to 1,600 particles; the aggregate roulette was 12,800 to 6,383;
+and the final report was
+`PASS ... owner-blocks=4 ghost-weight-checks=8`. The eight direct checks are
+non-owner copies of selected inter-rank boundary blocks after both split and
+roulette synchronization; the decomposition contained six MPI boundary
+blocks. `perl -c input/hartley2.pl`,
+`input/test_comet_reaction_network.pl`, and
+`input/test_comet_physics_database.pl` all passed. `git diff --check` is part
+of the final source audit.
+
+These tests validate controller mechanics and MPI synchronization. They do
+not replace a new 10,000-iteration Halley convergence/population run with the
+controller enabled. The earlier non-adaptive production run remains the last
+long science result, so the feature is not yet accepted for a paper claim or
+for merging to `master`.
+
+### Merge notes specific to this round
+
+Do not merge yet. Continue development and long validation on
+`1d_comet_dev`, and report to the user before any switch, rebase, cherry-pick,
+or merge involving `master`. When the long adaptive run is accepted, add this
+round to the existing temporary integration-branch runbook in three semantic
+batches: (1) parser and Halley controls; (2) radial application implementation
+and focused CLI test; (3) README, paper-parameter, and status documentation.
+The implementation is application-local, but batch 2 depends on the earlier
+core local-weight/face-transfer batch and must follow it.
+
+Resolve conflicts semantically. In `RadialSimulation.cpp`, retain both the
+source-derived initial `W/dt` profile and the new sampling-break adaptation;
+do not replace one with the other. Retain owner-only resampling, exact
+factor-two steps, `W_old/W_new` roulette, preflight capacity checking,
+`ParallelBlockDataExchange()`, global-minimum recomputation, and the rule that
+converged output returns before another adaptation. In the parser, preserve
+the explicit switch requirement and do not silently enable this behavior for
+other radial comet inputs. Keep the range in the input rather than hard-coding
+50 and 200 in C++.
+
+For a source-only commit, explicitly review and add only the eight files in
+the table above. Do not add generated root `hartley2.pl`, `build/`, `amps`,
+`PT*`, meshes, AMR measure caches, logs, or `validation_runs/`. The unrelated
+local `Makefile` linker edit remains outside this feature. After future
+conflict resolution, delete `build`, rebuild `halley1d.input`, confirm the
+generated controls and core mode quartet, rerun both focused adaptation tests,
+the existing serial/four-rank face-mover suite, chemistry and parser tests,
+then complete the approved long convergence and Rubin-comparison run. Stop
+again for user review before recording or applying any merge to `master`.
+
+## Photochemical first-daughter burst protection added on 2026-11-03
+
+The adaptive-weight Halley validation under
+`validation_runs/halley1d_adaptive_weight_convergence_rubin_20261102`
+terminated at iteration 5516 after approximately 8 h 31 min on four MPI
+ranks. Rank 2 reported `pic_pbuffer.cpp` error 225.1, "The particle buffer is
+full." The last complete break at iteration 5500 had globally reduced the
+population from 14,133,960 to 3,736,445, yet the failure followed only 16
+iterations later. The preceding controller adapted only species already
+present in each block. An absent daughter therefore retained an obsolete low
+carrier rate after its parent weight increased; its first later chemical event
+could request a very large residual-resampling multiplicity even though the
+global post-adaptation population was modest. The last convergence metric was
+1.669883, limited by CN, so this failed run is neither converged nor suitable
+for a Rubin comparison claim.
+
+The input now explicitly supplies
+
+```text
+RadialMaxPhotochemicalProductsPerReaction=20
+```
+
+The parser accepts only a positive integer and requires this record whenever
+DIM1 radial particle-weight adaptation and chemistry are both enabled. The
+value is a numerical AMPS population-control choice, not a parameter inferred
+from Rubin et al. The generated application also validates the value before
+initialization.
+
+At each complete sampling break, ordinary 50--200 population plans are built
+first. Starting with every species having a nonzero population in an owner
+block, the controller closes the enabled unit-unimolecular reaction graph
+transitively. Thus, a daughter that is currently absent but can be created and
+react again before the next sampling break is protected as a later-generation
+parent. For each reachable reaction, if its absent products' stoichiometric
+coefficients sum to `Cabs`, the minimum carrier rate assigned to every absent
+product is
+
+```text
+(W_product/dt_product)_min =
+    (W_parent/dt_parent) * Cabs/20.
+```
+
+The parent carrier in this expression includes the power-of-two population
+change planned in the same transaction. Reachability and carrier constraints
+are iterated to a fixed point. Therefore, for every reachable generation, the
+sum of the absent products' expected residual-resampling multiplicities for
+one individual selected reaction event is at most 20. When several parents or
+channels reach the same absent species, the largest required carrier is
+retained. The daughter weight is only raised, by an integral power of two.
+Because there is no particle list to resample, the operation creates no
+particles and leaves every empty cell empty. The first later chemistry event
+uses the new block weight through the existing unbiased
+`(W_parent/dt_parent)/(W_product/dt_product)` residual sampling. Products
+already present remain governed by the independent 50--200 mean-population
+controller.
+
+Every adaptation now reports `empty-photochemical-daughter` and the global
+maximum expected absent-product multiplicity before and after the transaction.
+The code checks the post-adaptation maximum against the input limit and aborts
+before chemistry resumes if it is violated. Updated owner weights continue to
+use the standard block-data exchange and global-minimum-cache reconstruction,
+so MPI boundary copies see the same protected daughter weight.
+
+### Files changed in this protection round
+
+| File | Detailed reason and later-merge significance |
+| --- | --- |
+| `input/hartley2.pl` | Adds and validates `RadialMaxPhotochemicalProductsPerReaction`, generates the C++ value, and requires it only for the combination of enabled radial adaptation and enabled chemistry. Preserve the existing generic reaction-network generator and order-independent input handling during conflict resolution. |
+| `input/halley1d.input` | Supplies the user-selected value 20 and documents that the limit is the total expected model multiplicity of all currently absent products in one selected channel. It is a numerical setting, not a Rubin parameter. |
+| `srcHartley2/RadialSimulation.h` | Declares the generated cap and its block-local, absent-daughter semantics. |
+| `srcHartley2/RadialSimulation.cpp` | Reads the generic generated reaction network, transitively closes all reactions reachable from present species, iterates absent-daughter carrier constraints to a fixed point using post-adaptation parent carriers, applies weight-only power-of-two increases, verifies the cap, extends diagnostics, and adds an integrated serial/MPI regression. No particle is created by the new planner. |
+| `srcHartley2/README.md` | Documents the new required input, derivation, conservation interpretation, diagnostics, scope, and focused validator behavior. |
+| `srcHartley2/halley2011/PAPER_PARAMETERS.md` | Separates the value 20 from published Halley inputs and records it as an AMPS numerical control. |
+| `srcHartley2/STATUS.md` | Records the failed-run evidence, implementation, validation, limitations, and merge procedure in this section. |
+
+The root `hartley2.pl` used by the AMPS preprocessing command was refreshed
+mechanically from `input/hartley2.pl`; it remains an untracked generated
+working copy and must not be included in a source commit. No file under
+`src/pic/` or any other core directory was modified in this round. The change
+uses the existing generic reaction-network API, local block weight/timestep
+accessors, particle lists, and MPI block-data exchange.
+
+### Build and focused validation evidence
+
+Before the accepted compilation, `build` was removed and the exact
+`halley1d.input` configuration was regenerated. The optimized command
+`make -j8 EXTRACOMPILEROPTIONS=-O3` completed and linked successfully. The
+generated `build/main/RadialSimulation.cpp` contains adaptation enabled,
+the 50--200 range, and
+`MaximumPhotochemicalProductsPerReaction=20`. The known DIM1 aggressive-loop
+and sandbox OpenMPI interface warnings remained; there was no final compile or
+link error. `perl -c input/hartley2.pl`, the reaction-network parser test, and
+the comet physics-database test all passed.
+
+The focused validator deliberately set an enabled channel's absent products
+to an unsafe total expectation of 160 model particles per individual event.
+It evaluates the full reaction reachability closure when checking this bound.
+The serial run changed two empty daughter weights, created no daughters,
+reduced the expectation from 160 to exactly 20, and reported PASS. The
+four-rank run changed eight empty daughter block/species weights across four
+owner blocks, again reduced 160 to 20, and passed four photochemical checks
+plus 16 direct ghost-weight synchronization checks. Its final line was:
+
+```text
+PASS particle-weight adaptation validation range=50:200 max-photochemical-products=20 owner-blocks=4 photochemical-checks=4 ghost-weight-checks=16
+```
+
+These focused results validate the cap calculation, power-of-two weight-only
+operation, empty-cell preservation, and MPI synchronization. They do not prove
+long-run population stability or convergence. A fresh 10,000-iteration Halley
+run must pass the former iteration-5516 failure point without a buffer error,
+then satisfy the existing convergence criterion and regenerate the Rubin
+comparison before this enhancement is accepted.
+
+### Merge notes for this protection round
+
+Do not merge yet. Continue work on `1d_comet_dev` and tell the user before any
+operation involving `master`. During a later temporary integration-branch
+merge, place this round after the existing generic chemistry and species-local
+weight batches. Resolve `RadialSimulation.cpp` semantically: retain both the
+50--200 present-species controller and the absent-daughter cap; calculate
+daughter requirements from the parent's *planned* carrier; preserve the
+transitive reachability/fixed-point iteration and maximum requirement over all
+reachable channels; never seed an empty particle list; retain the postcondition
+check, owner/ghost synchronization, and global-minimum repair. Do not replace
+the generated generic network with a Halley-specific reaction table or
+hard-code 20 in C++.
+
+After conflict resolution, remove `build`, regenerate the exact Halley input,
+confirm the generated cap and local timestep/weight mode quartet, and rerun
+the parser/database tests plus serial and four-rank adaptation validators.
+Then perform the full convergence/population/Rubin-comparison run and verify
+that diagnostics never report a post-adaptation absent-product expectation
+above 20. Include only the seven maintained source/documentation files in the
+table above; exclude root generated copies, `build`, `amps`, `PT*`, meshes,
+logs, caches, and `validation_runs`. Stop for user review before recording an
+integration commit or changing `master`.
+
+## Emergency pre-exchange particle-buffer protection added on 2026-11-03
+
+The 12-rank run in
+`validation_runs/halley1d_photochemical_cap_convergence_rubin_20261103_12mpi`
+terminated at iteration 5,690 after approximately 5 h 15 min. Rank 7 aborted
+in `pic_pbuffer.cpp:476` with error 225.1, "The particle buffer is full." The
+iteration-5,500 sampling adaptation had reduced the global population from
+12,209,935 to 3,706,593, but the population subsequently grew to 29,159,492
+before the next sampling break. NH2 alone accounted for 16,021,072 particles
+and NH3 for 6,381,797. The last complete convergence metric was 1.466266,
+limited by CH with `0/3` accepted windows. Thus the run is useful failure
+evidence but is not a converged Rubin validation result.
+
+The Halley input now explicitly supplies:
+
+```text
+RadialEmergencyParticleBufferUtilization=0.75
+```
+
+The parser accepts only a finite fraction in `(0,1)` and requires the keyword
+when radial particle-weight adaptation is enabled. The value is an AMPS
+numerical population-control setting, not a quantity inferred from Rubin et
+al. The configured 0.75 means that the emergency path is entered when the
+largest local particle count among MPI ranks reaches 75% of that rank's
+`MaxNPart` capacity.
+
+### Algorithm and conservation
+
+The generic core particle-exchange wrapper now contains a nullable callback
+executed collectively immediately before either buffered or unbuffered normal
+particle migration. Other applications retain the historical path because the
+default pointer is null. `RadialSimulation::Initialize()` installs the comet
+callback only when its existing weight-adaptation switch is on.
+
+The callback first uses `MPI_Allreduce` to obtain the maximum rank utilization.
+If it is below the input threshold, it returns without changing any state. If
+it reaches the threshold, one emergency step visits every allocated owner and
+MPI boundary-block copy on every rank, retains each particle independently
+with probability one half, and doubles every block-local weight for every
+species. It then rebuilds the core global-minimum weight cache and measures
+utilization again. The factor-two step repeats only if stochastic survival
+left a rank at or above the threshold.
+
+The common factor across all blocks and species is essential at this point in
+the iteration. The mover may already have placed completed or continuation
+particles in a non-owner boundary-block copy while waiting for the exchange.
+Changing only an owner block would give those staged particles inconsistent
+weights. Applying the same factor everywhere preserves every block-to-block
+weight ratio and every inter-species `W/dt` carrier ratio. Consequently the
+existing face-flux and chemistry resampling probabilities are unchanged.
+Surviving particles retain position, velocity, internal state, and any local-
+timestep remainder. Roulette conserves represented moments in expectation,
+does not split particles, and never seeds an empty cell.
+
+This is deliberately an emergency variance-for-capacity trade. It is not a
+replacement for the ordinary species/block 50--200 controller at completed
+sampling breaks. It also cannot guarantee protection against an arbitrarily
+large allocation burst that occurs before the next pre-exchange check; the
+25% headroom and the separate per-reaction product cap must be assessed in a
+new long run.
+
+### Files changed and later-merge significance
+
+| File | Detailed reason and merge guidance |
+| --- | --- |
+| `src/pic/pic.h` | Adds the generic `BeforeParticleDataExchange` callback declaration and invokes it immediately before the exchange-mode dispatch. During a master merge, retain the callback before both buffered and unbuffered implementations and do not move it after receive-slot allocation. If master already has an equivalent hook, use that hook instead of creating a duplicate. |
+| `src/pic/pic_parallel.cpp` | Defines the new callback pointer as null so all unrelated AMPS applications remain behaviorally unchanged. Keep this definition paired with the header declaration. |
+| `input/hartley2.pl` | Adds strict parsing/generation for `RadialEmergencyParticleBufferUtilization` and requires the explicit value when radial weight adaptation is enabled. Preserve the existing order-independent generic comet parser and do not introduce a hidden default. |
+| `input/halley1d.input` | Supplies 0.75 and documents trigger timing, factor-two roulette, staged particles, and the reason a common weight factor preserves `W/dt` ratios. This value is numerical, not from Rubin et al. |
+| `srcHartley2/RadialSimulation.h` | Declares the generated threshold and the callback whose address is stored by the core. |
+| `srcHartley2/RadialSimulation.cpp` | Implements collective occupancy checks, all-copy/all-species factor-two roulette, cache reconstruction, diagnostics, callback installation, input validation, and an integrated test through the real exchange API. Preserve the distinction between this global emergency step and the owner-only per-block sampling adaptation. |
+| `srcHartley2/README.md` | Documents syntax, trigger ordering, conservation, variance, interaction with staged continuation particles, and limitations. |
+| `srcHartley2/halley2011/PAPER_PARAMETERS.md` | Records 0.75 as a supplied AMPS control rather than a published Halley parameter. |
+| `srcHartley2/STATUS.md` | Records the failure that motivated the change, implementation, focused evidence, limitations, and this merge procedure. |
+
+The root `hartley2.pl` is only the untracked mechanical preprocessing copy of
+`input/hartley2.pl`; it must not be committed. Generated `build/`, `amps`,
+`PT*`, mesh/cache files, logs, and `validation_runs/` also remain outside a
+source commit.
+
+### Clean build and focused evidence
+
+`build` was explicitly deleted before preprocessing and compilation. The exact
+tracked `halley1d.input` then generated
+`EmergencyParticleBufferUtilization=0.75`, species-local timesteps,
+species-local block weights, individual weight correction off, and local-face
+flux resampling on. `make -j8 EXTRACOMPILEROPTIONS=-O3` compiled and linked
+successfully. Only the previously documented aggressive-loop and sandbox
+OpenMPI interface warnings appeared. Both parser syntax checks and the comet
+reaction/physics database tests passed.
+
+The integrated validator temporarily sets a small synthetic trigger equal to
+75% of its initial test utilization, then calls the ordinary core
+`ExchangeParticleData()` API. This exercises callback placement without
+allocating 15 million particles per rank merely to reach 75% of the production
+20-million-slot buffer; the production value is restored and printed in the
+final result.
+
+The one-rank test reduced 4,096 particles to 1,957 in one factor-two step and
+reported maximum utilization `2.048e-4 -> 9.785e-5` before the regular MPI
+exchange. It passed one emergency and one photochemical check. The four-rank
+test reduced 16,384 particles to 8,133, with the maximum rank changing from
+4,096 to 2,074 and utilization `2.048e-4 -> 1.037e-4`. It passed four
+emergency checks, four photochemical checks, and 20 direct ghost-weight
+checks. The matching 12-rank test reduced 49,152 particles to 24,449 and
+passed 12 emergency checks, 12 photochemical checks, and 60 direct ghost-
+weight checks. Its final line was:
+
+```text
+PASS particle-weight adaptation validation range=50:200 emergency-buffer-utilization=0.750000 max-photochemical-products=20 owner-blocks=12 emergency-checks=12 photochemical-checks=12 ghost-weight-checks=60
+```
+
+These focused results validate trigger collectives, factor-two statistics,
+core-hook timing, owner/boundary weight agreement, and all previous adaptation
+checks. They do not establish long-run population stability or physical
+convergence. Acceptance requires a fresh 12-rank run to pass iteration 5,690,
+avoid all buffer failures through termination, satisfy the existing three-
+window convergence rule, and regenerate Rubin comparisons from the accepted
+final output.
+
+### Merge instructions for this round
+
+Do not merge yet. Remain on `1d_comet_dev` until the new long validation is
+accepted, and tell the user before any switch, rebase, cherry-pick, or merge
+involving `master`. In a later disposable integration branch, apply the two
+generic core-hook files as a small semantic batch after the existing local-
+timestep/local-weight core prerequisites. Apply the parser/application batch
+next, followed by documentation. The application batch depends on the core
+hook and must not be cherry-picked alone.
+
+During conflict resolution, confirm that the callback remains null by default,
+is called collectively before receive allocation, and cannot recurse through
+`ExchangeParticleData()`. In the radial code, retain the common all-species,
+all-block factor for emergency operation; do not replace it with the ordinary
+owner-only per-species planner while particles may be staged in boundary
+copies. Retain the post-step utilization check, global-minimum-cache rebuild,
+and detailed diagnostic. Preserve the independent 50--200 sampling-break
+controller and absent-daughter cap.
+
+After conflict resolution, delete `build`, regenerate the Halley configuration,
+verify the generated 0.75 value and mode quartet, rerun the parser/database
+tests and serial/four-/twelve-rank adaptation validators, then perform the full 12-rank
+convergence/population/Rubin study. Stop for user review before recording an
+integration commit or changing `master`.
+
 ## Remaining decisions for DIM1 science simulations
 
 For Hartley 2, the paper, existing implementation, and supplied domain controls
@@ -1961,3 +2384,665 @@ meaningful comparison still requires a converged restarted output and must
 state that 294 pair cross sections are analytical estimates outside Rubin's
 printed table. The NMS observables remain out of scope until an instrument
 response is implemented.
+
+## Fourteen-rank post-emergency long validation stopped on 2026-11-03
+
+The requested repeat run was archived in:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_emergency_weight_convergence_rubin_20261103_14mpi
+```
+
+It was launched at 10:23:21 CST with:
+
+```text
+mpiexec -n 14 ./amps.emergency-weight
+```
+
+The directory contains immutable snapshots of the executable, maintained
+Halley input, Rubin comparison utility, generic one-dimensional plotting
+utility, and digitized Rubin reference data. The executable SHA-256 is
+`1dbbd0bf0dce67ab518747fdb90ae5cdd8afb1739a92b42e9ccb78614453ff34`;
+the input SHA-256 is
+`6f9a7de309e3d0f1d3274d0aa4786ae63e6b7659a150ac9c7867f1591e280cd7`.
+The snapshot requests 20,000,000 particle slots per rank, block-local species
+weights and timesteps, regular 50--200 mean-particles-per-cell adaptation,
+the per-event product cap of 20, and emergency pre-exchange adaptation at 75%
+rank-local buffer utilization. Termination remains three consecutive complete
+500-iteration windows below 5% relative change, with 10,000 iterations as the
+hard ceiling.
+
+The job reported exactly 14 MPI ranks and completed ten sampling windows. At
+iteration 5,000, the convergence metric was `1.946078`, limited by CH, with
+zero of three required converged windows. Regular adaptation changed the
+population from 10,667,398 to 3,317,073 and reduced the maximum expected
+absent-product multiplicity from 65,537 to 16. The run did not exercise the
+75% emergency-buffer trigger. It was stopped at iteration 5,492 at the user's
+request before reaching the former iteration-5,690 failure point. No particle-
+buffer error or MPI abort occurred before the requested stop. This is useful
+population-control evidence but is neither a convergence result nor an
+accepted Rubin comparison. Do not merge it to `master`.
+
+## Sampling-population emergency request added on 2026-11-03
+
+The rank-local 75% buffer trigger does not detect a severe population
+concentration until that concentration occupies most of one rank's entire
+20-million-slot buffer. A second trigger now reuses the particle counts that
+the regular sampling-break controller already calculates. For every owner
+block, it sums all compiled species and forms the whole-block mean
+
+```text
+mean_total = sum_species(block particle count) / block cell count.
+```
+
+The threshold is the explicitly requested
+
+```text
+10 * number of compiled species * maximum requested particles/species/cell.
+```
+
+For the current 27-species, 50--200 Halley case, this is 54,000 total model
+particles per cell as a block mean. The implementation compares integer block
+counts against the equivalent threshold multiplied by the block cell count,
+with checked integer multiplication, so a value exactly at the boundary does
+not trigger and there is no floating-point boundary ambiguity.
+
+The comparison uses the pre-adaptation sampling snapshot. If the global
+maximum owner-block mean strictly exceeds the threshold, all MPI ranks record
+the same pending request and a diagnostic containing the sampling iteration,
+observed mean, threshold, multiplier, and species count. The sampling routine
+does not call particle exchange or global emergency roulette recursively. The
+next normal `PIC::Parallel::ExchangeParticleData()` call consumes the request
+inside the existing `BeforeParticleDataExchange` callback. It applies at least
+one common all-species/all-allocated-block factor-two weight increase and
+unbiased one-half roulette before normal MPI particle migration. If the
+independent rank-buffer trigger is also active, roulette continues until all
+ranks are below its configured utilization threshold. Diagnostics distinguish
+`sampling-population`, `buffer`, and combined trigger reasons.
+
+This timing preserves the established safety properties. A particle already
+staged in a non-owner boundary block is resampled together with ordinary owner-
+block particles; every owner and ghost weight changes by the same factor; and
+all block-to-block and inter-species `W/dt` ratios remain unchanged. The
+sampling request is cleared only after roulette and the global-minimum weight
+cache rebuild complete successfully. A later sampling window can raise a new
+one-shot request.
+
+### Files changed in this enhancement
+
+| File | Change and later-merge significance |
+| --- | --- |
+| `srcHartley2/RadialSimulation.cpp` | Adds checked threshold construction, all-species block-count accumulation, the collective pending request, trigger-aware pre-exchange diagnostics, one-shot request consumption, and a focused integrated regression. Keep the count before ordinary per-species resampling and keep execution in the pre-exchange callback when resolving master conflicts. |
+| `srcHartley2/RadialSimulation.h` | Extends the emergency-control documentation to describe both independent trigger conditions. No new public variable or input keyword is introduced. |
+| `input/halley1d.input` | Documents that the existing maximum of 200 also defines the fixed `10*nSpecies*maximum` sampling alarm. No Rubin parameter is inferred. |
+| `srcHartley2/README.md` | Documents units, strict comparison, collective request timing, conservation, diagnostics, and interaction with the 75% trigger. |
+| `srcHartley2/halley2011/PAPER_PARAMETERS.md` | Marks the new multiplier as a supplied numerical control rather than a paper value. |
+| `srcHartley2/STATUS.md` | Records the stopped 14-rank run, algorithm, validation requirements, and merge guidance. |
+
+No additional core source modification is required in this round. The
+application continues to use the already-added generic nullable
+`BeforeParticleDataExchange` hook in `src/pic/pic.h` and
+`src/pic/pic_parallel.cpp`. The core hook must remain earlier than both normal
+exchange implementations and receive-side allocation.
+
+### Validation and merge requirements
+
+The integrated weight-adaptation validator now constructs a small valid
+synthetic 5--20 range, exceeds its exact
+`10*nSpecies*maximum*block-cell-count` threshold, calls the real sampling
+adaptation, verifies that a request was recorded but not executed there, then
+calls the ordinary core particle-exchange API. It checks factor-two/binomial
+statistics, request consumption, empty-cell preservation, and owner/ghost
+weight agreement. The existing synthetic 75% buffer test remains independent.
+
+Before accepting this change, delete `build`, compile the exact Halley input,
+run parser/database checks, and pass the serial, four-rank, and twelve-rank
+focused validators. Then start a fresh long convergence run and confirm both
+trigger diagnostics when their respective conditions occur, population
+stability past iteration 5,690, no buffer failures through termination, and a
+new Rubin comparison from the accepted final window.
+
+The clean-build and focused portion of that plan passed on 2026-11-03. The
+workspace `build/` directory was removed before compiling the exact
+`input/halley1d.input` configuration with `-O3`. The input parser and the
+reaction-network and physical-database checks passed. The resulting executable
+then passed `--validate-weight-adaptation` with 1, 4, and 12 MPI processes. The
+sampling-population test deliberately observed a block mean of 10,800
+particles per cell against its synthetic 5,400 threshold and produced a
+`trigger=sampling-population` event only in the next pre-exchange callback.
+The final MPI evidence was:
+
+```text
+1 rank:  owner-blocks=1  emergency-checks=1  sampling-population-emergency-checks=1  ghost-weight-checks=0
+4 ranks: owner-blocks=4  emergency-checks=4  sampling-population-emergency-checks=4  ghost-weight-checks=24
+12 ranks: owner-blocks=12 emergency-checks=12 sampling-population-emergency-checks=12 ghost-weight-checks=72
+```
+
+All three runs reported `PASS`. The remaining acceptance work is the new long
+convergence/Rubin-comparison run described above; it has not been started by
+this enhancement.
+
+For a later master integration, do not cherry-pick this application change
+without the earlier two-file core hook. Resolve `RadialSimulation.cpp`
+semantically so that the ordinary per-species 50--200 controller, absent-
+daughter product cap, 75% rank-buffer trigger, and new total-block-mean trigger
+all remain independent. Do not move global roulette into the sampling routine,
+do not change the strict `>` comparison to `>=`, and do not calculate the
+sampling alarm after regular adaptation. Exclude generated `build/`, root
+parser copies, executables, meshes, logs, `PT*`, and `validation_runs/` from a
+source commit. Remain on `1d_comet_dev` and stop for user review before any
+operation involving `master`.
+
+## Fourteen-rank sampling-emergency validation failed at iteration 6,019
+
+After the clean build and 1/4/12-rank focused regressions passed, a fresh long
+Halley/Rubin validation was started from iteration zero with 14 MPI processes:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_sampling_emergency_convergence_rubin_20261103_14mpi
+mpiexec -n 14 ./amps.sampling-emergency
+```
+
+The previous stopped run directory and its iteration-5,492 evidence were left
+unchanged. The new run uses the newly built executable whose SHA-256 is
+`9fcbd3c0818767519dc1afc28aaa373580b39f3896f713bd20e33b55ba65486a`;
+the staged `halley1d.input` is byte-identical to `input/halley1d.input`. Its
+`PT/plots` tree was created normally, and eleven sampling windows had completed
+through iteration 5,500 at the latest status check. The convergence metric was
+1.592657 at iteration 5,500 (C2H2-limited, 0/3 consecutive windows), so this is
+not yet a convergence result. The new sampling-population path received its
+first long-run exercise at iteration 2,500: the maximum owner-block mean of
+139,595.1 particles/cell exceeded the 54,000 threshold and raised a collective
+request. At the next pre-exchange callback, one global factor-two step reduced
+the represented model-particle population from 1,547,234 to 772,725 and the
+maximum rank population from 229,100 to 114,351. The aggregate buffer use was
+only 1.1455%, confirming that this event was caused by the new local-
+concentration alarm rather than the independent 75% rank-buffer alarm. The run
+triggered a second sampling-population event at iteration 3,500, where the
+maximum block mean of 99,652.25 particles/cell again exceeded 54,000. The
+pre-exchange step reduced the model population from 2,302,385 to 1,151,350 and
+the maximum-rank population from 762,910 to 381,673; rank-buffer utilization
+was only 3.81455%, again well below the independent 75% threshold. No third
+emergency event occurred at iteration 4,000; regular adaptation changed the
+population from 2,292,318 to 1,470,464. A third sampling-population event
+occurred at iteration 4,500, with a block mean of 96,618.12 particles/cell.
+The pre-exchange step reduced 2,646,904 model particles to 1,322,913 and the
+maximum-rank population from 510,896 to 255,554. A fourth event at iteration
+5,000 reduced 2,112,903 particles to 1,055,870 after a block mean of 68,605.5
+particles/cell was detected. A fifth event at iteration 5,500 caught a much
+larger 262,430.6-particle/cell block mean and reduced 1,880,894 particles to
+940,366; the maximum-rank population fell from 376,750 to 188,505. The run
+subsequently passed the former iteration-5,690 particle-buffer failure point
+and advanced through iteration 5,950 without an AMPS, MPI, or particle-buffer
+error. This is direct long-run stability evidence for the new sampling alarm,
+although the model remained at 0/3 converged sampling windows.
+
+The run did not complete. At iteration 6,000, its convergence metric was
+1.635755 (H2-limited, 0/3). A sixth sampling alarm detected an extreme block
+mean of 524,326.8 particles/cell. Regular 50--200 adaptation first reduced the
+population from 6,432,566 to 1,675,482, and the deferred global emergency step
+then reduced 1,678,520 particles to 839,312; maximum-rank occupancy fell from
+339,908 to 169,649. Nevertheless, the population regrew extremely rapidly. At
+iteration 6,008 the global population was 2,242,648 and rank 6 already held
+1,416,169 particles. During iteration 6,019, before another emergency callback
+could create headroom, rank 6 exhausted its 20-million-slot particle buffer:
+
+```text
+AMPS: exit: line=476, file=pic_pbuffer.cpp,
+message=The particle buffer is full (error code=225.1)
+MPI_ABORT was invoked on rank 6
+```
+
+The MPI launcher exited with status 1 and no simulation processes remain. This
+failure demonstrates that sampling-window detection plus a pre-exchange 75%
+occupancy test cannot protect against a very large intra-iteration allocation
+burst. A subsequent fix must provide allocation-site or chemistry-stage
+headroom control rather than merely lowering the sampling threshold. The run
+is useful population-stability evidence, but it is not an accepted convergence
+or Rubin-comparison result and must not be merged to `master` as validation of
+the current algorithm.
+
+## Empty-neighbor carrier propagation added on 2026-11-03
+
+The iteration-6,019 failure above need not have been caused by chemistry alone.
+The block-face mover uses the residual-resampling mean
+
+```text
+mu = (W_source/dt_source)/(W_destination/dt_destination).
+```
+
+Regular adaptation previously skipped a zero-population block/species pair.
+Such a block could therefore retain an old, extremely small local statistical
+weight. The first particle transported into it could have `mu >> 1` and create
+a large clone burst before either the next 500-iteration sampling break or the
+pre-exchange emergency callback. The chemistry daughter cap cannot control
+this transport path.
+
+`srcHartley2/RadialSimulation.cpp` now prepares empty transport regions in the
+same sampling-break adaptation transaction. It gathers the authoritative
+owner count and the planned carrier rate `W/dt` for every calculation leaf and
+species onto every MPI rank. For each species, it constructs face adjacency,
+finds every connected component whose blocks are all empty for that species,
+and activates only components touching a currently populated block. The target
+carrier of an active component is the maximum of all current empty-member
+carriers and all populated boundary carriers. Every empty member below that
+target is raised through exact factor-two weight steps. No particle is
+allocated, removed, or cloned by propagation.
+
+An explicit work list and multi-source breadth-first traversal carry the
+constraint through a neighbor, its neighbor, and so on, with no recursive
+call-stack limit. A dyadic fixed-point pass preserves the existing invariant
+that adaptive weights differ by powers of two. After planning, the code checks
+every directed face entering an active empty block and aborts unless its clone
+mean is at most one within numerical tolerance. The established owner-to-ghost
+block-data exchange then distributes the new weights before particle transport
+resumes. Diagnostics add `empty-transport-neighbor`, `empty-components`,
+`max-empty-hops`, and `max-empty-face-clone-mean=before->after`.
+
+The adjacency builder is intentionally structured for later DIM2/DIM3 use: it
+enumerates all `2*DIM` faces and the dimension-dependent face subslots. The
+definition remains face connected because a corner contact is not a mover
+crossing. Before accepting this path for higher dimensions, add dedicated
+DIM2/DIM3 tests containing coarse/fine AMR faces, verify all active subfaces,
+deduplicate repeated neighbors, and enforce the same directed-entry
+postcondition. The present evidence validates DIM1 only.
+
+### Files changed in this round
+
+| File | Detailed reason and later-merge significance |
+| --- | --- |
+| `srcHartley2/RadialSimulation.cpp` | Adds global leaf/count/carrier collection, dimension-aware face adjacency, empty-component discovery, multi-hop work-list propagation, dyadic carrier raising, postcondition checks, diagnostics, and focused regression assertions. Preserve the `W/dt` calculation; substituting raw `W` breaks local-timestep flux balance. |
+| `srcHartley2/RadialSimulation.h` | Documents that ordinary adaptation includes weight-only propagation into face-connected empty neighbors. It adds no public control or ABI object. |
+| `input/halley1d.input` | Documents the automatic transport-consistency step next to the existing adaptation controls. No new keyword or Rubin-derived value is introduced. |
+| `srcHartley2/README.md` | Describes the mover equation, component algorithm, conservation/empty-cell behavior, diagnostics, and requirements for a future higher-dimensional validation. |
+| `srcHartley2/halley2011/PAPER_PARAMETERS.md` | Separates this numerical population safeguard from Rubin et al. physics and published parameters. |
+| `srcHartley2/STATUS.md` | Records motivation, implementation, validation evidence, long-run disposition, and master-integration guidance. |
+
+No core file under `src/pic/` was added or modified for this enhancement. It
+uses the previously implemented local-timestep/local-weight face conversion,
+local weight accessors, owner block table, and owner/ghost block-data exchange.
+Those earlier core prerequisites remain necessary but should be reviewed as a
+separate semantic batch during a future integration.
+
+### Clean build and focused validation
+
+Before compilation, the exact workspace `build/` directory was removed. The
+Halley configuration then compiled and linked from scratch with
+`make -j8 EXTRACOMPILEROPTIONS=-O3`. The reaction-network parser and comet
+physics-database tests passed, and `git diff --check` reported no whitespace
+error.
+
+The focused `--validate-weight-adaptation` test passed with 1, 4, and 12 MPI
+processes. Its roulette case deliberately creates a populated-to-empty carrier
+ratio of two and requires propagation through successive empty blocks. Its
+sampling-population stress case creates a clone mean of 1,024. In all cases the
+post-propagation maximum was exactly one, no empty cell was populated, and the
+multi-rank owner/ghost checks passed. The final evidence was:
+
+```text
+1 rank:  empty-transport-neighbor=372 max-empty-hops=372 max-empty-face-clone-mean=1024->1 empty-transport-propagation-checks=1  ghost-weight-checks=0
+4 ranks: empty-transport-neighbor=369 max-empty-hops=97  max-empty-face-clone-mean=1024->1 empty-transport-propagation-checks=4  ghost-weight-checks=24
+12 ranks: empty-transport-neighbor=361 max-empty-hops=32 max-empty-face-clone-mean=1024->1 empty-transport-propagation-checks=12 ghost-weight-checks=72
+```
+
+These tests establish deterministic multi-hop DIM1 planning, collective MPI
+agreement, and ghost synchronization. They do not establish long-run
+population stability, convergence, or agreement with Rubin et al.; those
+remain requirements of the restarted validation run.
+
+### Merge instructions for the empty-neighbor enhancement
+
+Do not merge this work yet. Keep development and long validation on
+`1d_comet_dev`, and stop for user review before any switch, rebase,
+cherry-pick, or merge involving `master`. In a later disposable integration
+branch based on the then-current master, first integrate and validate the
+earlier generic core local-time/local-weight face machinery and nullable
+pre-exchange hook. Then integrate this application change with the complete
+sampling-break controller; do not extract only the empty-neighbor function
+without its power-of-two plans and owner/ghost synchronization.
+
+Resolve `RadialSimulation.cpp` semantically. Retain the order: count owner
+particles, create ordinary population plans, constrain absent chemistry
+daughters, propagate planned `W/dt` through empty face components, preflight
+capacity, apply particle resampling and weight-only plans, synchronize ghost
+weights, and rebuild the global-minimum cache. Preserve the postcondition and
+diagnostics. Never replace `W/dt` with `W`, seed empty blocks, use corner
+adjacency, or lower an empty carrier during propagation.
+
+After conflicts are resolved, delete `build`, regenerate from
+`input/halley1d.input`, repeat the parser/database tests and the 1/4/12-rank
+focused validator, and run the full 14-rank convergence/population/Rubin
+comparison. Exclude generated executables, `build/`, `PT*`, root parser
+copies, meshes, logs, and `validation_runs/` from source commits. A successful
+long run and regenerated comparison plots are prerequisites for review, not
+permission to merge automatically.
+
+### Restarted fourteen-rank long validation
+
+A fresh run was launched from iteration zero at 18:46:50 CST on 2026-11-03:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_empty_neighbor_weight_convergence_rubin_20261103_14mpi
+mpiexec -n 14 ./amps.empty-neighbor-weight
+```
+
+The failed sampling-emergency run and all older archives remain unchanged.
+The new directory contains the executable, exact Halley input, generic DIM1
+plotter, Rubin comparison program, and digitized Rubin reference data. The
+staged executable SHA-256 is
+`2fa06c798ec8627cea87cb3eca4ec773dff25bef83742ff82b11de1ad75ef05d`;
+the staged input SHA-256 is
+`d2199c0af07ff346c934d7934d085bd4fc51ab2edc8cb5d09420adee91e19b96`.
+Both staged files were byte-compared with the tested workspace artifacts.
+
+Initialization reported exactly 14 MPI processes and one OpenMP thread per
+process, and `PT/plots` was created normally. The run completed two sampling
+windows and advanced beyond iteration 1,000 at this status update. Iteration
+500 provided a production exercise of the new transport safeguard:
+
+```text
+radial particle-weight adaptation iteration=500 range=50:200
+particles=39730->168757 changed-block-species=351 split=279 roulette=4
+empty-photochemical-daughter=68 empty-transport-neighbor=671
+empty-components=18 max-empty-hops=371
+max-empty-face-clone-mean=6.400000e+01->1.000000e+00
+max-absent-products-per-reaction=3.343333e+02->6.208333e+00 limit=20
+```
+
+Thus the real Halley population exposed a prospective factor-64 first-arrival
+clone amplification, and the recursive empty-neighbor preparation reduced it
+to one before transport resumed. At iteration 1,000 the maximum relative L1
+change was `0.8181504` (NH3-limited, `0/3` consecutive windows). The second
+adaptation reduced 1,520,239 particles to 484,013; no empty weight needed a
+further increase and the maximum empty-entry clone mean remained one. No
+particle-buffer, MPI, or postcondition error was present at this checkpoint.
+The job remains active. It is not yet a convergence result or an accepted
+Rubin comparison; acceptance still requires stable completion or convergence,
+particular scrutiny past iteration 6,019, and plots regenerated from the
+accepted final output.
+
+## Allocation-burst control implemented and focused-tested on 2026-11-04
+
+The preceding “job remains active” statement records the state at that earlier
+checkpoint; the run later failed and is no longer active. The 14-rank
+empty-neighbor run reached iteration 8,136, after completing its iteration-
+8,000 sampling window with a maximum relative L1 change of `1.810334` for CN
+and `0/3` converged windows. Rank 5 then exhausted its 20-million-slot particle
+buffer inside a sampling window:
+
+```text
+AMPS: (11/3 23:36:43), Iteration: 8136
+AMPS: exit: line=476, file=pic_pbuffer.cpp,
+message=The particle buffer is full (error code=225.1)
+MPI_ABORT was invoked on rank 5
+```
+
+The pre-exchange high-water check could not stop an allocation burst that
+occurred before the next exchange. The empty-neighbor repair also left two
+unbounded cases: a particle could enter a populated block with a much smaller
+carrier, and residual chemistry could round an expected daughter count upward.
+The current implementation controls the allocation sites rather than relying
+only on a later population alarm.
+
+### Implemented invariants and execution order
+
+The complete controller has four coupled stages:
+
+1. **Sampling-break and initialization planning.** Ordinary 50--200
+   block/species population plans remain dyadic. The same planning pass closes
+   the reaction graph from represented particles and configured surface-source
+   species. For every reachable selected channel it enforces the hard bound
+   `sum coefficient*ceil(C_parent/C_product) <= 20`, where `C=W/dt`. This
+   includes products that are present, products that are absent, residual
+   rounding, and later-generation daughters. Initialization performs the
+   weight-only closure before the first source injection.
+2. **Face allocation elimination.** For each species, every calculation leaf
+   is placed in a graph using real mesh faces and all dimension-dependent
+   subface slots. Because the requested maximum multiplicity is one in both
+   directions, every block in a face-connected component is raised to a common
+   dyadically reachable carrier. Populated blocks use unbiased factor-two
+   roulette; empty blocks change weight only. Every directed face is checked
+   after application, and owner values are distributed to ghost copies before
+   transport resumes.
+3. **Transactional chemistry.** The core photolysis driver makes bounded
+   passes through eligible parents. The comet processor draws the complete
+   event multiplicity before mutating the parent, reuses the parent slot for
+   the first daughter, and commits only if every remaining daughter slot fits
+   below the 90% transaction ceiling. Otherwise it reinserts the unchanged
+   parent for the next pass. A per-particle stage byte prevents completed
+   parents and new daughters from reacting again in the same outer iteration.
+4. **Collective allocation emergency.** A chemistry checkpoint at the 75%
+   high watermark requests common factor-two roulette and repeats it until the
+   maximum MPI-rank population is at or below the 50% low watermark. The
+   existing buffer and sampling triggers retain their 75% target behavior.
+   Ten percent of each buffer remains outside application chemistry
+   transactions. The callback is collective and never recursively invokes
+   particle exchange.
+
+The common-factor emergency conserves represented quantities in expectation
+and preserves all carrier ratios. Ordinary block-specific roulette also
+conserves in expectation and increases Monte Carlo variance. With a connected
+DIM1 mesh and face multiplicity one, each species has a component-global
+carrier after an adaptation pass; local weights still differ in proportion to
+local timesteps. This is a deliberate zero-allocation transport policy, but it
+is stronger than independently optimized block-local statistical weights.
+
+### Files changed for the allocation-burst implementation
+
+| File | Detailed modification and later-merge significance |
+| --- | --- |
+| `src/pic/pic.h` | Declares the nullable pre-exchange hook and the five nullable transactional-photochemistry callbacks. The complete batch set is all-or-none; unrelated applications keep null defaults. Merge declarations with their definitions and driver changes, not as an isolated header edit. |
+| `src/pic/pic_parallel.cpp` | Defines the null pre-exchange callback used by the radial emergency controller. The invocation remains in `PIC::Parallel::ExchangeParticleData()` before buffered/unbuffered dispatch and receive-slot allocation. If current master has an equivalent hook, reconcile semantically rather than installing a duplicate. |
+| `src/pic/pic_photolytic_reactions.cpp` | Defines null batch callbacks and extends the historical photolysis pass with bounded repeated passes, eligibility filtering, a collective application checkpoint, a global remaining-parent count, partial-set rejection, and a loop guard. The null path retains historical behavior. Installed batch mode explicitly rejects hybrid/OpenMP compilation until counters and cell-list reconstruction are made thread-safe. |
+| `srcHartley2/CometChemistry.h` | Documents and exports the particle-byte reservation, batch callbacks, eligibility protocol, and boolean transactional processor contract. |
+| `srcHartley2/CometChemistry.cpp` | Reserves/resets the stage flag, calculates a conservative parent budget from the high watermark and hard event cap, performs collective pressure checks, and makes each reaction atomic. It never truncates products: an event above the hard cap aborts, while a capacity-deferred event leaves the parent unchanged. |
+| `srcHartley2/RadialSimulation.h` | Declares and documents high/low/reserve/face controls plus the collective allocation-emergency entry point. The photochemical input is documented as a hard actual allocation cap rather than an expected absent-product cap. |
+| `srcHartley2/RadialSimulation.cpp` | Implements direct-source reaction reachability, hard `ceil`-based chemistry planning, all-face component carrier equalization, populated-block roulette, final post-face chemistry checks, low-water allocation emergencies, initialization-time planning, input validation, diagnostics, and expanded focused regressions. The face graph enumerates DIM1/2/3 topology, but only DIM1 has been validated. |
+| `input/hartley2.pl` | Strictly parses and requires `RadialAllocationLowWatermark`, `RadialAllocationReserveFraction`, and `RadialMaxFaceTransferMultiplicity` when adaptation is enabled. It generates the corresponding application variables and retains explicit input rather than hidden defaults. |
+| `input/halley1d.input` | Sets the agreed controls to `0.50`, `0.10`, and `1`; documents transactional chemistry and the hard 20-daughter allocation formula. This is the canonical tracked Halley input. |
+| `srcHartley2/README.md` | Replaces the superseded expected/absent and empty-neighbor descriptions with the hard chemistry, all-face, transactional, and low-water algorithms and their limitations. |
+| `src/pic/README.md` | Documents both generic nullable core interfaces, their no-op defaults, callback contracts, MPI-only validation status, and core merge grouping. |
+| `srcHartley2/halley2011/PAPER_PARAMETERS.md` | Separates the 50%, 75%, 10%, face-one, and daughter-20 controls from Rubin et al. physics and states the exact hard bounds used in comparisons. |
+| `srcHartley2/STATUS.md` | Records the motivating failure, implementation, evidence, limitations, and this master-integration procedure. |
+
+The root `hartley2.pl` and `halley1d.input` currently mirror their canonical
+tracked files because AMPS preprocessing stages inputs in the repository root.
+They are untracked build inputs, not additional source files, and must not be
+included in a later source commit or merge.
+
+### Clean build and focused evidence
+
+The workspace `build/` directory was removed before the final compile. The
+exact Halley input then passed a clean optimized build with
+`make -j8 EXTRACOMPILEROPTIONS=-O3`. Only the previously known DIM1
+aggressive-loop warnings remained. The following standalone checks passed:
+
+- `perl -c input/hartley2.pl`;
+- `perl input/test_comet_reaction_network.pl`;
+- `perl input/test_comet_physics_database.pl`;
+- the C++ reaction-network test; and
+- the C++ collision-database test.
+
+The focused validation archive is
+`validation_runs/halley1d_allocation_burst_control_20261104`. The exact
+`--validate-weight-adaptation` executable passed with 1, 4, and 12 MPI ranks:
+
+```text
+1 rank:  owner=1  emergency=1  allocation-burst=1  sampling=1  face=1  photochemical=1  ghost=0
+4 ranks: owner=4  emergency=4  allocation-burst=4  sampling=4  face=4  photochemical=4  ghost=28
+12 ranks: owner=12 emergency=12 allocation-burst=12 sampling=12 face=12 photochemical=12 ghost=84
+```
+
+Initialization changed no population and reduced the maximum hard channel
+allocation from 335 to 18 (`particles=0->0`, 746 chemistry-constrained plans).
+The synthetic chemistry case forced 3,202 possible allocated products and
+reduced that bound to 18. The all-face test reduced a two-sided clone mean from
+2 to 1. The allocation emergency deliberately used a compact synthetic low
+target and required two common-factor doublings; on one rank utilization fell
+from `2.048e-4` to `5.195e-5`, proving that the request is consumed only after
+the measured target is reached. Equivalent collective and ghost-copy checks
+passed at 4 and 12 ranks.
+
+A final four-rank production smoke is in
+`validation_runs/halley1d_allocation_burst_control_20261104/production_smoke_final`.
+It was deliberately bounded by an external 60-second timeout (exit 124), not
+an AMPS failure. It reached iteration 1,074 and wrote 54 plot files: 27 species
+at iterations 500 and 1,000. The production initialization again reduced
+335 to 18 without creating particles. The iteration-500 face maximum fell from
+512 to 1; at iteration 1,000 the adaptation changed `56,355` particles to
+`54,692`, reduced the face maximum from 512 to 1, and retained a hard chemistry
+maximum of 12 against the limit of 20. The iteration-1,000 convergence metric
+was `0.8150373` for NH3 with `0/3` windows. No buffer-full, MPI, chemistry,
+postcondition, or abort message is present. This smoke proves integration
+through two output/adaptation boundaries; it is not a convergence or Rubin
+agreement result.
+
+### Known limitations and remaining validation
+
+- Transactional batch chemistry is MPI-only. A hybrid/OpenMP run with the
+  callbacks installed intentionally aborts. Thread-safe counters/list handling
+  and hybrid tests are required before removing that guard.
+- DIM2/DIM3 face and subface enumeration is implemented but not validated.
+  Add refined coarse/fine interfaces, disconnected components, bidirectional
+  crossings, and owner/ghost checks before claiming generic multidimensional
+  allocation control.
+- The current reachability preparation is conservative across a connected
+  component. A future disconnected multidimensional mesh can reduce variance
+  by computing chemistry reachability and caps per transport component, but it
+  must preserve the hard final postcondition.
+- Factor-two roulette is conservative only in expectation and changes sampling
+  variance. The new population history and Rubin comparison must be assessed,
+  not assumed equivalent to the failed run.
+- The final smoke ended at iteration 1,074. A fresh 14-rank run must pass the
+  previous iteration-8,136 failure, reach the 10,000 ceiling or the configured
+  convergence criterion, and generate a new accepted Rubin comparison.
+
+### Required master-merge sequence after validation
+
+Do **not** merge yet. Remain on `1d_comet_dev`, and tell the user before any
+switch, rebase, cherry-pick, integration-branch creation, or merge involving
+`master`. After a long run and its comparison are accepted, perform the work
+on a disposable integration branch based on the then-current master:
+
+1. Record `git status`, `git diff --name-status master`, the branch tip, exact
+   input hash, executable hash, MPI count, and accepted validation paths. Make
+   source commits clean before integration; retain run archives outside those
+   commits.
+2. Merge the generic pre-exchange primitive as one nullable core unit:
+   `pic.h` plus `pic_parallel.cpp`. Verify the callback is before both exchange
+   implementations and does not recurse. Compile and smoke-test a representative
+   non-comet application to prove the null default is inert.
+3. Merge the generic photochemistry batch primitive as a second core unit:
+   `pic.h` plus `pic_photolytic_reactions.cpp`. Preserve the historical null
+   path, all-or-none validation, global remaining-parent reduction, loop guard,
+   and explicit hybrid rejection. Compile both MPI and hybrid configurations;
+   the MPI null path must run normally and the installed hybrid path must fail
+   with the documented message until thread-safe support is implemented.
+4. Merge the comet parser/input and application implementation together:
+   `input/hartley2.pl`, canonical comet input, `CometChemistry.*`, and
+   `RadialSimulation.*`. Do not cherry-pick only the input keywords, only the
+   driver callbacks, or only the face planner. Preserve the execution order:
+   population plans, hard chemistry plans, face-component enforcement, final
+   hard chemistry verification, owner/ghost synchronization, and cache rebuild.
+5. Resolve `RadialSimulation.cpp` semantically rather than selecting an entire
+   side of a conflict. Preserve `W/dt`, power-of-two-only increases, actual
+   `ceil` multiplicities, all reaction products, direct-source roots, both
+   directions of every face, empty-cell preservation, and the 90/75/50
+   transaction thresholds. Do not replace these with raw `W`, expected values,
+   absent-products-only logic, or empty-neighbor-only propagation.
+6. Remove `build`, stage the canonical parser and `input/halley1d.input` through
+   the normal AMPS configuration, and rebuild from scratch. Repeat parser and
+   database checks, focused 1/4/12-rank validation, chemistry ensemble,
+   local-timestep face tests, and a non-comet regression.
+7. Repeat the full 14-rank Halley run from iteration zero. Require stable
+   passage beyond 8,136, either convergence or the 10,000 ceiling, consistent
+   population diagnostics, and regenerated Rubin PNG/EPS/PDF/CSV/manifest
+   artifacts from the accepted final window. Add DIM3 and refined-face tests
+   before advertising the controller as validated for higher dimensions.
+8. Stop for user review of the integration diff and validation evidence before
+   recording or applying any merge to `master`.
+
+Do not commit or merge `build/`, `amps`, root-staged parser/input copies,
+`PT*`, `validation_runs/`, logs, meshes, `SWMF_data`, `share/`, generated
+tables, or other run artifacts. The high-conflict core locations are the
+parallel declarations/exchange wrapper in `pic.h`, the photolytic namespace in
+`pic.h`, the driver loop in `pic_photolytic_reactions.cpp`, and the pre-exchange
+definition in `pic_parallel.cpp`. Application conflicts will concentrate in
+the adaptation order and initialization callbacks in `RadialSimulation.cpp`.
+No commit, branch switch, or merge was performed in this implementation round.
+
+## 2026-11-04: fresh 14-rank allocation-burst validation started
+
+A new validation run was staged from iteration zero after removing the exact
+workspace `build/` directory and compiling the Halley input with optimized
+settings (`make -j8 EXTRACOMPILEROPTIONS=-O3`). The parser, reaction-network
+database, physics database, and `git diff --check` gates passed. The resulting
+executable also passed the allocation-burst validation mode on 1, 4, and 12
+MPI ranks before the long launch. The focused logs are under
+`validation_runs/halley1d_allocation_burst_preflight_20261104_clean/`.
+
+The long-run archive is:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_allocation_burst_convergence_rubin_20261104_14mpi_fresh
+```
+
+It was launched at 2026-11-04 12:25:32 CST with 14 MPI processes and one
+OpenMP thread per process. The exact staged executable and input SHA-256 values
+are recorded in `RUN_MANIFEST.md`. An initial sandboxed MPI attempt failed
+before application initialization because local Open MPI networking was
+denied; that diagnostic is retained as `error.sandbox-launch.log`. The same
+executable then started successfully with host MPI access.
+
+At the 12:27:05 snapshot the run had reached iteration 1,819 and had written
+three complete 500-iteration windows. Initialization changed no particles and
+reduced the worst chemistry allocation bound from 335 to 18. The adaptations
+at iterations 500, 1,000, and 1,500 ended with 29,169, 55,138, and 81,182
+particles, respectively. At iteration 1,500 the hard reaction multiplicity
+was 12 against the configured limit of 20, and the maximum expected face clone
+mean was reduced from 512 to 1. The latest convergence metric was 0.7885894,
+limited by NH3, with 0/3 consecutive passing windows; this is an active run,
+not a convergence claim. No AMPS error, NaN, buffer exhaustion, hard
+postcondition failure, or MPI abort was present. The lone `No protocol
+specified` message in `error.log` is from the optional GUI plot viewer in the
+headless launch environment and is non-fatal.
+
+No commit, branch switch, master operation, or merge was performed for this
+launch. The run subsequently reached the documented 10,000-iteration ceiling,
+and the next section records the diagnostic comparison generated from its
+final complete window.
+
+## 2026-11-04: completed-run Rubin comparison generated
+
+The fresh 14-rank run finished normally at the 10,000-iteration hard ceiling
+with exit status zero. It passed the historical iteration-8,136 buffer failure
+and ended with 391,034 particles after the final adaptation. Allocation
+stability passed, but convergence did not: window 20 reported maximum relative
+L1 1.946230 for CH3 and 0/3 consecutive windows at tolerance 0.05.
+
+The final complete `out=19` profiles were compared with the digitized Rubin
+et al. (2011) neutral DSMC curves. The generated directory is:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_allocation_burst_convergence_rubin_20261104_14mpi_fresh/PT/plots/rubin2011_comparison
+```
+
+It contains 18 PNG figures, 18 EPS figures, an 18-page combined PDF,
+`comparison_profiles.csv`, and `manifest.json`. Both calculated and
+published curves are present. The plot generator was updated so every detached
+figure visibly carries `NONCONVERGED (0/3 windows)`; the manifest now also
+stores `scientific_status: nonconverged` and an explicit diagnostic-only
+limitation. This prevents the completed allocation-stability run from being
+mistaken for an accepted steady-state science result.
+
+```text
+a445b9f23d920836f0f9bdc641bc34e92e44d826f2a5ae6bfe34d7e6aa92a8bf  manifest.json
+223880ba79fe2a5d63295c05b1f1d10618da82ac3d520add93179676fd90f5a9  comparison_profiles.csv
+ff6c7677a65f5c10a28ec511187590cfaa28e844914063726d5f6b45310dd005  rubin2011_neutral_profiles.pdf
+```
+
+The overlay is diagnostic, not a Rubin-agreement acceptance result. The next
+step is to review the primary-species density and velocity discrepancies and
+separate physical evolution from noise in sparsely sampled daughter species
+before changing convergence controls or launching another long run. No commit,
+branch switch, master operation, or merge was performed.

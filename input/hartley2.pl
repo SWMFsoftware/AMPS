@@ -68,6 +68,13 @@ my $RadialInnerBoundaryTemperatureIsSet=0;
 my $RadialMaxIterationsIsSet=0;
 my $RadialSamplingLengthIsSet=0;
 my $RadialLoadBalanceIntervalIsSet=0;
+my $RadialParticleWeightAdaptationIsSet=0;
+my $RadialParticleNumberPerCellRangeIsSet=0;
+my $RadialEmergencyParticleBufferUtilizationIsSet=0;
+my $RadialAllocationLowWatermarkIsSet=0;
+my $RadialAllocationReserveFractionIsSet=0;
+my $RadialMaxFaceTransferMultiplicityIsSet=0;
+my $RadialMaxPhotochemicalProductsPerReactionIsSet=0;
 my $RadialConvergenceToleranceIsSet=0;
 my $RadialConvergenceWindowsIsSet=0;
 
@@ -414,6 +421,81 @@ while ($line=<InputFile>) {
         "long int Comet::RadialSimulation::LoadBalanceInterval",$InputLine,
         "main/RadialSimulation.cpp");
     $RadialLoadBalanceIntervalIsSet=1;
+  }
+  elsif ($InputLine eq "RADIALPARTICLEWEIGHTADAPTATION") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    $InputLine=~s/ //g;
+    die "RadialParticleWeightAdaptation must be ON or OFF, line=$InputFileLineNumber ($InputFileName)\n"
+        unless $InputLine eq "ON" || $InputLine eq "OFF";
+    ampsConfigLib::ChangeValueOfVariable(
+        "bool Comet::RadialSimulation::ParticleWeightAdaptationEnabled",
+        $InputLine eq "ON" ? "true" : "false","main/RadialSimulation.cpp");
+    $RadialParticleWeightAdaptationIsSet=1;
+  }
+  elsif ($InputLine eq "RADIALPARTICLENUMBERPERCELLRANGE") {
+    my $value=$LineOriginal;
+    $value=~s/!.*$//;
+    $value=~s/^\s*RadialParticleNumberPerCellRange\s*[=:]\s*//i;
+    my @field=map {trim($_)} split(/\|/,$value,-1);
+    die "RadialParticleNumberPerCellRange expects MINIMUM | MAXIMUM, line=$InputFileLineNumber ($InputFileName)\n"
+        unless @field==2;
+    die "RadialParticleNumberPerCellRange values must be positive integers, line=$InputFileLineNumber ($InputFileName)\n"
+        unless $field[0]=~/^\d+$/ && $field[0]>0 &&
+               $field[1]=~/^\d+$/ && $field[1]>0;
+    die "RadialParticleNumberPerCellRange maximum must be at least twice the minimum for power-of-two adaptation, line=$InputFileLineNumber ($InputFileName)\n"
+        unless $field[1]>=2*$field[0];
+    ampsConfigLib::ChangeValueOfVariable(
+        "long int Comet::RadialSimulation::MinimumParticlesPerCell",$field[0],
+        "main/RadialSimulation.cpp");
+    ampsConfigLib::ChangeValueOfVariable(
+        "long int Comet::RadialSimulation::MaximumParticlesPerCell",$field[1],
+        "main/RadialSimulation.cpp");
+    $RadialParticleNumberPerCellRangeIsSet=1;
+  }
+  elsif ($InputLine eq "RADIALEMERGENCYPARTICLEBUFFERUTILIZATION") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    die "RadialEmergencyParticleBufferUtilization must be a fraction in (0,1), line=$InputFileLineNumber ($InputFileName)\n"
+        unless isPositiveNumber($InputLine) && $InputLine<1.0;
+    ampsConfigLib::ChangeValueOfVariable(
+        "double Comet::RadialSimulation::EmergencyParticleBufferUtilization",
+        $InputLine,"main/RadialSimulation.cpp");
+    $RadialEmergencyParticleBufferUtilizationIsSet=1;
+  }
+  elsif ($InputLine eq "RADIALALLOCATIONLOWWATERMARK") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    die "RadialAllocationLowWatermark must be a fraction in (0,1), line=$InputFileLineNumber ($InputFileName)\n"
+        unless isPositiveNumber($InputLine) && $InputLine<1.0;
+    ampsConfigLib::ChangeValueOfVariable(
+        "double Comet::RadialSimulation::AllocationLowWatermark",
+        $InputLine,"main/RadialSimulation.cpp");
+    $RadialAllocationLowWatermarkIsSet=1;
+  }
+  elsif ($InputLine eq "RADIALALLOCATIONRESERVEFRACTION") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    die "RadialAllocationReserveFraction must be a fraction in (0,1), line=$InputFileLineNumber ($InputFileName)\n"
+        unless isPositiveNumber($InputLine) && $InputLine<1.0;
+    ampsConfigLib::ChangeValueOfVariable(
+        "double Comet::RadialSimulation::AllocationReserveFraction",
+        $InputLine,"main/RadialSimulation.cpp");
+    $RadialAllocationReserveFractionIsSet=1;
+  }
+  elsif ($InputLine eq "RADIALMAXFACETRANSFERMULTIPLICITY") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    die "RadialMaxFaceTransferMultiplicity must be a positive integer, line=$InputFileLineNumber ($InputFileName)\n"
+        unless defined $InputLine && $InputLine=~/^\d+$/ && $InputLine>0;
+    ampsConfigLib::ChangeValueOfVariable(
+        "long int Comet::RadialSimulation::MaximumFaceTransferMultiplicity",
+        $InputLine,"main/RadialSimulation.cpp");
+    $RadialMaxFaceTransferMultiplicityIsSet=1;
+  }
+  elsif ($InputLine eq "RADIALMAXPHOTOCHEMICALPRODUCTSPERREACTION") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    die "RadialMaxPhotochemicalProductsPerReaction must be a positive integer, line=$InputFileLineNumber ($InputFileName)\n"
+        unless defined $InputLine && $InputLine=~/^\d+$/ && $InputLine>0;
+    ampsConfigLib::ChangeValueOfVariable(
+        "long int Comet::RadialSimulation::MaximumPhotochemicalProductsPerReaction",
+        $InputLine,"main/RadialSimulation.cpp");
+    $RadialMaxPhotochemicalProductsPerReactionIsSet=1;
   }
   elsif ($InputLine eq "RADIALCONVERGENCETOLERANCE") {
     ($InputLine,$InputComment)=split(' ',$InputComment,2);
@@ -1136,6 +1218,26 @@ if ($Dimension eq "1") {
         unless $RadialSamplingLengthIsSet;
     die "RadialSimulationMode=ON requires RadialLoadBalanceInterval\n"
         unless $RadialLoadBalanceIntervalIsSet;
+    die "RadialSimulationMode=ON requires RadialParticleWeightAdaptation\n"
+        unless $RadialParticleWeightAdaptationIsSet;
+    if (particleWeightAdaptationIsEnabled(
+        "$WorkingSourceDirectory/main/RadialSimulation.cpp")) {
+      die "RadialParticleWeightAdaptation=ON requires RadialParticleNumberPerCellRange\n"
+          unless $RadialParticleNumberPerCellRangeIsSet;
+      die "RadialParticleWeightAdaptation=ON requires RadialEmergencyParticleBufferUtilization\n"
+          unless $RadialEmergencyParticleBufferUtilizationIsSet;
+      die "RadialParticleWeightAdaptation=ON requires RadialAllocationLowWatermark\n"
+          unless $RadialAllocationLowWatermarkIsSet;
+      die "RadialParticleWeightAdaptation=ON requires RadialAllocationReserveFraction\n"
+          unless $RadialAllocationReserveFractionIsSet;
+      die "RadialParticleWeightAdaptation=ON requires RadialMaxFaceTransferMultiplicity\n"
+          unless $RadialMaxFaceTransferMultiplicityIsSet;
+      if (chemistryIsEnabled(
+          "$WorkingSourceDirectory/main/CometChemistry.cpp")) {
+        die "RadialParticleWeightAdaptation=ON with ChemistryMode=ON requires RadialMaxPhotochemicalProductsPerReaction\n"
+            unless $RadialMaxPhotochemicalProductsPerReactionIsSet;
+      }
+    }
     die "RadialSimulationMode=ON requires RadialConvergenceTolerance\n"
         unless $RadialConvergenceToleranceIsSet;
     die "RadialSimulationMode=ON requires RadialConvergenceWindows\n"
@@ -1145,6 +1247,19 @@ if ($Dimension eq "1") {
           unless $RadialCharacteristicSpeed[$species]>0.0;
     }
   }
+}
+
+# Inspect the generated application value instead of maintaining a second
+# parser-side copy of the switch.  This is the same pattern used for the
+# radial simulation mode and keeps validation tied to the source that will
+# actually be compiled.
+sub particleWeightAdaptationIsEnabled {
+  my ($source)=@_;
+  open(my $in,'<',$source) or die "cannot read '$source': $!\n";
+  local $/;
+  my $text=<$in>;
+  close($in);
+  return $text=~/bool\s+Comet::RadialSimulation::ParticleWeightAdaptationEnabled\s*=\s*true\s*;/;
 }
 
 

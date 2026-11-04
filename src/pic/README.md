@@ -439,3 +439,49 @@ the merged bytes. A native rebuild must follow the repository preflight:
 confirm the Mars2 root and that no build/test process is active, remove only
 the root `build`, regenerate the selected application and production hooks,
 then compile through the top-level workflow with `-j16`.
+
+## 11. Optional pre-exchange and transactional photochemistry hooks
+
+Two nullable interfaces allow an application to control particle-buffer
+capacity without embedding its population policy in the AMPS core.
+
+`PIC::Parallel::BeforeParticleDataExchange` is called collectively immediately
+before either ordinary exchange implementation allocates receive-side particle
+slots. The default is `NULL`, so existing applications retain their previous
+behavior. An installed callback may inspect and resample application particle
+populations and may use MPI collectives, but it must not call
+`ExchangeParticleData()` recursively. The location of this callback is part of
+its contract: moving it after the buffered/unbuffered dispatch would be too
+late to protect receive allocation.
+
+`PIC::ChemicalReactions::PhotolyticReactions` also provides a complete
+five-callback transactional batch interface:
+
+- `BeginBatchedModel` prepares per-stage application state;
+- `IsBatchedParticleEligible` distinguishes deferred parents from completed
+  parents and newly created daughters;
+- `GetBatchedParticleLimit` supplies the maximum parents attempted in the
+  current pass;
+- `BatchedReactionProcessor` commits one complete event or reinserts an
+  unchanged deferred parent and returns `false`; and
+- `FinishBatchedPass` is the collective-safe checkpoint at which the
+  application can create headroom before another pass.
+
+All five pointers must be either null or installed. A partial set terminates
+with an error. With a complete set, the core rebuilds cell lists on each pass,
+keeps ineligible particles without processing them again, globally counts
+remaining eligible parents, and repeats until the list is drained. The
+application owns event atomicity and eligibility metadata; the generic core
+does not assume a reaction network, statistical-weight law, or buffer
+watermark. The historical reaction processor and single-pass behavior are
+unchanged when all pointers are null.
+
+The current batch counters and application checkpoint protocol are validated
+for MPI compilation only. A hybrid/OpenMP build explicitly rejects an
+installed batch interface. Before a future master integration enables hybrid
+use, counters and list rebuilding must be made thread-safe and tested with
+multiple OpenMP threads. Merge `pic.h` and `pic_photolytic_reactions.cpp`
+together; merging declarations without the null definitions/driver, or the
+driver without the callback contract, creates an incomplete core API. The
+pre-exchange hook in `pic_parallel.cpp`/`pic.h` is a separate nullable core
+primitive and should be reviewed as a second semantic unit.

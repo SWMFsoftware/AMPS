@@ -16,6 +16,11 @@ double PIC::Parallel::Latency=0.0;
 //the user-defiend function to perform MPI exchange of the model data
 PIC::Parallel::fUserDefinedMpiModelDataExchage PIC::Parallel::UserDefinedMpiModelDataExchage=NULL;
 
+// Optional collective application hook called before ordinary particle
+// migration.  Keeping the default NULL preserves the historical exchange path
+// for every application that does not explicitly install a capacity control.
+PIC::Parallel::fBeforeParticleDataExchange PIC::Parallel::BeforeParticleDataExchange=NULL;
+
 //processing 'corner' and 'center' node associated data vectors when perform syncronization
 PIC::Parallel::CornerBlockBoundaryNodes::fUserDefinedProcessNodeAssociatedData PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData=NULL;
 PIC::Parallel::CornerBlockBoundaryNodes::fUserDefinedProcessNodeAssociatedData PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData=NULL;

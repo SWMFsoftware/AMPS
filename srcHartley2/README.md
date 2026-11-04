@@ -184,6 +184,271 @@ large direct-parent-to-daughter clone bursts. Reactions between species with
 different carrier rates still perform
 `(W_parent/dt_parent)/(W_product/dt_product)` split/roulette explicitly.
 
+### Sampling-break block-weight adaptation
+
+The radial input can independently enable population control for the
+species-local block weights:
+
+```text
+RadialParticleWeightAdaptation=on
+RadialParticleNumberPerCellRange=50 | 200
+RadialEmergencyParticleBufferUtilization=0.75
+RadialAllocationLowWatermark=0.50
+RadialAllocationReserveFraction=0.10
+RadialMaxFaceTransferMultiplicity=1
+RadialMaxPhotochemicalProductsPerReaction=20
+```
+
+Both bounds are inclusive positive integers. The maximum must be at least
+twice the minimum; that condition guarantees that an integral power-of-two
+change can place any nonzero population in the requested band. The switch is
+mandatory for a radial case so that adaptation is never enabled implicitly;
+the range is required only when the switch is on. When chemistry and
+adaptation are both enabled, the positive-integer photochemical-product limit
+is also required. The emergency high watermark, allocation low watermark,
+reserved fraction, and face-transfer limit are required whenever adaptation
+is on. The low watermark must be below the high watermark, and the high
+watermark cannot enter the reserved tail of the particle buffer. The currently
+validated correction-free face controller requires a transfer limit of one.
+These are numerical controls, not Rubin et al. model parameters.
+
+Adaptation runs only after a complete sampling window has been printed and
+used for the convergence comparison. It therefore cannot alter the sample
+that triggered it. For each owner block and each species separately, let `N`
+be the instantaneous number of model particles and `Nc` the number of cells
+in that block. The controller uses the whole-block mean
+
+```text
+nbar = N/Nc.
+```
+
+Cells with no particles contribute zero to this mean. A block/species pair
+with `N=0` is skipped by the population-range controller, and all population
+resampling stays in the particle's current cell, so an empty cell is never
+populated by adaptation.
+
+The target weight is restricted to `W_new=W_old*2^k`. The controller chooses
+the integer `k` that moves the expected post-adaptation mean into the input
+range. Each factor-of-two step is applied as follows:
+
+- `k<0`: set `W_new=W_old/2` and clone every current particle of that species
+  exactly once. Repeating this operation implements larger negative powers.
+- `k>0`: set `W_new=2*W_old` and retain each current particle independently
+  with probability `W_old/W_new=1/2`. Repeating this operation implements
+  larger positive powers.
+
+Splitting conserves represented number, mass, momentum, energy, and internal
+state exactly. Roulette conserves those quantities in expectation and adds
+the corresponding Monte Carlo variance. A split improves later transport and
+collision sampling only after the siblings decorrelate; copying a particle
+does not create independent information at the adaptation instant. Clones
+carry the complete particle record but receive a new tracker identity when
+tracking is enabled. Before
+changing any lists, the rank computes the exact worst-case clone demand and
+aborts if the configured particle buffer cannot hold it; this prevents a
+partially applied adaptation.
+
+Chemistry allocation requires a hard bound, including products that are
+already present. After planning ordinary population changes, the controller
+starts from every species present in a block and every configured direct
+surface source. It closes the enabled unit-unimolecular reaction graph
+transitively, because a daughter can be created and react again before the
+next sampling break. Including direct sources lets the same proof run during
+initialization, before the first particle is injected.
+
+For one selected reaction channel, a concrete daughter's residual-resampling
+mean is
+
+```text
+mu = (W_parent/dt_parent)/(W_daughter/dt_daughter).
+```
+
+The actual allocation may be `ceil(mu)` because the residual Bernoulli draw
+can round upward. For every reachable channel the controller therefore raises
+product weights by powers of two until
+
+```text
+sum_products coefficient * ceil(C_parent/C_product) <= M,
+```
+
+where `C=W/dt` and `M` is
+`RadialMaxPhotochemicalProductsPerReaction`. The reachability/carrier loop
+continues to a fixed point, so the bound covers later-generation daughters and
+all products of a selected channel, whether present or absent. No weight is
+lowered and no empty cell is seeded. After transport constraints have been
+applied, the hard chemistry bound is evaluated again with the final carriers;
+a violation aborts before chemistry resumes.
+
+Transport has a separate hard allocation bound. Its residual multiplicity at
+a block face is
+
+```text
+mu_face = (W_source/dt_source)/(W_destination/dt_destination).
+```
+
+This ratio can be large for either a populated or empty destination. With
+`RadialMaxFaceTransferMultiplicity=1`, both directed senses of every face must
+satisfy `mu_face<=1`, so every block in a face-connected component must have a
+common carrier for that species. After population and chemistry plans are
+applied, the controller:
+
+1. gathers authoritative owner counts and carriers for every calculation leaf;
+2. constructs face adjacency using all `2*DIM` faces and the active AMR
+   subface slots, without introducing edge or corner coupling;
+3. finds each face-connected component and selects a common carrier reachable
+   from every member by power-of-two increases;
+4. applies unbiased factor-two roulette to populated blocks being raised,
+   while empty blocks receive only a weight change and remain empty; and
+5. verifies both directed senses of every face and aborts unless the maximum
+   transfer multiplicity is at most one to numerical tolerance.
+
+Because all adaptive changes are dyadic, no unrelated statistical scale is
+introduced. The standard block-data exchange then distributes owner values to
+ghost blocks before transport resumes. Diagnostics report changed
+block/species pairs, component count, maximum graph distance, and maximum face
+clone mean before and after enforcement.
+
+For a future multidimensional comet calculation, the definition must remain
+face connected and all active coarse/fine subfaces must be tested. The
+implementation has the required DIM-independent enumeration, but DIM2/DIM3
+refinement-interface tests are required before claiming validation outside
+DIM1. On the connected radial mesh, a limit of one makes `W/dt`
+component-global for each species; local weights still vary with local
+timestep. This deliberate variance/capacity tradeoff is stronger than the
+earlier empty-neighbor-only repair.
+
+Only owner blocks are resampled. After any change, the normal AMPS block-data
+exchange propagates the new weights to MPI boundary copies, and the legacy
+global-minimum weight cache is recomputed because adaptation can increase as
+well as decrease every local weight. Subsequent block-face transport and
+species-changing chemistry already use the current source and destination
+block weights, so their existing `(W/dt)` balance consumes the synchronized
+carrier plan without a second correction mechanism.
+
+### Emergency pre-exchange buffer protection
+
+Sampling-break adaptation alone cannot protect a rank from population growth
+inside a 500-iteration window. The 12-rank validation ending at iteration
+5,690 demonstrated this: the global population grew to 29,159,492 after the
+iteration-5,500 adaptation and rank 7 exhausted its 20,000,000-slot local
+buffer before the next sampling break.
+
+The core therefore provides an optional application callback immediately
+before `PIC::Parallel::ExchangeParticleData()` allocates receive-side particle
+slots. Generic AMPS cases leave the callback null. The radial comet
+initializer installs it only when block-weight adaptation is enabled. Every
+ordinary exchange, including local-timestep continuation exchanges,
+collectively evaluates the rank-buffer trigger
+
+```text
+u_max = max_rank(N_allocated/MaxNPart).
+```
+
+Completed sampling breaks provide a second trigger without adding another
+particle-list traversal. After counting every species for the ordinary
+block-weight controller, each owner block evaluates
+
+```text
+mean_total(block) = sum_species N(block,species) / N_cells(block)
+sampling_limit = 10 * nTotalSpecies * MaximumParticlesPerCell.
+```
+
+The maximum is reduced across MPI ranks. A strict exceedance records the same
+pending request on every rank; it does not run roulette recursively from the
+sampling routine. The next ordinary particle exchange consumes that request
+in the established pre-exchange callback. The count is taken before regular
+per-species sampling-break adaptation, so a transient population excursion
+cannot be hidden by the ordinary controller before it is recorded. With the
+Halley settings this limit is `10*27*200 = 54,000` total model particles per
+cell as a block mean.
+
+If neither the rank-buffer threshold nor a pending sampling-population request
+is active, no state is changed. Either trigger causes one emergency
+factor-two step:
+
+1. retains every allocated model particle independently with probability
+   `1/2`, including particles already staged in non-owner MPI boundary-block
+   copies;
+2. doubles every species weight in every allocated owner or boundary block;
+3. reconstructs the core's global-minimum weight cache; and
+4. consumes a pending sampling-population request; and
+5. rechecks the maximum rank utilization, repeating collectively only if
+   stochastic survival did not create the requested buffer headroom.
+
+Thus a sampling-population trigger guarantees one factor-two step. The 75%
+rank-buffer trigger may require additional steps until every rank is below its
+configured threshold. Diagnostics distinguish `buffer`,
+`sampling-population`, and combined triggers and retain the sampling iteration,
+observed block mean, and threshold.
+
+Applying one common factor to all species and blocks is deliberate. It
+preserves every adjacent-block weight ratio and every inter-species `W/dt`
+carrier ratio, so face-flux conversion and chemical residual sampling are
+unchanged. Roulette conserves represented number, mass, momentum, translational
+energy, and internal energy in expectation. It never splits particles or
+populates an empty cell, and it is safe for a survivor with an unfinished
+local-timestep continuation because the complete particle record is retained.
+The price is an emergency increase in Monte Carlo variance; the ordinary
+per-block 50--200 controller may later restore resolution at a completed
+sampling break.
+
+The ordinary threshold protects MPI receive allocation. Allocation-producing
+chemistry adds a stronger path: it stops at collective batch checkpoints when
+the 0.75 high watermark is reached, requests the same common-factor roulette,
+and repeats factor-two coarsening until every rank is at or below the 0.50 low
+watermark. The last 10% of each particle buffer is never offered to a chemistry
+transaction. Transport cannot create a face clone when the face limit is one,
+so it cannot produce the earlier first-arrival allocation burst.
+
+### Transactional photochemistry
+
+The generic AMPS photolysis driver exposes a nullable five-callback batch
+interface. Applications that leave all callbacks null retain the historical
+single pass. The comet application installs the complete set and reserves one
+byte in each particle record before the particle buffer is initialized. At the
+start of each chemistry stage that byte is cleared on existing particles.
+Completed parents and all daughters created during the stage are marked, so a
+new daughter cannot react a second time in the same outer AMPS iteration.
+
+Each batch conservatively charges every attempted parent the configured hard
+maximum of 20 daughter slots and stops before crossing the 0.75 high watermark.
+For an event that reacts, all residual multiplicities are drawn before any list
+mutation. If the complete event would cross the 90% transaction ceiling, the
+unchanged parent is reinserted and retried after the collective checkpoint.
+Otherwise the existing parent slot is reused for the first daughter and only
+the remaining daughter slots are allocated. An actual event above the hard cap
+aborts because truncation would bias chemistry. This callback mode is currently
+MPI-only; a hybrid/OpenMP build terminates with an explicit unsupported-mode
+error instead of entering unsafe shared counters.
+
+The focused regression is selected instead of a science run:
+
+```sh
+mpirun -np 1 ./amps --validate-weight-adaptation
+mpirun -np 4 ./amps --validate-weight-adaptation
+mpirun -np 12 ./amps --validate-weight-adaptation
+```
+
+It exercises a multi-step exact split, factor-two binomial roulette, owner
+blocks on every rank, and preservation of initially empty cells. It creates a
+two-sided unsafe face ratio and verifies component-wide carrier equalization
+without clone allocation. It independently exercises the buffer,
+allocation-burst, and sampling-population triggers. For the sampling trigger
+it constructs an exact synthetic
+`10*nTotalSpecies*maximum*block-cell-count` threshold, exceeds it, verifies
+that the sampling routine records but does not execute the request, and then
+invokes the regular core particle-exchange API. The test verifies that the
+emergency callback runs before migration, consumes the request, applies a
+factor-two/binomial step, lowers maximum-rank occupancy for the independent
+buffer test, and keeps owner/boundary weights synchronized. The allocation
+test requires two consecutive weight doublings, verifies the low-water target,
+request consumption, and statistical survival. With chemistry enabled it
+forces one channel above the actual hard allocation cap, verifies transitive
+reachability and direct-source initialization, confirms the bound falls to at
+most 20 without seeding particles, and checks MPI boundary-copy
+synchronization. It deletes its artificial population and must not be invoked
+during a science calculation.
+
 ## Internal energy and radiative cooling
 
 The generic input record pairs a compiled species with a named physical law:

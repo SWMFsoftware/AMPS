@@ -186,6 +186,53 @@ CouplerMode=off
   ! Convergence is evaluated only at complete 500-iteration sampling windows;
   ! 10,000 iterations is the unconditional safety ceiling.
   RadialSamplingLength=500
+  ! At every complete sampling break, adapt each species' block-local weight
+  ! from that species' instantaneous mean population per cell in the block.
+  ! Weight changes are exact powers of two.  Halving a weight clones every
+  ! represented particle once per factor-of-two step; doubling a weight keeps
+  ! each particle with probability W_old/W_new=1/2 per step.  Empty cells are
+  ! never seeded, and completed samples are not altered retroactively.  After
+  ! adapting populated blocks, the code raises W/dt by powers of two through
+  ! each face-connected chain of empty neighboring blocks.  This prevents the
+  ! first transported particle from being cloned merely because an empty
+  ! destination retained an obsolete, very small species weight.  This is an
+  ! automatic consistency step of the same controller, not another keyword.
+  RadialParticleWeightAdaptation=on
+  RadialParticleNumberPerCellRange=50 | 200
+  ! Before every regular MPI particle exchange, compare the most occupied
+  ! rank's live particle count with its local buffer capacity.  At 75%, apply
+  ! a common factor-two increase to every block/species weight and unbiased
+  ! 1/2 roulette to every particle, including particles already staged in a
+  ! boundary-block copy.  Repeat only if stochastic survival leaves a rank at
+  ! or above the threshold.  The common factor preserves all block and species
+  ! W/dt ratios while creating receive-side headroom before MPI migration.
+  ! A second trigger uses the same callback: at a completed sampling break,
+  ! sum all species in each owner block and divide by its cell count.  If the
+  ! largest block mean strictly exceeds 10 times (number of species) times the
+  ! requested maximum of 200 particles/species/cell, record a collective
+  ! request.  The next regular MPI particle exchange then executes one common
+  ! emergency factor-two step at the same safe pre-exchange location.
+  RadialEmergencyParticleBufferUtilization=0.75
+  ! Transactional chemistry stops at synchronized checkpoints when any rank
+  ! reaches 75%, then repeats common factor-two coarsening until all ranks are
+  ! at or below 50%.  Ten percent of every particle buffer is never offered
+  ! to chemistry transactions, leaving hard headroom for migration and other
+  ! core bookkeeping.  A face multiplicity of one equalizes W/dt across each
+  ! connected radial mesh for a species, so the mover never allocates clones.
+  RadialAllocationLowWatermark=0.50
+  RadialAllocationReserveFraction=0.10
+  RadialMaxFaceTransferMultiplicity=1
+  ! Starting from every reaction parent present in a block, and from every
+  ! configured surface-source species before the first injection, follow the
+  ! enabled chemistry transitively: a newly created daughter may itself react
+  ! before the next 500-step sampling break.  Raise reachable product weights
+  ! by powers of two, whether those products are currently present or absent.
+  ! The hard check sums coefficient*ceil[(W_parent/dt_parent)/
+  ! (W_product/dt_product)] over every product of one selected channel, so no
+  ! individual reaction event can allocate more than 20 daughter slots.  This
+  ! includes residual-resampling round-up and cascading daughter reactions;
+  ! it is a capacity bound, not merely an expected-product target.
+  RadialMaxPhotochemicalProductsPerReaction=20
   ! Redistribute complete AMPS blocks more often than the science-output
   ! window.  The first long-run attempt reached 12 million particles but
   ! exhausted rank 17's five-million-slot local buffer at iteration 2344
