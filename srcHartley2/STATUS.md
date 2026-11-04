@@ -3046,3 +3046,45 @@ step is to review the primary-species density and velocity discrepancies and
 separate physical evolution from noise in sparsely sampled daughter species
 before changing convergence controls or launching another long run. No commit,
 branch switch, master operation, or merge was performed.
+
+## 2026-11-04: master-integration appendix updated after `c76c488`
+
+The allocation-burst development is now committed at
+`c76c48820b4d3ee4ce28c2bb816ae44a2cafd641`, which matches
+`origin/1d_comet_dev`. The current local `master` and merge base are
+`cb7be2bba41f373352ab853abed23955ea69c8b9`. The comet branch contains seven
+dependent commits after that base and changes 72 files (+29,224/-437).
+
+Do not merge yet. Before any switch, fetch, rebase, cherry-pick, integration
+branch, or merge involving `master`, tell the user. The latest commit cannot
+be cherry-picked alone: it depends on the radial mesh, generic parser and
+databases, collision/cooling/chemistry wiring, face-stopping local-timestep
+mover, block-local weights, and validation framework introduced by the six
+earlier commits.
+
+The expanded whole-branch integration procedure is in `handoff.md`, under
+"Whole-branch master-integration appendix after `c76c488`." It records:
+
+- the exact seven-commit dependency chain and current history boundary;
+- exclusions for the local root `Makefile` change and generated run data;
+- semantic phases for parser/databases, dimension-neutral core repairs,
+  physics, face-stopping transport, adaptive weights, core callbacks, and
+  visualization/provenance;
+- high-conflict core/application files and invariants that must survive
+  conflict resolution;
+- clean build, non-comet/DIM3, parser/database, local-timestep, chemistry,
+  1/4/12-rank weight, and fresh 14-rank validation gates; and
+- the final user-review stop before any commit or operation changing
+  `master`.
+
+The most important integration invariants remain `W/dt` face carriers,
+face-first continuation, power-of-two adaptive weights, hard upward-rounded
+complete reaction multiplicities, all-face bidirectional enforcement,
+empty-cell preservation, owner/ghost synchronization, null generic-core
+defaults, and explicit nonconvergence labels in Rubin products.
+
+The completed 14-rank run validates allocation stability through iteration
+10,000 but remains nonconverged (relative L1 1.946230 for CH3, 0/3 windows).
+This result is evidence for allocation safety, not authority to merge or a
+claim of Rubin agreement. No branch switch, integration-branch creation, or
+merge was performed while adding these instructions.
