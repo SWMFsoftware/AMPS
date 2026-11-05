@@ -3572,3 +3572,100 @@ Never merge `validation_runs`, `PT`, generated executables, generated input
 symlinks, meshes, or profiler output. Preserve the archive as external
 evidence. Do not turn an absent archive into fabricated fixtures or inferred
 cell measures.
+
+## 2026-11-05: Stage 1 input-selectable population policies complete
+
+Stage 1 of `CHEMISTRY.md` is implemented and its focused gates pass on
+`1d_comet_dev`. No branch switch, commit, rebase, cherry-pick, integration
+branch, or operation on `master` was performed. This stage separates numerical
+population policy from comet identity; it does not claim that the existing
+40,000-iteration Rubin comparison converged.
+
+### Source files added or modified
+
+| File | Change and reason | Later master-merge dependency |
+| --- | --- | --- |
+| `input/CometPopulationPolicy.pm` | **New.** Parses global, `DIRECT_SOURCE`, `CHEMICAL_ONLY`, and explicit-species range/lock records; validates conflicts and resolves `species > group > global` deterministically. Policy source/class values are numeric generated-data contracts, not Halley-specific tables. | Add before `hartley2.pl`; preserve exact numeric enum agreement with `RadialSimulation.h`. |
+| `input/test_comet_population_policy.pl` | **New.** Exercises precedence, transitive reaction classes, explicit overrides, locks, and rejection of duplicate, unknown, contradictory, invalid, and global-lock records. | Merge with the module so parser behavior cannot land untested. |
+| `input/CometReactionNetwork.pm` | Adds `reachable_species_from()`, a generic closure over enabled positive-rate reactions. This derives later-generation chemical-only species from arbitrary networks. | Reconcile with any master reaction-parser changes first; do not replace the closure with a fixed comet species list. |
+| `input/hartley2.pl` | Delegates population records to the policy module, reads the independent adaptation interval, derives direct-source and reaction-reachable groups after all databases are loaded, and generates species-indexed ranges, locks, policy sources, and classes. | Merge after both Perl modules and before C++ consumers. Regenerate build output; do not hand-merge generated headers. |
+| `input/halley1d.input` | Canonical Stage 1 policy: global 800--3,200, chemical-only 50--200, direct-source lock, and 10,000-iteration adaptation interval. | Merge only after parser/runtime support. Keep Hartley inputs separate; these values are Halley numerical controls, not universal defaults. |
+| `srcHartley2/RadialSimulation.h` | Declares generated species policy arrays and stable policy source/class codes; documents legacy cadence and emergency-lock override semantics. | Must remain numerically consistent with `CometPopulationPolicy.pm`. |
+| `srcHartley2/RadialSimulation.cpp` | Uses per-species targets, skips locked species in regular and chemistry planning, enforces locks transactionally through the face solver, schedules adaptation independently of sampling, reports all resolved policies, and bases sampling emergency thresholds on resolved maxima. The chemistry allocator now ignores irreducible one-carrier products and may refine an unlocked parent when locked products cannot be coarsened. | Merge after generated arrays. Audit the chemistry constraint and face-carrier transaction together; separating them can reintroduce allocation bursts or silently alter locked source weights. Emergency common-factor coarsening intentionally remains a safety override. |
+| `srcHartley2/tests/test_stage1_population_policy_runtime.py` | Parses startup policy/cadence records, checks derived classes, verifies the alternate daughter target leaves every direct-source rate/carrier unchanged, and checks adaptation iterations 0/50/100. | Merge with runtime logging; field names are a tested diagnostic interface. |
+| `srcHartley2/tests/test_stage1_legacy_equivalence.py` | Hash-compares the complete set of top-level output `.dat` files from an archived legacy input and a candidate run. | Keep archive paths external and configurable; do not add generated outputs to Git. |
+| `srcHartley2/tests/run_stage1_tests.sh` | Runs mandatory Perl/syntax tests and optional archived runtime, cadence, and legacy gates selected by environment variables. It disables Python bytecode output. | Merge after all Stage 1 tests; an absent external archive is an explicit skip, never fabricated evidence. |
+| `srcHartley2/CHEMISTRY.md`, `srcHartley2/README.md`, `srcHartley2/STATUS.md`, `handoff.md` | Record the implemented grammar, algorithms, validation evidence, limitations, recovery steps, and merge order. | Reconcile prose after code conflicts; do not take an older whole-file version that reopens Stage 0/1 or loses the master stop. |
+
+The repository-root `hartley2.pl`, `amps`, `build/`, validation executables,
+run logs, and `PT` output are generated or external evidence. They are not
+Stage 1 source files and must not be staged for the later master integration.
+The unrelated dirty top-level `Makefile` remains user-owned and was not
+modified for Stage 1.
+
+### Validation evidence
+
+The archive root is:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/stage1_population_policy_20261105
+```
+
+- `canonical_policy/run.log`: four-rank runtime validator, 27 resolved
+  species, fixed cadence 10,000, and a final `PASS` for all 4 owner blocks,
+  emergency/allocation/sampling/face/photochemical checks, and 28 ghost-weight
+  checks.
+- `alternate_policy/run.log`: chemical-only target 100--400. Every locked
+  direct-source physical rate and surface carrier matches the canonical
+  50--200 build within the test's 5e-14 relative tolerance.
+- `cadence/run.log`: short four-rank run with interval 50 and sampling length
+  100; adaptation records occur at iterations 0, 50, and 100.
+- `legacy_candidate/PT/plots`: exact pre-Stage-1 input semantics. All 54
+  `.dat` files are byte-identical to
+  `stage0_closure_20261105/diagnostics_off/production/PT/plots`.
+
+The final canonical clean `-O3` executable SHA-256 is
+`3661a7cdfb4b97a0ff011b23fc463e78d8ad7555302a49ba0b28db0b30871199`;
+the canonical input SHA-256 is
+`50cffc75488d26a0c3ccc1fb1289118b8729f756f08f2ade4e196a81cedc91c5`.
+The entire `build/` directory was removed before each of the canonical,
+alternate, cadence, legacy, and final canonical compilations.
+
+### Stage 1 merge order and conflict rules
+
+Do not merge yet. After the full comet model is tested and the user explicitly
+authorizes master-integration work, create a disposable integration branch
+from the then-current `master` and apply Stage 1 in this dependency order:
+
+1. merge `CometReactionNetwork.pm::reachable_species_from()` and its existing
+   reaction-network tests;
+2. add `CometPopulationPolicy.pm` together with its Perl test;
+3. merge `input/hartley2.pl`, regenerate from representative legacy and
+   selector inputs, and inspect the generated species arrays;
+4. merge the matching declarations and enum values in `RadialSimulation.h`;
+5. merge runtime selection, cadence, reporting, lock preflight, and chemistry
+   constraint changes in `RadialSimulation.cpp` as one reviewable application
+   unit;
+6. merge the Stage 1 runtime/legacy tests and runner;
+7. merge `halley1d.input` and documentation last.
+
+During conflict resolution preserve these invariants:
+
+- group membership is database-derived and order-independent;
+- precedence is explicit species, derived group, then global;
+- the absent interval retains complete-sampling-break legacy behavior;
+- adaptation runs only at a completed iteration, with no continuation
+  particle in flight;
+- regular and chemistry-driven adaptation cannot alter locked species;
+- the face/chemistry plan is preflighted before any block mutation;
+- emergency common-factor adaptation can override locks only for buffer
+  safety and must report the event;
+- the new parser/controller adds no random draw when no Stage 1 policy changes
+  a legacy input.
+
+Rerun the focused runner, a clean compile for the target master toolchain, the
+four-rank weight validator, the alternate-source invariance gate, the cadence
+run, and the 54-file legacy comparison on the integration branch. Then rerun
+the existing DIM1 transport/chemistry suite and one unrelated DIM3 smoke test.
+Present the exact integration diff and results to the user and stop before any
+operation that changes `master`.

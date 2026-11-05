@@ -24,8 +24,14 @@ long int Comet::RadialSimulation::MaxIterations=-1;
 long int Comet::RadialSimulation::SamplingLength=-1;
 long int Comet::RadialSimulation::LoadBalanceInterval=-1;
 bool Comet::RadialSimulation::ParticleWeightAdaptationEnabled=false;
+long int Comet::RadialSimulation::ParticleWeightAdaptationInterval=-1;
 long int Comet::RadialSimulation::MinimumParticlesPerCell=-1;
 long int Comet::RadialSimulation::MaximumParticlesPerCell=-1;
+long int Comet::RadialSimulation::SpeciesMinimumParticlesPerCell[PIC::nTotalSpecies]={0};
+long int Comet::RadialSimulation::SpeciesMaximumParticlesPerCell[PIC::nTotalSpecies]={0};
+int Comet::RadialSimulation::ParticleWeightLocked[PIC::nTotalSpecies]={0};
+int Comet::RadialSimulation::PopulationPolicySource[PIC::nTotalSpecies]={0};
+int Comet::RadialSimulation::PopulationClass[PIC::nTotalSpecies]={0};
 double Comet::RadialSimulation::EmergencyParticleBufferUtilization=-1.0;
 double Comet::RadialSimulation::AllocationLowWatermark=-1.0;
 double Comet::RadialSimulation::AllocationReserveFraction=-1.0;
@@ -38,6 +44,11 @@ namespace {
 bool Fail(const std::string &message,std::string *error) {
   if (error!=NULL) *error=message;
   return false;
+}
+
+bool HasConfiguredDirectSource(int species) {
+  return Comet::Model::SurfaceProductionRate[species]>0.0 ||
+      Comet::Model::ExtendedProductionRate[species]>0.0;
 }
 
 double ParticlePhysicalRate(long int ptr,int species,
@@ -113,6 +124,91 @@ void SetWeightOverTimeStep(int species,double weightOverTimeStep,
     SetWeightOverTimeStep(species,weightOverTimeStep,node->downNode[child]);
 }
 
+const char *PopulationPolicySourceName(int source) {
+  switch (source) {
+  case Comet::RadialSimulation::PolicySource::Global: return "global";
+  case Comet::RadialSimulation::PolicySource::DirectSource:
+    return "DIRECT_SOURCE";
+  case Comet::RadialSimulation::PolicySource::ChemicalOnly:
+    return "CHEMICAL_ONLY";
+  case Comet::RadialSimulation::PolicySource::ExplicitSpecies:
+    return "explicit-species";
+  }
+  return "invalid";
+}
+
+const char *PopulationClassName(int populationClass) {
+  switch (populationClass) {
+  case Comet::RadialSimulation::PolicyClass::Other: return "other";
+  case Comet::RadialSimulation::PolicyClass::DirectSource:
+    return "direct-source";
+  case Comet::RadialSimulation::PolicyClass::ChemicalOnly:
+    return "chemical-only";
+  }
+  return "invalid";
+}
+
+void ReportResolvedPopulationPolicies(
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *innerNode) {
+  // The generated policy table is immutable, but the surface carrier is a
+  // runtime result of AMPS source-weight initialization.  Report both in one
+  // startup table so validation can prove that changing a daughter target did
+  // not change a locked direct-source injection carrier or physical rate.
+  std::vector<double> localCarrier(PIC::nTotalSpecies,0.0);
+  std::vector<double> surfaceCarrier(PIC::nTotalSpecies,0.0);
+  if (innerNode!=NULL && innerNode->block!=NULL)
+    for (int species=0;species<PIC::nTotalSpecies;species++) {
+      const double weight=innerNode->block->GetLocalParticleWeight(species);
+      const double timeStep=innerNode->block->GetLocalTimeStep(species);
+      if (!(weight>0.0) || !std::isfinite(weight) ||
+          !(timeStep>0.0) || !std::isfinite(timeStep)) {
+        std::fprintf(stderr,
+            "invalid surface carrier while reporting species %d policy\n",
+            species);
+        std::abort();
+      }
+      localCarrier[species]=weight/timeStep;
+    }
+  MPI_Allreduce(localCarrier.data(),surfaceCarrier.data(),PIC::nTotalSpecies,
+      MPI_DOUBLE,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+
+  if (PIC::ThisThread!=0) return;
+  std::fprintf(PIC::DiagnospticMessageStream,
+      "$PREFIX: resolved radial population policies adaptation-cadence=%s",
+      Comet::RadialSimulation::ParticleWeightAdaptationInterval>0 ?
+          "fixed-iteration" : "legacy-sampling-break");
+  if (Comet::RadialSimulation::ParticleWeightAdaptationInterval>0)
+    std::fprintf(PIC::DiagnospticMessageStream," interval=%ld",
+        Comet::RadialSimulation::ParticleWeightAdaptationInterval);
+  std::fprintf(PIC::DiagnospticMessageStream,"\n");
+  for (int species=0;species<PIC::nTotalSpecies;species++) {
+    char symbol[_MAX_STRING_LENGTH_PIC_];
+    PIC::MolecularData::GetChemSymbol(symbol,species);
+    std::fprintf(PIC::DiagnospticMessageStream,
+        "$PREFIX: population-policy species=%s class=%s selector=%s locked=%s range=%ld:%ld surface-source-s-1=%.17e surface-carrier-W-dt-s-1=%.17e\n",
+        symbol,PopulationClassName(
+            Comet::RadialSimulation::PopulationClass[species]),
+        PopulationPolicySourceName(
+            Comet::RadialSimulation::PopulationPolicySource[species]),
+        Comet::RadialSimulation::ParticleWeightLocked[species] ? "yes" : "no",
+        Comet::RadialSimulation::SpeciesMinimumParticlesPerCell[species],
+        Comet::RadialSimulation::SpeciesMaximumParticlesPerCell[species],
+        Comet::Model::SurfaceProductionRate[species],surfaceCarrier[species]);
+  }
+  std::fflush(PIC::DiagnospticMessageStream);
+}
+
+bool RegularAdaptationDue(long int completedIterations,
+    bool completeSamplingBreak) {
+  if (!Comet::RadialSimulation::ParticleWeightAdaptationEnabled) return false;
+  if (Comet::RadialSimulation::ParticleWeightAdaptationInterval>0)
+    return completedIterations%
+        Comet::RadialSimulation::ParticleWeightAdaptationInterval==0;
+  // An input without the Stage-1 cadence record follows the exact historical
+  // trigger: one regular adaptation after every complete sampling window.
+  return completeSamplingBreak;
+}
+
 constexpr long int BlockCellCount=
     _BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
 
@@ -137,8 +233,17 @@ long long SamplingPopulationEmergencyMaximumBlockParticles=0;
 long long SamplingPopulationEmergencyThresholdBlockParticles=0;
 long int SamplingPopulationEmergencyIteration=-1;
 
+long int MaximumRequestedParticlesPerCell() {
+  long int result=0;
+  for (int species=0;species<PIC::nTotalSpecies;species++)
+    result=std::max(result,
+        Comet::RadialSimulation::SpeciesMaximumParticlesPerCell[species]);
+  return result;
+}
+
 long long GetSamplingPopulationEmergencyBlockThreshold() {
-  if (Comet::RadialSimulation::MaximumParticlesPerCell<=0 ||
+  const long int maximumRequested=MaximumRequestedParticlesPerCell();
+  if (maximumRequested<=0 ||
       PIC::nTotalSpecies<=0 || BlockCellCount<=0) {
     std::fprintf(stderr,
         "invalid sampling-population emergency threshold inputs\n");
@@ -155,13 +260,12 @@ long long GetSamplingPopulationEmergencyBlockThreshold() {
     std::abort();
   }
   threshold*=PIC::nTotalSpecies;
-  if (Comet::RadialSimulation::MaximumParticlesPerCell>
-      LLONG_MAX/threshold) {
+  if (maximumRequested>LLONG_MAX/threshold) {
     std::fprintf(stderr,
         "sampling-population emergency per-cell threshold overflows long long\n");
     std::abort();
   }
-  threshold*=Comet::RadialSimulation::MaximumParticlesPerCell;
+  threshold*=maximumRequested;
   if (BlockCellCount>LLONG_MAX/threshold) {
     std::fprintf(stderr,
         "sampling-population emergency block threshold overflows long long\n");
@@ -194,12 +298,22 @@ struct cWeightAdaptationPlan {
   // A zero-population photochemical daughter has no particles to roulette.
   // Its weight can nevertheless be raised before its first reaction event,
   // preventing residual resampling from creating an unbounded clone burst.
+  // This flag is deliberately limited to positive powers.  An empty,
+  // unlocked parent can instead receive a negative chemistry power when its
+  // locked daughters cannot be coarsened; that safe, allocation-free weight
+  // decrease follows the ordinary split path (whose particle list is empty).
   bool EmptyPhotochemicalDaughter=false;
   // True when the final power was raised above the population controller's
   // choice to impose the hard all-product reaction allocation bound.  The
   // species may be present; in that case normal factor-two roulette is
   // required rather than a weight-only edit.
   bool PhotochemicalCarrierConstraint=false;
+};
+
+struct cLockedWeightSnapshot {
+  PIC::Mesh::cDataBlockAMR *Block=NULL;
+  int Species=-1;
+  double Weight=0.0;
 };
 
 long int CountSpeciesInBlock(PIC::Mesh::cDataBlockAMR *block,int species) {
@@ -252,8 +366,23 @@ std::array<long int,PIC::nTotalSpecies> CountAllSpeciesInBlock(
   return counts;
 }
 
-int SelectWeightPower(long int particleCount) {
+int SelectWeightPower(long int particleCount,int species) {
   if (particleCount<=0) return 0;
+  if (species<0 || species>=PIC::nTotalSpecies) {
+    std::fprintf(stderr,
+        "particle-weight adaptation received invalid species %d\n",species);
+    std::abort();
+  }
+  const long int minimum=
+      Comet::RadialSimulation::SpeciesMinimumParticlesPerCell[species];
+  const long int maximum=
+      Comet::RadialSimulation::SpeciesMaximumParticlesPerCell[species];
+  if (minimum<=0 || maximum<2*minimum) {
+    std::fprintf(stderr,
+        "particle-weight adaptation has invalid resolved range for species %d\n",
+        species);
+    std::abort();
+  }
 
   // The range is stated per cell, while the statistical weight belongs to
   // the whole block.  Empty cells therefore contribute zero to this mean;
@@ -261,7 +390,7 @@ int SelectWeightPower(long int particleCount) {
   long double expectedMean=
       static_cast<long double>(particleCount)/BlockCellCount;
   int power=0;
-  while (expectedMean<Comet::RadialSimulation::MinimumParticlesPerCell) {
+  while (expectedMean<minimum) {
     expectedMean*=2.0L;
     power--;
     if (power < -1024) {
@@ -270,7 +399,7 @@ int SelectWeightPower(long int particleCount) {
       std::abort();
     }
   }
-  while (expectedMean>Comet::RadialSimulation::MaximumParticlesPerCell) {
+  while (expectedMean>maximum) {
     expectedMean*=0.5L;
     power++;
     if (power > 1024) {
@@ -340,7 +469,7 @@ long long MaximumReactionDaughterAllocation(
     // the first sampling break.  Treat the configured source itself as
     // reachability evidence so initialization can prove the hard bound.
     reachable[species]=counts[species]>0 ||
-        Comet::Model::SurfaceProductionRate[species]>0.0;
+        HasConfiguredDirectSource(species);
 
   // A daughter absent at the sampling break may be created and react again
   // before the next break.  Close the reaction graph transitively from the
@@ -427,7 +556,7 @@ void ConstrainPhotochemicalDaughterPlans(
     plannedCarrierRate[species]=GetCarrierRate(node->block,species,
         weightPower[species]);
     reachable[species]=counts[species]>0 ||
-        Comet::Model::SurfaceProductionRate[species]>0.0;
+        HasConfiguredDirectSource(species);
   }
 
   // Propagate reachability and hard carrier requirements together.  The old
@@ -494,7 +623,7 @@ void ConstrainPhotochemicalDaughterPlans(
 
       while (maximumChannelAllocation()>
           Comet::RadialSimulation::MaximumPhotochemicalProductsPerReaction) {
-        // Double the carrier of the reducible product currently responsible
+        // Double the carrier of the reducible, unlocked product currently responsible
         // for the largest hard contribution.  Products identical to the
         // parent cannot reduce their own ratio and are excluded.  Repeating
         // this dyadic step yields the least invasive fixed point compatible
@@ -504,38 +633,70 @@ void ConstrainPhotochemicalDaughterPlans(
         for (std::size_t term=0;term<reaction.ProductCount;term++) {
           const ChemicalSolver::cStoichiometricTerm &product=
               network.GetProductTerm(reactionIndex,term);
-          if (product.Species==parent) continue;
+          if (product.Species==parent ||
+              Comet::RadialSimulation::ParticleWeightLocked[product.Species])
+            continue;
           const long long coefficient=static_cast<long long>(
               std::floor(product.Coefficient+0.5));
-          const long long contribution=coefficient*
-              static_cast<long long>(std::ceil(
-                  plannedCarrierRate[parent]/
-                  plannedCarrierRate[product.Species]));
+          const long long multiplicity=static_cast<long long>(std::ceil(
+              plannedCarrierRate[parent]/
+              plannedCarrierRate[product.Species]));
+          // A product already at one carrier per stoichiometric occurrence
+          // cannot be reduced further by raising its weight.  Excluding that
+          // saturated candidate is essential when a different locked product
+          // is the contribution that keeps the channel over its cap.
+          if (multiplicity<=1) continue;
+          const long long contribution=coefficient*multiplicity;
           if (contribution>selectedContribution) {
             selectedContribution=contribution;
             selectedProduct=product.Species;
           }
         }
-        if (selectedProduct<0) {
+        if (selectedProduct>=0) {
+          if (weightPower[selectedProduct]>=1024) {
+            std::fprintf(stderr,
+                "reaction %s requires an invalid product-weight exponent\n",
+                reaction.Id);
+            std::abort();
+          }
+          weightPower[selectedProduct]++;
+          plannedCarrierRate[selectedProduct]*=2.0;
+          if (!std::isfinite(plannedCarrierRate[selectedProduct])) {
+            std::fprintf(stderr,
+                "reaction %s overflowed a product carrier rate\n",reaction.Id);
+            std::abort();
+          }
+          chemistryConstrained[selectedProduct]=true;
+        }
+        else if (!Comet::RadialSimulation::ParticleWeightLocked[parent]) {
+          // All reducible product contributions are locked (or already at
+          // their irreducible one-carrier floor).  Halve the unlocked parent
+          // carrier instead.  This is an exact dyadic split of any represented
+          // parent population and reduces every daughter multiplicity in the
+          // channel without modifying a locked direct-source weight.
+          if (weightPower[parent]<=-1024) {
+            std::fprintf(stderr,
+                "reaction %s requires an invalid parent-weight exponent\n",
+                reaction.Id);
+            std::abort();
+          }
+          weightPower[parent]--;
+          plannedCarrierRate[parent]*=0.5;
+          if (!(plannedCarrierRate[parent]>0.0) ||
+              !std::isfinite(plannedCarrierRate[parent])) {
+            std::fprintf(stderr,
+                "reaction %s underflowed its parent carrier rate\n",
+                reaction.Id);
+            std::abort();
+          }
+          chemistryConstrained[parent]=true;
+        }
+        else {
           std::fprintf(stderr,
-              "reaction %s cannot satisfy the hard daughter limit by product-weight adaptation\n",
+              "reaction %s cannot satisfy the hard daughter limit because its parent and limiting products are locked\n",
               reaction.Id);
           std::abort();
         }
-        if (weightPower[selectedProduct]>=1024) {
-          std::fprintf(stderr,
-              "reaction %s requires an invalid product-weight exponent\n",
-              reaction.Id);
-          std::abort();
-        }
-        weightPower[selectedProduct]++;
-        plannedCarrierRate[selectedProduct]*=2.0;
-        if (!std::isfinite(plannedCarrierRate[selectedProduct])) {
-          std::fprintf(stderr,
-              "reaction %s overflowed a product carrier rate\n",reaction.Id);
-          std::abort();
-        }
-        chemistryConstrained[selectedProduct]=true;
         changed=true;
       }
     }
@@ -970,7 +1131,7 @@ cFaceCarrierPropagationStatistics EnforceFaceCarrierMultiplicityLimit() {
       for (std::size_t block=0;block<nodes.size();block++) {
         const std::size_t offset=block*PIC::nTotalSpecies+species;
         reachable[species]=reachable[species] || globalCounts[offset]>0 ||
-            Comet::Model::SurfaceProductionRate[species]>0.0;
+            HasConfiguredDirectSource(species);
         finalCarrier[species]=std::max(finalCarrier[species],
             targetCarriers[offset]);
       }
@@ -1036,12 +1197,15 @@ cFaceCarrierPropagationStatistics EnforceFaceCarrierMultiplicityLimit() {
           for (std::size_t term=0;term<reaction.ProductCount;term++) {
             const ChemicalSolver::cStoichiometricTerm &product=
                 network.GetProductTerm(reactionIndex,term);
-            if (product.Species==parent) continue;
+            if (product.Species==parent ||
+                Comet::RadialSimulation::ParticleWeightLocked[product.Species])
+              continue;
             const long long coefficient=static_cast<long long>(
                 std::floor(product.Coefficient+0.5));
-            const long long contribution=coefficient*
-                static_cast<long long>(std::ceil(finalCarrier[parent]/
-                    finalCarrier[product.Species]));
+            const long long multiplicity=static_cast<long long>(std::ceil(
+                finalCarrier[parent]/finalCarrier[product.Species]));
+            if (multiplicity<=1) continue;
+            const long long contribution=coefficient*multiplicity;
             if (contribution>selectedContribution) {
               selectedContribution=contribution;
               selectedProduct=product.Species;
@@ -1050,7 +1214,7 @@ cFaceCarrierPropagationStatistics EnforceFaceCarrierMultiplicityLimit() {
           if (selectedProduct<0 ||
               !std::isfinite(2.0*finalCarrier[selectedProduct])) {
             std::fprintf(stderr,
-                "reaction %s cannot satisfy the final hard daughter limit\n",
+                "reaction %s cannot satisfy the final hard daughter limit without changing a locked product weight\n",
                 reaction.Id);
             std::abort();
           }
@@ -1070,6 +1234,24 @@ cFaceCarrierPropagationStatistics EnforceFaceCarrierMultiplicityLimit() {
             targetCarriers[offset],finalCarrier[species]);
       }
   }
+
+  // Complete every collective planning step before mutating a block, then
+  // reject any plan that would alter a locked species.  This preflight keeps
+  // a policy conflict transactional: no rank has changed a particle list or
+  // weight when the conflict is reported.
+  for (std::size_t block=0;block<nodes.size();block++)
+    for (int species=0;species<PIC::nTotalSpecies;species++) {
+      if (!Comet::RadialSimulation::ParticleWeightLocked[species]) continue;
+      const std::size_t offset=block*PIC::nTotalSpecies+species;
+      const double scale=std::max(std::fabs(globalCarriers[offset]),1.0);
+      if (std::fabs(targetCarriers[offset]-globalCarriers[offset])>
+          64.0*std::numeric_limits<double>::epsilon()*scale) {
+        std::fprintf(stderr,
+            "face/chemistry carrier plan would change locked species %d in block %zu\n",
+            species,block);
+        std::abort();
+      }
+    }
 
   // Quantify the exact mover multiplicity that motivated this propagation on
   // every directed face, including populated-populated and populated-empty
@@ -1204,6 +1386,7 @@ void AdaptParticleWeights(long int completedIterations) {
   if (!Comet::RadialSimulation::ParticleWeightAdaptationEnabled) return;
 
   std::vector<cWeightAdaptationPlan> plans;
+  std::vector<cLockedWeightSnapshot> lockedWeights;
   long int requiredClones=0;
   long long localMaximumProductsBefore=0;
   long long localMaximumTotalBlockParticles=0;
@@ -1226,8 +1409,21 @@ void AdaptParticleWeights(long int completedIterations) {
     std::array<bool,PIC::nTotalSpecies> chemistryConstrained{};
 
     for (int species=0;species<PIC::nTotalSpecies;species++) {
+      if (Comet::RadialSimulation::ParticleWeightLocked[species]) {
+        // A lock is stronger than either a group or global population range.
+        // Snapshot every owner value so the later face-component safety pass
+        // cannot change a locked carrier silently.  Emergency coarsening does
+        // not use this routine and remains the documented buffer-safety
+        // override.
+        cLockedWeightSnapshot snapshot;
+        snapshot.Block=node->block;
+        snapshot.Species=species;
+        snapshot.Weight=node->block->GetLocalParticleWeight(species);
+        lockedWeights.push_back(snapshot);
+        continue;
+      }
       if (counts[species]==0) continue;
-      finalWeightPower[species]=SelectWeightPower(counts[species]);
+      finalWeightPower[species]=SelectWeightPower(counts[species],species);
     }
 
     // Apply the hard reaction constraint to every reachable product, not only
@@ -1246,7 +1442,7 @@ void AdaptParticleWeights(long int completedIterations) {
       plan.ParticleCount=counts[species];
       plan.WeightPower=finalWeightPower[species];
       plan.EmptyPhotochemicalDaughter=counts[species]==0 &&
-          chemistryConstrained[species];
+          chemistryConstrained[species] && plan.WeightPower>0;
       plan.PhotochemicalCarrierConstraint=chemistryConstrained[species];
 
       const double oldWeight=node->block->GetLocalParticleWeight(species);
@@ -1349,6 +1545,24 @@ void AdaptParticleWeights(long int completedIterations) {
   // This closes both empty- and populated-destination transport bursts.
   const cFaceCarrierPropagationStatistics propagationStatistics=
       EnforceFaceCarrierMultiplicityLimit();
+
+  // The face solver is allowed to coarsen populated or empty blocks for an
+  // adaptable species, but a Stage-1 lock is an application contract.  Fail
+  // immediately if an unexpected pre-existing carrier discontinuity would
+  // force the solver to alter a locked owner value; continuing would change
+  // its future injection population while claiming that it remained locked.
+  for (const cLockedWeightSnapshot &snapshot:lockedWeights) {
+    const double current=
+        snapshot.Block->GetLocalParticleWeight(snapshot.Species);
+    const double scale=std::max(std::fabs(snapshot.Weight),1.0);
+    if (std::fabs(current-snapshot.Weight)>
+        64.0*std::numeric_limits<double>::epsilon()*scale) {
+      std::fprintf(stderr,
+          "face-carrier propagation changed locked species %d weight\n",
+          snapshot.Species);
+      std::abort();
+    }
+  }
 
   long long localMaximumProductsAfter=0;
   for (unsigned int blockIndex=0;
@@ -1888,6 +2102,29 @@ bool Comet::RadialSimulation::Validate(std::string *error) {
       return Fail("particle-weight adaptation range must be positive",error);
     if (MaximumParticlesPerCell<2*MinimumParticlesPerCell)
       return Fail("particle-weight adaptation maximum must be at least twice the minimum",error);
+    if (ParticleWeightAdaptationInterval==0 ||
+        ParticleWeightAdaptationInterval < -1)
+      return Fail("particle-weight adaptation interval must be positive or use the legacy -1 sampling-break value",error);
+    for (int species=0;species<PIC::nTotalSpecies;species++) {
+      if (SpeciesMinimumParticlesPerCell[species]<=0 ||
+          SpeciesMaximumParticlesPerCell[species]<
+              2*SpeciesMinimumParticlesPerCell[species])
+        return Fail("a resolved species population range is invalid",error);
+      if (ParticleWeightLocked[species]!=0 &&
+          ParticleWeightLocked[species]!=1)
+        return Fail("a resolved species weight-lock flag is invalid",error);
+      if (PopulationPolicySource[species]<PolicySource::Global ||
+          PopulationPolicySource[species]>PolicySource::ExplicitSpecies)
+        return Fail("a resolved population-policy source is invalid",error);
+      if (PopulationClass[species]<PolicyClass::Other ||
+          PopulationClass[species]>PolicyClass::ChemicalOnly)
+        return Fail("a resolved population class is invalid",error);
+      const bool direct=HasConfiguredDirectSource(species);
+      if (direct!=(PopulationClass[species]==PolicyClass::DirectSource))
+        return Fail("resolved direct-source population class disagrees with configured sources",error);
+      if (direct && PopulationClass[species]==PolicyClass::ChemicalOnly)
+        return Fail("a direct source cannot be classified as chemical-only",error);
+    }
     if (!(EmergencyParticleBufferUtilization>0.0) ||
         !(EmergencyParticleBufferUtilization<1.0) ||
         !std::isfinite(EmergencyParticleBufferUtilization))
@@ -1907,6 +2144,9 @@ bool Comet::RadialSimulation::Validate(std::string *error) {
         MaximumPhotochemicalProductsPerReaction<=0)
       return Fail("particle-weight adaptation with chemistry requires a positive maximum photochemical product count per reaction",error);
 #endif
+  }
+  else if (ParticleWeightAdaptationInterval>0) {
+    return Fail("particle-weight adaptation interval requires adaptation enabled",error);
   }
   if (!(ConvergenceTolerance>0.0) || ConvergenceTolerance>1.0 ||
       !std::isfinite(ConvergenceTolerance))
@@ -2249,6 +2489,7 @@ void Comet::RadialSimulation::Initialize() {
     // empty because every resulting plan is a weight-only increase.
     AdaptParticleWeights(0);
   }
+  ReportResolvedPopulationPolicies(innerNode);
 #endif
 
   PIC::BC::BlockInjectionBCindicatior=InjectionBlockIndicator;
@@ -2285,7 +2526,18 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
     return false;
   }
 
-  constexpr int species=0;
+  int species=-1;
+  for (int candidate=0;candidate<PIC::nTotalSpecies;candidate++)
+    if (!ParticleWeightLocked[candidate]) {
+      species=candidate;
+      break;
+    }
+  if (species<0) {
+    if (PIC::ThisThread==0)
+      std::fprintf(stderr,
+          "particle-weight adaptation validation requires one unlocked species\n");
+    return false;
+  }
   const double originalWeight=localHasBlock ?
       node->block->GetLocalParticleWeight(species) : 1.0;
   const double originalCarrier=localHasBlock ?
@@ -2303,8 +2555,8 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
   // zero; the other cells must remain empty after every split.
   PIC::ParticleBuffer::DeleteAllParticles();
   const long int splitInitial=std::max(1L,
-      (MinimumParticlesPerCell*BlockCellCount+7)/8);
-  const int splitPower=SelectWeightPower(splitInitial);
+      (SpeciesMinimumParticlesPerCell[species]*BlockCellCount+7)/8);
+  const int splitPower=SelectWeightPower(splitInitial,species);
   const double splitTargetCarrier=
       std::ldexp(globalOriginalCarrier,splitPower);
   // Put every other block at the carrier the selected blocks will reach.
@@ -2344,7 +2596,7 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
       originalWeight,species);
   SynchronizeAdaptedBlockWeights();
   const long int rouletteInitial=
-      2*MaximumParticlesPerCell*BlockCellCount;
+      2*SpeciesMaximumParticlesPerCell[species]*BlockCellCount;
   if (localHasBlock)
     SeedValidationParticles(node,species,rouletteInitial);
   rnd_seed(99173+PIC::ThisThread);
@@ -2406,11 +2658,16 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
           network.GetReactantTerm(reactionIndex,0).Species;
       const ChemicalSolver::cReaction &reaction=
           network.GetReaction(reactionIndex);
-      bool hasDistinctProduct=false;
-      for (std::size_t term=0;term<reaction.ProductCount;term++)
-        if (network.GetProductTerm(reactionIndex,term).Species!=parent)
-          hasDistinctProduct=true;
-      if (hasDistinctProduct) {
+      bool hasDistinctProduct=false,allDistinctProductsUnlocked=true;
+      for (std::size_t term=0;term<reaction.ProductCount;term++) {
+        const int product=
+            network.GetProductTerm(reactionIndex,term).Species;
+        if (product==parent) continue;
+        hasDistinctProduct=true;
+        if (ParticleWeightLocked[product])
+          allDistinctProductsUnlocked=false;
+      }
+      if (hasDistinctProduct && allDistinctProductsUnlocked) {
         validationReaction=reactionIndex;
         break;
       }
@@ -2440,7 +2697,8 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
         // Keep the parent exactly at the lower population bound so ordinary
         // population adaptation leaves its weight unchanged.  Every distinct
         // product begins absent from all cells in the selected block.
-        const long int parentCount=MinimumParticlesPerCell*BlockCellCount;
+        const long int parentCount=
+            SpeciesMinimumParticlesPerCell[parent]*BlockCellCount;
         SeedValidationParticles(node,parent,parentCount);
       }
       MPI_Allreduce(localSavedCarriers.data(),savedCarriers.data(),
@@ -2659,10 +2917,24 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
   PIC::ParticleBuffer::DeleteAllParticles();
   const long int configuredMinimumParticlesPerCell=MinimumParticlesPerCell;
   const long int configuredMaximumParticlesPerCell=MaximumParticlesPerCell;
+  std::array<long int,PIC::nTotalSpecies> configuredMinimumBySpecies{};
+  std::array<long int,PIC::nTotalSpecies> configuredMaximumBySpecies{};
+  for (int testSpecies=0;testSpecies<PIC::nTotalSpecies;testSpecies++) {
+    configuredMinimumBySpecies[testSpecies]=
+        SpeciesMinimumParticlesPerCell[testSpecies];
+    configuredMaximumBySpecies[testSpecies]=
+        SpeciesMaximumParticlesPerCell[testSpecies];
+  }
   constexpr long int validationMinimumParticlesPerCell=5;
   constexpr long int validationMaximumParticlesPerCell=20;
   MinimumParticlesPerCell=validationMinimumParticlesPerCell;
   MaximumParticlesPerCell=validationMaximumParticlesPerCell;
+  for (int testSpecies=0;testSpecies<PIC::nTotalSpecies;testSpecies++) {
+    SpeciesMinimumParticlesPerCell[testSpecies]=
+        validationMinimumParticlesPerCell;
+    SpeciesMaximumParticlesPerCell[testSpecies]=
+        validationMaximumParticlesPerCell;
+  }
   const long long validationSamplingBlockThreshold=
       GetSamplingPopulationEmergencyBlockThreshold();
   if (validationSamplingBlockThreshold>LONG_MAX/2) {
@@ -2692,6 +2964,12 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
     // so diagnostics remain traceable to the sampling decision.
     MinimumParticlesPerCell=configuredMinimumParticlesPerCell;
     MaximumParticlesPerCell=configuredMaximumParticlesPerCell;
+    for (int testSpecies=0;testSpecies<PIC::nTotalSpecies;testSpecies++) {
+      SpeciesMinimumParticlesPerCell[testSpecies]=
+          configuredMinimumBySpecies[testSpecies];
+      SpeciesMaximumParticlesPerCell[testSpecies]=
+          configuredMaximumBySpecies[testSpecies];
+    }
     rnd_seed(99241+PIC::ThisThread);
     PIC::Parallel::ExchangeParticleData();
     const bool requestConsumed=!SamplingPopulationEmergencyPending;
@@ -2725,6 +3003,12 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
   // range unconditionally before any final cleanup or result reporting.
   MinimumParticlesPerCell=configuredMinimumParticlesPerCell;
   MaximumParticlesPerCell=configuredMaximumParticlesPerCell;
+  for (int testSpecies=0;testSpecies<PIC::nTotalSpecies;testSpecies++) {
+    SpeciesMinimumParticlesPerCell[testSpecies]=
+        configuredMinimumBySpecies[testSpecies];
+    SpeciesMaximumParticlesPerCell[testSpecies]=
+        configuredMaximumBySpecies[testSpecies];
+  }
 
   PIC::ParticleBuffer::DeleteAllParticles();
   SetWeightOverTimeStep(species,globalOriginalCarrier,
@@ -2806,7 +3090,13 @@ void Comet::RadialSimulation::Run() {
         PIC::Parallel::IterationNumberAfterRebalancing!=0)
       RebalanceRadialDomain(iteration+1);
 
-    if (PIC::DataOutputFileNumber==previousOutputNumber) continue;
+    if (PIC::DataOutputFileNumber==previousOutputNumber) {
+#if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
+      if (RegularAdaptationDue(iteration+1,false))
+        AdaptParticleWeights(iteration+1);
+#endif
+      continue;
+    }
     previousOutputNumber=PIC::DataOutputFileNumber;
 
     // Alarm-triggered partial output must never satisfy a convergence test
@@ -2818,6 +3108,10 @@ void Comet::RadialSimulation::Run() {
             PIC::LastSampleLength);
         std::fflush(PIC::DiagnospticMessageStream);
       }
+#if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
+      if (RegularAdaptationDue(iteration+1,false))
+        AdaptParticleWeights(iteration+1);
+#endif
       continue;
     }
 
@@ -2835,7 +3129,8 @@ void Comet::RadialSimulation::Run() {
         std::fflush(PIC::DiagnospticMessageStream);
       }
 #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
-      AdaptParticleWeights(iteration+1);
+      if (RegularAdaptationDue(iteration+1,true))
+        AdaptParticleWeights(iteration+1);
 #endif
       continue;
     }
@@ -2874,7 +3169,8 @@ void Comet::RadialSimulation::Run() {
       return;
     }
 #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
-    AdaptParticleWeights(iteration+1);
+    if (RegularAdaptationDue(iteration+1,true))
+      AdaptParticleWeights(iteration+1);
 #endif
   }
 

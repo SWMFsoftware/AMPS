@@ -92,6 +92,50 @@ sub reaction_count {
   return scalar @{$self->{reactions}};
 }
 
+# Return a boolean species table reachable from the supplied source indices.
+# A general reaction becomes reachable only when every reactant species is
+# reachable; this reduces to ordinary parent-to-daughter traversal for the
+# unit-unimolecular network used by the current particle executor while
+# remaining meaningful for future continuum chemistry backends.  A zero-rate
+# channel is excluded because it cannot create a chemical-only population.
+sub reachable_species_from {
+  my ($self,$roots)=@_;
+  die "reachable_species_from requires a root-species array\n"
+      unless ref($roots) eq 'ARRAY';
+
+  my $species_count=scalar keys %{$self->{species_index}};
+  my @reachable=(0)x$species_count;
+  for my $root (@$roots) {
+    die "invalid reachable-species root '$root'\n"
+        unless defined($root) && $root=~/^\d+$/ &&
+            $root>=0 && $root<$species_count;
+    $reachable[$root]=1;
+  }
+
+  my $changed=1;
+  while ($changed) {
+    $changed=0;
+    for my $reaction (@{$self->{reactions}}) {
+      next unless $reaction->{a}>0.0;
+      my $enabled=1;
+      for my $reactant (@{$reaction->{reactants}}) {
+        if (!$reachable[$reactant->{species}]) {
+          $enabled=0;
+          last;
+        }
+      }
+      next unless $enabled;
+      for my $product (@{$reaction->{products}}) {
+        if (!$reachable[$product->{species}]) {
+          $reachable[$product->{species}]=1;
+          $changed=1;
+        }
+      }
+    }
+  }
+  return \@reachable;
+}
+
 sub write_header {
   my ($self,$path)=@_;
   open(my $out,'>',$path) or die "cannot write '$path': $!\n";

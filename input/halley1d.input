@@ -205,10 +205,21 @@ CouplerMode=off
   ! destination retained an obsolete, very small species weight.  This is an
   ! automatic consistency step of the same controller, not another keyword.
   RadialParticleWeightAdaptation=on
+  ! Regular adaptation cadence is independent of the science sampling length.
+  ! This case retains one adaptation per 10,000-step sampling window.
+  RadialParticleWeightAdaptationInterval=10000
   ! Scale both limits by another factor of four with the injection reference
   ! so the block-local adaptation maintains four times the completed run's
   ! mean model population.
   RadialParticleNumberPerCellRange=800 | 3200
+  ! Chemically reachable species without a direct configured source receive a
+  ! separate population target. Explicit species records override this group,
+  ! and this group overrides the global fallback above.
+  RadialParticleNumberPerCellRange(CHEMICAL_ONLY)=50 | 200
+  ! Preserve source-derived regular weights for every directly supplied
+  ! parent. Emergency common-factor coarsening remains a buffer-safety
+  ! override and is reported whenever it occurs.
+  RadialParticleWeightLock=DIRECT_SOURCE
   ! Before every regular MPI particle exchange, compare the most occupied
   ! rank's live particle count with its local buffer capacity.  At 75%, apply
   ! a common factor-two increase to every block/species weight and unbiased

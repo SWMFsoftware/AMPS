@@ -778,3 +778,66 @@ the diagnostics-off baseline. The controlled four-rank enabled/disabled smoke
 pair measured +0.93% wall time and +340 KiB maximum resident memory. These are
 diagnostic-implementation results; the 10,000-iteration run remained
 nonconverged and is not a science-quality Halley solution.
+
+## Stage 1 species population policies
+
+Population control can now be selected globally, by a derived comet-physics
+group, or by one explicit species. The canonical Halley input uses:
+
+```text
+RadialParticleWeightAdaptation=on
+RadialParticleWeightAdaptationInterval=10000
+RadialParticleNumberPerCellRange=800 | 3200
+RadialParticleNumberPerCellRange(CHEMICAL_ONLY)=50 | 200
+RadialParticleWeightLock=DIRECT_SOURCE
+```
+
+`DIRECT_SOURCE` contains species whose configured surface or extended source
+rate is positive. `CHEMICAL_ONLY` contains species transitively reachable from
+those sources through enabled, positive-rate reactions but having no direct
+source of their own. The input generator derives both groups after reading the
+source and reaction databases; no comet-specific species list is compiled
+into the controller. An explicit species name can replace a group selector.
+Resolution is deterministic: explicit species overrides a derived group,
+which overrides the unqualified global record.
+
+A selector may have one range policy or one lock policy, not both at the same
+precedence level. Ranges contain positive integers and require
+`maximum >= 2*minimum`, matching the power-of-two controller. Duplicate
+records, unknown selectors, invalid bounds, and range/lock contradictions are
+fatal input errors. A locked species keeps its source-derived weight during
+regular population adaptation and chemistry allocation protection. The
+collective emergency common-factor coarsener may still change it as a
+last-resort buffer-safety operation; that override is always logged.
+
+`RadialParticleWeightAdaptationInterval=N` decouples numerical adaptation
+from the science sampling length. Adaptation occurs only after a complete
+mover/chemistry iteration and never while a continuation particle is in
+flight. Omitting the interval preserves legacy behavior: adapt only at a full
+sampling break. Startup prints one resolved row per species with its class,
+winning selector, lock state, range, physical source rate, and actual surface
+carrier `W/dt`.
+
+Focused parser tests are always available:
+
+```sh
+srcHartley2/tests/run_stage1_tests.sh
+```
+
+The complete 2026-11-05 evidence, when the external validation archive is
+present, is reproduced with:
+
+```sh
+HARTLEY2_STAGE1_POLICY_LOG=validation_runs/stage1_population_policy_20261105/canonical_policy/run.log \
+HARTLEY2_STAGE1_ALTERNATE_LOG=validation_runs/stage1_population_policy_20261105/alternate_policy/run.log \
+HARTLEY2_STAGE1_CADENCE_LOG=validation_runs/stage1_population_policy_20261105/cadence/run.log \
+HARTLEY2_STAGE1_LEGACY_BASELINE=validation_runs/stage0_closure_20261105/diagnostics_off/production/PT/plots \
+HARTLEY2_STAGE1_LEGACY_CANDIDATE=validation_runs/stage1_population_policy_20261105/legacy_candidate/PT/plots \
+  srcHartley2/tests/run_stage1_tests.sh
+```
+
+The accepted result is 27 resolved species, unchanged locked direct-source
+rates/carriers under the alternate daughter target, cadence records at
+iterations 0/50/100, and 54 byte-identical legacy output files. These tests
+close Stage 1 numerical-policy behavior; they do not change the existing
+nonconverged status of the long Rubin science comparison.

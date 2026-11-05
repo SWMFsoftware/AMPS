@@ -36,8 +36,31 @@ extern long int LoadBalanceInterval;
 // block from being multiplied by an obsolete, anomalously small local weight;
 // the propagation itself never creates a particle.
 extern bool ParticleWeightAdaptationEnabled;
+// A positive value requests regular adaptation at this many completed model
+// iterations, independently of SamplingLength.  The source default -1 is the
+// legacy contract: adapt only at complete sampling breaks.  Both paths run
+// after PIC::TimeStep has completed transport, chemistry, collisions, and all
+// continuation exchanges, so no in-flight particle is ever split or removed.
+extern long int ParticleWeightAdaptationInterval;
 extern long int MinimumParticlesPerCell;
 extern long int MaximumParticlesPerCell;
+// Stage-1 input resolution produces one immutable policy row per compiled
+// species.  The legacy scalar range remains the global fallback and keeps old
+// input behavior unchanged.  Locked species ignore regular population and
+// photochemical weight adaptation; emergency common-factor coarsening remains
+// a safety override and is reported separately when it occurs.
+extern long int SpeciesMinimumParticlesPerCell[];
+extern long int SpeciesMaximumParticlesPerCell[];
+extern int ParticleWeightLocked[];
+extern int PopulationPolicySource[];
+extern int PopulationClass[];
+
+namespace PolicySource {
+enum Type {Global=0,DirectSource=1,ChemicalOnly=2,ExplicitSpecies=3};
+}
+namespace PolicyClass {
+enum Type {Other=0,DirectSource=1,ChemicalOnly=2};
+}
 // Emergency roulette runs immediately before the regular particle exchange
 // when either (a) any MPI rank reaches this fraction of its local particle-
 // buffer capacity or (b) the preceding sampling break found an owner block

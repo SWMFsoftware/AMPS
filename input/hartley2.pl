@@ -13,6 +13,7 @@ use lib cwd,$Bin,"$Bin/input";
 use ampsConfigLib;
 use CometReactionNetwork;
 use CometPhysicsDatabase;
+use CometPopulationPolicy;
 
 
 #my $command= $];
@@ -70,6 +71,7 @@ my $RadialSamplingLengthIsSet=0;
 my $RadialLoadBalanceIntervalIsSet=0;
 my $RadialParticleWeightAdaptationIsSet=0;
 my $RadialParticleNumberPerCellRangeIsSet=0;
+my $RadialParticleWeightAdaptationIntervalIsSet=0;
 my $RadialEmergencyParticleBufferUtilizationIsSet=0;
 my $RadialAllocationLowWatermarkIsSet=0;
 my $RadialAllocationReserveFractionIsSet=0;
@@ -111,6 +113,7 @@ my @RadialCharacteristicSpeed=(-1.0)x$TotalSpeciesNumber;
 my @RadiativeCoolingModel=(0)x$TotalSpeciesNumber;
 my $ReactionNetwork=CometReactionNetwork->new(species=>\@SpeciesList);
 my $PhysicsDatabase=CometPhysicsDatabase->new(species=>\@SpeciesList);
+my $PopulationPolicy=CometPopulationPolicy->new(species=>\@SpeciesList);
 
 #add the model header to the pic.h
 open (PIC_H,">>$WorkingSourceDirectory/pic/pic.h") || die "Cannot open $WorkingSourceDirectory/pic/pic.h";
@@ -441,24 +444,30 @@ while ($line=<InputFile>) {
     $RadialParticleWeightAdaptationIsSet=1;
   }
   elsif ($InputLine eq "RADIALPARTICLENUMBERPERCELLRANGE") {
-    my $value=$LineOriginal;
-    $value=~s/!.*$//;
-    $value=~s/^\s*RadialParticleNumberPerCellRange\s*[=:]\s*//i;
-    my @field=map {trim($_)} split(/\|/,$value,-1);
-    die "RadialParticleNumberPerCellRange expects MINIMUM | MAXIMUM, line=$InputFileLineNumber ($InputFileName)\n"
-        unless @field==2;
-    die "RadialParticleNumberPerCellRange values must be positive integers, line=$InputFileLineNumber ($InputFileName)\n"
-        unless $field[0]=~/^\d+$/ && $field[0]>0 &&
-               $field[1]=~/^\d+$/ && $field[1]>0;
-    die "RadialParticleNumberPerCellRange maximum must be at least twice the minimum for power-of-two adaptation, line=$InputFileLineNumber ($InputFileName)\n"
-        unless $field[1]>=2*$field[0];
+    # Keep the complete original record: punctuation normalization above is
+    # useful for dispatch, but the optional selector in parentheses is part of
+    # the Stage-1 grammar.  The shared resolver validates the exact same text
+    # used by its focused tests and defers group membership until all source
+    # and chemistry records have been read.
+    $PopulationPolicy->add_range_record($LineOriginal,
+        "line $InputFileLineNumber ($InputFileName)");
+    $RadialParticleNumberPerCellRangeIsSet=1
+        if $LineOriginal!~/RadialParticleNumberPerCellRange\s*\(/i;
+  }
+  elsif ($InputLine eq "RADIALPARTICLEWEIGHTLOCK") {
+    $PopulationPolicy->add_lock_record($LineOriginal,
+        "line $InputFileLineNumber ($InputFileName)");
+  }
+  elsif ($InputLine eq "RADIALPARTICLEWEIGHTADAPTATIONINTERVAL") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    die "RadialParticleWeightAdaptationInterval must be a positive integer, line=$InputFileLineNumber ($InputFileName)\n"
+        unless defined $InputLine && $InputLine=~/^\d+$/ && $InputLine>0;
+    die "duplicate RadialParticleWeightAdaptationInterval, line=$InputFileLineNumber ($InputFileName)\n"
+        if $RadialParticleWeightAdaptationIntervalIsSet;
     ampsConfigLib::ChangeValueOfVariable(
-        "long int Comet::RadialSimulation::MinimumParticlesPerCell",$field[0],
-        "main/RadialSimulation.cpp");
-    ampsConfigLib::ChangeValueOfVariable(
-        "long int Comet::RadialSimulation::MaximumParticlesPerCell",$field[1],
-        "main/RadialSimulation.cpp");
-    $RadialParticleNumberPerCellRangeIsSet=1;
+        "long int Comet::RadialSimulation::ParticleWeightAdaptationInterval",
+        $InputLine,"main/RadialSimulation.cpp");
+    $RadialParticleWeightAdaptationIntervalIsSet=1;
   }
   elsif ($InputLine eq "RADIALEMERGENCYPARTICLEBUFFERUTILIZATION") {
     ($InputLine,$InputComment)=split(' ',$InputComment,2);
@@ -1191,6 +1200,71 @@ for (my $species=0;$species<$TotalSpeciesNumber;$species++) {
          $ExtendedDistributionMode[$species]==0;
 }
 
+# Resolve Stage-1 population selectors only after named chemistry databases,
+# explicit reactions, surface sources, and extended sources are complete.
+# This makes input order irrelevant and prevents a comet name or a hard-coded
+# species catalog from leaking into the generic policy.  A direct source is
+# any positive configured surface or extended source.  CHEMICAL_ONLY is the
+# transitive positive-rate reaction closure of those sources, excluding the
+# direct sources themselves.  When chemistry is off no chemical-only group is
+# inferred even if unused reaction records are present in the input.
+my @DirectSource=(0)x$TotalSpeciesNumber;
+my @DirectSourceRoots;
+for (my $species=0;$species<$TotalSpeciesNumber;$species++) {
+  if ($SurfaceProductionRate[$species]>0.0 ||
+      $ExtendedProductionRate[$species]>0.0) {
+    $DirectSource[$species]=1;
+    push @DirectSourceRoots,$species;
+  }
+}
+my $ChemicalReachable=[(0)x$TotalSpeciesNumber];
+if (chemistryIsEnabled("$WorkingSourceDirectory/main/CometChemistry.cpp")) {
+  $ChemicalReachable=$ReactionNetwork->reachable_species_from(
+      \@DirectSourceRoots);
+}
+
+my @ResolvedMinimum=(0)x$TotalSpeciesNumber;
+my @ResolvedMaximum=(0)x$TotalSpeciesNumber;
+my @ResolvedLocked=(0)x$TotalSpeciesNumber;
+my @ResolvedSource=(0)x$TotalSpeciesNumber;
+my @ResolvedClass=(0)x$TotalSpeciesNumber;
+if ($PopulationPolicy->has_global_range()) {
+  my ($minimum,$maximum)=$PopulationPolicy->global_range();
+  ampsConfigLib::ChangeValueOfVariable(
+      "long int Comet::RadialSimulation::MinimumParticlesPerCell",$minimum,
+      "main/RadialSimulation.cpp");
+  ampsConfigLib::ChangeValueOfVariable(
+      "long int Comet::RadialSimulation::MaximumParticlesPerCell",$maximum,
+      "main/RadialSimulation.cpp");
+  my $resolved=$PopulationPolicy->resolve(
+      direct_source=>\@DirectSource,
+      chemical_reachable=>$ChemicalReachable);
+  @ResolvedMinimum=@{$resolved->{minimum}};
+  @ResolvedMaximum=@{$resolved->{maximum}};
+  @ResolvedLocked=@{$resolved->{locked}};
+  @ResolvedSource=@{$resolved->{source}};
+  @ResolvedClass=@{$resolved->{class}};
+}
+elsif ($PopulationPolicy->policy_count()!=0) {
+  die "species/group population policies require a global RadialParticleNumberPerCellRange fallback\n";
+}
+
+ampsConfigLib::ChangeValueOfArray(
+    "long int Comet::RadialSimulation::SpeciesMinimumParticlesPerCell\\[PIC::nTotalSpecies\\]",
+    \@ResolvedMinimum,"main/RadialSimulation.cpp");
+ampsConfigLib::ChangeValueOfArray(
+    "long int Comet::RadialSimulation::SpeciesMaximumParticlesPerCell\\[PIC::nTotalSpecies\\]",
+    \@ResolvedMaximum,"main/RadialSimulation.cpp");
+ampsConfigLib::ChangeValueOfArray(
+    "int Comet::RadialSimulation::ParticleWeightLocked\\[PIC::nTotalSpecies\\]",
+    \@ResolvedLocked,"main/RadialSimulation.cpp");
+ampsConfigLib::ChangeValueOfArray(
+    "int Comet::RadialSimulation::PopulationPolicySource\\[PIC::nTotalSpecies\\]",
+    \@ResolvedSource,"main/RadialSimulation.cpp");
+ampsConfigLib::ChangeValueOfArray(
+    "int Comet::RadialSimulation::PopulationClass\\[PIC::nTotalSpecies\\]",
+    \@ResolvedClass,"main/RadialSimulation.cpp");
+
 ampsConfigLib::ChangeValueOfArray("double Comet::Model::SurfaceProductionRate\\[PIC::nTotalSpecies\\]",\@SurfaceProductionRate,"main/CometModel.cpp");
 ampsConfigLib::ChangeValueOfArray("int Comet::Model::SurfaceDistributionMode\\[PIC::nTotalSpecies\\]",\@SurfaceDistributionMode,"main/CometModel.cpp");
 ampsConfigLib::ChangeValueOfArray("double Comet::Model::SurfaceTemperature\\[PIC::nTotalSpecies\\]",\@SurfaceTemperature,"main/CometModel.cpp");
@@ -1245,6 +1319,9 @@ if ($Dimension eq "1") {
         die "RadialParticleWeightAdaptation=ON with ChemistryMode=ON requires RadialMaxPhotochemicalProductsPerReaction\n"
             unless $RadialMaxPhotochemicalProductsPerReactionIsSet;
       }
+    }
+    elsif ($RadialParticleWeightAdaptationIntervalIsSet) {
+      die "RadialParticleWeightAdaptationInterval requires RadialParticleWeightAdaptation=ON\n";
     }
     die "RadialSimulationMode=ON requires RadialConvergenceTolerance\n"
         unless $RadialConvergenceToleranceIsSet;

@@ -229,12 +229,11 @@ observability and non-perturbation, not a steady Halley solution.
 Allow direct parents and chemical-only daughters to have different numerical
 population policies while keeping the application generic.
 
-### Approved selector model and proposed input spelling
+### Implemented selector model and input spelling
 
 The user approved supporting both explicit-species and derived-group
 selectors. Precedence is fixed as explicit species, then derived group, then
-global default. The exact parser spelling should be finalized during
-implementation, but the model needs these concepts:
+global default. Stage 1 implements the following exact spelling:
 
 ```text
 RadialParticleNumberPerCellRange=800 | 3200
@@ -283,6 +282,38 @@ the current case.
 - Policies are fully input-driven and comet-independent.
 - Legacy inputs are unchanged.
 - A startup table proves which species are locked and which target applies.
+
+### Completion evidence (2026-11-05)
+
+Stage 1 is complete on `1d_comet_dev`. `CometPopulationPolicy.pm` resolves
+global, `DIRECT_SOURCE`, `CHEMICAL_ONLY`, and explicit-species records after
+the source and arbitrary reaction tables are available. The parser rejects
+duplicate selectors, unknown species/groups, invalid ranges, and a range and
+lock assigned at the same precedence level. Reaction reachability is the
+transitive closure of enabled, positive-rate channels; therefore a secondary
+or later-generation daughter is classified without embedding a Halley species
+list.
+
+The runtime now consumes generated species-indexed ranges, locks, policy
+sources, and derived classes. A positive
+`RadialParticleWeightAdaptationInterval` schedules adaptation at completed
+iteration boundaries independently of sampling. Omitting it selects the
+legacy complete-sampling-break cadence. Regular population and
+chemistry-allocation planning cannot modify a locked species. Emergency
+common-factor coarsening remains the explicitly reported buffer-safety
+override because refusing it could prevent a rank from reaching the next safe
+MPI exchange.
+
+The validation archive is
+`validation_runs/stage1_population_policy_20261105`. Its canonical four-rank
+validator resolves all 27 species and passes owner/ghost, face-transfer,
+photochemical-allocation, and emergency checks. A second build changes only
+the chemical-only range from 50--200 to 100--400 and proves every direct
+source rate and `W/dt` carrier unchanged. A cadence run records adaptation at
+iterations 0, 50, and 100. Finally, an exact archived legacy input produces
+54 output `.dat` files byte-identical to the pre-Stage-1 baseline. Run all
+available gates with the environment-variable command documented in
+`srcHartley2/README.md`.
 
 ## Stage 2: component-wide, correction-free daughter carriers
 
@@ -824,9 +855,8 @@ manifest. Wait for explicit user approval.
 
 ## Recommended immediate next action
 
-Stage 0 is complete. Implement Stage 1 next using the approved dual selector
-model, then the Stage 2 component-wide correction-free carrier planner. Run
-the decision gate in Stage 3 before
+Stages 0 and 1 are complete. Implement the Stage 2 component-wide,
+correction-free carrier planner next. Run the decision gate in Stage 3 before
 changing the core to allow individual corrections. The current measurements
 indicate that C2 can plausibly reach useful occupancy with the existing
 20-product reaction bound and about a 24% total-population increase while
