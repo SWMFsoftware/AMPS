@@ -300,3 +300,24 @@ existing AMPS comet collision prescription rather than attributed to that
 paper. Rubin et al. likewise omit their exact radial discretization and
 numerical controls; the Halley input labels the supplied and derived values
 and keeps the remaining choices explicit.
+
+## Generic conditional reaction-channel importance policy
+
+The chemistry database remains physical and comet-independent: reaction IDs,
+stoichiometry, rate laws, and excess energies are not changed to improve model
+statistics. An optional input policy instead assigns a target conditional
+selection probability `q*` to every positive-rate sibling in one complete
+unit-unimolecular parent family. The runtime preserves the database total rate
+and parent lifetime, samples the configured conditional distribution, and
+transports `L=q/q*` on product corrections. Product-free sinks are part of the
+family and diagnostics even though they create no tracked daughter.
+
+This separation lets another comet input choose different biased families
+without adding comet-specific C++ or editing the general reaction database.
+The policy is currently implemented by the DIM1 particle executor because
+that is the only validated generic-comet chemistry backend. Its input parser,
+generated table, and pure planner are geometry-neutral; a future 2-D/3-D
+executor may consume the same policy after it provides the Stage-4/5/6
+correction, transaction, and capacity contracts. Deterministic all-channel
+branching and total-reaction forcing are separate algorithms and are not
+silently implied by this stochastic policy.

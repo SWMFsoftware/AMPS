@@ -41,6 +41,19 @@ extern long int MaximumDaughterPacketCount;
 long int GetDaughterPacketCount(std::size_t reaction);
 int GetDaughterPacketPolicySource(std::size_t reaction);
 
+// Stage-7 channel importance sampling changes only the conditional selection
+// of a mutually exclusive channel after the ordinary total-reaction event has
+// occurred.  Complete parent families are generated from stable reaction IDs.
+// Their requested q* values remain positive and normalized; every selected
+// product carrier receives L=q/q*.  Unconfigured families and the global
+// default use the exact historical analog selector and L=1.
+extern bool ChannelImportanceSamplingEnabled;
+bool IsChannelImportanceConfigured(std::size_t reaction);
+int GetChannelParentSpecies(std::size_t reaction);
+double GetPhysicalChannelProbability(std::size_t reaction);
+double GetBiasedChannelProbability(std::size_t reaction);
+double GetChannelLikelihoodRatio(std::size_t reaction);
+
 // The returned object is a non-owning view of static tables generated from
 // the selected input file.  Validate must succeed before particle stepping.
 const ChemicalSolver::cReactionNetwork& GetNetwork();
@@ -75,6 +88,14 @@ bool ValidateEnsemble(long int eventsPerReaction);
 // packet moments, and byte-exact particle rollback on capacity deferral. This
 // focused mode does not replace a transported comet science pilot.
 bool ValidateDaughterPacketSplitting(long int eventsPerReaction);
+
+// Exercise Stage-7 channel selection using deterministic global event IDs.
+// The validator compares analog and biased channel ensembles, includes
+// product-free sinks, checks likelihood-weighted product moments and family
+// ESS, and is decomposition-identical at 1/4/12 ranks.  The separate Stage-6
+// validator remains the real K*N particle-transaction check and, when Stage 7
+// is enabled, also proves that stored corrections include L before /N.
+bool ValidateChannelImportanceSampling(long int eventsPerFamily);
 
 // Exercise owner-only block state, common packet phases, transaction
 // rollback, dynamic MPI block migration, and a real local-weight restart.

@@ -13,8 +13,10 @@
 #include "pic.h"
 #include "src/models/chemical_solver/SystematicResidualAccumulator.h"
 #include "CometChemistry.generated.h"
+#include "CometChannelImportancePolicy.generated.h"
 #include "CometDaughterPacketPolicy.generated.h"
 #include "CometDiagnostics.h"
+#include "ChannelImportancePlanner.h"
 #include "DaughterPacketPlanner.h"
 #include "RadialSimulation.h"
 
@@ -27,11 +29,16 @@ int Comet::Chemistry::ResidualSamplingMode=Comet::Chemistry::ResidualSampling::I
 std::uint64_t Comet::Chemistry::ResidualPhaseSeed=1;
 bool Comet::Chemistry::DaughterPacketSplittingEnabled=false;
 long int Comet::Chemistry::MaximumDaughterPacketCount=1;
+bool Comet::Chemistry::ChannelImportanceSamplingEnabled=false;
 
 static_assert(
     Comet::Chemistry::DaughterPacketGenerated::ReactionCount==
         Comet::Chemistry::Generated::ReactionCount,
     "generated daughter-packet policy does not match reaction network");
+static_assert(
+    Comet::Chemistry::ChannelImportanceGenerated::ReactionCount==
+        Comet::Chemistry::Generated::ReactionCount,
+    "generated channel-importance policy does not match reaction network");
 
 namespace {
 long int ChemistryProcessedFlagOffset=-1;
@@ -324,10 +331,18 @@ double Stage3MigrationLoadMeasure(
 struct cParentReactionRateCache {
   std::vector<std::size_t> Channels;
   std::vector<double> Rates;
+  std::vector<double> PhysicalProbabilities;
+  std::vector<double> SelectionProbabilities;
+  std::vector<double> LikelihoodRatios;
   double TotalRate=0.0;
+  bool ImportanceConfigured=false;
 };
 
 std::vector<cParentReactionRateCache> ParentReactionRates;
+std::vector<int> RuntimeChannelParentSpecies;
+std::vector<double> RuntimePhysicalChannelProbability;
+std::vector<double> RuntimeBiasedChannelProbability;
+std::vector<double> RuntimeChannelLikelihoodRatio;
 double CachedHeliocentricDistanceAU=
     std::numeric_limits<double>::quiet_NaN();
 bool ParentReactionRatesReady=false;
@@ -351,6 +366,33 @@ bool RefreshParentReactionRates(std::string *error) {
 
   const ChemicalSolver::cReactionNetwork &network=
       Comet::Chemistry::GetNetwork();
+  RuntimeChannelParentSpecies.assign(network.GetReactionCount(),-1);
+  RuntimePhysicalChannelProbability.assign(network.GetReactionCount(),0.0);
+  RuntimeBiasedChannelProbability.assign(network.GetReactionCount(),0.0);
+  RuntimeChannelLikelihoodRatio.assign(network.GetReactionCount(),1.0);
+  bool foundConfiguredFamily=false;
+
+  // Repeat the generated policy's structural checks at runtime.  This catches
+  // stale/hand-edited headers before a configured row can be silently omitted
+  // from the unit-unimolecular parent index.
+  for (std::size_t reaction=0;reaction<network.GetReactionCount();reaction++) {
+    const bool configured=Comet::Chemistry::
+        ChannelImportanceGenerated::Configured[reaction]!=0;
+    if (network.IsUnitUnimolecular(reaction))
+      RuntimeChannelParentSpecies[reaction]=
+          network.GetReactantTerm(reaction,0).Species;
+    if (configured && !Comet::Chemistry::ChannelImportanceSamplingEnabled) {
+      if (error!=NULL)
+        *error="generated channel-importance rows require enabled mode";
+      return false;
+    }
+    if (configured && !network.IsUnitUnimolecular(reaction)) {
+      if (error!=NULL)
+        *error="channel importance targets a non-unit-unimolecular reaction";
+      return false;
+    }
+  }
+
   for (int species=0;species<PIC::nTotalSpecies;species++) {
     cParentReactionRateCache &cache=ParentReactionRates[species];
     const std::size_t channelCount=
@@ -376,6 +418,12 @@ bool RefreshParentReactionRates(std::string *error) {
           *error="comet chemistry produced an invalid cached reaction rate";
         return false;
       }
+      if (!(rate>0.0) && Comet::Chemistry::
+          ChannelImportanceGenerated::Configured[reaction]!=0) {
+        if (error!=NULL)
+          *error="channel importance targets a reaction with zero runtime rate";
+        return false;
+      }
       if (rate>0.0) {
         cache.Channels.push_back(reaction);
         cache.Rates.push_back(rate);
@@ -387,6 +435,88 @@ bool RefreshParentReactionRates(std::string *error) {
         *error="comet chemistry produced an invalid cached total rate";
       return false;
     }
+
+    if (!(cache.TotalRate>0.0)) continue;
+    cache.PhysicalProbabilities.resize(cache.Channels.size(),0.0);
+    cache.SelectionProbabilities.resize(cache.Channels.size(),0.0);
+    cache.LikelihoodRatios.resize(cache.Channels.size(),1.0);
+
+    std::size_t configuredCount=0;
+    double configuredSum=0.0;
+    for (std::size_t channel=0;channel<cache.Channels.size();channel++) {
+      const std::size_t reaction=cache.Channels[channel];
+      RuntimeChannelParentSpecies[reaction]=species;
+      const bool configured=Comet::Chemistry::
+          ChannelImportanceGenerated::Configured[reaction]!=0;
+      if (configured) {
+        configuredCount++;
+        const double probability=Comet::Chemistry::
+            ChannelImportanceGenerated::BiasedProbability[reaction];
+        if (!(probability>0.0) || probability>1.0 ||
+            !std::isfinite(probability)) {
+          if (error!=NULL)
+            *error="generated channel-importance probability is invalid";
+          return false;
+        }
+        configuredSum+=probability;
+      }
+    }
+    if (configuredCount!=0 && configuredCount!=cache.Channels.size()) {
+      if (error!=NULL)
+        *error="channel importance must configure a complete positive-rate parent family";
+      return false;
+    }
+    cache.ImportanceConfigured=configuredCount!=0;
+    if (cache.ImportanceConfigured) {
+      foundConfiguredFamily=true;
+      if (!std::isfinite(configuredSum) ||
+          std::fabs(configuredSum-1.0)>1.0e-12) {
+        if (error!=NULL)
+          *error="generated channel-importance family probabilities do not sum to one";
+        return false;
+      }
+    }
+
+    double biasedPrefix=0.0;
+    for (std::size_t channel=0;channel<cache.Channels.size();channel++) {
+      const std::size_t reaction=cache.Channels[channel];
+      const double physical=cache.Rates[channel]/cache.TotalRate;
+      // The final selection interval is the exact arithmetic remainder.  Its
+      // likelihood uses that same actual interval, never a rounded input
+      // value that differs from the selector's measure.
+      double biased=physical;
+      if (cache.ImportanceConfigured) {
+        biased=(channel+1==cache.Channels.size()) ? 1.0-biasedPrefix :
+            Comet::Chemistry::ChannelImportanceGenerated::
+                BiasedProbability[reaction];
+        biasedPrefix+=biased;
+      }
+      if (!(physical>0.0) || !(biased>0.0) || !std::isfinite(physical) ||
+          !std::isfinite(biased)) {
+        if (error!=NULL)
+          *error="channel importance produced an invalid runtime probability";
+        return false;
+      }
+      const double likelihood=physical/biased;
+      if (!(likelihood>0.0) || !std::isfinite(likelihood)) {
+        if (error!=NULL)
+          *error="channel importance produced an invalid likelihood ratio";
+        return false;
+      }
+      cache.PhysicalProbabilities[channel]=physical;
+      cache.SelectionProbabilities[channel]=biased;
+      cache.LikelihoodRatios[channel]=likelihood;
+      RuntimePhysicalChannelProbability[reaction]=physical;
+      RuntimeBiasedChannelProbability[reaction]=biased;
+      RuntimeChannelLikelihoodRatio[reaction]=likelihood;
+    }
+  }
+
+  if (Comet::Chemistry::ChannelImportanceSamplingEnabled &&
+      !foundConfiguredFamily) {
+    if (error!=NULL)
+      *error="enabled channel importance has no configured positive-rate family";
+    return false;
   }
 
   CachedHeliocentricDistanceAU=Comet::Chemistry::HeliocentricDistanceAU;
@@ -498,6 +628,37 @@ int Comet::Chemistry::GetDaughterPacketPolicySource(std::size_t reaction) {
       DaughterPacketGenerated::PolicySource[reaction] : 0;
 }
 
+bool Comet::Chemistry::IsChannelImportanceConfigured(std::size_t reaction) {
+  if (reaction>=GetNetwork().GetReactionCount()) {
+    std::fprintf(stderr,"channel-importance reaction index is out of range\n");
+    std::abort();
+  }
+  return ChannelImportanceSamplingEnabled &&
+      ChannelImportanceGenerated::Configured[reaction]!=0;
+}
+
+int Comet::Chemistry::GetChannelParentSpecies(std::size_t reaction) {
+  if (reaction>=RuntimeChannelParentSpecies.size()) return -1;
+  return RuntimeChannelParentSpecies[reaction];
+}
+
+double Comet::Chemistry::GetPhysicalChannelProbability(
+    std::size_t reaction) {
+  if (reaction>=RuntimePhysicalChannelProbability.size()) return 0.0;
+  return RuntimePhysicalChannelProbability[reaction];
+}
+
+double Comet::Chemistry::GetBiasedChannelProbability(
+    std::size_t reaction) {
+  if (reaction>=RuntimeBiasedChannelProbability.size()) return 0.0;
+  return RuntimeBiasedChannelProbability[reaction];
+}
+
+double Comet::Chemistry::GetChannelLikelihoodRatio(std::size_t reaction) {
+  if (reaction>=RuntimeChannelLikelihoodRatio.size()) return 1.0;
+  return RuntimeChannelLikelihoodRatio[reaction];
+}
+
 bool Comet::Chemistry::Validate(std::string *error) {
   if (ResidualSamplingMode!=ResidualSampling::IndependentBernoulli &&
       ResidualSamplingMode!=ResidualSampling::RandomPhaseSystematic) {
@@ -546,6 +707,34 @@ bool Comet::Chemistry::Validate(std::string *error) {
     if (!Comet::RadialSimulation::IndividualCorrectionWindowsEnabled) {
       if (error!=NULL)
         *error="daughter packet splitting requires Stage-5 correction windows";
+      return false;
+    }
+#endif
+  }
+  if (ChannelImportanceSamplingEnabled) {
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ != _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+    if (error!=NULL)
+      *error="channel importance sampling requires individual particle corrections";
+    return false;
+#else
+    if (!Enabled) {
+      if (error!=NULL)
+        *error="channel importance sampling requires comet chemistry";
+      return false;
+    }
+    if (ResidualSamplingMode!=ResidualSampling::IndependentBernoulli) {
+      if (error!=NULL)
+        *error="channel importance sampling requires Bernoulli chemistry residual mode";
+      return false;
+    }
+    if (!Comet::RadialSimulation::IndividualCorrectionWindowsEnabled) {
+      if (error!=NULL)
+        *error="channel importance sampling requires Stage-5 correction windows";
+      return false;
+    }
+    if (!Comet::Diagnostics::Enabled) {
+      if (error!=NULL)
+        *error="channel importance sampling requires comet diagnostics for likelihood and ESS metadata";
       return false;
     }
 #endif
@@ -1650,7 +1839,13 @@ bool Comet::Chemistry::ValidateDaughterPacketSplitting(
           node->block->GetLocalTimeStep(cSpecies);
       const double parentCarrier=
           node->block->GetLocalParticleWeight(c2Species)/forcedTimeStep;
-      const double unsplitCorrection=parentCarrier/targetCarrier;
+      // When Stage 7 is active the production executor must apply L before
+      // Stage 6 partitions the product across packets.  Reusing the real
+      // transaction check here proves the composed correction L/N, including
+      // its final arithmetic remainder, rather than testing either feature in
+      // isolation.
+      const double unsplitCorrection=parentCarrier/targetCarrier*
+          GetChannelLikelihoodRatio(c2Reaction);
       double correctionSum=0.0;
       const double carbonMass=PIC::MolecularData::GetMass(cSpecies);
       const double parentSpeed2=validationVelocity[0]*validationVelocity[0]+
@@ -1816,6 +2011,292 @@ bool Comet::Chemistry::ValidateDaughterPacketSplitting(
 #endif
 }
 
+bool Comet::Chemistry::ValidateChannelImportanceSampling(
+    long int eventsPerFamily) {
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ != _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+  (void)eventsPerFamily;
+  if (PIC::ThisThread==0)
+    std::fprintf(stderr,
+        "channel-importance validation requires individual corrections\n");
+  return false;
+#else
+  namespace Accumulator=ChemicalSolver::SystematicResidualAccumulator;
+  if (!Enabled || !ChannelImportanceSamplingEnabled) {
+    if (PIC::ThisThread==0)
+      std::fprintf(stderr,
+          "channel-importance validation requires enabled Stage-7 chemistry\n");
+    return false;
+  }
+  if (eventsPerFamily<1000 || !ParentReactionRatesReady) {
+    if (PIC::ThisThread==0)
+      std::fprintf(stderr,
+          "channel-importance validation requires at least 1000 events and initialized rates\n");
+    return false;
+  }
+
+  const ChemicalSolver::cReactionNetwork &network=GetNetwork();
+  auto uniformFor=[](std::uint64_t event,std::uint64_t stream,
+      std::uint64_t parent) {
+    std::uint64_t key=Accumulator::Combine(event,stream);
+    key=Accumulator::Combine(key,parent);
+    const std::uint64_t bits=Accumulator::Mix(key);
+    return static_cast<double>(bits>>11)*0x1.0p-53;
+  };
+  auto select=[](const std::vector<double> &probability,double uniform) {
+    std::size_t selected=probability.size()-1;
+    double remainder=uniform;
+    for (std::size_t channel=0;channel<probability.size();channel++) {
+      remainder-=probability[channel];
+      if (remainder<=0.0) {
+        selected=channel;
+        break;
+      }
+    }
+    return selected;
+  };
+  auto normalizedError=[](long double actual,long double expected,
+      long double variance,long long samples) {
+    const long double sigma=std::sqrt(std::max(0.0L,
+        static_cast<long double>(samples)*variance));
+    const long double floor=4096.0L*std::numeric_limits<double>::epsilon()*
+        std::max(1.0L,std::fabs(expected));
+    return static_cast<double>(std::fabs(actual-expected)/
+        std::max(8.0L*sigma,floor));
+  };
+
+  if (PIC::ThisThread==0)
+    std::printf("Channel-importance validation: events/family=%ld ranks=%d "
+        "deterministic-global-events=on\n",eventsPerFamily,
+        PIC::nTotalThreads);
+
+  bool allPass=true;
+  int familyCount=0,biasedFamilyCount=0,reactionCount=0,sinkCount=0;
+  bool coveredMany=false,coveredRare=false,coveredReducedRare=false;
+  bool coveredPacket=false;
+  for (int parent=0;parent<PIC::nTotalSpecies;parent++) {
+    const cParentReactionRateCache &cache=ParentReactionRates[parent];
+    if (!(cache.TotalRate>0.0) || cache.Channels.empty()) continue;
+    familyCount++;
+    if (cache.ImportanceConfigured) biasedFamilyCount++;
+    if (cache.Channels.size()>=3 && cache.ImportanceConfigured)
+      coveredMany=true;
+
+    const std::size_t channels=cache.Channels.size();
+    std::vector<unsigned long long> localCount(2*channels,0),
+        globalCount(2*channels,0);
+    long long localReacted=0,globalReacted=0;
+    // Derive a nontrivial survival test from the actual total rate.  Both arms
+    // reuse the same occurrence uniform and therefore must have exactly the
+    // same reacted/surviving parent set; only their conditional channel draw
+    // is allowed to differ.
+    const double validationTimeStep=-std::log(0.375)/cache.TotalRate;
+    const double reactionProbability=
+        1.0-std::exp(-cache.TotalRate*validationTimeStep);
+    for (long int event=PIC::ThisThread;event<eventsPerFamily;
+         event+=PIC::nTotalThreads) {
+      if (uniformFor(static_cast<std::uint64_t>(event),0,
+          static_cast<std::uint64_t>(parent))>=reactionProbability) continue;
+      localReacted++;
+      const double channelUniform=uniformFor(
+          static_cast<std::uint64_t>(event),1,
+          static_cast<std::uint64_t>(parent));
+      const std::size_t analog=select(cache.PhysicalProbabilities,
+          channelUniform);
+      const std::size_t biased=select(cache.SelectionProbabilities,
+          channelUniform);
+      localCount[analog]++;
+      localCount[channels+biased]++;
+
+      // Drive the real production diagnostic accumulator with the same
+      // deterministic local selections used by this validator.  Every MPI
+      // rank records only its event-ID partition; WriteSamplingReport below
+      // performs the ordinary collective reduction.  This closes the durable
+      // CSV/JSON metadata path in addition to checking the estimator printed
+      // in this log.  cache.TotalRate is used as a finite synthetic parent
+      // carrier rate, so the stored weighted-channel rate obeys the exact
+      // production definition parentRate*L without requiring a model particle.
+      const std::size_t selectedReaction=cache.Channels[biased];
+      Comet::Diagnostics::RecordReactionSelection(selectedReaction,
+          network.GetReaction(selectedReaction).ProductCount==0,
+          cache.LikelihoodRatios[biased],
+          cache.TotalRate*cache.LikelihoodRatios[biased]);
+    }
+    MPI_Allreduce(localCount.data(),globalCount.data(),
+        static_cast<int>(globalCount.size()),MPI_UNSIGNED_LONG_LONG,MPI_SUM,
+        MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce(&localReacted,&globalReacted,1,MPI_LONG_LONG,MPI_SUM,
+        MPI_GLOBAL_COMMUNICATOR);
+
+    bool familyPass=globalReacted>0;
+    long double familyWeight=0.0L,familyWeight2=0.0L;
+    long double exactMoment[6]={0.0L,0.0L,0.0L,0.0L,0.0L,0.0L};
+    long double analogMoment[6]={0.0L,0.0L,0.0L,0.0L,0.0L,0.0L};
+    long double biasedMoment[6]={0.0L,0.0L,0.0L,0.0L,0.0L,0.0L};
+    long double analogFirst[6]={0.0L,0.0L,0.0L,0.0L,0.0L,0.0L};
+    long double analogSecond[6]={0.0L,0.0L,0.0L,0.0L,0.0L,0.0L};
+    long double biasedFirst[6]={0.0L,0.0L,0.0L,0.0L,0.0L,0.0L};
+    long double biasedSecond[6]={0.0L,0.0L,0.0L,0.0L,0.0L,0.0L};
+    const double parentVelocity[3]={400.0,-120.0,55.0};
+    const double parentMass=PIC::MolecularData::GetMass(parent);
+    const double parentSpeed2=parentVelocity[0]*parentVelocity[0]+
+        parentVelocity[1]*parentVelocity[1]+
+        parentVelocity[2]*parentVelocity[2];
+
+    for (std::size_t channel=0;channel<channels;channel++) {
+      const std::size_t reactionIndex=cache.Channels[channel];
+      const ChemicalSolver::cReaction &reaction=
+          network.GetReaction(reactionIndex);
+      const double physical=cache.PhysicalProbabilities[channel];
+      const double biased=cache.SelectionProbabilities[channel];
+      const double likelihood=cache.LikelihoodRatios[channel];
+      const unsigned long long analogSelections=globalCount[channel];
+      const unsigned long long biasedSelections=globalCount[channels+channel];
+      const double weighted=biasedSelections*likelihood;
+      const double expected=globalReacted*physical;
+      const double selectionSigma=std::sqrt(globalReacted*biased*
+          (1.0-biased));
+      const double weightedVariance=globalReacted*physical*physical*
+          (1.0/biased-1.0);
+      const double weightedSigma=std::sqrt(std::max(0.0,weightedVariance));
+      const double selectionAllowed=std::max(8.0*selectionSigma,
+          4096.0*std::numeric_limits<double>::epsilon()*
+              std::max(1.0,globalReacted*biased));
+      const double weightedAllowed=std::max(8.0*weightedSigma,
+          4096.0*std::numeric_limits<double>::epsilon()*
+              std::max(1.0,expected));
+      bool reactionPass=std::fabs(static_cast<double>(biasedSelections)-
+          globalReacted*biased)<=selectionAllowed &&
+          std::fabs(weighted-expected)<=weightedAllowed &&
+          likelihood==physical/biased && physical>0.0 && biased>0.0;
+      const double analogVariance=physical*(1.0-physical);
+      const double biasedVariance=physical*physical*(1.0/biased-1.0);
+      const double varianceRatio=analogVariance>0.0 ?
+          biasedVariance/analogVariance : 1.0;
+      if (physical<0.05 && cache.ImportanceConfigured) {
+        coveredRare=true;
+        if (biased>physical && varianceRatio<1.0)
+          coveredReducedRare=true;
+      }
+      if (GetDaughterPacketCount(reactionIndex)>1 &&
+          cache.ImportanceConfigured) coveredPacket=true;
+      if (reaction.ProductCount==0) sinkCount++;
+      reactionCount++;
+      familyWeight+=biasedSelections*likelihood;
+      familyWeight2+=biasedSelections*likelihood*likelihood;
+
+      long double observable[6]={0.0L,0.0L,0.0L,0.0L,0.0L,0.0L};
+      if (reaction.ProductCount!=0) {
+        long double concrete=0.0L,trackedMass=0.0L;
+        for (std::size_t term=0;term<reaction.ProductCount;term++) {
+          const ChemicalSolver::cStoichiometricTerm &product=
+              network.GetProductTerm(reactionIndex,term);
+          concrete+=product.Coefficient;
+          trackedMass+=product.Coefficient*
+              PIC::MolecularData::GetMass(product.Species);
+        }
+        observable[0]=concrete;
+        observable[1]=trackedMass;
+        observable[2]=parentMass*parentVelocity[0];
+        observable[3]=parentMass*parentVelocity[1];
+        observable[4]=parentMass*parentVelocity[2];
+        observable[5]=0.5L*parentMass*parentSpeed2+
+            reaction.ExcessEnergyJ;
+      }
+      for (int moment=0;moment<6;moment++) {
+        const long double value=observable[moment];
+        exactMoment[moment]+=globalReacted*physical*value;
+        analogMoment[moment]+=analogSelections*value;
+        biasedMoment[moment]+=biasedSelections*likelihood*value;
+        analogFirst[moment]+=physical*value;
+        analogSecond[moment]+=physical*value*value;
+        biasedFirst[moment]+=physical*value;
+        biasedSecond[moment]+=biased*likelihood*likelihood*value*value;
+      }
+
+      if (PIC::ThisThread==0)
+        std::printf("%s channel-importance reaction=%s parent=%d "
+            "physical=%.17e biased=%.17e likelihood=%.17e analog=%llu "
+            "selected=%llu weighted=%.17e expected=%.17e sigma=%.17e "
+            "variance-ratio=%.17e sink=%d packets=%ld\n",
+            reactionPass ? "PASS" : "FAIL",reaction.Id,parent,physical,
+            biased,likelihood,analogSelections,biasedSelections,weighted,
+            expected,weightedSigma,varianceRatio,
+            reaction.ProductCount==0 ? 1 : 0,
+            GetDaughterPacketCount(reactionIndex));
+      familyPass=reactionPass && familyPass;
+    }
+
+    const double familyEss=familyWeight2>0.0L ?
+        static_cast<double>(familyWeight*familyWeight/familyWeight2) : 0.0;
+    const double familyEssFraction=globalReacted>0 ?
+        familyEss/globalReacted : 0.0;
+    familyPass=familyEss>=1.0 &&
+        familyEss<=globalReacted*(1.0+1.0e-12) && familyPass;
+
+    double maximumAnalogZ=0.0,maximumBiasedZ=0.0;
+    for (int moment=0;moment<6;moment++) {
+      const long double analogVariance=std::max(0.0L,
+          analogSecond[moment]-analogFirst[moment]*analogFirst[moment]);
+      const long double biasedVariance=std::max(0.0L,
+          biasedSecond[moment]-biasedFirst[moment]*biasedFirst[moment]);
+      maximumAnalogZ=std::max(maximumAnalogZ,
+          normalizedError(analogMoment[moment],exactMoment[moment],
+              analogVariance,globalReacted));
+      maximumBiasedZ=std::max(maximumBiasedZ,
+          normalizedError(biasedMoment[moment],exactMoment[moment],
+              biasedVariance,globalReacted));
+    }
+    familyPass=maximumAnalogZ<=1.0 && maximumBiasedZ<=1.0 && familyPass;
+    if (PIC::ThisThread==0) {
+      std::printf("%s channel-importance family parent=%d channels=%zu "
+          "total-rate=%.17e trials=%ld reacted=%lld analog-loss=%lld "
+          "biased-loss=%lld family-ess=%.17e ess-fraction=%.17e "
+          "configured=%d\n",familyPass ? "PASS" : "FAIL",parent,
+          channels,cache.TotalRate,eventsPerFamily,globalReacted,
+          globalReacted,globalReacted,familyEss,familyEssFraction,
+          cache.ImportanceConfigured ? 1 : 0);
+      std::printf("%s channel-importance moments parent=%d "
+          "analog-max-z=%.17e biased-max-z=%.17e\n",
+          familyPass ? "PASS" : "FAIL",parent,maximumAnalogZ,
+          maximumBiasedZ);
+    }
+    allPass=familyPass && allPass;
+  }
+
+  // Require the staged validation policy to cover a multi-channel family, a
+  // rare branch whose analytic variance is reduced, a neutral/sink family,
+  // and a packet-split biased reaction.  Passing with only identity rows
+  // would not close the Stage-7 implementation gate.
+  allPass=familyCount>0 && biasedFamilyCount>0 && reactionCount>0 &&
+      sinkCount>0 && coveredMany && coveredRare && coveredReducedRare &&
+      coveredPacket && allPass;
+  int localPass=allPass ? 1 : 0,globalPass=0;
+  MPI_Allreduce(&localPass,&globalPass,1,MPI_INT,MPI_MIN,
+      MPI_GLOBAL_COMMUNICATOR);
+
+  // Exercise the actual Stage-7 serializer in every accepted decomposition.
+  // A high, reserved output index makes the focused artifact unambiguous and
+  // avoids collision with ordinary science output indices.  The integrated
+  // runner launches each decomposition in its own immutable case directory.
+  const long int diagnosticOutputIndex=7000000+PIC::nTotalThreads;
+  const std::vector<double> noPreviousProfile(PIC::nTotalSpecies,0.0);
+  Comet::Diagnostics::WriteSamplingReport(eventsPerFamily,
+      diagnosticOutputIndex,eventsPerFamily,noPreviousProfile,false);
+  if (PIC::ThisThread==0) {
+    std::printf("%s channel-importance diagnostics output=%ld "
+        "csv=PT/diagnostics/comet_stage7_importance.out=%ld.csv "
+        "json=PT/diagnostics/comet_stage7_importance.out=%ld.json\n",
+        globalPass ? "PASS" : "FAIL",diagnosticOutputIndex,
+        diagnosticOutputIndex,diagnosticOutputIndex);
+    std::printf("Channel-importance validation result: %s families=%d "
+        "biased-families=%d reactions=%d sinks=%d events=%ld\n",
+        globalPass ? "PASS" : "FAIL",familyCount,biasedFamilyCount,
+        reactionCount,sinkCount,eventsPerFamily);
+  }
+  return globalPass!=0;
+#endif
+}
+
 void Comet::Chemistry::BeginBatchedModel() {
   LocalChemistryAllocationPressure=false;
 
@@ -1959,14 +2440,40 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
     return true;
   }
 
-  double selector=rnd()*totalRate;
+  std::size_t selectedSlot=parentRates.Channels.size()-1;
   std::size_t selected=parentRates.Channels.back();
-  for (std::size_t i=0;i<parentRates.Channels.size();i++) {
-    selector-=parentRates.Rates[i];
-    if (selector<=0.0) {
-      selected=parentRates.Channels[i];
-      break;
+  if (!ChannelImportanceSamplingEnabled ||
+      !parentRates.ImportanceConfigured) {
+    // Compatibility boundary: retain the exact historical multiply and
+    // left-to-right rate subtraction for every analog family.  Enabling a
+    // policy for another parent therefore does not perturb this family's
+    // selection thresholds or random-number consumption.
+    double selector=rnd()*totalRate;
+    for (std::size_t i=0;i<parentRates.Channels.size();i++) {
+      selector-=parentRates.Rates[i];
+      if (selector<=0.0) {
+        selectedSlot=i;
+        selected=parentRates.Channels[i];
+        break;
+      }
     }
+  }
+  else {
+    double selector=rnd();
+    for (std::size_t i=0;i<parentRates.Channels.size();i++) {
+      selector-=parentRates.SelectionProbabilities[i];
+      if (selector<=0.0) {
+        selectedSlot=i;
+        selected=parentRates.Channels[i];
+        break;
+      }
+    }
+  }
+  const double channelLikelihood=parentRates.LikelihoodRatios[selectedSlot];
+  if (!(channelLikelihood>0.0) || !std::isfinite(channelLikelihood)) {
+    std::fprintf(stderr,
+        "invalid channel-importance likelihood for reaction %zu\n",selected);
+    std::abort();
   }
   const ChemicalSolver::cReaction &reaction=network.GetReaction(selected);
   const long int reactionPacketCount=GetDaughterPacketCount(selected);
@@ -2068,7 +2575,8 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
     // planner below divides each exact unsplit correction across packets.
     daughterMultiplicity[product]=reactionPacketCount;
     unsplitDaughterCorrection[product]=
-        parentPhysicalWeight*productTimeStep/(baseWeight*timeStep);
+        parentPhysicalWeight*productTimeStep/(baseWeight*timeStep)*
+        channelLikelihood;
 #else
     if (ResidualSamplingMode==ResidualSampling::RandomPhaseSystematic) {
       namespace Accumulator=
@@ -2180,7 +2688,8 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
     if (!Comet::Diagnostics::Enabled) return;
     const double parentRate=parentPhysicalWeight/timeStep;
     Comet::Diagnostics::RecordReactionSelection(selected,
-        reaction.ProductCount==0);
+        reaction.ProductCount==0,channelLikelihood,
+        parentRate*channelLikelihood);
     Comet::Diagnostics::RecordChemicalDestruction(parentSpecies,parentRate);
 
     struct cTermDiagnostic {
@@ -2218,7 +2727,8 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
       // final binary64 remainder.  Their totals therefore expose any carrier
       // reconstruction error instead of assuming it away.
       const double expectedPacketRate=
-          parentRate/static_cast<double>(reactionPacketCount);
+          parentRate*channelLikelihood/
+          static_cast<double>(reactionPacketCount);
       const double productCarrierRate=
           node->block->GetLocalParticleWeight(species)/
           node->block->GetLocalTimeStep(species);

@@ -16,7 +16,13 @@ extern bool Enabled;
 void Initialize();
 
 void RecordEligibleParentVisit(std::size_t reaction);
-void RecordReactionSelection(std::size_t reaction,bool neutralSink);
+// Record one committed channel selection.  likelihoodRatio and
+// weightedChannelRate are Stage-7 metadata: the latter is the selected
+// parent's represented physical rate multiplied by q/q*.  Defaults retain
+// source compatibility for correction-free/off-mode callers; when channel
+// importance sampling is enabled, production supplies both values explicitly.
+void RecordReactionSelection(std::size_t reaction,bool neutralSink,
+    double likelihoodRatio=1.0,double weightedChannelRate=0.0);
 void RecordAllocationDeferral(std::size_t reaction);
 void RecordEmergencyRequest();
 

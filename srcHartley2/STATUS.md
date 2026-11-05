@@ -4664,3 +4664,216 @@ existing Stage 0--5 sequence above, then add these Stage-6-specific steps:
     Rubin comparison to the user, then stop before any operation on `master`.
 
 No AMPS or MPI process is active at this handoff. No commit or merge was made.
+
+## Stage 7 stochastic channel importance sampling completed (2026-11-05)
+
+Stage 7 is implemented and accepted as a focused implementation/compatibility
+stage on branch `1d_comet_dev`. The pre-Stage-7 branch tip remains
+`83d24f9222c941deeb8e009a9e0ff89d4e56ce46`; no commit, merge, branch switch,
+or operation on `master` was performed. The unrelated pre-existing tracked
+`Makefile` edit remains outside this work.
+
+The implementation biases only the channel selected *after* an ordinary
+physical reaction event has occurred. For one configured unit-unimolecular
+parent family, the input must supply a strictly positive target probability
+`q*` for every positive-rate sibling, including product-free sinks, and the
+family must sum to one. The total physical reaction rate, parent lifetime, and
+parent deletion are unchanged. A selected productive channel receives
+likelihood `L=q/q*`; Stage 4 applies `L` to the unsplit product correction and
+Stage 6 then creates `N` packets carrying `L/N` each. Sinks produce no model
+particle but remain in selection and diagnostics. Unconfigured families use
+the former raw-rate subtraction selector and preserve its RNG path.
+
+### Stage-7 file inventory and rationale
+
+New source and test files:
+
+- `input/CometChannelImportancePolicy.pm` parses stable, case-sensitive
+  reaction selectors, resolves complete families, rejects partial/duplicate/
+  unknown/zero-rate/non-unit policies, checks normalization, and emits the
+  generated C++ arrays.
+- `input/test_comet_channel_importance_policy.pl` covers default-off identity,
+  two- and many-channel families, sinks, tiny/dominant probabilities, record
+  order, malformed policies, and generated sentinels.
+- `srcHartley2/ChannelImportancePlanner.h` is the geometry-neutral pure
+  selector/likelihood planner used to test analog identity, boundary choices,
+  weighted moments, variance, and ESS without initializing AMPS.
+- `srcHartley2/CometChannelImportancePolicy.generated.h` is a safe source-tree
+  fallback with no configured reaction. A configured build generates the
+  69-row application-specific copy in `build/main/`; do not hand-edit either
+  generated table.
+- `srcHartley2/tests/test_stage7_channel_importance_planner.cpp` validates the
+  pure planner for analog, two-/many-channel, dominant/tiny, disabled, boundary,
+  moment, variance, ESS, and error cases.
+- `srcHartley2/tests/run_stage7_channel_importance_tests.sh` runs the Perl and
+  pure C++ tests without modifying a configured build.
+- `srcHartley2/tests/test_stage7_channel_importance_logs.py` strictly checks
+  1/4/12-rank runtime logs and CSV/JSON sidecars, including reaction coverage,
+  family coverage, likelihood identities, uncertainty, ESS, weighted rates,
+  provenance, and rank-decomposition equivalence. Its floating tolerance is
+  limited to accumulated binary64 fields; identifiers, counts, metadata,
+  `q`, `q*`, and `L` remain strict.
+- `srcHartley2/tests/run_stage7_integrated_tests.sh` runs an immutable frozen
+  executable at 1, 4, and 12 MPI ranks and replays the Stage-5 window,
+  Stage-6 packet, and Stage-7 channel validators into a new output root.
+
+Modified source and test files:
+
+- `input/CometReactionNetwork.pm` now exposes a defensive ordered reaction
+  view for policy construction without changing the physical database.
+- `input/hartley2.pl` accepts `ChemistryChannelImportanceMode` and
+  `ChemistryChannelBiasedProbability(REACTION:<ID>)`, validates prerequisites,
+  and generates the policy header. The root `hartley2.pl` was refreshed only
+  as the normal mechanical configure copy and must not be staged as source.
+- `srcHartley2/CometChemistry.h/.cpp` cache and validate complete configured
+  families, preserve the exact analog path for unconfigured families, sample
+  configured `q*`, apply `L` exactly once before packet division, retain
+  unweighted parent destruction, record sinks, and provide the deterministic
+  initialized validator. Capacity forecasts use the combined Stage-6
+  transaction cardinality, not an after-allocation repair.
+- `srcHartley2/CometDiagnostics.h/.cpp` add a separate Stage-7 CSV/JSON schema
+  with per-reaction selection, likelihood, likelihood-square, and weighted-rate
+  sums plus parent-family ESS. Keeping a separate schema avoids changing the
+  Stage-0 production diagnostic contract.
+- `srcHartley2/RadialMain.cpp` adds
+  `--validate-channel-importance --chemistry-validation-events N`.
+- `srcHartley2/tests/run_all_stage_tests.sh` adds Stage-7 pure, provenance,
+  and matrix jobs; archived/fresh Stage-7 selection; sidecar preflight; and
+  the new 25-test/eight-group summary.
+- `srcHartley2/CHEMISTRY.md`, `README.md`, and
+  `GENERIC_COMET_DESIGN.md` document the algorithm, input, prerequisites,
+  diagnostics, tests, generic-comet boundary, limitations, and merge order.
+- This file and root `handoff.md` record validation and later integration
+  instructions.
+
+No AMPS core source under `src/`, `srcInterface/`, `srcGeneral/`, `meshAMR/`,
+or the shared model libraries was added or modified for Stage 7. The feature
+uses the application-side Stage-4 correction carrier, Stage-5 windows, and
+Stage-6 transaction machinery already developed on this branch. The clean
+build copied application sources into `build/`; those copies are disposable
+artifacts, not core edits.
+
+### Accepted Stage-7 evidence
+
+The validation-only input used complete equal-probability C2 and H2O families:
+
+```text
+ChemistryChannelImportanceMode=on
+C2_2C=0.5                 C2_ION=0.5
+H2O_OH_H=0.25             H2O_O_H2=0.25
+H2O_O_2H=0.25             H2O_ION=0.25
+```
+
+These are test controls, not a recommended Halley policy. The accepted,
+immutable archive is:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/stage7-channel-importance-full-20261105-r2
+```
+
+Its end-to-end runner passed:
+
+```text
+PASS Stage-5 correction-window integrated matrix 1rank=pass 4rank=pass 12rank=pass
+PASS Stage-6 daughter-packet integrated matrix 1rank=pass 4rank=pass 12rank=pass reactions=46 sinks=23 packet-cases=4 events=200000
+PASS Stage-7 channel-importance integrated matrix 1rank=pass 4rank=pass 12rank=pass families=27 reactions=69 sidecar-rows=69 events=200000
+```
+
+The archive's `provenance/SHA256SUMS` verifies:
+
+```text
+62d3a1e53eb2fa873c2a86f07a5000cbcb5813817ebf8267ba07986bd9ef92a8  amps.stage7-channel-importance
+41ca2daa708a5cfdeaf2e7293579ecaa1d91b8fb9b479a05dd16c0fdeada4891  halley1d.stage7-validation.input
+eb968bf7d4b95f43564070c8f64fecf772a989aafa63da8477980483a726c971  picGlobal.stage7-validation.dfn
+e4f958f113d41f7d71b63ed7e8b093543ac978b065355e97a8f1974943fd1cd3  CometChannelImportancePolicy.generated.h
+274d5170bbaae9b74ea41a81a81034ba8c79ce03e7fb014b848eb454f7264b87  CometDaughterPacketPolicy.generated.h
+```
+
+The unsuffixed Stage-7 archive is development evidence only: every AMPS case
+passed, but the first post-run parser used an unrealistically tight repeated-
+addition tolerance. The accepted `-r2` parser applies a documented
+`8*N*epsilon` bound only to accumulated floating fields. Never relabel,
+combine, or substitute the unsuffixed archive for `-r2`.
+
+After acceptance, `.amps.conf` and canonical `input/halley1d.input` were
+restored. The exact `/data/vtenishe/COMET1D/AMPS/build` directory was removed
+before a clean canonical compile. The resulting build is individual-particle-
+correction off, Stage-6 packet counts all one, and all 69 Stage-7 policy rows
+unconfigured. Current hashes are:
+
+```text
+a99f39b913f2d59109c87e724b1179549dbd8115ad13761c55a76a439ea94ed4  amps
+0d89b536e6daa2dea7251bb57920fb6f1dd2546efd7c454d25b6dcccc26eccf5  input/halley1d.input
+c3d2bca73f068cff357ae6d1f5002c97dc738b6a3190c712b2787890c92e2726  build/pic/picGlobal.dfn
+b120edd6fe20c0965a7bc71491b75439cb787d731d9d86a7e2d409a6ff6fc2b0  build/main/RadialSimulation.cpp
+7f4e0be8f6a6f09e0b39a28642200839a1d32a7d195953befd043609632a9fbf  build/main/CometChannelImportancePolicy.generated.h
+c1330629ecb9e0048d716085dafba93ea098959f1bc9cb842ea8616d933cf5ae  srcHartley2/CometChannelImportancePolicy.generated.h
+```
+
+The final complete archived replay passed:
+
+```text
+Hartley2 all-stage test summary status=PASS stage4-mode=archived stage5-mode=archived stage6-mode=archived stage7-mode=archived
+  tests: run=25 passed=25 skipped=0 failed=0
+  test-groups: run=8 passed=8 skipped=0 failed=0
+PASS Hartley2 all-stage suite tests=25 test-groups=8 stage4-mode=archived stage5-mode=archived stage6-mode=archived stage7-mode=archived
+```
+
+This closes Stage 7 as an implementation/focused-compatibility stage only.
+It does not choose scientifically optimal `q*`, prove transported steady-state
+variance reduction, or close the Rubin comparison. Deterministic all-channel
+branching and total-reaction forcing are intentionally absent. The runtime
+executor remains validated only for DIM1; the policy/parser/planner are
+geometry-neutral but a future DIM2/DIM3 executor must satisfy the same
+correction, capacity, conservation, and diagnostics contracts.
+
+### Detailed Stage-7 additions to the later master-integration procedure
+
+Do not merge yet. After Stage-9 science validation and only after explicit
+user authorization, extend the prior Stage 0--6 merge sequence as follows:
+
+1. Record the exact development tip, target `master` tip, merge base, dirty
+   tracked files, untracked/generated exclusions, and SHA-256 manifests for
+   all accepted archives. Work on a disposable clean integration branch; do
+   not switch this validation worktree to `master`.
+2. Integrate and validate Stages 0--6 first. Stage 7 depends on Stage-4
+   per-particle correction, Stage-5 post-transaction windows, and Stage-6
+   packet accounting; conflict resolution must not bypass those contracts.
+3. Merge the defensive reaction descriptor in `CometReactionNetwork.pm`, then
+   `CometChannelImportancePolicy.pm` and its Perl test. Prove strict complete-
+   family validation before changing runtime code.
+4. Merge `hartley2.pl` generation and the fallback header. Configure one
+   omitted/off input and one complete-family on-input; inspect all stable IDs,
+   sinks, zero-rate exclusions, normalization, and all-zero off arrays. The
+   root parser copy is mechanical and build/root generated artifacts are not
+   source files.
+5. Add `ChannelImportancePlanner.h` and its pure test. Require exact analog
+   selector identity, analytic weighted means/variance/ESS, boundary behavior,
+   and all rejection cases before runtime integration.
+6. Merge `CometChemistry.h/.cpp`. Preserve the raw-rate/RNG branch for
+   unconfigured families, physical total event probability, unweighted parent
+   deletion, sink selection, one application of `L`, Stage-6 `L/N`, allocation
+   forecasts, and rollback invariants.
+7. Merge the separate diagnostics schema and CLI validator, followed by the
+   strict parser/runners and general-runner jobs. Do not fold Stage-7 fields
+   into the stable Stage-0 production schema during conflict resolution.
+8. Remove the exact build directory, make a clean Stage-7-on build, freeze its
+   executable/input/generated headers, and run Stage-5/6/7 validators at 1, 4,
+   and 12 ranks into a new immutable archive. Never overwrite the accepted
+   `stage7-channel-importance-full-20261105-r2` evidence.
+9. Restore canonical `input/halley1d.input`, remove the exact build directory
+   again, clean-build the correction/packet/importance-off application, and
+   rerun all 25 tests in eight groups. Review off-mode RNG identity, parent
+   lifetime, sinks, yields, conservation, ESS, capacity, and MPI invariance.
+10. Run independent-seed transported Stage-9 pilots and a new Rubin comparison
+    before proposing production `q*`. Do not promote the equal C2/H2O test
+    policy to a science input.
+11. Exclude the unrelated `Makefile`, root generated inputs/parsers, `build/`,
+    `amps`, meshes, `PT*`, logs, raw validation archives, and failed diagnostic
+    archives unless the user separately requests a curated manifest.
+12. Present the exact integration diff and commit range, exclusions, hashes,
+    test matrix, performance/memory effects, science uncertainty/closure, and
+    Rubin products to the user, then stop before any `master` operation.
+
+No AMPS/MPI validation process is active after the final replay. No commit or
+merge was made.

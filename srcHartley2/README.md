@@ -1321,11 +1321,59 @@ broad validation windows are not production Halley parameters. A transported
 independent-seed variance/cost and flux-closure study remains necessary before
 enabling packets in a science input.
 
-## Complete Stage 0--6 test runner
+## Stage 7 stochastic reaction-channel importance sampling
 
-The general runner now has seven groups. Archived mode checks the Stage-6 pure
-policy/planner job and frozen packet matrix, including its Stage-5 dependency
-replay, in addition to every Stage 0--5 job:
+Stage 7 changes only the conditional channel choice after the ordinary total
+reaction test succeeds.  A configured positive-rate, unit-unimolecular parent
+family must list every sibling, including product-free ionization sinks, with
+strictly positive target probabilities `q*` that sum to one:
+
+```text
+ChemistryChannelImportanceMode=on
+ChemistryChannelBiasedProbability(REACTION:C2_2C)=0.5
+ChemistryChannelBiasedProbability(REACTION:C2_ION)=0.5
+```
+
+Stable reaction IDs are case-sensitive.  Partial families, duplicates,
+unknown/zero-rate/non-unit targets, disabled-mode records, and non-normalized
+families stop preprocessing.  Unconfigured families retain the historical
+`rnd()*totalRate` raw-rate subtraction and RNG count.  For a selected channel,
+the product correction receives `L=q/q*` before Stage 6 divides it among `N`
+packets, so each packet carries `L/N`.  Parent destruction is not weighted;
+sinks create no daughter but remain present in diagnostics.
+
+Run the pure input-policy and planner tests with:
+
+```sh
+srcHartley2/tests/run_stage7_channel_importance_tests.sh
+```
+
+The initialized validator uses `--validate-channel-importance` and writes a
+separate Stage-7 CSV/JSON pair containing raw selections, `q`, `q*`, `L`,
+likelihood sums, weighted channel rate, and parent-family ESS.  The integrated
+runner replays Stages 4--6 and validates 1/4/12-rank deterministic identity:
+
+```sh
+srcHartley2/tests/run_stage7_integrated_tests.sh \
+  --executable /absolute/path/to/stage7/amps \
+  --output-root /new/absolute/path/to/stage7-validation \
+  --chemistry-validation-events 200000
+```
+
+The accepted archive is
+`validation_runs/stage7-channel-importance-full-20261105-r2`.  Its validation
+policy uses equal target probabilities for the complete C2 and H2O families;
+those values test sinks, rare branches, variance changes, and Stage-6 `L/N`
+composition and are not production Halley bias parameters.  The accepted
+matrix covers 27 parent families and all 69 reactions at 200,000 events per
+family.  Deterministic all-channel branching remains deliberately deferred.
+
+## Complete Stage 0--7 test runner
+
+The general runner now has eight groups and 25 tests. Archived mode checks the
+Stage-7 pure policy/planner job and frozen importance matrix, including its
+Stage-4/5/6 dependency replay and CSV/JSON provenance, in addition to every
+Stage 0--6 job:
 
 ```sh
 srcHartley2/tests/run_all_stage_tests.sh --plan
@@ -1352,8 +1400,27 @@ srcHartley2/tests/run_all_stage_tests.sh \
   --stage6-output-root /new/absolute/path/to/stage6-validation
 ```
 
+Fresh Stage-7 mode requires a frozen importance-enabled binary and a new
+immutable output root:
+
+```sh
+srcHartley2/tests/run_all_stage_tests.sh \
+  --stage7-mode fresh \
+  --stage7-executable /absolute/path/to/stage7/amps \
+  --stage7-output-root /new/absolute/path/to/stage7-validation
+```
+
 The current build used by archived mode must remain correction-off because it
-is also the read-only Stage-3 parser fixture. The Stage-5 and Stage-6 logs are
-replayed from frozen archives; the runner never mutates input or `build/`. As before,
+is also the read-only Stage-3 parser fixture. The Stage-5/6/7 logs are replayed
+from frozen archives; the runner never mutates input or `build/`. As before,
 it counts every test and group, retains separate logs for failures/skips, and
 prints every failed test name and absolute log path.
+
+The final canonical-off replay completed with:
+
+```text
+Hartley2 all-stage test summary status=PASS stage4-mode=archived stage5-mode=archived stage6-mode=archived stage7-mode=archived
+  tests: run=25 passed=25 skipped=0 failed=0
+  test-groups: run=8 passed=8 skipped=0 failed=0
+PASS Hartley2 all-stage suite tests=25 test-groups=8 stage4-mode=archived stage5-mode=archived stage6-mode=archived stage7-mode=archived
+```

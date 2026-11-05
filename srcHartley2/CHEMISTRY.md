@@ -1045,53 +1045,229 @@ pure planner are geometry-neutral.
 
 ## Stage 7: reaction-channel importance sampling
 
-### Objective
+Stage 7 implements stochastic conditional-channel biasing. It does not force
+the parent to react: the parent total rate, exponential event probability,
+reaction position, and destruction count remain analog. Only the mutually
+exclusive channel selected after an ordinary total-reaction event is changed.
 
-Reduce variance from rare channel selection while leaving the total parent
-reaction probability analog.
+### Accepted input contract
 
-### Algorithm
+The exact input grammar is:
 
-If physical channel probability is `q_j` and the biased selection probability
-is `q_j*`, multiply every product packet from that channel by
+```text
+ChemistryChannelImportanceMode=ON
+ChemistryChannelBiasedProbability(REACTION:C2_2C)=0.5
+ChemistryChannelBiasedProbability(REACTION:C2_ION)=0.5
+```
+
+`REACTION:` is syntax, while the following reaction ID is stable and
+case-sensitive. Generated reaction-array indices, species selectors, group
+selectors, global defaults, and implicit remainders are intentionally not an
+input interface. A parent family remains analog unless at least one of its
+channels is named. Once one positive-rate unit-unimolecular channel is named,
+every positive-rate sibling for the same parent must be named, including
+product-free neutral sinks/ionization losses. Each requested `q*` must be
+finite and in `(0,1]`, and the complete family must sum to one within the
+strict parser tolerance. The runtime assigns the last positive interval the
+arithmetic remainder, so the actual selection measure closes at exactly one.
+
+The resolver rejects:
+
+- records paired with omitted or explicit `OFF` mode;
+- `ON` mode without any probability record;
+- duplicate, empty, unknown, or case-mismatched reaction IDs;
+- zero-rate and non-unit-unimolecular targets;
+- partial positive-rate sibling families;
+- zero, negative, non-finite, greater-than-one, or nonnumeric probabilities;
+- family sums outside the normalization tolerance; and
+- malformed reaction descriptors or generated arrays.
+
+An untouched family has generated `Configured=0` and
+`BiasedProbability=0`. With the mode omitted, every family follows the exact
+historical raw-rate selector. A configured one-channel family with `q*=1` is
+valid as an identity case but provides no variance reduction. A zero physical
+rate can never receive positive statistical support.
+
+Stage 7 requires comet chemistry, DIM1, individual particle corrections,
+Bernoulli residual mode, Stage-5 correction windows, and comet diagnostics.
+The mode is independently default-off. It does not require Stage-6 packet
+splitting, but it composes with it when both switches are enabled.
+
+### Runtime estimator and conservation contract
+
+For parent `s`, the existing cache retains each physical rate `k_j` and
+
+```text
+k_total = sum_j k_j,
+q_j     = k_j/k_total.
+```
+
+The total reaction test remains exactly
+`1-exp(-k_total*dt_parent)`. Unconfigured families then retain the historical
+`rnd()*k_total` and left-to-right raw-rate subtraction, including its random
+draw count and floating-point channel boundaries. Configured families use one
+uniform draw against the complete positive `q_j*` table. For the selected
+channel,
 
 ```text
 L_j = q_j/q_j*.
 ```
 
-For `N` equal packets, the correction is
+The parent is destroyed exactly once with its original analog carrier. This
+destruction must not be multiplied by `L_j`, because every channel in the
+family destroys the same already-reacted parent. A selected product-free sink
+therefore creates no daughter but records its raw selection and likelihood so
+its weighted channel yield remains auditable.
+
+For product species `d`, Stage 4's unsplit corrected carrier becomes
+
+```text
+c_daughter =
+    [W_parent*c_parent/dt_parent] /
+    [W_daughter/dt_daughter] * L_j.
+```
+
+If Stage 6 requests `N` independent complete daughter packets, its exact
+final-remainder planner partitions that value:
 
 ```text
 c_daughter,i =
-    [C_parent/(W_daughter/dt_daughter)] * L_j/N.
+    [W_parent*c_parent/dt_parent] /
+    [W_daughter/dt_daughter] * L_j/N,
 ```
 
-All enabled channel probabilities must remain normalized and positive where
-the physical rate is positive. A channel with zero physical rate cannot be
-made nonzero statistically. The input must refer to stable reaction IDs, not
-generated array indices.
+with the last packet carrying the arithmetic remainder. Thus Stage 7 changes
+no `K*N` allocation cardinality, recoil sampling, parent-slot reuse, tracker
+state, or transaction-capacity bound. Capacity rejection remains mutation- and
+commit-diagnostic-free. After the chemistry transaction, Stage-5 windows run
+normally on the likelihood-weighted corrections; they may keep, roulette, or
+split them without a Stage-7 exemption.
 
-An optional deterministic branching mode may instantiate every neutral
-channel for one analog parent reaction, with each branch weighted by its
-physical probability. Treat sink/ionization channels as weighted loss. This
-mode has a larger transaction size and requires its own capacity bound.
+For any channel observable `f_j`, the estimator is unbiased because
 
-### Tests
+```text
+sum_j q_j* L_j f_j = sum_j q_j f_j.
+```
 
-- Validate likelihood ratios and normalization for two-channel, many-channel,
-  dominant-channel, and very small-channel networks.
-- Compare analog and biased ensembles for product number, mass, momentum,
-  energy, and parent loss.
-- Prove that changing `q_j*` changes variance but not weighted mean.
-- Test reaction-ID parsing, duplicates, missing IDs, and biasing a disabled
-  channel.
+The application repeats all generated-family, positive-runtime-rate,
+normalization, and likelihood checks when it builds the rate cache. This
+catches stale or hand-edited generated headers before particle processing.
 
-### Exit criteria
+### Diagnostics and effective sample size
 
-- Parent total reaction rate and lifetime remain analog and unchanged.
-- Weighted channel yields agree with catalog branching fractions.
-- Bias factors and resulting effective sample sizes are reported in output
-  metadata.
+When Stage 7 is enabled, each committed selection records `L`, `L^2`, and the
+likelihood-weighted channel rate. Separate files preserve the legacy Stage-0
+schema and off-mode output identity:
+
+```text
+PT/diagnostics/comet_stage7_importance.out=<index>.csv
+PT/diagnostics/comet_stage7_importance.out=<index>.json
+```
+
+The Stage-7 schema reports stable reaction ID, parent, configured/sink flags,
+physical `q`, actual biased `q*`, `L`, raw selections, likelihood sums,
+weighted channel rate, and family totals. The sampled family effective sample
+size is
+
+```text
+ESS = (sum L)^2/sum(L^2).
+```
+
+This is selection-weight ESS for one parent-channel family. It is not a claim
+of independent transported particle samples after collisions, packet cloning,
+or Stage-5 resampling. Production diagnostics are mandatory when importance
+mode is on so sink yields and ESS cannot disappear silently.
+
+### Focused tests and evidence status
+
+The pure runner is:
+
+```sh
+srcHartley2/tests/run_stage7_channel_importance_tests.sh
+```
+
+Its policy suite covers default/off identity, stable case-sensitive IDs,
+complete two-/many-/single-channel families, sinks, tiny/dominant `q*`, input
+order, malformed/duplicate/unknown records, partial families, zero-rate and
+non-unit targets, normalization, generated-header sentinels, and defensive
+reaction descriptors. `ChannelImportancePlanner.h` covers exact analog
+rate-subtraction identity, selection boundaries, likelihoods, weighted means,
+variance, disabled channels, and analytic/sample ESS.
+
+The initialized runtime entry point is:
+
+```text
+--validate-channel-importance --chemistry-validation-events N
+```
+
+The runtime test must compare deterministic global-event analog and biased
+ensembles for every configured parent family, including sinks. It must require
+unchanged total parent events; physical weighted channel yields; number, mass,
+momentum, and energy agreement; the predicted variance change; valid ESS; and
+identical global statistics at 1, 4, and 12 MPI ranks. The Stage-6 real
+`K*N` transaction validator must also be replayed with Stage 7 enabled so
+stored daughter corrections prove the combined `L/N` rule. Stage-5 window and
+Stage-4 exact-chemistry dependencies must continue to pass with the same
+frozen executable.
+
+The completed focused evidence is:
+
+```text
+Comet channel-importance policy test passed
+PASS Stage-7 channel-importance planner analog-identity=1 two-channel=1 many-channel=1 dominant-tiny=1 disabled=1 boundaries=1 weighted-mean=1 variance=1 ess=1 errors=1
+PASS Stage-5 correction-window integrated matrix 1rank=pass 4rank=pass 12rank=pass
+PASS Stage-6 daughter-packet integrated matrix 1rank=pass 4rank=pass 12rank=pass reactions=46 sinks=23 packet-cases=4 events=200000
+PASS Stage-7 channel-importance integrated matrix 1rank=pass 4rank=pass 12rank=pass families=27 reactions=69 sidecar-rows=69 events=200000
+accepted archive: validation_runs/stage7-channel-importance-full-20261105-r2
+PASS Hartley2 all-stage suite tests=25 test-groups=8 stage4-mode=archived stage5-mode=archived stage6-mode=archived stage7-mode=archived
+```
+
+The archive freezes the Stage-7-on executable, validation input, generated
+core configuration, generated importance policy, and generated packet policy
+under `provenance/SHA256SUMS`. The first unsuffixed archive is development
+evidence: its AMPS cases passed, but the original parser tolerance was too
+tight for ordinary binary64 reduction-order roundoff. The accepted `-r2`
+archive completed the end-to-end runner after limiting an `8*N*epsilon` bound
+to accumulated diagnostic fields; integer counts, metadata, and `q/q*/L`
+remain strict. A focused validator closes implementation compatibility only;
+transported independent-seed science validation remains Stage 9.
+
+### Scope limitation and later master merge
+
+Deterministic all-channel branching is deferred. It is not an alternate
+Stage-7 mode in the current implementation. Such a mode would have to retain
+or explicitly represent the sink/loss branch, allocate several channel
+transactions for one analog event, introduce a separate hard capacity bound,
+and pass its own parent-survival and conservation proof. Do not infer this
+behavior from stochastic `q*` selection.
+
+For a later authorized master integration, preserve this order after Stages
+0--6 have passed on a disposable clean integration branch:
+
+1. add the defensive reaction-family descriptor, input policy module, and
+   pure Perl tests;
+2. add the pure planner and C++ unit test, proving analog identity before any
+   application runtime change;
+3. add the self-contained generated-header fallback and `hartley2.pl` parser,
+   then inspect one omitted/off input and one complete C2 family;
+4. add rate-cache policy validation and conditional selection while retaining
+   the byte-for-byte analog selection branch;
+5. apply `L` once to the Stage-4 unsplit correction before Stage-6 divides by
+   `N`; preserve Stage-5 scheduling and all transaction rollback invariants;
+6. add separate diagnostics/ESS output, CLI validation, strict log parser, and
+   1/4/12-rank runner;
+7. freeze and hash a clean Stage-7-on executable/input/generated policy, run
+   all prerequisite matrices into a new immutable archive, then restore and
+   clean-build the canonical Stage-7-off input;
+8. rerun the complete Stage 0--7 suite and review off-mode RNG/output identity,
+   parent lifetime, sink weighting, channel yields, conservation, ESS, and MPI
+   decomposition invariance; and
+9. present the exact diff, exclusions, hashes, validation records, and Stage-9
+   science limitations to the user, then stop before any `master` operation.
+
+Generated binaries, build copies, raw output, validation archives, and the
+pre-existing unrelated `Makefile` change must not enter the source commit.
+Documentation of a merge sequence is not permission to merge.
 
 ## Stage 8: optional total-reaction forcing
 
@@ -1242,12 +1418,18 @@ manifest. Wait for explicit user approval.
 
 ## Recommended immediate next action
 
-Stage 6 is implemented and focused-tested for its explicitly supported radial
-configuration. Do not start Stage 7 or merge to `master` without a separate
-user decision. The canonical correction-off build has been restored and the
-complete archived Stage 0--6 orchestrator passes. The next scientific action
-is still a transported independent-seed pilot: compare `N=1,2,4,8` using the
-same parent realization and compatible Stage-5 windows, measure variance per
-daughter and buffer/runtime cost, verify primary profiles and flux closure,
-and only then select production packet counts. Never select packet counts or
-windows by tuning to the Rubin curve.
+Stage 7 is implemented and focused-tested for its explicitly supported radial
+configuration. The canonical correction-off, packet-off, importance-off build
+has been restored and the complete archived Stage 0--7 orchestrator passes 25
+tests in eight groups. Do not start Stage 8 or merge to `master` without a
+separate user decision.
+
+The next scientific action is a transported independent-seed Stage-9 pilot.
+Compare the analog policy with candidate Stage-6 packet counts and complete
+Stage-7 conditional channel policies using identical physical inputs and
+documented independent seeds. Measure uncertainty per daughter, family ESS,
+flux closure, buffer use, and runtime; verify unchanged parent lifetime and
+primary profiles; and only then select production controls. The equal C2 and
+H2O probabilities in the accepted Stage-7 archive are validation fixtures,
+not calibrated Halley/Rubin parameters. Never select packet counts, windows,
+or `q*` values by tuning to the Rubin curve.

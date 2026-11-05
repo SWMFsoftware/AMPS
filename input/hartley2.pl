@@ -16,6 +16,7 @@ use CometPhysicsDatabase;
 use CometPopulationPolicy;
 use CometCorrectionWindowPolicy;
 use CometDaughterPacketPolicy;
+use CometChannelImportancePolicy;
 
 
 #my $command= $];
@@ -61,6 +62,7 @@ my $SurfaceResolutionIsSet=0;
 my $HeliocentricDistanceAUIsSet=0;
 my $CometRandomSeedIsSet=0;
 my $ChemistryModeIsSet=0;
+my $CometDiagnosticsEnabled=0;
 my $ChemistryResidualSamplingIsSet=0;
 my $ChemistryResidualSampling="BERNOULLI";
 my $ConfiguredGeometry="";
@@ -124,6 +126,8 @@ my $CorrectionWindowPolicy=
     CometCorrectionWindowPolicy->new(species=>\@SpeciesList);
 my $DaughterPacketPolicy=
     CometDaughterPacketPolicy->new(species=>\@SpeciesList);
+my $ChannelImportancePolicy=
+    CometChannelImportancePolicy->new(species=>\@SpeciesList);
 
 #add the model header to the pic.h
 open (PIC_H,">>$WorkingSourceDirectory/pic/pic.h") || die "Cannot open $WorkingSourceDirectory/pic/pic.h";
@@ -332,6 +336,7 @@ while ($line=<InputFile>) {
         unless $InputLine eq "ON" || $InputLine eq "OFF";
     ampsConfigLib::ChangeValueOfVariable("bool Comet::Diagnostics::Enabled",
         $InputLine eq "ON" ? "true" : "false","main/CometDiagnostics.cpp");
+    $CometDiagnosticsEnabled=($InputLine eq "ON") ? 1 : 0;
   }
   elsif ($InputLine eq "PHYSICSDATABASE") {
     ($InputLine,$InputComment)=split(' ',$InputComment,2);
@@ -581,6 +586,23 @@ while ($line=<InputFile>) {
     # Keep selector prefixes and stable reaction IDs exactly as supplied; the
     # common policy module alone owns their normalization and precedence.
     $DaughterPacketPolicy->add_count_record($LineOriginal,
+        "line $InputFileLineNumber ($InputFileName)");
+  }
+  elsif ($InputLine eq "CHEMISTRYCHANNELIMPORTANCEMODE") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    $InputLine=~s/ //g if defined $InputLine;
+    $ChannelImportancePolicy->set_mode($InputLine,
+        "line $InputFileLineNumber ($InputFileName)");
+    ampsConfigLib::ChangeValueOfVariable(
+        "bool Comet::Chemistry::ChannelImportanceSamplingEnabled",
+        $InputLine eq "ON" ? "true" : "false",
+        "main/CometChemistry.cpp");
+  }
+  elsif ($InputLine eq "CHEMISTRYCHANNELBIASEDPROBABILITY") {
+    # Stable, case-sensitive reaction IDs and the exact requested q* are
+    # parsed only by the common policy module.  No generated array index is an
+    # input interface.
+    $ChannelImportancePolicy->add_probability_record($LineOriginal,
         "line $InputFileLineNumber ($InputFileName)");
   }
   elsif ($InputLine eq "PARTICLEWEIGHTCORRECTIONWINDOWMODE") {
@@ -1450,6 +1472,34 @@ my $ResolvedDaughterPackets=
 $DaughterPacketPolicy->write_header(
     "$WorkingSourceDirectory/main/CometDaughterPacketPolicy.generated.h",
     $ResolvedDaughterPackets);
+
+# Stage 7 resolves complete positive-rate sibling families after the named
+# database and explicit reaction records have both loaded.  Corrections and
+# Stage-5 windows are required because the selected channel likelihood L=q/q*
+# travels on each daughter particle.  Diagnostics are mandatory so sinks,
+# weighted channel rates, and family ESS remain visible in production output.
+if ($ChannelImportancePolicy->is_enabled()) {
+  die "ChemistryChannelImportanceMode=ON requires ChemistryMode=ON\n"
+      unless chemistryIsEnabled(
+          "$WorkingSourceDirectory/main/CometChemistry.cpp");
+  die "ChemistryChannelImportanceMode=ON requires Dimension=1\n"
+      unless $Dimension==1;
+  die "ChemistryChannelImportanceMode=ON requires ParticleWeightCorrectionMode=ON\n"
+      unless individualParticleWeightCorrectionIsEnabled(
+          "$WorkingSourceDirectory/pic/picGlobal.dfn");
+  die "ChemistryChannelImportanceMode=ON requires ChemistryResidualSampling=BERNOULLI\n"
+      unless $ChemistryResidualSampling eq 'BERNOULLI';
+  die "ChemistryChannelImportanceMode=ON requires ParticleWeightCorrectionWindowMode=ON\n"
+      unless $CorrectionWindowPolicy->is_enabled();
+  die "ChemistryChannelImportanceMode=ON requires CometDiagnostics=ON\n"
+      unless $CometDiagnosticsEnabled;
+}
+my $ResolvedChannelImportance=
+    $ChannelImportancePolicy->validate_configuration_and_resolve(
+        reactions=>$ReactionNetwork->channel_importance_policy_reactions());
+$ChannelImportancePolicy->write_header(
+    "$WorkingSourceDirectory/main/CometChannelImportancePolicy.generated.h",
+    $ResolvedChannelImportance);
 
 ampsConfigLib::ChangeValueOfArray("double Comet::Model::SurfaceProductionRate\\[PIC::nTotalSpecies\\]",\@SurfaceProductionRate,"main/CometModel.cpp");
 ampsConfigLib::ChangeValueOfArray("int Comet::Model::SurfaceDistributionMode\\[PIC::nTotalSpecies\\]",\@SurfaceDistributionMode,"main/CometModel.cpp");

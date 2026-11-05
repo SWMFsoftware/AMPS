@@ -36,6 +36,27 @@ std::vector<double> SpeciesFlux;
 std::vector<std::size_t> ProductBoundOffset;
 std::vector<double> ProductSystematicBound;
 std::vector<double> SpeciesSystematicBound;
+
+// Stage-7 channel-importance statistics deliberately live outside the
+// generic ChemistryDiagnostics table.  The Stage-0 table and its CSV/JSON
+// schema are already durable validation interfaces; extending them would make
+// a disabled importance policy change legacy output.  Three additive moments
+// per generated reaction are sufficient for MPI reduction and for computing
+// the parent-family effective sample size after a sampling window:
+//
+//   ESS = (sum L)^2 / sum L^2,  L=q/q*.
+//
+// WeightedChannelRate is accumulated as (W_parent*c_parent/dt_parent)*L.
+// It therefore remains meaningful when parent particles carry different
+// block-local weights or individual corrections, and it also represents a
+// product-free sink whose destroyed parent cannot carry L forward.
+enum cChannelImportanceMomentField {
+  ImportanceLikelihoodSum=0,
+  ImportanceLikelihoodSquareSum,
+  ImportanceWeightedChannelRate,
+  ChannelImportanceMomentFieldCount
+};
+std::vector<double> ChannelImportanceMoments;
 std::uint64_t GlobalEmergencyRequests=0;
 enum cEmergencyEventField {
   EmergencyEventTotal=0,
@@ -93,6 +114,182 @@ bool ProductionAgreement(double expected,double represented,double variance,
   return std::fabs(represented-expected)<=tolerance;
 }
 
+double& ChannelImportanceMoment(std::size_t reaction,
+    cChannelImportanceMomentField field) {
+  const std::size_t offset=
+      reaction*ChannelImportanceMomentFieldCount+field;
+  if (offset>=ChannelImportanceMoments.size()) {
+    std::fprintf(stderr,
+        "invalid Stage-7 channel-importance diagnostic reaction %zu\n",
+        reaction);
+    std::abort();
+  }
+  return ChannelImportanceMoments[offset];
+}
+
+// Write Stage-7 metadata to separate files.  Keeping this out of the Stage-0
+// writers is an explicit off-mode compatibility boundary: when the input
+// switch is disabled no extra file is created and no legacy column changes.
+void WriteChannelImportanceReport(long int completedIteration,
+    long int outputIndex,long int sampleLength,
+    const std::vector<std::uint64_t> &globalCounts,
+    const std::vector<double> &globalImportanceMoments) {
+  if (!Comet::Chemistry::ChannelImportanceSamplingEnabled) return;
+
+  const ChemicalSolver::cReactionNetwork &network=
+      Comet::Chemistry::GetNetwork();
+  const std::size_t reactionCount=network.GetReactionCount();
+  if (globalImportanceMoments.size()!=
+      reactionCount*ChannelImportanceMomentFieldCount) {
+    std::fprintf(stderr,
+        "invalid reduced Stage-7 channel-importance diagnostic layout\n");
+    std::abort();
+  }
+
+  // Recover the raw committed selection count without changing the stable
+  // generic serialization.  Each reaction begins with seven counters and is
+  // followed by six counters for each product term.
+  std::vector<std::uint64_t> rawSelections(reactionCount,0);
+  std::size_t countOffset=0;
+  for (std::size_t reaction=0;reaction<reactionCount;reaction++) {
+    if (countOffset+ChemicalSolver::cChemistryDiagnostics::
+        ReactionCountFieldNumber>globalCounts.size()) {
+      std::fprintf(stderr,
+          "invalid Stage-0 count layout while writing Stage-7 metadata\n");
+      std::abort();
+    }
+    rawSelections[reaction]=globalCounts[countOffset+
+        ChemicalSolver::cChemistryDiagnostics::PhysicalReactionSelections];
+    countOffset+=ChemicalSolver::cChemistryDiagnostics::
+        ReactionCountFieldNumber+
+        network.GetReaction(reaction).ProductCount*
+        ChemicalSolver::cChemistryDiagnostics::ProductCountFieldNumber;
+  }
+  if (countOffset!=globalCounts.size()) {
+    std::fprintf(stderr,
+        "Stage-0 count layout has trailing values in Stage-7 metadata writer\n");
+    std::abort();
+  }
+
+  std::vector<std::uint64_t> familySelections(PIC::nTotalSpecies,0);
+  std::vector<double> familyLikelihoodSum(PIC::nTotalSpecies,0.0);
+  std::vector<double> familyLikelihoodSquareSum(PIC::nTotalSpecies,0.0);
+  for (std::size_t reaction=0;reaction<reactionCount;reaction++) {
+    const int parent=Comet::Chemistry::GetChannelParentSpecies(reaction);
+    if (parent<0 || parent>=PIC::nTotalSpecies) {
+      std::fprintf(stderr,
+          "invalid Stage-7 parent species for reaction %zu\n",reaction);
+      std::abort();
+    }
+    const std::size_t base=reaction*ChannelImportanceMomentFieldCount;
+    familySelections[parent]+=rawSelections[reaction];
+    familyLikelihoodSum[parent]+=
+        globalImportanceMoments[base+ImportanceLikelihoodSum];
+    familyLikelihoodSquareSum[parent]+=
+        globalImportanceMoments[base+ImportanceLikelihoodSquareSum];
+  }
+
+  char csvName[256],jsonName[256];
+  std::snprintf(csvName,sizeof(csvName),
+      "PT/diagnostics/comet_stage7_importance.out=%ld.csv",outputIndex);
+  std::snprintf(jsonName,sizeof(jsonName),
+      "PT/diagnostics/comet_stage7_importance.out=%ld.json",outputIndex);
+  FILE *csv=std::fopen(csvName,"w");
+  FILE *json=std::fopen(jsonName,"w");
+  if (csv==NULL || json==NULL) {
+    std::fprintf(stderr,
+        "cannot open Stage-7 channel-importance diagnostic output\n");
+    std::abort();
+  }
+
+  std::fprintf(csv,
+      "iteration,output_index,sampling_length,mpi_ranks,reaction_index,reaction_id,parent_species,parent_symbol,configured,neutral_sink,physical_probability,biased_probability,likelihood_ratio,raw_selections,likelihood_sum,likelihood_square_sum,weighted_channel_rate_s-1,family_raw_selections,family_likelihood_sum,family_likelihood_square_sum,family_effective_sample_size\n");
+  std::fprintf(json,
+      "{\n  \"schema\": \"amps.comet.stage7-channel-importance.v1\",\n"
+      "  \"iteration\": %ld,\n  \"output_index\": %ld,\n"
+      "  \"sampling_length\": %ld,\n  \"mpi_ranks\": %d,\n"
+      "  \"effective_sample_size_definition\": \"(sum L)^2/sum L^2 over every committed selection in one parent-channel family\",\n"
+      "  \"reactions\": [\n",
+      completedIteration,outputIndex,sampleLength,PIC::nTotalThreads);
+
+  for (std::size_t reaction=0;reaction<reactionCount;reaction++) {
+    const ChemicalSolver::cReaction &entry=network.GetReaction(reaction);
+    const int parent=Comet::Chemistry::GetChannelParentSpecies(reaction);
+    char parentSymbol[_MAX_STRING_LENGTH_PIC_];
+    SpeciesSymbol(parentSymbol,parent);
+    const bool configured=
+        Comet::Chemistry::IsChannelImportanceConfigured(reaction);
+    const bool sink=entry.ProductCount==0;
+    const double physicalProbability=
+        Comet::Chemistry::GetPhysicalChannelProbability(reaction);
+    const double biasedProbability=
+        Comet::Chemistry::GetBiasedChannelProbability(reaction);
+    const double likelihood=
+        Comet::Chemistry::GetChannelLikelihoodRatio(reaction);
+    const std::size_t base=reaction*ChannelImportanceMomentFieldCount;
+    const double likelihoodSum=
+        globalImportanceMoments[base+ImportanceLikelihoodSum];
+    const double likelihoodSquareSum=
+        globalImportanceMoments[base+ImportanceLikelihoodSquareSum];
+    const double weightedRate=Average(
+        globalImportanceMoments[base+ImportanceWeightedChannelRate],
+        sampleLength);
+    const double familySum=familyLikelihoodSum[parent];
+    const double familySquareSum=familyLikelihoodSquareSum[parent];
+    const double familyEss=(familySquareSum>0.0) ?
+        familySum*familySum/familySquareSum : 0.0;
+    if (!std::isfinite(physicalProbability) || physicalProbability<0.0 ||
+        physicalProbability>1.0 || !std::isfinite(biasedProbability) ||
+        biasedProbability<0.0 || biasedProbability>1.0 ||
+        !(likelihood>0.0) || !std::isfinite(likelihood) ||
+        !std::isfinite(likelihoodSum) || likelihoodSum<0.0 ||
+        !std::isfinite(likelihoodSquareSum) || likelihoodSquareSum<0.0 ||
+        !std::isfinite(weightedRate) || weightedRate<0.0 ||
+        !std::isfinite(familyEss) || familyEss<0.0 ||
+        familyEss>static_cast<double>(familySelections[parent])+
+            1.0e-9*std::max(1.0,
+                static_cast<double>(familySelections[parent]))) {
+      std::fprintf(stderr,
+          "invalid Stage-7 metadata for reaction %s\n",entry.Id);
+      std::abort();
+    }
+
+    std::fprintf(csv,
+        "%ld,%ld,%ld,%d,%zu,%s,%d,%s,%s,%s,%.17e,%.17e,%.17e,%llu,%.17e,%.17e,%.17e,%llu,%.17e,%.17e,%.17e\n",
+        completedIteration,outputIndex,sampleLength,PIC::nTotalThreads,
+        reaction,entry.Id,parent,parentSymbol,configured ? "true" : "false",
+        sink ? "true" : "false",physicalProbability,biasedProbability,
+        likelihood,static_cast<unsigned long long>(rawSelections[reaction]),
+        likelihoodSum,likelihoodSquareSum,weightedRate,
+        static_cast<unsigned long long>(familySelections[parent]),familySum,
+        familySquareSum,familyEss);
+    std::fprintf(json,
+        "    {\"index\": %zu, \"id\": \"%s\", \"parent_species\": %d, "
+        "\"parent_symbol\": \"%s\", \"configured\": %s, \"neutral_sink\": %s, "
+        "\"physical_probability\": %.17e, \"biased_probability\": %.17e, "
+        "\"likelihood_ratio\": %.17e, \"raw_selections\": %llu, "
+        "\"likelihood_sum\": %.17e, \"likelihood_square_sum\": %.17e, "
+        "\"weighted_channel_rate_s-1\": %.17e, "
+        "\"family_raw_selections\": %llu, \"family_likelihood_sum\": %.17e, "
+        "\"family_likelihood_square_sum\": %.17e, "
+        "\"family_effective_sample_size\": %.17e}%s\n",
+        reaction,entry.Id,parent,parentSymbol,configured ? "true" : "false",
+        sink ? "true" : "false",physicalProbability,biasedProbability,
+        likelihood,static_cast<unsigned long long>(rawSelections[reaction]),
+        likelihoodSum,likelihoodSquareSum,weightedRate,
+        static_cast<unsigned long long>(familySelections[parent]),familySum,
+        familySquareSum,familyEss,
+        reaction+1==reactionCount ? "" : ",");
+  }
+  std::fprintf(json,"  ]\n}\n");
+  std::fclose(csv);
+  std::fclose(json);
+  std::fprintf(PIC::DiagnospticMessageStream,
+      "$PREFIX: Stage-7 channel-importance diagnostics wrote output=%ld sampling-length=%ld\n",
+      outputIndex,sampleLength);
+  std::fflush(PIC::DiagnospticMessageStream);
+}
+
 } // namespace
 
 void Comet::Diagnostics::Initialize() {
@@ -102,6 +299,7 @@ void Comet::Diagnostics::Initialize() {
     ProductBoundOffset.clear();
     ProductSystematicBound.clear();
     SpeciesSystematicBound.clear();
+    ChannelImportanceMoments.clear();
     GlobalEmergencyRequests=0;
     std::fill(GlobalEmergencyEvents,
         GlobalEmergencyEvents+EmergencyEventFieldCount,0);
@@ -124,6 +322,11 @@ void Comet::Diagnostics::Initialize() {
   SpeciesFlux.assign(static_cast<std::size_t>(PIC::nTotalSpecies)*
       FluxFieldCount,0.0);
   SpeciesSystematicBound.assign(PIC::nTotalSpecies,0.0);
+  if (Comet::Chemistry::ChannelImportanceSamplingEnabled)
+    ChannelImportanceMoments.assign(network.GetReactionCount()*
+        ChannelImportanceMomentFieldCount,0.0);
+  else
+    ChannelImportanceMoments.clear();
   GlobalEmergencyRequests=0;
   std::fill(GlobalEmergencyEvents,
       GlobalEmergencyEvents+EmergencyEventFieldCount,0);
@@ -137,9 +340,22 @@ void Comet::Diagnostics::RecordEligibleParentVisit(std::size_t reaction) {
 }
 
 void Comet::Diagnostics::RecordReactionSelection(std::size_t reaction,
-    bool neutralSink) {
+    bool neutralSink,double likelihoodRatio,double weightedChannelRate) {
   if (!Enabled) return;
   ChemistryCounters.RecordSelection(reaction,neutralSink);
+  if (!Comet::Chemistry::ChannelImportanceSamplingEnabled) return;
+  if (!(likelihoodRatio>0.0) || !std::isfinite(likelihoodRatio) ||
+      weightedChannelRate<0.0 || !std::isfinite(weightedChannelRate)) {
+    std::fprintf(stderr,
+        "invalid committed Stage-7 channel-importance diagnostic\n");
+    std::abort();
+  }
+  ChannelImportanceMoment(reaction,ImportanceLikelihoodSum)+=
+      likelihoodRatio;
+  ChannelImportanceMoment(reaction,ImportanceLikelihoodSquareSum)+=
+      likelihoodRatio*likelihoodRatio;
+  ChannelImportanceMoment(reaction,ImportanceWeightedChannelRate)+=
+      weightedChannelRate;
 }
 
 void Comet::Diagnostics::RecordAllocationDeferral(std::size_t reaction) {
@@ -261,6 +477,8 @@ void Comet::Diagnostics::WriteSamplingReport(long int completedIteration,
   std::vector<double> globalFlux(SpeciesFlux.size(),0.0);
   std::vector<double> globalProductBounds(ProductSystematicBound.size(),0.0);
   std::vector<double> globalSpeciesBounds(SpeciesSystematicBound.size(),0.0);
+  std::vector<double> globalChannelImportance(
+      ChannelImportanceMoments.size(),0.0);
   std::uint64_t globalEmergencies=0;
   std::uint64_t globalEmergencyEvents[EmergencyEventFieldCount]={0,0,0,0};
   MPI_Reduce(localCounts.data(),globalCounts.data(),
@@ -278,6 +496,11 @@ void Comet::Diagnostics::WriteSamplingReport(long int completedIteration,
   MPI_Reduce(SpeciesSystematicBound.data(),globalSpeciesBounds.data(),
       static_cast<int>(SpeciesSystematicBound.size()),MPI_DOUBLE,MPI_SUM,0,
       MPI_GLOBAL_COMMUNICATOR);
+  if (!ChannelImportanceMoments.empty())
+    MPI_Reduce(ChannelImportanceMoments.data(),
+        globalChannelImportance.data(),
+        static_cast<int>(ChannelImportanceMoments.size()),MPI_DOUBLE,MPI_SUM,0,
+        MPI_GLOBAL_COMMUNICATOR);
   MPI_Reduce(&GlobalEmergencyRequests,&globalEmergencies,1,MPI_UINT64_T,
       MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
   MPI_Reduce(GlobalEmergencyEvents,globalEmergencyEvents,
@@ -539,6 +762,8 @@ void Comet::Diagnostics::WriteSamplingReport(long int completedIteration,
     std::fprintf(json,"  ]\n}\n");
     std::fclose(csv);
     std::fclose(json);
+    WriteChannelImportanceReport(completedIteration,outputIndex,sampleLength,
+        globalCounts,globalChannelImportance);
     std::fprintf(PIC::DiagnospticMessageStream,
         "$PREFIX: comet diagnostics wrote output=%ld iteration=%ld sampling-length=%ld emergencies=%llu\n",
         outputIndex,completedIteration,sampleLength,
@@ -550,6 +775,8 @@ void Comet::Diagnostics::WriteSamplingReport(long int completedIteration,
   std::fill(SpeciesFlux.begin(),SpeciesFlux.end(),0.0);
   std::fill(ProductSystematicBound.begin(),ProductSystematicBound.end(),0.0);
   std::fill(SpeciesSystematicBound.begin(),SpeciesSystematicBound.end(),0.0);
+  std::fill(ChannelImportanceMoments.begin(),
+      ChannelImportanceMoments.end(),0.0);
   GlobalEmergencyRequests=0;
   std::fill(GlobalEmergencyEvents,
       GlobalEmergencyEvents+EmergencyEventFieldCount,0);

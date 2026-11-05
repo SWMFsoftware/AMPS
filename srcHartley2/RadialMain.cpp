@@ -18,6 +18,7 @@ void PrintUsage(const char *program) {
   std::printf("usage: %s [--validate-local-timestep | --validate-chemistry | "
       "--validate-weight-adaptation | --validate-correction-windows | "
       "--validate-systematic-residual | --validate-daughter-packets | "
+      "--validate-channel-importance | "
       "--validate-unsupported-simplified-ntc] "
       "[--validation-particles N] [--validation-mover first|second|both] "
       "[--validation-skip-multiface] [--validation-unit-corrections] "
@@ -37,6 +38,7 @@ int main(int argc,char **argv) {
   bool validateCorrectionWindows=false;
   bool validateSystematicResidual=false;
   bool validateDaughterPackets=false;
+  bool validateChannelImportance=false;
   bool validateUnsupportedSimplifiedNTC=false;
   bool randomSeedOverride=false;
   bool residualSamplingOverride=false;
@@ -62,6 +64,9 @@ int main(int argc,char **argv) {
     }
     else if (option=="--validate-daughter-packets") {
       validateDaughterPackets=true;
+    }
+    else if (option=="--validate-channel-importance") {
+      validateChannelImportance=true;
     }
     else if (option=="--validate-unsupported-simplified-ntc") {
       validateUnsupportedSimplifiedNTC=true;
@@ -169,6 +174,7 @@ int main(int argc,char **argv) {
       (validateCorrectionWindows ? 1 : 0)+
       (validateSystematicResidual ? 1 : 0)+
       (validateDaughterPackets ? 1 : 0)+
+      (validateChannelImportance ? 1 : 0)+
       (validateUnsupportedSimplifiedNTC ? 1 : 0);
   if (validationModeCount>1) {
     std::fprintf(stderr,
@@ -298,6 +304,12 @@ int main(int argc,char **argv) {
     if (validateDaughterPackets) {
       const bool passed=Comet::Chemistry::ValidateDaughterPacketSplitting(
           chemistryValidationEvents);
+      MPI_Finalize();
+      return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+    if (validateChannelImportance) {
+      const bool passed=Comet::Chemistry::
+          ValidateChannelImportanceSampling(chemistryValidationEvents);
       MPI_Finalize();
       return passed ? EXIT_SUCCESS : EXIT_FAILURE;
     }

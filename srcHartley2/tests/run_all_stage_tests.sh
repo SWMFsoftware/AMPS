@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Run the complete focused and archived Hartley2 chemistry-development test
-# stack for Stages 0 through 6.
+# stack for Stages 0 through 7.
 #
 # The lower-stage integrated tests intentionally consume frozen logs: their
 # own runners define those logs as the authoritative, reproducible runtime
-# protocol.  Stage 4 additionally supports a fresh MPI matrix when the caller
-# supplies a correction-on executable and a new output root.  This orchestrator
+# protocol.  Stages 4 through 7 additionally support fresh MPI matrices when
+# the caller supplies the appropriate executable and a new output root.  This orchestrator
 # never configures or compiles AMPS, never edits an input, and never removes a
 # build tree.  Keeping build mutation outside the test process guarantees that
-# a failed Stage-4 run cannot leave the canonical workspace correction-on.
+# a failed fresh run cannot leave the canonical workspace correction-on.
 #
 # All optional inputs of the individual runners are made mandatory here.  A
 # complete all-stage pass must not hide missing production/runtime evidence
@@ -29,6 +29,9 @@ stage5_output_root=
 stage6_mode=archived
 stage6_executable=
 stage6_output_root=
+stage7_mode=archived
+stage7_executable=
+stage7_output_root=
 mpi_launcher=mpiexec
 validation_particles=200000
 chemistry_validation_events=200000
@@ -40,7 +43,7 @@ usage() {
 usage: run_all_stage_tests.sh [options]
 
 Run every focused/pure test and every archived runtime-evidence checker used
-to close Hartley2 chemistry-development Stages 0 through 6.
+to close Hartley2 chemistry-development Stages 0 through 7.
 
 Options:
   --evidence-root PATH
@@ -73,12 +76,22 @@ Options:
       with correction windows, Bernoulli residuals, and packets enabled.
   --stage6-output-root PATH
       Required in fresh Stage-6 mode and must not exist.
+  --stage7-mode archived|fresh
+      archived (default) revalidates the frozen Stage-7 channel-importance,
+      Stage-6 packet, Stage-5 correction-window, and exact-chemistry 1/4/12
+      matrix. fresh invokes the Stage-7 MPI runner.
+  --stage7-executable PATH
+      Required in fresh Stage-7 mode. Must be an already-built DIM1 binary
+      with correction windows, Bernoulli residuals, packets, diagnostics, and
+      channel importance enabled.
+  --stage7-output-root PATH
+      Required in fresh Stage-7 mode and must not exist.
   --mpiexec COMMAND
-      MPI launcher for Stage-0 focused and fresh Stage-4 tests.
+      MPI launcher for Stage-0 focused and fresh Stage-4/5/6/7 tests.
   --validation-particles N
       Fresh Stage-4 mover particles per case. Default: 200000.
   --chemistry-validation-events N
-      Fresh Stage-4 chemistry events per case. Default: 200000.
+      Fresh Stage-4/5/6/7 chemistry events per case. Default: 200000.
   --log-root PATH
       Preserve every per-test log and summary under a new directory. Without
       this option, successful-run logs are temporary; failed/skipped-run logs
@@ -101,6 +114,7 @@ Required evidence layout beneath --evidence-root:
   stage4-unsupported-mf-20261105b
   stage5-correction-window-full-20261105
   stage6-daughter-packet-full-20261105-r4
+  stage7-channel-importance-full-20261105-r2
 
 The current repository build is used only as a read-only Stage-3 parser
 fixture and must be configured with individual corrections off. Rebuild it
@@ -159,6 +173,21 @@ while (( $# > 0 )); do
     --stage6-output-root)
       [[ $# -ge 2 ]] || { usage >&2; exit 2; }
       stage6_output_root=$2
+      shift 2
+      ;;
+    --stage7-mode)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      stage7_mode=$2
+      shift 2
+      ;;
+    --stage7-executable)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      stage7_executable=$2
+      shift 2
+      ;;
+    --stage7-output-root)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      stage7_output_root=$2
       shift 2
       ;;
     --mpiexec)
@@ -226,6 +255,13 @@ case "$stage6_mode" in
   archived|fresh) ;;
   *)
     printf 'invalid --stage6-mode value: %s\n' "$stage6_mode" >&2
+    exit 2
+    ;;
+esac
+case "$stage7_mode" in
+  archived|fresh) ;;
+  *)
+    printf 'invalid --stage7-mode value: %s\n' "$stage7_mode" >&2
     exit 2
     ;;
 esac
@@ -322,6 +358,32 @@ elif [[ -n "$stage6_executable" || -n "$stage6_output_root" ]]; then
   exit 2
 fi
 
+if [[ "$stage7_mode" == fresh ]]; then
+  if [[ -z "$stage7_executable" || -z "$stage7_output_root" ]]; then
+    printf '%s\n' \
+      'fresh Stage-7 mode requires --stage7-executable and --stage7-output-root' >&2
+    exit 2
+  fi
+  if [[ ! -f "$stage7_executable" || ! -x "$stage7_executable" ]]; then
+    printf 'Stage-7 executable is not executable: %s\n' \
+      "$stage7_executable" >&2
+    exit 2
+  fi
+  stage7_executable=$(readlink -f -- "$stage7_executable")
+  if [[ "$stage7_output_root" != /* ]]; then
+    stage7_output_root="$source_root/$stage7_output_root"
+  fi
+  if [[ -e "$stage7_output_root" ]]; then
+    printf 'fresh Stage-7 output already exists: %s\n' \
+      "$stage7_output_root" >&2
+    exit 2
+  fi
+elif [[ -n "$stage7_executable" || -n "$stage7_output_root" ]]; then
+  printf '%s\n' \
+    '--stage7-executable/--stage7-output-root are valid only in fresh mode' >&2
+  exit 2
+fi
+
 resolved_mpi_launcher=$(command -v -- "$mpi_launcher" || true)
 if [[ -z "$resolved_mpi_launcher" ]]; then
   printf 'MPI launcher is not on PATH: %s\n' "$mpi_launcher" >&2
@@ -356,6 +418,7 @@ stage4_off_regression="$evidence_root/stage4-correction-off-regression-20261105"
 stage4_mf_archive="$evidence_root/stage4-unsupported-mf-20261105b"
 stage5_archive="$evidence_root/stage5-correction-window-full-20261105"
 stage6_archive="$evidence_root/stage6-daughter-packet-full-20261105-r4"
+stage7_archive="$evidence_root/stage7-channel-importance-full-20261105-r2"
 
 require_file() {
   if [[ ! -f "$1" ]]; then
@@ -411,6 +474,20 @@ for stage_rank in 1 4 12; do
     require_file \
       "$stage6_archive/mpi${stage_rank}/daughter-packets/run.log"
   fi
+  if [[ "$stage7_mode" == archived ]]; then
+    require_file \
+      "$stage7_archive/mpi${stage_rank}/correction-windows/run.log"
+    require_file \
+      "$stage7_archive/mpi${stage_rank}/chemistry/run.log"
+    require_file \
+      "$stage7_archive/mpi${stage_rank}/daughter-packets/run.log"
+    require_file \
+      "$stage7_archive/mpi${stage_rank}/channel-importance/run.log"
+    require_file \
+      "$stage7_archive/mpi${stage_rank}/channel-importance/PT/diagnostics/comet_stage7_importance.out=$((7000000+stage_rank)).csv"
+    require_file \
+      "$stage7_archive/mpi${stage_rank}/channel-importance/PT/diagnostics/comet_stage7_importance.out=$((7000000+stage_rank)).json"
+  fi
 done
 require_file "$stage3_root/mpi1/PT/diagnostics/stage3_cells.C2.out=0.csv"
 require_file "$stage3_root/mpi1/PT/diagnostics/cell_measures.csv"
@@ -425,6 +502,9 @@ if [[ "$stage4_mode" == archived ]]; then
 fi
 if [[ "$stage6_mode" == archived ]]; then
   require_file "$stage6_archive/provenance/SHA256SUMS"
+fi
+if [[ "$stage7_mode" == archived ]]; then
+  require_file "$stage7_archive/provenance/SHA256SUMS"
 fi
 
 # The Stage-3 parser test copies generated sources from the current build but
@@ -451,6 +531,7 @@ print_plan() {
   printf '  Stage 4:    %s\n' "$stage4_mode"
   printf '  Stage 5:    %s\n' "$stage5_mode"
   printf '  Stage 6:    %s\n' "$stage6_mode"
+  printf '  Stage 7:    %s\n' "$stage7_mode"
   if [[ -n "$requested_log_root" ]]; then
     printf '  logs:       %s\n' "$requested_log_root"
   else
@@ -469,6 +550,10 @@ print_plan() {
     printf '  Stage-6 executable: %s\n' "$stage6_executable"
     printf '  Stage-6 output:     %s\n' "$stage6_output_root"
   fi
+  if [[ "$stage7_mode" == fresh ]]; then
+    printf '  Stage-7 executable: %s\n' "$stage7_executable"
+    printf '  Stage-7 output:     %s\n' "$stage7_output_root"
+  fi
   printf '%s\n' \
     '  tests:' \
     '    Stage 0 focused MPI, analyzer, frozen baseline, production report' \
@@ -481,7 +566,10 @@ print_plan() {
     '    Stage 5 input/planner tests and correction-window/exact-chemistry' \
     '            integrated 1/4/12 evidence' \
     '    Stage 6 packet-policy/planner tests, Stage-5 dependency replay,' \
-    '            production transaction, and integrated 1/4/12 evidence'
+    '            production transaction, and integrated 1/4/12 evidence' \
+    '    Stage 7 channel-policy/planner tests, Stage-4/5/6 dependency replay,' \
+    '            weighted channel moments, sinks, ESS, durable diagnostics,' \
+    '            and decomposition-identical integrated 1/4/12 evidence'
 }
 
 print_plan
@@ -694,6 +782,48 @@ check_stage6_provenance() {
   )
 }
 
+check_stage7_matrix() {
+  local stage5_arguments=()
+  local packet_arguments=(--expected-events "$chemistry_validation_events")
+  local importance_arguments=(--expected-events "$chemistry_validation_events")
+  for stage_rank in 1 4 12; do
+    # Revalidate the complete correction/packet dependency stack from the
+    # same frozen Stage-7 binary before accepting its importance estimator.
+    stage5_arguments+=(
+      --window-log "$stage_rank" \
+        "$stage7_on_root/mpi${stage_rank}/correction-windows/run.log"
+      --chemistry-log "$stage_rank" \
+        "$stage7_on_root/mpi${stage_rank}/chemistry/run.log"
+    )
+    packet_arguments+=(
+      --packet-log "$stage_rank" \
+        "$stage7_on_root/mpi${stage_rank}/daughter-packets/run.log"
+    )
+    importance_arguments+=(
+      --importance-log "$stage_rank" \
+        "$stage7_on_root/mpi${stage_rank}/channel-importance/run.log"
+      --diagnostics-root "$stage_rank" \
+        "$stage7_on_root/mpi${stage_rank}/channel-importance"
+    )
+  done
+  PYTHONDONTWRITEBYTECODE=1 python3 \
+    "$script_dir/test_stage5_integrated_logs.py" \
+    "${stage5_arguments[@]}" &&
+  PYTHONDONTWRITEBYTECODE=1 python3 \
+    "$script_dir/test_stage6_daughter_packet_logs.py" \
+    "${packet_arguments[@]}" &&
+  PYTHONDONTWRITEBYTECODE=1 python3 \
+    "$script_dir/test_stage7_channel_importance_logs.py" \
+    "${importance_arguments[@]}"
+}
+
+check_stage7_provenance() {
+  (
+    cd -- "$stage7_archive/provenance"
+    sha256sum -c SHA256SUMS
+  )
+}
+
 run_test stage0 stage0.complete env \
   HARTLEY2_MPIEXEC="$resolved_mpi_launcher" \
   HARTLEY2_STAGE0_BASELINE_ROOT="$stage0_baseline" \
@@ -794,7 +924,25 @@ else
 fi
 run_test stage6 stage6.matrix check_stage6_matrix
 
-stage_order=(stage0 stage1 stage2 stage3 stage4 stage5 stage6)
+run_test stage7 stage7.input-and-planner \
+  "$script_dir/run_stage7_channel_importance_tests.sh"
+if [[ "$stage7_mode" == archived ]]; then
+  run_test stage7 stage7.provenance check_stage7_provenance
+fi
+if [[ "$stage7_mode" == fresh ]]; then
+  run_test stage7 stage7.fresh-runtime \
+    "$script_dir/run_stage7_integrated_tests.sh" \
+    --executable "$stage7_executable" \
+    --output-root "$stage7_output_root" \
+    --mpiexec "$resolved_mpi_launcher" \
+    --chemistry-validation-events "$chemistry_validation_events"
+  stage7_on_root=$stage7_output_root
+else
+  stage7_on_root=$stage7_archive
+fi
+run_test stage7 stage7.matrix check_stage7_matrix
+
+stage_order=(stage0 stage1 stage2 stage3 stage4 stage5 stage6 stage7)
 group_results=()
 passed_groups=0
 skipped_groups=0
@@ -849,8 +997,9 @@ fi
 
 summary_file="$log_root/summary.txt"
 {
-  printf '\nHartley2 all-stage test summary status=%s stage4-mode=%s stage5-mode=%s stage6-mode=%s\n' \
-    "$overall_result" "$stage4_mode" "$stage5_mode" "$stage6_mode"
+  printf '\nHartley2 all-stage test summary status=%s stage4-mode=%s stage5-mode=%s stage6-mode=%s stage7-mode=%s\n' \
+    "$overall_result" "$stage4_mode" "$stage5_mode" "$stage6_mode" \
+    "$stage7_mode"
   printf '  tests: run=%d passed=%d skipped=%d failed=%d\n' \
     "$executed_tests" "$passed_tests" "$skipped_tests" "$failed_tests"
   printf '  test-groups: run=%d passed=%d skipped=%d failed=%d\n' \
@@ -895,14 +1044,14 @@ summary_file="$log_root/summary.txt"
 } | tee "$summary_file"
 
 if [[ "$overall_result" == PASS ]]; then
-  printf 'PASS Hartley2 all-stage suite tests=%d test-groups=%d stage4-mode=%s stage5-mode=%s stage6-mode=%s\n' \
+  printf 'PASS Hartley2 all-stage suite tests=%d test-groups=%d stage4-mode=%s stage5-mode=%s stage6-mode=%s stage7-mode=%s\n' \
     "$executed_tests" "$executed_groups" "$stage4_mode" "$stage5_mode" \
-    "$stage6_mode"
+    "$stage6_mode" "$stage7_mode"
   suite_success=true
   exit 0
 fi
 
-printf 'FAIL Hartley2 all-stage suite tests=%d test-groups=%d stage4-mode=%s stage5-mode=%s stage6-mode=%s\n' \
+printf 'FAIL Hartley2 all-stage suite tests=%d test-groups=%d stage4-mode=%s stage5-mode=%s stage6-mode=%s stage7-mode=%s\n' \
   "$executed_tests" "$executed_groups" "$stage4_mode" "$stage5_mode" \
-  "$stage6_mode" >&2
+  "$stage6_mode" "$stage7_mode" >&2
 exit 1

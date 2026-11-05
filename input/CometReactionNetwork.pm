@@ -113,6 +113,28 @@ sub packet_policy_reactions {
   return \@result;
 }
 
+# Return the stable IDs, nominal rates, and reactant stoichiometry needed by
+# the Stage-7 channel-importance resolver.  Keep this separate from the packet
+# descriptor above: packet policy is product-oriented, whereas importance
+# policy groups complete positive-rate unit-unimolecular sibling families by
+# parent.  The returned hashes/arrays are fresh defensive copies, so a policy
+# module cannot mutate the database or generated reaction order.
+sub channel_importance_policy_reactions {
+  my ($self)=@_;
+  my @result;
+  for my $reaction (@{$self->{reactions}}) {
+    push @result,{
+      id=>$reaction->{id},
+      rate=>$reaction->{a},
+      reactants=>[
+        map {{species=>$_->{species},coefficient=>$_->{coefficient}}}
+            @{$reaction->{reactants}}
+      ],
+    };
+  }
+  return \@result;
+}
+
 # Return a boolean species table reachable from the supplied source indices.
 # A general reaction becomes reachable only when every reactant species is
 # reachable; this reduces to ordinary parent-to-daughter traversal for the
