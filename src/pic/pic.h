@@ -5233,6 +5233,26 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
       //the limit of the collision number per a single model particles
       extern double CollisionLimitingThrehold;
 
+      // Disabled-by-default observability for focused validation of the
+      // general NTC estimator.  These are model-pair trials and individual
+      // particle updates, not physical collision-rate samples.  The normal
+      // production sampling buffers remain the authoritative science output.
+      // The diagnostic is intentionally process-local; a validation driver
+      // can reduce snapshots across MPI ranks with the reductions appropriate
+      // to each field (sum for counts, min/max for probabilities).
+      struct cNTCValidationDiagnostic {
+        bool Enabled;
+        unsigned long long TrialCount,SelfPairRejectionCount;
+        unsigned long long AcceptedCollisionCount,ParticleUpdateCount;
+        unsigned long long UpdateProbabilityCount;
+        unsigned long long InvalidUpdateProbabilityCount;
+        unsigned long long RoundoffClampCount;
+        double MinimumUpdateProbability,MaximumUpdateProbability;
+      };
+      extern cNTCValidationDiagnostic NTCValidationDiagnostic;
+      void ResetNTCValidationDiagnostic(bool enable);
+      cNTCValidationDiagnostic GetNTCValidationDiagnostic();
+
       //sample collision statistics
       namespace CollsionFrequentcySampling {
         extern int SamplingBufferOffset;
@@ -6127,6 +6147,13 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
       double MomentumFluxVariance[3];
       double IncomingKineticEnergyFlux,OutgoingKineticEnergyFlux;
       double KineticEnergyFluxVariance;
+      // Internal energy is carried by the same statistical rate W*c/dt as
+      // number and translational moments.  Keeping it separate from kinetic
+      // energy makes the face regression sensitive to accidental loss of the
+      // rotational/vibrational particle record while cloning or exchanging a
+      // continuation particle.
+      double IncomingInternalEnergyFlux,OutgoingInternalEnergyFlux;
+      double InternalEnergyFluxVariance;
       double MaximumRemainderInvariantError;
       int ContinuationSweepCount;
       long int MaximumPendingParticleCount,FinalPendingParticleCount;

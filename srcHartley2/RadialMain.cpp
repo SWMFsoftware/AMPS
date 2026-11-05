@@ -16,9 +16,10 @@
 namespace {
 void PrintUsage(const char *program) {
   std::printf("usage: %s [--validate-local-timestep | --validate-chemistry | "
-      "--validate-weight-adaptation | --validate-systematic-residual] "
+      "--validate-weight-adaptation | --validate-systematic-residual | "
+      "--validate-unsupported-simplified-ntc] "
       "[--validation-particles N] [--validation-mover first|second|both] "
-      "[--validation-skip-multiface] "
+      "[--validation-skip-multiface] [--validation-unit-corrections] "
       "[--chemistry-validation-events N] [--random-seed N] "
       "[--chemistry-residual-sampling bernoulli|systematic]\n",program);
 }
@@ -33,6 +34,7 @@ int main(int argc,char **argv) {
   bool validateChemistry=false;
   bool validateWeightAdaptation=false;
   bool validateSystematicResidual=false;
+  bool validateUnsupportedSimplifiedNTC=false;
   bool randomSeedOverride=false;
   bool residualSamplingOverride=false;
   long int chemistryValidationEvents=200000;
@@ -51,6 +53,9 @@ int main(int argc,char **argv) {
     }
     else if (option=="--validate-systematic-residual") {
       validateSystematicResidual=true;
+    }
+    else if (option=="--validate-unsupported-simplified-ntc") {
+      validateUnsupportedSimplifiedNTC=true;
     }
     else if (option=="--random-seed") {
       if (++argument>=argc) {
@@ -121,6 +126,9 @@ int main(int argc,char **argv) {
     else if (option=="--validation-skip-multiface") {
       validationOptions.TestMultiFace=false;
     }
+    else if (option=="--validation-unit-corrections") {
+      validationOptions.UseUnitCorrections=true;
+    }
     else if (option=="--chemistry-validation-events") {
       if (++argument>=argc) {
         PrintUsage(argv[0]);
@@ -149,10 +157,16 @@ int main(int argc,char **argv) {
   }
   const int validationModeCount=(validateLocalTimeStep ? 1 : 0)+
       (validateChemistry ? 1 : 0)+(validateWeightAdaptation ? 1 : 0)+
-      (validateSystematicResidual ? 1 : 0);
+      (validateSystematicResidual ? 1 : 0)+
+      (validateUnsupportedSimplifiedNTC ? 1 : 0);
   if (validationModeCount>1) {
     std::fprintf(stderr,
         "select only one focused validation mode per invocation\n");
+    return EXIT_FAILURE;
+  }
+  if (validationOptions.UseUnitCorrections && !validateLocalTimeStep) {
+    std::fprintf(stderr,
+        "--validation-unit-corrections requires --validate-local-timestep\n");
     return EXIT_FAILURE;
   }
 
@@ -263,6 +277,22 @@ int main(int argc,char **argv) {
       const bool passed=Comet::Chemistry::ValidateSystematicResidualState();
       MPI_Finalize();
       return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+    if (validateUnsupportedSimplifiedNTC) {
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      // The function must terminate through its correction-on setup guard
+      // before dereferencing the deliberately null node.  Returning would
+      // mean that an unsupported collision executor could silently run.
+      PIC::MolecularCollisions::ParticleCollisionModel::
+          ModelCellCollisions_ntc_simplified(0,0,0,NULL);
+      std::fprintf(stderr,
+          "unsupported simplified NTC unexpectedly accepted corrections\n");
+#else
+      std::fprintf(stderr,
+          "unsupported simplified NTC guard test requires corrections on\n");
+#endif
+      MPI_Finalize();
+      return EXIT_FAILURE;
     }
     Comet::RadialSimulation::Run();
   }

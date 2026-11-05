@@ -769,8 +769,14 @@ bool Comet::Chemistry::ValidateEnsemble(long int eventsPerReaction) {
 
   if (PIC::ThisThread==0)
     std::printf("Chemistry ensemble validation: events/reaction=%ld ranks=%d "
-        "relative-limit=0.02 z-limit=5.0\n",eventsPerReaction,
-        PIC::nTotalThreads);
+        "individual-correction=%s relative-limit=0.02 z-limit=5.0\n",
+        eventsPerReaction,PIC::nTotalThreads,
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+        "on"
+#else
+        "off"
+#endif
+        );
 
   for (std::size_t reactionIndex=0;
        reactionIndex<network.GetReactionCount();reactionIndex++) {
@@ -801,7 +807,7 @@ bool Comet::Chemistry::ValidateEnsemble(long int eventsPerReaction) {
           "invalid parent weight/timestep in chemistry validation\n");
       std::abort();
     }
-    const double sourceRateWeight=parentWeight/parentTimeStep;
+    const double baseSourceRateWeight=parentWeight/parentTimeStep;
     const double parentMass=PIC::MolecularData::GetMass(parentSpecies);
     double productMass=0.0;
     for (int species:products)
@@ -825,6 +831,18 @@ bool Comet::Chemistry::ValidateEnsemble(long int eventsPerReaction) {
         7919*static_cast<int>(reactionIndex));
 
     for (long int event=0;event<localEvents;event++) {
+      double parentCorrection=1.0;
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      // Span the same deliberately wide Stage-4 correction range used by the
+      // mover/adaptation validators.  This exercises corrected production
+      // rates below and above the base W/dt carrier without enabling any
+      // Stage-5 weight-window policy.
+      static const double correctionCycle[]={0.0625,0.25,1.0,4.0,16.0};
+      parentCorrection=correctionCycle[
+          (event+static_cast<long int>(reactionIndex))%5];
+#endif
+      const double sourceRateWeight=
+          baseSourceRateWeight*parentCorrection;
       std::vector<double> velocity;
       GenerateProductVelocities(products,parentVelocity,
           reaction.ExcessEnergyJ,velocity);
@@ -861,13 +879,32 @@ bool Comet::Chemistry::ValidateEnsemble(long int eventsPerReaction) {
         const double targetWeight=node->block->GetLocalParticleWeight(species);
         const double targetTimeStep=node->block->GetLocalTimeStep(species);
         const double targetRateWeight=targetWeight/targetTimeStep;
-        const double mean=GetResidualMultiplicityMean(parentWeight,
+        double mean,bernoulliVariance,actualRate;
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+        // The production executor emits exactly one concrete product and
+        // assigns c_d=C_parent/(W_d/dt_d).  Reconstruct that same carrier here
+        // and require its represented rate to equal the corrected parent rate
+        // exactly; there is no residual-allocation variance in this branch.
+        const double daughterCorrection=
+            sourceRateWeight/targetRateWeight;
+        if (!(daughterCorrection>0.0) ||
+            !std::isfinite(daughterCorrection)) {
+          std::fprintf(stderr,
+              "invalid daughter correction in chemistry validation\n");
+          std::abort();
+        }
+        mean=daughterCorrection;
+        bernoulliVariance=0.0;
+        actualRate=targetRateWeight*daughterCorrection;
+#else
+        mean=GetResidualMultiplicityMean(parentWeight,
             parentTimeStep,targetWeight,targetTimeStep);
         const double residual=mean-std::floor(mean);
-        const double bernoulliVariance=residual*(1.0-residual);
+        bernoulliVariance=residual*(1.0-residual);
         const long int multiplicity=DrawResidualMultiplicity(parentWeight,
             parentTimeStep,targetWeight,targetTimeStep);
-        const double actualRate=multiplicity*targetRateWeight;
+        actualRate=multiplicity*targetRateWeight;
+#endif
         const double mass=PIC::MolecularData::GetMass(species);
         const double *v=velocity.data()+3*product;
         const double kineticPerMolecule=
@@ -1173,6 +1210,11 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
   const double parentPhysicalWeight=
       node->block->GetLocalParticleWeight(parentSpecies)*
       PIC::ParticleBuffer::GetIndividualStatWeightCorrection(parentData);
+  if (!(parentPhysicalWeight>0.0) || !std::isfinite(parentPhysicalWeight)) {
+    std::fprintf(stderr,
+        "invalid corrected parent carrier in comet chemistry\n");
+    std::abort();
+  }
 #elif (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) || \
       (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SINGLE_GLOBAL_PARTICLE_WEIGHT_) || \
       (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_)
@@ -1447,8 +1489,17 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
     // A single corrected daughter carries the same physical production rate
     // as its parent event, including the species-local timestep conversion.
+    const double daughterCorrection=
+        parentPhysicalWeight*productTimeStep/(baseWeight*timeStep);
+    if (!(daughterCorrection>0.0) ||
+        !std::isfinite(daughterCorrection)) {
+      std::fprintf(stderr,
+          "invalid corrected daughter carrier in reaction %s species %d\n",
+          reaction.Id,species);
+      std::abort();
+    }
     PIC::ParticleBuffer::SetIndividualStatWeightCorrection(
-        parentPhysicalWeight*productTimeStep/(baseWeight*timeStep),data);
+        daughterCorrection,data);
 #endif
     MarkChemistryProcessed(data);
 
@@ -1649,6 +1700,14 @@ bool Comet::Chemistry::ValidateSystematicResidualState() {
       PIC::ParticleBuffer::SetV(velocity,particleData);
       PIC::ParticleBuffer::SetI(PIC::ThisThread%PIC::nTotalSpecies,
           particleData);
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      // The particle checksum spans the complete particle record.  A
+      // rank-distinct, non-unit correction therefore makes this restart test
+      // explicitly sensitive to loss or reinitialization of c rather than
+      // merely relying on the default value one.
+      PIC::ParticleBuffer::SetIndividualStatWeightCorrection(
+          std::ldexp(1.0,(PIC::ThisThread%7)-3),particleData);
+#endif
       localRestartParticles=1;
       break;
     }
@@ -1749,8 +1808,14 @@ bool Comet::Chemistry::ValidateSystematicResidualState() {
       (PIC::nTotalThreads==1 || globalCounts[5]>0);
   if (PIC::ThisThread==0)
     std::printf(
-        "%s systematic-residual validation mode=SYSTEMATIC mpi-ranks=%d owner-blocks=%lld accumulators=%lld same-carrier-packet-checks=%lld plan-retry-checks=%lld first-use-rollback-checks=%lld carrier-epoch-reset-checks=%lld migrated-nonzero-states=%lld migration-checks=%lld restart-continuation-checks=%lld restart-particles=%lld restart-particle-checksum=%d restart-ghost-sync-checks=%lld owner-only-state-checks=%lld max-prefix-error=%.17e center-cell-output=1 sampling-report-output=1 partial-mutations=%lld\n",
-        pass ? "PASS" : "FAIL",PIC::nTotalThreads,globalCounts[0],
+        "%s systematic-residual validation mode=SYSTEMATIC individual-correction=%s mpi-ranks=%d owner-blocks=%lld accumulators=%lld same-carrier-packet-checks=%lld plan-retry-checks=%lld first-use-rollback-checks=%lld carrier-epoch-reset-checks=%lld migrated-nonzero-states=%lld migration-checks=%lld restart-continuation-checks=%lld restart-particles=%lld restart-particle-checksum=%d restart-ghost-sync-checks=%lld owner-only-state-checks=%lld max-prefix-error=%.17e center-cell-output=1 sampling-report-output=1 partial-mutations=%lld\n",
+        pass ? "PASS" : "FAIL",
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+        "on",
+#else
+        "off",
+#endif
+        PIC::nTotalThreads,globalCounts[0],
         globalCounts[1],globalCounts[2],globalCounts[3],globalCounts[10],
         globalCounts[4],
         globalCounts[5],globalCounts[6],globalCounts[7],

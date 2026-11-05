@@ -20,11 +20,12 @@
 // This implementation requires a species-local timestep and either a
 // spatially global weight or one species-dependent weight stored in each
 // block.  In the local-weight case the face conversion below includes the
-// full W_old/W_new factor as well as dt_new/dt_old.  Individual corrections
-// would create a second, competing representation of the same statistical
-// weight and therefore remain disallowed.  CUDA continuation sweeps are not
-// implemented yet; failing at compile time is safer than silently dropping
-// the uncompleted part of a trajectory.
+// full W_old/W_new factor as well as dt_new/dt_old.  A particle's individual
+// correction c is deliberately unchanged at the face: it multiplies both the
+// incoming and outgoing carriers and therefore cancels from the required
+// residual-resampling multiplicity.  CloneParticle() copies c with the rest
+// of the record.  CUDA continuation sweeps are not implemented yet; failing
+// at compile time is safer than silently dropping the uncompleted trajectory.
 #if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
 #if _SIMULATION_TIME_STEP_MODE_ != _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
 #error "Local-timestep flux resampling requires SpeciesLocalTimeStep"
@@ -33,9 +34,6 @@
     (_SIMULATION_PARTICLE_WEIGHT_MODE_ != _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) && \
     (_SIMULATION_PARTICLE_WEIGHT_MODE_ != _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_)
 #error "Local-timestep flux resampling requires a supported global or species-local particle weight"
-#endif
-#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ != _INDIVIDUAL_PARTICLE_WEIGHT_OFF_
-#error "Local-timestep flux resampling requires ParticleWeightCorrectionMode=off"
 #endif
 #if _CUDA_MODE_ == _ON_
 #error "Local-timestep flux-resampling continuation is not implemented for CUDA"
@@ -241,6 +239,19 @@ bool PrepareLocalTimeStepFaceTransfer(long int ptr,int species,
         "invalid timestep or particle weight at local-timestep block face");
   }
 
+  PIC::ParticleBuffer::byte *particleData=
+      PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+  double individualCorrection=1.0;
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+  individualCorrection=
+      PIC::ParticleBuffer::GetIndividualStatWeightCorrection(particleData);
+  if (!(individualCorrection>0.0) ||
+      !std::isfinite(individualCorrection)) {
+    exit(__LINE__,__FILE__,
+        "invalid individual weight correction at local-timestep block face");
+  }
+#endif
+
   const double meanMultiplicity=
       oldWeight*newTimeStep/(newWeight*oldTimeStep);
   if (!(meanMultiplicity>0.0) || !std::isfinite(meanMultiplicity) ||
@@ -266,13 +277,26 @@ bool PrepareLocalTimeStepFaceTransfer(long int ptr,int species,
   if (PIC::Mover::LocalTimeStepFluxDiagnostic.Enabled) {
     PIC::Mover::cLocalTimeStepFluxDiagnostic &diagnostic=
         PIC::Mover::LocalTimeStepFluxDiagnostic;
-    const double incomingRate=oldWeight/oldTimeStep;
-    const double outgoingRate=newWeight/newTimeStep;
+    // c is fixed during face transfer.  It cancels from meanMultiplicity but
+    // must remain in every physical diagnostic carrier; the corresponding
+    // residual-resampling variance therefore contains c^2 through the square
+    // of outgoingRate.
+    const double incomingRate=
+        oldWeight*individualCorrection/oldTimeStep;
+    const double outgoingRate=
+        newWeight*individualCorrection/newTimeStep;
     const double mass=PIC::MolecularData::GetMass(species);
     const double probabilityVariance=
         residualProbability*(1.0-residualProbability);
     const double energy=0.5*mass*(velocity[0]*velocity[0]+
         velocity[1]*velocity[1]+velocity[2]*velocity[2]);
+    double internalEnergy=0.0;
+#if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
+    if (PIC::IDF::nTotalRotationalModes[species]>0)
+      internalEnergy+=PIC::IDF::GetRotE(particleData);
+    for (int mode=0;mode<PIC::IDF::nTotalVibtationalModes[species];mode++)
+      internalEnergy+=PIC::IDF::GetVibE(mode,particleData);
+#endif
 
     diagnostic.FaceTransferCount++;
     diagnostic.DestinationParticleCount+=destinationMultiplicity;
@@ -303,6 +327,13 @@ bool PrepareLocalTimeStepFaceTransfer(long int ptr,int species,
         destinationMultiplicity*outgoingRate*energy;
     diagnostic.KineticEnergyFluxVariance+=probabilityVariance*
         outgoingRate*outgoingRate*energy*energy;
+
+    diagnostic.IncomingInternalEnergyFlux+=
+        incomingRate*internalEnergy;
+    diagnostic.OutgoingInternalEnergyFlux+=
+        destinationMultiplicity*outgoingRate*internalEnergy;
+    diagnostic.InternalEnergyFluxVariance+=probabilityVariance*
+        outgoingRate*outgoingRate*internalEnergy*internalEnergy;
   }
 
   if (destinationMultiplicity==0) {
@@ -333,8 +364,6 @@ bool PrepareLocalTimeStepFaceTransfer(long int ptr,int species,
           MaximumRemainderInvariantError=invariantError;
   }
 
-  PIC::ParticleBuffer::byte *particleData=
-      PIC::ParticleBuffer::GetParticleDataPointer(ptr);
   PIC::ParticleBuffer::SetX(position,particleData);
   PIC::ParticleBuffer::SetV(velocity,particleData);
   PIC::Mover::SetLocalTimeStepRemainderFraction(

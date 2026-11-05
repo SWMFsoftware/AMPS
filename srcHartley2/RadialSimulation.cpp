@@ -400,11 +400,14 @@ long long MaximumReactionDaughterAllocation(
     const std::array<long int,PIC::nTotalSpecies> &counts) {
   if (!Comet::Chemistry::Enabled) return 0;
 
-  // ProcessParticle first selects one mutually exclusive reaction channel and
-  // then residual-resamples every concrete product with expectation
-  // (W_parent/dt_parent)/(W_product/dt_product).  floor(mu)+Bernoulli(frac)
-  // can allocate ceil(mu), so the hard capacity diagnostic must use that
-  // upper value for every stoichiometric product, present or absent.
+  // ProcessParticle first selects one mutually exclusive reaction channel.
+  // In a fixed-correction build it then residual-resamples every concrete
+  // product with expectation
+  // (W_parent/dt_parent)/(W_product/dt_product); floor(mu)+Bernoulli(frac)
+  // can allocate ceil(mu).  With individual corrections enabled, chemistry
+  // instead creates exactly one model daughter per integer-stoichiometric
+  // product and stores the carrier conversion in that daughter's correction.
+  // The hard allocation bound must mirror those two executors exactly.
   const ChemicalSolver::cReactionNetwork &network=
       Comet::Chemistry::GetNetwork();
   std::array<bool,PIC::nTotalSpecies> reachable{};
@@ -454,19 +457,25 @@ long long MaximumReactionDaughterAllocation(
     const int parent=
         network.GetReactantTerm(reactionIndex,0).Species;
     if (!reachable[parent]) continue;
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_OFF_
     const double parentCarrier=GetCarrierRate(block,parent);
+#endif
     const ChemicalSolver::cReaction &reaction=
         network.GetReaction(reactionIndex);
     long long maximumProducts=0;
     for (std::size_t term=0;term<reaction.ProductCount;term++) {
       const ChemicalSolver::cStoichiometricTerm &product=
           network.GetProductTerm(reactionIndex,term);
+      const long long coefficient=static_cast<long long>(
+          std::floor(product.Coefficient+0.5));
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      const long long oneProductMaximum=1;
+#else
       const double mean=parentCarrier/
           GetCarrierRate(block,product.Species);
       const long long oneProductMaximum=
           static_cast<long long>(std::ceil(mean));
-      const long long coefficient=static_cast<long long>(
-          std::floor(product.Coefficient+0.5));
+#endif
       if (oneProductMaximum<=0 || coefficient<=0 ||
           oneProductMaximum>LLONG_MAX/coefficient ||
           maximumProducts>LLONG_MAX-oneProductMaximum*coefficient) {
@@ -910,11 +919,12 @@ cComponentCarrierTransaction BuildComponentCarrierTransaction(
     }
   }
 
-  // Solve the hard chemistry allocation cap on the same component scalars
-  // selected by the population planner.  Repeated product terms are combined
-  // before selecting a carrier change, sinks require no allocation, and every
-  // change restarts the network closure because lowering one parent can make
-  // an upstream channel more restrictive.
+  // Close chemistry reachability on the same component scalars selected by
+  // the population planner and enforce the irreducible stoichiometric bound.
+  // In correction-off builds, also solve the residual-allocation cap by
+  // changing base carriers.  In correction-on builds each concrete product is
+  // represented by one daughter whose c stores the carrier conversion, so a
+  // base-carrier constraint here would be both unnecessary and incorrect.
   if (Comet::Chemistry::Enabled) {
     const ChemicalSolver::cReactionNetwork &network=
         Comet::Chemistry::GetNetwork();
@@ -977,6 +987,11 @@ cComponentCarrierTransaction BuildComponentCarrierTransaction(
             std::abort();
           }
 
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+          // Reachability changes still drive another closure pass, but no
+          // component carrier is changed for chemistry in this mode.
+          continue;
+#else
           auto hardAllocation = [&]() -> long long {
             long long total=0;
             for (int product=0;product<PIC::nTotalSpecies;product++) {
@@ -1066,6 +1081,7 @@ cComponentCarrierTransaction BuildComponentCarrierTransaction(
             }
             changed=true;
           }
+#endif
         }
       }
     }
@@ -1254,11 +1270,23 @@ cComponentCarrierTransaction BuildComponentCarrierTransaction(
               network.GetProductTerm(reactionIndex,term);
           const long long coefficient=
               CheckedReactionCoefficient(product.Coefficient,reaction.Id);
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+          // The correction-on chemistry executor creates exactly one model
+          // daughter for each concrete stoichiometric product and stores the
+          // parent/daughter carrier conversion in that particle's correction
+          // factor.  Auditing the base-carrier ratio here would reintroduce
+          // the legacy residual-resampling allocation count and can falsely
+          // report hundreds of allocations for a one-particle corrected
+          // daughter.  Keep this final plan audit identical to
+          // MaximumReactionDaughterAllocation() and ProcessParticle().
+          const long long multiplicity=1;
+#else
           const long long multiplicity=static_cast<long long>(std::ceil(
               transaction.ComponentCarrier[
                   component*PIC::nTotalSpecies+parent]/
               transaction.ComponentCarrier[
                   component*PIC::nTotalSpecies+product.Species]));
+#endif
           if (multiplicity<=0 || multiplicity>LLONG_MAX/coefficient ||
               total>LLONG_MAX-multiplicity*coefficient) {
             std::fprintf(stderr,
@@ -1510,6 +1538,461 @@ void AdaptParticleWeights(long int completedIterations) {
   }
 }
 
+constexpr double ValidationCorrectionValues[]={0.0625,0.25,1.0,4.0,16.0};
+constexpr std::size_t ValidationCorrectionValueCount=
+    sizeof(ValidationCorrectionValues)/sizeof(ValidationCorrectionValues[0]);
+
+void SeedValidationParticles(
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,int species,
+    long int particleCount);
+
+struct cValidationCorrectionAudit {
+  long long ParticleCount=0;
+  long long InvalidCount=0;
+  double MaximumRelativeError=0.0;
+  double CorrectionSum=0.0;
+  double CorrectionSquareSum=0.0;
+};
+
+cValidationCorrectionAudit AuditValidationCorrections(int species) {
+  cValidationCorrectionAudit local,global;
+  std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> nodes;
+  CollectCalculationLeafNodes(PIC::Mesh::mesh->rootTree,nodes);
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node:nodes) {
+    if (node->Thread!=PIC::ThisThread || node->block==NULL) continue;
+    for (long int cell=0;cell<BlockCellCount;cell++)
+      for (long int ptr=node->block->FirstCellParticleTable[cell];ptr!=-1;
+           ptr=PIC::ParticleBuffer::GetNext(ptr)) {
+        PIC::ParticleBuffer::byte *data=
+            PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+        if (PIC::ParticleBuffer::GetI(data)!=species) continue;
+        local.ParticleCount++;
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+        const double correction=
+            PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data);
+        double minimumError=std::numeric_limits<double>::infinity();
+        for (double expected:ValidationCorrectionValues)
+          minimumError=std::min(minimumError,
+              std::fabs(correction-expected)/expected);
+        if (!(correction>0.0) || !std::isfinite(correction) ||
+            minimumError>256.0*std::numeric_limits<double>::epsilon())
+          local.InvalidCount++;
+        else {
+          local.CorrectionSum+=correction;
+          local.CorrectionSquareSum+=correction*correction;
+        }
+        if (std::isfinite(minimumError))
+          local.MaximumRelativeError=std::max(
+              local.MaximumRelativeError,minimumError);
+#endif
+      }
+  }
+  MPI_Allreduce(&local.ParticleCount,&global.ParticleCount,1,MPI_LONG_LONG,
+      MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&local.InvalidCount,&global.InvalidCount,1,MPI_LONG_LONG,
+      MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&local.MaximumRelativeError,&global.MaximumRelativeError,1,
+      MPI_DOUBLE,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&local.CorrectionSum,&global.CorrectionSum,1,MPI_DOUBLE,
+      MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&local.CorrectionSquareSum,&global.CorrectionSquareSum,1,
+      MPI_DOUBLE,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  return global;
+}
+
+bool NearlyEqualValidation(double left,double right,double tolerance=2.0e-12) {
+  const double scale=std::max({std::fabs(left),std::fabs(right),
+      std::numeric_limits<double>::min()});
+  return std::fabs(left-right)<=tolerance*scale;
+}
+
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+// Exercise the real core sampler with correction correlated to velocity and
+// rotational energy.  Reading the collecting buffer directly avoids a
+// sampling-buffer switch that would perturb the focused validator's global
+// state, while still invoking exactly the production ProcessCell() path.
+bool ValidateIndividualCorrectionSampling(
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,int &localChecks) {
+  if (node==NULL || node->block==NULL) return true;
+  int species=-1;
+#if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
+  for (int candidate=0;candidate<PIC::nTotalSpecies;candidate++)
+    if (PIC::IDF::nTotalRotationalModes[candidate]>0) {
+      species=candidate;
+      break;
+    }
+#endif
+  if (species<0) return false;
+
+  PIC::ParticleBuffer::DeleteAllParticles();
+  SeedValidationParticles(node,species,
+      static_cast<long int>(ValidationCorrectionValueCount));
+  PIC::Mesh::cDataCenterNode *cell=node->block->GetCenterNode(
+      _getCenterNodeLocalNumber(0,0,0));
+  if (cell==NULL) return false;
+  PIC::Mesh::flushCollectingSamplingBuffer(cell);
+
+  const double baseWeight=node->block->GetLocalParticleWeight(species);
+  double expectedWeight=0.0,expectedDensity=0.0;
+  double expectedVelocity[3]={0.0,0.0,0.0};
+  double expectedRotationalEnergy=0.0;
+  int particleIndex=0;
+  for (long int ptr=node->block->FirstCellParticleTable[0];ptr!=-1;
+       ptr=PIC::ParticleBuffer::GetNext(ptr),particleIndex++) {
+    PIC::ParticleBuffer::byte *data=
+        PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+    const double correction=
+        PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data);
+    const double representedWeight=baseWeight*correction;
+    double velocity[3]={100.0+37.0*particleIndex,
+        -21.0+5.0*particleIndex,9.0-3.0*particleIndex};
+    PIC::ParticleBuffer::SetV(velocity,data);
+    const double rotationalEnergy=
+        ValidationCorrectionValues[particleIndex]*1.0e-21;
+    PIC::IDF::LB::SetRotE(rotationalEnergy,data);
+    expectedWeight+=representedWeight;
+    expectedDensity+=representedWeight/cell->Measure;
+    for (int dimension=0;dimension<3;dimension++)
+      expectedVelocity[dimension]+=representedWeight*velocity[dimension];
+    expectedRotationalEnergy+=representedWeight*rotationalEnergy;
+  }
+
+  std::vector<int> sampledParticleCounts(PIC::nTotalSpecies,0);
+  int *sampledParticleCountTable[1]={sampledParticleCounts.data()};
+  PIC::Sampling::ProcessCell(0,0,0,sampledParticleCountTable,node,0);
+
+  const double *sampledWeight=
+      cell->GetSampleDatum_ptr(&PIC::Mesh::DatumParticleWeight,species);
+  const double *sampledDensity=
+      cell->GetSampleDatum_ptr(&PIC::Mesh::DatumNumberDensity,species);
+  const double *sampledVelocity=
+      cell->GetSampleDatum_ptr(&PIC::Mesh::DatumParticleVelocity,species);
+  if (sampledWeight==NULL || sampledDensity==NULL || sampledVelocity==NULL)
+    return false;
+  char *samplingData=cell->GetAssociatedDataBufferPointer()+
+      PIC::Mesh::collectingCellSampleDataPointerOffset;
+  const double sampledInternalWeight=*(species+reinterpret_cast<double*>(
+      samplingData+PIC::IDF::_TOTAL_SAMPLE_PARTICLE_WEIGHT_SAMPLE_DATA_OFFSET_));
+  const double sampledRotational=*(species+reinterpret_cast<double*>(
+      samplingData+PIC::IDF::_ROTATIONAL_ENERGY_SAMPLE_DATA_OFFSET_));
+
+  bool pass=sampledParticleCounts[species]==
+      static_cast<int>(ValidationCorrectionValueCount) &&
+      NearlyEqualValidation(sampledWeight[0],expectedWeight) &&
+      NearlyEqualValidation(sampledDensity[0],expectedDensity) &&
+      NearlyEqualValidation(sampledInternalWeight,expectedWeight) &&
+      NearlyEqualValidation(sampledRotational,expectedRotationalEnergy);
+  for (int dimension=0;dimension<3;dimension++)
+    pass=pass && NearlyEqualValidation(sampledVelocity[dimension],
+        expectedVelocity[dimension]);
+  if (pass) localChecks++;
+  PIC::Mesh::flushCollectingSamplingBuffer(cell);
+  return pass;
+}
+
+struct cCollisionSpeciesMoment {
+  double Weight=0.0;
+  double Velocity[3]={0.0,0.0,0.0};
+};
+
+cCollisionSpeciesMoment CollectCollisionSpeciesMoment(
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,int species) {
+  cCollisionSpeciesMoment result;
+  const double baseWeight=node->block->GetLocalParticleWeight(species);
+  for (long int ptr=node->block->FirstCellParticleTable[0];ptr!=-1;
+       ptr=PIC::ParticleBuffer::GetNext(ptr)) {
+    PIC::ParticleBuffer::byte *data=
+        PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+    if (PIC::ParticleBuffer::GetI(data)!=species) continue;
+    const double weight=baseWeight*
+        PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data);
+    double velocity[3];
+    PIC::ParticleBuffer::GetV(velocity,data);
+    result.Weight+=weight;
+    for (int dimension=0;dimension<3;dimension++)
+      result.Velocity[dimension]+=weight*velocity[dimension];
+  }
+  if (result.Weight>0.0)
+    for (int dimension=0;dimension<3;dimension++)
+      result.Velocity[dimension]/=result.Weight;
+  return result;
+}
+
+int ValidationNTCSpecies0=-1;
+int ValidationNTCSpecies1=-1;
+
+bool SelectValidationNTCCrossSpeciesPair(
+    PIC::Mesh::cDataCenterNode*,int species0,int species1) {
+  // The Stage-4 collision test seeds two deliberately separated streams.  A
+  // pair filter is required because updates from same-species collisions add
+  // work to the core diagnostic but cannot relax the separation that the
+  // test is intended to measure.  This hook is the normal general-NTC pair
+  // selector; production state is restored immediately after the focused
+  // kernel loop.
+  return (species0==ValidationNTCSpecies0 &&
+              species1==ValidationNTCSpecies1) ||
+      (species0==ValidationNTCSpecies1 &&
+              species1==ValidationNTCSpecies0);
+}
+
+// Run the selected production general-NTC cell kernel.  This test is aimed at
+// compatibility/invariants rather than a new collision-physics calibration:
+// it requires nonzero relaxation work, correction retention, and instrumented
+// finite update probabilities in [0,1].
+bool ValidateIndividualCorrectionNTC(
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,int &localChecks,
+    unsigned long long &localProbabilityChecks,double &localMinimumProbability,
+    double &localMaximumProbability) {
+  if (node==NULL || node->block==NULL) return true;
+  int species0=-1,species1=-1;
+#if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
+  for (int species=0;species<PIC::nTotalSpecies;species++)
+    if (PIC::MolecularData::GetSpecieType(species)==
+            _PIC_SPECIE_TYPE__GAS_ &&
+        (PIC::IDF::nTotalRotationalModes[species]>0 ||
+         PIC::IDF::nTotalVibtationalModes[species]>0)) {
+      species0=species;
+      break;
+    }
+#endif
+  for (int species=0;species<PIC::nTotalSpecies;species++)
+    if (PIC::MolecularData::GetSpecieType(species)==
+        _PIC_SPECIE_TYPE__GAS_ && species!=species0) {
+      if (species0<0) species0=species;
+      else {species1=species;break;}
+    }
+  if (species0<0 || species1<0) return false;
+
+  PIC::ParticleBuffer::DeleteAllParticles();
+  constexpr long int ParticlesPerSpecies=96;
+  SeedValidationParticles(node,species0,ParticlesPerSpecies);
+  SeedValidationParticles(node,species1,ParticlesPerSpecies);
+  int index0=0,index1=0;
+  for (long int ptr=node->block->FirstCellParticleTable[0];ptr!=-1;
+       ptr=PIC::ParticleBuffer::GetNext(ptr)) {
+    PIC::ParticleBuffer::byte *data=
+        PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+    const int species=PIC::ParticleBuffer::GetI(data);
+    const double correction=
+        PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data);
+    double velocity[3];
+    if (species==species0) {
+      velocity[0]=700.0+8.0*index0+3.0*correction;
+      velocity[1]=30.0; velocity[2]=-10.0; index0++;
+    }
+    else {
+      velocity[0]=-500.0-6.0*index1-2.0*correction;
+      velocity[1]=-20.0; velocity[2]=15.0; index1++;
+    }
+    PIC::ParticleBuffer::SetV(velocity,data);
+  }
+  const cCollisionSpeciesMoment before0=
+      CollectCollisionSpeciesMoment(node,species0);
+  const cCollisionSpeciesMoment before1=
+      CollectCollisionSpeciesMoment(node,species1);
+  const double initialSeparation=
+      std::fabs(before0.Velocity[0]-before1.Velocity[0]);
+
+  PIC::MolecularCollisions::ParticleCollisionModel::
+      ResetNTCValidationDiagnostic(true);
+  // A fixed number of kernel calls is not a meaningful amount of collision
+  // work when c spans 1/16...16: the exact unequal-carrier update probability
+  // can be small, and 32 calls produced only a few updates in the first
+  // Stage-4 smoke test.  Stop on completed update work instead, retaining a
+  // hard cycle ceiling so a broken/zero-probability operator fails promptly.
+  // Two species with 96 particles each are seeded.  Requiring 256 updates
+  // therefore exercises more than one cross-species update per model
+  // particle on average; the independent drift-relaxation predicate below
+  // still prevents an update counter alone from declaring success.
+  constexpr unsigned long long TargetParticleUpdates=256;
+  constexpr int MaximumCollisionCycles=65536;
+  const PIC::MolecularCollisions::ParticleCollisionModel::
+      fDoSimulateCellCollisions savedCollisionSelector=
+      PIC::MolecularCollisions::ParticleCollisionModel::
+          DoSimulateCellCollisions;
+  ValidationNTCSpecies0=species0;
+  ValidationNTCSpecies1=species1;
+  PIC::MolecularCollisions::ParticleCollisionModel::
+      DoSimulateCellCollisions=SelectValidationNTCCrossSpeciesPair;
+  int collisionCycles=0;
+  for (;collisionCycles<MaximumCollisionCycles;collisionCycles++) {
+    PIC::MolecularCollisions::ParticleCollisionModel::
+        ModelCellCollisions_ntc(0,0,0,node);
+    if ((collisionCycles+1)%32==0 &&
+        PIC::MolecularCollisions::ParticleCollisionModel::
+            GetNTCValidationDiagnostic().ParticleUpdateCount>=
+                TargetParticleUpdates) {
+      collisionCycles++;
+      break;
+    }
+  }
+  PIC::MolecularCollisions::ParticleCollisionModel::
+      DoSimulateCellCollisions=savedCollisionSelector;
+  ValidationNTCSpecies0=-1;
+  ValidationNTCSpecies1=-1;
+  const PIC::MolecularCollisions::ParticleCollisionModel::
+      cNTCValidationDiagnostic diagnostic=
+      PIC::MolecularCollisions::ParticleCollisionModel::
+          GetNTCValidationDiagnostic();
+  PIC::MolecularCollisions::ParticleCollisionModel::
+      ResetNTCValidationDiagnostic(false);
+
+  const cCollisionSpeciesMoment after0=
+      CollectCollisionSpeciesMoment(node,species0);
+  const cCollisionSpeciesMoment after1=
+      CollectCollisionSpeciesMoment(node,species1);
+  const double finalSeparation=
+      std::fabs(after0.Velocity[0]-after1.Velocity[0]);
+  const cValidationCorrectionAudit audit0=
+      AuditValidationCorrections(species0);
+  const cValidationCorrectionAudit audit1=
+      AuditValidationCorrections(species1);
+  const bool pass=diagnostic.TrialCount>0 &&
+      diagnostic.AcceptedCollisionCount>0 &&
+      diagnostic.ParticleUpdateCount>=TargetParticleUpdates &&
+      diagnostic.UpdateProbabilityCount>0 &&
+      diagnostic.InvalidUpdateProbabilityCount==0 &&
+      std::isfinite(diagnostic.MinimumUpdateProbability) &&
+      std::isfinite(diagnostic.MaximumUpdateProbability) &&
+      diagnostic.MinimumUpdateProbability>=0.0 &&
+      diagnostic.MaximumUpdateProbability<=1.0 &&
+      audit0.InvalidCount==0 && audit1.InvalidCount==0 &&
+      audit0.ParticleCount==ParticlesPerSpecies*PIC::nTotalThreads &&
+      audit1.ParticleCount==ParticlesPerSpecies*PIC::nTotalThreads &&
+      finalSeparation<initialSeparation;
+  if (pass) localChecks++;
+  localProbabilityChecks=diagnostic.UpdateProbabilityCount;
+  localMinimumProbability=diagnostic.MinimumUpdateProbability;
+  localMaximumProbability=diagnostic.MaximumUpdateProbability;
+  if (PIC::ThisThread==0) {
+    // Keep a compact, machine-readable failure record in every archive.  In
+    // particular, a valid probability range alone does not prove that the
+    // unequal-collision operator performed work or relaxed the two streams.
+    // These fields distinguish a selection/update failure from correction
+    // corruption or an over-strict relaxation assertion without requiring a
+    // debugger rerun of the MPI validation case.
+    std::fprintf(PIC::DiagnospticMessageStream,
+        "%s individual-weight NTC validation cycles=%d target-updates=%llu trials=%llu accepted=%llu updates=%llu probability-checks=%llu invalid-probabilities=%llu probability-min=%.17e probability-max=%.17e species0-count=%lld species1-count=%lld species0-invalid-c=%lld species1-invalid-c=%lld initial-separation=%.17e final-separation=%.17e\n",
+        pass ? "PASS" : "FAIL",collisionCycles,TargetParticleUpdates,
+        diagnostic.TrialCount,
+        diagnostic.AcceptedCollisionCount,diagnostic.ParticleUpdateCount,
+        diagnostic.UpdateProbabilityCount,
+        diagnostic.InvalidUpdateProbabilityCount,
+        diagnostic.MinimumUpdateProbability,
+        diagnostic.MaximumUpdateProbability,audit0.ParticleCount,
+        audit1.ParticleCount,audit0.InvalidCount,audit1.InvalidCount,
+        initialSeparation,finalSeparation);
+    std::fflush(PIC::DiagnospticMessageStream);
+  }
+  return pass;
+}
+
+bool ValidateIndividualCorrectionBoundaryAndRestart(
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,int species,
+    int &localBoundaryChecks,int &localRestartChecks) {
+  if (node==NULL || node->block==NULL) return true;
+  PIC::ParticleBuffer::DeleteAllParticles();
+  SeedValidationParticles(node,species,1);
+  long int ptr=node->block->FirstCellParticleTable[0];
+  if (ptr<0) return false;
+  PIC::ParticleBuffer::byte *data=
+      PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+  PIC::ParticleBuffer::SetIndividualStatWeightCorrection(4.0,data);
+  double position[3],velocity[3];
+  PIC::ParticleBuffer::GetX(position,data);
+  PIC::ParticleBuffer::GetV(velocity,data);
+  const int innerResult=Comet::RadialSimulation::ProcessDomainBoundary(ptr,
+      position,velocity,0,node);
+  const bool innerPass=innerResult==_PARTICLE_REJECTED_ON_THE_FACE_ &&
+      PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data)==4.0;
+  const int outerResult=Comet::RadialSimulation::ProcessDomainBoundary(ptr,
+      position,velocity,1,node);
+  const bool outerPass=outerResult==_PARTICLE_DELETED_ON_THE_FACE_ &&
+      PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data)==4.0;
+  if (innerPass && outerPass) localBoundaryChecks++;
+
+  const unsigned long checksumBefore=PIC::Restart::GetParticleDataCheckSum();
+  const double correctionBefore=
+      PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data);
+  char restartName[256];
+  std::snprintf(restartName,sizeof(restartName),
+      "/tmp/amps-hartley2-stage4.ranks=%d.restart",PIC::nTotalThreads);
+  PIC::Restart::SaveParticleData(restartName);
+  PIC::ParticleBuffer::DeleteAllParticles();
+  PIC::Restart::ReadParticleData(restartName);
+  const unsigned long checksumAfter=PIC::Restart::GetParticleDataCheckSum();
+  const cValidationCorrectionAudit restartAudit=
+      AuditValidationCorrections(species);
+  const bool restartPass=checksumAfter==checksumBefore &&
+      restartAudit.ParticleCount==PIC::nTotalThreads &&
+      restartAudit.InvalidCount==0 && correctionBefore==4.0;
+  if (restartPass) localRestartChecks++;
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+  if (PIC::ThisThread==0) std::remove(restartName);
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+  return innerPass && outerPass && restartPass;
+}
+
+double Stage4MigrationLoadMeasure(
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+  // A stable, deliberately irregular AMR-ID hash changes multi-rank
+  // ownership boundaries without depending on their old owners.  It is used
+  // only by the focused validator, after all other initialized-mesh tests.
+  std::uint64_t key=1469598103934665603ULL^
+      static_cast<std::uint64_t>(node->AMRnodeID.ResolutionLevel);
+  for (unsigned int digit=0;digit<node->AMRnodeID.Length();digit++) {
+    key^=static_cast<std::uint64_t>(node->AMRnodeID.id[digit])+1ULL;
+    key*=1099511628211ULL;
+  }
+  return 1.0+static_cast<double>(key%97ULL);
+}
+
+bool ValidateIndividualCorrectionMigration(int species,int &localChecks) {
+  std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> nodes;
+  CollectCalculationLeafNodes(PIC::Mesh::mesh->rootTree,nodes);
+  std::vector<int> oldOwner(nodes.size(),-1);
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *seedNode=NULL;
+  for (std::size_t block=0;block<nodes.size();block++) {
+    oldOwner[block]=nodes[block]->Thread;
+    if (seedNode==NULL && nodes[block]->Thread==PIC::ThisThread &&
+        nodes[block]->block!=NULL) seedNode=nodes[block];
+  }
+  if (seedNode==NULL) return false;
+
+  PIC::ParticleBuffer::DeleteAllParticles();
+  SeedValidationParticles(seedNode,species,1);
+  PIC::ParticleBuffer::byte *data=PIC::ParticleBuffer::GetParticleDataPointer(
+      seedNode->block->FirstCellParticleTable[0]);
+  PIC::ParticleBuffer::SetIndividualStatWeightCorrection(
+      ValidationCorrectionValues[PIC::ThisThread%
+          ValidationCorrectionValueCount],data);
+  const cValidationCorrectionAudit before=
+      AuditValidationCorrections(species);
+
+  PIC::Mesh::mesh->SetParallelLoadMeasure(Stage4MigrationLoadMeasure);
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists(
+      _PIC_DYNAMIC_BALANCE_SEND_RECV_MESH_NODE_EXCHANGE_TAG_);
+  PIC::DomainBlockDecomposition::UpdateBlockTable();
+
+  long long localMigratedBlocks=0;
+  for (std::size_t block=0;block<nodes.size();block++)
+    if (nodes[block]->Thread==PIC::ThisThread &&
+        oldOwner[block]!=nodes[block]->Thread) localMigratedBlocks++;
+  long long migratedBlocks=0;
+  MPI_Allreduce(&localMigratedBlocks,&migratedBlocks,1,MPI_LONG_LONG,MPI_SUM,
+      MPI_GLOBAL_COMMUNICATOR);
+  const cValidationCorrectionAudit after=
+      AuditValidationCorrections(species);
+  const bool pass=after.InvalidCount==0 &&
+      after.ParticleCount==before.ParticleCount &&
+      after.CorrectionSum==before.CorrectionSum &&
+      after.CorrectionSquareSum==before.CorrectionSquareSum &&
+      (PIC::nTotalThreads==1 || migratedBlocks>0);
+  if (pass) localChecks++;
+  return pass;
+}
+#endif
+
 void SeedValidationParticles(
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,int species,
     long int particleCount) {
@@ -1524,6 +2007,10 @@ void SeedValidationParticles(
   // same analytically known split/roulette scaling and can be checked without
   // confusing adaptation error with thermal sampling noise.
   const double velocity[3]={417.0,-31.0,12.0};
+  // A wide deterministic correction cycle makes the adaptation validator
+  // sensitive to CloneParticle() accidentally resetting c and to roulette
+  // moments that use W instead of the represented carrier W*c.  The cycle is
+  // compile-time inert in the default correction-off production build.
   for (long int particle=0;particle<particleCount;particle++) {
     const long int ptr=PIC::ParticleBuffer::GetNewParticle(first);
     PIC::ParticleBuffer::byte *data=
@@ -1531,6 +2018,11 @@ void SeedValidationParticles(
     PIC::ParticleBuffer::SetX(const_cast<double*>(position),data);
     PIC::ParticleBuffer::SetV(const_cast<double*>(velocity),data);
     PIC::ParticleBuffer::SetI(species,data);
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+    PIC::ParticleBuffer::SetIndividualStatWeightCorrection(
+        ValidationCorrectionValues[(particle+species)%
+            ValidationCorrectionValueCount],data);
+#endif
 #if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
     PIC::IDF::InitRotTemp(
         Comet::RadialSimulation::InnerBoundaryTemperature,data);
@@ -1549,7 +2041,7 @@ void SeedValidationParticles(
 
 // Integrated represented moments used by the Stage-2 transaction tests.
 // WeightSquared is not a physical moment; it is the exact variance coefficient
-// for independent 1/2 roulette with unequal local block weights.
+// for independent 1/2 roulette with unequal represented weights W*c.
 struct cValidationMoments {
   double Number=0.0;
   double Mass=0.0;
@@ -1566,13 +2058,24 @@ cValidationMoments CollectValidationMoments(int species) {
   const double mass=PIC::MolecularData::GetMass(species);
   for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node:nodes) {
     if (node->Thread!=PIC::ThisThread || node->block==NULL) continue;
-    const double weight=node->block->GetLocalParticleWeight(species);
+    const double baseWeight=node->block->GetLocalParticleWeight(species);
     for (long int cell=0;cell<BlockCellCount;cell++)
       for (long int ptr=node->block->FirstCellParticleTable[cell];ptr!=-1;
            ptr=PIC::ParticleBuffer::GetNext(ptr)) {
         PIC::ParticleBuffer::byte *data=
             PIC::ParticleBuffer::GetParticleDataPointer(ptr);
         if (PIC::ParticleBuffer::GetI(data)!=species) continue;
+        double weight=baseWeight;
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+        const double correction=
+            PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data);
+        if (!(correction>0.0) || !std::isfinite(correction)) {
+          std::fprintf(stderr,
+              "invalid individual correction in adaptation validation\n");
+          std::abort();
+        }
+        weight*=correction;
+#endif
         double velocity[3];
         PIC::ParticleBuffer::GetV(velocity,data);
         local.Number+=weight;
@@ -2217,6 +2720,18 @@ void Comet::RadialSimulation::RequestAllocationBurstEmergency() {
 
 bool Comet::RadialSimulation::Validate(std::string *error) {
   if (!Enabled) return true;
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ != _PIC_MODE_ON_
+  return Fail("individual corrections in the radial backend require local-timestep flux resampling",error);
+#endif
+#if _PIC__PARTICLE_COLLISION_MODEL__MODE_ == _PIC_MODE_ON_ && \
+    _PIC__PARTICLE_COLLISION_MODEL_ != _PIC__PARTICLE_COLLISION_MODEL__NTC_
+  // Stage 4 validates the correction-aware general NTC path. MF and
+  // user-defined collision executors have different pair samplers and must
+  // not silently inherit that claim until they receive their own audit.
+  return Fail("individual corrections with collisions require the validated general NTC model",error);
+#endif
+#endif
   if (!(CourantNumber>0.0) || CourantNumber>1.0 ||
       !std::isfinite(CourantNumber))
     return Fail("radial Courant number must be in (0,1]",error);
@@ -2236,8 +2751,6 @@ bool Comet::RadialSimulation::Validate(std::string *error) {
   if (ParticleWeightAdaptationEnabled) {
 #if _SIMULATION_PARTICLE_WEIGHT_MODE_ != _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
     return Fail("particle-weight adaptation requires SpeciesLocalParticleWeight",error);
-#elif _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ != _INDIVIDUAL_PARTICLE_WEIGHT_OFF_
-    return Fail("particle-weight adaptation requires individual weight correction off",error);
 #else
     if (MinimumParticlesPerCell<=0 || MaximumParticlesPerCell<=0)
       return Fail("particle-weight adaptation range must be positive",error);
@@ -2280,7 +2793,7 @@ bool Comet::RadialSimulation::Validate(std::string *error) {
         EmergencyParticleBufferUtilization>1.0-AllocationReserveFraction)
       return Fail("allocation reserve must leave the emergency high watermark below the transaction ceiling",error);
     if (MaximumFaceTransferMultiplicity!=1)
-      return Fail("the validated correction-free face-allocation controller currently requires maximum face multiplicity 1",error);
+      return Fail("the validated face-allocation controller currently requires maximum face multiplicity 1",error);
     if (Comet::Chemistry::Enabled &&
         MaximumPhotochemicalProductsPerReaction<=0)
       return Fail("particle-weight adaptation with chemistry requires a positive maximum photochemical product count per reaction",error);
@@ -2699,6 +3212,20 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
   int localRouletteConservationChecks=0;
   int localCapacityRollbackChecks=0;
   int localPartialMutations=0;
+  int localSplitCorrectionChecks=0;
+  int localRouletteCorrectionChecks=0;
+  int localEmergencyCorrectionChecks=0;
+  double localMaximumCorrectionError=0.0;
+  int localSamplingCorrectionChecks=0;
+  int localCollisionCorrectionChecks=0;
+  int localBoundaryCorrectionChecks=0;
+  int localRestartCorrectionChecks=0;
+  int localMigrationCorrectionChecks=0;
+  unsigned long long localCollisionProbabilityChecks=0;
+  double localMinimumCollisionProbability=
+      std::numeric_limits<double>::infinity();
+  double localMaximumCollisionProbability=
+      -std::numeric_limits<double>::infinity();
   double stage2MaximumFaceMultiplicity=0.0;
   long long stage2MaximumReactionAllocation=0;
 
@@ -2771,6 +3298,10 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
   const cValidationMoments splitBefore=CollectValidationMoments(species);
   AdaptParticleWeights(0);
   const cValidationMoments splitAfter=CollectValidationMoments(species);
+  const cValidationCorrectionAudit splitCorrectionAudit=
+      AuditValidationCorrections(species);
+  localMaximumCorrectionError=std::max(localMaximumCorrectionError,
+      splitCorrectionAudit.MaximumRelativeError);
   const double splitExpectedWeight=std::ldexp(splitInitialWeight,-3);
   bool splitLocalPass=true;
   if (localHasBlock) {
@@ -2818,6 +3349,7 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
   MPI_Allreduce(&localEmptyBlocks,&globalEmptyBlocks,1,MPI_LONG_LONG,MPI_SUM,
       MPI_GLOBAL_COMMUNICATOR);
   const bool componentSplitPass=splitLocalPass && splitMomentPass &&
+      splitCorrectionAudit.InvalidCount==0 &&
       componentPopulationPass && emptyBlocksPass && globalEmptyBlocks>0 &&
       splitState.PropagationStatistics.MaximumCloneMeanAfter<=
           1.0+256.0*std::numeric_limits<double>::epsilon();
@@ -2826,6 +3358,7 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
     localComponentPopulationChecks++;
     localEmptyBlockChecks++;
     localSplitConservationChecks++;
+    localSplitCorrectionChecks++;
     localFaceCarrierPropagationChecks++;
   }
   stage2MaximumFaceMultiplicity=std::max(stage2MaximumFaceMultiplicity,
@@ -2887,6 +3420,10 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
   rnd_seed(99173+PIC::ThisThread);
   AdaptParticleWeights(0);
   const cValidationMoments rouletteAfter=CollectValidationMoments(species);
+  const cValidationCorrectionAudit rouletteCorrectionAudit=
+      AuditValidationCorrections(species);
+  localMaximumCorrectionError=std::max(localMaximumCorrectionError,
+      rouletteCorrectionAudit.MaximumRelativeError);
   // Survival probability is 1/2 but every survivor receives twice the old
   // weight.  Represented moments are therefore unbiased at their original
   // values.  For unequal old weights, Var[sum(2*w_i*Bernoulli(1/2))]
@@ -2910,9 +3447,10 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
             DoubleBits(2.0*rouletteInitialWeight) &&
         OtherValidationCellsAreEmpty(node->block);
   }
-  localPass=localPass && rouletteMomentPass && rouletteLocalPass;
+  localPass=localPass && rouletteMomentPass && rouletteLocalPass &&
+      rouletteCorrectionAudit.InvalidCount==0;
   if (rouletteMomentPass && rouletteLocalPass && localHasBlock)
-    localRouletteConservationChecks++;
+    localRouletteConservationChecks++,localRouletteCorrectionChecks++;
   localPass=ValidateSynchronizedWeightCopies(node,species,
       2.0*rouletteInitialWeight,localGhostChecks) && localPass;
 
@@ -3050,10 +3588,12 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
         }
       }
 
-      // Force the hard residual-allocation bound—not only its expectation—
-      // above the configured cap.  Install the unsafe carrier on every mesh
-      // copy so the subsequent face controller cannot mask the chemistry
-      // preparation test with an older, larger carrier in another block.
+      // Correction-off chemistry must raise an unsafe residual daughter
+      // carrier before allocation.  Correction-on chemistry always creates
+      // one daughter per concrete stoichiometric product, so its hard count
+      // is carrier-independent and this test instead proves that adaptation
+      // leaves the carrier alone while retaining the irreducible bound.
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_OFF_
       const double unsafeCarrier=savedCarriers[parent]*absentCoefficient/
           (8.0*MaximumPhotochemicalProductsPerReaction);
       for (int product=0;product<PIC::nTotalSpecies;product++)
@@ -3061,6 +3601,9 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
           SetWeightOverTimeStep(product,unsafeCarrier,
               PIC::Mesh::mesh->rootTree);
       SynchronizeAdaptedBlockWeights();
+#else
+      (void)absentCoefficient;
+#endif
 
       long long multiplicityBefore=0;
       if (localHasBlock) {
@@ -3085,10 +3628,16 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
               node->block->GetLocalParticleWeight(product),localGhostChecks) &&
               localPass;
         }
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+        localPass=localPass && multiplicityBefore==multiplicityAfter &&
+            multiplicityAfter<=MaximumPhotochemicalProductsPerReaction &&
+            daughtersRemainEmpty;
+#else
         localPass=localPass &&
             multiplicityBefore>MaximumPhotochemicalProductsPerReaction &&
             multiplicityAfter<=MaximumPhotochemicalProductsPerReaction &&
             daughtersRemainEmpty;
+#endif
         localPhotochemicalChecks++;
       }
       for (int testSpecies=0;testSpecies<PIC::nTotalSpecies;testSpecies++)
@@ -3134,6 +3683,12 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
     rnd_seed(77123+PIC::ThisThread);
     PIC::Parallel::ExchangeParticleData();
     EmergencyParticleBufferUtilization=configuredEmergencyThreshold;
+    const cValidationCorrectionAudit emergencyCorrectionAudit=
+        AuditValidationCorrections(species);
+    localMaximumCorrectionError=std::max(localMaximumCorrectionError,
+        emergencyCorrectionAudit.MaximumRelativeError);
+    if (emergencyCorrectionAudit.InvalidCount!=0) localPass=false;
+    else if (localHasBlock) localEmergencyCorrectionChecks++;
 
     const long long localEmergencyAfter=PIC::ParticleBuffer::NAllPart;
     long long maximumEmergencyAfter=0;
@@ -3205,6 +3760,12 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
     rnd_seed(83117+PIC::ThisThread);
     RequestAllocationBurstEmergency();
     AllocationLowWatermark=configuredAllocationLowWatermark;
+    const cValidationCorrectionAudit allocationCorrectionAudit=
+        AuditValidationCorrections(species);
+    localMaximumCorrectionError=std::max(localMaximumCorrectionError,
+        allocationCorrectionAudit.MaximumRelativeError);
+    if (allocationCorrectionAudit.InvalidCount!=0) localPass=false;
+    else if (localHasBlock) localEmergencyCorrectionChecks++;
 
     const long long localAllocationAfter=PIC::ParticleBuffer::NAllPart;
     long long maximumAllocationAfter=0;
@@ -3311,6 +3872,12 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
     rnd_seed(99241+PIC::ThisThread);
     PIC::Parallel::ExchangeParticleData();
     const bool requestConsumed=!SamplingPopulationEmergencyPending;
+    const cValidationCorrectionAudit samplingCorrectionAudit=
+        AuditValidationCorrections(species);
+    localMaximumCorrectionError=std::max(localMaximumCorrectionError,
+        samplingCorrectionAudit.MaximumRelativeError);
+    if (samplingCorrectionAudit.InvalidCount!=0) localPass=false;
+    else if (localHasBlock) localEmergencyCorrectionChecks++;
 
     if (localHasBlock) {
       const long int actualCount=CountSpeciesInBlock(node->block,species);
@@ -3347,6 +3914,28 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
     SpeciesMaximumParticlesPerCell[testSpecies]=
         configuredMaximumBySpecies[testSpecies];
   }
+
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+  // Stage-4 paths that are independent of the population controller itself:
+  // the production sampler, general NTC kernel, radial boundary callback, and
+  // full-record restart.  Keeping them in this initialized focused driver
+  // reuses the exact mesh, local W/dt values, MPI decomposition, and particle
+  // layout of the application rather than a reduced mock.
+  localPass=ValidateIndividualCorrectionSampling(node,
+      localSamplingCorrectionChecks) && localPass;
+  localPass=ValidateIndividualCorrectionNTC(node,
+      localCollisionCorrectionChecks,localCollisionProbabilityChecks,
+      localMinimumCollisionProbability,localMaximumCollisionProbability) &&
+      localPass;
+  localPass=ValidateIndividualCorrectionBoundaryAndRestart(node,species,
+      localBoundaryCorrectionChecks,localRestartCorrectionChecks) &&
+      localPass;
+  // Run ownership migration last because it deliberately changes the AMR
+  // distribution.  All following cleanup uses the rebuilt owner table and no
+  // longer relies on the pre-migration validation-node pointer.
+  localPass=ValidateIndividualCorrectionMigration(species,
+      localMigrationCorrectionChecks) && localPass;
+#endif
 
   PIC::ParticleBuffer::DeleteAllParticles();
   SetWeightOverTimeStep(species,globalOriginalCarrier,
@@ -3392,6 +3981,33 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
   MPI_Allreduce(&stage2MaximumReactionAllocation,
       &globalStage2MaximumReactionAllocation,1,MPI_LONG_LONG,MPI_MAX,
       MPI_GLOBAL_COMMUNICATOR);
+  int localCorrectionChecks[3]={localSplitCorrectionChecks,
+      localRouletteCorrectionChecks,localEmergencyCorrectionChecks};
+  int globalCorrectionChecks[3]={0,0,0};
+  MPI_Allreduce(localCorrectionChecks,globalCorrectionChecks,3,MPI_INT,
+      MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  double globalMaximumCorrectionError=0.0;
+  MPI_Allreduce(&localMaximumCorrectionError,
+      &globalMaximumCorrectionError,1,MPI_DOUBLE,MPI_MAX,
+      MPI_GLOBAL_COMMUNICATOR);
+  int localCoreCorrectionChecks[5]={localSamplingCorrectionChecks,
+      localCollisionCorrectionChecks,localBoundaryCorrectionChecks,
+      localRestartCorrectionChecks,localMigrationCorrectionChecks};
+  int globalCoreCorrectionChecks[5]={0,0,0,0,0};
+  MPI_Allreduce(localCoreCorrectionChecks,globalCoreCorrectionChecks,5,
+      MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  unsigned long long globalCollisionProbabilityChecks=0;
+  MPI_Allreduce(&localCollisionProbabilityChecks,
+      &globalCollisionProbabilityChecks,1,MPI_UNSIGNED_LONG_LONG,MPI_SUM,
+      MPI_GLOBAL_COMMUNICATOR);
+  double globalMinimumCollisionProbability=0.0;
+  double globalMaximumCollisionProbability=0.0;
+  MPI_Allreduce(&localMinimumCollisionProbability,
+      &globalMinimumCollisionProbability,1,MPI_DOUBLE,MPI_MIN,
+      MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&localMaximumCollisionProbability,
+      &globalMaximumCollisionProbability,1,MPI_DOUBLE,MPI_MAX,
+      MPI_GLOBAL_COMMUNICATOR);
   if (PIC::nTotalThreads>1 && globalGhostChecks==0) globalResult=0;
   if (Comet::Chemistry::Enabled &&
       globalPhotochemicalChecks!=globalBlockCount) globalResult=0;
@@ -3404,6 +4020,21 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
   for (int check=0;check<7;check++)
     if (globalStage2Checks[check]!=globalBlockCount) globalResult=0;
   if (globalStage2Checks[7]!=0 ||
+      globalCorrectionChecks[0]!=globalBlockCount ||
+      globalCorrectionChecks[1]!=globalBlockCount ||
+      globalCorrectionChecks[2]!=3*globalBlockCount ||
+      globalMaximumCorrectionError>
+          256.0*std::numeric_limits<double>::epsilon() ||
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      globalCoreCorrectionChecks[0]!=globalBlockCount ||
+      globalCoreCorrectionChecks[1]!=globalBlockCount ||
+      globalCoreCorrectionChecks[2]!=globalBlockCount ||
+      globalCoreCorrectionChecks[3]!=globalBlockCount ||
+      globalCoreCorrectionChecks[4]!=globalBlockCount ||
+      globalCollisionProbabilityChecks==0 ||
+      !(globalMinimumCollisionProbability>=0.0) ||
+      !(globalMaximumCollisionProbability<=1.0) ||
+#endif
       globalStage2MaximumFaceMultiplicity>
           1.0+256.0*std::numeric_limits<double>::epsilon() ||
       globalStage2MaximumReactionAllocation>
@@ -3411,8 +4042,14 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
     globalResult=0;
   if (PIC::ThisThread==0) {
     std::fprintf(PIC::DiagnospticMessageStream,
-        "%s particle-weight adaptation validation range=%ld:%ld emergency-buffer-utilization=%.6f allocation-low-watermark=%.6f allocation-reserve=%.6f max-face-transfer-multiplicity=%ld max-photochemical-products=%ld owner-blocks=%d emergency-checks=%d allocation-burst-checks=%d sampling-population-emergency-checks=%d face-carrier-propagation-checks=%d photochemical-checks=%d ghost-weight-checks=%d\n",
-        globalResult!=0 ? "PASS" : "FAIL",MinimumParticlesPerCell,
+        "%s particle-weight adaptation validation individual-correction=%s range=%ld:%ld emergency-buffer-utilization=%.6f allocation-low-watermark=%.6f allocation-reserve=%.6f max-face-transfer-multiplicity=%ld max-photochemical-products=%ld owner-blocks=%d emergency-checks=%d allocation-burst-checks=%d sampling-population-emergency-checks=%d face-carrier-propagation-checks=%d photochemical-checks=%d ghost-weight-checks=%d\n",
+        globalResult!=0 ? "PASS" : "FAIL",
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+        "on",
+#else
+        "off",
+#endif
+        MinimumParticlesPerCell,
         MaximumParticlesPerCell,EmergencyParticleBufferUtilization,
         AllocationLowWatermark,AllocationReserveFraction,
         MaximumFaceTransferMultiplicity,
@@ -3431,6 +4068,34 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
         globalStage2MaximumFaceMultiplicity,
         globalStage2MaximumReactionAllocation,
         MaximumPhotochemicalProductsPerReaction,globalStage2Checks[7]);
+    std::fprintf(PIC::DiagnospticMessageStream,
+        "%s individual-weight adaptation validation correction-mode=%s mpi-ranks=%d correction-min=%.17g correction-max=%.17g correction-values=%zu max-correction-error=%.17e partial-mutations=%d split-correction-checks=%d roulette-correction-checks=%d emergency-correction-checks=%d corrected-moment-checks=%d capacity-rollback-checks=%d ghost-weight-publication-checks=%d\n",
+        globalResult!=0 ? "PASS" : "FAIL",
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+        "ON",
+#else
+        "OFF",
+#endif
+        PIC::nTotalThreads,ValidationCorrectionValues[0],
+        ValidationCorrectionValues[ValidationCorrectionValueCount-1],
+        ValidationCorrectionValueCount,globalMaximumCorrectionError,
+        globalStage2Checks[7],globalCorrectionChecks[0],
+        globalCorrectionChecks[1],globalCorrectionChecks[2],
+        globalStage2Checks[4]+globalStage2Checks[5],globalStage2Checks[6],
+        globalGhostChecks);
+    std::fprintf(PIC::DiagnospticMessageStream,
+        "%s individual-weight core compatibility correction-mode=%s mpi-ranks=%d sampling-checks=%d collision-checks=%d boundary-checks=%d restart-checks=%d migration-checks=%d collision-probability-checks=%llu collision-probability-min=%.17e collision-probability-max=%.17e\n",
+        globalResult!=0 ? "PASS" : "FAIL",
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+        "ON",
+#else
+        "OFF",
+#endif
+        PIC::nTotalThreads,globalCoreCorrectionChecks[0],
+        globalCoreCorrectionChecks[1],globalCoreCorrectionChecks[2],
+        globalCoreCorrectionChecks[3],globalCoreCorrectionChecks[4],
+        globalCollisionProbabilityChecks,
+        globalMinimumCollisionProbability,globalMaximumCollisionProbability);
     std::fflush(PIC::DiagnospticMessageStream);
   }
   return globalResult!=0;

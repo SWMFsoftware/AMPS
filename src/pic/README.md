@@ -546,3 +546,80 @@ This is intentionally limited to the general NTC routine. Specialized
 uniform-weight collision paths were not changed and should not be folded into
 this implementation during master integration without separate deterministic
 and statistical validation.
+
+## 13. Individual corrections with local face transfer and general NTC
+
+Stage-4 comet work adds a narrowly scoped correction-aware path to the generic
+core. The feature remains selected by existing compile-time configuration and
+does not change correction-off builds.
+
+### Local-timestep face transfer
+
+`pic_mover.cpp` permits individual corrections when local-timestep flux
+resampling is enabled. The supported policy holds a particle's individual
+correction `c` fixed across a block face. Because the physical rate is
+`W*c/dt`, `c` cancels from the residual split/roulette multiplicity:
+
+```text
+mu = W_old*dt_new/(W_new*dt_old).
+```
+
+The original particle and all clones retain the complete particle record,
+including `c`, rotational energy, and vibrational state. The mover rejects a
+non-positive or non-finite correction before changing a particle. Its opt-in
+validation diagnostic uses `W*c/dt` for number, mass, momentum, kinetic
+energy, and internal energy; the variance terms contain the corresponding
+squared outgoing rate. The diagnostic is not a production sampler.
+
+### General NTC collisions
+
+For species bucket `s`, particle `i` has physical carrier
+`q_i=W_s*c_i`. `ModelCellCollisions_ntc()` builds strictly increasing
+correction prefix sums and selects each trial particle with probability
+`q_i/sum(q)`. Cross-species trials use
+
+```text
+N_trial = sum_i(q_i) sum_j(q_j) sigma_g,max dt_max / (q_min V),
+```
+
+with the usual one-half factor for one-species unordered pairs. A selected
+particle is updated with probability `q_min/q_i` times its local-timestep
+ratio. The implementation validates that every probability is finite and in
+`[0,1]`, allowing only a roundoff-sized clamp. Same-species draws are
+independent; a self pair is discarded rather than redrawn, preserving the
+ordered-pair normalization and preventing the historical one-particle loop.
+The collision limiter uses `ancoll/(N0*N1)` with explicit parentheses.
+
+`cNTCValidationDiagnostic` in `pic.h` is disabled by default. A focused MPI
+validator may enable it to count trials, accepted collisions, self-pair
+rejections, particle updates, invalid probabilities, and probability extrema.
+Enabling that process-local diagnostic in a hybrid build fails explicitly
+until a thread-safe reduction exists.
+
+The simplified NTC kernel is not correction-aware. In a correction-on build
+it terminates at entry with a nonzero exit code and directs the caller to the
+general NTC implementation. Application setup must similarly reject MF or
+any unvalidated collision implementation; the core does not reinterpret
+those models.
+
+### Qualification and merge constraints
+
+The comet validator covers corrections `1/16, 1/4, 1, 4, 16`, all-correction-
+one identity cases, local/remote/multiple faces, internal energy, adaptation,
+sampling, collision relaxation, boundary handling, restart, migration, and
+chemistry at 1, 4, and 12 MPI ranks. Evidence is listed in
+`srcHartley2/CHEMISTRY.md` and `srcHartley2/STATUS.md`.
+
+For a later master integration, treat the core work as two reviewable semantic
+units:
+
+1. merge the `pic.h` flux-diagnostic fields with `pic_mover.cpp`; and
+2. merge the `pic.h` NTC diagnostic interface with
+   `pic_particle_collision_models.cpp`.
+
+Do not merge only the declarations, weaken the simplified-NTC failure, or
+broaden the supported mover/collision matrix during conflict resolution.
+Retain default-off behavior and repeat correction-off plus correction-on
+1/4/12-rank tests after a clean regenerated build. CUDA, hybrid diagnostic
+reduction, field-line/periodic movers, and non-radial correction-on chemistry
+remain outside this qualification.

@@ -15,6 +15,17 @@ source_root=$(cd -- "$script_dir/../.." && pwd)
 stage0_tmp=$(mktemp -d "${TMPDIR:-/tmp}/hartley2-stage0.XXXXXX")
 trap 'rm -rf -- "$stage0_tmp"' EXIT
 
+# The all-stage runner may select a non-default MPI launcher.  Keep the
+# historical command name when no override is supplied so direct invocations
+# retain their original behavior.  Resolve it before compiling anything;
+# otherwise a missing launcher would leave a misleading partial test run.
+stage0_mpi_launcher=${HARTLEY2_MPIEXEC:-mpiexec}
+stage0_mpi_launcher=$(command -v -- "$stage0_mpi_launcher" || true)
+if [[ -z "$stage0_mpi_launcher" ]]; then
+  echo "Stage-0 MPI launcher is not on PATH: ${HARTLEY2_MPIEXEC:-mpiexec}" >&2
+  exit 2
+fi
+
 mpicxx -std=c++11 -O2 -Wall -Wextra -DOMPI_SKIP_MPICXX=1 \
   -I"$source_root/src" \
   "$script_dir/test_stage0_chemistry_diagnostics.cpp" \
@@ -22,7 +33,7 @@ mpicxx -std=c++11 -O2 -Wall -Wextra -DOMPI_SKIP_MPICXX=1 \
 
 reference_signature=""
 for ranks in 1 4 12; do
-  output=$(mpiexec -n "$ranks" --oversubscribe \
+  output=$("$stage0_mpi_launcher" -n "$ranks" --oversubscribe \
     "$stage0_tmp/test_stage0_chemistry_diagnostics")
   printf '%s\n' "$output"
   signature=$(printf '%s\n' "$output" | sed -n 's/^stage0-mpi-signature /stage0-mpi-signature /p')

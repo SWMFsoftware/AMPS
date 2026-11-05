@@ -645,19 +645,31 @@ Make individual statistical corrections compatible with the radial
 local-timestep mover, adaptive base weights, general NTC collisions, chemistry,
 MPI exchange, and sampling before using them for science.
 
-### Existing support and blockers
+### Implemented support and remaining exclusions
 
-- The particle buffer already stores and clones an individual correction.
-- Macroscopic sampling multiplies the base weight by that correction.
-- The general NTC collision implementation includes individual corrections in
-  collision majorants and unequal-weight update probabilities.
-- Comet chemistry already reads a corrected parent and can assign one
-  corrected daughter per concrete product.
-- The local-timestep flux-resampling mover has a compile-time prohibition.
-- `RadialSimulation::Validate()` rejects adaptive block weights with
-  individual correction enabled.
-- Simplified NTC assumes corrections are off, and unsupported collision
-  implementations must continue to fail explicitly.
+- The particle buffer stores, clones, exchanges, migrates, and restarts an
+  individual correction. Macroscopic sampling uses the physical carrier
+  `W*c`.
+- The local-timestep face mover now implements the fixed-correction residual
+  policy below. It validates positive finite `c`, preserves `c` in every
+  survivor/clone, and measures number, mass, momentum, kinetic energy, and
+  internal-energy flux with `W*c/dt`.
+- Adaptive and emergency block-weight changes preserve `c`; their conservation
+  diagnostics use corrected carriers. Capacity failure remains transactional.
+- General NTC now selects a particle in proportion to its physical carrier,
+  rejects same-particle pairs without conditioning a redraw, and validates
+  every unequal-carrier update probability. A disabled-by-default diagnostic
+  exposes focused-test counts and extrema without changing production output.
+- Comet chemistry creates exactly one corrected daughter for each concrete
+  stoichiometric product in correction-on builds. This makes the existing
+  carrier-conversion formula reachable, but it does **not** implement the
+  Stage-5 correction windows or importance policy.
+- The validated collision path is general NTC only. Simplified NTC terminates
+  explicitly at entry, and the radial setup rejects MF or another collision
+  model when corrections and collisions are both enabled.
+- MPI-only radial DIM1 validation is complete. Hybrid diagnostic reduction,
+  CUDA continuation, field-line movers, periodic topology, and 2-D/3-D
+  correction-on chemistry have not been validated and are not claimed.
 
 ### Face-transfer design
 
@@ -719,6 +731,68 @@ unreviewed second route.
   widely unequal.
 - A correction-on run with importance disabled reproduces the
   correction-off reference within independent Monte Carlo uncertainty.
+
+### Completion record (2026-11-05)
+
+Stage 4 is complete on `1d_comet_dev` for the supported radial configuration.
+The user explicitly authorized this implementation after the Stage-3 focused
+gate was completed; this does not retroactively claim that the pending long
+Stage-3 science matrix selected Stage 4.
+
+The validated compile-time/runtime combination is:
+
+```text
+DIM1 radial mesh
+SpeciesLocalTimeStep
+SpeciesLocalParticleWeight
+ParticleWeightCorrectionMode=on
+local-timestep face-flux resampling=on
+general NTC collisions
+MPI-only focused diagnostics
+internal degrees of freedom enabled by the configured species data
+```
+
+The correction-on archive is
+`validation_runs/stage4-correction-on-full-20261105`. It exercises 200,000
+mover particles per case and 200,000 chemistry events at 1, 4, and 12 MPI
+ranks. Each decomposition covers five exact correction values from `1/16` to
+`16`, all-correction-one identity runs, local and remote faces, multiple-face
+continuation, adaptation, emergency adaptation, sampling, general NTC
+relaxation, boundary deletion/re-emission, restart, dynamic migration, ghost
+publication, and chemistry. The archive also proves that simplified NTC fails
+explicitly. A separately configured MF setup was rejected before mesh setup in
+`validation_runs/stage4-unsupported-mf-20261105b`.
+
+The correction-off identity reference is
+`validation_runs/stage4-correction-off-reference-20261105`. The strict checker
+requires identical path-coverage counts at every MPI decomposition and
+requires both correction-on/all-`c=1` and correction-off arms independently to
+pass the same number, mass, momentum, kinetic/internal-energy, remainder, and
+post-move flux tests. The maximum physical-flux checksum error was
+`5.48e-12` with corrections on and `1.39e-11` with corrections off, both below
+the frozen `1e-9` limit. Run the combined audit as documented in
+`srcHartley2/README.md`.
+
+Correction-off Stage-2 adaptation and Stage-3 systematic-residual regressions
+also pass at 1, 4, and 12 ranks in
+`validation_runs/stage4-correction-off-regression-20261105`. Stage-0, Stage-1,
+Stage-2 planner, Stage-3 accumulator/parser/science-gate synthetic tests, and
+adaptive-bin/diagnostic-semantics tests pass. These are compatibility tests;
+they are not a replacement for a long converged comet-science comparison.
+
+The repository's canonical Halley input remains correction-off with
+Systematic chemistry residuals, and the current generated executable is a
+clean correction-off build. Individual corrections and all Stage-4
+diagnostics remain opt-in. Stage 5 is still open: correction windows, bounded
+splitting/roulette, and the scientific importance policy are not implemented.
+
+The complete Stage-0--4 regression stack is orchestrated by
+`tests/run_all_stage_tests.sh`. Its default archived mode requires every
+external evidence path instead of accepting the individual runners' optional
+skip behavior. `--plan` performs a read-only preflight; optional `fresh`
+Stage-4 mode uses a separately supplied correction-on executable and never
+reconfigures the canonical workspace. See `README.md` for commands and
+`STATUS.md` for the exact 17-group validation record.
 
 ## Stage 5: exact individually weighted daughters and weight windows
 
@@ -1029,11 +1103,11 @@ manifest. Wait for explicit user approval.
 
 ## Recommended immediate next action
 
-Stages 0--2, the Stage 3 implementation, and the permanent scientific gate are
-implemented and focused-tested. Review the read-only `plan` output, then run
-the complete eight-case matrix with `validation/run_stage3_science_gate.py`.
-Evaluate the first complete archive, review and explicitly accept its Rubin
-candidate baseline, and rerun the evaluator with that accepted baseline. Use
-the resulting outcome to skip Stage 4, consider Stage 4, or repeat an
-inconclusive experiment. Do not merge to `master` or start Stage 4 before that
-decision is recorded.
+Stage 4 is implemented and focused-tested for its explicitly supported radial
+configuration. Do not start Stage 5 or merge to `master` without a separate
+user decision. The pending long Stage-3 scientific matrix remains useful as a
+science-quality baseline: review its read-only plan, run all eight cases,
+review and explicitly accept the Rubin candidate, and record the result. That
+experiment now decides whether/where individual daughter weighting is worth
+activating scientifically; it no longer gates the already completed Stage-4
+compatibility foundation.

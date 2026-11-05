@@ -17,7 +17,30 @@ using cNode=cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>;
 constexpr double RequiredRelativeAccuracy=0.02;
 constexpr double MaximumStandardDeviations=5.0;
 constexpr double CrossingFraction=0.25;
+
+// Exercise H2O whenever the configured species table provides it.  The Halley
+// case gives water rotational degrees of freedom, so the same face tests also
+// verify that cloning and MPI continuation preserve internal-energy state.
+// The fallback keeps reduced, non-comet species tables buildable.
+#ifdef _H2O_SPEC_
+constexpr int TestSpecies=_H2O_SPEC_;
+#else
 constexpr int TestSpecies=0;
+#endif
+
+// Exact powers of two give a wide, bitwise reproducible correction cycle.  A
+// copied or exchanged particle must therefore return one of these exact bins.
+// Correction-off builds retain the historical c=1 behavior through the same
+// code path instead of maintaining a separate, weaker validator.
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+const double ValidationCorrectionCycle[]={1.0/16.0,1.0/4.0,1.0,4.0,16.0};
+#else
+const double ValidationCorrectionCycle[]={1.0};
+#endif
+constexpr int ValidationCorrectionCount=
+    sizeof(ValidationCorrectionCycle)/sizeof(ValidationCorrectionCycle[0]);
+constexpr double ValidationInternalEnergyQuantum=1.0e-21;
+bool UseUnitCorrections=false;
 
 struct cFacePair {
   cNode *Left=NULL;
@@ -32,6 +55,12 @@ struct cParticleScan {
   long long InvalidState=0;
   long long InvalidSpeed=0;
   long long InvalidRadialProbe=0;
+  long long InvalidCorrection=0;
+  long long InvalidInternalEnergy=0;
+  long long CorrectionCounts[ValidationCorrectionCount]={};
+  double CorrectionSum=0.0;
+  double CorrectionSquareSum=0.0;
+  double CorrectionWeightedInternalEnergy=0.0;
 };
 
 struct cDiagnostic {
@@ -46,6 +75,8 @@ struct cDiagnostic {
   double MomentumFluxVariance[3]={0.0,0.0,0.0};
   double IncomingKineticEnergyFlux=0.0,OutgoingKineticEnergyFlux=0.0;
   double KineticEnergyFluxVariance=0.0;
+  double IncomingInternalEnergyFlux=0.0,OutgoingInternalEnergyFlux=0.0;
+  double InternalEnergyFluxVariance=0.0;
   double MaximumRemainderInvariantError=0.0;
   int ContinuationSweepCount=0;
   long int MaximumPendingParticleCount=0,FinalPendingParticleCount=0;
@@ -54,6 +85,129 @@ struct cDiagnostic {
   long int ContinuationMovedParticleCount=0;
   long int ContinuationDeletedParticleCount=0;
 };
+
+struct cValidationSummary {
+  long long LocalFaceChecks=0;
+  long long MpiFaceChecks=0;
+  long long MultiFaceChecks=0;
+  long long CorrectionPreservationChecks=0;
+  long long CloneCorrectionChecks=0;
+  long long InternalEnergyChecks=0;
+  long long PartialMutations=0;
+  double MaximumCorrectionError=0.0;
+  double MaximumFluxChecksumError=0.0;
+};
+
+int UnitCorrectionIndex() {
+  for (int index=0;index<ValidationCorrectionCount;index++)
+    if (ValidationCorrectionCycle[index]==1.0) return index;
+  return -1;
+}
+
+int ValidationCorrectionIndexForParticle(long int particle) {
+  if (UseUnitCorrections) return UnitCorrectionIndex();
+  return particle%ValidationCorrectionCount;
+}
+
+int FindValidationCorrection(double correction) {
+  for (int index=0;index<ValidationCorrectionCount;index++)
+    if (correction==ValidationCorrectionCycle[index]) return index;
+  return -1;
+}
+
+double ParticleInternalEnergy(PIC::ParticleBuffer::byte *data,int species) {
+  double energy=0.0;
+#if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
+  if (PIC::IDF::nTotalRotationalModes[species]>0)
+    energy+=PIC::IDF::GetRotE(data);
+  for (int mode=0;mode<PIC::IDF::nTotalVibtationalModes[species];mode++)
+    energy+=PIC::IDF::GetVibE(mode,data);
+#else
+  (void)data;
+  (void)species;
+#endif
+  return energy;
+}
+
+bool HasDeterministicValidationInternalEnergy() {
+#if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_ && \
+    _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL_ == \
+        _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL__LB_
+  return true;
+#else
+  return false;
+#endif
+}
+
+bool HasValidationInternalEnergyModes() {
+#if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
+  return PIC::IDF::nTotalRotationalModes[TestSpecies]>0 ||
+      PIC::IDF::nTotalVibtationalModes[TestSpecies]>0;
+#else
+  return false;
+#endif
+}
+
+double ExpectedValidationInternalEnergy(int correctionIndex,int species) {
+  double energy=0.0;
+#if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_ && \
+    _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL_ == \
+        _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL__LB_
+  if (PIC::IDF::nTotalRotationalModes[species]>0)
+    energy+=ValidationInternalEnergyQuantum*(correctionIndex+1);
+  for (int mode=0;mode<PIC::IDF::nTotalVibtationalModes[species];mode++)
+    energy+=0.125*ValidationInternalEnergyQuantum*
+        (correctionIndex+mode+1);
+#else
+  (void)correctionIndex;
+  (void)species;
+#endif
+  return energy;
+}
+
+void InitializeValidationParticleState(long int particle,
+    PIC::ParticleBuffer::byte *data) {
+  const int correctionIndex=ValidationCorrectionIndexForParticle(particle);
+  if (correctionIndex<0) {
+    std::fprintf(stderr,"validation correction cycle does not contain unity\n");
+    std::abort();
+  }
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+  PIC::ParticleBuffer::SetIndividualStatWeightCorrection(
+      ValidationCorrectionCycle[correctionIndex],data);
+#endif
+
+#if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
+  // Initialize all model-owned fields first.  In the validated LB build the
+  // random values are then replaced by an exact correction-indexed pattern,
+  // making a state-copy error distinguishable from a merely plausible value.
+  PIC::IDF::InitRotTemp(180.0,data);
+  PIC::IDF::InitVibTemp(180.0,data);
+#if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL_ == \
+    _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL__LB_
+  if (PIC::IDF::nTotalRotationalModes[TestSpecies]>0)
+    PIC::IDF::LB::SetRotE(
+        ValidationInternalEnergyQuantum*(correctionIndex+1),data);
+  for (int mode=0;mode<PIC::IDF::nTotalVibtationalModes[TestSpecies];mode++)
+    PIC::IDF::LB::SetVibE(0.125*ValidationInternalEnergyQuantum*
+        (correctionIndex+mode+1),mode,data);
+#endif
+#else
+  (void)correctionIndex;
+  (void)data;
+#endif
+}
+
+double GetOwnerCarrier(cNode *node) {
+  const double local=(node!=NULL && node->Thread==PIC::ThisThread &&
+      node->block!=NULL) ?
+      node->block->GetLocalParticleWeight(TestSpecies)/
+          node->block->GetLocalTimeStep(TestSpecies) : 0.0;
+  double global=0.0;
+  MPI_Allreduce(&local,&global,1,MPI_DOUBLE,MPI_SUM,
+      MPI_GLOBAL_COMMUNICATOR);
+  return global;
+}
 
 std::vector<cNode*> GetOrderedLeaves() {
   std::vector<cNode*> leaves;
@@ -153,8 +307,10 @@ void InjectSingleFaceParticles(cNode *source,double face,long int particleNumber
     const long int ptr=PIC::ParticleBuffer::InitiateParticle(position,
         velocityBuffer,NULL,&species,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,
         source);
-    PIC::Mover::SetLocalTimeStepRemainderFraction(0.0,
-        PIC::ParticleBuffer::GetParticleDataPointer(ptr));
+    PIC::ParticleBuffer::byte *data=
+        PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+    InitializeValidationParticleState(particle,data);
+    PIC::Mover::SetLocalTimeStepRemainderFraction(0.0,data);
   }
 }
 
@@ -173,7 +329,7 @@ cDiagnostic ReduceDiagnostic() {
   result.RouletteDeletionCount=globalCounts[2];
   result.CloneCount=globalCounts[3];
 
-  const double localValues[18]={
+  const double localValues[21]={
       local.IncomingNumberFlux,local.OutgoingNumberFlux,
       local.NumberFluxVariance,local.IncomingMassFlux,
       local.OutgoingMassFlux,local.MassFluxVariance,
@@ -182,9 +338,11 @@ cDiagnostic ReduceDiagnostic() {
       local.OutgoingMomentumFlux[1],local.OutgoingMomentumFlux[2],
       local.MomentumFluxVariance[0],local.MomentumFluxVariance[1],
       local.MomentumFluxVariance[2],local.IncomingKineticEnergyFlux,
-      local.OutgoingKineticEnergyFlux,local.KineticEnergyFluxVariance};
-  double globalValues[18]={};
-  MPI_Allreduce(localValues,globalValues,18,MPI_DOUBLE,MPI_SUM,
+      local.OutgoingKineticEnergyFlux,local.KineticEnergyFluxVariance,
+      local.IncomingInternalEnergyFlux,local.OutgoingInternalEnergyFlux,
+      local.InternalEnergyFluxVariance};
+  double globalValues[21]={};
+  MPI_Allreduce(localValues,globalValues,21,MPI_DOUBLE,MPI_SUM,
       MPI_GLOBAL_COMMUNICATOR);
   result.IncomingNumberFlux=globalValues[0];
   result.OutgoingNumberFlux=globalValues[1];
@@ -200,6 +358,9 @@ cDiagnostic ReduceDiagnostic() {
   result.IncomingKineticEnergyFlux=globalValues[15];
   result.OutgoingKineticEnergyFlux=globalValues[16];
   result.KineticEnergyFluxVariance=globalValues[17];
+  result.IncomingInternalEnergyFlux=globalValues[18];
+  result.OutgoingInternalEnergyFlux=globalValues[19];
+  result.InternalEnergyFluxVariance=globalValues[20];
 
   MPI_Allreduce(&local.MaximumRemainderInvariantError,
       &result.MaximumRemainderInvariantError,1,MPI_DOUBLE,MPI_MAX,
@@ -280,6 +441,42 @@ cParticleScan ScanParticles(cNode *expectedNode,
           continue;
         }
 
+        // This compact histogram is a correction-preservation checksum.  Exact
+        // bin membership catches a transformed c, while sum(c), sum(c^2), and
+        // sum(c*E_internal) expose record corruption across MPI reductions.
+        const double correction=
+            PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data);
+        const int correctionIndex=FindValidationCorrection(correction);
+        const double internalEnergy=ParticleInternalEnergy(data,TestSpecies);
+        if (!(correction>0.0) || !std::isfinite(correction) ||
+            correctionIndex<0) {
+          local.InvalidCorrection++;
+        }
+        else {
+          local.CorrectionCounts[correctionIndex]++;
+          local.CorrectionSum+=correction;
+          local.CorrectionSquareSum+=correction*correction;
+        }
+
+        if (!(internalEnergy>=0.0) || !std::isfinite(internalEnergy)) {
+          local.InvalidInternalEnergy++;
+        }
+        else {
+          if (correctionIndex>=0)
+            local.CorrectionWeightedInternalEnergy+=
+                correction*internalEnergy;
+          if (correctionIndex>=0 &&
+              HasDeterministicValidationInternalEnergy()) {
+            const double expected=ExpectedValidationInternalEnergy(
+                correctionIndex,TestSpecies);
+            const double tolerance=512.0*
+                std::numeric_limits<double>::epsilon()*
+                std::max(expected,std::numeric_limits<double>::min());
+            if (std::fabs(internalEnergy-expected)>tolerance)
+              local.InvalidInternalEnergy++;
+          }
+        }
+
         if (velocities!=NULL) {
           int group=-1;
           const double speed=std::sqrt(velocity[0]*velocity[0]+
@@ -295,11 +492,12 @@ cParticleScan ScanParticles(cNode *expectedNode,
   }
 
   cParticleScan global;
-  long long localValues[6]={local.Count,local.WrongNode,
+  long long localValues[8]={local.Count,local.WrongNode,
       local.NonzeroRemainder,local.InvalidState,local.InvalidSpeed,
-      local.InvalidRadialProbe};
-  long long globalValues[6]={};
-  MPI_Allreduce(localValues,globalValues,6,MPI_LONG_LONG,MPI_SUM,
+      local.InvalidRadialProbe,local.InvalidCorrection,
+      local.InvalidInternalEnergy};
+  long long globalValues[8]={};
+  MPI_Allreduce(localValues,globalValues,8,MPI_LONG_LONG,MPI_SUM,
       MPI_GLOBAL_COMMUNICATOR);
   global.Count=globalValues[0];
   global.WrongNode=globalValues[1];
@@ -307,7 +505,107 @@ cParticleScan ScanParticles(cNode *expectedNode,
   global.InvalidState=globalValues[3];
   global.InvalidSpeed=globalValues[4];
   global.InvalidRadialProbe=globalValues[5];
+  global.InvalidCorrection=globalValues[6];
+  global.InvalidInternalEnergy=globalValues[7];
+  MPI_Allreduce(local.CorrectionCounts,global.CorrectionCounts,
+      ValidationCorrectionCount,MPI_LONG_LONG,MPI_SUM,
+      MPI_GLOBAL_COMMUNICATOR);
+  const double localChecksums[3]={local.CorrectionSum,
+      local.CorrectionSquareSum,local.CorrectionWeightedInternalEnergy};
+  double globalChecksums[3]={0.0,0.0,0.0};
+  MPI_Allreduce(localChecksums,globalChecksums,3,MPI_DOUBLE,MPI_SUM,
+      MPI_GLOBAL_COMMUNICATOR);
+  global.CorrectionSum=globalChecksums[0];
+  global.CorrectionSquareSum=globalChecksums[1];
+  global.CorrectionWeightedInternalEnergy=globalChecksums[2];
   return global;
+}
+
+bool CheckCorrectionChecksum(const cParticleScan &scan,long int sourceCount,
+    double meanMultiplicity,double &maximumError,
+    bool &cloneCheckPerformed) {
+  bool pass=scan.InvalidCorrection==0;
+  long long checksumCount=0;
+  double checksumSum=0.0,checksumSquareSum=0.0;
+  for (int index=0;index<ValidationCorrectionCount;index++) {
+    checksumCount+=scan.CorrectionCounts[index];
+    checksumSum+=scan.CorrectionCounts[index]*
+        ValidationCorrectionCycle[index];
+    checksumSquareSum+=scan.CorrectionCounts[index]*
+        ValidationCorrectionCycle[index]*ValidationCorrectionCycle[index];
+  }
+
+  const double sumScale=std::max(std::fabs(scan.CorrectionSum),1.0);
+  const double squareScale=
+      std::max(std::fabs(scan.CorrectionSquareSum),1.0);
+  const double sumError=std::fabs(checksumSum-scan.CorrectionSum)/sumScale;
+  const double squareError=
+      std::fabs(checksumSquareSum-scan.CorrectionSquareSum)/squareScale;
+  maximumError=std::max(maximumError,std::max(sumError,squareError));
+  pass=checksumCount==scan.Count &&
+      sumError<=512.0*std::numeric_limits<double>::epsilon() &&
+      squareError<=512.0*std::numeric_limits<double>::epsilon() && pass;
+
+  // Integer multiplicities contain no roulette.  Their exact per-correction
+  // histogram proves that each original c was retained by every local clone,
+  // MPI pack/unpack, and continuation.  Fractional cases use the independent
+  // analytic flux variance because their per-bin populations are stochastic.
+  cloneCheckPerformed=false;
+  const double roundedMultiplicity=std::round(meanMultiplicity);
+  if (roundedMultiplicity>=1.0 &&
+      std::fabs(meanMultiplicity-roundedMultiplicity)<=
+          64.0*std::numeric_limits<double>::epsilon()*
+              std::max(meanMultiplicity,1.0)) {
+    const long long multiplier=static_cast<long long>(roundedMultiplicity);
+    cloneCheckPerformed=multiplier>1;
+    const int unitIndex=UnitCorrectionIndex();
+    for (int index=0;index<ValidationCorrectionCount;index++) {
+      const long long sourceBin=UseUnitCorrections ?
+          (index==unitIndex ? sourceCount : 0) :
+          sourceCount/ValidationCorrectionCount+
+              (index<sourceCount%ValidationCorrectionCount ? 1 : 0);
+      pass=scan.CorrectionCounts[index]==multiplier*sourceBin && pass;
+    }
+  }
+  return pass;
+}
+
+bool CheckScanFluxChecksum(const cParticleScan &scan,
+    const cDiagnostic &diagnostic,double destinationCarrier,
+    long long repeatedFaces,double &maximumError) {
+  if (!(destinationCarrier>0.0) || !std::isfinite(destinationCarrier) ||
+      repeatedFaces<=0) return false;
+  const double representedNumber=repeatedFaces*destinationCarrier*
+      scan.CorrectionSum;
+  const double representedInternalEnergy=repeatedFaces*destinationCarrier*
+      scan.CorrectionWeightedInternalEnergy;
+  const double numberScale=std::max({std::fabs(representedNumber),
+      std::fabs(diagnostic.OutgoingNumberFlux),1.0});
+  const double internalScale=std::max({
+      std::fabs(representedInternalEnergy),
+      std::fabs(diagnostic.OutgoingInternalEnergyFlux),
+      std::numeric_limits<double>::min()});
+  const double numberError=
+      std::fabs(representedNumber-diagnostic.OutgoingNumberFlux)/numberScale;
+  const double internalError=std::fabs(representedInternalEnergy-
+      diagnostic.OutgoingInternalEnergyFlux)/internalScale;
+  maximumError=std::max(maximumError,std::max(numberError,internalError));
+
+  // The diagnostic and the post-move scan visit the same particles in
+  // different linked-list orders.  Their long sums are therefore not
+  // bitwise reproducible even though every summand is identical.  A fixed
+  // ULP allowance becomes invalid once an integer face split creates tens of
+  // thousands of clones.  Bound the comparison by the number of additions
+  // in both accumulations.  The factor 16 covers multiplication and MPI
+  // reduction rounding while retaining a sub-ppb bound in the largest Stage
+  // 4 validation case.  Exact per-correction histograms and per-particle
+  // internal-energy checks above still detect a missing or altered clone.
+  const double accumulationTolerance=std::max(
+      1024.0*std::numeric_limits<double>::epsilon(),
+      16.0*std::numeric_limits<double>::epsilon()*
+          static_cast<double>(scan.Count+diagnostic.FaceTransferCount));
+  return numberError<=accumulationTolerance &&
+      internalError<=accumulationTolerance;
 }
 
 bool CheckMoment(const char *name,double incoming,double outgoing,
@@ -374,12 +672,16 @@ bool CheckFluxes(const cDiagnostic &diagnostic) {
   pass=CheckMoment("kinetic",diagnostic.IncomingKineticEnergyFlux,
       diagnostic.OutgoingKineticEnergyFlux,
       diagnostic.KineticEnergyFluxVariance) && pass;
+  pass=CheckMoment("internal",diagnostic.IncomingInternalEnergyFlux,
+      diagnostic.OutgoingInternalEnergyFlux,
+      diagnostic.InternalEnergyFluxVariance) && pass;
   return pass;
 }
 
 bool RunSingleFaceCase(const std::vector<cNode*> &leaves,
     const cFacePair &pair,double timeStepRatio,double weightRatio,int direction,
-    long int particleNumber,const char *moverName,bool mpiFace,int caseNumber) {
+    long int particleNumber,const char *moverName,bool mpiFace,int caseNumber,
+    cValidationSummary &summary) {
   cNode *source=(direction>0) ? pair.Left : pair.Right;
   cNode *destination=(direction>0) ? pair.Right : pair.Left;
   const double face=pair.Left->xmax[0];
@@ -410,7 +712,8 @@ bool RunSingleFaceCase(const std::vector<cNode*> &leaves,
   pass=(scan.Count==diagnostic.DestinationParticleCount) && pass;
   pass=(scan.WrongNode==0 && scan.NonzeroRemainder==0 &&
       scan.InvalidState==0 && scan.InvalidSpeed==0 &&
-      scan.InvalidRadialProbe==0) && pass;
+      scan.InvalidRadialProbe==0 && scan.InvalidCorrection==0 &&
+      scan.InvalidInternalEnergy==0) && pass;
   pass=(diagnostic.FinalPendingParticleCount==0) && pass;
   pass=(diagnostic.InitialPendingParticleCount==
       diagnostic.DestinationParticleCount) && pass;
@@ -420,8 +723,26 @@ bool RunSingleFaceCase(const std::vector<cNode*> &leaves,
   pass=(diagnostic.ContinuationSweepCount==1) && pass;
   pass=(diagnostic.MaximumRemainderInvariantError<=
       128.0*std::numeric_limits<double>::epsilon()) && pass;
+  const double meanMultiplicity=timeStepRatio/weightRatio;
+  bool cloneCheckPerformed=false;
+  const bool correctionPass=CheckCorrectionChecksum(scan,particleNumber,
+      meanMultiplicity,summary.MaximumCorrectionError,cloneCheckPerformed);
+  const bool scanFluxPass=CheckScanFluxChecksum(scan,diagnostic,
+      GetOwnerCarrier(destination),1,summary.MaximumFluxChecksumError);
+  pass=correctionPass && scanFluxPass && pass;
   const bool fluxPass=CheckFluxes(diagnostic);
   pass=fluxPass && pass;
+
+  if (mpiFace) summary.MpiFaceChecks++;
+  else summary.LocalFaceChecks++;
+  if (correctionPass && scanFluxPass)
+    summary.CorrectionPreservationChecks++;
+  else summary.PartialMutations++;
+  if (cloneCheckPerformed && correctionPass)
+    summary.CloneCorrectionChecks++;
+  if (HasValidationInternalEnergyModes() &&
+      scan.InvalidInternalEnergy==0 && scanFluxPass && fluxPass)
+    summary.InternalEnergyChecks++;
 
   if (PIC::ThisThread==0) {
     std::printf("%s mover=%s face=%s direction=%s dt-ratio=%.3g "
@@ -435,12 +756,16 @@ bool RunSingleFaceCase(const std::vector<cNode*> &leaves,
     if (!pass)
       std::printf("  transfers=%lld destination-count=%lld wrong-node=%lld "
           "remainders=%lld invalid-state=%lld invalid-speed=%lld "
-          "invalid-position=%lld initial-pending=%ld post-exchange=%ld "
+          "invalid-position=%lld invalid-correction=%lld invalid-internal=%lld "
+          "correction-checksum=%s scan-flux-checksum=%s "
+          "initial-pending=%ld post-exchange=%ld "
           "moved=%ld deleted=%ld final-pending=%ld flux=%s "
           "remainder-error=%.9e\n",
           diagnostic.FaceTransferCount,diagnostic.DestinationParticleCount,
           scan.WrongNode,scan.NonzeroRemainder,scan.InvalidState,
-          scan.InvalidSpeed,scan.InvalidRadialProbe,
+          scan.InvalidSpeed,scan.InvalidRadialProbe,scan.InvalidCorrection,
+          scan.InvalidInternalEnergy,correctionPass ? "pass" : "fail",
+          scanFluxPass ? "pass" : "fail",
           diagnostic.InitialPendingParticleCount,
           diagnostic.FirstPostExchangePendingParticleCount,
           diagnostic.ContinuationMovedParticleCount,
@@ -483,7 +808,8 @@ cMultiFaceSpan FindMultiFaceSpan(const std::vector<cNode*> &leaves,
   return best;
 }
 
-bool RunMultiFaceCase(const std::vector<cNode*> &leaves,int rankCount) {
+bool RunMultiFaceCase(const std::vector<cNode*> &leaves,int rankCount,
+    cValidationSummary &summary) {
   const int requiredTransitions=(rankCount>=3) ? 2 : (rankCount==2 ? 1 : 0);
   const cMultiFaceSpan span=FindMultiFaceSpan(leaves,requiredTransitions);
   if (!span.IsValid()) {
@@ -513,8 +839,10 @@ bool RunMultiFaceCase(const std::vector<cNode*> &leaves,int rankCount) {
       int species=TestSpecies;
       const long int ptr=PIC::ParticleBuffer::InitiateParticle(position,
           velocity,NULL,&species,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,source);
-      PIC::Mover::SetLocalTimeStepRemainderFraction(0.0,
-          PIC::ParticleBuffer::GetParticleDataPointer(ptr));
+      PIC::ParticleBuffer::byte *data=
+          PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+      InitializeValidationParticleState(particle,data);
+      PIC::Mover::SetLocalTimeStepRemainderFraction(0.0,data);
     }
   }
 
@@ -526,19 +854,36 @@ bool RunMultiFaceCase(const std::vector<cNode*> &leaves,int rankCount) {
   const cParticleScan scan=ScanParticles(destination,NULL,0.0);
   const long long faceNumber=static_cast<long long>(span.End-span.Begin);
 
+  bool cloneCheckPerformed=false;
+  const bool correctionPass=CheckCorrectionChecksum(scan,particleNumber,1.0,
+      summary.MaximumCorrectionError,cloneCheckPerformed);
+  const bool scanFluxPass=CheckScanFluxChecksum(scan,diagnostic,
+      GetOwnerCarrier(destination),faceNumber,summary.MaximumFluxChecksumError);
   bool pass=scan.Count==particleNumber && scan.WrongNode==0 &&
       scan.NonzeroRemainder==0 && scan.InvalidState==0 &&
+      scan.InvalidCorrection==0 && scan.InvalidInternalEnergy==0 &&
       diagnostic.FaceTransferCount==faceNumber*particleNumber &&
       diagnostic.DestinationParticleCount==faceNumber*particleNumber &&
       diagnostic.ContinuationSweepCount==faceNumber &&
-      diagnostic.FinalPendingParticleCount==0 && CheckFluxes(diagnostic);
+      diagnostic.FinalPendingParticleCount==0 && correctionPass &&
+      scanFluxPass && CheckFluxes(diagnostic);
+
+  summary.MultiFaceChecks++;
+  if (correctionPass && scanFluxPass)
+    summary.CorrectionPreservationChecks++;
+  else summary.PartialMutations++;
+  if (HasValidationInternalEnergyModes() &&
+      scan.InvalidInternalEnergy==0 && scanFluxPass)
+    summary.InternalEnergyChecks++;
 
   if (PIC::ThisThread==0)
     std::printf("%s mover=first multi-face faces=%lld ownership-crossings=%d "
-        "particles=%lld sweeps=%d max-pending=%ld\n",
+        "particles=%lld sweeps=%d max-pending=%ld correction-checksum=%s "
+        "scan-flux-checksum=%s\n",
         pass ? "PASS" : "FAIL",faceNumber,span.OwnershipTransitions,
         scan.Count,diagnostic.ContinuationSweepCount,
-        diagnostic.MaximumPendingParticleCount);
+        diagnostic.MaximumPendingParticleCount,
+        correctionPass ? "pass" : "fail",scanFluxPass ? "pass" : "fail");
 
   PIC::Mover::ResetLocalTimeStepFluxDiagnostic(false);
   return pass;
@@ -546,7 +891,8 @@ bool RunMultiFaceCase(const std::vector<cNode*> &leaves,int rankCount) {
 
 bool RunMoverSuite(const std::vector<cNode*> &leaves,const cFacePair &localPair,
     const cFacePair &mpiPair,long int particleNumber,const char *name,
-    PIC::Mover::fSpeciesDependentParticleMover mover,int &caseNumber) {
+    PIC::Mover::fSpeciesDependentParticleMover mover,int &caseNumber,
+    cValidationSummary &summary) {
   PIC::Mover::SetLocalTimeStepValidationMover(mover);
   struct cRatioCase {double TimeStep,Weight;};
 #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
@@ -565,7 +911,7 @@ bool RunMoverSuite(const std::vector<cNode*> &leaves,const cFacePair &localPair,
   bool pass=true;
   for (const cRatioCase &ratio:cases) for (int direction: {-1,1})
     pass=RunSingleFaceCase(leaves,localPair,ratio.TimeStep,ratio.Weight,
-        direction,particleNumber,name,false,caseNumber++) && pass;
+        direction,particleNumber,name,false,caseNumber++,summary) && pass;
 
   if (mpiPair.IsValid()) {
 #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
@@ -575,7 +921,7 @@ bool RunMoverSuite(const std::vector<cNode*> &leaves,const cFacePair &localPair,
 #endif
     for (const cRatioCase &ratio:mpiCases) for (int direction: {-1,1})
       pass=RunSingleFaceCase(leaves,mpiPair,ratio.TimeStep,ratio.Weight,
-          direction,particleNumber,name,true,caseNumber++) && pass;
+          direction,particleNumber,name,true,caseNumber++,summary) && pass;
   }
   return pass;
 }
@@ -613,23 +959,46 @@ bool Comet::LocalTimeStepValidation::Run(const cOptions &options) {
     return false;
   }
 
+  UseUnitCorrections=options.UseUnitCorrections;
+  const double reportedCorrectionMinimum=UseUnitCorrections ? 1.0 :
+      ValidationCorrectionCycle[0];
+  const double reportedCorrectionMaximum=UseUnitCorrections ? 1.0 :
+      ValidationCorrectionCycle[ValidationCorrectionCount-1];
+  const int reportedCorrectionCount=UseUnitCorrections ? 1 :
+      ValidationCorrectionCount;
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+  const char *correctionPattern=UseUnitCorrections ? "unit" : "wide";
+#else
+  // A correction-off build has no per-particle field and the compile-time
+  // cycle contains only the identity value, regardless of the runtime option.
+  const char *correctionPattern="unit";
+#endif
+
   if (PIC::ThisThread==0)
     std::printf("Local-timestep validation: particles/case=%ld ranks=%d "
-        "relative-limit=%.3g z-limit=%.1f\n",options.ParticlesPerCase,
-        PIC::nTotalThreads,RequiredRelativeAccuracy,MaximumStandardDeviations);
+        "species=%s correction-pattern=%s correction-bins=%d "
+        "correction-range=%.5g:%.5g "
+        "deterministic-internal-energy=%s relative-limit=%.3g z-limit=%.1f\n",
+        options.ParticlesPerCase,PIC::nTotalThreads,
+        PIC::MolecularData::GetChemSymbol(TestSpecies),
+        correctionPattern,reportedCorrectionCount,reportedCorrectionMinimum,
+        reportedCorrectionMaximum,
+        HasDeterministicValidationInternalEnergy() ? "yes" : "no",
+        RequiredRelativeAccuracy,MaximumStandardDeviations);
 
   bool pass=true;
   int caseNumber=0;
+  cValidationSummary summary;
   if (options.TestFirstOrder)
     pass=RunMoverSuite(leaves,localPair,mpiPair,options.ParticlesPerCase,
         "first",PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory,
-        caseNumber) && pass;
+        caseNumber,summary) && pass;
 
   if (options.TestSecondOrder)
     pass=RunMoverSuite(leaves,localPair,mpiPair,options.ParticlesPerCase,
         "second",
         PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_SecondOrder,
-        caseNumber) && pass;
+        caseNumber,summary) && pass;
 
   // The production Halley case uses the first-order tracer.  Its long path is
   // the required check of repeated exchange/continuation sweeps and, with at
@@ -637,7 +1006,7 @@ bool Comet::LocalTimeStepValidation::Run(const cOptions &options) {
   if (options.TestFirstOrder && options.TestMultiFace) {
     PIC::Mover::SetLocalTimeStepValidationMover(
         PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory);
-    pass=RunMultiFaceCase(leaves,PIC::nTotalThreads) && pass;
+    pass=RunMultiFaceCase(leaves,PIC::nTotalThreads,summary) && pass;
   }
 
   PIC::ParticleBuffer::DeleteAllParticles();
@@ -648,9 +1017,36 @@ bool Comet::LocalTimeStepValidation::Run(const cOptions &options) {
   int localPass=pass ? 1 : 0,globalPass=0;
   MPI_Allreduce(&localPass,&globalPass,1,MPI_INT,MPI_MIN,
       MPI_GLOBAL_COMMUNICATOR);
-  if (PIC::ThisThread==0)
+  if (PIC::ThisThread==0) {
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+    const char *correctionMode="ON";
+#else
+    const char *correctionMode="OFF";
+#endif
+    std::printf("%s individual-weight local-timestep validation "
+        "correction-mode=%s correction-pattern=%s mpi-ranks=%d "
+        "correction-min=%.17g "
+        "correction-max=%.17g correction-values=%d "
+        "max-correction-error=%.17e max-flux-checksum-error=%.17e "
+        "partial-mutations=%lld "
+        "local-face-checks=%lld mpi-face-checks=%lld multiface-checks=%lld "
+        "correction-preservation-checks=%lld clone-correction-checks=%lld "
+        "internal-energy-checks=%lld\n",
+        globalPass ? "PASS" : "FAIL",correctionMode,correctionPattern,
+        PIC::nTotalThreads,reportedCorrectionMinimum,
+        reportedCorrectionMaximum,reportedCorrectionCount,
+        summary.MaximumCorrectionError,summary.MaximumFluxChecksumError,
+        summary.PartialMutations,summary.LocalFaceChecks,
+        summary.MpiFaceChecks,summary.MultiFaceChecks,
+        summary.CorrectionPreservationChecks,summary.CloneCorrectionChecks,
+        summary.InternalEnergyChecks);
+    // Preserve the historical focused-test sentinel for correction-off
+    // regression tooling while the richer Stage-4 record above carries the
+    // new compatibility evidence.
     std::printf("Local-timestep validation result: %s\n",
         globalPass ? "PASS" : "FAIL");
+  }
+  UseUnitCorrections=false;
   return globalPass!=0;
 #endif
 }

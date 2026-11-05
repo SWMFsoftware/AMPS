@@ -5,6 +5,7 @@
 
 #include "pic.h"
 
+#include <limits>
 #include <vector>
 
 //sampling offset of the collision frequentcy
@@ -12,6 +13,9 @@ int PIC::MolecularCollisions::ParticleCollisionModel::CollsionFrequentcySampling
 
 //the limit of the collisions per a single particles
 double PIC::MolecularCollisions::ParticleCollisionModel::CollisionLimitingThrehold=20.0;
+
+PIC::MolecularCollisions::ParticleCollisionModel::cNTCValidationDiagnostic
+    PIC::MolecularCollisions::ParticleCollisionModel::NTCValidationDiagnostic={};
 
 //a user-defined function to accept a cell for modeling collisions
 PIC::MolecularCollisions::ParticleCollisionModel::fDoSimulateCellCollisions PIC::MolecularCollisions::ParticleCollisionModel::DoSimulateCellCollisions=NULL;
@@ -39,6 +43,31 @@ inline double EvaluateCollisionCrossSection(int species0,double *velocity0,
 }
 
 } // namespace
+
+void PIC::MolecularCollisions::ParticleCollisionModel::
+ResetNTCValidationDiagnostic(bool enable) {
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  // The focused Stage-4 validator uses one execution thread per MPI rank.
+  // Reject an opt-in hybrid request until the counters and extrema below are
+  // implemented as thread-local records with an explicit thread reduction;
+  // silently racing a validation diagnostic would produce false evidence.
+  if (enable)
+    exit(__LINE__,__FILE__,
+        "general NTC validation diagnostic requires an MPI-only build");
+#endif
+  NTCValidationDiagnostic=cNTCValidationDiagnostic{};
+  NTCValidationDiagnostic.Enabled=enable;
+  NTCValidationDiagnostic.MinimumUpdateProbability=
+      std::numeric_limits<double>::infinity();
+  NTCValidationDiagnostic.MaximumUpdateProbability=
+      -std::numeric_limits<double>::infinity();
+}
+
+PIC::MolecularCollisions::ParticleCollisionModel::cNTCValidationDiagnostic
+PIC::MolecularCollisions::ParticleCollisionModel::
+GetNTCValidationDiagnostic() {
+  return NTCValidationDiagnostic;
+}
 
 
 
@@ -129,6 +158,17 @@ void PIC::MolecularCollisions::ParticleCollisionModel::Init() {
 void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc_simplified(
     int i, int j, int k, 
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+  // This optimized kernel assumes equal statistical carriers and selects
+  // model particles uniformly.  It therefore cannot be repaired merely by
+  // applying a correction to the post-collision update probability.  Fail at
+  // entry, before inspecting a node or particle, so every caller receives an
+  // explicit setup error instead of a biased collision rate.  The validated
+  // correction-aware implementation is ModelCellCollisions_ntc().
+  SetExitErrorCode(__LINE__,1);
+  exit(__LINE__,__FILE__,
+      "simplified NTC does not support individual particle-weight corrections; use general NTC");
+#endif
     
   const int SigmaCrMax_nTest = 100;
   const double SigmaCrMax_SafetyMargin = 1.3;
@@ -337,6 +377,13 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
 
   struct cParticleDataList {
     double vel[3];
+    // The base block weight is common to one species bucket.  Consequently
+    // selecting a particle in proportion to its physical carrier W*c is
+    // equivalent to selecting it in proportion to c.  Keep both c and its
+    // prefix sum with the compact velocity state so every NTC trial can draw
+    // the statistically correct pair without another particle-buffer read.
+    double WeightCorrection;
+    double CumulativeWeightCorrection;
     bool ValueChangedFlag;
     PIC::ParticleBuffer::byte *ParticleData;
   };
@@ -407,20 +454,60 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
       PIC::ParticleBuffer::GetV(entry.vel,ParticleData);
       entry.ParticleData=ParticleData;
       entry.ValueChangedFlag=false;
+
+      // GetIndividualStatWeightCorrection() returns one in correction-off
+      // builds.  Using the same path in both configurations keeps the NTC
+      // estimator identical algebraically and limits the special handling to
+      // the particle-record accessor.  A non-positive/non-finite correction
+      // cannot define a probability measure and must fail before it reaches a
+      // collision majorant or an update-probability denominator.
+      entry.WeightCorrection=
+          PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
+      if (!(entry.WeightCorrection>0.0) ||
+          !std::isfinite(entry.WeightCorrection))
+        exit(__LINE__,__FILE__,
+            "general NTC requires a positive finite particle-weight correction");
+
+      const double nextCorrectionSum=
+          sumWeightCorrection[species]+entry.WeightCorrection;
+      if (!(nextCorrectionSum>sumWeightCorrection[species]) ||
+          !std::isfinite(nextCorrectionSum))
+        exit(__LINE__,__FILE__,
+            "general NTC particle-weight-correction sum is not representable");
+      sumWeightCorrection[species]=nextCorrectionSum;
+      entry.CumulativeWeightCorrection=nextCorrectionSum;
       list.push_back(entry);
 
-      if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ ==
-          _INDIVIDUAL_PARTICLE_WEIGHT_ON_) {
-        const double correction=
-            PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
-        if (nParticleNumber[species]==0 ||
-            correction<minWeightCorrection[species])
-          minWeightCorrection[species]=correction;
-        sumWeightCorrection[species]+=correction;
-      }
-      else sumWeightCorrection[species]+=1.0;
+      if (nParticleNumber[species]==0 ||
+          entry.WeightCorrection<minWeightCorrection[species])
+        minWeightCorrection[species]=entry.WeightCorrection;
       nParticleNumber[species]++;
     }
+
+    // Draw from a species bucket with probability c_i/sum(c).  The physical
+    // carrier of entry i is q_i=W_species*c_i, and W_species is common to the
+    // bucket, so this is exactly a q-weighted draw.  The binary search operates
+    // on strictly increasing prefix sums checked during bucket construction.
+    auto SelectCorrectionWeightedParticle=[](cParticleDataList *list,
+        int count,double correctionSum) -> int {
+      if (list==NULL || count<=0 || !(correctionSum>0.0) ||
+          !std::isfinite(correctionSum))
+        exit(__LINE__,__FILE__,
+            "invalid species bucket in general NTC weighted selection");
+
+      double target=rnd()*correctionSum;
+      // rnd() is expected to be in [0,1), but map a rounded upper endpoint to
+      // the final positive bin rather than returning an out-of-range index.
+      if (!(target<correctionSum)) return count-1;
+
+      int left=0,right=count-1;
+      while (left<right) {
+        const int middle=left+(right-left)/2;
+        if (target<list[middle].CumulativeWeightCorrection) right=middle;
+        else left=middle+1;
+      }
+      return left;
+    };
 
     //loop through the first species
     double m0,m1,am;
@@ -444,6 +531,11 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
 
       //loop through the second speices
       for (s1=s0;s1<PIC::nTotalSpecies;s1++) if ((PIC::MolecularData::GetSpecieType(s1)==_PIC_SPECIE_TYPE__GAS_)&&(nParticleNumber[s1]!=0)) {
+        // One model particle cannot collide with itself.  The former repeated
+        // uniform draw never terminated for this case when a non-zero trial
+        // count was produced.
+        if (s0==s1 && nParticleNumber[s0]<2) continue;
+
         //call a user-defined funstion to verify whether collision should be modeled in the cell
         if (DoSimulateCellCollisions!=NULL) {
           if (DoSimulateCellCollisions(cell,s0,s1)==false) continue;
@@ -474,8 +566,18 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
 
         //1.Evaluate the maximum value of SigmaCr
         for (int ntest=0;ntest<SigmaCrMax_nTest;ntest++) {
-          memcpy(v0,s0List[(int)(rnd()*nParticleNumber[s0])].vel,3*sizeof(double));
-          memcpy(v1,s1List[(int)(rnd()*nParticleNumber[s1])].vel,3*sizeof(double));
+          // This loop constructs an envelope; it is not an estimator of the
+          // collision integral.  Probe model particles uniformly so even a
+          // low-correction, high-relative-speed tail can establish SigmaCrMax.
+          // Conditioning this envelope-only probe on distinct same-species
+          // particles does not alter the independently weighted NTC trials
+          // below.  The one-particle case was rejected before entering here.
+          const int s0Test=static_cast<int>(rnd()*nParticleNumber[s0]);
+          int s1Test;
+          do s1Test=static_cast<int>(rnd()*nParticleNumber[s1]);
+          while (s0==s1 && s0Test==s1Test);
+          memcpy(v0,s0List[s0Test].vel,3*sizeof(double));
+          memcpy(v1,s1List[s1Test].vel,3*sizeof(double));
           cr=sqrt(pow(v1[0]-v0[0],2)+pow(v1[1]-v0[1],2)+pow(v1[2]-v0[2],2));
 
           SigmaCr=cr*EvaluateCollisionCrossSection(s0,v0,s1,v1,block,cell);
@@ -491,24 +593,55 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
         maxLocalTimeStep=max(LocalTimeStep_s0,LocalTimeStep_s1);
         minLocalParticleWeight=min(LocalParticleWeight_s0*minParticleWeightCorrection_s0,LocalParticleWeight_s1*minParticleWeightCorrection_s1);
 
-        if (s0==s1) {
-          ancoll=0.5*sumWeightCorrection_s0/minParticleWeightCorrection_s0*
-            (sumWeightCorrection_s0/minParticleWeightCorrection_s0 /*-1.0*/)*
-            LocalParticleWeight_s0*minParticleWeightCorrection_s0*SigmaCrMax*LocalTimeStep_s0/cellMeasure;
-        }
-        else {
-          ancoll=(sumWeightCorrection_s0*LocalParticleWeight_s0)*(sumWeightCorrection_s1*LocalParticleWeight_s1)*
-            SigmaCrMax*maxLocalTimeStep/minLocalParticleWeight/cellMeasure;
-        }
+        const double totalPhysicalWeight_s0=
+            sumWeightCorrection_s0*LocalParticleWeight_s0;
+        const double totalPhysicalWeight_s1=
+            sumWeightCorrection_s1*LocalParticleWeight_s1;
+
+        // Let q_i=W_s*c_i be the physical weight of particle i and q_min the
+        // smallest carrier in this species pair.  Cross-species NTC uses
+        //
+        //   N_trial = sum_i(q_i) sum_j(q_j) sigma_g,max dt_max
+        //             / (q_min V).
+        //
+        // Selecting i and j with probabilities q_i/sum(q) makes one ordered
+        // pair's trial rate q_i*q_j/q_min.  Updating each selected particle
+        // with probability q_min/q_i (and its local-dt factor) then recovers
+        // the correct q_i*q_j collision-integral contribution.  Uniform pair
+        // selection is biased whenever c is correlated with velocity.
+        //
+        // For one species, the factor 1/2 converts ordered to unordered pairs.
+        // Independent weighted draws deliberately include i==j in N_trial;
+        // those zero-measure self trials are discarded below.  This preserves
+        // the exact sum over i!=j without conditional-redraw normalization.
+        if (s0==s1)
+          ancoll=0.5*totalPhysicalWeight_s0*totalPhysicalWeight_s0*
+              SigmaCrMax*LocalTimeStep_s0/
+              (minLocalParticleWeight*cellMeasure);
+        else
+          ancoll=totalPhysicalWeight_s0*totalPhysicalWeight_s1*
+              SigmaCrMax*maxLocalTimeStep/
+              (minLocalParticleWeight*cellMeasure);
 
         //3. Collision Limiting
         double CollisionLimitingFactor=1.0;
 
         // Computation of collision limiting factor 
-        if (nParticleNumber[s0]*nParticleNumber[s1]<ancoll) {
-          CollisionLimitingFactor=ancoll/nParticleNumber[s0]*nParticleNumber[s1];
+        const double modelPairCount=
+            static_cast<double>(nParticleNumber[s0])*
+            static_cast<double>(nParticleNumber[s1]);
+        if (modelPairCount<ancoll) {
+          // Parentheses are essential: ancoll/(N0*N1), not
+          // (ancoll/N0)*N1.  The old expression could reduce a pair loop to
+          // the wrong number of trials by orders of magnitude.
+          CollisionLimitingFactor=ancoll/modelPairCount;
           ancoll/=CollisionLimitingFactor;
         }
+
+        if (!(ancoll>=0.0) || !std::isfinite(ancoll) ||
+            ancoll>static_cast<double>(std::numeric_limits<long int>::max()))
+          exit(__LINE__,__FILE__,
+              "invalid prospective collision count in general NTC");
 
         ncoll=(long int)ancoll;
         ancoll-=ncoll;
@@ -519,14 +652,23 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
         double vrel[3],vcm[3];
 
         while (ncoll-->0) {
-          s0ptr=(int)((int)(rnd()*nParticleNumber[s0]));
+          if (NTCValidationDiagnostic.Enabled)
+            NTCValidationDiagnostic.TrialCount++;
 
-          if (s0!=s1) s1ptr=(int)((int)(rnd()*nParticleNumber[s1]));
-          else {
-            do {
-              s1ptr=(int)((int)(rnd()*nParticleNumber[s1]));
-            }
-            while (s0ptr==s1ptr);
+          s0ptr=SelectCorrectionWeightedParticle(s0List,
+              nParticleNumber[s0],sumWeightCorrection_s0);
+          s1ptr=SelectCorrectionWeightedParticle(s1List,
+              nParticleNumber[s1],sumWeightCorrection_s1);
+
+          // Do not redraw a same-species self pair.  Redrawing conditions the
+          // second-particle distribution and destroys the independent
+          // q_i*q_j normalization used in ancoll.  Discarding it instead
+          // removes exactly the nonphysical i==j term and also eliminates the
+          // historical one-particle infinite loop.
+          if (s0==s1 && s0ptr==s1ptr) {
+            if (NTCValidationDiagnostic.Enabled)
+              NTCValidationDiagnostic.SelfPairRejectionCount++;
+            continue;
           }
 
           memcpy(v0,s0List[s0ptr].vel,3*sizeof(double));
@@ -542,23 +684,68 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
           SigmaCr=cr*EvaluateCollisionCrossSection(s0,v0,s1,v1,block,cell);
 
           if (rnd()*SigmaCrMax>=SigmaCr) continue;
+          if (NTCValidationDiagnostic.Enabled)
+            NTCValidationDiagnostic.AcceptedCollisionCount++;
 
           //determine weather the properties of particles were updated
           double pUpdate_s0,pUpdate_s1;
           bool UpdateFlag[2];
 
-          pUpdate_s0=minLocalParticleWeight/LocalParticleWeight_s0 * LocalTimeStep_s0/maxLocalTimeStep;
-          pUpdate_s1=minLocalParticleWeight/LocalParticleWeight_s1 * LocalTimeStep_s1/maxLocalTimeStep;
+          pUpdate_s0=minLocalParticleWeight/
+              (LocalParticleWeight_s0*s0List[s0ptr].WeightCorrection)*
+              LocalTimeStep_s0/maxLocalTimeStep;
+          pUpdate_s1=minLocalParticleWeight/
+              (LocalParticleWeight_s1*s1List[s1ptr].WeightCorrection)*
+              LocalTimeStep_s1/maxLocalTimeStep;
 
-          if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_) {
-            pUpdate_s0 /= PIC::ParticleBuffer::GetIndividualStatWeightCorrection(
-              s0List[s0ptr].ParticleData);
-            pUpdate_s1 /= PIC::ParticleBuffer::GetIndividualStatWeightCorrection(
-              s1List[s1ptr].ParticleData);
-          } // _INDIVIDUAL_PARTICLE_WEIGHT_MODE_
+          // q_min<=q_selected and dt_species<=dt_max imply p in [0,1]
+          // analytically.  Reject non-finite or materially out-of-range values
+          // so an invalid correction cannot silently become an always/never
+          // update.  Clamp only the few ulps permitted for roundoff in the
+          // products and ratios above.
+          const double probabilityTolerance=
+              64.0*std::numeric_limits<double>::epsilon();
+          auto ValidateUpdateProbability=[&](double probability) -> double {
+            const bool invalid=!std::isfinite(probability) ||
+                probability < -probabilityTolerance ||
+                probability > 1.0+probabilityTolerance;
+            if (NTCValidationDiagnostic.Enabled) {
+              NTCValidationDiagnostic.UpdateProbabilityCount++;
+              if (std::isfinite(probability)) {
+                NTCValidationDiagnostic.MinimumUpdateProbability=std::min(
+                    NTCValidationDiagnostic.MinimumUpdateProbability,
+                    probability);
+                NTCValidationDiagnostic.MaximumUpdateProbability=std::max(
+                    NTCValidationDiagnostic.MaximumUpdateProbability,
+                    probability);
+              }
+              if (invalid)
+                NTCValidationDiagnostic.InvalidUpdateProbabilityCount++;
+            }
+            if (invalid)
+              exit(__LINE__,__FILE__,
+                  "general NTC collision update probability is outside [0,1]");
+            if (probability<0.0) {
+              if (NTCValidationDiagnostic.Enabled)
+                NTCValidationDiagnostic.RoundoffClampCount++;
+              return 0.0;
+            }
+            if (probability>1.0) {
+              if (NTCValidationDiagnostic.Enabled)
+                NTCValidationDiagnostic.RoundoffClampCount++;
+              return 1.0;
+            }
+            return probability;
+          };
+          pUpdate_s0=ValidateUpdateProbability(pUpdate_s0);
+          pUpdate_s1=ValidateUpdateProbability(pUpdate_s1);
 
           UpdateFlag[0]=(rnd()<pUpdate_s0) ? true :false;
           UpdateFlag[1]=(rnd()<pUpdate_s1) ? true :false;
+          if (NTCValidationDiagnostic.Enabled) {
+            if (UpdateFlag[0]) NTCValidationDiagnostic.ParticleUpdateCount++;
+            if (UpdateFlag[1]) NTCValidationDiagnostic.ParticleUpdateCount++;
+          }
 
           //model the internal energy exchange
           if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_) {

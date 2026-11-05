@@ -979,3 +979,193 @@ The generic chemistry executor currently depends on the radial
 batch/capacity/emergency policy. Chemistry is therefore rejected for the
 2-D/3-D backend until a geometry-neutral policy with explicit input values is
 implemented; this does not remove generic 3-D geometry/source support.
+
+## Stage 4 individual-correction compatibility
+
+Stage 4 is complete for the MPI DIM1 radial configuration using
+species-local timesteps, species-local block weights, local-timestep face
+resampling, and the general NTC collision model. It is an opt-in compatibility
+foundation, not a change to the production Halley setup. The canonical
+`input/halley1d.input` remains correction-off with Systematic chemistry
+residuals; the repository-root `halley1d.input` is a symbolic link to that
+file and must not be edited as though it were a disposable generated copy.
+
+The correction-aware mover uses fixed-`c` residual transfer. At a face,
+
+```text
+mu = (W_old*c/dt_old)/(W_new*c/dt_new)
+   = (W_old/dt_old)/(W_new/dt_new).
+```
+
+Every survivor and clone keeps `c`; diagnostics and physical moments use
+`W*c/dt`. Block-weight adaptation likewise changes only `W`. General NTC
+selects particles in proportion to `W*c`, uses the carrier ratio in each
+post-collision update probability, and rejects a same-particle draw instead
+of conditionally redrawing it. Simplified NTC explicitly terminates when
+individual corrections are compiled on. The radial setup also rejects MF or
+another unvalidated collision model before mesh construction.
+
+The focused modes are:
+
+```text
+--validate-local-timestep [--validation-unit-corrections]
+--validate-weight-adaptation
+--validate-chemistry
+--validate-unsupported-simplified-ntc
+```
+
+The integrated runner executes the wide-correction and all-`c=1` mover,
+adaptation/core, and chemistry cases at 1, 4, and 12 MPI ranks. It also checks
+the expected simplified-NTC failure:
+
+```sh
+srcHartley2/tests/run_stage4_integrated_tests.sh \
+  --executable /absolute/path/to/correction-on/amps \
+  --output-root /new/absolute/path/to/stage4-archive \
+  --validation-particles 200000 \
+  --chemistry-validation-events 200000
+```
+
+The completed archive is
+`validation_runs/stage4-correction-on-full-20261105`. Its frozen executable,
+input, generated `picGlobal.dfn`, and `SHA256SUMS` are under `provenance/`.
+Rebuild the same configuration without modifying the canonical input by using
+the archived correction-on input as a command-line make override. As required
+for this application, remove exactly the root build directory first:
+
+```sh
+cd /data/vtenishe/COMET1D/AMPS
+rm -rf /data/vtenishe/COMET1D/AMPS/build
+make -j8 EXTRACOMPILEROPTIONS=-O3 \
+  InputFileAMPS=validation_runs/stage4-correction-on-full-20261105/provenance/halley1d.correction-on.input
+rg 'INDIVIDUAL_PARTICLE_WEIGHT_MODE|PARTICLE_COLLISION_MODEL_ ' \
+  build/pic/picGlobal.dfn
+```
+
+The combined identity audit compares the all-`c=1` correction-on arm with the
+independently built correction-off reference. It requires the same path
+coverage and requires both arms to pass the same physical-flux tests:
+
+```sh
+stage4_on=validation_runs/stage4-correction-on-full-20261105
+stage4_off=validation_runs/stage4-correction-off-reference-20261105
+stage4_args=
+for stage4_rank in 1 4 12; do
+  stage4_args="$stage4_args \
+    --local-log $stage4_rank $stage4_on/mpi$stage4_rank/local-timestep/run.log \
+    --unit-local-log $stage4_rank $stage4_on/mpi$stage4_rank/local-timestep-unit/run.log \
+    --off-unit-local-log $stage4_rank $stage4_off/mpi$stage4_rank/run.log \
+    --adaptation-log $stage4_rank $stage4_on/mpi$stage4_rank/weight-adaptation/run.log \
+    --chemistry-log $stage4_rank $stage4_on/mpi$stage4_rank/chemistry/run.log"
+done
+# shellcheck disable=SC2086 # the variable deliberately contains CLI words
+PYTHONDONTWRITEBYTECODE=1 python3 \
+  srcHartley2/tests/test_stage4_integrated_logs.py $stage4_args
+```
+
+That audit reports both `PASS Stage-4 all-c=1 correction identity` and
+`PASS Stage-4 correction-on integrated matrix`. Correction-off Stage-2 and
+Stage-3 regressions are retained in
+`validation_runs/stage4-correction-off-regression-20261105`. To restore the
+normal development executable after any correction-on rebuild, again remove
+only the exact `build` directory and build with
+`InputFileAMPS=input/halley1d.input`; confirm that the generated macro is
+`_INDIVIDUAL_PARTICLE_WEIGHT_OFF_`.
+
+This stage does not validate hybrid diagnostic counters, CUDA continuation,
+field-line/periodic movers, or correction-on 2-D/3-D chemistry. It also does
+not implement Stage-5 correction windows or importance sampling. Do not merge
+to `master` from this workflow; the dependency order and conflict invariants
+are recorded in `STATUS.md`.
+
+## Complete Stage 0--4 test runner
+
+`tests/run_all_stage_tests.sh` is the single entry point for every focused
+test and archived runtime-evidence checker used to close Stages 0 through 4.
+Its default archived mode is non-destructive: it does not compile AMPS, edit
+an input, remove `build`, launch a production simulation, or overwrite an
+archive. It does run the Stage-0 standalone diagnostic at 1, 4, and 12 MPI
+ranks and compiles the temporary standalone Stage-0/2/3 unit executables.
+
+The runner makes all optional archive inputs of the individual stage runners
+mandatory. Missing evidence fails preflight; it cannot turn into a successful
+all-stage result containing `SKIP` records. It also verifies that the current
+generated build is correction-off before using it as the read-only Stage-3
+parser fixture. The runner and that parser test use standard `grep`; `rg` is
+not a runtime prerequisite.
+
+Inspect the resolved tools, evidence paths, configuration, and coverage
+without executing tests:
+
+```sh
+srcHartley2/tests/run_all_stage_tests.sh --plan
+```
+
+Run the complete archived suite:
+
+```sh
+srcHartley2/tests/run_all_stage_tests.sh
+```
+
+The validated 2026-11-05 archive bundle completes 17 independently logged
+test jobs organized into five stage groups and ends with:
+
+```text
+Hartley2 all-stage test summary status=PASS stage4-mode=archived
+  tests: run=17 passed=17 skipped=0 failed=0
+  test-groups: run=5 passed=5 skipped=0 failed=0
+PASS Hartley2 all-stage suite tests=17 test-groups=5 stage4-mode=archived
+```
+
+Here a **test** is one independently logged orchestrated job and a **test
+group** is one roadmap stage (`stage0` through `stage4`). The summary reports
+each stage's contained pass/skip/fail counts. The runner continues after an
+independent job fails so the final result lists every observed failure rather
+than only the first one.
+
+Every job writes a separate log while the suite is running. Successful default
+runs remove those temporary logs. If any test fails or emits `SKIP`, the logs
+are retained automatically and the final `failed-tests`/`skipped-tests` lists
+give the test name, stage, exit code, and absolute log path. The summary itself
+is retained as `summary.txt` in the reported log root. To retain logs even for
+a successful run, select a new directory explicitly:
+
+```sh
+srcHartley2/tests/run_all_stage_tests.sh \
+  --log-root validation_runs/all-stage-logs-YYYYMMDD
+```
+
+An existing log root is rejected so evidence from separate attempts cannot be
+mixed. Any failed or skipped test makes the complete runner exit nonzero.
+
+The groups include Stage-0 MPI/analyzer/baseline/production checks; all
+Stage-1 parser, runtime, cadence, and legacy checks; Stage-2 pure and 1/4/12
+integrated checks; every Stage-3 pure/parser/visualization/semantics/science-
+gate/integrated check; the final correction-off Stage-2/3 regressions; frozen
+Stage-4 executable provenance; MF and simplified-NTC rejection; and the
+correction-on wide/all-`c=1` 1/4/12 matrix.
+
+To repeat the Stage-4 MPI matrix rather than replay its archived compact
+records, first provide an independently clean-built correction-on/general-NTC
+executable. Compilation remains outside the runner: remove exactly the root
+`build` directory before that build. Then use a new output path:
+
+```sh
+srcHartley2/tests/run_all_stage_tests.sh \
+  --stage4-mode fresh \
+  --stage4-executable /absolute/path/to/amps.correction-on \
+  --stage4-output-root /new/absolute/path/to/stage4-validation
+```
+
+Fresh mode invokes `run_stage4_integrated_tests.sh`, then applies the combined
+all-`c=1` identity checker against the frozen correction-off reference. It
+never installs the supplied executable as the repository's `amps`, so a
+failure cannot leave the workspace correction-on. The mover particle and
+chemistry-event counts default to 200,000 and can be changed with the explicit
+CLI options printed by `--help`. MPI rank counts remain the validated 1, 4,
+and 12 and therefore remain below the approved 18-process limit.
+
+`--evidence-root` may point to a relocated archive bundle, but the complete
+dated subdirectory structure printed by `--help` is required. This is
+intentional: automatically choosing a newest-looking run could combine
+different executables or incomplete evidence and produce a false pass.

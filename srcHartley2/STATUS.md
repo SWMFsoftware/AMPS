@@ -4034,3 +4034,232 @@ and explicit baseline acceptance. Present the commit range, integration diff,
 excluded generated files, artifact hashes, 1/4/12 logs, eight-run wall/memory
 cost, final outcome, and Rubin comparison to the user, then stop for explicit
 approval before changing `master`.
+
+## 2026-11-05: Stage 4 individual-correction compatibility complete
+
+Stage 4 is implemented and focused-tested on branch `1d_comet_dev` at current
+HEAD `c0dc90e`. No commit, merge, or operation on `master` was performed. The
+user explicitly authorized this stage after the Stage-3 implementation; this
+record does not claim that the still-pending long Stage-3 scientific matrix
+made the go/no-go decision.
+
+The supported configuration is the DIM1 radial backend with species-local
+timesteps, species-local block weights, local-timestep face resampling,
+individual particle corrections, the general NTC collision model, MPI-only
+focused diagnostics, and the configured internal degrees of freedom.
+Simplified NTC and MF are explicitly rejected. CUDA continuation, hybrid NTC
+diagnostic reduction, field-line/periodic movers, and correction-on 2-D/3-D
+chemistry are not qualified.
+
+### Core files modified
+
+| File | Detailed modification and reason | Master-merge dependency/invariant |
+| --- | --- | --- |
+| `src/pic/pic.h` | Extends the opt-in local-timestep flux diagnostic with separate internal-energy input/output/variance fields. Adds a disabled-by-default general-NTC validation record and reset/snapshot API for trials, accepted pairs, self-pair rejection, particle updates, invalid/clamped probabilities, and extrema. | Merge each declaration with its implementation. These counters are process-local validation observability, not production science samples; do not enable them by default or use them in hybrid mode without a thread reduction. |
+| `src/pic/pic_mover.cpp` | Removes the correction-on compile-time prohibition only for the existing local-timestep face-resampling path. Validates positive finite `c`; keeps `c` fixed in survivors/clones; retains the base `W_old*dt_new/(W_new*dt_old)` multiplicity because `c` cancels; changes all diagnostic carriers to `W*c/dt`; and audits rotational/vibrational internal-energy flux. | Merge with the `pic.h` flux fields. Preserve full-record cloning and fixed-`c` policy. Do not revive the legacy correction-transform route, broaden to CUDA, or omit correction from diagnostics. |
+| `src/pic/pic_particle_collision_models.cpp` | Makes general NTC carrier-correct: caches `c` and prefix sums in reusable species buckets, selects trials in proportion to `W*c`, uses independently drawn same-species pairs and discards self pairs, fixes the limiter to `ancoll/(N0*N1)`, validates every update probability against `[0,1]`, and exposes opt-in diagnostics. It also prevents the one-particle same-species loop. Simplified NTC now terminates explicitly in correction-on builds with a nonzero AMPS exit code. | Merge with the `pic.h` NTC API. Preserve weighted selection, independent-draw normalization, self-pair discard, the corrected parentheses, finite checks, and explicit simplified-kernel rejection. Re-run both correction-off and correction-on collision tests; do not fold MF/specialized kernels into this change. |
+
+No new core source file was added. The three core modifications above are the
+complete Stage-4 core delta. Existing Stage-2/3 core work remains separately
+documented and must not be conflated with this review unit.
+
+### Comet application and test files modified or added
+
+| File | Detailed modification and reason | Master-merge dependency/invariant |
+| --- | --- | --- |
+| `srcHartley2/LocalTimeStepValidation.h`, `.cpp` | Adds exact correction histograms for `1/16,1/4,1,4,16`, an all-`c=1` identity mode, deterministic rotational/vibrational energies, corrected post-move flux checksums, and compact coverage/audit records for local, MPI, and multiple-face first/second-order mover paths. Correction-off builds report the unit pattern through the same protocol. | Merge after the core mover diagnostic. Preserve exact powers-of-two corrections, separate correction/long-sum tolerances, and rank-sensitive MPI coverage. |
+| `srcHartley2/RadialMain.cpp` | Adds `--validation-unit-corrections` and a narrow `--validate-unsupported-simplified-ntc` expected-failure mode. | Merge with the validators that consume these options. The unsupported mode is a guard test, not a runtime collision selector. |
+| `srcHartley2/RadialSimulation.cpp` | Allows corrections only with local face resampling and general NTC; keeps MF/other models rejected. Corrects chemistry capacity accounting to one daughter per concrete product in correction-on builds. Makes regular/emergency adaptation audits use `W*c` while preserving `c`. Adds focused sampling, general-NTC relaxation/probability, boundary deletion/re-emission, restart, migration, ghost publication, and rollback checks with compact records. | Merge after Stage-2 adaptive weights, transactional capacity hooks, restart support, and the Stage-4 core primitives. Preserve the radial-only guard, concrete stoichiometric transaction count, callback restoration after focused NTC, and no-partial-mutation requirements. |
+| `srcHartley2/CometChemistry.cpp` | Reaches the exact corrected-daughter path in correction-on builds: one daughter per concrete product with `c_daughter=(W_parent*c_parent/dt_parent)/(W_daughter/dt_daughter)`. Extends the ensemble through the five-value correction range and validates parent/daughter physical carriers. | Merge after the Stage-4 radial setup and before any Stage-5 windows. This is carrier compatibility only; do not label Stage 5 complete or remove the Systematic/correction-on incompatibility. |
+| `srcHartley2/tests/run_stage4_integrated_tests.sh` | **New.** Runs wide and unit correction mover, adaptation/core, chemistry, and expected simplified-NTC failure at exactly 1, 4, and 12 ranks without configuring or compiling AMPS or overwriting an archive. | Keep executable/input provenance outside the runner. Output roots must remain new and correction-on configuration must be verified before launch. |
+| `srcHartley2/tests/test_stage4_integrated_logs.py` | **New.** Strictly parses compact evidence instead of trusting exit status. Requires wide corrections, exact unit identity, flux and probability bounds, NTC work/relaxation, adaptation/rollback/ghost paths, sampling/boundary/restart/migration, and chemistry. Optional correction-off logs enforce identical 1/4/12 path coverage and independent physical-test success for all-`c=1`. | Merge with the C++ record schema. A field rename is an interface change and requires synchronized updates; do not make missing evidence optional. |
+| `srcHartley2/CHEMISTRY.md`, `README.md`; `src/pic/README.md`; `STATUS.md`; `handoff.md` | Records the algorithm, supported matrix, test evidence, recovery, exclusions, and later merge sequence. | Documentation is not authorization to merge or to activate corrections in canonical inputs. |
+
+The canonical `input/halley1d.input` was restored exactly: correction mode is
+off, the collision model is the default general NTC, and chemistry residuals
+are Systematic. The root `halley1d.input` is a symlink to that tracked file.
+The pre-existing dirty root `Makefile`, generated executable/parser links,
+historical PT/log directories, and validation archives are not Stage-4 source
+changes and must not be staged accidentally.
+
+### Validation evidence
+
+Every compile in this round first removed exactly
+`/data/vtenishe/COMET1D/AMPS/build`. The full correction-on matrix passed with
+200,000 mover particles per case and 200,000 chemistry events per case:
+
+```text
+validation_runs/stage4-correction-on-full-20261105
+PASS Stage-4 all-c=1 correction identity 1rank=pass 4rank=pass 12rank=pass
+PASS Stage-4 correction-on integrated matrix 1rank=pass 4rank=pass 12rank=pass
+```
+
+Frozen correction-on provenance is:
+
+```text
+amps.correction-on
+  9e9f79398f5bf335f3ac0a283504c8782773d7a72f4bd6c51ce5fa2152fb5732
+halley1d.correction-on.input
+  81fe26cb4aaafff2af65ed33d3461da41da51e940678c7dea99b941f9bed84fc
+picGlobal.correction-on.dfn
+  eb968bf7d4b95f43564070c8f64fecf772a989aafa63da8477980483a726c971
+```
+
+The correction-off identity archive is
+`validation_runs/stage4-correction-off-reference-20261105`. At all three MPI
+sizes it exercised the exact same local/MPI/multiple-face, clone, correction-
+preservation, and internal-energy coverage as the correction-on all-`c=1`
+arm. Both independently passed the physical-moment tests. Maximum flux
+checksum errors were about `5.47e-12` on and `1.39e-11` off, below `1e-9`.
+
+`validation_runs/stage4-correction-off-regression-20261105` retains passing
+1/4/12-rank Stage-2 adaptation and Stage-3 Systematic restart/migration logs.
+The correction-on MF setup failed before mesh setup as required in
+`validation_runs/stage4-unsupported-mf-20261105b`; its input and generated
+macro file are retained with the rejection log. The full Stage-0 runner,
+Stage-1 parser/reaction checks, Stage-2 planner, Stage-3 accumulator/parser,
+14-case synthetic science gate, 11 adaptive-bin tests, and 4 diagnostic-
+semantics tests also passed. No AMPS/MPI validation process is active.
+
+The final clean executable is the canonical correction-off build:
+
+```text
+amps                   773d9606b7282b0105da59d3d996df135223522e6162b723284903ff5b73b6d5
+input/halley1d.input   0d89b536e6daa2dea7251bb57920fb6f1dd2546efd7c454d25b6dcccc26eccf5
+build/pic/picGlobal.dfn c3d2bca73f068cff357ae6d1f5002c97dc738b6a3190c712b2787890c92e2726
+```
+
+### Later merge to master: detailed sequence
+
+Do not merge yet. After comet validation is accepted and the user explicitly
+authorizes master integration:
+
+1. create a disposable integration branch from the then-current `master` and
+   record both base SHAs; do not switch the working validation branch with
+   uncommitted artifacts present;
+2. exclude the dirty root `Makefile`, root symlinks/generated parser,
+   executable, `build`, meshes, `PT*`, logs, and raw validation archives from
+   every source commit;
+3. first integrate prerequisite Stage-2 adaptive block carriers/capacity hooks
+   and Stage-3 restart/application-storage work, with their original tests;
+4. integrate the mover unit: the relevant `pic.h` internal-flux fields plus
+   `pic_mover.cpp`, then build correction-off and run the local-timestep tests;
+5. integrate the collision unit: the relevant `pic.h` NTC diagnostic plus
+   `pic_particle_collision_models.cpp`, then test correction-off and the
+   correction-on simplified-kernel rejection;
+6. integrate `LocalTimeStepValidation.*` and the CLI options, followed by the
+   radial setup/adaptation/core validator and `CometChemistry.cpp` exact
+   daughter path;
+7. add the Stage-4 shell/Python tests and documentation, clean-regenerate a
+   correction-on executable, run the complete 1/4/12 matrix, then clean-
+   regenerate the canonical correction-off executable and repeat Stage-0--3
+   regressions plus the combined identity audit;
+8. review the integration diff for unintended changes to input defaults,
+   collision selection, random streams in correction-off builds, particle
+   record layout, or unsupported geometry; retain correction-off/Systematic
+   in Halley and keep Hartley input separate;
+9. present commit range, exact diff, excluded files, hashes, MPI logs,
+   memory/wall cost, Stage-3 science outcome, and Rubin comparison to the
+   user, then stop before changing `master`.
+
+During conflicts, preserve: fixed correction at faces; `W*c/dt` diagnostics;
+full-record cloning; weighted general-NTC selection; independent same-species
+draws with self-pair discard; `ancoll/(N0*N1)`; finite probability checks;
+explicit simplified/MF rejection; one corrected daughter per concrete
+product; transactional capacity rollback; ghost publication after adaptation;
+and default-off behavior. Stage-5 correction windows and importance sampling
+must remain a later, separately approved change.
+
+## 2026-11-05: unified Stage 0--4 test orchestrator
+
+`srcHartley2/tests/run_all_stage_tests.sh` is now the authoritative single
+entry point for the complete previously executed focused/archive test stack.
+No commit, branch switch, or master operation was performed. The orchestrator
+does not compile AMPS or mutate `build`; this separates testing from the
+correction-off/correction-on build transition and prevents a failed test from
+leaving the canonical workspace in the wrong configuration.
+
+### Files changed
+
+| File | Change and reason | Later master-merge note |
+| --- | --- | --- |
+| `srcHartley2/tests/run_all_stage_tests.sh` | **New.** Strictly preflights compilers/interpreters/MPI, the correction-off Stage-3 parser fixture, and every required external archive. Runs all Stage-0/1 runners, both Stage-2 runners, all Stage-3 runners plus the two standalone Python suites and real CLI smoke test, final correction-off Stage-2/3 regressions, Stage-4 provenance/rejection checks, and the combined correction-on/all-`c=1` matrix. Optional fresh mode delegates to the existing Stage-4 MPI runner using a caller-supplied executable/new archive. | Merge after the individual runners and their documented archive layouts. Preserve failure on missing evidence and the read-only build policy. Do not replace dated explicit paths with newest-directory discovery. |
+| `srcHartley2/tests/run_stage0_tests.sh` | Adds `HARTLEY2_MPIEXEC` as an optional launcher override, resolved before compilation. Direct use still defaults to `mpiexec`. This lets the unified runner use the same explicit launcher for Stage 0 and fresh Stage 4. | Backward compatible. Keep the standalone 1/4/12 ranks and `--oversubscribe`; do not reinterpret the override as permission to change rank coverage. |
+| `srcHartley2/tests/run_stage3_parser_tests.sh` | Replaces five `rg` checks with portable `grep -E/-F` checks so the all-stage suite does not depend on a developer-specific ripgrep installation. Test patterns and semantics are unchanged. | Preserve `--` before patterns and keep fixed-string matching for generated C++ definitions. |
+| `srcHartley2/README.md` | Documents archived/fresh operation, build separation, evidence requirements, coverage, and commands. | Merge with the runner; documentation does not embed validation artifacts in Git. |
+| `srcHartley2/STATUS.md`, `handoff.md` | Records evidence, recovery, and integration behavior. | Documentation only; it does not authorize a master merge. |
+
+### Orchestration contract
+
+Archived mode is the default and requires all previously retained evidence.
+The child runners' standalone optional `SKIP` behavior is intentionally not
+allowed: the wrapper supplies every Stage-0 production/baseline path, every
+Stage-1 runtime/cadence/legacy path, and every Stage-2/3 1/4/12 log. A missing
+file or directory fails preflight before any test starts.
+
+The current `build` is read only and is used only by the Stage-3 parser test.
+The wrapper requires the assembled block/species inputs, generated sources,
+and `_INDIVIDUAL_PARTICLE_WEIGHT_OFF_`; it never regenerates them. Stage-4
+archived mode verifies the three frozen provenance hashes before parsing
+compact records. It independently checks the MF and simplified-NTC rejection
+messages and applies the all-`c=1` correction-on/off identity comparison.
+
+Fresh Stage-4 mode requires `--stage4-executable` and a nonexistent
+`--stage4-output-root`. It delegates the 1/4/12 MPI runs to the existing
+Stage-4 runner and then repeats the combined identity test against the frozen
+correction-off archive. It does not copy or install the executable. A caller
+that builds it must first remove exactly `/data/vtenishe/COMET1D/AMPS/build`,
+and must separately restore a clean canonical correction-off build after any
+configuration work.
+
+### Validation result
+
+`--plan` passed strict tool/artifact/configuration preflight. The first full
+execution correctly caught an invalid hard-coded Stage-3 sampling length in
+the new CLI smoke wiring. The runner was changed to read and validate the
+authoritative `sampling_length` column rather than assuming the production
+value. The second complete archived execution passed:
+
+```text
+Hartley2 all-stage test summary status=PASS stage4-mode=archived
+  tests: run=17 passed=17 skipped=0 failed=0
+  test-groups: run=5 passed=5 skipped=0 failed=0
+PASS Hartley2 all-stage suite tests=17 test-groups=5 stage4-mode=archived
+```
+
+The complete suite was repeated with `PATH=/usr/bin:/bin`, which excludes the
+workspace's `rg`; the Stage-3 parser and all 17 groups passed. Therefore `rg`
+is not an undeclared runtime dependency.
+
+The result collector was also tested with two deliberate compiler failures.
+It continued through all remaining independent jobs, returned nonzero, and
+reported `run=17 passed=15 skipped=0 failed=2` plus five group results
+(`passed=3 failed=2`). Both `stage2.planner` and `stage3.accumulator` appeared
+in `failed-tests` with their exit codes and distinct absolute log paths; both
+logs and `summary.txt` existed and were nonempty. The injected archive was
+removed after verification and is not validation evidence.
+
+Default successful runs remove temporary logs. Failed/skipped runs preserve
+their automatically allocated `/tmp/hartley2-all-stages.*/logs` directory.
+`--log-root NEW_PATH` retains all per-test logs and `summary.txt` even on
+success and refuses an existing path. A child `SKIP` is counted separately in
+both test and stage-group summaries but still makes this complete suite exit
+nonzero.
+
+That result includes the Stage-0 standalone MPI signature at 1/4/12 ranks,
+three Stage-0 Python checks and 20 production reports; complete Stage-1
+runtime/cadence and 54-file legacy equivalence; Stage-2 pure and integrated
+checks; Stage-3 accumulator, 11 adaptive-bin, 4 diagnostic-semantics, 8 parser
+case, 14 science-gate, 2,984-cell CLI, and integrated checks; correction-off
+Stage-2/3 regression replays; Stage-4 provenance and both unsupported-model
+rejections; and the correction-on matrix/identity check. Temporary unit
+binaries and CLI products were written under `mktemp` directories and removed
+by traps. No Python bytecode directory remains.
+
+For later master integration, add this orchestrator only after all child
+runners and record schemas are stable. On the integration branch, assemble a
+complete evidence bundle or pass an explicit relocated `--evidence-root`,
+run `--plan`, then archived mode. Build a separate correction-on executable
+with the exact clean-build procedure and run fresh mode into a new archive.
+Finally restore/rebuild correction-off and rerun archived mode. Present both
+terminal PASS records and hashes to the user before any operation on master.

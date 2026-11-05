@@ -62,7 +62,7 @@ run_failure() {
     echo "FAIL parser accepted invalid case $(basename "$case_root")" >&2
     exit 1
   fi
-  if ! rg -q "$expected" "$case_root/parser.log"; then
+  if ! grep -Eq -- "$expected" "$case_root/parser.log"; then
     echo "FAIL parser emitted the wrong error for $(basename "$case_root")" >&2
     cat "$case_root/parser.log" >&2
     exit 1
@@ -71,20 +71,20 @@ run_failure() {
 
 case_root=$(prepare_case valid)
 run_success "$case_root"
-rg -q 'std::uint64_t Comet::Model::RandomSeed=104729;' \
+grep -Fq -- 'std::uint64_t Comet::Model::RandomSeed=104729;' \
   "$case_root/work/main/CometModel.cpp"
-rg -q 'bool Comet::Model::RandomSeedConfigured=true;' \
+grep -Fq -- 'bool Comet::Model::RandomSeedConfigured=true;' \
   "$case_root/work/main/CometModel.cpp"
-rg -q 'ResidualSampling::RandomPhaseSystematic' \
+grep -Fq -- 'ResidualSampling::RandomPhaseSystematic' \
   "$case_root/work/main/CometChemistry.cpp"
 
 case_root=$(prepare_case omitted_defaults)
 sed -i '/^167 halley1d.input$/,+1d;/^172 halley1d.input$/,+1d' \
   "$case_root/case.Block"
 run_success "$case_root"
-rg -q 'bool Comet::Model::RandomSeedConfigured=false;' \
+grep -Fq -- 'bool Comet::Model::RandomSeedConfigured=false;' \
   "$case_root/work/main/CometModel.cpp"
-rg -q 'ResidualSampling::IndependentBernoulli;' \
+grep -Fq -- 'ResidualSampling::IndependentBernoulli;' \
   "$case_root/work/main/CometChemistry.cpp"
 
 case_root=$(prepare_case invalid_seed)
