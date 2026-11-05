@@ -321,3 +321,61 @@ executor may consume the same policy after it provides the Stage-4/5/6
 correction, transaction, and capacity contracts. Deterministic all-channel
 branching and total-reaction forcing are separate algorithms and are not
 silently implied by this stochastic policy.
+
+## Stage 8 total-reaction forcing layer
+
+The optional Stage-8 layer is comet-generic and species-policy driven. It
+does not contain a Hartley 2 or Halley reaction literal and does not change
+the reaction database. `CometTotalReactionForcingPolicy.pm` resolves explicit
+compiled species into a generated boolean table after inspecting the generic
+reaction descriptors; only a parent with a positive-rate, unit-
+unimolecular family is eligible.
+
+For a physical carrier `C`, total rate `lambda`, and logical local step `dt`,
+the application constructs exact survivor and reacted carriers `C*(1-P)` and
+`C*P`, where `P=-expm1(-lambda*dt)`. This is a numerical representation of
+the existing physical reaction law. There is no occurrence-bias input and no
+comet-specific calibration parameter. Conditional channel bias remains the
+separate Stage-7 policy, and daughter packet splitting remains Stage 6.
+
+The reusable boundary between the AMPS core and an application is a three-
+callback trajectory-event contract in `pic.h`: side-effect-free query,
+elapsed-segment advance, and due-event process. All callbacks default to null
+and the core accepts either all three or none. The first-order traced mover
+competes an application event with the next geometric face, advances event
+state before face transfer, and allows conversion/deletion plus continuation
+at the event. Consequently the core knows nothing about chemistry, species
+policies, reaction tables, or comet geometry.
+
+The comet application owns a compact pending-event particle record and the
+conversion rules. Pending records cross block/MPI boundaries with the normal
+particle bytes. A productive `K`-product, `N`-packet transaction allocates
+`K*N` parent markers plus the retained survivor only after a mutation-free
+capacity preflight. At the event, each marker becomes its concrete product,
+receives `P*L/N` carrier composition and deterministic conservative recoil,
+then rescales its unspent normalized interval to the product timestep. Sink
+markers are deleted at the event. This separation lets a later geometry use
+the same application policy once its mover implements the same event
+contract.
+
+Qualification uses that boundary rather than invoking application callbacks
+directly. One real execution-track fixture sends sixteen productive markers
+through a block face and schedules their events afterward. At one rank the
+face is local; at four and twelve ranks it changes MPI ownership. A separate
+product-free marker is due bitwise at the face, proving the documented face-
+first tie, advance-before-copy, zero-time processing by the destination owner,
+and mover-owned deletion. The accepted matrix also replays the Stage-4
+local-timestep/correction/collision and weight-adaptation validators with the
+Stage-8 callbacks installed. A pure `A -> B -> C` planner gate separately
+checks two-generation analytic yields and analog-versus-forced occurrence
+variance.
+
+The currently validated backend is DIM1 spherical radial, first-order,
+force-free traced motion with a constant total rate during one logical
+segment. Geometry-neutral pure planning includes piecewise hazards, but
+production DIM2/DIM3, second-order, field-line, periodic, CUDA, and
+multi-segment varying-hazard integrations remain explicit future work. They
+must extend the event interface rather than copy the comet chemistry into a
+new mover. Corrected collisions remain covered by the Stage-4 replay, but a
+transported Stage-8 daughter interacting in the NTC collision kernel is a
+Stage-9 science-validation requirement rather than a Stage-8 claim.

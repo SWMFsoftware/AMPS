@@ -4877,3 +4877,301 @@ user authorization, extend the prior Stage 0--6 merge sequence as follows:
 
 No AMPS/MPI validation process is active after the final replay. No commit or
 merge was made.
+
+## Stage 8 deterministic total-reaction forcing (2026-11-05)
+
+Stage 8 is implemented and focused-tested on `1d_comet_dev`. The work started
+from commit `c2da2d752b0f09bb39abd75b1b4a1c7432adfc50`. No commit, branch switch,
+merge, or operation on `master` was performed. The tracked `Makefile` edit
+predates Stage 8 and remains user-owned; do not include it in a Stage-8 commit.
+
+### Accepted algorithm and invariants
+
+The approved estimator is deterministic physical two-branch splitting, not a
+biased Bernoulli occurrence probability. For total rate `lambda`, logical
+local step `dt`, and incoming physical carrier `C`, production evaluates
+`P=-expm1(-lambda*dt)` and retains survivor/reacted carriers `C*(1-P)` and
+`C*P`. The reacted value and arithmetic survivor remainder close exactly in
+binary64. No `P*` exists in the input or generated policy.
+
+The reacted branch stays a parent particle until the mover reaches a reaction
+time sampled from the physical exponential law conditional on an event in the
+segment. A configured Stage-7 channel contributes `L=q/q*`; a Stage-6 packet
+count contributes `/N`. Each concrete product packet therefore represents
+`C*P*L/N`. Products in one packet reconstruct a common conservative recoil
+solution from a stored counter-based key. A sink remains a pending parent
+marker until the same event point and is then deleted.
+
+Before the first channel, event-position, or recoil-key random draw, the
+application preflights the largest `K*N` transaction in the complete parent
+family plus the retained survivor. A rejection leaves particle bytes, linked-
+list path, RNG state, physical selection/product diagnostics, and source
+carrier unchanged. Eligible-visit and allocation-deferral counters still
+record the attempted work and capacity pressure. Pending state
+is 16 application-owned bytes copied by ordinary block/MPI particle transfer.
+The event callback converts species at the event, applies the parent/product
+`W/dt` ratio once, and rescales the unused interval by
+`dt_product/dt_parent`. A zero-length re-query proves the marker was consumed
+exactly once.
+
+### New and modified files
+
+Core files:
+
+- `src/pic/pic.h` adds the generic all-or-none `QueryTrajectoryEvent`,
+  `AdvanceTrajectoryEvent`, and `ProcessTrajectoryEvent` callback types,
+  status/result enums, and ownership contract. The interface has no comet or
+  chemistry dependency and defaults to three null pointers.
+- `src/pic/pic_mover.cpp` defines the null callbacks, rejects partial
+  installation during initialization and at mover entry, and integrates an
+  event only into the legacy first-order traced mover. Query is side-effect
+  free; a strictly earlier event wins over geometry, while exact face equality
+  gives the face precedence. Event clocks advance before a face clone/MPI
+  exchange. The core owns deletion and destination-list insertion and checks
+  allocation, species, finite phase space/remaining time, positive correction,
+  and marker clearing after application processing.
+- `src/pic/README.md` documents callback timing, face-equality semantics,
+  particle/list ownership, local-timestep normalization, and unsupported
+  movers. With all callbacks null, no event call or RNG draw occurs.
+
+Input and pure-policy files:
+
+- `input/CometTotalReactionForcingPolicy.pm` is the strict species-policy
+  resolver/generator. It accepts only `ON`, case-sensitive known species, and
+  positive-rate unit-unimolecular parent families; it rejects duplicates,
+  off-mode records, zero-rate/noneligible species, and an empty enabled mode.
+- `input/test_comet_total_reaction_forcing_policy.pl` covers valid generation,
+  default-off identity, and malformed/incomplete policies.
+- `input/hartley2.pl` recognizes the exact records
+  `ChemistryTotalReactionForcingMode=ON` and
+  `ChemistryTotalReactionForcing(SPECIES:name)=ON`, writes the generated table,
+  and requires chemistry, DIM1 radial mode, individual corrections, Bernoulli
+  residuals, Stage-5 windows, diagnostics, and an explicit product cap.
+- `srcHartley2/CometTotalReactionForcingPolicy.generated.h` is a safe source-
+  tree fallback with all species unconfigured. The build copy is always
+  regenerated from the selected input.
+- `srcHartley2/TotalReactionForcingPlanner.h` is AMPS/MPI/RNG independent. It
+  implements homogeneous and piecewise optical-depth plans, stable `expm1`/
+  `log1p` inversion, exact carrier closure, multigeneration decay, and checked
+  capacity arithmetic.
+
+Application runtime files:
+
+- `srcHartley2/CometChemistry.h` declares the opt-in mode, resolved-species
+  query, mover installer, and initialized validator.
+- `srcHartley2/CometChemistry.cpp` contains the generated-policy validation,
+  conditional split transaction, compact pending record, deterministic recoil,
+  three mover callbacks, diagnostics composition, capacity/RNG rollback, and
+  Stage-8 runtime fixtures. It reserves pending bytes only in enabled builds.
+  The pre-existing Stage-6 validator temporarily disables Stage 8 around its
+  direct endpoint replay so the lower-stage gate remains unchanged. The final
+  mover fixture creates one real C2 transaction with sixteen C product markers
+  plus a survivor and adds one explicit C2 ionization sink. Product events are
+  scheduled after the selected face; the sink is scheduled at the exact stable
+  q-form face-intersection double. The fixture runs
+  `PIC::TimeStepInternal::ExecutionTrackDefault`, audits callback owner/radius/
+  remaining time from inside `ProcessTotalReactionEvent`, and scans final
+  particles for species, marker drain, correction sum, and predicted endpoint.
+  Particle-list insertion deliberately converts `FindCellIndex`'s ghost-
+  offset center-node result to the compact physical-cell index; the initial
+  smoke test exposed and fixed this distinction before acceptance.
+- `srcHartley2/RadialSimulation.cpp` installs the complete callback set after
+  particle-data offsets exist and before `PIC::Mover::Init()` validates it.
+- `srcHartley2/RadialMain.cpp` adds the mutually exclusive
+  `--validate-total-reaction-forcing` command and dispatch.
+
+Test files:
+
+- `srcHartley2/tests/test_stage8_total_reaction_forcing_planner.cpp` covers
+  split closure, constant/piecewise hazards, conditional placement,
+  multigeneration, capacity limits, extreme inputs, and rejection paths. It
+  now also advances a closed-form discrete-cycle `A -> B -> C` network,
+  verifies `A+B+C` carrier closure after every cycle, and compares 64 keyed
+  analog ensembles against the deterministic-forcing result and analytic
+  occurrence variance.
+- `srcHartley2/tests/test_stage8_forced_segment_reference.py` is an independent
+  analytic oracle for survival, conditional CDFs, and piecewise positions.
+- `srcHartley2/tests/test_stage8_total_reaction_forcing_logs.py` strictly
+  parses and recomputes the runtime records. Global analytic fixtures must be
+  rank-identical; each rank-local transaction residue must independently meet
+  its physical bound because `MPI_MAX` can select different valid roundoff
+  residues at different decompositions. It also requires one production-
+  mover record with 18 face transfers/continuations, 16 product events, one
+  face-tied sink, destination ownership, 17 completed particles, no pending
+  marker/remainder, and bounded carrier/event/endpoint errors.
+- `srcHartley2/tests/test_stage8_total_reaction_forcing_parser.py` mutation-
+  tests missing/wrong survival, event bounds, `P*L/N`, rollback,
+  double-chemistry, transaction roundoff, missing local/MPI face crossing,
+  uncleared markers, unfinished remainders, bad product endpoints, and bad
+  mover correction. All 13 mutations are independently rejected.
+- `srcHartley2/tests/run_stage8_total_reaction_forcing_tests.sh` runs the pure
+  Perl/C++ gate without configuring or compiling AMPS.
+- `srcHartley2/tests/run_stage8_integrated_tests.sh` replays the Stage-4 local-
+  timestep, unit-correction, and weight-adaptation validators before running
+  Stage-5/6/7/8 at exactly 1, 4, and 12 ranks into a nonexisting immutable
+  root. It exposes separate mover-particle and chemistry-event counts and uses
+  the existing strict Stage-4 parser rather than duplicating its schema.
+- `srcHartley2/tests/run_all_stage_tests.sh` adds archived/fresh Stage-8
+  modes, five jobs, strict provenance, and a total of 30 tests in nine groups;
+  it still requires no `rg` executable.
+
+Documentation files:
+
+- `srcHartley2/CHEMISTRY.md` records the equations, policy, mover transaction,
+  validation, limits, and Stage-9 science gate.
+- `srcHartley2/README.md` gives operator input/CLI/test commands and archive
+  rules.
+- `srcHartley2/GENERIC_COMET_DESIGN.md` records the reusable core/application
+  boundary and future geometry/mover work.
+- `srcHartley2/STATUS.md` and root `handoff.md` contain recovery state and the
+  ordered later-master integration procedure.
+
+The temporary validation edits to `input/halley1d.input` are not source
+changes. They are frozen only as
+`validation_runs/stage8-total-reaction-forcing-full-20261105-r4/provenance/halley1d.stage8-validation.input`.
+The tracked canonical input is restored to SHA-256
+`0d89b536e6daa2dea7251bb57920fb6f1dd2546efd7c454d25b6dcccc26eccf5`.
+Root `hartley2.pl`, root input symlinks/copies, `build/`, `amps`, PT output,
+meshes, logs, and validation archives are generated/local artifacts and must
+not be staged with the implementation.
+
+### Validation evidence
+
+Pure policy, parser syntax, planner, analytic reference, 13 mutation tests,
+shell syntax, and `git diff --check` pass. The Stage-8-enabled application was
+built with `-O3` only after removing exactly the repository `build/` directory.
+Both enabled and final canonical builds emitted the pre-existing DIM1
+aggressive-loop-optimization warnings in unrelated generic 3-coordinate core
+paths; neither build emitted a Stage-8 compile or link error.
+The accepted runtime archive is:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/stage8-total-reaction-forcing-full-20261105-r4
+PASS Stage-4 correction-on integrated matrix 1rank=pass 4rank=pass 12rank=pass
+PASS Stage-5 correction-window integrated matrix 1rank=pass 4rank=pass 12rank=pass
+PASS Stage-6 daughter-packet integrated matrix 1rank=pass 4rank=pass 12rank=pass reactions=46 sinks=23 packet-cases=4 events=200000
+PASS Stage-7 channel-importance integrated matrix 1rank=pass 4rank=pass 12rank=pass families=27 reactions=69 sidecar-rows=69 events=200000
+PASS Stage-8 total-reaction forcing integrated matrix 1rank=pass 4rank=pass 12rank=pass events=200000 homogeneous=1 piecewise=1 decay=1 composition=1 rollback=1 mover=1
+```
+
+The archive manifest freezes the acceptance executable, validation input,
+core configuration, generated chemistry table, and Stage-6/7/8 policy tables.
+The enabled executable SHA-256 is
+`822905e735deef438b9c0cbe31bb2ef150ee23b60d912def5d33d8f522f09ce6`;
+the generated Stage-8 table is
+`f3a788fdb0e65457b8fea06986d172d1f6cac84fecd79bc488cf73ee439db8fa`.
+
+The `-r1` archive is failed development evidence because its summary counted
+`K*N` product markers as reacted branches. The `-r2` archive fixed that
+definition but exposed an invalid parser demand for identical rank-local
+roundoff maxima; all physical bounds passed. The `-r3` archive passed the
+direct Query/Advance/Process algebra but an audit found that it never passed
+pending markers through `ExecutionTrackDefault` and did not replay Stage 4.
+It is pre-acceptance evidence. Do not use, merge, rename, or substitute any of
+`-r1`, `-r2`, or `-r3` for accepted `-r4`.
+
+### Supported scope and unresolved work
+
+Stage 8 is complete as implementation/focused-compatibility evidence only for
+DIM1 spherical radial, the first-order force-free traced mover, and a constant
+total rate during one logical local-timestep segment. The pure planner tests
+piecewise hazards, but production does not yet integrate a varying hazard
+across several blocks. Second-order, Boris, guiding-center, field-line,
+periodic, CUDA, hybrid, DIM2, and DIM3 paths are not supported claims.
+
+Stage 9 still requires multiple independent transported seeds comparing
+analog and forced occurrence, measured variance/cost, collision feedback,
+unchanged parent lifetime and primary profiles, daughter production/loss/
+escape closure, buffer headroom, effective sample sizes, convergence, and a
+new Rubin comparison. Validation values such as broad correction windows,
+`N=8`, and equal target channel probabilities are fixtures, not Halley input
+recommendations. The accepted matrix does replay Stage-4 corrected NTC
+collision invariants with callbacks installed, but it does not yet collide a
+newly transported Stage-8 daughter; that specific feedback remains Stage 9.
+
+### Later merge to master: ordered procedure, not authorization
+
+Do not merge yet. After Stage-9 science acceptance and explicit user approval,
+perform integration on a disposable branch made from a recorded current
+`master` tip. Never switch the present dirty development worktree to master.
+
+1. Record the exact `1d_comet_dev` commit range, merge base, working-tree
+   diff, excluded artifacts, and current master tip. Preserve unrelated master
+   changes and the user-owned `Makefile` edit.
+2. Integrate and test Stages 0--7 first. Stage 8 depends on individual
+   corrections, correction windows, packet counts, channel likelihoods,
+   diagnostics, and the established `K*N` capacity contract.
+3. Merge the three generic core callback declarations/definitions and
+   first-order mover hook as a separate reviewable change. Retain all-null
+   defaults, all-or-none initialization validation, face-equality precedence,
+   core-only deletion/list ownership, post-callback validation, and zero-event
+   re-query. Resolve mover conflicts semantically; do not copy a whole old
+   `pic_mover.cpp` over master.
+4. Clean-build representative non-comet/core applications with null callbacks
+   and run their mover tests before adding comet registration. Confirm no RNG
+   draw and no behavior/configuration change in off mode.
+5. Add the strict input policy, pure planner, generated fallback, and pure
+   tests. Run omitted/off, valid C2, duplicate, unknown, zero-rate, bad value,
+   and missing-prerequisite parser cases before runtime code.
+6. Add application declarations and chemistry implementation, then the
+   initialization registration and CLI. Preserve transaction preflight before
+   RNG/mutation, 16-byte memcpy access, one `P`, one `L`, one `/N`, common
+   packet recoil, `W/dt` conversion, remaining-time rescaling, sink handling,
+   leader-only diagnostics, and rollback invariants.
+7. Add strict analytic/mutation/runtime tests and runner wiring. The runtime
+   gate must use the production execution track, not direct callback calls:
+   require local and MPI faces, an exact face/event tie, advance-before-copy,
+   destination-owner processing, mover-owned sink deletion, marker/remainder
+   drain, and predicted product endpoints. Preserve the compact particle-list
+   index when seeding fixtures; `FindCellIndex` returns a ghost-offset center-
+   node index. Do not weaken exact analytic rank identity; only rank-local
+   transaction maxima use independently bounded roundoff.
+8. Create an independent validation input outside the canonical file, remove
+   exactly the integration worktree's `build/`, build Stage 8 on, freeze all
+   provenance, and rerun the complete 1/4/12 Stage-4/5/6/7/8 matrix into a new
+   nonexisting archive. Stage 4 must be replayed with the Stage-8 callback set
+   installed so legacy face, MPI continuation, correction, collision, and
+   adaptation paths cannot regress silently.
+9. Restore the canonical off input, remove exactly `build/` again, clean-build
+   and verify correction/packet/importance/forcing off. Run the complete
+   30-test, nine-group orchestrator and relevant core/application regressions.
+10. Run the Stage-9 transported science plan; do not promote validation
+    windows, packets, `q*`, or forcing species into a production input based
+    on visual agreement with Rubin.
+11. Exclude `Makefile`, `build/`, `amps`, root generated parsers/inputs,
+    meshes, `PT*`, logs, raw validation archives, failed `-r1`/`-r2`, and pre-
+    acceptance `-r3` evidence from source commits unless the user explicitly
+    requests a curated small manifest.
+12. Present the exact integration diff/commits, exclusions, hashes, complete
+    test matrix, performance/memory/uncertainty/closure/convergence results,
+    and Rubin products to the user. Stop and obtain explicit approval before
+    any merge, push, or operation affecting `master`.
+
+### Final canonical workspace after Stage-8 validation
+
+After freezing the enabled executable, `input/halley1d.input` was restored,
+exactly `/data/vtenishe/COMET1D/AMPS/build` was removed, and the application
+was clean-built with `make -j8 EXTRACOMPILEROPTIONS=-O3`. The generated core
+macro is `_INDIVIDUAL_PARTICLE_WEIGHT_OFF_`; all 27 total-forcing flags are
+zero; all 69 packet counts are one; and all 69 channel-importance flags are
+zero. Final hashes are:
+
+```text
+7752f0967512c4de136c5ef9f284a682bbfc986aab6a89b8e2459262c6a96317  amps
+0d89b536e6daa2dea7251bb57920fb6f1dd2546efd7c454d25b6dcccc26eccf5  input/halley1d.input
+c3d2bca73f068cff357ae6d1f5002c97dc738b6a3190c712b2787890c92e2726  build/pic/picGlobal.dfn
+ce925a583f1b1cffa641ac8336fb59eba850605ecb6730df35e09fa39507910b  build/main/RadialSimulation.cpp
+311c78deeb0fcc2140f21d995d86b5024ac2c9c9b3091a46631e5caef055413a  build/main/CometTotalReactionForcingPolicy.generated.h
+419fda57d23876a1837ab9b9f4867231331c05b05ba5fabd631d1c1184299fc1  build/main/CometDaughterPacketPolicy.generated.h
+7f4e0be8f6a6f09e0b39a28642200839a1d32a7d195953befd043609632a9fbf  build/main/CometChannelImportancePolicy.generated.h
+```
+
+The final archived replay passed without skip or failure:
+
+```text
+tests: run=30 passed=30 skipped=0 failed=0
+test-groups: run=9 passed=9 skipped=0 failed=0
+PASS Hartley2 all-stage suite tests=30 test-groups=9 stage4-mode=archived stage5-mode=archived stage6-mode=archived stage7-mode=archived stage8-mode=archived
+```
+
+No AMPS or MPI process remains active. No commit or merge was made.

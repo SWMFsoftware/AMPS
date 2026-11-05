@@ -6084,6 +6084,49 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
         long int ptr, double localTimeStep,
         cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
 
+    // Optional event embedded in one force-free trajectory.  This interface
+    // lets an application stop the first-order trace mover at a physical
+    // event (for example, a forced chemical reaction), mutate the particle at
+    // the exact event point, and continue the unused local-timestep interval.
+    // It is deliberately a three-callback transaction:
+    //
+    //  * QueryTrajectoryEvent is a side-effect-free preview.  It may return
+    //    EventPending and an eventTime in [0,maximumSegment].
+    //  * AdvanceTrajectoryEvent commits the elapsed segment before a block-
+    //    face clone or MPI exchange copies application particle bytes.
+    //  * ProcessTrajectoryEvent commits a due event.  It may change velocity,
+    //    species, application fields, and remainingTime, but it must not own
+    //    list insertion or particle-buffer deletion.
+    //
+    // The mover owns deletion after EventDelete and owns all destination-list
+    // insertion after EventContinue.  Applications must install all three
+    // callbacks or none.  The default all-NULL state preserves every legacy
+    // mover path and consumes no extra random number.  Currently only
+    // UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection
+    // invokes this interface; other movers must reject an application mode
+    // that requires it until they implement the same continuation contract.
+    enum eTrajectoryEventStatus {
+      TrajectoryEventNone=0,
+      TrajectoryEventPending=1
+    };
+    enum eTrajectoryEventResult {
+      TrajectoryEventContinue=0,
+      TrajectoryEventDelete=1
+    };
+    typedef int (*fQueryTrajectoryEvent)(long int ptr,int species,
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
+        double localTimeStep,double maximumSegment,double& eventTime);
+    typedef void (*fAdvanceTrajectoryEvent)(long int ptr,int species,
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
+        double localTimeStep,double elapsedTime);
+    typedef int (*fProcessTrajectoryEvent)(long int ptr,double *position,
+        double *velocity,int& species,
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
+        double oldLocalTimeStep,double& remainingTime);
+    extern fQueryTrajectoryEvent QueryTrajectoryEvent;
+    extern fAdvanceTrajectoryEvent AdvanceTrajectoryEvent;
+    extern fProcessTrajectoryEvent ProcessTrajectoryEvent;
+
 
     //the vector containing the species specific particle moving procedures
 //    extern fSpeciesDependentParticleMover *MoveParticleTimeStep;

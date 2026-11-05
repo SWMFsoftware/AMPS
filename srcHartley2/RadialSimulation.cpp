@@ -3288,6 +3288,10 @@ void Comet::RadialSimulation::Initialize() {
   // Other comet modes that disable chemistry reserve nothing.
   Comet::Chemistry::RequestParticleData();
   PIC::Init_AfterParser();
+  // Stage 8 installs an all-or-none, application-owned trajectory-event
+  // callback set. Installation must precede Mover::Init(), where the generic
+  // core validates the contract even for a zero-particle validation run.
+  Comet::Chemistry::ConfigureTotalReactionForcingMover();
   PIC::Mover::Init();
   Comet::Diagnostics::Initialize();
   WriteCellMeasureAudit();

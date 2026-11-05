@@ -17,6 +17,7 @@ use CometPopulationPolicy;
 use CometCorrectionWindowPolicy;
 use CometDaughterPacketPolicy;
 use CometChannelImportancePolicy;
+use CometTotalReactionForcingPolicy;
 
 
 #my $command= $];
@@ -128,6 +129,8 @@ my $DaughterPacketPolicy=
     CometDaughterPacketPolicy->new(species=>\@SpeciesList);
 my $ChannelImportancePolicy=
     CometChannelImportancePolicy->new(species=>\@SpeciesList);
+my $TotalReactionForcingPolicy=
+    CometTotalReactionForcingPolicy->new(species=>\@SpeciesList);
 
 #add the model header to the pic.h
 open (PIC_H,">>$WorkingSourceDirectory/pic/pic.h") || die "Cannot open $WorkingSourceDirectory/pic/pic.h";
@@ -603,6 +606,24 @@ while ($line=<InputFile>) {
     # parsed only by the common policy module.  No generated array index is an
     # input interface.
     $ChannelImportancePolicy->add_probability_record($LineOriginal,
+        "line $InputFileLineNumber ($InputFileName)");
+  }
+  elsif ($InputLine eq "CHEMISTRYTOTALREACTIONFORCINGMODE") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    $InputLine=~s/ //g if defined $InputLine;
+    $TotalReactionForcingPolicy->set_mode($InputLine,
+        "line $InputFileLineNumber ($InputFileName)");
+    ampsConfigLib::ChangeValueOfVariable(
+        "bool Comet::Chemistry::TotalReactionForcingEnabled",
+        $InputLine eq "ON" ? "true" : "false",
+        "main/CometChemistry.cpp");
+  }
+  elsif ($InputLine eq "CHEMISTRYTOTALREACTIONFORCING") {
+    # The raw record retains the case-sensitive compiled species symbol.
+    # Stage 8 has no tunable P*: each named parent is represented by both
+    # physical branches P and 1-P, so accepting a numeric value here would
+    # silently change the approved deterministic estimator.
+    $TotalReactionForcingPolicy->add_species_record($LineOriginal,
         "line $InputFileLineNumber ($InputFileName)");
   }
   elsif ($InputLine eq "PARTICLEWEIGHTCORRECTIONWINDOWMODE") {
@@ -1500,6 +1521,40 @@ my $ResolvedChannelImportance=
 $ChannelImportancePolicy->write_header(
     "$WorkingSourceDirectory/main/CometChannelImportancePolicy.generated.h",
     $ResolvedChannelImportance);
+
+# Stage 8 deterministically retains both total-reaction outcomes for each
+# configured parent.  It therefore requires individual correction storage for
+# the P and 1-P carriers, Stage-5 windows to control the split population at a
+# safe cycle boundary, and an explicit transaction bound for the reacted
+# K*N daughters plus survivor.  Diagnostics are mandatory so carrier closure,
+# branch positions, and capacity deferrals cannot disappear in a science run.
+if ($TotalReactionForcingPolicy->is_enabled()) {
+  die "ChemistryTotalReactionForcingMode=ON requires ChemistryMode=ON\n"
+      unless chemistryIsEnabled(
+          "$WorkingSourceDirectory/main/CometChemistry.cpp");
+  die "ChemistryTotalReactionForcingMode=ON requires Dimension=1\n"
+      unless $Dimension==1;
+  die "ChemistryTotalReactionForcingMode=ON requires RadialSimulationMode=ON\n"
+      unless radialSimulationIsEnabled(
+          "$WorkingSourceDirectory/main/RadialSimulation.cpp");
+  die "ChemistryTotalReactionForcingMode=ON requires ParticleWeightCorrectionMode=ON\n"
+      unless individualParticleWeightCorrectionIsEnabled(
+          "$WorkingSourceDirectory/pic/picGlobal.dfn");
+  die "ChemistryTotalReactionForcingMode=ON requires ChemistryResidualSampling=BERNOULLI\n"
+      unless $ChemistryResidualSampling eq 'BERNOULLI';
+  die "ChemistryTotalReactionForcingMode=ON requires ParticleWeightCorrectionWindowMode=ON\n"
+      unless $CorrectionWindowPolicy->is_enabled();
+  die "ChemistryTotalReactionForcingMode=ON requires RadialMaxPhotochemicalProductsPerReaction\n"
+      unless $RadialMaxPhotochemicalProductsPerReactionIsSet;
+  die "ChemistryTotalReactionForcingMode=ON requires CometDiagnostics=ON\n"
+      unless $CometDiagnosticsEnabled;
+}
+my $ResolvedTotalReactionForcing=
+    $TotalReactionForcingPolicy->validate_configuration_and_resolve(
+        reactions=>$ReactionNetwork->channel_importance_policy_reactions());
+$TotalReactionForcingPolicy->write_header(
+    "$WorkingSourceDirectory/main/CometTotalReactionForcingPolicy.generated.h",
+    $ResolvedTotalReactionForcing);
 
 ampsConfigLib::ChangeValueOfArray("double Comet::Model::SurfaceProductionRate\\[PIC::nTotalSpecies\\]",\@SurfaceProductionRate,"main/CometModel.cpp");
 ampsConfigLib::ChangeValueOfArray("int Comet::Model::SurfaceDistributionMode\\[PIC::nTotalSpecies\\]",\@SurfaceDistributionMode,"main/CometModel.cpp");

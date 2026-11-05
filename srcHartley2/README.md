@@ -1424,3 +1424,124 @@ Hartley2 all-stage test summary status=PASS stage4-mode=archived stage5-mode=arc
   test-groups: run=8 passed=8 skipped=0 failed=0
 PASS Hartley2 all-stage suite tests=25 test-groups=8 stage4-mode=archived stage5-mode=archived stage6-mode=archived stage7-mode=archived
 ```
+
+## Stage 8 deterministic total-reaction forcing
+
+Stage 8 addresses rare total reaction occurrence without changing a physical
+reaction rate or introducing a tunable occurrence probability. For each
+configured unit-unimolecular parent and one logical local-timestep segment,
+the application retains both exact physical outcomes:
+
+```text
+P = -expm1(-lambda*dt)
+survivor carrier = C*(1-P)
+reacted carrier  = C*P
+```
+
+The reacted branch remains a parent particle while it moves to a reaction
+time sampled from the physical exponential distribution conditional on an
+event inside the segment. It then converts to a product, or is removed for a
+sink, and completes its unspent normalized interval using the product local
+timestep. Stage-7 channel likelihood `L` and Stage-6 packet count `N` compose
+as `C*P*L/N` for each concrete product packet. Products from one packet use a
+common deterministic conservative recoil solution.
+
+Enable it only with an explicit per-species policy:
+
+```text
+ChemistryTotalReactionForcingMode=on
+ChemistryTotalReactionForcing(SPECIES:C2)=on
+```
+
+Species symbols are case-sensitive and the value must be `ON`; there is no
+numeric `P*` record. Enabled forcing requires DIM1 radial chemistry,
+individual particle corrections, Bernoulli residual sampling, Stage-5
+windows, an explicit `RadialMaxPhotochemicalProductsPerReaction`, and
+diagnostics. The parser rejects incomplete prerequisites, duplicates,
+unknown species, and species without a positive-rate unit-unimolecular
+family. Omitting the mode and all records preserves the default-off path.
+
+The implementation stores a 16-byte pending-event record only in enabled
+builds. Before any mutation or Stage-8 RNG draw it preflights the complete
+`K*N` daughter transaction and retained survivor; an insufficient buffer
+leaves bytes, path, and RNG state unchanged. The generic core event callbacks
+are all null by default and must be installed as a complete set. A geometric
+face at exactly the event time wins, so ordinary block/MPI continuation is
+completed before conversion.
+
+Current qualification is deliberately narrow: the production hook is the
+first-order force-free traced mover in the DIM1 spherical radial application,
+with a constant total reaction rate during a logical segment. The pure
+planner tests piecewise-constant hazards, but production multi-block hazard
+integration, second-order/field-line/periodic/CUDA movers, and DIM2/DIM3 are
+not yet supported claims.
+
+Run the pure policy/planner checks without changing a build:
+
+```sh
+srcHartley2/tests/run_stage8_total_reaction_forcing_tests.sh
+```
+
+An enabled executable exposes `--validate-total-reaction-forcing`. Its mover
+fixture uses the production execution track: sixteen C2 products react after
+a local/MPI face and one product-free sink is due exactly at the face. The
+test requires face-first ordering, advance-before-copy, destination-owner
+processing, core-owned deletion, complete remaining flight, and exact carrier
+closure. The full runner replays the Stage-4 mover/adaptation matrix and
+Stages 5--8 at 1, 4, and 12 ranks:
+
+```sh
+srcHartley2/tests/run_stage8_integrated_tests.sh \
+  --executable /absolute/path/to/stage8/amps \
+  --output-root /new/absolute/path/to/stage8-validation \
+  --validation-particles 200000 \
+  --chemistry-validation-events 200000
+```
+
+The output root must not exist. The accepted immutable evidence is
+`validation_runs/stage8-total-reaction-forcing-full-20261105-r4`; the `-r1`
+and `-r2` siblings are failed parser-development evidence. The `-r3` sibling
+passed direct callback checks but did not exercise events through the real
+mover or replay Stage 4, so it is pre-acceptance evidence. None may be
+substituted for `-r4`.
+Validation fixtures such as broad windows, `N=8`, and equal C2/H2O `q*` are
+not science parameters.
+
+## Complete Stage 0--8 test runner
+
+The general runner now has nine groups and 30 independently logged tests. In
+addition to every Stage 0--7 check it runs the Stage-8 policy/planner and
+analytic-oracle job, verifies frozen provenance, replays every lower-stage
+compatibility record from the Stage-8 archive, and strictly checks the forced
+segment records at 1, 4, and 12 ranks:
+
+```sh
+srcHartley2/tests/run_all_stage_tests.sh --plan
+srcHartley2/tests/run_all_stage_tests.sh
+```
+
+Fresh Stage-8 mode requires a separately clean-built enabled binary and a new
+immutable directory:
+
+```sh
+srcHartley2/tests/run_all_stage_tests.sh \
+  --stage8-mode fresh \
+  --stage8-executable /absolute/path/to/stage8/amps \
+  --stage8-output-root /new/absolute/path/to/stage8-validation
+```
+
+The archived runner remains read-only and the current repository build must
+be canonical correction-off for the Stage-3 parser fixture. Successful
+closure reports:
+
+```text
+tests: run=30 passed=30 skipped=0 failed=0
+test-groups: run=9 passed=9 skipped=0 failed=0
+PASS Hartley2 all-stage suite tests=30 test-groups=9 stage4-mode=archived stage5-mode=archived stage6-mode=archived stage7-mode=archived stage8-mode=archived
+```
+
+This is implementation compatibility evidence, not the Stage-9 transported
+science result. Production use still requires independent-seed analog/forced
+variance and cost comparisons, parent-profile invariance, collision feedback,
+minor-species flux closure, buffer headroom, convergence, and regenerated
+Rubin comparison products.

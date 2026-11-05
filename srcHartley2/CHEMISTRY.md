@@ -1276,41 +1276,117 @@ Documentation of a merge sequence is not permission to merge.
 Address a species that remains unresolved because the total parent reaction
 probability—not merely the channel or product carrier—is too small.
 
-This stage is optional and must not begin unless Stages 2 through 7 are
-insufficient and diagnostics identify rare total reaction occurrence as the
-limiting variance.
+This stage is optional. It was implemented after Stages 2 through 7 exposed
+total reaction occurrence, rather than only conditional channel selection or
+daughter carrier size, as a remaining source of variance.
 
-### Required physics
+### Implemented deterministic two-branch estimator
 
-If physical reaction probability is `P` and a biased probability `P*` is
-used, a reacted branch carries `P/P*`, while a sampled survivor must carry
+There is deliberately no biased occurrence probability `P*` in the input.
+For a configured parent with total constant rate `lambda` during one logical
+local-timestep segment `dt`, the planner evaluates
 
 ```text
-(1-P)/(1-P*).
+tau = lambda*dt
+P = -expm1(-tau)
+S = 1-P.
 ```
 
-Removing parents at `P*` without the survivor correction is prohibited because
-it biases parent lifetime and every downstream density.
+An incoming physical carrier `C=(W_parent/dt_parent)*c_parent` is represented
+by both outcomes: an unchanged parent carrier `C*S` and a reacted carrier
+`C*P`. The reacted value is adjusted by at most a few binary64 ulps and the
+survivor is its arithmetic remainder, so the committed pair adds to `C`
+exactly in production precision. This is deterministic implicit branching,
+not a stochastic `P*` estimator. The formerly proposed `P/P*` reacted and
+`(1-P)/(1-P*)` survivor likelihoods remain a rejected alternative; omitting
+the latter would bias the parent lifetime.
 
-Prefer forced-reaction segments or implicit branching over per-step
-uncontrolled splitting:
+The reacted branch retains the parent species until its physical reaction
+point. With `u` uniform on `[0,1)`, the conditional event time is
 
-- retain an unreacted branch with the correct survival weight;
-- create a reacted branch with the complementary physical weight;
-- sample reaction position from the conditional optical-depth distribution;
-- distribute reacted weight among channels; and
-- immediately apply weight windows and capacity limits.
+```text
+t = -log1p(-u*P)/lambda,       0 <= t <= dt.
+```
+
+Stage 7 then selects a conditional channel. Its likelihood `L=q/q*` is
+applied once; Stage 6 packet count `N` divides each concrete product carrier.
+For every concrete product, the final represented carrier is therefore
+`C*P*L/N` per packet. A sink has one pending marker and no daughter. A
+productive reaction with `K` concrete products allocates `K*N` pending
+markers plus the survivor. All markers initially remain parent particles so
+ordinary mover geometry, face crossings, MPI exchange, and local-timestep
+continuation determine the event location before conversion.
+
+Each marker carries a compact 16-byte application record containing the
+reaction/product code, deterministic recoil key/leader flag, and remaining
+normalized parent interval. The first-order force-free traced mover queries
+the event without side effects, advances the record by the elapsed segment,
+and calls the application at the event point. Conversion changes species,
+restores all products in a packet from the same deterministic conservative
+recoil key, scales the correction by the parent/product `W/dt` ratio, and
+rescales the unspent interval by `dt_product/dt_parent`. Only the packet
+leader performs once-per-reaction destruction and selection accounting.
+
+The transaction preflights the maximum `K*N` family allocation before the
+first Stage-8 RNG draw or mutation. Failure leaves the parent record, path,
+RNG state, and particle buffer unchanged. Stage-5 windows run at the normal
+completed-cycle boundary; pending in-flight records must have completed
+before then. The particle record is requested only when the mode is enabled,
+and omitted/off inputs leave the three core callbacks null.
+
+### Input and supported scope
+
+The exact input spelling is:
+
+```text
+ChemistryTotalReactionForcingMode=on
+ChemistryTotalReactionForcing(SPECIES:C2)=on
+```
+
+Only explicit, case-sensitive compiled species are accepted. Numeric values,
+`P*`, duplicate/unknown species, zero-rate or non-unit-unimolecular parents,
+records in off mode, and an enabled mode without a species are rejected.
+The enabled mode requires DIM1 spherical radial chemistry, individual
+corrections, Bernoulli residual sampling, Stage-5 correction windows, an
+explicit photochemical product cap, and diagnostics. The generated table is
+one immutable flag per species.
+
+The production hook is currently qualified only for the legacy first-order,
+force-free traced mover used by the DIM1 radial application. The generic core
+interface is geometry-neutral, but no second-order, field-line, periodic,
+CUDA, DIM2, or DIM3 event integration is claimed. The runtime currently
+assumes a constant total reaction rate over one logical local-timestep
+segment. The pure planner and analytic oracle cover piecewise-constant
+hazards, but production does not yet accumulate a multi-block hazard plan.
 
 ### Tests
 
-- Pure exponential-decay tests with known analytic survival and product
-  distributions.
-- Spatially varying rate tests with conditional reaction positions.
-- Multiple-generation networks with biased and unbiased parents.
-- Collision/transport tests proving weighted parents retain the correct
-  lifetime and feedback.
-- Direct comparisons among analog, forced, and analytic solutions over many
-  independent seeds.
+- `run_stage8_total_reaction_forcing_tests.sh` covers the strict Perl policy,
+  parser syntax, exact carrier closure, homogeneous and piecewise hazards,
+  conditional positions, capacity arithmetic, and invalid inputs. Its pure
+  planner also advances an analytic discrete-cycle `A -> B -> C` network,
+  proves `A+B+C` carrier closure at every cycle, compares 64 keyed analog
+  ensembles with the closed form, and demonstrates that deterministic total-
+  occurrence forcing removes occurrence-count variance.
+- `--validate-total-reaction-forcing` exercises homogeneous survival,
+  constant/piecewise positions, multistep exponential decay, the real
+  `C2_2C` Stage-7 likelihood plus Stage-6 `N=8` composition, a production
+  transaction, mover-event conversion/continuation, and byte/RNG/path
+  rollback on forced capacity failure. The mover fixture invokes
+  `ExecutionTrackDefault`, crosses a local face at one rank and an MPI-owned
+  face otherwise, places sixteen productive events after the face, and puts a
+  product-free sink bitwise at the face time. It requires face precedence,
+  advance-before-copy, destination-owner zero-time processing, mover-owned
+  deletion, completed product endpoints, and no residual marker.
+- `run_stage8_integrated_tests.sh` first replays the Stage-4 local-timestep,
+  unit-correction, and weight-adaptation validators and then the accepted
+  Stage-5, Stage-6, Stage-7, and Stage-8 validators at exactly 1, 4, and 12
+  ranks with 200,000 mover particles and 200,000 chemistry events. Independent
+  strict parsers own every lower-stage and Stage-8 schema.
+- The complete orchestrator adds five Stage-8 jobs and reports 30 tests in
+  nine groups. Its archived mode consumes the immutable accepted archive;
+  fresh mode requires a caller-supplied enabled executable and a new output
+  root.
 
 ### Exit criteria
 
@@ -1319,6 +1395,32 @@ uncontrolled splitting:
 - Variance reduction justifies the additional branching and collision
   complexity.
 - The feature remains opt-in and is not required by ordinary comet cases.
+
+### Closure and remaining scientific gate
+
+Stage 8 is closed as an implementation and focused-compatibility stage on
+`1d_comet_dev`. The accepted archive is
+`validation_runs/stage8-total-reaction-forcing-full-20261105-r4`; its
+`provenance/SHA256SUMS` freezes the enabled executable, validation input, core
+configuration, and generated Stage-6/7/8 policies. The `-r1` sibling is
+retained as failed development evidence: every MPI case ran, but the first
+validator reported product markers rather than one logical reacted branch in
+its summary counter. The `-r2` retry fixed that counter but exposed an invalid
+checker requirement that per-rank transaction roundoff maxima be identical.
+Every residue was already below the strict physical tolerance. The `-r3`
+archive then passed the direct callback algebra, but audit showed that it did
+not run pending markers through the production mover and did not replay the
+Stage-4 mover matrix; it is therefore pre-acceptance evidence. The accepted
+`-r4` checker retains exact rank identity for deterministic analytic fixtures,
+requires each independent transaction residue to pass its bound, and requires
+the real mover/MPI/sink record plus the complete Stage-4 dependency replay.
+
+This closure is not a claim of transported science convergence or useful
+end-to-end variance reduction. The pure `A -> B -> C` gate establishes the
+estimator's occurrence-variance mechanism; independent-seed transported
+analog/forced comparisons, Stage-8 product collision feedback, primary-
+profile invariance, daughter flux closure, buffer/runtime cost, effective
+sample size, and a converged Rubin comparison remain Stage 9.
 
 ## Stage 9: long-run science validation
 
@@ -1418,18 +1520,18 @@ manifest. Wait for explicit user approval.
 
 ## Recommended immediate next action
 
-Stage 7 is implemented and focused-tested for its explicitly supported radial
-configuration. The canonical correction-off, packet-off, importance-off build
-has been restored and the complete archived Stage 0--7 orchestrator passes 25
-tests in eight groups. Do not start Stage 8 or merge to `master` without a
-separate user decision.
+Stage 8 is implemented and focused-tested for its explicitly supported radial
+configuration. The canonical correction-off, packet-off, importance-off,
+total-forcing-off build has been restored and the complete archived Stage
+0--8 orchestrator passes 30 tests in nine groups. Do not merge to `master`
+without a separate user decision and completed science validation.
 
 The next scientific action is a transported independent-seed Stage-9 pilot.
-Compare the analog policy with candidate Stage-6 packet counts and complete
-Stage-7 conditional channel policies using identical physical inputs and
+Compare analog chemistry with candidate Stage-6 packets, complete Stage-7
+conditional policies, and Stage-8 forcing using identical physical inputs and
 documented independent seeds. Measure uncertainty per daughter, family ESS,
 flux closure, buffer use, and runtime; verify unchanged parent lifetime and
 primary profiles; and only then select production controls. The equal C2 and
-H2O probabilities in the accepted Stage-7 archive are validation fixtures,
-not calibrated Halley/Rubin parameters. Never select packet counts, windows,
-or `q*` values by tuning to the Rubin curve.
+H2O probabilities and broad windows in the accepted archives are validation
+fixtures, not calibrated Halley/Rubin parameters. Never select packets,
+windows, `q*`, or forcing species by tuning to the Rubin curve.

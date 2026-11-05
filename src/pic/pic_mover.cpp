@@ -53,6 +53,14 @@ PIC::Mover::fFindMovingSurfaceIntersection
 PIC::Mover::fProcessMovingSurfaceIntersection
     PIC::Mover::ProcessMovingSurfaceIntersection=NULL;
 
+// Applications that do not need an in-flight event leave this complete set
+// NULL.  Keeping the pointers in generic core state (rather than compiling a
+// comet-specific branch) makes the legacy mover byte-for-byte unchanged up to
+// the one predictable null test and avoids any random-number consumption.
+PIC::Mover::fQueryTrajectoryEvent PIC::Mover::QueryTrajectoryEvent=NULL;
+PIC::Mover::fAdvanceTrajectoryEvent PIC::Mover::AdvanceTrajectoryEvent=NULL;
+PIC::Mover::fProcessTrajectoryEvent PIC::Mover::ProcessTrajectoryEvent=NULL;
+
 // Pointer-mode begins with the same mover used by the canonical legacy macro.
 // This is initialization of the dispatch mechanism, not a physical-model
 // selection: applications may replace it explicitly during initialization.
@@ -470,6 +478,19 @@ void PIC::Mover::Init_BeforeParser(){
 }
 
 void PIC::Mover::Init() {
+  // A preview without a commit callback, or a commit callback without the
+  // preview that limits the segment, can either duplicate an event across an
+  // MPI face or mutate a particle after it has passed the event point.  Reject
+  // partial installation during initialization, before a zero-particle run
+  // could otherwise hide the invalid setup.
+  const int trajectoryEventCallbackCount=
+      (QueryTrajectoryEvent!=NULL ? 1 : 0)+
+      (AdvanceTrajectoryEvent!=NULL ? 1 : 0)+
+      (ProcessTrajectoryEvent!=NULL ? 1 : 0);
+  if (trajectoryEventCallbackCount!=0 && trajectoryEventCallbackCount!=3)
+    exit(__LINE__,__FILE__,
+        "trajectory-event mover requires all three callbacks or none");
+
   // check if guiding center motion is used
   if (_PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_) {
     GuidingCenter::Init();
@@ -1645,6 +1666,14 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
 
   PIC::Mesh::cDataCenterNode *cell;
   bool MovingTimeFinished=false;
+  const int trajectoryEventCallbackCount=
+      (QueryTrajectoryEvent!=NULL ? 1 : 0)+
+      (AdvanceTrajectoryEvent!=NULL ? 1 : 0)+
+      (ProcessTrajectoryEvent!=NULL ? 1 : 0);
+  if (trajectoryEventCallbackCount!=0 && trajectoryEventCallbackCount!=3)
+    exit(__LINE__,__FILE__,
+        "incomplete trajectory-event callback set in first-order mover");
+  const bool trajectoryEventsEnabled=QueryTrajectoryEvent!=NULL;
 #if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
   // Siblings created at a face cannot be linked into cell lists until the
   // original particle reaches the normal mover epilogue.  Holding their
@@ -1680,6 +1709,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
 #define _UNDEFINED_MIN_DT_INTERSECTION_CODE_UTSNFTT_        0
 #define _BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_       1
 #define _INTERNAL_SPHERE_MIN_DT_INTERSECTION_CODE_UTSNFTT_  2
+#define _TRAJECTORY_EVENT_MIN_DT_INTERSECTION_CODE_UTSNFTT_ 3
 
   int ParticleIntersectionCode=_UNDEFINED_MIN_DT_INTERSECTION_CODE_UTSNFTT_;
 
@@ -1753,11 +1783,27 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
     InternalBoundaryDescriptor_dtMin=NULL;
     ParticleIntersectionCode=_UNDEFINED_MIN_DT_INTERSECTION_CODE_UTSNFTT_;
 
+    // Species may change at an embedded trajectory event.  Re-read it at the
+    // beginning of every segment so force, geometry, local timestep, and a
+    // subsequent block-face transfer all use the committed post-event value.
+    int spec=PIC::ParticleBuffer::GetI(ParticleData);
+    double segmentLocalTimeStep=-1.0;
+    if (trajectoryEventsEnabled) {
+      if (spec<0 || spec>=PIC::nTotalSpecies)
+        exit(__LINE__,__FILE__,
+            "invalid particle species in trajectory-event capable mover");
+      if (startNode==NULL || startNode->block==NULL)
+        exit(__LINE__,__FILE__,
+            "trajectory-event capable mover requires an allocated start block");
+      segmentLocalTimeStep=startNode->block->GetLocalTimeStep(spec);
+      if (!(segmentLocalTimeStep>0.0) ||
+          !std::isfinite(segmentLocalTimeStep))
+        exit(__LINE__,__FILE__,
+            "invalid local timestep in trajectory-event capable mover");
+    }
+
 #if _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE_ == _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE__ON_
     double accl[3],vv;
-    int spec;
-
-    spec=PIC::ParticleBuffer::GetI(ParticleData);
     _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(accl,spec,ptr,x,v,startNode);
 
     a=sqrt(accl[0]*accl[0]+accl[1]*accl[1]+accl[2]*accl[2]);
@@ -1920,6 +1966,42 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
     }
 #endif
 
+    // Let an application event compete with the already resolved geometric
+    // segment.  Query is a preview and must not update its particle state;
+    // only Advance below commits elapsed time.  Strictly earlier events win.
+    // Exact equality intentionally leaves a face/internal-surface event first,
+    // so flux resampling and MPI ownership transfer still see the pre-event
+    // species.  The copied zero event clock is then processed at the start of
+    // the next continuation.  Equality at an ordinary timestep endpoint has
+    // no competing geometry and therefore remains a real event.
+    if (trajectoryEventsEnabled) {
+      double eventTime=-1.0;
+      const int eventStatus=QueryTrajectoryEvent(ptr,spec,startNode,
+          segmentLocalTimeStep,dtMin,eventTime);
+      if (eventStatus!=TrajectoryEventNone &&
+          eventStatus!=TrajectoryEventPending)
+        exit(__LINE__,__FILE__,
+            "trajectory-event query returned an unsupported status");
+      if (eventStatus==TrajectoryEventPending) {
+        const double tolerance=64.0*std::numeric_limits<double>::epsilon()*
+            std::max(std::fabs(dtMin),std::fabs(segmentLocalTimeStep));
+        if (!std::isfinite(eventTime) || eventTime<0.0 ||
+            eventTime>dtMin+tolerance)
+          exit(__LINE__,__FILE__,
+              "trajectory-event query returned a time outside the segment");
+        if (eventTime>dtMin) eventTime=dtMin;
+        if (eventTime<dtMin ||
+            (eventTime==dtMin &&
+             ParticleIntersectionCode==
+                 _UNDEFINED_MIN_DT_INTERSECTION_CODE_UTSNFTT_)) {
+          dtMin=eventTime;
+          ParticleIntersectionCode=
+              _TRAJECTORY_EVENT_MIN_DT_INTERSECTION_CODE_UTSNFTT_;
+          MovingTimeFinished=false;
+        }
+      }
+    }
+
     //advance the particle's position
     for (idim=0;idim<3;idim++) {
 
@@ -1932,11 +2014,80 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
       v[0]+=dtMin*accl[0],v[1]+=dtMin*accl[1],v[2]+=dtMin*accl[2];
     }
 
+    // Commit the event clock before any face transfer clones the particle or
+    // an ownership exchange serializes it.  A zero-time due event performs no
+    // clock advance; ProcessTrajectoryEvent below must clear that event.
+    if (trajectoryEventsEnabled && dtMin>0.0)
+      AdvanceTrajectoryEvent(ptr,spec,startNode,segmentLocalTimeStep,dtMin);
+
     //adjust the particle moving time
     dtTotal-=dtMin;
 
+    if (trajectoryEventsEnabled && dtTotal<0.0) {
+      const double tolerance=64.0*std::numeric_limits<double>::epsilon()*
+          std::max(std::fabs(dtMin),std::fabs(segmentLocalTimeStep));
+      if (dtTotal < -tolerance)
+        exit(__LINE__,__FILE__,
+            "trajectory event advanced beyond the remaining mover interval");
+      dtTotal=0.0;
+    }
+
     //interaction with the faces of the block and internal surfaces
-    if (ParticleIntersectionCode==_INTERNAL_SPHERE_MIN_DT_INTERSECTION_CODE_UTSNFTT_) {
+    if (ParticleIntersectionCode==
+        _TRAJECTORY_EVENT_MIN_DT_INTERSECTION_CODE_UTSNFTT_) {
+      const int eventResult=ProcessTrajectoryEvent(ptr,x,v,spec,startNode,
+          segmentLocalTimeStep,dtTotal);
+      if (eventResult==TrajectoryEventDelete) {
+        // The callback reports physics only.  The mover remains the sole owner
+        // of particle-buffer deletion and list insertion, matching every
+        // surface/boundary path in this routine.
+        if (!PIC::ParticleBuffer::IsParticleAllocated(ParticleData))
+          exit(__LINE__,__FILE__,
+              "trajectory-event delete callback released the particle");
+        PIC::ParticleBuffer::DeleteParticle(ptr);
+        return _PARTICLE_LEFT_THE_DOMAIN_;
+      }
+      if (eventResult!=TrajectoryEventContinue)
+        exit(__LINE__,__FILE__,
+            "trajectory-event processor returned an unsupported result");
+      if (!PIC::ParticleBuffer::IsParticleAllocated(ParticleData) ||
+          spec<0 || spec>=PIC::nTotalSpecies ||
+          PIC::ParticleBuffer::GetI(ParticleData)!=spec ||
+          !std::isfinite(dtTotal) || dtTotal<0.0)
+        exit(__LINE__,__FILE__,
+            "trajectory-event processor committed an invalid particle state");
+      for (int dimension=0;dimension<3;dimension++)
+        if (!std::isfinite(x[dimension]) || !std::isfinite(v[dimension]))
+          exit(__LINE__,__FILE__,
+              "trajectory-event processor committed nonfinite phase space");
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      {
+        const double correction=
+            PIC::ParticleBuffer::GetIndividualStatWeightCorrection(
+                ParticleData);
+        if (!(correction>0.0) || !std::isfinite(correction))
+          exit(__LINE__,__FILE__,
+              "trajectory-event processor committed an invalid correction");
+      }
+#endif
+
+      // A due-zero event must be consumed exactly once.  Re-querying a zero
+      // segment is side-effect-free and catches a callback that forgot to
+      // clear its marker before the mover could enter an infinite loop.
+      double repeatedEventTime=-1.0;
+      const int repeatedStatus=QueryTrajectoryEvent(ptr,spec,startNode,
+          startNode->block->GetLocalTimeStep(spec),0.0,repeatedEventTime);
+      if (repeatedStatus!=TrajectoryEventNone)
+        exit(__LINE__,__FILE__,
+            "trajectory-event processor did not clear the due event");
+
+      // Process may convert from a parent to a product timestep.  It owns the
+      // corresponding rescaling of dtTotal; the next loop recomputes forces,
+      // geometry, and local timestep from the new species.  With no interval
+      // left, normal epilogue insertion is sufficient.
+      MovingTimeFinished=(dtTotal==0.0);
+    }
+    else if (ParticleIntersectionCode==_INTERNAL_SPHERE_MIN_DT_INTERSECTION_CODE_UTSNFTT_) {
       int code;
 
       FirstBoundaryFlag=true;

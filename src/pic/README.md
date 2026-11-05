@@ -46,6 +46,58 @@ their own established selection paths. Changing the switch does not select a
 physics model by itself; model parsing and callback registration are
 application responsibilities.
 
+## Optional event inside a first-order trajectory
+
+The first-order force-free trace mover has a default-inactive, three-callback
+interface for an application event that must occur at an exact point inside a
+particle trajectory. The generic core does not define event physics. All
+three pointers begin as `NULL`, and an application must install either the
+complete set or none before `PIC::Mover::Init()`:
+
+```cpp
+PIC::Mover::QueryTrajectoryEvent;
+PIC::Mover::AdvanceTrajectoryEvent;
+PIC::Mover::ProcessTrajectoryEvent;
+```
+
+`QueryTrajectoryEvent` is a side-effect-free preview. Given the current
+species, owner block, local timestep, and maximum geometrically allowed
+segment, it returns either `TrajectoryEventNone` or `TrajectoryEventPending`
+with a finite event time in that segment. The mover compares this time with
+block faces and internal surfaces. A strictly earlier event wins. Exact
+equality gives the geometric boundary precedence; the event state is copied
+through the normal face transfer and is processed as a zero-time event by the
+next local or MPI continuation. Equality at an ordinary timestep endpoint has
+no competing boundary and remains an event.
+
+After moving a positive interval, the core calls `AdvanceTrajectoryEvent`
+before any face-resampling clone or MPI exchange can copy the particle. The
+application must commit only the elapsed event-clock state here. A useful
+local-timestep implementation stores a dimensionless remaining event fraction
+and subtracts `elapsedTime/localTimeStep`; the existing continuation machinery
+then preserves that fraction while changing timestep between blocks.
+
+At the event point, `ProcessTrajectoryEvent` receives mutable position,
+velocity, species, and remaining mover time. It may update application bytes,
+change species/velocity, and rescale the remaining interval for a new species.
+It returns `TrajectoryEventContinue` or `TrajectoryEventDelete`. The callback
+must not allocate, delete, or link particles: the caller must preallocate any
+branch particles before movement, and the mover remains the sole owner of
+particle-buffer deletion and destination-list insertion. A continuing event
+must leave a valid allocated particle, matching particle-buffer species,
+finite phase space and remaining time, and—when compiled—positive finite
+individual correction. The event marker must be cleared before returning;
+the mover re-queries a zero interval to prevent a forgotten marker from
+causing an infinite loop.
+
+This interface is currently implemented only by
+`UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection`, the
+first-order spatial mover used with local-timestep face continuation. An
+application must reject the mode with second-order, Boris, guiding-center,
+field-line, CUDA, or hybrid movers until those paths implement and validate
+equivalent semantics. With all pointers `NULL`, no callback or random draw is
+made and the historical trajectory path is retained.
+
 ## Local-timestep block-face flux resampling
 
 The opt-in `_PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_` makes the trace mover

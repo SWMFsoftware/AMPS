@@ -54,6 +54,21 @@ double GetPhysicalChannelProbability(std::size_t reaction);
 double GetBiasedChannelProbability(std::size_t reaction);
 double GetChannelLikelihoodRatio(std::size_t reaction);
 
+// Stage 8 replaces only the Bernoulli decision for explicitly configured
+// parent species. One carrier is split into the exact survivor and reacted
+// fractions. The reacted carrier remains a parent until the mover reaches a
+// conditionally sampled reaction point, then becomes a product (or a neutral
+// sink) and uses the rest of the normalized local-timestep interval. There is
+// deliberately no user-supplied biased occurrence probability.
+extern bool TotalReactionForcingEnabled;
+bool IsTotalReactionForcingConfigured(int species);
+
+// Install the three application callbacks used by the core first-order
+// trajectory-event hook. This must run after particle-data offsets have been
+// requested but before PIC::Mover::Init validates the all-or-none callback
+// contract.
+void ConfigureTotalReactionForcingMover();
+
 // The returned object is a non-owning view of static tables generated from
 // the selected input file.  Validate must succeed before particle stepping.
 const ChemicalSolver::cReactionNetwork& GetNetwork();
@@ -96,6 +111,11 @@ bool ValidateDaughterPacketSplitting(long int eventsPerReaction);
 // validator remains the real K*N particle-transaction check and, when Stage 7
 // is enabled, also proves that stored corrections include L before /N.
 bool ValidateChannelImportanceSampling(long int eventsPerFamily);
+
+// Exercise the deterministic carrier split, conditional position inversion,
+// Stage-7 likelihood/Stage-6 packet composition, rollback contract, and
+// mover-event continuation with decomposition-independent fixtures.
+bool ValidateTotalReactionForcing(long int eventsPerFixture);
 
 // Exercise owner-only block state, common packet phases, transaction
 // rollback, dynamic MPI block migration, and a real local-weight restart.

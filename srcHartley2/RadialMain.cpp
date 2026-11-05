@@ -18,7 +18,7 @@ void PrintUsage(const char *program) {
   std::printf("usage: %s [--validate-local-timestep | --validate-chemistry | "
       "--validate-weight-adaptation | --validate-correction-windows | "
       "--validate-systematic-residual | --validate-daughter-packets | "
-      "--validate-channel-importance | "
+      "--validate-channel-importance | --validate-total-reaction-forcing | "
       "--validate-unsupported-simplified-ntc] "
       "[--validation-particles N] [--validation-mover first|second|both] "
       "[--validation-skip-multiface] [--validation-unit-corrections] "
@@ -39,6 +39,7 @@ int main(int argc,char **argv) {
   bool validateSystematicResidual=false;
   bool validateDaughterPackets=false;
   bool validateChannelImportance=false;
+  bool validateTotalReactionForcing=false;
   bool validateUnsupportedSimplifiedNTC=false;
   bool randomSeedOverride=false;
   bool residualSamplingOverride=false;
@@ -67,6 +68,9 @@ int main(int argc,char **argv) {
     }
     else if (option=="--validate-channel-importance") {
       validateChannelImportance=true;
+    }
+    else if (option=="--validate-total-reaction-forcing") {
+      validateTotalReactionForcing=true;
     }
     else if (option=="--validate-unsupported-simplified-ntc") {
       validateUnsupportedSimplifiedNTC=true;
@@ -175,6 +179,7 @@ int main(int argc,char **argv) {
       (validateSystematicResidual ? 1 : 0)+
       (validateDaughterPackets ? 1 : 0)+
       (validateChannelImportance ? 1 : 0)+
+      (validateTotalReactionForcing ? 1 : 0)+
       (validateUnsupportedSimplifiedNTC ? 1 : 0);
   if (validationModeCount>1) {
     std::fprintf(stderr,
@@ -310,6 +315,12 @@ int main(int argc,char **argv) {
     if (validateChannelImportance) {
       const bool passed=Comet::Chemistry::
           ValidateChannelImportanceSampling(chemistryValidationEvents);
+      MPI_Finalize();
+      return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+    if (validateTotalReactionForcing) {
+      const bool passed=Comet::Chemistry::ValidateTotalReactionForcing(
+          chemistryValidationEvents);
       MPI_Finalize();
       return passed ? EXIT_SUCCESS : EXIT_FAILURE;
     }
