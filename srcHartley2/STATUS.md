@@ -3378,3 +3378,197 @@ continued, all expected outputs were written, and the process exited zero;
 the warnings remain documented for subsequent operational investigation.
 Complete run, convergence, artifact, and checksum provenance is in the
 archive's `RUN_MANIFEST.md`. No commit, branch switch, or merge was performed.
+
+## 2026-11-05: minor-daughter chemistry roadmap documented
+
+`srcHartley2/CHEMISTRY.md` now records the measured C2 and other
+minor-daughter sampling deficiencies from the completed 40,000-iteration run
+and a decision-gated implementation roadmap. The stages cover baseline
+diagnostics, input-selectable parent/daughter policies, component-wide
+correction-free carriers, residual accumulators, individual-weight support for
+the local-timestep mover and NTC collisions, exact weighted daughters, packet
+splitting, channel importance sampling, optional total-reaction forcing, and
+long-run science validation.
+
+Each stage includes implementation tasks, conservation and capacity
+invariants, tests, acceptance criteria, documentation requirements, and a
+separate master-merge preparation sequence. The first recommended development
+path retains correction mode off and locks direct-source parent carriers;
+individual weights are a later decision gate only if the lower-risk method is
+insufficient. `srcHartley2/README.md` links to the roadmap. No model source,
+input value, branch, commit, or master state was changed while preparing it.
+
+## 2026-11-05: Stage 0 chemistry closure tests implemented
+
+The focused tests required by `srcHartley2/CHEMISTRY.md` Stage 0 are now implemented on
+`1d_comet_dev`. No branch switch, merge, or master modification was made.
+
+New and modified files are:
+
+| File | Purpose and later-merge dependency |
+| --- | --- |
+| `src/models/chemical_solver/ChemistryDiagnostics.h` | New geometry-, PIC-, and MPI-independent event accumulator. It retains reaction-wide eligible/selection/destruction/sink/deferral/emergency counts and product-term zero/one/many multiplicity, allocated/reused carrier, number, mass, momentum, and energy values. Repeated product terms remain distinct. Disabled configuration retains no table and serializes empty vectors. Merge this generic core header before application instrumentation. |
+| `src/models/chemical_solver/README.md` | Documents the new generic accumulator boundary, product-term indexing, reduction contract, disabled behavior, and Stage 0 test command. Merge with the core header. |
+| `srcHartley2/tests/test_stage0_chemistry_diagnostics.cpp` | New deterministic unit/MPI test. It exercises one, two, repeated, and zero products and distributes the same 240 physical events across 1, 4, and 12 ranks. |
+| `srcHartley2/tests/test_stage0_minor_species.py` | New analyzer regression. It checks the exact core L1 formula with explicit measures, missing-measure behavior, comparison ratios, convergence metadata, artifact hashes, and final archived C2 values. |
+| `srcHartley2/tests/run_stage0_tests.sh` | New single entry point that compiles the C++ test, compares all three MPI signatures, and runs Python tests. |
+| `srcHartley2/visualization/analyze_minor_species.py` | New read-only CSV/JSON analyzer for occupancy, populated radius, `W`, `dt`, `W/dt`, adjacent-window changes, convergence state, and available paper comparisons. |
+| `srcHartley2/halley2011/reference/halley1d_stage0_baseline.json` | New immutable machine-readable final-window values and SHA-256 provenance for the external 18-rank archive. It does not claim that the run converged. |
+| `srcHartley2/CHEMISTRY.md` | Records the implemented tests and explicitly lists the production instrumentation still required before Stage 0 can close. |
+| `srcHartley2/README.md`, `srcHartley2/visualization/README.md` | Add commands, definitions, exact-measure policy, archive behavior, and closure limitations. |
+
+Validation performed in the working tree:
+
+- the counter executable compiled with the runner's C++11 warning flags and
+  `-DOMPI_SKIP_MPICXX=1` (the test uses the MPI C API);
+- 1-, 4-, and 12-rank executions all printed exactly
+  `counts=55900 moments=5.14068525000000000e+07 events=240`;
+- all three Python tests passed, including verification of every baseline
+  artifact checksum and re-analysis of `pic.C2.s=14.out=3.dat`;
+- the C2 regression reproduced 3,010 rows, mean occupancy
+  `0.14003317275747507`, 2,154 zero rows, first positive radius
+  `6,384,136 m`, density `681143.6827560823 m^-3` at 10,000 km, and
+  AMPS/Rubin ratio `0.008362717017089849`;
+- the baseline remains explicitly `nonconverged` with 0/3 passing windows.
+
+The legacy Tecplot files do not contain the cell `Measure` used by
+`CollectIntegratedDensityProfile()`. The analyzer therefore reports the exact
+integrated L1 metric as unavailable for that archive. Tests supply explicit
+measures and verify the same `n*V` formula as `RadialSimulation.cpp`; no radius
+reconstruction or inferred shell volume is accepted.
+
+### Master-merge notes for this test increment
+
+After comet-model validation is complete and the user explicitly authorizes a
+master integration attempt, merge this increment in dependency order:
+
+1. bring in `ChemistryDiagnostics.h` as an isolated generic-core commit and
+   run its standalone 1/4/12-rank test before connecting any application;
+2. merge the analyzer and its Python test with the committed baseline JSON;
+3. merge the runner and documentation after adjusting only repository-relative
+   paths, never the frozen hashes or acceptance values;
+4. connect production instrumentation in a later commit, with diagnostics off
+   by default, then prove byte-identical model output for the disabled path;
+5. add exact cell-measure and species flux reports and repeat C2 reconciliation
+   before marking Stage 0 complete.
+
+The external `validation_runs/...` directory is evidence, not source to be
+merged into master. If it is absent in another checkout, set
+`HARTLEY2_STAGE0_BASELINE_ROOT`; otherwise the test runner reports the archive
+test as skipped. Do not replace that skip with fabricated fixtures or inferred
+cell measures. The production hooks, boundary/source fluxes, full C2 path
+reconciliation, and measured real-loop diagnostic overhead remain open.
+
+## 2026-11-05: Stage 0 production diagnostics closed
+
+The previously open production-observability work is now implemented and
+validated on `1d_comet_dev`. This section supersedes the open items in the
+preceding incremental test note. No branch switch, commit, merge, or master
+operation was performed.
+
+### Files added or modified
+
+| File | Change, reason, and merge dependency |
+| --- | --- |
+| `src/models/chemical_solver/ChemistryDiagnostics.h` | Extended the generic, geometry-free accumulator to retain expected and represented number/mass/momentum/energy plus represented-number variance. Added stable flattened count/moment views and sampling-window reset. Merge this core header first and run its standalone MPI test before application hooks. |
+| `src/models/chemical_solver/README.md` | Documents the accumulator layout, variance, reset, and disabled contract. Merge with the header. |
+| `srcHartley2/CometDiagnostics.h`, `srcHartley2/CometDiagnostics.cpp` | New comet adapter. It builds counters from the generated arbitrary reaction network, tallies per-species physical rates, reduces them at complete sampling breaks, and writes aligned CSV/JSON. The default is off. It does not draw random numbers or change particles. Merge only after the core header and reaction-network API exist. |
+| `srcHartley2/CometChemistry.cpp` | Adds one eligible visit per positive-rate channel; transactional selection, sink, deferral, and emergency counts; expected/represented product moments and variance; and species production/destruction tallies. Existing selection order and RNG order are preserved. Conflict resolution must retain the optimized parent-channel index and transactional allocation logic. |
+| `srcHartley2/RadialSimulation.cpp` | Adds `W/dt` surface and boundary tallies, distinct gross inner incident/re-emission and outer escape, exact AMR `Measure()` audit output, and the diagnostic report call after each full sampling window. Keep the same traversal used by `CollectIntegratedDensityProfile()` when merging. |
+| `input/hartley2.pl`, repository-root `hartley2.pl` symlink target | Adds validated `CometDiagnostics=ON|OFF` generation and the `CometDiagnostics.o` link dependency for the 1-D application. Default is off. Regenerate, do not hand-edit, generated headers. |
+| `srcHartley2/makefile` | Links the new diagnostics adapter. Merge with parser-generated object selection so it is included only where the comet application uses it. |
+| `input/halley1d.input` | Explicitly keeps `CometDiagnostics=off` in the canonical 128-injection, 800--3,200 population, 10,000-sample, 40,000-iteration case. The temporary closure run used a staged copy with diagnostics on and smaller controls; do not merge those temporary values into this input. |
+| `srcHartley2/tests/test_stage0_chemistry_diagnostics.cpp` | Updated deterministic accumulator test for expected/represented moments and variance. Current 1/4/12-rank signature is `counts=55900 moments=2.17583523750000000e+08 events=240`. |
+| `srcHartley2/tests/test_stage0_production_report.py` | New independent archive checker. It validates exact measures, CSV/JSON alignment, C2 channel lineage and actual carrier creation, product slots, `max(5 sigma,1%)` acceptance, flux identities, and explicit zero loss/escape observations. |
+| `srcHartley2/tests/run_stage0_tests.sh` | Runs the focused suite and optionally the production archive when `HARTLEY2_STAGE0_PRODUCTION_ROOT` is supplied. |
+| `srcHartley2/CHEMISTRY.md` | Moved the roadmap under the application, records Stage 0 closure, and freezes the approved Stage 1 selector decision: support explicit species and derived groups with precedence `explicit species > derived group > global`. |
+| `srcHartley2/README.md`, `srcHartley2/visualization/README.md`, `srcHartley2/STATUS.md`, `handoff.md` | Document definitions, units, commands, evidence, limitations, and master-integration order. Reconcile these after code conflicts rather than taking one branch wholesale. |
+
+### Definitions frozen by validation
+
+- An eligible visit is one parent visit to one enabled channel whose evaluated
+  rate is positive. Zero-rate channels are not eligible.
+- Production agreement is
+  `abs(represented-expected) <= max(5*sigma, 0.01*abs(expected))`.
+- All species source/loss/boundary fields are sampling-window average physical
+  number rates: accumulate represented `W/dt` for each event, reduce across
+  ranks, and divide by the number of iterations in the completed window.
+- Inner incident and thermal re-emission are separate gross terms; their
+  equality for the current boundary is checked instead of silently canceling
+  them before output.
+- Emergency requests are global per sampling window. A collective request is
+  counted once on rank zero before reduction, not once per MPI process.
+
+### Closure evidence
+
+The production archive is:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/stage0_closure_20261105/diagnostics_on_10000iter_14mpi/production
+```
+
+It used 14 MPI ranks, diagnostics enabled, 500-iteration sampling windows,
+and a 10,000-iteration hard limit. The temporary input SHA-256 is
+`06369c95d71f4c98b61dba5bce4912f886c2d9023d2d53c6e99cb247ce336d43` and
+the executable SHA-256 is
+`03099b09674e3077dcdd9415937223477d5a890f48acb1def8d51fe1ff0939ce`.
+The run exited zero in 8:21.93 wall time, produced 20 diagnostic windows and
+2,984 exact cell measures, observed selected C2 production and a represented
+C2 carrier, and triggered no emergency adaptations. C2 destruction and outer
+escape were zero during the finite transient; their explicit paths and
+nonnegative zero fluxes reconcile rather than being inferred.
+
+After restoring the canonical high-statistics input and removing the complete
+workspace `build/` directory, a clean `-O3` build succeeded. The resulting
+diagnostics-off executable SHA-256 is
+`ce077706cb4aff32af92b339aae712252643b26c5407c8b9efe88d0f4f290ef6`; the
+canonical input SHA-256 is
+`cbaf3bb629199dc0f3779c7a0e0b5a4b88f5fd2d5677885ad028666aff76d37e`.
+
+All 540 model `.dat` files are byte-identical to the preserved diagnostics-off
+baseline in
+`validation_runs/halley1d_priority_optimization_repeat_20261104_14mpi/PT/plots`.
+The only directory-level difference is that the older baseline also contains
+its `rubin2011_comparison` subdirectory. The closure run remained physically
+nonconverged (`0/3`, limiting CH3 relative L1 `1.946230`), so this evidence
+closes observability and non-perturbation only.
+
+The controlled four-rank 200-iteration pair under
+`validation_runs/stage0_closure_20261105` measured:
+
+| Configuration | Wall time | Maximum RSS |
+| --- | ---: | ---: |
+| diagnostics off | 8.58 s | 1,376,232 KiB |
+| diagnostics on | 8.66 s | 1,376,572 KiB |
+| difference | +0.93% | +340 KiB (+0.025%) |
+
+### Master-merge instructions for the closed Stage 0 increment
+
+Do not merge yet. After the comet model is validated and the user explicitly
+authorizes a master integration attempt:
+
+1. integrate `ChemistryDiagnostics.h` and its README/test alone; require the
+   identical 1/4/12-rank signature;
+2. integrate the parser switch and diagnostics adapter with the existing
+   reaction-network API, keeping `CometDiagnostics=off` as the generated and
+   canonical default;
+3. integrate chemistry hooks while auditing parent-channel order, occurrence
+   and channel random draws, transactional allocation, and emergency request
+   placement line by line;
+4. integrate radial flux and exact-measure hooks while preserving local
+   timestep/weight transport, owner/ghost synchronization, convergence order,
+   and the exact AMR traversal;
+5. run both Perl generator suites, the focused Stage 0 runner, and an
+   instrumented production report check;
+6. perform paired diagnostics-off/on runs from the same clean executable and
+   input controls; require zero differing `.dat` files with diagnostics off
+   versus the pre-integration reference and no unexplained enabled-path model
+   differences;
+7. report the code commit range, generated-file policy, full diff, tests,
+   memory/time overhead, C2 path result, and nonconvergence status, then stop
+   for user approval before any master commit or merge.
+
+Never merge `validation_runs`, `PT`, generated executables, generated input
+symlinks, meshes, or profiler output. Preserve the archive as external
+evidence. Do not turn an absent archive into fabricated fixtures or inferred
+cell measures.

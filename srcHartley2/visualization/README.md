@@ -126,6 +126,61 @@ neutral density. The comparison contains both AMPS and Rubin neutral DSMC
 curves and states the NMS limitation in the manifest. Methanol likewise
 remains an empty AMPS curve when it is disabled in `halley1d.input`.
 
+## Stage 0 minor-species statistics
+
+`analyze_minor_species.py` is the read-only, machine-readable counterpart to
+the plotting tools. It summarizes sampled particle occupancy, zero-cell
+fraction, first and last populated radii, block-local `W`, `dt`, and `W/dt`,
+window-to-window changes at requested radii, the recorded convergence state,
+and Rubin comparison values. It writes both JSON and long-form CSV:
+
+```sh
+python3 srcHartley2/visualization/analyze_minor_species.py \
+  PT/plots --species C2 C2H C2H2 \
+  --output-index 3 --sampling-length 10000 \
+  --run-log run.log \
+  --comparison-csv PT/plots/rubin2011_comparison/comparison_profiles.csv \
+  --output-prefix PT/plots/minor_species_stage0
+```
+
+The label `log10(Local Particle Weight)` is retained verbatim because that is
+the historical AMPS output-column name; the radial application writes the
+actual base weight in that column, and the report records the source label.
+
+The integrated density change uses exactly the same definition as
+`RadialSimulation.cpp`: the L1 norm of `n*cell_measure`, normalized by the
+larger adjacent-window norm. Legacy plot files do not include the core cell
+measure. For those files the JSON/CSV explicitly reports the metric as
+unavailable; it does not reconstruct a volume from plotting coordinates.
+Future diagnostic output may add `Cell Measure [m^3]`, or an exact aligned CSV
+can be supplied with `--cell-measures` using the columns `radius_m` and
+`measure_m3`.
+
+The preserved high-statistics C2 acceptance values and artifact checksums are
+in `halley2011/reference/halley1d_stage0_baseline.json`. Run all Stage 0 tests
+with:
+
+```sh
+srcHartley2/tests/run_stage0_tests.sh
+```
+
+The runner checks deterministic counter accumulation, identical reductions at
+1, 4, and 12 MPI ranks, exact-measure L1 analysis, legacy missing-measure
+handling, and the external archived C2 final window. Set
+`HARTLEY2_STAGE0_BASELINE_ROOT` when the validation archive is not at its
+documented repository-relative location; only the archive test is skipped
+when neither location exists.
+
+For an instrumented run, set `HARTLEY2_STAGE0_PRODUCTION_ROOT` to its
+production directory. The runner then invokes
+`test_stage0_production_report.py --require-observed-c2`. That checker reads
+`PT/diagnostics/cell_measures.csv` and every `comet_stage0.out=N.{csv,json}`,
+rejects shifted CSV columns or inconsistent reaction/product/flux identities,
+requires both configured C2 production paths and an actual C2 carrier, and
+recomputes the `max(5 sigma, 1%)` acceptance instead of trusting the stored
+boolean. A zero C2 destruction or escape rate is retained as an observed
+zero, not replaced by a synthetic event.
+
 `--output NAME` always saves `NAME.png` and `NAME.eps`. If the argument has a
 different extension, such as `.pdf`, that format is saved in addition to PNG
 and EPS. After saving, the script opens the PNG in the system's desktop image

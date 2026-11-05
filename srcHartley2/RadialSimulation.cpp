@@ -12,6 +12,7 @@
 
 #include "pic.h"
 #include "CometChemistry.h"
+#include "CometDiagnostics.h"
 #include "CometModel.h"
 #include "CometRadiativeCooling.h"
 
@@ -37,6 +38,28 @@ namespace {
 bool Fail(const std::string &message,std::string *error) {
   if (error!=NULL) *error=message;
   return false;
+}
+
+double ParticlePhysicalRate(long int ptr,int species,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+  if (node==NULL || node->block==NULL) {
+    std::fprintf(stderr,"missing radial block in particle-rate diagnostic\n");
+    std::abort();
+  }
+  PIC::ParticleBuffer::byte *data=
+      PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+  double weight=node->block->GetLocalParticleWeight(species);
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+  weight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data);
+#endif
+  const double timeStep=node->block->GetLocalTimeStep(species);
+  if (!(weight>0.0) || !std::isfinite(weight) ||
+      !(timeStep>0.0) || !std::isfinite(timeStep)) {
+    std::fprintf(stderr,
+        "invalid particle weight/timestep in radial flux diagnostic\n");
+    std::abort();
+  }
+  return weight/timeStep;
 }
 
 bool HasInnerFace(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
@@ -1561,16 +1584,76 @@ std::vector<double> CollectIntegratedDensityProfile() {
   return globalProfile;
 }
 
-double EvaluateRelativeL1Change(const std::vector<double> &current,
-    const std::vector<double> &previous,int &limitingSpecies) {
+void FillLocalCellMeasureAudit(
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,long int &cellIndex,
+    std::vector<double> &radius,std::vector<double> &measure) {
+  if (node==NULL) return;
+  if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+    if (node->Thread==PIC::ThisThread && node->block!=NULL) {
+      for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+        PIC::Mesh::cDataCenterNode *cell=node->block->GetCenterNode(
+            _getCenterNodeLocalNumber(i,0,0));
+        if (cell==NULL || !(cell->Measure>0.0) ||
+            !std::isfinite(cell->Measure) ||
+            !std::isfinite(cell->GetX()[0])) {
+          std::fprintf(stderr,"invalid radial cell-measure audit data\n");
+          std::abort();
+        }
+        radius[cellIndex+i]=cell->GetX()[0];
+        measure[cellIndex+i]=cell->Measure;
+      }
+    }
+    cellIndex+=_BLOCK_CELLS_X_;
+    return;
+  }
+  for (int child=0;child<(1<<DIM);child++)
+    FillLocalCellMeasureAudit(node->downNode[child],cellIndex,radius,measure);
+}
+
+void WriteCellMeasureAudit() {
+  if (!Comet::Diagnostics::Enabled) return;
+  const long int cellCount=CountProfileCells(PIC::Mesh::mesh->rootTree);
+  std::vector<double> localRadius(cellCount,0.0),localMeasure(cellCount,0.0);
+  std::vector<double> globalRadius(cellCount,0.0),globalMeasure(cellCount,0.0);
+  long int visited=0;
+  FillLocalCellMeasureAudit(PIC::Mesh::mesh->rootTree,visited,localRadius,
+      localMeasure);
+  if (visited!=cellCount || cellCount>INT_MAX) {
+    std::fprintf(stderr,"invalid radial cell-measure audit traversal\n");
+    std::abort();
+  }
+  MPI_Reduce(localRadius.data(),globalRadius.data(),static_cast<int>(cellCount),
+      MPI_DOUBLE,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(localMeasure.data(),globalMeasure.data(),
+      static_cast<int>(cellCount),MPI_DOUBLE,MPI_SUM,0,
+      MPI_GLOBAL_COMMUNICATOR);
+  if (PIC::ThisThread==0) {
+    FILE *file=std::fopen("PT/diagnostics/cell_measures.csv","w");
+    if (file==NULL) {
+      std::fprintf(stderr,"cannot open radial cell-measure audit file\n");
+      std::abort();
+    }
+    std::fprintf(file,"cell_index,radius_m,measure_m3\n");
+    for (long int cell=0;cell<cellCount;cell++) {
+      if (!(globalMeasure[cell]>0.0) || !std::isfinite(globalRadius[cell])) {
+        std::fprintf(stderr,"incomplete reduced radial cell-measure audit\n");
+        std::abort();
+      }
+      std::fprintf(file,"%ld,%.17e,%.17e\n",cell,globalRadius[cell],
+          globalMeasure[cell]);
+    }
+    std::fclose(file);
+  }
+}
+
+std::vector<double> EvaluateRelativeL1Changes(
+    const std::vector<double> &current,const std::vector<double> &previous) {
   if (current.size()!=previous.size() ||
       current.size()%PIC::nTotalSpecies!=0) {
     std::fprintf(stderr,"inconsistent radial convergence profile sizes\n");
     std::abort();
   }
-
-  double maximumChange=-1.0;
-  limitingSpecies=0;
+  std::vector<double> changes(PIC::nTotalSpecies,0.0);
   for (int species=0;species<PIC::nTotalSpecies;species++) {
     double differenceNorm=0.0,currentNorm=0.0,previousNorm=0.0;
     for (size_t offset=species;offset<current.size();
@@ -1579,15 +1662,21 @@ double EvaluateRelativeL1Change(const std::vector<double> &current,
       currentNorm+=std::abs(current[offset]);
       previousNorm+=std::abs(previous[offset]);
     }
-
-    // max(||n_k||_1,||n_{k-1}||_1) gives a symmetric reference scale and
-    // avoids division by zero. A species absent from both windows has zero
-    // change; appearance or disappearance produces a relative change of one.
     const double referenceNorm=std::max(currentNorm,previousNorm);
-    const double relativeChange=
-        referenceNorm>0.0 ? differenceNorm/referenceNorm : 0.0;
-    if (relativeChange>maximumChange) {
-      maximumChange=relativeChange;
+    changes[species]=referenceNorm>0.0 ? differenceNorm/referenceNorm : 0.0;
+  }
+  return changes;
+}
+
+double EvaluateRelativeL1Change(const std::vector<double> &current,
+    const std::vector<double> &previous,int &limitingSpecies) {
+  const std::vector<double> changes=
+      EvaluateRelativeL1Changes(current,previous);
+  double maximumChange=-1.0;
+  limitingSpecies=0;
+  for (int species=0;species<PIC::nTotalSpecies;species++) {
+    if (changes[species]>maximumChange) {
+      maximumChange=changes[species];
       limitingSpecies=species;
     }
   }
@@ -1766,6 +1855,7 @@ void Comet::RadialSimulation::RequestAllocationBurstEmergency() {
   // rank before entering the existing emergency routine guarantees identical
   // control flow even when only one rank reported capacity pressure.
   AllocationBurstEmergencyPending=true;
+  Comet::Diagnostics::RecordEmergencyRequest();
   EmergencyParticleWeightAdaptation();
 #endif
 }
@@ -1904,6 +1994,11 @@ long int Comet::RadialSimulation::InjectBlock(
 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
       PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,data);
 #endif
+      // One injected model particle carries W/dt molecules per second through
+      // one outer iteration.  Accumulating that carrier rate and dividing by
+      // the completed window length gives the realized physical source rate.
+      Comet::Diagnostics::RecordSurfaceInjection(species,
+          particleWeight/timeStep);
       PIC::Mover::DispatchParticleMover(ptr,timeStep-eventTime,node);
       injected++;
     }
@@ -1915,8 +2010,11 @@ int Comet::RadialSimulation::ProcessDomainBoundary(long int ptr,
     double *position,double *velocity,int intersectionFace,
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   (void)position;
+  const int species=PIC::ParticleBuffer::GetI(ptr);
+  const double representedRate=ParticlePhysicalRate(ptr,species,node);
   if (intersectionFace==1) {
     // Rubin et al. remove every particle crossing the outer boundary.
+    Comet::Diagnostics::RecordOuterBoundary(species,representedRate);
     return _PARTICLE_DELETED_ON_THE_FACE_;
   }
   if (intersectionFace!=0) {
@@ -1929,7 +2027,7 @@ int Comet::RadialSimulation::ProcessDomainBoundary(long int ptr,
   // states that the gas is completely thermalized there, so discard the
   // incident velocity and draw a new outward half-Maxwellian at the explicit
   // inner-boundary temperature. Dust is outside this radial gas backend.
-  const int species=PIC::ParticleBuffer::GetI(ptr);
+  Comet::Diagnostics::RecordInnerBoundary(species,representedRate);
   const double externalNormal[3]={-1.0,0.0,0.0};
   const double bulkVelocity[3]={0.0,0.0,0.0};
   PIC::Distribution::InjectMaxwellianDistribution(velocity,bulkVelocity,
@@ -1965,6 +2063,8 @@ void Comet::RadialSimulation::Initialize() {
   Comet::Chemistry::RequestParticleData();
   PIC::Init_AfterParser();
   PIC::Mover::Init();
+  Comet::Diagnostics::Initialize();
+  WriteCellMeasureAudit();
 
   if (Comet::Chemistry::Enabled) {
     // Install the complete generic core batch interface as one unit.  The
@@ -2724,6 +2824,9 @@ void Comet::RadialSimulation::Run() {
     completedWindows++;
     std::vector<double> currentProfile=CollectIntegratedDensityProfile();
     if (previousProfile.empty()) {
+      Comet::Diagnostics::WriteSamplingReport(iteration+1,
+          previousOutputNumber-1,PIC::LastSampleLength,
+          std::vector<double>(PIC::nTotalSpecies,0.0),false);
       previousProfile.swap(currentProfile);
       if (PIC::ThisThread==0) {
         std::fprintf(PIC::DiagnospticMessageStream,
@@ -2738,8 +2841,13 @@ void Comet::RadialSimulation::Run() {
     }
 
     int limitingSpecies=0;
+    const std::vector<double> relativeChanges=Comet::Diagnostics::Enabled ?
+        EvaluateRelativeL1Changes(currentProfile,previousProfile) :
+        std::vector<double>();
     const double maximumChange=EvaluateRelativeL1Change(currentProfile,
         previousProfile,limitingSpecies);
+    Comet::Diagnostics::WriteSamplingReport(iteration+1,
+        previousOutputNumber-1,PIC::LastSampleLength,relativeChanges,true);
     previousProfile.swap(currentProfile);
     if (maximumChange<=ConvergenceTolerance)
       convergedWindows++;

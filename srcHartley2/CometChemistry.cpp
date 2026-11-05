@@ -10,6 +10,7 @@
 
 #include "pic.h"
 #include "CometChemistry.generated.h"
+#include "CometDiagnostics.h"
 #include "RadialSimulation.h"
 
 bool Comet::Chemistry::Enabled=false;
@@ -750,6 +751,16 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
       ParentReactionRates[parentSpecies];
   const double totalRate=parentRates.TotalRate;
 
+  // The approved Stage-0 definition counts one eligible visit for every
+  // positive-rate channel applicable to this parent.  Deferred parents are
+  // intentionally counted again when a later batch revisits them; this is an
+  // executor-work metric, while committed selections below remain physical
+  // event counts and are never double counted.
+  if (Comet::Diagnostics::Enabled)
+    for (std::size_t channel=0;channel<parentRates.Channels.size();channel++)
+      Comet::Diagnostics::RecordEligibleParentVisit(
+          parentRates.Channels[channel]);
+
   if (!(totalRate>0.0)) {
     MarkChemistryProcessed(parentData);
     KeepParticle(ptr,firstParticleCell);
@@ -783,12 +794,15 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
   // particles. A zero-product channel is a photoionization loss from this
   // neutral-only network and therefore simply removes the parent.
   std::vector<int> productSpecies;
+  std::vector<std::size_t> productTermIndex;
   for (std::size_t term=0;term<reaction.ProductCount;term++) {
     const ChemicalSolver::cStoichiometricTerm &product=
         network.GetProductTerm(selected,term);
     const int multiplicity=static_cast<int>(std::floor(product.Coefficient+0.5));
-    for (int copy=0;copy<multiplicity;copy++)
+    for (int copy=0;copy<multiplicity;copy++) {
       productSpecies.push_back(product.Species);
+      productTermIndex.push_back(term);
+    }
   }
 
   double xParent[3],vParent[3];
@@ -861,7 +875,95 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
     std::abort();
   }
 
+  // Commit diagnostics only after the transaction is known to fit.  A
+  // capacity-deferred parent is retried by the core and must not appear as a
+  // second physical reaction.  Expected product rates follow stoichiometry
+  // from the selected parent carrier; represented rates follow the daughters
+  // actually produced by residual split/roulette.
+  auto recordCommittedDiagnostics=[&]() {
+    if (!Comet::Diagnostics::Enabled) return;
+    const double parentRate=parentPhysicalWeight/timeStep;
+    Comet::Diagnostics::RecordReactionSelection(selected,
+        reaction.ProductCount==0);
+    Comet::Diagnostics::RecordChemicalDestruction(parentSpecies,parentRate);
+
+    struct cTermDiagnostic {
+      std::uint64_t Multiplicity=0,Allocated=0,Reused=0;
+      double ExpectedNumber=0.0,ExpectedMass=0.0;
+      double ExpectedMomentum[3]={0.0,0.0,0.0};
+      double ExpectedEnergy=0.0;
+      double RepresentedNumber=0.0,RepresentedMass=0.0;
+      double RepresentedMomentum[3]={0.0,0.0,0.0};
+      double RepresentedEnergy=0.0,NumberVariance=0.0;
+    };
+    std::vector<cTermDiagnostic> terms(reaction.ProductCount);
+    bool reuseAvailable=totalDaughters>0;
+    for (std::size_t product=0;product<productSpecies.size();product++) {
+      const std::size_t termIndex=productTermIndex[product];
+      cTermDiagnostic &term=terms[termIndex];
+      const int species=productSpecies[product];
+      const double mass=PIC::MolecularData::GetMass(species);
+      const double *velocity=productVelocity.data()+3*product;
+      const double speedSquared=velocity[0]*velocity[0]+
+          velocity[1]*velocity[1]+velocity[2]*velocity[2];
+      const std::uint64_t multiplicity=static_cast<std::uint64_t>(
+          daughterMultiplicity[product]);
+      term.Multiplicity+=multiplicity;
+      if (multiplicity>0) {
+        if (reuseAvailable) {
+          term.Reused++;
+          term.Allocated+=multiplicity-1;
+          reuseAvailable=false;
+        }
+        else term.Allocated+=multiplicity;
+      }
+
+      term.ExpectedNumber+=parentRate;
+      term.ExpectedMass+=parentRate*mass;
+      for (int component=0;component<3;component++)
+        term.ExpectedMomentum[component]+=
+            parentRate*mass*velocity[component];
+      term.ExpectedEnergy+=parentRate*0.5*mass*speedSquared;
+
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      const double representedRate=parentRate;
+#else
+      const double productCarrierRate=
+          node->block->GetLocalParticleWeight(species)/
+          node->block->GetLocalTimeStep(species);
+      const double representedRate=multiplicity*productCarrierRate;
+      const double mean=GetResidualMultiplicityMean(parentPhysicalWeight,
+          timeStep,node->block->GetLocalParticleWeight(species),
+          node->block->GetLocalTimeStep(species));
+      const double fraction=mean-std::floor(mean);
+      term.NumberVariance+=productCarrierRate*productCarrierRate*
+          fraction*(1.0-fraction);
+#endif
+      term.RepresentedNumber+=representedRate;
+      term.RepresentedMass+=representedRate*mass;
+      for (int component=0;component<3;component++)
+        term.RepresentedMomentum[component]+=
+            representedRate*mass*velocity[component];
+      term.RepresentedEnergy+=representedRate*0.5*mass*speedSquared;
+    }
+
+    for (std::size_t product=0;product<reaction.ProductCount;product++) {
+      const ChemicalSolver::cStoichiometricTerm &networkTerm=
+          network.GetProductTerm(selected,product);
+      const cTermDiagnostic &term=terms[product];
+      Comet::Diagnostics::RecordChemistryProduct(selected,product,
+          term.Multiplicity,term.Allocated,term.Reused,term.ExpectedNumber,
+          term.ExpectedMass,term.ExpectedMomentum,term.ExpectedEnergy,
+          term.RepresentedNumber,term.RepresentedMass,
+          term.RepresentedMomentum,term.RepresentedEnergy,
+          term.NumberVariance);
+      Comet::Diagnostics::RecordChemicalProduction(networkTerm.Species,
+          term.ExpectedNumber,term.RepresentedNumber,term.NumberVariance);
+    }
+  };
+
   if (totalDaughters==0) {
+    recordCommittedDiagnostics();
     PIC::ParticleBuffer::DeleteParticle(ptr);
     return true;
   }
@@ -877,9 +979,12 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
   const long int requiredNewSlots=totalDaughters-1;
   if (requiredNewSlots>transactionCeiling-PIC::ParticleBuffer::NAllPart) {
     LocalChemistryAllocationPressure=true;
+    Comet::Diagnostics::RecordAllocationDeferral(selected);
     KeepParticle(ptr,firstParticleCell);
     return false;
   }
+
+  recordCommittedDiagnostics();
 
   // Clone auxiliary fields from the parent, then replace position, velocity,
   // and species for each integer-stoichiometry product.  Fixed block-local

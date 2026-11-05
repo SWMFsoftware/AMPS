@@ -161,6 +161,9 @@ CouplerMode=off
   Rubin2011OHGroundRate=3.0e-6
   Rubin2011MethanolH2COBranch=OFF
   ChemistryMode=on
+  ! Stage-0 observability is opt-in. OFF is the production default and must
+  ! preserve the historical scientific output and random-number stream.
+  CometDiagnostics=off
 
   ! Water rotational cooling from the analytic Crovisier/Huebner
   ! approximation printed as equation (48b) by Gombosi et al. (1986).

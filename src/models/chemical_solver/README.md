@@ -55,6 +55,24 @@ If a runtime parameter used by a rate law changes, the application must rebuild
 its rate cache before the next particle batch; the generic network does not
 cache application state.
 
+## Geometry-independent event diagnostics
+
+`ChemistryDiagnostics.h` provides an optional accumulator for particle or
+continuum executors. It contains no PIC, MPI, mesh, or comet dependency. A
+caller configures the number of product terms for every reaction and records
+local eligible visits, selected reactions/channels, destruction and sinks,
+allocation pressure, product-carrier multiplicity, slot allocation/reuse, and
+represented number, mass, momentum, and energy.
+
+Product records are indexed by reaction-table term rather than distinct
+species. This preserves repeated products and allows an audit to trace a
+counter back to the generated input record. `CountValues()` and
+`MomentValues()` expose stable flat arrays for separate integer and
+floating-point MPI sum reductions; MPI itself remains an application/runtime
+responsibility. Configuring the object disabled allocates no reaction table,
+every record method becomes a no-op before index validation, and both output
+arrays are empty.
+
 ## Input generation
 
 `input/CometReactionNetwork.pm` parses the application record
@@ -86,6 +104,19 @@ balance, and individual particle-weight correction.
 
 The standalone test also checks the parent index, preservation of channel
 order, exclusion of a binary reaction, and invalid species/channel sentinels.
+The comet Stage 0 test additionally checks the diagnostic accumulator with
+one-, two-, repeated-, and zero-product reactions and identical reductions at
+1, 4, and 12 MPI ranks.
+
+`ChemistryDiagnostics.h` is deliberately independent of PIC geometry and MPI.
+The application configures one record per network reaction and one subrecord
+per product term, accumulates integer event/carrier counts plus expected and
+represented number, mass, momentum, and energy, and reduces the stable
+`CountValues()` and `MomentValues()` layouts collectively. Represented-number
+variance is stored as a moment so the application can evaluate a statistical
+production tolerance after reduction. `Reset()` clears one sampling window
+without changing the configured layout. When configured disabled, no reaction
+table is retained and hot-path record methods are inert.
 
 Run the standalone tests with:
 
@@ -96,5 +127,7 @@ g++ -std=c++17 -Wall -Wextra -pedantic \
   src/models/chemical_solver/test_reaction_network.cpp \
   -o /tmp/test_reaction_network
 /tmp/test_reaction_network
+
+srcHartley2/tests/run_stage0_tests.sh
 ```
 

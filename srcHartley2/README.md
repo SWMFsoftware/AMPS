@@ -16,7 +16,9 @@ The application currently supports:
 `STATUS.md` records build and runtime verification. The Hartley 2 radial case
 is `input/hartley2.radial.input`; the historical triangulated case remains
 `input/hartley2.input`. The Rubin et al. case is explicitly named for comet
-Halley in `input/halley1d.input`.
+Halley in `input/halley1d.input`. `srcHartley2/CHEMISTRY.md` provides
+the staged implementation and validation roadmap for improving minor
+photochemical-daughter statistics without increasing direct-parent injection.
 
 ## Code organization
 
@@ -705,3 +707,74 @@ reproducible extractor is `halley2011/digitize_rubin2011.py`. The paper's
 Giotto NMS mass-channel curves require an instrument-response model that is
 not part of this application and are not mixed with the neutral-density
 comparison.
+
+## Stage 0 chemistry-observability tests
+
+The minor-daughter roadmap is in `srcHartley2/CHEMISTRY.md`. Stage 0 is
+complete on `1d_comet_dev`; run its focused and archived tests with:
+
+```sh
+srcHartley2/tests/run_stage0_tests.sh
+```
+
+The suite compiles the geometry-independent accumulator in
+`src/models/chemical_solver/ChemistryDiagnostics.h`, verifies one-, two-,
+repeated-, and zero-product reaction accounting, and reduces an identical
+physical event set at 1, 4, and 12 MPI ranks. The reduced count and physical
+moment signatures must be identical at every rank count. The disabled path
+must retain no records and emit no serialized fields.
+
+Production instrumentation is selected in the comet input with:
+
+```text
+CometDiagnostics=ON
+```
+
+The default and canonical Halley setting is `OFF`. The off path returns before
+allocating diagnostic tables, calling MPI, writing files, changing model
+state, or drawing random numbers. With it enabled, each completed sampling
+window writes `PT/diagnostics/comet_stage0.out=N.csv` and `.json` plus one
+run-level `PT/diagnostics/cell_measures.csv`. The latter contains the exact
+ordered AMR cell-center radius and core `Measure()` value used by integrated
+convergence; it is not reconstructed from radial coordinates.
+
+An eligible parent visit means one visit to one enabled, positive-rate
+reaction channel for the current parent particle. Reaction rows report
+selection, destruction, sink, deferral, and emergency counts. Product rows
+retain each stoichiometric term separately and report zero/one/many residual
+multiplicity, allocated/reused/model carriers, and expected and represented
+number, mass, momentum, and energy rates. Represented-number variance is used
+to report `sigma`; expected/represented production passes when
+`abs(represented-expected) <= max(5*sigma, 1%*abs(expected))`.
+
+Species flux columns are physical number rates in `s^-1`. Each event adds its
+represented `W/dt`; the collective sum is divided by the completed sampling
+length. Surface injection, expected/represented chemical production,
+chemical destruction, gross inner-boundary incident and thermal re-emitted
+rates, and outer escape are distinct. The two inner terms are intentionally
+separate even though the current thermalizing boundary gives zero net number
+flux. Momentum columns are newtons, mass rates are `kg s^-1`, and energy rates
+are watts.
+
+`visualization/analyze_minor_species.py` creates JSON and CSV reports from one
+or more saved species windows. The committed acceptance record
+`halley2011/reference/halley1d_stage0_baseline.json` freezes the executable,
+input, run-log, C2 output, and Rubin-comparison checksums plus the final C2
+occupancy and comparison values. The test re-analyzes that archive when it is
+available. Exact volume-weighted L1 diagnostics require an AMPS cell-measure
+column or an explicitly supplied aligned table; the tool marks legacy output
+as unavailable instead of estimating cell volume from plot coordinates.
+
+Validate an instrumented production archive as part of the same runner with:
+
+```sh
+HARTLEY2_STAGE0_PRODUCTION_ROOT=/absolute/path/to/production \
+  srcHartley2/tests/run_stage0_tests.sh
+```
+
+The accepted closure run contains 20 reports, 2,984 exact cell measures, an
+observed represented C2 carrier, and byte-identical model output relative to
+the diagnostics-off baseline. The controlled four-rank enabled/disabled smoke
+pair measured +0.93% wall time and +340 KiB maximum resident memory. These are
+diagnostic-implementation results; the 10,000-iteration run remained
+nonconverged and is not a science-quality Halley solution.

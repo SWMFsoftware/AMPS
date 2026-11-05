@@ -5,7 +5,7 @@ DEFAULT_TARGET : lib
 include ../../Makefile.conf
 
 # Dimension=1 replaces these two object lists during input preprocessing.
-MAINLIBOBJ = Gravity.o Comet.o CometData.o CometModel.o CometChemistry.o CometPhysics.o CometRadiativeCooling.o main_lib.o OrbitCalculation.o ColumnIntegral.o SurfaceDataCG.o SampleSizeDistribution.o RadialMesh.o RadialMeshProfile.o RadialSimulation.o LocalTimeStepValidation.o
+MAINLIBOBJ = Gravity.o Comet.o CometData.o CometModel.o CometChemistry.o CometDiagnostics.o CometPhysics.o CometRadiativeCooling.o main_lib.o OrbitCalculation.o ColumnIntegral.o SurfaceDataCG.o SampleSizeDistribution.o RadialMesh.o RadialMeshProfile.o RadialSimulation.o LocalTimeStepValidation.o
 MAINOBJ = main.o
 
 lib : $(MAINLIBOBJ)
