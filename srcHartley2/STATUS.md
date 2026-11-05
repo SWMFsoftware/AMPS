@@ -4462,3 +4462,205 @@ PASS Hartley2 all-stage suite tests=19 test-groups=6 stage4-mode=archived stage5
 There is no active AMPS/MPI validation process. The pre-existing tracked
 `Makefile` difference and historical/generated untracked files are unrelated
 to Stage 5 and were preserved. `git diff --check` passes. No commit was made.
+
+## Stage 6 daughter-packet implementation and validation (2026-11-05)
+
+This section supersedes the preceding Stage-5-era statement that Stage 6 was
+future work. Stage 6 is now implemented and focused-tested on branch
+`1d_comet_dev`, starting from commit
+`9eeb06041893cbbd5fe8a92bef7a2ec5d285b61b`. No commit, branch switch, merge,
+or operation involving `master` was performed. The user must be told and must
+explicitly authorize the operation before any attempt to integrate this work
+with `master`.
+
+### Approved behavior and implementation invariants
+
+The input policy selects a fixed daughter-packet count for each generated
+reaction. An explicit reaction ID has highest precedence. Without an explicit
+reaction rule, each concrete product resolves `species > CHEMICAL_ONLY >
+global`, and the reaction uses the maximum resolved count across all of its
+products. Repeated products participate normally. A product-free sink is
+always `N=1`; explicitly targeting one is rejected even if the requested count
+is one. Selectors that match only zero-rate reactions cannot create an
+effective split, and enabled packet mode must contain at least one positive-rate
+reaction with `N>1`.
+
+For a reaction with `K` concrete stoichiometric products and selected packet
+count `N`, the production transaction creates exactly `K*N` particles. Each
+packet obtains an independent recoil solution containing all `K` products.
+For each product, the original Stage-4 correction is divided across its `N`
+representatives; the last representative receives the arithmetic remainder so
+the corrections reconstruct the original value in production order. The
+parent slot is reused once, the remaining records are allocated, all committed
+daughters are marked processed for the current chemistry stage, and every new
+particle receives a valid independent tracker identity.
+
+Preflight proves `K*N` against integer overflow, the configured packet maximum,
+the radial hard product limit, and available particle capacity before mutation.
+Capacity rejection leaves the parent byte-identical and consumes no
+commit-dependent random numbers. Normal chemistry, emergency population
+forecasts, and block-weight adaptation all use the same `K*N` cardinality.
+Stage-5 correction windows run normally after packet creation: packet daughters
+have no exemption from keep, roulette, or split decisions. The packet and
+window policies therefore must be qualified together in later science runs.
+
+With all packet records omitted, the generated reaction counts are one and the
+runtime retains the historical one-recoil random-number path. This strict-off
+identity is a merge requirement. The implementation is currently supported
+only by the qualified DIM1, individual-correction, general-NTC, Bernoulli
+chemistry path. The policy resolver and pure planner are geometry independent,
+but this work does not claim DIM2/DIM3 corrected-chemistry support.
+
+### Complete Stage-6 source inventory
+
+| File | Detailed Stage-6 change and reason | Later master-merge dependency/invariant |
+| --- | --- | --- |
+| `input/CometDaughterPacketPolicy.pm` | **New.** Parses mode, declared maximum, global/group/species/reaction selectors; resolves the approved precedence and maximum-across-products rule; rejects duplicates, unknown targets, sinks, zero-rate-only effective splits, invalid counts, inactive-mode records, and `K*N` transactions above the hard limit; emits the generated C++ policy header. | Merge before `input/hartley2.pl`. Preserve stable reaction IDs and strict default-off behavior. Do not resolve from generated array position. |
+| `input/test_comet_daughter_packet_policy.pl` | **New.** Pure Perl regression for off identity, all precedence levels, mixed and repeated products, sinks, zero-rate cases, malformed/duplicate records, maximum enforcement, transaction limits, and generated-header integrity. | Merge with the policy module and keep independent of an AMPS build tree. |
+| `input/CometReactionNetwork.pm` | Adds `packet_policy_reactions()`, a defensive description containing stable ID, nominal rate, and concrete product stoichiometry after database expansion. | Merge before policy resolution. Preserve existing reaction order and keep private network state immutable. |
+| `input/hartley2.pl` | Instantiates the packet policy, parses the three Stage-6 record types, retains the hard product limit for cross-validation, enforces chemistry/DIM1/individual-correction/Bernoulli/Stage-5 prerequisites, resolves after the full network and chemical-only set exist, and writes the generated header. | Merge after both input modules. Regenerate outputs; do not hand-merge `build/main` copies. Omission must leave all packet counts at one. |
+| `srcHartley2/CometDaughterPacketPolicy.generated.h` | **New.** Safe source-tree fallback with zero generated reactions and count-one sentinel arrays. The application generator replaces it only in the generated build tree. | Merge before compiling `CometChemistry.cpp`. Keep `<cstddef>` and the zero-reaction sentinel so direct source-tree compilation is well formed. |
+| `srcHartley2/DaughterPacketPlanner.h` | **New.** AMPS/MPI/mesh-independent fixed-count correction partition and capacity planner for `N=1,2,4,8` and general valid counts. | Merge before runtime chemistry. Preserve exact final-remainder reconstruction and mutation-free rejection. |
+| `srcHartley2/CometChemistry.h` | Declares packet switch/maximum, generated-policy accessors, focused validator, and comments defining the transaction contract. | Merge in lockstep with `CometChemistry.cpp` and generated header. |
+| `srcHartley2/CometChemistry.cpp` | Loads and validates the generated policy; retains the off/`N=1` RNG path; implements independent recoil packets, exact correction partitions, `K*N` capacity transaction, parent reuse, tracker/processed-state commit, and policy diagnostics. Adds deterministic ensemble and real `C2_2C -> C+C` production-transaction validation. Validator-only centered extended-precision `(count,mean,M2)` moments are merged with the parallel identity so rank regrouping is numerically stable. | Merge after Stage-4 exact corrected daughters and Stage-5 windows. Preserve per-packet recoil, full transaction rollback, DIM-only coordinate comparisons, high-precision diagnostics, and centered-moment merge. |
+| `srcHartley2/RadialSimulation.cpp` | Changes all chemistry capacity mirrors, emergency forecasts, and adaptive block-weight projections from `K` to the runtime `K*N` worst-case transaction size. | Merge with chemistry runtime. Missing any one mirror can admit a partial allocation burst even if the chemistry executor itself is correct. |
+| `srcHartley2/RadialMain.cpp` | Adds mutually exclusive `--validate-daughter-packets` routing and help text, using the shared chemistry validation event count. | Merge with the validator; this is a test mode, not a production input selector. |
+| `srcHartley2/tests/test_stage6_daughter_packet_planner.cpp` | **New.** Pure C++ tests for identity, exact sums, `N=1,2,4,8`, repeated products, overflow/hard-limit/capacity rejection, and sink cardinality. | Merge with the pure planner. Exact production-order equality is intentional. |
+| `srcHartley2/tests/run_stage6_daughter_packet_tests.sh` | **New.** Runs the Perl policy suite and compiles/runs the pure C++ planner in a temporary directory. | Merge after both pure tests; it must not configure AMPS or retain a test binary. |
+| `srcHartley2/tests/run_stage6_integrated_tests.sh` | **New.** Runs Stage-5 windows, exact chemistry, and the packet validator at exactly 1, 4, and 12 MPI ranks into a caller-supplied immutable root. | Merge after runtime/CLI. Preserve refusal to overwrite evidence and separate command/stdout/stderr records. |
+| `srcHartley2/tests/test_stage6_daughter_packet_logs.py` | **New.** Strictly parses all 46 reactions, 23 sinks, `N=1,2,4,8`, policy sources, represented moments, variance scaling, conservation, MPI identity, production transaction, links, processed flags, tracker state, and rollback. | Merge with the C++ output schema; field or precision changes are validation-interface changes. |
+| `srcHartley2/tests/run_all_stage_tests.sh` | Extends the general runner to seven groups and 22 checks; adds archived/fresh Stage-6 modes, immutable evidence preflight, packet pure/matrix jobs, Stage-5 dependency replay, and SHA-256 provenance verification. | Merge after Stage-6 runners. Keep the current build correction-off; archived Stage-6 evidence uses its separate frozen correction-on binary. |
+| `srcHartley2/CHEMISTRY.md` | Records policy grammar, precedence, transaction math, Stage-5 interaction, validation boundary, and remaining science work. | Merge after behavior is stable; do not reinterpret validation counts as Halley science parameters. |
+| `srcHartley2/README.md` | Adds operator commands for pure, focused, archived, fresh, and all-stage Stage-6 validation. | Keep paths and CLI synchronized with the runners. |
+| `srcHartley2/STATUS.md`, `handoff.md` | Records implementation rationale, hashes, evidence, recovery procedure, exclusions, and ordered master integration. | Append/reconcile these histories; documentation never grants permission to merge. |
+
+No core file under `src/pic`, `src/meshAMR`, or `src/models` was added or
+modified by Stage 6. The implementation consumes the previously developed
+Stage-4 individual-correction mover/collision interfaces and the Stage-2/3
+application capacity/restart machinery. `RadialSimulation.cpp` is an
+application source despite its infrastructure role. The pre-existing tracked
+root `Makefile` difference is unrelated and must not be attributed to or
+staged with Stage 6.
+
+### Focused and complete validation evidence
+
+Before every Stage-6 compilation, exactly
+`/data/vtenishe/COMET1D/AMPS/build` was removed. The accepted packet-enabled
+build used packet maximum 8; global 1; `CHEMICAL_ONLY` 2; species `C2` 8;
+reaction `H2O_OH_H` 4; reaction `C2_2C` 8; a 64-product transaction limit;
+and deliberately broad Stage-5 windows. These are validation settings, not a
+scientifically selected Halley policy.
+
+The pure test result is:
+
+```text
+Comet daughter-packet policy test passed
+PASS Stage-6 daughter-packet planner identity=1 exact-sum=1 packet-counts=1,2,4,8 repeated-products=1 capacity=1 sink=1
+```
+
+The immutable accepted runtime archive is:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/stage6-daughter-packet-full-20261105-r4
+PASS Stage-5 correction-window integrated matrix 1rank=pass 4rank=pass 12rank=pass
+PASS Stage-6 daughter-packet integrated matrix 1rank=pass 4rank=pass 12rank=pass reactions=46 sinks=23 packet-cases=4 events=200000
+```
+
+Its `provenance/SHA256SUMS` verifies:
+
+```text
+amps.stage6-correction-on                 c70e51c7a5e36f8626d3966126aab15d6e82b7bd22081ee93ac7b64c18558170
+halley1d.stage6-validation.input          6b9a4479e1f57eecb1c03d59a594518912e381fa1b7caf84f9368b20c243abc2
+picGlobal.stage6-validation.dfn           eb968bf7d4b95f43564070c8f64fecf772a989aafa63da8477980483a726c971
+CometDaughterPacketPolicy.generated.h     274d5170bbaae9b74ea41a81a81034ba8c79ce03e7fb014b848eb454f7264b87
+```
+
+The sibling archives without `-r4` and with suffixes `-r2` and `-r3` are
+development diagnostics, not acceptance evidence. They exposed, in order,
+an invalid DIM1 comparison of inactive coordinates, insufficient numeric
+print precision for strict rank comparison, and cancellation in raw
+sum/sum-square variance reconstruction. The accepted implementation compares
+only active dimensions, prints deterministic statistics at full precision,
+and uses centered extended-precision parallel moments. Retain the failed
+archives only for debugging history; never combine them with `-r4`.
+
+After acceptance, canonical `input/halley1d.input` was restored byte-for-byte,
+the exact build directory was removed again, and a clean correction-off build
+completed. Its final state is:
+
+```text
+amps                                      4ed4147d6c640bc473a4a87caf89808c0438d3a3cbfe2d99dd8853f6f943218e
+input/halley1d.input                      0d89b536e6daa2dea7251bb57920fb6f1dd2546efd7c454d25b6dcccc26eccf5
+build/pic/picGlobal.dfn                   c3d2bca73f068cff357ae6d1f5002c97dc738b6a3190c712b2787890c92e2726
+build/main/RadialSimulation.cpp           b120edd6fe20c0965a7bc71491b75439cb787d731d9d86a7e2d409a6ff6fc2b0
+srcHartley2/CometDaughterPacketPolicy.generated.h ffa6c0387ec0b3b5909eecf71ee3d0167642a168c12c889f7e4fcd08fc4a0fa6
+```
+
+The canonical generated configuration is individual-correction off, general
+NTC, Stage-5 windows off, Stage-6 packet mode false, and every generated packet
+count one. The final all-stage preflight and complete archived replay passed:
+
+```text
+Hartley2 all-stage test summary status=PASS stage4-mode=archived stage5-mode=archived stage6-mode=archived
+  tests: run=22 passed=22 skipped=0 failed=0
+  test-groups: run=7 passed=7 skipped=0 failed=0
+PASS Hartley2 all-stage suite tests=22 test-groups=7 stage4-mode=archived stage5-mode=archived stage6-mode=archived
+```
+
+This closes Stage 6 as an implementation and focused-compatibility stage. It
+does not close the scientific validation gate: production packet counts still
+require independent-seed variance/cost selection, transported convergence,
+primary-profile invariance, minor-species flux closure, buffer-headroom
+measurement, and a new Rubin comparison. Stage 7 channel importance sampling
+also remains separate future work.
+
+### Detailed Stage-6 additions to the later master-integration procedure
+
+Do not merge yet. After the comet model and the scientific packet pilot are
+accepted and the user explicitly authorizes master integration, follow the
+existing Stage 0--5 sequence above, then add these Stage-6-specific steps:
+
+1. record the exact `1d_comet_dev` tip, target `master` tip, merge base, dirty
+   tracked files, untracked/generated exclusions, and SHA-256 manifests for
+   every accepted Stage 0--6 archive;
+2. create a disposable integration branch from that recorded master tip in a
+   clean worktree; do not switch this validation worktree to `master` and do
+   not copy raw `PT`, mesh, build, executable, or archive contents into source
+   commits;
+3. finish and validate Stages 0--5 in their documented order before applying
+   any packet patch; Stage 6 depends on Stage-4 exact corrected products and
+   Stage-5 post-cycle correction windows;
+4. merge `CometReactionNetwork.pm`, then add
+   `CometDaughterPacketPolicy.pm` and its Perl test. Run the pure policy test
+   before changing the application parser;
+5. merge the `hartley2.pl` records and generated-header step. Configure one
+   legacy input with all Stage-6 records omitted and one focused on-input;
+   inspect stable reaction IDs, policy sources, counts, sinks, zero-rate rows,
+   and `K*N` bounds rather than trusting a successful configure alone;
+6. add the fallback generated header and pure planner/test. Prove `N=1`
+   identity and exact production-order correction sums before runtime wiring;
+7. merge `CometChemistry.h/.cpp`, then the three `RadialSimulation.cpp`
+   capacity mirrors and `RadialMain.cpp` validator. During conflicts preserve
+   independent recoil per packet, parent byte-identity on rejection, tracker
+   initialization, processed flags, active-dimension checks, and centered
+   parallel moments;
+8. add the Stage-6 shell/Python runners and general-runner provenance job.
+   Freeze a newly clean-built packet-enabled executable/input/generated header
+   and run 1/4/12 ranks into a new immutable archive; never overwrite or
+   relabel `stage6-daughter-packet-full-20261105-r4`;
+9. restore the canonical no-packet input, remove exactly the build directory,
+   rebuild, and prove the correction-off/off-mode identity plus the complete
+   22-test, seven-group archived suite;
+10. review random-stream identity when `N=1`, selector precedence, sink and
+    zero-rate rejection, transaction cardinality in every allocation forecast,
+    Stage-5 scheduling order, conservation, rank invariance, provenance, and
+    unsupported geometry/model gates;
+11. exclude the pre-existing `Makefile` change and all generated root inputs,
+    `build/`, `amps`, meshes, `PT*`, logs, raw validation archives, and failed
+    diagnostic archives from source commits unless the user separately asks
+    to version a curated evidence manifest;
+12. present the exact integration diff and commit range, exclusions, all
+    hashes, 1/4/12 records, science-pilot uncertainty/cost/closure results, and
+    Rubin comparison to the user, then stop before any operation on `master`.
+
+No AMPS or MPI process is active at this handoff. No commit or merge was made.

@@ -32,6 +32,15 @@ enum Type {IndependentBernoulli=0,RandomPhaseSystematic=1};
 extern int ResidualSamplingMode;
 extern std::uint64_t ResidualPhaseSeed;
 
+// Stage-6 packet splitting is independently default-off.  When enabled, the
+// generated policy supplies one complete-reaction packet count per stable
+// reaction ID.  MaximumDaughterPacketCount bounds N; the radial hard product
+// limit separately bounds N times the concrete stoichiometric product count.
+extern bool DaughterPacketSplittingEnabled;
+extern long int MaximumDaughterPacketCount;
+long int GetDaughterPacketCount(std::size_t reaction);
+int GetDaughterPacketPolicySource(std::size_t reaction);
+
 // The returned object is a non-owning view of static tables generated from
 // the selected input file.  Validate must succeed before particle stepping.
 const ChemicalSolver::cReactionNetwork& GetNetwork();
@@ -58,6 +67,14 @@ void CloseResidualDiagnosticWindow();
 // across MPI ranks for each reaction.  The returned pass/fail value is
 // collective and identical on every rank.
 bool ValidateEnsemble(long int eventsPerReaction);
+
+// Exercise Stage-6 packet kinematics, exact per-product correction splitting,
+// and N=1/2/4/8 variance/cost behavior for every generated neutral reaction.
+// It also drives one repeated-product reaction through the real executor to
+// test parent-slot reuse, linked-list commit, processed flags, represented
+// packet moments, and byte-exact particle rollback on capacity deferral. This
+// focused mode does not replace a transported comet science pilot.
+bool ValidateDaughterPacketSplitting(long int eventsPerReaction);
 
 // Exercise owner-only block state, common packet phases, transaction
 // rollback, dynamic MPI block migration, and a real local-weight restart.

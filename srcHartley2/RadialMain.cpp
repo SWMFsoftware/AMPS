@@ -17,7 +17,7 @@ namespace {
 void PrintUsage(const char *program) {
   std::printf("usage: %s [--validate-local-timestep | --validate-chemistry | "
       "--validate-weight-adaptation | --validate-correction-windows | "
-      "--validate-systematic-residual | "
+      "--validate-systematic-residual | --validate-daughter-packets | "
       "--validate-unsupported-simplified-ntc] "
       "[--validation-particles N] [--validation-mover first|second|both] "
       "[--validation-skip-multiface] [--validation-unit-corrections] "
@@ -36,6 +36,7 @@ int main(int argc,char **argv) {
   bool validateWeightAdaptation=false;
   bool validateCorrectionWindows=false;
   bool validateSystematicResidual=false;
+  bool validateDaughterPackets=false;
   bool validateUnsupportedSimplifiedNTC=false;
   bool randomSeedOverride=false;
   bool residualSamplingOverride=false;
@@ -58,6 +59,9 @@ int main(int argc,char **argv) {
     }
     else if (option=="--validate-systematic-residual") {
       validateSystematicResidual=true;
+    }
+    else if (option=="--validate-daughter-packets") {
+      validateDaughterPackets=true;
     }
     else if (option=="--validate-unsupported-simplified-ntc") {
       validateUnsupportedSimplifiedNTC=true;
@@ -164,6 +168,7 @@ int main(int argc,char **argv) {
       (validateChemistry ? 1 : 0)+(validateWeightAdaptation ? 1 : 0)+
       (validateCorrectionWindows ? 1 : 0)+
       (validateSystematicResidual ? 1 : 0)+
+      (validateDaughterPackets ? 1 : 0)+
       (validateUnsupportedSimplifiedNTC ? 1 : 0);
   if (validationModeCount>1) {
     std::fprintf(stderr,
@@ -287,6 +292,12 @@ int main(int argc,char **argv) {
     }
     if (validateSystematicResidual) {
       const bool passed=Comet::Chemistry::ValidateSystematicResidualState();
+      MPI_Finalize();
+      return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+    if (validateDaughterPackets) {
+      const bool passed=Comet::Chemistry::ValidateDaughterPacketSplitting(
+          chemistryValidationEvents);
       MPI_Finalize();
       return passed ? EXIT_SUCCESS : EXIT_FAILURE;
     }

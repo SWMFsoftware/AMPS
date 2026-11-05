@@ -92,6 +92,27 @@ sub reaction_count {
   return scalar @{$self->{reactions}};
 }
 
+# Return a defensive, read-only-style description for input policies that are
+# resolved after named databases and explicit reactions have both loaded.
+# Stage-6 packet selection needs stable IDs, nominal rates, and concrete
+# product stoichiometry but must not depend on this module's private hashes or
+# alter the reaction order later emitted by write_header().
+sub packet_policy_reactions {
+  my ($self)=@_;
+  my @result;
+  for my $reaction (@{$self->{reactions}}) {
+    push @result,{
+      id=>$reaction->{id},
+      rate=>$reaction->{a},
+      products=>[
+        map {{species=>$_->{species},coefficient=>$_->{coefficient}}}
+            @{$reaction->{products}}
+      ],
+    };
+  }
+  return \@result;
+}
+
 # Return a boolean species table reachable from the supplied source indices.
 # A general reaction becomes reachable only when every reactant species is
 # reachable; this reduces to ordinary parent-to-daughter traversal for the

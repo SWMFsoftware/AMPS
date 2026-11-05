@@ -672,8 +672,9 @@ long long MaximumReactionDaughterAllocation(
   // product with expectation
   // (W_parent/dt_parent)/(W_product/dt_product); floor(mu)+Bernoulli(frac)
   // can allocate ceil(mu).  With individual corrections enabled, chemistry
-  // instead creates exactly one model daughter per integer-stoichiometric
-  // product and stores the carrier conversion in that daughter's correction.
+  // instead creates exactly N model daughters per integer-stoichiometric
+  // product, where N is the resolved Stage-6 reaction packet count, and
+  // stores an exact partition of the carrier conversion in those daughters.
   // The hard allocation bound must mirror those two executors exactly.
   const ChemicalSolver::cReactionNetwork &network=
       Comet::Chemistry::GetNetwork();
@@ -736,7 +737,11 @@ long long MaximumReactionDaughterAllocation(
       const long long coefficient=static_cast<long long>(
           std::floor(product.Coefficient+0.5));
 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
-      const long long oneProductMaximum=1;
+      // Stage-6 creates one instance of every concrete product in every
+      // complete packet. The reaction-resolved N replaces Stage-4's unit
+      // multiplicity while the correction factor carries 1/N of the event.
+      const long long oneProductMaximum=
+          Comet::Chemistry::GetDaughterPacketCount(reactionIndex);
 #else
       const double mean=parentCarrier/
           GetCarrierRate(block,product.Species);
@@ -1222,20 +1227,35 @@ cComponentCarrierTransaction BuildComponentCarrierTransaction(
 
           std::array<long long,PIC::nTotalSpecies> coefficient{};
           long long irreducibleFloor=0;
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+          const long long reactionPacketCount=
+              Comet::Chemistry::GetDaughterPacketCount(reactionIndex);
+#endif
           for (std::size_t term=0;term<reaction.ProductCount;term++) {
             const ChemicalSolver::cStoichiometricTerm &product=
                 network.GetProductTerm(reactionIndex,term);
             const long long value=
                 CheckedReactionCoefficient(product.Coefficient,reaction.Id);
+            long long irreducibleContribution=value;
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+            if (reactionPacketCount<=0 ||
+                value>LLONG_MAX/reactionPacketCount) {
+              std::fprintf(stderr,
+                  "reaction %s packet product count overflows\n",
+                  reaction.Id);
+              std::abort();
+            }
+            irreducibleContribution*=reactionPacketCount;
+#endif
             if (coefficient[product.Species]>LLONG_MAX-value ||
-                irreducibleFloor>LLONG_MAX-value) {
+                irreducibleFloor>LLONG_MAX-irreducibleContribution) {
               std::fprintf(stderr,
                   "reaction %s product coefficient sum overflows\n",
                   reaction.Id);
               std::abort();
             }
             coefficient[product.Species]+=value;
-            irreducibleFloor+=value;
+            irreducibleFloor+=irreducibleContribution;
             const std::size_t productOffset=
                 component*PIC::nTotalSpecies+product.Species;
             if (!transaction.Reachable[productOffset]) {
@@ -1538,15 +1558,12 @@ cComponentCarrierTransaction BuildComponentCarrierTransaction(
           const long long coefficient=
               CheckedReactionCoefficient(product.Coefficient,reaction.Id);
 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
-          // The correction-on chemistry executor creates exactly one model
-          // daughter for each concrete stoichiometric product and stores the
-          // parent/daughter carrier conversion in that particle's correction
-          // factor.  Auditing the base-carrier ratio here would reintroduce
-          // the legacy residual-resampling allocation count and can falsely
-          // report hundreds of allocations for a one-particle corrected
-          // daughter.  Keep this final plan audit identical to
-          // MaximumReactionDaughterAllocation() and ProcessParticle().
-          const long long multiplicity=1;
+          // Packet splitting still avoids the legacy base-carrier ratio: it
+          // creates exactly N corrected instances of each concrete product.
+          // Keep this audit identical to MaximumReactionDaughterAllocation()
+          // and ProcessParticle().
+          const long long multiplicity=
+              Comet::Chemistry::GetDaughterPacketCount(reactionIndex);
 #else
           const long long multiplicity=static_cast<long long>(std::ceil(
               transaction.ComponentCarrier[

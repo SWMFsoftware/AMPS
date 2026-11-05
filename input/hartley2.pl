@@ -15,6 +15,7 @@ use CometReactionNetwork;
 use CometPhysicsDatabase;
 use CometPopulationPolicy;
 use CometCorrectionWindowPolicy;
+use CometDaughterPacketPolicy;
 
 
 #my $command= $];
@@ -81,6 +82,7 @@ my $RadialAllocationLowWatermarkIsSet=0;
 my $RadialAllocationReserveFractionIsSet=0;
 my $RadialMaxFaceTransferMultiplicityIsSet=0;
 my $RadialMaxPhotochemicalProductsPerReactionIsSet=0;
+my $RadialMaxPhotochemicalProductsPerReaction=-1;
 my $RadialConvergenceToleranceIsSet=0;
 my $RadialConvergenceWindowsIsSet=0;
 
@@ -120,6 +122,8 @@ my $PhysicsDatabase=CometPhysicsDatabase->new(species=>\@SpeciesList);
 my $PopulationPolicy=CometPopulationPolicy->new(species=>\@SpeciesList);
 my $CorrectionWindowPolicy=
     CometCorrectionWindowPolicy->new(species=>\@SpeciesList);
+my $DaughterPacketPolicy=
+    CometDaughterPacketPolicy->new(species=>\@SpeciesList);
 
 #add the model header to the pic.h
 open (PIC_H,">>$WorkingSourceDirectory/pic/pic.h") || die "Cannot open $WorkingSourceDirectory/pic/pic.h";
@@ -552,7 +556,32 @@ while ($line=<InputFile>) {
     ampsConfigLib::ChangeValueOfVariable(
         "long int Comet::RadialSimulation::MaximumPhotochemicalProductsPerReaction",
         $InputLine,"main/RadialSimulation.cpp");
+    $RadialMaxPhotochemicalProductsPerReaction=0+$InputLine;
     $RadialMaxPhotochemicalProductsPerReactionIsSet=1;
+  }
+  elsif ($InputLine eq "CHEMISTRYDAUGHTERPACKETMODE") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    $InputLine=~s/ //g if defined $InputLine;
+    $DaughterPacketPolicy->set_mode($InputLine,
+        "line $InputFileLineNumber ($InputFileName)");
+    ampsConfigLib::ChangeValueOfVariable(
+        "bool Comet::Chemistry::DaughterPacketSplittingEnabled",
+        $InputLine eq "ON" ? "true" : "false",
+        "main/CometChemistry.cpp");
+  }
+  elsif ($InputLine eq "CHEMISTRYDAUGHTERPACKETMAXIMUM") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    $DaughterPacketPolicy->set_maximum($InputLine,
+        "line $InputFileLineNumber ($InputFileName)");
+    ampsConfigLib::ChangeValueOfVariable(
+        "long int Comet::Chemistry::MaximumDaughterPacketCount",
+        $DaughterPacketPolicy->maximum(),"main/CometChemistry.cpp");
+  }
+  elsif ($InputLine eq "CHEMISTRYDAUGHTERPACKETCOUNT") {
+    # Keep selector prefixes and stable reaction IDs exactly as supplied; the
+    # common policy module alone owns their normalization and precedence.
+    $DaughterPacketPolicy->add_count_record($LineOriginal,
+        "line $InputFileLineNumber ($InputFileName)");
   }
   elsif ($InputLine eq "PARTICLEWEIGHTCORRECTIONWINDOWMODE") {
     ($InputLine,$InputComment)=split(' ',$InputComment,2);
@@ -1392,6 +1421,35 @@ ampsConfigLib::ChangeValueOfArray(
 ampsConfigLib::ChangeValueOfArray(
     "int Comet::RadialSimulation::IndividualCorrectionWindowPolicySource\\[PIC::nTotalSpecies\\]",
     \@ResolvedCorrectionSource,"main/RadialSimulation.cpp");
+
+# Stage-6 species selectors resolve to one count for the complete reaction
+# packet.  This happens after database expansion and source reachability, so
+# stable reaction IDs and the derived CHEMICAL_ONLY group are both complete.
+if ($DaughterPacketPolicy->is_enabled()) {
+  die "ChemistryDaughterPacketMode=ON requires ChemistryMode=ON\n"
+      unless chemistryIsEnabled(
+          "$WorkingSourceDirectory/main/CometChemistry.cpp");
+  die "ChemistryDaughterPacketMode=ON requires Dimension=1\n"
+      unless $Dimension==1;
+  die "ChemistryDaughterPacketMode=ON requires ParticleWeightCorrectionMode=ON\n"
+      unless individualParticleWeightCorrectionIsEnabled(
+          "$WorkingSourceDirectory/pic/picGlobal.dfn");
+  die "ChemistryDaughterPacketMode=ON requires ChemistryResidualSampling=BERNOULLI\n"
+      unless $ChemistryResidualSampling eq 'BERNOULLI';
+  die "ChemistryDaughterPacketMode=ON requires ParticleWeightCorrectionWindowMode=ON\n"
+      unless $CorrectionWindowPolicy->is_enabled();
+  die "ChemistryDaughterPacketMode=ON requires RadialMaxPhotochemicalProductsPerReaction\n"
+      unless $RadialMaxPhotochemicalProductsPerReactionIsSet;
+}
+my $ResolvedDaughterPackets=
+    $DaughterPacketPolicy->validate_configuration_and_resolve(
+        reactions=>$ReactionNetwork->packet_policy_reactions(),
+        chemical_only=>$ChemicalReachable,
+        transaction_limit=>$RadialMaxPhotochemicalProductsPerReactionIsSet ?
+            $RadialMaxPhotochemicalProductsPerReaction : 1);
+$DaughterPacketPolicy->write_header(
+    "$WorkingSourceDirectory/main/CometDaughterPacketPolicy.generated.h",
+    $ResolvedDaughterPackets);
 
 ampsConfigLib::ChangeValueOfArray("double Comet::Model::SurfaceProductionRate\\[PIC::nTotalSpecies\\]",\@SurfaceProductionRate,"main/CometModel.cpp");
 ampsConfigLib::ChangeValueOfArray("int Comet::Model::SurfaceDistributionMode\\[PIC::nTotalSpecies\\]",\@SurfaceDistributionMode,"main/CometModel.cpp");

@@ -920,45 +920,128 @@ not be described as either feature.
 
 ## Stage 6: daughter packet splitting
 
-### Objective
+Stage 6 is implemented and its focused compatibility gates are closed for the
+same correction-on DIM1/general-NTC configuration qualified by Stages 4 and
+5. It creates several independent recoil realizations for one selected
+chemical event without changing the represented event rate.
 
-Create several statistically useful trajectories from one minor-product
-cohort while preserving its total individual weight.
+### Input policy and precedence
 
-### Algorithm
+The optional records are:
 
-For a daughter correction `c_d` and requested packet count `N`, create `N`
-particles with corrections summing exactly to `c_d`. Use equal corrections
-unless a documented variance-minimizing allocation is introduced later.
+```text
+ChemistryDaughterPacketMode=on
+ChemistryDaughterPacketMaximum=8
+ChemistryDaughterPacketCount(GLOBAL)=1
+ChemistryDaughterPacketCount(CHEMICAL_ONLY)=2
+ChemistryDaughterPacketCount(SPECIES:C2)=8
+ChemistryDaughterPacketCount(REACTION:H2O_OH_H)=4
+ChemistryDaughterPacketCount(REACTION:C2_2C)=8
+```
 
-For a multi-product dissociation, generate `N` complete reaction packets. In
-each packet, sample one recoil solution and create every stoichiometric
-product from that same solution. Different packets receive independent recoil
-directions. This preserves momentum and excess energy within each packet and
-provides independent velocity information; cloning one velocity `N` times
-does not.
+The mode and maximum are required when packet splitting is enabled. A
+reaction-ID record has highest precedence. Otherwise, the resolver evaluates
+every concrete product and selects the maximum applicable product count; for
+each product, explicit species overrides `CHEMICAL_ONLY`, which overrides the
+global count. This rule handles repeated products and mixed-product reactions
+without relying on generated reaction-array positions.
 
-Packet selection must be input-driven by species, reaction ID, or a generic
-chemical-only group. Enforce a hard packet/transaction limit and include it in
-the chemistry batch capacity calculation.
+Product-free sinks always remain `N=1`. Explicitly targeting a sink is an
+input error even when the requested count is one, because such a selector
+cannot produce a packet. Enabled records that only match zero-rate channels,
+duplicate selectors, unknown species/reactions, nonpositive/nonintegral
+counts, counts above the declared maximum, inactive-mode packet records, and
+any `K*N` transaction above
+`RadialMaxPhotochemicalProductsPerReaction` stop preprocessing. Omitting the
+mode and all packet records is the strict legacy default: generated counts
+are one and production uses the historical one-recoil path.
 
-### Tests
+### Production transaction
 
-- Verify per-packet momentum and energy conservation.
-- Verify that the sum of packet corrections equals the unsplit correction.
-- Compare velocity and density variance for `N=1,2,4,8` over independent
-  seeds.
-- Confirm no change in weighted means as `N` changes.
-- Profile memory and runtime; report the marginal variance reduction per
-  added daughter particle.
+For a selected reaction with `K` concrete stoichiometric products and packet
+count `N`, chemistry reserves and creates exactly `K*N` daughters. Every
+packet calls the existing recoil generator independently and contains all `K`
+products from that one recoil solution. Momentum and excess energy are
+therefore conserved inside each packet; merely cloning one velocity is never
+used as a variance-reduction substitute.
 
-### Exit criteria
+For product `k`, the Stage-4 unsplit correction is
 
-- Packet count is chosen from measured variance/cost, not from agreement with
-  the paper curve.
-- Primary populations remain unchanged.
-- C2 and other selected minor species meet their input statistical target with
-  acceptable buffer headroom.
+```text
+c_k = (W_parent*c_parent/dt_parent)/(W_k/dt_k).
+```
+
+`DaughterPacketPlanner.h` partitions it into `N` positive corrections. The
+first `N-1` receive `c_k/N`, and the last receives the arithmetic remainder in
+production order, so the stored corrections reconstruct `c_k` exactly. The
+planner checks integer overflow, declared packet maximum, `K*N` hard limit,
+and available particle capacity before mutation. Production reuses the parent
+slot once, allocates the remaining `K*N-1` records, preserves position and
+application state, assigns product species/velocity/correction, initializes
+new tracker identities, and marks every committed daughter as already
+processed for the current chemistry stage.
+
+The batch capacity mirrors in `RadialSimulation.cpp` use the same `K*N`
+cardinality for normal chemistry, emergency forecasts, and block-weight
+adaptation. A failed preflight leaves the parent record byte-identical and
+defers the event before RNG-dependent commit. Stage-5 correction windows run
+normally after the fixed packet transaction; packet daughters receive no
+special exemption and can subsequently be kept, rouletted, or split. This is
+why scientific packet policies must be evaluated together with their window
+policy.
+
+### Focused validation
+
+The pure suite is:
+
+```sh
+srcHartley2/tests/run_stage6_daughter_packet_tests.sh
+```
+
+It covers default/off identity, all precedence levels, maximum-across-product
+resolution, repeated products, sink and zero-rate rejection, malformed and
+duplicate records, generated-header integrity, `N=1,2,4,8`, exact correction
+sums, overflow, hard-limit, and capacity rollback.
+
+An initialized Stage-6 build exposes:
+
+```text
+--validate-daughter-packets --chemistry-validation-events N
+```
+
+For every one of the 46 generated neutral reactions, the validator compares
+`N=1,2,4,8` using deterministic global event IDs. It checks all concrete
+products, exact correction reconstruction, packet momentum/energy,
+unchanged weighted velocity/density means, and the expected `1/N` estimator
+variance. Centered online moments are accumulated in extended precision and
+merged with the parallel `(count,mean,M2)` identity, preventing MPI grouping
+roundoff from masquerading as a different event ensemble. A separate real
+`C2_2C -> C+C` transaction checks 16 committed daughters for `N=8`, parent
+slot reuse, list links, processing flags, represented moments, independent
+recoils, and byte-exact capacity rollback.
+
+The accepted full matrix is:
+
+```text
+validation_runs/stage6-daughter-packet-full-20261105-r4
+PASS Stage-6 daughter-packet integrated matrix 1rank=pass 4rank=pass 12rank=pass reactions=46 sinks=23 packet-cases=4 events=200000
+```
+
+The validation policy used global 1, `CHEMICAL_ONLY` 2, species `C2` 8,
+reaction `H2O_OH_H` 4, and reaction `C2_2C` 8, with packet maximum 8 and a
+64-product transaction limit. Broad Stage-5 windows were used only so the
+focused `N=8` trajectories survived to the validator. These are test values,
+not calibrated Halley settings.
+
+### Completion boundary
+
+Stage 6 is closed as an implementation and focused-compatibility stage. It
+does not yet select a production packet count from independent-seed
+variance/cost, prove primary-profile invariance in a transported converged
+run, establish minor-species flux closure, measure buffer headroom, or update
+the Rubin comparison. Those scientific gates remain Stage 9. DIM2/DIM3
+corrected chemistry also remains unsupported even though the resolver and
+pure planner are geometry-neutral.
 
 ## Stage 7: reaction-channel importance sampling
 
@@ -1159,13 +1242,12 @@ manifest. Wait for explicit user approval.
 
 ## Recommended immediate next action
 
-Stage 5 is implemented and focused-tested for its explicitly supported radial
-configuration. Do not start Stage 6 or merge to `master` without a separate
-user decision. First restore and verify the canonical correction-off build,
-run the complete archived Stage 0--5 test orchestrator, and retain the frozen
-Stage-5 1/4/12-rank archive. The pending long Stage-3 scientific matrix remains
-the correction-free science-quality baseline: review its read-only plan, run
-all eight cases, review and explicitly accept the Rubin candidate, and record
-the result. A later Stage-5 science pilot must select windows from measured
-variance/cost and independent-seed closure, never by tuning to the paper
-curve.
+Stage 6 is implemented and focused-tested for its explicitly supported radial
+configuration. Do not start Stage 7 or merge to `master` without a separate
+user decision. The canonical correction-off build has been restored and the
+complete archived Stage 0--6 orchestrator passes. The next scientific action
+is still a transported independent-seed pilot: compare `N=1,2,4,8` using the
+same parent realization and compatible Stage-5 windows, measure variance per
+daughter and buffer/runtime cost, verify primary profiles and flux closure,
+and only then select production packet counts. Never select packet counts or
+windows by tuning to the Rubin curve.

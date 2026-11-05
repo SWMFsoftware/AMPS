@@ -13,7 +13,9 @@
 #include "pic.h"
 #include "src/models/chemical_solver/SystematicResidualAccumulator.h"
 #include "CometChemistry.generated.h"
+#include "CometDaughterPacketPolicy.generated.h"
 #include "CometDiagnostics.h"
+#include "DaughterPacketPlanner.h"
 #include "RadialSimulation.h"
 
 bool Comet::Chemistry::Enabled=false;
@@ -23,6 +25,13 @@ double Comet::Chemistry::HeliocentricDistanceAU=-1.0;
 // leave its continuation behind when ChemistryResidualSampling is parsed.
 int Comet::Chemistry::ResidualSamplingMode=Comet::Chemistry::ResidualSampling::IndependentBernoulli;
 std::uint64_t Comet::Chemistry::ResidualPhaseSeed=1;
+bool Comet::Chemistry::DaughterPacketSplittingEnabled=false;
+long int Comet::Chemistry::MaximumDaughterPacketCount=1;
+
+static_assert(
+    Comet::Chemistry::DaughterPacketGenerated::ReactionCount==
+        Comet::Chemistry::Generated::ReactionCount,
+    "generated daughter-packet policy does not match reaction network");
 
 namespace {
 long int ChemistryProcessedFlagOffset=-1;
@@ -462,6 +471,33 @@ const ChemicalSolver::cReactionNetwork& Comet::Chemistry::GetNetwork() {
   return network;
 }
 
+long int Comet::Chemistry::GetDaughterPacketCount(std::size_t reaction) {
+  if (reaction>=GetNetwork().GetReactionCount()) {
+    std::fprintf(stderr,"daughter-packet reaction index is out of range\n");
+    std::abort();
+  }
+  const long int count=DaughterPacketSplittingEnabled ?
+      DaughterPacketGenerated::PacketCount[reaction] : 1;
+  if (count<1 ||
+      (DaughterPacketSplittingEnabled &&
+       count>MaximumDaughterPacketCount)) {
+    std::fprintf(stderr,
+        "invalid generated daughter-packet count for reaction %zu\n",
+        reaction);
+    std::abort();
+  }
+  return count;
+}
+
+int Comet::Chemistry::GetDaughterPacketPolicySource(std::size_t reaction) {
+  if (reaction>=GetNetwork().GetReactionCount()) {
+    std::fprintf(stderr,"daughter-packet policy index is out of range\n");
+    std::abort();
+  }
+  return DaughterPacketSplittingEnabled ?
+      DaughterPacketGenerated::PolicySource[reaction] : 0;
+}
+
 bool Comet::Chemistry::Validate(std::string *error) {
   if (ResidualSamplingMode!=ResidualSampling::IndependentBernoulli &&
       ResidualSamplingMode!=ResidualSampling::RandomPhaseSystematic) {
@@ -486,6 +522,34 @@ bool Comet::Chemistry::Validate(std::string *error) {
     return false;
   }
 #endif
+  if (DaughterPacketSplittingEnabled) {
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ != _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+    if (error!=NULL)
+      *error="daughter packet splitting requires individual particle corrections";
+    return false;
+#else
+    if (!Enabled) {
+      if (error!=NULL)
+        *error="daughter packet splitting requires comet chemistry";
+      return false;
+    }
+    if (ResidualSamplingMode!=ResidualSampling::IndependentBernoulli) {
+      if (error!=NULL)
+        *error="daughter packet splitting requires Bernoulli chemistry residual mode";
+      return false;
+    }
+    if (MaximumDaughterPacketCount<2) {
+      if (error!=NULL)
+        *error="daughter packet splitting requires a maximum of at least two";
+      return false;
+    }
+    if (!Comet::RadialSimulation::IndividualCorrectionWindowsEnabled) {
+      if (error!=NULL)
+        *error="daughter packet splitting requires Stage-5 correction windows";
+      return false;
+    }
+#endif
+  }
   if (Enabled && (!(HeliocentricDistanceAU>0.0) ||
       !std::isfinite(HeliocentricDistanceAU))) {
     if (error!=NULL)
@@ -499,6 +563,7 @@ bool Comet::Chemistry::Validate(std::string *error) {
   // mass-action reactions remain useful to continuum solvers, but enabling
   // them here would assign a density-dependent cell rate to one particle
   // without the required reactant-pair selection.
+  bool effectivePacketSplit=false;
   if (Enabled) for (std::size_t reaction=0;
       reaction<GetNetwork().GetReactionCount();reaction++) {
     if (!GetNetwork().IsUnitUnimolecular(reaction)) {
@@ -508,7 +573,19 @@ bool Comet::Chemistry::Validate(std::string *error) {
     }
 
     const ChemicalSolver::cReaction &entry=GetNetwork().GetReaction(reaction);
+    const long int packetCount=GetDaughterPacketCount(reaction);
+    // Generated rules may cover a database reaction disabled by a zero rate.
+    // Such a row is deterministic metadata but cannot make packet mode
+    // operational, so it does not satisfy the effective-split startup gate.
+    if (packetCount>1 && GetNetwork().GetRateCoefficient(reaction,0.0,
+        HeliocentricDistanceAU)>0.0) effectivePacketSplit=true;
+    if (entry.ProductCount==0 && packetCount!=1) {
+      if (error!=NULL)
+        *error="a product-free chemistry sink cannot use daughter packets";
+      return false;
+    }
     double reactantMass=0.0,productMass=0.0;
+    long int concreteProductCount=0;
     for (std::size_t reactant=0;reactant<entry.ReactantCount;reactant++) {
       const ChemicalSolver::cStoichiometricTerm &term=
           GetNetwork().GetReactantTerm(reaction,reactant);
@@ -524,7 +601,29 @@ bool Comet::Chemistry::Validate(std::string *error) {
           *error="the PIC comet chemistry executor requires positive integer product coefficients";
         return false;
       }
+      const long int integerCoefficient=static_cast<long int>(
+          std::floor(coefficient+0.5));
+      if (concreteProductCount>LONG_MAX-integerCoefficient) {
+        if (error!=NULL)
+          *error="concrete chemistry product count overflows long int";
+        return false;
+      }
+      concreteProductCount+=integerCoefficient;
       productMass+=coefficient*PIC::MolecularData::GetMass(term.Species);
+    }
+
+    // Repeat the input generator's K*N transaction proof at startup.  This
+    // catches a stale generated packet header, a hand-edited source default,
+    // or a hard-limit change made after preprocessing before any reaction can
+    // partially mutate a particle list.
+    if (concreteProductCount!=0 &&
+        (packetCount>LONG_MAX/concreteProductCount ||
+         packetCount*concreteProductCount>
+             Comet::RadialSimulation::
+                 MaximumPhotochemicalProductsPerReaction)) {
+      if (error!=NULL)
+        *error="daughter packet transaction exceeds the radial hard product limit";
+      return false;
     }
 
     // Product-free ionization entries are neutral sinks. Every neutral
@@ -541,6 +640,12 @@ bool Comet::Chemistry::Validate(std::string *error) {
         *error="a neutral comet chemistry channel does not conserve species mass";
       return false;
     }
+  }
+
+  if (DaughterPacketSplittingEnabled && !effectivePacketSplit) {
+    if (error!=NULL)
+      *error="daughter packet mode has no reaction with packet count above one";
+    return false;
   }
 
   // Build application runtime rates only after the generic network and the
@@ -1030,6 +1135,687 @@ bool Comet::Chemistry::ValidateEnsemble(long int eventsPerReaction) {
   return globalPass!=0;
 }
 
+bool Comet::Chemistry::ValidateDaughterPacketSplitting(
+    long int eventsPerReaction) {
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ != _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+  (void)eventsPerReaction;
+  if (PIC::ThisThread==0)
+    std::fprintf(stderr,
+        "daughter-packet validation requires individual particle corrections\n");
+  return false;
+#else
+  if (!Enabled || !DaughterPacketSplittingEnabled) {
+    if (PIC::ThisThread==0)
+      std::fprintf(stderr,
+          "daughter-packet validation requires enabled Stage-6 chemistry\n");
+    return false;
+  }
+  if (eventsPerReaction<1000) {
+    if (PIC::ThisThread==0)
+      std::fprintf(stderr,
+          "daughter-packet validation requires at least 1000 events per reaction\n");
+    return false;
+  }
+
+  // This validator deliberately exercises the same recoil generator and pure
+  // correction planner used by ProcessParticle, but does not allocate real
+  // particles.  It can therefore compare N=1/2/4/8 at identical physical
+  // event counts without buffer pressure or transport obscuring a packet
+  // error.  The separate transported science pilot remains the test of final
+  // radial density statistics and Stage-5 post-window retention.
+  const long int packetCounts[]={1,2,4,8};
+  constexpr int packetCaseCount=4;
+  const double parentVelocity[3]={431.0,-137.0,59.0};
+  const double parentSpeed2=parentVelocity[0]*parentVelocity[0]+
+      parentVelocity[1]*parentVelocity[1]+
+      parentVelocity[2]*parentVelocity[2];
+  const double launchRadius=5000.0;
+  const double flightTime=1000.0;
+  const double referenceRadius=launchRadius+
+      std::sqrt(parentSpeed2)*flightTime;
+  const double shellHalfWidth=5.0e5;
+  const double shellNormalization=1.0/
+      (4.0*Pi*referenceRadius*referenceRadius*Pi*shellHalfWidth);
+  const ChemicalSolver::cReactionNetwork &network=GetNetwork();
+
+  struct cEstimatorResult {
+    double VelocityMean=0.0,VelocityVariance=0.0;
+    double DensityMean=0.0,DensityVariance=0.0;
+  };
+
+  bool allPass=true;
+  int testedReactionCount=0,sinkReactionCount=0;
+  if (PIC::ThisThread==0)
+    std::printf("Daughter-packet validation: events/reaction=%ld ranks=%d "
+        "packets=1,2,4,8 deterministic-global-events=on\n",
+        eventsPerReaction,PIC::nTotalThreads);
+
+  for (std::size_t reactionIndex=0;
+       reactionIndex<network.GetReactionCount();reactionIndex++) {
+    const ChemicalSolver::cReaction &reaction=
+        network.GetReaction(reactionIndex);
+    if (reaction.ProductCount==0) {
+      sinkReactionCount++;
+      if (GetDaughterPacketCount(reactionIndex)!=1) allPass=false;
+      continue;
+    }
+
+    std::vector<int> products;
+    for (std::size_t term=0;term<reaction.ProductCount;term++) {
+      const ChemicalSolver::cStoichiometricTerm &product=
+          network.GetProductTerm(reactionIndex,term);
+      const long int coefficient=static_cast<long int>(
+          std::floor(product.Coefficient+0.5));
+      for (long int copy=0;copy<coefficient;copy++)
+        products.push_back(product.Species);
+    }
+    if (products.empty()) {
+      allPass=false;
+      continue;
+    }
+
+    std::vector<cEstimatorResult> result(packetCaseCount);
+    bool reactionPass=true;
+    for (int packetCase=0;packetCase<packetCaseCount;packetCase++) {
+      const long int packetCount=packetCounts[packetCase];
+      const std::size_t transactionCount=products.size()*packetCount;
+      if (packetCount>MaximumDaughterPacketCount ||
+          transactionCount>static_cast<std::size_t>(
+              Comet::RadialSimulation::
+                  MaximumPhotochemicalProductsPerReaction)) {
+        if (PIC::ThisThread==0)
+          std::printf("FAIL daughter-packet reaction=%s packets=%ld "
+              "reason=validation-case-exceeds-configured-hard-limit\n",
+              reaction.Id,packetCount);
+        reactionPass=false;
+        continue;
+      }
+
+      // The strict checker compares the same global event ensemble at 1, 4,
+      // and 12 ranks.  Maintain centered online moments in extended precision
+      // instead of subtracting two raw O(N*mean^2) moments.  The latter loses
+      // significant digits for the ~1e-21 density proxy and makes harmless
+      // MPI regrouping look like a different sample set.  These statistics
+      // are validator bookkeeping only; production chemistry is unchanged.
+      long double localVelocityMean=0.0L,localVelocityM2=0.0L;
+      long double localDensityMean=0.0L,localDensityM2=0.0L;
+      double localMaximumMomentumError=0.0;
+      double localMaximumEnergyError=0.0;
+      int localCorrectionFailure=0,localIndependentSample=0;
+      long long localEventCount=0;
+
+      MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+      const double start=MPI_Wtime();
+      // Strided global event IDs plus a seed derived from the ID make the
+      // physical sample set invariant under 1/4/12-rank decomposition.  This
+      // is a validator-only RNG discipline; production retains its configured
+      // seed+rank event streams.
+      for (long int event=PIC::ThisThread;event<eventsPerReaction;
+           event+=PIC::nTotalThreads) {
+        const unsigned long long seedValue=
+            UINT64_C(104729)+UINT64_C(1000003)*reactionIndex+
+            UINT64_C(10007)*packetCase+UINT64_C(7919)*event;
+        rnd_seed(static_cast<int>(seedValue%UINT64_C(2000000000))+1);
+
+        // Vary the unsplit carrier through a wide, deterministic range.  The
+        // estimator below divides by it again, so this tests exact correction
+        // partitioning without changing the physical packet distribution.
+        static const double correctionCycle[]={0.0625,0.25,1.0,4.0,16.0};
+        std::vector<double> unsplit(products.size());
+        for (std::size_t product=0;product<products.size();product++)
+          unsplit[product]=correctionCycle[
+              (event+static_cast<long int>(product)+
+               static_cast<long int>(reactionIndex))%5];
+
+        Comet::DaughterPacketPlanner::cPlan plan;
+        try {
+          plan=Comet::DaughterPacketPlanner::BuildPlan(unsplit,
+              static_cast<std::size_t>(packetCount),
+              static_cast<std::size_t>(MaximumDaughterPacketCount),
+              static_cast<std::size_t>(Comet::RadialSimulation::
+                  MaximumPhotochemicalProductsPerReaction));
+        }
+        catch (const std::exception &exception) {
+          std::fprintf(stderr,
+              "daughter-packet validation planner failed for %s: %s\n",
+              reaction.Id,exception.what());
+          localCorrectionFailure=1;
+          continue;
+        }
+
+        for (std::size_t product=0;product<products.size();product++) {
+          double reconstructed=0.0;
+          for (long int packet=0;packet<packetCount;packet++)
+            reconstructed+=plan.Correction(packet,product);
+          if (reconstructed!=unsplit[product])
+            localCorrectionFailure=1;
+        }
+
+        double velocityEstimator=0.0,densityEstimator=0.0;
+        double firstPacketVelocity=0.0;
+        for (long int packet=0;packet<packetCount;packet++) {
+          std::vector<double> velocity;
+          GenerateProductVelocities(products,parentVelocity,
+              reaction.ExcessEnergyJ,velocity);
+
+          double momentum[3]={0.0,0.0,0.0};
+          double energy=0.0,totalMass=0.0;
+          for (std::size_t product=0;product<products.size();product++) {
+            const double mass=PIC::MolecularData::GetMass(products[product]);
+            const double *v=velocity.data()+3*product;
+            totalMass+=mass;
+            for (int idim=0;idim<3;idim++)
+              momentum[idim]+=mass*v[idim];
+            energy+=0.5*mass*(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
+          }
+          double momentumError2=0.0;
+          for (int idim=0;idim<3;idim++) {
+            const double error=
+                momentum[idim]-totalMass*parentVelocity[idim];
+            momentumError2+=error*error;
+          }
+          localMaximumMomentumError=std::max(localMaximumMomentumError,
+              std::sqrt(momentumError2)/std::max(
+                  totalMass*std::sqrt(parentSpeed2),
+                  std::numeric_limits<double>::min()));
+          const double expectedEnergy=
+              0.5*totalMass*parentSpeed2+reaction.ExcessEnergyJ;
+          localMaximumEnergyError=std::max(localMaximumEnergyError,
+              std::fabs(energy-expectedEnergy)/std::max(expectedEnergy,
+                  std::numeric_limits<double>::min()));
+
+          // Give every concrete product nonzero representation in the two
+          // estimators. Velocity uses deterministic index weights 1..K; an
+          // equal-weight average would collapse to the conserved center-of-
+          // mass velocity for equal-mass reactions such as C2 -> C+C and
+          // falsely report zero recoil variance. Density uses the same index
+          // weights for a consistent all-column test. Each term also uses its
+          // own exact correction share, so a lost/reordered planner column
+          // changes the estimator. The radial-shell kernel remains a focused
+          // density proxy, not a substitute for transported comet output.
+          const double productWeightSum=0.5*products.size()*
+              (products.size()+1.0);
+          for (std::size_t product=0;product<products.size();product++) {
+            const double *selectedVelocity=velocity.data()+3*product;
+            const double share=(product+1.0)/productWeightSum*
+                plan.Correction(packet,product)/unsplit[product];
+            velocityEstimator+=share*selectedVelocity[0];
+            const double finalX=launchRadius+
+                selectedVelocity[0]*flightTime;
+            const double finalY=selectedVelocity[1]*flightTime;
+            const double finalZ=selectedVelocity[2]*flightTime;
+            const double radius=std::sqrt(finalX*finalX+finalY*finalY+
+                finalZ*finalZ);
+            const double normalizedOffset=
+                (radius-referenceRadius)/shellHalfWidth;
+            const double shellKernel=shellNormalization/
+                (1.0+normalizedOffset*normalizedOffset);
+            densityEstimator+=share*shellKernel;
+          }
+          if (packet==0) firstPacketVelocity=velocity[0];
+          else if (velocity[0]!=firstPacketVelocity)
+            localIndependentSample=1;
+        }
+
+        localEventCount++;
+        const long double sampleCount=localEventCount;
+        const long double velocityValue=velocityEstimator;
+        const long double velocityDelta=velocityValue-localVelocityMean;
+        localVelocityMean+=velocityDelta/sampleCount;
+        localVelocityM2+=velocityDelta*(velocityValue-localVelocityMean);
+        const long double densityValue=densityEstimator;
+        const long double densityDelta=densityValue-localDensityMean;
+        localDensityMean+=densityDelta/sampleCount;
+        localDensityM2+=densityDelta*(densityValue-localDensityMean);
+      }
+      MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+      const double localWall=MPI_Wtime()-start;
+
+      long long globalEventCount=0;
+      MPI_Allreduce(&localEventCount,&globalEventCount,1,MPI_LONG_LONG,
+          MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+      // Gather and combine (count,mean,M2) tuples with the parallel centered-
+      // moment identity.  A plain MPI_SUM cannot combine centered moments.
+      // Rank-order merging on the root plus a broadcast also gives every rank
+      // the identical finalized validator statistic.
+      long double localMoments[4]={localVelocityMean,localVelocityM2,
+          localDensityMean,localDensityM2};
+      std::vector<long double> gatheredMoments;
+      std::vector<long long> gatheredCounts;
+      if (PIC::ThisThread==0) {
+        gatheredMoments.resize(4*PIC::nTotalThreads);
+        gatheredCounts.resize(PIC::nTotalThreads);
+      }
+      MPI_Gather(localMoments,4,MPI_LONG_DOUBLE,
+          PIC::ThisThread==0 ? gatheredMoments.data() : NULL,4,
+          MPI_LONG_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
+      MPI_Gather(&localEventCount,1,MPI_LONG_LONG,
+          PIC::ThisThread==0 ? gatheredCounts.data() : NULL,1,
+          MPI_LONG_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+      long double globalMoments[4]={0.0L,0.0L,0.0L,0.0L};
+      if (PIC::ThisThread==0) {
+        long long accumulatedCount=0;
+        for (int rank=0;rank<PIC::nTotalThreads;rank++) {
+          const long long rankCount=gatheredCounts[rank];
+          if (rankCount<=0) continue;
+          if (accumulatedCount==0) {
+            for (int field=0;field<4;field++)
+              globalMoments[field]=gatheredMoments[4*rank+field];
+            accumulatedCount=rankCount;
+            continue;
+          }
+          const long double oldCount=accumulatedCount;
+          const long double addedCount=rankCount;
+          const long double mergedCount=oldCount+addedCount;
+          for (int estimator=0;estimator<2;estimator++) {
+            const int meanIndex=2*estimator;
+            const int m2Index=meanIndex+1;
+            const long double addedMean=
+                gatheredMoments[4*rank+meanIndex];
+            const long double delta=addedMean-globalMoments[meanIndex];
+            globalMoments[m2Index]+=
+                gatheredMoments[4*rank+m2Index]+delta*delta*
+                oldCount*addedCount/mergedCount;
+            globalMoments[meanIndex]+=delta*addedCount/mergedCount;
+          }
+          accumulatedCount+=rankCount;
+        }
+      }
+      MPI_Bcast(globalMoments,4,MPI_LONG_DOUBLE,0,
+          MPI_GLOBAL_COMMUNICATOR);
+      double globalMaximumMomentumError=0.0;
+      double globalMaximumEnergyError=0.0,globalWall=0.0;
+      MPI_Allreduce(&localMaximumMomentumError,
+          &globalMaximumMomentumError,1,MPI_DOUBLE,MPI_MAX,
+          MPI_GLOBAL_COMMUNICATOR);
+      MPI_Allreduce(&localMaximumEnergyError,&globalMaximumEnergyError,1,
+          MPI_DOUBLE,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+      MPI_Allreduce(&localWall,&globalWall,1,MPI_DOUBLE,MPI_MAX,
+          MPI_GLOBAL_COMMUNICATOR);
+      int globalCorrectionFailure=0,globalIndependentSample=0;
+      MPI_Allreduce(&localCorrectionFailure,&globalCorrectionFailure,1,
+          MPI_INT,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+      MPI_Allreduce(&localIndependentSample,&globalIndependentSample,1,
+          MPI_INT,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+
+      if (globalEventCount!=eventsPerReaction || globalEventCount<=1) {
+        if (PIC::ThisThread==0)
+          std::printf("FAIL daughter-packet reaction=%s packets=%ld "
+              "reason=incomplete-global-event-count actual=%lld expected=%ld\n",
+              reaction.Id,packetCount,globalEventCount,eventsPerReaction);
+        reactionPass=false;
+        continue;
+      }
+      const long double denominator=static_cast<long double>(globalEventCount);
+      result[packetCase].VelocityMean=static_cast<double>(globalMoments[0]);
+      result[packetCase].DensityMean=static_cast<double>(globalMoments[2]);
+      result[packetCase].VelocityVariance=static_cast<double>(std::max(0.0L,
+          globalMoments[1]/(denominator-1.0L)));
+      result[packetCase].DensityVariance=static_cast<double>(std::max(0.0L,
+          globalMoments[3]/(denominator-1.0L)));
+
+      bool packetPass=globalCorrectionFailure==0 &&
+          globalMaximumMomentumError<=1.0e-11 &&
+          globalMaximumEnergyError<=1.0e-11;
+      if (packetCount>1 && reaction.ExcessEnergyJ>0.0)
+        packetPass=globalIndependentSample!=0 && packetPass;
+
+      if (packetCase>0) {
+        const cEstimatorResult &baseline=result[0];
+        const double velocityStandardError=std::sqrt(
+            (baseline.VelocityVariance+result[packetCase].VelocityVariance)/
+            denominator);
+        const double densityStandardError=std::sqrt(
+            (baseline.DensityVariance+result[packetCase].DensityVariance)/
+            denominator);
+        const double velocityAllowed=std::max(8.0*velocityStandardError,
+            4096.0*std::numeric_limits<double>::epsilon()*
+                std::max(1.0,std::fabs(baseline.VelocityMean)));
+        const double densityAllowed=std::max(8.0*densityStandardError,
+            4096.0*std::numeric_limits<double>::epsilon()*
+                std::max(std::fabs(baseline.DensityMean),
+                    std::numeric_limits<double>::min()));
+        packetPass=std::fabs(result[packetCase].VelocityMean-
+            baseline.VelocityMean)<=velocityAllowed && packetPass;
+        packetPass=std::fabs(result[packetCase].DensityMean-
+            baseline.DensityMean)<=densityAllowed && packetPass;
+
+        // Independent packet averaging has theoretical event-estimator
+        // variance Var(X)/N.  Allow generous finite-sample margins while
+        // still detecting cloned velocities (scaled ratio near N) or a lost
+        // correction factor (mean and variance both wrong).
+        if (baseline.VelocityVariance>0.0) {
+          const double scaled=result[packetCase].VelocityVariance*
+              packetCount/baseline.VelocityVariance;
+          packetPass=(scaled>=0.5 && scaled<=1.6) && packetPass;
+        }
+        if (baseline.DensityVariance>0.0) {
+          const double scaled=result[packetCase].DensityVariance*
+              packetCount/baseline.DensityVariance;
+          packetPass=(scaled>=0.5 && scaled<=1.6) && packetPass;
+        }
+      }
+
+      reactionPass=packetPass && reactionPass;
+      if (PIC::ThisThread==0) {
+        const double velocityScaled=(packetCase==0 ||
+            result[0].VelocityVariance==0.0) ? 1.0 :
+            result[packetCase].VelocityVariance*packetCount/
+                result[0].VelocityVariance;
+        const double densityScaled=(packetCase==0 ||
+            result[0].DensityVariance==0.0) ? 1.0 :
+            result[packetCase].DensityVariance*packetCount/
+                result[0].DensityVariance;
+        static const char *sourceNames[]={"implicit","global",
+            "chemical-only","species","reaction"};
+        const int policySource=GetDaughterPacketPolicySource(reactionIndex);
+        const char *sourceName=(policySource>=0 && policySource<5) ?
+            sourceNames[policySource] : "invalid";
+        std::printf("%s daughter-packet reaction=%s packets=%ld products=%zu "
+            "configured=%ld source=%d selector=%s events=%lld daughters=%llu "
+            // Full binary64 round-trip precision is part of the validator
+            // log interface.  The independent checker compares deterministic
+            // global-event ensembles across MPI decompositions; nine printed
+            // digits can straddle a decimal rounding boundary even when the
+            // underlying reductions differ only at machine precision.
+            "velocity-mean=%.17e velocity-variance=%.17e "
+            "velocity-scaled=%.17e density-mean=%.17e "
+            "density-variance=%.17e density-scaled=%.17e "
+            "momentum-error=%.3e energy-error=%.3e wall=%.6g\n",
+            packetPass ? "PASS" : "FAIL",reaction.Id,packetCount,
+            products.size(),GetDaughterPacketCount(reactionIndex),
+            policySource,sourceName,
+            globalEventCount,
+            static_cast<unsigned long long>(globalEventCount)*
+                transactionCount,result[packetCase].VelocityMean,
+            result[packetCase].VelocityVariance,velocityScaled,
+            result[packetCase].DensityMean,
+            result[packetCase].DensityVariance,densityScaled,
+            globalMaximumMomentumError,globalMaximumEnergyError,globalWall);
+      }
+    }
+
+    testedReactionCount++;
+    allPass=reactionPass && allPass;
+  }
+
+  // Exercise the real particle transaction, not only its pure planner.  The
+  // Rubin network's C2_2C channel is especially useful: it has a repeated
+  // concrete product, the staged species policy resolves it to N=8, and its
+  // only competing C2 channel is a sink.  A very large temporary parent
+  // timestep makes one of those channels occur with probability effectively
+  // one; deterministic seed search locates the neutral channel without
+  // modifying physical rates or adding a validator-only executor hook.
+  PIC::DomainBlockDecomposition::UpdateBlockTable();
+  bool productionPass=PIC::DomainBlockDecomposition::nLocalBlocks>0 &&
+      PIC::DomainBlockDecomposition::BlockTable[0]!=NULL &&
+      PIC::DomainBlockDecomposition::BlockTable[0]->block!=NULL;
+  long int productionCount=0,parentReuseCount=0,processedCount=0;
+  long int linkCheckCount=0,rollbackCount=0,seedAttempts=0;
+  double maximumCorrectionError=0.0;
+  double maximumRepresentedMomentumError=0.0;
+  double maximumRepresentedEnergyError=0.0;
+  if (productionPass) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=
+        PIC::DomainBlockDecomposition::BlockTable[0];
+    int c2Species=-1,cSpecies=-1;
+    for (int species=0;species<PIC::nTotalSpecies;species++) {
+      char symbol[_MAX_STRING_LENGTH_PIC_];
+      PIC::MolecularData::GetChemSymbol(symbol,species);
+      if (std::strcmp(symbol,"C2")==0) c2Species=species;
+      if (std::strcmp(symbol,"C")==0) cSpecies=species;
+    }
+    std::size_t c2Reaction=network.GetReactionCount();
+    for (std::size_t reaction=0;reaction<network.GetReactionCount();reaction++)
+      if (std::strcmp(network.GetReaction(reaction).Id,"C2_2C")==0)
+        c2Reaction=reaction;
+    productionPass=c2Species>=0 && cSpecies>=0 &&
+        c2Reaction<network.GetReactionCount() &&
+        GetDaughterPacketCount(c2Reaction)==8;
+
+    const double validationVelocity[3]={431.0,-137.0,59.0};
+    const double cellWidth=(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_;
+    const double validationPosition[3]={
+        node->xmin[0]+0.5*cellWidth,0.0,0.0};
+    auto seedParent=[&]() -> long int {
+      long int &first=node->block->FirstCellParticleTable[0];
+      const long int ptr=PIC::ParticleBuffer::GetNewParticle(first);
+      PIC::ParticleBuffer::byte *data=
+          PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+      PIC::ParticleBuffer::SetX(const_cast<double*>(validationPosition),data);
+      PIC::ParticleBuffer::SetV(const_cast<double*>(validationVelocity),data);
+      PIC::ParticleBuffer::SetI(c2Species,data);
+      PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,data);
+#if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
+      PIC::IDF::InitRotTemp(180.0,data);
+      PIC::IDF::InitVibTemp(180.0,data);
+#endif
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+      PIC::Mover::SetLocalTimeStepRemainderFraction(0.0,data);
+#endif
+      return ptr;
+    };
+    auto detachAndProcess=[&](long int ptr,int seed) -> bool {
+      long int &first=node->block->FirstCellParticleTable[0];
+      first=-1;
+      PIC::ParticleBuffer::SetPrev(-1,ptr);
+      PIC::ParticleBuffer::SetNext(-1,ptr);
+      rnd_seed(seed);
+      return ProcessParticle(ptr,first,node);
+    };
+
+    const double originalTimeStep=productionPass ?
+        node->block->GetLocalTimeStep(c2Species) : 1.0;
+    const double forcedTimeStep=1.0e12;
+    if (!(originalTimeStep>0.0) || !std::isfinite(originalTimeStep))
+      productionPass=false;
+    int acceptedSeed=-1;
+    long int acceptedParentPointer=-1;
+    bool timeStepChanged=false;
+    if (productionPass) {
+      node->block->SetLocalTimeStep(forcedTimeStep,c2Species);
+      timeStepChanged=true;
+      for (int trial=0;trial<256 && acceptedSeed<0;trial++) {
+        PIC::ParticleBuffer::DeleteAllParticles();
+        const long int ptr=seedParent();
+        BeginBatchedModel();
+        const int seed=1900001+7919*trial+PIC::ThisThread;
+        const bool accepted=detachAndProcess(ptr,seed);
+        seedAttempts=trial+1;
+        if (accepted && PIC::ParticleBuffer::NAllPart==16) {
+          acceptedSeed=seed;
+          acceptedParentPointer=ptr;
+        }
+      }
+      productionPass=acceptedSeed>=0;
+    }
+
+    if (productionPass) {
+      // GetNewParticle(first) head-inserts every allocated daughter.  Thus the
+      // two products of each complete packet remain adjacent, in reverse
+      // packet/product commit order; the reused parent is the final tail.
+      std::vector<long int> particles;
+      bool listLinksPass=true;
+      long int previous=-1;
+      for (long int ptr=node->block->FirstCellParticleTable[0];ptr!=-1;
+           ptr=PIC::ParticleBuffer::GetNext(ptr)) {
+        particles.push_back(ptr);
+        if (PIC::ParticleBuffer::GetPrev(ptr)!=previous)
+          listLinksPass=false;
+        previous=ptr;
+      }
+      productionCount=static_cast<long int>(particles.size());
+      productionPass=productionCount==16 && productionPass;
+      const double targetCarrier=node->block->GetLocalParticleWeight(cSpecies)/
+          node->block->GetLocalTimeStep(cSpecies);
+      const double parentCarrier=
+          node->block->GetLocalParticleWeight(c2Species)/forcedTimeStep;
+      const double unsplitCorrection=parentCarrier/targetCarrier;
+      double correctionSum=0.0;
+      const double carbonMass=PIC::MolecularData::GetMass(cSpecies);
+      const double parentSpeed2=validationVelocity[0]*validationVelocity[0]+
+          validationVelocity[1]*validationVelocity[1]+
+          validationVelocity[2]*validationVelocity[2];
+      const double packetMolecularEnergy=carbonMass*parentSpeed2+
+          network.GetReaction(c2Reaction).ExcessEnergyJ;
+      double firstPacketVx=0.0;
+      bool independentPackets=false;
+      for (std::size_t index=0;index<particles.size();index++) {
+        const long int ptr=particles[index];
+        PIC::ParticleBuffer::byte *data=
+            PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+        if (PIC::ParticleBuffer::GetI(data)!=cSpecies)
+          productionPass=false;
+        if (!IsBatchedParticleEligible(ptr)) processedCount++;
+        if (ptr==acceptedParentPointer) parentReuseCount++;
+        double position[3];
+        PIC::ParticleBuffer::GetX(position,data);
+        // GetX() only guarantees coordinates compiled into this application.
+        // In the radial DIM=1 build, the inactive stack slots are deliberately
+        // unspecified and therefore must not participate in the transaction
+        // identity check.  The production mover and chemistry both operate on
+        // exactly DIM active coordinates.
+        for (int idim=0;idim<DIM;idim++)
+          if (position[idim]!=validationPosition[idim]) productionPass=false;
+        correctionSum+=
+            PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data);
+      }
+      for (std::size_t packet=0;packet<particles.size()/2;packet++) {
+        double representedRate[2],velocity[2][3];
+        for (int product=0;product<2;product++) {
+          PIC::ParticleBuffer::byte *data=
+              PIC::ParticleBuffer::GetParticleDataPointer(
+                  particles[2*packet+product]);
+          representedRate[product]=targetCarrier*
+              PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data);
+          PIC::ParticleBuffer::GetV(velocity[product],data);
+        }
+        const double rateScale=std::max(representedRate[0],
+            std::numeric_limits<double>::min());
+        maximumCorrectionError=std::max(maximumCorrectionError,
+            std::fabs(representedRate[0]-representedRate[1])/rateScale);
+        double representedMomentumError2=0.0;
+        for (int idim=0;idim<3;idim++) {
+          const double represented=carbonMass*(
+              representedRate[0]*velocity[0][idim]+
+              representedRate[1]*velocity[1][idim]);
+          const double expected=carbonMass*(representedRate[0]+
+              representedRate[1])*validationVelocity[idim];
+          const double error=represented-expected;
+          representedMomentumError2+=error*error;
+        }
+        const double momentumScale=carbonMass*(representedRate[0]+
+            representedRate[1])*std::sqrt(parentSpeed2);
+        maximumRepresentedMomentumError=std::max(
+            maximumRepresentedMomentumError,
+            std::sqrt(representedMomentumError2)/std::max(momentumScale,
+                std::numeric_limits<double>::min()));
+        double representedEnergy=0.0;
+        for (int product=0;product<2;product++)
+          representedEnergy+=0.5*carbonMass*representedRate[product]*(
+              velocity[product][0]*velocity[product][0]+
+              velocity[product][1]*velocity[product][1]+
+              velocity[product][2]*velocity[product][2]);
+        const double representedEnergyExpected=0.5*
+            (representedRate[0]+representedRate[1])*packetMolecularEnergy;
+        maximumRepresentedEnergyError=std::max(
+            maximumRepresentedEnergyError,
+            std::fabs(representedEnergy-representedEnergyExpected)/
+                std::max(representedEnergyExpected,
+                    std::numeric_limits<double>::min()));
+        if (packet==0) firstPacketVx=velocity[0][0];
+        else if (velocity[0][0]!=firstPacketVx) independentPackets=true;
+      }
+      maximumCorrectionError=std::max(maximumCorrectionError,
+          std::fabs(correctionSum-2.0*unsplitCorrection)/
+              (2.0*unsplitCorrection));
+      // Report the list invariant independently of the physical transaction
+      // checks.  This keeps a future velocity/correction failure from being
+      // mislabeled as a particle-list corruption in the strict log parser.
+      linkCheckCount=(listLinksPass && particles.size()==16) ? 1 : 0;
+      productionPass=processedCount==16 && parentReuseCount==1 &&
+          linkCheckCount==1 &&
+          independentPackets && maximumCorrectionError<=1.0e-12 &&
+          maximumRepresentedMomentumError<=1.0e-11 &&
+          maximumRepresentedEnergyError<=1.0e-11 && productionPass;
+
+      // Repeat the identical selected event with a deliberately reduced
+      // logical capacity. MaxNPart is restored before any allocation/deletion;
+      // the production preflight must return false, retain the one parent,
+      // and leave every particle byte unchanged. Controller-only eligible and
+      // allocation-deferral diagnostics are intentionally allowed to change.
+      PIC::ParticleBuffer::DeleteAllParticles();
+      const long int rollbackParent=seedParent();
+      BeginBatchedModel();
+      std::vector<PIC::ParticleBuffer::byte> before(
+          PIC::ParticleBuffer::ParticleDataLength);
+      std::memcpy(before.data(),
+          PIC::ParticleBuffer::GetParticleDataPointer(rollbackParent),
+          PIC::ParticleBuffer::ParticleDataLength);
+      const long int originalMaximum=PIC::ParticleBuffer::MaxNPart;
+      PIC::ParticleBuffer::MaxNPart=16;
+      const bool rollbackAccepted=
+          detachAndProcess(rollbackParent,acceptedSeed);
+      PIC::ParticleBuffer::MaxNPart=originalMaximum;
+      const long int rollbackFirst=
+          node->block->FirstCellParticleTable[0];
+      const bool rollbackBytes=rollbackFirst==rollbackParent &&
+          PIC::ParticleBuffer::NAllPart==1 &&
+          std::memcmp(before.data(),
+              PIC::ParticleBuffer::GetParticleDataPointer(rollbackParent),
+              PIC::ParticleBuffer::ParticleDataLength)==0;
+      if (!rollbackAccepted && rollbackBytes) rollbackCount=1;
+      else productionPass=false;
+    }
+
+    if (timeStepChanged)
+      node->block->SetLocalTimeStep(originalTimeStep,c2Species);
+    PIC::ParticleBuffer::DeleteAllParticles();
+  }
+
+  int localProductionPass=productionPass ? 1 : 0;
+  int globalProductionPass=0;
+  MPI_Allreduce(&localProductionPass,&globalProductionPass,1,MPI_INT,MPI_MIN,
+      MPI_GLOBAL_COMMUNICATOR);
+  long int localProductionCounts[6]={productionCount,parentReuseCount,
+      processedCount,linkCheckCount,rollbackCount,seedAttempts};
+  long int globalProductionCounts[6]={};
+  MPI_Allreduce(localProductionCounts,globalProductionCounts,5,MPI_LONG,
+      MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(localProductionCounts+5,globalProductionCounts+5,1,MPI_LONG,
+      MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+  double localProductionErrors[3]={maximumCorrectionError,
+      maximumRepresentedMomentumError,maximumRepresentedEnergyError};
+  double globalProductionErrors[3]={};
+  MPI_Allreduce(localProductionErrors,globalProductionErrors,3,MPI_DOUBLE,
+      MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+  if (PIC::ThisThread==0)
+    std::printf("%s daughter-packet production-transaction ranks=%d "
+        "reaction=C2_2C packets=8 products=2 emitted=%ld reused=%ld "
+        "processed=%ld link-checks=%ld capacity-rollbacks=%ld "
+        "correction-error=%.3e represented-momentum=%.3e "
+        "represented-energy=%.3e max-seed-attempts=%ld\n",
+        globalProductionPass ? "PASS" : "FAIL",PIC::nTotalThreads,
+        globalProductionCounts[0],globalProductionCounts[1],
+        globalProductionCounts[2],globalProductionCounts[3],
+        globalProductionCounts[4],globalProductionErrors[0],
+        globalProductionErrors[1],globalProductionErrors[2],
+        globalProductionCounts[5]);
+  allPass=globalProductionPass!=0 && allPass;
+
+  allPass=testedReactionCount>0 && allPass;
+  int localPass=allPass ? 1 : 0,globalPass=0;
+  MPI_Allreduce(&localPass,&globalPass,1,MPI_INT,MPI_MIN,
+      MPI_GLOBAL_COMMUNICATOR);
+  if (PIC::ThisThread==0)
+    std::printf("Daughter-packet validation result: %s "
+        "neutral-reactions=%d sink-reactions=%d packet-cases=%d\n",
+        globalPass ? "PASS" : "FAIL",testedReactionCount,
+        sinkReactionCount,packetCaseCount);
+  return globalPass!=0;
+#endif
+}
+
 void Comet::Chemistry::BeginBatchedModel() {
   LocalChemistryAllocationPressure=false;
 
@@ -1183,6 +1969,7 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
     }
   }
   const ChemicalSolver::cReaction &reaction=network.GetReaction(selected);
+  const long int reactionPacketCount=GetDaughterPacketCount(selected);
 
   // Expand integer stoichiometric coefficients into concrete daughter
   // particles. A zero-product channel is a photoionization loss from this
@@ -1203,8 +1990,17 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
   PIC::ParticleBuffer::GetX(xParent,parentData);
   PIC::ParticleBuffer::GetV(vParent,parentData);
   std::vector<double> productVelocity;
-  GenerateProductVelocities(productSpecies,vParent,reaction.ExcessEnergyJ,
-      productVelocity);
+  if (reactionPacketCount==1) {
+    // Compatibility boundary: before Stage 6, one recoil solution was drawn
+    // here, before correction-off residual allocation and before capacity
+    // preflight. Preserve that call position exactly whenever packet mode is
+    // disabled, including the historical random consumption of a transaction
+    // that is later deferred. An explicit Stage-6 N=1 suppression uses this
+    // same identity path. Only N>1 has a new random-stream contract and waits
+    // until acceptance before drawing its independent solutions.
+    GenerateProductVelocities(productSpecies,vParent,reaction.ExcessEnergyJ,
+        productVelocity);
+  }
 
 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
   const double parentPhysicalWeight=
@@ -1230,6 +2026,8 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
   // parent and bitwise-identical phases are retried after the collective batch
   // checkpoint creates headroom.
   std::vector<long int> daughterMultiplicity(productSpecies.size(),0);
+  std::vector<double> unsplitDaughterCorrection(productSpecies.size(),0.0);
+  Comet::DaughterPacketPlanner::cPlan daughterPacketPlan;
   std::vector<double> daughterNextPhase(productSpecies.size(),0.0);
   std::vector<unsigned char> daughterPhaseActive(productSpecies.size(),0);
   double *residualBlockData=NULL;
@@ -1265,7 +2063,12 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
     }
 
 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
-    daughterMultiplicity[product]=1;
+    // Every packet contains the complete concrete product list.  Store N as
+    // the per-product multiplicity for diagnostics/capacity, while the pure
+    // planner below divides each exact unsplit correction across packets.
+    daughterMultiplicity[product]=reactionPacketCount;
+    unsplitDaughterCorrection[product]=
+        parentPhysicalWeight*productTimeStep/(baseWeight*timeStep);
 #else
     if (ResidualSamplingMode==ResidualSampling::RandomPhaseSystematic) {
       namespace Accumulator=
@@ -1311,6 +2114,31 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
     }
     totalDaughters+=daughterMultiplicity[product];
   }
+
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+  try {
+    daughterPacketPlan=Comet::DaughterPacketPlanner::BuildPlan(
+        unsplitDaughterCorrection,
+        static_cast<std::size_t>(reactionPacketCount),
+        static_cast<std::size_t>(
+            std::max<long int>(1,MaximumDaughterPacketCount)),
+        static_cast<std::size_t>(Comet::RadialSimulation::
+            MaximumPhotochemicalProductsPerReaction));
+  }
+  catch (const std::exception &exception) {
+    std::fprintf(stderr,
+        "invalid daughter-packet plan for reaction %s: %s\n",
+        reaction.Id,exception.what());
+    std::abort();
+  }
+  if (daughterPacketPlan.TotalDaughterCount!=
+      static_cast<std::size_t>(totalDaughters)) {
+    std::fprintf(stderr,
+        "daughter-packet transaction count disagrees with chemistry allocation for reaction %s\n",
+        reaction.Id);
+    std::abort();
+  }
+#endif
 
   // RadialMaxPhotochemicalProductsPerReaction is a hard actual allocation
   // limit, not merely an expectation.  Sampling-break carrier planning is
@@ -1371,9 +2199,6 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
       cTermDiagnostic &term=terms[termIndex];
       const int species=productSpecies[product];
       const double mass=PIC::MolecularData::GetMass(species);
-      const double *velocity=productVelocity.data()+3*product;
-      const double speedSquared=velocity[0]*velocity[0]+
-          velocity[1]*velocity[1]+velocity[2]*velocity[2];
       const std::uint64_t multiplicity=static_cast<std::uint64_t>(
           daughterMultiplicity[product]);
       term.Multiplicity+=multiplicity;
@@ -1386,16 +2211,49 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
         else term.Allocated+=multiplicity;
       }
 
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      // Each packet is an independently oriented reaction solution carrying
+      // 1/N of the event.  Expected moments use the mathematical equal share;
+      // represented moments use the exact stored correction, including the
+      // final binary64 remainder.  Their totals therefore expose any carrier
+      // reconstruction error instead of assuming it away.
+      const double expectedPacketRate=
+          parentRate/static_cast<double>(reactionPacketCount);
+      const double productCarrierRate=
+          node->block->GetLocalParticleWeight(species)/
+          node->block->GetLocalTimeStep(species);
+      for (long int packet=0;packet<reactionPacketCount;packet++) {
+        const double *velocity=productVelocity.data()+3*(
+            packet*productSpecies.size()+product);
+        const double speedSquared=velocity[0]*velocity[0]+
+            velocity[1]*velocity[1]+velocity[2]*velocity[2];
+        const double representedRate=productCarrierRate*
+            daughterPacketPlan.Correction(packet,product);
+        term.ExpectedNumber+=expectedPacketRate;
+        term.ExpectedMass+=expectedPacketRate*mass;
+        term.RepresentedNumber+=representedRate;
+        term.RepresentedMass+=representedRate*mass;
+        for (int component=0;component<3;component++) {
+          term.ExpectedMomentum[component]+=
+              expectedPacketRate*mass*velocity[component];
+          term.RepresentedMomentum[component]+=
+              representedRate*mass*velocity[component];
+        }
+        term.ExpectedEnergy+=
+            expectedPacketRate*0.5*mass*speedSquared;
+        term.RepresentedEnergy+=
+            representedRate*0.5*mass*speedSquared;
+      }
+#else
+      const double *velocity=productVelocity.data()+3*product;
+      const double speedSquared=velocity[0]*velocity[0]+
+          velocity[1]*velocity[1]+velocity[2]*velocity[2];
       term.ExpectedNumber+=parentRate;
       term.ExpectedMass+=parentRate*mass;
       for (int component=0;component<3;component++)
         term.ExpectedMomentum[component]+=
             parentRate*mass*velocity[component];
       term.ExpectedEnergy+=parentRate*0.5*mass*speedSquared;
-
-#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
-      const double representedRate=parentRate;
-#else
       const double productCarrierRate=
           node->block->GetLocalParticleWeight(species)/
           node->block->GetLocalTimeStep(species);
@@ -1408,13 +2266,13 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
         term.NumberVariance+=productCarrierRate*productCarrierRate*
             fraction*(1.0-fraction);
       }
-#endif
       term.RepresentedNumber+=representedRate;
       term.RepresentedMass+=representedRate*mass;
       for (int component=0;component<3;component++)
         term.RepresentedMomentum[component]+=
             representedRate*mass*velocity[component];
       term.RepresentedEnergy+=representedRate*0.5*mass*speedSquared;
+#endif
     }
 
     for (std::size_t product=0;product<reaction.ProductCount;product++) {
@@ -1457,14 +2315,30 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
     return false;
   }
 
+  // For N>1, generate one independent, complete recoil
+  // solution per accepted packet. Products inside a packet conserve momentum
+  // and excess energy together; different packets use independent random
+  // orientations. The N=1 identity path already generated its historical
+  // solution above and must not draw it a second time.
+  if (reactionPacketCount>1) {
+    productVelocity.resize(3*productSpecies.size()*reactionPacketCount);
+    for (long int packet=0;packet<reactionPacketCount;packet++) {
+      std::vector<double> packetVelocity;
+      GenerateProductVelocities(productSpecies,vParent,reaction.ExcessEnergyJ,
+          packetVelocity);
+      std::copy(packetVelocity.begin(),packetVelocity.end(),
+          productVelocity.begin()+3*packet*productSpecies.size());
+    }
+  }
+
   commitResidualPhases();
   recordCommittedDiagnostics();
 
   // Clone auxiliary fields from the parent, then replace position, velocity,
-  // and species for each integer-stoichiometry product.  Fixed block-local
-  // weights use residual split/roulette; number, mass, momentum, and excess-
-  // energy rates are conserved in expectation without an individual weight
-  // correction field.
+  // species, and (when present) correction for each concrete daughter.  The
+  // packet-major commit order keeps every independently sampled complete
+  // recoil solution contiguous.  The parent slot is reused exactly once, so
+  // the earlier K*N-1 capacity preflight remains exact.
   char daughterTemplate[PIC::ParticleBuffer::ParticleDataLength];
   PIC::ParticleBuffer::SetParticleAllocated(
       reinterpret_cast<PIC::ParticleBuffer::byte*>(daughterTemplate));
@@ -1476,62 +2350,68 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
       reinterpret_cast<PIC::ParticleBuffer::byte*>(daughterTemplate),parentData);
 
   bool parentSlotReused=false;
-  for (std::size_t product=0;product<productSpecies.size();product++) {
+  auto emitDaughter=[&](std::size_t product,long int packet,
+      double correction) {
     const int species=productSpecies[product];
-    const double baseWeight=node->block->GetLocalParticleWeight(species);
-    const double productTimeStep=node->block->GetLocalTimeStep(species);
-
+    double *velocity=productVelocity.data()+3*(
+        packet*productSpecies.size()+product);
     PIC::ParticleBuffer::byte *data=
         reinterpret_cast<PIC::ParticleBuffer::byte*>(daughterTemplate);
     PIC::ParticleBuffer::SetX(xParent,data);
-    PIC::ParticleBuffer::SetV(productVelocity.data()+3*product,data);
+    PIC::ParticleBuffer::SetV(velocity,data);
     PIC::ParticleBuffer::SetI(species,data);
 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
-    // A single corrected daughter carries the same physical production rate
-    // as its parent event, including the species-local timestep conversion.
-    const double daughterCorrection=
-        parentPhysicalWeight*productTimeStep/(baseWeight*timeStep);
-    if (!(daughterCorrection>0.0) ||
-        !std::isfinite(daughterCorrection)) {
+    if (!(correction>0.0) || !std::isfinite(correction)) {
       std::fprintf(stderr,
-          "invalid corrected daughter carrier in reaction %s species %d\n",
+          "invalid daughter-packet correction in reaction %s species %d\n",
           reaction.Id,species);
       std::abort();
     }
     PIC::ParticleBuffer::SetIndividualStatWeightCorrection(
-        daughterCorrection,data);
+        correction,data);
+#else
+    (void)correction;
 #endif
     MarkChemistryProcessed(data);
 
-    // Each residual-resampling sibling represents the same physical product
-    // cohort and therefore starts with the same event velocity.  Subsequent
-    // motion and collisions decorrelate the model particles.  Assign a fresh
-    // tracker identity to every sibling rather than cloning one identity.
-    for (long int copy=0;copy<daughterMultiplicity[product];copy++) {
 #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
-      PIC::ParticleTracker::InitParticleID(daughterTemplate);
-      PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(
-          xParent,productVelocity.data()+3*product,species,daughterTemplate,
-          static_cast<void*>(node));
+    PIC::ParticleTracker::InitParticleID(daughterTemplate);
+    PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(
+        xParent,velocity,species,daughterTemplate,static_cast<void*>(node));
 #endif
-      if (!parentSlotReused) {
-        // Detach the parent slot's stale links before CloneParticle, which
-        // intentionally preserves the destination links.  Reinsert it into
-        // the newly rebuilt cell list exactly like an allocated daughter.
-        PIC::ParticleBuffer::SetPrev(-1,parentData);
-        PIC::ParticleBuffer::SetNext(-1,parentData);
-        PIC::ParticleBuffer::CloneParticle(parentData,data);
-        KeepParticle(ptr,firstParticleCell);
-        parentSlotReused=true;
-      }
-      else {
-        const long int daughter=
-            PIC::ParticleBuffer::GetNewParticle(firstParticleCell);
-        PIC::ParticleBuffer::CloneParticle(
-            PIC::ParticleBuffer::GetParticleDataPointer(daughter),data);
-      }
+    if (!parentSlotReused) {
+      // Detach the parent slot's stale links before CloneParticle, which
+      // intentionally preserves destination links. Reinsert it into the
+      // rebuilt cell list exactly like an allocated daughter.
+      PIC::ParticleBuffer::SetPrev(-1,parentData);
+      PIC::ParticleBuffer::SetNext(-1,parentData);
+      PIC::ParticleBuffer::CloneParticle(parentData,data);
+      KeepParticle(ptr,firstParticleCell);
+      parentSlotReused=true;
     }
+    else {
+      const long int daughter=
+          PIC::ParticleBuffer::GetNewParticle(firstParticleCell);
+      PIC::ParticleBuffer::CloneParticle(
+          PIC::ParticleBuffer::GetParticleDataPointer(daughter),data);
+    }
+  };
+
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+  for (long int packet=0;packet<reactionPacketCount;packet++)
+    for (std::size_t product=0;product<productSpecies.size();product++)
+      emitDaughter(product,packet,
+          daughterPacketPlan.Correction(packet,product));
+#else
+  // Correction-off residual siblings intentionally share the one historical
+  // recoil solution generated before residual allocation. Stage-6 packet
+  // mode is rejected in this build, so both RNG order and representation are
+  // identical to the pre-Stage-6 executor.
+  for (std::size_t product=0;product<productSpecies.size();product++) {
+    for (long int copy=0;copy<daughterMultiplicity[product];copy++)
+      emitDaughter(product,0,1.0);
   }
+#endif
   return true;
 }
 

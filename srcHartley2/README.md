@@ -1267,11 +1267,65 @@ comparison remain required before enabling the feature in a production input.
 Correction-on DIM2/DIM3 chemistry is still unsupported; the pure planner is
 geometry-neutral, but the current executor intentionally remains radial.
 
-## Complete Stage 0--5 test runner
+## Stage 6 daughter-packet splitting
 
-The general runner now adds a sixth group. Archived mode checks the Stage-5
-pure parser/planner job and the frozen 1/4/12 correction-window/chemistry
-matrix in addition to every Stage 0--4 job:
+Stage 6 adds input-selected independent recoil packets for statistically weak
+chemical daughters. For `K` concrete products and packet count `N`, one
+selected physical reaction creates exactly `K*N` model particles. Every
+packet contains every product from one recoil solution; separate packets use
+separate recoil calls. Product `k` keeps its Stage-4 represented rate because
+its unsplit correction is divided into `N` positive parts with an exact final
+remainder.
+
+Packet selection is resolved during preprocessing:
+
+```text
+ChemistryDaughterPacketMode=on
+ChemistryDaughterPacketMaximum=8
+ChemistryDaughterPacketCount(GLOBAL)=1
+ChemistryDaughterPacketCount(CHEMICAL_ONLY)=2
+ChemistryDaughterPacketCount(SPECIES:C2)=8
+ChemistryDaughterPacketCount(REACTION:C2_2C)=8
+```
+
+Reaction ID has highest precedence. Otherwise, the maximum applicable count
+among all concrete products is used; explicit species overrides
+`CHEMICAL_ONLY`, which overrides global. Explicit sink selectors are illegal,
+and the parser rejects any policy whose `K*N` exceeds the configured chemistry
+transaction limit. With the mode and records omitted, all generated counts
+are one and the historical one-recoil RNG path is retained.
+
+Run the pure policy/planner tests with:
+
+```sh
+srcHartley2/tests/run_stage6_daughter_packet_tests.sh
+```
+
+The initialized-mesh validator is selected with
+`--validate-daughter-packets`. The integrated runner exercises it together
+with the Stage-5 correction-window and exact-chemistry validators at 1, 4,
+and 12 ranks:
+
+```sh
+srcHartley2/tests/run_stage6_integrated_tests.sh \
+  --executable /absolute/path/to/stage6/amps \
+  --output-root /new/absolute/path/to/stage6-validation \
+  --chemistry-validation-events 200000
+```
+
+The accepted archive is
+`validation_runs/stage6-daughter-packet-full-20261105-r4`. It covers 46
+neutral reactions and 23 sinks at `N=1,2,4,8`, plus a real repeated-product
+`C2_2C` allocation/rollback transaction. The fixed test packet counts and
+broad validation windows are not production Halley parameters. A transported
+independent-seed variance/cost and flux-closure study remains necessary before
+enabling packets in a science input.
+
+## Complete Stage 0--6 test runner
+
+The general runner now has seven groups. Archived mode checks the Stage-6 pure
+policy/planner job and frozen packet matrix, including its Stage-5 dependency
+replay, in addition to every Stage 0--5 job:
 
 ```sh
 srcHartley2/tests/run_all_stage_tests.sh --plan
@@ -1288,8 +1342,18 @@ srcHartley2/tests/run_all_stage_tests.sh \
   --stage5-output-root /new/absolute/path/to/stage5-validation
 ```
 
+Fresh Stage-6 mode likewise requires a frozen packet-enabled binary and a new
+immutable output root:
+
+```sh
+srcHartley2/tests/run_all_stage_tests.sh \
+  --stage6-mode fresh \
+  --stage6-executable /absolute/path/to/stage6/amps \
+  --stage6-output-root /new/absolute/path/to/stage6-validation
+```
+
 The current build used by archived mode must remain correction-off because it
-is also the read-only Stage-3 parser fixture. The Stage-5 logs are replayed
-from the frozen archive; the runner never mutates input or `build/`. As before,
+is also the read-only Stage-3 parser fixture. The Stage-5 and Stage-6 logs are
+replayed from frozen archives; the runner never mutates input or `build/`. As before,
 it counts every test and group, retains separate logs for failures/skips, and
 prints every failed test name and absolute log path.
