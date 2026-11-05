@@ -3669,3 +3669,120 @@ run, and the 54-file legacy comparison on the integration branch. Then rerun
 the existing DIM1 transport/chemistry suite and one unrelated DIM3 smoke test.
 Present the exact integration diff and results to the user and stop before any
 operation that changes `master`.
+
+## 2026-11-05: Stage 2 component-wide carrier transaction implemented
+
+Stage 2 of `CHEMISTRY.md` is implemented and its pure and integrated
+transaction gates pass on `1d_comet_dev`. No commit, branch switch, rebase,
+cherry-pick, integration branch, or operation on `master` was performed in
+this round. The result replaces the Stage-1 two-phase controller that could
+split a minor daughter locally and then undo that split when the face solver
+raised the complete component to its largest pre-existing carrier.
+
+### Source files added or modified
+
+| File | Detailed change and reason | Later master-merge dependency |
+| --- | --- | --- |
+| `srcHartley2/ComponentCarrierPlanner.h` | **New.** Header-only, AMPS/MPI/geometry-independent graph planner. It discovers face-connected components, validates the positive dyadic carrier lattice, computes total-particle/total-cell means, selects one carrier per species/component, preserves locks, and calculates exact split capacity before returning a plan. Keeping this layer pure makes DIM2/DIM3 topology testable before those comet drivers use the controller. | Add before `RadialSimulation.cpp`. Preserve the integer power-of-two and empty-node contracts if the planner is moved into core later. |
+| `srcHartley2/RadialSimulation.cpp` | Replaces independent per-block selection plus post-commit maximum propagation with one collective plan/preflight/commit transaction. It gathers authoritative owner counts/carriers, constructs dimension-independent face/subface adjacency, solves population and transitive chemistry constraints on component scalars, aggregates repeated products, audits every reachable reaction, preflights exact clone capacity with the configured reserve, commits only accepted plans, synchronizes once, verifies bitwise source locks, and rechecks committed carriers/reaction allocation. Empty blocks can be refined without creating particles. The superseded Stage-1 planning/face functions were removed. The integrated validator now measures all conserved moments, sparse/empty/two-ended behavior, capacity rollback, locks, reaction limits, and ghosts. | Merge only after Stage-1 generated policy arrays/locks. Treat the planner, chemistry fixed point, capacity preflight, commit, and validator as one logical unit; taking only the new commit loop or only the graph planner reopens the allocation defect. Reconcile any master changes in AMR face access, owner/ghost exchange, or particle-buffer reservation line by line. |
+| `srcHartley2/RadialSimulation.h` | Updates the public numerical-control contract from block-local adaptation to component-wide planning and documents fixed-point chemistry, transactional capacity rejection, face multiplicity one, and the expanded validation mode. | Merge with `RadialSimulation.cpp`; stale Stage-1 comments would misdescribe runtime semantics. |
+| `srcHartley2/tests/test_stage2_component_carrier_planner.cpp` | **New.** Pure C++ tests for a single block, exact lower/upper boundaries, long chains, empty and two-ended components, disconnected components, synthetic 2D/3D graphs, unequal dyadic inputs, source locks, invalid non-dyadic inputs, and exact capacity rejection. | No AMPS build dependency; run first during conflict resolution. Extend this test when higher-dimensional neighbor rules change. |
+| `srcHartley2/tests/run_stage2_planner_tests.sh` | **New.** Builds the pure planner test in a temporary directory and leaves no repository binary. | Merge with its C++ test. |
+| `srcHartley2/tests/test_stage2_integrated_logs.py` | **New.** Strictly parses exactly one legacy and one Stage-2 PASS record from each 1/4/12-rank log; rejects missing per-owner checks, absent MPI ghost checks, face/reaction limit violations, partial mutations, and decomposition-dependent chemistry results. | Diagnostic field names are a tested interface; update producer and parser together. |
+| `srcHartley2/tests/run_stage2_integrated_tests.sh` | **New.** Routes externally archived 1/4/12 logs through the strict parser and explicitly skips when evidence paths are not supplied. Python bytecode output is disabled. | Keep validation archives external; never fabricate runtime evidence in Git. |
+| `srcHartley2/CHEMISTRY.md` | Records the implemented algorithm, exact gates, archive/hash, and distinction between closed transaction tests and the still-required minor-daughter science pilot. | Reconcile after code and tests so later stages retain the true completion boundary. |
+| `srcHartley2/README.md` | Documents the component transaction, conserved-moment/capacity tests, commands, and archived results. | Merge after runtime/test paths are final. |
+| `srcHartley2/STATUS.md`, `handoff.md` | Add recovery state, validation evidence, and detailed master integration order/conflict invariants. | Documentation only; do not use it to authorize a master operation. |
+
+The top-level `Makefile` was already dirty and remains user-owned. Root
+`hartley2.pl`, `amps`, `build/`, root input links, meshes, `PT`, logs, and
+`validation_runs` are generated or external evidence and must not be staged
+as Stage-2 source.
+
+### Validation evidence
+
+The exact archive root is:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/stage2_component_carrier_20261105
+```
+
+The build directory was removed before each recompilation. A clean
+`make -j8 EXTRACOMPILEROPTIONS=-O3` completed with only the known legacy DIM1
+aggressive-loop warnings and sandbox OpenMPI interface notices. The frozen
+executable/input/`picGlobal.dfn` SHA-256 values are:
+
+```text
+amps.stage2    c40c6bb44871209672cd6c7ecc6e16cc838ca5ea3e3e0184970696d273909939
+halley1d.input 50cffc75488d26a0c3ccc1fb1289118b8729f756f08f2ade4e196a81cedc91c5
+picGlobal.dfn  c3d2bca73f068cff357ae6d1f5002c97dc738b6a3190c712b2787890c92e2726
+```
+
+`run_stage2_planner_tests.sh` passes. The same executable then passes
+`--validate-weight-adaptation` at 1, 4, and 12 MPI ranks. Each run reports one
+owner check per rank for component population, empty blocks, the two-ended
+chain, source locks, reaction allocation, split conservation, roulette
+conservation, and capacity rollback. Ghost checks are 0/28/84 as expected;
+maximum face multiplicity is exactly 1, maximum reaction allocation is 20 for
+a limit of 20, and partial mutations are zero. The strict cross-rank parser
+reports:
+
+```text
+PASS Stage-2 integrated component carriers 1rank-owners=1-ghosts=0 4rank-owners=4-ghosts=28 12rank-owners=12-ghosts=84
+```
+
+The existing Stage-0 suite also passes after the implementation. These gates
+validate the transaction and decomposition behavior; they do not establish a
+converged Rubin science result. A production minor-daughter pilot remains the
+next acceptance step before Stage 3 or master integration.
+
+### Stage 2 master-merge order and conflict rules
+
+Do not merge yet. After the minor-daughter pilot and full comet validation are
+complete, and only after explicit user authorization, create a disposable
+integration branch from the then-current `master` and apply Stage 2 in this
+order:
+
+1. confirm that the full Stage-1 policy/parser/runtime commit range is already
+   present and rerun the Stage-1 selector/legacy gates;
+2. add `ComponentCarrierPlanner.h` and its pure C++ test/runner, then run that
+   test before touching AMPS runtime code;
+3. merge the authoritative owner gather and dimension-independent face graph
+   construction in `RadialSimulation.cpp`;
+4. merge component population selection and chemistry fixed-point planning as
+   one unit, preserving repeated-product aggregation and locked-parent/product
+   handling;
+5. merge exact clone/reserve preflight and the plan-only rejection path before
+   merging mutation code;
+6. merge commit, one-time owner/ghost synchronization, exact lock verification,
+   face/reaction postchecks, and removal of the old two-phase functions;
+7. merge the integrated validator and log parser/runner;
+8. update header/README/CHEMISTRY/STATUS documentation last, then rebuild from
+   a deleted `build/` directory and rerun 1/4/12 MPI gates.
+
+During conflict resolution preserve all of these invariants:
+
+- every calculation leaf has exactly one authoritative owner contribution;
+- component population is `sum(owner particles)/sum(component cells)`, not a
+  mean of block means and not a populated-cell-only statistic;
+- an empty block may change carrier but may not acquire a model particle;
+- carrier changes are integral powers of two on the existing species lattice;
+- direct-source regular weights remain bitwise unchanged;
+- every reachable positive-rate unit-unimolecular reaction is audited, with
+  repeated product terms summed before applying the hard cap;
+- clone capacity is computed from the final population+chemistry plan and all
+  ranks accept before the first mutation; stochastic future roulette may not
+  be counted as available capacity;
+- owners synchronize to boundary copies only after a successful commit, and
+  both senses of every face remain at multiplicity at most one;
+- emergency common-factor coarsening remains a separately logged buffer-safety
+  override and must not be conflated with the regular component transaction;
+- a rejected transaction leaves list links, represented moments, and carrier
+  bits unchanged.
+
+Do not merge generated build copies or validation output. On the disposable
+integration branch, run the pure planner, Stage 0 and Stage 1 suites, the
+1/4/12 Stage-2 validator, one unrelated DIM3 mesh smoke test, and the eventual
+minor-daughter science pilot. Show the exact diff, source commit range,
+excluded files, test logs, performance/memory impact, and science result to
+the user, then stop before any operation that changes `master`.

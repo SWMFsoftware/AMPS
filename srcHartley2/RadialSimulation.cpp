@@ -4,12 +4,15 @@
 #include <array>
 #include <cmath>
 #include <climits>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <unordered_map>
 #include <vector>
 
+#include "ComponentCarrierPlanner.h"
 #include "pic.h"
 #include "CometChemistry.h"
 #include "CometDiagnostics.h"
@@ -314,7 +317,16 @@ struct cLockedWeightSnapshot {
   PIC::Mesh::cDataBlockAMR *Block=NULL;
   int Species=-1;
   double Weight=0.0;
+  std::uint64_t WeightBits=0;
 };
+
+std::uint64_t DoubleBits(double value) {
+  static_assert(sizeof(std::uint64_t)==sizeof(double),
+      "double bit snapshot requires a 64-bit representation");
+  std::uint64_t result=0;
+  std::memcpy(&result,&value,sizeof(result));
+  return result;
+}
 
 long int CountSpeciesInBlock(PIC::Mesh::cDataBlockAMR *block,int species) {
   long int count=0;
@@ -366,51 +378,6 @@ std::array<long int,PIC::nTotalSpecies> CountAllSpeciesInBlock(
   return counts;
 }
 
-int SelectWeightPower(long int particleCount,int species) {
-  if (particleCount<=0) return 0;
-  if (species<0 || species>=PIC::nTotalSpecies) {
-    std::fprintf(stderr,
-        "particle-weight adaptation received invalid species %d\n",species);
-    std::abort();
-  }
-  const long int minimum=
-      Comet::RadialSimulation::SpeciesMinimumParticlesPerCell[species];
-  const long int maximum=
-      Comet::RadialSimulation::SpeciesMaximumParticlesPerCell[species];
-  if (minimum<=0 || maximum<2*minimum) {
-    std::fprintf(stderr,
-        "particle-weight adaptation has invalid resolved range for species %d\n",
-        species);
-    std::abort();
-  }
-
-  // The range is stated per cell, while the statistical weight belongs to
-  // the whole block.  Empty cells therefore contribute zero to this mean;
-  // they are not seeded by the resampling operations below.
-  long double expectedMean=
-      static_cast<long double>(particleCount)/BlockCellCount;
-  int power=0;
-  while (expectedMean<minimum) {
-    expectedMean*=2.0L;
-    power--;
-    if (power < -1024) {
-      std::fprintf(stderr,
-          "particle-weight adaptation requires an invalid split exponent\n");
-      std::abort();
-    }
-  }
-  while (expectedMean>maximum) {
-    expectedMean*=0.5L;
-    power++;
-    if (power > 1024) {
-      std::fprintf(stderr,
-          "particle-weight adaptation requires an invalid roulette exponent\n");
-      std::abort();
-    }
-  }
-  return power;
-}
-
 double GetCarrierRate(PIC::Mesh::cDataBlockAMR *block,int species,
     int pendingWeightPower=0) {
   const double oldWeight=block->GetLocalParticleWeight(species);
@@ -426,28 +393,6 @@ double GetCarrierRate(PIC::Mesh::cDataBlockAMR *block,int species,
     std::abort();
   }
   return carrierRate;
-}
-
-int SelectMinimumCarrierWeightPower(PIC::Mesh::cDataBlockAMR *block,
-    int species,double minimumCarrierRate) {
-  if (!(minimumCarrierRate>0.0) || !std::isfinite(minimumCarrierRate)) {
-    std::fprintf(stderr,
-        "invalid minimum photochemical carrier rate for species %d\n",species);
-    std::abort();
-  }
-
-  long double carrierRate=GetCarrierRate(block,species);
-  int power=0;
-  while (carrierRate<minimumCarrierRate) {
-    carrierRate*=2.0L;
-    power++;
-    if (power>1024 || !std::isfinite(carrierRate)) {
-      std::fprintf(stderr,
-          "photochemical daughter adaptation requires an invalid weight exponent\n");
-      std::abort();
-    }
-  }
-  return power;
 }
 
 long long MaximumReactionDaughterAllocation(
@@ -535,172 +480,6 @@ long long MaximumReactionDaughterAllocation(
     maximum=std::max(maximum,maximumProducts);
   }
   return maximum;
-}
-
-void ConstrainPhotochemicalDaughterPlans(
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,
-    const std::array<long int,PIC::nTotalSpecies> &counts,
-    std::array<int,PIC::nTotalSpecies> &weightPower,
-    std::array<bool,PIC::nTotalSpecies> &chemistryConstrained) {
-  if (!Comet::Chemistry::Enabled) return;
-
-  const ChemicalSolver::cReactionNetwork &network=
-      Comet::Chemistry::GetNetwork();
-  std::array<double,PIC::nTotalSpecies> plannedCarrierRate{};
-  std::array<bool,PIC::nTotalSpecies> reachable{};
-  for (int species=0;species<PIC::nTotalSpecies;species++) {
-    // Population adaptation of a present parent is applied in this same
-    // transaction.  Start from its planned, not old, carrier rate; otherwise
-    // a roulette step that raises W would make daughter protection obsolete
-    // immediately. Zero-population species have no population plan.
-    plannedCarrierRate[species]=GetCarrierRate(node->block,species,
-        weightPower[species]);
-    reachable[species]=counts[species]>0 ||
-        HasConfiguredDirectSource(species);
-  }
-
-  // Propagate reachability and hard carrier requirements together.  The old
-  // controller considered only absent daughters and constrained an expected
-  // sum.  A present daughter can have an even smaller W/dt after population
-  // adaptation, and residual Bernoulli rounding can exceed an expectation.
-  // Here every reachable channel is constrained by the actual worst-case sum
-  // of ceil(parentCarrier/productCarrier) over all concrete products.
-  bool changed=true;
-  std::size_t iteration=0;
-  const std::size_t maximumIterations=
-      4096*PIC::nTotalSpecies*(network.GetReactionCount()+1)+1;
-  while (changed) {
-    changed=false;
-    if (++iteration>maximumIterations) {
-      std::fprintf(stderr,
-          "photochemical daughter adaptation did not reach a finite carrier-rate fixed point\n");
-      std::abort();
-    }
-
-    for (std::size_t reactionIndex=0;
-         reactionIndex<network.GetReactionCount();reactionIndex++) {
-      if (!network.IsUnitUnimolecular(reactionIndex) ||
-          !(network.GetRateCoefficient(reactionIndex,0.0,
-              Comet::Chemistry::HeliocentricDistanceAU)>0.0)) continue;
-
-      const int parent=
-          network.GetReactantTerm(reactionIndex,0).Species;
-      if (!reachable[parent]) continue;
-      const ChemicalSolver::cReaction &reaction=
-          network.GetReaction(reactionIndex);
-      for (std::size_t term=0;term<reaction.ProductCount;term++) {
-        const ChemicalSolver::cStoichiometricTerm &product=
-            network.GetProductTerm(reactionIndex,term);
-        if (!reachable[product.Species]) {
-          reachable[product.Species]=true;
-          changed=true;
-        }
-      }
-
-      auto maximumChannelAllocation = [&]() -> long long {
-        long long total=0;
-        for (std::size_t term=0;term<reaction.ProductCount;term++) {
-          const ChemicalSolver::cStoichiometricTerm &product=
-              network.GetProductTerm(reactionIndex,term);
-          const long long coefficient=static_cast<long long>(
-              std::floor(product.Coefficient+0.5));
-          const double mean=plannedCarrierRate[parent]/
-              plannedCarrierRate[product.Species];
-          const long long multiplicity=
-              static_cast<long long>(std::ceil(mean));
-          if (multiplicity<=0 || coefficient<=0 ||
-              multiplicity>LLONG_MAX/coefficient ||
-              total>LLONG_MAX-multiplicity*coefficient) {
-            std::fprintf(stderr,
-                "invalid hard allocation bound in reaction %s\n",
-                reaction.Id);
-            std::abort();
-          }
-          total+=multiplicity*coefficient;
-        }
-        return total;
-      };
-
-      while (maximumChannelAllocation()>
-          Comet::RadialSimulation::MaximumPhotochemicalProductsPerReaction) {
-        // Double the carrier of the reducible, unlocked product currently responsible
-        // for the largest hard contribution.  Products identical to the
-        // parent cannot reduce their own ratio and are excluded.  Repeating
-        // this dyadic step yields the least invasive fixed point compatible
-        // with the application's power-of-two weight policy.
-        int selectedProduct=-1;
-        long long selectedContribution=-1;
-        for (std::size_t term=0;term<reaction.ProductCount;term++) {
-          const ChemicalSolver::cStoichiometricTerm &product=
-              network.GetProductTerm(reactionIndex,term);
-          if (product.Species==parent ||
-              Comet::RadialSimulation::ParticleWeightLocked[product.Species])
-            continue;
-          const long long coefficient=static_cast<long long>(
-              std::floor(product.Coefficient+0.5));
-          const long long multiplicity=static_cast<long long>(std::ceil(
-              plannedCarrierRate[parent]/
-              plannedCarrierRate[product.Species]));
-          // A product already at one carrier per stoichiometric occurrence
-          // cannot be reduced further by raising its weight.  Excluding that
-          // saturated candidate is essential when a different locked product
-          // is the contribution that keeps the channel over its cap.
-          if (multiplicity<=1) continue;
-          const long long contribution=coefficient*multiplicity;
-          if (contribution>selectedContribution) {
-            selectedContribution=contribution;
-            selectedProduct=product.Species;
-          }
-        }
-        if (selectedProduct>=0) {
-          if (weightPower[selectedProduct]>=1024) {
-            std::fprintf(stderr,
-                "reaction %s requires an invalid product-weight exponent\n",
-                reaction.Id);
-            std::abort();
-          }
-          weightPower[selectedProduct]++;
-          plannedCarrierRate[selectedProduct]*=2.0;
-          if (!std::isfinite(plannedCarrierRate[selectedProduct])) {
-            std::fprintf(stderr,
-                "reaction %s overflowed a product carrier rate\n",reaction.Id);
-            std::abort();
-          }
-          chemistryConstrained[selectedProduct]=true;
-        }
-        else if (!Comet::RadialSimulation::ParticleWeightLocked[parent]) {
-          // All reducible product contributions are locked (or already at
-          // their irreducible one-carrier floor).  Halve the unlocked parent
-          // carrier instead.  This is an exact dyadic split of any represented
-          // parent population and reduces every daughter multiplicity in the
-          // channel without modifying a locked direct-source weight.
-          if (weightPower[parent]<=-1024) {
-            std::fprintf(stderr,
-                "reaction %s requires an invalid parent-weight exponent\n",
-                reaction.Id);
-            std::abort();
-          }
-          weightPower[parent]--;
-          plannedCarrierRate[parent]*=0.5;
-          if (!(plannedCarrierRate[parent]>0.0) ||
-              !std::isfinite(plannedCarrierRate[parent])) {
-            std::fprintf(stderr,
-                "reaction %s underflowed its parent carrier rate\n",
-                reaction.Id);
-            std::abort();
-          }
-          chemistryConstrained[parent]=true;
-        }
-        else {
-          std::fprintf(stderr,
-              "reaction %s cannot satisfy the hard daughter limit because its parent and limiting products are locked\n",
-              reaction.Id);
-          std::abort();
-        }
-        changed=true;
-      }
-    }
-  }
 }
 
 long int RequiredCloneCount(const cWeightAdaptationPlan &plan) {
@@ -791,31 +570,6 @@ void RouletteSpeciesByTwo(const cWeightAdaptationPlan &plan) {
   block->SetLocalParticleWeight(newWeight,plan.Species);
 }
 
-void RaiseEmptyPhotochemicalDaughterWeight(
-    const cWeightAdaptationPlan &plan) {
-  PIC::Mesh::cDataBlockAMR *block=plan.Node->block;
-  if (!plan.EmptyPhotochemicalDaughter || plan.ParticleCount!=0 ||
-      plan.WeightPower<=0 || CountSpeciesInBlock(block,plan.Species)!=0) {
-    std::fprintf(stderr,
-        "invalid empty photochemical daughter adaptation plan\n");
-    std::abort();
-  }
-  const double oldWeight=block->GetLocalParticleWeight(plan.Species);
-  const double newWeight=std::ldexp(oldWeight,plan.WeightPower);
-  if (!(oldWeight>0.0) || !std::isfinite(oldWeight) ||
-      !(newWeight>0.0) || !std::isfinite(newWeight)) {
-    std::fprintf(stderr,
-        "invalid empty daughter weight for species %d\n",plan.Species);
-    std::abort();
-  }
-
-  // There is no particle list to resample.  Changing only the block weight
-  // leaves every cell empty; when the first physical daughter is eventually
-  // produced, the chemistry executor's ordinary unbiased residual sampling
-  // uses this larger carrier rate and respects the configured event cap.
-  block->SetLocalParticleWeight(newWeight,plan.Species);
-}
-
 void RefreshGlobalMinimumParticleWeights() {
   // SetLocalParticleWeight() only lowers this legacy global-minimum cache.
   // Recompute it explicitly whenever an adaptation raises block weights.
@@ -880,112 +634,137 @@ void CollectCalculationLeafNodes(
     CollectCalculationLeafNodes(node->downNode[child],nodes);
 }
 
-double RaiseCarrierByPowersOfTwo(double carrier,double minimumCarrier,
-    int *power=NULL) {
-  if (!(carrier>0.0) || !std::isfinite(carrier) ||
-      !(minimumCarrier>0.0) || !std::isfinite(minimumCarrier)) {
-    std::fprintf(stderr,
-        "invalid carrier while enforcing the face-transfer limit\n");
+// Stage 2 plans the complete component transaction before it changes either
+// a particle list or a block weight.  The old implementation first committed
+// independent block splits and only then raised carriers across faces; one
+// empty/coarse block could consequently roulette away the daughter split.
+// This record owns every piece of state required to preflight, commit, and
+// verify one collective transaction without re-planning from mutated data.
+struct cComponentCarrierTransaction {
+  std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> Nodes;
+  std::vector<std::vector<std::size_t> > Neighbors;
+  std::vector<long long> GlobalCounts;
+  std::vector<double> GlobalCarriers;
+  std::vector<double> TargetCarriers;
+  std::vector<std::size_t> ComponentIndex;
+  std::vector<std::vector<std::size_t> > ComponentNodes;
+  std::vector<long long> ComponentParticleCount;
+  std::vector<long long> ComponentCellCount;
+  std::vector<double> ComponentCarrier;
+  std::vector<int> ComponentPowerAdjustment;
+  std::vector<unsigned char> ChemistryConstrained;
+  std::vector<unsigned char> Reachable;
+  std::vector<cWeightAdaptationPlan> LocalPlans;
+  std::vector<cLockedWeightSnapshot> LockedWeights;
+  cFaceCarrierPropagationStatistics PropagationStatistics;
+  long long LocalRequiredClones=0;
+  long long LocalCapacityAvailable=0;
+  long long GlobalMaximumTotalBlockParticles=0;
+  long long GlobalMaximumProductsBefore=0;
+  long long GlobalMaximumProductsPlanned=0;
+  bool CapacityAccepted=false;
+};
+
+long long CheckedReactionCoefficient(double coefficient,const char *reaction) {
+  if (!(coefficient>0.0) || !std::isfinite(coefficient)) {
+    std::fprintf(stderr,"reaction %s has an invalid product coefficient\n",
+        reaction);
     std::abort();
   }
-
-  // All radial carrier rates start from one species-wide value and every
-  // subsequent adaptation changes them by an exact power of two.  Retain
-  // that invariant here.  The tolerance prevents roundoff in W/dt from
-  // manufacturing an unnecessary additional doubling at an equal-carrier
-  // interface.
-  constexpr long double tolerance=
-      128.0L*std::numeric_limits<double>::epsilon();
-  long double result=carrier;
-  int resultPower=0;
-  while (result<static_cast<long double>(minimumCarrier)*(1.0L-tolerance)) {
-    result*=2.0L;
-    resultPower++;
-    if (resultPower>1024 || !std::isfinite(result)) {
-      std::fprintf(stderr,
-          "face-carrier propagation requires an invalid weight exponent\n");
-      std::abort();
-    }
+  const long long rounded=static_cast<long long>(std::llround(coefficient));
+  if (rounded<=0 || std::fabs(coefficient-rounded)>
+      64.0*std::numeric_limits<double>::epsilon()*
+          std::max(std::fabs(coefficient),1.0)) {
+    std::fprintf(stderr,
+        "reaction %s has a non-integral product coefficient\n",reaction);
+    std::abort();
   }
-  if (power!=NULL) *power=resultPower;
-  return static_cast<double>(result);
+  return rounded;
 }
 
-cFaceCarrierPropagationStatistics EnforceFaceCarrierMultiplicityLimit() {
-  cFaceCarrierPropagationStatistics statistics;
+cComponentCarrierTransaction BuildComponentCarrierTransaction(
+    long long capacityOverride=-1) {
+  namespace Planner=
+      Comet::RadialSimulation::ComponentCarrierPlanner;
+  cComponentCarrierTransaction transaction;
 
-  // Build one deterministic list of calculation leaves on every MPI rank.
-  // The tree topology is replicated even though live particle lists and the
-  // authoritative block weights exist only on each block's owner.  Stable
-  // global indexing lets the following reductions communicate population and
-  // carrier information without attempting recursive point-to-point traffic
-  // while sampling-break adaptation is already collective.
-  std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> nodes;
-  CollectCalculationLeafNodes(PIC::Mesh::mesh->rootTree,nodes);
-  if (nodes.empty()) {
+  // The replicated AMR tree provides the same stable node order on every
+  // rank.  Only node->Thread owns authoritative particles/weights; collective
+  // sums below turn those single-owner values into an identical planning
+  // table on all ranks.
+  CollectCalculationLeafNodes(PIC::Mesh::mesh->rootTree,transaction.Nodes);
+  if (transaction.Nodes.empty()) {
     std::fprintf(stderr,
-        "face-carrier propagation found no calculation blocks\n");
+        "component carrier planner found no calculation blocks\n");
     std::abort();
   }
-  if (nodes.size()*PIC::nTotalSpecies>static_cast<std::size_t>(INT_MAX)) {
+  if (transaction.Nodes.size()*PIC::nTotalSpecies>
+      static_cast<std::size_t>(INT_MAX)) {
     std::fprintf(stderr,
-        "face-carrier propagation exceeds the MPI count limit\n");
+        "component carrier planner exceeds the MPI count limit\n");
     std::abort();
   }
 
   std::unordered_map<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,std::size_t>
       nodeIndex;
-  nodeIndex.reserve(2*nodes.size());
-  for (std::size_t block=0;block<nodes.size();block++)
-    nodeIndex[nodes[block]]=block;
+  nodeIndex.reserve(2*transaction.Nodes.size());
+  for (std::size_t block=0;block<transaction.Nodes.size();block++)
+    nodeIndex[transaction.Nodes[block]]=block;
 
-  // Particles cross block faces, not edges or corners.  DIM1 has one slot per
-  // face, DIM2 has two transverse subfaces, and DIM3 has four.  Iterating the
-  // active 2*DIM faces and all subface slots is the part that must be retained
-  // when this algorithm is validated in higher-dimensional comet geometries.
-  // Coarse/fine AMR interfaces may report the same neighbor more than once;
-  // duplicates are harmless but are removed to keep component traversals and
-  // diagnostics deterministic.
   constexpr int nFaces=2*DIM;
   constexpr int nFaceSlotsI=(DIM>=2) ? 2 : 1;
   constexpr int nFaceSlotsJ=(DIM>=3) ? 2 : 1;
-  std::vector<std::vector<std::size_t> > neighbors(nodes.size());
-  for (std::size_t block=0;block<nodes.size();block++) {
+  std::vector<Planner::cEdge> edges;
+  transaction.Neighbors.resize(transaction.Nodes.size());
+  for (std::size_t block=0;block<transaction.Nodes.size();block++) {
     for (int face=0;face<nFaces;face++)
       for (int iFace=0;iFace<nFaceSlotsI;iFace++)
         for (int jFace=0;jFace<nFaceSlotsJ;jFace++) {
           cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *neighbor=
-              nodes[block]->GetNeibFace(face,iFace,jFace,PIC::Mesh::mesh);
+              transaction.Nodes[block]->GetNeibFace(face,iFace,jFace,
+                  PIC::Mesh::mesh);
           if (neighbor==NULL) continue;
           const auto location=nodeIndex.find(neighbor);
           if (location==nodeIndex.end()) {
             std::fprintf(stderr,
-                "face-carrier propagation found a face neighbor outside the leaf table\n");
+                "component carrier planner found a face neighbor outside the leaf table\n");
             std::abort();
           }
-          if (location->second==block) continue;
-          std::vector<std::size_t> &list=neighbors[block];
-          if (std::find(list.begin(),list.end(),location->second)==list.end())
-            list.push_back(location->second);
+          const std::size_t other=location->second;
+          if (other==block) continue;
+          edges.push_back(Planner::cEdge(block,other));
+          transaction.Neighbors[block].push_back(other);
+          transaction.Neighbors[other].push_back(block);
         }
   }
+  for (std::vector<std::size_t> &list:transaction.Neighbors) {
+    std::sort(list.begin(),list.end());
+    list.erase(std::unique(list.begin(),list.end()),list.end());
+  }
 
-  const std::size_t valueCount=nodes.size()*PIC::nTotalSpecies;
-  std::vector<long long> localCounts(valueCount,0),globalCounts(valueCount,0);
-  std::vector<double> localCarriers(valueCount,0.0),
-      globalCarriers(valueCount,0.0);
-  std::vector<int> localOwners(nodes.size(),0),globalOwners(nodes.size(),0);
-  for (std::size_t block=0;block<nodes.size();block++) {
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=nodes[block];
+  const std::size_t valueCount=
+      transaction.Nodes.size()*PIC::nTotalSpecies;
+  std::vector<long long> localCounts(valueCount,0);
+  transaction.GlobalCounts.assign(valueCount,0);
+  std::vector<double> localCarriers(valueCount,0.0);
+  transaction.GlobalCarriers.assign(valueCount,0.0);
+  std::vector<int> localOwners(transaction.Nodes.size(),0),
+      globalOwners(transaction.Nodes.size(),0);
+  long long localMaximumProductsBefore=0;
+  for (std::size_t block=0;block<transaction.Nodes.size();block++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=
+        transaction.Nodes[block];
     if (node->Thread!=PIC::ThisThread) continue;
     if (node->block==NULL) {
       std::fprintf(stderr,
-          "owner block is not allocated during face-carrier propagation\n");
+          "component carrier owner block is not allocated\n");
       std::abort();
     }
     localOwners[block]=1;
     const std::array<long int,PIC::nTotalSpecies> counts=
         CountAllSpeciesInBlock(node->block);
+    localMaximumProductsBefore=std::max(localMaximumProductsBefore,
+        MaximumReactionDaughterAllocation(node->block,counts));
     for (int species=0;species<PIC::nTotalSpecies;species++) {
       const std::size_t offset=block*PIC::nTotalSpecies+species;
       localCounts[offset]=counts[species];
@@ -993,162 +772,471 @@ cFaceCarrierPropagationStatistics EnforceFaceCarrierMultiplicityLimit() {
     }
   }
   MPI_Allreduce(localOwners.data(),globalOwners.data(),
-      static_cast<int>(nodes.size()),MPI_INT,MPI_SUM,
+      static_cast<int>(transaction.Nodes.size()),MPI_INT,MPI_SUM,
       MPI_GLOBAL_COMMUNICATOR);
-  MPI_Allreduce(localCounts.data(),globalCounts.data(),
+  MPI_Allreduce(localCounts.data(),transaction.GlobalCounts.data(),
       static_cast<int>(valueCount),MPI_LONG_LONG,MPI_SUM,
       MPI_GLOBAL_COMMUNICATOR);
-  MPI_Allreduce(localCarriers.data(),globalCarriers.data(),
+  MPI_Allreduce(localCarriers.data(),transaction.GlobalCarriers.data(),
       static_cast<int>(valueCount),MPI_DOUBLE,MPI_SUM,
       MPI_GLOBAL_COMMUNICATOR);
-  for (std::size_t block=0;block<nodes.size();block++) {
+  MPI_Allreduce(&localMaximumProductsBefore,
+      &transaction.GlobalMaximumProductsBefore,1,MPI_LONG_LONG,MPI_MAX,
+      MPI_GLOBAL_COMMUNICATOR);
+
+  for (std::size_t block=0;block<transaction.Nodes.size();block++) {
     if (globalOwners[block]!=1) {
       std::fprintf(stderr,
-          "calculation block has %d owners during face-carrier propagation\n",
+          "component carrier block has %d authoritative owners\n",
           globalOwners[block]);
       std::abort();
     }
+    long long total=0;
     for (int species=0;species<PIC::nTotalSpecies;species++) {
       const std::size_t offset=block*PIC::nTotalSpecies+species;
-      if (globalCounts[offset]<0 || !(globalCarriers[offset]>0.0) ||
-          !std::isfinite(globalCarriers[offset])) {
+      if (transaction.GlobalCounts[offset]<0 ||
+          !(transaction.GlobalCarriers[offset]>0.0) ||
+          !std::isfinite(transaction.GlobalCarriers[offset]) ||
+          total>LLONG_MAX-transaction.GlobalCounts[offset]) {
         std::fprintf(stderr,
-            "invalid global block state while propagating species %d\n",
+            "invalid authoritative component state for block %zu species %d\n",
+            block,species);
+        std::abort();
+      }
+      total+=transaction.GlobalCounts[offset];
+    }
+    transaction.GlobalMaximumTotalBlockParticles=std::max(
+        transaction.GlobalMaximumTotalBlockParticles,total);
+  }
+
+  std::vector<Planner::cPlan> speciesPlans(PIC::nTotalSpecies);
+  transaction.TargetCarriers=transaction.GlobalCarriers;
+  for (int species=0;species<PIC::nTotalSpecies;species++) {
+    std::vector<Planner::cNodeState> state;
+    state.reserve(transaction.Nodes.size());
+    for (std::size_t block=0;block<transaction.Nodes.size();block++) {
+      const std::size_t offset=block*PIC::nTotalSpecies+species;
+      state.push_back(Planner::cNodeState(transaction.GlobalCounts[offset],
+          BlockCellCount,transaction.GlobalCarriers[offset]));
+    }
+
+    try {
+      speciesPlans[species]=Planner::BuildPlan(state,edges,Planner::cPolicy(
+          Comet::RadialSimulation::SpeciesMinimumParticlesPerCell[species],
+          Comet::RadialSimulation::SpeciesMaximumParticlesPerCell[species],
+          Comet::RadialSimulation::ParticleWeightLocked[species]!=0));
+    }
+    catch (const std::exception &exception) {
+      std::fprintf(stderr,
+          "component carrier planning failed for species %d: %s\n",species,
+          exception.what());
+      std::abort();
+    }
+
+    const Planner::cPlan &plan=speciesPlans[species];
+    if (species==0) {
+      transaction.ComponentIndex=plan.ComponentIndex;
+      transaction.ComponentNodes.reserve(plan.Components.size());
+      for (const Planner::cComponentPlan &component:plan.Components)
+        transaction.ComponentNodes.push_back(component.Nodes);
+    }
+    else if (plan.ComponentIndex!=transaction.ComponentIndex ||
+        plan.Components.size()!=transaction.ComponentNodes.size()) {
+      std::fprintf(stderr,
+          "component topology changed between species plans\n");
+      std::abort();
+    }
+
+    for (std::size_t component=0;component<plan.Components.size();component++) {
+      if (plan.Components[component].Nodes!=
+          transaction.ComponentNodes[component]) {
+        std::fprintf(stderr,
+            "component node ordering changed between species plans\n");
+        std::abort();
+      }
+      if (plan.Components[component].Nodes.size()>1)
+        transaction.PropagationStatistics.ActiveComponents++;
+    }
+    for (std::size_t block=0;block<transaction.Nodes.size();block++) {
+      const std::size_t offset=block*PIC::nTotalSpecies+species;
+      const int power=plan.WeightPower[block];
+      const double target=std::ldexp(transaction.GlobalCarriers[offset],power);
+      if (!(target>0.0) || !std::isfinite(target)) {
+        std::fprintf(stderr,
+            "component carrier target is invalid for block %zu species %d\n",
+            block,species);
+        std::abort();
+      }
+      transaction.TargetCarriers[offset]=target;
+    }
+  }
+
+  const std::size_t componentCount=transaction.ComponentNodes.size();
+  const std::size_t componentValueCount=componentCount*PIC::nTotalSpecies;
+  transaction.ComponentParticleCount.assign(componentValueCount,0);
+  transaction.ComponentCellCount.assign(componentCount,0);
+  transaction.ComponentCarrier.assign(componentValueCount,0.0);
+  transaction.ComponentPowerAdjustment.assign(componentValueCount,0);
+  transaction.ChemistryConstrained.assign(componentValueCount,0);
+  transaction.Reachable.assign(componentValueCount,0);
+  for (std::size_t component=0;component<componentCount;component++) {
+    if (transaction.ComponentNodes[component].size()>
+        static_cast<std::size_t>(LLONG_MAX/BlockCellCount)) {
+      std::fprintf(stderr,"component cell count overflows long long\n");
+      std::abort();
+    }
+    transaction.ComponentCellCount[component]=
+        static_cast<long long>(transaction.ComponentNodes[component].size())*
+            BlockCellCount;
+    for (int species=0;species<PIC::nTotalSpecies;species++) {
+      const std::size_t componentOffset=
+          component*PIC::nTotalSpecies+species;
+      long long count=0;
+      for (std::size_t block:transaction.ComponentNodes[component]) {
+        const long long addition=transaction.GlobalCounts[
+            block*PIC::nTotalSpecies+species];
+        if (count>LLONG_MAX-addition) {
+          std::fprintf(stderr,
+              "component particle count overflows long long\n");
+          std::abort();
+        }
+        count+=addition;
+      }
+      transaction.ComponentParticleCount[componentOffset]=count;
+      transaction.ComponentCarrier[componentOffset]=
+          speciesPlans[species].Components[component].TargetCarrier;
+      transaction.Reachable[componentOffset]=count>0 ||
+          HasConfiguredDirectSource(species);
+    }
+  }
+
+  // Solve the hard chemistry allocation cap on the same component scalars
+  // selected by the population planner.  Repeated product terms are combined
+  // before selecting a carrier change, sinks require no allocation, and every
+  // change restarts the network closure because lowering one parent can make
+  // an upstream channel more restrictive.
+  if (Comet::Chemistry::Enabled) {
+    const ChemicalSolver::cReactionNetwork &network=
+        Comet::Chemistry::GetNetwork();
+    for (std::size_t component=0;component<componentCount;component++) {
+      bool changed=true;
+      std::size_t iterations=0;
+      const std::size_t maximumIterations=
+          4096*PIC::nTotalSpecies*(network.GetReactionCount()+1)+1;
+      while (changed) {
+        changed=false;
+        if (++iterations>maximumIterations) {
+          std::fprintf(stderr,
+              "component chemistry carrier constraints did not converge\n");
+          std::abort();
+        }
+        for (std::size_t reactionIndex=0;
+             reactionIndex<network.GetReactionCount();reactionIndex++) {
+          if (!network.IsUnitUnimolecular(reactionIndex) ||
+              !(network.GetRateCoefficient(reactionIndex,0.0,
+                  Comet::Chemistry::HeliocentricDistanceAU)>0.0)) continue;
+          const ChemicalSolver::cReaction &reaction=
+              network.GetReaction(reactionIndex);
+          const int parent=
+              network.GetReactantTerm(reactionIndex,0).Species;
+          const std::size_t parentOffset=
+              component*PIC::nTotalSpecies+parent;
+          if (!transaction.Reachable[parentOffset]) continue;
+
+          std::array<long long,PIC::nTotalSpecies> coefficient{};
+          long long irreducibleFloor=0;
+          for (std::size_t term=0;term<reaction.ProductCount;term++) {
+            const ChemicalSolver::cStoichiometricTerm &product=
+                network.GetProductTerm(reactionIndex,term);
+            const long long value=
+                CheckedReactionCoefficient(product.Coefficient,reaction.Id);
+            if (coefficient[product.Species]>LLONG_MAX-value ||
+                irreducibleFloor>LLONG_MAX-value) {
+              std::fprintf(stderr,
+                  "reaction %s product coefficient sum overflows\n",
+                  reaction.Id);
+              std::abort();
+            }
+            coefficient[product.Species]+=value;
+            irreducibleFloor+=value;
+            const std::size_t productOffset=
+                component*PIC::nTotalSpecies+product.Species;
+            if (!transaction.Reachable[productOffset]) {
+              transaction.Reachable[productOffset]=1;
+              changed=true;
+            }
+          }
+          if (irreducibleFloor>
+              Comet::RadialSimulation::
+                  MaximumPhotochemicalProductsPerReaction) {
+            std::fprintf(stderr,
+                "reaction %s has irreducible product count %lld above limit %ld\n",
+                reaction.Id,irreducibleFloor,
+                Comet::RadialSimulation::
+                    MaximumPhotochemicalProductsPerReaction);
+            std::abort();
+          }
+
+          auto hardAllocation = [&]() -> long long {
+            long long total=0;
+            for (int product=0;product<PIC::nTotalSpecies;product++) {
+              if (coefficient[product]==0) continue;
+              const double ratio=
+                  transaction.ComponentCarrier[parentOffset]/
+                  transaction.ComponentCarrier[
+                      component*PIC::nTotalSpecies+product];
+              const long long multiplicity=
+                  static_cast<long long>(std::ceil(ratio));
+              if (multiplicity<=0 ||
+                  multiplicity>LLONG_MAX/coefficient[product] ||
+                  total>LLONG_MAX-multiplicity*coefficient[product]) {
+                std::fprintf(stderr,
+                    "reaction %s component allocation overflows\n",
+                    reaction.Id);
+                std::abort();
+              }
+              total+=multiplicity*coefficient[product];
+            }
+            return total;
+          };
+
+          while (hardAllocation()>
+              Comet::RadialSimulation::
+                  MaximumPhotochemicalProductsPerReaction) {
+            int selectedProduct=-1;
+            long long selectedContribution=-1;
+            for (int product=0;product<PIC::nTotalSpecies;product++) {
+              if (coefficient[product]==0 || product==parent ||
+                  Comet::RadialSimulation::ParticleWeightLocked[product])
+                continue;
+              const std::size_t productOffset=
+                  component*PIC::nTotalSpecies+product;
+              const long long multiplicity=static_cast<long long>(std::ceil(
+                  transaction.ComponentCarrier[parentOffset]/
+                  transaction.ComponentCarrier[productOffset]));
+              if (multiplicity<=1) continue;
+              const long long contribution=
+                  coefficient[product]*multiplicity;
+              if (contribution>selectedContribution) {
+                selectedContribution=contribution;
+                selectedProduct=product;
+              }
+            }
+
+            if (selectedProduct>=0) {
+              const std::size_t productOffset=
+                  component*PIC::nTotalSpecies+selectedProduct;
+              if (transaction.ComponentPowerAdjustment[productOffset]>=1024 ||
+                  !std::isfinite(
+                      2.0*transaction.ComponentCarrier[productOffset])) {
+                std::fprintf(stderr,
+                    "reaction %s requires an invalid daughter carrier\n",
+                    reaction.Id);
+                std::abort();
+              }
+              transaction.ComponentPowerAdjustment[productOffset]++;
+              transaction.ComponentCarrier[productOffset]*=2.0;
+              transaction.ChemistryConstrained[productOffset]=1;
+            }
+            else if (!Comet::RadialSimulation::
+                ParticleWeightLocked[parent]) {
+              if (transaction.ComponentPowerAdjustment[parentOffset]<=-1024) {
+                std::fprintf(stderr,
+                    "reaction %s requires an invalid parent carrier\n",
+                    reaction.Id);
+                std::abort();
+              }
+              transaction.ComponentPowerAdjustment[parentOffset]--;
+              transaction.ComponentCarrier[parentOffset]*=0.5;
+              if (!(transaction.ComponentCarrier[parentOffset]>0.0) ||
+                  !std::isfinite(
+                      transaction.ComponentCarrier[parentOffset])) {
+                std::fprintf(stderr,
+                    "reaction %s underflowed its parent carrier\n",
+                    reaction.Id);
+                std::abort();
+              }
+              transaction.ChemistryConstrained[parentOffset]=1;
+            }
+            else {
+              std::fprintf(stderr,
+                  "reaction %s cannot meet the component allocation limit without changing locked carriers\n",
+                  reaction.Id);
+              std::abort();
+            }
+            changed=true;
+          }
+        }
+      }
+    }
+  }
+
+  // Convert the final component scalars back into per-owner dyadic powers.
+  // No state has been mutated yet.  Exact clone requirements therefore cover
+  // every population and chemistry split in the transaction, not merely the
+  // initial per-block request as in the old two-phase controller.
+  for (std::size_t block=0;block<transaction.Nodes.size();block++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=transaction.Nodes[block];
+    for (int species=0;species<PIC::nTotalSpecies;species++) {
+      const std::size_t offset=block*PIC::nTotalSpecies+species;
+      const std::size_t component=transaction.ComponentIndex[block];
+      const std::size_t componentOffset=
+          component*PIC::nTotalSpecies+species;
+      const long long combinedPower=static_cast<long long>(
+          speciesPlans[species].WeightPower[block])+
+          transaction.ComponentPowerAdjustment[componentOffset];
+      if (combinedPower<-1024 || combinedPower>1024) {
+        std::fprintf(stderr,
+            "final component power is out of range for species %d\n",species);
+        std::abort();
+      }
+      const int power=static_cast<int>(combinedPower);
+      const double target=
+          std::ldexp(transaction.GlobalCarriers[offset],power);
+      if (!(target>0.0) || !std::isfinite(target)) {
+        std::fprintf(stderr,
+            "final component carrier is invalid for species %d\n",species);
+        std::abort();
+      }
+      const double expected=transaction.ComponentCarrier[componentOffset];
+      const double scale=std::max(std::fabs(target),std::fabs(expected));
+      if (std::fabs(target-expected)>
+          1024.0*std::numeric_limits<double>::epsilon()*scale) {
+        std::fprintf(stderr,
+            "final carrier left the component dyadic lattice for species %d\n",
             species);
         std::abort();
       }
-    }
-  }
+      transaction.TargetCarriers[offset]=target;
 
-  std::vector<double> targetCarriers=globalCarriers;
-  std::vector<unsigned char> activeComponent(valueCount,0);
-  for (int species=0;species<PIC::nTotalSpecies;species++) {
-    std::vector<unsigned char> visited(nodes.size(),0);
-    for (std::size_t start=0;start<nodes.size();start++) {
-      if (visited[start]) continue;
-
-      // A particle can cross any face in either direction.  Consequently a
-      // maximum transfer multiplicity of one implies
-      //
-      //   carrier(source) / carrier(destination) <= 1
-      //
-      // in both directed senses of every face, which is possible only when
-      // all blocks in that face-connected component use the same W/dt for
-      // this species.  This is deliberately stronger than the former
-      // empty-neighbor repair: a populated low-weight destination can create
-      // the same allocation burst as an empty one.  The explicit work list
-      // is dimension-independent and cannot overflow the call stack in a
-      // long radial mesh.  In DIM2/DIM3 the face table constructed above
-      // naturally includes all AMR subfaces; no edge/corner coupling is
-      // introduced.
-      std::vector<std::size_t> component,workList(1,start);
-      visited[start]=1;
-      double componentCarrier=
-          globalCarriers[start*PIC::nTotalSpecies+species];
-      for (std::size_t cursor=0;cursor<workList.size();cursor++) {
-        const std::size_t block=workList[cursor];
-        component.push_back(block);
-        componentCarrier=std::max(componentCarrier,
-            globalCarriers[block*PIC::nTotalSpecies+species]);
-        for (std::size_t neighbor:neighbors[block]) {
-          if (!visited[neighbor]) {
-            visited[neighbor]=1;
-            workList.push_back(neighbor);
-          }
-        }
-      }
-      if (component.size()>1) statistics.ActiveComponents++;
-
-      // All initial carrier rates for one species share a common value and
-      // every adaptive change is a power of two.  The fixed-point loop finds
-      // a common member of those dyadic lattices without ever lowering a
-      // weight (lowering would require immediate particle cloning).  Fail
-      // loudly if a future initialization or higher-dimensional extension
-      // violates this invariant instead of silently retaining a burst face.
-      bool targetChanged=true;
-      int targetIterations=0;
-      while (targetChanged) {
-        targetChanged=false;
-        if (++targetIterations>1024) {
+      if (Comet::RadialSimulation::ParticleWeightLocked[species]) {
+        if (power!=0) {
           std::fprintf(stderr,
-              "face-carrier propagation did not reach a dyadic fixed point\n");
+              "component plan would change locked species %d\n",species);
           std::abort();
         }
-        for (std::size_t block:component) {
-          const double raised=RaiseCarrierByPowersOfTwo(
-              globalCarriers[block*PIC::nTotalSpecies+species],
-              componentCarrier);
-          if (raised>componentCarrier*(1.0+
-              128.0*std::numeric_limits<double>::epsilon())) {
-            componentCarrier=raised;
-            targetChanged=true;
-          }
+        if (node->Thread==PIC::ThisThread) {
+          cLockedWeightSnapshot snapshot;
+          snapshot.Block=node->block;
+          snapshot.Species=species;
+          snapshot.Weight=node->block->GetLocalParticleWeight(species);
+          snapshot.WeightBits=DoubleBits(snapshot.Weight);
+          transaction.LockedWeights.push_back(snapshot);
         }
+        continue;
       }
-
-      // Record the graph distance reached from one component member.  The
-      // validator uses this to prove propagation crossed more than the first
-      // face; it is not part of the physical decision.
-      std::unordered_map<std::size_t,long long> distance;
-      std::vector<std::size_t> distanceWork(1,start);
-      distance[start]=0;
-      for (std::size_t cursor=0;cursor<distanceWork.size();cursor++) {
-        const std::size_t block=distanceWork[cursor];
-        const long long nextDistance=distance[block]+1;
-        statistics.MaximumPropagationHops=std::max(
-            statistics.MaximumPropagationHops,distance[block]);
-        for (std::size_t neighbor:neighbors[block]) {
-          if (distance.count(neighbor)!=0) continue;
-          distance[neighbor]=nextDistance;
-          distanceWork.push_back(neighbor);
-        }
+      if (power==0) continue;
+      transaction.PropagationStatistics.GlobalChangedBlockSpecies++;
+      if (node->Thread!=PIC::ThisThread) continue;
+      if (transaction.GlobalCounts[offset]>LONG_MAX) {
+        std::fprintf(stderr,
+            "local component population exceeds long int\n");
+        std::abort();
       }
-
-      for (std::size_t block:component) {
-        const std::size_t offset=block*PIC::nTotalSpecies+species;
-        activeComponent[offset]=1;
-        targetCarriers[offset]=RaiseCarrierByPowersOfTwo(
-            globalCarriers[offset],componentCarrier);
+      cWeightAdaptationPlan plan;
+      plan.Node=node;
+      plan.Species=species;
+      plan.ParticleCount=
+          static_cast<long int>(transaction.GlobalCounts[offset]);
+      plan.WeightPower=power;
+      plan.EmptyPhotochemicalDaughter=plan.ParticleCount==0 &&
+          transaction.ChemistryConstrained[componentOffset] && power>0;
+      plan.PhotochemicalCarrierConstraint=
+          transaction.ChemistryConstrained[componentOffset];
+      const long int clones=RequiredCloneCount(plan);
+      if (transaction.LocalRequiredClones>LLONG_MAX-clones) {
+        std::fprintf(stderr,
+            "component transaction clone count overflows long long\n");
+        std::abort();
       }
+      transaction.LocalRequiredClones+=clones;
+      transaction.LocalPlans.push_back(plan);
     }
   }
 
+  // Quantify both directed senses of every face before and after the plan.
+  // Equality is a plan invariant; the mover sees no systematic cloning even
+  // when a daughter carrier was lowered through hundreds of empty blocks.
+  for (std::size_t source=0;source<transaction.Nodes.size();source++)
+    for (std::size_t destination:transaction.Neighbors[source])
+      for (int species=0;species<PIC::nTotalSpecies;species++) {
+        const std::size_t sourceOffset=
+            source*PIC::nTotalSpecies+species;
+        const std::size_t destinationOffset=
+            destination*PIC::nTotalSpecies+species;
+        transaction.PropagationStatistics.MaximumCloneMeanBefore=std::max(
+            transaction.PropagationStatistics.MaximumCloneMeanBefore,
+            transaction.GlobalCarriers[sourceOffset]/
+                transaction.GlobalCarriers[destinationOffset]);
+        transaction.PropagationStatistics.MaximumCloneMeanAfter=std::max(
+            transaction.PropagationStatistics.MaximumCloneMeanAfter,
+            transaction.TargetCarriers[sourceOffset]/
+                transaction.TargetCarriers[destinationOffset]);
+      }
+  const double faceTolerance=
+      Comet::RadialSimulation::MaximumFaceTransferMultiplicity*
+      (1.0+256.0*std::numeric_limits<double>::epsilon());
+  if (transaction.PropagationStatistics.MaximumCloneMeanAfter>
+      faceTolerance) {
+    std::fprintf(stderr,
+        "component plan leaves face multiplicity %.16e above limit %ld\n",
+        transaction.PropagationStatistics.MaximumCloneMeanAfter,
+        Comet::RadialSimulation::MaximumFaceTransferMultiplicity);
+    std::abort();
+  }
+
+  // Record the maximum graph distance once per spatial component.  This is a
+  // validation diagnostic proving that a plan reached beyond immediate
+  // neighbors; it does not affect the carrier decision.
+  for (const std::vector<std::size_t> &component:transaction.ComponentNodes) {
+    if (component.empty()) continue;
+    std::vector<long long> distance(transaction.Nodes.size(),-1);
+    std::vector<std::size_t> work(1,component.front());
+    distance[component.front()]=0;
+    for (std::size_t cursor=0;cursor<work.size();cursor++) {
+      const std::size_t block=work[cursor];
+      transaction.PropagationStatistics.MaximumPropagationHops=std::max(
+          transaction.PropagationStatistics.MaximumPropagationHops,
+          distance[block]);
+      for (std::size_t neighbor:transaction.Neighbors[block])
+        if (distance[neighbor]<0) {
+          distance[neighbor]=distance[block]+1;
+          work.push_back(neighbor);
+        }
+    }
+  }
+
+  // The capacity ceiling preserves the input reserve for chemistry and MPI
+  // bookkeeping.  Roulette releases are deliberately ignored: accepting a
+  // split may not depend on stochastic deletions that have not happened yet.
+  const long double ceilingValue=std::floor(
+      static_cast<long double>(PIC::ParticleBuffer::MaxNPart)*
+      (1.0L-Comet::RadialSimulation::AllocationReserveFraction));
+  if (ceilingValue<0.0L || ceilingValue>LLONG_MAX) {
+    std::fprintf(stderr,"component transaction capacity is invalid\n");
+    std::abort();
+  }
+  const long long ceiling=static_cast<long long>(ceilingValue);
+  transaction.LocalCapacityAvailable=ceiling>
+      PIC::ParticleBuffer::NAllPart ?
+      ceiling-PIC::ParticleBuffer::NAllPart : 0;
+  if (capacityOverride>=0)
+    transaction.LocalCapacityAvailable=capacityOverride;
+  const int localCapacityFailure=
+      transaction.LocalRequiredClones>
+          transaction.LocalCapacityAvailable ? 1 : 0;
+  int globalCapacityFailure=0;
+  MPI_Allreduce(&localCapacityFailure,&globalCapacityFailure,1,MPI_INT,MPI_MAX,
+      MPI_GLOBAL_COMMUNICATOR);
+  transaction.CapacityAccepted=globalCapacityFailure==0;
+
+  // Audit every final reachable reaction against the same component values
+  // that will be committed.  This is separate from the mutation-free solver
+  // loop so a future network change cannot accidentally skip a channel.
   if (Comet::Chemistry::Enabled) {
-    // Face propagation can raise a parent carrier because some remote block
-    // already uses a larger value.  A daughter bound computed only from the
-    // population currently present in one block would then be stale, and an
-    // incoming parent could create a large reaction burst before the next
-    // sampling break.  Close the globally present reaction graph and impose
-    // the hard event bound on the *final* component carriers.  This is
-    // conservative for a future disconnected mesh (it couples components by
-    // their maxima) but is exact for the connected radial domain; a future
-    // DIM2/DIM3 refinement can perform the identical closure per component.
     const ChemicalSolver::cReactionNetwork &network=
         Comet::Chemistry::GetNetwork();
-    std::array<bool,PIC::nTotalSpecies> reachable{};
-    std::array<double,PIC::nTotalSpecies> finalCarrier{};
-    for (int species=0;species<PIC::nTotalSpecies;species++) {
-      for (std::size_t block=0;block<nodes.size();block++) {
-        const std::size_t offset=block*PIC::nTotalSpecies+species;
-        reachable[species]=reachable[species] || globalCounts[offset]>0 ||
-            HasConfiguredDirectSource(species);
-        finalCarrier[species]=std::max(finalCarrier[species],
-            targetCarriers[offset]);
-      }
-    }
-
-    bool changed=true;
-    std::size_t iterations=0;
-    const std::size_t maximumIterations=
-        4096*PIC::nTotalSpecies*(network.GetReactionCount()+1)+1;
-    while (changed) {
-      changed=false;
-      if (++iterations>maximumIterations) {
-        std::fprintf(stderr,
-            "final face/chemistry carrier constraints did not converge\n");
-        std::abort();
-      }
-
+    for (std::size_t component=0;component<componentCount;component++)
       for (std::size_t reactionIndex=0;
            reactionIndex<network.GetReactionCount();reactionIndex++) {
         if (!network.IsUnitUnimolecular(reactionIndex) ||
@@ -1156,186 +1244,63 @@ cFaceCarrierPropagationStatistics EnforceFaceCarrierMultiplicityLimit() {
                 Comet::Chemistry::HeliocentricDistanceAU)>0.0)) continue;
         const int parent=
             network.GetReactantTerm(reactionIndex,0).Species;
-        if (!reachable[parent]) continue;
+        if (!transaction.Reachable[
+            component*PIC::nTotalSpecies+parent]) continue;
         const ChemicalSolver::cReaction &reaction=
             network.GetReaction(reactionIndex);
+        long long total=0;
         for (std::size_t term=0;term<reaction.ProductCount;term++) {
-          const int product=
-              network.GetProductTerm(reactionIndex,term).Species;
-          if (!reachable[product]) {
-            reachable[product]=true;
-            changed=true;
-          }
-        }
-
-        auto hardAllocation = [&]() -> long long {
-          long long total=0;
-          for (std::size_t term=0;term<reaction.ProductCount;term++) {
-            const ChemicalSolver::cStoichiometricTerm &product=
-                network.GetProductTerm(reactionIndex,term);
-            const long long coefficient=static_cast<long long>(
-                std::floor(product.Coefficient+0.5));
-            const long long multiplicity=static_cast<long long>(std::ceil(
-                finalCarrier[parent]/finalCarrier[product.Species]));
-            if (multiplicity<=0 || coefficient<=0 ||
-                multiplicity>LLONG_MAX/coefficient ||
-                total>LLONG_MAX-multiplicity*coefficient) {
-              std::fprintf(stderr,
-                  "invalid final hard allocation bound in reaction %s\n",
-                  reaction.Id);
-              std::abort();
-            }
-            total+=multiplicity*coefficient;
-          }
-          return total;
-        };
-
-        while (hardAllocation()>
-            Comet::RadialSimulation::MaximumPhotochemicalProductsPerReaction) {
-          int selectedProduct=-1;
-          long long selectedContribution=-1;
-          for (std::size_t term=0;term<reaction.ProductCount;term++) {
-            const ChemicalSolver::cStoichiometricTerm &product=
-                network.GetProductTerm(reactionIndex,term);
-            if (product.Species==parent ||
-                Comet::RadialSimulation::ParticleWeightLocked[product.Species])
-              continue;
-            const long long coefficient=static_cast<long long>(
-                std::floor(product.Coefficient+0.5));
-            const long long multiplicity=static_cast<long long>(std::ceil(
-                finalCarrier[parent]/finalCarrier[product.Species]));
-            if (multiplicity<=1) continue;
-            const long long contribution=coefficient*multiplicity;
-            if (contribution>selectedContribution) {
-              selectedContribution=contribution;
-              selectedProduct=product.Species;
-            }
-          }
-          if (selectedProduct<0 ||
-              !std::isfinite(2.0*finalCarrier[selectedProduct])) {
+          const ChemicalSolver::cStoichiometricTerm &product=
+              network.GetProductTerm(reactionIndex,term);
+          const long long coefficient=
+              CheckedReactionCoefficient(product.Coefficient,reaction.Id);
+          const long long multiplicity=static_cast<long long>(std::ceil(
+              transaction.ComponentCarrier[
+                  component*PIC::nTotalSpecies+parent]/
+              transaction.ComponentCarrier[
+                  component*PIC::nTotalSpecies+product.Species]));
+          if (multiplicity<=0 || multiplicity>LLONG_MAX/coefficient ||
+              total>LLONG_MAX-multiplicity*coefficient) {
             std::fprintf(stderr,
-                "reaction %s cannot satisfy the final hard daughter limit without changing a locked product weight\n",
-                reaction.Id);
+                "reaction %s final allocation overflows\n",reaction.Id);
             std::abort();
           }
-          finalCarrier[selectedProduct]*=2.0;
-          changed=true;
+          total+=multiplicity*coefficient;
         }
-      }
-    }
-
-    // Raise every spatial component to the chemistry-safe value using the
-    // same dyadic operation as the face controller.  Never lower a carrier:
-    // lowering here would allocate particles before capacity is protected.
-    for (int species=0;species<PIC::nTotalSpecies;species++)
-      for (std::size_t block=0;block<nodes.size();block++) {
-        const std::size_t offset=block*PIC::nTotalSpecies+species;
-        targetCarriers[offset]=RaiseCarrierByPowersOfTwo(
-            targetCarriers[offset],finalCarrier[species]);
+        transaction.GlobalMaximumProductsPlanned=std::max(
+            transaction.GlobalMaximumProductsPlanned,total);
       }
   }
-
-  // Complete every collective planning step before mutating a block, then
-  // reject any plan that would alter a locked species.  This preflight keeps
-  // a policy conflict transactional: no rank has changed a particle list or
-  // weight when the conflict is reported.
-  for (std::size_t block=0;block<nodes.size();block++)
-    for (int species=0;species<PIC::nTotalSpecies;species++) {
-      if (!Comet::RadialSimulation::ParticleWeightLocked[species]) continue;
-      const std::size_t offset=block*PIC::nTotalSpecies+species;
-      const double scale=std::max(std::fabs(globalCarriers[offset]),1.0);
-      if (std::fabs(targetCarriers[offset]-globalCarriers[offset])>
-          64.0*std::numeric_limits<double>::epsilon()*scale) {
-        std::fprintf(stderr,
-            "face/chemistry carrier plan would change locked species %d in block %zu\n",
-            species,block);
-        std::abort();
-      }
-    }
-
-  // Quantify the exact mover multiplicity that motivated this propagation on
-  // every directed face, including populated-populated and populated-empty
-  // pairs.  The configured production value is currently required to be one;
-  // retaining it in this check makes a future bounded-multiplicity extension
-  // explicit rather than hidden in a numerical tolerance.
-  for (std::size_t source=0;source<nodes.size();source++)
-    for (std::size_t destination:neighbors[source])
-      for (int species=0;species<PIC::nTotalSpecies;species++) {
-        const std::size_t sourceOffset=
-            source*PIC::nTotalSpecies+species;
-        const std::size_t destinationOffset=
-            destination*PIC::nTotalSpecies+species;
-        if (!activeComponent[destinationOffset]) continue;
-        statistics.MaximumCloneMeanBefore=std::max(
-            statistics.MaximumCloneMeanBefore,
-            globalCarriers[sourceOffset]/globalCarriers[destinationOffset]);
-        statistics.MaximumCloneMeanAfter=std::max(
-            statistics.MaximumCloneMeanAfter,
-            targetCarriers[sourceOffset]/targetCarriers[destinationOffset]);
-      }
-  const double ratioTolerance=
-      Comet::RadialSimulation::MaximumFaceTransferMultiplicity*
-      (1.0+256.0*std::numeric_limits<double>::epsilon());
-  if (statistics.MaximumCloneMeanAfter>ratioTolerance) {
+  if (transaction.GlobalMaximumProductsPlanned>
+      Comet::RadialSimulation::MaximumPhotochemicalProductsPerReaction) {
     std::fprintf(stderr,
-        "face-carrier propagation left an excessive transfer multiplicity: mean=%.16e limit=%ld\n",
-        statistics.MaximumCloneMeanAfter,
-        Comet::RadialSimulation::MaximumFaceTransferMultiplicity);
+        "component chemistry plan leaves %lld products above limit %ld\n",
+        transaction.GlobalMaximumProductsPlanned,
+        Comet::RadialSimulation::MaximumPhotochemicalProductsPerReaction);
     std::abort();
   }
+  return transaction;
+}
 
-  for (std::size_t block=0;block<nodes.size();block++) {
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=nodes[block];
-    if (node->Thread!=PIC::ThisThread) continue;
-    for (int species=0;species<PIC::nTotalSpecies;species++) {
-      const std::size_t offset=block*PIC::nTotalSpecies+species;
-      if (!activeComponent[offset]) continue;
-      int power=0;
-      RaiseCarrierByPowersOfTwo(globalCarriers[offset],
-          targetCarriers[offset],&power);
-      if (power==0) continue;
-      const long int localCount=CountSpeciesInBlock(node->block,species);
-      if (localCount!=globalCounts[offset]) {
-        std::fprintf(stderr,
-            "owner population changed during face-carrier planning for species %d\n",
-            species);
-        std::abort();
-      }
-
-      if (localCount==0) {
-        // No list exists to resample.  Raising only the block weight keeps
-        // every cell empty and ensures the first arriving particle is never
-        // cloned by this face conversion.
-        const double oldWeight=node->block->GetLocalParticleWeight(species);
-        const double newWeight=std::ldexp(oldWeight,power);
-        if (!(newWeight>0.0) || !std::isfinite(newWeight)) {
-          std::fprintf(stderr,
-              "invalid propagated empty-block weight for species %d\n",
-              species);
-          std::abort();
-        }
-        node->block->SetLocalParticleWeight(newWeight,species);
-      }
-      else {
-        // A populated block must conserve its represented flux while its
-        // carrier is raised.  Apply the same unbiased factor-two roulette as
-        // ordinary weight adaptation once per exponent step.  No allocation
-        // occurs in this branch; it can only release particle-buffer slots.
-        cWeightAdaptationPlan plan;
-        plan.Node=node;
-        plan.Species=species;
-        plan.ParticleCount=localCount;
-        plan.WeightPower=power;
-        for (int step=0;step<power;step++) RouletteSpeciesByTwo(plan);
-      }
-      statistics.LocalChangedBlockSpecies++;
-    }
+void SetEmptySpeciesWeight(const cWeightAdaptationPlan &plan) {
+  if (plan.ParticleCount!=0 ||
+      CountSpeciesInBlock(plan.Node->block,plan.Species)!=0) {
+    std::fprintf(stderr,
+        "component empty-weight plan found a represented particle\n");
+    std::abort();
   }
-  MPI_Allreduce(&statistics.LocalChangedBlockSpecies,
-      &statistics.GlobalChangedBlockSpecies,1,MPI_LONG_LONG,MPI_SUM,
-      MPI_GLOBAL_COMMUNICATOR);
-  LastFaceCarrierPropagationStatistics=statistics;
-  return statistics;
+  const double oldWeight=
+      plan.Node->block->GetLocalParticleWeight(plan.Species);
+  const double newWeight=std::ldexp(oldWeight,plan.WeightPower);
+  if (!(oldWeight>0.0) || !std::isfinite(oldWeight) ||
+      !(newWeight>0.0) || !std::isfinite(newWeight)) {
+    std::fprintf(stderr,
+        "invalid empty component weight for species %d\n",plan.Species);
+    std::abort();
+  }
+  // No list is created.  The empty block merely receives the same W/dt
+  // lattice value as every populated member of its face component.
+  plan.Node->block->SetLocalParticleWeight(newWeight,plan.Species);
 }
 
 void EmergencyRouletteAllAllocatedBlockCopies(
@@ -1385,111 +1350,29 @@ void EmergencyRouletteAllAllocatedBlockCopies(
 void AdaptParticleWeights(long int completedIterations) {
   if (!Comet::RadialSimulation::ParticleWeightAdaptationEnabled) return;
 
-  std::vector<cWeightAdaptationPlan> plans;
-  std::vector<cLockedWeightSnapshot> lockedWeights;
-  long int requiredClones=0;
-  long long localMaximumProductsBefore=0;
-  long long localMaximumTotalBlockParticles=0;
-  for (unsigned int blockIndex=0;
-       blockIndex<PIC::DomainBlockDecomposition::nLocalBlocks;blockIndex++) {
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=
-        PIC::DomainBlockDecomposition::BlockTable[blockIndex];
-    if (node==NULL || node->block==NULL) continue;
+  cComponentCarrierTransaction transaction=
+      BuildComponentCarrierTransaction();
 
-    // Count all species in one list traversal.  The decision is based on the
-    // instantaneous population at the break, not on the completed time-
-    // averaged density sample that has already been written.
-    const std::array<long int,PIC::nTotalSpecies> counts=
-        CountAllSpeciesInBlock(node->block);
-    localMaximumTotalBlockParticles=std::max(
-        localMaximumTotalBlockParticles,GetTotalBlockParticleCount(counts));
-    localMaximumProductsBefore=std::max(localMaximumProductsBefore,
-        MaximumReactionDaughterAllocation(node->block,counts));
-    std::array<int,PIC::nTotalSpecies> finalWeightPower{};
-    std::array<bool,PIC::nTotalSpecies> chemistryConstrained{};
-
-    for (int species=0;species<PIC::nTotalSpecies;species++) {
-      if (Comet::RadialSimulation::ParticleWeightLocked[species]) {
-        // A lock is stronger than either a group or global population range.
-        // Snapshot every owner value so the later face-component safety pass
-        // cannot change a locked carrier silently.  Emergency coarsening does
-        // not use this routine and remains the documented buffer-safety
-        // override.
-        cLockedWeightSnapshot snapshot;
-        snapshot.Block=node->block;
-        snapshot.Species=species;
-        snapshot.Weight=node->block->GetLocalParticleWeight(species);
-        lockedWeights.push_back(snapshot);
-        continue;
-      }
-      if (counts[species]==0) continue;
-      finalWeightPower[species]=SelectWeightPower(counts[species],species);
-    }
-
-    // Apply the hard reaction constraint to every reachable product, not only
-    // absent species.  This may override a population-driven split: keeping a
-    // reaction event below its actual allocation limit takes precedence over
-    // the requested sampling range because violating it can exhaust the rank
-    // before any later emergency checkpoint is reachable.
-    ConstrainPhotochemicalDaughterPlans(node,counts,finalWeightPower,
-        chemistryConstrained);
-
-    for (int species=0;species<PIC::nTotalSpecies;species++) {
-      if (finalWeightPower[species]==0) continue;
-      cWeightAdaptationPlan plan;
-      plan.Node=node;
-      plan.Species=species;
-      plan.ParticleCount=counts[species];
-      plan.WeightPower=finalWeightPower[species];
-      plan.EmptyPhotochemicalDaughter=counts[species]==0 &&
-          chemistryConstrained[species] && plan.WeightPower>0;
-      plan.PhotochemicalCarrierConstraint=chemistryConstrained[species];
-
-      const double oldWeight=node->block->GetLocalParticleWeight(species);
-      const double newWeight=std::ldexp(oldWeight,plan.WeightPower);
-      if (!(oldWeight>0.0) || !std::isfinite(oldWeight) ||
-          !(newWeight>0.0) || !std::isfinite(newWeight)) {
-        std::fprintf(stderr,
-            "invalid planned particle weight for species %d\n",species);
-        std::abort();
-      }
-      const long int clones=RequiredCloneCount(plan);
-      if (requiredClones>LONG_MAX-clones) {
-        std::fprintf(stderr,
-            "particle-weight adaptation total clone count overflows long int\n");
-        std::abort();
-      }
-      requiredClones+=clones;
-      plans.push_back(plan);
-    }
-  }
-
-  // The regular controller above treats each species independently.  A
-  // pathological block can nevertheless contain a very large sum over many
-  // species, or a single reaction-driven population can overshoot far beyond
-  // the requested range between two sampling windows.  Detect that condition
-  // from the pre-adaptation snapshot.  All ranks store the same global result
-  // so the later collective callback cannot diverge across MPI processes.
-  long long globalMaximumTotalBlockParticles=0;
-  MPI_Allreduce(&localMaximumTotalBlockParticles,
-      &globalMaximumTotalBlockParticles,1,MPI_LONG_LONG,MPI_MAX,
-      MPI_GLOBAL_COMMUNICATOR);
+  // Preserve the existing independent all-species emergency trigger.  It is
+  // evaluated from the same authoritative pre-transaction counts used by the
+  // component planner and still executes only at the next safe pre-exchange
+  // callback.
   const long long samplingEmergencyBlockThreshold=
       GetSamplingPopulationEmergencyBlockThreshold();
-  if (globalMaximumTotalBlockParticles>samplingEmergencyBlockThreshold) {
+  if (transaction.GlobalMaximumTotalBlockParticles>
+      samplingEmergencyBlockThreshold) {
     SamplingPopulationEmergencyPending=true;
     SamplingPopulationEmergencyMaximumBlockParticles=
-        globalMaximumTotalBlockParticles;
+        transaction.GlobalMaximumTotalBlockParticles;
     SamplingPopulationEmergencyThresholdBlockParticles=
         samplingEmergencyBlockThreshold;
     SamplingPopulationEmergencyIteration=completedIterations;
-
     if (PIC::ThisThread==0) {
       std::fprintf(PIC::DiagnospticMessageStream,
           "$PREFIX: radial sampling-population emergency requested iteration=%ld max-mean-total-particles-per-cell=%.6e threshold=%.6e multiplier=%lld species=%d execution=before-next-regular-mpi-particle-exchange\n",
           completedIterations,
-          static_cast<double>(globalMaximumTotalBlockParticles)/
-              BlockCellCount,
+          static_cast<double>(
+              transaction.GlobalMaximumTotalBlockParticles)/BlockCellCount,
           static_cast<double>(samplingEmergencyBlockThreshold)/
               BlockCellCount,
           SamplingPopulationEmergencyMultiplier,PIC::nTotalSpecies);
@@ -1497,20 +1380,13 @@ void AdaptParticleWeights(long int completedIterations) {
     }
   }
 
-  // Preflight against the per-rank buffer before changing any weight or list.
-  // This deliberately ignores particles that roulette may free, making the
-  // check conservative and preventing a half-applied split transaction.
-  const long int available=
-      PIC::ParticleBuffer::MaxNPart-PIC::ParticleBuffer::NAllPart;
-  const int localCapacityFailure=requiredClones>available ? 1 : 0;
-  int globalCapacityFailure=0;
-  MPI_Allreduce(&localCapacityFailure,&globalCapacityFailure,1,MPI_INT,MPI_MAX,
-      MPI_GLOBAL_COMMUNICATOR);
-  if (globalCapacityFailure!=0) {
-    if (localCapacityFailure!=0)
+  if (!transaction.CapacityAccepted) {
+    if (transaction.LocalRequiredClones>
+        transaction.LocalCapacityAvailable)
       std::fprintf(stderr,
-          "rank %d needs %ld adaptation clones but has only %ld particle slots\n",
-          PIC::ThisThread,requiredClones,available);
+          "rank %d component transaction needs %lld clones but has %lld reserved particle slots; no state was changed\n",
+          PIC::ThisThread,transaction.LocalRequiredClones,
+          transaction.LocalCapacityAvailable);
     std::abort();
   }
 
@@ -1518,12 +1394,13 @@ void AdaptParticleWeights(long int completedIterations) {
   long long localSplitPlans=0,localRoulettePlans=0;
   long long localEmptyDaughterPlans=0;
   long long localChemistryConstrainedPlans=0;
-  for (const cWeightAdaptationPlan &plan:plans) {
+  for (const cWeightAdaptationPlan &plan:transaction.LocalPlans) {
     if (plan.PhotochemicalCarrierConstraint)
       localChemistryConstrainedPlans++;
-    if (plan.EmptyPhotochemicalDaughter) {
-      localEmptyDaughterPlans++;
-      RaiseEmptyPhotochemicalDaughterWeight(plan);
+    if (plan.ParticleCount==0) {
+      if (plan.EmptyPhotochemicalDaughter)
+        localEmptyDaughterPlans++;
+      SetEmptySpeciesWeight(plan);
     }
     else if (plan.WeightPower<0) {
       localSplitPlans++;
@@ -1537,86 +1414,88 @@ void AdaptParticleWeights(long int completedIterations) {
     }
   }
 
-  // Population and chemistry plans above modify only their owner block.
-  // Before the next mover step, enforce the configured multiplicity on every
-  // directed face.  At the validated value of one this equalizes W/dt over a
-  // complete face-connected component.  Empty blocks receive only a weight;
-  // populated blocks are rouletted, so the operation allocates no particles.
-  // This closes both empty- and populated-destination transport bursts.
-  const cFaceCarrierPropagationStatistics propagationStatistics=
-      EnforceFaceCarrierMultiplicityLimit();
+  long long localStatistics[7]={localBefore,PIC::ParticleBuffer::NAllPart,
+      static_cast<long long>(transaction.LocalPlans.size()),localSplitPlans,
+      localRoulettePlans,localEmptyDaughterPlans,
+      localChemistryConstrainedPlans};
+  long long globalStatistics[7]={0,0,0,0,0,0,0};
+  MPI_Allreduce(localStatistics,globalStatistics,7,MPI_LONG_LONG,MPI_SUM,
+      MPI_GLOBAL_COMMUNICATOR);
+  transaction.PropagationStatistics.LocalChangedBlockSpecies=
+      static_cast<long long>(transaction.LocalPlans.size());
 
-  // The face solver is allowed to coarsen populated or empty blocks for an
-  // adaptable species, but a Stage-1 lock is an application contract.  Fail
-  // immediately if an unexpected pre-existing carrier discontinuity would
-  // force the solver to alter a locked owner value; continuing would change
-  // its future injection population while claiming that it remained locked.
-  for (const cLockedWeightSnapshot &snapshot:lockedWeights) {
+  if (globalStatistics[2]>0) SynchronizeAdaptedBlockWeights();
+
+  // A regular transaction never writes a locked owner value.  Compare its
+  // exact IEEE representation after synchronization; a tolerance would hide
+  // a one-bit source carrier drift and invalidate the bitwise source-lock
+  // contract used by the Stage-2 pilot.
+  for (const cLockedWeightSnapshot &snapshot:transaction.LockedWeights) {
     const double current=
         snapshot.Block->GetLocalParticleWeight(snapshot.Species);
-    const double scale=std::max(std::fabs(snapshot.Weight),1.0);
-    if (std::fabs(current-snapshot.Weight)>
-        64.0*std::numeric_limits<double>::epsilon()*scale) {
+    if (DoubleBits(current)!=snapshot.WeightBits) {
       std::fprintf(stderr,
-          "face-carrier propagation changed locked species %d weight\n",
+          "component transaction changed locked species %d weight bits\n",
           snapshot.Species);
       std::abort();
     }
   }
 
   long long localMaximumProductsAfter=0;
-  for (unsigned int blockIndex=0;
-       blockIndex<PIC::DomainBlockDecomposition::nLocalBlocks;blockIndex++) {
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=
-        PIC::DomainBlockDecomposition::BlockTable[blockIndex];
-    if (node==NULL || node->block==NULL) continue;
+  for (std::size_t block=0;block<transaction.Nodes.size();block++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=transaction.Nodes[block];
+    if (node->Thread!=PIC::ThisThread) continue;
+    for (int species=0;species<PIC::nTotalSpecies;species++) {
+      const std::size_t offset=block*PIC::nTotalSpecies+species;
+      const double actual=GetCarrierRate(node->block,species);
+      const double expected=transaction.TargetCarriers[offset];
+      const double scale=std::max(std::fabs(actual),std::fabs(expected));
+      if (std::fabs(actual-expected)>
+          1024.0*std::numeric_limits<double>::epsilon()*scale) {
+        std::fprintf(stderr,
+            "committed component carrier differs from its plan for block %zu species %d\n",
+            block,species);
+        std::abort();
+      }
+    }
     const std::array<long int,PIC::nTotalSpecies> counts=
         CountAllSpeciesInBlock(node->block);
     localMaximumProductsAfter=std::max(localMaximumProductsAfter,
         MaximumReactionDaughterAllocation(node->block,counts));
   }
+  long long globalMaximumProductsAfter=0;
+  MPI_Allreduce(&localMaximumProductsAfter,&globalMaximumProductsAfter,1,
+      MPI_LONG_LONG,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
   if (Comet::Chemistry::Enabled &&
-      localMaximumProductsAfter>
+      globalMaximumProductsAfter>
           Comet::RadialSimulation::MaximumPhotochemicalProductsPerReaction) {
     std::fprintf(stderr,
-        "rank %d photochemical adaptation left %lld possible products per event; limit=%ld\n",
-        PIC::ThisThread,localMaximumProductsAfter,
+        "component transaction left %lld products per event above limit %ld\n",
+        globalMaximumProductsAfter,
         Comet::RadialSimulation::MaximumPhotochemicalProductsPerReaction);
     std::abort();
   }
 
-  long long localStatistics[7]={localBefore,PIC::ParticleBuffer::NAllPart,
-      static_cast<long long>(plans.size()),localSplitPlans,
-      localRoulettePlans,localEmptyDaughterPlans,
-      localChemistryConstrainedPlans};
-  long long globalStatistics[7]={0,0,0,0,0,0,0};
-  MPI_Allreduce(localStatistics,globalStatistics,7,MPI_LONG_LONG,MPI_SUM,
-      MPI_GLOBAL_COMMUNICATOR);
-  long long localProductStatistics[2]={localMaximumProductsBefore,
-      localMaximumProductsAfter};
-  long long globalProductStatistics[2]={0,0};
-  MPI_Allreduce(localProductStatistics,globalProductStatistics,2,MPI_LONG_LONG,
-      MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
-
-  if (globalStatistics[2]>0 ||
-      propagationStatistics.GlobalChangedBlockSpecies>0)
-    SynchronizeAdaptedBlockWeights();
+  LastFaceCarrierPropagationStatistics=
+      transaction.PropagationStatistics;
   if (PIC::ThisThread==0) {
     std::fprintf(PIC::DiagnospticMessageStream,
-        "$PREFIX: radial particle-weight adaptation iteration=%ld range=%ld:%ld particles=%lld->%lld changed-block-species=%lld split=%lld roulette=%lld empty-photochemical-daughter=%lld chemistry-constrained=%lld face-carrier-changes=%lld face-components=%lld max-face-hops=%lld max-face-clone-mean=%.6e->%.6e max-products-per-reaction=%lld->%lld limit=%ld\n",
+        "$PREFIX: radial particle-weight adaptation iteration=%ld range=%ld:%ld particles=%lld->%lld changed-block-species=%lld split=%lld roulette=%lld empty-photochemical-daughter=%lld chemistry-constrained=%lld face-carrier-changes=%lld face-components=%lld max-face-hops=%lld max-face-clone-mean=%.6e->%.6e max-products-per-reaction=%lld->%lld limit=%ld component-planner=on required-clones=%lld\n",
         completedIterations,
         Comet::RadialSimulation::MinimumParticlesPerCell,
         Comet::RadialSimulation::MaximumParticlesPerCell,
         globalStatistics[0],globalStatistics[1],globalStatistics[2],
         globalStatistics[3],globalStatistics[4],globalStatistics[5],
         globalStatistics[6],
-        propagationStatistics.GlobalChangedBlockSpecies,
-        propagationStatistics.ActiveComponents,
-        propagationStatistics.MaximumPropagationHops,
-        propagationStatistics.MaximumCloneMeanBefore,
-        propagationStatistics.MaximumCloneMeanAfter,
-        globalProductStatistics[0],globalProductStatistics[1],
-        Comet::RadialSimulation::MaximumPhotochemicalProductsPerReaction);
+        transaction.PropagationStatistics.GlobalChangedBlockSpecies,
+        transaction.PropagationStatistics.ActiveComponents,
+        transaction.PropagationStatistics.MaximumPropagationHops,
+        transaction.PropagationStatistics.MaximumCloneMeanBefore,
+        transaction.PropagationStatistics.MaximumCloneMeanAfter,
+        transaction.GlobalMaximumProductsBefore,
+        globalMaximumProductsAfter,
+        Comet::RadialSimulation::MaximumPhotochemicalProductsPerReaction,
+        transaction.LocalRequiredClones);
     std::fflush(PIC::DiagnospticMessageStream);
   }
 }
@@ -1628,7 +1507,13 @@ void SeedValidationParticles(
   long int &first=node->block->FirstCellParticleTable[0];
   const double cellWidth=(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_;
   const double position[3]={node->xmin[0]+0.5*cellWidth,0.0,0.0};
-  const double velocity[3]={0.0,0.0,0.0};
+  // Use a non-zero, identical state for every synthetic particle.  Exact
+  // splitting must duplicate every stored degree of freedom, while roulette
+  // must retain an unbiased subset.  With a common state the represented
+  // number, mass, momentum, kinetic energy, and internal energy all have the
+  // same analytically known split/roulette scaling and can be checked without
+  // confusing adaptation error with thermal sampling noise.
+  const double velocity[3]={417.0,-31.0,12.0};
   for (long int particle=0;particle<particleCount;particle++) {
     const long int ptr=PIC::ParticleBuffer::GetNewParticle(first);
     PIC::ParticleBuffer::byte *data=
@@ -1641,11 +1526,100 @@ void SeedValidationParticles(
         Comet::RadialSimulation::InnerBoundaryTemperature,data);
     PIC::IDF::InitVibTemp(
         Comet::RadialSimulation::InnerBoundaryTemperature,data);
+    if (PIC::IDF::nTotalRotationalModes[species]>0)
+      PIC::IDF::LB::SetRotE(1.0e-21*(species+1),data);
+    for (int mode=0;mode<PIC::IDF::nTotalVibtationalModes[species];mode++)
+      PIC::IDF::LB::SetVibE(2.0e-22*(mode+1),mode,data);
 #endif
 #if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
     PIC::Mover::SetLocalTimeStepRemainderFraction(0.0,data);
 #endif
   }
+}
+
+// Integrated represented moments used by the Stage-2 transaction tests.
+// WeightSquared is not a physical moment; it is the exact variance coefficient
+// for independent 1/2 roulette with unequal local block weights.
+struct cValidationMoments {
+  double Number=0.0;
+  double Mass=0.0;
+  double Momentum[3]={0.0,0.0,0.0};
+  double KineticEnergy=0.0;
+  double InternalEnergy=0.0;
+  double WeightSquared=0.0;
+};
+
+cValidationMoments CollectValidationMoments(int species) {
+  cValidationMoments local,global;
+  std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> nodes;
+  CollectCalculationLeafNodes(PIC::Mesh::mesh->rootTree,nodes);
+  const double mass=PIC::MolecularData::GetMass(species);
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node:nodes) {
+    if (node->Thread!=PIC::ThisThread || node->block==NULL) continue;
+    const double weight=node->block->GetLocalParticleWeight(species);
+    for (long int cell=0;cell<BlockCellCount;cell++)
+      for (long int ptr=node->block->FirstCellParticleTable[cell];ptr!=-1;
+           ptr=PIC::ParticleBuffer::GetNext(ptr)) {
+        PIC::ParticleBuffer::byte *data=
+            PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+        if (PIC::ParticleBuffer::GetI(data)!=species) continue;
+        double velocity[3];
+        PIC::ParticleBuffer::GetV(velocity,data);
+        local.Number+=weight;
+        local.Mass+=weight*mass;
+        double speedSquared=0.0;
+        for (int dimension=0;dimension<3;dimension++) {
+          local.Momentum[dimension]+=weight*mass*velocity[dimension];
+          speedSquared+=velocity[dimension]*velocity[dimension];
+        }
+        local.KineticEnergy+=0.5*weight*mass*speedSquared;
+#if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
+        double internal=0.0;
+        if (PIC::IDF::nTotalRotationalModes[species]>0)
+          internal+=PIC::IDF::GetRotE(data);
+        for (int mode=0;mode<PIC::IDF::nTotalVibtationalModes[species];mode++)
+          internal+=PIC::IDF::GetVibE(mode,data);
+        local.InternalEnergy+=weight*internal;
+#endif
+        local.WeightSquared+=weight*weight;
+      }
+  }
+
+  // Keep this as a contiguous explicit pack instead of relying on struct
+  // padding in MPI.  Every entry is a sum and therefore decomposition
+  // independent to ordinary floating-point reduction tolerance.
+  double localValues[8]={local.Number,local.Mass,local.Momentum[0],
+      local.Momentum[1],local.Momentum[2],local.KineticEnergy,
+      local.InternalEnergy,local.WeightSquared};
+  double globalValues[8]={0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
+  MPI_Allreduce(localValues,globalValues,8,MPI_DOUBLE,MPI_SUM,
+      MPI_GLOBAL_COMMUNICATOR);
+  global.Number=globalValues[0];
+  global.Mass=globalValues[1];
+  for (int dimension=0;dimension<3;dimension++)
+    global.Momentum[dimension]=globalValues[2+dimension];
+  global.KineticEnergy=globalValues[5];
+  global.InternalEnergy=globalValues[6];
+  global.WeightSquared=globalValues[7];
+  return global;
+}
+
+bool ValidationMomentsEqual(const cValidationMoments &left,
+    const cValidationMoments &right,double relativeTolerance) {
+  const double leftValues[7]={left.Number,left.Mass,left.Momentum[0],
+      left.Momentum[1],left.Momentum[2],left.KineticEnergy,
+      left.InternalEnergy};
+  const double rightValues[7]={right.Number,right.Mass,right.Momentum[0],
+      right.Momentum[1],right.Momentum[2],right.KineticEnergy,
+      right.InternalEnergy};
+  for (int value=0;value<7;value++) {
+    const double scale=std::max(std::fabs(leftValues[value]),
+        std::fabs(rightValues[value]));
+    if (scale==0.0) continue;
+    if (std::fabs(leftValues[value]-rightValues[value])>
+        relativeTolerance*scale) return false;
+  }
+  return true;
 }
 
 bool OtherValidationCellsAreEmpty(PIC::Mesh::cDataBlockAMR *block) {
@@ -2538,8 +2512,6 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
           "particle-weight adaptation validation requires one unlocked species\n");
     return false;
   }
-  const double originalWeight=localHasBlock ?
-      node->block->GetLocalParticleWeight(species) : 1.0;
   const double originalCarrier=localHasBlock ?
       GetCarrierRate(node->block,species) : 0.0;
   double globalOriginalCarrier=0.0;
@@ -2548,101 +2520,294 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
   bool localPass=true;
   int localGhostChecks=0;
   int localFaceCarrierPropagationChecks=0;
+  int localComponentPopulationChecks=0;
+  int localEmptyBlockChecks=0;
+  int localTwoEndedChecks=0;
+  int localLockedSourceChecks=0;
+  int localSplitConservationChecks=0;
+  int localRouletteConservationChecks=0;
+  int localCapacityRollbackChecks=0;
+  int localPartialMutations=0;
+  double stage2MaximumFaceMultiplicity=0.0;
+  long long stage2MaximumReactionAllocation=0;
 
-  // Splitting test: choose a nonzero block mean well below the lower bound.
-  // The selector decides the required power, so the test remains valid for
-  // any mathematically supported input range.  All particles begin in cell
-  // zero; the other cells must remain empty after every split.
-  PIC::ParticleBuffer::DeleteAllParticles();
-  const long int splitInitial=std::max(1L,
-      (SpeciesMinimumParticlesPerCell[species]*BlockCellCount+7)/8);
-  const int splitPower=SelectWeightPower(splitInitial,species);
-  const double splitTargetCarrier=
-      std::ldexp(globalOriginalCarrier,splitPower);
-  // Put every other block at the carrier the selected blocks will reach.
-  // Otherwise the strict face controller would correctly raise the selected
-  // carrier after splitting and its roulette would obscure this focused test
-  // of the split primitive.
-  SetWeightOverTimeStep(species,splitTargetCarrier,
-      PIC::Mesh::mesh->rootTree);
-  if (localHasBlock) {
-    node->block->SetLocalParticleWeight(originalWeight,species);
-    SeedValidationParticles(node,species,splitInitial);
+  std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> calculationNodes;
+  CollectCalculationLeafNodes(PIC::Mesh::mesh->rootTree,calculationNodes);
+  if (calculationNodes.size()>
+      static_cast<std::size_t>(LLONG_MAX/BlockCellCount) ||
+      globalBlockCount!=PIC::nTotalThreads) {
+    if (PIC::ThisThread==0)
+      std::fprintf(stderr,
+          "Stage-2 validation requires one selected owner per rank and a representable cell count\n");
+    localPass=false;
   }
+  const long long totalCalculationCells=
+      static_cast<long long>(calculationNodes.size())*BlockCellCount;
+
+  // Use a compact validation range.  Its 5:20 interval has exact dyadic test
+  // points: a component mean of one must split three times to eight, and a
+  // mean of forty must roulette once to twenty.  Only the selected species is
+  // changed and the input policy is restored before the chemistry/emergency
+  // regression tests below.
+  const long int configuredSpeciesMinimum=
+      SpeciesMinimumParticlesPerCell[species];
+  const long int configuredSpeciesMaximum=
+      SpeciesMaximumParticlesPerCell[species];
+  SpeciesMinimumParticlesPerCell[species]=5;
+  SpeciesMaximumParticlesPerCell[species]=20;
+  const bool configuredChemistryEnabled=Comet::Chemistry::Enabled;
+  Comet::Chemistry::Enabled=false;
+
+  int lockedSpecies=-1;
+  for (int candidate=0;candidate<PIC::nTotalSpecies;candidate++)
+    if (ParticleWeightLocked[candidate]) {
+      lockedSpecies=candidate;
+      break;
+    }
+  std::vector<std::uint64_t> lockedWeightBits;
+  if (lockedSpecies>=0) {
+    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *testNode:calculationNodes)
+      if (testNode->Thread==PIC::ThisThread && testNode->block!=NULL)
+        lockedWeightBits.push_back(DoubleBits(
+            testNode->block->GetLocalParticleWeight(lockedSpecies)));
+  }
+  else localPass=false;
+
+  auto distributedCount = [&](long long total) -> long int {
+    if (globalBlockCount<=0) return 0;
+    const long long base=total/globalBlockCount;
+    const long long remainder=total%globalBlockCount;
+    const long long result=base+(PIC::ThisThread<remainder ? 1 : 0);
+    if (result<0 || result>LONG_MAX) {
+      std::fprintf(stderr,"Stage-2 validation population exceeds long int\n");
+      std::abort();
+    }
+    return localHasBlock ? static_cast<long int>(result) : 0;
+  };
+
+  // Component split: particles occupy one owner block per rank while every
+  // other cell contributes zero to the component mean.  The plan must lower
+  // W/dt on the complete face component, clone only existing particles, and
+  // leave every initially empty cell empty.
+  PIC::ParticleBuffer::DeleteAllParticles();
+  SetWeightOverTimeStep(species,globalOriginalCarrier,
+      PIC::Mesh::mesh->rootTree);
   SynchronizeAdaptedBlockWeights();
+  const long int splitInitial=distributedCount(totalCalculationCells);
+  const double splitInitialWeight=localHasBlock ?
+      node->block->GetLocalParticleWeight(species) : 1.0;
+  if (localHasBlock) SeedValidationParticles(node,species,splitInitial);
+  const cValidationMoments splitBefore=CollectValidationMoments(species);
   AdaptParticleWeights(0);
+  const cValidationMoments splitAfter=CollectValidationMoments(species);
+  const double splitExpectedWeight=std::ldexp(splitInitialWeight,-3);
+  bool splitLocalPass=true;
   if (localHasBlock) {
-    long int multiplier=1;
-    for (int step=0;step < -splitPower;step++) multiplier*=2;
-    const long int expectedCount=splitInitial*multiplier;
-    const long int actualCount=CountSpeciesInBlock(node->block,species);
-    const double expectedWeight=std::ldexp(originalWeight,splitPower);
-    const double actualWeight=node->block->GetLocalParticleWeight(species);
-    const double weightScale=std::max(std::fabs(expectedWeight),1.0);
-    localPass=localPass && splitPower<0 && actualCount==expectedCount &&
-        std::fabs(actualWeight-expectedWeight)<=1.0e-13*weightScale &&
+    splitLocalPass=
+        CountSpeciesInBlock(node->block,species)==8*splitInitial &&
+        DoubleBits(node->block->GetLocalParticleWeight(species))==
+            DoubleBits(splitExpectedWeight) &&
         OtherValidationCellsAreEmpty(node->block);
   }
+  const bool splitMomentPass=ValidationMomentsEqual(splitBefore,splitAfter,
+      5.0e-13);
+  cComponentCarrierTransaction splitState=
+      BuildComponentCarrierTransaction();
+  bool componentPopulationPass=true,hasPopulatedComponent=false;
+  bool emptyBlocksPass=true;
+  long long localEmptyBlocks=0;
+  for (std::size_t component=0;
+       component<splitState.ComponentNodes.size();component++) {
+    const std::size_t componentOffset=
+        component*PIC::nTotalSpecies+species;
+    const long long count=
+        splitState.ComponentParticleCount[componentOffset];
+    if (count==0) continue;
+    hasPopulatedComponent=true;
+    const long double mean=static_cast<long double>(count)/
+        splitState.ComponentCellCount[component];
+    componentPopulationPass=componentPopulationPass &&
+        mean>=5.0L && mean<=20.0L;
+  }
+  componentPopulationPass=componentPopulationPass && hasPopulatedComponent;
+  for (std::size_t block=0;block<splitState.Nodes.size();block++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *testNode=splitState.Nodes[block];
+    if (testNode->Thread!=PIC::ThisThread || testNode->block==NULL) continue;
+    const std::size_t offset=block*PIC::nTotalSpecies+species;
+    if (splitState.GlobalCounts[offset]!=0) continue;
+    localEmptyBlocks++;
+    emptyBlocksPass=emptyBlocksPass &&
+        CountSpeciesInBlock(testNode->block,species)==0 &&
+        std::fabs(GetCarrierRate(testNode->block,species)-
+            std::ldexp(globalOriginalCarrier,-3))<=
+            512.0*std::numeric_limits<double>::epsilon()*
+                std::ldexp(globalOriginalCarrier,-3);
+  }
+  long long globalEmptyBlocks=0;
+  MPI_Allreduce(&localEmptyBlocks,&globalEmptyBlocks,1,MPI_LONG_LONG,MPI_SUM,
+      MPI_GLOBAL_COMMUNICATOR);
+  const bool componentSplitPass=splitLocalPass && splitMomentPass &&
+      componentPopulationPass && emptyBlocksPass && globalEmptyBlocks>0 &&
+      splitState.PropagationStatistics.MaximumCloneMeanAfter<=
+          1.0+256.0*std::numeric_limits<double>::epsilon();
+  localPass=localPass && componentSplitPass;
+  if (componentSplitPass && localHasBlock) {
+    localComponentPopulationChecks++;
+    localEmptyBlockChecks++;
+    localSplitConservationChecks++;
+    localFaceCarrierPropagationChecks++;
+  }
+  stage2MaximumFaceMultiplicity=std::max(stage2MaximumFaceMultiplicity,
+      splitState.PropagationStatistics.MaximumCloneMeanAfter);
   localPass=ValidateSynchronizedWeightCopies(node,species,
-      std::ldexp(originalWeight,splitPower),localGhostChecks) && localPass;
+      splitExpectedWeight,localGhostChecks) && localPass;
 
-  // Roulette test: twice the upper-bound mean requires exactly one weight
-  // doubling.  The survivor count is stochastic, so use a six-sigma binomial
-  // bound while also checking that no empty cell was populated.
+  // A second exact split places the population only at the two ends of the
+  // radial chain.  It closes the regression in which an empty interior block
+  // used to raise the carrier again after local splitting.
   PIC::ParticleBuffer::DeleteAllParticles();
-  SetWeightOverTimeStep(species,2.0*globalOriginalCarrier,
+  SetWeightOverTimeStep(species,globalOriginalCarrier,
       PIC::Mesh::mesh->rootTree);
-  if (localHasBlock) node->block->SetLocalParticleWeight(
-      originalWeight,species);
   SynchronizeAdaptedBlockWeights();
-  const long int rouletteInitial=
-      2*SpeciesMaximumParticlesPerCell[species]*BlockCellCount;
-  if (localHasBlock)
-    SeedValidationParticles(node,species,rouletteInitial);
+  bool twoEndedPass=calculationNodes.size()>=2;
+  if (twoEndedPass) {
+    const long long firstCount=totalCalculationCells/2;
+    const long long lastCount=totalCalculationCells-firstCount;
+    if (calculationNodes.front()->Thread==PIC::ThisThread)
+      SeedValidationParticles(calculationNodes.front(),species,
+          static_cast<long int>(firstCount));
+    if (calculationNodes.back()->Thread==PIC::ThisThread)
+      SeedValidationParticles(calculationNodes.back(),species,
+          static_cast<long int>(lastCount));
+    const cValidationMoments before=CollectValidationMoments(species);
+    AdaptParticleWeights(0);
+    const cValidationMoments after=CollectValidationMoments(species);
+    twoEndedPass=ValidationMomentsEqual(before,after,5.0e-13) &&
+        LastFaceCarrierPropagationStatistics.MaximumCloneMeanAfter<=
+            1.0+256.0*std::numeric_limits<double>::epsilon();
+    if (calculationNodes.front()->Thread==PIC::ThisThread)
+      twoEndedPass=twoEndedPass &&
+          CountSpeciesInBlock(calculationNodes.front()->block,species)==
+              8*firstCount;
+    if (calculationNodes.back()->Thread==PIC::ThisThread)
+      twoEndedPass=twoEndedPass &&
+          CountSpeciesInBlock(calculationNodes.back()->block,species)==
+              8*lastCount;
+  }
+  int twoEndedLocal=twoEndedPass ? 1 : 0,twoEndedGlobal=0;
+  MPI_Allreduce(&twoEndedLocal,&twoEndedGlobal,1,MPI_INT,MPI_MIN,
+      MPI_GLOBAL_COMMUNICATOR);
+  localPass=localPass && twoEndedGlobal!=0;
+  if (twoEndedGlobal!=0 && localHasBlock) localTwoEndedChecks++;
+
+  // Component roulette: start from an exact mean of forty.  A single
+  // doubling gives an expected mean of twenty.  The represented moments are
+  // tested against the exact weighted Bernoulli variance, so differing local
+  // timesteps/weights cannot make the statistical bound rank dependent.
+  PIC::ParticleBuffer::DeleteAllParticles();
+  SetWeightOverTimeStep(species,globalOriginalCarrier,
+      PIC::Mesh::mesh->rootTree);
+  SynchronizeAdaptedBlockWeights();
+  const long int rouletteInitial=distributedCount(40*totalCalculationCells);
+  const double rouletteInitialWeight=localHasBlock ?
+      node->block->GetLocalParticleWeight(species) : 1.0;
+  if (localHasBlock) SeedValidationParticles(node,species,rouletteInitial);
+  const cValidationMoments rouletteBefore=CollectValidationMoments(species);
   rnd_seed(99173+PIC::ThisThread);
   AdaptParticleWeights(0);
+  const cValidationMoments rouletteAfter=CollectValidationMoments(species);
+  // Survival probability is 1/2 but every survivor receives twice the old
+  // weight.  Represented moments are therefore unbiased at their original
+  // values.  For unequal old weights, Var[sum(2*w_i*Bernoulli(1/2))]
+  // is exactly sum(w_i^2), which was accumulated before mutation.
+  const cValidationMoments rouletteExpected=rouletteBefore;
+  const double rouletteSigma=std::sqrt(rouletteBefore.WeightSquared);
+  const double rouletteTolerance=rouletteExpected.Number>0.0 ?
+      7.0*rouletteSigma/rouletteExpected.Number+5.0e-13 : 0.0;
+  const bool rouletteMomentPass=
+      std::fabs(rouletteAfter.Number-rouletteExpected.Number)<=
+          7.0*rouletteSigma &&
+      ValidationMomentsEqual(rouletteAfter,rouletteExpected,
+          rouletteTolerance);
+  bool rouletteLocalPass=true;
   if (localHasBlock) {
     const long int actualCount=CountSpeciesInBlock(node->block,species);
     const double expectation=0.5*rouletteInitial;
     const double sigma=std::sqrt(0.25*rouletteInitial);
-    const double actualWeight=node->block->GetLocalParticleWeight(species);
-    const double expectedWeight=2.0*originalWeight;
-    const double weightScale=std::max(std::fabs(expectedWeight),1.0);
-    localPass=localPass &&
-        std::fabs(actualCount-expectation)<=6.0*sigma &&
-        std::fabs(actualWeight-expectedWeight)<=1.0e-13*weightScale &&
+    rouletteLocalPass=std::fabs(actualCount-expectation)<=7.0*sigma &&
+        DoubleBits(node->block->GetLocalParticleWeight(species))==
+            DoubleBits(2.0*rouletteInitialWeight) &&
         OtherValidationCellsAreEmpty(node->block);
   }
+  localPass=localPass && rouletteMomentPass && rouletteLocalPass;
+  if (rouletteMomentPass && rouletteLocalPass && localHasBlock)
+    localRouletteConservationChecks++;
   localPass=ValidateSynchronizedWeightCopies(node,species,
-      2.0*originalWeight,localGhostChecks) && localPass;
-  // Test recursive face propagation separately from population adaptation.
-  // All cells are empty; selected blocks start at twice the common carrier.
-  // A directed-face limit of one must propagate that carrier through each
-  // complete connected component without allocating any particle.
+      2.0*rouletteInitialWeight,localGhostChecks) && localPass;
+
+  // Capacity rejection is a pure planning operation.  Force zero additional
+  // capacity while a three-step split is needed, then compare exact particle
+  // count, represented moments, and every local owner carrier bit before and
+  // after the rejected plan.  No mutation routine is called on failure.
   PIC::ParticleBuffer::DeleteAllParticles();
   SetWeightOverTimeStep(species,globalOriginalCarrier,
       PIC::Mesh::mesh->rootTree);
-  if (localHasBlock)
-    node->block->SetLocalParticleWeight(2.0*originalWeight,species);
   SynchronizeAdaptedBlockWeights();
-  AdaptParticleWeights(0);
-  if (localHasBlock) {
-    const cFaceCarrierPropagationStatistics &propagation=
-        LastFaceCarrierPropagationStatistics;
-    const bool propagationPass=
-        propagation.GlobalChangedBlockSpecies>0 &&
-        propagation.ActiveComponents>0 &&
-        propagation.MaximumPropagationHops>=2 &&
-        propagation.MaximumCloneMeanBefore>1.0 &&
-        propagation.MaximumCloneMeanAfter<=
-            1.0+256.0*std::numeric_limits<double>::epsilon();
-    localPass=localPass && propagationPass &&
-        CountSpeciesInBlock(node->block,species)==0;
-    if (propagationPass) localFaceCarrierPropagationChecks++;
-  }
+  if (localHasBlock) SeedValidationParticles(node,species,splitInitial);
+  const long long capacityParticlesBefore=PIC::ParticleBuffer::NAllPart;
+  const cValidationMoments capacityMomentsBefore=
+      CollectValidationMoments(species);
+  std::vector<std::uint64_t> capacityWeightBits;
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *testNode:calculationNodes)
+    if (testNode->Thread==PIC::ThisThread && testNode->block!=NULL)
+      capacityWeightBits.push_back(DoubleBits(
+          testNode->block->GetLocalParticleWeight(species)));
+  const cComponentCarrierTransaction rejectedTransaction=
+      BuildComponentCarrierTransaction(0);
+  const cValidationMoments capacityMomentsAfter=
+      CollectValidationMoments(species);
+  bool capacityRollbackPass=!rejectedTransaction.CapacityAccepted &&
+      PIC::ParticleBuffer::NAllPart==capacityParticlesBefore &&
+      ValidationMomentsEqual(capacityMomentsBefore,capacityMomentsAfter,0.0);
+  std::size_t capacityBitIndex=0;
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *testNode:calculationNodes)
+    if (testNode->Thread==PIC::ThisThread && testNode->block!=NULL) {
+      capacityRollbackPass=capacityRollbackPass &&
+          DoubleBits(testNode->block->GetLocalParticleWeight(species))==
+              capacityWeightBits[capacityBitIndex++];
+    }
+  int capacityLocal=capacityRollbackPass ? 1 : 0,capacityGlobal=0;
+  MPI_Allreduce(&capacityLocal,&capacityGlobal,1,MPI_INT,MPI_MIN,
+      MPI_GLOBAL_COMMUNICATOR);
+  if (capacityGlobal==0) localPartialMutations++;
+  localPass=localPass && capacityGlobal!=0;
+  if (capacityGlobal!=0 && localHasBlock) localCapacityRollbackChecks++;
+
+  // Source locks cover every ordinary transaction above.  Compare exact
+  // IEEE-754 bits on every owner, independently of the internal assertion in
+  // AdaptParticleWeights, so the validation record proves the contract.
+  bool lockedSourcePass=lockedSpecies>=0;
+  std::size_t lockedBitIndex=0;
+  if (lockedSpecies>=0)
+    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *testNode:calculationNodes)
+      if (testNode->Thread==PIC::ThisThread && testNode->block!=NULL) {
+        lockedSourcePass=lockedSourcePass &&
+            DoubleBits(testNode->block->GetLocalParticleWeight(
+                lockedSpecies))==lockedWeightBits[lockedBitIndex++];
+      }
+  int lockedLocal=lockedSourcePass ? 1 : 0,lockedGlobal=0;
+  MPI_Allreduce(&lockedLocal,&lockedGlobal,1,MPI_INT,MPI_MIN,
+      MPI_GLOBAL_COMMUNICATOR);
+  localPass=localPass && lockedGlobal!=0;
+  if (lockedGlobal!=0 && localHasBlock) localLockedSourceChecks++;
+
+  PIC::ParticleBuffer::DeleteAllParticles();
   SetWeightOverTimeStep(species,globalOriginalCarrier,
       PIC::Mesh::mesh->rootTree);
   SynchronizeAdaptedBlockWeights();
+  SpeciesMinimumParticlesPerCell[species]=configuredSpeciesMinimum;
+  SpeciesMaximumParticlesPerCell[species]=configuredSpeciesMaximum;
+  Comet::Chemistry::Enabled=configuredChemistryEnabled;
 
   int localPhotochemicalChecks=0;
   if (Comet::Chemistry::Enabled) {
@@ -2739,6 +2904,8 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
             CountAllSpeciesInBlock(node->block);
         const long long multiplicityAfter=
             MaximumReactionDaughterAllocation(node->block,counts);
+        stage2MaximumReactionAllocation=std::max(
+            stage2MaximumReactionAllocation,multiplicityAfter);
         bool daughtersRemainEmpty=true;
         for (int product=0;product<PIC::nTotalSpecies;product++) {
           if (!testedDaughter[product]) continue;
@@ -3039,6 +3206,21 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
   MPI_Allreduce(&localFaceCarrierPropagationChecks,
       &globalFaceCarrierPropagationChecks,1,MPI_INT,MPI_SUM,
       MPI_GLOBAL_COMMUNICATOR);
+  int localStage2Checks[8]={localComponentPopulationChecks,
+      localEmptyBlockChecks,localTwoEndedChecks,localLockedSourceChecks,
+      localSplitConservationChecks,localRouletteConservationChecks,
+      localCapacityRollbackChecks,localPartialMutations};
+  int globalStage2Checks[8]={0,0,0,0,0,0,0,0};
+  MPI_Allreduce(localStage2Checks,globalStage2Checks,8,MPI_INT,MPI_SUM,
+      MPI_GLOBAL_COMMUNICATOR);
+  double globalStage2MaximumFaceMultiplicity=0.0;
+  MPI_Allreduce(&stage2MaximumFaceMultiplicity,
+      &globalStage2MaximumFaceMultiplicity,1,MPI_DOUBLE,MPI_MAX,
+      MPI_GLOBAL_COMMUNICATOR);
+  long long globalStage2MaximumReactionAllocation=0;
+  MPI_Allreduce(&stage2MaximumReactionAllocation,
+      &globalStage2MaximumReactionAllocation,1,MPI_LONG_LONG,MPI_MAX,
+      MPI_GLOBAL_COMMUNICATOR);
   if (PIC::nTotalThreads>1 && globalGhostChecks==0) globalResult=0;
   if (Comet::Chemistry::Enabled &&
       globalPhotochemicalChecks!=globalBlockCount) globalResult=0;
@@ -3047,6 +3229,14 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
   if (globalSamplingPopulationEmergencyChecks!=globalBlockCount)
     globalResult=0;
   if (globalFaceCarrierPropagationChecks!=globalBlockCount)
+    globalResult=0;
+  for (int check=0;check<7;check++)
+    if (globalStage2Checks[check]!=globalBlockCount) globalResult=0;
+  if (globalStage2Checks[7]!=0 ||
+      globalStage2MaximumFaceMultiplicity>
+          1.0+256.0*std::numeric_limits<double>::epsilon() ||
+      globalStage2MaximumReactionAllocation>
+          MaximumPhotochemicalProductsPerReaction)
     globalResult=0;
   if (PIC::ThisThread==0) {
     std::fprintf(PIC::DiagnospticMessageStream,
@@ -3060,6 +3250,16 @@ bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
         globalSamplingPopulationEmergencyChecks,
         globalFaceCarrierPropagationChecks,
         globalPhotochemicalChecks,globalGhostChecks);
+    std::fprintf(PIC::DiagnospticMessageStream,
+        "%s component-carrier validation mpi-ranks=%d owner-blocks=%d component-population-checks=%d empty-block-checks=%d two-ended-checks=%d locked-source-checks=%d reaction-allocation-checks=%d split-conservation-checks=%d roulette-conservation-checks=%d capacity-rollback-checks=%d ghost-weight-checks=%d max-face-multiplicity=%.17e max-reaction-allocation=%lld reaction-limit=%ld partial-mutations=%d\n",
+        globalResult!=0 ? "PASS" : "FAIL",PIC::nTotalThreads,
+        globalBlockCount,globalStage2Checks[0],globalStage2Checks[1],
+        globalStage2Checks[2],globalStage2Checks[3],
+        globalPhotochemicalChecks,globalStage2Checks[4],
+        globalStage2Checks[5],globalStage2Checks[6],globalGhostChecks,
+        globalStage2MaximumFaceMultiplicity,
+        globalStage2MaximumReactionAllocation,
+        MaximumPhotochemicalProductsPerReaction,globalStage2Checks[7]);
     std::fflush(PIC::DiagnospticMessageStream);
   }
   return globalResult!=0;

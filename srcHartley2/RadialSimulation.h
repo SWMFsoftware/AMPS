@@ -25,16 +25,15 @@ extern long int SamplingLength;
 // population front from exhausting one MPI rank while the global population
 // is still well within the distributed particle-buffer capacity.
 extern long int LoadBalanceInterval;
-// When enabled, the population at each completed sampling break is measured
-// independently for every species and owner block.  The block-local weight is
-// changed by an integral power of two until the expected mean population per
-// cell lies in this inclusive range.  Empty species/block populations remain
-// empty because adaptation only resamples particles that already exist.  Once
-// populated blocks have been adapted, their W/dt carrier constraints are
-// propagated by power-of-two weight increases through face-connected empty
-// neighbors.  This prevents the first particle entering a previously empty
-// block from being multiplied by an obsolete, anomalously small local weight;
-// the propagation itself never creates a particle.
+// When enabled, every species is planned over complete face-connected mesh
+// components at a safe adaptation boundary.  Authoritative owner counts and
+// cell counts select one power-of-two W/dt carrier for the whole component;
+// populated blocks split/roulette and empty blocks receive only that carrier,
+// so empty cells remain empty.  Chemistry constraints and the exact clone
+// requirement are solved before any list or weight is changed.  A transaction
+// commits only when every rank has capacity, then synchronizes owner values to
+// ghosts.  This removes the former two-phase conflict in which face
+// equalization could undo a daughter split selected independently per block.
 extern bool ParticleWeightAdaptationEnabled;
 // A positive value requests regular adaptation at this many completed model
 // iterations, independently of SamplingLength.  The source default -1 is the
@@ -74,18 +73,19 @@ extern double EmergencyParticleBufferUtilization;
 // particle slots unavailable to application-level chemistry transactions.
 extern double AllocationLowWatermark;
 extern double AllocationReserveFraction;
-// Maximum actual destination multiplicity at any directed block face.  A
-// value of one removes mover-side clone allocation entirely by equalizing the
-// W/dt carrier rate over each face-connected mesh component.
+// Maximum actual destination multiplicity at any directed block face.  The
+// Stage-2 planner currently requires the validated value one and selects a
+// single W/dt carrier over every face-connected mesh component, eliminating
+// mover-side cloning at ordinary crossings.
 extern long int MaximumFaceTransferMultiplicity;
 // A chemistry event may create several fixed-weight model daughters when the
 // parent and product carrier rates W/dt differ.  At a sampling break, every
-// reaction transitively reachable from any represented parent is inspected.
-// Product weights—whether that product is present or absent—are raised by
-// powers of two until the sum of worst-case residual-resampling allocations
-// for one selected reaction event does not exceed this hard limit.  The final
-// check uses face-propagated carrier rates, so a parent arriving from another
-// block cannot bypass the bound.  Empty cells remain empty.
+// reaction transitively reachable from a represented or direct-source parent
+// is inspected independently in every spatial component. Repeated product
+// terms are aggregated and product carriers are raised by powers of two; when
+// locked products prevent that change, an unlocked parent may be split. The
+// component fixed point must keep every event at or below this hard limit.
+// Empty cells remain empty.
 extern long int MaximumPhotochemicalProductsPerReaction;
 // ConvergenceTolerance applies to the volume-weighted relative L1 change of
 // each species' complete radial number-density profile. The run stops only
@@ -100,8 +100,11 @@ bool Validate(std::string *error=NULL);
 void Initialize();
 void Run();
 
-// Run an integrated split/roulette regression on initialized radial blocks.
-// This is a focused validation mode: it replaces the live particle lists and
+// Run the integrated Stage-2 transaction regression on initialized radial
+// blocks. It checks component population decisions, empty and two-ended
+// chains, exact split and ensemble roulette moment conservation, chemistry
+// allocation, bitwise source locks, owner/ghost values, emergency controls,
+// and mutation-free capacity rejection. It replaces live particle lists and
 // must therefore be invoked instead of, never during, a science run.
 bool ValidateParticleWeightAdaptation();
 

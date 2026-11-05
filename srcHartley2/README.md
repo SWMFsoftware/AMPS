@@ -431,25 +431,45 @@ mpirun -np 4 ./amps --validate-weight-adaptation
 mpirun -np 12 ./amps --validate-weight-adaptation
 ```
 
-It exercises a multi-step exact split, factor-two binomial roulette, owner
-blocks on every rank, and preservation of initially empty cells. It creates a
-two-sided unsafe face ratio and verifies component-wide carrier equalization
-without clone allocation. It independently exercises the buffer,
-allocation-burst, and sampling-population triggers. For the sampling trigger
-it constructs an exact synthetic
-`10*nTotalSpecies*maximum*block-cell-count` threshold, exceeds it, verifies
-that the sampling routine records but does not execute the request, and then
-invokes the regular core particle-exchange API. The test verifies that the
-emergency callback runs before migration, consumes the request, applies a
-factor-two/binomial step, lowers maximum-rank occupancy for the independent
-buffer test, and keeps owner/boundary weights synchronized. The allocation
-test requires two consecutive weight doublings, verifies the low-water target,
-request consumption, and statistical survival. With chemistry enabled it
-forces one channel above the actual hard allocation cap, verifies transitive
-reachability and direct-source initialization, confirms the bound falls to at
-most 20 without seeding particles, and checks MPI boundary-copy
-synchronization. It deletes its artificial population and must not be invoked
-during a science calculation.
+The Stage-2 validator places sparse populations in one owner block per rank
+and at both ends of the 373-block radial chain. It verifies that one component
+carrier is selected from the mean over all 2,984 cells, including empty cells,
+while empty cells remain empty. Exact splitting conserves represented number,
+mass, three momentum components, kinetic energy, and internal energy. The
+roulette case checks the same moments against the exact weighted Bernoulli
+variance, including unequal local block weights.
+
+The validator also forces a zero-capacity preflight rejection and compares
+particle counts, moments, and exact carrier bits before and after planning;
+the rejected transaction must make no partial mutation. Direct-source carrier
+bits remain locked. With chemistry enabled, every reachable component channel
+is solved before commit and the focused unsafe channel must fall to at most 20
+products per event. Owner values are then checked in MPI boundary copies. The
+earlier buffer, allocation-burst, and sampling-population emergency tests
+remain mandatory regressions. This mode deletes its artificial population and
+must never be invoked during a science calculation.
+
+The geometry-independent planner suite covers one block, long chains,
+disconnected components, empty and two-ended populations, exact range
+boundaries, locks, capacity rejection, and synthetic DIM2/DIM3 face graphs:
+
+```sh
+srcHartley2/tests/run_stage2_planner_tests.sh
+```
+
+After producing the 1/4/12-rank runtime logs, run the strict cross-rank gate:
+
+```sh
+HARTLEY2_STAGE2_LOG_1=validation_runs/stage2_component_carrier_20261105/mpi1/run.log \
+HARTLEY2_STAGE2_LOG_4=validation_runs/stage2_component_carrier_20261105/mpi4/run.log \
+HARTLEY2_STAGE2_LOG_12=validation_runs/stage2_component_carrier_20261105/mpi12/run.log \
+  srcHartley2/tests/run_stage2_integrated_tests.sh
+```
+
+The archived 2026-11-05 result passes with maximum face multiplicity 1,
+maximum reaction allocation 20, zero partial mutations, and respectively
+0/28/84 non-owner ghost checks at 1/4/12 MPI ranks. These transaction tests do
+not by themselves establish convergence of the Rubin science comparison.
 
 ## Internal energy and radiative cooling
 

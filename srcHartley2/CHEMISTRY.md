@@ -402,6 +402,59 @@ These values size a pilot only. They are not defaults or validation results.
   it.
 - No emergency adaptation, buffer exhaustion, or partial transaction occurs.
 
+### Implementation and transaction-test evidence (2026-11-05)
+
+The Stage-2 component transaction is implemented on `1d_comet_dev`. The
+runtime builds a deterministic face graph from the replicated AMR leaf tree,
+collects exactly one authoritative count/carrier row from each block owner,
+and calls the geometry-independent planner once per species. Population
+selection uses total particles divided by total component cells; an empty
+block therefore affects the requested mean but is never seeded. All targets
+remain on each species' power-of-two carrier lattice.
+
+Chemistry is solved on the component scalars before mutation. Reachability is
+closed transitively from represented and configured direct-source parents,
+repeated product terms are aggregated, irreducible stoichiometric floors are
+checked, and unlocked products are coarsened only as much as required by the
+event cap. If locked products are limiting, an unlocked parent may be split.
+The final audit revisits every reachable reaction. The transaction computes
+the exact number of required split clones and compares it with the per-rank
+buffer ceiling after reserving `RadialAllocationReserveFraction`; any rank's
+failure rejects the collective plan before a weight or list is changed.
+
+The old two-phase path (independent block decision followed by component
+maximum propagation) has been removed. Commit now applies the already planned
+split/roulette or empty-block weight change, synchronizes owners to boundary
+copies once, verifies exact locked-source weight bits, and rechecks chemistry.
+Transport resumes only after the common component carrier is visible on all
+copies.
+
+Pure planner tests are in
+`srcHartley2/tests/test_stage2_component_carrier_planner.cpp`; their runner
+also exercises synthetic DIM2 and DIM3 graphs without an AMPS mesh. The
+integrated validator uses the canonical Halley mesh and one frozen executable
+at 1, 4, and 12 MPI ranks. It checks sparse and two-ended chains, empty blocks,
+exact split conservation and statistically bounded roulette conservation for
+number/mass/momentum/kinetic/internal energy, bitwise source locks, the hard
+reaction limit, owner/ghost synchronization, and a forced zero-capacity
+rollback. The strict parser reports:
+
+```text
+PASS Stage-2 integrated component carriers 1rank-owners=1-ghosts=0 4rank-owners=4-ghosts=28 12rank-owners=12-ghosts=84
+```
+
+All runs report maximum face multiplicity 1, maximum reaction allocation 20
+for a limit of 20, and `partial-mutations=0`. Evidence is archived under
+`validation_runs/stage2_component_carrier_20261105`; the frozen executable
+SHA-256 is
+`c40c6bb44871209672cd6c7ecc6e16cc838ca5ea3e3e0184970696d273909939`.
+
+This closes the Stage-2 implementation and transaction test matrix. The
+science-pilot criteria above still require a new burn-in/production study of
+C2, C2H, CN, C2H5, and HCO before the component method is claimed to improve a
+converged Rubin comparison. Stage 3 must not use the transaction tests as a
+substitute for that science evidence.
+
 ## Stage 3: correction-free variance reduction and decision gate
 
 ### Objective
