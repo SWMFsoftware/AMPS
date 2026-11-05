@@ -87,6 +87,19 @@ extern long int MaximumFaceTransferMultiplicity;
 // component fixed point must keep every event at or below this hard limit.
 // Empty cells remain empty.
 extern long int MaximumPhotochemicalProductsPerReaction;
+// Stage-5 windows limit the dimensionless individual correction c without
+// changing the block base carrier W/dt.  Input resolution supplies one row
+// per compiled species with selector precedence matching the population
+// policy.  The executor acts only outside the inclusive [lower,upper] band:
+// low particles roulette to target and high particles split toward target.
+// MaximumIndividualCorrectionWindowSplits is a per-input-particle limit and
+// is intentionally independent of the chemistry event-product limit above.
+extern bool IndividualCorrectionWindowsEnabled;
+extern double IndividualCorrectionWindowLower[];
+extern double IndividualCorrectionWindowTarget[];
+extern double IndividualCorrectionWindowUpper[];
+extern int IndividualCorrectionWindowPolicySource[];
+extern long int MaximumIndividualCorrectionWindowSplits;
 // ConvergenceTolerance applies to the volume-weighted relative L1 change of
 // each species' complete radial number-density profile. The run stops only
 // after every species passes for RequiredConvergedWindows successive windows.
@@ -112,6 +125,12 @@ void WriteStage3CellDiagnostics(long int outputIndex,long int sampleLength);
 // and mutation-free capacity rejection. It replaces live particle lists and
 // must therefore be invoked instead of, never during, a science run.
 bool ValidateParticleWeightAdaptation();
+
+// Run the Stage-5 initialized-mesh regression instead of a science run.  It
+// exercises inclusive keep boundaries, exact full-state splitting, low-side
+// roulette statistics, collective capacity rollback, restart, direct-source
+// c=1 identity, and the empty-population invariant on every MPI rank.
+bool ValidateIndividualCorrectionWindows();
 
 // Collective callback installed in PIC::Parallel.  It is public only because
 // the core stores its address; application code must not call it directly.

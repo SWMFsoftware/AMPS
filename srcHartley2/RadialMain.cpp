@@ -16,7 +16,8 @@
 namespace {
 void PrintUsage(const char *program) {
   std::printf("usage: %s [--validate-local-timestep | --validate-chemistry | "
-      "--validate-weight-adaptation | --validate-systematic-residual | "
+      "--validate-weight-adaptation | --validate-correction-windows | "
+      "--validate-systematic-residual | "
       "--validate-unsupported-simplified-ntc] "
       "[--validation-particles N] [--validation-mover first|second|both] "
       "[--validation-skip-multiface] [--validation-unit-corrections] "
@@ -33,6 +34,7 @@ int main(int argc,char **argv) {
   bool validateLocalTimeStep=false;
   bool validateChemistry=false;
   bool validateWeightAdaptation=false;
+  bool validateCorrectionWindows=false;
   bool validateSystematicResidual=false;
   bool validateUnsupportedSimplifiedNTC=false;
   bool randomSeedOverride=false;
@@ -50,6 +52,9 @@ int main(int argc,char **argv) {
     }
     else if (option=="--validate-weight-adaptation") {
       validateWeightAdaptation=true;
+    }
+    else if (option=="--validate-correction-windows") {
+      validateCorrectionWindows=true;
     }
     else if (option=="--validate-systematic-residual") {
       validateSystematicResidual=true;
@@ -157,6 +162,7 @@ int main(int argc,char **argv) {
   }
   const int validationModeCount=(validateLocalTimeStep ? 1 : 0)+
       (validateChemistry ? 1 : 0)+(validateWeightAdaptation ? 1 : 0)+
+      (validateCorrectionWindows ? 1 : 0)+
       (validateSystematicResidual ? 1 : 0)+
       (validateUnsupportedSimplifiedNTC ? 1 : 0);
   if (validationModeCount>1) {
@@ -270,6 +276,12 @@ int main(int argc,char **argv) {
     if (validateWeightAdaptation) {
       const bool passed=
           Comet::RadialSimulation::ValidateParticleWeightAdaptation();
+      MPI_Finalize();
+      return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+    if (validateCorrectionWindows) {
+      const bool passed=
+          Comet::RadialSimulation::ValidateIndividualCorrectionWindows();
       MPI_Finalize();
       return passed ? EXIT_SUCCESS : EXIT_FAILURE;
     }

@@ -14,6 +14,7 @@ use ampsConfigLib;
 use CometReactionNetwork;
 use CometPhysicsDatabase;
 use CometPopulationPolicy;
+use CometCorrectionWindowPolicy;
 
 
 #my $command= $];
@@ -117,6 +118,8 @@ my @RadiativeCoolingModel=(0)x$TotalSpeciesNumber;
 my $ReactionNetwork=CometReactionNetwork->new(species=>\@SpeciesList);
 my $PhysicsDatabase=CometPhysicsDatabase->new(species=>\@SpeciesList);
 my $PopulationPolicy=CometPopulationPolicy->new(species=>\@SpeciesList);
+my $CorrectionWindowPolicy=
+    CometCorrectionWindowPolicy->new(species=>\@SpeciesList);
 
 #add the model header to the pic.h
 open (PIC_H,">>$WorkingSourceDirectory/pic/pic.h") || die "Cannot open $WorkingSourceDirectory/pic/pic.h";
@@ -550,6 +553,37 @@ while ($line=<InputFile>) {
         "long int Comet::RadialSimulation::MaximumPhotochemicalProductsPerReaction",
         $InputLine,"main/RadialSimulation.cpp");
     $RadialMaxPhotochemicalProductsPerReactionIsSet=1;
+  }
+  elsif ($InputLine eq "PARTICLEWEIGHTCORRECTIONWINDOWMODE") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    $InputLine=~s/ //g if defined $InputLine;
+    $CorrectionWindowPolicy->set_mode($InputLine,
+        "line $InputFileLineNumber ($InputFileName)");
+    # This switch controls only the safe-stage window transaction.  The core
+    # ParticleWeightCorrectionMode independently controls whether particles
+    # have correction storage; final validation below requires both switches.
+    ampsConfigLib::ChangeValueOfVariable(
+        "bool Comet::RadialSimulation::IndividualCorrectionWindowsEnabled",
+        $InputLine eq "ON" ? "true" : "false",
+        "main/RadialSimulation.cpp");
+  }
+  elsif ($InputLine eq "PARTICLEWEIGHTCORRECTIONWINDOW") {
+    # Preserve the raw record so the optional selector and the three pipe-
+    # separated fields reach the common policy parser unchanged.
+    $CorrectionWindowPolicy->add_window_record($LineOriginal,
+        "line $InputFileLineNumber ($InputFileName)");
+  }
+  elsif ($InputLine eq "PARTICLEWEIGHTCORRECTIONWINDOWMAXSPLITS") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    $CorrectionWindowPolicy->set_maximum_splits($InputLine,
+        "line $InputFileLineNumber ($InputFileName)");
+    # This is a per-particle window-split bound.  It deliberately does not
+    # replace MaximumPhotochemicalProductsPerReaction, which bounds the whole
+    # exact stoichiometric chemistry transaction.
+    ampsConfigLib::ChangeValueOfVariable(
+        "long int Comet::RadialSimulation::MaximumIndividualCorrectionWindowSplits",
+        $CorrectionWindowPolicy->maximum_splits(),
+        "main/RadialSimulation.cpp");
   }
   elsif ($InputLine eq "RADIALCONVERGENCETOLERANCE") {
     ($InputLine,$InputComment)=split(' ',$InputComment,2);
@@ -1311,6 +1345,54 @@ ampsConfigLib::ChangeValueOfArray(
     "int Comet::RadialSimulation::PopulationClass\\[PIC::nTotalSpecies\\]",
     \@ResolvedClass,"main/RadialSimulation.cpp");
 
+# Stage-5 correction windows deliberately use the same source-derived groups
+# and precedence as the Stage-1 population policy, but are resolved into a
+# separate set of generated tables.  Omission is the compatibility default:
+# no window records, split bound, or runtime controller may be enabled by an
+# older comet input accidentally.
+my @ResolvedCorrectionLower=(0.0)x$TotalSpeciesNumber;
+my @ResolvedCorrectionTarget=(0.0)x$TotalSpeciesNumber;
+my @ResolvedCorrectionUpper=(0.0)x$TotalSpeciesNumber;
+my @ResolvedCorrectionSource=(0)x$TotalSpeciesNumber;
+if ($CorrectionWindowPolicy->is_enabled()) {
+  die "ParticleWeightCorrectionWindowMode=ON requires Dimension=1\n"
+      unless $Dimension==1;
+  die "ParticleWeightCorrectionWindowMode=ON requires RadialSimulationMode=ON\n"
+      unless radialSimulationIsEnabled(
+          "$WorkingSourceDirectory/main/RadialSimulation.cpp");
+  die "ParticleWeightCorrectionWindowMode=ON requires ParticleWeightCorrectionMode=ON\n"
+      unless individualParticleWeightCorrectionIsEnabled(
+          "$WorkingSourceDirectory/pic/picGlobal.dfn");
+  my $resolved=$CorrectionWindowPolicy->validate_configuration_and_resolve(
+      direct_source=>\@DirectSource,
+      chemical_reachable=>$ChemicalReachable);
+  @ResolvedCorrectionLower=@{$resolved->{lower}};
+  @ResolvedCorrectionTarget=@{$resolved->{target}};
+  @ResolvedCorrectionUpper=@{$resolved->{upper}};
+  @ResolvedCorrectionSource=@{$resolved->{source}};
+}
+else {
+  # Also rejects records or a limit paired with explicit OFF, and records in
+  # legacy inputs which omit the mode entirely.  This prevents a typo from
+  # silently producing generated but inactive window tables.
+  $CorrectionWindowPolicy->validate_configuration_and_resolve(
+      direct_source=>\@DirectSource,
+      chemical_reachable=>$ChemicalReachable);
+}
+
+ampsConfigLib::ChangeValueOfArray(
+    "double Comet::RadialSimulation::IndividualCorrectionWindowLower\\[PIC::nTotalSpecies\\]",
+    \@ResolvedCorrectionLower,"main/RadialSimulation.cpp");
+ampsConfigLib::ChangeValueOfArray(
+    "double Comet::RadialSimulation::IndividualCorrectionWindowTarget\\[PIC::nTotalSpecies\\]",
+    \@ResolvedCorrectionTarget,"main/RadialSimulation.cpp");
+ampsConfigLib::ChangeValueOfArray(
+    "double Comet::RadialSimulation::IndividualCorrectionWindowUpper\\[PIC::nTotalSpecies\\]",
+    \@ResolvedCorrectionUpper,"main/RadialSimulation.cpp");
+ampsConfigLib::ChangeValueOfArray(
+    "int Comet::RadialSimulation::IndividualCorrectionWindowPolicySource\\[PIC::nTotalSpecies\\]",
+    \@ResolvedCorrectionSource,"main/RadialSimulation.cpp");
+
 ampsConfigLib::ChangeValueOfArray("double Comet::Model::SurfaceProductionRate\\[PIC::nTotalSpecies\\]",\@SurfaceProductionRate,"main/CometModel.cpp");
 ampsConfigLib::ChangeValueOfArray("int Comet::Model::SurfaceDistributionMode\\[PIC::nTotalSpecies\\]",\@SurfaceDistributionMode,"main/CometModel.cpp");
 ampsConfigLib::ChangeValueOfArray("double Comet::Model::SurfaceTemperature\\[PIC::nTotalSpecies\\]",\@SurfaceTemperature,"main/CometModel.cpp");
@@ -1391,6 +1473,18 @@ sub particleWeightAdaptationIsEnabled {
   my $text=<$in>;
   close($in);
   return $text=~/bool\s+Comet::RadialSimulation::ParticleWeightAdaptationEnabled\s*=\s*true\s*;/;
+}
+
+# The core input parser writes this macro before the application parser runs.
+# Inspect the generated definition so a Stage-5 window cannot be accepted in a
+# build whose particle records have no individual-correction field.
+sub individualParticleWeightCorrectionIsEnabled {
+  my ($source)=@_;
+  open(my $in,'<',$source) or die "cannot read '$source': $!\n";
+  local $/;
+  my $text=<$in>;
+  close($in);
+  return $text=~/#define\s+_INDIVIDUAL_PARTICLE_WEIGHT_MODE_\s+_INDIVIDUAL_PARTICLE_WEIGHT_ON_/;
 }
 
 

@@ -9,10 +9,12 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <stdexcept>
 #include <unordered_map>
 #include <vector>
 
 #include "ComponentCarrierPlanner.h"
+#include "CorrectionWindowPlanner.h"
 #include "pic.h"
 #include "CometChemistry.h"
 #include "CometDiagnostics.h"
@@ -40,6 +42,12 @@ double Comet::RadialSimulation::AllocationLowWatermark=-1.0;
 double Comet::RadialSimulation::AllocationReserveFraction=-1.0;
 long int Comet::RadialSimulation::MaximumFaceTransferMultiplicity=-1;
 long int Comet::RadialSimulation::MaximumPhotochemicalProductsPerReaction=-1;
+bool Comet::RadialSimulation::IndividualCorrectionWindowsEnabled=false;
+double Comet::RadialSimulation::IndividualCorrectionWindowLower[PIC::nTotalSpecies]={0.0};
+double Comet::RadialSimulation::IndividualCorrectionWindowTarget[PIC::nTotalSpecies]={0.0};
+double Comet::RadialSimulation::IndividualCorrectionWindowUpper[PIC::nTotalSpecies]={0.0};
+int Comet::RadialSimulation::IndividualCorrectionWindowPolicySource[PIC::nTotalSpecies]={0};
+long int Comet::RadialSimulation::MaximumIndividualCorrectionWindowSplits=-1;
 double Comet::RadialSimulation::ConvergenceTolerance=-1.0;
 int Comet::RadialSimulation::RequiredConvergedWindows=-1;
 
@@ -198,6 +206,30 @@ void ReportResolvedPopulationPolicies(
         Comet::RadialSimulation::SpeciesMaximumParticlesPerCell[species],
         Comet::Model::SurfaceProductionRate[species],surfaceCarrier[species]);
   }
+  std::fflush(PIC::DiagnospticMessageStream);
+}
+
+void ReportResolvedCorrectionWindowPolicies() {
+  if (PIC::ThisThread!=0) return;
+  std::fprintf(PIC::DiagnospticMessageStream,
+      "$PREFIX: individual correction-window controller mode=%s max-split-particles=%ld cadence=completed-time-step\n",
+      Comet::RadialSimulation::IndividualCorrectionWindowsEnabled ?
+          "on" : "off",
+      Comet::RadialSimulation::MaximumIndividualCorrectionWindowSplits);
+  if (Comet::RadialSimulation::IndividualCorrectionWindowsEnabled)
+    for (int species=0;species<PIC::nTotalSpecies;species++) {
+      char symbol[_MAX_STRING_LENGTH_PIC_];
+      PIC::MolecularData::GetChemSymbol(symbol,species);
+      std::fprintf(PIC::DiagnospticMessageStream,
+          "$PREFIX: correction-window-policy species=%s selector=%s lower=%.17e target=%.17e upper=%.17e direct-source=%s\n",
+          symbol,PopulationPolicySourceName(
+              Comet::RadialSimulation::
+                  IndividualCorrectionWindowPolicySource[species]),
+          Comet::RadialSimulation::IndividualCorrectionWindowLower[species],
+          Comet::RadialSimulation::IndividualCorrectionWindowTarget[species],
+          Comet::RadialSimulation::IndividualCorrectionWindowUpper[species],
+          HasConfiguredDirectSource(species) ? "yes" : "no");
+    }
   std::fflush(PIC::DiagnospticMessageStream);
 }
 
@@ -377,6 +409,241 @@ std::array<long int,PIC::nTotalSpecies> CountAllSpeciesInBlock(
   }
   return counts;
 }
+
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+// Compact counters returned by the correction-window transaction.  The
+// planner itself is AMPS-independent (CorrectionWindowPlanner.h); these
+// fields describe only the particle-buffer commit performed here.
+struct cCorrectionWindowStatistics {
+  long long Examined=0;
+  long long Kept=0;
+  long long RouletteCandidates=0;
+  long long RouletteSurvivors=0;
+  long long SplitParents=0;
+  long long SplitChildren=0;
+  long long RequiredAdditionalParticles=0;
+};
+
+std::vector<Comet::CorrectionWindowPlanner::cPolicy>
+BuildCorrectionWindowPolicies() {
+  std::vector<Comet::CorrectionWindowPlanner::cPolicy> policies;
+  policies.reserve(PIC::nTotalSpecies);
+  for (int species=0;species<PIC::nTotalSpecies;species++)
+    policies.push_back(Comet::CorrectionWindowPlanner::cPolicy(
+        Comet::RadialSimulation::IndividualCorrectionWindowLower[species],
+        Comet::RadialSimulation::IndividualCorrectionWindowTarget[species],
+        Comet::RadialSimulation::IndividualCorrectionWindowUpper[species],
+        static_cast<std::size_t>(
+            Comet::RadialSimulation::MaximumIndividualCorrectionWindowSplits)));
+  return policies;
+}
+
+// Apply one collective, mutation-free-preflighted correction-window batch.
+// The capacityOverride argument exists only for the focused rollback test;
+// production passes -1 and reserves the same allocation headroom used by
+// chemistry.  Two mesh traversals are intentional.  Storing a plan object for
+// every live particle would itself cause an avoidable memory burst in a
+// multi-million-particle comet run.  The first traversal validates every
+// correction and counts the exact additional slots; only after all ranks
+// accept does the second traversal rebuild the deterministic per-particle
+// plan and commit it.
+bool ApplyIndividualCorrectionWindowsInternal(long int completedIterations,
+    long long capacityOverride,cCorrectionWindowStatistics *statistics,
+    bool emitDiagnostics) {
+  namespace Window=Comet::CorrectionWindowPlanner;
+  cCorrectionWindowStatistics local;
+  if (!Comet::RadialSimulation::IndividualCorrectionWindowsEnabled) {
+    if (statistics!=NULL) *statistics=local;
+    return true;
+  }
+
+  const std::vector<Window::cPolicy> policies=
+      BuildCorrectionWindowPolicies();
+  bool localPlanAccepted=true;
+  std::string localFailure;
+
+  // Preflight only authoritative owner blocks.  At a completed AMPS time
+  // step no live particle belongs in a boundary-copy list; processing copies
+  // would double-count and could publish a correction on the wrong rank.
+  for (unsigned int blockIndex=0;
+       blockIndex<PIC::DomainBlockDecomposition::nLocalBlocks;blockIndex++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=
+        PIC::DomainBlockDecomposition::BlockTable[blockIndex];
+    if (node==NULL || node->block==NULL) continue;
+    for (long int cell=0;cell<BlockCellCount;cell++)
+      for (long int ptr=node->block->FirstCellParticleTable[cell];ptr!=-1;
+           ptr=PIC::ParticleBuffer::GetNext(ptr)) {
+        PIC::ParticleBuffer::byte *data=
+            PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+        // A nonzero remainder denotes an unfinished face continuation.  The
+        // controller is deliberately forbidden from cloning/deleting that
+        // state, even if a future caller invokes it at the wrong location.
+        if (PIC::Mover::GetLocalTimeStepRemainderFraction(data)!=0.0) {
+          localPlanAccepted=false;
+          localFailure="correction-window controller found an unfinished trajectory";
+          continue;
+        }
+#endif
+        const int species=PIC::ParticleBuffer::GetI(data);
+        const double correction=
+            PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data);
+        try {
+          const Window::cParticlePlan plan=Window::BuildParticlePlan(
+              Window::cRequest(species,correction),policies.at(species));
+          const std::size_t additional=plan.OutputCorrections.size()-1;
+          if (additional>static_cast<std::size_t>(LLONG_MAX) ||
+              local.RequiredAdditionalParticles>
+                  LLONG_MAX-static_cast<long long>(additional))
+            throw std::length_error(
+                "correction-window additional-particle count overflows");
+          local.RequiredAdditionalParticles+=
+              static_cast<long long>(additional);
+          local.Examined++;
+        }
+        catch (const std::exception &exception) {
+          localPlanAccepted=false;
+          if (localFailure.empty()) localFailure=exception.what();
+        }
+      }
+  }
+
+  // Do not count stochastic roulette deletions as available capacity.  A
+  // split transaction must be safe even if every low-correction particle
+  // survives.  The normal ceiling also preserves the input chemistry/MPI
+  // reserve, matching the allocation contract used by ProcessParticle().
+  long long available=0;
+  if (capacityOverride>=0) available=capacityOverride;
+  else {
+    const long double ceilingValue=std::floor(
+        static_cast<long double>(PIC::ParticleBuffer::MaxNPart)*
+        (1.0L-Comet::RadialSimulation::AllocationReserveFraction));
+    if (ceilingValue<0.0L || ceilingValue>LLONG_MAX) {
+      localPlanAccepted=false;
+      if (localFailure.empty())
+        localFailure="correction-window capacity ceiling is invalid";
+    }
+    else {
+      const long long ceiling=static_cast<long long>(ceilingValue);
+      available=ceiling>PIC::ParticleBuffer::NAllPart ?
+          ceiling-PIC::ParticleBuffer::NAllPart : 0;
+    }
+  }
+  if (local.RequiredAdditionalParticles>available) {
+    localPlanAccepted=false;
+    if (localFailure.empty())
+      localFailure="insufficient particle capacity for correction-window batch";
+  }
+
+  const int localAccepted=localPlanAccepted ? 1 : 0;
+  int globallyAccepted=0;
+  MPI_Allreduce(&localAccepted,&globallyAccepted,1,MPI_INT,MPI_MIN,
+      MPI_GLOBAL_COMMUNICATOR);
+  if (globallyAccepted==0) {
+    if (emitDiagnostics && !localPlanAccepted)
+      std::fprintf(stderr,
+          "rank %d rejected correction-window transaction: %s (required=%lld available=%lld)\n",
+          PIC::ThisThread,localFailure.c_str(),
+          local.RequiredAdditionalParticles,available);
+    if (statistics!=NULL) *statistics=local;
+    return false;
+  }
+
+  // The complete batch is now known to fit on every rank.  Snapshot `next`
+  // before each mutation: split children are inserted at the list head and
+  // must not be processed again in this batch; a roulette deletion invalidates
+  // only the current link.  CloneParticle preserves position, velocity,
+  // internal modes, chemistry stage, and all application fields.  Tracker
+  // identity is the sole field intentionally regenerated for each sibling.
+  for (unsigned int blockIndex=0;
+       blockIndex<PIC::DomainBlockDecomposition::nLocalBlocks;blockIndex++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=
+        PIC::DomainBlockDecomposition::BlockTable[blockIndex];
+    if (node==NULL || node->block==NULL) continue;
+    for (long int cell=0;cell<BlockCellCount;cell++) {
+      long int &first=node->block->FirstCellParticleTable[cell];
+      for (long int ptr=first;ptr!=-1;) {
+        const long int next=PIC::ParticleBuffer::GetNext(ptr);
+        PIC::ParticleBuffer::byte *data=
+            PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+        const int species=PIC::ParticleBuffer::GetI(data);
+        const double correction=
+            PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data);
+        const Window::cParticlePlan plan=Window::BuildParticlePlan(
+            Window::cRequest(species,correction),policies[species]);
+
+        if (plan.Action==Window::eAction::Keep) local.Kept++;
+        else if (plan.Action==Window::eAction::Roulette) {
+          local.RouletteCandidates++;
+          if (rnd()<plan.SurvivalProbability) {
+            PIC::ParticleBuffer::SetIndividualStatWeightCorrection(
+                plan.OutputCorrections[0],data);
+            local.RouletteSurvivors++;
+          }
+          else PIC::ParticleBuffer::DeleteParticle(ptr,first);
+        }
+        else {
+          local.SplitParents++;
+          PIC::ParticleBuffer::SetIndividualStatWeightCorrection(
+              plan.OutputCorrections[0],data);
+          for (std::size_t child=1;
+               child<plan.OutputCorrections.size();child++) {
+            const long int clone=PIC::ParticleBuffer::GetNewParticle(first);
+            PIC::ParticleBuffer::byte *copy=
+                PIC::ParticleBuffer::GetParticleDataPointer(clone);
+            PIC::ParticleBuffer::CloneParticle(copy,data);
+            PIC::ParticleBuffer::SetIndividualStatWeightCorrection(
+                plan.OutputCorrections[child],copy);
+#if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
+            PIC::ParticleTracker::InitParticleID(copy);
+            double trackedPosition[3],trackedVelocity[3];
+            PIC::ParticleBuffer::GetX(trackedPosition,copy);
+            PIC::ParticleBuffer::GetV(trackedVelocity,copy);
+            PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(
+                trackedPosition,trackedVelocity,species,copy,
+                static_cast<void*>(node));
+#endif
+            local.SplitChildren++;
+          }
+        }
+        ptr=next;
+      }
+    }
+  }
+
+  if (statistics!=NULL) *statistics=local;
+  if (emitDiagnostics) {
+    long long localValues[8]={local.Examined,local.Kept,
+        local.RouletteCandidates,local.RouletteSurvivors,
+        local.SplitParents,local.SplitChildren,
+        local.RequiredAdditionalParticles,PIC::ParticleBuffer::NAllPart};
+    long long globalValues[8]={0,0,0,0,0,0,0,0};
+    MPI_Allreduce(localValues,globalValues,8,MPI_LONG_LONG,MPI_SUM,
+        MPI_GLOBAL_COMMUNICATOR);
+    if (PIC::ThisThread==0 &&
+        (globalValues[2]!=0 || globalValues[4]!=0)) {
+      std::fprintf(PIC::DiagnospticMessageStream,
+          "$PREFIX: individual correction-window transaction iteration=%ld examined=%lld kept=%lld roulette=%lld survivors=%lld split-parents=%lld split-children=%lld required-additional=%lld particles-after=%lld\n",
+          completedIterations,globalValues[0],globalValues[1],
+          globalValues[2],globalValues[3],globalValues[4],globalValues[5],
+          globalValues[6],globalValues[7]);
+      std::fflush(PIC::DiagnospticMessageStream);
+    }
+  }
+  return true;
+}
+
+void ApplyIndividualCorrectionWindowsOrAbort(long int completedIterations) {
+  if (!ApplyIndividualCorrectionWindowsInternal(completedIterations,-1,NULL,
+      true)) {
+    if (PIC::ThisThread==0)
+      std::fprintf(stderr,
+          "individual correction-window transaction rejected before iteration %ld could complete\n",
+          completedIterations);
+    std::abort();
+  }
+}
+#endif
 
 double GetCarrierRate(PIC::Mesh::cDataBlockAMR *block,int species,
     int pendingWeightPower=0) {
@@ -2732,6 +2999,50 @@ bool Comet::RadialSimulation::Validate(std::string *error) {
   return Fail("individual corrections with collisions require the validated general NTC model",error);
 #endif
 #endif
+  if (IndividualCorrectionWindowsEnabled) {
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ != _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+    return Fail("individual correction windows require individual particle-weight corrections",error);
+#else
+#if _COMPILATION_MODE_ != _COMPILATION_MODE__MPI_
+    return Fail("individual correction windows currently require the MPI-only host executor",error);
+#endif
+    if (MaximumIndividualCorrectionWindowSplits<2)
+      return Fail("individual correction windows require a split limit of at least two",error);
+    if (!(AllocationReserveFraction>0.0) ||
+        !(AllocationReserveFraction<1.0) ||
+        !std::isfinite(AllocationReserveFraction))
+      return Fail("individual correction windows require a valid allocation reserve fraction",error);
+    try {
+      const std::vector<Comet::CorrectionWindowPlanner::cPolicy> policies=
+          BuildCorrectionWindowPolicies();
+      for (int species=0;species<PIC::nTotalSpecies;species++) {
+        Comet::CorrectionWindowPlanner::ValidatePolicy(policies[species]);
+        // Ordered bounds alone are insufficient for the fixed
+        // ceil(c/target) split rule.  Prove that the first representable value
+        // above the upper edge can be returned to the window; the input
+        // parser applies the same compatibility gate.
+        Comet::CorrectionWindowPlanner::BuildParticlePlan(
+            Comet::CorrectionWindowPlanner::cRequest(species,
+                std::nextafter(IndividualCorrectionWindowUpper[species],
+                    std::numeric_limits<double>::infinity())),
+            policies[species]);
+        if (IndividualCorrectionWindowPolicySource[species]<
+                PolicySource::Global ||
+            IndividualCorrectionWindowPolicySource[species]>
+                PolicySource::ExplicitSpecies)
+          return Fail("an individual correction-window policy source is invalid",error);
+        if (HasConfiguredDirectSource(species) &&
+            !(IndividualCorrectionWindowLower[species]<=1.0 &&
+              IndividualCorrectionWindowUpper[species]>=1.0))
+          return Fail("a direct-source correction window must contain the injection correction one",error);
+      }
+    }
+    catch (const std::exception &exception) {
+      return Fail(std::string("invalid individual correction window: ")+
+          exception.what(),error);
+    }
+#endif
+  }
   if (!(CourantNumber>0.0) || CourantNumber>1.0 ||
       !std::isfinite(CourantNumber))
     return Fail("radial Courant number must be in (0,1]",error);
@@ -3148,11 +3459,329 @@ void Comet::RadialSimulation::Initialize() {
     AdaptParticleWeights(0);
   }
   ReportResolvedPopulationPolicies(innerNode);
+  ReportResolvedCorrectionWindowPolicies();
 #endif
 
   PIC::BC::BlockInjectionBCindicatior=InjectionBlockIndicator;
   PIC::BC::userDefinedBoundingBlockInjectionFunction=InjectBlock;
   PIC::BC::InitBoundingBoxInjectionBlockList();
+}
+
+bool Comet::RadialSimulation::ValidateIndividualCorrectionWindows() {
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ != _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+  if (PIC::ThisThread==0)
+    std::fprintf(stderr,
+        "correction-window validation requires individual corrections\n");
+  return false;
+#else
+  namespace Window=Comet::CorrectionWindowPlanner;
+  if (!IndividualCorrectionWindowsEnabled) {
+    if (PIC::ThisThread==0)
+      std::fprintf(stderr,
+          "correction-window validation requires the input switch ON\n");
+    return false;
+  }
+
+  // The focused validator owns all particle lists and is selected instead of
+  // a science run.  One owner block per rank exercises the collective commit
+  // and rank-local capacity calculation without manufacturing ghost copies.
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=
+      SelectValidationOwnerBlock();
+  const int localHasBlock=(node!=NULL && node->block!=NULL) ? 1 : 0;
+  int globalBlockCount=0;
+  MPI_Allreduce(&localHasBlock,&globalBlockCount,1,MPI_INT,MPI_SUM,
+      MPI_GLOBAL_COMMUNICATOR);
+  if (globalBlockCount!=PIC::nTotalThreads) {
+    if (PIC::ThisThread==0)
+      std::fprintf(stderr,
+          "correction-window validation requires one owner block per MPI rank\n");
+    return false;
+  }
+
+  int species=-1;
+  for (int candidate=0;candidate<PIC::nTotalSpecies;candidate++)
+    if (!HasConfiguredDirectSource(candidate)) {
+      species=candidate;
+      break;
+    }
+  if (species<0) species=0;
+  const Window::cPolicy policy(
+      IndividualCorrectionWindowLower[species],
+      IndividualCorrectionWindowTarget[species],
+      IndividualCorrectionWindowUpper[species],
+      static_cast<std::size_t>(MaximumIndividualCorrectionWindowSplits));
+
+  // The first value above the inclusive upper edge is the hardest place to
+  // form two legal children.  Reject a mathematically ordered but unusable
+  // policy before constructing any synthetic particle.
+  const double highCorrection=std::nextafter(policy.UpperCorrection,
+      std::numeric_limits<double>::infinity());
+  Window::cParticlePlan highPlan;
+  try {
+    highPlan=Window::BuildParticlePlan(
+        Window::cRequest(species,highCorrection),policy);
+  }
+  catch (const std::exception &exception) {
+    if (PIC::ThisThread==0)
+      std::fprintf(stderr,
+          "correction-window validation cannot split above the upper edge: %s\n",
+          exception.what());
+    return false;
+  }
+  if (highPlan.Action!=Window::eAction::Split ||
+      highPlan.OutputCorrections.size()<2) return false;
+
+  struct cAudit {
+    long long Count=0;
+    long long Outside=0;
+    double Sum=0.0;
+    double SquareSum=0.0;
+  };
+  auto auditSpecies = [&](int auditSpecies) -> cAudit {
+    cAudit local,global;
+    for (unsigned int blockIndex=0;
+         blockIndex<PIC::DomainBlockDecomposition::nLocalBlocks;
+         blockIndex++) {
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *auditNode=
+          PIC::DomainBlockDecomposition::BlockTable[blockIndex];
+      if (auditNode==NULL || auditNode->block==NULL) continue;
+      for (long int cell=0;cell<BlockCellCount;cell++)
+        for (long int ptr=auditNode->block->FirstCellParticleTable[cell];
+             ptr!=-1;ptr=PIC::ParticleBuffer::GetNext(ptr)) {
+          PIC::ParticleBuffer::byte *data=
+              PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+          if (PIC::ParticleBuffer::GetI(data)!=auditSpecies) continue;
+          const double correction=
+              PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data);
+          local.Count++;
+          local.Sum+=correction;
+          local.SquareSum+=correction*correction;
+          if (!(correction>=IndividualCorrectionWindowLower[auditSpecies]) ||
+              !(correction<=IndividualCorrectionWindowUpper[auditSpecies]) ||
+              !std::isfinite(correction)) local.Outside++;
+        }
+    }
+    long long localCounts[2]={local.Count,local.Outside};
+    long long globalCounts[2]={0,0};
+    MPI_Allreduce(localCounts,globalCounts,2,MPI_LONG_LONG,MPI_SUM,
+        MPI_GLOBAL_COMMUNICATOR);
+    double localSums[2]={local.Sum,local.SquareSum};
+    double globalSums[2]={0.0,0.0};
+    MPI_Allreduce(localSums,globalSums,2,MPI_DOUBLE,MPI_SUM,
+        MPI_GLOBAL_COMMUNICATOR);
+    global.Count=globalCounts[0];
+    global.Outside=globalCounts[1];
+    global.Sum=globalSums[0];
+    global.SquareSum=globalSums[1];
+    return global;
+  };
+  auto setCorrection = [&](double correction) {
+    if (!localHasBlock) return;
+    for (long int ptr=node->block->FirstCellParticleTable[0];ptr!=-1;
+         ptr=PIC::ParticleBuffer::GetNext(ptr))
+      PIC::ParticleBuffer::SetIndividualStatWeightCorrection(correction,
+          PIC::ParticleBuffer::GetParticleDataPointer(ptr));
+  };
+
+  bool pass=true;
+  int keepChecks=0,splitChecks=0,rouletteChecks=0;
+  int capacityRollbackChecks=0,restartChecks=0,directSourceChecks=0;
+
+  // Inclusive boundaries and the target must be bitwise identity operations.
+  PIC::ParticleBuffer::DeleteAllParticles();
+  SeedValidationParticles(node,species,3);
+  if (localHasBlock) {
+    const double values[3]={policy.LowerCorrection,
+        policy.TargetCorrection,policy.UpperCorrection};
+    int index=0;
+    for (long int ptr=node->block->FirstCellParticleTable[0];ptr!=-1;
+         ptr=PIC::ParticleBuffer::GetNext(ptr))
+      PIC::ParticleBuffer::SetIndividualStatWeightCorrection(values[index++],
+          PIC::ParticleBuffer::GetParticleDataPointer(ptr));
+  }
+  const cValidationMoments keepBefore=CollectValidationMoments(species);
+  cCorrectionWindowStatistics keepStatistics;
+  const bool keepAccepted=ApplyIndividualCorrectionWindowsInternal(0,-1,
+      &keepStatistics,false);
+  const cValidationMoments keepAfter=CollectValidationMoments(species);
+  const cAudit keepAudit=auditSpecies(species);
+  const bool keepPass=keepAccepted && keepAudit.Outside==0 &&
+      keepAudit.Count==3LL*globalBlockCount &&
+      ValidationMomentsEqual(keepBefore,keepAfter,0.0) &&
+      keepStatistics.Kept==3 && keepStatistics.RouletteCandidates==0 &&
+      keepStatistics.SplitParents==0;
+  pass=pass && keepPass;
+  if (keepPass) keepChecks++;
+
+  // A zero-capacity preflight of a required split must be a true rollback:
+  // particle count, corrections, and all represented physical moments remain
+  // unchanged, and roulette RNG has not yet been consulted.
+  PIC::ParticleBuffer::DeleteAllParticles();
+  SeedValidationParticles(node,species,1);
+  setCorrection(highCorrection);
+  const long int capacityCountBefore=PIC::ParticleBuffer::NAllPart;
+  const cValidationMoments capacityBefore=CollectValidationMoments(species);
+  const cAudit capacityAuditBefore=auditSpecies(species);
+  cCorrectionWindowStatistics rejectedStatistics;
+  const bool capacityAccepted=ApplyIndividualCorrectionWindowsInternal(0,0,
+      &rejectedStatistics,false);
+  const cValidationMoments capacityAfter=CollectValidationMoments(species);
+  const cAudit capacityAuditAfter=auditSpecies(species);
+  const bool capacityPass=!capacityAccepted &&
+      PIC::ParticleBuffer::NAllPart==capacityCountBefore &&
+      capacityAuditAfter.Count==capacityAuditBefore.Count &&
+      capacityAuditAfter.Sum==capacityAuditBefore.Sum &&
+      capacityAuditAfter.SquareSum==capacityAuditBefore.SquareSum &&
+      ValidationMomentsEqual(capacityBefore,capacityAfter,0.0);
+  pass=pass && capacityPass;
+  if (capacityPass) capacityRollbackChecks++;
+
+  // Commit the same split with normal capacity.  Exact child corrections and
+  // CloneParticle preserve represented number, mass, momentum, kinetic
+  // energy, internal energy, chemistry stage, and zero mover remainder.
+  const cValidationMoments splitBefore=CollectValidationMoments(species);
+  cCorrectionWindowStatistics splitStatistics;
+  const bool splitAccepted=ApplyIndividualCorrectionWindowsInternal(0,-1,
+      &splitStatistics,false);
+  const cValidationMoments splitAfter=CollectValidationMoments(species);
+  const cAudit splitAudit=auditSpecies(species);
+  const long long expectedSplitCount=
+      static_cast<long long>(highPlan.OutputCorrections.size())*
+      globalBlockCount;
+  const bool splitPass=splitAccepted && splitAudit.Outside==0 &&
+      splitAudit.Count==expectedSplitCount &&
+      ValidationMomentsEqual(splitBefore,splitAfter,5.0e-13) &&
+      splitStatistics.SplitParents==1 &&
+      splitStatistics.SplitChildren==
+          static_cast<long long>(highPlan.OutputCorrections.size()-1);
+  pass=pass && splitPass;
+  if (splitPass) splitChecks++;
+
+  // Restart serializes the full particle record, including each child
+  // correction and internal state.  Tracker IDs and RNG state are purposely
+  // excluded from this assertion because the core reinitializes tracking on
+  // reload and does not checkpoint the ordinary roulette stream.
+  const cValidationMoments restartBefore=CollectValidationMoments(species);
+  const cAudit restartAuditBefore=auditSpecies(species);
+  char restartName[256];
+  std::snprintf(restartName,sizeof(restartName),
+      "/tmp/amps-hartley2-stage5.ranks=%d.restart",PIC::nTotalThreads);
+  PIC::Restart::SaveParticleData(restartName);
+  PIC::ParticleBuffer::DeleteAllParticles();
+  PIC::Restart::ReadParticleData(restartName);
+  const cValidationMoments restartAfter=CollectValidationMoments(species);
+  const cAudit restartAuditAfter=auditSpecies(species);
+  const bool restartPass=restartAuditAfter.Count==restartAuditBefore.Count &&
+      restartAuditAfter.Outside==0 &&
+      restartAuditAfter.Sum==restartAuditBefore.Sum &&
+      restartAuditAfter.SquareSum==restartAuditBefore.SquareSum &&
+      ValidationMomentsEqual(restartBefore,restartAfter,0.0);
+  pass=pass && restartPass;
+  if (restartPass) restartChecks++;
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+  if (PIC::ThisThread==0) std::remove(restartName);
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+
+  // Low-side roulette is assessed against its analytic mean and variance.
+  // All seeded particles have identical state, while base weights may differ
+  // by radial block; WeightSquared retains the exact unequal-weight variance
+  // coefficient needed for a decomposition-independent physical-moment test.
+  PIC::ParticleBuffer::DeleteAllParticles();
+  constexpr long int RouletteParticlesPerRank=65536;
+  SeedValidationParticles(node,species,RouletteParticlesPerRank);
+  const double lowCorrection=0.5*policy.LowerCorrection;
+  setCorrection(lowCorrection);
+  const cValidationMoments rouletteBefore=CollectValidationMoments(species);
+  rnd_seed(49979687+PIC::ThisThread);
+  cCorrectionWindowStatistics rouletteStatistics;
+  const bool rouletteAccepted=ApplyIndividualCorrectionWindowsInternal(0,-1,
+      &rouletteStatistics,false);
+  const cValidationMoments rouletteAfter=CollectValidationMoments(species);
+  const cAudit rouletteAudit=auditSpecies(species);
+  long long localRoulette[2]={rouletteStatistics.RouletteCandidates,
+      rouletteStatistics.RouletteSurvivors};
+  long long globalRoulette[2]={0,0};
+  MPI_Allreduce(localRoulette,globalRoulette,2,MPI_LONG_LONG,MPI_SUM,
+      MPI_GLOBAL_COMMUNICATOR);
+  const double survivalProbability=
+      lowCorrection/policy.TargetCorrection;
+  const double expectedSurvivors=
+      RouletteParticlesPerRank*globalBlockCount*survivalProbability;
+  const double survivorSigma=std::sqrt(
+      RouletteParticlesPerRank*globalBlockCount*survivalProbability*
+      (1.0-survivalProbability));
+  const double physicalSigma=std::sqrt(rouletteBefore.WeightSquared*
+      (policy.TargetCorrection-lowCorrection)/lowCorrection);
+  const double physicalTolerance=rouletteBefore.Number>0.0 ?
+      7.0*physicalSigma/rouletteBefore.Number+5.0e-13 : 0.0;
+  const bool roulettePass=rouletteAccepted && rouletteAudit.Outside==0 &&
+      globalRoulette[0]==
+          static_cast<long long>(RouletteParticlesPerRank)*globalBlockCount &&
+      std::fabs(globalRoulette[1]-expectedSurvivors)<=7.0*survivorSigma &&
+      std::fabs(rouletteAfter.Number-rouletteBefore.Number)<=
+          7.0*physicalSigma &&
+      ValidationMomentsEqual(rouletteAfter,rouletteBefore,
+          physicalTolerance);
+  pass=pass && roulettePass;
+  if (roulettePass) rouletteChecks++;
+
+  // Direct injection explicitly initializes c=1.  The input resolver rejects
+  // a direct-source window that excludes one; exercise that identity through
+  // the production controller rather than relying on parser evidence alone.
+  int directSpecies=-1;
+  for (int candidate=0;candidate<PIC::nTotalSpecies;candidate++)
+    if (HasConfiguredDirectSource(candidate)) {
+      directSpecies=candidate;
+      break;
+    }
+  PIC::ParticleBuffer::DeleteAllParticles();
+  if (directSpecies>=0) {
+    SeedValidationParticles(node,directSpecies,1);
+    if (localHasBlock) {
+      PIC::ParticleBuffer::byte *data=
+          PIC::ParticleBuffer::GetParticleDataPointer(
+              node->block->FirstCellParticleTable[0]);
+      PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,data);
+    }
+    cCorrectionWindowStatistics directStatistics;
+    const bool directAccepted=ApplyIndividualCorrectionWindowsInternal(0,-1,
+        &directStatistics,false);
+    const cAudit directAudit=auditSpecies(directSpecies);
+    const bool directPass=directAccepted &&
+        directAudit.Count==globalBlockCount && directAudit.Outside==0 &&
+        directAudit.Sum==static_cast<double>(globalBlockCount) &&
+        directStatistics.Kept==1;
+    pass=pass && directPass;
+    if (directPass) directSourceChecks++;
+  }
+  else pass=false;
+
+  // An empty species/list remains empty; windows never manufacture a
+  // trajectory without a represented input particle.
+  PIC::ParticleBuffer::DeleteAllParticles();
+  cCorrectionWindowStatistics emptyStatistics;
+  const bool emptyPass=ApplyIndividualCorrectionWindowsInternal(0,-1,
+      &emptyStatistics,false) && PIC::ParticleBuffer::NAllPart==0 &&
+      emptyStatistics.Examined==0;
+  pass=pass && emptyPass;
+
+  const int localResult=pass ? 1 : 0;
+  int globalResult=0;
+  MPI_Allreduce(&localResult,&globalResult,1,MPI_INT,MPI_MIN,
+      MPI_GLOBAL_COMMUNICATOR);
+  if (PIC::ThisThread==0) {
+    std::fprintf(PIC::DiagnospticMessageStream,
+        "%s individual-correction window validation correction-mode=ON mpi-ranks=%d owner-blocks=%d lower=%.17e target=%.17e upper=%.17e max-split-particles=%ld keep-checks=%d split-checks=%d roulette-checks=%d capacity-rollback-checks=%d restart-checks=%d direct-source-checks=%d empty-checks=%d roulette-candidates=%lld roulette-survivors=%lld\n",
+        globalResult!=0 ? "PASS" : "FAIL",PIC::nTotalThreads,
+        globalBlockCount,policy.LowerCorrection,policy.TargetCorrection,
+        policy.UpperCorrection,MaximumIndividualCorrectionWindowSplits,
+        keepChecks,splitChecks,rouletteChecks,capacityRollbackChecks,
+        restartChecks,directSourceChecks,emptyPass ? 1 : 0,
+        globalRoulette[0],globalRoulette[1]);
+    std::fflush(PIC::DiagnospticMessageStream);
+  }
+  return globalResult!=0;
+#endif
 }
 
 bool Comet::RadialSimulation::ValidateParticleWeightAdaptation() {
@@ -4131,6 +4760,13 @@ void Comet::RadialSimulation::Run() {
       if (RegularAdaptationDue(iteration+1,false))
         AdaptParticleWeights(iteration+1);
 #endif
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      // PIC::TimeStep has drained every local-timestep continuation and
+      // chemistry batch.  If a base-weight adaptation is due, it has already
+      // committed above; individual correction windows are therefore the
+      // final carrier normalization at this safe completed-stage boundary.
+      ApplyIndividualCorrectionWindowsOrAbort(iteration+1);
+#endif
       continue;
     }
     previousOutputNumber=PIC::DataOutputFileNumber;
@@ -4147,6 +4783,9 @@ void Comet::RadialSimulation::Run() {
 #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
       if (RegularAdaptationDue(iteration+1,false))
         AdaptParticleWeights(iteration+1);
+#endif
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      ApplyIndividualCorrectionWindowsOrAbort(iteration+1);
 #endif
       continue;
     }
@@ -4168,6 +4807,9 @@ void Comet::RadialSimulation::Run() {
 #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
       if (RegularAdaptationDue(iteration+1,true))
         AdaptParticleWeights(iteration+1);
+#endif
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      ApplyIndividualCorrectionWindowsOrAbort(iteration+1);
 #endif
       continue;
     }
@@ -4196,6 +4838,14 @@ void Comet::RadialSimulation::Run() {
       std::fflush(PIC::DiagnospticMessageStream);
     }
 
+#if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
+    if (RegularAdaptationDue(iteration+1,true))
+      AdaptParticleWeights(iteration+1);
+#endif
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+    ApplyIndividualCorrectionWindowsOrAbort(iteration+1);
+#endif
+
     if (convergedWindows>=RequiredConvergedWindows) {
       if (PIC::ThisThread==0) {
         std::fprintf(PIC::DiagnospticMessageStream,
@@ -4205,10 +4855,6 @@ void Comet::RadialSimulation::Run() {
       }
       return;
     }
-#if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
-    if (RegularAdaptationDue(iteration+1,true))
-      AdaptParticleWeights(iteration+1);
-#endif
   }
 
   if (PIC::ThisThread==0) {

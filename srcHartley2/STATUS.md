@@ -4263,3 +4263,202 @@ run `--plan`, then archived mode. Build a separate correction-on executable
 with the exact clean-build procedure and run fresh mode into a new archive.
 Finally restore/rebuild correction-off and rerun archived mode. Present both
 terminal PASS records and hashes to the user before any operation on master.
+
+## 2026-11-05: Stage 5 exact daughters and correction windows complete
+
+Stage 5 is implemented and focused-tested on `1d_comet_dev`, based on commit
+`5da7fe664f986ac74191dcffb010322cb6dcda53`. No commit, branch switch, merge,
+or operation on `master` was performed. Three sub-agents independently audited
+the existing chemistry/runtime algorithm, designed the input policy, and
+designed the pure/integrated validation coverage. Their recommendations were
+reconciled here; they did not merge or commit code.
+
+The supported runtime remains deliberately narrow: DIM1 radial mesh,
+species-local block weights and timesteps, local-timestep face resampling,
+individual corrections, general NTC collisions, and Bernoulli chemistry
+residual allocation. Correction windows with Systematic residuals, simplified
+NTC, MF, CUDA, hybrid batched chemistry, or DIM2/DIM3 chemistry are not
+qualified. The planner is geometry-neutral, but the particle-list executor is
+not yet qualified outside the radial application.
+
+### Algorithm and conservation contract
+
+The Stage-4 exact chemistry path remains authoritative. Every selected analog
+reaction creates one particle for every concrete stoichiometric product and
+sets
+
+```text
+c_daughter = (W_parent*c_parent/dt_parent)/(W_daughter/dt_daughter).
+```
+
+Stage 5 does not alter reaction probability, channel selection, recoil, or
+parent destruction. It applies species-resolved correction windows only after
+a complete `PIC::TimeStep()`. The inclusive interval is inert. For `c<lower`,
+roulette survival probability is `c/target` and a survivor receives `target`.
+For `c>upper`, the fixed representation is `ceil(c/target)` particles, bounded
+by the input hard maximum. The first children receive `c/n`; the final child
+receives the arithmetic remainder. The planner requires the production-order
+sum to equal the input correction exactly.
+
+The runtime uses two owner-only traversals rather than retaining a plan vector
+for every live particle. Preflight validates finite positive corrections,
+zero mover remainder, species policy, exact clone count, per-particle split
+limit, and reserve-aware local capacity. Roulette deletions are not credited
+toward capacity. `MPI_Allreduce(MPI_MIN)` makes acceptance collective: one
+rank's rejection occurs before all RNG draws, list changes, tracker changes,
+and window diagnostics on every rank. Commit snapshots each original next
+link, so head-inserted children are not processed recursively. Full-record
+cloning preserves position, velocity, internal modes, species, chemistry
+stage, and application bytes; only the child correction and tracker identity
+are changed. Base-weight adaptation, when due on the same boundary, commits
+first. No ghost block weight publication is required because `c` travels in
+the full particle record.
+
+### Files added or modified
+
+| File | Detailed change and reason | Later master-merge dependency/invariant |
+| --- | --- | --- |
+| `input/CometCorrectionWindowPolicy.pm` | **New.** Geometry- and network-independent input resolver for global, `DIRECT_SOURCE`, `CHEMICAL_ONLY`, and explicit-species windows. Validates finite ordered triples, fixed-split compatibility, duplicate/unknown selectors, direct-source `c=1`, required global/limit records, and strict default-off behavior. | Merge before `hartley2.pl`. Preserve precedence `species > group > global` and reject inactive records instead of silently ignoring them. Do not combine this dimensionless-correction policy with block population ranges. |
+| `input/test_comet_correction_window_policy.pl` | **New.** Parser/resolver regression covering precedence and invalid/off-mode configurations. | Merge with the module; keep it independent of a generated AMPS tree. |
+| `input/hartley2.pl` | Parses the Stage-5 switch, window records, and split limit; derives direct/reaction-reachable groups after all databases load; generates one lower/target/upper/source row per compiled species; and requires radial DIM1 plus core correction mode when enabled. | Merge after the policy module and before C++ consumers. Keep generated arrays on one physical source line for `ChangeValueOfArray`; regenerate, never hand-merge, `build/main/RadialSimulation.cpp`. |
+| `srcHartley2/CorrectionWindowPlanner.h` | **New.** Pure AMPS/MPI/mesh-independent keep/roulette/split planner and aggregate capacity preflight. Implements inclusive bounds, fixed ceil splitting, exact final remainder, hard split limit, overflow checks, and no-mutation batch rejection. | Merge before the runtime executor. This header is the future DIM2/DIM3 reuse boundary; do not add radial mesh or RNG calls to it. |
+| `srcHartley2/RadialSimulation.h` | Declares generated policy arrays, split limit, switch, and the focused initialized-mesh validator. Detailed comments distinguish the correction window from the chemistry transaction bound. | Merge in lockstep with generated definitions and parser source codes. |
+| `srcHartley2/RadialSimulation.cpp` | Adds policy reporting/validation, the two-pass collective owner-list executor, reserve-aware capacity transaction, full-state split/tracker commit, roulette deletion, safe post-step scheduling in every run branch, and the production-path validator. The validator covers keep boundaries, split moments/state, global zero-capacity rollback, restart, analytic roulette statistics, direct `c=1`, and empty populations. | Merge after Stage-2/3 capacity/restart and all Stage-4 mover/collision/chemistry prerequisites. Preserve owner-only traversal, zero-remainder gate, no roulette capacity credit, all-rank preflight, base-adaptation-before-window ordering, and full-record clone semantics. |
+| `srcHartley2/RadialMain.cpp` | Adds mutually exclusive `--validate-correction-windows` CLI routing and usage text. | Merge with the validator; it is a focused test mode, not a production policy selector. |
+| `srcHartley2/tests/test_stage5_correction_window_planner.cpp` | **New.** Pure C++ cases for inclusive policy, expected roulette, exact production-order split sum, hard-limit/capacity rollback, multiple species, repeated products, and empty batches. | Merge with the planner. Exact equality is intentional, not a tolerance typo. |
+| `srcHartley2/tests/run_stage5_correction_window_tests.sh` | **New.** Compiles/runs the pure planner and executes the Perl policy suite in a temporary directory. | Merge after both pure tests; it must not configure AMPS or leave a binary. |
+| `srcHartley2/tests/run_stage5_integrated_tests.sh` | **New.** Runs correction-window and exact chemistry validators at exactly 1, 4, and 12 ranks with Bernoulli residuals, immutable new output roots, separate commands/stdout/stderr, and a strict final checker. | Merge after CLI/runtime and parser. Preserve explicit caller-supplied executable and refusal to overwrite evidence. |
+| `srcHartley2/tests/test_stage5_integrated_logs.py` | **New.** Requires one passing window record per rank, exact owner/rank and path flags, consistent policy, analytic seven-sigma roulette bounds, and Stage-4 exact chemistry coverage at every decomposition. | Merge with the C++ output schema. A renamed field is an interface change; zero exit status alone is not acceptance. |
+| `srcHartley2/tests/run_all_stage_tests.sh` | Extends the general runner through Stage 5, adds archived/fresh Stage-5 modes, strict evidence preflight, the pure job and matrix job, a sixth group, and Stage-5 mode in the final summary. | Merge after the Stage-5 runner/checker. Preserve Stage-3's requirement that the current build be correction-off; archived Stage-5 evidence comes from a separate frozen binary. |
+| `srcHartley2/CHEMISTRY.md`, `srcHartley2/README.md` | Records the implemented algorithm, grammar, validation values/evidence, unsupported matrix, science boundary, and operator commands. | Merge after code/test schemas stabilize. Do not treat the validation window values as a production Rubin policy. |
+| `srcHartley2/STATUS.md`, `handoff.md` | Records complete file rationale, recovery state, and master-integration sequence. | Documentation is not permission to merge. Reconcile append-only history rather than replacing it with an older whole-file version. |
+
+No core file under `src/pic`, `src/meshAMR`, or `src/models` was added or
+modified for Stage 5. Stage 5 consumes the already documented Stage-4 core
+individual-correction mover/collision interfaces and the Stage-2/3
+application capacity/restart machinery. Keep this distinction when reviewing
+a future integration diff.
+
+The canonical `input/halley1d.input` was only staged temporarily to build the
+validator. The accepted build used global `0.25|1|4`, direct-source
+`0.5|1|2`, chemical-only `0.0625|0.25|4`, and a maximum split count of 32.
+After the archive was produced, the tracked input was restored byte-for-byte
+to its original correction-off/Systematic form (SHA-256
+`0d89b536e6daa2dea7251bb57920fb6f1dd2546efd7c454d25b6dcccc26eccf5`).
+Those focused values have not been scientifically calibrated.
+
+### Validation evidence
+
+Before each compile, exactly `/data/vtenishe/COMET1D/AMPS/build` was removed.
+The correction-on build completed without compiler/linker errors. The pure
+suite printed:
+
+```text
+Comet correction-window policy test passed
+PASS Stage-5 correction-window planner policy=1 roulette=1 split=1 capacity=1 multi-species=1 repeated-products=1 empty=1
+```
+
+The full runtime archive is:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/stage5-correction-window-full-20261105
+PASS Stage-5 correction-window integrated matrix 1rank=pass 4rank=pass 12rank=pass
+```
+
+At each rank count, the initialized-mesh controller passed keep, split,
+roulette, capacity rollback, restart, direct-source, and empty-list checks.
+It used 65,536 roulette candidates per owner block. The paired chemistry run
+used 200,000 events per generated reaction and retained the complete exact
+daughter number/mass/momentum/energy checks from Stage 4. The validation
+binary hash was
+`6f640dd3db0fad77f96b392b19e20fe9dcde65e698207db24a1dc9014a58d89f`;
+its generated `build/pic/picGlobal.dfn` hash was
+`eb968bf7d4b95f43564070c8f64fecf772a989aafa63da8477980483a726c971`.
+The first sandboxed launch was preserved separately as
+`stage5-correction-window-full-20261105.sandbox-launch-failed`; Open MPI had
+no visible network interface and AMPS never started. The unrestricted rerun
+is the acceptance archive.
+
+This evidence closes implementation Stage 5, not the long scientific pilot.
+No production convergence, independent-seed C2 uncertainty, clone
+decorrelation time, parent-profile invariance, minor-species flux closure, or
+new Rubin comparison is claimed here.
+
+### Detailed later merge sequence
+
+Do not merge yet. Tell the user before any switch, fetch/rebase, cherry-pick,
+integration branch, commit on `master`, or merge involving `master`. After the
+comet science validation is accepted and explicit authorization is given:
+
+1. record the current `1d_comet_dev` tip, then-current `master` tip, merge
+   base, dirty/untracked exclusions, and all Stage 0--5 archive hashes;
+2. use a disposable integration branch created from that recorded master;
+   never reuse this validation worktree with raw archives or generated files;
+3. integrate prerequisite Stage 0--3 diagnostics, policies, component
+   planner, transactional capacity, accumulator, and restart changes in their
+   documented order and pass their correction-off suites;
+4. integrate the Stage-4 core mover and general-NTC changes as separate,
+   reviewable core commits, including correction-off identity and unsupported
+   collision-model gates; do not mix them with Stage-5 parsing;
+5. integrate the Stage-4 exact corrected-daughter application path and prove
+   the 1/4/12 all-`c=1` identity before adding any window;
+6. add `CometCorrectionWindowPolicy.pm` and its Perl test, then modify
+   `input/hartley2.pl`; regenerate and inspect species arrays from at least one
+   legacy off input and the focused on input;
+7. add the pure planner/test, then declarations, runtime executor, scheduling,
+   CLI, and focused validator. Resolve conflicts by preserving conservation
+   and rollback invariants, not by accepting whichever branch compiles;
+8. add the Stage-5 shell/Python runners and general-runner wiring. Build the
+   correction-on validation binary only after deleting the exact build tree,
+   rerun the 1/4/12 matrix into a new archive, and parse it strictly;
+9. restore canonical correction-off `halley1d.input`, delete the exact build
+   tree again, rebuild, and run all archived Stage 0--5 groups. Verify omission
+   of window records is behavior-identical to the old input;
+10. review for unintended changes to random streams in off mode, generated
+    policy order, source classification, collision selection, chemistry event
+    count, tracker state, capacity reserve, and unsupported geometry;
+11. exclude `build/`, `amps`, root generated parser/input copies, meshes,
+    `PT*`, raw validation archives, sandbox failure evidence, and the
+    pre-existing dirty `Makefile` from source commits;
+12. present the exact integration diff, commit range, exclusions, build/input
+    hashes, 1/4/12 records, memory/wall comparison, science-pilot statistics,
+    convergence/closure result, and Rubin comparison to the user, then stop
+    before changing `master`.
+
+During conflict resolution, preserve: correction mode default off; selector
+precedence; direct-source `c=1`; one exact daughter per concrete product;
+inclusive windows; fixed ceil splitting; exact correction sum; full-record
+cloning; unique child tracker setup; no roulette capacity credit; collective
+preflight/rollback; owner-only traversal; base adaptation before windows; and
+the separation between the chemistry event-product limit and window split
+limit. Stage 6 packet splitting and Stage 7 channel importance sampling remain
+future, separately approved development.
+
+### Final restored workspace and complete regression
+
+After the correction-on acceptance archive, the canonical input was restored,
+exactly `/data/vtenishe/COMET1D/AMPS/build` was removed again, and AMPS was
+cleanly rebuilt from `input/halley1d.input`. The generated configuration has
+`_INDIVIDUAL_PARTICLE_WEIGHT_OFF_`, general NTC, window mode false, and split
+limit `-1`. Final hashes are:
+
+```text
+amps                         162707be2849ff3da60318389219c2c54bbdb4b5f6c9987f375f8cb25a4cf40d
+input/halley1d.input         0d89b536e6daa2dea7251bb57920fb6f1dd2546efd7c454d25b6dcccc26eccf5
+build/pic/picGlobal.dfn      c3d2bca73f068cff357ae6d1f5002c97dc738b6a3190c712b2787890c92e2726
+build/main/RadialSimulation.cpp d54a0ce8bdf1d115324b3e2d126b0b0fe351d5657d5370f43c6b1c423eb70cae
+```
+
+`run_all_stage_tests.sh --plan` passed against that correction-off build. The
+complete archived suite then passed all Stage 0--5 work:
+
+```text
+Hartley2 all-stage test summary status=PASS stage4-mode=archived stage5-mode=archived
+  tests: run=19 passed=19 skipped=0 failed=0
+  test-groups: run=6 passed=6 skipped=0 failed=0
+PASS Hartley2 all-stage suite tests=19 test-groups=6 stage4-mode=archived stage5-mode=archived
+```
+
+There is no active AMPS/MPI validation process. The pre-existing tracked
+`Makefile` difference and historical/generated untracked files are unrelated
+to Stage 5 and were preserved. `git diff --check` passes. No commit was made.

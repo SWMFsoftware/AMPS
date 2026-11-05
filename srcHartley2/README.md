@@ -1072,11 +1072,12 @@ only the exact `build` directory and build with
 `InputFileAMPS=input/halley1d.input`; confirm that the generated macro is
 `_INDIVIDUAL_PARTICLE_WEIGHT_OFF_`.
 
-This stage does not validate hybrid diagnostic counters, CUDA continuation,
-field-line/periodic movers, or correction-on 2-D/3-D chemistry. It also does
-not implement Stage-5 correction windows or importance sampling. Do not merge
-to `master` from this workflow; the dependency order and conflict invariants
-are recorded in `STATUS.md`.
+The Stage-4 archive does not validate hybrid diagnostic counters, CUDA
+continuation, field-line/periodic movers, or correction-on 2-D/3-D chemistry.
+It predates the separately tested Stage-5 windows documented below and still
+does not provide importance sampling. Do not merge to `master` from this
+workflow; the dependency order and conflict invariants are recorded in
+`STATUS.md`.
 
 ## Complete Stage 0--4 test runner
 
@@ -1169,3 +1170,126 @@ and 12 and therefore remain below the approved 18-process limit.
 dated subdirectory structure printed by `--help` is required. This is
 intentional: automatically choosing a newest-looking run could combine
 different executables or incomplete evidence and produce a false pass.
+
+## Stage 5 correction windows
+
+Stage 5 is implemented for the same correction-on DIM1 radial configuration
+qualified in Stage 4. Exact chemistry still creates one carrier for every
+concrete stoichiometric product with
+
+```text
+c_daughter = (W_parent*c_parent/dt_parent)/(W_daughter/dt_daughter).
+```
+
+The new controller bounds this dimensionless correction after each completed
+time step. The configured interval is inclusive. A correction below its lower
+edge is rouletted to the target with probability `c/target`; a correction
+above its upper edge is split into `ceil(c/target)` complete-record copies,
+subject to a per-particle hard maximum. Split corrections reconstruct the
+input correction exactly in production summation order. The controller runs
+after any coincident block-base-weight adaptation and refuses an unfinished
+local-timestep continuation.
+
+The transaction has a read-only preflight and an all-rank decision. It counts
+all required clones, retains `RadialAllocationReserveFraction`, and does not
+credit possible roulette deletions. Rejection therefore precedes RNG draws,
+particle-list edits, tracker changes, or diagnostics on every rank. Accepted
+splits preserve position, velocity, rotational/vibrational state, chemistry
+stage, and all other particle fields; each new tracked copy obtains a new
+tracker identity. Only authoritative owner-block particle lists are visited.
+
+### Input records
+
+Correction-window records are legal only when both the core correction mode
+and the application window switch are on:
+
+```text
+ParticleWeightCorrectionMode=on
+ParticleWeightCorrectionWindowMode=on
+ParticleWeightCorrectionWindow=LOWER | TARGET | UPPER
+ParticleWeightCorrectionWindow(DIRECT_SOURCE)=LOWER | TARGET | UPPER
+ParticleWeightCorrectionWindow(CHEMICAL_ONLY)=LOWER | TARGET | UPPER
+ParticleWeightCorrectionWindow(H2O)=LOWER | TARGET | UPPER
+ParticleWeightCorrectionWindowMaxSplits=32
+```
+
+The unqualified global record and the split limit are required. An explicit
+species record takes precedence over `DIRECT_SOURCE`/`CHEMICAL_ONLY`, which
+takes precedence over global. Direct-source windows must contain `c=1`.
+Malformed, duplicate, nonfinite, unordered, contradictory, or off-mode
+records stop configuration. Omitting the mode and all records is the legacy
+default-off behavior.
+
+The acceptance build used `0.25|1|4` globally, `0.5|1|2` for direct sources,
+`0.0625|0.25|4` for chemical-only species, and 32 maximum split particles.
+Those are test values, not a calibrated Halley/Rubin policy. Canonical
+`input/halley1d.input` remains correction-off and contains no window records.
+
+### Focused and MPI tests
+
+Run the parser and pure C++ planner tests without configuring AMPS:
+
+```sh
+srcHartley2/tests/run_stage5_correction_window_tests.sh
+```
+
+An initialized correction-on build exposes:
+
+```text
+--validate-correction-windows
+```
+
+The validator covers both inclusive boundaries, exact full-state splitting,
+collective capacity rollback, restart, low-side roulette expectation and
+physical moments, direct-source identity, empty lists, and owner-only MPI
+traversal. The integrated runner pairs it with the exact chemistry ensemble at
+1, 4, and 12 ranks:
+
+```sh
+srcHartley2/tests/run_stage5_integrated_tests.sh \
+  --executable /absolute/path/to/correction-on/amps \
+  --output-root /new/absolute/path/to/stage5-validation \
+  --chemistry-validation-events 200000
+```
+
+The completed archive is
+`validation_runs/stage5-correction-window-full-20261105`. Its strict checker
+reported:
+
+```text
+PASS Stage-5 correction-window integrated matrix 1rank=pass 4rank=pass 12rank=pass
+```
+
+This closes the implementation stage, not the scientific C2 pilot. Window
+selection, independent-seed uncertainty, clone decorrelation burn-in, parent
+profile invariance, minor-species flux closure, and the converged Rubin
+comparison remain required before enabling the feature in a production input.
+Correction-on DIM2/DIM3 chemistry is still unsupported; the pure planner is
+geometry-neutral, but the current executor intentionally remains radial.
+
+## Complete Stage 0--5 test runner
+
+The general runner now adds a sixth group. Archived mode checks the Stage-5
+pure parser/planner job and the frozen 1/4/12 correction-window/chemistry
+matrix in addition to every Stage 0--4 job:
+
+```sh
+srcHartley2/tests/run_all_stage_tests.sh --plan
+srcHartley2/tests/run_all_stage_tests.sh
+```
+
+Fresh Stage-5 mode requires an independently clean-built, correction-enabled
+binary and a new output directory:
+
+```sh
+srcHartley2/tests/run_all_stage_tests.sh \
+  --stage5-mode fresh \
+  --stage5-executable /absolute/path/to/correction-on/amps \
+  --stage5-output-root /new/absolute/path/to/stage5-validation
+```
+
+The current build used by archived mode must remain correction-off because it
+is also the read-only Stage-3 parser fixture. The Stage-5 logs are replayed
+from the frozen archive; the runner never mutates input or `build/`. As before,
+it counts every test and group, retains separate logs for failures/skips, and
+prints every failed test name and absolute log path.

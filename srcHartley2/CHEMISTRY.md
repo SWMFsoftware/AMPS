@@ -661,9 +661,10 @@ MPI exchange, and sampling before using them for science.
   every unequal-carrier update probability. A disabled-by-default diagnostic
   exposes focused-test counts and extrema without changing production output.
 - Comet chemistry creates exactly one corrected daughter for each concrete
-  stoichiometric product in correction-on builds. This makes the existing
-  carrier-conversion formula reachable, but it does **not** implement the
-  Stage-5 correction windows or importance policy.
+  stoichiometric product in correction-on builds. This made the existing
+  carrier-conversion formula reachable at the Stage-4 boundary; the
+  separately tested Stage-5 windows are documented below. Channel/reaction
+  importance sampling remains unimplemented.
 - The validated collision path is general NTC only. Simplified NTC terminates
   explicitly at entry, and the radial setup rejects MF or another collision
   model when corrections and collisions are both enabled.
@@ -781,10 +782,11 @@ adaptive-bin/diagnostic-semantics tests pass. These are compatibility tests;
 they are not a replacement for a long converged comet-science comparison.
 
 The repository's canonical Halley input remains correction-off with
-Systematic chemistry residuals, and the current generated executable is a
-clean correction-off build. Individual corrections and all Stage-4
-diagnostics remain opt-in. Stage 5 is still open: correction windows, bounded
-splitting/roulette, and the scientific importance policy are not implemented.
+Systematic chemistry residuals. Individual corrections and all Stage-4/5
+diagnostics remain opt-in. Stage 5 is now implemented and focused-tested, but
+its numerical window values are a validation policy, not a calibrated Rubin
+science policy. The normal Halley input therefore intentionally contains no
+correction-window records.
 
 The complete Stage-0--4 regression stack is orchestrated by
 `tests/run_all_stage_tests.sh`. Its default archived mode requires every
@@ -794,7 +796,7 @@ Stage-4 mode uses a separately supplied correction-on executable and never
 reconfigures the canonical workspace. See `README.md` for commands and
 `STATUS.md` for the exact 17-group validation record.
 
-## Stage 5: exact individually weighted daughters and weight windows
+## Stage 5: exact individually weighted daughters and weight windows (complete)
 
 ### Objective
 
@@ -816,51 +818,105 @@ create one particle for each concrete stoichiometric product and assign
 c_daughter = C_parent/(W_daughter/dt_daughter).
 ```
 
-This is the formula already present in `CometChemistry.cpp`. The work in this
-stage must make it reachable under the validated radial configuration and
-remove fixed-weight constraints that no longer describe actual allocation.
+This formula was made reachable by Stage 4. Stage 5 leaves that chemistry
+transaction unchanged and adds a post-step correction controller around it.
 
 With one individual particle per concrete product, the hard transaction count
 is the stoichiometric product count rather than
 `ceil(C_parent/C_product)`. Keep a separate input hard limit and preflight the
 complete transaction before modifying the parent.
 
-### Weight windows
+### Input policy
+
+Stage 5 adds these records to an input that also enables
+`ParticleWeightCorrectionMode`:
+
+```text
+ParticleWeightCorrectionWindowMode=on
+ParticleWeightCorrectionWindow=LOWER | TARGET | UPPER
+ParticleWeightCorrectionWindow(DIRECT_SOURCE)=LOWER | TARGET | UPPER
+ParticleWeightCorrectionWindow(CHEMICAL_ONLY)=LOWER | TARGET | UPPER
+ParticleWeightCorrectionWindow(SPECIES)=LOWER | TARGET | UPPER
+ParticleWeightCorrectionWindowMaxSplits=N
+```
+
+The unqualified record is mandatory when window mode is on. Resolution is
+deterministic: an explicit species overrides its derived source/chemical
+group, which overrides the global record. All values must be positive finite
+numbers with `LOWER < TARGET < UPPER`; a directly injected species must have a
+window containing `c=1`. The parser also rejects a window inconsistent with
+the fixed split rule and rejects every record/limit when the mode is off or
+omitted. Omission therefore preserves legacy behavior exactly.
+
+The focused acceptance build used global `0.25|1|4`, direct-source
+`0.5|1|2`, chemical-only `0.0625|0.25|4`, and a per-particle maximum of 32.
+Those values were staged only for the frozen Stage-5 executable. They are not
+present in canonical `input/halley1d.input` and must not be interpreted as a
+scientifically selected importance policy.
+
+### Weight-window transaction
 
 Individual corrections must not drift over an unbounded range. Add a
 species/group input policy defining lower, target, and upper correction or
 physical-carrier limits.
 
-For `c<c_target`, roulette to the target with survival probability
-`c/c_target`. For `c>c_target`, split into a bounded number of particles whose
-corrections sum exactly to `c`. Apply windows only at safe completed stages,
-not during an unfinished mover continuation.
+The inclusive band is inert: `LOWER <= c <= UPPER` leaves the particle
+unchanged. For `c<LOWER`, roulette to `TARGET` with survival probability
+`c/TARGET`. For `c>UPPER`, use `n=ceil(c/TARGET)`, limited by the input maximum,
+and create `n` particles. The first `n-1` receive `c/n`; the final particle
+receives the floating-point remainder, and the production-order sum must
+equal the original `c` exactly. Thus the committed split preserves the
+carrier without silently discarding roundoff.
 
-Every window operation must preserve position, velocity, internal state, and
-chemistry stage. Split copies receive unique tracker identities. Correlated
-copies do not qualify as independent samples until a measured burn-in.
+The controller runs collectively after every completed `PIC::TimeStep()`,
+after a coincident base-weight adaptation and before the next sample. It
+traverses authoritative owner blocks only and rejects any nonzero mover
+continuation remainder. Preflight performs no random draw or mutation, counts
+the exact `sum(n-1)` clone demand without crediting possible roulette
+deletions, retains the configured allocation reserve, and obtains an all-rank
+accept decision. One rank's capacity/configuration failure rolls back the
+entire batch before RNG, list, tracker, or diagnostic state changes.
 
-### Tests
+The commit clones the complete particle record, so position, velocity,
+internal modes, species, chemistry stage, and application state are retained;
+only `c` and a clone's tracker identity change. Roulette deletion repairs the
+cell list through the core particle-buffer API. Correlated split copies do not
+qualify as independent samples until a measured transport/collision burn-in.
 
-- Extend the chemistry ensemble to span correction ratios below and above one
-  over every reaction in the generated network.
-- Verify weighted number, mass, momentum, and excess-energy production for
-  each channel and the complete ensemble.
-- Verify repeated stoichiometric products and neutral sinks.
-- Test weight-window mean/variance, split-sum exactness, roulette expectation,
-  capacity failure, and restart.
-- Confirm that direct-source particles retain correction one unless another
-  explicitly selected model changes it.
+The pure implementation is in `CorrectionWindowPlanner.h`. It has no AMPS,
+MPI, mesh, or particle-buffer dependency. `RadialSimulation.cpp` provides the
+DIM1 owner-list executor. This separation is intentional preparation for a
+future geometry-neutral DIM2/DIM3 executor; Stage 5 does not claim that
+support yet.
 
-### Pilot acceptance criteria
+### Tests and evidence
 
-- Every selected C2 channel creates a model C2 product.
-- The weighted C2 production rate agrees with the analog physical rate within
-  its predicted uncertainty.
-- Parent reaction probability, lifetime, density, velocity, and injection
-  statistics are unchanged within measured uncertainty.
-- Correction distributions remain inside the configured windows after the
-  controller runs.
+- `tests/run_stage5_correction_window_tests.sh` checks parser precedence,
+  malformed/duplicate/off-mode cases, direct-source identity, keep bounds,
+  exact split sums, roulette expectation, hard split/capacity failures,
+  multiple species, repeated products, and empty input.
+- `--validate-correction-windows` uses an initialized mesh and production
+  executor to check inclusive bounds, full-state splitting, collective
+  zero-capacity rollback, correction/restart moments, 65,536 roulette
+  candidates per owner block, direct-source `c=1`, and an empty list.
+- `tests/run_stage5_integrated_tests.sh` runs that validator and the exact
+  chemistry ensemble at 1, 4, and 12 MPI ranks. The strict Python parser
+  requires every named path and identical resolved policy/chemistry coverage.
+- The completed 200,000-event archive is
+  `validation_runs/stage5-correction-window-full-20261105`; it reports
+  `PASS Stage-5 correction-window integrated matrix 1rank=pass 4rank=pass
+  12rank=pass`.
+
+### Completion boundary and remaining scientific work
+
+Stage 5 is closed as an implementation/compatibility stage: exact concrete
+products, bounded windows, transactional capacity behavior, restart, and MPI
+decomposition invariants have passed. It is not a long-run C2 science pass.
+Selecting species-specific windows, measuring clone decorrelation burn-in,
+checking parent profiles and C2 flux closure over independent seeds, and
+comparing a converged run with Rubin remain Stage 9 work. Packet splitting and
+channel importance sampling remain Stages 6 and 7; the Stage-5 controller must
+not be described as either feature.
 
 ## Stage 6: daughter packet splitting
 
@@ -1103,11 +1159,13 @@ manifest. Wait for explicit user approval.
 
 ## Recommended immediate next action
 
-Stage 4 is implemented and focused-tested for its explicitly supported radial
-configuration. Do not start Stage 5 or merge to `master` without a separate
-user decision. The pending long Stage-3 scientific matrix remains useful as a
-science-quality baseline: review its read-only plan, run all eight cases,
-review and explicitly accept the Rubin candidate, and record the result. That
-experiment now decides whether/where individual daughter weighting is worth
-activating scientifically; it no longer gates the already completed Stage-4
-compatibility foundation.
+Stage 5 is implemented and focused-tested for its explicitly supported radial
+configuration. Do not start Stage 6 or merge to `master` without a separate
+user decision. First restore and verify the canonical correction-off build,
+run the complete archived Stage 0--5 test orchestrator, and retain the frozen
+Stage-5 1/4/12-rank archive. The pending long Stage-3 scientific matrix remains
+the correction-free science-quality baseline: review its read-only plan, run
+all eight cases, review and explicitly accept the Rubin candidate, and record
+the result. A later Stage-5 science pilot must select windows from measured
+variance/cost and independent-seed closure, never by tuning to the paper
+curve.

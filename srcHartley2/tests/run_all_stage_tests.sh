@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run the complete focused and archived Hartley2 chemistry-development test
-# stack for Stages 0 through 4.
+# stack for Stages 0 through 5.
 #
 # The lower-stage integrated tests intentionally consume frozen logs: their
 # own runners define those logs as the authoritative, reproducible runtime
@@ -23,6 +23,9 @@ evidence_root="$source_root/validation_runs"
 stage4_mode=archived
 stage4_executable=
 stage4_output_root=
+stage5_mode=archived
+stage5_executable=
+stage5_output_root=
 mpi_launcher=mpiexec
 validation_particles=200000
 chemistry_validation_events=200000
@@ -34,7 +37,7 @@ usage() {
 usage: run_all_stage_tests.sh [options]
 
 Run every focused/pure test and every archived runtime-evidence checker used
-to close Hartley2 chemistry-development Stages 0 through 4.
+to close Hartley2 chemistry-development Stages 0 through 5.
 
 Options:
   --evidence-root PATH
@@ -50,6 +53,14 @@ Options:
   --stage4-output-root PATH
       Required in fresh mode and must not exist. The Stage-4 runtime runner
       creates this evidence archive.
+  --stage5-mode archived|fresh
+      archived (default) revalidates the frozen Stage-5 correction-window and
+      exact-chemistry 1/4/12 matrix. fresh invokes the Stage-5 MPI runner.
+  --stage5-executable PATH
+      Required in fresh Stage-5 mode. Must be an already-built DIM1,
+      correction-window-enabled executable.
+  --stage5-output-root PATH
+      Required in fresh Stage-5 mode and must not exist.
   --mpiexec COMMAND
       MPI launcher for Stage-0 focused and fresh Stage-4 tests.
   --validation-particles N
@@ -76,6 +87,7 @@ Required evidence layout beneath --evidence-root:
   stage4-correction-off-reference-20261105
   stage4-correction-off-regression-20261105
   stage4-unsupported-mf-20261105b
+  stage5-correction-window-full-20261105
 
 The current repository build is used only as a read-only Stage-3 parser
 fixture and must be configured with individual corrections off. Rebuild it
@@ -104,6 +116,21 @@ while (( $# > 0 )); do
     --stage4-output-root)
       [[ $# -ge 2 ]] || { usage >&2; exit 2; }
       stage4_output_root=$2
+      shift 2
+      ;;
+    --stage5-mode)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      stage5_mode=$2
+      shift 2
+      ;;
+    --stage5-executable)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      stage5_executable=$2
+      shift 2
+      ;;
+    --stage5-output-root)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      stage5_output_root=$2
       shift 2
       ;;
     --mpiexec)
@@ -160,6 +187,13 @@ case "$stage4_mode" in
     exit 2
     ;;
 esac
+case "$stage5_mode" in
+  archived|fresh) ;;
+  *)
+    printf 'invalid --stage5-mode value: %s\n' "$stage5_mode" >&2
+    exit 2
+    ;;
+esac
 for numeric_option in validation_particles chemistry_validation_events; do
   numeric_value=${!numeric_option}
   if [[ ! "$numeric_value" =~ ^[1-9][0-9]*$ ]]; then
@@ -201,6 +235,32 @@ elif [[ -n "$stage4_executable" || -n "$stage4_output_root" ]]; then
   exit 2
 fi
 
+if [[ "$stage5_mode" == fresh ]]; then
+  if [[ -z "$stage5_executable" || -z "$stage5_output_root" ]]; then
+    printf '%s\n' \
+      'fresh Stage-5 mode requires --stage5-executable and --stage5-output-root' >&2
+    exit 2
+  fi
+  if [[ ! -f "$stage5_executable" || ! -x "$stage5_executable" ]]; then
+    printf 'Stage-5 executable is not executable: %s\n' \
+      "$stage5_executable" >&2
+    exit 2
+  fi
+  stage5_executable=$(readlink -f -- "$stage5_executable")
+  if [[ "$stage5_output_root" != /* ]]; then
+    stage5_output_root="$source_root/$stage5_output_root"
+  fi
+  if [[ -e "$stage5_output_root" ]]; then
+    printf 'fresh Stage-5 output already exists: %s\n' \
+      "$stage5_output_root" >&2
+    exit 2
+  fi
+elif [[ -n "$stage5_executable" || -n "$stage5_output_root" ]]; then
+  printf '%s\n' \
+    '--stage5-executable/--stage5-output-root are valid only in fresh mode' >&2
+  exit 2
+fi
+
 resolved_mpi_launcher=$(command -v -- "$mpi_launcher" || true)
 if [[ -z "$resolved_mpi_launcher" ]]; then
   printf 'MPI launcher is not on PATH: %s\n' "$mpi_launcher" >&2
@@ -233,6 +293,7 @@ stage4_on_archive="$evidence_root/stage4-correction-on-full-20261105"
 stage4_off_archive="$evidence_root/stage4-correction-off-reference-20261105"
 stage4_off_regression="$evidence_root/stage4-correction-off-regression-20261105"
 stage4_mf_archive="$evidence_root/stage4-unsupported-mf-20261105b"
+stage5_archive="$evidence_root/stage5-correction-window-full-20261105"
 
 require_file() {
   if [[ ! -f "$1" ]]; then
@@ -274,6 +335,12 @@ for stage_rank in 1 4 12; do
     require_file \
       "$stage4_on_archive/mpi${stage_rank}/chemistry/run.log"
   fi
+  if [[ "$stage5_mode" == archived ]]; then
+    require_file \
+      "$stage5_archive/mpi${stage_rank}/correction-windows/run.log"
+    require_file \
+      "$stage5_archive/mpi${stage_rank}/chemistry/run.log"
+  fi
 done
 require_file "$stage3_root/mpi1/PT/diagnostics/stage3_cells.C2.out=0.csv"
 require_file "$stage3_root/mpi1/PT/diagnostics/cell_measures.csv"
@@ -309,6 +376,7 @@ print_plan() {
   printf '  evidence:   %s\n' "$evidence_root"
   printf '  MPI:        %s\n' "$resolved_mpi_launcher"
   printf '  Stage 4:    %s\n' "$stage4_mode"
+  printf '  Stage 5:    %s\n' "$stage5_mode"
   if [[ -n "$requested_log_root" ]]; then
     printf '  logs:       %s\n' "$requested_log_root"
   else
@@ -316,8 +384,12 @@ print_plan() {
       '  logs:       temporary on success; automatically retained on failure/skip'
   fi
   if [[ "$stage4_mode" == fresh ]]; then
-    printf '  executable: %s\n' "$stage4_executable"
-    printf '  output:     %s\n' "$stage4_output_root"
+    printf '  Stage-4 executable: %s\n' "$stage4_executable"
+    printf '  Stage-4 output:     %s\n' "$stage4_output_root"
+  fi
+  if [[ "$stage5_mode" == fresh ]]; then
+    printf '  Stage-5 executable: %s\n' "$stage5_executable"
+    printf '  Stage-5 output:     %s\n' "$stage5_output_root"
   fi
   printf '%s\n' \
     '  tests:' \
@@ -327,7 +399,9 @@ print_plan() {
     '    Stage 3 accumulator, parser, adaptive bins, diagnostic semantics,' \
     '            synthetic science gate, CLI smoke, integrated 1/4/12 evidence' \
     '    Stage 4 correction-off Stage-2/3 regressions, provenance, MF and' \
-    '            simplified-NTC rejection, correction-on matrix, all-c=1 identity'
+    '            simplified-NTC rejection, correction-on matrix, all-c=1 identity' \
+    '    Stage 5 input/planner tests and correction-window/exact-chemistry' \
+    '            integrated 1/4/12 evidence'
 }
 
 print_plan
@@ -493,6 +567,21 @@ check_stage4_matrix_and_identity() {
     "${stage4_arguments[@]}"
 }
 
+check_stage5_matrix() {
+  local stage5_arguments=()
+  for stage_rank in 1 4 12; do
+    stage5_arguments+=(
+      --window-log "$stage_rank" \
+        "$stage5_on_root/mpi${stage_rank}/correction-windows/run.log"
+      --chemistry-log "$stage_rank" \
+        "$stage5_on_root/mpi${stage_rank}/chemistry/run.log"
+    )
+  done
+  PYTHONDONTWRITEBYTECODE=1 python3 \
+    "$script_dir/test_stage5_integrated_logs.py" \
+    "${stage5_arguments[@]}"
+}
+
 run_test stage0 stage0.complete env \
   HARTLEY2_MPIEXEC="$resolved_mpi_launcher" \
   HARTLEY2_STAGE0_BASELINE_ROOT="$stage0_baseline" \
@@ -560,7 +649,22 @@ fi
 run_test stage4 stage4.simplified-ntc-rejection check_stage4_simplified_rejection
 run_test stage4 stage4.matrix-and-identity check_stage4_matrix_and_identity
 
-stage_order=(stage0 stage1 stage2 stage3 stage4)
+run_test stage5 stage5.input-and-planner \
+  "$script_dir/run_stage5_correction_window_tests.sh"
+if [[ "$stage5_mode" == fresh ]]; then
+  run_test stage5 stage5.fresh-runtime \
+    "$script_dir/run_stage5_integrated_tests.sh" \
+    --executable "$stage5_executable" \
+    --output-root "$stage5_output_root" \
+    --mpiexec "$resolved_mpi_launcher" \
+    --chemistry-validation-events "$chemistry_validation_events"
+  stage5_on_root=$stage5_output_root
+else
+  stage5_on_root=$stage5_archive
+fi
+run_test stage5 stage5.matrix check_stage5_matrix
+
+stage_order=(stage0 stage1 stage2 stage3 stage4 stage5)
 group_results=()
 passed_groups=0
 skipped_groups=0
@@ -615,8 +719,8 @@ fi
 
 summary_file="$log_root/summary.txt"
 {
-  printf '\nHartley2 all-stage test summary status=%s stage4-mode=%s\n' \
-    "$overall_result" "$stage4_mode"
+  printf '\nHartley2 all-stage test summary status=%s stage4-mode=%s stage5-mode=%s\n' \
+    "$overall_result" "$stage4_mode" "$stage5_mode"
   printf '  tests: run=%d passed=%d skipped=%d failed=%d\n' \
     "$executed_tests" "$passed_tests" "$skipped_tests" "$failed_tests"
   printf '  test-groups: run=%d passed=%d skipped=%d failed=%d\n' \
@@ -661,12 +765,12 @@ summary_file="$log_root/summary.txt"
 } | tee "$summary_file"
 
 if [[ "$overall_result" == PASS ]]; then
-  printf 'PASS Hartley2 all-stage suite tests=%d test-groups=%d stage4-mode=%s\n' \
-    "$executed_tests" "$executed_groups" "$stage4_mode"
+  printf 'PASS Hartley2 all-stage suite tests=%d test-groups=%d stage4-mode=%s stage5-mode=%s\n' \
+    "$executed_tests" "$executed_groups" "$stage4_mode" "$stage5_mode"
   suite_success=true
   exit 0
 fi
 
-printf 'FAIL Hartley2 all-stage suite tests=%d test-groups=%d stage4-mode=%s\n' \
-  "$executed_tests" "$executed_groups" "$stage4_mode" >&2
+printf 'FAIL Hartley2 all-stage suite tests=%d test-groups=%d stage4-mode=%s stage5-mode=%s\n' \
+  "$executed_tests" "$executed_groups" "$stage4_mode" "$stage5_mode" >&2
 exit 1
