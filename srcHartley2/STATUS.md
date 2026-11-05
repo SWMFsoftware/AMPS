@@ -3786,3 +3786,251 @@ integration branch, run the pure planner, Stage 0 and Stage 1 suites, the
 minor-daughter science pilot. Show the exact diff, source commit range,
 excluded files, test logs, performance/memory impact, and science result to
 the user, then stop before any operation that changes `master`.
+
+## 2026-11-05: Stage 3 systematic residual implementation and validation
+
+Stage 3 correction-free residual variance reduction is implemented on
+`1d_comet_dev`. No commit, branch switch, rebase, cherry-pick, integration
+branch, or master operation was performed. Three read-only sub-agent audits
+were used to separate Stage-3 requirements from later individual-weight work,
+identify the owner-block migration APIs, and define the validation matrix.
+
+### Detailed source-file map
+
+| File | Change and reason | Master-integration note |
+| --- | --- | --- |
+| `src/models/chemical_solver/SystematicResidualAccumulator.h` | **New.** Pure plan/commit accumulator and counter-based phase hash. `Plan()` returns multiplicity and next phase without mutation, allowing particle capacity to be accepted before state changes. | Add before comet runtime code. It has no AMPS mesh/MPI dependency and should remain reusable by other chemistry applications. |
+| `srcHartley2/CometChemistry.h/.cpp` | Adds optional Bernoulli/systematic mode, separate phase seed, aligned owner-block state, stable concrete-product indexing, common initial phases for exact-equal carriers, lazy epoch initialization, regular-carrier rephasing, a 53-bit layout/ABI signature, diagnostic bounds, and transaction-safe integration in `ProcessParticle()`. Adds the migration/restart validator. | Merge as one logical transaction. Preserve all-zero commit and first-use/capacity-deferral no-mutation ordering. Do not replace concrete-product slots with one slot per species or term. Increment the layout ABI version whenever field meaning or ordering changes. |
+| `srcHartley2/CometDiagnostics.h/.cpp` | Marks Bernoulli sigma unavailable in systematic mode and reports a conservative fixed-carrier-epoch error bound. Adds the selected residual mode and uncertainty method to JSON/CSV. | Keep CSV compatibility and JSON `null`/blank-CSV semantics; never reuse independent-Bernoulli variance for correlated systematic draws. |
+| `srcHartley2/RadialSimulation.cpp` | Registers chemistry block data before block allocation; closes/rephases accumulator epochs before an accepted regular carrier transaction; explicitly preserves phases under ratio-preserving emergency common scaling; extends cell-measure audit with exact inner/outer radii; writes authoritative center-cell density/occupancy CSVs for complete diagnostic windows. | Registration order is core local W/dt fields, sampling layout, application residual data, then block allocation. Do not call the epoch hook for a rejected transaction. Do not substitute node-interpolated Tecplot rows for center-cell exposure. |
+| `srcHartley2/CometModel.h/.cpp` | Adds the generic comet random seed and an explicit `RandomSeedConfigured` bit. | The flag is essential: an input that omits the seed must not receive a new `rnd_seed()` call. |
+| `srcHartley2/RadialMain.cpp` | Adds `--validate-systematic-residual` and `--random-seed`; selects a physical seed+rank stream only when configured/overridden and retains a decomposition-independent keyed phase stream. | Preserve the no-call legacy path and the one-focused-validator rule. |
+| `srcHartley2/main.cpp` | Replaces the historical literal seed 100 with the generic model value and registers systematic block storage in the legacy geometry backend. | Default remains 100, so the legacy 3-D source semantics do not change. Registration is a no-op in Bernoulli mode. |
+| `input/hartley2.pl` | Adds validated, duplicate-rejecting `CometRandomSeed` and `ChemistryResidualSampling=BERNOULLI|SYSTEMATIC`. Systematic mode requires enabled chemistry and an explicit seed. | The residual-mode C++ definition must remain on one physical line because `ChangeValueOfVariable()` replaces complete definition lines. Merge parser and source definitions together. |
+| `input/halley1d.input` | Selects seed 104729, systematic residuals, and diagnostics for the Stage-3 Halley case. | Case policy, not a generic default. Do not copy these records into Hartley input unless that case is intentionally converted. |
+| `src/pic/pic_restart.cpp` | Extends previously unsupported species-local-weight restart: saves the global minimum-weight cache, layout length, and full application-owned data for every owner block including empty blocks; restores only the current owner, then publishes restored weights/timesteps/application bytes to ghosts before movement. Changes three restart/checksum tree recursions from hard-coded eight children to `2^DIM`. The global-weight file layout is unchanged. | This is the only existing PIC core source modified; the reusable accumulator header is a new core-model file. Split restart review into (1) dimension fix, (2) local-weight format, and (3) post-read ghost publication. Old local-weight restart aborted, so there is no supported old local file format to preserve. Still run DIM1 local and unrelated DIM3 global restart tests on master. |
+| `srcHartley2/visualization/adaptive_radial_bins.py` | **New.** Non-destructive exposure-controlled radial aggregation of `stage3_cells.*.csv`, with exact support/volume, retained zero/underexposed bins, and independent-seed uncertainty on common supports. It explicitly rejects node-interpolated `pic.*.dat` as an exact exposure source. | Keep it read-only with respect to AMPS outputs. Replica meshes must match; never interpolate mismatched meshes silently. |
+| `srcHartley2/tests/test_stage3_residual_accumulator.cpp`, `run_stage3_accumulator_tests.sh` | **New.** Analytic mean/variance, strict prefix error, plan/retry, common packet, raw round-trip, and invalid-input tests. | Run before AMPS build during conflict resolution. |
+| `srcHartley2/tests/test_stage3_adaptive_bins.py`, `test_stage3_diagnostic_semantics.py` | **New.** Nine adaptive tests cover support selection, conservation, zeros, invalid exposure, exact geometry joins, provenance/mismatched replicas, distinct explicit seeds, sampling-length consistency, and complete CLI output. Four semantic tests prevent a Bernoulli sigma from being used in systematic mode while retaining readability of pre-Stage-3 Bernoulli reports. | Run with bytecode disabled in clean CI if repository cleanliness matters. |
+| `srcHartley2/tests/run_stage3_parser_tests.sh` | **New.** Isolated generated-tree test for explicit and omitted defaults plus invalid/duplicate seed, invalid/duplicate mode, missing systematic seed, and chemistry-off rejection. | Restore source defaults before each fixture; a previously configured build must not supply omitted values. |
+| `srcHartley2/tests/test_stage3_integrated_logs.py`, `run_stage3_integrated_tests.sh` | **New.** Strict protocol for exactly one PASS record at 1/4/12 ranks, including owner counts, packet/plan-retry/first-use/epoch checks, nonzero MPI migration, populated restart continuation/checksum, ghost publication, owner-only mutation, prefix error below one, and successful center/report output. | Producer field names are a tested interface; update validator and parser together. Logs remain validation artifacts, not source. Real capacity-rejection rollback remains covered by the inherited Stage-2 integrated transaction test. |
+| `srcHartley2/CHEMISTRY.md`, `README.md`, `visualization/README.md`, `STATUS.md`, `handoff.md` | Documents algorithm, limitations, evidence, recovery, and merge sequence. | Merge after code/test paths stabilize. Documentation does not authorize a master operation. |
+
+The top-level `Makefile` was already dirty and remains user-owned. Root
+`hartley2.pl`, `halley1d.input`, `amps`, `build/`, meshes, `PT`, logs, and
+`validation_runs/` are generated links/artifacts/evidence and must not be
+staged as Stage-3 source.
+
+### Focused validation evidence
+
+The evidence root is:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/stage3_systematic_20261105
+```
+
+The final clean executable, canonical Stage-3 input, generated PIC definition,
+exact commands, durations, and source/evidence fingerprints are recorded in
+`RUN_MANIFEST.md`. The executable and input SHA-256 values are:
+
+```text
+amps.stage3    572abc22185a8ef6df16a22669491046e55fff6ff6e31fe8cfb7e50a3137f0e2
+halley1d.input 0d89b536e6daa2dea7251bb57920fb6f1dd2546efd7c454d25b6dcccc26eccf5
+```
+
+The build directory was removed before every compilation. Pure accumulator
+tests pass for means 0.25, 1.0, and 2.75; the systematic cumulative variance
+matches `g(1-g)` and every fixed-phase prefix error is below one. The tests
+also cover the double/`LONG_MAX` conversion boundary. All nine adaptive-bin
+tests, four uncertainty-semantic tests, eight parser cases, and the real
+2,984-cell command-line smoke test pass. Stage-0 counters at 1/4/12 ranks are
+identical, and the archived 10,000-iteration report passes the observed-C2
+selection/carrier gate. The complete archived Stage-1 runtime/cadence and
+54-file legacy equivalence checks pass. Stage-2 pure planning and real 1/4/12
+transaction rollback checks pass.
+
+The integrated Stage-3 validator passes at 1, 4, and 12 MPI ranks. Every run
+checks 373 owner blocks and 36,554 accumulator records, 15,666 exact-carrier
+packet pairs, 373 non-mutating plan/retry cases, 373 first-use no-mutation
+cases, 373 carrier-epoch resets, and 373 restart continuations. The forced
+redistribution changes ownership of 0/9/33 nonzero block states at 1/4/12
+ranks. Each restart includes 1/4/12 controlled particles, preserves the
+particle checksum, and republishes restored state to 0/6/22 boundary ghosts.
+Owner-only state checks pass and partial mutations are zero; maximum tested
+prefix error is `4.99479983965357754e-01`. Every rank count also writes 2,984
+exact center-cell records for C2 plus a complete uncertainty report. The
+strict parser reports:
+
+```text
+PASS Stage-3 integrated systematic residual 1rank-owners=373-migrated=0 4rank-owners=373-migrated=9 12rank-owners=373-migrated=33
+```
+
+The focused Stage-3 plan/retry check is not described as a forced
+`ProcessParticle()` capacity rejection. Actual particle/list/state rollback
+under rejection is supplied by the passing Stage-2 integrated transaction
+archive, which is a prerequisite of this implementation. Together these
+tests close the intended implementation behavior. They do not close the
+scientific decision gate: the required four post-burn-in Bernoulli and four
+systematic pilots have not been run, because accepted burn-in duration,
+comparison radius range, maximum CV, and maximum zero-cell fraction are
+unspecified.
+Stage 4 is neither approved nor rejected by these focused tests.
+
+### Stage 3 master-merge sequence and conflict rules
+
+Do not merge yet. After the comet science pilot is accepted and the user
+explicitly authorizes integration, create a disposable branch from the
+then-current `master` and proceed in this order:
+
+1. rerun and verify the complete Stage-0/1/2 dependency stack on master;
+2. merge the three `2^DIM` restart-recursion fixes independently and run DIM1,
+   DIM2 (if available), and DIM3 restart/checksum smoke tests;
+3. merge the species-local block-state restart format, then test empty and
+   populated owner blocks across changed MPI decompositions and verify the
+   post-read owner-to-ghost exchange;
+4. add the pure systematic accumulator and run its no-AMPS test;
+5. merge generic seed declarations plus parser controls, and explicitly test
+   both an omitted legacy seed and an invalid/duplicate/systematic-without-seed
+   input;
+6. merge block-state registration/layout/phase initialization and verify one
+   stable slot per concrete product, explicit alignment, and layout signature;
+7. merge the `ProcessParticle()` plan/preflight/commit integration together
+   with regular/emergency carrier epoch handling;
+8. merge systematic diagnostic bounds and exact radial support output;
+9. merge focused runtime validators, strict log parser, and adaptive-bin tool;
+10. merge Halley case selection and documentation last, delete the exact build
+    directory, rebuild, and rerun 1/4/12 tests with one frozen executable.
+
+During conflict resolution preserve these invariants:
+
+- omitted residual mode is Bernoulli, reserves no block bytes, consumes no
+  additional random draw, and an omitted seed does not call `rnd_seed()`;
+- the phase stream is separate from physical-event randomness and keyed by
+  stable IDs rather than owner rank or first-use order;
+- only owners initialize/read/update phase state; ghosts are synchronization
+  copies, never stochastic actors;
+- all product phases are planned before the capacity test and committed only
+  with the complete physical reaction; all-zero committed events still
+  advance their residual;
+- exact-equal carrier siblings share initial packet phase but keep separate
+  concrete-product records;
+- a regular accepted carrier change starts a new bounded-error epoch, whereas
+  emergency common scaling preserves phases only while all relevant ratios
+  are exactly unchanged;
+- systematic diagnostics report a bound and `sigma=null`, never a Bernoulli
+  variance relabeled as systematic uncertainty;
+- local restart contains empty owner blocks and application data; global
+  restart layout remains unchanged, restored owner data is published to
+  ghosts, and the application signature rejects same-size layout drift;
+- tree recursion always uses `1<<DIM`, not a 3-D constant;
+- original AMPS cell output remains unchanged and adaptive output never drops
+  zero/underexposed samples.
+
+On the disposable integration branch, also run one unrelated DIM3 global-
+weight restart case and compare a legacy Bernoulli run byte-for-byte. Present
+the exact diff, core/application split, executable hashes, test logs, and
+science-gate report to the user, then stop before changing `master`.
+
+The generic chemistry network executor remains intentionally radial-only.
+Non-radial chemistry is rejected until master has a geometry-neutral
+batch/capacity/emergency policy with explicit input values; this limitation
+must not be weakened merely because generic 3-D geometry and sources exist.
+
+## 2026-11-05: permanent Stage 3 scientific decision gate
+
+The user-approved Stage-3 scientific decision is now encoded and
+focused-tested on branch `1d_comet_dev` at starting HEAD `d40a6a39ccda`. No
+merge, commit, or operation on `master` was performed. The long eight-case
+science matrix has not been launched; this section records implementation
+readiness, not a Stage-4 go/no-go result.
+
+### Files added or modified in this gate round
+
+| File | Change and reason | Later master-merge note |
+| --- | --- | --- |
+| `srcHartley2/RadialMain.cpp` | Adds `--chemistry-residual-sampling bernoulli|systematic`. The override is applied before `RadialSimulation::Initialize()` requests application block storage, allowing one frozen executable to run both arms without reserving residual bytes in Bernoulli mode. Systematic override still requires an explicit input or CLI seed. | Merge after the Stage-3 parser/model enums. Do not move the override below `PIC::Init_BeforeParser`/radial initialization or the block ABI can be selected for the wrong mode. |
+| `srcHartley2/CometDiagnostics.h`, `CometDiagnostics.cpp` | Adds structured executed-emergency counters by buffer, sampling-population, and allocation-burst trigger; records seed/mode/MPI provenance; retains collective request counts; and emits these values in every complete JSON window. Existing systematic fixed-epoch bounds remain distinct from Bernoulli sigma. CSV rows were re-audited to exactly 50 columns. | Merge producer and strict Stage-0/Stage-3 consumers together. Preserve rank-zero event ownership before MPI reduction and do not reinterpret a request as an executed emergency. |
+| `srcHartley2/RadialSimulation.cpp` | Records sampling emergency requests when first raised and executed trigger categories when emergency roulette actually commits. The Stage-3 center-cell CSV now carries block/local indices, block cell count, resolved per-cell target, lock, derived class, and policy source. | Merge only after Stage-1 population-policy arrays/classes exist. Keep writer order synchronized with `adaptive_radial_bins.py`; policy fields are science evidence, not inferred by the evaluator. |
+| `srcHartley2/visualization/adaptive_radial_bins.py` | Reads and validates optional authoritative block-policy metadata, preserves legacy tables that contain none of those fields, rejects partial/corrupt metadata, and carries policy identity through replicate merging. | Backward compatibility is intentional for exploratory archives. The science evaluator separately requires the new complete metadata. |
+| `srcHartley2/validation/stage3_science_policy.json` | **New.** Freezes four seeds, two modes, 12 MPI ranks, 10k burn-in, three accepted 10k windows through 40k, 10--100,000 km altitude, five important daughters, exposure/CV/zero/population/mode-mean/closure/emergency/Rubin gates. | Treat as reviewed science policy, not a generic comet default. Any threshold change needs explicit scientific review and matching code/tests. |
+| `srcHartley2/validation/stage3_gate_common.py` | **New.** Supplies strict policy validation, canonical hashes, atomic JSON, exact eight-run order, and canonical-input checks. Approved numerical boundaries are pinned in code so replacing the JSON/hash cannot silently relax them. | Merge before runner/evaluator. Do not replace exact policy checks with permissive defaults. |
+| `srcHartley2/validation/run_stage3_science_gate.py` | **New.** Durable operational runner with `plan/run/resume/status`, frozen executable/input/`picGlobal.dfn`/policy hashes, alternating sequential eight-case order, atomic attempt state, advisory locking, signal forwarding, fresh-at-zero retry, exact artifact validation, and per-artifact checksum verification. | Keep independent from the evaluator. It must never claim a scientific pass and must never reuse a partial `PT` tree as restart evidence. |
+| `srcHartley2/validation/evaluate_stage3_science_gate.py` | **New.** Read-only archive evaluator. It independently re-hashes frozen configuration and every protected run artifact, then requires exact provenance and complete windows, all-eight-run minimum-exposure support, authoritative population policy, convergence/closure/emergency gates, Systematic statistical quality, Bernoulli/Systematic mean agreement, and explicit Rubin-baseline acceptance. It writes JSON/CSV/Markdown and stable outcome exit codes. | Merge after diagnostic/table producers. Preserve exact-cell support and do not interpolate missing/zero samples away. Baseline promotion remains a human decision. |
+| `srcHartley2/validation/README.md` | **New.** Defines the experiment, thresholds, build/preflight, run/resume/reboot recovery, baseline review, evaluation outcomes, and focused test commands. | Merge with validation tools so operators do not launch an unproven ad-hoc matrix. |
+| `srcHartley2/tests/test_stage3_science_gate.py`, `run_stage3_science_gate_tests.sh` | **New.** Fourteen synthetic full-archive cases cover exact inclusive thresholds, common support, valid/missing/mismatched Rubin baselines, statistical failures, emergencies, nonconvergence, malformed tables, bad policy metadata/manifests, and post-run artifact mutation. | Keep outcome and exit-code expectations synchronized with the evaluator. These tests intentionally do not launch AMPS. |
+| `srcHartley2/tests/test_stage3_adaptive_bins.py` | Adds optional policy-metadata preservation and corrupt block-index rejection; the suite now has eleven cases. | Merge with the metadata reader/writer changes. |
+| `srcHartley2/CHEMISTRY.md`, `README.md`, `visualization/README.md`, `STATUS.md`, `handoff.md` | Records the approved decision gate, its true completion boundary, recovery steps, and later merge dependencies. | Documentation does not authorize a master merge or count as science evidence. |
+
+No new core source was added or modified in this gate round. The earlier
+Stage-3 core restart changes in `src/pic/pic_restart.cpp` remain a separate
+dependency and retain their previously documented DIM-aware traversal,
+application-block restart, particle-record, and ghost-publication tests.
+
+### Focused verification
+
+Before compiling, exactly `/data/vtenishe/COMET1D/AMPS/build` was removed.
+`make -j8 EXTRACOMPILEROPTIONS=-O3` passed. The generated artifacts are:
+
+```text
+amps                  3d5c0c3111b57a9c2e4b2d939d2252f19faa43e3ab89c08bbd6f0b2e6c6c8e70
+input/halley1d.input  0d89b536e6daa2dea7251bb57920fb6f1dd2546efd7c454d25b6dcccc26eccf5
+build/pic/picGlobal.dfn c3d2bca73f068cff357ae6d1f5002c97dc738b6a3190c712b2787890c92e2726
+```
+
+The same executable passed 10,000-event chemistry validation with both CLI
+residual modes. The Systematic focused runtime passed at 1, 4, and 12 MPI
+ranks, including 373 owner blocks, 36,554 accumulators, migration, restart,
+0/6/22 restored ghost records, and the new center-table schema. The current
+one-rank table has 2,984 exact rows and the adaptive-bin smoke test accepts
+its authoritative 50--200 `CHEMICAL_ONLY` metadata. Additional results:
+
+```text
+Stage-0 suite and archived production report       PASS
+Stage-1 parser/runtime/legacy-equivalence suite    PASS
+Stage-2 pure planner and archived 1/4/12 parser    PASS
+Stage-3 pure accumulator/parser                    PASS
+Stage-3 archived 1/4/12 integrated parser          PASS
+Stage-3 adaptive bins                              11/11 PASS
+Stage-3 diagnostic semantics                       4/4 PASS
+Stage-3 synthetic science gate                     14/14 PASS
+Stage-3 operational plan preflight                 PASS
+```
+
+The operational preflight selected `/usr/bin/orterun`, 12 ranks, OMP=1, and
+the approved alternating matrix. It did not create or launch a production
+science archive.
+
+### Merge into master only after scientific validation
+
+Do not merge yet. After the complete eight-run archive has been evaluated,
+the Rubin candidate has been explicitly reviewed/accepted, and the user has
+authorized integration, prepare a disposable branch from the then-current
+`master` and merge in this order:
+
+1. merge the already validated Stage-0 diagnostic foundation and Stage-1
+   population-policy tables/classes;
+2. merge the Stage-2 component planner and transactional capacity behavior;
+3. merge the Stage-3 accumulator/storage/restart implementation and all pure
+   plus 1/4/12 focused tests, including the narrowly scoped core restart
+   commit;
+4. merge the runtime residual-mode CLI before the science runner so one binary
+   retains the early storage-selection invariant;
+5. merge structured emergency counters and the authoritative center-cell
+   policy schema as one producer-interface change;
+6. merge adaptive-bin metadata validation, then common policy, science policy,
+   runner, evaluator, and synthetic tests in dependency order;
+7. add the explicitly accepted Rubin baseline and compact evaluation products
+   only after scientific review; keep raw `PT`, binaries, build trees, and
+   machine-local logs outside Git;
+8. merge application documentation/input last, delete the exact integration
+   `build/` directory, rebuild, and repeat every focused gate plus one complete
+   science evaluation against the retained archive.
+
+During conflict resolution preserve the exact policy values, fresh-at-zero
+attempt rule, all-eight-run minimum exposure, fully contained exact cells,
+unmodified zeros, distinction between requests and executed emergencies,
+Systematic-bound versus Bernoulli-sigma semantics, source/chemistry closure,
+and explicit baseline acceptance. Present the commit range, integration diff,
+excluded generated files, artifact hashes, 1/4/12 logs, eight-run wall/memory
+cost, final outcome, and Rubin comparison to the user, then stop for explicit
+approval before changing `master`.

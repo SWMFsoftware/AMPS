@@ -188,3 +188,67 @@ viewer. Use `--no-show` for a batch job. When no graphical display is
 available, the script reports that condition, saves the files, and skips the
 viewer automatically. If `--output` is omitted, matplotlib's interactive
 viewer is used directly.
+
+## Stage 3 exposure-controlled radial bins
+
+`adaptive_radial_bins.py` reads one species table plus the exact
+`PT/diagnostics/cell_measures.csv` written by the radial model. It merges
+contiguous cells from the nucleus outward until the requested exposure is
+reached, where exposure is mean sampled model-particle occupancy times the
+completed sampling length. It never changes the original AMPS table.
+The underlying radial mesh already expands logarithmically; aggregate edges
+remain exact existing cell faces rather than interpolated synthetic log edges.
+
+Use `stage3_cells.SPECIES.out=N.csv`, not `pic.*.dat`. The latter is a
+node-interpolated Tecplot representation with repeated AMR interfaces and
+cannot be joined exactly to center-cell shell exposure. The dedicated Stage-3
+table is emitted for complete diagnostic sampling windows and contains the
+authoritative center-cell density and mean model-particle occupancy. It also
+embeds cell index and shell geometry, sampling length, output index, random
+seed plus an explicit-seed flag, residual mode, and MPI-rank count. Current
+tables additionally embed the block index, local cell index, cells per block,
+resolved population target, lock flag, derived population class, and winning
+policy source. The tool checks the index arithmetic and requires one
+internally consistent policy per block. Legacy tables without any of the
+policy columns remain readable for exploratory plots, but the permanent
+Stage-3 science evaluator requires the complete authoritative metadata and
+the unlocked 50--200 `CHEMICAL_ONLY` policy for every important daughter.
+The tool cross-checks embedded geometry against the supplied cell-measure
+table and rejects inconsistent provenance instead of interpolating it.
+
+Every CSV/JSON row records the inner/outer support, geometric representative
+radius, cell count, volume, exposure, volume-weighted density, integrated
+number, mean model particles per cell, nonpositive-cell count, and whether the
+last bin is underexposed or completely empty. Zeros are retained.
+
+Repeat `--replicate TABLE` for independent seeds. All replicas must have the
+same exact mesh, species, output index, sampling length, residual mode, and MPI
+metadata. Multi-replica analysis also requires distinct explicitly configured
+seeds; duplicate paths and duplicate seeds are fatal. The CLI sampling length
+must match the embedded value. Common bin boundaries are selected from mean
+exposure; density standard deviation, standard error, CV, and
+nonpositive-replica fraction are then evaluated across independent runs. Four
+or more total tables are marked `decision_sample_status=ready`; this only
+means enough replicas are present, not that an unconfigured scientific
+threshold has passed.
+
+Run the focused tests with:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 srcHartley2/tests/test_stage3_adaptive_bins.py
+PYTHONDONTWRITEBYTECODE=1 python3 srcHartley2/tests/test_stage3_diagnostic_semantics.py
+```
+
+The first command currently runs eleven cases, including duplicate-seed,
+sampling-length, optional block-policy preservation, and corrupt block-index
+rejection. The second runs four cases proving that the
+Bernoulli five-sigma criterion is not reused for systematic residuals while
+pre-Stage-3 Bernoulli reports remain readable.
+
+The permanent all-eight-run gate uses
+`srcHartley2/validation/evaluate_stage3_science_gate.py`, not eight separate
+invocations of this plotting utility. That evaluator derives one common
+support from the minimum exposure over all four Bernoulli and all four
+Systematic runs, preventing a low-exposure seed from being hidden by an
+ensemble mean. See `srcHartley2/validation/README.md` for the fixed thresholds
+and archive contract.

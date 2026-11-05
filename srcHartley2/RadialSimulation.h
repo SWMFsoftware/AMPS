@@ -100,6 +100,11 @@ bool Validate(std::string *error=NULL);
 void Initialize();
 void Run();
 
+// Write authoritative center-cell density and model-particle occupancy for a
+// complete diagnostic window. This remains public so the focused Stage-3 MPI
+// validator can exercise the same collective/file path without a science run.
+void WriteStage3CellDiagnostics(long int outputIndex,long int sampleLength);
+
 // Run the integrated Stage-2 transaction regression on initialized radial
 // blocks. It checks component population decisions, empty and two-ended
 // chains, exact split and ensemble roulette moment conservation, chemistry

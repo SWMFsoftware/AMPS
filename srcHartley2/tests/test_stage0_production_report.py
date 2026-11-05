@@ -21,6 +21,45 @@ def close(left: float, right: float) -> bool:
     return abs(left - right) <= 5.0e-13 * scale
 
 
+def expected_production_tolerance(
+    record: dict, expected: float, residual_sampling: str, sigma_key: str
+) -> float:
+    """Recompute the mode-specific uncertainty contract written by C++."""
+    mode = residual_sampling.upper()
+    if mode == "SYSTEMATIC":
+        if record.get(sigma_key) is not None:
+            raise AssertionError("systematic report exposes a Bernoulli sigma")
+        if record.get("uncertainty_method") != "fixed-carrier-epoch-bound":
+            raise AssertionError("systematic report has the wrong uncertainty method")
+        uncertainty = record.get("systematic_error_bound_s-1")
+        if uncertainty is None or not math.isfinite(uncertainty) or uncertainty < 0.0:
+            raise AssertionError("systematic report has an invalid error bound")
+    elif mode in {"BERNOULLI", "LEGACY_BERNOULLI"}:
+        if record.get("systematic_error_bound_s-1") is not None:
+            raise AssertionError("Bernoulli report exposes a systematic bound")
+        # Reports produced before Stage 3 had no top-level residual mode and
+        # no uncertainty-method field; their only supported interpretation is
+        # the historical independent-Bernoulli formula.  Keep that archive
+        # readable, but require all newly explicit BERNOULLI reports to carry
+        # the method tag so a malformed current report cannot pass as legacy.
+        if mode == "BERNOULLI" and record.get("uncertainty_method") != (
+            "independent-bernoulli-analytic"
+        ):
+            raise AssertionError("Bernoulli report has the wrong uncertainty method")
+        if mode == "LEGACY_BERNOULLI" and record.get("uncertainty_method") not in (
+            None,
+            "independent-bernoulli-analytic",
+        ):
+            raise AssertionError("legacy Bernoulli report has an invalid uncertainty method")
+        sigma = record.get(sigma_key)
+        if sigma is None or not math.isfinite(sigma) or sigma < 0.0:
+            raise AssertionError("Bernoulli report has an invalid sigma")
+        uncertainty = 5.0 * sigma
+    else:
+        raise AssertionError(f"unknown residual sampling mode {residual_sampling!r}")
+    return max(uncertainty, 0.01 * abs(expected))
+
+
 def validate(root: Path, require_observed_c2: bool = False) -> None:
     diagnostics = root / "PT" / "diagnostics"
     measure_path = diagnostics / "cell_measures.csv"
@@ -54,6 +93,7 @@ def validate(root: Path, require_observed_c2: bool = False) -> None:
             raise AssertionError(f"unexpected schema in {json_path}")
         if report["sampling_length"] <= 0:
             raise AssertionError("non-positive diagnostic sampling length")
+        residual_sampling = report.get("residual_sampling", "LEGACY_BERNOULLI")
 
         with csv_path.open(newline="", encoding="utf-8") as stream:
             csv_rows = list(csv.DictReader(stream))
@@ -86,6 +126,14 @@ def validate(root: Path, require_observed_c2: bool = False) -> None:
                 accepted = difference <= product["production_tolerance_s-1"]
                 if accepted != product["production_agreement"]:
                     raise AssertionError("stored product acceptance disagrees with its tolerance")
+                expected_tolerance = expected_production_tolerance(
+                    product,
+                    product["expected_number_rate_s-1"],
+                    residual_sampling,
+                    "represented_number_sigma_s-1",
+                )
+                if not close(expected_tolerance, product["production_tolerance_s-1"]):
+                    raise AssertionError("product uncertainty/tolerance contract fails")
 
         c2_paths = {reaction["id"] for reaction, _ in c2_products}
         required_paths = {"C2H2_C2_H2", "C2H_C2_H"}
@@ -102,12 +150,14 @@ def validate(root: Path, require_observed_c2: bool = False) -> None:
             raise AssertionError("C2 represented reaction products do not reconcile with species flux")
         if expected > 0.0:
             observed_c2_selection = True
-            expected_tolerance = max(
-                5.0 * c2_flux["chemical_production_sigma_s-1"],
-                0.01 * abs(expected),
+            expected_tolerance = expected_production_tolerance(
+                c2_flux,
+                expected,
+                residual_sampling,
+                "chemical_production_sigma_s-1",
             )
             if not close(expected_tolerance, c2_flux["production_tolerance_s-1"]):
-                raise AssertionError("C2 tolerance is not max(5 sigma, 1% expected)")
+                raise AssertionError("C2 mode-specific tolerance is inconsistent")
             if not c2_flux["production_agreement"]:
                 raise AssertionError("C2 represented production fails the approved acceptance")
         if any(product["model_carriers"] > 0 for _, product in c2_products):

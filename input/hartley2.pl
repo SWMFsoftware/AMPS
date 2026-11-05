@@ -57,7 +57,10 @@ my $DomainOuterRadiusIsSet=0;
 my $RadialCellNumberIsSet=0;
 my $SurfaceResolutionIsSet=0;
 my $HeliocentricDistanceAUIsSet=0;
+my $CometRandomSeedIsSet=0;
 my $ChemistryModeIsSet=0;
+my $ChemistryResidualSamplingIsSet=0;
+my $ChemistryResidualSampling="BERNOULLI";
 my $ConfiguredGeometry="";
 my $PhysicsDatabaseName="NONE";
 my $NeutralCollisionCompletion="NONE";
@@ -197,6 +200,24 @@ while ($line=<InputFile>) {
     ampsConfigLib::ChangeValueOfVariable("double Comet::Chemistry::HeliocentricDistanceAU",$InputLine,"main/CometChemistry.cpp");
     $HeliocentricDistanceAUIsSet=1;
   }
+  elsif ($InputLine eq "COMETRANDOMSEED") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    die "CometRandomSeed must be an integer in [1,2147483000], line=$InputFileLineNumber ($InputFileName)\n"
+        unless defined $InputLine && $InputLine=~/^\d+$/ &&
+            $InputLine>=1 && $InputLine<=2147483000;
+    die "duplicate CometRandomSeed, line=$InputFileLineNumber ($InputFileName)\n"
+        if $CometRandomSeedIsSet;
+    ampsConfigLib::ChangeValueOfVariable(
+        "std::uint64_t Comet::Model::RandomSeed",$InputLine,
+        "main/CometModel.cpp");
+    ampsConfigLib::ChangeValueOfVariable(
+        "std::uint64_t Comet::Chemistry::ResidualPhaseSeed",$InputLine,
+        "main/CometChemistry.cpp");
+    ampsConfigLib::ChangeValueOfVariable(
+        "bool Comet::Model::RandomSeedConfigured","true",
+        "main/CometModel.cpp");
+    $CometRandomSeedIsSet=1;
+  }
   elsif ($InputLine eq "SURFACEMESHFILE") {
     my $value=$LineOriginal;
     $value=~s/!.*$//;
@@ -273,6 +294,22 @@ while ($line=<InputFile>) {
           "_PIC_PHOTOLYTIC_REACTIONS_MODE_OFF_","pic/picGlobal.dfn");
     }
     $ChemistryModeIsSet=1;
+  }
+  elsif ($InputLine eq "CHEMISTRYRESIDUALSAMPLING") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    $InputLine=~s/ //g;
+    die "ChemistryResidualSampling must be BERNOULLI or SYSTEMATIC, line=$InputFileLineNumber ($InputFileName)\n"
+        unless $InputLine eq "BERNOULLI" || $InputLine eq "SYSTEMATIC";
+    die "duplicate ChemistryResidualSampling, line=$InputFileLineNumber ($InputFileName)\n"
+        if $ChemistryResidualSamplingIsSet;
+    ampsConfigLib::ChangeValueOfVariable(
+        "int Comet::Chemistry::ResidualSamplingMode",
+        $InputLine eq "SYSTEMATIC" ?
+            "Comet::Chemistry::ResidualSampling::RandomPhaseSystematic" :
+            "Comet::Chemistry::ResidualSampling::IndependentBernoulli",
+        "main/CometChemistry.cpp");
+    $ChemistryResidualSampling=$InputLine;
+    $ChemistryResidualSamplingIsSet=1;
   }
   elsif ($InputLine eq "CHEMISTRYREACTION") {
     my $value=$LineOriginal;
@@ -1190,6 +1227,15 @@ if ($NeutralCollisionCompletion eq "COMBI1996_CHEMKIN_LORENTZ_HS") {
 die "ChemistryMode=ON requires at least one ChemistryReaction\n"
     if $ChemistryModeIsSet && $ReactionNetwork->reaction_count()==0 &&
        chemistryIsEnabled("$WorkingSourceDirectory/main/CometChemistry.cpp");
+die "ChemistryMode=ON currently requires CometGeometry=RADIAL1D; move the batch-capacity and emergency policy out of RadialSimulation before enabling the generic network executor in 2-D/3-D\n"
+    if chemistryIsEnabled("$WorkingSourceDirectory/main/CometChemistry.cpp") &&
+       $Dimension!=1;
+die "ChemistryResidualSampling requires ChemistryMode=ON\n"
+    if $ChemistryResidualSamplingIsSet &&
+       !chemistryIsEnabled("$WorkingSourceDirectory/main/CometChemistry.cpp");
+die "ChemistryResidualSampling=SYSTEMATIC requires an explicit CometRandomSeed\n"
+    if $ChemistryResidualSampling eq "SYSTEMATIC" &&
+       !$CometRandomSeedIsSet;
 
 for (my $species=0;$species<$TotalSpeciesNumber;$species++) {
   die "surface production for $SpeciesList[$species] requires a distribution\n"

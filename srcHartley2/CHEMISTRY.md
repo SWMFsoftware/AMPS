@@ -516,6 +516,127 @@ its input target or has unacceptable measured uncertainty after Stages 2 and
 3. If C2 and the other requested daughters are resolved, retain the simpler
 correction-free model and skip individual weights.
 
+### Stage 3 implementation status (2026-11-05)
+
+The correction-free implementation and its focused test matrix are complete
+on `1d_comet_dev`. `ChemistryResidualSampling=SYSTEMATIC` selects a
+random-phase systematic accumulator; omission retains the legacy independent
+Bernoulli path, allocates no accumulator block storage, and makes no new RNG
+call. Systematic mode requires an explicit `CometRandomSeed`. Physical-event
+RNG streams use `seed+rank`, while phases use a separate counter-based hash of
+the seed, stable AMR node ID, carrier epoch, reaction, and concrete product.
+
+State is registered with explicit double alignment in the application-owned
+block buffer after core local weight/timestep storage and before block
+allocation. Each owner block retains one phase for every concrete
+stoichiometric product. A 53-bit layout signature covers the Stage-3 state
+ABI and reaction/product order so a same-size but semantically different
+layout is rejected. Exact-equal product carriers in one reaction receive a
+common initial phase, but retain distinct
+slots so later carrier changes remain unambiguous. `ProcessParticle()` plans
+every multiplicity without changing state, performs the Stage-2 hard-cap and
+particle-capacity checks, then commits phases only with the complete reaction.
+An all-zero daughter event commits before deleting its parent; a capacity
+deferral leaves the parent and phases bitwise unchanged. First-use phase
+construction is provisional: an unaccepted event never marks or fills the
+block state.
+
+An accepted regular carrier transaction closes the current bounded-error
+epoch and rephases lazily under the new carrier. Emergency common-factor
+coarsening retains phases because it multiplies every block/species weight by
+the same factor and leaves every chemistry source/product `W/dt` ratio
+unchanged. Dynamic load balancing carries the state with its owner block.
+Core local-weight restart now saves every owner block, including empty blocks,
+and restores the full application-owned region. After owner records are read,
+the core block-data exchange republishes weights, timesteps, and application
+bytes to ghosts before the mover can use them. Populated restart records and
+particle checksums are validated. The same core change replaces three
+hard-coded eight-child restart traversals with `2^DIM`, which is needed for
+valid DIM1/DIM2 recursion.
+
+The Bernoulli analytic variance is never presented as a systematic variance.
+Systematic diagnostic JSON reports `represented_number_sigma_s-1: null` and a
+conservative fixed-carrier-epoch discrepancy bound. CSV leaves the Bernoulli
+sigma cell blank and appends the bound plus its uncertainty method. Original
+AMPS plot output is unchanged; complete diagnostic windows add authoritative
+center-cell `stage3_cells.*.csv` tables because Tecplot rows are
+node-interpolated.
+`visualization/adaptive_radial_bins.py` adds inner-to-outer exposure-controlled
+bins, retains zero and final-underexposed bins, and, when
+given independent-seed replicas on a common mesh, reports sample standard
+deviation, standard error, coefficient of variation, and nonpositive-seed
+fraction on common radial supports. Embedded species/output identity, exact
+geometry, sampling length, seed validity, residual mode, and MPI count are
+checked; duplicate paths/seeds and mismatched provenance are rejected.
+Boundaries remain exact cell faces on the logarithmically expanding radial
+mesh; the tool does not interpolate data onto invented logarithmic edges.
+
+Pure analytic tests cover `mu<1`, integer `mu`, `mu>1`, strict prefix error
+below one, plan/retry, packet coupling, serialization, and the floating-point
+`LONG_MAX` boundary. Eight isolated parser cases cover explicit/default and
+invalid/duplicate inputs. Integrated tests
+with one frozen input/seed at 1, 4, and 12 MPI ranks cover 373 owner blocks,
+36,554 accumulators, common phases, non-mutating plan retries, first-use
+rollback, carrier epochs, owner-only access, AMR migration, populated
+local-weight restart continuation, particle checksums, and restored ghost
+publication. Nine nonzero
+states change owner in the four-rank test and 33 in the twelve-rank test; all
+373 restart comparisons pass at every decomposition. They also require the
+authoritative center-cell writer to complete; each run produces 2,984 C2 cell
+records that pass the adaptive-bin command-line smoke test.
+
+The Stage-3 validator does not mislabel its pure plan/retry check as a forced
+`ProcessParticle()` capacity failure. The already passing Stage-2 integrated
+transaction suite supplies the real capacity-rejection, particle-list, lock,
+and no-mutation rollback test required by Stage 3.
+
+The scientific decision policy is now approved and encoded in
+`validation/stage3_science_policy.json`, with non-relaxable values checked by
+`validation/stage3_gate_common.py`. One frozen executable is used for four
+fixed Bernoulli seeds and the same four Systematic seeds at 12 MPI ranks and
+one OpenMP thread. The first 10,000-iteration window is burn-in/reference;
+the 20,000, 30,000, and 40,000 iteration outputs are the three accepted
+10,000-iteration windows. Each must satisfy the existing 5% profile-change,
+chemistry/source-closure, and zero-emergency gates.
+
+The statistical comparison uses only exact cells fully contained from 10 to
+100,000 km altitude above the 6 km surface. Common adaptive-bin support is
+defined by the minimum exposure over all eight runs, not by a favorable
+single mode or seed, and requires 100,000 particle-iterations. For C2, C2H,
+CN, C2H5, and HCO, at least 90% of Systematic bins must have CV at most 25%,
+none may exceed 50%, no bin may be empty, the raw zero-cell fraction may not
+exceed 5%, and at least 90% of populated complete blocks must remain inside
+the configured 50--200 `CHEMICAL_ONLY` target. Bernoulli and Systematic means
+must agree within the larger of 5% of their scale and two combined standard
+errors. Reaction/product production agreement, all-species source agreement,
+and Rubin log-density regression are independent gates, not substitutes for
+minor-species precision.
+
+`validation/run_stage3_science_gate.py` freezes the executable, canonical
+input, generated `picGlobal.dfn`, and policy; alternates the eight cases;
+records atomic per-attempt status; validates and hashes every required
+artifact; and resumes only by starting an incomplete case again at iteration
+zero. `validation/evaluate_stage3_science_gate.py` is the read-only scientific
+evaluator. It reports `PASS_SKIP_STAGE4`, `FAIL_CONSIDER_STAGE4`,
+`INCONCLUSIVE_RERUN`, or `INVALID_EVIDENCE` and writes compact JSON, CSV, and
+Markdown. Its first valid use writes an unaccepted Rubin candidate baseline;
+human scientific review must explicitly accept that baseline before a final
+pass is possible. Full commands, recovery rules, thresholds, and exit codes
+are in `validation/README.md`.
+
+The clean current build and 1/4/12-rank focused tests pass, as do 14 synthetic
+science-gate boundary/failure cases. The long eight-run science matrix has not
+yet been launched, so Stage 3 implementation is complete but its scientific
+go/no-go outcome remains pending. Do not begin Stage 4 merely from the focused
+tests.
+
+The generic network executor is currently valid only with the radial
+batch/capacity/emergency controller. Input preprocessing and runtime
+validation reject chemistry in 2-D/3-D rather than inventing policy values.
+Generic geometry and source support are not removed; a future geometry-neutral
+batch policy is required before this chemistry implementation is enabled and
+validated outside the radial backend.
+
 ## Stage 4: individual-weight compatibility foundation
 
 ### Objective
@@ -908,11 +1029,11 @@ manifest. Wait for explicit user approval.
 
 ## Recommended immediate next action
 
-Stages 0 and 1 are complete. Implement the Stage 2 component-wide,
-correction-free carrier planner next. Run the decision gate in Stage 3 before
-changing the core to allow individual corrections. The current measurements
-indicate that C2 can plausibly reach useful occupancy with the existing
-20-product reaction bound and about a 24% total-population increase while
-direct parents remain fixed. Individual weights remain a valuable second
-line of development, but they should be enabled only after their mover,
-collision, adaptation, MPI, and capacity behavior is proven together.
+Stages 0--2, the Stage 3 implementation, and the permanent scientific gate are
+implemented and focused-tested. Review the read-only `plan` output, then run
+the complete eight-case matrix with `validation/run_stage3_science_gate.py`.
+Evaluate the first complete archive, review and explicitly accept its Rubin
+candidate baseline, and rerun the evaluator with that accepted baseline. Use
+the resulting outcome to skip Stage 4, consider Stage 4, or repeat an
+inconclusive experiment. Do not merge to `master` or start Stage 4 before that
+decision is recorded.

@@ -55,6 +55,31 @@ If a runtime parameter used by a rate law changes, the application must rebuild
 its rate cache before the next particle batch; the generic network does not
 cache application state.
 
+## Correction-free systematic residual allocation
+
+`SystematicResidualAccumulator.h` is a geometry-, mesh-, and MPI-independent
+plan/commit primitive for converting a nonnegative expected multiplicity into
+an integer carrier count. For phase `p` and mean `mu`, it returns
+
+```text
+count = floor(p + mu)
+next_phase = p + mu - count.
+```
+
+`Plan()` never mutates caller state. An executor may therefore preview every
+product, perform a complete particle-capacity check, and commit `NextPhase`
+only with the physical reaction. Over any fixed-carrier epoch the cumulative
+integer discrepancy is strictly below one. `UnitPhase()` uses a counter-based
+SplitMix64 hash so applications can key phases by stable model identifiers
+without consuming the physical-event RNG stream. The helper rejects invalid
+phases, negative/non-finite means, and values whose integer count cannot be
+represented by `long int`, including the rounded LP64 `LONG_MAX` boundary.
+
+The helper owns no persistence policy. Applications must define stable state
+indices, owner-only mutation, carrier-change epochs, migration/restart layout
+fingerprints, and uncertainty reporting. Correlated systematic counts must not
+reuse independent-Bernoulli variance formulas.
+
 ## Geometry-independent event diagnostics
 
 `ChemistryDiagnostics.h` provides an optional accumulator for particle or
@@ -100,7 +125,9 @@ preprocessing.
 coefficients, rate parameters, and excess energy. Application-level
 validation may be stricter. The comet particle executor, for example,
 requires one unit reactant, integer product multiplicities, neutral mass
-balance, and individual particle-weight correction.
+balance, and either individual particle-weight correction or an explicitly
+selected correction-free Bernoulli/systematic residual allocator compatible
+with the configured carrier policy.
 
 The standalone test also checks the parent index, preservation of channel
 order, exclusion of a binary reaction, and invalid species/channel sentinels.
@@ -129,5 +156,6 @@ g++ -std=c++17 -Wall -Wextra -pedantic \
 /tmp/test_reaction_network
 
 srcHartley2/tests/run_stage0_tests.sh
+srcHartley2/tests/run_stage3_accumulator_tests.sh
 ```
 

@@ -34,6 +34,7 @@ photochemical-daughter statistics without increasing direct-parent injection.
 | `halley2011/digitize_rubin2011.py` and `halley2011/reference/` | Reproducible Rubin vector-curve extraction and committed neutral-profile reference data |
 | `visualization/plot_1d.py` | CLI plotter for named quantities in one or more DIM1 output files |
 | `visualization/compare_rubin2011.py` | Paper-ordered neutral-density and H2O-velocity comparison artifacts for the Halley run |
+| `validation/` | Frozen Stage-3 science policy, durable eight-run Bernoulli/Systematic runner, read-only decision evaluator, and operating instructions |
 | `Comet.cpp` and legacy helpers | Existing DIM3 Hartley 2 implementation |
 
 Reusable data containers live outside the application in
@@ -861,3 +862,120 @@ rates/carriers under the alternate daughter target, cadence records at
 iterations 0/50/100, and 54 byte-identical legacy output files. These tests
 close Stage 1 numerical-policy behavior; they do not change the existing
 nonconverged status of the long Rubin science comparison.
+
+## Stage 3 systematic chemistry residuals
+
+The optional input records are:
+
+```text
+CometRandomSeed=104729
+ChemistryResidualSampling=systematic
+CometDiagnostics=on
+```
+
+`SYSTEMATIC` maintains a randomized cumulative residual for each owner block,
+reaction, and concrete product. It reduces cumulative integer-allocation
+error from independent binomial noise to strictly less than one model
+particle per fixed-carrier epoch without enabling individual statistical
+weights. A reaction is still one transaction: accumulator phases advance only
+after the hard product cap and particle-buffer preflight accept all products.
+Regular carrier changes start a recorded epoch; emergency common scaling
+preserves phases because it does not change any relevant carrier ratio.
+
+The source default is `BERNOULLI`. Inputs that omit both new records reserve
+no residual block data and do not call `rnd_seed`; this preserves the radial
+application's historical inherited core RNG state. Systematic mode requires
+an explicit seed. `--random-seed N` overrides it for independent pilot runs.
+The input parser rejects duplicate/invalid seeds and modes, systematic mode
+without a seed, and a residual mode with chemistry disabled.
+
+Residual state is explicitly aligned in owner-block application storage and
+contains a 53-bit ABI/network-layout signature. The signature prevents a
+same-size reordered chemistry layout from being silently read as valid state.
+Local-weight restart saves empty and populated owner blocks, particle records,
+and the entire application region, then publishes restored owner data to
+ghost blocks before particle movement.
+
+Run the pure tests with:
+
+```sh
+srcHartley2/tests/run_stage3_accumulator_tests.sh
+PYTHONDONTWRITEBYTECODE=1 python3 srcHartley2/tests/test_stage3_adaptive_bins.py
+PYTHONDONTWRITEBYTECODE=1 python3 srcHartley2/tests/test_stage3_diagnostic_semantics.py
+srcHartley2/tests/run_stage3_parser_tests.sh
+```
+
+Validate archived 1/4/12-rank migration/restart logs with:
+
+```sh
+HARTLEY2_STAGE3_LOG_1=validation_runs/stage3_systematic_20261105/mpi1/stage3.mpi1.log \
+HARTLEY2_STAGE3_LOG_4=validation_runs/stage3_systematic_20261105/mpi4/stage3.mpi4.log \
+HARTLEY2_STAGE3_LOG_12=validation_runs/stage3_systematic_20261105/mpi12/stage3.mpi12.log \
+  srcHartley2/tests/run_stage3_integrated_tests.sh
+```
+
+The focused executable mode is
+`--validate-systematic-residual [--random-seed N]`. It forces a real AMR
+redistribution and performs a local-weight restart round trip with one
+controlled particle per MPI rank. The test record is strict: owner state and
+particle checksums must survive, restored state must reach boundary ghosts,
+and no partial transaction mutation is allowed. It also invokes the exact
+center-cell writer and uncertainty report; the PASS record requires both.
+
+The focused record calls its local check `plan-retry-checks`; it does not
+claim to force `ProcessParticle()` through a full-buffer rejection. The
+Stage-2 1/4/12 integrated transaction archive supplies the real capacity
+rejection and complete particle/list/state rollback prerequisite.
+
+For additional, non-destructive statistical output:
+
+```sh
+python3 srcHartley2/visualization/adaptive_radial_bins.py \
+  seed1/PT/diagnostics/stage3_cells.C2.out=3.csv \
+  --replicate seed2/PT/diagnostics/stage3_cells.C2.out=3.csv \
+  --replicate seed3/PT/diagnostics/stage3_cells.C2.out=3.csv \
+  --replicate seed4/PT/diagnostics/stage3_cells.C2.out=3.csv \
+  --cell-measures seed1/PT/diagnostics/cell_measures.csv \
+  --sampling-length 10000 --minimum-exposure 100000 \
+  --output seed1/PT/plots/C2.stage3-adaptive
+```
+
+The tool selects common bin boundaries from model-particle exposure and then
+estimates uncertainty across independent seeds. It verifies embedded
+species/output identity, exact geometry, sampling length, explicit distinct
+seeds, residual mode, and MPI metadata before combining replicas. Fewer than
+four inputs are retained but marked not decision-ready. The scientific Stage-4
+decision policy is now frozen in
+`validation/stage3_science_policy.json`; the required
+Bernoulli/Systematic matrix has not yet been run.
+
+The production decision workflow is documented in
+`validation/README.md`. In short, one cleanly built executable supplies both
+runtime residual modes, four fixed seeds are run in both modes at 12 MPI
+ranks, the first 10,000 iterations are burn-in, and three subsequent complete
+10,000-iteration windows are evaluated through 40,000 iterations. The
+evaluator uses all-eight-run minimum exposure on exact fully contained cells
+from 10--100,000 km altitude and checks CV, zero cells, 50--200 population
+coverage, mode-mean agreement, chemistry/source closure, emergencies,
+convergence, and an explicitly accepted Rubin regression baseline.
+
+Preflight without launching the long matrix:
+
+```sh
+python3 srcHartley2/validation/run_stage3_science_gate.py plan \
+  validation_runs/stage3_science_gate_YYYYMMDD \
+  --executable amps --input input/halley1d.input \
+  --pic-global build/pic/picGlobal.dfn
+srcHartley2/tests/run_stage3_science_gate_tests.sh
+```
+
+The operational runner supports `run`, `resume`, and `status`, always
+re-hashes completed evidence, and never resumes a partial physical state. The
+read-only evaluator returns `PASS_SKIP_STAGE4`, `FAIL_CONSIDER_STAGE4`,
+`INCONCLUSIVE_RERUN`, or `INVALID_EVIDENCE`. Operational completion alone is
+not a scientific pass.
+
+The generic chemistry executor currently depends on the radial
+batch/capacity/emergency policy. Chemistry is therefore rejected for the
+2-D/3-D backend until a geometry-neutral policy with explicit input values is
+implemented; this does not remove generic 3-D geometry/source support.

@@ -160,10 +160,19 @@ CouplerMode=off
   CollisionTemperatureMinimumSampleParticleNumber=1.0
   Rubin2011OHGroundRate=3.0e-6
   Rubin2011MethanolH2COBranch=OFF
+  ! Reproducible physical-event streams use seed+MPI-rank. Stage-3 residual
+  ! phases use a separate key made from this seed, stable AMR node ID,
+  ! carrier epoch, reaction, and concrete product, so phase initialization
+  ! never advances the physical RNG.
+  CometRandomSeed=104729
   ChemistryMode=on
-  ! Stage-0 observability is opt-in. OFF is the production default and must
-  ! preserve the historical scientific output and random-number stream.
-  CometDiagnostics=off
+  ! Random-phase systematic residual allocation retains one correction-free
+  ! state per owner block/reaction/concrete product. The legacy default for
+  ! inputs that omit this record remains independent Bernoulli sampling.
+  ChemistryResidualSampling=systematic
+  ! The Stage-3 decision gate needs expected/represented source closure and
+  ! the systematic fixed-carrier-epoch discrepancy bound in every window.
+  CometDiagnostics=on
 
   ! Water rotational cooling from the analytic Crovisier/Huebner
   ! approximation printed as equation (48b) by Gombosi et al. (1986).

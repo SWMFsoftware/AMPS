@@ -3,22 +3,309 @@
 #include <algorithm>
 #include <climits>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <vector>
 
 #include "pic.h"
+#include "src/models/chemical_solver/SystematicResidualAccumulator.h"
 #include "CometChemistry.generated.h"
 #include "CometDiagnostics.h"
 #include "RadialSimulation.h"
 
 bool Comet::Chemistry::Enabled=false;
 double Comet::Chemistry::HeliocentricDistanceAU=-1.0;
+// Keep this definition on one physical line.  The AMPS input preprocessor
+// replaces complete variable-definition lines; a wrapped initializer would
+// leave its continuation behind when ChemistryResidualSampling is parsed.
+int Comet::Chemistry::ResidualSamplingMode=Comet::Chemistry::ResidualSampling::IndependentBernoulli;
+std::uint64_t Comet::Chemistry::ResidualPhaseSeed=1;
 
 namespace {
 long int ChemistryProcessedFlagOffset=-1;
 bool LocalChemistryAllocationPressure=false;
+
+// Systematic residual state occupies only the block's application-owned data
+// region, so ordinary AMR ownership migration carries it byte-for-byte. The
+// header and each concrete-product record use doubles because the core's
+// block clean routine deliberately treats all application storage as an
+// array of doubles. Flags are consequently exact 0.0/1.0 values.
+constexpr std::size_t ResidualHeaderInitialized=0;
+constexpr std::size_t ResidualHeaderCarrierEpoch=1;
+constexpr std::size_t ResidualHeaderLayoutSignature=2;
+constexpr std::size_t ResidualHeaderLength=3;
+constexpr std::size_t ResidualRecordPhase=0;
+constexpr std::size_t ResidualRecordDiagnosticActive=1;
+constexpr std::size_t ResidualRecordLength=2;
+// Bump this whenever header/record byte semantics change even if the total
+// number of doubles does not.  Network contents are mixed in separately.
+constexpr std::uint64_t ResidualLayoutAbiVersion=1;
+long int ResidualBlockDataOffset=-1;
+std::vector<std::size_t> ResidualReactionOffset;
+std::vector<int> ResidualConcreteSpecies;
+std::vector<std::size_t> ResidualConcreteTerm;
+double ResidualLayoutSignature=0.0;
+
+void BuildResidualLayout() {
+  if (!ResidualReactionOffset.empty()) return;
+
+  const ChemicalSolver::cReactionNetwork &network=
+      Comet::Chemistry::GetNetwork();
+  ResidualReactionOffset.assign(network.GetReactionCount()+1,0);
+  for (std::size_t reaction=0;reaction<network.GetReactionCount();reaction++) {
+    ResidualReactionOffset[reaction]=ResidualConcreteSpecies.size();
+    const ChemicalSolver::cReaction &entry=network.GetReaction(reaction);
+    for (std::size_t term=0;term<entry.ProductCount;term++) {
+      const ChemicalSolver::cStoichiometricTerm &product=
+          network.GetProductTerm(reaction,term);
+      const long int coefficient=static_cast<long int>(
+          std::floor(product.Coefficient+0.5));
+      for (long int copy=0;copy<coefficient;copy++) {
+        ResidualConcreteSpecies.push_back(product.Species);
+        ResidualConcreteTerm.push_back(term);
+      }
+    }
+  }
+  ResidualReactionOffset[network.GetReactionCount()]=
+      ResidualConcreteSpecies.size();
+
+  // The restart core validates byte length, while the application knows the
+  // semantic ordering of those bytes.  Store a 53-bit, exactly representable
+  // fingerprint in every initialized block so a reordered reaction network
+  // with the same product count cannot silently reinterpret saved phases.
+  namespace Accumulator=ChemicalSolver::SystematicResidualAccumulator;
+  std::uint64_t signature=Accumulator::Mix(ResidualLayoutAbiVersion);
+  signature=Accumulator::Combine(signature,ResidualHeaderLength);
+  signature=Accumulator::Combine(signature,ResidualRecordLength);
+  signature=Accumulator::Combine(signature,ResidualHeaderInitialized);
+  signature=Accumulator::Combine(signature,ResidualHeaderCarrierEpoch);
+  signature=Accumulator::Combine(signature,ResidualHeaderLayoutSignature);
+  signature=Accumulator::Combine(signature,ResidualRecordPhase);
+  signature=Accumulator::Combine(signature,ResidualRecordDiagnosticActive);
+  signature=Accumulator::Combine(signature,network.GetReactionCount());
+  for (std::size_t reaction=0;reaction<network.GetReactionCount();reaction++) {
+    const ChemicalSolver::cReaction &entry=network.GetReaction(reaction);
+    for (const unsigned char *p=
+        reinterpret_cast<const unsigned char*>(entry.Id);*p!='\0';p++)
+      signature=Accumulator::Combine(signature,*p);
+    signature=Accumulator::Combine(signature,ResidualReactionOffset[reaction]);
+    signature=Accumulator::Combine(signature,
+        ResidualReactionOffset[reaction+1]-ResidualReactionOffset[reaction]);
+  }
+  for (std::size_t product=0;product<ResidualConcreteSpecies.size();product++) {
+    signature=Accumulator::Combine(signature,
+        static_cast<std::uint64_t>(ResidualConcreteSpecies[product]));
+    signature=Accumulator::Combine(signature,ResidualConcreteTerm[product]);
+  }
+  signature&=(UINT64_C(1)<<53)-1;
+  if (signature==0) signature=1;
+  ResidualLayoutSignature=static_cast<double>(signature);
+}
+
+std::size_t ResidualRecordIndex(std::size_t concreteProduct,
+    std::size_t field) {
+  return ResidualHeaderLength+ResidualRecordLength*concreteProduct+field;
+}
+
+double* GetResidualBlockData(
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+  if (ResidualBlockDataOffset<0 || node==NULL || node->block==NULL ||
+      node->Thread!=PIC::ThisThread) {
+    std::fprintf(stderr,
+        "systematic comet residual state was requested from a non-owner or uninitialized block\n");
+    std::abort();
+  }
+  char *raw=node->block->GetAssociatedDataBufferPointer()+
+      ResidualBlockDataOffset;
+  if (reinterpret_cast<std::uintptr_t>(raw)%alignof(double)!=0) {
+    std::fprintf(stderr,
+        "systematic comet residual block state is not double aligned\n");
+    std::abort();
+  }
+  return reinterpret_cast<double*>(raw);
+}
+
+std::uint64_t ResidualNodeKey(
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+  namespace Accumulator=ChemicalSolver::SystematicResidualAccumulator;
+  std::uint64_t key=Accumulator::Combine(
+      Comet::Chemistry::ResidualPhaseSeed,
+      static_cast<std::uint64_t>(node->AMRnodeID.ResolutionLevel));
+  for (unsigned int i=0;i<node->AMRnodeID.Length();i++)
+    key=Accumulator::Combine(key,node->AMRnodeID.id[i]);
+  return key;
+}
+
+double ResidualCarrierRate(PIC::Mesh::cDataBlockAMR *block,int species) {
+  const double weight=block->GetLocalParticleWeight(species);
+  const double timeStep=block->GetLocalTimeStep(species);
+  if (!(weight>0.0) || !std::isfinite(weight) || !(timeStep>0.0) ||
+      !std::isfinite(timeStep)) {
+    std::fprintf(stderr,
+        "invalid block carrier while accessing systematic comet residual state\n");
+    std::abort();
+  }
+  return weight/timeStep;
+}
+
+void BuildInitialResidualPhases(
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,
+    std::vector<double> &phases) {
+  namespace Accumulator=ChemicalSolver::SystematicResidualAccumulator;
+  double *data=GetResidualBlockData(node);
+  if (data[ResidualHeaderInitialized]!=0.0 ||
+      !(data[ResidualHeaderCarrierEpoch]>=0.0) ||
+      !std::isfinite(data[ResidualHeaderCarrierEpoch]) ||
+      (data[ResidualHeaderLayoutSignature]!=0.0 &&
+       data[ResidualHeaderLayoutSignature]!=ResidualLayoutSignature)) {
+    std::fprintf(stderr,"invalid systematic residual block header\n");
+    std::abort();
+  }
+  phases.assign(ResidualConcreteSpecies.size(),0.0);
+
+  const std::uint64_t epoch=static_cast<std::uint64_t>(
+      data[ResidualHeaderCarrierEpoch]);
+  const std::uint64_t nodeKey=ResidualNodeKey(node);
+  const ChemicalSolver::cReactionNetwork &network=
+      Comet::Chemistry::GetNetwork();
+
+  // Every concrete product retains its own state slot. Within a reaction,
+  // exact-equal W/dt carriers receive one common initial packet phase. Since
+  // they add the same mu, they remain in lockstep until an accepted regular
+  // carrier transaction starts a new epoch. Different carriers intentionally
+  // diverge and conserve production only in cumulative expectation.
+  for (std::size_t reaction=0;reaction<network.GetReactionCount();reaction++) {
+    const std::size_t begin=ResidualReactionOffset[reaction];
+    const std::size_t end=ResidualReactionOffset[reaction+1];
+    for (std::size_t product=begin;product<end;product++) {
+      const double carrier=ResidualCarrierRate(node->block,
+          ResidualConcreteSpecies[product]);
+      std::size_t leader=product;
+      for (std::size_t candidate=begin;candidate<product;candidate++)
+        if (ResidualCarrierRate(node->block,
+            ResidualConcreteSpecies[candidate])==carrier) {
+          leader=candidate;
+          break;
+        }
+
+      double phase;
+      if (leader!=product)
+        phase=phases[leader];
+      else {
+        std::uint64_t key=Accumulator::Combine(nodeKey,epoch);
+        key=Accumulator::Combine(key,reaction);
+        key=Accumulator::Combine(key,product-begin);
+        phase=Accumulator::UnitPhase(key);
+      }
+      phases[product]=phase;
+    }
+  }
+}
+
+void InitializeResidualBlock(
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+  double *data=GetResidualBlockData(node);
+  if (data[ResidualHeaderInitialized]==1.0) {
+    if (data[ResidualHeaderLayoutSignature]!=ResidualLayoutSignature) {
+      std::fprintf(stderr,
+          "systematic residual restart layout fingerprint mismatch\n");
+      std::abort();
+    }
+    return;
+  }
+  std::vector<double> phases;
+  BuildInitialResidualPhases(node,phases);
+  for (std::size_t product=0;product<phases.size();product++) {
+    data[ResidualRecordIndex(product,ResidualRecordPhase)]=phases[product];
+    data[ResidualRecordIndex(product,ResidualRecordDiagnosticActive)]=0.0;
+  }
+  data[ResidualHeaderLayoutSignature]=ResidualLayoutSignature;
+  data[ResidualHeaderInitialized]=1.0;
+}
+
+void CloseResidualBlockDiagnosticEpoch(
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,bool resetCarrierEpoch) {
+  double *data=GetResidualBlockData(node);
+  if (data[ResidualHeaderInitialized]==1.0) {
+    if (data[ResidualHeaderLayoutSignature]!=ResidualLayoutSignature) {
+      std::fprintf(stderr,
+          "systematic residual diagnostic layout fingerprint mismatch\n");
+      std::abort();
+    }
+    for (std::size_t product=0;product<ResidualConcreteSpecies.size();product++) {
+      double &active=data[ResidualRecordIndex(product,
+          ResidualRecordDiagnosticActive)];
+      if (active==1.0 && Comet::Diagnostics::Enabled) {
+        const auto upper=std::upper_bound(ResidualReactionOffset.begin(),
+            ResidualReactionOffset.end(),product);
+        const std::size_t reaction=static_cast<std::size_t>(
+            upper-ResidualReactionOffset.begin()-1);
+        const int species=ResidualConcreteSpecies[product];
+        Comet::Diagnostics::RecordSystematicResidualBound(reaction,
+            ResidualConcreteTerm[product],species,
+            ResidualCarrierRate(node->block,species));
+      }
+      active=0.0;
+    }
+  }
+
+  if (resetCarrierEpoch) {
+    const double nextEpoch=data[ResidualHeaderCarrierEpoch]+1.0;
+    if (!(nextEpoch>data[ResidualHeaderCarrierEpoch]) ||
+        !std::isfinite(nextEpoch)) {
+      std::fprintf(stderr,"systematic residual carrier epoch overflow\n");
+      std::abort();
+    }
+    data[ResidualHeaderCarrierEpoch]=nextEpoch;
+    data[ResidualHeaderInitialized]=0.0;
+  }
+}
+
+void ForEachOwnerResidualBlock(void (*function)(
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,bool),bool argument) {
+  if (Comet::Chemistry::ResidualSamplingMode!=
+      Comet::Chemistry::ResidualSampling::RandomPhaseSystematic) return;
+  for (unsigned int block=0;
+       block<PIC::DomainBlockDecomposition::nLocalBlocks;block++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=
+        PIC::DomainBlockDecomposition::BlockTable[block];
+    if (node==NULL || node->block==NULL || node->Thread!=PIC::ThisThread)
+      continue;
+    function(node,argument);
+  }
+}
+
+std::size_t ResidualStateDoubleCount() {
+  return ResidualHeaderLength+
+      ResidualRecordLength*ResidualConcreteSpecies.size();
+}
+
+void CollectResidualValidationLeaves(
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,
+    std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> &leaves) {
+  if (node==NULL) return;
+  if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+    if (node->IsUsedInCalculationFlag) leaves.push_back(node);
+    return;
+  }
+  for (int child=0;child<(1<<DIM);child++)
+    CollectResidualValidationLeaves(node->downNode[child],leaves);
+}
+
+double Stage3MigrationLoadMeasure(
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+  namespace Accumulator=ChemicalSolver::SystematicResidualAccumulator;
+  std::uint64_t key=static_cast<std::uint64_t>(
+      node->AMRnodeID.ResolutionLevel);
+  for (unsigned int i=0;i<node->AMRnodeID.Length();i++)
+    key=Accumulator::Combine(key,node->AMRnodeID.id[i]);
+  // A deliberately irregular but deterministic measure changes multi-rank
+  // ownership boundaries without depending on the previous MPI owner.
+  return 1.0+static_cast<double>(Accumulator::Mix(key)%97);
+}
 
 // Per-parent reaction dispatch is immutable during a chemistry stage.  The
 // generic network supplies applicable reaction indices in generated-table
@@ -120,6 +407,53 @@ void Comet::Chemistry::RequestParticleData() {
       sizeof(unsigned char));
 }
 
+void Comet::Chemistry::RequestBlockData() {
+  if (!Enabled || ResidualSamplingMode!=
+      ResidualSampling::RandomPhaseSystematic) return;
+  if (ResidualBlockDataOffset>=0) return;
+
+  BuildResidualLayout();
+  const std::size_t doubleCount=ResidualHeaderLength+
+      ResidualRecordLength*ResidualConcreteSpecies.size();
+  if (doubleCount>static_cast<std::size_t>(INT_MAX)/sizeof(double)) {
+    std::fprintf(stderr,
+        "systematic comet residual block state exceeds the core offset range\n");
+    std::abort();
+  }
+  // RequestInternalBlockData() is byte-granular and makes no alignment
+  // promise.  Insert explicit padding before exposing the storage as doubles;
+  // the runtime accessor also checks the actual allocated base address.
+  const int currentLength=
+      PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength;
+  const int alignment=static_cast<int>(alignof(double));
+  const int padding=(alignment-currentLength%alignment)%alignment;
+  if (padding!=0)
+    PIC::Mesh::cDataBlockAMR::RequestInternalBlockData(padding);
+  ResidualBlockDataOffset=PIC::Mesh::cDataBlockAMR::RequestInternalBlockData(
+      static_cast<int>(doubleCount*sizeof(double)));
+  if (ResidualBlockDataOffset%alignment!=0) {
+    std::fprintf(stderr,
+        "cannot align systematic comet residual block storage\n");
+    std::abort();
+  }
+}
+
+void Comet::Chemistry::PrepareForRegularCarrierChange() {
+  // This hook is called only after the complete component transaction has
+  // passed capacity preflight and immediately before any carrier is changed.
+  // Closing the active error bound under the old carriers and incrementing
+  // the block epoch guarantees a fresh, independently keyed phase after the
+  // new W/dt ratios have been committed.
+  ForEachOwnerResidualBlock(CloseResidualBlockDiagnosticEpoch,true);
+}
+
+void Comet::Chemistry::CloseResidualDiagnosticWindow() {
+  // Keep the physical phases continuous across output windows. Only the
+  // activity markers used to form a conservative per-window discrepancy
+  // bound are cleared.
+  ForEachOwnerResidualBlock(CloseResidualBlockDiagnosticEpoch,false);
+}
+
 const ChemicalSolver::cReactionNetwork& Comet::Chemistry::GetNetwork() {
   static const ChemicalSolver::cReactionNetwork network(
       Generated::Terms,Generated::TermCount,
@@ -129,6 +463,29 @@ const ChemicalSolver::cReactionNetwork& Comet::Chemistry::GetNetwork() {
 }
 
 bool Comet::Chemistry::Validate(std::string *error) {
+  if (ResidualSamplingMode!=ResidualSampling::IndependentBernoulli &&
+      ResidualSamplingMode!=ResidualSampling::RandomPhaseSystematic) {
+    if (error!=NULL)
+      *error="unknown comet chemistry residual-sampling mode";
+    return false;
+  }
+  if (Enabled && !Comet::RadialSimulation::Enabled) {
+    // The generated reaction database is geometry neutral, but its current
+    // transactional particle executor still obtains allocation limits,
+    // reserve policy, and emergency adaptation from the radial controller.
+    // Reject a 3-D request explicitly instead of silently falling back to the
+    // legacy photolysis path or aborting with unset (-1) capacity controls.
+    if (error!=NULL)
+      *error="generic comet chemistry execution currently requires the radial backend; define a geometry-neutral batch policy before enabling it in 2-D/3-D";
+    return false;
+  }
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+  if (ResidualSamplingMode==ResidualSampling::RandomPhaseSystematic) {
+    if (error!=NULL)
+      *error="systematic residual sampling requires individual particle corrections off";
+    return false;
+  }
+#endif
   if (Enabled && (!(HeliocentricDistanceAU>0.0) ||
       !std::isfinite(HeliocentricDistanceAU))) {
     if (error!=NULL)
@@ -825,11 +1182,33 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
 #error "Comet chemistry without individual corrections requires a supported global or species-local particle weight"
 #endif
 
-  // Draw every residual multiplicity before changing the parent or allocating
-  // a daughter.  This makes the reaction a transaction: either capacity for
-  // the complete event is available, or the untouched parent is reinserted
-  // and retried after the collective batch checkpoint creates headroom.
+  // Plan every residual multiplicity before changing the parent, accumulator,
+  // diagnostics, or particle list. This makes the reaction a transaction:
+  // either capacity for the complete event is available, or the untouched
+  // parent and bitwise-identical phases are retried after the collective batch
+  // checkpoint creates headroom.
   std::vector<long int> daughterMultiplicity(productSpecies.size(),0);
+  std::vector<double> daughterNextPhase(productSpecies.size(),0.0);
+  std::vector<unsigned char> daughterPhaseActive(productSpecies.size(),0);
+  double *residualBlockData=NULL;
+  bool residualInitializationPending=false;
+  std::vector<double> provisionalInitialPhases;
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_OFF_
+  if (ResidualSamplingMode==ResidualSampling::RandomPhaseSystematic) {
+    residualBlockData=GetResidualBlockData(node);
+    if (residualBlockData[ResidualHeaderInitialized]==0.0) {
+      // First use is planned from deterministic keyed phases without writing
+      // the block.  A capacity deferral therefore leaves even a never-used
+      // block bitwise unchanged; initialization is committed with the event.
+      BuildInitialResidualPhases(node,provisionalInitialPhases);
+      residualInitializationPending=true;
+    }
+    else if (residualBlockData[ResidualHeaderInitialized]!=1.0) {
+      std::fprintf(stderr,"invalid systematic residual initialization flag\n");
+      std::abort();
+    }
+  }
+#endif
   long int totalDaughters=0;
   for (std::size_t product=0;product<productSpecies.size();product++) {
     const int species=productSpecies[product];
@@ -846,9 +1225,39 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
     daughterMultiplicity[product]=1;
 #else
-    daughterMultiplicity[product]=
-        DrawResidualMultiplicity(parentPhysicalWeight,timeStep,baseWeight,
-            productTimeStep);
+    if (ResidualSamplingMode==ResidualSampling::RandomPhaseSystematic) {
+      namespace Accumulator=
+          ChemicalSolver::SystematicResidualAccumulator;
+      const std::size_t concrete=
+          ResidualReactionOffset[selected]+product;
+      if (concrete>=ResidualReactionOffset[selected+1]) {
+        std::fprintf(stderr,
+            "systematic residual concrete-product index is inconsistent with the generated network\n");
+        std::abort();
+      }
+      const double mean=GetResidualMultiplicityMean(parentPhysicalWeight,
+          timeStep,baseWeight,productTimeStep);
+      const double phase=residualInitializationPending ?
+          provisionalInitialPhases[concrete] :
+          residualBlockData[ResidualRecordIndex(concrete,
+              ResidualRecordPhase)];
+      const Accumulator::cPlan plan=Accumulator::Plan(phase,mean);
+      if (plan.Multiplicity<0 || !Accumulator::IsValidPhase(plan.NextPhase)) {
+        std::fprintf(stderr,
+            "invalid systematic residual plan for reaction %s product %zu\n",
+            reaction.Id,product);
+        std::abort();
+      }
+      daughterMultiplicity[product]=plan.Multiplicity;
+      daughterNextPhase[product]=plan.NextPhase;
+      daughterPhaseActive[product]=
+          (mean!=std::floor(mean)) ? 1 : 0;
+    }
+    else {
+      daughterMultiplicity[product]=
+          DrawResidualMultiplicity(parentPhysicalWeight,timeStep,baseWeight,
+              productTimeStep);
+    }
 #endif
 
     if (daughterMultiplicity[product]<0 ||
@@ -874,6 +1283,23 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
         parentSpecies,parentPhysicalWeight/timeStep);
     std::abort();
   }
+
+  auto commitResidualPhases=[&]() {
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_OFF_
+    if (ResidualSamplingMode==ResidualSampling::RandomPhaseSystematic) {
+      if (residualInitializationPending) InitializeResidualBlock(node);
+      for (std::size_t product=0;product<productSpecies.size();product++) {
+        const std::size_t concrete=
+            ResidualReactionOffset[selected]+product;
+        residualBlockData[ResidualRecordIndex(concrete,
+            ResidualRecordPhase)]=daughterNextPhase[product];
+        if (daughterPhaseActive[product])
+          residualBlockData[ResidualRecordIndex(concrete,
+              ResidualRecordDiagnosticActive)]=1.0;
+      }
+    }
+#endif
+  };
 
   // Commit diagnostics only after the transaction is known to fit.  A
   // capacity-deferred parent is retried by the core and must not appear as a
@@ -932,12 +1358,14 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
           node->block->GetLocalParticleWeight(species)/
           node->block->GetLocalTimeStep(species);
       const double representedRate=multiplicity*productCarrierRate;
-      const double mean=GetResidualMultiplicityMean(parentPhysicalWeight,
-          timeStep,node->block->GetLocalParticleWeight(species),
-          node->block->GetLocalTimeStep(species));
-      const double fraction=mean-std::floor(mean);
-      term.NumberVariance+=productCarrierRate*productCarrierRate*
-          fraction*(1.0-fraction);
+      if (ResidualSamplingMode==ResidualSampling::IndependentBernoulli) {
+        const double mean=GetResidualMultiplicityMean(parentPhysicalWeight,
+            timeStep,node->block->GetLocalParticleWeight(species),
+            node->block->GetLocalTimeStep(species));
+        const double fraction=mean-std::floor(mean);
+        term.NumberVariance+=productCarrierRate*productCarrierRate*
+            fraction*(1.0-fraction);
+      }
 #endif
       term.RepresentedNumber+=representedRate;
       term.RepresentedMass+=representedRate*mass;
@@ -963,6 +1391,9 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
   };
 
   if (totalDaughters==0) {
+    // A physical reaction with an all-zero systematic allocation still
+    // consumes its cumulative residual. Commit before deleting the parent.
+    commitResidualPhases();
     recordCommittedDiagnostics();
     PIC::ParticleBuffer::DeleteParticle(ptr);
     return true;
@@ -984,6 +1415,7 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
     return false;
   }
 
+  commitResidualPhases();
   recordCommittedDiagnostics();
 
   // Clone auxiliary fields from the parent, then replace position, velocity,
@@ -1050,4 +1482,279 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
     }
   }
   return true;
+}
+
+bool Comet::Chemistry::ValidateSystematicResidualState() {
+  namespace Accumulator=ChemicalSolver::SystematicResidualAccumulator;
+  if (!Enabled || ResidualSamplingMode!=
+      ResidualSampling::RandomPhaseSystematic || ResidualBlockDataOffset<0) {
+    if (PIC::ThisThread==0)
+      std::fprintf(stderr,
+          "systematic residual validation requires enabled SYSTEMATIC chemistry\n");
+    return false;
+  }
+
+  BuildResidualLayout();
+  PIC::DomainBlockDecomposition::UpdateBlockTable();
+  std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> leaves;
+  CollectResidualValidationLeaves(PIC::Mesh::mesh->rootTree,leaves);
+  if (leaves.empty() || ResidualConcreteSpecies.empty()) return false;
+
+  long long localOwnerBlocks=0,localAccumulators=0;
+  long long localSameCarrierChecks=0,localRollbackChecks=0;
+  long long localCarrierEpochChecks=0,localFirstUseRollbackChecks=0;
+  long long localPartialMutations=0,localOwnerStateChecks=0;
+  double localMaximumPrefixError=0.0;
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node:leaves) {
+    if (node->Thread!=PIC::ThisThread) continue;
+    if (node->block==NULL) return false;
+    localOwnerBlocks++;
+    InitializeResidualBlock(node);
+    double *data=GetResidualBlockData(node);
+    localOwnerStateChecks++;
+    localAccumulators+=ResidualConcreteSpecies.size();
+
+    const ChemicalSolver::cReactionNetwork &network=GetNetwork();
+    for (std::size_t reaction=0;reaction<network.GetReactionCount();reaction++) {
+      const std::size_t begin=ResidualReactionOffset[reaction];
+      const std::size_t end=ResidualReactionOffset[reaction+1];
+      for (std::size_t product=begin;product<end;product++) {
+        const double phase=data[ResidualRecordIndex(product,
+            ResidualRecordPhase)];
+        if (!Accumulator::IsValidPhase(phase)) return false;
+        for (std::size_t earlier=begin;earlier<product;earlier++) {
+          const double carrier=ResidualCarrierRate(node->block,
+              ResidualConcreteSpecies[product]);
+          const double earlierCarrier=ResidualCarrierRate(node->block,
+              ResidualConcreteSpecies[earlier]);
+          if (carrier==earlierCarrier) {
+            if (phase!=data[ResidualRecordIndex(earlier,
+                ResidualRecordPhase)]) return false;
+            const Accumulator::cPlan first=Accumulator::Plan(phase,0.375);
+            const Accumulator::cPlan second=Accumulator::Plan(
+                data[ResidualRecordIndex(earlier,ResidualRecordPhase)],0.375);
+            if (first.Multiplicity!=second.Multiplicity ||
+                first.NextPhase!=second.NextPhase) return false;
+            localSameCarrierChecks++;
+            break;
+          }
+        }
+      }
+    }
+
+    // Preview a transaction and deliberately discard it. The state must be
+    // bitwise unchanged, and a retry must return the identical allocation.
+    const std::size_t concrete=0;
+    double &phase=data[ResidualRecordIndex(concrete,ResidualRecordPhase)];
+    const double phaseBefore=phase;
+    const Accumulator::cPlan preview=Accumulator::Plan(phaseBefore,0.625);
+    const Accumulator::cPlan retry=Accumulator::Plan(phase,0.625);
+    if (std::memcmp(&phase,&phaseBefore,sizeof(double))!=0 ||
+        preview.Multiplicity!=retry.Multiplicity ||
+        preview.NextPhase!=retry.NextPhase) return false;
+    localRollbackChecks++;
+
+    // Commit an all-zero allocation when possible; even K=0 must consume its
+    // residual. Restore the phase afterward so migration compares the keyed
+    // initialized state rather than a validation-specific perturbation.
+    const double zeroMean=0.5*(1.0-phaseBefore);
+    const Accumulator::cPlan zeroPlan=Accumulator::Plan(phaseBefore,zeroMean);
+    if (zeroPlan.Multiplicity!=0) return false;
+    phase=zeroPlan.NextPhase;
+    localMaximumPrefixError=std::max(localMaximumPrefixError,
+        std::fabs(zeroPlan.Multiplicity-zeroMean));
+    phase=phaseBefore;
+
+    const double epochBefore=data[ResidualHeaderCarrierEpoch];
+    CloseResidualBlockDiagnosticEpoch(node,true);
+    if (data[ResidualHeaderInitialized]!=0.0 ||
+        data[ResidualHeaderCarrierEpoch]!=epochBefore+1.0) return false;
+
+    // Exercise the exact first-use planning helper used by ProcessParticle.
+    // It must derive common keyed phases without touching any block byte; a
+    // capacity-rejected event returns at this point without a compensating
+    // write or rollback operation.
+    std::vector<double> uninitializedState(data,data+ResidualStateDoubleCount());
+    std::vector<double> provisionalPhases;
+    BuildInitialResidualPhases(node,provisionalPhases);
+    if (std::memcmp(data,uninitializedState.data(),
+        ResidualStateDoubleCount()*sizeof(double))!=0)
+      localPartialMutations++;
+    if (provisionalPhases.size()!=ResidualConcreteSpecies.size()) return false;
+    localFirstUseRollbackChecks++;
+    InitializeResidualBlock(node);
+    if (data[ResidualHeaderInitialized]!=1.0) return false;
+    localCarrierEpochChecks++;
+  }
+
+  const std::size_t stateLength=ResidualStateDoubleCount();
+  if (leaves.size()*stateLength>static_cast<std::size_t>(INT_MAX))
+    return false;
+  std::vector<double> localExpected(leaves.size()*stateLength,0.0);
+  std::vector<double> globalExpected(localExpected.size(),0.0);
+  std::vector<int> oldOwner(leaves.size(),-1);
+  for (std::size_t block=0;block<leaves.size();block++) {
+    oldOwner[block]=leaves[block]->Thread;
+    if (leaves[block]->Thread==PIC::ThisThread) {
+      const double *state=GetResidualBlockData(leaves[block]);
+      std::copy(state,state+stateLength,
+          localExpected.begin()+block*stateLength);
+    }
+  }
+  MPI_Allreduce(localExpected.data(),globalExpected.data(),
+      static_cast<int>(globalExpected.size()),MPI_DOUBLE,MPI_SUM,
+      MPI_GLOBAL_COMMUNICATOR);
+
+  PIC::Mesh::mesh->SetParallelLoadMeasure(Stage3MigrationLoadMeasure);
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists(
+      _PIC_DYNAMIC_BALANCE_SEND_RECV_MESH_NODE_EXCHANGE_TAG_);
+  PIC::DomainBlockDecomposition::UpdateBlockTable();
+
+  long long localMigrated=0,localMigrationChecks=0;
+  for (std::size_t block=0;block<leaves.size();block++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=leaves[block];
+    if (node->Thread!=PIC::ThisThread) continue;
+    if (node->block==NULL) return false;
+    if (oldOwner[block]!=node->Thread) localMigrated++;
+    const double *actual=GetResidualBlockData(node);
+    const double *expected=globalExpected.data()+block*stateLength;
+    if (std::memcmp(actual,expected,stateLength*sizeof(double))!=0)
+      return false;
+    localMigrationChecks++;
+  }
+
+  // The core restart now serializes every local-weight owner block, including
+  // empty blocks. Put one controlled particle on each MPI rank so the same
+  // round trip covers both kinds of record: most blocks remain empty and one
+  // block per rank carries a real particle payload.  This is intentionally a
+  // restart-format test, not a chemistry event; no sampling counter is changed.
+  if (PIC::ParticleBuffer::NAllPart!=0) return false;
+  long long localRestartParticles=0;
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node:leaves)
+    if (node->Thread==PIC::ThisThread) {
+      long int &first=node->block->FirstCellParticleTable[
+          _getCenterNodeLocalNumber(0,0,0)];
+      const long int particle=PIC::ParticleBuffer::GetNewParticle(first);
+      PIC::ParticleBuffer::byte *particleData=
+          PIC::ParticleBuffer::GetParticleDataPointer(particle);
+      PIC::Mesh::cDataCenterNode *cell=node->block->GetCenterNode(
+          _getCenterNodeLocalNumber(0,0,0));
+      if (cell==NULL) return false;
+      double position[3]={0.0,0.0,0.0};
+      double velocity[3]={
+          101.0+PIC::ThisThread,202.0+PIC::ThisThread,
+          303.0+PIC::ThisThread};
+      position[0]=cell->GetX()[0];
+      PIC::ParticleBuffer::SetX(position,particleData);
+      PIC::ParticleBuffer::SetV(velocity,particleData);
+      PIC::ParticleBuffer::SetI(PIC::ThisThread%PIC::nTotalSpecies,
+          particleData);
+      localRestartParticles=1;
+      break;
+    }
+  long long globalRestartParticles=0;
+  MPI_Allreduce(&localRestartParticles,&globalRestartParticles,1,
+      MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  if (globalRestartParticles!=PIC::nTotalThreads) return false;
+  const unsigned long particleChecksumBefore=
+      PIC::Restart::GetParticleDataCheckSum();
+
+  // Save nonzero phases and the controlled particles, clear both classes of
+  // state, reload, and require bitwise phase and particle continuation.
+  char restartName[256];
+  std::snprintf(restartName,sizeof(restartName),
+      "/tmp/amps-hartley2-stage3.seed=%llu.ranks=%d.restart",
+      static_cast<unsigned long long>(ResidualPhaseSeed),PIC::nTotalThreads);
+  PIC::Restart::SaveParticleData(restartName);
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node:leaves)
+    if (node->block!=NULL) {
+      // Owners are restored directly from the restart record.  Poison ghost
+      // copies as well so the post-read verification proves that the core's
+      // owner-to-ghost publication actually occurred.
+      double *state=(node->Thread==PIC::ThisThread) ?
+          GetResidualBlockData(node) : reinterpret_cast<double*>(
+              node->block->GetAssociatedDataBufferPointer()+
+              ResidualBlockDataOffset);
+      std::fill(state,state+stateLength,-1.0);
+    }
+  PIC::ParticleBuffer::DeleteAllParticles();
+  if (PIC::ParticleBuffer::NAllPart!=0) return false;
+  PIC::Restart::ReadParticleData(restartName);
+  const unsigned long particleChecksumAfter=
+      PIC::Restart::GetParticleDataCheckSum();
+  long long localReloadedParticles=PIC::ParticleBuffer::NAllPart;
+  long long globalReloadedParticles=0;
+  MPI_Allreduce(&localReloadedParticles,&globalReloadedParticles,1,
+      MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  const bool particleRestartPassed=
+      globalReloadedParticles==globalRestartParticles &&
+      particleChecksumAfter==particleChecksumBefore;
+
+  long long localRestartChecks=0,localRestartGhostChecks=0;
+  for (std::size_t block=0;block<leaves.size();block++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=leaves[block];
+    const double *expected=globalExpected.data()+block*stateLength;
+    if (node->Thread==PIC::ThisThread) {
+      double *state=GetResidualBlockData(node);
+      if (std::memcmp(state,expected,stateLength*sizeof(double))!=0)
+        return false;
+      localRestartChecks++;
+    }
+    else if (node->block!=NULL) {
+      const double *state=reinterpret_cast<const double*>(
+          node->block->GetAssociatedDataBufferPointer()+
+          ResidualBlockDataOffset);
+      if (std::memcmp(state,expected,stateLength*sizeof(double))!=0)
+        return false;
+      localRestartGhostChecks++;
+    }
+  }
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+  if (PIC::ThisThread==0) std::remove(restartName);
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+
+  // Exercise the exact center-cell diagnostic collectively. The focused
+  // validator has no completed physical sample, so values are intentionally
+  // zero; the test proves mesh indexing, MPI reduction, schema, and one file
+  // per species without pretending to provide scientific statistics.
+  Comet::RadialSimulation::WriteStage3CellDiagnostics(0,1);
+  // Exercise the complete systematic diagnostic serialization as well.  The
+  // focused run has no sampled chemistry events, but it must still produce an
+  // aligned CSV and valid JSON with null Bernoulli sigma, an explicit fixed-
+  // epoch bound, and the selected uncertainty method.
+  Comet::Diagnostics::WriteSamplingReport(1,0,1,
+      std::vector<double>(PIC::nTotalSpecies,0.0),false);
+
+  long long localCounts[12]={localOwnerBlocks,localAccumulators,
+      localSameCarrierChecks,localRollbackChecks,localCarrierEpochChecks,
+      localMigrated,localMigrationChecks,localRestartChecks,
+      localOwnerStateChecks,localRestartGhostChecks,
+      localFirstUseRollbackChecks,localPartialMutations};
+  long long globalCounts[12]={0,0,0,0,0,0,0,0,0,0,0,0};
+  MPI_Allreduce(localCounts,globalCounts,12,MPI_LONG_LONG,MPI_SUM,
+      MPI_GLOBAL_COMMUNICATOR);
+  double maximumPrefixError=0.0;
+  MPI_Allreduce(&localMaximumPrefixError,&maximumPrefixError,1,MPI_DOUBLE,
+      MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+  const bool pass=globalCounts[0]>0 && globalCounts[1]>0 &&
+      globalCounts[2]>0 && globalCounts[3]==globalCounts[0] &&
+      globalCounts[4]==globalCounts[0] &&
+      globalCounts[6]==static_cast<long long>(leaves.size()) &&
+      globalCounts[7]==static_cast<long long>(leaves.size()) &&
+      globalCounts[8]==globalCounts[0] &&
+      globalCounts[10]==globalCounts[0] && globalCounts[11]==0 &&
+      maximumPrefixError<1.0 &&
+      particleRestartPassed &&
+      (PIC::nTotalThreads==1 ? globalCounts[9]==0 : globalCounts[9]>0) &&
+      (PIC::nTotalThreads==1 || globalCounts[5]>0);
+  if (PIC::ThisThread==0)
+    std::printf(
+        "%s systematic-residual validation mode=SYSTEMATIC mpi-ranks=%d owner-blocks=%lld accumulators=%lld same-carrier-packet-checks=%lld plan-retry-checks=%lld first-use-rollback-checks=%lld carrier-epoch-reset-checks=%lld migrated-nonzero-states=%lld migration-checks=%lld restart-continuation-checks=%lld restart-particles=%lld restart-particle-checksum=%d restart-ghost-sync-checks=%lld owner-only-state-checks=%lld max-prefix-error=%.17e center-cell-output=1 sampling-report-output=1 partial-mutations=%lld\n",
+        pass ? "PASS" : "FAIL",PIC::nTotalThreads,globalCounts[0],
+        globalCounts[1],globalCounts[2],globalCounts[3],globalCounts[10],
+        globalCounts[4],
+        globalCounts[5],globalCounts[6],globalCounts[7],
+        globalReloadedParticles,particleRestartPassed ? 1 : 0,
+        globalCounts[9],globalCounts[8],maximumPrefixError,globalCounts[11]);
+  return pass;
 }

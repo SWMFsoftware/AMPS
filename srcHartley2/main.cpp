@@ -513,7 +513,8 @@ int main(int argc,char **argv) {
 
   //seed the random number generatore
   if (_COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_) {
-    rnd_seed(100); 
+    rnd_seed(static_cast<int>(Comet::Model::RandomSeed)+
+        (Comet::Model::RandomSeedConfigured ? PIC::ThisThread : 0));
   }
 
   //analyse the model output file                                                                                                 
@@ -548,7 +549,10 @@ int main(int argc,char **argv) {
   PIC::Alarm::SetAlarm(20*3600-10*60);
 
   //seed the random number generator
-  rnd_seed(100);
+  // An explicit generic-comet seed defines independent MPI streams. Inputs
+  // that omit it retain the historical seed 100 on every rank exactly.
+  rnd_seed(static_cast<int>(Comet::Model::RandomSeed)+
+      (Comet::Model::RandomSeedConfigured ? PIC::ThisThread : 0));
 
 
 /*#pragma omp parallel for
@@ -682,6 +686,7 @@ int main(int argc,char **argv) {
 
   //initialize the blocks
   PIC::Mesh::initCellSamplingDataBuffer();
+  Comet::Chemistry::RequestBlockData();
 
   PIC::Mesh::mesh->AllowBlockAllocation=true;
   PIC::Mesh::mesh->AllocateTreeBlocks();

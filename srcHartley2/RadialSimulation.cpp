@@ -1361,6 +1361,8 @@ void AdaptParticleWeights(long int completedIterations) {
       GetSamplingPopulationEmergencyBlockThreshold();
   if (transaction.GlobalMaximumTotalBlockParticles>
       samplingEmergencyBlockThreshold) {
+    if (!SamplingPopulationEmergencyPending)
+      Comet::Diagnostics::RecordEmergencyRequest();
     SamplingPopulationEmergencyPending=true;
     SamplingPopulationEmergencyMaximumBlockParticles=
         transaction.GlobalMaximumTotalBlockParticles;
@@ -1394,6 +1396,14 @@ void AdaptParticleWeights(long int completedIterations) {
   long long localSplitPlans=0,localRoulettePlans=0;
   long long localEmptyDaughterPlans=0;
   long long localChemistryConstrainedPlans=0;
+  const long long localPlanCount=static_cast<long long>(
+      transaction.LocalPlans.size());
+  long long globalPlanCount=0;
+  MPI_Allreduce(&localPlanCount,&globalPlanCount,1,MPI_LONG_LONG,MPI_SUM,
+      MPI_GLOBAL_COMMUNICATOR);
+  if (globalPlanCount>0)
+    Comet::Chemistry::PrepareForRegularCarrierChange();
+
   for (const cWeightAdaptationPlan &plan:transaction.LocalPlans) {
     if (plan.PhotochemicalCarrierConstraint)
       localChemistryConstrainedPlans++;
@@ -1772,9 +1782,137 @@ std::vector<double> CollectIntegratedDensityProfile() {
   return globalProfile;
 }
 
+void FillLocalStage3CellSamples(
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,long int &cellIndex,
+    std::vector<double> &samples,std::vector<double> &geometry) {
+  if (node==NULL) return;
+  if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+    if (node->Thread==PIC::ThisThread && node->block!=NULL) {
+      for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+        PIC::Mesh::cDataCenterNode *cell=node->block->GetCenterNode(
+            _getCenterNodeLocalNumber(i,0,0));
+        if (cell==NULL) {
+          std::fprintf(stderr,"missing center node in Stage-3 cell output\n");
+          std::abort();
+        }
+        const double width=(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_;
+        const std::size_t geometryOffset=4*static_cast<std::size_t>(cellIndex+i);
+        geometry[geometryOffset]=cell->GetX()[0];
+        geometry[geometryOffset+1]=node->xmin[0]+i*width;
+        geometry[geometryOffset+2]=node->xmin[0]+(i+1)*width;
+        geometry[geometryOffset+3]=cell->Measure;
+        for (int species=0;species<PIC::nTotalSpecies;species++) {
+          const double density=cell->GetNumberDensity(species);
+          const double occupancy=cell->GetDatumAverage(
+              PIC::Mesh::DatumParticleNumber,species);
+          if (!(density>=0.0) || !std::isfinite(density) ||
+              !(occupancy>=0.0) || !std::isfinite(occupancy)) {
+            std::fprintf(stderr,
+                "invalid Stage-3 cell sample for species %d\n",species);
+            std::abort();
+          }
+          const std::size_t offset=2*(
+              static_cast<std::size_t>(cellIndex+i)*PIC::nTotalSpecies+
+              species);
+          samples[offset]=density;
+          samples[offset+1]=occupancy;
+        }
+      }
+    }
+    cellIndex+=_BLOCK_CELLS_X_;
+    return;
+  }
+  for (int child=0;child<(1<<DIM);child++)
+    FillLocalStage3CellSamples(node->downNode[child],cellIndex,samples,
+        geometry);
+}
+
+void WriteStage3CellSamplesInternal(long int outputIndex,long int sampleLength) {
+  if (!Comet::Diagnostics::Enabled) return;
+  const long int cellCount=CountProfileCells(PIC::Mesh::mesh->rootTree);
+  const std::size_t valueCount=2*static_cast<std::size_t>(cellCount)*
+      PIC::nTotalSpecies;
+  const std::size_t geometryValueCount=4*static_cast<std::size_t>(cellCount);
+  if (cellCount<=0 || valueCount>static_cast<std::size_t>(INT_MAX) ||
+      geometryValueCount>static_cast<std::size_t>(INT_MAX)) {
+    std::fprintf(stderr,"Stage-3 cell output exceeds the MPI count limit\n");
+    std::abort();
+  }
+  std::vector<double> local(valueCount,0.0),global(valueCount,0.0);
+  std::vector<double> localGeometry(geometryValueCount,0.0);
+  std::vector<double> globalGeometry(localGeometry.size(),0.0);
+  long int visited=0;
+  FillLocalStage3CellSamples(PIC::Mesh::mesh->rootTree,visited,local,
+      localGeometry);
+  if (visited!=cellCount) {
+    std::fprintf(stderr,"inconsistent Stage-3 cell-output traversal\n");
+    std::abort();
+  }
+  MPI_Reduce(local.data(),global.data(),static_cast<int>(valueCount),
+      MPI_DOUBLE,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(localGeometry.data(),globalGeometry.data(),
+      static_cast<int>(localGeometry.size()),MPI_DOUBLE,MPI_SUM,0,
+      MPI_GLOBAL_COMMUNICATOR);
+  if (PIC::ThisThread!=0) return;
+
+  // Tecplot tables are node-interpolated and duplicate AMR interfaces.  They
+  // cannot be joined exactly to shell measures for an exposure decision.
+  // Emit a separate center-cell table, preserving the original plot files.
+  for (int species=0;species<PIC::nTotalSpecies;species++) {
+    char symbol[_MAX_STRING_LENGTH_PIC_];
+    PIC::MolecularData::GetChemSymbol(symbol,species);
+    // Build the diagnostic name dynamically.  Chemical symbols normally are
+    // short, but avoiding a fixed path buffer makes the output contract safe
+    // for user-defined species names as the generic comet application grows.
+    const std::string path=std::string("PT/diagnostics/stage3_cells.")+symbol+
+        ".out="+std::to_string(outputIndex)+".csv";
+    FILE *file=std::fopen(path.c_str(),"w");
+    if (file==NULL) {
+      std::fprintf(stderr,"cannot open Stage-3 cell diagnostic %s\n",
+          path.c_str());
+      std::abort();
+    }
+    std::fprintf(file,
+        "cell_index,block_index,local_cell_index,block_cell_count,radius_m,r_inner_m,r_outer_m,measure_m3,number_density_m-3,mean_model_particles,population_target_min_per_cell,population_target_max_per_cell,population_locked,population_class,population_policy_source,sampling_length,output_index,random_seed,random_seed_configured,residual_sampling,mpi_ranks\n");
+    const char *residualMode=Comet::Chemistry::ResidualSamplingMode==
+        Comet::Chemistry::ResidualSampling::RandomPhaseSystematic ?
+        "SYSTEMATIC" : "BERNOULLI";
+    for (long int cell=0;cell<cellCount;cell++) {
+      const std::size_t offset=2*(
+          static_cast<std::size_t>(cell)*PIC::nTotalSpecies+species);
+      const std::size_t geometryOffset=4*static_cast<std::size_t>(cell);
+      if (!(globalGeometry[geometryOffset+3]>0.0) ||
+          !(globalGeometry[geometryOffset+1]<globalGeometry[geometryOffset]) ||
+          !(globalGeometry[geometryOffset]<globalGeometry[geometryOffset+2])) {
+        std::fprintf(stderr,"invalid reduced Stage-3 cell geometry\n");
+        std::abort();
+      }
+      std::fprintf(file,
+          "%ld,%ld,%ld,%d,%.17e,%.17e,%.17e,%.17e,%.17e,%.17e,%ld,%ld,%d,%d,%d,%ld,%ld,%llu,%d,%s,%d\n",
+          cell,cell/_BLOCK_CELLS_X_,cell%_BLOCK_CELLS_X_,_BLOCK_CELLS_X_,
+          globalGeometry[geometryOffset],globalGeometry[geometryOffset+1],
+          globalGeometry[geometryOffset+2],globalGeometry[geometryOffset+3],
+          global[offset],global[offset+1],
+          Comet::RadialSimulation::SpeciesMinimumParticlesPerCell[species],
+          Comet::RadialSimulation::SpeciesMaximumParticlesPerCell[species],
+          Comet::RadialSimulation::ParticleWeightLocked[species],
+          Comet::RadialSimulation::PopulationClass[species],
+          Comet::RadialSimulation::PopulationPolicySource[species],
+          sampleLength,outputIndex,
+          static_cast<unsigned long long>(
+              Comet::Model::RandomSeedConfigured ?
+              Comet::Model::RandomSeed : 0),
+          Comet::Model::RandomSeedConfigured ? 1 : 0,
+          residualMode,PIC::nTotalThreads);
+    }
+    std::fclose(file);
+  }
+}
+
 void FillLocalCellMeasureAudit(
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,long int &cellIndex,
-    std::vector<double> &radius,std::vector<double> &measure) {
+    std::vector<double> &radius,std::vector<double> &innerRadius,
+    std::vector<double> &outerRadius,std::vector<double> &measure) {
   if (node==NULL) return;
   if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
     if (node->Thread==PIC::ThisThread && node->block!=NULL) {
@@ -1788,6 +1926,9 @@ void FillLocalCellMeasureAudit(
           std::abort();
         }
         radius[cellIndex+i]=cell->GetX()[0];
+        const double width=(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_;
+        innerRadius[cellIndex+i]=node->xmin[0]+i*width;
+        outerRadius[cellIndex+i]=node->xmin[0]+(i+1)*width;
         measure[cellIndex+i]=cell->Measure;
       }
     }
@@ -1795,17 +1936,20 @@ void FillLocalCellMeasureAudit(
     return;
   }
   for (int child=0;child<(1<<DIM);child++)
-    FillLocalCellMeasureAudit(node->downNode[child],cellIndex,radius,measure);
+    FillLocalCellMeasureAudit(node->downNode[child],cellIndex,radius,
+        innerRadius,outerRadius,measure);
 }
 
 void WriteCellMeasureAudit() {
   if (!Comet::Diagnostics::Enabled) return;
   const long int cellCount=CountProfileCells(PIC::Mesh::mesh->rootTree);
-  std::vector<double> localRadius(cellCount,0.0),localMeasure(cellCount,0.0);
-  std::vector<double> globalRadius(cellCount,0.0),globalMeasure(cellCount,0.0);
+  std::vector<double> localRadius(cellCount,0.0),localInner(cellCount,0.0),
+      localOuter(cellCount,0.0),localMeasure(cellCount,0.0);
+  std::vector<double> globalRadius(cellCount,0.0),globalInner(cellCount,0.0),
+      globalOuter(cellCount,0.0),globalMeasure(cellCount,0.0);
   long int visited=0;
   FillLocalCellMeasureAudit(PIC::Mesh::mesh->rootTree,visited,localRadius,
-      localMeasure);
+      localInner,localOuter,localMeasure);
   if (visited!=cellCount || cellCount>INT_MAX) {
     std::fprintf(stderr,"invalid radial cell-measure audit traversal\n");
     std::abort();
@@ -1815,19 +1959,25 @@ void WriteCellMeasureAudit() {
   MPI_Reduce(localMeasure.data(),globalMeasure.data(),
       static_cast<int>(cellCount),MPI_DOUBLE,MPI_SUM,0,
       MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(localInner.data(),globalInner.data(),static_cast<int>(cellCount),
+      MPI_DOUBLE,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(localOuter.data(),globalOuter.data(),static_cast<int>(cellCount),
+      MPI_DOUBLE,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
   if (PIC::ThisThread==0) {
     FILE *file=std::fopen("PT/diagnostics/cell_measures.csv","w");
     if (file==NULL) {
       std::fprintf(stderr,"cannot open radial cell-measure audit file\n");
       std::abort();
     }
-    std::fprintf(file,"cell_index,radius_m,measure_m3\n");
+    std::fprintf(file,
+        "cell_index,radius_m,r_inner_m,r_outer_m,measure_m3\n");
     for (long int cell=0;cell<cellCount;cell++) {
       if (!(globalMeasure[cell]>0.0) || !std::isfinite(globalRadius[cell])) {
         std::fprintf(stderr,"incomplete reduced radial cell-measure audit\n");
         std::abort();
       }
-      std::fprintf(file,"%ld,%.17e,%.17e\n",cell,globalRadius[cell],
+      std::fprintf(file,"%ld,%.17e,%.17e,%.17e,%.17e\n",cell,
+          globalRadius[cell],globalInner[cell],globalOuter[cell],
           globalMeasure[cell]);
     }
     std::fclose(file);
@@ -1903,6 +2053,11 @@ void RebalanceRadialDomain(long int completedIterations) {
 }
 }
 
+void Comet::RadialSimulation::WriteStage3CellDiagnostics(
+    long int outputIndex,long int sampleLength) {
+  WriteStage3CellSamplesInternal(outputIndex,sampleLength);
+}
+
 void Comet::RadialSimulation::EmergencyParticleWeightAdaptation() {
 #if _SIMULATION_PARTICLE_WEIGHT_MODE_ != _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
   return;
@@ -1974,6 +2129,10 @@ void Comet::RadialSimulation::EmergencyParticleWeightAdaptation() {
     std::abort();
   }
   do {
+    // Every species and every allocated block copy is multiplied by the same
+    // factor. Chemistry source/product W/dt ratios and systematic residual
+    // means are therefore bitwise unchanged; preserving phases is the
+    // explicit Stage-3 transformation for this emergency common scaling.
     EmergencyRouletteAllAllocatedBlockCopies(PIC::Mesh::mesh->rootTree);
     RefreshGlobalMinimumParticleWeights();
     weightDoublings++;
@@ -1997,6 +2156,14 @@ void Comet::RadialSimulation::EmergencyParticleWeightAdaptation() {
       std::abort();
     }
   } while (maximumUtilizationAfter>targetUtilization);
+
+  // Count the execution, rather than merely the allocation subsystem's
+  // request. These counters are reset only after a complete diagnostic
+  // window is written, which makes the science gate authoritative even when
+  // an event was caused by pure buffer pressure or by the sampling-population
+  // alarm. Multiple simultaneous triggers still describe one event.
+  Comet::Diagnostics::RecordEmergencyEvent(bufferUtilizationTrigger,
+      samplingPopulationTrigger,allocationBurstTrigger);
 
   // Consume the sampling request only after the roulette and cache rebuild
   // have completed successfully.  A later sampling window may raise a new
@@ -2260,6 +2427,10 @@ void Comet::RadialSimulation::Initialize() {
   // Sampling storage and cell blocks must exist before AMPS initializes
   // weights, timesteps, collision data, or its particle mover.
   PIC::Mesh::initCellSamplingDataBuffer();
+  // The optional systematic chemistry accumulator is block-owned state.
+  // Register it after the core's local W/dt fields but before block allocation
+  // so ordinary AMR migration and restart include the complete state vector.
+  Comet::Chemistry::RequestBlockData();
   PIC::Mesh::mesh->AllowBlockAllocation=true;
   PIC::Mesh::mesh->AllocateTreeBlocks();
   // PIC::TimeStep() normally builds this owner-block table at the beginning
@@ -3315,6 +3486,7 @@ void Comet::RadialSimulation::Run() {
       continue;
     }
 
+    WriteStage3CellDiagnostics(previousOutputNumber-1,PIC::LastSampleLength);
     completedWindows++;
     std::vector<double> currentProfile=CollectIntegratedDensityProfile();
     if (previousProfile.empty()) {

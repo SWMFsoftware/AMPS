@@ -20,6 +20,20 @@ void RecordReactionSelection(std::size_t reaction,bool neutralSink);
 void RecordAllocationDeferral(std::size_t reaction);
 void RecordEmergencyRequest();
 
+// Record one executed common-factor emergency and the trigger(s) that caused
+// it. More than one trigger can be true for one execution; the total counter
+// advances once while each applicable trigger counter advances independently.
+// The radial callback is collective, so the implementation records on rank
+// zero and the sampling writer reduces exactly once.
+void RecordEmergencyEvent(bool bufferUtilization,
+    bool samplingPopulation,bool allocationBurst);
+
+// Add one fixed-carrier-epoch contribution to the conservative systematic
+// discrepancy bound. The caller invokes this once per active concrete
+// product accumulator, not once per chemistry event.
+void RecordSystematicResidualBound(std::size_t reaction,
+    std::size_t productTerm,int species,double carrierRate);
+
 void RecordChemistryProduct(std::size_t reaction,std::size_t productTerm,
     std::uint64_t modelMultiplicity,std::uint64_t allocatedSlots,
     std::uint64_t reusedSlots,double expectedNumberRate,

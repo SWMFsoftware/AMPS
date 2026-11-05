@@ -1,6 +1,7 @@
 #ifndef _GENERIC_COMET_MODEL_H_
 #define _GENERIC_COMET_MODEL_H_
 
+#include <cstdint>
 #include <string>
 
 namespace Comet {
@@ -45,6 +46,13 @@ enum Type {
 
 extern int GeometryMode;
 extern double HeliocentricDistanceAU;
+// Reproducible science-run seed. Geometry backends may combine it with the
+// MPI rank for their physical-event stream; chemistry systematic phases use
+// the unmodified value as a decomposition-independent keyed seed.
+extern std::uint64_t RandomSeed;
+// False preserves the radial application's historical inherited core RNG
+// state. The input parser sets this only for an explicit CometRandomSeed.
+extern bool RandomSeedConfigured;
 extern char SurfaceMeshFileName[];
 extern double SurfaceMeshLengthUnit;
 

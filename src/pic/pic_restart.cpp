@@ -141,7 +141,9 @@ void PIC::Restart::SamplingData::SaveBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
     }
   }
   else {
-    for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (node->downNode[nDownNode]!=NULL) SamplingData::SaveBlock(node->downNode[nDownNode],fRestart);
+    // An AMR node has 2^DIM children.  Iterating over the historical 3-D
+    // constant reads beyond downNode[] in DIM1/DIM2 restart traversals.
+    for (int nDownNode=0;nDownNode<(1<<DIM);nDownNode++) if (node->downNode[nDownNode]!=NULL) SamplingData::SaveBlock(node->downNode[nDownNode],fRestart);
   }
 }
 
@@ -265,14 +267,31 @@ void PIC::Restart::SaveParticleData(const char* fname) {
     if (fwrite(&PIC::ParticleBuffer::ParticleDataLength,sizeof(long int),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fwrite has failed");  
     nSavedBytes+=sizeof(long int);
 
-    //save the particle weight table
-    if (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) {
+    // Save the global weight cache in both supported species-dependent modes.
+    // In local mode the authoritative per-block weights are serialized below;
+    // this table is still needed for core minimum-weight bookkeeping.
+    if (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_ ||
+        _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_) {
       if (fwrite(PIC::ParticleWeightTimeStep::GlobalParticleWeight,sizeof(double),_TOTAL_SPECIES_NUMBER_,fRestart)!=_TOTAL_SPECIES_NUMBER_) exit(__LINE__,__FILE__,"Error: fwrite has failed"); 
       nSavedBytes+=sizeof(double)*_TOTAL_SPECIES_NUMBER_;
     }
     else {
       exit(__LINE__,__FILE__,"Error: not implemented");
-    } 
+    }
+
+    // Species-local runs need the complete application-owned block state on
+    // restart: local timesteps, local weights, and any registered model data
+    // such as comet systematic residual phases. Global-weight restart layout
+    // remains byte-for-byte unchanged.
+    if (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_) {
+      const int BlockUserDataLength=
+          PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-
+          PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
+      if (BlockUserDataLength<0 ||
+          fwrite(&BlockUserDataLength,sizeof(int),1,fRestart)!=1)
+        exit(__LINE__,__FILE__,"Error: cannot write local block restart layout");
+      nSavedBytes+=sizeof(int);
+    }
   }
 
   //save the restart information
@@ -338,36 +357,57 @@ int PIC::Restart::SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* 
           }
         }
 
-        //save the particle number into the restart file
-        if (nTotalParticleNumber!=0) {
+        // Global-weight files retain their historical sparse layout. A local-
+        // weight file must also contain empty owner blocks because an empty
+        // block still owns timestep, weight, and application state that can
+        // affect the first particle entering it after restart.
+        if (nTotalParticleNumber!=0 ||
+            _SIMULATION_PARTICLE_WEIGHT_MODE_ ==
+                _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_) {
           if (fwrite(&node->AMRnodeID,sizeof(cAMRnodeID),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fwrite has failed"); 
           nSavedBytes+=sizeof(cAMRnodeID); 
 
           if (fwrite(&nTotalParticleNumber,sizeof(int),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fwrite has failed"); 
           nSavedBytes+=sizeof(int);
 
-          if (fwrite(&ParticleNumberTable[0][0][0],sizeof(int),_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_,fRestart)!=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_) exit(__LINE__,__FILE__,"Error: fwrite has failed"); 
-	  nSavedBytes+=sizeof(int)*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
+          if (_SIMULATION_PARTICLE_WEIGHT_MODE_ ==
+              _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_) {
+            const int BlockUserDataLength=
+                PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-
+                PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
+            char *BlockUserData=node->block->GetAssociatedDataBufferPointer()+
+                PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
+            if (BlockUserDataLength<0 ||
+                fwrite(BlockUserData,sizeof(char),BlockUserDataLength,fRestart)!=
+                    static_cast<std::size_t>(BlockUserDataLength))
+              exit(__LINE__,__FILE__,"Error: cannot write local block restart data");
+            nSavedBytes+=BlockUserDataLength;
+          }
 
-          //save the particle data into the restart file
-          //IMPORTANT: save the partilce data in the reverse order so, when thay are read back from the restart file they are in the seme order as
-          //in the memory before saving --> the checksum of the particle data is the same
-          for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
-            char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
-            int n;
+          if (nTotalParticleNumber!=0) {
+            if (fwrite(&ParticleNumberTable[0][0][0],sizeof(int),_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_,fRestart)!=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_) exit(__LINE__,__FILE__,"Error: fwrite has failed");
+	    nSavedBytes+=sizeof(int)*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
 
-            for (n=0;n<ParticleNumberTable[i][j][k];n++) {
-              if (n==0) {
-                ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
-                for (int t=0;t<ParticleNumberTable[i][j][k]-1;t++) ptr=PIC::ParticleBuffer::GetNext(ptr);
+            //save the particle data into the restart file
+            //IMPORTANT: save the partilce data in the reverse order so, when thay are read back from the restart file they are in the seme order as
+            //in the memory before saving --> the checksum of the particle data is the same
+            for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+              char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
+              int n;
+
+              for (n=0;n<ParticleNumberTable[i][j][k];n++) {
+                if (n==0) {
+                  ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+                  for (int t=0;t<ParticleNumberTable[i][j][k]-1;t++) ptr=PIC::ParticleBuffer::GetNext(ptr);
+                }
+                else ptr=PIC::ParticleBuffer::GetPrev(ptr);
+
+                memcpy(tempParticleData,PIC::ParticleBuffer::GetParticleDataPointer(ptr),PIC::ParticleBuffer::ParticleDataLength);
+                if (fwrite(tempParticleData,sizeof(char),PIC::ParticleBuffer::ParticleDataLength,fRestart)!=PIC::ParticleBuffer::ParticleDataLength) exit(__LINE__,__FILE__,"Error: fwrite has failed");
+	        nSavedBytes+=sizeof(char)*PIC::ParticleBuffer::ParticleDataLength;
+
+                ++res;
               }
-              else ptr=PIC::ParticleBuffer::GetPrev(ptr);
-
-              memcpy(tempParticleData,PIC::ParticleBuffer::GetParticleDataPointer(ptr),PIC::ParticleBuffer::ParticleDataLength);
-              if (fwrite(tempParticleData,sizeof(char),PIC::ParticleBuffer::ParticleDataLength,fRestart)!=PIC::ParticleBuffer::ParticleDataLength) exit(__LINE__,__FILE__,"Error: fwrite has failed"); 
-	      nSavedBytes+=sizeof(char)*PIC::ParticleBuffer::ParticleDataLength;
-
-              ++res;
             }
           }
         }
@@ -375,7 +415,9 @@ int PIC::Restart::SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* 
     }
   }
   else {
-    for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (node->downNode[nDownNode]!=NULL) res+=SaveParticleDataBlock(node->downNode[nDownNode],fRestart,nSavedBlocks,nSavedBytes);
+    // Use the configured mesh dimension; 2^3 is an out-of-bounds traversal
+    // for the generic DIM1/DIM2 mesh layouts.
+    for (int nDownNode=0;nDownNode<(1<<DIM);nDownNode++) if (node->downNode[nDownNode]!=NULL) res+=SaveParticleDataBlock(node->downNode[nDownNode],fRestart,nSavedBlocks,nSavedBytes);
   }
 
   return res;
@@ -397,7 +439,8 @@ long int PIC::Restart::GetRestartFileParticleNumber(const char *fname) {
   if (fread(&t,sizeof(long int),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
 
   //read the particle weight table
-  if (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) {
+  if (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_ ||
+      _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_) {
     double tt[_TOTAL_SPECIES_NUMBER_];
 
     if (fread(tt,sizeof(double),_TOTAL_SPECIES_NUMBER_,fRestart)!=_TOTAL_SPECIES_NUMBER_) exit(__LINE__,__FILE__,"Error: fread failed"); 
@@ -405,13 +448,24 @@ long int PIC::Restart::GetRestartFileParticleNumber(const char *fname) {
   else {
     exit(__LINE__,__FILE__,"Error: not implemented");
   }
-  
+  int BlockUserDataLength=0;
+  if (_SIMULATION_PARTICLE_WEIGHT_MODE_ ==
+      _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_) {
+    if (fread(&BlockUserDataLength,sizeof(int),1,fRestart)!=1 ||
+        BlockUserDataLength<0)
+      exit(__LINE__,__FILE__,"Error: invalid local block restart layout");
+  }
 
-  while (feof(fRestart)==0) {
+  while (true) {
     int nTotalParticleNumber=0;
+    cAMRnodeID NodeId;
 
-    fseek(fRestart,sizeof(cAMRnodeID),SEEK_CUR);
-    if (fread(&nTotalParticleNumber,sizeof(int),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+    if (fread(&NodeId,sizeof(cAMRnodeID),1,fRestart)!=1) break;
+    if (fread(&nTotalParticleNumber,sizeof(int),1,fRestart)!=1)
+      exit(__LINE__,__FILE__,"Error: fread failed");
+    if (BlockUserDataLength>0 &&
+        fseek(fRestart,BlockUserDataLength,SEEK_CUR)!=0)
+      exit(__LINE__,__FILE__,"Error: cannot skip local block restart data");
 
     res+=nTotalParticleNumber;
 
@@ -429,9 +483,14 @@ long int PIC::Restart::GetRestartFileParticleNumber(const char *fname) {
 
 int PIC::Restart::ReadParticleDataBlock(FILE* fRestart,int &nReadBlocks,int &nReadBytes,int st_size) {
   int res=0;
+  const int BlockUserDataLength=
+      (_SIMULATION_PARTICLE_WEIGHT_MODE_ ==
+          _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_) ?
+      PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-
+          PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset : 0;
 
-
-  //read the data
+  // Read the concatenated per-rank block records. In local-weight mode even
+  // empty blocks have a record because their associated state is physical.
   while ((!feof(fRestart))&&(nReadBytes<st_size)) {
     int nTotalParticleNumber=0;
     int ParticleNumberTable[_BLOCK_CELLS_X_][_BLOCK_CELLS_Y_][_BLOCK_CELLS_Z_];
@@ -439,71 +498,82 @@ int PIC::Restart::ReadParticleDataBlock(FILE* fRestart,int &nReadBlocks,int &nRe
     cAMRnodeID NodeId;
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node;
 
-    if (fread(&NodeId,sizeof(cAMRnodeID),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+    if (fread(&NodeId,sizeof(cAMRnodeID),1,fRestart)!=1) break;
     nReadBytes+=sizeof(cAMRnodeID);
 
     if (fread(&nTotalParticleNumber,sizeof(int),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
     nReadBytes+=sizeof(int);
 
+    if (nTotalParticleNumber<0)
+      exit(__LINE__,__FILE__,"Error: negative restart particle count");
+    Node=PIC::Mesh::mesh->findAMRnodeWithID(NodeId);
+    if (Node==NULL)
+      exit(__LINE__,__FILE__,"Error: restart block is absent from the mesh");
+
+    const long int ParticlePayloadLength=(nTotalParticleNumber!=0) ?
+        _BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int)+
+        nTotalParticleNumber*PIC::ParticleBuffer::ParticleDataLength : 0;
+    if (Node->Thread!=PIC::ThisThread) {
+      const long int SkipLength=BlockUserDataLength+ParticlePayloadLength;
+      nReadBytes+=SkipLength;
+      if (SkipLength>0 && fseek(fRestart,SkipLength,SEEK_CUR)!=0) return res;
+      continue;
+    }
+
+    if (Node->block==NULL)
+      exit(__LINE__,__FILE__,"Error: restart owner block is not allocated");
+    nReadBlocks++;
+
+    if (BlockUserDataLength>0) {
+      char *BlockUserData=Node->block->GetAssociatedDataBufferPointer()+
+          PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
+      if (fread(BlockUserData,sizeof(char),BlockUserDataLength,fRestart)!=
+          static_cast<std::size_t>(BlockUserDataLength))
+        exit(__LINE__,__FILE__,"Error: cannot read local block restart data");
+      nReadBytes+=BlockUserDataLength;
+    }
+
     if (nTotalParticleNumber!=0) {
-      Node=PIC::Mesh::mesh->findAMRnodeWithID(NodeId);
+      if (fread(&ParticleNumberTable[0][0][0],sizeof(int),_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_,fRestart)!=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_) exit(__LINE__,__FILE__,"Error: file reading error");
+      FirstCellParticleTable=Node->block->FirstCellParticleTable;
+      nReadBytes+=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int);
 
-      if (Node->Thread!=PIC::ThisThread) {
-        //skip the data for this block
-	nReadBytes+=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int)+
-	  nTotalParticleNumber*PIC::ParticleBuffer::ParticleDataLength*sizeof(char); 
+      int i,j,k,np;
+      char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
+      long int ptr;
 
-        if (fseek(fRestart,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int)+
-          nTotalParticleNumber*PIC::ParticleBuffer::ParticleDataLength*sizeof(char),SEEK_CUR)!=0) return res;
-      }
-      else {
-        //read the data for this block
-        nReadBlocks++;	
-	
-        if (fread(&ParticleNumberTable[0][0][0],sizeof(int),_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_,fRestart)!=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_) exit(__LINE__,__FILE__,"Error: file reading error");
-        FirstCellParticleTable=Node->block->FirstCellParticleTable;
-	nReadBytes+=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int);
+      // The block is allocated: rebuild each list in the saved order.
+      for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+        for (np=0;np<ParticleNumberTable[i][j][k];np++) {
+          if (fread(tempParticleData,sizeof(char),PIC::ParticleBuffer::ParticleDataLength,fRestart)!=PIC::ParticleBuffer::ParticleDataLength) exit(__LINE__,__FILE__,"Error: file reading error");
+          ptr=PIC::ParticleBuffer::GetNewParticle(FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]);
+          res++;
+          nReadBytes+=PIC::ParticleBuffer::ParticleDataLength;
 
-        int i,j,k,np;
-        char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
-        long int ptr;
+          PIC::ParticleBuffer::CloneParticle((PIC::ParticleBuffer::byte*) PIC::ParticleBuffer::GetParticleDataPointer(ptr),(PIC::ParticleBuffer::byte*) tempParticleData);
 
-        //block is allocated -> march through the cells and save them into the restart file
-        for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
-          for (np=0;np<ParticleNumberTable[i][j][k];np++) {
-            if (fread(tempParticleData,sizeof(char),PIC::ParticleBuffer::ParticleDataLength,fRestart)!=PIC::ParticleBuffer::ParticleDataLength) exit(__LINE__,__FILE__,"Error: file reading error");
-            ptr=PIC::ParticleBuffer::GetNewParticle(FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]);
-            res++; 
-	    nReadBytes+=PIC::ParticleBuffer::ParticleDataLength;
+          //in case when particle tracking is on -> apply the particle tracking conditions if needed
+          if (_PIC_PARTICLE_TRACKER_MODE_ ==_PIC_MODE_ON_) {
+            PIC::ParticleBuffer::byte *ParticleData;
+            PIC::ParticleTracker::cParticleData *DataRecord;
 
-            PIC::ParticleBuffer::CloneParticle((PIC::ParticleBuffer::byte*) PIC::ParticleBuffer::GetParticleDataPointer(ptr),(PIC::ParticleBuffer::byte*) tempParticleData);
+            ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+            DataRecord=(PIC::ParticleTracker::cParticleData*)(PIC::ParticleTracker::ParticleDataRecordOffset+(PIC::ParticleBuffer::byte*)ParticleData);
+            DataRecord->TrajectoryTrackingFlag=false;
 
-            //in case when particle tracking is on -> apply the particle tracking conditions if needed
-            if (_PIC_PARTICLE_TRACKER_MODE_ ==_PIC_MODE_ON_) {
-              PIC::ParticleBuffer::byte *ParticleData;
-              PIC::ParticleTracker::cParticleData *DataRecord;
+            if (_PIC_PARTICLE_TRACKER__RESTART_LOADED_PARTICLES__APPLY_TRACKING_CONDITION_MODE_==_PIC_MODE_ON_) {
+              //apply the particle tracking condition if needed
+              double x[3],v[3];
+              int spec;
 
-              ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
-              DataRecord=(PIC::ParticleTracker::cParticleData*)(PIC::ParticleTracker::ParticleDataRecordOffset+(PIC::ParticleBuffer::byte*)ParticleData);
-              DataRecord->TrajectoryTrackingFlag=false;
+              PIC::ParticleBuffer::GetX(x,ParticleData);
+              PIC::ParticleBuffer::GetV(v,ParticleData);
+              spec=PIC::ParticleBuffer::GetI(ParticleData);
 
-
-              if (_PIC_PARTICLE_TRACKER__RESTART_LOADED_PARTICLES__APPLY_TRACKING_CONDITION_MODE_==_PIC_MODE_ON_) {
-                //apply the particle tracking condition if needed
-                double x[3],v[3];
-                int spec;
-
-                PIC::ParticleBuffer::GetX(x,ParticleData);
-                PIC::ParticleBuffer::GetV(v,ParticleData);
-                spec=PIC::ParticleBuffer::GetI(ParticleData);
-
-                PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(x,v,spec,(void *)ParticleData,(void*)Node);
-              }
-
+              PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(x,v,spec,(void *)ParticleData,(void*)Node);
             }
           }
         }
-
       }
     }
   }
@@ -544,13 +614,28 @@ void PIC::Restart::ReadParticleData(const char* fname) {
   nReadBytes+=sizeof(long int);
   if (t!=PIC::ParticleBuffer::ParticleDataLength) exit(__LINE__,__FILE__,"Error: the value of the PIC::ParticleBuffer::ParticleDataLength haschanged");
 
-  //save the particle weight table
-  if (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) {
+  //recover the particle weight table
+  if (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_ ||
+      _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_) {
     if (fread(PIC::ParticleWeightTimeStep::GlobalParticleWeight,sizeof(double),_TOTAL_SPECIES_NUMBER_,fRestart)!=_TOTAL_SPECIES_NUMBER_) exit(__LINE__,__FILE__,"Error: fread failed"); 
     nReadBytes+=sizeof(double)*_TOTAL_SPECIES_NUMBER_;
   }
   else {
-    exit(__LINE__,__FILE__,"Error: not implemented");
+    exit(__LINE__,__FILE__,"Error: particle restart weight mode is not implemented");
+  }
+
+  int BlockUserDataLength=0;
+  if (_SIMULATION_PARTICLE_WEIGHT_MODE_ ==
+      _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_) {
+    if (fread(&BlockUserDataLength,sizeof(int),1,fRestart)!=1)
+      exit(__LINE__,__FILE__,"Error: cannot read local block restart layout");
+    nReadBytes+=sizeof(int);
+    const int ExpectedBlockUserDataLength=
+        PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-
+        PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
+    if (BlockUserDataLength!=ExpectedBlockUserDataLength)
+      exit(__LINE__,__FILE__,
+          "Error: local block restart data length differs from this executable");
   }
 
   if (memcmp(msg,UserAdditionalRestartDataCompletedMarker,sizeof(char)*UserAdditionalRestartDataCompletedMarkerLength)!=0) {
@@ -561,6 +646,15 @@ void PIC::Restart::ReadParticleData(const char* fname) {
 
   nLoadedParticles=ReadParticleDataBlock(fRestart,nReadBlocks,nReadBytes,st.st_size);
   fclose(fRestart);
+
+  // Particle-restart records are restored only by each block's current owner.
+  // Local timesteps, local weights, and application-owned bytes are also
+  // consumed by ghost blocks during face transport, so publish the restored
+  // owner state before the next mover step.  Global-weight files retain their
+  // historical behavior because they have no authoritative block payload.
+  if (_SIMULATION_PARTICLE_WEIGHT_MODE_ ==
+      _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_)
+    PIC::Mesh::mesh->ParallelBlockDataExchange();
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   MPI_Reduce(&nLoadedParticles,&nTotalLoadedParticles,1,MPI_INT,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
@@ -645,7 +739,7 @@ void PIC::Restart::GetParticleDataBlockCheckSum(cTreeNodeAMR<PIC::Mesh::cDataBlo
     }
   }
   else {
-    for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (node->downNode[nDownNode]!=NULL) GetParticleDataBlockCheckSum(node->downNode[nDownNode],CheckSum,PrevNodeThread);
+    for (int nDownNode=0;nDownNode<(1<<DIM);nDownNode++) if (node->downNode[nDownNode]!=NULL) GetParticleDataBlockCheckSum(node->downNode[nDownNode],CheckSum,PrevNodeThread);
   }
 }
 

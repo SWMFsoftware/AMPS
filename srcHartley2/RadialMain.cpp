@@ -10,15 +10,17 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cerrno>
+#include <cstdint>
 #include <string>
 
 namespace {
 void PrintUsage(const char *program) {
   std::printf("usage: %s [--validate-local-timestep | --validate-chemistry | "
-      "--validate-weight-adaptation] "
+      "--validate-weight-adaptation | --validate-systematic-residual] "
       "[--validation-particles N] [--validation-mover first|second|both] "
       "[--validation-skip-multiface] "
-      "[--chemistry-validation-events N]\n",program);
+      "[--chemistry-validation-events N] [--random-seed N] "
+      "[--chemistry-residual-sampling bernoulli|systematic]\n",program);
 }
 }
 
@@ -30,7 +32,11 @@ int main(int argc,char **argv) {
   bool validateLocalTimeStep=false;
   bool validateChemistry=false;
   bool validateWeightAdaptation=false;
+  bool validateSystematicResidual=false;
+  bool randomSeedOverride=false;
+  bool residualSamplingOverride=false;
   long int chemistryValidationEvents=200000;
+  std::uint64_t randomSeed=Comet::Model::RandomSeed;
   Comet::LocalTimeStepValidation::cOptions validationOptions;
   for (int argument=1;argument<argc;argument++) {
     const std::string option=argv[argument];
@@ -42,6 +48,46 @@ int main(int argc,char **argv) {
     }
     else if (option=="--validate-weight-adaptation") {
       validateWeightAdaptation=true;
+    }
+    else if (option=="--validate-systematic-residual") {
+      validateSystematicResidual=true;
+    }
+    else if (option=="--random-seed") {
+      if (++argument>=argc) {
+        PrintUsage(argv[0]);
+        return EXIT_FAILURE;
+      }
+      char *end=NULL;
+      errno=0;
+      const unsigned long long value=std::strtoull(argv[argument],&end,10);
+      if (errno!=0 || end==argv[argument] || *end!='\0' || value<1 ||
+          value>2147483000ULL) {
+        std::fprintf(stderr,"invalid --random-seed value: %s\n",
+            argv[argument]);
+        return EXIT_FAILURE;
+      }
+      randomSeed=static_cast<std::uint64_t>(value);
+      randomSeedOverride=true;
+    }
+    else if (option=="--chemistry-residual-sampling") {
+      if (++argument>=argc) {
+        PrintUsage(argv[0]);
+        return EXIT_FAILURE;
+      }
+      const std::string mode=argv[argument];
+      if (mode=="bernoulli" || mode=="BERNOULLI")
+        Comet::Chemistry::ResidualSamplingMode=
+            Comet::Chemistry::ResidualSampling::IndependentBernoulli;
+      else if (mode=="systematic" || mode=="SYSTEMATIC")
+        Comet::Chemistry::ResidualSamplingMode=
+            Comet::Chemistry::ResidualSampling::RandomPhaseSystematic;
+      else {
+        std::fprintf(stderr,
+            "invalid --chemistry-residual-sampling value: %s\n",
+            argv[argument]);
+        return EXIT_FAILURE;
+      }
+      residualSamplingOverride=true;
     }
     else if (option=="--validation-particles") {
       if (++argument>=argc) {
@@ -102,7 +148,8 @@ int main(int argc,char **argv) {
     }
   }
   const int validationModeCount=(validateLocalTimeStep ? 1 : 0)+
-      (validateChemistry ? 1 : 0)+(validateWeightAdaptation ? 1 : 0);
+      (validateChemistry ? 1 : 0)+(validateWeightAdaptation ? 1 : 0)+
+      (validateSystematicResidual ? 1 : 0);
   if (validationModeCount>1) {
     std::fprintf(stderr,
         "select only one focused validation mode per invocation\n");
@@ -112,7 +159,34 @@ int main(int argc,char **argv) {
   // AMPS input preprocessing has already compiled case values into the source
   // tree.  This call initializes MPI, molecular data, and core services that
   // the validators use; no runtime text input is parsed here.
+  // The science-gate residual override is deliberately applied before this
+  // point and, more importantly, before RadialSimulation::Initialize() calls
+  // Chemistry::RequestBlockData().  Therefore one frozen executable can run
+  // both arms: Bernoulli reserves no residual bytes, while SYSTEMATIC reserves
+  // and initializes the normal owner-block state.  Physics and chemistry
+  // tables remain byte-identical between arms.
   PIC::Init_BeforeParser();
+  if (residualSamplingOverride &&
+      Comet::Chemistry::ResidualSamplingMode==
+          Comet::Chemistry::ResidualSampling::RandomPhaseSystematic &&
+      !Comet::Model::RandomSeedConfigured && !randomSeedOverride) {
+    std::fprintf(stderr,
+        "systematic command-line residual sampling requires an explicit seed\n");
+    return EXIT_FAILURE;
+  }
+  if (Comet::Model::RandomSeedConfigured || randomSeedOverride) {
+    Comet::Model::RandomSeed=randomSeed;
+    // A command-line override is just as explicit as an input record and must
+    // be recorded as valid provenance in Stage-3 center-cell tables.
+    Comet::Model::RandomSeedConfigured=true;
+    Comet::Chemistry::ResidualPhaseSeed=randomSeed;
+    rnd_seed(static_cast<int>(randomSeed)+PIC::ThisThread);
+    if (PIC::ThisThread==0) {
+      std::printf("$PREFIX: comet random seed=%llu rank-stream=seed+rank residual-phase-stream=keyed\n",
+          static_cast<unsigned long long>(randomSeed));
+      std::fflush(stdout);
+    }
+  }
 
   std::string validationError;
   if (!Comet::Model::Validate(&validationError,
@@ -182,6 +256,11 @@ int main(int argc,char **argv) {
     if (validateWeightAdaptation) {
       const bool passed=
           Comet::RadialSimulation::ValidateParticleWeightAdaptation();
+      MPI_Finalize();
+      return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+    if (validateSystematicResidual) {
+      const bool passed=Comet::Chemistry::ValidateSystematicResidualState();
       MPI_Finalize();
       return passed ? EXIT_SUCCESS : EXIT_FAILURE;
     }

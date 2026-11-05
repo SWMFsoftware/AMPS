@@ -83,6 +83,40 @@ particle record and is therefore copied by cloning, MPI exchange, and restart
 packing. Applications must initialize valid positive finite weights and
 timesteps on every allocated block copy before moving particles.
 
+## Species-local particle restart
+
+`PIC::Restart::SaveParticleData()` supports
+`_SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_`. The local format stores:
+
+- the global minimum-weight cache used by core bookkeeping;
+- the application-visible block-data byte length; and
+- the complete block-associated region beginning at
+  `UserAssociatedDataOffset` for every owner block, including blocks with no
+  particles.
+
+The last rule is essential: an empty block still owns local timesteps, local
+particle weights, and application state that controls the first particle to
+enter it. Populated records then append the existing per-cell particle counts
+and particle payloads. The historical global-weight file layout is unchanged.
+
+On restore, each current owner consumes its block record. AMPS immediately
+calls `ParallelBlockDataExchange()` before returning from the local-weight
+restart, publishing restored W/dt and application bytes to boundary ghosts
+before any face mover can use them. Restart/checksum tree recursion uses
+`1<<DIM`; a hard-coded eight-child traversal is invalid in DIM1 and DIM2.
+
+The core validates the application block-slice length but cannot identify its
+semantic record order. Applications that persist structured state in this
+slice must include their own layout version or fingerprint. The generic comet
+systematic-residual state stores a 53-bit reaction/product layout fingerprint
+in each initialized block and rejects a mismatched continuation.
+
+Required validation for changes to this format includes empty and populated
+blocks, owner-to-ghost publication, particle checksum continuation, state
+migration across MPI owners, and DIM1 plus an unrelated DIM3 global-weight
+restart. A local-weight file made by an executable with a different block-data
+length is rejected; restart files are not a portable interchange format.
+
 ## 1. Interpolation representations
 
 AMPS now provides two complementary representations of a cell-centered interpolation stencil.

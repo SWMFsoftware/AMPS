@@ -9,6 +9,8 @@
 // input preprocessor replaces them for a radial or future axisymmetric case.
 int Comet::Model::GeometryMode=Comet::Model::Geometry::Triangulated;
 double Comet::Model::HeliocentricDistanceAU=-1.0;
+std::uint64_t Comet::Model::RandomSeed=100;
+bool Comet::Model::RandomSeedConfigured=false;
 char Comet::Model::SurfaceMeshFileName[_MAX_STRING_LENGTH_PIC_]="hartley2.shape.nas";
 double Comet::Model::SurfaceMeshLengthUnit=1.0e3;
 
