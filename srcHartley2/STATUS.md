@@ -3249,3 +3249,132 @@ adds deterministic 540-file, performance-profile, and regenerated Rubin-plot
 gates. The addendum preserves the explicit final stop before any operation
 that changes `master`. No merge-related operation was performed while adding
 it.
+
+## 2026-11-04: four-times-particle run restarted with 1,000-step sampling
+
+The requested higher-statistics Halley validation configuration now uses
+`ReferenceInjectionParticleNumber=32`, a requested block-mean range of
+200--800 particles/species/cell, a 20,000-iteration ceiling, and
+`RadialSamplingLength=1000`.  The earlier attempt with a 500-step sampling
+length was intentionally stopped at iteration 4,752 and preserved as a
+superseded run; it did not terminate because of an AMPS failure.
+
+The exact `build/` directory was removed before rebuilding with `-O3`.
+Generated-source inspection confirmed 20,000 iterations, sampling length
+1,000, range 200--800, and reference injection 32.  The rebuilt executable
+SHA-256 is
+`cf939ed9b2b8d4a27786ce359f9a64b26383d5ddbb1b42cd558560dcfedb2f79`;
+the input SHA-256 is
+`26e16d7a7f26b33626d17b6f5a3d212c14c8426862555a27a691829f1d6a9b8f`.
+
+Before restart, the chemistry ensemble passed all 46 neutral reactions with
+20,000 events per reaction, and particle-weight adaptation passed at 1, 4,
+and 12 MPI ranks for the configured 200--800 range.  The new 14-rank run was
+launched at 2026-11-04 15:26 CST from:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_4x_particles_20000iter_sampling1000_20261104_14mpi/production
+```
+
+Runtime output explicitly reports `current sample length:1000`.  The run
+completed its first sampling window and created all 27 species files before
+this status update.  Full provenance and preflight logs are recorded in the
+parent archive's `RUN_MANIFEST.md`.  No branch switch, commit, or merge was
+performed.
+
+## 2026-11-04: higher-statistics run completed and compared with Rubin
+
+The 14-rank, 1,000-step-sampling run documented immediately above completed
+normally at its 20,000-iteration ceiling with exit status zero.  It produced
+20 complete windows and all 540 expected `.dat` files.  The final sampled
+population was 2,021,443, and final weight adaptation produced 2,024,519
+particles, about 10.1% of the 20-million-slot capacity.  No emergency
+adaptation or runtime failure occurred.
+
+The run remains scientifically nonconverged: the final maximum relative L1 is
+1.521183 for CH with 0/3 passing consecutive windows.  It must not be treated
+as an accepted steady Rubin solution.
+
+The final `out=19` data were overlaid with the digitized Rubin DSMC profiles
+at:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_4x_particles_20000iter_sampling1000_20261104_14mpi/production/PT/plots/rubin2011_comparison
+```
+
+The validated artifact set contains 18 PNG files, 18 EPS files, an 18-page
+PDF, `comparison_profiles.csv`, and `manifest.json`.  Both a density panel and
+the H2O-velocity panel were visually checked for AMPS/published curve pairs and
+the explicit `NONCONVERGED (0/3 windows)` label.  The PDF SHA-256 is
+`19d12367eee0a22ae7281c1f10fbef6c671285a296dffeecd6521d05da09e381`.
+No commit, branch switch, or merge was performed.
+
+## 2026-11-04: second higher-statistics 18-rank run started
+
+At the user's request, the Halley controls were increased by another factor of
+four relative to the completed 20,000-iteration run.  The injection reference
+is now 128 and the adaptive block/species target is 800--3,200 particles per
+cell.  This is four times the immediately preceding run and sixteen times the
+original eight-event/50--200 numerical baseline; physical source rates are
+unchanged.  Sampling length is 10,000 and the hard ceiling is 40,000
+iterations.
+
+The exact `build/` directory was removed before an `-O3` clean rebuild.
+Generated C++ inspection confirmed all four requested controls.  Both Perl
+generator suites, the 20,000-event chemistry ensemble for all 46 reactions,
+and the 1/4/12-rank weight-adaptation matrix passed.  The weight tests report
+the configured 800--3,200 range and include emergency, allocation-burst,
+sampling-population, face-carrier, photochemical, and ghost-weight checks.
+
+The fresh run uses 18 MPI processes and was launched at 2026-11-04 16:47 CST
+from:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_16x_particles_40000iter_sampling10000_20261104_18mpi/production
+```
+
+The executable SHA-256 is
+`bf32933f8155745d9623b5b2836f608234daaf32946284916506c649775113fd`
+and input SHA-256 is
+`3e9d2d70a2b19ffdedc2b4a58f441ef25b4dd9e031a9229d4665696856a0810e`.
+Startup output explicitly reports `current sample length:10000`, range
+800--3,200, and no error.  Because window 1 establishes the reference, only
+iterations 20,000, 30,000, and 40,000 can provide the three comparisons
+needed for an earliest possible 3/3 convergence result; every one must pass
+for convergence before the ceiling.  Full provenance is in the archive's
+`RUN_MANIFEST.md`.  No commit, branch switch, or merge was performed.
+
+## 2026-11-05: 40,000-iteration run completed and Rubin comparison generated
+
+The 18-rank, 10,000-step-sampling validation run completed all 40,000
+iterations and exited with status zero after approximately 7 hours 39 minutes.
+It produced four complete output windows and all 108 expected species `.dat`
+files. The final sampled population was 10,733,211; final regular adaptation
+changed 10,733,262 particles to 10,737,306. There was no particle-buffer
+exhaustion, emergency adaptation, or AMPS abort.
+
+The run did **not** satisfy the scientific convergence test. Its final record
+was `max-relative-L1=3.733287e-01`, limiting species CH, and 0/3 consecutive
+passing windows at iteration 40,000, versus a tolerance of 5.0e-2. The final
+plots are therefore diagnostic comparisons and are explicitly marked
+`NONCONVERGED (0/3 windows)`; they must not be presented as an accepted steady
+Rubin solution.
+
+The final `out=3` data were overlaid with the digitized Rubin profiles at:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_16x_particles_40000iter_sampling10000_20261104_18mpi/production/PT/plots/rubin2011_comparison
+```
+
+The validated set contains 18 PNG files, 18 EPS files, an 18-page combined
+PDF, `comparison_profiles.csv`, and `manifest.json`. The density and
+H2O-velocity panels were visually checked for both AMPS and Rubin curves and
+the nonconverged qualification. The combined PDF SHA-256 is
+`68d66ac57b082ffde4832f0159c20deb19ef2fd594c389931ca58ca871f04080`.
+
+The MPI error log retained TCP transport warnings around 22:38 CST, including
+`Connection reset by peer` and an invalid-header report. All 18 ranks
+continued, all expected outputs were written, and the process exited zero;
+the warnings remain documented for subsequent operational investigation.
+Complete run, convergence, artifact, and checksum provenance is in the
+archive's `RUN_MANIFEST.md`. No commit, branch switch, or merge was performed.

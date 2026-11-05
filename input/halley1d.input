@@ -50,10 +50,13 @@ CouplerMode=off
 #include species.input
 
 #General
-  ! Eight injection events per shortened parent timestep give an estimated
-  ! minimum of 52.45 model particles in the first cell (CH4 is limiting).
-  ! Halving both C and this count preserves the requested surface statistics.
-  ReferenceInjectionParticleNumber=8
+  ! The second high-statistics validation scales the preceding injection
+  ! reference by another factor of four: 128 events per shortened parent
+  ! timestep give an estimated minimum of 839.2 model particles in the first
+  ! cell (CH4 is limiting).  The physical source rate is unchanged; the
+  ! smaller statistical weight creates four times as many model particles as
+  ! the completed 32-event run (sixteen times the original eight-event run).
+  ReferenceInjectionParticleNumber=128
   ! The superseded global-weight run reached 62.09 million particles before it
   ! was stopped after iteration 2729.  Retain its enlarged buffer during the
   ! local-weight validation so capacity cannot mask a transport regression.
@@ -183,9 +186,10 @@ CouplerMode=off
   ! characteristic speeds used by the local-timestep calculation.
   RadialCourantNumber=0.25
   RadialInnerBoundaryTemperature=180.0
-  ! Convergence is evaluated only at complete 500-iteration sampling windows;
-  ! 10,000 iterations is the unconditional safety ceiling.
-  RadialSamplingLength=500
+  ! Convergence is evaluated only at complete 10,000-iteration sampling
+  ! windows; 40,000 iterations is the unconditional safety ceiling for this
+  ! second high-statistics validation.
+  RadialSamplingLength=10000
   ! At every complete sampling break, adapt each species' block-local weight
   ! from that species' instantaneous mean population per cell in the block.
   ! Weight changes are exact powers of two.  Halving a weight clones every
@@ -198,7 +202,10 @@ CouplerMode=off
   ! destination retained an obsolete, very small species weight.  This is an
   ! automatic consistency step of the same controller, not another keyword.
   RadialParticleWeightAdaptation=on
-  RadialParticleNumberPerCellRange=50 | 200
+  ! Scale both limits by another factor of four with the injection reference
+  ! so the block-local adaptation maintains four times the completed run's
+  ! mean model population.
+  RadialParticleNumberPerCellRange=800 | 3200
   ! Before every regular MPI particle exchange, compare the most occupied
   ! rank's live particle count with its local buffer capacity.  At 75%, apply
   ! a common factor-two increase to every block/species weight and unbiased
@@ -209,7 +216,7 @@ CouplerMode=off
   ! A second trigger uses the same callback: at a completed sampling break,
   ! sum all species in each owner block and divide by its cell count.  If the
   ! largest block mean strictly exceeds 10 times (number of species) times the
-  ! requested maximum of 200 particles/species/cell, record a collective
+  ! requested maximum of 3200 particles/species/cell, record a collective
   ! request.  The next regular MPI particle exchange then executes one common
   ! emergency factor-two step at the same safe pre-exchange location.
   RadialEmergencyParticleBufferUtilization=0.75
@@ -225,8 +232,9 @@ CouplerMode=off
   ! Starting from every reaction parent present in a block, and from every
   ! configured surface-source species before the first injection, follow the
   ! enabled chemistry transitively: a newly created daughter may itself react
-  ! before the next 500-step sampling break.  Raise reachable product weights
-  ! by powers of two, whether those products are currently present or absent.
+  ! before the next 10,000-step sampling break.  Raise reachable product
+  ! weights by powers of two, whether those products are currently present or
+  ! absent.
   ! The hard check sums coefficient*ceil[(W_parent/dt_parent)/
   ! (W_product/dt_product)] over every product of one selected channel, so no
   ! individual reaction event can allocate more than 20 daughter slots.  This
@@ -240,7 +248,7 @@ CouplerMode=off
   ! sampling-break rebalances.  Fifty iterations matches the core's default
   ! minimum emergency-rebalance spacing and changes only MPI ownership.
   RadialLoadBalanceInterval=50
-  RadialMaxIterations=10000
+  RadialMaxIterations=40000
   ! Require every compiled species' volume-weighted radial density profile to
   ! change by no more than 5% for three consecutive window-to-window
   ! comparisons. The first complete window supplies only the reference.
