@@ -1694,3 +1694,53 @@ the command line: `.amps.conf` can override `-input`, and the generated root
 `hartley2.pl` can lag tracked `input/hartley2.pl`. Remove exactly `build/`
 before every recompile and hash the effective input, executable, core
 definition, chemistry table, and generated Stage-6/7/8 headers before a run.
+
+## Stage 10 merge-readiness audit
+
+Stage 10 produces review evidence; it never changes `master` and never grants
+permission to merge. Run the complete focused suite into a new directory so
+the human summary and machine-readable receipt share one immutable log root:
+
+```sh
+srcHartley2/tests/run_all_stage_tests.sh \
+  --log-root /new/absolute/path/to/stage10-all-stage-tests
+```
+
+The receipt schema is `amps.comet.all-stage-test-result.v1`. It binds every
+test/group result and log checksum to the exact development HEAD and tree.
+Stage-9 synthetic gates, checkpoint smoke, and collision fixtures are marked
+as focused implementation evidence, not as long-run science acceptance.
+
+Create and verify a readiness bundle only with explicit full commit IDs:
+
+```sh
+python3 srcHartley2/validation/stage10_merge_readiness.py collect \
+  --repo /data/vtenishe/COMET1D/AMPS \
+  --target-ref refs/heads/master \
+  --target-commit TARGET_FULL_SHA1 \
+  --base-commit MERGE_BASE_FULL_SHA1 \
+  --dev-commit DEVELOPMENT_FULL_SHA1 \
+  --policy srcHartley2/validation/stage10_release_policy.json \
+  --all-stage-result /absolute/path/to/all_stage_result.json \
+  --all-stage-result-sha256 RECEIPT_SHA256 \
+  --output-dir /new/absolute/path/to/stage10-readiness
+
+python3 srcHartley2/validation/stage10_merge_readiness.py verify \
+  --bundle /absolute/path/to/stage10-readiness
+```
+
+If the sole policy-allowed tracked `Makefile` customization is present, also
+pass `--dirty-exclusion Makefile=WORKTREE_SHA256`; every tracked dirty path
+must be declared and hashed exactly. A focused-only bundle reports
+`FOCUSED_ONLY_NOT_SCIENCE_READY`. `READY_FOR_USER_REVIEW` additionally
+requires an authenticated accepted Stage-9 campaign and Rubin comparison,
+but even that state records merge authorization as `NOT_GRANTED`. Unknown
+integration paths, altered logs, reused output directories, dirty or
+untracked reviewable source, or missing evidence fail closed. The distributed
+policy lists the generated/runtime untracked artifact families that may be
+summarized and excluded; it cannot be replaced with weaker custom rules.
+
+The subsystem-by-subsystem conflict strategy and excluded-artifact list are
+in `MASTER_MERGE.md`. It is intentionally a manual semantic merge guide, not
+an executable merge script. No branch switch, rebase, cherry-pick, merge,
+commit, push, or master update is performed by these tools.

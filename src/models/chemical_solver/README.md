@@ -158,4 +158,3 @@ g++ -std=c++17 -Wall -Wextra -pedantic \
 srcHartley2/tests/run_stage0_tests.sh
 srcHartley2/tests/run_stage3_accumulator_tests.sh
 ```
-

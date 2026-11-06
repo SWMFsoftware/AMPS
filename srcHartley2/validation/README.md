@@ -213,3 +213,65 @@ srcHartley2/validation/run_stage9_comparison_tests.sh
 
 Those tests validate authentication, fail-closed behavior, unit conversion,
 and output formats. Their synthetic PASS is not comet science evidence.
+
+## Stage-10 focused-test receipt and merge-readiness bundle
+
+Stage 10 separates four facts that must not be collapsed into one PASS:
+
+1. focused Stage 0--10 implementation tests completed;
+2. Stage-9 long-run science evidence was supplied and accepted;
+3. the resulting exact diff is complete enough for user review; and
+4. the user explicitly authorized an operation affecting `master`.
+
+Only the first three can be evaluated here. The fourth is always serialized
+as `NOT_GRANTED`; none of these programs runs a mutating Git command.
+
+Run the focused suite with an explicit new log root. In addition to
+`summary.txt`, it writes `all_stage_result.json` with schema
+`amps.comet.all-stage-test-result.v1`:
+
+```bash
+srcHartley2/tests/run_all_stage_tests.sh \
+  --log-root /new/absolute/path/to/stage10-all-stage-tests
+```
+
+The receipt contains the exact HEAD commit/tree, branch state, every test and
+group result, log checksum, aggregate counts, archived/live mode, and
+interpretation. A receipt created without a real accepted Stage-9 manifest
+must explicitly say focused implementation passed but science did not.
+
+The policy and tool are:
+
+```text
+stage10_release_policy.json
+stage10_merge_readiness.py
+```
+
+Use `stage10_merge_readiness.py --help` and the subcommand help as the
+authoritative CLI. `collect` requires an explicit policy-listed target ref,
+full target/base/development commits, the versioned policy, the focused-suite
+receipt and its SHA-256, and a brand-new output directory. It optionally
+authenticates real Stage-9 campaign/comparison evidence. It does not infer a
+target from the spelling `master`. `verify --bundle DIRECTORY` recomputes
+every bundle checksum and validates the recorded status and authorization.
+
+The report schema is `amps.comet.stage10-merge-readiness.v1`. Without accepted
+real science it reports `FOCUSED_ONLY_NOT_SCIENCE_READY`; with both gates it
+may report `READY_FOR_USER_REVIEW`. Both results retain
+`merge_authorization=NOT_GRANTED`. Dirty or untracked reviewable source,
+unclassified diff paths, altered receipts/logs, missing evidence, commit/tree
+mismatches, reused output, and checksum changes fail closed. Explicit
+generated/runtime untracked exclusions are summarized by policy rule; a
+custom policy cannot weaken the canonical classifications.
+
+Run the Stage-10 mutation tests with:
+
+```bash
+srcHartley2/tests/run_stage10_tests.sh
+```
+
+The test fixtures use temporary repositories/evidence only. They prove the
+tooling contracts and cannot constitute comet science or permission to merge.
+The manual semantic integration order, core/application ownership boundaries,
+exclusions, and post-integration matrix are documented in
+`../MASTER_MERGE.md`.

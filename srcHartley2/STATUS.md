@@ -5442,3 +5442,180 @@ Never copy an entire older `CometChemistry.cpp`, `RadialSimulation.cpp`, or
 master interfaces. Never stage `build/`, `amps`, root generated inputs or
 parser copies, meshes, `PT*`, transient logs, temporary validation inputs, or
 raw validation archives merely because they exist in the worktree.
+
+## Stage 10 merge-readiness evidence (2026-11-05, development branch only)
+
+Stage 10 prepares a reproducible review package for the generic-comet work.
+It does not change comet physics, chemistry, particle transport, weights,
+timesteps, collisions, source rates, or output quantities. It also does not
+switch branches, commit, merge, rebase, cherry-pick, push, or update
+`master`. Development remains on `1d_comet_dev`, whose committed starting tip
+for this stage is
+`bff4c532f34515365fd910691595f261db96847f`.
+
+### Repository topology and authority boundary
+
+The read-only audit found two different possible master targets:
+
+```text
+local master:       cb7be2bba41f373352ab853abed23955ea69c8b9
+origin/master:      635d1622f80b445cf83130e90e5539bfa872e453
+divergence:         1 local-only commit, 17 origin-only commits
+local merge base:   cb7be2bba41f373352ab853abed23955ea69c8b9
+origin merge base:  f9c2c00da9c8348b9d4003e2a82c1fe139b300cc
+```
+
+Consequently no Stage-10 command infers what “master” means. Collection
+requires an explicit allowed target ref, its full commit, the full merge-base
+commit, and the full development commit. The report always serializes
+`merge_authorization=NOT_GRANTED`. Even a future
+`READY_FOR_USER_REVIEW` result is evidence for a user decision, not authority
+to perform a Git operation.
+
+The current scientific state is intentionally separate. The committed Stage-9
+implementation has 38/38 focused tests in 10/10 groups, but the balanced
+independent-seed Halley campaign and accepted Rubin products do not exist.
+The minimum daughter carrier-ESS fraction, variance-per-walltime gain,
+required resolved-bin fraction, and flux-closure policy remain explicit
+decisions. Therefore the only valid current readiness interpretation is
+`FOCUSED_ONLY_NOT_SCIENCE_READY`.
+
+### New Stage-10 implementation files
+
+- `srcHartley2/tests/write_all_stage_result.py` converts the shell runner's
+  exact test records into schema `amps.comet.all-stage-test-result.v1`. It
+  validates full Git object IDs, Stage-4--9 execution modes, unique test IDs,
+  result/exit consistency, log containment, group/test totals, optional
+  science-test coupling, and SHA-256 values. Publication is atomic and refuses
+  overwrite.
+- `srcHartley2/tests/test_stage10_all_stage_result.py` mutation-tests JSON
+  escaping, focused/science separation, duplicate IDs, escaped log paths,
+  inconsistent exits/results, missing science records, and overwrite
+  refusal.
+- `srcHartley2/tests/run_stage10_tests.sh` is the one-command dependency-free
+  Stage-10 test group. It runs both the receipt and readiness mutation suites
+  and labels its PASS as tooling-only.
+- `srcHartley2/validation/stage10_release_policy.json` versions the allowed
+  target refs, sole tracked-dirty exclusion, exact focused-suite contract,
+  science schemas/minima, path classifications, and immutable
+  `NOT_GRANTED` authorization state.
+- `srcHartley2/validation/stage10_merge_readiness.py` uses only an explicit
+  allowlist of read-only Git queries. `collect` verifies commits, branch,
+  merge base, target ref, tracked dirty exclusions, the complete JSON test
+  receipt and its logs, exact integration diffs, and any optional Stage-9/
+  Rubin evidence before creating a new checksum-protected bundle. `verify`
+  checks every member, canonical Markdown rendering, policy binding, status,
+  blockers, and authorization without consulting or modifying Git.
+- `srcHartley2/validation/stage10_merge_readiness_selftest.py` creates
+  disposable repositories and evidence, then mutation-tests topology,
+  receipt/log checksums, classifications, dirty exclusions, output
+  immutability, forged/missing science, bundle tampering, and authorization.
+- `srcHartley2/validation/run_stage10_merge_readiness_tests.sh` provides the
+  dependency/tool preflight and invokes the self-test without writing Python
+  bytecode into the source tree.
+- `srcHartley2/MASTER_MERGE.md` is the tracked manual semantic-integration
+  guide. It records the authority stops, explicit target selection, ownership
+  and dependency waves, invariants, allowlist/exclusions, clean-build/test
+  replay, science blockers, and the final evidence that must be shown to the
+  user. It is not an executable merge script.
+
+### Modified files and rationale
+
+- `srcHartley2/tests/run_all_stage_tests.sh` retains its human summary and
+  now writes `all_stage_result.json` only for an explicit new `--log-root`.
+  The receipt binds the test list, log hashes, counts, modes, branch, commit,
+  tree, and separate focused/science meanings. A supplied real Stage-9
+  manifest is evaluated as its own test instead of being conflated with the
+  synthetic science-gate mutation suite. Stage 10 is one additional group,
+  making the focused no-manifest contract 39 tests in 11 groups.
+- `srcHartley2/CHEMISTRY.md`, `README.md`,
+  `GENERIC_COMET_DESIGN.md`, and `validation/README.md` document the evidence
+  states, commands, schema ownership, default science blocker, and strict
+  non-authority boundary.
+- `handoff.md` now begins with the current branch/commit/topology, Stage-9
+  commit state, Stage-10 recovery state, unresolved science decisions, and
+  the prohibition on any master operation.
+- `src/models/chemical_solver/README.md` removes one EOF whitespace finding
+  exposed by the complete integration-range audit. No technical text changed.
+- `srcHartley2/halley2011/reference/rubin2011_neutral_profiles.csv` is
+  normalized from CRLF to LF because the committed range otherwise reports
+  every reference row as trailing whitespace. The data fields are unchanged;
+  the normalized SHA-256 is
+  `a75b28ac9141255b2ee9ce4f5f1e1abbb8c1332b7d9e16d79fcae2eab0d19ace`.
+
+The unrelated tracked root `Makefile` linker edit remains user-owned and is
+not part of Stage 10. The release policy permits it only as an explicitly
+hashed dirty exclusion. Untracked `build/`, `amps`, `PT*`, meshes, root input
+and parser copies, logs, generated tables, and `validation_runs/` remain
+outside merge scope.
+
+### Later integration procedure
+
+After Stage 9 science is accepted and the user separately authorizes work
+against one exact target commit, follow `MASTER_MERGE.md` rather than copying
+entire development files. Integrate reusable chemistry/cometary-physics
+interfaces first, core particle/mover changes with null/default-off behavior
+second, application input/generated policies next, then DIM1 application
+consumers, tests/evidence tooling, reference inputs, and documentation. After
+each semantic wave, replay its focused tests. Remove exactly the disposable
+integration worktree's `build/` before every recompile; run representative
+target-owned non-comet/DIM3 regressions as well as all Stage 0--10 groups and
+the live MPI matrices. Present exact diffs, exclusions, hashes, performance,
+memory, independent-seed statistics, convergence/closure, and Rubin products,
+then stop again for approval. No current result authorizes these operations.
+
+### Stage-10 focused validation result
+
+The dedicated Stage-10 runner passed both dependency-free mutation suites:
+
+```text
+PASS Stage-10 all-stage result writer cases=8
+PASS Stage-10 merge-readiness selftest
+  cases=target-ref,branch,receipt,untracked-source,artifact-exclusion,
+        dirty-exclusion,extra-dirt,overwrite,tamper,forged-science,
+        unknown-path,read-only-git
+```
+
+The complete archived Stage 0--10 suite then passed:
+
+```text
+tests:       run=39 passed=39 skipped=0 failed=0
+test-groups: run=11 passed=11 skipped=0 failed=0
+Stage 4--9 modes: archived
+Stage-9 science:  NOT_EVALUATED
+```
+
+Durable evidence is under:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/stage10-all-stage-tests-20261105-r3
+```
+
+The human summary SHA-256 is
+`549fd51c44a18512e1dd18e3007e57280e10d761fbe742aecf68fc9f8e90baab`.
+The schema-v1 receipt SHA-256 is
+`ca55abc4e319b464a5600ed10d8a33be9b8fb7a042f169b3bb129a5190d4a7d5`.
+The canonical Stage-10 release-policy SHA-256 is
+`8fd7c4b76b45c03d00422bffd9ca0ef0eb628bc4cc4c4fe3ca3fcabb737570c2`.
+It records committed HEAD
+`bff4c532f34515365fd910691595f261db96847f` and tree
+`7ede9f010babbb3146dfcc072405caa84c8a5291`.
+
+This archive proves the current Stage-10 worktree passed focused tests. It is
+not a final merge-readiness bundle because the Stage-10 source/documentation
+is not yet committed, so its development commit cannot describe those
+changes. After a later user-requested Stage-10 commit, rerun the suite into a
+new directory and run `collect` against that new exact commit. The collector
+must reject dirty or untracked reviewable source and the current missing
+Stage-9 science/Rubin evidence; do not weaken those checks to reuse this
+development receipt.
+
+A real-workspace `collect` preflight was also run deliberately before commit.
+It exited 2 and named every non-allowlisted tracked Stage-10 modification
+rather than producing a bundle; the requested output directory was not
+created. This is the expected fail-closed behavior, not a test failure.
+
+No C++ or generated AMPS configuration changed in Stage 10, so no compile was
+required and the existing `build/` directory was not touched. The standing
+rule remains: remove exactly `/data/vtenishe/COMET1D/AMPS/build` before any
+future recompile.

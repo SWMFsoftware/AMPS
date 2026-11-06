@@ -433,3 +433,28 @@ callback contract, then add the application estimator selection, checkpoint
 writer, focused collision fixture, and evidence tooling as separate
 reviewable changes. DIM2/DIM3 support should generalize the application-side
 checkpoint traversal; it must not introduce comet chemistry into the core.
+
+## Stage 10 integration boundary
+
+Stage 10 changes the evidence and documentation layer only. It introduces no
+new physical model, reaction rule, particle field, mover callback, collision
+algorithm, or comet-specific runtime path. Its purpose is to make the
+application/core ownership boundary reviewable before any separately
+authorized master integration.
+
+The readiness inventory classifies changes by semantic subsystem: reusable
+core interfaces, generic comet chemistry/statistics, DIM1 application and
+input wiring, validation tooling/tests, reference data, and documentation.
+Generated executables, build trees, meshes, root parser/input copies, `PT*`,
+logs, and raw campaign archives remain outside the source change set. An
+unclassified path is a blocker requiring human review; it is never inferred
+to be safe because of a filename suffix.
+
+Core changes must later be replayed semantically against the selected target
+commit, preserving null/default-off behavior and the core unit regressions.
+Application files must then be integrated in dependency order rather than
+copied wholesale over target versions. The exact target commit and merge base
+are evidence fields because local `master` and `origin/master` are allowed to
+diverge. `MASTER_MERGE.md` records that dependency order and the required
+post-integration matrix. Neither it nor the readiness tool authorizes or
+executes a merge.

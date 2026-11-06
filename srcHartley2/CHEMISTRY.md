@@ -1559,6 +1559,62 @@ tests pass.
 
 ## Stage 10: documentation and master-merge preparation
 
+### Objective and non-authority boundary
+
+Stage 10 packages the already implemented stages into a reproducible review
+bundle. It does **not** merge, switch to, update, rebase onto, or push
+`master`; it does not turn focused implementation tests into a Halley science
+result. Every audit names the target, merge-base, and development commits by
+full SHA-1. A branch name alone is deliberately insufficient because local
+and remote `master` may point at different histories.
+
+The readiness report has two independent evidence gates:
+
+1. the complete Stage 0--10 focused implementation suite must be
+   authenticated by its machine-readable receipt; and
+2. Stage-9 science acceptance requires a separate, checksum-protected real
+   campaign manifest and accepted Rubin-comparison manifest.
+
+Passing only the first gate is reported as
+`FOCUSED_ONLY_NOT_SCIENCE_READY`. Passing both permits
+`READY_FOR_USER_REVIEW`, which still records `merge_authorization` as
+`NOT_GRANTED`. No tool in this stage runs a mutating Git command or treats a
+readiness result as user approval.
+
+### Reproducible readiness bundle
+
+`validation/stage10_merge_readiness.py` implements two fail-closed actions:
+
+- `collect` authenticates the exact commit topology, categorized integration
+  paths, dirty-worktree exclusions, the all-stage receipt, and any optional
+  Stage-9 science evidence, then creates a brand-new checksummed report
+  directory; and
+- `verify` recomputes the bundle checksums and validates its focused or
+  science/review state without modifying the repository.
+
+The associated `stage10_release_policy.json` is the versioned classification
+policy. Source, tests, tracked inputs, and documentation are reviewable;
+build trees, executables, `PT*`, transient logs, root generated input/parser
+copies, meshes, and raw validation archives are excluded. Unknown paths fail
+closed for human classification instead of being silently staged. Untracked
+source, tests, tracked-input candidates, and root documentation also block;
+only the canonical policy's explicit generated/runtime artifact families may
+be summarized as untracked exclusions.
+
+`tests/run_all_stage_tests.sh --log-root NEW_DIRECTORY` writes an
+`amps.comet.all-stage-test-result.v1` receipt containing the exact HEAD commit
+and tree, branch/detached state, every test and group result, log paths and
+SHA-256 values, aggregate counts, archived/live execution modes, and an
+explicit interpretation of focused versus Stage-9 science evidence. The
+human summary remains available, but Stage 10 consumes the JSON receipt so a
+copied PASS line cannot stand in for test evidence.
+
+The tool and receipt writers are covered by mutation tests for altered logs,
+hashes, commits, classifications, result counts, missing evidence, output
+reuse, and attempted readiness escalation. The tracked `MASTER_MERGE.md`
+describes semantic integration by subsystem and is a review guide, not an
+executable merge script.
+
 ### Documentation required after every stage
 
 - Update `srcHartley2/STATUS.md` with exact modified files, rationale, tests,
@@ -1617,8 +1673,11 @@ importance-off, total-forcing-off, diagnostics-off build has been restored.
 The complete archived Stage 0--9 orchestrator passes 38 tests in ten groups,
 including the 1/4/12 transported-daughter/general-NTC matrix and paired
 same-binary analog/enhanced checkpoint validation. These tests close the
-implementation stage, not the scientific gate. Do not merge to `master`
-without a separate user decision and completed science validation.
+implementation stage, not the scientific gate. Stage 10 adds one release-
+evidence group, so the final focused worktree suite passes 39 tests in 11
+groups; its machine receipt remains development evidence until the Stage-10
+changes are committed and retested at that exact commit. Do not merge to
+`master` without a separate user decision and completed science validation.
 
 The next scientific action is an independent-seed Stage-9 pilot.
 Compare analog chemistry with candidate Stage-6 packets, complete Stage-7

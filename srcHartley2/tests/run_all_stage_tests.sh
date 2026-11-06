@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run the complete focused and archived Hartley2 chemistry-development test
-# stack for Stages 0 through 9.
+# stack for Stages 0 through 10.
 #
 # The lower-stage integrated tests intentionally consume frozen logs: their
 # own runners define those logs as the authoritative, reproducible runtime
@@ -54,7 +54,7 @@ usage() {
 usage: run_all_stage_tests.sh [options]
 
 Run every focused/pure test and every archived runtime-evidence checker used
-to close Hartley2 chemistry-development Stages 0 through 9.
+to close Hartley2 chemistry-development Stages 0 through 10.
 
 Options:
   --evidence-root PATH
@@ -128,9 +128,11 @@ Options:
   --chemistry-validation-events N
       Fresh Stage-4/5/6/7/8/9 chemistry events per case. Default: 200000.
   --log-root PATH
-      Preserve every per-test log and summary under a new directory. Without
-      this option, successful-run logs are temporary; failed/skipped-run logs
-      are retained automatically and their absolute paths are reported.
+      Preserve every per-test log, summary.txt, and the checksum-bound
+      all_stage_result.json receipt under a new directory. Without this
+      option, successful-run logs are temporary; failed/skipped-run logs are
+      retained automatically and their absolute paths are reported, but no
+      machine-readable release-evidence receipt is published.
   --plan
       Preflight all tools/artifacts and print the resolved test plan without
       executing a compiler, Python/Perl test, or MPI process.
@@ -545,7 +547,7 @@ resolved_mpi_launcher=$(readlink -f -- "$resolved_mpi_launcher")
 # Every tool below is used by at least one child runner.  Preflight the full
 # toolchain before the first test so a missing Perl/compiler cannot turn a
 # long suite into a late partial result.
-for required_tool in mpicxx c++ g++ perl python3 grep sha256sum tee; do
+for required_tool in mpicxx c++ g++ perl python3 grep sha256sum tee git; do
   if ! command -v -- "$required_tool" >/dev/null 2>&1; then
     printf 'required all-stage test tool is not on PATH: %s\n' \
       "$required_tool" >&2
@@ -801,6 +803,21 @@ if [[ -n "$requested_log_root" ]]; then
 else
   log_root="$all_stage_tmp/logs"
   mkdir -p -- "$log_root"
+fi
+
+# Bind an explicitly retained machine-readable result to the exact Git
+# identity at which testing started.  This is deliberately read-only: the
+# runner never switches branches, stages files, or changes repository state.
+# Rechecking the identity before publication prevents a concurrent commit or
+# branch switch from producing a receipt whose HEAD fields describe only part
+# of the test interval.
+all_stage_head_commit=
+all_stage_head_tree=
+all_stage_branch=
+if [[ "$explicit_log_root" == true ]]; then
+  all_stage_head_commit=$(git -C "$source_root" rev-parse --verify 'HEAD^{commit}')
+  all_stage_head_tree=$(git -C "$source_root" rev-parse --verify 'HEAD^{tree}')
+  all_stage_branch=$(git -C "$source_root" symbolic-ref --quiet --short HEAD || true)
 fi
 
 # Keep default logs only when they are needed to diagnose an incomplete run.
@@ -1273,19 +1290,20 @@ fi
 run_test stage8 stage8.matrix check_stage8_matrix
 
 # The deterministic mutation suite proves that every Stage-9 acceptance gate
-# fails closed under malformed or scientifically deficient evidence. A real
-# manifest is evaluated only when the caller supplies one explicitly; this
-# prevents a synthetic PASS from being reported as completion of the long-run
-# ANALOG/FORCED comparison.
-stage9_science_arguments=()
-if [[ -n "$stage9_science_manifest" ]]; then
-  stage9_science_arguments+=(--manifest "$stage9_science_manifest")
-fi
+# fails closed under malformed or scientifically deficient evidence.  Keep a
+# caller-supplied real manifest in a separate test record: a rejected science
+# decision must not be mistaken for a failure of the focused gate self-tests,
+# and a synthetic tooling PASS must never become a science PASS.
 run_test stage9 stage9.parser \
   "$script_dir/run_stage9_parser_tests.sh"
 run_test stage9 stage9.science-gate-tooling \
-  "$script_dir/run_stage9_science_gate_tests.sh" \
-  "${stage9_science_arguments[@]}"
+  "$script_dir/run_stage9_science_gate_tests.sh"
+if [[ -n "$stage9_science_manifest" ]]; then
+  run_test stage9 stage9.science-acceptance env \
+    PYTHONDONTWRITEBYTECODE=1 python3 \
+    "$script_dir/test_stage9_science_gate.py" \
+    "$stage9_science_manifest"
+fi
 run_test stage9 stage9.campaign-tooling \
   "$source_root/srcHartley2/validation/run_stage9_tooling_tests.sh"
 run_test stage9 stage9.comparison-tooling \
@@ -1311,7 +1329,14 @@ else
 fi
 run_test stage9 stage9.transported-collision-matrix check_stage9_matrix
 
-stage_order=(stage0 stage1 stage2 stage3 stage4 stage5 stage6 stage7 stage8 stage9)
+# Stage 10 verifies the immutable JSON receipt writer and the read-only,
+# fail-closed readiness collector with synthetic mutation fixtures.  This
+# tooling PASS is intentionally separate from Stage-9 long-run science and
+# cannot authorize a master operation.
+run_test stage10 stage10.release-evidence-tooling \
+  "$script_dir/run_stage10_tests.sh"
+
+stage_order=(stage0 stage1 stage2 stage3 stage4 stage5 stage6 stage7 stage8 stage9 stage10)
 group_results=()
 passed_groups=0
 skipped_groups=0
@@ -1407,10 +1432,62 @@ summary_file="$log_root/summary.txt"
   if [[ "$explicit_log_root" == true || "$overall_result" != PASS ]]; then
     printf '  logs-root: %s\n' "$log_root"
     printf '  summary-log: %s\n' "$summary_file"
+    if [[ "$explicit_log_root" == true ]]; then
+      printf '  machine-result: %s\n' "$log_root/all_stage_result.json"
+    fi
   else
     printf '%s\n' '  logs: temporary; removed after successful completion'
   fi
 } | tee "$summary_file"
+
+if [[ "$explicit_log_root" == true ]]; then
+  final_head_commit=$(git -C "$source_root" rev-parse --verify 'HEAD^{commit}')
+  final_head_tree=$(git -C "$source_root" rev-parse --verify 'HEAD^{tree}')
+  final_branch=$(git -C "$source_root" symbolic-ref --quiet --short HEAD || true)
+  if [[ "$final_head_commit" != "$all_stage_head_commit" ||
+        "$final_head_tree" != "$all_stage_head_tree" ||
+        "$final_branch" != "$all_stage_branch" ]]; then
+    printf '%s\n' \
+      'repository HEAD, tree, or branch changed during the all-stage suite; refusing JSON receipt' >&2
+    exit 1
+  fi
+
+  result_command=(
+    python3 "$script_dir/write_all_stage_result.py"
+    --repository-root "$source_root"
+    --head-commit "$all_stage_head_commit"
+    --head-tree "$all_stage_head_tree"
+    --log-root "$log_root"
+    --summary "$summary_file"
+    --output "$log_root/all_stage_result.json"
+    --expected-overall "$overall_result"
+    --mode stage4 "$stage4_mode"
+    --mode stage5 "$stage5_mode"
+    --mode stage6 "$stage6_mode"
+    --mode stage7 "$stage7_mode"
+    --mode stage8 "$stage8_mode"
+    --mode stage9 "$stage9_mode"
+  )
+  if [[ -n "$all_stage_branch" ]]; then
+    result_command+=(--branch "$all_stage_branch")
+  else
+    result_command+=(--detached-head)
+  fi
+  if [[ -n "$stage9_science_manifest" ]]; then
+    result_command+=(--science-manifest "$stage9_science_manifest")
+  fi
+  for ((summary_index=0; summary_index<${#test_names[@]}; summary_index++)); do
+    result_command+=(
+      --test
+      "${test_names[summary_index]}"
+      "${test_stages[summary_index]}"
+      "${test_results[summary_index]}"
+      "${test_exit_codes[summary_index]}"
+      "${test_logs[summary_index]}"
+    )
+  done
+  PYTHONDONTWRITEBYTECODE=1 "${result_command[@]}"
+fi
 
 if [[ "$overall_result" == PASS ]]; then
   printf 'PASS Hartley2 all-stage suite tests=%d test-groups=%d stage4-mode=%s stage5-mode=%s stage6-mode=%s stage7-mode=%s stage8-mode=%s stage9-mode=%s\n' \
