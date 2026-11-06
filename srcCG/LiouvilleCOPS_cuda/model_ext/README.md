@@ -1,9 +1,20 @@
 # model_ext: dust grain in the nude gauge and the NG = RG crossing constraint
 
-The code used for the 12M grain fits on Voyager (2026-10-27, jobs 120985–120988). These files are byte-identical
-copies of `$COPS_OUTPUT_ROOT/model_ext/` (`/data001/highresolu_vt/cops_output/model_ext/`), which is where the jobs
-ran them from. Their SHA256 values match the ones recorded in every production fit's
-`fit_manifest.json["model_extension"]` and in `<run>/grain/provenance-<job>/model_ext.sha256`.
+The code used for the grain fits on Voyager and for every later model change built on them (2026-10-27 …
+2026-11-06). The jobs ran the files from `$COPS_OUTPUT_ROOT/model_ext/`, `$COPS_OUTPUT_ROOT/jobs/` and
+`$COPS_OUTPUT_ROOT/figures_cluster/scripts/` (`COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output`), outside git.
+This folder keeps them under version control:
+
+* `grain_crossing.py`, `grain_fit.py`, `grain_finetune.py`, `grain.sbatch`, `grain_finetune.sbatch` (committed in
+  `af48d01`): byte-identical to the run copies. Their SHA256 values match the ones recorded in every production
+  fit's `fit_manifest.json["model_extension"]` and in `<run>/grain/provenance-<job>/model_ext.sha256`.
+* Every other file (added 2026-11-06; sections "Extensions after 2026-10-27", "Job scripts", "Figure scripts"
+  below) is the run copy **plus a header block of comments** at the top (after the `#!` line): what the file is for,
+  which runs used it, how to run it, and the SHA256 of the run copy. Nothing else is changed.
+  * `RUN_COPIES.sha256` lists, for each such file, the SHA256 of its run copy and the run copy's path.
+  * `./check_copies.sh` removes the header blocks and checks every file against those values (OK / DIFFERS).
+  * The SHA256 values are also the ones in each job's `provenance-<job>/model_ext.sha256` (for the job scripts:
+    the copy in the provenance folder), so a fit can be matched to the code here.
 
 ## Model (user decisions 2026-10-27, handoff §14)
 
@@ -45,6 +56,74 @@ These lines were kept as run, so the copies stay identical to the code recorded 
 elsewhere, change them; the hashes will then differ from the recorded ones.
 
 `../../LiouvilleCOPS` (the CPU workflow) is unchanged. The grain is not in it yet.
+
+## Extensions after 2026-10-27: when to use which
+
+All of them wrap the unchanged `fit_cops.py` / `gpu_fit.py` / `fine_tune_gpu.py` in the running process, like the
+grain code. Each file's header says how to run it; the `jobs/` scripts show complete commands.
+
+| Need | Use | Module(s) | First used |
+|---|---|---|---|
+| hold some temperatures (Tmax, T75, Tmin) fixed | `grain_fit_fixed.py --fix T75=133 --fix Tmin=133` | `fixed_parameters.py` | 2026-11-04 (older form: `grain_fit_fixed_T.py` + `fixed_temperature.py`, job 121932) |
+| hold any parameter fixed, e.g. a template amplitude at 1 | `grain_fit_fixed.py --fix c_<template>=1` | `fixed_parameters.py` | 2026-11-04 |
+| use a fine tuning's activity correction as a fixed added term (same or another mesh) | `ft_template.py`, then the fit with `--activity-template <npz> <name> --fix c_<name>=1` | — | 2026-11-04 (20M option 2), 2026-11-05 (12M cycles) |
+| start a fit from a fit + its fine-tuned grain | `restart_grain_start.py`, then `--restart-from <new npz> --template-start 0` | — | 2026-11-05 (cycles) |
+| fit/fine-tuning cycles (correction templates accumulated) | `jobs/grain_ft_cycle*.sbatch` | the three above | 2026-11-05 |
+| give the last N data points a larger weight | `grain_fit_weighted.py --weight-last N --weight-factor F [--weight-profile constant\|linear] [--weight-gauges ng,rg]` | `late_weights.py` (+ `fixed_parameters.py` for `--fix`) | 2026-11-06 (job 122236) |
+| carry a grain fit to another mesh and fine-tune there | `translate_grain.py`, `grain_translate_finetune.sbatch` | — | 2026-11-04 |
+| refine elements of a shape model locally | `refine_mesh.py` (+ `seen_after_gap.py` for the 20M mask), `refined_bundle.py` | — | 2026-11-04 |
+| scale the activity of chosen areas without refitting | `area_scaling.py`, `area_scaling.sbatch` | — | 2026-11-04 |
+| rerun a finished grain fit exactly | `grain_repro.sbatch` | — | 2026-11-03 |
+
+Notes:
+
+* **Held parameters** need free temperatures (not `--ordered-temperature`, not `--fix-temperature`), and with held
+  templates `--template-start 0` (the start then comes from the restart). `fixed_parameters.py` was fixed on
+  2026-11-06: it evaluates the regularization term, its Jacobian and the diagnostic D on the full parameter vector
+  (before, held template amplitudes inside the regularized block shifted it; a fit with 7 held parameters crashed,
+  job 122118). With λ = 0, which every fit used, cost and parameters are unaffected; only the reported D of earlier
+  fits with held templates is wrong.
+* **Weights:** W multiplies a point's cost term (its residual and Jacobian row by √W); the crossing penalty uses the
+  unweighted residuals; reported costs, rms and the restart file are unweighted, so they compare with other fits;
+  the weighted objective is in `fit_manifest.json["model_extension"]["late_weights"]`. Without `--weight-last` the
+  driver is the same as `grain_fit_fixed.py`.
+* **The original temperature law** (used by `jobs/grain_ft_cycle_Torig.sbatch`) is the analytical law of
+  `../../LiouvilleCOPS/src/Source.cpp` with its defaults Tmax 182.09922, T75 136.11149, Tmin 133 K; to use it in a
+  grain fit, hold the three: `--fix Tmax=182.09922 --fix T75=136.11149 --fix Tmin=133`.
+
+## Job scripts (`jobs/`, run copies in `$COPS_OUTPUT_ROOT/jobs/`)
+
+| Script | What it ran | Jobs |
+|---|---|---|
+| `probe_gpu.sbatch`, `build_check.sbatch`, `hash_check.sbatch` | site probe, builds + self tests, hash check against passion (setup, handoff §3, §5, §9) | 120809, 120810/120814, 120867 |
+| `submit_earlier.sh`, `submit_campaign.sh` | runner campaign submission (+ C16 set) with the site environment and provenance | 12M, 20M campaigns |
+| `c16.sbatch` | C16 fit set (monotonic penalty + ordered T) | 120870, 120873 |
+| `grain_ft_cycle.sbatch` | 12M fit/fine-tuning cycles 1–3 from C30 | 122080–122082 |
+| `grain_ft_cycle_T130.sbatch` | cycle 4 with all T ≥ 130 K | 122096 |
+| `grain_ft_cycle_Tmin130.sbatch` | cycles 4–6, Tmin = 130 K and Tmax = 231.98 K held | 122117, 122140, 122141 |
+| `grain_ft_cycle_Torig.sbatch` | cycles 4–6, the original temperature law held | 122219–122221 |
+| `grain_late_weights.sbatch` | fit from cycle 3 with the last N points weighted | 122236 |
+| `grain_rough.sbatch`, `prepare_12m_rough.sbatch` | 12M rough-surface base and the C30 fit on it | 122033, 122034 |
+| `prepare_44m.sbatch`, `grain_44m_c30.sbatch` | 44M preparation; C30 with the 12M conditions on 44M | 121996/122020, 122078 |
+| `refine_12m.sbatch`, `refine_20m.sbatch` | local mesh refinement tests | 122009, 122011 |
+
+The job scripts in this folder itself (`grain*.sbatch`, `area_scaling.sbatch`) ran from `$COPS_OUTPUT_ROOT/model_ext/`.
+
+## Figure scripts (`figures/`, run copies in `$COPS_OUTPUT_ROOT/figures_cluster/scripts/`)
+
+`model_obs_figures.py` draws every comparison (model vs COPS observations, .eps + .png 300 dpi);
+`finetune_table.py` turns a fine tuning into a table it can plot; `how_to_rerun.py` writes HOW-TO-RERUN.md;
+`snapshot.sh` copies a campaign's results and restart files next to its plots. Each `figures_*.sh` makes one figure
+folder under `$COPS_OUTPUT_ROOT/figures_cluster/<RES>/` (its header names it) and writes HOW-TO-RERUN.md there; from
+2026-11-06 on (`figures_12m_late_weights.sh`) also `code/` with the code that ran and the AMPS commit of each fit.
+They run on the login node (no GPU), from `$APP` with `.venv/bin/python`.
+
+## Running on another machine
+
+The copies are as run on Voyager. Change, in the files you use: `APP`, `AMPS`, `T`, `COPS_OUTPUT_ROOT`,
+`COPS_DATA_ROOT`, `CUDA_PATH`/`CUDA_HOME`, the MPI path in `PATH`, and the `#SBATCH` partition, account,
+`--nodelist` and resource lines. Then `./check_copies.sh` reports those files as DIFFERS, as expected; keep the
+change in git so that the code of every new run is recorded.
 
 ---
 
