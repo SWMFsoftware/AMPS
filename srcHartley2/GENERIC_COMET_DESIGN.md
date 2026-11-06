@@ -379,3 +379,57 @@ must extend the event interface rather than copy the comet chemistry into a
 new mover. Corrected collisions remain covered by the Stage-4 replay, but a
 transported Stage-8 daughter interacting in the NTC collision kernel is a
 Stage-9 science-validation requirement rather than a Stage-8 claim.
+
+## Stage 9 validation boundary
+
+Stage 9 deliberately adds no comet identity or alternate reaction database.
+It separates a reusable estimator-selection and evidence layer from the
+Halley-specific science policy:
+
+- `CometChemistry` owns the runtime `configured`, `analog`, and `enhanced`
+  estimator arms. One Stage-6/7/8-enabled binary reserves one particle layout
+  and installs one callback set for both comparison arms.
+- `RadialSimulation` owns DIM1 checkpoint collection because it has the
+  authoritative radial-cell order, sampling-window boundary, local block
+  weights, and safe points for adaptation and load balancing.
+- the general AMPS NTC kernel remains unchanged. A focused application
+  fixture sends transported Stage-8 daughters into that production kernel and
+  audits its existing probability and conservation behavior.
+- validation tooling owns immutable manifests, hashes, confidence intervals,
+  cost-normalized comparisons, and case-specific acceptance thresholds.
+
+The analog arm changes only the estimator: one packet, physical channel
+probability, unit likelihood, and stochastic reaction occurrence. The
+enhanced arm enables the compiled packet, channel-importance, and
+total-occurrence layers. Neither arm may change geometry, rates, excess
+energies, collision cross sections, source rates, mesh, generated chemistry,
+or executable. This same-binary rule prevents a compiler or table change from
+being misidentified as a variance-reduction effect.
+
+For one model particle, the science carrier is
+
+```text
+q = W_block,species * c_particle.
+```
+
+Therefore cell ESS is `(sum q)^2/sum(q^2)`. A future DIM2 or DIM3 checkpoint
+backend must preserve that definition but replace the DIM1 radial traversal
+with a deterministic geometry-appropriate cell identity. It must also retain
+the same safe-boundary contract: no unfinished local-timestep fraction, no
+pending chemistry event, and exact agreement between linked particle lists
+and the live-buffer count before sampling, adaptation, or repartitioning.
+
+The transported-daughter collision fixture is reusable as a boundary test,
+not as a physical Halley collision experiment. It proves that a real
+importance-weighted daughter retains its record and represented rate through
+the mover and enters the production general-NTC algorithm. Physical science
+acceptance still requires measured collision counts, independent seeds,
+daughter flux closure, profile uncertainty, buffer headroom, convergence, and
+cost in the complete comet run.
+
+No Stage-9 core source file is added or modified. Later master integration
+must first merge and validate the existing generic Stage-8 null-default mover
+callback contract, then add the application estimator selection, checkpoint
+writer, focused collision fixture, and evidence tooling as separate
+reviewable changes. DIM2/DIM3 support should generalize the application-side
+checkpoint traversal; it must not introduce comet chemistry into the core.

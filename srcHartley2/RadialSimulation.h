@@ -105,6 +105,12 @@ extern long int MaximumIndividualCorrectionWindowSplits;
 // after every species passes for RequiredConvergedWindows successive windows.
 extern double ConvergenceTolerance;
 extern int RequiredConvergedWindows;
+// Stage-9 science diagnostics are an explicit opt-in because they perform a
+// complete particle scan after every iteration and add a new checkpoint
+// schema.  They are intended for one frozen Stage-6/7/8-enabled executable
+// used by both analog and enhanced comparison arms; ordinary comet inputs
+// retain the historical output and cost when this switch is off.
+extern bool Stage9ScienceDiagnosticsEnabled;
 
 bool Validate(std::string *error=NULL);
 

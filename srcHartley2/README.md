@@ -1545,3 +1545,152 @@ science result. Production use still requires independent-seed analog/forced
 variance and cost comparisons, parent-profile invariance, collision feedback,
 minor-species flux closure, buffer headroom, convergence, and regenerated
 Rubin comparison products.
+
+## Stage 9 transported-science instrumentation
+
+Stage 9 adds a same-binary comparison path so estimator statistics can be
+changed without changing compiled physics.  Build one executable with
+individual corrections and Stages 5--8 enabled, then select the runtime arm:
+
+```sh
+mpiexec -n 12 /absolute/path/to/stage9/amps \
+  --chemistry-estimator-mode analog
+
+mpiexec -n 12 /absolute/path/to/stage9/amps \
+  --chemistry-estimator-mode enhanced
+```
+
+The default `configured` mode preserves the behavior selected by the input.
+`analog` uses one daughter packet, physical channel selection, likelihood
+one, and stochastic total reaction occurrence. `enhanced` activates the
+compiled Stage-6/7/8 policies. Both arms use the identical particle layout,
+callbacks, chemistry/collision tables, and executable. The startup provenance
+line reports the selected mode and compiled feature flags.
+
+Enable the sampling-window evidence only in the validation input:
+
+```text
+Stage9ScienceDiagnostics=ON
+```
+
+The parser requires DIM1 radial chemistry, comet diagnostics, individual
+corrections, Bernoulli residual sampling, and enabled Stage-5 correction
+windows, Stage-6 daughter packets, Stage-7 channel importance, and Stage-8
+total-reaction forcing. Ordinary inputs retain the previous output and scan
+cost when the switch is off.
+
+Every completed window writes a summary in both CSV and JSON plus one
+per-cell carrier table per species:
+
+```text
+PT/diagnostics/comet_stage9_checkpoint.out=<N>.csv
+PT/diagnostics/comet_stage9_checkpoint.out=<N>.json
+PT/diagnostics/stage9_carriers.<SPECIES>.out=<N>.csv
+```
+
+Carrier ESS uses the complete physical carrier
+`q=W_block,species*c_particle`. The files include per-species inventory,
+`sum(q^2)`, Kish ESS, occupied cells, minimum positive cell ESS, correction
+range, wall time, capacity and peak utilization, safe-boundary audit count,
+seed, ranks, and estimator mode. A safe-boundary audit aborts on an unfinished
+local-timestep fraction, a pending Stage-8 event, or particle-list/count
+disagreement.
+
+Run the transported-daughter collision compatibility matrix with a frozen
+enabled executable and a new output directory:
+
+```sh
+srcHartley2/tests/run_stage9_integrated_tests.sh \
+  --executable /absolute/path/to/stage9/amps \
+  --output-root /new/absolute/path/to/stage9-collision-validation \
+  --chemistry-validation-events 200000
+```
+
+This launches `--validate-transported-daughter-collision` at exactly 1, 4,
+and 12 ranks. The fixture moves actual Stage-8 C daughters across the live
+local/MPI execution track and then collides them with H2O through production
+general NTC. The strict parser checks ownership, record preservation,
+collision feedback, probabilities, represented rate, momentum, and complete
+trajectory/event drain. The directory must not already exist.
+
+The science evaluator has a separate dependency-free mutation suite:
+
+```sh
+srcHartley2/tests/run_stage9_science_gate_tests.sh
+srcHartley2/tests/run_stage9_science_gate_tests.sh \
+  --manifest /absolute/path/to/stage9-science-manifest.json \
+  --output /new/absolute/path/to/stage9-science-result.json
+```
+
+The first command tests the evaluator with synthetic records only. It does
+not validate Halley. A real manifest must checksum every compact run summary,
+contain balanced analog/enhanced arms with at least four independent seeds
+each, and provide all scientific thresholds explicitly. Missing evidence is a
+failure, not a skipped metric.
+
+The remaining focused Stage-9 contracts are run with:
+
+```sh
+srcHartley2/tests/run_stage9_parser_tests.sh
+python3 srcHartley2/tests/test_stage9_checkpoint_outputs_selftest.py
+srcHartley2/validation/run_stage9_tooling_tests.sh
+srcHartley2/validation/run_stage9_comparison_tests.sh
+```
+
+The checkpoint checker also accepts real paired cases:
+
+```sh
+python3 srcHartley2/tests/test_stage9_checkpoint_outputs.py \
+  --case analog=/absolute/path/to/analog \
+  --case enhanced=/absolute/path/to/enhanced
+```
+
+It does not trust the JSON summary alone: it recomputes counts, physical
+inventory, squared carriers, Kish ESS, occupied cells, and correction extrema
+from every per-cell CSV and requires the analog/enhanced seed, rank count,
+window, species order, and cell layout to match exactly.
+
+The durable campaign driver separates archive creation from execution:
+
+```sh
+python3 srcHartley2/validation/run_stage9_science_campaign.py plan \
+  /new/absolute/path/to/stage9-campaign \
+  --policy /absolute/path/to/resolved-stage9-policy.json \
+  --executable /absolute/path/to/frozen/stage9/amps \
+  --input /absolute/path/to/frozen/stage9.input
+
+python3 srcHartley2/validation/run_stage9_science_campaign.py run \
+  /absolute/path/to/stage9-campaign
+python3 srcHartley2/validation/run_stage9_science_campaign.py status \
+  /absolute/path/to/stage9-campaign
+```
+
+`plan` freezes executable, input, core definition, generated Stage-6/7/8 and
+chemistry headers, launcher, policy, and hashes without launching AMPS. `run`
+accepts only a pristine planned archive. `resume` preserves completed cases
+but creates a fresh attempt for each interrupted/failed case; it never resumes
+inside a partial PT tree. The shipped policy is intentionally a template:
+literal `DECISION_REQUIRED` fields make `plan` fail until the unresolved
+science thresholds are supplied.
+
+The long Stage-9 ensemble and regenerated Rubin PNG/EPS/PDF/CSV/JSON products
+remain pending. Before launching it, approve the minimum daughter carrier-ESS
+fraction, minimum variance-per-wall-time gain and bin coverage, and either a
+confidence-interval flux-closure rule or an explicit relative tolerance.
+Focused parser, collision, and checkpoint tests do not substitute for this
+science decision.
+
+Accepted focused evidence is preserved under
+`validation_runs/stage9-transported-collision-full-20261105-r3` and
+`validation_runs/stage9-checkpoint-smoke-20261105-r2`. The canonical
+Stage-0--9 aggregate logs are in
+`validation_runs/stage9-all-stage-tests-20261105`; the result is 38/38 tests
+and 10/10 groups with no skips or failures. The checkpoint smoke uses only one
+window and is intentionally nonconverged. It verifies the output contract,
+not a Rubin result.
+
+For reproducible builds, check the effective input rather than trusting only
+the command line: `.amps.conf` can override `-input`, and the generated root
+`hartley2.pl` can lag tracked `input/hartley2.pl`. Remove exactly `build/`
+before every recompile and hash the effective input, executable, core
+definition, chemistry table, and generated Stage-6/7/8 headers before a run.

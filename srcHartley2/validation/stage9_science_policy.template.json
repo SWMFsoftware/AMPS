@@ -1,0 +1,41 @@
+{
+  "schema": "amps.comet.stage9-campaign-policy.v1",
+  "seeds": [104729, 1299709, 15485863, 32452843],
+  "mpi_ranks": 12,
+  "omp_threads": 1,
+  "sampling_length": 10000,
+  "burn_in_iterations": 10000,
+  "maximum_iterations": 40000,
+  "minimum_steady_windows": 3,
+  "chemistry_validation_events": 200000,
+  "gate_policy": {
+    "minimum_seeds": 4,
+    "mpi_ranks": 12,
+    "omp_threads": 1,
+    "burn_in_iterations": 10000,
+    "minimum_steady_windows": 3,
+    "maximum_buffer_utilization": 0.75,
+    "confidence_multiplier": 3.182446305,
+    "minimum_forced_daughter_collisions": 1,
+    "flux_closure": {
+      "method": "DECISION_REQUIRED",
+      "relative_tolerance": "DECISION_REQUIRED"
+    },
+    "primary_species": {
+      "H2O": {
+        "relative_tolerance": 0.05,
+        "combined_se_multiplier": 2.0
+      }
+    },
+    "daughter_species": {
+      "C2": {
+        "relative_tolerance": 0.05,
+        "combined_se_multiplier": 2.0,
+        "minimum_ess_fraction": "DECISION_REQUIRED",
+        "maximum_zero_cell_fraction": 0.05,
+        "minimum_variance_cost_gain": "DECISION_REQUIRED",
+        "minimum_gain_bin_fraction": "DECISION_REQUIRED"
+      }
+    }
+  }
+}

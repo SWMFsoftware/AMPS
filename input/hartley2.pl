@@ -64,6 +64,7 @@ my $HeliocentricDistanceAUIsSet=0;
 my $CometRandomSeedIsSet=0;
 my $ChemistryModeIsSet=0;
 my $CometDiagnosticsEnabled=0;
+my $Stage9ScienceDiagnosticsEnabled=0;
 my $ChemistryResidualSamplingIsSet=0;
 my $ChemistryResidualSampling="BERNOULLI";
 my $ConfiguredGeometry="";
@@ -340,6 +341,17 @@ while ($line=<InputFile>) {
     ampsConfigLib::ChangeValueOfVariable("bool Comet::Diagnostics::Enabled",
         $InputLine eq "ON" ? "true" : "false","main/CometDiagnostics.cpp");
     $CometDiagnosticsEnabled=($InputLine eq "ON") ? 1 : 0;
+  }
+  elsif ($InputLine eq "STAGE9SCIENCEDIAGNOSTICS") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    $InputLine=~s/ //g;
+    die "Stage9ScienceDiagnostics must be ON or OFF, line=$InputFileLineNumber ($InputFileName)\n"
+        unless $InputLine eq "ON" || $InputLine eq "OFF";
+    ampsConfigLib::ChangeValueOfVariable(
+        "bool Comet::RadialSimulation::Stage9ScienceDiagnosticsEnabled",
+        $InputLine eq "ON" ? "true" : "false",
+        "main/RadialSimulation.cpp");
+    $Stage9ScienceDiagnosticsEnabled=($InputLine eq "ON") ? 1 : 0;
   }
   elsif ($InputLine eq "PHYSICSDATABASE") {
     ($InputLine,$InputComment)=split(' ',$InputComment,2);
@@ -1555,6 +1567,38 @@ my $ResolvedTotalReactionForcing=
 $TotalReactionForcingPolicy->write_header(
     "$WorkingSourceDirectory/main/CometTotalReactionForcingPolicy.generated.h",
     $ResolvedTotalReactionForcing);
+
+# Stage 9 compares the analog and fully enhanced estimators from one frozen
+# executable.  Its checkpoint writer is useful only when the complete
+# correction/packet/channel/occurrence stack is compiled into that binary;
+# runtime selection between the two arms must not change particle layout or
+# generated policy provenance.  Keep this opt-in so older production inputs
+# retain byte-for-byte output schemas and no additional collective scans.
+if ($Stage9ScienceDiagnosticsEnabled) {
+  die "Stage9ScienceDiagnostics=ON requires Dimension=1\n"
+      unless $Dimension==1;
+  die "Stage9ScienceDiagnostics=ON requires RadialSimulationMode=ON\n"
+      unless radialSimulationIsEnabled(
+          "$WorkingSourceDirectory/main/RadialSimulation.cpp");
+  die "Stage9ScienceDiagnostics=ON requires ChemistryMode=ON\n"
+      unless chemistryIsEnabled(
+          "$WorkingSourceDirectory/main/CometChemistry.cpp");
+  die "Stage9ScienceDiagnostics=ON requires CometDiagnostics=ON\n"
+      unless $CometDiagnosticsEnabled;
+  die "Stage9ScienceDiagnostics=ON requires ParticleWeightCorrectionMode=ON\n"
+      unless individualParticleWeightCorrectionIsEnabled(
+          "$WorkingSourceDirectory/pic/picGlobal.dfn");
+  die "Stage9ScienceDiagnostics=ON requires ChemistryResidualSampling=BERNOULLI\n"
+      unless $ChemistryResidualSampling eq 'BERNOULLI';
+  die "Stage9ScienceDiagnostics=ON requires ParticleWeightCorrectionWindowMode=ON\n"
+      unless $CorrectionWindowPolicy->is_enabled();
+  die "Stage9ScienceDiagnostics=ON requires ChemistryDaughterPacketMode=ON\n"
+      unless $DaughterPacketPolicy->is_enabled();
+  die "Stage9ScienceDiagnostics=ON requires ChemistryChannelImportanceMode=ON\n"
+      unless $ChannelImportancePolicy->is_enabled();
+  die "Stage9ScienceDiagnostics=ON requires ChemistryTotalReactionForcingMode=ON\n"
+      unless $TotalReactionForcingPolicy->is_enabled();
+}
 
 ampsConfigLib::ChangeValueOfArray("double Comet::Model::SurfaceProductionRate\\[PIC::nTotalSpecies\\]",\@SurfaceProductionRate,"main/CometModel.cpp");
 ampsConfigLib::ChangeValueOfArray("int Comet::Model::SurfaceDistributionMode\\[PIC::nTotalSpecies\\]",\@SurfaceDistributionMode,"main/CometModel.cpp");

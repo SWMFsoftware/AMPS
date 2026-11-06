@@ -1466,6 +1466,97 @@ interpretable Halley result rather than merely a smoother curve.
 - The run reaches the configured convergence criterion; a hard-limit result
   remains labeled nonconverged regardless of visual smoothness.
 
+### Stage-9 implementation status (2026-11-05)
+
+The measurement and comparison infrastructure is now implemented on
+`1d_comet_dev`; the long independent-seed science decision has **not** yet
+been run or accepted.  One Stage-6/7/8-enabled executable can select either
+estimator at startup with
+
+```text
+--chemistry-estimator-mode analog
+--chemistry-estimator-mode enhanced
+```
+
+`analog` uses one daughter packet, physical conditional channel probabilities,
+unit likelihood, and ordinary stochastic total reaction occurrence.
+`enhanced` executes the compiled Stage-6 packet, Stage-7 channel-importance,
+and Stage-8 total-occurrence policies.  Both choices retain the same particle
+layout, generated tables, callbacks, physical reaction network, collision
+database, mesh, and executable.  `configured` remains the default and keeps
+the input-selected production behavior.  Runtime selection is rejected after
+particle storage is reserved, and the compiled policies are still validated
+in the analog arm so that an invalid enhanced configuration cannot hide behind
+the comparison mode.
+
+The opt-in input record
+
+```text
+Stage9ScienceDiagnostics=ON
+```
+
+requires DIM1 radial chemistry, comet diagnostics, individual particle
+corrections, Bernoulli residual sampling, and enabled Stage-5/6/7/8 policies.
+At each complete sampling window it writes
+
+```text
+PT/diagnostics/comet_stage9_checkpoint.out=<N>.csv
+PT/diagnostics/comet_stage9_checkpoint.out=<N>.json
+PT/diagnostics/stage9_carriers.<SPECIES>.out=<N>.csv
+```
+
+For a model particle the carrier used in the effective-sample-size audit is
+`q=W_block,species*c_particle`, not the correction alone.  The per-cell Kish
+ESS is `(sum q)^2/sum(q^2)`.  Checkpoints also record physical inventory,
+correction extrema, occupied cells, the minimum positive cell ESS, sampling-
+window wall time, rank capacity, peak buffer utilization, estimator mode,
+seed, and MPI size.  Safe-boundary scans at load balance, regular adaptation,
+and checkpoint time fail immediately if the linked-list live count disagrees
+with `NAllPart`, a local-timestep remainder is pending, or a Stage-8 reaction
+event remains armed.
+
+The focused `--validate-transported-daughter-collision` mode extends the
+accepted Stage-8 production-mover fixture.  Its actual transported C daughter
+records from `C2 -> 2C` enter the production general-NTC kernel with H2O.  The
+strict 1/4/12-rank parser requires pointer/owner identity, velocity feedback
+in both populations, unchanged species/correction/event/remainder records,
+zero unfinished trajectories, valid unit probabilities, represented-rate
+closure, and weighted momentum closure.  This is a collision-wiring and
+correction-compatibility test; it is not an independent-seed convergence or
+Rubin-validation result.
+
+The checksum-protected science gate consumes at least four balanced seeds per
+arm and rejects missing or ambiguous data.  It checks fresh starts, identical
+physics/mesh/network hashes, convergence and burn-in, steady windows,
+buffer/emergency state, pending trajectories/events, parent invariance,
+daughter confidence intervals and profiles, carrier ESS, zero-cell fraction,
+source/production/loss/escape identities, transported daughter collisions,
+and variance per wall-clock cost.  Its synthetic mutation suite validates
+the evaluator only; a synthetic PASS is never comet science evidence.
+
+The campaign driver exposes separate `plan`, `run`, `resume`, and read-only
+`status` operations. Planning freezes one executable/input/core/generated-
+policy provenance set before launch. Every case begins at iteration zero;
+resume preserves accepted cases but makes a new attempt for interrupted or
+failed cases and never reuses a partial PT tree. Enhanced cases run the
+focused transported-daughter collision gate before their long run. The
+distributed policy template contains literal `DECISION_REQUIRED` entries,
+and planning rejects it until the scientific choices below are supplied.
+
+The following policy values remain scientific decisions and therefore are
+not inferred from Stage-6/7/8 fixtures or from visual agreement with Rubin:
+
+- minimum carrier-ESS fraction for each claimed daughter;
+- minimum variance-per-wall-time gain and the required fraction of resolved
+  radial bins that must achieve it; and
+- the daughter flux-closure rule: preferably a seed confidence interval that
+  contains zero imbalance, or otherwise an explicitly supplied relative
+  tolerance.
+
+Until those values are approved and the complete balanced ensemble passes,
+Stage 9 remains open as a science stage even when all focused implementation
+tests pass.
+
 ## Stage 10: documentation and master-merge preparation
 
 ### Documentation required after every stage
@@ -1520,13 +1611,16 @@ manifest. Wait for explicit user approval.
 
 ## Recommended immediate next action
 
-Stage 8 is implemented and focused-tested for its explicitly supported radial
-configuration. The canonical correction-off, packet-off, importance-off,
-total-forcing-off build has been restored and the complete archived Stage
-0--8 orchestrator passes 30 tests in nine groups. Do not merge to `master`
+Stage 9 is implemented and focused-tested for its explicitly supported radial
+configuration. The canonical correction-off, window-off, packet-off,
+importance-off, total-forcing-off, diagnostics-off build has been restored.
+The complete archived Stage 0--9 orchestrator passes 38 tests in ten groups,
+including the 1/4/12 transported-daughter/general-NTC matrix and paired
+same-binary analog/enhanced checkpoint validation. These tests close the
+implementation stage, not the scientific gate. Do not merge to `master`
 without a separate user decision and completed science validation.
 
-The next scientific action is a transported independent-seed Stage-9 pilot.
+The next scientific action is an independent-seed Stage-9 pilot.
 Compare analog chemistry with candidate Stage-6 packets, complete Stage-7
 conditional policies, and Stage-8 forcing using identical physical inputs and
 documented independent seeds. Measure uncertainty per daughter, family ESS,
@@ -1535,3 +1629,10 @@ primary profiles; and only then select production controls. The equal C2 and
 H2O probabilities and broad windows in the accepted archives are validation
 fixtures, not calibrated Halley/Rubin parameters. Never select packets,
 windows, `q*`, or forcing species by tuning to the Rubin curve.
+
+Before planning that ensemble, obtain explicit values for the minimum
+per-daughter carrier-ESS fraction, minimum variance-per-walltime gain and
+required resolved-bin fraction, plus either the recommended independent-seed
+flux-imbalance confidence interval containing zero or an approved positive
+relative tolerance. The shipped template intentionally contains
+`DECISION_REQUIRED` and refuses to launch without those choices.

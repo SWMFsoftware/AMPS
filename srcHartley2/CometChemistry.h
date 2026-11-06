@@ -63,6 +63,21 @@ double GetChannelLikelihoodRatio(std::size_t reaction);
 extern bool TotalReactionForcingEnabled;
 bool IsTotalReactionForcingConfigured(int species);
 
+// Stage-9 estimator arms use one frozen Stage-6/7/8-enabled executable.  The
+// configured mode preserves the input-selected behavior.  Analog keeps the
+// identical particle layout and installed mover callbacks but executes N=1,
+// physical channel probabilities, unit likelihood, and ordinary stochastic
+// reaction occurrence.  Enhanced executes the compiled policies.
+namespace EstimatorMode {
+enum Type {Configured=0,Analog=1,Enhanced=2};
+}
+extern int ActiveEstimatorMode;
+bool ConfigureEstimatorMode(int mode,std::string *error=NULL);
+const char* GetEstimatorModeName();
+bool IsDaughterPacketSplittingActive();
+bool IsChannelImportanceSamplingActive();
+bool IsTotalReactionForcingActive();
+
 // Install the three application callbacks used by the core first-order
 // trajectory-event hook. This must run after particle-data offsets have been
 // requested but before PIC::Mover::Init validates the all-or-none callback
@@ -114,8 +129,18 @@ bool ValidateChannelImportanceSampling(long int eventsPerFamily);
 
 // Exercise the deterministic carrier split, conditional position inversion,
 // Stage-7 likelihood/Stage-6 packet composition, rollback contract, and
-// mover-event continuation with decomposition-independent fixtures.
-bool ValidateTotalReactionForcing(long int eventsPerFixture);
+// mover-event continuation with decomposition-independent fixtures.  The
+// optional Stage-9 arm continues from the exact live mover products into the
+// production general-NTC kernel; the default preserves the accepted Stage-8
+// test and its output schema.
+bool ValidateTotalReactionForcing(long int eventsPerFixture,
+    bool validateTransportedCollision=false);
+
+// Read-only checkpoint audit used by Stage 9.  The void pointer keeps this
+// geometry-neutral interface independent of pic.h; callers pass an AMPS
+// particle-data record.  A correction-off/Stage-8-off build has no reserved
+// marker and therefore always returns false.
+bool HasPendingTotalReactionEvent(const void *particleData);
 
 // Exercise owner-only block state, common packet phases, transaction
 // rollback, dynamic MPI block migration, and a real local-weight restart.

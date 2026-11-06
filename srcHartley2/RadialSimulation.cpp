@@ -50,11 +50,80 @@ int Comet::RadialSimulation::IndividualCorrectionWindowPolicySource[PIC::nTotalS
 long int Comet::RadialSimulation::MaximumIndividualCorrectionWindowSplits=-1;
 double Comet::RadialSimulation::ConvergenceTolerance=-1.0;
 int Comet::RadialSimulation::RequiredConvergedWindows=-1;
+bool Comet::RadialSimulation::Stage9ScienceDiagnosticsEnabled=false;
 
 namespace {
+// Stage-9 monitoring is deliberately kept outside the production diagnostic
+// accumulators.  The values below describe one wall-clock sampling window and
+// are reset only after its immutable checkpoint has been written.  Keeping
+// them process-local avoids a new collective on every particle iteration;
+// the checkpoint reduction reports the slowest rank and the largest observed
+// per-rank allocation pressure.
+long int Stage9WindowPeakLiveParticles=0;
+double Stage9WindowPeakBufferUtilization=0.0;
+double Stage9WindowStartWallTime=0.0;
+unsigned long long Stage9SafeBoundaryAudits=0;
+
 bool Fail(const std::string &message,std::string *error) {
   if (error!=NULL) *error=message;
   return false;
+}
+
+void UpdateStage9BufferPeak() {
+  if (!Comet::RadialSimulation::Stage9ScienceDiagnosticsEnabled) return;
+  const long int live=PIC::ParticleBuffer::NAllPart;
+  const long int capacity=PIC::ParticleBuffer::MaxNPart;
+  if (live<0 || capacity<=0 || live>capacity) {
+    std::fprintf(stderr,
+        "invalid particle-buffer state in Stage-9 monitoring: live=%ld capacity=%ld\n",
+        live,capacity);
+    std::abort();
+  }
+  Stage9WindowPeakLiveParticles=std::max(
+      Stage9WindowPeakLiveParticles,live);
+  Stage9WindowPeakBufferUtilization=std::max(
+      Stage9WindowPeakBufferUtilization,
+      static_cast<double>(live)/static_cast<double>(capacity));
+}
+
+// Local-timestep continuation particles and Stage-8 event markers are valid
+// only inside the production mover's drained execution track.  Population
+// adaptation, output, and AMR redistribution must never observe either state.
+// Scan at those comparatively infrequent boundaries instead of every
+// iteration so the science diagnostic cannot dominate a 40,000-step run.
+void AuditStage9SafeBoundary(const char *boundary) {
+  if (!Comet::RadialSimulation::Stage9ScienceDiagnosticsEnabled) return;
+  long long live=0,pendingRemainders=0,pendingReactionEvents=0;
+  const int cellCount=
+      _BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
+  for (unsigned int blockIndex=0;
+       blockIndex<PIC::DomainBlockDecomposition::nLocalBlocks;blockIndex++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=
+        PIC::DomainBlockDecomposition::BlockTable[blockIndex];
+    if (node==NULL || node->block==NULL) continue;
+    for (int cell=0;cell<cellCount;cell++)
+      for (long int ptr=node->block->FirstCellParticleTable[cell];ptr!=-1;
+           ptr=PIC::ParticleBuffer::GetNext(ptr)) {
+        live++;
+        PIC::ParticleBuffer::byte *data=
+            PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+        const double remainder=
+            PIC::Mover::GetLocalTimeStepRemainderFraction(data);
+        if (!std::isfinite(remainder) || remainder!=0.0)
+          pendingRemainders++;
+        if (Comet::Chemistry::HasPendingTotalReactionEvent(data))
+          pendingReactionEvents++;
+      }
+  }
+  if (live!=PIC::ParticleBuffer::NAllPart || pendingRemainders!=0 ||
+      pendingReactionEvents!=0) {
+    std::fprintf(stderr,
+        "Stage-9 unsafe %s boundary on rank %d: list-live=%lld buffer-live=%ld pending-remainders=%lld pending-reaction-events=%lld\n",
+        boundary,PIC::ThisThread,live,PIC::ParticleBuffer::NAllPart,
+        pendingRemainders,pendingReactionEvents);
+    std::abort();
+  }
+  Stage9SafeBoundaryAudits++;
 }
 
 bool HasConfiguredDirectSource(int species) {
@@ -2696,6 +2765,239 @@ void WriteStage3CellSamplesInternal(long int outputIndex,long int sampleLength) 
   }
 }
 
+// Accumulate instantaneous, individually weighted carriers in the same
+// authoritative radial-cell ordering used by the Stage-3 density tables.
+// q=W_block,species*c_particle is the physical carrier represented by one
+// model particle.  The Kish carrier ESS in a cell is therefore
+// (sum q)^2/sum(q^2); using corrections alone would be wrong after local
+// block-weight adaptation changes W between radial blocks.
+void FillLocalStage9CarrierSamples(
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,long int &cellIndex,
+    std::vector<double> &weightSum,std::vector<double> &weightSquareSum,
+    std::vector<double> &minimumCorrection,
+    std::vector<double> &maximumCorrection,
+    std::vector<unsigned long long> &carrierCount) {
+  if (node==NULL) return;
+  if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+    if (node->Thread==PIC::ThisThread && node->block!=NULL) {
+      for (int i=0;i<_BLOCK_CELLS_X_;i++)
+        for (long int ptr=node->block->FirstCellParticleTable[i];ptr!=-1;
+             ptr=PIC::ParticleBuffer::GetNext(ptr)) {
+          PIC::ParticleBuffer::byte *data=
+              PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+          const int species=PIC::ParticleBuffer::GetI(data);
+          if (species<0 || species>=PIC::nTotalSpecies) {
+            std::fprintf(stderr,
+                "invalid species in Stage-9 carrier diagnostic\n");
+            std::abort();
+          }
+          const double correction=
+              PIC::ParticleBuffer::GetIndividualStatWeightCorrection(data);
+          const double carrier=node->block->GetLocalParticleWeight(species)*
+              correction;
+          if (!(correction>0.0) || !std::isfinite(correction) ||
+              !(carrier>0.0) || !std::isfinite(carrier) ||
+              !std::isfinite(carrier*carrier)) {
+            std::fprintf(stderr,
+                "invalid Stage-9 carrier for species %d\n",species);
+            std::abort();
+          }
+          const std::size_t offset=
+              static_cast<std::size_t>(cellIndex+i)*PIC::nTotalSpecies+
+              species;
+          weightSum[offset]+=carrier;
+          weightSquareSum[offset]+=carrier*carrier;
+          minimumCorrection[offset]=std::min(minimumCorrection[offset],
+              correction);
+          maximumCorrection[offset]=std::max(maximumCorrection[offset],
+              correction);
+          carrierCount[offset]++;
+        }
+    }
+    cellIndex+=_BLOCK_CELLS_X_;
+    return;
+  }
+  for (int child=0;child<(1<<DIM);child++)
+    FillLocalStage9CarrierSamples(node->downNode[child],cellIndex,weightSum,
+        weightSquareSum,minimumCorrection,maximumCorrection,carrierCount);
+}
+
+void WriteStage9CheckpointInternal(long int completedIteration,
+    long int outputIndex,long int sampleLength) {
+  if (!Comet::RadialSimulation::Stage9ScienceDiagnosticsEnabled) return;
+  AuditStage9SafeBoundary("science-checkpoint");
+  UpdateStage9BufferPeak();
+
+  const long int cellCount=CountProfileCells(PIC::Mesh::mesh->rootTree);
+  const std::size_t valueCount=
+      static_cast<std::size_t>(cellCount)*PIC::nTotalSpecies;
+  if (cellCount<=0 || valueCount>static_cast<std::size_t>(INT_MAX)) {
+    std::fprintf(stderr,"Stage-9 carrier output exceeds the MPI count limit\n");
+    std::abort();
+  }
+  std::vector<double> localWeight(valueCount,0.0),
+      localWeight2(valueCount,0.0),globalWeight(valueCount,0.0),
+      globalWeight2(valueCount,0.0);
+  std::vector<double> localMinimum(valueCount,
+      std::numeric_limits<double>::infinity());
+  std::vector<double> localMaximum(valueCount,0.0),globalMinimum(valueCount),
+      globalMaximum(valueCount);
+  std::vector<unsigned long long> localCount(valueCount,0),
+      globalCount(valueCount,0);
+  long int visited=0;
+  FillLocalStage9CarrierSamples(PIC::Mesh::mesh->rootTree,visited,
+      localWeight,localWeight2,localMinimum,localMaximum,localCount);
+  if (visited!=cellCount) {
+    std::fprintf(stderr,"inconsistent Stage-9 carrier traversal\n");
+    std::abort();
+  }
+  MPI_Reduce(localWeight.data(),globalWeight.data(),static_cast<int>(valueCount),
+      MPI_DOUBLE,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(localWeight2.data(),globalWeight2.data(),
+      static_cast<int>(valueCount),MPI_DOUBLE,MPI_SUM,0,
+      MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(localMinimum.data(),globalMinimum.data(),
+      static_cast<int>(valueCount),MPI_DOUBLE,MPI_MIN,0,
+      MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(localMaximum.data(),globalMaximum.data(),
+      static_cast<int>(valueCount),MPI_DOUBLE,MPI_MAX,0,
+      MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(localCount.data(),globalCount.data(),
+      static_cast<int>(valueCount),MPI_UNSIGNED_LONG_LONG,MPI_SUM,0,
+      MPI_GLOBAL_COMMUNICATOR);
+
+  const long int localPeak=Stage9WindowPeakLiveParticles;
+  const long int localCurrent=PIC::ParticleBuffer::NAllPart;
+  const long int localCapacity=PIC::ParticleBuffer::MaxNPart;
+  long int globalPeak=0,globalCurrent=0,minimumCapacity=0,maximumCapacity=0;
+  MPI_Reduce(&localPeak,&globalPeak,1,MPI_LONG,MPI_MAX,0,
+      MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(&localCurrent,&globalCurrent,1,MPI_LONG,MPI_SUM,0,
+      MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(&localCapacity,&minimumCapacity,1,MPI_LONG,MPI_MIN,0,
+      MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(&localCapacity,&maximumCapacity,1,MPI_LONG,MPI_MAX,0,
+      MPI_GLOBAL_COMMUNICATOR);
+  double globalPeakUtilization=0.0;
+  MPI_Reduce(&Stage9WindowPeakBufferUtilization,&globalPeakUtilization,1,
+      MPI_DOUBLE,MPI_MAX,0,MPI_GLOBAL_COMMUNICATOR);
+  const double localWallSeconds=std::max(0.0,
+      MPI_Wtime()-Stage9WindowStartWallTime);
+  double globalWallSeconds=0.0;
+  MPI_Reduce(&localWallSeconds,&globalWallSeconds,1,MPI_DOUBLE,MPI_MAX,0,
+      MPI_GLOBAL_COMMUNICATOR);
+  const unsigned long long localAudits=Stage9SafeBoundaryAudits;
+  unsigned long long minimumAudits=0,maximumAudits=0;
+  MPI_Reduce(&localAudits,&minimumAudits,1,MPI_UNSIGNED_LONG_LONG,MPI_MIN,0,
+      MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(&localAudits,&maximumAudits,1,MPI_UNSIGNED_LONG_LONG,MPI_MAX,0,
+      MPI_GLOBAL_COMMUNICATOR);
+
+  if (PIC::ThisThread==0) {
+    const char *mode=Comet::Chemistry::GetEstimatorModeName();
+    const std::string base="PT/diagnostics/comet_stage9_checkpoint.out="+
+        std::to_string(outputIndex);
+    FILE *csv=std::fopen((base+".csv").c_str(),"w");
+    FILE *json=std::fopen((base+".json").c_str(),"w");
+    if (csv==NULL || json==NULL) {
+      if (csv!=NULL) std::fclose(csv);
+      if (json!=NULL) std::fclose(json);
+      std::fprintf(stderr,"cannot open Stage-9 checkpoint output\n");
+      std::abort();
+    }
+    std::fprintf(csv,
+        "iteration,output_index,sampling_length,estimator_mode,random_seed,mpi_ranks,species,model_carriers,physical_inventory,sum_squared_weights,carrier_ess,occupied_cells,minimum_positive_cell_ess,correction_min,correction_max,window_wall_seconds,peak_rank_live_particles,total_live_particles,rank_capacity_min,rank_capacity_max,peak_buffer_utilization,safe_boundary_audits,pending_remainders,pending_reaction_events\n");
+    std::fprintf(json,
+        "{\n  \"schema\": \"amps.comet.stage9-checkpoint.v1\",\n  \"iteration\": %ld,\n  \"output_index\": %ld,\n  \"sampling_length\": %ld,\n  \"estimator_mode\": \"%s\",\n  \"random_seed\": %llu,\n  \"mpi_ranks\": %d,\n  \"window_wall_seconds\": %.17e,\n  \"peak_rank_live_particles\": %ld,\n  \"total_live_particles\": %ld,\n  \"rank_capacity_min\": %ld,\n  \"rank_capacity_max\": %ld,\n  \"peak_buffer_utilization\": %.17e,\n  \"safe_boundary_audits_min\": %llu,\n  \"safe_boundary_audits_max\": %llu,\n  \"pending_remainders\": 0,\n  \"pending_reaction_events\": 0,\n  \"species\": [\n",
+        completedIteration,outputIndex,sampleLength,mode,
+        static_cast<unsigned long long>(Comet::Model::RandomSeed),
+        PIC::nTotalThreads,globalWallSeconds,globalPeak,globalCurrent,
+        minimumCapacity,maximumCapacity,globalPeakUtilization,minimumAudits,
+        maximumAudits);
+
+    for (int species=0;species<PIC::nTotalSpecies;species++) {
+      char symbol[_MAX_STRING_LENGTH_PIC_];
+      PIC::MolecularData::GetChemSymbol(symbol,species);
+      double weight=0.0,weight2=0.0,minimum=INFINITY,maximum=0.0;
+      unsigned long long count=0,occupiedCells=0;
+      double minimumCellEss=INFINITY;
+      const std::string cellPath=std::string("PT/diagnostics/stage9_carriers.")+
+          symbol+".out="+std::to_string(outputIndex)+".csv";
+      FILE *cellFile=std::fopen(cellPath.c_str(),"w");
+      if (cellFile==NULL) {
+        std::fprintf(stderr,"cannot open Stage-9 carrier cell output %s\n",
+            cellPath.c_str());
+        std::abort();
+      }
+      std::fprintf(cellFile,
+          "cell_index,model_carriers,sum_weights,sum_squared_weights,carrier_ess,correction_min,correction_max,output_index,sampling_length,estimator_mode,random_seed,mpi_ranks\n");
+      for (long int cell=0;cell<cellCount;cell++) {
+        const std::size_t offset=
+            static_cast<std::size_t>(cell)*PIC::nTotalSpecies+species;
+        const unsigned long long cellCountValue=globalCount[offset];
+        const double cellWeight=globalWeight[offset];
+        const double cellWeight2=globalWeight2[offset];
+        const double cellEss=cellWeight2>0.0 ?
+            cellWeight*cellWeight/cellWeight2 : 0.0;
+        if (cellCountValue>0) {
+          occupiedCells++;
+          minimumCellEss=std::min(minimumCellEss,cellEss);
+          minimum=std::min(minimum,globalMinimum[offset]);
+          maximum=std::max(maximum,globalMaximum[offset]);
+        }
+        count+=cellCountValue;
+        weight+=cellWeight;
+        weight2+=cellWeight2;
+        std::fprintf(cellFile,
+            "%ld,%llu,%.17e,%.17e,%.17e,",
+            cell,cellCountValue,cellWeight,cellWeight2,cellEss);
+        if (cellCountValue>0)
+          std::fprintf(cellFile,"%.17e,%.17e,",globalMinimum[offset],
+              globalMaximum[offset]);
+        else std::fprintf(cellFile,",,");
+        std::fprintf(cellFile,"%ld,%ld,%s,%llu,%d\n",outputIndex,
+            sampleLength,mode,
+            static_cast<unsigned long long>(Comet::Model::RandomSeed),
+            PIC::nTotalThreads);
+      }
+      std::fclose(cellFile);
+      const double ess=weight2>0.0 ? weight*weight/weight2 : 0.0;
+      std::fprintf(csv,"%ld,%ld,%ld,%s,%llu,%d,%s,%llu,%.17e,%.17e,%.17e,%llu,",
+          completedIteration,outputIndex,sampleLength,mode,
+          static_cast<unsigned long long>(Comet::Model::RandomSeed),
+          PIC::nTotalThreads,symbol,count,weight,weight2,ess,occupiedCells);
+      if (occupiedCells>0)
+        std::fprintf(csv,"%.17e,%.17e,%.17e,",minimumCellEss,minimum,
+            maximum);
+      else std::fprintf(csv,",,,");
+      std::fprintf(csv,"%.17e,%ld,%ld,%ld,%ld,%.17e,%llu,0,0\n",
+          globalWallSeconds,globalPeak,globalCurrent,minimumCapacity,
+          maximumCapacity,globalPeakUtilization,minimumAudits);
+      std::fprintf(json,
+          "    {\"symbol\": \"%s\", \"model_carriers\": %llu, \"physical_inventory\": %.17e, \"sum_squared_weights\": %.17e, \"carrier_ess\": %.17e, \"occupied_cells\": %llu, \"minimum_positive_cell_ess\": ",
+          symbol,count,weight,weight2,ess,occupiedCells);
+      if (occupiedCells>0)
+        std::fprintf(json,"%.17e, \"correction_min\": %.17e, \"correction_max\": %.17e}",
+            minimumCellEss,minimum,maximum);
+      else
+        std::fprintf(json,"null, \"correction_min\": null, \"correction_max\": null}");
+      std::fprintf(json,species+1==PIC::nTotalSpecies ? "\n" : ",\n");
+    }
+    std::fprintf(json,"  ]\n}\n");
+    std::fclose(csv);
+    std::fclose(json);
+  }
+
+  // Begin the next window from the current population; this preserves a
+  // post-checkpoint baseline even when adaptation immediately changes it.
+  Stage9WindowPeakLiveParticles=PIC::ParticleBuffer::NAllPart;
+  Stage9WindowPeakBufferUtilization=
+      static_cast<double>(PIC::ParticleBuffer::NAllPart)/
+      static_cast<double>(PIC::ParticleBuffer::MaxNPart);
+  Stage9WindowStartWallTime=MPI_Wtime();
+  Stage9SafeBoundaryAudits=0;
+}
+
 void FillLocalCellMeasureAudit(
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,long int &cellIndex,
     std::vector<double> &radius,std::vector<double> &innerRadius,
@@ -3135,6 +3437,16 @@ bool Comet::RadialSimulation::Validate(std::string *error) {
     return Fail("radial convergence tolerance must be in (0,1]",error);
   if (RequiredConvergedWindows<=0)
     return Fail("required converged-window count must be positive",error);
+  if (Stage9ScienceDiagnosticsEnabled) {
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ != _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+    return Fail("Stage-9 science diagnostics require individual particle corrections",error);
+#else
+    if (!Comet::Diagnostics::Enabled)
+      return Fail("Stage-9 science diagnostics require comet diagnostics",error);
+    if (!Comet::Chemistry::Enabled)
+      return Fail("Stage-9 science diagnostics require comet chemistry",error);
+#endif
+  }
 
   for (int species=0;species<PIC::nTotalSpecies;species++) {
     if (!(CharacteristicSpeed[species]>0.0) ||
@@ -4760,9 +5072,18 @@ void Comet::RadialSimulation::Run() {
   int convergedWindows=0;
   long int completedWindows=0;
   long int previousOutputNumber=PIC::DataOutputFileNumber;
+  if (Stage9ScienceDiagnosticsEnabled) {
+    Stage9WindowPeakLiveParticles=PIC::ParticleBuffer::NAllPart;
+    Stage9WindowPeakBufferUtilization=
+        static_cast<double>(PIC::ParticleBuffer::NAllPart)/
+        static_cast<double>(PIC::ParticleBuffer::MaxNPart);
+    Stage9WindowStartWallTime=MPI_Wtime();
+    Stage9SafeBoundaryAudits=0;
+  }
 
   for (long int iteration=0;iteration<MaxIterations;iteration++) {
     PIC::TimeStep();
+    UpdateStage9BufferPeak();
     // Cooling changes particle internal energy after this iteration's
     // transport/collisions and before the next iteration.  It deliberately
     // uses only the previously completed macroscopic sample.
@@ -4773,13 +5094,17 @@ void Comet::RadialSimulation::Run() {
     // avoids an immediate duplicate redistribution when a science-output
     // iteration is also a multiple of the shorter scheduled interval.
     if ((iteration+1)%LoadBalanceInterval==0 &&
-        PIC::Parallel::IterationNumberAfterRebalancing!=0)
+        PIC::Parallel::IterationNumberAfterRebalancing!=0) {
+      AuditStage9SafeBoundary("load-balance");
       RebalanceRadialDomain(iteration+1);
+    }
 
     if (PIC::DataOutputFileNumber==previousOutputNumber) {
 #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
-      if (RegularAdaptationDue(iteration+1,false))
+      if (RegularAdaptationDue(iteration+1,false)) {
+        AuditStage9SafeBoundary("regular-weight-adaptation");
         AdaptParticleWeights(iteration+1);
+      }
 #endif
 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
       // PIC::TimeStep has drained every local-timestep continuation and
@@ -4812,6 +5137,8 @@ void Comet::RadialSimulation::Run() {
     }
 
     WriteStage3CellDiagnostics(previousOutputNumber-1,PIC::LastSampleLength);
+    WriteStage9CheckpointInternal(iteration+1,previousOutputNumber-1,
+        PIC::LastSampleLength);
     completedWindows++;
     std::vector<double> currentProfile=CollectIntegratedDensityProfile();
     if (previousProfile.empty()) {

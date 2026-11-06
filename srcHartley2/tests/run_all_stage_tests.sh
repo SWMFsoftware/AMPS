@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run the complete focused and archived Hartley2 chemistry-development test
-# stack for Stages 0 through 8.
+# stack for Stages 0 through 9.
 #
 # The lower-stage integrated tests intentionally consume frozen logs: their
 # own runners define those logs as the authoritative, reproducible runtime
@@ -9,7 +9,10 @@
 # orchestrator never configures or compiles AMPS, never edits an input, and
 # never removes a build tree.  Keeping build mutation outside the test process
 # guarantees that a failed fresh run cannot leave the canonical workspace
-# correction-on.
+# correction-on. Stage 9 additionally exercises its dependency-free science-
+# gate mutation suite on every invocation. A caller may also supply a completed
+# long-run manifest to evaluate scientific acceptance; omitting that optional
+# manifest never converts the synthetic tooling test into science evidence.
 #
 # All optional inputs of the individual runners are made mandatory here.  A
 # complete all-stage pass must not hide missing production/runtime evidence
@@ -36,6 +39,10 @@ stage7_output_root=
 stage8_mode=archived
 stage8_executable=
 stage8_output_root=
+stage9_mode=archived
+stage9_executable=
+stage9_output_root=
+stage9_science_manifest=
 mpi_launcher=mpiexec
 validation_particles=200000
 chemistry_validation_events=200000
@@ -47,7 +54,7 @@ usage() {
 usage: run_all_stage_tests.sh [options]
 
 Run every focused/pure test and every archived runtime-evidence checker used
-to close Hartley2 chemistry-development Stages 0 through 8.
+to close Hartley2 chemistry-development Stages 0 through 9.
 
 Options:
   --evidence-root PATH
@@ -100,13 +107,26 @@ Options:
       deterministic two-branch total-reaction forcing enabled.
   --stage8-output-root PATH
       Required in fresh Stage-8 mode and must not exist.
+  --stage9-mode archived|fresh
+      archived (default) revalidates the frozen transported-daughter/general-
+      NTC 1/4/12 matrix. fresh invokes the Stage-9 MPI runner.
+  --stage9-executable PATH
+      Required in fresh Stage-9 mode. Must be an already-built DIM1 binary
+      with Stages 5/6/7/8, individual corrections, and general NTC enabled.
+  --stage9-output-root PATH
+      Required in fresh Stage-9 mode and must not exist.
+  --stage9-science-manifest PATH
+      Optional checksum-protected long-run ANALOG/FORCED manifest. When
+      supplied, the Stage-9 science gate evaluates it in addition to its
+      always-run synthetic mutation suite. Omitting this path means the suite
+      validates tooling and collision compatibility, not scientific closure.
   --mpiexec COMMAND
-      MPI launcher for Stage-0 focused and fresh Stage-4/5/6/7/8 tests.
+      MPI launcher for Stage-0 focused and fresh Stage-4/5/6/7/8/9 tests.
   --validation-particles N
       Fresh Stage-4 and Stage-8 dependency-replay mover particles per case.
       Default: 200000.
   --chemistry-validation-events N
-      Fresh Stage-4/5/6/7/8 chemistry events per case. Default: 200000.
+      Fresh Stage-4/5/6/7/8/9 chemistry events per case. Default: 200000.
   --log-root PATH
       Preserve every per-test log and summary under a new directory. Without
       this option, successful-run logs are temporary; failed/skipped-run logs
@@ -131,6 +151,8 @@ Required evidence layout beneath --evidence-root:
   stage6-daughter-packet-full-20261105-r4
   stage7-channel-importance-full-20261105-r2
   stage8-total-reaction-forcing-full-20261105-r4
+  stage9-transported-collision-full-20261105-r3
+  stage9-checkpoint-smoke-20261105-r2
 
 The current repository build is used only as a read-only Stage-3 parser
 fixture and must be configured with individual corrections off. Rebuild it
@@ -221,6 +243,26 @@ while (( $# > 0 )); do
       stage8_output_root=$2
       shift 2
       ;;
+    --stage9-mode)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      stage9_mode=$2
+      shift 2
+      ;;
+    --stage9-executable)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      stage9_executable=$2
+      shift 2
+      ;;
+    --stage9-output-root)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      stage9_output_root=$2
+      shift 2
+      ;;
+    --stage9-science-manifest)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      stage9_science_manifest=$2
+      shift 2
+      ;;
     --mpiexec)
       [[ $# -ge 2 ]] || { usage >&2; exit 2; }
       mpi_launcher=$2
@@ -300,6 +342,13 @@ case "$stage8_mode" in
   archived|fresh) ;;
   *)
     printf 'invalid --stage8-mode value: %s\n' "$stage8_mode" >&2
+    exit 2
+    ;;
+esac
+case "$stage9_mode" in
+  archived|fresh) ;;
+  *)
+    printf 'invalid --stage9-mode value: %s\n' "$stage9_mode" >&2
     exit 2
     ;;
 esac
@@ -448,6 +497,44 @@ elif [[ -n "$stage8_executable" || -n "$stage8_output_root" ]]; then
   exit 2
 fi
 
+if [[ "$stage9_mode" == fresh ]]; then
+  if [[ -z "$stage9_executable" || -z "$stage9_output_root" ]]; then
+    printf '%s\n' \
+      'fresh Stage-9 mode requires --stage9-executable and --stage9-output-root' >&2
+    exit 2
+  fi
+  if [[ ! -f "$stage9_executable" || ! -x "$stage9_executable" ]]; then
+    printf 'Stage-9 executable is not executable: %s\n' \
+      "$stage9_executable" >&2
+    exit 2
+  fi
+  stage9_executable=$(readlink -f -- "$stage9_executable")
+  if [[ "$stage9_output_root" != /* ]]; then
+    stage9_output_root="$source_root/$stage9_output_root"
+  fi
+  if [[ -e "$stage9_output_root" ]]; then
+    printf 'fresh Stage-9 output already exists: %s\n' \
+      "$stage9_output_root" >&2
+    exit 2
+  fi
+elif [[ -n "$stage9_executable" || -n "$stage9_output_root" ]]; then
+  printf '%s\n' \
+    '--stage9-executable/--stage9-output-root are valid only in fresh mode' >&2
+  exit 2
+fi
+
+if [[ -n "$stage9_science_manifest" ]]; then
+  if [[ "$stage9_science_manifest" != /* ]]; then
+    stage9_science_manifest="$source_root/$stage9_science_manifest"
+  fi
+  if [[ ! -f "$stage9_science_manifest" ]]; then
+    printf 'Stage-9 science manifest is not a file: %s\n' \
+      "$stage9_science_manifest" >&2
+    exit 2
+  fi
+  stage9_science_manifest=$(readlink -f -- "$stage9_science_manifest")
+fi
+
 resolved_mpi_launcher=$(command -v -- "$mpi_launcher" || true)
 if [[ -z "$resolved_mpi_launcher" ]]; then
   printf 'MPI launcher is not on PATH: %s\n' "$mpi_launcher" >&2
@@ -484,6 +571,8 @@ stage5_archive="$evidence_root/stage5-correction-window-full-20261105"
 stage6_archive="$evidence_root/stage6-daughter-packet-full-20261105-r4"
 stage7_archive="$evidence_root/stage7-channel-importance-full-20261105-r2"
 stage8_archive="$evidence_root/stage8-total-reaction-forcing-full-20261105-r4"
+stage9_archive="$evidence_root/stage9-transported-collision-full-20261105-r3"
+stage9_checkpoint_archive="$evidence_root/stage9-checkpoint-smoke-20261105-r2"
 
 require_file() {
   if [[ ! -f "$1" ]]; then
@@ -575,6 +664,10 @@ for stage_rank in 1 4 12; do
     require_file \
       "$stage8_archive/mpi${stage_rank}/total-reaction-forcing/run.log"
   fi
+  if [[ "$stage9_mode" == archived ]]; then
+    require_file \
+      "$stage9_archive/mpi${stage_rank}/transported-daughter-collision/run.log"
+  fi
 done
 require_file "$stage3_root/mpi1/PT/diagnostics/stage3_cells.C2.out=0.csv"
 require_file "$stage3_root/mpi1/PT/diagnostics/cell_measures.csv"
@@ -596,6 +689,13 @@ fi
 if [[ "$stage8_mode" == archived ]]; then
   require_file "$stage8_archive/provenance/SHA256SUMS"
 fi
+require_file "$stage9_checkpoint_archive/provenance/SHA256SUMS"
+for stage9_estimator_mode in analog enhanced; do
+  require_file \
+    "$stage9_checkpoint_archive/$stage9_estimator_mode/PT/diagnostics/comet_stage9_checkpoint.out=0.json"
+  require_file \
+    "$stage9_checkpoint_archive/$stage9_estimator_mode/PT/diagnostics/comet_stage9_checkpoint.out=0.csv"
+done
 
 # The Stage-3 parser test copies generated sources from the current build but
 # never modifies them.  Require the complete fixture and correction-off mode;
@@ -623,6 +723,7 @@ print_plan() {
   printf '  Stage 6:    %s\n' "$stage6_mode"
   printf '  Stage 7:    %s\n' "$stage7_mode"
   printf '  Stage 8:    %s\n' "$stage8_mode"
+  printf '  Stage 9:    %s\n' "$stage9_mode"
   if [[ -n "$requested_log_root" ]]; then
     printf '  logs:       %s\n' "$requested_log_root"
   else
@@ -649,6 +750,15 @@ print_plan() {
     printf '  Stage-8 executable: %s\n' "$stage8_executable"
     printf '  Stage-8 output:     %s\n' "$stage8_output_root"
   fi
+  if [[ "$stage9_mode" == fresh ]]; then
+    printf '  Stage-9 executable: %s\n' "$stage9_executable"
+    printf '  Stage-9 output:     %s\n' "$stage9_output_root"
+  fi
+  if [[ -n "$stage9_science_manifest" ]]; then
+    printf '  Stage-9 science:    %s\n' "$stage9_science_manifest"
+  else
+    printf '%s\n' '  Stage-9 science:    tooling selftest only (no long-run manifest)'
+  fi
   printf '%s\n' \
     '  tests:' \
     '    Stage 0 focused MPI, analyzer, frozen baseline, production report' \
@@ -667,7 +777,11 @@ print_plan() {
     '            and decomposition-identical integrated 1/4/12 evidence' \
     '    Stage 8 input/planner and analytic forced-segment references,' \
     '            strict parser mutation tests, Stage-4/5/6/7 dependency replay,' \
-    '            and mover-integrated deterministic 1/4/12 evidence'
+    '            and mover-integrated deterministic 1/4/12 evidence' \
+    '    Stage 9 parser, science-gate/campaign/comparison mutation suites,' \
+    '            paired same-binary analog/enhanced checkpoint validation,' \
+    '            optional long-run manifest, and transported-daughter/' \
+    '            general-NTC 1/4/12 evidence'
 }
 
 print_plan
@@ -990,6 +1104,33 @@ check_stage8_provenance() {
   )
 }
 
+check_stage9_matrix() {
+  local collision_arguments=()
+  for stage_rank in 1 4 12; do
+    collision_arguments+=(
+      --collision-log "$stage_rank"
+        "$stage9_on_root/mpi${stage_rank}/transported-daughter-collision/run.log"
+    )
+  done
+  PYTHONDONTWRITEBYTECODE=1 python3 \
+    "$script_dir/test_stage9_transported_collision_logs.py" \
+    "${collision_arguments[@]}"
+}
+
+check_stage9_checkpoint_provenance() {
+  (
+    cd -- "$stage9_checkpoint_archive/provenance"
+    sha256sum -c SHA256SUMS
+  )
+}
+
+check_stage9_checkpoint_outputs() {
+  PYTHONDONTWRITEBYTECODE=1 python3 \
+    "$script_dir/test_stage9_checkpoint_outputs.py" \
+    --case "analog=$stage9_checkpoint_archive/analog" \
+    --case "enhanced=$stage9_checkpoint_archive/enhanced"
+}
+
 run_test stage0 stage0.complete env \
   HARTLEY2_MPIEXEC="$resolved_mpi_launcher" \
   HARTLEY2_STAGE0_BASELINE_ROOT="$stage0_baseline" \
@@ -1131,7 +1272,46 @@ else
 fi
 run_test stage8 stage8.matrix check_stage8_matrix
 
-stage_order=(stage0 stage1 stage2 stage3 stage4 stage5 stage6 stage7 stage8)
+# The deterministic mutation suite proves that every Stage-9 acceptance gate
+# fails closed under malformed or scientifically deficient evidence. A real
+# manifest is evaluated only when the caller supplies one explicitly; this
+# prevents a synthetic PASS from being reported as completion of the long-run
+# ANALOG/FORCED comparison.
+stage9_science_arguments=()
+if [[ -n "$stage9_science_manifest" ]]; then
+  stage9_science_arguments+=(--manifest "$stage9_science_manifest")
+fi
+run_test stage9 stage9.parser \
+  "$script_dir/run_stage9_parser_tests.sh"
+run_test stage9 stage9.science-gate-tooling \
+  "$script_dir/run_stage9_science_gate_tests.sh" \
+  "${stage9_science_arguments[@]}"
+run_test stage9 stage9.campaign-tooling \
+  "$source_root/srcHartley2/validation/run_stage9_tooling_tests.sh"
+run_test stage9 stage9.comparison-tooling \
+  "$source_root/srcHartley2/validation/run_stage9_comparison_tests.sh"
+run_test stage9 stage9.checkpoint-validator-selftest env \
+  PYTHONDONTWRITEBYTECODE=1 python3 \
+  "$script_dir/test_stage9_checkpoint_outputs_selftest.py"
+run_test stage9 stage9.checkpoint-provenance \
+  check_stage9_checkpoint_provenance
+run_test stage9 stage9.checkpoint-output-contract \
+  check_stage9_checkpoint_outputs
+
+if [[ "$stage9_mode" == fresh ]]; then
+  run_test stage9 stage9.fresh-transported-collision \
+    "$script_dir/run_stage9_integrated_tests.sh" \
+    --executable "$stage9_executable" \
+    --output-root "$stage9_output_root" \
+    --mpiexec "$resolved_mpi_launcher" \
+    --chemistry-validation-events "$chemistry_validation_events"
+  stage9_on_root=$stage9_output_root
+else
+  stage9_on_root=$stage9_archive
+fi
+run_test stage9 stage9.transported-collision-matrix check_stage9_matrix
+
+stage_order=(stage0 stage1 stage2 stage3 stage4 stage5 stage6 stage7 stage8 stage9)
 group_results=()
 passed_groups=0
 skipped_groups=0
@@ -1186,9 +1366,9 @@ fi
 
 summary_file="$log_root/summary.txt"
 {
-  printf '\nHartley2 all-stage test summary status=%s stage4-mode=%s stage5-mode=%s stage6-mode=%s stage7-mode=%s stage8-mode=%s\n' \
+  printf '\nHartley2 all-stage test summary status=%s stage4-mode=%s stage5-mode=%s stage6-mode=%s stage7-mode=%s stage8-mode=%s stage9-mode=%s\n' \
     "$overall_result" "$stage4_mode" "$stage5_mode" "$stage6_mode" \
-    "$stage7_mode" "$stage8_mode"
+    "$stage7_mode" "$stage8_mode" "$stage9_mode"
   printf '  tests: run=%d passed=%d skipped=%d failed=%d\n' \
     "$executed_tests" "$passed_tests" "$skipped_tests" "$failed_tests"
   printf '  test-groups: run=%d passed=%d skipped=%d failed=%d\n' \
@@ -1233,14 +1413,14 @@ summary_file="$log_root/summary.txt"
 } | tee "$summary_file"
 
 if [[ "$overall_result" == PASS ]]; then
-  printf 'PASS Hartley2 all-stage suite tests=%d test-groups=%d stage4-mode=%s stage5-mode=%s stage6-mode=%s stage7-mode=%s stage8-mode=%s\n' \
+  printf 'PASS Hartley2 all-stage suite tests=%d test-groups=%d stage4-mode=%s stage5-mode=%s stage6-mode=%s stage7-mode=%s stage8-mode=%s stage9-mode=%s\n' \
     "$executed_tests" "$executed_groups" "$stage4_mode" "$stage5_mode" \
-    "$stage6_mode" "$stage7_mode" "$stage8_mode"
+    "$stage6_mode" "$stage7_mode" "$stage8_mode" "$stage9_mode"
   suite_success=true
   exit 0
 fi
 
-printf 'FAIL Hartley2 all-stage suite tests=%d test-groups=%d stage4-mode=%s stage5-mode=%s stage6-mode=%s stage7-mode=%s stage8-mode=%s\n' \
+printf 'FAIL Hartley2 all-stage suite tests=%d test-groups=%d stage4-mode=%s stage5-mode=%s stage6-mode=%s stage7-mode=%s stage8-mode=%s stage9-mode=%s\n' \
   "$executed_tests" "$executed_groups" "$stage4_mode" "$stage5_mode" \
-  "$stage6_mode" "$stage7_mode" "$stage8_mode" >&2
+  "$stage6_mode" "$stage7_mode" "$stage8_mode" "$stage9_mode" >&2
 exit 1

@@ -36,6 +36,8 @@ bool Comet::Chemistry::ChannelImportanceSamplingEnabled=false;
 // Keep this definition on one physical line: the compile-time input parser
 // replaces the complete line when Stage 8 is enabled for a radial case.
 bool Comet::Chemistry::TotalReactionForcingEnabled=false;
+int Comet::Chemistry::ActiveEstimatorMode=
+    Comet::Chemistry::EstimatorMode::Configured;
 
 static_assert(
     Comet::Chemistry::DaughterPacketGenerated::ReactionCount==
@@ -50,6 +52,7 @@ namespace {
 long int ChemistryProcessedFlagOffset=-1;
 long int TotalReactionForcingStateOffset=-1;
 bool LocalChemistryAllocationPressure=false;
+bool ValidationSuppressTotalReactionForcing=false;
 
 // A forced reacted carrier is still physically the parent while it travels
 // to its conditional reaction point.  The mover therefore needs a compact,
@@ -109,6 +112,23 @@ struct cTotalReactionMoverValidationAudit {
 };
 
 cTotalReactionMoverValidationAudit TotalReactionMoverValidationAudit;
+
+// The Stage-9 transported-daughter fixture temporarily restricts the normal
+// general-NTC pair loop to the exact daughter/background pair under test.
+// These selectors are never enabled by a science run: the validator saves
+// and restores the production callback around one owner-local cell-kernel
+// invocation.  Keeping the filter here avoids adding comet-specific state to
+// the reusable collision core.
+int TransportedCollisionSpecies0=-1;
+int TransportedCollisionSpecies1=-1;
+
+bool SelectTransportedCollisionPair(
+    PIC::Mesh::cDataCenterNode*,int species0,int species1) {
+  return (species0==TransportedCollisionSpecies0 &&
+              species1==TransportedCollisionSpecies1) ||
+      (species0==TransportedCollisionSpecies1 &&
+              species1==TransportedCollisionSpecies0);
+}
 
 cTotalReactionForcingState GetTotalReactionState(
     const PIC::ParticleBuffer::byte *particleData) {
@@ -739,16 +759,80 @@ const ChemicalSolver::cReactionNetwork& Comet::Chemistry::GetNetwork() {
   return network;
 }
 
-long int Comet::Chemistry::GetDaughterPacketCount(std::size_t reaction) {
-  if (reaction>=GetNetwork().GetReactionCount()) {
+bool Comet::Chemistry::ConfigureEstimatorMode(int mode,std::string *error) {
+  if (mode!=EstimatorMode::Configured && mode!=EstimatorMode::Analog &&
+      mode!=EstimatorMode::Enhanced) {
+    if (error!=NULL) *error="unknown comet chemistry estimator mode";
+    return false;
+  }
+
+  if (ChemistryProcessedFlagOffset>=0 && mode!=ActiveEstimatorMode) {
+    if (error!=NULL)
+      *error="comet chemistry estimator mode must be selected before particle storage is reserved";
+    return false;
+  }
+
+  if (mode!=EstimatorMode::Configured) {
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ != _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+    if (error!=NULL)
+      *error="Stage-9 estimator comparison requires individual particle corrections";
+    return false;
+#else
+    // Both comparison arms intentionally require one fully enhanced binary.
+    // Analog does not turn these compiled flags off: RequestParticleData and
+    // ConfigureTotalReactionForcingMover therefore reserve/install the exact
+    // same state layout and callback contract as Enhanced.  Only the runtime
+    // estimator decisions below differ.
+    if (!DaughterPacketSplittingEnabled ||
+        !ChannelImportanceSamplingEnabled ||
+        !TotalReactionForcingEnabled) {
+      if (error!=NULL)
+        *error="Stage-9 estimator comparison requires one Stage-6/7/8-enabled executable";
+      return false;
+    }
+#endif
+  }
+
+  ActiveEstimatorMode=mode;
+  return true;
+}
+
+const char* Comet::Chemistry::GetEstimatorModeName() {
+  switch (ActiveEstimatorMode) {
+  case EstimatorMode::Configured: return "configured";
+  case EstimatorMode::Analog: return "analog";
+  case EstimatorMode::Enhanced: return "enhanced";
+  default: return "invalid";
+  }
+}
+
+bool Comet::Chemistry::IsDaughterPacketSplittingActive() {
+  return DaughterPacketSplittingEnabled &&
+      ActiveEstimatorMode!=EstimatorMode::Analog;
+}
+
+bool Comet::Chemistry::IsChannelImportanceSamplingActive() {
+  return ChannelImportanceSamplingEnabled &&
+      ActiveEstimatorMode!=EstimatorMode::Analog;
+}
+
+bool Comet::Chemistry::IsTotalReactionForcingActive() {
+  return TotalReactionForcingEnabled &&
+      ActiveEstimatorMode!=EstimatorMode::Analog &&
+      !ValidationSuppressTotalReactionForcing;
+}
+
+namespace {
+long int GetConfiguredDaughterPacketCount(std::size_t reaction) {
+  if (reaction>=Comet::Chemistry::GetNetwork().GetReactionCount()) {
     std::fprintf(stderr,"daughter-packet reaction index is out of range\n");
     std::abort();
   }
-  const long int count=DaughterPacketSplittingEnabled ?
-      DaughterPacketGenerated::PacketCount[reaction] : 1;
+  const long int count=Comet::Chemistry::DaughterPacketSplittingEnabled ?
+      Comet::Chemistry::DaughterPacketGenerated::PacketCount[reaction] : 1;
   if (count<1 ||
-      (DaughterPacketSplittingEnabled &&
-       count>MaximumDaughterPacketCount)) {
+      (Comet::Chemistry::DaughterPacketSplittingEnabled &&
+       count>Comet::Chemistry::MaximumDaughterPacketCount)) {
     std::fprintf(stderr,
         "invalid generated daughter-packet count for reaction %zu\n",
         reaction);
@@ -756,13 +840,23 @@ long int Comet::Chemistry::GetDaughterPacketCount(std::size_t reaction) {
   }
   return count;
 }
+}
+
+long int Comet::Chemistry::GetDaughterPacketCount(std::size_t reaction) {
+  if (reaction>=GetNetwork().GetReactionCount()) {
+    std::fprintf(stderr,"daughter-packet reaction index is out of range\n");
+    std::abort();
+  }
+  if (!IsDaughterPacketSplittingActive()) return 1;
+  return GetConfiguredDaughterPacketCount(reaction);
+}
 
 int Comet::Chemistry::GetDaughterPacketPolicySource(std::size_t reaction) {
   if (reaction>=GetNetwork().GetReactionCount()) {
     std::fprintf(stderr,"daughter-packet policy index is out of range\n");
     std::abort();
   }
-  return DaughterPacketSplittingEnabled ?
+  return IsDaughterPacketSplittingActive() ?
       DaughterPacketGenerated::PolicySource[reaction] : 0;
 }
 
@@ -771,7 +865,7 @@ bool Comet::Chemistry::IsChannelImportanceConfigured(std::size_t reaction) {
     std::fprintf(stderr,"channel-importance reaction index is out of range\n");
     std::abort();
   }
-  return ChannelImportanceSamplingEnabled &&
+  return IsChannelImportanceSamplingActive() &&
       ChannelImportanceGenerated::Configured[reaction]!=0;
 }
 
@@ -789,11 +883,14 @@ double Comet::Chemistry::GetPhysicalChannelProbability(
 double Comet::Chemistry::GetBiasedChannelProbability(
     std::size_t reaction) {
   if (reaction>=RuntimeBiasedChannelProbability.size()) return 0.0;
+  if (!IsChannelImportanceSamplingActive())
+    return RuntimePhysicalChannelProbability[reaction];
   return RuntimeBiasedChannelProbability[reaction];
 }
 
 double Comet::Chemistry::GetChannelLikelihoodRatio(std::size_t reaction) {
   if (reaction>=RuntimeChannelLikelihoodRatio.size()) return 1.0;
+  if (!IsChannelImportanceSamplingActive()) return 1.0;
   return RuntimeChannelLikelihoodRatio[reaction];
 }
 
@@ -803,7 +900,7 @@ bool Comet::Chemistry::IsTotalReactionForcingConfigured(int species) {
         "total-reaction-forcing species index is out of range: %d\n",species);
     std::abort();
   }
-  if (!TotalReactionForcingEnabled) return false;
+  if (!IsTotalReactionForcingActive()) return false;
   if (TotalReactionForcingGenerated::SpeciesCount!=
       static_cast<std::size_t>(PIC::nTotalSpecies)) {
     std::fprintf(stderr,
@@ -811,6 +908,19 @@ bool Comet::Chemistry::IsTotalReactionForcingConfigured(int species) {
     std::abort();
   }
   return TotalReactionForcingGenerated::Configured[species]!=0;
+}
+
+bool Comet::Chemistry::HasPendingTotalReactionEvent(
+    const void *particleData) {
+  // Check both the compiled mode and the reserved offset.  RequestParticleData
+  // deliberately reserves no 16-byte marker in ordinary Stage-8-off builds,
+  // so a checkpoint auditor must not read at an invalid negative offset.
+  if (!TotalReactionForcingEnabled || TotalReactionForcingStateOffset<0 ||
+      particleData==NULL)
+    return false;
+  const PIC::ParticleBuffer::byte *data=
+      static_cast<const PIC::ParticleBuffer::byte*>(particleData);
+  return GetTotalReactionState(data).Code!=0;
 }
 
 bool Comet::Chemistry::Validate(std::string *error) {
@@ -969,7 +1079,10 @@ bool Comet::Chemistry::Validate(std::string *error) {
     }
 
     const ChemicalSolver::cReaction &entry=GetNetwork().GetReaction(reaction);
-    const long int packetCount=GetDaughterPacketCount(reaction);
+    // Structural startup validation always checks the compiled policy, even
+    // when Stage 9 selects the analog runtime arm.  Otherwise ANALOG would
+    // hide a stale/unsafe N>1 row in the very executable used by ENHANCED.
+    const long int packetCount=GetConfiguredDaughterPacketCount(reaction);
     // Generated rules may cover a database reaction disabled by a zero rate.
     // Such a row is deterministic metadata but cannot make packet mode
     // operational, so it does not satisfy the effective-split startup gate.
@@ -2380,10 +2493,12 @@ bool Comet::Chemistry::ValidateDaughterPacketSplitting(
       // separate Stage-8 validator tests in-flight conversion. Temporarily
       // suppress only the occurrence-forcing dispatch around this one direct
       // call; generated packet and Stage-7 channel policies remain active.
-      const bool savedTotalReactionForcing=TotalReactionForcingEnabled;
-      TotalReactionForcingEnabled=false;
+      const bool savedTotalReactionSuppression=
+          ValidationSuppressTotalReactionForcing;
+      ValidationSuppressTotalReactionForcing=true;
       const bool result=ProcessParticle(ptr,first,node);
-      TotalReactionForcingEnabled=savedTotalReactionForcing;
+      ValidationSuppressTotalReactionForcing=
+          savedTotalReactionSuppression;
       return result;
     };
 
@@ -2892,7 +3007,7 @@ bool Comet::Chemistry::ValidateChannelImportanceSampling(
 }
 
 bool Comet::Chemistry::ValidateTotalReactionForcing(
-    long int eventsPerFixture) {
+    long int eventsPerFixture,bool validateTransportedCollision) {
 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ != _INDIVIDUAL_PARTICLE_WEIGHT_ON_
   if (PIC::ThisThread==0)
     std::fprintf(stderr,
@@ -3281,6 +3396,7 @@ bool Comet::Chemistry::ValidateTotalReactionForcing(
   // and the destination continuation must invoke Process at zero flight time;
   // only the mover may then release the sink's particle-buffer slot.
   bool moverPass=compositionPass;
+  bool moverProductionPass=false;
   int moverMpiFace=0;
   long long moverGlobalCounts[12]={};
   long long moverGlobalFaceTransfers=0;
@@ -3289,6 +3405,25 @@ bool Comet::Chemistry::ValidateTotalReactionForcing(
   long int moverGlobalFinalPending=0;
   double moverCorrectionError=INFINITY,moverEventPositionError=INFINITY;
   double moverRemainingFractionError=INFINITY,moverEndpointError=INFINITY;
+
+  // Stage 9 extends the Stage-8 mover fixture only when explicitly selected.
+  // Keep every result outside the nested mover scope so rank zero can emit a
+  // single strict record after all reductions have completed.
+  bool transportedCollisionPass=!validateTransportedCollision;
+  int transportedCollisionPartner=-1,transportedCollisionOwner=-1;
+  long long transportedDaughters=0,transportedPartners=0;
+  long long transportedDaughtersChanged=0,transportedPartnersChanged=0;
+  long long transportedUnchangedRecords=0,transportedUnfinished=0;
+  long long transportedWrongOwner=0,transportedCollisionCycles=0;
+  unsigned long long transportedTrials=0,transportedAccepted=0;
+  unsigned long long transportedUpdates=0,transportedProbabilityChecks=0;
+  unsigned long long transportedInvalidProbabilities=0;
+  unsigned long long transportedRoundoffClamps=0;
+  double transportedProbabilityMinimum=INFINITY;
+  double transportedProbabilityMaximum=-INFINITY;
+  double transportedCorrectionError=INFINITY;
+  double transportedRateError=INFINITY;
+  double transportedMomentumError=INFINITY;
   if (moverPass) {
     std::size_t sinkReaction=network.GetReactionCount();
     for (std::size_t reaction=0;reaction<network.GetReactionCount();reaction++)
@@ -3458,7 +3593,13 @@ bool Comet::Chemistry::ValidateTotalReactionForcing(
       // Every product endpoint then remains at least forty continuation
       // displacements from the nearest destination face, so an endpoint
       // mismatch cannot be hidden by a second face transfer.
-      const double productTimeStep=0.05*minimumWidth/
+      // The accepted Stage-8 fixture retains its original 0.05-block
+      // continuation.  Stage 9 shortens only its private copy to 0.01 block:
+      // the conditional event is 0.10 block inside the destination and a
+      // radial cell is 0.125 block wide, so every recoil endpoint then stays
+      // in the same physical cell and can enter one real NTC cell call.
+      const double productTimeStep=
+          (validateTransportedCollision ? 0.01 : 0.05)*minimumWidth/
           globalMaximumProductSpeed;
       moverPass=productTimeStep>0.0 && std::isfinite(productTimeStep) &&
           moverPass;
@@ -3656,6 +3797,510 @@ bool Comet::Chemistry::ValidateTotalReactionForcing(
             moverEventPositionError<=2.0e-12 &&
             moverRemainingFractionError<=2.0e-12 &&
             moverEndpointError<=2.0e-12;
+        moverProductionPass=moverPass;
+
+        if (validateTransportedCollision && moverPass) {
+#if _PIC__PARTICLE_COLLISION_MODEL_ != _PIC__PARTICLE_COLLISION_MODEL__NTC_
+          // Stage 9 is specifically a qualification of the correction-aware
+          // general NTC executor used by the Halley science input.  Refuse to
+          // reinterpret another collision algorithm as equivalent evidence.
+          transportedCollisionPass=false;
+#else
+          struct cTransportedCollisionRecord {
+            long int Particle=-1;
+            int Species=-1;
+            double Correction=0.0;
+            std::uint64_t CorrectionBits=0;
+            cTotalReactionForcingState State;
+            double Remainder=0.0;
+            double Velocity[3]={0.0,0.0,0.0};
+          };
+          static_assert(sizeof(double)==sizeof(std::uint64_t),
+              "Stage-9 correction-bit audit requires binary64 storage");
+
+          transportedCollisionOwner=destination->Thread;
+          for (int species=0;species<PIC::nTotalSpecies;species++) {
+            char symbol[100];
+            PIC::MolecularData::GetChemSymbol(symbol,species);
+            if (std::strcmp(symbol,"H2O")==0) {
+              transportedCollisionPartner=species;
+              break;
+            }
+          }
+
+          std::vector<cTransportedCollisionRecord> daughters,partners;
+          int collisionCell=-1,collisionI=0,collisionJ=0,collisionK=0;
+          bool localCollisionPass=transportedCollisionPartner>=0 &&
+              transportedCollisionPartner!=productSpecies;
+          double savedProductWeight=0.0,savedProductTimeStep=0.0;
+          double savedPartnerWeight=0.0,savedPartnerTimeStep=0.0;
+          bool carrierChanged=false;
+
+          // ProductEndpoints contains the pointer recorded by the application
+          // callback before the core continuation mover integrates the unused
+          // product interval.  Requiring those exact pointers here proves the
+          // collision input was created by Stage 8 and transported by the
+          // production mover; a freshly seeded C particle cannot satisfy this
+          // identity test.
+          if (destination->Thread==PIC::ThisThread) {
+            if (destination->block==NULL) localCollisionPass=false;
+            else {
+              const int cellCount=
+                  _BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
+              for (int cell=0;cell<cellCount;cell++)
+                for (long int particle=
+                         destination->block->FirstCellParticleTable[cell];
+                     particle!=-1;
+                     particle=PIC::ParticleBuffer::GetNext(particle)) {
+                  bool isTransportedDaughter=false;
+                  for (const cTotalReactionMoverValidationEndpoint &endpoint:
+                       TotalReactionMoverValidationAudit.ProductEndpoints)
+                    if (endpoint.Particle==particle) {
+                      isTransportedDaughter=true;
+                      break;
+                    }
+                  if (!isTransportedDaughter) continue;
+
+                  PIC::ParticleBuffer::byte *data=
+                      PIC::ParticleBuffer::GetParticleDataPointer(particle);
+                  cTransportedCollisionRecord record;
+                  record.Particle=particle;
+                  record.Species=PIC::ParticleBuffer::GetI(data);
+                  record.Correction=
+                      PIC::ParticleBuffer::GetIndividualStatWeightCorrection(
+                          data);
+                  std::memcpy(&record.CorrectionBits,&record.Correction,
+                      sizeof(record.CorrectionBits));
+                  record.State=GetTotalReactionState(data);
+                  record.Remainder=
+                      PIC::Mover::GetLocalTimeStepRemainderFraction(data);
+                  PIC::ParticleBuffer::GetV(record.Velocity,data);
+                  daughters.push_back(record);
+                  if (collisionCell<0) collisionCell=cell;
+                  else if (collisionCell!=cell) localCollisionPass=false;
+                }
+            }
+
+            localCollisionPass=daughters.size()==16 && collisionCell>=0 &&
+                localCollisionPass;
+            if (localCollisionPass) {
+              const double commonCorrection=daughters.front().Correction;
+              localCollisionPass=commonCorrection>0.0 &&
+                  std::isfinite(commonCorrection);
+              for (const cTransportedCollisionRecord &record:daughters)
+                localCollisionPass=record.Species==productSpecies &&
+                    record.CorrectionBits==
+                        daughters.front().CorrectionBits &&
+                    record.State.Code==0 && record.Remainder==0.0 &&
+                    localCollisionPass;
+
+              collisionI=collisionCell%_BLOCK_CELLS_X_;
+              const int yz=collisionCell/_BLOCK_CELLS_X_;
+              collisionJ=yz%_BLOCK_CELLS_Y_;
+              collisionK=yz/_BLOCK_CELLS_Y_;
+              PIC::Mesh::cDataCenterNode *center=
+                  destination->block->GetCenterNode(
+                      _getCenterNodeLocalNumber(collisionI,collisionJ,
+                          collisionK));
+              localCollisionPass=center!=NULL && center->Measure>0.0 &&
+                  std::isfinite(center->Measure) && localCollisionPass;
+
+              // A counter-stream separated from every recoil product avoids
+              // a zero-relative-speed fixture.  The real comet cross-section
+              // adapter is evaluated for every transported daughter, so the
+              // scale below remains valid if a future database makes C-H2O
+              // speed dependent.
+              double partnerVelocity[3]={-12000.0,1750.0,-625.0};
+              double minimumSigmaCr=INFINITY;
+              if (localCollisionPass)
+                for (cTransportedCollisionRecord &record:daughters) {
+                  const double dv0=record.Velocity[0]-partnerVelocity[0];
+                  const double dv1=record.Velocity[1]-partnerVelocity[1];
+                  const double dv2=record.Velocity[2]-partnerVelocity[2];
+                  const double relativeSpeed=
+                      std::sqrt(dv0*dv0+dv1*dv1+dv2*dv2);
+                  const double crossSection=PIC::MolecularCollisions::
+                      ParticleCollisionModel::UserDefined::
+                          GetTotalCrossSection(record.Velocity,
+                              partnerVelocity,productSpecies,
+                              transportedCollisionPartner,
+                              destination->block,center);
+                  const double sigmaCr=crossSection*relativeSpeed;
+                  if (!(sigmaCr>0.0) || !std::isfinite(sigmaCr))
+                    localCollisionPass=false;
+                  else minimumSigmaCr=std::min(minimumSigmaCr,sigmaCr);
+                }
+
+              constexpr int PartnerCount=64;
+              constexpr double TargetTrials=256.0;
+              double collisionCarrier=0.0;
+              if (localCollisionPass) {
+                // With W=dt=S for both species and one common correction c,
+                // the unequal-species NTC prospective count is
+                //
+                //   N_C N_H S^2 c (sigma*g)_max / V.
+                //
+                // Solving with the minimum observed sigma*g guarantees at
+                // least TargetTrials before collision limiting.  W/dt stays
+                // exactly one, preserving the represented Stage-8 product
+                // rate, while equal c, W, and dt make both update
+                // probabilities analytically one.  Every accepted collision
+                // then conserves represented momentum event by event.
+                collisionCarrier=std::sqrt(TargetTrials*center->Measure/
+                    (static_cast<double>(daughters.size())*PartnerCount*
+                     commonCorrection*minimumSigmaCr));
+                localCollisionPass=collisionCarrier>0.0 &&
+                    std::isfinite(collisionCarrier);
+              }
+
+              if (localCollisionPass) {
+                savedProductWeight=destination->block->
+                    GetLocalParticleWeight(productSpecies);
+                savedProductTimeStep=destination->block->
+                    GetLocalTimeStep(productSpecies);
+                savedPartnerWeight=destination->block->
+                    GetLocalParticleWeight(transportedCollisionPartner);
+                savedPartnerTimeStep=destination->block->
+                    GetLocalTimeStep(transportedCollisionPartner);
+                destination->block->SetLocalParticleWeight(collisionCarrier,
+                    productSpecies);
+                destination->block->SetLocalTimeStep(collisionCarrier,
+                    productSpecies);
+                destination->block->SetLocalParticleWeight(collisionCarrier,
+                    transportedCollisionPartner);
+                destination->block->SetLocalTimeStep(collisionCarrier,
+                    transportedCollisionPartner);
+                carrierChanged=true;
+
+                double partnerPosition[3];
+                PIC::ParticleBuffer::GetX(partnerPosition,
+                    PIC::ParticleBuffer::GetParticleDataPointer(
+                        daughters.front().Particle));
+                for (int index=0;index<PartnerCount;index++) {
+                  const long int particle=
+                      PIC::ParticleBuffer::GetNewParticle(true);
+                  PIC::ParticleBuffer::byte *data=
+                      PIC::ParticleBuffer::GetParticleDataPointer(particle);
+                  PIC::ParticleBuffer::SetI(transportedCollisionPartner,data);
+                  PIC::ParticleBuffer::SetX(partnerPosition,data);
+                  PIC::ParticleBuffer::SetV(partnerVelocity,data);
+                  PIC::ParticleBuffer::SetIndividualStatWeightCorrection(
+                      commonCorrection,data);
+                  PIC::ParticleBuffer::SetPrev(-1,data);
+                  PIC::ParticleBuffer::SetNext(-1,data);
+                  PIC::Mover::SetLocalTimeStepRemainderFraction(0.0,data);
+                  ClearTotalReactionState(data);
+                  ChemistryProcessedFlag(data)=1;
+#if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
+                  PIC::IDF::InitRotTemp(180.0,data);
+                  PIC::IDF::InitVibTemp(180.0,data);
+#endif
+                  KeepParticle(particle,destination->block->
+                      FirstCellParticleTable[collisionCell]);
+
+                  cTransportedCollisionRecord record;
+                  record.Particle=particle;
+                  record.Species=transportedCollisionPartner;
+                  record.Correction=commonCorrection;
+                  std::memcpy(&record.CorrectionBits,&record.Correction,
+                      sizeof(record.CorrectionBits));
+                  record.State=GetTotalReactionState(data);
+                  record.Remainder=0.0;
+                  PIC::ParticleBuffer::GetV(record.Velocity,data);
+                  partners.push_back(record);
+                }
+              }
+            }
+          }
+
+          int localSetupPass=localCollisionPass ? 1 : 0;
+          int globalSetupPass=0;
+          MPI_Allreduce(&localSetupPass,&globalSetupPass,1,MPI_INT,MPI_MIN,
+              MPI_GLOBAL_COMMUNICATOR);
+          localCollisionPass=globalSetupPass!=0;
+
+          auto weightedMomentum=[](
+              const std::vector<cTransportedCollisionRecord> &records,
+              double result[3],double &scale) {
+            for (const cTransportedCollisionRecord &record:records) {
+              const double mass=PIC::MolecularData::GetMass(record.Species);
+              double speedSquared=0.0;
+              for (int dimension=0;dimension<3;dimension++) {
+                result[dimension]+=mass*record.Correction*
+                    record.Velocity[dimension];
+                speedSquared+=record.Velocity[dimension]*
+                    record.Velocity[dimension];
+              }
+              scale+=mass*record.Correction*std::sqrt(speedSquared);
+            }
+          };
+
+          double localMomentumBefore[3]={0.0,0.0,0.0};
+          double localMomentumScale=0.0;
+          if (destination->Thread==PIC::ThisThread && localCollisionPass) {
+            weightedMomentum(daughters,localMomentumBefore,
+                localMomentumScale);
+            weightedMomentum(partners,localMomentumBefore,
+                localMomentumScale);
+          }
+
+          const auto savedCollisionSelector=PIC::MolecularCollisions::
+              ParticleCollisionModel::DoSimulateCellCollisions;
+          TransportedCollisionSpecies0=productSpecies;
+          TransportedCollisionSpecies1=transportedCollisionPartner;
+          PIC::MolecularCollisions::ParticleCollisionModel::
+              DoSimulateCellCollisions=SelectTransportedCollisionPair;
+          PIC::MolecularCollisions::ParticleCollisionModel::
+              ResetNTCValidationDiagnostic(true);
+
+          long long localCycles=0;
+          if (destination->Thread==PIC::ThisThread && localCollisionPass) {
+            // Re-seed after internal-state initialization so the collision
+            // fixture, not the number of IDF random draws, owns this stream.
+            rnd_seed(971927+PIC::ThisThread);
+            constexpr int MaximumCollisionCycles=16;
+            for (;localCycles<MaximumCollisionCycles;localCycles++) {
+              PIC::MolecularCollisions::ParticleCollisionModel::
+                  ModelCellCollisions_ntc(collisionI,collisionJ,collisionK,
+                      destination);
+              long long daughterChanges=0,partnerChanges=0;
+              for (const cTransportedCollisionRecord &record:daughters) {
+                double velocity[3];
+                PIC::ParticleBuffer::GetV(velocity,
+                    PIC::ParticleBuffer::GetParticleDataPointer(
+                        record.Particle));
+                if (std::memcmp(velocity,record.Velocity,
+                    sizeof(velocity))!=0) daughterChanges++;
+              }
+              for (const cTransportedCollisionRecord &record:partners) {
+                double velocity[3];
+                PIC::ParticleBuffer::GetV(velocity,
+                    PIC::ParticleBuffer::GetParticleDataPointer(
+                        record.Particle));
+                if (std::memcmp(velocity,record.Velocity,
+                    sizeof(velocity))!=0) partnerChanges++;
+              }
+              const auto diagnostic=PIC::MolecularCollisions::
+                  ParticleCollisionModel::GetNTCValidationDiagnostic();
+              if (daughterChanges>=8 && partnerChanges>=8 &&
+                  diagnostic.ParticleUpdateCount>=64) {
+                localCycles++;
+                break;
+              }
+            }
+          }
+
+          const auto localDiagnostic=PIC::MolecularCollisions::
+              ParticleCollisionModel::GetNTCValidationDiagnostic();
+          PIC::MolecularCollisions::ParticleCollisionModel::
+              DoSimulateCellCollisions=savedCollisionSelector;
+          TransportedCollisionSpecies0=-1;
+          TransportedCollisionSpecies1=-1;
+          PIC::MolecularCollisions::ParticleCollisionModel::
+              ResetNTCValidationDiagnostic(false);
+
+          long long localDaughters=0,localPartners=0;
+          long long localDaughtersChanged=0,localPartnersChanged=0;
+          long long localUnchangedRecords=0,localUnfinished=0;
+          long long localWrongOwner=0;
+          double localCorrectionError=0.0,localRateBefore=0.0;
+          double localRateAfter=0.0;
+          double localMomentumAfter[3]={0.0,0.0,0.0};
+          double ignoredMomentumScale=0.0;
+          if (destination->Thread==PIC::ThisThread && localCollisionPass) {
+            localDaughters=daughters.size();
+            localPartners=partners.size();
+            for (const cTransportedCollisionRecord &record:daughters) {
+              PIC::ParticleBuffer::byte *data=
+                  PIC::ParticleBuffer::GetParticleDataPointer(
+                      record.Particle);
+              double velocity[3],correction;
+              std::uint64_t correctionBits=0;
+              PIC::ParticleBuffer::GetV(velocity,data);
+              correction=PIC::ParticleBuffer::
+                  GetIndividualStatWeightCorrection(data);
+              std::memcpy(&correctionBits,&correction,
+                  sizeof(correctionBits));
+              const cTotalReactionForcingState state=
+                  GetTotalReactionState(data);
+              const double remainder=PIC::Mover::
+                  GetLocalTimeStepRemainderFraction(data);
+              if (std::memcmp(velocity,record.Velocity,
+                  sizeof(velocity))!=0) localDaughtersChanged++;
+              const bool unchanged=PIC::ParticleBuffer::GetI(data)==
+                      record.Species &&
+                  correctionBits==record.CorrectionBits &&
+                  std::memcmp(&state,&record.State,sizeof(state))==0 &&
+                  remainder==record.Remainder &&
+                  ChemistryProcessedFlag(data)==1;
+              if (unchanged) localUnchangedRecords++;
+              if (state.Code!=0 || remainder!=0.0) localUnfinished++;
+              localCorrectionError=std::max(localCorrectionError,
+                  std::fabs(correction-record.Correction)/record.Correction);
+              localRateBefore+=record.Correction;
+              localRateAfter+=correction;
+
+              cTransportedCollisionRecord after=record;
+              after.Correction=correction;
+              std::memcpy(after.Velocity,velocity,sizeof(velocity));
+              std::vector<cTransportedCollisionRecord> one(1,after);
+              weightedMomentum(one,localMomentumAfter,
+                  ignoredMomentumScale);
+            }
+            for (const cTransportedCollisionRecord &record:partners) {
+              PIC::ParticleBuffer::byte *data=
+                  PIC::ParticleBuffer::GetParticleDataPointer(
+                      record.Particle);
+              double velocity[3],correction;
+              std::uint64_t correctionBits=0;
+              PIC::ParticleBuffer::GetV(velocity,data);
+              correction=PIC::ParticleBuffer::
+                  GetIndividualStatWeightCorrection(data);
+              std::memcpy(&correctionBits,&correction,
+                  sizeof(correctionBits));
+              const cTotalReactionForcingState state=
+                  GetTotalReactionState(data);
+              const double remainder=PIC::Mover::
+                  GetLocalTimeStepRemainderFraction(data);
+              if (std::memcmp(velocity,record.Velocity,
+                  sizeof(velocity))!=0) localPartnersChanged++;
+              const bool unchanged=PIC::ParticleBuffer::GetI(data)==
+                      record.Species &&
+                  correctionBits==record.CorrectionBits &&
+                  std::memcmp(&state,&record.State,sizeof(state))==0 &&
+                  remainder==record.Remainder &&
+                  ChemistryProcessedFlag(data)==1;
+              if (unchanged) localUnchangedRecords++;
+              if (state.Code!=0 || remainder!=0.0) localUnfinished++;
+              localCorrectionError=std::max(localCorrectionError,
+                  std::fabs(correction-record.Correction)/record.Correction);
+
+              cTransportedCollisionRecord after=record;
+              after.Correction=correction;
+              std::memcpy(after.Velocity,velocity,sizeof(velocity));
+              std::vector<cTransportedCollisionRecord> one(1,after);
+              weightedMomentum(one,localMomentumAfter,
+                  ignoredMomentumScale);
+            }
+            if (PIC::ThisThread!=destination->Thread) localWrongOwner++;
+          }
+
+          if (carrierChanged) {
+            destination->block->SetLocalParticleWeight(savedProductWeight,
+                productSpecies);
+            destination->block->SetLocalTimeStep(savedProductTimeStep,
+                productSpecies);
+            destination->block->SetLocalParticleWeight(savedPartnerWeight,
+                transportedCollisionPartner);
+            destination->block->SetLocalTimeStep(savedPartnerTimeStep,
+                transportedCollisionPartner);
+          }
+
+          long long localIntegerResults[8]={localDaughters,localPartners,
+              localDaughtersChanged,localPartnersChanged,
+              localUnchangedRecords,localUnfinished,localWrongOwner,
+              localCycles};
+          long long globalIntegerResults[8]={};
+          MPI_Allreduce(localIntegerResults,globalIntegerResults,8,
+              MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+          transportedDaughters=globalIntegerResults[0];
+          transportedPartners=globalIntegerResults[1];
+          transportedDaughtersChanged=globalIntegerResults[2];
+          transportedPartnersChanged=globalIntegerResults[3];
+          transportedUnchangedRecords=globalIntegerResults[4];
+          transportedUnfinished=globalIntegerResults[5];
+          transportedWrongOwner=globalIntegerResults[6];
+          transportedCollisionCycles=globalIntegerResults[7];
+
+          unsigned long long localDiagnosticCounts[6]={
+              localDiagnostic.TrialCount,
+              localDiagnostic.AcceptedCollisionCount,
+              localDiagnostic.ParticleUpdateCount,
+              localDiagnostic.UpdateProbabilityCount,
+              localDiagnostic.InvalidUpdateProbabilityCount,
+              localDiagnostic.RoundoffClampCount};
+          unsigned long long globalDiagnosticCounts[6]={};
+          MPI_Allreduce(localDiagnosticCounts,globalDiagnosticCounts,6,
+              MPI_UNSIGNED_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+          transportedTrials=globalDiagnosticCounts[0];
+          transportedAccepted=globalDiagnosticCounts[1];
+          transportedUpdates=globalDiagnosticCounts[2];
+          transportedProbabilityChecks=globalDiagnosticCounts[3];
+          transportedInvalidProbabilities=globalDiagnosticCounts[4];
+          transportedRoundoffClamps=globalDiagnosticCounts[5];
+
+          const double localProbabilityMinimum=
+              localDiagnostic.UpdateProbabilityCount>0 ?
+                  localDiagnostic.MinimumUpdateProbability : INFINITY;
+          const double localProbabilityMaximum=
+              localDiagnostic.UpdateProbabilityCount>0 ?
+                  localDiagnostic.MaximumUpdateProbability : -INFINITY;
+          MPI_Allreduce(&localProbabilityMinimum,
+              &transportedProbabilityMinimum,1,MPI_DOUBLE,MPI_MIN,
+              MPI_GLOBAL_COMMUNICATOR);
+          MPI_Allreduce(&localProbabilityMaximum,
+              &transportedProbabilityMaximum,1,MPI_DOUBLE,MPI_MAX,
+              MPI_GLOBAL_COMMUNICATOR);
+
+          double globalMomentumBefore[3]={0.0,0.0,0.0};
+          double globalMomentumAfter[3]={0.0,0.0,0.0};
+          double globalMomentumScale=0.0;
+          MPI_Allreduce(localMomentumBefore,globalMomentumBefore,3,
+              MPI_DOUBLE,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+          MPI_Allreduce(localMomentumAfter,globalMomentumAfter,3,
+              MPI_DOUBLE,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+          MPI_Allreduce(&localMomentumScale,&globalMomentumScale,1,
+              MPI_DOUBLE,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+          double momentumDifferenceSquared=0.0;
+          for (int dimension=0;dimension<3;dimension++) {
+            const double difference=globalMomentumAfter[dimension]-
+                globalMomentumBefore[dimension];
+            momentumDifferenceSquared+=difference*difference;
+          }
+          transportedMomentumError=std::sqrt(momentumDifferenceSquared)/
+              std::max(globalMomentumScale,
+                  std::numeric_limits<double>::min());
+          MPI_Allreduce(&localCorrectionError,
+              &transportedCorrectionError,1,MPI_DOUBLE,MPI_MAX,
+              MPI_GLOBAL_COMMUNICATOR);
+          double globalRatesBeforeAfter[2]={0.0,0.0};
+          const double localRatesBeforeAfter[2]={localRateBefore,
+              localRateAfter};
+          MPI_Allreduce(localRatesBeforeAfter,globalRatesBeforeAfter,2,
+              MPI_DOUBLE,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+          transportedRateError=std::fabs(globalRatesBeforeAfter[1]-
+              globalRatesBeforeAfter[0])/
+              std::max(globalRatesBeforeAfter[0],
+                  std::numeric_limits<double>::min());
+
+          localCollisionPass=localCollisionPass &&
+              transportedDaughters==16 && transportedPartners==64 &&
+              transportedDaughtersChanged>=8 &&
+              transportedPartnersChanged>=8 &&
+              transportedUnchangedRecords==80 &&
+              transportedUnfinished==0 && transportedWrongOwner==0 &&
+              transportedCollisionCycles>0 && transportedTrials>0 &&
+              transportedAccepted>0 && transportedUpdates>=64 &&
+              transportedProbabilityChecks==2*transportedAccepted &&
+              transportedInvalidProbabilities==0 &&
+              transportedRoundoffClamps==0 &&
+              std::fabs(transportedProbabilityMinimum-1.0)<=2.0e-12 &&
+              std::fabs(transportedProbabilityMaximum-1.0)<=2.0e-12 &&
+              transportedCorrectionError==0.0 &&
+              transportedRateError==0.0 &&
+              transportedMomentumError<=2.0e-12;
+          int localCollisionResult=localCollisionPass ? 1 : 0;
+          int globalCollisionResult=0;
+          MPI_Allreduce(&localCollisionResult,&globalCollisionResult,1,
+              MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+          transportedCollisionPass=globalCollisionResult!=0;
+          moverPass=moverPass && transportedCollisionPass;
+#endif
+        }
+        else if (validateTransportedCollision) {
+          transportedCollisionPass=false;
+          moverPass=false;
+        }
         PIC::Mover::ResetLocalTimeStepFluxDiagnostic(false);
       }
       Comet::Diagnostics::Enabled=savedDiagnostics;
@@ -3730,7 +4375,8 @@ bool Comet::Chemistry::ValidateTotalReactionForcing(
         globalCounts[8],globalCounts[9],globalDoubleChemistry,
         globalCorrectionError,globalPositionError);
     std::printf("%s total-reaction-forcing mover-production ranks=%d mpi-face=%d face-transfers=%lld initial-pending=%ld continuation-moves=%ld sweeps=%d final-pending=%ld product-events=%lld sink-events=%lld wrong-owner-events=%lld final-particles=%lld survivors=%lld products=%lld uncleared-markers=%lld nonzero-remainders=%lld processed=%lld endpoint-checks=%lld moved-endpoints=%lld correction-error=%.17e event-position-error=%.17e remaining-fraction-error=%.17e endpoint-error=%.17e\n",
-        moverPass ? "PASS" : "FAIL",PIC::nTotalThreads,moverMpiFace,
+        moverProductionPass ? "PASS" : "FAIL",PIC::nTotalThreads,
+        moverMpiFace,
         moverGlobalFaceTransfers,moverGlobalInitialPending,
         moverGlobalContinuationMoves,moverGlobalSweeps,
         moverGlobalFinalPending,moverGlobalCounts[0],moverGlobalCounts[1],
@@ -3739,6 +4385,22 @@ bool Comet::Chemistry::ValidateTotalReactionForcing(
         moverGlobalCounts[8],moverGlobalCounts[9],moverGlobalCounts[11],
         moverCorrectionError,moverEventPositionError,
         moverRemainingFractionError,moverEndpointError);
+    if (validateTransportedCollision)
+      std::printf("%s transported-daughter-collision ranks=%d reaction=C2_2C product=%d partner=%d owner=%d daughters=%lld partners=%lld daughter-velocity-changes=%lld partner-velocity-changes=%lld unchanged-records=%lld unfinished-trajectories=%lld wrong-owner=%lld cycles=%lld trials=%llu accepted=%llu updates=%llu probability-checks=%llu invalid-probabilities=%llu roundoff-clamps=%llu probability-min=%.17e probability-max=%.17e correction-error=%.17e represented-rate-error=%.17e momentum-error=%.17e\n",
+          transportedCollisionPass ? "PASS" : "FAIL",
+          PIC::nTotalThreads,compositionProducts.empty() ? -1 :
+              compositionProducts[0],transportedCollisionPartner,
+          transportedCollisionOwner,transportedDaughters,
+          transportedPartners,transportedDaughtersChanged,
+          transportedPartnersChanged,transportedUnchangedRecords,
+          transportedUnfinished,transportedWrongOwner,
+          transportedCollisionCycles,transportedTrials,
+          transportedAccepted,transportedUpdates,
+          transportedProbabilityChecks,transportedInvalidProbabilities,
+          transportedRoundoffClamps,
+          transportedProbabilityMinimum,transportedProbabilityMaximum,
+          transportedCorrectionError,transportedRateError,
+          transportedMomentumError);
     std::printf("Total-reaction forcing validation result: %s homogeneous=%d piecewise=%d decay=%d composition=%d transactions=%d mover=%d events=%ld\n",
         allPass ? "PASS" : "FAIL",homogeneousPass ? 1 : 0,
         piecewiseResult.Pass ? 1 : 0,decayPass ? 1 : 0,
@@ -3950,7 +4612,7 @@ bool ProcessTotalReactionForcedParticle(long int ptr,
   }
 
   std::size_t selectedSlot=parentRates.Channels.size()-1;
-  if (!Comet::Chemistry::ChannelImportanceSamplingEnabled ||
+  if (!Comet::Chemistry::IsChannelImportanceSamplingActive() ||
       !parentRates.ImportanceConfigured) {
     double selector=rnd()*parentRates.TotalRate;
     for (std::size_t slot=0;slot<parentRates.Channels.size();slot++) {
@@ -3972,7 +4634,9 @@ bool ProcessTotalReactionForcedParticle(long int ptr,
     }
   }
   const std::size_t selected=parentRates.Channels[selectedSlot];
-  const double likelihood=parentRates.LikelihoodRatios[selectedSlot];
+  const double likelihood=
+      Comet::Chemistry::IsChannelImportanceSamplingActive() ?
+          parentRates.LikelihoodRatios[selectedSlot] : 1.0;
   if (!(likelihood>0.0) || !std::isfinite(likelihood)) {
     std::fprintf(stderr,"invalid Stage-8 channel likelihood\n");
     std::abort();
@@ -4177,7 +4841,7 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
 
   std::size_t selectedSlot=parentRates.Channels.size()-1;
   std::size_t selected=parentRates.Channels.back();
-  if (!ChannelImportanceSamplingEnabled ||
+  if (!IsChannelImportanceSamplingActive() ||
       !parentRates.ImportanceConfigured) {
     // Compatibility boundary: retain the exact historical multiply and
     // left-to-right rate subtraction for every analog family.  Enabling a
@@ -4204,7 +4868,8 @@ bool Comet::Chemistry::ProcessParticle(long int ptr,long int &firstParticleCell,
       }
     }
   }
-  const double channelLikelihood=parentRates.LikelihoodRatios[selectedSlot];
+  const double channelLikelihood=IsChannelImportanceSamplingActive() ?
+      parentRates.LikelihoodRatios[selectedSlot] : 1.0;
   if (!(channelLikelihood>0.0) || !std::isfinite(channelLikelihood)) {
     std::fprintf(stderr,
         "invalid channel-importance likelihood for reaction %zu\n",selected);

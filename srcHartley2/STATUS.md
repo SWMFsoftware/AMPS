@@ -5175,3 +5175,270 @@ PASS Hartley2 all-stage suite tests=30 test-groups=9 stage4-mode=archived stage5
 ```
 
 No AMPS or MPI process remains active. No commit or merge was made.
+
+## Stage 9 transported-science implementation (2026-11-05, focused validation complete)
+
+Stage 9 now has the application instrumentation and strict evidence readers
+needed to compare the analog and fully enhanced estimators from one frozen
+executable. This section records implementation state, not science closure.
+The balanced long ensemble and the regenerated Rubin comparison have not yet
+been accepted. Development remains on `1d_comet_dev`, based on Stage-8 commit
+`c87bdcd0c7d2d06b0795bd7d5ec9e1a422f9e22b`. No branch switch, commit,
+merge, push, or operation on `master` is part of this work.
+
+### Modified application and input files
+
+- `input/hartley2.pl` parses `Stage9ScienceDiagnostics=ON|OFF`, writes the
+  generated `Stage9ScienceDiagnosticsEnabled` value, and fails closed unless
+  an enabled case is DIM1 radial chemistry with comet diagnostics, individual
+  corrections, Bernoulli residuals, correction windows, daughter packets,
+  channel importance, and total-reaction forcing. The default is off.
+- `srcHartley2/CometChemistry.h` declares the runtime estimator modes and
+  accessors `ConfigureEstimatorMode`, `GetEstimatorModeName`,
+  `IsDaughterPacketSplittingActive`, `IsChannelImportanceSamplingActive`, and
+  `IsTotalReactionForcingActive`. It also declares the read-only
+  `HasPendingTotalReactionEvent` safe-boundary audit and the optional
+  transported-collision extension to `ValidateTotalReactionForcing`.
+- `srcHartley2/CometChemistry.cpp` implements `configured`, `analog`, and
+  `enhanced` modes without modifying the compiled enable flags. Analog uses
+  `N=1`, physical channel selection, likelihood one, and ordinary stochastic
+  total occurrence; enhanced uses the compiled Stage-6/7/8 policies. Both
+  retain identical particle bytes and callbacks. The file also extends the
+  live Stage-8 mover fixture so actual transported C daughters from `C2_2C`
+  collide with H2O through production `ModelCellCollisions_ntc`. It audits
+  exact transported records, ownership, feedback to both velocity
+  populations, collision probabilities, correction/rate retention, completed
+  trajectories, and represented momentum.
+- `srcHartley2/RadialMain.cpp` adds
+  `--chemistry-estimator-mode configured|analog|enhanced` and
+  `--validate-transported-daughter-collision`. Estimator selection is applied
+  after compiled input initialization and before validation or particle
+  storage; a leader-only provenance record reports the active and compiled
+  policies.
+- `srcHartley2/RadialSimulation.h/.cpp` add the opt-in Stage-9 checkpoint
+  writer. A per-iteration local peak update avoids an MPI collective in the
+  hot loop. Complete sampling windows reduce carrier sums, squared carrier
+  sums, counts, correction extrema, capacity, utilization, wall time, and
+  safe-boundary audit counts. Carrier ESS uses
+  `q=W_block,species*c_particle`, so local block-weight adaptation is included.
+  Safe-boundary scans abort on an unfinished local-timestep fraction, pending
+  Stage-8 event, or linked-list/live-buffer disagreement before output,
+  adaptation, or load balancing.
+
+No Stage-9 change is made to `src/pic`. The transported-collision test calls
+the existing production general-NTC implementation, and the same-binary arms
+use the previously accepted Stage-8 null-default trajectory-event contract.
+The unrelated tracked `Makefile` linker edit remains user-owned and must not
+be folded into this stage.
+
+### New test and evidence files
+
+- `srcHartley2/tests/run_stage9_integrated_tests.sh` runs the immutable
+  transported-daughter collision fixture at exactly 1, 4, and 12 ranks into
+  a new nonexisting root. It does not build, edit input, or overwrite evidence.
+- `srcHartley2/tests/test_stage9_transported_collision_logs.py` strictly
+  parses the focused collision records and compares only deterministic
+  chemical/carrier invariants across rank counts; RNG-dependent trial counts
+  and owner rank are bounded but not required to be identical.
+- `srcHartley2/tests/test_stage9_transported_collision_logs_selftest.py`
+  mutation-tests that parser.
+- `srcHartley2/tests/run_stage9_science_gate_tests.sh` runs the dependency-free
+  gate self-tests and optionally evaluates a real manifest.
+- `srcHartley2/tests/test_stage9_science_gate.py` reads checksum-protected
+  `amps.comet.stage9-science-manifest.v1` and
+  `amps.comet.stage9-run-summary.v1` records. It requires balanced analog and
+  forced arms, at least four seeds per arm, fresh starts, identical physical
+  provenance, convergence/burn-in/windows, capacity and pending-state
+  evidence, collision feedback, primary invariance, daughter uncertainty and
+  ESS, zero-cell fractions, flux identities, and cost-normalized variance.
+- `srcHartley2/tests/test_stage9_science_gate_selftest.py` supplies valid and
+  deliberately corrupted synthetic archives. Those fixture thresholds are
+  parser tests and are not Halley science choices.
+- `srcHartley2/validation/stage9_run_summary.py` is the production summary
+  verifier. It reads completed Stage-0 chemistry
+  reports, Stage-9 checkpoint/carrier files, and unambiguous AMPS profiles; it
+  refuses to repair, interpolate, or infer missing science data.
+- `srcHartley2/validation/run_stage9_science_campaign.py` provides immutable
+  `plan`, `run`, `resume`, and read-only `status` operations for four fixed
+  seeds in balanced analog/enhanced arms. Every case starts from iteration
+  zero; resume creates a new attempt rather than reusing a partial PT tree.
+  Enhanced cases first run the focused transported-daughter collision gate in
+  an isolated directory, avoiding a new observer in the NTC hot path.
+- `srcHartley2/validation/stage9_science_policy.template.json` freezes the
+  12-rank, one-thread, 10,000-iteration burn-in, three 10,000-step accepted
+  windows, 40,000 maximum iterations, and four documented seeds. Its ESS,
+  flux-closure, variance/cost gain, and bin-coverage entries remain literal
+  `DECISION_REQUIRED`; campaign planning fails until they are resolved.
+- `srcHartley2/validation/stage9_tooling_selftest.py` and
+  `run_stage9_tooling_tests.sh` mutation-test summary construction, complete
+  provenance freezing, balanced case ordering, interruption recovery, both
+  flux-closure policies, and publication of an accepted manifest.
+- `srcHartley2/validation/generate_stage9_rubin_comparison.py`,
+  `stage9_comparison_selftest.py`, and `run_stage9_comparison_tests.sh`
+  authenticate an accepted balanced manifest before producing non-overwriting
+  PNG, EPS, PDF, CSV, and JSON ensemble products with Rubin overlays.
+- `srcHartley2/tests/run_stage9_parser_tests.sh` and
+  `test_stage9_science_diagnostics_parser.py` cover default/off/on parsing,
+  invalid tokens, and every required Stage-5/6/7/8 prerequisite.
+- `srcHartley2/tests/test_stage9_checkpoint_outputs.py` independently
+  recomputes every per-cell carrier count, `sum(q)`, `sum(q^2)`, Kish ESS,
+  correction range, and species aggregate from paired analog/enhanced smoke
+  outputs. `test_stage9_checkpoint_outputs_selftest.py` mutation-tests that
+  fail-closed contract.
+- `srcHartley2/tests/run_all_stage_tests.sh` now includes all Stage-9 parser,
+  science-gate, campaign, comparison, checkpoint, checksum, and collision
+  groups without adding an `rg` runtime dependency.
+
+### Output schemas and safe interpretation
+
+An enabled science input writes
+
+```text
+PT/diagnostics/comet_stage9_checkpoint.out=<N>.csv
+PT/diagnostics/comet_stage9_checkpoint.out=<N>.json
+PT/diagnostics/stage9_carriers.<SPECIES>.out=<N>.csv
+```
+
+The checkpoint schema is `amps.comet.stage9-checkpoint.v1`. It records the
+completed iteration, output index, sample length, mode, seed, ranks, maximum
+sampling-window wall time, live population/capacity, peak rank utilization,
+safe-boundary audits, zero pending remainders/events, and per-species physical
+carrier inventory/ESS/correction range. Per-cell tables preserve cell index,
+carrier count, `sum(q)`, `sum(q^2)`, ESS, and provenance. An empty cell has
+zero ESS and blank correction extrema; the writer does not manufacture a
+carrier for it.
+
+The focused collision log is a compatibility proof, not a measured physical
+collision rate. The controlled fixture chooses its carrier/time-step scale so
+the two update probabilities are analytically one and can expose correction-
+aware NTC wiring errors without statistical ambiguity. Long-run science must
+use the case's unmodified physical weights, timesteps, and collision data.
+
+### Accepted focused validation and exact evidence
+
+The Stage-9-enabled build was created only after removing the exact
+`/data/vtenishe/COMET1D/AMPS/build` directory. The accepted transported-
+daughter archive is:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/stage9-transported-collision-full-20261105-r3
+```
+
+Its frozen executable SHA-256 is
+`c10fca52f5be1c8bb6da79d1ac1daab6167422aeb5f5b440134fedb794d5efaf`
+and its validation-input SHA-256 is
+`8e3599d62b57b712075043ec284eca1a5d489aa1fb37b079e8ad56cb00c917d6`;
+the generated-header hashes are in `provenance/SHA256SUMS`. The strict
+1/4/12-rank matrix passed with 16 transported C daughters, 64 H2O partners,
+production general NTC, rate closure, momentum closure, and zero unfinished
+state. Earlier `-r1` and `-r2` directories are failed evidence and must not be
+substituted for `-r3`.
+
+The paired one-window same-binary smoke archive is:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/stage9-checkpoint-smoke-20261105-r2
+```
+
+Both arms used executable SHA-256
+`75cedeb999287868dd4cc7a5a273de8967de7c848cc9b3d31abf47954136ff47`,
+input SHA-256
+`ba8c812616a6f47a64652e5ff35eeceb60625bfd07221ea268a62231a48054da`,
+seed 104729, one rank, one completed iteration/window, 27 species, and 2,984
+radial cells. The independent output checker passed with zero pending
+remainders/events and identical analog/enhanced layout. The smoke is
+deliberately nonconverged and is only an output-contract test.
+
+Focused mutation/parser results were: collision parser 9/9, science gate
+15/15, campaign/summary tooling 9/9, comparison tooling 5/5, input parser
+13/13, and checkpoint validator 10/10. After restoring `halley1d.input`, the
+exact build directory was removed again and the canonical configuration was
+rebuilt with individual corrections, Stage-5 windows, Stage-6 packets,
+Stage-7 channel importance, Stage-8 forcing, and Stage-9 diagnostics all off.
+The complete aggregate result was:
+
+```text
+tests: run=38 passed=38 skipped=0 failed=0
+test-groups: run=10 passed=10 skipped=0 failed=0
+PASS Hartley2 all-stage suite tests=38 test-groups=10 stage4-mode=archived stage5-mode=archived stage6-mode=archived stage7-mode=archived stage8-mode=archived stage9-mode=archived
+```
+
+Logs are preserved under
+`/data/vtenishe/COMET1D/AMPS/validation_runs/stage9-all-stage-tests-20261105`.
+This closes Stage-9 implementation/focused validation, not its long-run
+scientific gate. Do not describe a synthetic tooling PASS, the one-window
+smoke, or the deterministic collision fixture as Halley/Rubin acceptance.
+
+Two build-provenance hazards were found and must be checked during any replay:
+`.amps.conf` can override a command-line input selection, and the root
+generated `hartley2.pl` can be stale relative to tracked `input/hartley2.pl`.
+Verify the effective `InputFileAMPS`, synchronize/regenerate the root parser,
+and hash the executable/input/generated headers before launching evidence.
+
+### Scientific decisions still required
+
+The evaluator intentionally does not silently choose:
+
+1. a minimum per-daughter carrier-ESS fraction;
+2. a minimum variance-per-wall-time gain and required fraction of resolved
+   radial bins achieving that gain; or
+3. a relative flux-closure tolerance. The preferred alternative for item 3
+   is to require the independent-seed confidence interval of the net
+   source-plus-production-minus-loss-minus-escape imbalance to contain zero.
+
+Existing Stage-3 profile/zero-cell thresholds may be retained only when their
+meaning and comparison interval are unchanged. Stage-6 packet counts, Stage-7
+target probabilities, Stage-8 forcing choices, and synthetic self-test values
+are not substitutes for these decisions.
+
+### Later merge to master: Stage-9 additions, not authorization
+
+Do not merge yet. After the full science gate passes and the user explicitly
+authorizes integration, append these steps to the Stage-8 master procedure:
+
+1. Freeze the `1d_comet_dev` commit range, merge base, Stage-9 executable,
+   validation input, generated policy headers, mesh/network/physics hashes,
+   focused collision archive, balanced seed manifest, summaries, evaluator
+   result, and Rubin comparison products. Record excluded local artifacts and
+   preserve the unrelated `Makefile` edit.
+2. Integrate the already reviewed Stages 0--8 first. Re-run the null-callback
+   core mover regressions before Stage-9 application code; Stage 9 adds no new
+   core API and must not be used to conceal a Stage-8 core conflict.
+3. Merge estimator-mode declarations/implementation and CLI as one
+   application change. Verify the default `configured` path first, then prove
+   analog and enhanced reserve identical particle bytes, install identical
+   callbacks, load identical generated tables, and reject selection after
+   storage reservation.
+4. Merge the input switch and checkpoint writer together. Replay parser cases
+   for omitted/off/on, every missing prerequisite, and invalid values. Verify
+   off mode adds neither files nor scans; verify an enabled short case writes
+   schema-v1 JSON/CSV with exact seed/rank/mode provenance and zero pending
+   states.
+5. Merge the transported-collision fixture and strict parser. Run 1/4/12 MPI
+   from one frozen executable, preserving production general NTC and the real
+   Stage-8 mover route. Do not weaken pointer, owner, probability, carrier,
+   momentum, or drain checks to accommodate a decomposition.
+6. Merge the summary builder, manifest gate, mutation tests, campaign tooling,
+   comparison exporter, checkpoint validator, and aggregate-runner wiring.
+   Verify the staged file list explicitly and keep raw PT trees and large
+   archives outside source.
+7. Clean-build the canonical correction-off input after removing exactly the
+   integration worktree's `build/`. Run every Stage 0--9 focused group plus
+   representative master/core applications and confirm default-off behavior.
+8. Reproduce the balanced analog/enhanced seed matrix from iteration zero.
+   The manifest must authenticate identical physics and numerical controls
+   except estimator mode and seed. Require convergence, accepted burn-in and
+   windows, collision feedback, buffer headroom, ESS/profile/flux gates, and
+   measured cost-normalized gain under the approved policy.
+9. Regenerate Rubin PNG, EPS, PDF, CSV, and JSON products from accepted
+   summaries with seed confidence intervals and convergence/cost metadata.
+10. Present exact diffs, commits, hashes, test counts, failed/skipped logs,
+    performance, uncertainty, closure, convergence, Rubin products, and all
+    excluded artifacts. Stop for explicit approval before any merge, push, or
+    operation affecting `master`.
+
+Never copy an entire older `CometChemistry.cpp`, `RadialSimulation.cpp`, or
+`hartley2.pl` over master. Resolve conflicts semantically around current
+master interfaces. Never stage `build/`, `amps`, root generated inputs or
+parser copies, meshes, `PT*`, transient logs, temporary validation inputs, or
+raw validation archives merely because they exist in the worktree.

@@ -19,11 +19,13 @@ void PrintUsage(const char *program) {
       "--validate-weight-adaptation | --validate-correction-windows | "
       "--validate-systematic-residual | --validate-daughter-packets | "
       "--validate-channel-importance | --validate-total-reaction-forcing | "
+      "--validate-transported-daughter-collision | "
       "--validate-unsupported-simplified-ntc] "
       "[--validation-particles N] [--validation-mover first|second|both] "
       "[--validation-skip-multiface] [--validation-unit-corrections] "
       "[--chemistry-validation-events N] [--random-seed N] "
-      "[--chemistry-residual-sampling bernoulli|systematic]\n",program);
+      "[--chemistry-residual-sampling bernoulli|systematic] "
+      "[--chemistry-estimator-mode configured|analog|enhanced]\n",program);
 }
 }
 
@@ -40,9 +42,12 @@ int main(int argc,char **argv) {
   bool validateDaughterPackets=false;
   bool validateChannelImportance=false;
   bool validateTotalReactionForcing=false;
+  bool validateTransportedDaughterCollision=false;
   bool validateUnsupportedSimplifiedNTC=false;
   bool randomSeedOverride=false;
   bool residualSamplingOverride=false;
+  bool estimatorModeOverride=false;
+  int estimatorMode=Comet::Chemistry::EstimatorMode::Configured;
   long int chemistryValidationEvents=200000;
   std::uint64_t randomSeed=Comet::Model::RandomSeed;
   Comet::LocalTimeStepValidation::cOptions validationOptions;
@@ -71,6 +76,9 @@ int main(int argc,char **argv) {
     }
     else if (option=="--validate-total-reaction-forcing") {
       validateTotalReactionForcing=true;
+    }
+    else if (option=="--validate-transported-daughter-collision") {
+      validateTransportedDaughterCollision=true;
     }
     else if (option=="--validate-unsupported-simplified-ntc") {
       validateUnsupportedSimplifiedNTC=true;
@@ -111,6 +119,26 @@ int main(int argc,char **argv) {
         return EXIT_FAILURE;
       }
       residualSamplingOverride=true;
+    }
+    else if (option=="--chemistry-estimator-mode") {
+      if (++argument>=argc) {
+        PrintUsage(argv[0]);
+        return EXIT_FAILURE;
+      }
+      const std::string mode=argv[argument];
+      if (mode=="configured" || mode=="CONFIGURED")
+        estimatorMode=Comet::Chemistry::EstimatorMode::Configured;
+      else if (mode=="analog" || mode=="ANALOG")
+        estimatorMode=Comet::Chemistry::EstimatorMode::Analog;
+      else if (mode=="enhanced" || mode=="ENHANCED")
+        estimatorMode=Comet::Chemistry::EstimatorMode::Enhanced;
+      else {
+        std::fprintf(stderr,
+            "invalid --chemistry-estimator-mode value: %s\n",
+            argv[argument]);
+        return EXIT_FAILURE;
+      }
+      estimatorModeOverride=true;
     }
     else if (option=="--validation-particles") {
       if (++argument>=argc) {
@@ -180,6 +208,7 @@ int main(int argc,char **argv) {
       (validateDaughterPackets ? 1 : 0)+
       (validateChannelImportance ? 1 : 0)+
       (validateTotalReactionForcing ? 1 : 0)+
+      (validateTransportedDaughterCollision ? 1 : 0)+
       (validateUnsupportedSimplifiedNTC ? 1 : 0);
   if (validationModeCount>1) {
     std::fprintf(stderr,
@@ -202,6 +231,28 @@ int main(int argc,char **argv) {
   // and initializes the normal owner-block state.  Physics and chemistry
   // tables remain byte-identical between arms.
   PIC::Init_BeforeParser();
+  if (estimatorModeOverride) {
+    // The generated input has now initialized the compiled Stage-6/7/8
+    // policy flags.  Select only the runtime estimator arm; never rewrite
+    // those flags, because both arms must reserve the same particle bytes,
+    // install the same mover callbacks, and pass the same generated-policy
+    // validation before the first block or particle is allocated.
+    std::string estimatorError;
+    if (!Comet::Chemistry::ConfigureEstimatorMode(estimatorMode,
+        &estimatorError)) {
+      std::fprintf(stderr,"invalid chemistry estimator mode: %s\n",
+          estimatorError.c_str());
+      return EXIT_FAILURE;
+    }
+    if (PIC::ThisThread==0) {
+      std::printf("$PREFIX: comet chemistry estimator mode=%s compiled-packets=%d compiled-channel-importance=%d compiled-total-forcing=%d identical-layout=on\n",
+          Comet::Chemistry::GetEstimatorModeName(),
+          Comet::Chemistry::DaughterPacketSplittingEnabled ? 1 : 0,
+          Comet::Chemistry::ChannelImportanceSamplingEnabled ? 1 : 0,
+          Comet::Chemistry::TotalReactionForcingEnabled ? 1 : 0);
+      std::fflush(stdout);
+    }
+  }
   if (residualSamplingOverride &&
       Comet::Chemistry::ResidualSamplingMode==
           Comet::Chemistry::ResidualSampling::RandomPhaseSystematic &&
@@ -321,6 +372,16 @@ int main(int argc,char **argv) {
     if (validateTotalReactionForcing) {
       const bool passed=Comet::Chemistry::ValidateTotalReactionForcing(
           chemistryValidationEvents);
+      MPI_Finalize();
+      return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+    if (validateTransportedDaughterCollision) {
+      // Stage 9 starts with the complete Stage-8 production-mover fixture,
+      // then feeds its exact transported daughter records to the real general
+      // NTC cell kernel.  It is deliberately a separate mode so the accepted
+      // Stage-8 parser and archive remain unchanged.
+      const bool passed=Comet::Chemistry::ValidateTotalReactionForcing(
+          chemistryValidationEvents,true);
       MPI_Finalize();
       return passed ? EXIT_SUCCESS : EXIT_FAILURE;
     }

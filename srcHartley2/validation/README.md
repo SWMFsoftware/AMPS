@@ -138,3 +138,78 @@ PYTHONDONTWRITEBYTECODE=1 python3 srcHartley2/tests/test_stage3_diagnostic_seman
 Do not merge to `master` from this workflow. Retain the complete archive,
 accepted baseline, exact hashes, outcome summary, performance/memory record,
 and comparison plots for the later user-approved integration review.
+
+## Stage-9 balanced analog/enhanced campaign
+
+`run_stage9_science_campaign.py` manages immutable balanced runs from one
+frozen executable and physical input. `plan` authenticates and copies the
+executable, input, `picGlobal.dfn`, generated chemistry table, and generated
+Stage-6/7/8 policies before any launch. `run` accepts only a pristine plan;
+`resume` retains already accepted cases but creates a fresh attempt for an
+interrupted or failed case instead of reusing partial `PT` state. `status` is
+read-only.
+
+Each completed case is reduced by `stage9_run_summary.py`. The reducer reads
+the AMPS convergence and Stage-0 chemistry reports, Stage-9 checkpoint JSON/
+CSV and per-cell carrier tables, profiles, and the transported-collision log.
+It refuses missing, ambiguous, altered, nonfinite, or internally inconsistent
+evidence; it never fills a missing science value by interpolation or a default
+assumption.
+
+Planning requires a resolved copy of
+`stage9_science_policy.template.json`. The distributed template deliberately
+uses `DECISION_REQUIRED` for the minimum daughter carrier-ESS fraction,
+variance-per-walltime improvement, required resolved-bin fraction, and flux-
+closure choice. Flux closure must be explicitly either
+`independent_seed_ci_contains_zero` with a documented null tolerance or
+`relative_tolerance` with a positive numeric tolerance. Synthetic fixture
+values are not production choices.
+
+Run the dependency-free mutation suites with:
+
+```bash
+srcHartley2/tests/run_stage9_science_gate_tests.sh
+srcHartley2/validation/run_stage9_tooling_tests.sh
+```
+
+The first currently covers 15 gate mutations and the second covers 9 archive,
+summary, recovery, and publication cases. Their PASS validates tooling only;
+the Halley claim requires a complete checksum-protected manifest with at least
+four independent seeds per arm.
+
+## Stage-9 ensemble Rubin comparison products
+
+After the complete balanced Stage-9 campaign passes the strict science gate,
+publish the independent-seed ensemble comparison with:
+
+```bash
+python3 srcHartley2/validation/generate_stage9_rubin_comparison.py \
+  validation_runs/STAGE9_CAMPAIGN/RUN_MANIFEST.json \
+  --output-directory validation_runs/STAGE9_CAMPAIGN/rubin2011_comparison
+```
+
+The exporter calls the checksum-protected science evaluator itself. It refuses
+an incomplete or altered summary, differing physical provenance, a failed
+convergence/closure/ESS/variance gate, and any attempt to overwrite an
+existing product. The five products share the basename
+`stage9_rubin2011_ensemble_comparison` and have `png`, `eps`, `pdf`, `csv`, and
+`json` extensions. Model density is converted from m^-3 to cm^-3. Every model
+curve is the mean over the documented independent seeds; dashed curves are
+the confidence bounds calculated with the policy-supplied multiplier. The
+committed Rubin vector digitization is overlaid only for species present in
+the Stage-9 gate policy, and every available published variant is identified
+explicitly.
+
+The JSON records seed identities, summary and manifest checksums, physical
+input identity, convergence state, complete post-burn-in window exposure,
+wall/MPI cost, paper-data and source-PDF provenance, and the exact plotted
+values. The long-form CSV distinguishes `ANALOG`, `FORCED`, and `RUBIN2011`
+rows, so the comparison can be reproduced without reading a raster plot.
+Synthetic tooling tests are run with:
+
+```bash
+srcHartley2/validation/run_stage9_comparison_tests.sh
+```
+
+Those tests validate authentication, fail-closed behavior, unit conversion,
+and output formats. Their synthetic PASS is not comet science evidence.
