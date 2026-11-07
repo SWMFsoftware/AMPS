@@ -116,9 +116,9 @@
       "generated_outputs": ["weight/time-step macros and particle layout"],
       "status": "partial",
       "suite_ids": ["CORE-PIC-NATIVE-001"],
-      "case_ids": ["PIC-PBUFFER-INIT-001", "PHYS-3D-COLLISION-RATE-001"],
-      "reason": "The profile is executed and local values drive the collision-rate oracle; the general weight/time-step API is not qualified.",
-      "gaps": ["individual weight correction", "unequal local weights/time steps", "split/merge", "injection/sampling normalization"]
+      "case_ids": ["PIC-PBUFFER-INIT-001", "PHYS-3D-COLLISION-RATE-001", "PIC-WEIGHT-MODE-ROUNDTRIP-001", "PIC-TIMESTEP-MODE-ROUNDTRIP-001", "PIC-WEIGHT-TIMESTEP-SPECIES-COPY-001", "PIC-WEIGHT-TIMESTEP-INVALID-VALUE-001", "PIC-WEIGHT-TIMESTEP-INVALID-SPECIES-001"],
+      "reason": "The profile directly exercises species-global weight/time-step round trips, minimum reduction, scaled cross-species copies, and host-side typed rejection of invalid values and indices; local values also drive the collision-rate oracle.",
+      "gaps": ["local and single-global profiles", "individual weight correction", "unequal-weight/time-step physics and rescaling", "CUDA device-side invalid-state diagnostics", "split/merge", "injection/sampling normalization"]
     },
     {
       "mode_id": "compile.weights.individual-correction-v1",

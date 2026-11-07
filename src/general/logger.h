@@ -16,11 +16,163 @@
 #include <time.h> 
 #include <iostream>
 #include <ctime>
+#include <cerrno>
+#include <cstdlib>
+#include <mutex>
+#include <stdexcept>
+#include <string>
 
 #include "rnd.h"
 
 #ifndef _LOGGER_H_
-#define _LOGGER_H_ 
+#define _LOGGER_H_
+
+/*
+ * Bounded synchronous diagnostics for normal core/module logging.
+ *
+ * The historical cLogger below is a watchdog/call-stack recorder built around
+ * fork, System-V shared memory, and named semaphores. Its lifetime semantics
+ * remain unchanged for existing PIC debugging. cFileLogger supplies the
+ * separate everyday contract: atomic in-process lines, explicit durable
+ * flush, bounded rotation, and a fatal path visible as failure to launchers.
+ *
+ * Timestamps are UTC with one-second resolution. Before a complete line would
+ * exceed rotation_bytes, the active file becomes `.1` and older generations
+ * move toward `.N`. A single oversized line is kept intact. std::mutex
+ * serializes threads in one process; MPI ranks must use rank-qualified paths.
+ */
+namespace AMPS {
+namespace Diagnostics {
+
+class cFileLogger {
+ private:
+  std::string path_;
+  std::size_t rotation_bytes_;
+  unsigned int backup_count_;
+  FILE* stream_;
+  std::mutex mutex_;
+
+  cFileLogger(const cFileLogger&);
+  cFileLogger& operator=(const cFileLogger&);
+
+  static std::string Generation(const std::string& path,
+                                unsigned int generation) {
+    return path + "." + std::to_string(generation);
+  }
+
+  void Open(const char* mode) {
+    stream_ = fopen(path_.c_str(), mode);
+    if (stream_ == NULL)
+      throw std::runtime_error("cannot open diagnostic log '" + path_ + "'");
+  }
+
+  long int CurrentSize() {
+    if (fseek(stream_, 0, SEEK_END) != 0)
+      throw std::runtime_error("cannot seek diagnostic log '" + path_ + "'");
+    const long int size = ftell(stream_);
+    if (size < 0)
+      throw std::runtime_error("cannot size diagnostic log '" + path_ + "'");
+    return size;
+  }
+
+  void Rotate() {
+    if (fflush(stream_) != 0)
+      throw std::runtime_error("cannot flush diagnostic log before rotation");
+    fclose(stream_);
+    stream_ = NULL;
+    if (backup_count_ == 0) {
+      Open("w");
+      return;
+    }
+    (void)remove(Generation(path_, backup_count_).c_str());
+    for (unsigned int generation = backup_count_; generation > 1;
+         --generation) {
+      const std::string old_name = Generation(path_, generation - 1);
+      const std::string new_name = Generation(path_, generation);
+      if (rename(old_name.c_str(), new_name.c_str()) != 0 && errno != ENOENT)
+        throw std::runtime_error("cannot rotate diagnostic log generation");
+    }
+    if (rename(path_.c_str(), Generation(path_, 1).c_str()) != 0 &&
+        errno != ENOENT)
+      throw std::runtime_error("cannot rotate active diagnostic log");
+    Open("w");
+  }
+
+  static std::string TimestampUTC() {
+    const time_t now = time(NULL);
+    struct tm broken_down;
+#if defined(_WIN32)
+    if (gmtime_s(&broken_down, &now) != 0)
+      throw std::runtime_error("cannot construct UTC diagnostic timestamp");
+#else
+    if (gmtime_r(&now, &broken_down) == NULL)
+      throw std::runtime_error("cannot construct UTC diagnostic timestamp");
+#endif
+    char buffer[32];
+    if (strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ",
+                 &broken_down) == 0)
+      throw std::runtime_error("cannot format UTC diagnostic timestamp");
+    return std::string(buffer);
+  }
+
+ public:
+  explicit cFileLogger(const std::string& path,
+                       std::size_t rotation_bytes = 0,
+                       unsigned int backup_count = 0)
+      : path_(path), rotation_bytes_(rotation_bytes),
+        backup_count_(backup_count), stream_(NULL) {
+    if (path_.empty())
+      throw std::invalid_argument("diagnostic log path must not be empty");
+    Open("a");
+  }
+
+  ~cFileLogger() {
+    if (stream_ != NULL) {
+      (void)fflush(stream_);
+      fclose(stream_);
+      stream_ = NULL;
+    }
+  }
+
+  void Log(const std::string& level, const std::string& message) {
+    if (level.empty())
+      throw std::invalid_argument("diagnostic log level must not be empty");
+    const std::string line = TimestampUTC() + " [" + level + "] " +
+                             message + "\n";
+    std::lock_guard<std::mutex> guard(mutex_);
+    const long int current_size = CurrentSize();
+    if (rotation_bytes_ > 0 && current_size > 0 &&
+        static_cast<std::size_t>(current_size) + line.size() >
+            rotation_bytes_)
+      Rotate();
+    if (fwrite(line.data(), 1, line.size(), stream_) != line.size())
+      throw std::runtime_error("cannot write diagnostic log '" + path_ + "'");
+  }
+
+  void Flush() {
+    std::lock_guard<std::mutex> guard(mutex_);
+    if (fflush(stream_) != 0)
+      throw std::runtime_error("cannot flush diagnostic log '" + path_ + "'");
+#if !defined(_WIN32)
+    // fflush transfers libc data to the kernel; fsync is the stronger receipt
+    // needed before deliberate fatal termination.
+    if (fsync(fileno(stream_)) != 0)
+      throw std::runtime_error("cannot synchronize diagnostic log '" + path_ + "'");
+#endif
+  }
+
+  static void Fatal(const std::string& path, const std::string& message,
+                    int status = EXIT_FAILURE) {
+    cFileLogger logger(path);
+    logger.Log("FATAL", message);
+    logger.Flush();
+    // Normalize an accidental zero so a fatal diagnostic never reports PASS.
+    std::exit(status == 0 ? EXIT_FAILURE : status);
+  }
+};
+
+}  // namespace Diagnostics
+}  // namespace AMPS
 
 template <class T>
 class cLogger {

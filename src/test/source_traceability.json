@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "Rule-based T0 source/public-contract traceability. The validator expands these areas to every current production translation unit and public compile contract; compilation alone never changes a status to tested.",
+  "description": "Rule-based T0/T1 source/public-contract traceability. The validator expands these areas to every current production translation unit and public compile contract; compilation alone never changes a status to tested.",
   "statuses": ["tested", "partial", "planned", "exempt"],
   "discovery": {
     "translation_unit_extensions": [".c", ".cc", ".cpp", ".cxx", ".f", ".f90", ".for"],
@@ -22,12 +22,25 @@
     "src/test/tests/pic/native_core/run_test.py",
     "src/general/input/test_amps_input.cpp",
     "src/test/tests/general/containers/test_general_containers.cpp",
+    "src/test/tests/general/numerics/test_general_numerics.cpp",
+    "src/test/tests/general/rng/test_general_rng.cpp",
+    "src/test/tests/general/mpi_channel/test_mpi_channel.cpp",
+    "src/test/tests/general/logger/test_general_logger.cpp",
+    "src/test/tests/pic/units/test_units.cpp",
+    "src/test/tests/species/radiation/test_species_radiation.cpp",
+    "src/test/tests/interface/test_c_abi.cpp",
+    "src/test/tests/interface/test_fortran_abi.cpp",
+    "src/test/tests/interface/test_geopack_contracts.cpp",
+    "src/test/tests/interface/run_test.py",
     "test/srcCoreUnitTests/particle_buffer.cpp",
     "test/srcCoreUnitTests/physics_photochemistry.cpp",
     "test/srcCoreUnitTests/physics_collisions.cpp",
     "test/srcCoreUnitTests/physics_distribution.cpp",
     "test/srcCoreUnitTests/physics_idf.cpp",
-    "test/srcCoreUnitTests/physics_movers.cpp"
+    "test/srcCoreUnitTests/physics_movers.cpp",
+    "test/srcCoreUnitTests/species.cpp",
+    "test/srcCoreUnitTests/units.cpp",
+    "test/srcCoreUnitTests/weight_time_t2.cpp"
   ],
   "areas": [
     {
@@ -46,22 +59,28 @@
       "component": "src/general",
       "path": "src/general",
       "status": "partial",
-      "suite_ids": ["CORE-GENERAL-CONTAINERS-001"],
-      "case_ids": ["GENERAL-ARRAY-001", "GENERAL-BITARRAY-001", "GENERAL-STACK-001", "GENERAL-LINKED-001", "GENERAL-STRING-001", "GENERAL-INDEXER4D-001"],
+      "suite_ids": ["CORE-GENERAL-CONTAINERS-001", "CORE-GENERAL-NUMERICS-001", "CORE-GENERAL-RNG-001", "CORE-GENERAL-MPI-001", "CORE-GENERAL-LOGGER-001"],
+      "case_ids": [
+        "GENERAL-ARRAY-001", "GENERAL-BITARRAY-001", "GENERAL-STACK-001", "GENERAL-LINKED-001", "GENERAL-STRING-001", "GENERAL-INDEXER4D-001",
+        "GENERAL-NUM-ARRAY-EMPTY-001", "GENERAL-NUM-ARRAY-INDEX-001", "GENERAL-NUM-ARRAY-OWNERSHIP-001", "GENERAL-NUM-ARRAY-RESIZE-001", "GENERAL-NUM-ARRAY-BOUNDS-001", "GENERAL-NUM-MANAGED-STACK-001", "GENERAL-NUM-SPECFUNC-001", "GENERAL-NUM-QUADRATURE-POLY-001", "GENERAL-NUM-QUADRATURE-CONVERGENCE-001", "GENERAL-NUM-QUADRATURE-DOMAIN-001",
+        "GENERAL-RNG-REPRO-001", "GENERAL-RNG-ENDPOINT-001", "GENERAL-RNG-STREAMS-001", "GENERAL-RNG-UNIFORM-001", "GENERAL-RNG-NORMAL-001", "GENERAL-RNG-GAMMA-001", "GENERAL-RNG-DIRECTION-001", "GENERAL-RNG-RANK-STREAM-001",
+        "GENERAL-MPI-CHANNEL-SCALAR-001", "GENERAL-MPI-CHANNEL-VECTOR-001", "GENERAL-MPI-CHANNEL-STRUCT-001", "GENERAL-MPI-CHANNEL-ZERO-001",
+        "GENERAL-LOGGER-FORMAT-LONG-001", "GENERAL-LOGGER-CONCURRENT-001", "GENERAL-LOGGER-ROTATE-FLUSH-001", "GENERAL-LOGGER-FATAL-001"
+      ],
       "local_registries": [],
-      "reason": "Selected containers and indexing utilities have direct cases; the remainder of general numerics has no global behavioral owner.",
-      "gaps": ["random streams", "special functions", "quadrature", "logger/fatal diagnostics", "multidimensional array contracts"]
+      "reason": "T1 directly covers multidimensional arrays, managed containers, RNG/distributions, quadrature, vector/integer helpers, synchronous logging, fatal diagnostics, and two-rank byte channels. The broader general directory remains partial because non-T1 grid/debug/checksum/CUDA helpers are separately inventoried.",
+      "gaps": ["legacy fork/shared-memory cLogger daemon lifecycle", "CRC/debugger stream helpers", "thread/spinlock helpers", "CUDA allocation/kernel wrappers", "legacy general grid and distribution containers"]
     },
     {
       "area_id": "interface",
       "component": "src/interface",
       "path": "src/interface",
-      "status": "planned",
-      "suite_ids": [],
-      "case_ids": [],
+      "status": "partial",
+      "suite_ids": ["CORE-INTERFACE-ABI-001"],
+      "case_ids": ["INTERFACE-C-ABI-001", "INTERFACE-FORTRAN-LEGACY-001", "INTERFACE-FORTRAN-ISO-C-001", "INTERFACE-GEOPACK-MATRIX-001", "INTERFACE-GEOPACK-CONVENTION-001", "INTERFACE-GEOPACK-NOSPICE-001", "INTERFACE-PROVIDER-ARMS-001", "INTERFACE-PROVIDER-BATSRUS-001", "INTERFACE-PROVIDER-CCMC-001", "INTERFACE-PROVIDER-KAMELEON-001", "INTERFACE-PROVIDER-SWMF-001"],
       "local_registries": [],
-      "reason": "No interface ABI or external-field wrapper is registered in the global core runner.",
-      "gaps": ["C/C++/Fortran ABI", "interpolation adapters", "optional-provider rejection", "coordinate/unit conversions"]
+      "reason": "Synthetic C/C++/Fortran ABI echoes qualify compiler/toolchain interoperability, while production Geopack ordering, coordinate, unit, and no-SPICE behavior is directly tested; unavailable external data providers are typed skips rather than false passes.",
+      "gaps": ["production C/Fortran wrapper coverage outside Geopack", "ARMS independent data fixture", "BATSRUS BATL/.idl fixture", "CCMC trajectory/background fixture", "Kameleon library/CDF fixture", "live SWMF exchange fixture", "T01/T05/T96/TA15/TA16/KMAG numerical references"]
     },
     {
       "area_id": "mesh-amr",
@@ -254,12 +273,12 @@
       "area_id": "pic-units",
       "component": "src/pic/units",
       "path": "src/pic/units",
-      "status": "planned",
-      "suite_ids": [],
-      "case_ids": [],
+      "status": "tested",
+      "suite_ids": ["CORE-UNITS-001", "CORE-PIC-NATIVE-001"],
+      "case_ids": ["UNITS-FACTOR-DERIVATION-001", "UNITS-SCALAR-ROUNDTRIP-001", "UNITS-VECTOR-ROUNDTRIP-001", "UNITS-DIMENSIONAL-IDENTITIES-001", "UNITS-INVALID-SCALES-001", "PIC-UNITS-GLOBAL-INIT-001", "PIC-UNITS-CONVERSION-TABLE-001"],
       "local_registries": [],
-      "reason": "No unit-conversion suite is registered.",
-      "gaps": ["base/derived conversions", "round trips", "dimensional consistency", "invalid units"]
+      "reason": "Independent CGS/SI factor derivations, every public scalar/vector conversion family, round trips, dimensional identities, alias safety, invalid/unrepresentable scale rejection, and native global initialization/printing are registered.",
+      "gaps": []
     },
     {
       "area_id": "pic-core",
@@ -273,22 +292,23 @@
         "PHYS-DISTRIBUTION-MAXWELLIAN-001",
         "PHYS-IDF-STORAGE-001", "PHYS-IDF-ROTATION-001", "PHYS-IDF-VIBRATION-001", "PHYS-IDF-PARTITION-001", "PHYS-IDF-RT-001", "PHYS-IDF-RT-RATE-001",
         "PHYS-MOVER-SIMPLE-001", "PHYS-MOVER-BORIS-001", "PHYS-MOVER-SURFACE-001",
-        "PHYS-3D-COLLISION-RELAXATION-001", "PHYS-3D-COLLISION-RATE-001", "PHYS-3D-PHOTODECAY-001"
+        "PHYS-3D-COLLISION-RELAXATION-001", "PHYS-3D-COLLISION-RATE-001", "PHYS-3D-PHOTODECAY-001",
+        "PIC-WEIGHT-MODE-ROUNDTRIP-001", "PIC-TIMESTEP-MODE-ROUNDTRIP-001", "PIC-WEIGHT-TIMESTEP-SPECIES-COPY-001", "PIC-WEIGHT-TIMESTEP-INVALID-VALUE-001", "PIC-WEIGHT-TIMESTEP-INVALID-SPECIES-001"
       ],
       "local_registries": [],
-      "reason": "The combined configured application owns bounded particle-buffer, collision, distribution, LB, neutral mover, sphere, and parent-decay behavior.",
-      "gaps": ["charged mover convergence", "non-NTC collision selectors", "unequal weights/time steps", "injection", "general sampling", "split/merge", "restart", "refinement/outer boundaries"]
+      "reason": "The combined configured application owns bounded particle-buffer, collision, distribution, LB, neutral mover, sphere, parent-decay, and host-side species-global particle-weight/time-step behavior, including invalid scale and species rejection.",
+      "gaps": ["charged mover convergence", "non-NTC collision selectors", "local and single-global weight/time-step profiles", "individual-particle weights", "unequal-weight/time-step physics and rescaling", "CUDA device-side weight/time-step diagnostics", "injection", "general sampling", "split/merge", "restart", "refinement/outer boundaries"]
     },
     {
       "area_id": "species",
       "component": "src/species",
       "path": "src/species",
-      "status": "planned",
-      "suite_ids": [],
-      "case_ids": [],
+      "status": "partial",
+      "suite_ids": ["CORE-PIC-NATIVE-001", "CORE-SPECIES-RADIATION-001"],
+      "case_ids": ["CONFIG-DUPLICATE-SPECIES-001", "PIC-SPECIES-CONSTANTS-001", "PIC-SPECIES-GENERATED-MAPPING-001", "PIC-SPECIES-GENERATED-TABLES-001", "PIC-SPECIES-LOOKUP-DIAGNOSTICS-001", "SPECIES-RADIATION-REFERENCE-001", "SPECIES-RADIATION-SCALING-001", "SPECIES-RADIATION-ACCELERATION-001", "SPECIES-RADIATION-INVALID-001"],
       "local_registries": [],
-      "reason": "No generated species-table suite is registered.",
-      "gaps": ["mass/charge constants", "parser mapping", "duplicate/unknown species", "compiled indices"]
+      "reason": "Generated mass/charge/type tables, compiled indices, unique/unknown parser mappings, duplicate-deck rejection, constants, and every public He/Na radiation function have computational regression, domain, and dimensional tests. The retained radiation-table literals are not a separately versioned independent digitization.",
+      "gaps": ["versioned bibliographic/page-level He/Na digitization fixture independent of production tables"]
     },
     {
       "area_id": "test-governance",

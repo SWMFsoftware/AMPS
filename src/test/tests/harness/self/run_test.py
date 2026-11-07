@@ -179,10 +179,12 @@ def test_selection_contract(context: Dict) -> None:
 
     # Campaign names are operational contracts, not aliases for identical
     # selections. Smoke is dependency-light, nightly is the complete current
-    # deterministic registry, and extended/profile select the configured
-    # native application. Pinning the sets prevents an innocent manifest edit
-    # from making machine bring-up rebuild AMPS or making extended duplicate
-    # nightly.
+    # deterministic registry, distributed selects the two-rank channel suite,
+    # extended adds the optional-provider/interface module to the configured
+    # native application, and profile selects only that native application.
+    # Pinning these complete sets makes a campaign-membership edit deliberate:
+    # a new suite cannot silently introduce an MPI launch or AMPS rebuild into
+    # machine bring-up, nor disappear from the routine nightly campaign.
     def campaign_ids(name: str) -> set:
         campaign_args = argparse.Namespace(
             test=[], match=[], component=[], all=False, case=[],
@@ -191,11 +193,19 @@ def test_selection_contract(context: Dict) -> None:
 
     assert campaign_ids("smoke") == {
         "CORE-HARNESS-001", "CORE-GENERAL-INPUT-001",
-        "CORE-GENERAL-CONTAINERS-001"}
+        "CORE-GENERAL-CONTAINERS-001", "CORE-GENERAL-NUMERICS-001",
+        "CORE-GENERAL-RNG-001", "CORE-GENERAL-LOGGER-001",
+        "CORE-UNITS-001", "CORE-SPECIES-RADIATION-001"}
     assert campaign_ids("nightly") == {
         "CORE-HARNESS-001", "CORE-GENERAL-INPUT-001",
-        "CORE-GENERAL-CONTAINERS-001", "CORE-PIC-NATIVE-001"}
-    assert campaign_ids("extended") == {"CORE-PIC-NATIVE-001"}
+        "CORE-GENERAL-CONTAINERS-001", "CORE-GENERAL-NUMERICS-001",
+        "CORE-GENERAL-RNG-001", "CORE-GENERAL-MPI-001",
+        "CORE-GENERAL-LOGGER-001", "CORE-UNITS-001",
+        "CORE-SPECIES-RADIATION-001", "CORE-INTERFACE-ABI-001",
+        "CORE-PIC-NATIVE-001"}
+    assert campaign_ids("distributed") == {"CORE-GENERAL-MPI-001"}
+    assert campaign_ids("extended") == {
+        "CORE-INTERFACE-ABI-001", "CORE-PIC-NATIVE-001"}
     assert campaign_ids("profile") == {"CORE-PIC-NATIVE-001"}
 
     unknown_case_args = argparse.Namespace(

@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "stage": "T1",
+  "purpose": "Enumerate every public T1 family so untested, unavailable, and delegated behavior cannot disappear behind aggregate PASS counts.",
+  "families": [
+    {
+      "path": "src/general/array_1d.h..array_5d.h",
+      "status": "tested",
+      "contracts": ["empty", "asymmetric indexing", "bounds", "resize", "deep copy", "move", "external alias ownership", "arithmetic"]
+    },
+    {
+      "path": "src/general/stack.h, stack_managed.h, linked_container.h, bitArray.h, indexer_4d.h",
+      "status": "tested",
+      "contracts": ["growth", "reuse", "reset/clear", "word boundaries", "iteration", "reverse lookup"]
+    },
+    {
+      "path": "src/general/rnd.h, rnd.cpp, specfunc.h::Vector3D::Distribution",
+      "status": "tested",
+      "contracts": ["fixed recurrence", "endpoint exclusion", "explicit streams", "MPI-rank streams", "uniform", "normal", "gamma", "isotropic direction", "complete reseed"]
+    },
+    {
+      "path": "src/general/quadrature.h",
+      "status": "tested",
+      "contracts": ["polynomial exactness", "multidimensional product", "smooth convergence", "endpoint-sensitive convergence", "invalid domain"]
+    },
+    {
+      "path": "src/general/specfunc.h",
+      "status": "partial",
+      "contracts": ["GCD", "vector identities"],
+      "remaining": ["CRC/debug stream", "thread/spinlock", "CUDA allocation/kernel wrappers"],
+      "note": "The historical custom erf/gam implementations are commented out; active error/gamma calls resolve to the standard math library and are not represented as AMPS algorithms."
+    },
+    {
+      "path": "src/general/logger.h::AMPS::Diagnostics::cFileLogger",
+      "status": "tested",
+      "contracts": ["UTC/level format", "long messages", "concurrent lines", "rotation", "durable flush", "nonzero fatal subprocess"]
+    },
+    {
+      "path": "src/general/logger.h::cLogger",
+      "status": "partial",
+      "contracts": ["bounded in-memory call table"],
+      "remaining": ["fork/shared-memory daemon lifecycle", "timeout parent termination", "semaphore cleanup"]
+    },
+    {
+      "path": "src/general/mpichannel.h",
+      "status": "tested",
+      "contracts": ["scalar", "vector", "trivially-copyable structure", "zero-length", "exact-capacity frame"]
+    },
+    {
+      "path": "src/general/constants*.h",
+      "status": "tested",
+      "contracts": ["atomic mass", "elementary charge", "Boltzmann", "speed of light", "pi", "H2O mass"]
+    },
+    {
+      "path": "src/species/He.*, src/species/Na.*",
+      "status": "tested",
+      "contracts": ["retained table regression points", "interpolation", "finite out-of-range clamping", "inverse-square scaling", "acceleration units", "invalid/unrepresentable heliocentric state"],
+      "note": "The current table literals are regression fixtures. A separately versioned paper/digitization fixture is still required for independent scientific revalidation of those tabulations."
+    },
+    {
+      "path": "generated PIC molecular tables and ampsConfig.pl SpeciesList",
+      "status": "tested",
+      "contracts": ["compiled order/index", "symbols", "mass", "charge", "type", "duplicate rejection", "unknown typed miss"]
+    },
+    {
+      "path": "src/pic/units/pic_units_normalization.h",
+      "status": "tested",
+      "contracts": ["base/derived factors", "scalar/vector round trips", "in-place vectors", "dimensional identities", "invalid and unrepresentable scales", "number-density scale domains"]
+    },
+    {
+      "path": "src/pic/units/units.cpp",
+      "status": "tested",
+      "contracts": ["AMU/charge global initialization", "identity verification", "idempotence", "active conversion-table output"]
+    },
+    {
+      "path": "src/test synthetic C/C++/Fortran ABI fixtures",
+      "status": "tested",
+      "contracts": ["C ABI", "legacy Fortran ABI", "ISO_C_BINDING", "column-major order"],
+      "note": "These are compiler/toolchain interoperability echoes, not tests of an AMPS production C/Fortran wrapper."
+    },
+    {
+      "path": "src/interface/GeopackInterface.*",
+      "status": "tested",
+      "contracts": ["coordinate rotation", "Earth-radius/nT conversion", "no-SPICE fallback"]
+    },
+    {
+      "path": "ARMS/BATSRUS/CCMC/Kameleon/SWMF providers",
+      "status": "unavailable",
+      "contracts": ["typed per-provider SKIP"],
+      "remaining": ["versioned independent data fixtures", "provider libraries", "configured PIC/coupling state"]
+    },
+    {
+      "path": "src/interface T01/T05/T96/TA15/TA16/KMAG wrappers",
+      "status": "planned",
+      "remaining": ["independent published numerical reference fixtures"]
+    }
+  ]
+}

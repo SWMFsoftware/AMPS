@@ -10,6 +10,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+#include <limits.h>
+#include <new>
+#include <stdint.h>
 #include "specfunc.h"
 
 template <class T>
@@ -18,7 +21,22 @@ protected:
   T* data;
   int size_dim0,size_dim1,size_dim2;
   int ndim1_ndim2;
+  int element_count;
   bool locally_allocated_data_buiffer;
+
+  _TARGET_HOST_ _TARGET_DEVICE_
+  static int CheckedElementCount(int n0,int n1,int n2) {
+    if (n0<=0 || n1<=0 || n2<=0)
+      exit(__LINE__,__FILE__,"Error: nonpositive array_3d extent");
+    const size_t a=static_cast<size_t>(n0);
+    const size_t b=static_cast<size_t>(n1);
+    const size_t c=static_cast<size_t>(n2);
+    if (a>static_cast<size_t>(INT_MAX)/b ||
+        a*b>static_cast<size_t>(INT_MAX)/c ||
+        a*b*c>SIZE_MAX/sizeof(T))
+      exit(__LINE__,__FILE__,"Error: array_3d extent product overflows");
+    return static_cast<int>(a*b*c);
+  }
 
 public:
 
@@ -28,36 +46,40 @@ _TARGET_HOST_ _TARGET_DEVICE_
     if ((data!=NULL)&&(locally_allocated_data_buiffer==true)) delete [] data;
 
     data=NULL;
+    size_dim0=0,size_dim1=0,size_dim2=0;
+    ndim1_ndim2=0;
+    element_count=0;
     locally_allocated_data_buiffer=false;
   }
 
 _TARGET_HOST_ _TARGET_DEVICE_
   void init (int n0,int n1,int n2) {
-    if ((n0<=0)||(n1<=0)||(n2<=0)) {
-      printf("Error: allocation of array_3d object\n");
-      printf("with negative number of elemens\n");
-      exit(__LINE__,__FILE__);
-    } 
+    const int count=CheckedElementCount(n0,n1,n2);
+
+   if (data!=NULL || size_dim0!=0 || size_dim1!=0 || size_dim2!=0)
+     exit(__LINE__,__FILE__,"Error: initialization of allocated array_3d object");
 
    #ifndef __CUDA_ARCH__
    try {
-     data=new T[n0*n1*n2];
+     data=new T[count];
    }
-   catch (bad_alloc) {
-     printf("Memory Error: array_3d() cannot allocate %ld bytes\n", n0*n1*n2*sizeof(T));
+   catch (const std::bad_alloc&) {
+     printf("Memory Error: array_3d() cannot allocate %zu bytes\n",
+         static_cast<size_t>(count)*sizeof(T));
      exit(__LINE__,__FILE__);
    }
    #else 
-   data=new T[n0*n1*n2];
+   data=new T[count];
    #endif
 
    size_dim0=n0,size_dim1=n1,size_dim2=n2;
    ndim1_ndim2=n1*n2;
+   element_count=count;
    locally_allocated_data_buiffer=true;
   }
 
   void find_nan() {
-    int i,imax=size_dim0*size_dim1*size_dim2;
+    int i,imax=element_count;
 
     for (i=0;i<imax;i++) {
       if (isfinite(data[i])==false) {
@@ -71,6 +93,7 @@ _TARGET_HOST_ _TARGET_DEVICE_
     data=NULL;
     size_dim0=0,size_dim1=0,size_dim2=0;
     ndim1_ndim2=0;
+    element_count=0;
     locally_allocated_data_buiffer=false;
   };
 
@@ -86,25 +109,70 @@ _TARGET_HOST_ _TARGET_DEVICE_
     data=NULL;
     size_dim0=0,size_dim1=0,size_dim2=0;
     ndim1_ndim2=0;
+    element_count=0;
     locally_allocated_data_buiffer=false;
 
     init(n0,n1,n2);
   };
 
+  _TARGET_HOST_ _TARGET_DEVICE_
+  array_3d(const array_3d<T>& other) {
+    data=NULL;
+    size_dim0=0,size_dim1=0,size_dim2=0;
+    ndim1_ndim2=0;
+    element_count=0;
+    locally_allocated_data_buiffer=false;
+    if (other.size_dim0>0 && other.size_dim1>0 && other.size_dim2>0) {
+      init(other.size_dim0,other.size_dim1,other.size_dim2);
+      for (int i=0;i<size();i++) data[i]=other.data[i];
+    }
+  }
+
+  _TARGET_HOST_ _TARGET_DEVICE_
+  array_3d(array_3d<T>&& other) noexcept {
+    data=other.data;
+    size_dim0=other.size_dim0,size_dim1=other.size_dim1,size_dim2=other.size_dim2;
+    ndim1_ndim2=other.ndim1_ndim2;
+    element_count=other.element_count;
+    locally_allocated_data_buiffer=other.locally_allocated_data_buiffer;
+    other.data=NULL;
+    other.size_dim0=other.size_dim1=other.size_dim2=0;
+    other.ndim1_ndim2=0;
+    other.element_count=0;
+    other.locally_allocated_data_buiffer=false;
+  }
+
 _TARGET_HOST_ _TARGET_DEVICE_
   array_3d(T* t,int n0,int n1,int n2) {
+    if (t==NULL)
+      exit(__LINE__,__FILE__,"Error: null external array_3d buffer");
+    const int count=CheckedElementCount(n0,n1,n2);
     data=t;
 
     size_dim0=n0,size_dim1=n1,size_dim2=n2;
     ndim1_ndim2=n1*n2;
+    element_count=count;
 
     locally_allocated_data_buiffer=false;
   };
 
+  _TARGET_HOST_ _TARGET_DEVICE_
+  void resize(int n0,int n1,int n2) {
+    if (n0==0 && n1==0 && n2==0) {
+      Deallocate();
+      return;
+    }
+    (void)CheckedElementCount(n0,n1,n2);
+    if (n0==size_dim0 && n1==size_dim1 && n2==size_dim2 &&
+        locally_allocated_data_buiffer) return;
+    Deallocate();
+    init(n0,n1,n2);
+  }
+
 //===================================================
 _TARGET_HOST_ _TARGET_DEVICE_
   int size() const {
-    return size_dim0*size_dim1*size_dim2;
+    return element_count;
   }
 
 _TARGET_HOST_ _TARGET_DEVICE_
@@ -153,20 +221,42 @@ _TARGET_HOST_ _TARGET_DEVICE_
 //===================================================
 _TARGET_HOST_ _TARGET_DEVICE_
   array_3d<T>& operator = (const array_3d<T>& v) {
-    int i,imax;
-
-    imax=size_dim0*size_dim1*size_dim2;
+    if (this==&v) return *this;
+    if (size_dim0!=v.size_dim0 || size_dim1!=v.size_dim1 ||
+        size_dim2!=v.size_dim2 || !locally_allocated_data_buiffer) {
+      Deallocate();
+      if (v.size_dim0>0 && v.size_dim1>0 && v.size_dim2>0)
+        init(v.size_dim0,v.size_dim1,v.size_dim2);
+    }
+    int i,imax=v.element_count;
     for (i=0;i<imax;i++) data[i]=v.data[i];
 
     return *this;
   };
+
+  _TARGET_HOST_ _TARGET_DEVICE_
+  array_3d<T>& operator = (array_3d<T>&& v) noexcept {
+    if (this==&v) return *this;
+    Deallocate();
+    data=v.data;
+    size_dim0=v.size_dim0,size_dim1=v.size_dim1,size_dim2=v.size_dim2;
+    ndim1_ndim2=v.ndim1_ndim2;
+    element_count=v.element_count;
+    locally_allocated_data_buiffer=v.locally_allocated_data_buiffer;
+    v.data=NULL;
+    v.size_dim0=v.size_dim1=v.size_dim2=0;
+    v.ndim1_ndim2=0;
+    v.element_count=0;
+    v.locally_allocated_data_buiffer=false;
+    return *this;
+  }
 
 //===================================================
 _TARGET_HOST_ _TARGET_DEVICE_
   array_3d<T>& operator = (T f) {
     int i,imax;
 
-    imax=size_dim0*size_dim1*size_dim2;
+    imax=element_count;
     for (i=0;i<imax;i++) data[i]=f;
  
     return *this;
@@ -181,7 +271,7 @@ _TARGET_HOST_ _TARGET_DEVICE_
     int i,imax;
     array_3d<T> v3(v1.size_dim0,v1.size_dim1,v1.size_dim2);
 
-    imax=v1.size_dim0*v1.size_dim1*v1.size_dim2;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v3.data[i]=v1.data[i]+v2.data[i];
 
     return v3;
@@ -196,7 +286,7 @@ _TARGET_HOST_ _TARGET_DEVICE_
     int i,imax;
     array_3d<T> v3(v1.size_dim0,v1.size_dim1,v1.size_dim2);
 
-    imax=v1.size_dim0*v1.size_dim1*v1.size_dim2;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v3.data[i]=v1.data[i]-v2.data[i];
 
     return v3;
@@ -207,7 +297,7 @@ _TARGET_HOST_ _TARGET_DEVICE_
     int i,imax;
     array_3d<T> v3(v1.size_dim0,v1.size_dim1,v1.size_dim2);
 
-    imax=v1.size_dim0*v1.size_dim1*v1.size_dim2;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v3.data[i]=t*v1.data[i];
 
     return v3;
@@ -222,7 +312,7 @@ _TARGET_HOST_ _TARGET_DEVICE_
     int i,imax;
     array_3d<T> v3(v1.size_dim0,v1.size_dim1,v1.size_dim2);
 
-    imax=v1.size_dim0*v1.size_dim1*v1.size_dim2;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v3.data[i]=v1.data[i]/t;
 
     return v3;
@@ -236,7 +326,7 @@ _TARGET_HOST_ _TARGET_DEVICE_
 
     int i,imax;
 
-    imax=v1.size_dim0*v1.size_dim1*v1.size_dim2;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v1.data[i]+=v2.data[i];
 
     return v1;
@@ -250,7 +340,7 @@ _TARGET_HOST_ _TARGET_DEVICE_
 
     int i,imax;
 
-    imax=v1.size_dim0*v1.size_dim1*v1.size_dim2;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v1.data[i]-=v2.data[i];
 
     return v1;
@@ -260,7 +350,7 @@ _TARGET_HOST_ _TARGET_DEVICE_
   friend array_3d<T>& operator *= (array_3d<T> &v1,const T t) {
     int i,imax;
 
-    imax=v1.size_dim0*v1.size_dim1*v1.size_dim2;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v1.data[i]*=t;
 
     return v1;
@@ -275,7 +365,7 @@ _TARGET_HOST_ _TARGET_DEVICE_
 
     int i,imax;
 
-    imax=v1.size_dim0*v1.size_dim1*v1.size_dim2;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v1.data[i]/=t;
 
     return v1;
@@ -291,7 +381,10 @@ _TARGET_HOST_ _TARGET_DEVICE_
 
     t=v1.data;
     v1.data=v2.data;
-    v2.data=t; 
+    v2.data=t;
+    const bool ownership=v1.locally_allocated_data_buiffer;
+    v1.locally_allocated_data_buiffer=v2.locally_allocated_data_buiffer;
+    v2.locally_allocated_data_buiffer=ownership;
   };  
 
   //===================================================
@@ -306,34 +399,29 @@ _TARGET_HOST_ _TARGET_DEVICE_
   }
 
   void gather_double(int gather_rank, MPI_Comm comm) {
-    // Get current process rank
-    int rank;
-    MPI_Comm_rank(comm, &rank);
+    int rank,nrank;
+    MPI_Comm_rank(comm,&rank);
+    MPI_Comm_size(comm,&nrank);
 
-    // Get total data size (same for all processes)
-    int dataSize = size();  // size_dim0 * size_dim1 * size_dim2
+    if (gather_rank<0 || gather_rank>=nrank)
+      exit(__LINE__,__FILE__,"Error: invalid array_3d gather root");
+    if (data==NULL)
+      exit(__LINE__,__FILE__,"Error: null array_3d gather buffer");
+    if (!std::is_same<T,double>::value)
+      exit(__LINE__,__FILE__,"Error: gather_double requires array_3d<double>");
 
-    // Allocate temporary buffer only on gathering rank
-    double* tempBuffer = nullptr;
-    if (rank == gather_rank) {
-        tempBuffer = new double[dataSize];
-    }
+    // A true MPI_Gather receives nrank*size() elements on the root, but this
+    // class owns exactly size() elements and the API provides no destination
+    // array or rank dimension.  The former implementation allocated only one
+    // rank's block, causing an out-of-bounds MPI write for nrank>1, and then
+    // copied only rank zero's block back.  Until the public API is redesigned
+    // to expose a correctly sized result, reject the unrepresentable operation
+    // deterministically.  A one-rank gather is exactly the identity operation.
+    if (nrank!=1)
+      exit(__LINE__,__FILE__,
+          "Error: multi-rank array_3d gather needs an explicit destination");
 
-    // Gather all data to the specified rank
-    MPI_Gather(data,              // send buffer
-               dataSize,          // send count
-               MPI_DOUBLE,        // send type
-               tempBuffer,        // receive buffer
-               dataSize,          // receive count
-               MPI_DOUBLE,        // receive type
-               gather_rank,       // root rank
-               comm);             // communicator
-
-    // If this is the gathering rank, copy the gathered data
-    if (rank == gather_rank) {
-        memcpy(data, tempBuffer, dataSize * sizeof(double));
-        delete[] tempBuffer;
-    }
+    (void)rank;
 }
 
 void reduce(int reduce_rank, MPI_Op operation, MPI_Comm comm) {

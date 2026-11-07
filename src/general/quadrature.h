@@ -31,6 +31,8 @@
 #include <unistd.h>
 #include <float.h>
 #include <string.h>
+#include <stdexcept>
+#include <vector>
 
 namespace Quadrature {
 
@@ -196,6 +198,10 @@ namespace Quadrature {
 
       inline void Generate_GaussLegendreTable(int n, double* x, double* w, double eps)
       {
+        if (n<=0 || x==NULL || w==NULL || !(eps>0.0) ||
+            !std::isfinite(eps))
+          throw std::invalid_argument(
+              "Gauss-Legendre table requires positive order/tolerance and buffers");
         double x0,  x1,  dx;  /* Abscissas */
         double w0=0.0,  w1=0.0,  dw=0.0;  /* Weights */
         double P0, P_1, P_2;  /* Legendre polynomial values */
@@ -299,6 +305,18 @@ namespace Quadrature {
             j++;
           } while((fabs(dx)>eps || fabs(dw)>eps) && j<100);
 
+          // Newton convergence is part of the generated-table contract.  The
+          // former fixed-iteration exit stored the last iterate even when it
+          // had not met the requested tolerance (and NaN comparisons could
+          // make that look converged).  Reject that table before it can be
+          // used as an integration rule; callers can then distinguish a
+          // numerical construction failure from a valid finite integral.
+          if (!std::isfinite(x1) || !std::isfinite(w1) ||
+              !std::isfinite(dx) || !std::isfinite(dw) ||
+              fabs(dx)>eps || fabs(dw)>eps)
+            throw std::runtime_error(
+                "Gauss-Legendre root iteration did not converge");
+
           x[(m-1)-(i-1)] = x1;
           w[(m-1)-(i-1)] = w1;
         }
@@ -310,29 +328,46 @@ namespace Quadrature {
       inline double GaussLegendre(int VectorDimention,int AccuracyOrder, double (*Integrant)(double *), double* minIntegrationLimit, double* maxIntegrationLimit) {
         int idim;
 
-        double A[VectorDimention],B[VectorDimention],s[VectorDimention],x[VectorDimention];
-        int i[VectorDimention],returnPointCode[VectorDimention];
+        if (VectorDimention<=0 || AccuracyOrder<=0 || Integrant==NULL ||
+            minIntegrationLimit==NULL || maxIntegrationLimit==NULL)
+          throw std::invalid_argument(
+              "GaussLegendre requires positive dimension/order and non-null inputs");
+
+        // Reversed finite limits are a valid oriented integral, and equal
+        // limits are a valid zero-measure domain.  NaN/Inf limits, however,
+        // make the affine Gauss map and every downstream weight undefined;
+        // reject them before evaluating the caller's integrand.
+        for (idim=0;idim<VectorDimention;idim++) {
+          if (!std::isfinite(minIntegrationLimit[idim]) ||
+              !std::isfinite(maxIntegrationLimit[idim]))
+            throw std::invalid_argument(
+                "GaussLegendre requires finite integration limits");
+        }
+
+        // Runtime dimensions are represented by standard containers.  The
+        // former variable-length arrays were a GNU extension and made this
+        // public numerical header fail strict ISO C++ compilers.
+        std::vector<double> A(VectorDimention),B(VectorDimention);
+        std::vector<double> s(VectorDimention),x(VectorDimention);
+        std::vector<int> i(VectorDimention),returnPointCode(VectorDimention);
 
         const int IntegrationTableLength=(AccuracyOrder+1)>>1;
-        double xGauss[IntegrationTableLength],wGauss[IntegrationTableLength];
+        std::vector<double> xGauss(IntegrationTableLength);
+        std::vector<double> wGauss(IntegrationTableLength);
 
         //load the Gauss points and weight table
         bool TableFound=false;
 
-        if ((VectorDimention<=0)||(AccuracyOrder<0)) {
-          printf("$PREFIX:Error: negative parameter! (file=%s,line=%i",__FILE__,__LINE__);
-          exit(0);
-        }
-
         for (int n=0;n<nAccuracyOrderLevels;n++) if (AccuracyOrder==glaw[n].AccuracyOrder) {
           TableFound=true;
-          memcpy(xGauss,glaw[n].x,IntegrationTableLength*sizeof(double));
-          memcpy(wGauss,glaw[n].w,IntegrationTableLength*sizeof(double));
+          memcpy(xGauss.data(),glaw[n].x,IntegrationTableLength*sizeof(double));
+          memcpy(wGauss.data(),glaw[n].w,IntegrationTableLength*sizeof(double));
           break;
         }
 
         if (TableFound==false) {
-          Generate_GaussLegendreTable(AccuracyOrder,xGauss,wGauss,1.0E-10);
+          Generate_GaussLegendreTable(
+              AccuracyOrder,xGauss.data(),wGauss.data(),1.0E-10);
         }
 
 
@@ -349,14 +384,14 @@ namespace Quadrature {
           OddOrderIntegrationStart:
           if (idim==VectorDimention-1) { //Calculate the integral
             x[idim]=B[idim];
-            s[idim]=wGauss[0]*Integrant(x);
+            s[idim]=wGauss[0]*Integrant(x.data());
 
             for (int ii=1;ii<IntegrationTableLength;ii++) {
               x[idim]=B[idim]+A[idim]*xGauss[ii];
-              s[idim]+=wGauss[ii]*Integrant(x);
+              s[idim]+=wGauss[ii]*Integrant(x.data());
 
               x[idim]=B[idim]-A[idim]*xGauss[ii];
-              s[idim]+=wGauss[ii]*Integrant(x);
+              s[idim]+=wGauss[ii]*Integrant(x.data());
             }
           }
           else { //higher dimensions
@@ -413,10 +448,10 @@ namespace Quadrature {
 
             for (int ii=0;ii<IntegrationTableLength;ii++) {
               x[idim]=B[idim]+A[idim]*xGauss[ii];
-              s[idim]+=wGauss[ii]*(*Integrant)(x);
+              s[idim]+=wGauss[ii]*(*Integrant)(x.data());
 
               x[idim]=B[idim]-A[idim]*xGauss[ii];
-              s[idim]+=wGauss[ii]*(*Integrant)(x);
+              s[idim]+=wGauss[ii]*(*Integrant)(x.data());
             }
           }
           else {

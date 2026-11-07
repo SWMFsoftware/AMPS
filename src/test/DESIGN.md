@@ -17,6 +17,39 @@ Application validation remains in `srcEarth/test`, `srcMoon/test`,
 `srcEnceladus/test`, `srcSEP/test`, and `srcSEP3D/test`. A core pass does not
 qualify a physical model, observational comparison, or scientific campaign.
 
+## Frozen T1 receipt and live T2 registry
+
+The bounded T1 registry is frozen at 11 suites and 98 stable individual cases,
+including a 31-case configured native suite.  It is qualified by retained
+normal, reverse, and seed-1729 shuffled campaigns: each has 93 PASS, five
+typed provider SKIPs, and no FAIL/ERROR.  Its retained native executable has
+SHA-256
+`17b98e5ecd22915fc181cce51b8d71bd6abef517802a456ff2efba659c581919`.
+Five external provider contracts in the interface suite are
+deliberately `SKIP` unless their actual provider libraries,
+configured coupling state, and independently versioned data fixtures are
+available. Those skips remain visible limitations, not passes.
+
+The live T2 manifest contains the same 11 suites and 103 cases.  The
+dependency-light `smoke` campaign remains eight suites and 51 cases;
+`nightly` and `--all` select all 103 cases; `distributed` owns the current
+five-case two-rank channel/RNG evidence; `profile` selects the 36-case
+configured native suite; and `extended` selects that native suite together
+with the 11-case interface suite.  The first T2 slice adds five host
+species-global particle weight/time-step cases.  Its retained normal evidence
+at `/tmp/amps-t2-all-qualified-normal` has 98 PASS, five provider SKIPs, and
+no FAIL/ERROR; focused and collision-regression receipts are in
+`/tmp/amps-t2-weight-time-initial` and
+`/tmp/amps-t2-weight-time-collision-recheck`.  The complete 36-case native
+owner also passes reverse and deterministic seed-1729 shuffled order at
+`/tmp/amps-t2-native-qualified-reverse` and
+`/tmp/amps-t2-native-qualified-shuffle-1729`; its corrected normal, reverse,
+and shuffled executable hash is
+`6329674e470d9cadda436aca2d410f1ef5ecad27f4918108d56bd3078a1f4925`.
+This evidence does not qualify species-local or single-global profiles,
+individual correction and split/merge, unequal-weight/time collision physics,
+or CUDA device diagnostics.
+
 ## Test oracle rules
 
 - Exact algebraic identities and invariants are preferred over snapshot files.
@@ -51,6 +84,14 @@ example, `src/pic/ecsim` more specific than `src/pic`. Tests/build trees and
 declared local test registries are excluded from production-file discovery.
 The validator proves classification integrity only; it cannot turn a compiled
 or named source into behavioral coverage.
+
+`t1_public_algorithm_inventory.json` is the complementary T1 family ledger.
+It enumerates public arrays, numerical helpers, RNG distributions, MPI
+channels, logging, constants, unit normalization, species radiation,
+generated species, ABI/Geopack interfaces, and optional providers. A family
+may be `tested`, `partial`, `unavailable`, or `planned`; the latter three
+states must survive even when every executable case in an aggregate run is
+green.
 
 An individual runner receives a schema-1 context containing resolved
 repository/work/artifact paths, tool argv lists, execution settings, and its
@@ -153,15 +194,29 @@ area is:
 | photolytic reactions | lifetimes; branching; parent removal; daughter kinematics; statistical weights; no-daughter mode |
 | SEP/CME libraries | adapt existing authoritative registries without duplicating expected values or overstating physical qualification |
 
+T1 closes bounded portions of `general`, `PIC units`, `species`, and
+`interface`.  The first T2 slice additionally closes the host species-global
+weight/time-step API subset of `PIC core`; its other compile-time profiles and
+particle-physics consumers remain open. It does not make the broad `general`,
+`interface`, or `PIC core` inventory entries complete. The legacy
+fork/shared-memory logger, CRC/debug streams,
+thread/spinlock and CUDA helpers, older grids/distributions, optional provider
+numerics, and T01/T05/T96/TA15/TA16/KMAG reference comparisons remain explicit
+gaps. `PIC units` and `species` are covered only for the exact public contracts
+recorded in the component and T1 inventories.
+
 ## Nightly tiers
 
-- `smoke`: harness integrity and fast dependency-light tests; expected on every
+- `smoke`: eight suites and 51 fast dependency-light cases; expected on every
   change and machine bring-up.
-- `nightly`: deterministic unit/module coverage suitable for routine CI; no
-  observational or long campaign runs.
-- `extended`: currently the exclusive configured native profile; future MPI
-  rank matrices, restart, sanitizer, convergence, and long statistical suites
-  belong here as they are implemented.
+- `nightly`: all 11 suites and 103 registered cases, including the exclusive
+  native suite and optional-provider states; no observational or long campaign
+  runs.
+- `distributed`: the current five-case two-rank MPI channel/RNG module suite.
+- `profile`: the 36-case configured native profile.
+- `extended`: the native profile plus the 11-case interface/optional-provider
+  suite. Future rank matrices, restart, sanitizer, convergence, and long
+  statistical suites belong here as they are implemented.
 
 The current scheduler runs nonexclusive suites concurrently within explicit
 exclusive barriers. Future distributed sharding may place those batches on
@@ -184,8 +239,9 @@ editing `.amps.conf`, and retain the generated configuration and executable
 identity. The bounded macro checks and invalid-deck probe do not qualify all
 generator options. Complete Config.pl/ampsConfig.pl qualification still needs
 isolated positive and negative fixtures, independent generated macro/species
-oracles, reproducibility checks, and one contract per mutually exclusive
-profile. A failure to configure is `FAIL` only when the tool executed and
+oracles beyond the now-registered duplicate-`SpeciesList` and compiled-table
+cases, reproducibility checks, and one contract per mutually exclusive profile.
+A failure to configure is `FAIL` only when the tool executed and
 violated an asserted generator contract; missing tools or an untrustworthy
 receipt keep their normal `SKIP`/`ERROR` meanings.
 
@@ -194,7 +250,10 @@ receipt keep their normal `SKIP`/`ERROR` meanings.
 1. Framework, portable profiles, inventory audit, input parser, core containers,
    and a configured particle-buffer application.
 2. Import the existing `srcUnitTests` cases into dependency-free/native suites;
-   remove hard-coded GoogleTest paths and fix failure exit propagation.
+   remove hard-coded GoogleTest paths and fix failure exit propagation. T1 now
+   includes the bounded general, units, species, ABI, and native species
+   families recorded in `t1_public_algorithm_inventory.json`; remaining public
+   families retain their explicit status there.
 3. Adapt existing stencil, linear solver, interpolation, collision, chemistry,
    dust, SWCME, and SEP/CME runners without reimplementing their oracles.
 4. Add missing general/species/unit/model tests and invalid-input coverage.
@@ -207,9 +266,15 @@ receipt keep their normal `SKIP`/`ERROR` meanings.
 
 ## Current native physics boundary
 
-`CORE-PIC-NATIVE-001` implements a bounded one-rank portion of the PIC and
-photolytic-reaction plan: table/radial rates, sampled branching, configured
-missing daughters, exponential scheduling and 3-D parent survival;
+`CORE-PIC-NATIVE-001` implements a bounded one-rank portion of the PIC,
+species-generation, and photolytic-reaction plan. It rejects duplicate
+top-level species declarations and independently checks compiled constants,
+generated ordering/mass/charge/type tables, and typed unknown-name lookup. Its
+five T2 weight/time-step cases exercise host species-global round trips,
+minimum reduction, scaled species-distribution copies, and typed rejection of
+nonpositive, nonfinite, or out-of-range inputs. Its
+physics cases cover table/radial rates, sampled branching, configured missing
+daughters, exponential scheduling and 3-D parent survival;
 two/three-body conservation and two-body angular isotropy; drifting Maxwellian
 moments; hard-sphere scattering invariants; populated-cell NTC rate,
 conservation, and RT equilibration; classical LB equilibrium/partition/RT
@@ -217,9 +282,12 @@ moments and occurrence rate; neutral ballistic Simple/Boris movement; and an
 analytic specular spherical-surface event. These tests use independent
 algebraic/statistical oracles and are not application snapshots.
 
-This does not make either inventory component complete. In particular, a
+This does not make the relevant inventory components complete. In particular, a
 zero-force neutral Boris limit does not qualify charged orbit accuracy; the
 NTC cases do not qualify the other collision selectors or unequal statistical
 weights/time steps; and parent-only photochemistry does not qualify daughter
-insertion or weight bookkeeping. The exact remaining items stay enumerated in
+insertion or weight bookkeeping.  The weight/time-step cases do not qualify
+species-local or single-global compile profiles, individual particle-weight
+correction and split/merge, unequal-weight/time collision physics, or CUDA
+device diagnostics.  The exact remaining items stay enumerated in
 `component_inventory.json` and `test/srcCoreUnitTests/README.md`.

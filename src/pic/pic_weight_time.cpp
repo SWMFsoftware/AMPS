@@ -5,9 +5,43 @@
 //====================================================
 //the time step and particle weight adaptation procedures
 
-
-
+#include <cmath>
+#include <stdexcept>
+#include <string>
 #include "pic.h"
+
+namespace {
+void ValidateWeightTimeSpecies(int spec,const char* quantity) {
+  if (spec<0 || spec>=PIC::nTotalSpecies)
+    throw std::out_of_range(std::string(quantity)+" species index is out of range");
+}
+
+void ValidateWeightTimeValue(double value,const char* quantity) {
+  if (!std::isfinite(value) || value<=0.0)
+    throw std::invalid_argument(std::string(quantity)+
+                                " must be finite and positive");
+}
+
+void ValidateWeightTimeCopy(int target,int source,double coefficient,
+                            const char* quantity) {
+  ValidateWeightTimeSpecies(target,quantity);
+  ValidateWeightTimeSpecies(source,quantity);
+  ValidateWeightTimeValue(coefficient,"distribution scale coefficient");
+}
+
+double ScaleWeightTimeValue(double source,double coefficient,
+                            const char* quantity) {
+  // A positive finite coefficient is insufficient when the source is still
+  // the -1 initialization sentinel or when multiplication overflows.  Check
+  // both operands and the dimension-preserving result before committing a
+  // global value, so later divisions by weight or dt cannot receive zero,
+  // negative, NaN, or infinity.
+  ValidateWeightTimeValue(source,quantity);
+  const double result=source*coefficient;
+  ValidateWeightTimeValue(result,quantity);
+  return result;
+}
+}
 
 //set particle wight and local time step
 PIC::ParticleWeightTimeStep::fSetFunction PIC::ParticleWeightTimeStep::LocalParticleWeight=NULL,PIC::ParticleWeightTimeStep::LocalTimeStep=NULL;
@@ -434,16 +468,24 @@ void PIC::ParticleWeightTimeStep::initTimeStep(cTreeNodeAMR<PIC::Mesh::cDataBloc
 //====================================================
 //copy local time step and weight distribution from one spece to another
 void PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(int specTarget,int specSource,double ProportionaltyCoefficient) {
+  ValidateWeightTimeCopy(specTarget,specSource,ProportionaltyCoefficient,
+                         "particle weight");
 #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
-  GlobalParticleWeight[specTarget]=ProportionaltyCoefficient*GlobalParticleWeight[specSource];
+  GlobalParticleWeight[specTarget]=ScaleWeightTimeValue(
+      GlobalParticleWeight[specSource],ProportionaltyCoefficient,
+      "copied particle weight");
 #else
   exit(__LINE__,__FILE__,"Error: the option is not recognized");
 #endif
 }
 
 void PIC::ParticleWeightTimeStep::copyLocalTimeStepDistribution(int specTarget,int specSource,double ProportionaltyCoefficient) {
+  ValidateWeightTimeCopy(specTarget,specSource,ProportionaltyCoefficient,
+                         "particle time step");
 #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
-  GlobalTimeStep[specTarget]=ProportionaltyCoefficient*GlobalTimeStep[specSource];
+  GlobalTimeStep[specTarget]=ScaleWeightTimeValue(
+      GlobalTimeStep[specSource],ProportionaltyCoefficient,
+      "copied particle time step");
 #elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
   //global time step is the same for all  => no nothing 
 #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
@@ -472,6 +514,8 @@ void PIC::ParticleWeightTimeStep::copyLocalTimeStepDistribution(int specTarget,i
 //====================================================
 //set global particle constant weight
 void PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(int spec,double GlobalParticleWeight,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+  ValidateWeightTimeSpecies(spec,"particle weight");
+  ValidateWeightTimeValue(GlobalParticleWeight,"particle weight");
 //  if (PIC::ParticleWeightTimeStep::GlobalParticleWeight==NULL) {
 //    PIC::ParticleWeightTimeStep::GlobalParticleWeight=new double [PIC::nTotalSpecies];
 //    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalParticleWeight[s]=-1.0;
@@ -499,6 +543,7 @@ void PIC::ParticleWeightTimeStep::initParticleWeight_ConstantDensity(int spec,do
 //====================================================
 //return the value of the 'global' time step
 double PIC::ParticleWeightTimeStep::GetGlobalTimeStep(int spec) {
+  ValidateWeightTimeSpecies(spec,"particle time step");
   double res;
 
   switch (_SIMULATION_TIME_STEP_MODE_) {

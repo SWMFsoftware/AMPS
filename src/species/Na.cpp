@@ -22,12 +22,43 @@
 
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <stdexcept>
 
 #include "constants.h"
 #include "Na.h"
 
+namespace {
+void ValidateHeliocentricState(double velocity, double distance) {
+  // Every sodium table is a finite radial-velocity lookup followed by an
+  // inverse-square heliocentric-distance scale. A nonpositive or nonfinite
+  // distance has no physical meaning and previously leaked Inf/NaN into force
+  // evaluation; fail at this public boundary instead.
+  if (!std::isfinite(velocity) || !std::isfinite(distance) || distance<=0.0)
+    throw std::invalid_argument(
+        "heliocentric velocity must be finite and distance finite/positive");
+}
+
+double ScaleInverseSquare(double value, double reference_distance,
+                          double distance) {
+  // Distances are metres and value carries the table's g-factor or SI
+  // acceleration units. Extreme finite distances are rejected when the
+  // mathematically positive result is outside double's representable range.
+  const double ratio = reference_distance / distance;
+  const double scaled = value * ratio * ratio;
+  if (!std::isfinite(scaled))
+    throw std::overflow_error(
+        "heliocentric inverse-square scaling is not representable");
+  if (!(scaled>0.0))
+    throw std::underflow_error(
+        "heliocentric inverse-square scaling underflowed");
+  return scaled;
+}
+}
+
 
 double SodiumGfactor__D1D2__Combi_1997_icarus(double HeliocentricVelocity,double HeliocentricDistance) {
+
+  ValidateHeliocentricState(HeliocentricVelocity,HeliocentricDistance);
 
   static const int SodiumGfactor__D1D2_TableLength__Combi_1997_icarus=101;
   static const double SodiumGfactor__D1D2_HeliocenticVelocity_Min__Combi_1997_icarus=-50.0E3;
@@ -63,9 +94,7 @@ double SodiumGfactor__D1D2__Combi_1997_icarus(double HeliocentricVelocity,double
   }
 
   //scale g-factor to the required heliocentric distance
-  res*=pow(149598000000.0/HeliocentricDistance,2);
-
-  return res;
+  return ScaleInverseSquare(res,149598000000.0,HeliocentricDistance);
 
 }
 
@@ -78,6 +107,8 @@ double SodiumGfactor__D1D2__Combi_1997_icarus(double HeliocentricVelocity,double
 //the acceleration is in teh direction out of the sun
 
 double SodiumRadiationPressureAcceleration__Combi_1997_icarus(double HeliocentricVelocity,double HeliocentricDistance) {
+
+  ValidateHeliocentricState(HeliocentricVelocity,HeliocentricDistance);
 
   static const int sodiumRadiationPressure_TableLength__Combi_1997_icarus=1201;
   static const double sodiumRadiationPressure_HeliocenticVelocity_Min__Combi_1997_icarus=-60.0E3;
@@ -185,9 +216,8 @@ double SodiumRadiationPressureAcceleration__Combi_1997_icarus(double Heliocentri
   }
   
   //convert the acceleration from [cm s^{-2}] to [m s^{-2}] and scale it to the required heliocentric distance 
-  res*=0.01*pow(149598000000.0/HeliocentricDistance,2); 
-
-  return res;
+  return ScaleInverseSquare(
+      0.01*res,149598000000.0,HeliocentricDistance);
 }
 
 
@@ -195,6 +225,8 @@ double SodiumRadiationPressureAcceleration__Combi_1997_icarus(double Heliocentri
 
 
 double SodiumGfactor__5891_58A__Killen_2009_AJSS(double HeliocentricVelocity,double HeliocentricDistance) {
+
+  ValidateHeliocentricState(HeliocentricVelocity,HeliocentricDistance);
 
   struct cGFactor {
     double RadiaVelocity,gFactor;
@@ -228,21 +260,27 @@ double SodiumGfactor__5891_58A__Killen_2009_AJSS(double HeliocentricVelocity,dou
 
   static const double dv=(gFactor5891_58A__Killen_2009_AJSS__Fig_7[1].RadiaVelocity-gFactor5891_58A__Killen_2009_AJSS__Fig_7[0].RadiaVelocity)*1.0E3;
   static const double vmin=gFactor5891_58A__Killen_2009_AJSS__Fig_7[0].RadiaVelocity*1.0E3;
+  static const double vmax=gFactor5891_58A__Killen_2009_AJSS__Fig_7[nDataElements-1].RadiaVelocity*1.0E3;
 
-  int Interval=(int)((HeliocentricVelocity-vmin)/dv);
   double res;
 
-  if (Interval<0) res=gFactor5891_58A__Killen_2009_AJSS__Fig_7[0].gFactor;
-  else if (Interval>=nDataElements) res=gFactor5891_58A__Killen_2009_AJSS__Fig_7[nDataElements-1].gFactor;
-  else res=gFactor5891_58A__Killen_2009_AJSS__Fig_7[Interval].gFactor;
+  if (HeliocentricVelocity<=vmin)
+    res=gFactor5891_58A__Killen_2009_AJSS__Fig_7[0].gFactor;
+  else if (HeliocentricVelocity>=vmax)
+    res=gFactor5891_58A__Killen_2009_AJSS__Fig_7[nDataElements-1].gFactor;
+  else {
+    const int Interval=static_cast<int>((HeliocentricVelocity-vmin)/dv);
+    res=gFactor5891_58A__Killen_2009_AJSS__Fig_7[Interval].gFactor;
+  }
 
-  res*=pow(DataHeliocentricDistance/HeliocentricDistance,2);
-
-  return res;
+  return ScaleInverseSquare(
+      res,DataHeliocentricDistance,HeliocentricDistance);
 }
 
 
 double SodiumGfactor__5897_56A__Killen_2009_AJSS(double HeliocentricVelocity,double HeliocentricDistance) {
+
+  ValidateHeliocentricState(HeliocentricVelocity,HeliocentricDistance);
 
   struct cGFactor {
     double RadiaVelocity,gFactor;
@@ -277,17 +315,21 @@ double SodiumGfactor__5897_56A__Killen_2009_AJSS(double HeliocentricVelocity,dou
 
   static const double dv=(gFactor5897_56A__Killen_2009_AJSS__Fig_7[1].RadiaVelocity-gFactor5897_56A__Killen_2009_AJSS__Fig_7[0].RadiaVelocity)*1.0E3;
   static const double vmin=gFactor5897_56A__Killen_2009_AJSS__Fig_7[0].RadiaVelocity*1.0E3;
+  static const double vmax=gFactor5897_56A__Killen_2009_AJSS__Fig_7[nDataElements-1].RadiaVelocity*1.0E3;
 
-  int Interval=(int)((HeliocentricVelocity-vmin)/dv);
   double res;
 
-  if (Interval<0) res=gFactor5897_56A__Killen_2009_AJSS__Fig_7[0].gFactor;
-  else if (Interval>=nDataElements) res=gFactor5897_56A__Killen_2009_AJSS__Fig_7[nDataElements-1].gFactor;
-  else res=gFactor5897_56A__Killen_2009_AJSS__Fig_7[Interval].gFactor;
+  if (HeliocentricVelocity<=vmin)
+    res=gFactor5897_56A__Killen_2009_AJSS__Fig_7[0].gFactor;
+  else if (HeliocentricVelocity>=vmax)
+    res=gFactor5897_56A__Killen_2009_AJSS__Fig_7[nDataElements-1].gFactor;
+  else {
+    const int Interval=static_cast<int>((HeliocentricVelocity-vmin)/dv);
+    res=gFactor5897_56A__Killen_2009_AJSS__Fig_7[Interval].gFactor;
+  }
 
-  res*=pow(DataHeliocentricDistance/HeliocentricDistance,2);
-
-  return res;
+  return ScaleInverseSquare(
+      res,DataHeliocentricDistance,HeliocentricDistance);
 }
 
 

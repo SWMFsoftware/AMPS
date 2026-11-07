@@ -43,6 +43,11 @@ namespace RandomNumberGenerator {
   //Mersenne Twister with a fixed seed
   extern thread_local std::mt19937 gen;  
   extern thread_local std::uniform_real_distribution<double> dist;
+  // Box-Muller produces a pair.  Keeping the spare in the generator state
+  // (rather than a function-local static) lets rnd_seed() reset the complete
+  // stochastic stream, including derived Gaussian/gamma distributions.
+  extern thread_local bool NormalSpareAvailable;
+  extern thread_local double NormalSpare;
 }
 
 

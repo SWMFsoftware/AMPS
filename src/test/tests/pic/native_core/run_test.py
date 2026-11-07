@@ -56,8 +56,32 @@ PHYSICS_CASES = [
     "PHYS-3D-PHOTODECAY-001",
 ]
 
-ADAPTER_CASES = ["CONFIG-GENERATOR-001", "CONFIG-INVALID-DECK-001"]
-NATIVE_CASES = PBUFFER_CASES + PHYSICS_CASES
+SPECIES_CASES = [
+    "PIC-SPECIES-CONSTANTS-001",
+    "PIC-SPECIES-GENERATED-MAPPING-001",
+    "PIC-SPECIES-GENERATED-TABLES-001",
+    "PIC-SPECIES-LOOKUP-DIAGNOSTICS-001",
+]
+
+UNIT_CASES = [
+    "PIC-UNITS-GLOBAL-INIT-001",
+    "PIC-UNITS-CONVERSION-TABLE-001",
+]
+
+WEIGHT_TIME_CASES = [
+    "PIC-WEIGHT-MODE-ROUNDTRIP-001",
+    "PIC-TIMESTEP-MODE-ROUNDTRIP-001",
+    "PIC-WEIGHT-TIMESTEP-SPECIES-COPY-001",
+    "PIC-WEIGHT-TIMESTEP-INVALID-VALUE-001",
+    "PIC-WEIGHT-TIMESTEP-INVALID-SPECIES-001",
+]
+
+ADAPTER_CASES = [
+    "CONFIG-GENERATOR-001", "CONFIG-INVALID-DECK-001",
+    "CONFIG-DUPLICATE-SPECIES-001",
+]
+NATIVE_CASES = (PBUFFER_CASES + PHYSICS_CASES + SPECIES_CASES + UNIT_CASES +
+                WEIGHT_TIME_CASES)
 
 # The manifest aliases the historical family IDs to the combined suite, but
 # accepting direct legacy contexts keeps this adapter backward-compatible.
@@ -73,6 +97,14 @@ SUITES: Dict[str, Dict[str, Any]] = {
     "CORE-PIC-PHYSICS-001": {
         "artifact": "native-physics-output.txt",
         "cases": PHYSICS_CASES,
+    },
+    "CORE-SPECIES-001": {
+        "artifact": "native-species-output.txt",
+        "cases": ["CONFIG-DUPLICATE-SPECIES-001"] + SPECIES_CASES,
+    },
+    "CORE-PIC-WEIGHT-TIME-001": {
+        "artifact": "native-weight-time-output.txt",
+        "cases": WEIGHT_TIME_CASES,
     },
 }
 
@@ -388,6 +420,58 @@ def main() -> int:
                     if passed else
                     "expected nonzero exit and missing-input diagnostic; exit={}".format(
                         invalid.returncode))
+                observed[identifier] = case(
+                    identifier, "PASS" if passed else "FAIL", message)
+                continue
+
+            if identifier == "CONFIG-DUPLICATE-SPECIES-001":
+                print("[CASE] RUN  CONFIG-DUPLICATE-SPECIES-001 unique compiled names and repeated DUST groups",
+                      flush=True)
+                source_deck = repo / "input" / "test" / "core-unit-tests.input"
+                invalid_deck = work / "duplicate-species.input"
+                dust_deck = work / "repeated-dust-groups.input"
+                original = source_deck.read_text(encoding="utf-8")
+                duplicate = original.replace(
+                    "SpeciesList=H2O,OH,H,O,H2,O2,CO2",
+                    "SpeciesList=H2O,OH,H2O,O,H2,O2,CO2", 1)
+                repeated_dust = original.replace(
+                    "SpeciesList=H2O,OH,H,O,H2,O2,CO2",
+                    "SpeciesList=H2O,DUST,DUST,DUST", 1)
+                if duplicate == original or repeated_dust == original:
+                    observed[identifier] = case(
+                        identifier, "FAIL", "could not construct SpeciesList fixtures")
+                    continue
+                invalid_deck.write_text(duplicate, encoding="utf-8")
+                dust_deck.write_text(repeated_dust, encoding="utf-8")
+                before = sha256(executable)
+                invalid = run_command(
+                    [str(repo / "ampsConfig.pl"), "-input", str(invalid_deck),
+                     "-validate-species-list-only"], repo,
+                    timeout=min(timeout, 120))
+                dust = run_command(
+                    [str(repo / "ampsConfig.pl"), "-input", str(dust_deck),
+                     "-validate-species-list-only"], repo,
+                    timeout=min(timeout, 120))
+                duplicate_transcript = artifacts / "duplicate-species-output.txt"
+                duplicate_transcript.write_text(
+                    "===== duplicate ordinary species =====\n{}\n"
+                    "===== repeated DUST groups =====\n{}".format(
+                        invalid.stdout or "", dust.stdout or ""),
+                    encoding="utf-8")
+                evidence.append(str(duplicate_transcript))
+                diagnostic = "compiled species names must be unique"
+                passed = (invalid.returncode != 0 and
+                          diagnostic in (invalid.stdout or "") and
+                          dust.returncode == 0 and
+                          "SpeciesList validation passed" in (dust.stdout or "") and
+                          executable.is_file() and sha256(executable) == before)
+                message = (
+                    "ordinary duplicate rejected, repeated DUST groups accepted, "
+                    "and configured executable unchanged"
+                    if passed else
+                    "expected duplicate rejection, repeated-DUST acceptance, and "
+                    "unchanged executable; duplicate_exit={} dust_exit={}".format(
+                        invalid.returncode, dust.returncode))
                 observed[identifier] = case(
                     identifier, "PASS" if passed else "FAIL", message)
                 continue

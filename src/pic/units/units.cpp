@@ -101,6 +101,16 @@ picunits::Factors PIC::Units::Factors;
 //
 //==============================================================
 void PIC::Units::InitializeAMUChargeNormalization(bool verbose) {
+  // Initialization owns one process-global unit system.  Treat a nonzero
+  // length reference as the committed-state marker and make repeated calls a
+  // no-op.  The function is expected to run during serialized AMPS startup;
+  // it is not a concurrent reconfiguration API.
+  if (PIC::Units::Factors.L0_cm!=0.0) {
+    if (verbose)
+      std::printf("\nPIC::Units::Factors are already initialized\n");
+    return;
+  }
+
   // Use your project-wide constants if they exist; otherwise these are the exact SI values.
   // If _AMU_ and ElectronCharge are already defined macros/consts in AMPS, remove these and use the global ones.
   constexpr double AMU_kg = _AMU_;     // kg
@@ -133,11 +143,6 @@ void PIC::Units::InitializeAMUChargeNormalization(bool verbose) {
   const double rel_err_mass   = std::fabs(mass_conv   - mass_conv_target)   / mass_conv_target;
   const double rel_err_charge = std::fabs(charge_conv - charge_conv_target) / charge_conv_target;
 
-  if (PIC::Units::Factors.L0_cm!=0.0) {
-    std::printf("\nPIC::Units::Factors are already initialized\n");
-    return;
-  }
-
   if (verbose) {
     std::printf("\nInitializeBuild_ForMassAMU_ChargeE:\n");
     std::printf("  uSI = %.15e m/s\n", uSI_mps);
@@ -153,15 +158,16 @@ void PIC::Units::InitializeAMUChargeNormalization(bool verbose) {
   // Tight tolerance: should be near machine precision because the derivation matches build() algebra.
   // If this ever trips, it means the definitions in pic_units_normalization.h changed.
   const double tol = 1.0e-12;
-  if (rel_err_mass > tol || rel_err_charge > tol) {
-    std::printf("ERROR: InitializeBuild_ForMassAMU_ChargeE verification failed.\n");
-    std::printf("  rel_err_mass=%.3e rel_err_charge=%.3e\n", rel_err_mass, rel_err_charge);
-    std::printf("  This likely means the definitions of No2SiB/No2SiT/M0_g in build() changed,\n");
-    std::printf("  or the mover/deposition charge mapping is no longer the stated one.\n");
-    // In AMPS style you might prefer exit() or PIC::Exit().
-    // throw std::runtime_error("Unit normalization verification failed");
-  }
+  // Do not publish a Factors object if a future change breaks either defining
+  // identity.  A diagnostic-only printf previously allowed a physically
+  // inconsistent global normalization to become active.  Include nonfinite
+  // residuals because comparisons with NaN are otherwise false.
+  if (!std::isfinite(rel_err_mass) || !std::isfinite(rel_err_charge) ||
+      rel_err_mass > tol || rel_err_charge > tol)
+    throw std::runtime_error(
+        "AMU/charge unit-normalization identity verification failed");
 
+  // Commit only after every build and identity check succeeds.
   PIC::Units::Factors=F;
 }
 

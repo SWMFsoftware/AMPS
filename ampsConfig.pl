@@ -43,6 +43,7 @@ my @SpeciesType;
 
 #compile the code
 my $CompileProcessedCodeFlag=1;
+my $ValidateSpeciesListOnly=0;
 
 # Function to check if build directory needs to be recreated
 sub shouldRecreateSourceTree {
@@ -79,11 +80,57 @@ for (my $i = 0; $i < @ARGV; $i++) {
     if ($ARGV[$i] eq '-input' && defined $ARGV[$i + 1]) {
         $InputFileName = $ARGV[$i + 1];
     }
+    elsif ($ARGV[$i] eq '-validate-species-list-only') {
+        $ValidateSpeciesListOnly=1;
+    }
 }
 
 # Ensure $InputFileName is defined and the file exists
 unless (defined $InputFileName && -e $InputFileName) {
     die "Error: Input file must be specified with -input and must exist.\n";
+}
+
+# Reject an invalid top-level species registry before shouldRecreateSourceTree
+# can remove or regenerate `build`.  Species macros and generated mass/charge
+# tables use the list position as the compiled index; a duplicate symbol would
+# redefine the same macro to a later index while retaining two table rows.
+# That is an ambiguous physical species mapping, not a harmless alias.
+sub validateCompiledSpeciesSymbols {
+    my ($symbols,$location) = @_;
+    my %seen;
+    foreach my $symbol (@{$symbols}) {
+        my $key = uc($symbol);
+        # Repeated DUST tokens are not duplicate compiled species.  They are
+        # the established syntax for distinct dust size/charge groups; the
+        # generator emits _DUST_SPEC_ only for the first group and retains one
+        # table entry per group.  Every other compiled symbol must be unique.
+        next if $key eq 'DUST';
+        die "Error: duplicate species '$symbol' in SpeciesList at " .
+            "$location; compiled species names must be unique " .
+            "(repeated DUST groups are allowed).\n"
+            if $seen{$key}++;
+    }
+}
+
+sub validateTopLevelSpeciesList {
+    my ($path) = @_;
+    open(my $species_input, "<", $path) or
+        die "Error: cannot validate SpeciesList in $path: $!\n";
+    my $line_number = 0;
+    while (my $raw = <$species_input>) {
+        $line_number++;
+        $raw =~ s/!.*$//;
+        next unless ($raw =~ /^\s*SpeciesList\s*[=,:]\s*(.*?)\s*$/i);
+        my @symbols = grep { length($_) > 0 } split(/[\s,=:]+/, $1);
+        validateCompiledSpeciesSymbols(\@symbols,"$path:$line_number");
+    }
+    close($species_input);
+}
+
+validateTopLevelSpeciesList($InputFileName);
+if ($ValidateSpeciesListOnly) {
+    print "SpeciesList validation passed for $InputFileName\n";
+    exit 0;
 }
 
 # Ensure $InputFileName is defined and the file exists
@@ -582,6 +629,12 @@ sub ReadMainBlock {
       $TotalSpeciesNumber=0;
       @SpeciesList=split(' ',$s1);
       $MARKER__SPECIES_MACRO_DEFINIETION_USED_IN_SIMULATION=" ";
+
+      # The expanded input can contain SpeciesList in an included/generated
+      # block that is not visible to the top-level non-mutating preflight.
+      # Recheck at the authoritative parser boundary before emitting macros.
+      validateCompiledSpeciesSymbols(
+          \@SpeciesList,"$FileName:$InputFileLineNumber");
       
       foreach (@SpeciesList) {
         if ($_ eq "DUST") {

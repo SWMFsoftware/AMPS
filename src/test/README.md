@@ -11,6 +11,33 @@ registered coverage. `partial` and `planned` are visible technical work, not
 implicit passes. The strict coverage target remains red until that work is
 actually complete.
 
+The frozen T1 qualification registry contains 11 executable suites and 98
+individual cases, including 31 cases in the configured native suite.  Its
+retained normal, reverse, and seed-1729 shuffled campaigns each report 93
+PASS, five typed provider SKIPs, and no FAIL/ERROR; the retained native
+executable has SHA-256
+`17b98e5ecd22915fc181cce51b8d71bd6abef517802a456ff2efba659c581919`.
+Optional interface providers remain unqualified where their external
+libraries and independent fixtures are not configured.
+
+T2 extends the live registry, without rewriting that T1 receipt, to 11 suites
+and 103 cases.  The native suite now owns 36 cases: five new cases qualify
+particle statistical-weight and time-step round trips, species-distribution
+copies, and typed invalid-value/index rejection in the host species-global
+profile.  The retained normal T2 run in
+`/tmp/amps-t2-all-qualified-normal` reports 98 PASS, five provider SKIPs, and
+no FAIL/ERROR; focused evidence is in `/tmp/amps-t2-weight-time-initial`, with
+the collision regression recheck in
+`/tmp/amps-t2-weight-time-collision-recheck`.  All 36 native cases also pass
+in reverse order and deterministic seed-1729 shuffled order under
+`/tmp/amps-t2-native-qualified-reverse` and
+`/tmp/amps-t2-native-qualified-shuffle-1729`; the corrected normal, reverse,
+and shuffled builds have identical executable SHA-256
+`6329674e470d9cadda436aca2d410f1ef5ecad27f4918108d56bd3078a1f4925`.
+Species-local and single-global profiles, individual weight correction and
+split/merge, unequal-weight/time collision physics, and CUDA device
+diagnostics remain open.
+
 ## Architecture and ownership
 
 The execution path is deliberately one-way:
@@ -37,7 +64,7 @@ runner validates it before copying its meaning into the aggregate. A killed
 process, truncated JSON file, mismatched ID, duplicate case, hidden failure,
 or status/exit-code disagreement is therefore reported as `ERROR`.
 
-Two T0 governance ledgers refine that ownership without changing execution:
+Three governance ledgers refine that ownership without changing execution:
 
 - `source_traceability.json` assigns every current production translation unit
   and public `.h`, `.hpp`, `.dfn`, or `.inc` contract to exactly one area with
@@ -46,6 +73,11 @@ Two T0 governance ledgers refine that ownership without changing execution:
 - `configuration_contracts.json` records machine-profile, runtime-input,
   `Config.pl`, generated-file, compile-profile, and runtime-mode contracts.
   A successful build is never by itself evidence that a mode is tested.
+- `t1_public_algorithm_inventory.json` enumerates the public general,
+  species, units, generated-species, ABI, Geopack, and provider families in
+  the T1 scope.  It distinguishes `tested`, `partial`, `unavailable`, and
+  `planned` behavior so an aggregate case count cannot hide an untested
+  public family.
 
 Validate and optionally expand the rule-based ledger from the repository root:
 
@@ -65,20 +97,22 @@ a structural receipt, not a physics-test result.
 From the AMPS repository root:
 
 ```sh
-python3 src/test/run_tests.py --tier smoke
-python3 src/test/run_tests.py --tier nightly
-python3 src/test/run_tests.py --tier nightly --jobs 4
+python3 src/test/run_tests.py --campaign smoke
+python3 src/test/run_tests.py --campaign nightly
+python3 src/test/run_tests.py --campaign nightly --jobs 4
 python3 src/test/run_tests.py --all --list
 python3 src/test/run_tests.py --coverage
 make -C src/test smoke
 make core_test_nightly
 ```
 
-The top-level `test_all` target depends on `core_test_nightly`. In the current
-manifest, `nightly` includes the exclusive native suite as well as the
-dependency-light suites; `smoke` is the dependency-light-only selection.
-`core_test_extended` and `profile` select only the configured native profile,
-while `--all` ignores campaign membership and selects the complete registry.
+`--tier` remains a backward-compatible alias for `--campaign`. The top-level
+`test_all` target depends on `core_test_nightly`. In the current manifest,
+`smoke` selects eight dependency-light suites (51 cases), `nightly` selects
+all 11 suites (103 cases), `profile` selects the 36-case configured native
+suite, `extended` selects the 11-case interface suite plus the native suite,
+and `distributed` selects the five-case two-rank MPI channel/RNG suite.
+`--all` ignores campaign membership and selects the complete registry.
 Site/nightly orchestration must preserve the native suite's exclusive barrier
 because it selects a repository-wide application.
 
@@ -86,6 +120,8 @@ Run one suite or component:
 
 ```sh
 python3 src/test/run_tests.py --test CORE-GENERAL-INPUT-001
+python3 src/test/run_tests.py --test CORE-GENERAL-MPI-001
+python3 src/test/run_tests.py --test CORE-INTERFACE-ABI-001
 python3 src/test/run_tests.py --component src/general
 python3 src/test/run_tests.py --match 'CORE-GENERAL-*'
 ```
@@ -140,9 +176,15 @@ streamed case-start lines include the suite ID because independent output can
 interleave. `--fail-fast` finishes an already-submitted parallel batch and
 then prevents later batches from starting.
 
-The combined native suite owns two generated-configuration adapter cases,
-three particle-buffer cases, and 19 physics cases. The physics cases add
-analytical/invariant checks for Huebner
+The combined native suite owns three generated-configuration adapter cases,
+three particle-buffer cases, 19 physics cases, four compiled/generated
+species cases, two production-linked global-unit cases, and five particle
+weight/time-step cases.  The T2 cases exercise the configured host
+species-global minimum-reduction and distribution-copy behavior and require
+typed rejection of nonpositive, nonfinite, and out-of-range inputs.  They do
+not yet qualify species-local or single-global profiles, device-side error
+behavior, individual correction, split/merge, or unequal-weight/time collision
+physics.  The physics cases add analytical/invariant checks for Huebner
 rates, branching, products, and exponential parent decay; Maxwellian moments;
 hard-sphere scattering; populated-cell NTC collision rates; Larsen-Borgnakke
 rotational/vibrational laws and RT equilibration; neutral Simple/Boris motion;
@@ -153,6 +195,34 @@ collective suites. Exact equations, seeds, sample counts, tolerances,
 limitations, and case IDs are documented in
 `test/srcCoreUnitTests/README.md`; the legacy GoogleTest mapping is in
 `SRC_UNIT_TESTS_MIGRATION.md`.
+
+The remaining T1 suites exercise the following bounded contracts:
+
+- general arrays through rank five, managed stacks, algebraic helpers, and
+  independent quadrature oracles;
+- deterministic uniform/normal/gamma streams and isotropic directions, plus
+  two-rank independent-stream evidence;
+- two-rank scalar/vector/structure/zero-length `CMPI_channel` transfers;
+- thread-safe diagnostic formatting, rotation, durable flush, and fatal
+  subprocess behavior;
+- SI/CGS/normalized unit factors and scalar/vector round trips;
+- He/Na retained table-regression points, finite clamping, distance scaling,
+  acceleration units, and typed invalid/unrepresentable domains;
+- synthetic C and optional Fortran compiler/toolchain ABI echoes plus direct
+  production Geopack layout, coordinate, unit, and no-SPICE behavior.
+
+The ABI echoes do not qualify an AMPS production C/Fortran wrapper. Likewise,
+the retained He/Na table literals exercise computational behavior but are not
+a separately versioned digitization of the cited papers; that scientific
+provenance remains visible in the component and source-traceability ledgers.
+
+`CORE-INTERFACE-ABI-001` also owns explicit ARMS, BATSRUS, CCMC, Kameleon,
+and SWMF provider cases.  On a machine without the required provider library,
+configured coupling state, and versioned independent data fixture, each case
+must report `SKIP`; a synthetic fixture must not be reported as provider
+qualification.  Legacy/ISO-C Fortran cases similarly skip only when no
+Fortran compiler is available.  Available ABI and Geopack cases still execute
+and report their own states.
 
 The native runner takes an advisory lock on the checkout's read-only
 `Config.pl` inode and, on Linux, also scans `/proc` for legacy AMPS/
@@ -268,7 +338,9 @@ are enumerated in `configuration_contracts.json`.
 Future generator tests must run in a validated isolated checkout/workspace or
 use a non-mutating generator interface. They must never edit `.amps.conf`
 directly. Required negative cases include unknown applications/options,
-duplicate or unknown species, missing values, and incompatible mode pairs;
+unknown species, missing values, and incompatible mode pairs; duplicate
+top-level `SpeciesList` rejection is now a registered native case, but other
+species permutations and generator modes remain open;
 required positive cases compare generated macro values and species tables with
 independent expectations, record a configuration identity, and verify clean-
 build reproducibility. Individual-weight/split-merge, alternate collision,

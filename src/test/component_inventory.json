@@ -4,8 +4,8 @@
     {
       "component": "src/general",
       "status": "partial",
-      "test_ids": ["CORE-GENERAL-CONTAINERS-001"],
-      "remaining": "Random generators, special functions, quadrature, logging, and multidimensional arrays need independent numerical tests."
+      "test_ids": ["CORE-GENERAL-CONTAINERS-001", "CORE-GENERAL-NUMERICS-001", "CORE-GENERAL-RNG-001", "CORE-GENERAL-MPI-001", "CORE-GENERAL-LOGGER-001"],
+      "remaining": "T1 numerics are covered. Remaining non-T1 families are legacy cLogger daemon lifecycle, CRC/debug streams, thread/spinlock and CUDA helpers, and general grid/distribution containers."
     },
     {
       "component": "src/general/input",
@@ -15,9 +15,9 @@
     },
     {
       "component": "src/interface",
-      "status": "planned",
-      "test_ids": [],
-      "remaining": "C/Fortran interfaces, interpolation adapters, and external-field wrappers."
+      "status": "partial",
+      "test_ids": ["CORE-INTERFACE-ABI-001"],
+      "remaining": "Synthetic C/C++/Fortran toolchain ABI echoes and production Geopack contracts pass. Production wrappers outside Geopack, ARMS, BATSRUS, CCMC, Kameleon, and SWMF remain open pending independent fixtures; empirical magnetic-field wrappers still need numerical references."
     },
     {
       "component": "src/meshAMR",
@@ -101,7 +101,7 @@
       "component": "src/pic",
       "status": "partial",
       "test_ids": ["CORE-PIC-NATIVE-001"],
-      "remaining": "Particle-buffer state; Maxwellian moments; neutral Simple/Boris motion; analytic sphere reflection; hard-sphere kernel invariants; populated-cell NTC rate, conservation, and RT equilibration; 3-D parent decay; and LB equilibrium/partition/RT rates are tested. Add charged mover convergence, remaining collision selectors, unequal weights/time steps, injection, general sampling, split/merge, restart, refinement/outer boundaries, and MPI ownership."
+      "remaining": "Particle-buffer state; host-side species-global particle weights/time steps and invalid-domain rejection; Maxwellian moments; neutral Simple/Boris motion; analytic sphere reflection; hard-sphere kernel invariants; populated-cell NTC rate, conservation, and RT equilibration; 3-D parent decay; and LB equilibrium/partition/RT rates are tested. Add local and single-global weight/time-step profiles, individual-particle weights, unequal-weight/time-step physics and rescaling, CUDA device diagnostics, charged mover convergence, remaining collision selectors, injection, general sampling, split/merge, restart, refinement/outer boundaries, and MPI ownership."
     },
     {
       "component": "src/pic/ecsim",
@@ -129,15 +129,15 @@
     },
     {
       "component": "src/pic/units",
-      "status": "planned",
-      "test_ids": [],
-      "remaining": "Unit conversions, dimensional constants, round trips, and invalid-unit handling."
+      "status": "covered",
+      "test_ids": ["CORE-UNITS-001", "CORE-PIC-NATIVE-001"],
+      "remaining": "Extend independent dimensional fixtures whenever the public normalization API changes."
     },
     {
       "component": "src/species",
-      "status": "planned",
-      "test_ids": [],
-      "remaining": "Mass/charge/property tables and parser-to-compiled-species consistency."
+      "status": "partial",
+      "test_ids": ["CORE-PIC-NATIVE-001", "CORE-SPECIES-RADIATION-001"],
+      "remaining": "Generated species and all public He/Na computational paths are exercised. Independent scientific revalidation still needs a versioned bibliographic/page-level digitization fixture separate from the production tables."
     },
     {
       "component": "src/test",

@@ -10,6 +10,8 @@
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <limits.h>
+#include <stdint.h>
 #include "specfunc.h"
 
 using namespace std;
@@ -26,13 +28,30 @@ public:
   //===================================================
   _TARGET_HOST_ _TARGET_DEVICE_
     void init(long int n) {
+    if (n<0 || n>INT_MAX ||
+        (static_cast<size_t>(n)>SIZE_MAX/sizeof(T)))
+      exit(__LINE__,__FILE__,"Error: invalid or overflowing array_1d extent");
     if (size_dim0!=0) {
       printf("Error: initialization of allocated array_1d object\n");
       exit(__LINE__,__FILE__);
     }
 
-    data=new T [n];
+    data=(n>0) ? new T [n] : NULL;
     size_dim0=n;
+  }
+
+  // Resizing invalidates element values but leaves a canonical empty object
+  // for n==0.  This is deliberately separate from copy assignment, which
+  // preserves the source values while changing the destination extent.
+  _TARGET_HOST_ _TARGET_DEVICE_
+  void resize(long int n) {
+    if (n<0 || n>INT_MAX ||
+        (static_cast<size_t>(n)>SIZE_MAX/sizeof(T)))
+      exit(__LINE__,__FILE__,"Error: invalid or overflowing array_1d extent");
+    if (n==size_dim0) return;
+    if (data!=NULL) delete [] data;
+    data=(n>0) ? new T[n] : NULL;
+    size_dim0=static_cast<int>(n);
   }
 
 

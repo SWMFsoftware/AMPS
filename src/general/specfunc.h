@@ -7,8 +7,12 @@
 #include "mpi.h"
 
 #include <math.h>
+#include <cmath>
+#include <cstdint>
 #include <iostream>
 #include <iostream>
+#include <limits>
+#include <stdexcept>
 #include <stdlib.h>
 #include <string.h>
 #include <vector>
@@ -420,17 +424,29 @@ bool CompareArray_Unordered(T* A, int lenA,
  * @return Greatest common divisor (always positive)
  */
 inline int GetGcd(int a, int b) {
-    a = std::abs(a);  // Work with absolute values
-    b = std::abs(b);
+    // Widen before negation: abs(INT_MIN) is not representable as an int and
+    // is undefined behavior.  The Euclidean algorithm itself is performed on
+    // unsigned magnitudes so representable results such as gcd(INT_MIN,2)
+    // remain useful.  The one mathematically valid result outside this API's
+    // int return range (2^31) is reported as a typed overflow.
+    std::uint64_t ua = a < 0
+        ? static_cast<std::uint64_t>(-static_cast<std::int64_t>(a))
+        : static_cast<std::uint64_t>(a);
+    std::uint64_t ub = b < 0
+        ? static_cast<std::uint64_t>(-static_cast<std::int64_t>(b))
+        : static_cast<std::uint64_t>(b);
 
     // Euclidean algorithm: repeatedly replace (a,b) with (b, a mod b)
-    while (b != 0) {
-        int temp = b;
-        b = a % b;  // Remainder when a is divided by b
-        a = temp;
+    while (ub != 0) {
+        const std::uint64_t remainder = ua % ub;
+        ua = ub;
+        ub = remainder;
     }
 
-    return a;  // When b=0, a contains the GCD
+    if (ua > static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
+      throw std::overflow_error("GCD is not representable as a positive int");
+
+    return static_cast<int>(ua);  // When ub=0, ua contains the GCD
 }
 
 //=========================================================
@@ -1014,12 +1030,9 @@ namespace Vector3D {
     //normal distribution p(x) ~ exp(-x^2/2)
     //two random numbers can be generated concurrently --> save one to reduce the number of operations
     inline double Normal() {
-      static bool flag=false;
-      static double r;
-
-      if (flag==true) {
-        flag=false;
-	return r;
+      if (RandomNumberGenerator::NormalSpareAvailable) {
+        RandomNumberGenerator::NormalSpareAvailable=false;
+	return RandomNumberGenerator::NormalSpare;
       }
 
       double phi,t;
@@ -1027,13 +1040,20 @@ namespace Vector3D {
       t=sqrt(-2.0*log(rnd()));
       phi=2.0*Pi*rnd();
 
-      r=t*cos(phi);
-      flag=true;
+      RandomNumberGenerator::NormalSpare=t*cos(phi);
+      RandomNumberGenerator::NormalSpareAvailable=true;
 
       return t*sin(phi);
     }
 
     inline void Normal(double *res,int length) {
+      // A negative count previously made the odd-length tail write res[-2].
+      // A null buffer is valid only for the zero-length no-op.
+      if (length<0)
+        throw std::invalid_argument("normal sample count must be nonnegative");
+      if (length>0 && res==NULL)
+        throw std::invalid_argument("normal sample buffer must not be null");
+
       int npairs,ipair;
       double phi,r;
 
@@ -1053,9 +1073,9 @@ namespace Vector3D {
     inline double Gamma(double shape) {
       double res;
 
-    if (shape <= 0) {
-        throw std::invalid_argument("Shape parameter must be positive"); // Gamma distribution is defined only for positive shape parameters
-	exit(__LINE__,__FILE__,"Shape parameter must be positive"); 
+    if (!std::isfinite(shape) || shape <= 0) {
+        throw std::invalid_argument(
+            "Shape parameter must be finite and positive");
     }
 
     // Case 1: Shape parameter > 1 (Marsaglia and Tsang's method)
@@ -1087,6 +1107,9 @@ namespace Vector3D {
         // Gamma(shape) = Gamma(shape + 1) * U^(1 / shape)
         res=Gamma(shape + 1) * std::pow(rnd(), 1.0 / shape);
     }
+
+    if (!std::isfinite(res))
+      throw std::overflow_error("Gamma sample is not finite");
 
     return res;
 }
@@ -1121,10 +1144,15 @@ namespace Vector3D {
  *    multiply each sample by beta.
  */
    inline double Gamma(double shape,double beta) {
-     double res;
+     if (!std::isfinite(beta) || beta<=0.0)
+       throw std::invalid_argument(
+           "Gamma rate parameter must be finite and positive");
 
-     res=Gamma(shape); // Sample from Gamma(alpha, 1.0) 
+     double res=Gamma(shape); // Sample from Gamma(alpha, 1.0)
      res/=beta; // Rescale to Gamma(alpha, 1.0 / beta)
+
+     if (!std::isfinite(res))
+       throw std::overflow_error("Scaled Gamma sample is not finite");
 
      return res;
    } 

@@ -10,6 +10,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+#include <limits.h>
+#include <new>
+#include <stdint.h>
 #include "specfunc.h"
 
 template <class T>
@@ -18,6 +21,29 @@ protected:
   T* data;
   int size_dim0,size_dim1,size_dim2,size_dim3;
   int ndim0_ndim1,ndim0_ndim1_ndim2;
+  int element_count;
+  bool locally_allocated_data_buffer;
+
+  // Array extents and MPI element counts are represented by int throughout
+  // this legacy interface.  Validate in size_t before evaluating any signed
+  // products, so an oversized shape cannot wrap to an undersized allocation.
+  static int CheckedElementCount(int n0,int n1,int n2,int n3) {
+    if (n0<=0 || n1<=0 || n2<=0 || n3<=0)
+      exit(__LINE__,__FILE__,"Error: nonpositive array_4d extent");
+
+    size_t count=1;
+    const int extent[4]={n0,n1,n2,n3};
+    for (int i=0;i<4;i++) {
+      const size_t next=static_cast<size_t>(extent[i]);
+      if (count>static_cast<size_t>(INT_MAX)/next)
+        exit(__LINE__,__FILE__,"Error: array_4d extent product overflows");
+      count*=next;
+    }
+    if (count>SIZE_MAX/sizeof(T))
+      exit(__LINE__,__FILE__,"Error: array_4d allocation size overflows");
+
+    return static_cast<int>(count);
+  }
 
 public:
 
@@ -27,34 +53,38 @@ public:
     size_dim1=0;
     size_dim2=0;
     size_dim3=0;
+    ndim0_ndim1=ndim0_ndim1_ndim2=0;
+    element_count=0;
+    locally_allocated_data_buffer=false;
   };
 
 //===================================================
- ~array_4d() { 
-    if (data!=NULL) delete [] data;
-    data=NULL; 
-  };
+ ~array_4d() { Deallocate(); };
+
+  void Deallocate() {
+    if (data!=NULL && locally_allocated_data_buffer) delete [] data;
+    data=NULL;
+    size_dim0=size_dim1=size_dim2=size_dim3=0;
+    ndim0_ndim1=ndim0_ndim1_ndim2=0;
+    element_count=0;
+    locally_allocated_data_buffer=false;
+  }
 
 
 
 //===================================================
   void init(int n0,int n1,int n2,int n3) {
-    if ((n0<=0)||(n1<=0)||(n2<=0)||(n3<=0)) {
-      printf("Error: allocation of array_4d object\n");
-      printf("with negative number of elemens\n");
-      exit(__LINE__,__FILE__);
-    }
-   
-    if (size_dim0!=0) {
-      printf("Error: initialization of allocated of array_4d object\n");
-      exit(__LINE__,__FILE__);
-    }
+    const int count=CheckedElementCount(n0,n1,n2,n3);
+
+    if (data!=NULL || size_dim0!=0 || size_dim1!=0 || size_dim2!=0 || size_dim3!=0)
+      exit(__LINE__,__FILE__,"Error: initialization of allocated array_4d object");
 
     try {
-      data=new T[n0*n1*n2*n3];
+      data=new T[count];
     }
-    catch (bad_alloc) {
-      printf("Memory Error: array_4d() cannot allocate %ld bytes\n", n0*n1*n2*n3*sizeof(T));
+    catch (const std::bad_alloc&) {
+      printf("Memory Error: array_4d() cannot allocate %zu bytes\n",
+          static_cast<size_t>(count)*sizeof(T));
       exit(__LINE__,__FILE__);
     }
 
@@ -66,6 +96,8 @@ public:
 
     ndim0_ndim1=n0*n1;
     ndim0_ndim1_ndim2=n0*n1*n2;
+    element_count=count;
+    locally_allocated_data_buffer=true;
   };
   
   array_4d(int n0,int n1,int n2,int n3) {
@@ -74,12 +106,66 @@ public:
     size_dim1=0;
     size_dim2=0;
     size_dim3=0;
+    ndim0_ndim1=ndim0_ndim1_ndim2=0;
+    element_count=0;
+    locally_allocated_data_buffer=false;
 
     init(n0,n1,n2,n3);
   }
 
+  array_4d(T* external,int n0,int n1,int n2,int n3) {
+    if (external==NULL)
+      exit(__LINE__,__FILE__,"Error: invalid external array_4d buffer");
+    const int count=CheckedElementCount(n0,n1,n2,n3);
+    data=external;
+    size_dim0=n0,size_dim1=n1,size_dim2=n2,size_dim3=n3;
+    ndim0_ndim1=n0*n1;
+    ndim0_ndim1_ndim2=n0*n1*n2;
+    element_count=count;
+    locally_allocated_data_buffer=false;
+  }
+
+  array_4d(const array_4d<T>& other) {
+    data=NULL;
+    size_dim0=size_dim1=size_dim2=size_dim3=0;
+    ndim0_ndim1=ndim0_ndim1_ndim2=0;
+    element_count=0;
+    locally_allocated_data_buffer=false;
+    if (other.size()>0) {
+      init(other.size_dim0,other.size_dim1,other.size_dim2,other.size_dim3);
+      for (int i=0;i<size();i++) data[i]=other.data[i];
+    }
+  }
+
+  array_4d(array_4d<T>&& other) noexcept {
+    data=other.data;
+    size_dim0=other.size_dim0,size_dim1=other.size_dim1;
+    size_dim2=other.size_dim2,size_dim3=other.size_dim3;
+    ndim0_ndim1=other.ndim0_ndim1;
+    ndim0_ndim1_ndim2=other.ndim0_ndim1_ndim2;
+    element_count=other.element_count;
+    locally_allocated_data_buffer=other.locally_allocated_data_buffer;
+    other.data=NULL;
+    other.size_dim0=other.size_dim1=other.size_dim2=other.size_dim3=0;
+    other.ndim0_ndim1=other.ndim0_ndim1_ndim2=0;
+    other.element_count=0;
+    other.locally_allocated_data_buffer=false;
+  }
+
+  void resize(int n0,int n1,int n2,int n3) {
+    if (n0==0 && n1==0 && n2==0 && n3==0) {
+      Deallocate();
+      return;
+    }
+    (void)CheckedElementCount(n0,n1,n2,n3);
+    if (n0==size_dim0 && n1==size_dim1 && n2==size_dim2 && n3==size_dim3 &&
+        locally_allocated_data_buffer) return;
+    Deallocate();
+    init(n0,n1,n2,n3);
+  }
+
   void find_nan() {
-    int i,imax=size_dim0*size_dim1*size_dim2*size_dim3;
+    int i,imax=element_count;
 
     for (i=0;i<imax;i++) {
       if (isfinite(data[i])==false) {
@@ -102,19 +188,42 @@ public:
 
 //===================================================
   array_4d<T>& operator = (const array_4d<T>& v) {
-    int i,imax;
-  
-    imax=size_dim0*size_dim1*size_dim2*size_dim3;
+    if (this==&v) return *this;
+    if (size_dim0!=v.size_dim0 || size_dim1!=v.size_dim1 ||
+        size_dim2!=v.size_dim2 || size_dim3!=v.size_dim3 ||
+        !locally_allocated_data_buffer) {
+      Deallocate();
+      if (v.size()>0) init(v.size_dim0,v.size_dim1,v.size_dim2,v.size_dim3);
+    }
+    int i,imax=v.size();
     for (i=0;i<imax;i++) data[i]=v.data[i];
  
     return *this;
   };
 
+  array_4d<T>& operator = (array_4d<T>&& v) noexcept {
+    if (this==&v) return *this;
+    Deallocate();
+    data=v.data;
+    size_dim0=v.size_dim0,size_dim1=v.size_dim1;
+    size_dim2=v.size_dim2,size_dim3=v.size_dim3;
+    ndim0_ndim1=v.ndim0_ndim1;
+    ndim0_ndim1_ndim2=v.ndim0_ndim1_ndim2;
+    element_count=v.element_count;
+    locally_allocated_data_buffer=v.locally_allocated_data_buffer;
+    v.data=NULL;
+    v.size_dim0=v.size_dim1=v.size_dim2=v.size_dim3=0;
+    v.ndim0_ndim1=v.ndim0_ndim1_ndim2=0;
+    v.element_count=0;
+    v.locally_allocated_data_buffer=false;
+    return *this;
+  }
+
 //===================================================
   array_4d<T>& operator = (T f) {
     int i,imax;
 
-    imax=size_dim0*size_dim1*size_dim2*size_dim3;
+    imax=element_count;
     for (i=0;i<imax;i++) data[i]=f;
  
     return *this;
@@ -132,7 +241,7 @@ public:
     int i,imax;
     array_4d<T> v3(v1.size_dim0,v1.size_dim1,v1.size_dim2,v1.size_dim3);
 
-    imax=v1.size_dim0*v1.size_dim1*v1.size_dim2*v1.size_dim3;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v3.data[i]=v1.data[i]+v2.data[i]; 
    
     return v3;
@@ -148,9 +257,9 @@ public:
     }
 
     int i,imax;
-    array_4d<T> v3(v1.size_dim0,v1.size_dim1,v1.size_dim2,v1.size_dim1);
+    array_4d<T> v3(v1.size_dim0,v1.size_dim1,v1.size_dim2,v1.size_dim3);
 
-    imax=v1.size_dim0*v1.size_dim1*v1.size_dim2*v1.size_dim3;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v3.data[i]=v1.data[i]-v2.data[i];
 
     return v3;
@@ -161,7 +270,7 @@ public:
     int i,imax;
     array_4d<T> v3(v1.size_dim0,v1.size_dim1,v1.size_dim2,v1.size_dim3);
 
-    imax=v1.size_dim0*v1.size_dim1*v1.size_dim2*v1.size_dim3;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v3.data[i]=t*v1.data[i];
 
     return v3;
@@ -176,7 +285,7 @@ public:
     int i,imax;
     array_4d<T> v3(v1.size_dim0,v1.size_dim1,v1.size_dim2,v1.size_dim3);
 
-    imax=v1.size_dim0*v1.size_dim1*v1.size_dim2*v1.size_dim3;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v3.data[i]=v1.data[i]/t;
 
     return v3;
@@ -193,7 +302,7 @@ public:
 
     int i,imax;
 
-    imax=v1.size_dim0*v1.size_dim1*v1.size_dim2*v1.size_dim3;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v1.data[i]+=v2.data[i];
 
     return v1;
@@ -210,7 +319,7 @@ public:
 
     int i,imax;
 
-    imax=v1.size_dim0*v1.size_dim1*v1.size_dim2*v1.size_dim3;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v1.data[i]-=v2.data[i];
 
     return v1;
@@ -220,7 +329,7 @@ public:
   friend array_4d<T>& operator *= (array_4d<T> &v1,const T t) {
     int i,imax;
 
-    imax=v1.size_dim0*v1.size_dim1*v1.size_dim2*v1.size_dim3;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v1.data[i]*=t;
 
     return v1;
@@ -235,7 +344,7 @@ public:
 
     int i,imax;
 
-    imax=v1.size_dim0*v1.size_dim1*v1.size_dim2*v1.size_dim3;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v1.data[i]/=t;
 
     return v1;
@@ -252,8 +361,18 @@ public:
     return data;
   }
 
-  int size() {
-    return size_dim0*size_dim1*size_dim2*size_dim3;
+  int size() const {
+    return element_count;
+  }
+
+  int size(int dimension) const {
+    switch (dimension) {
+    case 0: return size_dim0;
+    case 1: return size_dim1;
+    case 2: return size_dim2;
+    case 3: return size_dim3;
+    default: return 0;
+    }
   }
 
   void reduce(int reduce_rank, MPI_Op operation, MPI_Comm comm) {

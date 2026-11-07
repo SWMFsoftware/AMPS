@@ -10,6 +10,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+#include <limits.h>
+#include <stdint.h>
 #include "specfunc.h"
 
 template <class T>
@@ -17,7 +19,19 @@ class array_2d {
 protected:
   T* data;
   int size_dim0,size_dim1;
+  int element_count;
   bool locally_allocated_data_buiffer;
+
+  static int CheckedElementCount(int n0,int n1) {
+    if (n0<=0 || n1<=0)
+      exit(__LINE__,__FILE__,"Error: nonpositive array_2d extent");
+    const size_t a=static_cast<size_t>(n0);
+    const size_t b=static_cast<size_t>(n1);
+    if (a>static_cast<size_t>(INT_MAX)/b ||
+        a*b>SIZE_MAX/sizeof(T))
+      exit(__LINE__,__FILE__,"Error: array_2d extent product overflows");
+    return static_cast<int>(a*b);
+  }
 
 public:
 
@@ -25,27 +39,24 @@ public:
 //===================================================
 
   void init(int n0,int n1) {
-    if ((n0<=0)||(n1<=0)) {
-      printf("Error: allocation of array_2d object\n");
-      printf("with negative number of elemens\n");
-      exit(__LINE__,__FILE__);
-    }
+    const int count=CheckedElementCount(n0,n1);
 
     if (size_dim0!=0) {
       printf("Error: initialization of allocated of array_2d object\n");
       exit(__LINE__,__FILE__);
     }
 
-   data=new T[n0*n1];
+   data=new T[count];
    locally_allocated_data_buiffer=true;
 
    size_dim0=n0;
    size_dim1=n1;
+   element_count=count;
   };
 
   int GetDim0() {return size_dim0;}
   int GetDim1() {return size_dim1;}
-  int GetElementNumber() {return size_dim0*size_dim1;}
+  int GetElementNumber() {return element_count;}
   T* GetBufferPointer() {return data;};
 
   void Deallocate() {
@@ -54,6 +65,7 @@ public:
     data=NULL;
     size_dim0=0;
     size_dim1=0;
+    element_count=0;
     locally_allocated_data_buiffer=false;
   }
 
@@ -62,6 +74,7 @@ public:
     data=NULL;
     size_dim0=0;
     size_dim1=0;
+    element_count=0;
     locally_allocated_data_buiffer=false;
   };
 
@@ -73,18 +86,63 @@ public:
     data=NULL;
     size_dim0=0;
     size_dim1=0;
+    element_count=0;
     locally_allocated_data_buiffer=false;
 
     init(n0,n1);
   };
 
+  // An owning array has value semantics.  The former implicit copy
+  // constructor aliased the allocation and both destructors deleted it.
+  array_2d(const array_2d<T>& other) {
+    data=NULL;
+    size_dim0=0;
+    size_dim1=0;
+    element_count=0;
+    locally_allocated_data_buiffer=false;
+    if (other.size_dim0>0 && other.size_dim1>0) {
+      init(other.size_dim0,other.size_dim1);
+      for (int i=0;i<element_count;i++) data[i]=other.data[i];
+    }
+  }
+
+  array_2d(array_2d<T>&& other) noexcept {
+    data=other.data;
+    size_dim0=other.size_dim0;
+    size_dim1=other.size_dim1;
+    element_count=other.element_count;
+    locally_allocated_data_buiffer=other.locally_allocated_data_buiffer;
+    other.data=NULL;
+    other.size_dim0=other.size_dim1=0;
+    other.element_count=0;
+    other.locally_allocated_data_buiffer=false;
+  }
+
   //the object does not allocate its own data buffer but acts as a manager providing indexed access to anothe data buffer
   array_2d(T* t,int n0,int n1) {
+    if (t==NULL)
+      exit(__LINE__,__FILE__,"Error: null external array_2d buffer");
+    const int count=CheckedElementCount(n0,n1);
     locally_allocated_data_buiffer=false;
 
     data=t;
     size_dim0=n0;
     size_dim1=n1;
+    element_count=count;
+  }
+
+  // Resize discards values and always produces owning storage.  A pair of
+  // zero extents is the canonical empty state; mixed zero extents remain an
+  // invalid shape and are rejected by init().
+  void resize(int n0,int n1) {
+    if (n0==0 && n1==0) {
+      Deallocate();
+      return;
+    }
+    (void)CheckedElementCount(n0,n1);
+    if (n0==size_dim0 && n1==size_dim1 && locally_allocated_data_buiffer) return;
+    Deallocate();
+    init(n0,n1);
   }
 
   bool IsAllocated() {return (data!=NULL);}
@@ -110,19 +168,38 @@ public:
 
 //===================================================
   inline array_2d<T>& operator = (const array_2d<T>& v) {
-    int i,imax;
-  
-    imax=size_dim0*size_dim1;
+    if (this==&v) return *this;
+    if (size_dim0!=v.size_dim0 || size_dim1!=v.size_dim1 ||
+        !locally_allocated_data_buiffer) {
+      Deallocate();
+      if (v.size_dim0>0 && v.size_dim1>0) init(v.size_dim0,v.size_dim1);
+    }
+    int i,imax=v.element_count;
     for (i=0;i<imax;i++) data[i]=v.data[i];
  
     return *this;
   };
 
+  array_2d<T>& operator = (array_2d<T>&& v) noexcept {
+    if (this==&v) return *this;
+    Deallocate();
+    data=v.data;
+    size_dim0=v.size_dim0;
+    size_dim1=v.size_dim1;
+    element_count=v.element_count;
+    locally_allocated_data_buiffer=v.locally_allocated_data_buiffer;
+    v.data=NULL;
+    v.size_dim0=v.size_dim1=0;
+    v.element_count=0;
+    v.locally_allocated_data_buiffer=false;
+    return *this;
+  }
+
 //===================================================
   array_2d<T>& operator = (T f) {
     int i,imax;
 
-    imax=size_dim0*size_dim1;
+    imax=element_count;
     for (i=0;i<imax;i++) data[i]=f;
  
     return *this;
@@ -139,7 +216,7 @@ public:
     int i,imax;
     array_2d<T> v3(v1.size_dim0,v1.size_dim1);
 
-    imax=v1.size_dim0*v1.size_dim1;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v3.data[i]=v1.data[i]+v2.data[i]; 
    
     return v3;
@@ -156,7 +233,7 @@ public:
     int i,imax;
     array_2d<T> v3(v1.size_dim0,v1.size_dim1);
 
-    imax=v1.size_dim0*v1.size_dim1;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v3.data[i]=v1.data[i]-v2.data[i];
 
     return v3;
@@ -167,7 +244,7 @@ public:
     int i,imax;
     array_2d<T> v3(v1.size_dim0,v1.size_dim1);
 
-    imax=v1.size_dim0*v1.size_dim1;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v3.data[i]=t*v1.data[i];
 
     return v3;
@@ -182,7 +259,7 @@ public:
     int i,imax;
     array_2d<T> v3(v1.size_dim0,v1.size_dim1);
 
-    imax=v1.size_dim0*v1.size_dim1;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v3.data[i]=v1.data[i]/t;
 
     return v3;
@@ -198,7 +275,7 @@ public:
 
     int i,imax;
 
-    imax=v1.size_dim0*v1.size_dim1;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v1.data[i]+=v2.data[i];
 
     return v1;
@@ -214,7 +291,7 @@ public:
 
     int i,imax;
 
-    imax=v1.size_dim0*v1.size_dim1;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v1.data[i]-=v2.data[i];
 
     return v1;
@@ -224,7 +301,7 @@ public:
   friend array_2d<T>& operator *= (array_2d<T> &v1,const T t) {
     int i,imax;
 
-    imax=v1.size_dim0*v1.size_dim1;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v1.data[i]*=t;
 
     return v1;
@@ -239,7 +316,7 @@ public:
 
     int i,imax;
 
-    imax=v1.size_dim0*v1.size_dim1;
+    imax=v1.element_count;
     for (i=0;i<imax;i++) v1.data[i]/=t;
 
     return v1;
@@ -262,11 +339,11 @@ public:
     }
 
     int size() {
-      return size_dim0*size_dim1;
+      return element_count;
     }
 
    void find_nan() {
-    int i,imax=size_dim0*size_dim1;
+    int i,imax=element_count;
 
     for (i=0;i<imax;i++) {
       if (isfinite(data[i])==false) {

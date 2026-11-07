@@ -106,6 +106,7 @@ TESTING
 #include <array>
 #include <cstdio>
 #include <stdexcept>
+#include <string>
 
 namespace picunits {
 
@@ -151,8 +152,9 @@ Time uses T0 = L0/U0, hence Si2NoT = Si2NoL/Si2NoV.
 
 Numerical Stability & Pitfalls
 ------------------------------
-  • All three input scales must be > 0. Very small or very large ratios can create
-    extreme factors; validate against expected magnitudes.
+  • All three input scales and every derived factor must be finite and > 0.
+    Scale triples whose double-precision derivation overflows or underflows are
+    rejected instead of installing a unit system containing zero, Inf, or NaN.
   • B0 = sqrt(ρ0)·U0: if ρ0 or U0 are tiny, B normalization will amplify noise.
   • For E scaling, we assume cgs with E·c = U×B. If you decide to use another
     convention, only adjust Si2NoE — all inverses remain consistent automatically.
@@ -233,22 +235,47 @@ inline Factors build(const NormScalesSI &s) {
 
     Error Handling
     --------------
-    Throws std::invalid_argument if any input scale ≤ 0.
+    Throws std::invalid_argument if any input scale is non-finite or ≤ 0, and
+    std::overflow_error if a positive finite triple cannot produce finite,
+    nonzero double-precision reference and conversion factors.
 
     Precision
     ---------
     Uses double precision throughout. If you require extended precision,
     promote the arithmetic here and in callers consistently.
     */
-    if (!(s.lSI_m > 0.0 && s.uSI_mps > 0.0 && s.mSI_kg > 0.0))
-        throw std::invalid_argument("Normalization scales must be positive.");
+    // A positive infinity satisfies `x > 0` but cannot define a physical unit
+    // system: ratios such as L0/U0 become indeterminate and inverse factors
+    // collapse to zero. Reject non-finite inputs at the public boundary so a
+    // bad deck fails deterministically instead of propagating NaN/Inf through
+    // field and particle conversions.
+    if (!(std::isfinite(s.lSI_m) && std::isfinite(s.uSI_mps) &&
+          std::isfinite(s.mSI_kg) && s.lSI_m > 0.0 && s.uSI_mps > 0.0 &&
+          s.mSI_kg > 0.0))
+        throw std::invalid_argument(
+            "Normalization scales must be finite and positive.");
 
     Factors f;
+
+    // Every reference scale and multiplicative conversion coefficient is
+    // physically positive.  IEEE-754 arithmetic does not trap ordinary
+    // overflow/underflow, so a finite input triple can otherwise create an
+    // unusable Factors object containing Inf or zero.  Check each derivation
+    // stage before its result is used as a divisor.  A typed overflow_error
+    // distinguishes an unrepresentable *derived* system from invalid input.
+    const auto require_representable = [](double value, const char* name) {
+      if (!std::isfinite(value) || value<=0.0)
+        throw std::overflow_error(
+            std::string("Normalization factor is not representable: ") + name);
+    };
 
     // SI→CGS bases
     f.L0_cm  = 100.0 * s.lSI_m;
     f.U0_cms = 100.0 * s.uSI_mps;
-    f.M0_g   = 1000.0 * s.mSI_kg; 
+    f.M0_g   = 1000.0 * s.mSI_kg;
+    require_representable(f.L0_cm, "L0_cm");
+    require_representable(f.U0_cms, "U0_cms");
+    require_representable(f.M0_g, "M0_g");
 
     // Derived CGS normalizers
     f.rho0 = f.M0_g / (f.L0_cm * f.L0_cm * f.L0_cm);
@@ -257,6 +284,12 @@ inline Factors build(const NormScalesSI &s) {
     f.P0   = f.rho0 * f.U0_cms * f.U0_cms;
     f.J0   = f.Q0 * f.U0_cms / (f.L0_cm * f.L0_cm * f.L0_cm);
     f.T0_s = (f.L0_cm / f.U0_cms); // numerically seconds because cm/(cm/s)
+    require_representable(f.rho0, "rho0");
+    require_representable(f.B0_G, "B0_G");
+    require_representable(f.Q0, "Q0");
+    require_representable(f.P0, "P0");
+    require_representable(f.J0, "J0");
+    require_representable(f.T0_s, "T0_s");
 
     // Raw SI→CGS factors
     const double si2cgs_rho = 1.0e-3;     // kg/m^3 → g/cm^3
@@ -266,6 +299,8 @@ inline Factors build(const NormScalesSI &s) {
     const double si2cgs_L   = 100.0;      // m      → cm
     const double si2cgs_J   = 1.0e-5 * f.U0_cms; // A/m^2 → statA/cm^2 scaled by U0
     const double si2cgs_E   = 1.0e6 / f.U0_cms;  // V/m   → statV/cm scaled by U0
+    require_representable(si2cgs_J, "SI-to-CGS current factor");
+    require_representable(si2cgs_E, "SI-to-CGS electric-field factor");
 
     // CGS→PIC (divide by normalizers)
     f.Si2NoRho = si2cgs_rho / f.rho0;
@@ -276,6 +311,14 @@ inline Factors build(const NormScalesSI &s) {
     f.Si2NoE   = (si2cgs_E  / f.B0_G);    // E scaled relative to B0, consistent with E c = U×B in cgs
     f.Si2NoL   = si2cgs_L   / f.L0_cm;
     f.Si2NoT   = f.Si2NoL / f.Si2NoV;     // = 1/T0
+    require_representable(f.Si2NoRho, "Si2NoRho");
+    require_representable(f.Si2NoV, "Si2NoV");
+    require_representable(f.Si2NoB, "Si2NoB");
+    require_representable(f.Si2NoP, "Si2NoP");
+    require_representable(f.Si2NoJ, "Si2NoJ");
+    require_representable(f.Si2NoE, "Si2NoE");
+    require_representable(f.Si2NoL, "Si2NoL");
+    require_representable(f.Si2NoT, "Si2NoT");
 
     // Inverses
     f.No2SiRho = 1.0 / f.Si2NoRho;
@@ -286,6 +329,14 @@ inline Factors build(const NormScalesSI &s) {
     f.No2SiE   = 1.0 / f.Si2NoE;
     f.No2SiL   = 1.0 / f.Si2NoL;
     f.No2SiT   = 1.0 / f.Si2NoT;
+    require_representable(f.No2SiRho, "No2SiRho");
+    require_representable(f.No2SiV, "No2SiV");
+    require_representable(f.No2SiB, "No2SiB");
+    require_representable(f.No2SiP, "No2SiP");
+    require_representable(f.No2SiJ, "No2SiJ");
+    require_representable(f.No2SiE, "No2SiE");
+    require_representable(f.No2SiL, "No2SiL");
+    require_representable(f.No2SiT, "No2SiT");
 
     // -------------------------------------------------------------------------
     // Particle mass & charge conversions used by SI-form pusher helpers
@@ -304,10 +355,15 @@ inline Factors build(const NormScalesSI &s) {
     // -------------------------------------------------------------------------
     f.No2SiM = 1.0E-3 * f.M0_g;     // [kg]
     f.Si2NoM = 1.0 / f.No2SiM;
+    require_representable(f.No2SiM, "No2SiM");
+    require_representable(f.Si2NoM, "Si2NoM");
 
     const double B0T0 = f.No2SiB * f.No2SiT;  // [T·s]
+    require_representable(B0T0, "B0*T0");
     f.Si2NoQ = B0T0 / f.No2SiM;               // q_no = q_SI * Si2NoQ
     f.No2SiQ = f.No2SiM / B0T0;               // q_SI = q_no * No2SiQ
+    require_representable(f.Si2NoQ, "Si2NoQ");
+    require_representable(f.No2SiQ, "No2SiQ");
 
     return f;
 }
@@ -494,6 +550,9 @@ inline double no2si_t  (double t_no,   const Factors& f){ return t_no   * f.No2S
 // SI → normalized (explicit N0 in cm^-3)
 // Example: si2no_n(45e6, 1000) == 0.045
 inline double si2no_n(double n_SI_m3, double N0_cm3){
+    if (!std::isfinite(N0_cm3) || N0_cm3<=0.0)
+      throw std::invalid_argument(
+          "Number-density reference scale must be finite and positive.");
     // Convert SI [1/m^3] → CGS [1/cm^3], then divide by reference N0
     return (n_SI_m3 * 1.0e-6) / N0_cm3;
 }
@@ -501,6 +560,9 @@ inline double si2no_n(double n_SI_m3, double N0_cm3){
 // normalized → SI (explicit N0 in cm^-3)
 // Example: no2si_n(0.045, 1000) == 45e6
 inline double no2si_n(double n_no, double N0_cm3){
+    if (!std::isfinite(N0_cm3) || N0_cm3<=0.0)
+      throw std::invalid_argument(
+          "Number-density reference scale must be finite and positive.");
     // Multiply by reference N0 [1/cm^3], then convert back to [1/m^3]
     return n_no * N0_cm3 * 1.0e6;
 }
@@ -615,15 +677,35 @@ inline double no2si_q(double q_no, const Factors& f) {return q_no * f.No2SiQ;}
 //
 // SI → normalized using derived N0
 inline double si2no_n(double n_SI_m3, const Factors& F, double m_species_kg){
+    if (!std::isfinite(m_species_kg) || m_species_kg<=0.0)
+      throw std::invalid_argument(
+          "Species mass must be finite and positive.");
+    if (!std::isfinite(F.rho0) || F.rho0<=0.0)
+      throw std::invalid_argument(
+          "Mass-density reference scale must be finite and positive.");
     const double m_g     = m_species_kg * 1.0e3;   // kg → g
     const double N0_cm3  = F.rho0 / m_g;           // [1/cm^3]
+    if (!std::isfinite(m_g) || m_g<=0.0 ||
+        !std::isfinite(N0_cm3) || N0_cm3<=0.0)
+      throw std::overflow_error(
+          "Species number-density scale is not representable.");
     return (n_SI_m3 * 1.0e-6) / N0_cm3;
 }
 
 // normalized → SI using derived N0
 inline double no2si_n(double n_no, const Factors& F, double m_species_kg){
+    if (!std::isfinite(m_species_kg) || m_species_kg<=0.0)
+      throw std::invalid_argument(
+          "Species mass must be finite and positive.");
+    if (!std::isfinite(F.rho0) || F.rho0<=0.0)
+      throw std::invalid_argument(
+          "Mass-density reference scale must be finite and positive.");
     const double m_g     = m_species_kg * 1.0e3;   // kg → g
     const double N0_cm3  = F.rho0 / m_g;           // [1/cm^3]
+    if (!std::isfinite(m_g) || m_g<=0.0 ||
+        !std::isfinite(N0_cm3) || N0_cm3<=0.0)
+      throw std::overflow_error(
+          "Species number-density scale is not representable.");
     return n_no * N0_cm3 * 1.0e6;                  // [1/m^3]
 }
 

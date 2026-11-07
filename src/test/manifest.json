@@ -67,8 +67,166 @@
       "timeout_seconds": 120
     },
     {
+      "id": "CORE-GENERAL-NUMERICS-001",
+      "component": "src/general",
+      "level": "unit",
+      "tiers": ["smoke", "nightly"],
+      "runner": "tests/general/numerics/run_test.py",
+      "description": "Rank-1 through rank-5 arrays, managed stack, special-function identities, and independent quadrature oracles",
+      "requires": {
+        "tools": ["mpi_cxx"],
+        "paths": ["src/general/array_5d.h", "src/general/quadrature.h", "src/general/stack_managed.h"],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "GENERAL-NUM-ARRAY-EMPTY-001",
+        "GENERAL-NUM-ARRAY-INDEX-001",
+        "GENERAL-NUM-ARRAY-OWNERSHIP-001",
+        "GENERAL-NUM-ARRAY-RESIZE-001",
+        "GENERAL-NUM-ARRAY-BOUNDS-001",
+        "GENERAL-NUM-MANAGED-STACK-001",
+        "GENERAL-NUM-SPECFUNC-001",
+        "GENERAL-NUM-QUADRATURE-POLY-001",
+        "GENERAL-NUM-QUADRATURE-CONVERGENCE-001",
+        "GENERAL-NUM-QUADRATURE-DOMAIN-001"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "CORE-GENERAL-RNG-001",
+      "component": "src/general",
+      "level": "unit",
+      "tiers": ["smoke", "nightly"],
+      "runner": "tests/general/rng/run_test.py",
+      "description": "Reproducible streams, endpoint exclusion, uniform/normal/gamma moments, and isotropic directions",
+      "requires": {
+        "tools": ["mpi_cxx"],
+        "paths": ["src/general/rnd.h", "src/general/specfunc.h"],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "GENERAL-RNG-REPRO-001",
+        "GENERAL-RNG-ENDPOINT-001",
+        "GENERAL-RNG-STREAMS-001",
+        "GENERAL-RNG-UNIFORM-001",
+        "GENERAL-RNG-NORMAL-001",
+        "GENERAL-RNG-GAMMA-001",
+        "GENERAL-RNG-DIRECTION-001"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "CORE-GENERAL-MPI-001",
+      "component": "src/general",
+      "level": "module",
+      "tiers": ["nightly", "distributed"],
+      "runner": "tests/general/mpi_channel/run_test.py",
+      "description": "Two-rank CMPI_channel transfers and MPI-derived independent RNG seeding",
+      "requires": {
+        "tools": ["mpi_cxx", "mpiexec"],
+        "paths": ["src/general/mpichannel.h"],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "GENERAL-MPI-CHANNEL-SCALAR-001",
+        "GENERAL-MPI-CHANNEL-VECTOR-001",
+        "GENERAL-MPI-CHANNEL-STRUCT-001",
+        "GENERAL-MPI-CHANNEL-ZERO-001",
+        "GENERAL-RNG-RANK-STREAM-001"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "CORE-GENERAL-LOGGER-001",
+      "component": "src/general",
+      "level": "unit",
+      "tiers": ["smoke", "nightly"],
+      "runner": "tests/general/logger/run_test.py",
+      "description": "Thread-safe diagnostic formatting, long lines, bounded rotation, durable flush, and fatal subprocess",
+      "requires": {
+        "tools": ["mpi_cxx"],
+        "paths": ["src/general/logger.h"],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "GENERAL-LOGGER-FORMAT-LONG-001",
+        "GENERAL-LOGGER-CONCURRENT-001",
+        "GENERAL-LOGGER-ROTATE-FLUSH-001",
+        "GENERAL-LOGGER-FATAL-001"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "CORE-UNITS-001",
+      "component": "src/pic/units",
+      "level": "unit",
+      "tiers": ["smoke", "nightly"],
+      "runner": "tests/pic/units/run_test.py",
+      "description": "Independent SI/CGS/normalized factors, round trips, dimensional identities, and invalid/unrepresentable scale checks",
+      "requires": {
+        "tools": ["cxx"],
+        "paths": ["src/pic/units/pic_units_normalization.h"],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "UNITS-FACTOR-DERIVATION-001",
+        "UNITS-SCALAR-ROUNDTRIP-001",
+        "UNITS-VECTOR-ROUNDTRIP-001",
+        "UNITS-DIMENSIONAL-IDENTITIES-001",
+        "UNITS-INVALID-SCALES-001"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "CORE-SPECIES-RADIATION-001",
+      "component": "src/species",
+      "level": "unit",
+      "tiers": ["smoke", "nightly"],
+      "runner": "tests/species/radiation/run_test.py",
+      "description": "Helium/sodium radiation-table reference points, inverse-square scaling, acceleration units, and invalid domains",
+      "requires": {
+        "tools": ["cxx"],
+        "paths": ["src/species/He.cpp", "src/species/Na.cpp"],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "SPECIES-RADIATION-REFERENCE-001",
+        "SPECIES-RADIATION-SCALING-001",
+        "SPECIES-RADIATION-ACCELERATION-001",
+        "SPECIES-RADIATION-INVALID-001"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "CORE-INTERFACE-ABI-001",
+      "component": "src/interface",
+      "level": "module",
+      "tiers": ["nightly", "extended"],
+      "runner": "tests/interface/run_test.py",
+      "description": "C/C++/Fortran ABI, Geopack coordinate/unit conventions, and typed optional-provider contracts",
+      "requires": {
+        "tools": ["cxx"],
+        "paths": ["src/interface/GeopackInterface.cpp", "src/interface/GeopackInterface.h"],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "INTERFACE-C-ABI-001",
+        "INTERFACE-FORTRAN-LEGACY-001",
+        "INTERFACE-FORTRAN-ISO-C-001",
+        "INTERFACE-GEOPACK-MATRIX-001",
+        "INTERFACE-GEOPACK-CONVENTION-001",
+        "INTERFACE-GEOPACK-NOSPICE-001",
+        "INTERFACE-PROVIDER-ARMS-001",
+        "INTERFACE-PROVIDER-BATSRUS-001",
+        "INTERFACE-PROVIDER-CCMC-001",
+        "INTERFACE-PROVIDER-KAMELEON-001",
+        "INTERFACE-PROVIDER-SWMF-001"
+      ],
+      "timeout_seconds": 180
+    },
+    {
       "id": "CORE-PIC-NATIVE-001",
-      "aliases": ["CORE-PIC-PARTICLE-BUFFER-001", "CORE-PIC-PHYSICS-001"],
+      "aliases": ["CORE-PIC-PARTICLE-BUFFER-001", "CORE-PIC-PHYSICS-001", "CORE-SPECIES-001", "CORE-PIC-WEIGHT-TIME-001"],
       "alias_cases": {
         "CORE-PIC-PARTICLE-BUFFER-001": [
           "PIC-PBUFFER-INIT-001",
@@ -95,13 +253,27 @@
           "PHYS-3D-COLLISION-RELAXATION-001",
           "PHYS-3D-COLLISION-RATE-001",
           "PHYS-3D-PHOTODECAY-001"
+        ],
+        "CORE-SPECIES-001": [
+          "CONFIG-DUPLICATE-SPECIES-001",
+          "PIC-SPECIES-CONSTANTS-001",
+          "PIC-SPECIES-GENERATED-MAPPING-001",
+          "PIC-SPECIES-GENERATED-TABLES-001",
+          "PIC-SPECIES-LOOKUP-DIAGNOSTICS-001"
+        ],
+        "CORE-PIC-WEIGHT-TIME-001": [
+          "PIC-WEIGHT-MODE-ROUNDTRIP-001",
+          "PIC-TIMESTEP-MODE-ROUNDTRIP-001",
+          "PIC-WEIGHT-TIMESTEP-SPECIES-COPY-001",
+          "PIC-WEIGHT-TIMESTEP-INVALID-VALUE-001",
+          "PIC-WEIGHT-TIMESTEP-INVALID-SPECIES-001"
         ]
       },
       "component": "src/pic",
       "level": "module",
       "tiers": ["nightly", "profile", "extended"],
       "runner": "tests/pic/native_core/run_test.py",
-      "description": "One configured native AMPS build covering generator/deck validation, particle buffers, and 3-D PIC physics",
+      "description": "One configured native AMPS build covering generator/deck validation, particle buffers, global units, particle-weight/time-step contracts, and 3-D PIC physics",
       "requires": {
         "tools": ["python", "make", "mpiexec"],
         "paths": [
@@ -112,13 +284,17 @@
           "test/srcCoreUnitTests/physics_collisions.cpp",
           "test/srcCoreUnitTests/physics_distribution.cpp",
           "test/srcCoreUnitTests/physics_idf.cpp",
-          "test/srcCoreUnitTests/physics_movers.cpp"
+          "test/srcCoreUnitTests/physics_movers.cpp",
+          "test/srcCoreUnitTests/species.cpp",
+          "test/srcCoreUnitTests/units.cpp",
+          "test/srcCoreUnitTests/weight_time_t2.cpp"
         ],
         "capabilities": []
       },
       "expected_cases": [
         "CONFIG-GENERATOR-001",
         "CONFIG-INVALID-DECK-001",
+        "CONFIG-DUPLICATE-SPECIES-001",
         "PIC-PBUFFER-INIT-001",
         "PIC-PBUFFER-STATE-001",
         "PIC-PBUFFER-LIST-001",
@@ -140,7 +316,18 @@
         "PHYS-MOVER-SURFACE-001",
         "PHYS-3D-COLLISION-RELAXATION-001",
         "PHYS-3D-COLLISION-RATE-001",
-        "PHYS-3D-PHOTODECAY-001"
+        "PHYS-3D-PHOTODECAY-001",
+        "PIC-SPECIES-CONSTANTS-001",
+        "PIC-SPECIES-GENERATED-MAPPING-001",
+        "PIC-SPECIES-GENERATED-TABLES-001",
+        "PIC-SPECIES-LOOKUP-DIAGNOSTICS-001",
+        "PIC-UNITS-GLOBAL-INIT-001",
+        "PIC-UNITS-CONVERSION-TABLE-001",
+        "PIC-WEIGHT-MODE-ROUNDTRIP-001",
+        "PIC-TIMESTEP-MODE-ROUNDTRIP-001",
+        "PIC-WEIGHT-TIMESTEP-SPECIES-COPY-001",
+        "PIC-WEIGHT-TIMESTEP-INVALID-VALUE-001",
+        "PIC-WEIGHT-TIMESTEP-INVALID-SPECIES-001"
       ],
       "timeout_seconds": 1800,
       "mpi_ranks": 1,

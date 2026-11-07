@@ -31,11 +31,43 @@ Last updated: 2026-11-07
 - Generic runtime-input parser adapter (four existing independent fixtures).
 - General utility tests for arrays, bit arrays, stack allocation/reuse, linked
   containers, string helpers, and sparse 4-D indexing.
+- T1 adds 10 general-numerics cases for asymmetric arrays 1-D through 5-D,
+  empty/copy/move/alias/resize/bounds behavior, managed-stack reuse,
+  special-function identities, and independent quadrature exactness,
+  convergence, and invalid-domain checks.
+- T1 adds seven deterministic RNG cases for recurrence/reseeding, endpoint
+  exclusion, independent interleaved streams, uniform/normal/gamma moments,
+  and isotropic directions, plus a separate two-rank RNG-stream case.
+- T1 adds four two-rank `CMPI_channel` payload cases, four diagnostic-logger
+  cases, five SI/CGS/normalized-units cases, and four He/Na radiation-table
+  cases. The associated production hardening covers safe multidimensional
+  array ownership/extent arithmetic, complete hybrid RNG reseeding, checked
+  MPI framing/alignment, finite and representable unit scales, Gamma/bulk-
+  normal domains, GCD `INT_MIN`, finite radiation-table clamping, and invalid
+  or unrepresentable heliocentric inputs.
+- T1 adds `CORE-INTERFACE-ABI-001`: six executable C/Fortran/Geopack cases and
+  five explicit optional-provider gates. ARMS, BATSRUS, CCMC, Kameleon, and
+  SWMF remain `SKIP` until independent libraries and versioned fixtures are
+  configured; these skips are not behavioral passes.
 - New dependency-free C++ harness shared by standalone and configured tests.
 - One combined `CORE-PIC-NATIVE-001` registered owner for the configured
   `test/srcCoreUnitTests` application. It replaces two executable native suite
   entries while preserving their old IDs as selection aliases, so compatible
-  particle-buffer and physics cases require one configured build.
+  particle-buffer and physics cases require one configured build. T1 extends
+  it from 24 to 31 cases and adds `CORE-SPECIES-001` as a third alias for
+  duplicate-species rejection, compiled constants, generated mapping/tables,
+  and unknown-name diagnostics. Two additional production-linked cases cover
+  transactional/idempotent global AMU/charge initialization and conversion-
+  table output.
+- T2 extends the same exclusive native owner from 31 to 36 cases and adds
+  `CORE-PIC-WEIGHT-TIME-001` as a selection alias for five production-linked
+  weight/time-step cases.  In the current host profile these cases qualify the
+  species-global, no-individual-correction mode: per-species minimum-reducer
+  round trips, scaled distribution copies, and typed rejection of invalid
+  values and species indices.  The production setters now require finite,
+  positive weights/time steps and validate species bounds before accessing
+  storage.  Local, single-global, and individual-correction profiles are not
+  implied by this evidence.
 - Expanded 19-case native physics suite:
   - four photochemistry kernel cases for Huebner H2O rates/yield/radial
     scaling, exponential decay probability/event time, product momentum/
@@ -80,8 +112,9 @@ Last updated: 2026-11-07
   initialization order.
 - Exact `--case` selection and deterministic `--order normal|reverse|shuffle`
   with a recorded shuffle seed are implemented. The harness checks selection,
-  aliasing, and deterministic order construction. Final-tree retained
-  normal/reverse/shuffle campaigns each pass all 45 cases. All 21
+  aliasing, and deterministic order construction. The retained T0
+  normal/reverse/shuffle campaigns each pass their historical 45-case
+  registry. All 21 T0
   dependency-light cases also pass through one-case global selections; the 22
   executable native cases are launched as exact one-case MPI processes from
   one clean build, while the two configuration cases execute as individually
@@ -110,11 +143,15 @@ Last updated: 2026-11-07
 - CRC diagnostic formatting no longer uses overlapping source/destination
   `sprintf`; bounded append formatting preserves termination on long paths.
 - The manifest distinguishes smoke, nightly, profile, extended, distributed,
-  and application-smoke campaigns. Smoke selects the three dependency-light
-  suites, nightly selects all four current suites, and profile/extended select
-  the configured native suite. The harness pins these distinct sets. Empty
-  campaign selections do not imply implemented coverage; the exclusive native
-  suite remains a scheduler barrier wherever selected.
+  and application-smoke campaigns. The retained T1 qualification registry
+  assigned eight suites and 51 cases to smoke and 11 suites/98 cases to
+  nightly.  The live T2 registry still has 11 executable suites but now has
+  103 cases: smoke remains 51, nightly/`--all` contain 103, and the exclusive
+  native profile contains 36. Profile, extended, and distributed retain their
+  specialized native/interface/MPI selections. The harness is intended to pin
+  these distinct sets. Empty campaign selections do not imply implemented
+  coverage; the exclusive native suite remains a scheduler barrier wherever
+  selected.
 - Framework, suite-adapter, native-fixture, and core-change comments document
   protocol/failure semantics, path containment, portability, concurrency,
   memory ownership, MPI reduction, test oracles, and validity limits. The
@@ -123,8 +160,12 @@ Last updated: 2026-11-07
 
 ## Not yet complete
 
-Only `src/general/input` is currently marked `covered`. The test harness is
-`partial`, and all `partial` and `planned` entries in
+Only `src/general/input` and `src/pic/units` are currently marked `covered`.
+`src/species` has complete computational path coverage for this T1 scope but
+remains `partial` until a separately versioned paper/digitization fixture
+independently revalidates the retained He/Na tables. The test harness is
+`partial`, and all other `partial` and
+`planned` entries in
 `component_inventory.json` remain open.
 In particular, the legacy individual-weight split/merge cases, generic optional
 particle-layout alignment, full-buffer fatal path, and four non-NTC collision
@@ -133,8 +174,10 @@ remain to be adapted; mesh/MPI/restart/rank-invariance coverage is open.
 
 The PIC and photolytic-reaction entries remain `partial`. Production NTC cell
 selection, a cross-species analytic rate, and H2O RT equilibration now have
-one-rank populated-cell evidence, but the other collision selectors, unequal
-weights/time steps, collision-limiting branch, injection, general sampling,
+one-rank populated-cell evidence. The species-global weight/time API has
+normal-order evidence for the host profile, but local and single-global
+profiles, individual particle weights, unequal-weight/time-step physics,
+other collision selectors, collision limiting, injection, general sampling,
 and split/merge remain open. Movers still need charged uniform-E/B convergence,
 outer/refinement crossings, absorption/moving surfaces, and rank migration.
 Photochemistry now has sampled branching and 3-D no-daughter parent decay, but
@@ -156,23 +199,60 @@ configuration ledger, so structural drift is part of smoke/nightly execution.
 The explicit standalone command remains useful for retaining the expanded
 per-file JSON receipt.
 
+T1 is qualified for its declared bounded contracts. The stale campaign oracle
+from the first smoke run was corrected; `/tmp/amps-t1-smoke-qualified` passes
+51/51. The final 98-case normal, reverse, and seed-1729 shuffled campaigns each
+report 93 PASS, five typed optional-provider SKIPs, and no FAIL/ERROR. This
+qualification does not promote the explicit `partial`, `planned`, or
+`unavailable` contracts described above.
+
+The first T2 weight/time slice is qualified for the current species-global,
+no-individual-correction host profile.  Its five focused cases pass, the
+corrected 103-case normal campaign reports 98 PASS, five typed provider SKIPs,
+and no FAIL/ERROR, and the complete 36-case native owner passes reverse and
+seed-1729 shuffled order.  The first full campaign is retained as a failed
+diagnostic: two populated-cell collision cases exposed that the test fixture
+fed the production `-1` uninitialized sentinel through a physical-value setter
+that now correctly rejects nonpositive weights.  The fixture was corrected to
+restore its raw saved lifecycle state without invoking reducer/setter
+semantics, and both collision cases plus all five weight/time cases then
+passed together.  T2 as a whole remains open: full-registry reverse/shuffle,
+alternate weight/time profiles, and particle-layout cases remain
+unimplemented, and `split_merge_t2.cpp` is unregistered and unqualified.
+
 `make -C src/test strict-coverage` is expected to fail until those items are
 implemented and qualified. A passing smoke run must not be described as
 complete AMPS coverage.
 
 ## Current validation evidence
 
-The source tree registers four executable suites and 45 individual cases: 11
-harness, four generic-input, six general-container, and 24 combined native
-cases. T0's final-tree normal, reverse, and seed-1729 shuffled `--all`
-campaigns each pass 45/45 with matching terminal, JSON, and 45-test JUnit
-receipts. Their retained native executables have the identical SHA-256
-`446e920d95fd2f174c7cfce8fadede469ed2af7905116a37fb608c3b9529484a`.
-The 38-case all-run and split receipts below are historical progression, not
-the current qualification evidence.
+The live source tree registers 11 executable suites and 103 individual cases,
+including 36 cases in the combined native owner.  The historical bounded T1
+qualification remains 11 suites/98 cases with 31 native cases; its normal,
+reverse, and shuffled native rebuilds retain the identical executable SHA-256
+`17b98e5ecd22915fc181cce51b8d71bd6abef517802a456ff2efba659c581919`.
+The first T2 slice has a corrected normal-order full-registry receipt plus
+36/36 native reverse and deterministic shuffled receipts. Full-registry T2
+reverse/shuffle remain pending. T0's earlier 45-case receipts remain
+historical evidence, and the retained T1 receipts remain the authority for T1
+itself.
 
 | Date | Command/evidence | Outcome | Scope |
 |---|---|---|---|
+| 2026-11-07 | `/tmp/amps-t2-weight-time-initial` | PASS 5/5 | Focused species-global weight/time API cases from one clean native build; executable SHA-256 `46678c6054daad2ff9b7e3a1aabce9792d12139515e02f93bfaa0296210f5ffe`. |
+| 2026-11-07 | `/tmp/amps-t2-all-normal` | Historical FAIL: 96 PASS, 2 FAIL, 5 SKIP | First 103-case normal campaign. `PHYS-3D-COLLISION-RELAXATION-001` and `PHYS-3D-COLLISION-RATE-001` exposed a test-fixture defect: restoring the `-1` uninitialized sentinel conflicted with the new finite-positive production setter contract. |
+| 2026-11-07 | `/tmp/amps-t2-weight-time-collision-recheck` | PASS 7/7 | Corrective focused run: the two populated-cell collision cases and all five T2 weight/time cases pass together after raw saved lifecycle-state restoration; executable SHA-256 `6329674e470d9cadda436aca2d410f1ef5ecad27f4918108d56bd3078a1f4925`. |
+| 2026-11-07 | `/tmp/amps-t2-all-qualified-normal` | 98 PASS, 5 SKIP, 0 FAIL/ERROR | Qualified normal-order receipt for the live 103-case registry; all 36 native cases pass and the five optional providers remain typed SKIPs. |
+| 2026-11-07 | `/tmp/amps-t2-native-qualified-reverse` | PASS 36/36 | Complete native owner in reverse case order after a clean rebuild; executable SHA-256 `6329674e470d9cadda436aca2d410f1ef5ecad27f4918108d56bd3078a1f4925`. |
+| 2026-11-07 | `/tmp/amps-t2-native-qualified-shuffle-1729` | PASS 36/36 | Complete native owner in deterministic shuffled case order after a clean rebuild; executable SHA-256 `6329674e470d9cadda436aca2d410f1ef5ecad27f4918108d56bd3078a1f4925`. |
+| 2026-11-07 | `python3 src/test/validate_traceability.py` | PASS | Current live structural classification: 24 areas, 209 production translation units, 181 public contracts, 12 configuration contracts, 11 suites, and 103 registered cases. No behavioral case execution. |
+| 2026-11-07 | `python3 src/test/run_tests.py --campaign smoke --jobs 4 --output-dir /tmp/amps-t1-smoke-qualified` | PASS 51/51, 8/8 suites | Corrected campaign-selection oracle and complete dependency-light T1 smoke gate. |
+| 2026-11-07 | `python3 src/test/run_tests.py --all --order normal --jobs 4 --output-dir /tmp/amps-t1-all-qualified-normal` | 93 PASS, 5 SKIP, 0 FAIL/ERROR | Complete 98-case normal order; native 31/31 PASS; provider SKIPs remain typed and explicit. |
+| 2026-11-07 | `python3 src/test/run_tests.py --all --order reverse --jobs 4 --output-dir /tmp/amps-t1-all-qualified-reverse` | 93 PASS, 5 SKIP, 0 FAIL/ERROR | Complete reverse suite/case order with a mandatory clean native rebuild. |
+| 2026-11-07 | `python3 src/test/run_tests.py --all --order shuffle --shuffle-seed 1729 --jobs 4 --output-dir /tmp/amps-t1-all-qualified-shuffle-1729` | 93 PASS, 5 SKIP, 0 FAIL/ERROR | Complete deterministic shuffled order with a mandatory clean native rebuild. All three final native executables have SHA-256 `17b98e5ecd22915fc181cce51b8d71bd6abef517802a456ff2efba659c581919`. |
+| 2026-11-07 | `/tmp/amps-t1-rng-hybrid-final`, `/tmp/amps-t1-mpi-integrated-final`, `/tmp/amps-t1-numerics-integrated-final`, `/tmp/amps-t1-units-integrated-final`, `/tmp/amps-t1-species-radiation-final-2` | PASS: 7 + 5 + 10 + 5 + 4 focused cases | Focused post-audit evidence for RNG, MPI channel/rank streams, arrays/numerics, units, and radiation tables. The complete campaigns above are the qualification authority. |
+| 2026-11-07 | `/tmp/amps-t1-smoke-final` | Historical FAIL: 50 PASS, 1 FAIL | Preserved first live smoke receipt that exposed the stale `HARNESS-SELECTION-001` oracle; resolved by `/tmp/amps-t1-smoke-qualified`. |
+| 2026-11-07 | `/tmp/amps-t1-interface-global` | 6 PASS, 5 SKIP | Executable C/Fortran/Geopack contracts pass; five external provider capabilities remain explicitly unavailable. |
 | 2026-11-07 | `python3 src/test/validate_traceability.py --output /tmp/amps-core-traceability.json` | PASS | Structural classification: 24 areas, 209 production translation units, 181 public contracts, 12 configuration contracts, 4 suites, 45 registered cases. No behavioral case execution. |
 | 2026-11-07 | `python3 src/test/run_tests.py --all --order normal --output-dir /tmp/amps-t0-all-final-normal` | PASS 45/45, 4/4 suites | Final-tree normal order; JSON/JUnit reconcile; 22 native executable cases each ran in a fresh exact-case MPI process. |
 | 2026-11-07 | `python3 src/test/run_tests.py --all --order reverse --output-dir /tmp/amps-t0-all-final-reverse` | PASS 45/45, 4/4 suites | Final-tree reverse suite/case order; exact reverse receipt and identical native executable hash. |

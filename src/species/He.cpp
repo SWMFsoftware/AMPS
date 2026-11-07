@@ -23,13 +23,43 @@
 
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <stdexcept>
 
 #include "constants.h"
 #include "He.h"
 
+namespace {
+void ValidateHeliocentricState(double velocity, double distance) {
+  // Tabulated Doppler interpolation accepts any finite radial velocity, while
+  // inverse-square flux scaling is defined only for finite positive distance.
+  // Rejecting invalid state at the public boundary prevents a silent Inf/NaN
+  // acceleration from entering a particle mover.
+  if (!std::isfinite(velocity) || !std::isfinite(distance) || distance<=0.0)
+    throw std::invalid_argument(
+        "heliocentric velocity must be finite and distance finite/positive");
+}
+
+double ScaleInverseSquare(double value, double reference_distance,
+                          double distance) {
+  // Both distances are metres. Forming the ratio first preserves the stated
+  // inverse-square closure, while the explicit range check prevents extreme
+  // but finite input from silently injecting Inf/zero into a force model.
+  const double ratio = reference_distance / distance;
+  const double scaled = value * ratio * ratio;
+  if (!std::isfinite(scaled))
+    throw std::overflow_error(
+        "heliocentric inverse-square scaling is not representable");
+  if (!(scaled>0.0))
+    throw std::underflow_error(
+        "heliocentric inverse-square scaling underflowed");
+  return scaled;
+}
+}
+
 
 double RadiationPressureAcceleration__Chamberlian_TOPA_Eq7_2_9(double HeliocentricVelocity, double HeliocentricDistance) {
 //TOPA Theory of Planetary Atmospheres
+	ValidateHeliocentricState(HeliocentricVelocity,HeliocentricDistance);
 
 	double res=0.0, gfactor=0.0;
 	static const double frequency__584_35A = 5.1303578E15;
@@ -39,11 +69,16 @@ double RadiationPressureAcceleration__Chamberlian_TOPA_Eq7_2_9(double Heliocentr
 
 	  //convert the acceleration from [cm s^{-2}] to [m s^{-2}] and scale it to the required heliocentric distance
 	  res = PlanckConstant*frequency__584_35A*gfactor/1.00794/_AMU_/SpeedOfLight;
+      if (!std::isfinite(res))
+        throw std::overflow_error(
+            "helium radiation-pressure acceleration is not representable");
       return res;
 
 }
 
 double HeliumGfactor__584_35A__Killen_2009_AJSS(double HeliocentricVelocity,double HeliocentricDistance) {
+
+  ValidateHeliocentricState(HeliocentricVelocity,HeliocentricDistance);
 
   struct cGFactor {
     double RadiaVelocity,gFactor;
@@ -105,17 +140,23 @@ double HeliumGfactor__584_35A__Killen_2009_AJSS(double HeliocentricVelocity,doub
 
   static const double dv=(gFactor584_35A__Killen_2009_AJSS__Fig_3[1].RadiaVelocity-gFactor584_35A__Killen_2009_AJSS__Fig_3[0].RadiaVelocity)*1.0E3;
   static const double vmin=gFactor584_35A__Killen_2009_AJSS__Fig_3[0].RadiaVelocity*1.0E3;
+  static const double vmax=gFactor584_35A__Killen_2009_AJSS__Fig_3[nDataElements-1].RadiaVelocity*1.0E3;
 
-  int Interval=(int)((HeliocentricVelocity-vmin)/dv);
   double res;
 
-  if (Interval<0) res=gFactor584_35A__Killen_2009_AJSS__Fig_3[0].gFactor;
-  else if (Interval>=nDataElements) res=gFactor584_35A__Killen_2009_AJSS__Fig_3[nDataElements-1].gFactor;
-  else res=gFactor584_35A__Killen_2009_AJSS__Fig_3[Interval].gFactor;
+  // Compare in floating point before converting to an index. Converting a
+  // finite value such as DBL_MAX directly to int is undefined in C++.
+  if (HeliocentricVelocity<=vmin)
+    res=gFactor584_35A__Killen_2009_AJSS__Fig_3[0].gFactor;
+  else if (HeliocentricVelocity>=vmax)
+    res=gFactor584_35A__Killen_2009_AJSS__Fig_3[nDataElements-1].gFactor;
+  else {
+    const int Interval=static_cast<int>((HeliocentricVelocity-vmin)/dv);
+    res=gFactor584_35A__Killen_2009_AJSS__Fig_3[Interval].gFactor;
+  }
 
-  res*=pow(DataHeliocentricDistance/HeliocentricDistance,2);
-
-  return res;
+  return ScaleInverseSquare(
+      res,DataHeliocentricDistance,HeliocentricDistance);
 }
 
 

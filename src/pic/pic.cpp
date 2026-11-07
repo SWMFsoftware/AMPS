@@ -7,6 +7,9 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <cmath>
+#include <stdexcept>
+#include <string>
 
 #include "pic.h"
 #include "global.h"
@@ -2376,7 +2379,34 @@ void PIC::Init_AfterParser() {
 
 //====================================================
 //set up the particle weight and time step
+namespace {
+void ValidateParticleScaleInput(int spec,double value,const char* quantity) {
+  if (spec<0 || spec>=PIC::nTotalSpecies)
+    throw std::out_of_range(std::string(quantity)+" species index is out of range");
+  // Statistical weight is a count of represented physical particles and dt is
+  // an elapsed time in seconds. Neither quantity has a meaningful zero,
+  // negative, NaN, or infinite state. Reject such values before a global
+  // minimum reduction or local associated-data write can poison later source,
+  // collision, mover, and sampling rate divisions.
+  if (!std::isfinite(value) || value<=0.0)
+    throw std::invalid_argument(std::string(quantity)+
+                                " must be finite and positive");
+}
+
+void ValidateParticleScaleSpecies(int spec,const char* quantity) {
+  if (spec<0 || spec>=PIC::nTotalSpecies)
+    throw std::out_of_range(std::string(quantity)+" species index is out of range");
+}
+}
+
 void PIC::Mesh::cDataBlockAMR::SetLocalParticleWeight(double weight, int spec) {
+#ifndef __CUDA_ARCH__
+  // Host calls fail with a typed diagnostic. Device kernels retain the
+  // historical no-throw fast path because CUDA device code cannot construct
+  // std::string or throw C++ exceptions; CUDA-specific invalid-state
+  // diagnostics require a separately qualified device policy.
+  ValidateParticleScaleInput(spec,weight,"particle weight");
+#endif
   #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
   *(spec+(double *)(associatedDataPointer+cDataBlockAMR_static_data::LocalParticleWeightOffset))=weight;
   #elif _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
@@ -2393,6 +2423,9 @@ void PIC::Mesh::cDataBlockAMR::SetLocalParticleWeight(double weight, int spec) {
 }
 
 double PIC::Mesh::cDataBlockAMR::GetLocalParticleWeight(int spec) {
+#ifndef __CUDA_ARCH__
+  ValidateParticleScaleSpecies(spec,"particle weight");
+#endif
   #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
   double *res;
   res=spec+(double *)(associatedDataPointer+cDataBlockAMR_static_data::LocalParticleWeightOffset);
@@ -2409,6 +2442,9 @@ double PIC::Mesh::cDataBlockAMR::GetLocalParticleWeight(int spec) {
 
 //set up the particle time step
 void PIC::Mesh::cDataBlockAMR::SetLocalTimeStep(double dt, int spec) {
+#ifndef __CUDA_ARCH__
+  ValidateParticleScaleInput(spec,dt,"particle time step");
+#endif
   #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
   *(spec+(double *)(associatedDataPointer+cDataBlockAMR_static_data::LocalTimeStepOffset))=dt;
   #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
@@ -2425,6 +2461,9 @@ void PIC::Mesh::cDataBlockAMR::SetLocalTimeStep(double dt, int spec) {
 }
 
 double PIC::Mesh::cDataBlockAMR::GetLocalTimeStep(int spec) {
+#ifndef __CUDA_ARCH__
+  ValidateParticleScaleSpecies(spec,"particle time step");
+#endif
 
   #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
   double *res;

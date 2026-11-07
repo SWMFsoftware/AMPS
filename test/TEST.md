@@ -31,30 +31,41 @@ responsibility of `srcEarth/test`, `srcMoon/test`, `srcEnceladus/test`,
 
 ## 2. Current baseline
 
-As of 2026-11-07 the global registry contains four executable suites and 45
-registered individual cases. The two historical native family IDs are aliases
-of the one combined native suite, not additional executable suites:
+As of 2026-11-07 the live global registry contains 11 executable suites and
+103 registered individual cases. The three historical native family IDs and
+the new T2 weight/time family ID are selection aliases of the one combined
+native suite, not additional executable suites:
 
 | Registered suite | Cases | Current scope |
 |---|---:|---|
 | `CORE-HARNESS-001` | 11 | Configuration, schema, registry, selection, protocol, subprocess failure, timeout/interrupt cleanup, concurrency, final report, traceability |
 | `CORE-GENERAL-INPUT-001` | 4 | Input grammar, diagnostics, includes, canonicalization |
 | `CORE-GENERAL-CONTAINERS-001` | 6 | Arrays, bit arrays, stacks, linked containers, strings, 4-D indexer |
-| `CORE-PIC-NATIVE-001` | 24 | Generated configuration/invalid deck, particle buffers, bounded photochemistry, collisions, Maxwellian sampling, internal energy, neutral movers, sphere event, populated 3-D cells |
+| `CORE-GENERAL-NUMERICS-001` | 10 | Arrays 1-D through 5-D, managed stack, special-function identities, quadrature exactness/convergence/domains |
+| `CORE-GENERAL-RNG-001` | 7 | Reproducibility, endpoints, independent streams, uniform/normal/gamma moments, isotropic directions |
+| `CORE-GENERAL-MPI-001` | 5 | Two-rank scalar/vector/structured/zero-length channel traffic and rank-derived RNG streams |
+| `CORE-GENERAL-LOGGER-001` | 4 | Formatting, long messages, concurrent lines, rotation/flush, fatal subprocess behavior |
+| `CORE-UNITS-001` | 5 | Independently derived factors, scalar/vector round trips, dimensional identities, invalid scales |
+| `CORE-SPECIES-RADIATION-001` | 4 | He/Na reference points, interpolation/scaling, acceleration units, invalid heliocentric state |
+| `CORE-INTERFACE-ABI-001` | 11 | C/Fortran ABI, Geopack ordering/conventions/no-SPICE, and five typed optional-provider gates |
+| `CORE-PIC-NATIVE-001` | 36 | Generated configuration/invalid decks, species tables/lookup, particle buffers, global unit initialization/output, bounded photochemistry, collisions, Maxwellian sampling, internal energy, neutral movers, sphere event, populated 3-D cells, and the host species-global weight/time API |
 
-The component ledger contains 24 components: one is marked `covered`, nine are
-`partial`, and fourteen are `planned`. The harness entry is explicitly
+The component ledger contains 24 components: three are marked `covered`, ten
+are `partial`, and eleven are `planned`. The harness entry remains explicitly
 `partial`; registered or passing cases are not evidence of complete AMPS
-coverage. The current 45-case registry passes consolidated final-tree
-normal, reverse, and deterministic seed-1729 shuffled `--all` campaigns. T0
-is qualified, while the component and physics limitations below remain work
-for T1 and later stages.
+coverage. T0 remains qualified by its retained 45-case evidence. The bounded
+historical T1 registry is also qualified: smoke passes 51/51, and the final
+98-case normal/reverse/seed-1729 shuffled campaigns each report 93 PASS, five
+explicit provider SKIPs, and no FAIL/ERROR. The live registry adds five T2
+cases; this does not retroactively change the T1 qualification scope.
 
 The following limitations must remain visible until their stages close:
 
-- `smoke` selects the three dependency-light suites, `nightly` selects all
-  four current suites, and `profile`/`extended` select the exclusive native
-  profile; the harness asserts these distinct registry sets;
+- `smoke` selects eight dependency-light suites (51 cases), `nightly` selects
+  all 11 current suites (103 cases), `profile` selects the 36-case exclusive
+  native profile, `extended` selects its 36 cases plus the 11-case interface
+  coverage, and `distributed` selects only the five-case MPI channel/RNG
+  family; the harness must assert these live registry sets;
 - all current native physics cases are one-rank tests;
 - the current Larsen--Borgnakke RT occurrence test qualifies the implemented
   hard-coded `Zrot=5`, not sensitivity to configured `RotationZnumber`;
@@ -103,8 +114,8 @@ an independent physics oracle.
 
 ### 3.3 Process and state isolation
 
-The target runner must make each case independently runnable by stable ID; the
-current CLI selects suites, and exact case selection is a T0 task.  Each case
+The runner makes each case independently runnable by stable ID through exact
+case selection.  Each case
 must save and restore every process-global value it changes, including
 particle-buffer pointers, species weights, time steps, random state, sampling buffers,
 reaction lifetimes, callbacks, mesh pointers, and optional-data offsets.
@@ -124,12 +135,10 @@ and particle/block migration must be counted exactly once.
 
 Every suite must publish atomic schema-versioned JSON through the existing
 runner protocol.  Stable individual IDs, descriptions, PASS/FAIL/SKIP/ERROR
-states, metrics, evidence paths, and failure messages are required.  Today,
-some adapters hard-code their expected case sets; the global manifest does not
-validate the individual IDs.  T0 must move the expected case registry to the
-manifest or a globally validated companion registry.  The global runner must
-then require that exact set so a faulty adapter, missing object, registration,
-or linker archive member cannot silently reduce coverage.
+states, metrics, evidence paths, and failure messages are required. Expected
+case IDs now live in the global manifest and are cross-checked against runner
+registries and result receipts, so a faulty adapter, missing object,
+registration, or linker archive member cannot silently reduce coverage.
 
 ### 3.6 Portable machine configuration
 
@@ -146,9 +155,9 @@ Profiles must support:
 - capability declarations for optional Fortran, CUDA, SPICE, external field
   libraries, sanitizers, and schedulers.
 
-The current configuration schema has `paths`, `tools`, and `execution` only.
-Versioned capability declarations and their required/optional policy are a T0
-schema extension, not a currently implemented feature.
+The configuration schema now includes versioned capability declarations in
+addition to `paths`, `tools`, and `execution`; harness tests reject unknown
+schema versions and inconsistent required/optional capability declarations.
 
 A missing optional capability is `SKIP`.  A machine designated for a required
 nightly capability must treat that skip as a policy failure in the nightly
@@ -294,13 +303,16 @@ retained native executables have the same SHA-256
 This gate qualifies the T0 harness baseline only; it does not change any
 `partial` or `planned` AMPS component into complete behavioral coverage.
 
-### Stage T1 -- General numerics, species, units, and interfaces
+### Stage T1 -- General numerics, species, units, and interfaces — bounded scope qualified
 
-Proposed suites:
+Implemented suites and aliases:
 
 - `CORE-GENERAL-NUMERICS-001`;
 - `CORE-GENERAL-RNG-001`;
-- `CORE-SPECIES-001`;
+- `CORE-GENERAL-MPI-001`;
+- `CORE-GENERAL-LOGGER-001`;
+- `CORE-SPECIES-RADIATION-001`;
+- `CORE-SPECIES-001` (selection alias within `CORE-PIC-NATIVE-001`);
 - `CORE-UNITS-001`;
 - `CORE-INTERFACE-ABI-001`.
 
@@ -337,13 +349,67 @@ Acceptance gate: `src/general`, `src/species`, and `src/pic/units` have no
 unlisted public algorithms; required interfaces pass on at least one supported
 Fortran toolchain and cleanly skip on profiles that declare Fortran absent.
 
+Implementation status (2026-11-07): all listed suites and 53 new T1 case IDs
+are registered. `src/test/t1_public_algorithm_inventory.json` explicitly
+classifies tested, partial, unavailable, and planned public families. Focused
+receipts pass 10 numerics, seven RNG, five MPI, four logger, five units, four
+species-radiation, five generated/configured species cases, and two production-
+linked global-unit cases. The interface
+receipt reports six executable ABI/Geopack passes and five explicit provider
+SKIPs; those SKIPs preserve the absence of independent ARMS, BATSRUS, CCMC,
+Kameleon, and SWMF fixtures rather than claiming adapter qualification.
+
+Qualification status: **QUALIFIED FOR THE DECLARED BOUNDED T1 CONTRACTS**.
+`/tmp/amps-t1-smoke-qualified` reports 51/51 PASS. The complete retained
+normal, reverse, and seed-1729 shuffled campaigns under
+`/tmp/amps-t1-all-qualified-*` each report 93 PASS, five typed optional-provider
+SKIPs, and no FAIL/ERROR across all 98 registered cases. All three clean native
+builds retained the identical executable SHA-256
+`17b98e5ecd22915fc181cce51b8d71bd6abef517802a456ff2efba659c581919`.
+The legacy `cLogger` daemon lifecycle, CRC/debug streams, thread/spinlock/CUDA
+helpers, optional provider fixtures, and T01/T05/T96/TA15/TA16/KMAG numerical
+references remain explicitly outside the bounded implemented T1 subset.
+
 ### Stage T2 -- Particle records, weights, time steps, and split/merge
 
-Proposed suites:
+T2 family IDs (the weight/time ID is implemented as a native-suite alias;
+the other two remain proposed):
 
 - `CORE-PIC-PBUFFER-LAYOUT-001`;
 - `CORE-PIC-WEIGHT-TIME-001`;
 - `CORE-PIC-SPLIT-MERGE-001`.
+
+Implementation status (2026-11-07): the first bounded weight/time slice is
+registered as five cases selected through the `CORE-PIC-WEIGHT-TIME-001` alias
+of the combined native suite.  The current host profile is species-global for
+both statistical weight and time step, with individual weight correction off.
+It directly tests per-species/block-visible round trips and minimum reduction,
+scaled species-distribution copies, and typed rejection of zero, negative,
+nonfinite, and out-of-range inputs.  Production validation was added at the
+public setters/copy helpers rather than relying on downstream memory access.
+
+Evidence is test-led and retains the failure that found the fixture defect.
+`/tmp/amps-t2-weight-time-initial` passes 5/5 with executable SHA-256
+`46678c6054daad2ff9b7e3a1aabce9792d12139515e02f93bfaa0296210f5ffe`.
+The first full run at `/tmp/amps-t2-all-normal` reports 96 PASS, two FAIL, and
+five SKIP because the test fixture restored AMPS's `-1` uninitialized sentinel
+through a production setter that now correctly rejects nonpositive values.
+After correcting the fixture to restore the raw saved lifecycle state without
+invoking physical-value setter/reducer semantics,
+`/tmp/amps-t2-weight-time-collision-recheck` passes the five new cases plus the
+two affected populated-cell collision cases (7/7), and
+`/tmp/amps-t2-all-qualified-normal` reports 98 PASS, five typed provider SKIPs,
+and zero FAIL/ERROR across the live 103-case registry.  The entire 36-case
+native owner also passes reverse and deterministic seed-1729 shuffled order in
+`/tmp/amps-t2-native-qualified-reverse` and
+`/tmp/amps-t2-native-qualified-shuffle-1729`; all corrected-order executables
+have SHA-256
+`6329674e470d9cadda436aca2d410f1ef5ecad27f4918108d56bd3078a1f4925`.
+This qualifies the first host-profile slice and its native order isolation;
+full-registry reverse/shuffle, alternate
+local/single-global/individual-weight profiles, particle-layout coverage, and
+split/merge remain open. `split_merge_t2.cpp` is not registered and carries no
+qualification evidence.
 
 Required generated profiles:
 
