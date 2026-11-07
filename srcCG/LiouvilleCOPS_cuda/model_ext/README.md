@@ -69,7 +69,7 @@ grain code. Each file's header says how to run it; the `jobs/` scripts show comp
 | use a fine tuning's activity correction as a fixed added term (same or another mesh) | `ft_template.py`, then the fit with `--activity-template <npz> <name> --fix c_<name>=1` | — | 2026-11-04 (20M option 2), 2026-11-05 (12M cycles) |
 | start a fit from a fit + its fine-tuned grain | `restart_grain_start.py`, then `--restart-from <new npz> --template-start 0` | — | 2026-11-05 (cycles) |
 | fit/fine-tuning cycles (correction templates accumulated) | `jobs/grain_ft_cycle*.sbatch` | the three above | 2026-11-05 |
-| give the last N data points a larger weight | `grain_fit_weighted.py --weight-last N --weight-factor F [--weight-profile constant\|linear] [--weight-gauges ng,rg]` | `late_weights.py` (+ `fixed_parameters.py` for `--fix`) | 2026-11-06 (job 122236) |
+| give the last N data points a larger weight | `grain_fit_weighted.py --weight-last N --weight-factor F [--weight-profile constant\|linear] [--weight-start S] [--weight-values W1:...:WN] [--weight-gauges ng,rg]` | `late_weights.py` (+ `fixed_parameters.py` for `--fix`) | 2026-11-06 (job 122236: last 5 x10; job 122248: last 6, linear 1 → 20) |
 | carry a grain fit to another mesh and fine-tune there | `translate_grain.py`, `grain_translate_finetune.sbatch` | — | 2026-11-04 |
 | refine elements of a shape model locally | `refine_mesh.py` (+ `seen_after_gap.py` for the 20M mask), `refined_bundle.py` | — | 2026-11-04 |
 | scale the activity of chosen areas without refitting | `area_scaling.py`, `area_scaling.sbatch` | — | 2026-11-04 |
@@ -87,6 +87,11 @@ Notes:
   unweighted residuals; reported costs, rms and the restart file are unweighted, so they compare with other fits;
   the weighted objective is in `fit_manifest.json["model_extension"]["late_weights"]`. Without `--weight-last` the
   driver is the same as `grain_fit_fixed.py`.
+  Profiles: `constant` (W = F on all N points), `linear` (from S = `--weight-start`, default 1, at the N-th point
+  from the end to F at the last), or explicit `--weight-values` in time order. Example, "from 1 at point 6 from the end
+  to 20 at the last point, linearly": `--weight-last 6 --weight-profile linear --weight-start 1 --weight-factor 20`
+  (W = 1, 4.8, 8.6, 12.4, 16.2, 20). `--weight-start` and `--weight-values` were added after job 122236; with their
+  defaults the weights are unchanged.
 * **The original temperature law** (used by `jobs/grain_ft_cycle_Torig.sbatch`) is the analytical law of
   `../../LiouvilleCOPS/src/Source.cpp` with its defaults Tmax 182.09922, T75 136.11149, Tmin 133 K; to use it in a
   grain fit, hold the three: `--fix Tmax=182.09922 --fix T75=136.11149 --fix Tmin=133`.
@@ -101,8 +106,8 @@ Notes:
 | `grain_ft_cycle.sbatch` | 12M fit/fine-tuning cycles 1–3 from C30 | 122080–122082 |
 | `grain_ft_cycle_T130.sbatch` | cycle 4 with all T ≥ 130 K | 122096 |
 | `grain_ft_cycle_Tmin130.sbatch` | cycles 4–6, Tmin = 130 K and Tmax = 231.98 K held | 122117, 122140, 122141 |
-| `grain_ft_cycle_Torig.sbatch` | cycles 4–6, the original temperature law held | 122219–122221 |
-| `grain_late_weights.sbatch` | fit from cycle 3 with the last N points weighted | 122236 |
+| `grain_ft_cycle_Torig.sbatch` | cycles 4–6, the original temperature law held (figures: `figures/figures_12m_cycles_Torig.sh`) | 122219–122221 |
+| `grain_late_weights.sbatch` | fit with the last N points weighted (WLAST, WFACTOR, WPROFILE, WSTART, WVALUES), from cycle 3 (START=c3) or the original-temperature cycle 6 (START=torig_c6) | 122236, 122248, 122250 |
 | `grain_rough.sbatch`, `prepare_12m_rough.sbatch` | 12M rough-surface base and the C30 fit on it | 122033, 122034 |
 | `prepare_44m.sbatch`, `grain_44m_c30.sbatch` | 44M preparation; C30 with the 12M conditions on 44M | 121996/122020, 122078 |
 | `refine_12m.sbatch`, `refine_20m.sbatch` | local mesh refinement tests | 122009, 122011 |
@@ -113,7 +118,7 @@ The job scripts in this folder itself (`grain*.sbatch`, `area_scaling.sbatch`) r
 
 `model_obs_figures.py` draws every comparison (model vs COPS observations, .eps + .png 300 dpi);
 `finetune_table.py` turns a fine tuning into a table it can plot; `how_to_rerun.py` writes HOW-TO-RERUN.md;
-`snapshot.sh` copies a campaign's results and restart files next to its plots. Each `figures_*.sh` makes one figure
+`snapshot.sh` copies a campaign's results and restart files next to its plots. `rerun_commands.py` writes the "exact commands" part of HOW-TO-RERUN.md (from 2026-11-06): every command of a fit and its fine tuning with all arguments, the job's exports, the AMPS commit of the run, and for each module and job script the git commit holding an identical copy here; job scripts from `grain_late_weights.sbatch` on also record their resolved commands in `provenance-<job>/commands.sh`. Each `figures_*.sh` makes one figure
 folder under `$COPS_OUTPUT_ROOT/figures_cluster/<RES>/` (its header names it) and writes HOW-TO-RERUN.md there; from
 2026-11-06 on (`figures_12m_late_weights.sh`) also `code/` with the code that ran and the AMPS commit of each fit.
 They run on the login node (no GPU), from `$APP` with `.venv/bin/python`.
