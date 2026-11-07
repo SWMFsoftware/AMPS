@@ -518,6 +518,14 @@ public:
      int ix[3];
 
      switch (_MESH_DIMENSION_) {
+     case 2:
+       /* Corner numbering is the binary Cartesian code x+2*y.  Probe one
+        * finest-grid index beyond both incident faces.  Using integer mesh
+        * coordinates avoids an arbitrary floating tolerance at a corner and
+        * gives the same answer before and after a topology-only adaptation. */
+       ix[0]=xMinGlobalIndex[0]+((i&1) ? NodeGeometricSizeIndex : -1);
+       ix[1]=xMinGlobalIndex[1]+((i&2) ? NodeGeometricSizeIndex : -1);
+       break;
      case 3:
        switch(i) {
        case 0:
@@ -626,11 +634,30 @@ public:
        ix[2]+=1+NodeGeometricSizeIndex;
      }; 
 
-     int nface=i/4;    
+     int nface;
      int iFace,jFace;
 
      switch (_MESH_DIMENSION_) {
+     case 1:
+       nface=i;
+       ix[0]=xMinGlobalIndex[0]+((nface==0) ? -1 : NodeGeometricSizeIndex);
+       break;
+     case 2:
+       nface=i/2;
+       iFace=i%2;
+       if (nface==0 || nface==1) {
+         ix[0]=xMinGlobalIndex[0]+((nface==0) ? -1 : NodeGeometricSizeIndex);
+         if (iFace==1 && NodeGeometricSizeIndex>1)
+           ix[1]+=NodeGeometricSizeIndex/2;
+       }
+       else {
+         ix[1]=xMinGlobalIndex[1]+((nface==2) ? -1 : NodeGeometricSizeIndex);
+         if (iFace==1 && NodeGeometricSizeIndex>1)
+           ix[0]+=NodeGeometricSizeIndex/2;
+       }
+       break;
      case 3:
+       nface=i/4;
        i-=4*nface;
        jFace=i/2;
        iFace=i%2;
@@ -779,6 +806,7 @@ public:
 
     for (int i=0;i<1<<_MESH_DIMENSION_;i++) downNode[i]=NULL;
 
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     #if _MESH_DIMENSION_ == 1
     for (int i=0;i<2;i++) neibNodeFace[i]=NULL;
 
@@ -788,15 +816,11 @@ public:
 
     #elif _MESH_DIMENSION_ == 3
 
-#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     for (int i=0;i<8;i++) neibNodeCorner[i]=NULL;
     for (int i=0;i<6*4;i++) neibNodeFace[i]=NULL; 
     for (int i=0;i<12*2;i++) neibNodeEdge[i]=NULL;
-#endif
-
-
-
     #endif //_MESH_DIMENSION_
+#endif
   }
 
 
@@ -977,6 +1001,7 @@ public:
 #endif
 
     //Neighbors of the nodes
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     #if _MESH_DIMENSION_ == 1
     for (i=0;i<2;i++) neibNodeFace[i]=NULL;
     #elif _MESH_DIMENSION_ == 2
@@ -985,14 +1010,11 @@ public:
     #elif _MESH_DIMENSION_ == 3
 
 
-#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     for (i=0;i<8;i++) neibNodeCorner[i]=NULL;
     for (i=0;i<6*4;i++) neibNodeFace[i]=NULL;
     for (i=0;i<12*2;i++) neibNodeEdge[i]=NULL;
-#endif 
-
-
     #endif
+#endif
 
 
     #if _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_
@@ -1023,9 +1045,26 @@ public:
     minNeibRefinmentLevel=-1,maxNeibRefinmentLevel=-1;
 
     #if _MESH_DIMENSION_ == 1
-    exit(__LINE__,__FILE__,"not implemented");
+    // A 1-D leaf has at most one neighbor on either side.  The face table is
+    // already refinement aware, so use it rather than reconstructing a
+    // coordinate probe that can be ambiguous on a dyadic interface.
+    for (i=0;i<2;i++) if ((node=neibNodeFace(i,mesh_ptr))!=NULL) {
+      if ((minNeibRefinmentLevel==-1)||(minNeibRefinmentLevel>node->RefinmentLevel)) minNeibRefinmentLevel=node->RefinmentLevel;
+      if (maxNeibRefinmentLevel<node->RefinmentLevel) maxNeibRefinmentLevel=node->RefinmentLevel;
+    }
     #elif _MESH_DIMENSION_ == 2
-    exit(__LINE__,__FILE__,"not implemented");
+    // Each 2-D face may abut two finer leaves; diagonal contact is represented
+    // by the four corner slots.  Inspecting all slots gives the true minimum
+    // and maximum adjacent refinement levels without counting null boundary
+    // entries as physical neighbors.
+    for (i=0;i<4*2;i++) if ((node=neibNodeFace(i,mesh_ptr))!=NULL) {
+      if ((minNeibRefinmentLevel==-1)||(minNeibRefinmentLevel>node->RefinmentLevel)) minNeibRefinmentLevel=node->RefinmentLevel;
+      if (maxNeibRefinmentLevel<node->RefinmentLevel) maxNeibRefinmentLevel=node->RefinmentLevel;
+    }
+    for (i=0;i<4;i++) if ((node=neibNodeCorner(i,mesh_ptr))!=NULL) {
+      if ((minNeibRefinmentLevel==-1)||(minNeibRefinmentLevel>node->RefinmentLevel)) minNeibRefinmentLevel=node->RefinmentLevel;
+      if (maxNeibRefinmentLevel<node->RefinmentLevel) maxNeibRefinmentLevel=node->RefinmentLevel;
+    }
     #elif _MESH_DIMENSION_ == 3
     //connections through faces
     for (i=0;i<6*4;i++) if ((node=neibNodeFace(i,mesh_ptr))!=NULL) {
@@ -1124,12 +1163,22 @@ public:
   inline cTreeNodeAMR *GetNeibFace(int nface,int iFace,int jFace,T* mesh_ptr) {
     cTreeNodeAMR* res;
 
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
 #if _MESH_DIMENSION_ == 1
     res=neibNodeFace[nface];
 #elif _MESH_DIMENSION_ == 2
     res=neibNodeFace[iFace+2*nface];
 #else
+    res=neibNodeFace[iFace+2*(jFace+2*nface)];
+#endif
+#else
+#if _MESH_DIMENSION_ == 1
+    res=neibNodeFace(nface,mesh_ptr);
+#elif _MESH_DIMENSION_ == 2
+    res=neibNodeFace(iFace+2*nface,mesh_ptr);
+#else
     res=neibNodeFace(iFace+2*(jFace+2*nface),mesh_ptr);
+#endif
 #endif
 
     return res;
@@ -1143,14 +1192,19 @@ public:
     if (neibNode!=NULL) if (neibNode->lastBranchFlag()!=_BOTTOM_BRANCH_TREE_) exit(__LINE__,__FILE__,"Error: neibNode is not a bottom tree node");
 #endif
 
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
 #if _MESH_DIMENSION_ == 1
     neibNodeFace[nface]=neibNode;
 #elif _MESH_DIMENSION_ == 2
     neibNodeFace[iFace+2*nface]=neibNode;
 #else
-#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     neibNodeFace[iFace+2*(jFace+2*nface)]=neibNode;
 #endif
+#else
+    /* In the default compact mode neighbors are derived from integer AMR
+     * coordinates by GetNeibFace(); there is intentionally no pointer table
+     * to update. */
+    (void)neibNode,(void)nface,(void)iFace,(void)jFace;
 #endif
   }
 
@@ -1196,8 +1250,8 @@ public:
     cTreeNodeAMR *res=NULL;
 
 #if _MESH_DIMENSION_ == 1
-    if (i==-1) res=neibNodeFace[0];
-    else if (i==1) res=neibNodeFace[1];
+    if (i==-1) res=GetNeibFace(0,0,0,mesh_ptr);
+    else if (i==1) res=GetNeibFace(1,0,0,mesh_ptr);
     else if (i!=0) exit(__LINE__,__FILE__,"Error: out of range");
 
 #elif _MESH_DIMENSION_ == 2
@@ -1205,15 +1259,15 @@ public:
      int code=abs(i)+abs(j);
 
      if (code==2) { //corner node
-       if (i==-1) res=(j==-1) ? neibNodeCorner[0] : neibNodeCorner[2];
-       else if (i==1) res=(j==-1) ? neibNodeCorner[1] : neibNodeCorner[3];
+       if (i==-1) res=(j==-1) ? GetNeibCorner(0,mesh_ptr) : GetNeibCorner(2,mesh_ptr);
+       else if (i==1) res=(j==-1) ? GetNeibCorner(1,mesh_ptr) : GetNeibCorner(3,mesh_ptr);
        else exit(__LINE__,__FILE__,"Error: out of range");
      }
      else if (code==1) { //face node
-       if (i==-1) res=neibNodeFace[0*2+0];
-       else if (i==1) res=neibNodeFace[1*2+0];
-       else if (j==-1) res=neibNodeFace[2*2+0];
-       else if (j==1) res=neibNodeFace[3*2+0];
+       if (i==-1) res=GetNeibFace(0,0,0,mesh_ptr);
+       else if (i==1) res=GetNeibFace(1,0,0,mesh_ptr);
+       else if (j==-1) res=GetNeibFace(2,0,0,mesh_ptr);
+       else if (j==1) res=GetNeibFace(3,0,0,mesh_ptr);
        else exit(__LINE__,__FILE__,"Error: out of range");
      }
      else if (code==0) res=this;
@@ -1994,12 +2048,23 @@ public:
     if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
       //add the local number of the allocated center nodes
       
-#if _MESH_DIMENSION_ == 3
+#if _MESH_DIMENSION_ == 1
+      // Center-node storage retains one inactive logical index in each
+      // suppressed direction.  Mesh signatures must walk exactly the same
+      // active cells as allocation: x including ghosts, with y=z=0.
+      const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+      const int jMin=0,jMax=0;
+      const int kMin=0,kMax=0;
+#elif _MESH_DIMENSION_ == 2
+      const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+      const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+      const int kMin=0,kMax=0;
+#elif _MESH_DIMENSION_ == 3
       const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
       const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
       const int kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
 #else
-      exit(__LINE__,__FILE__,"Error: not implemented");
+      #error Unsupported _MESH_DIMENSION_
 #endif
       
       
@@ -2328,6 +2393,17 @@ public:
   void init(double *xMin,double *xMax,double (*localResolutionFunction)(double*)) {
     int i,idim;
 
+    /* dxRootBlock and dx_max_refinment are fixed three-component storage even
+     * for 1-D/2-D instantiations.  Zero their inactive entries so generic
+     * diagnostics cannot consume indeterminate lengths.  xGlobalMin/Max,
+     * however, are deliberately sized to _MESH_DIMENSION_ and are assigned
+     * below only for active coordinates; writing three entries there would be
+     * an out-of-bounds write in the lower-dimensional profiles. */
+    for (idim=0;idim<3;idim++) {
+      dxRootBlock[idim]=0.0;
+      dx_max_refinment[idim]=0.0;
+    }
+
     //check the number of bits reserved to store the number of connection's of a corner node
     if ((1<<_MAX_CORNER_NODE_CONNECTION_BITS_)<_MAX_CORNER_NODE_CONNECTION_+1) exit(__LINE__,__FILE__,"The value of _MAX_CORNER_NODE_CONNECTION_BITS_ in not sufficient to store _MAX_CORNER_NODE_CONNECTION_");
 
@@ -2353,15 +2429,30 @@ public:
 
     for (idim=0;idim<_MESH_DIMENSION_;idim++) _MESH_AMR_XMAX_[idim]=xMax[idim],_MESH_AMR_XMIN_[idim]=xMin[idim]; 
 
-    //check the correctness of the symmetry options
+    /*
+     * Check only combinations that have an unambiguous geometric meaning.
+     * Cartesian/planar geometry is valid in every dimension.  Axisymmetry is
+     * represented on a two-dimensional meridional mesh and spherical
+     * symmetry on a one-dimensional radial mesh.  The former code accepted
+     * DIM in [1,3] above and then aborted unconditionally for DIM=1 or DIM=2,
+     * making the advertised lower-dimensional AMR implementations
+     * unreachable.
+     */
 #if _MESH_DIMENSION_ == 3
-    if (_AMR_SYMMETRY_MODE_!=_AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_) exit(__LINE__,__FILE__,"The symmetry mode and the mesh dimention are not consistent: only AMR_SYMMETRY_MODE = AMR_SYMMETRY_MODE_PLANAR_SYMMETRY is allowed for MESH_DIMENSION == 3");
-#else
-    exit(__LINE__,__FILE__,"Error: the option is not found");
+    if (_AMR_SYMMETRY_MODE_!=_AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_)
+      exit(__LINE__,__FILE__,"Only planar symmetry is valid for a three-dimensional mesh");
+#elif _MESH_DIMENSION_ == 2
+    if ((_AMR_SYMMETRY_MODE_!=_AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_) &&
+        (_AMR_SYMMETRY_MODE_!=_AMR_SYMMETRY_MODE_AXIAL_SYMMETRY_))
+      exit(__LINE__,__FILE__,"A two-dimensional mesh requires planar or axial symmetry");
+#elif _MESH_DIMENSION_ == 1
+    if ((_AMR_SYMMETRY_MODE_!=_AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_) &&
+        (_AMR_SYMMETRY_MODE_!=_AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_))
+      exit(__LINE__,__FILE__,"A one-dimensional mesh requires planar or spherical symmetry");
 #endif
 
     //set the minimum value of dx
-    for (int idim=0;idim<3;idim++) {
+    for (int idim=0;idim<_MESH_DIMENSION_;idim++) {
       dx_max_refinment[idim]=(xGlobalMax[idim]-xGlobalMin[idim])/(1<<_MAX_REFINMENT_LEVEL_);
     }
 
@@ -4475,7 +4566,10 @@ void AllocateBlock(cTreeNodeAMR<cBlockAMR> *startNode) {
   };
 
 
-  for (int iface=0;iface<6;iface++) {
+  /* Only geometrically present connection families may be queried.  The
+   * previous hard-coded 3-D counts asked a 2-D node for corners 4..7 (a typed
+   * bounds failure) and a 1-D node for nonexistent faces. */
+  for (int iface=0;iface<2*_MESH_DIMENSION_;iface++) {
     cTreeNodeAMR<cBlockAMR> *Neib=startNode->GetNeibFace(iface,0,0,this);
 
     if (Neib==NULL) continue;
@@ -4486,6 +4580,7 @@ void AllocateBlock(cTreeNodeAMR<cBlockAMR> *startNode) {
   }
 
 
+#if _MESH_DIMENSION_ == 3
   for (int iedge=0;iedge<12;iedge++) {
     cTreeNodeAMR<cBlockAMR> *Neib=startNode->GetNeibEdge(iedge,0,this);
 
@@ -4495,8 +4590,9 @@ void AllocateBlock(cTreeNodeAMR<cBlockAMR> *startNode) {
     SearchCommentionCenterNodeMap(Neib,EdgeConnectionMap_CenterNode[iedge]);
     SearchCommentionCornerNodeMap(Neib,EdgeConnectionMap_CornerNode[iedge]);
   }
+#endif
 
-  for (int icorner=0;icorner<8;icorner++) {
+  for (int icorner=0;icorner<(1<<_MESH_DIMENSION_);icorner++) {
     cTreeNodeAMR<cBlockAMR> *Neib=startNode->GetNeibCorner(icorner,this); 
 
     if (Neib==NULL) continue;
@@ -4962,8 +5058,258 @@ void DeallocateBlock(cTreeNodeAMR<cBlockAMR> *startNode) {
 
 
 //===================================================================
+/*
+ * Explicit application-data restriction hook for topology coarsening.
+ *
+ * A generic AMR container cannot infer whether an associated byte is a
+ * conserved density, an extensive cell total, a time accumulator, or an
+ * opaque application flag.  Coarsening therefore supplies all 2^D leaf
+ * children together with the newly available parent and delegates the
+ * restriction law to the owner of those data.  For a conserved density q the
+ * usual Cartesian law is
+ *
+ *       q_parent = sum_c(q_c V_c) / sum_c(V_c),
+ *
+ * where V_c is in the model's length-unit^D.  An extensive quantity instead
+ * uses the unnormalised sum.  The callback runs before any child block or tree
+ * node is released, and a void return deliberately prevents a half-applied
+ * topology rollback from being mistaken for a transactional data operation.
+ */
+typedef void (*fCoarsenTreeNodeDataTransfer)(
+    cTreeNodeAMR<cBlockAMR>* parent,
+    cTreeNodeAMR<cBlockAMR>* const* children,
+    int nChildren,void* context);
+
+/* Prolongation is likewise application-owned.  This hook runs after all
+ * children and their optional blocks have been created and connected, but
+ * before splitTreeNode() releases the parent's optional block. */
+typedef void (*fSplitTreeNodeDataTransfer)(
+    cTreeNodeAMR<cBlockAMR>* parent,
+    cTreeNodeAMR<cBlockAMR>* const* children,
+    int nChildren,void* context);
+
+_TARGET_HOST_
+bool coarsenTreeNode(
+    cTreeNodeAMR<cBlockAMR>* parent,
+    fCoarsenTreeNodeDataTransfer RestrictAssociatedData=NULL,
+    void* RestrictionContext=NULL) {
+  const int nChildren=1<<_MESH_DIMENSION_;
+  cTreeNodeAMR<cBlockAMR>* children[1<<_MESH_DIMENSION_];
+
+  /* Complete validation precedes the first mutation.  Only a complete set of
+   * leaf siblings may be collapsed; accepting a partial family would leave a
+   * hole in the dyadic partition.  A child adjacent to level parent+2 would
+   * create a forbidden >2:1 jump after collapse, so that state is rejected as
+   * well. */
+  if (parent==NULL || parent->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) return false;
+#if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
+  if (parent->InternalBoundaryDescriptorList!=NULL) return false;
+#endif
+#if _AMR__CUT_CELL__MODE_ == _AMR__CUT_CELL__MODE__ON_
+  if (parent->FirstTriangleCutFace!=NULL) return false;
+#endif
+  if (parent->neibCutFaceListDescriptorList!=NULL) return false;
+  for (int n=0;n<nChildren;n++) {
+    children[n]=parent->downNode[n];
+    if (children[n]==NULL ||
+        children[n]->lastBranchFlag()!=_BOTTOM_BRANCH_TREE_ ||
+        children[n]->upNode!=parent) return false;
+
+#if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
+    /* Merging surface descriptors requires a geometry-specific union and is
+     * not equivalent to copying an arbitrary child descriptor.  Reject this
+     * bounded topology API rather than silently losing a boundary. */
+    if (children[n]->InternalBoundaryDescriptorList!=NULL) return false;
+#endif
+#if _AMR__CUT_CELL__MODE_ == _AMR__CUT_CELL__MODE__ON_
+    if (children[n]->FirstTriangleCutFace!=NULL) return false;
+#endif
+    if (children[n]->neibCutFaceListDescriptorList!=NULL) return false;
+  }
+
+  cTreeNodeAMR<cBlockAMR>* face[6][2][2]={{{NULL}}};
+  cTreeNodeAMR<cBlockAMR>* edge[12][2]={{NULL}};
+  cTreeNodeAMR<cBlockAMR>* corner[8]={NULL};
+  int ix[3]={0,0,0};
+
+  /* Capture the post-collapse adjacency by probing one finest-grid index
+   * outside the parent.  Tangential probes are placed at the beginning and
+   * midpoint of each parent face/edge, exactly matching AMPS' two-by-two
+   * neighbor-slot convention.  Integer coordinates make this independent of
+   * floating-point face tolerances. */
+  for (int nface=0;nface<2*_MESH_DIMENSION_;nface++) {
+    const int normal=nface/2;
+    int tangent[2]={-1,-1},ntangent=0;
+    for (int d=0;d<_MESH_DIMENSION_;d++) if (d!=normal)
+      tangent[ntangent++]=d;
+
+    const int iMax=(_MESH_DIMENSION_>=2) ? 2 : 1;
+    const int jMax=(_MESH_DIMENSION_==3) ? 2 : 1;
+    for (int j=0;j<jMax;j++) for (int i=0;i<iMax;i++) {
+      for (int d=0;d<_MESH_DIMENSION_;d++) ix[d]=parent->xMinGlobalIndex[d];
+      ix[normal]+=(nface%2==0) ? -1 : parent->NodeGeometricSizeIndex;
+      if (ntangent>0 && i==1 && parent->NodeGeometricSizeIndex>1)
+        ix[tangent[0]]+=parent->NodeGeometricSizeIndex/2;
+      if (ntangent>1 && j==1 && parent->NodeGeometricSizeIndex>1)
+        ix[tangent[1]]+=parent->NodeGeometricSizeIndex/2;
+      face[nface][i][j]=findTreeNode(ix,parent);
+    }
+  }
+
+#if _MESH_DIMENSION_ == 2
+  for (int n=0;n<4;n++) {
+    ix[0]=parent->xMinGlobalIndex[0]+((n&1) ? parent->NodeGeometricSizeIndex : -1);
+    ix[1]=parent->xMinGlobalIndex[1]+((n&2) ? parent->NodeGeometricSizeIndex : -1);
+    corner[n]=findTreeNode(ix,parent);
+  }
+#elif _MESH_DIMENSION_ == 3
+  static const int EdgeIncrement[12][3]={
+      {0,-1,-1},{0,1,-1},{0,1,1},{0,-1,1},
+      {-1,0,-1},{1,0,-1},{1,0,1},{-1,0,1},
+      {-1,-1,0},{1,-1,0},{1,1,0},{-1,1,0}};
+  static const int EdgeDirection[12]={0,0,0,0,1,1,1,1,2,2,2,2};
+  for (int nedge=0;nedge<12;nedge++) for (int segment=0;segment<2;segment++) {
+    for (int d=0;d<3;d++) {
+      ix[d]=parent->xMinGlobalIndex[d];
+      if (EdgeIncrement[nedge][d]<0) ix[d]-=1;
+      if (EdgeIncrement[nedge][d]>0) ix[d]+=parent->NodeGeometricSizeIndex;
+    }
+    if (segment==1 && parent->NodeGeometricSizeIndex>1)
+      ix[EdgeDirection[nedge]]+=parent->NodeGeometricSizeIndex/2;
+    edge[nedge][segment]=findTreeNode(ix,parent);
+  }
+  for (int n=0;n<8;n++) {
+    for (int d=0;d<3;d++)
+      ix[d]=parent->xMinGlobalIndex[d]+
+          ((n&(1<<d)) ? parent->NodeGeometricSizeIndex : -1);
+    corner[n]=findTreeNode(ix,parent);
+  }
+#endif
+
+  auto IsChild = [&] (cTreeNodeAMR<cBlockAMR>* node) {
+    for (int n=0;n<nChildren;n++) if (node==children[n]) return true;
+    return false;
+  };
+  auto CheckBalance = [&] (cTreeNodeAMR<cBlockAMR>* node) {
+    return node==NULL || IsChild(node) ||
+        node->RefinmentLevel<=parent->RefinmentLevel+1;
+  };
+  for (int f=0;f<2*_MESH_DIMENSION_;f++) {
+    const int iMax=(_MESH_DIMENSION_>=2) ? 2 : 1;
+    const int jMax=(_MESH_DIMENSION_==3) ? 2 : 1;
+    for (int j=0;j<jMax;j++) for (int i=0;i<iMax;i++)
+      if (!CheckBalance(face[f][i][j])) return false;
+  }
+#if _MESH_DIMENSION_ == 2
+  for (int n=0;n<4;n++) if (!CheckBalance(corner[n])) return false;
+#elif _MESH_DIMENSION_ == 3
+  for (int n=0;n<8;n++) if (!CheckBalance(corner[n])) return false;
+  for (int e=0;e<12;e++) for (int s=0;s<2;s++)
+    if (!CheckBalance(edge[e][s])) return false;
+#endif
+
+  bool anyBlock=false,allBlocks=true;
+  for (int n=0;n<nChildren;n++) {
+    anyBlock=anyBlock || children[n]->block!=NULL;
+    allBlocks=allBlocks && children[n]->block!=NULL;
+  }
+  if (anyBlock && !allBlocks) return false;
+  /* With allocated blocks a null policy would silently discard center/corner
+   * state, cell data and particle lists.  The former coarsener aborted rather
+   * than define such semantics; retain that safety boundary by requiring an
+   * explicit restriction law.  A blockless topology tree contains no such
+   * payload and may be collapsed without a callback. */
+  if (anyBlock && RestrictAssociatedData==NULL) return false;
+  if (anyBlock && parent->block==NULL && !AllowBlockAllocation) return false;
+  if (anyBlock && parent->block==NULL &&
+      !parent->IsUsedInCalculationFlag) return false;
+
+  /* In explicit-neighbor mode replace every reciprocal child reference before
+   * the stack entries are released.  In the default compact mode setters are
+   * intentional no-ops and all adjacency is recomputed from integer indices. */
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
+  auto ReplaceChildReference = [&] (cTreeNodeAMR<cBlockAMR>* node) {
+    if (node==NULL || IsChild(node)) return;
+    for (int f=0;f<2*_MESH_DIMENSION_;f++) {
+      const int iMax=(_MESH_DIMENSION_>=2) ? 2 : 1;
+      const int jMax=(_MESH_DIMENSION_==3) ? 2 : 1;
+      for (int j=0;j<jMax;j++) for (int i=0;i<iMax;i++)
+        if (IsChild(node->GetNeibFace(f,i,j,this)))
+          node->SetNeibFace(parent,f,i,j);
+    }
+#if _MESH_DIMENSION_ >= 2
+    for (int c=0;c<(1<<_MESH_DIMENSION_);c++)
+      if (IsChild(node->GetNeibCorner(c,this))) node->SetNeibCorner(parent,c);
+#endif
+#if _MESH_DIMENSION_ == 3
+    for (int e=0;e<12;e++) for (int s=0;s<2;s++)
+      if (IsChild(node->GetNeibEdge(e,s,this))) node->SetNeibEdge(parent,e,s);
+#endif
+  };
+  for (int f=0;f<2*_MESH_DIMENSION_;f++) {
+    const int iMax=(_MESH_DIMENSION_>=2) ? 2 : 1;
+    const int jMax=(_MESH_DIMENSION_==3) ? 2 : 1;
+    for (int j=0;j<jMax;j++) for (int i=0;i<iMax;i++) {
+      ReplaceChildReference(face[f][i][j]);
+      parent->SetNeibFace(face[f][i][j],f,i,j);
+    }
+  }
+#if _MESH_DIMENSION_ >= 2
+  for (int c=0;c<(1<<_MESH_DIMENSION_);c++) {
+    ReplaceChildReference(corner[c]);
+    parent->SetNeibCorner(corner[c],c);
+  }
+#endif
+#if _MESH_DIMENSION_ == 3
+  for (int e=0;e<12;e++) for (int s=0;s<2;s++) {
+    ReplaceChildReference(edge[e][s]);
+    parent->SetNeibEdge(edge[e][s],e,s);
+  }
+#endif
+#endif
+
+  if (anyBlock && parent->block==NULL) {
+    AllocateBlock(parent);
+    if (parent->block==NULL) return false;
+  }
+
+  if (RestrictAssociatedData!=NULL)
+    RestrictAssociatedData(parent,children,nChildren,RestrictionContext);
+
+  /* This increment identifies the logical topology collapse.  If blocks are
+   * allocated, AllocateBlock/DeallocateBlock retain their existing additional
+   * storage-generation increments; callers must not interpret GetMeshID() as
+   * exactly one per high-level operation in that mode. */
+  nMeshModificationCounter++;
+  meshModifiedFlag=true;
+  meshModifiedFlag_CreateNewSpaceFillingCurve=true;
+  meshModifiedFlag_CountMeshElements=true;
+
+  for (int n=0;n<nChildren;n++) {
+    if (children[n]->block!=NULL) DeallocateBlock(children[n]);
+    parent->downNode[n]=NULL;
+    treeNodes.deleteElement(children[n]);
+  }
+
+  CreateBottomBranchNodeList(rootTree);
+  SetNodeNeibResolutionLevelLimit();
+  return true;
+}
+
+//===================================================================
 _TARGET_HOST_ _TARGET_DEVICE_
 bool deleteTreeNode(cTreeNodeAMR<cBlockAMR> *startNode) {
+  /* Historical callers pass any member of the sibling family.  Route that
+   * public shape to the validated host coarsener.  The former implementation
+   * below is retained as disabled archaeology: it exited unconditionally
+   * before reconnecting a node and had no 1-D/2-D path. */
+#ifndef __CUDA_ARCH__
+  return startNode!=NULL && coarsenTreeNode(startNode->upNode);
+#else
+  return false;
+#endif
+
+#if 0
   int i,j,k,iMax,jMax,kMax,iMin,jMin,kMin,nDownNode;
   cTreeNodeAMR<cBlockAMR> *upNode,*downNode,*neibNode; 
 
@@ -5324,6 +5670,7 @@ if (newCenterNode->Temp_ID==88861) {
   }
 
   return true; 
+#endif
 }
 
 
@@ -5605,7 +5952,10 @@ if (newCenterNode->Temp_ID==88861) {
 */
 
 _TARGET_HOST_ _TARGET_DEVICE_ 
-bool splitTreeNode(cTreeNodeAMR<cBlockAMR> *startNode) {
+bool splitTreeNode(
+    cTreeNodeAMR<cBlockAMR> *startNode,
+    fSplitTreeNodeDataTransfer ProlongAssociatedData=NULL,
+    void* ProlongationContext=NULL) {
   int i,j,k;
 
 
@@ -5628,7 +5978,10 @@ if (startNode->Temp_ID==15) {
     for (i=-1;i<2;i++) for (j=-1;j<2;j++) for (k=-1;k<2;k++) if ((neibNode=getNeibNode(i,j,k,startNode))!=NULL) if (neibNode->RefinmentLevel<startNode->RefinmentLevel) { //refine the neibNode
       if (neibNode->RefinmentLevel<startNode->RefinmentLevel-1) exit(__LINE__,__FILE__,"Error: the mesh is not consistent");
 
-      splitTreeNode(neibNode);
+      /* Balancing refinement is part of the same application data
+       * transaction.  Forward the prolongation law so an allocated coarse
+       * neighbor cannot lose its associated state while enforcing 2:1. */
+      splitTreeNode(neibNode,ProlongAssociatedData,ProlongationContext);
 
 
 
@@ -5948,7 +6301,10 @@ if (startNode->Temp_ID==15) {
 
        //make connection through the corner nodes of startNode->downNode[:]
        for (nd=0;nd<4;nd++) if ((nUpFace=ExternalNodesCornerNodeConnectionMap_downNode[nDownNode][nd].nUpFace)!=-1) {
-         if (startNode->GetNeibFace(nUpFace,0,0)!=startNode->GetNeibFace(nUpFace,1,0,this)) {
+         // Both probes must use the public storage-mode-neutral accessor.
+         // Omitting the mesh argument left this 2-D corner reconnection path
+         // uninstantiable even though the second probe was correct.
+         if (startNode->GetNeibFace(nUpFace,0,0,this)!=startNode->GetNeibFace(nUpFace,1,0,this)) {
            neibNode=startNode->GetNeibFace(nUpFace,ExternalNodesCornerNodeConnectionMap_downNode[nDownNode][nd].iFace,0,this);
 
            startNode->downNode[nDownNode]->SetNeibCorner(neibNode,nd);
@@ -6423,9 +6779,17 @@ if (startNode->Temp_ID==15) {
 
 #endif
 
-
-
-
+     /* At this point every daughter is geometrically complete and connected,
+      * while the parent block (when allocated) is still live.  That is the
+      * only ordering in which an application can implement conservative
+      * prolongation without a production-generated temporary copy.  Device
+      * refinement preserves the legacy no-callback path; application-owned
+      * host function pointers are intentionally not invoked in device code. */
+#ifndef __CUDA_ARCH__
+     if (ProlongAssociatedData!=NULL)
+       ProlongAssociatedData(startNode,startNode->downNode,
+           1<<_MESH_DIMENSION_,ProlongationContext);
+#endif
 
      //deallocate the block of 'startNode'
      if (DeallocateUnusedBlocks==true) DeallocateBlock(startNode);
@@ -7186,8 +7550,14 @@ if (CallsCounter==83) {
       std::cout << "$PREFIX: Building mesh.....  " << std::endl << std::flush;
     }
      
-    double dx[3];
-    for (int idim=0;idim<3;idim++) {
+    /* xGlobalMin/Max contain exactly _MESH_DIMENSION_ coordinates, whereas
+     * this diagnostic vector stays three-component so the legacy progress
+     * line has one stable schema.  Initialize suppressed components to zero
+     * and read/update only active coordinates; the former three-entry loop
+     * read beyond the 1-D/2-D domain arrays during the normal buildMesh()
+     * workflow.  dx retains model length units throughout refinement. */
+    double dx[3]={0.0,0.0,0.0};
+    for (int idim=0;idim<_MESH_DIMENSION_;idim++) {
       dx[idim]=xGlobalMax[idim]-xGlobalMin[idim];
     }
 
@@ -7209,7 +7579,7 @@ if (CallsCounter==83) {
       if (rank==0) {
         printf("$PREFIX: Building mesh [completed level: %i] minimum cell size:%e,%e,%e\n",level,
 	       dx[0]/_BLOCK_CELLS_X_,dx[1]/_BLOCK_CELLS_Y_,dx[2]/_BLOCK_CELLS_Z_);
-        for (int idim=0;idim<3;idim++) dx[idim]*=0.5;
+        for (int idim=0;idim<_MESH_DIMENSION_;idim++) dx[idim]*=0.5;
         fflush(stdout);
       }
 
@@ -10312,12 +10682,20 @@ nMPIops++;
     double Measure;
 
 
-    #if _MESH_DIMENSION_ == 3
+    #if _MESH_DIMENSION_ == 1
+    const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    const int jMin=0,jMax=0;
+    const int kMin=0,kMax=0;
+    #elif _MESH_DIMENSION_ == 2
+    const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+    const int kMin=0,kMax=0;
+    #elif _MESH_DIMENSION_ == 3
     const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
     const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
     const int kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
     #else
-    exit(__LINE__,__FILE__,"Error: not implemented");
+    #error Unsupported _MESH_DIMENSION_
     #endif
 
 	std::function<void(cTreeNodeAMR<cBlockAMR>*,CMPI_channel*,FILE*)> SaveDownTree;
@@ -10402,12 +10780,20 @@ nMPIops++;
     double Measure;
 
 
-    #if _MESH_DIMENSION_ == 3
+    #if _MESH_DIMENSION_ == 1
+    const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    const int jMin=0,jMax=0;
+    const int kMin=0,kMax=0;
+    #elif _MESH_DIMENSION_ == 2
+    const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+    const int kMin=0,kMax=0;
+    #elif _MESH_DIMENSION_ == 3
     const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
     const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
     const int kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
     #else
-    exit(__LINE__,__FILE__,"Error: not implemented");
+    #error Unsupported _MESH_DIMENSION_
     #endif
 
 
@@ -10473,12 +10859,20 @@ nMPIops++;
     cCenterNode *CenterNode;
     char *offset;
 
-    #if _MESH_DIMENSION_ == 3
+    #if _MESH_DIMENSION_ == 1
+    const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    const int jMin=0,jMax=0;
+    const int kMin=0,kMax=0;
+    #elif _MESH_DIMENSION_ == 2
+    const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+    const int kMin=0,kMax=0;
+    #elif _MESH_DIMENSION_ == 3
     const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
     const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
     const int kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
     #else
-    exit(__LINE__,__FILE__,"Error: not implemented");
+    #error Unsupported _MESH_DIMENSION_
     #endif
 
     char SendCellFlag;
@@ -10606,12 +11000,20 @@ nMPIops++;
     cCenterNode *CenterNode;
     char *offset;
 
-    #if _MESH_DIMENSION_ == 3
+    #if _MESH_DIMENSION_ == 1
+    const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    const int jMin=0,jMax=0;
+    const int kMin=0,kMax=0;
+    #elif _MESH_DIMENSION_ == 2
+    const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+    const int kMin=0,kMax=0;
+    #elif _MESH_DIMENSION_ == 3
     const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
     const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
     const int kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
     #else
-    exit(__LINE__,__FILE__,"Error: not implemented");
+    #error Unsupported _MESH_DIMENSION_
     #endif
 
     char savedLoadCellFlag,data[SavedDataLength];
@@ -12865,21 +13267,23 @@ if (TmpAllocationCounter==2437) {
         while (node!=NULL) {
           //search through the neighbors of the blocks
   #if _MESH_DIMENSION_ == 1
-  //for (i=0;i<2;i++) neibNodeFace[i]=NULL;
-
-
-
-   
-
-          for (i=0;i<2;i++) if (node->neibNodeFace[i]!=NULL) if (node->neibNodeFace[i]->Thread!=node->Thread) {
-            ParallelSendRecvMap[node->neibNodeFace[i]->Thread][node->Thread]=true;
-            ParallelSendRecvMap[node->Thread][node->neibNodeFace[i]->Thread]=true;
+          // Compact-neighbor builds resolve a face through the geometric
+          // accessor rather than storing neibNodeFace[].  Use the same API as
+          // 3-D so both storage modes produce the identical rank map.
+          cTreeNodeAMR<cBlockAMR> *NeibFace;
+          for (i=0;i<2;i++) if ((NeibFace=node->GetNeibFace(i,0,0,this))!=NULL) if (NeibFace->Thread!=node->Thread) {
+            ParallelSendRecvMap[NeibFace->Thread][node->Thread]=true;
+            ParallelSendRecvMap[node->Thread][NeibFace->Thread]=true;
           }
 
   #elif _MESH_DIMENSION_ == 2
-         for (i=0;i<4*2;i++) if (node->neibNodeFace[i]!=NULL) if (node->neibNodeFace[i]->Thread!=node->Thread) {
-           ParallelSendRecvMap[node->neibNodeFace[i]->Thread][node->Thread]=true;
-           ParallelSendRecvMap[node->Thread][node->neibNodeFace[i]->Thread]=true;
+         cTreeNodeAMR<cBlockAMR> *NeibFace;
+         for (int nface=0;nface<4;nface++) for (int iface=0;iface<2;iface++) {
+           NeibFace=node->GetNeibFace(nface,iface,0,this);
+           if ((NeibFace!=NULL)&&(NeibFace->Thread!=node->Thread)) {
+             ParallelSendRecvMap[NeibFace->Thread][node->Thread]=true;
+             ParallelSendRecvMap[node->Thread][NeibFace->Thread]=true;
+           }
          }
 
          cTreeNodeAMR<cBlockAMR> *NeibCorner; 
@@ -12895,17 +13299,14 @@ if (TmpAllocationCounter==2437) {
   //for (i=0;i<12*2;i++) neibNodeEdge[i]=NULL;
 
 
-cTreeNodeAMR<cBlockAMR> *NeibFace; 
-
-
-         for (i=0;i<6*4;i++) if ((NeibFace=node->neibNodeFace(i,this))!=NULL) {
-
-
-             if (NeibFace->Thread!=node->Thread) {
-               ParallelSendRecvMap[NeibFace->Thread][node->Thread]=true;
-               ParallelSendRecvMap[node->Thread][NeibFace->Thread]=true;
-             }
+         cTreeNodeAMR<cBlockAMR> *NeibFace;
+         for (int nface=0;nface<6;nface++) for (int jface=0;jface<2;jface++) for (int iface=0;iface<2;iface++) {
+           NeibFace=node->GetNeibFace(nface,iface,jface,this);
+           if ((NeibFace!=NULL)&&(NeibFace->Thread!=node->Thread)) {
+             ParallelSendRecvMap[NeibFace->Thread][node->Thread]=true;
+             ParallelSendRecvMap[node->Thread][NeibFace->Thread]=true;
            }
+         }
 
 
          cTreeNodeAMR<cBlockAMR> *NeibCorner;

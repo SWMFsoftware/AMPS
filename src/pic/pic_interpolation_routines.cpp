@@ -440,8 +440,18 @@ namespace {
     return PIC::Mesh::mesh->findTreeNode(xLogical,node);
   }
 
-  /* node->GetNeibFace(n,0,0) (n=0-5), GetNeibEdge(n-6,0) (n=6-17) and
-   * GetNeibCorner(n-18) (n=18-25) as used by InitStencil(). */
+  /* Return the coarsest leaf represented by a face/edge/corner neighbor slot.
+   * InitStencil() uses this helper only to find a coarser block near the query.
+   * A face has four geometric probe slots in 3-D and an edge has two.  Looking
+   * at slot zero alone is not sufficient: that probe may lie exactly on another
+   * AMR interface and resolve to a same-level diagonal leaf while the other
+   * slot lies unambiguously in the adjacent coarse leaf.  Missing that coarse
+   * leaf makes the fine-side trilinear row collapse its virtual fine ghost
+   * center onto a coarse cell center, which is conservative for constants but
+   * does not reproduce an affine field.  Selecting the minimum refinement
+   * level across all slots implements the physical purpose of this search;
+   * ties are immaterial because the subsequent coordinate-extent test decides
+   * whether the candidate can support the query. */
   _TARGET_HOST_ _TARGET_DEVICE_
   cInterpolationTreeNode *GetStencilNeib(cInterpolationTreeNode *node,int n) {
     #ifndef __CUDA_ARCH__
@@ -450,10 +460,34 @@ namespace {
     if ((e!=NULL)&&(e->neibKnown[n]==true)) return e->neib[n];
     #endif
 
-    cInterpolationTreeNode *res;
+    cInterpolationTreeNode *res=NULL,*candidate=NULL;
 
-    if (n<6) res=node->GetNeibFace(n,0,0,PIC::Mesh::mesh);
-    else if (n<18) res=node->GetNeibEdge(n-6,0,PIC::Mesh::mesh);
+    if (n<6) {
+      #if _MESH_DIMENSION_ == 3
+      for (int jFace=0;jFace<2;jFace++) for (int iFace=0;iFace<2;iFace++) {
+        candidate=node->GetNeibFace(n,iFace,jFace,PIC::Mesh::mesh);
+        if ((candidate!=NULL)&&((res==NULL)||
+            (candidate->RefinmentLevel<res->RefinmentLevel))) res=candidate;
+      }
+      #elif _MESH_DIMENSION_ == 2
+      for (int iFace=0;iFace<2;iFace++) {
+        candidate=node->GetNeibFace(n,iFace,0,PIC::Mesh::mesh);
+        if ((candidate!=NULL)&&((res==NULL)||
+            (candidate->RefinmentLevel<res->RefinmentLevel))) res=candidate;
+      }
+      #else
+      res=node->GetNeibFace(n,0,0,PIC::Mesh::mesh);
+      #endif
+    }
+    else if (n<18) {
+      #if _MESH_DIMENSION_ == 3
+      for (int iEdge=0;iEdge<2;iEdge++) {
+        candidate=node->GetNeibEdge(n-6,iEdge,PIC::Mesh::mesh);
+        if ((candidate!=NULL)&&((res==NULL)||
+            (candidate->RefinmentLevel<res->RefinmentLevel))) res=candidate;
+      }
+      #endif
+    }
     else res=node->GetNeibCorner(n-18,PIC::Mesh::mesh);
 
     #ifndef __CUDA_ARCH__
@@ -833,7 +867,17 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
       GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil,RowStencil,BuildPointerStencil);
       return;
     }
-    else if (node->RefinmentLevel==node->minNeibRefinmentLevel) {
+    /* minNeibRefinmentLevel describes neighbors only; it does not include the
+     * current leaf.  Therefore a coarse leaf surrounded exclusively by finer
+     * leaves has node->RefinmentLevel < minNeibRefinmentLevel.  Equality alone
+     * misclassified that valid 2:1 geometry as the fine-side case, found no
+     * coarser neighbor, and ultimately used a same-level ghost center.  The
+     * resulting row shifted a coarse support point onto one fine-cell center
+     * and failed affine-coordinate reproduction.  `<=` is the intended
+     * "current block is geometrically largest" relation stated by this branch;
+     * the -1 no-neighbor sentinel still bypasses it and retains the boundary
+     * fallback below. */
+    else if (node->RefinmentLevel<=node->minNeibRefinmentLevel) {
       if  ((0.5<iLoc)&&(iLoc<_BLOCK_CELLS_X_-0.5) && (0.5<jLoc)&&(jLoc<_BLOCK_CELLS_Y_-0.5) && (0.5<kLoc)&&(kLoc<_BLOCK_CELLS_Z_-0.5)) {
         //1. the point is deeper than a half cell size insode the block
         //2. the block is geometrically largest among the neibours
@@ -971,9 +1015,14 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
                 break;
 
               case 1:
-                if ((xLoc[1]<1.0)&&(xLoc[2]>nBlockCells[2]-1)) {
-                  if (xLoc[1]<dmin) dmin=xLoc[1],CoarserBlock=NeibNode;
-                  if (nBlockCells[2]-xLoc[2]<dmin) dmin=nBlockCells[2]-xLoc[2],CoarserBlock=NeibNode;
+                /* Edge 1 is (+y,-z), matching meshAMRgeneric's canonical
+                 * edge numbering and faceEdges above.  The former predicates
+                 * described edge 3 (-y,+z), so a fine query beside a coarse
+                 * block on edge 3 never selected that coarse interpolation
+                 * lattice. */
+                if ((xLoc[1]>nBlockCells[1]-1)&&(xLoc[2]<1.0)) {
+                  if (nBlockCells[1]-xLoc[1]<dmin) dmin=nBlockCells[1]-xLoc[1],CoarserBlock=NeibNode;
+                  if (xLoc[2]<dmin) dmin=xLoc[2],CoarserBlock=NeibNode;
                 }
 
                 break;
@@ -987,9 +1036,10 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
                 break;
 
               case 3:
-                if ((xLoc[1]>nBlockCells[1]-1)&&(xLoc[2]<1.0)) {
-                  if (nBlockCells[1]-xLoc[1]<dmin) dmin=nBlockCells[1]-xLoc[1],CoarserBlock=NeibNode;
-                  if (xLoc[2]<dmin) dmin=xLoc[2],CoarserBlock=NeibNode;
+                // Edge 3 is (-y,+z); keep its distances in fine-cell units.
+                if ((xLoc[1]<1.0)&&(xLoc[2]>nBlockCells[2]-1)) {
+                  if (xLoc[1]<dmin) dmin=xLoc[1],CoarserBlock=NeibNode;
+                  if (nBlockCells[2]-xLoc[2]<dmin) dmin=nBlockCells[2]-xLoc[2],CoarserBlock=NeibNode;
                 }
 
                 break;
@@ -1747,8 +1797,19 @@ void PIC::InterpolationRoutines::CornerBased::InitStencil(double *x,cTreeNodeAMR
   #pragma ivdep
   for (idim=0;idim<3;idim++) {
     if ((x[idim]<xMinNode[idim])||(x[idim]>xMaxNode[idim])) exit(__LINE__,__FILE__,"Error: the point is out of block");
-    if (fabs(x[idim]-xMaxNode[idim])<1e-10*dx[idim]) x[idim]= xMaxNode[idim]-1e-10*dx[idim];    
-    xLoc[idim]=(x[idim]-xMinNode[idim])/dx[idim];
+
+    /*
+     * The half-open cell index at an upper block face is evaluated at the
+     * representable interior limit, but the caller's physical coordinate is
+     * input and must remain immutable.  Mutating x here used to make a second
+     * interpolation depend on call order and displaced particles/sampling
+     * locations by 1e-10 cell widths.  Use a local probe solely for index and
+     * barycentric-coordinate construction; SI/model units are unchanged.
+     */
+    double xProbe=x[idim];
+    if (fabs(xProbe-xMaxNode[idim])<1e-10*dx[idim])
+      xProbe=xMaxNode[idim]-1e-10*dx[idim];
+    xLoc[idim]=(xProbe-xMinNode[idim])/dx[idim];
     iX[idim]=(int)(xLoc[idim]);
     xLoc[idim]-=iX[idim];
   }

@@ -465,7 +465,7 @@ void PIC::IDF::LB::Init() {
   int DataLength;
 
   DataLength=(1+nSpeciesMaxVibrationalModes)*sizeof(double);
-  PIC::ParticleBuffer::RequestDataStorage(offset,DataLength);
+  PIC::ParticleBuffer::RequestDataStorage(offset,DataLength,alignof(double));
 
   _ROTATIONAL_ENERGY_OFFSET_=offset;
   _VIBRATIONAL_ENERGY_OFFSET_=offset+sizeof(double);

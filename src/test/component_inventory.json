@@ -21,9 +21,9 @@
     },
     {
       "component": "src/meshAMR",
-      "status": "planned",
-      "test_ids": [],
-      "remaining": "Tree topology, refinement/coarsening, ownership, ghost exchange, cut cells, restart, and interpolation."
+      "status": "partial",
+      "test_ids": ["CORE-MESH-NATIVE-001"],
+      "remaining": "T3 covers one-rank Cartesian 1-D/2-D/3-D tree topology, exact-boundary search, same-level and 2:1 neighbors, split/coarsen callbacks and data conservation, adaptation cycles, cut-cell geometry, sparse NASTRAN round trips, and 3-D interpolation/cache invalidation. Distributed owner/ghost exchange, restart, nonmanifold/large surface fixtures, non-Cartesian coordinates, and deeper imbalance scenarios remain open."
     },
     {
       "component": "src/models/charge_exchange",
@@ -100,8 +100,8 @@
     {
       "component": "src/pic",
       "status": "partial",
-      "test_ids": ["CORE-PIC-NATIVE-001"],
-      "remaining": "Particle-buffer state; host-side species-global particle weights/time steps and invalid-domain rejection; Maxwellian moments; neutral Simple/Boris motion; analytic sphere reflection; hard-sphere kernel invariants; populated-cell NTC rate, conservation, and RT equilibration; 3-D parent decay; and LB equilibrium/partition/RT rates are tested. Add local and single-global weight/time-step profiles, individual-particle weights, unequal-weight/time-step physics and rescaling, CUDA device diagnostics, charged mover convergence, remaining collision selectors, injection, general sampling, split/merge, restart, refinement/outer boundaries, and MPI ownership."
+      "test_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001", "CORE-MESH-NATIVE-001"],
+      "remaining": "T2 tests packed/aligned fixed and individual-weight particle records, checked layout/lifecycle/fatal paths, species-global/species-local/single-global weight and time-step modes, local physical-distribution rescaling, finite-positive individual weights, and packed/aligned conservative split/merge. Existing physics evidence also covers Maxwellian moments, neutral Simple/Boris motion, analytic sphere reflection, hard-sphere invariants, populated-cell NTC rate/conservation/RT equilibration, 3-D parent decay, and LB equilibrium/partition/RT rates. T3 adds production uniform/AMR interpolation, exhaustive legacy refinement masks, deterministic row merging, cache invalidation, and immutable boundary queries. Add CUDA/device invalid-state diagnostics, semantic reduction policies for application-owned extension fields, unequal-weight/time-step collision physics, charged mover convergence, remaining collision selectors, injection, general sampling, restart, outer-boundary particle behavior, and MPI ownership."
     },
     {
       "component": "src/pic/ecsim",

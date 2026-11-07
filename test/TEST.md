@@ -31,10 +31,13 @@ responsibility of `srcEarth/test`, `srcMoon/test`, `srcEnceladus/test`,
 
 ## 2. Current baseline
 
-As of 2026-11-07 the live global registry contains 11 executable suites and
-103 registered individual cases. The three historical native family IDs and
-the new T2 weight/time family ID are selection aliases of the one combined
-native suite, not additional executable suites:
+As of 2026-11-07 the live global registry contains 17 executable suites and
+210 registered individual cases. The historical particle-buffer, physics,
+species, packed-fixed-layout, and species-global weight/time family IDs are
+selection aliases of the combined baseline native suite, not additional
+executable suites. Five additional native owners select mutually exclusive T2
+generated profiles, while the T3 mesh owner selects three compile-time
+dimensional profiles; every such owner performs its required clean rebuild:
 
 | Registered suite | Cases | Current scope |
 |---|---:|---|
@@ -48,24 +51,34 @@ native suite, not additional executable suites:
 | `CORE-UNITS-001` | 5 | Independently derived factors, scalar/vector round trips, dimensional identities, invalid scales |
 | `CORE-SPECIES-RADIATION-001` | 4 | He/Na reference points, interpolation/scaling, acceleration units, invalid heliocentric state |
 | `CORE-INTERFACE-ABI-001` | 11 | C/Fortran ABI, Geopack ordering/conventions/no-SPICE, and five typed optional-provider gates |
-| `CORE-PIC-NATIVE-001` | 36 | Generated configuration/invalid decks, species tables/lookup, particle buffers, global unit initialization/output, bounded photochemistry, collisions, Maxwellian sampling, internal energy, neutral movers, sphere event, populated 3-D cells, and the host species-global weight/time API |
+| `CORE-PIC-NATIVE-001` | 43 | Baseline packed/fixed layout, generated configuration, species/global units, bounded physics, and species-global weight/time |
+| `CORE-PIC-SPLIT-MERGE-001` | 13 | Packed individual-weight layout plus conservative split/merge |
+| `CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001` | 7 | Aligned-16 fixed-weight record layout and lifecycle |
+| `CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001` | 13 | Aligned-16 individual-weight layout plus split/merge |
+| `CORE-PIC-WEIGHT-TIME-LOCAL-001` | 5 | Species-local block weight/time storage and rescaling |
+| `CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001` | 4 | One weight/time slot shared across species |
+| `CORE-MESH-NATIVE-001` | 58 | One-rank 1-D/2-D/3-D AMR topology/adaptation, 3-D interpolation, cut-cell geometry, and NASTRAN I/O |
 
-The component ledger contains 24 components: three are marked `covered`, ten
-are `partial`, and eleven are `planned`. The harness entry remains explicitly
+The component ledger contains 24 components. The harness entry remains explicitly
 `partial`; registered or passing cases are not evidence of complete AMPS
 coverage. T0 remains qualified by its retained 45-case evidence. The bounded
 historical T1 registry is also qualified: smoke passes 51/51, and the final
 98-case normal/reverse/seed-1729 shuffled campaigns each report 93 PASS, five
-explicit provider SKIPs, and no FAIL/ERROR. The live registry adds five T2
-cases; this does not retroactively change the T1 qualification scope.
+explicit provider SKIPs, and no FAIL/ERROR. T2 is qualified for its declared
+one-rank host profile matrix by the 43-case baseline receipt and the 85-case
+six-profile reverse and shuffled campaigns. T3 is qualified for its declared
+one-rank Cartesian scope by corrected-tree normal, reverse, and seed-1729
+shuffled 58-case campaigns. This does not retroactively change an earlier
+stage's scope.
 
 The following limitations must remain visible until their stages close:
 
-- `smoke` selects eight dependency-light suites (51 cases), `nightly` selects
-  all 11 current suites (103 cases), `profile` selects the 36-case exclusive
-  native profile, `extended` selects its 36 cases plus the 11-case interface
-  coverage, and `distributed` selects only the five-case MPI channel/RNG
-  family; the harness must assert these live registry sets;
+- `smoke` selects eight dependency-light suites (51 cases), `nightly` and
+  `--all` select all 17 current suites (210 cases), `profile` selects seven
+  exclusive native owners (143 cases), `extended` selects the baseline,
+  packed-individual, interface, and mesh owners (125 cases), and `distributed`
+  selects only the five-case MPI channel/RNG family; the harness must assert
+  these live registry sets;
 - all current native physics cases are one-rank tests;
 - the current Larsen--Borgnakke RT occurrence test qualifies the implemented
   hard-coded `Zrot=5`, not sensitivity to configured `RotationZnumber`;
@@ -75,8 +88,9 @@ The following limitations must remain visible until their stages close:
   processor, daughter insertion, or statistical-weight bookkeeping;
 - current sphere testing uses a test callback and does not qualify every
   production surface-interaction callback;
-- split/merge, individual particle weights, restart, distributed ownership,
-  ECSIM, gyro motion, and most model libraries remain open.
+- CUDA/device invalid-state diagnostics, semantic reduction of opaque
+  application extension bytes, restart, distributed ownership, ECSIM, gyro
+  motion, and most model libraries remain open.
 
 The authoritative live registry and coverage state remain
 `src/test/manifest.json` and `src/test/component_inventory.json`.  This
@@ -372,98 +386,157 @@ references remain explicitly outside the bounded implemented T1 subset.
 
 ### Stage T2 -- Particle records, weights, time steps, and split/merge
 
-T2 family IDs (the weight/time ID is implemented as a native-suite alias;
-the other two remain proposed):
+Status (2026-11-07): **QUALIFIED FOR THE DECLARED ONE-RANK HOST CONTRACTS**.
+The six executable owners and 85 profile cases are:
 
-- `CORE-PIC-PBUFFER-LAYOUT-001`;
-- `CORE-PIC-WEIGHT-TIME-001`;
-- `CORE-PIC-SPLIT-MERGE-001`.
+| Suite/profile | Cases | Qualified contract |
+|---|---:|---|
+| `CORE-PIC-NATIVE-001` | 43 | Packed fixed-weight production layout and species-global weight/time |
+| `CORE-PIC-SPLIT-MERGE-001` | 13 | Packed individual-weight layout and split/merge |
+| `CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001` | 7 | Aligned-16 fixed layout with anonymous 1/2/4/8/16-byte fields |
+| `CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001` | 13 | Aligned-16 individual layout and split/merge |
+| `CORE-PIC-WEIGHT-TIME-LOCAL-001` | 5 | Species-local block storage and physical-distribution rescaling |
+| `CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001` | 4 | Single-global slots and cross-species aliasing |
 
-Implementation status (2026-11-07): the first bounded weight/time slice is
-registered as five cases selected through the `CORE-PIC-WEIGHT-TIME-001` alias
-of the combined native suite.  The current host profile is species-global for
-both statistical weight and time step, with individual weight correction off.
-It directly tests per-species/block-visible round trips and minimum reduction,
-scaled species-distribution copies, and typed rejection of zero, negative,
-nonfinite, and out-of-range inputs.  Production validation was added at the
-public setters/copy helpers rather than relying on downstream memory access.
+The record tests check typed aligned allocation, offsets and stride, clone,
+free-list reuse with stale-payload clearing, intrusive-list integrity, exact
+capacity, invalid host access, and real buffer exhaustion in an isolated
+nonzero subprocess that must report `The particle buffer is full`. Individual
+weights and every public host weight/time setter reject nonpositive or
+nonfinite values. Split/merge independently checks model count, total physical
+weight, species, weighted position, momentum, translational energy, rotational
+energy, each vibrational mode, boundary/target-unreachable behavior, and list
+integrity. Anonymous extension bytes follow the documented clone/survivor
+policy because their semantics are unavailable to the generic kernel.
 
-Evidence is test-led and retains the failure that found the fixture defect.
-`/tmp/amps-t2-weight-time-initial` passes 5/5 with executable SHA-256
-`46678c6054daad2ff9b7e3a1aabce9792d12139515e02f93bfaa0296210f5ffe`.
-The first full run at `/tmp/amps-t2-all-normal` reports 96 PASS, two FAIL, and
-five SKIP because the test fixture restored AMPS's `-1` uninitialized sentinel
-through a production setter that now correctly rejects nonpositive values.
-After correcting the fixture to restore the raw saved lifecycle state without
-invoking physical-value setter/reducer semantics,
-`/tmp/amps-t2-weight-time-collision-recheck` passes the five new cases plus the
-two affected populated-cell collision cases (7/7), and
-`/tmp/amps-t2-all-qualified-normal` reports 98 PASS, five typed provider SKIPs,
-and zero FAIL/ERROR across the live 103-case registry.  The entire 36-case
-native owner also passes reverse and deterministic seed-1729 shuffled order in
-`/tmp/amps-t2-native-qualified-reverse` and
-`/tmp/amps-t2-native-qualified-shuffle-1729`; all corrected-order executables
-have SHA-256
-`6329674e470d9cadda436aca2d410f1ef5ecad27f4918108d56bd3078a1f4925`.
-This qualifies the first host-profile slice and its native order isolation;
-full-registry reverse/shuffle, alternate
-local/single-global/individual-weight profiles, particle-layout coverage, and
-split/merge remain open. `split_merge_t2.cpp` is not registered and carries no
-qualification evidence.
+The retained qualification commands and receipts are:
 
-Required generated profiles:
+```sh
+python3 src/test/run_tests.py --test CORE-PIC-NATIVE-001 \
+  --output-dir /tmp/amps-t2-native-full-normal
+python3 src/test/run_tests.py --campaign profile --order reverse \
+  --output-dir /tmp/amps-t2-profile-reverse
+python3 src/test/run_tests.py --campaign profile --order shuffle \
+  --shuffle-seed 1729 --output-dir /tmp/amps-t2-profile-shuffle-1729
+```
 
-1. fixed species weight with the standard optional layout;
-2. individual particle weight enabled;
-3. anonymous optional fields with mixed sizes and alignments;
-4. every optional field needed by IDF, reactions, and sampling together.
+The baseline passes 43/43. Both full profile campaigns pass 85/85 across all
+six clean native rebuilds. Focused passing receipts are
+`/tmp/amps-t2-layout-packed-fixed-recheck` (7/7),
+`/tmp/amps-t2-split-merge-packed-recheck` (13/13),
+`/tmp/amps-t2-layout-aligned-fixed-initial` (7/7),
+`/tmp/amps-t2-layout-aligned-individual-recheck` (13/13),
+`/tmp/amps-t2-weight-local-recheck` (5/5), and
+`/tmp/amps-t2-weight-single-global-initial` (4/4).
 
-Required cases:
+Initial failures remain part of the evidence. The packed-fixed build initially
+used `int` test offsets where the checked API requires `long int&`; the packed
+split/merge fixture had an unreachable two-particle split bin and a merge
+velocity above the debugger guard; the aligned-individual oracle incorrectly
+required one particular source tuple to survive; and the local profile omitted
+the target-free exosphere block needed to generate internal-boundary base
+types. The corrections changed types or independent fixtures/profile input,
+not the asserted production invariants. Earlier species-global sentinel
+restoration evidence remains documented in `src/test/STATUS.md`.
 
-- clone and initialize every enabled field, verify offsets/alignment, free-list
-  reuse, stale-state clearing, list insertion/removal, and empty/full buffer;
-- verify buffer exhaustion and invalid record access in a subprocess;
-- global/species/local weights and time steps, round trips, rescaling
-  invariance, and zero/negative/nonfinite rejection;
-- port all fixed- and variable-weight cases from
-  `test/srcUnitTests/split_merge.cpp`;
-- after split/merge, assert particle count, total physical weight, species,
-  weighted position, momentum, translational/internal energy, optional-data
-  policy, and full list integrity;
-- cover empty, one-particle, two-particle, target-unreachable, and unrelated
-  species cases.
-
-Acceptance gate: all supported record layouts compile and pass; physical
-moments are invariant under an allowed split/merge cycle; fatal paths cannot
-terminate the global runner.
+Residual boundaries are explicit: device-side/CUDA invalid-state diagnostics,
+semantic averaging of opaque application fields, unequal-weight collision
+physics, injection/sampling normalization, restart, and distributed ownership
+are not qualified by T2. T3 qualification below is independent evidence and
+does not broaden this T2 contract.
 
 ### Stage T3 -- One-rank AMR topology, geometry, and interpolation
 
-Proposed suites:
+Status (2026-11-07): **QUALIFIED FOR THE DECLARED ONE-RANK CARTESIAN
+CONTRACTS**. `CORE-MESH-NATIVE-001` is the single executable owner; the
+roadmap family IDs `CORE-MESH-TOPOLOGY-001`, `CORE-MESH-ADAPTATION-001`,
+`CORE-MESH-CUTCELL-001`, and `CORE-PIC-INTERPOLATION-001` remain selection
+aliases rather than duplicate build owners. Its 58 cases comprise 14 topology
+and adaptation cases in each of `DIM=1`, `DIM=2`, and `DIM=3`, plus eight 3-D
+production-interpolation cases and eight 3-D cut-cell/NASTRAN cases.
 
-- `CORE-MESH-TOPOLOGY-001`;
-- `CORE-MESH-ADAPTATION-001`;
-- `CORE-MESH-CUTCELL-001`;
-- `CORE-PIC-INTERPOLATION-001`;
-- adapter for `test/srcInterpolateAMRTest`.
+The topology and adaptation fixtures use manufactured dyadic trees and
+independent integer, volume, and data-transfer oracles. They check
+exact-boundary search, parent/child relations, same-level and 2:1
+face/edge/corner neighbors, canonical checksums, refine/coarsen callbacks,
+associated-data conservation, modification counters, unique leaf load lists,
+maximum-level rejection, and repeated split/coarsen cycles. Lower-dimensional
+compilation is real evidence: shared AMR/PIC sources were hardened to avoid
+3-D-only loop bounds, neighbor access, node-ID types, surface declarations,
+mover locals, and field-line scratch sizes in the 1-D and 2-D profiles. The
+post-campaign audit additionally bounded global-domain initialization and
+`buildMesh` reads/writes to active dimensions while retaining zeroed 3-vector
+diagnostics. Each dimensional uniform case now runs production `buildMesh` on
+a private topology-only mesh and checks the mandatory root split, generation,
+maximum level, and unique `2^D` leaf list.
 
-Required cases:
+The interpolation cases execute production row/stencil code on uniform and
+2:1 AMR meshes, including all 256 legacy octant-refinement masks. They require
+unit-sum, nonnegative leaf support, affine-coordinate reproduction, duplicate
+row merging, insertion-order invariance, cache invalidation after adjacent
+refinement, and immutable boundary coordinates. The fixes select the `<=`
+level path when a coarse cell is surrounded by fine support, inspect all
+face/edge/corner neighbor slots before choosing the coarsest candidate, and
+correct the edge-1/edge-3 geometric predicates. These are production selection
+repairs, not relaxed test tolerances.
 
-- manufactured 1-D, 2-D, and 3-D uniform/nonuniform trees;
-- exact parent/child relations and face/edge/corner neighbors;
-- point search at interiors, faces, edges, corners and domain limits;
-- refine/coarsen cycles, associated-data transfer, total-volume conservation,
-  modification counters, load-list uniqueness, and maximum-level failure;
-- analytic plane and sphere cut-cell volume/area fractions;
-- surface normals, orientation, triangle intersections, near-tangent and
-  degenerate geometry, and NASTRAN read/write fixtures;
-- interpolation partition of unity, nonnegative weights where required,
-  exact constant/affine reproduction, refinement-interface behavior,
-  duplicate-cell merging and permutation invariance.
+Cut-cell checks use independent triangle, ray, prism, and sphere equations.
+Production now distinguishes contact with the open block interior from mere
+boundary contact, preventing an aligned interface from being counted as a
+volume cut. Recursive integration depth follows the interface-dominated
+`O(A*h)` error bound rather than treating the error as one isolated subcell
+volume. Sphere recursion preserves unsplit coordinate bounds, ray/edge metrics
+are finite and translation invariant, and sparse out-of-order NASTRAN IDs are
+resolved as keys before deterministic read/write/read comparison.
 
-Acceptance gate: deterministic mesh checksums and conserved quantities agree
-after refine/coarsen cycles; geometric error converges at its documented order;
-no assertion relies on MPI rank zero or application-specific mesh code.
+The final corrected-tree qualification commands and receipts are:
+
+```sh
+python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order normal \
+  --output-dir /tmp/amps-t3-qualified-normal
+python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order reverse \
+  --output-dir /tmp/amps-t3-qualified-reverse
+python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order shuffle \
+  --shuffle-seed 1729 --output-dir /tmp/amps-t3-qualified-shuffle-1729
+```
+
+The earlier non-final paths `/tmp/amps-t3-native-normal`,
+`/tmp/amps-t3-native-reverse`, and `/tmp/amps-t3-native-shuffle-1729` passed
+58/58 before an independent audit applied an additional lower-dimensional
+bounds correction. They are retained bring-up evidence, not the final
+qualification authority. The three corrected-tree commands above each pass
+58/58. Their retained executable SHA-256 values are identical across normal,
+reverse, and shuffled order: 1-D
+`54e79ddf1c34e2910a059a23e38232bea6322ab7a1ee6d31e35204acd8dbf4e0`, 2-D
+`8d5311b99bfba3812599336b2cdbb4fbcd53ab16a3e625122b6db44a30b4aad9`, and
+3-D `96f13a4be39ed221b7a252bb8313db3371ed49b2fd464ea1b5d09a545bf42e34`.
+Each command performs the required clean
+`Config.pl`/top-level build separately for `test/core-mesh-1d`,
+`test/core-mesh-2d`, and `test/core-mesh-3d`, then launches every selected case
+as a fresh one-rank MPI process. `/tmp/amps-t3-final-fixes-fourth` additionally
+passes the four focused interpolation/cut-cell regressions that closed the
+preceding 3-D failures.
+
+The final-tree cross-stage regression
+
+```sh
+python3 src/test/run_tests.py --campaign profile --order normal \
+  --output-dir /tmp/amps-t2-t3-profile-qualified
+```
+
+passes 143/143 cases in all seven configured suites with no FAIL, SKIP, or
+ERROR. It revalidates the six T2 owners (85 cases) together with the complete
+T3 owner (58 cases); it does not expand either stage's declared scope.
+
+The bounded T3 result does not qualify MPI owner/ghost exchange, restart,
+non-Cartesian coordinates, arbitrary application-associated data, deep
+multi-level imbalance, open/nonmanifold/self-intersecting or large production
+surfaces, or multi-rank surface ownership. The legacy `OutputLayerNodeMap`
+path remains hard-coded for 3-D and is neither exercised nor qualified in the
+1-D/2-D profiles. The three input decks are ignored by
+the repository's existing `*.input` rule; Codex did not alter Git control files,
+so a human preparing a commit must explicitly force-add
+`input/test/core-mesh-{1d,2d,3d}.input`.
 
 ### Stage T4 -- Movers, boundaries, injection, and sampling
 

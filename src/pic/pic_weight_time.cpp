@@ -474,6 +474,31 @@ void PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(int specTa
   GlobalParticleWeight[specTarget]=ScaleWeightTimeValue(
       GlobalParticleWeight[specSource],ProportionaltyCoefficient,
       "copied particle weight");
+#elif _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
+  // A local distribution is owned by leaf blocks.  Apply the same positive
+  // dimensionless scale at every allocated leaf; missing blocks carry no
+  // distribution and are intentionally skipped.  The public block setters
+  // retain their finite/positive validation, so a corrupt source is rejected
+  // rather than propagated through the AMR tree.
+  class cCopyParticleWeightDistribution {
+   public:
+    void Copy(int target, int source, double coefficient,
+              cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+      if (node == NULL) return;
+      if (node->block != NULL) {
+        const double source_weight =
+            node->block->GetLocalParticleWeight(source);
+        node->block->SetLocalParticleWeight(
+            ScaleWeightTimeValue(source_weight, coefficient,
+                                 "copied local particle weight"),
+            target);
+      }
+      for (int child = 0; child < (1 << DIM); ++child)
+        Copy(target, source, coefficient, node->downNode[child]);
+    }
+  } copier;
+  copier.Copy(specTarget, specSource, ProportionaltyCoefficient,
+              PIC::Mesh::mesh == NULL ? NULL : PIC::Mesh::mesh->rootTree);
 #else
   exit(__LINE__,__FILE__,"Error: the option is not recognized");
 #endif

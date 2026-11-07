@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "T0 inventory of AMPS machine, Config.pl, generated-configuration, compile-profile, and runtime-mode contracts. Status describes direct contract evidence, not successful compilation alone.",
+  "description": "Staged T0-T3 inventory of AMPS machine, Config.pl, generated-configuration, compile-profile, and runtime-mode contracts. Status describes direct contract evidence, not successful compilation alone.",
   "statuses": ["tested", "partial", "planned", "exempt"],
   "contracts": [
     {
@@ -32,15 +32,15 @@
     {
       "mode_id": "config.application.core-unit-tests-v1",
       "components": ["src/pic"],
-      "authority": ["Config.pl", "ampsConfig.pl", "input/test/core-unit-tests.input"],
+      "authority": ["Config.pl", "ampsConfig.pl", "input/test/core-unit-tests.input", "input/test/core-unit-tests-individual-weight.input", "input/test/core-unit-tests-local.input", "input/test/core-unit-tests-single-global.input"],
       "profile": "test/core-unit-tests",
       "selectors": ["Config.pl -application=test/core-unit-tests", "Config.pl -spice-path=nospice"],
       "generated_outputs": [".amps.conf", "Makefile.conf", "build/", "amps"],
       "status": "partial",
-      "suite_ids": ["CORE-PIC-NATIVE-001"],
+      "suite_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001"],
       "case_ids": ["CONFIG-GENERATOR-001", "PIC-PBUFFER-INIT-001", "PHYS-3D-COLLISION-RATE-001", "PHYS-MOVER-SURFACE-001"],
-      "reason": "The registered native adapter selects the application only through Config.pl, evaluates the final effective values of this profile's mutually exclusive time-step, weight, correction, photolysis, collision, and IDF macros, and retains generated-file identities; broader generator behavior remains open.",
-      "gaps": ["invalid application/option diagnostics", "full generated macro/value schema", "alternative mutually exclusive profiles", "schema/backward compatibility"]
+      "reason": "The registered native adapter selects each profile only through Config.pl, checks the effective time-step, weight, correction, layout, photolysis, collision, and IDF macros, and retains generated-file identities; broader generator behavior remains open.",
+      "gaps": ["invalid application/option diagnostics", "full generated macro/value schema", "schema/backward compatibility"]
     },
     {
       "mode_id": "compile.species.neutral-h2o-network-v1",
@@ -114,24 +114,76 @@
       "profile": "test/core-unit-tests",
       "selectors": ["TimeStepMode=SpeciesGlobalTimeStep", "ParticleWeightMode=SpeciesGlobalParticleWeight", "ParticleWeightCorrectionMode=off"],
       "generated_outputs": ["weight/time-step macros and particle layout"],
-      "status": "partial",
+      "status": "tested",
       "suite_ids": ["CORE-PIC-NATIVE-001"],
       "case_ids": ["PIC-PBUFFER-INIT-001", "PHYS-3D-COLLISION-RATE-001", "PIC-WEIGHT-MODE-ROUNDTRIP-001", "PIC-TIMESTEP-MODE-ROUNDTRIP-001", "PIC-WEIGHT-TIMESTEP-SPECIES-COPY-001", "PIC-WEIGHT-TIMESTEP-INVALID-VALUE-001", "PIC-WEIGHT-TIMESTEP-INVALID-SPECIES-001"],
-      "reason": "The profile directly exercises species-global weight/time-step round trips, minimum reduction, scaled cross-species copies, and host-side typed rejection of invalid values and indices; local values also drive the collision-rate oracle.",
-      "gaps": ["local and single-global profiles", "individual weight correction", "unequal-weight/time-step physics and rescaling", "CUDA device-side invalid-state diagnostics", "split/merge", "injection/sampling normalization"]
+      "reason": "The packed fixed profile directly exercises species-global weight/time-step round trips, minimum reduction, scaled cross-species copies, and host-side typed rejection of invalid values and indices.",
+      "gaps": []
     },
     {
       "mode_id": "compile.weights.individual-correction-v1",
       "components": ["src/pic"],
-      "authority": ["Config.pl", "ampsConfig.pl", "test/srcUnitTests/split_merge.cpp"],
-      "profile": "planned individual-weight core profile",
-      "selectors": ["ParticleWeightCorrectionMode=on"],
+      "authority": ["input/test/core-unit-tests-individual-weight.input", "test/srcCoreUnitTests/particle_layout_t2.cpp", "test/srcCoreUnitTests/split_merge_t2.cpp"],
+      "profile": "packed and aligned-16 individual-weight profiles",
+      "selectors": ["ParticleWeightCorrectionMode=on", "packed or 16-byte-aligned records"],
       "generated_outputs": ["individual-weight particle layout and split/merge hooks"],
-      "status": "planned",
-      "suite_ids": [],
-      "case_ids": [],
-      "reason": "The active profile compiles correction mode off; legacy split/merge cases require a separate generated profile.",
-      "gaps": ["profile input", "stable cases", "weight/momentum/energy/species/list oracles"]
+      "status": "tested",
+      "suite_ids": ["CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001"],
+      "case_ids": ["PIC-WEIGHT-INDIVIDUAL-INVALID-001", "PIC-SPLIT-MERGE-EQUAL-WEIGHT-001", "PIC-SPLIT-MERGE-VARIABLE-WEIGHT-001", "PIC-SPLIT-MERGE-BOUNDARY-001", "PIC-WEIGHT-ALIGNED-INDIVIDUAL-INVALID-001", "PIC-SPLIT-MERGE-ALIGNED-EQUAL-WEIGHT-001", "PIC-SPLIT-MERGE-ALIGNED-VARIABLE-WEIGHT-001", "PIC-SPLIT-MERGE-ALIGNED-BOUNDARY-001"],
+      "reason": "Packed and aligned profiles directly validate finite-positive individual weights and split/merge conservation of count, physical weight, species, position, momentum, translational and configured internal energies.",
+      "gaps": []
+    },
+    {
+      "mode_id": "compile.particle-layout.aligned16-fixed-v1",
+      "components": ["src/pic"],
+      "authority": ["input/test/core-unit-tests.input", "test/srcCoreUnitTests/particle_layout_t2.cpp"],
+      "profile": "aligned-16 fixed-weight profile",
+      "selectors": ["ParticleWeightCorrectionMode=off", "16-byte record alignment", "anonymous 1/2/4/8/16-byte fields"],
+      "generated_outputs": ["checked aligned particle offsets and stride"],
+      "status": "tested",
+      "suite_ids": ["CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001"],
+      "case_ids": ["PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-OFFSETS-001", "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-CLONE-001", "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-REUSE-001", "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-LIST-001", "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-CAPACITY-001", "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-INVALID-001", "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-EXHAUSTION-001"],
+      "reason": "Independent offset/stride oracles and lifecycle/fatal-path cases qualify the mixed-alignment fixed-weight record profile.",
+      "gaps": []
+    },
+    {
+      "mode_id": "compile.weights.species-local-v1",
+      "components": ["src/pic"],
+      "authority": ["input/test/core-unit-tests-local.input", "src/pic/pic_weight_time.cpp"],
+      "profile": "species-local block-associated weight/time",
+      "selectors": ["TimeStepMode=SpeciesLocalTimeStep", "ParticleWeightMode=SpeciesLocalParticleWeight", "ParticleWeightCorrectionMode=off"],
+      "generated_outputs": ["local block-associated weight/time offsets"],
+      "status": "tested",
+      "suite_ids": ["CORE-PIC-WEIGHT-TIME-LOCAL-001"],
+      "case_ids": ["PIC-WEIGHT-LOCAL-ROUNDTRIP-001", "PIC-TIMESTEP-LOCAL-ROUNDTRIP-001", "PIC-WEIGHT-TIMESTEP-LOCAL-RESCALE-001", "PIC-WEIGHT-TIMESTEP-LOCAL-INVALID-VALUE-001", "PIC-WEIGHT-TIMESTEP-LOCAL-INVALID-SPECIES-001"],
+      "reason": "Independent block storage, round trips, physical-distribution rescaling, and invalid host values/species are directly tested.",
+      "gaps": []
+    },
+    {
+      "mode_id": "compile.weights.single-global-v1",
+      "components": ["src/pic"],
+      "authority": ["input/test/core-unit-tests-single-global.input", "src/pic/pic_weight_time.cpp"],
+      "profile": "single global weight/time",
+      "selectors": ["TimeStepMode=SingleGlobalTimeStep", "ParticleWeightMode=SingleGlobalParticleWeight", "ParticleWeightCorrectionMode=off"],
+      "generated_outputs": ["single shared global weight/time slots"],
+      "status": "tested",
+      "suite_ids": ["CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001"],
+      "case_ids": ["PIC-WEIGHT-SINGLE-GLOBAL-ROUNDTRIP-001", "PIC-TIMESTEP-SINGLE-GLOBAL-ROUNDTRIP-001", "PIC-WEIGHT-TIMESTEP-SINGLE-GLOBAL-INVALID-VALUE-001", "PIC-WEIGHT-TIMESTEP-SINGLE-GLOBAL-INVALID-SPECIES-001"],
+      "reason": "Round trips, cross-species slot aliasing, and invalid host values/species are directly tested.",
+      "gaps": []
+    },
+    {
+      "mode_id": "config.application.core-mesh-dimensional-v1",
+      "components": ["src/meshAMR", "src/pic"],
+      "authority": ["Config.pl", "ampsConfig.pl", "input/test/core-mesh-1d.input", "input/test/core-mesh-2d.input", "input/test/core-mesh-3d.input"],
+      "profile": "test/core-mesh-1d, test/core-mesh-2d, and test/core-mesh-3d",
+      "selectors": ["Config.pl -application=test/core-mesh-{1d,2d,3d}", "Config.pl -spice-path=nospice", "DIM=1,2,3"],
+      "generated_outputs": [".amps.conf", "Makefile.conf", "build/pic/picGlobal.dfn", "amps", "retained per-profile executable and configuration hashes"],
+      "status": "partial",
+      "suite_ids": ["CORE-MESH-NATIVE-001"],
+      "case_ids": ["CORE-MESH-1D-TOPOLOGY-UNIFORM-001", "CORE-MESH-1D-ADAPT-DATA-001", "CORE-MESH-2D-TOPOLOGY-UNIFORM-001", "CORE-MESH-2D-ADAPT-DATA-001", "CORE-MESH-3D-TOPOLOGY-UNIFORM-001", "CORE-MESH-3D-ADAPT-DATA-001", "CORE-MESH-3D-INTERPOLATION-AMR-001", "MESH-CUTCELL-NASTRAN-ROUNDTRIP-001"],
+      "reason": "The T3 adapter performs a clean Config.pl/native build for each dimension, checks the selected application and effective generated DIM, retains executable/configuration identities, and dispatches only cases owned by that profile.",
+      "gaps": ["invalid DIM diagnostics", "non-Cartesian coordinate profiles", "distributed mesh configuration"]
     },
     {
       "mode_id": "compile.parallel.mpi-one-rank-v1",
@@ -141,9 +193,9 @@
       "selectors": ["mpiexec -n 1", "manifest mpi_ranks=1"],
       "generated_outputs": ["one-rank executable transcript"],
       "status": "partial",
-      "suite_ids": ["CORE-PIC-NATIVE-001"],
-      "case_ids": ["PHYS-MOVER-SIMPLE-001", "PHYS-3D-COLLISION-RATE-001"],
-      "reason": "Process-local native behavior is fixed at one rank by contract.",
+      "suite_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001", "CORE-MESH-NATIVE-001"],
+      "case_ids": ["PHYS-MOVER-SIMPLE-001", "PHYS-3D-COLLISION-RATE-001", "CORE-MESH-1D-TOPOLOGY-UNIFORM-001", "CORE-MESH-2D-TOPOLOGY-UNIFORM-001", "CORE-MESH-3D-TOPOLOGY-UNIFORM-001"],
+      "reason": "All six T2 native profiles and all three T3 dimensional mesh profiles are process-local and fixed at one rank by contract.",
       "gaps": ["two/four-rank owners and ghosts", "particle migration", "rank invariance"]
     },
     {

@@ -226,12 +226,21 @@
     },
     {
       "id": "CORE-PIC-NATIVE-001",
-      "aliases": ["CORE-PIC-PARTICLE-BUFFER-001", "CORE-PIC-PHYSICS-001", "CORE-SPECIES-001", "CORE-PIC-WEIGHT-TIME-001"],
+      "aliases": ["CORE-PIC-PARTICLE-BUFFER-001", "CORE-PIC-PBUFFER-LAYOUT-001", "CORE-PIC-PHYSICS-001", "CORE-SPECIES-001", "CORE-PIC-WEIGHT-TIME-001"],
       "alias_cases": {
         "CORE-PIC-PARTICLE-BUFFER-001": [
           "PIC-PBUFFER-INIT-001",
           "PIC-PBUFFER-STATE-001",
           "PIC-PBUFFER-LIST-001"
+        ],
+        "CORE-PIC-PBUFFER-LAYOUT-001": [
+          "PIC-PBUFFER-LAYOUT-PACKED-FIXED-OFFSETS-001",
+          "PIC-PBUFFER-LAYOUT-PACKED-FIXED-CLONE-001",
+          "PIC-PBUFFER-LAYOUT-PACKED-FIXED-REUSE-001",
+          "PIC-PBUFFER-LAYOUT-PACKED-FIXED-LIST-001",
+          "PIC-PBUFFER-LAYOUT-PACKED-FIXED-CAPACITY-001",
+          "PIC-PBUFFER-LAYOUT-PACKED-FIXED-INVALID-001",
+          "PIC-PBUFFER-LAYOUT-PACKED-FIXED-EXHAUSTION-001"
         ],
         "CORE-PIC-PHYSICS-001": [
           "PHYS-PHOTOCHEM-RATES-001",
@@ -280,6 +289,7 @@
           "Config.pl",
           "input/test/core-unit-tests.input",
           "test/srcCoreUnitTests/main.cpp",
+          "test/srcCoreUnitTests/particle_layout_t2.cpp",
           "test/srcCoreUnitTests/physics_photochemistry.cpp",
           "test/srcCoreUnitTests/physics_collisions.cpp",
           "test/srcCoreUnitTests/physics_distribution.cpp",
@@ -287,7 +297,8 @@
           "test/srcCoreUnitTests/physics_movers.cpp",
           "test/srcCoreUnitTests/species.cpp",
           "test/srcCoreUnitTests/units.cpp",
-          "test/srcCoreUnitTests/weight_time_t2.cpp"
+          "test/srcCoreUnitTests/weight_time_t2.cpp",
+          "test/srcCoreUnitTests/split_merge_t2.cpp"
         ],
         "capabilities": []
       },
@@ -298,6 +309,13 @@
         "PIC-PBUFFER-INIT-001",
         "PIC-PBUFFER-STATE-001",
         "PIC-PBUFFER-LIST-001",
+        "PIC-PBUFFER-LAYOUT-PACKED-FIXED-OFFSETS-001",
+        "PIC-PBUFFER-LAYOUT-PACKED-FIXED-CLONE-001",
+        "PIC-PBUFFER-LAYOUT-PACKED-FIXED-REUSE-001",
+        "PIC-PBUFFER-LAYOUT-PACKED-FIXED-LIST-001",
+        "PIC-PBUFFER-LAYOUT-PACKED-FIXED-CAPACITY-001",
+        "PIC-PBUFFER-LAYOUT-PACKED-FIXED-INVALID-001",
+        "PIC-PBUFFER-LAYOUT-PACKED-FIXED-EXHAUSTION-001",
         "PHYS-PHOTOCHEM-RATES-001",
         "PHYS-PHOTOCHEM-DECAY-001",
         "PHYS-PHOTOCHEM-KINEMATICS-001",
@@ -330,6 +348,323 @@
         "PIC-WEIGHT-TIMESTEP-INVALID-SPECIES-001"
       ],
       "timeout_seconds": 1800,
+      "mpi_ranks": 1,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-PIC-SPLIT-MERGE-001",
+      "component": "src/pic",
+      "level": "module",
+      "tiers": ["nightly", "profile", "extended"],
+      "runner": "tests/pic/native_core/run_test.py",
+      "description": "Packed individual-weight particle layout and conservative Cartesian split/merge physical moments",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": [
+          "Config.pl",
+          "input/test/core-unit-tests-individual-weight.input",
+          "test/srcCoreUnitTests/main.cpp",
+          "test/srcCoreUnitTests/particle_layout_t2.cpp",
+          "test/srcCoreUnitTests/split_merge_t2.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-OFFSETS-001",
+        "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-CLONE-001",
+        "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-REUSE-001",
+        "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-LIST-001",
+        "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-CAPACITY-001",
+        "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-INVALID-001",
+        "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-EXHAUSTION-001",
+        "PIC-SPLIT-MERGE-EQUAL-WEIGHT-001",
+        "PIC-SPLIT-MERGE-VARIABLE-WEIGHT-001",
+        "PIC-SPLIT-MERGE-BOUNDARY-001",
+        "PIC-SPLIT-EXTENDED-STATE-001",
+        "PIC-MERGE-EXTENDED-STATE-001",
+        "PIC-WEIGHT-INDIVIDUAL-INVALID-001"
+      ],
+      "timeout_seconds": 1800,
+      "mpi_ranks": 1,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001",
+      "component": "src/pic",
+      "level": "module",
+      "tiers": ["nightly", "profile"],
+      "runner": "tests/pic/native_core/run_test.py",
+      "description": "Aligned-16 fixed-weight particle-record offsets, clone/reuse policy, list integrity, and isolated fatal paths",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": [
+          "Config.pl",
+          "input/test/core-unit-tests.input",
+          "test/srcCoreUnitTests/main.cpp",
+          "test/srcCoreUnitTests/particle_layout_t2.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-OFFSETS-001",
+        "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-CLONE-001",
+        "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-REUSE-001",
+        "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-LIST-001",
+        "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-CAPACITY-001",
+        "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-INVALID-001",
+        "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-EXHAUSTION-001"
+      ],
+      "timeout_seconds": 1800,
+      "mpi_ranks": 1,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001",
+      "component": "src/pic",
+      "level": "module",
+      "tiers": ["nightly", "profile"],
+      "runner": "tests/pic/native_core/run_test.py",
+      "description": "Aligned-16 individual-weight particle layout plus independent split/merge regression profile",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": [
+          "Config.pl",
+          "input/test/core-unit-tests-individual-weight.input",
+          "test/srcCoreUnitTests/main.cpp",
+          "test/srcCoreUnitTests/particle_layout_t2.cpp",
+          "test/srcCoreUnitTests/split_merge_t2.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-OFFSETS-001",
+        "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-CLONE-001",
+        "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-REUSE-001",
+        "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-LIST-001",
+        "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-CAPACITY-001",
+        "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-INVALID-001",
+        "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-EXHAUSTION-001",
+        "PIC-SPLIT-MERGE-ALIGNED-EQUAL-WEIGHT-001",
+        "PIC-SPLIT-MERGE-ALIGNED-VARIABLE-WEIGHT-001",
+        "PIC-SPLIT-MERGE-ALIGNED-BOUNDARY-001",
+        "PIC-SPLIT-ALIGNED-EXTENDED-STATE-001",
+        "PIC-MERGE-ALIGNED-EXTENDED-STATE-001",
+        "PIC-WEIGHT-ALIGNED-INDIVIDUAL-INVALID-001"
+      ],
+      "timeout_seconds": 1800,
+      "mpi_ranks": 1,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-PIC-WEIGHT-TIME-LOCAL-001",
+      "component": "src/pic",
+      "level": "module",
+      "tiers": ["nightly", "profile"],
+      "runner": "tests/pic/native_core/run_test.py",
+      "description": "Generated species-local particle-weight and time-step profile using independent block-associated storage",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": [
+          "Config.pl",
+          "input/test/core-unit-tests-local.input",
+          "test/srcCoreUnitTests/main.cpp",
+          "test/srcCoreUnitTests/weight_time_t2.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "PIC-WEIGHT-LOCAL-ROUNDTRIP-001",
+        "PIC-TIMESTEP-LOCAL-ROUNDTRIP-001",
+        "PIC-WEIGHT-TIMESTEP-LOCAL-RESCALE-001",
+        "PIC-WEIGHT-TIMESTEP-LOCAL-INVALID-VALUE-001",
+        "PIC-WEIGHT-TIMESTEP-LOCAL-INVALID-SPECIES-001"
+      ],
+      "timeout_seconds": 1800,
+      "mpi_ranks": 1,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001",
+      "component": "src/pic",
+      "level": "module",
+      "tiers": ["nightly", "profile"],
+      "runner": "tests/pic/native_core/run_test.py",
+      "description": "Generated single-global particle-weight and time-step profile proving cross-species slot aliasing",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": [
+          "Config.pl",
+          "input/test/core-unit-tests-single-global.input",
+          "test/srcCoreUnitTests/main.cpp",
+          "test/srcCoreUnitTests/weight_time_t2.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "PIC-WEIGHT-SINGLE-GLOBAL-ROUNDTRIP-001",
+        "PIC-TIMESTEP-SINGLE-GLOBAL-ROUNDTRIP-001",
+        "PIC-WEIGHT-TIMESTEP-SINGLE-GLOBAL-INVALID-VALUE-001",
+        "PIC-WEIGHT-TIMESTEP-SINGLE-GLOBAL-INVALID-SPECIES-001"
+      ],
+      "timeout_seconds": 1800,
+      "mpi_ranks": 1,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-MESH-NATIVE-001",
+      "aliases": ["CORE-MESH-TOPOLOGY-001", "CORE-MESH-ADAPTATION-001", "CORE-MESH-CUTCELL-001", "CORE-PIC-INTERPOLATION-001"],
+      "alias_cases": {
+        "CORE-MESH-TOPOLOGY-001": [
+          "CORE-MESH-1D-TOPOLOGY-UNIFORM-001",
+          "CORE-MESH-1D-TOPOLOGY-NONUNIFORM-001",
+          "CORE-MESH-1D-SEARCH-001",
+          "CORE-MESH-1D-PARENT-CHILD-001",
+          "CORE-MESH-1D-NEIGHBORS-001",
+          "CORE-MESH-1D-CHECKSUM-001",
+          "CORE-MESH-2D-TOPOLOGY-UNIFORM-001",
+          "CORE-MESH-2D-TOPOLOGY-NONUNIFORM-001",
+          "CORE-MESH-2D-SEARCH-001",
+          "CORE-MESH-2D-PARENT-CHILD-001",
+          "CORE-MESH-2D-NEIGHBORS-001",
+          "CORE-MESH-2D-CHECKSUM-001",
+          "CORE-MESH-3D-TOPOLOGY-UNIFORM-001",
+          "CORE-MESH-3D-TOPOLOGY-NONUNIFORM-001",
+          "CORE-MESH-3D-SEARCH-001",
+          "CORE-MESH-3D-PARENT-CHILD-001",
+          "CORE-MESH-3D-NEIGHBORS-001",
+          "CORE-MESH-3D-CHECKSUM-001"
+        ],
+        "CORE-MESH-ADAPTATION-001": [
+          "CORE-MESH-1D-ADAPT-REFINE-001",
+          "CORE-MESH-1D-ADAPT-COARSEN-001",
+          "CORE-MESH-1D-ADAPT-DATA-001",
+          "CORE-MESH-1D-ADAPT-VOLUME-001",
+          "CORE-MESH-1D-ADAPT-COUNTERS-001",
+          "CORE-MESH-1D-ADAPT-LOAD-001",
+          "CORE-MESH-1D-ADAPT-MAX-LEVEL-001",
+          "CORE-MESH-1D-ADAPT-CYCLE-001",
+          "CORE-MESH-2D-ADAPT-REFINE-001",
+          "CORE-MESH-2D-ADAPT-COARSEN-001",
+          "CORE-MESH-2D-ADAPT-DATA-001",
+          "CORE-MESH-2D-ADAPT-VOLUME-001",
+          "CORE-MESH-2D-ADAPT-COUNTERS-001",
+          "CORE-MESH-2D-ADAPT-LOAD-001",
+          "CORE-MESH-2D-ADAPT-MAX-LEVEL-001",
+          "CORE-MESH-2D-ADAPT-CYCLE-001",
+          "CORE-MESH-3D-ADAPT-REFINE-001",
+          "CORE-MESH-3D-ADAPT-COARSEN-001",
+          "CORE-MESH-3D-ADAPT-DATA-001",
+          "CORE-MESH-3D-ADAPT-VOLUME-001",
+          "CORE-MESH-3D-ADAPT-COUNTERS-001",
+          "CORE-MESH-3D-ADAPT-LOAD-001",
+          "CORE-MESH-3D-ADAPT-MAX-LEVEL-001",
+          "CORE-MESH-3D-ADAPT-CYCLE-001"
+        ],
+        "CORE-MESH-CUTCELL-001": [
+          "MESH-CUTCELL-TRIANGLE-METRICS-001",
+          "MESH-CUTCELL-RAY-001",
+          "MESH-CUTCELL-TANGENT-DEGENERATE-001",
+          "MESH-CUTCELL-CLOSEST-001",
+          "MESH-CUTCELL-PLANE-VOLUME-001",
+          "MESH-CUTCELL-SPHERE-VOLUME-001",
+          "MESH-CUTCELL-SPHERE-AREA-CONVERGENCE-001",
+          "MESH-CUTCELL-NASTRAN-ROUNDTRIP-001"
+        ],
+        "CORE-PIC-INTERPOLATION-001": [
+          "CORE-MESH-3D-INTERPOLATION-UNIFORM-001",
+          "CORE-MESH-3D-INTERPOLATION-BOUNDARY-001",
+          "CORE-MESH-3D-INTERPOLATION-AMR-001",
+          "CORE-MESH-3D-INTERPOLATION-LEGACY-MASK-001",
+          "CORE-MESH-3D-INTERPOLATION-DUPLICATE-001",
+          "CORE-MESH-3D-INTERPOLATION-PERMUTATION-001",
+          "CORE-MESH-3D-INTERPOLATION-CACHE-001",
+          "CORE-MESH-3D-INTERPOLATION-INPUT-IMMUTABLE-001"
+        ]
+      },
+      "component": "src/meshAMR",
+      "level": "module",
+      "tiers": ["nightly", "profile", "extended"],
+      "runner": "tests/mesh/native/run_test.py",
+      "description": "Three clean one-rank DIM profiles covering AMR topology/adaptation/data transfer, cut-cell geometry, NASTRAN I/O, and production PIC interpolation",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": [
+          "Config.pl",
+          "input/test/core-mesh-1d.input",
+          "input/test/core-mesh-2d.input",
+          "input/test/core-mesh-3d.input",
+          "test/srcCoreMeshTests/main.cpp",
+          "test/srcCoreMeshTests/mesh_test_fixture.cpp",
+          "test/srcCoreMeshTests/mesh_topology.cpp",
+          "test/srcCoreMeshTests/mesh_adaptation.cpp",
+          "test/srcCoreMeshTests/mesh_coarsen_data.cpp",
+          "test/srcCoreMeshTests/pic_interpolation.cpp",
+          "test/srcCoreMeshTests/mesh_cutcell.cpp",
+          "test/srcCoreMeshTests/fixtures/sparse_out_of_order_tetrahedron.bdf"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "CORE-MESH-1D-TOPOLOGY-UNIFORM-001",
+        "CORE-MESH-1D-TOPOLOGY-NONUNIFORM-001",
+        "CORE-MESH-1D-SEARCH-001",
+        "CORE-MESH-1D-PARENT-CHILD-001",
+        "CORE-MESH-1D-NEIGHBORS-001",
+        "CORE-MESH-1D-CHECKSUM-001",
+        "CORE-MESH-1D-ADAPT-REFINE-001",
+        "CORE-MESH-1D-ADAPT-COARSEN-001",
+        "CORE-MESH-1D-ADAPT-DATA-001",
+        "CORE-MESH-1D-ADAPT-VOLUME-001",
+        "CORE-MESH-1D-ADAPT-COUNTERS-001",
+        "CORE-MESH-1D-ADAPT-LOAD-001",
+        "CORE-MESH-1D-ADAPT-MAX-LEVEL-001",
+        "CORE-MESH-1D-ADAPT-CYCLE-001",
+        "CORE-MESH-2D-TOPOLOGY-UNIFORM-001",
+        "CORE-MESH-2D-TOPOLOGY-NONUNIFORM-001",
+        "CORE-MESH-2D-SEARCH-001",
+        "CORE-MESH-2D-PARENT-CHILD-001",
+        "CORE-MESH-2D-NEIGHBORS-001",
+        "CORE-MESH-2D-CHECKSUM-001",
+        "CORE-MESH-2D-ADAPT-REFINE-001",
+        "CORE-MESH-2D-ADAPT-COARSEN-001",
+        "CORE-MESH-2D-ADAPT-DATA-001",
+        "CORE-MESH-2D-ADAPT-VOLUME-001",
+        "CORE-MESH-2D-ADAPT-COUNTERS-001",
+        "CORE-MESH-2D-ADAPT-LOAD-001",
+        "CORE-MESH-2D-ADAPT-MAX-LEVEL-001",
+        "CORE-MESH-2D-ADAPT-CYCLE-001",
+        "CORE-MESH-3D-TOPOLOGY-UNIFORM-001",
+        "CORE-MESH-3D-TOPOLOGY-NONUNIFORM-001",
+        "CORE-MESH-3D-SEARCH-001",
+        "CORE-MESH-3D-PARENT-CHILD-001",
+        "CORE-MESH-3D-NEIGHBORS-001",
+        "CORE-MESH-3D-CHECKSUM-001",
+        "CORE-MESH-3D-ADAPT-REFINE-001",
+        "CORE-MESH-3D-ADAPT-COARSEN-001",
+        "CORE-MESH-3D-ADAPT-DATA-001",
+        "CORE-MESH-3D-ADAPT-VOLUME-001",
+        "CORE-MESH-3D-ADAPT-COUNTERS-001",
+        "CORE-MESH-3D-ADAPT-LOAD-001",
+        "CORE-MESH-3D-ADAPT-MAX-LEVEL-001",
+        "CORE-MESH-3D-ADAPT-CYCLE-001",
+        "CORE-MESH-3D-INTERPOLATION-UNIFORM-001",
+        "CORE-MESH-3D-INTERPOLATION-BOUNDARY-001",
+        "CORE-MESH-3D-INTERPOLATION-AMR-001",
+        "CORE-MESH-3D-INTERPOLATION-LEGACY-MASK-001",
+        "CORE-MESH-3D-INTERPOLATION-DUPLICATE-001",
+        "CORE-MESH-3D-INTERPOLATION-PERMUTATION-001",
+        "CORE-MESH-3D-INTERPOLATION-CACHE-001",
+        "CORE-MESH-3D-INTERPOLATION-INPUT-IMMUTABLE-001",
+        "MESH-CUTCELL-TRIANGLE-METRICS-001",
+        "MESH-CUTCELL-RAY-001",
+        "MESH-CUTCELL-TANGENT-DEGENERATE-001",
+        "MESH-CUTCELL-CLOSEST-001",
+        "MESH-CUTCELL-PLANE-VOLUME-001",
+        "MESH-CUTCELL-SPHERE-VOLUME-001",
+        "MESH-CUTCELL-SPHERE-AREA-CONVERGENCE-001",
+        "MESH-CUTCELL-NASTRAN-ROUNDTRIP-001"
+      ],
+      "timeout_seconds": 7200,
       "mpi_ranks": 1,
       "exclusive": true
     }

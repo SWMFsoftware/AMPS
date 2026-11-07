@@ -517,99 +517,23 @@ public:
 Not_Inside_Sphere:
      if (nCounter==8) return _AMR_BLOCK_OUTSIDE_DOMAIN_;
 
-     //check if the sphere intersects the block
-     double r[3],x0[3],e0[3],e1[3],norm[3],rE0,rE1,lE0,lE1,lNorm,c;
-     int nface;
-
-     //the internal coordinated of the origin of the coordinate frame related to a face
-     static const int nX0face[6][3]=  { {0,0,0},{1,0,0}, {0,0,0},{0,1,0}, {0,0,0},{0,0,1}};
-
-     //the internal coordinate of the nodes that determine the coordinate vectors related to the frame
-     static const int nE0[6][3]=  { {0,1,0},{1,1,0}, {1,0,0},{1,1,0}, {1,0,0},{1,0,1}};
-     static const int nE1[6][3]=  { {0,0,1},{1,0,1}, {0,0,1},{0,1,1}, {0,1,0},{0,1,1}};
-
-     //the direction to the local normal in the coordinate system related to the face
-     static const int nNorm[6][3]={ {1,0,0},{0,0,0}, {0,1,0},{0,0,0}, {0,0,1},{0,0,0}};
-
-     for (nface=0;nface<6;nface++) {
-       for (idim=0,lNorm=0.0,lE0=0.0,lE1=0.0;idim<3;idim++) {
-         x0[idim]=(nX0face[nface][idim]==0) ? xBlockMin[idim] : xBlockMax[idim];
-
-         e0[idim]=((nE0[nface][idim]==0) ? xBlockMin[idim] : xBlockMax[idim]) - x0[idim];
-         e1[idim]=((nE1[nface][idim]==0) ? xBlockMin[idim] : xBlockMax[idim]) - x0[idim];
-
-         norm[idim]=((nNorm[nface][idim]==0) ? xBlockMin[idim] : xBlockMax[idim]) - x0[idim];
-
-         lE0+=pow(e0[idim],2);
-         lE1+=pow(e1[idim],2);
-         lNorm+=pow(norm[idim],2);
-       }
-
-       for (c=0.0,idim=0,lNorm=sqrt(lNorm),lE1=sqrt(lE1),lE0=sqrt(lE0);idim<3;idim++) {
-         r[idim]=OriginPosition[idim]-x0[idim];
-         norm[idim]/=lNorm;
-
-         c+=r[idim]*norm[idim];
-       }
-
-       //check the distance from the face to the point 'OriginPosition'
-       if (fabs(c)<Radius+EPS) { //the distance betweenthe plane containing the face and the point 'OriginPosition' is less or equal 'Radius'
-         for (rE0=0.0,rE1=0.0,idim=0;idim<3;idim++) {
-           r[idim]-=c*norm[idim];
-
-           e0[idim]/=lE0;
-           e1[idim]/=lE1;
-
-           rE0+=r[idim]*e0[idim];
-           rE1+=r[idim]*e1[idim];
-         }
-
-         if ((-EPS<rE0)&&(rE0<lE0+EPS)&&(-EPS<rE1)&&(rE1<lE1+EPS)) return _AMR_BLOCK_INTERSECT_DOMAIN_BOUNDARY_;
-       }
-
+     /* The squared distance from a point to an axis-aligned box is the sum
+      * of squared coordinate gaps to the nearest interval endpoint.  The
+      * sphere intersects (or is wholly contained in) the box exactly when
+      * this distance is <= R^2.  Unlike face/edge-only searches, this also
+      * detects a small sphere completely enclosed by a large block. */
+     double MinimumDistance2=0.0;
+     for (idim=0;idim<3;idim++) {
+       double gap=0.0;
+       if (OriginPosition[idim]<xBlockMin[idim])
+         gap=xBlockMin[idim]-OriginPosition[idim];
+       else if (OriginPosition[idim]>xBlockMax[idim])
+         gap=OriginPosition[idim]-xBlockMax[idim];
+       MinimumDistance2+=gap*gap;
      }
 
-     //check the intersection between the sphere and each edge of the block
-     //internal nodes of the block that determine the edge
-     static const int nX0Edge[12][3]={ {0,0,0},{0,1,0},{0,1,1},{0,0,1}, {0,0,0},{1,0,0},{1,0,1},{0,0,1}, {0,0,0},{1,0,0},{1,1,0},{0,1,0}};
-     static const int nX1[12][3]={ {1,0,0},{1,1,0},{1,1,1},{1,0,1}, {0,1,0},{1,1,0},{1,1,1},{0,1,1}, {0,0,1},{1,0,1},{1,1,1},{0,1,1}};
-
-     int nedge;
-     double l[3],dx[3],a=0.0,b=0.0,d,t1,t2,sqrt_d,tEPS;
-
-     for (nedge=0;nedge<12;nedge++) {
-       a=0.0,b=0.0,c=0.0;
-
-       for (idim=0;idim<3;idim++) {
-         x0[idim]=(nX0Edge[nedge][idim]==0) ? xBlockMin[idim] : xBlockMax[idim];
-         l[idim]=((nX1[nedge][idim]==0) ? xBlockMin[idim] : xBlockMax[idim]) - x0[idim];
-
-         dx[idim]=x0[idim]-OriginPosition[idim];
-         a+=pow(l[idim],2);
-         b+=2*l[idim]*dx[idim];
-         c+=pow(dx[idim],2);
-       }
-
-       c-=Radius*Radius;
-       d=b*b-4.0*a*c;
-
-       if (d<0.0) {
-         if (4.0*a*pow(EPS,2)>-d) d=0.0; //equvalent to EPS/|l[:]| > sqrt(|d|)/(2a) -> the particle is within the distance of EPS from the surface's boundary
-         else continue;
-       }
-
-       if (b<0.0) a*=-1.0,b*=-1.0,c*=-1.0;
-
-       sqrt_d=sqrt(d);
-       t1=-(b+sqrt_d)/(2.0*a);
-       t2=-2.0*c/(b+sqrt_d);
-
-       tEPS=EPS/sqrt(l[0]*l[0]+l[1]*l[1]+l[2]*l[2]);
-
-       if (((-tEPS<t1)&&(t1<1.0+tEPS)) || ((-tEPS<t2)&&(t2<1.0+tEPS))) return _AMR_BLOCK_INTERSECT_DOMAIN_BOUNDARY_;
-     }
-
-     return _AMR_BLOCK_INSIDE_DOMAIN_;
+     return (MinimumDistance2<=pow(Radius+EPS,2)) ?
+         _AMR_BLOCK_INTERSECT_DOMAIN_BOUNDARY_ : _AMR_BLOCK_INSIDE_DOMAIN_;
    }
 
 
@@ -660,37 +584,87 @@ Not_Inside_Sphere:
      double res=0.0;
      int idim;
 
+     /*
+      * Return the part of an axis-aligned block that remains in the AMPS
+      * computational domain, i.e. the block volume outside the excluded
+      * sphere.  All input coordinates, Radius, EPS, and the returned volume
+      * use one consistent caller-selected length unit (the result is unit^3).
+      * For an intersected block we translate by OriginPosition and normalize
+      * every coordinate and width by R.  Inclusion/exclusion of _volume_3()
+      * then supplies the overlap with the unit sphere and multiplication by
+      * R^3 restores physical volume:
+      *
+      *   V_remaining = R^3 (V_normalized_box - V_box_intersect_unit_sphere).
+      *
+      * The closed-form octant primitive requires a positive radius.  A
+      * non-positive radius is invalid geometry and is rejected through the
+      * normal AMPS fatal path rather than fabricating a volume.
+      */
+     if (IntersectionStatus==NULL) {
+       exit(__LINE__,__FILE__,"Error: sphere/block intersection status pointer is null");
+       return 0.0;
+     }
+
+     if (!(Radius>0.0) || !isfinite(Radius)) {
+       exit(__LINE__,__FILE__,"Error: sphere radius must be finite and positive");
+       *IntersectionStatus=_AMR_BLOCK_INSIDE_DOMAIN_;
+       return 0.0;
+     }
+
      BlockIntersectionCode=BlockIntersection(xBlockMinInit,xBlockMaxInit,EPS);
      *IntersectionStatus=BlockIntersectionCode;
 
-     if ((BlockIntersectionCode==_AMR_BLOCK_INSIDE_DOMAIN_)||(BlockIntersectionCode==_AMR_BLOCK_OUTSIDE_DOMAIN_)) {
+     if (BlockIntersectionCode==_AMR_BLOCK_OUTSIDE_DOMAIN_) {
+       // Every block corner lies within the excluded sphere.
+       return 0.0;
+     }
+
+     if (BlockIntersectionCode==_AMR_BLOCK_INSIDE_DOMAIN_) {
+       // The sphere does not intersect the block: its entire volume remains.
        for (res=1.0,idim=0;idim<3;idim++) res*=xBlockMaxInit[idim]-xBlockMinInit[idim];
        return res;
      }
 
 
-     // check if cell intersects one of the planes x[idim]==0
+     // Split at a sphere-centered coordinate plane.  This maps every child to
+     // one octant, where the analytic primitive is valid, and is translation
+     // invariant for a sphere whose center is not the global origin.
      for(idim = 0; idim < 3; idim++) {
-       if(xBlockMinInit[idim] * xBlockMaxInit[idim] < 0.0) {
-         double xBlockMiddle[3];
+       if((xBlockMinInit[idim]-OriginPosition[idim]) *
+          (xBlockMaxInit[idim]-OriginPosition[idim]) < 0.0) {
+         // Preserve the two unsplit extents.  A single "middle" vector used
+         // as both a maximum and a minimum collapses those dimensions to zero
+         // and loses seven octants when a box encloses the sphere.  The left
+         // child's maximum begins as the original maximum; the right child's
+         // minimum begins as the original minimum.  Only the selected axis is
+         // replaced by the sphere-centered plane.
+         double xLeftMax[3],xRightMin[3];
 
-         memcpy(xBlockMiddle, xBlockMinInit, 3*sizeof(double));
-         xBlockMiddle[idim] = 0.0;
-         res += GetRemainedBlockVolume(xBlockMinInit, xBlockMiddle,  EPS, IntersectionStatus);
-         res += GetRemainedBlockVolume(xBlockMiddle,  xBlockMaxInit, EPS, IntersectionStatus);
+         memcpy(xLeftMax,xBlockMaxInit,3*sizeof(double));
+         memcpy(xRightMin,xBlockMinInit,3*sizeof(double));
+         xLeftMax[idim]=OriginPosition[idim];
+         xRightMin[idim]=OriginPosition[idim];
+         res += GetRemainedBlockVolume(xBlockMinInit,xLeftMax,EPS,IntersectionStatus);
+         res += GetRemainedBlockVolume(xRightMin,xBlockMaxInit,EPS,IntersectionStatus);
+
+         // The status describes the caller's original block, not whichever
+         // recursive child happened to be evaluated last.
+         *IntersectionStatus=_AMR_BLOCK_INTERSECT_DOMAIN_BOUNDARY_;
          return res;
        }
      }
 
      // reflect coordinates if needed (for convenience)
-     // also normalize them to radius of the sphere  
+     // also normalize both positions and widths to the sphere radius.
      double x[3], d[3], R3 = Radius*Radius*Radius;
 
      for(idim = 0; idim < 3; idim++) {
-       d[idim]= xBlockMaxInit[idim] - xBlockMinInit[idim];
+       d[idim]=(xBlockMaxInit[idim]-xBlockMinInit[idim])/Radius;
 
-       if ((xBlockMinInit[idim] < 0.) && (xBlockMaxInit[idim] <= 0.)) x[idim] =- xBlockMaxInit[idim] / Radius;
-       else	 x[idim] =xBlockMinInit[idim] / Radius;
+       const double xmin=xBlockMinInit[idim]-OriginPosition[idim];
+       const double xmax=xBlockMaxInit[idim]-OriginPosition[idim];
+       if ((xmin < 0.) && (xmax <= 0.)) x[idim]=-xmax/Radius;
+       else x[idim]=xmin/Radius;
      }
 
      // now the cell lays fully in the first octant

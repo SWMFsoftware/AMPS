@@ -26,7 +26,8 @@ void PIC::GYROKINETIC::Init() {
   //request data in the particle state vector
   long int offset;
 
-  PIC::ParticleBuffer::RequestDataStorage(offset,3*sizeof(double));
+  PIC::ParticleBuffer::RequestDataStorage(offset,3*sizeof(double),
+                                          alignof(double));
   DriftVelocityOffset=offset;
 
   if ((_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_) && (PIC::ThisThread==0)) {

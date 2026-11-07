@@ -156,7 +156,8 @@ $MARKER:RESERVE-CELL-SAMPLING-DATA-BUFFER$
 
 
   //reserve the particle fields
-  PIC::ParticleBuffer::RequestDataStorage(ParticleData_SourceProcessID_Offset,2*sizeof(int));
+  PIC::ParticleBuffer::RequestDataStorage(ParticleData_SourceProcessID_Offset,
+                                          2*sizeof(int),alignof(int));
   ParticleData_OriginSurfaceElementNumber_Offset=ParticleData_SourceProcessID_Offset+sizeof(int);
 
 

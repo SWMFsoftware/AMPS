@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "Rule-based T0/T1 source/public-contract traceability. The validator expands these areas to every current production translation unit and public compile contract; compilation alone never changes a status to tested.",
+  "description": "Rule-based T0-T3 source/public-contract traceability. The validator expands these areas to every current production translation unit and public compile contract; compilation alone never changes a status to tested.",
   "statuses": ["tested", "partial", "planned", "exempt"],
   "discovery": {
     "translation_unit_extensions": [".c", ".cc", ".cpp", ".cxx", ".f", ".f90", ".for"],
@@ -20,6 +20,7 @@
   "case_registry_sources": [
     "src/test/tests/harness/self/run_test.py",
     "src/test/tests/pic/native_core/run_test.py",
+    "src/test/tests/mesh/native/run_test.py",
     "src/general/input/test_amps_input.cpp",
     "src/test/tests/general/containers/test_general_containers.cpp",
     "src/test/tests/general/numerics/test_general_numerics.cpp",
@@ -40,7 +41,14 @@
     "test/srcCoreUnitTests/physics_movers.cpp",
     "test/srcCoreUnitTests/species.cpp",
     "test/srcCoreUnitTests/units.cpp",
-    "test/srcCoreUnitTests/weight_time_t2.cpp"
+    "test/srcCoreUnitTests/weight_time_t2.cpp",
+    "test/srcCoreUnitTests/particle_layout_t2.cpp",
+    "test/srcCoreUnitTests/split_merge_t2.cpp"
+    ,"test/srcCoreMeshTests/mesh_topology.cpp"
+    ,"test/srcCoreMeshTests/mesh_adaptation.cpp"
+    ,"test/srcCoreMeshTests/mesh_coarsen_data.cpp"
+    ,"test/srcCoreMeshTests/pic_interpolation.cpp"
+    ,"test/srcCoreMeshTests/mesh_cutcell.cpp"
   ],
   "areas": [
     {
@@ -86,12 +94,18 @@
       "area_id": "mesh-amr",
       "component": "src/meshAMR",
       "path": "src/meshAMR",
-      "status": "planned",
-      "suite_ids": [],
-      "case_ids": [],
+      "status": "partial",
+      "suite_ids": ["CORE-MESH-NATIVE-001"],
+      "case_ids": [
+        "CORE-MESH-1D-TOPOLOGY-UNIFORM-001", "CORE-MESH-1D-TOPOLOGY-NONUNIFORM-001", "CORE-MESH-1D-SEARCH-001", "CORE-MESH-1D-PARENT-CHILD-001", "CORE-MESH-1D-NEIGHBORS-001", "CORE-MESH-1D-CHECKSUM-001", "CORE-MESH-1D-ADAPT-REFINE-001", "CORE-MESH-1D-ADAPT-COARSEN-001", "CORE-MESH-1D-ADAPT-DATA-001", "CORE-MESH-1D-ADAPT-VOLUME-001", "CORE-MESH-1D-ADAPT-COUNTERS-001", "CORE-MESH-1D-ADAPT-LOAD-001", "CORE-MESH-1D-ADAPT-MAX-LEVEL-001", "CORE-MESH-1D-ADAPT-CYCLE-001",
+        "CORE-MESH-2D-TOPOLOGY-UNIFORM-001", "CORE-MESH-2D-TOPOLOGY-NONUNIFORM-001", "CORE-MESH-2D-SEARCH-001", "CORE-MESH-2D-PARENT-CHILD-001", "CORE-MESH-2D-NEIGHBORS-001", "CORE-MESH-2D-CHECKSUM-001", "CORE-MESH-2D-ADAPT-REFINE-001", "CORE-MESH-2D-ADAPT-COARSEN-001", "CORE-MESH-2D-ADAPT-DATA-001", "CORE-MESH-2D-ADAPT-VOLUME-001", "CORE-MESH-2D-ADAPT-COUNTERS-001", "CORE-MESH-2D-ADAPT-LOAD-001", "CORE-MESH-2D-ADAPT-MAX-LEVEL-001", "CORE-MESH-2D-ADAPT-CYCLE-001",
+        "CORE-MESH-3D-TOPOLOGY-UNIFORM-001", "CORE-MESH-3D-TOPOLOGY-NONUNIFORM-001", "CORE-MESH-3D-SEARCH-001", "CORE-MESH-3D-PARENT-CHILD-001", "CORE-MESH-3D-NEIGHBORS-001", "CORE-MESH-3D-CHECKSUM-001", "CORE-MESH-3D-ADAPT-REFINE-001", "CORE-MESH-3D-ADAPT-COARSEN-001", "CORE-MESH-3D-ADAPT-DATA-001", "CORE-MESH-3D-ADAPT-VOLUME-001", "CORE-MESH-3D-ADAPT-COUNTERS-001", "CORE-MESH-3D-ADAPT-LOAD-001", "CORE-MESH-3D-ADAPT-MAX-LEVEL-001", "CORE-MESH-3D-ADAPT-CYCLE-001",
+        "CORE-MESH-3D-INTERPOLATION-UNIFORM-001", "CORE-MESH-3D-INTERPOLATION-BOUNDARY-001", "CORE-MESH-3D-INTERPOLATION-AMR-001", "CORE-MESH-3D-INTERPOLATION-LEGACY-MASK-001", "CORE-MESH-3D-INTERPOLATION-DUPLICATE-001", "CORE-MESH-3D-INTERPOLATION-PERMUTATION-001", "CORE-MESH-3D-INTERPOLATION-CACHE-001", "CORE-MESH-3D-INTERPOLATION-INPUT-IMMUTABLE-001",
+        "MESH-CUTCELL-TRIANGLE-METRICS-001", "MESH-CUTCELL-RAY-001", "MESH-CUTCELL-TANGENT-DEGENERATE-001", "MESH-CUTCELL-CLOSEST-001", "MESH-CUTCELL-PLANE-VOLUME-001", "MESH-CUTCELL-SPHERE-VOLUME-001", "MESH-CUTCELL-SPHERE-AREA-CONVERGENCE-001", "MESH-CUTCELL-NASTRAN-ROUNDTRIP-001"
+      ],
       "local_registries": [],
-      "reason": "The native physics fixture uses a mesh but does not independently qualify meshAMR public algorithms.",
-      "gaps": ["tree topology", "refine/coarsen", "cut-cell geometry", "interpolation", "restart", "owner/ghost exchange"]
+      "reason": "T3 directly exercises one-rank 1-D/2-D/3-D dyadic topology, exact-boundary search, same-level and 2:1 neighbor contracts, split/coarsen data transfer, repeated adaptation, cut-cell geometry and NASTRAN I/O, plus 3-D production interpolation with exhaustive legacy refinement masks and cache invalidation.",
+      "gaps": ["distributed owner/ghost exchange", "restart serialization", "nonmanifold and large production surface fixtures", "axisymmetric and spherical-coordinate adaptation", "multi-level imbalance rejection beyond the bounded fixture"]
     },
     {
       "area_id": "charge-exchange",
@@ -285,19 +299,28 @@
       "component": "src/pic",
       "path": "src/pic",
       "status": "partial",
-      "suite_ids": ["CORE-PIC-NATIVE-001"],
+      "suite_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001", "CORE-MESH-NATIVE-001"],
       "case_ids": [
         "PIC-PBUFFER-INIT-001", "PIC-PBUFFER-STATE-001", "PIC-PBUFFER-LIST-001",
+        "PIC-PBUFFER-LAYOUT-PACKED-FIXED-OFFSETS-001", "PIC-PBUFFER-LAYOUT-PACKED-FIXED-CLONE-001", "PIC-PBUFFER-LAYOUT-PACKED-FIXED-REUSE-001", "PIC-PBUFFER-LAYOUT-PACKED-FIXED-LIST-001", "PIC-PBUFFER-LAYOUT-PACKED-FIXED-CAPACITY-001", "PIC-PBUFFER-LAYOUT-PACKED-FIXED-INVALID-001", "PIC-PBUFFER-LAYOUT-PACKED-FIXED-EXHAUSTION-001",
+        "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-OFFSETS-001", "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-CLONE-001", "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-REUSE-001", "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-LIST-001", "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-CAPACITY-001", "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-INVALID-001", "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-EXHAUSTION-001",
+        "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-OFFSETS-001", "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-CLONE-001", "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-REUSE-001", "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-LIST-001", "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-CAPACITY-001", "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-INVALID-001", "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-EXHAUSTION-001",
+        "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-OFFSETS-001", "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-CLONE-001", "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-REUSE-001", "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-LIST-001", "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-CAPACITY-001", "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-INVALID-001", "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-EXHAUSTION-001",
         "PHYS-COLLISION-CONSERVATION-001", "PHYS-COLLISION-ISOTROPY-001",
         "PHYS-DISTRIBUTION-MAXWELLIAN-001",
         "PHYS-IDF-STORAGE-001", "PHYS-IDF-ROTATION-001", "PHYS-IDF-VIBRATION-001", "PHYS-IDF-PARTITION-001", "PHYS-IDF-RT-001", "PHYS-IDF-RT-RATE-001",
         "PHYS-MOVER-SIMPLE-001", "PHYS-MOVER-BORIS-001", "PHYS-MOVER-SURFACE-001",
         "PHYS-3D-COLLISION-RELAXATION-001", "PHYS-3D-COLLISION-RATE-001", "PHYS-3D-PHOTODECAY-001",
-        "PIC-WEIGHT-MODE-ROUNDTRIP-001", "PIC-TIMESTEP-MODE-ROUNDTRIP-001", "PIC-WEIGHT-TIMESTEP-SPECIES-COPY-001", "PIC-WEIGHT-TIMESTEP-INVALID-VALUE-001", "PIC-WEIGHT-TIMESTEP-INVALID-SPECIES-001"
+        "PIC-WEIGHT-MODE-ROUNDTRIP-001", "PIC-TIMESTEP-MODE-ROUNDTRIP-001", "PIC-WEIGHT-TIMESTEP-SPECIES-COPY-001", "PIC-WEIGHT-TIMESTEP-INVALID-VALUE-001", "PIC-WEIGHT-TIMESTEP-INVALID-SPECIES-001",
+        "PIC-WEIGHT-LOCAL-ROUNDTRIP-001", "PIC-TIMESTEP-LOCAL-ROUNDTRIP-001", "PIC-WEIGHT-TIMESTEP-LOCAL-RESCALE-001", "PIC-WEIGHT-TIMESTEP-LOCAL-INVALID-VALUE-001", "PIC-WEIGHT-TIMESTEP-LOCAL-INVALID-SPECIES-001",
+        "PIC-WEIGHT-SINGLE-GLOBAL-ROUNDTRIP-001", "PIC-TIMESTEP-SINGLE-GLOBAL-ROUNDTRIP-001", "PIC-WEIGHT-TIMESTEP-SINGLE-GLOBAL-INVALID-VALUE-001", "PIC-WEIGHT-TIMESTEP-SINGLE-GLOBAL-INVALID-SPECIES-001",
+        "PIC-SPLIT-MERGE-EQUAL-WEIGHT-001", "PIC-SPLIT-MERGE-VARIABLE-WEIGHT-001", "PIC-SPLIT-MERGE-BOUNDARY-001", "PIC-SPLIT-EXTENDED-STATE-001", "PIC-MERGE-EXTENDED-STATE-001", "PIC-WEIGHT-INDIVIDUAL-INVALID-001",
+        "PIC-SPLIT-MERGE-ALIGNED-EQUAL-WEIGHT-001", "PIC-SPLIT-MERGE-ALIGNED-VARIABLE-WEIGHT-001", "PIC-SPLIT-MERGE-ALIGNED-BOUNDARY-001", "PIC-SPLIT-ALIGNED-EXTENDED-STATE-001", "PIC-MERGE-ALIGNED-EXTENDED-STATE-001", "PIC-WEIGHT-ALIGNED-INDIVIDUAL-INVALID-001",
+        "CORE-MESH-3D-INTERPOLATION-UNIFORM-001", "CORE-MESH-3D-INTERPOLATION-BOUNDARY-001", "CORE-MESH-3D-INTERPOLATION-AMR-001", "CORE-MESH-3D-INTERPOLATION-LEGACY-MASK-001", "CORE-MESH-3D-INTERPOLATION-DUPLICATE-001", "CORE-MESH-3D-INTERPOLATION-PERMUTATION-001", "CORE-MESH-3D-INTERPOLATION-CACHE-001", "CORE-MESH-3D-INTERPOLATION-INPUT-IMMUTABLE-001"
       ],
       "local_registries": [],
-      "reason": "The combined configured application owns bounded particle-buffer, collision, distribution, LB, neutral mover, sphere, parent-decay, and host-side species-global particle-weight/time-step behavior, including invalid scale and species rejection.",
-      "gaps": ["charged mover convergence", "non-NTC collision selectors", "local and single-global weight/time-step profiles", "individual-particle weights", "unequal-weight/time-step physics and rescaling", "CUDA device-side weight/time-step diagnostics", "injection", "general sampling", "split/merge", "restart", "refinement/outer boundaries"]
+      "reason": "The configured profile matrix owns bounded particle-buffer layouts and lifecycle, host-side species-global/species-local/single-global weight and time-step behavior, finite-positive individual weights, conservative packed/aligned split/merge, collisions, distributions, LB, neutral movers, sphere interaction, parent decay, and T3 production interpolation across uniform and 2:1 AMR support.",
+      "gaps": ["charged mover convergence", "non-NTC collision selectors", "unequal-weight/time-step collision physics", "CUDA/device invalid-state diagnostics", "semantic reduction of opaque extension fields", "injection", "general sampling", "restart", "outer-boundary particle behavior", "distributed ownership"]
     },
     {
       "area_id": "species",

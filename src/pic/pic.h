@@ -31,6 +31,7 @@
 #include <locale>
 #include <string>
 #include <sstream>
+#include <stdexcept>
 
 
 #include <iostream>
@@ -2746,14 +2747,19 @@ void DeleteAttachedParticles();
     extern _TARGET_DEVICE_ _CUDA_MANAGED_ cParticleTable *ParticlePopulationTable;
       
     //Request additional data for a particle
-    void RequestDataStorage(long int &offset,int TotalDataLength);
+    // Reserve an application/model extension in every particle record.  The
+    // default byte alignment preserves the historical packed ABI; callers
+    // storing typed values should pass alignof(T) explicitly so every record
+    // yields a correctly aligned address on strict-alignment architectures.
+    void RequestDataStorage(long int &offset,int TotalDataLength,
+                            std::size_t alignment=1);
 
     //the basic data access functions for a particle
     _TARGET_HOST_ _TARGET_DEVICE_ 
     byte *GetParticleDataPointer(long int);
 
     //get particle data offset (pass next ans prev)
-    inline int GetParticleDataOffset(long int ptr) {
+    inline long int GetParticleDataOffset(long int ptr) {
       return _PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_+ptr*ParticleDataLength; 
     }
 
@@ -2778,7 +2784,8 @@ void DeleteAttachedParticles();
     }; 
 
     extern cOptionalParticleFieldAllocationManager OptionalParticleFieldAllocationManager;
-    extern int _PIC_PARTICLE_DATA__MOMENTUM_NORMAL_,_PIC_PARTICLE_DATA__MOMENTUM_PARALLEL_; 
+    extern long int _PIC_PARTICLE_DATA__MOMENTUM_NORMAL_,
+                    _PIC_PARTICLE_DATA__MOMENTUM_PARALLEL_;
 
     //the namespace contains data used in case when OpenMP is used
     namespace Thread {
@@ -3475,9 +3482,12 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
 
       memcpy(&res,ParticleDataStart+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_,sizeof(double)); 
 
-      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-      if ((isfinite(res)==false)||(res<1.0E-50)) exit(__LINE__,__FILE__);
-      #endif
+      // Statistical correction is a strictly positive, finite represented
+      // particle count.  Split/merge divides by sums of this value, so the
+      // domain contract cannot depend on a debug-only build flag.
+      if (!std::isfinite(res) || res<1.0E-50)
+        throw std::domain_error(
+            "individual particle weight correction is not positive finite");
 
       return res;
 
@@ -3501,9 +3511,15 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetIndividualStatWeightCorrection(double WeightCorrectionFactor,long int ptr) {
-    #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-    if (WeightCorrectionFactor<1.0E-50) exit(__LINE__,__FILE__);
-    if (!isfinite(WeightCorrectionFactor)) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+    #ifndef __CUDA_ARCH__
+    if (!std::isfinite(WeightCorrectionFactor) ||
+        WeightCorrectionFactor<1.0E-50)
+      throw std::invalid_argument(
+          "individual particle weight correction must be positive finite");
+    #elif _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+    if (WeightCorrectionFactor<1.0E-50 ||
+        !isfinite(WeightCorrectionFactor))
+      exit(__LINE__,__FILE__,"invalid individual particle weight correction");
     #endif
 
     #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
@@ -3530,9 +3546,15 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetIndividualStatWeightCorrection(double WeightCorrectionFactor,byte *ParticleDataStart) {
-    #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-      if (!isfinite(WeightCorrectionFactor)) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
-      if (WeightCorrectionFactor<1.0E-50) exit(__LINE__,__FILE__);
+    #ifndef __CUDA_ARCH__
+      if (!std::isfinite(WeightCorrectionFactor) ||
+          WeightCorrectionFactor<1.0E-50)
+        throw std::invalid_argument(
+            "individual particle weight correction must be positive finite");
+    #elif _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      if (WeightCorrectionFactor<1.0E-50 ||
+          !isfinite(WeightCorrectionFactor))
+        exit(__LINE__,__FILE__,"invalid individual particle weight correction");
     #endif
 
     #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
@@ -3732,7 +3754,11 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
       t&=0b0111'1111;
 
       *((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))=t;
-      SetInitFlag(false,(byte*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_)); 
+      // SetInitFlag() accepts the beginning of a particle record and applies
+      // the species offset internally.  Passing the species byte here used to
+      // add that offset twice, leaving a reused record's initialization flag
+      // stale (and potentially modifying an unrelated field).
+      SetInitFlag(false,(byte*)(ParticleDataBuffer+ptr*ParticleDataLength));
     }
 
     _TARGET_HOST_ _TARGET_DEVICE_
@@ -6141,7 +6167,13 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
 
       int ParticleDataLength;
       PIC::ParticleBuffer::byte *ParticleDataBuffer;
-      cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > *mesh=PIC::Mesh::mesh;
+      // This carrier is declared in every dimensional PIC profile even when
+      // the Lapenta mover is not selected.  Its mesh pointer must therefore
+      // follow the compile-time AMPS mesh alias; hard-coding cMeshAMR3d makes
+      // otherwise valid 1-D/2-D applications fail while changing no 3-D
+      // representation or mover behavior.
+      cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,
+                PIC::Mesh::cDataBlockAMR> *mesh=PIC::Mesh::mesh;
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
     };
 

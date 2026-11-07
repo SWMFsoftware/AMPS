@@ -20,23 +20,45 @@ executable has SHA-256
 Optional interface providers remain unqualified where their external
 libraries and independent fixtures are not configured.
 
-T2 extends the live registry, without rewriting that T1 receipt, to 11 suites
-and 103 cases.  The native suite now owns 36 cases: five new cases qualify
-particle statistical-weight and time-step round trips, species-distribution
-copies, and typed invalid-value/index rejection in the host species-global
-profile.  The retained normal T2 run in
-`/tmp/amps-t2-all-qualified-normal` reports 98 PASS, five provider SKIPs, and
-no FAIL/ERROR; focused evidence is in `/tmp/amps-t2-weight-time-initial`, with
-the collision regression recheck in
-`/tmp/amps-t2-weight-time-collision-recheck`.  All 36 native cases also pass
-in reverse order and deterministic seed-1729 shuffled order under
-`/tmp/amps-t2-native-qualified-reverse` and
-`/tmp/amps-t2-native-qualified-shuffle-1729`; the corrected normal, reverse,
-and shuffled builds have identical executable SHA-256
-`6329674e470d9cadda436aca2d410f1ef5ecad27f4918108d56bd3078a1f4925`.
-Species-local and single-global profiles, individual weight correction and
-split/merge, unequal-weight/time collision physics, and CUDA device
-diagnostics remain open.
+At the frozen T2 checkpoint the registry had 16 suites and 152 cases, without
+rewriting the T1 receipt. Six exclusive native owners formed the 85-case `profile`
+campaign: the 43-case packed/fixed baseline, 13-case packed individual-weight
+split/merge, 7-case aligned-16 fixed layout, 13-case aligned-16 individual
+layout/split-merge, 5-case species-local weight/time, and 4-case single-global
+weight/time profiles. `/tmp/amps-t2-native-full-normal` passes 43/43; both
+`/tmp/amps-t2-profile-reverse` and
+`/tmp/amps-t2-profile-shuffle-1729` pass 85/85. These receipts qualify the
+declared one-rank host contracts for record layout/lifecycle, finite-positive
+weights/time steps, local rescaling, and conservative split/merge. CUDA/device
+diagnostics, semantic averaging of opaque application fields, unequal-weight
+collision physics, injection/sampling normalization, restart, and distributed
+ownership remain open under the T2 contract.
+
+T3 extends the live registry, without rewriting the T1 or T2 receipts, to 17
+suites and 210 cases. `CORE-MESH-NATIVE-001` owns 58 one-rank cases: 14
+topology/adaptation cases for each of `DIM=1`, `DIM=2`, and `DIM=3`, eight 3-D
+interpolation cases, and eight 3-D cut-cell/NASTRAN cases. The retained normal,
+reverse, and seed-1729 shuffled receipts at `/tmp/amps-t3-native-normal`,
+`/tmp/amps-t3-native-reverse`, and `/tmp/amps-t3-native-shuffle-1729` each pass
+58/58, but an independent audit subsequently corrected a lower-dimensional
+bounds defect. Those receipts remain superseded bring-up evidence. The final
+corrected-tree receipts `/tmp/amps-t3-qualified-normal`,
+`/tmp/amps-t3-qualified-reverse`, and
+`/tmp/amps-t3-qualified-shuffle-1729` each pass 58/58 and qualify the declared
+Cartesian, one-rank contracts. Restart, MPI ownership/ghosts,
+non-Cartesian coordinates, deep imbalance, and general production-surface
+topology remain open. The legacy `OutputLayerNodeMap` path remains hard-coded
+for 3-D and is not exercised or qualified in the 1-D/2-D profiles.
+
+The implementation includes lower-dimensional loop/type/neighbor hardening,
+dimension-bounded global initialization and `buildMesh`, and a private
+production-`buildMesh` topology oracle in every dimension; split/coarsen
+restriction and prolongation; complete coarsest-neighbor
+selection for production interpolation, including the coarse-surrounded-by-
+fine `<=` selector and corrected edge-1/edge-3 predicates; open-interior
+cut-surface contact and `O(A*h)` integration-depth control; translated/scaled
+sphere volume recursion; and sparse-ID NASTRAN read/write/read validation.
+Details and independent oracles are in `test/srcCoreMeshTests/README.md`.
 
 ## Architecture and ownership
 
@@ -99,6 +121,7 @@ From the AMPS repository root:
 ```sh
 python3 src/test/run_tests.py --campaign smoke
 python3 src/test/run_tests.py --campaign nightly
+python3 src/test/run_tests.py --campaign profile
 python3 src/test/run_tests.py --campaign nightly --jobs 4
 python3 src/test/run_tests.py --all --list
 python3 src/test/run_tests.py --coverage
@@ -109,9 +132,10 @@ make core_test_nightly
 `--tier` remains a backward-compatible alias for `--campaign`. The top-level
 `test_all` target depends on `core_test_nightly`. In the current manifest,
 `smoke` selects eight dependency-light suites (51 cases), `nightly` selects
-all 11 suites (103 cases), `profile` selects the 36-case configured native
-suite, `extended` selects the 11-case interface suite plus the native suite,
-and `distributed` selects the five-case two-rank MPI channel/RNG suite.
+all 17 suites (210 cases), `profile` selects seven configured native suites
+(143 cases), `extended` selects the interface, baseline-native, packed-
+individual, and mesh suites (125 cases), and `distributed` selects the five-case two-rank
+MPI channel/RNG suite.
 `--all` ignores campaign membership and selects the complete registry.
 Site/nightly orchestration must preserve the native suite's exclusive barrier
 because it selects a repository-wide application.
@@ -141,16 +165,39 @@ their ordered result list. Reverse/shuffle support is an execution mechanism,
 not proof of isolation by itself; the retained normal/reverse/shuffle and
 one-case evidence is recorded in `STATUS.md`.
 
-The configured AMPS application test is exclusive and is selected by the
-`nightly`, `profile`, and `extended` campaigns:
+Each configured AMPS application test is exclusive and is selected by its
+declared campaigns. The baseline profile can be run directly with:
 
 ```sh
 python3 src/test/run_tests.py --test CORE-PIC-NATIVE-001
 ```
 
-The historical particle-buffer and physics suite IDs are manifest aliases for
-selection compatibility; they are not separate executable suites and must not
-trigger two rebuilds.
+Run the complete T3 dimensional matrix and its isolation orders with:
+
+```sh
+python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order normal \
+  --output-dir /tmp/amps-t3-qualified-normal
+python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order reverse \
+  --output-dir /tmp/amps-t3-qualified-reverse
+python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order shuffle \
+  --shuffle-seed 1729 --output-dir /tmp/amps-t3-qualified-shuffle-1729
+```
+
+The retained executable SHA-256 values are order-independent: 1-D
+`54e79ddf1c34e2910a059a23e38232bea6322ab7a1ee6d31e35204acd8dbf4e0`, 2-D
+`8d5311b99bfba3812599336b2cdbb4fbcd53ab16a3e625122b6db44a30b4aad9`, and
+3-D `96f13a4be39ed221b7a252bb8313db3371ed49b2fd464ea1b5d09a545bf42e34`.
+The final current-tree combined profile command
+`python3 src/test/run_tests.py --campaign profile --order normal --output-dir
+/tmp/amps-t2-t3-profile-qualified` passes 143/143 cases in all seven suites
+(the six T2 owners plus T3), with no FAIL, SKIP, or ERROR.
+
+The historical particle-buffer, packed-fixed layout, physics, species, and
+species-global weight/time suite IDs are manifest aliases for selection
+compatibility; they are not separate executable suites and must not trigger
+two rebuilds. `--campaign profile` serializes all seven exclusive owners. The
+six T2 owners select mutually exclusive record/weight profiles; the T3 owner
+itself performs three clean builds for its 1-D, 2-D, and 3-D applications.
 
 It performs the required native rebuild sequence: validate the repository and
 concurrent-process state, remove only `build`, select
@@ -176,15 +223,19 @@ streamed case-start lines include the suite ID because independent output can
 interleave. `--fail-fast` finishes an already-submitted parallel batch and
 then prevents later batches from starting.
 
-The combined native suite owns three generated-configuration adapter cases,
-three particle-buffer cases, 19 physics cases, four compiled/generated
-species cases, two production-linked global-unit cases, and five particle
-weight/time-step cases.  The T2 cases exercise the configured host
-species-global minimum-reduction and distribution-copy behavior and require
-typed rejection of nonpositive, nonfinite, and out-of-range inputs.  They do
-not yet qualify species-local or single-global profiles, device-side error
-behavior, individual correction, split/merge, or unequal-weight/time collision
-physics.  The physics cases add analytical/invariant checks for Huebner
+The baseline native suite owns three generated-configuration adapter cases,
+three particle-buffer cases, seven packed fixed-layout cases, 19 physics cases,
+four compiled/generated species cases, two production-linked global-unit
+cases, and five species-global particle weight/time-step cases. Five other
+native owners cover packed/aligned individual weights and split/merge,
+aligned fixed records, species-local weight/time and single-global
+weight/time. Across the matrix, T2 checks independently computed alignment and
+stride, clone/reuse/list/capacity behavior, isolated invalid/exhaustion paths,
+finite-positive host values, local physical-distribution rescaling, and
+split/merge conservation of count, physical weight, species, weighted
+position, momentum, translational and configured internal energies. Opaque
+extension bytes use an explicit clone/survivor policy. The physics cases add
+analytical/invariant checks for Huebner
 rates, branching, products, and exponential parent decay; Maxwellian moments;
 hard-sphere scattering; populated-cell NTC collision rates; Larsen-Borgnakke
 rotational/vibrational laws and RT equilibration; neutral Simple/Boris motion;
@@ -326,13 +377,16 @@ general adapter uses a different configured build concurrency.
 
 ### Generated-configuration boundary
 
-`CORE-PIC-NATIVE-001` is the single registered owner of the current
-`test/core-unit-tests` compile profile. Its configuration cases are intended
+`CORE-PIC-NATIVE-001` owns the baseline `test/core-unit-tests` compile profile;
+five additional exclusive owners select the individual-weight, aligned-record,
+species-local, and single-global T2 variants. `CORE-MESH-NATIVE-001` separately
+owns the `test/core-mesh-{1d,2d,3d}` profiles and verifies the effective
+generated `DIM` before executing profile-owned cases. The baseline configuration cases are intended
 to prove application selection through `Config.pl`, the final effective value
 of each selected mutually exclusive macro in this profile, an invalid-deck
 rejection, and retained SHA-256 identities. They do not qualify every
 `Config.pl`/`ampsConfig.pl` option, species permutation, invalid application,
-or alternative generated profile. Those exact partial and planned contracts
+or every generated profile. Those exact partial and tested contracts
 are enumerated in `configuration_contracts.json`.
 
 Future generator tests must run in a validated isolated checkout/workspace or
@@ -343,9 +397,15 @@ top-level `SpeciesList` rejection is now a registered native case, but other
 species permutations and generator modes remain open;
 required positive cases compare generated macro values and species tables with
 independent expectations, record a configuration identity, and verify clean-
-build reproducibility. Individual-weight/split-merge, alternate collision,
-field-solver, and distributed profiles remain separate contracts because they
-cannot be inferred from the active neutral one-rank profile.
+build reproducibility. Individual-weight/split-merge and alternate
+weight/time/layout profiles now have separate T2 contracts; alternate
+collision, field-solver, and distributed profiles remain open because they
+cannot be inferred from the qualified neutral one-rank matrix.
+
+The mesh input decks match the repository's existing `*.input` ignore rule.
+Codex does not modify Git control files; a human preparing a commit must use an
+explicit force-add for `input/test/core-mesh-{1d,2d,3d}.input` so the three
+configured T3 profiles are not omitted.
 
 ## Add an individual test
 

@@ -4,6 +4,7 @@
 //the cut-cell's functions
 #include <iostream>
 #include <list>
+#include <limits>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -332,10 +333,32 @@ unsigned long int GetTriangulationSignature();
     inline bool RayIntersection(double *x0,double *l,double &t,double *xLocal,double *xIntersection,double EPS) {
       double length,lNorm;
 
+      /*
+       * The stored Gram determinant
+       *
+       *   c = |e0|^2 |e1|^2 - (e0 dot e1)^2
+       *     = |e0 cross e1|^2                         [length^4]
+       *
+       * is zero for a degenerate triangle.  Projecting onto such a face used
+       * to divide by c and return NaNs.  A nearly collinear face is equally
+       * unsuitable for a stable hit decision, so reject it when sin(theta)^2
+       * is within 64 machine epsilons of zero.  This is a typed geometric
+       * miss: callers can continue testing the remaining faces, while no
+       * fabricated normal or intersection is introduced.
+       */
+      const double gramScale=c00*c11;
+      const double roundoff=64.0*std::numeric_limits<double>::epsilon();
+      if (!(c>roundoff*gramScale) || !isfinite(c)) {
+        t=0.0;
+        return false;
+      }
+
       lNorm=l[0]*ExternalNormal[0]+l[1]*ExternalNormal[1]+l[2]*ExternalNormal[2];
       length=(x0[0]-x0Face[0])*ExternalNormal[0]+(x0[1]-x0Face[1])*ExternalNormal[1]+(x0[2]-x0Face[2])*ExternalNormal[2];
 
-      if (lNorm==0.0) {
+      const double rayLength=sqrt(l[0]*l[0]+l[1]*l[1]+l[2]*l[2]);
+      if (!(rayLength>0.0) ||
+          fabs(lNorm)<=roundoff*rayLength) {
         t=0.0;
         return false;
       }
@@ -343,13 +366,31 @@ unsigned long int GetTriangulationSignature();
         t=-length/lNorm;
       }
 
-      if (t<0.0) return false;
+      /* EPS is a spatial tolerance in the coordinate units of x0 and the
+       * triangle.  Convert it to the dimensionless ray parameter and to a
+       * barycentric tolerance rather than comparing unlike units.  A hit up
+       * to EPS behind the origin is the origin hit t=0; farther-behind planes
+       * remain misses. */
+      const double spatialTolerance=(EPS>0.0) ? EPS : 0.0;
+      const double parameterTolerance=spatialTolerance/rayLength;
+      if (t<-parameterTolerance) return false;
+      if (t<0.0) t=0.0;
 
       //find position of the intersection in the internal frame related to the face
       for (int i=0;i<3;i++) xIntersection[i]=x0[i]+l[i]*t;
       GetProjectedLocalCoordinates(xLocal,xIntersection);
 
-      if ((xLocal[0]<xLocalMargin)||(xLocal[0]>1.0-xLocalMargin) || (xLocal[1]<xLocalMargin)||(xLocal[1]>1.0-xLocalMargin) || (xLocal[0]+xLocal[1]>1.0-xLocalMargin)) return false;
+      const double edge2Length=sqrt((x2Face[0]-x1Face[0])*(x2Face[0]-x1Face[0])+
+          (x2Face[1]-x1Face[1])*(x2Face[1]-x1Face[1])+
+          (x2Face[2]-x1Face[2])*(x2Face[2]-x1Face[2]));
+      const double faceLength=fmax(e0Length,fmax(e1Length,edge2Length));
+      const double barycentricTolerance=spatialTolerance/faceLength;
+      const double lower=xLocalMargin-barycentricTolerance;
+      const double upper=1.0-xLocalMargin+barycentricTolerance;
+
+      if ((xLocal[0]<lower)||(xLocal[0]>upper) ||
+          (xLocal[1]<lower)||(xLocal[1]>upper) ||
+          (xLocal[0]+xLocal[1]>upper)) return false;
 
       return true;
     }
@@ -648,6 +689,12 @@ auto lineIntersectsPlane = [EPS](const double* p1, const double* p2, double plan
   void ReadCEASurfaceMeshLongFormat(const char *fname,double UnitConversitonFactor=1.0);
   void SaveCEASurfaceMeshLongFormat(const char* fname);
 
+  /* Write the global triangular surface in the same two-line, free-field
+   * GRID-star/CTRIA3 subset accepted by ReadNastranSurfaceMeshLongFormat().
+   * Serialization IDs are deterministic and one based; geometry, winding,
+   * and the face attribute/property value are the round-trip contract. */
+  void SaveNastranSurfaceMeshLongFormat(const char* fname);
+
   void ReadNastranSurfaceMeshLongFormat_km(list<cSurfaceMeshFile> SurfaceMeshFileList);
   void ReadNastranSurfaceMeshLongFormat_km(list<cSurfaceMeshFile> SurfaceMeshFileList,const char *path);
 
@@ -706,7 +753,11 @@ auto lineIntersectsPlane = [EPS](const double* p1, const double* p2, double plan
     double GetLength() {
       double s=0.0;
 
-      for (int i=0;i<3;i++) s+=pow(node[0]->node->x[i]+node[1]->node->x[i],2);
+      /* Euclidean edge length is translation invariant:
+       * |x1-x0| = sqrt(sum_i (x1_i-x0_i)^2).  The historical '+' made the
+       * reported resolution depend on the coordinate origin and returned
+       * zero for nonzero edges symmetric about that origin. */
+      for (int i=0;i<3;i++) s+=pow(node[1]->node->x[i]-node[0]->node->x[i],2);
       return sqrt(s);
     }
   };
@@ -803,6 +854,7 @@ auto lineIntersectsPlane = [EPS](const double* p1, const double* p2, double plan
   double GetRemainedBlockVolume(double* xCellMin,double* xCellMax,double EPS,double RelativeError, cTriangleFace* SurfaceTriangulation,int nSurfaceTriangulation,cTriangleFaceDescriptor* TriangleCutFaceDescriptorList);
   //double GetRemainedBlockVolume(double* xCellMin,double* xCellMax,double EPS,double RelativeError, cTriangleFace* SurfaceTriangulation,int nSurfaceTriangulation,cTriangleFaceDescriptor* TriangleCutFaceDescriptorList,int maxIntegrationLevel,int IntegrationLevel);
   double GetRemainedBlockVolume(double* xCellMin,double* xCellMax,double EPS,double RelativeError, list<cTriangleFace*>& BlockTriangulationSet,int maxIntegrationLevel,int IntegrationLevel);
+  double GetRemainedBlockVolume(double* xCellMin,double* xCellMax,double EPS,double RelativeError, list<cTriangleFace*>& BlockTriangulationSet,int maxIntegrationLevel,int IntegrationLevel,cTriangleFace* SurfaceTriangulation,int nSurfaceTriangulation);
 
   int cutBlockTetrahedronConnectivity(CutCell::cCutBlock* bl,list<CutCell::cTetrahedron>& indomainConnectivityList,list<CutCell::cTetrahedron>& outdomainConnectivityList,list<CutCell::cTriangleCutFace> &TriangleCutFaceConnectivity);
 

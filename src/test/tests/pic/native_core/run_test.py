@@ -29,10 +29,52 @@ from lib.runner_support import (  # noqa: E402
     run_command, write_result)
 
 
-PBUFFER_CASES = [
+PBUFFER_BASE_CASES = [
     "PIC-PBUFFER-INIT-001", "PIC-PBUFFER-STATE-001",
     "PIC-PBUFFER-LIST-001",
 ]
+
+# Keep exact IDs as literals.  Besides making profile ownership obvious in a
+# code review, this lets the independent traceability validator prove that
+# every manifest case is declared by a configured registry source without
+# executing Python string construction.
+PACKED_FIXED_LAYOUT_CASES = [
+    "PIC-PBUFFER-LAYOUT-PACKED-FIXED-OFFSETS-001",
+    "PIC-PBUFFER-LAYOUT-PACKED-FIXED-CLONE-001",
+    "PIC-PBUFFER-LAYOUT-PACKED-FIXED-REUSE-001",
+    "PIC-PBUFFER-LAYOUT-PACKED-FIXED-LIST-001",
+    "PIC-PBUFFER-LAYOUT-PACKED-FIXED-CAPACITY-001",
+    "PIC-PBUFFER-LAYOUT-PACKED-FIXED-INVALID-001",
+    "PIC-PBUFFER-LAYOUT-PACKED-FIXED-EXHAUSTION-001",
+]
+PACKED_INDIVIDUAL_LAYOUT_CASES = [
+    "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-OFFSETS-001",
+    "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-CLONE-001",
+    "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-REUSE-001",
+    "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-LIST-001",
+    "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-CAPACITY-001",
+    "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-INVALID-001",
+    "PIC-PBUFFER-LAYOUT-PACKED-INDIVIDUAL-EXHAUSTION-001",
+]
+ALIGNED_FIXED_LAYOUT_CASES = [
+    "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-OFFSETS-001",
+    "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-CLONE-001",
+    "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-REUSE-001",
+    "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-LIST-001",
+    "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-CAPACITY-001",
+    "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-INVALID-001",
+    "PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-EXHAUSTION-001",
+]
+ALIGNED_INDIVIDUAL_LAYOUT_CASES = [
+    "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-OFFSETS-001",
+    "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-CLONE-001",
+    "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-REUSE-001",
+    "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-LIST-001",
+    "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-CAPACITY-001",
+    "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-INVALID-001",
+    "PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-EXHAUSTION-001",
+]
+PBUFFER_CASES = PBUFFER_BASE_CASES + PACKED_FIXED_LAYOUT_CASES
 
 PHYSICS_CASES = [
     "PHYS-PHOTOCHEM-RATES-001",
@@ -76,6 +118,39 @@ WEIGHT_TIME_CASES = [
     "PIC-WEIGHT-TIMESTEP-INVALID-SPECIES-001",
 ]
 
+LOCAL_WEIGHT_TIME_CASES = [
+    "PIC-WEIGHT-LOCAL-ROUNDTRIP-001",
+    "PIC-TIMESTEP-LOCAL-ROUNDTRIP-001",
+    "PIC-WEIGHT-TIMESTEP-LOCAL-RESCALE-001",
+    "PIC-WEIGHT-TIMESTEP-LOCAL-INVALID-VALUE-001",
+    "PIC-WEIGHT-TIMESTEP-LOCAL-INVALID-SPECIES-001",
+]
+
+SINGLE_GLOBAL_WEIGHT_TIME_CASES = [
+    "PIC-WEIGHT-SINGLE-GLOBAL-ROUNDTRIP-001",
+    "PIC-TIMESTEP-SINGLE-GLOBAL-ROUNDTRIP-001",
+    "PIC-WEIGHT-TIMESTEP-SINGLE-GLOBAL-INVALID-VALUE-001",
+    "PIC-WEIGHT-TIMESTEP-SINGLE-GLOBAL-INVALID-SPECIES-001",
+]
+
+SPLIT_MERGE_CASES = [
+    "PIC-SPLIT-MERGE-EQUAL-WEIGHT-001",
+    "PIC-SPLIT-MERGE-VARIABLE-WEIGHT-001",
+    "PIC-SPLIT-MERGE-BOUNDARY-001",
+    "PIC-SPLIT-EXTENDED-STATE-001",
+    "PIC-MERGE-EXTENDED-STATE-001",
+    "PIC-WEIGHT-INDIVIDUAL-INVALID-001",
+]
+
+ALIGNED_SPLIT_MERGE_CASES = [
+    "PIC-SPLIT-MERGE-ALIGNED-EQUAL-WEIGHT-001",
+    "PIC-SPLIT-MERGE-ALIGNED-VARIABLE-WEIGHT-001",
+    "PIC-SPLIT-MERGE-ALIGNED-BOUNDARY-001",
+    "PIC-SPLIT-ALIGNED-EXTENDED-STATE-001",
+    "PIC-MERGE-ALIGNED-EXTENDED-STATE-001",
+    "PIC-WEIGHT-ALIGNED-INDIVIDUAL-INVALID-001",
+]
+
 ADAPTER_CASES = [
     "CONFIG-GENERATOR-001", "CONFIG-INVALID-DECK-001",
     "CONFIG-DUPLICATE-SPECIES-001",
@@ -89,10 +164,34 @@ SUITES: Dict[str, Dict[str, Any]] = {
     "CORE-PIC-NATIVE-001": {
         "artifact": "native-core-output.txt",
         "cases": ADAPTER_CASES + NATIVE_CASES,
+        "application": "test/core-unit-tests",
+        "configure_options": ["-state-vector=packed", "-align=off"],
+        "input_deck": "input/test/core-unit-tests.input",
+        "expected_modes": {
+            "_SIMULATION_TIME_STEP_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_TIME_STEP_",
+            "_SIMULATION_PARTICLE_WEIGHT_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_",
+            "_INDIVIDUAL_PARTICLE_WEIGHT_MODE_":
+                "_INDIVIDUAL_PARTICLE_WEIGHT_OFF_",
+            "_STATE_VECTOR_MODE_": "_STATE_VECTOR_MODE_PACKED_",
+            "_ALIGN_STATE_VECTORS_BASE_": "1",
+            "_PIC_PHOTOLYTIC_REACTIONS_MODE_":
+                "_PIC_PHOTOLYTIC_REACTIONS_MODE_ON_",
+            "_PIC__PARTICLE_COLLISION_MODEL__MODE_": "_PIC_MODE_ON_",
+            "_PIC__PARTICLE_COLLISION_MODEL_":
+                "_PIC__PARTICLE_COLLISION_MODEL__NTC_",
+            "_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL_":
+                "_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL__LB_",
+        },
     },
     "CORE-PIC-PARTICLE-BUFFER-001": {
         "artifact": "native-particle-buffer-output.txt",
-        "cases": PBUFFER_CASES,
+        "cases": PBUFFER_BASE_CASES,
+    },
+    "CORE-PIC-PBUFFER-LAYOUT-001": {
+        "artifact": "native-particle-layout-packed-fixed-output.txt",
+        "cases": PACKED_FIXED_LAYOUT_CASES,
     },
     "CORE-PIC-PHYSICS-001": {
         "artifact": "native-physics-output.txt",
@@ -105,6 +204,98 @@ SUITES: Dict[str, Dict[str, Any]] = {
     "CORE-PIC-WEIGHT-TIME-001": {
         "artifact": "native-weight-time-output.txt",
         "cases": WEIGHT_TIME_CASES,
+    },
+    "CORE-PIC-WEIGHT-TIME-LOCAL-001": {
+        "artifact": "native-weight-time-local-output.txt",
+        "cases": LOCAL_WEIGHT_TIME_CASES,
+        "application": "test/core-unit-tests-local",
+        "configure_options": ["-state-vector=packed", "-align=off"],
+        "input_deck": "input/test/core-unit-tests-local.input",
+        "expected_modes": {
+            "_SIMULATION_TIME_STEP_MODE_":
+                "_SPECIES_DEPENDENT_LOCAL_TIME_STEP_",
+            "_SIMULATION_PARTICLE_WEIGHT_MODE_":
+                "_SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_",
+            "_INDIVIDUAL_PARTICLE_WEIGHT_MODE_":
+                "_INDIVIDUAL_PARTICLE_WEIGHT_OFF_",
+            "_STATE_VECTOR_MODE_": "_STATE_VECTOR_MODE_PACKED_",
+            "_ALIGN_STATE_VECTORS_BASE_": "1",
+        },
+    },
+    "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001": {
+        "artifact": "native-weight-time-single-global-output.txt",
+        "cases": SINGLE_GLOBAL_WEIGHT_TIME_CASES,
+        "application": "test/core-unit-tests-single-global",
+        "configure_options": ["-state-vector=packed", "-align=off"],
+        "input_deck": "input/test/core-unit-tests-single-global.input",
+        "expected_modes": {
+            "_SIMULATION_TIME_STEP_MODE_": "_SINGLE_GLOBAL_TIME_STEP_",
+            "_SIMULATION_PARTICLE_WEIGHT_MODE_":
+                "_SINGLE_GLOBAL_PARTICLE_WEIGHT_",
+            "_INDIVIDUAL_PARTICLE_WEIGHT_MODE_":
+                "_INDIVIDUAL_PARTICLE_WEIGHT_OFF_",
+            "_STATE_VECTOR_MODE_": "_STATE_VECTOR_MODE_PACKED_",
+            "_ALIGN_STATE_VECTORS_BASE_": "1",
+        },
+    },
+    "CORE-PIC-SPLIT-MERGE-001": {
+        "artifact": "native-split-merge-packed-individual-output.txt",
+        "cases": PACKED_INDIVIDUAL_LAYOUT_CASES + SPLIT_MERGE_CASES,
+        "application": "test/core-unit-tests-individual-weight",
+        "configure_options": ["-state-vector=packed", "-align=off"],
+        "input_deck": "input/test/core-unit-tests-individual-weight.input",
+        "expected_modes": {
+            "_SIMULATION_TIME_STEP_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_TIME_STEP_",
+            "_SIMULATION_PARTICLE_WEIGHT_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_",
+            "_INDIVIDUAL_PARTICLE_WEIGHT_MODE_":
+                "_INDIVIDUAL_PARTICLE_WEIGHT_ON_",
+            "_STATE_VECTOR_MODE_": "_STATE_VECTOR_MODE_PACKED_",
+            "_ALIGN_STATE_VECTORS_BASE_": "1",
+            "_PIC_PHOTOLYTIC_REACTIONS_MODE_":
+                "_PIC_PHOTOLYTIC_REACTIONS_MODE_ON_",
+            "_PIC__PARTICLE_COLLISION_MODEL__MODE_": "_PIC_MODE_ON_",
+            "_PIC__PARTICLE_COLLISION_MODEL_":
+                "_PIC__PARTICLE_COLLISION_MODEL__NTC_",
+            "_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL_":
+                "_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL__LB_",
+        },
+    },
+    "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001": {
+        "artifact": "native-particle-layout-aligned-fixed-output.txt",
+        "cases": ALIGNED_FIXED_LAYOUT_CASES,
+        "application": "test/core-unit-tests",
+        "configure_options": ["-state-vector=aligned", "-align-base=16"],
+        "input_deck": "input/test/core-unit-tests.input",
+        "expected_modes": {
+            "_SIMULATION_TIME_STEP_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_TIME_STEP_",
+            "_SIMULATION_PARTICLE_WEIGHT_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_",
+            "_INDIVIDUAL_PARTICLE_WEIGHT_MODE_":
+                "_INDIVIDUAL_PARTICLE_WEIGHT_OFF_",
+            "_STATE_VECTOR_MODE_": "_STATE_VECTOR_MODE_ALIGNED_",
+            "_ALIGN_STATE_VECTORS_BASE_": "16",
+        },
+    },
+    "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001": {
+        "artifact": "native-particle-layout-aligned-individual-output.txt",
+        "cases": (ALIGNED_INDIVIDUAL_LAYOUT_CASES +
+                  ALIGNED_SPLIT_MERGE_CASES),
+        "application": "test/core-unit-tests-individual-weight",
+        "configure_options": ["-state-vector=aligned", "-align-base=16"],
+        "input_deck": "input/test/core-unit-tests-individual-weight.input",
+        "expected_modes": {
+            "_SIMULATION_TIME_STEP_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_TIME_STEP_",
+            "_SIMULATION_PARTICLE_WEIGHT_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_",
+            "_INDIVIDUAL_PARTICLE_WEIGHT_MODE_":
+                "_INDIVIDUAL_PARTICLE_WEIGHT_ON_",
+            "_STATE_VECTOR_MODE_": "_STATE_VECTOR_MODE_ALIGNED_",
+            "_ALIGN_STATE_VECTORS_BASE_": "16",
+        },
     },
 }
 
@@ -127,7 +318,8 @@ def write_json(path: Path, payload: Mapping[str, Any]) -> None:
     os.replace(str(temporary), str(path))
 
 
-def retain_build_identity(repo: Path, artifacts: Path) -> Tuple[Path, Path]:
+def retain_build_identity(repo: Path, artifacts: Path,
+                          suite: Mapping[str, Any]) -> Tuple[Path, Path]:
     """Copy the executable/generated configuration and bind each to SHA-256."""
 
     retained = artifacts / "native-build"
@@ -140,10 +332,12 @@ def retain_build_identity(repo: Path, artifacts: Path) -> Tuple[Path, Path]:
         repo / "build" / "pic" / "picSpeciesMacro.dfn",
         repo / "build" / "pic" / "pic.h",
         repo / "build" / "meshAMR" / "meshAMRdef.h",
-        repo / "input" / "test" / "core-unit-tests.input",
+        repo / str(suite["input_deck"]),
     ]
     records: List[Dict[str, Any]] = []
-    retained_executable = retained / "amps-core-unit-tests"
+    application = str(suite["application"])
+    retained_executable = retained / (
+        "amps-" + application.replace("/", "-").replace("_", "-"))
     for source in candidates:
         if not source.is_file():
             continue
@@ -157,21 +351,25 @@ def retain_build_identity(repo: Path, artifacts: Path) -> Tuple[Path, Path]:
             "sha256": sha256(target),
         })
     identity = artifacts / "native-build-identity.json"
+    configure_commands = [
+        ["./Config.pl", "-application={}".format(application)]]
+    if suite.get("configure_options"):
+        configure_commands.append(
+            ["./Config.pl"] + list(suite["configure_options"]))
+    configure_commands.append(["./Config.pl", "-spice-path=nospice"])
     write_json(identity, {
         "schema_version": 1,
-        "application": "test/core-unit-tests",
+        "application": application,
         "spice_path": "nospice",
-        "configure_commands": [
-            ["./Config.pl", "-application=test/core-unit-tests"],
-            ["./Config.pl", "-spice-path=nospice"],
-        ],
+        "configure_commands": configure_commands,
         "build_command": ["env", "MAKEFLAGS=-j16", "make", "amps"],
         "files": records,
     })
     return retained_executable, identity
 
 
-def validate_generated_configuration(repo: Path) -> Tuple[bool, str]:
+def validate_generated_configuration(repo: Path,
+                                     suite: Mapping[str, Any]) -> Tuple[bool, str]:
     """Check application identity and effective mutually exclusive modes.
 
     ``picGlobal.dfn`` intentionally contains defaults followed by generated
@@ -206,25 +404,15 @@ def validate_generated_configuration(repo: Path) -> Tuple[bool, str]:
         if define:
             effective[define.group(1)] = define.group(2)
 
-    expected_modes = {
-        "_SIMULATION_TIME_STEP_MODE_":
-            "_SPECIES_DEPENDENT_GLOBAL_TIME_STEP_",
-        "_SIMULATION_PARTICLE_WEIGHT_MODE_":
-            "_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_",
-        "_INDIVIDUAL_PARTICLE_WEIGHT_MODE_":
-            "_INDIVIDUAL_PARTICLE_WEIGHT_OFF_",
-        "_PIC_PHOTOLYTIC_REACTIONS_MODE_":
-            "_PIC_PHOTOLYTIC_REACTIONS_MODE_ON_",
-        "_PIC__PARTICLE_COLLISION_MODEL__MODE_": "_PIC_MODE_ON_",
-        "_PIC__PARTICLE_COLLISION_MODEL_":
-            "_PIC__PARTICLE_COLLISION_MODEL__NTC_",
-        "_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL_":
-            "_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL__LB_",
-    }
+    expected_modes = dict(suite["expected_modes"])
+    application = str(suite["application"])
+    application_name = application.rsplit("/", 1)[-1]
+    input_name = Path(str(suite["input_deck"])).name
     checks = {
-        "APPLICATION=core-unit-tests": "APPLICATION=core-unit-tests" in selection,
-        "InputFileAMPS=core-unit-tests.input":
-            "InputFileAMPS=core-unit-tests.input" in selection,
+        "APPLICATION={}".format(application_name):
+            "APPLICATION={}".format(application_name) in selection,
+        "InputFileAMPS={}".format(input_name):
+            "InputFileAMPS={}".format(input_name) in selection,
         "SPICE=nospice": "SPICE=nospice" in selection,
         "H2O species generated": bool(re.search(
             r"#define\s+_H2O_SPEC_\s+0(?:\s|$)", header)),
@@ -277,7 +465,11 @@ def main() -> int:
     suite_id = str(context["test"]["id"])
     if suite_id not in SUITES:
         raise RunnerError("native core runner does not define suite {}".format(suite_id))
-    suite = SUITES[suite_id]
+    # Selection aliases use the same generated application/profile as their
+    # canonical owner while narrowing only the expected case set/artifact.
+    # Future T2 matrix owners carry their own explicit application metadata.
+    suite = dict(SUITES["CORE-PIC-NATIVE-001"])
+    suite.update(SUITES[suite_id])
     requested = list(context["test"].get("selected_cases", suite["cases"]))
     if (not requested or any(not isinstance(value, str) for value in requested) or
             len(set(requested)) != len(requested)):
@@ -332,13 +524,27 @@ def main() -> int:
 
         # Config.pl is the sole application-selection authority.  In
         # particular, this runner never edits .amps.conf or Makefile.local.
+        application = str(suite["application"])
         configured = run_command(
-            [str(repo / "Config.pl"), "-application=test/core-unit-tests"],
+            [str(repo / "Config.pl"), "-application={}".format(application)],
             repo, timeout=timeout)
         if configured.returncode != 0:
-            return write_result(context, "FAIL", "Config.pl could not select core-unit-tests",
+            return write_result(context, "FAIL",
+                                "Config.pl could not select {}".format(application),
                                 cases=[case(identifier, "FAIL", "configuration failed")
                                        for identifier in requested])
+        options = list(suite.get("configure_options", []))
+        if options:
+            configured_options = run_command(
+                [str(repo / "Config.pl")] + options, repo, timeout=timeout)
+            if configured_options.returncode != 0:
+                return write_result(
+                    context, "FAIL",
+                    "Config.pl could not apply profile options {}".format(
+                        " ".join(options)),
+                    cases=[case(identifier, "FAIL",
+                                "profile configuration failed")
+                           for identifier in requested])
         spice = run_command([str(repo / "Config.pl"), "-spice-path=nospice"],
                             repo, timeout=timeout)
         if spice.returncode != 0:
@@ -361,8 +567,19 @@ def main() -> int:
                                        for identifier in requested])
 
         artifacts.mkdir(parents=True, exist_ok=True)
-        executable, identity = retain_build_identity(repo, artifacts)
+        executable, identity = retain_build_identity(repo, artifacts, suite)
         evidence = [str(identity), str(executable)]
+        configuration_ok, configuration_message = \
+            validate_generated_configuration(repo, suite)
+        print("[preflight] generated_profile={} status={}".format(
+            configuration_message, "verified" if configuration_ok else "failed"),
+              flush=True)
+        if not configuration_ok:
+            return write_result(
+                context, "FAIL", configuration_message,
+                cases=[case(identifier, "FAIL", configuration_message)
+                       for identifier in requested],
+                evidence=evidence)
         observed: Dict[str, Dict[str, Any]] = {}
 
         rank_flag = str(context["execution"].get("mpi_rank_flag", "-n"))
@@ -374,7 +591,7 @@ def main() -> int:
         ranks = str(context["test"].get(
             "mpi_ranks", context["execution"].get("mpi_ranks", 1)))
         native_requested = [identifier for identifier in requested
-                            if identifier in NATIVE_CASES]
+                            if identifier not in ADAPTER_CASES]
         transcript_chunks: List[str] = []
         # Execute the already-final context sequence exactly, including the
         # adapter-level configuration cases.  Each native case gets a fresh
@@ -389,7 +606,7 @@ def main() -> int:
                 # Verify both the human-readable selection and the generated
                 # headers used to build the retained executable. Hash evidence
                 # already exists before this case publishes its result.
-                passed, message = validate_generated_configuration(repo)
+                passed, message = configuration_ok, configuration_message
                 observed[identifier] = case(
                     identifier, "PASS" if passed else "FAIL", message)
                 continue
@@ -427,7 +644,7 @@ def main() -> int:
             if identifier == "CONFIG-DUPLICATE-SPECIES-001":
                 print("[CASE] RUN  CONFIG-DUPLICATE-SPECIES-001 unique compiled names and repeated DUST groups",
                       flush=True)
-                source_deck = repo / "input" / "test" / "core-unit-tests.input"
+                source_deck = repo / str(suite["input_deck"])
                 invalid_deck = work / "duplicate-species.input"
                 dust_deck = work / "repeated-dust-groups.input"
                 original = source_deck.read_text(encoding="utf-8")
@@ -482,6 +699,24 @@ def main() -> int:
                               work, timeout=timeout)
             transcript_chunks.append(
                 "===== {} =====\n{}".format(identifier, run.stdout or ""))
+            if identifier.endswith("-EXHAUSTION-001"):
+                # The production full-buffer path intentionally calls the
+                # generic AMPS fatal handler, which maps to MPI_Abort in this
+                # profile.  Each native case already owns a separate mpiexec,
+                # so this death test cannot terminate the Python/global test
+                # runner.  Require both abnormal termination and the exact
+                # pre-abort diagnostic; accepting either alone would turn an
+                # unrelated crash or a false-success return into a PASS.
+                diagnostic = "The particle buffer is full"
+                passed = (run.returncode != 0 and
+                          diagnostic in (run.stdout or ""))
+                observed[identifier] = case(
+                    identifier, "PASS" if passed else "FAIL",
+                    "isolated full-buffer fatal path contained"
+                    if passed else
+                    "expected nonzero exit plus {!r}; exit={}".format(
+                        diagnostic, run.returncode))
+                continue
             found = re.findall(
                 r"^\[([A-Z][A-Z0-9-]+)\]\s+(PASS|FAIL)\s*(.*)$",
                 run.stdout or "", flags=re.MULTILINE)

@@ -1162,10 +1162,16 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
   //the descriptors of the internal surfaces
   cInternalBoundaryConditionsDescriptor *InternalBoundaryDescriptor,*InternalBoundaryDescriptor_dtMin=NULL,*lastInternalBoundaryDescriptor=NULL;
 
+  // A body-of-rotation descriptor is part of the shared boundary enum and
+  // switch below for every compiled dimension.  The corresponding pointer
+  // must therefore be declared independently of the dimension-specific
+  // spherical representation; lower-dimensional decks may keep the list
+  // empty, but the translation unit still has to type-check the switch.
+  cInternalRotationBodyData *Nucleus;
+
   //spherical internal surface
 #if DIM == 3
   cInternalSphericalData *Sphere;
-  cInternalRotationBodyData *Nucleus;
 #elif DIM == 2
   exit(__LINE__,__FILE__,"not yet");
 #else
@@ -2269,10 +2275,14 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
     }
   }
 
+  // See the first-order mover above: the body-of-rotation switch is parsed
+  // for all DIM profiles even though that physical boundary is three-
+  // dimensional.  Keep its descriptor pointer outside the sphere branch.
+  cInternalRotationBodyData *Nucleus;
+
   //spherical internal surface
 #if DIM == 3
   cInternalSphericalData *Sphere;
-  cInternalRotationBodyData *Nucleus;
 #elif DIM == 2
   exit(__LINE__,__FILE__,"not yet");
 #else

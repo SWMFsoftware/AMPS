@@ -735,7 +735,8 @@ namespace {
 //init the particle tracker
 void PIC::ParticleTracker::Init() {
   //reserve memory in the particle data
-  PIC::ParticleBuffer::RequestDataStorage(ParticleDataRecordOffset,sizeof(cParticleData));
+  PIC::ParticleBuffer::RequestDataStorage(ParticleDataRecordOffset,
+      sizeof(cParticleData),alignof(cParticleData));
 
   //init TrajectoryListTable and TrajectoryDataTable
   TrajectoryListTable=new cTrajectoryList[PIC::nTotalThreadsOpenMP];

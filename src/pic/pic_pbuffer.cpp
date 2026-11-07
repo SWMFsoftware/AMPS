@@ -8,6 +8,19 @@
 
 #include "pic.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <limits>
+#include <stdexcept>
+
+namespace {
+// Runtime particle extensions are registered before ParticleBuffer::Init().
+// Retaining the strongest request is essential: aligning only the first
+// record leaves the same typed field misaligned in every later record unless
+// the complete record stride is also a multiple of that alignment.
+std::size_t RequestedParticleDataAlignment=1;
+}
+
 _TARGET_DEVICE_ _CUDA_MANAGED_ long int PIC::ParticleBuffer::ParticleDataLength=_PIC_PARTICLE_DATA__FULL_DATA_LENGTH_;
 _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::ParticleBuffer::byte *PIC::ParticleBuffer::ParticleDataBuffer=NULL;
 _TARGET_DEVICE_ _CUDA_MANAGED_ long int PIC::ParticleBuffer::MaxNPart=0;
@@ -18,7 +31,8 @@ _TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::ParticleBuffer::Thread::NTotalThreads=0;
 _TARGET_DEVICE_ _CUDA_MANAGED_ long int *PIC::ParticleBuffer::Thread::AvailableParticleListLength=NULL,*PIC::ParticleBuffer::Thread::FirstPBufferParticle=NULL;
 
 PIC::ParticleBuffer::cOptionalParticleFieldAllocationManager PIC::ParticleBuffer::OptionalParticleFieldAllocationManager;
-int PIC::ParticleBuffer::_PIC_PARTICLE_DATA__MOMENTUM_NORMAL_=-1,PIC::ParticleBuffer::_PIC_PARTICLE_DATA__MOMENTUM_PARALLEL_=-1;
+long int PIC::ParticleBuffer::_PIC_PARTICLE_DATA__MOMENTUM_NORMAL_=-1,
+    PIC::ParticleBuffer::_PIC_PARTICLE_DATA__MOMENTUM_PARALLEL_=-1;
 
 
 //the particle number in a cell
@@ -45,24 +59,55 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
   if (BufrerLength<=0) exit(__LINE__,__FILE__,"BufrerLength is less that zero");
 
   //reserve space for optional parameters
-  if (OptionalParticleFieldAllocationManager.MomentumParallelNormal==true) {
-    _PIC_PARTICLE_DATA__MOMENTUM_NORMAL_=ParticleDataLength;
-    ParticleDataLength+=sizeof(double);
-
-    _PIC_PARTICLE_DATA__MOMENTUM_PARALLEL_=ParticleDataLength;
-    ParticleDataLength+=sizeof(double);
+  if (OptionalParticleFieldAllocationManager.MomentumParallelNormal==true &&
+      _PIC_PARTICLE_DATA__MOMENTUM_NORMAL_<0) {
+    RequestDataStorage(_PIC_PARTICLE_DATA__MOMENTUM_NORMAL_,sizeof(double),
+                       alignof(double));
+    RequestDataStorage(_PIC_PARTICLE_DATA__MOMENTUM_PARALLEL_,sizeof(double),
+                       alignof(double));
   } 
 
   //reserve the space for additional 'particle's variables'
 
   //allocate the memory for the buffer
-  MaxNPart=BufrerLength;
 //  ParticleDataBuffer=(PIC::ParticleBuffer::byte*) malloc(ParticleDataLength*MaxNPart);
 
 //  amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
 
   //adjust the length of the particle state vector to be proportional to _ALIGN_STATE_VECTORS_BASE_
-  if (ParticleDataLength%_ALIGN_STATE_VECTORS_BASE_!=0) ParticleDataLength=_ALIGN_STATE_VECTORS_BASE_*(1+ParticleDataLength/_ALIGN_STATE_VECTORS_BASE_); 
+  const long int configured_alignment=_ALIGN_STATE_VECTORS_BASE_;
+  const long int alignment=std::max(
+      configured_alignment,
+      static_cast<long int>(RequestedParticleDataAlignment));
+  if (alignment<=0 || (alignment & (alignment-1))!=0)
+    throw std::invalid_argument(
+        "particle-record alignment must be a positive power of two");
+  if (configured_alignment==1 &&
+      alignment>static_cast<long int>(alignof(std::max_align_t)))
+    throw std::invalid_argument(
+        "over-aligned particle extensions require aligned state vectors");
+  if (configured_alignment!=1 &&
+      configured_alignment<static_cast<long int>(sizeof(void*)))
+    throw std::invalid_argument(
+        "aligned particle records require alignment >= sizeof(void*)");
+  if (ParticleDataLength%alignment!=0) {
+    const long int padding=alignment-ParticleDataLength%alignment;
+    if (ParticleDataLength>std::numeric_limits<long int>::max()-padding)
+      throw std::overflow_error("aligned particle-record length overflows");
+    ParticleDataLength+=padding;
+  }
+
+  const std::size_t record_length=static_cast<std::size_t>(ParticleDataLength);
+  const std::size_t record_count=static_cast<std::size_t>(BufrerLength);
+  if (record_length>std::numeric_limits<std::size_t>::max()/record_count)
+    throw std::overflow_error("particle-buffer allocation size overflows");
+  const std::size_t buffer_bytes=record_length*record_count;
+  // AMPS' managed/device allocation wrappers retain a signed long element
+  // count for their historical ABI.  Reject an otherwise-valid size_t value
+  // before that call can narrow it to a negative allocation length.
+  if (buffer_bytes>
+      static_cast<std::size_t>(std::numeric_limits<long int>::max()))
+    throw std::overflow_error("particle-buffer allocation exceeds long int");
 
   // Debug: report the final particle state-vector length (bytes) after optional fields and alignment
   if ((_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_) && (PIC::ThisThread==0)) {
@@ -74,20 +119,25 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
 
   #if defined(__linux__)
   if ( _CUDA_MODE_ == _ON_) {
-    amps_malloc_device<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
+    amps_malloc_device<PIC::ParticleBuffer::byte>(ParticleDataBuffer,buffer_bytes);
   }
   else {
-    switch (_ALIGN_STATE_VECTORS_BASE_) {
+    switch (configured_alignment) {
     case 1:
-      amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
+      amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,buffer_bytes);
       break;
     default:
-      ParticleDataBuffer=static_cast<PIC::ParticleBuffer::byte*>(aligned_alloc(_ALIGN_STATE_VECTORS_BASE_,ParticleDataLength*MaxNPart));
+      ParticleDataBuffer=static_cast<PIC::ParticleBuffer::byte*>(
+          aligned_alloc(static_cast<std::size_t>(alignment),
+                        buffer_bytes));
     }
   }
   #else
-  amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
+  amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,buffer_bytes);
   #endif
+
+  if (ParticleDataBuffer==NULL) throw std::bad_alloc();
+  MaxNPart=BufrerLength;
 
   auto ClearParticleBuffer = [=] _TARGET_HOST_ _TARGET_DEVICE_ () {
     char *p=(char*)ParticleDataBuffer;
@@ -100,7 +150,7 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
     int id=0,increment=1;
     #endif
 
-    for (i=id;i<ParticleDataLength*MaxNPart;i+=increment) p[i]=0;
+    for (i=id;i<buffer_bytes;i+=increment) p[i]=0;
   };
 
   #if _CUDA_MODE_ == _ON_ 
@@ -109,13 +159,6 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
   #else
   ClearParticleBuffer();
   #endif
-
-  if (ParticleDataBuffer==NULL) {
-    char msg[500];
-
-    sprintf(msg,"Error: cannot allocate the particle data buffer (%ld byte, %ld model particles). Decrease the total number of the reserved particles.",ParticleDataLength*MaxNPart,MaxNPart);
-    exit(__LINE__,__FILE__,msg);
-  }  
 
   if (PIC::ThisThread==0) printf("$PREFIX: The total particle buffer length=%li\n",BufrerLength);
 
@@ -240,17 +283,63 @@ void PIC::ParticleBuffer::PrintBufferChecksum(int nline,const char* fname) {
 
 //==========================================================
 //Request additional data for a particle
-void PIC::ParticleBuffer::RequestDataStorage(long int &offset,int TotalDataLength) {
-  if (ParticleDataBuffer!=NULL) exit(__LINE__,__FILE__,"Error: the particle data buffer is already initialized. Request the particle data storage before the initialization of the particle data buffer");
+void PIC::ParticleBuffer::RequestDataStorage(long int &offset,
+                                             int TotalDataLength,
+                                             std::size_t alignment) {
+  if (ParticleDataBuffer!=NULL)
+    throw std::logic_error(
+        "particle data storage must be requested before buffer initialization");
+  if (TotalDataLength<=0)
+    throw std::invalid_argument("particle data storage length must be positive");
+  if (alignment==0 || (alignment & (alignment-1))!=0)
+    throw std::invalid_argument(
+        "particle data storage alignment must be a positive power of two");
+  if (alignment>static_cast<std::size_t>(
+                    std::numeric_limits<long int>::max()))
+    throw std::overflow_error("particle data storage alignment overflows");
 
-  offset=ParticleDataLength;
-  ParticleDataLength+=TotalDataLength;
+  const long int align=static_cast<long int>(alignment);
+  const long int remainder=ParticleDataLength%align;
+  const long int padding=(remainder==0) ? 0 : align-remainder;
+  const long int length=static_cast<long int>(TotalDataLength);
+  if (ParticleDataLength>std::numeric_limits<long int>::max()-padding ||
+      ParticleDataLength+padding>
+          std::numeric_limits<long int>::max()-length)
+    throw std::overflow_error("particle data storage length overflows");
+
+  offset=ParticleDataLength+padding;
+  ParticleDataLength=offset+length;
+  RequestedParticleDataAlignment=std::max(RequestedParticleDataAlignment,
+                                           alignment);
+}
+
+namespace {
+_TARGET_HOST_ _TARGET_DEVICE_
+inline void ResetParticleRecordForAllocation(PIC::ParticleBuffer::byte* data) {
+  // A free-list record contains valid linkage but its physical payload belongs
+  // to the deleted particle.  Clear the complete record after the free-list
+  // successor has been saved and before tracker/species initialization, so a
+  // reused model particle cannot inherit position, velocity, weight, internal
+  // energy, reaction, sampling, or application-extension state.
+  for (long int i=0;i<PIC::ParticleBuffer::ParticleDataLength;++i) data[i]=0;
+}
 }
 
 //==========================================================
 //the basic data access functions for a particle
 _TARGET_HOST_ _TARGET_DEVICE_
 PIC::ParticleBuffer::byte *PIC::ParticleBuffer::GetParticleDataPointer(long int ptr) {
+#ifndef __CUDA_ARCH__
+  // Reject invalid handles before pointer arithmetic.  This host-side typed
+  // containment lets callers and tests distinguish an uninitialized buffer
+  // from an out-of-range particle index without dereferencing arbitrary
+  // memory.  Device kernels keep the historical branch-free accessor; their
+  // launch/ownership validation remains the caller's responsibility.
+  if (ParticleDataBuffer==NULL)
+    throw std::logic_error("particle data buffer is not initialized");
+  if (ptr<0 || ptr>=MaxNPart)
+    throw std::out_of_range("particle index is outside the particle buffer");
+#endif
   return ParticleDataBuffer+ptr*ParticleDataLength;
 }
 
@@ -351,6 +440,9 @@ long int PIC::ParticleBuffer::GetNewParticleGPU(bool RandomThread) {
   newptr=Thread::FirstPBufferParticle[thread];
   pdataptr=GetParticleDataPointer(newptr);
   Thread::FirstPBufferParticle[thread]=GetNext(pdataptr);
+  if (IsParticleAllocated(pdataptr)==true)
+    exit(__LINE__,__FILE__,"Error: the particle is re-allocated");
+  ResetParticleRecordForAllocation(pdataptr);
 
   #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
   PIC::ParticleTracker::InitParticleID(pdataptr);
@@ -359,7 +451,6 @@ long int PIC::ParticleBuffer::GetNewParticleGPU(bool RandomThread) {
   SetPrev(-1,pdataptr);
   SetNext(-1,pdataptr);
 
-  if (IsParticleAllocated(pdataptr)==true) exit(__LINE__,__FILE__,"Error: the particle is re-allocated");
   SetParticleAllocated(pdataptr);
 
   return newptr;
@@ -383,6 +474,9 @@ long int PIC::ParticleBuffer::GetNewParticle(bool RandomThreadOpenMP) {
   newptr=FirstPBufferParticle;
   pdataptr=GetParticleDataPointer(newptr);
   FirstPBufferParticle=GetNext(pdataptr);
+  if (IsParticleAllocated(pdataptr)==true)
+    exit(__LINE__,__FILE__,"Error: the particle is re-allocated");
+  ResetParticleRecordForAllocation(pdataptr);
 
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
   static int thread=-1; //=omp_get_thread_num();
@@ -417,6 +511,9 @@ long int PIC::ParticleBuffer::GetNewParticle(bool RandomThreadOpenMP) {
   newptr=Thread::FirstPBufferParticle[thread];
   pdataptr=GetParticleDataPointer(newptr);
   Thread::FirstPBufferParticle[thread]=GetNext(pdataptr);
+  if (IsParticleAllocated(pdataptr)==true)
+    exit(__LINE__,__FILE__,"Error: the particle is re-allocated");
+  ResetParticleRecordForAllocation(pdataptr);
 
 #else
   #error The mode is unknown
@@ -431,7 +528,6 @@ long int PIC::ParticleBuffer::GetNewParticle(bool RandomThreadOpenMP) {
   SetNext(-1,pdataptr);
 
 //#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-  if (IsParticleAllocated(pdataptr)==true) exit(__LINE__,__FILE__,"Error: the particle is re-allocated");
   SetParticleAllocated(pdataptr);
 //#endif
 
@@ -481,6 +577,9 @@ long int PIC::ParticleBuffer::GetNewParticle(long int &ListFirstParticle,bool Ra
   newptr=FirstPBufferParticle;
   pdataptr=GetParticleDataPointer(newptr);
   FirstPBufferParticle=GetNext(pdataptr);
+  if (IsParticleAllocated(pdataptr)==true)
+    exit(__LINE__,__FILE__,"Error: the particle is re-allocated");
+  ResetParticleRecordForAllocation(pdataptr);
 
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
   static int thread=-1; //=omp_get_thread_num();
@@ -537,6 +636,9 @@ long int PIC::ParticleBuffer::GetNewParticle(long int &ListFirstParticle,bool Ra
   newptr=Thread::FirstPBufferParticle[thread];
   pdataptr=GetParticleDataPointer(newptr);
   Thread::FirstPBufferParticle[thread]=GetNext(pdataptr);
+  if (IsParticleAllocated(pdataptr)==true)
+    exit(__LINE__,__FILE__,"Error: the particle is re-allocated");
+  ResetParticleRecordForAllocation(pdataptr);
 
 #else
   #error The mode is unknown
@@ -561,7 +663,6 @@ long int PIC::ParticleBuffer::GetNewParticle(long int &ListFirstParticle,bool Ra
 
 
 //#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-  if (IsParticleAllocated(pdataptr)==true) exit(__LINE__,__FILE__,"Error: the particle is re-allocated");
   SetParticleAllocated(pdataptr);
 //#endif
 

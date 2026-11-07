@@ -1871,6 +1871,90 @@ PIC::ParticleBuffer::SetX(x0,pnew);*/
 //  PIC::Parallel::ExchangeParticleData();
 } 
 
+namespace {
+
+/**
+ * Reconstruct the physical per-particle state shared by the generic Cartesian
+ * split/merge kernels.
+ *
+ * Statistical weights are dimensionless counts of represented physical
+ * particles.  Therefore a per-particle quantity q (Cartesian position in m,
+ * rotational energy in J, or one vibrational-mode energy in J) has the
+ * conserved ensemble moment sum_i(w_i q_i).  The resampler assigns every
+ * output the weighted mean q_bar=sum_i(w_i q_i)/sum_i(w_i).  Since the split
+ * and merge velocity kernels separately conserve sum(w), momentum and
+ * translational kinetic energy, this convex reconstruction additionally
+ * conserves weighted position and every enabled LB internal-energy reservoir.
+ *
+ * A convex position mean stays inside a convex Cartesian cell when every
+ * input belongs to that cell, so the routine does not invalidate the caller's
+ * intrusive cell-list ownership.  Application-requested opaque extension
+ * bytes retain the documented CloneParticle/survivor policy; the core cannot
+ * infer whether an arbitrary byte sequence is an intensive variable, an
+ * extensive moment, or a unique identifier.
+ *
+ * The routine is intentionally host-only: MergeParticleList and
+ * SplitParticleList are host list controllers.  Invalid weights are rejected
+ * by the individual-weight API in debug builds and are not converted into a
+ * nonphysical fallback state here.
+ */
+void ReconstructConservedParticleState(const long int* input,
+                                       const double* inputWeight,
+                                       int nInput,
+                                       const long int* output,
+                                       int nOutput) {
+  namespace PB = PIC::ParticleBuffer;
+
+  double totalWeight=0.0;
+  double weightedPosition[3]={0.0,0.0,0.0};
+  double weightedRotationalEnergy=0.0;
+  const int species=PB::GetI(input[0]);
+  const bool hasRotationalEnergy=
+      PIC::IDF::LB::_ROTATIONAL_ENERGY_OFFSET_>=0 &&
+      species>=0 && species<PIC::nTotalSpecies &&
+      PIC::IDF::nTotalRotationalModes[species]>0;
+  const bool hasVibrationalEnergy=
+      PIC::IDF::LB::_VIBRATIONAL_ENERGY_OFFSET_>=0 &&
+      species>=0 && species<PIC::nTotalSpecies &&
+      PIC::IDF::nTotalVibtationalModes[species]>0;
+  const int nVibrationalModes=hasVibrationalEnergy ?
+      PIC::IDF::nTotalVibtationalModes[species] : 0;
+  std::vector<double> weightedVibrationalEnergy(nVibrationalModes,0.0);
+
+  for (int i=0;i<nInput;i++) {
+    const double weight=inputWeight[i];
+    double position[3]={0.0,0.0,0.0};
+    PB::byte* data=PB::GetParticleDataPointer(input[i]);
+
+    totalWeight+=weight;
+    PB::GetX(position,data);
+    for (int d=0;d<DIM;d++) weightedPosition[d]+=weight*position[d];
+
+    if (hasRotationalEnergy)
+      weightedRotationalEnergy+=weight*PIC::IDF::LB::GetRotE(data);
+    for (int mode=0;mode<nVibrationalModes;mode++)
+      weightedVibrationalEnergy[mode]+=
+          weight*PIC::IDF::LB::GetVibE(mode,data);
+  }
+
+  double meanPosition[3];
+  for (int d=0;d<DIM;d++) meanPosition[d]=weightedPosition[d]/totalWeight;
+  const double meanRotationalEnergy=
+      hasRotationalEnergy ? weightedRotationalEnergy/totalWeight : 0.0;
+
+  for (int i=0;i<nOutput;i++) {
+    PB::byte* data=PB::GetParticleDataPointer(output[i]);
+    PB::SetX(meanPosition,data);
+    if (hasRotationalEnergy)
+      PIC::IDF::LB::SetRotE(meanRotationalEnergy,data);
+    for (int mode=0;mode<nVibrationalModes;mode++)
+      PIC::IDF::LB::SetVibE(
+          weightedVibrationalEnergy[mode]/totalWeight,mode,data);
+  }
+}
+
+}  // namespace
+
 //===============================================================================================
 /**
  * PIC::ParticleSplitting::MergeParticleList(): 
@@ -2066,9 +2150,10 @@ namespace PB = PIC::ParticleBuffer;
         double W_total = p1->weight + p2->weight + p3->weight;
         double W_new = W_total * 0.5;
 
-        // Compute total momentum and energy
+        // Compute total momentum.  Statistical weight is the represented
+        // physical-particle count; molecular mass cancels from the velocity
+        // mean because all three records have the requested species.
         double momentum_total[3] = {0.0, 0.0, 0.0};
-        double energy_total = p1->weight*Vector3D::DotProduct(p1->v,p1->v)+p2->weight*Vector3D::DotProduct(p2->v,p2->v)+p3->weight*Vector3D::DotProduct(p3->v,p3->v);
 
         for (int d = 0; d < 3; ++d) {
           momentum_total[d] = p1->weight * p1->v[d]
@@ -2083,9 +2168,22 @@ namespace PB = PIC::ParticleBuffer;
           v_mean[d] = momentum_total[d] / W_total;
         }
 
-        // Compute magnitude of delta_v to satisfy energy conservation
-        double delta_v_magnitude2=energy_total/W_total-Vector3D::DotProduct(v_mean,v_mean);
-        double delta_v_magnitude=(delta_v_magnitude2>0.0) ? sqrt(delta_v_magnitude2) : 0.0;
+        // Compute the central second moment directly.  The algebraically
+        // equivalent expression sum(w|v|^2)/W-|v_mean|^2 suffers catastrophic
+        // cancellation when a cold population rides on a large bulk speed.
+        // With equal output weights W/2 and velocities v_mean +/- delta_v,
+        // choosing |delta_v|^2=sum(w|v-v_mean|^2)/W conserves translational
+        // kinetic energy (the common factor molecular_mass/2 cancels).
+        double delta_v_magnitude2=0.0;
+        for (int d=0;d<3;d++) {
+          const double dv1=p1->v[d]-v_mean[d];
+          const double dv2=p2->v[d]-v_mean[d];
+          const double dv3=p3->v[d]-v_mean[d];
+          delta_v_magnitude2+=
+              (p1->weight*dv1*dv1+p2->weight*dv2*dv2+
+               p3->weight*dv3*dv3)/W_total;
+        }
+        const double delta_v_magnitude=sqrt(delta_v_magnitude2);
 	
         // Generate random direction for delta_v
         double theta = acos(1.0 - 2.0 * rnd()); // theta in [0, pi]
@@ -2112,6 +2210,15 @@ namespace PB = PIC::ParticleBuffer;
           vA[d] = v_mean[d] + delta_v[d];
           vB[d] = v_mean[d] - delta_v[d];
         }
+
+        // Reconstruct position and enabled LB internal energies before p3 is
+        // deleted.  The input weights are the pre-merge weights; both output
+        // records represent W_total/2 after the velocity update below.
+        const long int inputState[3]={p1->index,p2->index,p3->index};
+        const double inputStateWeight[3]={p1->weight,p2->weight,p3->weight};
+        const long int outputState[2]={p1->index,p2->index};
+        ReconstructConservedParticleState(
+            inputState,inputStateWeight,3,outputState,2);
 
         // Remove the original third particle from PB
         PB::DeleteParticle(p3->index,FirstParticle);
@@ -2520,6 +2627,17 @@ namespace PB = PIC::ParticleBuffer;
         p3.index=newPtr;
         PB::SetV(p3.v,dataC);
         PB::SetIndividualStatWeightCorrection(w3p,dataC);
+
+        // CloneParticle supplies a deterministic default for opaque extension
+        // bytes.  For physical core fields, reconstruct the weighted position
+        // and each enabled LB energy reservoir from the two pre-split inputs.
+        // The velocity kernel has already conserved weight, momentum, and
+        // translational energy independently.
+        const long int inputState[2]={p1->index,p2->index};
+        const double inputStateWeight[2]={w1,w2};
+        const long int outputState[3]={p1->index,p2->index,newPtr};
+        ReconstructConservedParticleState(
+            inputState,inputStateWeight,2,outputState,3);
 
 	      //Place p1 anps p2 in the appropriate locations in particlePtrs 
         auto InsertParticlePtr = [&](ParticleInfo* p) {

@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <algorithm>
 #include <vector>
 #include <string.h>
 #include <list>
@@ -17,6 +18,7 @@
 #include <fstream>
 #include <signal.h>
 #include <string>
+#include <unordered_map>
 
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -105,6 +107,51 @@ bool AssignSurfaceMeshFileName(char (&destination)[Capacity],
   }
 
   return AssignSurfaceMeshFileName(destination,completePath);
+}
+
+/* Classify a point against a closed triangular surface without consulting the
+ * process-global ray-tracing mesh.  The fixed direction has irrational-looking
+ * component ratios so manufactured axis-aligned surfaces do not repeatedly
+ * hit shared edges.  We still sort and merge equal ray parameters because two
+ * triangles share every polygonal edge: one physical crossing must contribute
+ * one parity event, not two.  An even number of forward crossings is the AMPS
+ * computational domain (outside an internal body); an odd number is excluded.
+ * EPS has length units and is converted to a ray-parameter tolerance.
+ */
+bool PointInTriangulatedComputationalDomain(
+    double *x,CutCell::cTriangleFace *surface,int nSurface,double EPS) {
+  if (surface==NULL || nSurface<=0) return true;
+
+  double direction[3]={1.0,0.3713906763541037,0.5291502622129182};
+  const double directionLength=sqrt(direction[0]*direction[0]+
+      direction[1]*direction[1]+direction[2]*direction[2]);
+  vector<double> parameters;
+  parameters.reserve(nSurface);
+
+  for (int nface=0;nface<nSurface;nface++) {
+    double t;
+    if (surface[nface].RayIntersection(x,direction,t,EPS)) {
+      parameters.push_back(t);
+    }
+  }
+
+  sort(parameters.begin(),parameters.end());
+  int crossings=0;
+  double previous=0.0;
+  const double absoluteTolerance=((EPS>0.0) ? EPS : 0.0)/directionLength;
+
+  for (vector<double>::const_iterator it=parameters.begin();
+       it!=parameters.end();++it) {
+    const double scale=fmax(1.0,fabs(*it));
+    const double tolerance=fmax(absoluteTolerance,
+        128.0*numeric_limits<double>::epsilon()*scale);
+    if (crossings==0 || fabs(*it-previous)>tolerance) {
+      previous=*it;
+      crossings++;
+    }
+  }
+
+  return crossings%2==0;
 }
 
 } // namespace
@@ -480,6 +527,71 @@ void CutCell::SaveCEASurfaceMeshLongFormat(const char* fname) {
   }
 
   fclose(fout);
+}
+
+void CutCell::SaveNastranSurfaceMeshLongFormat(const char* fname) {
+  /*
+   * This writer intentionally emits the small, documented NASTRAN subset
+   * consumed by ReadNastranSurfaceMeshLongFormat(): each Cartesian GRID entry
+   * occupies two free-field lines and each triangular element is CTRIA3.
+   * Coordinates retain the caller's length unit; no implicit SI/km scaling is
+   * performed.  Node and element IDs are serialization-local, consecutive,
+   * and one based.  Therefore a read/write/read cycle promises geometry,
+   * winding, connectivity, and the CTRIA3 property (AMPS face attribute), but
+   * does not promise preservation of input record order or sparse input IDs.
+   */
+  if (fname==NULL) {
+    exit(__LINE__,__FILE__,"Error: a null NASTRAN output filename was supplied");
+    return;
+  }
+  if (nBoundaryTriangleNodes<0 || nBoundaryTriangleFaces<0 ||
+      (nBoundaryTriangleNodes>0 && BoundaryTriangleNodes==NULL) ||
+      (nBoundaryTriangleFaces>0 && BoundaryTriangleFaces==NULL)) {
+    exit(__LINE__,__FILE__,
+         "Error: inconsistent global surface arrays cannot be written as NASTRAN");
+    return;
+  }
+
+  FILE *fout=fopen(fname,"w");
+  if (fout==NULL) {
+    const string message=string("Error: cannot open NASTRAN output file: ")+fname;
+    exit(__LINE__,__FILE__,message.c_str());
+    return;
+  }
+
+  fprintf(fout,"$ AMPS triangular surface: free-field GRID-star/CTRIA3\n");
+  for (int nnode=0;nnode<nBoundaryTriangleNodes;nnode++) {
+    const double *x=BoundaryTriangleNodes[nnode].x;
+    fprintf(fout,"GRID* %d 0 %.17e %.17e\n",nnode+1,x[0],x[1]);
+    fprintf(fout,"* %.17e\n",x[2]);
+  }
+
+  for (int nface=0;nface<nBoundaryTriangleFaces;nface++) {
+    const ptrdiff_t i0=BoundaryTriangleFaces[nface].node[0]-BoundaryTriangleNodes;
+    const ptrdiff_t i1=BoundaryTriangleFaces[nface].node[1]-BoundaryTriangleNodes;
+    const ptrdiff_t i2=BoundaryTriangleFaces[nface].node[2]-BoundaryTriangleNodes;
+
+    if (i0<0 || i0>=nBoundaryTriangleNodes ||
+        i1<0 || i1>=nBoundaryTriangleNodes ||
+        i2<0 || i2>=nBoundaryTriangleNodes) {
+      fclose(fout);
+      exit(__LINE__,__FILE__,
+           "Error: a NASTRAN face references a node outside the global node array");
+      return;
+    }
+
+    fprintf(fout,"CTRIA3 %d %d %td %td %td\n",nface+1,
+            BoundaryTriangleFaces[nface].attribute,i0+1,i1+1,i2+1);
+  }
+
+  // The reader requests the record following the last CTRIA3 to terminate its
+  // loop, so emit an explicit non-element sentinel rather than relying on EOF
+  // behavior of the legacy input wrapper.
+  fprintf(fout,"ENDDATA\n");
+
+  if (fclose(fout)!=0) {
+    exit(__LINE__,__FILE__,"Error: failed to close the NASTRAN output file");
+  }
 }
 
 void CutCell::ReadCEASurfaceMeshLongFormat(list<cSurfaceMeshFile> SurfaceMeshFileList,double UnitConversitonFactor) {
@@ -865,7 +977,7 @@ void CutCell::ReadNastranSurfaceMeshLongFormat(list<cSurfaceMeshFile> SurfaceMes
 void CutCell::ReadNastranSurfaceMeshLongFormat(list<cSurfaceMeshFile> SurfaceMeshFileList,double UnitConversitonFactor) {
   CiFileOperations ifile;
   char str[10000],dat[10000],*endptr;
-  int idim,nnodes=0,nfaces=0,NodeNumberOffset=0,ThisMeshNodeCounter,MeshFileID=1;
+  int idim,nnodes=0,nfaces=0,MeshFileID=1;
 
   if (BoundaryTriangleFaces!=NULL) exit(__LINE__,__FILE__,"Error: redifinition of the surface triangulation array");
 
@@ -880,6 +992,13 @@ void CutCell::ReadNastranSurfaceMeshLongFormat(list<cSurfaceMeshFile> SurfaceMes
   list<cSurfaceMeshFile>::iterator MeshFile;
 
   for (MeshFile=SurfaceMeshFileList.begin();MeshFile!=SurfaceMeshFileList.end();MeshFile++) {
+    /* NASTRAN GRID identifiers are keys, not dense array offsets.  A valid
+     * deck may use sparse IDs and may list them in any order.  Build a map for
+     * this file to the corresponding index in the concatenated AMPS node
+     * vector.  Keeping the map per file also permits independent decks to
+     * reuse the same external IDs without cross-file aliasing. */
+    unordered_map<int,int> NodeIdToIndex;
+
     ifile.openfile(MeshFile->MeshFileName);
     ifile.GetInputStr(str,sizeof(str));
 
@@ -887,12 +1006,16 @@ void CutCell::ReadNastranSurfaceMeshLongFormat(list<cSurfaceMeshFile> SurfaceMes
     ifile.GetInputStr(str,sizeof(str));
     ifile.CutInputStr(dat,str);
 
-    ThisMeshNodeCounter=0;
-
     //load the nodes
     while (strcmp("GRID*",dat)==0) {
       ifile.CutInputStr(dat,str);
       node.id=strtol(dat,&endptr,10);
+
+      if (NodeIdToIndex.find(node.id)!=NodeIdToIndex.end()) {
+        exit(__LINE__,__FILE__,"Error: duplicate GRID identifier in a NASTRAN surface mesh");
+        ifile.closefile();
+        return;
+      }
 
       ifile.CutInputStr(dat,str);
       ifile.CutInputStr(dat,str);
@@ -907,9 +1030,9 @@ void CutCell::ReadNastranSurfaceMeshLongFormat(list<cSurfaceMeshFile> SurfaceMes
       ifile.CutInputStr(dat,str);
       node.x[2]=UnitConversitonFactor*strtod(dat,&endptr);
 
+      NodeIdToIndex[node.id]=nnodes;
       nodes.push_back(node);
       nnodes++;
-      ThisMeshNodeCounter++;
 
       ifile.GetInputStr(str,sizeof(str));
       ifile.CutInputStr(dat,str);
@@ -932,7 +1055,18 @@ void CutCell::ReadNastranSurfaceMeshLongFormat(list<cSurfaceMeshFile> SurfaceMes
 
       for (idim=0;idim<3;idim++) {
         ifile.CutInputStr(dat,str);
-        face.node[idim]=NodeNumberOffset+strtol(dat,&endptr,10)-1;
+        const int ExternalNodeId=strtol(dat,&endptr,10);
+        const unordered_map<int,int>::const_iterator NodeEntry=
+            NodeIdToIndex.find(ExternalNodeId);
+
+        if (NodeEntry==NodeIdToIndex.end()) {
+          exit(__LINE__,__FILE__,
+               "Error: CTRIA3 references an undefined GRID identifier");
+          ifile.closefile();
+          return;
+        }
+
+        face.node[idim]=NodeEntry->second;
       }
 
       nfaces++;
@@ -943,7 +1077,6 @@ void CutCell::ReadNastranSurfaceMeshLongFormat(list<cSurfaceMeshFile> SurfaceMes
     }
 
     MeshFileID++;
-    NodeNumberOffset+=ThisMeshNodeCounter;
     ifile.closefile();
   }
 
@@ -1300,7 +1433,18 @@ public:
 };*/
 
 
-double CutCell::GetRemainedBlockVolume(double* xCellMin,double* xCellMax,double EPS,double RelativeError, list<cTriangleFace*>& BlockTriangulationSet,int maxIntegrationLevel,int IntegrationLevel) {
+double CutCell::GetRemainedBlockVolume(double* xCellMin,double* xCellMax,
+    double EPS,double RelativeError,list<cTriangleFace*>& BlockTriangulationSet,
+    int maxIntegrationLevel,int IntegrationLevel) {
+  return GetRemainedBlockVolume(xCellMin,xCellMax,EPS,RelativeError,
+      BlockTriangulationSet,maxIntegrationLevel,IntegrationLevel,
+      BoundaryTriangleFaces,nBoundaryTriangleFaces);
+}
+
+double CutCell::GetRemainedBlockVolume(double* xCellMin,double* xCellMax,
+    double EPS,double RelativeError,list<cTriangleFace*>& BlockTriangulationSet,
+    int maxIntegrationLevel,int IntegrationLevel,
+    cTriangleFace *SurfaceTriangulation,int nSurfaceTriangulation) {
   double VolumeL1=0.0;
 
 /*
@@ -1353,8 +1497,44 @@ double CutCell::GetRemainedBlockVolume(double* xCellMin,double* xCellMax,double 
   list<cTriangleFace*>::iterator BlockTriangulationItr;
   bool IntersectionFound=false;
 
+  /* BlockIntersection() is deliberately inclusive: a triangle coincident
+   * with a block face counts as an intersection.  That is the safe convention
+   * for building candidate lists, but it is not a volume intersection.  A
+   * surface touching only the boundary has zero three-dimensional measure;
+   * sending such a block through the terminal tetrahedral reconstruction
+   * perturbs an otherwise exact, grid-aligned cut on both sides of the shared
+   * face.  Test the open block by contracting every face by a length margin
+   * larger than the geometry tolerance.  The 4*EPS term keeps a triangle at
+   * x=xmax outside even though BlockIntersection applies EPS once to both the
+   * triangle and box bounds.  The roundoff term has the same coordinate units
+   * as the mesh and prevents an exactly shared IEEE-754 face from leaking back
+   * into the open box when EPS is zero.
+   *
+   * If a cell is no wider than twice the margin, no numerically meaningful
+   * open box remains; in that resolution-limited case retain the conservative
+   * inclusive test instead of guessing a side.  This changes only zero-volume
+   * boundary contacts.  A surface crossing the cell interior still intersects
+   * the contracted box and follows the existing recursive/tetrahedral path. */
+  double xOpenMin[3],xOpenMax[3];
+  bool OpenBlockIsResolvable=true;
+
+  for (int idim=0;idim<3;idim++) {
+    const double coordinateScale=fmax(1.0,
+        fmax(fabs(xCellMin[idim]),fabs(xCellMax[idim])));
+    const double margin=fmax(4.0*fabs(EPS),
+        128.0*numeric_limits<double>::epsilon()*coordinateScale);
+
+    xOpenMin[idim]=xCellMin[idim]+margin;
+    xOpenMax[idim]=xCellMax[idim]-margin;
+    if (!(xOpenMin[idim]<xOpenMax[idim])) OpenBlockIsResolvable=false;
+  }
+
   for (BlockTriangulationItr=BlockTriangulationSet.begin();BlockTriangulationItr!=BlockTriangulationSet.end();BlockTriangulationItr++) {
-    if ((*BlockTriangulationItr)->BlockIntersection(xCellMin,xCellMax,EPS)==true) {
+    const bool IntersectsVolume=OpenBlockIsResolvable ?
+        (*BlockTriangulationItr)->BlockIntersection(xOpenMin,xOpenMax,EPS) :
+        (*BlockTriangulationItr)->BlockIntersection(xCellMin,xCellMax,EPS);
+
+    if (IntersectsVolume==true) {
       IntersectionFound=true;
       break;
     }
@@ -1362,11 +1542,22 @@ double CutCell::GetRemainedBlockVolume(double* xCellMin,double* xCellMax,double 
 
   //if no intersection is found -> determine weather the block is inside or outside of the domain
   if (IntersectionFound==false) {
-//    if (CheckPointInsideDomain(xCellMin,BoundaryTriangleFaces,nBoundaryTriangleFaces,false,EPS)==true) {
-      //the block is within the domain
+    /* With no boundary crossing, the connected block is wholly on one side
+     * of a closed surface.  Classify its center against the explicit surface
+     * supplied by the caller.  The old unconditional full-volume return made
+     * every recursively generated block inside a solid body count as plasma
+     * volume, and the old commented alternative silently referred to the
+     * unrelated process-global triangulation. */
+    double xCellCenter[3];
+    for (int idim=0;idim<3;idim++)
+      xCellCenter[idim]=0.5*(xCellMin[idim]+xCellMax[idim]);
+
+    if (PointInTriangulatedComputationalDomain(xCellCenter,
+          SurfaceTriangulation,nSurfaceTriangulation,EPS)) {
       return (xCellMax[0]-xCellMin[0])*(xCellMax[1]-xCellMin[1])*(xCellMax[2]-xCellMin[2]);
-//    }
-//    else return 0.0;
+    }
+
+    return 0.0;
   }
 
 
@@ -1390,7 +1581,8 @@ double CutCell::GetRemainedBlockVolume(double* xCellMin,double* xCellMax,double 
 
     for (int ii=0;ii<3;ii++) xCellCenter[ii]=(xCellMax[ii]+xCellMin[ii])/2.0;
 
-    CellCenterInsideDomain=CheckPointInsideDomain(xCellCenter,BoundaryTriangleFaces,nBoundaryTriangleFaces,false,EPS);
+    CellCenterInsideDomain=PointInTriangulatedComputationalDomain(
+        xCellCenter,SurfaceTriangulation,nSurfaceTriangulation,EPS);
 
 
     for (int i=0;i<2;i+=1) for (int j=0;j<2;j+=1) for (int k=0;k<2;k+=1) {
@@ -1517,7 +1709,9 @@ double CutCell::GetRemainedBlockVolume(double* xCellMin,double* xCellMax,double 
         }
 
         //calcualte the volume
-        VolumeL1+=GetRemainedBlockVolume(x0,x1,EPS,RelativeError,BlockTriangulationSubSet,maxIntegrationLevel,IntegrationLevel+1);
+        VolumeL1+=GetRemainedBlockVolume(x0,x1,EPS,RelativeError,
+            BlockTriangulationSubSet,maxIntegrationLevel,IntegrationLevel+1,
+            SurfaceTriangulation,nSurfaceTriangulation);
       }
   }
 
@@ -1530,7 +1724,28 @@ double CutCell::GetRemainedBlockVolume(double* xCellMin,double* xCellMax,double 
 double CutCell::GetRemainedBlockVolume(double* xCellMin,double* xCellMax,double EPS,double RelativeError, CutCell::cTriangleFace* SurfaceTriangulation,int nSurfaceTriangulation,CutCell::cTriangleFaceDescriptor* TriangleCutFaceDescriptorList) {
   int maxIntegrationLevel;
 
-  maxIntegrationLevel=1+(int)(log(1.0/(pow(RelativeError,0.333))));
+  /* Each recursive level halves all three cell lengths.  The unresolved
+   * volume of a smooth cut is a layer whose thickness is one subcell width h,
+   * so its leading error is O(A*h), where A is interface area, rather than the
+   * O(h^3) volume of one isolated subcell.  Requiring h/L0 <= RelativeError
+   * therefore gives
+   *
+   *   L = ceil(log2(RelativeError^(-1)))
+   *     = ceil(-log(RelativeError)/log(2)).
+   *
+   * RelativeError is dimensionless; coordinates and returned volume retain
+   * the caller's length and length-cubed units.  The configured hard maximum
+   * remains authoritative, so requests tighter than 2^-Lmax are explicitly
+   * resolution-limited rather than silently allocating an unbounded octree.
+   * Grid-aligned planar cuts are handled exactly by the open-block contact
+   * test above and do not depend on this asymptotic estimate. */
+  if (!(RelativeError>0.0) || !isfinite(RelativeError)) {
+    exit(__LINE__,__FILE__,"Error: cut-cell relative volume error must be finite and positive");
+    return 0.0;
+  }
+
+  maxIntegrationLevel=(RelativeError>=1.0) ? 0 :
+      (int)ceil(-log(RelativeError)/log(2.0));
 
   if (maxIntegrationLevel<0) maxIntegrationLevel=0;
   if (maxIntegrationLevel>_AMR__CUT_CELL_VOLUME_CALCULATION__MAX_REFINMENT_LEVEL_) maxIntegrationLevel=_AMR__CUT_CELL_VOLUME_CALCULATION__MAX_REFINMENT_LEVEL_;
@@ -1541,7 +1756,9 @@ double CutCell::GetRemainedBlockVolume(double* xCellMin,double* xCellMax,double 
 
   for (FaceDescriptor=TriangleCutFaceDescriptorList;FaceDescriptor!=NULL;FaceDescriptor=FaceDescriptor->next) BlockTriangulationSet.push_back(FaceDescriptor->TriangleFace)  ;
 
-  return GetRemainedBlockVolume(xCellMin,xCellMax,EPS,RelativeError,BlockTriangulationSet,maxIntegrationLevel,0);
+  return GetRemainedBlockVolume(xCellMin,xCellMax,EPS,RelativeError,
+      BlockTriangulationSet,maxIntegrationLevel,0,
+      SurfaceTriangulation,nSurfaceTriangulation);
 }
 
 void CutCell::ReconstructConnectivityList(list<CutCell::cConnectivityListTriangleNode>& nodes,list<CutCell::cConnectivityListTriangleEdge>& edges,list<CutCell::cConnectivityListTriangleFace>& faces,list<cConnectivityListTriangleEdgeDescriptor>& RecoveredEdgeDescriptorList) {

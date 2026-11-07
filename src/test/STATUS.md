@@ -59,15 +59,32 @@ Last updated: 2026-11-07
   and unknown-name diagnostics. Two additional production-linked cases cover
   transactional/idempotent global AMU/charge initialization and conversion-
   table output.
-- T2 extends the same exclusive native owner from 31 to 36 cases and adds
-  `CORE-PIC-WEIGHT-TIME-001` as a selection alias for five production-linked
-  weight/time-step cases.  In the current host profile these cases qualify the
-  species-global, no-individual-correction mode: per-species minimum-reducer
-  round trips, scaled distribution copies, and typed rejection of invalid
-  values and species indices.  The production setters now require finite,
-  positive weights/time steps and validate species bounds before accessing
-  storage.  Local, single-global, and individual-correction profiles are not
-  implied by this evidence.
+- T2 extends the baseline exclusive native owner from 31 to 43 cases and adds
+  five profile owners, for six suites and 85 native profile cases. The matrix
+  covers packed/aligned-16 and fixed/individual-weight records,
+  species-global/species-local/single-global weight and time-step modes, and
+  packed/aligned split/merge. Production record requests now enforce typed
+  power-of-two alignment and checked offset/stride arithmetic; record reuse
+  clears stale payload; invalid host pointers are contained; deletion marks
+  the addressed record; and host weight setters require finite positive
+  values before accessing storage. Species-local distribution copies rescale
+  physical density when weight or time step changes.
+- T2 split/merge cases assert model count, physical weight, species, weighted
+  position, momentum, translational energy, rotational energy, and each
+  vibrational mode. The central-variance implementation avoids catastrophic
+  cancellation. Opaque application bytes follow a clone/survivor policy
+  because generic PIC code has no field semantics. Buffer exhaustion is
+  isolated per MPI subprocess and must exit nonzero with the expected
+  diagnostic.
+- T3 adds `CORE-MESH-NATIVE-001`, a 58-case owner that performs clean 1-D,
+  2-D, and 3-D configured builds. Fourteen topology/adaptation cases execute in
+  each dimension; eight production interpolation and eight cut-cell/NASTRAN
+  cases execute in 3-D. The former roadmap suite IDs remain selection aliases.
+  Production hardening covers lower-dimensional AMR/PIC compilation, safe
+  split/coarsen data transfer, full neighbor-slot interpolation selection,
+  affine reproduction across all 256 legacy refinement masks, open-interior
+  cut-surface contact, interface-error-driven integration depth, translated
+  sphere recursion, ray/edge metrics, and sparse NASTRAN identifiers.
 - Expanded 19-case native physics suite:
   - four photochemistry kernel cases for Huebner H2O rates/yield/radial
     scaling, exponential decay probability/event time, product momentum/
@@ -145,13 +162,12 @@ Last updated: 2026-11-07
 - The manifest distinguishes smoke, nightly, profile, extended, distributed,
   and application-smoke campaigns. The retained T1 qualification registry
   assigned eight suites and 51 cases to smoke and 11 suites/98 cases to
-  nightly.  The live T2 registry still has 11 executable suites but now has
-  103 cases: smoke remains 51, nightly/`--all` contain 103, and the exclusive
-  native profile contains 36. Profile, extended, and distributed retain their
-  specialized native/interface/MPI selections. The harness is intended to pin
-  these distinct sets. Empty campaign selections do not imply implemented
-  coverage; the exclusive native suite remains a scheduler barrier wherever
-  selected.
+  nightly. The live T3 registry has 17 executable suites and 210 cases: smoke
+  remains 51, nightly/`--all` contain 210, and `profile` contains seven
+  exclusive native suites and 143 cases. `extended` contains 125 cases and
+  `distributed` retains its five-case MPI selection. The harness pins these
+  distinct sets. Empty campaign selections do not imply implemented coverage;
+  every native profile remains a scheduler barrier wherever selected.
 - Framework, suite-adapter, native-fixture, and core-change comments document
   protocol/failure semantics, path containment, portability, concurrency,
   memory ownership, MPI reduction, test oracles, and validity limits. The
@@ -167,18 +183,20 @@ independently revalidates the retained He/Na tables. The test harness is
 `partial`, and all other `partial` and
 `planned` entries in
 `component_inventory.json` remain open.
-In particular, the legacy individual-weight split/merge cases, generic optional
-particle-layout alignment, full-buffer fatal path, and four non-NTC collision
-selectors have not yet been migrated. Existing model/application runners also
-remain to be adapted; mesh/MPI/restart/rank-invariance coverage is open.
+In particular, four non-NTC collision selectors have not yet been migrated.
+Existing model/application runners also remain to be adapted; distributed
+mesh ownership, restart, and rank-invariance coverage are open. T2 closes the declared host
+particle-layout, full-buffer, weight/time-mode, individual-weight, and
+split/merge contracts, but not every use of those facilities by later physics.
 
 The PIC and photolytic-reaction entries remain `partial`. Production NTC cell
 selection, a cross-species analytic rate, and H2O RT equilibration now have
-one-rank populated-cell evidence. The species-global weight/time API has
-normal-order evidence for the host profile, but local and single-global
-profiles, individual particle weights, unequal-weight/time-step physics,
-other collision selectors, collision limiting, injection, general sampling,
-and split/merge remain open. Movers still need charged uniform-E/B convergence,
+one-rank populated-cell evidence. Species-global, species-local, and
+single-global weight/time modes, individual particle weights, local rescaling,
+and conservative split/merge now have T2 host evidence. Unequal-weight/time-
+step collision physics, other collision selectors, collision limiting,
+injection, general sampling, and CUDA/device invalid-state diagnostics remain
+open. Movers still need charged uniform-E/B convergence,
 outer/refinement crossings, absorption/moving surfaces, and rank migration.
 Photochemistry now has sampled branching and 3-D no-daughter parent decay, but
 still needs three-body angular qualification and daughter insertion/statistical-
@@ -206,19 +224,46 @@ report 93 PASS, five typed optional-provider SKIPs, and no FAIL/ERROR. This
 qualification does not promote the explicit `partial`, `planned`, or
 `unavailable` contracts described above.
 
-The first T2 weight/time slice is qualified for the current species-global,
-no-individual-correction host profile.  Its five focused cases pass, the
-corrected 103-case normal campaign reports 98 PASS, five typed provider SKIPs,
-and no FAIL/ERROR, and the complete 36-case native owner passes reverse and
-seed-1729 shuffled order.  The first full campaign is retained as a failed
-diagnostic: two populated-cell collision cases exposed that the test fixture
-fed the production `-1` uninitialized sentinel through a physical-value setter
-that now correctly rejects nonpositive weights.  The fixture was corrected to
-restore its raw saved lifecycle state without invoking reducer/setter
-semantics, and both collision cases plus all five weight/time cases then
-passed together.  T2 as a whole remains open: full-registry reverse/shuffle,
-alternate weight/time profiles, and particle-layout cases remain
-unimplemented, and `split_merge_t2.cpp` is unregistered and unqualified.
+T2 is qualified for the declared one-rank host profile matrix. The baseline
+owner passes 43/43, and the six-suite profile campaign passes 85/85 in reverse
+and deterministic seed-1729 shuffled orders. The matrix covers four record
+layouts, three supported weight/time organizations, individual finite-positive
+weight validation, local rescaling, and packed/aligned conservative
+split/merge. Earlier species-global sentinel restoration and the initial T2
+layout/profile fixture failures remain retained diagnostics; each was
+corrected without weakening the production invariant. CUDA/device diagnostics,
+semantic reduction of opaque fields, unequal-weight collision physics,
+injection/sampling normalization, restart, and distributed ownership remain
+outside T2. The separately implemented T3 scope is described below.
+
+T3 is qualified for its declared one-rank Cartesian scope. The first normal,
+reverse, and seed-1729 shuffled 58/58 receipts were followed by an independent
+audit that found and corrected one additional lower-dimensional array-bound
+defect, so those receipts are retained only as superseded bring-up evidence.
+The corrected tree then passed all 58 cases in normal, reverse, and seed-1729
+shuffled order with identical per-profile executable hashes. The scope does not
+include MPI owner/ghost exchange, restart, non-Cartesian coordinates, arbitrary
+application-associated data, deep imbalance, or general nonmanifold/open/
+self-intersecting and multi-rank surfaces. The legacy 3-D-hard-coded
+`OutputLayerNodeMap` is not exercised or qualified in the lower-dimensional
+profiles.
+
+The lower-dimensional bring-up was substantive rather than a source-only
+compile: dimension-bounded mesh-signature and associated-data loops, compact
+neighbor access, the 2-D neighbor call signature, dimension-generic mesh and
+node-ID types, mover local scope, and always-three-component field-line vectors
+were corrected before 1-D/2-D cases could execute. The final audit also bounded
+global-domain initialization and `buildMesh` reads/writes to active dimensions,
+with explicitly zeroed three-component diagnostics. The per-dimension uniform
+case now executes production `buildMesh` on a private topology-only mesh and
+asserts its root split, generation/maximum level, and unique `2^D` bottom list.
+The interpolation audit then corrected the coarse-surrounded-by-fine `<=`
+selector, searched every neighbor
+slot before selecting the coarsest support, and repaired the edge-1/edge-3
+predicates. Cut-cell work distinguishes open-interior intersection from face
+contact and selects recursive depth from the interface error `O(A*h)`; sphere
+subdivision preserves unsplit bounds, and NASTRAN lookup supports sparse,
+out-of-order IDs.
 
 `make -C src/test strict-coverage` is expected to fail until those items are
 implemented and qualified. A passing smoke run must not be described as
@@ -226,26 +271,56 @@ complete AMPS coverage.
 
 ## Current validation evidence
 
-The live source tree registers 11 executable suites and 103 individual cases,
-including 36 cases in the combined native owner.  The historical bounded T1
+The live source tree registers 17 executable suites and 210 individual cases,
+including 43 cases in the baseline native owner, 85 across the historical
+six-suite T2 profile matrix, and 58 in the three-profile dimensional T3 mesh
+owner. The live `profile` campaign therefore selects seven suites and 143
+cases. The historical bounded T1
 qualification remains 11 suites/98 cases with 31 native cases; its normal,
 reverse, and shuffled native rebuilds retain the identical executable SHA-256
 `17b98e5ecd22915fc181cce51b8d71bd6abef517802a456ff2efba659c581919`.
-The first T2 slice has a corrected normal-order full-registry receipt plus
-36/36 native reverse and deterministic shuffled receipts. Full-registry T2
-reverse/shuffle remain pending. T0's earlier 45-case receipts remain
+T2 has a 43/43 normal baseline receipt plus 85/85 reverse and deterministic
+shuffled profile receipts. T3 has final corrected-tree 58/58 normal, reverse,
+and seed-1729 shuffled receipts; its first three 58/58 receipts remain
+superseded bring-up evidence. The final-tree combined profile regression passes
+all 143 T2+T3 configured cases. T0's earlier 45-case receipts remain
 historical evidence, and the retained T1 receipts remain the authority for T1
 itself.
 
 | Date | Command/evidence | Outcome | Scope |
 |---|---|---|---|
+| 2026-11-07 | `python3 src/test/run_tests.py --campaign profile --order normal --output-dir /tmp/amps-t2-t3-profile-qualified` | PASS 143/143, 7/7 suites, 0 FAIL/SKIP/ERROR (426.294 s) | Final current-tree regression of all six T2 configured owners (85 cases) plus the T3 mesh owner (58 cases). |
+| 2026-11-07 | `python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order normal --output-dir /tmp/amps-t3-qualified-normal` | PASS 58/58 | Final corrected-tree normal order. Executable SHA-256: 1-D `54e79ddf1c34e2910a059a23e38232bea6322ab7a1ee6d31e35204acd8dbf4e0`; 2-D `8d5311b99bfba3812599336b2cdbb4fbcd53ab16a3e625122b6db44a30b4aad9`; 3-D `96f13a4be39ed221b7a252bb8313db3371ed49b2fd464ea1b5d09a545bf42e34`. |
+| 2026-11-07 | `python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order reverse --output-dir /tmp/amps-t3-qualified-reverse` | PASS 58/58 | Final corrected-tree reverse order; all three executable hashes match the normal receipt exactly. |
+| 2026-11-07 | `python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order shuffle --shuffle-seed 1729 --output-dir /tmp/amps-t3-qualified-shuffle-1729` | PASS 58/58 | Final corrected-tree deterministic shuffled order; all three executable hashes match normal and reverse exactly. |
+| 2026-11-07 | `python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order normal --output-dir /tmp/amps-t3-native-normal` | Superseded bring-up PASS 58/58 | All three dimensional profiles passed, but an independent audit subsequently corrected a lower-dimensional array-bound defect; superseded by the qualified rerun above. |
+| 2026-11-07 | `python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order reverse --output-dir /tmp/amps-t3-native-reverse` | Superseded bring-up PASS 58/58 | Reverse case order across the same three clean profile builds; not final authority after the post-campaign fix. |
+| 2026-11-07 | `python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order shuffle --shuffle-seed 1729 --output-dir /tmp/amps-t3-native-shuffle-1729` | Superseded bring-up PASS 58/58 | Deterministic shuffled order before the audit correction; final authority is the qualified receipt above. |
+| 2026-11-07 | `/tmp/amps-t3-final-fixes-fourth` | PASS 4/4 focused | Final 3-D interpolation-mask and planar cut-cell regressions before the independent lower-D audit. |
+| 2026-11-07 | `/tmp/amps-t3-1d-escalated-initial`, `/tmp/amps-t3-2d-second` | PASS 6/6 + 6/6 focused | Search, neighbors, coarsen, data transfer, and cycles after lower-dimensional compilation/neighbor hardening. These are focused bring-up receipts, not the final matrix. |
+| 2026-11-07 | `/tmp/amps-t3-3d-initial`, `/tmp/amps-t3-3d-second` | Historical FAIL 16/21, then 3/5 | Exposed missing interpolation configuration, sphere-recursion bounds, stale/incorrect AMR interpolation selection, and planar cut-cell contact/depth errors; later focused and 58-case bring-up runs passed. |
+| 2026-11-07 | `python3 src/test/validate_traceability.py --output /tmp/amps-t3-doc-audit.json` | PASS structural audit | 24 areas, 209 production translation units, 181 public contracts, 16 configuration contracts, 17 suites, and 210 cases. This structural receipt is distinct from the final behavioral campaigns. |
+| 2026-11-07 | `python3 src/test/run_tests.py --test CORE-PIC-NATIVE-001 --output-dir /tmp/amps-t2-native-full-normal` | PASS 43/43 | Complete baseline packed/fixed, species-global native owner in normal order. |
+| 2026-11-07 | `python3 src/test/run_tests.py --campaign profile --order reverse --output-dir /tmp/amps-t2-profile-reverse` | PASS 85/85, 6/6 suites | All T2 generated profiles and cases in reverse suite/case order; each owner performed its required clean rebuild. |
+| 2026-11-07 | `python3 src/test/run_tests.py --campaign profile --order shuffle --shuffle-seed 1729 --output-dir /tmp/amps-t2-profile-shuffle-1729` | PASS 85/85, 6/6 suites | All T2 generated profiles and cases in deterministic shuffled order. |
+| 2026-11-07 | `/tmp/amps-t2-layout-packed-fixed-recheck` | PASS 7/7 | Packed fixed record offsets, clone/reuse, list, capacity, invalid access, and exhaustion after correcting test offset types to the checked `long int&` API. |
+| 2026-11-07 | `/tmp/amps-t2-split-merge-packed-recheck` | PASS 13/13 | Packed individual layout and split/merge after making the two-particle bin reachable and keeping the high-bulk fixture below the debugger speed guard. |
+| 2026-11-07 | `/tmp/amps-t2-layout-aligned-fixed-initial` | PASS 7/7 | Aligned-16 fixed record profile with mixed-size anonymous extensions. |
+| 2026-11-07 | `/tmp/amps-t2-layout-aligned-individual-recheck` | PASS 13/13 | Aligned-16 individual layout and split/merge after the opaque-state oracle accepted an exact clone of either valid source tuple. |
+| 2026-11-07 | `/tmp/amps-t2-weight-local-recheck` | PASS 5/5 | Species-local block-associated weight/time and rescaling after adding the target-free exosphere generator block required by mesh headers. |
+| 2026-11-07 | `/tmp/amps-t2-weight-single-global-initial` | PASS 4/4 | Single-global round trips, cross-species slot aliasing, and invalid host inputs. |
+| 2026-11-07 | `/tmp/amps-t2-harness-final-prebuild` | PASS 11/11 | Harness registry, campaign-count, schema, protocol, subprocess, and traceability regression before the final native profile campaign. |
+| 2026-11-07 | `/tmp/amps-t2-layout-packed-fixed-initial` | Historical build failure | The fixture used `int` momentum offsets with a production API requiring checked `long int&`; the type mismatch was corrected and the seven cases passed in the recheck. |
+| 2026-11-07 | `/tmp/amps-t2-split-merge-packed-initial` | Historical FAIL: 11 PASS, 2 FAIL | Independent fixture exposed an unreachable two-particle split bin and a merge bulk speed above the debugger guard; corrected with identical-velocity input and a `1e9` bulk offset. |
+| 2026-11-07 | `/tmp/amps-t2-layout-aligned-individual-initial` | Historical FAIL: 12 PASS, 1 FAIL | Oracle over-specified which opaque tuple member was cloned; corrected to accept either exact existing record under the documented clone/survivor policy. |
+| 2026-11-07 | `/tmp/amps-t2-weight-local-initial` | Historical build failure | Minimal local deck omitted the exosphere-generated internal-boundary base classes; corrected by adding the target-free exosphere block. |
 | 2026-11-07 | `/tmp/amps-t2-weight-time-initial` | PASS 5/5 | Focused species-global weight/time API cases from one clean native build; executable SHA-256 `46678c6054daad2ff9b7e3a1aabce9792d12139515e02f93bfaa0296210f5ffe`. |
 | 2026-11-07 | `/tmp/amps-t2-all-normal` | Historical FAIL: 96 PASS, 2 FAIL, 5 SKIP | First 103-case normal campaign. `PHYS-3D-COLLISION-RELAXATION-001` and `PHYS-3D-COLLISION-RATE-001` exposed a test-fixture defect: restoring the `-1` uninitialized sentinel conflicted with the new finite-positive production setter contract. |
 | 2026-11-07 | `/tmp/amps-t2-weight-time-collision-recheck` | PASS 7/7 | Corrective focused run: the two populated-cell collision cases and all five T2 weight/time cases pass together after raw saved lifecycle-state restoration; executable SHA-256 `6329674e470d9cadda436aca2d410f1ef5ecad27f4918108d56bd3078a1f4925`. |
 | 2026-11-07 | `/tmp/amps-t2-all-qualified-normal` | 98 PASS, 5 SKIP, 0 FAIL/ERROR | Qualified normal-order receipt for the live 103-case registry; all 36 native cases pass and the five optional providers remain typed SKIPs. |
 | 2026-11-07 | `/tmp/amps-t2-native-qualified-reverse` | PASS 36/36 | Complete native owner in reverse case order after a clean rebuild; executable SHA-256 `6329674e470d9cadda436aca2d410f1ef5ecad27f4918108d56bd3078a1f4925`. |
 | 2026-11-07 | `/tmp/amps-t2-native-qualified-shuffle-1729` | PASS 36/36 | Complete native owner in deterministic shuffled case order after a clean rebuild; executable SHA-256 `6329674e470d9cadda436aca2d410f1ef5ecad27f4918108d56bd3078a1f4925`. |
-| 2026-11-07 | `python3 src/test/validate_traceability.py` | PASS | Current live structural classification: 24 areas, 209 production translation units, 181 public contracts, 12 configuration contracts, 11 suites, and 103 registered cases. No behavioral case execution. |
+| 2026-11-07 | `python3 src/test/validate_traceability.py` | Historical T2 PASS | Then-current T2 structural classification: 24 areas, 209 production translation units, 181 public contracts, 15 configuration contracts, 16 suites, and 152 registered cases. No behavioral case execution. |
 | 2026-11-07 | `python3 src/test/run_tests.py --campaign smoke --jobs 4 --output-dir /tmp/amps-t1-smoke-qualified` | PASS 51/51, 8/8 suites | Corrected campaign-selection oracle and complete dependency-light T1 smoke gate. |
 | 2026-11-07 | `python3 src/test/run_tests.py --all --order normal --jobs 4 --output-dir /tmp/amps-t1-all-qualified-normal` | 93 PASS, 5 SKIP, 0 FAIL/ERROR | Complete 98-case normal order; native 31/31 PASS; provider SKIPs remain typed and explicit. |
 | 2026-11-07 | `python3 src/test/run_tests.py --all --order reverse --jobs 4 --output-dir /tmp/amps-t1-all-qualified-reverse` | 93 PASS, 5 SKIP, 0 FAIL/ERROR | Complete reverse suite/case order with a mandatory clean native rebuild. |

@@ -181,7 +181,8 @@ def test_selection_contract(context: Dict) -> None:
     # selections. Smoke is dependency-light, nightly is the complete current
     # deterministic registry, distributed selects the two-rank channel suite,
     # extended adds the optional-provider/interface module to the configured
-    # native application, and profile selects only that native application.
+    # native applications, and profile selects only the clean native profile
+    # matrix.  T3's mesh owner performs three serial DIM builds internally.
     # Pinning these complete sets makes a campaign-membership edit deliberate:
     # a new suite cannot silently introduce an MPI launch or AMPS rebuild into
     # machine bring-up, nor disappear from the routine nightly campaign.
@@ -202,11 +203,23 @@ def test_selection_contract(context: Dict) -> None:
         "CORE-GENERAL-RNG-001", "CORE-GENERAL-MPI-001",
         "CORE-GENERAL-LOGGER-001", "CORE-UNITS-001",
         "CORE-SPECIES-RADIATION-001", "CORE-INTERFACE-ABI-001",
-        "CORE-PIC-NATIVE-001"}
+        "CORE-PIC-NATIVE-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001",
+        "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001",
+        "CORE-PIC-SPLIT-MERGE-001",
+        "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001",
+        "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001",
+        "CORE-MESH-NATIVE-001"}
     assert campaign_ids("distributed") == {"CORE-GENERAL-MPI-001"}
     assert campaign_ids("extended") == {
-        "CORE-INTERFACE-ABI-001", "CORE-PIC-NATIVE-001"}
-    assert campaign_ids("profile") == {"CORE-PIC-NATIVE-001"}
+        "CORE-INTERFACE-ABI-001", "CORE-PIC-NATIVE-001",
+        "CORE-PIC-SPLIT-MERGE-001", "CORE-MESH-NATIVE-001"}
+    assert campaign_ids("profile") == {
+        "CORE-PIC-NATIVE-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001",
+        "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001",
+        "CORE-PIC-SPLIT-MERGE-001",
+        "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001",
+        "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001",
+        "CORE-MESH-NATIVE-001"}
 
     unknown_case_args = argparse.Namespace(
         test=[], match=[], component=[], all=False, case=["UNKNOWN-CASE-001"],

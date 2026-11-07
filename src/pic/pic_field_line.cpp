@@ -1017,7 +1017,8 @@ namespace PIC {
       int DataLength;
 
       DataLength=sizeof(cParticleFieldLineData);
-      PIC::ParticleBuffer::RequestDataStorage(offset,DataLength);
+      PIC::ParticleBuffer::RequestDataStorage(offset,DataLength,
+                                              alignof(cParticleFieldLineData));
 
       ParticleDataOffset=offset;
     }
@@ -1836,10 +1837,14 @@ if (DIM != 3) {
       const double Omega = 2.97211E-6;      
 
       //position of the Sun
-      double xSun[DIM]={0.0,0.0,0.0};
+      // Field-line geometry is embedded in physical 3-space independently of
+      // the AMR mesh dimension.  These vectors are explicitly indexed through
+      // component 2 below, so sizing them by DIM corrupts the 1-D/2-D compile
+      // contract even when this optional initializer is never selected.
+      double xSun[3]={0.0,0.0,0.0};
 
       //relative position to Sun
-      double x2Sun[DIM]={0.0,0.0,0.0};
+      double x2Sun[3]={0.0,0.0,0.0};
 
       //distance to Sun
       double R2Sun=0;
@@ -1856,7 +1861,7 @@ if (DIM != 3) {
       double sintheta = sqrt(1 - costheta*costheta); // >=0 always     
 
       //start position
-      double x[DIM]={xStart[0],xStart[1],xStart[2]};
+      double x[3]={xStart[0],xStart[1],xStart[2]};
 
 
       //if too close to the Sun => move to distance R0
@@ -1890,7 +1895,7 @@ if (DIM != 3) {
         double AbsB = sqrt(B[0]*B[0]+B[1]*B[1]+B[2]*B[2]);
 
         //direction of the magnetic field
-        double b[DIM] = {B[0]/AbsB, B[1]/AbsB, B[2]/AbsB};
+        double b[3] = {B[0]/AbsB, B[1]/AbsB, B[2]/AbsB};
 
         // next vertex of the spiral
         x[0]+=b[0]*Ds; x[1]+=b[1]*Ds; x[2]+=b[2]*Ds;
