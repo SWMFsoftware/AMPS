@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "paths": {
+    "output_root": "${SCRATCH}/amps-test-results",
+    "temporary_root": "${SCRATCH}/amps-test-work",
+    "data_root": "${SCRATCH}/amps-reference-data"
+  },
+  "tools": {
+    "python": ["python3"],
+    "cxx": ["g++"],
+    "mpi_cxx": ["mpicxx"],
+    "make": ["gmake"],
+    "mpiexec": ["srun"]
+  },
+  "execution": {
+    "build_jobs": 32,
+    "mpi_ranks": 4,
+    "mpi_rank_flag": "-n",
+    "default_timeout_seconds": 900,
+    "keep_work": "failures"
+  }
+}

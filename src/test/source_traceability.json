@@ -1,0 +1,310 @@
+{
+  "schema_version": 1,
+  "description": "Rule-based T0 source/public-contract traceability. The validator expands these areas to every current production translation unit and public compile contract; compilation alone never changes a status to tested.",
+  "statuses": ["tested", "partial", "planned", "exempt"],
+  "discovery": {
+    "translation_unit_extensions": [".c", ".cc", ".cpp", ".cxx", ".f", ".f90", ".for"],
+    "public_contract_extensions": [".h", ".hpp", ".dfn", ".inc"],
+    "exclude_globs": [
+      "src/test/**",
+      "**/build/**",
+      "**/test/**",
+      "**/tests/**",
+      "**/test_*.c",
+      "**/test_*.cc",
+      "**/test_*.cpp",
+      "**/test_*.cxx",
+      "src/models/sep_common/sep_test_registry.cpp"
+    ]
+  },
+  "case_registry_sources": [
+    "src/test/tests/harness/self/run_test.py",
+    "src/test/tests/pic/native_core/run_test.py",
+    "src/general/input/test_amps_input.cpp",
+    "src/test/tests/general/containers/test_general_containers.cpp",
+    "test/srcCoreUnitTests/particle_buffer.cpp",
+    "test/srcCoreUnitTests/physics_photochemistry.cpp",
+    "test/srcCoreUnitTests/physics_collisions.cpp",
+    "test/srcCoreUnitTests/physics_distribution.cpp",
+    "test/srcCoreUnitTests/physics_idf.cpp",
+    "test/srcCoreUnitTests/physics_movers.cpp"
+  ],
+  "areas": [
+    {
+      "area_id": "general-input",
+      "component": "src/general/input",
+      "path": "src/general/input",
+      "status": "tested",
+      "suite_ids": ["CORE-GENERAL-INPUT-001"],
+      "case_ids": ["INP-01", "INP-02", "INP-03", "INP-04"],
+      "local_registries": [],
+      "reason": "The header-only parser contract has independent grammar, diagnostic, include, and canonicalization cases.",
+      "gaps": []
+    },
+    {
+      "area_id": "general",
+      "component": "src/general",
+      "path": "src/general",
+      "status": "partial",
+      "suite_ids": ["CORE-GENERAL-CONTAINERS-001"],
+      "case_ids": ["GENERAL-ARRAY-001", "GENERAL-BITARRAY-001", "GENERAL-STACK-001", "GENERAL-LINKED-001", "GENERAL-STRING-001", "GENERAL-INDEXER4D-001"],
+      "local_registries": [],
+      "reason": "Selected containers and indexing utilities have direct cases; the remainder of general numerics has no global behavioral owner.",
+      "gaps": ["random streams", "special functions", "quadrature", "logger/fatal diagnostics", "multidimensional array contracts"]
+    },
+    {
+      "area_id": "interface",
+      "component": "src/interface",
+      "path": "src/interface",
+      "status": "planned",
+      "suite_ids": [],
+      "case_ids": [],
+      "local_registries": [],
+      "reason": "No interface ABI or external-field wrapper is registered in the global core runner.",
+      "gaps": ["C/C++/Fortran ABI", "interpolation adapters", "optional-provider rejection", "coordinate/unit conversions"]
+    },
+    {
+      "area_id": "mesh-amr",
+      "component": "src/meshAMR",
+      "path": "src/meshAMR",
+      "status": "planned",
+      "suite_ids": [],
+      "case_ids": [],
+      "local_registries": [],
+      "reason": "The native physics fixture uses a mesh but does not independently qualify meshAMR public algorithms.",
+      "gaps": ["tree topology", "refine/coarsen", "cut-cell geometry", "interpolation", "restart", "owner/ghost exchange"]
+    },
+    {
+      "area_id": "charge-exchange",
+      "component": "src/models/charge_exchange",
+      "path": "src/models/charge_exchange",
+      "status": "planned",
+      "suite_ids": [],
+      "case_ids": [],
+      "local_registries": [],
+      "reason": "Charge-exchange behavior is excluded from the current native profile.",
+      "gaps": ["rate lookup", "event selection", "branching", "momentum/energy/weight bookkeeping"]
+    },
+    {
+      "area_id": "chemical-solver",
+      "component": "src/models/chemical_solver",
+      "path": "src/models/chemical_solver",
+      "status": "planned",
+      "suite_ids": [],
+      "case_ids": [],
+      "local_registries": [],
+      "reason": "No chemical-network solver suite is registered.",
+      "gaps": ["network assembly", "exact linear decay", "stiff benchmark", "positivity", "element/charge conservation"]
+    },
+    {
+      "area_id": "dust",
+      "component": "src/models/dust",
+      "path": "src/models/dust",
+      "status": "planned",
+      "suite_ids": [],
+      "case_ids": [],
+      "local_registries": [],
+      "reason": "Dust is excluded from the current native profile.",
+      "gaps": ["charging", "size groups", "forces", "sources", "moments", "split/merge"]
+    },
+    {
+      "area_id": "electron-impact",
+      "component": "src/models/electron_impact",
+      "path": "src/models/electron_impact",
+      "status": "planned",
+      "suite_ids": [],
+      "case_ids": [],
+      "local_registries": [],
+      "reason": "Electron impact is excluded from the current native profile.",
+      "gaps": ["thresholds", "cross-section interpolation", "rate integration", "branching", "daughter weights"]
+    },
+    {
+      "area_id": "exosphere",
+      "component": "src/models/exosphere",
+      "path": "src/models/exosphere",
+      "status": "planned",
+      "suite_ids": [],
+      "case_ids": [],
+      "local_registries": [],
+      "reason": "The exosphere generator supplies boundary data types to the fixture, but exosphere behavior is excluded.",
+      "gaps": ["surface sources", "source normalization", "sampling", "adsorption/desorption"]
+    },
+    {
+      "area_id": "photolytic-reactions",
+      "component": "src/models/photolytic_reactions",
+      "path": "src/models/photolytic_reactions",
+      "status": "partial",
+      "suite_ids": ["CORE-PIC-NATIVE-001"],
+      "case_ids": ["PHYS-PHOTOCHEM-RATES-001", "PHYS-PHOTOCHEM-DECAY-001", "PHYS-PHOTOCHEM-KINEMATICS-001", "PHYS-PHOTOCHEM-BRANCHING-001", "PHYS-3D-PHOTODECAY-001"],
+      "local_registries": [],
+      "reason": "H2O rates, branching, scheduling, bounded product kinematics, missing daughters, and parent-only 3-D decay have global cases.",
+      "gaps": ["daughter insertion", "statistical-weight conservation", "three-body angular distribution", "full configured chemistry processor"]
+    },
+    {
+      "area_id": "sep-common",
+      "component": "src/models/sep_common",
+      "path": "src/models/sep_common",
+      "status": "partial",
+      "suite_ids": [],
+      "case_ids": [],
+      "local_registries": ["src/models/sep_common/sep_test_registry.cpp"],
+      "reason": "Model-local authoritative tests exist but are not adapted to the global result protocol.",
+      "gaps": ["global adapter", "scope-preserving evidence import"]
+    },
+    {
+      "area_id": "sep-corona-swcme",
+      "component": "src/models/sep_corona_swcme",
+      "path": "src/models/sep_corona_swcme",
+      "status": "partial",
+      "suite_ids": [],
+      "case_ids": [],
+      "local_registries": ["src/models/sep_corona_swcme/test/check_architecture.py", "src/models/sep_corona_swcme/test/shock_front/test_reduced.cpp"],
+      "reason": "Maintained local shock/CME tests exist; no global adapter owns their evidence.",
+      "gaps": ["global adapter", "qualification-scope preservation"]
+    },
+    {
+      "area_id": "sep-coronal-cme",
+      "component": "src/models/sep_coronal_cme",
+      "path": "src/models/sep_coronal_cme",
+      "status": "partial",
+      "suite_ids": [],
+      "case_ids": [],
+      "local_registries": ["src/models/sep_coronal_cme/test/run_tests.py"],
+      "reason": "The staged local registry is authoritative and extensive but is not globally adapted.",
+      "gaps": ["non-duplicating global adapter", "retained aggregate evidence"]
+    },
+    {
+      "area_id": "sputtering",
+      "component": "src/models/sputtering",
+      "path": "src/models/sputtering",
+      "status": "planned",
+      "suite_ids": [],
+      "case_ids": [],
+      "local_registries": [],
+      "reason": "Sputtering is excluded from the current native profile.",
+      "gaps": ["yield tables", "energy law", "angular law", "source normalization"]
+    },
+    {
+      "area_id": "surface-model",
+      "component": "src/models/surface",
+      "path": "src/models/surface",
+      "status": "planned",
+      "suite_ids": [],
+      "case_ids": [],
+      "local_registries": [],
+      "reason": "The sphere case uses a test callback and does not qualify production surface-model callbacks.",
+      "gaps": ["indexing", "flux accounting", "adsorption/desorption", "production reflection laws"]
+    },
+    {
+      "area_id": "swcme",
+      "component": "src/models/swcme",
+      "path": "src/models/swcme",
+      "status": "partial",
+      "suite_ids": [],
+      "case_ids": [],
+      "local_registries": ["src/models/swcme/test/run_tests.py"],
+      "reason": "A maintained model-local routine/full runner exists but is not globally adapted.",
+      "gaps": ["global adapter", "evidence import without changing physical qualification"]
+    },
+    {
+      "area_id": "pic-ecsim",
+      "component": "src/pic/ecsim",
+      "path": "src/pic/ecsim",
+      "status": "partial",
+      "suite_ids": [],
+      "case_ids": [],
+      "local_registries": ["test/srcStencilTest/test_register.h", "test/srcFastWave/main.cpp", "test/srcLightWaveTest/main.cpp"],
+      "reason": "Stencil and wave applications exist outside the global registry.",
+      "gaps": ["global adapters", "independent discrete-operator oracles", "halo evidence"]
+    },
+    {
+      "area_id": "pic-gyro",
+      "component": "src/pic/gyro",
+      "path": "src/pic/gyro",
+      "status": "planned",
+      "suite_ids": [],
+      "case_ids": [],
+      "local_registries": [],
+      "reason": "No gyro mover suite is globally registered.",
+      "gaps": ["uniform-field orbit", "drifts", "adiabatic invariants", "convergence", "invalid-state diagnostics"]
+    },
+    {
+      "area_id": "pic-mesh",
+      "component": "src/pic/mesh",
+      "path": "src/pic/mesh",
+      "status": "planned",
+      "suite_ids": [],
+      "case_ids": [],
+      "local_registries": [],
+      "reason": "No global collector/mesh ownership suite is registered.",
+      "gaps": ["domain collectors", "owner/ghost integration", "migration"]
+    },
+    {
+      "area_id": "pic-parallel",
+      "component": "src/pic/parallel",
+      "path": "src/pic/parallel",
+      "status": "planned",
+      "suite_ids": [],
+      "case_ids": [],
+      "local_registries": [],
+      "reason": "All current native physics cases are process-local one-rank tests.",
+      "gaps": ["one/two/four-rank ownership", "received ghosts", "affinity", "rank invariance"]
+    },
+    {
+      "area_id": "pic-units",
+      "component": "src/pic/units",
+      "path": "src/pic/units",
+      "status": "planned",
+      "suite_ids": [],
+      "case_ids": [],
+      "local_registries": [],
+      "reason": "No unit-conversion suite is registered.",
+      "gaps": ["base/derived conversions", "round trips", "dimensional consistency", "invalid units"]
+    },
+    {
+      "area_id": "pic-core",
+      "component": "src/pic",
+      "path": "src/pic",
+      "status": "partial",
+      "suite_ids": ["CORE-PIC-NATIVE-001"],
+      "case_ids": [
+        "PIC-PBUFFER-INIT-001", "PIC-PBUFFER-STATE-001", "PIC-PBUFFER-LIST-001",
+        "PHYS-COLLISION-CONSERVATION-001", "PHYS-COLLISION-ISOTROPY-001",
+        "PHYS-DISTRIBUTION-MAXWELLIAN-001",
+        "PHYS-IDF-STORAGE-001", "PHYS-IDF-ROTATION-001", "PHYS-IDF-VIBRATION-001", "PHYS-IDF-PARTITION-001", "PHYS-IDF-RT-001", "PHYS-IDF-RT-RATE-001",
+        "PHYS-MOVER-SIMPLE-001", "PHYS-MOVER-BORIS-001", "PHYS-MOVER-SURFACE-001",
+        "PHYS-3D-COLLISION-RELAXATION-001", "PHYS-3D-COLLISION-RATE-001", "PHYS-3D-PHOTODECAY-001"
+      ],
+      "local_registries": [],
+      "reason": "The combined configured application owns bounded particle-buffer, collision, distribution, LB, neutral mover, sphere, and parent-decay behavior.",
+      "gaps": ["charged mover convergence", "non-NTC collision selectors", "unequal weights/time steps", "injection", "general sampling", "split/merge", "restart", "refinement/outer boundaries"]
+    },
+    {
+      "area_id": "species",
+      "component": "src/species",
+      "path": "src/species",
+      "status": "planned",
+      "suite_ids": [],
+      "case_ids": [],
+      "local_registries": [],
+      "reason": "No generated species-table suite is registered.",
+      "gaps": ["mass/charge constants", "parser mapping", "duplicate/unknown species", "compiled indices"]
+    },
+    {
+      "area_id": "test-governance",
+      "component": "src/test",
+      "path": "src/test",
+      "status": "exempt",
+      "suite_ids": ["CORE-HARNESS-001"],
+      "case_ids": [
+        "HARNESS-CONFIG-001", "HARNESS-MANIFEST-001", "HARNESS-SELECTION-001",
+        "HARNESS-PROTOCOL-001", "HARNESS-SCHEDULER-001", "HARNESS-REPORT-001",
+        "HARNESS-SCHEMA-001", "HARNESS-SUBPROCESS-001", "HARNESS-TIMEOUT-001",
+        "HARNESS-CONCURRENCY-001", "HARNESS-TRACEABILITY-001"
+      ],
+      "local_registries": [],
+      "reason": "Test-control implementation is not a production source area; its demonstrated contracts are tracked by the harness suite and T0 roadmap.",
+      "gaps": ["standalone traceability validator is not yet a manifest-owned case", "cross-platform retained fault-injection receipts", "full order-isolation campaign"]
+    }
+  ]
+}

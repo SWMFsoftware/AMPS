@@ -48,6 +48,30 @@ _TARGET_HOST_ _TARGET_DEVICE_
     init(n);
   }
 
+  // array_1d owns its storage.  The original compiler-generated copy
+  // constructor copied only the pointer, so a returned arithmetic temporary
+  // could alias the source and both destructors would delete the same buffer
+  // whenever copy elision was unavailable.  Keep value semantics explicit:
+  // copies have independent storage and moves transfer ownership.
+  _TARGET_HOST_ _TARGET_DEVICE_
+  array_1d(const array_1d<T>& other) {
+    data=NULL,size_dim0=0;
+
+    if (other.size_dim0>0) {
+      init(other.size_dim0);
+      for (int i=0;i<size_dim0;i++) data[i]=other.data[i];
+    }
+  }
+
+  _TARGET_HOST_ _TARGET_DEVICE_
+  array_1d(array_1d<T>&& other) noexcept {
+    data=other.data;
+    size_dim0=other.size_dim0;
+
+    other.data=NULL;
+    other.size_dim0=0;
+  }
+
 _TARGET_HOST_ _TARGET_DEVICE_
  ~array_1d() {
    if (data!=NULL) delete [] data;
@@ -113,7 +137,30 @@ _TARGET_HOST_ _TARGET_DEVICE_
 
 //===================================================
   array_1d<T>& operator = (const array_1d<T>& v) {
+    if (this==&v) return *this;
+
+    if (size_dim0!=v.size_dim0) {
+      if (data!=NULL) delete [] data;
+
+      data=(v.size_dim0>0) ? new T [v.size_dim0] : NULL;
+      size_dim0=v.size_dim0;
+    }
+
     for(int i=0;i<size_dim0;i++) data[i]=v.data[i];
+
+    return *this;
+  }
+
+  _TARGET_HOST_ _TARGET_DEVICE_
+  array_1d<T>& operator = (array_1d<T>&& v) noexcept {
+    if (this==&v) return *this;
+
+    if (data!=NULL) delete [] data;
+
+    data=v.data;
+    size_dim0=v.size_dim0;
+    v.data=NULL;
+    v.size_dim0=0;
 
     return *this;
   }

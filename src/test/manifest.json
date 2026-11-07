@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "campaigns": ["smoke", "nightly", "profile", "extended", "distributed", "application-smoke"],
+  "tests": [
+    {
+      "id": "CORE-HARNESS-001",
+      "component": "src/test",
+      "level": "unit",
+      "tiers": ["smoke", "nightly"],
+      "runner": "tests/harness/self/run_test.py",
+      "description": "Test registry, layered configuration, selection, and result-protocol self-test",
+      "requires": {
+        "tools": ["python"],
+        "paths": [],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "HARNESS-CONFIG-001",
+        "HARNESS-MANIFEST-001",
+        "HARNESS-SELECTION-001",
+        "HARNESS-PROTOCOL-001",
+        "HARNESS-SCHEDULER-001",
+        "HARNESS-REPORT-001",
+        "HARNESS-SCHEMA-001",
+        "HARNESS-SUBPROCESS-001",
+        "HARNESS-TIMEOUT-001",
+        "HARNESS-CONCURRENCY-001",
+        "HARNESS-TRACEABILITY-001"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "id": "CORE-GENERAL-INPUT-001",
+      "component": "src/general/input",
+      "level": "unit",
+      "tiers": ["smoke", "nightly"],
+      "runner": "tests/general/input/run_test.py",
+      "description": "Generic runtime-input grammar, diagnostics, includes, and canonicalization",
+      "requires": {
+        "tools": ["cxx"],
+        "paths": ["src/general/input/amps_input.h", "src/general/input/test_amps_input.cpp"],
+        "capabilities": []
+      },
+      "expected_cases": ["INP-01", "INP-02", "INP-03", "INP-04"],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "CORE-GENERAL-CONTAINERS-001",
+      "component": "src/general",
+      "level": "unit",
+      "tiers": ["smoke", "nightly"],
+      "runner": "tests/general/containers/run_test.py",
+      "description": "General array, bit-array, stack, linked-container, string, and 4-D index utilities",
+      "requires": {
+        "tools": ["mpi_cxx"],
+        "paths": ["src/general/indexer_4d.h", "src/general/stack.h"],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "GENERAL-ARRAY-001",
+        "GENERAL-BITARRAY-001",
+        "GENERAL-STACK-001",
+        "GENERAL-LINKED-001",
+        "GENERAL-STRING-001",
+        "GENERAL-INDEXER4D-001"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "CORE-PIC-NATIVE-001",
+      "aliases": ["CORE-PIC-PARTICLE-BUFFER-001", "CORE-PIC-PHYSICS-001"],
+      "alias_cases": {
+        "CORE-PIC-PARTICLE-BUFFER-001": [
+          "PIC-PBUFFER-INIT-001",
+          "PIC-PBUFFER-STATE-001",
+          "PIC-PBUFFER-LIST-001"
+        ],
+        "CORE-PIC-PHYSICS-001": [
+          "PHYS-PHOTOCHEM-RATES-001",
+          "PHYS-PHOTOCHEM-DECAY-001",
+          "PHYS-PHOTOCHEM-KINEMATICS-001",
+          "PHYS-PHOTOCHEM-BRANCHING-001",
+          "PHYS-COLLISION-CONSERVATION-001",
+          "PHYS-COLLISION-ISOTROPY-001",
+          "PHYS-DISTRIBUTION-MAXWELLIAN-001",
+          "PHYS-IDF-STORAGE-001",
+          "PHYS-IDF-ROTATION-001",
+          "PHYS-IDF-VIBRATION-001",
+          "PHYS-IDF-PARTITION-001",
+          "PHYS-IDF-RT-001",
+          "PHYS-IDF-RT-RATE-001",
+          "PHYS-MOVER-SIMPLE-001",
+          "PHYS-MOVER-BORIS-001",
+          "PHYS-MOVER-SURFACE-001",
+          "PHYS-3D-COLLISION-RELAXATION-001",
+          "PHYS-3D-COLLISION-RATE-001",
+          "PHYS-3D-PHOTODECAY-001"
+        ]
+      },
+      "component": "src/pic",
+      "level": "module",
+      "tiers": ["nightly", "profile", "extended"],
+      "runner": "tests/pic/native_core/run_test.py",
+      "description": "One configured native AMPS build covering generator/deck validation, particle buffers, and 3-D PIC physics",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": [
+          "Config.pl",
+          "input/test/core-unit-tests.input",
+          "test/srcCoreUnitTests/main.cpp",
+          "test/srcCoreUnitTests/physics_photochemistry.cpp",
+          "test/srcCoreUnitTests/physics_collisions.cpp",
+          "test/srcCoreUnitTests/physics_distribution.cpp",
+          "test/srcCoreUnitTests/physics_idf.cpp",
+          "test/srcCoreUnitTests/physics_movers.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "CONFIG-GENERATOR-001",
+        "CONFIG-INVALID-DECK-001",
+        "PIC-PBUFFER-INIT-001",
+        "PIC-PBUFFER-STATE-001",
+        "PIC-PBUFFER-LIST-001",
+        "PHYS-PHOTOCHEM-RATES-001",
+        "PHYS-PHOTOCHEM-DECAY-001",
+        "PHYS-PHOTOCHEM-KINEMATICS-001",
+        "PHYS-PHOTOCHEM-BRANCHING-001",
+        "PHYS-COLLISION-CONSERVATION-001",
+        "PHYS-COLLISION-ISOTROPY-001",
+        "PHYS-DISTRIBUTION-MAXWELLIAN-001",
+        "PHYS-IDF-STORAGE-001",
+        "PHYS-IDF-ROTATION-001",
+        "PHYS-IDF-VIBRATION-001",
+        "PHYS-IDF-PARTITION-001",
+        "PHYS-IDF-RT-001",
+        "PHYS-IDF-RT-RATE-001",
+        "PHYS-MOVER-SIMPLE-001",
+        "PHYS-MOVER-BORIS-001",
+        "PHYS-MOVER-SURFACE-001",
+        "PHYS-3D-COLLISION-RELAXATION-001",
+        "PHYS-3D-COLLISION-RATE-001",
+        "PHYS-3D-PHOTODECAY-001"
+      ],
+      "timeout_seconds": 1800,
+      "mpi_ranks": 1,
+      "exclusive": true
+    }
+  ]
+}

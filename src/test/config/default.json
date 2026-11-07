@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "paths": {
+    "output_root": "test_output/core-tests",
+    "temporary_root": "",
+    "data_root": ""
+  },
+  "tools": {
+    "python": ["python3"],
+    "cxx": ["c++"],
+    "mpi_cxx": ["mpicxx"],
+    "make": ["make"],
+    "mpiexec": ["mpiexec"]
+  },
+  "execution": {
+    "build_jobs": 16,
+    "mpi_ranks": 1,
+    "mpi_rank_flag": "-n",
+    "default_timeout_seconds": 300,
+    "keep_work": "failures"
+  }
+}

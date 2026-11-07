@@ -180,9 +180,12 @@ t.SwitchTimeSegment(__LINE__,"first switch");
     listeners.Append(new SummaryReportListener(std::unique_ptr<::testing::TestEventListener>(default_listener)));
 
 
-    // Run tests
-    RUN_ALL_TESTS();
+    // Propagate GoogleTest's status.  The historical driver discarded this
+    // value and always returned EXIT_SUCCESS, allowing a failing assertion to
+    // look green to Make/nightly automation even though the text report named
+    // failed tests.
+    const int test_status=RUN_ALL_TESTS();
 
   MPI_Finalize();
-  return EXIT_SUCCESS;
+  return test_status;
 }

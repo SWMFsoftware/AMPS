@@ -511,8 +511,16 @@ public:
   void PrintChecksumThread(long int nline,const char* fname,int ThisThread=-1) {
     char message[1000];
 
-    sprintf(message," line=%ld, file=%s",nline,fname);
-    if (ThisThread!=-1)  sprintf(message,"%s, thread=%i",message,ThisThread);
+    snprintf(message,sizeof(message)," line=%ld, file=%s",nline,fname);
+    if (ThisThread!=-1) {
+      // Appending from the current end avoids the undefined overlapping
+      // source/destination of sprintf(message,"%s...",message,...).  Retain
+      // truncation and a terminating NUL when a diagnostic path is long.
+      const size_t length=strlen(message);
+      if (length<sizeof(message)) {
+        snprintf(message+length,sizeof(message)-length,", thread=%i",ThisThread);
+      }
+    }
 
     printf("$PREFIX:CRC32 checksum=0x%lx, message=%s\n",checksum(),message);
   }

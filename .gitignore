@@ -4,6 +4,7 @@
 data
 output
 *.input
+!input/test/core-unit-tests.input
 table_parser
 .general.conf
 .amps.conf

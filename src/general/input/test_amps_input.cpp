@@ -14,10 +14,12 @@
 
 #include "amps_input.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -203,21 +205,112 @@ Outcome CanonicalAndOwnership() {
 
 }  // namespace
 
-int main() {
-  const std::vector<std::pair<std::string, std::function<Outcome()>>> tests = {
-      {"INP-01", Grammar},
-      {"INP-02", StructuralErrors},
-      {"INP-03", Includes},
-      {"INP-04", CanonicalAndOwnership},
+int main(int argc, char** argv) {
+  struct Test {
+    std::string id;
+    const char* description;
+    std::function<Outcome()> function;
   };
+  std::vector<Test> tests = {
+      {"INP-01", "nested/named blocks, comments, continuations, and locations",
+       Grammar},
+      {"INP-02", "structural-error diagnostics and physical line numbers",
+       StructuralErrors},
+      {"INP-03", "relative includes, balance, cycles, and missing files",
+       Includes},
+      {"INP-04", "canonical round trip, flattening, and ownership policy",
+       CanonicalAndOwnership},
+  };
+
+  // Keep this dependency-light program's selection contract aligned with the
+  // shared C++ harness used by configured AMPS tests.  Exact repeated --case
+  // arguments let the global runner prove that every case is independently
+  // executable.  Deterministic reverse/shuffle modes expose hidden mutable
+  // state and order dependencies; the default remains the historical order.
+  std::vector<std::string> selected_ids;
+  std::string filter;
+  std::string order = "normal";
+  unsigned int shuffle_seed = 0;
+  for (int i = 1; i < argc; ++i) {
+    const std::string argument = argv[i];
+    if (argument == "--case" && i + 1 < argc) {
+      selected_ids.push_back(argv[++i]);
+    } else if (argument == "--filter" && i + 1 < argc) {
+      filter = argv[++i];
+    } else if (argument == "--order" && i + 1 < argc) {
+      order = argv[++i];
+    } else if (argument == "--seed" && i + 1 < argc) {
+      try {
+        shuffle_seed = static_cast<unsigned int>(std::stoul(argv[++i]));
+      } catch (const std::exception&) {
+        std::fprintf(stderr, "invalid --seed value\n");
+        return 2;
+      }
+    } else {
+      std::fprintf(stderr,
+                   "usage: %s [--case ID]... [--filter SUBSTRING] "
+                   "[--order normal|reverse|shuffle] [--seed N]\n",
+                   argv[0]);
+      return 2;
+    }
+  }
+  if (order != "normal" && order != "reverse" && order != "shuffle") {
+    std::fprintf(stderr, "unknown test order '%s'\n", order.c_str());
+    return 2;
+  }
+  if (!selected_ids.empty() && !filter.empty()) {
+    std::fprintf(stderr, "--case and --filter are mutually exclusive\n");
+    return 2;
+  }
+
+  // Reject a misspelled exact ID even when another selected case would run;
+  // silently accepting a partial selection would create false coverage.
+  for (const std::string& requested : selected_ids) {
+    const bool known = std::any_of(tests.begin(), tests.end(),
+        [&requested](const Test& test) { return test.id == requested; });
+    if (!known) {
+      std::fprintf(stderr, "unknown input-test case '%s'\n", requested.c_str());
+      return 2;
+    }
+  }
+
+  // Exact selection begins in repeated --case order, matching the shared
+  // harness contract.  This is important because the global runner has
+  // already materialized reverse/shuffle order before invoking the adapter;
+  // filtering the fixed registry order would silently undo that evidence.
+  std::vector<Test> execution;
+  if (!selected_ids.empty()) {
+    for (const std::string& requested : selected_ids) {
+      const auto match = std::find_if(tests.begin(), tests.end(),
+          [&requested](const Test& test) { return test.id == requested; });
+      execution.push_back(*match);
+    }
+  } else {
+    for (const Test& test : tests)
+      if (filter.empty() || test.id.find(filter) != std::string::npos)
+        execution.push_back(test);
+  }
+  if (order == "reverse") {
+    std::reverse(execution.begin(), execution.end());
+  } else if (order == "shuffle") {
+    std::mt19937 generator(shuffle_seed);
+    std::shuffle(execution.begin(), execution.end(), generator);
+  }
+
   int failed = 0;
-  for (const auto& test : tests) {
-    const Outcome outcome = test.second();
-    std::printf("[%s] %s %s\n", test.first.c_str(), outcome.pass ? "PASS" : "FAIL",
+  for (const auto& test : execution) {
+    std::printf("[CASE] RUN  %s %s\n", test.id.c_str(), test.description);
+    std::fflush(stdout);
+    const Outcome outcome = test.function();
+    std::printf("[%s] %s %s\n", test.id.c_str(), outcome.pass ? "PASS" : "FAIL",
                 outcome.message.c_str());
     if (!outcome.pass) ++failed;
   }
-  std::printf("amps_input tests: total=%zu pass=%zu fail=%d\n", tests.size(),
-              tests.size() - static_cast<std::size_t>(failed), failed);
+  if (execution.empty()) {
+    std::fprintf(stderr, "no input tests matched the requested selection\n");
+    return 2;
+  }
+  std::printf("amps_input tests: total=%zu pass=%zu fail=%d\n", execution.size(),
+              execution.size() - static_cast<std::size_t>(failed), failed);
   return failed == 0 ? 0 : 1;
 }

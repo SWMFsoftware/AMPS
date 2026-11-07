@@ -387,11 +387,17 @@ void PhotolyticReactions::Huebner1992ASS::GetProductVelocity_2(double excessEner
     //positiveTemp = 2*e_calc*m1*m2-(m1+m2)*r1*r1;
     //}
 
+  // Isotropic directions are uniform in solid angle dOmega=dphi*d(cos theta),
+  // not uniform in polar angle theta.  Sampling theta uniformly overpopulates
+  // the poles: <nz^2>=1/2 instead of the physical isotropic value 1/3.  The
+  // centre-of-mass momentum magnitude is fixed above by the two-body energy
+  // closure; only its direction is randomized here.
   double phi = rnd()*Pi*2;
-  double theta= rnd()*Pi;
-  p1x = r1*cos(phi)*sin(theta);
-  p1y = r1*sin(phi)*sin(theta);
-  p1z = r1*cos(theta);
+  double cosTheta=2.0*rnd()-1.0;
+  double sinTheta=sqrt(1.0-cosTheta*cosTheta);
+  p1x = r1*cos(phi)*sinTheta;
+  p1y = r1*sin(phi)*sinTheta;
+  p1z = r1*cosTheta;
   p2x = -p1x;
   p2y = -p1y;
   p2z = -p1z;
@@ -643,11 +649,20 @@ void PhotolyticReactions::Huebner1992ASS::GenerateReactionProducts(int &Reaction
   
 
 
+  // Product IDs above are compacted when the application does not compile a
+  // daughter species (its generated species ID is negative). Velocities must
+  // use the same compact index. Writing slot i here used to leave holes: for
+  // example, a neutral H in original slot 1 was returned as product 0 while
+  // velocity 0 retained stale data from an earlier reaction.
+  int iReturnProduct=0;
   for (i=0;i<nMaxReactionProducts;i++) {
     int t;
     if ((t=TotalReactionProductTable[i+ReactionChannel*nMaxReactionProducts])>=0) {
-      //ReturnReactionProductTable[nReactionProducts++]=t;
-      for (int idim=0;idim<3;idim++) ReturnReactionProductVelocityTable[idim+3*i]=LocalReactionProductVelocityTable[i][idim];
+      for (int idim=0;idim<3;idim++) {
+        ReturnReactionProductVelocityTable[idim+3*iReturnProduct]=
+            LocalReactionProductVelocityTable[i][idim];
+      }
+      ++iReturnProduct;
     }
   }
 }
@@ -703,11 +718,15 @@ void PhotolyticReactions::Huebner1992ASS::GenerateGivenProducts(int prodSpec, in
   }
 
 
+  int iReturnProduct=0;
   for (i=0;i<nMaxReactionProducts;i++) {
     int t;
     if ((t=TotalReactionProductTable[i+ReactionChannel*nMaxReactionProducts])>=0) {
-      //ReturnReactionProductTable[nReactionProducts++]=t;
-      for (int idim=0;idim<3;idim++) ReturnReactionProductVelocityTable[idim+3*i]=LocalReactionProductVelocityTable[i][idim];
+      for (int idim=0;idim<3;idim++) {
+        ReturnReactionProductVelocityTable[idim+3*iReturnProduct]=
+            LocalReactionProductVelocityTable[i][idim];
+      }
+      ++iReturnProduct;
     }
   }
 

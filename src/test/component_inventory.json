@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "components": [
+    {
+      "component": "src/general",
+      "status": "partial",
+      "test_ids": ["CORE-GENERAL-CONTAINERS-001"],
+      "remaining": "Random generators, special functions, quadrature, logging, and multidimensional arrays need independent numerical tests."
+    },
+    {
+      "component": "src/general/input",
+      "status": "covered",
+      "test_ids": ["CORE-GENERAL-INPUT-001"],
+      "remaining": "Extend fixtures whenever the generic runtime-input grammar changes."
+    },
+    {
+      "component": "src/interface",
+      "status": "planned",
+      "test_ids": [],
+      "remaining": "C/Fortran interfaces, interpolation adapters, and external-field wrappers."
+    },
+    {
+      "component": "src/meshAMR",
+      "status": "planned",
+      "test_ids": [],
+      "remaining": "Tree topology, refinement/coarsening, ownership, ghost exchange, cut cells, restart, and interpolation."
+    },
+    {
+      "component": "src/models/charge_exchange",
+      "status": "planned",
+      "test_ids": [],
+      "remaining": "Reaction selection, rates, conservation, and statistical-weight handling."
+    },
+    {
+      "component": "src/models/chemical_solver",
+      "status": "planned",
+      "test_ids": [],
+      "remaining": "Network assembly, stiff/non-stiff limits, positivity, and conservation."
+    },
+    {
+      "component": "src/models/dust",
+      "status": "planned",
+      "test_ids": [],
+      "remaining": "Charging, size groups, forces, injection, and moment conservation."
+    },
+    {
+      "component": "src/models/electron_impact",
+      "status": "planned",
+      "test_ids": [],
+      "remaining": "Cross-section interpolation, thresholds, branching, and daughter bookkeeping."
+    },
+    {
+      "component": "src/models/exosphere",
+      "status": "planned",
+      "test_ids": [],
+      "remaining": "Surface sources, boundary interactions, source normalization, and sampling."
+    },
+    {
+      "component": "src/models/photolytic_reactions",
+      "status": "partial",
+      "test_ids": ["CORE-PIC-NATIVE-001"],
+      "remaining": "Rate/yield tables, inverse-square scaling, exponential scheduling, sampled branching, configured missing daughters, 3-D parent decay, product conservation, and two-body angular isotropy are tested. Add daughter insertion/statistical-weight conservation and three-body angular-distribution qualification."
+    },
+    {
+      "component": "src/models/sep_common",
+      "status": "partial",
+      "test_ids": [],
+      "remaining": "Existing model-local verification must be adapted into the global result protocol."
+    },
+    {
+      "component": "src/models/sep_corona_swcme",
+      "status": "partial",
+      "test_ids": [],
+      "remaining": "Existing model-local shock/CME tests must be adapted without changing their qualification scope."
+    },
+    {
+      "component": "src/models/sep_coronal_cme",
+      "status": "partial",
+      "test_ids": [],
+      "remaining": "The staged 222-test registry remains authoritative and needs a non-duplicating adapter."
+    },
+    {
+      "component": "src/models/sputtering",
+      "status": "planned",
+      "test_ids": [],
+      "remaining": "Yield tables, energy/angle laws, and source normalization."
+    },
+    {
+      "component": "src/models/surface",
+      "status": "planned",
+      "test_ids": [],
+      "remaining": "Surface mesh indexing, adsorption/desorption, flux accounting, and boundary state."
+    },
+    {
+      "component": "src/models/swcme",
+      "status": "partial",
+      "test_ids": [],
+      "remaining": "The existing SWCME routine/full runner needs a global-runner adapter and evidence import."
+    },
+    {
+      "component": "src/pic",
+      "status": "partial",
+      "test_ids": ["CORE-PIC-NATIVE-001"],
+      "remaining": "Particle-buffer state; Maxwellian moments; neutral Simple/Boris motion; analytic sphere reflection; hard-sphere kernel invariants; populated-cell NTC rate, conservation, and RT equilibration; 3-D parent decay; and LB equilibrium/partition/RT rates are tested. Add charged mover convergence, remaining collision selectors, unequal weights/time steps, injection, general sampling, split/merge, restart, refinement/outer boundaries, and MPI ownership."
+    },
+    {
+      "component": "src/pic/ecsim",
+      "status": "partial",
+      "test_ids": [],
+      "remaining": "Adapt stencil and wave tests; add independent discrete-operator and halo tests."
+    },
+    {
+      "component": "src/pic/gyro",
+      "status": "planned",
+      "test_ids": [],
+      "remaining": "Gyro mover and drift limits, invariants, convergence, and invalid-state diagnostics."
+    },
+    {
+      "component": "src/pic/mesh",
+      "status": "planned",
+      "test_ids": [],
+      "remaining": "Domain-boundary collectors and mesh/PIC ownership integration."
+    },
+    {
+      "component": "src/pic/parallel",
+      "status": "planned",
+      "test_ids": [],
+      "remaining": "One-, two-, and four-rank halo/affinity behavior with received-ghost verification."
+    },
+    {
+      "component": "src/pic/units",
+      "status": "planned",
+      "test_ids": [],
+      "remaining": "Unit conversions, dimensional constants, round trips, and invalid-unit handling."
+    },
+    {
+      "component": "src/species",
+      "status": "planned",
+      "test_ids": [],
+      "remaining": "Mass/charge/property tables and parser-to-compiled-species consistency."
+    },
+    {
+      "component": "src/test",
+      "status": "partial",
+      "test_ids": ["CORE-HARNESS-001"],
+      "remaining": "Schema, selection, protocol, scheduler, reporting, hostile subprocesses, timeout/interrupt cleanup, concurrency, exhaustive source/config traceability, and order/isolation campaigns are registered. Add cross-platform fault-injection evidence, distributed/sharded aggregation, cancellation stress, and long-run leak/resource checks."
+    }
+  ]
+}
