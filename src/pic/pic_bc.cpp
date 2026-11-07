@@ -7,6 +7,8 @@
 
 #include "pic.h"
 
+#include <limits>
+
 
 //the list of blocks where the injection BCs are applied
 
@@ -241,6 +243,25 @@ double PIC::BC::CalculateInjectionRate_MaxwellianDistribution(double NumberDesni
   return res;
 }
 
+double PIC::BC::SamplePoissonWaitingTime(double rate) {
+  // A non-positive or non-finite intensity has no physical event. Returning
+  // infinity gives an explicit, composable no-event value and also prevents
+  // a division by zero or NaN from silently entering an injection loop.
+  if (!(rate>0.0) || !std::isfinite(rate))
+    return std::numeric_limits<double>::infinity();
+
+  // rnd() is configured to exclude both endpoints. The logarithmic inverse
+  // CDF therefore returns a strictly positive finite waiting time with
+  // E[dt]=1/rate for a stationary Poisson process.
+  return -std::log(rnd())/rate;
+}
+
+double PIC::BC::SampleUniformSphereVolumeRadius(double outer_radius) {
+  if (!(outer_radius>0.0) || !std::isfinite(outer_radius))
+    return std::numeric_limits<double>::quiet_NaN();
+  return outer_radius*std::cbrt(rnd());
+}
+
 //====================================================
 //Free flow injection boundary conditions
 void PIC::BC::ExternalBoundary::OpenFlow::InitBlockList(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
@@ -374,7 +395,8 @@ int PIC::BC::ExternalBoundary::OpenFlow::InjectBlock(int spec,cTreeNodeAMR<PIC::
 
 
         //inject new particles into the domain
-        while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
+        while ((TimeCounter+=SamplePoissonWaitingTime(
+                    ModelParticlesInjectionRate))<LocalTimeStep) {
           //generate the new particle position on the face
           for (idim=0,c0=rnd(),c1=rnd();idim<DIM;idim++) x[idim]=x0[idim]+c0*e0[idim]+c1*e1[idim];
 

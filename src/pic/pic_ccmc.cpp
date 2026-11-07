@@ -628,7 +628,13 @@ void PIC::CCMC::LoadParticles() {
         }
 
         do {
-          r=ParticleInjection::InjectionDescriptorList[iInjectionEntry].SpatialDistribution.Spherical.Radius*pow(rnd(),1.0/3.0);
+          // Uniform number density in a 3-D ball requires the radial CDF
+          // P(R<=r)=(r/R)^3. Use the shared checked inverse-CDF sampler so
+          // this CCMC source and the independently tested boundary helper
+          // cannot diverge on the exponent or invalid-radius behavior.
+          r=PIC::BC::SampleUniformSphereVolumeRadius(
+              ParticleInjection::InjectionDescriptorList[iInjectionEntry].
+                  SpatialDistribution.Spherical.Radius);
           phi=2.0*Pi*rnd();
           sinTheta=2.0*rnd()-1;
           cosTheta=sqrt(1.0-sinTheta*sinTheta);

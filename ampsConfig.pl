@@ -2624,6 +2624,7 @@ sub ParticleCollisionModel {
       }
       elsif ($InputLine eq "HS") {
         ampsConfigLib::ChangeValueOfVariable("PIC::MolecularData::MolecularModels::GetTotalCrossSection","PIC::MolecularData::MolecularModels::HS::GetTotalCrossSection","pic/pic_init_const.cpp");
+	ampsConfigLib::ChangeValueOfVariable("static const int CompiledCollisionCrossSectionModel","_HS_MOL_MODEL_","pic/pic.h");
       }
 
       elsif ($InputLine eq "VHS" || $InputLine eq "VSS") {
@@ -2635,9 +2636,11 @@ sub ParticleCollisionModel {
 
 	if ($InputLine eq "VHS") {
            ampsConfigLib::ChangeValueOfVariable("PIC::MolecularData::MolecularModels::GetTotalCrossSection","PIC::MolecularData::MolecularModels::VHS::GetTotalCrossSection","pic/pic_init_const.cpp");
+	   ampsConfigLib::ChangeValueOfVariable("static const int CompiledCollisionCrossSectionModel","_VHS_MOL_MODEL_","pic/pic.h");
         }
 	else {
            ampsConfigLib::ChangeValueOfVariable("PIC::MolecularData::MolecularModels::GetTotalCrossSection","PIC::MolecularData::MolecularModels::VSS::GetTotalCrossSection","pic/pic_init_const.cpp");
+	   ampsConfigLib::ChangeValueOfVariable("static const int CompiledCollisionCrossSectionModel","_VSS_MOL_MODEL_","pic/pic.h");
         }
 
 	$InputComment=~s/[(),=]/ /g;
@@ -2671,12 +2674,20 @@ sub ParticleCollisionModel {
 	ampsConfigLib::ChangeValueOfArray("static const double ReferenceDiameterHs\\[\\]",\@d_ref_table,"pic/pic.h");
 	ampsConfigLib::ChangeValueOfArray("static const double ReferenceSpeedVhs\\[\\]",\@cr_ref_table,"pic/pic.h");
 	ampsConfigLib::ChangeValueOfArray("static const double ChiVssTable\\[\\]",\@chi_ref_table,"pic/pic.h");
+	# sigma(g)=pi*d_ref^2*(g_ref/g)^(2*omega) depends on the
+	# species power index.  The parser collected POWERINDEX above but formerly
+	# never emitted it, leaving every generated exponent at the header default
+	# zero and silently reducing VHS/VSS to a constant hard-sphere cross
+	# section.  Generate the table alongside the other molecular parameters so
+	# the input law is represented in the compiled closure.
+	ampsConfigLib::ChangeValueOfArray("static const double PowerIndexVhs\\[\\]",\@power_index_table,"pic/pic.h");
       }
       elsif ($InputLine eq "CONST") {
         my @CrossSectionTable;
         my ($t0,$t1,$t2,$t3,$s0,$s1,$cnt);
 
         ampsConfigLib::RedefineMacro("_PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION_","_PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__HS_","pic/picGlobal.dfn");
+	ampsConfigLib::ChangeValueOfVariable("static const int CompiledCollisionCrossSectionModel","_HS_MOL_MODEL_","pic/pic.h");
 
 	$InputComment=~s/[(),=]/ /g;
         

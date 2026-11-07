@@ -46,6 +46,40 @@ their own established selection paths. Changing the switch does not select a
 physics model by itself; model parsing and callback registration are
 application responsibilities.
 
+## T4/T5 validated physics seams
+
+The configured core-test application supplies uniform SI electric and
+magnetic fields through generated hooks. The default relativistic-Boris hook
+still performs the historical CPLR reads, so applications not selecting the
+test provider are unchanged. `PIC::GYROKINETIC::EvaluateRhsFromFields` exposes
+the local first-order guiding-center equations for provider validation. It
+returns typed neutral, zero-field, non-finite, and invalid-magnetic-moment
+states; it does not claim that gyro-radius/gradient scale separation is valid
+for a particle trajectory.
+
+Boundary/source helpers now centralize two distributions used by production:
+the exponential waiting time `-log(U)/lambda` and the uniform-ball radius
+`R*cbrt(U)`. Non-positive/non-finite rates return an infinite no-event time;
+invalid radii return NaN. The corresponding one-rank tests cover their
+analytical moments/CDF but do not establish distributed source ownership.
+
+The collision generator records whether HS, VHS, or VSS was compiled, and the
+elastic scattering dispatcher uses the matching angular law. VHS/HS are
+isotropic; VSS uses `cos(chi)=2*U^(1/alpha)-1` with a declared arithmetic
+binary alpha. All five cell selectors call this dispatcher. NTC and MF report
+individual-record-weight support; their simplified forms require fixed record
+weight, and Yinsi reports individual weights unimplemented. Collision trial
+limiting uses a dimensionless per-model-particle cap and an unbiased sample
+multiplier; a cell-local selector never overwrites the global threshold.
+
+The LB rotational collision number is read from the generated species table.
+One rotating partner or equal values for two rotating partners are
+unambiguous; unequal rotating-pair values are rejected until a physical
+mixing law is selected. RT is the validated channel. VT remains explicitly
+unverified/terminating and VV is not implemented. Exact covered tests and
+remaining T4/T5 boundaries are listed in
+[`../../test/srcCoreUnitTests/README.md`](../../test/srcCoreUnitTests/README.md).
+
 ## 1. Interpolation representations
 
 AMPS now provides two complementary representations of a cell-centered interpolation stencil.

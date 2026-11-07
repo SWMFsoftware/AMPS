@@ -589,6 +589,31 @@ has a convergence/invariant case; every production boundary mode has exact
 accounting; sampled and injected physical rates are invariant under legal
 weight/time-step rescaling.
 
+Current implementation checkpoint (2026-11-07): the registered baseline
+profile supplies 19 T4 cases and the separate periodic profile supplies one.
+The covered contracts are nonrelativistic uniform-E, uniform-B, and crossed-
+field Boris convergence; relativistic uniform-B convergence and gamma
+invariance; the public first-order guiding-center RHS for parallel,
+`E x B`, grad-B, and curvature terms with typed invalid domains; static sphere
+reflection/absorption/tangent/start-inside behavior; exact inertial moving-
+plane and moving-sphere events; outer loss; periodic wrapping and associated-
+data synchronization; Maxwell half-space flux; exponential waiting times;
+uniform cell, triangle, and spherical-volume positions; full raw density,
+flux, pressure-tensor, kinetic-energy, speed, temperature moments; legal
+weight rescaling; and collect/swap/flush lifecycle. Every new equation,
+unit/frame convention, stochastic tolerance, and unsupported domain is
+documented next to the implementation or fixture.
+
+This is a substantial bounded T4 qualification, not the universal acceptance
+gate above. Still open are explicit coarse/fine mover crossing; full
+particle-level gyro/adiabatic convergence; production circle, rotation-body,
+Nastran, and diffuse-surface dispatch; multiple-boundary competition;
+injection ownership/species-rate normalization; histogram under/overflow;
+and MPI migration. The final retained baseline receipts pass 51/51 combined
+T4/T5 cases in normal, reverse, and seed-1729 shuffled order at
+`/tmp/amps-t45-baseline-final-{normal,reverse,shuffle-1729}`. The periodic
+case passes in `/tmp/amps-t45-profile-variants-final`.
+
 ### Stage T5 -- Collisions and internal degrees of freedom
 
 Proposed suites:
@@ -623,6 +648,43 @@ Required cases:
 Acceptance gate: every compiled collision selector has rate, conservation,
 edge and statistical tests; configured relaxation parameters demonstrably
 control the production path; no selector is inferred from NTC evidence.
+
+Current implementation checkpoint (2026-11-07): all five compiled selectors
+(`ntc`, `ntc_simplified`, `mf`, `mf_simplified`, and `mf_Yinsi`) use the same
+independent unlike/same directed-rate fixture and have zero-relative-speed,
+empty/singleton, aggressive collision-limiting, and conservation evidence.
+The advanced selectors are also checked with unequal global weights/time
+steps; NTC and MF have a separate individual-record-weight profile. Typed
+capabilities state that simplified selectors require fixed record weight and
+Yinsi individual weights are unimplemented. Collision limiting now caps
+trials per model particle and applies an unbiased sample multiplier without
+mutating its global threshold from the Yinsi cell kernel.
+
+Separate clean VHS and VSS profiles validate generated diameter, reference-
+speed, power-index, and VSS-alpha tables, independent Maxwell quadrature,
+the Koura--Matsumoto angular first/second moments, and elastic invariants.
+LB tests cover conserved hot-to-cold and cold-to-hot RT partitions, all update-
+flag permutations, monatomic/linear/nonlinear rotation, multi-mode low/high-
+temperature vibration, and generated `Zrot=2,5,10` sensitivity. Unequal
+rotating cross-species `Zrot` remains a typed ambiguity until a physical
+mixing law is selected; VT is compiled but explicitly unverified/terminating,
+and VV is absent. Those are unsupported capabilities, not test passes.
+
+The baseline T5 portion is included in each 51/51 order-isolation receipt
+above. `/tmp/amps-t45-profile-variants-final` additionally passes all seven
+selected variant cases across six clean native builds: periodic, VHS, VSS,
+Zrot 2, Zrot 10, and two individual-weight collision cases. Within the
+declared supported capability domain, the T5 acceptance gate is satisfied;
+the typed unsupported domains remain future implementation work.
+
+The final cross-stage command `python3 src/test/run_tests.py --campaign
+profile --order normal --output-dir /tmp/amps-t2-t5-profile-qualified` passes
+194/194 cases in 12/12 T2-T5 profile suites. Its predecessor retained at
+`/tmp/amps-t2-t5-profile-final` found a stale seven-species test oracle after
+the charged T4 deck became nine-species; the independent table was extended
+to H+ and electron mass/charge contracts, passed its focused 5/5 rerun, and
+then passed the complete profile campaign. The diagnostic 193/194 receipt is
+not qualification evidence.
 
 ### Stage T6 -- Reactions and chemistry models
 

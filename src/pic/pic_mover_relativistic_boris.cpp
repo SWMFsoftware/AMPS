@@ -108,8 +108,11 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
 
     //calculate fields acting upon the particle
     PIC::CPLR::InitInterpolationStencil(xInit,startNode);
-    PIC::CPLR::GetBackgroundElectricField(E);
-    PIC::CPLR::GetBackgroundMagneticField(B);
+    // The default generated hook performs the two historical CPLR calls.
+    // A configured application may replace it with an analytic/provider field
+    // using the same units. This mirrors the non-relativistic Boris force
+    // hook and changes no default application behavior.
+    _PIC_PARTICLE_MOVER__RELATIVISTIC_BORIS_GET_FIELDS_(E,B);
 
     //limit the time integration period with the gyroqrecuency of the particle
     double dt,GyroFreq,dtMax;

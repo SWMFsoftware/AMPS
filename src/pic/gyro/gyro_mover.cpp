@@ -227,6 +227,92 @@ namespace GYROKINETIC {
     }
   }
 
+  cGuidingCenterRhsStatus EvaluateRhsFromFields(
+      const double E[3],const double B[3],const double gradB[9],double vpar,
+      double mu,int spec,double &absB,double b[3],double vdrift[3],
+      double &dvpar_dt) {
+    /* First-order guiding-centre closure in the simulation/inertial frame.
+     * For SI applications E [V/m], B [T], gradB[3*i+j]=dB_i/dx_j [T/m],
+     * vpar [m/s], and mu=m*v_perp^2/(2|B|) [J/T]. The returned terms are
+     *
+     *   dvpar/dt = (q/m) E.b - (mu/m) b.grad|B|,
+     *   v_d = E x B/|B|^2
+     *       + (mu/q) B x grad|B|/|B|^2
+     *       + (m*vpar^2/q) B x ((B.grad)B)/|B|^4.
+     *
+     * This local closure assumes a charged particle, |B|>0, slowly varying
+     * fields, and nonnegative adiabatic invariant mu. It does not itself test
+     * gyro-radius/gradient scale separation; the owning mover/provider must
+     * establish that model-domain condition. Invalid numerical domains return
+     * a typed status and exact zero outputs, never a plausible valid drift. */
+    absB=0.0;
+    b[0]=b[1]=b[2]=0.0;
+    vdrift[0]=vdrift[1]=vdrift[2]=0.0;
+    dvpar_dt=0.0;
+
+    if (!isfinite(vpar) || !isfinite(mu) || mu<0.0) {
+      return GUIDING_CENTER_RHS_NONFINITE_INPUT;
+    }
+    for (int i=0;i<3;i++) {
+      if (!isfinite(E[i]) || !isfinite(B[i]))
+        return GUIDING_CENTER_RHS_NONFINITE_INPUT;
+    }
+    for (int i=0;i<9;i++) if (!isfinite(gradB[i]))
+      return GUIDING_CENTER_RHS_NONFINITE_INPUT;
+
+    double m,q;
+    GetSpeciesMassCharge(m,q,spec);
+    if (q==0.0) return GUIDING_CENTER_RHS_NEUTRAL_SPECIES;
+    if (GetAbsBAndUnitB(B,absB,b)==false)
+      return GUIDING_CENTER_RHS_ZERO_MAGNETIC_FIELD;
+
+    const double absB2=absB*absB;
+    const double invAbsB2=1.0/absB2;
+    double gradAbsB[3];
+    GetGradAbsB(gradAbsB,B,gradB,absB);
+    const double Epar=E[0]*b[0]+E[1]*b[1]+E[2]*b[2];
+    const double bDotGradAbsB=b[0]*gradAbsB[0]+b[1]*gradAbsB[1]+
+        b[2]*gradAbsB[2];
+    dvpar_dt=(q/m)*Epar-(mu/m)*bDotGradAbsB;
+
+    // Vector3D::CrossProduct predates const-correct field APIs.  Form the
+    // three products explicitly here so the public diagnostic closure can
+    // accept immutable prescribed fields without casting away constness.
+    double ExB[3]={E[1]*B[2]-E[2]*B[1],
+        E[2]*B[0]-E[0]*B[2],E[0]*B[1]-E[1]*B[0]};
+    for (int i=0;i<3;i++) vdrift[i]=ExB[i]*invAbsB2;
+
+    if (mu!=0.0) {
+      double BxGradAbsB[3]={B[1]*gradAbsB[2]-B[2]*gradAbsB[1],
+          B[2]*gradAbsB[0]-B[0]*gradAbsB[2],
+          B[0]*gradAbsB[1]-B[1]*gradAbsB[0]};
+      const double coefficient=(mu/q)*invAbsB2;
+      for (int i=0;i<3;i++) vdrift[i]+=coefficient*BxGradAbsB[i];
+    }
+
+    if (vpar!=0.0) {
+      // gradB[3*i+j]=dB_i/dx_j. Thus BB=(B.grad)B is formed
+      // component-by-component before the curvature cross product.
+      double BB[3];
+      for (int i=0;i<3;i++)
+        BB[i]=B[0]*gradB[3*i]+B[1]*gradB[3*i+1]+B[2]*gradB[3*i+2];
+      double BxBB[3]={B[1]*BB[2]-B[2]*BB[1],
+          B[2]*BB[0]-B[0]*BB[2],B[0]*BB[1]-B[1]*BB[0]};
+      const double coefficient=(m*vpar*vpar/q)/(absB2*absB2);
+      for (int i=0;i<3;i++) vdrift[i]+=coefficient*BxBB[i];
+    }
+
+    if (!isfinite(dvpar_dt) || !isfinite(vdrift[0]) ||
+        !isfinite(vdrift[1]) || !isfinite(vdrift[2])) {
+      absB=0.0;
+      b[0]=b[1]=b[2]=0.0;
+      vdrift[0]=vdrift[1]=vdrift[2]=0.0;
+      dvpar_dt=0.0;
+      return GUIDING_CENTER_RHS_NONFINITE_OUTPUT;
+    }
+    return GUIDING_CENTER_RHS_OK;
+  }
+
   //----------------------------------------------------------------------------------
   // Helper: evaluate RHS terms for guiding-center ODE system
   //
@@ -258,78 +344,12 @@ namespace GYROKINETIC {
     // If we cannot evaluate fields here, keep RHS as zeros.
     if (GetEBandGradB(E,B,gradB,x,node)==false) return;
 
-    // If B is zero, GC model is undefined; keep RHS zeros.
-    if (GetAbsBAndUnitB(B,absB,b)==false) return;
-
-    // Species properties (units consistent with E,B)
-    double m,q;
-    GetSpeciesMassCharge(m,q,spec);
-
-    // Precompute |B| powers
-    const double absB2 = absB*absB;
-    const double invAbsB2 = 1.0/absB2;
-
-    // Compute grad|B|
-    double gradAbsB[3];
-    GetGradAbsB(gradAbsB,B,gradB,absB);
-
-    // Parallel electric field E_parallel = E·b
-    const double Epar = E[0]*b[0] + E[1]*b[1] + E[2]*b[2];
-
-    // Mirror term uses b·grad|B|
-    const double bDotGradAbsB = b[0]*gradAbsB[0] + b[1]*gradAbsB[1] + b[2]*gradAbsB[2];
-
-    // Parallel acceleration:
-    //   dvpar/dt = (q/m) E_parallel - (mu/m) (b·grad|B|)
-    dvpar_dt = (q/m)*Epar - (mu/m)*bDotGradAbsB;
-
-    // (1) E×B drift:
-    //   vE = (E×B)/|B|^2
-    double ExB[3];
-    Vector3D::CrossProduct(ExB,E,B);
-    vdrift[0] = ExB[0]*invAbsB2;
-    vdrift[1] = ExB[1]*invAbsB2;
-    vdrift[2] = ExB[2]*invAbsB2;
-
-    // (2) grad-B drift:
-    //   v_gradB = (mu/q) (B×grad|B|)/|B|^2
-    if (q!=0.0 && mu!=0.0) {
-      double BxGradAbsB[3];
-      Vector3D::CrossProduct(BxGradAbsB,B,gradAbsB);
-      const double c = (mu/q)*invAbsB2;
-      vdrift[0] += c*BxGradAbsB[0];
-      vdrift[1] += c*BxGradAbsB[1];
-      vdrift[2] += c*BxGradAbsB[2];
-    }
-
-    // (3) curvature drift:
-    //
-    // Compute (B·∇)B (a vector):
-    //   BB_i = sum_j B_j * ∂B_i/∂x_j
-    //
-    // Using layout gradB[3*i + j] = ∂B_i/∂x_j.
-    double BB[3];
-    BB[0] = B[0]*gradB[0*3+0] + B[1]*gradB[0*3+1] + B[2]*gradB[0*3+2];
-    BB[1] = B[0]*gradB[1*3+0] + B[1]*gradB[1*3+1] + B[2]*gradB[1*3+2];
-    BB[2] = B[0]*gradB[2*3+0] + B[1]*gradB[2*3+1] + B[2]*gradB[2*3+2];
-
-    // Curvature drift:
-    //   v_curv = (m vpar^2 / q) * (B×BB) / |B|^4
-    if (q!=0.0 && vpar!=0.0) {
-      double BxBB[3];
-      Vector3D::CrossProduct(BxBB,B,BB);
-      const double invAbsB4 = 1.0/(absB2*absB2);
-      const double c = (m*vpar*vpar/q)*invAbsB4;
-      vdrift[0] += c*BxBB[0];
-      vdrift[1] += c*BxBB[1];
-      vdrift[2] += c*BxBB[2];
-    }
-
-    // Clamp any non-finite results to zero for robustness.
-    if (!isfinite(vdrift[0]) || !isfinite(vdrift[1]) || !isfinite(vdrift[2]) || !isfinite(dvpar_dt)) {
-      vdrift[0]=0.0; vdrift[1]=0.0; vdrift[2]=0.0;
-      dvpar_dt=0.0;
-    }
+    // The field-local closure is also the public analytical test seam. Its
+    // typed status prevents zero-B, neutral, or non-finite states from being
+    // mistaken for a physically valid zero drift. Existing mover behavior is
+    // conservative: an invalid RHS remains zero and the caller decides the
+    // particle-level terminal action.
+    EvaluateRhsFromFields(E,B,gradB,vpar,mu,spec,absB,b,vdrift,dvpar_dt);
   }
 
   //----------------------------------------------------------------------------------

@@ -254,12 +254,12 @@
       "area_id": "pic-gyro",
       "component": "src/pic/gyro",
       "path": "src/pic/gyro",
-      "status": "planned",
-      "suite_ids": [],
-      "case_ids": [],
+      "status": "partial",
+      "suite_ids": ["CORE-PIC-NATIVE-001"],
+      "case_ids": ["T4-GYRO-DRIFTS-001", "T4-GYRO-VALIDITY-001"],
       "local_registries": [],
-      "reason": "No gyro mover suite is globally registered.",
-      "gaps": ["uniform-field orbit", "drifts", "adiabatic invariants", "convergence", "invalid-state diagnostics"]
+      "reason": "The registered native profile checks the public first-order guiding-center RHS against independent E-cross-B, grad-B, curvature, and parallel-force equations and requires typed rejection of neutral, zero-B, negative-mu, and non-finite domains.",
+      "gaps": ["full particle-orbit integration", "adiabatic scale separation", "spatially varying-field magnetic-moment invariant", "convergence", "mover-level terminal handling"]
     },
     {
       "area_id": "pic-mesh",
@@ -299,7 +299,7 @@
       "component": "src/pic",
       "path": "src/pic",
       "status": "partial",
-      "suite_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001", "CORE-MESH-NATIVE-001"],
+      "suite_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-PERIODIC-001", "CORE-PIC-COLLISION-VHS-001", "CORE-PIC-COLLISION-VSS-001", "CORE-PIC-IDF-ROTZ-Z2-001", "CORE-PIC-IDF-ROTZ-Z10-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001", "CORE-MESH-NATIVE-001"],
       "case_ids": [
         "PIC-PBUFFER-INIT-001", "PIC-PBUFFER-STATE-001", "PIC-PBUFFER-LIST-001",
         "PIC-PBUFFER-LAYOUT-PACKED-FIXED-OFFSETS-001", "PIC-PBUFFER-LAYOUT-PACKED-FIXED-CLONE-001", "PIC-PBUFFER-LAYOUT-PACKED-FIXED-REUSE-001", "PIC-PBUFFER-LAYOUT-PACKED-FIXED-LIST-001", "PIC-PBUFFER-LAYOUT-PACKED-FIXED-CAPACITY-001", "PIC-PBUFFER-LAYOUT-PACKED-FIXED-INVALID-001", "PIC-PBUFFER-LAYOUT-PACKED-FIXED-EXHAUSTION-001",
@@ -310,6 +310,15 @@
         "PHYS-DISTRIBUTION-MAXWELLIAN-001",
         "PHYS-IDF-STORAGE-001", "PHYS-IDF-ROTATION-001", "PHYS-IDF-VIBRATION-001", "PHYS-IDF-PARTITION-001", "PHYS-IDF-RT-001", "PHYS-IDF-RT-RATE-001",
         "PHYS-MOVER-SIMPLE-001", "PHYS-MOVER-BORIS-001", "PHYS-MOVER-SURFACE-001",
+        "T4-MOVER-ELECTRIC-CONVERGENCE-001", "T4-MOVER-MAGNETIC-CONVERGENCE-001", "T4-MOVER-EXB-DRIFT-001", "T4-MOVER-RELATIVISTIC-BORIS-001",
+        "T4-BOUNDARY-ABSORB-OUTER-001", "T4-BOUNDARY-TANGENT-001", "T4-BOUNDARY-START-INSIDE-001", "T4-BOUNDARY-MOVING-PLANE-001", "T4-BOUNDARY-MOVING-SPHERE-001", "T4-BOUNDARY-PERIODIC-001",
+        "T4-INJECTION-MAXWELLIAN-FLUX-001", "T4-INJECTION-POISSON-001", "T4-INJECTION-VOLUME-POSITION-001", "T4-INJECTION-FACE-POSITION-001", "T4-INJECTION-SPHERE-VOLUME-001",
+        "T4-SAMPLING-MOMENTS-001", "T4-SAMPLING-WEIGHT-RESCALING-001", "T4-SAMPLING-BUFFER-LIFECYCLE-001",
+        "T5-COLLISION-NTC-001", "T5-COLLISION-NTC-SIMPLIFIED-001", "T5-COLLISION-MF-001", "T5-COLLISION-MF-SIMPLIFIED-001", "T5-COLLISION-MF-YINSI-001", "T5-COLLISION-EDGE-CELLS-001",
+        "T5-COLLISION-ZERO-NTC-001", "T5-COLLISION-ZERO-NTC-SIMPLIFIED-001", "T5-COLLISION-ZERO-MF-001", "T5-COLLISION-ZERO-MF-SIMPLIFIED-001", "T5-COLLISION-ZERO-MF-YINSI-001",
+        "T5-COLLISION-LIMITING-NTC-001", "T5-COLLISION-LIMITING-NTC-SIMPLIFIED-001", "T5-COLLISION-LIMITING-MF-001", "T5-COLLISION-LIMITING-MF-SIMPLIFIED-001", "T5-COLLISION-LIMITING-MF-YINSI-001",
+        "T5-COLLISION-ASYMMETRIC-NTC-001", "T5-COLLISION-ASYMMETRIC-MF-001", "T5-COLLISION-ASYMMETRIC-MF-YINSI-001", "T5-COLLISION-WEIGHT-CAPABILITY-001", "T5-COLLISION-INDIVIDUAL-WEIGHT-NTC-001", "T5-COLLISION-INDIVIDUAL-WEIGHT-MF-001",
+        "T5-COLLISION-VHS-001", "T5-COLLISION-VSS-001", "T5-IDF-ROTZ-CONTRACT-001", "T5-IDF-CAPABILITY-001", "T5-IDF-RT-HOT-COLD-001", "T5-IDF-UPDATE-FLAGS-001", "T5-IDF-MODE-FAMILIES-001", "T5-IDF-ROTZ-Z2-001", "T5-IDF-ROTZ-Z10-001",
         "PHYS-3D-COLLISION-RELAXATION-001", "PHYS-3D-COLLISION-RATE-001", "PHYS-3D-PHOTODECAY-001",
         "PIC-WEIGHT-MODE-ROUNDTRIP-001", "PIC-TIMESTEP-MODE-ROUNDTRIP-001", "PIC-WEIGHT-TIMESTEP-SPECIES-COPY-001", "PIC-WEIGHT-TIMESTEP-INVALID-VALUE-001", "PIC-WEIGHT-TIMESTEP-INVALID-SPECIES-001",
         "PIC-WEIGHT-LOCAL-ROUNDTRIP-001", "PIC-TIMESTEP-LOCAL-ROUNDTRIP-001", "PIC-WEIGHT-TIMESTEP-LOCAL-RESCALE-001", "PIC-WEIGHT-TIMESTEP-LOCAL-INVALID-VALUE-001", "PIC-WEIGHT-TIMESTEP-LOCAL-INVALID-SPECIES-001",
@@ -319,8 +328,8 @@
         "CORE-MESH-3D-INTERPOLATION-UNIFORM-001", "CORE-MESH-3D-INTERPOLATION-BOUNDARY-001", "CORE-MESH-3D-INTERPOLATION-AMR-001", "CORE-MESH-3D-INTERPOLATION-LEGACY-MASK-001", "CORE-MESH-3D-INTERPOLATION-DUPLICATE-001", "CORE-MESH-3D-INTERPOLATION-PERMUTATION-001", "CORE-MESH-3D-INTERPOLATION-CACHE-001", "CORE-MESH-3D-INTERPOLATION-INPUT-IMMUTABLE-001"
       ],
       "local_registries": [],
-      "reason": "The configured profile matrix owns bounded particle-buffer layouts and lifecycle, host-side species-global/species-local/single-global weight and time-step behavior, finite-positive individual weights, conservative packed/aligned split/merge, collisions, distributions, LB, neutral movers, sphere interaction, parent decay, and T3 production interpolation across uniform and 2:1 AMR support.",
-      "gaps": ["charged mover convergence", "non-NTC collision selectors", "unequal-weight/time-step collision physics", "CUDA/device invalid-state diagnostics", "semantic reduction of opaque extension fields", "injection", "general sampling", "restart", "outer-boundary particle behavior", "distributed ownership"]
+      "reason": "The configured matrix owns bounded T2 records/weights/split-merge, T3 Cartesian AMR interpolation, T4 charged/relativistic movers, exact boundary events, periodic wrapping, injection and physical sampling, and T5 selector-specific collision rates/limits/weights plus VHS/VSS and LB RT/Zrot behavior.",
+      "gaps": ["CUDA/device invalid-state diagnostics", "semantic reduction of opaque extension fields", "coarse/fine mover crossing", "uncovered production surface geometries and diffuse law", "injection ownership and species-rate normalization", "histogram under/overflow policy", "restart", "distributed ownership and migration", "Yinsi individual weights", "unequal cross-species Zrot mixing law", "VT/VV relaxation"]
     },
     {
       "area_id": "species",

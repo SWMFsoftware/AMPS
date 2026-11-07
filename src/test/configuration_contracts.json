@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "Staged T0-T3 inventory of AMPS machine, Config.pl, generated-configuration, compile-profile, and runtime-mode contracts. Status describes direct contract evidence, not successful compilation alone.",
+  "description": "Staged T0-T5 inventory of AMPS machine, Config.pl, generated-configuration, compile-profile, and runtime-mode contracts. Status describes direct contract evidence, not successful compilation alone.",
   "statuses": ["tested", "partial", "planned", "exempt"],
   "contracts": [
     {
@@ -32,28 +32,28 @@
     {
       "mode_id": "config.application.core-unit-tests-v1",
       "components": ["src/pic"],
-      "authority": ["Config.pl", "ampsConfig.pl", "input/test/core-unit-tests.input", "input/test/core-unit-tests-individual-weight.input", "input/test/core-unit-tests-local.input", "input/test/core-unit-tests-single-global.input"],
+      "authority": ["Config.pl", "ampsConfig.pl", "input/test/core-unit-tests.input", "input/test/core-unit-tests-periodic.input", "input/test/core-unit-tests-vhs.input", "input/test/core-unit-tests-vss.input", "input/test/core-unit-tests-rotz2.input", "input/test/core-unit-tests-rotz10.input", "input/test/core-unit-tests-individual-weight.input", "input/test/core-unit-tests-local.input", "input/test/core-unit-tests-single-global.input"],
       "profile": "test/core-unit-tests",
       "selectors": ["Config.pl -application=test/core-unit-tests", "Config.pl -spice-path=nospice"],
       "generated_outputs": [".amps.conf", "Makefile.conf", "build/", "amps"],
       "status": "partial",
-      "suite_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001"],
-      "case_ids": ["CONFIG-GENERATOR-001", "PIC-PBUFFER-INIT-001", "PHYS-3D-COLLISION-RATE-001", "PHYS-MOVER-SURFACE-001"],
-      "reason": "The registered native adapter selects each profile only through Config.pl, checks the effective time-step, weight, correction, layout, photolysis, collision, and IDF macros, and retains generated-file identities; broader generator behavior remains open.",
+      "suite_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-PERIODIC-001", "CORE-PIC-COLLISION-VHS-001", "CORE-PIC-COLLISION-VSS-001", "CORE-PIC-IDF-ROTZ-Z2-001", "CORE-PIC-IDF-ROTZ-Z10-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001"],
+      "case_ids": ["CONFIG-GENERATOR-001", "PIC-PBUFFER-INIT-001", "PHYS-3D-COLLISION-RATE-001", "PHYS-MOVER-SURFACE-001", "T4-BOUNDARY-PERIODIC-001", "T5-COLLISION-VHS-001", "T5-COLLISION-VSS-001", "T5-IDF-ROTZ-Z2-001", "T5-IDF-ROTZ-Z10-001"],
+      "reason": "The registered native adapter selects every baseline and T2/T4/T5 variant only through Config.pl, checks the effective time-step, weight, layout, periodic, collision-model, and IDF macros, and retains generated-file identities; broader generator behavior remains open.",
       "gaps": ["invalid application/option diagnostics", "full generated macro/value schema", "schema/backward compatibility"]
     },
     {
-      "mode_id": "compile.species.neutral-h2o-network-v1",
+      "mode_id": "compile.species.h2o-network-charged-movers-v1",
       "components": ["src/species"],
       "authority": ["input/test/core-unit-tests.input", "src/species"],
       "profile": "test/core-unit-tests",
-      "selectors": ["SpeciesList=H2O,OH,H,O,H2,O2,CO2"],
+      "selectors": ["SpeciesList=H2O,OH,H,O,H2,O2,CO2,H_PLUS,ELECTRON"],
       "generated_outputs": ["generated species indices/mass tables"],
       "status": "partial",
       "suite_ids": ["CORE-PIC-NATIVE-001"],
-      "case_ids": ["PHYS-PHOTOCHEM-RATES-001", "PHYS-PHOTOCHEM-BRANCHING-001", "PHYS-DISTRIBUTION-MAXWELLIAN-001"],
-      "reason": "The exact neutral list supports current cases and missing charged daughters are tested; generated table identity is not independently asserted.",
-      "gaps": ["mass/charge table oracle", "duplicate/unknown species diagnostics", "permuted species order"]
+      "case_ids": ["PHYS-PHOTOCHEM-RATES-001", "PHYS-PHOTOCHEM-BRANCHING-001", "PHYS-DISTRIBUTION-MAXWELLIAN-001", "PIC-SPECIES-GENERATED-MAPPING-001", "PIC-SPECIES-GENERATED-TABLES-001", "T4-MOVER-ELECTRIC-CONVERGENCE-001", "T4-MOVER-MAGNETIC-CONVERGENCE-001"],
+      "reason": "The seven-species neutral prefix supports chemistry/IDF fixtures; appended H+ and electron records support charged movers. An independent literal table asserts all nine symbols, generated indices, masses, charges, and gas types.",
+      "gaps": ["permuted species order profile", "additional charged-species chemistry", "duplicate aliases beyond the registered diagnostic"]
     },
     {
       "mode_id": "compile.photolysis.huebner-active-v1",
@@ -77,9 +77,9 @@
       "generated_outputs": ["collision-model macros and sampling offsets"],
       "status": "partial",
       "suite_ids": ["CORE-PIC-NATIVE-001"],
-      "case_ids": ["PHYS-COLLISION-CONSERVATION-001", "PHYS-COLLISION-ISOTROPY-001", "PHYS-3D-COLLISION-RELAXATION-001", "PHYS-3D-COLLISION-RATE-001"],
-      "reason": "Hard-sphere invariants and one populated-cell NTC rate/relaxation profile are tested.",
-      "gaps": ["mf_simplified", "ntc_simplified", "mf_Yinsi", "mf", "unequal weights/time steps", "collision limiting"]
+      "case_ids": ["PHYS-COLLISION-CONSERVATION-001", "PHYS-COLLISION-ISOTROPY-001", "PHYS-3D-COLLISION-RELAXATION-001", "PHYS-3D-COLLISION-RATE-001", "T5-COLLISION-NTC-001", "T5-COLLISION-NTC-SIMPLIFIED-001", "T5-COLLISION-MF-001", "T5-COLLISION-MF-SIMPLIFIED-001", "T5-COLLISION-MF-YINSI-001", "T5-COLLISION-LIMITING-NTC-001", "T5-COLLISION-ASYMMETRIC-NTC-001", "T5-COLLISION-INDIVIDUAL-WEIGHT-NTC-001"],
+      "reason": "The constant-cross-section profile applies the same unlike/same rate and conservation oracle to every selector, covers zero/edge/limiting branches, and exercises declared unequal global and supported individual-record weight domains.",
+      "gaps": ["Yinsi individual-record weights", "simplified-selector unequal W/dt outside their declared fixed domain", "distributed collision ownership"]
     },
     {
       "mode_id": "compile.idf.lb-rt-v1",
@@ -90,9 +90,9 @@
       "generated_outputs": ["LB particle offsets, mode tables, RotationZnumber, TemperatureIndex"],
       "status": "partial",
       "suite_ids": ["CORE-PIC-NATIVE-001"],
-      "case_ids": ["PHYS-IDF-STORAGE-001", "PHYS-IDF-ROTATION-001", "PHYS-IDF-VIBRATION-001", "PHYS-IDF-PARTITION-001", "PHYS-IDF-RT-001", "PHYS-IDF-RT-RATE-001", "PHYS-3D-COLLISION-RELAXATION-001"],
-      "reason": "Storage, equilibrium moments, RT partition, fixed implemented occurrence rate, and cell equilibration are tested.",
-      "gaps": ["configured RotationZnumber sensitivity (production currently hard-codes 5)", "cross-species combination rule", "VT path is explicitly unverified", "VV relaxation"]
+      "case_ids": ["PHYS-IDF-STORAGE-001", "PHYS-IDF-ROTATION-001", "PHYS-IDF-VIBRATION-001", "PHYS-IDF-PARTITION-001", "PHYS-IDF-RT-001", "PHYS-IDF-RT-RATE-001", "PHYS-3D-COLLISION-RELAXATION-001", "T5-IDF-ROTZ-CONTRACT-001", "T5-IDF-CAPABILITY-001", "T5-IDF-RT-HOT-COLD-001", "T5-IDF-UPDATE-FLAGS-001", "T5-IDF-MODE-FAMILIES-001"],
+      "reason": "Storage, rotational/vibrational equilibrium, microcanonical RT partitions, both hot/cold directions, update flags, mode families, and the generated baseline Zrot value are tested.",
+      "gaps": ["user-selected unequal cross-species Zrot mixing law", "VT path is explicitly unverified and terminates", "VV relaxation is not implemented"]
     },
     {
       "mode_id": "compile.internal-boundary.sphere-v1",
@@ -103,9 +103,9 @@
       "generated_outputs": ["internal-boundary macros and sphere user-data types"],
       "status": "partial",
       "suite_ids": ["CORE-PIC-NATIVE-001"],
-      "case_ids": ["PHYS-MOVER-SURFACE-001"],
-      "reason": "One analytic static sphere event and remaining flight time are tested.",
-      "gaps": ["production callbacks", "absorption", "moving surfaces", "multiple boundaries", "refinement and rank crossing"]
+      "case_ids": ["PHYS-MOVER-SURFACE-001", "T4-BOUNDARY-ABSORB-OUTER-001", "T4-BOUNDARY-TANGENT-001", "T4-BOUNDARY-START-INSIDE-001", "T4-BOUNDARY-MOVING-PLANE-001", "T4-BOUNDARY-MOVING-SPHERE-001"],
+      "reason": "Analytic static-sphere reflection/absorption/tangent/start-inside cases and exact inertial moving-plane/sphere events check hit time, position, remaining flight, callback counts, and list integrity.",
+      "gaps": ["production diffuse callback", "circle/rotation-body/Nastran mover dispatch", "multiple simultaneous boundaries", "coarse/fine and rank crossing"]
     },
     {
       "mode_id": "compile.weights.species-global-no-correction-v1",
@@ -186,6 +186,45 @@
       "gaps": ["invalid DIM diagnostics", "non-Cartesian coordinate profiles", "distributed mesh configuration"]
     },
     {
+      "mode_id": "compile.boundary.periodic-one-rank-v1",
+      "components": ["src/pic"],
+      "authority": ["input/test/core-unit-tests-periodic.input", "src/pic/pic_bc_periodic.cpp", "test/srcCoreUnitTests/physics_t4.cpp"],
+      "profile": "test/core-unit-tests-periodic",
+      "selectors": ["_PIC_BC__PERIODIC_MODE_=ON", "one-rank Cartesian mesh"],
+      "generated_outputs": ["periodic boundary macro and real/ghost topology"],
+      "status": "partial",
+      "suite_ids": ["CORE-PIC-PERIODIC-001"],
+      "case_ids": ["T4-BOUNDARY-PERIODIC-001"],
+      "reason": "A separate clean compile profile checks generated periodic mode, real/ghost pairing, particle wrapping/list transfer, and associated-data synchronization.",
+      "gaps": ["multi-rank periodic ownership", "coarse/fine periodic interfaces", "non-Cartesian periodicity"]
+    },
+    {
+      "mode_id": "compile.collisions.vhs-vss-v1",
+      "components": ["src/pic"],
+      "authority": ["ampsConfig.pl", "input/test/core-unit-tests-vhs.input", "input/test/core-unit-tests-vss.input", "src/pic/pic.h", "src/pic/pic_particle_collision_models.cpp"],
+      "profile": "test/core-unit-tests-vhs and test/core-unit-tests-vss",
+      "selectors": ["CollisionCrossSection=VHS", "CollisionCrossSection=VSS", "D_REF", "CR_REF", "POWERINDEX", "CHI"],
+      "generated_outputs": ["compiled model identity and molecular parameter tables"],
+      "status": "partial",
+      "suite_ids": ["CORE-PIC-COLLISION-VHS-001", "CORE-PIC-COLLISION-VSS-001"],
+      "case_ids": ["T5-COLLISION-VHS-001", "T5-COLLISION-VSS-001"],
+      "reason": "Clean profiles verify generated speed-dependent sigma(g), independent Maxwell quadrature, VSS pair alpha, analytical angular moments, and elastic invariants through the production dispatcher.",
+      "gaps": ["bibliographic transport-coefficient calibration", "alternative binary-mixture alpha laws", "multi-species profile matrix"]
+    },
+    {
+      "mode_id": "compile.idf.lb-rotz-sensitivity-v1",
+      "components": ["src/pic"],
+      "authority": ["input/test/core-unit-tests.input", "input/test/core-unit-tests-rotz2.input", "input/test/core-unit-tests-rotz10.input", "src/pic/pic_lb.cpp"],
+      "profile": "baseline Zrot=5 plus test/core-unit-tests-rotz2 and test/core-unit-tests-rotz10",
+      "selectors": ["RotZnum(H2O)=2,5,10", "rtRelaxation=on"],
+      "generated_outputs": ["RotationZnumber species table"],
+      "status": "partial",
+      "suite_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-IDF-ROTZ-Z2-001", "CORE-PIC-IDF-ROTZ-Z10-001"],
+      "case_ids": ["T5-IDF-ROTZ-CONTRACT-001", "T5-IDF-ROTZ-Z2-001", "PHYS-IDF-RT-RATE-001", "T5-IDF-ROTZ-Z10-001"],
+      "reason": "Three clean generated profiles require the measured RT event frequency to follow 1/Zrot at 2, 5, and 10, proving that the input parameter controls the production path.",
+      "gaps": ["unequal rotating cross-species values require an explicit physical mixing law", "temperature-dependent Zrot", "VT/VV collision numbers"]
+    },
+    {
       "mode_id": "compile.parallel.mpi-one-rank-v1",
       "components": ["src/pic"],
       "authority": ["input/test/core-unit-tests.input", "src/test/config/default.json"],
@@ -193,9 +232,9 @@
       "selectors": ["mpiexec -n 1", "manifest mpi_ranks=1"],
       "generated_outputs": ["one-rank executable transcript"],
       "status": "partial",
-      "suite_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001", "CORE-MESH-NATIVE-001"],
-      "case_ids": ["PHYS-MOVER-SIMPLE-001", "PHYS-3D-COLLISION-RATE-001", "CORE-MESH-1D-TOPOLOGY-UNIFORM-001", "CORE-MESH-2D-TOPOLOGY-UNIFORM-001", "CORE-MESH-3D-TOPOLOGY-UNIFORM-001"],
-      "reason": "All six T2 native profiles and all three T3 dimensional mesh profiles are process-local and fixed at one rank by contract.",
+      "suite_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-PERIODIC-001", "CORE-PIC-COLLISION-VHS-001", "CORE-PIC-COLLISION-VSS-001", "CORE-PIC-IDF-ROTZ-Z2-001", "CORE-PIC-IDF-ROTZ-Z10-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001", "CORE-MESH-NATIVE-001"],
+      "case_ids": ["PHYS-MOVER-SIMPLE-001", "PHYS-3D-COLLISION-RATE-001", "T4-BOUNDARY-PERIODIC-001", "T5-COLLISION-VSS-001", "T5-IDF-ROTZ-Z10-001", "CORE-MESH-1D-TOPOLOGY-UNIFORM-001", "CORE-MESH-2D-TOPOLOGY-UNIFORM-001", "CORE-MESH-3D-TOPOLOGY-UNIFORM-001"],
+      "reason": "All configured T2-T5 native profiles and all three T3 dimensional mesh profiles are process-local and fixed at one rank by contract.",
       "gaps": ["two/four-rank owners and ghosts", "particle migration", "rank invariance"]
     },
     {

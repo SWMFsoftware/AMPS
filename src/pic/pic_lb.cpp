@@ -3,6 +3,8 @@
 
 #include "pic.h"
 
+#include <limits>
+
 //the total number of the vibrational and rotational modes
 //int *PIC::IDF::nTotalVibtationalModes;
 //int *PIC::IDF::nTotalRotationalModes;
@@ -386,6 +388,46 @@ void PIC::IDF::LB::CalculateVTTransition(PIC::ParticleBuffer::byte *ptr0, PIC::P
   collisions accordingly.
 */
 
+PIC::IDF::LB::cRotationalCollisionNumberStatus
+PIC::IDF::LB::EvaluateRotationalCollisionNumber(
+    int species0,int species1,double& collision_number) {
+  collision_number=std::numeric_limits<double>::infinity();
+  if (species0<0 || species0>=PIC::nTotalSpecies ||
+      species1<0 || species1>=PIC::nTotalSpecies)
+    return ROTATIONAL_COLLISION_NUMBER_INVALID;
+
+  const bool rotates0=PIC::IDF::nTotalRotationalModes[species0]>0;
+  const bool rotates1=PIC::IDF::nTotalRotationalModes[species1]>0;
+  if (!rotates0 && !rotates1)
+    return ROTATIONAL_COLLISION_NUMBER_NO_ROTATIONAL_MODES;
+
+  const double z0=rotates0 ? PIC::IDF::RotationZnumber[species0] : 0.0;
+  const double z1=rotates1 ? PIC::IDF::RotationZnumber[species1] : 0.0;
+  if ((rotates0 && (!(z0>0.0) || !std::isfinite(z0))) ||
+      (rotates1 && (!(z1>0.0) || !std::isfinite(z1))))
+    return ROTATIONAL_COLLISION_NUMBER_INVALID;
+
+  if (rotates0 && rotates1 && z0!=z1)
+    return ROTATIONAL_COLLISION_NUMBER_AMBIGUOUS_CROSS_SPECIES;
+  collision_number=rotates0 ? z0 : z1;
+  return ROTATIONAL_COLLISION_NUMBER_OK;
+}
+
+PIC::IDF::LB::cRelaxationCapability
+PIC::IDF::LB::GetRelaxationCapability(cRelaxationChannel channel) {
+  switch (channel) {
+    case RELAXATION_CHANNEL_RT:
+      return RELAXATION_CAPABILITY_SUPPORTED;
+    case RELAXATION_CHANNEL_VT:
+      return RELAXATION_CAPABILITY_UNVERIFIED_TERMINATES;
+    case RELAXATION_CHANNEL_VV:
+      return RELAXATION_CAPABILITY_NOT_IMPLEMENTED;
+  }
+  // The enum is closed, but keep a deterministic result for values received
+  // across a C-style or serialized boundary rather than invoking UB.
+  return RELAXATION_CAPABILITY_NOT_IMPLEMENTED;
+}
+
 void PIC::IDF::LB::RedistributeEnergy(PIC::ParticleBuffer::byte *ptr0,PIC::ParticleBuffer::byte *ptr1,
     double& vrel,bool* ChangeParticlePropertiesFlag,PIC::Mesh::cDataCenterNode* cell) {
     
@@ -404,14 +446,32 @@ void PIC::IDF::LB::RedistributeEnergy(PIC::ParticleBuffer::byte *ptr0,PIC::Parti
 
     Ec=0.5*mr*vrel*vrel;
 
-    // Set collision numbers
-    const double Zrot=5.0;
+    // Z_rot is generated from the input deck.  The former literal 5 made
+    // RotZnum syntactically configurable but physically inert.  Cross-species
+    // values are resolved only where the input supplies an unambiguous law:
+    // one rotating partner or the same value for both rotating partners.
+    double Zrot=std::numeric_limits<double>::infinity();
+    const cRotationalCollisionNumberStatus zrot_status=
+        EvaluateRotationalCollisionNumber(s[0],s[1],Zrot);
+    if (zrot_status==ROTATIONAL_COLLISION_NUMBER_INVALID)
+      exit(__LINE__,__FILE__,
+          "Invalid RotZnum: rotating species require a positive finite value");
+    if (zrot_status==ROTATIONAL_COLLISION_NUMBER_AMBIGUOUS_CROSS_SPECIES)
+      exit(__LINE__,__FILE__,
+          "Unequal cross-species RotZnum values require an explicit mixing law");
+
+    // VT remains a typed unqualified path: CalculateVTTransition terminates
+    // before using this provisional value.  It is retained here solely to
+    // preserve the pre-existing disabled configuration until a validated
+    // vibrational collision-number model is supplied.
     const double Zvib=0.5;
     
     // Calculate total relaxation probability: 1/Z = 1/Zrot + 1/Zvib
     double totalRelaxProb = 0.0;
     
-    if (_PIC_INTERNAL_DEGREES_OF_FREEDOM__RT_RELAXATION_MODE_ == _PIC_MODE_ON_) totalRelaxProb += 1.0/Zrot;
+    if (_PIC_INTERNAL_DEGREES_OF_FREEDOM__RT_RELAXATION_MODE_ == _PIC_MODE_ON_ &&
+        zrot_status==ROTATIONAL_COLLISION_NUMBER_OK)
+      totalRelaxProb += 1.0/Zrot;
     if (_PIC_INTERNAL_DEGREES_OF_FREEDOM__VT_RELAXATION_MODE_ == _PIC_MODE_ON_) totalRelaxProb += 1.0/Zvib;
     
     if (rnd() < totalRelaxProb) {

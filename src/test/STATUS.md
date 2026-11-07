@@ -2,6 +2,60 @@
 
 Last updated: 2026-11-07
 
+## T4/T5 checkpoint
+
+The live registry contains 22 suites and 261 cases. Structural traceability
+passes with 24 component areas, 209 production translation units, 181 public
+contracts, and 19 configuration contracts. T4 is implemented and qualified
+for the bounded one-rank profiles below but remains partial against the full
+roadmap acceptance gate; T5 satisfies its supported-capability gate while
+retaining typed unsupported domains.
+
+| Area | Implemented and directly tested | State / remaining boundary |
+| --- | --- | --- |
+| Charged movers | Uniform-E velocity/position convergence; uniform-B phase/energy convergence; crossed-field drift; relativistic gamma and gyrofrequency | PASS for constant-field Boris profiles; coarse/fine crossing and additional production movers remain open |
+| Guiding center | Parallel electric/mirror force, `E x B`, grad-B and curvature drift; neutral, zero-B, negative-mu and non-finite statuses | PASS for the field-local RHS; full orbit integration, adiabatic validity and convergence remain open |
+| Boundaries | Static sphere reflection/absorption/tangent/start-inside, outer loss, exact moving plane/sphere, periodic real/ghost wrap and data sync | PASS for registered modes; circle/rotation-body/Nastran mover dispatch, diffuse law, multiple boundaries and MPI migration remain open |
+| Injection | Maxwell half-space flux; Poisson waits; uniform cell, triangle, and ball positions | PASS for distribution kernels; ownership, species-rate/weight normalization and distributed injection remain open |
+| Sampling | Exact density, flux, full pressure tensor, energy, speed, temperature, rescaling invariance, collect/swap/flush | PASS for raw cell moments; histogram under/overflow and distributed reduction remain open |
+| Collision selectors | Same independent rate/conservation fixture for NTC, simplified NTC, MF, simplified MF, and Yinsi; zero/edge/limiting paths; unequal global W/dt on advanced selectors | PASS in declared domains; simplified selectors remain fixed-weight-only and Yinsi record weights are typed unimplemented |
+| Molecular laws | Generated VHS/VSS power tables; Maxwell quadrature; VSS alpha moments and elastic invariants | PASS for the two compile profiles; broader transport calibration and alternate mixture laws remain open |
+| LB internal energy | RT hot/cold equilibrium, update flags, mode families, vibrational limits, generated Zrot 2/5/10 | PASS for RT; unequal rotating-pair Zrot is typed ambiguous, VT is unverified/terminating, VV is absent |
+
+Production corrections made under these tests include the previously omitted
+VHS/VSS power-index emission, VSS angular dispatch for every selector,
+unbiased per-particle collision limiting without Yinsi global-threshold
+mutation, generated rather than literal `Zrot`, a typed guiding-center RHS,
+and shared checked Poisson/uniform-ball source samplers. New code and fixtures
+carry equations, SI units, frames, stochastic tolerances, validity limits, and
+typed-failure comments.
+
+Final retained evidence:
+
+| Command/evidence | Result |
+| --- | --- |
+| `/tmp/amps-t45-baseline-final-normal` | PASS 51/51, one clean baseline build |
+| `/tmp/amps-t45-baseline-final-reverse` | PASS 51/51, reverse case order |
+| `/tmp/amps-t45-baseline-final-shuffle-1729` | PASS 51/51, deterministic shuffled order |
+| `/tmp/amps-t45-profile-variants-final` | PASS 7/7 cases and 6/6 suites: periodic, VHS, VSS, Zrot 2, Zrot 10, individual-weight NTC/MF |
+| `/tmp/amps-t2-t5-profile-qualified` | PASS 194/194 cases and 12/12 suites on the corrected final tree, covering every T2-T5 configured profile |
+| `python3 src/test/validate_traceability.py --output /tmp/amps-t45-traceability-pretest.json` | PASS: 24 areas, 209 translation units, 181 public contracts, 19 configuration contracts, 22 suites, 261 cases |
+
+The native adapter performed the mandatory root/process preflight, removed
+only `build`, selected each application with `Config.pl`, and compiled with
+top-level `make amps` and `MAKEFLAGS=-j16` for every retained build. No Git
+state operation was performed.
+
+The first full-profile diagnostic at `/tmp/amps-t2-t5-profile-final`
+reported 193 PASS and one FAIL: the pre-T4 species oracle still asserted a
+seven-neutral deck after H+ and electrons were appended for the charged-mover
+profile. The oracle now documents and checks all nine symbols, indices,
+masses, charges, and gas types. `/tmp/amps-t45-species-nine-profile-fix`
+passes the focused 5/5 correction, and the complete
+`/tmp/amps-t2-t5-profile-qualified` rerun supersedes the diagnostic with
+194/194 PASS. The failed receipt is retained as discovery evidence and is not
+reported as qualification.
+
 ## Implemented
 
 - Portable global runner with validated registry, isolated work/artifact

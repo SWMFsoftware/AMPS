@@ -60,6 +60,23 @@ cut-surface contact and `O(A*h)` integration-depth control; translated/scaled
 sphere volume recursion; and sparse-ID NASTRAN read/write/read validation.
 Details and independent oracles are in `test/srcCoreMeshTests/README.md`.
 
+T4/T5 extend the live registry to 22 suites and 261 cases. The baseline native
+owner now contains 87 cases, with 51 selected T4/T5 mover, boundary, injection,
+sampling, collision, and IDF cases passing in normal, reverse, and seed-1729
+shuffled order. Five new compile-profile owners exercise periodic boundaries,
+VHS, VSS, and `Zrot=2/10`; the packed individual-weight owner adds two
+selector-specific collision cases. The six-profile variant campaign passes
+7/7 selected cases. These receipts establish the bounded contracts documented
+in `test/srcCoreUnitTests/README.md`; they do not qualify the remaining
+coarse/fine and MPI mover paths, every production surface type, source
+ownership/rate normalization, histograms, Yinsi individual weights, an
+unequal cross-species Zrot law, or VT/VV relaxation.
+
+The final cross-stage receipt `/tmp/amps-t2-t5-profile-qualified` passes all
+194 cases in all 12 configured T2-T5 suites. It supersedes the first
+`/tmp/amps-t2-t5-profile-final` diagnostic, which exposed and retained one
+stale seven-species oracle after the charged profile added H+ and electrons.
+
 ## Architecture and ownership
 
 The execution path is deliberately one-way:
@@ -132,10 +149,9 @@ make core_test_nightly
 `--tier` remains a backward-compatible alias for `--campaign`. The top-level
 `test_all` target depends on `core_test_nightly`. In the current manifest,
 `smoke` selects eight dependency-light suites (51 cases), `nightly` selects
-all 17 suites (210 cases), `profile` selects seven configured native suites
-(143 cases), `extended` selects the interface, baseline-native, packed-
-individual, and mesh suites (125 cases), and `distributed` selects the five-case two-rank
-MPI channel/RNG suite.
+all 22 suites (261 cases), `profile` selects 12 configured native suites (194
+cases), `extended` selects nine suites (176 cases), and `distributed` selects
+the five-case two-rank MPI channel/RNG suite.
 `--all` ignores campaign membership and selects the complete registry.
 Site/nightly orchestration must preserve the native suite's exclusive barrier
 because it selects a repository-wide application.
@@ -192,6 +208,21 @@ The final current-tree combined profile command
 /tmp/amps-t2-t3-profile-qualified` passes 143/143 cases in all seven suites
 (the six T2 owners plus T3), with no FAIL, SKIP, or ERROR.
 
+Run the bounded T4/T5 baseline and compile variants with:
+
+```sh
+python3 src/test/run_tests.py --test CORE-PIC-MOVER-CHARGED-001 \
+  --test CORE-PIC-MOVER-RELATIVISTIC-001 --test CORE-PIC-GYRO-001 \
+  --test CORE-PIC-BOUNDARY-001 --test CORE-PIC-INJECTION-001 \
+  --test CORE-PIC-SAMPLING-001 --test CORE-PIC-COLLISION-ALGORITHMS-001 \
+  --test CORE-PIC-IDF-001
+
+python3 src/test/run_tests.py --test CORE-PIC-PERIODIC-001 \
+  --test CORE-PIC-COLLISION-VHS-001 --test CORE-PIC-COLLISION-VSS-001 \
+  --test CORE-PIC-IDF-ROTZ-Z2-001 --test CORE-PIC-IDF-ROTZ-Z10-001 \
+  --test CORE-PIC-COLLISION-INDIVIDUAL-WEIGHT-001
+```
+
 The historical particle-buffer, packed-fixed layout, physics, species, and
 species-global weight/time suite IDs are manifest aliases for selection
 compatibility; they are not separate executable suites and must not trigger
@@ -224,12 +255,13 @@ interleave. `--fail-fast` finishes an already-submitted parallel batch and
 then prevents later batches from starting.
 
 The baseline native suite owns three generated-configuration adapter cases,
-three particle-buffer cases, seven packed fixed-layout cases, 19 physics cases,
-four compiled/generated species cases, two production-linked global-unit
-cases, and five species-global particle weight/time-step cases. Five other
-native owners cover packed/aligned individual weights and split/merge,
-aligned fixed records, species-local weight/time and single-global
-weight/time. Across the matrix, T2 checks independently computed alignment and
+three particle-buffer cases, seven packed fixed-layout cases, 19 original
+physics cases, 19 T4 cases, 25 T5 cases, four compiled/generated species
+cases, two production-linked global-unit cases, and five species-global
+particle weight/time-step cases. Ten other native owners cover packed/aligned
+individual weights and split/merge, aligned fixed records, species-local and
+single-global weight/time, periodic boundaries, VHS/VSS, and two Zrot
+profiles. Across the matrix, T2 checks independently computed alignment and
 stride, clone/reuse/list/capacity behavior, isolated invalid/exhaustion paths,
 finite-positive host values, local physical-distribution rescaling, and
 split/merge conservation of count, physical weight, species, weighted

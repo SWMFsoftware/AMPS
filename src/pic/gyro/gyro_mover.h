@@ -39,6 +39,29 @@
 
 namespace PIC {
 namespace GYROKINETIC {
+  /* Typed validity result for the field-local guiding-center closure. The
+   * reduced model requires a charged species, finite state/fields, nonnegative
+   * magnetic moment, and a nonzero magnetic field. Inputs use the provider's
+   * established unit system (SI: E V/m, B T, gradB T/m, velocity m/s, magnetic
+   * moment J/T); outputs are |B|, unit b, drift m/s, and parallel acceleration
+   * m/s^2. Invalid inputs produce zero outputs and a status; they are never
+   * converted into an apparently valid zero-drift particle.
+   */
+  enum cGuidingCenterRhsStatus {
+    GUIDING_CENTER_RHS_OK = 0,
+    GUIDING_CENTER_RHS_NEUTRAL_SPECIES,
+    GUIDING_CENTER_RHS_ZERO_MAGNETIC_FIELD,
+    GUIDING_CENTER_RHS_NONFINITE_INPUT,
+    GUIDING_CENTER_RHS_NONFINITE_OUTPUT
+  };
+
+  cGuidingCenterRhsStatus EvaluateRhsFromFields(
+      const double electric_field[3], const double magnetic_field[3],
+      const double magnetic_gradient[9], double parallel_velocity,
+      double magnetic_moment, int species, double& magnetic_field_magnitude,
+      double magnetic_direction[3], double drift_velocity[3],
+      double& parallel_acceleration);
+
   //----------------------------------------------------------------------------
   // Guiding-center movers (3-D only)
   //   - First order  : explicit Euler

@@ -96,7 +96,86 @@ PHYSICS_CASES = [
     "PHYS-3D-COLLISION-RELAXATION-001",
     "PHYS-3D-COLLISION-RATE-001",
     "PHYS-3D-PHOTODECAY-001",
+    "T4-MOVER-ELECTRIC-CONVERGENCE-001",
+    "T4-MOVER-MAGNETIC-CONVERGENCE-001",
+    "T4-MOVER-EXB-DRIFT-001",
+    "T4-MOVER-RELATIVISTIC-BORIS-001",
+    "T4-GYRO-DRIFTS-001",
+    "T4-GYRO-VALIDITY-001",
+    "T4-BOUNDARY-ABSORB-OUTER-001",
+    "T4-BOUNDARY-TANGENT-001",
+    "T4-BOUNDARY-START-INSIDE-001",
+    "T4-BOUNDARY-MOVING-PLANE-001",
+    "T4-BOUNDARY-MOVING-SPHERE-001",
+    "T4-INJECTION-MAXWELLIAN-FLUX-001",
+    "T4-INJECTION-POISSON-001",
+    "T4-INJECTION-VOLUME-POSITION-001",
+    "T4-INJECTION-FACE-POSITION-001",
+    "T4-INJECTION-SPHERE-VOLUME-001",
+    "T4-SAMPLING-MOMENTS-001",
+    "T4-SAMPLING-WEIGHT-RESCALING-001",
+    "T4-SAMPLING-BUFFER-LIFECYCLE-001",
 ]
+
+# T4/T5 cases are grouped here by physical contract, not merely by source
+# file. Alias selection executes one requested group from the baseline native
+# profile, while the canonical owner executes their union exactly once.
+# Compile-time variants below use separate applications/decks and therefore
+# cannot share an executable even when they select only one case.
+PERIODIC_CASES = [
+    "T4-BOUNDARY-PERIODIC-001",
+]
+
+T5_COLLISION_ALGORITHM_CASES = [
+    "T5-COLLISION-NTC-001",
+    "T5-COLLISION-NTC-SIMPLIFIED-001",
+    "T5-COLLISION-MF-001",
+    "T5-COLLISION-MF-SIMPLIFIED-001",
+    "T5-COLLISION-MF-YINSI-001",
+    "T5-COLLISION-EDGE-CELLS-001",
+    "T5-COLLISION-ZERO-NTC-001",
+    "T5-COLLISION-ZERO-NTC-SIMPLIFIED-001",
+    "T5-COLLISION-ZERO-MF-001",
+    "T5-COLLISION-ZERO-MF-SIMPLIFIED-001",
+    "T5-COLLISION-ZERO-MF-YINSI-001",
+    "T5-COLLISION-LIMITING-NTC-001",
+    "T5-COLLISION-LIMITING-NTC-SIMPLIFIED-001",
+    "T5-COLLISION-LIMITING-MF-001",
+    "T5-COLLISION-LIMITING-MF-SIMPLIFIED-001",
+    "T5-COLLISION-LIMITING-MF-YINSI-001",
+    "T5-COLLISION-ASYMMETRIC-NTC-001",
+    "T5-COLLISION-ASYMMETRIC-MF-001",
+    "T5-COLLISION-ASYMMETRIC-MF-YINSI-001",
+    "T5-COLLISION-WEIGHT-CAPABILITY-001",
+]
+
+T5_INDIVIDUAL_WEIGHT_COLLISION_CASES = [
+    "T5-COLLISION-INDIVIDUAL-WEIGHT-NTC-001",
+    "T5-COLLISION-INDIVIDUAL-WEIGHT-MF-001",
+]
+
+T5_IDF_BASE_CASES = [
+    "PHYS-IDF-STORAGE-001",
+    "PHYS-IDF-ROTATION-001",
+    "PHYS-IDF-VIBRATION-001",
+    "PHYS-IDF-PARTITION-001",
+    "PHYS-IDF-RT-001",
+    "PHYS-IDF-RT-RATE-001",
+]
+
+T5_IDF_NEW_CASES = [
+    "T5-IDF-ROTZ-CONTRACT-001",
+    "T5-IDF-CAPABILITY-001",
+    "T5-IDF-RT-HOT-COLD-001",
+    "T5-IDF-UPDATE-FLAGS-001",
+    "T5-IDF-MODE-FAMILIES-001",
+]
+T5_IDF_CASES = T5_IDF_BASE_CASES + T5_IDF_NEW_CASES
+
+# The canonical baseline owner must include every case compiled into its
+# executable. Keeping the expansion explicit makes manifest/runner drift a
+# schema error instead of silently omitting a newly registered test.
+PHYSICS_CASES += T5_COLLISION_ALGORITHM_CASES + T5_IDF_NEW_CASES
 
 SPECIES_CASES = [
     "PIC-SPECIES-CONSTANTS-001",
@@ -183,6 +262,7 @@ SUITES: Dict[str, Dict[str, Any]] = {
                 "_PIC__PARTICLE_COLLISION_MODEL__NTC_",
             "_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL_":
                 "_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL__LB_",
+            "_PIC_SAMPLE__VELOCITY_TENSOR_MODE_": "_PIC_MODE_ON_",
         },
     },
     "CORE-PIC-PARTICLE-BUFFER-001": {
@@ -196,6 +276,153 @@ SUITES: Dict[str, Dict[str, Any]] = {
     "CORE-PIC-PHYSICS-001": {
         "artifact": "native-physics-output.txt",
         "cases": PHYSICS_CASES,
+    },
+    "CORE-PIC-MOVER-CHARGED-001": {
+        "artifact": "native-t4-charged-mover-output.txt",
+        "cases": [
+            "T4-MOVER-ELECTRIC-CONVERGENCE-001",
+            "T4-MOVER-MAGNETIC-CONVERGENCE-001",
+            "T4-MOVER-EXB-DRIFT-001",
+        ],
+    },
+    "CORE-PIC-MOVER-RELATIVISTIC-001": {
+        "artifact": "native-t4-relativistic-mover-output.txt",
+        "cases": ["T4-MOVER-RELATIVISTIC-BORIS-001"],
+    },
+    "CORE-PIC-GYRO-001": {
+        "artifact": "native-t4-gyro-output.txt",
+        "cases": ["T4-GYRO-DRIFTS-001", "T4-GYRO-VALIDITY-001"],
+    },
+    "CORE-PIC-BOUNDARY-001": {
+        "artifact": "native-t4-boundary-output.txt",
+        "cases": [
+            "PHYS-MOVER-SURFACE-001",
+            "T4-BOUNDARY-ABSORB-OUTER-001",
+            "T4-BOUNDARY-TANGENT-001",
+            "T4-BOUNDARY-START-INSIDE-001",
+            "T4-BOUNDARY-MOVING-PLANE-001",
+            "T4-BOUNDARY-MOVING-SPHERE-001",
+        ],
+    },
+    "CORE-PIC-INJECTION-001": {
+        "artifact": "native-t4-injection-output.txt",
+        "cases": [
+            "T4-INJECTION-MAXWELLIAN-FLUX-001",
+            "T4-INJECTION-POISSON-001",
+            "T4-INJECTION-VOLUME-POSITION-001",
+            "T4-INJECTION-FACE-POSITION-001",
+            "T4-INJECTION-SPHERE-VOLUME-001",
+        ],
+    },
+    "CORE-PIC-SAMPLING-001": {
+        "artifact": "native-t4-sampling-output.txt",
+        "cases": [
+            "T4-SAMPLING-MOMENTS-001",
+            "T4-SAMPLING-WEIGHT-RESCALING-001",
+            "T4-SAMPLING-BUFFER-LIFECYCLE-001",
+        ],
+    },
+    "CORE-PIC-PERIODIC-001": {
+        "artifact": "native-t4-periodic-output.txt",
+        "cases": PERIODIC_CASES,
+        "application": "test/core-unit-tests-periodic",
+        "configure_options": ["-state-vector=packed", "-align=off"],
+        "input_deck": "input/test/core-unit-tests-periodic.input",
+        "expected_modes": {
+            "_SIMULATION_TIME_STEP_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_TIME_STEP_",
+            "_SIMULATION_PARTICLE_WEIGHT_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_",
+            "_INDIVIDUAL_PARTICLE_WEIGHT_MODE_":
+                "_INDIVIDUAL_PARTICLE_WEIGHT_OFF_",
+            "_STATE_VECTOR_MODE_": "_STATE_VECTOR_MODE_PACKED_",
+            "_ALIGN_STATE_VECTORS_BASE_": "1",
+            "_PIC_BC__PERIODIC_MODE_": "_PIC_BC__PERIODIC_MODE_ON_",
+            "_PIC_PHOTOLYTIC_REACTIONS_MODE_":
+                "_PIC_PHOTOLYTIC_REACTIONS_MODE_ON_",
+            "_PIC__PARTICLE_COLLISION_MODEL__MODE_": "_PIC_MODE_ON_",
+            "_PIC__PARTICLE_COLLISION_MODEL_":
+                "_PIC__PARTICLE_COLLISION_MODEL__NTC_",
+            "_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL_":
+                "_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL__LB_",
+            "_PIC_SAMPLE__VELOCITY_TENSOR_MODE_": "_PIC_MODE_ON_",
+        },
+    },
+    "CORE-PIC-COLLISION-ALGORITHMS-001": {
+        "artifact": "native-t5-collision-algorithms-output.txt",
+        "cases": T5_COLLISION_ALGORITHM_CASES,
+    },
+    "CORE-PIC-IDF-001": {
+        "artifact": "native-t5-idf-output.txt",
+        "cases": T5_IDF_CASES,
+    },
+    "CORE-PIC-COLLISION-VHS-001": {
+        "artifact": "native-t5-vhs-output.txt",
+        "cases": ["T5-COLLISION-VHS-001"],
+        "application": "test/core-unit-tests-vhs",
+        "configure_options": ["-state-vector=packed", "-align=off"],
+        "input_deck": "input/test/core-unit-tests-vhs.input",
+        "expected_modes": {
+            "_SIMULATION_TIME_STEP_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_TIME_STEP_",
+            "_SIMULATION_PARTICLE_WEIGHT_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_",
+            "_INDIVIDUAL_PARTICLE_WEIGHT_MODE_":
+                "_INDIVIDUAL_PARTICLE_WEIGHT_OFF_",
+            "_STATE_VECTOR_MODE_": "_STATE_VECTOR_MODE_PACKED_",
+            "_ALIGN_STATE_VECTORS_BASE_": "1",
+        },
+    },
+    "CORE-PIC-COLLISION-VSS-001": {
+        "artifact": "native-t5-vss-output.txt",
+        "cases": ["T5-COLLISION-VSS-001"],
+        "application": "test/core-unit-tests-vss",
+        "configure_options": ["-state-vector=packed", "-align=off"],
+        "input_deck": "input/test/core-unit-tests-vss.input",
+        "expected_modes": {
+            "_SIMULATION_TIME_STEP_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_TIME_STEP_",
+            "_SIMULATION_PARTICLE_WEIGHT_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_",
+            "_INDIVIDUAL_PARTICLE_WEIGHT_MODE_":
+                "_INDIVIDUAL_PARTICLE_WEIGHT_OFF_",
+            "_STATE_VECTOR_MODE_": "_STATE_VECTOR_MODE_PACKED_",
+            "_ALIGN_STATE_VECTORS_BASE_": "1",
+        },
+    },
+    "CORE-PIC-IDF-ROTZ-Z2-001": {
+        "artifact": "native-t5-idf-rotz2-output.txt",
+        "cases": ["T5-IDF-ROTZ-Z2-001"],
+        "application": "test/core-unit-tests-rotz2",
+        "configure_options": ["-state-vector=packed", "-align=off"],
+        "input_deck": "input/test/core-unit-tests-rotz2.input",
+        "expected_modes": {
+            "_SIMULATION_TIME_STEP_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_TIME_STEP_",
+            "_SIMULATION_PARTICLE_WEIGHT_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_",
+            "_INDIVIDUAL_PARTICLE_WEIGHT_MODE_":
+                "_INDIVIDUAL_PARTICLE_WEIGHT_OFF_",
+            "_STATE_VECTOR_MODE_": "_STATE_VECTOR_MODE_PACKED_",
+            "_ALIGN_STATE_VECTORS_BASE_": "1",
+        },
+    },
+    "CORE-PIC-IDF-ROTZ-Z10-001": {
+        "artifact": "native-t5-idf-rotz10-output.txt",
+        "cases": ["T5-IDF-ROTZ-Z10-001"],
+        "application": "test/core-unit-tests-rotz10",
+        "configure_options": ["-state-vector=packed", "-align=off"],
+        "input_deck": "input/test/core-unit-tests-rotz10.input",
+        "expected_modes": {
+            "_SIMULATION_TIME_STEP_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_TIME_STEP_",
+            "_SIMULATION_PARTICLE_WEIGHT_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_",
+            "_INDIVIDUAL_PARTICLE_WEIGHT_MODE_":
+                "_INDIVIDUAL_PARTICLE_WEIGHT_OFF_",
+            "_STATE_VECTOR_MODE_": "_STATE_VECTOR_MODE_PACKED_",
+            "_ALIGN_STATE_VECTORS_BASE_": "1",
+        },
     },
     "CORE-SPECIES-001": {
         "artifact": "native-species-output.txt",
@@ -240,7 +467,8 @@ SUITES: Dict[str, Dict[str, Any]] = {
     },
     "CORE-PIC-SPLIT-MERGE-001": {
         "artifact": "native-split-merge-packed-individual-output.txt",
-        "cases": PACKED_INDIVIDUAL_LAYOUT_CASES + SPLIT_MERGE_CASES,
+        "cases": (PACKED_INDIVIDUAL_LAYOUT_CASES + SPLIT_MERGE_CASES +
+                  T5_INDIVIDUAL_WEIGHT_COLLISION_CASES),
         "application": "test/core-unit-tests-individual-weight",
         "configure_options": ["-state-vector=packed", "-align=off"],
         "input_deck": "input/test/core-unit-tests-individual-weight.input",
@@ -258,6 +486,26 @@ SUITES: Dict[str, Dict[str, Any]] = {
             "_PIC__PARTICLE_COLLISION_MODEL__MODE_": "_PIC_MODE_ON_",
             "_PIC__PARTICLE_COLLISION_MODEL_":
                 "_PIC__PARTICLE_COLLISION_MODEL__NTC_",
+            "_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL_":
+                "_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL__LB_",
+        },
+    },
+    "CORE-PIC-COLLISION-INDIVIDUAL-WEIGHT-001": {
+        "artifact": "native-t5-collision-individual-weight-output.txt",
+        "cases": T5_INDIVIDUAL_WEIGHT_COLLISION_CASES,
+        "application": "test/core-unit-tests-individual-weight",
+        "configure_options": ["-state-vector=packed", "-align=off"],
+        "input_deck": "input/test/core-unit-tests-individual-weight.input",
+        "expected_modes": {
+            "_SIMULATION_TIME_STEP_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_TIME_STEP_",
+            "_SIMULATION_PARTICLE_WEIGHT_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_",
+            "_INDIVIDUAL_PARTICLE_WEIGHT_MODE_":
+                "_INDIVIDUAL_PARTICLE_WEIGHT_ON_",
+            "_STATE_VECTOR_MODE_": "_STATE_VECTOR_MODE_PACKED_",
+            "_ALIGN_STATE_VECTORS_BASE_": "1",
+            "_PIC__PARTICLE_COLLISION_MODEL__MODE_": "_PIC_MODE_ON_",
             "_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL_":
                 "_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL__LB_",
         },

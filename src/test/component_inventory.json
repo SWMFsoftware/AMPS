@@ -100,8 +100,8 @@
     {
       "component": "src/pic",
       "status": "partial",
-      "test_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001", "CORE-MESH-NATIVE-001"],
-      "remaining": "T2 tests packed/aligned fixed and individual-weight particle records, checked layout/lifecycle/fatal paths, species-global/species-local/single-global weight and time-step modes, local physical-distribution rescaling, finite-positive individual weights, and packed/aligned conservative split/merge. Existing physics evidence also covers Maxwellian moments, neutral Simple/Boris motion, analytic sphere reflection, hard-sphere invariants, populated-cell NTC rate/conservation/RT equilibration, 3-D parent decay, and LB equilibrium/partition/RT rates. T3 adds production uniform/AMR interpolation, exhaustive legacy refinement masks, deterministic row merging, cache invalidation, and immutable boundary queries. Add CUDA/device invalid-state diagnostics, semantic reduction policies for application-owned extension fields, unequal-weight/time-step collision physics, charged mover convergence, remaining collision selectors, injection, general sampling, restart, outer-boundary particle behavior, and MPI ownership."
+      "test_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-PERIODIC-001", "CORE-PIC-COLLISION-VHS-001", "CORE-PIC-COLLISION-VSS-001", "CORE-PIC-IDF-ROTZ-Z2-001", "CORE-PIC-IDF-ROTZ-Z10-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001", "CORE-MESH-NATIVE-001"],
+      "remaining": "T2 qualifies bounded record-layout, weight/time, and split/merge contracts; T3 qualifies bounded one-rank Cartesian AMR topology/geometry/interpolation. T4 adds constant-field charged and relativistic Boris convergence, field-local guiding-center drifts/typed validity, static and moving boundary events, periodic wrapping, outer loss, injection distributions, raw sampling moments, buffer lifecycle, and weight-rescaling invariance. T5 applies common rate/conservation/edge/limiting fixtures to all five selectors, qualifies supported unequal global and individual weights, VHS/VSS tables and angular laws, configurable Zrot sensitivity, and bounded RT/mode-family behavior. Remaining work includes CUDA/device diagnostics, semantic reduction of opaque extension fields, coarse/fine mover crossing, production circle/rotation-body/Nastran and diffuse boundaries, injection ownership/rate normalization, distribution histogram policy, restart, MPI ownership/migration, Yinsi individual weights, a selected unequal cross-species Zrot law, and independently implemented/qualified VT/VV relaxation."
     },
     {
       "component": "src/pic/ecsim",
@@ -111,9 +111,9 @@
     },
     {
       "component": "src/pic/gyro",
-      "status": "planned",
-      "test_ids": [],
-      "remaining": "Gyro mover and drift limits, invariants, convergence, and invalid-state diagnostics."
+      "status": "partial",
+      "test_ids": ["CORE-PIC-NATIVE-001"],
+      "remaining": "The public field-local guiding-center RHS is checked against analytic E-cross-B, grad-B, curvature, and parallel-force equations plus neutral, zero-B, negative-mu, and non-finite typed rejection. Full particle-orbit integration, adiabatic scale separation, magnetic-moment conservation along spatially varying fields, convergence, and mover-level terminal handling remain open."
     },
     {
       "component": "src/pic/mesh",

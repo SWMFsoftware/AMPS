@@ -123,6 +123,17 @@ at the end of each time step
 #define _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE_ _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE__ON_
 #define _PIC_PARTICLE_MOVER__GENERIC_TRANSFORMATION_INDICATOR_(xMiddle,vMiddle,spec,ptr,ParticleData,dtMin,TransformationTimeStepLimitFlag,startNode) _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_OFF_;
 #define _PIC_PARTICLE_MOVER__BORIS_SPLIT_ACCELERATION_(accl,rotation,spec,ptr,x,v,startNode) BorisSplitAcceleration_default(accl,rotation,spec,ptr,x,v,startNode);
+
+/* Relativistic Boris field-provider hook. Applications that do not override
+ * it retain the historical CPLR stencil lookup byte-for-byte. Keeping this
+ * generated compile-time hook parallel to BORIS_SPLIT_ACCELERATION lets a
+ * configured validation application provide an analytic field without
+ * introducing mutable test state into generic PIC. E is in V/m and B in T
+ * for SI profiles; normalized profiles retain the field solver's established
+ * unit contract. */
+#define _PIC_PARTICLE_MOVER__RELATIVISTIC_BORIS_GET_FIELDS_(E,B) \
+  PIC::CPLR::GetBackgroundElectricField(E); \
+  PIC::CPLR::GetBackgroundMagneticField(B);
 #define _PIC_PARTICLE_MOVER__GUIDING_CENTER_MOTION_(Vguide,ForceParal,AbsB,BDirection,PParal,spec,ptr,x,v,startNode) GuidingCenterMotion_default(Vguide,ForceParal,AbsB,BDirection,PParal,spec,ptr,x,v,startNode);
 
 #define _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(accl,spec,ptr,x,v,startNode) TotalParticleAcceleration_default(accl,spec,ptr,x,v,startNode);

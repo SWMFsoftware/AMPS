@@ -226,7 +226,7 @@
     },
     {
       "id": "CORE-PIC-NATIVE-001",
-      "aliases": ["CORE-PIC-PARTICLE-BUFFER-001", "CORE-PIC-PBUFFER-LAYOUT-001", "CORE-PIC-PHYSICS-001", "CORE-SPECIES-001", "CORE-PIC-WEIGHT-TIME-001"],
+      "aliases": ["CORE-PIC-PARTICLE-BUFFER-001", "CORE-PIC-PBUFFER-LAYOUT-001", "CORE-PIC-PHYSICS-001", "CORE-SPECIES-001", "CORE-PIC-WEIGHT-TIME-001", "CORE-PIC-MOVER-CHARGED-001", "CORE-PIC-MOVER-RELATIVISTIC-001", "CORE-PIC-GYRO-001", "CORE-PIC-BOUNDARY-001", "CORE-PIC-INJECTION-001", "CORE-PIC-SAMPLING-001", "CORE-PIC-COLLISION-ALGORITHMS-001", "CORE-PIC-IDF-001"],
       "alias_cases": {
         "CORE-PIC-PARTICLE-BUFFER-001": [
           "PIC-PBUFFER-INIT-001",
@@ -261,7 +261,91 @@
           "PHYS-MOVER-SURFACE-001",
           "PHYS-3D-COLLISION-RELAXATION-001",
           "PHYS-3D-COLLISION-RATE-001",
-          "PHYS-3D-PHOTODECAY-001"
+          "PHYS-3D-PHOTODECAY-001",
+          "T4-MOVER-ELECTRIC-CONVERGENCE-001",
+          "T4-MOVER-MAGNETIC-CONVERGENCE-001",
+          "T4-MOVER-EXB-DRIFT-001",
+          "T4-MOVER-RELATIVISTIC-BORIS-001",
+          "T4-GYRO-DRIFTS-001",
+          "T4-GYRO-VALIDITY-001",
+          "T4-BOUNDARY-ABSORB-OUTER-001",
+          "T4-BOUNDARY-TANGENT-001",
+          "T4-BOUNDARY-START-INSIDE-001",
+          "T4-BOUNDARY-MOVING-PLANE-001",
+          "T4-INJECTION-MAXWELLIAN-FLUX-001",
+          "T4-INJECTION-POISSON-001",
+          "T4-INJECTION-VOLUME-POSITION-001",
+          "T4-INJECTION-FACE-POSITION-001",
+          "T4-INJECTION-SPHERE-VOLUME-001",
+          "T4-SAMPLING-MOMENTS-001",
+          "T4-SAMPLING-BUFFER-LIFECYCLE-001"
+        ],
+        "CORE-PIC-MOVER-CHARGED-001": [
+          "T4-MOVER-ELECTRIC-CONVERGENCE-001",
+          "T4-MOVER-MAGNETIC-CONVERGENCE-001",
+          "T4-MOVER-EXB-DRIFT-001"
+        ],
+        "CORE-PIC-MOVER-RELATIVISTIC-001": [
+          "T4-MOVER-RELATIVISTIC-BORIS-001"
+        ],
+        "CORE-PIC-GYRO-001": [
+          "T4-GYRO-DRIFTS-001",
+          "T4-GYRO-VALIDITY-001"
+        ],
+        "CORE-PIC-BOUNDARY-001": [
+          "PHYS-MOVER-SURFACE-001",
+          "T4-BOUNDARY-ABSORB-OUTER-001",
+          "T4-BOUNDARY-TANGENT-001",
+          "T4-BOUNDARY-START-INSIDE-001",
+          "T4-BOUNDARY-MOVING-PLANE-001",
+          "T4-BOUNDARY-MOVING-SPHERE-001"
+        ],
+        "CORE-PIC-INJECTION-001": [
+          "T4-INJECTION-MAXWELLIAN-FLUX-001",
+          "T4-INJECTION-POISSON-001",
+          "T4-INJECTION-VOLUME-POSITION-001",
+          "T4-INJECTION-FACE-POSITION-001",
+          "T4-INJECTION-SPHERE-VOLUME-001"
+        ],
+        "CORE-PIC-SAMPLING-001": [
+          "T4-SAMPLING-MOMENTS-001",
+          "T4-SAMPLING-WEIGHT-RESCALING-001",
+          "T4-SAMPLING-BUFFER-LIFECYCLE-001"
+        ],
+        "CORE-PIC-COLLISION-ALGORITHMS-001": [
+          "T5-COLLISION-NTC-001",
+          "T5-COLLISION-NTC-SIMPLIFIED-001",
+          "T5-COLLISION-MF-001",
+          "T5-COLLISION-MF-SIMPLIFIED-001",
+          "T5-COLLISION-MF-YINSI-001",
+          "T5-COLLISION-EDGE-CELLS-001",
+          "T5-COLLISION-ZERO-NTC-001",
+          "T5-COLLISION-ZERO-NTC-SIMPLIFIED-001",
+          "T5-COLLISION-ZERO-MF-001",
+          "T5-COLLISION-ZERO-MF-SIMPLIFIED-001",
+          "T5-COLLISION-ZERO-MF-YINSI-001",
+          "T5-COLLISION-LIMITING-NTC-001",
+          "T5-COLLISION-LIMITING-NTC-SIMPLIFIED-001",
+          "T5-COLLISION-LIMITING-MF-001",
+          "T5-COLLISION-LIMITING-MF-SIMPLIFIED-001",
+          "T5-COLLISION-LIMITING-MF-YINSI-001",
+          "T5-COLLISION-ASYMMETRIC-NTC-001",
+          "T5-COLLISION-ASYMMETRIC-MF-001",
+          "T5-COLLISION-ASYMMETRIC-MF-YINSI-001",
+          "T5-COLLISION-WEIGHT-CAPABILITY-001"
+        ],
+        "CORE-PIC-IDF-001": [
+          "PHYS-IDF-STORAGE-001",
+          "PHYS-IDF-ROTATION-001",
+          "PHYS-IDF-VIBRATION-001",
+          "PHYS-IDF-PARTITION-001",
+          "PHYS-IDF-RT-001",
+          "PHYS-IDF-RT-RATE-001",
+          "T5-IDF-ROTZ-CONTRACT-001",
+          "T5-IDF-CAPABILITY-001",
+          "T5-IDF-RT-HOT-COLD-001",
+          "T5-IDF-UPDATE-FLAGS-001",
+          "T5-IDF-MODE-FAMILIES-001"
         ],
         "CORE-SPECIES-001": [
           "CONFIG-DUPLICATE-SPECIES-001",
@@ -295,6 +379,10 @@
           "test/srcCoreUnitTests/physics_distribution.cpp",
           "test/srcCoreUnitTests/physics_idf.cpp",
           "test/srcCoreUnitTests/physics_movers.cpp",
+          "test/srcCoreUnitTests/physics_t4.cpp",
+          "test/srcCoreUnitTests/physics_t5.cpp",
+          "test/srcCoreUnitTests/core_test_fields.h",
+          "test/srcCoreUnitTests/core_test_mesh.h",
           "test/srcCoreUnitTests/species.cpp",
           "test/srcCoreUnitTests/units.cpp",
           "test/srcCoreUnitTests/weight_time_t2.cpp",
@@ -335,6 +423,50 @@
         "PHYS-3D-COLLISION-RELAXATION-001",
         "PHYS-3D-COLLISION-RATE-001",
         "PHYS-3D-PHOTODECAY-001",
+        "T4-MOVER-ELECTRIC-CONVERGENCE-001",
+        "T4-MOVER-MAGNETIC-CONVERGENCE-001",
+        "T4-MOVER-EXB-DRIFT-001",
+        "T4-MOVER-RELATIVISTIC-BORIS-001",
+        "T4-GYRO-DRIFTS-001",
+        "T4-GYRO-VALIDITY-001",
+        "T4-BOUNDARY-ABSORB-OUTER-001",
+        "T4-BOUNDARY-TANGENT-001",
+        "T4-BOUNDARY-START-INSIDE-001",
+        "T4-BOUNDARY-MOVING-PLANE-001",
+        "T4-BOUNDARY-MOVING-SPHERE-001",
+        "T4-INJECTION-MAXWELLIAN-FLUX-001",
+        "T4-INJECTION-POISSON-001",
+        "T4-INJECTION-VOLUME-POSITION-001",
+        "T4-INJECTION-FACE-POSITION-001",
+        "T4-INJECTION-SPHERE-VOLUME-001",
+        "T4-SAMPLING-MOMENTS-001",
+        "T4-SAMPLING-WEIGHT-RESCALING-001",
+        "T4-SAMPLING-BUFFER-LIFECYCLE-001",
+        "T5-COLLISION-NTC-001",
+        "T5-COLLISION-NTC-SIMPLIFIED-001",
+        "T5-COLLISION-MF-001",
+        "T5-COLLISION-MF-SIMPLIFIED-001",
+        "T5-COLLISION-MF-YINSI-001",
+        "T5-COLLISION-EDGE-CELLS-001",
+        "T5-COLLISION-ZERO-NTC-001",
+        "T5-COLLISION-ZERO-NTC-SIMPLIFIED-001",
+        "T5-COLLISION-ZERO-MF-001",
+        "T5-COLLISION-ZERO-MF-SIMPLIFIED-001",
+        "T5-COLLISION-ZERO-MF-YINSI-001",
+        "T5-COLLISION-LIMITING-NTC-001",
+        "T5-COLLISION-LIMITING-NTC-SIMPLIFIED-001",
+        "T5-COLLISION-LIMITING-MF-001",
+        "T5-COLLISION-LIMITING-MF-SIMPLIFIED-001",
+        "T5-COLLISION-LIMITING-MF-YINSI-001",
+        "T5-COLLISION-ASYMMETRIC-NTC-001",
+        "T5-COLLISION-ASYMMETRIC-MF-001",
+        "T5-COLLISION-ASYMMETRIC-MF-YINSI-001",
+        "T5-COLLISION-WEIGHT-CAPABILITY-001",
+        "T5-IDF-ROTZ-CONTRACT-001",
+        "T5-IDF-CAPABILITY-001",
+        "T5-IDF-RT-HOT-COLD-001",
+        "T5-IDF-UPDATE-FLAGS-001",
+        "T5-IDF-MODE-FAMILIES-001",
         "PIC-SPECIES-CONSTANTS-001",
         "PIC-SPECIES-GENERATED-MAPPING-001",
         "PIC-SPECIES-GENERATED-TABLES-001",
@@ -352,7 +484,123 @@
       "exclusive": true
     },
     {
+      "id": "CORE-PIC-PERIODIC-001",
+      "component": "src/pic",
+      "level": "module",
+      "tiers": ["nightly", "profile", "extended"],
+      "runner": "tests/pic/native_core/run_test.py",
+      "description": "Configured periodic AMR initialization, real/ghost pairing, particle wrapping, list transfer, and associated-data synchronization",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": [
+          "Config.pl",
+          "input/test/core-unit-tests-periodic.input",
+          "src/pic/pic_bc_periodic.cpp",
+          "test/srcCoreUnitTests/main.cpp",
+          "test/srcCoreUnitTests/physics_t4.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "T4-BOUNDARY-PERIODIC-001"
+      ],
+      "timeout_seconds": 1800,
+      "mpi_ranks": 1,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-PIC-COLLISION-VHS-001",
+      "component": "src/pic",
+      "level": "module",
+      "tiers": ["nightly", "profile", "extended"],
+      "runner": "tests/pic/native_core/run_test.py",
+      "description": "Generated VHS parameter tables, speed-dependent cross sections, and independent Maxwell relative-speed quadrature",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": [
+          "Config.pl",
+          "input/test/core-unit-tests-vhs.input",
+          "test/srcCoreUnitTests/physics_t5.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": ["T5-COLLISION-VHS-001"],
+      "timeout_seconds": 1800,
+      "mpi_ranks": 1,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-PIC-COLLISION-VSS-001",
+      "component": "src/pic",
+      "level": "module",
+      "tiers": ["nightly", "profile", "extended"],
+      "runner": "tests/pic/native_core/run_test.py",
+      "description": "Generated VSS sigma/alpha parameters, analytical angular moments, and elastic invariants through the production selector dispatcher",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": [
+          "Config.pl",
+          "input/test/core-unit-tests-vss.input",
+          "test/srcCoreUnitTests/physics_t5.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": ["T5-COLLISION-VSS-001"],
+      "timeout_seconds": 1800,
+      "mpi_ranks": 1,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-PIC-IDF-ROTZ-Z2-001",
+      "component": "src/pic",
+      "level": "module",
+      "tiers": ["nightly", "profile", "extended"],
+      "runner": "tests/pic/native_core/run_test.py",
+      "description": "Generated LB Zrot=2 profile and independent one-half RT event probability",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": [
+          "Config.pl",
+          "input/test/core-unit-tests-rotz2.input",
+          "test/srcCoreUnitTests/physics_t5.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": ["T5-IDF-ROTZ-Z2-001"],
+      "timeout_seconds": 1800,
+      "mpi_ranks": 1,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-PIC-IDF-ROTZ-Z10-001",
+      "component": "src/pic",
+      "level": "module",
+      "tiers": ["nightly", "profile", "extended"],
+      "runner": "tests/pic/native_core/run_test.py",
+      "description": "Generated LB Zrot=10 profile and independent one-tenth RT event probability",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": [
+          "Config.pl",
+          "input/test/core-unit-tests-rotz10.input",
+          "test/srcCoreUnitTests/physics_t5.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": ["T5-IDF-ROTZ-Z10-001"],
+      "timeout_seconds": 1800,
+      "mpi_ranks": 1,
+      "exclusive": true
+    },
+    {
       "id": "CORE-PIC-SPLIT-MERGE-001",
+      "aliases": ["CORE-PIC-COLLISION-INDIVIDUAL-WEIGHT-001"],
+      "alias_cases": {
+        "CORE-PIC-COLLISION-INDIVIDUAL-WEIGHT-001": [
+          "T5-COLLISION-INDIVIDUAL-WEIGHT-NTC-001",
+          "T5-COLLISION-INDIVIDUAL-WEIGHT-MF-001"
+        ]
+      },
       "component": "src/pic",
       "level": "module",
       "tiers": ["nightly", "profile", "extended"],
@@ -382,7 +630,9 @@
         "PIC-SPLIT-MERGE-BOUNDARY-001",
         "PIC-SPLIT-EXTENDED-STATE-001",
         "PIC-MERGE-EXTENDED-STATE-001",
-        "PIC-WEIGHT-INDIVIDUAL-INVALID-001"
+        "PIC-WEIGHT-INDIVIDUAL-INVALID-001",
+        "T5-COLLISION-INDIVIDUAL-WEIGHT-NTC-001",
+        "T5-COLLISION-INDIVIDUAL-WEIGHT-MF-001"
       ],
       "timeout_seconds": 1800,
       "mpi_ranks": 1,

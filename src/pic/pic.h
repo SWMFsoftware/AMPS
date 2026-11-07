@@ -2602,6 +2602,27 @@ void DeleteAttachedParticles();
       typedef double (*fGetTotalCrossSection) (int,double*,int,double*);
       extern fGetTotalCrossSection GetTotalCrossSection;
 
+      /* Compile-time identity of the generated total-cross-section closure.
+       * Runtime MolModelCode is retained for legacy post-compile parsing, but
+       * it cannot describe which function/parameter tables Config.pl placed
+       * in this executable.  The identity also selects the matching angular
+       * law in VelocityScattering::Scatter; cross section and deflection must
+       * not silently describe two different molecular models. */
+      static const int CompiledCollisionCrossSectionModel=_HS_MOL_MODEL_;
+      enum cAngularScatteringCapability {
+        ANGULAR_SCATTERING_ISOTROPIC_SUPPORTED = 0,
+        ANGULAR_SCATTERING_VSS_SUPPORTED,
+        ANGULAR_SCATTERING_MODEL_UNSUPPORTED
+      };
+      inline cAngularScatteringCapability GetAngularScatteringCapability() {
+        if (CompiledCollisionCrossSectionModel==_VSS_MOL_MODEL_)
+          return ANGULAR_SCATTERING_VSS_SUPPORTED;
+        if (CompiledCollisionCrossSectionModel==_HS_MOL_MODEL_ ||
+            CompiledCollisionCrossSectionModel==_VHS_MOL_MODEL_)
+          return ANGULAR_SCATTERING_ISOTROPIC_SUPPORTED;
+        return ANGULAR_SCATTERING_MODEL_UNSUPPORTED;
+      }
+
       namespace HS {
         //the table of the constant collsion cross sections and reference diameter
         static const double ConstantCollisionCrossSectionTable[1][1]={{0.0}};
@@ -5294,44 +5315,141 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
       void ModelCellCollisions_mf_Yinsi(int i,int j,int k, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
       void mf_Yinsi();
 
+      /* Compile-independent capability query for per-record statistical
+       * weights. NTC and MF apply each record correction in candidate counts,
+       * update probabilities, and directed-rate samples. Their simplified
+       * variants deliberately require one fixed record weight. The Yinsi
+       * branch detects individual-weight mode but still terminates before an
+       * update law, so callers/tests must not infer support from compilation. */
+      enum cCollisionSelector {
+        COLLISION_SELECTOR_NTC = 0,
+        COLLISION_SELECTOR_NTC_SIMPLIFIED,
+        COLLISION_SELECTOR_MF,
+        COLLISION_SELECTOR_MF_SIMPLIFIED,
+        COLLISION_SELECTOR_MF_YINSI
+      };
+      enum cIndividualWeightCapability {
+        INDIVIDUAL_WEIGHT_SUPPORTED = 0,
+        INDIVIDUAL_WEIGHT_REQUIRES_FIXED_RECORD_WEIGHT,
+        INDIVIDUAL_WEIGHT_NOT_IMPLEMENTED
+      };
+      inline cIndividualWeightCapability GetIndividualWeightCapability(
+          cCollisionSelector selector) {
+        if (selector==COLLISION_SELECTOR_NTC || selector==COLLISION_SELECTOR_MF)
+          return INDIVIDUAL_WEIGHT_SUPPORTED;
+        if (selector==COLLISION_SELECTOR_NTC_SIMPLIFIED ||
+            selector==COLLISION_SELECTOR_MF_SIMPLIFIED)
+          return INDIVIDUAL_WEIGHT_REQUIRES_FIXED_RECORD_WEIGHT;
+        return INDIVIDUAL_WEIGHT_NOT_IMPLEMENTED;
+      }
+
       void CollisionModelManager(void (*CellCollisions)(int, int, int, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*));
     }
 
-    //models for calculation of the relative velocity after a collision
+    // Models for the post-collision relative-velocity direction.
     namespace VelocityScattering {
+      /* Apply a sampled deflection cosine while preserving the supplied
+       * center-of-mass velocity and relative-speed magnitude. Here vrel is
+       * v1-v0 [m/s], vcm=(m0*v0+m1*v1)/(m0+m1) [m/s], and masses are in kg.
+       * The orthogonal transformation below is Bird's DSMC construction; it
+       * changes direction only, so momentum and translational kinetic energy
+       * are conserved to roundoff for every accepted elastic event. */
+      inline void VelocityAfterCollisionWithCosine(
+          double* v0,double m0,double* v1,double m1,double *vcm,double *vrel,
+          double CosKsi) {
+        double Vrc,V[3],am=m0+m1;
+        double SinKsi,CosEps,SinEps,D,c;
+        int idim;
+
+        // A model-specific sampler supplies CosKsi in [-1,1]. Clamp only
+        // possible roundoff at the endpoints so sqrt(1-mu^2) remains finite.
+        if (CosKsi>1.0) CosKsi=1.0;
+        if (CosKsi<-1.0) CosKsi=-1.0;
+        SinKsi=sqrt(max(0.0,1.0-CosKsi*CosKsi));
+
+        // Axial symmetry makes the azimuth uniform on [0,2*pi).
+        c=2*Pi*rnd();
+        SinEps=sin(c);
+        CosEps=cos(c);
+
+        D=sqrt(vrel[1]*vrel[1]+vrel[2]*vrel[2]);
+        if (D>1.0E-6) {
+          Vrc=sqrt(vrel[0]*vrel[0]+vrel[1]*vrel[1]+vrel[2]*vrel[2]);
+          V[0]=CosKsi*vrel[0]+SinKsi*SinEps*D;
+          V[1]=CosKsi*vrel[1]+SinKsi*(Vrc*vrel[2]*CosEps-vrel[0]*vrel[1]*SinEps)/D;
+          V[2]=CosKsi*vrel[2]-SinKsi*(Vrc*vrel[1]*CosEps+vrel[0]*vrel[2]*SinEps)/D;
+        }
+        else {
+          // Avoid dividing by the transverse magnitude when the incoming
+          // relative velocity is aligned with the first coordinate axis.
+          V[0]=CosKsi*vrel[0];
+          V[1]=SinKsi*CosEps*vrel[0];
+          V[2]=SinKsi*SinEps*vrel[0];
+        }
+
+        for (idim=0;idim<3;idim++) {
+          v1[idim]=vcm[idim]+m0/am*V[idim];
+          v0[idim]=vcm[idim]-m1/am*V[idim];
+        }
+      }
+
       namespace HS {
         inline void VelocityAfterCollision(double* v0,double m0,double* v1,double m1,double *vcm,double *vrel) {
-          double Vrc,V[3],am=m0+m1;
-          double CosKsi,SinKsi,CosEps,SinEps,D,c;
-          int idim;
-
-          //generate the new value of the relative velocity
-          CosKsi=2.0*rnd()-1.0;
-          SinKsi=sqrt(1.0-CosKsi*CosKsi);
-
-          c=2*Pi*rnd();
-          SinEps=sin(c);
-          CosEps=cos(c);
-
-          D=sqrt(vrel[1]*vrel[1]+vrel[2]*vrel[2]);
-          if (D>1.0E-6) {
-            Vrc=sqrt(vrel[0]*vrel[0]+vrel[1]*vrel[1]+vrel[2]*vrel[2]);
-            V[0]=CosKsi*vrel[0]+SinKsi*SinEps*D;
-            V[1]=CosKsi*vrel[1]+SinKsi*(Vrc*vrel[2]*CosEps-vrel[0]*vrel[1]*SinEps)/D;
-            V[2]=CosKsi*vrel[2]-SinKsi*(Vrc*vrel[1]*CosEps+vrel[0]*vrel[2]*SinEps)/D;
-          }
-          else {
-            V[0]=CosKsi*vrel[0];
-            V[1]=SinKsi*CosEps*vrel[0];
-            V[2]=SinKsi*SinEps*vrel[0];
-          }
-
-          //generate new values of the particle velocities
-          for (idim=0;idim<3;idim++) {
-            v1[idim]=vcm[idim]+m0/am*V[idim];
-            v0[idim]=vcm[idim]-m1/am*V[idim];
-          }
+          // Isotropic HS/VHS scattering has a uniform deflection cosine on
+          // [-1,1]. Keep the historical random-number order: polar sample
+          // first, azimuth second, so non-VSS reproducibility is unchanged.
+          VelocityAfterCollisionWithCosine(
+              v0,m0,v1,m1,vcm,vrel,2.0*rnd()-1.0);
         }
+      }
+
+      namespace VSS {
+        inline double GetPairAlpha(int species0,int species1) {
+          /* Koura--Matsumoto's VSS alpha is dimensionless and positive.
+           * AMPS input stores one CHI/alpha per species; the binary-mixture
+           * closure uses the arithmetic pair mean, matching the arithmetic
+           * diameter mixing already used by the VHS/VSS cross section.
+           * This is a declared model closure, not a fitted transport law. */
+          const double alpha0=
+              PIC::MolecularData::MolecularModels::VSS::GetChi(species0);
+          const double alpha1=
+              PIC::MolecularData::MolecularModels::VSS::GetChi(species1);
+          return species0==species1 ? alpha0 : 0.5*(alpha0+alpha1);
+        }
+
+        inline bool VelocityAfterCollision(
+            int species0,double* v0,double m0,int species1,double* v1,
+            double m1,double *vcm,double *vrel) {
+          const double alpha=GetPairAlpha(species0,species1);
+          if (!(alpha>0.0) || !isfinite(alpha)) return false;
+
+          /* With uniformly sampled normalized impact area U, the VSS law is
+           * cos(chi)=2*U^(1/alpha)-1. Alpha=1 recovers the uniform-cosine
+           * VHS law. The common closure preserves |vrel|, momentum, and
+           * energy; only the angular probability density changes. */
+          const double cosine=2.0*pow(rnd(),1.0/alpha)-1.0;
+          VelocityAfterCollisionWithCosine(
+              v0,m0,v1,m1,vcm,vrel,cosine);
+          return true;
+        }
+      }
+
+      /* Select the angular law compiled with the total cross section. False
+       * is a typed local result for an invalid VSS alpha or an unknown model;
+       * legacy collision drivers convert it to their established fatal error
+       * because continuing would corrupt the declared collision physics. */
+      inline bool Scatter(int species0,double* v0,double m0,int species1,
+          double* v1,double m1,double *vcm,double *vrel) {
+        const int model=PIC::MolecularData::MolecularModels::
+            CompiledCollisionCrossSectionModel;
+        if (model==_VSS_MOL_MODEL_)
+          return VSS::VelocityAfterCollision(
+              species0,v0,m0,species1,v1,m1,vcm,vrel);
+        if (model==_HS_MOL_MODEL_ || model==_VHS_MOL_MODEL_) {
+          HS::VelocityAfterCollision(v0,m0,v1,m1,vcm,vrel);
+          return true;
+        }
+        return false;
       }
     }
 
@@ -5872,6 +5990,40 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
        
       void CalculateRTTransition(PIC::ParticleBuffer::byte *ptr0, PIC::ParticleBuffer::byte *ptr1,double &Ec, bool* ChangeParticlePropertiesFlag, bool &RedistributionEnergyFlag, double TempIndexOmega);
       void CalculateVTTransition(PIC::ParticleBuffer::byte *ptr0, PIC::ParticleBuffer::byte *ptr1,double &Ec, bool* ChangeParticlePropertiesFlag, bool &RedistributionEnergyFlag, double TempIndexOmega);
+
+      /* Resolve the configured rotational collision number for one collision
+       * pair.  Z_rot is dimensionless and the LB event probability is 1/Z_rot.
+       * A monatomic partner contributes no rotational reservoir.  If both
+       * partners rotate, equal configured values are unambiguous; unequal
+       * values require a separately selected cross-species mixing law and are
+       * rejected instead of being silently averaged. */
+      enum cRotationalCollisionNumberStatus {
+        ROTATIONAL_COLLISION_NUMBER_OK = 0,
+        ROTATIONAL_COLLISION_NUMBER_NO_ROTATIONAL_MODES,
+        ROTATIONAL_COLLISION_NUMBER_INVALID,
+        ROTATIONAL_COLLISION_NUMBER_AMBIGUOUS_CROSS_SPECIES
+      };
+      cRotationalCollisionNumberStatus EvaluateRotationalCollisionNumber(
+          int species0, int species1, double& collision_number);
+
+      /* Query qualification without entering a fatal legacy path.  RT is the
+       * only validated LB relaxation channel in the current core.  VT has
+       * source code but deliberately terminates before use; VV has no
+       * production transition.  Callers and tests can therefore distinguish
+       * supported physics from compiled-but-unverified or absent physics. */
+      enum cRelaxationChannel {
+        RELAXATION_CHANNEL_RT = 0,
+        RELAXATION_CHANNEL_VT,
+        RELAXATION_CHANNEL_VV
+      };
+      enum cRelaxationCapability {
+        RELAXATION_CAPABILITY_SUPPORTED = 0,
+        RELAXATION_CAPABILITY_UNVERIFIED_TERMINATES,
+        RELAXATION_CAPABILITY_NOT_IMPLEMENTED
+      };
+      cRelaxationCapability GetRelaxationCapability(
+          cRelaxationChannel channel);
+
       void RedistributeEnergy(PIC::ParticleBuffer::byte *ptr0,PIC::ParticleBuffer::byte *ptr1,double& vrel,bool* ChangeParticlePropertiesFlag,PIC::Mesh::cDataCenterNode* cell);
 
       //request data for the model
@@ -9259,6 +9411,20 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
 
     //calculate of the injection rate of particles distributed with Maxwellian distribution
     double CalculateInjectionRate_MaxwellianDistribution(const double NumberDesnity,const double Temp,const double *BulkVelocity,double *ExternalNormal,const int spec);
+
+    /* Draw one waiting time for a homogeneous Poisson source. ``rate`` is in
+     * s^-1 and the returned interval is in seconds. Invalid or zero rates are
+     * represented by +infinity, so callers can use the result in an event
+     * loop without manufacturing an event. The transform -log(U)/rate uses
+     * AMPS' endpoint-exclusive uniform generator and is shared by boundary
+     * injection and its statistical validation. */
+    double SamplePoissonWaitingTime(double rate);
+
+    /* Draw the radius of a point uniformly distributed in a three-dimensional
+     * ball of radius ``outer_radius`` [m].  Uniform volume requires
+     * P(R<=r)=(r/R)^3, hence r=R*cbrt(U).  A non-positive or non-finite
+     * radius returns NaN rather than silently creating a point source. */
+    double SampleUniformSphereVolumeRadius(double outer_radius);
 
     //user-defined generic particle-injection function
     typedef long int (*fUserDefinedParticleInjectionFunction)();

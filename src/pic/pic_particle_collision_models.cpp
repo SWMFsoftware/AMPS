@@ -225,10 +225,23 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc_s
                  LocalParticleWeight * SigmaCrMax * LocalTimeStep / cellMeasure;
       }
 
-      // Apply collision limiting if needed
+      // Apply unbiased collision-trial thinning. CollisionLimitingThrehold is
+      // dimensionless and means retained trials per model particle per step;
+      // the cap is therefore L*max(N0,N1), not N0*N1. If A prospective
+      // trials exceed cap C, run C trials and multiply every accepted sample
+      // by A/C. This preserves the expected physical rate while preventing a
+      // long sequence of collisions from evolving velocities beyond the
+      // single pre-loop sigma*g majorant. A non-positive/non-finite limit is
+      // invalid configuration rather than a silent no-collision model.
       double CollisionLimitingFactor = 1.0;
-      if (nParticleNumber[s0] * nParticleNumber[s1] < ancoll) {
-        CollisionLimitingFactor = ancoll / (nParticleNumber[s0] * nParticleNumber[s1]);
+      if (!(CollisionLimitingThrehold > 0.0) ||
+          !isfinite(CollisionLimitingThrehold))
+        exit(__LINE__,__FILE__,
+            "CollisionLimitingThrehold must be positive and finite");
+      const double maxCollisionTrials = CollisionLimitingThrehold *
+          max(nParticleNumber[s0],nParticleNumber[s1]);
+      if (maxCollisionTrials < ancoll) {
+        CollisionLimitingFactor = ancoll / maxCollisionTrials;
         ancoll /= CollisionLimitingFactor;
       }
 
@@ -277,7 +290,12 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc_s
 
 
         // Perform collision - directly modifies v0 and v1 which point to particle state
-        PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0,m0,v1,m1,vcm,vrel);
+        // The generated molecular model owns both sigma(g) and its angular
+        // law. HS/VHS remain isotropic; VSS consumes the configured alpha.
+        if (!PIC::MolecularCollisions::VelocityScattering::Scatter(
+                s0,v0,m0,s1,v1,m1,vcm,vrel))
+          exit(__LINE__,__FILE__,
+              "Invalid or unsupported molecular angular-scattering model");
 
         // Sample collision frequency if sampling is enabled
         if (_PIC__PARTICLE_COLLISION_MODEL__SAMPLE_COLLISION_FREQUENTCY_MODE__ == _PIC_MODE_ON_) {
@@ -476,12 +494,22 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
             SigmaCrMax*maxLocalTimeStep/minLocalParticleWeight/cellMeasure;
         }
 
-        //3. Collision Limiting
+        //3. Collision limiting: use the same per-particle cap and unbiased
+        //sample multiplier as the simplified NTC path above. The prior
+        //expression ancoll/N0*N1 also had left-to-right precedence, producing
+        //ancoll*N1/N0 rather than ancoll/(N0*N1); the explicit cap removes
+        //that ambiguity and gives this configuration variable its stated
+        //meaning across selector implementations.
         double CollisionLimitingFactor=1.0;
 
-        // Computation of collision limiting factor 
-        if (nParticleNumber[s0]*nParticleNumber[s1]<ancoll) {
-          CollisionLimitingFactor=ancoll/nParticleNumber[s0]*nParticleNumber[s1];
+        if (!(CollisionLimitingThrehold>0.0) ||
+            !isfinite(CollisionLimitingThrehold))
+          exit(__LINE__,__FILE__,
+              "CollisionLimitingThrehold must be positive and finite");
+        const double maxCollisionTrials=CollisionLimitingThrehold*
+            max(nParticleNumber[s0],nParticleNumber[s1]);
+        if (maxCollisionTrials<ancoll) {
+          CollisionLimitingFactor=ancoll/maxCollisionTrials;
           ancoll/=CollisionLimitingFactor;
         }
 
@@ -546,7 +574,10 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
           }
 
           //the collision is considered to be true
-          PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0,m0,v1,m1,vcm,vrel);
+          if (!PIC::MolecularCollisions::VelocityScattering::Scatter(
+                  s0,v0,m0,s1,v1,m1,vcm,vrel))
+            exit(__LINE__,__FILE__,
+                "Invalid or unsupported molecular angular-scattering model");
 
           //update the velocities in the lists
           if (UpdateFlag[0]==true) {
@@ -862,7 +893,10 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_si
         }
 
         // Perform collision - directly modifies v0 and v1 which point to particle state
-        PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0,m0,v1,m1,vcm,vrel);
+        if (!PIC::MolecularCollisions::VelocityScattering::Scatter(
+                s0,v0,m0,s1,v1,m1,vcm,vrel))
+          exit(__LINE__,__FILE__,
+              "Invalid or unsupported molecular angular-scattering model");
 
         // Sample collision frequency if sampling is enabled
         if (_PIC__PARTICLE_COLLISION_MODEL__SAMPLE_COLLISION_FREQUENTCY_MODE__ == _PIC_MODE_ON_) {
@@ -1144,7 +1178,10 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf(in
           }
 
           //the collision is considered to be true
-          PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0,m0,v1,m1,vcm,vrel);
+          if (!PIC::MolecularCollisions::VelocityScattering::Scatter(
+                  s0,v0,m0,s1,v1,m1,vcm,vrel))
+            exit(__LINE__,__FILE__,
+                "Invalid or unsupported molecular angular-scattering model");
 
           //update the velocities in the lists
           if (UpdateFlag[0]==true) {
@@ -1211,7 +1248,11 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yi
   int SigmaCrMax_nTest=100;
   double SigmaCrMax_SafetyMargin=1.05;
 
-  PIC::MolecularCollisions::ParticleCollisionModel::CollisionLimitingThrehold=40.0;
+  // CollisionLimitingThrehold is shared configuration for all selectors.
+  // Earlier code overwrote it with 40 on every Yinsi cell call, making a
+  // later NTC/MF result depend on selector execution order.  The Yinsi
+  // equations below already consume the common dimensionless limit; do not
+  // mutate process-global configuration from a cell-local physics kernel.
 
   struct cParticleDataList {
     double vel[3];
@@ -1473,7 +1514,10 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yi
           }
 
           //the collision is considered to be true
-          PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0,m0,v1,m1,vcm,vrel);
+          if (!PIC::MolecularCollisions::VelocityScattering::Scatter(
+                  s0,v0,m0,s1,v1,m1,vcm,vrel))
+            exit(__LINE__,__FILE__,
+                "Invalid or unsupported molecular angular-scattering model");
 
           //update the velocities in the lists
           if (UpdateFlag[0]==true) {
