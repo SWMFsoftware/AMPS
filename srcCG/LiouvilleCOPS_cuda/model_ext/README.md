@@ -74,6 +74,8 @@ grain code. Each file's header says how to run it; the `jobs/` scripts show comp
 | refine elements of a shape model locally | `refine_mesh.py` (+ `seen_after_gap.py` for the 20M mask), `refined_bundle.py` | — | 2026-11-04 |
 | scale the activity of chosen areas without refitting | `area_scaling.py`, `area_scaling.sbatch` | — | 2026-11-04 |
 | rerun a finished grain fit exactly | `grain_repro.sbatch` | — | 2026-11-03 |
+| evaluate finished fits on a fine time grid of the late window with the COPS time response (10-s running average, 10 s + DPU 5-readout average) and gauge offsets, without refitting | `late_time_grid.py` (observation file with a 1-s grid), `native/liouville_cops_cuda` (bases), `late_response_eval.py`; `jobs/late_response.sbatch` | — | 2026-11-07 (job 122289) |
+| fit a strictly positive H2O activity A = exp(Y a + c T_cliff) (c ≥ 0) with a night/shadow ratio, an H2O flux floor F = max(q A, r q_max A_orig), a log-space Tikhonov prior (emission-weighted projection of ln A_orig), the late observations compared with the gauge time response (W10x5) and model-only 1-s grid rows | `positive_fit.py` (options before `--`, gpu_fit.py arguments after it); `jobs/positive_fit.sbatch` (LAMBDA, resume segments); base with the grid: `jobs/prepare_12m_lategrid.sbatch` (`late_time_grid.py --allow-missing-l2`), check `jobs/base_consistency_check.sbatch` | `positive_problem.py`, `positive_activity.py` + `kernels/pressure.cu`, `kernels/activity.cu` (env COPS_POS_ENABLE, COPS_POS_NIGHT_RATIO, COPS_POS_ACTIVITY=exp, COPS_POS_FLOOR_RATIO); tests `positive_activity_check.py`, `test_positive_fit.py` | 2026-11-07 (12M lambda scan, jobs 122307, 122310–122312, 122319, 122320) |
 
 Notes:
 
@@ -92,6 +94,7 @@ Notes:
   to 20 at the last point, linearly": `--weight-last 6 --weight-profile linear --weight-start 1 --weight-factor 20`
   (W = 1, 4.8, 8.6, 12.4, 16.2, 20). `--weight-start` and `--weight-values` were added after job 122236; with their
   defaults the weights are unchanged.
+* **Positive-activity fits** (user decisions 2026-11-07): mixed precision only (FP64 records and `restart.cu` are refused while COPS_POS_* are active), so the fine-tuning tools (`fine_tune_gpu.py`, `grain_finetune.py`, `late_response_eval.py`, which use max(activity_linear, 0)) are **not valid** for these fits; the restart file's `activity_linear` holds the exponent s. The driver switches the start-up consistency check off (`--check-tolerance inf`), so check each new base once with `jobs/base_consistency_check.sbatch` (unchanged code). Each fit's `ACTIVITY_PARAMETERIZATION.txt` lists which of its products are valid. Grid rows (use 0) are model-only: `figures/positive_table.py` removes them before plotting.
 * **The original temperature law** (used by `jobs/grain_ft_cycle_Torig.sbatch`) is the analytical law of
   `../../LiouvilleCOPS/src/Source.cpp` with its defaults Tmax 182.09922, T75 136.11149, Tmin 133 K; to use it in a
   grain fit, hold the three: `--fix Tmax=182.09922 --fix T75=136.11149 --fix Tmin=133`.
@@ -108,6 +111,11 @@ Notes:
 | `grain_ft_cycle_Tmin130.sbatch` | cycles 4–6, Tmin = 130 K and Tmax = 231.98 K held | 122117, 122140, 122141 |
 | `grain_ft_cycle_Torig.sbatch` | cycles 4–6, the original temperature law held (figures: `figures/figures_12m_cycles_Torig.sh`) | 122219–122221 |
 | `grain_late_weights.sbatch` | fit with the last N points weighted (WLAST, WFACTOR, WPROFILE, WSTART, WVALUES), from cycle 3 (START=c3) or the original-temperature cycle 6 (START=torig_c6) | 122236, 122248, 122250 |
+| `late_response.sbatch` | late-window forward check: 1-s grid, bases for gauge offsets 0/1.5/3 m along +Z (3 GPUs), time-response windows, five fits + fine tunings (figures: `figures/figures_12m_late_response.sh`) | 122289 |
+| `prepare_12m_lategrid.sbatch` | 12M fitting base with the 1-s late grid and gauge offset +1.5 m along +Z (no record store) | 122291 |
+| `base_consistency_check.sbatch` | a base against the unchanged GPU forward model (`gpu_fit.py --data-only`, tolerance 1e-6) | 122304 |
+| `positive_activity_check.sbatch`, `positive_unit_12m.sbatch`, `positive_fit_test.sbatch` | positive-activity kernel checks, unit tests, smoke test (λ 0, 4 evaluations, Jacobian check) | 122298, —, 122303 |
+| `positive_fit.sbatch` | positive-activity fit, LAMBDA required, max_nfev 4000, resume segments (figures: `figures/figures_12m_positive_scan.sh`) | 122307, 122310–122312, 122319, 122320 |
 | `grain_rough.sbatch`, `prepare_12m_rough.sbatch` | 12M rough-surface base and the C30 fit on it | 122033, 122034 |
 | `prepare_44m.sbatch`, `grain_44m_c30.sbatch` | 44M preparation; C30 with the 12M conditions on 44M | 121996/122020, 122078 |
 | `refine_12m.sbatch`, `refine_20m.sbatch` | local mesh refinement tests | 122009, 122011 |
@@ -121,7 +129,9 @@ The job scripts in this folder itself (`grain*.sbatch`, `area_scaling.sbatch`) r
 `snapshot.sh` copies a campaign's results and restart files next to its plots. `rerun_commands.py` writes the "exact commands" part of HOW-TO-RERUN.md (from 2026-11-06): every command of a fit and its fine tuning with all arguments, the job's exports, the AMPS commit of the run, and for each module and job script the git commit holding an identical copy here; job scripts from `grain_late_weights.sbatch` on also record their resolved commands in `provenance-<job>/commands.sh`. Each `figures_*.sh` makes one figure
 folder under `$COPS_OUTPUT_ROOT/figures_cluster/<RES>/` (its header names it) and writes HOW-TO-RERUN.md there; from
 2026-11-06 on (`figures_12m_late_weights.sh`) also `code/` with the code that ran and the AMPS commit of each fit.
-They run on the login node (no GPU), from `$APP` with `.venv/bin/python`.
+They run on the login node (no GPU), from `$APP` with `.venv/bin/python`. `late_response_figures.py` + `figures_12m_late_response.sh <job>` (2026-11-07) draw a `late_response.sbatch` job
+(model with and without the gauge time response, per gauge offset) into `12M/model_vs_observations_late_response/`.
+`figures_12m_positive_scan.sh` (2026-11-07) draws the six positive-activity λ fits into `12M/model_vs_observations_positive_lambda_scan/` (`positive_table.py` removes the model-only grid rows); `scan_summary.py` (run copy in `$COPS_OUTPUT_ROOT/analysis/positive_lambda_scan_12m/`) writes the scan table and the L-curve.
 
 ## Running on another machine
 
