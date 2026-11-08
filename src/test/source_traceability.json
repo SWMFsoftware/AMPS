@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "Rule-based T0-T10 source/public-contract traceability. The validator expands these areas to every current production translation unit and public compile contract; compilation alone never changes a status to tested.",
+  "description": "Rule-based T0-T11 source/public-contract traceability. The validator expands these areas to every current production translation unit and public compile contract; compilation alone never changes a status to tested.",
   "statuses": ["tested", "partial", "planned", "exempt"],
   "discovery": {
     "translation_unit_extensions": [".c", ".cc", ".cpp", ".cxx", ".f", ".f90", ".for"],
@@ -18,6 +18,7 @@
     ]
   },
   "case_registry_sources": [
+    "src/test/case_registries.json",
     "src/test/tests/harness/self/run_test.py",
     "src/test/tests/pic/native_core/run_test.py",
     "src/test/tests/mesh/native/run_test.py",
@@ -99,17 +100,21 @@
       "component": "src/general",
       "path": "src/general",
       "status": "partial",
-      "suite_ids": ["CORE-GENERAL-CONTAINERS-001", "CORE-GENERAL-NUMERICS-001", "CORE-GENERAL-RNG-001", "CORE-GENERAL-MPI-001", "CORE-GENERAL-LOGGER-001"],
+      "suite_ids": ["CORE-GENERAL-CONTAINERS-001", "CORE-GENERAL-NUMERICS-001", "CORE-GENERAL-RNG-001", "CORE-GENERAL-MPI-001", "CORE-GENERAL-LOGGER-001", "CORE-T12-PORTABILITY-001"],
       "case_ids": [
         "GENERAL-ARRAY-001", "GENERAL-BITARRAY-001", "GENERAL-STACK-001", "GENERAL-LINKED-001", "GENERAL-STRING-001", "GENERAL-INDEXER4D-001",
         "GENERAL-NUM-ARRAY-EMPTY-001", "GENERAL-NUM-ARRAY-INDEX-001", "GENERAL-NUM-ARRAY-OWNERSHIP-001", "GENERAL-NUM-ARRAY-RESIZE-001", "GENERAL-NUM-ARRAY-BOUNDS-001", "GENERAL-NUM-MANAGED-STACK-001", "GENERAL-NUM-SPECFUNC-001", "GENERAL-NUM-QUADRATURE-POLY-001", "GENERAL-NUM-QUADRATURE-CONVERGENCE-001", "GENERAL-NUM-QUADRATURE-DOMAIN-001",
         "GENERAL-RNG-REPRO-001", "GENERAL-RNG-ENDPOINT-001", "GENERAL-RNG-STREAMS-001", "GENERAL-RNG-UNIFORM-001", "GENERAL-RNG-NORMAL-001", "GENERAL-RNG-GAMMA-001", "GENERAL-RNG-DIRECTION-001", "GENERAL-RNG-RANK-STREAM-001",
         "GENERAL-MPI-CHANNEL-SCALAR-001", "GENERAL-MPI-CHANNEL-VECTOR-001", "GENERAL-MPI-CHANNEL-STRUCT-001", "GENERAL-MPI-CHANNEL-ZERO-001",
-        "GENERAL-LOGGER-FORMAT-LONG-001", "GENERAL-LOGGER-CONCURRENT-001", "GENERAL-LOGGER-ROTATE-FLUSH-001", "GENERAL-LOGGER-FATAL-001"
+        "GENERAL-LOGGER-FORMAT-LONG-001", "GENERAL-LOGGER-CONCURRENT-001", "GENERAL-LOGGER-ROTATE-FLUSH-001", "GENERAL-LOGGER-FATAL-001",
+        "T12-CXX-GNU-DEBUG-001", "T12-CXX-GNU-OPTIMIZED-001", "T12-CXX-CLANG-001", "T12-FORTRAN-ABI-001",
+        "T12-SANITIZER-ASAN-001", "T12-SANITIZER-UBSAN-001", "T12-SANITIZER-TSAN-001", "T12-VALGRIND-LEAK-001",
+        "T12-OPENMP-INVARIANCE-001", "T12-MPI-OPENMPI-001", "T12-MPI-MPICH-001",
+        "T12-CUDA-COMPILE-001", "T12-CUDA-RUNTIME-001", "T12-PERFORMANCE-ARRAY-001", "T12-PERFORMANCE-IO-001", "T12-COVERAGE-STRICT-001"
       ],
       "local_registries": [],
-      "reason": "T1 directly covers multidimensional arrays, managed containers, RNG/distributions, quadrature, vector/integer helpers, synchronous logging, fatal diagnostics, and two-rank byte channels. The broader general directory remains partial because non-T1 grid/debug/checksum/CUDA helpers are separately inventoried.",
-      "gaps": ["legacy fork/shared-memory cLogger daemon lifecycle", "CRC/debugger stream helpers", "thread/spinlock helpers", "CUDA allocation/kernel wrappers", "legacy general grid and distribution containers"]
+      "reason": "T1 directly covers multidimensional arrays, managed containers, RNG/distributions, quadrature, vector/integer helpers, synchronous logging, fatal diagnostics, and two-rank byte channels. T12 exercises production array_1d under bounded compiler, sanitizer, OpenMP, leak and timing profiles and keeps unavailable backends typed. The broader general directory and whole-program portability remain partial.",
+      "gaps": ["legacy fork/shared-memory cLogger daemon lifecycle", "CRC/debugger stream helpers", "thread/spinlock helpers", "CUDA allocation/kernel wrappers", "legacy general grid and distribution containers", "whole-AMPS sanitizer/compiler profiles", "configured mesh/push/collision/halo/restart performance budgets", "strict coverage closure"]
     },
     {
       "area_id": "interface",
@@ -212,33 +217,33 @@
       "component": "src/models/sep_common",
       "path": "src/models/sep_common",
       "status": "partial",
-      "suite_ids": [],
-      "case_ids": [],
-      "local_registries": ["src/models/sep_common/sep_test_registry.cpp"],
-      "reason": "Model-local authoritative tests exist but are not adapted to the global result protocol.",
-      "gaps": ["global adapter", "scope-preserving evidence import"]
+      "suite_ids": ["CORE-MODEL-SEP-COMMON-001"],
+      "case_ids": ["SEP-COMMON-ARCHIVE-SEP-COMMON01", "SEP-COMMON-MFP-VERIFY", "SEP-COMMON-PERP-VERIFY", "SEP-COMMON-PITCH-PAD01"],
+      "local_registries": ["src/models/sep_common/sep_test_registry.cpp", "src/models/sep_common/pitch_angle_diffusion/run_all_tests.py"],
+      "reason": "T11 executes all five local scopes in an isolated copy and imports the exact 143-row registry without duplicating physics oracles.",
+      "gaps": ["52-case full pitch-angle Monte-Carlo acceptance is a typed routine SKIP"]
     },
     {
       "area_id": "sep-corona-swcme",
       "component": "src/models/sep_corona_swcme",
       "path": "src/models/sep_corona_swcme",
       "status": "partial",
-      "suite_ids": [],
-      "case_ids": [],
+      "suite_ids": ["CORE-MODEL-SEP-CORONA-SWCME-FULL-001", "CORE-MODEL-SEP-CORONA-SWCME-REDUCED-001"],
+      "case_ids": ["CSWC-FULL-CMBGU01", "CSWC-FULL-CSWC0628-MASS-TIME", "CSWC-REDUCED-SHARED-RSH-RSH00-01", "CSWC-REDUCED-PORTABLE-SRCSEP3D-RSHAPP04"],
       "local_registries": ["src/models/sep_corona_swcme/test/check_architecture.py", "src/models/sep_corona_swcme/test/shock_front/test_reduced.cpp"],
-      "reason": "Maintained local shock/CME tests exist; no global adapter owns their evidence.",
-      "gaps": ["global adapter", "qualification-scope preservation"]
+      "reason": "T11 imports 15 bounded full-volume markers and the complete 97-row reduced-front registry while retaining their disjoint qualification labels.",
+      "gaps": ["BG3D-4/G1 remains deferred and unqualified", "35 reduced native rows are routine SKIP"]
     },
     {
       "area_id": "sep-coronal-cme",
       "component": "src/models/sep_coronal_cme",
       "path": "src/models/sep_coronal_cme",
       "status": "partial",
-      "suite_ids": [],
-      "case_ids": [],
+      "suite_ids": ["CORE-MODEL-SEP-CORONAL-CME-001"],
+      "case_ids": ["SCCM-DOCSCCM01", "SCCM-ARCHSCCM01", "SCCM-XMD3D01"],
       "local_registries": ["src/models/sep_coronal_cme/test/run_tests.py"],
-      "reason": "The staged local registry is authoritative and extensive but is not globally adapted.",
-      "gaps": ["non-duplicating global adapter", "retained aggregate evidence"]
+      "reason": "T11 invokes the exact 222-case local registry and retains its JSON/JUnit software-verification evidence.",
+      "gaps": ["three campaign-evidence SKIPs", "production and observational qualification remain false"]
     },
     {
       "area_id": "sputtering",
@@ -267,11 +272,11 @@
       "component": "src/models/swcme",
       "path": "src/models/swcme",
       "status": "partial",
-      "suite_ids": [],
-      "case_ids": [],
-      "local_registries": ["src/models/swcme/test/run_tests.py"],
-      "reason": "A maintained model-local routine/full runner exists but is not globally adapted.",
-      "gaps": ["global adapter", "evidence import without changing physical qualification"]
+      "suite_ids": ["CORE-MODEL-SWCME-001"],
+      "case_ids": ["SWCME-R1CFG01", "SWCME-EXT-SAN01", "SWCME-VP01", "SWCME-VP16"],
+      "local_registries": ["src/models/swcme/test/run_tests.py", "src/models/swcme/test/core/test_swcme.cpp", "src/models/swcme/test/validation/campaign.json"],
+      "reason": "T11 executes the four-case R1 authority and imports every dormant extended/observational identity with its typed blocker.",
+      "gaps": ["six extended test sources absent", "observational campaign runner absent"]
     },
     {
       "area_id": "pic-ecsim",
@@ -396,16 +401,17 @@
       "component": "src/test",
       "path": "src/test",
       "status": "exempt",
-      "suite_ids": ["CORE-HARNESS-001"],
+      "suite_ids": ["CORE-HARNESS-001", "CORE-LEGACY-REGISTRY-AUDIT-001"],
       "case_ids": [
         "HARNESS-CONFIG-001", "HARNESS-MANIFEST-001", "HARNESS-SELECTION-001",
         "HARNESS-PROTOCOL-001", "HARNESS-SCHEDULER-001", "HARNESS-REPORT-001",
         "HARNESS-SCHEMA-001", "HARNESS-SUBPROCESS-001", "HARNESS-TIMEOUT-001",
-        "HARNESS-CONCURRENCY-001", "HARNESS-TRACEABILITY-001"
+        "HARNESS-CONCURRENCY-001", "HARNESS-TRACEABILITY-001",
+        "LEGACY-UNIT-TESTS-001", "LEGACY-MODEL-DUST-TEST-001"
       ],
       "local_registries": [],
-      "reason": "Test-control implementation is not a production source area; its demonstrated contracts are tracked by the harness suite and T0 roadmap.",
-      "gaps": ["standalone traceability validator is not yet a manifest-owned case", "cross-platform retained fault-injection receipts", "full order-isolation campaign"]
+      "reason": "Test-control implementation is not a production source area; its demonstrated contracts are tracked by the harness suite, and T11 audits explicit directory/owner dispositions for all roadmap legacy applications without treating that governance receipt as behavioral migration qualification.",
+      "gaps": ["standalone traceability validator is not yet a manifest-owned case", "per-application legacy oracle/failure/path/determinism review", "cross-platform retained fault-injection receipts", "full order-isolation campaign"]
     }
   ]
 }

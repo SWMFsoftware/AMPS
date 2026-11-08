@@ -293,7 +293,7 @@ python3 srcSEP3D/test/run_reduced_shock_front.py
 ```
 
 The default invocation uses the existing configured `./amps` and executes the
-shared 57-assertion RSH harness, `ARCHCSWC01`, `RSHAPP01--03`, one- and
+shared 57-assertion RSH harness, `ARCHCSWC01`, `RSHAPP01--04`, one- and
 four-rank `RSH24--RSH27` smoke cases, an actual native uninterrupted/checkpoint/
 resume matrix, and the separate four-rank `RSH24--RSH28` 1-AU campaign.  The
 restart matrix compares four-rank uninterrupted with four-to-four resume, then
@@ -302,10 +302,14 @@ fresh directory below
 `test_output/reduced-front/runner/` and writes `summary.txt`, `summary.json`,
 one complete log per phase, native JSON receipts, products and artifacts.
 Every FAIL/ERROR in the final summary carries its log path.  The expected
-complete selected-profile aggregate is 93 PASS with no FAIL/SKIP/ERROR; IDs
+complete selected-profile aggregate is 97 PASS with no FAIL/SKIP/ERROR; IDs
 repeated at different layers/rank counts remain distinct evidence records.
-The 2026-10-05 native result is `93/0/0/0` under
-`test_output/reduced-front/runner/20261005T-native-restart-qualification-02/`.
+The current registry requires 97 rows.  The retained unified native result
+under `test_output/reduced-front/runner/20261005T-native-restart-qualification-02/`
+is the earlier 93/0/0/0 receipt, produced before `RSHAPP04` added four shared
+assertion rows to the aggregate.  `RSHAPP04` has separate passing evidence,
+but those receipts must not be combined and relabeled as a fresh 97-PASS
+native aggregate; a new complete native run is still required for that claim.
 On the 2026-10-05 validation host, the non-restart native phases took
 approximately 57 s (one-rank smoke), 36 s (four-rank smoke), and 1,750 s
 (four-rank 1-AU).  The complete invocation therefore takes more than 30
@@ -331,7 +335,7 @@ symlinked build target, removes only root `build` with `rm -rf -- build`, then
 regenerates the srcSEP3D configuration/hooks and builds `amps` with `-j16`.
 An existing output directory is rejected so older evidence cannot be
 overwritten or mistaken for a fresh result.  `--skip-native` records every
-omitted native ID as SKIP; it cannot produce the 93-PASS complete result.
+omitted native ID as SKIP; it cannot produce the 97-PASS complete result.
 
 #### Actual AMPS checkpoint/resume protocol
 
@@ -372,7 +376,7 @@ one-to-four-rank case qualifies that mechanism for this background-only,
 zero-particle profile.  It does not by itself qualify nonempty particle
 repartitioning, which remains outside the reduced-model scope.
 
-`RSHAPP01--03` are dependency-light application boundary tests.  Run their
+`RSHAPP01--04` are dependency-light application boundary tests.  Run their
 binary from the `srcSEP3D` directory because other application fixtures use
 paths relative to that documented working directory:
 

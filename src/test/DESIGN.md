@@ -205,26 +205,46 @@ numerics, and T01/T05/T96/TA15/TA16/KMAG reference comparisons remain explicit
 gaps. `PIC units` and `species` are covered only for the exact public contracts
 recorded in the component and T1 inventories.
 
-## Campaigns at the T10 checkpoint
+## Campaigns at the T12 checkpoint
 
 - `smoke`: eight suites and 51 fast dependency-light cases; expected on every
   change and machine bring-up.
-- `nightly`: all 42 suites and 375 registered cases, including typed optional-
-  provider states and exclusive configured owners; no observational or long
-  application campaign runs.
+- `nightly`: the established 42 suites and 375 deterministic core cases,
+  including typed optional-provider states and exclusive configured owners;
+  no observational, imported model, or portability-closure campaign runs.
 - `distributed`: two suites and 21 cases: the five-case two-rank channel/RNG
   module plus T10's 16-case collective 1/2/4-rank AMR/PIC matrix.
 - `profile`: 19 configured/native suites and 233 cases.
-- `extended`: 25 suites and 257 cases, adding interface/optional-provider and
-  other integration contracts to the configured profiles. Future sanitizer,
-  accelerator, hybrid-thread and long statistical suites belong here as they
-  are implemented.
+- `extended`: 32 suites and 910 cases, adding interface/optional-provider,
+  all 637 T11 imported identities, and the 16-case bounded T12 matrix to the
+  configured profiles.
+- `--all`: all 49 suites and 1,028 cases. It is not expected to be green while
+  imported local FAIL/ERROR evidence and the strict-coverage T12 case remain
+  red; aggregate execution must preserve those states rather than hide them.
 
 The current scheduler runs nonexclusive suites concurrently within explicit
 exclusive barriers. Future distributed sharding may place those batches on
 different workers; each shard must publish its own JSON/JUnit receipt, and a
 final aggregator must require the exact manifest selection count before
 reporting success.
+
+T11's out-of-line `case_registries.json` is identity data, not an expected-
+physics database. The manifest loader requires a unique exact case list and
+each adapter separately reconciles its complete ordered local/global registry
+before selection. This two-sided check prevents either local drift or central
+narrowing. Imported SCCM software verification, reduced-front/background,
+full-volume deferred BG3D-4, observational, and legacy disposition claims are
+kept distinct in IDs, messages and evidence.
+
+T12 is designed as a bounded, machine-profile-aware matrix rather than one
+host's tool autodetection script. Required tools use the normal configuration;
+optional compiler/MPI/CUDA/leak commands accept argv vectors from a machine
+overlay before conventional fallbacks. Every optional backend retains its own
+case ID and cannot borrow another backend's PASS. Performance records require
+an independent checksum before applying a broad elapsed-time ceiling, keeping
+correctness and capacity failures distinct. `T12-COVERAGE-STRICT-001` invokes
+the real strict inventory gate and remains FAIL until all coverage conditions
+are satisfied; an anticipated failure is never converted into PASS or SKIP.
 
 ## Generated configuration contracts
 

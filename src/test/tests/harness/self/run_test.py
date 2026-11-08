@@ -25,7 +25,8 @@ sys.path.insert(0, str(TEST_ROOT))
 
 from lib.configuration import ConfigurationError, load_configuration  # noqa: E402
 from lib.manifest import ManifestError, audit_inventory, load_manifest  # noqa: E402
-from lib.runner_support import case, load_context, main_guard, write_result  # noqa: E402
+from lib.runner_support import (case, error_result, load_context, main_guard,  # noqa: E402
+                                write_result)
 
 
 def _global_module():
@@ -134,6 +135,38 @@ def test_schema_extensions(context: Dict) -> None:
             pass
         else:
             raise AssertionError("manifest schema_version 2 was accepted")
+
+        # Imported model adapters must validate the *complete* central/local
+        # registry before applying an individual selection.  Otherwise a
+        # manifest edit could delete an expensive or failing local case and
+        # the adapter would report a smaller green suite.  Exercise the shared
+        # T11 boundary directly with synthetic identities; no model expected
+        # value is duplicated here.
+        common_spec = importlib.util.spec_from_file_location(
+            "amps_t11_cme_common",
+            TEST_ROOT / "tests" / "models" / "cme" / "common.py")
+        assert common_spec is not None and common_spec.loader is not None
+        common = importlib.util.module_from_spec(common_spec)
+        common_spec.loader.exec_module(common)
+        complete_rows = [
+            {"id": "IMPORTED-A", "status": "PASS", "message": ""},
+            {"id": "IMPORTED-B", "status": "SKIP", "message": ""},
+        ]
+        narrowed = {"test": {
+            "expected_cases": ["IMPORTED-A"],
+            "selected_cases": ["IMPORTED-A"],
+        }}
+        try:
+            common.selected_rows(narrowed, complete_rows)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("narrowed imported model registry was accepted")
+        selected = common.selected_rows({"test": {
+            "expected_cases": ["IMPORTED-A", "IMPORTED-B"],
+            "selected_cases": ["IMPORTED-B"],
+        }}, complete_rows)
+        assert [row["id"] for row in selected] == ["IMPORTED-B"]
 
 
 def test_registry_and_inventory(context: Dict) -> None:
@@ -273,7 +306,13 @@ def test_selection_contract(context: Dict) -> None:
         "CORE-PIC-FIELD-SOLVER-001", "CORE-PIC-AUXILIARY-001",
         "CORE-PIC-FIELD-LINE-001", "CORE-PIC-CALLBACK-OUTPUT-001",
         "CORE-PIC-RESTART-001", "CORE-PIC-DATAFILE-001",
-        "CORE-PIC-OUTPUT-001"}
+        "CORE-PIC-OUTPUT-001",
+        "CORE-MODEL-SEP-COMMON-001", "CORE-MODEL-SWCME-001",
+        "CORE-MODEL-SEP-CORONAL-CME-001",
+        "CORE-MODEL-SEP-CORONA-SWCME-FULL-001",
+        "CORE-MODEL-SEP-CORONA-SWCME-REDUCED-001",
+        "CORE-LEGACY-REGISTRY-AUDIT-001",
+        "CORE-T12-PORTABILITY-001"}
     assert campaign_ids("profile") == {
         "CORE-PIC-NATIVE-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001",
         "CORE-EXOSPHERE-SPHERE-NATIVE-001",
@@ -337,6 +376,48 @@ def test_result_protocol(context: Dict) -> None:
     wrong["cases"] = [{"id": "CASE-B", "status": "PASS", "message": "ok"}]
     status, message, cases = module.validate_result(test, wrong, 0)
     assert status == "ERROR" and "registry mismatch" in message
+
+    # Infrastructure failures must remain visible under the exact requested
+    # identities.  Otherwise the global validator can only report a secondary
+    # empty-registry error, obscuring the compiler/launcher/parser exception
+    # that actually prevented execution.  A selected one-case run reports one
+    # ERROR row; it must not invent results for the unrequested sibling.
+    with TemporaryDirectory(prefix="amps-test-error-result-") as directory:
+        receipt = Path(directory) / "result.json"
+        error_context = {
+            "test": {
+                "id": "PROTOCOL-ERROR-FIXTURE",
+                "expected_cases": ["CASE-A", "CASE-B"],
+                "selected_cases": ["CASE-B"],
+            },
+            "result_file": str(receipt),
+        }
+        assert error_result(error_context, RuntimeError("fixture failure")) == 2
+        reported = json.loads(receipt.read_text(encoding="utf-8"))
+        assert reported["status"] == "ERROR"
+        assert reported["cases"] == [{
+            "id": "CASE-B", "status": "ERROR",
+            "message": "RuntimeError: fixture failure",
+        }]
+
+        # Invalid selections can be the exception's cause. Error publication
+        # must not echo an empty, duplicate, foreign, or ill-typed selection,
+        # because each would trigger a second registry error in the parent and
+        # hide the useful root cause. The complete valid owner registry is the
+        # deterministic fallback in all four forms.
+        for index, malformed in enumerate((
+                [], ["CASE-A", "CASE-A"], ["FOREIGN"], ["CASE-A", 7])):
+            malformed_receipt = Path(directory) / "malformed-{}.json".format(index)
+            error_context["test"]["selected_cases"] = malformed
+            error_context["result_file"] = str(malformed_receipt)
+            assert error_result(
+                error_context, RuntimeError("selection failure")) == 2
+            malformed_result = json.loads(
+                malformed_receipt.read_text(encoding="utf-8"))
+            assert [row["id"] for row in malformed_result["cases"]] == [
+                "CASE-A", "CASE-B"]
+            assert all(row["status"] == "ERROR"
+                       for row in malformed_result["cases"])
 
 
 def test_scheduler_barriers(context: Dict) -> None:
@@ -685,7 +766,11 @@ def test_traceability_contract(context: Dict) -> None:
     trace = validator.load_json(TEST_ROOT / "source_traceability.json", validation)
     contracts = validator.load_json(
         TEST_ROOT / "configuration_contracts.json", validation)
-    manifest = validator.load_json(TEST_ROOT / "manifest.json", validation)
+    # Feed traceability the same expanded manifest used above.  Imported T11
+    # registries live in case_registries.json and are resolved by
+    # load_manifest(); reparsing raw manifest JSON here would drop 637 stable
+    # cases and create a second, contradictory governance view.
+    manifest = {"tests": tests}
     inventory = validator.load_json(
         TEST_ROOT / "component_inventory.json", validation)
     expanded = validator.validate_traceability(

@@ -1,6 +1,91 @@
 # AMPS core-test status
 
-Last updated: 2026-11-07
+Last updated: 2026-11-08
+
+## Contributor-guide checkpoint
+
+The `src/test/README.md` “Add tests to the global procedure” section is now a
+standalone contributor workflow rather than a five-step summary. It documents
+case-versus-suite ownership, ID and manifest schemas, exact registry/selection
+rules, the schema-1 result protocol, PASS/FAIL/SKIP/ERROR semantics,
+independent physical/numerical oracles, dependency-light C++ and configured
+native tests, MPI/thread/accelerator evidence, portable paths and machine
+profiles, coverage/traceability ledgers, exact verification commands, and a
+final checklist.
+
+The core-test development roadmap is now co-located with the runner at
+`src/test/TEST.md` (moved from `test/TEST.md`); repository documentation and
+handoff references use the new path.
+
+`src/test/templates/run_test.py.template` supplies a commented, copyable,
+fail-closed adapter. Its unmodified placeholders intentionally publish two
+FAIL rows so unfinished tests cannot appear green. Syntax validation and a
+synthetic schema-1 execution both pass; the latter returns the required exit 1
+and exact two-case receipt. Relative README links, `git diff --check`, and
+structural traceability pass. The live registry is unchanged at 49 suites and
+1,028 cases.
+
+## T11/T12 checkpoint
+
+The live registry now contains 49 suites and 1,028 cases. Structural
+traceability passes with 24 areas, 209 production translation units, 194
+public contracts, 24 configuration contracts, and the complete live suite/case
+registry. T11's integration mechanism is implemented; T12's bounded matrix is
+implemented, but T12 coverage closure is deliberately still open.
+
+T11 contributes six extended suites and 637 identities:
+
+| Imported owner | PASS | FAIL | SKIP | ERROR | Qualification boundary |
+| --- | ---: | ---: | ---: | ---: | --- |
+| SEP common | 91 | 0 | 52 | 0 | Long pitch-angle Monte-Carlo acceptance is not run by the routine import |
+| SWCME | 4 | 0 | 143 | 0 | Four R1 checks execute; missing extended sources and observational runner remain typed |
+| staged coronal CME | 219 | 0 | 3 | 0 | Software verification only; production and observational qualification remain false |
+| full Corona--SWCME | 13 | 1 | 0 | 1 | `CMBGU05` rejects material-contact leakage; `CSWC0628-MASS-TIME` exceeds the 180-s routine ceiling |
+| reduced front plus ambient | 62 | 0 | 35 | 0 | Dependency-light rows execute; native rows use explicit `--skip-native` and no historical PASS is reused |
+| legacy disposition audit | 13 | 0 | 0 | 0 | Directory/owner governance only; complete legacy behavioral migration is not claimed |
+| **T11 total** | **402** | **1** | **233** | **1** | No imported result qualifies BG3D-4, G1, a full CME, or an observational campaign |
+
+All large registries are explicit in `case_registries.json`. Adapters require
+exact ordered central/local equality before applying a one-case selection, and
+the harness has a negative narrowed-registry control. The full-volume adapter
+preserves typed nonzero markers and treats untyped crashes/setup exits as
+ERROR; SEP-common reconciles the pitch runner's exit with its JSON statuses.
+
+T12 adds 16 extended cases without a native AMPS rebuild. The retained global
+run reports 10 PASS, five SKIP, one FAIL and zero ERROR. GNU debug/optimized,
+Fortran ABI, ASan, UBSan, Valgrind, OpenMP 1/2/4 invariance, NVCC header/kernel
+compilation and two broad array/I/O guardrails pass. Clang is unavailable,
+TSan lacks a usable host runtime, both installed MPI launchers are denied
+sockets by the sandbox, and CUDA has no usable device; these are five separate
+SKIPs. `T12-COVERAGE-STRICT-001` truthfully FAILs because only 2 of 24
+components are covered and 22 remain incomplete.
+
+Retained evidence:
+
+| Command/evidence | Result |
+| --- | --- |
+| `/tmp/amps-t11-sep-common-final` | 91 PASS / 52 SKIP after exit/report and exact-registry hardening |
+| `/tmp/amps-t11-swcme-global` | 4 PASS / 143 SKIP with complete dormant/observational identities |
+| `/tmp/amps-t11-sccm-fixed` | 219 PASS / 3 SKIP, bounded software-verification metadata retained |
+| `/tmp/amps-t11-cswc-full-final` | 13 PASS / 1 FAIL / 1 ERROR; architecture still executed and passed after earlier failure |
+| `/tmp/amps-t11-reduced-final2` | 62 PASS / 35 native SKIP over the complete 97-row current registry |
+| `/tmp/amps-t11-legacy-final` | 13 PASS governance/disposition rows; not behavioral migration qualification |
+| `/tmp/amps-t12-portability-final2` | 10 PASS / 5 SKIP / 1 strict-coverage FAIL after compiler-runtime and CUDA evidence-isolation hardening |
+| `/tmp/amps-t12-harness-final3` | 11/11 harness checks PASS, including malformed-selection fallback and case-preserving infrastructure ERROR receipts |
+| `/tmp/amps-t12-traceability-final3.json` | PASS: 49 suites / 1,028 cases and all structural inventories reconcile |
+
+The preceding bring-up receipt `/tmp/amps-t11-reduced-final` is retained as
+failure evidence: exact-order validation rejected a central registry that put
+restart rows before the maintained local runner's 1-AU phase. Reordering the
+central identity registry to match that local authority produced the final
+97-row result above; no reduced-front physics or expected value was changed.
+
+T12 remains open. Required remaining evidence includes whole-AMPS
+compiler/sanitizer profiles, a usable Clang and TSan profile, successfully
+executed OpenMPI and MPICH (or two approved scheduler profiles), hybrid
+MPI/OpenMP and concurrent particle-list behavior, actual supported accelerator
+backends, calibrated production mesh/push/collision/halo/restart performance,
+and closure or explicit reviewed exemption of all 22 incomplete components.
 
 ## T10 checkpoint
 
@@ -554,11 +639,12 @@ complete AMPS coverage.
 
 ## Current validation evidence
 
-The live source tree registers 31 executable suites and 311 individual cases.
-Its `profile` campaign selects 17 configured owners and 211 cases, including
-the expanded 93-case baseline owner, historical T2 variants, the 58-case T3
-dimensional mesh owner, T4/T5 compile variants, T6 reaction profiles, and
-three T7 applications. The earlier seven-suite/143-case combined T2+T3
+The live source tree registers 49 executable suites and 1,028 individual
+cases. Its `profile` campaign selects 19 configured owners and 233 cases,
+including the expanded baseline owner, historical T2 variants, the 58-case T3
+dimensional mesh owner, T4/T5 compile variants, T6 reaction profiles, three
+T7 applications, the T8 periodic ECSIM profile, and the T10 collective MPI
+owner. The earlier seven-suite/143-case combined T2+T3
 profile remains retained historical evidence rather than the current campaign
 membership. The historical bounded T1
 qualification remains 11 suites/98 cases with 31 native cases; its normal,

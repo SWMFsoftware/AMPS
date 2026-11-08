@@ -4,8 +4,8 @@
     {
       "component": "src/general",
       "status": "partial",
-      "test_ids": ["CORE-GENERAL-CONTAINERS-001", "CORE-GENERAL-NUMERICS-001", "CORE-GENERAL-RNG-001", "CORE-GENERAL-MPI-001", "CORE-GENERAL-LOGGER-001"],
-      "remaining": "T1 numerics are covered. Remaining non-T1 families are legacy cLogger daemon lifecycle, CRC/debug streams, thread/spinlock and CUDA helpers, and general grid/distribution containers."
+      "test_ids": ["CORE-GENERAL-CONTAINERS-001", "CORE-GENERAL-NUMERICS-001", "CORE-GENERAL-RNG-001", "CORE-GENERAL-MPI-001", "CORE-GENERAL-LOGGER-001", "CORE-T12-PORTABILITY-001"],
+      "remaining": "T1 numerics are covered and T12 adds a bounded compiler/sanitizer/OpenMP/leak/backend matrix for production array storage. Remaining non-T1 families are legacy cLogger daemon lifecycle, CRC/debug streams, thread/spinlock and CUDA helpers, general grid/distribution containers, whole-AMPS sanitizer profiles, configured performance budgets, and strict coverage closure."
     },
     {
       "component": "src/general/input",
@@ -64,20 +64,20 @@
     {
       "component": "src/models/sep_common",
       "status": "partial",
-      "test_ids": [],
-      "remaining": "Existing model-local verification must be adapted into the global result protocol."
+      "test_ids": ["CORE-MODEL-SEP-COMMON-001"],
+      "remaining": "T11 imports all 143 local archive/transport-coefficient cases with exact identities and retained evidence. The 52 several-hour pitch-angle Monte-Carlo cases remain explicit routine SKIPs and require a qualified acceptance receipt before this component can be covered."
     },
     {
       "component": "src/models/sep_corona_swcme",
       "status": "partial",
-      "test_ids": [],
-      "remaining": "Existing model-local shock/CME tests must be adapted without changing their qualification scope."
+      "test_ids": ["CORE-MODEL-SEP-CORONA-SWCME-FULL-001", "CORE-MODEL-SEP-CORONA-SWCME-REDUCED-001"],
+      "remaining": "T11 imports 15 bounded full-volume code checks and all 97 reduced-front rows without scope promotion. BG3D-4/G1 remain unqualified and deferred; routine reduced execution retains 35 native cases as explicit SKIP."
     },
     {
       "component": "src/models/sep_coronal_cme",
       "status": "partial",
-      "test_ids": [],
-      "remaining": "The staged 222-test registry remains authoritative and needs a non-duplicating adapter."
+      "test_ids": ["CORE-MODEL-SEP-CORONAL-CME-001"],
+      "remaining": "T11 imports the authoritative 222-case staged registry as software verification. Three campaign-evidence cases remain SKIP and the local production_qualified=false and observational_campaign_qualified=false limits remain authoritative."
     },
     {
       "component": "src/models/sputtering",
@@ -94,8 +94,8 @@
     {
       "component": "src/models/swcme",
       "status": "partial",
-      "test_ids": [],
-      "remaining": "The existing SWCME routine/full runner needs a global-runner adapter and evidence import."
+      "test_ids": ["CORE-MODEL-SWCME-001"],
+      "remaining": "T11 executes and imports the four bounded R1 cases, but preserves all 127 extended and 16 observational identities as typed SKIP/BLOCKED. Six extended translation units and the observational campaign runner are absent and must be restored before coverage."
     },
     {
       "component": "src/pic",
@@ -142,8 +142,8 @@
     {
       "component": "src/test",
       "status": "partial",
-      "test_ids": ["CORE-HARNESS-001"],
-      "remaining": "Schema, selection, protocol, scheduler, reporting, hostile subprocesses, timeout/interrupt cleanup, concurrency, exhaustive source/config traceability, and order/isolation campaigns are registered. Add cross-platform fault-injection evidence, distributed/sharded aggregation, cancellation stress, and long-run leak/resource checks."
+      "test_ids": ["CORE-HARNESS-001", "CORE-LEGACY-REGISTRY-AUDIT-001"],
+      "remaining": "Schema, selection, protocol, scheduler, reporting, hostile subprocesses, timeout/interrupt cleanup, concurrency, exhaustive source/config traceability, order/isolation campaigns, and all 13 roadmap legacy dispositions are registered. The disposition audit is governance only; per-application independent-oracle, failure-exit, deterministic-state and hard-coded-path review remains open. Also add cross-platform fault injection, distributed/sharded aggregation, cancellation stress, and long-run resource checks."
     }
   ]
 }

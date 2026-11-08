@@ -10,7 +10,15 @@
     "cxx": ["g++"],
     "mpi_cxx": ["mpicxx"],
     "make": ["gmake"],
-    "mpiexec": ["srun"]
+    "mpiexec": ["srun"],
+    "fortran": ["gfortran"],
+    "clang_cxx": ["clang++"],
+    "valgrind": ["valgrind"],
+    "nvcc": ["nvcc"],
+    "openmpi_cxx": ["mpicxx.openmpi"],
+    "openmpi_exec": ["mpiexec.openmpi"],
+    "mpich_cxx": ["mpicxx.mpich"],
+    "mpich_exec": ["mpiexec.mpich"]
   },
   "execution": {
     "build_jobs": 32,

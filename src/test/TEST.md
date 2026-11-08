@@ -31,8 +31,8 @@ responsibility of `srcEarth/test`, `srcMoon/test`, `srcEnceladus/test`,
 
 ## 2. Current baseline
 
-As of 2026-11-07 the live global registry contains 42 executable suites and
-375 registered individual cases. The historical particle-buffer, physics,
+As of 2026-11-07 the live global registry contains 49 executable suites and
+1,028 registered individual cases. The historical particle-buffer, physics,
 species, packed-fixed-layout, and species-global weight/time family IDs remain
 selection aliases of canonical native owners, not extra executable suites.
 Configured owners select mutually exclusive generated applications and each
@@ -46,6 +46,8 @@ performs its required clean rebuild. The current registry groups are:
 | T7 dependency-light physics | 3 | 26 | Spherical surface/exosphere kernels, sputtering source laws/ledgers, and dust laws/size-group split-merge |
 | T8/T9 dependency-light numerics/data | 9 | 42 | Boundary/deposition/field/field-line/callback kernels plus checked restart/data/output formats |
 | Exclusive configured profiles | 19 | 233 | Native PIC/movers/collisions/IDF/layout/weight modes, mesh dimensions, reaction profiles, T7 applications, ECSIM operators, and the T10 rank matrix |
+| T11 model/legacy adapters | 6 | 637 | Exact local identities and typed results/limitations; no imported PASS is promoted beyond its local qualification scope |
+| T12 bounded portability | 1 | 16 | Compiler/Fortran/sanitizer/leak/OpenMP/MPI/CUDA/guardrail matrix and the still-red strict-coverage gate |
 
 The 19-suite `profile` campaign is the configured-profile group above. Its
 233 cases include the 94-case baseline owner, the historical T2 variants, the
@@ -68,10 +70,11 @@ stage's scope.
 
 The following limitations must remain visible until their stages close:
 
-- `smoke` selects eight dependency-light suites (51 cases), `nightly` and
-  `--all` select all 42 current suites (375 cases), `profile` selects 19
-  exclusive native owners (233 cases), `extended` selects 25 suites (257
-  cases), and `distributed` selects the five-case MPI channel/RNG family plus
+- `smoke` selects eight dependency-light suites (51 cases), `nightly` selects
+  the established 42-suite/375-case deterministic core campaign, `--all`
+  selects all 49 suites/1,028 cases, `profile` selects 19 exclusive native
+  owners (233 cases), `extended` selects 32 suites (910 cases), and
+  `distributed` selects the five-case MPI channel/RNG family plus
   T10's 16-case 1/2/4-rank matrix; the harness asserts these live sets and the
   three T10 alias mappings;
 - physical-process native fixtures remain one-rank unless their own contract
@@ -966,7 +969,7 @@ Acceptance gate: every rank publishes its local assertions; no test relies on
 rank-zero summaries alone; the complete rank matrix passes without duplicate
 or lost blocks/particles.
 
-### Stage T11 -- Integrate existing model-local registries
+### Stage T11 -- Integrate existing model-local registries (implemented)
 
 Required adapters:
 
@@ -985,7 +988,26 @@ Acceptance gate: every imported case has a stable global identity and evidence
 path; the global report preserves local typed failures and limitations; no
 local pass is renamed into a broader physical qualification.
 
-### Stage T12 -- Portability, sanitizers, performance, and coverage closure
+The implemented adapters register 637 identities: SEP-common 143, SWCME 147,
+staged coronal-CME 222, bounded full-volume Corona--SWCME 15, reduced-front 97,
+and legacy disposition audit 13.  The 2026-11-07 aggregate is 402 PASS,
+233 SKIP, one FAIL and one ERROR.  The FAIL is `CMBGU05`'s existing
+material-contact leakage rejection; `CSWC0628-MASS-TIME` is ERROR because the
+refinement executable exceeded the routine 180-second ceiling and no PASS was
+inferred from its partial output.  These retained outcomes confirm that the
+adapter preserves red evidence; they do not qualify BG3D-4, G1, a full CME,
+or an observational campaign.  The routine reduced adapter executes 62
+dependency-light rows and retains 35 native rows as SKIP; it does not reuse
+the historical native receipt.
+
+The 13 legacy rows are governance/disposition checks.  They prove directory
+presence and a registered bounded owner, not that every diagnostic path has
+passed independent-oracle, deterministic-state, hard-coded-path and
+failure-exit review.  Legacy migration therefore remains partial under the
+requirements in Section 6 even though the T11 registration mechanism is
+implemented.
+
+### Stage T12 -- Portability, sanitizers, performance, and coverage closure (bounded matrix implemented; closure open)
 
 Required matrix, limited to configurations actually supported by AMPS:
 
@@ -1019,6 +1041,24 @@ Coverage closure requires:
 
 Only after these conditions are met should strict coverage become a required
 nightly gate.
+
+The first registered T12 matrix has 16 exact cases and performs no native AMPS
+rebuild.  It exercises production `array_1d` storage under GNU debug/optimized,
+ASan, UBSan, Valgrind, OpenMP 1/2/4-thread and broad array/I/O guardrail
+profiles; reuses the maintained C++/Fortran ABI controls; and keeps Clang,
+TSan, two MPI implementations and CUDA compile/runtime as separate typed
+capabilities.  On the 2026-11-07 host it reports 10 PASS, five SKIP and one
+FAIL.  Clang is absent, the TSan runtime is incomplete, both MPI launchers are
+denied sockets by the sandbox, and no CUDA device is available; NVCC compile
+still passes.  The sole FAIL is `T12-COVERAGE-STRICT-001`: only 2 of 24
+inventory components are covered, so 22 remain incomplete.  This is the
+intended fail-closed T12 state, not a qualified stage closure.
+
+Whole-AMPS compiler/sanitizer profiles, concurrent particle-list and hybrid
+MPI/OpenMP evidence, actual accelerator backends, a successfully executed
+second MPI implementation, and calibrated mesh/push/collision/halo/restart
+performance budgets are still required in addition to closing every strict
+coverage item above.
 
 ## 6. Legacy-test migration map
 

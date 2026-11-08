@@ -58,6 +58,36 @@ def load_manifest(path: Path, repo_root: Path, test_root: Path) -> List[Dict[str
     raw_tests = payload.get("tests")
     if not isinstance(raw_tests, list):
         raise ManifestError("{}: 'tests' must be a list".format(path))
+    # Large imported model registries (222 coronal-CME cases, for example)
+    # remain explicit and reviewable without burying the operational suite
+    # definition in thousands of list lines.  The referenced file is fixed
+    # below test_root rather than caller-selected, so a manifest cannot load
+    # code or data from outside the test control plane.
+    registry_path = test_root / "case_registries.json"
+    registry_payload = _load(registry_path) if registry_path.is_file() else {
+        "schema_version": 1, "registries": {}}
+    unknown_registry_top = set(registry_payload) - {"schema_version", "registries"}
+    if unknown_registry_top:
+        raise ManifestError("{} has unknown top-level keys: {}".format(
+            registry_path, ", ".join(sorted(unknown_registry_top))))
+    raw_registries = registry_payload.get("registries", {})
+    if not isinstance(raw_registries, dict):
+        raise ManifestError("{}: 'registries' must be an object".format(registry_path))
+    # Validate every stored registry, including one not yet referenced by a
+    # suite.  This prevents a misspelled ID or duplicate row from lying dormant
+    # until a later manifest edit activates it, and keeps the out-of-line file
+    # subject to the same grammar as inline expected_cases.
+    for registry_id, registry_cases in raw_registries.items():
+        if not isinstance(registry_id, str) or not _ID.match(registry_id):
+            raise ManifestError("{} has invalid registry ID {!r}".format(
+                registry_path, registry_id))
+        if (not isinstance(registry_cases, list) or not registry_cases or
+                any(not isinstance(value, str) or not _ID.match(value)
+                    for value in registry_cases) or
+                len(set(registry_cases)) != len(registry_cases)):
+            raise ManifestError(
+                "{} registry {} must contain unique nonempty case IDs".format(
+                    registry_path, registry_id))
     tests: List[Dict[str, Any]] = []
     identifiers: Set[str] = set()
     all_case_ids: Set[str] = set()
@@ -68,12 +98,12 @@ def load_manifest(path: Path, repo_root: Path, test_root: Path) -> List[Dict[str
             raise ManifestError("{} must be an object".format(label))
         required = {
             "id", "component", "level", "tiers", "runner", "description",
-            "expected_cases",
         }
         missing = required - set(raw)
         if missing:
             raise ManifestError("{} missing {}".format(label, ", ".join(sorted(missing))))
         allowed = required | {
+            "expected_cases", "expected_cases_ref",
             "aliases", "alias_cases", "requires", "timeout_seconds",
             "mpi_ranks", "exclusive",
         }
@@ -123,7 +153,21 @@ def load_manifest(path: Path, repo_root: Path, test_root: Path) -> List[Dict[str
                 len(set(tiers)) != len(tiers)):
             raise ManifestError("{} tiers must be a unique nonempty subset of {}".format(
                 label, sorted(enabled_campaigns)))
-        expected_cases = raw["expected_cases"]
+        has_inline_cases = "expected_cases" in raw
+        has_case_reference = "expected_cases_ref" in raw
+        if has_inline_cases == has_case_reference:
+            raise ManifestError(
+                "{} must name exactly one of expected_cases or expected_cases_ref".format(
+                    label))
+        if has_case_reference:
+            reference = raw["expected_cases_ref"]
+            if not isinstance(reference, str) or not _ID.match(reference):
+                raise ManifestError("{} expected_cases_ref must be a registry ID".format(label))
+            if reference not in raw_registries:
+                raise ManifestError("{} names unknown case registry {}".format(label, reference))
+            expected_cases = raw_registries[reference]
+        else:
+            expected_cases = raw["expected_cases"]
         if (not isinstance(expected_cases, list) or not expected_cases or
                 any(not isinstance(value, str) or not _ID.match(value)
                     for value in expected_cases) or

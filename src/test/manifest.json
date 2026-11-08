@@ -1449,6 +1449,116 @@
       "timeout_seconds": 7200,
       "mpi_ranks": 1,
       "exclusive": true
+    },
+    {
+      "id": "CORE-MODEL-SEP-COMMON-001",
+      "component": "src/models/sep_common",
+      "level": "integration",
+      "tiers": ["extended"],
+      "runner": "tests/models/sep_common/run_test.py",
+      "description": "All archive, mean-free-path, parallel/perpendicular-diffusion and pitch-angle local registries with explicit acceptance limitations",
+      "requires": {
+        "tools": ["python", "cxx", "make"],
+        "paths": ["src/models/sep_common"],
+        "capabilities": []
+      },
+      "expected_cases_ref": "T11-SEP-COMMON",
+      "timeout_seconds": 7200,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-MODEL-SWCME-001",
+      "component": "src/models/swcme",
+      "level": "integration",
+      "tiers": ["extended"],
+      "runner": "tests/models/swcme/run_test.py",
+      "description": "Executable bounded R1 plus complete dormant extended and observational registries with typed blockers",
+      "requires": {
+        "tools": ["python", "cxx", "make"],
+        "paths": ["src/models/swcme/test/run_tests.py", "src/models/swcme/test/validation/campaign.json"],
+        "capabilities": []
+      },
+      "expected_cases_ref": "T11-SWCME",
+      "timeout_seconds": 1800,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-MODEL-SEP-CORONAL-CME-001",
+      "component": "src/models/sep_coronal_cme",
+      "level": "integration",
+      "tiers": ["extended"],
+      "runner": "tests/models/cme/sep_coronal_cme/run_test.py",
+      "description": "Authoritative 222-case staged coronal-CME software-verification registry",
+      "requires": {
+        "tools": ["python", "cxx", "make"],
+        "paths": ["src/models/sep_coronal_cme/test/run_tests.py"],
+        "capabilities": []
+      },
+      "expected_cases_ref": "T11-SCCM",
+      "timeout_seconds": 7200,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-MODEL-SEP-CORONA-SWCME-FULL-001",
+      "component": "src/models/sep_corona_swcme",
+      "level": "integration",
+      "tiers": ["extended"],
+      "runner": "tests/models/cme/sep_corona_swcme_full/run_test.py",
+      "description": "Fifteen bounded full-volume software checks without BG3D-4 or G1 qualification",
+      "requires": {
+        "tools": ["python", "cxx", "make"],
+        "paths": ["src/models/sep_corona_swcme/makefile"],
+        "capabilities": []
+      },
+      "expected_cases_ref": "T11-CSWC-FULL",
+      "timeout_seconds": 3600,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-MODEL-SEP-CORONA-SWCME-REDUCED-001",
+      "component": "src/models/sep_corona_swcme",
+      "level": "integration",
+      "tiers": ["extended"],
+      "runner": "tests/models/cme/sep_corona_swcme_reduced/run_test.py",
+      "description": "Complete 97-row reduced-front plus ambient registry with 35 explicit routine native SKIPs",
+      "requires": {
+        "tools": ["python", "cxx", "make"],
+        "paths": ["srcSEP3D/test/run_reduced_shock_front.py", "src/models/sep_corona_swcme/shock_front"],
+        "capabilities": []
+      },
+      "expected_cases_ref": "T11-CSWC-REDUCED",
+      "timeout_seconds": 3600,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-LEGACY-REGISTRY-AUDIT-001",
+      "component": "src/test",
+      "level": "module",
+      "tiers": ["extended"],
+      "runner": "tests/legacy/registry/run_test.py",
+      "description": "Explicit governance/disposition audit for every roadmap legacy application without behavioral migration qualification",
+      "requires": {
+        "tools": ["python"],
+        "paths": ["test/srcUnitTests", "test/srcModelDustTest"],
+        "capabilities": []
+      },
+      "expected_cases_ref": "T11-LEGACY",
+      "timeout_seconds": 120
+    },
+    {
+      "id": "CORE-T12-PORTABILITY-001",
+      "component": "src/general",
+      "level": "integration",
+      "tiers": ["extended"],
+      "runner": "tests/portability/matrix/run_test.py",
+      "description": "Bounded compiler, Fortran ABI, sanitizer, leak, OpenMP, MPI, CUDA and performance matrix plus the truthful strict-coverage gate",
+      "requires": {
+        "tools": ["python", "cxx", "mpi_cxx"],
+        "paths": ["src/general/array_1d.h", "src/test/component_inventory.json"],
+        "capabilities": []
+      },
+      "expected_cases_ref": "T12-PORTABILITY",
+      "timeout_seconds": 900
     }
   ]
 }

@@ -116,7 +116,12 @@ def list_tests() -> None:
     print("native-restart-checkpoint-1: " + " ".join(SMOKE_IDS))
     print("native-restart-repartition-4: " + " ".join(RESTART_IDS))
     print("native-1au-4: " + " ".join(LONG_IDS))
-    print("Expected complete selected-profile total: 93 PASS, 0 FAIL, 0 SKIP, 0 ERROR")
+    # Cardinality is part of the public registry contract.  The shared
+    # executable emits 57 assertion rows (including repeated base labels),
+    # architecture and portable application boundaries add 1+4, and the
+    # native rank/restart/1-AU phases add 35.  Scope plus occurrence is the
+    # identity used by the summary, so wrappers must expect all 97 rows.
+    print("Expected complete selected-profile total: 97 PASS, 0 FAIL, 0 SKIP, 0 ERROR")
 
 
 def command_text(command: Sequence[str]) -> str:

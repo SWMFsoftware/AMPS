@@ -240,7 +240,46 @@ def write_result(
 
 
 def error_result(context: Mapping[str, Any], error: BaseException) -> int:
-    return write_result(context, "ERROR", "{}: {}".format(type(error).__name__, error))
+    """Publish an infrastructure failure without losing requested case IDs.
+
+    The global protocol validates the exact selected case registry even when a
+    suite cannot start its compiler, parser, or native subprocess.  Emitting
+    only a suite-level ERROR would therefore replace the useful root cause
+    with a secondary ``registry mismatch`` and make the requested cases vanish
+    from the final inventory.  Attribute the same control-plane failure to
+    every requested identity instead.  This does *not* claim that each tested
+    assertion ran: the explicit ERROR state records precisely the opposite.
+
+    ``selected_cases`` is normally resolved by the global scheduler.  The
+    expected registry is the fail-safe fallback for a directly constructed
+    context.  Malformed selections fall back once more to the expected list so
+    error publication itself remains best-effort and cannot conceal the first
+    exception.
+    """
+
+    message = "{}: {}".format(type(error).__name__, error)
+    test = context.get("test", {})
+    expected = test.get("expected_cases", []) if isinstance(test, Mapping) else []
+    expected_is_valid = (
+        isinstance(expected, list) and bool(expected) and
+        all(isinstance(identifier, str) and identifier for identifier in expected) and
+        len(set(expected)) == len(expected))
+    selected = test.get("selected_cases", expected) if isinstance(test, Mapping) else []
+    # A malformed selection is itself a control-plane error, but publishing
+    # duplicate, foreign, or zero rows would make the global validator replace
+    # the original exception with another registry diagnostic.  Fall back to
+    # the complete known-good owner registry so the first exception remains
+    # the visible reason for every case.  Reverse/shuffled subsets are valid;
+    # only membership and uniqueness, not canonical order, are required here.
+    selected_is_valid = (
+        expected_is_valid and isinstance(selected, list) and bool(selected) and
+        all(isinstance(identifier, str) and identifier for identifier in selected) and
+        len(set(selected)) == len(selected) and
+        all(identifier in expected for identifier in selected))
+    if not selected_is_valid:
+        selected = expected if expected_is_valid else []
+    rows = [case(identifier, "ERROR", message) for identifier in selected]
+    return write_result(context, "ERROR", message, cases=rows)
 
 
 def case(case_id: str, status: str, message: str = "") -> Dict[str, Any]:

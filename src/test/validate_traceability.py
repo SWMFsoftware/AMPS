@@ -23,6 +23,9 @@ from typing import Any, Dict, Iterable, List, Mapping, Sequence, Set, Tuple
 
 TEST_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = TEST_ROOT.parents[1]
+sys.path.insert(0, str(TEST_ROOT))
+
+from lib.manifest import ManifestError, load_manifest  # noqa: E402
 ALLOWED_STATUSES = {"tested", "partial", "planned", "exempt"}
 INVENTORY_STATUS = {
     "tested": "covered", "partial": "partial", "planned": "planned",
@@ -331,7 +334,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     validation = Validation()
     trace = load_json(TEST_ROOT / "source_traceability.json", validation)
     contracts = load_json(TEST_ROOT / "configuration_contracts.json", validation)
-    manifest = load_json(TEST_ROOT / "manifest.json", validation)
+    # Use the same manifest loader as the global runner.  T11 introduced
+    # reviewable out-of-line case registries for the several-hundred-row model
+    # imports; reading raw manifest JSON here would falsely treat those suites
+    # as case-less and let the two governance paths disagree.
+    try:
+        loaded_tests = load_manifest(
+            TEST_ROOT / "manifest.json", REPO_ROOT, TEST_ROOT)
+        manifest = {"tests": loaded_tests}
+    except ManifestError as error:
+        validation.errors.append("manifest: {}".format(error))
+        manifest = {"tests": []}
     inventory = load_json(TEST_ROOT / "component_inventory.json", validation)
     expanded = validate_traceability(trace, manifest, inventory, validation)
     contract_counts = validate_contracts(contracts, manifest, trace, validation)

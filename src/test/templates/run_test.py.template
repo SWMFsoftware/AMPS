@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""Template for one dependency-light AMPS core-test suite adapter.
+
+Copy this file to ``src/test/tests/<component>/<suite>/run_test.py`` and
+replace every ``TEMPLATE`` marker.  The unmodified template deliberately
+reports FAIL rather than providing a false-green placeholder.
+
+This adapter is the control boundary between the global scheduler and the
+tested fixture.  It validates the complete manifest registry, honors an exact
+case subset/order, publishes one structured result per requested identity,
+and converts unexpected control failures into ERROR receipts without losing
+case identities.  Scientific expected values belong in independently derived
+fixtures beside the adapter, not in this orchestration skeleton.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from typing import Dict, Mapping
+
+
+HERE = Path(__file__).resolve()
+# For the documented tests/<component>/<suite>/run_test.py layout, parents[3]
+# is src/test. Adjust this only if the copied runner uses a deeper layout.
+TEST_ROOT = HERE.parents[3]
+sys.path.insert(0, str(TEST_ROOT))
+
+from lib.runner_support import (  # noqa: E402
+    RunnerError, case, error_result, load_context, main_guard, write_result)
+
+
+# TEMPLATE: case IDs use the repository grammar [A-Z][A-Z0-9-]* and are
+# globally unique. Keep this list in the same order as manifest.json. For a
+# large registry, put the authoritative list in case_registries.json and keep
+# an equivalent local registry check so neither side can silently narrow it.
+EXPECTED_CASES = [
+    "TEMPLATE-BEHAVIOR-001",
+    "TEMPLATE-INVALID-INPUT-001",
+]
+
+# A suite status must be at least as severe as every child case. SKIP is more
+# severe than PASS for aggregation but still exits zero; FAIL and ERROR exit
+# one and two respectively through write_result().
+SEVERITY = {"PASS": 0, "SKIP": 1, "FAIL": 2, "ERROR": 3}
+
+
+def evaluate_case(identifier: str, context: Mapping[str, object]) -> Dict:
+    """Run one independent assertion and return one structured case.
+
+    TEMPLATE: replace these fail-closed placeholders with production-linked
+    assertions and independent expected values. If a subprocess is needed,
+    resolve its argv with ``command(context, "tool-name")`` and execute it
+    using ``run_command``—never concatenate a shell command. Store full
+    transcripts below context["artifact_dir"] and return the retained path in
+    the suite evidence list.
+
+    A tested mismatch is FAIL. An optional, genuinely unavailable capability
+    is SKIP. An unexpected parser, filesystem, timeout, or control exception
+    is ERROR and is handled by main().
+    """
+
+    if identifier == "TEMPLATE-BEHAVIOR-001":
+        return case(identifier, "FAIL", "TEMPLATE assertion is not implemented")
+    if identifier == "TEMPLATE-INVALID-INPUT-001":
+        return case(identifier, "FAIL", "TEMPLATE invalid-input oracle is not implemented")
+    raise RunnerError("adapter received unknown case {!r}".format(identifier))
+
+
+def main() -> int:
+    context = load_context("TEMPLATE: describe the tested component")
+    try:
+        # Checking the complete owner registry before applying selected_cases
+        # prevents a manifest edit from deleting a test and yielding a smaller
+        # green run. Order is part of the protocol, including reverse/shuffle
+        # selections supplied separately through selected_cases.
+        configured = list(context["test"].get("expected_cases", ()))
+        if configured != EXPECTED_CASES:
+            raise RunnerError(
+                "TEMPLATE manifest registry drift: configured {} adapter {}".format(
+                    configured, EXPECTED_CASES))
+        requested = list(context["test"].get("selected_cases", configured))
+        if (not requested or len(set(requested)) != len(requested) or
+                any(identifier not in EXPECTED_CASES for identifier in requested)):
+            raise RunnerError("invalid TEMPLATE case selection: {}".format(requested))
+
+        artifacts = Path(str(context["artifact_dir"]))
+        artifacts.mkdir(parents=True, exist_ok=True)
+
+        results = []
+        for identifier in requested:
+            print("[CASE] RUN  {} TEMPLATE case description".format(identifier),
+                  flush=True)
+            try:
+                results.append(evaluate_case(identifier, context))
+            except Exception as error:
+                # Continue independent cases so the final inventory remains
+                # complete. The ERROR state explicitly says this assertion did
+                # not produce trustworthy tested behavior.
+                results.append(case(
+                    identifier, "ERROR",
+                    "{}: {}".format(type(error).__name__, error)))
+
+        # TEMPLATE: replace this small text receipt with the real transcript,
+        # reference provenance, residual table, or other useful evidence.
+        transcript = artifacts / "template-summary.txt"
+        transcript.write_text(
+            "\n".join("{} {}".format(row["id"], row["status"])
+                      for row in results) + "\n",
+            encoding="utf-8")
+
+        status = max(
+            (row["status"] for row in results),
+            key=lambda value: SEVERITY[value])
+        return write_result(
+            context, status,
+            "TEMPLATE: {} selected cases evaluated".format(len(results)),
+            cases=results,
+            evidence=[str(transcript)],
+            metrics={"selected_cases": len(results)})
+    except Exception as error:
+        # Common setup/control failures apply to every selected identity.
+        # error_result() preserves those identities as ERROR rows and writes
+        # the atomic schema-1 receipt expected by the global runner.
+        return error_result(context, error)
+
+
+if __name__ == "__main__":
+    main_guard(main)

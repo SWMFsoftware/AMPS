@@ -157,9 +157,11 @@ make core_test_nightly
 ```
 
 `--tier` remains a backward-compatible alias for `--campaign`. The top-level
-`test_all` target depends on `core_test_nightly`. The live T10 registry has
-42 suites and 375 cases; use `--list` for exact campaign memberships because
-later roadmap stages extend those sets. The `distributed` campaign selects
+`test_all` target depends on `core_test_nightly`. The live T12 registry has
+49 suites and 1,028 cases; use `--list` for exact campaign memberships. The
+routine `nightly` campaign intentionally remains the established 42-suite,
+375-case deterministic core selection, while `extended` owns the T11 model
+imports and bounded T12 portability matrix. The `distributed` campaign selects
 the five-case two-rank channel/RNG suite and the 16-case T10 collective
 1/2/4-rank matrix (two suites and 21 cases total).
 `--all` ignores campaign membership and selects the complete registry.
@@ -537,33 +539,457 @@ fixture contract, independent equations, exact case inventory, qualified
 boundary, and evidence files are documented in
 `test/srcCoreMPITests/README.md`.
 
-## Add an individual test
+### T11 local-registry adapters
 
-1. Give the suite a stable ID and add it to `manifest.json`. Declare the exact
-   production component, level, tiers, requirements, timeout, and whether it
-   mutates repository-wide configuration (`exclusive`).
-2. Put its runner below `tests/<component>/<suite>/run_test.py`. It receives
-   only `--context FILE`; use `lib/runner_support.py` to load tools/paths, run
-   commands, and atomically write the versioned result.
-3. Put hand-derived fixtures and references beside that runner. Never generate
-   an expected solution with the production routine under test.
-4. Add the suite ID to `component_inventory.json`, but mark a component
-   `covered` only when its required unit, module, MPI, restart, invalid-input,
-   and numerical-convergence behavior is genuinely exercised.
-5. Run the harness self-test, the new suite alone, smoke, and the appropriate
-   nightly/extended tier. Inspect both JSON and JUnit receipts.
+Six extended suites import 637 exact identities without duplicating their
+model-local physics oracles. Large identity lists are stored in
+`case_registries.json`; `lib/manifest.py` resolves them through the same
+validation path used by selection, reporting and traceability. Every adapter
+validates the complete ordered central/local registry before applying an exact
+case selection, so deleting an expensive or failing case cannot create a
+smaller green campaign.
 
-Individual C++ tests may use `native/test_harness.h`; it has no GoogleTest,
-PIC, MPI, or application dependency. Tests that need configured PIC use the
-application in `test/srcCoreUnitTests` and remain serialized because AMPS
-application selection is repository-wide.
+The current T11 evidence is 402 PASS, 233 SKIP, one FAIL and one ERROR. The
+full-volume `CMBGU05` leakage failure and `CSWC0628-MASS-TIME` refinement
+timeout remain visible. SEP-common's 52 long Monte-Carlo acceptance cases,
+SWCME's unavailable extended/observational registries, SCCM's three missing
+campaign-evidence cases, and reduced-front's 35 native cases remain typed
+SKIPs. A reduced-front PASS never qualifies BG3D-4/G1, and the legacy audit
+proves only explicit directory/owner dispositions rather than complete legacy
+behavioral migration. Exact commands, evidence boundaries and limitations are
+documented beside each adapter under `tests/models/` and `tests/legacy/`.
 
-For a configured application, remember that AMPS links application objects
-through a static archive. A translation unit containing only static
-`AMPS_TEST_CASE` registrations may be discarded by the linker. Export a small
-link-anchor function from that translation unit and call it from `main.cpp`,
-then add every expected case ID to the suite adapter. The exact-ID registry
-will fail if a source file is omitted even when all remaining cases pass.
+### T12 bounded portability matrix
 
-See [DESIGN.md](DESIGN.md) for test levels, component plans, acceptance rules,
-and the staged route to complete nightly coverage.
+Run the registered matrix with:
+
+```sh
+python3 src/test/run_tests.py --test CORE-T12-PORTABILITY-001 \
+  --output-dir /tmp/amps-t12-portability --jobs 1
+```
+
+The matrix uses a private general-header mirror and writes all binaries below
+the suite work directory; it never changes `.amps.conf`, invokes `Config.pl`,
+or rebuilds native AMPS. It covers GNU debug/optimized, Fortran ABI, ASan,
+UBSan, selected four-thread TSan, Valgrind, OpenMP invariance, explicit
+OpenMPI/MPICH pairs, CUDA compile/runtime, two broad performance guardrails,
+and strict coverage as 16 separate cases. Optional tool absence is SKIP, a
+present tool that violates its contract is FAIL, and the strict-coverage case
+reports the real inventory exit.
+
+Machine files may override optional argv vectors using `fortran`,
+`clang_cxx`, `valgrind`, `nvcc`, `openmpi_cxx`, `openmpi_exec`, `mpich_cxx`
+and `mpich_exec`; see `config/machine.example.json`. This is the mechanism for
+site wrappers and paths—test code contains no site-specific absolute path.
+On the current host the matrix is intentionally red at 10 PASS, five SKIP and
+one FAIL because strict coverage still has 2 covered and 22 incomplete
+components. See `tests/portability/matrix/README.md` for the exact boundary;
+whole-AMPS sanitizers and production mesh/push/collision/halo/restart
+performance budgets remain open.
+
+## Add tests to the global procedure
+
+This section is the contributor procedure for registering a test, writing its
+adapter, producing independent evidence, and verifying that the global runner
+cannot silently omit it. Architectural rationale and coverage policy remain in
+[DESIGN.md](DESIGN.md); the staged coverage roadmap remains in
+[`TEST.md`](TEST.md).
+
+### 1. Decide whether to add a case or a suite
+
+Prefer a new **case in an existing suite** when it uses the same production
+component, compiled configuration, prerequisites, timeout class, isolation
+boundary, and runner protocol. Add a **new suite** when any of those differ—for
+example, a new generated AMPS configuration, MPI rank layout, accelerator,
+external dataset, long acceptance campaign, or repository-wide build owner.
+
+Do not create a new suite merely to avoid updating an existing exact case
+registry. Conversely, do not hide mutually incompatible compile-time modes in
+one runner. One suite is one schedulable isolation and evidence owner.
+
+Use these levels consistently:
+
+| Level | Intended boundary |
+| --- | --- |
+| `unit` | One dependency-light function, class, parser, or exact algebraic contract |
+| `module` | Several production translation units or one configured subsystem |
+| `integration` | Cross-module, native application, MPI, restart, or external-provider boundary |
+| `system` | Complete application workflow with an explicitly bounded scientific claim |
+
+Campaigns express cost and environment, not importance:
+
+- `smoke`: fast, deterministic bring-up checks;
+- `nightly`: deterministic routine CPU coverage;
+- `profile`: mutually exclusive generated configurations;
+- `extended`: long convergence, stochastic, compiler, or sanitizer work;
+- `distributed`: multi-rank ownership/communication/restart work;
+- `application-smoke`: application plumbing without scientific qualification.
+
+A suite may belong to multiple campaigns. Do not add a test to `smoke` unless
+its prerequisites and runtime are appropriate for every supported smoke host.
+
+### 2. Choose stable identities
+
+Suite, alias, registry, and case IDs must match `[A-Z][A-Z0-9-]*`. Case IDs are
+globally unique across the complete manifest. Use a component/family prefix,
+the behavior being asserted, and a numeric suffix, for example
+`GENERAL-ARRAY-RESIZE-001`. Never encode a temporary hostname, output path,
+random seed, date, or current implementation detail in an ID.
+
+IDs are evidence keys and must not be renamed casually. If behavior is
+replaced, preserve the prior result/evidence boundary or document a migration;
+do not reuse its ID for a different assertion.
+
+For a short registry, declare cases inline in `manifest.json`. Large imported
+or staged registries belong in `case_registries.json` and are referenced by
+`expected_cases_ref`. The loader validates every stored registry—even one not
+yet referenced—and rejects empty, duplicate, malformed, or globally duplicate
+case IDs. A suite must specify exactly one of `expected_cases` and
+`expected_cases_ref`.
+
+### 3. Register the suite in `manifest.json`
+
+A minimal dependency-light entry is:
+
+```json
+{
+  "id": "CORE-EXAMPLE-001",
+  "component": "src/models/example",
+  "level": "unit",
+  "tiers": ["nightly"],
+  "runner": "tests/models/example/run_test.py",
+  "description": "Independent example-model identities and invalid-domain behavior",
+  "requires": {
+    "tools": ["cxx"],
+    "paths": ["src/models/example/example.h"],
+    "capabilities": []
+  },
+  "expected_cases": [
+    "EXAMPLE-IDENTITY-001",
+    "EXAMPLE-INVALID-DOMAIN-001"
+  ],
+  "timeout_seconds": 120
+}
+```
+
+Manifest fields have these contracts:
+
+| Field | Requirement |
+| --- | --- |
+| `id` | Globally unique stable suite ID; aliases also share this namespace |
+| `component` | Existing production path below `src/`, never a test directory |
+| `level` | One of `unit`, `module`, `integration`, or `system` |
+| `tiers` | Nonempty unique subset of the declared campaigns |
+| `runner` | Existing file below `src/test`, written relative to `src/test` |
+| `description` | Specific tested behavior and boundary, not “run unit tests” |
+| `requires.tools` | Configured tool-vector names, not executable paths |
+| `requires.paths` | Repository-relative prerequisite files/directories |
+| `requires.capabilities` | Named optional/required machine capabilities |
+| `expected_cases` | Ordered, unique, nonempty exact case list |
+| `expected_cases_ref` | Out-of-line registry ID used instead of `expected_cases` |
+| `timeout_seconds` | Positive suite deadline including build and execution |
+| `mpi_ranks` | Positive rank request when the suite has one declared layout |
+| `exclusive` | `true` when checkout-wide generated state can be changed |
+
+`aliases` and `alias_cases` are compatibility/selection mechanisms, not a way
+to give one result several identities. Each alias subset must be a nonempty
+subset of the owning suite's expected cases. Add aliases only when an existing
+stable selection name must continue to work.
+
+Set `exclusive: true` if the runner or any transitive command invokes
+`Config.pl`/`ampsConfig.pl`, removes or rebuilds root `build`, changes generated
+headers or `.general.conf`, writes source-adjacent objects, or otherwise changes
+checkout-wide state. Unknown isolation is exclusive. A private source copy
+does not become nonexclusive until all transitive writes are proven to remain
+below its unique work/artifact roots. See
+[`../../TEST_IMPROVEMENT_PLAN.md`](../../TEST_IMPROVEMENT_PLAN.md) for the
+isolation audit and future resource model.
+
+### 4. Create the runner
+
+Put the adapter at
+`src/test/tests/<component>/<suite>/run_test.py`. A fully commented,
+fail-closed starting point is
+[`templates/run_test.py.template`](templates/run_test.py.template). After
+copying it:
+
+1. replace every `TEMPLATE` marker;
+2. keep its complete ordered registry equal to the manifest owner registry;
+3. implement independent case assertions;
+4. retain useful transcripts/references below `artifact_dir`; and
+5. run the validation sequence in Section 11.
+
+The global runner invokes an adapter only as:
+
+```text
+python3 path/to/run_test.py --context resolved-context.json
+```
+
+Use `load_context()` rather than parsing additional suite-specific CLI flags.
+The schema-1 context provides:
+
+- `repo_root`, `work_dir`, `artifact_dir`, and the controlled `result_file`;
+- the resolved suite manifest entry, including `expected_cases` and
+  `selected_cases`;
+- portable tool argv vectors and resolved data/output paths; and
+- execution settings such as build jobs, MPI ranks, and timeout policy.
+
+Use `command(context, "cxx")` (or another configured tool name) to obtain an
+argv vector. Use `run_command()` to execute it without a shell, stream output,
+enforce a timeout, and clean up the owned process group. Do not concatenate a
+shell string, interpolate an untrusted path, or discover a site compiler from
+a hard-coded absolute path.
+
+Before executing a selected subset, compare the adapter's complete ordered
+registry with `context["test"]["expected_cases"]`. Then honor
+`selected_cases` in its supplied order. This proves that `--case`, reverse,
+and shuffle selection cannot conceal a deleted manifest or local case.
+
+Emit and flush this record immediately before each assertion:
+
+```text
+[CASE] RUN  <stable-case-id> <short description>
+```
+
+The line is live progress, not evidence. The atomic schema-1 result is
+authoritative.
+
+### 5. Publish the exact result protocol
+
+Use `case()` and `write_result()` from `lib/runner_support.py`. A runner result
+contains:
+
+```json
+{
+  "schema_version": 1,
+  "id": "CORE-EXAMPLE-001",
+  "status": "PASS",
+  "message": "two example cases passed",
+  "cases": [
+    {"id": "EXAMPLE-IDENTITY-001", "status": "PASS", "message": "residual <= tolerance"},
+    {"id": "EXAMPLE-INVALID-DOMAIN-001", "status": "PASS", "message": "typed rejection observed"}
+  ],
+  "evidence": ["/absolute/artifact/path/example-output.txt"],
+  "metrics": {"maximum_residual": 1.2e-13}
+}
+```
+
+The global runner requires exact selected case content **and order**, unique
+IDs, a suite status at least as severe as every child, and the corresponding
+process exit code:
+
+| Status | Meaning | Exit |
+| --- | --- | ---: |
+| `PASS` | The requested assertion ran and met its independent acceptance rule | 0 |
+| `SKIP` | A genuinely optional capability/reference is unavailable or the declared profile does not execute it | 0 |
+| `FAIL` | The tested behavior ran and violated its assertion, residual, conservation law, or required build contract | 1 |
+| `ERROR` | No trustworthy tested conclusion exists because setup, parsing, timeout, filesystem, protocol, or control infrastructure failed | 2 |
+
+Severity is `ERROR > FAIL > SKIP > PASS`. A mixed PASS/SKIP suite is SKIP; a
+suite cannot claim PASS while hiding a failed child. Missing required
+capability policy is handled by the global prerequisite check and may be ERROR
+rather than SKIP.
+
+Catch common setup/control exceptions inside `main()` and return
+`error_result(context, error)`. It attributes the infrastructure ERROR to all
+selected case IDs, preventing a secondary empty-registry diagnostic from
+hiding the original failure. `main_guard()` is only the last boundary for a
+failure that occurs before a trustworthy context/result can be written.
+
+### 6. Build independent scientific and numerical oracles
+
+Do not calculate an expected value with the production routine under test.
+Use one or more of:
+
+- an exact identity or conservation law;
+- an independently evaluated analytical solution;
+- a manufactured solution with known convergence order;
+- an independently implemented high-accuracy quadrature/reference algorithm;
+- a versioned external fixture with bibliographic/file provenance; or
+- cross-decomposition/rank/thread invariants where exact ordering permits.
+
+Every numerical reference must document:
+
+- physical quantity, SI or declared native units;
+- coordinate frame, orientation, and sign convention;
+- equations and assumptions;
+- fixture source/version and any transformation performed;
+- absolute/relative tolerance and its truncation, conditioning, or uncertainty
+  rationale; and
+- valid domain and typed invalid-domain behavior.
+
+Test limits, zero states, invalid values, unsupported modes, and conservation
+budgets—not only one nominal value. Convergence claims require multiple
+resolutions and an independently specified expected order. Stochastic tests
+require deterministic seeds for reproducibility plus acceptance bounds derived
+from the distribution/sample count; one recorded production output is not a
+statistical oracle.
+
+Keep small references beside the runner. Large or machine-provided references
+must be addressed through the configured `data_root` and a committed manifest
+containing provenance and integrity information.
+
+### 7. Add C++ production-linked cases
+
+Dependency-light C++ tests may use `native/test_harness.h`; it has no
+GoogleTest, PIC, MPI, or application dependency. Compile objects and
+executables below `work_dir`, not next to sources. Parse the C++ harness's exact
+`[ID] PASS|FAIL message` rows and reject missing, duplicate, foreign, or
+out-of-order records even when the process exits zero.
+
+For a configured AMPS application, use `test/srcCoreUnitTests` and keep the
+suite exclusive. AMPS links application objects through a static archive, so a
+translation unit containing only static `AMPS_TEST_CASE` registrations may be
+discarded by the linker. Export a small link-anchor function from that
+translation unit, call it from `main.cpp`, and add every registered case ID to
+the owning adapter. The exact-ID registry must fail if a source file or link
+anchor is omitted even when all remaining cases pass.
+
+Before every native rebuild, follow the repository preflight exactly:
+
+1. confirm `/home/vtenishe/Mars2/AMPS` and that no build/test process is active;
+2. remove only root `build` with `rm -rf -- build` from that confirmed root;
+3. regenerate the selected application and production hooks through the
+   established configuration workflow; and
+4. compile through the top-level workflow with `-j16`.
+
+Never edit `.amps.conf` directly. A direct source-only compile is useful for a
+dependency-light fixture but is not native AMPS build evidence.
+
+### 8. Add MPI, threaded, or accelerator tests
+
+Declare MPI tools/capabilities and ranks in the manifest/machine profile. Use
+the configured launcher argv and rank flag; never assume `mpiexec`, `-n`, a
+hostfile, scheduler command, or network interface. Every rank must publish its
+local assertion or contribute to a checked exact reduction. Rank-zero-only
+success is insufficient for ownership, migration, halo, or restart claims.
+
+Use distinct identities for serial, MPI implementations, thread layouts,
+compile-only accelerator evidence, and runtime accelerator evidence. Missing
+optional hardware can be SKIP; a compiler PASS cannot qualify a device runtime.
+Use unique output/restart paths and account for every allocated rank/thread or
+device. Tests that share launch fabrics, devices, generated configurations, or
+fixed services remain exclusive until the resource scheduler described in
+`TEST_IMPROVEMENT_PLAN.md` is implemented and qualified.
+
+### 9. Keep paths and machine configuration portable
+
+All writes belong below `work_dir` or `artifact_dir`:
+
+- `work_dir`: disposable objects, executables, scratch files, and temporary
+  copied source trees;
+- `artifact_dir`: retained transcripts, residual tables, reference comparison,
+  plots, and suite-owned evidence;
+- `result_file`: controlled by `write_result()`; never choose or overwrite it;
+- global logs: written by the scheduler below `<output>/logs/<suite-id>.log`.
+
+Do not write into production sources, root `build` from a nonexclusive suite,
+a shared application output directory, `$HOME`, or a fixed `/tmp/name`. Do not
+embed `/home/...`, compiler installations, SPICE/data roots, MPI launchers, or
+site scratch paths in test code. Add a documented argv/path/capability field to
+a machine overlay when a site needs one; see `config/machine.example.json`.
+
+`run_command()` receives argv elements, not shell syntax. Do not use pipes,
+redirections, command substitution, or environment-variable expansion as
+arguments and expect a shell to interpret them. Perform small file operations
+with Python APIs and retain the resulting paths as evidence.
+
+### 10. Update coverage and traceability ledgers
+
+Every new suite must be named in the owning entry of
+`component_inventory.json`. Keep the entry `partial` unless the documented
+remaining behaviors are genuinely closed; one green case never automatically
+makes a component `covered`. An `exempt` state needs an explicit reviewed
+rationale.
+
+Also update the relevant ledger when the change alters its ownership:
+
+- `source_traceability.json` for a new production source/public-contract
+  ownership rule or changed suite mapping;
+- `configuration_contracts.json` for a new generated/configured mode;
+- `t1_public_algorithm_inventory.json` for a newly tested or reclassified
+  public algorithm family;
+- `case_registries.json` for a large out-of-line exact registry; and
+- component/model README and `src/test/STATUS.md` for commands, evidence,
+  limitations, and qualification state.
+
+Run `validate_traceability.py` after any registry or ownership change. Its PASS
+proves structural classification integrity; it does not substitute for a
+behavioral test.
+
+### 11. Validate the contribution
+
+From the repository root, replace the example IDs and output paths below:
+
+```sh
+# Confirm manifest loading, ownership, and exact registered case count.
+python3 src/test/run_tests.py --test CORE-EXAMPLE-001 --list
+
+# Run one case, then the complete owning suite.
+python3 src/test/run_tests.py --case EXAMPLE-IDENTITY-001 \
+  --output-dir /tmp/amps-example-one --jobs 1
+python3 src/test/run_tests.py --test CORE-EXAMPLE-001 \
+  --output-dir /tmp/amps-example-suite --jobs 1
+
+# Prove ordering does not change case meaning or final identity accounting.
+python3 src/test/run_tests.py --test CORE-EXAMPLE-001 --order reverse \
+  --output-dir /tmp/amps-example-reverse --jobs 1
+python3 src/test/run_tests.py --test CORE-EXAMPLE-001 --order shuffle \
+  --shuffle-seed 1729 --output-dir /tmp/amps-example-shuffle --jobs 1
+
+# Validate the control plane and structural ledgers.
+python3 src/test/run_tests.py --test CORE-HARNESS-001 \
+  --output-dir /tmp/amps-example-harness --jobs 1
+python3 src/test/validate_traceability.py \
+  --output /tmp/amps-example-traceability.json
+
+# Run every campaign to which the suite was added, then the full selection
+# when its cost and prerequisites make that appropriate.
+python3 src/test/run_tests.py --campaign nightly \
+  --output-dir /tmp/amps-example-nightly --jobs 8
+```
+
+Inspect all of:
+
+- terminal individual results and counts;
+- `<output>/amps-core-tests.json`;
+- `<output>/amps-core-tests.xml`;
+- `<output>/logs/<suite-id>.log`;
+- the suite artifact directory and every path named by `evidence`; and
+- `not_executed_suites` if fail-fast was used.
+
+Confirm that JSON/JUnit contain every selected identity exactly once and that
+FAIL/ERROR/SKIP messages retain their real reasons. Run `git diff --check` as a
+read-only formatting check. The repository-wide strict-coverage gate remains
+red while inventory components are partial; do not misrepresent that known
+global state as a failure of an otherwise valid new test, and do not weaken it
+to obtain a green contribution.
+
+Native suites additionally require their clean-build preflight evidence and
+the applicable one-/multi-rank execution receipts. Optional-provider tests
+require both the available behavior and the correctly typed unavailable path.
+
+### 12. Contributor checklist
+
+- [ ] The case belongs in this suite, or the new suite has a distinct justified isolation/configuration owner.
+- [ ] Suite and case IDs are stable, valid, globally unique, and exactly ordered.
+- [ ] Manifest component, level, campaigns, requirements, timeout, ranks, and exclusivity are accurate.
+- [ ] The runner accepts only `--context`, validates the complete registry, and honors exact selection order.
+- [ ] Every case emits `[CASE] RUN` and publishes one structured result.
+- [ ] Suite severity and process exit agree with all child statuses.
+- [ ] Common infrastructure failures use `error_result()` and retain selected identities.
+- [ ] Expected values are independent and units, frame, provenance, domains, and tolerances are documented.
+- [ ] Invalid/limit states and conservation or convergence behavior are tested where applicable.
+- [ ] All generated files stay below declared work/artifact roots.
+- [ ] Tool and data locations come from the context/machine profile; no site path is hard-coded.
+- [ ] Configured native builds are exclusive and follow the mandatory clean preflight.
+- [ ] MPI/thread/device evidence accounts for every participant and does not broaden another backend's claim.
+- [ ] Component inventory and every affected traceability/configuration ledger are updated honestly.
+- [ ] Exact-case, complete-suite, reverse, shuffle, harness, traceability, and applicable campaign runs are checked.
+- [ ] JSON, JUnit, logs, artifacts, counts, and typed non-PASS outcomes reconcile.
+
+For complete worked examples, compare a dependency-light adapter such as
+`tests/species/radiation/run_test.py`, a native owner such as
+`tests/pic/native_core/run_test.py`, an MPI owner such as
+`tests/pic/mpi_distributed/run_test.py`, and an imported-registry adapter under
+`tests/models/cme/`.

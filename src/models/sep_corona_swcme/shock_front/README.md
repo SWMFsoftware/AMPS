@@ -298,8 +298,12 @@ one-/four-rank smoke cases, actual four-to-four and one-to-four checkpoint/
 resume comparisons, and the separate four-rank 1-AU campaign.  Fresh phase
 logs, native receipts and `summary.{txt,json}` are written below
 `test_output/reduced-front/runner/`; every FAIL/ERROR is printed with its log
-path.  The current validated aggregate is 93/0/0/0, with evidence under
-`test_output/reduced-front/runner/20261005T-native-restart-qualification-02/`.
+path.  The current registry contains 97 rows.  The retained unified native
+receipt under
+`test_output/reduced-front/runner/20261005T-native-restart-qualification-02/`
+contains 93/0/0/0 because it predates the four rows added with `RSHAPP04`.
+That boundary has separate passing evidence, but a new complete native run is
+required before a 97-PASS aggregate can be claimed.
 On the 2026-10-05 host,
 the 340-step native phase alone took about 29 minutes, so this command is not a
 routine short test.  Use `--list` or `--dry-run` to inspect coverage/commands,
