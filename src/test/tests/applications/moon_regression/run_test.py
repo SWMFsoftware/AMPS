@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the registered Moon U01--U26 and linked I11--I20 regression campaign.
+"""Run the registered Moon U01--U26 and linked I11--I20 aggregate campaign.
 
 This adapter owns only global orchestration and status translation.  The Moon
 individual runners retain their physical oracles and artifacts.  Because Moon
@@ -97,9 +97,12 @@ def main() -> int:
     artifacts = Path(str(context["artifact_dir"]))
     artifacts.mkdir(parents=True, exist_ok=True)
     timeout = int(context["test"].get("timeout_seconds", 14400))
+    full_validation = bool(
+        context.get("execution", {}).get("full_validation", False))
+    campaign_mode = "qualification" if full_validation else "regression"
     capability = context.get("capabilities", {}).get("moon-spice", {})
     available = (capability if isinstance(capability, bool) else
-                 capability.get("available", False))
+                 capability.get("available", False)) or full_validation
     if not available:
         reason = (
             "not executed: optional machine capability 'moon-spice' is unavailable; "
@@ -109,7 +112,8 @@ def main() -> int:
             print("[CASE] RUN  {} {}".format(row["id"], reason), flush=True)
         return write_result(
             context, "SKIP", reason, cases=rows,
-            metrics={"selected_case_count": len(rows), "execution": "not-run"})
+            metrics={"selected_case_count": len(rows), "execution": "not-run",
+                     "campaign_mode": campaign_mode})
     spice_path_raw = str(context["paths"].get("spice_path", ""))
     spice_kernels_raw = str(context["paths"].get("spice_kernels", ""))
     if not spice_path_raw or not spice_kernels_raw:
@@ -187,7 +191,7 @@ def main() -> int:
             str(repo / "srcMoon" / "test" / "run_all_test.py"),
             "--skip-build", "--build-dir", str(repo / "build"),
             "--amps", str(retained), "--output-dir", str(campaign_output),
-            "--campaign-mode", "regression", "--mpi-ranks",
+            "--campaign-mode", campaign_mode, "--mpi-ranks",
             str(int(context["test"].get("mpi_ranks", 8))),
             "--spice-path", str(spice_path), "--spice-kernels", str(spice_kernels),
             "--case-id-prefix", "MOON-",
@@ -196,7 +200,7 @@ def main() -> int:
             argv.extend(["--only", local_id])
         local = run_command(
             argv, repo, timeout=timeout, env={"PYTHONDONTWRITEBYTECODE": "1"})
-        outer_transcript = artifacts / "moon-regression.txt"
+        outer_transcript = artifacts / "moon-{}.txt".format(campaign_mode)
         outer_transcript.write_text(local.stdout or "", encoding="utf-8")
         summary_path = campaign_output / "run_all_summary.json"
         payload = load_summary(summary_path)
@@ -220,8 +224,9 @@ def main() -> int:
         severity = {"PASS": 0, "SKIP": 1, "FAIL": 2, "ERROR": 3}
         suite_status = max(
             (row["status"] for row in translated_rows), key=severity.__getitem__)
-        # run_all_test returns zero for a scientifically incomplete regression
-        # containing typed SKIPPED gates, one for FAIL, and two for ERROR.
+        # run_all_test returns zero for a scientifically incomplete aggregate
+        # containing typed SKIPPED gates, one for FAIL, and two for ERROR in
+        # either regression or qualification mode.
         expected_exit = 2 if suite_status == "ERROR" else (1 if suite_status == "FAIL" else 0)
         if local.returncode != expected_exit:
             raise RunnerError(
@@ -229,12 +234,14 @@ def main() -> int:
                     local.returncode, suite_status))
         return write_result(
             context, suite_status,
-            "imported {} exact Moon regression outcomes".format(len(translated_rows)),
+            "imported {} exact Moon {} outcomes".format(
+                len(translated_rows), campaign_mode),
             cases=translated_rows,
             evidence=[str(build_transcript), str(identity), str(outer_transcript),
                       str(summary_path)],
             metrics={"selected_case_count": len(translated_rows),
-                     "local_campaign_status": payload.get("campaign_status")})
+                     "local_campaign_status": payload.get("campaign_status"),
+                     "campaign_mode": campaign_mode})
     except Exception as error:
         return error_result(context, error)
     finally:

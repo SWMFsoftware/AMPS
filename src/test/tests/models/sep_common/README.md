@@ -42,7 +42,8 @@ Run through the global harness after the suite is registered in
 `src/test/manifest.json`:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-MODEL-SEP-COMMON-001 --jobs 1
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-MODEL-SEP-COMMON-001 --jobs 1
 ```
 
 The suite must remain exclusive because perpendicular diffusion builds the

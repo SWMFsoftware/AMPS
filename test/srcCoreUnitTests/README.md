@@ -21,14 +21,15 @@ directory, selects this application through `Config.pl`, builds with `-j16`,
 and preserves structured evidence:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-PIC-PARTICLE-BUFFER-001
-python3 src/test/run_tests.py --test CORE-PIC-PHYSICS-001
-python3 src/test/run_tests.py --case PIC-UNITS-GLOBAL-INIT-001 \
+PROFILE=test/qualification-machine/passion.json
+python3 src/test/run_tests.py --config "$PROFILE" --test CORE-PIC-PARTICLE-BUFFER-001
+python3 src/test/run_tests.py --config "$PROFILE" --test CORE-PIC-PHYSICS-001
+python3 src/test/run_tests.py --config "$PROFILE" --case PIC-UNITS-GLOBAL-INIT-001 \
   --case PIC-UNITS-CONVERSION-TABLE-001
-python3 src/test/run_tests.py --test CORE-PIC-WEIGHT-TIME-001
-python3 src/test/run_tests.py --test CORE-PIC-RESTART-NATIVE-001
-python3 src/test/run_tests.py --campaign profile
-python3 src/test/run_tests.py --test CORE-PIC-SPLIT-MERGE-001
+python3 src/test/run_tests.py --config "$PROFILE" --test CORE-PIC-WEIGHT-TIME-001
+python3 src/test/run_tests.py --config "$PROFILE" --test CORE-PIC-RESTART-NATIVE-001
+python3 src/test/run_tests.py --config "$PROFILE" --campaign profile
+python3 src/test/run_tests.py --config "$PROFILE" --test CORE-PIC-SPLIT-MERGE-001
 ```
 
 The current cases verify process-local particle-buffer allocation/deletion,
@@ -215,7 +216,8 @@ networks using independent analytic solutions.
 Run the complete bounded T6 gate with:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-CHEMICAL-SOLVER-001 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-CHEMICAL-SOLVER-001 \
   --test CORE-PHOTOCHEM-EXECUTION-001 \
   --test CORE-PHOTOCHEM-DAUGHTER-001 \
   --test CORE-CHARGE-EXCHANGE-001 \
@@ -249,7 +251,8 @@ work rather than being inferred from this receipt.
 Run only this case through its alias:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-PIC-RESTART-NATIVE-001 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-PIC-RESTART-NATIVE-001 \
   --output-dir /tmp/amps-t9-native-restart-state
 ```
 

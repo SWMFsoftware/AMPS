@@ -18,9 +18,12 @@ procedure and uses its configured C++ compiler:
 
 ```bash
 cd /home/vtenishe/Mars2/AMPS
-python3 src/test/run_tests.py --test APPLICATION-ENCELADUS-FORWARD-001
-python3 src/test/run_tests.py --test APPLICATION-ENCELADUS-NATIVE-STARTUP-001
-python3 src/test/run_tests.py --test APPLICATION-ENCELADUS-E3-001
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test APPLICATION-ENCELADUS-FORWARD-001
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test APPLICATION-ENCELADUS-NATIVE-STARTUP-001
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test APPLICATION-ENCELADUS-E3-001
 ```
 
 The first owner imports the 42 dependency-light checks below. The native owner
@@ -29,6 +32,14 @@ E3 owner retains all 13 long-run identities but defaults to explicit `SKIP`;
 enable the optional `enceladus-e3` machine capability only on a host approved
 for the 10,000-step MPI campaign. The global catalog and manifest are the
 authorities for exact IDs and current campaign membership.
+
+An operator may instead request every expensive, portability, distributed,
+and qualification owner with one explicit global key; this also activates E3:
+
+```bash
+python3 src/test/run_tests.py --full-validation --jobs 8 \
+  --config test/qualification-machine/passion.json
+```
 
 Run one case, with its own JSON/SVG receipt, by its stable ID:
 

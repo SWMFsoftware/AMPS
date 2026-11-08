@@ -2,6 +2,94 @@
 
 Last updated: 2026-11-08
 
+## Core/application execution streams
+
+The global runner now derives three independent streams from the complete
+registered manifest:
+
+| Stream | Suites | Cases | Ownership |
+| --- | ---: | ---: | --- |
+| `core` | 49 | 1,028 | Every validated `src/...` core/model owner |
+| `application-srcEnceladus` | 3 | 61 | Forward, native startup, and E3 Enceladus owners |
+| `application-srcMoon` | 2 | 46 | Moon regression and M0 boundary owners |
+
+`--streams N` sets the maximum number of concurrently active streams and
+defaults to one. `--jobs N` remains a distinct per-stream limit for
+consecutive nonexclusive suites. The make wrapper exposes the same settings as
+`STREAMS=N JOBS=N`. A writer-priority checkout gate spans all streams:
+nonexclusive readers may overlap, while every `exclusive: true` suite waits
+for all readers and runs without any other stream inspecting or changing the
+generated checkout. Native configuration and build operations therefore
+remain globally serialized.
+
+A bare `--list` now inventories the complete registry, summarizes all
+registered applications, and prints separate core, Enceladus, and Moon stream
+sections. Explicit campaign/component/test/case selectors still narrow the
+selected stream contents. Execution writes `streams/<id>.log` and
+`streams/<id>.json` for every selected stream; `selection.json` records the
+plan and `amps-core-tests.json` references all stream receipts while retaining
+the single combined result inventory.
+
+Validation evidence:
+
+| Command/evidence | Outcome |
+| --- | --- |
+| `python3 src/test/run_tests.py --config test/qualification-machine/passion.json --list --streams 3` | PASS: two registered applications plus three separate stream sections; 49/1,028 core, 3/61 Enceladus, and 2/46 Moon |
+| `python3 src/test/run_tests.py --config test/qualification-machine/passion.json --all --dry-run --streams 3 --jobs 2 --output-dir /tmp/amps-stream-runner-dry-all` | PASS control-plane run: 54 explicit dry-run SKIPs, six per-stream log/JSON files, and one reconciled combined JSON/JUnit result |
+| `python3 src/test/run_tests.py --config test/qualification-machine/passion.json --test CORE-GENERAL-INPUT-001 --test APPLICATION-ENCELADUS-FORWARD-001 --test APPLICATION-MOON-M0-001 --streams 3 --jobs 1 --output-dir /tmp/amps-stream-runner-real-smoke` | PASS control plane and executed evidence: core 4/4 PASS, Enceladus 42/42 PASS, Moon ten explicit SKIPs; all three streams visibly overlap without a native rebuild |
+| `python3 src/test/run_tests.py --config test/qualification-machine/passion.json --test CORE-HARNESS-001 --streams 2 --output-dir /tmp/amps-stream-runner-harness-final` | PASS 11/11, including exact stream partition/list formatting, bounded stream scheduling, global exclusive-gate invariants, and per-stream receipts |
+
+No native AMPS rebuild was performed while qualifying this orchestration
+layer; the checkout gate is independently exercised with deterministic
+concurrency fixtures, while the retained real cross-stream run uses only
+dependency-light owners and the typed Moon M0 non-execution boundary.
+
+## Required qualification-machine profile
+
+The global CLI now refuses every invocation that omits `--config`, including
+`--list` and `--coverage`, with exit 2. Its diagnostic names the resolved
+`test/qualification-machine/` directory, the short-hostname profile it
+expects, and `template.json`. This makes the choice of compiler, MPI launcher,
+filesystem roots, rank count, timeout, and optional qualification
+capabilities an explicit part of every test receipt rather than an ambient
+default. Machine profiles are deliberately stored in the repository's
+top-level `test/` tree rather than `src/test/` because they are operational
+test configuration, not AMPS source code. The make wrapper supplies
+`../../test/qualification-machine/$(hostname -s).json` explicitly and supports a
+`CONFIG=...` override.
+
+The new maintained files are:
+
+- `test/qualification-machine/passion.json`: Passion's installed GNU, OpenMPI,
+  MPICH, Fortran, Valgrind, and CUDA commands; `/data/vtenishe` durable roots;
+  `/tmp/vtenishe` work root; local CSPICE/kernel paths; 16 build jobs; eight
+  MPI ranks; and the Moon-SPICE/Enceladus-E3 capabilities;
+- `test/qualification-machine/template.json`: schema-valid placeholders and all
+  optional portability-tool keys for a new host; and
+- `test/qualification-machine/README.md`: naming, copy/edit, validation, overlay,
+  and execution instructions.
+
+T12's recursive strict-coverage identity now writes a schema-limited profile
+from its resolved parent context and passes that file explicitly. It therefore
+obeys the public requirement without selecting a hostname file behind the
+operator's back.
+
+Validation evidence:
+
+| Command/evidence | Outcome |
+| --- | --- |
+| `python3 src/test/run_tests.py --list` | Expected exit 2 before selection, with the Passion-profile and template paths in the error |
+| `python3 src/test/run_tests.py --help` | PASS without a profile; help labels `--config` required and names the profile directory |
+| JSON parsing and `py_compile` for the two profiles and three modified runners | PASS |
+| `python3 src/test/run_tests.py --config test/qualification-machine/passion.json --full-validation --list` | PASS: all 54 suites and 1,135 cases selected |
+| `make -C src/test list` | PASS: the wrapper visibly invokes the global runner with `../../test/qualification-machine/passion.json` |
+| `python3 src/test/run_tests.py --config test/qualification-machine/passion.json --test CORE-HARNESS-001 --output-dir /tmp/amps-required-config-harness-relocated` | PASS 11/11 after relocation, including real schema loading of Passion/template and omission rejection even when `AMPS_TEST_CONFIG` is set |
+| exact `T12-COVERAGE-STRICT-001` at `/tmp/amps-required-config-t12-nested` | Expected FAIL because coverage remains 2 covered/24 incomplete; its retained nested transcript contains the inventory, not a missing-config error |
+
+Historical commands elsewhere in this ledger are retained exactly as they
+were executed. Commands recorded before this change can omit `--config`; all
+new runs and reproductions must supply a reviewed profile.
+
 ## Moon and Enceladus application integration
 
 The global registry now contains 54 suites and 1,135 individual cases across
@@ -19,8 +107,8 @@ campaigns does not convert either application root to covered.
 | --- | ---: | --- |
 | `APPLICATION-ENCELADUS-FORWARD-001` | 42 | Executes all 11 dependency-light local software checks and 31 independent numeric reference comparisons using the configured compiler argv |
 | `APPLICATION-ENCELADUS-NATIVE-STARTUP-001` | 6 | Exclusive clean Enceladus build followed by exact import of CLI/default-deck, invalid-configuration, and generated-hook startup gates |
-| `APPLICATION-ENCELADUS-E3-001` | 13 | Owns every 10,000-step E3 process/ledger/flyby assertion; defaults to individual SKIP unless the optional `enceladus-e3` capability is enabled |
-| `APPLICATION-MOON-REGRESSION-001` | 36 | Exclusive clean Moon/SPICE build, then exact import of U01-U26 and bounded-regression I11-I20 PASS/FAIL/SKIPPED/ERROR outcomes |
+| `APPLICATION-ENCELADUS-E3-001` | 13 | Owns every 10,000-step E3 process/ledger/flyby assertion; defaults to individual SKIP unless `enceladus-e3` or global `--full-validation` explicitly activates it |
+| `APPLICATION-MOON-REGRESSION-001` | 36 | Exclusive clean Moon/SPICE build, then exact import of U01-U26 and I11-I20 outcomes in routine regression or full-validation qualification mode |
 | `APPLICATION-MOON-M0-001` | 10 | Audits every I01-I10 runner/README and emits explicit SKIP until the local multi-build orchestrator satisfies the current native preflight |
 
 The Moon and native Enceladus adapters follow the mandatory native sequence:
@@ -58,6 +146,35 @@ adapter/build path and separately demonstrates that the sandbox error is
 environmental; it does not qualify the other 45 Moon cases. The repository's
 current generated tree is the clean Enceladus configuration left by the final
 integrated application-smoke run.
+
+## Full-validation selector
+
+The global runner now accepts `--full-validation`. It selects all 54 suites
+and 1,135 cases and records the complete campaign union in both
+`selection.json` and `amps-core-tests.json`. Unlike ordinary `--all`, it also
+sets `execution.full_validation=true` in every adapter context. Enceladus E3
+therefore attempts the bounded 10,000-step run, while the Moon U/I aggregate
+selects `--campaign-mode qualification`.
+
+The selector is intentionally incompatible with campaign, suite, component,
+glob, case, and `--all` selectors. Missing tools, SPICE paths, external data,
+or unfinished application gates retain their typed outcomes; full validation
+does not weaken prerequisites. Moon I01-I10 remain a visible SKIP until their
+multi-build orchestrator satisfies the mandatory native preflight.
+
+Validation evidence:
+
+| Command/evidence | Outcome |
+| --- | --- |
+| `python3 src/test/run_tests.py --full-validation --list` | PASS: complete manifest-order selection of 54 suites and 1,135 cases |
+| `python3 src/test/run_tests.py --full-validation --campaign nightly --list` | Expected exit 2 with a clear incompatible-selector diagnostic |
+| `python3 src/test/run_tests.py --full-validation --dry-run --jobs 8 --output-dir /tmp/amps-full-validation-dry-run` | PASS control-plane exercise: one combined JSON/JUnit receipt for all 54 selected owners; every suite is explicitly marked dry-run SKIP and no native build runs |
+| `python3 src/test/run_tests.py --test CORE-HARNESS-001 --output-dir /tmp/amps-full-validation-harness` | PASS: 11/11, including complete-selection and narrowing-rejection assertions |
+
+The expensive scientific campaigns were not executed while adding this CLI
+control. An actual run requires an explicitly provisioned machine overlay and
+is started with `python3 src/test/run_tests.py --full-validation --jobs N
+--config /path/to/qualification-machine.json`.
 
 ## Contributor-guide checkpoint
 

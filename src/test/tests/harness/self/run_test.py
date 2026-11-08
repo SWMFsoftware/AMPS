@@ -10,6 +10,8 @@ import io
 import json
 import os
 import signal
+import socket
+import subprocess
 import sys
 import threading
 import time
@@ -72,6 +74,49 @@ def test_layered_configuration(context: Dict) -> None:
             (Path(directory) / "env-cspice").resolve())
         assert resolved["paths"]["spice_kernels"] == str(
             (Path(directory) / "env-kernels").resolve())
+
+    # Committed qualification-machine profiles are part of the operator
+    # contract.  Loading both through the production configuration path proves
+    # that Passion's concrete profile and the copy-and-edit template retain the
+    # current schema; it does not claim that template placeholder paths exist.
+    profile_root = repo / "test" / "qualification-machine"
+    passion = load_configuration(
+        repo, TEST_ROOT / "config" / "default.json",
+        [profile_root / "passion.json"], environ={})
+    assert passion["tools"]["cxx"] == ["/usr/bin/g++"]
+    assert passion["execution"]["build_jobs"] == 16
+    assert passion["execution"]["mpi_ranks"] == 8
+    assert passion["paths"]["spice_path"] == "/home/vtenishe/SPICE/cspice"
+    load_configuration(
+        repo, TEST_ROOT / "config" / "default.json",
+        [profile_root / "template.json"], environ={})
+
+    # The CLI must fail before registry selection or filesystem mutation when
+    # no explicit machine profile is supplied.  Keep the profile directory and
+    # template name in the diagnostic so a new machine can be configured
+    # without reading runner source.
+    omitted = subprocess.run(
+        [sys.executable, str(TEST_ROOT / "run_tests.py"), "--list"],
+        cwd=str(repo), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        universal_newlines=True, check=False)
+    assert omitted.returncode == 2
+    assert "--config is required" in omitted.stdout
+    assert "test/qualification-machine" in omitted.stdout
+    assert socket.gethostname().split(".", 1)[0] + ".json" in omitted.stdout
+    assert "template.json" in omitted.stdout
+
+    # AMPS_TEST_CONFIG remains a useful lower-precedence overlay, but it must
+    # not satisfy the explicit CLI requirement.  Otherwise a stale login-shell
+    # variable could silently choose the machine identity for a qualification
+    # campaign and the command line would no longer be self-describing.
+    inherited = dict(os.environ)
+    inherited["AMPS_TEST_CONFIG"] = str(profile_root / "passion.json")
+    environment_only = subprocess.run(
+        [sys.executable, str(TEST_ROOT / "run_tests.py"), "--list"],
+        cwd=str(repo), env=inherited, stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT, universal_newlines=True, check=False)
+    assert environment_only.returncode == 2
+    assert "--config is required" in environment_only.stdout
 
 
 def test_schema_extensions(context: Dict) -> None:
@@ -250,6 +295,51 @@ def test_selection_contract(context: Dict) -> None:
         test=[], match=[], component=[], all=False, case=[],
         campaign=None, tier="smoke")
     assert module.select_tests(tests, legacy_tier_args)
+
+    # Full validation is a distinct execution contract rather than a spelling
+    # of --all: both select every registered owner, but full validation also
+    # propagates qualification intent to application adapters.  Selection must
+    # remain complete and cannot be narrowed by a campaign, component, suite,
+    # or individual-case selector that would make the label misleading.
+    full_args = argparse.Namespace(
+        test=[], match=[], component=[], all=False, case=[],
+        campaign=None, tier=None, full_validation=True)
+    full_selected = module.select_tests(tests, full_args)
+    assert [item["id"] for item in full_selected] == [
+        item["id"] for item in tests]
+    assert sum(len(item["selected_cases"]) for item in full_selected) == sum(
+        len(item["expected_cases"]) for item in tests)
+    narrowed_full_args = argparse.Namespace(
+        test=["CORE-GENERAL-INPUT-001"], match=[], component=[], all=False,
+        case=[], campaign=None, tier=None, full_validation=True)
+    try:
+        module.select_tests(tests, narrowed_full_args)
+    except ManifestError as error:
+        assert "cannot be combined" in str(error)
+    else:
+        raise AssertionError("--full-validation accepted a narrowed selection")
+
+    # The complete registry is partitioned into one core stream and one stream
+    # per registered application.  The list formatter must expose application
+    # totals even for a narrowed selection and then print each selected stream
+    # in a separate, unambiguous section.
+    streams = module.group_test_streams(full_selected)
+    assert [item["id"] for item in streams] == [
+        "core", "application-srcEnceladus", "application-srcMoon"]
+    assert [len(item["tests"]) for item in streams] == [49, 3, 2]
+    assert [sum(len(test["selected_cases"]) for _, test in item["tests"])
+            for item in streams] == [1028, 61, 46]
+    listed = io.StringIO()
+    with contextlib.redirect_stdout(listed):
+        module.print_tests(
+            full_selected, registered_tests=tests, stream_jobs=3, suite_jobs=2)
+    listing = listed.getvalue()
+    assert "REGISTERED APPLICATIONS count=2" in listing
+    assert "srcEnceladus" in listing and "srcMoon" in listing
+    assert "STREAM 1/3 id=core" in listing
+    assert "STREAM 2/3 id=application-srcEnceladus" in listing
+    assert "STREAM 3/3 id=application-srcMoon" in listing
+    assert "concurrent_limit=3 suites_per_stream=2" in listing
 
     # Campaign names are operational contracts, not aliases for identical
     # selections. Smoke is dependency-light, nightly is the complete current
@@ -662,17 +752,27 @@ def test_scheduler_concurrency(context: Dict) -> None:
     module = _global_module()
     lock = threading.Lock()
     active = [0]
+    active_exclusive = [0]
     maximum = [0]
     started: List[str] = []
+    overlap_violations: List[str] = []
 
     def fake_run(test, config, output, dry_run, case_prefix="    "):
         with lock:
+            if test.get("exclusive", False):
+                if active[0] != 0:
+                    overlap_violations.append("exclusive-overlap")
+                active_exclusive[0] += 1
+            elif active_exclusive[0] != 0:
+                overlap_violations.append("shared-overlap")
             active[0] += 1
             maximum[0] = max(maximum[0], active[0])
             started.append(test["id"])
         time.sleep(0.01 if test.get("fail") else 0.04)
         with lock:
             active[0] -= 1
+            if test.get("exclusive", False):
+                active_exclusive[0] -= 1
         status = "FAIL" if test.get("fail") else "PASS"
         return {
             "id": test["id"], "component": "src/test", "level": "unit",
@@ -694,6 +794,7 @@ def test_scheduler_concurrency(context: Dict) -> None:
 
         started[:] = []
         active[0] = 0
+        active_exclusive[0] = 0
         maximum[0] = 0
         fail_tests = [
             (0, {"id": "FAIL-FIRST", "component": "src/test", "level": "unit",
@@ -706,6 +807,43 @@ def test_scheduler_concurrency(context: Dict) -> None:
         module.run_batch(
             fail_tests, 3, {}, Path("."), False, jobs=2, fail_fast=True)
         assert set(started) == {"FAIL-FIRST", "IN-FLIGHT"}
+
+        # Three independent streams may overlap their nonexclusive work.  The
+        # global checkout gate must nevertheless make an exclusive/native
+        # suite run alone, including against nonexclusive suites in a different
+        # application stream.  This is the safety property that permits
+        # --streams N without racing Config.pl or root build transitions.
+        started[:] = []
+        active[0] = 0
+        maximum[0] = 0
+        stream_tests = [
+            {"id": "CORE-SHARED", "component": "src/test", "level": "unit",
+             "runner": "fixture", "fail": False, "exclusive": False,
+             "expected_cases": ["CORE-SHARED-CASE"],
+             "selected_cases": ["CORE-SHARED-CASE"]},
+            {"id": "ENC-EXCLUSIVE", "component": "srcEnceladus", "level": "system",
+             "runner": "fixture", "fail": False, "exclusive": True,
+             "expected_cases": ["ENC-EXCLUSIVE-CASE"],
+             "selected_cases": ["ENC-EXCLUSIVE-CASE"]},
+            {"id": "MOON-SHARED", "component": "srcMoon", "level": "system",
+             "runner": "fixture", "fail": False, "exclusive": False,
+             "expected_cases": ["MOON-SHARED-CASE"],
+             "selected_cases": ["MOON-SHARED-CASE"]},
+        ]
+        with TemporaryDirectory(prefix="amps-stream-scheduler-") as directory:
+            indexed, by_stream = module.run_test_streams(
+                module.group_test_streams(stream_tests), len(stream_tests), {},
+                Path(directory), False, jobs=1, stream_jobs=3, fail_fast=False)
+            assert [item[0] for item in indexed] == [0, 1, 2]
+            assert set(by_stream) == {
+                "core", "application-srcEnceladus", "application-srcMoon"}
+            stream_metadata = module.write_stream_reports(
+                Path(directory), module.group_test_streams(stream_tests), by_stream)
+            assert [item["id"] for item in stream_metadata] == [
+                "core", "application-srcEnceladus", "application-srcMoon"]
+            assert all(Path(item["report"]).is_file() for item in stream_metadata)
+            assert all(Path(item["log"]).is_file() for item in stream_metadata)
+            assert overlap_violations == []
     finally:
         module.run_one = original
 

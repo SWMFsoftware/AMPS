@@ -9,6 +9,7 @@ MPI initialization and do not claim an evolving E3 simulation.
 
 ```bash
 python3 src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
   --test APPLICATION-ENCELADUS-NATIVE-STARTUP-001
 ```
 

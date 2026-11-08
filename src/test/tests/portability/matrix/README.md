@@ -66,7 +66,8 @@ root `build`, or performs a native AMPS rebuild.
 After registration in the global manifest, run:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-T12-PORTABILITY-001 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-T12-PORTABILITY-001 \
   --output-dir /tmp/amps-t12-portability --jobs 1
 ```
 

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "paths": {
+    "output_root": "/data/vtenishe/AMPS-test-results",
+    "temporary_root": "/tmp/vtenishe/amps-test-work",
+    "data_root": "/data/vtenishe/AMPS-test-data",
+    "spice_path": "/home/vtenishe/SPICE/cspice",
+    "spice_kernels": "/home/vtenishe/SPICE/Kernels"
+  },
+  "tools": {
+    "python": ["/usr/bin/python3"],
+    "cxx": ["/usr/bin/g++"],
+    "mpi_cxx": ["/usr/bin/mpicxx"],
+    "make": ["/usr/bin/make"],
+    "mpiexec": ["/usr/bin/mpiexec"],
+    "fortran": ["/usr/bin/gfortran"],
+    "valgrind": ["/usr/bin/valgrind"],
+    "nvcc": ["/etc/alternatives/cuda/bin/nvcc"],
+    "openmpi_cxx": ["/usr/bin/mpicxx.openmpi"],
+    "openmpi_exec": ["/usr/bin/mpiexec.openmpi"],
+    "mpich_cxx": ["/usr/bin/mpicxx.mpich"],
+    "mpich_exec": ["/usr/bin/mpiexec.mpich"]
+  },
+  "execution": {
+    "build_jobs": 16,
+    "mpi_ranks": 8,
+    "mpi_rank_flag": "-n",
+    "default_timeout_seconds": 14400,
+    "keep_work": "failures",
+    "default_campaign": "smoke"
+  },
+  "capabilities": {
+    "moon-spice": {
+      "available": true,
+      "policy": "optional"
+    },
+    "enceladus-e3": {
+      "available": true,
+      "policy": "optional"
+    }
+  }
+}

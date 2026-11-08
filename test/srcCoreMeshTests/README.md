@@ -163,11 +163,14 @@ effective generated `DIM`, and launches each case in a fresh one-rank MPI
 process:
 
 ```
-python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order normal \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-MESH-NATIVE-001 --order normal \
   --output-dir /tmp/amps-t3-qualified-normal
-python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order reverse \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-MESH-NATIVE-001 --order reverse \
   --output-dir /tmp/amps-t3-qualified-reverse
-python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order shuffle \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-MESH-NATIVE-001 --order shuffle \
   --shuffle-seed 1729 --output-dir /tmp/amps-t3-qualified-shuffle-1729
 ```
 

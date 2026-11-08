@@ -14,5 +14,6 @@ qualify the legacy multi-block GMRES assembly or particle-field feedback.
 Run with:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-PIC-FIELD-SOLVER-001
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-PIC-FIELD-SOLVER-001
 ```

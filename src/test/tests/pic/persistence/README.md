@@ -20,7 +20,8 @@ read.
 The actual production call path has a separate configured receipt:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-PIC-RESTART-NATIVE-001
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-PIC-RESTART-NATIVE-001
 ```
 
 That one-rank case saves and reads AMPS sampling and particle restart files,

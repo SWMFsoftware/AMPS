@@ -23,9 +23,12 @@ the global artifact directory.
 Run the registered suites with:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-MODEL-SEP-CORONAL-CME-001
-python3 src/test/run_tests.py --test CORE-MODEL-SEP-CORONA-SWCME-FULL-001
-python3 src/test/run_tests.py --test CORE-MODEL-SEP-CORONA-SWCME-REDUCED-001
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-MODEL-SEP-CORONAL-CME-001
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-MODEL-SEP-CORONA-SWCME-FULL-001
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-MODEL-SEP-CORONA-SWCME-REDUCED-001
 ```
 
 A complete native reduced-front campaign remains a separate model-local run:

@@ -57,16 +57,20 @@ neighbor-discovery predicate.
 From `/home/vtenishe/Mars2/AMPS`:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-MESH-MPI-OWNERSHIP-001 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-MESH-MPI-OWNERSHIP-001 \
   --output-dir /tmp/amps-t10
 ```
 
 Aliases select bounded families without adding another build owner:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-PIC-MPI-HALO-001
-python3 src/test/run_tests.py --test CORE-PIC-MPI-MIGRATION-001
-python3 src/test/run_tests.py --test CORE-PIC-MPI-RANK-INVARIANCE-001
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-PIC-MPI-HALO-001
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-PIC-MPI-MIGRATION-001
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-PIC-MPI-RANK-INVARIANCE-001
 ```
 
 The adapter enforces the required clean native preflight before each selected

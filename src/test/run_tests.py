@@ -20,6 +20,7 @@ import queue
 import random
 import signal
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -52,6 +53,10 @@ STATUSES = ("PASS", "FAIL", "SKIP", "ERROR")
 # wrong; ERROR means the harness could not make that observation reliably.
 SEVERITY = {"PASS": 0, "SKIP": 1, "FAIL": 2, "ERROR": 3}
 EXPECTED_EXIT = {"PASS": 0, "SKIP": 0, "FAIL": 1, "ERROR": 2}
+# Stream workers can finish on different threads.  Serialize complete terminal
+# lines while leaving suite logs independent so a user never sees two stream
+# status records spliced together.
+OUTPUT_LOCK = threading.Lock()
 
 
 def stamp() -> str:
@@ -76,13 +81,17 @@ def write_json(path: Path, value: Any) -> None:
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run registered AMPS core unit/module tests with portable settings")
+        description="Run registered AMPS core and application tests with portable settings")
     selection = parser.add_argument_group("selection")
     selection.add_argument("--campaign", choices=CAMPAIGNS,
                            help="test campaign (default: smoke)")
     selection.add_argument("--tier", choices=CAMPAIGNS,
                            help="backward-compatible alias for --campaign")
     selection.add_argument("--all", action="store_true", help="select every registered test")
+    selection.add_argument(
+        "--full-validation", action="store_true",
+        help=("select the complete registry and request expensive, portability, "
+              "distributed, and application qualification execution"))
     selection.add_argument("--test", action="append", default=[], metavar="ID",
                            help="select an exact test ID; may be repeated")
     selection.add_argument("--match", action="append", default=[], metavar="GLOB",
@@ -95,13 +104,17 @@ def parse_arguments() -> argparse.Namespace:
                            default="normal", help="suite and case execution order")
     selection.add_argument("--shuffle-seed", type=int, default=0, metavar="N",
                            help="deterministic seed for --order shuffle (default: 0)")
-    selection.add_argument("--list", action="store_true", help="list selected tests and exit")
+    selection.add_argument(
+        "--list", action="store_true",
+        help="list the complete registry, or an explicitly narrowed selection, by stream")
     selection.add_argument("--coverage", action="store_true",
                            help="print the component coverage inventory and exit")
 
     machine = parser.add_argument_group("machine configuration")
-    machine.add_argument("--config", action="append", type=Path, default=[], metavar="JSON",
-                         help="overlay machine configuration; may be repeated")
+    machine.add_argument(
+        "--config", action="append", type=Path, default=[], metavar="JSON",
+        help=("required machine configuration overlay; may be repeated "
+              "(profiles: test/qualification-machine/)"))
     machine.add_argument("--output-dir", metavar="PATH",
                          help="exact output directory for this run")
     machine.add_argument("--build-jobs", type=int, metavar="N")
@@ -111,7 +124,11 @@ def parse_arguments() -> argparse.Namespace:
     execution.add_argument(
         "--jobs", type=int, default=1, metavar="N",
         help=("maximum concurrently executing nonexclusive suites "
-              "(default: 1; exclusive native suites always run alone)"))
+              "inside each stream (default: 1)"))
+    execution.add_argument(
+        "--streams", type=int, default=1, metavar="N",
+        help=("maximum independently executing core/application test streams "
+              "(default: 1; checkout-mutating suites remain globally serialized)"))
     execution.add_argument("--fail-fast", action="store_true")
     execution.add_argument("--dry-run", action="store_true")
     execution.add_argument("--require-complete-coverage", action="store_true",
@@ -120,7 +137,21 @@ def parse_arguments() -> argparse.Namespace:
                            help="additional JSON report path")
     execution.add_argument("--junit", type=Path, metavar="FILE",
                            help="additional JUnit report path")
-    return parser.parse_args()
+    arguments = parser.parse_args()
+    if not arguments.config:
+        profiles = REPO_ROOT / "test" / "qualification-machine"
+        # Match the make wrapper's ``hostname -s`` convention.  The expected
+        # filename is diagnostic guidance rather than an implicit fallback:
+        # an operator must still name the reviewed profile explicitly, which
+        # prevents a costly campaign from silently using another host's tools,
+        # MPI launcher, scratch filesystem, or qualification capabilities.
+        short_hostname = socket.gethostname().split(".", 1)[0]
+        parser.error(
+            "--config is required; select a machine profile from {} "
+            "(for this host use {}, or copy and edit {})".format(
+                profiles, profiles / (short_hostname + ".json"),
+                profiles / "template.json"))
+    return arguments
 
 
 def select_tests(tests: Sequence[Mapping[str, Any]], args: argparse.Namespace) -> List[Dict[str, Any]]:
@@ -135,10 +166,17 @@ def select_tests(tests: Sequence[Mapping[str, Any]], args: argparse.Namespace) -
     requested_matches = list(getattr(args, "match", []))
     requested_components = list(getattr(args, "component", []))
     requested_cases = list(getattr(args, "case", []))
+    full_validation = bool(getattr(args, "full_validation", False))
     campaign = getattr(args, "campaign", None) or getattr(args, "tier", None) or "smoke"
     tier = getattr(args, "tier", None)
     if getattr(args, "campaign", None) and tier and campaign != tier:
         raise ManifestError("--campaign and --tier name different campaigns")
+    if full_validation and (
+            getattr(args, "all", False) or requested_tests or
+            requested_matches or requested_components or requested_cases or
+            getattr(args, "campaign", None) or tier):
+        raise ManifestError(
+            "--full-validation cannot be combined with campaign or narrowing selectors")
     if len(set(requested_cases)) != len(requested_cases):
         raise ManifestError("duplicate requested case IDs are not allowed")
     explicit_suite = bool(requested_tests or requested_matches or requested_components)
@@ -179,7 +217,15 @@ def select_tests(tests: Sequence[Mapping[str, Any]], args: argparse.Namespace) -
             if matched_aliases and all(alias in alias_cases for alias in matched_aliases):
                 alias_subset = set(
                     value for alias in matched_aliases for value in alias_cases[alias])
-        if getattr(args, "all", False):
+        if full_validation:
+            # Full validation is deliberately not a synonym for a particular
+            # campaign.  It is the union of the complete reviewed registry and
+            # also propagates qualification intent through the execution
+            # context below.  Keeping selection here in manifest order gives
+            # the final combined report the same stable evidence ordering as
+            # every other global run.
+            include = True
+        elif getattr(args, "all", False):
             include = not requested_cases or bool(owned_cases & set(requested_cases))
         elif explicit_suite:
             include = True
@@ -244,11 +290,91 @@ def order_tests(tests: Sequence[Mapping[str, Any]], order: str,
     return ordered
 
 
-def print_tests(tests: Sequence[Mapping[str, Any]]) -> None:
-    for item in tests:
-        print("{:<30} {:<12} {:<30} cases={:<3} {}".format(
-            item["id"], item["level"], item["component"],
-            len(item.get("selected_cases", item["expected_cases"])), item["description"]))
+def stream_id_for_test(test: Mapping[str, Any]) -> str:
+    """Return the stable execution-stream identity for a registered suite.
+
+    Core ownership paths use the ``src/...`` form validated by the manifest.
+    Explicitly allow-listed applications use top-level names such as
+    ``srcEnceladus`` and ``srcMoon``.  Deriving streams from that already
+    validated distinction prevents a second application registry from drifting
+    away from the manifest while keeping each application's logs independent.
+    """
+
+    component = str(test["component"])
+    return "core" if component.startswith("src/") else "application-" + component
+
+
+def group_test_streams(
+    tests: Sequence[Mapping[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Group selected suites into core and per-application streams.
+
+    Stream order is deliberately stable: core first, followed by application
+    components in lexical order.  Suite order inside each stream remains the
+    exact selected order (normal, reverse, or seeded shuffle).  Original
+    selection indices are retained so the combined report can be restored to
+    the requested logical order regardless of concurrent completion order.
+    """
+
+    grouped: Dict[str, Dict[str, Any]] = {}
+    for index, test in enumerate(tests):
+        stream_id = stream_id_for_test(test)
+        if stream_id not in grouped:
+            component = "" if stream_id == "core" else str(test["component"])
+            grouped[stream_id] = {
+                "id": stream_id,
+                "kind": "core" if stream_id == "core" else "application",
+                "component": component,
+                "tests": [],
+            }
+        grouped[stream_id]["tests"].append((index, test))
+    order = (["core"] if "core" in grouped else []) + sorted(
+        identifier for identifier in grouped if identifier != "core")
+    return [grouped[identifier] for identifier in order]
+
+
+def print_tests(
+    tests: Sequence[Mapping[str, Any]],
+    registered_tests: Optional[Sequence[Mapping[str, Any]]] = None,
+    stream_jobs: int = 1,
+    suite_jobs: int = 1,
+) -> None:
+    """Print registered applications and the exact selected stream plan."""
+
+    registry = list(registered_tests if registered_tests is not None else tests)
+    applications: Dict[str, List[Mapping[str, Any]]] = {}
+    selected_ids = {str(item["id"]) for item in tests}
+    for item in registry:
+        component = str(item["component"])
+        if not component.startswith("src/"):
+            applications.setdefault(component, []).append(item)
+    print("REGISTERED APPLICATIONS count={}".format(len(applications)))
+    for component in sorted(applications):
+        suites = applications[component]
+        selected_count = sum(
+            1 for item in suites if str(item["id"]) in selected_ids)
+        print("  {:<20} registered_suites={:<3} registered_cases={:<4} selected_suites={}".format(
+            component, len(suites),
+            sum(len(item["expected_cases"]) for item in suites), selected_count))
+
+    streams = group_test_streams(tests)
+    print("EXECUTION STREAMS selected={} concurrent_limit={} suites_per_stream={}".format(
+        len(streams), min(stream_jobs, len(streams)) if streams else 0,
+        suite_jobs))
+    for number, stream in enumerate(streams, 1):
+        indexed = stream["tests"]
+        case_count = sum(len(item.get("selected_cases", item["expected_cases"]))
+                         for _, item in indexed)
+        application = (" component={}".format(stream["component"])
+                       if stream["kind"] == "application" else "")
+        print("\nSTREAM {}/{} id={} kind={}{} suites={} cases={}".format(
+            number, len(streams), stream["id"], stream["kind"], application,
+            len(indexed), case_count))
+        for _, item in indexed:
+            print("  {:<30} {:<12} {:<30} cases={:<3} {}".format(
+                item["id"], item["level"], item["component"],
+                len(item.get("selected_cases", item["expected_cases"])),
+                item["description"]))
 
 
 def print_coverage(entries: Sequence[Mapping[str, Any]]) -> None:
@@ -682,18 +808,24 @@ def print_final_results(rows: Sequence[Mapping[str, Any]]) -> None:
 def execution_batches(
     tests: Sequence[Mapping[str, Any]],
 ) -> List[List[Tuple[int, Mapping[str, Any]]]]:
-    """Place exclusive suites behind barriers while retaining manifest order.
+    """Place one stream's exclusive suites behind order-preserving barriers."""
+
+    return indexed_execution_batches(list(enumerate(tests)))
+
+
+def indexed_execution_batches(
+    tests: Sequence[Tuple[int, Mapping[str, Any]]],
+) -> List[List[Tuple[int, Mapping[str, Any]]]]:
+    """Batch indexed suites without losing their combined-selection indices.
 
     A native AMPS adapter changes the checkout-wide generated configuration,
-    so it must neither overlap another native adapter nor a dependency-light
-    suite that could inspect the tree. Consecutive nonexclusive suites form a
-    batch that the caller may execute concurrently. Each exclusive suite is a
-    one-element batch and therefore has both a leading and trailing barrier.
+    so it remains a one-element barrier inside its stream.  ``CheckoutGate``
+    below extends that barrier across all concurrently executing streams.
     """
 
     batches: List[List[Tuple[int, Mapping[str, Any]]]] = []
     parallel: List[Tuple[int, Mapping[str, Any]]] = []
-    for index, test in enumerate(tests):
+    for index, test in tests:
         if bool(test.get("exclusive", False)):
             if parallel:
                 batches.append(parallel)
@@ -706,6 +838,71 @@ def execution_batches(
     return batches
 
 
+class CheckoutGate:
+    """Writer-priority gate protecting checkout-mutating native suites.
+
+    Nonexclusive suites enter as readers and may overlap across streams.
+    An exclusive suite enters as a writer only after every reader finishes;
+    once a writer is waiting, new readers pause so a busy core stream cannot
+    starve an application build.  This is stricter than merely placing a mutex
+    around builds: no dependency-light reader may inspect generated headers
+    while another stream changes the repository-wide AMPS configuration.
+    """
+
+    def __init__(self) -> None:
+        self._condition = threading.Condition()
+        self._readers = 0
+        self._writer = False
+        self._waiting_writers = 0
+
+    def acquire(self, exclusive: bool) -> None:
+        with self._condition:
+            if exclusive:
+                self._waiting_writers += 1
+                try:
+                    while self._writer or self._readers:
+                        self._condition.wait()
+                    self._writer = True
+                finally:
+                    self._waiting_writers -= 1
+            else:
+                while self._writer or self._waiting_writers:
+                    self._condition.wait()
+                self._readers += 1
+
+    def release(self, exclusive: bool) -> None:
+        with self._condition:
+            if exclusive:
+                if not self._writer:
+                    raise RuntimeError("exclusive checkout gate released without ownership")
+                self._writer = False
+            else:
+                if self._readers <= 0:
+                    raise RuntimeError("shared checkout gate released without ownership")
+                self._readers -= 1
+            self._condition.notify_all()
+
+
+class StreamRecorder:
+    """Publish one stream's concise terminal events and retained text log."""
+
+    def __init__(self, identifier: str, path: Path, reset: bool = True) -> None:
+        self.identifier = identifier
+        self.path = path
+        self._lock = threading.Lock()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if reset or not self.path.exists():
+            self.path.write_text("", encoding="utf-8")
+
+    def emit(self, message: str) -> None:
+        rendered = "[stream {}] {}".format(self.identifier, message)
+        with OUTPUT_LOCK:
+            print(rendered, flush=True)
+        with self._lock:
+            with self.path.open("a", encoding="utf-8", newline="\n") as stream:
+                stream.write(rendered + "\n")
+
+
 def run_batch(
     batch: Sequence[Tuple[int, Mapping[str, Any]]],
     selected_count: int,
@@ -714,20 +911,47 @@ def run_batch(
     dry_run: bool,
     jobs: int,
     fail_fast: bool,
+    gate: Optional[CheckoutGate] = None,
+    recorder: Optional[StreamRecorder] = None,
 ) -> List[Tuple[int, Dict[str, Any]]]:
     """Run one barrier-delimited batch and return results in manifest order."""
+
+    def emit(message: str) -> None:
+        if recorder is None:
+            with OUTPUT_LOCK:
+                print(message, flush=True)
+        else:
+            recorder.emit(message)
+
+    def execute(test: Mapping[str, Any], case_prefix: str = "    ",
+                start_message: str = "") -> Dict[str, Any]:
+        exclusive = bool(test.get("exclusive", False))
+        if gate is not None:
+            gate.acquire(exclusive)
+        try:
+            # Announce RUN only after the cross-stream checkout gate is held.
+            # Otherwise several queued native builds would look simultaneous
+            # even though the safety gate was correctly serializing them.
+            if start_message:
+                emit(start_message)
+            return run_one(test, config, output, dry_run, case_prefix)
+        finally:
+            if gate is not None:
+                gate.release(exclusive)
 
     workers = min(jobs, len(batch))
     if workers <= 1:
         completed = []
         for index, test in batch:
             number = index + 1
-            print("[{}/{}] RUN  {} ({})".format(
-                number, selected_count, test["id"], test["component"]), flush=True)
-            result = run_one(test, config, output, dry_run)
-            print("[{}/{}] {:5} {} {:.3f}s {}".format(
+            start_message = "[{}/{}] RUN  {} ({})".format(
+                number, selected_count, test["id"], test["component"])
+            case_prefix = ("    [stream {}] ".format(recorder.identifier)
+                           if recorder is not None else "    ")
+            result = execute(test, case_prefix, start_message)
+            emit("[{}/{}] {:5} {} {:.3f}s {}".format(
                 number, selected_count, result["status"], result["id"],
-                result["seconds"], result["message"]), flush=True)
+                result["seconds"], result["message"]))
             completed.append((index, result))
             if fail_fast and result["status"] in ("FAIL", "ERROR"):
                 break
@@ -740,13 +964,15 @@ def run_batch(
 
         def submit(index: int, test: Mapping[str, Any]) -> None:
             number = index + 1
-            print("[{}/{}] RUN  {} ({})".format(
-                number, selected_count, test["id"], test["component"]), flush=True)
+            start_message = "[{}/{}] RUN  {} ({})".format(
+                number, selected_count, test["id"], test["component"])
             # Prefix streamed case starts with the owning suite because output
             # from independent adapters may legitimately interleave.
-            case_prefix = "    [{}] ".format(test["id"])
+            case_prefix = "    [{}{}] ".format(
+                ("stream {} / ".format(recorder.identifier)
+                 if recorder is not None else ""), test["id"])
             future = executor.submit(
-                run_one, test, config, output, dry_run, case_prefix)
+                execute, test, case_prefix, start_message)
             futures[future] = (index, test)
 
         for _ in range(workers):
@@ -777,9 +1003,9 @@ def run_batch(
                         "work_dir": "", "artifact_dir": "", "cases": [],
                         "evidence": [], "metrics": {},
                     }
-                print("[{}/{}] {:5} {} {:.3f}s {}".format(
+                emit("[{}/{}] {:5} {} {:.3f}s {}".format(
                     number, selected_count, result["status"], result["id"],
-                    result["seconds"], result["message"]), flush=True)
+                    result["seconds"], result["message"]))
                 completed.append((index, result))
                 if fail_fast and result["status"] in ("FAIL", "ERROR"):
                     stop_submitting = True
@@ -791,6 +1017,183 @@ def run_batch(
                         break
                     submit(next_index, next_test)
     return sorted(completed, key=lambda item: item[0])
+
+
+def run_stream(
+    stream: Mapping[str, Any],
+    selected_count: int,
+    config: Mapping[str, Any],
+    output: Path,
+    dry_run: bool,
+    jobs: int,
+    fail_fast: bool,
+    gate: CheckoutGate,
+    stop_event: threading.Event,
+) -> Tuple[str, List[Tuple[int, Dict[str, Any]]]]:
+    """Execute one stream sequentially across its internal barrier batches."""
+
+    identifier = str(stream["id"])
+    recorder = StreamRecorder(identifier, output / "streams" / (identifier + ".log"))
+    indexed_tests = list(stream["tests"])
+    case_count = sum(len(item.get("selected_cases", item["expected_cases"]))
+                     for _, item in indexed_tests)
+    recorder.emit("START kind={} suites={} cases={} suite_jobs={}".format(
+        stream["kind"], len(indexed_tests), case_count, jobs))
+    completed: List[Tuple[int, Dict[str, Any]]] = []
+    for batch in indexed_execution_batches(indexed_tests):
+        if fail_fast and stop_event.is_set():
+            break
+        batch_results = run_batch(
+            batch, selected_count, config, output, dry_run, jobs, fail_fast,
+            gate=gate, recorder=recorder)
+        completed.extend(batch_results)
+        if fail_fast and any(
+                result["status"] in ("FAIL", "ERROR")
+                for _, result in batch_results):
+            stop_event.set()
+            break
+    stream_counts = counts(result for _, result in completed)
+    recorder.emit(
+        "END executed_suites={} pass={} fail={} skip={} error={}".format(
+            len(completed), stream_counts["PASS"], stream_counts["FAIL"],
+            stream_counts["SKIP"], stream_counts["ERROR"]))
+    return identifier, completed
+
+
+def run_test_streams(
+    streams: Sequence[Mapping[str, Any]],
+    selected_count: int,
+    config: Mapping[str, Any],
+    output: Path,
+    dry_run: bool,
+    jobs: int,
+    stream_jobs: int,
+    fail_fast: bool,
+) -> Tuple[List[Tuple[int, Dict[str, Any]]], Dict[str, List[Tuple[int, Dict[str, Any]]]]]:
+    """Run independent streams concurrently under one global checkout gate."""
+
+    if not streams:
+        return [], {}
+    gate = CheckoutGate()
+    stop_event = threading.Event()
+    workers = min(stream_jobs, len(streams))
+    by_stream: Dict[str, List[Tuple[int, Dict[str, Any]]]] = {}
+    streams_by_id = {str(stream["id"]): stream for stream in streams}
+
+    def record_stream_failure(identifier: str, error: BaseException) -> None:
+        """Convert a stream-control defect into visible combined evidence."""
+
+        recorder = StreamRecorder(
+            identifier, output / "streams" / (identifier + ".log"),
+            reset=False)
+        recorder.emit("ERROR stream scheduler failed: {}".format(error))
+        first_index, first_test = streams_by_id[identifier]["tests"][0]
+        by_stream[identifier] = [(first_index, {
+            "id": first_test["id"],
+            "component": first_test["component"],
+            "level": first_test["level"],
+            "status": "ERROR",
+            "message": one_line("stream scheduler failed: {}".format(error)),
+            "seconds": 0.0,
+            "runner": first_test["runner"],
+            "log": str(recorder.path),
+            "work_dir": "", "artifact_dir": "", "cases": [],
+            "evidence": [], "metrics": {},
+        })]
+        stop_event.set()
+
+    if workers <= 1:
+        for stream in streams:
+            if fail_fast and stop_event.is_set():
+                break
+            identifier = str(stream["id"])
+            try:
+                returned_identifier, completed = run_stream(
+                    stream, selected_count, config, output, dry_run, jobs,
+                    fail_fast, gate, stop_event)
+                if returned_identifier != identifier:
+                    raise RuntimeError(
+                        "stream identity mismatch: expected {}, got {}".format(
+                            identifier, returned_identifier))
+                by_stream[identifier] = completed
+            except BaseException as error:
+                record_stream_failure(identifier, error)
+                if isinstance(error, (KeyboardInterrupt, SystemExit)):
+                    raise
+    else:
+        with ThreadPoolExecutor(max_workers=workers,
+                                thread_name_prefix="amps-test-stream") as executor:
+            futures = {
+                executor.submit(
+                    run_stream, stream, selected_count, config, output,
+                    dry_run, jobs, fail_fast, gate, stop_event): str(stream["id"])
+                for stream in streams
+            }
+            for future in futures:
+                identifier = futures[future]
+                try:
+                    returned_identifier, completed = future.result()
+                    if returned_identifier != identifier:
+                        raise RuntimeError(
+                            "stream identity mismatch: expected {}, got {}".format(
+                                identifier, returned_identifier))
+                    by_stream[identifier] = completed
+                except Exception as error:
+                    # A stream-level scheduler defect has no trustworthy suite
+                    # identity to attach. Preserve it in the stream log and
+                    # let the missing selected suites remain visible in the
+                    # combined report's not_executed_suites inventory.
+                    record_stream_failure(identifier, error)
+    combined = [item for stream in streams
+                for item in by_stream.get(str(stream["id"]), [])]
+    return sorted(combined, key=lambda item: item[0]), by_stream
+
+
+def write_stream_reports(
+    output: Path,
+    streams: Sequence[Mapping[str, Any]],
+    by_stream: Mapping[str, Sequence[Tuple[int, Mapping[str, Any]]]],
+) -> List[Dict[str, Any]]:
+    """Write one JSON receipt per stream and return combined-report metadata."""
+
+    metadata: List[Dict[str, Any]] = []
+    for stream in streams:
+        identifier = str(stream["id"])
+        indexed_tests = list(stream["tests"])
+        completed = list(by_stream.get(identifier, []))
+        results = [result for _, result in sorted(completed, key=lambda item: item[0])]
+        selected_ids = [str(test["id"]) for _, test in indexed_tests]
+        executed_ids = {str(result["id"]) for result in results}
+        report_path = output / "streams" / (identifier + ".json")
+        log_path = output / "streams" / (identifier + ".log")
+        payload = {
+            "schema_version": 1,
+            "id": identifier,
+            "kind": stream["kind"],
+            "component": stream["component"],
+            "selection": selected_ids,
+            "selected_case_count": sum(
+                len(test.get("selected_cases", test["expected_cases"]))
+                for _, test in indexed_tests),
+            "not_executed_suites": [
+                identifier for identifier in selected_ids
+                if identifier not in executed_ids],
+            "counts": counts(results),
+            "results": results,
+            "log": str(log_path),
+        }
+        write_json(report_path, payload)
+        metadata.append({
+            "id": identifier,
+            "kind": stream["kind"],
+            "component": stream["component"],
+            "selected_suite_count": len(selected_ids),
+            "selected_case_count": payload["selected_case_count"],
+            "counts": payload["counts"],
+            "report": str(report_path),
+            "log": str(log_path),
+        })
+    return metadata
 
 
 def write_junit(path: Path, results: Sequence[Mapping[str, Any]], elapsed: float) -> None:
@@ -847,13 +1250,30 @@ def main() -> int:
     if args.jobs <= 0:
         print("configuration error: --jobs must be a positive integer", file=sys.stderr)
         return 2
+    if args.streams <= 0:
+        print("configuration error: --streams must be a positive integer", file=sys.stderr)
+        return 2
     try:
         config = load_configuration(
             REPO_ROOT, TEST_ROOT / "config" / "default.json", args.config,
             output_root=args.output_dir, build_jobs=args.build_jobs,
             mpi_ranks=args.mpi_ranks)
-        if args.campaign is None and args.tier is None:
+        # A bare --list is a registry inventory, so it must expose every
+        # registered application as well as core. Explicit selectors still
+        # narrow listing exactly as they narrow execution.
+        unfiltered_list = bool(
+            args.list and not args.full_validation and not args.all and
+            args.campaign is None and args.tier is None and not args.test and
+            not args.match and not args.component and not args.case)
+        if unfiltered_list:
+            args.all = True
+        elif (args.campaign is None and args.tier is None and
+              not args.full_validation):
             args.campaign = config["execution"]["default_campaign"]
+        # This flag is an execution request, not a machine-property setting.
+        # Adapters use it to select expensive/qualification modes while still
+        # validating real paths, tools, data packages, and physical gates.
+        config["execution"]["full_validation"] = bool(args.full_validation)
         tests = load_manifest(TEST_ROOT / "manifest.json", REPO_ROOT, TEST_ROOT)
         inventory, inventory_errors = audit_inventory(
             TEST_ROOT / "component_inventory.json", REPO_ROOT, tests)
@@ -871,7 +1291,8 @@ def main() -> int:
             return 1
         return 0
     if args.list:
-        print_tests(selected)
+        print_tests(selected, registered_tests=tests,
+                    stream_jobs=args.streams, suite_jobs=args.jobs)
         return 0
     if not selected:
         print("no tests selected", file=sys.stderr)
@@ -879,35 +1300,43 @@ def main() -> int:
 
     output = make_output_directory(config, args.output_dir)
     write_json(output / "effective-config.json", config)
-    campaign = args.campaign or args.tier or "smoke"
+    campaign = ("full-validation" if args.full_validation else
+                (args.campaign or args.tier or "smoke"))
     selected_case_ids = [
         case_id for item in selected for case_id in item["selected_cases"]]
+    streams = group_test_streams(selected)
+    stream_selection = [{
+        "id": stream["id"],
+        "kind": stream["kind"],
+        "component": stream["component"],
+        "suites": [test["id"] for _, test in stream["tests"]],
+        "case_count": sum(
+            len(test.get("selected_cases", test["expected_cases"]))
+            for _, test in stream["tests"]),
+    } for stream in streams]
     write_json(output / "selection.json", {
         "schema_version": 1,
         "campaign": campaign,
+        "full_validation": bool(args.full_validation),
+        "included_campaigns": list(CAMPAIGNS) if args.full_validation else [campaign],
         "order": args.order,
         "shuffle_seed": args.shuffle_seed,
+        "stream_jobs": args.streams,
+        "suite_jobs_per_stream": args.jobs,
+        "streams": stream_selection,
         "case_ids": selected_case_ids,
         "tests": selected,
     })
-    print("AMPS core tests: campaign={} selected_suites={} selected_cases={} order={} output={}".format(
-        campaign, len(selected), len(selected_case_ids), args.order, output))
+    print("AMPS tests: campaign={} selected_streams={} stream_jobs={} suite_jobs_per_stream={} selected_suites={} selected_cases={} order={} output={}".format(
+        campaign, len(streams), min(args.streams, len(streams)), args.jobs,
+        len(selected), len(selected_case_ids), args.order, output))
     started_utc = dt.datetime.now(dt.timezone.utc).isoformat()
     started = time.monotonic()
-    indexed_results: List[Tuple[int, Dict[str, Any]]] = []
-    for batch in execution_batches(selected):
-        batch_results = run_batch(
-            batch, len(selected), config, output, args.dry_run, args.jobs,
-            args.fail_fast)
-        indexed_results.extend(batch_results)
-        # Concurrent work already submitted in this barrier batch is allowed
-        # to finish. Fail-fast prevents scheduling subsequent batches; it
-        # cannot safely revoke already-running adapters and their evidence.
-        if (args.fail_fast and any(
-                result["status"] in ("FAIL", "ERROR")
-                for _, result in batch_results)):
-            break
+    indexed_results, results_by_stream = run_test_streams(
+        streams, len(selected), config, output, args.dry_run, args.jobs,
+        args.streams, args.fail_fast)
     results = [result for _, result in sorted(indexed_results, key=lambda item: item[0])]
+    stream_reports = write_stream_reports(output, streams, results_by_stream)
 
     elapsed = time.monotonic() - started
     totals = counts(results)
@@ -920,8 +1349,13 @@ def main() -> int:
         "elapsed_seconds": elapsed,
         "output_directory": str(output),
         "campaign": campaign,
+        "full_validation": bool(args.full_validation),
+        "included_campaigns": list(CAMPAIGNS) if args.full_validation else [campaign],
         "order": args.order,
         "shuffle_seed": args.shuffle_seed,
+        "stream_jobs": args.streams,
+        "suite_jobs_per_stream": args.jobs,
+        "streams": stream_reports,
         "selection": [item["id"] for item in selected],
         "case_selection": selected_case_ids,
         "not_executed_suites": [
@@ -949,6 +1383,10 @@ def main() -> int:
         **individual_totals))
     print("SUITE SUMMARY total={TOTAL} pass={PASS} fail={FAIL} skip={SKIP} error={ERROR} seconds={:.3f}".format(
         elapsed, **totals))
+    print("STREAM REPORTS")
+    for item in stream_reports:
+        print("  {} log={} json={}".format(
+            item["id"], item["log"], item["report"]))
     print("JSON:  {}".format(json_report))
     print("JUnit: {}".format(junit_report))
     # SKIP is visible in both reports but does not make a heterogeneous-machine

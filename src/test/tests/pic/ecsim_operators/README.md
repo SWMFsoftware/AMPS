@@ -12,7 +12,8 @@ least `p-0.2`.  Curl-curl additionally asserts the discrete
 Run through the portable global orchestrator:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-ECSIM-OPERATORS-001 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-ECSIM-OPERATORS-001 \
   --output-dir /tmp/amps-core-t8-operators
 ```
 

@@ -1,6 +1,10 @@
 SHELL := /bin/sh
 PYTHON ?= python3
-RUNNER := $(PYTHON) run_tests.py
+MACHINE ?= $(shell hostname -s)
+CONFIG ?= ../../test/qualification-machine/$(MACHINE).json
+STREAMS ?= 1
+JOBS ?= 1
+RUNNER := $(PYTHON) run_tests.py --config $(CONFIG) --streams $(STREAMS) --jobs $(JOBS)
 
 .PHONY: test smoke nightly extended list coverage strict-coverage
 

@@ -24,7 +24,8 @@ the final report through the common result protocol.
 Run the suite from the repository root:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-LEGACY-REGISTRY-AUDIT-001 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-LEGACY-REGISTRY-AUDIT-001 \
   --output-dir /tmp/amps-t11-legacy --jobs 1
 ```
 

@@ -15,7 +15,9 @@ qualification or a native Enceladus application run.
 Run it from the repository root:
 
 ```bash
-python3 src/test/run_tests.py --test APPLICATION-ENCELADUS-FORWARD-001
+python3 src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --test APPLICATION-ENCELADUS-FORWARD-001
 ```
 
 Evidence is retained below the global run's

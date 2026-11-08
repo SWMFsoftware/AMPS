@@ -43,7 +43,8 @@ The suite runner owns the generated AMPS configuration and therefore must run
 exclusively.  From the repository root:
 
 ```sh
-python3 src/test/run_tests.py --case CORE-EXOSPHERE-SPHERE-INTEGRATION-001
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --case CORE-EXOSPHERE-SPHERE-INTEGRATION-001
 ```
 
 For a manual qualification, first verify that no build/test process is using

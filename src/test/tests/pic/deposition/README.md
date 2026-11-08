@@ -17,5 +17,6 @@ implicit point current is an Esirkepov current.
 Run from the repository root:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-PIC-DEPOSITION-001
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-PIC-DEPOSITION-001
 ```

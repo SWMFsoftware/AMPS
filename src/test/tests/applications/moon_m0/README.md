@@ -11,7 +11,9 @@ The SKIPs are intentional evidence of non-execution, not failures and not
 passes. Run the boundary audit with:
 
 ```bash
-python3 src/test/run_tests.py --test APPLICATION-MOON-M0-001
+python3 src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --test APPLICATION-MOON-M0-001
 ```
 
 The authoritative local manual campaign remains:

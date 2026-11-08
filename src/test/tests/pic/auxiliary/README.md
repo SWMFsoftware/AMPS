@@ -8,7 +8,8 @@ malformed inputs are checked through typed status codes rather than accepting
 silent extrapolation.
 
 ```sh
-python3 src/test/run_tests.py --test CORE-PIC-AUXILIARY-001 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-PIC-AUXILIARY-001 \
   --output-dir /tmp/amps-core-t8-auxiliary
 ```
 

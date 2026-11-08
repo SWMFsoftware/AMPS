@@ -132,7 +132,9 @@ List both global owners without running them:
 
 ```sh
 cd /home/vtenishe/Mars2/AMPS
-python3 src/test/run_tests.py --component srcMoon --list
+python3 src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --component srcMoon --list
 ```
 
 To execute the regression owner, provide site paths in an overlay and enable
@@ -156,6 +158,19 @@ python3 src/test/run_tests.py \
   --test APPLICATION-MOON-REGRESSION-001 \
   --config /path/to/moon-machine.json
 ```
+
+The repository-wide full selector requests the local qualification mode rather
+than regression mode and selects every other registered core/application
+owner as well:
+
+```sh
+python3 src/test/run_tests.py --full-validation --jobs 8 \
+  --config test/qualification-machine/passion.json
+```
+
+This explicit request does not supply SPICE paths or missing M2/observational
+packages. Such prerequisites and the still-preflight-blocked I01-I10 owner
+remain visible as typed failures or skips in the combined report.
 
 The global adapter performs the exact root/process check, removes only root
 `build`, configures Moon/SPICE, and runs `MAKEFLAGS=-j16 make amps` before

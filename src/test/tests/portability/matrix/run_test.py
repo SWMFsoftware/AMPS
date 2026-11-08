@@ -13,6 +13,7 @@ anticipated.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
@@ -50,6 +51,35 @@ EXPECTED_CASES = [
 ]
 
 SEVERITY = {"PASS": 0, "SKIP": 1, "FAIL": 2, "ERROR": 3}
+
+
+def write_nested_machine_profile(context: Mapping[str, object], path: Path) -> None:
+    """Mirror the resolved machine settings for a nested global-runner check.
+
+    The public runner requires an explicit machine profile.  T12's strict
+    coverage identity recursively invokes that runner, so it must not evade
+    the same contract or select a hostname-specific committed file.  Only
+    configuration-schema fields are copied: transient control-plane keys such
+    as ``full_validation`` are execution intent and are not valid overlay
+    input.  Commands are already normalized argv vectors and paths are already
+    absolute, making this generated profile an exact record of the parent
+    worker rather than a second source of machine assumptions.
+    """
+
+    execution = context["execution"]
+    allowed_execution = (
+        "build_jobs", "mpi_ranks", "mpi_rank_flag",
+        "default_timeout_seconds", "keep_work", "default_campaign")
+    payload = {
+        "schema_version": 1,
+        "paths": dict(context["paths"]),
+        "tools": dict(context["tools"]),
+        "execution": {
+            key: execution[key] for key in allowed_execution if key in execution},
+        "capabilities": dict(context.get("capabilities", {})),
+    }
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8")
 
 
 def available(argv: Sequence[str]) -> bool:
@@ -494,8 +524,11 @@ def main() -> int:
 
         coverage_id = "T12-COVERAGE-STRICT-001"
         if coverage_id in requested:
+            nested_profile = work / "nested-machine-profile.json"
+            write_nested_machine_profile(context, nested_profile)
             coverage = run_command(command(context, "python") + [
-                "src/test/run_tests.py", "--coverage", "--require-complete-coverage"],
+                "src/test/run_tests.py", "--config", str(nested_profile),
+                "--coverage", "--require-complete-coverage"],
                 repo, timeout=timeout)
             passed = coverage.returncode == 0
             results[coverage_id] = case(coverage_id, "PASS" if passed else "FAIL",

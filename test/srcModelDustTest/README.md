@@ -8,7 +8,8 @@ The registered global owner is `CORE-DUST-NATIVE-001`. Run it from the
 repository root:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-DUST-NATIVE-001 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-DUST-NATIVE-001 \
   --output-dir /tmp/amps-dust-native
 ```
 

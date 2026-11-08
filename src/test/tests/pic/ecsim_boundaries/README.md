@@ -9,6 +9,7 @@ conductor closure, so that request is explicitly unsupported rather than being
 silently aliased to Dirichlet.
 
 ```sh
-python3 src/test/run_tests.py --test CORE-ECSIM-BOUNDARIES-001 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-ECSIM-BOUNDARIES-001 \
   --output-dir /tmp/amps-core-t8-boundaries
 ```

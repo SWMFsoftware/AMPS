@@ -60,8 +60,9 @@ that requires its application-level continuation fixtures.
 Run the T9 suites from the repository root:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-PIC-RESTART-001
-python3 src/test/run_tests.py --test CORE-PIC-DATAFILE-001
-python3 src/test/run_tests.py --test CORE-PIC-OUTPUT-001
-python3 src/test/run_tests.py --test CORE-PIC-RESTART-NATIVE-001
+PROFILE=test/qualification-machine/passion.json
+python3 src/test/run_tests.py --config "$PROFILE" --test CORE-PIC-RESTART-001
+python3 src/test/run_tests.py --config "$PROFILE" --test CORE-PIC-DATAFILE-001
+python3 src/test/run_tests.py --config "$PROFILE" --test CORE-PIC-OUTPUT-001
+python3 src/test/run_tests.py --config "$PROFILE" --test CORE-PIC-RESTART-NATIVE-001
 ```

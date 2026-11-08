@@ -118,7 +118,8 @@ reduction remain outside T7.
 Run the registered dependency-light suite from the repository root:
 
 ```bash
-python3 src/test/run_tests.py --test CORE-DUST-001 --jobs 1 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-DUST-001 --jobs 1 \
   --output-dir /tmp/amps-core-dust
 ```
 
@@ -127,7 +128,8 @@ AMPS rebuild is not part of this command.  Run the configured integration case
 with:
 
 ```bash
-python3 src/test/run_tests.py --test CORE-DUST-INJECTION-NATIVE-001 --jobs 1 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-DUST-INJECTION-NATIVE-001 --jobs 1 \
   --output-dir /tmp/amps-core-dust-injection
 ```
 

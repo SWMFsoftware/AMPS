@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "paths": {
+    "output_root": "/path/to/durable/amps-test-results",
+    "temporary_root": "/path/to/node-local/amps-test-work",
+    "data_root": "/path/to/amps-reference-data",
+    "spice_path": "/path/to/SPICE/cspice",
+    "spice_kernels": "/path/to/SPICE/Kernels"
+  },
+  "tools": {
+    "python": ["python3"],
+    "cxx": ["g++"],
+    "mpi_cxx": ["mpicxx"],
+    "make": ["make"],
+    "mpiexec": ["mpiexec"],
+    "fortran": ["gfortran"],
+    "clang_cxx": ["clang++"],
+    "valgrind": ["valgrind"],
+    "nvcc": ["nvcc"],
+    "openmpi_cxx": ["mpicxx.openmpi"],
+    "openmpi_exec": ["mpiexec.openmpi"],
+    "mpich_cxx": ["mpicxx.mpich"],
+    "mpich_exec": ["mpiexec.mpich"]
+  },
+  "execution": {
+    "build_jobs": 16,
+    "mpi_ranks": 4,
+    "mpi_rank_flag": "-n",
+    "default_timeout_seconds": 14400,
+    "keep_work": "failures",
+    "default_campaign": "smoke"
+  },
+  "capabilities": {
+    "moon-spice": {
+      "available": false,
+      "policy": "optional"
+    },
+    "enceladus-e3": {
+      "available": false,
+      "policy": "optional"
+    }
+  }
+}

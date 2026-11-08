@@ -156,9 +156,12 @@ the production algorithm.
 The registered portable user-facing commands are:
 
 ```text
-python3 src/test/run_tests.py --test CORE-SPUTTERING-001 --order normal
-python3 src/test/run_tests.py --test CORE-SPUTTERING-001 --order reverse
-python3 src/test/run_tests.py --test CORE-SPUTTERING-001 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-SPUTTERING-001 --order normal
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-SPUTTERING-001 --order reverse
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-SPUTTERING-001 \
   --order shuffle --shuffle-seed 707
 ```
 

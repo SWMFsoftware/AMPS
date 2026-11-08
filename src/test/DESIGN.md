@@ -104,6 +104,12 @@ status, message, cases, evidence, and optional metrics. Exit codes are fixed:
 `0` for PASS/SKIP, `1` for FAIL, and `2` for ERROR. The global runner enforces
 that correspondence.
 
+`--full-validation` is a non-narrowable execution mode over the complete
+manifest. It differs from `--all` by propagating qualification intent in the
+schema-1 context, allowing reviewed application adapters to select their long
+or qualification paths. Selection and final reports retain the flag and full
+campaign union; missing site resources keep their typed status.
+
 Before invoking an individual case, its executor emits and flushes
 `[CASE] RUN  <stable-id> <description>`. Suite adapters stream child output,
 and the global runner relays these records while preserving the complete log.
@@ -111,12 +117,14 @@ Case-start output is informational rather than evidence: the exact result
 registry and atomic JSON receipt remain authoritative if a process terminates
 between its start record and final result.
 
-Configured AMPS builds are exclusive. The implemented `--jobs N` scheduler
-executes consecutive nonexclusive suites in a bounded worker pool (default
-`N=1`) and places a leading/trailing barrier around every exclusive suite.
-Results are restored to manifest order even when completion order differs.
-This prevents checkout-wide application configuration from racing while
-allowing isolated dependency-light suites to use otherwise idle cores.
+The scheduler derives one core stream and one stream per registered
+application. `--streams N` bounds concurrently active streams; `--jobs N`
+bounds consecutive nonexclusive suites inside each stream. Configured AMPS
+builds remain globally exclusive through a writer-priority checkout gate: an
+exclusive suite waits for every nonexclusive reader in every stream and blocks
+new readers while it is waiting. Results are restored to selected order even
+when stream completion order differs. Each stream retains its own text/JSON
+receipt and the global JSON/JUnit reports remain the combined authority.
 
 ### Result and failure semantics
 

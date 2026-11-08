@@ -83,8 +83,10 @@ def main() -> int:
             any(identifier not in EXPECTED_CASES for identifier in requested)):
         raise RunnerError("invalid Enceladus E3 case selection")
     capability = context.get("capabilities", {}).get("enceladus-e3", {})
+    full_validation = bool(
+        context.get("execution", {}).get("full_validation", False))
     available = (capability if isinstance(capability, bool) else
-                 capability.get("available", False))
+                 capability.get("available", False)) or full_validation
     if not available:
         # The long campaign is deliberately opt-in because a routine worker may
         # lack a permitted MPI transport or sufficient wall time.  Publishing
@@ -98,7 +100,7 @@ def main() -> int:
         for row in rows:
             print("[CASE] RUN  {} {}".format(row["id"], reason), flush=True)
         return write_result(context, "SKIP", reason, cases=rows,
-                            metrics={"execution": "not-run"})
+            metrics={"execution": "not-run", "full_validation": full_validation})
 
     repo = Path(str(context["repo_root"])).resolve()
     artifacts = Path(str(context["artifact_dir"]))
@@ -199,7 +201,8 @@ def main() -> int:
             context, status,
             "imported {} bounded native E3 outcomes".format(len(selected_rows)),
             cases=selected_rows, evidence=evidence,
-            metrics={"local_elapsed_s": payload.get("elapsed_s")})
+            metrics={"local_elapsed_s": payload.get("elapsed_s"),
+                     "full_validation": full_validation})
     except Exception as error:
         return error_result(context, error)
     finally:

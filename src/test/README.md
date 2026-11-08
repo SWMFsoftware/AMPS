@@ -155,25 +155,78 @@ a structural receipt, not a physics-test result.
 From the AMPS repository root:
 
 ```sh
-python3 src/test/run_tests.py --campaign smoke
-python3 src/test/run_tests.py --campaign nightly
-python3 src/test/run_tests.py --campaign profile
-python3 src/test/run_tests.py --campaign nightly --jobs 4
-python3 src/test/run_tests.py --all --list
-python3 src/test/run_tests.py --coverage
+PROFILE=test/qualification-machine/passion.json
+python3 src/test/run_tests.py --config "$PROFILE" --campaign smoke
+python3 src/test/run_tests.py --config "$PROFILE" --campaign nightly
+python3 src/test/run_tests.py --config "$PROFILE" --campaign profile
+python3 src/test/run_tests.py --config "$PROFILE" --campaign nightly --jobs 4
+python3 src/test/run_tests.py --config "$PROFILE" --all --streams 3 --jobs 2
+python3 src/test/run_tests.py --config "$PROFILE" --list --streams 3
+python3 src/test/run_tests.py --config "$PROFILE" --full-validation --list
+python3 src/test/run_tests.py --config "$PROFILE" --coverage
 make -C src/test smoke
+make -C src/test STREAMS=3 JOBS=2 nightly
 make core_test_nightly
 ```
 
+`--config` is mandatory, including for `--list` and `--coverage`. Omitting it
+terminates before manifest selection and points to
+`test/qualification-machine/`, which contains the maintained
+[`passion.json`](../../test/qualification-machine/passion.json), a
+[`template.json`](../../test/qualification-machine/template.json), and profile-creation
+instructions. The make wrappers select
+`../../test/qualification-machine/$(hostname -s).json` by default; override with
+`make -C src/test CONFIG=/path/to/machine.json nightly` when needed.
+
+`--streams N` is the maximum number of independent execution streams and
+defaults to `1`. The complete registry has three streams: `core`,
+`application-srcEnceladus`, and `application-srcMoon`. `--jobs N` separately
+limits concurrent nonexclusive suites inside each active stream. For example,
+`--streams 3 --jobs 2` permits all three streams and up to two safe suites per
+stream to make progress; it does not permit native builds to race. The make
+wrapper exposes the same controls as `STREAMS=N JOBS=N`.
+
+A bare `--list` is a complete registry inventory. It first summarizes every
+registered application, then prints the core and each selected application in
+separate `STREAM` sections with exact suite/case counts. Explicit selectors
+such as `--campaign smoke --list`, `--component srcMoon --list`, or
+`--test ID --list` still narrow the selected stream plan while retaining the
+registered-application summary.
+
 `--tier` remains a backward-compatible alias for `--campaign`. The top-level
 `test_all` target depends on `core_test_nightly`. The live registry has 54
-suites and 1,135 cases; use `--list` for exact campaign memberships. The
+suites and 1,135 cases; use `--campaign NAME --list` for an exact campaign
+membership or bare `--list` for the complete registry. The
 routine `nightly` campaign intentionally remains the established 42-suite,
 375-case deterministic core selection, while `extended` owns the T11 model
 imports and bounded T12 portability matrix. The `distributed` campaign selects
 the five-case two-rank channel/RNG suite and the 16-case T10 collective
 1/2/4-rank matrix (two suites and 21 cases total).
 `--all` ignores campaign membership and selects the complete registry.
+`--full-validation` also selects the complete registry, but additionally marks
+the execution as an explicit request for expensive and qualification modes:
+the Enceladus E3 owner attempts its 10,000-step run and the Moon aggregate uses
+`--campaign-mode qualification`. The flag is intentionally incompatible with
+`--campaign`, `--tier`, `--all`, `--test`, `--match`, `--component`, and
+`--case`; a full-validation receipt can therefore never describe a narrowed
+selection. Use a machine overlay to provide actual SPICE paths, compilers,
+launchers, external datasets, and other site prerequisites. The explicit flag
+authorizes costly execution but does not fabricate missing resources or turn a
+typed FAIL/SKIP/ERROR into PASS.
+
+Run the complete execution only on an appropriately provisioned worker:
+
+```sh
+python3 src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --full-validation --streams 3 --jobs 2
+```
+
+Both `selection.json` and the final `amps-core-tests.json` record
+`full_validation: true` and the union of included campaign names. The Moon M0
+owner remains an explicit SKIP until its historical multi-build procedure is
+converted to the mandatory native-build preflight; full validation exposes
+that open gate rather than bypassing it.
 Site/nightly orchestration must preserve the native suite's exclusive barrier
 because it selects a repository-wide application.
 
@@ -181,11 +234,12 @@ The `application-smoke` campaign exposes both application trees requested for
 global orchestration:
 
 ```sh
-python3 src/test/run_tests.py --campaign application-smoke
-python3 src/test/run_tests.py --test APPLICATION-ENCELADUS-FORWARD-001
-python3 src/test/run_tests.py --test APPLICATION-ENCELADUS-NATIVE-STARTUP-001
-python3 src/test/run_tests.py --test APPLICATION-ENCELADUS-E3-001
-python3 src/test/run_tests.py --component srcMoon --list
+PROFILE=test/qualification-machine/passion.json
+python3 src/test/run_tests.py --config "$PROFILE" --campaign application-smoke
+python3 src/test/run_tests.py --config "$PROFILE" --test APPLICATION-ENCELADUS-FORWARD-001
+python3 src/test/run_tests.py --config "$PROFILE" --test APPLICATION-ENCELADUS-NATIVE-STARTUP-001
+python3 src/test/run_tests.py --config "$PROFILE" --test APPLICATION-ENCELADUS-E3-001
+python3 src/test/run_tests.py --config "$PROFILE" --component srcMoon --list
 ```
 
 `APPLICATION-ENCELADUS-FORWARD-001` executes 42 dependency-light checks.
@@ -193,8 +247,8 @@ python3 src/test/run_tests.py --component srcMoon --list
 build and imports all six pre-MPI startup/configuration gates. The separate
 13-case `APPLICATION-ENCELADUS-E3-001` owner is in `extended`, not the routine
 application-smoke campaign: it reports every identity as `SKIP` unless a
-machine overlay explicitly enables the optional `enceladus-e3` capability for
-the 10,000-step MPI run. A capability skip is visibility, not validation.
+machine overlay enables `enceladus-e3` or the operator explicitly requests
+`--full-validation`. A capability skip is visibility, not validation.
 `APPLICATION-MOON-REGRESSION-001` owns all U01-U26/I11-I20 outcomes but is a
 prerequisite SKIP unless the machine profile declares `moon-spice` and supplies
 both SPICE paths. `APPLICATION-MOON-M0-001` lists I01-I10 as typed SKIPs until
@@ -205,20 +259,22 @@ qualification.
 Run one suite or component:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-GENERAL-INPUT-001
-python3 src/test/run_tests.py --test CORE-GENERAL-MPI-001
-python3 src/test/run_tests.py --test CORE-INTERFACE-ABI-001
-python3 src/test/run_tests.py --component src/general
-python3 src/test/run_tests.py --match 'CORE-GENERAL-*'
+PROFILE=test/qualification-machine/passion.json
+python3 src/test/run_tests.py --config "$PROFILE" --test CORE-GENERAL-INPUT-001
+python3 src/test/run_tests.py --config "$PROFILE" --test CORE-GENERAL-MPI-001
+python3 src/test/run_tests.py --config "$PROFILE" --test CORE-INTERFACE-ABI-001
+python3 src/test/run_tests.py --config "$PROFILE" --component src/general
+python3 src/test/run_tests.py --config "$PROFILE" --match 'CORE-GENERAL-*'
 ```
 
 Run exact cases or deterministic isolation orders without broadening the
 selection:
 
 ```sh
-python3 src/test/run_tests.py --case INP-03
-python3 src/test/run_tests.py --case PHYS-IDF-RT-001 --order reverse
-python3 src/test/run_tests.py --all --order shuffle --shuffle-seed 1729
+PROFILE=test/qualification-machine/passion.json
+python3 src/test/run_tests.py --config "$PROFILE" --case INP-03
+python3 src/test/run_tests.py --config "$PROFILE" --case PHYS-IDF-RT-001 --order reverse
+python3 src/test/run_tests.py --config "$PROFILE" --all --order shuffle --shuffle-seed 1729
 ```
 
 `--case` may be repeated. A requested ID must have exactly one manifest owner;
@@ -231,17 +287,22 @@ Each configured AMPS application test is exclusive and is selected by its
 declared campaigns. The baseline profile can be run directly with:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-PIC-NATIVE-001
+python3 src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --test CORE-PIC-NATIVE-001
 ```
 
 Run the complete T3 dimensional matrix and its isolation orders with:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order normal \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-MESH-NATIVE-001 --order normal \
   --output-dir /tmp/amps-t3-qualified-normal
-python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order reverse \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-MESH-NATIVE-001 --order reverse \
   --output-dir /tmp/amps-t3-qualified-reverse
-python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order shuffle \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-MESH-NATIVE-001 --order shuffle \
   --shuffle-seed 1729 --output-dir /tmp/amps-t3-qualified-shuffle-1729
 ```
 
@@ -260,13 +321,15 @@ reproduce only the historical T2+T3 subset.
 Run the bounded T4/T5 baseline and compile variants with:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-PIC-MOVER-CHARGED-001 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-PIC-MOVER-CHARGED-001 \
   --test CORE-PIC-MOVER-RELATIVISTIC-001 --test CORE-PIC-GYRO-001 \
   --test CORE-PIC-BOUNDARY-001 --test CORE-PIC-INJECTION-001 \
   --test CORE-PIC-SAMPLING-001 --test CORE-PIC-COLLISION-ALGORITHMS-001 \
   --test CORE-PIC-IDF-001
 
-python3 src/test/run_tests.py --test CORE-PIC-PERIODIC-001 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-PIC-PERIODIC-001 \
   --test CORE-PIC-COLLISION-VHS-001 --test CORE-PIC-COLLISION-VSS-001 \
   --test CORE-PIC-IDF-ROTZ-Z2-001 --test CORE-PIC-IDF-ROTZ-Z10-001 \
   --test CORE-PIC-COLLISION-INDIVIDUAL-WEIGHT-001
@@ -275,7 +338,8 @@ python3 src/test/run_tests.py --test CORE-PIC-PERIODIC-001 \
 Run the bounded T6 reaction and chemistry gate with:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-CHEMICAL-SOLVER-001 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-CHEMICAL-SOLVER-001 \
   --test CORE-PHOTOCHEM-EXECUTION-001 \
   --test CORE-PHOTOCHEM-DAUGHTER-001 \
   --test CORE-CHARGE-EXCHANGE-001 \
@@ -292,7 +356,8 @@ repository-wide scheduler barriers.
 Run the implemented T7 surface, exosphere, sputtering and dust slice with:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-SURFACE-001 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-SURFACE-001 \
   --test CORE-EXOSPHERE-SOURCES-001 \
   --test CORE-EXOSPHERE-SPHERE-NATIVE-001 \
   --test CORE-SPUTTERING-001 --test CORE-DUST-001 \
@@ -314,14 +379,18 @@ restart boundaries.
 Run the bounded T8 and T9 owners with:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-ECSIM-OPERATORS-001
-python3 src/test/run_tests.py --test CORE-ECSIM-BOUNDARIES-001 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-ECSIM-OPERATORS-001
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-ECSIM-BOUNDARIES-001 \
   --test CORE-PIC-DEPOSITION-001 --test CORE-PIC-FIELD-SOLVER-001 \
   --test CORE-PIC-AUXILIARY-001 --test CORE-PIC-FIELD-LINE-001 \
   --test CORE-PIC-CALLBACK-OUTPUT-001 --jobs 4
-python3 src/test/run_tests.py --test CORE-PIC-RESTART-001 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-PIC-RESTART-001 \
   --test CORE-PIC-DATAFILE-001 --test CORE-PIC-OUTPUT-001 --jobs 3
-python3 src/test/run_tests.py --test CORE-PIC-RESTART-NATIVE-001
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-PIC-RESTART-NATIVE-001
 ```
 
 The first and last commands are exclusive configured builds and obey the
@@ -355,14 +424,17 @@ bytes, weights, time steps, and scoped scalar state. Direct multi-case C++
 execution remains useful for diagnosis, but nightly qualification does not
 depend on every process-global singleton being safely reset in one process.
 
-`--jobs N` controls suite concurrency and defaults to `1`. Only consecutive
-nonexclusive suites may overlap. An `exclusive: true` suite forms a barrier:
-all earlier work completes before it starts, it runs alone, and later work is
-not submitted until it finishes. This is required because a native suite
-selects a checkout-wide application and rebuilds `build`. With `--jobs > 1`,
-streamed case-start lines include the suite ID because independent output can
-interleave. `--fail-fast` finishes an already-submitted parallel batch and
-then prevents later batches from starting.
+`--streams N` controls concurrent core/application streams; `--jobs N`
+controls suite concurrency inside each stream. Only consecutive nonexclusive
+suites within a stream may overlap. An `exclusive: true` suite is also guarded
+by a writer-priority checkout gate shared by every stream: it starts only after
+all nonexclusive readers finish, runs without another stream inspecting or
+mutating generated configuration, and blocks new readers while waiting. This
+serializes `Config.pl` and root-build transitions without unnecessarily
+serializing independent dependency-light work. Stream and suite limits are
+independent, so operators must choose values compatible with machine CPU and
+memory capacity. `--fail-fast` lets already-running work publish its receipt
+but prevents subsequent batches from starting.
 
 The baseline native suite owns three generated-configuration adapter cases,
 three particle-buffer cases, seven packed fixed-layout cases, 19 original
@@ -431,12 +503,16 @@ concurrently.
 Each run writes:
 
 - `effective-config.json`: resolved machine settings and their source files;
-- `selection.json`: immutable selected registry entries;
+- `selection.json`: immutable selected registry entries and stream plan;
+- `streams/<stream>.log`: concise RUN/DONE history for one independent stream;
+- `streams/<stream>.json`: that stream's selection, results, counts, and
+  not-executed inventory;
 - `logs/ID.log`: complete output of each individual runner;
 - `work/ID/`: isolated transient state (moved below the configured machine
   scratch root when `temporary_root` is set);
 - `artifacts/ID/`: runner-owned evidence;
-- `amps-core-tests.json`: structured aggregate result;
+- `amps-core-tests.json`: structured aggregate result referencing every stream
+  receipt;
 - `amps-core-tests.xml`: JUnit for CI/nightly systems.
 
 After execution, the terminal prints `FINAL INDIVIDUAL TEST RESULTS` with one
@@ -445,7 +521,7 @@ produce case evidence), followed by separate individual and suite summaries.
 The JSON report exposes the same normalized view as `individual_results` and
 `individual_counts`; `counts` remains the suite-level compatibility summary.
 Thus `--all` ends with the complete case/state inventory even when earlier
-case-start output was interleaved by `--jobs`.
+case-start output was interleaved by multiple streams or suite workers.
 
 Statuses are `PASS`, `FAIL`, `SKIP`, and `ERROR`. A missing prerequisite is a
 typed `SKIP`; malformed/missing runner evidence, timeout, or harness failure is
@@ -455,8 +531,8 @@ hide a failing case behind a passing suite status or a zero exit code.
 During execution the terminal shows both suite and individual-case progress:
 
 ```text
-[2/3] RUN  CORE-GENERAL-INPUT-001 (src/general/input)
-    [CASE] RUN  INP-01 nested/named blocks, comments, continuations, and locations
+[stream core] [2/3] RUN  CORE-GENERAL-INPUT-001 (src/general/input)
+    [stream core] [CASE] RUN  INP-01 nested/named blocks, comments, continuations, and locations
 ```
 
 Each adapter streams the `[CASE] RUN` record immediately before entering the
@@ -467,7 +543,8 @@ the entire suite finishes.
 
 ## Portable machine settings
 
-No test contains an absolute installation path. Configuration precedence is:
+Test implementations contain no site installation paths. The global CLI now
+requires an explicit machine profile. Configuration precedence is:
 
 1. committed `config/default.json`;
 2. JSON files named by `AMPS_TEST_CONFIG` (colon-separated on Unix);
@@ -475,13 +552,20 @@ No test contains an absolute installation path. Configuration precedence is:
 4. scalar `AMPS_TEST_*` environment variables;
 5. command-line overrides.
 
-Copy `config/machine.example.json` outside the repository (or to the ignored
-`config/local.json`) and adjust it for a workstation or cluster:
+Copy the maintained template to a short-hostname profile and adjust it for a
+workstation or cluster:
 
 ```sh
+cp test/qualification-machine/template.json \
+  test/qualification-machine/$(hostname -s).json
 python3 src/test/run_tests.py \
-  --config src/test/config/local.json --tier nightly
+  --config test/qualification-machine/$(hostname -s).json --tier nightly
 ```
+
+The explicit `--config` option is required even if `AMPS_TEST_CONFIG` is set;
+environment-named overlays remain an additional lower-precedence layer rather
+than an implicit choice of execution machine. Repeated CLI profiles are still
+supported and merge from left to right.
 
 Relative paths resolve from the repository root. `${ENVIRONMENT_VARIABLE}` and
 `~` are expanded. Commands are argument lists and are executed without a
@@ -564,7 +648,8 @@ accepted only when every rank publishes its own PASS record and rank zero
 publishes exactly one collective summary.
 
 ```sh
-python3 src/test/run_tests.py --test CORE-MESH-MPI-OWNERSHIP-001 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-MESH-MPI-OWNERSHIP-001 \
   --output-dir /tmp/amps-t10
 ```
 
@@ -600,7 +685,8 @@ documented beside each adapter under `tests/models/` and `tests/legacy/`.
 Run the registered matrix with:
 
 ```sh
-python3 src/test/run_tests.py --test CORE-T12-PORTABILITY-001 \
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test CORE-T12-PORTABILITY-001 \
   --output-dir /tmp/amps-t12-portability --jobs 1
 ```
 
@@ -615,8 +701,9 @@ reports the real inventory exit.
 
 Machine files may override optional argv vectors using `fortran`,
 `clang_cxx`, `valgrind`, `nvcc`, `openmpi_cxx`, `openmpi_exec`, `mpich_cxx`
-and `mpich_exec`; see `config/machine.example.json`. This is the mechanism for
-site wrappers and paths—test code contains no site-specific absolute path.
+and `mpich_exec`; see `test/qualification-machine/template.json`. This is the
+mechanism for site wrappers and paths—test code contains no site-specific
+absolute path.
 On the current host the matrix is intentionally red at 10 PASS, five SKIP and
 one FAIL because strict coverage still has 2 covered and 22 incomplete
 components. See `tests/portability/matrix/README.md` for the exact boundary;
@@ -931,7 +1018,8 @@ Do not write into production sources, root `build` from a nonexclusive suite,
 a shared application output directory, `$HOME`, or a fixed `/tmp/name`. Do not
 embed `/home/...`, compiler installations, SPICE/data roots, MPI launchers, or
 site scratch paths in test code. Add a documented argv/path/capability field to
-a machine overlay when a site needs one; see `config/machine.example.json`.
+a machine overlay when a site needs one; see
+`test/qualification-machine/template.json`.
 
 `run_command()` receives argv elements, not shell syntax. Do not use pipes,
 redirections, command substitution, or environment-variable expansion as
@@ -967,22 +1055,23 @@ From the repository root, replace the example IDs and output paths below:
 
 ```sh
 # Confirm manifest loading, ownership, and exact registered case count.
-python3 src/test/run_tests.py --test CORE-EXAMPLE-001 --list
+PROFILE=test/qualification-machine/passion.json
+python3 src/test/run_tests.py --config "$PROFILE" --test CORE-EXAMPLE-001 --list
 
 # Run one case, then the complete owning suite.
-python3 src/test/run_tests.py --case EXAMPLE-IDENTITY-001 \
+python3 src/test/run_tests.py --config "$PROFILE" --case EXAMPLE-IDENTITY-001 \
   --output-dir /tmp/amps-example-one --jobs 1
-python3 src/test/run_tests.py --test CORE-EXAMPLE-001 \
+python3 src/test/run_tests.py --config "$PROFILE" --test CORE-EXAMPLE-001 \
   --output-dir /tmp/amps-example-suite --jobs 1
 
 # Prove ordering does not change case meaning or final identity accounting.
-python3 src/test/run_tests.py --test CORE-EXAMPLE-001 --order reverse \
+python3 src/test/run_tests.py --config "$PROFILE" --test CORE-EXAMPLE-001 --order reverse \
   --output-dir /tmp/amps-example-reverse --jobs 1
-python3 src/test/run_tests.py --test CORE-EXAMPLE-001 --order shuffle \
+python3 src/test/run_tests.py --config "$PROFILE" --test CORE-EXAMPLE-001 --order shuffle \
   --shuffle-seed 1729 --output-dir /tmp/amps-example-shuffle --jobs 1
 
 # Validate the control plane and structural ledgers.
-python3 src/test/run_tests.py --test CORE-HARNESS-001 \
+python3 src/test/run_tests.py --config "$PROFILE" --test CORE-HARNESS-001 \
   --output-dir /tmp/amps-example-harness --jobs 1
 python3 src/test/generate_test_catalog.py --check
 python3 src/test/validate_traceability.py \
@@ -990,7 +1079,7 @@ python3 src/test/validate_traceability.py \
 
 # Run every campaign to which the suite was added, then the full selection
 # when its cost and prerequisites make that appropriate.
-python3 src/test/run_tests.py --campaign nightly \
+python3 src/test/run_tests.py --config "$PROFILE" --campaign nightly \
   --output-dir /tmp/amps-example-nightly --jobs 8
 ```
 

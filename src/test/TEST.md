@@ -30,6 +30,59 @@ observational fit, or long scientific campaign.  Those remain the
 responsibility of `srcEarth/test`, `srcMoon/test`, `srcEnceladus/test`,
 `srcSEP/test`, `srcSEP3D/test`, and other application-level suites.
 
+### Required machine profile
+
+Every direct invocation of the global runner, including inventory-only
+`--list` and `--coverage` requests, must name at least one reviewed machine
+overlay:
+
+```sh
+python3 src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --campaign smoke
+```
+
+Omission is a command-line error and the diagnostic points to
+`test/qualification-machine/`. That directory contains the concrete
+Passion profile, a copy-and-edit template, and the profile-maintenance guide.
+The `src/test/makefile` wrappers explicitly supply the short-hostname profile
+(`../../test/qualification-machine/$(hostname -s).json`) and accept
+`CONFIG=...` for a
+different reviewed overlay. This requirement prevents old default paths,
+launcher choices, rank counts, or optional capabilities from silently
+controlling a qualification run.
+
+Commands retained later in this roadmap as dated historical evidence are
+quoted exactly as originally executed and can therefore predate the required
+option. Any new execution or reproduction of those commands must add
+`--config /path/to/reviewed-machine.json`.
+
+### Execution streams and concurrency controls
+
+The global runner separates the complete registry into `core`,
+`application-srcEnceladus`, and `application-srcMoon`. Use `--streams N` to
+bound concurrently active streams and `--jobs N` to bound nonexclusive suites
+inside each stream:
+
+```sh
+python3 src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --all --streams 3 --jobs 2
+```
+
+These limits are independent; their product is only an upper bound because
+exclusive suites and short streams reduce available parallelism. A global
+writer-priority checkout gate serializes every `exclusive: true` suite against
+all other suites, including readers in another application stream, so no two
+generated configurations or root builds can overlap. Each stream publishes
+its own text and JSON receipt below `<output>/streams/`; the combined JSON and
+JUnit reports remain authoritative for the full invocation.
+
+A bare `--list` prints the complete registry. It includes registered-
+application totals and separate sections for each selected stream. Adding an
+explicit campaign, component, test, glob, or case selector narrows those
+sections without hiding the registered-application summary.
+
 ## 2. Current baseline
 
 As of 2026-11-08 the live global registry contains 54 executable suites and
@@ -164,7 +217,8 @@ registration, or linker archive member cannot silently reduce coverage.
 
 No test may contain a user name, home directory, fixed installation prefix,
 MPI launcher string, compiler path, or scratch path.  Those settings belong in
-layered machine profiles such as `src/test/config/machine.example.json`.
+layered machine profiles such as
+`test/qualification-machine/template.json`.
 
 Profiles must support:
 
@@ -222,10 +276,19 @@ The schema currently accepts `smoke`, `nightly`, `profile`, `extended`,
 suites remain empty selections, not evidence that their target coverage has
 been implemented.
 
-Nonexclusive suites may run concurrently under `--jobs`.  Every configured
-native profile remains behind a leading and trailing exclusive barrier.  Cases
-that share one generated configuration are compiled once and selected from one
-executable. The particle-buffer and physics families now belong to
+The global `--full-validation` execution key is the non-narrowable union of
+all registered campaigns. In addition to selecting every suite, it propagates
+qualification intent to application adapters: Enceladus E3 is activated and
+Moon selects its qualification mode. Site resources are still validated, and
+missing tools/data plus unfinished qualification gates retain typed outcomes.
+The selection and final result JSON explicitly record this mode so a webpage
+generator can distinguish it from ordinary `--all` registry execution.
+
+Nonexclusive suites may run concurrently inside each stream under `--jobs`,
+and independent streams may overlap under `--streams`. Every configured
+native profile remains behind both its stream barrier and the global exclusive
+checkout gate. Cases that share one generated configuration are compiled once
+and selected from one executable. The particle-buffer and physics families now belong to
 `CORE-PIC-NATIVE-001`; the old suite IDs are selection aliases only. Exact
 case selection must preserve those individual identities without introducing
 an unsafe cross-suite build cache.
