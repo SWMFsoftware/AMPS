@@ -22,8 +22,8 @@
     {
       "component": "src/meshAMR",
       "status": "partial",
-      "test_ids": ["CORE-MESH-NATIVE-001"],
-      "remaining": "T3 covers one-rank Cartesian 1-D/2-D/3-D tree topology, exact-boundary search, same-level and 2:1 neighbors, split/coarsen callbacks and data conservation, adaptation cycles, cut-cell geometry, sparse NASTRAN round trips, and 3-D interpolation/cache invalidation. Distributed owner/ghost exchange, restart, nonmanifold/large surface fixtures, non-Cartesian coordinates, and deeper imbalance scenarios remain open."
+      "test_ids": ["CORE-MESH-NATIVE-001", "CORE-MESH-MPI-OWNERSHIP-001"],
+      "remaining": "T3 covers one-rank Cartesian topology/adaptation/cut-cell/interpolation. T10 adds replicated 1/2/4-rank owner maps, unique local load lists, received ghosts, weighted block/particle repartition, distributed cut-cell receipts, and same/changed-decomposition particle restart. Nonmanifold/large surface fixtures, non-Cartesian coordinates, deeper imbalance scenarios, and mesh-topology file restart remain open."
     },
     {
       "component": "src/models/charge_exchange",
@@ -100,8 +100,8 @@
     {
       "component": "src/pic",
       "status": "partial",
-      "test_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-PERIODIC-001", "CORE-PIC-COLLISION-VHS-001", "CORE-PIC-COLLISION-VSS-001", "CORE-PIC-IDF-ROTZ-Z2-001", "CORE-PIC-IDF-ROTZ-Z10-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001", "CORE-MESH-NATIVE-001", "CORE-PIC-AUXILIARY-001", "CORE-PIC-DEPOSITION-001", "CORE-PIC-FIELD-LINE-001", "CORE-PIC-CALLBACK-OUTPUT-001", "CORE-PIC-RESTART-001", "CORE-PIC-DATAFILE-001", "CORE-PIC-OUTPUT-001"],
-            "remaining": "T2-T5 qualify the bounded record, AMR, mover, boundary, injection, sampling, collision and internal-energy contracts recorded in their checkpoints. T8 adds production-linked CIC deposition/continuity, ray/column/background helpers, field-line interpolation/exchange/split/repartition, and callback/trajectory formatting. T9 adds the AMPSPF1 restart envelope, atomic publication, ABI/layout/CRC rejection, deterministic canonical continuation fixtures, changed-decomposition data chunks and Tecplot layout checks. Remaining work includes CUDA/device diagnostics, semantic reduction of opaque extension fields, coarse/fine mover crossing, production circle/rotation-body/Nastran and diffuse boundaries, distributed injection and ownership, histogram policy, a full native AMPS continuation fixture including application callback state, migration of the inventoried legacy AMR/background/trajectory formats, MPI ownership/migration, application-specific stopping tables, Yinsi individual weights, a selected unequal cross-species Zrot law, and independently implemented/qualified VT/VV relaxation."
+      "test_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-PERIODIC-001", "CORE-PIC-COLLISION-VHS-001", "CORE-PIC-COLLISION-VSS-001", "CORE-PIC-IDF-ROTZ-Z2-001", "CORE-PIC-IDF-ROTZ-Z10-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001", "CORE-MESH-NATIVE-001", "CORE-PIC-AUXILIARY-001", "CORE-PIC-DEPOSITION-001", "CORE-PIC-FIELD-LINE-001", "CORE-PIC-CALLBACK-OUTPUT-001", "CORE-PIC-RESTART-001", "CORE-PIC-DATAFILE-001", "CORE-PIC-OUTPUT-001", "CORE-MESH-MPI-OWNERSHIP-001"],
+            "remaining": "T2-T5 qualify bounded record, AMR, mover, boundary, injection, sampling, collision and internal-energy contracts. T8 adds deposition/field/callback contracts; T9 adds checked persistence. T10 adds production 1/2/4-rank owner-to-ghost halos, send masks, block/particle serialization and exact-once migration, load repartition, periodic/loss handling, restart across decomposition changes, and rank-invariant global number/weight/mass/momentum/energy/rate checksums. Remaining work includes CUDA/device diagnostics, semantic reduction of opaque extension fields, coarse/fine mover crossing, additional production surfaces/diffuse laws, distributed source injection, histogram policy, full callback-aware continuation, migration of legacy formats, application stopping tables, Yinsi individual weights, unequal cross-species Zrot, and VT/VV relaxation."
     },
     {
       "component": "src/pic/ecsim",
@@ -117,15 +117,15 @@
     },
     {
       "component": "src/pic/mesh",
-      "status": "planned",
-      "test_ids": [],
-      "remaining": "Domain-boundary collectors and mesh/PIC ownership integration."
+      "status": "partial",
+      "test_ids": ["CORE-MESH-MPI-OWNERSHIP-001"],
+      "remaining": "T10 covers native owner/ghost integration, weighted migration, and distributed cut-cell consistency. Domain-boundary collector reductions and collector-specific physical field fixtures remain open."
     },
     {
       "component": "src/pic/parallel",
-      "status": "planned",
-      "test_ids": [],
-      "remaining": "One-, two-, and four-rank halo/affinity behavior with received-ghost verification."
+      "status": "partial",
+      "test_ids": ["CORE-MESH-MPI-OWNERSHIP-001"],
+      "remaining": "T10 covers 1/2/4-rank Replace/Add halo transport, send-halo/mask geometry, received ghosts, exact-once migration, CPU-list discovery, and invariant reductions. Scheduler/cgroup-dependent affinity mutation and ECSIM remote-stencil consumption remain open."
     },
     {
       "component": "src/pic/units",

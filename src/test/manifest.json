@@ -1223,6 +1223,76 @@
       "exclusive": true
     },
     {
+      "id": "CORE-MESH-MPI-OWNERSHIP-001",
+      "aliases": [
+        "CORE-PIC-MPI-HALO-001",
+        "CORE-PIC-MPI-MIGRATION-001",
+        "CORE-PIC-MPI-RANK-INVARIANCE-001"
+      ],
+      "alias_cases": {
+        "CORE-PIC-MPI-HALO-001": [
+          "PIC-MPI-HALO-REPLACE-001",
+          "PIC-MPI-HALO-ADD-001",
+          "PIC-MPI-SEND-MASK-001",
+          "PIC-MPI-BLOCK-PACK-001"
+        ],
+        "CORE-PIC-MPI-MIGRATION-001": [
+          "PIC-MPI-PARTICLE-EXCHANGE-001",
+          "PIC-MPI-PARTICLE-REPARTITION-001",
+          "PIC-MPI-OUTER-LOSS-001",
+          "PIC-MPI-PERIODIC-EXCHANGE-001"
+        ],
+        "CORE-PIC-MPI-RANK-INVARIANCE-001": [
+          "PIC-MPI-AFFINITY-DIAGNOSTICS-001",
+          "PIC-MPI-RESTART-SAME-001",
+          "PIC-MPI-RESTART-REPARTITION-001",
+          "PIC-MPI-RANK-INVARIANCE-001"
+        ]
+      },
+      "component": "src/meshAMR",
+      "level": "integration",
+      "tiers": ["nightly", "profile", "extended", "distributed"],
+      "runner": "tests/pic/mpi_distributed/run_test.py",
+      "description": "Collective 1/2/4-rank AMR ownership, owner-to-ghost halo, send-mask, block/particle migration, periodic/loss, restart-decomposition, and rank-invariant global-state matrix",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": [
+          "Config.pl",
+          "input/test/core-mpi.input",
+          "input/test/core-mpi-periodic.input",
+          "test/srcCoreMPITests/main.cpp",
+          "src/pic/parallel/halo_sync.cpp",
+          "src/pic/parallel/init_send_halo.cpp",
+          "src/pic/pic_block_send_mask.cpp",
+          "src/pic/pic_parallel.cpp",
+          "src/pic/pic_move_blocks.cpp",
+          "src/meshAMR/meshAMRgeneric.h"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "MESH-MPI-OWNER-MAP-001",
+        "MESH-MPI-OWNER-GHOST-001",
+        "MESH-MPI-LOAD-REPARTITION-001",
+        "MESH-MPI-CUTCELL-CONSISTENCY-001",
+        "PIC-MPI-HALO-REPLACE-001",
+        "PIC-MPI-HALO-ADD-001",
+        "PIC-MPI-SEND-MASK-001",
+        "PIC-MPI-BLOCK-PACK-001",
+        "PIC-MPI-PARTICLE-EXCHANGE-001",
+        "PIC-MPI-PARTICLE-REPARTITION-001",
+        "PIC-MPI-OUTER-LOSS-001",
+        "PIC-MPI-PERIODIC-EXCHANGE-001",
+        "PIC-MPI-AFFINITY-DIAGNOSTICS-001",
+        "PIC-MPI-RESTART-SAME-001",
+        "PIC-MPI-RESTART-REPARTITION-001",
+        "PIC-MPI-RANK-INVARIANCE-001"
+      ],
+      "timeout_seconds": 10800,
+      "mpi_ranks": 4,
+      "exclusive": true
+    },
+    {
       "id": "CORE-MESH-NATIVE-001",
       "aliases": ["CORE-MESH-TOPOLOGY-001", "CORE-MESH-ADAPTATION-001", "CORE-MESH-CUTCELL-001", "CORE-PIC-INTERPOLATION-001"],
       "alias_cases": {

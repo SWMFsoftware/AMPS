@@ -31,8 +31,8 @@ responsibility of `srcEarth/test`, `srcMoon/test`, `srcEnceladus/test`,
 
 ## 2. Current baseline
 
-As of 2026-11-07 the live global registry contains 31 executable suites and
-311 registered individual cases. The historical particle-buffer, physics,
+As of 2026-11-07 the live global registry contains 42 executable suites and
+375 registered individual cases. The historical particle-buffer, physics,
 species, packed-fixed-layout, and species-global weight/time family IDs remain
 selection aliases of canonical native owners, not extra executable suites.
 Configured owners select mutually exclusive generated applications and each
@@ -44,13 +44,15 @@ performs its required clean rebuild. The current registry groups are:
 | General/core dependency-light | 9 | 56 | Input, containers, numerics, RNG, MPI channels, logger, units, species/radiation and interface ABI |
 | Chemical solver | 1 | 7 | Independent finite-network decay, reversible, stiff, chain, conservation and invalid-network fixtures |
 | T7 dependency-light physics | 3 | 26 | Spherical surface/exosphere kernels, sputtering source laws/ledgers, and dust laws/size-group split-merge |
-| Exclusive configured profiles | 17 | 211 | Native PIC/movers/collisions/IDF/layout/weight modes, mesh dimensions, reaction profiles, and T7 exosphere/dust applications |
+| T8/T9 dependency-light numerics/data | 9 | 42 | Boundary/deposition/field/field-line/callback kernels plus checked restart/data/output formats |
+| Exclusive configured profiles | 19 | 233 | Native PIC/movers/collisions/IDF/layout/weight modes, mesh dimensions, reaction profiles, T7 applications, ECSIM operators, and the T10 rank matrix |
 
-The 17-suite `profile` campaign is the configured-profile group above. Its
-211 cases include the 93-case baseline owner, the historical T2 variants, the
+The 19-suite `profile` campaign is the configured-profile group above. Its
+233 cases include the 94-case baseline owner, the historical T2 variants, the
 58-case T3 dimensional mesh matrix, T4/T5 compile modes, T6 reactions, and
-three T7 one-rank applications. `src/test/manifest.json` is authoritative for
-the exact suite/case membership and aliases.
+three T7 one-rank applications, the T8 periodic ECSIM operator profile, and
+T10's 16-case collective rank matrix. `src/test/manifest.json` is
+authoritative for the exact suite/case membership and aliases.
 
 The component ledger contains 24 components. The harness entry remains explicitly
 `partial`; registered or passing cases are not evidence of complete AMPS
@@ -67,22 +69,26 @@ stage's scope.
 The following limitations must remain visible until their stages close:
 
 - `smoke` selects eight dependency-light suites (51 cases), `nightly` and
-  `--all` select all 31 current suites (311 cases), `profile` selects 17
-  exclusive native owners (211 cases), `extended` selects 14 suites (193
-  cases), and `distributed` selects only the five-case MPI channel/RNG family;
-  the harness must assert these live registry sets;
-- all current native physics cases are one-rank tests;
-- the current Larsen--Borgnakke RT occurrence test qualifies the implemented
-  hard-coded `Zrot=5`, not sensitivity to configured `RotationZnumber`;
+  `--all` select all 42 current suites (375 cases), `profile` selects 19
+  exclusive native owners (233 cases), `extended` selects 25 suites (257
+  cases), and `distributed` selects the five-case MPI channel/RNG family plus
+  T10's 16-case 1/2/4-rank matrix; the harness asserts these live sets and the
+  three T10 alias mappings;
+- physical-process native fixtures remain one-rank unless their own contract
+  says otherwise; T10 qualifies distributed communication/ownership, not
+  distributed chemistry, collisions, sources, or feedback;
+- configured `Zrot=2/5/10` occurrence sensitivity is covered, but an unequal
+  rotating cross-species mixing law remains undefined and unqualified;
 - the production VT path declares itself unverified and must not be reported
   as covered;
-- current parent photodecay does not qualify the full configured chemistry
-  processor, daughter insertion, or statistical-weight bookkeeping;
-- current sphere testing uses a test callback and does not qualify every
-  production surface-interaction callback;
+- T6 qualifies one configured individual-weight H2O daughter insertion, not a
+  runtime multi-parent network or MPI/threaded processing;
+- T7 qualifies bounded spherical exosphere/surface modes, not every target-
+  specific source, nonspherical callback, or distributed source reduction;
 - CUDA/device invalid-state diagnostics, semantic reduction of opaque
-  application extension bytes, restart, distributed ownership, ECSIM, gyro
-  motion, and most model libraries remain open.
+  application extension bytes, mesh-topology/application-callback restart,
+  ECSIM remote-stencil consumption, hybrid-thread ownership, gyro motion, and
+  most application/model-library qualification remain open.
 
 The authoritative live registry and coverage state remain
 `src/test/manifest.json` and `src/test/component_inventory.json`.  This
@@ -911,18 +917,22 @@ with external libraries remain open; MPI ownership/decomposition belongs to
 T10. The legacy-compatibility switch defaults on to preserve existing AMPS
 runs and can be disabled when an enveloped restart is required.
 
-### Stage T10 -- MPI ownership, halos, block and particle migration
+### Stage T10 -- MPI ownership, halos, block and particle migration (implemented)
 
-Proposed suites:
+Registered suite selectors:
 
 - `CORE-MESH-MPI-OWNERSHIP-001`;
 - `CORE-PIC-MPI-HALO-001`;
 - `CORE-PIC-MPI-MIGRATION-001`;
 - `CORE-PIC-MPI-RANK-INVARIANCE-001`.
 
-Required matrix: one, two and four ranks for the same manufactured domain.
+The four stable IDs map to one exclusive build owner, so selecting aliases
+does not trigger duplicate checkout-wide rebuilds. The owner builds the
+nonperiodic `test/core-mpi` and periodic `test/core-mpi-periodic` profiles and
+runs every selected case at one, two and four ranks on the same manufactured
+domain/topology for that profile.
 
-Required cases:
+Implemented cases:
 
 - deterministic owner maps and unique block load lists;
 - Replace/Add halo operations at faces, edges and corners;
@@ -937,6 +947,20 @@ Required cases:
 - restart under the same and a changed decomposition;
 - rank-count-invariant global number, weight, mass, momentum, energy, sampled
   rates and checksums where deterministic ordering permits exact comparison.
+
+The concrete registry has 16 cases. `MESH-MPI-OWNER-*` validates replicated
+`Thread` ownership separately from the current rank's intrusive load list and
+received-ghost lists. `PIC-MPI-HALO-*` checks production full-block Replace/Add
+transport, while `PIC-MPI-SEND-MASK-001` independently inventories geometric
+contacts and covers face/edge/corner plus same/coarse-fine masks across the
+matrix. Block pack/unpack, ghost-to-owner particle exchange, weighted block
+repartition, periodic wrapping, outer loss, affinity discovery, restart, and
+global invariants each have separate stable cases.
+
+The affinity case intentionally validates CPU-list parsing and rank-local
+online-CPU discovery without changing process affinity. Actual affinity
+mutation is scheduler/cgroup policy and remains a portable-machine gap rather
+than a test that can safely widen a nightly job's allocation.
 
 Acceptance gate: every rank publishes its local assertions; no test relies on
 rank-zero summaries alone; the complete rank matrix passes without duplicate

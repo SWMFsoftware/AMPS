@@ -173,6 +173,34 @@ def test_selection_contract(context: Dict) -> None:
     assert len(selected[0]["selected_cases"]) == 36
     assert all(value.startswith(("PHYS-", "T4-"))
                for value in selected[0]["selected_cases"])
+
+    # T10 deliberately exposes three user-facing family selectors while one
+    # exclusive owner performs the two checkout-wide builds. Pin each exact
+    # alias mapping here so a manifest edit cannot silently broaden an alias,
+    # omit a collective case, or create a second native build owner.
+    mpi_alias_cases = {
+        "CORE-PIC-MPI-HALO-001": [
+            "PIC-MPI-HALO-REPLACE-001", "PIC-MPI-HALO-ADD-001",
+            "PIC-MPI-SEND-MASK-001", "PIC-MPI-BLOCK-PACK-001"],
+        "CORE-PIC-MPI-MIGRATION-001": [
+            "PIC-MPI-PARTICLE-EXCHANGE-001",
+            "PIC-MPI-PARTICLE-REPARTITION-001",
+            "PIC-MPI-OUTER-LOSS-001", "PIC-MPI-PERIODIC-EXCHANGE-001"],
+        "CORE-PIC-MPI-RANK-INVARIANCE-001": [
+            "PIC-MPI-AFFINITY-DIAGNOSTICS-001",
+            "PIC-MPI-RESTART-SAME-001",
+            "PIC-MPI-RESTART-REPARTITION-001",
+            "PIC-MPI-RANK-INVARIANCE-001"],
+    }
+    for alias, expected in mpi_alias_cases.items():
+        mpi_alias_args = argparse.Namespace(
+            test=[alias], match=[], component=[], all=False, case=[],
+            campaign="smoke", tier=None)
+        selected = module.select_tests(tests, mpi_alias_args)
+        assert [item["id"] for item in selected] == [
+            "CORE-MESH-MPI-OWNERSHIP-001"]
+        assert selected[0]["selected_cases"] == expected
+
     legacy_tier_args = argparse.Namespace(
         test=[], match=[], component=[], all=False, case=[],
         campaign=None, tier="smoke")
@@ -180,10 +208,13 @@ def test_selection_contract(context: Dict) -> None:
 
     # Campaign names are operational contracts, not aliases for identical
     # selections. Smoke is dependency-light, nightly is the complete current
-    # deterministic registry, distributed selects the two-rank channel suite,
-    # extended adds the optional-provider/interface module to the configured
-    # native applications, and profile selects only the clean native profile
-    # matrix.  T3's mesh owner performs three serial DIM builds internally.
+    # deterministic registry, distributed selects both the two-rank channel
+    # suite and T10's 1/2/4-rank collective matrix, extended adds the optional-
+    # provider/interface module to the configured native applications, and
+    # profile selects only clean native profiles. T3's mesh owner performs
+    # three serial DIM builds internally; T10 performs its rank matrix inside
+    # one exclusive owner so the campaign never races two checkout-wide
+    # Config.pl/build transitions.
     # Pinning these complete sets makes a campaign-membership edit deliberate:
     # a new suite cannot silently introduce an MPI launch or AMPS rebuild into
     # machine bring-up, nor disappear from the routine nightly campaign.
@@ -219,12 +250,14 @@ def test_selection_contract(context: Dict) -> None:
         "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001",
         "CORE-PHOTOCHEM-DAUGHTER-001",
         "CORE-T6-REACTIONS-NATIVE-001", "CORE-MESH-NATIVE-001",
+        "CORE-MESH-MPI-OWNERSHIP-001",
         "CORE-ECSIM-OPERATORS-001", "CORE-ECSIM-BOUNDARIES-001",
         "CORE-PIC-DEPOSITION-001", "CORE-PIC-FIELD-SOLVER-001",
         "CORE-PIC-AUXILIARY-001", "CORE-PIC-FIELD-LINE-001",
         "CORE-PIC-CALLBACK-OUTPUT-001", "CORE-PIC-RESTART-001",
         "CORE-PIC-DATAFILE-001", "CORE-PIC-OUTPUT-001"}
-    assert campaign_ids("distributed") == {"CORE-GENERAL-MPI-001"}
+    assert campaign_ids("distributed") == {
+        "CORE-GENERAL-MPI-001", "CORE-MESH-MPI-OWNERSHIP-001"}
     assert campaign_ids("extended") == {
         "CORE-INTERFACE-ABI-001", "CORE-PIC-NATIVE-001",
         "CORE-EXOSPHERE-SPHERE-NATIVE-001",
@@ -233,8 +266,9 @@ def test_selection_contract(context: Dict) -> None:
         "CORE-PIC-IDF-ROTZ-Z10-001", "CORE-PIC-SPLIT-MERGE-001",
         "CORE-PHOTOCHEM-DAUGHTER-001",
         "CORE-T6-REACTIONS-NATIVE-001", "CORE-DUST-NATIVE-001",
-        "CORE-DUST-INJECTION-NATIVE-001",
-        "CORE-MESH-NATIVE-001", "CORE-ECSIM-OPERATORS-001",
+        "CORE-DUST-INJECTION-NATIVE-001", "CORE-MESH-MPI-OWNERSHIP-001",
+        "CORE-MESH-NATIVE-001",
+        "CORE-ECSIM-OPERATORS-001",
         "CORE-ECSIM-BOUNDARIES-001", "CORE-PIC-DEPOSITION-001",
         "CORE-PIC-FIELD-SOLVER-001", "CORE-PIC-AUXILIARY-001",
         "CORE-PIC-FIELD-LINE-001", "CORE-PIC-CALLBACK-OUTPUT-001",
@@ -253,7 +287,8 @@ def test_selection_contract(context: Dict) -> None:
         "CORE-PHOTOCHEM-DAUGHTER-001",
         "CORE-T6-REACTIONS-NATIVE-001", "CORE-DUST-NATIVE-001",
         "CORE-DUST-INJECTION-NATIVE-001",
-        "CORE-MESH-NATIVE-001", "CORE-ECSIM-OPERATORS-001"}
+        "CORE-MESH-NATIVE-001", "CORE-MESH-MPI-OWNERSHIP-001",
+        "CORE-ECSIM-OPERATORS-001"}
 
     unknown_case_args = argparse.Namespace(
         test=[], match=[], component=[], all=False, case=["UNKNOWN-CASE-001"],

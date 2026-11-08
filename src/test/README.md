@@ -157,10 +157,11 @@ make core_test_nightly
 ```
 
 `--tier` remains a backward-compatible alias for `--campaign`. The top-level
-`test_all` target depends on `core_test_nightly`. The live T9 checkpoint has
-41 suites and 359 cases; use `--list` for exact campaign memberships because
-later roadmap stages extend those sets. The
-`distributed` campaign retains the five-case two-rank MPI channel/RNG suite.
+`test_all` target depends on `core_test_nightly`. The live T10 registry has
+42 suites and 375 cases; use `--list` for exact campaign memberships because
+later roadmap stages extend those sets. The `distributed` campaign selects
+the five-case two-rank channel/RNG suite and the 16-case T10 collective
+1/2/4-rank matrix (two suites and 21 cases total).
 `--all` ignores campaign membership and selects the complete registry.
 Site/nightly orchestration must preserve the native suite's exclusive barrier
 because it selects a repository-wide application.
@@ -347,8 +348,9 @@ hard-sphere scattering; populated-cell NTC collision rates; Larsen-Borgnakke
 rotational/vibrational laws and RT equilibration; neutral Simple/Boris motion;
 and analytic spherical-surface reflection. Its real three-dimensional AMR
 fixture allocates particle populations in owner cells but remains fixed at one
-MPI rank. Distributed ownership/migration evidence belongs in later
-collective suites. Exact equations, seeds, sample counts, tolerances,
+MPI rank. T10 supplies its separate collective ownership/migration matrix;
+that evidence does not retroactively make the baseline physics fixture
+distributed. Exact equations, seeds, sample counts, tolerances,
 limitations, and case IDs are documented in
 `test/srcCoreUnitTests/README.md`; the legacy GoogleTest mapping is in
 `SRC_UNIT_TESTS_MIGRATION.md`.
@@ -512,6 +514,28 @@ The mesh input decks match the repository's existing `*.input` ignore rule.
 Codex does not modify Git control files; a human preparing a commit must use an
 explicit force-add for `input/test/core-mesh-{1d,2d,3d}.input` so the three
 configured T3 profiles are not omitted.
+
+### T10 collective MPI matrix
+
+`CORE-MESH-MPI-OWNERSHIP-001` is the exclusive owner of 16 collective cases.
+Its aliases `CORE-PIC-MPI-HALO-001`, `CORE-PIC-MPI-MIGRATION-001`, and
+`CORE-PIC-MPI-RANK-INVARIANCE-001` select bounded subsets without duplicate
+builds. The owner retains nonperiodic and periodic executables, then launches
+every selected case independently at 1, 2, and 4 ranks. A matrix element is
+accepted only when every rank publishes its own PASS record and rank zero
+publishes exactly one collective summary.
+
+```sh
+python3 src/test/run_tests.py --test CORE-MESH-MPI-OWNERSHIP-001 \
+  --output-dir /tmp/amps-t10
+```
+
+The two input decks are ignored by the repository's broad `*.input` rule; a
+human preparing a commit must explicitly force-add
+`input/test/core-mpi.input` and `input/test/core-mpi-periodic.input`. The
+fixture contract, independent equations, exact case inventory, qualified
+boundary, and evidence files are documented in
+`test/srcCoreMPITests/README.md`.
 
 ## Add an individual test
 

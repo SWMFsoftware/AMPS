@@ -2,6 +2,56 @@
 
 Last updated: 2026-11-07
 
+## T10 checkpoint
+
+T10 is implemented and qualified for its bounded CPU, three-dimensional
+Cartesian, fixed-weight neutral scope. The live registry contains 42 suites
+and 375 cases. Structural traceability passes with 24 component areas, 209
+production translation units, 194 public contracts, and 24 configuration
+contracts. The new exclusive owner contributes 16 collective cases, each run
+independently at 1, 2, and 4 MPI ranks; all 48 matrix elements require a local
+PASS record from every participating rank rather than accepting rank-zero
+output alone.
+
+| Area | Implemented and directly tested | State / remaining boundary |
+| --- | --- | --- |
+| Ownership/ghosts | Replicated `Thread` owner map, exact current-rank load-list membership, allocated received-ghost lists, deterministic ownership checksums | PASS at 1/2/4 ranks; remote intrusive owner lists are intentionally not traversed because their links are reused by received-ghost lists |
+| Halos/masks | Full-block center-node Replace/Add, actual owner/destination send relations, face/edge/corner and same/coarse-fine masks | PASS at 1/2/4 ranks on the bounded nonuniform 2:1 fixture; ECSIM remote-stencil consumption remains open |
+| Serialization/migration | Associated center/corner data and particle pack/unpack, exact-once ghost-to-owner exchange, weighted block/particle repartition | PASS with exact data and particle identity checks; opaque-field semantic reduction and distributed source injection remain open |
+| Boundaries/geometry | Periodic ghost-to-real transfer, outer loss, distributed cut-cell ray hit identities | PASS for Cartesian CPU profiles; non-Cartesian and larger/nonmanifold surfaces remain open |
+| Restart/invariance | Same and changed decomposition particle restart; invariant count, physical weight/mass, momentum, kinetic energy, sampled affine rate and commutative checksum | PASS at 1/2/4 ranks; mesh-topology file restart, callback schemas and hybrid per-thread RNG state remain open |
+| Portability | CPU-list parsing and rank-local online-CPU discovery | PASS without mutating process affinity; scheduler/cgroup-authorized affinity mutation is deliberately not claimed |
+
+Final retained T10 evidence:
+
+| Command/evidence | Result |
+| --- | --- |
+| `python3 src/test/run_tests.py --test CORE-MESH-MPI-OWNERSHIP-001 --output-dir /tmp/amps-t10-qualified --jobs 1` | PASS 16/16 cases, 48/48 rank-matrix invocations, 112 participating rank processes; both profiles rebuilt through the mandatory clean workflow |
+| `python3 src/test/run_tests.py --test CORE-MESH-MPI-OWNERSHIP-001 --order reverse --output-dir /tmp/amps-t10-qualified-reverse --jobs 1` | PASS 16/16 in reverse order; matrix receipts are byte-identical to normal order and both retained executable SHA-256 values reproduce exactly |
+| `/tmp/amps-t10-qualified/artifacts/CORE-MESH-MPI-OWNERSHIP-001/t10-matrix-receipts.json` | Exact 1/2/4-rank receipts, including identical global count/hash/weight/mass/momentum/energy/rate values |
+| `/tmp/amps-t10-qualified/artifacts/CORE-MESH-MPI-OWNERSHIP-001/native-t10-mpi-output.txt` | Complete configure/build and rank-local run transcript |
+| `/tmp/amps-t10-qualified/artifacts/CORE-MESH-MPI-OWNERSHIP-001/native-build/{baseline,periodic}` | Retained executables, generated headers, selected inputs, SHA-256 file inventory and build identity |
+| `python3 src/test/run_tests.py --test CORE-HARNESS-001 --output-dir /tmp/amps-t10-harness-final3 --jobs 1` | PASS 11/11 governance checks after pinning T10's exact campaign membership, three alias-to-case mappings, and generated-configuration contract |
+| `python3 src/test/validate_traceability.py --output /tmp/amps-t10-traceability-final.json` | PASS: 24 areas, 209 translation units, 194 public contracts, 24 configuration contracts, 42 suites, 375 cases |
+
+The initial full bring-up at `/tmp/amps-t10-full1` passed 12/15 cases and
+exposed three fixture/oracle defects: the send-mask callback had been invoked
+outside its real owner/destination caller contract, block-pack validation had
+not initialized unrelated owner blocks, and a rank-invariant floating receipt
+required bitwise rather than tolerance-bounded reduction agreement. The
+contract-corrected focused receipt `/tmp/amps-t10-fix3` passes all three cases
+at 1/2/4 ranks. The later qualified run adds the CPU-affinity diagnostic and
+is the superseding 16-case authority; no failed bring-up is counted as
+qualification evidence.
+
+Both native profiles use the required preflight: confirm repository/process
+state, remove only `build`, select the application and SPICE mode through
+`Config.pl`, and compile through top-level `make amps` with
+`MAKEFLAGS=-j16`. The two test input decks are covered by the repository's
+broad `*.input` ignore rule; Git control files were not changed, and a human
+preparing a commit must explicitly force-add those decks. No Git state
+operation was performed.
+
 ## T8/T9 checkpoint
 
 T8 and T9 are implemented and qualified for their bounded one-rank host

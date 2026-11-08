@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "Staged T0-T7 inventory of AMPS machine, Config.pl, generated-configuration, compile-profile, and runtime-mode contracts. Status describes direct contract evidence, not successful compilation alone.",
+  "description": "Staged T0-T10 inventory of AMPS machine, Config.pl, generated-configuration, compile-profile, and runtime-mode contracts. Status describes direct contract evidence, not successful compilation alone.",
   "statuses": ["tested", "partial", "planned", "exempt"],
   "contracts": [
     {
@@ -287,7 +287,20 @@
       "suite_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-PERIODIC-001", "CORE-PIC-COLLISION-VHS-001", "CORE-PIC-COLLISION-VSS-001", "CORE-PIC-IDF-ROTZ-Z2-001", "CORE-PIC-IDF-ROTZ-Z10-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001", "CORE-PHOTOCHEM-DAUGHTER-001", "CORE-T6-REACTIONS-NATIVE-001", "CORE-DUST-NATIVE-001", "CORE-DUST-INJECTION-NATIVE-001", "CORE-EXOSPHERE-SPHERE-NATIVE-001", "CORE-MESH-NATIVE-001"],
       "case_ids": ["PHYS-MOVER-SIMPLE-001", "PHYS-3D-COLLISION-RATE-001", "T4-BOUNDARY-PERIODIC-001", "T5-COLLISION-VSS-001", "T5-IDF-ROTZ-Z10-001", "CORE-DUST-CHARGING-DYNAMICS-001", "CORE-DUST-INJECTION-INTEGRATION-001", "CORE-EXOSPHERE-SPHERE-INTEGRATION-001", "CORE-MESH-1D-TOPOLOGY-UNIFORM-001", "CORE-MESH-2D-TOPOLOGY-UNIFORM-001", "CORE-MESH-3D-TOPOLOGY-UNIFORM-001"],
       "reason": "All configured T2-T7 native profiles and all three T3 dimensional mesh profiles are process-local and fixed at one rank by contract.",
-      "gaps": ["two/four-rank owners and ghosts", "particle migration", "rank invariance"]
+      "gaps": ["hybrid/OpenMP rank-thread interaction", "accelerator-backend rank matrix"]
+    },
+    {
+      "mode_id": "config.application.core-mpi-rank-matrix-v1",
+      "components": ["src/meshAMR", "src/pic", "src/pic/parallel"],
+      "authority": ["Config.pl", "ampsConfig.pl", "input/test/core-mpi.input", "input/test/core-mpi-periodic.input", "test/srcCoreMPITests/main.cpp", "src/test/tests/pic/mpi_distributed/run_test.py"],
+      "profile": "test/core-mpi and test/core-mpi-periodic",
+      "selectors": ["Config.pl -application=test/core-mpi", "Config.pl -application=test/core-mpi-periodic", "Config.pl -spice-path=nospice", "DIM=3", "mpiexec -n 1,2,4"],
+      "generated_outputs": [".amps.conf", "Makefile.conf", "build/pic/picGlobal.dfn", "build/meshAMR/meshAMRdef.h", "retained baseline/periodic executables and generated configuration hashes", "rank-local transcript", "1/2/4-rank matrix receipts"],
+      "status": "partial",
+      "suite_ids": ["CORE-MESH-MPI-OWNERSHIP-001"],
+      "case_ids": ["MESH-MPI-OWNER-MAP-001", "MESH-MPI-OWNER-GHOST-001", "MESH-MPI-LOAD-REPARTITION-001", "MESH-MPI-CUTCELL-CONSISTENCY-001", "PIC-MPI-HALO-REPLACE-001", "PIC-MPI-HALO-ADD-001", "PIC-MPI-SEND-MASK-001", "PIC-MPI-BLOCK-PACK-001", "PIC-MPI-PARTICLE-EXCHANGE-001", "PIC-MPI-PARTICLE-REPARTITION-001", "PIC-MPI-OUTER-LOSS-001", "PIC-MPI-PERIODIC-EXCHANGE-001", "PIC-MPI-AFFINITY-DIAGNOSTICS-001", "PIC-MPI-RESTART-SAME-001", "PIC-MPI-RESTART-REPARTITION-001", "PIC-MPI-RANK-INVARIANCE-001"],
+      "reason": "The exclusive T10 adapter independently rebuilds nonperiodic and periodic profiles through Config.pl, verifies the selected application, input, SPICE, DIM and periodic generated macros, retains executable/configuration identities, then requires every rank in the 1/2/4 matrix to publish its own assertion record. The profile is partial because it deliberately covers only the bounded CPU Cartesian neutral record and does not imply every distributed PIC configuration.",
+      "gaps": ["hybrid/OpenMP and accelerator profiles", "non-Cartesian distributed mesh profiles", "distributed source/collision configurations", "ECSIM remote-stencil consumption", "scheduler-authorized affinity partitioning"]
     },
     {
       "mode_id": "config.invalid-generated-decks-v1",

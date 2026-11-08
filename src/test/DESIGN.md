@@ -205,18 +205,20 @@ numerics, and T01/T05/T96/TA15/TA16/KMAG reference comparisons remain explicit
 gaps. `PIC units` and `species` are covered only for the exact public contracts
 recorded in the component and T1 inventories.
 
-## Nightly tiers
+## Campaigns at the T10 checkpoint
 
 - `smoke`: eight suites and 51 fast dependency-light cases; expected on every
   change and machine bring-up.
-- `nightly`: all 11 suites and 103 registered cases, including the exclusive
-  native suite and optional-provider states; no observational or long campaign
-  runs.
-- `distributed`: the current five-case two-rank MPI channel/RNG module suite.
-- `profile`: the 36-case configured native profile.
-- `extended`: the native profile plus the 11-case interface/optional-provider
-  suite. Future rank matrices, restart, sanitizer, convergence, and long
-  statistical suites belong here as they are implemented.
+- `nightly`: all 42 suites and 375 registered cases, including typed optional-
+  provider states and exclusive configured owners; no observational or long
+  application campaign runs.
+- `distributed`: two suites and 21 cases: the five-case two-rank channel/RNG
+  module plus T10's 16-case collective 1/2/4-rank AMR/PIC matrix.
+- `profile`: 19 configured/native suites and 233 cases.
+- `extended`: 25 suites and 257 cases, adding interface/optional-provider and
+  other integration contracts to the configured profiles. Future sanitizer,
+  accelerator, hybrid-thread and long statistical suites belong here as they
+  are implemented.
 
 The current scheduler runs nonexclusive suites concurrently within explicit
 exclusive barriers. Future distributed sharding may place those batches on
