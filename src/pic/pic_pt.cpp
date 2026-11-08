@@ -1555,7 +1555,8 @@ void PIC::ParticleTracker::AssembleTrajectoryOutputFromSelected(const char *fnam
     const std::string speciesOutput=std::string(fname)+".s="+
       std::to_string(spec)+"."+ChemSymbol+".dat";
     fout[spec]=fopen(speciesOutput.c_str(),"w");
-    fprintf(fout[spec],"VARIABLES=\"x\", \"y\", \"z\", \"spec\", \"Speed\", \"vx\", \"vy\", \"vz\", \"Kinetic Energy [eV]\"");
+    if (!PIC::CallbackOutputKernels::WriteTrajectoryBaseVariables(fout[spec]))
+      exit(__LINE__,__FILE__,"Error: cannot write trajectory variable header");
 
     if (_PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_) fprintf(fout[spec],", \"Electric Charge\", \"Particle Size\"");
     if (_PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_) fprintf(fout[spec],", \"Total kinetic energy [J]\"");
@@ -1583,13 +1584,13 @@ void PIC::ParticleTracker::AssembleTrajectoryOutputFromSelected(const char *fnam
 
       cTrajectoryPhysicalData *TrajectoryData=Buffer+el;
 
-      fprintf(trOut,"%e  %e  %e  %i  %e   %e  %e  %e",TrajectoryData->x[0],TrajectoryData->x[1],TrajectoryData->x[2],
-          TrajectoryData->spec,TrajectoryData->Speed,TrajectoryData->v[0],TrajectoryData->v[1],TrajectoryData->v[2]);
-
       double KineticEnergy;
       if (Relativistic::GetGamma(TrajectoryData->v)<0.5) KineticEnergy=PIC::MolecularData::GetMass(TrajectoryData->spec)*Vector3D::DotProduct(TrajectoryData->v,TrajectoryData->v)/2.0;
       else KineticEnergy=Relativistic::Vel2E(TrajectoryData->v,PIC::MolecularData::GetMass(TrajectoryData->spec));
-      fprintf(trOut," %e",KineticEnergy/ElectronCharge);
+      if (!PIC::CallbackOutputKernels::WriteTrajectoryBaseRecord(
+            trOut,TrajectoryData->x,TrajectoryData->spec,TrajectoryData->Speed,
+            TrajectoryData->v,KineticEnergy/ElectronCharge))
+        exit(__LINE__,__FILE__,"Error: invalid trajectory base record");
 
 #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
       fprintf(trOut," %e  %e ",TrajectoryData->ElectricCharge,TrajectoryData->ParticleSize);
@@ -1667,7 +1668,8 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
     const std::string speciesOutput=std::string(fname)+".s="+
       std::to_string(spec)+"."+ChemSymbol+".dat";
     fout[spec]=fopen(speciesOutput.c_str(),"w");
-    fprintf(fout[spec],"VARIABLES=\"x\", \"y\", \"z\", \"spec\", \"Speed\", \"vx\", \"vy\", \"vz\", \"Kinetic Energy [eV]\"");
+    if (!PIC::CallbackOutputKernels::WriteTrajectoryBaseVariables(fout[spec]))
+      exit(__LINE__,__FILE__,"Error: cannot write trajectory variable header");
 
     if (_PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_) {
       fprintf(fout[spec],", \"Electric Charge\", \"Particle Size\"");
@@ -1875,9 +1877,6 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
           break;
         }
 
-        fprintf(trOut,"%e  %e  %e  %i  %e   %e  %e  %e",TrajectoryData->x[0],TrajectoryData->x[1],TrajectoryData->x[2],
-            TrajectoryData->spec,TrajectoryData->Speed,TrajectoryData->v[0],TrajectoryData->v[1],TrajectoryData->v[2]);
-
         double KineticEnergy;
 
         if (Relativistic::GetGamma(TrajectoryData->v)<0.5) {
@@ -1887,7 +1886,10 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
           KineticEnergy=Relativistic::Vel2E(TrajectoryData->v,PIC::MolecularData::GetMass(TrajectoryData->spec)); 
         }
 
-        fprintf(trOut," %e",KineticEnergy/ElectronCharge);
+        if (!PIC::CallbackOutputKernels::WriteTrajectoryBaseRecord(
+              trOut,TrajectoryData->x,TrajectoryData->spec,TrajectoryData->Speed,
+              TrajectoryData->v,KineticEnergy/ElectronCharge))
+          exit(__LINE__,__FILE__,"Error: invalid trajectory base record");
 
 #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_ 
         fprintf(trOut," %e  %e ",TrajectoryData->ElectricCharge,TrajectoryData->ParticleSize);

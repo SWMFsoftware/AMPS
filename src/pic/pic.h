@@ -151,6 +151,9 @@ inline void timing_stop(std::string name) {}
 #include "mesh_boundary_blocks.h"
 #include "mesh_boundary_cells.h"
 #include "mesh_boundary_corners.h" 
+#include "pic_field_line_kernels.h"
+#include "pic_callback_output_kernels.h"
+#include "pic_persistent_format.h"
 
 namespace PIC {
 
@@ -1627,9 +1630,10 @@ void DeleteAttachedParticles();
 
         tBegin=begin->GetElectricField(),tEnd=end->GetElectricField();
 
-        for (int idim=0; idim<DIM; idim++) {
-          ElectricFieldOut[idim]  = tBegin[idim] * (1 - S) + tEnd[idim] * S;
-        }
+        if (PIC::FieldLineKernels::LinearInterpolate(
+              tBegin,tEnd,DIM,S,ElectricFieldOut)!=
+            PIC::FieldLineKernels::Status::Success)
+          exit(__LINE__,__FILE__,"Error: invalid field-line electric-field interpolation");
       }
 
       //position 0<=s<=1 on the segment
@@ -1638,9 +1642,10 @@ void DeleteAttachedParticles();
 
         tBegin=begin->GetMagneticField(),tEnd=end->GetMagneticField();
 
-        for (int idim=0; idim<DIM; idim++) {
-          MagneticFieldOut[idim]  = tBegin[idim] * (1 - S) + tEnd[idim] * S;
-        }
+        if (PIC::FieldLineKernels::LinearInterpolate(
+              tBegin,tEnd,DIM,S,MagneticFieldOut)!=
+            PIC::FieldLineKernels::Status::Success)
+          exit(__LINE__,__FILE__,"Error: invalid field-line magnetic-field interpolation");
       }
 
       //position 0<=s<=1 on segment
@@ -1649,9 +1654,10 @@ void DeleteAttachedParticles();
 
         tBegin=begin->GetPlasmaVelocity(),tEnd=end->GetPlasmaVelocity();
 
-        for (int idim=0; idim<DIM; idim++) {
-          PlasmaVelocityOut[idim] = tBegin[idim] * (1 - S) + tEnd[idim] * S;
-        }
+        if (PIC::FieldLineKernels::LinearInterpolate(
+              tBegin,tEnd,DIM,S,PlasmaVelocityOut)!=
+            PIC::FieldLineKernels::Status::Success)
+          exit(__LINE__,__FILE__,"Error: invalid field-line velocity interpolation");
       }
 
       //position 0<=s<=1 on the segment
@@ -1660,7 +1666,10 @@ void DeleteAttachedParticles();
 
         //plasma density
         begin->GetPlasmaDensity(tBegin), end->GetPlasmaDensity(tEnd);
-        PlasmaDensityOut = tBegin * (1 - S) + tEnd * S;
+        if (PIC::FieldLineKernels::LinearInterpolate(
+              &tBegin,&tEnd,1,S,&PlasmaDensityOut)!=
+            PIC::FieldLineKernels::Status::Success)
+          exit(__LINE__,__FILE__,"Error: invalid field-line density interpolation");
       }
 
       //position 0<=s<=1 on segment
@@ -1669,7 +1678,10 @@ void DeleteAttachedParticles();
 
         //plasma temperature
         begin->GetPlasmaTemperature(tBegin), end->GetPlasmaTemperature(tEnd);
-        PlasmaTemperatureOut = tBegin * (1 - S) + tEnd * S;
+        if (PIC::FieldLineKernels::LinearInterpolate(
+              &tBegin,&tEnd,1,S,&PlasmaTemperatureOut)!=
+            PIC::FieldLineKernels::Status::Success)
+          exit(__LINE__,__FILE__,"Error: invalid field-line temperature interpolation");
       }
 
       //position 0<=s<=1 on segment
@@ -1678,7 +1690,10 @@ void DeleteAttachedParticles();
 
         //plasma pressure
         begin->GetPlasmaPressure(tBegin), end->GetPlasmaPressure(tEnd);
-        PlasmaPressureOut = tBegin * (1 - S) + tEnd * S;
+        if (PIC::FieldLineKernels::LinearInterpolate(
+              &tBegin,&tEnd,1,S,&PlasmaPressureOut)!=
+            PIC::FieldLineKernels::Status::Success)
+          exit(__LINE__,__FILE__,"Error: invalid field-line pressure interpolation");
       }
     };
 
@@ -9177,6 +9192,14 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
 
   //Save and read the restart files
   namespace Restart {
+    /* Compatibility switch for pre-AMPSPF1 native restart files. It defaults
+     * to true to preserve the established AMPS restart workflow during the
+     * format migration, but applications that require corruption-detecting
+     * envelopes can set it false before either restart reader is called.
+     * Legacy files are always same-build-only and never establish portable
+     * restart evidence. */
+    extern bool AllowLegacyRestartFiles;
+
     //sampled data
     namespace SamplingData {
       extern char RestartFileName[_MAX_STRING_LENGTH_PIC_]; //<- SAVE INTO THIS FILE: the name of the sampled restart file that will be used in the 'read' procedures to recoved the sampled data. The name is set in AMPS' input file
@@ -9838,6 +9861,7 @@ namespace PIC {
 //field solver
 #include "LinearSystemCornerNode.h"
 #include "LinearSystemCenterNode.h"
+#include "ecsim/boundary_row.h"
 
 namespace PIC {
 

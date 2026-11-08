@@ -3,7 +3,31 @@
 
 #include "pic.h"
 
+namespace {
+std::uint64_t SamplingRestartLayoutIdentity() {
+  return PIC::PersistentFormat::LayoutIdentity({
+    1,static_cast<std::uint64_t>(DIM),_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,
+    _BLOCK_CELLS_Z_,sizeof(cAMRnodeID),
+    static_cast<std::uint64_t>(PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength),
+    static_cast<std::uint64_t>(PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength)});
+}
+std::uint64_t ParticleRestartLayoutIdentity() {
+  return PIC::PersistentFormat::LayoutIdentity({
+    2,static_cast<std::uint64_t>(DIM),_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,
+    _BLOCK_CELLS_Z_,_TOTAL_SPECIES_NUMBER_,sizeof(cAMRnodeID),
+    static_cast<std::uint64_t>(PIC::ParticleBuffer::ParticleDataLength),
+    static_cast<std::uint64_t>(_COMPILATION_MODE_),
+    static_cast<std::uint64_t>(_SIMULATION_TIME_STEP_MODE_),sizeof(bool),
+    sizeof(unsigned long int)});
+}
+bool PersistentOpenAccepted(PIC::PersistentFormat::Status status) {
+  return status==PIC::PersistentFormat::Status::Success ||
+         status==PIC::PersistentFormat::Status::LegacyAccepted;
+}
+}
+
 int PIC::Restart::ParticleRestartAutosaveIterationInterval=1;
+bool PIC::Restart::AllowLegacyRestartFiles=true;
 char PIC::Restart::SamplingData::RestartFileName[_MAX_STRING_LENGTH_PIC_]="SampleData.restart";
 
 char PIC::Restart::saveParticleDataRestartFileName[200]="ParticleData.restart";
@@ -45,7 +69,7 @@ void PIC::Restart::SamplingData::Save(const char* fname) {
   char fname_full[500];  
   
   sprintf(fname_full,"%s.thread=%i.tmp",fname,PIC::ThisThread);
-  fRestart=fopen(fname_full,"w");
+  fRestart=fopen(fname_full,"wb");
 
   if (fRestart==NULL) exit(__LINE__,__FILE__,"Error: cannot open file");
 
@@ -66,19 +90,17 @@ void PIC::Restart::SamplingData::Save(const char* fname) {
 
   //combine separated restart files in a single files 
   if (ThisThread==0) {
-    std::ofstream  dst(fname,   std::ios::binary);
-  
+    std::vector<std::string> parts;
     for (int thread=0;thread<PIC::nTotalThreads;thread++) {
       sprintf(fname_full,"%s.thread=%i.tmp",fname,thread);
-
-      std::ifstream  src(fname_full, std::ios::binary);
-      dst<<src.rdbuf();
-
-      src.close();
-      remove(fname_full); 
+      parts.emplace_back(fname_full);
     }
-
-    dst.close();
+    const auto status=PIC::PersistentFormat::WriteAtomicConcat(
+      fname,PIC::PersistentFormat::Kind::SamplingRestart,
+      PIC::PersistentFormat::NativeLayout,SamplingRestartLayoutIdentity(),parts);
+    if (status!=PIC::PersistentFormat::Status::Success)
+      exit(__LINE__,__FILE__,"Error: atomic sampling-restart publication failed");
+    for (const auto& part:parts) remove(part.c_str());
   }
   
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
@@ -148,14 +170,20 @@ void PIC::Restart::SamplingData::SaveBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
 void PIC::Restart::SamplingData::Read(const char* fname) {
   FILE *fRestart=NULL;
 
-  fRestart=fopen(fname,"r");
-
-  if (fRestart==NULL) {
+  std::uint64_t payloadSize=0;
+  const auto persistentStatus=PIC::PersistentFormat::OpenValidated(
+    fname,PIC::PersistentFormat::Kind::SamplingRestart,
+    SamplingRestartLayoutIdentity(),PIC::Restart::AllowLegacyRestartFiles,
+    fRestart,payloadSize);
+  if (!PersistentOpenAccepted(persistentStatus)) {
     char msg[200];
 
     sprintf(msg,"Error: restart file %s is not found",fname);
     exit(__LINE__,__FILE__,msg);
   }
+  if (persistentStatus==PIC::PersistentFormat::Status::LegacyAccepted &&
+      PIC::ThisThread==0)
+    printf("$PREFIX: Warning: accepting unversioned same-build sampling restart: %s\n",fname);
 
   if (fread(&PIC::LastSampleLength,sizeof(PIC::LastSampleLength),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread has failed"); 
   if (fread(&PIC::DataOutputFileNumber,sizeof(PIC::DataOutputFileNumber),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread has failed"); 
@@ -253,7 +281,7 @@ void PIC::Restart::SaveParticleData(const char* fname) {
   char fname_full[300];
 
   sprintf(fname_full,"%s.thread=%i.tmp",fname,PIC::ThisThread);
-  fRestart=fopen(fname_full,"w");
+  fRestart=fopen(fname_full,"wb");
 
   //call the user-defined function for saving additional data into the restart file
   if (PIC::ThisThread==0) {
@@ -273,6 +301,29 @@ void PIC::Restart::SaveParticleData(const char* fname) {
     else {
       exit(__LINE__,__FILE__,"Error: not implemented");
     } 
+
+    // AMPSPF1 particle payload revision 2 closes deterministic one-rank
+    // continuation state that the legacy stream omitted.  Global time steps
+    // have SI units of seconds.  The initialized flag is serialized because a
+    // table of sentinel values is not equivalent to an initialized table.
+    // The MPI generator's scalar seed is the exact next-event state; hybrid
+    // per-thread RNG arrays require a separate collective format and remain a
+    // documented unsupported continuation mode.
+#if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
+    if (fwrite(PIC::ParticleWeightTimeStep::GlobalTimeStep,sizeof(double),
+        _TOTAL_SPECIES_NUMBER_,fRestart)!=_TOTAL_SPECIES_NUMBER_)
+      exit(__LINE__,__FILE__,"Error: fwrite has failed");
+    if (fwrite(&PIC::ParticleWeightTimeStep::GlobalTimeStepInitialized,
+        sizeof(bool),1,fRestart)!=1)
+      exit(__LINE__,__FILE__,"Error: fwrite has failed");
+    nSavedBytes+=sizeof(double)*_TOTAL_SPECIES_NUMBER_+sizeof(bool);
+#endif
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+    if (fwrite(&RandomNumberGenerator::rndLastSeed,
+        sizeof(RandomNumberGenerator::rndLastSeed),1,fRestart)!=1)
+      exit(__LINE__,__FILE__,"Error: fwrite has failed");
+    nSavedBytes+=sizeof(RandomNumberGenerator::rndLastSeed);
+#endif
   }
 
   //save the restart information
@@ -286,21 +337,18 @@ void PIC::Restart::SaveParticleData(const char* fname) {
   MPI_Reduce(&nSavedBytes,&nTotalSavedBytes,1,MPI_INT,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
 
   if (ThisThread==0) {
-    std::ofstream  dst(fname,   std::ios::binary);
-
     printf("$PREFIX: Saving restart file: particles saved - %i; blocks - %i; bytes - %i\n", nTotalSavedParticles,nTotalSavedBlocks,nTotalSavedBytes);
-
+    std::vector<std::string> parts;
     for (int thread=0;thread<PIC::nTotalThreads;thread++) {
       sprintf(fname_full,"%s.thread=%i.tmp",fname,thread);
-
-      std::ifstream  src(fname_full, std::ios::binary);
-      dst<<src.rdbuf();
-
-      src.close();
-      remove(fname_full);
+      parts.emplace_back(fname_full);
     }
-
-    dst.close();
+    const auto status=PIC::PersistentFormat::WriteAtomicConcat(
+      fname,PIC::PersistentFormat::Kind::ParticleRestart,
+      PIC::PersistentFormat::NativeLayout,ParticleRestartLayoutIdentity(),parts);
+    if (status!=PIC::PersistentFormat::Status::Success)
+      exit(__LINE__,__FILE__,"Error: atomic particle-restart publication failed");
+    for (const auto& part:parts) remove(part.c_str());
   }
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
@@ -384,17 +432,27 @@ int PIC::Restart::SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* 
 
 long int PIC::Restart::GetRestartFileParticleNumber(const char *fname) {
   long int res=0;
-  FILE* fRestart;
-
-  fRestart=fopen(fname,"r");
+  FILE* fRestart=nullptr;
+  std::uint64_t payloadSize=0;
+  const auto status=PIC::PersistentFormat::OpenValidated(
+    fname,PIC::PersistentFormat::Kind::ParticleRestart,
+    ParticleRestartLayoutIdentity(),PIC::Restart::AllowLegacyRestartFiles,
+    fRestart,payloadSize);
+  if (!PersistentOpenAccepted(status))
+    exit(__LINE__,__FILE__,"Error: incompatible or corrupt particle restart");
 
   if (UserAdditionalRestartDataRead!=NULL) UserAdditionalRestartDataRead(fRestart);
 
   char msg[UserAdditionalRestartDataCompletedMarkerLength];
   if (fread(msg,sizeof(char),UserAdditionalRestartDataCompletedMarkerLength,fRestart)!=UserAdditionalRestartDataCompletedMarkerLength) exit(__LINE__,__FILE__,"Error: fread failed"); 
+  if (memcmp(msg,UserAdditionalRestartDataCompletedMarker,
+      sizeof(char)*UserAdditionalRestartDataCompletedMarkerLength)!=0)
+    exit(__LINE__,__FILE__,"Error: invalid user-data marker in particle restart");
 
   long int t;
   if (fread(&t,sizeof(long int),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+  if (t!=PIC::ParticleBuffer::ParticleDataLength)
+    exit(__LINE__,__FILE__,"Error: incompatible particle record length");
 
   //read the particle weight table
   if (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) {
@@ -405,20 +463,51 @@ long int PIC::Restart::GetRestartFileParticleNumber(const char *fname) {
   else {
     exit(__LINE__,__FILE__,"Error: not implemented");
   }
+
+  if (status==PIC::PersistentFormat::Status::Success) {
+#if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
+    double timeStep[_TOTAL_SPECIES_NUMBER_];
+    bool initialized=false;
+    if (fread(timeStep,sizeof(double),_TOTAL_SPECIES_NUMBER_,fRestart)!=
+        _TOTAL_SPECIES_NUMBER_ || fread(&initialized,sizeof(bool),1,fRestart)!=1)
+      exit(__LINE__,__FILE__,"Error: truncated time-step restart state");
+#endif
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+    unsigned long int seed=0;
+    if (fread(&seed,sizeof(seed),1,fRestart)!=1)
+      exit(__LINE__,__FILE__,"Error: truncated RNG restart state");
+#endif
+  }
   
 
-  while (feof(fRestart)==0) {
+  const long payloadBegin=(status==PIC::PersistentFormat::Status::Success) ?
+      static_cast<long>(PIC::PersistentFormat::HeaderSize) : 0L;
+  while (true) {
+    const long position=ftell(fRestart);
+    if (position<0) exit(__LINE__,__FILE__,"Error: ftell failed");
+    const std::uint64_t consumed=static_cast<std::uint64_t>(position-payloadBegin);
+    if (consumed==payloadSize) break;
+    if (consumed>payloadSize || payloadSize-consumed<sizeof(cAMRnodeID)+sizeof(int))
+      exit(__LINE__,__FILE__,"Error: truncated particle restart block header");
     int nTotalParticleNumber=0;
 
-    fseek(fRestart,sizeof(cAMRnodeID),SEEK_CUR);
+    if (fseek(fRestart,sizeof(cAMRnodeID),SEEK_CUR)!=0)
+      exit(__LINE__,__FILE__,"Error: fseek failed");
     if (fread(&nTotalParticleNumber,sizeof(int),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+    if (nTotalParticleNumber<0) exit(__LINE__,__FILE__,"Error: negative particle count in restart");
 
     res+=nTotalParticleNumber;
 
     if (nTotalParticleNumber!=0) {
       //skip the data for this block
-      fseek(fRestart,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int)+
-        nTotalParticleNumber*PIC::ParticleBuffer::ParticleDataLength*sizeof(char),SEEK_CUR);
+      const std::uint64_t skip=
+        std::uint64_t(_BLOCK_CELLS_X_)*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int)+
+        std::uint64_t(nTotalParticleNumber)*PIC::ParticleBuffer::ParticleDataLength;
+      const long afterHeader=ftell(fRestart);
+      if (afterHeader<0 || std::uint64_t(afterHeader-payloadBegin)+skip>payloadSize ||
+          skip>static_cast<std::uint64_t>(std::numeric_limits<long>::max()) ||
+          fseek(fRestart,static_cast<long>(skip),SEEK_CUR)!=0)
+        exit(__LINE__,__FILE__,"Error: invalid particle restart block length");
     }
   }
 
@@ -514,25 +603,31 @@ int PIC::Restart::ReadParticleDataBlock(FILE* fRestart,int &nReadBlocks,int &nRe
 
 void PIC::Restart::ReadParticleData(const char* fname) {
   FILE *fRestart=NULL;
-  struct stat st;
   int nReadBlocks=0,nReadBytes=0;
-
-
-  if (stat(fname, &st) != 0) {
-    exit(__LINE__,__FILE__,"Error getting file info");
-  }
-
-  fRestart=fopen(fname,"r");
-
-  if (fRestart==NULL) {
+  std::uint64_t payloadSize=0;
+  const auto persistentStatus=PIC::PersistentFormat::OpenValidated(
+    fname,PIC::PersistentFormat::Kind::ParticleRestart,
+    ParticleRestartLayoutIdentity(),PIC::Restart::AllowLegacyRestartFiles,
+    fRestart,payloadSize);
+  if (!PersistentOpenAccepted(persistentStatus)) {
     char msg[200];
 
     sprintf(msg,"Error: restart file %s is not found",fname);
     exit(__LINE__,__FILE__,msg);
   }
+  if (payloadSize>static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
+    exit(__LINE__,__FILE__,"Error: particle restart exceeds legacy reader size limit");
+  if (persistentStatus==PIC::PersistentFormat::Status::LegacyAccepted &&
+      PIC::ThisThread==0)
+    printf("$PREFIX: Warning: accepting unversioned same-build particle restart: %s\n",fname);
 
   //call the user function for recovering the additional user information
   if (UserAdditionalRestartDataRead!=NULL) UserAdditionalRestartDataRead(fRestart);
+  const long userDataEnd=ftell(fRestart);
+  const long payloadBegin=(persistentStatus==PIC::PersistentFormat::Status::Success) ?
+      static_cast<long>(PIC::PersistentFormat::HeaderSize) : 0L;
+  if (userDataEnd<payloadBegin) exit(__LINE__,__FILE__,"Error: invalid user restart reader position");
+  nReadBytes=static_cast<int>(userDataEnd-payloadBegin);
 
   //read the end-of-the-user-data-marker
   char msg[UserAdditionalRestartDataCompletedMarkerLength];
@@ -553,13 +648,34 @@ void PIC::Restart::ReadParticleData(const char* fname) {
     exit(__LINE__,__FILE__,"Error: not implemented");
   }
 
+
+  if (persistentStatus==PIC::PersistentFormat::Status::Success) {
+#if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
+    if (fread(PIC::ParticleWeightTimeStep::GlobalTimeStep,sizeof(double),
+        _TOTAL_SPECIES_NUMBER_,fRestart)!=_TOTAL_SPECIES_NUMBER_)
+      exit(__LINE__,__FILE__,"Error: truncated time-step restart state");
+    nReadBytes+=sizeof(double)*_TOTAL_SPECIES_NUMBER_;
+    if (fread(&PIC::ParticleWeightTimeStep::GlobalTimeStepInitialized,
+        sizeof(bool),1,fRestart)!=1)
+      exit(__LINE__,__FILE__,"Error: truncated time-step initialization state");
+    nReadBytes+=sizeof(bool);
+#endif
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+    if (fread(&RandomNumberGenerator::rndLastSeed,
+        sizeof(RandomNumberGenerator::rndLastSeed),1,fRestart)!=1)
+      exit(__LINE__,__FILE__,"Error: truncated RNG restart state");
+    nReadBytes+=sizeof(RandomNumberGenerator::rndLastSeed);
+#endif
+  }
+
   if (memcmp(msg,UserAdditionalRestartDataCompletedMarker,sizeof(char)*UserAdditionalRestartDataCompletedMarkerLength)!=0) {
     exit(__LINE__,__FILE__,"Error: the end-of-the additional used data in the input file is mislocated. Something wrong with the user-defined additional restart data save/read procedures.");
   }
 
   int nLoadedParticles,nTotalLoadedParticles;
 
-  nLoadedParticles=ReadParticleDataBlock(fRestart,nReadBlocks,nReadBytes,st.st_size);
+  nLoadedParticles=ReadParticleDataBlock(
+    fRestart,nReadBlocks,nReadBytes,static_cast<int>(payloadSize));
   fclose(fRestart);
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);

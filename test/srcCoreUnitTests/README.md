@@ -26,6 +26,7 @@ python3 src/test/run_tests.py --test CORE-PIC-PHYSICS-001
 python3 src/test/run_tests.py --case PIC-UNITS-GLOBAL-INIT-001 \
   --case PIC-UNITS-CONVERSION-TABLE-001
 python3 src/test/run_tests.py --test CORE-PIC-WEIGHT-TIME-001
+python3 src/test/run_tests.py --test CORE-PIC-RESTART-NATIVE-001
 python3 src/test/run_tests.py --campaign profile
 python3 src/test/run_tests.py --test CORE-PIC-SPLIT-MERGE-001
 ```
@@ -225,6 +226,36 @@ The retained normal-build and order-isolation evidence is listed in
 `src/test/STATUS.md`. The manifest aliases charge exchange and electron impact
 to one exclusive reaction-profile owner, so selecting both does not rebuild
 the same executable twice.
+
+## T9 native sampling and particle restart
+
+`persistence_native.cpp` adds one selected case to the baseline application.
+It first drives `SamplingData::Save/Read` on the shared eight-block fixture and
+requires exact recovery of completed sample bytes, last-sample length and
+output index; the collecting counter must reset to zero so a partial interval
+is not counted twice. It then inserts one H2O record in a resolved owner cell,
+saves through `PIC::Restart::SaveParticleData`, deletes the source, perturbs
+the runtime tables, and reloads through `ReadParticleData`.
+
+The oracle checks exact owner-cell/list recovery, species, position, velocity,
+global statistical weight, global SI time step and initialization flag,
+rotational/vibrational energy, every anonymous T2 extension byte, and the
+scalar MPI RNG seed. `GetRestartFileParticleNumber` must independently report
+one. The test is one-rank by design: AMPS restart save/read are collective,
+while this harness executes process-local cases only on rank zero. Changed-
+rank ownership and hybrid per-thread RNG arrays therefore remain T10/follow-up
+work rather than being inferred from this receipt.
+
+Run only this case through its alias:
+
+```sh
+python3 src/test/run_tests.py --test CORE-PIC-RESTART-NATIVE-001 \
+  --output-dir /tmp/amps-t9-native-restart-state
+```
+
+The adapter performs the mandatory clean configured rebuild. The dependency-
+light AMPSPF1 corruption, ABI/layout, atomic-publication and canonical-
+continuation tests are separately owned by `CORE-PIC-RESTART-001`.
 
 ## Physics suites and independent oracles
 

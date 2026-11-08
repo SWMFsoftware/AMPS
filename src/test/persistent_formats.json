@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "compatibility_policy": {
+    "enveloped_native": "Requires matching byte order, pointer and C/C++ scalar widths, format kind, generated layout identity, payload length, and CRC-32.",
+    "enveloped_canonical": "Fixed-width little-endian payloads may cross builds after kind, version, layout identity, length, and CRC-32 validation.",
+    "legacy_native": "Unversioned files are same-build-only and require the legacy compatibility switch; it defaults on to preserve baseline workflows during migration and can be disabled before reading. They are never evidence of cross-build portability.",
+    "text": "Text readers validate declared variables/dimensions and finite numeric records; producer-specific optional columns remain part of the layout identity."
+  },
+  "formats": [
+    {
+      "id": "sampling_restart",
+      "owner": "src/pic/pic_restart.cpp",
+      "envelope": "AMPSPF1 version 1",
+      "magic": true,
+      "version": true,
+      "byte_order": true,
+      "integer_widths": true,
+      "layout_identity": true,
+      "compatibility": "enveloped_native; legacy_native compatibility switch retained",
+      "tests": ["PIC-RESTART-ROUNDTRIP-001", "PIC-RESTART-CORRUPTION-001", "PIC-RESTART-NATIVE-ROUNDTRIP-001"]
+    },
+    {
+      "id": "particle_restart",
+      "owner": "src/pic/pic_restart.cpp",
+      "envelope": "AMPSPF1 version 1",
+      "magic": true,
+      "version": true,
+      "byte_order": true,
+      "integer_widths": true,
+      "layout_identity": true,
+      "compatibility": "enveloped_native; legacy_native compatibility switch retained",
+      "tests": ["PIC-RESTART-CONTINUATION-001", "PIC-RESTART-EMPTY-MAX-001", "PIC-RESTART-NATIVE-ROUNDTRIP-001"]
+    },
+    {
+      "id": "amr_mesh",
+      "owner": "src/meshAMR/meshAMRgeneric.h",
+      "envelope": "legacy section markers only",
+      "magic": true,
+      "version": false,
+      "byte_order": false,
+      "integer_widths": false,
+      "layout_identity": false,
+      "compatibility": "legacy_native only; cross-build unsupported"
+    },
+    {
+      "id": "amr_center_node_data",
+      "owner": "src/meshAMR/meshAMRgeneric.h",
+      "envelope": "legacy raw records",
+      "magic": false,
+      "version": false,
+      "byte_order": false,
+      "integer_widths": false,
+      "layout_identity": false,
+      "compatibility": "legacy_native only; cross-build unsupported"
+    },
+    {
+      "id": "background_binary",
+      "owner": "src/pic/pic_datafile.cpp",
+      "envelope": "legacy raw flags and doubles; mesh signature in filename",
+      "magic": false,
+      "version": false,
+      "byte_order": false,
+      "integer_widths": false,
+      "layout_identity": "filename mesh signature only",
+      "compatibility": "legacy_native only; canonical envelope demonstrated by CORE-PIC-DATAFILE-001"
+    },
+    {
+      "id": "associated_node_data",
+      "owner": "src/pic/pic_tecplot.cpp",
+      "envelope": "legacy raw flags and associated buffers",
+      "magic": false,
+      "version": false,
+      "byte_order": false,
+      "integer_widths": false,
+      "layout_identity": false,
+      "compatibility": "legacy_native only; cross-build unsupported"
+    },
+    {
+      "id": "trajectory_dataset",
+      "owner": "src/pic/pic_pt.cpp",
+      "envelope": "legacy native counters and chemical-symbol records",
+      "magic": false,
+      "version": false,
+      "byte_order": false,
+      "integer_widths": false,
+      "layout_identity": false,
+      "compatibility": "legacy_native only; cross-build unsupported"
+    },
+    {
+      "id": "trajectory_temp_data_and_list",
+      "owner": "src/pic/pic_pt.cpp",
+      "envelope": "legacy native record count and structs",
+      "magic": false,
+      "version": false,
+      "byte_order": false,
+      "integer_widths": false,
+      "layout_identity": false,
+      "compatibility": "legacy_native only; record-size guard exists on data buffers"
+    },
+    {
+      "id": "trajectory_selected_points",
+      "owner": "src/pic/pic_pt.cpp",
+      "envelope": "native magic includes record sizes",
+      "magic": true,
+      "version": false,
+      "byte_order": false,
+      "integer_widths": "implicit in magic",
+      "layout_identity": "partial record-size identity",
+      "compatibility": "same byte order and native ABI only"
+    },
+    {
+      "id": "stack_serialization",
+      "owner": "src/general/stack.h; src/general/stack_managed.h; src/meshAMR/meshAMRdef.h",
+      "envelope": "legacy native counters and element buffers",
+      "magic": false,
+      "version": false,
+      "byte_order": false,
+      "integer_widths": false,
+      "layout_identity": false,
+      "compatibility": "embedded same-build serialization only"
+    },
+    {
+      "id": "cutcell_connectivity_scratch",
+      "owner": "src/meshAMR/meshAMRcutcell.cpp; src/pic/pic_cut_cells.cpp",
+      "envelope": "legacy native intermediate index files",
+      "magic": false,
+      "version": false,
+      "byte_order": false,
+      "integer_widths": false,
+      "layout_identity": false,
+      "compatibility": "same-run scratch only; not a restart interchange format"
+    },
+    {
+      "id": "tecplot_ascii",
+      "owner": "src/pic/pic_tecplot.cpp; src/pic/pic_pt.cpp; src/pic/pic_datafile.cpp",
+      "envelope": "Tecplot VARIABLES and ZONE text",
+      "magic": "text grammar",
+      "version": false,
+      "byte_order": "not applicable",
+      "integer_widths": "not applicable",
+      "layout_identity": "ordered variable list and compile-profile optional columns",
+      "compatibility": "text; variable order, units, dimensions, and finite values must validate",
+      "tests": ["PIC-OUTPUT-TECPLOT-LAYOUT-001", "PIC-OUTPUT-NONFINITE-001"]
+    }
+  ]
+}

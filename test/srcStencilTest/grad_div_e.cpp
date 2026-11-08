@@ -289,7 +289,7 @@ static void print_point_comparison(int N, double Lx,double Ly,double Lz,
 }
 
 // ---------- Convergence table across all flavors ----------
-static void print_convergence_combined(const std::vector<int>& Ns,
+static bool print_convergence_combined(const std::vector<int>& Ns,
                                        double Lx, double Ly, double Lz,
                                        double a, double b, double c,
                                        bool tecplot_on_finest = true)
@@ -356,8 +356,15 @@ static void print_convergence_combined(const std::vector<int>& Ns,
     for (int f=0; f<5; ++f) {
       double p_inf = 0.0, p_l2 = 0.0;
       if (t > 0) {
-        p_inf = std::log2(err[f][t-1].linf / err[f][t].linf);
-        p_l2  = std::log2(err[f][t-1].l2   / err[f][t].l2);
+        // The grid sequence contains 3/2 and 4/3 refinements, not only
+        // doublings.  Observed order is log(e_h/e_h2)/log(h/h2), with
+        // h proportional to 1/N.  log2 of the error ratio understated the
+        // order whenever N_t/N_(t-1) was not two.
+        const double refinement = double(Ns[t]) / double(Ns[t-1]);
+        p_inf = std::log(err[f][t-1].linf / err[f][t].linf) /
+                std::log(refinement);
+        p_l2  = std::log(err[f][t-1].l2   / err[f][t].l2) /
+                std::log(refinement);
       }
       std::cout << " | "
                 << std::scientific << std::setprecision(3) << std::setw(12) << err[f][t].linf << " "
@@ -369,6 +376,17 @@ static void print_convergence_combined(const std::vector<int>& Ns,
   }
 
   std::cout << std::string(190, '-') << "\n";
+
+  const double expected[5] = {2.0, 2.0, 4.0, 6.0, 8.0};
+  bool pass = true;
+  for (int f=0; f<5; ++f) {
+    const std::size_t n=Ns.size();
+    const double refinement=double(Ns[n-1])/double(Ns[n-2]);
+    const double measured=std::log(err[f][n-2].l2/err[f][n-1].l2) /
+                          std::log(refinement);
+    if (!std::isfinite(measured) || measured<expected[f]-0.2) pass=false;
+  }
+  return pass;
 }
 
 // ---------- Entry point ----------
@@ -378,15 +396,23 @@ int Run(const std::vector<std::string>& args) {
   const double a = 2.0*M_PI, b = 2.0*M_PI, c = 2.0*M_PI;
   std::vector<int> Ns = {16, 24, 32, 48, 64};
 
-  print_convergence_combined(Ns, Lx,Ly,Lz, a,b,c, /*tecplot_on_finest=*/true);
+  bool tecplot_on_finest = true;
+  for (const auto& arg : args) {
+    if (arg == "--no-tecplot") tecplot_on_finest = false;
+  }
 
-  std::cout << "\nTecplot files (finest grid per operator) - CORNER VERSION:\n"
+  const bool pass = print_convergence_combined(
+      Ns, Lx,Ly,Lz, a,b,c, tecplot_on_finest);
+
+  if (tecplot_on_finest) std::cout << "\nTecplot files (finest grid per operator) - CORNER VERSION:\n"
                "  graddivE_corner_SecondOrder_Compact_N64.dat\n"
                "  graddivE_corner_SecondOrder_Wide_N64.dat\n"
                "  graddivE_corner_FourthOrder_N64.dat\n"
                "  graddivE_corner_SixthOrder_N64.dat\n"
                "  graddivE_corner_EighthOrder_N64.dat\n";
-  return 0;
+  std::cout << "[ECSIM-STENCIL-GRAD-DIV-001] "
+            << (pass ? "PASS" : "FAIL") << "\n";
+  return pass ? 0 : 1;
 }
 } // namespace GradDivE
 

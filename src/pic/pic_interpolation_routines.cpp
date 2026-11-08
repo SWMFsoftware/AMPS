@@ -202,6 +202,7 @@
  */
 
 #include "pic.h"
+#include "pic_deposition_kernels.h"
 
 #include <cstdint>
 #include <cstdlib>
@@ -1813,6 +1814,17 @@ void PIC::InterpolationRoutines::CornerBased::InitStencil(double *x,cTreeNodeAMR
     iX[idim]=(int)(xLoc[idim]);
     xLoc[idim]-=iX[idim];
   }
+
+  /*
+   * Use the same dependency-light CIC shape kernel that is independently
+   * qualified by CORE-PIC-DEPOSITION-001.  xLoc is dimensionless and already
+   * clipped to the owning half-open cell above.  A failure therefore denotes
+   * an internal geometry contract violation, not a recoverable empty stencil.
+   */
+  double LocalCornerWeight[8];
+  if (PIC::DepositionKernels::TrilinearWeights(xLoc,LocalCornerWeight)!=
+      PIC::DepositionKernels::Status::Success)
+    exit(__LINE__,__FILE__,"Error: invalid local coordinate in corner interpolation");
   
   //build interpolation stencil
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -1834,36 +1846,36 @@ void PIC::InterpolationRoutines::CornerBased::InitStencil(double *x,cTreeNodeAMR
     if (CornerNode!=NULL) {
       switch (iStencil+2*jStencil+4*kStencil) {
       case 0+0*2+0*4:
-        w=(1.0-xLoc[0])*(1.0-xLoc[1])*(1.0-xLoc[2]);
+        w=LocalCornerWeight[0];
         InterpolationCoefficientTable[0]=w;
         break;
       case 1+0*2+0*4:
-        w=xLoc[0]*(1.0-xLoc[1])*(1.0-xLoc[2]);
+        w=LocalCornerWeight[1];
         InterpolationCoefficientTable[1]=w;
         break;
       case 0+1*2+0*4:
-        w=(1.0-xLoc[0])*xLoc[1]*(1.0-xLoc[2]);
+        w=LocalCornerWeight[2];
         InterpolationCoefficientTable[3]=w;
         break;
       case 1+1*2+0*4:
-        w=xLoc[0]*xLoc[1]*(1.0-xLoc[2]);
+        w=LocalCornerWeight[3];
         InterpolationCoefficientTable[2]=w;
         break;
 
       case 0+0*2+1*4:
-        w=(1.0-xLoc[0])*(1.0-xLoc[1])*xLoc[2];
+        w=LocalCornerWeight[4];
         InterpolationCoefficientTable[4]=w;
         break;
       case 1+0*2+1*4:
-        w=xLoc[0]*(1.0-xLoc[1])*xLoc[2];
+        w=LocalCornerWeight[5];
         InterpolationCoefficientTable[5]=w;
         break;
       case 0+1*2+1*4:
-        w=(1.0-xLoc[0])*xLoc[1]*xLoc[2];
+        w=LocalCornerWeight[6];
         InterpolationCoefficientTable[7]=w;
         break;
       case 1+1*2+1*4:
-        w=xLoc[0]*xLoc[1]*xLoc[2];
+        w=LocalCornerWeight[7];
         InterpolationCoefficientTable[6]=w;
         break;
 

@@ -808,77 +808,108 @@ not failures of the completed T7 scope.
 
 ### Stage T8 -- ECSIM, deposition, field solvers, and waves
 
-Proposed suites:
+Implemented suites:
 
 - `CORE-ECSIM-OPERATORS-001`;
 - `CORE-ECSIM-BOUNDARIES-001`;
 - `CORE-PIC-DEPOSITION-001`;
 - `CORE-PIC-FIELD-SOLVER-001`;
 - `CORE-PIC-AUXILIARY-001`;
-- adapters for `test/srcStencilTest`, `test/srcLinearSystemSolver`,
-  `test/srcGMRESPeriodicBCTest`, `test/srcFastWave`, and
-  `test/srcLightWaveTest`.
+- `CORE-PIC-FIELD-LINE-001`;
+- `CORE-PIC-CALLBACK-OUTPUT-001`.
 
-Required cases:
+Implemented scope and independent oracles:
 
-- curl, grad-div, Laplacian and curl-curl on constant, affine, polynomial and
-  sinusoidal manufactured fields for orders 2, 4, 6 and 8;
-- discrete `div(curl)=0` and `curl(grad)=0` identities within their stencil
-  domains;
-- periodic, Dirichlet, Neumann and conducting boundary stencils where
-  supported;
-- one-particle analytic charge/current deposition, total deposited charge,
-  and discrete continuity during a cell crossing;
-- manufactured Poisson/Maxwell solutions, residual histories and convergence;
-- vacuum wave dispersion and a documented particle-plus-field energy budget;
-- straight and manufactured-curved field-line interpolation, vertex/edge
-  exchange, particle splitting on field lines, and conservation during a
-  field-line repartition;
-- ray tracing and column integration through constant and affine analytic
-  fields, including exact path length and boundary clipping;
-- stopping-power tables at knots, interpolated points and validity limits;
-- background/fluid-field interpolation and update-mode dispatch against small
-  committed interface fixtures, with typed behavior when an optional coupling
-  library is unavailable;
-- runtime-state and user-particle callback dispatch, invocation order and
-  exactly-once accounting; deterministic trajectory-record formatting;
-- remote halo stencil tests are deferred to T10 but must reuse these same
-  manufactured fields.
+- The native `test/srcStencilTest` adapter executes curl, grad-div, Laplacian
+  and curl-curl at orders 2, 4, 6 and 8 on five periodic meshes. Independent
+  Fourier derivatives gate observed order; exact coefficient moments cover
+  constant, affine, quadratic and mixed-polynomial fields and compatible
+  `div(curl)=0` / `curl(grad)=0` identities.
+- Checked delta-E rows cover periodic, Dirichlet and homogeneous Neumann
+  boundaries. Perfect-conductor requests return a typed unsupported status
+  until component-aware tangential/normal physics is implemented.
+- Production-linked CIC weights/deposition reproduce one-particle tensor
+  weights, total charge and `q*v`; a prefix-current construction satisfies the
+  nodal continuity equation for a multi-cell crossing.
+- A Dirichlet Poisson CG solve checks its independently assembled residual and
+  second-order sine convergence. The periodic Yee fixture checks the discrete
+  dispersion relation, exact staggered invariant and an independent
+  particle-plus-field energy-transfer ledger.
+- Straight/curved field-line interpolation, vertex/edge uniqueness, exact-
+  intrinsic particle split and overlap repartition close their represented
+  totals. Ray clipping, constant/affine column quadrature, stopping-table
+  limits, affine background interpolation/update dispatch, callback order and
+  exactly-once invocation, and deterministic finite trajectory records are
+  directly asserted.
 
-Acceptance gate: each advertised spatial order achieves its expected observed
-order; solver residual and conservation gates are independent of production
-diagnostic output.
+The older `test/srcLinearSystemSolver`, `test/srcGMRESPeriodicBCTest`,
+`test/srcFastWave`, and `test/srcLightWaveTest` programs remain diagnostic
+applications. Their bounded numerical contracts were moved into asserted,
+production-linked kernels; their legacy multi-block assembly/output paths were
+not converted into false PASS cases.
+
+Qualification: 34/34 cases pass in seven suites. The 5-case native operator
+receipt is `/tmp/amps-t8-operators-final2`; the other 29 cases pass in normal
+and reverse order at `/tmp/amps-t8-final` and `/tmp/amps-t8-reverse`. Each
+advertised order reaches at least `p-0.2`; solver residual and conservation
+gates are independent of production diagnostic output. Component-aware
+conductor rows, legacy multi-block GMRES assembly, particle-field feedback and
+remote MPI halos remain explicit later work; remote halos belong to T10.
 
 ### Stage T9 -- Restart, data files, and output integrity
 
-Proposed suites:
+Implemented suites:
 
 - `CORE-PIC-RESTART-001`;
 - `CORE-PIC-DATAFILE-001`;
 - `CORE-PIC-OUTPUT-001`;
-- adapter for `test/srcDataReaderTest`.
+- native selection alias `CORE-PIC-RESTART-NATIVE-001` owned by
+  `CORE-PIC-NATIVE-001`.
 
-Required cases:
+Implemented scope and compatibility policy:
 
-- inventory every persistent format and record whether it currently carries
-  magic, format version, byte order, integer widths and generated-layout
-  identity; where absent, add reviewed metadata and a compatibility policy
-  before claiming cross-build portability;
-- round-trip mesh topology, owner metadata, particles, optional fields,
-  weights, time steps, internal energy, chemistry state, boundary state,
-  sampling counters and RNG state;
-- compare one step after restart with an uninterrupted run;
-- empty mesh/blocks/cells and maximum populated records;
-- truncated, corrupt, unknown-version and incompatible-layout failures;
-- endianness and integer-width handling, atomic publication, interrupted-write
-  behavior, and explicitly supported cross-build compatibility;
-- background-data interpolation against small committed fixtures;
-- Tecplot/data output variable order, units, dimensions and finite values;
-- where supported, write with one rank and read with a different decomposition.
+- `src/test/persistent_formats.json` inventories all 12 persistent families
+  with owner, magic/version, byte order, scalar widths, layout identity and an
+  explicit native/canonical/text compatibility boundary. The registry adapter
+  rejects missing metadata, duplicate IDs and inventory drift.
+- `AMPSPF1` is a 64-byte canonical little-endian envelope with typed kind,
+  version, pointer/scalar widths, writer byte order, generated-layout identity,
+  payload length, payload CRC-32 and header CRC-32. Publication is temp-write,
+  `fflush`, `fsync`, then atomic rename. Native payloads reject ABI/layout
+  mismatches; fixed-width canonical payloads can cross compatible builds.
+- Production sampling and particle restart writers/readers use the envelope.
+  The particle payload revision restores global weights, global time steps and
+  their initialization state, the scalar MPI RNG seed, complete particle
+  records (including internal and opaque application bytes), and AMR owner/
+  cell placement. The native one-rank case also restores sampling counters and
+  completed sampling bytes, and requires exact particle/state recovery.
+- Independent canonical fixtures round-trip topology/owner/particle/sampling/
+  RNG/chemistry/boundary fields and compare one deterministic step with an
+  uninterrupted continuation. Empty and 1 MiB payloads, truncation, payload
+  corruption, unknown version, wrong kind/layout, endian/pointer/integer-width
+  mismatch, interrupted publication and explicit legacy policy are asserted.
+- Analytic affine background interpolation, concatenated writer chunks read
+  under a changed partition, kind/layout rejection, Tecplot trajectory
+  variable order/units/dimensions and nonfinite rejection replace the external-
+  data-dependent diagnostic behavior of `test/srcDataReaderTest` with small
+  reproducible fixtures.
 
-Acceptance gate: restart continuation is equivalent within stated exact or
-floating-point tolerances; corruption cannot be accepted as a valid state;
-every persistent format has an explicit version/compatibility test.
+Qualification: the three dependency-light suites pass 13/13 in normal and
+seed-809 shuffled order at `/tmp/amps-t9-qualified` and
+`/tmp/amps-t9-qualified-shuffle-809`. The actual one-rank AMPS sampling/
+particle restart passes at `/tmp/amps-t9-native-restart-state`. Corruption is
+rejected before payload interpretation, continuation is bitwise exact for the
+canonical deterministic fixture, and every inventoried family has an explicit
+compatibility policy.
+
+The qualified boundary is one-rank MPI and the two production restart
+families. Legacy AMR mesh, raw background/associated-node, trajectory scratch/
+dataset, stack and cut-cell files remain same-build or same-run formats and are
+not claimed portable. Native changed-rank restart, hybrid per-thread RNG state,
+application callback schema identity, and full application-level continuation
+with external libraries remain open; MPI ownership/decomposition belongs to
+T10. The legacy-compatibility switch defaults on to preserve existing AMPS
+runs and can be disabled when an enveloped restart is required.
 
 ### Stage T10 -- MPI ownership, halos, block and particle migration
 

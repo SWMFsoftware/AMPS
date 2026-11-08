@@ -50,7 +50,16 @@ void PIC::UserParticleProcessing::Processing() {
 
       while (p!=-1) {
         pnext=PIC::ParticleBuffer::GetNext(p);
-        _PIC_USER_PARTICLE_PROCESSING__FUNCTION_(p,newFirstCellParticle,node);
+        // AMPS exposes this hook as a function-like configuration macro rather
+        // than a function pointer.  The zero-argument lambda therefore forms a
+        // real callable boundary without changing how applications override
+        // the hook.  InvokeExactlyOnce supplies the testable cardinality
+        // contract: every particle removed from the old intrusive list reaches
+        // the configured processor once, and only that processor decides
+        // whether/how it is inserted into the rebuilt list.
+        PIC::CallbackOutputKernels::InvokeExactlyOnce([&]() {
+          _PIC_USER_PARTICLE_PROCESSING__FUNCTION_(p,newFirstCellParticle,node);
+        });
         p=pnext;
       }
 

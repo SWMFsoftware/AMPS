@@ -26,6 +26,7 @@ using namespace std;
 #include "meshAMRcutcell.h"
 
 #include "pic.h"
+#include "pic_geometry_kernels.h"
 
 //init the ray tracking module
 void PIC::RayTracing::Init() {
@@ -34,128 +35,15 @@ void PIC::RayTracing::Init() {
 
 //calculate the exist point of the ray from a given block
 bool PIC::RayTracing::GetBlockExitPoint(double *xBlockMin,double *xBlockMax,double *x0Ray,double *lRay,double *xBlockExit, double *xFaceExitLocal, int &nExitFace) {
-  double e0,e1,e2,dt,dtExit=-1.0;
-  double xFace[2];
-
-  e0=xBlockMax[0]-xBlockMin[0];
-  e1=xBlockMax[1]-xBlockMin[1];
-  e2=xBlockMax[2]-xBlockMin[2];
-
-  nExitFace=-1;
-
-  //calculate intersection of the ray with the faces
-  //face 0
-  if (lRay[0]<0.0) {
-     dt=(xBlockMin[0]-x0Ray[0])/lRay[0];
-
-     if (dt>dtExit) {
-       xFace[0]=(x0Ray[1]+dt*lRay[1]-xBlockMin[1]); // /e1;
-       xFace[1]=(x0Ray[2]+dt*lRay[2]-xBlockMin[2]); // /e2;
-
-       if ((xFace[0]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[0]<=e1+PIC::Mesh::mesh->EPS)  && (xFace[1]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[1]<=e2+PIC::Mesh::mesh->EPS)) {
-         dtExit=dt,nExitFace=0;
-
-         xFaceExitLocal[0]=xFace[0]/e1;
-         xFaceExitLocal[1]=xFace[1]/e2;
-       }
-    }
-  }
-
-  //face 1
-  if (lRay[0]>0.0) {
-    dt=(xBlockMax[0]-x0Ray[0])/lRay[0];
-
-    if (dt>dtExit) {
-      xFace[0]=(x0Ray[1]+dt*lRay[1]-xBlockMin[1]); // /e1;
-      xFace[1]=(x0Ray[2]+dt*lRay[2]-xBlockMin[2]); // /e2;
-
-      if ((xFace[0]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[0]<=e1+PIC::Mesh::mesh->EPS)  && (xFace[1]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[1]<=e2+PIC::Mesh::mesh->EPS)) {
-        dtExit=dt,nExitFace=1;
-
-        xFaceExitLocal[0]=xFace[0]/e1;
-        xFaceExitLocal[1]=xFace[1]/e2;
-      }
-    }
-  }
-
-
-  //face 2
-  if (lRay[1]<0.0) {
-    dt=(xBlockMin[1]-x0Ray[1])/lRay[1];
-
-    if (dt>dtExit) {
-      xFace[0]=(x0Ray[0]+dt*lRay[0]-xBlockMin[0]); // /e0;
-      xFace[1]=(x0Ray[2]+dt*lRay[2]-xBlockMin[2]); // /e2;
-
-      if ((xFace[0]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[0]<=e0+PIC::Mesh::mesh->EPS)  && (xFace[1]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[1]<=e2+PIC::Mesh::mesh->EPS)) {
-        dtExit=dt,nExitFace=2;
-
-        xFaceExitLocal[0]=xFace[0]/e0;
-        xFaceExitLocal[1]=xFace[1]/e2;
-      }
-    }
-  }
-
-  //face 3
-  if (lRay[1]>0.0) {
-    dt=(xBlockMax[1]-x0Ray[1])/lRay[1];
-
-    if (dt>dtExit) {
-      xFace[0]=(x0Ray[0]+dt*lRay[0]-xBlockMin[0]); // /e0;
-      xFace[1]=(x0Ray[2]+dt*lRay[2]-xBlockMin[2]); // /e2;
-
-      if ((xFace[0]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[0]<=e0+PIC::Mesh::mesh->EPS)  && (xFace[1]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[1]<=e2+PIC::Mesh::mesh->EPS)) {
-        dtExit=dt,nExitFace=3;
-
-        xFaceExitLocal[0]=xFace[0]/e0;
-        xFaceExitLocal[1]=xFace[1]/e2;
-      }
-    }
-  }
-
-
-  //face 4
-  if (lRay[2]<0.0) {
-    dt=(xBlockMin[2]-x0Ray[2])/lRay[2];
-
-    if (dt>dtExit) {
-      xFace[0]=(x0Ray[0]+dt*lRay[0]-xBlockMin[0]); // /e0;
-      xFace[1]=(x0Ray[1]+dt*lRay[1]-xBlockMin[1]); // /e1;
-
-      if ((xFace[0]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[0]<=e0+PIC::Mesh::mesh->EPS)  && (xFace[1]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[1]<=e1+PIC::Mesh::mesh->EPS)) {
-        dtExit=dt,nExitFace=4;
-
-        xFaceExitLocal[0]=xFace[0]/e0;
-        xFaceExitLocal[1]=xFace[1]/e1;
-      }
-    }
-  }
-
-  //face 5
-  if (lRay[2]>0.0) {
-    dt=(xBlockMax[2]-x0Ray[2])/lRay[2];
-
-    if (dt>dtExit) {
-      xFace[0]=(x0Ray[0]+dt*lRay[0]-xBlockMin[0]); // /e0;
-      xFace[1]=(x0Ray[1]+dt*lRay[1]-xBlockMin[1]); // /e1;
-
-      if ((xFace[0]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[0]<=e0+PIC::Mesh::mesh->EPS)  && (xFace[1]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[1]<=e1+PIC::Mesh::mesh->EPS)) {
-        dtExit=dt,nExitFace=5;
-
-        xFaceExitLocal[0]=xFace[0]/e0;
-        xFaceExitLocal[1]=xFace[1]/e1;
-      }
-    }
-  }
-
-  if (nExitFace==-1) return false;
-
-  //calculate the exit point from the block
-  xBlockExit[0]=x0Ray[0]+dtExit*lRay[0];
-  xBlockExit[1]=x0Ray[1]+dtExit*lRay[1];
-  xBlockExit[2]=x0Ray[2]+dtExit*lRay[2];
-
-  return true;
+  // The slab kernel selects the minimum forward face parameter.  It also
+  // rejects zero directions and malformed boxes explicitly, avoiding the
+  // historical collection of face-specific divisions.  The public boolean
+  // contract is retained: only a geometrically valid forward exit is true.
+  const PIC::GeometryKernels::RayBoxStatus status=
+      PIC::GeometryKernels::GetRayBoxExit(
+          xBlockMin,xBlockMax,x0Ray,lRay,PIC::Mesh::mesh->EPS,
+          xBlockExit,xFaceExitLocal,nExitFace);
+  return status==PIC::GeometryKernels::RayBoxStatus::Success;
 }
 
 bool PIC::RayTracing::TestDirectAccess(double *xStart,double *xTarget) {

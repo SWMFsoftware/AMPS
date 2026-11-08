@@ -178,6 +178,180 @@
       "timeout_seconds": 120
     },
     {
+      "id": "CORE-ECSIM-OPERATORS-001",
+      "component": "src/pic/ecsim",
+      "level": "module",
+      "tiers": ["nightly", "profile", "extended"],
+      "runner": "tests/pic/ecsim_operators/run_test.py",
+      "description": "Native periodic ECSIM curl, grad-div, Laplacian, and curl-curl manufactured-solution convergence at orders 2/4/6/8",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": [
+          "Config.pl",
+          "input/test/stencil.input",
+          "test/srcStencilTest/main.cpp",
+          "src/pic/ecsim/curl_curl_e_all_orders.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "ECSIM-STENCIL-CURL-001",
+        "ECSIM-STENCIL-GRAD-DIV-001",
+        "ECSIM-STENCIL-LAPLACIAN-001",
+        "ECSIM-STENCIL-CURL-CURL-001",
+        "ECSIM-STENCIL-MOMENTS-IDENTITIES-001"
+      ],
+      "timeout_seconds": 3600,
+      "mpi_ranks": 1,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-PIC-AUXILIARY-001",
+      "component": "src/pic",
+      "level": "unit",
+      "tiers": ["nightly", "extended"],
+      "runner": "tests/pic/auxiliary/run_test.py",
+      "description": "Ray-box clipping, constant/affine column quadrature, typed stopping-table interpolation, and background update ownership",
+      "requires": {
+        "tools": ["cxx"],
+        "paths": [
+          "src/pic/pic_geometry_kernels.h",
+          "src/pic/pic_integration_kernels.h",
+          "src/pic/pic_background_update_mode.h",
+          "src/pic/pic_deposition_kernels.h"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "PIC-AUX-RAY-BOX-001",
+        "PIC-AUX-COLUMN-CONSTANT-001",
+        "PIC-AUX-COLUMN-AFFINE-001",
+        "PIC-AUX-STOPPING-TABLE-001",
+        "PIC-AUX-BACKGROUND-DISPATCH-001",
+        "PIC-AUX-BACKGROUND-INTERPOLATION-001"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "CORE-ECSIM-BOUNDARIES-001",
+      "component": "src/pic/ecsim",
+      "level": "unit",
+      "tiers": ["nightly", "extended"],
+      "runner": "tests/pic/ecsim_boundaries/run_test.py",
+      "description": "Periodic, Dirichlet, homogeneous-Neumann and typed unsupported perfect-conductor ECSIM increment-row policy",
+      "requires": {
+        "tools": ["cxx"],
+        "paths": ["src/pic/ecsim/boundary_row.h", "src/pic/ecsim/get_stencil.cpp"],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "ECSIM-BC-PERIODIC-001",
+        "ECSIM-BC-DIRICHLET-001",
+        "ECSIM-BC-NEUMANN-001",
+        "ECSIM-BC-CONDUCTOR-UNSUPPORTED-001"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "CORE-PIC-DEPOSITION-001",
+      "component": "src/pic",
+      "level": "module",
+      "tiers": ["nightly", "extended"],
+      "runner": "tests/pic/deposition/run_test.py",
+      "description": "Production CIC corner weights, one-particle charge/current totals, exact segment continuity, and typed invalid domains",
+      "requires": {
+        "tools": ["cxx"],
+        "paths": [
+          "src/pic/pic_deposition_kernels.h",
+          "src/pic/pic_interpolation_routines.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "PIC-DEPOSITION-ANALYTIC-001",
+        "PIC-DEPOSITION-TOTALS-001",
+        "PIC-DEPOSITION-CONTINUITY-001",
+        "PIC-DEPOSITION-INVALID-001"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "CORE-PIC-FIELD-SOLVER-001",
+      "component": "src/pic/ecsim",
+      "level": "module",
+      "tiers": ["nightly", "extended"],
+      "runner": "tests/pic/field_solver/run_test.py",
+      "description": "Independent manufactured Poisson residual/convergence and periodic Yee dispersion/energy gates",
+      "requires": {
+        "tools": ["cxx"],
+        "paths": ["src/pic/pic_field_solver_kernels.h"],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "PIC-FIELD-POISSON-RESIDUAL-001",
+        "PIC-FIELD-POISSON-CONVERGENCE-001",
+        "PIC-FIELD-WAVE-DISPERSION-001",
+        "PIC-FIELD-WAVE-ENERGY-001",
+        "PIC-FIELD-SOLVER-INVALID-001"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "CORE-PIC-FIELD-LINE-001",
+      "component": "src/pic",
+      "level": "module",
+      "tiers": ["nightly", "extended"],
+      "runner": "tests/pic/field_line/run_test.py",
+      "description": "Field-line straight/curved interpolation, unique exchange, weighted splitting, and conservative repartition",
+      "requires": {"tools": ["cxx"], "paths": ["src/pic/pic_field_line_kernels.h", "src/pic/pic.h"], "capabilities": []},
+      "expected_cases": ["PIC-FIELDLINE-STRAIGHT-INTERP-001", "PIC-FIELDLINE-CURVED-INTERP-001", "PIC-FIELDLINE-EXCHANGE-001", "PIC-FIELDLINE-PARTICLE-SPLIT-001", "PIC-FIELDLINE-REPARTITION-001", "PIC-FIELDLINE-INVALID-001"],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "CORE-PIC-CALLBACK-OUTPUT-001",
+      "component": "src/pic",
+      "level": "module",
+      "tiers": ["nightly", "extended"],
+      "runner": "tests/pic/callback_output/run_test.py",
+      "description": "Runtime and particle callback order/exactly-once dispatch plus deterministic trajectory base formatting",
+      "requires": {"tools": ["cxx"], "paths": ["src/pic/pic_callback_output_kernels.h", "src/pic/pic_pt.cpp"], "capabilities": []},
+      "expected_cases": ["PIC-CALLBACK-RUNTIME-ORDER-001", "PIC-CALLBACK-PARTICLE-ONCE-001", "PIC-TRAJECTORY-FORMAT-001", "PIC-CALLBACK-OUTPUT-INVALID-001"],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "CORE-PIC-RESTART-001",
+      "component": "src/pic",
+      "level": "module",
+      "tiers": ["nightly", "extended"],
+      "runner": "tests/pic/persistence/run_test.py",
+      "description": "Versioned restart metadata, round-trip/continuation, bounds, corruption, compatibility, atomic publication, and legacy policy",
+      "requires": {"tools": ["cxx"], "paths": ["src/pic/pic_persistent_format.h", "src/pic/pic_restart.cpp", "src/test/persistent_formats.json"], "capabilities": []},
+      "expected_cases": ["PIC-PERSISTENCE-INVENTORY-001", "PIC-RESTART-ROUNDTRIP-001", "PIC-RESTART-CONTINUATION-001", "PIC-RESTART-EMPTY-MAX-001", "PIC-RESTART-CORRUPTION-001", "PIC-RESTART-ENDIAN-WIDTH-001", "PIC-RESTART-ATOMIC-001", "PIC-RESTART-LEGACY-POLICY-001"],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "CORE-PIC-DATAFILE-001",
+      "component": "src/pic",
+      "level": "module",
+      "tiers": ["nightly", "extended"],
+      "runner": "tests/pic/persistence/run_test.py",
+      "description": "Versioned background fixture, changed decomposition consumption, and kind/layout compatibility",
+      "requires": {"tools": ["cxx"], "paths": ["src/pic/pic_persistent_format.h", "src/pic/pic_datafile.cpp"], "capabilities": []},
+      "expected_cases": ["PIC-DATAFILE-BACKGROUND-001", "PIC-DATAFILE-DECOMPOSITION-001", "PIC-DATAFILE-COMPATIBILITY-001"],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "CORE-PIC-OUTPUT-001",
+      "component": "src/pic",
+      "level": "module",
+      "tiers": ["nightly", "extended"],
+      "runner": "tests/pic/persistence/run_test.py",
+      "description": "Tecplot trajectory variable order/units, finite records, and invalid output rejection",
+      "requires": {"tools": ["cxx"], "paths": ["src/pic/pic_callback_output_kernels.h", "src/pic/pic_pt.cpp"], "capabilities": []},
+      "expected_cases": ["PIC-OUTPUT-TECPLOT-LAYOUT-001", "PIC-OUTPUT-NONFINITE-001"],
+      "timeout_seconds": 180
+    },
+    {
       "id": "CORE-SPECIES-RADIATION-001",
       "component": "src/species",
       "level": "unit",
@@ -423,7 +597,7 @@
     },
     {
       "id": "CORE-PIC-NATIVE-001",
-      "aliases": ["CORE-PIC-PARTICLE-BUFFER-001", "CORE-PIC-PBUFFER-LAYOUT-001", "CORE-PIC-PHYSICS-001", "CORE-SPECIES-001", "CORE-PIC-WEIGHT-TIME-001", "CORE-PIC-MOVER-CHARGED-001", "CORE-PIC-MOVER-RELATIVISTIC-001", "CORE-PIC-GYRO-001", "CORE-PIC-BOUNDARY-001", "CORE-PIC-INJECTION-001", "CORE-PIC-SAMPLING-001", "CORE-PIC-COLLISION-ALGORITHMS-001", "CORE-PIC-IDF-001", "CORE-PHOTOCHEM-EXECUTION-001"],
+      "aliases": ["CORE-PIC-PARTICLE-BUFFER-001", "CORE-PIC-PBUFFER-LAYOUT-001", "CORE-PIC-PHYSICS-001", "CORE-SPECIES-001", "CORE-PIC-WEIGHT-TIME-001", "CORE-PIC-MOVER-CHARGED-001", "CORE-PIC-MOVER-RELATIVISTIC-001", "CORE-PIC-GYRO-001", "CORE-PIC-BOUNDARY-001", "CORE-PIC-INJECTION-001", "CORE-PIC-SAMPLING-001", "CORE-PIC-COLLISION-ALGORITHMS-001", "CORE-PIC-IDF-001", "CORE-PHOTOCHEM-EXECUTION-001", "CORE-PIC-RESTART-NATIVE-001"],
       "alias_cases": {
         "CORE-PIC-PARTICLE-BUFFER-001": [
           "PIC-PBUFFER-INIT-001",
@@ -565,6 +739,9 @@
           "PIC-WEIGHT-TIMESTEP-SPECIES-COPY-001",
           "PIC-WEIGHT-TIMESTEP-INVALID-VALUE-001",
           "PIC-WEIGHT-TIMESTEP-INVALID-SPECIES-001"
+        ],
+        "CORE-PIC-RESTART-NATIVE-001": [
+          "PIC-RESTART-NATIVE-ROUNDTRIP-001"
         ]
       },
       "component": "src/pic",
@@ -588,6 +765,7 @@
           "test/srcCoreUnitTests/physics_t5.cpp",
           "test/srcCoreUnitTests/physics_t6_photochem.cpp",
           "test/srcCoreUnitTests/physics_t6_reactions.cpp",
+          "test/srcCoreUnitTests/persistence_native.cpp",
           "test/srcCoreUnitTests/core_test_chemistry.h",
           "test/srcCoreUnitTests/core_test_fields.h",
           "test/srcCoreUnitTests/core_test_mesh.h",
@@ -691,7 +869,8 @@
         "PIC-TIMESTEP-MODE-ROUNDTRIP-001",
         "PIC-WEIGHT-TIMESTEP-SPECIES-COPY-001",
         "PIC-WEIGHT-TIMESTEP-INVALID-VALUE-001",
-        "PIC-WEIGHT-TIMESTEP-INVALID-SPECIES-001"
+        "PIC-WEIGHT-TIMESTEP-INVALID-SPECIES-001",
+        "PIC-RESTART-NATIVE-ROUNDTRIP-001"
       ],
       "timeout_seconds": 1800,
       "mpi_ranks": 1,

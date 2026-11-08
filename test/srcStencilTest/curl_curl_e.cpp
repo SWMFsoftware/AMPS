@@ -194,17 +194,22 @@ inline Vec3 numericalCurl_8th(const std::vector<double>& Vx,
     return (size_t)kk*Ny*Nx + (size_t)jj*Nx + (size_t)ii;
   };
 
-  // 8th order: f'(x) = [-f(x+4h) + 8f(x+3h) - 36f(x+2h) + 112f(x+h) - 112f(x-h) + 36f(x-2h) - 8f(x-3h) + f(x-4h)] / (280h)
+  // Eighth-order centered derivative.  These are the unique antisymmetric
+  // radius-four weights that reproduce monomials through degree eight:
+  //   f' = (-3 f+4 +32 f+3 -168 f+2 +672 f+1
+  //         -672 f-1 +168 f-2 -32 f-3 +3 f-4)/(840 h).
+  // The former coefficients divided by 280 did not even reproduce f(x)=x;
+  // it was a diagnostic-fixture defect, not an ECSIM stencil failure.
   auto deriv8 = [&](const std::vector<double>& V, int i0, int j0, int k0, 
                     int di, int dj, int dk, double dh) -> double {
-    return (-V[idx(wrap(i0+4*di,Nx), wrap(j0+4*dj,Ny), wrap(k0+4*dk,Nz))]
-           +8.0*V[idx(wrap(i0+3*di,Nx), wrap(j0+3*dj,Ny), wrap(k0+3*dk,Nz))]
-           -36.0*V[idx(wrap(i0+2*di,Nx), wrap(j0+2*dj,Ny), wrap(k0+2*dk,Nz))]
-           +112.0*V[idx(wrap(i0+di,Nx), wrap(j0+dj,Ny), wrap(k0+dk,Nz))]
-           -112.0*V[idx(wrap(i0-di,Nx), wrap(j0-dj,Ny), wrap(k0-dk,Nz))]
-           +36.0*V[idx(wrap(i0-2*di,Nx), wrap(j0-2*dj,Ny), wrap(k0-2*dk,Nz))]
-           -8.0*V[idx(wrap(i0-3*di,Nx), wrap(j0-3*dj,Ny), wrap(k0-3*dk,Nz))]
-           +V[idx(wrap(i0-4*di,Nx), wrap(j0-4*dj,Ny), wrap(k0-4*dk,Nz))]) / (280.0*dh);
+    return (-3.0*V[idx(wrap(i0+4*di,Nx), wrap(j0+4*dj,Ny), wrap(k0+4*dk,Nz))]
+           +32.0*V[idx(wrap(i0+3*di,Nx), wrap(j0+3*dj,Ny), wrap(k0+3*dk,Nz))]
+           -168.0*V[idx(wrap(i0+2*di,Nx), wrap(j0+2*dj,Ny), wrap(k0+2*dk,Nz))]
+           +672.0*V[idx(wrap(i0+di,Nx), wrap(j0+dj,Ny), wrap(k0+dk,Nz))]
+           -672.0*V[idx(wrap(i0-di,Nx), wrap(j0-dj,Ny), wrap(k0-dk,Nz))]
+           +168.0*V[idx(wrap(i0-2*di,Nx), wrap(j0-2*dj,Ny), wrap(k0-2*dk,Nz))]
+           -32.0*V[idx(wrap(i0-3*di,Nx), wrap(j0-3*dj,Ny), wrap(k0-3*dk,Nz))]
+           +3.0*V[idx(wrap(i0-4*di,Nx), wrap(j0-4*dj,Ny), wrap(k0-4*dk,Nz))]) / (840.0*dh);
   };
 
   const double dVz_dy = deriv8(Vz, i, j, k, 0, 1, 0, dy);
@@ -351,7 +356,12 @@ static void print_point_lap(int N, double L,
   line("(LaplacianE)_z", LPAz[idx], LPz[idx]);
 }
 
-struct ErrStats { double linf=0.0, l2abs=0.0, l2rel=0.0; };
+struct ErrStats {
+  double linf=0.0, l2abs=0.0, l2rel=0.0;
+  // Relative norm of the independently assembled identity
+  // curl-curl(E) - [grad(div(E))-laplacian(E)].
+  double identity_l2rel=0.0;
+};
 
 template<typename BuildGradDiv, typename BuildLap, typename BuildCurlCurl, typename CurlFunc>
 ErrStats run_one_order(const char* label,
@@ -553,7 +563,11 @@ ErrStats run_one_order(const char* label,
   print_point_gd(N, L, GDx, GDy, GDz, GDAx, GDAy, GDAz, label);
   print_point_lap(N, L, LPx, LPy, LPz, LPAx, LPAy, LPAz, label);
 
-  ErrStats s; s.linf = linfA; s.l2abs = l2absA; s.l2rel = relL2A;
+  ErrStats s;
+  s.linf = linfA;
+  s.l2abs = l2absA;
+  s.l2rel = relL2A;
+  s.identity_l2rel = relL2I;
   
   if (direct_err) {
     direct_err->linf = linfDir;
@@ -579,7 +593,11 @@ struct Variant {
 
 int Run(const std::vector<std::string>&) {
   const double L = 1.0;
-  const double a = 2.0*M_PI, b = 3.0*M_PI, c = 5.0*M_PI;
+  // The wrapped stencil assumes a periodic field.  Integer Fourier modes
+  // (1,2,3) are used in all three directions so the value and every analytic
+  // derivative agree at x=0 and x=L.  Odd multiples of pi are anti-periodic
+  // and therefore cannot be used as a periodic manufactured solution.
+  const double a = 2.0*M_PI, b = 4.0*M_PI, c = 6.0*M_PI;
 
   const Variant variants[] = {
     { "2nd-compact",
@@ -617,13 +635,14 @@ int Run(const std::vector<std::string>&) {
   std::vector<int> Ns = {16, 24, 32, 48, 64};
 
   std::cout << "\n=== Corner curl_curl(E): analytic vs numerical, identity, and GD/Lap verification ===\n"
-            << "Domain L=" << L << ", wavenumbers a=2π, b=3π, c=5π\n";
+            << "Domain L=" << L << ", wavenumbers a=2π, b=4π, c=6π\n";
 
   struct Row { double linf=0.0, l2=0.0; };
   std::vector<Row> second_rows, second_direct_rows;
   std::vector<Row> fourth_rows, fourth_direct_rows;
   std::vector<Row> sixth_rows, sixth_direct_rows;
   std::vector<Row> eighth_rows, eighth_direct_rows;
+  double max_identity_residual=0.0;
   
   auto push_row = [](std::vector<Row>& vec, const ErrStats& s){
     Row r; r.linf = s.linf; r.l2 = s.l2abs; vec.push_back(r);
@@ -647,6 +666,8 @@ int Run(const std::vector<std::string>&) {
                                    &direct_stats);
 
       const std::string name = variants[v].name;
+      max_identity_residual=std::max(
+          max_identity_residual,res.identity_l2rel);
       if      (name == "2nd-compact") { s2c = res; s2c_dir = direct_stats; }
       else if (name == "4th")         { s4  = res; s4_dir = direct_stats; }
       else if (name == "6th")         { s6  = res; s6_dir = direct_stats; }
@@ -718,7 +739,27 @@ int Run(const std::vector<std::string>&) {
   print_convergence_table("CONVERGENCE: 8th Order",
                          eighth_rows, eighth_direct_rows, "8th");
 
-  return 0;
+  const auto observed_order = [&](const std::vector<Row>& rows)->double {
+    const std::size_t n = rows.size();
+    return safe_ord(rows[n-2].l2, rows[n-1].l2, Ns[n-2], Ns[n-1]);
+  };
+  const double measured[] = {
+    observed_order(second_rows), observed_order(fourth_rows),
+    observed_order(sixth_rows), observed_order(eighth_rows)
+  };
+  const double expected[] = {2.0, 4.0, 6.0, 8.0};
+  bool pass = true;
+  for (int i=0; i<4; ++i) {
+    // A 0.2 margin admits the leading modified-wavenumber term on the finite
+    // grid while still rejecting a downgrade by one complete spatial order.
+    if (!std::isfinite(measured[i]) || measured[i] < expected[i]-0.2)
+      pass = false;
+  }
+  if (!(max_identity_residual < 1.0e-12))
+    pass = false;
+  std::cout << "[ECSIM-STENCIL-CURL-CURL-001] "
+            << (pass ? "PASS" : "FAIL") << "\n";
+  return pass ? 0 : 1;
 }
 
 } // namespace CurlCurlE

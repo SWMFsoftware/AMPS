@@ -27,6 +27,7 @@ void LinkUnitTests();
 void LinkWeightTimeT2Tests();
 void LinkParticleLayoutT2Tests();
 void LinkSplitMergeT2Tests();
+void LinkNativePersistenceTests();
 
 }  // namespace CoreTests
 }  // namespace AMPS
@@ -55,6 +56,7 @@ int main(int argc, char** argv) {
   // profile's linked case inventory explicit and deterministic.
   AMPS::CoreTests::LinkParticleLayoutT2Tests();
   AMPS::CoreTests::LinkSplitMergeT2Tests();
+  AMPS::CoreTests::LinkNativePersistenceTests();
 
   // Use the production pre-parser initialization rather than constructing a
   // test-only particle layout.  With this application's input deck it installs

@@ -322,9 +322,13 @@ static ErrStats run_one(const Variant& V,
 }
 
 static int Run(const std::vector<std::string>& args) {
-  // domain and wavenumbers (choose a,b,c unequal to avoid trivial curl=0)
+  // Periodic manufactured field on [0,1)^3.  Every wavenumber must be an
+  // integer multiple of 2*pi: the former 3*pi and 5*pi modes changed sign
+  // across a periodic face, so the wrapped stencil quite correctly saw a
+  // discontinuity and its boundary error grew under refinement.  Unequal
+  // integer modes retain a nontrivial curl while satisfying the BC exactly.
   double Lx=1.0, Ly=1.0, Lz=1.0;
-  double a=2.0*M_PI, b=3.0*M_PI, c=5.0*M_PI;
+  double a=2.0*M_PI, b=4.0*M_PI, c=6.0*M_PI;
 
   // refinement set (non-powers-of-two included to exercise generic order calc)
   std::vector<int> Ns = {16, 24, 32, 48, 64};
@@ -399,7 +403,18 @@ static int Run(const std::vector<std::string>& args) {
       std::cout << "  curlB_" << vname << "_N" << Ns.back() << ".dat\n";
     }
   }
-  return 0;
+  bool pass = true;
+  const double expected[] = {2.0, 2.0, 4.0, 6.0, 8.0};
+  for (int f=0; f<F; ++f) {
+    const std::size_t n = Ns.size();
+    const double ratio = double(Ns[n-1])/double(Ns[n-2]);
+    const double measured = std::log(err[f][n-2].l2/err[f][n-1].l2) /
+                            std::log(ratio);
+    if (!std::isfinite(measured) || measured < expected[f]-0.2) pass=false;
+  }
+  std::cout << "[ECSIM-STENCIL-CURL-001] " << (pass ? "PASS" : "FAIL")
+            << "\n";
+  return pass ? 0 : 1;
 }
 
 } // namespace CurlB

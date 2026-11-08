@@ -38,18 +38,6 @@ int main(int argc, char** argv) {
   // Ensure the tests' translation units remain linked-in even with aggressive LTO.
   StencilTests::ForceLinkAllTests();
 
-  {
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM::Stencil::SecondOrder;
-
-PIC::FieldSolver::Electromagnetic::ECSIM::Stencil::cGradDivEStencil Gc[3], Gw[3];
-double dx,dy,dz;
-
-InitGradDivEBStencils_compact(Gc, dx, dy, dz);
-InitGradDivEBStencils_wide   (Gw, dx, dy, dz);
-
-//test_grad_div_e();
-  }
-
   auto args = ParseArgs(argc, argv);
 
   // No test name? Print list and a short usage hint.

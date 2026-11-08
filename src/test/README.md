@@ -77,6 +77,16 @@ The final cross-stage receipt `/tmp/amps-t2-t5-profile-qualified` passes all
 `/tmp/amps-t2-t5-profile-final` diagnostic, which exposed and retained one
 stale seven-species oracle after the charged profile added H+ and electrons.
 
+T8/T9 extend the live registry to 41 suites and 359 cases. T8 owns 34 cases:
+five native manufactured ECSIM operator/moment/identity checks and 29
+dependency-light boundary, deposition, field, field-line, geometry,
+background and callback/output checks. T9 owns 13 versioned persistence/data/
+output cases plus one native AMPS sampling/particle restart case selected from
+the baseline owner. The native restart restores AMR cell placement, particle
+state and extension bytes, global weights/time steps, completed sampling data
+and the scalar MPI RNG seed. `STATUS.md` records the exact receipts and the
+explicit remaining legacy-format, hybrid-RNG and distributed boundaries.
+
 ## Architecture and ownership
 
 The execution path is deliberately one-way:
@@ -147,9 +157,9 @@ make core_test_nightly
 ```
 
 `--tier` remains a backward-compatible alias for `--campaign`. The top-level
-`test_all` target depends on `core_test_nightly`. At the T7 checkpoint the
-registry contains 31 suites and 311 cases; use `--list` for the exact live
-campaign memberships because later roadmap stages extend those sets. The
+`test_all` target depends on `core_test_nightly`. The live T9 checkpoint has
+41 suites and 359 cases; use `--list` for exact campaign memberships because
+later roadmap stages extend those sets. The
 `distributed` campaign retains the five-case two-rank MPI channel/RNG suite.
 `--all` ignores campaign membership and selects the complete registry.
 Site/nightly orchestration must preserve the native suite's exclusive barrier
@@ -264,11 +274,31 @@ normal/reverse/shuffled dependency-kernel receipts plus the remaining MPI,
 nonspherical, target-specific source, native sputtered-product insertion, and
 restart boundaries.
 
+Run the bounded T8 and T9 owners with:
+
+```sh
+python3 src/test/run_tests.py --test CORE-ECSIM-OPERATORS-001
+python3 src/test/run_tests.py --test CORE-ECSIM-BOUNDARIES-001 \
+  --test CORE-PIC-DEPOSITION-001 --test CORE-PIC-FIELD-SOLVER-001 \
+  --test CORE-PIC-AUXILIARY-001 --test CORE-PIC-FIELD-LINE-001 \
+  --test CORE-PIC-CALLBACK-OUTPUT-001 --jobs 4
+python3 src/test/run_tests.py --test CORE-PIC-RESTART-001 \
+  --test CORE-PIC-DATAFILE-001 --test CORE-PIC-OUTPUT-001 --jobs 3
+python3 src/test/run_tests.py --test CORE-PIC-RESTART-NATIVE-001
+```
+
+The first and last commands are exclusive configured builds and obey the
+mandatory clean-build preflight. `CORE-PIC-RESTART-NATIVE-001` is a selection
+alias for one case in `CORE-PIC-NATIVE-001`, so it reuses the established
+native application rather than adding a duplicate owner. The dependency-light
+T9 fixtures validate canonical continuation and corruption/compatibility; the
+native case separately proves the real sampling and particle restart paths.
+
 The historical particle-buffer, packed-fixed layout, physics, species, and
 species-global weight/time suite IDs are manifest aliases for selection
 compatibility; they are not separate executable suites and must not trigger
-two rebuilds. `--campaign profile` currently serializes 17 exclusive owners
-and 211 cases. The six T2 owners select mutually exclusive record/weight
+two rebuilds. `--campaign profile` currently serializes 18 exclusive owners
+and 217 cases. The six T2 owners select mutually exclusive record/weight
 profiles; the T3 owner itself performs three clean builds for its 1-D, 2-D,
 and 3-D applications. Later configured reaction and T7 owners add their own
 clean application selections.
@@ -301,7 +331,8 @@ The baseline native suite owns three generated-configuration adapter cases,
 three particle-buffer cases, seven packed fixed-layout cases, 19 original
 physics cases, 19 T4 cases, 25 T5 cases, four compiled/generated species
 cases, two production-linked global-unit cases, and five species-global
-particle weight/time-step cases. Ten other native owners cover packed/aligned
+particle weight/time-step cases, plus one native sampling/particle restart
+case. Ten other native owners cover packed/aligned
 individual weights and split/merge, aligned fixed records, species-local and
 single-global weight/time, periodic boundaries, VHS/VSS, and two Zrot
 profiles. Across the matrix, T2 checks independently computed alignment and

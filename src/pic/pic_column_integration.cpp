@@ -6,6 +6,7 @@
 //the module that performs column integration
 
 #include "pic.h"
+#include "pic_integration_kernels.h"
 
 PIC::ColumnIntegration::cBoundingBoxFace PIC::ColumnIntegration::BoundingBoxFace[6]={ {{0.0,0.0,0.0},{0.0,0.0,0.0},{0.0,0.0,0.0},{0.0,0.0,0.0},0.0,0.0}, {{0.0,0.0,0.0},{0.0,0.0,0.0},{0.0,0.0,0.0},{0.0,0.0,0.0},0.0,0.0},
     {{0.0,0.0,0.0},{0.0,0.0,0.0},{0.0,0.0,0.0},{0.0,0.0,0.0},0.0,0.0}, {{0.0,0.0,0.0},{0.0,0.0,0.0},{0.0,0.0,0.0},{0.0,0.0,0.0},0.0,0.0},
@@ -285,10 +286,14 @@ void PIC::ColumnIntegration::GetCoulumnIntegral(double *ResultVector,int ResultV
 //    else if (PIC::ThisThread==0) MPI_Recv(a1,ResultVectorLength,MPI_DOUBLE,xNode->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
     else for (i=0;i<ResultVectorLength;i++) a1[i]=0.0;
 
-    for (i=0;i<ResultVectorLength;i++) {
-      ResultVector[i]+=0.5*(a0[i]+a1[i])*dl;
-      a0[i]=a1[i];
-    }
+    // Composite trapezoidal integration is exact for constant and affine
+    // fields along a straight segment.  The shared kernel validates the path
+    // increment and finite integrand values; a violation is a typed numerical
+    // failure at this layer and remains fatal in the legacy void API.
+    if (!PIC::IntegrationKernels::TrapezoidAccumulate(
+            ResultVector,a0,a1,ResultVectorLength,dl))
+      exit(__LINE__,__FILE__,"Invalid column-integration increment/data");
+    for (i=0;i<ResultVectorLength;i++) a0[i]=a1[i];
 
 
     IntegratedPath+=dl;

@@ -323,7 +323,9 @@ void PIC::RunTimeSystemState::CumulativeTiming::Print() {
   } 
 
   //call other function used for timing
-  for (auto& it : PIC::RunTimeSystemState::CumulativeTiming::PrintTimingFunctionTable) it();
+  if (!PIC::CallbackOutputKernels::InvokeInRegistrationOrder(
+        PIC::RunTimeSystemState::CumulativeTiming::PrintTimingFunctionTable))
+    exit(__LINE__,__FILE__,"Error: null cumulative-timing callback");
 }
 
 

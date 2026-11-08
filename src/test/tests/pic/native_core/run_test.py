@@ -205,6 +205,10 @@ T6_ELECTRON_IMPACT_CASES = [
 ]
 T6_REACTION_CASES = T6_CHARGE_EXCHANGE_CASES + T6_ELECTRON_IMPACT_CASES
 
+T9_NATIVE_RESTART_CASES = [
+    "PIC-RESTART-NATIVE-ROUNDTRIP-001",
+]
+
 # The canonical baseline owner must include every case compiled into its
 # executable. Keeping the expansion explicit makes manifest/runner drift a
 # schema error instead of silently omitting a newly registered test.
@@ -269,7 +273,7 @@ ADAPTER_CASES = [
     "CONFIG-DUPLICATE-SPECIES-001",
 ]
 NATIVE_CASES = (PBUFFER_CASES + PHYSICS_CASES + SPECIES_CASES + UNIT_CASES +
-                WEIGHT_TIME_CASES)
+                WEIGHT_TIME_CASES + T9_NATIVE_RESTART_CASES)
 
 # The manifest aliases the historical family IDs to the combined suite, but
 # accepting direct legacy contexts keeps this adapter backward-compatible.
@@ -310,6 +314,10 @@ SUITES: Dict[str, Dict[str, Any]] = {
     "CORE-PIC-PHYSICS-001": {
         "artifact": "native-physics-output.txt",
         "cases": PHYSICS_CASES,
+    },
+    "CORE-PIC-RESTART-NATIVE-001": {
+        "artifact": "native-particle-restart-output.txt",
+        "cases": T9_NATIVE_RESTART_CASES,
     },
     "CORE-PIC-MOVER-CHARGED-001": {
         "artifact": "native-t4-charged-mover-output.txt",

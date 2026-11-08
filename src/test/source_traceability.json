@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "Rule-based T0-T7 source/public-contract traceability. The validator expands these areas to every current production translation unit and public compile contract; compilation alone never changes a status to tested.",
+  "description": "Rule-based T0-T9 source/public-contract traceability. The validator expands these areas to every current production translation unit and public compile contract; compilation alone never changes a status to tested.",
   "statuses": ["tested", "partial", "planned", "exempt"],
   "discovery": {
     "translation_unit_extensions": [".c", ".cc", ".cpp", ".cxx", ".f", ".f90", ".for"],
@@ -47,6 +47,21 @@
     "test/srcModelDustTest/main.cpp",
     "src/test/tests/models/dust_injection_native/run_test.py",
     "test/srcModelDustInjectionTest/main.cpp",
+    "src/test/tests/pic/ecsim_operators/run_test.py",
+    "src/test/tests/pic/ecsim_boundaries/run_test.py",
+    "src/test/tests/pic/ecsim_boundaries/test_boundaries.cpp",
+    "src/test/tests/pic/auxiliary/run_test.py",
+    "src/test/tests/pic/auxiliary/test_auxiliary.cpp",
+    "src/test/tests/pic/deposition/run_test.py",
+    "src/test/tests/pic/deposition/test_deposition.cpp",
+    "src/test/tests/pic/field_solver/run_test.py",
+    "src/test/tests/pic/field_solver/test_field_solver.cpp",
+    "src/test/tests/pic/field_line/run_test.py",
+    "src/test/tests/pic/field_line/test_field_line.cpp",
+    "src/test/tests/pic/callback_output/run_test.py",
+    "src/test/tests/pic/callback_output/test_callback_output.cpp",
+    "src/test/tests/pic/persistence/run_test.py",
+    "src/test/tests/pic/persistence/test_persistence.cpp",
     "test/srcCoreUnitTests/particle_buffer.cpp",
     "test/srcCoreUnitTests/physics_photochemistry.cpp",
     "test/srcCoreUnitTests/physics_collisions.cpp",
@@ -58,6 +73,7 @@
     "test/srcCoreUnitTests/weight_time_t2.cpp",
     "test/srcCoreUnitTests/particle_layout_t2.cpp",
     "test/srcCoreUnitTests/split_merge_t2.cpp"
+    ,"test/srcCoreUnitTests/persistence_native.cpp"
     ,"test/srcCoreMeshTests/mesh_topology.cpp"
     ,"test/srcCoreMeshTests/mesh_adaptation.cpp"
     ,"test/srcCoreMeshTests/mesh_coarsen_data.cpp"
@@ -258,11 +274,19 @@
       "component": "src/pic/ecsim",
       "path": "src/pic/ecsim",
       "status": "partial",
-      "suite_ids": [],
-      "case_ids": [],
+      "suite_ids": ["CORE-ECSIM-OPERATORS-001", "CORE-ECSIM-BOUNDARIES-001", "CORE-PIC-FIELD-SOLVER-001"],
+      "case_ids": [
+        "ECSIM-STENCIL-CURL-001", "ECSIM-STENCIL-GRAD-DIV-001",
+        "ECSIM-STENCIL-LAPLACIAN-001", "ECSIM-STENCIL-CURL-CURL-001",
+        "ECSIM-STENCIL-MOMENTS-IDENTITIES-001", "ECSIM-BC-PERIODIC-001",
+        "ECSIM-BC-DIRICHLET-001", "ECSIM-BC-NEUMANN-001",
+        "ECSIM-BC-CONDUCTOR-UNSUPPORTED-001", "PIC-FIELD-POISSON-RESIDUAL-001",
+        "PIC-FIELD-POISSON-CONVERGENCE-001", "PIC-FIELD-WAVE-DISPERSION-001",
+        "PIC-FIELD-WAVE-ENERGY-001", "PIC-FIELD-SOLVER-INVALID-001"
+      ],
       "local_registries": ["test/srcStencilTest/test_register.h", "test/srcFastWave/main.cpp", "test/srcLightWaveTest/main.cpp"],
-      "reason": "Stencil and wave applications exist outside the global registry.",
-      "gaps": ["global adapters", "independent discrete-operator oracles", "halo evidence"]
+      "reason": "T8 directly qualifies production ECSIM stencils with independent manufactured orders and exact moment/identity oracles, checked periodic/Dirichlet/Neumann row closures, a typed unsupported conductor closure, and dependency-light Poisson/Yee residual, dispersion, and energy contracts.",
+      "gaps": ["component-aware perfect-conductor closure", "legacy multi-block linear-system/GMRES assembly", "remote halo stencil evidence deferred to T10"]
     },
     {
       "area_id": "pic-gyro",
@@ -313,7 +337,7 @@
       "component": "src/pic",
       "path": "src/pic",
       "status": "partial",
-      "suite_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-PERIODIC-001", "CORE-PIC-COLLISION-VHS-001", "CORE-PIC-COLLISION-VSS-001", "CORE-PIC-IDF-ROTZ-Z2-001", "CORE-PIC-IDF-ROTZ-Z10-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001", "CORE-MESH-NATIVE-001"],
+      "suite_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-PERIODIC-001", "CORE-PIC-COLLISION-VHS-001", "CORE-PIC-COLLISION-VSS-001", "CORE-PIC-IDF-ROTZ-Z2-001", "CORE-PIC-IDF-ROTZ-Z10-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001", "CORE-MESH-NATIVE-001", "CORE-PIC-AUXILIARY-001", "CORE-PIC-DEPOSITION-001", "CORE-PIC-FIELD-LINE-001", "CORE-PIC-CALLBACK-OUTPUT-001", "CORE-PIC-RESTART-001", "CORE-PIC-DATAFILE-001", "CORE-PIC-OUTPUT-001"],
       "case_ids": [
         "PIC-PBUFFER-INIT-001", "PIC-PBUFFER-STATE-001", "PIC-PBUFFER-LIST-001",
         "PIC-PBUFFER-LAYOUT-PACKED-FIXED-OFFSETS-001", "PIC-PBUFFER-LAYOUT-PACKED-FIXED-CLONE-001", "PIC-PBUFFER-LAYOUT-PACKED-FIXED-REUSE-001", "PIC-PBUFFER-LAYOUT-PACKED-FIXED-LIST-001", "PIC-PBUFFER-LAYOUT-PACKED-FIXED-CAPACITY-001", "PIC-PBUFFER-LAYOUT-PACKED-FIXED-INVALID-001", "PIC-PBUFFER-LAYOUT-PACKED-FIXED-EXHAUSTION-001",
@@ -339,11 +363,17 @@
         "PIC-WEIGHT-SINGLE-GLOBAL-ROUNDTRIP-001", "PIC-TIMESTEP-SINGLE-GLOBAL-ROUNDTRIP-001", "PIC-WEIGHT-TIMESTEP-SINGLE-GLOBAL-INVALID-VALUE-001", "PIC-WEIGHT-TIMESTEP-SINGLE-GLOBAL-INVALID-SPECIES-001",
         "PIC-SPLIT-MERGE-EQUAL-WEIGHT-001", "PIC-SPLIT-MERGE-VARIABLE-WEIGHT-001", "PIC-SPLIT-MERGE-BOUNDARY-001", "PIC-SPLIT-EXTENDED-STATE-001", "PIC-MERGE-EXTENDED-STATE-001", "PIC-WEIGHT-INDIVIDUAL-INVALID-001",
         "PIC-SPLIT-MERGE-ALIGNED-EQUAL-WEIGHT-001", "PIC-SPLIT-MERGE-ALIGNED-VARIABLE-WEIGHT-001", "PIC-SPLIT-MERGE-ALIGNED-BOUNDARY-001", "PIC-SPLIT-ALIGNED-EXTENDED-STATE-001", "PIC-MERGE-ALIGNED-EXTENDED-STATE-001", "PIC-WEIGHT-ALIGNED-INDIVIDUAL-INVALID-001",
-        "CORE-MESH-3D-INTERPOLATION-UNIFORM-001", "CORE-MESH-3D-INTERPOLATION-BOUNDARY-001", "CORE-MESH-3D-INTERPOLATION-AMR-001", "CORE-MESH-3D-INTERPOLATION-LEGACY-MASK-001", "CORE-MESH-3D-INTERPOLATION-DUPLICATE-001", "CORE-MESH-3D-INTERPOLATION-PERMUTATION-001", "CORE-MESH-3D-INTERPOLATION-CACHE-001", "CORE-MESH-3D-INTERPOLATION-INPUT-IMMUTABLE-001"
+        "CORE-MESH-3D-INTERPOLATION-UNIFORM-001", "CORE-MESH-3D-INTERPOLATION-BOUNDARY-001", "CORE-MESH-3D-INTERPOLATION-AMR-001", "CORE-MESH-3D-INTERPOLATION-LEGACY-MASK-001", "CORE-MESH-3D-INTERPOLATION-DUPLICATE-001", "CORE-MESH-3D-INTERPOLATION-PERMUTATION-001", "CORE-MESH-3D-INTERPOLATION-CACHE-001", "CORE-MESH-3D-INTERPOLATION-INPUT-IMMUTABLE-001",
+        "PIC-AUX-RAY-BOX-001", "PIC-AUX-COLUMN-CONSTANT-001", "PIC-AUX-COLUMN-AFFINE-001", "PIC-AUX-STOPPING-TABLE-001", "PIC-AUX-BACKGROUND-DISPATCH-001", "PIC-AUX-BACKGROUND-INTERPOLATION-001",
+        "PIC-DEPOSITION-ANALYTIC-001", "PIC-DEPOSITION-TOTALS-001", "PIC-DEPOSITION-CONTINUITY-001", "PIC-DEPOSITION-INVALID-001",
+        "PIC-FIELDLINE-STRAIGHT-INTERP-001", "PIC-FIELDLINE-CURVED-INTERP-001", "PIC-FIELDLINE-EXCHANGE-001", "PIC-FIELDLINE-PARTICLE-SPLIT-001", "PIC-FIELDLINE-REPARTITION-001", "PIC-FIELDLINE-INVALID-001",
+        "PIC-CALLBACK-RUNTIME-ORDER-001", "PIC-CALLBACK-PARTICLE-ONCE-001", "PIC-TRAJECTORY-FORMAT-001", "PIC-CALLBACK-OUTPUT-INVALID-001",
+        "PIC-PERSISTENCE-INVENTORY-001", "PIC-RESTART-ROUNDTRIP-001", "PIC-RESTART-CONTINUATION-001", "PIC-RESTART-EMPTY-MAX-001", "PIC-RESTART-CORRUPTION-001", "PIC-RESTART-ENDIAN-WIDTH-001", "PIC-RESTART-ATOMIC-001", "PIC-RESTART-LEGACY-POLICY-001",
+        "PIC-DATAFILE-BACKGROUND-001", "PIC-DATAFILE-DECOMPOSITION-001", "PIC-DATAFILE-COMPATIBILITY-001", "PIC-OUTPUT-TECPLOT-LAYOUT-001", "PIC-OUTPUT-NONFINITE-001", "PIC-RESTART-NATIVE-ROUNDTRIP-001"
       ],
       "local_registries": [],
-      "reason": "The configured matrix owns bounded T2 records/weights/split-merge, T3 Cartesian AMR interpolation, T4 charged/relativistic movers, exact boundary events, periodic wrapping, injection and physical sampling, and T5 selector-specific collision rates/limits/weights plus VHS/VSS and LB RT/Zrot behavior.",
-      "gaps": ["CUDA/device invalid-state diagnostics", "semantic reduction of opaque extension fields", "coarse/fine mover crossing", "uncovered production surface geometries and diffuse law", "injection ownership and species-rate normalization", "histogram under/overflow policy", "restart", "distributed ownership and migration", "Yinsi individual weights", "unequal cross-species Zrot mixing law", "VT/VV relaxation"]
+      "reason": "The configured matrix owns bounded T2 records/weights/split-merge, T3 Cartesian AMR interpolation, T4 charged/relativistic movers, exact boundary events, periodic wrapping, injection and physical sampling, and T5 selector-specific collision rates/limits/weights plus VHS/VSS and LB RT/Zrot behavior. T8 adds production-linked deposition, geometry/integration, background, field-line and callback/output contracts. T9 adds a checked atomic persistent envelope, deterministic canonical continuation fixtures, corruption/ABI rejection, data repartition and Tecplot layout checks.",
+      "gaps": ["CUDA/device invalid-state diagnostics", "semantic reduction of opaque extension fields", "coarse/fine mover crossing", "uncovered production surface geometries and diffuse law", "injection ownership and species-rate normalization", "histogram under/overflow policy", "full native AMPS continuation including application callback state", "migration of inventoried legacy AMR/background/trajectory formats", "distributed ownership and migration", "Yinsi individual weights", "unequal cross-species Zrot mixing law", "VT/VV relaxation"]
     },
     {
       "area_id": "species",

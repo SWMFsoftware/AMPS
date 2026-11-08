@@ -263,7 +263,18 @@ static int Run(const std::vector<std::string>&) {
     std::cout << "\n";
   }
   std::cout << "--------------------------------------------------------------------------------------------------------------\n";
-  return 0;
+  bool pass=true;
+  const double expected[4]={2.0,4.0,6.0,8.0};
+  for (int o=0;o<4;++o) {
+    const std::size_t n=Ns.size();
+    const double refinement=double(Ns[n-1])/double(Ns[n-2]);
+    const double measured=std::log(err[o][n-2].l2/err[o][n-1].l2) /
+                          std::log(refinement);
+    if (!std::isfinite(measured) || measured<expected[o]-0.2) pass=false;
+  }
+  std::cout << "[ECSIM-STENCIL-LAPLACIAN-001] "
+            << (pass ? "PASS" : "FAIL") << "\n";
+  return pass ? 0 : 1;
 }
 
 } // namespace LaplacianE

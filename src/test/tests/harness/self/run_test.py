@@ -218,7 +218,12 @@ def test_selection_contract(context: Dict) -> None:
         "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001",
         "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001",
         "CORE-PHOTOCHEM-DAUGHTER-001",
-        "CORE-T6-REACTIONS-NATIVE-001", "CORE-MESH-NATIVE-001"}
+        "CORE-T6-REACTIONS-NATIVE-001", "CORE-MESH-NATIVE-001",
+        "CORE-ECSIM-OPERATORS-001", "CORE-ECSIM-BOUNDARIES-001",
+        "CORE-PIC-DEPOSITION-001", "CORE-PIC-FIELD-SOLVER-001",
+        "CORE-PIC-AUXILIARY-001", "CORE-PIC-FIELD-LINE-001",
+        "CORE-PIC-CALLBACK-OUTPUT-001", "CORE-PIC-RESTART-001",
+        "CORE-PIC-DATAFILE-001", "CORE-PIC-OUTPUT-001"}
     assert campaign_ids("distributed") == {"CORE-GENERAL-MPI-001"}
     assert campaign_ids("extended") == {
         "CORE-INTERFACE-ABI-001", "CORE-PIC-NATIVE-001",
@@ -229,7 +234,12 @@ def test_selection_contract(context: Dict) -> None:
         "CORE-PHOTOCHEM-DAUGHTER-001",
         "CORE-T6-REACTIONS-NATIVE-001", "CORE-DUST-NATIVE-001",
         "CORE-DUST-INJECTION-NATIVE-001",
-        "CORE-MESH-NATIVE-001"}
+        "CORE-MESH-NATIVE-001", "CORE-ECSIM-OPERATORS-001",
+        "CORE-ECSIM-BOUNDARIES-001", "CORE-PIC-DEPOSITION-001",
+        "CORE-PIC-FIELD-SOLVER-001", "CORE-PIC-AUXILIARY-001",
+        "CORE-PIC-FIELD-LINE-001", "CORE-PIC-CALLBACK-OUTPUT-001",
+        "CORE-PIC-RESTART-001", "CORE-PIC-DATAFILE-001",
+        "CORE-PIC-OUTPUT-001"}
     assert campaign_ids("profile") == {
         "CORE-PIC-NATIVE-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001",
         "CORE-EXOSPHERE-SPHERE-NATIVE-001",
@@ -243,7 +253,7 @@ def test_selection_contract(context: Dict) -> None:
         "CORE-PHOTOCHEM-DAUGHTER-001",
         "CORE-T6-REACTIONS-NATIVE-001", "CORE-DUST-NATIVE-001",
         "CORE-DUST-INJECTION-NATIVE-001",
-        "CORE-MESH-NATIVE-001"}
+        "CORE-MESH-NATIVE-001", "CORE-ECSIM-OPERATORS-001"}
 
     unknown_case_args = argparse.Namespace(
         test=[], match=[], component=[], all=False, case=["UNKNOWN-CASE-001"],

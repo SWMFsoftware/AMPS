@@ -2,6 +2,71 @@
 
 Last updated: 2026-11-07
 
+## T8/T9 checkpoint
+
+T8 and T9 are implemented and qualified for their bounded one-rank host
+scope. The live registry contains 41 suites and 359 cases. Structural
+traceability passes with 24 component areas, 209 production translation
+units, 194 public contracts, and 23 configuration contracts. T8 contributes
+34 cases in seven canonical suites. T9 contributes 13 dependency-light cases
+in three canonical suites plus one actual AMPS sampling/particle restart case
+selected through `CORE-PIC-RESTART-NATIVE-001` from the baseline native owner.
+
+| Area | Implemented and directly tested | State / remaining boundary |
+| --- | --- | --- |
+| ECSIM operators | Native periodic curl, grad-div, Laplacian and curl-curl orders 2/4/6/8; exact constant/affine/quadratic/mixed moments; compatible div-curl and curl-grad identities | PASS for periodic interiors; remote halos are T10 |
+| ECSIM boundaries | Periodic/no-row, fixed-field Dirichlet and homogeneous-Neumann increment rows | PASS for supported rows; perfect-conductor component physics is typed unsupported |
+| Deposition and fields | CIC charge/qv totals and exact 1-D segment continuity; Poisson CG residual/order; Yee dispersion/staggered invariant; particle-field energy ledger | PASS for the dependency-light one-rank kernels; legacy multi-block GMRES assembly and feedback remain open |
+| Field line and auxiliary | Straight/curved interpolation, exchange uniqueness, intrinsic split, conservative repartition, ray clipping, column quadrature, stopping limits and affine background dispatch/interpolation | PASS for local geometry/data contracts; remote exchange belongs to T10 |
+| Callbacks and trajectory | Registration order, exactly-once particle processing, deterministic trajectory schema/records and finite-value rejection | PASS for process-local callbacks and base trajectory columns; application optional columns retain their own layout responsibility |
+| Persistent envelope | AMPSPF1 magic/version/kind, byte order, pointer/scalar widths, layout ID, length, payload/header CRC, atomic publication and explicit native/canonical/legacy policy | PASS for envelope version 1 and particle payload revision 2 |
+| Native restart | Real sampling bytes/counters and an AMR-owned H2O particle round-trip through production save/read, including owner cell, x/v/species, global weight/time step, internal energy, opaque extension bytes and scalar MPI RNG seed | PASS for one-rank MPI; changed-rank ownership, hybrid per-thread RNG and application callback schema identity remain open |
+| Data/output | Affine background fixture, concatenated chunks consumed under a changed partition, kind/layout rejection, Tecplot variable order/units/dimensions and nonfinite rejection | PASS for canonical fixture and trajectory base schema; raw legacy background/trajectory files remain same-build-only |
+
+Production corrections include periodic wavenumber and eighth-order curl-curl
+coefficients in the native stencil application, checked ECSIM boundary-row
+construction, shared CIC/interpolation/geometry/integration/field/field-line
+kernels used at production call sites, and checked callback/trajectory
+formatting. Sampling and particle restart publication now uses binary rank
+parts and an atomically published AMPSPF1 envelope. Particle payload revision
+2 restores the global time-step table/initialization flag and scalar MPI RNG
+seed in addition to the existing weight and complete particle records.
+Unversioned files remain readable through
+`PIC::Restart::AllowLegacyRestartFiles`, which defaults true for baseline
+compatibility and can be disabled before recovery.
+
+Final retained T8/T9 evidence:
+
+| Command/evidence | Result |
+| --- | --- |
+| `/tmp/amps-t8-operators-final2` | PASS 5/5 native ECSIM operator/moment/identity cases after a clean configured rebuild |
+| `/tmp/amps-t8-final` | PASS 29/29 remaining T8 cases and 6/6 suites in normal order |
+| `/tmp/amps-t8-reverse` | PASS 29/29 remaining T8 cases and 6/6 suites in reverse order |
+| `/tmp/amps-t9-qualified` | PASS 13/13 persistence/data/output cases and 3/3 suites in normal order |
+| `/tmp/amps-t9-qualified-shuffle-809` | PASS 13/13 persistence/data/output cases and 3/3 suites in deterministic shuffled order |
+| `/tmp/amps-t9-native-restart-state` | PASS actual one-rank native sampling/particle restart case after a clean configured rebuild |
+| `/tmp/amps-t89-harness-qualified` | PASS 11/11 harness schema, campaign, selection, scheduler, protocol and traceability checks |
+| `python3 src/test/validate_traceability.py` | PASS: 24 areas, 209 translation units, 194 public contracts, 23 configuration contracts, 41 suites, 359 cases |
+
+The first post-integration ECSIM rebuild failed because the established user-
+particle hook is a function-like configuration macro and was incorrectly
+passed as a callable. The production bridge now invokes the macro inside an
+exactly-once lambda; `/tmp/amps-t8-operators-final2` is the superseding clean
+receipt. The earlier failure is discovery evidence, not a qualified result.
+
+Every configured T8/T9 run performed the mandatory root/process preflight,
+removed only `build`, selected its application through `Config.pl`, and built
+through top-level `make amps` with `MAKEFLAGS=-j16`. No Git state operation was
+performed.
+
+The qualification boundary is explicit. The old diagnostic-only linear-
+solver, fast-wave, light-wave and external-data reader programs were not
+relabeled as passing applications; their reproducible numerical contracts are
+now asserted in production-linked small fixtures. Component-aware conductor
+physics, legacy multi-block assembly, particle-field feedback, legacy-format
+migration, full native application continuation and distributed restart/
+field-line/halo ownership remain later work.
+
 ## T7 checkpoint
 
 T7 is complete for the bounded one-rank spherical scope selected for this

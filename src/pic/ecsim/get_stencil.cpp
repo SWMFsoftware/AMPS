@@ -643,7 +643,16 @@ auto boundary_short_circuit = [&]() -> bool {
   //
   // We use the *average* of the inward values along each active boundary normal so that a single
   // Neumann corner row remains well-defined even when this corner lies on multiple domain faces.
-  const double wNeib = -1.0 / double(nDonors);
+  // Resolve the dependency-light row policy used by the independent boundary
+  // tests.  Mesh traversal above owns donor coordinates; this policy owns the
+  // algebraic constraint and prevents silent use of an unsupported BC code.
+  const auto rowPolicy=
+      PIC::FieldSolver::Electromagnetic::ECSIM::BoundaryRow::Resolve(
+          false,bcType,nDonors);
+  if (rowPolicy.status!=PIC::FieldSolver::Electromagnetic::ECSIM::
+          BoundaryRow::Status::Neumann)
+    exit(__LINE__,__FILE__,"Invalid ECSIM Neumann boundary-row policy");
+  const double wNeib = rowPolicy.donor_weight;
 
   for (int q = 0; q < nDonors; ++q) {
     const int idx = 1 + q;
