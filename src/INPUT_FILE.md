@@ -11,11 +11,59 @@ transport).  The reader that implements the grammar is the header-only
 
 | Layer | File | Decides | Changes require |
 |---|---|---|---|
-| Compile time | `input/<application>.input`, read by `ampsConfig.pl` | which species, modules and physics libraries are compiled in | a rebuild |
-| Run time | `amps.in` (or `-input FILE`) — this document | every value: mesh, model selections and parameters, sources, observers, output | an edit |
+| Compile time | `input/<application>.input`, or `input/<application>.conf` when no same-named `.input` exists; selected by `Config.pl -application=<application>` | species, dimension, compiled modules, fixed table topology and allocation/layout maxima | a clean rebuild |
+| Run time | conventionally `<application>.in`, selected by the application's CLI (`-input FILE` or the documented `-i FILE` alias) — this document | the physical case, mesh targets within compiled limits, sources, run controls, observers and output | an edit and a new run receipt, not a rebuild |
 
 The runtime file can choose only among what was compiled in; it cannot add or
 relabel species.
+
+`Config.pl` deliberately prefers the historical `.input` file when both
+extensions exist. The `.conf` fallback allows a two-layer application to use
+`.conf` exclusively for compile-time capability and memory-layout decisions
+without making its runtime `.in` file look like an AMPS preprocessor input.
+Changing either compile-time file requires removal of the exact generated
+`build/` directory before recompiling. Changing only a runtime `.in` file does
+not.
+
+### 1.1 Named case overlays
+
+Any block owner may group closely related runtime cases as direct named child
+blocks:
+
+```text
+#begin application: example
+  mesh.outer_radius_m = 1.0e9
+  source.temperature_k = 175
+
+  #begin case: quiet
+    source.rate_s-1 = 8.0e27
+  #end case
+
+  #begin case: active
+    source.rate_s-1 = 2.8e29
+  #end case
+#end application
+```
+
+The common assignments form the base configuration. `ResolveCase` overlays
+the selected case: a case assignment replaces a common assignment with the
+same normalized key, a new assignment is added, and matching non-case child
+blocks are overlaid recursively. Case blocks must be named, must be direct
+children of the block that owns them, and cannot be nested. Their names use
+the same letters/digits/underscore/hyphen rule as other named blocks.
+
+Selection is intentionally fail-closed. If at least one case section exists,
+the application must require an explicit CLI selector; it must not silently
+choose the first case or a default. An absent selector and an unknown selector
+are errors, and the latter diagnostic lists the available names. Conversely,
+supplying a selector for a block with no case sections is also an error. The
+owner remains responsible for validating the fully resolved values and for
+recording the selected case in run provenance.
+
+The generic reader implements only this deterministic overlay operation. It
+does not prescribe a CLI spelling. The generic comet application uses
+`./amps -i i3.in -case 1`; other applications may expose the same selector
+through their established command-line vocabulary.
 
 ## 2. File selection
 

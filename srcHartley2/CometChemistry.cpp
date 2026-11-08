@@ -8,6 +8,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <memory>
+#include <cstring>
 #include <vector>
 
 #include "pic.h"
@@ -53,6 +55,21 @@ long int ChemistryProcessedFlagOffset=-1;
 long int TotalReactionForcingStateOffset=-1;
 bool LocalChemistryAllocationPressure=false;
 bool ValidationSuppressTotalReactionForcing=false;
+
+// Generated::Reactions fixes the executable's topology and array sizes.  A
+// mutable copy changes only the scalar A coefficient before the first network
+// access, allowing one I3 executable to execute several observation cases
+// without weakening the compile-time species/stoichiometry contract.
+std::vector<ChemicalSolver::cReaction>& RuntimeReactionTable() {
+  static std::vector<ChemicalSolver::cReaction> table(
+      Comet::Chemistry::Generated::Reactions,
+      Comet::Chemistry::Generated::Reactions+
+          Comet::Chemistry::Generated::ReactionCount);
+  return table;
+}
+
+bool RuntimeReactionNetworkConstructed=false;
+std::unique_ptr<ChemicalSolver::cReactionNetwork> RuntimeReactionNetwork;
 
 // A forced reacted carrier is still physically the parent while it travels
 // to its conditional reaction point.  The mover therefore needs a compact,
@@ -752,11 +769,47 @@ void Comet::Chemistry::CloseResidualDiagnosticWindow() {
 }
 
 const ChemicalSolver::cReactionNetwork& Comet::Chemistry::GetNetwork() {
-  static const ChemicalSolver::cReactionNetwork network(
-      Generated::Terms,Generated::TermCount,
-      Generated::Reactions,Generated::ReactionCount,
-      PIC::nTotalSpecies);
-  return network;
+  if (!RuntimeReactionNetwork) {
+    std::vector<ChemicalSolver::cReaction> &reactions=RuntimeReactionTable();
+    RuntimeReactionNetwork.reset(new ChemicalSolver::cReactionNetwork(
+        Generated::Terms,Generated::TermCount,reactions.data(),reactions.size(),
+        PIC::nTotalSpecies));
+    RuntimeReactionNetworkConstructed=true;
+  }
+  return *RuntimeReactionNetwork;
+}
+
+std::size_t Comet::Chemistry::GetCompiledReactionCount() {
+  return Generated::ReactionCount;
+}
+
+const char* Comet::Chemistry::GetCompiledReactionId(std::size_t reaction) {
+  return reaction<Generated::ReactionCount ? Generated::Reactions[reaction].Id :
+      NULL;
+}
+
+bool Comet::Chemistry::ConfigureReactionRate(const std::string &id,
+    double rateCoefficient,std::string *error) {
+  if (RuntimeReactionNetworkConstructed) {
+    if (error!=NULL)
+      *error="reaction rates must be configured before the chemistry network is first accessed";
+    return false;
+  }
+  if (!std::isfinite(rateCoefficient) || rateCoefficient<0.0) {
+    if (error!=NULL) *error="reaction '"+id+"' has an invalid rate coefficient";
+    return false;
+  }
+
+  std::vector<ChemicalSolver::cReaction> &reactions=RuntimeReactionTable();
+  for (std::size_t reaction=0;reaction<reactions.size();reaction++) {
+    const char *compiledId=reactions[reaction].Id;
+    if (compiledId!=NULL && id==compiledId) {
+      reactions[reaction].A=rateCoefficient;
+      return true;
+    }
+  }
+  if (error!=NULL) *error="runtime input names unknown compiled reaction '"+id+"'";
+  return false;
 }
 
 bool Comet::Chemistry::ConfigureEstimatorMode(int mode,std::string *error) {

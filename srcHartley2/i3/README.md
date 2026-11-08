@@ -1,8 +1,9 @@
 # 3I/ATLAS six-case radial campaign
 
-This directory owns the observation-derived data and deterministic input
-generation for the six MAVEN/IUVS 3I/ATLAS cases supplied in `Archive.zip`.
-It does not put a 3I constant into the generic comet C++ application.
+This directory owns the observation-derived data and deterministic runtime
+input generation for the six MAVEN/IUVS 3I/ATLAS cases supplied in
+`Archive.zip`. It does not put a 3I constant into the generic comet C++
+application.
 
 Run:
 
@@ -12,14 +13,45 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
   srcHartley2/i3/tests/test_prepare_i3_cases.py
 ```
 
-The first command reproduces `input/i3.case1.input` through
-`input/i3.case6.input` from `input/i3.input` and the reviewed CSV files under
-`reference/`. `input/i3.input` is a generator template, not a directly
-loadable AMPS input. Each concrete case is loadable, but AMPS configuration is
-compile-time: preprocess and compile one case at a time. Remove exactly the
-repository `build/` directory before each recompile; never reuse a build made
-for another case. The six outputs likewise require distinct run directories
-or archived `PT` trees.
+The first command reproduces the single loadable `input/i3.in` file from the
+reviewed CSV files under `reference/`. Common model settings appear once;
+six direct `case: 1` through `case: 6` sections contain only the values that
+vary with the observation. Byte-exact regeneration is required for review.
+
+The executable is compiled once from `input/i3.conf`:
+
+```sh
+./Config.pl -application=i3
+rm -rf -- /data/vtenishe/COMET1D/AMPS/build
+make -j8 EXTRACOMPILEROPTIONS=-O3
+```
+
+`Config.pl` first looks for `input/i3.input`; because this application has no
+such file, it selects `input/i3.conf`. The `.conf` file fixes species,
+dimension, compiled model/reaction/collision topology, block layout, particle
+storage and allocation maxima. It contains no observation case. The runtime
+file supplies physical sources, case reaction rates, mesh targets, run
+controls, fluorescence geometry and solar conditions:
+
+```sh
+mpiexec -n 12 ./amps -i input/i3.in -case 1
+```
+
+`-case` is mandatory because `i3.in` contains case sections. Omitting it or
+requesting a name outside `1`--`6` terminates before mesh or particle
+allocation. All six cases use the same executable; no rebuild is required
+when only the selected case or runtime values change. Use a distinct run
+directory (or archive its `PT` tree) for every launch.
+
+For a fast executable-level receipt check, add `--validate-runtime-input`.
+It resolves the selected case, verifies that all MPI ranks obtained the same
+canonical configuration, runs the complete comet/chemistry/collision/cooling/
+brightness/radial validation chain, and exits before mesh or particle
+allocation:
+
+```sh
+mpiexec -n 2 ./amps -i input/i3.in -case 1 --validate-runtime-input
+```
 
 ## Archived observation table
 
@@ -61,7 +93,7 @@ method. The source snapshots used during derivation had these hashes:
 The authoritative services are
 `https://www.spaceweather.gc.ca/solar_flux_data/daily_flux_values/fluxtable.txt`
 and `https://ssd.jpl.nasa.gov/api/horizons.api`. No runtime network access is
-needed. The generated chemistry records contain the calculated 1-AU value;
+needed. The generated runtime chemistry records contain the calculated 1-AU value;
 the existing `HELIOCENTRIC` law then applies the case's inverse-square factor
 once.
 
@@ -106,7 +138,9 @@ For each direct parent `i`, the generator evaluates
 lambda_i = 1 / [sqrt(2) * sum_j(n_j*sigma_ij)]
 ```
 
-with the exact collision records selected by the input at 175 K. The requested
+with the exact collision records selected by the compiled capability at
+175 K. The sampled-temperature floor and occupancy threshold are runtime
+model settings in `i3.in`. The requested
 first-cell width is the minimum of the H2O, CO, and CO2 mixture paths. Across
 cases 1--6 it is respectively 1.75261509304, 1.29785287642, 0.531312387076,
 0.131442336866, 0.122734766819, and 0.131442336866 m; CO2 is limiting in each
@@ -117,7 +151,9 @@ The collision hierarchy is explicit. Three CO2-parent pairs retain Rubin et
 al. (2011) Table 3. The selected completion adds Combi (1996) H2O/OH/H2/H/O/CO
 values, followed only where needed by CHEMKIN-diameter/Lorentz hard-sphere
 estimates. The unsupported OH--CO2, O--CO2, H2--CO2, and H--CO2 pairs remain
-labeled estimates in the generated C++ table.
+labeled estimates in the generated compiled capability table. Collision-pair
+topology is compile-time because it defines the complete callback database;
+no case-specific collision value is hidden in the executable.
 
 The direct-source injection reference is derived for at least 800 particles
 per first-cell parent population and is 114 events per shortened parent
@@ -195,9 +231,12 @@ make -C src/models/resonance_fluorescence test
 
 The focused generator test verifies all six shifted solar indices, reaction
 count and reachability, minimum mixture paths, injection count, recoil-derived
-characteristic speeds, brightness records, and byte-for-byte regeneration of
-all six tracked inputs. Case 1 also has a clean C++17/MPI build, a 200,000-
-sample-per-parent test of the production crossing-flux injector, and a
+characteristic speeds, brightness records, six named case sections, and
+byte-for-byte regeneration of the tracked `input/i3.in`. The generic input
+test independently verifies the overlay algorithm and fail-closed selector
+rules. Case 1 also has a clean C++17/MPI build from `input/i3.conf`, a runtime
+load through `-i input/i3.in -case 1`, a 200,000-sample-per-parent test of the
+production crossing-flux injector, and a
 20,000-event-per-neutral-reaction compiled chemistry test. All eight neutral
 product channels passed mass, momentum, excess-energy, and ensemble checks;
 all nine neutral-system ionization channels were recognized as sinks. The

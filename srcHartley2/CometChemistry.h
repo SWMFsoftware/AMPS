@@ -87,6 +87,17 @@ void ConfigureTotalReactionForcingMover();
 // The returned object is a non-owning view of static tables generated from
 // the selected input file.  Validate must succeed before particle stepping.
 const ChemicalSolver::cReactionNetwork& GetNetwork();
+
+// A two-layer comet build compiles reaction topology (species, stoichiometry,
+// rate-law kind, and excess energy) into the executable but supplies the
+// case's rate coefficient at startup.  These setters deliberately permit only
+// A to change and only before GetNetwork() constructs its lookup index; a
+// runtime file therefore cannot alter compiled storage layout or chemistry
+// topology.  Legacy compile-time inputs need not call them.
+std::size_t GetCompiledReactionCount();
+const char* GetCompiledReactionId(std::size_t reaction);
+bool ConfigureReactionRate(const std::string &id,double rateCoefficient,
+    std::string *error=NULL);
 bool Validate(std::string *error=NULL);
 
 // Reserve owner-block accumulator storage after core local timestep/weight

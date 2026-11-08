@@ -345,6 +345,58 @@ bool Comet::Brightness::SetObservationGeometry(
   return true;
 }
 
+bool Comet::Brightness::ResetRuntimeConfiguration(std::string *error) {
+  if (SamplingInitialized || SamplingRegistered)
+    return Fail("brightness configuration cannot change after sampler initialization",error);
+  Enabled=false;
+  MinimumImpactParameter=-1.0;
+  MaximumImpactParameter=-1.0;
+  ImpactParameterCount=0;
+  ImpactParameterGridMode=GridMode::Linear;
+  EmissionLineCount=0;
+  SolarLymanAlphaFlux1AU=0.0;
+  OutOfRangeVelocityPolicy=VelocityDomainPolicy::Abort;
+  ObservationGeometryConfigured=false;
+  BulkHeliocentricRadialVelocity=0.0;
+  for (int component=0;component<3;component++) {
+    CometHeliocentricVelocity[component]=0.0;
+    HeliocentricRadialDirection[component]=component==0 ? 1.0 : 0.0;
+    LineOfSightDirection[component]=component==2 ? 1.0 : 0.0;
+    ImpactParameterDirection[component]=component==0 ? 1.0 : 0.0;
+  }
+  for (int line=0;line<MaxEmissionLines;line++) {
+    EmissionSpecies[line]=0;
+    PhotonGFactor[line]=0.0;
+    GFactorModel[line]=GFactor::Fixed;
+    EffectivePhotonWavelength[line]=0.0;
+    TauDiagnosticMode[line]=OpticalDepthDiagnostic::None;
+    LineCenterCrossSection[line]=0.0;
+    TauFlagThreshold[line]=0.0;
+    TransitionName[line][0]='\0';
+    GFactorProvenance[line][0]='\0';
+    TauProvenance[line][0]='\0';
+  }
+  MetadataLoaded=true;  // Runtime metadata replaces generated metadata.
+  return true;
+}
+
+bool Comet::Brightness::SetEmissionMetadata(int line,const char *transition,
+    const char *gFactorProvenance,const char *tauProvenance,
+    std::string *error) {
+  if (line<0 || line>=MaxEmissionLines || transition==NULL ||
+      gFactorProvenance==NULL || tauProvenance==NULL)
+    return Fail("invalid brightness emission metadata arguments",error);
+  if (std::strlen(transition)>=MetadataStringLength ||
+      std::strlen(gFactorProvenance)>=MetadataStringLength ||
+      std::strlen(tauProvenance)>=MetadataStringLength)
+    return Fail("brightness emission metadata exceeds compiled storage",error);
+  std::strcpy(TransitionName[line],transition);
+  std::strcpy(GFactorProvenance[line],gFactorProvenance);
+  std::strcpy(TauProvenance[line],tauProvenance);
+  MetadataLoaded=true;
+  return true;
+}
+
 bool Comet::Brightness::Validate(std::string *error) {
   LoadGeneratedMetadata();
   if (!Enabled) return true;

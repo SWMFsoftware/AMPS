@@ -34,13 +34,14 @@ tolerances are eight asymptotic standard errors plus small minimum tolerances;
 this avoids a flaky Monte Carlo gate without weakening sensitivity to an
 ordinary volume-Maxwellian or an isotropic-hemisphere regression.
 
-After preprocessing and compiling an I3 input, run:
+After compiling the shared I3 executable from `input/i3.conf`, run a selected
+case from the combined runtime receipt:
 
 ```bash
 srcHartley2/tests/run_i3_surface_injection_test.sh /absolute/path/to/amps
 ```
 
 Optional environment controls are `I3_INJECTION_MPI_RANKS` (default 1),
-`I3_INJECTION_PARTICLES` (default 200000), `I3_INJECTION_LOG`, and `MPIEXEC`.
-The runner never rebuilds the executable and therefore does not alter the
-active AMPS case.
+`I3_INJECTION_PARTICLES` (default 200000), `I3_INJECTION_LOG`, `MPIEXEC`,
+`I3_RUNTIME_INPUT` (default `input/i3.in`), and `I3_CASE` (default 1). The
+runner always passes `-i ... -case ...`; it never rebuilds the executable.

@@ -1,0 +1,274 @@
+! Generated deterministically by srcHartley2/i3/prepare_i3_cases.py.
+! Compile once with input/i3.conf, then select one case explicitly:
+!   ./amps -i i3.in -case CASE
+! Do not copy case values into i3.conf; that file owns layout only.
+
+#begin application: comet
+  schema = 1
+  geometry = spherical
+
+  source.H2O.distribution = uniform
+  source.H2O.temperature_k = 175.0
+  source.H2O.bulk_speed_m_s = 0.0
+  source.CO.distribution = uniform
+  source.CO.temperature_k = 175.0
+  source.CO.bulk_speed_m_s = 0.0
+  source.CO2.distribution = uniform
+  source.CO2.temperature_k = 175.0
+  source.CO2.bulk_speed_m_s = 0.0
+
+  collision.temperature_floor_k = 175.0
+  collision.minimum_sample_particles = 1.0
+  chemistry.enabled = true
+  chemistry.residual_sampling = systematic
+  diagnostics.enabled = true
+  cooling.H2O.model = GOMBOSI1986_H2O
+
+  nucleus.radius_m = 2500
+  mesh.outer_radius_m = 1000000000
+  mesh.radial_cell_count = 2000
+  simulation.reference_injection_particles = 114
+  simulation.courant_number = 0.25
+  simulation.inner_boundary_temperature_k = 175.0
+  simulation.sampling_length = 10000
+  simulation.weight_adaptation_enabled = true
+  simulation.weight_adaptation_interval = 10000
+  simulation.particles_per_cell.minimum = 800
+  simulation.particles_per_cell.maximum = 3200
+  simulation.chemical_only_particles_per_cell.minimum = 50
+  simulation.chemical_only_particles_per_cell.maximum = 200
+  simulation.lock_direct_source_weights = true
+  simulation.emergency_buffer_utilization = 0.75
+  simulation.allocation_low_watermark = 0.50
+  simulation.allocation_reserve_fraction = 0.10
+  simulation.max_face_transfer_multiplicity = 1
+  simulation.max_photochemical_products_per_reaction = 20
+  simulation.load_balance_interval = 50
+  simulation.max_iterations = 30000
+  simulation.convergence_tolerance = 0.05
+  simulation.convergence_windows = 3
+  transport.characteristic_speed.H_m_s = 46945
+  transport.characteristic_speed.H2_m_s = 18783
+  transport.characteristic_speed.O_m_s = 4660
+  transport.characteristic_speed.OH_m_s = 1997
+  transport.characteristic_speed.H2O_m_s = 400
+  transport.characteristic_speed.CO_m_s = 400
+  transport.characteristic_speed.CO2_m_s = 400
+
+  brightness.enabled = true
+  brightness.impact_parameter_grid = LOG | 2500.0 | 1.0e9 | 200
+  brightness.velocity_domain_policy = ABORT
+  brightness.emission.OH = OH | OH_A2SIGMA_X2PI_00 | OH_AX00_SA1988_LOWELL_UNQUENCHED | CORE_SCHLEICHER_AHEARN1988_LOWELL | THIN | ISOTROPIC_4PI | NONE | 0 | 0 | NONE | 308.5
+  brightness.emission.H = H | H_LYMAN_ALPHA | H_LYA_IKL2020 | CORE_IKL2020_CASE_SOLAR_FLUX | THIN | ISOTROPIC_4PI | LINE_CENTER | 9.5e-18 | 0.1 | DOPPLER_B8KMS_FOSC0.4164_CONSERVATIVE_DIAGNOSTIC | 0
+  dust.enabled = false
+
+  #begin case: 1
+    case.index = 1
+    case.campaign_phase = Pre-Mars Closest Approach
+    case.observation_start_utc = 2025-09-28T17:45:26Z
+    case.observation_end_utc = 2025-09-29T05:43:12Z
+    case.exposure_mean_f107p_sfu = 136.194566908
+    heliocentric_distance_au = 1.75
+    random_seed = 104730
+    source.H2O.rate_s-1 = 8.0e27
+    source.CO.rate_s-1 = 7.2e27
+    source.CO2.rate_s-1 = 3.0e27
+    ! Minimum mixture mean free path at the 175-K surface: CO2.
+    mesh.surface_resolution_m = 1.75261509304
+    chemistry.rate.H2O_H_OH_1au_s-1 = 1.17084889035e-05
+    chemistry.rate.H2O_H2_O_1au_s-1 = 1.05577172537e-06
+    chemistry.rate.H2O_2H_O_1au_s-1 = 1.40769563383e-06
+    chemistry.rate.OH_O3P_H_1au_s-1 = 5.30525097633e-06
+    chemistry.rate.OH_O1S_H_1au_s-1 = 1.02057933453e-06
+    chemistry.rate.OH_O1D_H_1au_s-1 = 7.70610656545e-06
+    chemistry.rate.H2_2H_EXCITED_1au_s-1 = 6.04136042853e-08
+    chemistry.rate.H2_2H_1au_s-1 = 7.98244607218e-08
+    chemistry.rate.H2O_OHPLUS_H_ION_1au_s-1 = 1.14419944817e-07
+    chemistry.rate.H2O_OPLUS_H2_ION_1au_s-1 = 1.13852806818e-08
+    chemistry.rate.H2O_HPLUS_OH_ION_1au_s-1 = 2.63354225251e-08
+    chemistry.rate.H2O_ION_1au_s-1 = 6.62933316955e-07
+    chemistry.rate.OH_ION_1au_s-1 = 4.32434249274e-07
+    chemistry.rate.H2_ION_1au_s-1 = 1.24139734071e-07
+    chemistry.rate.H2_DISS_ION_1au_s-1 = 1.71338893537e-08
+    chemistry.rate.H_ION_1au_s-1 = 1.09535059474e-07
+    chemistry.rate.O_ION_1au_s-1 = 4.87041120013e-07
+    brightness.observation_geometry = -0.546656520072639 | -0.833039569848657 | 0.084921870730915 | 0.0333897515381367 | 0.847084960232127 | -0.530407574079366 | -0.814915305671808 | -0.284170871344927 | -0.505133606544733
+    brightness.heliocentric_radial_velocity_km_s = -39.7
+    brightness.solar_lya_flux_1au_photon_cm-2_s-1 = 5.1040518742e11
+  #end case
+
+  #begin case: 2
+    case.index = 2
+    case.campaign_phase = Mars Closest Approach
+    case.observation_start_utc = 2025-10-03T00:06:41Z
+    case.observation_end_utc = 2025-10-03T12:04:28Z
+    case.exposure_mean_f107p_sfu = 142.874791643
+    heliocentric_distance_au = 1.66
+    random_seed = 104731
+    source.H2O.rate_s-1 = 1.4e28
+    source.CO.rate_s-1 = 8.0e27
+    source.CO2.rate_s-1 = 3.3e27
+    ! Minimum mixture mean free path at the 175-K surface: CO2.
+    mesh.surface_resolution_m = 1.29785287642
+    chemistry.rate.H2O_H_OH_1au_s-1 = 1.18438213291e-05
+    chemistry.rate.H2O_H2_O_1au_s-1 = 1.07412920437e-06
+    chemistry.rate.H2O_2H_O_1au_s-1 = 1.4321722725e-06
+    chemistry.rate.OH_O3P_H_1au_s-1 = 5.32026038052e-06
+    chemistry.rate.OH_O1S_H_1au_s-1 = 1.03832489756e-06
+    chemistry.rate.OH_O1D_H_1au_s-1 = 7.83634503777e-06
+    chemistry.rate.H2_2H_EXCITED_1au_s-1 = 6.14640600281e-08
+    chemistry.rate.H2_2H_1au_s-1 = 8.1758686706e-08
+    chemistry.rate.H2O_OHPLUS_H_ION_1au_s-1 = 1.1860380013e-07
+    chemistry.rate.H2O_OPLUS_H2_ION_1au_s-1 = 1.20298148418e-08
+    chemistry.rate.H2O_HPLUS_OH_ION_1au_s-1 = 2.74820152746e-08
+    chemistry.rate.H2O_ION_1au_s-1 = 6.80950446542e-07
+    chemistry.rate.OH_ION_1au_s-1 = 4.46746589408e-07
+    chemistry.rate.H2_ION_1au_s-1 = 1.26843709082e-07
+    chemistry.rate.H2_DISS_ION_1au_s-1 = 1.78798653594e-08
+    chemistry.rate.H_ION_1au_s-1 = 1.11920919778e-07
+    chemistry.rate.O_ION_1au_s-1 = 5.02919915153e-07
+    brightness.observation_geometry = -0.610496726466311 | -0.787423829284146 | 0.0851907274849193 | 0.590163537675551 | 0.29467408118463 | -0.75158112315057 | -0.295764605812525 | -0.787342993749712 | -0.54093835891144
+    brightness.heliocentric_radial_velocity_km_s = -36.2
+    brightness.solar_lya_flux_1au_photon_cm-2_s-1 = 5.2756309969e11
+  #end case
+
+  #begin case: 3
+    case.index = 3
+    case.campaign_phase = Post-Mars Closest Approach
+    case.observation_start_utc = 2025-10-09T09:38:43Z
+    case.observation_end_utc = 2025-10-09T21:36:31Z
+    case.exposure_mean_f107p_sfu = 139.711261811
+    heliocentric_distance_au = 1.54
+    random_seed = 104732
+    source.H2O.rate_s-1 = 5.3e28
+    source.CO.rate_s-1 = 9.2e27
+    source.CO2.rate_s-1 = 3.8e27
+    ! Minimum mixture mean free path at the 175-K surface: CO2.
+    mesh.surface_resolution_m = 0.531312387076
+    chemistry.rate.H2O_H_OH_1au_s-1 = 1.17803458398e-05
+    chemistry.rate.H2O_H2_O_1au_s-1 = 1.06550579119e-06
+    chemistry.rate.H2O_2H_O_1au_s-1 = 1.42067438825e-06
+    chemistry.rate.OH_O3P_H_1au_s-1 = 5.31323665686e-06
+    chemistry.rate.OH_O1S_H_1au_s-1 = 1.02998893148e-06
+    chemistry.rate.OH_O1D_H_1au_s-1 = 7.77517337002e-06
+    chemistry.rate.H2_2H_EXCITED_1au_s-1 = 6.09706091623e-08
+    chemistry.rate.H2_2H_1au_s-1 = 8.08484706756e-08
+    chemistry.rate.H2O_OHPLUS_H_ION_1au_s-1 = 1.16628706233e-07
+    chemistry.rate.H2O_OPLUS_H2_ION_1au_s-1 = 1.17240083374e-08
+    chemistry.rate.H2O_HPLUS_OH_ION_1au_s-1 = 2.69397798935e-08
+    chemistry.rate.H2O_ION_1au_s-1 = 6.7246542487e-07
+    chemistry.rate.OH_ION_1au_s-1 = 4.39996065549e-07
+    chemistry.rate.H2_ION_1au_s-1 = 1.25572067591e-07
+    chemistry.rate.H2_DISS_ION_1au_s-1 = 1.75270857139e-08
+    chemistry.rate.H_ION_1au_s-1 = 1.10798883169e-07
+    chemistry.rate.O_ION_1au_s-1 = 4.95431507939e-07
+    brightness.observation_geometry = -0.710947453033246 | -0.698158163059487 | 0.0844328039268099 | 0.724815977485832 | -0.58432132310053 | -0.36497998595992 | -0.61671247542999 | -0.786439489907525 | 0.0343314922921597
+    brightness.heliocentric_radial_velocity_km_s = -29.6
+    brightness.solar_lya_flux_1au_photon_cm-2_s-1 = 5.4427133660e11
+  #end case
+
+  #begin case: 4
+    case.index = 4
+    case.campaign_phase = Pre-Perihelion
+    case.observation_start_utc = 2025-10-24T05:57:02Z
+    case.observation_end_utc = 2025-10-27T21:40:46Z
+    case.exposure_mean_f107p_sfu = 143.568741662
+    heliocentric_distance_au = 1.36
+    random_seed = 104733
+    source.H2O.rate_s-1 = 2.6e29
+    source.CO.rate_s-1 = 1.2e28
+    source.CO2.rate_s-1 = 5.0e27
+    ! Minimum mixture mean free path at the 175-K surface: CO2.
+    mesh.surface_resolution_m = 0.131442336866
+    chemistry.rate.H2O_H_OH_1au_s-1 = 1.18576021676e-05
+    chemistry.rate.H2O_H2_O_1au_s-1 = 1.07600444873e-06
+    chemistry.rate.H2O_2H_O_1au_s-1 = 1.43467259831e-06
+    chemistry.rate.OH_O3P_H_1au_s-1 = 5.32178151284e-06
+    chemistry.rate.OH_O1S_H_1au_s-1 = 1.04013763377e-06
+    chemistry.rate.OH_O1D_H_1au_s-1 = 7.8496455973e-06
+    chemistry.rate.H2_2H_EXCITED_1au_s-1 = 6.15713656773e-08
+    chemistry.rate.H2_2H_1au_s-1 = 8.19569992124e-08
+    chemistry.rate.H2O_OHPLUS_H_ION_1au_s-1 = 1.19035586798e-07
+    chemistry.rate.H2O_OPLUS_H2_ION_1au_s-1 = 1.20970331107e-08
+    chemistry.rate.H2O_HPLUS_OH_ION_1au_s-1 = 2.76007821529e-08
+    chemistry.rate.H2O_ION_1au_s-1 = 6.82800621864e-07
+    chemistry.rate.OH_ION_1au_s-1 = 4.48220957171e-07
+    chemistry.rate.H2_ION_1au_s-1 = 1.27120578515e-07
+    chemistry.rate.H2_DISS_ION_1au_s-1 = 1.79571353766e-08
+    chemistry.rate.H_ION_1au_s-1 = 1.12165216337e-07
+    chemistry.rate.O_ION_1au_s-1 = 5.04555220201e-07
+    brightness.observation_geometry = -0.938930808198234 | -0.336494958220189 | 0.0719727761629592 | 0.583770485706925 | -0.806003901419664 | -0.0978250014760102 | -0.806361627604856 | -0.589623910458544 | 0.0460930552472141
+    brightness.heliocentric_radial_velocity_km_s = -5.8
+    brightness.solar_lya_flux_1au_photon_cm-2_s-1 = 5.2444958674e11
+  #end case
+
+  #begin case: 5
+    case.index = 5
+    case.campaign_phase = Perihelion
+    case.observation_start_utc = 2025-10-28T04:59:25Z
+    case.observation_end_utc = 2025-10-31T06:05:51Z
+    case.exposure_mean_f107p_sfu = 150.444624050
+    heliocentric_distance_au = 1.36
+    random_seed = 104734
+    source.H2O.rate_s-1 = 2.8e29
+    source.CO.rate_s-1 = 1.2e28
+    source.CO2.rate_s-1 = 5.0e27
+    ! Minimum mixture mean free path at the 175-K surface: CO2.
+    mesh.surface_resolution_m = 0.122734766819
+    chemistry.rate.H2O_H_OH_1au_s-1 = 1.19914831734e-05
+    chemistry.rate.H2O_H2_O_1au_s-1 = 1.09427910745e-06
+    chemistry.rate.H2O_2H_O_1au_s-1 = 1.45903880993e-06
+    chemistry.rate.OH_O3P_H_1au_s-1 = 5.33649037539e-06
+    chemistry.rate.OH_O1S_H_1au_s-1 = 1.0578031372e-06
+    chemistry.rate.OH_O1D_H_1au_s-1 = 7.97922886759e-06
+    chemistry.rate.H2_2H_EXCITED_1au_s-1 = 6.26170822594e-08
+    chemistry.rate.H2_2H_1au_s-1 = 8.38966149672e-08
+    chemistry.rate.H2O_OHPLUS_H_ION_1au_s-1 = 1.23286181567e-07
+    chemistry.rate.H2O_OPLUS_H2_ION_1au_s-1 = 1.27656568387e-08
+    chemistry.rate.H2O_HPLUS_OH_ION_1au_s-1 = 2.87742043131e-08
+    chemistry.rate.H2O_ION_1au_s-1 = 7.00924603233e-07
+    chemistry.rate.OH_ION_1au_s-1 = 4.62708597075e-07
+    chemistry.rate.H2_ION_1au_s-1 = 1.29825023952e-07
+    chemistry.rate.H2_DISS_ION_1au_s-1 = 1.87205666616e-08
+    chemistry.rate.H_ION_1au_s-1 = 1.14551491723e-07
+    chemistry.rate.O_ION_1au_s-1 = 5.20620117721e-07
+    brightness.observation_geometry = -0.969662586328084 | -0.235159236702651 | 0.0667428053722478 | 0.571307031301513 | -0.816792754925974 | -0.080360882809299 | -0.816932426948076 | -0.575342762092991 | 0.0400264401106851
+    brightness.heliocentric_radial_velocity_km_s = 0.4
+    brightness.solar_lya_flux_1au_photon_cm-2_s-1 = 5.4475114410e11
+  #end case
+
+  #begin case: 6
+    case.index = 6
+    case.campaign_phase = Post-Perihelion
+    case.observation_start_utc = 2025-11-01T04:03:41Z
+    case.observation_end_utc = 2025-11-03T21:51:23Z
+    case.exposure_mean_f107p_sfu = 138.071807780
+    heliocentric_distance_au = 1.37
+    random_seed = 104735
+    source.H2O.rate_s-1 = 2.6e29
+    source.CO.rate_s-1 = 1.2e28
+    source.CO2.rate_s-1 = 5.0e27
+    ! Minimum mixture mean free path at the 175-K surface: CO2.
+    mesh.surface_resolution_m = 0.131442336866
+    chemistry.rate.H2O_H_OH_1au_s-1 = 1.17470198721e-05
+    chemistry.rate.H2O_H2_O_1au_s-1 = 1.06098760214e-06
+    chemistry.rate.H2O_2H_O_1au_s-1 = 1.41465013618e-06
+    chemistry.rate.OH_O3P_H_1au_s-1 = 5.30953762168e-06
+    chemistry.rate.OH_O1S_H_1au_s-1 = 1.02562134873e-06
+    chemistry.rate.OH_O1D_H_1au_s-1 = 7.74311733354e-06
+    chemistry.rate.H2_2H_EXCITED_1au_s-1 = 6.07120683444e-08
+    chemistry.rate.H2_2H_1au_s-1 = 8.03727091124e-08
+    chemistry.rate.H2O_OHPLUS_H_ION_1au_s-1 = 1.15600750891e-07
+    chemistry.rate.H2O_OPLUS_H2_ION_1au_s-1 = 1.15659351827e-08
+    chemistry.rate.H2O_HPLUS_OH_ION_1au_s-1 = 2.66582443015e-08
+    chemistry.rate.H2O_ION_1au_s-1 = 6.6803493351e-07
+    chemistry.rate.OH_ION_1au_s-1 = 4.36478482144e-07
+    chemistry.rate.H2_ION_1au_s-1 = 1.24906823328e-07
+    chemistry.rate.H2_DISS_ION_1au_s-1 = 1.73439179793e-08
+    chemistry.rate.H_ION_1au_s-1 = 1.10211902936e-07
+    chemistry.rate.O_ION_1au_s-1 = 4.91528758035e-07
+    brightness.observation_geometry = -0.990062255810804 | -0.1269475424757 | 0.0605066201188121 | 0.5608482271503 | -0.825249894662547 | -0.0664219652059532 | -0.825321596754999 | -0.563636315961546 | 0.0340347654476351
+    brightness.heliocentric_radial_velocity_km_s = 7.1
+    brightness.solar_lya_flux_1au_photon_cm-2_s-1 = 5.4492645419e11
+  #end case
+#end application

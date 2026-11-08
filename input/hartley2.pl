@@ -69,6 +69,7 @@ my $Stage9ScienceDiagnosticsEnabled=0;
 my $ChemistryResidualSamplingIsSet=0;
 my $ChemistryResidualSampling="BERNOULLI";
 my $ConfiguredGeometry="";
+my $RuntimeInputModeIsSet=0;
 my $PhysicsDatabaseName="NONE";
 my $NeutralCollisionCompletion="NONE";
 my $Rubin2011OHGroundRate;
@@ -181,7 +182,7 @@ while ($line=<InputFile>) {
       ampsConfigLib::RedefineMacroFunction("_PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_","(ptr,LocalTimeStep,node,FirstBoundaryFlag) PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection(ptr,LocalTimeStep,node,FirstBoundaryFlag);","pic/picGlobal.dfn");
       ampsConfigLib::RedefineMacroFunction("_PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_FACE_","(ptr,LocalTimeStep,node,FirstBoundaryFlag,InjectionFace) PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection(ptr,LocalTimeStep,node,FirstBoundaryFlag);","pic/picGlobal.dfn");
 
-      ampsConfigLib::SubstituteCodeLine('^MAINLIBOBJ =',"MAINLIBOBJ = RadialMesh.o RadialMeshProfile.o RadialSimulation.o LocalTimeStepValidation.o CometModel.o CometChemistry.o CometDiagnostics.o CometPhysics.o CometRadiativeCooling.o CometBrightness.o","main/makefile");
+      ampsConfigLib::SubstituteCodeLine('^MAINLIBOBJ =',"MAINLIBOBJ = RadialMesh.o RadialMeshProfile.o RadialSimulation.o LocalTimeStepValidation.o CometModel.o CometChemistry.o CometDiagnostics.o CometPhysics.o CometRadiativeCooling.o CometBrightness.o CometRuntimeInput.o","main/makefile");
       ampsConfigLib::SubstituteCodeLine('^MAINOBJ =',"MAINOBJ = RadialMain.o","main/makefile");
       ampsConfigLib::SubstituteCodeLine('#include "Comet.h"',"// The radial mesh build does not use the 3D Comet model header.","pic/pic.h");
       ampsConfigLib::ChangeValueOfVariable("int Comet::Model::GeometryMode","Comet::Model::Geometry::Spherical","main/CometModel.cpp");
@@ -208,6 +209,19 @@ while ($line=<InputFile>) {
         unless exists $mode{$InputLine};
     ampsConfigLib::ChangeValueOfVariable("int Comet::Model::GeometryMode",$mode{$InputLine},"main/CometModel.cpp");
     $ConfiguredGeometry=$InputLine;
+  }
+  elsif ($InputLine eq "RUNTIMEINPUTMODE") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    $InputLine=~s/ //g;
+    die "RuntimeInputMode must be ON or OFF, line=$InputFileLineNumber ($InputFileName)\n"
+        unless $InputLine eq "ON" || $InputLine eq "OFF";
+    die "duplicate RuntimeInputMode, line=$InputFileLineNumber ($InputFileName)\n"
+        if $RuntimeInputModeIsSet;
+    ampsConfigLib::ChangeValueOfVariable(
+        "bool Comet::RuntimeInput::Required",
+        $InputLine eq "ON" ? "true" : "false",
+        "main/CometRuntimeInput.cpp");
+    $RuntimeInputModeIsSet=1;
   }
   elsif ($InputLine eq "HELIOCENTRICDISTANCEAU") {
     ($InputLine,$InputComment)=split(' ',$InputComment,2);

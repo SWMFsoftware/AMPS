@@ -4,6 +4,7 @@
 #include "CometModel.h"
 #include "CometPhysics.h"
 #include "CometRadiativeCooling.h"
+#include "CometRuntimeInput.h"
 #include "LocalTimeStepValidation.h"
 #include "RadialMesh.h"
 #include "RadialSimulation.h"
@@ -30,7 +31,8 @@ void PrintUsage(const char *program) {
       "[--validation-skip-multiface] [--validation-unit-corrections] "
       "[--chemistry-validation-events N] [--random-seed N] "
       "[--chemistry-residual-sampling bernoulli|systematic] "
-      "[--chemistry-estimator-mode configured|analog|enhanced]\n",program);
+      "[--chemistry-estimator-mode configured|analog|enhanced] "
+      "[--validate-runtime-input] [-i FILE [-case CASE]]\n",program);
 }
 
 // Return the compiled species number without depending on application-specific
@@ -219,12 +221,15 @@ int main(int argc,char **argv) {
   bool validateTransportedDaughterCollision=false;
   bool validateUnsupportedSimplifiedNTC=false;
   bool validateSurfaceInjection=false;
+  bool validateRuntimeInput=false;
   bool randomSeedOverride=false;
   bool residualSamplingOverride=false;
   bool estimatorModeOverride=false;
   int estimatorMode=Comet::Chemistry::EstimatorMode::Configured;
+  int residualSamplingMode=Comet::Chemistry::ResidualSamplingMode;
   long int chemistryValidationEvents=200000;
   std::uint64_t randomSeed=Comet::Model::RandomSeed;
+  std::string runtimeInputPath,runtimeCaseName;
   Comet::LocalTimeStepValidation::cOptions validationOptions;
   for (int argument=1;argument<argc;argument++) {
     const std::string option=argv[argument];
@@ -261,6 +266,13 @@ int main(int argc,char **argv) {
     else if (option=="--validate-surface-injection") {
       validateSurfaceInjection=true;
     }
+    else if (option=="--validate-runtime-input") {
+      // This mode deliberately performs the same strict parse, selected-case
+      // overlay, MPI hash agreement, and complete model validation as a
+      // production run, then stops before AMR/particle allocation. It gives
+      // every case in one runtime file a fast executable-level regression.
+      validateRuntimeInput=true;
+    }
     else if (option=="--random-seed") {
       if (++argument>=argc) {
         PrintUsage(argv[0]);
@@ -285,10 +297,10 @@ int main(int argc,char **argv) {
       }
       const std::string mode=argv[argument];
       if (mode=="bernoulli" || mode=="BERNOULLI")
-        Comet::Chemistry::ResidualSamplingMode=
+        residualSamplingMode=
             Comet::Chemistry::ResidualSampling::IndependentBernoulli;
       else if (mode=="systematic" || mode=="SYSTEMATIC")
-        Comet::Chemistry::ResidualSamplingMode=
+        residualSamplingMode=
             Comet::Chemistry::ResidualSampling::RandomPhaseSystematic;
       else {
         std::fprintf(stderr,
@@ -297,6 +309,20 @@ int main(int argc,char **argv) {
         return EXIT_FAILURE;
       }
       residualSamplingOverride=true;
+    }
+    else if (option=="-i" || option=="--input") {
+      if (++argument>=argc || !runtimeInputPath.empty()) {
+        std::fprintf(stderr,"-i/--input requires exactly one file\n");
+        return EXIT_FAILURE;
+      }
+      runtimeInputPath=argv[argument];
+    }
+    else if (option=="-case" || option=="--case") {
+      if (++argument>=argc || !runtimeCaseName.empty()) {
+        std::fprintf(stderr,"-case/--case requires exactly one case name\n");
+        return EXIT_FAILURE;
+      }
+      runtimeCaseName=argv[argument];
     }
     else if (option=="--chemistry-estimator-mode") {
       if (++argument>=argc) {
@@ -388,7 +414,8 @@ int main(int argc,char **argv) {
       (validateTotalReactionForcing ? 1 : 0)+
       (validateTransportedDaughterCollision ? 1 : 0)+
       (validateUnsupportedSimplifiedNTC ? 1 : 0)+
-      (validateSurfaceInjection ? 1 : 0);
+      (validateSurfaceInjection ? 1 : 0)+
+      (validateRuntimeInput ? 1 : 0);
   if (validationModeCount>1) {
     std::fprintf(stderr,
         "select only one focused validation mode per invocation\n");
@@ -399,10 +426,20 @@ int main(int argc,char **argv) {
         "--validation-unit-corrections requires --validate-local-timestep\n");
     return EXIT_FAILURE;
   }
+  if (Comet::RuntimeInput::Required && runtimeInputPath.empty()) {
+    std::fprintf(stderr,
+        "this executable requires runtime model input: use -i FILE -case CASE\n");
+    return EXIT_FAILURE;
+  }
+  if (runtimeInputPath.empty() && !runtimeCaseName.empty()) {
+    std::fprintf(stderr,"-case requires -i FILE\n");
+    return EXIT_FAILURE;
+  }
 
-  // AMPS input preprocessing has already compiled case values into the source
-  // tree.  This call initializes MPI, molecular data, and core services that
-  // the validators use; no runtime text input is parsed here.
+  // Compile-time preprocessing fixes species, dimension, enabled core models,
+  // block layout, and maximum allocation sizes.  A modern two-layer comet
+  // executable then loads the physical run receipt below. Legacy inputs keep
+  // RuntimeInput::Required=false and retain their generated values.
   // The science-gate residual override is deliberately applied before this
   // point and, more importantly, before RadialSimulation::Initialize() calls
   // Chemistry::RequestBlockData().  Therefore one frozen executable can run
@@ -410,6 +447,24 @@ int main(int argc,char **argv) {
   // and initializes the normal owner-block state.  Physics and chemistry
   // tables remain byte-identical between arms.
   PIC::Init_BeforeParser();
+  if (!runtimeInputPath.empty()) {
+    std::string inputError;
+    if (!Comet::RuntimeInput::LoadAndApply(runtimeInputPath,runtimeCaseName,
+        &inputError)) {
+      if (PIC::ThisThread==0)
+        std::fprintf(stderr,"invalid comet runtime input: %s\n",
+            inputError.c_str());
+      return EXIT_FAILURE;
+    }
+    if (PIC::ThisThread==0) {
+      std::printf("$PREFIX: comet runtime input=%s case=%s\n",
+          runtimeInputPath.c_str(),runtimeCaseName.c_str());
+      std::fflush(stdout);
+    }
+  }
+  if (residualSamplingOverride)
+    Comet::Chemistry::ResidualSamplingMode=residualSamplingMode;
+  if (!randomSeedOverride) randomSeed=Comet::Model::RandomSeed;
   if (estimatorModeOverride) {
     // The generated input has now initialized the compiled Stage-6/7/8
     // policy flags.  Select only the runtime estimator arm; never rewrite
@@ -493,6 +548,21 @@ int main(int argc,char **argv) {
     std::fprintf(stderr,"Invalid radial simulation: %s\n",
         validationError.c_str());
     return EXIT_FAILURE;
+  }
+
+  if (validateRuntimeInput) {
+    // Stop only after all model owners have validated the installed state.
+    // In particular this constructs/checks the runtime chemistry network and
+    // validates the generated collision database and runtime brightness
+    // metadata, but it creates no mesh, block, particle, PT, or plot output.
+    if (PIC::ThisThread==0) {
+      std::printf("PASS comet runtime input validation file=%s case=%s\n",
+          runtimeInputPath.empty() ? "<compiled>" : runtimeInputPath.c_str(),
+          runtimeCaseName.empty() ? "<none>" : runtimeCaseName.c_str());
+      std::fflush(stdout);
+    }
+    MPI_Finalize();
+    return EXIT_SUCCESS;
   }
 
   // The computational coordinate is cometocentric radius.  DIM1 spherical

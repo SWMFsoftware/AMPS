@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Reproduce the six compile-time AMPS inputs for the 3I/ATLAS campaign.
+"""Reproduce the one runtime ``i3.in`` receipt for all six 3I/ATLAS cases.
 
-The program deliberately performs all case-dependent calculations outside
-the C++ application.  AMPS inputs are compile-time configuration files, so a
-separate preprocessing/build is required for each concrete case.  This tool
-is deterministic and network-free: the repository CSV files contain the
-reviewed observation table, solar-longitude correction, reaction parameters,
-and fluorescence metadata together with their provenance.
+``input/i3.conf`` fixes compiled species, dimension, block layout, maximum AMR
+level, enabled core modules, collision topology, and reaction topology. This
+program keeps every case-dependent calculation outside the C++ application
+and writes it into named ``case`` sections in one runtime file. The result is
+deterministic and network-free.
 """
 
 from __future__ import annotations
@@ -25,7 +24,6 @@ NUCLEUS_RADIUS_M = 2_500.0
 DOMAIN_OUTER_RADIUS_M = 1.0e9
 SURFACE_TEMPERATURE_K = 175.0
 RADIAL_CELL_COUNT = 2_000
-BLOCK_CELL_COUNT = 8
 COURANT_NUMBER = 0.25
 DIRECT_PARENT_SPEED_M_S = 400.0
 TARGET_SURFACE_PARTICLES_PER_CELL = 800.0
@@ -176,11 +174,6 @@ def derive_characteristic_speeds(reactions: list[Reaction]) -> dict[str, int]:
     return {species: math.ceil(value) for species, value in speed.items()}
 
 
-def _max_refinement_level(surface_resolution_m: float) -> int:
-    root_width = (DOMAIN_OUTER_RADIUS_M - NUCLEUS_RADIUS_M) / BLOCK_CELL_COUNT
-    return math.ceil(math.log2(root_width / surface_resolution_m))
-
-
 def _load_reactions(path: Path) -> list[Reaction]:
     reactions = []
     for row in _load_csv(path):
@@ -196,26 +189,6 @@ def _load_reactions(path: Path) -> list[Reaction]:
             )
         )
     return reactions
-
-
-def _reaction_records(reactions: list[Reaction], f107p: float) -> str:
-    records = []
-    for reaction in reactions:
-        rate_1au = reaction.a0_s * f107p**reaction.exponent
-        records.append(
-            "  ChemistryReaction="
-            f"{reaction.reaction_id} | {reaction.reactants} | {reaction.products} | "
-            f"HELIOCENTRIC | {_format_number(rate_1au)} | 0 | 0 | 1 | "
-            f"{_format_number(reaction.excess_energy_ev)}"
-        )
-    return "\n".join(records)
-
-
-def _speed_records(speeds: dict[str, int]) -> str:
-    return "\n".join(
-        f"  RadialCharacteristicSpeed={species:<3s} | {speeds[species]}"
-        for species in MASS_AMU
-    )
 
 
 def _validate_observation_geometry(case: dict[str, str]) -> None:
@@ -282,89 +255,147 @@ def _validate_observation_geometry(case: dict[str, str]) -> None:
         )
 
 
-def _brightness_records(case: dict[str, str]) -> str:
-    """Select reusable velocity-dependent models with explicit case inputs.
+def _runtime_reaction_records(reactions: list[Reaction], f107p: float) -> list[str]:
+    return [
+        f"    chemistry.rate.{reaction.reaction_id}_1au_s-1 = "
+        f"{_format_number(reaction.a0_s * f107p**reaction.exponent)}"
+        for reaction in reactions
+    ]
 
-    The Lowell OH source is an integrated energy g factor.  The historical
-    case-table photon values used 308.5 nm exactly, so that convention is now
-    visible in the input instead of being hidden in a precomputed scalar.
-    """
 
-    _validate_observation_geometry(case)
+def render_runtime_input(
+    cases: list[dict[str, str]], reactions: list[Reaction]
+) -> str:
+    """Render common run settings plus six explicit case overlays."""
 
-    return "\n".join(
-        (
-            "  BrightnessMode=ON",
-            "  BrightnessImpactParameterGrid=LOG | 2500.0 | 1.0e9 | 200",
-            "  BrightnessObservationGeometry="
-            + " | ".join(
-                case[name]
-                for name in (
-                    "er_x", "er_y", "er_z", "los_x", "los_y", "los_z",
-                    "impact_x", "impact_y", "impact_z",
-                )
-            ),
-            "  BrightnessHeliocentricRadialVelocityKMS="
-            f"{case['heliocentric_radial_velocity_km_s']}",
-            "  BrightnessVelocityDomainPolicy=ABORT",
-            "  BrightnessSolarLymanAlphaFlux1AUPhotonCM2S="
-            f"{case['h_lya_photon_flux_1au_ph_cm-2_s-1']}",
-            "  BrightnessEmission=OH | OH_A2SIGMA_X2PI_00 | "
+    speeds = derive_characteristic_speeds(reactions)
+    lines = [
+        "! Generated deterministically by srcHartley2/i3/prepare_i3_cases.py.",
+        "! Compile once with input/i3.conf, then select one case explicitly:",
+        "!   ./amps -i i3.in -case CASE",
+        "! Do not copy case values into i3.conf; that file owns layout only.",
+        "",
+        "#begin application: comet",
+        "  schema = 1",
+        "  geometry = spherical",
+        "",
+        "  source.H2O.distribution = uniform",
+        "  source.H2O.temperature_k = 175.0",
+        "  source.H2O.bulk_speed_m_s = 0.0",
+        "  source.CO.distribution = uniform",
+        "  source.CO.temperature_k = 175.0",
+        "  source.CO.bulk_speed_m_s = 0.0",
+        "  source.CO2.distribution = uniform",
+        "  source.CO2.temperature_k = 175.0",
+        "  source.CO2.bulk_speed_m_s = 0.0",
+        "",
+        "  collision.temperature_floor_k = 175.0",
+        "  collision.minimum_sample_particles = 1.0",
+        "  chemistry.enabled = true",
+        "  chemistry.residual_sampling = systematic",
+        "  diagnostics.enabled = true",
+        "  cooling.H2O.model = GOMBOSI1986_H2O",
+        "",
+        f"  nucleus.radius_m = {_format_number(NUCLEUS_RADIUS_M)}",
+        f"  mesh.outer_radius_m = {_format_number(DOMAIN_OUTER_RADIUS_M)}",
+        f"  mesh.radial_cell_count = {RADIAL_CELL_COUNT}",
+        f"  simulation.reference_injection_particles = {derive_reference_injection_count()}",
+        f"  simulation.courant_number = {_format_number(COURANT_NUMBER)}",
+        "  simulation.inner_boundary_temperature_k = 175.0",
+        "  simulation.sampling_length = 10000",
+        "  simulation.weight_adaptation_enabled = true",
+        "  simulation.weight_adaptation_interval = 10000",
+        "  simulation.particles_per_cell.minimum = 800",
+        "  simulation.particles_per_cell.maximum = 3200",
+        "  simulation.chemical_only_particles_per_cell.minimum = 50",
+        "  simulation.chemical_only_particles_per_cell.maximum = 200",
+        "  simulation.lock_direct_source_weights = true",
+        "  simulation.emergency_buffer_utilization = 0.75",
+        "  simulation.allocation_low_watermark = 0.50",
+        "  simulation.allocation_reserve_fraction = 0.10",
+        "  simulation.max_face_transfer_multiplicity = 1",
+        "  simulation.max_photochemical_products_per_reaction = 20",
+        "  simulation.load_balance_interval = 50",
+        "  simulation.max_iterations = 30000",
+        "  simulation.convergence_tolerance = 0.05",
+        "  simulation.convergence_windows = 3",
+    ]
+    lines.extend(
+        f"  transport.characteristic_speed.{species}_m_s = {speeds[species]}"
+        for species in MASS_AMU
+    )
+    lines.extend(
+        [
+            "",
+            "  brightness.enabled = true",
+            "  brightness.impact_parameter_grid = LOG | 2500.0 | 1.0e9 | 200",
+            "  brightness.velocity_domain_policy = ABORT",
+            "  brightness.emission.OH = OH | OH_A2SIGMA_X2PI_00 | "
             "OH_AX00_SA1988_LOWELL_UNQUENCHED | "
-            "CORE_SCHLEICHER_AHEARN1988_LOWELL | THIN | "
-            "ISOTROPIC_4PI | NONE | 0 | 0 | NONE | 308.5",
-            "  BrightnessEmission=H | H_LYMAN_ALPHA | "
-            "H_LYA_IKL2020 | CORE_IKL2020_CASE_SOLAR_FLUX | THIN | "
-            "ISOTROPIC_4PI | LINE_CENTER | 9.5e-18 | 0.1 | "
+            "CORE_SCHLEICHER_AHEARN1988_LOWELL | THIN | ISOTROPIC_4PI | "
+            "NONE | 0 | 0 | NONE | 308.5",
+            "  brightness.emission.H = H | H_LYMAN_ALPHA | H_LYA_IKL2020 | "
+            "CORE_IKL2020_CASE_SOLAR_FLUX | THIN | ISOTROPIC_4PI | "
+            "LINE_CENTER | 9.5e-18 | 0.1 | "
             "DOPPLER_B8KMS_FOSC0.4164_CONSERVATIVE_DIAGNOSTIC | 0",
-        )
+            "  dust.enabled = false",
+        ]
     )
 
+    for case in cases:
+        _validate_observation_geometry(case)
+        f107p = float(case["exposure_mean_f107p_sfu"])
+        _, limiting_species, surface_mfp = derive_surface_resolution(case)
+        geometry = " | ".join(
+            case[name]
+            for name in (
+                "er_x", "er_y", "er_z", "los_x", "los_y", "los_z",
+                "impact_x", "impact_y", "impact_z",
+            )
+        )
+        lines.extend(
+            [
+                "",
+                f"  #begin case: {case['case_id']}",
+                f"    case.index = {case['case_id']}",
+                f"    case.campaign_phase = {case['campaign_phase']}",
+                f"    case.observation_start_utc = {case['observation_start_utc']}",
+                f"    case.observation_end_utc = {case['observation_end_utc']}",
+                f"    case.exposure_mean_f107p_sfu = {case['exposure_mean_f107p_sfu']}",
+                f"    heliocentric_distance_au = {case['heliocentric_distance_au']}",
+                f"    random_seed = {104729 + int(case['case_id'])}",
+                f"    source.H2O.rate_s-1 = {case['q_h2o_s-1']}",
+                f"    source.CO.rate_s-1 = {case['q_co_s-1']}",
+                f"    source.CO2.rate_s-1 = {case['q_co2_s-1']}",
+                "    ! Minimum mixture mean free path at the 175-K surface: "
+                f"{limiting_species}.",
+                f"    mesh.surface_resolution_m = {_format_number(surface_mfp)}",
+            ]
+        )
+        lines.extend(_runtime_reaction_records(reactions, f107p))
+        lines.extend(
+            [
+                f"    brightness.observation_geometry = {geometry}",
+                "    brightness.heliocentric_radial_velocity_km_s = "
+                f"{case['heliocentric_radial_velocity_km_s']}",
+                "    brightness.solar_lya_flux_1au_photon_cm-2_s-1 = "
+                f"{case['h_lya_photon_flux_1au_ph_cm-2_s-1']}",
+                "  #end case",
+            ]
+        )
 
-def render_case(template: str, case: dict[str, str], reactions: list[Reaction]) -> str:
-    f107p = float(case["exposure_mean_f107p_sfu"])
-    _, limiting_species, surface_mfp = derive_surface_resolution(case)
-    speeds = derive_characteristic_speeds(reactions)
-    replacements = {
-        "CASE_ID": case["case_id"],
-        "CAMPAIGN_PHASE": case["campaign_phase"],
-        "OBSERVATION_START_UTC": case["observation_start_utc"],
-        "OBSERVATION_END_UTC": case["observation_end_utc"],
-        "HELIOCENTRIC_DISTANCE_AU": case["heliocentric_distance_au"],
-        "Q_H2O": case["q_h2o_s-1"],
-        "Q_CO": case["q_co_s-1"],
-        "Q_CO2": case["q_co2_s-1"],
-        "F107P_SFU": case["exposure_mean_f107p_sfu"],
-        "CHEMISTRY_REACTIONS": _reaction_records(reactions, f107p),
-        "RANDOM_SEED": str(104729 + int(case["case_id"])),
-        "LIMITING_MFP_SPECIES": limiting_species,
-        "SURFACE_MFP_M": _format_number(surface_mfp),
-        "REFERENCE_INJECTION_COUNT": str(derive_reference_injection_count()),
-        "MAX_REFINEMENT_LEVEL": str(_max_refinement_level(surface_mfp)),
-        "CHARACTERISTIC_SPEEDS": _speed_records(speeds),
-        "BRIGHTNESS_RECORDS": _brightness_records(case),
-    }
-    rendered = template
-    for name, value in replacements.items():
-        rendered = rendered.replace(f"@{name}@", value)
-    unresolved = sorted({token.split("@", 1)[0] for token in rendered.split("@") [1::2]})
-    if "@" in rendered:
-        raise RuntimeError("unresolved input-template tokens: " + ", ".join(unresolved))
-    return rendered
+    lines.extend(["#end application", ""])
+    return "\n".join(lines)
 
 
 def generate(repository: Path, output_directory: Path) -> list[Path]:
     i3_directory = repository / "srcHartley2" / "i3"
     cases = _load_csv(i3_directory / "reference" / "i3_cases.csv")
     reactions = _load_reactions(i3_directory / "reference" / "photochemistry_channels.csv")
-    template = (repository / "input" / "i3.input").read_text(encoding="utf-8")
     output_directory.mkdir(parents=True, exist_ok=True)
-    outputs = []
-    for case in cases:
-        output = output_directory / f"i3.case{case['case_id']}.input"
-        output.write_text(render_case(template, case, reactions), encoding="utf-8")
-        outputs.append(output)
-    return outputs
+    output = output_directory / "i3.in"
+    output.write_text(render_runtime_input(cases, reactions), encoding="utf-8")
+    return [output]
 
 
 def main() -> None:

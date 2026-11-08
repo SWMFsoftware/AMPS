@@ -63,6 +63,15 @@ bool SetObservationGeometry(const double heliocentricRadialDirection[3],
     const double lineOfSightDirection[3],
     const double impactParameterDirection[3],std::string *error=NULL);
 
+// Runtime comet receipts configure the same arrays that legacy compile-time
+// inputs generate. ResetRuntimeConfiguration is legal only before sampler
+// registration. SetEmissionMetadata retains transition/provenance strings in
+// fixed compiled storage, so runtime selection cannot change memory layout.
+bool ResetRuntimeConfiguration(std::string *error=NULL);
+bool SetEmissionMetadata(int line,const char *transition,
+    const char *gFactorProvenance,const char *tauProvenance,
+    std::string *error=NULL);
+
 // Register the particle-resolved sampler after radial blocks and cell measures
 // exist. PIC calls SampleParticleResolvedBrightness() every sampling iteration
 // and OutputSampledBrightness() at the same completed-buffer boundary used by

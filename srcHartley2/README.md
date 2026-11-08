@@ -14,11 +14,12 @@ The application currently supports:
 
 ## Operator workflow: clean builds and isolated runs
 
-Comet inputs are consumed by the AMPS preprocessor at compile time.  The
-executable does **not** load `halley1d.input` or `i3.caseN.input` when it is
-started.  Consequently, changing a case means deleting exactly the generated
-`build` directory and compiling again with the intended `InputFileAMPS`.
-Never reuse an executable built for another comet or another I3 case.
+The application supports both historical one-layer inputs and the new I3
+two-layer input. Historical Halley/Hartley `.input` files are consumed by the
+AMPS preprocessor and changing them requires a clean rebuild. I3 compiles
+capabilities and allocation limits from `i3.conf` once, then loads the
+physical run receipt from `i3.in` at startup. Changing an I3 case therefore
+does not require a rebuild.
 
 Run all commands below from the repository root:
 
@@ -26,16 +27,20 @@ Run all commands below from the repository root:
 cd /data/vtenishe/COMET1D/AMPS
 ```
 
-Select the generic comet application once for a new checkout or configuration:
+Select the desired compile-time application once for a new checkout or
+configuration. For historical comet inputs use `hartley2`; for the shared I3
+executable use `i3`:
 
 ```sh
 ./Config.pl -application=hartley2
+./Config.pl -application=i3
 ```
 
-`srcHartley2` is the retained historical AMPS application name; selecting it
-does not make a generic run a Hartley-2 physical case.  The `InputFileAMPS`
-argument below selects the actual comet/campaign configuration.  Before every
-recompile, remove only this exact generated directory:
+`Config.pl` resolves `input/<application>.input` first and falls back to
+`input/<application>.conf` only when the `.input` file is absent. Thus `i3`
+selects `input/i3.conf`, while existing applications retain their historical
+behavior. Before every required recompile, remove only this exact generated
+directory:
 
 ```sh
 rm -rf -- /data/vtenishe/COMET1D/AMPS/build
@@ -46,45 +51,54 @@ relative to the directory in which `amps` is launched.  Running a frozen
 executable in an isolated production directory therefore keeps its output,
 mesh, diagnostic files, and logs separate from the repository-root `PT`.
 
-Use this input-selection table; only the concrete files in the middle column
-are passed to `make`:
+Use this input-selection table:
 
-| Application case | Compile-time input | Notes |
-| --- | --- | --- |
-| 1P/Halley Rubin comparison | `input/halley1d.input` | DIM1; 10,000-step samples; 40,000-step maximum; brightness disabled |
-| 3I/ATLAS case 1--6 | `input/i3.caseN.input` | DIM1; substitute `N=1..6`; each case needs its own clean executable |
-| 3I generator template | `input/i3.input` | Never compile directly; regenerate concrete cases with `i3/prepare_i3_cases.py` |
-| Hartley 2 radial configuration | `input/hartley2.radial.input` | DIM1 configuration/mesh path; maintained with simulation mode disabled until its remaining controls are supplied |
-| Historical Hartley 2 shape case | `input/hartley2.input` | DIM3 triangulated-nucleus application |
+| Application case | Compile-time configuration | Runtime input | Notes |
+| --- | --- | --- | --- |
+| 1P/Halley Rubin comparison | `input/halley1d.input` | none | DIM1 legacy path; 10,000-step samples; 40,000-step maximum; brightness disabled |
+| 3I/ATLAS cases 1--6 | `input/i3.conf` | `input/i3.in` plus required `-case N` | one DIM1 executable for all six cases |
+| Hartley 2 radial configuration | `input/hartley2.radial.input` | none | DIM1 configuration/mesh path; simulation mode remains disabled until its remaining controls are supplied |
+| Historical Hartley 2 shape case | `input/hartley2.input` | none | DIM3 triangulated-nucleus application |
 
 ### Build and run one 3I/ATLAS case
 
-The six concrete inputs are `input/i3.case1.input` through
-`input/i3.case6.input`.  `input/i3.input` contains generator tokens and is
-**not** directly compilable.  Reproduce the concrete inputs and run their
-focused generator regression with:
+`input/i3.in` contains common model values and six direct named case sections.
+Reproduce it and run the focused generator/runtime-input regressions with:
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 srcHartley2/i3/prepare_i3_cases.py
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
   srcHartley2/i3/tests/test_prepare_i3_cases.py
 srcHartley2/tests/run_comet_brightness_tests.sh
+make -C src/general/input test
 ```
 
-Choose one case number from 1 through 6 and cleanly build it.  This example
-selects case 1 and an optimized CPU build:
+Cleanly build the I3 executable once:
 
 ```sh
-CASE=1
+./Config.pl -application=i3
 rm -rf -- /data/vtenishe/COMET1D/AMPS/build
-make -j8 EXTRACOMPILEROPTIONS=-O3 \
-  InputFileAMPS="input/i3.case${CASE}.input"
+make -j8 EXTRACOMPILEROPTIONS=-O3
 ```
 
-Each I3 case has different source rates, heliocentric conditions, reaction
-rates, observation geometry, and fluorescence inputs compiled into `amps`.
-Repeat the clean-build step for every other case; do not run cases 2--6 with a
-case-1 executable.
+`i3.conf` fixes the seven species, DIM1 geometry capability, block/ghost-cell
+layout, internal-degree storage, collision/reaction topology, particle buffer
+capacity, and maximum refinement level. `i3.in` owns the nucleus/domain and
+mesh targets, sources, numerical run controls, case reaction rates,
+observation geometry, and brightness conditions. The executable refuses to
+run without `-i`; because `i3.in` contains case sections it also refuses to
+run without an explicit `-case`.
+
+Validate a case through every model owner without allocating a mesh or
+particle buffer:
+
+```sh
+mpiexec -n 2 ./amps -i input/i3.in -case 1 --validate-runtime-input
+```
+
+Success prints `PASS comet runtime input validation ...`. This mode is useful
+for checking all case sections after editing `i3.in`; it does not replace a
+transport, convergence, or brightness validation run.
 
 Freeze the executable and the exact input in a case-specific directory before
 starting MPI.  The example rank count is 12; select a count allowed by the
@@ -94,14 +108,17 @@ host allocation and validation plan.
 CASE=1
 RUN="/data/vtenishe/COMET1D/AMPS/validation_runs/i3_case${CASE}_manual/production"
 mkdir -p "$RUN"
-cp -p amps "input/i3.case${CASE}.input" "$RUN/"
+cp -p amps input/i3.in "$RUN/"
 
 (
   cd "$RUN"
   set -o pipefail
-  mpiexec -n 12 ./amps 2>&1 | tee "case${CASE}.run.log"
+  mpiexec -n 12 ./amps -i i3.in -case "$CASE" 2>&1 | tee "case${CASE}.run.log"
 )
 ```
+
+All cases share the same executable and runtime file; only `-case` and the run
+directory change. An unknown case is fatal and lists the available names.
 
 The generated inputs currently request 200 brightness rays, a 10,000-
 iteration sampling window, and at most 30,000 iterations.  Raw radial and
@@ -186,10 +203,14 @@ ideal radial cells, block-local particle weights and timesteps, and
 `BrightnessMode=off`.  Build it independently of every I3 executable:
 
 ```sh
+./Config.pl -application=halley1d
 rm -rf -- /data/vtenishe/COMET1D/AMPS/build
-make -j8 EXTRACOMPILEROPTIONS=-O3 \
-  InputFileAMPS=input/halley1d.input
+make -j8 EXTRACOMPILEROPTIONS=-O3
 ```
+
+Use `Config.pl` for this selection. The AMPS preprocessor reads the persisted
+`InputFileAMPS` selector; a one-off `make InputFileAMPS=...` argument can be
+superseded by the staged configuration and is not the maintained workflow.
 
 Freeze and run it in its own directory.  This example uses 18 MPI processes;
 use only a rank count available in the host allocation.
@@ -228,9 +249,11 @@ it as a steady solution.  To inspect any individual Halley radial quantity,
 use `visualization/plot_1d.py`; its aliases and examples are documented in
 `visualization/README.md`.
 
-When switching back from Halley to any I3 case—or between I3 cases—repeat the
-exact clean-build procedure.  Copying a different input beside an existing
-executable changes provenance only; it does not reconfigure that executable.
+When switching between Halley and I3, repeat the exact clean-build procedure.
+Do not rebuild between I3 cases: use the same I3 executable and change the
+required `-case N` selector. Copying a different legacy `.input` beside an
+existing executable changes provenance only; it does not reconfigure that
+executable.
 
 ### Build and run the Hartley 2 configurations
 
@@ -240,9 +263,9 @@ time.  Build a new executable and prepare an isolated four-rank smoke-test
 directory as follows:
 
 ```sh
+./Config.pl -application=hartley2
 rm -rf -- /data/vtenishe/COMET1D/AMPS/build
-make -j8 EXTRACOMPILEROPTIONS=-O3 \
-  InputFileAMPS=input/hartley2.input
+make -j8 EXTRACOMPILEROPTIONS=-O3
 
 RUN=/data/vtenishe/COMET1D/AMPS/validation_runs/hartley2_dim3_manual/production
 mkdir -p "$RUN"
@@ -265,9 +288,9 @@ The one-dimensional Shou/Hartley configuration is
 `input/hartley2.radial.input`.  It can be preprocessed and compiled with:
 
 ```sh
+./Config.pl -application=hartley2.radial
 rm -rf -- /data/vtenishe/COMET1D/AMPS/build
-make -j8 EXTRACOMPILEROPTIONS=-O3 \
-  InputFileAMPS=input/hartley2.radial.input
+make -j8 EXTRACOMPILEROPTIONS=-O3
 ```
 
 Do not use that executable for a production simulation yet.  The file
@@ -397,8 +420,9 @@ srcHartley2/tests/run_comet_brightness_tests.sh
 is `input/hartley2.radial.input`; the historical triangulated case remains
 `input/hartley2.input`. The Rubin et al. case is explicitly named for comet
 Halley in `input/halley1d.input`. The six observation-driven 3I/ATLAS cases
-are generated and documented in `srcHartley2/i3/README.md`; their concrete
-inputs are `input/i3.case1.input` through `input/i3.case6.input`.
+are generated and documented in `srcHartley2/i3/README.md`; compile-time
+capabilities are in `input/i3.conf` and all six runtime cases are sections of
+`input/i3.in`.
 `srcHartley2/CHEMISTRY.md` provides
 the staged implementation and validation roadmap for improving minor
 photochemical-daughter statistics without increasing direct-parent injection.
@@ -411,11 +435,12 @@ photochemical-daughter statistics without increasing direct-parent injection.
 | `CometChemistry.*` | Validated discrete execution of generated unimolecular reaction events |
 | `CometPhysics.*` | Adapter from generated neutral collision data to the AMPS collision callback |
 | `CometRadiativeCooling.*` | Species/model selection and AMPS internal-energy update for published cooling laws |
+| `CometRuntimeInput.*` | Strict runtime comet receipt, generic case overlay, MPI consistency check, and installation of selected model values before allocation |
 | `RadialMesh*` | DIM1 spherical domain and logarithmically expanding target resolution |
 | `RadialSimulation.*` | DIM1 source injection, timestep selection, inner re-emission, outer loss, and time stepping |
 | `halley2011/derive_halley1d_controls.py` | Reproducible Halley surface-resolution, injection-count, and daughter-speed derivation |
 | `halley2011/digitize_rubin2011.py` and `halley2011/reference/` | Reproducible Rubin vector-curve extraction and committed neutral-profile reference data |
-| `i3/prepare_i3_cases.py`, `i3/reference/`, and `input/i3*.input` | Reproducible 3I/ATLAS observation table, solar correction, chemistry, mesh controls, brightness configuration, and six compile-time inputs |
+| `i3/prepare_i3_cases.py`, `i3/reference/`, `input/i3.conf`, and `input/i3.in` | Reproducible 3I/ATLAS capability layout plus one runtime receipt containing common controls and six explicit cases |
 | `visualization/plot_1d.py` | CLI plotter for named quantities in one or more DIM1 output files |
 | `visualization/compare_rubin2011.py` | Paper-ordered neutral-density and H2O-velocity comparison artifacts for the Halley run |
 | `visualization/plot_i3_brightness_comparison.py` | Overlays an AMPS H/OH brightness table on the extracted numerical MAVEN/IUVS references, supports `--reference-dir`, saves a PNG, and opens an optional Matplotlib window |

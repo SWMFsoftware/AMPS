@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused deterministic tests for the six 3I/ATLAS input files."""
+"""Focused deterministic tests for the combined 3I/ATLAS runtime input."""
 
 from __future__ import annotations
 
@@ -98,41 +98,48 @@ class I3CaseGeneratorTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not orthogonal"):
             MODULE._validate_observation_geometry(invalid)
 
-    def test_generated_inputs_match_tracked_files(self) -> None:
+    def test_generated_runtime_input_matches_tracked_file(self) -> None:
         with tempfile.TemporaryDirectory(prefix="amps-i3-input-test-") as directory:
             outputs = MODULE.generate(REPOSITORY, Path(directory))
-            self.assertEqual(len(outputs), 6)
-            for output in outputs:
-                tracked = REPOSITORY / "input" / output.name
-                text = output.read_text(encoding="utf-8")
-                self.assertEqual(text, tracked.read_text(encoding="utf-8"))
-                self.assertNotIn("@", text)
-                self.assertIn("BrightnessMode=ON", text)
-                self.assertIn(
-                    "BrightnessImpactParameterGrid=LOG | 2500.0 | 1.0e9 | 200",
-                    text,
-                )
-                self.assertIn("BrightnessHeliocentricRadialVelocityKMS=", text)
-                self.assertIn("BrightnessObservationGeometry=", text)
-                self.assertIn("BrightnessVelocityDomainPolicy=ABORT", text)
-                self.assertIn(
-                    "BrightnessSolarLymanAlphaFlux1AUPhotonCM2S=", text
-                )
-                self.assertIn("H_LYA_IKL2020", text)
-                self.assertIn("OH_AX00_SA1988_LOWELL_UNQUENCHED", text)
-                self.assertNotIn(
-                    "BrightnessEmission=H | H_LYMAN_ALPHA | "
-                    + self.cases[int(output.stem[-1]) - 1][
-                        "h_lya_ikl2020_g_at_rh_s-1"
-                    ],
-                    text,
-                )
-                self.assertEqual(text.count("ChemistryReaction="), 17)
-                self.assertEqual(text.count("SurfaceSource="), 3)
-                self.assertIn("DomainOuterRadius=1.0e9", text)
-                self.assertIn("RadialCellNumber=2000", text)
-                self.assertIn("RadialSamplingLength=10000", text)
-                self.assertIn("RadialMaxIterations=30000", text)
+            self.assertEqual([output.name for output in outputs], ["i3.in"])
+            output = outputs[0]
+            tracked = REPOSITORY / "input" / "i3.in"
+            text = output.read_text(encoding="utf-8")
+            self.assertEqual(text, tracked.read_text(encoding="utf-8"))
+            self.assertNotIn("@", text)
+            self.assertEqual(text.count("#begin case:"), 6)
+            self.assertEqual(text.count("#end case"), 6)
+            self.assertEqual(text.count("chemistry.rate."), 6 * 17)
+            self.assertEqual(text.count("source.H2O.rate_s-1"), 6)
+            self.assertEqual(text.count("mesh.surface_resolution_m"), 6)
+            self.assertIn("brightness.enabled = true", text)
+            self.assertIn(
+                "brightness.impact_parameter_grid = LOG | 2500.0 | 1.0e9 | 200",
+                text,
+            )
+            self.assertEqual(
+                text.count("brightness.heliocentric_radial_velocity_km_s"), 6
+            )
+            self.assertEqual(text.count("brightness.observation_geometry"), 6)
+            self.assertEqual(
+                text.count("brightness.solar_lya_flux_1au_photon_cm-2_s-1"), 6
+            )
+            self.assertIn("H_LYA_IKL2020", text)
+            self.assertIn("OH_AX00_SA1988_LOWELL_UNQUENCHED", text)
+            self.assertIn("mesh.outer_radius_m = 1000000000", text)
+            self.assertIn("mesh.radial_cell_count = 2000", text)
+            self.assertIn("simulation.sampling_length = 10000", text)
+            self.assertIn("simulation.max_iterations = 30000", text)
+
+    def test_compile_configuration_is_layout_only(self) -> None:
+        text = (REPOSITORY / "input" / "i3.conf").read_text(encoding="utf-8")
+        self.assertIn("RuntimeInputMode=on", text)
+        self.assertIn("MaxMeshRefinmentLevel=30", text)
+        self.assertEqual(text.count("ChemistryReaction="), 17)
+        self.assertEqual(text.count(" | HELIOCENTRIC | 0 |"), 17)
+        self.assertIn("BrightnessMode=off", text)
+        self.assertNotIn("2025-", text)
+        self.assertNotIn("8.0e27", text)
 
 
 if __name__ == "__main__":

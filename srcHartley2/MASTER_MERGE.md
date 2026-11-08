@@ -575,10 +575,10 @@ Merge order within the existing waves:
    fluorescence tests, and the expanded brightness parser tests. Run them
    with the reusable chemistry, collision, injection-distribution,
    brightness, and all-stage tests.
-6. In Wave 7, merge `input/i3.input`, the six generated concrete inputs,
+6. In Wave 7, merge `input/i3.conf`, the single generated `input/i3.in`,
    `srcHartley2/i3/prepare_i3_cases.py`, the compact I3 case/reference CSVs,
-   and the I3 README as one reviewed provenance unit. Regenerate the six
-   inputs and require no diff. The guarded fluorescence acquisition utility
+   and the I3 README as one reviewed provenance unit. Regenerate `i3.in` and
+   require no diff. The guarded fluorescence acquisition utility
    and its authoritative snapshot already belong to the earlier core module;
    an upstream network refresh is a separate scientific-data change and must
    not be mixed into conflict resolution.
@@ -593,11 +593,12 @@ Merge order within the existing waves:
    numerical table and `--reference-dir`; it must not regain an undeclared
    dependency on untracked `Archive.zip`.
 
-The generator template and concrete files are intentionally both tracked:
-the template is the review surface, while each concrete file is the exact
-compile-time AMPS configuration. During conflict resolution, do not hand-edit
-only a concrete case. Change the CSV or template, regenerate all six, review
-the resulting six-file diff, and rerun the generator test. A changed solar
+The compile/runtime split is intentional: `i3.conf` is the review surface for
+fixed executable layout and capability, while `i3.in` is the exact scientific
+receipt for every run. During conflict resolution, do not recreate the former
+six compile-time files or hand-edit one generated case section. Change the
+reviewed CSV or generator, regenerate `i3.in`, review the single-file diff,
+and rerun the generator test. A changed solar
 dataset, JPL ephemeris, reaction coefficient, energy, collision source, or g
 factor requires an explicit provenance update; do not retain the old hash or
 silently treat a new value as equivalent.
@@ -610,7 +611,8 @@ Pre-merge I3 validation must include:
   values, radial-bin and paired-uncertainty checks; the 87-row CSV and metadata
   regenerate byte-for-byte from the authenticated archive and reviewed pixel
   anchors;
-- exact regeneration of all six inputs on the integration commit;
+- exact regeneration of the one combined `input/i3.in`, including all six
+  named cases, on the integration commit;
 - validation of all 1,201 core Lowell OH records as non-extrapolated and positive,
   exact coverage of `[-60,60] km/s`, and retention of the energy g factor as
   the authoritative downloaded value rather than only its 3090-A photon
@@ -619,10 +621,12 @@ Pre-merge I3 validation must include:
   model at all six case velocity/irradiance pairs across its strict
   `[-200,200] km/s` domain, and checking the documented force-balance
   conversion from IKL `mu` to photon g factor;
-- a clean preprocess and compile for at least cases 1 and 5 (the low- and
-  highest-Q mesh/population extremes), each after removing only that exact
-  worktree's `build/` directory;
-- parser-only or clean configure validation for the other four inputs;
+- one clean preprocess and compile from `input/i3.conf` after removing only
+  that exact worktree's `build/` directory; the same executable must load
+  cases 1 and 5 (the low- and highest-Q mesh/population extremes) from
+  `input/i3.in` without recompilation;
+- parser/runtime selection validation for all six cases plus negative tests
+  for an omitted selector, an unknown selector, and an unknown runtime key;
 - one-/multi-rank pilot output with identical particle-resolved brightness
   columns after normalization by the same sampling length, and exact Tecplot
   species/index/output filenames;
@@ -669,6 +673,70 @@ patch, preserve the pre-existing `EXTRALINKEROPTIONS_F=-lmpi++` modification;
 it predates this module and must not be attributed to it or overwritten. As
 with all other work in this document, these instructions do not authorize a
 merge, branch switch, cherry-pick, or master update.
+
+## Two-layer runtime-input integration wave (I3 redesign)
+
+This section supersedes every earlier instruction that describes six
+`i3.caseN.input` executables. The redesign is reusable infrastructure, not an
+I3-only file shuffle, and must be transferred in dependency order:
+
+1. Merge the generic grammar layer first:
+   `src/general/input/amps_input.h`, its INP-05 regression in
+   `test_amps_input.cpp`, `src/general/input/README.md`, and the normative
+   `src/INPUT_FILE.md`. Preserve `ResolveCase` as an owner-invoked helper;
+   never make the generic parser guess which block owns a case or read argv.
+   The `src/INPUT_FILE.md` case semantics are part of the public core input
+   contract and **must be merged into master**, not left as comet-only notes.
+2. Merge the `Config.pl` selection change independently. Verify exact
+   precedence: `input/<application>.input` first, then same-named `.conf`,
+   otherwise fatal. Preserve target-side configuration changes and remove
+   stale `APPLICATION`/`InputFileAMPS` selectors without deleting unrelated
+   user options. Re-run `perl -c Config.pl`, configure one historical
+   `.input` application, then configure `i3` and verify `i3.conf` was selected.
+3. Merge the application runtime bridge:
+   `CometRuntimeInput.*`, the `RadialMain.cpp` `-i/-case` wiring,
+   `RuntimeInputMode` handling and `CometRuntimeInput.o` registration in
+   `input/hartley2.pl`, plus the narrowly scoped pre-network chemistry and
+   pre-sampler brightness configuration APIs. Keep
+   `Comet::RuntimeInput::Required=false` in source; only `i3.conf` changes it
+   to true. That default is the compatibility boundary for Halley and Hartley.
+4. Merge `input/i3.conf`, `input/i3.in`, the generator, generator tests,
+   updated surface-injection runner, I3 README, comet README, STATUS and
+   handoff notes as the application-data wave. Do not stage the root copies
+   `i3.conf`/`i3.in` made by `Config.pl`; `input/` owns the source files.
+   Delete the tracked former `input/i3.input` in the same integration commit
+   so the `.input`-first rule cannot silently select the retired paradigm.
+5. Regenerate `input/i3.in` and require a byte-empty diff. Then remove only
+   the integration worktree's exact `build/`, configure `-application=i3`,
+   and compile once. With that one binary require: no `-i` fails; `-i i3.in`
+   without `-case` fails; an unknown case fails and lists 1--6; a valid case
+   reaches a production-model validator; all six case sections resolve.
+6. Reconfigure and cleanly rebuild `halley1d.input`. Run the maintained
+   Halley chemistry/collision/Rubin regressions and verify there is no runtime
+   input requirement and no brightness-schema change. This is mandatory
+   compatibility evidence, not an optional application check.
+
+Conflict-resolution invariants:
+
+- `.conf` contains fixed species, dimension, compiled module/table topology,
+  block/ghost layout and allocation maxima; `.in` contains physical run and
+  observation settings within those capabilities. Do not move an observation
+  case, source rate, case reaction rate, mesh target, random seed, run length,
+  or brightness geometry back into `.conf`.
+- Case blocks remain generic direct named children. Common assignments are
+  copied first and one explicitly selected case overlays them. Do not add a
+  default case, environment-variable fallback, numerical special case, or an
+  I3 branch to `amps_input.h`.
+- Runtime parsing remains strict and collective: unknown/missing keys fail,
+  each rank parses the same path, canonical hashes agree before model state is
+  installed, and case provenance is consumed explicitly.
+- Chemistry topology/storage stays compiled, but case rate coefficients must
+  be installed before the first `GetNetwork()` call. Brightness metadata must
+  be installed before sampler registration. A conflict that initializes
+  either singleton early invalidates the one-executable/many-case contract.
+- Never stage `build/`, `amps`, `PT/`, root-staged input copies, logs,
+  `Archive.zip`, or validation-run trees. No instruction here authorizes a
+  branch switch, commit, cherry-pick, merge, push, or modification of master.
 
 ## Final user decision
 

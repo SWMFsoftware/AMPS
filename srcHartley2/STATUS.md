@@ -6222,3 +6222,63 @@ top-level and visualization READMEs document extraction limitations, the new
 CLI, and detailed clean compile/run/output/comparison workflows for each I3
 input and the canonical Halley input.  No solver, core source, simulation
 input, active executable, or active production process was changed.
+
+## I3 two-layer input and generic case sections (2026-11-08)
+
+Status: implemented and focused validation passed on branch `1d_comet_dev`.
+Nothing was committed or merged, and no master ref was changed.
+
+The former one-executable-per-observation layout has been replaced by one
+compile-time capability file, `input/i3.conf`, and one runtime scientific
+receipt, `input/i3.in`. `./Config.pl -application=i3` selects `i3.conf` because
+the former tracked `input/i3.input` has been deleted. The optimized executable
+then runs any observation with `-i input/i3.in -case N`, where `N` is 1--6.
+Case selection is explicit and fail-closed: a file containing cases cannot be
+loaded without `-case`, and an unknown name lists the available cases.
+
+### Files changed and why
+
+| File | Role in this redesign |
+| --- | --- |
+| `Config.pl` | Resolves `input/<application>.input` first and falls back to same-named `.conf`; refreshes and de-duplicates persisted application/input selectors. Historical `.input` precedence was retained. |
+| `src/general/input/amps_input.h` | Adds application-independent `ResolveCase`: common values form a base, one direct named case overlays matching assignments/child blocks, nested/unnamed cases and invalid selectors fail. Source locations survive overlay. |
+| `src/general/input/test_amps_input.cpp` | Adds INP-05 coverage for overlay replacement/addition, recursive child overlay, required/unknown/spurious selector diagnostics, and nested-case rejection. |
+| `src/INPUT_FILE.md`, `src/general/input/README.md` | Make `.input`/`.conf` precedence and named-case behavior part of the normative core input-file contract. These files must be merged to master with the parser, not left in comet-only documentation. |
+| `input/hartley2.pl` | Adds `RuntimeInputMode=ON/OFF`, generates the `Comet::RuntimeInput::Required` compatibility flag, and links `CometRuntimeInput.o` in DIM1 when enabled. Legacy inputs default to OFF. |
+| `srcHartley2/CometRuntimeInput.h/.cpp` | New strict runtime owner. It parses `application: comet`, invokes the generic case resolver, checks canonical configuration hashes across MPI ranks, rejects missing/unknown keys, and installs sources, heliocentric conditions, mesh targets, simulation controls, population policies, reaction rates, cooling and brightness before allocation. |
+| `srcHartley2/RadialMain.cpp` | Adds `-i/--input`, `-case/--case`, mandatory runtime-input enforcement for I3, selected receipt output, and `--validate-runtime-input`. CLI chemistry/random overrides are applied after runtime loading. |
+| `srcHartley2/CometChemistry.h/.cpp` | Keeps compiled reaction topology/storage but permits each case's `A` coefficient to be installed by stable reaction ID before the singleton network is constructed. Late/unknown/invalid updates fail. Legacy generated values are unchanged. |
+| `srcHartley2/CometBrightness.h/.cpp` | Adds a pre-registration reset and runtime emission-metadata setter so one executable can install case geometry, solar conditions and line metadata before sampling. Mutation after registration fails. |
+| `input/i3.conf` | New compile-time capability/layout configuration: seven species, DIM1 spherical backend, block/ghost layout, particle storage/buffer maximum, maximum AMR refinement, IDF layout, collision/reaction topology, and brightness linkage. Its placeholder run values cannot be executed because runtime input is required. |
+| `input/i3.in` | New loadable scientific receipt: common physical/numerical settings once plus six `case: N` overlays containing observation provenance, production rates, surface resolution, solar-corrected reaction rates, geometry, radial velocity and Ly-alpha flux. |
+| `input/i3.input` | Deleted so `.input` precedence cannot silently select the retired generator-template/one-case executable paradigm. Obsolete `i3.case1.input.Assembled*` artifacts were also removed from the working tree. |
+| `srcHartley2/i3/prepare_i3_cases.py` | Generates exactly one `i3.in`; obsolete template substitution and six concrete compile-time renderers were removed. |
+| `srcHartley2/i3/tests/test_prepare_i3_cases.py` | Verifies byte-exact combined-file generation, six case blocks, 102 case reaction rates, common settings and compile/runtime separation. |
+| `srcHartley2/tests/run_i3_surface_injection_test.sh`, `I3_SURFACE_INJECTION.md` | Runner now supplies explicit runtime input/case (`I3_RUNTIME_INPUT`, `I3_CASE`) so it tests production wiring rather than compiled case constants. |
+| `srcHartley2/README.md`, `srcHartley2/i3/README.md` | Document one clean I3 build, runtime case selection, isolated run directories, validator use, and corrected legacy Halley/Hartley `Config.pl` selection. |
+| `srcHartley2/MASTER_MERGE.md` | Adds a dependency-ordered two-layer integration wave, compatibility invariants, exclusions, exact tests, and the explicit requirement to merge the generic input description into master. |
+| `handoff.md` | Records recovery commands, validation evidence and the final I3-selected workspace state. |
+
+The existing root `Makefile` resonance-fluorescence changes shown by the dirty
+tree predate this input redesign. Preserve and review them in their documented
+brightness/core-data merge wave; do not attribute the unrelated
+`EXTRALINKEROPTIONS_F=-lmpi++` line to this work.
+
+### Validation evidence
+
+- `perl -c Config.pl` and `perl -c input/hartley2.pl`: pass.
+- `make -C src/general/input test`: 5/5 groups pass, including INP-05.
+- `python3 -m unittest srcHartley2/i3/tests/test_prepare_i3_cases.py`: 6/6 pass.
+- `srcHartley2/tests/run_comet_brightness_tests.sh`: all seven focused groups pass, including legacy default-off generation.
+- `Config.pl` precedence: `-application=hartley2` selected `hartley2.input`; `-application=i3` selected `i3.conf`; final selectors are `APPLICATION=i3`, `InputFileAMPS=i3.conf`.
+- After deleting exactly `/data/vtenishe/COMET1D/AMPS/build`, `make -j8 EXTRACOMPILEROPTIONS=-O3` completed from `i3.conf`.
+- Missing `-i` fails; `-i input/i3.in` without `-case` fails; `-case 9` fails and lists cases 1--6.
+- Cases 1--6 each pass `mpiexec -n 1 ./amps -i input/i3.in -case N --validate-runtime-input`; case 1 also passes with two ranks, exercising collective canonical-hash agreement.
+- The updated runner passes 200,000 production boundary samples per species for H2O, CO and CO2 through `-i/-case`; all energy/cosine/moment tests pass.
+- A separate clean optimized build from `halley1d.input` passes `mpiexec -n 1 ./amps --validate-runtime-input` with `file=<compiled> case=<none>`, proving the Rubin input does not acquire a runtime-input requirement.
+- The workspace was then restored with another exact clean build from `i3.conf`; the final two-rank case-1 runtime validation passes.
+- `git diff --check`: pass before this status append; rerun before staging.
+
+These checks establish configuration, build, backward-compatibility and
+focused physical-source wiring. They are not a converged I3 transport result
+and do not establish observational brightness agreement.
