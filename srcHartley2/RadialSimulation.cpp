@@ -17,6 +17,7 @@
 #include "CorrectionWindowPlanner.h"
 #include "pic.h"
 #include "CometChemistry.h"
+#include "CometBrightness.h"
 #include "CometDiagnostics.h"
 #include "CometModel.h"
 #include "CometRadiativeCooling.h"
@@ -3606,6 +3607,11 @@ void Comet::RadialSimulation::Initialize() {
   Comet::Chemistry::ConfigureTotalReactionForcingMover();
   PIC::Mover::Init();
   Comet::Diagnostics::Initialize();
+  // Brightness uses an external sampling callback, not completed macroscopic
+  // cell averages. Register it only after blocks, shell measures, local
+  // weights, and the particle record are initialized. Its output/clear
+  // callback is then driven by the same PIC sampling boundary as pic.* data.
+  Comet::Brightness::InitializeSampling();
   WriteCellMeasureAudit();
 
   if (Comet::Chemistry::Enabled) {

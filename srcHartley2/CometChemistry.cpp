@@ -2010,7 +2010,17 @@ bool Comet::Chemistry::ValidateEnsemble(long int eventsPerReaction) {
           globalMaximumEnergyError);
   }
 
-  allPass=(testedReactionCount>0 && unequalReactionCount>0) && allPass;
+  // A chemistry case is not invalid merely because every reacting species
+  // has the same configured W/dt carrier rate.  This occurs naturally in the
+  // I3 H2O-family network: H2O is the largest direct-source carrier and all
+  // of its descendants inherit that rate, so every residual multiplicity is
+  // exactly one.  Individual reactions above still exercise stoichiometry,
+  // recoil, mass, momentum, and energy.  Keep reporting the unequal count so
+  // dedicated importance/roulette fixtures (including the Halley Stage-4
+  // archive checker) can and do require a positive value, but do not make
+  // that fixture-specific coverage condition a universal chemistry-validity
+  // requirement.
+  allPass=(testedReactionCount>0) && allPass;
   int localPass=allPass ? 1 : 0,globalPass=0;
   MPI_Allreduce(&localPass,&globalPass,1,MPI_INT,MPI_MIN,
       MPI_GLOBAL_COMMUNICATOR);

@@ -18,6 +18,7 @@ use CometCorrectionWindowPolicy;
 use CometDaughterPacketPolicy;
 use CometChannelImportancePolicy;
 use CometTotalReactionForcingPolicy;
+use CometBrightnessConfig;
 
 
 #my $command= $];
@@ -132,6 +133,7 @@ my $ChannelImportancePolicy=
     CometChannelImportancePolicy->new(species=>\@SpeciesList);
 my $TotalReactionForcingPolicy=
     CometTotalReactionForcingPolicy->new(species=>\@SpeciesList);
+my $BrightnessConfig=CometBrightnessConfig->new(species=>\@SpeciesList);
 
 #add the model header to the pic.h
 open (PIC_H,">>$WorkingSourceDirectory/pic/pic.h") || die "Cannot open $WorkingSourceDirectory/pic/pic.h";
@@ -179,7 +181,7 @@ while ($line=<InputFile>) {
       ampsConfigLib::RedefineMacroFunction("_PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_","(ptr,LocalTimeStep,node,FirstBoundaryFlag) PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection(ptr,LocalTimeStep,node,FirstBoundaryFlag);","pic/picGlobal.dfn");
       ampsConfigLib::RedefineMacroFunction("_PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_FACE_","(ptr,LocalTimeStep,node,FirstBoundaryFlag,InjectionFace) PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection(ptr,LocalTimeStep,node,FirstBoundaryFlag);","pic/picGlobal.dfn");
 
-      ampsConfigLib::SubstituteCodeLine('^MAINLIBOBJ =',"MAINLIBOBJ = RadialMesh.o RadialMeshProfile.o RadialSimulation.o LocalTimeStepValidation.o CometModel.o CometChemistry.o CometDiagnostics.o CometPhysics.o CometRadiativeCooling.o","main/makefile");
+      ampsConfigLib::SubstituteCodeLine('^MAINLIBOBJ =',"MAINLIBOBJ = RadialMesh.o RadialMeshProfile.o RadialSimulation.o LocalTimeStepValidation.o CometModel.o CometChemistry.o CometDiagnostics.o CometPhysics.o CometRadiativeCooling.o CometBrightness.o","main/makefile");
       ampsConfigLib::SubstituteCodeLine('^MAINOBJ =',"MAINOBJ = RadialMain.o","main/makefile");
       ampsConfigLib::SubstituteCodeLine('#include "Comet.h"',"// The radial mesh build does not use the 3D Comet model header.","pic/pic.h");
       ampsConfigLib::ChangeValueOfVariable("int Comet::Model::GeometryMode","Comet::Model::Geometry::Spherical","main/CometModel.cpp");
@@ -352,6 +354,38 @@ while ($line=<InputFile>) {
         $InputLine eq "ON" ? "true" : "false",
         "main/RadialSimulation.cpp");
     $Stage9ScienceDiagnosticsEnabled=($InputLine eq "ON") ? 1 : 0;
+  }
+  elsif ($InputLine eq "BRIGHTNESSMODE") {
+    $BrightnessConfig->set_mode_record($LineOriginal,
+        "line $InputFileLineNumber ($InputFileName)");
+  }
+  elsif ($InputLine eq "BRIGHTNESSIMPACTPARAMETERGRID") {
+    $BrightnessConfig->set_grid_record($LineOriginal,
+        "line $InputFileLineNumber ($InputFileName)");
+  }
+  elsif ($InputLine eq "BRIGHTNESSHELIOCENTRICRADIALVELOCITYKMS") {
+    $BrightnessConfig->set_radial_velocity_record($LineOriginal,
+        "line $InputFileLineNumber ($InputFileName)");
+  }
+  elsif ($InputLine eq "BRIGHTNESSCOMETHELIOCENTRICVELOCITYKMS") {
+    $BrightnessConfig->set_comet_velocity_record($LineOriginal,
+        "line $InputFileLineNumber ($InputFileName)");
+  }
+  elsif ($InputLine eq "BRIGHTNESSOBSERVATIONGEOMETRY") {
+    $BrightnessConfig->set_observation_geometry_record($LineOriginal,
+        "line $InputFileLineNumber ($InputFileName)");
+  }
+  elsif ($InputLine eq "BRIGHTNESSVELOCITYDOMAINPOLICY") {
+    $BrightnessConfig->set_velocity_domain_policy_record($LineOriginal,
+        "line $InputFileLineNumber ($InputFileName)");
+  }
+  elsif ($InputLine eq "BRIGHTNESSSOLARLYMANALPHAFLUX1AUPHOTONCM2S") {
+    $BrightnessConfig->set_solar_lya_flux_record($LineOriginal,
+        "line $InputFileLineNumber ($InputFileName)");
+  }
+  elsif ($InputLine eq "BRIGHTNESSEMISSION") {
+    $BrightnessConfig->add_emission_record($LineOriginal,
+        "line $InputFileLineNumber ($InputFileName)");
   }
   elsif ($InputLine eq "PHYSICSDATABASE") {
     ($InputLine,$InputComment)=split(' ',$InputComment,2);
@@ -1321,6 +1355,102 @@ die "Dimension=1 requires Geometry=Spherical\n"
     if $Dimension eq "1" && $ConfiguredGeometry ne "SPHERICAL";
 die "Dimension=3 requires Geometry=Triangulated\n"
     if $Dimension eq "3" && $ConfiguredGeometry ne "TRIANGULATED";
+
+# Brightness is an optional DIM1 particle-sampling layer. Resolve and emit it
+# only after the complete block is known so input order cannot alter its
+# prerequisites.  Omission is exactly equivalent to OFF and therefore keeps
+# legacy Halley and Hartley generated sources unchanged apart from linking an
+# inert object in DIM1 builds.
+$BrightnessConfig->validate_configuration(
+    dimension=>$Dimension,
+    radial_enabled=>radialSimulationIsEnabled(
+        "$WorkingSourceDirectory/main/RadialSimulation.cpp"));
+if ($BrightnessConfig->enabled()) {
+  my $grid=$BrightnessConfig->grid();
+  my @emissions=@{$BrightnessConfig->emissions()};
+  my @species=map {$_->{species}} @emissions;
+  my @g_factor=map {$_->{g_factor}} @emissions;
+  my @g_factor_model=map {$_->{model}} @emissions;
+  my @effective_wavelength=map {$_->{effective_wavelength_m}} @emissions;
+  my @tau_mode=map {$_->{tau_mode} eq "LINE_CENTER" ? 1 : 0} @emissions;
+  my @cross_section=map {$_->{cross_section}} @emissions;
+  my @threshold=map {$_->{threshold}} @emissions;
+  my $geometry=$BrightnessConfig->observation_geometry();
+  my @comet_velocity=map {$_*1.0e3}
+      @{$BrightnessConfig->resolved_comet_velocity_km_s()};
+  ampsConfigLib::ChangeValueOfVariable(
+      "bool Comet::Brightness::Enabled","true","main/CometBrightness.cpp");
+  ampsConfigLib::ChangeValueOfVariable(
+      "double Comet::Brightness::MinimumImpactParameter",
+      $grid->{minimum},"main/CometBrightness.cpp");
+  ampsConfigLib::ChangeValueOfVariable(
+      "double Comet::Brightness::MaximumImpactParameter",
+      $grid->{maximum},"main/CometBrightness.cpp");
+  ampsConfigLib::ChangeValueOfVariable(
+      "long int Comet::Brightness::ImpactParameterCount",
+      $grid->{count},"main/CometBrightness.cpp");
+  ampsConfigLib::ChangeValueOfVariable(
+      "int Comet::Brightness::ImpactParameterGridMode",
+      $grid->{mode} eq "LOG" ?
+          "Comet::Brightness::GridMode::Logarithmic" :
+          "Comet::Brightness::GridMode::Linear",
+      "main/CometBrightness.cpp");
+  ampsConfigLib::ChangeValueOfVariable(
+      "int Comet::Brightness::EmissionLineCount",scalar(@emissions),
+      "main/CometBrightness.cpp");
+  ampsConfigLib::ChangeValueOfArray(
+      "int Comet::Brightness::EmissionSpecies\\[Comet::Brightness::MaxEmissionLines\\]",
+      \@species,"main/CometBrightness.cpp");
+  ampsConfigLib::ChangeValueOfArray(
+      "double Comet::Brightness::PhotonGFactor\\[Comet::Brightness::MaxEmissionLines\\]",
+      \@g_factor,"main/CometBrightness.cpp");
+  ampsConfigLib::ChangeValueOfArray(
+      "int Comet::Brightness::GFactorModel\\[Comet::Brightness::MaxEmissionLines\\]",
+      \@g_factor_model,"main/CometBrightness.cpp");
+  ampsConfigLib::ChangeValueOfArray(
+      "double Comet::Brightness::EffectivePhotonWavelength\\[Comet::Brightness::MaxEmissionLines\\]",
+      \@effective_wavelength,"main/CometBrightness.cpp");
+  ampsConfigLib::ChangeValueOfArray(
+      "double Comet::Brightness::CometHeliocentricVelocity\\[3\\]",
+      \@comet_velocity,"main/CometBrightness.cpp");
+  ampsConfigLib::ChangeValueOfArray(
+      "double Comet::Brightness::HeliocentricRadialDirection\\[3\\]",
+      $geometry->{radial},"main/CometBrightness.cpp");
+  ampsConfigLib::ChangeValueOfArray(
+      "double Comet::Brightness::LineOfSightDirection\\[3\\]",
+      $geometry->{los},"main/CometBrightness.cpp");
+  ampsConfigLib::ChangeValueOfArray(
+      "double Comet::Brightness::ImpactParameterDirection\\[3\\]",
+      $geometry->{impact},"main/CometBrightness.cpp");
+  ampsConfigLib::ChangeValueOfVariable(
+      "bool Comet::Brightness::ObservationGeometryConfigured","true",
+      "main/CometBrightness.cpp");
+  ampsConfigLib::ChangeValueOfVariable(
+      "int Comet::Brightness::OutOfRangeVelocityPolicy",
+      $BrightnessConfig->velocity_domain_policy() eq "ABORT" ?
+          "Comet::Brightness::VelocityDomainPolicy::Abort" :
+          "Comet::Brightness::VelocityDomainPolicy::ExcludeAndReport",
+      "main/CometBrightness.cpp");
+  if (defined $BrightnessConfig->solar_lya_flux_1au_ph_cm2_s()) {
+    ampsConfigLib::ChangeValueOfVariable(
+        "double Comet::Brightness::SolarLymanAlphaFlux1AU",
+        $BrightnessConfig->solar_lya_flux_1au_ph_cm2_s()*1.0e4,
+        "main/CometBrightness.cpp");
+  }
+  ampsConfigLib::ChangeValueOfArray(
+      "int Comet::Brightness::TauDiagnosticMode\\[Comet::Brightness::MaxEmissionLines\\]",
+      \@tau_mode,"main/CometBrightness.cpp");
+  ampsConfigLib::ChangeValueOfArray(
+      "double Comet::Brightness::LineCenterCrossSection\\[Comet::Brightness::MaxEmissionLines\\]",
+      \@cross_section,"main/CometBrightness.cpp");
+  ampsConfigLib::ChangeValueOfArray(
+      "double Comet::Brightness::TauFlagThreshold\\[Comet::Brightness::MaxEmissionLines\\]",
+      \@threshold,"main/CometBrightness.cpp");
+  ampsConfigLib::AddLineAfterMarker2File(
+      $BrightnessConfig->generated_metadata_calls(),
+      "COMET_BRIGHTNESS_INPUT_METADATA_MARKER",
+      "main/CometBrightness.cpp");
+}
 
 # Named databases are expanded only after the complete application block has
 # been read.  This makes the input keywords order independent while retaining

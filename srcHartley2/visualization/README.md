@@ -1,5 +1,89 @@
 # DIM1 comet-result visualization
 
+## 3I/ATLAS brightness comparison
+
+`plot_i3_brightness_comparison.py` overlays the in-run, particle-resolved AMPS
+H Ly-alpha or OH(0,0) brightness on the corresponding numerical MAVEN/IUVS
+reference in `references/i3_brightness_MAVEN/maven_iuvs_brightness.csv`.
+That table contains all six cases and is the default; ordinary plotting no
+longer requires `Archive.zip`.
+
+The observations were supplied as raster plots rather than original numerical
+tables.  The reference directory therefore also retains reviewed source-pixel
+anchors, source/member hashes, detected plot boxes, axis calibration, and an
+explicit uncertainty policy.  Horizontal bounds use the independently
+tabulated case resolution.  Visible vertical uncertainty bars are retained;
+blank vertical bounds mean that the raster did not resolve a separate bar,
+not that physical uncertainty is zero.  The archive's red legacy-model curve
+is not part of the extracted reference.
+
+If the AMPS curve falls below the source panels' 0.09-kR lower edge, the new
+plot automatically extends the Y axis by up to two useful decades and marks
+that source-raster boundary.  This makes a physically low model result visible
+instead of silently clipping it.
+
+Case 1 examples using the first completed sampling window are:
+
+```sh
+python3 srcHartley2/visualization/plot_i3_brightness_comparison.py \
+  validation_runs/i3_case1_rays200_sampling10000_max30000_indexfix_20261107_12mpi/production/PT/plots/pic.H.brightness.s=0.out=0.dat \
+  --case 1 --species H \
+  --output validation_runs/i3_case1_rays200_sampling10000_max30000_indexfix_20261107_12mpi/production/PT/plots/i3_case1_H_brightness_comparison.png
+
+python3 srcHartley2/visualization/plot_i3_brightness_comparison.py \
+  validation_runs/i3_case1_rays200_sampling10000_max30000_indexfix_20261107_12mpi/production/PT/plots/pic.OH.brightness.s=3.out=0.dat \
+  --case 1 --species OH \
+  --output validation_runs/i3_case1_rays200_sampling10000_max30000_indexfix_20261107_12mpi/production/PT/plots/i3_case1_OH_brightness_comparison.png
+```
+
+The case can normally be inferred from a standard run-directory name such as
+`i3_case1_*`, and species can be inferred from the Tecplot variables.  Supply
+`--case` and `--species` explicitly for renamed or relocated outputs.  Run
+`--help` for axis overrides.  After saving the PNG, the script opens the
+comparison in an interactive Matplotlib window by default; close that window
+to return to the shell.  Use `--no-show` on a batch node.  If neither
+`DISPLAY` nor `WAYLAND_DISPLAY` is available, the script saves the PNG and
+reports that no window can be opened.
+
+An alternate reference location must contain the same
+`maven_iuvs_brightness.csv` schema and is selected with:
+
+```sh
+python3 srcHartley2/visualization/plot_i3_brightness_comparison.py \
+  PT/plots/pic.H.brightness.s=0.out=0.dat \
+  --case 1 --species H \
+  --reference-dir /full/path/to/i3_brightness_MAVEN
+```
+
+Reproduce the committed table from the original supplied archive with:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 \
+  srcHartley2/visualization/extract_i3_brightness_maven.py \
+  --archive /full/path/Archive.zip
+```
+
+Extraction details and limitations are in
+`references/i3_brightness_MAVEN/README.md`.  `Archive.zip` is needed for that
+audit/regeneration command only, not by the comparison plotter.
+
+The comparison plotter requires Python 3, NumPy, and matplotlib.  The
+reference extractor additionally requires Pillow.  Validate the committed
+table, its recorded hashes, alternate-reference loading, and byte-exact
+archive regeneration with:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
+  srcHartley2/tests/test_i3_brightness_reference.py
+```
+
+Without `--output`, the PNG is written under `PT/plots` relative to the
+current working directory, using
+`i3_caseN_SPECIES_brightness_comparison.png`.  Thus a command launched from
+the AMPS repository root writes to that root's `PT/plots`, even when its input
+Tecplot table is under `validation_runs`.  Use `--output` when the comparison
+must remain beside a frozen validation run instead.
+
 `plot_1d.py` reads the quoted variable names in AMPS Tecplot output instead of
 assuming fixed column positions. It plots one selected physical quantity from
 one or more files on common axes. The X axis is always the logarithmic

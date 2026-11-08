@@ -180,6 +180,12 @@ CouplerMode=off
   ! different species-specific laws without changing application code.
   RadiativeCooling=H2O | GOMBOSI1986_H2O
 
+  ! The Rubin/Halley validation remains a density, velocity, and temperature
+  ! comparison. Keep the optional fluorescence writer explicitly off so a
+  ! later parser/default change cannot add brightness collectives or files to
+  ! this established regression case.
+  BrightnessMode=off
+
   ! Rubin et al. place the inner boundary at a 6 km cometocentric radius and
   ! the outer boundary at 10^6 km cometocentric radius.
   NucleusRadius=6000.0

@@ -1,0 +1,154 @@
+! Generator template for the six gas-only, spherically symmetric 3I/ATLAS
+! cases in Archive.zip/Model_Table_6cases.pdf.  This file intentionally uses
+! generator-token fields and is not itself passed to Config.pl.  Run
+!
+!   python3 srcHartley2/i3/prepare_i3_cases.py
+!
+! to reproduce the six loadable input/i3.case1.input ... i3.case6.input
+! files.  Physical case values live in srcHartley2/i3/reference, not in C++.
+
+#main
+
+SpeciesList=H,H2,O,OH,H2O,CO,CO2
+
+makefile SOURCES=src
+makefile RUNDIR=run
+
+ProjectSourceDirectory=srcHartley2
+WorkingSourceDirectory=build
+SourceDirectory=src
+
+Prefix=AMPS
+DiagnosticStream=screen
+OutputDirectory=PT/plots
+StdoutErrorLog=on
+DebuggerMode=off
+ForceRepeatableSimulationPath=on
+
+TimeStepMode=SpeciesLocalTimeStep
+ParticleWeightMode=SpeciesLocalParticleWeight
+ParticleWeightCorrectionMode=off
+LocalTimeStepFluxResampling=on
+CouplerMode=off
+
+#endmain
+
+#include species.input
+
+#General
+  ReferenceInjectionParticleNumber=@REFERENCE_INJECTION_COUNT@
+  RequestedParticleBufferLength=20000000
+  MaxMeshRefinmentLevel=@MAX_REFINEMENT_LEVEL@
+  EnforceRequestedMeshResolution=on
+  BlockCells=8,1,1
+  GhostCells=2,0,0
+  NastranSurfaceUserData=off
+
+  define _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION_ _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__USER_DEFINED_
+  define _PIC__PARTICLE_COLLISION_MODEL__MODE_ _PIC_MODE_ON_
+#endGeneral
+
+#IDF
+  Model=LB
+  vtRelaxation=off
+  vvRelaxation=off
+  rtRelaxation=on
+  nRotModes(H2O=3)
+  RotZnum(H2O=5)
+  TemperatureIndex(H2O,H)=0.5
+  TemperatureIndex(H2O,H2)=0.5
+  TemperatureIndex(H2O,O)=0.5
+  TemperatureIndex(H2O,OH)=0.5
+  TemperatureIndex(H2O,H2O)=0.5
+  TemperatureIndex(H2O,CO)=0.5
+  TemperatureIndex(H2O,CO2)=0.5
+#endIDF
+
+#block ../hartley2.pl
+
+  Dimension=1
+  Geometry=Spherical
+  HeliocentricDistanceAU=@HELIOCENTRIC_DISTANCE_AU@
+
+  ! Archive case @CASE_ID@: @CAMPAIGN_PHASE@.
+  ! Exposure: @OBSERVATION_START_UTC@ through @OBSERVATION_END_UTC@.
+  ! The source rate is a total number of molecules per second.  Zero bulk
+  ! drift invokes AMPS' exact crossing-flux distribution
+  ! p(v_vector) proportional to v_normal*f_Maxwell(v_vector), v_normal>0.
+  ! Its speed marginal is v times the ordinary Maxwell speed distribution;
+  ! its angular marginal is the cosine law p(mu)=2*mu.
+  SurfaceSource=H2O | UNIFORM | @Q_H2O@ | 175.0 | 0.0
+  SurfaceSource=CO  | UNIFORM | @Q_CO@  | 175.0 | 0.0
+  SurfaceSource=CO2 | UNIFORM | @Q_CO2@ | 175.0 | 0.0
+
+  PhysicsDatabase=NONE
+  ! Preserve the three measured/compiled Rubin Table-3 CO2-parent pairs
+  ! before completing the remaining seven-species matrix.  The completion
+  ! adds Combi values first and CHEMKIN/Lorentz geometric hard-sphere
+  ! estimates only where neither source supplies a pair.  In particular the
+  ! OH/O/H2/H-with-CO2 estimates remain explicitly labeled as estimates in
+  ! the generated collision table; they are not disguised as measurements.
+  NeutralCollision=H2O | CO2 | CONSTANT | 3.4e-19 | Rubin et al. (2011), Table 3
+  NeutralCollision=CO  | CO2 | CONSTANT | 3.2e-19 | Rubin et al. (2011), Table 3
+  NeutralCollision=CO2 | CO2 | CONSTANT | 3.4e-19 | Rubin et al. (2011), Table 3
+  NeutralCollisionCompletion=COMBI1996_CHEMKIN_LORENTZ_HS
+  CollisionTemperatureFloor=175.0
+  CollisionTemperatureMinimumSampleParticleNumber=1.0
+
+  ! The case's corrected F10.7P is @F107P_SFU@ sfu.  Each generated A is the
+  ! Moore--Mapaye 1-AU A0*F10.7P^alpha value. Runtime HELIOCENTRIC scaling
+  ! then applies (1 AU/r_h)^2 exactly once.
+@CHEMISTRY_REACTIONS@
+  CometRandomSeed=@RANDOM_SEED@
+  ChemistryMode=on
+  ChemistryResidualSampling=systematic
+  CometDiagnostics=on
+  RadiativeCooling=H2O | GOMBOSI1986_H2O
+
+  NucleusRadius=2500.0
+  DomainOuterRadius=1.0e9
+  RadialCellNumber=2000
+  ! Minimum hard-sphere mixture mean free path among the three direct parents
+  ! at the 175-K surface: @LIMITING_MFP_SPECIES@, @SURFACE_MFP_M@ m.
+  NucleusSurfaceResolution=@SURFACE_MFP_M@
+
+  RadialSimulationMode=on
+  RadialCourantNumber=0.25
+  RadialInnerBoundaryTemperature=175.0
+  RadialSamplingLength=10000
+  RadialParticleWeightAdaptation=on
+  RadialParticleWeightAdaptationInterval=10000
+  RadialParticleNumberPerCellRange=800 | 3200
+  RadialParticleNumberPerCellRange(CHEMICAL_ONLY)=50 | 200
+  RadialParticleWeightLock=DIRECT_SOURCE
+  RadialEmergencyParticleBufferUtilization=0.75
+  RadialAllocationLowWatermark=0.50
+  RadialAllocationReserveFraction=0.10
+  RadialMaxFaceTransferMultiplicity=1
+  RadialMaxPhotochemicalProductsPerReaction=20
+  RadialLoadBalanceInterval=50
+  RadialMaxIterations=30000
+  RadialConvergenceTolerance=0.05
+  RadialConvergenceWindows=3
+
+@CHARACTERISTIC_SPEEDS@
+
+  ! Brightness is evaluated on a separate logarithmic impact-parameter grid
+  ! spanning the modeled nucleus surface through the requested outer radius.
+  ! Named core models evaluate the OH and H Swings-effect factors for every
+  ! model particle at every sampling iteration. The explicit J2000-ecliptic
+  ! geometry supplies the Sun radial axis, comet-to-Mars LOS, and projected
+  ! antisolar impact direction; the table radial velocity initializes the
+  ! comet velocity vector along that radial axis. H also receives the case
+  ! 1-AU solar Ly-alpha flux.
+  ! The Lowell OH source is an energy rate, so its 308.5-nm effective photon
+  ! wavelength is explicit in each generated case. Brightness output is a
+  ! particle-resolved convolution over the sampled velocity distribution.
+  ! LINE_CENTER only reports a conservative optical-depth diagnostic.
+@BRIGHTNESS_RECORDS@
+
+  DustMode=off
+
+#endblock
+
+#end

@@ -1,0 +1,28 @@
+Title: Coefficients of the linear correlations between the model parameters for H and total irradiance in Lyman-alpha 
+Authors: Kowalska-Leszczynska, I., Bzowski, M., Sokol, J. M., Kubiak, M. A.
+Table: Table 1 from Kowalska-leszczynska et al. 2020 (Update of the Solar Lyman-Alpha Profile Line Model)
+================================================================================
+Byte-by-byte Description of file: table1v4.txt
+--------------------------------------------------------------------------------
+   Bytes Format Units Label  Explanations
+--------------------------------------------------------------------------------
+   1-  6 A6     ---     P      Parameter name (one of the 9 parameters of the model)
+   8- 15 A8     ---     beta   determins the order of the magnitude of the parameter
+  17- 22 F6.3   ---     alpha  determins how strong is the correlation with Itot
+--------------------------------------------------------------------------------
+Note (1):  Parameters of the IKL model are linear functions of total Lyman-alpha irradiance Itot:
+           P=beta(1 + alpha*(Itot/<Itot>)), <Itot>=4.25E11 [ph/cm^2/s]
+           muK, sigmaK, dmu, sigmaR are in the units of radial velocity [km/s]
+           abkg is in a units 1/(radial velocity) [s/km]
+           AK, kappa, AR, bbkg are dimensionless
+Note (2):  Header length: 19 lines
+--------------------------------------------------------------------------------
+AK     6.523     0.619
+muK    5.143    -1.081
+sigmaK 38.008    0.104
+kappa  2.165    -0.301 
+AR     580.37    0.28 
+dmu    -0.344   -0.828
+sigmaR 32.439   -0.049 
+bbkg   0.035     0.184
+abkg   0.411E-4 -1.333

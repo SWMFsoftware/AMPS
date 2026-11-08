@@ -535,6 +535,141 @@ If a science item is missing, the report must identify the exact item and use
 `FOCUSED_ONLY_NOT_SCIENCE_READY`; it must not reinterpret the item as optional. A tool or focused
 test PASS is never a waiver for missing science evidence.
 
+## 3I/ATLAS campaign overlay for a later integration
+
+The 3I inputs are an application-data consumer of the generic interfaces and
+must be merged only after their dependencies, never as a reason to introduce
+case constants into a reusable layer.
+
+Merge order within the existing waves:
+
+1. Before application consumers, merge
+   `src/models/resonance_fluorescence/` and the targeted root `Makefile`
+   wiring. This is a reusable core-data commit: it contains published H/OH
+   models and immutable reference data, but no Halley, Hartley, 3I, mesh,
+   species-index, MPI, or PIC dependency. Preserve unrelated target Makefile
+   changes while adding the compile switch, include path, model build, and
+   `libAMPS.a` object glob.
+2. In Wave 1, merge the generic brightness math/configuration types. This
+   includes the exact inverse of the core DIM1 spherical mover's local-radial
+   velocity rotation; keep its round-trip test beside the shell-chord and
+   Rayleigh tests. Keep the fixed-scalar path for backward compatibility and
+   use named core model IDs, not duplicated H/OH tables or case constants.
+3. In Wave 3, merge the strict brightness grammar and generic collision and
+   reaction input machinery. Re-run its invalid-input tests before accepting
+   any concrete 3I file. Enabled brightness must require explicit
+   heliocentric-radial/LOS/impact geometry, accept either scalar radial or
+   full-vector comet velocity, and require `ABORT` or
+   `EXCLUDE_AND_REPORT` velocity-domain policy. Named H still requires solar
+   Ly-alpha flux and Lowell OH still requires an effective wavelength.
+4. In Wave 4, merge the DIM1 particle sampler and the single sampling-callback
+   registration in `RadialSimulation.cpp`. Preserve the core callback order:
+   sample every core sampling iteration; on core output, MPI-reduce, divide by
+   `PIC::LastSampleLength`, write, clear, and synchronize. Demonstrate
+   brightness omission/default-off with `halley1d.input` so the Rubin file
+   schema and comparison remain byte-compatible. Keep model IDs, provenance,
+   exact reference hashes, estimator, vectors, and policy as Tecplot dataset
+   metadata. Output names must remain
+   `pic.<species>.brightness.s=<species-index>.out=<output-index>.dat`.
+5. In Wave 6, merge `srcHartley2/i3/tests/test_prepare_i3_cases.py`, the core
+   fluorescence tests, and the expanded brightness parser tests. Run them
+   with the reusable chemistry, collision, injection-distribution,
+   brightness, and all-stage tests.
+6. In Wave 7, merge `input/i3.input`, the six generated concrete inputs,
+   `srcHartley2/i3/prepare_i3_cases.py`, the compact I3 case/reference CSVs,
+   and the I3 README as one reviewed provenance unit. Regenerate the six
+   inputs and require no diff. The guarded fluorescence acquisition utility
+   and its authoritative snapshot already belong to the earlier core module;
+   an upstream network refresh is a separate scientific-data change and must
+   not be mixed into conflict resolution.
+7. After the case tables and visualization utility are present, merge
+   `srcHartley2/visualization/references/i3_brightness_MAVEN/`,
+   `extract_i3_brightness_maven.py`, `plot_i3_brightness_comparison.py`, and
+   `test_i3_brightness_reference.py` as one reviewed visualization/provenance
+   unit. The committed CSV is a raster digitization, not original instrument
+   data. Preserve its pixel-anchor and metadata files, verify the archive and
+   member hashes, and require byte-exact CSV/metadata regeneration when the
+   external archive is available. Runtime plotting must use the committed
+   numerical table and `--reference-dir`; it must not regain an undeclared
+   dependency on untracked `Archive.zip`.
+
+The generator template and concrete files are intentionally both tracked:
+the template is the review surface, while each concrete file is the exact
+compile-time AMPS configuration. During conflict resolution, do not hand-edit
+only a concrete case. Change the CSV or template, regenerate all six, review
+the resulting six-file diff, and rerun the generator test. A changed solar
+dataset, JPL ephemeris, reaction coefficient, energy, collision source, or g
+factor requires an explicit provenance update; do not retain the old hash or
+silently treat a new value as equivalent.
+
+Pre-merge I3 validation must include:
+
+- verification of the supplied archive and embedded PDF checksums documented
+  in `srcHartley2/i3/README.md`;
+- all 12 numerical MAVEN/IUVS subsets pass schema, ordering, units, positive
+  values, radial-bin and paired-uncertainty checks; the 87-row CSV and metadata
+  regenerate byte-for-byte from the authenticated archive and reviewed pixel
+  anchors;
+- exact regeneration of all six inputs on the integration commit;
+- validation of all 1,201 core Lowell OH records as non-extrapolated and positive,
+  exact coverage of `[-60,60] km/s`, and retention of the energy g factor as
+  the authoritative downloaded value rather than only its 3090-A photon
+  conversion;
+- parsing all nine official IKL-2020 H coefficients, evaluating the analytic
+  model at all six case velocity/irradiance pairs across its strict
+  `[-200,200] km/s` domain, and checking the documented force-balance
+  conversion from IKL `mu` to photon g factor;
+- a clean preprocess and compile for at least cases 1 and 5 (the low- and
+  highest-Q mesh/population extremes), each after removing only that exact
+  worktree's `build/` directory;
+- parser-only or clean configure validation for the other four inputs;
+- one-/multi-rank pilot output with identical particle-resolved brightness
+  columns after normalization by the same sampling length, and exact Tecplot
+  species/index/output filenames;
+- no missing collision pair and the expected Combi/Rubin/CHEMKIN provenance
+  for all 28 unordered pairs among seven species;
+- source-injection tests at 175 K for H2O, CO, and CO2 against the exact
+  crossing-flux speed and cosine-angle distributions;
+- an isolated parser assertion of the exact generated brightness species,
+  model, effective-wavelength, three geometry vectors, comet velocity,
+  velocity-domain policy, case condition, tau mode, cross-section, and
+  threshold arrays/declarations; checking only the
+  enabled flag or metadata is insufficient because a Perl regex-escape error
+  can otherwise leave the compiled arrays at zero;
+- chemistry validation that accepts a physically valid equal-`W/dt` network
+  such as the I3 H2O family, while retaining the existing Halley Stage-4 log
+  requirement for a positive unequal-carrier count so split/roulette
+  coverage is not lost;
+- a converged production run or a clearly labeled nonconverged status for
+  each case that is presented scientifically;
+- line-center tau review for every H comparison point, and no claim that a
+  flagged thin result is a solved resonant-transfer result;
+- a focused check that each g factor uses
+  `e_r dot (V_comet + R(n)*v_local)` for the individual model particle, with
+  the same deterministic local basis as the core mover and no bulk-only H
+  substitution;
+- an out-of-domain particle fixture for both supported policies: fatal under
+  `ABORT`, and excluded-count/column accounting under
+  `EXCLUDE_AND_REPORT`, with no clamping or extrapolation;
+- comparison only within the finite 1e9-m mesh unless a separately reviewed
+  domain change or outer continuation is implemented; and
+- a fresh Halley build/test and Rubin comparison proving that I3 additions did
+  not change the pre-existing default-off workflow; preserve its explicit
+  `BrightnessMode=off` record.
+
+Do not stage `Archive.zip`, raw Horizons/NRC/LASP downloads, `PT` trees,
+generated root copies, executables, or build products. The deliberately
+retained core
+`reference/g_factors/oh_ax00_schleicher_ahearn1988/lowell_oh00_raw.jsonl` is
+an exception: it is the compact audit source for the normalized OH table and
+its non-extrapolation test, not a runtime artifact. The reviewed CSV data,
+official IKL coefficient file, Lowell snapshot, generated immutable include,
+and manifest hashes are source artifacts. When applying the root `Makefile`
+patch, preserve the pre-existing `EXTRALINKEROPTIONS_F=-lmpi++` modification;
+it predates this module and must not be attributed to it or overwritten. As
+with all other work in this document, these instructions do not authorize a
+merge, branch switch, cherry-pick, or master update.
+
 ## Final user decision
 
 When, and only when, all readiness evidence is assembled, present the exact
@@ -548,3 +683,23 @@ target and exact integration result.
 If approval later names a different target or the recorded target has moved,
 the approval does not transfer. Repeat the disposable integration and full
 validation process against the new full commit and request approval again.
+
+## Brightness physical-cell index repair
+
+When transferring the particle-resolved brightness sampler, preserve the
+separate index spaces in `SampleParticleResolvedBrightness()`. AMPS center
+nodes include ghost cells, so `_getCenterNodeLocalNumber()` is valid for
+`GetCenterNode()` but must never index `FirstCellParticleTable`; the latter is
+dense over physical cells only. Merge the `centerNodeNumber` /
+`particleCellNumber` split, its explicit bound, detailed free-list-alias
+comment, and the configured-source parser assertion as one unit.
+
+This is correctness-critical rather than a performance-only optimization. In
+the I3 DIM1 build, physical cell 6 mapped to center-node index 8 while the
+particle table had valid indices 0--7. The adjacent zero was interpreted as
+the head of the free-particle chain, causing all 20,000,000 unused buffer
+slots to be sampled as H particles. Later integration validation must include
+an empty first sampling iteration, first/last physical-cell coverage, and a
+short multi-rank completed sampling window that writes finite H/OH Tecplot
+brightness files. Do not resolve a conflict by restoring the former shared
+`cellNumber` index.

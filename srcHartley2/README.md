@@ -12,11 +12,394 @@ The application currently supports:
 - a reserved DIM2 axisymmetric model type whose execution backend is not yet
   implemented.
 
+## Operator workflow: clean builds and isolated runs
+
+Comet inputs are consumed by the AMPS preprocessor at compile time.  The
+executable does **not** load `halley1d.input` or `i3.caseN.input` when it is
+started.  Consequently, changing a case means deleting exactly the generated
+`build` directory and compiling again with the intended `InputFileAMPS`.
+Never reuse an executable built for another comet or another I3 case.
+
+Run all commands below from the repository root:
+
+```sh
+cd /data/vtenishe/COMET1D/AMPS
+```
+
+Select the generic comet application once for a new checkout or configuration:
+
+```sh
+./Config.pl -application=hartley2
+```
+
+`srcHartley2` is the retained historical AMPS application name; selecting it
+does not make a generic run a Hartley-2 physical case.  The `InputFileAMPS`
+argument below selects the actual comet/campaign configuration.  Before every
+recompile, remove only this exact generated directory:
+
+```sh
+rm -rf -- /data/vtenishe/COMET1D/AMPS/build
+```
+
+The output path in all maintained radial inputs is `PT/plots`, interpreted
+relative to the directory in which `amps` is launched.  Running a frozen
+executable in an isolated production directory therefore keeps its output,
+mesh, diagnostic files, and logs separate from the repository-root `PT`.
+
+Use this input-selection table; only the concrete files in the middle column
+are passed to `make`:
+
+| Application case | Compile-time input | Notes |
+| --- | --- | --- |
+| 1P/Halley Rubin comparison | `input/halley1d.input` | DIM1; 10,000-step samples; 40,000-step maximum; brightness disabled |
+| 3I/ATLAS case 1--6 | `input/i3.caseN.input` | DIM1; substitute `N=1..6`; each case needs its own clean executable |
+| 3I generator template | `input/i3.input` | Never compile directly; regenerate concrete cases with `i3/prepare_i3_cases.py` |
+| Hartley 2 radial configuration | `input/hartley2.radial.input` | DIM1 configuration/mesh path; maintained with simulation mode disabled until its remaining controls are supplied |
+| Historical Hartley 2 shape case | `input/hartley2.input` | DIM3 triangulated-nucleus application |
+
+### Build and run one 3I/ATLAS case
+
+The six concrete inputs are `input/i3.case1.input` through
+`input/i3.case6.input`.  `input/i3.input` contains generator tokens and is
+**not** directly compilable.  Reproduce the concrete inputs and run their
+focused generator regression with:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 srcHartley2/i3/prepare_i3_cases.py
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
+  srcHartley2/i3/tests/test_prepare_i3_cases.py
+srcHartley2/tests/run_comet_brightness_tests.sh
+```
+
+Choose one case number from 1 through 6 and cleanly build it.  This example
+selects case 1 and an optimized CPU build:
+
+```sh
+CASE=1
+rm -rf -- /data/vtenishe/COMET1D/AMPS/build
+make -j8 EXTRACOMPILEROPTIONS=-O3 \
+  InputFileAMPS="input/i3.case${CASE}.input"
+```
+
+Each I3 case has different source rates, heliocentric conditions, reaction
+rates, observation geometry, and fluorescence inputs compiled into `amps`.
+Repeat the clean-build step for every other case; do not run cases 2--6 with a
+case-1 executable.
+
+Freeze the executable and the exact input in a case-specific directory before
+starting MPI.  The example rank count is 12; select a count allowed by the
+host allocation and validation plan.
+
+```sh
+CASE=1
+RUN="/data/vtenishe/COMET1D/AMPS/validation_runs/i3_case${CASE}_manual/production"
+mkdir -p "$RUN"
+cp -p amps "input/i3.case${CASE}.input" "$RUN/"
+
+(
+  cd "$RUN"
+  set -o pipefail
+  mpiexec -n 12 ./amps 2>&1 | tee "case${CASE}.run.log"
+)
+```
+
+The generated inputs currently request 200 brightness rays, a 10,000-
+iteration sampling window, and at most 30,000 iterations.  Raw radial and
+brightness output appears under `$RUN/PT/plots`.  Brightness tables follow:
+
+```text
+pic.H.brightness.s=0.out=<output-index>.dat
+pic.OH.brightness.s=3.out=<output-index>.dat
+```
+
+`out=0` exists only after the first complete sampling window.  A partial run
+that has not crossed that boundary cannot produce a scientifically meaningful
+brightness comparison.
+
+### Plot I3 brightness with the MAVEN/IUVS observations
+
+Run the comparison utility from the repository root and give it a completed
+brightness table.  It saves the PNG in the repository-root `PT/plots` and
+opens an interactive Matplotlib window by default.  Close the window to
+return to the shell.  For the current frozen case-1 run:
+
+```sh
+RUN=/data/vtenishe/COMET1D/AMPS/validation_runs/i3_case1_rays200_sampling10000_max30000_indexfix_20261107_12mpi/production
+
+python3 srcHartley2/visualization/plot_i3_brightness_comparison.py \
+  "$RUN/PT/plots/pic.H.brightness.s=0.out=0.dat"
+
+python3 srcHartley2/visualization/plot_i3_brightness_comparison.py \
+  "$RUN/PT/plots/pic.OH.brightness.s=3.out=0.dat"
+```
+
+The default destinations are:
+
+```text
+PT/plots/i3_case1_H_brightness_comparison.png
+PT/plots/i3_case1_OH_brightness_comparison.png
+```
+
+Add `--no-show` to save without opening a Matplotlib window.  Use an explicit
+`--output PATH.png` to keep the comparison beside a frozen run instead of in
+the current working directory's `PT/plots`.  `--case N` and `--species H|OH`
+override path/header inference when files have been renamed.
+
+The plotting script reads the extracted numerical references from:
+
+```text
+/data/vtenishe/COMET1D/AMPS/srcHartley2/visualization/references/i3_brightness_MAVEN/maven_iuvs_brightness.csv
+```
+
+Point centers, radial-bin bounds, visible vertical uncertainties, reviewed
+source pixels, hashes, and extraction limitations are documented in that
+directory.  To use an equivalent table stored elsewhere, point the CLI to its
+containing directory:
+
+```sh
+python3 srcHartley2/visualization/plot_i3_brightness_comparison.py \
+  "$RUN/PT/plots/pic.H.brightness.s=0.out=0.dat" \
+  --reference-dir /full/path/to/i3_brightness_MAVEN
+```
+
+`Archive.zip` is no longer required for ordinary plotting.  It remains the
+source artifact needed to audit or regenerate the committed reference table:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 \
+  srcHartley2/visualization/extract_i3_brightness_maven.py \
+  --archive /full/path/Archive.zip
+```
+
+The supplied observations were raster plots rather than original numerical
+tables.  The extracted CSV therefore remains a documented raster
+digitization, not a claim of additional measurement precision.  The generated
+comparison PNG is self-contained for viewing and directly plots the black
+MAVEN/IUVS points/bounds with the blue AMPS curve; the archive's red legacy
+model is deliberately absent from the numerical reference.
+
+### Build, run, and compare the Halley/Rubin case
+
+The maintained Halley configuration is `input/halley1d.input`.  It currently
+uses 10,000-iteration sampling windows, a 40,000-iteration maximum, 2,000
+ideal radial cells, block-local particle weights and timesteps, and
+`BrightnessMode=off`.  Build it independently of every I3 executable:
+
+```sh
+rm -rf -- /data/vtenishe/COMET1D/AMPS/build
+make -j8 EXTRACOMPILEROPTIONS=-O3 \
+  InputFileAMPS=input/halley1d.input
+```
+
+Freeze and run it in its own directory.  This example uses 18 MPI processes;
+use only a rank count available in the host allocation.
+
+```sh
+RUN=/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_manual_18mpi/production
+mkdir -p "$RUN"
+cp -p amps input/halley1d.input "$RUN/"
+
+(
+  cd "$RUN"
+  set -o pipefail
+  mpiexec -n 18 ./amps 2>&1 | tee halley1d.run.log
+)
+```
+
+Create the paper-ordered Rubin comparison from the latest output index that is
+complete for every configured species:
+
+```sh
+RUN=/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_manual_18mpi/production
+
+python3 srcHartley2/visualization/compare_rubin2011.py \
+  "$RUN/PT/plots" \
+  --run-log "$RUN/halley1d.run.log" \
+  --sampling-length 10000 \
+  --output-dir "$RUN/PT/plots/rubin2011_comparison"
+```
+
+The explicit sampling length is required because the plotting utility retains
+a historical 500-iteration default for older archived Halley runs.  The
+destination contains per-figure PNG/EPS files, a combined PDF,
+`comparison_profiles.csv`, and a provenance/status manifest.  It labels a
+nonconverged or unrecognized run as diagnostic rather than silently presenting
+it as a steady solution.  To inspect any individual Halley radial quantity,
+use `visualization/plot_1d.py`; its aliases and examples are documented in
+`visualization/README.md`.
+
+When switching back from Halley to any I3 case—or between I3 cases—repeat the
+exact clean-build procedure.  Copying a different input beside an existing
+executable changes provenance only; it does not reconfigure that executable.
+
+### Build and run the Hartley 2 configurations
+
+The historical three-dimensional Hartley 2 model uses
+`input/hartley2.input`.  It requires the triangulated nucleus file at run
+time.  Build a new executable and prepare an isolated four-rank smoke-test
+directory as follows:
+
+```sh
+rm -rf -- /data/vtenishe/COMET1D/AMPS/build
+make -j8 EXTRACOMPILEROPTIONS=-O3 \
+  InputFileAMPS=input/hartley2.input
+
+RUN=/data/vtenishe/COMET1D/AMPS/validation_runs/hartley2_dim3_manual/production
+mkdir -p "$RUN"
+cp -p amps input/hartley2.input "$RUN/"
+gzip -dc input/hartley2.shape.nas.gz > "$RUN/hartley2.shape.nas"
+
+(
+  cd "$RUN"
+  set -o pipefail
+  mpiexec -n 4 ./amps 2>&1 | tee hartley2.run.log
+)
+```
+
+The input's current test controls request 50 iterations and initially sample
+every 10 iterations.  Its output is written under `$RUN/PT/plots`.  Preserve
+the uncompressed filename `hartley2.shape.nas`: that is the runtime filename
+compiled from the input.
+
+The one-dimensional Shou/Hartley configuration is
+`input/hartley2.radial.input`.  It can be preprocessed and compiled with:
+
+```sh
+rm -rf -- /data/vtenishe/COMET1D/AMPS/build
+make -j8 EXTRACOMPILEROPTIONS=-O3 \
+  InputFileAMPS=input/hartley2.radial.input
+```
+
+Do not use that executable for a production simulation yet.  The file
+intentionally contains `RadialSimulationMode=off`; it preserves the derived
+nucleus, source, domain, and radial-mesh configuration while the remaining
+Hartley run controls are kept explicit rather than guessed.  A runnable
+Hartley radial case must first enable that mode and supply/validate those
+controls in the input file, followed by another clean build.
+
+## DIM1 resonance-fluorescence brightness
+
+DIM1 cases may opt in to line-of-sight column and optically thin fluorescence
+output. Omission is the compatibility default: no extra collectives or files
+are produced. The canonical Halley/Rubin input additionally says
+`BrightnessMode=off` so its density and velocity regression remains explicit
+and unchanged. A configured case uses records of the following form:
+
+```text
+BrightnessMode=on
+BrightnessImpactParameterGrid=log | MIN_M | MAX_M | NUMBER_OF_POINTS
+BrightnessObservationGeometry=ER_X | ER_Y | ER_Z | LOS_X | LOS_Y | LOS_Z | IMPACT_X | IMPACT_Y | IMPACT_Z
+BrightnessVelocityDomainPolicy=ABORT
+BrightnessEmission=H | H_LYMAN_ALPHA | PHOTON_G_FACTOR_S-1 | G_PROVENANCE | THIN | ISOTROPIC_4PI | LINE_CENTER | CROSS_SECTION_M2 | TAU_FLAG_THRESHOLD | TAU_PROVENANCE
+BrightnessEmission=OH | OH_A2SIGMA_X2PI_00 | PHOTON_G_FACTOR_S-1 | G_PROVENANCE | THIN | ISOTROPIC_4PI | NONE | 0 | 0 | NONE
+```
+
+`BrightnessImpactParameterGrid` accepts `LINEAR` or `LOG`; a single-point
+linear grid uses equal minimum and maximum values. The geometry record uses a
+single Cartesian frame: `ER` is the heliocentric radial unit vector pointing
+away from the Sun, `LOS` points from the comet toward the observer, and
+`IMPACT` is the direction of positive projected distance in the sky plane.
+`LOS` and `IMPACT` must be orthogonal; all three vectors are normalized by the
+parser and checked again at runtime. A positive number in emission field 3
+retains the fixed photon-g-factor path above. A case can instead select the
+reusable core models with:
+
+```text
+BrightnessHeliocentricRadialVelocityKMS=COMET_BULK_VR_KM_S
+# Alternative to the scalar record above:
+# BrightnessCometHeliocentricVelocityKMS=VX_KM_S | VY_KM_S | VZ_KM_S
+BrightnessSolarLymanAlphaFlux1AUPhotonCM2S=SOLAR_LYA_FLUX_AT_1_AU
+BrightnessEmission=H | H_LYMAN_ALPHA | H_LYA_IKL2020 | G_PROVENANCE | THIN | ISOTROPIC_4PI | LINE_CENTER | CROSS_SECTION_M2 | TAU_FLAG_THRESHOLD | TAU_PROVENANCE | 0
+BrightnessEmission=OH | OH_A2SIGMA_X2PI_00 | OH_AX00_SA1988_LOWELL_UNQUENCHED | G_PROVENANCE | THIN | ISOTROPIC_4PI | NONE | 0 | 0 | NONE | EFFECTIVE_WAVELENGTH_NM
+```
+
+The scalar comet-velocity record is backward-compatible shorthand for
+`V_comet=Vr*ER`; it and the full-vector record are mutually exclusive. The
+source-level default is exactly `(0,0,0)`, and
+`Comet::Brightness::SetCometHeliocentricVelocity()` provides the same setup
+API for another application. The core H model requires the solar flux. The OH
+reference is an integrated energy g factor, so its photon conversion
+wavelength must be explicit. Model evaluation applies the heliocentric
+inverse-square factor once using `HeliocentricDistanceAU`. A particle velocity
+outside a model's published interval is never clamped or extrapolated:
+`ABORT` stops the run with the line/model/velocity, while
+`EXCLUDE_AND_REPORT` omits that evaluation and writes its excluded column
+fraction and count. The fixed scalar path remains available and does not
+receive implicit distance or solar-cycle scaling.
+
+The reference data, equations, citations, hashes, acquisition tool, and
+standalone tests are in `src/models/resonance_fluorescence/`; no observation
+or comet constant is compiled into `srcHartley2`.
+
+Only `THIN` emission with the explicit `ISOTROPIC_4PI` phase convention is
+supported; that convention is the assumption behind the Rayleigh conversion
+and is repeated in the Tecplot metadata. For atomic H, `LINE_CENTER` is mandatory:
+the supplied conservative line-center cross section produces
+`tau_0=sigma_0*N`, and the supplied threshold produces an output flag. The thin
+brightness is deliberately left unmodified even when the flag is true. The
+line-center cross section has provenance separate from the photon g factor;
+`NONE` diagnostics require the literal tau provenance `NONE`. This
+prevents a line-center diagnostic from masquerading as frequency-resolved
+radiative transfer. A future attenuation model must be a separately named,
+validated input model rather than a reinterpretation of these columns.
+
+The brightness calculation is an AMPS external sampler, not a density-file
+postprocessor. Every core sampling iteration it visits the actual model
+particles in owner cells. For each configured impact parameter it splits the
+line of sight at exact spherical-cell intersections and applies two-point
+Gauss--Legendre quadrature within every visible segment. At quadrature point
+`x=b*IMPACT+s*LOS`, the stored DIM1 local velocity is rotated back into that
+point's Cartesian radial frame and the Doppler velocity is evaluated for that
+individual particle as
+
+```text
+v_helio,r = ER dot (V_comet + R(x/|x|) v_local).
+```
+
+The particle contribution uses its block-local statistical weight and
+individual weight correction divided by the spherical cell measure. For
+projected radius `b`, shell boundaries `ri,ro`, and `b>=Rn`, the exact chord
+covered by the quadrature is
+
+```text
+2 [sqrt(ro^2-b^2) - sqrt(max(ri,b)^2-b^2)].
+```
+
+For `b<Rn`, the opaque nucleus hides the rear segment and the factor two is
+removed. The sampler's output and clearing callbacks are synchronized with
+the ordinary AMPS sampling-window lifecycle. Rank zero writes one Tecplot
+file per configured species using the normal species/index/output convention:
+
+```text
+<OutputDirectory>/pic.<species>.brightness.s=<species-index>.out=<output-index>.dat
+```
+
+For the maintained I3 inputs the output directory is `PT/plots`. Multiple
+configured transitions of one species are separate columns in the same file.
+Columns include impact parameter, column density, effective photon g factor,
+brightness in R and kR, line-center tau and threshold flag, and excluded-domain
+statistics. Dataset auxiliary records preserve the three geometry vectors,
+comet velocity, estimator, policy, model/provenance, and reference-data hash.
+Existing `pic.*.dat` files and columns are untouched. The integral stops at
+the finite radial domain: there is no unreported Haser or analytic tail. An
+impact parameter beyond the domain therefore reports zero rather than an
+extrapolated column. In SI units the thin intensity is
+`B[R]=integral(n*g ds)/10^10`, with a separate kR column.
+
+Focused geometry, unit, tau-policy and parser/source-generation tests are:
+
+```sh
+srcHartley2/tests/run_comet_brightness_tests.sh
+```
+
 `GENERIC_COMET_DESIGN.md` describes the interfaces and dimensional split.
 `STATUS.md` records build and runtime verification. The Hartley 2 radial case
 is `input/hartley2.radial.input`; the historical triangulated case remains
 `input/hartley2.input`. The Rubin et al. case is explicitly named for comet
-Halley in `input/halley1d.input`. `srcHartley2/CHEMISTRY.md` provides
+Halley in `input/halley1d.input`. The six observation-driven 3I/ATLAS cases
+are generated and documented in `srcHartley2/i3/README.md`; their concrete
+inputs are `input/i3.case1.input` through `input/i3.case6.input`.
+`srcHartley2/CHEMISTRY.md` provides
 the staged implementation and validation roadmap for improving minor
 photochemical-daughter statistics without increasing direct-parent injection.
 
@@ -32,8 +415,11 @@ photochemical-daughter statistics without increasing direct-parent injection.
 | `RadialSimulation.*` | DIM1 source injection, timestep selection, inner re-emission, outer loss, and time stepping |
 | `halley2011/derive_halley1d_controls.py` | Reproducible Halley surface-resolution, injection-count, and daughter-speed derivation |
 | `halley2011/digitize_rubin2011.py` and `halley2011/reference/` | Reproducible Rubin vector-curve extraction and committed neutral-profile reference data |
+| `i3/prepare_i3_cases.py`, `i3/reference/`, and `input/i3*.input` | Reproducible 3I/ATLAS observation table, solar correction, chemistry, mesh controls, brightness configuration, and six compile-time inputs |
 | `visualization/plot_1d.py` | CLI plotter for named quantities in one or more DIM1 output files |
 | `visualization/compare_rubin2011.py` | Paper-ordered neutral-density and H2O-velocity comparison artifacts for the Halley run |
+| `visualization/plot_i3_brightness_comparison.py` | Overlays an AMPS H/OH brightness table on the extracted numerical MAVEN/IUVS references, supports `--reference-dir`, saves a PNG, and opens an optional Matplotlib window |
+| `visualization/extract_i3_brightness_maven.py` and `visualization/references/i3_brightness_MAVEN/` | Reproducible raster-to-table extraction, reviewed pixel anchors, numerical H/OH references for all six cases, and source/hash metadata |
 | `validation/` | Frozen Stage-3 science policy, durable eight-run Bernoulli/Systematic runner, read-only decision evaluator, and operating instructions |
 | `Comet.cpp` and legacy helpers | Existing DIM3 Hartley 2 implementation |
 
@@ -568,17 +954,20 @@ The checked-in Hartley 2 radial input leaves `RadialSimulationMode=off`; its
 runtime validates configuration and builds the mesh without inventing missing
 science-run controls. The Halley file records the supplied 2,000 cells,
 Courant number 0.25, 400 m/s parent baseline, disabled methanol branch, and
-controls derived by `halley2011/derive_halley1d_controls.py`. The 500-step
-sampling window and 10,000-iteration hard ceiling are explicit. The selected
-0.36 eV OH branch uses the lower published rate, `3.0e-6 s^-1` at 1 AU. The
-run compares the volume-weighted relative L1 change of every species' complete
-radial density profile and terminates after all species remain within 5% for
-three consecutive window-to-window comparisons. The first complete window is
-the reference, so convergence needs at least four windows. Multi-rank tests
-have crossed output and block-migration boundaries, verifying runtime plumbing.
+controls derived by `halley2011/derive_halley1d_controls.py`. The current
+high-statistics configuration has a 10,000-step sampling window and a
+40,000-iteration hard ceiling. Earlier validation histories below used the
+then-current 500-step/10,000-iteration configuration and remain labeled as
+historical evidence. The selected 0.36 eV OH branch uses the lower published
+rate, `3.0e-6 s^-1` at 1 AU. The run compares the volume-weighted relative L1
+change of every species' complete radial density profile and terminates after
+all species remain within 5% for three consecutive window-to-window
+comparisons. The first complete window is the reference, so convergence needs
+at least four windows. Multi-rank tests have crossed output and block-migration
+boundaries, verifying runtime plumbing.
 
 `RadialLoadBalanceInterval` is a separate numerical control and does not
-change the 500-step science window. After a complete outer iteration, the
+change the configured science sampling window. After a complete outer iteration, the
 radial driver may redistribute whole AMPS blocks through the core's standard
 `CreateNewParallelDistributionLists()` path, reset the core rebalancing
 accounting, and rebuild the rank-local block table. Redistribution is skipped

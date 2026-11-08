@@ -1,0 +1,7 @@
+case_id,start_shift_days,end_shift_days,exposure_mean_shift_days,unshifted_f107p_sfu,shifted_f107p_sfu,method
+1,9.7369,9.8119,9.7743,166.186393896,136.194566908,"JPL Sun-centered J2000 ecliptic longitude; 360/25.38 deg/day Carrington rotation; NRC adjusted 20-UT flux; centered 81-day mean; exact exposure average"
+2,10.3961,10.4757,10.4358,162.753086420,142.874791643,"JPL Sun-centered J2000 ecliptic longitude; 360/25.38 deg/day Carrington rotation; NRC adjusted 20-UT flux; centered 81-day mean; exact exposure average"
+3,11.4600,11.5468,11.5033,135.775308642,139.711261811,"JPL Sun-centered J2000 ecliptic longitude; 360/25.38 deg/day Carrington rotation; NRC adjusted 20-UT flux; centered 81-day mean; exact exposure average"
+4,-13.0384,-12.3059,-12.6732,136.073007575,143.568741662,"JPL Sun-centered J2000 ecliptic longitude; 360/25.38 deg/day Carrington rotation; NRC adjusted 20-UT flux; centered 81-day mean; exact exposure average"
+5,-12.2445,-11.6303,-11.9374,134.288449679,150.444624050,"JPL Sun-centered J2000 ecliptic longitude; 360/25.38 deg/day Carrington rotation; NRC adjusted 20-UT flux; centered 81-day mean; exact exposure average"
+6,-11.4460,-10.8969,-11.1708,135.405064373,138.071807780,"JPL Sun-centered J2000 ecliptic longitude; 360/25.38 deg/day Carrington rotation; NRC adjusted 20-UT flux; centered 81-day mean; exact exposure average"

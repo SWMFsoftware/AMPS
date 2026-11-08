@@ -1,7 +1,180 @@
 # Generic comet / Hartley 2 status
 
-Date: 2026-11-03
+Date: 2026-11-07
 Branch: `1d_comet_dev`
+
+## 3I/ATLAS six-case input development (2026-11-07)
+
+The generic DIM1 application now has six deterministic, observation-driven
+3I/ATLAS inputs. `input/i3.input` is the common generator template;
+`srcHartley2/i3/prepare_i3_cases.py` combines it with reviewed CSV catalogs to
+write the loadable `input/i3.case1.input` through `input/i3.case6.input`.
+AMPS configuration remains compile-time, so every case requires its own clean
+preprocess/build and separate run output. No 3I production rate, date, solar
+index, nucleus radius, or mesh value was added to C++. Published H/OH
+fluorescence data are now in a reusable core module, not in the application.
+
+The implementation uses:
+
+- the table Q(H2O), Q(CO), and Q(CO2) values as molecules/s; raster-fit H2O
+  values are retained only as comparison metadata;
+- compiled species `H,H2,O,OH,H2O,CO,CO2`, with CO and CO2 collision-only;
+- Moore--Mapaye per-channel `A0*F10.7P^alpha` H2O/OH/H2 chemistry plus neutral
+  ionization sinks, scaled once by the existing heliocentric inverse-square
+  law;
+- state-distinct OH reaction records even though O(3P), O(1D), and O(1S)
+  products share the compiled O species;
+- a 2.5-km, 175-K uniform spherical source, cometocentric outer radius 1e9 m,
+  2,000 radial cells, local timestep/local block weight, and convergence and
+  emergency-population controls inherited from the validated Halley policy;
+- direct-parent target range 800--3,200 particles/cell, chemical-only range
+  50--200, direct-source weight locking, and a derived injection reference of
+  114; and
+- input-driven H Ly-alpha and OH(0,0) brightness on 200 logarithmic impact
+  parameters, with the H thin result guarded by a line-center tau diagnostic.
+
+`reference/solar_activity_audit.csv` records the approved JPL/Carrington
+solar-longitude correction. The final exposure-averaged F10.7P values are
+`136.194566908`, `142.874791643`, `139.711261811`, `143.568741662`,
+`150.444624050`, and `138.071807780` sfu; provisional unshifted values are not
+used. `reference/photochemistry_channels.csv` owns all rate coefficients,
+solar exponents, energies, and citations. The H2O/H2 excess energies follow
+Huebner--Mukherjee through Carberry Mogan et al.; the state-labeled OH values
+are 1.27 eV for O(3P), 7.73 eV for O(1D), and 10.0 eV for O(1S), with the
+specific published source recorded per row.
+
+The surface cell width is calculated rather than chosen. For each parent,
+the generator forms the residence-weighted outgoing half-Maxwellian density
+and evaluates `lambda_i=1/(sqrt(2)*sum_j n_j sigma_ij)` with the exact selected
+175-K parent collision laws. The minimum path is the CO2 value in all cases:
+1.75261509304, 1.29785287642, 0.531312387076, 0.131442336866,
+0.122734766819, and 0.131442336866 m.
+
+Focused deterministic evidence:
+
+```text
+python3 -m unittest srcHartley2/i3/tests/test_prepare_i3_cases.py
+Ran 5 tests: OK
+
+make -C src/models/resonance_fluorescence test
+Ran 3 reference-data tests: OK
+PASS resonance-fluorescence core evaluator
+
+srcHartley2/tests/run_comet_brightness_tests.sh
+PASS comet-brightness focused test group tests=7
+```
+
+The tests check all six corrected solar values, 17 reactions, minimum mixture
+paths, direct injection count, recoil-derived characteristic speeds,
+brightness records, and byte-for-byte regeneration of every tracked input.
+The core fluorescence tests check all nine official IKL-2020 H coefficients,
+all 1,201 non-extrapolated Lowell OH records over +/-60 km/s, authoritative
+and generated-file SHA-256 hashes, strict model domains, inverse-square
+scaling, and agreement with all six existing rounded case scalars. A clean
+case-1 application compile also passes. These checks do not replace a
+convergence run. Before any later recompile, remove exactly
+`/data/vtenishe/COMET1D/AMPS/build`; preserve the pre-existing root
+`Makefile` linker edit and all run archives.
+
+Files added for this work and their reason are:
+
+| File | Purpose |
+| --- | --- |
+| `input/i3.input` | Common reviewable template; deliberately not directly loadable while generator tokens remain. |
+| `input/i3.case1.input` ... `input/i3.case6.input` | Six concrete, separately loadable AMPS cases. |
+| `srcHartley2/i3/prepare_i3_cases.py` | Network-free calculation of rates, mean free paths, injection statistics, recoil speed bounds, brightness records, and concrete inputs. |
+| `srcHartley2/i3/reference/i3_cases.csv` | Archive transcription, solar-corrected indices, and fluorescence metadata. |
+| `srcHartley2/i3/reference/solar_activity_audit.csv` | Endpoint/exposure longitude shifts and unshifted controls. |
+| `srcHartley2/i3/reference/photochemistry_channels.csv` | Geometry-independent chemical network parameters and provenance. |
+| `srcHartley2/i3/tests/test_prepare_i3_cases.py` | Determinism and physics-control regression. |
+| `srcHartley2/i3/README.md` | Full derivation, citations, limitations, operation, and validation boundary. |
+| `src/models/resonance_fluorescence/resonance_fluorescence.h/.cpp` | Application-independent SI API and strict IKL H / Lowell OH evaluators; no MPI, PIC, mesh, species index, or campaign dependency. |
+| `src/models/resonance_fluorescence/reference/g_factors/` | Authoritative IKL coefficient source, exact Lowell REST snapshot, normalized OH energy table, and machine-readable provenance/hashes. |
+| `src/models/resonance_fluorescence/generated/reference_tables.inc` | Deterministically generated immutable runtime representation; avoids file I/O in model loops. |
+| `src/models/resonance_fluorescence/tools/` | Guarded upstream acquisition and deterministic reference-table generator with stale-file check. |
+| `src/models/resonance_fluorescence/tests/` | Hash/grid/no-extrapolation audit plus six-case scientific evaluator regression. |
+| `src/models/resonance_fluorescence/makefile`, root `Makefile` wiring | Builds the reusable object into `libAMPS.a`; preserves the pre-existing root linker-option change. |
+| `srcHartley2/CometBrightnessMath.h` | PIC-independent exact shell chord, opaque-nucleus occultation, Rayleigh conversion, non-attenuating tau diagnostic, and inverse of the core DIM1 local-radial velocity rotation. |
+| `srcHartley2/CometBrightness.h/.cpp` | Default-off particle-resolved external sampler, named core-model resolution, velocity-dependent per-particle g factors, MPI reduction, synchronized buffer lifecycle, and per-species Tecplot output. Fixed scalar inputs remain supported. |
+| `input/CometBrightnessConfig.pm` | Strict fixed-or-named model grammar; requires explicit observation geometry, supports scalar-radial or full-vector comet velocity, enforces an out-of-domain policy, and retains H solar-flux/OH wavelength requirements. |
+| `input/hartley2.pl` | Generates model selectors, geometry/vector/policy data, SI case conditions, fixed/model arrays, and the DIM1 link dependency. Its exact declarations and arrays are regression-tested. |
+| `srcHartley2/RadialMain.cpp` | Validates generated brightness configuration and provides the production surface-injection distribution regression. |
+| `srcHartley2/RadialSimulation.cpp` | Registers the brightness sampling and output callbacks after PIC initialization; core output controls reduction, writing, and buffer clearing at the ordinary sampling boundary. |
+| `srcHartley2/tests/run_comet_brightness_tests.sh` and brightness tests | Velocity-rotation/geometry/unit/policy/parser regression, including exact generated declarations and array values. |
+| `srcHartley2/tests/run_i3_surface_injection_test.sh` and `I3_SURFACE_INJECTION.md` | Reproducible H2O/CO/CO2 flux-distribution runtime test and its mathematical contract. |
+| `input/halley1d.input` | Explicitly selects `BrightnessMode=off`; no Rubin comparison physics is changed. |
+| `srcHartley2/CometChemistry.cpp` | Treats equal carrier rates as a valid network while continuing to report unequal-carrier coverage for dedicated fixtures. |
+
+### Clean case-1 build and focused runtime evidence
+
+The latest case-1 source was configured only after removing exactly
+`/data/vtenishe/COMET1D/AMPS/build`, then compiled and linked with C++17/MPI.
+The first attempted configure exposed that `.amps.conf` overrides
+the Make command's `InputFileAMPS`; it was stopped while still compiling the
+old Halley selection. The workspace selector was set to
+`input/i3.case1.input`, `build/` was removed again, and every accepted build
+reported that exact input. This configuration produced 376 AMR blocks and
+3,008 allocated dyadic cells; the requested ideal radial profile remains
+2,000 cells, and the finest allocated cell is 0.9313202 m versus the
+1.75261509304-m case-1 surface request.
+
+An earlier brightness-enabled configure also found a real generator defect:
+the five `ChangeValueOfArray` regular expressions in `input/hartley2.pl`
+used one Perl escape where two were required. Metadata and `Enabled=true`
+were correct, but the generated numerical arrays remained zero. The parser
+was fixed and `test_comet_brightness_parser.py` now asserts the exact species,
+g-factor/model, wavelength, tau-mode, cross-section, and threshold array
+contents. The latest generated case-1 selectors are OH index 3 with model 2,
+effective wavelength 308.5 nm, and H index 0 with model 1. The generated
+bulk velocity is -39.7 km/s and the solar Ly-alpha flux is
+`5.1040518742e11 photon cm^-2 s^-1` at 1 AU. Runtime startup resolves the
+case-1 photon rates to about `1.800241179e-4 s^-1` for OH and
+`9.658586e-4 s^-1` for H; the small differences from archived rounded scalars
+are covered by the core regression. H keeps `sigma_0=9.5e-18 m^2` and tau
+threshold 0.1.
+
+Focused runtime results against the final executable are:
+
+```text
+PASS I3 surface-injection validation mpi-ranks=1
+     species=H2O,CO,CO2 temperature-K=175 particles-per-species=200000
+PASS chemistry reaction=... for all 8 neutral-product channels
+Chemistry ensemble validation result: PASS
+     neutral-reactions=8 unequal-weight/timestep-reactions=0 sink-reactions=9
+```
+
+The zero unequal-carrier count is intentional for this input: H2O is the
+largest direct-source `W/dt` carrier and every reacting H2O descendant
+inherits it, so residual multiplicity is exactly one. `CometChemistry.cpp`
+no longer declares an otherwise valid chemistry configuration failed merely
+because its configured carriers are equal. It continues to report the count;
+the independent Halley Stage-4 log checker still requires a positive unequal
+count and therefore retains coverage of split/roulette behavior.
+
+Final local build evidence (build products are not source and must not be
+merged) is:
+
+```text
+9fd8a455d3d33d8858ab25d038bcf3c9742c6ebbb7857eeabf2a693f11674c9b  amps
+3a8b9df77c9f15654b95bb8b5d33021b5c5e1722cee6f2cf6c5f7e52c4f2dfe7  input/i3.case1.input
+d3820a51eec9077c99b78180c6581ac1a4e026f749226442b43f2099eaead104  build/main/CometBrightness.cpp
+1fb36028af013311e14d9a7140fbdb08fba854c77efb11ec873a804869d6089d  src/models/resonance_fluorescence/generated/reference_tables.inc
+068380d305aa16e276f16e36780c8b8204c988c99eb2bc5d0f7b1f946edb4662  build/main/CometChemistry.generated.h
+2b45b41de73d6a98e1231c3d109af8adef348db99101fed92653e575f4587dd4  build/main/CometPhysics.generated.h
+9ddabb43c544acaebb08f70732e417c25ecba4a47144e52702d98beb8c56282e  build/pic/picGlobal.dfn
+```
+
+The I3 work is not yet a scientific validation result. Case 1 has a clean
+configured build and focused injection/chemistry runtime evidence, while
+cases 2--6 have deterministic parser/generator evidence only. A completed-
+sampling-window brightness pilot, long convergence runs, H tau-gate review,
+spectral H g-factor convolution over sampled particle velocities,
+observation digitization with uncertainty, and brightness/profile comparisons
+remain. The six I3 inputs now intentionally select bulk-velocity core models;
+the legacy fixed-scalar input form remains regression-tested. The explicit
+1e9-m boundary truncates archive H
+points beyond 10^6 km and must be disclosed rather than filled by an
+undocumented tail.
 
 ## Current result
 
@@ -5619,3 +5792,433 @@ No C++ or generated AMPS configuration changed in Stage 10, so no compile was
 required and the existing `build/` directory was not touched. The standing
 rule remains: remove exactly `/data/vtenishe/COMET1D/AMPS/build` before any
 future recompile.
+
+## Input-driven DIM1 brightness development
+
+The generic radial application now has an optional, default-off resonance-
+fluorescence output layer. `CometBrightnessMath.h` owns the PIC-independent
+exact spherical-shell chord, opaque-nucleus occultation, energy-to-photon and
+Rayleigh conversions, and line-center optical-depth diagnostic.
+`CometBrightness.cpp/.h` own the
+input-generated line configuration, owner-cell MPI reduction and separate
+completed-window CSV writer. `RadialSimulation.cpp` invokes that writer only
+after the full-sampling-window guard and before population adaptation;
+`RadialMain.cpp` validates generated configuration before mesh construction.
+
+`input/CometBrightnessConfig.pm` strictly parses the grid and emission
+records. Species and transition, a positive fixed photon g factor or named
+core model, provenance, the explicit `THIN` mode, and the `ISOTROPIC_4PI`
+phase convention are required. Core-model records require bulk radial
+velocity; H requires case solar irradiance; OH energy-to-photon conversion
+requires an explicit wavelength. Atomic-H records must also supply a
+positive line-center cross
+section, tau flag threshold, and independent cross-section provenance. The calculated
+thin brightness is never attenuated; the output states
+`attenuation_applied=false` and reports tau and the threshold flag separately.
+No case H or OH g factor is hardwired. The reusable core module owns the
+published reference models and data. `input/hartley2.pl` emits selectors,
+conditions, arrays, and metadata and links `CometBrightness.o` only in the
+DIM1 object set.
+Existing inputs that omit `BrightnessMode` remain off, so the Rubin/Halley
+comparison data contract is unchanged.
+
+Each CSV row explicitly records `radial_domain_outer_radius_m`, states that
+the column stops at that boundary, and labels the outer continuation `NONE`.
+The writer never silently extrapolates a density tail beyond the DIM1 mesh.
+
+Focused evidence currently passes:
+
+```text
+PASS comet-brightness exact-chord=1 occultation=1 units=1 tau-flag=1 invalid=1
+PASS resonance-fluorescence core evaluator
+Ran 3 reference-data tests: OK
+PASS comet-brightness input policy fixed=1 modeled=1 default-off=1 invalid=11
+Ran 3 parser integration tests: OK
+PASS comet-brightness focused test group tests=7
+```
+
+The test runner is `srcHartley2/tests/run_comet_brightness_tests.sh`; it does
+not touch `build/` or launch AMPS. A clean final case-1 configure/compile now
+passes and the generated numerical arrays were inspected as described in the
+I3 section above. A short run reaching a complete sampling window and writing
+the CSV remains pending. Before any further recompile, remove exactly
+`build/` as required by the standing clean-build policy.
+
+For later integration with `master`, merge the reusable core model, reference
+manifest/data, tests, and targeted root build wiring first. Then merge the
+pure brightness math header/tests, parser module/application adapter, and the
+two small radial call-site changes. Preserve default-off and fixed-scalar
+behavior and the separate CSV schema. Do not replace the DIM1 shell sum with
+the core Cartesian column
+integrator: that core path currently exits for `DIM!=3`. Do not merge a case
+campaign g factor, solar flux, OH photon wavelength, or attenuation
+approximation into the generic C++ source; those remain explicit
+input/provenance decisions.
+
+## Particle-resolved fluorescence sampling revision (2026-11-07)
+
+This section supersedes every earlier statement in this file that describes
+brightness as a completed-window shell-density CSV or a bulk-velocity-only
+calculation. Brightness is now evaluated inside the AMPS sampling lifecycle
+from individual model particles and written in Tecplot format.
+
+The DIM1 mover representation was verified before implementing the inverse
+mapping. `src/pic/pic_mover.cpp` advances the particle with all three Cartesian
+velocity components, detects the radial block/sphere intersection, and then
+rotates both position and velocity so the stored position is `(r,0,0)` and
+the stored velocity is expressed in the local radial basis. The new
+`RotateLocalVelocityToCartesian()` in `CometBrightnessMath.h` is the exact
+transpose/inverse of that normalization. Its regression uses nonzero radial
+and both transverse components and checks a round trip to floating-point
+tolerance.
+
+For an impact parameter `b` and LOS coordinate `s`, the sampler uses
+`x=b*IMPACT+s*LOS`. It intersects the ray with every occupied owner-cell
+spherical shell, removes the occulted far segment when `b<R_n`, and evaluates
+each remaining segment with two-point Gauss--Legendre quadrature. At each
+quadrature point, every relevant model particle in the shell contributes
+
+```text
+(W_block * individual_correction / shell_measure) * ds
+```
+
+to the column. Its local velocity is rotated to `x/|x|`, combined with the
+full comet heliocentric velocity, and projected as
+
+```text
+v_helio,r = e_r dot (V_comet + R(x/|x|) v_local).
+```
+
+Named H/OH models receive that particle-specific Doppler velocity. The fixed
+g-factor path uses the same particle column estimator but skips the model
+evaluation. Static ray data (`b`, `b^2`, and the sky-plane offset) are
+precomputed once; AMR shell intersections remain owner-cell calculations so
+they stay valid after load redistribution.
+
+`V_comet` defaults to exactly `(0,0,0)` and can be changed through
+`SetCometHeliocentricVelocity()`. Enabled input requires explicit normalized
+heliocentric radial, comet-to-observer LOS, and sky-plane impact directions.
+The scalar legacy velocity is shorthand for `V_comet=Vr*e_r`; a full
+three-component input is also accepted. Out-of-domain g-factor evaluations
+are never clamped or extrapolated. `ABORT` reports the line, model, velocity,
+and status before terminating; `EXCLUDE_AND_REPORT` records excluded column
+and evaluation count.
+
+The sampler is registered once after PIC/radial initialization. The core
+invokes it every sampling iteration and calls its output callback at the same
+boundary as ordinary AMPS sampling output. The callback MPI-reduces the
+buffers, divides by `PIC::LastSampleLength`, writes rank-zero Tecplot files,
+clears all ranks' external buffers, and synchronizes. There is one file per
+configured species; multiple transitions are columns:
+
+```text
+PT/plots/pic.<species>.brightness.s=<species-index>.out=<output-index>.dat
+```
+
+The variables include impact parameter, column density, effective photon g
+factor, R/kR brightness, line-center tau/flag, and excluded-domain fraction
+and count. Dataset auxiliary metadata records estimator, geometry, comet
+velocity, policy, model/provenance, and exact reference-data hash.
+
+Files changed specifically for this revision:
+
+| File | Revision and later-merge purpose |
+| --- | --- |
+| `srcHartley2/CometBrightnessMath.h` | Adds the PIC-independent inverse DIM1 velocity rotation; merge with its round-trip unit test before the runtime sampler. |
+| `srcHartley2/CometBrightness.h/.cpp` | Replaces the old density CSV writer with the particle external sampler, public geometry/velocity API, strict domain policy, static ray geometry, MPI lifecycle, and Tecplot writer. Treat this as one semantic unit. |
+| `srcHartley2/RadialSimulation.cpp` | Registers the sampler after PIC initialization and removes the old manual completed-window writer call. Merge only after the target core callback signatures are checked. |
+| `input/CometBrightnessConfig.pm` | Adds vector/scalar velocity resolution, nine-component geometry, and velocity-domain policy with duplicate and orthogonality checks. |
+| `input/hartley2.pl` | Parses/generates the new arrays and policy. The policy declaration must stay on one physical C++ source line because `ChangeValueOfVariable()` replaces the complete declaration line. |
+| `srcHartley2/i3/reference/i3_cases.csv` | Stores per-case `e_r`, comet-to-Mars LOS, and projected antisolar impact vectors; scalar table radial velocities remain authoritative. |
+| `srcHartley2/i3/prepare_i3_cases.py`, `input/i3.input`, `input/i3.case*.input` | Emit explicit geometry and `ABORT` policy without hardwiring a campaign case into C++. Regenerate all six together; do not hand-edit one concrete case. |
+| `srcHartley2/tests/test_comet_brightness_math.cpp` | Tests the mover/sampler velocity-transform inverse in addition to chord, occultation, units, and tau policy. |
+| `srcHartley2/tests/test_comet_brightness_parser.py`, `input/test_comet_brightness_config.pl` | Assert exact generated vectors and one-line policy declaration and reject missing/nonorthogonal geometry and invalid policy. |
+| `srcHartley2/README.md`, `srcHartley2/i3/README.md`, `srcHartley2/MASTER_MERGE.md`, `handoff.md` | Replace obsolete bulk/CSV descriptions and document input, estimator, Tecplot schema, limitations, recovery, and integration order. |
+
+Focused evidence after this revision is:
+
+```text
+PASS comet-brightness rotation=1 exact-chord=1 occultation=1 units=1 tau-flag=1 invalid=1
+PASS resonance-fluorescence core evaluator
+Ran 3 reference-data tests: OK
+PASS comet-brightness input policy fixed=1 modeled=1 default-off=1 invalid=13
+Ran 3 parser integration tests: OK
+PASS comet-brightness focused test group tests=7
+```
+
+A clean case-1 preprocess/compile was performed after deleting exactly
+`/data/vtenishe/COMET1D/AMPS/build`; the generated policy-declaration defect
+found by the first attempt was fixed and covered by the parser regression.
+Runtime initialization subsequently passed brightness configuration
+validation and built the 376-block/3,008-cell I3 mesh. The selected
+one-rank weight-adaptation validator later failed its own multi-rank
+ghost/boundary coverage checks; that is not a brightness failure and is not
+claimed as a passing adaptation test.
+
+Still required before scientific use are a short completed-window runtime
+that produces and parses the new Tecplot files, one-/multi-rank estimator
+equivalence, an explicit runtime out-of-domain policy fixture, performance
+and peak-memory measurement for the 200-ray campaign, and converged I3
+production comparisons. The direct reference estimator intentionally favors
+traceability over an unvalidated velocity-histogram shortcut.
+
+For a later master integration, merge the reusable core fluorescence module
+first, then the pure math/API and tests, then parser/generator, then the
+runtime sampler plus the one radial registration change, and only then the
+I3 campaign files. Preserve the Halley `BrightnessMode=off` input and rerun
+the Rubin workflow. Do not retain the removed manual writer call, do not add
+the particle sampler alongside the old density writer, and do not change the
+filename/metadata contract during conflict resolution. No merge, commit,
+branch switch, or master modification was performed here.
+
+## I3 case-1 12-rank production start (2026-11-07)
+
+At the user's direction, the maintained I3 brightness grid was reduced from
+2,000 to 200 logarithmic rays. The common six-case template now uses a
+10,000-iteration sampling length and a 30,000-iteration maximum. All six
+concrete inputs were regenerated, the five generator tests and seven focused
+brightness test groups passed, and case 1 was cleanly rebuilt only after
+removing exactly `/data/vtenishe/COMET1D/AMPS/build`.
+
+The frozen production directory is:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/i3_case1_rays200_sampling10000_max30000_20261107_12mpi/production
+```
+
+It contains private copies of the exact executable and input used:
+
+```text
+1c1966cdad3313462fb6d773b7513de3d85c5b4d27463dd6588d0005d8f335b6  amps
+063251ec7efb312f82799ccddf328bad8c4d80b4aca809a8f09f22491ee8029d  i3.case1.input
+```
+
+The launch command was `mpiexec -n 12 ./amps`, issued from that production
+directory at 2026-11-07 21:23:11 CST. Initialization reported all 12 ranks,
+distributed 376 blocks as 29--33 blocks/rank, allocated the 20,000,000-slot
+particle buffer, resolved the direct/chemical population policies, and
+entered iteration 0 with 10,000 iterations to the first output. Output will
+be isolated under that directory's `PT/`; the pre-existing repository-root
+`PT` tree is untouched. No case 2--6 run has been started.
+
+## I3 case-1 iteration-0 debugger diagnosis (2026-11-07)
+
+The 12-rank production process above was stopped at the user's request; its
+partial directory and frozen production executable were retained. There is
+no I3 production process running after this investigation. Before rebuilding,
+exactly `/data/vtenishe/COMET1D/AMPS/build` was removed. The case-1 target was
+then compiled with the explicit diagnostic flags
+`-O0 -g3 -fno-omit-frame-pointer`; `file amps` confirmed that the resulting ELF
+contained debug information and was not stripped. A private copy (SHA-256
+`d49c9746990638e5e8244026f03ee453d95ee631af8161710cbebc04f7c9e5a5`) was
+run under GDB from:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/i3_case1_debug_20261107/production
+```
+
+The single-rank debug run reproduced the apparent iteration-0 stall. It
+initialized the same 376-block/3,008-cell mesh, reported zero active model
+particles, and entered the external brightness sampling callback. A GDB
+interrupt found the main thread in this call chain:
+
+```text
+AMPS::ResonanceFluorescence::Evaluate()
+EvaluatePhotonGFactor()
+SampleQuadraturePoint()
+SampleSegment()
+Comet::Brightness::SampleParticleResolvedBrightness()
+PIC::Sampling::Sampling()
+PIC::TimeStep()
+```
+
+This is an indexing defect, not an MPI deadlock and not legitimate work on
+active particles. `CometBrightness.cpp` uses
+`_getCenterNodeLocalNumber(localCell,0,0)` both to retrieve the center node and
+to index `FirstCellParticleTable`. In this DIM1 configuration the center-node
+macro expands to `localCell+2` because the center-node array includes two ghost
+cells. `FirstCellParticleTable`, however, is a dense eight-entry table for the
+eight physical cells and must be indexed by the physical particle-cell number
+(`localCell` in this loop).
+
+The decisive GDB values were:
+
+```text
+localCell = 6
+cellNumber = 8
+FirstCellParticleTable[0..7] = {-1,-1,-1,-1,-1,-1,-1,-1}
+FirstCellParticleTable[8] = 0                 # out-of-bounds read
+PIC::ParticleBuffer::GetAllPartNum() = 0
+PIC::ParticleBuffer::GetMaxNPart() = 20000000
+particles.size() = 20000000
+```
+
+Index 8 reads the adjacent value zero. Zero is the head of the unused
+particle-buffer free list, so the brightness gather loop follows that list and
+mistakes all 20,000,000 free slots for H particles. It then performs the
+Doppler-sensitive g-factor calculation for all of them at each relevant ray
+quadrature point. This explains both the CPU activity and the lack of
+iteration progress in the production run.
+
+No source fix was made during this diagnostic-only step. The required repair
+is to keep the ghost-aware center-node index for `GetCenterNode()` but use a
+separate dense physical-cell index for `FirstCellParticleTable`. Regression
+coverage must include (1) an empty-buffer sampling call that gathers zero
+particles, (2) particles in physical cells 0 and 7, (3) bounds validation of
+every particle-list index, and (4) a short one-/multi-rank completed-window
+brightness run. Do not restart production until that repair and those tests
+are complete. The GDB inferior was killed and GDB exited cleanly; no merge,
+commit, branch switch, or master operation was performed.
+
+## I3 case-1 particle-list repair and 12-rank retry (2026-11-07)
+
+The debugger-confirmed brightness defect is repaired in
+`CometBrightness.cpp`. The loop now uses a ghost-aware `centerNodeNumber` only
+for `GetCenterNode()` and a separately named, explicitly bounded
+`particleCellNumber=localCell` for the DIM1 `FirstCellParticleTable`. Detailed
+source comments record why these index spaces must not be combined and how an
+out-of-bounds zero aliases the free-particle chain. The configured-source
+parser regression asserts the separate physical-cell index and rejects the
+former `FirstCellParticleTable[cellNumber]` expression.
+
+The focused brightness suite passed all seven groups after this change. A
+clean case-1 rebuild was then made only after deleting exactly
+`/data/vtenishe/COMET1D/AMPS/build`; the generated source was inspected to
+confirm the fixed index at the runtime call site. The frozen retry is:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/i3_case1_rays200_sampling10000_max30000_indexfix_20261107_12mpi/production
+```
+
+Its immutable launch inputs are:
+
+```text
+264cf69f8c01abcf8ee250a88b7b755e2b04c2841b7f207ecca0f7d9031d08dc  amps
+063251ec7efb312f82799ccddf328bad8c4d80b4aca809a8f09f22491ee8029d  i3.case1.input
+```
+
+The active command is `mpiexec -n 12 ./amps`, started at 2026-11-07 21:53:55
+CST with terminal output also saved in `case1.run.log`. Initialization entered
+iteration 0 at 21:54:00. Unlike the defective run, it immediately advanced:
+iteration 10 reported 3,458 real model particles and approximately 5.1 ms per
+iteration, and the run passed iteration 700 within the first half minute.
+This proves that an empty sampler no longer walks the 20,000,000-slot free
+list and that the 12-rank case progresses. It does not yet constitute a
+completed-window or scientific validation result. Expected outputs remain
+under this retry directory's `PT/plots`; cases 2--6 are not running.
+
+The retry must remain under observation through its first 10,000-iteration
+sampling boundary. Verify that both ordinary radial outputs and the H/OH
+Tecplot brightness files are written, parse their finite values and metadata,
+and compare one-/multi-rank estimators before declaring the runtime sampler
+validated. No merge, commit, branch switch, or master operation was performed.
+
+## I3 case-1 first brightness comparison (2026-11-08)
+
+The repaired 12-rank retry crossed iteration 10,000 and wrote its first
+complete radial and particle-resolved brightness window.  Both H and OH
+brightness tables contain 200 Tecplot points with finite values.  A reusable
+comparison utility was added as
+`srcHartley2/visualization/plot_i3_brightness_comparison.py`.
+
+The supplied observations exist only as PNG plots inside `Archive.zip`; the
+utility therefore does not invent precise numerical points by digitizing the
+raster.  Instead it detects the long black plot spines, extracts the interior
+observation layer, maps every raster pixel to the panel's documented
+logarithmic distance/brightness coordinates, and overlays the AMPS Tecplot
+curve.  It removes the archive's red legacy-model pixels by default, including
+their anti-aliased fringe; `--keep-archive-model` retains and labels that curve
+for a three-way comparison.  The implementation works explicitly in log10
+coordinates because placing a linear raster image directly on matplotlib log
+axes would distort its pixel-to-data mapping.
+
+The plot automatically expands below the archive's 0.09-kR lower edge when
+the calculated profile is fainter, and visibly marks that original edge.  For
+case 1 output 0 the chosen range is `1e-4--20 kR`.  This is necessary: over
+the archived comparison range the first-window AMPS curves lie below the
+observations rather than merely being hidden by the original plot bounds.
+This visual discrepancy is diagnostic only; output 0 is not a converged
+campaign result.
+
+Generated artifacts are:
+
+```text
+/data/vtenishe/COMET1D/AMPS/validation_runs/i3_case1_rays200_sampling10000_max30000_indexfix_20261107_12mpi/production/PT/plots/i3_case1_H_brightness_comparison.png
+/data/vtenishe/COMET1D/AMPS/validation_runs/i3_case1_rays200_sampling10000_max30000_indexfix_20261107_12mpi/production/PT/plots/i3_case1_OH_brightness_comparison.png
+```
+
+Validation exercised the plot-box detector against all 12 supplied H/OH
+panels, successfully generated both case-1 PNGs, confirmed their PNG/RGBA
+format, and passed `git diff --check`.  `visualization/README.md` documents the
+CLI, provenance limitation, examples, lower-range behavior, and optional
+legacy-model overlay.  This development changes no solver, core source, input,
+or active run state and requires no special master-merge ordering beyond
+copying the new script with its README documentation.  No merge, commit,
+branch switch, or master operation was performed.
+
+The comparison CLI subsequently made interactive Matplotlib display its
+default behavior: it saves the PNG first, opens the live figure, and returns
+to the shell when that window closes.  `--no-show` selects the Agg backend for
+batch use.  A missing X11/Wayland display also falls back to saved-PNG-only
+operation with an explicit diagnostic rather than a backend exception.
+
+The implicit output destination was then aligned with the ordinary AMPS user
+workflow: it is `PT/plots/i3_caseN_SPECIES_brightness_comparison.png` relative
+to the command's current working directory.  This prevents an input archived
+under `validation_runs` from silently placing the comparison away from the
+repository-level `PT/plots` a user is inspecting.  Explicit `--output` paths
+continue to take precedence for frozen validation artifacts.
+
+The top of `srcHartley2/README.md` now contains a complete operator workflow
+for both campaign families: compile-time input selection, exact build-tree
+cleanup, per-case I3 regeneration/tests/build/freeze/MPI launch, independent
+Halley build/freeze/MPI launch, output-directory semantics, Rubin comparison
+with the current 10,000-iteration sampling length, and interactive/headless I3
+brightness plotting.  It explicitly records that `Archive.zip` remains an
+external regeneration dependency: the plotting script reads observation PNG
+members directly without extraction or source embedding, while each generated
+comparison PNG is self-contained for later viewing.  This is a documentation
+change only and does not alter the active executable or production run.
+
+## I3 numerical MAVEN/IUVS reference extraction (2026-11-08)
+
+The earlier direct-raster comparison described above has been superseded for
+ordinary plotting.  All 12 supplied H Ly-alpha and OH(0,0) panels were
+digitized into the maintained reference unit:
+
+```text
+srcHartley2/visualization/references/i3_brightness_MAVEN/
+```
+
+`maven_iuvs_brightness.csv` contains 87 observations: H has respectively
+11, 14, 14, 7, 8 and 9 points in cases 1--6; OH has 4, 8, 5, 3, 2 and 2.
+Radial centers are exact integer multiples of each case's independently
+transcribed `resolution_1e5_km`, and horizontal bounds are one half resolution
+on each side, matching the contiguous source bins.  Brightness centers and
+visibly separable OH vertical bars are mapped from the reviewed rows in
+`digitization_pixels.csv` through each detected plot box on common log10 axes.
+Blank vertical bounds mean the raster does not resolve a separate vertical
+bar; they do not assert zero physical uncertainty.
+
+`metadata.json` authenticates the source archive, case table, reviewed anchor
+table, output CSV and every member PNG, and records dimensions, plot boxes,
+units, limits and extraction policy.  The deterministic extractor is
+`visualization/extract_i3_brightness_maven.py`.  It validates black observation
+ink at every reviewed center and reproduces both the CSV and metadata byte for
+byte.  The red legacy-model curve is not extracted.
+
+`plot_i3_brightness_comparison.py` now reads this numerical reference by
+default, draws the radial and available vertical bounds as error bars, and no
+longer needs `Archive.zip` during ordinary plotting.  `--reference-dir DIR`
+selects an alternate directory containing the same
+`maven_iuvs_brightness.csv` schema.  The archive is retained only for audit or
+regeneration.  Case-1 H/OH PNGs in the repository-root `PT/plots` were
+regenerated from the new table and visually inspected.
+
+The focused `test_i3_brightness_reference.py` runs four tests: all 12 subsets
+and exact point counts, metadata hashes, alternate-directory loading, and
+byte-exact archive regeneration when the external archive is present.  The
+top-level and visualization READMEs document extraction limitations, the new
+CLI, and detailed clean compile/run/output/comparison workflows for each I3
+input and the canonical Halley input.  No solver, core source, simulation
+input, active executable, or active production process was changed.
