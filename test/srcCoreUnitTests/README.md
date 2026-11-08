@@ -178,6 +178,54 @@ plus 7/7 selected variant cases across six clean builds at
 campaign at `/tmp/amps-t2-t5-profile-qualified` passes 194/194 cases in 12/12
 suites.
 
+## T6 photochemistry and compiled reaction models
+
+The baseline photochemistry owner executes six cases against populated local
+blocks. The fixture deliberately rebuilds the AMR local-block table after
+allocating its eight owner blocks; the production chemistry driver iterates
+that table, so omitting this step would turn a decay test into a zero-block
+no-op. The cases compare observed H2O parent survival with the exact
+`exp(-dt/tau)` law, check disabled and invalid-lifetime paths, verify both
+intrusive-list links after deletions, and repeat initialization to prove that
+the lifetime table is not accumulated twice. Stable `expm1`/`log1p` forms are
+used by production for small probabilities and Poisson event times.
+
+A separate clean individual-weight profile enables one daughter-producing H2O
+channel. Its oracle is independent of the production channel sampler and
+closes daughter identity/count, statistical weight, charge, parent/daughter
+mass, centre-of-mass momentum, and excess kinetic energy. This qualifies that
+configured channel only; it does not claim MPI/thread-safe insertion, a
+general runtime network, or application-specific multi-parent callbacks.
+
+The Burger reaction profile exposes three compiled parents and tests total
+electron-impact rates at literal energies, exact threshold behavior,
+conditioned eligible-channel selection, H2O product statistics, and typed
+no-reaction handling. Lindsay--Stebbings and Maher--Tinsley tests independently
+evaluate their H/H+ analytic lifetime formulas at valid points and require
+the established large-lifetime sentinel outside the physical domain. These
+charge-exchange files do not expose event/product/particle-weight APIs, so T6
+does not infer those capabilities.
+
+The dependency-light `CORE-CHEMICAL-SOLVER-001` suite is built outside this
+configured application. It checks irreversible and reversible closed forms,
+a stiff decay, a coupled chain, positivity/conservation, and typed invalid
+networks using independent analytic solutions.
+
+Run the complete bounded T6 gate with:
+
+```sh
+python3 src/test/run_tests.py --test CORE-CHEMICAL-SOLVER-001 \
+  --test CORE-PHOTOCHEM-EXECUTION-001 \
+  --test CORE-PHOTOCHEM-DAUGHTER-001 \
+  --test CORE-CHARGE-EXCHANGE-001 \
+  --test CORE-ELECTRON-IMPACT-001
+```
+
+The retained normal-build and order-isolation evidence is listed in
+`src/test/STATUS.md`. The manifest aliases charge exchange and electron impact
+to one exclusive reaction-profile owner, so selecting both does not rebuild
+the same executable twice.
+
 ## Physics suites and independent oracles
 
 The original `CORE-PIC-PHYSICS-001` foundation contains 19 native cases in six

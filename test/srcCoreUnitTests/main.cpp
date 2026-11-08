@@ -20,6 +20,8 @@ void LinkInternalDegreesOfFreedomTests();
 void LinkMoverTests();
 void LinkT4Tests();
 void LinkT5Tests();
+void LinkT6PhotochemistryTests();
+void LinkT6ReactionTests();
 void LinkSpeciesTests();
 void LinkUnitTests();
 void LinkWeightTimeT2Tests();
@@ -38,6 +40,12 @@ int main(int argc, char** argv) {
   AMPS::CoreTests::LinkMoverTests();
   AMPS::CoreTests::LinkT4Tests();
   AMPS::CoreTests::LinkT5Tests();
+  // T6 source files are always archived, but charge-exchange/electron-impact
+  // registrations remain compile-profile guarded.  Referencing both anchors
+  // makes the linked registry explicit and allows the dedicated reaction
+  // profile to activate its optional-module cases without a second main.
+  AMPS::CoreTests::LinkT6PhotochemistryTests();
+  AMPS::CoreTests::LinkT6ReactionTests();
   AMPS::CoreTests::LinkSpeciesTests();
   AMPS::CoreTests::LinkUnitTests();
   AMPS::CoreTests::LinkWeightTimeT2Tests();

@@ -147,11 +147,10 @@ make core_test_nightly
 ```
 
 `--tier` remains a backward-compatible alias for `--campaign`. The top-level
-`test_all` target depends on `core_test_nightly`. In the current manifest,
-`smoke` selects eight dependency-light suites (51 cases), `nightly` selects
-all 22 suites (261 cases), `profile` selects 12 configured native suites (194
-cases), `extended` selects nine suites (176 cases), and `distributed` selects
-the five-case two-rank MPI channel/RNG suite.
+`test_all` target depends on `core_test_nightly`. At the T7 checkpoint the
+registry contains 31 suites and 311 cases; use `--list` for the exact live
+campaign memberships because later roadmap stages extend those sets. The
+`distributed` campaign retains the five-case two-rank MPI channel/RNG suite.
 `--all` ignores campaign membership and selects the complete registry.
 Site/nightly orchestration must preserve the native suite's exclusive barrier
 because it selects a repository-wide application.
@@ -203,10 +202,13 @@ The retained executable SHA-256 values are order-independent: 1-D
 `54e79ddf1c34e2910a059a23e38232bea6322ab7a1ee6d31e35204acd8dbf4e0`, 2-D
 `8d5311b99bfba3812599336b2cdbb4fbcd53ab16a3e625122b6db44a30b4aad9`, and
 3-D `96f13a4be39ed221b7a252bb8313db3371ed49b2fd464ea1b5d09a545bf42e34`.
-The final current-tree combined profile command
+The retained T2+T3 checkpoint command
 `python3 src/test/run_tests.py --campaign profile --order normal --output-dir
 /tmp/amps-t2-t3-profile-qualified` passes 143/143 cases in all seven suites
-(the six T2 owners plus T3), with no FAIL, SKIP, or ERROR.
+(the six T2 owners plus T3), with no FAIL, SKIP, or ERROR. That receipt was
+created when `profile` contained only those seven owners; the same command now
+selects the current 17-suite/211-case profile, so use explicit suite IDs to
+reproduce only the historical T2+T3 subset.
 
 Run the bounded T4/T5 baseline and compile variants with:
 
@@ -223,12 +225,53 @@ python3 src/test/run_tests.py --test CORE-PIC-PERIODIC-001 \
   --test CORE-PIC-COLLISION-INDIVIDUAL-WEIGHT-001
 ```
 
+Run the bounded T6 reaction and chemistry gate with:
+
+```sh
+python3 src/test/run_tests.py --test CORE-CHEMICAL-SOLVER-001 \
+  --test CORE-PHOTOCHEM-EXECUTION-001 \
+  --test CORE-PHOTOCHEM-DAUGHTER-001 \
+  --test CORE-CHARGE-EXCHANGE-001 \
+  --test CORE-ELECTRON-IMPACT-001
+```
+
+The charge-exchange and electron-impact IDs are selection aliases for one
+exclusive configured reaction-profile owner. The photochemistry execution ID
+is the baseline native alias; the daughter ID owns a separate
+individual-weight build. The solver is dependency-light and may run
+concurrently with non-native suites, but all configured owners remain
+repository-wide scheduler barriers.
+
+Run the implemented T7 surface, exosphere, sputtering and dust slice with:
+
+```sh
+python3 src/test/run_tests.py --test CORE-SURFACE-001 \
+  --test CORE-EXOSPHERE-SOURCES-001 \
+  --test CORE-EXOSPHERE-SPHERE-NATIVE-001 \
+  --test CORE-SPUTTERING-001 --test CORE-DUST-001 \
+  --test CORE-DUST-NATIVE-001 \
+  --test CORE-DUST-INJECTION-NATIVE-001
+```
+
+`CORE-SURFACE-001` and `CORE-EXOSPHERE-SOURCES-001` are selection aliases for
+one dependency-light owner and therefore compile once. The three configured
+T7 owners are exclusive: they perform the mandatory clean
+`test/core-exosphere-sphere`, `test/model-dust`, and
+`test/model-dust-injection` rebuilds and run one MPI rank. The command selects
+29 cases in six canonical suites; the retained campaign passes all 29 with no
+FAIL/SKIP/ERROR. `STATUS.md` records the exact aggregate and
+normal/reverse/shuffled dependency-kernel receipts plus the remaining MPI,
+nonspherical, target-specific source, native sputtered-product insertion, and
+restart boundaries.
+
 The historical particle-buffer, packed-fixed layout, physics, species, and
 species-global weight/time suite IDs are manifest aliases for selection
 compatibility; they are not separate executable suites and must not trigger
-two rebuilds. `--campaign profile` serializes all seven exclusive owners. The
-six T2 owners select mutually exclusive record/weight profiles; the T3 owner
-itself performs three clean builds for its 1-D, 2-D, and 3-D applications.
+two rebuilds. `--campaign profile` currently serializes 17 exclusive owners
+and 211 cases. The six T2 owners select mutually exclusive record/weight
+profiles; the T3 owner itself performs three clean builds for its 1-D, 2-D,
+and 3-D applications. Later configured reaction and T7 owners add their own
+clean application selections.
 
 It performs the required native rebuild sequence: validate the repository and
 concurrent-process state, remove only `build`, select

@@ -16,6 +16,7 @@
 #include "Exosphere.h"
 #include "constants.h"
 #include "SingleVariableDiscreteDistribution.h"
+#include "Exosphere_SurfaceSource.h"
 
 #include <cmath>
 #include <limits>
@@ -2264,12 +2265,18 @@ long int Exosphere::SourceProcesses::InjectionBoundaryModel(int spec,int Boundar
   if (Flux_SW_Sputtering>0.0) SolarWindSputtering::SurfaceInjectionDistribution.Init();*/
 
 
-  while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
+  while ((TimeCounter+=Exosphere::SurfaceSource::PoissonWaitingTime(
+              ModelParticlesInjectionRate,rnd()))<LocalTimeStep) {
     //determine the source process to generate a particle's properties
-    do {
-      SourceProcessID=(int)(rnd()*(1+_EXOSPHERE__SOURCE_MAX_ID_VALUE_));
-    }
-    while (FluxSourceProcess[SourceProcessID]/TotalFlux<rnd());
+    // Select through the cumulative physical-rate distribution rather than
+    // rejection over a uniformly chosen process ID.  Both methods have the
+    // same ideal probabilities, but inverse-CDF selection consumes one
+    // variate per event, cannot loop indefinitely on a sparse table, and
+    // verifies that the compiled process rates close to TotalFlux [s^-1].
+    SourceProcessID=static_cast<int>(
+        Exosphere::SurfaceSource::SelectSourceProcess(
+            FluxSourceProcess,1+_EXOSPHERE__SOURCE_MAX_ID_VALUE_,
+            TotalFlux,rnd()));
 
     //the particle buffer used to set-up the new particle data
     PIC::ParticleBuffer::byte tempParticleData[PIC::ParticleBuffer::ParticleDataLength];

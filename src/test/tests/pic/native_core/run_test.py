@@ -172,10 +172,44 @@ T5_IDF_NEW_CASES = [
 ]
 T5_IDF_CASES = T5_IDF_BASE_CASES + T5_IDF_NEW_CASES
 
+# T6 photochemistry extends the baseline Huebner/PIC profile.  The first five
+# cases exercise common kernels and scheduler domains; the sixth drives the
+# production whole-mesh traversal with AMPS' no-daughter callback.  A separate
+# individual-weight executable replaces only that callback and owns the
+# mutually exclusive daughter-insertion case below.
+T6_PHOTOCHEM_BASE_CASES = [
+    "T6-PHOTOCHEM-RATE-DOMAIN-001",
+    "T6-PHOTOCHEM-SCHEDULER-DOMAIN-001",
+    "T6-PHOTOCHEM-BRANCH-DISTANCE-001",
+    "T6-PHOTOCHEM-GIVEN-PRODUCT-001",
+    "T6-PHOTOCHEM-THREE-BODY-ANGULAR-001",
+    "T6-PHOTOCHEM-DRIVER-NO-DAUGHTER-001",
+]
+T6_PHOTOCHEM_DAUGHTER_CASES = [
+    "T6-PHOTOCHEM-DRIVER-DAUGHTER-001",
+]
+
+# Charge exchange and electron impact require optional production archives and
+# the complete Burger daughter-species map, so they are isolated in one clean
+# generated profile rather than changing the baseline particle layout.
+T6_CHARGE_EXCHANGE_CASES = [
+    "T6-CHARGE-EXCHANGE-LINDSAY-001",
+    "T6-CHARGE-EXCHANGE-MAHER-001",
+    "T6-CHARGE-EXCHANGE-SELECTOR-001",
+]
+T6_ELECTRON_IMPACT_CASES = [
+    "T6-ELECTRON-IMPACT-RATES-001",
+    "T6-ELECTRON-IMPACT-YIELDS-001",
+    "T6-ELECTRON-IMPACT-PRODUCTS-001",
+    "T6-ELECTRON-IMPACT-CONDITIONED-001",
+]
+T6_REACTION_CASES = T6_CHARGE_EXCHANGE_CASES + T6_ELECTRON_IMPACT_CASES
+
 # The canonical baseline owner must include every case compiled into its
 # executable. Keeping the expansion explicit makes manifest/runner drift a
 # schema error instead of silently omitting a newly registered test.
-PHYSICS_CASES += T5_COLLISION_ALGORITHM_CASES + T5_IDF_NEW_CASES
+PHYSICS_CASES += (T5_COLLISION_ALGORITHM_CASES + T5_IDF_NEW_CASES +
+                  T6_PHOTOCHEM_BASE_CASES)
 
 SPECIES_CASES = [
     "PIC-SPECIES-CONSTANTS-001",
@@ -355,6 +389,80 @@ SUITES: Dict[str, Dict[str, Any]] = {
     "CORE-PIC-IDF-001": {
         "artifact": "native-t5-idf-output.txt",
         "cases": T5_IDF_CASES,
+    },
+    "CORE-PHOTOCHEM-EXECUTION-001": {
+        "artifact": "native-t6-photochemistry-output.txt",
+        "cases": T6_PHOTOCHEM_BASE_CASES,
+    },
+    "CORE-PHOTOCHEM-DAUGHTER-001": {
+        "artifact": "native-t6-photochemistry-daughter-output.txt",
+        "cases": T6_PHOTOCHEM_DAUGHTER_CASES,
+        "application": "test/core-unit-tests-photochem-daughter",
+        "configure_options": ["-state-vector=packed", "-align=off"],
+        "input_deck": "input/test/core-unit-tests-photochem-daughter.input",
+        "expected_modes": {
+            "_SIMULATION_TIME_STEP_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_TIME_STEP_",
+            "_SIMULATION_PARTICLE_WEIGHT_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_",
+            "_INDIVIDUAL_PARTICLE_WEIGHT_MODE_":
+                "_INDIVIDUAL_PARTICLE_WEIGHT_ON_",
+            "_STATE_VECTOR_MODE_": "_STATE_VECTOR_MODE_PACKED_",
+            "_ALIGN_STATE_VECTORS_BASE_": "1",
+            "_PIC_PHOTOLYTIC_REACTIONS_MODE_":
+                "_PIC_PHOTOLYTIC_REACTIONS_MODE_ON_",
+            "_AMPS_CORE_TEST_T6_DAUGHTER_PROCESSOR_MODE_":
+                "_AMPS_CORE_TEST_T6_DAUGHTER_PROCESSOR_MODE__ON_",
+        },
+    },
+    "CORE-T6-REACTIONS-NATIVE-001": {
+        "artifact": "native-t6-reactions-output.txt",
+        "cases": T6_REACTION_CASES,
+        "application": "test/core-unit-tests-reactions",
+        "configure_options": ["-state-vector=packed", "-align=off"],
+        "input_deck": "input/test/core-unit-tests-reactions.input",
+        "expected_species": [
+            "H2O_PLUS", "OH_PLUS", "O_PLUS", "O2_PLUS", "H2_PLUS",
+        ],
+        "expected_modes": {
+            "_SIMULATION_TIME_STEP_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_TIME_STEP_",
+            "_SIMULATION_PARTICLE_WEIGHT_MODE_":
+                "_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_",
+            "_INDIVIDUAL_PARTICLE_WEIGHT_MODE_":
+                "_INDIVIDUAL_PARTICLE_WEIGHT_OFF_",
+            "_STATE_VECTOR_MODE_": "_STATE_VECTOR_MODE_PACKED_",
+            "_ALIGN_STATE_VECTORS_BASE_": "1",
+            "_PIC_PHOTOLYTIC_REACTIONS_MODE_":
+                "_PIC_PHOTOLYTIC_REACTIONS_MODE_ON_",
+            "_AMPS_CORE_TEST_T6_REACTIONS_": "1",
+        },
+    },
+    "CORE-CHARGE-EXCHANGE-001": {
+        "artifact": "native-t6-charge-exchange-output.txt",
+        "cases": T6_CHARGE_EXCHANGE_CASES,
+        "application": "test/core-unit-tests-reactions",
+        "configure_options": ["-state-vector=packed", "-align=off"],
+        "input_deck": "input/test/core-unit-tests-reactions.input",
+        "expected_species": [
+            "H2O_PLUS", "OH_PLUS", "O_PLUS", "O2_PLUS", "H2_PLUS",
+        ],
+        "expected_modes": {
+            "_AMPS_CORE_TEST_T6_REACTIONS_": "1",
+        },
+    },
+    "CORE-ELECTRON-IMPACT-001": {
+        "artifact": "native-t6-electron-impact-output.txt",
+        "cases": T6_ELECTRON_IMPACT_CASES,
+        "application": "test/core-unit-tests-reactions",
+        "configure_options": ["-state-vector=packed", "-align=off"],
+        "input_deck": "input/test/core-unit-tests-reactions.input",
+        "expected_species": [
+            "H2O_PLUS", "OH_PLUS", "O_PLUS", "O2_PLUS", "H2_PLUS",
+        ],
+        "expected_modes": {
+            "_AMPS_CORE_TEST_T6_REACTIONS_": "1",
+        },
     },
     "CORE-PIC-COLLISION-VHS-001": {
         "artifact": "native-t5-vhs-output.txt",
@@ -665,6 +773,15 @@ def validate_generated_configuration(repo: Path,
         "H2O species generated": bool(re.search(
             r"#define\s+_H2O_SPEC_\s+0(?:\s|$)", header)),
     }
+    # Optional profiles can require daughters which the baseline intentionally
+    # leaves unavailable.  Check for a concrete non-negative generated index;
+    # merely finding the fallback negative macro would not prove that product
+    # construction can allocate the species exercised by the native case.
+    for species in suite.get("expected_species", []):
+        pattern = (r"#define\s+_{}\_SPEC_\s+([0-9]+)(?:\s|$)".format(
+            re.escape(str(species))))
+        checks["{} species generated".format(species)] = bool(
+            re.search(pattern, header))
     checks.update({
         "effective {}={}".format(name, value): effective.get(name) == value
         for name, value in expected_modes.items()

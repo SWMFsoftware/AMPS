@@ -27,39 +27,39 @@
     },
     {
       "component": "src/models/charge_exchange",
-      "status": "planned",
-      "test_ids": [],
-      "remaining": "Reaction selection, rates, conservation, and statistical-weight handling."
+      "status": "partial",
+      "test_ids": ["CORE-T6-REACTIONS-NATIVE-001"],
+      "remaining": "Lindsay-Stebbings and Maher-Tinsley H/H+ lifetime fits now have independent effective-speed, density-scaling, selector, unsupported-species, and invalid-domain evidence. The component still exposes no event/product mapping, branching, velocity exchange, or statistical-weight API; those capabilities remain explicitly unimplemented rather than test-only inventions."
     },
     {
       "component": "src/models/chemical_solver",
-      "status": "planned",
-      "test_ids": [],
-      "remaining": "Network assembly, stiff/non-stiff limits, positivity, and conservation."
+      "status": "partial",
+      "test_ids": ["CORE-CHEMICAL-SOLVER-001"],
+      "remaining": "The dependency-light solver now has exact irreversible/reversible kinetics, a stiff Robertson reference, positivity, conservation/convergence, strict topology validation, and typed invalid/singular-path evidence. Remaining work is runtime-deck reaction-network assembly, production cell coupling, elemental/charge metadata validation, and multi-network application integration."
     },
     {
       "component": "src/models/dust",
-      "status": "planned",
-      "test_ids": [],
-      "remaining": "Charging, size groups, forces, injection, and moment conservation."
+      "status": "partial",
+      "test_ids": ["CORE-DUST-001", "CORE-DUST-NATIVE-001", "CORE-DUST-INJECTION-NATIVE-001"],
+      "remaining": "T7 covers logarithmic bins/power laws, SI potential and Lorentz limits, spherical source laws, Fink Mie interpolation, weighted moments, and a dust-owned individual-weight split/merge restricted to exact intrinsic grains within explicit radius groups. Clean configured applications check Horanyi signed currents/potential plus transient convergence and production spherical injection through native AMR ownership, particle records, mover, sampling, and mass-reservoir closure. Multi-rank source arbitration/migration/reduction, restart, and full stochastic convergence remain open."
     },
     {
       "component": "src/models/electron_impact",
-      "status": "planned",
-      "test_ids": [],
-      "remaining": "Cross-section interpolation, thresholds, branching, and daughter bookkeeping."
+      "status": "partial",
+      "test_ids": ["CORE-T6-REACTIONS-NATIVE-001"],
+      "remaining": "Burger thresholds, knots/interpolation/clamping, all parent dispatches, H2O yields, branching, product identities, and atomic/charge/momentum/energy closure are tested. Remaining work includes full product statistics for O2/H2/H/O, runtime electron-distribution coupling, particle insertion/weights, and thread-safe return storage."
     },
     {
       "component": "src/models/exosphere",
-      "status": "planned",
-      "test_ids": [],
-      "remaining": "Surface sources, boundary interactions, source normalization, and sampling."
+      "status": "partial",
+      "test_ids": ["CORE-SURFACE-EXOSPHERE-001", "CORE-EXOSPHERE-SPHERE-NATIVE-001"],
+      "remaining": "T7 covers source-shape normalization, uniform and Knudsen-cosine laws, physical/sampled ledgers, stationary Poisson times, cumulative process selection, and production helper wiring. A clean native profile drives the five target-independent spherical modes through one-rank AMR ownership, allocation/mover, individual weights, accommodation, and adsorption-minus-desorption inventory exchange. MPI injection/reduction, SPICE/orbital inputs, target-specific user sources and temperature maps, external-domain modes, and nonspherical geometry remain open."
     },
     {
       "component": "src/models/photolytic_reactions",
       "status": "partial",
-      "test_ids": ["CORE-PIC-NATIVE-001"],
-      "remaining": "Rate/yield tables, inverse-square scaling, exponential scheduling, sampled branching, configured missing daughters, 3-D parent decay, product conservation, and two-body angular isotropy are tested. Add daughter insertion/statistical-weight conservation and three-body angular-distribution qualification."
+      "test_ids": ["CORE-PIC-NATIVE-001", "CORE-PHOTOCHEM-DAUGHTER-001"],
+      "remaining": "Active-Sun neutral rates, inverse-square domains, stable scheduling, conditional branching, unavailable daughters, two-/three-body conservation and isotropy, default traversal, and individual-weight H2O daughter insertion are tested. Remaining work includes quiet-Sun tables, runtime network selection, reaction-cycle policy, MPI/thread-safe daughter processing, and application-specific multi-parent callbacks."
     },
     {
       "component": "src/models/sep_common",
@@ -81,15 +81,15 @@
     },
     {
       "component": "src/models/sputtering",
-      "status": "planned",
-      "test_ids": [],
-      "remaining": "Yield tables, energy/angle laws, and source normalization."
+      "status": "partial",
+      "test_ids": ["CORE-SPUTTERING-001"],
+      "remaining": "T7 checks inherited ice-yield boundaries/interpolation, product identity, H2O/O2 speed laws and importance normalization, selectable emission angles with Knudsen-cosine default, incident-flux/area/yield event normalization, individual daughter weight, and number/mass/momentum/energy ledgers. Native sputtered-particle insertion and application incident-flux providers remain open; exact page-level provenance for every inherited numeric table entry has not been established."
     },
     {
       "component": "src/models/surface",
-      "status": "planned",
-      "test_ids": [],
-      "remaining": "Surface mesh indexing, adsorption/desorption, flux accounting, and boundary state."
+      "status": "partial",
+      "test_ids": ["CORE-SURFACE-EXOSPHERE-001", "CORE-EXOSPHERE-SPHERE-NATIVE-001"],
+      "remaining": "T7 covers analytic spherical indexing/area/normals, default surface-buffer semantics, actual production spherical source ownership/movement, deterministic accommodation/adsorption, and inventory update/flush closure. Production nonspherical meshes, target-specific temperature/chemistry laws, and MPI ownership/reduction remain open."
     },
     {
       "component": "src/models/swcme",

@@ -13,7 +13,16 @@ void PIC::ChemicalReactions::PhotolyticReactions::Init() {
   //only one particle transformation model can be used
   if (_PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ == _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ON_) exit(__LINE__,__FILE__,"Error: only one particle transformation model can be used");
 
-  ConstantTotalLifeTime=new double [PIC::nTotalSpecies];
+  // Initialization is intentionally idempotent.  This table is process-global
+  // configuration state, and native applications may initialize a module once
+  // before parsing and again after selecting a run-time chemistry deck.  Reuse
+  // the allocation so a second call neither leaks the first table nor leaves
+  // stale lifetimes active.  A negative value is the documented "reaction
+  // disabled" sentinel; physical lifetimes accepted below are finite seconds
+  // strictly greater than zero.
+  if (ConstantTotalLifeTime==NULL) {
+    ConstantTotalLifeTime=new double [PIC::nTotalSpecies];
+  }
 
   for (int i=0;i<PIC::nTotalSpecies;i++) {
     ConstantTotalLifeTime[i]=-1.0;
@@ -22,25 +31,50 @@ void PIC::ChemicalReactions::PhotolyticReactions::Init() {
 
 
 double PIC::ChemicalReactions::PhotolyticReactions::TotalLifeTime_default(double *x,int spec,long int ptr,bool &ReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
-  ReactionAllowedFlag=(ConstantTotalLifeTime[spec]>0.0) ? true : false;
-  return ConstantTotalLifeTime[spec];
+  // Invalid species IDs and an uninitialized table are typed as unavailable,
+  // not dereferenced.  This preserves the scheduler's no-transformation
+  // contract and makes malformed run-time input fail closed without inventing
+  // a chemical rate.  NaN and infinity are not lifetimes in SI seconds.
+  if ((ConstantTotalLifeTime==NULL)||(spec<0)||(spec>=PIC::nTotalSpecies)) {
+    ReactionAllowedFlag=false;
+    return -1.0;
+  }
+
+  const double lifetime=ConstantTotalLifeTime[spec];
+  ReactionAllowedFlag=(std::isfinite(lifetime)&&(lifetime>0.0));
+  return lifetime;
 }
 
 int PIC::ChemicalReactions::PhotolyticReactions::PhotolyticReaction(double *x,long int ptr,int &spec,double &TimeInterval,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   int code=_PHOTOLYTIC_REACTIONS_NO_TRANSPHORMATION_;
-  double p,lifetime,c;
+  double p,lifetime;
   bool flag;
 
+  // dt is an elapsed time in seconds.  Zero is an exact no-op; negative,
+  // infinite, and NaN intervals are invalid domains.  The legacy API has no
+  // error return distinct from "no transformation", so invalid domains fail
+  // closed and leave TimeInterval unchanged.  Check the species before the
+  // configured lifetime callback because the default callback indexes a
+  // species-sized table.
+  if ((spec<0)||(spec>=PIC::nTotalSpecies)||
+      (!std::isfinite(TimeInterval))||(TimeInterval<=0.0)) {
+    return _PHOTOLYTIC_REACTIONS_NO_TRANSPHORMATION_;
+  }
+
   lifetime=_PIC_PHOTOLYTIC_REACTIONS__TOTAL_LIFETIME_(x,spec,ptr,flag,node);
-  if (flag==false) return _PHOTOLYTIC_REACTIONS_NO_TRANSPHORMATION_;
+  if ((flag==false)||(!std::isfinite(lifetime))||(lifetime<=0.0)) {
+    return _PHOTOLYTIC_REACTIONS_NO_TRANSPHORMATION_;
+  }
 
-
-  c=exp(-TimeInterval/lifetime);
-  p=1.0-c; //the probability for reaction to occur
+  // For a constant first-order rate k=1/tau, survival is exp(-dt/tau).
+  // expm1 avoids cancellation in 1-exp(-dt/tau) when dt << tau.  Conditional
+  // event time inversion uses t=-tau*log(1-U*p), where U is uniform on [0,1)
+  // and p is the event probability over the requested interval.
+  p=-expm1(-TimeInterval/lifetime);
 
   if (rnd()<p) {
     //determine the time offset when the reaction had occured
-    TimeInterval=-lifetime*log(1.0+rnd()*(c-1.0));
+    TimeInterval=-lifetime*log1p(-rnd()*p);
 
     return _PHOTOLYTIC_REACTION_OCCURES_;
   }

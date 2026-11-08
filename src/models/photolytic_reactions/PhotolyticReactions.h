@@ -14,12 +14,33 @@
 #include "pic.h"
 #include "PhotolyticReactions.dfn"
 
+#include <cmath>
+#include <limits>
+
 
 /*-----------------------------  !!!!!!!!!!!!!!!! IMPORTANT !!!!!!!!!!!!!!!! ---------------------------------------------
  * In the list of the reaction products it is assumed that the products are ordered by deacreasing of their mass (first heavy that light)
  */
 
 namespace PhotolyticReactions {
+
+  // Huebner rates are tabulated at a finite reference distance r0 and are
+  // diluted geometrically as k(r)=k(r0)*(r0/r)^2.  Distances are SI metres.
+  // A non-positive or non-finite distance is outside that physical domain;
+  // return a quiet NaN so callers can distinguish invalid input from a valid
+  // zero reaction rate at a very large finite distance.
+  inline double ScaleInverseSquareRate(double ReferenceRate,
+      double ReferenceDistance,double HeliocentricDistance) {
+    if ((!std::isfinite(ReferenceRate))||(ReferenceRate<0.0)||
+        (!std::isfinite(ReferenceDistance))||(ReferenceDistance<=0.0)||
+        (!std::isfinite(HeliocentricDistance))||
+        (HeliocentricDistance<=0.0)) {
+      return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    const double ratio=ReferenceDistance/HeliocentricDistance;
+    return ReferenceRate*ratio*ratio;
+  }
 
   //the general functions and variables used by particular model
   namespace Huebner1992ASS {
@@ -68,7 +89,8 @@ namespace PhotolyticReactions {
       void Init();
 
       inline double GetTotalReactionRate(double HeliocentricDistance) {
-        return TotalReactionRate*pow(TableHeliocentricDistance/HeliocentricDistance,2);
+        return ScaleInverseSquareRate(TotalReactionRate,
+            TableHeliocentricDistance,HeliocentricDistance);
       }
 
       inline void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
@@ -163,7 +185,8 @@ namespace PhotolyticReactions {
       void Init();
 
       inline double GetTotalReactionRate(double HeliocentricDistance) {
-        return TotalReactionRate*pow(TableHeliocentricDistance/HeliocentricDistance,2);
+        return ScaleInverseSquareRate(TotalReactionRate,
+            TableHeliocentricDistance,HeliocentricDistance);
       }
 
       inline void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
@@ -229,7 +252,8 @@ namespace PhotolyticReactions {
       void Init();
 
       inline double GetTotalReactionRate(double HeliocentricDistance) {
-        return TotalReactionRate*pow(TableHeliocentricDistance/HeliocentricDistance,2);
+        return ScaleInverseSquareRate(TotalReactionRate,
+            TableHeliocentricDistance,HeliocentricDistance);
       }
 
       inline void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
@@ -294,7 +318,8 @@ namespace PhotolyticReactions {
       void Init();
 
       inline double GetTotalReactionRate(double HeliocentricDistance) {
-        return TotalReactionRate*pow(TableHeliocentricDistance/HeliocentricDistance,2);
+        return ScaleInverseSquareRate(TotalReactionRate,
+            TableHeliocentricDistance,HeliocentricDistance);
       }
 
       inline void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
@@ -360,7 +385,8 @@ namespace PhotolyticReactions {
       void Init();
 
       inline double GetTotalReactionRate(double HeliocentricDistance) {
-        return TotalReactionRate*pow(TableHeliocentricDistance/HeliocentricDistance,2);
+        return ScaleInverseSquareRate(TotalReactionRate,
+            TableHeliocentricDistance,HeliocentricDistance);
       }
 
       inline void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
@@ -425,7 +451,8 @@ namespace PhotolyticReactions {
       void Init();
 
       inline double GetTotalReactionRate(double HeliocentricDistance) {
-        return TotalReactionRate*pow(TableHeliocentricDistance/HeliocentricDistance,2);
+        return ScaleInverseSquareRate(TotalReactionRate,
+            TableHeliocentricDistance,HeliocentricDistance);
       }
 
       inline void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {

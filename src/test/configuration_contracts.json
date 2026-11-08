@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "Staged T0-T5 inventory of AMPS machine, Config.pl, generated-configuration, compile-profile, and runtime-mode contracts. Status describes direct contract evidence, not successful compilation alone.",
+  "description": "Staged T0-T7 inventory of AMPS machine, Config.pl, generated-configuration, compile-profile, and runtime-mode contracts. Status describes direct contract evidence, not successful compilation alone.",
   "statuses": ["tested", "partial", "planned", "exempt"],
   "contracts": [
     {
@@ -32,14 +32,14 @@
     {
       "mode_id": "config.application.core-unit-tests-v1",
       "components": ["src/pic"],
-      "authority": ["Config.pl", "ampsConfig.pl", "input/test/core-unit-tests.input", "input/test/core-unit-tests-periodic.input", "input/test/core-unit-tests-vhs.input", "input/test/core-unit-tests-vss.input", "input/test/core-unit-tests-rotz2.input", "input/test/core-unit-tests-rotz10.input", "input/test/core-unit-tests-individual-weight.input", "input/test/core-unit-tests-local.input", "input/test/core-unit-tests-single-global.input"],
+      "authority": ["Config.pl", "ampsConfig.pl", "input/test/core-unit-tests.input", "input/test/core-unit-tests-periodic.input", "input/test/core-unit-tests-vhs.input", "input/test/core-unit-tests-vss.input", "input/test/core-unit-tests-rotz2.input", "input/test/core-unit-tests-rotz10.input", "input/test/core-unit-tests-individual-weight.input", "input/test/core-unit-tests-photochem-daughter.input", "input/test/core-unit-tests-reactions.input", "input/test/core-unit-tests-local.input", "input/test/core-unit-tests-single-global.input"],
       "profile": "test/core-unit-tests",
       "selectors": ["Config.pl -application=test/core-unit-tests", "Config.pl -spice-path=nospice"],
       "generated_outputs": [".amps.conf", "Makefile.conf", "build/", "amps"],
       "status": "partial",
-      "suite_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-PERIODIC-001", "CORE-PIC-COLLISION-VHS-001", "CORE-PIC-COLLISION-VSS-001", "CORE-PIC-IDF-ROTZ-Z2-001", "CORE-PIC-IDF-ROTZ-Z10-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001"],
+      "suite_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-PERIODIC-001", "CORE-PIC-COLLISION-VHS-001", "CORE-PIC-COLLISION-VSS-001", "CORE-PIC-IDF-ROTZ-Z2-001", "CORE-PIC-IDF-ROTZ-Z10-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001", "CORE-PHOTOCHEM-DAUGHTER-001", "CORE-T6-REACTIONS-NATIVE-001"],
       "case_ids": ["CONFIG-GENERATOR-001", "PIC-PBUFFER-INIT-001", "PHYS-3D-COLLISION-RATE-001", "PHYS-MOVER-SURFACE-001", "T4-BOUNDARY-PERIODIC-001", "T5-COLLISION-VHS-001", "T5-COLLISION-VSS-001", "T5-IDF-ROTZ-Z2-001", "T5-IDF-ROTZ-Z10-001"],
-      "reason": "The registered native adapter selects every baseline and T2/T4/T5 variant only through Config.pl, checks the effective time-step, weight, layout, periodic, collision-model, and IDF macros, and retains generated-file identities; broader generator behavior remains open.",
+      "reason": "The registered native adapter selects every baseline and T2-T6 variant only through Config.pl, checks effective generated modes/species, and retains executable/configuration identities; broader generator behavior remains open.",
       "gaps": ["invalid application/option diagnostics", "full generated macro/value schema", "schema/backward compatibility"]
     },
     {
@@ -56,17 +56,69 @@
       "gaps": ["permuted species order profile", "additional charged-species chemistry", "duplicate aliases beyond the registered diagnostic"]
     },
     {
+      "mode_id": "config.application.model-dust-v1",
+      "components": ["src/models/dust"],
+      "authority": ["Config.pl", "ampsConfig.pl", "input/test/model-dust.input", "test/srcModelDustTest/main.cpp"],
+      "profile": "test/model-dust",
+      "selectors": ["Config.pl -application=test/model-dust", "Dust dustmode=on", "mpiexec -n 1"],
+      "generated_outputs": [".amps.conf", "build/", "amps", "private test_model-dust.dat receipt"],
+      "status": "partial",
+      "suite_ids": ["CORE-DUST-NATIVE-001"],
+      "case_ids": ["CORE-DUST-CHARGING-DYNAMICS-001"],
+      "reason": "The exclusive T7 adapter performs the mandatory clean Config.pl/top-level build and runs configured equilibrium and transient charging across four radii. It checks every enabled signed current at three potentials and the equilibrium potential against immutable values independently evaluated from Horanyi (1996), then checks finite transient convergence and the q/a dimensional invariant while retaining executable/deck identities.",
+      "gaps": ["multi-rank charging ownership", "restart of charged dust state"]
+    },
+    {
+      "mode_id": "config.application.model-dust-injection-v1",
+      "components": ["src/models/dust", "src/models/exosphere", "src/pic"],
+      "authority": ["Config.pl", "ampsConfig.pl", "input/test/model-dust-injection.input", "test/srcModelDustInjectionTest/main.cpp"],
+      "profile": "test/model-dust-injection",
+      "selectors": ["Config.pl -application=test/model-dust-injection", "SpeciesList=DUST", "ParticleWeightCorrectionMode=on", "Dust dustmode=on", "mpiexec -n 1"],
+      "generated_outputs": [".amps.conf", "build/", "amps", "native spherical injection transcript"],
+      "status": "partial",
+      "suite_ids": ["CORE-DUST-INJECTION-NATIVE-001"],
+      "case_ids": ["CORE-DUST-INJECTION-INTEGRATION-001"],
+      "reason": "The exclusive T7 adapter performs the mandated clean build, constructs a translated spherical internal boundary and one-rank 3-D AMR mesh, and drives the production dust injector/mover with deterministic grain state. It checks DUST record offsets, individual weight, native owner and particle allocation, sampled mass rate, and exact two-interval closure of the signed residual-mass ledger.",
+      "gaps": ["multi-rank source arbitration and migration", "restart of injected dust", "stochastic distribution convergence beyond dependency-light laws"]
+    },
+    {
+      "mode_id": "config.application.core-exosphere-sphere-v1",
+      "components": ["src/models/exosphere", "src/models/surface", "src/pic"],
+      "authority": ["Config.pl", "ampsConfig.pl", "input/test/core-exosphere-sphere.input", "test/srcCoreExosphereTests/main.cpp"],
+      "profile": "test/core-exosphere-sphere",
+      "selectors": ["Config.pl -application=test/core-exosphere-sphere", "SpeciesList=H2O", "ParticleWeightCorrectionMode=on", "SurfaceVolatileDensity=FluxBalance", "mpiexec -n 1"],
+      "generated_outputs": [".amps.conf", "build/", "amps", "native spherical exosphere transcript"],
+      "status": "partial",
+      "suite_ids": ["CORE-EXOSPHERE-SPHERE-NATIVE-001"],
+      "case_ids": ["CORE-EXOSPHERE-SPHERE-INTEGRATION-001"],
+      "reason": "The exclusive T7 adapter performs the mandated clean build with impact, PSD, thermal, uniform-rate sputtering, and vertical spherical modes. It constructs a one-rank 3-D AMR mesh and physical surface buffers, then checks production dispatch, allocation, owner/list placement, individual weight, sampled/calculated/global rates, deterministic accommodation, and adsorption-minus-desorption inventory closure.",
+      "gaps": ["target-specific user sources and temperature maps", "external-domain/background-plasma injection", "non-spherical resolved surfaces", "multi-rank source statistics and reduction"]
+    },
+    {
       "mode_id": "compile.photolysis.huebner-active-v1",
       "components": ["src/models/photolytic_reactions"],
-      "authority": ["input/test/core-unit-tests.input", "src/models/photolytic_reactions/PhotolyticReactions_Huebner1992ASS.cpp"],
-      "profile": "test/core-unit-tests",
-      "selectors": ["_PIC_PHOTOLYTIC_REACTIONS_MODE_=ON", "neutral-only compiled daughters"],
+      "authority": ["input/test/core-unit-tests.input", "input/test/core-unit-tests-photochem-daughter.input", "src/models/photolytic_reactions/PhotolyticReactions_Huebner1992ASS.cpp", "src/pic/pic_photolytic_reactions.cpp"],
+      "profile": "test/core-unit-tests and test/core-unit-tests-photochem-daughter",
+      "selectors": ["_PIC_PHOTOLYTIC_REACTIONS_MODE_=ON", "default no-daughter callback", "individual-weight H2O->OH+H callback"],
       "generated_outputs": ["generated photolysis macros and linked Huebner tables"],
       "status": "partial",
-      "suite_ids": ["CORE-PIC-NATIVE-001"],
-      "case_ids": ["PHYS-PHOTOCHEM-RATES-001", "PHYS-PHOTOCHEM-DECAY-001", "PHYS-PHOTOCHEM-KINEMATICS-001", "PHYS-PHOTOCHEM-BRANCHING-001", "PHYS-3D-PHOTODECAY-001"],
-      "reason": "Rates, branching, product invariants, missing daughters, and parent decay are tested for this bounded profile.",
-      "gaps": ["quiet-Sun compile profile", "daughter insertion/weights", "full reaction processor", "three-body angular law"]
+      "suite_ids": ["CORE-PIC-NATIVE-001", "CORE-PHOTOCHEM-DAUGHTER-001"],
+      "case_ids": ["PHYS-PHOTOCHEM-RATES-001", "PHYS-PHOTOCHEM-DECAY-001", "PHYS-PHOTOCHEM-KINEMATICS-001", "PHYS-PHOTOCHEM-BRANCHING-001", "PHYS-3D-PHOTODECAY-001", "T6-PHOTOCHEM-RATE-DOMAIN-001", "T6-PHOTOCHEM-SCHEDULER-DOMAIN-001", "T6-PHOTOCHEM-BRANCH-DISTANCE-001", "T6-PHOTOCHEM-GIVEN-PRODUCT-001", "T6-PHOTOCHEM-THREE-BODY-ANGULAR-001", "T6-PHOTOCHEM-DRIVER-NO-DAUGHTER-001", "T6-PHOTOCHEM-DRIVER-DAUGHTER-001"],
+      "reason": "Two clean profiles qualify active-Sun rates/domains, branching/kinematics, actual owner-block traversal, and individual-weight daughter insertion through the configured production hook.",
+      "gaps": ["quiet-Sun compile profile", "runtime network selection", "MPI/thread-safe daughter processing", "application multi-parent callbacks"]
+    },
+    {
+      "mode_id": "compile.reactions.optional-burger-charge-exchange-v1",
+      "components": ["src/models/charge_exchange", "src/models/electron_impact"],
+      "authority": ["input/test/core-unit-tests-reactions.input", "src/models/charge_exchange/ChargeExchange.dfn", "src/models/electron_impact/ElectronImpact_Burger2010SSR.cpp"],
+      "profile": "test/core-unit-tests-reactions",
+      "selectors": ["IncludeModule=CHARGE_EXCHANGE", "IncludeModule=ELECTRON_IMPACT", "_AMPS_CORE_TEST_T6_REACTIONS_=1", "complete Burger ion/electron daughter species list"],
+      "generated_outputs": ["linked optional reaction archives", "non-negative generated daughter species IDs", "retained executable and generated macro/species hashes"],
+      "status": "partial",
+      "suite_ids": ["CORE-T6-REACTIONS-NATIVE-001"],
+      "case_ids": ["T6-CHARGE-EXCHANGE-LINDSAY-001", "T6-CHARGE-EXCHANGE-MAHER-001", "T6-CHARGE-EXCHANGE-SELECTOR-001", "T6-ELECTRON-IMPACT-RATES-001", "T6-ELECTRON-IMPACT-YIELDS-001", "T6-ELECTRON-IMPACT-PRODUCTS-001", "T6-ELECTRON-IMPACT-CONDITIONED-001"],
+      "reason": "A clean Config.pl profile proves both optional archives and every required product species are compiled before analytic/table/product tests execute.",
+      "gaps": ["Maher-Tinsley generated selector variant", "charge-exchange product/event API", "runtime electron distribution", "particle daughter insertion and weights"]
     },
     {
       "mode_id": "compile.collisions.ntc-constant-v1",
@@ -227,14 +279,14 @@
     {
       "mode_id": "compile.parallel.mpi-one-rank-v1",
       "components": ["src/pic"],
-      "authority": ["input/test/core-unit-tests.input", "src/test/config/default.json"],
-      "profile": "test/core-unit-tests",
+      "authority": ["input/test/core-unit-tests.input", "input/test/core-exosphere-sphere.input", "input/test/model-dust.input", "input/test/model-dust-injection.input", "src/test/config/default.json"],
+      "profile": "all registered one-rank configured profiles",
       "selectors": ["mpiexec -n 1", "manifest mpi_ranks=1"],
       "generated_outputs": ["one-rank executable transcript"],
       "status": "partial",
-      "suite_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-PERIODIC-001", "CORE-PIC-COLLISION-VHS-001", "CORE-PIC-COLLISION-VSS-001", "CORE-PIC-IDF-ROTZ-Z2-001", "CORE-PIC-IDF-ROTZ-Z10-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001", "CORE-MESH-NATIVE-001"],
-      "case_ids": ["PHYS-MOVER-SIMPLE-001", "PHYS-3D-COLLISION-RATE-001", "T4-BOUNDARY-PERIODIC-001", "T5-COLLISION-VSS-001", "T5-IDF-ROTZ-Z10-001", "CORE-MESH-1D-TOPOLOGY-UNIFORM-001", "CORE-MESH-2D-TOPOLOGY-UNIFORM-001", "CORE-MESH-3D-TOPOLOGY-UNIFORM-001"],
-      "reason": "All configured T2-T5 native profiles and all three T3 dimensional mesh profiles are process-local and fixed at one rank by contract.",
+      "suite_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-PERIODIC-001", "CORE-PIC-COLLISION-VHS-001", "CORE-PIC-COLLISION-VSS-001", "CORE-PIC-IDF-ROTZ-Z2-001", "CORE-PIC-IDF-ROTZ-Z10-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001", "CORE-PHOTOCHEM-DAUGHTER-001", "CORE-T6-REACTIONS-NATIVE-001", "CORE-DUST-NATIVE-001", "CORE-DUST-INJECTION-NATIVE-001", "CORE-EXOSPHERE-SPHERE-NATIVE-001", "CORE-MESH-NATIVE-001"],
+      "case_ids": ["PHYS-MOVER-SIMPLE-001", "PHYS-3D-COLLISION-RATE-001", "T4-BOUNDARY-PERIODIC-001", "T5-COLLISION-VSS-001", "T5-IDF-ROTZ-Z10-001", "CORE-DUST-CHARGING-DYNAMICS-001", "CORE-DUST-INJECTION-INTEGRATION-001", "CORE-EXOSPHERE-SPHERE-INTEGRATION-001", "CORE-MESH-1D-TOPOLOGY-UNIFORM-001", "CORE-MESH-2D-TOPOLOGY-UNIFORM-001", "CORE-MESH-3D-TOPOLOGY-UNIFORM-001"],
+      "reason": "All configured T2-T7 native profiles and all three T3 dimensional mesh profiles are process-local and fixed at one rank by contract.",
       "gaps": ["two/four-rank owners and ghosts", "particle migration", "rank invariance"]
     },
     {

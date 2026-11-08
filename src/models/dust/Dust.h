@@ -20,6 +20,8 @@ using namespace std;
 #include "Exosphere.h"
 #include "constants.h"
 #include "Dust.dfn"
+#include "DustCore.h"
+#include "DustSplitMerge.h"
 
 namespace ElectricallyChargedDust {
   //the dust spece groups
@@ -106,10 +108,7 @@ namespace ElectricallyChargedDust {
 
     inline int GetGroupNumber(double *v) {
       double Speed=sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
-
-      if (Speed<=minGrainVelocity) return 0;
-      else if (Speed>=maxGrainVelocity) return nGroups-1;
-      else return (int)((log(Speed)-logMinGrainVelocity)/dLogGrainVelocity);
+      return Core::LogarithmicBin(Speed,minGrainVelocity,maxGrainVelocity,nGroups);
     }
 
     inline void Init() {
@@ -262,7 +261,7 @@ namespace ElectricallyChargedDust {
     extern double PowerIndex,NormalizationFactor,LogMinDustGrainRadius,LogMaxDustGrainRadius,maxValue__non_normalized;
 
     inline double GetNormalizedValue(double GrainRadius) {
-      return pow(GrainRadius,1.0-PowerIndex)/NormalizationFactor;
+      return Core::PowerLawLogDensity(GrainRadius,minDustRadius,maxDustRadius,PowerIndex);
     }
 
     inline void PrintDistributionFucntion() {
@@ -287,7 +286,14 @@ namespace ElectricallyChargedDust {
         double r,dLogR=(LogMaxDustGrainRadius-LogMinDustGrainRadius)/(nOutputPoints-1);
 
         for (int i=0;i<nOutputPoints;i++) {
-          r=exp(LogMinDustGrainRadius+dLogR*i);
+          // exp(log(a_max)) can round a few ulps above a_max.  The physical
+          // power-law domain is the closed SI interval [a_min,a_max], so pin
+          // both endpoints exactly and evaluate only interior abscissae via
+          // the logarithmic map.  This preserves the requested 400-point grid
+          // without weakening the typed out-of-domain check used by physics.
+          r=(i==0) ? minDustRadius :
+              ((i==nOutputPoints-1) ? maxDustRadius :
+               exp(LogMinDustGrainRadius+dLogR*i));
 
           fprintf(fout,"%e  %e\n",r,GetNormalizedValue(r)/r); //transfer the distribution from f(ln R) -> f(R)
         }
@@ -299,8 +305,8 @@ namespace ElectricallyChargedDust {
     inline void Init() {
       LogMinDustGrainRadius=log(minDustRadius);
       LogMaxDustGrainRadius=log(maxDustRadius);
-      NormalizationFactor=(exp((1.0-PowerIndex)*LogMaxDustGrainRadius)-exp((1.0-PowerIndex)*LogMinDustGrainRadius))/(1.0-PowerIndex);
-      maxValue__non_normalized=pow(minDustRadius,1.0-PowerIndex);
+      NormalizationFactor=Core::PowerLawLogNormalization(minDustRadius,maxDustRadius,PowerIndex);
+      maxValue__non_normalized=Core::PowerLawLogMaximum(minDustRadius,maxDustRadius,PowerIndex);
 
       if (PIC::ThisThread==0) {
         cout << "$PREFIX:Dust Grains Distribution:" << endl;
@@ -330,7 +336,9 @@ namespace ElectricallyChargedDust {
   namespace Charging {
 
     //calculate the potential of the dust grain
-    inline double GetDustGrainPotential(double GrainRadius, double GrainElectricCharge) {return GrainElectricCharge/(4.0*Pi*VacuumPermittivity*GrainRadius);}
+    inline double GetDustGrainPotential(double GrainRadius, double GrainElectricCharge) {
+      return Core::IsolatedSpherePotential(GrainRadius,GrainElectricCharge,VacuumPermittivity);
+    }
 
     //update the grain's charge
     const int CHARGE_INTEGRATION_MODE__EQUILIBRIUM_POTENTIAL=0;
@@ -437,9 +445,10 @@ namespace ElectricallyChargedDust {
     PIC::CPLR::InitInterpolationStencil(x_LOCAL,startNode);
     PIC::CPLR::GetBackgroundFieldsVector(E,B);
 
-    accl_LOCAL[0]+=GrainCharge*(E[0]+v_LOCAL[1]*B[2]-v_LOCAL[2]*B[1])/GrainMass;
-    accl_LOCAL[1]+=GrainCharge*(E[1]-v_LOCAL[0]*B[2]+v_LOCAL[2]*B[0])/GrainMass;
-    accl_LOCAL[2]+=GrainCharge*(E[2]+v_LOCAL[0]*B[1]-v_LOCAL[1]*B[0])/GrainMass;
+    // Core::LorentzAcceleration documents and checks the SI point-grain law
+    // a=(q/m)(E+v cross B).  Field interpolation and particle ownership remain
+    // PIC responsibilities; this algebraic kernel is independently testable.
+    Core::LorentzAcceleration(GrainCharge,GrainMass,E,B,v_LOCAL,accl_LOCAL);
 
     //copy the accaleration vector from the internal buffer
     memcpy(accl,accl_LOCAL,3*sizeof(double));
@@ -1396,6 +1405,17 @@ int DustChargingProcessor_SteadyState(double *xInit,double *xFinal,double *v,int
 //injection of the dust grains
 typedef bool (*fGenerateNewDustGrainInternalProperties)(double *x,double *v,double& GrainRadius, double& GrainWeightCorrection,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* &startNode);
 extern fGenerateNewDustGrainInternalProperties GenerateNewDustGrainInternalProperties;
+
+namespace Injection {
+  // The spherical source carries its signed physical-mass balance between
+  // calls.  A positive value is unrepresented source mass; a negative value
+  // is the debt after emitting a finite macroparticle.  Exposing an explicit
+  // reset/read boundary makes initialization and future deterministic native
+  // tests independent of process-lifetime static state; each MPI rank owns
+  // its local reservoir.
+  void ResetMassReservoir();
+  double GetMassReservoir();
+}
 
 long int DustInjection__Sphere(int BoundaryElementType,void *SphereDataPointer);
 }

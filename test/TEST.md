@@ -31,33 +31,26 @@ responsibility of `srcEarth/test`, `srcMoon/test`, `srcEnceladus/test`,
 
 ## 2. Current baseline
 
-As of 2026-11-07 the live global registry contains 17 executable suites and
-210 registered individual cases. The historical particle-buffer, physics,
-species, packed-fixed-layout, and species-global weight/time family IDs are
-selection aliases of the combined baseline native suite, not additional
-executable suites. Five additional native owners select mutually exclusive T2
-generated profiles, while the T3 mesh owner selects three compile-time
-dimensional profiles; every such owner performs its required clean rebuild:
+As of 2026-11-07 the live global registry contains 31 executable suites and
+311 registered individual cases. The historical particle-buffer, physics,
+species, packed-fixed-layout, and species-global weight/time family IDs remain
+selection aliases of canonical native owners, not extra executable suites.
+Configured owners select mutually exclusive generated applications and each
+performs its required clean rebuild. The current registry groups are:
 
-| Registered suite | Cases | Current scope |
-|---|---:|---|
-| `CORE-HARNESS-001` | 11 | Configuration, schema, registry, selection, protocol, subprocess failure, timeout/interrupt cleanup, concurrency, final report, traceability |
-| `CORE-GENERAL-INPUT-001` | 4 | Input grammar, diagnostics, includes, canonicalization |
-| `CORE-GENERAL-CONTAINERS-001` | 6 | Arrays, bit arrays, stacks, linked containers, strings, 4-D indexer |
-| `CORE-GENERAL-NUMERICS-001` | 10 | Arrays 1-D through 5-D, managed stack, special-function identities, quadrature exactness/convergence/domains |
-| `CORE-GENERAL-RNG-001` | 7 | Reproducibility, endpoints, independent streams, uniform/normal/gamma moments, isotropic directions |
-| `CORE-GENERAL-MPI-001` | 5 | Two-rank scalar/vector/structured/zero-length channel traffic and rank-derived RNG streams |
-| `CORE-GENERAL-LOGGER-001` | 4 | Formatting, long messages, concurrent lines, rotation/flush, fatal subprocess behavior |
-| `CORE-UNITS-001` | 5 | Independently derived factors, scalar/vector round trips, dimensional identities, invalid scales |
-| `CORE-SPECIES-RADIATION-001` | 4 | He/Na reference points, interpolation/scaling, acceleration units, invalid heliocentric state |
-| `CORE-INTERFACE-ABI-001` | 11 | C/Fortran ABI, Geopack ordering/conventions/no-SPICE, and five typed optional-provider gates |
-| `CORE-PIC-NATIVE-001` | 43 | Baseline packed/fixed layout, generated configuration, species/global units, bounded physics, and species-global weight/time |
-| `CORE-PIC-SPLIT-MERGE-001` | 13 | Packed individual-weight layout plus conservative split/merge |
-| `CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001` | 7 | Aligned-16 fixed-weight record layout and lifecycle |
-| `CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001` | 13 | Aligned-16 individual-weight layout plus split/merge |
-| `CORE-PIC-WEIGHT-TIME-LOCAL-001` | 5 | Species-local block weight/time storage and rescaling |
-| `CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001` | 4 | One weight/time slot shared across species |
-| `CORE-MESH-NATIVE-001` | 58 | One-rank 1-D/2-D/3-D AMR topology/adaptation, 3-D interpolation, cut-cell geometry, and NASTRAN I/O |
+| Registry group | Suites | Cases | Current scope |
+|---|---:|---:|---|
+| Harness | 1 | 11 | Configuration, schema, registry, selection, protocol, subprocess/timeout cleanup, concurrency, reporting and traceability |
+| General/core dependency-light | 9 | 56 | Input, containers, numerics, RNG, MPI channels, logger, units, species/radiation and interface ABI |
+| Chemical solver | 1 | 7 | Independent finite-network decay, reversible, stiff, chain, conservation and invalid-network fixtures |
+| T7 dependency-light physics | 3 | 26 | Spherical surface/exosphere kernels, sputtering source laws/ledgers, and dust laws/size-group split-merge |
+| Exclusive configured profiles | 17 | 211 | Native PIC/movers/collisions/IDF/layout/weight modes, mesh dimensions, reaction profiles, and T7 exosphere/dust applications |
+
+The 17-suite `profile` campaign is the configured-profile group above. Its
+211 cases include the 93-case baseline owner, the historical T2 variants, the
+58-case T3 dimensional mesh matrix, T4/T5 compile modes, T6 reactions, and
+three T7 one-rank applications. `src/test/manifest.json` is authoritative for
+the exact suite/case membership and aliases.
 
 The component ledger contains 24 components. The harness entry remains explicitly
 `partial`; registered or passing cases are not evidence of complete AMPS
@@ -74,11 +67,10 @@ stage's scope.
 The following limitations must remain visible until their stages close:
 
 - `smoke` selects eight dependency-light suites (51 cases), `nightly` and
-  `--all` select all 17 current suites (210 cases), `profile` selects seven
-  exclusive native owners (143 cases), `extended` selects the baseline,
-  packed-individual, interface, and mesh owners (125 cases), and `distributed`
-  selects only the five-case MPI channel/RNG family; the harness must assert
-  these live registry sets;
+  `--all` select all 31 current suites (311 cases), `profile` selects 17
+  exclusive native owners (211 cases), `extended` selects 14 suites (193
+  cases), and `distributed` selects only the five-case MPI channel/RNG family;
+  the harness must assert these live registry sets;
 - all current native physics cases are one-rank tests;
 - the current Larsen--Borgnakke RT occurrence test qualifies the implemented
   hard-coded `Zrot=5`, not sensitivity to configured `RotationZnumber`;
@@ -686,7 +678,7 @@ to H+ and electron mass/charge contracts, passed its focused 5/5 rerun, and
 then passed the complete profile campaign. The diagnostic 193/194 receipt is
 not qualification evidence.
 
-### Stage T6 -- Reactions and chemistry models
+### Stage T6 -- Reactions and chemistry models -- bounded scope qualified
 
 Proposed suites:
 
@@ -729,32 +721,90 @@ Acceptance gate: each reaction model closes its physical budgets and agrees
 with an independent rate/solution; daughter insertion and statistical-weight
 handling are exercised through production hooks, not only isolated kernels.
 
-### Stage T7 -- Surfaces, exosphere, sputtering, and dust
+Completion checkpoint (2026-11-07): the supported T6 domain passes 21/21
+cases in four canonical suites in both reverse and deterministic seed-706
+shuffled order. The chemical integrator has independent irreversible,
+reversible, stiff and coupled-chain solutions plus positivity/conservation and
+invalid-network tests. Native photochemistry executes on populated cells and
+has a separate individual-weight daughter profile closing identity, count,
+weight, charge, mass, momentum and kinetic-energy budgets. Burger compiled
+rates/thresholds and H2O products, plus both exposed H/H+ charge-exchange
+lifetime formulas, are independently evaluated. Structural traceability at
+this checkpoint passes 24 areas, 209 production translation units, 181 public
+contracts, 20 configuration contracts, 25 suites and 282 cases.
 
-Proposed suites:
+This is deliberately a bounded qualification rather than a claim that every
+bullet above is available in production. Charge exchange currently exposes
+rate/lifetime functions but no generic event/product/weight API. Burger
+product statistics are implemented only for H2O, and runtime electron-cell
+coupling is open. Quiet-Sun multi-parent runtime selection, MPI/threaded
+daughter insertion and application callbacks remain open. The chemical solver
+has no runtime input-deck network assembler or PIC-cell coupling yet. These
+typed gaps remain T6 follow-up work and must not be inferred from the passing
+case count.
 
-- `CORE-SURFACE-001`;
-- `CORE-EXOSPHERE-SOURCES-001`;
-- `CORE-SPUTTERING-001`;
-- `CORE-DUST-001`;
-- adapters for `test/srcModelDustTest` and relevant model-local tests.
+### Stage T7 -- Surfaces, exosphere, sputtering, and dust -- bounded gate complete
 
-Required cases:
+Canonical suites:
 
-- surface-element indexing, positive areas and total analytic area;
-- adsorption/desorption state and flux accounting;
-- source-shape integration and total-rate normalization;
-- uniform and cosine-law surface distributions;
-- source, impact and sampled-flux closure;
-- sputtering yield tables, threshold/energy/angle laws and product weights;
-- exosphere source-process limiting cases and surface-temperature/orbital
-  inputs where those are core rather than application contracts;
-- dust size-bin mapping, charging equilibrium/transients, force limits,
-  injection, Mie-table interpolation, sampled moments and split/merge budgets.
+- `CORE-SURFACE-EXOSPHERE-001` (8 dependency-light cases);
+- `CORE-EXOSPHERE-SPHERE-NATIVE-001` (1 clean native case);
+- `CORE-SPUTTERING-001` (10 dependency-light cases);
+- `CORE-DUST-001` (8 dependency-light cases);
+- `CORE-DUST-NATIVE-001` (1 clean native charging case); and
+- `CORE-DUST-INJECTION-NATIVE-001` (1 clean native injection case).
 
-Acceptance gate: every enabled surface/source mode integrates to its requested
-physical rate and closes its accounting; tabulated models have boundary and
-interpolation fixtures with provenance.
+Acceptance gate: spherical surface geometry and state ledgers close; every
+selected compiled spherical exosphere mode produces native owned particles at
+its requested physical rate; tabulated sputtering and Mie models have boundary
+and interpolation fixtures; selectable sputtering angles default to the
+Knudsen-cosine law; daughter-product ledgers close; and dust charging,
+injection, sampled moments, and size-group-restricted individual-weight
+split/merge close their declared invariants.
+
+Checkpoint (2026-11-07): the retained aggregate campaign at
+`/tmp/amps-t7-final` passes 29/29 cases and 6/6 suites with no
+FAIL/SKIP/ERROR. The 26 dependency-light cases pass normal, reverse, and
+deterministic seed-707 shuffled order. Structural traceability passes 24
+areas, 209 production translation units, 186 public contracts, 23
+configuration contracts, 31 suites and 311 cases.
+
+Implemented evidence covers analytic spherical indexing/area/normals and
+surface inventory/sample-buffer semantics; exact uniform and default
+Knudsen-cosine inverse CDFs; stationary Poisson event times; cumulative source
+selection; and physical/sampled ledgers. A clean one-rank 3-D AMR application
+drives impact vaporization, PSD, thermal desorption, uniform-rate sputtering,
+and vertical injection through the production exosphere dispatcher, particle
+buffer, owner-cell lists and mover, then closes deterministic accommodation
+and adsorption-minus-desorption exchange.
+
+Sputtering evidence covers Rubin/Teolis thresholds, endpoints and log
+interpolation; product identity; H2O/O2 finite-window speed importance;
+selectable angle laws; incident-flux/area/yield event rate; individual daughter
+weight; and represented number, mass, momentum and energy ledgers. Tests
+qualify the retained table implementation, not independent laboratory
+provenance: exact publication pages/digitization histories for every inherited
+numeric entry remain unavailable.
+
+Dust evidence covers logarithmic bins/power laws, SI charging potential and
+Lorentz limits, translated spherical injection, Fink Mie interpolation and
+weighted moments. Independent Horanyi-current fixtures at -5, 0 and +5 V and
+an independently pinned equilibrium potential accompany four-radius transient
+convergence. The dust-owned split/merge API requires individual correction,
+one owner/species/explicit radius group, and exact radius/mass/charge; it
+preserves represented number, mass, charge, momentum and scalar kinetic
+energy. The native DUST profile closes record offsets, AMR owner/mover,
+sampled mass rate and the signed residual-mass reservoir.
+
+The qualified boundary is deliberately one-rank and spherical. Open follow-up
+work includes nonspherical surfaces, MPI source arbitration/migration/reduction,
+restart, SPICE/orbital inputs, target-specific user sources and temperature
+maps, external/background-plasma injection, native application insertion of
+the new sputtering-product layer, and long stochastic convergence. The
+two-output dust merge cannot generally preserve the pressure tensor, higher
+velocity moments or raw sampled speed; callers requiring those observables
+must retain the original population. These are explicit later capabilities,
+not failures of the completed T7 scope.
 
 ### Stage T8 -- ECSIM, deposition, field solvers, and waves
 

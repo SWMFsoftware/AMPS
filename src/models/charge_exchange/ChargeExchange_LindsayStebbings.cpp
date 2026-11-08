@@ -13,6 +13,20 @@ double ChargeExchange::LindsayStebbings::LifeTime(int      spec,
   // this model is for atomic hydrogen and three charge exchange species only
   if(spec != _H_SPEC_ && spec != _H_ENA_V1_SPEC_ && spec != _H_ENA_V2_SPEC_ && spec != _H_ENA_V3_SPEC_) return 1E+100;
 
+  /* The fit requires a finite positive proton temperature T_p [K] and number
+   * density n_p [m^-3], plus finite neutral/plasma bulk velocities [m s^-1].
+   * sqrt(T_p), omega=|dv|/sqrt(2 k_B T_p/m_H), and
+   * tau=(n_p <g> sigma)^-1 are undefined outside that domain.  The public API
+   * predates status enums, so retain its established 1e100 s no-reaction
+   * sentinel rather than returning NaN, a negative lifetime, or terminating.
+   * Callers can therefore distinguish the invalid/unsupported capability from
+   * every finite physical lifetime supported by this empirical fit. */
+  if (vParticle==NULL || vPlasma==NULL || !(PlasmaTemperature>0.0) ||
+      !(PlasmaNumberDensity>0.0) || !isfinite(PlasmaTemperature) ||
+      !isfinite(PlasmaNumberDensity)) return 1E+100;
+  for (int idim=0;idim<3;idim++)
+    if (!isfinite(vParticle[idim]) || !isfinite(vPlasma[idim])) return 1E+100;
+
 
   // calculating V_rel according to eq. 8 of Heerkhuisen et al. 2006
   v_th = sqrt(2.0 * Kbol * PlasmaTemperature / _MASS_(_H_));

@@ -4,6 +4,8 @@
 
 #include "PhotolyticReactions.h"
 
+#include <algorithm>
+
 
 
 //-----------------------------------   H2O ----------------------------------------------
@@ -72,7 +74,10 @@ void PhotolyticReactions::H2O::Huebner1992ASS::Init() {
   }
   else exit(__LINE__,__FILE__,"Error: the option is unknown");
 
-  //calculate the total rate
+  // The tabulated channel rates have units s^-1 at 1 AU.  Reset before the
+  // sum so initialization is idempotent; otherwise a legitimate second model
+  // initialization doubles the physical destruction frequency.
+  TotalReactionRate=0.0;
   for (int nChannel=0;nChannel<nReactionChannels;nChannel++) TotalReactionRate+=ReactionRateTable[nChannel];
 }
 
@@ -135,7 +140,8 @@ void PhotolyticReactions::O2::Huebner1992ASS::Init() {
   }
   else exit(__LINE__,__FILE__,"Error: the option is unknown");
 
-  //calculate the total rate
+  // Recompute rather than accumulate across repeated initialization.
+  TotalReactionRate=0.0;
   for (int nChannel=0;nChannel<nReactionChannels;nChannel++) TotalReactionRate+=ReactionRateTable[nChannel];
 }
 
@@ -189,7 +195,8 @@ void PhotolyticReactions::H::Huebner1992ASS::Init() {
   }
   else exit(__LINE__,__FILE__,"Error: the option is unknown");
 
-  //calculate the total rate
+  // Recompute rather than accumulate across repeated initialization.
+  TotalReactionRate=0.0;
   for (int nChannel=0;nChannel<nReactionChannels;nChannel++) TotalReactionRate+=ReactionRateTable[nChannel];
 }
 
@@ -249,7 +256,8 @@ void PhotolyticReactions::H2::Huebner1992ASS::Init() {
   else exit(__LINE__,__FILE__,"Error: the option is unknown");
 
 
-  //calculate the total rate
+  // Recompute rather than accumulate across repeated initialization.
+  TotalReactionRate=0.0;
   for (int nChannel=0;nChannel<nReactionChannels;nChannel++) TotalReactionRate+=ReactionRateTable[nChannel];
 }
 //-----------------------------------   O ----------------------------------------------
@@ -304,7 +312,8 @@ void PhotolyticReactions::O::Huebner1992ASS::Init() {
 
 
 
-  //calculate the total rate
+  // Recompute rather than accumulate across repeated initialization.
+  TotalReactionRate=0.0;
   for (int nChannel=0;nChannel<nReactionChannels;nChannel++) TotalReactionRate+=ReactionRateTable[nChannel];
 }
 
@@ -366,7 +375,8 @@ void PhotolyticReactions::OH::Huebner1992ASS::Init() {
   else exit(__LINE__,__FILE__,"Error: the option is unknown");
 
 
-  //calculate the total rate
+  // Recompute rather than accumulate across repeated initialization.
+  TotalReactionRate=0.0;
   for (int nChannel=0;nChannel<nReactionChannels;nChannel++) TotalReactionRate+=ReactionRateTable[nChannel];
 }
 
@@ -457,17 +467,30 @@ void PhotolyticReactions::Huebner1992ASS::GetProductVelocity_3(double excessEner
   p3z = (-m1*m3*p1z+sqrt(positiveTemp))/(m1*(m2+m3));
 
 
-    double beta,gamma;
-  beta = rnd()*2*Pi;
-  gamma= rnd()*2*Pi;
-
-  double matrixBeta[3][3]={{cos(beta),0,sin(beta)},{0,1,0},{-sin(beta),0,cos(beta)}};
-  double matrixGamma[3][3]={{cos(gamma),-sin(gamma),0},{sin(gamma),cos(gamma),0},{0,0,1}};
-  double tempVelocity1[3][3], tempVelocity2[3][3];
+  // The algebra above constructs one centre-of-mass configuration with the
+  // requested energy.  Its absolute orientation has no preferred direction
+  // for an unpolarized photon field, so rotate the complete three-body event
+  // by a Haar-uniform element of SO(3).  Independent uniform Euler angles are
+  // not Haar distributed and leave a measurable Cartesian second-moment
+  // anisotropy.  The Shoemake quaternion below uses u1,u2,u3~U[0,1):
+  //   q=(sqrt(1-u1)sin(2pi u2), sqrt(1-u1)cos(2pi u2),
+  //      sqrt(u1)sin(2pi u3),   sqrt(u1)cos(2pi u3)).
+  // One orthogonal rotation is applied to every daughter, so total momentum
+  // and translational kinetic energy are invariant to roundoff.
+  const double u1=rnd(),u2=rnd(),u3=rnd();
+  const double qx=sqrt(1.0-u1)*sin(2.0*Pi*u2);
+  const double qy=sqrt(1.0-u1)*cos(2.0*Pi*u2);
+  const double qz=sqrt(u1)*sin(2.0*Pi*u3);
+  const double qw=sqrt(u1)*cos(2.0*Pi*u3);
+  const double rotation[3][3]={
+    {1.0-2.0*(qy*qy+qz*qz),2.0*(qx*qy-qz*qw),2.0*(qx*qz+qy*qw)},
+    {2.0*(qx*qy+qz*qw),1.0-2.0*(qx*qx+qz*qz),2.0*(qy*qz-qx*qw)},
+    {2.0*(qx*qz-qy*qw),2.0*(qy*qz+qx*qw),1.0-2.0*(qx*qx+qy*qy)}
+  };
+  double tempVelocity1[3][3];
   
   for (int i=0;i<3;i++){
     for (int j=0;j<3;j++){
-      tempVelocity2[i][j]=0.0;
       productVelocityTable[3*i+j]=0.0;
     }
   }
@@ -488,15 +511,7 @@ void PhotolyticReactions::Huebner1992ASS::GetProductVelocity_3(double excessEner
   for (int iprod=0; iprod<3; iprod++){
     for (int i=0; i<3;i++){
       for (int j=0;j<3;j++){
-	tempVelocity2[iprod][i]+=matrixBeta[i][j]*tempVelocity1[iprod][j];	
-      }
-    }
-  }
-
-  for (int iprod=0; iprod<3; iprod++){
-    for (int i=0; i<3;i++){
-      for (int j=0;j<3;j++){
-	productVelocityTable[3*iprod+i]+=matrixGamma[i][j]*tempVelocity2[iprod][j];	
+	productVelocityTable[3*iprod+i]+=rotation[i][j]*tempVelocity1[iprod][j];
       }
     }
   }
@@ -531,16 +546,83 @@ void PhotolyticReactions::Huebner1992ASS::GetProductVelocity_3(double excessEner
 
 
 //-----------------------------------  Chemical model ----------------------------------------
+namespace {
+
+bool ValidReactionSelectionInput(double *ReactionRateTable,
+    int nReactionChannels,int* TotalReactionProductTable,
+    int *ReactionChannelProductNumber,double *ReactionProductMassTable,
+    int nMaxReactionProducts,double TotalReactionRate,
+    int* ReturnReactionProductTable,double *ReturnReactionProductVelocityTable) {
+  if ((ReactionRateTable==NULL)||(TotalReactionProductTable==NULL)||
+      (ReactionChannelProductNumber==NULL)||(ReactionProductMassTable==NULL)||
+      (ReturnReactionProductTable==NULL)||
+      (ReturnReactionProductVelocityTable==NULL)||(nReactionChannels<=0)||
+      (nMaxReactionProducts<=0)||(!std::isfinite(TotalReactionRate))||
+      (TotalReactionRate<=0.0)) return false;
+
+  double rateSum=0.0;
+  for (int channel=0;channel<nReactionChannels;channel++) {
+    if ((!std::isfinite(ReactionRateTable[channel]))||
+        (ReactionRateTable[channel]<0.0)) return false;
+    rateSum+=ReactionRateTable[channel];
+  }
+
+  // The cumulative selector assumes that its normalization is the sum of the
+  // channel rates. A mismatch biases any residual interval into the final
+  // channel. Treat a mismatch larger than summation roundoff as invalid and
+  // report it through the legacy channel=-1/count=0 result.
+  const double scale=std::max(rateSum,TotalReactionRate);
+  return (rateSum>0.0)&&std::isfinite(rateSum)&&
+      (std::fabs(rateSum-TotalReactionRate)<=
+       64.0*std::numeric_limits<double>::epsilon()*scale);
+}
+
+bool ChannelHasProduct(int channel,int product,int *ProductTable,
+    int nMaxReactionProducts) {
+  for (int slot=0;slot<nMaxReactionProducts;slot++) {
+    if (ProductTable[channel*nMaxReactionProducts+slot]==product) return true;
+  }
+  return false;
+}
+
+bool ValidSelectedChannelKinematics(int channel,int nSpecies,
+    int nMaxReactionProducts,double *ReactionProductMassTable,
+    double TotalEnergy) {
+  if (((nSpecies!=2)&&(nSpecies!=3))||
+      (nSpecies>nMaxReactionProducts)||(!std::isfinite(TotalEnergy))||
+      (TotalEnergy<0.0)) return false;
+
+  for (int product=0;product<nSpecies;product++) {
+    const double mass=ReactionProductMassTable[
+        channel*nMaxReactionProducts+product];
+    if ((!std::isfinite(mass))||(mass<=0.0)) return false;
+  }
+  return true;
+}
+
+}  // namespace
+
 void PhotolyticReactions::Huebner1992ASS::GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* ReturnReactionProductTable,double *ReturnReactionProductVelocityTable,
     double *ReactionRateTable, int nReactionChannels,int* TotalReactionProductTable,int *ReactionChannelProductNumber,double *ReactionProductMassTable,int nMaxReactionProducts,
     double TotalReactionRate,double *ExcessEnergyTable) {
   int i;
   double summ=0.0;
 
+  // Invalid/unavailable selections are recoverable: the legacy API reports a
+  // sentinel channel and no products instead of aborting or sampling a biased
+  // final channel.
+  ReactionChannel=-1;
+  nReactionProducts=0;
+  if (!ValidReactionSelectionInput(ReactionRateTable,nReactionChannels,
+      TotalReactionProductTable,ReactionChannelProductNumber,
+      ReactionProductMassTable,nMaxReactionProducts,TotalReactionRate,
+      ReturnReactionProductTable,ReturnReactionProductVelocityTable)) return;
+
   //1. Determine the reaction channel
-  for (TotalReactionRate*=rnd(),i=0,summ=0.0;i<nReactionChannels;i++) {
+  const double selection=TotalReactionRate*rnd();
+  for (i=0,summ=0.0;i<nReactionChannels;i++) {
     summ+=ReactionRateTable[i];
-    if (summ>TotalReactionRate) break;
+    if (summ>selection) break;
   }
 
   if (i==nReactionChannels) i = i-1;
@@ -566,13 +648,18 @@ void PhotolyticReactions::Huebner1992ASS::GenerateReactionProducts(int &Reaction
     
   double LocalReactionProductVelocityTable[nMaxReactionProducts][3];
   int nSpecies=ReactionChannelProductNumber[ReactionChannel];
+
+  if (!ValidSelectedChannelKinematics(ReactionChannel,nSpecies,
+      nMaxReactionProducts,ReactionProductMassTable,TotalEnergy)) {
+    ReactionChannel=-1;
+    nReactionProducts=0;
+    return;
+  }
   
   if (nSpecies==2){
     GetProductVelocity_2(TotalEnergy,&ReactionProductMassTable[ReactionChannel*nMaxReactionProducts], &LocalReactionProductVelocityTable[0][0]);
   }else if (nSpecies==3){
     GetProductVelocity_3(TotalEnergy,&ReactionProductMassTable[ReactionChannel*nMaxReactionProducts], &LocalReactionProductVelocityTable[0][0]);
-  }else{
-    exit(__LINE__,__FILE__,"Error: something is wrong, nSpecies cannot be this number");
   }
 
 
@@ -672,29 +759,49 @@ void PhotolyticReactions::Huebner1992ASS::GenerateReactionProducts(int &Reaction
 void PhotolyticReactions::Huebner1992ASS::GenerateGivenProducts(int prodSpec, int &ReactionChannel,int &nReactionProducts, int* ReturnReactionProductTable,double *ReturnReactionProductVelocityTable,
     double *ReactionRateTable, int nReactionChannels,int* TotalReactionProductTable,int *ReactionChannelProductNumber,double *ReactionProductMassTable,int nMaxReactionProducts,
     double TotalReactionRate,double *ExcessEnergyTable) {
-    int i;
+  int i;
   double summ=0.0;
-  bool findGivenSpec=false;
 
+  ReactionChannel=-1;
+  nReactionProducts=0;
+  if (!ValidReactionSelectionInput(ReactionRateTable,nReactionChannels,
+      TotalReactionProductTable,ReactionChannelProductNumber,
+      ReactionProductMassTable,nMaxReactionProducts,TotalReactionRate,
+      ReturnReactionProductTable,ReturnReactionProductVelocityTable)) return;
 
-  while (!findGivenSpec){
-    double temp = TotalReactionRate*rnd();
-    for (i=0,summ=0.0;i<nReactionChannels;i++) {
-      summ+=ReactionRateTable[i];
-      if (summ>temp) break;
+  // Sample directly from channels containing the requested compiled product.
+  // Rejection sampling is equivalent only when such a channel exists; the old
+  // loop never terminated for an unavailable daughter.  The eligible-rate
+  // normalization retains the exact conditional branching distribution.
+  double eligibleRate=0.0;
+  for (int channel=0;channel<nReactionChannels;channel++) {
+    if (ChannelHasProduct(channel,prodSpec,TotalReactionProductTable,
+        nMaxReactionProducts)) eligibleRate+=ReactionRateTable[channel];
+  }
+  if ((!std::isfinite(eligibleRate))||(eligibleRate<=0.0)) return;
+
+  const double selection=eligibleRate*rnd();
+  for (i=0,summ=0.0;i<nReactionChannels;i++) {
+    if (!ChannelHasProduct(i,prodSpec,TotalReactionProductTable,
+        nMaxReactionProducts)) continue;
+    summ+=ReactionRateTable[i];
+    if (summ>selection) break;
+  }
+  if (i==nReactionChannels) {
+    for (i=nReactionChannels-1;i>=0;i--) {
+      if (ChannelHasProduct(i,prodSpec,TotalReactionProductTable,
+          nMaxReactionProducts)&&(ReactionRateTable[i]>0.0)) break;
     }
-    
-    if (i==nReactionChannels) i = i-1;
-    ReactionChannel=i;
-    
-  
-    for (i=0,nReactionProducts=0;i<nMaxReactionProducts;i++) {
-      int t;
-      if ((t=TotalReactionProductTable[i+ReactionChannel*nMaxReactionProducts])>=0) {
-	ReturnReactionProductTable[nReactionProducts++]=t;
-	if (t==prodSpec) findGivenSpec=true;
-      } 
-    } 
+  }
+  if (i<0) return;
+  ReactionChannel=i;
+
+  for (i=0,nReactionProducts=0;i<nMaxReactionProducts;i++) {
+    int t;
+    if ((t=TotalReactionProductTable[
+        i+ReactionChannel*nMaxReactionProducts])>=0) {
+      ReturnReactionProductTable[nReactionProducts++]=t;
+    }
   }
 
   if (nReactionProducts==0) return;
@@ -708,13 +815,18 @@ void PhotolyticReactions::Huebner1992ASS::GenerateGivenProducts(int prodSpec, in
     
   double LocalReactionProductVelocityTable[nMaxReactionProducts][3];
   int nSpecies=ReactionChannelProductNumber[ReactionChannel];
+
+  if (!ValidSelectedChannelKinematics(ReactionChannel,nSpecies,
+      nMaxReactionProducts,ReactionProductMassTable,TotalEnergy)) {
+    ReactionChannel=-1;
+    nReactionProducts=0;
+    return;
+  }
   
   if (nSpecies==2){
     GetProductVelocity_2(TotalEnergy,&ReactionProductMassTable[ReactionChannel*nMaxReactionProducts], &LocalReactionProductVelocityTable[0][0]);
   }else if (nSpecies==3){
     GetProductVelocity_3(TotalEnergy,&ReactionProductMassTable[ReactionChannel*nMaxReactionProducts], &LocalReactionProductVelocityTable[0][0]);
-  }else{
-    exit(__LINE__,__FILE__,"Error: something is wrong, nSpecies cannot be this number");
   }
 
 
@@ -736,7 +848,19 @@ double PhotolyticReactions::Huebner1992ASS::GetSpeciesReactionYield(int spec,dou
   double Yield=0.0,TotalReactionRate=0.0;
   int ReactionChannel,i;
 
+  // A zero table is a physically disabled network and therefore has zero
+  // yield. Malformed pointers, dimensions, negative rates, and non-finite
+  // rates are invalid domains and are distinguished with NaN.
+  if ((ReactionRateTable==NULL)||(TotalReactionProductTable==NULL)||
+      (nReactionChannels<=0)||(nMaxReactionProducts<=0)) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+
   for (ReactionChannel=0;ReactionChannel<nReactionChannels;ReactionChannel++) {
+    if ((!std::isfinite(ReactionRateTable[ReactionChannel]))||
+        (ReactionRateTable[ReactionChannel]<0.0)) {
+      return std::numeric_limits<double>::quiet_NaN();
+    }
     TotalReactionRate+=ReactionRateTable[ReactionChannel];
 
     for (i=0;i<nMaxReactionProducts;i++) if (TotalReactionProductTable[i+ReactionChannel*nMaxReactionProducts]==spec) Yield+=ReactionRateTable[ReactionChannel];

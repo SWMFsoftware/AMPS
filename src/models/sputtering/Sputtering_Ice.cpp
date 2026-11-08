@@ -2,6 +2,9 @@
 
 #include "Sputtering.h"
 
+#include <cmath>
+#include <limits>
+
 void Sputtering::Ice::GetSputteringSpeed(int spec, 
 					 double& speed, 
 					 double& weight_correction){
@@ -158,13 +161,37 @@ double Sputtering::Ice::Rubin::SputteringYield(double speed,
   default:
     return 0.0;
   }
-  double E = 0.5*m*speed*speed/ElectronCharge;  // Energy in eV
-  int counter = int((log10(E)-1.47)/0.1);     // Derive array entry from energy
-  if ((E > 1E9) || (YieldData[counter][projectile] < 1.0) || (counter < 0)) 
-    return 0.0;
-  double b = (log10(YieldData[counter+1][projectile]/YieldData[counter][projectile]))/0.1;
-  double a = log10(YieldData[counter][projectile])-b*(1.47+counter*0.1);
-  return pow(10,b*log10(E)+a);
+  // The argument is a speed magnitude in m/s and m is in kg, hence
+  // E=mv^2/(2 e) is the projectile kinetic energy in eV.  The retained Rubin
+  // grid is uniform in log10(E/eV), starting at 1.47 with spacing 0.1.  Reject
+  // invalid/out-of-domain values *before* converting the logarithm to an
+  // integer: log10(0) and an unchecked negative table index were undefined
+  // behavior in the former boundary path.
+  if (!std::isfinite(speed) || speed < 0.0) return 0.0;
+  const double E = 0.5*m*speed*speed/ElectronCharge;
+  const double log10E0 = 1.47;
+  const double dLog10Energy = 0.1;
+  const int nEnergyLevel = 77;
+  const double log10E = E > 0.0 ? log10(E) : -HUGE_VAL;
+  const double tableCoordinate = (log10E-log10E0)/dLog10Energy;
+
+  // Retain the historical 1 GeV model ceiling.  The upper interpolation row
+  // is still checked independently so no future table/configuration change
+  // can make counter+1 escape the 77-row fixture.
+  if (!(E <= 1.0E9) || tableCoordinate < 0.0 ||
+      tableCoordinate >= nEnergyLevel-1) return 0.0;
+  const int counter = static_cast<int>(floor(tableCoordinate));
+  const double lowerYield = YieldData[counter][projectile];
+  const double upperYield = YieldData[counter+1][projectile];
+
+  // Rubin's retained threshold convention suppresses an interval whenever
+  // its lower tabulated yield is below one molecule/ion.  A non-positive
+  // upper endpoint cannot participate in logarithmic interpolation either;
+  // returning zero preserves the table's explicit high-energy cutoffs.
+  if (lowerYield < 1.0 || upperYield <= 0.0) return 0.0;
+  const double fraction = tableCoordinate-counter;
+  return pow(10.0,(1.0-fraction)*log10(lowerYield)+
+                  fraction*log10(upperYield));
 }
 
 // description of Benjamin Teolis's model -------------------------------------
@@ -304,11 +331,39 @@ double Sputtering::Ice::Teolis::SputteringYield(double speed,
   default:
     return 0.0;
   }
-  double E = 0.5*m*speed*speed/ElectronCharge;      // Energy in eV
-  if(E > Emax || E < Emin) return 0.0;
-  int counter = int((log10(E/Emin))/dLog10Energy) - 1;// Derive array entry from energy
-  // interpolate lenearly log10(Yield) = a + b * log10(E)
-  double b = (log10(YieldData[counter+1][target][projectile]/YieldData[counter][target][projectile]))/dLog10Energy;
-  double a = log10(YieldData[counter][target][projectile])-b*(log10(Emin)+counter*dLog10Energy);
-  return pow(10,b*log10(E)+a);
+  // speed is a magnitude in m/s and m is in kg; dividing mv^2/2 by the
+  // elementary charge converts joules to eV.  The Teolis fixture is a
+  // 100-point geometric energy grid, including both 10 eV and 6 MeV.  Its
+  // published implementation contract is log-log interpolation,
+  // log10(Y)=(1-f)log10(Y_i)+f log10(Y_{i+1}).
+  if (!std::isfinite(speed) || speed < 0.0) return 0.0;
+  double E = 0.5*m*speed*speed/ElectronCharge;
+  // A caller commonly constructs v from a requested boundary energy.  The
+  // sqrt/square round trip may land a few ulps outside [Emin,Emax], although
+  // it denotes the endpoint physically.  Admit only that floating-point
+  // roundoff band; a genuinely sub-threshold or super-ceiling energy remains
+  // zero.  The factor 32 covers the operations above while staying about
+  // 7e-15 relative, many orders below the table resolution.
+  const double boundaryTolerance=32.0*std::numeric_limits<double>::epsilon();
+  if (E < Emin) {
+    if (E >= Emin*(1.0-boundaryTolerance)) E=Emin;
+    else return 0.0;
+  }
+  if (E > Emax) {
+    if (E <= Emax*(1.0+boundaryTolerance)) E=Emax;
+    else return 0.0;
+  }
+  const double tableCoordinate=log10(E/Emin)/dLog10Energy;
+
+  // Both endpoints belong to the tabulated domain.  At 6 MeV there is no
+  // row 100 with which to interpolate, so return row 99 exactly.  The former
+  // `-1` offset indexed row -1 at 10 eV and shifted every interior interval.
+  if (tableCoordinate >= nEnergyLevel-1)
+    return YieldData[nEnergyLevel-1][target][projectile];
+  int counter=static_cast<int>(floor(tableCoordinate));
+  if (counter < 0 || counter >= nEnergyLevel-1) return 0.0;
+  const double fraction=tableCoordinate-counter;
+  return pow(10.0,
+      (1.0-fraction)*log10(YieldData[counter][target][projectile])+
+      fraction*log10(YieldData[counter+1][target][projectile]));
 }

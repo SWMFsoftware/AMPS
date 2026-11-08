@@ -30,7 +30,10 @@ namespace ElectronImpact {
     void Print(const char* fname,const char* OutputDirectory,int nReactionChannels,int nMaxReactionProducts,int *ReactionChannelProducts,double *log10RateCoefficientTable,char *ReactionChannelProductsString);
 
     //calculate the yield fpr a particular specie
-    double GetSpeciesReactionYield(int spec,double ElectronTemeprature,double *log10RateCoefficientTable, int nReactionChannels, int* ReactionChannelProducts, int nMaxReactionProducts);
+    double GetSpeciesReactionYield(int spec,double ElectronTemeprature,
+        double *log10RateCoefficientTable,int nReactionChannels,
+        int* ReactionChannelProducts,int nMaxReactionProducts,
+        double *minTemp);
   }
 
 
@@ -83,7 +86,10 @@ namespace ElectronImpact {
       }
 
       inline double GetSpeciesReactionYield(int spec,double ElectronTemeprature) {
-        return ElectronImpact::Burger2010SSR::GetSpeciesReactionYield(spec,ElectronTemeprature,&log10RateCoefficientTable[0][0],nReactionChannels,&ReactionChannelProducts[0][0],nMaxReactionProducts);
+        return ElectronImpact::Burger2010SSR::GetSpeciesReactionYield(
+            spec,ElectronTemeprature,&log10RateCoefficientTable[0][0],
+            nReactionChannels,&ReactionChannelProducts[0][0],
+            nMaxReactionProducts,minTemp);
       }
 
     }
@@ -159,7 +165,10 @@ namespace ElectronImpact {
       }
 
       inline double GetSpeciesReactionYield(int spec,double ElectronTemeprature) {
-        return ElectronImpact::Burger2010SSR::GetSpeciesReactionYield(spec,ElectronTemeprature,&log10RateCoefficientTable[0][0],nReactionChannels,&ReactionChannelProducts[0][0],nMaxReactionProducts);
+        return ElectronImpact::Burger2010SSR::GetSpeciesReactionYield(
+            spec,ElectronTemeprature,&log10RateCoefficientTable[0][0],
+            nReactionChannels,&ReactionChannelProducts[0][0],
+            nMaxReactionProducts,minTemp);
       }
 
     }
@@ -232,7 +241,10 @@ namespace ElectronImpact {
       }
 
       inline double GetSpeciesReactionYield(int spec,double ElectronTemeprature) {
-        return ElectronImpact::Burger2010SSR::GetSpeciesReactionYield(spec,ElectronTemeprature,&log10RateCoefficientTable[0][0],nReactionChannels,&ReactionChannelProducts[0][0],nMaxReactionProducts);
+        return ElectronImpact::Burger2010SSR::GetSpeciesReactionYield(
+            spec,ElectronTemeprature,&log10RateCoefficientTable[0][0],
+            nReactionChannels,&ReactionChannelProducts[0][0],
+            nMaxReactionProducts,minTemp);
       }
 
     }
@@ -307,7 +319,10 @@ namespace ElectronImpact {
       }
 
       inline double GetSpeciesReactionYield(int spec,double ElectronTemeprature) {
-        return ElectronImpact::Burger2010SSR::GetSpeciesReactionYield(spec,ElectronTemeprature,&log10RateCoefficientTable[0][0],nReactionChannels,&ReactionChannelProducts[0][0],nMaxReactionProducts);
+        return ElectronImpact::Burger2010SSR::GetSpeciesReactionYield(
+            spec,ElectronTemeprature,&log10RateCoefficientTable[0][0],
+            nReactionChannels,&ReactionChannelProducts[0][0],
+            nMaxReactionProducts,minTemp);
       }
 
     }
@@ -382,7 +397,10 @@ namespace ElectronImpact {
       }
 
       inline double GetSpeciesReactionYield(int spec,double ElectronTemeprature) {
-        return ElectronImpact::Burger2010SSR::GetSpeciesReactionYield(spec,ElectronTemeprature,&log10RateCoefficientTable[0][0],nReactionChannels,&ReactionChannelProducts[0][0],nMaxReactionProducts);
+        return ElectronImpact::Burger2010SSR::GetSpeciesReactionYield(
+            spec,ElectronTemeprature,&log10RateCoefficientTable[0][0],
+            nReactionChannels,&ReactionChannelProducts[0][0],
+            nMaxReactionProducts,minTemp);
       }
 
     }
@@ -673,7 +691,12 @@ namespace ElectronImpact {
     }
    
     for (int iChannel=0; iChannel<nChannels; iChannel++){
-      if (ElectronTemeprature>minTemp[iChannel]){
+      /* A channel is open at its threshold because the rate evaluator uses
+       * log10(T_e)>=log10(T_threshold).  Keep this capability predicate on
+       * the identical closed-domain convention; the old strict comparison
+       * could claim that a daughter was unavailable while assigning it a
+       * nonzero tabulated rate.  T_e and thresholds are in eV. */
+      if (ElectronTemeprature>=minTemp[iChannel]){
 	for (int i=0; i<nMaxProducts; i++){
 	  if (ProdTable[iChannel*nMaxProducts+i]==daughterSpec){
 	    res=true;

@@ -15,16 +15,24 @@
 #define _SPUTTERING_
 
 #include "Sputtering.dfn"
+#include "Sputtering_Source.h"
 
 #include "pic.h"
 
 
 namespace Sputtering {
-  // number and list of sputtered species, to be set by call of Init()
-  static int nSpecTarget;
-  static int *SpecTarget;
-  // list of yields corresponding to list of SpecTarget
-  static double *Yield;
+  // Number and list of sputtered species, populated by Init().  These are
+  // declarations, not header-local storage: callers that inspect the public
+  // product catalogue must see the same objects used by GetSputteringYield().
+  // The former `static` declarations created a different zero-initialized
+  // catalogue in every translation unit and could therefore report no
+  // products even after the model had been initialized.
+  extern int nSpecTarget;
+  extern int *SpecTarget;
+  // Dimensionless sputtered molecules per incident ion, in SpecTarget order.
+  // The buffer is scratch storage owned by this module and is overwritten by
+  // each GetSputteringYield() call; it is not thread-safe.
+  extern double *Yield;
 
   // icy surface ==============================================================
   namespace Ice {

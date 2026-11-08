@@ -79,12 +79,22 @@ namespace Fink2012Icarus {
   };
 
   inline double Get(double GrainRadius,double WaweLength,int Case) {
-    double aLog;
+    // The digitized abscissa is log10(x), where x=2*pi*a/lambda is the
+    // dimensionless size parameter.  Radius and wavelength must use the same
+    // length unit.  The historical implementation compared a [length] with
+    // the logarithmic table bounds, allowing negative table indices for
+    // sub-micron grains; clamp on aLog before converting it to an index.
+    if (!std::isfinite(GrainRadius) || !std::isfinite(WaweLength) ||
+        GrainRadius<=0.0 || WaweLength<=0.0 || Case<0 || Case>=nCases) {
+      throw std::invalid_argument(
+          "Fink-2012 Mie lookup requires positive finite lengths and a valid case");
+    }
 
-    aLog=log10(2.0*Pi*GrainRadius/WaweLength);
+    const double aLog=log10(2.0*3.141592653589793238462643383279502884*
+        GrainRadius/WaweLength);
 
-    if (GrainRadius<aMinLog10) return DataArray[0][Case];
-    else if (GrainRadius>aMaxLog10) return DataArray[nPoints-1][Case];
+    if (aLog<=aMinLog10) return DataArray[0][Case];
+    else if (aLog>=aMaxLog10) return DataArray[nPoints-1][Case];
     else {
       double w,x;
       int i;

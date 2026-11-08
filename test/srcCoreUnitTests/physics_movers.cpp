@@ -83,6 +83,14 @@ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* MoverNode(const double* position) {
     PIC::Mesh::mesh->AllowBlockAllocation = true;
     PIC::Mesh::mesh->AllocateTreeBlocks();
     PIC::Mesh::mesh->InitCellMeasure();
+    // Whole-mesh PIC modules do not traverse the AMR linked list directly;
+    // they use DomainBlockDecomposition::BlockTable.  Native applications
+    // refresh that table during initialization/load balancing.  The fixture
+    // must do the same after block allocation, otherwise chemistry/collision
+    // drivers execute a zero-block no-op while cell-local tests still appear
+    // healthy.  This table contains the eight one-rank owner leaves and has no
+    // particle or physical-state side effects.
+    PIC::DomainBlockDecomposition::UpdateBlockTable();
     mesh_initialized = true;
   }
 

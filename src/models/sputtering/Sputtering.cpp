@@ -2,6 +2,14 @@
 
 #include "Sputtering.h"
 
+// One catalogue is shared by the public data members and both master
+// functions.  Init() owns these arrays.  No surface area or incident flux is
+// encoded here: Yield contains only the dimensionless multiplicity Y=N_out /
+// N_incident supplied by the selected laboratory yield model.
+int Sputtering::nSpecTarget=0;
+int* Sputtering::SpecTarget=NULL;
+double* Sputtering::Yield=NULL;
+
 // initialization of sputtering model
 void Sputtering::Init(){
   
@@ -34,6 +42,12 @@ void Sputtering::Init(){
   for(int iSpecTarget = 0; iSpecTarget < nSpecTargetInit; iSpecTarget++)
     if(SpecTargetInit[iSpecTarget] >= 0) ++count;
   // set number and list of species in simulation
+  // Init can be called again when an application reconstructs its source
+  // registry.  Releasing only these module-owned arrays makes that operation
+  // idempotent without changing any particle or surface state.
+  delete [] Sputtering::SpecTarget;
+  delete [] Sputtering::Yield;
+
   Sputtering::nSpecTarget = count;
   Sputtering::SpecTarget  = new int[count];
   Sputtering::Yield       = new double[count];

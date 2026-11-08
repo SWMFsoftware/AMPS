@@ -20,6 +20,21 @@ ElectricallyChargedDust::fGenerateNewDustGrainInternalProperties ElectricallyCha
 ElectricallyChargedDust::fGrainDragCoeffiient ElectricallyChargedDust::GrainDragCoeffiient_UserDefinedFunction=NULL;
 ElectricallyChargedDust::fGrainMassDensity ElectricallyChargedDust::GrainMassDensity_UserDefinedFunction=NULL;
 
+namespace {
+// Signed physical dust mass [kg] carried by this MPI rank.  Positive mass is
+// waiting to be represented; a negative value is the finite-particle debt
+// carried into the next DustInjection__Sphere call.
+double DustInjectionMassReservoir=0.0;
+}
+
+void ElectricallyChargedDust::Injection::ResetMassReservoir() {
+  DustInjectionMassReservoir=0.0;
+}
+
+double ElectricallyChargedDust::Injection::GetMassReservoir() {
+  return DustInjectionMassReservoir;
+}
+
 
 //int ElectricallyChargedDust::_DUST_SPEC_=-1;
 double ElectricallyChargedDust::minDustRadius=-1.0;
@@ -437,15 +452,14 @@ long int ElectricallyChargedDust::DustInjection__Sphere(int BoundaryElementType,
   int GrainVelocityGroup,spec;
 
   const int ParticleDataLength=PIC::ParticleBuffer::ParticleDataLength;
+  // Particle records contain model extension bytes in addition to the generic
+  // PIC fields.  Start from a defined all-zero state before setting dust and
+  // list metadata so no uninitialized padding/extension value is copied into
+  // the global particle buffer.
+  memset(tempParticleData,0,ParticleDataLength);
   PIC::ParticleBuffer::SetParticleAllocated((PIC::ParticleBuffer::byte*)tempParticleData);
 
-  //============  DEBUG =========================
-  static double GrainInjectedMass=0.0;
-
-
 //  if (nDustGroups!=1) exit(__LINE__,__FILE__,"Error: the injection procedure doesn't work correctly for nDustGroups!=1");
-
-  //============ END DEBUG =========================
 
   if (BoundaryElementType!=_INTERNAL_BOUNDARY_TYPE_SPHERE_) exit(__LINE__,__FILE__,"Error: implemented only for BoundaryElementType==_INTERNAL_BOUNDARY_TYPE_SPHERE_");
 
@@ -466,9 +480,9 @@ long int ElectricallyChargedDust::DustInjection__Sphere(int BoundaryElementType,
 #endif
 
 
-  GrainInjectedMass+=TotalMassDustProductionRate*LocalTimeStep;
+  DustInjectionMassReservoir+=TotalMassDustProductionRate*LocalTimeStep;
 
-  while (GrainInjectedMass>0.0) {
+  while (DustInjectionMassReservoir>0.0) {
     startNode=NULL;
 
     if (GenerateNewDustGrainInternalProperties_LOCAL!=NULL) {
@@ -477,34 +491,53 @@ long int ElectricallyChargedDust::DustInjection__Sphere(int BoundaryElementType,
     else {
       //uniform source of the dust on the sphere
       int idim;
-      double ExternalNormal[3],r=0.0;
+      // AMPS uses DIM<=3; zero-initialize inactive components because the
+      // dependency-light normalizer intentionally evaluates a 3-vector.  A
+      // 1-D/2-D build therefore normalizes within its active subspace rather
+      // than reading an uninitialized tail.
+      double ExternalNormal[3]={0.0,0.0,0.0};
 
       //generate the gain radius and weight correction
       ElectricallyChargedDust::SizeDistribution::GenerateGrainRandomRadius(GrainRadius,GrainWeightCorrection);
 
       //generate the new particle position and velocity
-      for (idim=0;idim<DIM;idim++) {
-        ExternalNormal[idim]=sqrt(-2.0*log(rnd()))*cos(PiTimes2*rnd());
-        r+=pow(ExternalNormal[idim],2);
+      double directionNorm2;
+      do {
+        directionNorm2=0.0;
+        for (idim=0;idim<DIM;idim++) {
+          ExternalNormal[idim]=sqrt(-2.0*log(rnd()))*cos(PiTimes2*rnd());
+          directionNorm2+=ExternalNormal[idim]*ExternalNormal[idim];
+        }
+        // A generator endpoint rnd()==0 produces log(0), and an exactly zero
+        // Gaussian vector has no direction.  Both events are outside the
+        // source law; redraw instead of passing nonfinite state to the model.
       }
+      while (!(directionNorm2>0.0) || !isfinite(directionNorm2));
 
-      r=sqrt(r);
-
-      for (idim=0;idim<DIM;idim++) {
-        ExternalNormal[idim]/=r;
-        x[idim]=sphereRadius*ExternalNormal[idim];
-        v[idim]=InitialGrainSpeed*ExternalNormal[idim];
-      }
+      // Independent equal-variance Gaussian components are isotropic.  The
+      // shared normalization kernel maps that draw to a uniform S^2 direction
+      // while rejecting the measure-zero zero vector explicitly.
+      ElectricallyChargedDust::Core::NormalizeInjectionDirection(ExternalNormal);
+      ElectricallyChargedDust::Core::SphericalSourceState(
+          sphereX0,sphereRadius,InitialGrainSpeed,ExternalNormal,x,v);
 
       //determine if the particle belongs to this processor
       startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
-      InjectionFlag=(startNode->Thread==PIC::Mesh::mesh->ThisThread) ? true : false;
+      InjectionFlag=(startNode!=NULL &&
+          startNode->Thread==PIC::Mesh::mesh->ThisThread);
     }
 
-    GrainMass=4.0/3.0*Pi*MeanDustDensity*pow(GrainRadius,3);
-    GrainInjectedMass-=GrainMass*ParticleWeight*GrainWeightCorrection;
+    GrainMass=ElectricallyChargedDust::Core::SphericalGrainMass(
+        GrainRadius,MeanDustDensity);
+    DustInjectionMassReservoir-=
+        GrainMass*ParticleWeight*GrainWeightCorrection;
 
     if (InjectionFlag==false) continue;
+    // A user callback must return a native owner when it accepts injection.
+    // Treat a missing owner as a rejected event instead of dereferencing it;
+    // the mass ledger has already consumed the globally attempted event, as
+    // it does on non-owner MPI ranks.
+    if (startNode==NULL || startNode->block==NULL) continue;
     if ((block=startNode->block)->GetLocalTimeStep(_DUST_SPEC_)/LocalTimeStep<rnd()) continue;
 
     //determine the velocity group of the injected grain;
@@ -1031,7 +1064,11 @@ void ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::SampleDi
         SamplingDataPointer[ElectricCurentSamplingOffset+idim]+=v[idim]*grainElecticCharge;
       }
 
-      SamplingDataPointer[AbsoluteElectricCurrentValueSamplingOffset]+=speed*grainElecticCharge;
+      // This diagnostic is the magnitude-weighted current moment, not the
+      // signed charge flux already stored component-wise above.  Use |q| so
+      // oppositely charged grains cannot cancel an "absolute" observable.
+      SamplingDataPointer[AbsoluteElectricCurrentValueSamplingOffset]+=
+          speed*fabs(grainElecticCharge);
 #endif
 
       ptr=PIC::ParticleBuffer::GetNext(ParticleData);
@@ -1515,43 +1552,51 @@ int ElectricallyChargedDust::DustChargingProcessor_SteadyState(double *xInit,dou
 //==========================================================================================
 //sample particle data
 void ElectricallyChargedDust::Sampling::SampleParticleData(char *ParticleData,double LocalParticleWeight,char  *SamplingBuffer,int spec) {
-  double GrainRadius,v[3]={0.0,0.0,0.0},Speed=0.0;
+  double GrainRadius,v[3]={0.0,0.0,0.0};
   int dustSamplingInterval,idim;
 
   //determine if the particle is a dust grain
   if (!((_DUST_SPEC_<=spec)&&(spec<_DUST_SPEC_+ElectricallyChargedDust::GrainVelocityGroup::nGroups))) return;
+  // RequestSamplingData allocates no per-bin storage when sampling is
+  // disabled.  Return before mapping a radius so a valid dust particle cannot
+  // address a zero-length buffer.
+  if (nDustSizeSamplingIntervals<=0) return;
 
   GrainRadius=GetGrainRadius((PIC::ParticleBuffer::byte*)ParticleData);
-  dustSamplingInterval=(int)(log(GrainRadius/minDustRadius)/dLogDustSamplingIntervals);
+  dustSamplingInterval=Core::LogarithmicBin(GrainRadius,minDustRadius,
+      maxDustRadius,nDustSizeSamplingIntervals);
   PIC::ParticleBuffer::GetV(v,(PIC::ParticleBuffer::byte*)ParticleData);
 
+#if _PIC_MODEL__DUST__ELECTRIC_CHARGE_MODE_ == _PIC_MODEL__DUST__ELECTRIC_CHARGE_MODE__ON_
+  const double grainElectricCharge=GetGrainCharge((PIC::ParticleBuffer::byte*)ParticleData);
+#else
+  const double grainElectricCharge=0.0;
+#endif
+  // Accumulate raw count, velocity, speed, charge, and current moments with
+  // one shared SI definition.  Output normalization remains unchanged.
+  Core::WeightedMoments moments;
+  Core::AccumulateWeightedMoments(LocalParticleWeight,v,
+      grainElectricCharge,moments);
+
   //number density
-  *(dustSamplingInterval+(double*)(SamplingBuffer+DustSizeSamplingInterval_NumberDensity_Offset))+=LocalParticleWeight;
+  *(dustSamplingInterval+(double*)(SamplingBuffer+DustSizeSamplingInterval_NumberDensity_Offset))+=moments.number;
 
   //velocity
   for (idim=0;idim<3;idim++) {
-    v[idim]*=LocalParticleWeight;
-    Speed+=v[idim]*v[idim];
-
-    *(idim+3*dustSamplingInterval+(double*)(SamplingBuffer+DustSizeSamplingInterval_Velocity_Offset))+=v[idim];
+    *(idim+3*dustSamplingInterval+(double*)(SamplingBuffer+DustSizeSamplingInterval_Velocity_Offset))+=moments.velocity[idim];
   }
 
   //Speed
-  Speed=sqrt(Speed);
-  *(dustSamplingInterval+(double*)(SamplingBuffer+DustSizeSamplingInterval_Speed_Offset))+=Speed;
+  *(dustSamplingInterval+(double*)(SamplingBuffer+DustSizeSamplingInterval_Speed_Offset))+=moments.speed;
 
   //electric charge and currents
 #if _PIC_MODEL__DUST__ELECTRIC_CHARGE_MODE_ == _PIC_MODEL__DUST__ELECTRIC_CHARGE_MODE__ON_
-  double grainElectricCharge=GetGrainCharge((PIC::ParticleBuffer::byte*)ParticleData);
-
-  *(dustSamplingInterval+(double*)(SamplingBuffer+DustSizeSamplingInterval_ElectricCherge_Offset))+=grainElectricCharge*LocalParticleWeight;
-  *((double*)(SamplingBuffer+Sampling::TotalDustElectricChargeDensitySamplingOffset))+=grainElectricCharge*LocalParticleWeight;
+  *(dustSamplingInterval+(double*)(SamplingBuffer+DustSizeSamplingInterval_ElectricCherge_Offset))+=moments.charge;
+  *((double*)(SamplingBuffer+Sampling::TotalDustElectricChargeDensitySamplingOffset))+=moments.charge;
 
   for (idim=0;idim<3;idim++) {
-    v[idim]*=grainElectricCharge;
-
-    *(idim+3*dustSamplingInterval+(double*)(SamplingBuffer+DustSizeSamplingInterval_ElectricCurrent_Offset))+=v[idim];
-    *(idim+(double*)(SamplingBuffer+Sampling::TotalDustElectricCurrentDensitySamplingOffset))+=v[idim];
+    *(idim+3*dustSamplingInterval+(double*)(SamplingBuffer+DustSizeSamplingInterval_ElectricCurrent_Offset))+=moments.current[idim];
+    *(idim+(double*)(SamplingBuffer+Sampling::TotalDustElectricCurrentDensitySamplingOffset))+=moments.current[idim];
   }
 #endif
 }

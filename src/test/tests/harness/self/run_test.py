@@ -170,8 +170,9 @@ def test_selection_contract(context: Dict) -> None:
         case=[], campaign="smoke", tier=None)
     selected = module.select_tests(tests, alias_args)
     assert [item["id"] for item in selected] == ["CORE-PIC-NATIVE-001"]
-    assert len(selected[0]["selected_cases"]) == 19
-    assert all(value.startswith("PHYS-") for value in selected[0]["selected_cases"])
+    assert len(selected[0]["selected_cases"]) == 36
+    assert all(value.startswith(("PHYS-", "T4-"))
+               for value in selected[0]["selected_cases"])
     legacy_tier_args = argparse.Namespace(
         test=[], match=[], component=[], all=False, case=[],
         campaign=None, tier="smoke")
@@ -203,22 +204,45 @@ def test_selection_contract(context: Dict) -> None:
         "CORE-GENERAL-RNG-001", "CORE-GENERAL-MPI-001",
         "CORE-GENERAL-LOGGER-001", "CORE-UNITS-001",
         "CORE-SPECIES-RADIATION-001", "CORE-INTERFACE-ABI-001",
+        "CORE-CHEMICAL-SOLVER-001",
+        "CORE-SURFACE-EXOSPHERE-001", "CORE-EXOSPHERE-SPHERE-NATIVE-001",
+        "CORE-SPUTTERING-001",
+        "CORE-DUST-001", "CORE-DUST-NATIVE-001",
+        "CORE-DUST-INJECTION-NATIVE-001",
         "CORE-PIC-NATIVE-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001",
         "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001",
         "CORE-PIC-SPLIT-MERGE-001",
+        "CORE-PIC-PERIODIC-001", "CORE-PIC-COLLISION-VHS-001",
+        "CORE-PIC-COLLISION-VSS-001", "CORE-PIC-IDF-ROTZ-Z2-001",
+        "CORE-PIC-IDF-ROTZ-Z10-001",
         "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001",
         "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001",
-        "CORE-MESH-NATIVE-001"}
+        "CORE-PHOTOCHEM-DAUGHTER-001",
+        "CORE-T6-REACTIONS-NATIVE-001", "CORE-MESH-NATIVE-001"}
     assert campaign_ids("distributed") == {"CORE-GENERAL-MPI-001"}
     assert campaign_ids("extended") == {
         "CORE-INTERFACE-ABI-001", "CORE-PIC-NATIVE-001",
-        "CORE-PIC-SPLIT-MERGE-001", "CORE-MESH-NATIVE-001"}
+        "CORE-EXOSPHERE-SPHERE-NATIVE-001",
+        "CORE-PIC-PERIODIC-001", "CORE-PIC-COLLISION-VHS-001",
+        "CORE-PIC-COLLISION-VSS-001", "CORE-PIC-IDF-ROTZ-Z2-001",
+        "CORE-PIC-IDF-ROTZ-Z10-001", "CORE-PIC-SPLIT-MERGE-001",
+        "CORE-PHOTOCHEM-DAUGHTER-001",
+        "CORE-T6-REACTIONS-NATIVE-001", "CORE-DUST-NATIVE-001",
+        "CORE-DUST-INJECTION-NATIVE-001",
+        "CORE-MESH-NATIVE-001"}
     assert campaign_ids("profile") == {
         "CORE-PIC-NATIVE-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001",
+        "CORE-EXOSPHERE-SPHERE-NATIVE-001",
         "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001",
         "CORE-PIC-SPLIT-MERGE-001",
+        "CORE-PIC-PERIODIC-001", "CORE-PIC-COLLISION-VHS-001",
+        "CORE-PIC-COLLISION-VSS-001", "CORE-PIC-IDF-ROTZ-Z2-001",
+        "CORE-PIC-IDF-ROTZ-Z10-001",
         "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001",
         "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001",
+        "CORE-PHOTOCHEM-DAUGHTER-001",
+        "CORE-T6-REACTIONS-NATIVE-001", "CORE-DUST-NATIVE-001",
+        "CORE-DUST-INJECTION-NATIVE-001",
         "CORE-MESH-NATIVE-001"}
 
     unknown_case_args = argparse.Namespace(

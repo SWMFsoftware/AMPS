@@ -18,6 +18,7 @@
 #include "SingleVariableDistribution.h"
 #include "SingleVariableDiscreteDistribution.h"
 #include "constants.h"
+#include "Exosphere_SurfaceSource.h"
 
 #include "Exosphere.dfn"
 
@@ -334,7 +335,6 @@ namespace Exosphere {
     if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
 
     //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
-    double lVel[3];
 #if _EXOSPHERE__ENERGY_DISTRIBUTION_INVERSION_ == _EXOSPHERE__ENERGY_DISTRIBUTION_INVERSION__NUMERIC_
     double Speed=sqrt(EnergyDistribution->DistributeVariable()*2.0/PIC::MolecularData::GetMass(spec));
 #elif _EXOSPHERE__ENERGY_DISTRIBUTION_INVERSION_ == _EXOSPHERE__ENERGY_DISTRIBUTION_INVERSION__USER_DEFINED_
@@ -350,57 +350,30 @@ namespace Exosphere {
 #endif
 
 #if _EXOSPHERE__INJECTION_ANGLE_DISTRIBUTION_ == _EXOSPHERE__INJECTION_ANGLE_DISTRIBUTION__UNIFORM_
-    double c=0.0,rVel=0.0;
-
-    for (idim=0;idim<3;idim++) {
-      lVel[idim]=sqrt(-2.0*log(rnd()))*cos(PiTimes2*rnd());
-      rVel+=pow(lVel[idim],2);
-
-      c+=ExternalNormal[idim]*lVel[idim];
-    }
-
-    rVel=Speed/sqrt(rVel);
-
-    if (c>0.0) {
-      //the distributed velocity vector is directed into the domain
-      for (idim=0;idim<3;idim++) v_LOCAL_IAU_OBJECT[idim]=lVel[idim]*rVel;
-    }
-    else {
-      //the distributed velocity vector is directed into the planet -> redirect it
-      for (idim=0;idim<3;idim++) v_LOCAL_IAU_OBJECT[idim]=(lVel[idim]-2.0*c*ExternalNormal[idim])*rVel;
-    }
+    const SurfaceSource::AngularLaw SurfaceAngularLaw=
+        SurfaceSource::AngularLaw::UniformSolidAngle;
 #elif _EXOSPHERE__INJECTION_ANGLE_DISTRIBUTION_ ==  _EXOSPHERE__INJECTION_ANGLE_DISTRIBUTION__KNUDSEN_COSINE_
-    // first, distribute velocity assuming normal vector to be {0,0,1}
-    double Phi      = PiTimes2*rnd();
-    double SinTheta = pow(rnd(),0.5);
-    lVel[0] = cos(Phi) * SinTheta;
-    lVel[1] = sin(Phi) * SinTheta;
-    lVel[2] = pow(1.0 - SinTheta*SinTheta, 0.5);
-    // actual normal is obtained from {0,0,1} by 2 rotations:
-    //   1: around initial z axis by angle A
-    //   2: around new     y axis by angle B
-    //
-    // rotation matrix:  / CosB*CosA -SinA SinB*CosA \
-    //                  |  CosB*SinA  CosA SinB*SinA  |
-    //                   \-SinB         0  CosB      /
-    //
-    //         => normal = {SinB*CosA, SinB*SinA, CosB}
-    double CosB = ExternalNormal[2];
-    if(CosB < 1.0 && CosB > -1.0) {
-      double SinB = pow(1.0 - CosB*CosB, 0.5);
-      double CosA, SinA;
-      CosA = ExternalNormal[0] / SinB;
-      SinA = ExternalNormal[1] / SinB;
-      v_LOCAL_IAU_OBJECT[0]=Speed*( lVel[0]*CosB*CosA - lVel[1]*SinA + lVel[2]*SinB*CosA);
-      v_LOCAL_IAU_OBJECT[1]=Speed*( lVel[0]*CosB*SinA + lVel[1]*CosA + lVel[2]*SinB*SinA);
-      v_LOCAL_IAU_OBJECT[2]=Speed*(-lVel[0]*SinB                     + lVel[2]*CosB     );
-    }
-    else    // if abs(CosB)==1 no rotation is needed
-      for (idim=0;idim<3;idim++) v_LOCAL_IAU_OBJECT[idim]=lVel[idim]*Speed;
-    
+    const SurfaceSource::AngularLaw SurfaceAngularLaw=
+        SurfaceSource::AngularLaw::KnudsenCosine;
 #else
     exit(__LINE__, __FILE__, "ERROR: _EXOSPHERE__INJECTION_ANGLE_DISTRIBUTION_ is not defined")
 #endif
+
+    // The dependency-light sampler implements the exact inverse CDF in the
+    // outward surface frame: p(mu)=1 for uniform solid angle and p(mu)=2*mu
+    // for a Knudsen effusive flux, where mu=v.n/|v|.  The orthonormal-frame
+    // rotation is nonsingular at both poles.  In particular, a south-pole
+    // normal now emits toward -z; the legacy special case incorrectly left a
+    // +z sample unrotated.  Speed [m/s] remains owned by the selected source's
+    // energy law and the result is still expressed in the body-fixed IAU
+    // frame before applying the full position/velocity state transform.
+    const std::array<double,3> SurfaceNormal={{
+        ExternalNormal[0],ExternalNormal[1],ExternalNormal[2]}};
+    const std::array<double,3> UnitVelocity=
+        SurfaceSource::DirectionFromUnitSamples(
+            SurfaceNormal,rnd(),rnd(),SurfaceAngularLaw);
+    for (idim=0;idim<3;idim++)
+      v_LOCAL_IAU_OBJECT[idim]=Speed*UnitVelocity[idim];
 
     //transform the velocity vector to the coordinate frame 'MSGR_SO'
     v_LOCAL_SO_OBJECT[0]=

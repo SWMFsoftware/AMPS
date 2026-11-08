@@ -225,8 +225,205 @@
       "timeout_seconds": 180
     },
     {
+      "id": "CORE-CHEMICAL-SOLVER-001",
+      "component": "src/models/chemical_solver",
+      "level": "module",
+      "tiers": ["nightly"],
+      "runner": "tests/models/chemical_solver/run_test.py",
+      "description": "Dependency-light adaptive implicit chemistry integration, network validation, analytic kinetics, stiff Robertson behavior, positivity, conservation, and typed failures",
+      "requires": {
+        "tools": ["cxx"],
+        "paths": [
+          "src/models/chemical_solver/ChemicalSolver.h",
+          "src/models/chemical_solver/chemeq2.cpp",
+          "test/srcChemicalSolverTests/main.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "CHEM-SOLVER-DECAY-001",
+        "CHEM-SOLVER-REVERSIBLE-001",
+        "CHEM-SOLVER-ROBERTSON-001",
+        "CHEM-SOLVER-CONSERVATION-CONVERGENCE-001",
+        "CHEM-SOLVER-NETWORK-VALIDATION-001",
+        "CHEM-SOLVER-INVALID-001",
+        "CHEM-SOLVER-SINGULAR-001"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "CORE-SURFACE-EXOSPHERE-001",
+      "aliases": ["CORE-SURFACE-001", "CORE-EXOSPHERE-SOURCES-001"],
+      "alias_cases": {
+        "CORE-SURFACE-001": [
+          "SURFACE-SPHERE-GEOMETRY-001",
+          "SURFACE-STATE-FLUX-001"
+        ],
+        "CORE-EXOSPHERE-SOURCES-001": [
+          "EXOSPHERE-SOURCE-SHAPE-001",
+          "EXOSPHERE-ANGULAR-UNIFORM-001",
+          "EXOSPHERE-ANGULAR-COSINE-001",
+          "EXOSPHERE-FLUX-CLOSURE-001",
+          "EXOSPHERE-POISSON-SCHEDULER-001",
+          "EXOSPHERE-COMPILED-SOURCE-SELECTION-001"
+        ]
+      },
+      "component": "src/models/surface",
+      "level": "module",
+      "tiers": ["nightly"],
+      "runner": "tests/models/surface_exosphere/run_test.py",
+      "description": "Dependency-light spherical surface geometry, default exosphere surface state, source normalization, angular laws, and flux accounting",
+      "requires": {
+        "tools": ["cxx"],
+        "paths": [
+          "src/models/surface/SurfaceElementGeometry.h",
+          "src/models/exosphere/Exosphere_DefaultSurfaceDataStructure.h",
+          "src/models/exosphere/Exosphere_SurfaceSource.h"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "SURFACE-SPHERE-GEOMETRY-001",
+        "SURFACE-STATE-FLUX-001",
+        "EXOSPHERE-SOURCE-SHAPE-001",
+        "EXOSPHERE-ANGULAR-UNIFORM-001",
+        "EXOSPHERE-ANGULAR-COSINE-001",
+        "EXOSPHERE-FLUX-CLOSURE-001",
+        "EXOSPHERE-POISSON-SCHEDULER-001",
+        "EXOSPHERE-COMPILED-SOURCE-SELECTION-001"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "CORE-EXOSPHERE-SPHERE-NATIVE-001",
+      "component": "src/models/exosphere",
+      "level": "integration",
+      "tiers": ["nightly", "profile", "extended"],
+      "runner": "tests/models/exosphere_native/run_test.py",
+      "description": "Clean configured one-rank spherical exosphere source dispatch, AMR ownership, particle weight, surface interaction, inventory, and sampling-ledger qualification",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": [
+          "Config.pl",
+          "input/test/core-exosphere-sphere.input",
+          "test/srcCoreExosphereTests/main.cpp",
+          "src/models/exosphere/Exosphere.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": ["CORE-EXOSPHERE-SPHERE-INTEGRATION-001"],
+      "timeout_seconds": 1800,
+      "mpi_ranks": 1,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-SPUTTERING-001",
+      "component": "src/models/sputtering",
+      "level": "module",
+      "tiers": ["nightly"],
+      "runner": "tests/models/sputtering/run_test.py",
+      "description": "Ice sputtering tables, selectable emission-angle laws, source-rate accounting, product ledgers, and H2O/O2 speed importance weights",
+      "requires": {
+        "tools": ["cxx"],
+        "paths": [
+          "src/models/sputtering/Sputtering.h",
+          "src/models/sputtering/Sputtering_Source.h",
+          "src/models/sputtering/Sputtering.cpp",
+          "src/models/sputtering/Sputtering_Ice.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "SPUTTERING-TEOLIS-TABLE-001",
+        "SPUTTERING-RUBIN-TABLE-001",
+        "SPUTTERING-PRODUCT-CATALOGUE-001",
+        "SPUTTERING-SPEED-WEIGHT-001",
+        "SPUTTERING-WEIGHT-NORMALIZATION-001",
+        "SPUTTERING-ANGLE-SELECTOR-001",
+        "SPUTTERING-ANGLE-MOMENTS-001",
+        "SPUTTERING-SOURCE-RATE-001",
+        "SPUTTERING-PRODUCT-LEDGER-001",
+        "SPUTTERING-RATE-LEDGER-CLOSURE-001"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "CORE-DUST-001",
+      "component": "src/models/dust",
+      "level": "module",
+      "tiers": ["nightly"],
+      "runner": "tests/models/dust/run_test.py",
+      "description": "Dependency-light dust size distributions, charging/force limits, spherical source laws, Mie interpolation, moments, and dust-owned size-group split/merge",
+      "requires": {
+        "tools": ["cxx"],
+        "paths": [
+          "src/models/dust/DustCore.h",
+          "src/models/dust/DustSplitMerge.h",
+          "src/models/dust/Dust_MieScatteringEfficiency_Fink2012Icarus.h",
+          "src/models/dust/Dust.h",
+          "src/models/dust/Dust.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "CORE-DUST-SIZE-BINS-001",
+        "CORE-DUST-SIZE-DISTRIBUTION-001",
+        "CORE-DUST-CHARGING-POTENTIAL-001",
+        "CORE-DUST-FORCE-LIMITS-001",
+        "CORE-DUST-INJECTION-LAW-001",
+        "CORE-DUST-MIE-INTERPOLATION-001",
+        "CORE-DUST-MOMENTS-001",
+        "CORE-DUST-SPLIT-MERGE-001"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "CORE-DUST-NATIVE-001",
+      "component": "src/models/dust",
+      "level": "integration",
+      "tiers": ["nightly", "profile", "extended"],
+      "runner": "tests/models/dust_native/run_test.py",
+      "description": "Clean configured test/model-dust build and one-rank equilibrium/transient charging convergence across four grain radii",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": [
+          "Config.pl",
+          "input/test/model-dust.input",
+          "test/srcModelDustTest/main.cpp",
+          "src/models/dust/Dust_charging.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": ["CORE-DUST-CHARGING-DYNAMICS-001"],
+      "timeout_seconds": 1800,
+      "mpi_ranks": 1,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-DUST-INJECTION-NATIVE-001",
+      "component": "src/models/dust",
+      "level": "integration",
+      "tiers": ["nightly", "profile", "extended"],
+      "runner": "tests/models/dust_injection_native/run_test.py",
+      "description": "Clean configured DUST build and one-rank production spherical injection, AMR ownership, individual-weight, mover, sampling, and mass-ledger qualification",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": [
+          "Config.pl",
+          "input/test/model-dust-injection.input",
+          "test/srcModelDustInjectionTest/main.cpp",
+          "src/models/dust/Dust.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": ["CORE-DUST-INJECTION-INTEGRATION-001"],
+      "timeout_seconds": 1800,
+      "mpi_ranks": 1,
+      "exclusive": true
+    },
+    {
       "id": "CORE-PIC-NATIVE-001",
-      "aliases": ["CORE-PIC-PARTICLE-BUFFER-001", "CORE-PIC-PBUFFER-LAYOUT-001", "CORE-PIC-PHYSICS-001", "CORE-SPECIES-001", "CORE-PIC-WEIGHT-TIME-001", "CORE-PIC-MOVER-CHARGED-001", "CORE-PIC-MOVER-RELATIVISTIC-001", "CORE-PIC-GYRO-001", "CORE-PIC-BOUNDARY-001", "CORE-PIC-INJECTION-001", "CORE-PIC-SAMPLING-001", "CORE-PIC-COLLISION-ALGORITHMS-001", "CORE-PIC-IDF-001"],
+      "aliases": ["CORE-PIC-PARTICLE-BUFFER-001", "CORE-PIC-PBUFFER-LAYOUT-001", "CORE-PIC-PHYSICS-001", "CORE-SPECIES-001", "CORE-PIC-WEIGHT-TIME-001", "CORE-PIC-MOVER-CHARGED-001", "CORE-PIC-MOVER-RELATIVISTIC-001", "CORE-PIC-GYRO-001", "CORE-PIC-BOUNDARY-001", "CORE-PIC-INJECTION-001", "CORE-PIC-SAMPLING-001", "CORE-PIC-COLLISION-ALGORITHMS-001", "CORE-PIC-IDF-001", "CORE-PHOTOCHEM-EXECUTION-001"],
       "alias_cases": {
         "CORE-PIC-PARTICLE-BUFFER-001": [
           "PIC-PBUFFER-INIT-001",
@@ -347,6 +544,14 @@
           "T5-IDF-UPDATE-FLAGS-001",
           "T5-IDF-MODE-FAMILIES-001"
         ],
+        "CORE-PHOTOCHEM-EXECUTION-001": [
+          "T6-PHOTOCHEM-RATE-DOMAIN-001",
+          "T6-PHOTOCHEM-SCHEDULER-DOMAIN-001",
+          "T6-PHOTOCHEM-BRANCH-DISTANCE-001",
+          "T6-PHOTOCHEM-GIVEN-PRODUCT-001",
+          "T6-PHOTOCHEM-THREE-BODY-ANGULAR-001",
+          "T6-PHOTOCHEM-DRIVER-NO-DAUGHTER-001"
+        ],
         "CORE-SPECIES-001": [
           "CONFIG-DUPLICATE-SPECIES-001",
           "PIC-SPECIES-CONSTANTS-001",
@@ -381,6 +586,9 @@
           "test/srcCoreUnitTests/physics_movers.cpp",
           "test/srcCoreUnitTests/physics_t4.cpp",
           "test/srcCoreUnitTests/physics_t5.cpp",
+          "test/srcCoreUnitTests/physics_t6_photochem.cpp",
+          "test/srcCoreUnitTests/physics_t6_reactions.cpp",
+          "test/srcCoreUnitTests/core_test_chemistry.h",
           "test/srcCoreUnitTests/core_test_fields.h",
           "test/srcCoreUnitTests/core_test_mesh.h",
           "test/srcCoreUnitTests/species.cpp",
@@ -467,6 +675,12 @@
         "T5-IDF-RT-HOT-COLD-001",
         "T5-IDF-UPDATE-FLAGS-001",
         "T5-IDF-MODE-FAMILIES-001",
+        "T6-PHOTOCHEM-RATE-DOMAIN-001",
+        "T6-PHOTOCHEM-SCHEDULER-DOMAIN-001",
+        "T6-PHOTOCHEM-BRANCH-DISTANCE-001",
+        "T6-PHOTOCHEM-GIVEN-PRODUCT-001",
+        "T6-PHOTOCHEM-THREE-BODY-ANGULAR-001",
+        "T6-PHOTOCHEM-DRIVER-NO-DAUGHTER-001",
         "PIC-SPECIES-CONSTANTS-001",
         "PIC-SPECIES-GENERATED-MAPPING-001",
         "PIC-SPECIES-GENERATED-TABLES-001",
@@ -478,6 +692,75 @@
         "PIC-WEIGHT-TIMESTEP-SPECIES-COPY-001",
         "PIC-WEIGHT-TIMESTEP-INVALID-VALUE-001",
         "PIC-WEIGHT-TIMESTEP-INVALID-SPECIES-001"
+      ],
+      "timeout_seconds": 1800,
+      "mpi_ranks": 1,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-PHOTOCHEM-DAUGHTER-001",
+      "component": "src/models/photolytic_reactions",
+      "level": "module",
+      "tiers": ["nightly", "profile", "extended"],
+      "runner": "tests/pic/native_core/run_test.py",
+      "description": "Production whole-mesh photochemistry dispatch with individual-weight H2O to OH+H daughter insertion and independent physical budgets",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": [
+          "Config.pl",
+          "input/test/core-unit-tests-photochem-daughter.input",
+          "test/srcCoreUnitTests/core_test_chemistry.h",
+          "test/srcCoreUnitTests/physics_t6_photochem.cpp",
+          "src/pic/pic_photolytic_reactions.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": ["T6-PHOTOCHEM-DRIVER-DAUGHTER-001"],
+      "timeout_seconds": 1800,
+      "mpi_ranks": 1,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-T6-REACTIONS-NATIVE-001",
+      "aliases": ["CORE-CHARGE-EXCHANGE-001", "CORE-ELECTRON-IMPACT-001"],
+      "alias_cases": {
+        "CORE-CHARGE-EXCHANGE-001": [
+          "T6-CHARGE-EXCHANGE-LINDSAY-001",
+          "T6-CHARGE-EXCHANGE-MAHER-001",
+          "T6-CHARGE-EXCHANGE-SELECTOR-001"
+        ],
+        "CORE-ELECTRON-IMPACT-001": [
+          "T6-ELECTRON-IMPACT-RATES-001",
+          "T6-ELECTRON-IMPACT-YIELDS-001",
+          "T6-ELECTRON-IMPACT-PRODUCTS-001",
+          "T6-ELECTRON-IMPACT-CONDITIONED-001"
+        ]
+      },
+      "component": "src/models/electron_impact",
+      "level": "module",
+      "tiers": ["nightly", "profile", "extended"],
+      "runner": "tests/pic/native_core/run_test.py",
+      "description": "Configured optional charge-exchange and Burger electron-impact archives with analytic rates, thresholds, branching, product identity, conservation, and typed unavailable domains",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": [
+          "Config.pl",
+          "input/test/core-unit-tests-reactions.input",
+          "test/srcCoreUnitTests/physics_t6_reactions.cpp",
+          "src/models/charge_exchange/ChargeExchange_LindsayStebbings.cpp",
+          "src/models/charge_exchange/ChargeExchange_MaherTinsley.cpp",
+          "src/models/electron_impact/ElectronImpact_Burger2010SSR.cpp"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "T6-CHARGE-EXCHANGE-LINDSAY-001",
+        "T6-CHARGE-EXCHANGE-MAHER-001",
+        "T6-CHARGE-EXCHANGE-SELECTOR-001",
+        "T6-ELECTRON-IMPACT-RATES-001",
+        "T6-ELECTRON-IMPACT-YIELDS-001",
+        "T6-ELECTRON-IMPACT-PRODUCTS-001",
+        "T6-ELECTRON-IMPACT-CONDITIONED-001"
       ],
       "timeout_seconds": 1800,
       "mpi_ranks": 1,

@@ -197,7 +197,17 @@ double ElectronImpact::Burger2010SSR::GetTotalRateCoefficient(double *RateCoeffi
   int i0,i1;
   double t,el,c0,c1,TempLOG10,res=0.0;
   int nChannel;
-  //ElectronTemeprature in eV
+  // Every channel output is defined even when the requested temperature is
+  // outside the tabulated domain.  This prevents callers from observing
+  // uninitialized rates for a valid zero-total result.
+  for (nChannel=0;nChannel<nReactionChannels;nChannel++)
+    RateCoefficientTable[nChannel]=0.0;
+
+  // ElectronTemeprature is in eV. A non-positive or non-finite value has no
+  // physical Maxwellian rate in this table and returns the typed numeric
+  // result zero; in particular, log10() is never evaluated outside its domain.
+  if (!(ElectronTemeprature>0.0) || !isfinite(ElectronTemeprature)) return 0.0;
+
   //determine the element number in the data table and the corresponding interpolation coefficients;
   TempLOG10=log10(ElectronTemeprature);
   el=(TempLOG10-minlog10RateCoefficientTableElectronTemeprature_LOG10)/dlog10RateCoefficientTableElectronTemeprature_LOG10;
@@ -518,6 +528,10 @@ void ElectronImpact::Burger2010SSR::GenerateReactionProducts(double ElectronTeme
   TotalRateCoefficient=GetTotalRateCoefficient(RateCoefficientTable,ElectronTemeprature,nReactionChannels,log10RateCoefficientTable, minTemp);
 
   if (TotalRateCoefficient==0) {
+    // -1 is the explicit no-reaction sentinel used by the conditioned
+    // generator below.  Defining it here too prevents a sub-threshold or
+    // invalid T_e request from leaking the caller's previous channel value.
+    ReactionChannel=-1;
     nReactionProducts=0;
     return;
   }
@@ -608,23 +622,50 @@ void ElectronImpact::Burger2010SSR::GenerateGivenProducts(int prodSpec,double El
   TotalRateCoefficient=GetTotalRateCoefficient(RateCoefficientTable,ElectronTemeprature,nReactionChannels,log10RateCoefficientTable, minTemp);
 
   if (TotalRateCoefficient==0) {
+    ReactionChannel=-1;
     nReactionProducts=0;
     return;
   }
   //determine the channel of the impact reaction
   //Note some channels can have 0 probablity.
 
-  bool findGivenSpec=false;
-  
-  while (!findGivenSpec){
-    double temp = TotalRateCoefficient*rnd();
-    for (nChannel=0,summ=0.0;nChannel<nReactionChannels;nChannel++) {
-      summ+=RateCoefficientTable[nChannel];
-      if (summ>temp) break;
-    }
-    
-    if (nChannel==nReactionChannels) nChannel-=1; //keep the reaction channel index within the range
-    ReactionChannel=nChannel;
+  /* Condition the channel distribution on the requested daughter instead of
+   * rejection-sampling the unconditional distribution. The old loop never
+   * terminated when the daughter was unavailable at the requested T_e. Here
+   * eligibleRate [m^3 s^-1] is the sum of channel rate coefficients which
+   * contain prodSpec; a zero sum is an explicit no-product result. */
+  double eligibleRate=0.0;
+  for (nChannel=0;nChannel<nReactionChannels;nChannel++) {
+    bool contains=false;
+    for (i=0;i<nMaxReactionProducts;i++)
+      if (ReactionChannelProducts[i+nChannel*nMaxReactionProducts]==prodSpec)
+        contains=true;
+    if (contains) eligibleRate+=RateCoefficientTable[nChannel];
+  }
+  if (!(eligibleRate>0.0)) {
+    ReactionChannel=-1;
+    nReactionProducts=0;
+    return;
+  }
+
+  const double target=eligibleRate*rnd();
+  for (nChannel=0,summ=0.0;nChannel<nReactionChannels;nChannel++) {
+    bool contains=false;
+    for (i=0;i<nMaxReactionProducts;i++)
+      if (ReactionChannelProducts[i+nChannel*nMaxReactionProducts]==prodSpec)
+        contains=true;
+    if (!contains) continue;
+    summ+=RateCoefficientTable[nChannel];
+    if (summ>target) break;
+  }
+  if (nChannel==nReactionChannels) {
+    // Endpoint-exclusive rnd() should make this unreachable; retain a typed
+    // no-product result rather than indexing beyond the channel table.
+    ReactionChannel=-1;
+    nReactionProducts=0;
+    return;
+  }
+  ReactionChannel=nChannel;
     
     double excessEnergy=-1.0;
     excessEnergy = ElectronTemeprature-minTemp[nChannel];
@@ -635,13 +676,9 @@ void ElectronImpact::Burger2010SSR::GenerateGivenProducts(int prodSpec,double El
     // Init the list of the reaction products
     int t;
     
-    for (i=0,nReactionProducts=0;i<nMaxReactionProducts;i++) {
-      if ((t=ReactionChannelProducts[i+ReactionChannel*nMaxReactionProducts])>=0) {
-	ReturnReactionProductTable[nReactionProducts++]=t;
-	if (t==prodSpec) findGivenSpec=true;
-      }
-    }
-    
+  for (i=0,nReactionProducts=0;i<nMaxReactionProducts;i++) {
+    if ((t=ReactionChannelProducts[i+ReactionChannel*nMaxReactionProducts])>=0)
+      ReturnReactionProductTable[nReactionProducts++]=t;
   }
 
   if (nReactionProducts==0) return;
@@ -727,32 +764,18 @@ void ElectronImpact::Burger2010SSR::Print(const char* fname,const char* OutputDi
   fclose(fout);
 }
 
-double ElectronImpact::Burger2010SSR::GetSpeciesReactionYield(int spec,double ElectronTemeprature,double *log10RateCoefficientTable, int nReactionChannels, int* ReactionChannelProducts, int nMaxReactionProducts) {
+double ElectronImpact::Burger2010SSR::GetSpeciesReactionYield(
+    int spec,double ElectronTemeprature,double *log10RateCoefficientTable,
+    int nReactionChannels,int* ReactionChannelProducts,
+    int nMaxReactionProducts,double *minTemp) {
   double yield=0.0,TotalRateCoefficient=0.0,RateCoefficientTable[nReactionChannels];
   int ReactionChannel,i;
 
-  double * minTemp;
-
-  switch (spec){
-  case _O2_SPEC_ :
-    minTemp = ElectronImpact::O2::Burger2010SSR::minTemp;
-    break;
-  case _H2O_SPEC_:
-    minTemp = ElectronImpact::H2O::Burger2010SSR::minTemp;
-    break;
-  case _O_SPEC_:
-    minTemp = ElectronImpact::O::Burger2010SSR::minTemp;
-    break;
-  case _H2_SPEC_:
-    minTemp = ElectronImpact::H2::Burger2010SSR::minTemp;
-    break;
-  case _H_SPEC_:
-    minTemp = ElectronImpact::H2::Burger2010SSR::minTemp;
-    break;
-  default:
-    return 0.0;
-  }
-
+  /* minTemp belongs to the parent reaction table. The earlier implementation
+   * selected it from `spec`, which is the requested daughter; neutral or ion
+   * daughters therefore used an unrelated threshold array or returned zero.
+   * Passing the owning table explicitly keeps yield=sum(nu_c k_c)/sum(k_c)
+   * dimensionless and valid for every compiled daughter. */
   TotalRateCoefficient=GetTotalRateCoefficient(RateCoefficientTable,ElectronTemeprature,nReactionChannels,log10RateCoefficientTable,minTemp);
 
   for (ReactionChannel=0;ReactionChannel<nReactionChannels;ReactionChannel++) {

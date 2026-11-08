@@ -2,6 +2,116 @@
 
 Last updated: 2026-11-07
 
+## T7 checkpoint
+
+T7 is complete for the bounded one-rank spherical scope selected for this
+stage. The live registry contains 31 suites and 311 cases; structural
+traceability passes with 24 component areas, 209 production translation
+units, 186 public contracts, and 23 configuration contracts. The final T7
+campaign reports 29 PASS, no FAIL/SKIP/ERROR, and six passing suites. Its 26
+dependency-light cases also pass in normal, reverse, and deterministic
+seed-707 shuffled order.
+
+| Area | Implemented and directly tested | State / remaining boundary |
+| --- | --- | --- |
+| Spherical surface | Flat/index round trips, positive exact curved areas, total `4*pi*R^2`, unit normals, default inventory/sample-buffer semantics, deterministic accommodation and adsorption-minus-desorption exchange | PASS for spherical one-rank contracts; nonspherical surfaces, target chemistry/temperature laws and MPI reduction remain open |
+| Exosphere sources | Area-weighted shapes, uniform and default Knudsen-cosine laws, stationary Poisson event times, cumulative process selection, physical/sampled ledgers, and production particle insertion | PASS for the five target-independent compiled spherical modes through native AMR ownership and the mover; target-specific, external-domain, background-plasma, SPICE and MPI modes remain open |
+| Sputtering | Rubin/Teolis boundaries and interpolation; product catalogue; H2O/O2 speed/weight laws; selectable angles with Knudsen-cosine default; incident-rate, daughter-weight and number/mass/momentum/energy ledgers | PASS for the shared source layer; native sputtered-particle insertion and exact page-level provenance of inherited numeric tables remain open |
+| Dust kernels | Log bins/power laws, SI potential/Lorentz limits, spherical direction/mass, Fink Mie interpolation, weighted moments, and dust-owned individual-weight split/merge within explicit exact-intrinsic size groups | PASS for the deterministic physical and conservation APIs; the two-output merge cannot generally preserve the pressure tensor, higher moments or raw speed moment |
+| Dust charging and injection | Independent Horanyi-current fixtures at three potentials and one equilibrium root; transient convergence for four radii; translated spherical production injection, DUST records, native AMR owner/mover, sampled mass rate and signed reservoir closure | PASS for bounded one-rank profiles; multi-rank arbitration/migration/reduction, restart and long stochastic convergence remain open |
+
+Production corrections include bounds-safe Rubin/Teolis interpolation, the
+Teolis interval-offset correction, a single shared sputtering product
+catalogue with idempotent initialization, dimensionally correct Mie bounds in
+log size parameter, dimension-safe dust injection normalization, translated
+sphere geometry, initialized particle records and checked AMR ownership, the
+removable `p=1` dust-size limit, and shared checked dust bin/force/moment
+kernels used by production call sites. The legacy exosphere injector now uses
+the shared exact angular inverse CDFs, stationary Poisson scheduler and
+cumulative compiled-process selector. New headers and tests document
+equations, SI units, coordinate conventions, numerical bounds, ownership and
+unsupported domains.
+
+Final retained T7 evidence:
+
+| Command/evidence | Result |
+| --- | --- |
+| `/tmp/amps-t7-final` | PASS 29/29 cases and 6/6 suites; no FAIL/SKIP/ERROR |
+| `/tmp/amps-t7-kernels-current` | PASS 26/26 dependency-light cases in normal order |
+| `/tmp/amps-t7-kernels-reverse` | PASS 26/26 dependency-light cases in reverse order |
+| `/tmp/amps-t7-kernels-shuffle-707` | PASS 26/26 dependency-light cases in deterministic shuffled order |
+| `/tmp/amps-t7-exosphere-native-final` | PASS native five-mode spherical exosphere source, ownership and ledger case after final relative-rate closure hardening |
+| `/tmp/amps-t7-dust-charging-native-current` | PASS native signed-current/equilibrium/transient charging case |
+| `/tmp/amps-t7-dust-injection-native-current3` | PASS native translated-sphere dust injection and mass-ledger case |
+| `/tmp/amps-t7-harness-final` | PASS 11/11 harness schema, campaign, selection, scheduler, protocol and traceability checks |
+| `python3 src/test/validate_traceability.py` | PASS: 24 areas, 209 translation units, 186 public contracts, 23 configuration contracts, 31 suites, 311 cases |
+
+The final native exosphere transcript emitted 618 numerical particles in four
+source intervals: 122 impact-vaporization, 141 PSD, 112 thermal-desorption,
+122 sputtering and 121 vertical-injection records. The accumulated calculated,
+surface-sampled and global production ledgers each report
+`6.1799999999999988e11 s^-1`; source occurrence counts are observability checks,
+not rate estimators. The dust injection receipt emitted one represented grain
+in the first half-grain interval and none in the second, closing the signed
+reservoir from `-4.1887902047863901e-17 kg` to exactly zero while reporting
+`8.3775804095727796e-16 kg s^-1` sampled mass rate.
+
+Earlier dust receipts that reported two capability SKIPs are retained only as
+diagnostics. They motivated the dedicated DUST-species native injection
+profile and the dust-owned size-group split/merge API; the all-green final
+campaign supersedes them. Likewise, the first native injection attempt exposed
+radius-record initialization order and the second exposed a floating endpoint
+at `exp(log(a_max))`; both defects were corrected before the retained receipt.
+
+Every configured T7 run performed the mandatory root/process preflight,
+removed only `build`, selected its application through `Config.pl`, and
+compiled through top-level `make amps` with `MAKEFLAGS=-j16`. Focused
+warnings-as-errors and ASan/UBSan runs passed the dependency-light dust and
+sputtering/exosphere kernels; LeakSanitizer is unavailable under this
+environment's ptrace restrictions. No Git state operation was performed.
+
+## T6 checkpoint
+
+T6 is qualified for the implemented, bounded reaction domains. The live
+registry at this checkpoint contains 25 suites and 282 cases, and structural
+traceability passes with 24 component areas, 209 production translation units,
+181 public contracts, and 20 configuration contracts. The gate covers the
+dependency-light chemical integrator, configured H2O photolysis execution,
+one individual-weight daughter-production profile, Burger electron-impact
+rates/products, and the two compiled charge-exchange rate laws.
+
+| Area | Implemented and directly tested | State / remaining boundary |
+| --- | --- | --- |
+| Chemical integrator | `A -> B`, reversible `A <-> B`, stiff decay, coupled chain, positivity/conservation, invalid networks | PASS for the dependency-light finite network API; runtime deck assembly and cell coupling remain open |
+| Photolysis execution | Populated-cell parent survival/decay, intrusive-list integrity, disabled/invalid lifetime paths, idempotent initialization | PASS for configured H2O quiet-Sun execution; application multi-parent networks remain open |
+| Photolysis daughters | Individual-weight H2O channel, daughter identity/count, weight, charge, mass, momentum and kinetic-energy accounting | PASS for the selected one-channel native profile; MPI/threaded insertion and general runtime networks remain open |
+| Charge exchange | Lindsay--Stebbings and Maher--Tinsley formulas, finite-domain values and invalid-domain sentinel | PASS for the exposed H/H+ lifetime functions; event selection, products and particle weights are not exposed by this module |
+| Electron impact | Burger total rates, thresholds, eligible-channel selection and H2O product statistics | PASS for compiled parent-rate dispatch and H2O products; runtime electron coupling and other-parent product insertion remain open |
+
+The populated-cell fixture now calls
+`PIC::DomainBlockDecomposition::UpdateBlockTable()` after allocating owner
+blocks. This is a substantive test correction: without rebuilding that table,
+whole-mesh chemistry processors observe `nLocalBlocks == 0` and a nominally
+passing parent-decay case is a no-op. The final receipts therefore supersede
+the earlier diagnostic runs.
+
+Final retained T6 evidence:
+
+| Command/evidence | Result |
+| --- | --- |
+| `/tmp/amps-t6-chemical-integrated` | PASS 7/7 chemical-solver cases |
+| `/tmp/amps-t6-photochem-baseline-blocktable` | PASS 6/6 populated-cell photochemistry cases |
+| `/tmp/amps-t6-photochem-daughter-blocktable` | PASS 1/1 individual-weight daughter case |
+| `/tmp/amps-t6-reactions-build2` | PASS 7/7 charge-exchange/electron-impact cases |
+| `/tmp/amps-t6-gate-reverse` | PASS 21/21 cases and 4/4 suites in reverse order |
+| `/tmp/amps-t6-gate-shuffle-706` | PASS 21/21 cases and 4/4 suites in deterministic shuffled order |
+| `/tmp/amps-t6-harness-prebuild-2` | PASS 11/11 harness self-tests |
+| `python3 src/test/validate_traceability.py` | PASS: 24 areas, 209 translation units, 181 public contracts, 20 configuration contracts, 25 suites, 282 cases |
+
+Each native T6 owner used the mandatory root/process preflight, removed only
+`build`, selected its deck through `Config.pl`, and compiled through top-level
+`make amps` with `MAKEFLAGS=-j16`. No Git state operation was performed.
+
 ## T4/T5 checkpoint
 
 The live registry contains 22 suites and 261 cases. Structural traceability
@@ -216,12 +326,14 @@ reported as qualification.
 - The manifest distinguishes smoke, nightly, profile, extended, distributed,
   and application-smoke campaigns. The retained T1 qualification registry
   assigned eight suites and 51 cases to smoke and 11 suites/98 cases to
-  nightly. The live T3 registry has 17 executable suites and 210 cases: smoke
-  remains 51, nightly/`--all` contain 210, and `profile` contains seven
-  exclusive native suites and 143 cases. `extended` contains 125 cases and
-  `distributed` retains its five-case MPI selection. The harness pins these
-  distinct sets. Empty campaign selections do not imply implemented coverage;
-  every native profile remains a scheduler barrier wherever selected.
+  nightly. At the T3 checkpoint the registry had 17 executable suites and 210
+  cases: smoke contained 51, nightly/`--all` contained 210, `profile`
+  contained seven exclusive native suites and 143 cases, and `extended`
+  contained 125. The current T7 registry instead has 31/311 total and 17/211
+  in `profile`; `distributed` still retains its five-case MPI selection. The
+  harness pins the current distinct sets. Empty campaign selections do not
+  imply implemented coverage; every native profile remains a scheduler
+  barrier wherever selected.
 - Framework, suite-adapter, native-fixture, and core-change comments document
   protocol/failure semantics, path containment, portability, concurrency,
   memory ownership, MPI reduction, test oracles, and validity limits. The
@@ -236,26 +348,28 @@ remains `partial` until a separately versioned paper/digitization fixture
 independently revalidates the retained He/Na tables. The test harness is
 `partial`, and all other `partial` and
 `planned` entries in
-`component_inventory.json` remain open.
-In particular, four non-NTC collision selectors have not yet been migrated.
-Existing model/application runners also remain to be adapted; distributed
-mesh ownership, restart, and rank-invariance coverage are open. T2 closes the declared host
-particle-layout, full-buffer, weight/time-mode, individual-weight, and
-split/merge contracts, but not every use of those facilities by later physics.
+`component_inventory.json` remain open. Existing model/application runners
+outside the adapted T7 spherical-exosphere and dust applications still remain
+to be integrated;
+distributed mesh ownership, restart, and rank-invariance coverage are open.
+T2 closes the declared host particle-layout, full-buffer, weight/time-mode,
+individual-weight, and split/merge contracts, but not every use of those
+facilities by later physics.
 
 The PIC and photolytic-reaction entries remain `partial`. Production NTC cell
 selection, a cross-species analytic rate, and H2O RT equilibration now have
 one-rank populated-cell evidence. Species-global, species-local, and
 single-global weight/time modes, individual particle weights, local rescaling,
-and conservative split/merge now have T2 host evidence. Unequal-weight/time-
-step collision physics, other collision selectors, collision limiting,
-injection, general sampling, and CUDA/device invalid-state diagnostics remain
-open. Movers still need charged uniform-E/B convergence,
-outer/refinement crossings, absorption/moving surfaces, and rank migration.
-Photochemistry now has sampled branching and 3-D no-daughter parent decay, but
-still needs three-body angular qualification and daughter insertion/statistical-
-weight bookkeeping. VT/VV relaxation is not claimed because the current VT
-implementation explicitly exits as unverified.
+and conservative split/merge now have T2 host evidence. T5 covers all five
+collision selectors in their declared weight domains, collision limiting, and
+the configured VHS/VSS laws; Yinsi individual-record weights and simplified-
+selector unequal-weight extensions remain open. T4 covers constant-field
+charged movers plus bounded static/moving/periodic surfaces, but coarse/fine
+crossings, additional production surface types and rank migration remain open.
+T6 covers three-body photolysis angular statistics and one individual-weight
+H2O daughter-insertion profile; quiet-Sun/runtime networks and MPI/thread-safe
+daughter processing remain open. VT/VV relaxation is not claimed because the
+current VT implementation explicitly exits as unverified.
 
 The RT occurrence case deliberately qualifies the current LB closure's
 hard-coded `Zrot=5`. The input generator emits and initialization validates
@@ -325,11 +439,13 @@ complete AMPS coverage.
 
 ## Current validation evidence
 
-The live source tree registers 17 executable suites and 210 individual cases,
-including 43 cases in the baseline native owner, 85 across the historical
-six-suite T2 profile matrix, and 58 in the three-profile dimensional T3 mesh
-owner. The live `profile` campaign therefore selects seven suites and 143
-cases. The historical bounded T1
+The live source tree registers 31 executable suites and 311 individual cases.
+Its `profile` campaign selects 17 configured owners and 211 cases, including
+the expanded 93-case baseline owner, historical T2 variants, the 58-case T3
+dimensional mesh owner, T4/T5 compile variants, T6 reaction profiles, and
+three T7 applications. The earlier seven-suite/143-case combined T2+T3
+profile remains retained historical evidence rather than the current campaign
+membership. The historical bounded T1
 qualification remains 11 suites/98 cases with 31 native cases; its normal,
 reverse, and shuffled native rebuilds retain the identical executable SHA-256
 `17b98e5ecd22915fc181cce51b8d71bd6abef517802a456ff2efba659c581919`.
@@ -343,7 +459,7 @@ itself.
 
 | Date | Command/evidence | Outcome | Scope |
 |---|---|---|---|
-| 2026-11-07 | `python3 src/test/run_tests.py --campaign profile --order normal --output-dir /tmp/amps-t2-t3-profile-qualified` | PASS 143/143, 7/7 suites, 0 FAIL/SKIP/ERROR (426.294 s) | Final current-tree regression of all six T2 configured owners (85 cases) plus the T3 mesh owner (58 cases). |
+| 2026-11-07 | `python3 src/test/run_tests.py --campaign profile --order normal --output-dir /tmp/amps-t2-t3-profile-qualified` | PASS 143/143, 7/7 suites, 0 FAIL/SKIP/ERROR (426.294 s) | Historical T2+T3 checkpoint of all six T2 configured owners (85 cases) plus the T3 mesh owner (58 cases); the live profile campaign has since expanded. |
 | 2026-11-07 | `python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order normal --output-dir /tmp/amps-t3-qualified-normal` | PASS 58/58 | Final corrected-tree normal order. Executable SHA-256: 1-D `54e79ddf1c34e2910a059a23e38232bea6322ab7a1ee6d31e35204acd8dbf4e0`; 2-D `8d5311b99bfba3812599336b2cdbb4fbcd53ab16a3e625122b6db44a30b4aad9`; 3-D `96f13a4be39ed221b7a252bb8313db3371ed49b2fd464ea1b5d09a545bf42e34`. |
 | 2026-11-07 | `python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order reverse --output-dir /tmp/amps-t3-qualified-reverse` | PASS 58/58 | Final corrected-tree reverse order; all three executable hashes match the normal receipt exactly. |
 | 2026-11-07 | `python3 src/test/run_tests.py --test CORE-MESH-NATIVE-001 --order shuffle --shuffle-seed 1729 --output-dir /tmp/amps-t3-qualified-shuffle-1729` | PASS 58/58 | Final corrected-tree deterministic shuffled order; all three executable hashes match normal and reverse exactly. |
