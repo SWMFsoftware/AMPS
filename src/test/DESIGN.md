@@ -16,6 +16,10 @@ levels:
 Application validation remains in `srcEarth/test`, `srcMoon/test`,
 `srcEnceladus/test`, `srcSEP/test`, and `srcSEP3D/test`. A core pass does not
 qualify a physical model, observational comparison, or scientific campaign.
+The global runner may orchestrate an explicitly allow-listed application root
+and translate its exact local outcomes. This supplies common scheduling and
+evidence without moving the scientific oracle or promoting a local SKIP/PASS
+beyond the application suite's documented scope.
 
 ## Frozen T1 receipt and live T2 registry
 

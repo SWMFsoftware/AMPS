@@ -48,18 +48,30 @@ def test_layered_configuration(context: Dict) -> None:
         overlay = Path(directory) / "machine.json"
         overlay.write_text(json.dumps({
             "schema_version": 1,
-            "paths": {"output_root": "relative-results"},
+            "paths": {
+                "output_root": "relative-results",
+                "spice_path": "relative-cspice",
+                "spice_kernels": "relative-kernels",
+            },
             "tools": {"cxx": ["machine-cxx", "--driver"]},
             "execution": {"build_jobs": 3},
         }), encoding="utf-8")
         resolved = load_configuration(
             repo, TEST_ROOT / "config" / "default.json", [overlay],
-            environ={"AMPS_TEST_BUILD_JOBS": "7", "AMPS_TEST_MPI_RANKS": "2"},
+            environ={
+                "AMPS_TEST_BUILD_JOBS": "7", "AMPS_TEST_MPI_RANKS": "2",
+                "AMPS_TEST_SPICE_PATH": str(Path(directory) / "env-cspice"),
+                "AMPS_TEST_SPICE_KERNELS": str(Path(directory) / "env-kernels"),
+            },
             build_jobs=11)
         assert resolved["tools"]["cxx"] == ["machine-cxx", "--driver"]
         assert resolved["execution"]["build_jobs"] == 11
         assert resolved["execution"]["mpi_ranks"] == 2
         assert resolved["paths"]["output_root"] == str((repo / "relative-results").resolve())
+        assert resolved["paths"]["spice_path"] == str(
+            (Path(directory) / "env-cspice").resolve())
+        assert resolved["paths"]["spice_kernels"] == str(
+            (Path(directory) / "env-kernels").resolve())
 
 
 def test_schema_extensions(context: Dict) -> None:
@@ -312,7 +324,21 @@ def test_selection_contract(context: Dict) -> None:
         "CORE-MODEL-SEP-CORONA-SWCME-FULL-001",
         "CORE-MODEL-SEP-CORONA-SWCME-REDUCED-001",
         "CORE-LEGACY-REGISTRY-AUDIT-001",
-        "CORE-T12-PORTABILITY-001"}
+        "CORE-T12-PORTABILITY-001",
+        "APPLICATION-ENCELADUS-FORWARD-001",
+        "APPLICATION-ENCELADUS-NATIVE-STARTUP-001",
+        "APPLICATION-ENCELADUS-E3-001",
+        "APPLICATION-MOON-REGRESSION-001",
+        "APPLICATION-MOON-M0-001"}
+    # Application smoke is an explicit orchestration boundary.  Pinning the
+    # complete set prevents a new application from silently acquiring a
+    # checkout-wide build in routine site campaigns, while also ensuring that
+    # either imported application cannot disappear from the global procedure.
+    assert campaign_ids("application-smoke") == {
+        "APPLICATION-ENCELADUS-FORWARD-001",
+        "APPLICATION-ENCELADUS-NATIVE-STARTUP-001",
+        "APPLICATION-MOON-REGRESSION-001",
+        "APPLICATION-MOON-M0-001"}
     assert campaign_ids("profile") == {
         "CORE-PIC-NATIVE-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001",
         "CORE-EXOSPHERE-SPHERE-NATIVE-001",
@@ -777,6 +803,7 @@ def test_traceability_contract(context: Dict) -> None:
         trace, manifest, inventory, validation)
     contract_counts = validator.validate_contracts(
         contracts, manifest, trace, validation)
+    validator.validate_test_catalog(tests, inventory, validation)
     assert not validation.errors, "; ".join(validation.errors)
     assert expanded["translation_unit_count"] > 0
     assert expanded["manifest_case_count"] == len(case_ids)

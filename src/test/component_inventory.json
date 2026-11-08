@@ -140,6 +140,18 @@
       "remaining": "Generated species and all public He/Na computational paths are exercised. Independent scientific revalidation still needs a versioned bibliographic/page-level digitization fixture separate from the production tables."
     },
     {
+      "component": "srcEnceladus",
+      "status": "partial",
+      "test_ids": ["APPLICATION-ENCELADUS-FORWARD-001", "APPLICATION-ENCELADUS-NATIVE-STARTUP-001", "APPLICATION-ENCELADUS-E3-001"],
+      "remaining": "The complete dependency-light forward-model campaign, all six native pre-MPI startup gates, and all thirteen E3 identities are globally owned. The costly 10,000-step E3 execution is capability-gated; broader flyby/occultation observation comparisons, multi-rank behavior, and long-run source-distribution qualification remain open."
+    },
+    {
+      "component": "srcMoon",
+      "status": "partial",
+      "test_ids": ["APPLICATION-MOON-REGRESSION-001", "APPLICATION-MOON-M0-001"],
+      "remaining": "The global routine owns the complete U01-U26/I11-I20 regression registry and preserves every typed local outcome after a compliant Moon/SPICE build. I01-I10 are visible but explicitly SKIP until their multi-build orchestrator satisfies the mandatory native preflight; M1/M2 qualification and unavailable external validation packages also remain open."
+    },
+    {
       "component": "src/test",
       "status": "partial",
       "test_ids": ["CORE-HARNESS-001", "CORE-LEGACY-REGISTRY-AUDIT-001"],

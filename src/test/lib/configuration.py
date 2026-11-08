@@ -24,6 +24,12 @@ _ENVIRONMENT_OVERRIDES = {
     "AMPS_TEST_OUTPUT_ROOT": ("paths", "output_root", "path"),
     "AMPS_TEST_TEMP_ROOT": ("paths", "temporary_root", "path"),
     "AMPS_TEST_DATA_ROOT": ("paths", "data_root", "path"),
+    # SPICE installations are site resources and must never be embedded in an
+    # application adapter.  These optional overrides are resolved with the
+    # same rules as the ordinary test paths and are consumed only by adapters
+    # that explicitly check their named machine capability before execution.
+    "AMPS_TEST_SPICE_PATH": ("paths", "spice_path", "path"),
+    "AMPS_TEST_SPICE_KERNELS": ("paths", "spice_kernels", "path"),
     "AMPS_TEST_PYTHON": ("tools", "python", "command"),
     "AMPS_TEST_CXX": ("tools", "cxx", "command"),
     "AMPS_TEST_MPI_CXX": ("tools", "mpi_cxx", "command"),
@@ -213,6 +219,10 @@ def load_configuration(
                       "paths.temporary_root", allow_empty=True)
     data_root = _path(paths.get("data_root"), repo_root,
                       "paths.data_root", allow_empty=True)
+    spice_path = _path(paths.get("spice_path"), repo_root,
+                       "paths.spice_path", allow_empty=True)
+    spice_kernels = _path(paths.get("spice_kernels"), repo_root,
+                          "paths.spice_kernels", allow_empty=True)
     resolved_tools = {
         name: _command(value, "tools.{}".format(name)) for name, value in tools.items()
     }
@@ -267,6 +277,8 @@ def load_configuration(
             "output_root": str(output),
             "temporary_root": "" if temporary is None else str(temporary),
             "data_root": "" if data_root is None else str(data_root),
+            "spice_path": "" if spice_path is None else str(spice_path),
+            "spice_kernels": "" if spice_kernels is None else str(spice_kernels),
         },
         "tools": resolved_tools,
         "capabilities": capabilities,

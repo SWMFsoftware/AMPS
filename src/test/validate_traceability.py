@@ -26,6 +26,7 @@ REPO_ROOT = TEST_ROOT.parents[1]
 sys.path.insert(0, str(TEST_ROOT))
 
 from lib.manifest import ManifestError, load_manifest  # noqa: E402
+from generate_test_catalog import render_catalog  # noqa: E402
 ALLOWED_STATUSES = {"tested", "partial", "planned", "exempt"}
 INVENTORY_STATUS = {
     "tested": "covered", "partial": "partial", "planned": "planned",
@@ -322,6 +323,30 @@ def validate_contracts(contracts: Mapping[str, Any], manifest: Mapping[str, Any]
     return {status: status_counts[status] for status in sorted(ALLOWED_STATUSES)}
 
 
+def validate_test_catalog(
+    tests: Sequence[Mapping[str, Any]],
+    inventory: Mapping[str, Any],
+    validation: Validation,
+) -> None:
+    """Require generated human documentation to match the live registry.
+
+    The manifest remains authoritative. This comparison makes the contributor
+    catalog an enforced projection of that authority, so an agent cannot add a
+    case while leaving the documented what/how/why/where inventory stale.
+    """
+
+    catalog = TEST_ROOT / "TEST_CATALOG.md"
+    try:
+        expected = render_catalog(REPO_ROOT, TEST_ROOT, tests, inventory)
+        actual = catalog.read_text(encoding="utf-8")
+    except (OSError, ValueError) as error:
+        validation.errors.append("test catalog: {}".format(error))
+        return
+    validation.require(
+        actual == expected,
+        "TEST_CATALOG.md is stale; run python3 src/test/generate_test_catalog.py")
+
+
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path,
@@ -346,6 +371,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         validation.errors.append("manifest: {}".format(error))
         manifest = {"tests": []}
     inventory = load_json(TEST_ROOT / "component_inventory.json", validation)
+    validate_test_catalog(manifest["tests"], inventory, validation)
     expanded = validate_traceability(trace, manifest, inventory, validation)
     contract_counts = validate_contracts(contracts, manifest, trace, validation)
     expanded["configuration_contract_count"] = sum(contract_counts.values())

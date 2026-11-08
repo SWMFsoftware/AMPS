@@ -30,6 +30,17 @@ def main() -> int:
     parser.add_argument("--launcher", choices=("mpiexec", "direct"),
                         default="mpiexec",
                         help="use a normal MPI launcher or MPI singleton mode")
+    parser.add_argument(
+        "--launcher-command", nargs="+", default=["mpiexec"],
+        help=("MPI launcher argv supplied by the site profile; the default "
+              "preserves the historical mpiexec behavior"))
+    parser.add_argument(
+        "--launcher-command-json", default="",
+        help=("JSON string array form of the launcher argv; this form safely "
+              "preserves wrapper options that begin with a dash"))
+    parser.add_argument(
+        "--rank-flag", default="-n",
+        help="launcher option preceding the rank count (normally -n or -np)")
     parser.add_argument("--timeout-s", type=float, default=7200.0)
     parser.add_argument("--expected-iterations", type=int, default=10000)
     parser.add_argument("--expected-sample-length", type=int, default=1000)
@@ -43,6 +54,16 @@ def main() -> int:
                         default="on",
                         help="expected runtime volume_field_output receipt and files")
     args = parser.parse_args()
+    launcher_command = args.launcher_command
+    if args.launcher_command_json:
+        try:
+            launcher_command = json.loads(args.launcher_command_json)
+        except json.JSONDecodeError as error:
+            parser.error("--launcher-command-json is invalid JSON: {}".format(error))
+        if (not isinstance(launcher_command, list) or not launcher_command or
+                any(not isinstance(token, str) or not token
+                    for token in launcher_command)):
+            parser.error("--launcher-command-json must be a nonempty string array")
     if (args.ranks <= 0 or args.timeout_s <= 0 or
             args.expected_iterations <= 0 or args.expected_sample_length <= 0 or
             args.particles_per_species_step <= 0 or
@@ -52,6 +73,8 @@ def main() -> int:
         parser.error("--expected-iterations must be divisible by --expected-sample-length")
     if args.launcher == "direct" and args.ranks != 1:
         parser.error("--launcher=direct supports exactly one MPI rank")
+    if args.launcher == "mpiexec" and not launcher_command:
+        parser.error("--launcher-command must contain at least one token")
 
     executable = args.executable.resolve()
     input_file = args.input.resolve()
@@ -65,8 +88,13 @@ def main() -> int:
     (output / "PT" / "plots").mkdir(parents=True, exist_ok=True)
 
     if args.launcher == "mpiexec":
-        command = ["mpiexec", "-n", str(args.ranks), str(executable),
-                   "--input", str(input_file)]
+        # Keep site scheduling policy outside this application-local runner.
+        # The global test configuration may select mpiexec, srun, or a wrapper
+        # and may use a launcher-specific rank spelling.  Only the executable
+        # and AMPS input arguments are owned here.
+        command = (list(launcher_command) +
+                   [args.rank_flag, str(args.ranks), str(executable),
+                    "--input", str(input_file)])
     else:
         # Open MPI singleton mode still executes the complete MPI-native main
         # path, but it needs no out-of-band network interface for one rank.

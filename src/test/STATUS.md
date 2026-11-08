@@ -2,6 +2,63 @@
 
 Last updated: 2026-11-08
 
+## Moon and Enceladus application integration
+
+The global registry now contains 54 suites and 1,135 individual cases across
+26 inventory/traceability areas. Five `application-smoke`/`extended` owners
+add 107 application-level identities without changing the 42-suite, 375-case
+deterministic core nightly selection. The routine `application-smoke` subset
+contains four owners and 94 cases; the costly 13-case E3 campaign is retained
+in `extended` behind an explicit machine capability.
+
+Strict coverage remains intentionally open: 2 of 26 inventory components are
+covered and 24 are partial/planned. Adding globally visible application
+campaigns does not convert either application root to covered.
+
+| Global owner | Cases | Current execution boundary |
+| --- | ---: | --- |
+| `APPLICATION-ENCELADUS-FORWARD-001` | 42 | Executes all 11 dependency-light local software checks and 31 independent numeric reference comparisons using the configured compiler argv |
+| `APPLICATION-ENCELADUS-NATIVE-STARTUP-001` | 6 | Exclusive clean Enceladus build followed by exact import of CLI/default-deck, invalid-configuration, and generated-hook startup gates |
+| `APPLICATION-ENCELADUS-E3-001` | 13 | Owns every 10,000-step E3 process/ledger/flyby assertion; defaults to individual SKIP unless the optional `enceladus-e3` capability is enabled |
+| `APPLICATION-MOON-REGRESSION-001` | 36 | Exclusive clean Moon/SPICE build, then exact import of U01-U26 and bounded-regression I11-I20 PASS/FAIL/SKIPPED/ERROR outcomes |
+| `APPLICATION-MOON-M0-001` | 10 | Audits every I01-I10 runner/README and emits explicit SKIP until the local multi-build orchestrator satisfies the current native preflight |
+
+The Moon and native Enceladus adapters follow the mandatory native sequence:
+they confirm the repository and absence of another native build/run, lock
+`Config.pl`, remove only root `build` with `rm -rf -- build`, configure the
+selected application, and execute top-level `make amps` with
+`MAKEFLAGS=-j16`. The Moon owner then passes `--skip-build` to its local
+aggregate, so there is one build authority. SPICE locations and the
+`moon-spice` capability are portable machine-overlay settings or the
+`AMPS_TEST_SPICE_PATH`/`AMPS_TEST_SPICE_KERNELS` environment overrides; no
+application adapter embeds a site path. The E3 local launcher now accepts the
+configured launcher argv and rank flag, including wrapper options encoded as
+a JSON string array.
+
+Validation and retained evidence:
+
+| Command/evidence | Outcome |
+| --- | --- |
+| `python3 src/test/run_tests.py --campaign application-smoke --jobs 8 --output-dir /tmp/amps-application-smoke-integrated-final` | Complete integrated routine: 48 PASS / 46 explicit SKIP / 0 FAIL / 0 ERROR across all 94 cases; forward and native Enceladus pass, every unavailable Moon identity and reason is printed and retained |
+| `python3 src/test/run_tests.py --test APPLICATION-ENCELADUS-FORWARD-001 --output-dir /tmp/amps-global-enceladus-integration` | PASS: 42/42 cases, zero FAIL/SKIP/ERROR; JSON/JUnit, local receipt, transcript and SVG retained |
+| `python3 src/test/run_tests.py --test APPLICATION-ENCELADUS-NATIVE-STARTUP-001 --output-dir /tmp/amps-global-enceladus-native-integration` | PASS: 6/6 after the exact clean native preflight; configured executable/hash, build transcript, local receipt, JSON and JUnit retained |
+| `python3 src/test/run_tests.py --test APPLICATION-ENCELADUS-E3-001 --output-dir /tmp/amps-global-enceladus-e3-integration` | SKIP: all 13 E3 identities listed individually because the default profile deliberately leaves `enceladus-e3` unavailable; the 10,000-step simulation was not executed |
+| `python3 src/test/run_tests.py --test APPLICATION-MOON-M0-001 --output-dir /tmp/amps-global-moon-m0-integration` | SKIP: all ten I01-I10 identities listed individually with the preflight-conversion blocker |
+| `python3 src/test/run_tests.py --test APPLICATION-MOON-REGRESSION-001 --output-dir /tmp/amps-global-moon-registry-integration` | SKIP: all 36 U/I identities listed individually because the default profile deliberately leaves `moon-spice` unavailable |
+| `python3 src/test/run_tests.py --case MOON-U01 --config /tmp/amps-moon-machine.json --output-dir /tmp/amps-global-moon-u01-integration` | Clean Moon build PASS; imported U01 ERROR because the restricted sandbox denied all OpenMPI network interfaces; this is retained environment failure evidence, not a test pass |
+| unsandboxed `python3 srcMoon/test/U01_los_geometry/test.py --build-dir /home/vtenishe/Mars2/AMPS/build --output-dir /tmp/amps-moon-u01-unsandboxed` | PASS on the exact generated Moon build: all six U01 geometry/output checks true |
+| `python3 src/test/run_tests.py --test CORE-HARNESS-001 --output-dir /tmp/amps-app-integration-harness-final4` | PASS: 11/11 after pinning the four-suite `application-smoke` and 37-suite `extended` selections |
+| `python3 src/test/validate_traceability.py --output /tmp/amps-app-integration-traceability-final.json` | PASS: 26 areas, 209 translation units, 194 public contracts, 24 configuration contracts, 54 suites and 1,135 cases |
+| `python3 src/test/generate_test_catalog.py --check` | PASS: generated catalog contains 54 suites and 1,135 cases |
+
+The complete Moon regression campaign, Moon qualification mode, Moon M0
+multi-build campaign, and 10,000-step Enceladus E3 simulation were not executed
+by this integration. The earlier selected Moon case establishes its
+adapter/build path and separately demonstrates that the sandbox error is
+environmental; it does not qualify the other 45 Moon cases. The repository's
+current generated tree is the clean Enceladus configuration left by the final
+integrated application-smoke run.
+
 ## Contributor-guide checkpoint
 
 The `src/test/README.md` “Add tests to the global procedure” section is now a
@@ -22,12 +79,23 @@ fail-closed adapter. Its unmodified placeholders intentionally publish two
 FAIL rows so unfinished tests cannot appear green. Syntax validation and a
 synthetic schema-1 execution both pass; the latter returns the required exit 1
 and exact two-case receipt. Relative README links, `git diff --check`, and
-structural traceability pass. The live registry is unchanged at 49 suites and
-1,028 cases.
+structural traceability pass. At that checkpoint the registry remained 49
+suites and 1,028 cases.
 
-## T11/T12 checkpoint
+`src/test/TEST_CATALOG.md` was introduced as a generated projection of the
+expanded manifest and component inventory. Before the application integration
+above, it contained a 49-suite index and 1,028 individual case
+rows; every case has nonempty What, How, Why, and Where fields, with maintained
+source descriptions used for 728 cases and conservative stable-ID prose for
+the remaining 300. `generate_test_catalog.py --check` is enforced by both
+structural traceability and `HARNESS-TRACEABILITY-001`. The focused harness
+receipt at `/tmp/amps-test-catalog-harness-final` passes 11/11, traceability at
+`/tmp/amps-test-catalog-traceability-final.json` passes, and all
+catalog-relative links resolve.
 
-The live registry now contains 49 suites and 1,028 cases. Structural
+## T11/T12 checkpoint (before application integration)
+
+At this checkpoint the registry contained 49 suites and 1,028 cases. Structural
 traceability passes with 24 areas, 209 production translation units, 194
 public contracts, 24 configuration contracts, and the complete live suite/case
 registry. T11's integration mechanism is implemented; T12's bounded matrix is

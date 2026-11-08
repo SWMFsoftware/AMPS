@@ -654,6 +654,11 @@ def main() -> int:
     )
     parser.add_argument("--stream", action="store_true", help="also stream runner logs")
     parser.add_argument(
+        "--case-id-prefix", default="", metavar="TEXT",
+        help=("prefix used only for live [CASE] RUN records; the local JSON "
+              "registry and result IDs remain unchanged"),
+    )
+    parser.add_argument(
         "--strict-skips",
         action="store_true",
         help="return failure when any test is SKIPPED",
@@ -787,6 +792,12 @@ def main() -> int:
 
     results: list[dict[str, Any]] = []
     for test_id in selected:
+        # Announce the exact individual test before its runner starts.  The
+        # optional prefix lets a parent registry display collision-free global
+        # IDs without changing this application's authoritative local IDs or
+        # any scientific artifact schema.
+        print(f"[CASE] RUN  {args.case_id_prefix}{test_id} {registry[test_id]}",
+              flush=True)
         result = run_test(
             test_id, registry[test_id], build_dir, output_root, args.stream,
             amps, m1_input, m2_input, args.campaign_mode, args.mpi_ranks,

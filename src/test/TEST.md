@@ -2,10 +2,11 @@
 
 Status: development roadmap
 
-Last updated: 2026-11-07
+Last updated: 2026-11-08
 
-Scope: AMPS core code under `src/`; application science validation remains in
-the corresponding application test directories.
+Scope: AMPS core code under `src/`, plus global orchestration of explicitly
+registered application suites. Application science oracles and qualification
+remain in the corresponding application test directories.
 
 ## 1. Purpose
 
@@ -31,8 +32,8 @@ responsibility of `srcEarth/test`, `srcMoon/test`, `srcEnceladus/test`,
 
 ## 2. Current baseline
 
-As of 2026-11-07 the live global registry contains 49 executable suites and
-1,028 registered individual cases. The historical particle-buffer, physics,
+As of 2026-11-08 the live global registry contains 54 executable suites and
+1,135 registered individual cases. The historical particle-buffer, physics,
 species, packed-fixed-layout, and species-global weight/time family IDs remain
 selection aliases of canonical native owners, not extra executable suites.
 Configured owners select mutually exclusive generated applications and each
@@ -48,6 +49,7 @@ performs its required clean rebuild. The current registry groups are:
 | Exclusive configured profiles | 19 | 233 | Native PIC/movers/collisions/IDF/layout/weight modes, mesh dimensions, reaction profiles, T7 applications, ECSIM operators, and the T10 rank matrix |
 | T11 model/legacy adapters | 6 | 637 | Exact local identities and typed results/limitations; no imported PASS is promoted beyond its local qualification scope |
 | T12 bounded portability | 1 | 16 | Compiler/Fortran/sanitizer/leak/OpenMP/MPI/CUDA/guardrail matrix and the still-red strict-coverage gate |
+| Application orchestration | 5 | 107 | Enceladus dependency-light receipt, native startup gates, and capability-gated E3 campaign; Moon U01-U26/I11-I20 regression owner; Moon I01-I10 typed preflight-blocked boundary |
 
 The 19-suite `profile` campaign is the configured-profile group above. Its
 233 cases include the 94-case baseline owner, the historical T2 variants, the
@@ -56,7 +58,9 @@ three T7 one-rank applications, the T8 periodic ECSIM operator profile, and
 T10's 16-case collective rank matrix. `src/test/manifest.json` is
 authoritative for the exact suite/case membership and aliases.
 
-The component ledger contains 24 components. The harness entry remains explicitly
+The component ledger contains 26 components. The two application roots are
+partial application-level entries; they do not broaden core qualification.
+The harness entry remains explicitly
 `partial`; registered or passing cases are not evidence of complete AMPS
 coverage. T0 remains qualified by its retained 45-case evidence. The bounded
 historical T1 registry is also qualified: smoke passes 51/51, and the final
@@ -72,8 +76,9 @@ The following limitations must remain visible until their stages close:
 
 - `smoke` selects eight dependency-light suites (51 cases), `nightly` selects
   the established 42-suite/375-case deterministic core campaign, `--all`
-  selects all 49 suites/1,028 cases, `profile` selects 19 exclusive native
-  owners (233 cases), `extended` selects 32 suites (910 cases), and
+  selects all 54 suites/1,135 cases, `profile` selects 19 exclusive native
+  owners (233 cases), `extended` selects 37 suites (1,017 cases),
+  `application-smoke` selects four suites (94 cases), and
   `distributed` selects the five-case MPI channel/RNG family plus
   T10's 16-case 1/2/4-rank matrix; the harness asserts these live sets and the
   three T10 alias mappings;

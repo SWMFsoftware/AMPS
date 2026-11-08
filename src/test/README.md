@@ -1,9 +1,11 @@
 # AMPS core unit and module tests
 
-`src/test` is the global test-control layer for production code under `src`.
-It does not replace application validation or model-specific qualification.
-It gives those tests one portable registry, one result vocabulary, and one
-nightly-compatible evidence format.
+`src/test` is the global test-control layer for production code under `src`
+and for explicitly registered application-local campaigns. It does not
+replace application validation or model-specific qualification. It gives
+those tests one portable registry, one result vocabulary, and one
+nightly-compatible evidence format while preserving each application's own
+oracles and acceptance boundaries.
 
 The initial migration is intentionally honest: every core component is in
 `component_inventory.json`, but only entries marked `covered` have complete
@@ -105,6 +107,13 @@ suite. This boundary prevents a suite from selecting extra tests, changing the
 global output location, or declaring itself green while returning a failed
 case.
 
+[`TEST_CATALOG.md`](TEST_CATALOG.md) is the generated human-readable projection
+of the expanded manifest: all suites and cases with concise what/how/why/where
+descriptions. `generate_test_catalog.py --check`, structural traceability, and
+the harness reject catalog drift. The catalog documents registered intent; the
+JSON receipt from a particular run remains authoritative for what actually
+executed and how it ended.
+
 Every suite has two writable locations. `work_dir` is disposable compiler and
 execution state and may be placed on node-local scratch. `artifact_dir` is
 retained evidence such as a comparison table or executable transcript. The
@@ -157,8 +166,8 @@ make core_test_nightly
 ```
 
 `--tier` remains a backward-compatible alias for `--campaign`. The top-level
-`test_all` target depends on `core_test_nightly`. The live T12 registry has
-49 suites and 1,028 cases; use `--list` for exact campaign memberships. The
+`test_all` target depends on `core_test_nightly`. The live registry has 54
+suites and 1,135 cases; use `--list` for exact campaign memberships. The
 routine `nightly` campaign intentionally remains the established 42-suite,
 375-case deterministic core selection, while `extended` owns the T11 model
 imports and bounded T12 portability matrix. The `distributed` campaign selects
@@ -167,6 +176,31 @@ the five-case two-rank channel/RNG suite and the 16-case T10 collective
 `--all` ignores campaign membership and selects the complete registry.
 Site/nightly orchestration must preserve the native suite's exclusive barrier
 because it selects a repository-wide application.
+
+The `application-smoke` campaign exposes both application trees requested for
+global orchestration:
+
+```sh
+python3 src/test/run_tests.py --campaign application-smoke
+python3 src/test/run_tests.py --test APPLICATION-ENCELADUS-FORWARD-001
+python3 src/test/run_tests.py --test APPLICATION-ENCELADUS-NATIVE-STARTUP-001
+python3 src/test/run_tests.py --test APPLICATION-ENCELADUS-E3-001
+python3 src/test/run_tests.py --component srcMoon --list
+```
+
+`APPLICATION-ENCELADUS-FORWARD-001` executes 42 dependency-light checks.
+`APPLICATION-ENCELADUS-NATIVE-STARTUP-001` performs the mandatory clean native
+build and imports all six pre-MPI startup/configuration gates. The separate
+13-case `APPLICATION-ENCELADUS-E3-001` owner is in `extended`, not the routine
+application-smoke campaign: it reports every identity as `SKIP` unless a
+machine overlay explicitly enables the optional `enceladus-e3` capability for
+the 10,000-step MPI run. A capability skip is visibility, not validation.
+`APPLICATION-MOON-REGRESSION-001` owns all U01-U26/I11-I20 outcomes but is a
+prerequisite SKIP unless the machine profile declares `moon-spice` and supplies
+both SPICE paths. `APPLICATION-MOON-M0-001` lists I01-I10 as typed SKIPs until
+the local multi-build orchestrator satisfies the current mandatory native
+preflight. These statuses are intentional and cannot be read as application
+qualification.
 
 Run one suite or component:
 
@@ -472,6 +506,8 @@ Supported environment overrides are:
 | `AMPS_TEST_OUTPUT_ROOT` | Result root |
 | `AMPS_TEST_TEMP_ROOT` | Machine scratch root reserved for runners |
 | `AMPS_TEST_DATA_ROOT` | Optional root for large machine-local reference data |
+| `AMPS_TEST_SPICE_PATH` | Optional CSPICE installation for registered application suites |
+| `AMPS_TEST_SPICE_KERNELS` | Optional SPICE kernel tree for registered application suites |
 | `AMPS_TEST_PYTHON` | Python command |
 | `AMPS_TEST_CXX` | Dependency-light C++ compiler command |
 | `AMPS_TEST_MPI_CXX` | MPI C++ compiler command |
@@ -595,6 +631,14 @@ cannot silently omit it. Architectural rationale and coverage policy remain in
 [DESIGN.md](DESIGN.md); the staged coverage roadmap remains in
 [`TEST.md`](TEST.md).
 
+> **Mandatory rule for agents and contributors:** Any change that adds,
+> removes, renames, reorders, or changes ownership/description of a suite or
+> individual case **must** regenerate [`TEST_CATALOG.md`](TEST_CATALOG.md) with
+> `python3 src/test/generate_test_catalog.py` in the same change. The work is
+> incomplete until `python3 src/test/generate_test_catalog.py --check` passes.
+> Do not hand-edit the generated catalog and do not defer its update to a later
+> agent.
+
 ### 1. Decide whether to add a case or a suite
 
 Prefer a new **case in an existing suite** when it uses the same production
@@ -677,7 +721,7 @@ Manifest fields have these contracts:
 | Field | Requirement |
 | --- | --- |
 | `id` | Globally unique stable suite ID; aliases also share this namespace |
-| `component` | Existing production path below `src/`, never a test directory |
+| `component` | Existing production path below `src/`, or an explicitly approved application root such as `srcMoon`/`srcEnceladus`; never a test directory |
 | `level` | One of `unit`, `module`, `integration`, or `system` |
 | `tiers` | Nonempty unique subset of the declared campaigns |
 | `runner` | Existing file below `src/test`, written relative to `src/test` |
@@ -940,6 +984,7 @@ python3 src/test/run_tests.py --test CORE-EXAMPLE-001 --order shuffle \
 # Validate the control plane and structural ledgers.
 python3 src/test/run_tests.py --test CORE-HARNESS-001 \
   --output-dir /tmp/amps-example-harness --jobs 1
+python3 src/test/generate_test_catalog.py --check
 python3 src/test/validate_traceability.py \
   --output /tmp/amps-example-traceability.json
 
@@ -985,6 +1030,7 @@ require both the available behavior and the correctly typed unavailable path.
 - [ ] Configured native builds are exclusive and follow the mandatory clean preflight.
 - [ ] MPI/thread/device evidence accounts for every participant and does not broaden another backend's claim.
 - [ ] Component inventory and every affected traceability/configuration ledger are updated honestly.
+- [ ] `TEST_CATALOG.md` is regenerated in this change and its `--check` gate passes.
 - [ ] Exact-case, complete-suite, reverse, shuffle, harness, traceability, and applicable campaign runs are checked.
 - [ ] JSON, JUnit, logs, artifacts, counts, and typed non-PASS outcomes reconcile.
 

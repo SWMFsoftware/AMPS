@@ -3,7 +3,9 @@
   "paths": {
     "output_root": "test_output/core-tests",
     "temporary_root": "",
-    "data_root": ""
+    "data_root": "",
+    "spice_path": "",
+    "spice_kernels": ""
   },
   "tools": {
     "python": ["python3"],
@@ -18,5 +20,15 @@
     "mpi_rank_flag": "-n",
     "default_timeout_seconds": 300,
     "keep_work": "failures"
+  },
+  "capabilities": {
+    "moon-spice": {
+      "available": false,
+      "policy": "optional"
+    },
+    "enceladus-e3": {
+      "available": false,
+      "policy": "optional"
+    }
   }
 }

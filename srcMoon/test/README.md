@@ -120,6 +120,48 @@ presence from being treated as qualified validation evidence.
 
 ## Running
 
+### Repository-wide procedure
+
+The global routine owns stable identities for every implemented test in this
+directory. U01-U26 and I11-I20 are imported through an exclusive clean
+Moon/SPICE regression build; I01-I10 are separately visible as explicit SKIPs
+until the historical multi-build M0 orchestrator is converted to the current
+mandatory native-build preflight.
+
+List both global owners without running them:
+
+```sh
+cd /home/vtenishe/Mars2/AMPS
+python3 src/test/run_tests.py --component srcMoon --list
+```
+
+To execute the regression owner, provide site paths in an overlay and enable
+the optional capability:
+
+```json
+{
+  "schema_version": 1,
+  "paths": {
+    "spice_path": "/site/SPICE/cspice",
+    "spice_kernels": "/site/SPICE/Kernels"
+  },
+  "capabilities": {
+    "moon-spice": {"available": true, "policy": "optional"}
+  }
+}
+```
+
+```sh
+python3 src/test/run_tests.py \
+  --test APPLICATION-MOON-REGRESSION-001 \
+  --config /path/to/moon-machine.json
+```
+
+The global adapter performs the exact root/process check, removes only root
+`build`, configures Moon/SPICE, and runs `MAKEFLAGS=-j16 make amps` before
+calling this directory's aggregate with `--skip-build`. Local SKIPPED results
+remain global SKIP; they are never upgraded from a zero convenience exit.
+
 ### Complete campaign
 
 `run_all_test.py` is the single entry point for all 36 currently registered
@@ -193,7 +235,9 @@ I18, I19, or I20 with `--skip-build`, `--m2-amps` must identify a separately
 built Na+Ar executable; the canonical `--amps` remains Na-only. `--list`
 prints the explicit campaign
 registry, `--only UXX` or `--only IXX` may be repeated for a focused runner
-check, `--stream` mirrors individual logs to the terminal, and `--strict-skips`
+check, `--stream` mirrors individual logs to the terminal, and
+`--case-id-prefix` changes only the live progress label used by a parent
+orchestrator (never the local result IDs). `--strict-skips`
 makes any
 SKIPPED test fail the aggregate command. Without `--strict-skips`, SKIPPED
 remains a recorded incomplete capability but does not change the campaign exit

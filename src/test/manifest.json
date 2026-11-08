@@ -1559,6 +1559,86 @@
       },
       "expected_cases_ref": "T12-PORTABILITY",
       "timeout_seconds": 900
+    },
+    {
+      "id": "APPLICATION-ENCELADUS-FORWARD-001",
+      "component": "srcEnceladus",
+      "level": "integration",
+      "tiers": ["extended", "application-smoke"],
+      "runner": "tests/applications/enceladus/run_test.py",
+      "description": "Complete dependency-light Enceladus forward-model parser, source, chemistry, numerics and 31-value reference campaign",
+      "requires": {
+        "tools": ["python", "cxx"],
+        "paths": ["srcEnceladus/test/run_tests.py", "srcEnceladus/test/reference/forward_model_reference.json"],
+        "capabilities": []
+      },
+      "expected_cases_ref": "APPLICATION-ENCELADUS",
+      "timeout_seconds": 600
+    },
+    {
+      "id": "APPLICATION-ENCELADUS-NATIVE-STARTUP-001",
+      "component": "srcEnceladus",
+      "level": "system",
+      "tiers": ["extended", "application-smoke"],
+      "runner": "tests/applications/enceladus_native/run_test.py",
+      "description": "Clean Enceladus build and exact import of all six pre-MPI native startup/configuration gates",
+      "requires": {
+        "tools": ["python", "make"],
+        "paths": ["Config.pl", "srcEnceladus/test/run_native_startup.py"],
+        "capabilities": []
+      },
+      "expected_cases_ref": "APPLICATION-ENCELADUS-NATIVE",
+      "timeout_seconds": 3600,
+      "exclusive": true
+    },
+    {
+      "id": "APPLICATION-ENCELADUS-E3-001",
+      "component": "srcEnceladus",
+      "level": "system",
+      "tiers": ["extended"],
+      "runner": "tests/applications/enceladus_e3/run_test.py",
+      "description": "Capability-gated clean build and 10,000-step E3 process, transport-ledger, and flyby-product campaign",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": ["Config.pl", "srcEnceladus/test/run_e3_simulation.py", "input/enceladus.in"],
+        "capabilities": []
+      },
+      "expected_cases_ref": "APPLICATION-ENCELADUS-E3",
+      "timeout_seconds": 14400,
+      "mpi_ranks": 1,
+      "exclusive": true
+    },
+    {
+      "id": "APPLICATION-MOON-REGRESSION-001",
+      "component": "srcMoon",
+      "level": "system",
+      "tiers": ["extended", "application-smoke"],
+      "runner": "tests/applications/moon_regression/run_test.py",
+      "description": "Clean Moon/SPICE build plus all U01-U26 and bounded linked I11-I20 regression outcomes with typed scientific skips",
+      "requires": {
+        "tools": ["python", "make", "mpiexec"],
+        "paths": ["Config.pl", "srcMoon/test/run_all_test.py"],
+        "capabilities": []
+      },
+      "expected_cases_ref": "APPLICATION-MOON-REGRESSION",
+      "timeout_seconds": 14400,
+      "mpi_ranks": 8,
+      "exclusive": true
+    },
+    {
+      "id": "APPLICATION-MOON-M0-001",
+      "component": "srcMoon",
+      "level": "system",
+      "tiers": ["extended", "application-smoke"],
+      "runner": "tests/applications/moon_m0/run_test.py",
+      "description": "Complete Moon I01-I10 M0 registry with explicit non-execution until its multi-build workflow satisfies the mandatory native preflight",
+      "requires": {
+        "tools": ["python"],
+        "paths": ["srcMoon/test/run_integration_tests.py"],
+        "capabilities": []
+      },
+      "expected_cases_ref": "APPLICATION-MOON-M0",
+      "timeout_seconds": 120
     }
   ]
 }

@@ -20,6 +20,12 @@ CAMPAIGNS = (
 )
 _CAMPAIGNS = set(CAMPAIGNS)
 _COVERAGE = {"covered", "partial", "planned", "exempt"}
+# Application science remains owned by its application-local suite, but the
+# global runner may orchestrate explicitly reviewed application roots.  Keep
+# this allow-list narrow: manifest component paths also drive user selection
+# and coverage reporting, so accepting arbitrary repository directories would
+# weaken both the execution-containment and ownership contracts.
+_APPLICATION_COMPONENTS = {"srcMoon", "srcEnceladus"}
 
 
 def _load(path: Path) -> Dict[str, Any]:
@@ -40,7 +46,7 @@ def load_manifest(path: Path, repo_root: Path, test_root: Path) -> List[Dict[str
 
     The containment checks are both correctness and safety boundaries: a
     committed manifest cannot execute an arbitrary file outside the test tree
-    or claim coverage for a path outside production ``src``.
+    or claim coverage for an unreviewed path outside production ``src``.
     """
 
     payload = _load(path)
@@ -136,13 +142,18 @@ def load_manifest(path: Path, repo_root: Path, test_root: Path) -> List[Dict[str
             raise ManifestError("{} alias_cases names undeclared aliases: {}".format(
                 label, ", ".join(sorted(unknown_alias_cases))))
         component = raw["component"]
-        if not isinstance(component, str) or not component.startswith("src/"):
-            raise ManifestError("{} component must be below src/".format(label))
+        if not isinstance(component, str):
+            raise ManifestError("{} component must be a string".format(label))
         component_path = (repo_root / component).resolve()
-        try:
-            component_path.relative_to((repo_root / "src").resolve())
-        except ValueError:
-            raise ManifestError("{} component escapes src/".format(label))
+        if component not in _APPLICATION_COMPONENTS:
+            if not component.startswith("src/"):
+                raise ManifestError(
+                    "{} component must be below src/ or an approved application root".format(
+                        label))
+            try:
+                component_path.relative_to((repo_root / "src").resolve())
+            except ValueError:
+                raise ManifestError("{} component escapes src/".format(label))
         if not component_path.exists():
             raise ManifestError("{} component does not exist: {}".format(label, component_path))
         if raw["level"] not in _LEVELS:
@@ -254,6 +265,12 @@ def discover_components(repo_root: Path) -> Set[str]:
         "src/general", "src/interface", "src/meshAMR", "src/pic", "src/species",
         "src/test",
     }
+    # These roots are application-level coverage entries, not children of the
+    # core production tree.  Their inventory rows explicitly remain partial
+    # unless the corresponding application campaign establishes otherwise.
+    components.update(
+        component for component in _APPLICATION_COMPONENTS
+        if (repo_root / component).is_dir())
     for parent in (src / "general", src / "pic", src / "models"):
         if parent.is_dir():
             for child in parent.iterdir():

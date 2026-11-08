@@ -188,6 +188,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path,
                         default=ROOT / "test_output" / "srcEnceladus")
+    parser.add_argument(
+        "--cxx", nargs="+", default=["g++"], metavar="ARG",
+        help=("C++ compiler argv used for the dependency-light forward-model "
+              "binary (default: g++). The global test adapter passes the "
+              "machine-profile compiler vector here without invoking a shell."),
+    )
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -212,8 +218,13 @@ def main() -> int:
         outcomes.append(("U01_source_export", exported.returncode == 0,
                          exported.stdout + exported.stderr))
         binary = temp / "forward_model_tests"
-        compiled = run([
-            "g++", "-std=c++17", "-O2", "-I..", "-I../src",
+        # The compiler is configuration, not model physics.  Accepting an argv
+        # vector makes the same test portable to compiler wrappers and cluster
+        # modules while preserving exact flag ordering and avoiding shell
+        # expansion.  The source/include contract and optimization level stay
+        # owned by this application test.
+        compiled = run(list(args.cxx) + [
+            "-std=c++17", "-O2", "-I..", "-I../src",
             "ForwardModel.cpp", "test/forward_model_tests.cpp", "-o", str(binary),
         ])
         outcomes.append(("U02_core_compile", compiled.returncode == 0,
