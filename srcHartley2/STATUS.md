@@ -224,28 +224,39 @@ The I3 work is not yet a scientific validation result.
   `--validate-runtime-input` on one rank, and case 1 also passes on two ranks.
   The surface-injection regression passes through `-i/-case` with 200,000
   samples per species for H2O, CO, and CO2.
-- Case 1 transport: the 12-rank run in
+- Production: all six cases ran with the `i3.conf` executable and
+  `-i i3.in -case N` on 128 ranks, under
+  `validation_runs/i3_campaign_20261108/caseN_np128/production`. Every run
+  ended cleanly at the 30,000-iteration cap without converging (window-3
+  change 28--37% against a 5% tolerance). See "I3 six-case production results
+  (2026-11-08)" at the end of this file.
+- Done in this round: 1/4/12-rank brightness equivalence, the `ABORT` and
+  `EXCLUDE_AND_REPORT` out-of-domain fixture, sampler performance and peak
+  memory, the H tau-flag review, and nonconverged MAVEN/IUVS comparisons for
+  outputs 0--2.
+- Superseded: the earlier 12-rank case-1 run in
   `validation_runs/i3_case1_rays200_sampling10000_max30000_indexfix_20261107_12mpi/production`
-  completed its first 10,000-iteration window (output 0) with finite 200-ray
-  H and OH brightness tables. Over the compared range the AMPS curves lie below
-  the MAVEN/IUVS points. That window is not converged and is diagnostic only.
-  This run predates the redesign: its executable was compiled from the retired
-  `i3.case1.input`.
-- Cases 2--6: no transport run has been started.
+  was compiled from the retired `i3.case1.input` and is diagnostic only.
 
 Remaining before scientific use:
 
-- production runs of all six cases with the `i3.conf` executable and
-  `-i input/i3.in -case N`, each in its own run directory, carried to
-  convergence or explicitly labeled nonconverged;
-- one-rank versus multi-rank equivalence of the particle-resolved brightness
-  estimator;
-- a runtime out-of-domain fixture for both `ABORT` and `EXCLUDE_AND_REPORT`;
-- performance and peak-memory measurement of the 200-ray sampler;
-- review of every H line-center tau flag (the thin result is never
-  attenuated); and
-- brightness/profile comparisons that disclose that the observations are
-  raster digitizations without the original numerical uncertainties.
+- converged runs. Campaign 2 raised `simulation.max_iterations` to 150,000,
+  and cases 1, 2, and 5 converged at iteration 70,000. See "I3 campaign 2
+  interim results" at the end of this file;
+- the H points beyond, or close to, the domain boundary in cases 4--6.
+  Campaign 2 moved the boundary to 3e9 m and corrects the remaining 13--21%
+  column loss with the collisionless reference;
+- tracked executable-level I3 tests. The portable orchestrator
+  `srcHartley2/tests/run_all_stage_tests.sh` (2026-11-09) covers the I3
+  generator, MAVEN/IUVS regeneration, and the focused brightness tests. The
+  checks that need the I3 executable still exist only as the untracked
+  `validation_runs/i3_campaign_20261108/scripts/focused_tests.sbatch` and
+  `validation_runs/i3_campaign2_20261108/scripts/smoke.sbatch`. These cover
+  runtime input per case, the local-time-step, weight-adaptation, and
+  chemistry validators, surface injection, and 1/4-rank brightness
+  equivalence;
+- comparisons that disclose that the observations are raster digitizations
+  without the original numerical uncertainties.
 
 All six cases select the named core H/OH models, evaluated with per-particle
 Doppler velocities; the legacy fixed-scalar input form remains
@@ -6479,12 +6490,134 @@ each 10,000-iteration window. The runs stop at convergence or at 30,000
 iterations. From the pilots, about 6-17 h per case is expected if the late
 cost levels off at 1-3 s/iteration; this is an estimate, not a measurement.
 
-Still required after the runs: the convergence status of each case, review
-of every H line-center tau flag, MAVEN/IUVS comparison plots with the
-nonconverged label where it applies, and disclosure of the 1e9-m domain
-truncation. The H g-factor evaluation cost could also be reduced (for
-example with a tabulated g(v)), but that would change numerical values and
-needs its own validation.
+The post-run items listed at launch (convergence status, H tau review,
+nonconverged comparison plots, and domain-truncation disclosure) are
+reported in the next section. The H g-factor evaluation cost could also be
+reduced (for example with a tabulated g(v)), but that would change numerical
+values and needs its own validation.
+
+## I3 six-case production results (2026-11-08)
+
+All six jobs (122873--122878) exited with code 0. No log contains an error,
+abort, or velocity-domain exclusion. Each run reached the 30,000-iteration
+cap on 128 ranks. Peak RSS was 1.42 GB per rank, about 180 GB per node. The
+late cost was 0.42--0.60 s/iteration with 3.9--4.3 M particles, well below
+the 1--3 s/iteration pilot extrapolation.
+
+### Convergence
+
+No case converged. The criterion is the largest volume-weighted relative
+L1 change between successive 10,000-iteration windows, below 0.05 for three
+consecutive windows. The first window is only the reference, so it needs at
+least four windows; 30,000 iterations provide two comparisons.
+
+| Case | Elapsed | Window 2 (iteration 20,000) | Window 3 (iteration 30,000) | Limiting species, window 3 |
+| --- | --- | ---: | ---: | --- |
+| 1 | 2:40:17 | 0.959 | 0.367 | O |
+| 2 | 3:18:25 | 0.953 | 0.350 | O |
+| 3 | 3:20:24 | 0.924 | 0.298 | H |
+| 4 | 3:37:29 | 0.903 | 0.288 | H |
+| 5 | 3:36:26 | 0.905 | 0.276 | H |
+| 6 | 3:36:28 | 0.906 | 0.280 | H |
+
+Every brightness result below is therefore nonconverged.
+
+### Brightness against MAVEN/IUVS
+
+The table gives the median model/observed ratio over the observation points
+inside the 1e9-m domain. AMPS brightness is log-interpolated to each point.
+
+| Case | Species | Points in domain | Output 0 | Output 1 | Output 2 | Output-2 range |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| 1 | H | 11/11 | 0.003 | 0.072 | 0.110 | 0.095--0.140 |
+| 1 | OH | 4/4 | 0.026 | 0.226 | 0.250 | 0.207--0.325 |
+| 2 | H | 14/14 | 0.005 | 0.083 | 0.120 | 0.107--0.160 |
+| 2 | OH | 8/8 | 0.025 | 0.199 | 0.216 | 0.189--0.221 |
+| 3 | H | 14/14 | 0.011 | 0.152 | 0.221 | 0.190--0.240 |
+| 3 | OH | 5/5 | 0.057 | 0.313 | 0.332 | 0.321--0.356 |
+| 4 | H | 6/7 | 0.019 | 0.236 | 0.339 | 0.078--0.636 |
+| 4 | OH | 3/3 | 0.097 | 0.480 | 0.532 | 0.464--0.737 |
+| 5 | H | 5/8 | 0.022 | 0.277 | 0.389 | 0.162--0.721 |
+| 5 | OH | 2/2 | 0.159 | 0.737 | 0.792 | 0.720--0.864 |
+| 6 | H | 4/9 | 0.026 | 0.315 | 0.442 | 0.232--0.702 |
+| 6 | OH | 2/2 | 0.125 | 0.610 | 0.654 | 0.577--0.731 |
+
+- OH grew 6--11% between outputs 1 and 2, so it is close to steady. It is
+  still 1.3--4.6 times below the observations.
+- H grew 1.4--1.5 times per window and is still rising. It is 2.3--9 times
+  below the observations.
+- The model remains below every observation point.
+
+### H line-center optical depth
+
+The sampler flags rays with H tau above 0.1 but never attenuates them.
+
+| Case | Flagged rays | Maximum tau | tau > 0.1 out to | tau > 1 out to | Maximum tau at an observation point |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 58/200 | 0.22 | 101 km | none | 0.017 |
+| 2 | 95/200 | 0.43 | 1,110 km | none | 0.036 |
+| 3 | 153/200 | 1.72 | 47,500 km | 88 km | 0.096 |
+| 4 | 182/200 | 12.1 | 311,000 km | 12,200 km | 0.206 |
+| 5 | 182/200 | 12.7 | 311,000 km | 13,900 km | 0.196 |
+| 6 | 181/200 | 11.0 | 292,000 km | 11,400 km | 0.156 |
+
+The optically thick region lies well inside the innermost observation point
+in every case. Only the innermost H point in each of cases 4--6 exceeds tau
+0.1, with tau at most 0.21. Attenuating these points would lower them by at
+most about 20% and would not change the comparison.
+
+### Domain truncation
+
+The H column is accumulated only inside r = 1e9 m (10^6 km), and the modeled
+H brightness falls to zero at that impact parameter. H points beyond the
+boundary are excluded: 1 of 7 in case 4, 3 of 8 in case 5, and 5 of 9 in
+case 6. In-domain H points near the boundary are also biased low by the
+missing outer column; for example, the case-4 minimum ratio of 0.078 is at
+its outermost in-domain point. All OH points lie inside the domain.
+
+### Output files
+
+Plots are in `validation_runs/i3_campaign_20261108/plots_out0`, `plots_out1`,
+and `plots_out2`, as `i3_caseN_{H,OH}_outK.png` plus six-case montages. The
+ratio table is `validation_runs/i3_campaign_20261108/plots_out2/ratios_out0_out1_out2.txt`.
+
+### Next step
+
+Converged results need longer runs. At the late cost of about 0.5
+s/iteration, each 10,000-iteration window takes about 1.4 h per case. The
+runs cannot be restarted, so a longer run starts again from iteration 0 with
+a larger `simulation.max_iterations` in `input/i3.in`; no rebuild is needed.
+
+## I3 campaign 2 launch (2026-11-08)
+
+Six new production runs started on 2026-11-08 at about 23:35 CST (Slurm jobs
+123164–123169, one 128-rank node each) in
+`validation_runs/i3_campaign2_20261108/caseN_np128/production`. The
+executable is the campaign-1 binary (commit `d61307f`, SHA-256 `c33c69da...`).
+Only `input/i3.in` changed; it was regenerated with these settings:
+
+- Production rates: H2O, CO, and CO2 multiplied by 3.95, 4.81, 2.97, 1.74,
+  1.25, and 1.53 for cases 1–6, from the OH match in
+  `validation_runs/i3_campaign_20261108/analysis_q_scaling/README.md`. The
+  factors live in the new `srcHartley2/i3/reference/i3_rate_scaling.csv`, so
+  the archive transcription in `i3_cases.csv` is unchanged.
+- Domain: `mesh.outer_radius_m` raised from 1e9 to 3e9 m, and the brightness
+  impact-parameter grid extended to 3e9 m. The 30-level AMR limit makes the
+  finest cell 0.349 m, so the generator floors the surface request at
+  0.353 m. Cases 2–6 are therefore 1.3–4.6 times coarser than the surface
+  mean free path (chosen over 1e10 m, which would have been 2.6–15 times
+  coarser, and over keeping 1e9 m).
+- Time step: Courant number 0.8 on conservative speed bounds, with the
+  parent bound raised from 400 to 2,500 m/s. The H time step is 3.1 times
+  longer than in campaign 1 and the parent time step 0.51 times as long.
+- Iteration cap: 150,000.
+
+Before launch, `smoke_123163` passed 25/25 checks (see the campaign README).
+The generator changes (`prepare_i3_cases.py`, its unit tests, and
+`i3_rate_scaling.csv`), the regenerated `input/i3.in`, and the
+`srcHartley2/i3/README.md` update are committed together with the interim
+results below.
+
 ## 2026-11-09: portable single-entry generic-comet test suite
 
 Status: implemented and exercised on branch `1d_comet_dev`; no commit, branch
@@ -6544,3 +6677,53 @@ uncommitted working-tree change during the run. After the files are reviewed
 and committed, rerun the same command with a new log directory to bind release
 evidence to the resulting commit. The current portable PASS validates the
 implementation and fixture contracts; it is not a new converged comet run.
+
+## I3 campaign 2 interim results (2026-11-09 11:10 CST)
+
+Cases 1, 2, and 5 converged at iteration 70,000. Their windows 5–7 passed the
+5% criterion, and the runs ended normally after 6.8, 9.8, and 9.4 h. Cases 4
+and 6 have passed two of the three windows and should end at iteration
+80,000. Case 3 had passed none at iteration 45,600. No log contains an error.
+Details, plots, and scripts are in
+`validation_runs/i3_campaign2_20261108/README.md`.
+
+### Brightness against MAVEN/IUVS
+
+The table gives the median model/observed ratio at the latest output.
+"Edge-corrected" multiplies the AMPS H by the ratio of the untruncated to the
+3e9-m-truncated column from the collisionless test-particle reference.
+
+| Case | Output | State | OH | H | H edge-corrected | H AMPS/collisionless |
+| ---: | ---: | --- | ---: | ---: | ---: | ---: |
+| 1 | 6 | converged | 0.95 | 0.55 | 0.60 | 1.01 |
+| 2 | 6 | converged | 0.99 | 0.72 | 0.75 | 1.02 |
+| 3 | 3 | running | 0.97 | 0.94 | 1.02 | not converged |
+| 4 | 6 | running | 1.04 | 1.00 | 1.14 | 1.04 |
+| 5 | 6 | converged | 1.00 | 0.73 | 0.89 | 1.07 |
+| 6 | 6 | running | 1.03 | 0.89 | 1.16 | 1.02 |
+
+- OH: the rate scaling works. OH matches within 5% in every case.
+- Collisional H enhancement: 1–7%. This is smaller than the campaign-1
+  estimate of 3–16%, so collisions with the added CO/CO2 do not explain the H
+  deficit.
+- H with OH matched:
+  - too low in cases 1 and 2, by factors of 1.7 and 1.3, with a flatter
+    radial slope than observed;
+  - about 10% low in case 5;
+  - 14–16% high in cases 4 and 6.
+  A single H2O rate cannot fit both species in cases 1 and 2 with the
+  current product energies and OH lifetime.
+- Domain edge: the 3e9 m edge still removes 13–21% of the H column at the
+  observation points in cases 4–6, and 4–5% in cases 1–2. The collisionless
+  reference supplies the correction, so the domain need not grow further.
+
+### Performance regression
+
+The cost per iteration rose from about 0.4 s to 1.6–3 s per iteration in all
+running cases, with no growth in particle count (3.2–3.7 M). Cases 2, 4, and
+6 recovered briefly to about 0.7 s at about 08:10 CST. The recovery
+coincided with neither an output nor a common iteration. The per-rank timing
+table puts the time in the photochemistry phase and in particle exchange.
+The time is equal on every rank, including ranks without particles, so most
+of it is waiting at a synchronization point. The nodes are exclusive. The
+cause has not been found yet.

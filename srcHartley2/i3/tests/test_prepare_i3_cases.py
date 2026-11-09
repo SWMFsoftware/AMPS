@@ -78,11 +78,41 @@ class I3CaseGeneratorTest(unittest.TestCase):
             self.assertAlmostEqual(selected, expected_value, places=12)
 
     def test_injection_and_recoil_controls(self) -> None:
-        self.assertEqual(MODULE.derive_reference_injection_count(), 114)
+        self.assertEqual(MODULE.derive_reference_injection_count(), 59)
         self.assertEqual(
             MODULE.derive_characteristic_speeds(self.reactions),
-            {"H": 46945, "H2": 18783, "O": 4660, "OH": 1997, "H2O": 400, "CO": 400, "CO2": 400},
+            {"H": 49045, "H2": 20883, "O": 6760, "OH": 4097, "H2O": 2500, "CO": 2500, "CO2": 2500},
         )
+
+    def test_rate_scaling_keeps_archive_ratios(self) -> None:
+        scaling = MODULE._load_csv(
+            REPOSITORY / "srcHartley2" / "i3" / "reference" / "i3_rate_scaling.csv"
+        )
+        scaled = MODULE.apply_rate_scaling(self.cases, scaling)
+        factors = {row["case_id"]: float(row["parent_rate_factor"]) for row in scaling}
+        for original, new in zip(self.cases, scaled):
+            for column in ("q_h2o_s-1", "q_co_s-1", "q_co2_s-1"):
+                self.assertAlmostEqual(
+                    float(new[column]) / float(original[column]),
+                    factors[original["case_id"]],
+                    delta=1.0e-3 * factors[original["case_id"]],
+                )
+        with self.assertRaisesRegex(ValueError, "every case exactly once"):
+            MODULE.apply_rate_scaling(self.cases, scaling[:-1])
+
+    def test_surface_request_respects_amr_level_limit(self) -> None:
+        finest = MODULE.finest_surface_cell_m()
+        conf = (REPOSITORY / "input" / "i3.conf").read_text(encoding="utf-8")
+        self.assertIn(f"MaxMeshRefinmentLevel={MODULE.AMR_MAX_REFINEMENT_LEVEL}", conf)
+        self.assertIn(f"BlockCells={MODULE.AMR_BLOCK_CELLS},1,1", conf)
+        scaling = MODULE._load_csv(
+            REPOSITORY / "srcHartley2" / "i3" / "reference" / "i3_rate_scaling.csv"
+        )
+        for case in MODULE.apply_rate_scaling(self.cases, scaling):
+            _, mfp, request, floored = MODULE.surface_resolution_request(case)
+            self.assertGreater(request, finest)
+            self.assertEqual(floored, mfp < 1.01 * finest)
+            self.assertEqual(request, max(mfp, 1.01 * finest))
 
     def test_observation_geometry_is_explicit_and_consistent(self) -> None:
         for case in self.cases:
@@ -114,7 +144,7 @@ class I3CaseGeneratorTest(unittest.TestCase):
             self.assertEqual(text.count("mesh.surface_resolution_m"), 6)
             self.assertIn("brightness.enabled = true", text)
             self.assertIn(
-                "brightness.impact_parameter_grid = LOG | 2500.0 | 1.0e9 | 200",
+                "brightness.impact_parameter_grid = LOG | 2500.0 | 3000000000 | 200",
                 text,
             )
             self.assertEqual(
@@ -126,10 +156,10 @@ class I3CaseGeneratorTest(unittest.TestCase):
             )
             self.assertIn("H_LYA_IKL2020", text)
             self.assertIn("OH_AX00_SA1988_LOWELL_UNQUENCHED", text)
-            self.assertIn("mesh.outer_radius_m = 1000000000", text)
+            self.assertIn("mesh.outer_radius_m = 3000000000", text)
             self.assertIn("mesh.radial_cell_count = 2000", text)
             self.assertIn("simulation.sampling_length = 10000", text)
-            self.assertIn("simulation.max_iterations = 30000", text)
+            self.assertIn("simulation.max_iterations = 150000", text)
 
     def test_compile_configuration_is_layout_only(self) -> None:
         text = (REPOSITORY / "input" / "i3.conf").read_text(encoding="utf-8")

@@ -21,12 +21,26 @@ AMU_KG = 1.66053906660e-27
 BOLTZMANN_J_K = 1.380649e-23
 EV_J = 1.602176634e-19
 NUCLEUS_RADIUS_M = 2_500.0
-DOMAIN_OUTER_RADIUS_M = 1.0e9
+# 3e9 m keeps >=78% of an r^-2 H column at observation points inside 1e9 m
+# and 62-78% at the outermost case 4-6 points (0% with the earlier 1e9 m).
+DOMAIN_OUTER_RADIUS_M = 3.0e9
 SURFACE_TEMPERATURE_K = 175.0
 RADIAL_CELL_COUNT = 2_000
-COURANT_NUMBER = 0.25
-DIRECT_PARENT_SPEED_M_S = 400.0
+# The characteristic speeds below are conservative upper bounds on particle
+# speed, so the Courant number limits the fastest particle of each species to
+# 0.8 cells per step.  The first campaign (C=0.25) left H, the slowest species
+# to converge, moving only ~0.14 cells per step on average.
+COURANT_NUMBER = 0.8
+# Upper bound on direct-parent speeds: the first campaign's output profiles
+# reached bulk+3 sigma = 2.2 km/s (the earlier 400 m/s was exceeded 1.4-3.3x).
+DIRECT_PARENT_SPEED_M_S = 2_500.0
 TARGET_SURFACE_PARTICLES_PER_CELL = 800.0
+# Must match input/i3.conf (MaxMeshRefinmentLevel, BlockCells).  The finest
+# dyadic cell is the radial extent / (BlockCells * 2^level); AMPS aborts if the
+# requested surface resolution is finer than that.
+AMR_MAX_REFINEMENT_LEVEL = 30
+AMR_BLOCK_CELLS = 8
+MAX_ITERATIONS = 150_000
 
 MASS_AMU = {"H": 1, "H2": 2, "O": 16, "OH": 17, "H2O": 18, "CO": 28, "CO2": 44}
 DIRECT_PARENTS = ("H2O", "CO", "CO2")
@@ -103,6 +117,44 @@ def derive_surface_resolution(case: dict[str, str]) -> tuple[dict[str, float], s
     }
     limiting = min(mean_free_path, key=mean_free_path.get)
     return mean_free_path, limiting, mean_free_path[limiting]
+
+
+def finest_surface_cell_m() -> float:
+    """Width of the finest dyadic radial cell the compiled AMR tree allows."""
+
+    extent = DOMAIN_OUTER_RADIUS_M - NUCLEUS_RADIUS_M
+    return extent / (AMR_BLOCK_CELLS * 2**AMR_MAX_REFINEMENT_LEVEL)
+
+
+def surface_resolution_request(case: dict[str, str]) -> tuple[str, float, float, bool]:
+    """Requested surface cell: the mixture mean free path, floored 1% above
+    the finest dyadic cell so the AMR level limit is never exceeded."""
+
+    _, limiting, mean_free_path = derive_surface_resolution(case)
+    floor = 1.01 * finest_surface_cell_m()
+    return limiting, mean_free_path, max(mean_free_path, floor), mean_free_path < floor
+
+
+def apply_rate_scaling(
+    cases: list[dict[str, str]], scaling: list[dict[str, str]]
+) -> list[dict[str, str]]:
+    """Multiply the transcribed archive rates of all three direct parents by
+    the reviewed per-case factor (kept in a separate file so the archive
+    transcription in i3_cases.csv stays unmodified)."""
+
+    factors = {row["case_id"]: float(row["parent_rate_factor"]) for row in scaling}
+    if sorted(factors) != sorted(case["case_id"] for case in cases):
+        raise ValueError("rate scaling must list every case exactly once")
+    scaled = []
+    for case in cases:
+        factor = factors[case["case_id"]]
+        if not (math.isfinite(factor) and factor > 0.0):
+            raise ValueError(f"case {case['case_id']} has an invalid rate factor")
+        updated = dict(case)
+        for column in ("q_h2o_s-1", "q_co_s-1", "q_co2_s-1"):
+            updated[column] = f"{float(case[column]) * factor:.3e}"
+        scaled.append(updated)
+    return scaled
 
 
 def derive_reference_injection_count() -> int:
@@ -316,7 +368,7 @@ def render_runtime_input(
         "  simulation.max_face_transfer_multiplicity = 1",
         "  simulation.max_photochemical_products_per_reaction = 20",
         "  simulation.load_balance_interval = 50",
-        "  simulation.max_iterations = 30000",
+        f"  simulation.max_iterations = {MAX_ITERATIONS}",
         "  simulation.convergence_tolerance = 0.05",
         "  simulation.convergence_windows = 3",
     ]
@@ -328,7 +380,8 @@ def render_runtime_input(
         [
             "",
             "  brightness.enabled = true",
-            "  brightness.impact_parameter_grid = LOG | 2500.0 | 1.0e9 | 200",
+            "  brightness.impact_parameter_grid = LOG | 2500.0 | "
+            f"{_format_number(DOMAIN_OUTER_RADIUS_M)} | 200",
             "  brightness.velocity_domain_policy = ABORT",
             "  brightness.emission.OH = OH | OH_A2SIGMA_X2PI_00 | "
             "OH_AX00_SA1988_LOWELL_UNQUENCHED | "
@@ -345,7 +398,15 @@ def render_runtime_input(
     for case in cases:
         _validate_observation_geometry(case)
         f107p = float(case["exposure_mean_f107p_sfu"])
-        _, limiting_species, surface_mfp = derive_surface_resolution(case)
+        limiting_species, surface_mfp, surface_request, floored = (
+            surface_resolution_request(case)
+        )
+        resolution_note = (
+            f"{limiting_species} = {_format_number(surface_mfp)} m; floored at "
+            f"the finest {AMR_MAX_REFINEMENT_LEVEL}-level AMR cell."
+            if floored
+            else f"{limiting_species}."
+        )
         geometry = " | ".join(
             case[name]
             for name in (
@@ -368,8 +429,8 @@ def render_runtime_input(
                 f"    source.CO.rate_s-1 = {case['q_co_s-1']}",
                 f"    source.CO2.rate_s-1 = {case['q_co2_s-1']}",
                 "    ! Minimum mixture mean free path at the 175-K surface: "
-                f"{limiting_species}.",
-                f"    mesh.surface_resolution_m = {_format_number(surface_mfp)}",
+                f"{resolution_note}",
+                f"    mesh.surface_resolution_m = {_format_number(surface_request)}",
             ]
         )
         lines.extend(_runtime_reaction_records(reactions, f107p))
@@ -390,7 +451,10 @@ def render_runtime_input(
 
 def generate(repository: Path, output_directory: Path) -> list[Path]:
     i3_directory = repository / "srcHartley2" / "i3"
-    cases = _load_csv(i3_directory / "reference" / "i3_cases.csv")
+    cases = apply_rate_scaling(
+        _load_csv(i3_directory / "reference" / "i3_cases.csv"),
+        _load_csv(i3_directory / "reference" / "i3_rate_scaling.csv"),
+    )
     reactions = _load_reactions(i3_directory / "reference" / "photochemistry_channels.csv")
     output_directory.mkdir(parents=True, exist_ok=True)
     output = output_directory / "i3.in"

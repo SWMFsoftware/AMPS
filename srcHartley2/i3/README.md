@@ -144,12 +144,39 @@ lambda_i = 1 / [sqrt(2) * sum_j(n_j*sigma_ij)]
 
 with the exact collision records selected by the compiled capability at
 175 K. The sampled-temperature floor and occupancy threshold are runtime
-model settings in `i3.in`. The requested
-first-cell width is the minimum of the H2O, CO, and CO2 mixture paths. Across
-cases 1--6 it is respectively 1.75261509304, 1.29785287642, 0.531312387076,
-0.131442336866, 0.122734766819, and 0.131442336866 m; CO2 is limiting in each
-case. The domain's cometocentric outer radius is exactly 1e9 m (10^6 km), with
-2,000 ideal radial cells and a 2.5-km spherical nucleus.
+model settings in `i3.in`. The requested first-cell width is the minimum of
+the H2O, CO, and CO2 mixture paths (CO2 is limiting in every case). It is
+floored 1% above the finest cell the compiled AMR tree allows, which is the
+radial extent / (BlockCells x 2^MaxMeshRefinmentLevel) = 0.349 m; AMPS
+aborts on a finer request. At the current rates, case 1 is resolved at
+0.444 m and cases 2--6 (mean free paths 0.076--0.27 m) are floored at
+0.353 m, and the generated `i3.in` records each mean free path. The domain's
+cometocentric outer radius is 3e9 m (3x10^6 km), with 2,000 ideal radial
+cells and a 2.5-km spherical nucleus. The first campaign used 1e9 m, which
+removed 14--37% of the H column at the median observation point.
+
+### Production rates
+
+`reference/i3_cases.csv` keeps the archived table rates unchanged. The
+generator multiplies all three parent rates of each case by
+`parent_rate_factor` in `reference/i3_rate_scaling.csv`. The current factors
+(3.95, 4.81, 2.97, 1.74, 1.25, and 1.53 for cases 1--6) match the MAVEN/IUVS
+OH(0-0) profiles to the converged AMPS OH, keeping the archive CO/H2O and
+CO2/H2O ratios. The derivation is in
+`validation_runs/i3_campaign_20261108/analysis_q_scaling/README.md`. AMPS's
+net H2O outflow is 77--80% of the input rate because of return flux to the
+nucleus; compare net rates with observationally derived production rates.
+
+### Time step
+
+Each species' characteristic speed is a conservative upper bound on its
+particle speed: 2,500 m/s for the direct parents (the first campaign reached
+bulk + 3 sigma = 2.2 km/s), and parent bound plus maximum recoil for each
+product. The Courant number of 0.8 therefore limits the fastest particle of
+each species to 0.8 cells per step. Compared with the first campaign (400 m/s
+bounds at Courant 0.25), the time step is 3.1 times longer for H, 2.9 for H2,
+2.2 for O, and 1.6 for OH, which shortens the slow transit of collisionally
+slowed H; the parent time step is 0.51 times as long.
 
 The collision hierarchy is explicit. Three CO2-parent pairs retain Rubin et
 al. (2011) Table 3. The selected completion adds Combi (1996) H2O/OH/H2/H/O/CO
@@ -160,8 +187,7 @@ topology is compile-time because it defines the complete callback database;
 no case-specific collision value is hidden in the executable.
 
 The direct-source injection reference is derived for at least 800 particles
-per first-cell parent population and is 114 events per shortened parent
-timestep. Regular block-local adaptation keeps the validated 800--3,200
+per first-cell parent population and is 59 events per parent time step. Regular block-local adaptation keeps the validated 800--3,200
 range for directly represented populations; chemically produced species use
 the separate 50--200 range, and direct-source weights remain locked outside
 emergency common-factor coarsening. These are statistical controls and do not
