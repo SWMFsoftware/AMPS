@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-07, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-09, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/positive_fit.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/positive_fit.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 5ea0230d74027b24f83da5a2c6f9371f2281ebff8147cae6bdc4a29996f669a8
+# SHA256 of the run copy = SHA256 of this file without these header lines: 8c1139f5c3d822e28259b7d78ce251e0c585681991d0e0b6754a459b8a91d85f
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: driver. Positive-activity fit (user decisions 2026-11-07); options before "--" (--point-table, --grain-start-uPa,
-#   --crossing-weight, --check-jacobian, --devices, --precision mixed, --max-nfev, --segment, --wall-time,
-#   --restart-from, --template-start) and the gpu_fit.py/fit_cops.py arguments after it.
-# USED BY: jobs/positive_fit.sbatch (jobs 122307, 122310-122312, 122319, 122320), jobs/positive_fit_test.sbatch (122303).
-# RUN: see the commands.sh of each fit's provenance (figures_cluster/12M/model_vs_observations_positive_lambda_scan/HOW-TO-RERUN.md).
+# WHAT: driver. Positive-activity fit (user decisions 2026-11-07/08); options before "--" (--point-table, --grain-start-uPa,
+#   --grain-start-from, --crossing-weight, --check-jacobian, --devices, --precision mixed, --max-nfev, --segment,
+#   --wall-time, --restart-from (resume), --start-restart (start from another fit), --ratio 0.02|0.002, --held-exponent
+#   (per-facet exponent term held, D on the total ln A), --check-held-span, --template-start) and the gpu_fit.py
+#   arguments after it. 2026-11-08: ratio, start restart with start check, held term.
+# USED BY: jobs/positive_fit.sbatch (jobs/positive_cycles.sh).
+# 2026-11-09 update: ratio 1e-5 (user 2026-11-08), CO2 flux floor (COPS_POS_FLOOR_CO2), start override --start-set (kappa = 1).
 # ==== end of header ====
 """grain_fit.py with the positive H2O activity A = exp(s), the start from the original map, the log-space Tikhonov term
 and the COPS W10x5 time response in the late window (model_ext/positive_problem.py; GPU side model_ext/
@@ -31,8 +33,38 @@ bind, ~12 min; one --lambda per process):
 Driver options (before '--'):
 * --point-table: late_time_grid.py --table of the base (index UTC kind original_index L2_start L2_stop); grid rows and
   the L2 STOP times of the late observations (required);
-* --grain-start-uPa: grain A start in 1e-6 Pa (default 6.96024299190473 = cycle 3's fine-tuned A, user 2026-11-07);
-  grain B starts at 0;
+* --ratio R: night/shadow production ratio = H2O flux-floor ratio (COPS_POS_NIGHT_RATIO = COPS_POS_FLOOR_RATIO = R;
+  user decisions: 0.02 and, since 2026-11-07 evening, 0.002; positive_problem.RATIO_DECISIONS). Default: the preset
+  environment (jobs/positive_fit.sbatch RATIO), else 0.02. Recorded in the manifest, the products and the restart marker;
+  a resume (--restart-from) must have its restart's ratio;
+* --start-restart R.npz: start the optimizer from another positive fit's fit_restart.npz (a, c, kappa, grain by name;
+  exact optimizer coordinates when the ascale is the same; the prior s0 and D's reference are unchanged; the source's
+  temperature law, mesh, template and parameter layout must be this fit's). A new fit, not a resume: its wall-time
+  segments start at 1. Before the first optimizer step the START CHECK compares the cost at the start with the source's
+  final cost: same ratio, lambda and held term -> must reproduce it to 1e-8 relative (else the fit stops); otherwise the
+  difference and its causes are printed and recorded (model_extension.positive.start_check). Excludes --restart-from;
+* --start-set NAME=VALUE[,NAME=VALUE...] (2026-11-08; user "kappa = 1 where stuck": e.g. --start-set kappa=1): after
+  --start-restart (required) the optimizer start of each named parameter of the fit is VALUE in its optimizer coordinate
+  (kappa: kappa itself; positive_problem.START_SET_DEFINITION); lo <= VALUE <= hi; the prior is unchanged; not with
+  --grain-start-* for the grain names. Recorded in the manifest (model_extension.positive.start_set, config,
+  fit_chain), the restart marker (model_extension.start_set and fit_chain.start_set, kept by resumes),
+  ACTIVITY_PARAMETERIZATION.txt ("Optimizer start: ... then --start-set ...") and the start check, which reports the
+  start as NOT the source's state. Absent: every behaviour as before;
+* --grain-start-uPa A, --grain-start-B B: grain start (A in 1e-6 Pa, B in 1e-6 Pa per 100 s). Precedence: these, else
+  the start restart's grain, else A = 6.96024299190473 (cycle 3's fine-tuned A, user 2026-11-07), B = 0;
+* --grain-start-from F.npz: the grain start from a fine tuning's state file (keys grain_A_uPa, grain_B_uPa_per_100s;
+  path and sha256 recorded); excludes --grain-start-uPa/-B;
+* --held-exponent H.npz: a per-facet term held fixed in the exponent (user 2026-11-07, cycles 2 and 3: the accumulated
+  fine-tuning change): s = Y a + c T + h. Key "held_next" (the fine tuning's file) or "held" (tests); float64, one
+  value per facet in mesh order, nepers. The GPU sees the full s (act_lin + h on the host: positive_problem.
+  install_held_activity; host activity of the local transport only), the Jacobian is unchanged in form. Tikhonov:
+  D^2 = |B (x - x0) + h|^2_area = |Lt (x - x0 + h_B)|^2 + |h_perp|^2_area (h = B h_B + h_perp), i.e. D measures the
+  TOTAL ln A (fitted + held) from s0; the regularization rows are Lt (x - x0 + h_B) and the constant
+  sqrt(lambda) |h_perp|_area, so the cost is 1/2 (data + lambda D^2) with the total D. Products: activity_exp_facets.npz
+  "held" (s includes h), ACTIVITY_PARAMETERIZATION.txt (file, sha256, D contribution), restart marker (path, sha256;
+  activity_linear includes h). A resume (--restart-from) must have the same held file (sha256);
+* --check-held-span (diagnostic, tests): with a held term in the span of the fitted columns, data residuals/Jacobian
+  with h at the start x == without h at x + h_B (evaluated on the GPUs both ways); recorded as held_span_check;
 * --check-jacobian: before fitting, analytic vs central-difference Jacobian columns of the full objective (data with
   grain and W10x5, crossing rows, Tikhonov rows if lambda > 0) at the start for --check-parameters (default a00, a02,
   a07, c_cliff_ge_60deg, kappa, grain_A_uPa); printed, recorded in fit_manifest.json["model_extension"]
@@ -67,7 +99,20 @@ for _p in (str(HERE), str(APP / "tools"), str(APP)):
 
 import positive_problem  # noqa: E402
 
-POSITIVE_ENVIRONMENT = positive_problem.set_positive_environment()     # before any GPU binding (user 2026-11-07)
+
+
+def _ratio_argument(argv):
+    """--ratio R before '--' (the driver's options), or None. Spawned GPU workers get the parent's sys.argv or none;
+    they inherit the environment the parent set, which set_positive_environment then checks."""
+    head = argv[:argv.index("--")] if "--" in argv else argv
+    for k, token in enumerate(head):
+        if token == "--ratio" and k + 1 < len(head):
+            return head[k + 1]
+    return None
+
+
+# before any GPU binding (user 2026-11-07); one ratio for night/shadow and the H2O floor
+POSITIVE_ENVIRONMENT = positive_problem.set_positive_environment(ratio=_ratio_argument(sys.argv[1:]))
 
 import positive_activity  # noqa: E402
 
@@ -85,7 +130,19 @@ def main():
     cfg, argv, notes = positive_problem.rewrite_arguments(sys.argv[1:])
     for n in notes:
         print("positive_fit: %s" % n, flush=True)
-    restart = positive_problem.check_restart_marker(cfg["restart_from"]) if cfg["restart_from"] else None
+    held_record = {}
+    if cfg["held_exponent"]:                         # before anything binds a backend
+        run = Path(cfg["run"])
+        if not (run / "elements.bin").is_file():
+            from cops_cuda import reference
+            run = Path(reference.load("cops_paths").product_input(str(run)))
+        positive_problem.load_held(cfg["held_exponent"], positive_problem.elements_faces(run))
+        positive_problem.install_held_activity(held_record)
+        if positive_problem.HELD["info"]["sha256"] != cfg["held_identity"]["sha256"]:
+            raise SystemExit("positive_fit: the held file changed while it was read")
+    restart = positive_problem.check_restart_marker(cfg["restart_from"], cfg) if cfg["restart_from"] else None
+    start_restart = (positive_problem.check_restart_marker(cfg["start_restart"], cfg) if cfg["start_restart"]
+                     else None)
     import grain_crossing
     import grain_fit
     original = grain_crossing.install
@@ -98,7 +155,8 @@ def main():
                "environment": dict(POSITIVE_ENVIRONMENT),
                "environment_in_process": {k: os.environ.get(k) for k, _ in positive_problem.POSITIVE_ENV},
                "inserted_or_replaced_arguments": notes, "grain_fit_argv": list(argv),
-               "restart": restart, "config": {k: v for k, v in cfg.items()},
+               "restart": restart, "start_restart_marker": start_restart, "config": {k: v for k, v in cfg.items()},
+               "held_gpu_patch": held_record.get("held_gpu_patch"),
                "consistency_check": {
                    "fitter_check_tolerance": "inf",
                    "reason": "fit_cops evaluates MF at the run's linear srcCG coefficients; with A = exp(s) these "

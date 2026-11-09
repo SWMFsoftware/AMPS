@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-07, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-09, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/positive_activity_check.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/positive_activity_check.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 679045ded61b584a2f17f2af3cbfd9bc6567504caf3f7c5535a7d9fdebcf4d3a
+# SHA256 of the run copy = SHA256 of this file without these header lines: 81f0fae66623b6dc3858e777ccb815fc8704b78b23a65f49cc0d6ccd8cca81c2
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: test. Checks of positive_activity.py on a fitting base: kernels with the options off bitwise identical to
 #   the unchanged ones; NumPy reference of night ratio / exp / floor; Jacobian against finite differences. user decisions 2026-11-07.
 # USED BY: jobs/positive_activity_check.sbatch (job 122298).
+# 2026-11-09 update: ratio 1e-5 (user 2026-11-08), CO2 flux floor (COPS_POS_FLOOR_CO2), start override --start-set (kappa = 1).
 # ==== end of header ====
 """Validation of model_ext/positive_activity.py on the SHAP8 12M fitting base (mixed precision, FP32 record store).
 
@@ -38,6 +39,30 @@ multi2_host / multi2_device (MultiGpuBackend, spawned workers on 2 devices, loca
 3. Jacobian: analytic columns of mod / nofloor / clipfloor (cuda1_host) against central finite differences of the GPU
    pressures, two step sizes, for a0, a1, a4, a6, a12, a20, b0 (cliff), b1 (ft_c1), Tmax, T75, Tmin, kappa.
 Writes <out>/report.json, <out>/report.txt and the per-phase products (phase_*.npz/json/log) in <out>.
+
+CO2 flux floor (2026-11-08; COPS_POS_FLOOR_CO2=1, F_CO2 = max(kappa Q_CO2 ACO2, r qmax_C ACO2)), more phases:
+phase oldmod     the "mod" settings with the 2026-11-07 module and kernels (--old-model-ext, default the frozen
+                 snapshot model_ext_frozen/c1_20261108T000327Z that every 0.002 production fit ran; CHECK_MODULE_DIR)
+phase r002       NIGHT_RATIO=0.002 ACTIVITY=exp FLOOR_RATIO=0.002 (the 0.002 production configuration), new module
+phase oldr002    the same with the 2026-11-07 module and kernels
+phase r1e5       NIGHT_RATIO=FLOOR_RATIO=1e-5 exp, WITHOUT the CO2 floor (the H2O part of co2floor)
+phase co2floor   NIGHT_RATIO=FLOOR_RATIO=1e-5 exp, COPS_POS_FLOOR_CO2=1 (the user's 1e-5 decision)
+phase co2floor02 NIGHT_RATIO=FLOOR_RATIO=0.02 exp, COPS_POS_FLOOR_CO2=1 (test only, not a decided configuration: a
+                 larger CO2 floor makes the floor terms large enough to test them through the pressures)
+1b. old vs new module/kernels, BITWISE: oldmod vs mod and oldr002 vs r002 (pressures and all 33 Jacobian columns,
+    cuda1_host, cuda1_device, multi2_host, cuda1_stream; the workers' compiled kernels are checked to be the old /
+    new copies); the PTX of the 41 kernels of the old pressure.cu equals the new one's (nvcc --ptx, the template's
+    shared-array symbol name normalized).
+1c. co2floor vs r1e5 (cuda1_host, every state): the activity/template columns are bitwise equal (the CO2 floor does
+    not touch the H2O part); co2floor multi2_host and cuda1_stream (records streamed: the two-pass split of the CF
+    request) vs cuda1_host bitwise.
+2b. co2floor / co2floor02 / r002 / r1e5 pressures and the kappa column against the NumPy reference (FP64 kernel files
+    and FP32 store records) at the states exp (kappa of the c3 fit, 0.189), exp_k1e-3, exp_k2 (kappa > 1: night records
+    not at the CO2 floor) and exp_k0 (kappa = 4.04e-19, the 0.002 c1 lambda-1e-2 fit's value: every CO2 record at the
+    floor, so the kappa column must be exactly 0).
+3b. co2floor / co2floor02 analytic columns vs central differences: a, b, T, kappa at exp; T, kappa at exp_k1e-3 and
+    exp_k2; kappa at exp_k0 (pass: min over the steps of the column-scaled error <= 1e-5 for T and kappa; the kappa
+    column at exp_k0 and its differences exactly 0).
 """
 
 import argparse
@@ -54,6 +79,10 @@ HERE = Path(__file__).resolve().parent
 APP = Path("/data001/highresolu_vt/AMPS/srcCG/LiouvilleCOPS_cuda")
 sys.path.insert(0, str(APP))
 sys.path.insert(0, str(HERE))
+# old-module phases (2026-11-08): positive_activity (and its kernels/) from another model_ext directory; also in the
+# spawned GPU workers, which re-run this module's top level (they inherit the environment)
+if os.environ.get("CHECK_MODULE_DIR"):
+    sys.path.insert(0, os.environ["CHECK_MODULE_DIR"])
 
 R12 = Path("/data001/highresolu_vt/cops_output/runs/shap8_012m_flat_earlier")
 DEFAULTS = {"base": R12 / "base", "store": R12 / "store",
@@ -67,13 +96,52 @@ PHASES = {
             "COPS_POS_FLOOR_RATIO": "0.02"},
     "nofloor": {"COPS_POS_ENABLE": "1", "COPS_POS_NIGHT_RATIO": "0.02", "COPS_POS_ACTIVITY": "exp"},
     "clipfloor": {"COPS_POS_ENABLE": "1", "COPS_POS_NIGHT_RATIO": "0.02", "COPS_POS_FLOOR_RATIO": "0.02"},
+    # 2026-11-08: the CO2 flux floor and the identity of the earlier configurations with the 2026-11-07 code
+    "oldmod": {"COPS_POS_ENABLE": "1", "COPS_POS_NIGHT_RATIO": "0.02", "COPS_POS_ACTIVITY": "exp",
+               "COPS_POS_FLOOR_RATIO": "0.02"},
+    "r002": {"COPS_POS_ENABLE": "1", "COPS_POS_NIGHT_RATIO": "0.002", "COPS_POS_ACTIVITY": "exp",
+             "COPS_POS_FLOOR_RATIO": "0.002"},
+    "oldr002": {"COPS_POS_ENABLE": "1", "COPS_POS_NIGHT_RATIO": "0.002", "COPS_POS_ACTIVITY": "exp",
+                "COPS_POS_FLOOR_RATIO": "0.002"},
+    "r1e5": {"COPS_POS_ENABLE": "1", "COPS_POS_NIGHT_RATIO": "1e-5", "COPS_POS_ACTIVITY": "exp",
+             "COPS_POS_FLOOR_RATIO": "1e-5"},
+    "co2floor": {"COPS_POS_ENABLE": "1", "COPS_POS_NIGHT_RATIO": "1e-5", "COPS_POS_ACTIVITY": "exp",
+                 "COPS_POS_FLOOR_RATIO": "1e-5", "COPS_POS_FLOOR_CO2": "1"},
+    "co2floor02": {"COPS_POS_ENABLE": "1", "COPS_POS_NIGHT_RATIO": "0.02", "COPS_POS_ACTIVITY": "exp",
+                   "COPS_POS_FLOOR_RATIO": "0.02", "COPS_POS_FLOOR_CO2": "1"},
 }
+OLD_MODULE_PHASES = {"oldmod": "mod", "oldr002": "r002"}     # old phase -> the new phase it must equal bitwise
+OLD_MODEL_EXT = Path("/data001/highresolu_vt/cops_output/model_ext_frozen/c1_20261108T000327Z")
+OLD_SHA256 = {"positive_activity.py": "6f353bcb43992541b1abe90cc60e1f6e9c2eb7a77c6cc250bd94c1eab3e6cb7e",
+              "kernels/pressure.cu": "714b9d908fee29c8135931ecd8a5209fba5ef1dd6905bec5b219cf5a0a4280f3",
+              "kernels/activity.cu": "4d53c184e697967effa6d8311577159666d0f5d623ad9024ad43bf7ee26357a4"}
 # NumPy model settings of each phase: (night ratio or None = 0.2/0.1, activity, floor ratio, state)
 MODEL = {"ref": (None, "clip", 0.0, "fit"), "def": (None, "clip", 0.0, "fit"), "mod": (0.02, "exp", 0.02, "exp"),
-         "nofloor": (0.02, "exp", 0.0, "exp"), "clipfloor": (0.02, "clip", 0.02, "fit")}
+         "nofloor": (0.02, "exp", 0.0, "exp"), "clipfloor": (0.02, "clip", 0.02, "fit"),
+         "oldmod": (0.02, "exp", 0.02, "exp"), "r002": (0.002, "exp", 0.002, "exp"),
+         "oldr002": (0.002, "exp", 0.002, "exp"), "r1e5": (1e-5, "exp", 1e-5, "exp"),
+         "co2floor": (1e-5, "exp", 1e-5, "exp"), "co2floor02": (0.02, "exp", 0.02, "exp")}
+CO2_FLOOR_PHASES = ("co2floor", "co2floor02")
+KAPPA_STATES = ("exp", "exp_k1e-3", "exp_k2", "exp_k0")
+KAPPA_K0 = 4.039516e-19                      # kappa of the 0.002 c1 lambda-1e-2 fit (its fit_result.txt)
+PHASE_STATES = {"co2floor": KAPPA_STATES, "co2floor02": KAPPA_STATES, "r1e5": KAPPA_STATES}
 IDENTITY_BACKENDS = ("cuda1_host", "cuda1_device", "multi2_host", "multi2_device", "cuda1_stream", "cuda1_fp64")
 PHYSICS_BACKENDS = {"mod": ("cuda1_host", "cuda1_device", "multi2_host", "cuda1_stream"), "nofloor": ("cuda1_host",),
-                    "clipfloor": ("cuda1_host", "multi2_host")}
+                    "clipfloor": ("cuda1_host", "multi2_host"),
+                    "oldmod": ("cuda1_host", "cuda1_device", "multi2_host", "cuda1_stream"),
+                    "r002": ("cuda1_host", "cuda1_device", "multi2_host", "cuda1_stream"),
+                    "oldr002": ("cuda1_host", "cuda1_device", "multi2_host", "cuda1_stream"),
+                    "r1e5": ("cuda1_host",),
+                    "co2floor": ("cuda1_host", "cuda1_device", "multi2_host", "cuda1_stream"),
+                    "co2floor02": ("cuda1_host", "cuda1_device", "multi2_host", "cuda1_stream")}
+FD_PHASES = ("mod", "nofloor", "clipfloor")  # the 2026-11-07 finite-difference set (state "exp"/"fit" only)
+# CO2-floor phases: finite differences per state (2026-11-08)
+FD_PLAN = {"exp": [("a", k) for k in (0, 1, 4, 6, 12, 20)] + [("b", 0), ("b", 1), ("T", 0), ("T", 1), ("T", 2),
+                                                               ("kappa", 0)],
+           "exp_k1e-3": [("T", 0), ("T", 1), ("T", 2), ("kappa", 0)],
+           "exp_k2": [("T", 0), ("T", 1), ("T", 2), ("kappa", 0)],
+           "exp_k0": [("kappa", 0)]}
+FD_PASS = 1e-5                               # CO2-floor phases: min over the steps of the column-scaled error (T, kappa)
 FD_A = (0, 1, 4, 6, 12, 20)
 FD_B = (0, 1)
 FD_STEPS = (1e-3, 1e-4, 1e-6)    # exponent change (exp) or fraction of rms(act_lin) (clip); T: x 100 K; kappa: x 10
@@ -185,7 +253,8 @@ def states(inp, which):
         return bk.ParameterState(inp["a_fit"], inp["T_fit"], float(inp["kappa_fit"]), inp["b_fit"])
     if which == "pert":
         return bk.ParameterState(inp["a_pert"], inp["T_pert"], float(inp["kappa_fit"]) * 1.3, inp["b_pert"])
-    return bk.ParameterState(inp["a_exp"], inp["T_fit"], float(inp["kappa_fit"]), inp["b_exp"])
+    kappa = {"exp": float(inp["kappa_fit"]), "exp_k1e-3": 1e-3, "exp_k2": 2.0, "exp_k0": KAPPA_K0}[which]
+    return bk.ParameterState(inp["a_exp"], inp["T_fit"], kappa, inp["b_exp"])
 
 
 # ---------------------------------------------------------------------------------------------------- one phase
@@ -197,6 +266,12 @@ def run_phase(name, work, devices):
         import positive_activity
         info["installed"] = positive_activity.install()
         info["config"] = positive_activity.config()
+        info["module_file"] = str(Path(positive_activity.__file__).resolve())
+        if (name in OLD_MODULE_PHASES) != bool(os.environ.get("CHECK_MODULE_DIR")) or (
+                name in OLD_MODULE_PHASES and Path(positive_activity.__file__).resolve().parent
+                != Path(os.environ["CHECK_MODULE_DIR"]).resolve()):
+            raise SystemExit("phase %s imported %s (CHECK_MODULE_DIR %s)" % (name, positive_activity.__file__,
+                                                                           os.environ.get("CHECK_MODULE_DIR")))
     else:
         info["installed"] = False
     from cops_cuda import backend as bk, cuda_sources, evaluator
@@ -213,7 +288,8 @@ def run_phase(name, work, devices):
     if name in ("ref", "def"):
         backends, state_names = IDENTITY_BACKENDS, ("fit", "pert")
     else:
-        backends, state_names = PHYSICS_BACKENDS[name], (which,)
+        backends, state_names = PHYSICS_BACKENDS[name], PHASE_STATES.get(name, (which,))
+    info["states"] = list(state_names)
     info["backends"] = {}
     d0, d1 = devices[0], devices[1]
     for be_name in backends:
@@ -279,13 +355,46 @@ def run_phase(name, work, devices):
                                      "compiled": ((w.get("model_extension") or {}).get("positive_activity") or {}).get("compiled"),
                                      "model_extension_config": {k: ((w.get("model_extension") or {}).get("positive_activity") or {}).get(k)
                                                                 for k in ("enabled", "modified", "night_ratio", "qmin_ratio", "activity",
-                                                                          "floor_ratio", "role")},
+                                                                          "floor_ratio", "co2_floor", "role")},
                                      "dataset_floor": ((w.get("model_extension") or {}).get("positive_activity") or {}).get("dataset")}
                                     for w, r in zip(ident["workers"], ident["workers_ready"])]
                 entry["model_extension"] = ident.get("model_extension")
             info["backends"][be_name] = entry
+            # finite differences, CO2-floor phases (2026-11-08): per state (FD_PLAN), keys fd/<state>/<tag>/<step>/NG|RG
+            if be_name == "cuda1_host" and name in CO2_FLOOR_PHASES:
+                Y = M.Y
+                info["fd"] = {"act_unit": 1.0, "steps": {}}
+                for st in state_names:
+                    s0 = states(inp, st)
+                    for kind, k in FD_PLAN[st]:
+                        for delta in FD_STEPS:
+                            if kind == "a":
+                                h = delta / float(np.max(np.abs(Y[:, k])))
+                            elif kind == "b":
+                                h = delta / (abs(scale) * float(np.max(np.abs(basis[:, k]))))
+                            elif kind == "T":
+                                h = delta * 100.0
+                            else:                      # kappa; at kappa ~ 0 an absolute step (all records at the floor)
+                                h = delta * 10.0 * s0.kappa if s0.kappa > 1e-6 else delta * 1e-3
+                            vals = []
+                            for sign in (1.0, -1.0):
+                                a_, b_, T_, kap = s0.a.copy(), s0.b.copy(), s0.T.copy(), s0.kappa
+                                if kind == "a":
+                                    a_[k] += sign * h
+                                elif kind == "b":
+                                    b_[k] += sign * h
+                                elif kind == "T":
+                                    T_[k] += sign * h
+                                else:
+                                    kap += sign * h
+                                r = be.evaluate(bk.ParameterState(a_, T_, kap, b_))
+                                vals.append((r.pNG, r.pRG))
+                            tag = "%s%d" % (kind, k)
+                            out["fd/%s/%s/%g/NG" % (st, tag, delta)] = (vals[0][0] - vals[1][0]) / (2 * h)
+                            out["fd/%s/%s/%g/RG" % (st, tag, delta)] = (vals[0][1] - vals[1][1]) / (2 * h)
+                            info["fd"]["steps"]["%s/%s/%g" % (st, tag, delta)] = h
             # finite differences (cuda1_host, physics phases)
-            if be_name == "cuda1_host" and name not in ("ref", "def"):
+            if be_name == "cuda1_host" and name in FD_PHASES:
                 s0 = states(inp, which)
                 rms_act = 1.0
                 if act == "clip":
@@ -348,8 +457,10 @@ def run_phase(name, work, devices):
 
 # --------------------------------------------------------------------------------------------- NumPy reference
 def numpy_pressures(fit_cops, el, M, base, store, point_ids, act_lin, night_ratio, activity, floor_ratio, T, kappa,
-                    source):
-    """pNG, pRG of the modified model at the points (formulas of fit_cops Model.evaluate + the extension)."""
+                    source, co2_floor=False):
+    """pNG, pRG of the modified model at the points (formulas of fit_cops Model.evaluate + the extension). With
+    co2_floor (2026-11-08): F_CO2 = max(kappa qC, qmaxC (floor_ratio ACO2)), qC = Q_CO2 ACO2; stats gain the analytic
+    d p / d kappa (records not at the CO2 floor only) and the CO2-floor record counts."""
     from cops_cuda.record_store import split_fields, store_file_name
     AU, KT, COS75 = fit_cops.AU, fit_cops.KT, fit_cops.COS75
     p_exp = 4.2143229 if M.helio == "shap5" else 4.8
@@ -358,7 +469,9 @@ def numpy_pressures(fit_cops, el, M, base, store, point_ids, act_lin, night_rati
     A = np.exp(act_lin) if activity == "exp" else np.maximum(act_lin, 0.0)
     cNG, cRG, bm = M.cNG, M.cRG, M.bm
     pNG, pRG = np.zeros(len(point_ids)), np.zeros(len(point_ids))
-    stats = {"records": 0, "at_floor": 0, "ng_h2o_sum": 0.0, "ng_h2o_floor_sum": 0.0, "per_point_floor_fraction": []}
+    dkNG, dkRG = np.zeros(len(point_ids)), np.zeros(len(point_ids))
+    stats = {"records": 0, "at_floor": 0, "ng_h2o_sum": 0.0, "ng_h2o_floor_sum": 0.0, "per_point_floor_fraction": [],
+             "co2_floor": bool(co2_floor), "co2_at_floor": 0, "ng_co2_sum": 0.0, "ng_co2_floor_sum": 0.0}
     for j, ip in enumerate(point_ids):
         _, h, rec = fit_cops.read_kernel(str(base / "kernels" / ("point=%04d.bin" % ip)))
         if source == "fp64":
@@ -393,15 +506,31 @@ def numpy_pressures(fit_cops, el, M, base, store, point_ids, act_lin, night_rati
         u = 1.0 / np.sqrt(np.where(use_lit, Tl, Tmin))
         VB = h["VdotB"]
         nH = np.sum(F * kn * u)
-        pNG[j] = cNG["H2O"] * bm["H2O"] * nH + kappa * cNG["CO2"] * bm["CO2"] * np.sum(qC * kn * u)
-        pRG[j] = (cRG["H2O"][j] * (np.sum(F * kphi) + bm["H2O"] * np.sum(F * VB * kv * u))
-                  + kappa * cRG["CO2"][j] * (np.sum(qC * kphi) + bm["CO2"] * np.sum(qC * VB * kv * u)))
+        if co2_floor:
+            FminC = qmaxC * (floor_ratio * el["ACO2"][face])
+            onC = kappa * qC < FminC
+            FC = np.where(onC, FminC, kappa * qC)
+            actC = np.where(onC, 0.0, qC)                      # d F_CO2 / d kappa
+            pNG[j] = cNG["H2O"] * bm["H2O"] * nH + cNG["CO2"] * bm["CO2"] * np.sum(FC * kn * u)
+            pRG[j] = (cRG["H2O"][j] * (np.sum(F * kphi) + bm["H2O"] * np.sum(F * VB * kv * u))
+                      + cRG["CO2"][j] * (np.sum(FC * kphi) + bm["CO2"] * np.sum(FC * VB * kv * u)))
+            stats["co2_at_floor"] += int(onC.sum())
+            stats["ng_co2_sum"] += float(np.sum(FC * kn * u))
+            stats["ng_co2_floor_sum"] += float(np.sum((FC * kn * u)[onC]))
+        else:
+            actC = qC
+            pNG[j] = cNG["H2O"] * bm["H2O"] * nH + kappa * cNG["CO2"] * bm["CO2"] * np.sum(qC * kn * u)
+            pRG[j] = (cRG["H2O"][j] * (np.sum(F * kphi) + bm["H2O"] * np.sum(F * VB * kv * u))
+                      + kappa * cRG["CO2"][j] * (np.sum(qC * kphi) + bm["CO2"] * np.sum(qC * VB * kv * u)))
+        dkNG[j] = cNG["CO2"] * bm["CO2"] * np.sum(actC * kn * u)
+        dkRG[j] = cRG["CO2"][j] * (np.sum(actC * kphi) + bm["CO2"] * np.sum(actC * VB * kv * u))
         stats["records"] += len(F)
         stats["at_floor"] += int(on.sum())
         stats["ng_h2o_sum"] += float(nH)
         nf = float(np.sum((F * kn * u)[on]))
         stats["ng_h2o_floor_sum"] += nf
         stats["per_point_floor_fraction"].append([int(ip), float(on.mean()) if len(on) else 0.0, nf / nH if nH else 0.0])
+    stats["dkappa_NG"], stats["dkappa_RG"] = dkNG, dkRG
     return pNG, pRG, stats
 
 
@@ -422,7 +551,7 @@ def late_mask(utc):
 
 
 # ---------------------------------------------------------------------------------------------------- analysis
-def analyse(work, args, fit_cops, el, M):
+def analyse(work, args, fit_cops, el, M, suffix=""):
     inp = dict(np.load(work / "inputs.npz"))
     res = {p: dict(np.load(work / ("phase_%s.npz" % p))) for p in PHASES}
     meta = {p: json.loads((work / ("phase_%s.json" % p)).read_text()) for p in PHASES}
@@ -553,20 +682,259 @@ def analyse(work, args, fit_cops, el, M):
         lines.append("   refusals (%s): %s" % (p, {k: v[:90] for k, v in meta[p]["refusals"].items()}))
     lines.append("4. TIMING (median warm full Jacobian, 33 columns, %d points): %s" % (len(inp["point_ids"]), {
         p: {be: round(v["jacobian_s_median"], 4) for be, v in meta[p]["backends"].items()} for p in PHASES}))
+    # 2026-11-08: the CO2 flux floor (sections 1b, 1c, 2b, 3b)
+    co2 = analyse_co2_floor(work, args, fit_cops, el, M, inp, res, meta, late, lines)
+    report["co2_floor"] = co2
     # pass/fail: identity bitwise; GPU vs NumPy <= 1e-6 (FP64 kernel files) and <= 1e-12 (FP32 store records)
     nan_inf = lambda x: float("inf") if x != x else x     # noqa: E731  (a NaN fails)
     worst = {src: max(nan_inf(v[k]) for e in phys.values() for v in e[src]["backends"].values()
                       for k in ("max_rel_NG", "max_rel_RG")) for src in ("fp64", "fp32store")}
     passed = {"identity_bitwise": bool(ident["bitwise_identical"]),
               "physics_fp64_le_1e-6": bool(worst["fp64"] <= 1e-6), "physics_fp32store_le_1e-12": bool(worst["fp32store"] <= 1e-12)}
+    passed.update(co2["passed"])
     report["passed"] = dict(passed, worst_physics=worst)
     lines.append("PASS/FAIL: %s; worst GPU/NumPy - 1: FP64 records %.2e, FP32 store records %.2e"
                  % (passed, worst["fp64"], worst["fp32store"]))
     report["summary_lines"] = lines
-    (work / "report.json").write_text(json.dumps(jsonable(report), indent=1))
-    (work / "report.txt").write_text("\n".join(lines) + "\n")
+    (work / ("report%s.json" % suffix)).write_text(json.dumps(jsonable(report), indent=1))
+    (work / ("report%s.txt" % suffix)).write_text("\n".join(lines) + "\n")
     print("\n".join(lines), flush=True)
     return all(passed.values())
+
+
+def _bitwise(a, b):
+    return a.dtype == b.dtype and a.shape == b.shape and a.tobytes() == b.tobytes()
+
+
+def _sha256(path):
+    import hashlib
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _compiled(meta_phase):
+    """(name, path, sha256) of every module compiled in the phase's driver and its workers."""
+    out = [(c["name"], c["path"], c["sha256"]) for c in meta_phase.get("compiled_in_driver") or []]
+    for be in meta_phase["backends"].values():
+        for w in be.get("workers", []):
+            out += [(c["name"], c["path"], c["sha256"]) for c in (w.get("compiled") or [])]
+    return out
+
+
+def ptx_check(old_dir, out):
+    """PTX of every kernel of the old pressure.cu vs the new one (nvcc --ptx -arch=sm_80, --fmad=false): identical
+    after normalizing the template's shared-array symbol (the new template has a third parameter, mangled Lb0E)."""
+    import re
+    nvcc = Path(os.environ.get("CUDA_HOME", "/usr/local/cuda-12.9")) / "bin" / "nvcc"
+    res = {"nvcc": str(nvcc), "old": str(old_dir / "kernels" / "pressure.cu"), "new": str(HERE / "kernels" / "pressure.cu")}
+    if not nvcc.is_file():
+        res["error"] = "nvcc not found"
+        return res
+    ptx = {}
+    for tag in ("old", "new"):
+        target = out / ("ptx_%s.ptx" % tag)
+        cmd = [str(nvcc), "--ptx", "-arch=sm_80", "-std=c++14", "--fmad=false", "-x", "cu", "-o", str(target), res[tag]]
+        rc = subprocess.call(cmd)
+        if rc != 0:
+            res["error"] = "nvcc exit %d for %s" % (rc, tag)
+            return res
+        text = target.read_text()
+        funcs = {}
+        for m in re.finditer(r"\.visible \.entry (\w+)\(", text):
+            body = text[m.start():text.index("\n}\n", m.start()) + 3]
+            if tag == "new":
+                body = re.sub(r"(_ZZ12fused_body_mILi(?:n?\d+)ELi\d+E)Lb0E", r"\1", body)
+            funcs[m.group(1)] = body
+        ptx[tag] = funcs
+    same = [k for k in ptx["old"] if ptx["new"].get(k) == ptx["old"][k]]
+    res.update(old_kernels=len(ptx["old"]), identical=len(same),
+               different=sorted(k for k in ptx["old"] if k not in same),
+               new_kernels=sorted(set(ptx["new"]) - set(ptx["old"])),
+               all_identical=len(same) == len(ptx["old"]) and len(same) > 0)
+    return res
+
+
+def colrel(x, ref):
+    """max |x - ref| / max |ref| (column-scaled); 0 when both are exactly 0, inf when only ref is 0."""
+    m = float(np.max(np.abs(ref))) if np.size(ref) else 0.0
+    d = float(np.max(np.abs(np.asarray(x) - np.asarray(ref)))) if np.size(ref) else 0.0
+    return d / m if m > 0 else (0.0 if d == 0.0 else float("inf"))
+
+
+def analyse_co2_floor(work, args, fit_cops, el, M, inp, res, meta, late, lines):
+    """Sections 1b, 1c, 2b, 3b (2026-11-08, CO2 flux floor); returns {"passed": {...}, ...}."""
+    out, passed = {}, {}
+    new_sha = _sha256(HERE / "kernels" / "pressure.cu")
+    # 1b. old vs new module and kernels, bitwise
+    ob = {}
+    for old, new in OLD_MODULE_PHASES.items():
+        keys = sorted(k for k in res[new] if not k.startswith("fd/"))
+        mism = [k for k in keys if k not in res[old] or not _bitwise(res[new][k], res[old][k])]
+        extra = sorted(k for k in res[old] if not k.startswith("fd/") and k not in res[new])
+        comp_old = sorted({c[2] for c in _compiled(meta[old]) if c[0] == "pressure"})
+        comp_new = sorted({c[2] for c in _compiled(meta[new]) if c[0] == "pressure"})
+        ob[old] = {"vs": new, "compared": len(keys), "mismatches": mism[:20], "n_mismatches": len(mism),
+                   "keys_only_in_old": extra[:20], "bitwise_identical": not mism and not extra and len(keys) > 0,
+                   "pressure_compiled_old": comp_old, "pressure_compiled_new": comp_new,
+                   "kernels_as_expected": comp_old == [OLD_SHA256["kernels/pressure.cu"]] and comp_new == [new_sha],
+                   "module_old": meta[old].get("module_file"), "module_new": meta[new].get("module_file")}
+        lines.append("1b. OLD vs NEW module/kernels (%s = 2026-11-07 code vs %s): %d arrays (backends %s, pressures and "
+                     "33 columns), mismatches %d -> %s; compiled pressure.cu old %s new %s (%s)" % (
+                         old, new, len(keys), "/".join(PHYSICS_BACKENDS[new]), len(mism),
+                         "BITWISE IDENTICAL" if ob[old]["bitwise_identical"] else "DIFFERENT",
+                         [s[:12] for s in comp_old], [s[:12] for s in comp_new],
+                         "as expected" if ob[old]["kernels_as_expected"] else "UNEXPECTED"))
+        passed["%s_vs_%s_bitwise" % (old, new)] = bool(ob[old]["bitwise_identical"] and ob[old]["kernels_as_expected"])
+    out["old_vs_new"] = ob
+    ptx = json.loads((work / "ptx_check.json").read_text()) if (work / "ptx_check.json").is_file() else {"error": "missing"}
+    out["ptx"] = ptx
+    lines.append("1b. PTX of the old pressure.cu kernels vs the new: %s" % (
+        "%d of %d identical (template symbol normalized), different %s, new kernels %s" % (
+            ptx["identical"], ptx["old_kernels"], ptx["different"], ptx["new_kernels"]) if "error" not in ptx
+        else "not run (%s)" % ptx["error"]))
+    passed["ptx_old_kernels_identical"] = bool(ptx.get("all_identical"))
+    # 1c. co2floor vs r1e5: the H2O columns bitwise; co2floor backends vs cuda1_host bitwise
+    cols = {}
+    for st in KAPPA_STATES:
+        ks = [k for k in res["co2floor"] if k.startswith("cuda1_host/%s/J/a" % st) or
+              k.startswith("cuda1_host/%s/J/b" % st)]
+        mism = [k for k in ks if not _bitwise(res["co2floor"][k], res["r1e5"][k])]
+        dp = {g: relmax(res["co2floor"]["cuda1_host/%s/p%s" % (st, g)], res["r1e5"]["cuda1_host/%s/p%s" % (st, g)])
+              for g in ("NG", "RG")}
+        cols[st] = {"columns": len(ks), "mismatches": mism, "pressure_change_by_co2_floor_max_rel": dp}
+    out["h2o_columns_vs_r1e5"] = cols
+    ok = all(not v["mismatches"] and v["columns"] == 2 * 29 for v in cols.values())
+    passed["co2floor_h2o_columns_bitwise_r1e5"] = bool(ok)
+    # kappa = 2 > 1: no CO2 record at the floor -> the CF kernels and assembly give the r1e5 numbers bitwise (code 15 =
+    # the bind-time PhiCO2 fold, the floor sums are exact zeros)
+    k2 = [k for k in res["r1e5"] if k.startswith("cuda1_host/exp_k2/")]
+    k2_mism = [k for k in k2 if not _bitwise(res["co2floor"][k], res["r1e5"][k])]
+    out["exp_k2_co2floor_vs_r1e5"] = {"compared": len(k2), "mismatches": k2_mism}
+    passed["co2floor_exp_k2_equals_r1e5_bitwise"] = bool(k2 and not k2_mism)
+    lines.append("1c. co2floor vs r1e5 at kappa 2 (no CO2 record at the floor), cuda1_host: %d arrays, mismatches %s"
+                 % (len(k2), k2_mism[:6] or "none (bitwise identical)"))
+    lines.append("1c. co2floor vs r1e5 (no CO2 floor), cuda1_host: a/b columns bitwise %s (%s); pressure change by the "
+                 "CO2 floor (max rel NG/RG): %s" % (ok, {st: "%d/%d" % (v["columns"] - len(v["mismatches"]),
+                                                                          v["columns"]) for st, v in cols.items()},
+                                                    {st: "%.2e/%.2e" % (v["pressure_change_by_co2_floor_max_rel"]["NG"],
+                                                                        v["pressure_change_by_co2_floor_max_rel"]["RG"])
+                                                     for st, v in cols.items()}))
+    for p in CO2_FLOOR_PHASES:
+        host = {k[len("cuda1_host/"):]: v for k, v in res[p].items() if k.startswith("cuda1_host/")}
+        bw = {}
+        for be in PHYSICS_BACKENDS[p][1:]:
+            other = {k[len(be) + 1:]: v for k, v in res[p].items() if k.startswith(be + "/")}
+            bw[be] = {"bitwise": set(other) == set(host) and all(_bitwise(other[k], host[k]) for k in host),
+                      "max_abs_over_colmax": max(float(np.max(np.abs(other[k] - host[k])) /
+                                                       max(float(np.max(np.abs(host[k]))), 1e-300)) for k in host)}
+        out.setdefault("backends_vs_cuda1_host", {})[p] = bw
+        streamed = meta[p]["backends"].get("cuda1_stream", {}).get("streamed_records")
+        lines.append("1c. %s backends vs cuda1_host (%d arrays, 4 states): %s; cuda1_stream streamed records %s" % (
+            p, len(host), {be: ("bitwise" if v["bitwise"] else "max abs/colmax %.1e" % v["max_abs_over_colmax"])
+                           for be, v in bw.items()}, streamed))
+        passed["%s_multi2_stream_bitwise" % p] = bool(bw["multi2_host"]["bitwise"] and bw["cuda1_stream"]["bitwise"]
+                                                     and streamed)
+        passed["%s_device_activity_le_1e-12" % p] = bool(bw["cuda1_device"]["max_abs_over_colmax"] <= 1e-12)
+        dsf = [((w.get("dataset_floor") or {}).get("co2_floor_first")) for w in
+               meta[p]["backends"]["multi2_host"].get("workers", [])]
+        lines.append("    %s workers: CO2 floor first evaluation %s" % (p, dsf))
+    # 2b. physics vs NumPy, every state; kappa column vs the NumPy derivative
+    phys, worst = {}, {"fp64": 0.0, "fp32store": 0.0, "kappa_fp64": 0.0, "kappa_fp32store": 0.0}
+    act = None
+    for p in ("r002", "r1e5") + CO2_FLOOR_PHASES:
+        night, activity, floor, _ = MODEL[p]
+        co2_on = "COPS_POS_FLOOR_CO2" in PHASES[p]
+        phys[p] = {}
+        for st in PHASE_STATES.get(p, ("exp",)):
+            s = states(inp, st)
+            if act is None:
+                act = M.Y @ s.a + float(inp["scale_exp"]) * (inp["basis"] @ s.b)
+            e = {}
+            for source in ("fp64", "fp32store"):
+                nNG, nRG, stt = numpy_pressures(fit_cops, el, M, args.base, args.store,
+                                                [int(x) for x in inp["point_ids"]], act, night, activity, floor, s.T,
+                                                s.kappa, "fp64" if source == "fp64" else "fp32", co2_floor=co2_on)
+                be_res = {}
+                for be in PHYSICS_BACKENDS[p]:
+                    gNG, gRG = res[p]["%s/%s/pNG" % (be, st)], res[p]["%s/%s/pRG" % (be, st)]
+                    kNG, kRG = res[p]["%s/%s/J/kappa0/NG" % (be, st)], res[p]["%s/%s/J/kappa0/RG" % (be, st)]
+                    jNG, jRG = res[p]["%s/%s/jac_pNG" % (be, st)], res[p]["%s/%s/jac_pRG" % (be, st)]
+                    v = {"max_rel_NG": relmax(gNG, nNG), "max_rel_RG": relmax(gRG, nRG),
+                         "kappa_col_max_rel_NG": colrel(kNG, stt["dkappa_NG"]),
+                         "kappa_col_max_rel_RG": colrel(kRG, stt["dkappa_RG"]),
+                         "kappa_col_zero_where_numpy_zero": bool(not np.any(kNG[stt["dkappa_NG"] == 0]) and
+                                                                 not np.any(kRG[stt["dkappa_RG"] == 0])),
+                         "kappa_col_exactly_zero": bool(not np.any(kNG) and not np.any(kRG)),
+                         "jacobian_call_pressures_bitwise": bool(_bitwise(jNG, gNG) and _bitwise(jRG, gRG))}
+                    be_res[be] = v
+                    for k in ("max_rel_NG", "max_rel_RG"):
+                        worst[source] = max(worst[source], v[k] if v[k] == v[k] else float("inf"))
+                    for k in ("kappa_col_max_rel_NG", "kappa_col_max_rel_RG"):
+                        worst["kappa_" + source] = max(worst["kappa_" + source], v[k] if v[k] == v[k] else float("inf"))
+                e[source] = {"backends": be_res, "co2_at_floor": stt["co2_at_floor"], "records": stt["records"],
+                             "h2o_at_floor": stt["at_floor"],
+                             "ng_co2_floor_share": stt["ng_co2_floor_sum"] / max(stt["ng_co2_sum"], 1e-300),
+                             "numpy_dkappa_zero": bool(not np.any(stt["dkappa_NG"]) and not np.any(stt["dkappa_RG"]))}
+            phys[p][st] = e
+            f = e["fp32store"]
+            lines.append("2b. %-10s %-9s kappa %-9.3g: records %d, CO2 at floor %d (%.2f%%; NG CO2 sum at floor %.3f%%), "
+                         "H2O at floor %d; vs NumPy FP32 store: %s; FP64 files: %s" % (
+                             p, st, s.kappa, f["records"], f["co2_at_floor"],
+                             100.0 * f["co2_at_floor"] / max(f["records"], 1), 100.0 * f["ng_co2_floor_share"],
+                             f["h2o_at_floor"],
+                             {be: "p %.1e/%.1e kappa %.1e/%.1e" % (v["max_rel_NG"], v["max_rel_RG"],
+                                                                    v["kappa_col_max_rel_NG"], v["kappa_col_max_rel_RG"])
+                              for be, v in f["backends"].items()},
+                             {be: "p %.1e/%.1e" % (v["max_rel_NG"], v["max_rel_RG"])
+                              for be, v in e["fp64"]["backends"].items()}))
+    out["physics"] = phys
+    out["worst"] = worst
+    passed["co2_physics_fp64_le_1e-6"] = bool(worst["fp64"] <= 1e-6)
+    passed["co2_physics_fp32store_le_1e-12"] = bool(worst["fp32store"] <= 1e-12)
+    passed["co2_kappa_column_fp32store_le_1e-12"] = bool(worst["kappa_fp32store"] <= 1e-12)
+    k0 = all(phys[p]["exp_k0"]["fp32store"]["backends"][be]["kappa_col_exactly_zero"] and
+             phys[p]["exp_k0"]["fp32store"]["numpy_dkappa_zero"] for p in CO2_FLOOR_PHASES for be in PHYSICS_BACKENDS[p])
+    passed["co2_kappa_column_zero_at_kappa_k0"] = bool(k0)
+    passed["co2_kappa_column_zero_where_numpy_zero"] = all(
+        v["kappa_col_zero_where_numpy_zero"] for p in CO2_FLOOR_PHASES for st in phys[p].values()
+        for src in ("fp32store",) for v in st[src]["backends"].values())   # same inputs: same floor decisions
+    lines.append("2b. worst GPU/NumPy - 1: pressures FP64 files %.2e, FP32 store %.2e; kappa column FP64 %.2e, FP32 store "
+                 "%.2e; kappa column exactly 0 at kappa %.3g (every CO2 record at the floor): %s"
+                 % (worst["fp64"], worst["fp32store"], worst["kappa_fp64"], worst["kappa_fp32store"], KAPPA_K0, k0))
+    # 3b. analytic vs central differences
+    jac, fd_ok, k0_fd = {}, True, True
+    for p in CO2_FLOOR_PHASES:
+        jac[p] = {}
+        for st, params in FD_PLAN.items():
+            for kind, k in params:
+                tag = "%s%d" % (kind, k)
+                row = {}
+                for delta in FD_STEPS:
+                    for g in ("NG", "RG"):
+                        an = res[p]["cuda1_host/%s/J/%s/%s" % (st, tag, g)]
+                        fd = res[p]["fd/%s/%s/%g/%s" % (st, tag, delta, g)]
+                        m = float(np.max(np.abs(an)))
+                        col = float(np.max(np.abs(an - fd))) / m if m > 0 else float(np.max(np.abs(fd)))
+                        row["%g/%s" % (delta, g)] = {"colscaled": col, "colmax": m}
+                best = {g: min(row["%g/%s" % (d, g)]["colscaled"] for d in FD_STEPS) for g in ("NG", "RG")}
+                row["best"] = best
+                jac[p]["%s/%s" % (st, tag)] = row
+                if kind in ("T", "kappa") and max(best.values()) > FD_PASS:
+                    fd_ok = False
+                if st == "exp_k0":
+                    zero = all(not np.any(res[p]["fd/exp_k0/kappa0/%g/%s" % (d, g)]) for d in FD_STEPS for g in ("NG", "RG"))
+                    row["fd_exactly_zero"] = zero
+                    k0_fd &= zero
+                lines.append("3b. %-10s %-9s %-6s " % (p, st, tag) + "  ".join(
+                    "h%g %s %.1e" % (d, g, row["%g/%s" % (d, g)]["colscaled"]) for d in FD_STEPS for g in ("NG", "RG"))
+                    + ("  (fd exactly 0: %s)" % row["fd_exactly_zero"] if st == "exp_k0" else ""))
+    out["jacobian"] = jac
+    passed["co2_fd_T_kappa_le_1e-5"] = bool(fd_ok)
+    passed["co2_fd_kappa_zero_at_k0"] = bool(k0_fd)
+    for p in ("r002", "r1e5") + CO2_FLOOR_PHASES + tuple(OLD_MODULE_PHASES):
+        lines.append("   refusals (%s): %s" % (p, {k: v[:90] for k, v in meta[p]["refusals"].items()}))
+    passed["co2_refusals"] = all(v.startswith("refused") for p in CO2_FLOOR_PHASES for v in meta[p]["refusals"].values())
+    out["passed"] = passed
+    return out
 
 
 def main():
@@ -580,6 +948,12 @@ def main():
     run.add_argument("--store", type=Path, default=DEFAULTS["store"])
     run.add_argument("--fit", type=Path, default=DEFAULTS["fit"])
     run.add_argument("--phases", default=",".join(PHASES))
+    run.add_argument("--old-model-ext", type=Path, default=OLD_MODEL_EXT,
+                     help="model_ext directory with the 2026-11-07 positive_activity.py and kernels (phases %s)"
+                          % ", ".join(OLD_MODULE_PHASES))
+    an = sub.add_parser("analyse", help="the analysis again on an existing --out of 'run' (CPU; writes "
+                                        "report_reanalysis_<UTC>.json/.txt, never the run's report)")
+    an.add_argument("--out", type=Path, required=True)
     ph = sub.add_parser("phase")
     ph.add_argument("name", choices=list(PHASES))
     ph.add_argument("--work", type=Path, required=True)
@@ -588,16 +962,34 @@ def main():
     if a.cmd == "phase":
         run_phase(a.name, a.work, [int(d) for d in a.devices.split(",")])
         return 0
+    if a.cmd == "analyse":
+        info = json.loads((a.out / "inputs.json").read_text())
+        a.base, a.store, a.points = Path(info["base"]), Path(info["store"]), [int(p) for p in info["points"]]
+        fit_cops, el, M = reference_model(a.base, a.points)
+        return 0 if analyse(a.out, a, fit_cops, el, M, suffix="_reanalysis_" + time.strftime("%Y%m%dT%H%M%SZ",
+                                                                                             time.gmtime())) else 4
     if a.cmd != "run":
-        ap.error("use 'run' or 'phase'")
+        ap.error("use 'run', 'phase' or 'analyse'")
     a.points = [int(p) for p in a.points.split(",")]
+    a.old_model_ext = a.old_model_ext.resolve()
+    old_sha = {rel: _sha256(a.old_model_ext / rel) for rel in OLD_SHA256}
+    if old_sha != OLD_SHA256:
+        raise SystemExit("--old-model-ext %s is not the 2026-11-07 code: %s (expected %s)" % (a.old_model_ext, old_sha,
+                                                                                            OLD_SHA256))
     a.out.mkdir(parents=True, exist_ok=False)
+    log("PTX of the old and new pressure.cu")
+    ptx = ptx_check(a.old_model_ext, a.out)
+    (a.out / "ptx_check.json").write_text(json.dumps(dict(ptx, old_model_ext=str(a.old_model_ext),
+                                                         old_sha256=old_sha), indent=1))
+    log("PTX: %s" % {k: v for k, v in ptx.items() if k != "different"})
     log("inputs")
     fit_cops, el, M = prepare_inputs(a, a.out)
-    base_env = {k: v for k, v in os.environ.items() if not k.startswith("COPS_POS_")}
+    base_env = {k: v for k, v in os.environ.items() if not k.startswith("COPS_POS_") and k != "CHECK_MODULE_DIR"}
     base_env.update(COPS_CUDA_RECORD_PRECISION="fp32", COPS_CUDA_RECORD_STORE=str(a.store), CHECK_BASE=str(a.base))
     for name in a.phases.split(","):
         env = dict(base_env, **(PHASES[name] or {}))
+        if name in OLD_MODULE_PHASES:
+            env["CHECK_MODULE_DIR"] = str(a.old_model_ext)
         cmd = [sys.executable, "-W", "ignore", str(Path(__file__).resolve()), "phase", name, "--work", str(a.out),
                "--devices", a.devices]
         log("phase %s: %s with %s" % (name, " ".join(cmd), PHASES[name]))

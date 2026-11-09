@@ -1,13 +1,13 @@
-# ==== version-controlled copy: header added 2026-11-07, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-09, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/positive_problem.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/positive_problem.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: f6d8d792ccc8c46c9570909b7146f6b9d9dae940d62a4f84f8cea74f757f00b5
+# SHA256 of the run copy = SHA256 of this file without these header lines: b234281c22bebe49dc4078b52b2b1dbd2bb37f1146cae5cf942dfb2a741570f9
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: module. Fit driver of the positive-activity fits (user decisions 2026-11-07): wraps fit_cops.Problem / gpu_fit.py; activity
-#   exp(Y a + c T_cliff), c >= 0; start and prior = emission-weighted (w = area A_orig) LS projection of ln A_orig;
-#   area-weighted log Tikhonov D; late observations (>= 10:33:10 UTC) compared with W10x5 of the surface model (+ grain
-#   at the time stamp); model-only 1-s grid rows (use 0); inserts --check-tolerance inf, --template-start 0,
-#   --fix-temperature; writes activity_exp_facets.npz, ACTIVITY_PARAMETERIZATION.txt, late_window_model.dat.
-# USED BY: positive_fit.py.
+# WHAT: module. Fit driver of the positive-activity fits (user decisions 2026-11-07/08): exp(Y a + c T_cliff + held), c >= 0; start and prior
+#   = emission-weighted projection of ln A_orig; area-weighted log Tikhonov on the total ln A (held: Lt (x - x0 + h_B) plus
+#   the constant |h_perp|); W10x5 late window; grid rows; ratio, start restart and start check; products and restart
+#   marker (ratio, held file sha256).
+# USED BY: positive_fit.py, positive_finetune.py.
+# 2026-11-09 update: ratio 1e-5 (user 2026-11-08), CO2 flux floor (COPS_POS_FLOOR_CO2), start override --start-set (kappa = 1).
 # ==== end of header ====
 """Positive H2O activity A = exp(s), start from the original map, log-space Tikhonov term and the COPS time response
 in the late window (user decisions 2026-11-07). Fit-level part; the GPU side is model_ext/positive_activity.py.
@@ -23,7 +23,12 @@ Model (user 2026-11-07)
   (positive_activity.py, env COPS_POS_*) forms af = exp(act_lin) from act_lin = Y a + enhancement_scale * B c exactly as
   the fitter passes them, so this Problem passes enhancement_scale = 1.0 and exponent coefficients. The same patch
   applies the night/shadow ratio 0.02 and the per-record flux floor 0.02 q_max A_orig (COPS_POS_NIGHT_RATIO,
-  COPS_POS_FLOOR_RATIO); this module does not reimplement them.
+  COPS_POS_FLOOR_RATIO); this module does not reimplement them. The ratio is one of RATIO_DECISIONS (0.02, 0.002,
+  1e-5); the decision of 1e-5 (user 2026-11-08) also includes the CO2 flux floor with the same ratio
+  (COPS_POS_FLOOR_CO2=1: F_CO2 = max(kappa Q_CO2 A_CO2,run, r q_max,CO2 A_CO2,run), A_CO2,run = the run's ACO2 map;
+  CO2_FLOOR_DECISIONS; recorded in the manifest ("ratio", "environment"), the restart marker ("co2_floor"; a resume
+  must have the same), the start check (a CO2-floor change is a change of the problem), ACTIVITY_PARAMETERIZATION.txt
+  and activity_exp_facets.npz (meta co2_floor, F_min_CO2_over_qmax_CO2)).
 * Optimizer coordinates: a_j = ascale * x_j with ascale = max_j |a_start_j| (O(1) start; replaces the fitter's
   max |coef[0]|, which is the scale of the linear srcCG coefficients); c_cliff = x (amplitude, lower bound 0 as for
   every template, CLAUDE.md; with exp it is ln of the cliff factor).
@@ -93,6 +98,7 @@ import hashlib
 import json
 import math
 import os
+import textwrap
 from pathlib import Path
 
 import numpy as np
@@ -106,7 +112,34 @@ WINDOW_LAGS_S = (0.0, 2.0, 4.0, 6.0, 8.0)          # DPU mean of the last 5 read
 WINDOW_DT_S = 0.05                                 # sub-sample step of late_response_eval.window_mean
 DEFAULT_GRAIN_START_UPA = 6.96024299190473         # 6.96024299190473e-06 Pa: cycle 3 fine-tuned A_Pa (user 2026-11-07)
 POSITIVE_ENV = (("COPS_POS_ENABLE", "1"), ("COPS_POS_NIGHT_RATIO", "0.02"), ("COPS_POS_ACTIVITY", "exp"),
-                ("COPS_POS_FLOOR_RATIO", "0.02"))  # agent B's patch (user 2026-11-07)
+                ("COPS_POS_FLOOR_RATIO", "0.02"),  # agent B's patch; the ratio entries are the DEFAULT (0.02)
+                ("COPS_POS_FLOOR_CO2", None))      # 2026-11-08: set from the ratio's decision (CO2_FLOOR_DECISIONS)
+ENV_NIGHT, ENV_FLOOR, ENV_FLOOR_CO2 = "COPS_POS_NIGHT_RATIO", "COPS_POS_FLOOR_RATIO", "COPS_POS_FLOOR_CO2"
+DEFAULT_RATIO = "0.02"
+# The night/shadow production ratio and the H2O flux-floor ratio are the user's decisions; one value R sets both
+# (COPS_POS_NIGHT_RATIO = COPS_POS_FLOOR_RATIO = R). Any other value is refused until the user decides it.
+RATIO_DECISIONS = {
+    0.02: "user 2026-11-07 (first decision): night/shadow ratio 0.02 'as in srcCG' and H2O flux floor 0.02 q_max A_orig",
+    0.002: "user 2026-11-07 (second decision): night/shadow ratio and H2O floor ratio both 0.002 (CO2 no floor)",
+    1e-5: "user 2026-11-08 (third decision): 'decrease the floor to 1.0E-5 and also use that for nightside and shadows'; night/shadow ratio and H2O floor ratio both 1e-5; then 'use the same floor for CO2': CO2 flux floor with the same ratio (the lead's reading: F_CO2 = max(q kappa A_CO2,run, 1e-5 q_max,CO2 A_CO2,run), A_CO2,run = the run's CO2 map ACO2 = the CO2 activity at kappa = 1; COPS_POS_FLOOR_CO2=1)"}
+# The CO2 flux floor (COPS_POS_FLOOR_CO2=1, positive_activity.py) is part of a ratio's decision: on for 1e-5 only (user
+# 2026-11-08); the earlier decisions have no CO2 floor (the variable must be unset for them).
+CO2_FLOOR_DECISIONS = {0.02: False, 0.002: False, 1e-5: True}
+CO2_FLOOR_TEXT = ("CO2 flux floor F_CO2 >= {floor} q_max,CO2 A_CO2,run (F_CO2 = max(kappa Q_CO2 A_CO2,run, {floor} "
+                  "q_max,CO2 A_CO2,run), A_CO2,run = the run's CO2 map ACO2 (elements.bin column 33) = the CO2 activity "
+                  "at kappa = 1; user 2026-11-08 'use the same floor for CO2', the lead's reading; records at the CO2 "
+                  "floor do not depend on kappa)")
+START_REPRODUCTION_RTOL = 1e-8     # a start that must reproduce its source (same ratio, lambda, held term): cost rel.
+# --start-set NAME=VALUE (2026-11-08): explicit optimizer-start values applied after --start-restart (and the grain start)
+START_SET_DEFINITION = ("--start-set NAME=VALUE[,NAME=VALUE...]: after --start-restart the optimizer start of each named "
+                        "parameter of this fit is VALUE, in the fitter's optimizer coordinate x of that name (kappa: kappa "
+                        "itself; aNN: a_NN / ascale; c_cliff_ge_60deg: ln of the cliff factor; grain_A_uPa: 1e-6 Pa; "
+                        "grain_B_uPa_per_100s: 1e-6 Pa per 100 s); every other parameter keeps the start restart's value; "
+                        "the prior x0 is unchanged; lo <= VALUE <= hi is required")
+START_SET_DECISIONS = {"kappa": "user 2026-11-08 'kappa = 1 where stuck': the ratio-1e-5 cycle-1 fits of lambda 1e-3, 1e-2 "
+                                "and 1e-1 start kappa at 1 (the fitter's default, the run's CO2 map); every other parameter "
+                                "from the ratio-0.002 cycle-1 fit (--start-restart); lambda 0, 1e-5, 1e-4 keep the "
+                                "restart's kappa"}
 PARAMETERIZATION_ID = "positive_exp_activity_log_tikhonov_w10x5_emisproj_v2"   # v2: emission-weighted start/prior
 PROJECTION_WEIGHTING = "emission_weighted_log_ls"
 PROJECTION_WEIGHT_DEFINITION = ("w_e = area_e * A_orig,e (A_orig > 0; normalized by max A_orig, which does not change "
@@ -114,15 +147,36 @@ PROJECTION_WEIGHT_DEFINITION = ("w_e = area_e * A_orig,e (A_orig > 0; normalized
 CHECK_PARAMETERS = ("a00", "a02", "a07", "c_cliff_ge_60deg", "kappa", "grain_A_uPa")
 GRID_REASON = "late_grid_point"
 REQUIRED_TEMPLATE = "cliff_ge_60deg"                # the user's model (2026-11-07): exactly this template
-POLICY = ("user 2026-11-07: A = exp(Y a + c_cliff T_cliff) (positive by construction; templates inside the exponent; "
-          "ft_c* not used); start and prior = emission-weighted (w = area A_orig) LS projection of ln A_orig on "
-          "[Y, T_cliff] over A_orig > 0 (negative "
-          "cliff coefficient -> 0, Y re-projected); original analytical temperature law held (fit_cops "
-          "--fix-temperature); kappa free >= 0 from 1; night ratio 0.02 and flux floor 0.02 q_max A_orig on the GPU "
-          "(positive_activity.py); D^2 = sum area (s - s0)^2 / sum area (log space, prior = start); late window "
-          "(>= 10:33:10 UTC) compared with W10x5 of the surface model (mean of five 10-s averages ending at "
-          "T, T-2, ..., T-8 s, T = L2 STOP), grain added at the observation time; grain + crossing 10, grain start "
-          "A = 6.96024299190473e-06 Pa, B = 0")
+POLICY_TEMPLATE = (
+    "user 2026-11-07: A = exp(Y a + c_cliff T_cliff) (positive by construction; templates inside the exponent; "
+    "ft_c* not used); start and prior = emission-weighted (w = area A_orig) LS projection of ln A_orig on "
+    "[Y, T_cliff] over A_orig > 0 (negative "
+    "cliff coefficient -> 0, Y re-projected); original analytical temperature law held (fit_cops "
+    "--fix-temperature); kappa free >= 0 from 1; night ratio {ratio} and flux floor {ratio} q_max A_orig on the GPU "
+    "(positive_activity.py); D^2 = sum area (s - s0)^2 / sum area (log space, prior = start); late window "
+    "(>= 10:33:10 UTC) compared with W10x5 of the surface model (mean of five 10-s averages ending at "
+    "T, T-2, ..., T-8 s, T = L2 STOP), grain added at the observation time; grain + crossing 10, grain start "
+    "A = 6.96024299190473e-06 Pa, B = 0 (unless a start restart / fine tuning gives it)")
+POLICY = POLICY_TEMPLATE.format(ratio="0.02")      # the first decision's text (kept for importers)
+
+
+def current_ratio(environ=None):
+    """The ratio R of this process (COPS_POS_NIGHT_RATIO = COPS_POS_FLOOR_RATIO = R), as a float."""
+    env = os.environ if environ is None else environ
+    return float(env.get(ENV_NIGHT, DEFAULT_RATIO))
+
+
+def current_co2_floor(environ=None):
+    """True when this process has the CO2 flux floor (COPS_POS_FLOOR_CO2=1; set by set_positive_environment)."""
+    env = os.environ if environ is None else environ
+    return (env.get(ENV_FLOOR_CO2) or "").strip() == "1"
+
+
+def current_policy():
+    text = POLICY_TEMPLATE.format(ratio=repr(current_ratio()))
+    if current_co2_floor():
+        text += "; " + CO2_FLOOR_TEXT.format(floor=repr(current_ratio()))
+    return text
 
 
 def sha256(path):
@@ -159,16 +213,98 @@ def jsonable(value):
 
 
 # ------------------------------------------------------------------------------------------------ environment (B)
-def set_positive_environment(environ=None):
+def _ratio_value(text, what):
+    try:
+        r = float(text)
+    except (TypeError, ValueError):
+        raise SystemExit("positive_fit: %s=%r is not a number" % (what, text)) from None
+    if r not in RATIO_DECISIONS:
+        raise SystemExit("positive_fit: %s=%s is not a ratio the user decided (decided: %s); a new value is a user "
+                         "decision (add it to positive_problem.RATIO_DECISIONS with its date)"
+                         % (what, text, ", ".join("%g" % v for v in sorted(RATIO_DECISIONS))))
+    return r
+
+
+def parse_start_set(text):
+    """--start-set NAME=VALUE[,NAME=VALUE...] -> [[name, value], ...] (finite floats, unique names; checked against the
+    fit's parameters and bounds when the Problem exists)."""
+    out = []
+    for item in str(text).split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if item.count("=") != 1:
+            raise SystemExit("positive_fit: --start-set %r: need NAME=VALUE[,NAME=VALUE...]" % text)
+        name, value = (s.strip() for s in item.split("="))
+        try:
+            v = float(value)
+        except ValueError:
+            raise SystemExit("positive_fit: --start-set %s=%r: the value is not a number" % (name, value)) from None
+        if not name or not math.isfinite(v):
+            raise SystemExit("positive_fit: --start-set %r: need a parameter name and a finite value" % item)
+        if name in [n for n, _ in out]:
+            raise SystemExit("positive_fit: --start-set names %s twice" % name)
+        out.append([name, v])
+    if not out:
+        raise SystemExit("positive_fit: --start-set %r sets nothing" % text)
+    return out
+
+
+def set_positive_environment(environ=None, ratio=None):
     """Set the COPS_POS_* variables of the GPU patch (before anything binds a backend; spawned workers inherit them).
-    A different preset value is refused: the values are the user's decisions of 2026-11-07."""
+
+    The night/shadow ratio and the H2O floor ratio are one value R (user decisions, RATIO_DECISIONS): from ``ratio``
+    (positive_fit.py --ratio), else from a preset COPS_POS_NIGHT_RATIO / COPS_POS_FLOOR_RATIO (jobs/positive_fit.sbatch
+    RATIO; spawned workers inherit the parent's), else the default 0.02 (the behaviour before 2026-11-07 evening).
+    Refused: an undecided R, night != floor, a preset value different from ``ratio``, other preset COPS_POS_* values
+    different from the user's (ENABLE 1, ACTIVITY exp).
+    CO2 flux floor (2026-11-08): COPS_POS_FLOOR_CO2 follows the ratio's decision (CO2_FLOOR_DECISIONS): R = 1e-5 sets
+    it to 1 (a preset value must be 1); for 0.02 and 0.002 it must be unset (any preset value, also 0, is refused, so
+    the recorded environment of those fits is the one of the earlier ones). Returned (and recorded as the fit's
+    "environment") only when set."""
     environ = os.environ if environ is None else environ
+    preset = {k: environ.get(k) for k in (ENV_NIGHT, ENV_FLOOR) if environ.get(k) is not None}
+    values = {k: _ratio_value(v, k) for k, v in preset.items()}
+    if len(set(values.values())) > 1:
+        raise SystemExit("positive_fit: %s differ; the user's decisions set both to one value" % preset)
+    if ratio is not None:
+        r = _ratio_value(ratio, "--ratio")
+        if values and set(values.values()) != {r}:
+            raise SystemExit("positive_fit: --ratio %s but the environment has %s" % (ratio, preset))
+        text = str(ratio).strip()
+    elif preset:
+        text = next(iter(preset.values())).strip()
+    else:
+        text = DEFAULT_RATIO
+    r = _ratio_value(text, "ratio")
+    co2 = CO2_FLOOR_DECISIONS[r]
+    old_co2 = environ.get(ENV_FLOOR_CO2)
+    if co2 and old_co2 is not None and old_co2 != "1":
+        raise SystemExit("positive_fit: %s=%s is preset; the decision of ratio %s includes the CO2 floor (%s=1, user "
+                         "2026-11-08)" % (ENV_FLOOR_CO2, old_co2, text, ENV_FLOOR_CO2))
+    if not co2 and old_co2 is not None:
+        raise SystemExit("positive_fit: %s=%s is preset, but the decision of ratio %s has no CO2 floor (only 1e-5 has "
+                         "one, user 2026-11-08): unset it" % (ENV_FLOOR_CO2, old_co2, text))
+    out = {}
     for key, value in POSITIVE_ENV:
+        if key in (ENV_NIGHT, ENV_FLOOR):
+            old = environ.get(key)
+            if old is None:
+                environ[key] = text
+            out[key] = environ[key]
+            continue
+        if key == ENV_FLOOR_CO2:
+            if co2:
+                environ[key] = "1"
+                out[key] = "1"
+            continue
         old = environ.get(key)
         if old is not None and old != value:
             raise SystemExit("positive_fit: %s=%s is preset; the user's decision (2026-11-07) is %s" % (key, old, value))
         environ[key] = value
-    return dict(POSITIVE_ENV)
+        out[key] = value
+    out["ratio_decision"] = RATIO_DECISIONS[r]
+    return out
 
 
 def describe_positive_activity(module):
@@ -225,9 +361,13 @@ def _value(tail, name):
 def rewrite_arguments(argv):
     """Split the positive_fit.py command into (driver config, grain_fit.py argv, notes).
 
-    Driver options (before '--'): --point-table PATH (required), --grain-start-uPa A (default 6.96024299190473),
-    --check-jacobian, --check-parameters a00,a02,... . Everything else goes to grain_fit.py / gpu_fit.py
-    (--crossing-weight, --devices, --precision, --max-nfev, --wall-time, ...).
+    Driver options (before '--'): --point-table PATH (required), --ratio R (night/shadow = floor ratio; also via the
+    environment, see set_positive_environment), --start-restart PATH (start from another positive fit's
+    fit_restart.npz; the prior is unchanged), --grain-start-uPa A, --grain-start-B B (grain B start in 1e-6 Pa per 100 s),
+    --check-jacobian, --check-parameters a00,a02,..., --start-set NAME=VALUE[,...] (2026-11-08: needs --start-restart;
+    START_SET_DEFINITION; absent: nothing changes). Grain start precedence: explicit --grain-start-uPa / -B, else
+    the start restart's grain, else A = 6.96024299190473, B = 0. Everything else goes to grain_fit.py / gpu_fit.py
+    (--crossing-weight, --devices, --precision, --max-nfev, --wall-time, --restart-from, ...).
     Inserted when absent: gpu_fit --template-start 0 (the start is the projection; the default 1.0 would replace the
     projected cliff coefficient), fitter --fix-temperature; fitter --check-tolerance is set to inf. Refused: options
     that contradict the user's model (see the messages)."""
@@ -238,8 +378,15 @@ def rewrite_arguments(argv):
     head, tail = argv[:split], argv[split + 1:]
     notes = []
     cfg = {"point_table": _pop(head, "--point-table"),
-           "grain_start_uPa": _pop(head, "--grain-start-uPa", float, DEFAULT_GRAIN_START_UPA),
+           "ratio": _pop(head, "--ratio"),
+           "start_restart": _pop(head, "--start-restart"),
+           "grain_start_uPa": _pop(head, "--grain-start-uPa", float),
+           "grain_start_B": _pop(head, "--grain-start-B", float),
+           "grain_start_from": _pop(head, "--grain-start-from"),
+           "held_exponent": _pop(head, "--held-exponent"),
+           "start_set": _pop(head, "--start-set"),
            "check_jacobian": _flag(head, "--check-jacobian"),
+           "check_held_span": _flag(head, "--check-held-span"),
            "check_parameters": list(CHECK_PARAMETERS)}
     names = _pop(head, "--check-parameters")
     if names:
@@ -249,8 +396,50 @@ def rewrite_arguments(argv):
     cfg["point_table"] = str(Path(cfg["point_table"]).resolve())
     if not Path(cfg["point_table"]).is_file():
         raise SystemExit("positive_fit: point table not found: %s" % cfg["point_table"])
-    if not cfg["grain_start_uPa"] >= 0.0:
-        raise SystemExit("positive_fit: --grain-start-uPa must be >= 0")
+    for key, opt in (("grain_start_uPa", "--grain-start-uPa"), ("grain_start_B", "--grain-start-B")):
+        if cfg[key] is not None and not (math.isfinite(cfg[key]) and cfg[key] >= 0.0):
+            raise SystemExit("positive_fit: %s must be finite and >= 0 (lower bound of the grain parameters)" % opt)
+    if cfg["grain_start_from"] is not None:
+        if cfg["grain_start_uPa"] is not None or cfg["grain_start_B"] is not None:
+            raise SystemExit("positive_fit: --grain-start-from and --grain-start-uPa/-B exclude each other")
+        A, B, ident = read_grain_start(cfg["grain_start_from"])
+        cfg["grain_start_from"] = ident["path"]
+        cfg["grain_start_uPa"], cfg["grain_start_B"] = A, B
+        cfg["grain_start_uPa_source"] = cfg["grain_start_B_source"] = "%s (sha256 %s)" % (ident["path"], ident["sha256"])
+        cfg["grain_start_from_identity"] = ident
+    if cfg["held_exponent"] is not None:
+        path = Path(cfg["held_exponent"]).resolve()
+        if not path.is_file():
+            raise SystemExit("positive_fit: --held-exponent file not found: %s" % path)
+        cfg["held_exponent"] = str(path)
+        cfg["held_identity"] = {"path": str(path), "sha256": sha256(path)}
+        for opt, bad in (("--activity", "device"), ("--transport", "mpi")):
+            v = _value(head, opt)
+            if v is not None and (v == bad or (opt == "--transport" and v != "local")):
+                raise SystemExit("positive_fit: --held-exponent needs the host activity of the local transport (the "
+                                 "held term is added to act_lin on the host; %s %s computes it elsewhere)" % (opt, v))
+    if cfg["check_held_span"] and cfg["held_exponent"] is None:
+        raise SystemExit("positive_fit: --check-held-span needs --held-exponent")
+    if cfg["ratio"] is not None:
+        _ratio_value(cfg["ratio"], "--ratio")
+    if cfg["start_restart"] is not None:
+        cfg["start_restart"] = str(Path(cfg["start_restart"]).resolve())
+        if not Path(cfg["start_restart"]).is_file():
+            raise SystemExit("positive_fit: --start-restart file not found: %s" % cfg["start_restart"])
+    if cfg["start_set"] is None:
+        del cfg["start_set"]                         # absent option: the configuration of the earlier fits
+    else:
+        if cfg["start_restart"] is None:
+            raise SystemExit("positive_fit: --start-set needs --start-restart (it overrides values of that start; a "
+                             "resume continues its own state)")
+        cfg["start_set"] = parse_start_set(cfg["start_set"])
+        for name, _ in cfg["start_set"]:
+            if name in ("grain_A_uPa", "grain_B_uPa_per_100s") and (cfg["grain_start_uPa"] is not None or
+                                                                   cfg["grain_start_B"] is not None):
+                raise SystemExit("positive_fit: --start-set %s and --grain-start-uPa/-B/-from both set the grain start"
+                                 % name)
+        notes.append("--start-set %s applied after --start-restart" % ",".join("%s=%r" % (n, v) for n, v in
+                                                                             cfg["start_set"]))
     # gpu_fit.py options
     ts = _value(head, "--template-start")
     if ts is None:
@@ -260,6 +449,11 @@ def rewrite_arguments(argv):
         raise SystemExit("positive_fit: --template-start must be 0: the template amplitude starts at the projected "
                          "value (user 2026-11-07); a nonzero value would replace it")
     cfg["restart_from"] = _value(head, "--restart-from")
+    if cfg["restart_from"] is not None and cfg["start_restart"] is not None:
+        raise SystemExit("positive_fit: --start-restart (a new fit from another fit's state) and gpu_fit --restart-from "
+                         "(resume of this fit's previous segment) exclude each other")
+    if cfg["restart_from"] is not None:
+        cfg["restart_from"] = str(Path(cfg["restart_from"]).resolve())
     # fitter options
     for bad, why in (("--ordered-temperature", "the temperature law is held (--fix-temperature)"),
                      ("--fix-legacy-activity", "all 25 exponent coefficients are fitted"),
@@ -302,15 +496,213 @@ def rewrite_arguments(argv):
     return cfg, head + ["--"] + tail, notes
 
 
-def check_restart_marker(path):
-    """A --restart-from file must come from this parameterization (a linear fit's restart would be misread)."""
+def marker_ratios(ext):
+    """(night, floor) ratios of a restart marker: the explicit fields (since 2026-11-07 evening), else the GPU patch
+    configuration recorded in the marker (earlier restarts)."""
+    if ext.get("night_ratio") is not None:
+        return float(ext["night_ratio"]), float(ext["floor_ratio"])
+    cfg = ((ext.get("positive_activity") or {}).get("config") or {})
+    if cfg.get("night_ratio") is None:
+        return None, None
+    return float(cfg["night_ratio"]), float(cfg.get("floor_ratio"))
+
+
+def marker_co2_floor(ext):
+    """The CO2 flux floor of a restart marker: the explicit field (since 2026-11-08), else False (the earlier
+    restarts were written before the CO2 floor existed)."""
+    return bool(ext.get("co2_floor", False))
+
+
+def marker_held(ext):
+    """The held exponent term of a restart marker: None (no held term) or {path, sha256, ...}."""
+    h = ext.get("held_exponent")
+    return h if h else None
+
+
+def check_restart_marker(path, cfg=None):
+    """A restart (--restart-from, --start-restart) must come from this parameterization (a linear fit's restart would
+    be misread). For --restart-from (resume of this fit) the ratio and the held term must be this process's."""
     with np.load(str(path), allow_pickle=False) as z:
         meta = json.loads(str(z["meta_json"]))
     ext = meta.get("model_extension") or {}
     if ext.get("parameterization") != PARAMETERIZATION_ID:
         raise SystemExit("positive_fit: %s is not a restart of a positive_fit.py fit (meta model_extension."
                          "parameterization %r, need %r)" % (path, ext.get("parameterization"), PARAMETERIZATION_ID))
-    return {"path": str(Path(path).resolve()), "parameterization": ext.get("parameterization")}
+    night, floor = marker_ratios(ext)
+    out = {"path": str(Path(path).resolve()), "sha256": sha256(path), "parameterization": ext.get("parameterization"),
+           "night_ratio": night, "floor_ratio": floor, "co2_floor": marker_co2_floor(ext),
+           "held_exponent": marker_held(ext),
+           "lambda": (meta.get("settings") or {}).get("lambda"), "status": meta.get("status"),
+           "segments": meta.get("segments"), "fit_directory": meta.get("fit_directory"),
+           "fit_chain": ext.get("fit_chain")}
+    if cfg is not None and cfg.get("restart_from") and str(Path(path).resolve()) == cfg["restart_from"]:
+        r = current_ratio()
+        if night != r or floor != r:
+            raise SystemExit("positive_fit: --restart-from %s was written with night/floor ratios %s/%s; this process "
+                             "has %s: a resume must continue the same problem" % (path, night, floor, r))
+        if marker_co2_floor(ext) != current_co2_floor():
+            raise SystemExit("positive_fit: --restart-from %s was written with the CO2 floor %s; this process has %s: a "
+                             "resume must continue the same problem" % (path, marker_co2_floor(ext),
+                                                                        current_co2_floor()))
+        held = held_identity(cfg)
+        if (marker_held(ext) or {}).get("sha256") != (held or {}).get("sha256"):
+            raise SystemExit("positive_fit: --restart-from %s has the held term %s; this process has %s: a resume "
+                             "must continue the same problem" % (path, marker_held(ext), held))
+    return out
+
+
+def held_identity(cfg):
+    """{path, sha256} of the held exponent file of this process (None: no held term)."""
+    return cfg.get("held_identity")
+
+
+def read_grain_start(path):
+    """(A [1e-6 Pa], B [1e-6 Pa per 100 s], identity) from a fine tuning's state file (keys grain_A_uPa,
+    grain_B_uPa_per_100s)."""
+    path = Path(path).resolve()
+    if not path.is_file():
+        raise SystemExit("positive_fit: --grain-start-from file not found: %s" % path)
+    with np.load(str(path), allow_pickle=False) as z:
+        missing = [k for k in ("grain_A_uPa", "grain_B_uPa_per_100s") if k not in z.files]
+        if missing:
+            raise SystemExit("positive_fit: --grain-start-from %s lacks %s" % (path, missing))
+        A, B = (float(np.asarray(z[k]).reshape(-1)[0]) if np.asarray(z[k]).size == 1 else float("nan")
+                for k in ("grain_A_uPa", "grain_B_uPa_per_100s"))
+    for name, v in (("grain_A_uPa", A), ("grain_B_uPa_per_100s", B)):
+        if not (math.isfinite(v) and v >= 0.0):
+            raise SystemExit("positive_fit: --grain-start-from %s: %s = %r (need one finite value >= 0)" % (path, name, v))
+    return A, B, {"path": str(path), "sha256": sha256(path), "grain_A_uPa": A, "grain_B_uPa_per_100s": B}
+
+
+# ------------------------------------------------------------------------------------------------ held exponent
+# The per-facet term h held fixed in the exponent (user 2026-11-07: cycles 2 and 3 hold the accumulated fine-tuning
+# change): s = Y a + c T + h. Loaded once per process by positive_fit.py (load_held + install_held_activity, before any
+# backend binds); the Problem, the writers and the restart marker read HELD.
+HELD = {"h": None, "info": None, "calls": 0}
+HELD_KEYS = ("held_next", "held")       # held_next: written by the fine tuning; held: tests
+
+
+def elements_faces(run):
+    """Number of facets of <run>/elements.bin (header int32 [version, nfaces, ny])."""
+    header = np.fromfile(str(Path(run) / "elements.bin"), dtype="<i4", count=3)
+    return int(header[1])
+
+
+def load_held(path, nfaces):
+    """h (float64, one value per facet in mesh order, nepers) from an .npz with exactly one of the keys held_next /
+    held. Refused: another dtype, shape or a non-finite value. A mesh identity stored in the file (key mesh_identity, or
+    meta_json mesh_identity / mesh.identity) is compared with the base's when the Problem is built."""
+    path = Path(path).resolve()
+    with np.load(str(path), allow_pickle=False) as z:
+        keys = [k for k in HELD_KEYS if k in z.files]
+        if len(keys) != 1:
+            raise SystemExit("positive_fit: --held-exponent %s must have exactly one of the keys %s (has %s)"
+                             % (path, HELD_KEYS, z.files))
+        h = np.array(z[keys[0]])
+        meta = {}
+        if "meta_json" in z.files:
+            try:
+                meta = json.loads(str(z["meta_json"]))
+            except ValueError:
+                meta = {"unreadable_meta_json": True}
+        mesh = str(z["mesh_identity"]) if "mesh_identity" in z.files else (
+            meta.get("mesh_identity") or (meta.get("mesh") or {}).get("identity") if isinstance(meta, dict) else None)
+    if h.dtype != np.float64 or h.shape != (nfaces,):
+        raise SystemExit("positive_fit: --held-exponent %s key %s is %s %s; need float64 (%d,) in mesh order"
+                         % (path, keys[0], h.dtype, h.shape, nfaces))
+    if not np.all(np.isfinite(h)):
+        raise SystemExit("positive_fit: --held-exponent %s has non-finite values" % path)
+    h.setflags(write=False)
+    info = {"path": str(path), "sha256": sha256(path), "key": keys[0], "facets": int(nfaces),
+            "array_sha256": hashlib.sha256(h.tobytes()).hexdigest(), "mesh_identity_in_file": mesh,
+            "min": float(h.min()), "max": float(h.max()), "nonzero_facets": int(np.count_nonzero(h)),
+            "file_meta": jsonable({k: v for k, v in meta.items()
+                                   if not isinstance(v, (list, dict)) or len(json.dumps(v)) < 4000})
+            if isinstance(meta, dict) else None}
+    HELD["h"], HELD["info"] = h, info
+    return h, info
+
+
+def install_held_activity(record):
+    """GPU activity with the held term: act_lin = Y a + A_scale B b + h on the host (CudaBackend.activity_linear and
+    MultiGpuBackend.activity_linear of THIS process; the local multi-GPU workers read the parent's act_lin from shared
+    memory, so they see h without a patch of their own). The device activity (MPI transport or --activity device)
+    computes act_lin on the GPU without h: refused at the first evaluation. The Jacobian columns (d af / d coef = af
+    basis, af = exp(act_lin)) need no change: h is a constant. Called after positive_activity.install()."""
+    from cops_cuda import evaluator, multi_gpu
+    from cops_cuda.errors import UnsupportedConfiguration
+    h = HELD["h"]
+    if h is None:
+        return False
+    B, M = evaluator.CudaBackend, multi_gpu.MultiGpuBackend
+    if getattr(B.activity_linear, "_positive_held", False):
+        return True
+    orig_cuda, orig_multi = B.activity_linear, M.activity_linear
+    orig_upload, orig_evaluate = B._upload_activity, M._evaluate
+
+    def with_held(act):
+        h_now = HELD["h"]                  # None only inside check_held_span (the shifted comparison)
+        if h_now is None:
+            return act
+        if act.shape != h_now.shape:
+            raise UnsupportedConfiguration("positive_problem: act_lin has %s values, the held term %s"
+                                           % (act.shape, h_now.shape))
+        HELD["calls"] += 1
+        return act + h_now
+
+    def activity_linear_cuda(self, state):
+        return with_held(orig_cuda(self, state))
+
+    def activity_linear_multi(self, state):
+        return with_held(orig_multi(self, state))
+
+    def _upload_activity(self, state):
+        if self.activity_mode == "device":
+            raise UnsupportedConfiguration("positive_problem: the held exponent term needs the host activity")
+        return orig_upload(self, state)
+
+    def _evaluate(self, state, request):
+        if self.activity != "host":
+            raise UnsupportedConfiguration("positive_problem: the held exponent term needs the host activity "
+                                           "(multi-GPU activity %r)" % self.activity)
+        return orig_evaluate(self, state, request)
+    for f in (activity_linear_cuda, activity_linear_multi, _upload_activity, _evaluate):
+        f._positive_held = True
+    B.activity_linear, M.activity_linear = activity_linear_cuda, activity_linear_multi
+    B._upload_activity, M._evaluate = _upload_activity, _evaluate
+    record["held_gpu_patch"] = {
+        "patched": ["evaluator.CudaBackend.activity_linear (+h)", "multi_gpu.MultiGpuBackend.activity_linear (+h)",
+                    "CudaBackend._upload_activity (refuses device activity)",
+                    "MultiGpuBackend._evaluate (refuses device activity)"],
+        "process": os.getpid(), "workers": "read the parent's act_lin (shared memory; host activity)"}
+    return True
+
+
+def held_projection(Y, T, area, h, G_all, ascale, chunk=1 << 20):
+    """h = B h_B + h_perp, area-weighted LS projection on the fitted columns B = [Y, T] (physical coordinates; h_B is
+    returned in optimizer coordinates, i.e. divided by S = (ascale (Y), 1 (templates))). |h_perp|^2_area (the constant
+    part of D^2), |h|^2_area, and the orthogonality residual max|B^T diag(area) h_perp| / max|B^T diag(area) h|."""
+    n, ny = Y.shape
+    m = G_all.shape[0]
+    rhs = np.zeros(m)
+    for i in range(0, n, chunk):
+        sl = slice(i, min(i + chunk, n))
+        Bm = np.column_stack((Y[sl], T[sl]))
+        rhs += Bm.T @ (area[sl] * h[sl])
+    z = np.linalg.solve(G_all, rhs)
+    perp2, h2, ortho = 0.0, 0.0, np.zeros(m)
+    for i in range(0, n, chunk):
+        sl = slice(i, min(i + chunk, n))
+        Bm = np.column_stack((Y[sl], T[sl]))
+        hp = h[sl] - Bm @ z
+        perp2 += float(np.sum(area[sl] * hp * hp))
+        h2 += float(np.sum(area[sl] * h[sl] * h[sl]))
+        ortho += Bm.T @ (area[sl] * hp)
+    total = float(np.sum(area))
+    S = np.concatenate([np.full(ny, ascale), np.ones(m - ny)])
+    scale = float(np.max(np.abs(rhs)))
+    return {"hB": z / S, "z_physical": z, "perp2": perp2 / total, "h2": h2 / total,
+            "orthogonality_rel": float(np.max(np.abs(ortho)) / scale) if scale > 0 else 0.0}
 
 
 # ------------------------------------------------------------------------------------------------ tables
@@ -678,7 +1070,12 @@ def install_selection(fit_cops, gkeys, record):
 def install_core(fit_cops, cfg, record):
     """Before grain_crossing.install: selection wrapper, the exponent Problem, activity writers, Jacobian check."""
     table = read_point_table(cfg["point_table"])
-    record.update(policy=POLICY, parameterization=PARAMETERIZATION_ID,
+    record.update(policy=current_policy(), parameterization=PARAMETERIZATION_ID,
+                  ratio={"night_ratio": current_ratio(), "floor_ratio": float(os.environ.get(ENV_FLOOR, "nan")),
+                         "decision": RATIO_DECISIONS.get(current_ratio()), "co2_floor": current_co2_floor(),
+                         "co2_floor_ratio": (float(os.environ.get(ENV_FLOOR, "nan")) if current_co2_floor() else None),
+                         "co2_floor_definition": (CO2_FLOOR_TEXT.format(floor=repr(current_ratio()))
+                                                  if current_co2_floor() else "none (CO2 has no floor)")},
                   point_table={"path": cfg["point_table"], "sha256": sha256(cfg["point_table"]), "rows": len(table)},
                   user_temperature_K=list(USER_T0), late_start_utc=LATE_START_UTC)
     gkeys = grid_keys(table)
@@ -739,6 +1136,10 @@ def install_core(fit_cops, cfg, record):
             Lt, _, reg = log_tikhonov(grams[0], self.area_total, self.ascale, len(self.fit_j))
             self.Lt = Lt
             self.reg_slice = slice(0, self.na + self.nb)
+            self.held = HELD["h"]
+            self.held_hB, self.held_perp2, self.held_row = None, 0.0, False
+            if self.held is not None:
+                self._install_held(el, T, grams[0], record)
             names = list(self.names)
             record["start_projection"] = dict(
                 proj["stats"], ascale=self.ascale,
@@ -764,11 +1165,323 @@ def install_core(fit_cops, cfg, record):
                       " (projected %s < 0: set to 0, Y re-projected)" % st["projected_template_coefficients"]
                       if st["template_coefficient_clamped_to_0_and_Y_reprojected"] else "", self.ascale), flush=True)
 
+        # ---- held exponent term h (user 2026-11-07): s = B x + h, D^2 = |B (x - x0) + h|^2_area
+        #      = |Lt (x - x0 + h_B)|^2 + |h_perp|^2_area  (h = B h_B + h_perp, h_perp area-orthogonal to B)
+        def _install_held(self, el, T, G_all, record):
+            from cops_cuda import reference
+            h, info = self.held, dict(HELD["info"])
+            if h.shape != (len(el["area"]),):
+                raise SystemExit("positive_problem: the held term has %s values for %d facets" % (h.shape, len(el["area"])))
+            mesh = reference.load("activity_templates").mesh_identity(el["centroid"], el["area"])
+            if info.get("mesh_identity_in_file") not in (None, mesh):
+                raise SystemExit("positive_problem: the held term belongs to the mesh %s, the base is %s"
+                                 % (info["mesh_identity_in_file"], mesh))
+            info["mesh_identity_verified"] = info.get("mesh_identity_in_file") == mesh
+            pr = held_projection(el["Y"], T, el["area"], h, G_all, self.ascale)
+            self.held_hB = pr["hB"]
+            self.held_perp2 = pr["perp2"]
+            self.held_row = pr["perp2"] > 0.0
+            info.update(rms_area_nepers=math.sqrt(pr["h2"]), D_perp_nepers=math.sqrt(pr["perp2"]),
+                        D_perp_squared=pr["perp2"], h_B_optimizer=[float(v) for v in pr["hB"]],
+                        h_B_physical=[float(v) for v in pr["z_physical"]], orthogonality_rel=pr["orthogonality_rel"],
+                        regularization_rows="Lt (x - x0 + h_B)" + (" and the constant sqrt(lambda) |h_perp|_area"
+                                                                   if self.held_row else ""),
+                        D_at_prior_x0_nepers=math.sqrt(pr["h2"]))
+            record["held_exponent"] = info
+            record["held_exponent_marker"] = {k: info[k] for k in ("path", "sha256", "key", "array_sha256",
+                                                                   "D_perp_nepers", "rms_area_nepers")}
+            print("positive_fit: held exponent term %s (key %s, sha256 %s): rms_area %.6f nepers, %d nonzero facets; "
+                  "h = B h_B + h_perp with |h_perp|_area = %.6f nepers (constant part of D), orthogonality %.1e; "
+                  "s = Y a + c T + h" % (info["path"], info["key"], info["sha256"][:16], info["rms_area_nepers"],
+                                         info["nonzero_facets"], info["D_perp_nepers"], pr["orthogonality_rel"]),
+                  flush=True)
+
+        def regularization(self, x):
+            if self.held is None:
+                return super().regularization(x)
+            rs = self.reg_slice
+            r = np.sqrt(self.lam) * (self.Lt @ (x[rs] - self.x0[rs] + self.held_hB))
+            if self.held_row:
+                r = np.concatenate([r, [np.sqrt(self.lam) * math.sqrt(self.held_perp2)]])
+            return r
+
+        def reg_jacobian(self):
+            R = super().reg_jacobian()
+            if self.held is not None and self.held_row:
+                R = np.vstack([R, np.zeros((1, R.shape[1]))])
+            return R
+
+        def deviation(self, x):
+            if self.held is None:
+                return super().deviation(x)
+            rs = self.reg_slice
+            v = self.Lt @ (x[rs] - self.x0[rs] + self.held_hB)
+            return float(np.sqrt(float(v @ v) + self.held_perp2))
+
     fit_cops.Problem = PositiveCore
     install_activity_writers(fit_cops, record, gkeys)
     if cfg.get("check_jacobian"):
         install_jacobian_check(fit_cops, cfg["check_parameters"], record)
+    if cfg.get("check_held_span"):
+        install_held_span_check(fit_cops, record)
+    source = cfg.get("start_restart") or cfg.get("restart_from")
+    if source:                                       # outside the Jacobian check: runs first
+        role = "start_restart" if cfg.get("start_restart") else "restart_from"
+        info, arrays = load_source(source, role)
+        record["fit_chain"] = fit_chain(info, role)
+        install_start_check(fit_cops, cfg, record, info, arrays)
+    else:
+        record["fit_chain"] = {"start": "the projection of the original map (no restart)"}
     return PositiveCore
+
+
+def install_held_span_check(fit_cops, record):
+    """Diagnostic (--check-held-span, tests): with a held term in the span of the fitted columns (h = B z), the data
+    residuals and the data Jacobian at the optimizer start x must equal those WITHOUT the held term at x + h_B (the GPU
+    evaluated both ways: act_lin + h on the host vs the shifted coefficients), and D(x) must equal the D of the shifted
+    state. Once, at the first least_squares call; printed and recorded (model_extension.positive.held_span_check)."""
+    original = fit_cops.least_squares
+    state = {"done": False}
+
+    def least_squares(fun, x0, jac="2-point", **kwargs):
+        if not state["done"]:
+            state["done"] = True
+            P = fit_cops.P
+            out = {"perp_over_h_rms": math.sqrt(P.held_perp2) / max(math.sqrt(sum(
+                np.asarray(P.held, float) ** 2) / len(P.held)), 1e-300)}
+            x = np.array(x0, float)
+            rH, JH, DH = P.data_residuals(x), P.data_jacobian(x), P.deviation(x)
+            calls = HELD["calls"]
+            xs = x.copy()
+            xs[P.reg_slice] += P.held_hB
+            saved = HELD["h"], P.held
+            HELD["h"], P.held = None, None
+            try:
+                rN, JN, DN = P.data_residuals(xs), P.data_jacobian(xs), P.deviation(xs)
+            finally:
+                HELD["h"], P.held = saved
+            scale = float(np.max(np.abs(rN)))
+            out.update(residual_max_abs_diff=float(np.max(np.abs(rH - rN))), residual_scale=scale,
+                       jacobian_max_rel_diff=float(np.max(np.abs(JH - JN)) / np.max(np.abs(JN))),
+                       D_held=float(DH), D_shifted=float(DN), held_calls_with=int(calls),
+                       held_calls_without=int(HELD["calls"] - calls),
+                       h_B=[float(v) for v in P.held_hB])
+            record["held_span_check"] = out
+            print("positive_fit: held span check (h in span(B)): data residuals with h at x vs without h at x + h_B: "
+                  "max |diff| %.3e (scale %.3e); data Jacobian max rel diff %.3e; D %.12f vs %.12f; |h_perp|/rms(h) "
+                  "%.1e" % (out["residual_max_abs_diff"], scale, out["jacobian_max_rel_diff"], DH, DN,
+                            out["perp_over_h_rms"]), flush=True)
+            fit_cops.save_active_manifest()
+        return original(fun, x0, jac=jac, **kwargs)
+    fit_cops.least_squares = least_squares
+
+
+# ------------------------------------------------------------------------------------------------ start restart
+def load_source(path, role):
+    """What the start check needs from the restart that supplies the start (role start_restart: another fit's state;
+    restart_from: this fit's previous segment): marker, final cost, lambda, the source fit's manifest numbers (data
+    cost, regularization cost, D, crossing penalty), stored predictions (COPS_model.dat, 7 significant digits)."""
+    with np.load(str(path), allow_pickle=False) as z:
+        meta = json.loads(str(z["meta_json"]))
+        arrays = {k: np.array(z[k]) for k in ("point_ids", "pred_ng", "pred_rg", "x")}
+    ext = meta.get("model_extension") or {}
+    if ext.get("parameterization") != PARAMETERIZATION_ID:
+        raise SystemExit("positive_fit: %s is not a restart of a positive_fit.py fit (parameterization %r)"
+                         % (path, ext.get("parameterization")))
+    night, floor = marker_ratios(ext)
+    opt = meta.get("optimizer") or {}
+    info = {"role": role, "path": str(Path(path).resolve()), "sha256": sha256(path),
+            "cost": float(opt["cost"]), "lambda": float((meta.get("settings") or {}).get("lambda")),
+            "nfev": opt.get("nfev"), "message": opt.get("message"), "status": meta.get("status"),
+            "segments": meta.get("segments"), "night_ratio": night, "floor_ratio": floor,
+            "co2_floor": marker_co2_floor(ext),
+            "held_exponent": marker_held(ext), "fit_directory": meta.get("fit_directory"),
+            "previous_fit_chain": ext.get("fit_chain")}
+    manifest = Path(meta.get("fit_directory") or "/nonexistent") / "fit_manifest.json"
+    try:
+        m = json.loads(manifest.read_text())
+        o = [v for v in m["optimizer_results"] if float(v["lambda"]) == info["lambda"]][0]
+        info.update(manifest=str(manifest), data_cost=float(o["data_cost"]),
+                    regularization_cost=float(o["regularization_cost"]), D=float(o["deviation_from_prior"]),
+                    penalty_cost=float(m["model_extension"]["final"]["penalty_cost"]),
+                    manifest_cost=float(o["cost"]))
+    except Exception as exc:                          # recorded and printed, never silent
+        info["manifest_error"] = "%s: %s" % (exc.__class__.__name__, exc)
+    return info, arrays
+
+
+def fit_chain(info, role):
+    keep = ("path", "sha256", "fit_directory", "lambda", "cost", "night_ratio", "floor_ratio", "co2_floor",
+            "held_exponent", "status", "nfev")
+    entry = {k: info.get(k) for k in keep}
+    if role == "start_restart":
+        return {"start": "another fit's restart (positive_fit.py --start-restart)", "start_restart": entry}
+    prev = dict(info.get("previous_fit_chain") or {})
+    prev["resumed_from"] = list(prev.get("resumed_from") or []) + [entry]
+    return prev
+
+
+def start_from_restart(P, el, path, record):
+    """Optimizer start of P from another positive fit's restart (cops_cuda.restart.start_vector: by name; with the same
+    ascale the exact optimizer coordinates). Refused: another parameterization, parameter layout, mesh, template or
+    temperature law. The prior P.x0 is not changed."""
+    from cops_cuda import reference
+    from cops_cuda import restart as rs
+    state = rs.read(path)
+    ext = state.meta.get("model_extension") or {}
+    if ext.get("parameterization") != PARAMETERIZATION_ID:
+        raise SystemExit("positive_fit: --start-restart %s is not a positive fit (%r)" % (path, ext.get("parameterization")))
+    if list(state.meta.get("names") or []) != list(P.names):
+        raise SystemExit("positive_fit: --start-restart %s has the parameters %s, this fit %s"
+                         % (path, state.meta.get("names"), list(P.names)))
+    templates = reference.load("activity_templates")
+    if templates.mesh_identity(el["centroid"], el["area"]) != state.mesh_identity():
+        raise SystemExit("positive_fit: --start-restart %s belongs to another mesh" % path)
+    cols = np.asarray(P.enhancement_basis[:, P.nh:], float)
+    if state.template_names != list(P.template_names) or not np.array_equal(state.template_columns, cols):
+        raise SystemExit("positive_fit: --start-restart %s has other template columns (%s)" % (path, state.template_names))
+    if not np.allclose(np.asarray(state.T, float), USER_T0, rtol=0.0, atol=1e-9):
+        raise SystemExit("positive_fit: --start-restart %s has the temperature law %s, the user's is %s"
+                         % (path, list(state.T), list(USER_T0)))
+    x, report = rs.start_vector(P, state)
+    same_scale = float(state.meta.get("ascale", np.nan)) == float(P.ascale)
+    out = {"path": str(Path(path).resolve()), "sha256": sha256(path), "start_vector": jsonable(report),
+           "same_ascale": same_scale, "x_equals_source_x": bool(np.array_equal(x, np.asarray(state.x, float))),
+           "source_x": [float(v) for v in state.x], "prior_x0_unchanged": True}
+    if report["clipped"] or report["kept_problem_start"]:
+        print("positive_fit: WARNING start restart: clipped %s, kept the problem's start for %s"
+              % (report["clipped"], report["kept_problem_start"]), flush=True)
+    del state
+    record["start_restart"] = out
+    return x
+
+
+def install_start_check(fit_cops, cfg, record, source, arrays):
+    """At the first least_squares call (inside the crossing wrapper: fun = data + Tikhonov + crossing rows): the cost
+    at the optimizer start against the source restart's final cost. When the source is the same problem (same ratio,
+    lambda and held term) the start must reproduce it (|rel| <= START_REPRODUCTION_RTOL; otherwise the fit stops);
+    otherwise the differences are reported with their causes (printed, manifest model_extension.positive.start_check)."""
+    original = fit_cops.least_squares
+    state = {"done": False}
+
+    def least_squares(fun, x0, jac="2-point", **kwargs):
+        if not state["done"]:
+            state["done"] = True
+            res = start_check(fun, x0, fit_cops, cfg, source, arrays)
+            record["start_check"] = res
+            fit_cops.save_active_manifest()
+            if res.get("failed"):
+                raise SystemExit("positive_fit: start check failed: %s" % res["failed"])
+        return original(fun, x0, jac=jac, **kwargs)
+    fit_cops.least_squares = least_squares
+
+
+def start_check(fun, x0, fit_cops, cfg, source, arrays):
+    P = fit_cops.P
+    x = np.array(x0, dtype=float)
+    r = np.asarray(fun(x), float)
+    nd = int(P.ndata)
+    nreg = len(P.regularization(x)) if P.lam > 0 else 0
+    rd, rr, rc = r[:nd], r[nd:nd + nreg], r[nd + nreg:]
+    data, reg, pen = (0.5 * float(v @ v) for v in (rd, rr, rc))
+    cost, D = data + reg, float(P.deviation(x))
+    held_now = (held_identity(cfg) or {}).get("sha256")
+    held_src = (source.get("held_exponent") or {}).get("sha256")
+    ratio = current_ratio()
+    floor = float(os.environ.get(ENV_FLOOR, "nan"))
+    co2 = current_co2_floor()
+    co2_src = bool(source.get("co2_floor", False))
+    same = {"ratio": source["night_ratio"] == ratio and source["floor_ratio"] == floor and co2_src == co2,
+            "lambda": source["lambda"] == float(P.lam), "held_exponent": held_now == held_src,
+            "x": len(arrays["x"]) == len(x) and bool(np.array_equal(x, arrays["x"]))}
+    sset = cfg.get("start_set") or []
+    if sset:                                          # --start-set (2026-11-08): never the source's state
+        same["start_set"] = False
+    expect = all(same.values())
+    out = {"source": {k: v for k, v in source.items() if k != "previous_fit_chain"},
+           "start": {"cost": cost, "data_cost": data, "regularization_cost": reg, "D": D, "crossing_penalty_cost": pen,
+                     "night_ratio": ratio, "floor_ratio": floor, "co2_floor": co2, "lambda": float(P.lam),
+                     "held_sha256": held_now},
+           "same": same, "reproduction_expected": expect,
+           "cost_rel_diff": cost / source["cost"] - 1.0,
+           "x_start_equals_source_x": same["x"], "tolerance": START_REPRODUCTION_RTOL}
+    if "data_cost" in source:
+        out["data_cost_rel_diff"] = data / source["data_cost"] - 1.0
+        out["D_diff"] = D - source["D"]
+        out["crossing_penalty_diff"] = pen - source["penalty_cost"]
+    # model at the start vs the source's stored predictions (used rows; ln p = r / w + ln ref)
+    try:
+        ip = np.asarray(P.M.ipoint)[np.asarray(P.M.rows)]
+        pos = {int(p): k for k, p in enumerate(arrays["point_ids"])}
+
+        def dln(use, w, ln_ref, res, stored):
+            idx = np.array([pos[int(p)] for p in ip[use]], dtype=np.int64)
+            d = (res / w + ln_ref) - np.log(np.maximum(stored[idx], fit_cops.FLOOR))
+            k = int(np.argmax(np.abs(d)))
+            return {"points": int(len(d)), "max_abs_dln": float(abs(d[k])), "at_point": int(ip[use][k]),
+                    "rms_dln": float(np.sqrt(np.mean(d * d))), "mean_dln": float(np.mean(d))}
+        out["predictions_vs_source"] = {"NG": dln(P.useNG, P.wNG, P.lnNG, rd[:P.NNG], arrays["pred_ng"]),
+                                        "RG": dln(P.useRG, P.wRG, P.lnRG, rd[P.NNG:], arrays["pred_rg"]),
+                                        "note": "source = its COPS_model.dat (%.6e): |d ln p| ~ 5e-7 is rounding"}
+    except Exception as exc:
+        out["predictions_vs_source"] = {"error": "%s: %s" % (exc.__class__.__name__, exc)}
+    changes = []
+    if not same["ratio"]:
+        changes.append("ratio %s/%s -> %s/%s" % (source["night_ratio"], source["floor_ratio"], ratio, floor)
+                       + ("; CO2 floor %s -> %s" % ("on" if co2_src else "off", "on" if co2 else "off")
+                          if co2_src != co2 else ""))
+    if not same["lambda"]:
+        changes.append("lambda %g -> %g" % (source["lambda"], P.lam))
+    if not same["held_exponent"]:
+        changes.append("held term %s -> %s" % ((held_src or "none")[:12], (held_now or "none")[:12]))
+    if sset:
+        names = list(P.names)
+        out["start_set"] = [{"name": n, "value": float(v), "start_value": float(x[names.index(n)]),
+                             "source_value": (float(arrays["x"][names.index(n)])
+                                              if len(arrays["x"]) == len(x) else None)} for n, v in sset]
+        changes.append("--start-set %s (the source's %s)" % (
+            ", ".join("%s=%r" % (e["name"], e["value"]) for e in out["start_set"]),
+            ", ".join("%s=%r" % (e["name"], e["source_value"]) for e in out["start_set"])))
+    if not same["x"]:
+        diff = ([P.names[k] for k in np.nonzero(x != arrays["x"])[0]] if len(arrays["x"]) == len(x)
+                else ["parameter layout"])
+        changes.append("start x differs from the source's x in %s" % ", ".join(diff))
+    out["changes"] = changes
+    if expect and not abs(out["cost_rel_diff"]) <= START_REPRODUCTION_RTOL:
+        out["failed"] = ("the start reproduces the source's problem (same ratio, lambda, held term) but its cost %.12e "
+                         "differs from the source's final cost %.12e by %.3e (relative; tolerance %.0e)"
+                         % (cost, source["cost"], out["cost_rel_diff"], START_REPRODUCTION_RTOL))
+    print("positive_fit: start check (%s %s): cost at the start %.12e (data %.12e, regularization %.6e, D %.9f; "
+          "crossing penalty %.3e); source final cost %.12e (data %s, D %s, penalty %s); relative difference %+.3e%s" % (
+              source["role"], source["path"], cost, data, reg, D, pen, source["cost"],
+              "%.12e" % source["data_cost"] if "data_cost" in source else "?",
+              "%.9f" % source["D"] if "D" in source else "?",
+              "%.3e" % source["penalty_cost"] if "penalty_cost" in source else "?", out["cost_rel_diff"],
+              " (data %+.3e)" % out["data_cost_rel_diff"] if "data_cost_rel_diff" in out else ""), flush=True)
+    pv = out["predictions_vs_source"]
+    if "NG" in pv:
+        print("positive_fit: start check: model at the start vs the source's stored predictions: NG max |d ln p| %.3e "
+              "(rms %.3e, mean %+.3e), RG max %.3e (rms %.3e, mean %+.3e)" % (
+                  pv["NG"]["max_abs_dln"], pv["NG"]["rms_dln"], pv["NG"]["mean_dln"], pv["RG"]["max_abs_dln"],
+                  pv["RG"]["rms_dln"], pv["RG"]["mean_dln"]), flush=True)
+    else:
+        print("positive_fit: WARNING start check: prediction comparison unavailable: %s" % pv.get("error"), flush=True)
+    if "manifest_error" in source:
+        print("positive_fit: WARNING start check: the source's fit_manifest.json could not be read: %s"
+              % source["manifest_error"], flush=True)
+    if sset:
+        print("positive_fit: start check: the start is NOT the source's state: --start-set %s"
+              % "; ".join("%s = %r (source %r)" % (e["name"], e["value"], e["source_value"]) for e in out["start_set"]),
+              flush=True)
+    if expect:
+        print("positive_fit: start check: same problem and state as the source (ratio, lambda, held term, x): "
+              "reproduction %s "
+              "(|rel| %.1e, tolerance %.0e)" % ("CONFIRMED" if "failed" not in out else "FAILED",
+                                               abs(out["cost_rel_diff"]), START_REPRODUCTION_RTOL), flush=True)
+    else:
+        print("positive_fit: start check: NOT the source's problem (%s): the start cost differs from the source's "
+              "final cost because of these changes (expected, recorded)" % "; ".join(changes), flush=True)
+    return out
 
 
 def install_outer(fit_cops, cfg, record):
@@ -782,13 +1495,38 @@ def install_outer(fit_cops, cfg, record):
             if "grain_A_uPa" not in names:
                 raise SystemExit("positive_problem: the grain parameters are missing")
             k = names.index("grain_A_uPa")
+            if names[k + 1] != "grain_B_uPa_per_100s":
+                raise SystemExit("positive_problem: unexpected grain parameter layout %s" % names[k:])
             default = float(self.x0[k])
-            self.x0[k] = cfg["grain_start_uPa"]
-            self.x0[k + 1] = 0.0
-            record["grain_start"] = {"grain_A_uPa": float(cfg["grain_start_uPa"]), "grain_B_uPa_per_100s": 0.0,
+            start = start_from_restart(self, el, cfg["start_restart"], record) if cfg.get("start_restart") else None
+            # grain start: explicit (fine tuning) > the start restart's > A = cycle 3's fine-tuned value, B = 0
+            values, sources = [], []
+            for j, key, fallback in ((k, "grain_start_uPa", DEFAULT_GRAIN_START_UPA), (k + 1, "grain_start_B", 0.0)):
+                if cfg.get(key) is not None:
+                    values.append(float(cfg[key]))
+                    sources.append(cfg.get(key + "_source") or "explicit (--%s)" % key.replace("_", "-"))
+                elif start is not None:
+                    values.append(float(start[j]))
+                    sources.append("the start restart %s" % cfg["start_restart"])
+                else:
+                    values.append(float(fallback))
+                    sources.append("user 2026-11-07: cycle 3 fine-tuned A_Pa (grain/cycles/c3/finetune/C30_n4000_"
+                                   "grain_cross10_ftc3_m5_i5_cpu/grain_finetune.json)" if j == k else
+                                   "user 2026-11-07: B = 0")
+            self.x0[k], self.x0[k + 1] = values
+            if start is not None:
+                start[k], start[k + 1] = values
+                if cfg.get("start_set"):                   # 2026-11-08: explicit start values after the restart's
+                    apply_start_set(self, start, cfg["start_set"], record)
+                self.restart_start = start                 # fit_cops.fit_one's start; the prior x0 is unchanged
+            record["grain_start"] = {"grain_A_uPa": values[0], "grain_B_uPa_per_100s": values[1],
+                                     "source_A": sources[0], "source_B": sources[1],
                                      "replaced_grain_crossing_default_A_uPa": default,
-                                     "source": "user 2026-11-07: cycle 3 fine-tuned A_Pa (grain/cycles/c3/finetune/"
-                                               "C30_n4000_grain_cross10_ftc3_m5_i5_cpu/grain_finetune.json), B = 0"}
+                                     "note": "with gpu_fit --restart-from (resume) the previous segment's values "
+                                             "replace this start (gpu_fit install_template_start)"}
+            print("positive_fit: grain start A %.9g uPa (%s), B %.9g uPa/100 s (%s)%s" % (
+                values[0], sources[0], values[1], sources[1],
+                "; optimizer start = the start restart's x (prior unchanged)" if start is not None else ""), flush=True)
             # the late window starts at the first post-gap NG point (user 2026-11-07)
             layout = self.late_layout
             i_end = int(np.nonzero(self.et_fit == self.et_end)[0][0])
@@ -812,6 +1550,33 @@ def install_outer(fit_cops, cfg, record):
     install_restart_marker(record)
     install_figure_filter(grid_keys(read_point_table(cfg["point_table"])), record)
     return PositiveGrainProblem
+
+
+def apply_start_set(P, start, assignments, record):
+    """--start-set: start[name] = value for each assignment (optimizer coordinates, START_SET_DEFINITION); refused for
+    names that are not parameters of P or values outside [lo, hi]. Recorded in record["start_set"] (manifest) and in
+    record["fit_chain"]["start_set"] (restart marker, resumes, ACTIVITY_PARAMETERIZATION.txt)."""
+    names = list(P.names)
+    applied = []
+    for name, value in assignments:
+        if name not in names:
+            raise SystemExit("positive_fit: --start-set %s: not a parameter of this fit (%s)" % (name, ", ".join(names)))
+        j = names.index(name)
+        lo, hi = float(P.lo[j]), float(P.hi[j])
+        if not lo <= float(value) <= hi:
+            raise SystemExit("positive_fit: --start-set %s=%r is outside its bounds [%r, %r]" % (name, value, lo, hi))
+        applied.append({"name": name, "index": j, "value": float(value), "start_restart_value": float(start[j]),
+                        "bounds": [lo, hi], "decision": START_SET_DECISIONS.get(name, "no recorded user decision for "
+                                                                                     "this name")})
+        start[j] = float(value)
+    record["start_set"] = {"assignments": applied, "definition": START_SET_DEFINITION,
+                           "applied_after": "--start-restart and the grain start; the prior x0 is unchanged"}
+    if isinstance(record.get("fit_chain"), dict):
+        record["fit_chain"]["start_set"] = applied
+    print("positive_fit: --start-set: %s; the optimizer start is NOT the start restart's state in these parameters"
+          % ", ".join("%s = %r (the start restart's %r)" % (a["name"], a["value"], a["start_restart_value"])
+                      for a in applied), flush=True)
+    return applied
 
 
 def install_figure_filter(gkeys, record):
@@ -838,10 +1603,13 @@ def install_figure_filter(gkeys, record):
 
 # ------------------------------------------------------------------------------------------------ writers
 def exp_state(P, el, a, b):
-    """The exponent field s = Y a + enhancement_scale * B b (enhancement_scale = 1 here)."""
+    """The exponent field s = Y a + enhancement_scale * B b (+ the held term h; enhancement_scale = 1 here)."""
     s = exponent_field(el["Y"], np.asarray(a, float))
     for j in range(P.nb):
         s += P.enhancement_scale * float(b[j]) * P.enhancement_basis[:, j]
+    h = getattr(P, "held", None)
+    if h is not None:
+        s += h
     return s
 
 
@@ -850,7 +1618,10 @@ def install_activity_writers(fit_cops, record, gkeys=frozenset()):
     products (pressure_residuals.dat/png, pressure_comparison_*.png) for the observation rows only (no grid rows)."""
 
     def activity_diagnostics(a, b, el, seen, coef, enhancement_basis, enhancement_scale):
+        held = getattr(fit_cops.P, "held", None)
         s = el["Y"] @ a
+        if held is not None:
+            s = s + held
         if len(b):
             s = s + enhancement_scale * (enhancement_basis @ b)
         act = np.exp(s)
@@ -864,7 +1635,7 @@ def install_activity_writers(fit_cops, record, gkeys=frozenset()):
              "unseen_activity_fraction_prior": np.sum((area * act0)[~seen]) / tot0,
              "unseen_area_fraction": np.sum(area[~seen]) / np.sum(area)}
         if len(b):
-            delta = act - np.exp(el["Y"] @ a)          # activity added by the template factor(s)
+            delta = act - np.exp(el["Y"] @ a + (held if held is not None else 0.0))   # added by the template factor(s)
             n0 = np.sum(area * (el["Y"] @ coef[0]) ** 2)
             d.update({"enhancement_relative_rms_D": np.sqrt(np.sum(area * delta ** 2) / n0),
                       "enhancement_area_weighted_mean": np.sum(area * delta) / np.sum(area),
@@ -928,14 +1699,18 @@ H2O activity per facet:  A = exp(s),  s = sum_j a_j Y_j + c * T_cliff   (Y: the 
 of the fitter; T_cliff: template {templates} of {bundle}; c = ln of the cliff factor, >= 0).
 Production per kernel record (GPU, model_ext/positive_activity.py): night/shadow ratio {night} (H2O and CO2; reference
 0.2 and 0.1); H2O flux floor F >= {floor} q_max A_orig (A_orig = the run's activity, elements.bin column 32; records at
-the floor do not depend on the activity parameters; CO2 has no floor). Temperature law held: Tmax {T0[0]},
+the floor do not depend on the activity parameters; {co2_text}). Temperature law held: Tmax {T0[0]},
 T75 {T0[1]}, Tmin {T0[2]} K. Late window (>= {late} UTC): model = W10x5 of the surface model (+ grain at the time stamp).
 Tikhonov: D^2 = sum area (s - s0)^2 / sum area (nepers; s0 = the start and prior = the emission-weighted, w = area A_orig,
 LS projection of ln A_orig on the same basis). lambda = {lam:g}.
+Ratio (night/shadow = H2O floor{co2_ratio}): {night} -- {ratio_decision}.
+{co2_par}Optimizer start: {start}
+Held exponent term: {held}
 
 VALID in this directory:
-  activity_exp_facets.npz       s, A = exp(s), s0, F_min_over_qmax = {floor} A_orig, seen  (per facet, mesh order)
-  activity_facets.dat           legacy_linear = Y coef[0] of the run; residual_linear = A - legacy_linear;
+  activity_exp_facets.npz       s (includes the held term), A = exp(s), s0, held (h; zeros without one),
+                                F_min_over_qmax = {floor} A_orig, seen  (per facet, mesh order); meta: D direct, D fitter
+{co2_npz}  activity_facets.dat           legacy_linear = Y coef[0] of the run; residual_linear = A - legacy_linear;
                                 total_linear = clipped_activity = A = exp(s)  (patched writer)
   activity_template_power.dat   template coefficient c and the activity added by the factor, A - exp(Y a)
   activity_region_diagnostics.dat, activity_maps.png   from the fields above ("clipped" = A; nothing is clipped)
@@ -956,10 +1731,14 @@ NOT VALID -- do not use (written by the reference fitter for the linear max(0, Y
 cannot replay an exp activity):
   ActivityFit.txt (the H2O row holds exponent coefficients), ActivityEnhancementFit.txt, ActivityEnhancementFacets.dat,
   cops_fit.in (would run the C++ model with these numbers as linear coefficients), activity_degree_power.dat (empty),
-  fit_restart.npz "activity_linear" (= s, not a linear activity): tools that use max(activity_linear, 0)
-  (fine_tune_gpu.py, fine_tuning.py, restart_tool.py, grain_finetune.py, late_response_eval.py) are not valid for this
-  fit. The restart file can continue this fit with positive_fit.py --restart-from (marker meta "model_extension").
+  fit_restart.npz "activity_linear" (= s INCLUDING the held term, not a linear activity): tools that use
+  max(activity_linear, 0) (fine_tune_gpu.py, fine_tuning.py, restart_tool.py, grain_finetune.py, late_response_eval.py)
+  are not valid for this fit. The restart file can continue this fit with positive_fit.py --restart-from (marker meta
+  "model_extension": ratio, held term path/sha256, fit chain) or start another with --start-restart.
 """
+
+
+D_CHECK_RTOL = 1e-9     # D direct (sum over facets) vs the fitter's D (Lt and the held decomposition)
 
 
 def write_exp_products(out, P, r, el, seen, record):
@@ -969,30 +1748,98 @@ def write_exp_products(out, P, r, el, seen, record):
     A = np.exp(s)
     floor = float(os.environ.get("COPS_POS_FLOOR_RATIO", "nan"))
     night = os.environ.get("COPS_POS_NIGHT_RATIO", "?")
+    held = getattr(P, "held", None)
+    D = float(np.sqrt(np.sum(el["area"] * (s - P.s0) ** 2) / P.area_total))
+    D_fit = float(r["D"])
+    D_rel = abs(D - D_fit) / max(D, D_fit) if max(D, D_fit) > 0 else 0.0
+    hinfo = record.get("held_exponent")
     meta = {"parameterization": PARAMETERIZATION_ID, "created_utc": utc_now(), "lambda": float(r["lam"]),
             "names": list(P.names), "x": [float(v) for v in r["x"]], "ascale": float(P.ascale),
             "floor_ratio": floor, "night_ratio": night, "templates": list(P.template_names),
-            "run": str(getattr(P.args, "run", ""))}
+            "run": str(getattr(P.args, "run", "")), "ratio_decision": RATIO_DECISIONS.get(current_ratio()),
+            "fit_chain": record.get("fit_chain"), "grain_start": record.get("grain_start"),
+            "D_direct_nepers": D, "D_fitter_nepers": D_fit, "D_direct_vs_fitter_rel": D_rel,
+            "held_exponent": ({k: v for k, v in hinfo.items() if k not in ("h_B_physical", "file_meta")}
+                              if hinfo else None),
+            "s_definition": "s = Y a + c T" + (" + held (the held exponent term)" if held is not None else "")}
+    co2 = current_co2_floor()
+    co2_arrays = {}
+    if co2:                     # 2026-11-08: the CO2 flux floor (keys added only when it is on)
+        meta.update(co2_floor=True, co2_floor_ratio=floor,
+                    co2_floor_definition=CO2_FLOOR_TEXT.format(floor=repr(current_ratio())))
+        co2_arrays["F_min_CO2_over_qmax_CO2"] = floor * np.asarray(el["ACO2"], float)
     path = out / "activity_exp_facets.npz"
     with path.open("xb") as f:
         np.savez_compressed(f, s=s, A=A, s0=np.asarray(P.s0, float),
+                            held=np.asarray(held, float) if held is not None else np.zeros(len(s)),
                             F_min_over_qmax=floor * np.asarray(el["AH2O"], float),
-                            seen=np.asarray(seen, bool), meta_json=np.array(json.dumps(meta, sort_keys=True)))
+                            seen=np.asarray(seen, bool), meta_json=np.array(json.dumps(meta, sort_keys=True)),
+                            **co2_arrays)
     bundle = [src["bundle"]["path"] for src in getattr(P, "template_sources", [])]
-    text = PARAMETERIZATION_TEXT.format(utc=utc_now(), pid=PARAMETERIZATION_ID,
+    chain = record.get("fit_chain") or {}
+    if chain.get("start_restart"):
+        start = "the restart %s (sha256 %s; lambda %g, final cost %.6e); grain A %s, B %s" % (
+            chain["start_restart"]["path"], chain["start_restart"]["sha256"], chain["start_restart"]["lambda"],
+            chain["start_restart"]["cost"], (record.get("grain_start") or {}).get("source_A"),
+            (record.get("grain_start") or {}).get("source_B"))
+    elif chain.get("resumed_from"):
+        start = "resumed from %s (wall-time segments)%s" % (chain["resumed_from"][-1]["path"],
+                                                            "; first segment started from %s" % chain["start_restart"]["path"]
+                                                            if chain.get("start_restart") else "")
+    else:
+        start = "the projection s0 (grain A %s, B %s)" % ((record.get("grain_start") or {}).get("source_A"),
+                                                           (record.get("grain_start") or {}).get("source_B"))
+    if chain.get("start_set"):                         # --start-set (2026-11-08), first segment of this fit
+        start += "; then --start-set %s (the start restart's values replaced: %s; %s)" % (
+            ", ".join("%s=%r" % (e["name"], e["value"]) for e in chain["start_set"]),
+            ", ".join("%s %r" % (e["name"], e["start_restart_value"]) for e in chain["start_set"]),
+            "; ".join(sorted({e["decision"] for e in chain["start_set"]})))
+    if hinfo:
+        held_text = ("h from %s (key %s, sha256 %s; file array sha256 %s): s = Y a + c T + h, h held fixed (user "
+                     "2026-11-07: the accumulated fine-tuning change). rms_area(h) = %.6f nepers (= D at the prior "
+                     "x0). D contribution: h = B h_B + h_perp (area-weighted projection on the fitted columns), "
+                     "D^2 = |B (x - x0) + h|^2_area = |Lt (x - x0 + h_B)|^2 + |h_perp|^2_area, |h_perp|_area = %.6f "
+                     "nepers (constant; D^2 contribution %.6e). D direct %.9f, fitter %.9f (rel %.1e)."
+                     % (hinfo["path"], hinfo["key"], hinfo["sha256"], hinfo["array_sha256"], hinfo["rms_area_nepers"],
+                        hinfo["D_perp_nepers"], hinfo["D_perp_squared"], D, D_fit, D_rel))
+    else:
+        held_text = "none (s = Y a + c T). D direct %.9f, fitter %.9f (rel %.1e)." % (D, D_fit, D_rel)
+    text = PARAMETERIZATION_TEXT.format(utc=utc_now(), pid=PARAMETERIZATION_ID, start=start, held=held_text,
+                                        ratio_decision=RATIO_DECISIONS.get(current_ratio()),
                                         templates=", ".join(P.template_names) or "(none)",
                                         bundle=", ".join(bundle) or "-", night=night, floor=floor, T0=USER_T0,
                                         late=LATE_START_UTC, lam=float(r["lam"]),
-                                        ngrid=len(P.late_layout.grid_rows), reason=GRID_REASON)
+                                        ngrid=len(P.late_layout.grid_rows), reason=GRID_REASON,
+                                        co2_text=("CO2 flux floor F_CO2 >= %s q_max,CO2 A_CO2,run, see below" % floor
+                                                  if co2 else "CO2 has no floor"),
+                                        co2_par=("\n".join(textwrap.wrap("CO2 flux floor (COPS_POS_FLOOR_CO2=1): "
+                                                                          + CO2_FLOOR_TEXT.format(floor=floor)
+                                                                          + ". Pressures p = p_H2O + kappa p_CO2(records "
+                                                                          "not at the CO2 floor) + p_CO2(records at "
+                                                                          "the floor, F_min,CO2 in place of kappa Q_CO2 "
+                                                                          "A_CO2,run); d p / d kappa from the records "
+                                                                          "not at the floor only.", 118)) + "\n"
+                                                 if co2 else ""),
+                                        co2_ratio=(" = CO2 floor" if co2 else ""),
+                                        co2_npz=("                                F_min_CO2_over_qmax_CO2 = %s A_CO2,run "
+                                                 "(ACO2; the CO2 floor over q_max,CO2)\n" % floor if co2 else ""))
     tpath = out / "ACTIVITY_PARAMETERIZATION.txt"
     with tpath.open("x") as f:
         f.write(text)
-    D = float(np.sqrt(np.sum(el["area"] * (s - P.s0) ** 2) / P.area_total))
     record["products"] = {p.name: {"sha256": sha256(p), "size_bytes": p.stat().st_size} for p in (path, tpath)}
-    record["result_summary"] = {"D_direct_nepers": D, "D_fitter": float(r["D"]),
+    if held is not None:
+        record["held_activity_calls"] = int(HELD["calls"])
+        if HELD["calls"] == 0:
+            print("positive_fit: WARNING the held term was never added to act_lin (0 calls of the patched "
+                  "activity_linear): the GPU pressures did not see h", flush=True)
+    record["result_summary"] = {"D_direct_nepers": D, "D_fitter": D_fit, "D_direct_vs_fitter_rel": D_rel,
+                                "D_check_tolerance": D_CHECK_RTOL, "D_check_pass": D_rel <= D_CHECK_RTOL,
+                                "held_exponent": bool(hinfo),
                                 "total_activity_over_A_orig": float(np.sum(el["area"] * A) / np.sum(el["area"] * el["AH2O"])),
                                 "A_range": [float(A.min()), float(A.max())], "kappa": float(kappa)}
-    print("positive_fit: wrote %s, %s (D direct %.6f nepers, fitter %.6f)" % (path, tpath, D, r["D"]), flush=True)
+    print("positive_fit: wrote %s, %s (D direct %.9f nepers, fitter %.9f, rel %.1e%s)" % (
+        path, tpath, D, D_fit, D_rel, "" if D_rel <= D_CHECK_RTOL else " > %.0e: WARNING D check failed" % D_CHECK_RTOL),
+        flush=True)
 
 
 def write_late_window_products(out, fit_cops, r, record):
@@ -1064,13 +1911,24 @@ def install_restart_marker(record):
 
     def from_fit(problem, result, fit_dir, manifest, elements):
         state = original(problem, result, fit_dir, manifest, elements)
+        held = getattr(problem, "held", None)
+        if held is not None:
+            state.arrays["activity_linear"] = np.asarray(state.arrays["activity_linear"], float) + held
         state.meta["model_extension"] = {
-            "parameterization": PARAMETERIZATION_ID, "policy": POLICY,
+            "activity_linear_includes_held": held is not None,
+            "parameterization": PARAMETERIZATION_ID, "policy": current_policy(),
+            "night_ratio": current_ratio(), "floor_ratio": float(os.environ.get(ENV_FLOOR, "nan")),
+            "co2_floor": current_co2_floor(),
+            "ratio_decision": RATIO_DECISIONS.get(current_ratio()),
+            "held_exponent": record.get("held_exponent_marker"),
+            "fit_chain": record.get("fit_chain"),
             "activity": "A = exp(activity_linear); activity_linear = Y a + c T (exponent)",
             "warning": "not a linear activity: tools that use max(activity_linear, 0) do not apply",
             "ascale": float(problem.ascale), "positive_activity": record.get("positive_activity"),
             "start_projection_weighting": PROJECTION_WEIGHTING,
             "late_window": {k: record.get("late_window", {}).get(k) for k in ("late_start_utc", "late_observations")}}
+        if record.get("start_set"):                    # --start-set (2026-11-08); also in fit_chain (resumes keep it)
+            state.meta["model_extension"]["start_set"] = record["start_set"]
         return state
     from_fit._positive_marker = True
     rs.from_fit = from_fit
@@ -1100,7 +1958,7 @@ def jacobian_check(fun, jac, x0, P, names):
     r0 = np.asarray(fun(x), float)
     J = np.asarray(jac(x), float)
     nd = int(P.ndata)
-    nreg = int(P.Lt.shape[0]) if P.lam > 0 else 0
+    nreg = len(P.regularization(x)) if P.lam > 0 else 0
     late = np.concatenate([P.et_fit[P.useNG] >= P.et_end, P.et_fit[P.useRG] >= P.et_end])
     blocks = {"data": np.arange(nd), "data_late_window": np.nonzero(late)[0],
               "regularization": np.arange(nd, nd + nreg), "crossing": np.arange(nd + nreg, len(r0))}

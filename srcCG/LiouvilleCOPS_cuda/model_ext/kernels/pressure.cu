@@ -1,11 +1,12 @@
-// ==== version-controlled copy: header added 2026-11-07, not part of the code that ran ====
+// ==== version-controlled copy: header added 2026-11-09, not part of the code that ran ====
 // Run copy: $COPS_OUTPUT_ROOT/model_ext/kernels/pressure.cu (on Voyager: /data001/highresolu_vt/cops_output/model_ext/kernels/pressure.cu)
-// SHA256 of the run copy = SHA256 of this file without these header lines: 714b9d908fee29c8135931ecd8a5209fba5ef1dd6905bec5b219cf5a0a4280f3
+// SHA256 of the run copy = SHA256 of this file without these header lines: 85842e95149817a73664f6e1afe543fd2dff5d884063124398f5887bdb08faf7
 // Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 // WHAT: CUDA source. The mixed-precision static_factors_m / fused_body_m kernels of the GPU forward model with the
 //   positive-activity options of positive_activity.py (night/shadow ratio, exp activity, H2O floor block indexed
 //   aco2[nfaces + f]); user decisions 2026-11-07. Compiled at run time by positive_activity.py (NVRTC via CuPy).
 // USED BY: positive_activity.py.
+// 2026-11-09 update: ratio 1e-5 (user 2026-11-08), CO2 flux floor (COPS_POS_FLOOR_CO2), start override --start-set (kappa = 1).
 // ==== end of header ====
 // =============================================================================================
 // model_ext COPY (positive_activity.py, user decisions 2026-11-07) of
@@ -38,6 +39,32 @@
 //      by every kernel as before), [nfaces, 2 nfaces) floor_ratio * AH2O (read only by
 //      fused_body_m). Kernels that index aco2[f] only (precompute_static, eval_fused_m_phic)
 //      are unaffected.
+//   5. (2026-11-08, user: "use the same floor for CO2"; positive_activity.py COPS_POS_FLOOR_CO2=1)
+//      CO2 flux floor in the NEW kernels eval_fused_m_p5f / eval_fused_m_p14f only
+//      (fused_body_m<NP, G, CF = true>): the record's CO2 flux is
+//          F_C = max(kappa * qc, F_min,C),  qc = Q_CO2 * ACO2(f)  (the reference's q["CO2"], the
+//          production per unit kappa, Q_CO2 with the night/shadow ratio),
+//          F_min,C = qmax_C(p) * (r * ACO2(f))  (r = floor_ratio, the H2O floor's ratio; ACO2 = the
+//          run's CO2 map = the CO2 activity at kappa = 1),
+//      i.e. CO2 emission never drops below r times the run's maximum-production CO2 emission, even
+//      for kappa -> 0. A record is at the CO2 floor when kappa * qc < F_min,C (strict; NaN false).
+//      Records NOT at the floor enter the CO2 sums of codes 3, 4 and the temperature weights
+//      exactly as before (the host multiplies them by kappa); their PhiCO2 is accumulated per
+//      evaluation (code 15; the bind-time PhiCO2 of all records is not used). Records AT the floor
+//      are left out of codes 3, 4, 15 and of the CO2 terms of the temperature weights (gN keeps its
+//      H2O term, w2 none) and go into kappa-independent sums with F_min,C in place of q:
+//          16  sum F_min,C Kn u             (NG)
+//          17  sum (F_min,C VB) KV u        (RG, VdotB part)
+//          18  sum F_min,C KPhi             (RG, Phi part)
+//          19..21  sum F_min,C Kn x (dl, dlx, dn)                 (p14f only: NG temperature)
+//          22..24  sum (bm_C (F_min,C VB) KV) x (dl, dlx, dn)     (p14f only: RG temperature)
+//      positive_activity.py assembles p = p_H + kappa p_C,active + p_C,floor and the kappa column
+//      from the active sums only: records at the CO2 floor contribute 0 to d p / d kappa. The
+//      H2O part (static_factors_m, the H2O floor, the activity/template columns) is unchanged
+//      (finetune.cu copies it). Layout with COPS_POS_FLOOR_CO2=1: aco2 holds 2 nfaces + 2 values,
+//      aco2[2 nfaces] = kappa (written by positive_activity.py before every evaluation) and
+//      aco2[2 nfaces + 1] = r; the CF kernels read them. The existing kernels (CF = false) do not
+//      read them and are the 2026-11-07 code: the CF additions are compile-time dead there.
 // =============================================================================================
 //
 // FP64 COPS pressure and analytic-Jacobian sums (ROADMAP C06).
@@ -443,7 +470,24 @@ __device__ __forceinline__ void static_factors_m(
     x = is_lit ? 1.0 / c - 1.0 : 0.0;
 }
 
-template <int NP, int G>
+// positive_activity (2026-11-08, CO2 flux floor, CF kernels only): qc = Q_CO2 * ACO2(f) of record r,
+// with the expressions of static_factors_m (left unchanged: finetune.cu copies it verbatim), so the
+// value is bitwise the qc that static_factors_m formed wn_c, wv_c, phi_c from.
+__device__ __forceinline__ double co2_flux_m(
+    long long r, long long p, int f, const float* __restrict__ cos32,
+    const double* __restrict__ pt, long long npt, const double* __restrict__ aco2)
+{
+    const double qmin_c = pt[2 * npt + p], qmax_c = pt[3 * npt + p];
+    const double c0 = (double)cos32[r];
+    const bool night = c0 <= 0.0;                  // shadow folded into cos (-2)
+    const double cz = c0 < 1.0 ? c0 : 1.0;
+    const double qc0 = night ? qmin_c : qmin_c + (qmax_c - qmin_c) * cz;
+    return qc0 * aco2[f];
+}
+
+// CF (positive_activity 2026-11-08): CO2 flux floor (header item 5); CF = false (the default, every
+// kernel that existed before) is the 2026-11-07 code: each CF addition is compile-time dead there.
+template <int NP, int G, bool CF = false>
 __device__ __forceinline__ void fused_body_m(
     const long long* __restrict__ blocks, const int* __restrict__ face,
     const float* __restrict__ kn32, const float* __restrict__ kphi32,
@@ -454,11 +498,17 @@ __device__ __forceinline__ void fused_body_m(
     const double* __restrict__ colbasis, long long nfaces, int col0,
     const double* __restrict__ pp, double* __restrict__ partial)
 {
-    constexpr int N = (NP > 0 ? NP : 0) + 2 * G + (NP < 0 ? 1 : 0);
+    // CF: the CO2-floor sums (codes 15..18, and 19..24 with the temperature sums) after the others
+    constexpr int NF = CF ? (NP >= 14 ? 10 : 4) : 0;
+    constexpr int N = (NP > 0 ? NP : 0) + 2 * G + (NP < 0 ? 1 : 0) + NF;
     __shared__ double tree[BLOCK];
     const Params P = load_params(pp);
     const long long b = blockIdx.x;
     const long long p = blocks[3 * b], begin = blocks[3 * b + 1], end = blocks[3 * b + 2];
+    // CF: kappa and the floor ratio r, the two values after the H2O floor block (positive_activity.py)
+    const double kappa_c = CF ? aco2[2 * nfaces] : 0.0;
+    const double ratio_c = CF ? aco2[2 * nfaces + 1] : 0.0;
+    const int bf = (NP > 0 ? NP : 0) + 2 * G;          // CF: first CO2-floor accumulator
     double acc[N];
 #pragma unroll
     for (int k = 0; k < N; ++k) acc[k] = 0.0;
@@ -494,18 +544,53 @@ __device__ __forceinline__ void fused_body_m(
         const double dn = use_lit ? 0.0 : du;
         const double dlx = dl * x;
         if (NP >= 5) {
+            // positive_activity (CF only): CO2 flux floor F_C = max(kappa * qc, F_min,C),
+            // F_min,C = qmax_C * (r * ACO2); at_floor_c is the constant false when CF is false
+            bool at_floor_c = false;
+            double fn_c = 0.0, fv_c = 0.0, fp_c = 0.0;
+            if (CF) {
+                const double fminc = pt[3 * npt + p] * (ratio_c * aco2[f]);
+                at_floor_c = kappa_c * co2_flux_m(r, p, f, cos32, pt, npt, aco2) < fminc;
+                if (at_floor_c) {
+                    const double kn = (double)kn32[r], kphi = (double)kphi32[r], kv = (double)kv32[r];
+                    fn_c = fminc * kn;                     // the record's CO2 factors with F_min,C
+                    fv_c = fminc * pt[4 * npt + p] * kv;   // (F_min,C * VB) * KV
+                    fp_c = fminc * kphi;
+                }
+            }
             acc[0] = acc[0] + wn_h * af * u;
             acc[1] = acc[1] + wp_h * af;
             acc[2] = acc[2] + wv_h * af * u;
-            acc[3] = acc[3] + wn_c * u;
-            acc[4] = acc[4] + wv_c * u;
+            if (!at_floor_c) {                             // CF: active CO2 records only (x kappa on the host)
+                acc[3] = acc[3] + wn_c * u;
+                acc[4] = acc[4] + wv_c * u;
+            }
+            if (CF) {
+                if (at_floor_c) {
+                    acc[bf + 1] = acc[bf + 1] + fn_c * u;  // code 16
+                    acc[bf + 2] = acc[bf + 2] + fv_c * u;  // code 17
+                    acc[bf + 3] = acc[bf + 3] + fp_c;      // code 18
+                } else {
+                    acc[bf] = acc[bf] + phi_c;             // code 15: PhiCO2 of the active records
+                }
+            }
             if (NP >= 14) {
-                const double w0 = P.cNbmH * wn_h * af + P.kcNbmC * wn_c;
+                const double w0 = !at_floor_c ? P.cNbmH * wn_h * af + P.kcNbmC * wn_c
+                                              : P.cNbmH * wn_h * af;   // CF: gN without its CO2 term (19..21)
                 const double w1 = P.bmH * wv_h * af;
                 const double w2 = P.bmC * wv_c;
                 acc[5] = acc[5] + w0 * dl;  acc[6] = acc[6] + w0 * dlx;  acc[7] = acc[7] + w0 * dn;
                 acc[8] = acc[8] + w1 * dl;  acc[9] = acc[9] + w1 * dlx;  acc[10] = acc[10] + w1 * dn;
-                acc[11] = acc[11] + w2 * dl; acc[12] = acc[12] + w2 * dlx; acc[13] = acc[13] + w2 * dn;
+                if (!at_floor_c) {                         // CF: active CO2 records only (x kappa on the host)
+                    acc[11] = acc[11] + w2 * dl; acc[12] = acc[12] + w2 * dlx; acc[13] = acc[13] + w2 * dn;
+                }
+                if (CF && at_floor_c) {
+                    const double w3 = P.bmC * fv_c;        // bm_C * ((F_min,C * VB) * KV)
+                    acc[bf + 4] = acc[bf + 4] + fn_c * dl;  acc[bf + 5] = acc[bf + 5] + fn_c * dlx;
+                    acc[bf + 6] = acc[bf + 6] + fn_c * dn;                                    // codes 19..21
+                    acc[bf + 7] = acc[bf + 7] + w3 * dl;    acc[bf + 8] = acc[bf + 8] + w3 * dlx;
+                    acc[bf + 9] = acc[bf + 9] + w3 * dn;                                      // codes 22..24
+                }
             }
         }
         if (G > 0) {
@@ -572,3 +657,24 @@ COPS_FUSED_KERNEL_M(eval_fused_m_c13, 0, 13)
 COPS_FUSED_KERNEL_M(eval_fused_m_c14, 0, 14)
 COPS_FUSED_KERNEL_M(eval_fused_m_c15, 0, 15)
 COPS_FUSED_KERNEL_M(eval_fused_m_c16, 0, 16)
+
+// positive_activity (2026-11-08): the CO2-floor kernels (header item 5), launched only by
+// positive_activity.py's evaluation with COPS_POS_FLOOR_CO2=1 (outputs: the codes of eval_fused_m_p5
+// / eval_fused_m_p14, then 15..18 / 15..24). The activity/template columns need no CO2 variant.
+#define COPS_FUSED_KERNEL_MF(NAME, NP, G)                                                      \
+extern "C" __global__ void __launch_bounds__(BLOCK) NAME(                                       \
+    const long long* __restrict__ blocks, const int* __restrict__ face,                       \
+    const float* __restrict__ kn32, const float* __restrict__ kphi32,                         \
+    const float* __restrict__ kv32, const float* __restrict__ cos32,                          \
+    const double* __restrict__ pt, long long npt,                                             \
+    const double* __restrict__ aco2, double cos75,                                            \
+    const double* __restrict__ af_face, const unsigned char* __restrict__ active,             \
+    const double* __restrict__ colbasis, long long nfaces, int col0,                          \
+    const double* __restrict__ pp, double* __restrict__ partial)                              \
+{                                                                                              \
+    fused_body_m<NP, G, true>(blocks, face, kn32, kphi32, kv32, cos32, pt, npt, aco2, cos75,    \
+                              af_face, active, colbasis, nfaces, col0, pp, partial);           \
+}
+
+COPS_FUSED_KERNEL_MF(eval_fused_m_p5f, 5, 0)
+COPS_FUSED_KERNEL_MF(eval_fused_m_p14f, 14, 0)
