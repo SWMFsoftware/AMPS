@@ -36,6 +36,11 @@ Paths in Appendix B are relative to the AMPS repository root.
   (b) fluorescence or solar-input errors at r_dot = -40 km/s;
   (c) observation-side calibration or background subtraction.
   For (c) we need information from the MAVEN team (Section 7).
+- Public archive. The case 1-3 observations are in the NASA PDS, labelled
+  with the generic target "MARS". A quick look confirms that the scans cross
+  the comet and include off-comet frames about 6 deg away, with a large,
+  time-variable Lyman-alpha background. Imaging for cases 4-6 was not found
+  (Section 9).
 
 
 2. THE MODEL (what the comparison assumes)
@@ -372,6 +377,111 @@ F. Other constraints from IUVS
   the OH g-factor and lifetime at -40 km/s.
 - Other species (F): add measured or bounded H-bearing parents to the model,
   first in the collisionless reference model, then in AMPS.
+- Archive (Section 9): reduce cases 1-3 ourselves from the archived L1B
+  frames, with our own frame-by-frame background treatment, and compare
+  with the digitized profiles.
+
+
+9. PUBLIC ARCHIVE STATUS OF THE IUVS DATA (checked 2026-11-09)
+--------------------------------------------------------------
+
+Where the data are:
+
+- NASA PDS, MAVEN IUVS bundles: raw L1A, calibrated L1B, processed L1C,
+  derived L2, and key parameters. The latest delivery found is release 45b
+  (PDS delivery 2026-06-27), with coverage through 2025-12-06. The PDS
+  Atmospheres node page states coverage through 2025-12-15.
+- Calibrated files:
+  https://atmos.nmsu.edu/PDS/data/PDS4/MAVEN/iuvs_calibrated_bundle/l1b/
+  under {disk,echelle}/2025/{09,10,11}/
+- The comet observations are not labelled as such:
+  - the PDS4 label Target_Identification is MARS;
+  - the FITS Observation table has TARGET_NAME = MARS and
+    OBSERVATION_TYPE = CDS, which ordinary Mars apoapse files also carry;
+  - the release notes do not mention 3I/ATLAS.
+
+Cases 1-3: FUV and MUV imaging found
+
+  case  orbits        file time span (UTC)              frames per orbit
+  1     24497-24500   2025-09-28 17:38 -> 09-29 05:43   45 FUV + 45 MUV
+  2     24525-24528   2025-10-02 23:59 -> 10-03 12:04   45 FUV + 45 MUV
+  3     24567-24570   2025-10-09 09:31 -> 10-09 21:36   45 FUV + 45 MUV
+
+- File names: mvn_iuv_l1b_apoapse-space-orbitNNNNN-{fuv,muv}_<UTC>_v13_r01.fits
+  (directory l1b/disk/2025/MM/). The time spans match the exposure windows
+  of the case table.
+- Related space-pointed files: echelle "apoapse-space" files on Sep 27-28
+  (orbits 24491-24496) and Oct 10 (orbits 24571-24576), each with short
+  4-frame FUV/MUV sets.
+
+Verification (orbit 24497, 9 of the 45 FUV files). The pixel RA/Dec was
+compared with the JPL Horizons position of C/2025 N1 seen from the Mars
+centre (500@499): RA 269.35 -> 269.17 deg, Dec 7.54 -> 7.69 deg, distance
+0.293 au.
+
+- Raster across the coma. The nucleus position lies inside the pixel
+  footprint in the 18:14 and 18:33 UTC frames, and the other scan steps pass
+  0.2-0.5 deg from it.
+- Off-comet frames. The first two frames and the last one point about
+  6.1 deg away, about 4.6e6 km projected. They are probably the off-comet
+  (background) reference.
+- Quick-look Lyman-alpha. Integrated over 120.6-122.6 nm on the L1B data,
+  median along the slit per frame:
+  - the total brightness is 1.8-3.1 kR;
+  - the frame containing the nucleus peaks at 3.66 kR against a 2.3 kR slit
+    median, about 1.3 kR from the comet (the digitized innermost case-1 point
+    is 1.15 kR);
+  - at the ~6-deg pointings the background drifts from 3.05 kR (17:41) to
+    1.81 kR (18:48), more than 1 kR within an hour.
+
+What this implies:
+
+- Comet H in the reference region is small. At 6 deg (about 4.6e6 km)
+  our model gives comet H of about 0.016 kR for case 1, about 10% of the
+  faintest case-1 point. Over-subtraction of coma in such a reference cannot
+  produce the factor 1.7.
+- The background dominates and drifts. The background is 2-20 times the
+  case-1 comet signal and changes by more than 1 kR within an hour, so it
+  must be removed frame by frame or with a model in time. Questions A1-A4
+  matter most for cases 1-3.
+- We can reduce cases 1-3 ourselves. The L1B files carry per-pixel
+  RA/Dec, the calibrated spectra, and uncertainties, so the profiles can be
+  rebuilt independently of the digitized figures.
+
+Cases 4-6: imaging not found
+
+- No FUV/MUV comet files. No space-pointed FUV/MUV files exist between
+  2025-10-24 and 11-03.
+- Echelle only. There are 11 single echelle "inspace" files (orbits
+  24714-24734, Oct 31 -> Nov 3). The Nov 1 file (orbit 24716) points
+  straight at the comet: separation 0.0 deg, with the comet 1.3 au from
+  Mars. Echelle covers Lyman-alpha (H and D), not OH at 308 nm.
+- Routine apoapse files are not comet pointings. A sampled FUV file
+  (orbit 24700, Oct 29) points at the Mars disk, 115 deg from the comet.
+- The observing plan changed. From Oct 24 the daily number of FUV
+  periapse files drops from about 250-300 to about 80, but no comet-pointed
+  imaging was identified by file name. A complete search needs the headers
+  of about 1,000 FUV/MUV files (about 4 GB).
+
+New questions for the MAVEN/IUVS team
+
+  G1. Which archived files (orbits, segments, channels, frames) produced the
+      six profiles? In particular, where are the case 4-6 FUV and MUV comet
+      images, or were cases 4-6 built from echelle data?
+  G2. Are the frames about 6 deg from the comet in each case 1-3 orbit the
+      background reference? How was the background interpolated in time,
+      given a drift of more than 1 kR within an hour?
+  G3. Will a future PDS release identify the comet observations (target
+      name, observation type)?
+
+Sources:
+- PDS release summary of 2026-06-27:
+  https://pds.nasa.gov/datasearch/subscription-service/SS-20260627.shtml
+- PDS Atmospheres IUVS page:
+  https://pds-atmospheres.nmsu.edu/data_and_services/atmospheres_data/MAVEN/maven_iuvs.html
+- IUVS PDS SIS:
+  https://atmos.nmsu.edu/PDS/data/PDS4/MAVEN/iuvs_calibrated_bundle/document/iuvs_pds_sis.pdf
+- JPL Horizons API: https://ssd.jpl.nasa.gov/api/horizons.api
 
 
 APPENDIX A. SENSITIVITIES (CASE 1)
