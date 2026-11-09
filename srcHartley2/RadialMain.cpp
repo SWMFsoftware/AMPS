@@ -1,6 +1,7 @@
 #include "pic.h"
 #include "CometChemistry.h"
 #include "CometBrightness.h"
+#include "CometBrightnessMath.h"
 #include "CometModel.h"
 #include "CometPhysics.h"
 #include "CometRadiativeCooling.h"
@@ -8,6 +9,7 @@
 #include "LocalTimeStepValidation.h"
 #include "RadialMesh.h"
 #include "RadialSimulation.h"
+#include "resonance_fluorescence.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -26,7 +28,8 @@ void PrintUsage(const char *program) {
       "--validate-channel-importance | --validate-total-reaction-forcing | "
       "--validate-transported-daughter-collision | "
       "--validate-unsupported-simplified-ntc | "
-      "--validate-surface-injection] "
+      "--validate-surface-injection | --validate-brightness "
+      "[--brightness-out-of-domain exclude|abort]] "
       "[--validation-particles N] [--validation-mover first|second|both] "
       "[--validation-skip-multiface] [--validation-unit-corrections] "
       "[--chemistry-validation-events N] [--random-seed N] "
@@ -203,6 +206,277 @@ bool ValidateSurfaceInjection(long int particlesPerSpecies) {
   }
   return globalResult!=0;
 }
+
+// ---------------------------------------------------------------------------
+// Particle-resolved brightness sampler fixture (--validate-brightness).
+//
+// The production sampler is driven by PIC's external-sampling lifecycle and
+// only sees whatever particles happen to be in owner cells.  This fixture
+// replaces the transport-dependent population with a deterministic global
+// particle set whose membership is defined by a global index alone, so the
+// union over MPI ranks is identical for every decomposition:
+//
+//   * out=0 is written after one sampling call with no particles at all and
+//     must be identically zero (empty-window regression for the free-list
+//     aliasing defect fixed on 2026-11-07);
+//   * out=1 samples the seeded set.  The Python checker compares out=1 across
+//     1/4/12-rank runs (decomposition equivalence) and against the
+//     independent column densities written here with the PIC-free
+//     Math::VisibleShellChordLength() helper;
+//   * the first and the last physical radial cell are always populated;
+//   * all seeded velocities stay inside every selected core model's
+//     published radial-velocity interval, so the production ABORT policy is
+//     not triggered by the regular set;
+//   * with --brightness-out-of-domain, one extra H particle with a 500 km/s
+//     local radial velocity is placed at r=1e7 m.  "exclude" selects
+//     EXCLUDE_AND_REPORT and must finish with positive excluded counts;
+//     "abort" selects ABORT and must terminate through MPI_Abort.
+//
+// The fixture never advances particles and never writes ordinary pic.* cell
+// output.  It must not be used inside a science run.
+namespace BrightnessFixture {
+enum OutOfDomainMode {None=0,Exclude=1,Abort=2};
+
+constexpr long int ParticlesPerSpecies=4000;
+constexpr double OutOfDomainRadiusM=1.0e7;
+constexpr double OutOfDomainLocalSpeedMPS=5.0e5;
+constexpr int SamplingRepeats=3;
+
+double FixtureImpactParameter(long int point) {
+  // Same expression as the production grid in CometBrightness.cpp.  The
+  // Python checker additionally compares this column with the Tecplot one.
+  using namespace Comet::Brightness;
+  if (ImpactParameterCount==1) return MinimumImpactParameter;
+  const double fraction=static_cast<double>(point)/
+      static_cast<double>(ImpactParameterCount-1);
+  if (ImpactParameterGridMode==GridMode::Logarithmic)
+    return std::exp(std::log(MinimumImpactParameter)+fraction*
+        (std::log(MaximumImpactParameter)-std::log(MinimumImpactParameter)));
+  return MinimumImpactParameter+fraction*
+      (MaximumImpactParameter-MinimumImpactParameter);
+}
+
+struct cSeed {
+  double Radius;
+  int Species;
+  double LocalVelocity[3];
+};
+
+struct cInserted {
+  double InnerRadius,OuterRadius,Measure,Weight;
+  int Species;
+};
+
+// Insert one global seed if this rank owns the block that contains it.
+// Returns true when inserted locally.
+bool InsertIfOwned(const cSeed &seed,std::vector<cInserted> &inserted) {
+  double position[3]={seed.Radius,0.0,0.0};
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=
+      PIC::Mesh::mesh->findTreeNode(position);
+  if (node==NULL || node->block==NULL || node->Thread!=PIC::ThisThread)
+    return false;
+  const double cellWidth=(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_;
+  long int cell=static_cast<long int>(
+      std::floor((seed.Radius-node->xmin[0])/cellWidth));
+  cell=std::max(0L,std::min(cell,static_cast<long int>(_BLOCK_CELLS_X_-1)));
+  // Dense physical-cell index for the particle list; ghost-aware index for
+  // the center node.  See the matching comment in CometBrightness.cpp.
+  PIC::Mesh::cDataCenterNode *centerNode=node->block->GetCenterNode(
+      _getCenterNodeLocalNumber(cell,0,0));
+  if (centerNode==NULL || !(centerNode->Measure>0.0)) return false;
+
+  long int &first=node->block->FirstCellParticleTable[cell];
+  const long int ptr=PIC::ParticleBuffer::GetNewParticle(first);
+  PIC::ParticleBuffer::byte *data=
+      PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+  PIC::ParticleBuffer::SetX(position,data);
+  PIC::ParticleBuffer::SetV(const_cast<double*>(seed.LocalVelocity),data);
+  PIC::ParticleBuffer::SetI(seed.Species,data);
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+  PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,data);
+#endif
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+  PIC::Mover::SetLocalTimeStepRemainderFraction(0.0,data);
+#endif
+  cInserted record;
+  record.InnerRadius=node->xmin[0]+cell*cellWidth;
+  record.OuterRadius=record.InnerRadius+cellWidth;
+  record.Measure=centerNode->Measure;
+  record.Weight=node->block->GetLocalParticleWeight(seed.Species);
+  record.Species=seed.Species;
+  inserted.push_back(record);
+  return true;
+}
+
+bool Run(int outOfDomainMode) {
+  using namespace Comet::Brightness;
+  bool localPass=true;
+  auto fail=[&](const char *message) {
+    if (PIC::ThisThread==0) std::fprintf(stderr,"brightness fixture: %s\n",message);
+    localPass=false;
+  };
+  if (!Enabled || EmissionLineCount<=0) {
+    fail("brightness is not enabled in the runtime input");
+    return false;
+  }
+
+  // Emitting species, in first-appearance order of the configured lines.
+  std::vector<int> species;
+  for (int line=0;line<EmissionLineCount;line++)
+    if (std::find(species.begin(),species.end(),EmissionSpecies[line])==
+        species.end()) species.push_back(EmissionSpecies[line]);
+
+  // Velocity amplitude: keep |e_r.(V_comet+R v)| inside every selected core
+  // model's published interval.  |e_r.(R v)|<=|v|, so a bound on |v| is
+  // sufficient for every quadrature direction.
+  double headroom=15.0e3;
+  for (int line=0;line<EmissionLineCount;line++) {
+    const AMPS::ResonanceFluorescence::ModelMetadata *metadata=NULL;
+    if (GFactorModel[line]==GFactor::HydrogenLymanAlphaIKL2020)
+      metadata=AMPS::ResonanceFluorescence::GetMetadata(
+          AMPS::ResonanceFluorescence::Model::HydrogenLymanAlphaIKL2020);
+    else if (GFactorModel[line]==
+        GFactor::HydroxylAX00SchleicherAhearn1988Unquenched)
+      metadata=AMPS::ResonanceFluorescence::GetMetadata(AMPS::
+          ResonanceFluorescence::Model::HydroxylAX00SchleicherAhearn1988Unquenched);
+    if (metadata==NULL) continue;
+    headroom=std::min(headroom,std::min(
+        metadata->maximumRadialVelocityMPS-BulkHeliocentricRadialVelocity,
+        BulkHeliocentricRadialVelocity-metadata->minimumRadialVelocityMPS));
+  }
+  if (!(headroom>1.0e3)) {
+    fail("bulk comet velocity leaves no in-domain headroom for the fixture");
+    return false;
+  }
+  const double amplitude=0.5*headroom;
+
+  // ---- empty window: out=0 must be identically zero ----
+  int localEmpty=PIC::ParticleBuffer::GetAllPartNum()==0 ? 1 : 0,globalEmpty=0;
+  MPI_Allreduce(&localEmpty,&globalEmpty,1,MPI_INT,MPI_MIN,
+      MPI_GLOBAL_COMMUNICATOR);
+  if (globalEmpty==0) fail("particle buffer is not empty before seeding");
+  SampleParticleResolvedBrightness();
+  PIC::LastSampleLength=1;
+  OutputSampledBrightness(0);
+
+  // ---- deterministic global seed list ----
+  const double rn=Comet::RadialModel::NucleusRadius;
+  const double rout=Comet::RadialModel::GetDomainOuterRadius();
+  std::vector<cSeed> seeds;
+  for (std::size_t s=0;s<species.size();s++) {
+    for (long int k=0;k<ParticlesPerSpecies+2;k++) {
+      cSeed seed;
+      seed.Species=species[s];
+      if (k==ParticlesPerSpecies) seed.Radius=rn+1.0e-3;          // first cell
+      else if (k==ParticlesPerSpecies+1) seed.Radius=rout-1.0e-3; // last cell
+      else {
+        const double u=(k+0.5)/static_cast<double>(ParticlesPerSpecies);
+        seed.Radius=rn*std::exp(u*std::log(rout/rn));
+      }
+      const double phase=static_cast<double>(k)+0.37*static_cast<double>(s);
+      seed.LocalVelocity[0]=0.75*amplitude*std::sin(1.7*phase+0.3);
+      seed.LocalVelocity[1]=0.50*amplitude*std::cos(2.3*phase+0.1);
+      seed.LocalVelocity[2]=0.35*amplitude*std::sin(0.7*phase+1.1);
+      seeds.push_back(seed);
+    }
+  }
+  if (outOfDomainMode!=None) {
+    int hydrogen=-1;
+    for (int line=0;line<EmissionLineCount;line++)
+      if (GFactorModel[line]==GFactor::HydrogenLymanAlphaIKL2020)
+        hydrogen=EmissionSpecies[line];
+    if (hydrogen<0) {
+      fail("out-of-domain fixture requires the H_LYA_IKL2020 line");
+      return false;
+    }
+    cSeed seed;
+    seed.Species=hydrogen;
+    seed.Radius=OutOfDomainRadiusM;
+    seed.LocalVelocity[0]=OutOfDomainLocalSpeedMPS;
+    seed.LocalVelocity[1]=0.0;
+    seed.LocalVelocity[2]=0.0;
+    seeds.push_back(seed);
+    OutOfRangeVelocityPolicy=outOfDomainMode==Exclude ?
+        VelocityDomainPolicy::ExcludeAndReport : VelocityDomainPolicy::Abort;
+  }
+
+  std::vector<cInserted> inserted;
+  long int localFirst=0,localLast=0;
+  for (std::size_t i=0;i<seeds.size();i++) {
+    if (!InsertIfOwned(seeds[i],inserted)) continue;
+    if (seeds[i].Radius==rn+1.0e-3) localFirst++;
+    if (seeds[i].Radius==rout-1.0e-3) localLast++;
+  }
+  long int localCounts[3]={static_cast<long int>(inserted.size()),
+      localFirst,localLast},globalCounts[3]={0,0,0};
+  MPI_Allreduce(localCounts,globalCounts,3,MPI_LONG,MPI_SUM,
+      MPI_GLOBAL_COMMUNICATOR);
+  const long int expectedEdge=static_cast<long int>(species.size());
+  if (globalCounts[0]!=static_cast<long int>(seeds.size()))
+    fail("not every seeded particle found exactly one owner block");
+  if (globalCounts[1]!=expectedEdge || globalCounts[2]!=expectedEdge)
+    fail("first/last physical cell coverage is incomplete");
+
+  // ---- sample the seeded set; timing is the max over ranks ----
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+  const double t0=MPI_Wtime();
+  for (int repeat=0;repeat<SamplingRepeats;repeat++)
+    SampleParticleResolvedBrightness();
+  double localSeconds=(MPI_Wtime()-t0)/SamplingRepeats,maxSeconds=0.0;
+  MPI_Reduce(&localSeconds,&maxSeconds,1,MPI_DOUBLE,MPI_MAX,0,
+      MPI_GLOBAL_COMMUNICATOR);
+  PIC::LastSampleLength=SamplingRepeats;
+  OutputSampledBrightness(1);
+
+  // ---- independent column density: sum_p W/V * chord(b) ----
+  const std::size_t rays=static_cast<std::size_t>(ImpactParameterCount);
+  std::vector<double> localColumn(rays*species.size(),0.0),
+      globalColumn(rays*species.size(),0.0);
+  for (const cInserted &record:inserted) {
+    const std::size_t s=static_cast<std::size_t>(std::find(species.begin(),
+        species.end(),record.Species)-species.begin());
+    for (std::size_t ray=0;ray<rays;ray++) {
+      const double chord=Math::VisibleShellChordLength(record.InnerRadius,
+          record.OuterRadius,FixtureImpactParameter(ray),rn);
+      localColumn[ray*species.size()+s]+=record.Weight/record.Measure*chord;
+    }
+  }
+  MPI_Reduce(localColumn.data(),globalColumn.data(),
+      static_cast<int>(localColumn.size()),MPI_DOUBLE,MPI_SUM,0,
+      MPI_GLOBAL_COMMUNICATOR);
+  if (PIC::ThisThread==0) {
+    const std::string path=std::string(PIC::OutputDataFileDirectory)+
+        "/brightness_validation_expected_columns.csv";
+    FILE *csv=std::fopen(path.c_str(),"w");
+    if (csv==NULL) fail("cannot write expected-column CSV");
+    else {
+      std::fprintf(csv,"impact_index,impact_parameter_m,species_index,expected_column_m2\n");
+      for (std::size_t ray=0;ray<rays;ray++)
+        for (std::size_t s=0;s<species.size();s++)
+          std::fprintf(csv,"%zu,%.17e,%d,%.17e\n",ray,
+              FixtureImpactParameter(ray),species[s],
+              globalColumn[ray*species.size()+s]);
+      std::fclose(csv);
+    }
+  }
+
+  int localResult=localPass ? 1 : 0,globalResult=0;
+  MPI_Allreduce(&localResult,&globalResult,1,MPI_INT,MPI_MIN,
+      MPI_GLOBAL_COMMUNICATOR);
+  if (PIC::ThisThread==0) {
+    std::printf("%s I3 particle-resolved brightness fixture mpi-ranks=%d "
+        "seeded=%ld first-cell=%ld last-cell=%ld velocity-amplitude-mps=%.6e "
+        "out-of-domain=%s rays=%ld lines=%d sampler-seconds-per-call=%.6e\n",
+        globalResult!=0 ? "PASS" : "FAIL",PIC::nTotalThreads,globalCounts[0],
+        globalCounts[1],globalCounts[2],amplitude,
+        outOfDomainMode==None ? "none" :
+            (outOfDomainMode==Exclude ? "exclude" : "abort"),
+        ImpactParameterCount,EmissionLineCount,maxSeconds);
+    std::fflush(stdout);
+  }
+  return globalResult!=0;
+}
+} // namespace BrightnessFixture
 }
 
 int main(int argc,char **argv) {
@@ -221,6 +495,8 @@ int main(int argc,char **argv) {
   bool validateTransportedDaughterCollision=false;
   bool validateUnsupportedSimplifiedNTC=false;
   bool validateSurfaceInjection=false;
+  bool validateBrightness=false;
+  int brightnessOutOfDomainMode=BrightnessFixture::None;
   bool validateRuntimeInput=false;
   bool randomSeedOverride=false;
   bool residualSamplingOverride=false;
@@ -265,6 +541,23 @@ int main(int argc,char **argv) {
     }
     else if (option=="--validate-surface-injection") {
       validateSurfaceInjection=true;
+    }
+    else if (option=="--validate-brightness") {
+      validateBrightness=true;
+    }
+    else if (option=="--brightness-out-of-domain") {
+      if (++argument>=argc) {
+        PrintUsage(argv[0]);
+        return EXIT_FAILURE;
+      }
+      const std::string mode=argv[argument];
+      if (mode=="exclude") brightnessOutOfDomainMode=BrightnessFixture::Exclude;
+      else if (mode=="abort") brightnessOutOfDomainMode=BrightnessFixture::Abort;
+      else {
+        std::fprintf(stderr,"invalid --brightness-out-of-domain value: %s\n",
+            argv[argument]);
+        return EXIT_FAILURE;
+      }
     }
     else if (option=="--validate-runtime-input") {
       // This mode deliberately performs the same strict parse, selected-case
@@ -415,10 +708,17 @@ int main(int argc,char **argv) {
       (validateTransportedDaughterCollision ? 1 : 0)+
       (validateUnsupportedSimplifiedNTC ? 1 : 0)+
       (validateSurfaceInjection ? 1 : 0)+
+      (validateBrightness ? 1 : 0)+
       (validateRuntimeInput ? 1 : 0);
   if (validationModeCount>1) {
     std::fprintf(stderr,
         "select only one focused validation mode per invocation\n");
+    return EXIT_FAILURE;
+  }
+  if (brightnessOutOfDomainMode!=BrightnessFixture::None &&
+      !validateBrightness) {
+    std::fprintf(stderr,
+        "--brightness-out-of-domain requires --validate-brightness\n");
     return EXIT_FAILURE;
   }
   if (validationOptions.UseUnitCorrections && !validateLocalTimeStep) {
@@ -595,6 +895,11 @@ int main(int argc,char **argv) {
     Comet::RadialSimulation::Initialize();
     if (validateLocalTimeStep) {
       const bool passed=Comet::LocalTimeStepValidation::Run(validationOptions);
+      MPI_Finalize();
+      return passed ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+    if (validateBrightness) {
+      const bool passed=BrightnessFixture::Run(brightnessOutOfDomainMode);
       MPI_Finalize();
       return passed ? EXIT_SUCCESS : EXIT_FAILURE;
     }

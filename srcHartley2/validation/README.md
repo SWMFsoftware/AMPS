@@ -51,12 +51,12 @@ review decision; neither runner nor evaluator promotes it automatically.
 
 ## Build and preflight
 
-The canonical case is `input/halley1d.input`. Remove exactly the repository
+The canonical case is `input/halley1d.input`. Run these commands from the AMPS
+repository root; all paths are relative to it. Remove exactly the root
 `build/` directory before compiling:
 
 ```sh
-cd /data/vtenishe/COMET1D/AMPS
-rm -rf /data/vtenishe/COMET1D/AMPS/build
+rm -rf -- build
 make -j8 EXTRACOMPILEROPTIONS=-O3
 python3 srcHartley2/validation/run_stage3_science_gate.py plan \
   validation_runs/stage3_science_gate_YYYYMMDD \

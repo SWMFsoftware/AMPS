@@ -72,6 +72,22 @@ std::vector<unsigned long long> ExcludedEvaluationCount;
 constexpr double AstronomicalUnitM=1.495978707e11;
 constexpr double InverseSqrtThree=0.577350269189625764509148780502;
 
+// Load-balance accounting for the sampler.  Radial comet builds that select
+// ForceRepeatableSimulationPath use particle-number balancing: the mover adds
+// one unit to a block's ParallelLoadMeasure per particle move.  The sampler
+// cost is not proportional to particle number.  It is
+//   (emitting particles in a cell) x (rays crossing that shell)
+//   x (2 or 4 quadrature points) g-factor evaluations,
+// and it is concentrated in outer shells, which almost every ray crosses.
+// In the 2026-11-08 I3 pilots, the one rank that owned the outer H/OH front
+// did almost all of the 200-ray work while 63 others waited in the next
+// collective (128 ranks were no faster than 64). One evaluation (rotation
+// plus core model) measured about 60 ns, versus about 1.5 us for one
+// particle's complete iteration, hence 0.04 particle-move equivalents per
+// evaluation.  The count is deterministic, so decomposition stays
+// repeatable.  It changes MPI block ownership only, never a sampled value.
+constexpr double LoadPerGFactorEvaluation=0.04;
+
 std::size_t SampleIndex(long int impact,int line) {
   return static_cast<std::size_t>(impact)*
       Comet::Brightness::EmissionLineCount+line;
@@ -542,6 +558,10 @@ void Comet::Brightness::SampleParticleResolvedBrightness() {
     if (node==NULL || node->block==NULL || node->Thread!=PIC::ThisThread)
       continue;
     const double cellWidth=(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_;
+    double blockEvaluations=0.0;
+#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+    const double blockStartTime=MPI_Wtime();
+#endif
     for (int localCell=0;localCell<_BLOCK_CELLS_X_;localCell++) {
       // These two AMPS arrays deliberately use different index spaces.
       // GetCenterNode() addresses the center-node array, which includes
@@ -642,8 +662,21 @@ void Comet::Brightness::SampleParticleResolvedBrightness() {
         if (farSideVisible)
           SampleSegment(particles,impact,ray,-zOuter,-zInner,
               inverseCellMeasure);
+        blockEvaluations+=(farSideVisible ? 4.0 : 2.0)*
+            static_cast<double>(particles.size());
       }
     }
+    // See LoadPerGFactorEvaluation above.  Only owner blocks reach this
+    // point, and the core consumes and resets the measure at every
+    // CreateNewParallelDistributionLists() call.
+#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_
+    node->ParallelLoadMeasure+=LoadPerGFactorEvaluation*blockEvaluations;
+#elif _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+    (void)blockEvaluations;
+    node->ParallelLoadMeasure+=MPI_Wtime()-blockStartTime;
+#else
+    (void)blockEvaluations;
+#endif
   }
 #endif
 }

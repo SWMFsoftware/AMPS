@@ -22,7 +22,7 @@ The executable is compiled once from `input/i3.conf`:
 
 ```sh
 ./Config.pl -application=i3
-rm -rf -- /data/vtenishe/COMET1D/AMPS/build
+rm -rf -- build
 make -j8 EXTRACOMPILEROPTIONS=-O3
 ```
 

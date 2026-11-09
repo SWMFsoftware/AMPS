@@ -1,18 +1,58 @@
 # Generic comet / Hartley 2 status
 
-Date: 2026-11-07
+Date: 2026-11-08
 Branch: `1d_comet_dev`
 
-## 3I/ATLAS six-case input development (2026-11-07)
+All paths in this file are relative to the AMPS repository root (the
+directory that contains `Config.pl`, `input/`, and `srcHartley2/`), except
+explicitly absolute scratch locations such as `/tmp/...`.
 
-The generic DIM1 application now has six deterministic, observation-driven
-3I/ATLAS inputs. `input/i3.input` is the common generator template;
-`srcHartley2/i3/prepare_i3_cases.py` combines it with reviewed CSV catalogs to
-write the loadable `input/i3.case1.input` through `input/i3.case6.input`.
-AMPS configuration remains compile-time, so every case requires its own clean
-preprocess/build and separate run output. No 3I production rate, date, solar
-index, nucleus radius, or mesh value was added to C++. Published H/OH
-fluorescence data are now in a reusable core module, not in the application.
+## 3I/ATLAS six-case campaign (updated 2026-11-08)
+
+### Decision: six independent input files will not be used
+
+The original layout, in which the generator template `input/i3.input`
+produced six separately compiled inputs `input/i3.case1.input` through
+`input/i3.case6.input` (one clean build and one executable per observation),
+is retired and will not be used. Those files have been removed from the
+source tree. Do not regenerate, restore, or build from them, and do not start
+new runs from executables that were compiled from them.
+
+All six observations now share one compile-time configuration and one runtime
+input:
+
+| File | Role |
+| --- | --- |
+| `input/i3.conf` | Compile-time capability and layout: seven species, DIM1 spherical backend, block/ghost layout, particle storage and buffer maximum, maximum AMR refinement, collision/reaction topology, and brightness linkage. Contains no observation case. |
+| `input/i3.in` | Runtime scientific receipt: common physical and numerical settings once, plus six named sections `case: 1` through `case: 6` holding the observation-dependent values (production rates, surface resolution, solar-corrected reaction rates, geometry, radial velocity, Ly-alpha flux). |
+
+Build once and select the case at launch:
+
+```sh
+./Config.pl -application=i3
+rm -rf -- build
+make -j8 EXTRACOMPILEROPTIONS=-O3
+mpiexec -n 12 ./amps -i input/i3.in -case N        # N = 1..6
+```
+
+`Config.pl` selects `input/i3.conf` because no `input/i3.input` exists.
+Changing the case or any runtime value requires no rebuild. `-i` and `-case`
+are mandatory for the I3 executable, and an unknown case is fatal. Run each
+case in its own directory. The implementation and validation record is the
+section "I3 two-layer input and generic case sections (2026-11-08)" at the
+end of this file.
+
+Earlier sections that mention `i3.input`, `i3.caseN.input`, or a per-case
+rebuild are historical. Their run paths and hashes still record what was
+actually executed, but they do not describe the current workflow.
+
+### Physics and data content (unchanged by the input redesign)
+
+The generic DIM1 application has six deterministic, observation-driven
+3I/ATLAS cases. `srcHartley2/i3/prepare_i3_cases.py` combines reviewed CSV
+catalogs into the single runtime file `input/i3.in`. No 3I production rate,
+date, solar index, nucleus radius, or mesh value was added to C++. Published
+H/OH fluorescence data are in a reusable core module, not in the application.
 
 The implementation uses:
 
@@ -50,7 +90,9 @@ and evaluates `lambda_i=1/(sqrt(2)*sum_j n_j sigma_ij)` with the exact selected
 1.75261509304, 1.29785287642, 0.531312387076, 0.131442336866,
 0.122734766819, and 0.131442336866 m.
 
-Focused deterministic evidence:
+Focused deterministic evidence recorded on 2026-11-07 for the retired
+six-file layout (the current generator test runs 6 tests and regenerates only
+`input/i3.in`; see the final section):
 
 ```text
 python3 -m unittest srcHartley2/i3/tests/test_prepare_i3_cases.py
@@ -66,23 +108,26 @@ PASS comet-brightness focused test group tests=7
 
 The tests check all six corrected solar values, 17 reactions, minimum mixture
 paths, direct injection count, recoil-derived characteristic speeds,
-brightness records, and byte-for-byte regeneration of every tracked input.
+brightness records, and byte-for-byte regeneration of every input that was
+tracked at that time.
 The core fluorescence tests check all nine official IKL-2020 H coefficients,
 all 1,201 non-extrapolated Lowell OH records over +/-60 km/s, authoritative
 and generated-file SHA-256 hashes, strict model domains, inverse-square
 scaling, and agreement with all six existing rounded case scalars. A clean
 case-1 application compile also passes. These checks do not replace a
 convergence run. Before any later recompile, remove exactly
-`/data/vtenishe/COMET1D/AMPS/build`; preserve the pre-existing root
+`build`; preserve the pre-existing root
 `Makefile` linker edit and all run archives.
 
 Files added for this work and their reason are:
 
 | File | Purpose |
 | --- | --- |
-| `input/i3.input` | Common reviewable template; deliberately not directly loadable while generator tokens remain. |
-| `input/i3.case1.input` ... `input/i3.case6.input` | Six concrete, separately loadable AMPS cases. |
-| `srcHartley2/i3/prepare_i3_cases.py` | Network-free calculation of rates, mean free paths, injection statistics, recoil speed bounds, brightness records, and concrete inputs. |
+| `input/i3.conf` | Compile-time capability/layout shared by all six cases (replaces the retired template). |
+| `input/i3.in` | Single loadable runtime receipt with common settings and six named case sections (replaces the six per-case inputs). |
+| `input/i3.input`, `input/i3.case1.input` ... `input/i3.case6.input` | **Retired; will not be used.** Former generator template and six per-case compile-time inputs. Deleted from the source tree; do not regenerate or restore. |
+| `srcHartley2/i3/prepare_i3_cases.py` | Network-free calculation of rates, mean free paths, injection statistics, recoil speed bounds, and brightness records; writes only `input/i3.in`. |
+| `srcHartley2/CometRuntimeInput.h/.cpp`, `src/general/input/amps_input.h` (`ResolveCase`), `Config.pl` | Strict runtime loading of `i3.in`, generic named-case overlay, MPI-consistent receipt check, and `.input`-then-`.conf` application selection (see the final section). |
 | `srcHartley2/i3/reference/i3_cases.csv` | Archive transcription, solar-corrected indices, and fluorescence metadata. |
 | `srcHartley2/i3/reference/solar_activity_audit.csv` | Endpoint/exposure longitude shifts and unshifted controls. |
 | `srcHartley2/i3/reference/photochemistry_channels.csv` | Geometry-independent chemical network parameters and provenance. |
@@ -98,17 +143,23 @@ Files added for this work and their reason are:
 | `srcHartley2/CometBrightness.h/.cpp` | Default-off particle-resolved external sampler, named core-model resolution, velocity-dependent per-particle g factors, MPI reduction, synchronized buffer lifecycle, and per-species Tecplot output. Fixed scalar inputs remain supported. |
 | `input/CometBrightnessConfig.pm` | Strict fixed-or-named model grammar; requires explicit observation geometry, supports scalar-radial or full-vector comet velocity, enforces an out-of-domain policy, and retains H solar-flux/OH wavelength requirements. |
 | `input/hartley2.pl` | Generates model selectors, geometry/vector/policy data, SI case conditions, fixed/model arrays, and the DIM1 link dependency. Its exact declarations and arrays are regression-tested. |
-| `srcHartley2/RadialMain.cpp` | Validates generated brightness configuration and provides the production surface-injection distribution regression. |
+| `srcHartley2/RadialMain.cpp` | Validates brightness configuration, parses `-i`/`-case` and `--validate-runtime-input`, and provides the production surface-injection distribution regression. |
 | `srcHartley2/RadialSimulation.cpp` | Registers the brightness sampling and output callbacks after PIC initialization; core output controls reduction, writing, and buffer clearing at the ordinary sampling boundary. |
 | `srcHartley2/tests/run_comet_brightness_tests.sh` and brightness tests | Velocity-rotation/geometry/unit/policy/parser regression, including exact generated declarations and array values. |
 | `srcHartley2/tests/run_i3_surface_injection_test.sh` and `I3_SURFACE_INJECTION.md` | Reproducible H2O/CO/CO2 flux-distribution runtime test and its mathematical contract. |
 | `input/halley1d.input` | Explicitly selects `BrightnessMode=off`; no Rubin comparison physics is changed. |
 | `srcHartley2/CometChemistry.cpp` | Treats equal carrier rates as a valid network while continuing to report unequal-carrier coverage for dedicated fixtures. |
 
-### Clean case-1 build and focused runtime evidence
+### Clean case-1 build and focused runtime evidence (historical, retired layout)
+
+This subsection records the 2026-11-07 build made from the retired
+compile-time file `input/i3.case1.input`. It is kept as evidence only. The
+current equivalent is the clean `i3.conf` build and the
+`-i input/i3.in -case N --validate-runtime-input` checks recorded in the final
+section.
 
 The latest case-1 source was configured only after removing exactly
-`/data/vtenishe/COMET1D/AMPS/build`, then compiled and linked with C++17/MPI.
+`build`, then compiled and linked with C++17/MPI.
 The first attempted configure exposed that `.amps.conf` overrides
 the Make command's `InputFileAMPS`; it was stopped while still compiling the
 old Halley selection. The workspace selector was set to
@@ -164,17 +215,43 @@ d3820a51eec9077c99b78180c6581ac1a4e026f749226442b43f2099eaead104  build/main/Com
 9ddabb43c544acaebb08f70732e417c25ecba4a47144e52702d98beb8c56282e  build/pic/picGlobal.dfn
 ```
 
-The I3 work is not yet a scientific validation result. Case 1 has a clean
-configured build and focused injection/chemistry runtime evidence, while
-cases 2--6 have deterministic parser/generator evidence only. A completed-
-sampling-window brightness pilot, long convergence runs, H tau-gate review,
-spectral H g-factor convolution over sampled particle velocities,
-observation digitization with uncertainty, and brightness/profile comparisons
-remain. The six I3 inputs now intentionally select bulk-velocity core models;
-the legacy fixed-scalar input form remains regression-tested. The explicit
-1e9-m boundary truncates archive H
-points beyond 10^6 km and must be disclosed rather than filled by an
-undocumented tail.
+### Current I3 status and remaining work (2026-11-08)
+
+The I3 work is not yet a scientific validation result.
+
+- Configuration: one clean optimized executable built from `input/i3.conf`
+  loads all six cases from `input/i3.in`. Cases 1--6 each pass
+  `--validate-runtime-input` on one rank, and case 1 also passes on two ranks.
+  The surface-injection regression passes through `-i/-case` with 200,000
+  samples per species for H2O, CO, and CO2.
+- Case 1 transport: the 12-rank run in
+  `validation_runs/i3_case1_rays200_sampling10000_max30000_indexfix_20261107_12mpi/production`
+  completed its first 10,000-iteration window (output 0) with finite 200-ray
+  H and OH brightness tables. Over the compared range the AMPS curves lie below
+  the MAVEN/IUVS points. That window is not converged and is diagnostic only.
+  This run predates the redesign: its executable was compiled from the retired
+  `i3.case1.input`.
+- Cases 2--6: no transport run has been started.
+
+Remaining before scientific use:
+
+- production runs of all six cases with the `i3.conf` executable and
+  `-i input/i3.in -case N`, each in its own run directory, carried to
+  convergence or explicitly labeled nonconverged;
+- one-rank versus multi-rank equivalence of the particle-resolved brightness
+  estimator;
+- a runtime out-of-domain fixture for both `ABORT` and `EXCLUDE_AND_REPORT`;
+- performance and peak-memory measurement of the 200-ray sampler;
+- review of every H line-center tau flag (the thin result is never
+  attenuated); and
+- brightness/profile comparisons that disclose that the observations are
+  raster digitizations without the original numerical uncertainties.
+
+All six cases select the named core H/OH models, evaluated with per-particle
+Doppler velocities; the legacy fixed-scalar input form remains
+regression-tested. The explicit 1e9-m boundary truncates archive H points
+beyond 10^6 km and must be disclosed rather than filled by an undocumented
+tail.
 
 ## Current result
 
@@ -216,7 +293,7 @@ The repository build selectors now name `halley1d.input`. An earlier clean
 DIM1 executable used the lower OH endpoint and one iteration to smoke-test the
 execution path; the final requested controls are now in the tracked input.
 The Halley runtime output path is `PT/plots`, relative to the launch directory;
-the intended launch directory is `/data/vtenishe/COMET1D/AMPS`. A compile does
+the intended launch directory is the AMPS repository root. A compile does
 not create this runtime directory.
 
 ### Local-timestep implementation added on 2026-11-01
@@ -310,14 +387,15 @@ running `make -j8` with `halley1d.input`. Validation ran from
 `/tmp/amps-lts-validation.0L6Pni`, not the repository run directory, so it did
 not modify `PT` or any paper-comparison output.
 
-The final commands were:
+The final commands, run from that scratch directory with `AMPS_ROOT` set to
+the AMPS repository root, were:
 
 ```sh
-mpirun -np 1 /data/vtenishe/COMET1D/AMPS/amps \
+mpirun -np 1 "$AMPS_ROOT/amps" \
   --validate-local-timestep --validation-particles 200000 \
   --validation-mover both --validation-skip-multiface
 
-mpirun -np 4 /data/vtenishe/COMET1D/AMPS/amps \
+mpirun -np 4 "$AMPS_ROOT/amps" \
   --validate-local-timestep --validation-particles 200000 \
   --validation-mover both
 ```
@@ -2177,7 +2255,7 @@ prerequisite and must not be dropped during a later master merge.
 
 ### Focused validation evidence
 
-Before compilation, `/data/vtenishe/COMET1D/AMPS/build` was deleted. The exact
+Before compilation, `build` was deleted. The exact
 Halley input then cleanly preprocessed, compiled, and linked with
 `make -j8 EXTRACOMPILEROPTIONS=-O3`. The known DIM1 legacy aggressive-loop
 warnings and sandbox-only OpenMPI interface notices remained, but there was no
@@ -2563,7 +2641,7 @@ response is implemented.
 The requested repeat run was archived in:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_emergency_weight_convergence_rubin_20261103_14mpi
+validation_runs/halley1d_emergency_weight_convergence_rubin_20261103_14mpi
 ```
 
 It was launched at 10:23:21 CST with:
@@ -2712,7 +2790,7 @@ After the clean build and 1/4/12-rank focused regressions passed, a fresh long
 Halley/Rubin validation was started from iteration zero with 14 MPI processes:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_sampling_emergency_convergence_rubin_20261103_14mpi
+validation_runs/halley1d_sampling_emergency_convergence_rubin_20261103_14mpi
 mpiexec -n 14 ./amps.sampling-emergency
 ```
 
@@ -2895,7 +2973,7 @@ permission to merge automatically.
 A fresh run was launched from iteration zero at 18:46:50 CST on 2026-11-03:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_empty_neighbor_weight_convergence_rubin_20261103_14mpi
+validation_runs/halley1d_empty_neighbor_weight_convergence_rubin_20261103_14mpi
 mpiexec -n 14 ./amps.empty-neighbor-weight
 ```
 
@@ -3157,7 +3235,7 @@ MPI ranks before the long launch. The focused logs are under
 The long-run archive is:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_allocation_burst_convergence_rubin_20261104_14mpi_fresh
+validation_runs/halley1d_allocation_burst_convergence_rubin_20261104_14mpi_fresh
 ```
 
 It was launched at 2026-11-04 12:25:32 CST with 14 MPI processes and one
@@ -3197,7 +3275,7 @@ The final complete `out=19` profiles were compared with the digitized Rubin
 et al. (2011) neutral DSMC curves. The generated directory is:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_allocation_burst_convergence_rubin_20261104_14mpi_fresh/PT/plots/rubin2011_comparison
+validation_runs/halley1d_allocation_burst_convergence_rubin_20261104_14mpi_fresh/PT/plots/rubin2011_comparison
 ```
 
 It contains 18 PNG figures, 18 EPS figures, an 18-page combined PDF,
@@ -3322,7 +3400,7 @@ all emergency, allocation-burst, sampling-population, face-carrier, and
 photochemical checks. Focused artifacts are under:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_priority_optimization_preflight_20261104
+validation_runs/halley1d_priority_optimization_preflight_20261104
 ```
 
 The `benchmark14` subdirectory is a fresh 14-rank run from iteration zero. It
@@ -3378,7 +3456,7 @@ staged executable and input hashes documented above and completed normally at
 the 10,000-iteration ceiling with exit status zero. Its archive is:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_priority_optimization_repeat_20261104_14mpi
+validation_runs/halley1d_priority_optimization_repeat_20261104_14mpi
 ```
 
 All 20 sampling windows and 540 `.dat` files were produced. Every data file is
@@ -3400,7 +3478,7 @@ The final complete output (`out=19`, iteration 10,000) was compared with the
 digitized Rubin et al. neutral DSMC profiles. The generated directory is:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_priority_optimization_repeat_20261104_14mpi/PT/plots/rubin2011_comparison
+validation_runs/halley1d_priority_optimization_repeat_20261104_14mpi/PT/plots/rubin2011_comparison
 ```
 
 It contains 18 PNG files, 18 EPS files, an 18-page PDF,
@@ -3446,7 +3524,7 @@ and 12 MPI ranks for the configured 200--800 range.  The new 14-rank run was
 launched at 2026-11-04 15:26 CST from:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_4x_particles_20000iter_sampling1000_20261104_14mpi/production
+validation_runs/halley1d_4x_particles_20000iter_sampling1000_20261104_14mpi/production
 ```
 
 Runtime output explicitly reports `current sample length:1000`.  The run
@@ -3472,7 +3550,7 @@ The final `out=19` data were overlaid with the digitized Rubin DSMC profiles
 at:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_4x_particles_20000iter_sampling1000_20261104_14mpi/production/PT/plots/rubin2011_comparison
+validation_runs/halley1d_4x_particles_20000iter_sampling1000_20261104_14mpi/production/PT/plots/rubin2011_comparison
 ```
 
 The validated artifact set contains 18 PNG files, 18 EPS files, an 18-page
@@ -3503,7 +3581,7 @@ The fresh run uses 18 MPI processes and was launched at 2026-11-04 16:47 CST
 from:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_16x_particles_40000iter_sampling10000_20261104_18mpi/production
+validation_runs/halley1d_16x_particles_40000iter_sampling10000_20261104_18mpi/production
 ```
 
 The executable SHA-256 is
@@ -3536,7 +3614,7 @@ Rubin solution.
 The final `out=3` data were overlaid with the digitized Rubin profiles at:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_16x_particles_40000iter_sampling10000_20261104_18mpi/production/PT/plots/rubin2011_comparison
+validation_runs/halley1d_16x_particles_40000iter_sampling10000_20261104_18mpi/production/PT/plots/rubin2011_comparison
 ```
 
 The validated set contains 18 PNG files, 18 EPS files, an 18-page combined
@@ -3677,7 +3755,7 @@ operation was performed.
 The production archive is:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/stage0_closure_20261105/diagnostics_on_10000iter_14mpi/production
+validation_runs/stage0_closure_20261105/diagnostics_on_10000iter_14mpi/production
 ```
 
 It used 14 MPI ranks, diagnostics enabled, 500-iteration sampling windows,
@@ -3781,7 +3859,7 @@ modified for Stage 1.
 The archive root is:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/stage1_population_policy_20261105
+validation_runs/stage1_population_policy_20261105
 ```
 
 - `canonical_policy/run.log`: four-rank runtime validator, 27 resolved
@@ -3877,7 +3955,7 @@ as Stage-2 source.
 The exact archive root is:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/stage2_component_carrier_20261105
+validation_runs/stage2_component_carrier_20261105
 ```
 
 The build directory was removed before each recompilation. A clean
@@ -3999,7 +4077,7 @@ staged as Stage-3 source.
 The evidence root is:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/stage3_systematic_20261105
+validation_runs/stage3_systematic_20261105
 ```
 
 The final clean executable, canonical Stage-3 input, generated PIC definition,
@@ -4141,7 +4219,7 @@ application-block restart, particle-record, and ghost-publication tests.
 
 ### Focused verification
 
-Before compiling, exactly `/data/vtenishe/COMET1D/AMPS/build` was removed.
+Before compiling, exactly `build` was removed.
 `make -j8 EXTRACOMPILEROPTIONS=-O3` passed. The generated artifacts are:
 
 ```text
@@ -4258,7 +4336,7 @@ changes and must not be staged accidentally.
 ### Validation evidence
 
 Every compile in this round first removed exactly
-`/data/vtenishe/COMET1D/AMPS/build`. The full correction-on matrix passed with
+`build`. The full correction-on matrix passed with
 200,000 mover particles per case and 200,000 chemistry events per case:
 
 ```text
@@ -4381,7 +4459,7 @@ Fresh Stage-4 mode requires `--stage4-executable` and a nonexistent
 `--stage4-output-root`. It delegates the 1/4/12 MPI runs to the existing
 Stage-4 runner and then repeats the combined identity test against the frozen
 correction-off archive. It does not copy or install the executable. A caller
-that builds it must first remove exactly `/data/vtenishe/COMET1D/AMPS/build`,
+that builds it must first remove exactly `build`,
 and must separately restore a clean canonical correction-off build after any
 configuration work.
 
@@ -4522,7 +4600,7 @@ Those focused values have not been scientifically calibrated.
 
 ### Validation evidence
 
-Before each compile, exactly `/data/vtenishe/COMET1D/AMPS/build` was removed.
+Before each compile, exactly `build` was removed.
 The correction-on build completed without compiler/linker errors. The pure
 suite printed:
 
@@ -4534,7 +4612,7 @@ PASS Stage-5 correction-window planner policy=1 roulette=1 split=1 capacity=1 mu
 The full runtime archive is:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/stage5-correction-window-full-20261105
+validation_runs/stage5-correction-window-full-20261105
 PASS Stage-5 correction-window integrated matrix 1rank=pass 4rank=pass 12rank=pass
 ```
 
@@ -4610,7 +4688,7 @@ future, separately approved development.
 ### Final restored workspace and complete regression
 
 After the correction-on acceptance archive, the canonical input was restored,
-exactly `/data/vtenishe/COMET1D/AMPS/build` was removed again, and AMPS was
+exactly `build` was removed again, and AMPS was
 cleanly rebuilt from `input/halley1d.input`. The generated configuration has
 `_INDIVIDUAL_PARTICLE_WEIGHT_OFF_`, general NTC, window mode false, and split
 limit `-1`. Final hashes are:
@@ -4718,7 +4796,7 @@ staged with Stage 6.
 ### Focused and complete validation evidence
 
 Before every Stage-6 compilation, exactly
-`/data/vtenishe/COMET1D/AMPS/build` was removed. The accepted packet-enabled
+`build` was removed. The accepted packet-enabled
 build used packet maximum 8; global 1; `CHEMICAL_ONLY` 2; species `C2` 8;
 reaction `H2O_OH_H` 4; reaction `C2_2C` 8; a 64-product transaction limit;
 and deliberately broad Stage-5 windows. These are validation settings, not a
@@ -4734,7 +4812,7 @@ PASS Stage-6 daughter-packet planner identity=1 exact-sum=1 packet-counts=1,2,4,
 The immutable accepted runtime archive is:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/stage6-daughter-packet-full-20261105-r4
+validation_runs/stage6-daughter-packet-full-20261105-r4
 PASS Stage-5 correction-window integrated matrix 1rank=pass 4rank=pass 12rank=pass
 PASS Stage-6 daughter-packet integrated matrix 1rank=pass 4rank=pass 12rank=pass reactions=46 sinks=23 packet-cases=4 events=200000
 ```
@@ -4941,7 +5019,7 @@ These are test controls, not a recommended Halley policy. The accepted,
 immutable archive is:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/stage7-channel-importance-full-20261105-r2
+validation_runs/stage7-channel-importance-full-20261105-r2
 ```
 
 Its end-to-end runner passed:
@@ -4969,7 +5047,7 @@ addition tolerance. The accepted `-r2` parser applies a documented
 combine, or substitute the unsuffixed archive for `-r2`.
 
 After acceptance, `.amps.conf` and canonical `input/halley1d.input` were
-restored. The exact `/data/vtenishe/COMET1D/AMPS/build` directory was removed
+restored. The exact `build` directory was removed
 before a clean canonical compile. The resulting build is individual-particle-
 correction off, Stage-6 packet counts all one, and all 69 Stage-7 policy rows
 unconfigured. Current hashes are:
@@ -5219,7 +5297,7 @@ paths; neither build emitted a Stage-8 compile or link error.
 The accepted runtime archive is:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/stage8-total-reaction-forcing-full-20261105-r4
+validation_runs/stage8-total-reaction-forcing-full-20261105-r4
 PASS Stage-4 correction-on integrated matrix 1rank=pass 4rank=pass 12rank=pass
 PASS Stage-5 correction-window integrated matrix 1rank=pass 4rank=pass 12rank=pass
 PASS Stage-6 daughter-packet integrated matrix 1rank=pass 4rank=pass 12rank=pass reactions=46 sinks=23 packet-cases=4 events=200000
@@ -5323,7 +5401,7 @@ perform integration on a disposable branch made from a recorded current
 ### Final canonical workspace after Stage-8 validation
 
 After freezing the enabled executable, `input/halley1d.input` was restored,
-exactly `/data/vtenishe/COMET1D/AMPS/build` was removed, and the application
+exactly `build` was removed, and the application
 was clean-built with `make -j8 EXTRACOMPILEROPTIONS=-O3`. The generated core
 macro is `_INDIVIDUAL_PARTICLE_WEIGHT_OFF_`; all 27 total-forcing flags are
 zero; all 69 packet counts are one; and all 69 channel-importance flags are
@@ -5490,11 +5568,11 @@ use the case's unmodified physical weights, timesteps, and collision data.
 ### Accepted focused validation and exact evidence
 
 The Stage-9-enabled build was created only after removing the exact
-`/data/vtenishe/COMET1D/AMPS/build` directory. The accepted transported-
+`build` directory. The accepted transported-
 daughter archive is:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/stage9-transported-collision-full-20261105-r3
+validation_runs/stage9-transported-collision-full-20261105-r3
 ```
 
 Its frozen executable SHA-256 is
@@ -5510,7 +5588,7 @@ substituted for `-r3`.
 The paired one-window same-binary smoke archive is:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/stage9-checkpoint-smoke-20261105-r2
+validation_runs/stage9-checkpoint-smoke-20261105-r2
 ```
 
 Both arms used executable SHA-256
@@ -5537,7 +5615,7 @@ PASS Hartley2 all-stage suite tests=38 test-groups=10 stage4-mode=archived stage
 ```
 
 Logs are preserved under
-`/data/vtenishe/COMET1D/AMPS/validation_runs/stage9-all-stage-tests-20261105`.
+`validation_runs/stage9-all-stage-tests-20261105`.
 This closes Stage-9 implementation/focused validation, not its long-run
 scientific gate. Do not describe a synthetic tooling PASS, the one-window
 smoke, or the deterministic collision fixture as Halley/Rubin acceptance.
@@ -5761,7 +5839,7 @@ Stage-9 science:  NOT_EVALUATED
 Durable evidence is under:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/stage10-all-stage-tests-20261105-r3
+validation_runs/stage10-all-stage-tests-20261105-r3
 ```
 
 The human summary SHA-256 is
@@ -5790,7 +5868,7 @@ created. This is the expected fail-closed behavior, not a test failure.
 
 No C++ or generated AMPS configuration changed in Stage 10, so no compile was
 required and the existing `build/` directory was not touched. The standing
-rule remains: remove exactly `/data/vtenishe/COMET1D/AMPS/build` before any
+rule remains: remove exactly `build` before any
 future recompile.
 
 ## Input-driven DIM1 brightness development
@@ -5930,7 +6008,7 @@ Files changed specifically for this revision:
 | `input/CometBrightnessConfig.pm` | Adds vector/scalar velocity resolution, nine-component geometry, and velocity-domain policy with duplicate and orthogonality checks. |
 | `input/hartley2.pl` | Parses/generates the new arrays and policy. The policy declaration must stay on one physical C++ source line because `ChangeValueOfVariable()` replaces the complete declaration line. |
 | `srcHartley2/i3/reference/i3_cases.csv` | Stores per-case `e_r`, comet-to-Mars LOS, and projected antisolar impact vectors; scalar table radial velocities remain authoritative. |
-| `srcHartley2/i3/prepare_i3_cases.py`, `input/i3.input`, `input/i3.case*.input` | Emit explicit geometry and `ABORT` policy without hardwiring a campaign case into C++. Regenerate all six together; do not hand-edit one concrete case. |
+| `srcHartley2/i3/prepare_i3_cases.py`, `input/i3.input`, `input/i3.case*.input` | Emit explicit geometry and `ABORT` policy without hardwiring a campaign case into C++. Regenerate all six together; do not hand-edit one concrete case. **Superseded 2026-11-08:** the template and six case inputs are retired and will not be used; the generator now writes the geometry and policy into the case sections of `input/i3.in`. |
 | `srcHartley2/tests/test_comet_brightness_math.cpp` | Tests the mover/sampler velocity-transform inverse in addition to chord, occultation, units, and tau policy. |
 | `srcHartley2/tests/test_comet_brightness_parser.py`, `input/test_comet_brightness_config.pl` | Assert exact generated vectors and one-line policy declaration and reject missing/nonorthogonal geometry and invalid policy. |
 | `srcHartley2/README.md`, `srcHartley2/i3/README.md`, `srcHartley2/MASTER_MERGE.md`, `handoff.md` | Replace obsolete bulk/CSV descriptions and document input, estimator, Tecplot schema, limitations, recovery, and integration order. |
@@ -5947,7 +6025,7 @@ PASS comet-brightness focused test group tests=7
 ```
 
 A clean case-1 preprocess/compile was performed after deleting exactly
-`/data/vtenishe/COMET1D/AMPS/build`; the generated policy-declaration defect
+`build`; the generated policy-declaration defect
 found by the first attempt was fixed and covered by the parser regression.
 Runtime initialization subsequently passed brightness configuration
 validation and built the 376-block/3,008-cell I3 mesh. The selected
@@ -5973,17 +6051,21 @@ branch switch, or master modification was performed here.
 
 ## I3 case-1 12-rank production start (2026-11-07)
 
+*Historical: this run and the regenerated per-case inputs belong to the
+retired six-file layout. New runs use `-i input/i3.in -case N`; see the top of
+this file.*
+
 At the user's direction, the maintained I3 brightness grid was reduced from
 2,000 to 200 logarithmic rays. The common six-case template now uses a
 10,000-iteration sampling length and a 30,000-iteration maximum. All six
 concrete inputs were regenerated, the five generator tests and seven focused
 brightness test groups passed, and case 1 was cleanly rebuilt only after
-removing exactly `/data/vtenishe/COMET1D/AMPS/build`.
+removing exactly `build`.
 
 The frozen production directory is:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/i3_case1_rays200_sampling10000_max30000_20261107_12mpi/production
+validation_runs/i3_case1_rays200_sampling10000_max30000_20261107_12mpi/production
 ```
 
 It contains private copies of the exact executable and input used:
@@ -6006,7 +6088,7 @@ be isolated under that directory's `PT/`; the pre-existing repository-root
 The 12-rank production process above was stopped at the user's request; its
 partial directory and frozen production executable were retained. There is
 no I3 production process running after this investigation. Before rebuilding,
-exactly `/data/vtenishe/COMET1D/AMPS/build` was removed. The case-1 target was
+exactly `build` was removed. The case-1 target was
 then compiled with the explicit diagnostic flags
 `-O0 -g3 -fno-omit-frame-pointer`; `file amps` confirmed that the resulting ELF
 contained debug information and was not stripped. A private copy (SHA-256
@@ -6014,7 +6096,7 @@ contained debug information and was not stripped. A private copy (SHA-256
 run under GDB from:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/i3_case1_debug_20261107/production
+validation_runs/i3_case1_debug_20261107/production
 ```
 
 The single-rank debug run reproduced the apparent iteration-0 stall. It
@@ -6072,6 +6154,10 @@ commit, branch switch, or master operation was performed.
 
 ## I3 case-1 particle-list repair and 12-rank retry (2026-11-07)
 
+*Historical input layout: this retry's executable was compiled from the
+retired `i3.case1.input`. The brightness index repair itself is current and
+is part of every `i3.conf` build.*
+
 The debugger-confirmed brightness defect is repaired in
 `CometBrightness.cpp`. The loop now uses a ghost-aware `centerNodeNumber` only
 for `GetCenterNode()` and a separately named, explicitly bounded
@@ -6083,11 +6169,11 @@ former `FirstCellParticleTable[cellNumber]` expression.
 
 The focused brightness suite passed all seven groups after this change. A
 clean case-1 rebuild was then made only after deleting exactly
-`/data/vtenishe/COMET1D/AMPS/build`; the generated source was inspected to
+`build`; the generated source was inspected to
 confirm the fixed index at the runtime call site. The frozen retry is:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/i3_case1_rays200_sampling10000_max30000_indexfix_20261107_12mpi/production
+validation_runs/i3_case1_rays200_sampling10000_max30000_indexfix_20261107_12mpi/production
 ```
 
 Its immutable launch inputs are:
@@ -6143,8 +6229,8 @@ campaign result.
 Generated artifacts are:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/validation_runs/i3_case1_rays200_sampling10000_max30000_indexfix_20261107_12mpi/production/PT/plots/i3_case1_H_brightness_comparison.png
-/data/vtenishe/COMET1D/AMPS/validation_runs/i3_case1_rays200_sampling10000_max30000_indexfix_20261107_12mpi/production/PT/plots/i3_case1_OH_brightness_comparison.png
+validation_runs/i3_case1_rays200_sampling10000_max30000_indexfix_20261107_12mpi/production/PT/plots/i3_case1_H_brightness_comparison.png
+validation_runs/i3_case1_rays200_sampling10000_max30000_indexfix_20261107_12mpi/production/PT/plots/i3_case1_OH_brightness_comparison.png
 ```
 
 Validation exercised the plot-box detector against all 12 supplied H/OH
@@ -6226,7 +6312,9 @@ input, active executable, or active production process was changed.
 ## I3 two-layer input and generic case sections (2026-11-08)
 
 Status: implemented and focused validation passed on branch `1d_comet_dev`.
-Nothing was committed or merged, and no master ref was changed.
+Nothing was committed or merged, and no master ref was changed. The six
+independent per-case input files will not be used again (see the decision at
+the top of this file).
 
 The former one-executable-per-observation layout has been replaced by one
 compile-time capability file, `input/i3.conf`, and one runtime scientific
@@ -6271,7 +6359,7 @@ brightness/core-data merge wave; do not attribute the unrelated
 - `python3 -m unittest srcHartley2/i3/tests/test_prepare_i3_cases.py`: 6/6 pass.
 - `srcHartley2/tests/run_comet_brightness_tests.sh`: all seven focused groups pass, including legacy default-off generation.
 - `Config.pl` precedence: `-application=hartley2` selected `hartley2.input`; `-application=i3` selected `i3.conf`; final selectors are `APPLICATION=i3`, `InputFileAMPS=i3.conf`.
-- After deleting exactly `/data/vtenishe/COMET1D/AMPS/build`, `make -j8 EXTRACOMPILEROPTIONS=-O3` completed from `i3.conf`.
+- After deleting exactly `build`, `make -j8 EXTRACOMPILEROPTIONS=-O3` completed from `i3.conf`.
 - Missing `-i` fails; `-i input/i3.in` without `-case` fails; `-case 9` fails and lists cases 1--6.
 - Cases 1--6 each pass `mpiexec -n 1 ./amps -i input/i3.in -case N --validate-runtime-input`; case 1 also passes with two ranks, exercising collective canonical-hash agreement.
 - The updated runner passes 200,000 production boundary samples per species for H2O, CO and CO2 through `-i/-case`; all energy/cosine/moment tests pass.
@@ -6282,3 +6370,118 @@ brightness/core-data merge wave; do not attribute the unrelated
 These checks establish configuration, build, backward-compatibility and
 focused physical-source wiring. They are not a converged I3 transport result
 and do not establish observational brightness agreement.
+
+## I3 pre-production testing and six-case launch (2026-11-08)
+
+Status: all six I3 production runs submitted to Slurm from the AMPS
+repository root on cluster host `voyager1`. Nothing was
+committed or merged, and no master ref was changed. The campaign directory
+is `validation_runs/i3_campaign_20261108/`; its `scripts/` subdirectory holds
+the build, focused-test, pilot, and production batch scripts used below.
+
+### Environment setup on this host
+
+The checkout had no build, `.amps.conf`, or run archive. `Config.pl` cloned
+`share/` and `util/`, then
+`./Config.pl -install=s -compiler=gfortran,gcc_mpicc` (GCC 11.5, OpenMPI
+4.1.7rc1) and `./Config.pl -application=i3` selected `input/i3.conf`. The
+login node exposes one core, so every build runs as a Slurm job
+(`scripts/build_i3.sbatch`: `rm -rf -- build`, then
+`make -j32 EXTRACOMPILEROPTIONS=-O3`). A clean build takes about 40-55 s.
+Compute-node `/tmp` is mounted `noexec`, so the focused-test job points
+`TMPDIR` at its own test directory. `/usr/bin/time` is not installed on the
+compute nodes; peak RSS is read from `/proc/<pid>/status` (VmHWM).
+
+### New code in this round
+
+| File | Change and reason |
+| --- | --- |
+| `srcHartley2/RadialMain.cpp` | Adds `--validate-brightness [--brightness-out-of-domain exclude\|abort]`. It seeds a deterministic, decomposition-independent H/OH particle set (4,000 log-uniform particles per species, plus one in each of the first and last physical cells), checks an empty sampling window, writes independent column densities from `Math::VisibleShellChordLength()`, times the sampler, and optionally injects one 500 km/s H particle at r=1e7 m. Production paths are unchanged. |
+| `srcHartley2/tests/test_i3_brightness_validation.py` | Checker for that mode. `equivalence` compares 1/4/12-rank tables, the zero empty window, and the independent columns; `exclude` checks EXCLUDE_AND_REPORT accounting against a base run. |
+| `srcHartley2/CometBrightness.cpp` | Sampler load accounting. Under particle-number balancing (forced by `ForceRepeatableSimulationPath=on`), each owner block now adds 0.04 particle-move equivalents per g-factor evaluation to `ParallelLoadMeasure`; under execution-time balancing it adds its measured time instead. This changes MPI block ownership only; no sampled value changes. |
+| `srcHartley2/README.md` | Documents the brightness fixture and checker commands. |
+
+### Focused tests on the production executable
+
+The final executable (SHA-256 `c33c69daf31dbda56d3967dd4df4f691035469146c0201cee332145e0335cbea`)
+passed 33/33 tests in `validation_runs/i3_campaign_20261108/tests_122856/`:
+
+- byte-exact `input/i3.in` regeneration, generator unit tests (6), the
+  brightness group (7), the generic input parser (INP-01..05), and the
+  MAVEN/IUVS reference tests;
+- `--validate-runtime-input` for cases 1-6 (one rank) and case 1 (two ranks);
+  missing `-i`, missing `-case`, and `-case 9` fail with their diagnostics;
+- surface injection at 175 K (200,000 samples per parent), chemistry
+  ensembles (cases 1 and 5, 1 and 4 ranks; 8 neutral channels plus 9 sinks),
+  local-timestep face transport (4 ranks, both movers, 95-face path), and
+  weight adaptation (4 ranks);
+- the new brightness fixture for cases 1 and 5 at 1, 4, and 12 ranks.
+  Maximum cross-rank relative difference 1.7e-14, maximum difference from
+  the independent column 1.4e-14, 200/200 positive rays per species, and a
+  zero empty window. EXCLUDE_AND_REPORT recorded 1,470 excluded evaluations,
+  only on rays crossing the injected shell. ABORT terminated with
+  `brightness g-factor evaluation failed ... velocity=-4.24e5 m/s`.
+
+### Performance pilots and the load-balance defect
+
+Pilots ran the production executable and `i3.in` with only the sampling
+length and iteration cap changed (`scripts/pilot.sbatch`). Peak RSS is about
+1.4 GB per rank, roughly 180 GB per 128-rank node.
+
+The first 12,000-iteration pilots showed time per iteration rising much
+faster than population (0.37 s/iteration near iteration 5,500 with about
+1.5 M particles), and 128 ranks were no faster than 64. GDB stack sampling
+of all 64 ranks found 63 waiting in the chemistry `MPI_Allreduce`
+(`FinishBatchedPass`) while one rank evaluated g factors in
+`SampleParticleResolvedBrightness()`. The AMPS "Photo Chemistry Time"
+column was absorbing that wait. Particle-number balancing ignored the
+sampler, whose cost scales with emitting particles times crossing rays, so
+the rank owning the outer H/OH front did about 86% of the 200-ray work.
+
+After the load-accounting change, the same pilots ran at 0.058-0.086
+s/iteration over iterations 5,000-6,000 (4-6x faster), and 128 ranks beat
+64. A repeated stack sample showed 37 of 128 ranks working in the sampler at
+once. Later timings for the 128-rank case-5 pilot:
+
+| Iterations | s/iteration | Particles at end |
+| --- | ---: | ---: |
+| 8,000-9,000 | 0.233 | 2.42 M |
+| 9,000-10,000 | 0.315 | 2.69 M |
+| 10,000-10,705 | 0.457 | 3.36 M |
+
+The iteration-10,000 weight adaptation in the pilots was split-only
+(2.72 M -> 3.24 M and 2.86 M -> 3.32 M), with at most 18-20 products per
+reaction against a limit of 20 and no emergency coarsening. The sampler
+remains the dominant cost.
+
+### Production launch
+
+Each case runs the unmodified `input/i3.in` with 128 MPI ranks on one
+exclusive 128-core node, in the `superlong128cores` partition with a 4-day
+limit (the runs cannot be restarted). Each run directory freezes `amps`,
+`i3.in`, `i3.conf`, and `picGlobal.dfn` with `SHA256SUMS` and
+`provenance.txt`, and writes per-rank peak RSS to `rss.*.txt`.
+
+| Case | Slurm job | Run directory |
+| --- | --- | --- |
+| 1 | 122873 | `validation_runs/i3_campaign_20261108/case1_np128/production` |
+| 2 | 122874 | `validation_runs/i3_campaign_20261108/case2_np128/production` |
+| 3 | 122875 | `validation_runs/i3_campaign_20261108/case3_np128/production` |
+| 4 | 122876 | `validation_runs/i3_campaign_20261108/case4_np128/production` |
+| 5 | 122877 | `validation_runs/i3_campaign_20261108/case5_np128/production` |
+| 6 | 122878 | `validation_runs/i3_campaign_20261108/case6_np128/production` |
+
+All six started on nodes node032 and node009-node013. Each log reports
+`comet runtime input=i3.in case=N` and the tested executable hash. Output
+goes to each run directory's `PT/plots`; brightness tables follow
+`pic.H.brightness.s=0.out=K.dat` and `pic.OH.brightness.s=3.out=K.dat` after
+each 10,000-iteration window. The runs stop at convergence or at 30,000
+iterations. From the pilots, about 6-17 h per case is expected if the late
+cost levels off at 1-3 s/iteration; this is an estimate, not a measurement.
+
+Still required after the runs: the convergence status of each case, review
+of every H line-center tau flag, MAVEN/IUVS comparison plots with the
+nonconverged label where it applies, and disclosure of the 1e9-m domain
+truncation. The H g-factor evaluation cost could also be reduced (for
+example with a tabulated g(v)), but that would change numerical values and
+needs its own validation.

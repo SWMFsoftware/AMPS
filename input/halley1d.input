@@ -21,7 +21,7 @@ Prefix=AMPS
 DiagnosticStream=screen
 ! AMPS creates this path relative to the directory from which the executable
 ! is launched. A run started in the repository root therefore writes to
-! /data/vtenishe/COMET1D/AMPS/PT/plots.
+! PT/plots under that root.
 OutputDirectory=PT/plots
 StdoutErrorLog=on
 DebuggerMode=off

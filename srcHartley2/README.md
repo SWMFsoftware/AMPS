@@ -21,11 +21,9 @@ capabilities and allocation limits from `i3.conf` once, then loads the
 physical run receipt from `i3.in` at startup. Changing an I3 case therefore
 does not require a rebuild.
 
-Run all commands below from the repository root:
-
-```sh
-cd /data/vtenishe/COMET1D/AMPS
-```
+Run all commands below from the AMPS repository root, i.e. the directory that
+contains `Config.pl`, `input/`, and `srcHartley2/`. Every path in this
+document is relative to that directory.
 
 Select the desired compile-time application once for a new checkout or
 configuration. For historical comet inputs use `hartley2`; for the shared I3
@@ -39,11 +37,11 @@ executable use `i3`:
 `Config.pl` resolves `input/<application>.input` first and falls back to
 `input/<application>.conf` only when the `.input` file is absent. Thus `i3`
 selects `input/i3.conf`, while existing applications retain their historical
-behavior. Before every required recompile, remove only this exact generated
-directory:
+behavior. Before every required recompile, remove only the generated `build`
+directory in the AMPS root:
 
 ```sh
-rm -rf -- /data/vtenishe/COMET1D/AMPS/build
+rm -rf -- build
 ```
 
 The output path in all maintained radial inputs is `PT/plots`, interpreted
@@ -77,7 +75,7 @@ Cleanly build the I3 executable once:
 
 ```sh
 ./Config.pl -application=i3
-rm -rf -- /data/vtenishe/COMET1D/AMPS/build
+rm -rf -- build
 make -j8 EXTRACOMPILEROPTIONS=-O3
 ```
 
@@ -106,7 +104,7 @@ host allocation and validation plan.
 
 ```sh
 CASE=1
-RUN="/data/vtenishe/COMET1D/AMPS/validation_runs/i3_case${CASE}_manual/production"
+RUN="validation_runs/i3_case${CASE}_manual/production"
 mkdir -p "$RUN"
 cp -p amps input/i3.in "$RUN/"
 
@@ -141,7 +139,7 @@ opens an interactive Matplotlib window by default.  Close the window to
 return to the shell.  For the current frozen case-1 run:
 
 ```sh
-RUN=/data/vtenishe/COMET1D/AMPS/validation_runs/i3_case1_rays200_sampling10000_max30000_indexfix_20261107_12mpi/production
+RUN=validation_runs/i3_case1_rays200_sampling10000_max30000_indexfix_20261107_12mpi/production
 
 python3 srcHartley2/visualization/plot_i3_brightness_comparison.py \
   "$RUN/PT/plots/pic.H.brightness.s=0.out=0.dat"
@@ -165,7 +163,7 @@ override path/header inference when files have been renamed.
 The plotting script reads the extracted numerical references from:
 
 ```text
-/data/vtenishe/COMET1D/AMPS/srcHartley2/visualization/references/i3_brightness_MAVEN/maven_iuvs_brightness.csv
+srcHartley2/visualization/references/i3_brightness_MAVEN/maven_iuvs_brightness.csv
 ```
 
 Point centers, radial-bin bounds, visible vertical uncertainties, reviewed
@@ -204,7 +202,7 @@ ideal radial cells, block-local particle weights and timesteps, and
 
 ```sh
 ./Config.pl -application=halley1d
-rm -rf -- /data/vtenishe/COMET1D/AMPS/build
+rm -rf -- build
 make -j8 EXTRACOMPILEROPTIONS=-O3
 ```
 
@@ -216,7 +214,7 @@ Freeze and run it in its own directory.  This example uses 18 MPI processes;
 use only a rank count available in the host allocation.
 
 ```sh
-RUN=/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_manual_18mpi/production
+RUN=validation_runs/halley1d_manual_18mpi/production
 mkdir -p "$RUN"
 cp -p amps input/halley1d.input "$RUN/"
 
@@ -231,7 +229,7 @@ Create the paper-ordered Rubin comparison from the latest output index that is
 complete for every configured species:
 
 ```sh
-RUN=/data/vtenishe/COMET1D/AMPS/validation_runs/halley1d_manual_18mpi/production
+RUN=validation_runs/halley1d_manual_18mpi/production
 
 python3 srcHartley2/visualization/compare_rubin2011.py \
   "$RUN/PT/plots" \
@@ -264,10 +262,10 @@ directory as follows:
 
 ```sh
 ./Config.pl -application=hartley2
-rm -rf -- /data/vtenishe/COMET1D/AMPS/build
+rm -rf -- build
 make -j8 EXTRACOMPILEROPTIONS=-O3
 
-RUN=/data/vtenishe/COMET1D/AMPS/validation_runs/hartley2_dim3_manual/production
+RUN=validation_runs/hartley2_dim3_manual/production
 mkdir -p "$RUN"
 cp -p amps input/hartley2.input "$RUN/"
 gzip -dc input/hartley2.shape.nas.gz > "$RUN/hartley2.shape.nas"
@@ -289,7 +287,7 @@ The one-dimensional Shou/Hartley configuration is
 
 ```sh
 ./Config.pl -application=hartley2.radial
-rm -rf -- /data/vtenishe/COMET1D/AMPS/build
+rm -rf -- build
 make -j8 EXTRACOMPILEROPTIONS=-O3
 ```
 
@@ -389,7 +387,20 @@ covered by the quadrature is
 ```
 
 For `b<Rn`, the opaque nucleus hides the rear segment and the factor two is
-removed. The sampler's output and clearing callbacks are synchronized with
+removed.
+
+The sampler's cost per block is
+`(emitting particles) x (rays crossing the shell) x (2 or 4)` g-factor
+evaluations, and it is concentrated in the outer shells. Every owner block
+therefore adds that cost to its `ParallelLoadMeasure`. Under particle-number
+balancing (forced by `ForceRepeatableSimulationPath=on`), each evaluation
+counts as 0.04 particle-move equivalents. Under execution-time balancing, the
+block adds its measured sampler time instead. Without this term, the rank that
+owns the outer H/OH front serializes the 200-ray sampler, and 128 ranks run
+no faster than 64. The term changes MPI block ownership only, never a sampled
+value.
+
+The sampler's output and clearing callbacks are synchronized with
 the ordinary AMPS sampling-window lifecycle. Rank zero writes one Tecplot
 file per configured species using the normal species/index/output convention:
 
@@ -414,6 +425,43 @@ Focused geometry, unit, tau-policy and parser/source-generation tests are:
 ```sh
 srcHartley2/tests/run_comet_brightness_tests.sh
 ```
+
+The production sampler itself is exercised by `--validate-brightness`. After
+mesh and sampler initialization it seeds a deterministic particle set whose
+membership depends only on a global index (4,000 particles per emitting
+species, log-uniform in radius, plus one particle in the first and one in the
+last physical cell), so every MPI decomposition samples the same physical
+set. Seeded velocities stay inside every selected core model's velocity
+interval. The run writes `out=0` after a sampling call with no particles,
+which must be identically zero, and `out=1` for the seeded set, together
+with `PT/plots/brightness_validation_expected_columns.csv`, an independent
+column density computed with `Math::VisibleShellChordLength()`. Adding
+`--brightness-out-of-domain exclude|abort` inserts one H particle with a
+500 km/s local radial velocity at r=1e7 m and selects that policy. Run each
+case from a separate directory and check the tables with:
+
+```sh
+for n in 1 4 12; do
+  (mkdir -p bright_np$n && cd bright_np$n && \
+   mpiexec -n $n ../amps -i ../input/i3.in -case 1 --validate-brightness)
+done
+python3 srcHartley2/tests/test_i3_brightness_validation.py equivalence \
+  bright_np1 bright_np4 bright_np12
+(mkdir -p bright_excl && cd bright_excl && \
+ mpiexec -n 4 ../amps -i ../input/i3.in -case 1 --validate-brightness \
+   --brightness-out-of-domain exclude)
+python3 srcHartley2/tests/test_i3_brightness_validation.py exclude \
+  bright_np4 bright_excl
+```
+
+`equivalence` requires the empty window to be zero, every column density to
+match the independent chord sum, and every numeric column to agree across
+rank counts to floating-point summation order (relative 1e-10). `exclude`
+requires the untouched species to be unchanged, the H column to grow by
+exactly the injected particle's column, the excluded column not to exceed it,
+and positive excluded counts only on rays crossing that shell. The `abort`
+variant must exit nonzero with `brightness g-factor evaluation failed`. The
+fixture never advances particles and is not a science run.
 
 `GENERIC_COMET_DESIGN.md` describes the interfaces and dimensional split.
 `STATUS.md` records build and runtime verification. The Hartley 2 radial case
@@ -957,7 +1005,7 @@ converged Rubin comparison.
 
 Launch the Halley executable from the repository root. Its configured output
 directory is `PT/plots`, relative to that working directory, so AMPS creates
-both `/data/vtenishe/COMET1D/AMPS/PT` and its `plots` subdirectory during
+both `PT` and its `plots` subdirectory in the AMPS root during
 runtime initialization. Compilation alone does not create run directories.
 
 Parallel DIM1 runs require the dimension-aware neighbor-mask bounds in
@@ -1448,8 +1496,7 @@ the archived correction-on input as a command-line make override. As required
 for this application, remove exactly the root build directory first:
 
 ```sh
-cd /data/vtenishe/COMET1D/AMPS
-rm -rf /data/vtenishe/COMET1D/AMPS/build
+rm -rf -- build
 make -j8 EXTRACOMPILEROPTIONS=-O3 \
   InputFileAMPS=validation_runs/stage4-correction-on-full-20261105/provenance/halley1d.correction-on.input
 rg 'INDIVIDUAL_PARTICLE_WEIGHT_MODE|PARTICLE_COLLISION_MODEL_ ' \
@@ -2129,7 +2176,7 @@ Create and verify a readiness bundle only with explicit full commit IDs:
 
 ```sh
 python3 srcHartley2/validation/stage10_merge_readiness.py collect \
-  --repo /data/vtenishe/COMET1D/AMPS \
+  --repo . \
   --target-ref refs/heads/master \
   --target-commit TARGET_FULL_SHA1 \
   --base-commit MERGE_BASE_FULL_SHA1 \
