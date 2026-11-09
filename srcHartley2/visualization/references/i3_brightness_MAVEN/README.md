@@ -1,7 +1,8 @@
 # MAVEN/IUVS 3I brightness references
 
 `maven_iuvs_brightness.csv` contains the H Ly-alpha and OH(0,0) radial
-brightness points extracted from the 12 PNG panels supplied in `Archive.zip`.
+brightness points extracted from the 12 PNG panels supplied in the tracked
+`srcHartley2/tests/data/i3/Archive.zip` test fixture.
 Distance is in units of `10^5 km`; brightness is in kR.  The table is the
 default observation source for `../../plot_i3_brightness_comparison.py`.
 
@@ -29,7 +30,8 @@ the CSV from the supplied archive with:
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 \
-  srcHartley2/visualization/extract_i3_brightness_maven.py
+  srcHartley2/visualization/extract_i3_brightness_maven.py \
+  --archive srcHartley2/tests/data/i3/Archive.zip
 ```
 
 The extractor requires Python 3, NumPy, and Pillow.  Its regression test is:
@@ -39,6 +41,6 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
   srcHartley2/tests/test_i3_brightness_reference.py
 ```
 
-The extraction ignores the red legacy-model curves.  `Archive.zip` is needed
-only to audit or regenerate these committed numerical references; ordinary
-comparison plotting reads this directory and does not require the archive.
+The extraction ignores the red legacy-model curves. The bundled archive is
+used only to audit or regenerate these committed numerical references;
+ordinary comparison plotting reads this directory and does not open it.

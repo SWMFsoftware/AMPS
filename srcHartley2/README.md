@@ -61,14 +61,11 @@ Use this input-selection table:
 ### Build and run one 3I/ATLAS case
 
 `input/i3.in` contains common model values and six direct named case sections.
-Reproduce it and run the focused generator/runtime-input regressions with:
+Run the portable generic-comet regression suite, including byte-exact I3 input
+generation, through the single test orchestrator:
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 python3 srcHartley2/i3/prepare_i3_cases.py
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
-  srcHartley2/i3/tests/test_prepare_i3_cases.py
-srcHartley2/tests/run_comet_brightness_tests.sh
-make -C src/general/input test
+srcHartley2/tests/run_all_stage_tests.sh
 ```
 
 Cleanly build the I3 executable once:
@@ -177,13 +174,14 @@ python3 srcHartley2/visualization/plot_i3_brightness_comparison.py \
   --reference-dir /full/path/to/i3_brightness_MAVEN
 ```
 
-`Archive.zip` is no longer required for ordinary plotting.  It remains the
-source artifact needed to audit or regenerate the committed reference table:
+The source archive is not required for ordinary plotting. Its checksummed
+copy under the test tree is used to audit or regenerate the committed
+reference table:
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 \
   srcHartley2/visualization/extract_i3_brightness_maven.py \
-  --archive /full/path/Archive.zip
+  --archive srcHartley2/tests/data/i3/Archive.zip
 ```
 
 The supplied observations were raster plots rather than original numerical
@@ -1540,21 +1538,21 @@ does not provide importance sampling. Do not merge to `master` from this
 workflow; the dependency order and conflict invariants are recorded in
 `STATUS.md`.
 
-## Complete Stage 0--4 test runner
+## Complete portable generic-comet test runner
 
-`tests/run_all_stage_tests.sh` is the single entry point for every focused
-test and archived runtime-evidence checker used to close Stages 0 through 4.
-Its default archived mode is non-destructive: it does not compile AMPS, edit
-an input, remove `build`, launch a production simulation, or overwrite an
-archive. It does run the Stage-0 standalone diagnostic at 1, 4, and 12 MPI
-ranks and compiles the temporary standalone Stage-0/2/3 unit executables.
+`tests/run_all_stage_tests.sh` is the single public entry point for the generic
+runtime-input parser, I3 input/reference tests, comet brightness tests, and all
+Stage 0--10 chemistry/transport tests. Its default mode is non-destructive: it
+does not configure or compile AMPS, edit an input, remove `build`, launch a
+production simulation, or overwrite an archive. It builds temporary focused
+C++ tests and runs the standalone Stage-0 diagnostic at 1, 4, and 12 MPI ranks.
 
-The runner makes all optional archive inputs of the individual stage runners
-mandatory. Missing evidence fails preflight; it cannot turn into a successful
-all-stage result containing `SKIP` records. It also verifies that the current
-generated build is correction-off before using it as the read-only Stage-3
-parser fixture. The runner and that parser test use standard `grep`; `rg` is
-not a runtime prerequisite.
+The default evidence is the compact, checksummed fixture under
+`tests/data/archived`; no machine-local `validation_runs`, generated build,
+root-level assembled input, or AMPS executable is needed. Missing or modified
+fixture data fails preflight or the `data.manifest` test; it cannot become a
+successful result containing `SKIP`. The Stage-3 parser creates isolated trees
+from tracked source defaults. Standard `grep` is used; `rg` is not required.
 
 Inspect the resolved tools, evidence paths, configuration, and coverage
 without executing tests:
@@ -1563,25 +1561,26 @@ without executing tests:
 srcHartley2/tests/run_all_stage_tests.sh --plan
 ```
 
-Run the complete archived suite:
+Run the complete portable suite:
 
 ```sh
 srcHartley2/tests/run_all_stage_tests.sh
 ```
 
-The validated 2026-11-05 archive bundle completes 17 independently logged
-test jobs organized into five stage groups and ends with:
+The portable suite completes 44 independently logged jobs organized into 14
+groups and ends with:
 
 ```text
-Hartley2 all-stage test summary status=PASS stage4-mode=archived
-  tests: run=17 passed=17 skipped=0 failed=0
-  test-groups: run=5 passed=5 skipped=0 failed=0
-PASS Hartley2 all-stage suite tests=17 test-groups=5 stage4-mode=archived
+Hartley2 all-stage test summary status=PASS stage4-mode=archived ...
+  tests: run=44 passed=44 skipped=0 failed=0
+  test-groups: run=14 passed=14 skipped=0 failed=0
+PASS Hartley2 all-stage suite tests=44 test-groups=14 ...
 ```
 
 Here a **test** is one independently logged orchestrated job and a **test
-group** is one roadmap stage (`stage0` through `stage4`). The summary reports
-each stage's contained pass/skip/fail counts. The runner continues after an
+group** is one subsystem/roadmap group (`infrastructure`, `i3`, `brightness`,
+or `stage0` through `stage10`). The summary reports each group's contained
+pass/skip/fail counts. The runner continues after an
 independent job fails so the final result lists every observed failure rather
 than only the first one.
 
@@ -1600,7 +1599,9 @@ srcHartley2/tests/run_all_stage_tests.sh \
 An existing log root is rejected so evidence from separate attempts cannot be
 mixed. Any failed or skipped test makes the complete runner exit nonzero.
 
-The groups include Stage-0 MPI/analyzer/baseline/production checks; all
+The groups include the fixture manifest, generic input grammar, I3 generator,
+MAVEN extraction and brightness libraries; Stage-0 MPI/analyzer/baseline/
+production checks; all
 Stage-1 parser, runtime, cadence, and legacy checks; Stage-2 pure and 1/4/12
 integrated checks; every Stage-3 pure/parser/visualization/semantics/science-
 gate/integrated check; the final correction-off Stage-2/3 regressions; frozen
@@ -1627,10 +1628,12 @@ chemistry-event counts default to 200,000 and can be changed with the explicit
 CLI options printed by `--help`. MPI rank counts remain the validated 1, 4,
 and 12 and therefore remain below the approved 18-process limit.
 
-`--evidence-root` may point to a relocated archive bundle, but the complete
-dated subdirectory structure printed by `--help` is required. This is
-intentional: automatically choosing a newest-looking run could combine
-different executables or incomplete evidence and produce a false pass.
+`--evidence-root` may point to a complete external validation archive instead
+of the compact default fixture, but the dated subdirectory structure printed
+by `--help` is required. This is intentional: automatically choosing a
+newest-looking run could combine different executables or incomplete evidence
+and produce a false pass. Fixture scope and scientific limitations are
+documented in `tests/README.md` and `tests/data/README.md`.
 
 ## Stage 5 correction windows
 

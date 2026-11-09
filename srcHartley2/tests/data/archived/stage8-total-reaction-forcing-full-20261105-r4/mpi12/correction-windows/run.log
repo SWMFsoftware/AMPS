@@ -1,0 +1,210 @@
+AMPS: The total number of the MPI processes=12
+AMPS: The total number of the OpenMP threads per each MPI process=1
+
+AMPS: (11/5 16:42:52), Initialization of the code
+AMPS: Simulation Target - _TARGET_ 
+AMPS: comet random seed=104729 rank-stream=seed+rank residual-phase-stream=keyed
+AMPS: Building mesh.....  
+AMPS: Building mesh [completed level: 0] minimum cell size:1.249992e+08
+AMPS: Building mesh [completed level: 1] minimum cell size:6.249962e+07
+AMPS: Building mesh [completed level: 2] minimum cell size:3.124981e+07
+AMPS: Building mesh [completed level: 3] minimum cell size:1.562491e+07
+AMPS: Building mesh [completed level: 4] minimum cell size:7.812453e+06
+AMPS: Building mesh [completed level: 5] minimum cell size:3.906227e+06
+AMPS: Building mesh [completed level: 6] minimum cell size:1.953113e+06
+AMPS: Building mesh [completed level: 7] minimum cell size:9.765566e+05
+AMPS: Building mesh [completed level: 8] minimum cell size:4.882783e+05
+AMPS: Building mesh [completed level: 9] minimum cell size:2.441392e+05
+AMPS: Building mesh [completed level: 10] minimum cell size:1.220696e+05
+AMPS: Building mesh [completed level: 11] minimum cell size:6.103479e+04
+AMPS: Building mesh [completed level: 12] minimum cell size:3.051740e+04
+AMPS: Building mesh [completed level: 13] minimum cell size:1.525870e+04
+AMPS: Building mesh [completed level: 14] minimum cell size:7.629349e+03
+AMPS: Building mesh [completed level: 15] minimum cell size:3.814674e+03
+AMPS: Building mesh [completed level: 16] minimum cell size:1.907337e+03
+AMPS: Building mesh [completed level: 17] minimum cell size:9.536686e+02
+AMPS: Building mesh [completed level: 18] minimum cell size:4.768343e+02
+AMPS: Building mesh [completed level: 19] minimum cell size:2.384171e+02
+AMPS: Building mesh [completed level: 20] minimum cell size:1.192086e+02
+AMPS: Building mesh [completed level: 21] minimum cell size:5.960429e+01
+AMPS: Building mesh [completed level: 22] minimum cell size:2.980214e+01
+AMPS: Building mesh [completed level: 23] minimum cell size:1.490107e+01
+AMPS: Building mesh [completed level: 24] minimum cell size:7.450536e+00
+AMPS: Building mesh [completed level: 25] minimum cell size:3.725268e+00
+AMPS: Building mesh [completed level: 26] minimum cell size:1.862634e+00
+AMPS: Building mesh [completed level: 27] minimum cell size:9.313170e-01
+AMPS: Building mesh [completed level: 28] minimum cell size:4.656585e-01
+AMPS: Building mesh [completed level: 29] minimum cell size:2.328292e-01
+AMPS: Building mesh.....   done
+AMPS: Total Number of blocks used in calcualtions=373, Total Number of blocks: 373
+AMPS:Initial Cumulative Parallel Load Distribution
+AMPS:Thread	Load	Normalized Load	Number of Blocks
+AMPS:0	3.73e+02	1.20e+01	373(373)
+AMPS:1	0.00e+00	0.00e+00	0(0)
+AMPS:2	0.00e+00	0.00e+00	0(0)
+AMPS:3	0.00e+00	0.00e+00	0(0)
+AMPS:4	0.00e+00	0.00e+00	0(0)
+AMPS:5	0.00e+00	0.00e+00	0(0)
+AMPS:6	0.00e+00	0.00e+00	0(0)
+AMPS:7	0.00e+00	0.00e+00	0(0)
+AMPS:8	0.00e+00	0.00e+00	0(0)
+AMPS:9	0.00e+00	0.00e+00	0(0)
+AMPS:10	0.00e+00	0.00e+00	0(0)
+AMPS:11	0.00e+00	0.00e+00	0(0)
+Domain Decomposition Signature is 0x1010301b8b0368c  (msg= line=13555, file=/data/vtenishe/COMET1D/AMPS/build/meshAMR/meshAMRgeneric.h):
+The total number of blocks: 373
+AMPS:Cumulative Parallel Load Distribution
+AMPS:Thread	Load	Normalized Load	Number of Blocks
+AMPS:0	3.30e+01	1.06e+00	33(33)
+AMPS:1	3.20e+01	1.03e+00	32(32)
+AMPS:2	3.10e+01	9.97e-01	31(31)
+AMPS:3	3.10e+01	9.97e-01	31(31)
+AMPS:4	3.10e+01	9.97e-01	31(31)
+AMPS:5	3.10e+01	9.97e-01	31(31)
+AMPS:6	3.10e+01	9.97e-01	31(31)
+AMPS:7	3.10e+01	9.97e-01	31(31)
+AMPS:8	3.10e+01	9.97e-01	31(31)
+AMPS:9	3.10e+01	9.97e-01	31(31)
+AMPS:10	3.20e+01	1.03e+00	32(32)
+AMPS:11	2.80e+01	9.01e-01	28(28)
+AMPS:Min number of blocks per processor: 28
+AMPS:Max number of blocks per processor: 33
+AMPS:Min processor load: 9.008043e-01, thread=11
+AMPS:Max processor load: 1.061662e+00, thread=0
+AMPS:Individual block load: min=3.217158e-02, max=3.217158e-02
+AMPS:Parameters of the block with the maximum load
+AMPS:Block->Temp_ID=706
+AMPS:(i,j,k)=(0,0,0): x=6.126659e+03 
+AMPS:(i,j,k)=(1,0,0): x=6.134110e+03 
+AMPS:Middle block's coordinates=6.130384e+03 
+
+AMPS:The length of the domain's boundary nodes list:
+AMPS:Thread	The number of the domain's boundary nodes
+AMPS:0	1
+AMPS:1	2
+AMPS:2	2
+AMPS:3	2
+AMPS:4	2
+AMPS:5	2
+AMPS:6	2
+AMPS:7	2
+AMPS:8	2
+AMPS:9	2
+AMPS:10	2
+AMPS:11	1
+AMPS: comet radial mesh: nucleus radius=6.000000e+03 m, outer radius=1.000000e+09 m
+AMPS: comet radial mesh: radial extent=9.999940e+08 m
+AMPS: comet radial mesh: requested surface resolution=3.293693e-01 m, ideal outer-cell resolution=8.501014e+06 m
+AMPS: comet radial mesh: geometric cell-width ratio=1.008573952117e+00
+AMPS: comet radial mesh: requested ideal cells=2000, allocated dyadic AMR cells=2984
+AMPS:Time step mode: specie dependent local time step
+AMPS:Particle weight mode: specie dependent local weight
+AMPS: Allocating tree blocks.....  AMPS:Blocks Allocation Report:
+AMPS: Thread	AllocatedBlocks
+AMPS:0	33(33)
+AMPS:1	32(32)
+AMPS:2	31(31)
+AMPS:3	31(31)
+AMPS:4	31(31)
+AMPS:5	31(31)
+AMPS:6	31(31)
+AMPS:7	31(31)
+AMPS:8	31(31)
+AMPS:9	31(31)
+AMPS:10	32(32)
+AMPS:11	28(28)
+AMPS:Blocks Allocation Report:
+AMPS: Thread	Allocated Domain's Boundary Blocks
+AMPS:0	1(1)
+AMPS:1	2(2)
+AMPS:2	2(2)
+AMPS:3	2(2)
+AMPS:4	2(2)
+AMPS:5	2(2)
+AMPS:6	2(2)
+AMPS:7	2(2)
+AMPS:8	2(2)
+AMPS:9	2(2)
+AMPS:10	2(2)
+AMPS:11	1(1)
+done.
+AMPS: check existance of the calculated volume data file.... 
+AMPS: the calculated volume data file amr.sig=0xfefcfdfc4e703379.CenterNodeMeasure.bin is not found
+AMPS: the calculated volume data file is not found: generating....
+AMPS: saving the calculated volume data file....    done
+AMPS: The total particle buffer length=20000000
+AMPS: Global Particle Weight (CH4) = 3.051002e+20 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (NH3) = 1.193705e+22 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (H2O) = 7.958031e+23 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (C2H2) = 2.026233e+20 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (HCN) = 1.591606e+21 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (C2H4) = 3.292978e+20 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (CO) = 1.123588e+22 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (C2H6) = 3.183212e+21 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (H2CO) = 1.193705e+22 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (CH3OH) = 1.352865e+22 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (CO2) = 1.989508e+22 (file=pic_weight_time.cpp,line=221)
+AMPS: radial particle-weight adaptation iteration=0 range=800:3200 particles=0->0 changed-block-species=0 split=0 roulette=0 empty-photochemical-daughter=0 chemistry-constrained=0 face-carrier-changes=0 face-components=27 max-face-hops=372 max-face-clone-mean=1.000000e+00->1.000000e+00 max-products-per-reaction=16->16 limit=64 component-planner=on required-clones=0
+AMPS: resolved radial population policies adaptation-cadence=fixed-iteration interval=10000
+AMPS: population-policy species=H class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=H2 class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=C class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=CH class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=CH2 class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=N class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=CH3 class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=NH class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=CH4 class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=4.19999999999999989e+27 surface-carrier-W-dt-s-1=3.28124999999999991e+25
+AMPS: population-policy species=NH2 class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=O class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=NH3 class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=1.04999999999999995e+28 surface-carrier-W-dt-s-1=8.20312499999999957e+25
+AMPS: population-policy species=OH class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=H2O class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=6.99999999999999958e+29 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=C2 class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=C2H class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=C2H2 class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=2.09999999999999995e+27 surface-carrier-W-dt-s-1=1.64062500000000017e+25
+AMPS: population-policy species=CN class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=HCN class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=1.39999999999999996e+27 surface-carrier-W-dt-s-1=1.09374999999999997e+25
+AMPS: population-policy species=C2H4 class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=2.09999999999999995e+27 surface-carrier-W-dt-s-1=1.64062499999999996e+25
+AMPS: population-policy species=CO class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=9.09999999999999938e+28 surface-carrier-W-dt-s-1=7.10937499999999951e+26
+AMPS: population-policy species=C2H5 class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=HCO class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=C2H6 class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=2.79999999999999993e+27 surface-carrier-W-dt-s-1=2.18749999999999994e+25
+AMPS: population-policy species=H2CO class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=1.04999999999999995e+28 surface-carrier-W-dt-s-1=8.20312499999999957e+25
+AMPS: population-policy species=CH3OH class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=1.19000000000000000e+28 surface-carrier-W-dt-s-1=9.29687499999999997e+25
+AMPS: population-policy species=CO2 class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=1.74999999999999998e+28 surface-carrier-W-dt-s-1=1.36718749999999999e+26
+AMPS: individual correction-window controller mode=on max-split-particles=512 cadence=completed-time-step
+AMPS: correction-window-policy species=H selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=H2 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=C selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=CH selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=CH2 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=N selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=CH3 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=NH selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=CH4 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=NH2 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=O selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=NH3 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=OH selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=H2O selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=C2 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=C2H selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=C2H2 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=CN selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=HCN selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=C2H4 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=CO selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=C2H5 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=HCO selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=C2H6 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=H2CO selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=CH3OH selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=CO2 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: Saving restart file: particles saved - 3084; blocks - 373; bytes - 471483
+AMPS: Saving particle restart file: /tmp/amps-hartley2-stage5.ranks=12.restart
+AMPS:The particle data CRC32 checksum=0x20002e01e2f3d (683@pic_restart.cpp):
+AMPS: Reading particle restart file: /tmp/amps-hartley2-stage5.ranks=12.restart
+AMPS: Reading particle restart file: the total number of locaded particles is 3084
+AMPS:The particle data CRC32 checksum=0x20002e01e2f3d (683@pic_restart.cpp):
+PASS individual-correction window validation correction-mode=ON mpi-ranks=12 owner-blocks=12 lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 max-split-particles=512 keep-checks=1 split-checks=1 roulette-checks=1 capacity-rollback-checks=1 restart-checks=1 direct-source-checks=1 empty-checks=1 roulette-candidates=786432 roulette-survivors=0

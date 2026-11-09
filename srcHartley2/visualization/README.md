@@ -60,12 +60,12 @@ Reproduce the committed table from the original supplied archive with:
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 \
   srcHartley2/visualization/extract_i3_brightness_maven.py \
-  --archive /full/path/Archive.zip
+  --archive srcHartley2/tests/data/i3/Archive.zip
 ```
 
 Extraction details and limitations are in
-`references/i3_brightness_MAVEN/README.md`.  `Archive.zip` is needed for that
-audit/regeneration command only, not by the comparison plotter.
+`references/i3_brightness_MAVEN/README.md`. The tracked archive is needed for
+that audit/regeneration command only, not by the comparison plotter.
 
 The comparison plotter requires Python 3, NumPy, and matplotlib.  The
 reference extractor additionally requires Pillow.  Validate the committed

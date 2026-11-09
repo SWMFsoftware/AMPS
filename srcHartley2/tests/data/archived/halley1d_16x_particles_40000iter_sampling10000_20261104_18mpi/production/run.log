@@ -1,0 +1,4 @@
+AMPS: radial convergence reference window=1 iteration=10000
+AMPS: radial convergence window=2 iteration=20000 max-relative-L1=9.485097e-01 limiting-species=N consecutive=0/3 tolerance=5.000000e-02
+AMPS: radial convergence window=3 iteration=30000 max-relative-L1=4.311511e-01 limiting-species=H consecutive=0/3 tolerance=5.000000e-02
+AMPS: radial convergence window=4 iteration=40000 max-relative-L1=3.733287e-01 limiting-species=CH consecutive=0/3 tolerance=5.000000e-02

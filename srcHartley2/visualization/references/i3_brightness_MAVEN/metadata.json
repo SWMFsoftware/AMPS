@@ -3,7 +3,7 @@
   "observable": "MAVEN/IUVS radial brightness",
   "distance_unit": "1e5 km",
   "brightness_unit": "kR",
-  "source_archive": "Archive.zip",
+  "source_archive": "srcHartley2/tests/data/i3/Archive.zip",
   "source_archive_sha256": "344d33e69c913a5e76d57ddb7c92c1a8d1e52a92a03c06f2f5849f70e45597be",
   "case_table": "srcHartley2/i3/reference/i3_cases.csv",
   "case_table_sha256": "a322b317f74a522b8911f51e5724a3e41d5e623f3ad218106fc3829bde2d2363",

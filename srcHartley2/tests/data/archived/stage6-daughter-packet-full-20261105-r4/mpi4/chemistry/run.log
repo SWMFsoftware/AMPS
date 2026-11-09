@@ -1,0 +1,211 @@
+AMPS: The total number of the MPI processes=4
+AMPS: The total number of the OpenMP threads per each MPI process=1
+
+AMPS: (11/5 14:31:32), Initialization of the code
+AMPS: Simulation Target - _TARGET_ 
+AMPS: comet random seed=104729 rank-stream=seed+rank residual-phase-stream=keyed
+AMPS: Building mesh.....  
+AMPS: Building mesh [completed level: 0] minimum cell size:1.249992e+08
+AMPS: Building mesh [completed level: 1] minimum cell size:6.249962e+07
+AMPS: Building mesh [completed level: 2] minimum cell size:3.124981e+07
+AMPS: Building mesh [completed level: 3] minimum cell size:1.562491e+07
+AMPS: Building mesh [completed level: 4] minimum cell size:7.812453e+06
+AMPS: Building mesh [completed level: 5] minimum cell size:3.906227e+06
+AMPS: Building mesh [completed level: 6] minimum cell size:1.953113e+06
+AMPS: Building mesh [completed level: 7] minimum cell size:9.765566e+05
+AMPS: Building mesh [completed level: 8] minimum cell size:4.882783e+05
+AMPS: Building mesh [completed level: 9] minimum cell size:2.441392e+05
+AMPS: Building mesh [completed level: 10] minimum cell size:1.220696e+05
+AMPS: Building mesh [completed level: 11] minimum cell size:6.103479e+04
+AMPS: Building mesh [completed level: 12] minimum cell size:3.051740e+04
+AMPS: Building mesh [completed level: 13] minimum cell size:1.525870e+04
+AMPS: Building mesh [completed level: 14] minimum cell size:7.629349e+03
+AMPS: Building mesh [completed level: 15] minimum cell size:3.814674e+03
+AMPS: Building mesh [completed level: 16] minimum cell size:1.907337e+03
+AMPS: Building mesh [completed level: 17] minimum cell size:9.536686e+02
+AMPS: Building mesh [completed level: 18] minimum cell size:4.768343e+02
+AMPS: Building mesh [completed level: 19] minimum cell size:2.384171e+02
+AMPS: Building mesh [completed level: 20] minimum cell size:1.192086e+02
+AMPS: Building mesh [completed level: 21] minimum cell size:5.960429e+01
+AMPS: Building mesh [completed level: 22] minimum cell size:2.980214e+01
+AMPS: Building mesh [completed level: 23] minimum cell size:1.490107e+01
+AMPS: Building mesh [completed level: 24] minimum cell size:7.450536e+00
+AMPS: Building mesh [completed level: 25] minimum cell size:3.725268e+00
+AMPS: Building mesh [completed level: 26] minimum cell size:1.862634e+00
+AMPS: Building mesh [completed level: 27] minimum cell size:9.313170e-01
+AMPS: Building mesh [completed level: 28] minimum cell size:4.656585e-01
+AMPS: Building mesh [completed level: 29] minimum cell size:2.328292e-01
+AMPS: Building mesh.....   done
+AMPS: Total Number of blocks used in calcualtions=373, Total Number of blocks: 373
+AMPS:Initial Cumulative Parallel Load Distribution
+AMPS:Thread	Load	Normalized Load	Number of Blocks
+AMPS:0	3.73e+02	4.00e+00	373(373)
+AMPS:1	0.00e+00	0.00e+00	0(0)
+AMPS:2	0.00e+00	0.00e+00	0(0)
+AMPS:3	0.00e+00	0.00e+00	0(0)
+Domain Decomposition Signature is 0x1010301b8b0368c  (msg= line=13555, file=/data/vtenishe/COMET1D/AMPS/build/meshAMR/meshAMRgeneric.h):
+The total number of blocks: 373
+AMPS:Cumulative Parallel Load Distribution
+AMPS:Thread	Load	Normalized Load	Number of Blocks
+AMPS:0	9.80e+01	1.05e+00	98(98)
+AMPS:1	9.70e+01	1.04e+00	97(97)
+AMPS:2	9.40e+01	1.01e+00	94(94)
+AMPS:3	8.40e+01	9.01e-01	84(84)
+AMPS:Min number of blocks per processor: 84
+AMPS:Max number of blocks per processor: 98
+AMPS:Min processor load: 9.008043e-01, thread=3
+AMPS:Max processor load: 1.050938e+00, thread=0
+AMPS:Individual block load: min=1.072386e-02, max=1.072386e-02
+AMPS:Parameters of the block with the maximum load
+AMPS:Block->Temp_ID=596
+AMPS:(i,j,k)=(0,0,0): x=8.980214e+03 
+AMPS:(i,j,k)=(1,0,0): x=9.099423e+03 
+AMPS:Middle block's coordinates=9.039819e+03 
+
+AMPS:The length of the domain's boundary nodes list:
+AMPS:Thread	The number of the domain's boundary nodes
+AMPS:0	1
+AMPS:1	2
+AMPS:2	2
+AMPS:3	1
+AMPS: comet radial mesh: nucleus radius=6.000000e+03 m, outer radius=1.000000e+09 m
+AMPS: comet radial mesh: radial extent=9.999940e+08 m
+AMPS: comet radial mesh: requested surface resolution=3.293693e-01 m, ideal outer-cell resolution=8.501014e+06 m
+AMPS: comet radial mesh: geometric cell-width ratio=1.008573952117e+00
+AMPS: comet radial mesh: requested ideal cells=2000, allocated dyadic AMR cells=2984
+AMPS:Time step mode: specie dependent local time step
+AMPS:Particle weight mode: specie dependent local weight
+AMPS: Allocating tree blocks.....  AMPS:Blocks Allocation Report:
+AMPS: Thread	AllocatedBlocks
+AMPS:0	98(98)
+AMPS:1	97(97)
+AMPS:2	94(94)
+AMPS:3	84(84)
+AMPS:Blocks Allocation Report:
+AMPS: Thread	Allocated Domain's Boundary Blocks
+AMPS:0	1(1)
+AMPS:1	2(2)
+AMPS:2	2(2)
+AMPS:3	1(1)
+done.
+AMPS: check existance of the calculated volume data file.... 
+AMPS: the calculated volume data file amr.sig=0xfffcfefe132cc8cf.CenterNodeMeasure.bin is not found
+AMPS: the calculated volume data file is not found: generating....
+AMPS: saving the calculated volume data file....    done
+AMPS: The total particle buffer length=20000000
+AMPS: Global Particle Weight (CH4) = 3.051002e+20 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (NH3) = 1.193705e+22 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (H2O) = 7.958031e+23 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (C2H2) = 2.026233e+20 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (HCN) = 1.591606e+21 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (C2H4) = 3.292978e+20 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (CO) = 1.123588e+22 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (C2H6) = 3.183212e+21 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (H2CO) = 1.193705e+22 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (CH3OH) = 1.352865e+22 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (CO2) = 1.989508e+22 (file=pic_weight_time.cpp,line=221)
+AMPS: radial particle-weight adaptation iteration=0 range=800:3200 particles=0->0 changed-block-species=0 split=0 roulette=0 empty-photochemical-daughter=0 chemistry-constrained=0 face-carrier-changes=0 face-components=27 max-face-hops=372 max-face-clone-mean=1.000000e+00->1.000000e+00 max-products-per-reaction=16->16 limit=64 component-planner=on required-clones=0
+AMPS: resolved radial population policies adaptation-cadence=fixed-iteration interval=10000
+AMPS: population-policy species=H class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=H2 class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=C class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=CH class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=CH2 class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=N class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=CH3 class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=NH class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=CH4 class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=4.19999999999999989e+27 surface-carrier-W-dt-s-1=3.28124999999999991e+25
+AMPS: population-policy species=NH2 class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=O class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=NH3 class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=1.04999999999999995e+28 surface-carrier-W-dt-s-1=8.20312499999999957e+25
+AMPS: population-policy species=OH class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=H2O class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=6.99999999999999958e+29 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=C2 class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=C2H class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=C2H2 class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=2.09999999999999995e+27 surface-carrier-W-dt-s-1=1.64062500000000017e+25
+AMPS: population-policy species=CN class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=HCN class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=1.39999999999999996e+27 surface-carrier-W-dt-s-1=1.09374999999999997e+25
+AMPS: population-policy species=C2H4 class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=2.09999999999999995e+27 surface-carrier-W-dt-s-1=1.64062499999999996e+25
+AMPS: population-policy species=CO class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=9.09999999999999938e+28 surface-carrier-W-dt-s-1=7.10937499999999951e+26
+AMPS: population-policy species=C2H5 class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=HCO class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=C2H6 class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=2.79999999999999993e+27 surface-carrier-W-dt-s-1=2.18749999999999994e+25
+AMPS: population-policy species=H2CO class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=1.04999999999999995e+28 surface-carrier-W-dt-s-1=8.20312499999999957e+25
+AMPS: population-policy species=CH3OH class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=1.19000000000000000e+28 surface-carrier-W-dt-s-1=9.29687499999999997e+25
+AMPS: population-policy species=CO2 class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=1.74999999999999998e+28 surface-carrier-W-dt-s-1=1.36718749999999999e+26
+AMPS: individual correction-window controller mode=on max-split-particles=512 cadence=completed-time-step
+AMPS: correction-window-policy species=H selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=H2 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=C selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=CH selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=CH2 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=N selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=CH3 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=NH selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=CH4 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=NH2 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=O selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=NH3 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=OH selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=H2O selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=C2 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=C2H selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=C2H2 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=CN selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=HCN selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=C2H4 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=CO selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=C2H5 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=HCO selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=C2H6 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=H2CO selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=CH3OH selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=CO2 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+Chemistry ensemble validation: events/reaction=200000 ranks=4 individual-correction=on relative-limit=0.02 z-limit=5.0
+PASS chemistry reaction=CO2_CO_O3P events=200000 products=2 multiplicity-mean=[0.0015625,3.07692] catalog-mass-relative=1.571e-16 kinematic-momentum=6.586e-14 kinematic-energy=1.521e-15
+PASS chemistry reaction=CO2_CO_O1D events=200000 products=2 multiplicity-mean=[0.0015625,3.07692] catalog-mass-relative=1.571e-16 kinematic-momentum=1.354e-13 kinematic-energy=1.468e-15
+PASS chemistry reaction=CH3OH_CH3_OH events=200000 products=2 multiplicity-mean=[0.0010625,0.272] catalog-mass-relative=0.000e+00 kinematic-momentum=1.888e-13 kinematic-energy=9.551e-16
+PASS chemistry reaction=H2CO_HCO_H events=200000 products=2 multiplicity-mean=[0.0009375,0.24] catalog-mass-relative=0.000e+00 kinematic-momentum=5.110e-14 kinematic-energy=7.827e-15
+PASS chemistry reaction=H2CO_CO_H2 events=200000 products=2 multiplicity-mean=[0.0009375,1.84615] catalog-mass-relative=0.000e+00 kinematic-momentum=1.547e-13 kinematic-energy=2.114e-15
+PASS chemistry reaction=H2CO_CO_2H events=200000 products=3 multiplicity-mean=[0.0009375,1.84615] catalog-mass-relative=0.000e+00 kinematic-momentum=2.501e-14 kinematic-energy=7.928e-16
+PASS chemistry reaction=C2H6_C2H4_H2 events=200000 products=2 multiplicity-mean=[0.00025,21.3333] catalog-mass-relative=0.000e+00 kinematic-momentum=2.119e-13 kinematic-energy=1.198e-15
+PASS chemistry reaction=C2H6_2CH3 events=200000 products=2 multiplicity-mean=[0.00025,0.064] catalog-mass-relative=0.000e+00 kinematic-momentum=8.139e-14 kinematic-energy=8.087e-16
+PASS chemistry reaction=C2H6_C2H5_H events=200000 products=2 multiplicity-mean=[0.00025,0.064] catalog-mass-relative=0.000e+00 kinematic-momentum=1.964e-13 kinematic-energy=1.232e-15
+PASS chemistry reaction=C2H6_CH4_CH2 events=200000 products=2 multiplicity-mean=[0.00025,10.6667] catalog-mass-relative=0.000e+00 kinematic-momentum=1.944e-13 kinematic-energy=7.841e-16
+PASS chemistry reaction=HCO_CH_O events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=5.248e-14 kinematic-energy=7.931e-16
+PASS chemistry reaction=HCO_OH_C events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=5.713e-14 kinematic-energy=7.931e-16
+PASS chemistry reaction=C2H5_C2H4_H events=200000 products=2 multiplicity-mean=[0.0625,5333.33] catalog-mass-relative=0.000e+00 kinematic-momentum=3.056e-13 kinematic-energy=2.639e-15
+PASS chemistry reaction=CO_C3P_O3P events=200000 products=2 multiplicity-mean=[0.008125,2.08] catalog-mass-relative=0.000e+00 kinematic-momentum=1.331e-13 kinematic-energy=2.628e-15
+PASS chemistry reaction=CO_C1D_O1D events=200000 products=2 multiplicity-mean=[0.008125,2.08] catalog-mass-relative=0.000e+00 kinematic-momentum=4.138e-14 kinematic-energy=7.738e-16
+PASS chemistry reaction=C2H4_C2H2_H2 events=200000 products=2 multiplicity-mean=[0.0001875,16] catalog-mass-relative=0.000e+00 kinematic-momentum=4.325e-13 kinematic-energy=2.701e-15
+PASS chemistry reaction=C2H4_C2H2_2H events=200000 products=3 multiplicity-mean=[0.0001875,16] catalog-mass-relative=0.000e+00 kinematic-momentum=1.631e-14 kinematic-energy=8.685e-16
+PASS chemistry reaction=HCN_CN_H events=200000 products=2 multiplicity-mean=[0.000125,0.032] catalog-mass-relative=0.000e+00 kinematic-momentum=1.356e-13 kinematic-energy=1.884e-15
+PASS chemistry reaction=CN_C_N events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=7.509e-14 kinematic-energy=8.091e-16
+PASS chemistry reaction=C2H2_C2H_H events=200000 products=2 multiplicity-mean=[0.0001875,0.048] catalog-mass-relative=0.000e+00 kinematic-momentum=2.926e-13 kinematic-energy=4.469e-15
+PASS chemistry reaction=C2H2_C2_H2 events=200000 products=2 multiplicity-mean=[0.0001875,0.048] catalog-mass-relative=0.000e+00 kinematic-momentum=2.082e-13 kinematic-energy=2.498e-15
+PASS chemistry reaction=C2H_C2_H events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=1.448e-13 kinematic-energy=2.383e-15
+PASS chemistry reaction=C2_2C events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=9.373e-14 kinematic-energy=1.160e-15
+PASS chemistry reaction=H2O_OH_H events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=1.179e-13 kinematic-energy=1.748e-15
+PASS chemistry reaction=H2O_O_H2 events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=3.167e-13 kinematic-energy=1.888e-15
+PASS chemistry reaction=H2O_O_2H events=200000 products=3 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=1.528e-14 kinematic-energy=8.355e-16
+PASS chemistry reaction=OH_O_H_GROUND events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=6.352e-14 kinematic-energy=2.184e-15
+PASS chemistry reaction=OH_O_H_067 events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=6.028e-14 kinematic-energy=2.401e-15
+PASS chemistry reaction=OH_O_H_269 events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=1.440e-13 kinematic-energy=1.332e-15
+PASS chemistry reaction=OH_O_H_384 events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=2.361e-13 kinematic-energy=1.558e-15
+PASS chemistry reaction=NH3_NH2_H events=200000 products=2 multiplicity-mean=[0.0009375,0.24] catalog-mass-relative=0.000e+00 kinematic-momentum=1.275e-13 kinematic-energy=2.314e-15
+PASS chemistry reaction=NH3_NH_H2 events=200000 products=2 multiplicity-mean=[0.0009375,0.24] catalog-mass-relative=0.000e+00 kinematic-momentum=1.863e-13 kinematic-energy=1.574e-15
+PASS chemistry reaction=NH3_NH_2H events=200000 products=3 multiplicity-mean=[0.0009375,0.24] catalog-mass-relative=0.000e+00 kinematic-momentum=2.880e-14 kinematic-energy=7.093e-16
+PASS chemistry reaction=NH2_NH_H events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=2.939e-13 kinematic-energy=9.366e-16
+PASS chemistry reaction=CH4_CH3_H events=200000 products=2 multiplicity-mean=[0.000375,0.096] catalog-mass-relative=0.000e+00 kinematic-momentum=1.953e-13 kinematic-energy=1.107e-15
+PASS chemistry reaction=CH4_CH2_H2 events=200000 products=2 multiplicity-mean=[0.000375,0.096] catalog-mass-relative=0.000e+00 kinematic-momentum=2.056e-13 kinematic-energy=6.782e-16
+PASS chemistry reaction=CH4_CH_H2_H events=200000 products=3 multiplicity-mean=[0.000375,0.096] catalog-mass-relative=0.000e+00 kinematic-momentum=1.764e-14 kinematic-energy=8.750e-16
+PASS chemistry reaction=CH4_CH2_2H events=200000 products=3 multiplicity-mean=[0.000375,0.096] catalog-mass-relative=0.000e+00 kinematic-momentum=1.614e-14 kinematic-energy=8.867e-16
+PASS chemistry reaction=NH_N_H events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=9.174e-14 kinematic-energy=2.017e-15
+PASS chemistry reaction=CH3_CH2_H events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=3.255e-13 kinematic-energy=1.646e-15
+PASS chemistry reaction=CH3_CH_H2 events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=8.521e-14 kinematic-energy=7.971e-16
+PASS chemistry reaction=CH2_CH_H events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=2.605e-13 kinematic-energy=1.048e-15
+PASS chemistry reaction=CH2_C_H2 events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=1.841e-13 kinematic-energy=1.794e-15
+PASS chemistry reaction=CH_C_H events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=6.154e-14 kinematic-energy=2.753e-15
+PASS chemistry reaction=H2_2H_820 events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=5.196e-13 kinematic-energy=5.862e-16
+PASS chemistry reaction=H2_2H_044 events=200000 products=2 multiplicity-mean=[0.0625,16] catalog-mass-relative=0.000e+00 kinematic-momentum=1.041e-13 kinematic-energy=8.496e-16
+Chemistry ensemble validation result: PASS neutral-reactions=46 unequal-weight/timestep-reactions=46 sink-reactions=23

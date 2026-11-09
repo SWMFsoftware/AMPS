@@ -788,13 +788,16 @@ its numerical window values are a validation policy, not a calibrated Rubin
 science policy. The normal Halley input therefore intentionally contains no
 correction-window records.
 
-The complete Stage-0--4 regression stack is orchestrated by
-`tests/run_all_stage_tests.sh`. Its default archived mode requires every
-external evidence path instead of accepting the individual runners' optional
-skip behavior. `--plan` performs a read-only preflight; optional `fresh`
-Stage-4 mode uses a separately supplied correction-on executable and never
-reconfigures the canonical workspace. See `README.md` for commands and
-`STATUS.md` for the exact 17-group validation record.
+The complete generic-input, I3/brightness, and Stage-0--10 regression stack is
+orchestrated by `tests/run_all_stage_tests.sh`. Its default archived mode reads
+the checksummed compact evidence under `tests/data`, so a clean clone does not
+depend on machine-local validation archives or a configured AMPS build. It
+rejects missing data instead of accepting child-runner skip behavior. `--plan`
+performs a read-only preflight; optional fresh modes use separately supplied
+executables and never reconfigure the canonical workspace. Compact protocol
+fixtures validate implementation contracts and do not replace complete
+scientific archives or a new converged model run. See `tests/README.md` for the
+operator contract and fixture boundary.
 
 ## Stage 5: exact individually weighted daughters and weight windows (complete)
 

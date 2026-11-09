@@ -119,8 +119,17 @@ class MinorSpeciesAnalyzerTest(unittest.TestCase):
 
 class ArchivedBaselineTest(unittest.TestCase):
     def test_preserved_c2_final_window(self) -> None:
+        # The complete science archive remains outside Git because it contains
+        # the executable and every species/output table.  The portable
+        # orchestrator instead supplies a compact, checksummed manifest under
+        # tests/data.  Direct invocations retain the complete-archive manifest
+        # as their default so this test cannot silently redefine science
+        # provenance when a user points it at the historical archive.
+        baseline_override = os.environ.get("HARTLEY2_STAGE0_BASELINE_MANIFEST")
         baseline_path = (
-            SOURCE_ROOT
+            Path(baseline_override)
+            if baseline_override
+            else SOURCE_ROOT
             / "srcHartley2"
             / "halley2011"
             / "reference"

@@ -75,10 +75,13 @@ class I3BrightnessReferenceTest(unittest.TestCase):
             for name in original:
                 self.assertTrue(np.array_equal(original[name], copied[name], equal_nan=True))
 
-    def test_archive_regeneration_is_byte_exact_when_archive_is_available(self) -> None:
-        archive = ROOT / "Archive.zip"
-        if not archive.exists():
-            self.skipTest("external Archive.zip is not available")
+    def test_archive_regeneration_is_byte_exact(self) -> None:
+        # Keep the reviewed raster source beside the test that verifies its
+        # deterministic extraction. Do not fall back to a repository-root
+        # developer copy: omitting the tracked artifact must fail on every
+        # machine instead of becoming a machine-dependent pass or skip.
+        archive = Path(__file__).resolve().parent / "data" / "i3" / "Archive.zip"
+        self.assertTrue(archive.is_file(), f"missing bundled I3 archive: {archive}")
         with tempfile.TemporaryDirectory(prefix="i3-brightness-extract-") as temporary:
             destination = Path(temporary)
             status = EXTRACT.main(["--archive", str(archive), "--output-dir", str(destination)])

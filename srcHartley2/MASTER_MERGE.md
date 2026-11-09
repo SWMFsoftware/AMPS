@@ -270,6 +270,10 @@ second implementation of the algorithm they claim to verify.
 - Integrate `srcHartley2/tests/run_all_stage_tests.sh` only after all child
   groups exist; verify its plan, archived/live mode, counts, skip policy, and
   failed-log reporting.
+- Integrate `srcHartley2/tests/data/`, its complete SHA-256 manifest, the
+  source-only Stage-3 parser fixture, and the bundled I3 observation archive
+  with the orchestrator. Verify a clean checkout needs neither `build/`, root
+  assembled inputs, `validation_runs/`, nor a prebuilt AMPS executable.
 - Integrate the tracked `srcHartley2/validation/` runners, evaluators, policy
   templates, self-tests, comparison exporter, and validation README.
 - Integrate `write_all_stage_result.py` with the aggregate runner and verify
@@ -284,9 +288,10 @@ second implementation of the algorithm they claim to verify.
   because a target worktree contains additional local artifacts.
 - Integrate the tracked `input/test_comet_*.pl` parsers with their Wave-3
   modules, even though the aggregate runner consumes them here.
-- Keep validation archives and generated plots outside source. A compact
-  checksum manifest may refer to them, but must not pretend that a missing
-  external archive is committed data.
+- Keep full validation archives, executables, particle output, and generated
+  plots outside source. The compact tracked protocol fixtures are test data,
+  not a substitute for those science archives; preserve that distinction in
+  the aggregate receipt and documentation.
 
 Test totals from an older wave are not acceptance criteria. The final report
 must use the totals printed by the exact integrated runner and must identify
@@ -590,8 +595,9 @@ Merge order within the existing waves:
    data. Preserve its pixel-anchor and metadata files, verify the archive and
    member hashes, and require byte-exact CSV/metadata regeneration when the
    external archive is available. Runtime plotting must use the committed
-   numerical table and `--reference-dir`; it must not regain an undeclared
-   dependency on untracked `Archive.zip`.
+   numerical table and `--reference-dir`; regeneration must use the declared,
+   checksummed `srcHartley2/tests/data/i3/Archive.zip` test artifact rather
+   than an untracked root copy.
 
 The compile/runtime split is intentional: `i3.conf` is the review surface for
 fixed executable layout and capability, while `i3.in` is the exact scientific
@@ -661,8 +667,11 @@ Pre-merge I3 validation must include:
   not change the pre-existing default-off workflow; preserve its explicit
   `BrightnessMode=off` record.
 
-Do not stage `Archive.zip`, raw Horizons/NRC/LASP downloads, `PT` trees,
-generated root copies, executables, or build products. The deliberately
+Do not stage the untracked repository-root `Archive.zip`, raw
+Horizons/NRC/LASP downloads, `PT` trees, generated root copies, executables,
+or build products. Do integrate the deliberately compact, checksummed
+`srcHartley2/tests/data/i3/Archive.zip` fixture with the portable test suite.
+The deliberately
 retained core
 `reference/g_factors/oh_ax00_schleicher_ahearn1988/lowell_oh00_raw.jsonl` is
 an exception: it is the compact audit source for the normalized OH table and
@@ -734,8 +743,11 @@ Conflict-resolution invariants:
   be installed before the first `GetNetwork()` call. Brightness metadata must
   be installed before sampler registration. A conflict that initializes
   either singleton early invalidates the one-executable/many-case contract.
-- Never stage `build/`, `amps`, `PT/`, root-staged input copies, logs,
-  `Archive.zip`, or validation-run trees. No instruction here authorizes a
+- Never stage `build/`, `amps`, `PT/`, root-staged input copies, run logs,
+  the root `Archive.zip`, or validation-run trees. The exception is the
+  reviewed `srcHartley2/tests/data/` fixture set, including its I3 archive and
+  protocol logs, which must be integrated with its SHA-256 manifest. No
+  instruction here authorizes a
   branch switch, commit, cherry-pick, merge, push, or modification of master.
 
 ## Final user decision

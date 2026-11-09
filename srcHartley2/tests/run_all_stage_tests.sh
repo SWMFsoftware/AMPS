@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Run the complete focused and archived Hartley2 chemistry-development test
-# stack for Stages 0 through 10.
+# Run the complete portable generic-comet test stack through one public entry
+# point: runtime-input/I3/brightness checks plus chemistry Stages 0 through 10.
 #
 # The lower-stage integrated tests intentionally consume frozen logs: their
 # own runners define those logs as the authoritative, reproducible runtime
@@ -14,16 +14,25 @@
 # long-run manifest to evaluate scientific acceptance; omitting that optional
 # manifest never converts the synthetic tooling test into science evidence.
 #
-# All optional inputs of the individual runners are made mandatory here.  A
-# complete all-stage pass must not hide missing production/runtime evidence
-# behind one of the per-stage runners' deliberate standalone SKIP paths.
+# All evidence inputs of the individual runners are made mandatory here. A
+# complete portable pass must not hide a missing tracked fixture behind one of
+# the per-stage runners' deliberate standalone SKIP paths. Compact protocol
+# fixtures exercise historical output contracts; they are not represented as
+# a fresh convergence or science result from the current executable.
 
 set -euo pipefail
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 source_root=$(cd -- "$script_dir/../.." && pwd)
+portable_data_root="$script_dir/data"
+portable_data_manifest="$portable_data_root/SHA256SUMS"
 
-evidence_root="$source_root/validation_runs"
+# The default archive is intentionally inside the tracked test tree. It holds
+# only the protocol records and numerical tables consumed by the checkers;
+# executables, full particle outputs, and unrelated production files are not
+# test dependencies. --evidence-root remains available for auditing the
+# original complete validation archives.
+evidence_root="$script_dir/data/archived"
 stage4_mode=archived
 stage4_executable=
 stage4_output_root=
@@ -58,8 +67,9 @@ to close Hartley2 chemistry-development Stages 0 through 10.
 
 Options:
   --evidence-root PATH
-      Archive bundle root. Default: REPOSITORY/validation_runs. The expected
-      dated subdirectory layout is documented below and preflighted strictly.
+      Archive bundle root. Default: srcHartley2/tests/data/archived, the
+      compact source-controlled protocol fixture. A complete validation_runs
+      tree with the same layout may be supplied for a full archive audit.
   --stage4-mode archived|fresh
       archived (default) revalidates the frozen correction-on 1/4/12 matrix.
       fresh invokes run_stage4_integrated_tests.sh and then compares its
@@ -156,10 +166,10 @@ Required evidence layout beneath --evidence-root:
   stage9-transported-collision-full-20261105-r3
   stage9-checkpoint-smoke-20261105-r2
 
-The current repository build is used only as a read-only Stage-3 parser
-fixture and must be configured with individual corrections off. Rebuild it
-before invoking this runner if that precondition is not satisfied; as always,
-remove exactly REPOSITORY/build before recompiling.
+The default suite is source-only except for temporary focused C++ tests and
+the Stage-0 MPI diagnostic executable that it builds under TMPDIR. It does not
+require or inspect REPOSITORY/build, a root-level assembled input, or an AMPS
+science executable.
 EOF
 }
 
@@ -556,6 +566,12 @@ for required_tool in mpicxx c++ g++ perl python3 grep sha256sum tee git; do
 done
 
 stage0_baseline="$evidence_root/halley1d_16x_particles_40000iter_sampling10000_20261104_18mpi"
+stage0_baseline_manifest="$stage0_baseline/portable_baseline.json"
+if [[ ! -f "$stage0_baseline_manifest" ]]; then
+  # A caller-supplied complete validation archive uses the immutable science
+  # manifest. Only the tracked compact fixture uses portable_baseline.json.
+  stage0_baseline_manifest="$source_root/srcHartley2/halley2011/reference/halley1d_stage0_baseline.json"
+fi
 stage0_production="$evidence_root/stage0_closure_20261105/diagnostics_on_10000iter_14mpi/production"
 stage1_root="$evidence_root/stage1_population_policy_20261105"
 stage1_policy_log="$stage1_root/canonical_policy/run.log"
@@ -591,6 +607,8 @@ require_directory() {
 }
 
 require_directory "$stage0_baseline/production"
+require_file "$stage0_baseline_manifest"
+require_file "$portable_data_manifest"
 require_directory "$stage0_production/PT/diagnostics"
 require_file "$stage1_policy_log"
 require_file "$stage1_alternate_log"
@@ -699,26 +717,11 @@ for stage9_estimator_mode in analog enhanced; do
     "$stage9_checkpoint_archive/$stage9_estimator_mode/PT/diagnostics/comet_stage9_checkpoint.out=0.csv"
 done
 
-# The Stage-3 parser test copies generated sources from the current build but
-# never modifies them.  Require the complete fixture and correction-off mode;
-# using a correction-on Stage-4 build here would make an all-stage result
-# dependent on the caller's previous local configuration.
-require_directory "$source_root/build/main"
-require_file "$source_root/build/pic/picGlobal.dfn"
-require_file "$source_root/halley1d.input.Assembled.Block"
-require_file "$source_root/halley1d.input.Assembled.Species"
-if ! grep -Eq -- \
-    '^#define _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ _INDIVIDUAL_PARTICLE_WEIGHT_OFF_$' \
-    "$source_root/build/pic/picGlobal.dfn"; then
-  printf '%s\n' \
-    'current Stage-3 parser fixture is not a correction-off AMPS build' >&2
-  exit 2
-fi
-
 print_plan() {
   printf 'Hartley2 all-stage test plan\n'
   printf '  repository: %s\n' "$source_root"
   printf '  evidence:   %s\n' "$evidence_root"
+  printf '  test data:  %s\n' "$portable_data_root"
   printf '  MPI:        %s\n' "$resolved_mpi_launcher"
   printf '  Stage 4:    %s\n' "$stage4_mode"
   printf '  Stage 5:    %s\n' "$stage5_mode"
@@ -763,6 +766,8 @@ print_plan() {
   fi
   printf '%s\n' \
     '  tests:' \
+    '    Portable-data manifest, generic input parser, I3 generation/MAVEN' \
+    '            extraction, and comet/resonance brightness models' \
     '    Stage 0 focused MPI, analyzer, frozen baseline, production report' \
     '    Stage 1 parser/network, runtime policy, cadence, legacy equivalence' \
     '    Stage 2 pure planner and integrated 1/4/12 transaction evidence' \
@@ -795,6 +800,14 @@ fi
 all_stage_tmp=$(mktemp -d "${TMPDIR:-/tmp}/hartley2-all-stages.XXXXXX")
 scratch_root="$all_stage_tmp/scratch"
 mkdir -p -- "$scratch_root"
+# The generic-input makefile executes its BUILD target with a leading './'.
+# Supply a path relative to that makefile's directory so the focused binary
+# remains in suite scratch while both compilation and execution resolve the
+# same file. Python is already a required test tool and os.path.relpath does
+# not require either directory to exist yet.
+generic_input_build=$(PYTHONDONTWRITEBYTECODE=1 python3 -c \
+  'import os,sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))' \
+  "$scratch_root/generic-input" "$source_root/src/general/input")
 explicit_log_root=false
 if [[ -n "$requested_log_root" ]]; then
   mkdir -p -- "$requested_log_root"
@@ -1148,9 +1161,36 @@ check_stage9_checkpoint_outputs() {
     --case "enhanced=$stage9_checkpoint_archive/enhanced"
 }
 
+check_portable_data_manifest() {
+  # Run from the data directory because every manifest path is relative and
+  # begins with './'. This authenticates the MAVEN source archive as well as
+  # every compact Stage 0--9 record before any checker trusts its contents.
+  (
+    cd -- "$portable_data_root"
+    sha256sum -c SHA256SUMS
+  )
+}
+
+# Application-independent grammar, I3 input/reference, and brightness tests
+# are part of the same public model gate. Keeping them here prevents a stage
+# suite from passing while the runtime case selector or observable pipeline is
+# broken. Child scripts remain implementation details; operators invoke only
+# this orchestrator.
+run_test infrastructure data.manifest check_portable_data_manifest
+run_test infrastructure input.generic \
+  make -C "$source_root/src/general/input" \
+    BUILD="$generic_input_build" test
+run_test i3 i3.input-generation env PYTHONDONTWRITEBYTECODE=1 \
+  python3 -m unittest "$source_root/srcHartley2/i3/tests/test_prepare_i3_cases.py"
+run_test brightness brightness.focused \
+  "$script_dir/run_comet_brightness_tests.sh"
+run_test i3 i3.maven-reference env PYTHONDONTWRITEBYTECODE=1 \
+  python3 -m unittest "$script_dir/test_i3_brightness_reference.py"
+
 run_test stage0 stage0.complete env \
   HARTLEY2_MPIEXEC="$resolved_mpi_launcher" \
   HARTLEY2_STAGE0_BASELINE_ROOT="$stage0_baseline" \
+  HARTLEY2_STAGE0_BASELINE_MANIFEST="$stage0_baseline_manifest" \
   HARTLEY2_STAGE0_PRODUCTION_ROOT="$stage0_production" \
   "$script_dir/run_stage0_tests.sh"
 
@@ -1336,7 +1376,7 @@ run_test stage9 stage9.transported-collision-matrix check_stage9_matrix
 run_test stage10 stage10.release-evidence-tooling \
   "$script_dir/run_stage10_tests.sh"
 
-stage_order=(stage0 stage1 stage2 stage3 stage4 stage5 stage6 stage7 stage8 stage9 stage10)
+stage_order=(infrastructure i3 brightness stage0 stage1 stage2 stage3 stage4 stage5 stage6 stage7 stage8 stage9 stage10)
 group_results=()
 passed_groups=0
 skipped_groups=0

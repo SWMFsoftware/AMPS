@@ -1,6 +1,6 @@
 # Generic comet / Hartley 2 status
 
-Date: 2026-11-08
+Date: 2026-11-09
 Branch: `1d_comet_dev`
 
 All paths in this file are relative to the AMPS repository root (the
@@ -6485,3 +6485,62 @@ nonconverged label where it applies, and disclosure of the 1e9-m domain
 truncation. The H g-factor evaluation cost could also be reduced (for
 example with a tabulated g(v)), but that would change numerical values and
 needs its own validation.
+## 2026-11-09: portable single-entry generic-comet test suite
+
+Status: implemented and exercised on branch `1d_comet_dev`; no commit, branch
+switch, merge, or master operation was performed. The authoritative operator
+entry point is now:
+
+```sh
+srcHartley2/tests/run_all_stage_tests.sh
+```
+
+The default command no longer depends on the repository-root
+`validation_runs/`, a configured/generated `build/`, root-level assembled
+input files, or an AMPS science executable. It verifies and consumes the
+source-controlled 8.9-MiB fixture bundle under `srcHartley2/tests/data/`,
+builds only focused temporary test programs, and runs the Stage-0 diagnostic
+at 1, 4, and 12 MPI ranks. `--evidence-root` and the existing Stage-4--9
+`fresh` modes remain available for auditing full external archives or a
+caller-supplied already-built executable.
+
+### Modified and added files
+
+| File or directory | Change and reason | Later master-integration note |
+| --- | --- | --- |
+| `srcHartley2/tests/run_all_stage_tests.sh` | Makes the compact tracked evidence tree the default; authenticates it before parsing; adds the generic runtime-input grammar, I3 six-case generator, MAVEN/IUVS regeneration, and brightness/resonance-fluorescence groups to the Stage-0--10 stack. The runner retains strict preflight, per-test logs, aggregate test/group counts, failed-log reporting, and optional durable JSON output. | Integrate after all child runners and `tests/data`. Preserve the distinction between portable protocol replay and fresh science validation. Do not restore a generated-build dependency. |
+| `srcHartley2/tests/data/` | New 8.9-MiB source-controlled fixture bundle. It contains only checker-consumed logs, diagnostic sidecars, compact numerical tables, generated-policy provenance, a two-species/two-cell Stage-9 checkpoint pair, and the reviewed I3 source archive. `SHA256SUMS` covers 179 files, including nested provenance manifests. | Add the complete directory, including files named `run.log`, CSV/JSON tables, nested manifests, and `i3/Archive.zip`. Do not substitute the multi-gigabyte production archives or omit files because their names resemble generated output. Review any future numerical fixture change scientifically and regenerate the root manifest. |
+| `srcHartley2/tests/data/README.md` | Documents provenance, reduction boundaries, the difference between regression fixtures and science evidence, and the exact deterministic manifest-regeneration command. | Keep beside the data. A compact fixture PASS cannot be cited as a new converged Rubin or I3 run. |
+| `srcHartley2/tests/README.md` | Defines the one public command, portable requirements, log retention, external-archive audit mode, and scientific limitations. | Make this the test operator entry point; individual child scripts remain implementation components. |
+| `srcHartley2/tests/test_stage3_parser.py`, `run_stage3_parser_tests.sh` | Replaces the prior copy of a developer's generated `build/` and root assembled files with source-only temporary parser fixtures. Covers valid, omitted-default, duplicate, invalid, missing-seed, and chemistry-off behavior. | Integrate the Python test with the small shell wrapper. It imports the maintained source-only `ParserFixture` from the Stage-9 parser tests, so merge those together. |
+| `srcHartley2/tests/test_stage0_minor_species.py` | Accepts an explicit `HARTLEY2_STAGE0_BASELINE_MANIFEST` for the compact baseline while preserving the full immutable science manifest as the direct-invocation default. | Preserve both paths; the portable manifest must not silently replace the scientific provenance contract for external archives. |
+| `srcHartley2/tests/test_i3_brightness_reference.py` | Makes archive-to-table regeneration mandatory using `tests/data/i3/Archive.zip`; a missing source artifact is now a failure rather than a skipped test. | Integrate with the bundled archive and updated reference metadata in the same change. |
+| `srcHartley2/visualization/references/i3_brightness_MAVEN/metadata.json` and related README files | Records the canonical tracked archive path and updates regeneration commands. | Do not stage the unrelated root `Archive.zip`; do stage the checksummed test artifact. |
+| `srcHartley2/README.md`, `srcHartley2/i3/README.md`, `srcHartley2/visualization/README.md`, `srcHartley2/CHEMISTRY.md` | Documents the single runner, portable data, archive location, dependencies, scope, and full-archive/fresh modes. | Reconcile these active instructions after code and test paths; older dated validation sections remain historical evidence. |
+| `srcHartley2/MASTER_MERGE.md` | Adds the portable fixture/test wave and explicitly distinguishes the tracked I3 archive from the unrelated root copy and other excluded run artifacts. | Follow the documented order; no text in that file authorizes a merge. |
+
+### Validation result
+
+The final command was:
+
+```sh
+srcHartley2/tests/run_all_stage_tests.sh \
+  --log-root /tmp/hartley2-portable-suite-final-20261109-r4
+```
+
+It passed all 44 independently logged jobs in all 14 groups, with zero skips
+and zero failures. Coverage included the data manifest, generic case-overlay
+grammar, I3 generation, byte-exact MAVEN/IUVS extraction, focused brightness,
+Stage-0 MPI at 1/4/12 ranks, and all Stage-1--10 checks. The durable files are:
+
+```text
+/tmp/hartley2-portable-suite-final-20261109-r4/summary.txt
+/tmp/hartley2-portable-suite-final-20261109-r4/all_stage_result.json
+```
+
+The receipt records committed HEAD
+`d61307f929ab54dbc2f517be372e28d50311999d`; this implementation was still an
+uncommitted working-tree change during the run. After the files are reviewed
+and committed, rerun the same command with a new log directory to bind release
+evidence to the resulting commit. The current portable PASS validates the
+implementation and fixture contracts; it is not a new converged comet run.

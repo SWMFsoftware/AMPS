@@ -1,0 +1,6 @@
+AMPS: The total number of the MPI processes=1
+AMPS: The total number of the OpenMP threads per each MPI process=1
+
+AMPS: (11/5 12:3:55), Initialization of the code
+AMPS: Simulation Target - _TARGET_ 
+AMPS: comet random seed=104729 rank-stream=seed+rank residual-phase-stream=keyed

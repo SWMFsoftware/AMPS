@@ -1,0 +1,291 @@
+AMPS: The total number of the MPI processes=4
+AMPS: The total number of the OpenMP threads per each MPI process=1
+
+AMPS: (11/5 15:17:58), Initialization of the code
+AMPS: Simulation Target - _TARGET_ 
+AMPS: comet random seed=104729 rank-stream=seed+rank residual-phase-stream=keyed
+AMPS: Building mesh.....  
+AMPS: Building mesh [completed level: 0] minimum cell size:1.249992e+08
+AMPS: Building mesh [completed level: 1] minimum cell size:6.249962e+07
+AMPS: Building mesh [completed level: 2] minimum cell size:3.124981e+07
+AMPS: Building mesh [completed level: 3] minimum cell size:1.562491e+07
+AMPS: Building mesh [completed level: 4] minimum cell size:7.812453e+06
+AMPS: Building mesh [completed level: 5] minimum cell size:3.906227e+06
+AMPS: Building mesh [completed level: 6] minimum cell size:1.953113e+06
+AMPS: Building mesh [completed level: 7] minimum cell size:9.765566e+05
+AMPS: Building mesh [completed level: 8] minimum cell size:4.882783e+05
+AMPS: Building mesh [completed level: 9] minimum cell size:2.441392e+05
+AMPS: Building mesh [completed level: 10] minimum cell size:1.220696e+05
+AMPS: Building mesh [completed level: 11] minimum cell size:6.103479e+04
+AMPS: Building mesh [completed level: 12] minimum cell size:3.051740e+04
+AMPS: Building mesh [completed level: 13] minimum cell size:1.525870e+04
+AMPS: Building mesh [completed level: 14] minimum cell size:7.629349e+03
+AMPS: Building mesh [completed level: 15] minimum cell size:3.814674e+03
+AMPS: Building mesh [completed level: 16] minimum cell size:1.907337e+03
+AMPS: Building mesh [completed level: 17] minimum cell size:9.536686e+02
+AMPS: Building mesh [completed level: 18] minimum cell size:4.768343e+02
+AMPS: Building mesh [completed level: 19] minimum cell size:2.384171e+02
+AMPS: Building mesh [completed level: 20] minimum cell size:1.192086e+02
+AMPS: Building mesh [completed level: 21] minimum cell size:5.960429e+01
+AMPS: Building mesh [completed level: 22] minimum cell size:2.980214e+01
+AMPS: Building mesh [completed level: 23] minimum cell size:1.490107e+01
+AMPS: Building mesh [completed level: 24] minimum cell size:7.450536e+00
+AMPS: Building mesh [completed level: 25] minimum cell size:3.725268e+00
+AMPS: Building mesh [completed level: 26] minimum cell size:1.862634e+00
+AMPS: Building mesh [completed level: 27] minimum cell size:9.313170e-01
+AMPS: Building mesh [completed level: 28] minimum cell size:4.656585e-01
+AMPS: Building mesh [completed level: 29] minimum cell size:2.328292e-01
+AMPS: Building mesh.....   done
+AMPS: Total Number of blocks used in calcualtions=373, Total Number of blocks: 373
+AMPS:Initial Cumulative Parallel Load Distribution
+AMPS:Thread	Load	Normalized Load	Number of Blocks
+AMPS:0	3.73e+02	4.00e+00	373(373)
+AMPS:1	0.00e+00	0.00e+00	0(0)
+AMPS:2	0.00e+00	0.00e+00	0(0)
+AMPS:3	0.00e+00	0.00e+00	0(0)
+Domain Decomposition Signature is 0x1010301b8b0368c  (msg= line=13555, file=/data/vtenishe/COMET1D/AMPS/build/meshAMR/meshAMRgeneric.h):
+The total number of blocks: 373
+AMPS:Cumulative Parallel Load Distribution
+AMPS:Thread	Load	Normalized Load	Number of Blocks
+AMPS:0	9.80e+01	1.05e+00	98(98)
+AMPS:1	9.70e+01	1.04e+00	97(97)
+AMPS:2	9.40e+01	1.01e+00	94(94)
+AMPS:3	8.40e+01	9.01e-01	84(84)
+AMPS:Min number of blocks per processor: 84
+AMPS:Max number of blocks per processor: 98
+AMPS:Min processor load: 9.008043e-01, thread=3
+AMPS:Max processor load: 1.050938e+00, thread=0
+AMPS:Individual block load: min=1.072386e-02, max=1.072386e-02
+AMPS:Parameters of the block with the maximum load
+AMPS:Block->Temp_ID=596
+AMPS:(i,j,k)=(0,0,0): x=8.980214e+03 
+AMPS:(i,j,k)=(1,0,0): x=9.099423e+03 
+AMPS:Middle block's coordinates=9.039819e+03 
+
+AMPS:The length of the domain's boundary nodes list:
+AMPS:Thread	The number of the domain's boundary nodes
+AMPS:0	1
+AMPS:1	2
+AMPS:2	2
+AMPS:3	1
+AMPS: comet radial mesh: nucleus radius=6.000000e+03 m, outer radius=1.000000e+09 m
+AMPS: comet radial mesh: radial extent=9.999940e+08 m
+AMPS: comet radial mesh: requested surface resolution=3.293693e-01 m, ideal outer-cell resolution=8.501014e+06 m
+AMPS: comet radial mesh: geometric cell-width ratio=1.008573952117e+00
+AMPS: comet radial mesh: requested ideal cells=2000, allocated dyadic AMR cells=2984
+AMPS:Time step mode: specie dependent local time step
+AMPS:Particle weight mode: specie dependent local weight
+AMPS: Allocating tree blocks.....  AMPS:Blocks Allocation Report:
+AMPS: Thread	AllocatedBlocks
+AMPS:0	98(98)
+AMPS:1	97(97)
+AMPS:2	94(94)
+AMPS:3	84(84)
+AMPS:Blocks Allocation Report:
+AMPS: Thread	Allocated Domain's Boundary Blocks
+AMPS:0	1(1)
+AMPS:1	2(2)
+AMPS:2	2(2)
+AMPS:3	1(1)
+done.
+AMPS: check existance of the calculated volume data file.... 
+AMPS: the calculated volume data file amr.sig=0xfefcfdfc4e703379.CenterNodeMeasure.bin is not found
+AMPS: the calculated volume data file is not found: generating....
+AMPS: saving the calculated volume data file....    done
+AMPS: The total particle buffer length=20000000
+AMPS: Global Particle Weight (CH4) = 3.051002e+20 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (NH3) = 1.193705e+22 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (H2O) = 7.958031e+23 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (C2H2) = 2.026233e+20 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (HCN) = 1.591606e+21 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (C2H4) = 3.292978e+20 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (CO) = 1.123588e+22 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (C2H6) = 3.183212e+21 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (H2CO) = 1.193705e+22 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (CH3OH) = 1.352865e+22 (file=pic_weight_time.cpp,line=221)
+AMPS: Global Particle Weight (CO2) = 1.989508e+22 (file=pic_weight_time.cpp,line=221)
+AMPS: radial particle-weight adaptation iteration=0 range=800:3200 particles=0->0 changed-block-species=0 split=0 roulette=0 empty-photochemical-daughter=0 chemistry-constrained=0 face-carrier-changes=0 face-components=27 max-face-hops=372 max-face-clone-mean=1.000000e+00->1.000000e+00 max-products-per-reaction=16->16 limit=64 component-planner=on required-clones=0
+AMPS: resolved radial population policies adaptation-cadence=fixed-iteration interval=10000
+AMPS: population-policy species=H class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=H2 class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=C class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=CH class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=CH2 class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=N class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=CH3 class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=NH class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=CH4 class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=4.19999999999999989e+27 surface-carrier-W-dt-s-1=3.28124999999999991e+25
+AMPS: population-policy species=NH2 class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=O class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=NH3 class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=1.04999999999999995e+28 surface-carrier-W-dt-s-1=8.20312499999999957e+25
+AMPS: population-policy species=OH class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=H2O class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=6.99999999999999958e+29 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=C2 class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=C2H class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=C2H2 class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=2.09999999999999995e+27 surface-carrier-W-dt-s-1=1.64062500000000017e+25
+AMPS: population-policy species=CN class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=HCN class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=1.39999999999999996e+27 surface-carrier-W-dt-s-1=1.09374999999999997e+25
+AMPS: population-policy species=C2H4 class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=2.09999999999999995e+27 surface-carrier-W-dt-s-1=1.64062499999999996e+25
+AMPS: population-policy species=CO class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=9.09999999999999938e+28 surface-carrier-W-dt-s-1=7.10937499999999951e+26
+AMPS: population-policy species=C2H5 class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=HCO class=chemical-only selector=CHEMICAL_ONLY locked=no range=50:200 surface-source-s-1=0.00000000000000000e+00 surface-carrier-W-dt-s-1=5.46874999999999967e+27
+AMPS: population-policy species=C2H6 class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=2.79999999999999993e+27 surface-carrier-W-dt-s-1=2.18749999999999994e+25
+AMPS: population-policy species=H2CO class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=1.04999999999999995e+28 surface-carrier-W-dt-s-1=8.20312499999999957e+25
+AMPS: population-policy species=CH3OH class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=1.19000000000000000e+28 surface-carrier-W-dt-s-1=9.29687499999999997e+25
+AMPS: population-policy species=CO2 class=direct-source selector=DIRECT_SOURCE locked=yes range=800:3200 surface-source-s-1=1.74999999999999998e+28 surface-carrier-W-dt-s-1=1.36718749999999999e+26
+AMPS: individual correction-window controller mode=on max-split-particles=512 cadence=completed-time-step
+AMPS: correction-window-policy species=H selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=H2 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=C selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=CH selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=CH2 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=N selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=CH3 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=NH selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=CH4 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=NH2 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=O selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=NH3 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=OH selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=H2O selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=C2 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=C2H selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=C2H2 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=CN selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=HCN selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=C2H4 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=CO selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=C2H5 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=HCO selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=no
+AMPS: correction-window-policy species=C2H6 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=H2CO selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=CH3OH selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+AMPS: correction-window-policy species=CO2 selector=global lower=1.00000000000000002e-08 target=2.50000000000000000e-01 upper=6.40000000000000000e+01 direct-source=yes
+Channel-importance validation: events/family=200000 ranks=4 deterministic-global-events=on
+PASS channel-importance reaction=H_ION parent=0 physical=1.00000000000000000e+00 biased=1.00000000000000000e+00 likelihood=1.00000000000000000e+00 analog=125012 selected=125012 weighted=1.25012000000000000e+05 expected=1.25012000000000000e+05 sigma=0.00000000000000000e+00 variance-ratio=1.00000000000000000e+00 sink=1 packets=1
+PASS channel-importance family parent=0 channels=1 total-rate=9.01234567901234692e-08 trials=200000 reacted=125012 analog-loss=125012 biased-loss=125012 family-ess=1.25012000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=0 analog-max-z=0.00000000000000000e+00 biased-max-z=0.00000000000000000e+00
+PASS channel-importance reaction=H2_2H_820 parent=1 physical=3.29896907216494784e-01 biased=3.29896907216494784e-01 likelihood=1.00000000000000000e+00 analog=41136 selected=41136 weighted=4.11360000000000000e+04 expected=4.10909690721649386e+04 sigma=1.65937293761014075e+02 variance-ratio=1.00000000000000000e+00 sink=0 packets=2
+PASS channel-importance reaction=H2_2H_044 parent=1 physical=2.33676975945017157e-01 biased=2.33676975945017157e-01 likelihood=1.00000000000000000e+00 analog=29094 selected=29094 weighted=2.90940000000000000e+04 expected=2.91061030927835018e+04 sigma=1.49347503964806663e+02 variance-ratio=1.00000000000000000e+00 sink=0 packets=2
+PASS channel-importance reaction=H2_ION parent=1 physical=4.36426116838487976e-01 biased=4.36426116838487976e-01 likelihood=1.00000000000000000e+00 analog=54327 selected=54327 weighted=5.43270000000000000e+04 expected=5.43599278350515451e+04 sigma=1.75030956171699984e+02 variance-ratio=9.99999999999999889e-01 sink=1 packets=1
+PASS channel-importance family parent=1 channels=3 total-rate=1.79629629629629665e-07 trials=200000 reacted=124557 analog-loss=124557 biased-loss=124557 family-ess=1.24557000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=1 analog-max-z=2.35157224268792153e-02 biased-max-z=2.35157224268792153e-02
+PASS channel-importance reaction=C_ION parent=2 physical=1.00000000000000000e+00 biased=1.00000000000000000e+00 likelihood=1.00000000000000000e+00 analog=125048 selected=125048 weighted=1.25048000000000000e+05 expected=1.25048000000000000e+05 sigma=0.00000000000000000e+00 variance-ratio=1.00000000000000000e+00 sink=1 packets=1
+PASS channel-importance family parent=2 channels=1 total-rate=5.06172839506172874e-07 trials=200000 reacted=125048 analog-loss=125048 biased-loss=125048 family-ess=1.25048000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=2 analog-max-z=0.00000000000000000e+00 biased-max-z=0.00000000000000000e+00
+PASS channel-importance reaction=CH_C_H parent=3 physical=1.00000000000000000e+00 biased=1.00000000000000000e+00 likelihood=1.00000000000000000e+00 analog=124681 selected=124681 weighted=1.24681000000000000e+05 expected=1.24681000000000000e+05 sigma=0.00000000000000000e+00 variance-ratio=1.00000000000000000e+00 sink=0 packets=2
+PASS channel-importance family parent=3 channels=1 total-rate=1.13580246913580259e-02 trials=200000 reacted=124681 analog-loss=124681 biased-loss=124681 family-ess=1.24681000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=3 analog-max-z=0.00000000000000000e+00 biased-max-z=0.00000000000000000e+00
+PASS channel-importance reaction=CH2_CH_H parent=4 physical=7.63067531476535721e-01 biased=7.63067531476535721e-01 likelihood=1.00000000000000000e+00 analog=95422 selected=95422 weighted=9.54220000000000000e+04 expected=9.56856161770316685e+04 sigma=1.50569018204319974e+02 variance-ratio=1.00000000000000022e+00 sink=0 packets=2
+PASS channel-importance reaction=CH2_C_H2 parent=4 physical=2.28920259442960683e-01 biased=2.28920259442960683e-01 likelihood=1.00000000000000000e+00 analog=28986 selected=28986 weighted=2.89860000000000000e+04 expected=2.87056848531094984e+04 sigma=1.48776248201948590e+02 variance-ratio=1.00000000000000022e+00 sink=0 packets=2
+PASS channel-importance reaction=CH2_ION parent=4 physical=8.01220908050362217e-03 biased=8.01220908050362217e-03 likelihood=1.00000000000000000e+00 analog=988 selected=988 weighted=9.88000000000000000e+02 expected=1.00469896985883224e+03 sigma=3.15697499459428208e+01 variance-ratio=1.00000000000000022e+00 sink=1 packets=1
+PASS channel-importance family parent=4 channels=3 total-rate=1.61790123456790155e-04 trials=200000 reacted=125396 analog-loss=125396 biased-loss=125396 family-ess=1.25396000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=4 analog-max-z=6.61193463973700352e-02 biased-max-z=6.61193463973700352e-02
+PASS channel-importance reaction=N_ION parent=5 physical=1.00000000000000000e+00 biased=1.00000000000000000e+00 likelihood=1.00000000000000000e+00 analog=125618 selected=125618 weighted=1.25618000000000000e+05 expected=1.25618000000000000e+05 sigma=0.00000000000000000e+00 variance-ratio=1.00000000000000000e+00 sink=1 packets=1
+PASS channel-importance family parent=5 channels=1 total-rate=2.34567901234567932e-07 trials=200000 reacted=125618 analog-loss=125618 biased-loss=125618 family-ess=1.25618000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=5 analog-max-z=0.00000000000000000e+00 biased-max-z=0.00000000000000000e+00
+PASS channel-importance reaction=CH3_CH2_H parent=6 physical=9.32167502510193979e-01 biased=9.32167502510193979e-01 likelihood=1.00000000000000000e+00 analog=116601 selected=116601 weighted=1.16601000000000000e+05 expected=1.16637458751588027e+05 sigma=8.89483565221103021e+01 variance-ratio=9.99999999999999112e-01 sink=0 packets=2
+PASS channel-importance reaction=CH3_CH_H2 parent=6 physical=6.65833930364424370e-02 biased=6.65833930364424370e-02 likelihood=1.00000000000000000e+00 analog=8383 selected=8383 weighted=8.38300000000000000e+03 expected=8.33124705368485957e+03 sigma=8.81846038525187055e+01 variance-ratio=1.00000000000000022e+00 sink=0 packets=2
+PASS channel-importance reaction=CH3_ION parent=6 physical=1.24910445336365999e-03 biased=1.24910445336365999e-03 likelihood=1.00000000000000000e+00 analog=141 selected=141 weighted=1.41000000000000000e+02 expected=1.56294194727127945e+02 sigma=1.24939572174895570e+01 variance-ratio=1.00000000000000000e+00 sink=1 packets=1
+PASS channel-importance family parent=6 channels=3 total-rate=9.27083950617283987e-04 trials=200000 reacted=125125 analog-loss=125125 biased-loss=125125 family-ess=1.25125000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=6 analog-max-z=1.53015918624493236e-01 biased-max-z=1.53015918624493236e-01
+PASS channel-importance reaction=NH_N_H parent=7 physical=1.00000000000000000e+00 biased=1.00000000000000000e+00 likelihood=1.00000000000000000e+00 analog=124912 selected=124912 weighted=1.24912000000000000e+05 expected=1.24912000000000000e+05 sigma=0.00000000000000000e+00 variance-ratio=1.00000000000000000e+00 sink=0 packets=2
+PASS channel-importance family parent=7 channels=1 total-rate=7.09876543209876675e-05 trials=200000 reacted=124912 analog-loss=124912 biased-loss=124912 family-ess=1.24912000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=7 analog-max-z=0.00000000000000000e+00 biased-max-z=0.00000000000000000e+00
+PASS channel-importance reaction=CH4_CH3_H parent=8 physical=3.42375559652357206e-02 biased=3.42375559652357206e-02 likelihood=1.00000000000000000e+00 analog=4304 selected=4304 weighted=4.30400000000000000e+03 expected=4.27853041875164672e+03 sigma=6.42809769223420631e+01 variance-ratio=9.99999999999999778e-01 sink=0 packets=2
+PASS channel-importance reaction=CH4_CH2_H2 parent=8 physical=5.26731630234395620e-01 biased=5.26731630234395620e-01 likelihood=1.00000000000000000e+00 analog=65810 selected=65810 weighted=6.58100000000000000e+04 expected=6.58235449038714869e+04 sigma=1.76499863424446630e+02 variance-ratio=1.00000000000000022e+00 sink=0 packets=2
+PASS channel-importance reaction=CH4_CH_H2_H parent=8 physical=8.42770608375033037e-02 biased=8.42770608375033037e-02 likelihood=1.00000000000000000e+00 analog=10381 selected=10381 weighted=1.03810000000000000e+04 expected=1.05317671846194371e+04 sigma=9.82047901116582125e+01 variance-ratio=9.99999999999999778e-01 sink=0 packets=2
+PASS channel-importance reaction=CH4_CH2_2H parent=8 physical=2.76534105873057656e-01 biased=2.76534105873057656e-01 likelihood=1.00000000000000000e+00 analog=34699 selected=34699 weighted=3.46990000000000000e+04 expected=3.45573610745325204e+04 sigma=1.58117273339930392e+02 variance-ratio=1.00000000000000022e+00 sink=0 packets=2
+PASS channel-importance reaction=CH4_ION parent=8 physical=7.82196470898077478e-02 biased=7.82196470898077478e-02 likelihood=1.00000000000000000e+00 analog=9772 selected=9772 weighted=9.77200000000000000e+03 expected=9.77479641822491431e+03 sigma=9.49221538525998909e+01 variance-ratio=1.00000000000000000e+00 sink=1 packets=1
+PASS channel-importance family parent=8 channels=5 total-rate=9.37530864197530862e-06 trials=200000 reacted=124966 analog-loss=124966 biased-loss=124966 family-ess=1.24966000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=8 analog-max-z=1.57261974486866689e-03 biased-max-z=1.57261974486866689e-03
+PASS channel-importance reaction=NH2_NH_H parent=9 physical=1.00000000000000000e+00 biased=1.00000000000000000e+00 likelihood=1.00000000000000000e+00 analog=124610 selected=124610 weighted=1.24610000000000000e+05 expected=1.24610000000000000e+05 sigma=0.00000000000000000e+00 variance-ratio=1.00000000000000000e+00 sink=0 packets=2
+PASS channel-importance family parent=9 channels=1 total-rate=2.59259259259259249e-06 trials=200000 reacted=124610 analog-loss=124610 biased-loss=124610 family-ess=1.24610000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=9 analog-max-z=0.00000000000000000e+00 biased-max-z=0.00000000000000000e+00
+PASS channel-importance reaction=O_ION parent=10 physical=1.00000000000000000e+00 biased=1.00000000000000000e+00 likelihood=1.00000000000000000e+00 analog=124943 selected=124943 weighted=1.24943000000000000e+05 expected=1.24943000000000000e+05 sigma=0.00000000000000000e+00 variance-ratio=1.00000000000000000e+00 sink=1 packets=1
+PASS channel-importance family parent=10 channels=1 total-rate=2.46913580246913593e-07 trials=200000 reacted=124943 analog-loss=124943 biased-loss=124943 family-ess=1.24943000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=10 analog-max-z=0.00000000000000000e+00 biased-max-z=0.00000000000000000e+00
+PASS channel-importance reaction=NH3_NH2_H parent=11 physical=9.61538461538461675e-01 biased=9.61538461538461675e-01 likelihood=1.00000000000000000e+00 analog=119887 selected=119887 weighted=1.19887000000000000e+05 expected=1.19808653846153858e+05 sigma=6.78824362256465719e+01 variance-ratio=9.99999999999998890e-01 sink=0 packets=2
+PASS channel-importance reaction=NH3_NH_H2 parent=11 physical=2.26244343891402709e-02 biased=2.26244343891402709e-02 likelihood=1.00000000000000000e+00 analog=2789 selected=2789 weighted=2.78900000000000000e+03 expected=2.81902714932126673e+03 sigma=5.24904587000365481e+01 variance-ratio=1.00000000000000000e+00 sink=0 packets=2
+PASS channel-importance reaction=NH3_NH_2H parent=11 physical=1.13122171945701355e-02 biased=1.13122171945701355e-02 likelihood=1.00000000000000000e+00 analog=1354 selected=1354 weighted=1.35400000000000000e+03 expected=1.40951357466063337e+03 sigma=3.73305351015141156e+01 variance-ratio=1.00000000000000000e+00 sink=0 packets=2
+PASS channel-importance reaction=NH3_ION parent=11 physical=4.52488687782805384e-03 biased=4.52488687782805384e-03 likelihood=1.00000000000000000e+00 analog=571 selected=571 weighted=5.71000000000000000e+02 expected=5.63805429864253369e+02 sigma=2.36908056864474830e+01 variance-ratio=1.00000000000000000e+00 sink=1 packets=1
+PASS channel-importance family parent=11 channels=4 total-rate=2.18271604938271620e-04 trials=200000 reacted=124601 analog-loss=124601 biased-loss=124601 family-ess=1.24601000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=11 analog-max-z=1.44351248828273493e-01 biased-max-z=1.44351248828273493e-01
+PASS channel-importance reaction=OH_O_H_GROUND parent=12 physical=1.74418604651162795e-01 biased=1.74418604651162795e-01 likelihood=1.00000000000000000e+00 analog=21632 selected=21632 weighted=2.16320000000000000e+04 expected=2.18499418604651182e+04 sigma=1.34308992585953689e+02 variance-ratio=1.00000000000000000e+00 sink=0 packets=2
+PASS channel-importance reaction=OH_O_H_067 parent=12 physical=2.90697674418604612e-02 biased=2.90697674418604612e-02 likelihood=1.00000000000000000e+00 analog=3664 selected=3664 weighted=3.66400000000000000e+03 expected=3.64165697674418561e+03 sigma=5.94625500237519518e+01 variance-ratio=1.00000000000000022e+00 sink=0 packets=2
+PASS channel-importance reaction=OH_O_H_269 parent=12 physical=8.13953488372092943e-02 biased=8.13953488372092943e-02 likelihood=1.00000000000000000e+00 analog=10345 selected=10345 weighted=1.03450000000000000e+04 expected=1.01966395348837195e+04 sigma=9.67816124218571758e+01 variance-ratio=1.00000000000000000e+00 sink=0 packets=2
+PASS channel-importance reaction=OH_O_H_384 parent=12 physical=1.74418604651162788e-02 biased=1.74418604651162788e-02 likelihood=1.00000000000000000e+00 analog=2136 selected=2136 weighted=2.13600000000000000e+03 expected=2.18499418604651146e+03 sigma=4.63344776849421081e+01 variance-ratio=1.00000000000000022e+00 sink=0 packets=2
+PASS channel-importance reaction=OH_ION parent=12 physical=6.97674418604651181e-01 biased=6.97674418604651181e-01 likelihood=1.00000000000000000e+00 analog=87496 selected=87496 weighted=8.74960000000000000e+04 expected=8.73997674418604729e+04 sigma=1.62552100895924298e+02 variance-ratio=1.00000000000000022e+00 sink=1 packets=1
+PASS channel-importance family parent=12 channels=5 total-rate=2.12345679012345700e-05 trials=200000 reacted=125273 analog-loss=125273 biased-loss=125273 family-ess=1.25273000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=12 analog-max-z=7.40013183535757207e-02 biased-max-z=7.40013183535757207e-02
+PASS channel-importance reaction=H2O_OH_H parent=13 physical=8.50774204526118849e-01 biased=2.50000000000000000e-01 likelihood=3.40309681810447540e+00 analog=106788 selected=31204 weighted=1.06190233112132046e+05 expected=1.06503318019397659e+05 sigma=5.21373979981774596e+02 variance-ratio=1.71037628278221305e+01 sink=0 packets=4
+PASS channel-importance reaction=H2O_O_H2 parent=13 physical=5.10464522715671290e-02 biased=2.50000000000000000e-01 likelihood=2.04185809086268516e-01 analog=6282 selected=31275 weighted=6.38591117917304746e+03 expected=6.39019908116385977e+03 sigma=3.12824387989064761e+01 variance-ratio=1.61377084454007530e-01 sink=0 packets=2
+PASS channel-importance reaction=H2O_O_2H parent=13 physical=6.38080653394589026e-02 biased=2.50000000000000000e-01 likelihood=2.55232261357835610e-01 analog=7864 selected=31718 weighted=8.09545686574783031e+03 expected=7.98774885145482313e+03 sigma=3.91030484986330862e+01 variance-ratio=2.04471101417666279e-01 sink=0 packets=2
+PASS channel-importance reaction=H2O_ION parent=13 physical=3.43712778628551957e-02 biased=2.50000000000000000e-01 likelihood=1.37485111451420783e-01 analog=4250 selected=30987 weighted=4.26025114854517597e+03 expected=4.30273404798366482e+03 sigma=2.10635087912636898e+01 variance-ratio=1.06784140969162986e-01 sink=1 packets=1
+PASS channel-importance family parent=13 channels=4 total-rate=1.45111111111111130e-05 trials=200000 reacted=125184 analog-loss=125184 biased-loss=125184 family-ess=4.27227538064829278e+04 ess-fraction=3.41279666782359770e-01 configured=1
+PASS channel-importance moments parent=13 analog-max-z=1.43959882069937123e-02 biased-max-z=3.94476355510620103e-02
+PASS channel-importance reaction=C2_2C parent=14 physical=9.90099009900990007e-02 biased=5.00000000000000000e-01 likelihood=1.98019801980198001e-01 analog=12458 selected=62586 weighted=1.23932673267326718e+04 expected=1.23922772277227705e+04 sigma=3.50279622781384461e+01 variance-ratio=1.09890109890109874e-01 sink=0 packets=8
+PASS channel-importance reaction=C2_ION parent=14 physical=9.00990099009900902e-01 biased=5.00000000000000000e-01 likelihood=1.80198019801980180e+00 analog=112704 selected=62576 weighted=1.12760712871287120e+05 expected=1.12769722772277222e+05 sigma=3.18754456731059861e+02 variance-ratio=9.09999999999999254e+00 sink=1 packets=1
+PASS channel-importance family parent=14 channels=2 total-rate=1.24691358024691371e-06 trials=200000 reacted=125162 analog-loss=125162 biased-loss=125162 family-ess=7.61671350633280817e+04 ess-fraction=6.08548401777920467e-01 configured=1
+PASS channel-importance moments parent=14 analog-max-z=7.77481954564098326e-02 biased-max-z=3.53324510443779084e-03
+PASS channel-importance reaction=C2H_C2_H parent=15 physical=8.75000000000000000e-01 biased=8.75000000000000000e-01 likelihood=1.00000000000000000e+00 analog=109180 selected=109180 weighted=1.09180000000000000e+05 expected=1.09329500000000000e+05 sigma=1.16902470033784979e+02 variance-ratio=9.99999999999999445e-01 sink=0 packets=8
+PASS channel-importance reaction=C2H_ION parent=15 physical=1.24999999999999972e-01 biased=1.24999999999999972e-01 likelihood=1.00000000000000000e+00 analog=15768 selected=15768 weighted=1.57680000000000000e+04 expected=1.56184999999999964e+04 sigma=1.16902470033784979e+02 variance-ratio=1.00000000000000000e+00 sink=1 packets=1
+PASS channel-importance family parent=15 channels=2 total-rate=9.87654320987654500e-06 trials=200000 reacted=124948 analog-loss=124948 biased-loss=124948 family-ess=1.24948000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=15 analog-max-z=1.59855476061363661e-01 biased-max-z=1.59855476061363661e-01
+PASS channel-importance reaction=C2H2_C2H_H parent=16 physical=7.38007380073800845e-01 biased=7.38007380073800845e-01 likelihood=1.00000000000000000e+00 analog=92223 selected=92223 weighted=9.22230000000000000e+04 expected=9.22627306273062859e+04 sigma=1.55473967334062564e+02 variance-ratio=9.99999999999999889e-01 sink=0 packets=2
+PASS channel-importance reaction=C2H2_C2_H2 parent=16 physical=1.99261992619926193e-01 biased=1.99261992619926193e-01 likelihood=1.00000000000000000e+00 analog=24992 selected=24992 weighted=2.49920000000000000e+04 expected=2.49109372693726946e+04 sigma=1.41234323983398269e+02 variance-ratio=1.00000000000000022e+00 sink=0 packets=8
+PASS channel-importance reaction=C2H2_ION parent=16 physical=6.27306273062730735e-02 biased=6.27306273062730735e-02 likelihood=1.00000000000000000e+00 analog=7801 selected=7801 weighted=7.80100000000000000e+03 expected=7.84233210332103499e+03 sigma=8.57343437073824219e+01 variance-ratio=1.00000000000000000e+00 sink=1 packets=1
+PASS channel-importance family parent=16 channels=3 total-rate=1.67283950617283971e-05 trials=200000 reacted=125016 analog-loss=125016 biased-loss=125016 family-ess=1.25016000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=16 analog-max-z=6.02618821316359757e-02 biased-max-z=6.02618821316359757e-02
+PASS channel-importance reaction=CN_C_N parent=17 physical=1.00000000000000000e+00 biased=1.00000000000000000e+00 likelihood=1.00000000000000000e+00 analog=125020 selected=125020 weighted=1.25020000000000000e+05 expected=1.25020000000000000e+05 sigma=0.00000000000000000e+00 variance-ratio=1.00000000000000000e+00 sink=0 packets=2
+PASS channel-importance family parent=17 channels=1 total-rate=3.95061728395061749e-06 trials=200000 reacted=125020 analog-loss=125020 biased-loss=125020 family-ess=1.25020000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=17 analog-max-z=0.00000000000000000e+00 biased-max-z=0.00000000000000000e+00
+PASS channel-importance reaction=HCN_CN_H parent=18 physical=9.66542750929368033e-01 biased=9.66542750929368033e-01 likelihood=1.00000000000000000e+00 analog=120823 selected=120823 weighted=1.20823000000000000e+05 expected=1.20874869888475834e+05 sigma=6.35935580718596114e+01 variance-ratio=1.00000000000000311e+00 sink=0 packets=2
+PASS channel-importance reaction=HCN_ION parent=18 physical=3.34572490706319670e-02 biased=3.34572490706319670e-02 likelihood=1.00000000000000000e+00 analog=4236 selected=4236 weighted=4.23600000000000000e+03 expected=4.18413011152416311e+03 sigma=6.35935580718595119e+01 variance-ratio=1.00000000000000022e+00 sink=1 packets=1
+PASS channel-importance family parent=18 channels=2 total-rate=1.66049382716049413e-05 trials=200000 reacted=125059 analog-loss=125059 biased-loss=125059 family-ess=1.25059000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=18 analog-max-z=1.01955862449979159e-01 biased-max-z=1.01955862449979159e-01
+PASS channel-importance reaction=C2H4_C2H2_H2 parent=19 physical=5.00000000000000000e-01 biased=5.00000000000000000e-01 likelihood=1.00000000000000000e+00 analog=62081 selected=62081 weighted=6.20810000000000000e+04 expected=6.24560000000000000e+04 sigma=1.76714458944365958e+02 variance-ratio=1.00000000000000000e+00 sink=0 packets=2
+PASS channel-importance reaction=C2H4_C2H2_2H parent=19 physical=4.79166666666666685e-01 biased=4.79166666666666685e-01 likelihood=1.00000000000000000e+00 analog=60265 selected=60265 weighted=6.02650000000000000e+04 expected=5.98536666666666715e+04 sigma=1.76560994339696180e+02 variance-ratio=1.00000000000000022e+00 sink=0 packets=2
+PASS channel-importance reaction=C2H4_ION parent=19 physical=2.08333333333333322e-02 biased=2.08333333333333322e-02 likelihood=1.00000000000000000e+00 analog=2566 selected=2566 weighted=2.56600000000000000e+03 expected=2.60233333333333303e+03 sigma=5.04788872258051597e+01 variance-ratio=1.00000000000000022e+00 sink=1 packets=1
+PASS channel-importance family parent=19 channels=3 total-rate=5.92592592592592666e-05 trials=200000 reacted=124912 analog-loss=124912 biased-loss=124912 family-ess=1.24912000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=19 analog-max-z=2.81003334631227453e-01 biased-max-z=2.81003334631227453e-01
+PASS channel-importance reaction=CO_C3P_O3P parent=20 physical=3.74013782083291779e-01 biased=3.74013782083291779e-01 likelihood=1.00000000000000000e+00 analog=46561 selected=46561 weighted=4.65610000000000000e+04 expected=4.67412503745131398e+04 sigma=1.71053729987508319e+02 variance-ratio=1.00000000000000022e+00 sink=0 packets=2
+PASS channel-importance reaction=CO_C1D_O1D parent=20 physical=4.67392389893138971e-02 biased=4.67392389893138971e-02 likelihood=1.00000000000000000e+00 analog=5957 selected=5957 weighted=5.95700000000000000e+03 expected=5.84109617497253657e+03 sigma=7.46196206429041524e+01 variance-ratio=9.99999999999999889e-01 sink=0 packets=2
+PASS channel-importance reaction=CO_ION parent=20 physical=5.79246978927394407e-01 biased=5.79246978927394407e-01 likelihood=1.00000000000000000e+00 analog=72454 selected=72454 weighted=7.24540000000000000e+04 expected=7.23896534505143354e+04 sigma=1.74522678708822468e+02 variance-ratio=1.00000000000000000e+00 sink=1 packets=1
+PASS channel-importance family parent=20 channels=3 total-rate=2.47234567901234575e-06 trials=200000 reacted=124972 analog-loss=124972 biased-loss=124972 family-ess=1.24972000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=20 analog-max-z=4.60875271066014461e-02 biased-max-z=4.60875271066014461e-02
+PASS channel-importance reaction=C2H5_C2H4_H parent=21 physical=8.70712401055408924e-01 biased=8.70712401055408924e-01 likelihood=1.00000000000000000e+00 analog=108746 selected=108746 weighted=1.08746000000000000e+05 expected=1.08733693931398404e+05 sigma=1.18566092171271890e+02 variance-ratio=9.99999999999999334e-01 sink=0 packets=2
+PASS channel-importance reaction=C2H5_ION parent=21 physical=1.29287598944590992e-01 biased=1.29287598944590992e-01 likelihood=1.00000000000000000e+00 analog=16133 selected=16133 weighted=1.61330000000000000e+04 expected=1.61453060686015779e+04 sigma=1.18566092171271919e+02 variance-ratio=9.99999999999999889e-01 sink=1 packets=1
+PASS channel-importance family parent=21 channels=2 total-rate=4.67901234567901359e-06 trials=200000 reacted=124879 analog-loss=124879 biased-loss=124879 family-ess=1.24879000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=21 analog-max-z=1.29738489902952205e-02 biased-max-z=1.29738489902952205e-02
+PASS channel-importance reaction=HCO_CH_O parent=22 physical=4.92307692307692335e-01 biased=4.92307692307692335e-01 likelihood=1.00000000000000000e+00 analog=61605 selected=61605 weighted=6.16050000000000000e+04 expected=6.15340307692307761e+04 sigma=1.76749410417235168e+02 variance-ratio=1.00000000000000022e+00 sink=0 packets=2
+PASS channel-importance reaction=HCO_OH_C parent=22 physical=4.92307692307692335e-01 biased=4.92307692307692335e-01 likelihood=1.00000000000000000e+00 analog=61425 selected=61425 weighted=6.14250000000000000e+04 expected=6.15340307692307761e+04 sigma=1.76749410417235168e+02 variance-ratio=1.00000000000000022e+00 sink=0 packets=2
+PASS channel-importance reaction=HCO_ION parent=22 physical=1.53846153846153855e-02 biased=1.53846153846153855e-02 likelihood=1.00000000000000000e+00 analog=1961 selected=1961 weighted=1.96100000000000000e+03 expected=1.92293846153846175e+03 sigma=4.35126969159509613e+01 variance-ratio=1.00000000000000000e+00 sink=1 packets=1
+PASS channel-importance family parent=22 channels=3 total-rate=8.02469135802469114e-05 trials=200000 reacted=124991 analog-loss=124991 biased-loss=124991 family-ess=1.24991000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=22 analog-max-z=1.09340322363469494e-01 biased-max-z=1.09340322363469494e-01
+PASS channel-importance reaction=C2H6_C2H4_H2 parent=23 physical=3.50047303689687783e-01 biased=3.50047303689687783e-01 likelihood=1.00000000000000000e+00 analog=43990 selected=43990 weighted=4.39900000000000000e+04 expected=4.37464616840113522e+04 sigma=1.68621264155974529e+02 variance-ratio=1.00000000000000000e+00 sink=0 packets=2
+PASS channel-importance reaction=C2H6_2CH3 parent=23 physical=8.32544938505203336e-02 biased=8.32544938505203336e-02 likelihood=1.00000000000000000e+00 analog=10533 selected=10533 weighted=1.05330000000000000e+04 expected=1.04045638599810773e+04 sigma=9.76644109288687474e+01 variance-ratio=1.00000000000000000e+00 sink=0 packets=2
+PASS channel-importance reaction=C2H6_C2H5_H parent=23 physical=3.12204351939451286e-01 biased=3.12204351939451286e-01 likelihood=1.00000000000000000e+00 analog=38865 selected=38865 weighted=3.88650000000000000e+04 expected=3.90171144749290470e+04 sigma=1.63816365286672266e+02 variance-ratio=1.00000000000000022e+00 sink=0 packets=2
+PASS channel-importance reaction=C2H6_CH4_CH2 parent=23 physical=2.08136234626300876e-01 biased=2.08136234626300876e-01 likelihood=1.00000000000000000e+00 analog=25763 selected=25763 weighted=2.57630000000000000e+04 expected=2.60114096499527004e+04 sigma=1.43518266391736063e+02 variance-ratio=1.00000000000000000e+00 sink=0 packets=2
+PASS channel-importance reaction=C2H6_ION parent=23 physical=4.63576158940397290e-02 biased=4.63576158940397290e-02 likelihood=1.00000000000000000e+00 analog=5822 selected=5822 weighted=5.82200000000000000e+03 expected=5.79345033112582678e+03 sigma=7.43295350851483363e+01 variance-ratio=1.00000000000000000e+00 sink=1 packets=1
+PASS channel-importance family parent=23 channels=5 total-rate=1.30493827160493849e-05 trials=200000 reacted=124973 analog-loss=124973 biased-loss=124973 family-ess=1.24973000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=23 analog-max-z=4.80119861530677733e-02 biased-max-z=4.80119861530677733e-02
+PASS channel-importance reaction=H2CO_HCO_H parent=24 physical=2.76474530831099241e-01 biased=2.76474530831099241e-01 likelihood=1.00000000000000000e+00 analog=34829 selected=34829 weighted=3.48290000000000000e+04 expected=3.45007037533512121e+04 sigma=1.57994107073019308e+02 variance-ratio=9.99999999999999778e-01 sink=0 packets=2
+PASS channel-importance reaction=H2CO_CO_H2 parent=24 physical=5.86461126005361932e-01 biased=5.86461126005361932e-01 likelihood=1.00000000000000000e+00 analog=72917 selected=72917 weighted=7.29170000000000000e+04 expected=7.31833109919570998e+04 sigma=1.73965927764069221e+02 variance-ratio=9.99999999999999889e-01 sink=0 packets=2
+PASS channel-importance reaction=H2CO_CO_2H parent=24 physical=1.34048257372654162e-01 biased=1.34048257372654162e-01 likelihood=1.00000000000000000e+00 analog=16683 selected=16683 weighted=1.66830000000000000e+04 expected=1.67276139410187679e+04 sigma=1.20354918645739971e+02 variance-ratio=1.00000000000000022e+00 sink=0 packets=2
+PASS channel-importance reaction=H2CO_ION parent=24 physical=3.01608579088471877e-03 biased=3.01608579088471877e-03 likelihood=1.00000000000000000e+00 analog=359 selected=359 weighted=3.59000000000000000e+02 expected=3.76371313672922270e+02 sigma=1.93710130220816481e+01 variance-ratio=1.00000000000000000e+00 sink=1 packets=1
+PASS channel-importance family parent=24 channels=4 total-rate=2.94716049382716058e-04 trials=200000 reacted=124788 analog-loss=124788 biased-loss=124788 family-ess=1.24788000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=24 analog-max-z=9.69812059276159606e-03 biased-max-z=9.69812059276159606e-03
+PASS channel-importance reaction=CH3OH_CH3_OH parent=25 physical=4.34108527131782995e-01 biased=4.34108527131782995e-01 likelihood=1.00000000000000000e+00 analog=54256 selected=54256 weighted=5.42560000000000000e+04 expected=5.42327441860465187e+04 sigma=1.75185180552257606e+02 variance-ratio=1.00000000000000022e+00 sink=0 packets=2
+PASS channel-importance reaction=CH3OH_ION parent=25 physical=5.65891472868217060e-01 biased=5.65891472868217060e-01 likelihood=1.00000000000000000e+00 analog=70673 selected=70673 weighted=7.06730000000000000e+04 expected=7.06962558139534958e+04 sigma=1.75185180552257606e+02 variance-ratio=1.00000000000000000e+00 sink=1 packets=1
+PASS channel-importance family parent=25 channels=2 total-rate=1.59259259259259275e-06 trials=200000 reacted=124929 analog-loss=124929 biased-loss=124929 family-ess=1.24929000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=25 analog-max-z=1.65937366107175334e-02 biased-max-z=1.65937366107175334e-02
+PASS channel-importance reaction=CO2_CO_O3P parent=26 physical=4.59311033449825268e-01 biased=4.59311033449825268e-01 likelihood=1.00000000000000000e+00 analog=57352 selected=57352 weighted=5.73520000000000000e+04 expected=5.73872391412880679e+04 sigma=1.76149501913774344e+02 variance-ratio=1.00000000000000022e+00 sink=0 packets=2
+PASS channel-importance reaction=CO2_CO_O1D parent=26 physical=1.39790314528207699e-01 biased=1.39790314528207699e-01 likelihood=1.00000000000000000e+00 analog=17513 selected=17513 weighted=1.75130000000000000e+04 expected=1.74656814777833279e+04 sigma=1.22573032803119077e+02 variance-ratio=1.00000000000000000e+00 sink=0 packets=2
+PASS channel-importance reaction=CO2_ION parent=26 physical=4.00898652021967061e-01 biased=4.00898652021967061e-01 likelihood=1.00000000000000000e+00 analog=50077 selected=50077 weighted=5.00770000000000000e+04 expected=5.00890793809286115e+04 sigma=1.73229428724143247e+02 variance-ratio=9.99999999999999889e-01 sink=1 packets=1
+PASS channel-importance family parent=26 channels=3 total-rate=2.47283950617283984e-06 trials=200000 reacted=124942 analog-loss=124942 biased-loss=124942 family-ess=1.24942000000000000e+05 ess-fraction=1.00000000000000000e+00 configured=0
+PASS channel-importance moments parent=26 analog-max-z=8.71631700916120251e-03 biased-max-z=8.71631700916120251e-03
+AMPS: Stage-7 channel-importance diagnostics wrote output=7000004 sampling-length=200000
+AMPS: comet diagnostics wrote output=7000004 iteration=200000 sampling-length=200000 emergencies=0
+PASS channel-importance diagnostics output=7000004 csv=PT/diagnostics/comet_stage7_importance.out=7000004.csv json=PT/diagnostics/comet_stage7_importance.out=7000004.json
+Channel-importance validation result: PASS families=27 biased-families=2 reactions=69 sinks=23 events=200000

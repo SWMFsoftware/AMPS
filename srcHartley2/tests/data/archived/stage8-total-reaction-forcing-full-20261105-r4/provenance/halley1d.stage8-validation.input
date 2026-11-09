@@ -1,0 +1,337 @@
+! Gas-only input for the spherically symmetric Comet 1P/Halley model in
+! Rubin et al., Icarus 213 (2011) 655--677.
+!
+! Paper values and derived numerical controls are distinguished in comments
+! and in srcHartley2/halley2011/PAPER_PARAMETERS.md.  Remaining angle-bracket
+! fields require an explicit case choice and intentionally stop preprocessing.
+
+#main
+
+SpeciesList=H,H2,C,CH,CH2,N,CH3,NH,CH4,NH2,O,NH3,OH,H2O,C2,C2H,C2H2,CN,HCN,C2H4,CO,C2H5,HCO,C2H6,H2CO,CH3OH,CO2
+
+makefile SOURCES=src
+makefile RUNDIR=run
+
+! srcHartley2 is the historical directory name of the generic comet app.
+ProjectSourceDirectory=srcHartley2
+WorkingSourceDirectory=build
+SourceDirectory=src
+
+Prefix=AMPS
+DiagnosticStream=screen
+! AMPS creates this path relative to the directory from which the executable
+! is launched. A run started in the repository root therefore writes to
+! /data/vtenishe/COMET1D/AMPS/PT/plots.
+OutputDirectory=PT/plots
+StdoutErrorLog=on
+DebuggerMode=off
+ForceRepeatableSimulationPath=on
+
+TimeStepMode=SpeciesLocalTimeStep
+! Each species has one statistical weight per block.  The radial initializer
+! makes W proportional to the local timestep, which keeps W/dt and the
+! expected steady-flux occupancy approximately constant with radius.  At a
+! block face the mover nevertheless uses the full
+! (W_old/dt_old)/(W_new/dt_new) ratio, so arbitrary adjacent local weights are
+! connected by conservative stochastic cloning/Russian roulette.  Chemistry
+! applies the analogous source-to-product W/dt conversion.
+ParticleWeightMode=SpeciesLocalParticleWeight
+! Transport and chemistry conserve physical flux statistically without an
+! individual correction factor on every particle.
+ParticleWeightCorrectionMode=on
+! Preserve the unused fraction of the old block step at an interface, rescale
+! it to the destination step, and complete MPI-crossing trajectories before
+! the next collision/chemistry pass.
+LocalTimeStepFluxResampling=on
+CouplerMode=off
+
+#endmain
+
+#include species.input
+
+#General
+  ! The second high-statistics validation scales the preceding injection
+  ! reference by another factor of four: 128 events per shortened parent
+  ! timestep give an estimated minimum of 839.2 model particles in the first
+  ! cell (CH4 is limiting).  The physical source rate is unchanged; the
+  ! smaller statistical weight creates four times as many model particles as
+  ! the completed 32-event run (sixteen times the original eight-event run).
+  ReferenceInjectionParticleNumber=128
+  ! The superseded global-weight run reached 62.09 million particles before it
+  ! was stopped after iteration 2729.  Retain its enlarged buffer during the
+  ! local-weight validation so capacity cannot mask a transport regression.
+  ! The expected production population should now remain far below this limit;
+  ! a large renewed growth trend is a validation failure, not a reason to
+  ! increase the buffer again.
+  RequestedParticleBufferLength=20000000
+  MaxMeshRefinmentLevel=29
+  EnforceRequestedMeshResolution=on
+  BlockCells=8,1,1
+  GhostCells=2,0,0
+  NastranSurfaceUserData=off
+
+  ! Rubin et al. use hard-sphere neutral collisions with 4*pi scattering.
+  define _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION_ _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__USER_DEFINED_
+  define _PIC__PARTICLE_COLLISION_MODEL__MODE_ _PIC_MODE_ON_
+#endGeneral
+
+! Rubin et al. include collisional relaxation, and the Gombosi cooling law
+! removes energy from H2O rotation.  Use the AMPS Larsen-Borgnakke model with
+! the same water rotational setup as the legacy comet application.  The core
+! VT implementation is explicitly marked unverified and aborts when called,
+! so this traceable Halley case enables rotational-translational relaxation
+! only; no vibrational modes are invented here.
+#IDF
+  Model=LB
+  vtRelaxation=off
+  vvRelaxation=off
+  rtRelaxation=on
+
+  nRotModes(H2O=3)
+  RotZnum(H2O=5)
+
+  ! All current neutral collisions are hard-sphere laws.  AMPS represents
+  ! their viscosity temperature index as omega=0.5 when redistributing
+  ! translational and H2O rotational energy.
+  TemperatureIndex(H2O,H)=0.5
+  TemperatureIndex(H2O,H2)=0.5
+  TemperatureIndex(H2O,C)=0.5
+  TemperatureIndex(H2O,CH)=0.5
+  TemperatureIndex(H2O,CH2)=0.5
+  TemperatureIndex(H2O,N)=0.5
+  TemperatureIndex(H2O,CH3)=0.5
+  TemperatureIndex(H2O,NH)=0.5
+  TemperatureIndex(H2O,CH4)=0.5
+  TemperatureIndex(H2O,NH2)=0.5
+  TemperatureIndex(H2O,O)=0.5
+  TemperatureIndex(H2O,NH3)=0.5
+  TemperatureIndex(H2O,OH)=0.5
+  TemperatureIndex(H2O,H2O)=0.5
+  TemperatureIndex(H2O,C2)=0.5
+  TemperatureIndex(H2O,C2H)=0.5
+  TemperatureIndex(H2O,C2H2)=0.5
+  TemperatureIndex(H2O,CN)=0.5
+  TemperatureIndex(H2O,HCN)=0.5
+  TemperatureIndex(H2O,C2H4)=0.5
+  TemperatureIndex(H2O,CO)=0.5
+  TemperatureIndex(H2O,C2H5)=0.5
+  TemperatureIndex(H2O,HCO)=0.5
+  TemperatureIndex(H2O,C2H6)=0.5
+  TemperatureIndex(H2O,H2CO)=0.5
+  TemperatureIndex(H2O,CH3OH)=0.5
+  TemperatureIndex(H2O,CO2)=0.5
+#endIDF
+
+#block ../hartley2.pl
+
+  Dimension=1
+  Geometry=Spherical
+  HeliocentricDistanceAU=0.90
+
+  ! Parent rates are Table 2 abundances multiplied by Q(H2O)=7.0e29 s^-1.
+  ! The spherical paper case uses a uniform source, T=180 K, and zero initial
+  ! bulk speed at the top of the Knudsen layer.
+  SurfaceSource=H2O   | UNIFORM | 7.00e29 | 180.0 | 0.0
+  SurfaceSource=CO    | UNIFORM | 9.10e28 | 180.0 | 0.0
+  SurfaceSource=CO2   | UNIFORM | 1.75e28 | 180.0 | 0.0
+  SurfaceSource=CH3OH | UNIFORM | 1.19e28 | 180.0 | 0.0
+  SurfaceSource=H2CO  | UNIFORM | 1.05e28 | 180.0 | 0.0
+  SurfaceSource=NH3   | UNIFORM | 1.05e28 | 180.0 | 0.0
+  SurfaceSource=CH4   | UNIFORM | 4.20e27 | 180.0 | 0.0
+  SurfaceSource=C2H6  | UNIFORM | 2.80e27 | 180.0 | 0.0
+  SurfaceSource=C2H4  | UNIFORM | 2.10e27 | 180.0 | 0.0
+  SurfaceSource=C2H2  | UNIFORM | 2.10e27 | 180.0 | 0.0
+  SurfaceSource=HCN   | UNIFORM | 1.40e27 | 180.0 | 0.0
+
+  ! Table 4 is loaded through a named physics database. The paper prints an
+  ! interval for the ground-state OH branch and studies both states of the
+  ! methanol-to-formaldehyde branch, so each run must select them explicitly.
+  PhysicsDatabase=Rubin2011
+  ! Complete Rubin's parent-only collision matrix by source priority. Preserve
+  ! Rubin Table 3, add the non-overlapping Combi (1996) H2O/OH/H2/H/O/CO
+  ! values, then use CHEMKIN Table 5.1 diameters with Lorentz mixing and
+  ! sigma=pi*d_ij^2 only for the remaining pairs. The final tier is explicitly
+  ! an analytical hard-sphere estimate rather than a measured cross section.
+  NeutralCollisionCompletion=COMBI1996_CHEMKIN_LORENTZ_HS
+  ! Before the first completed sample, and whenever the sampled kinetic
+  ! temperature is colder, evaluate the Crifo H2O law at the 180 K source
+  ! temperature.  Warmer completed-sample temperatures are used directly.
+  CollisionTemperatureFloor=180.0
+  CollisionTemperatureMinimumSampleParticleNumber=1.0
+  Rubin2011OHGroundRate=3.0e-6
+  Rubin2011MethanolH2COBranch=OFF
+  ! Reproducible physical-event streams use seed+MPI-rank. Stage-3 residual
+  ! phases use a separate key made from this seed, stable AMR node ID,
+  ! carrier epoch, reaction, and concrete product, so phase initialization
+  ! never advances the physical RNG.
+  CometRandomSeed=104729
+  ChemistryMode=on
+  ! Random-phase systematic residual allocation retains one correction-free
+  ! state per owner block/reaction/concrete product. The legacy default for
+  ! inputs that omit this record remains independent Bernoulli sampling.
+  ChemistryResidualSampling=bernoulli
+  ParticleWeightCorrectionWindowMode=on
+  ParticleWeightCorrectionWindow=1.0e-8 | 0.25 | 64.0
+  ParticleWeightCorrectionWindowMaxSplits=512
+  ChemistryDaughterPacketMode=on
+  ChemistryDaughterPacketMaximum=8
+  ChemistryDaughterPacketCount(GLOBAL)=1
+  ChemistryDaughterPacketCount(CHEMICAL_ONLY)=2
+  ChemistryDaughterPacketCount(SPECIES:C2)=8
+  ChemistryDaughterPacketCount(REACTION:H2O_OH_H)=4
+  ChemistryDaughterPacketCount(REACTION:C2_2C)=8
+  ChemistryChannelImportanceMode=on
+  ChemistryChannelBiasedProbability(REACTION:C2_2C)=0.5
+  ChemistryChannelBiasedProbability(REACTION:C2_ION)=0.5
+  ChemistryChannelBiasedProbability(REACTION:H2O_OH_H)=0.25
+  ChemistryChannelBiasedProbability(REACTION:H2O_O_H2)=0.25
+  ChemistryChannelBiasedProbability(REACTION:H2O_O_2H)=0.25
+  ChemistryChannelBiasedProbability(REACTION:H2O_ION)=0.25
+  ChemistryTotalReactionForcingMode=on
+  ChemistryTotalReactionForcing(SPECIES:C2)=on
+  ! The Stage-3 decision gate needs expected/represented source closure and
+  ! the systematic fixed-carrier-epoch discrepancy bound in every window.
+  CometDiagnostics=on
+
+  ! Water rotational cooling from the analytic Crovisier/Huebner
+  ! approximation printed as equation (48b) by Gombosi et al. (1986).
+  ! Species and model are paired explicitly so other comet inputs can select
+  ! different species-specific laws without changing application code.
+  RadiativeCooling=H2O | GOMBOSI1986_H2O
+
+  ! Rubin et al. place the inner boundary at a 6 km cometocentric radius and
+  ! the outer boundary at 10^6 km cometocentric radius.
+  NucleusRadius=6000.0
+  DomainOuterRadius=1.0e9
+  RadialCellNumber=2000
+  ! Derived from the outgoing parent density and the H2O-parent Table 3
+  ! cross sections; this is a resolution estimate rather than a paper value.
+  NucleusSurfaceResolution=0.3293692849882
+
+  RadialSimulationMode=on
+  ! A four-rank run at C=0.5 reached iteration 3500, then a collision-product
+  ! tail particle crossed more than one eight-cell MPI boundary block in one
+  ! move and reached a remotely owned block with no local allocation.  C=0.25
+  ! keeps the maximum expected H-to-heavy hard-sphere energy-transfer speed
+  ! within one boundary block while retaining the supplied, species-specific
+  ! characteristic speeds used by the local-timestep calculation.
+  RadialCourantNumber=0.25
+  RadialInnerBoundaryTemperature=180.0
+  ! Convergence is evaluated only at complete 10,000-iteration sampling
+  ! windows; 40,000 iterations is the unconditional safety ceiling for this
+  ! second high-statistics validation.
+  RadialSamplingLength=10000
+  ! At every complete sampling break, adapt each species' block-local weight
+  ! from that species' instantaneous mean population per cell in the block.
+  ! Weight changes are exact powers of two.  Halving a weight clones every
+  ! represented particle once per factor-of-two step; doubling a weight keeps
+  ! each particle with probability W_old/W_new=1/2 per step.  Empty cells are
+  ! never seeded, and completed samples are not altered retroactively.  After
+  ! adapting populated blocks, the code raises W/dt by powers of two through
+  ! each face-connected chain of empty neighboring blocks.  This prevents the
+  ! first transported particle from being cloned merely because an empty
+  ! destination retained an obsolete, very small species weight.  This is an
+  ! automatic consistency step of the same controller, not another keyword.
+  RadialParticleWeightAdaptation=on
+  ! Regular adaptation cadence is independent of the science sampling length.
+  ! This case retains one adaptation per 10,000-step sampling window.
+  RadialParticleWeightAdaptationInterval=10000
+  ! Scale both limits by another factor of four with the injection reference
+  ! so the block-local adaptation maintains four times the completed run's
+  ! mean model population.
+  RadialParticleNumberPerCellRange=800 | 3200
+  ! Chemically reachable species without a direct configured source receive a
+  ! separate population target. Explicit species records override this group,
+  ! and this group overrides the global fallback above.
+  RadialParticleNumberPerCellRange(CHEMICAL_ONLY)=50 | 200
+  ! Preserve source-derived regular weights for every directly supplied
+  ! parent. Emergency common-factor coarsening remains a buffer-safety
+  ! override and is reported whenever it occurs.
+  RadialParticleWeightLock=DIRECT_SOURCE
+  ! Before every regular MPI particle exchange, compare the most occupied
+  ! rank's live particle count with its local buffer capacity.  At 75%, apply
+  ! a common factor-two increase to every block/species weight and unbiased
+  ! 1/2 roulette to every particle, including particles already staged in a
+  ! boundary-block copy.  Repeat only if stochastic survival leaves a rank at
+  ! or above the threshold.  The common factor preserves all block and species
+  ! W/dt ratios while creating receive-side headroom before MPI migration.
+  ! A second trigger uses the same callback: at a completed sampling break,
+  ! sum all species in each owner block and divide by its cell count.  If the
+  ! largest block mean strictly exceeds 10 times (number of species) times the
+  ! requested maximum of 3200 particles/species/cell, record a collective
+  ! request.  The next regular MPI particle exchange then executes one common
+  ! emergency factor-two step at the same safe pre-exchange location.
+  RadialEmergencyParticleBufferUtilization=0.75
+  ! Transactional chemistry stops at synchronized checkpoints when any rank
+  ! reaches 75%, then repeats common factor-two coarsening until all ranks are
+  ! at or below 50%.  Ten percent of every particle buffer is never offered
+  ! to chemistry transactions, leaving hard headroom for migration and other
+  ! core bookkeeping.  A face multiplicity of one equalizes W/dt across each
+  ! connected radial mesh for a species, so the mover never allocates clones.
+  RadialAllocationLowWatermark=0.50
+  RadialAllocationReserveFraction=0.10
+  RadialMaxFaceTransferMultiplicity=1
+  ! Starting from every reaction parent present in a block, and from every
+  ! configured surface-source species before the first injection, follow the
+  ! enabled chemistry transitively: a newly created daughter may itself react
+  ! before the next 10,000-step sampling break.  Raise reachable product
+  ! weights by powers of two, whether those products are currently present or
+  ! absent.
+  ! The hard check sums coefficient*ceil[(W_parent/dt_parent)/
+  ! (W_product/dt_product)] over every product of one selected channel, so no
+  ! individual reaction event can allocate more than 64 daughter slots.  This
+  ! includes residual-resampling round-up and cascading daughter reactions;
+  ! it is a capacity bound, not merely an expected-product target.
+  RadialMaxPhotochemicalProductsPerReaction=64
+  ! Redistribute complete AMPS blocks more often than the science-output
+  ! window.  The first long-run attempt reached 12 million particles but
+  ! exhausted rank 17's five-million-slot local buffer at iteration 2344
+  ! because the advancing population front remained on that rank between
+  ! sampling-break rebalances.  Fifty iterations matches the core's default
+  ! minimum emergency-rebalance spacing and changes only MPI ownership.
+  RadialLoadBalanceInterval=50
+  RadialMaxIterations=40000
+  ! Require every compiled species' volume-weighted radial density profile to
+  ! change by no more than 5% for three consecutive window-to-window
+  ! comparisons. The first complete window supplies only the reference.
+  RadialConvergenceTolerance=0.05
+  RadialConvergenceWindows=3
+
+  ! Direct parents begin with the supplied 400 m/s characteristic speed.
+  ! Daughter recoil bounds are propagated through Table 4 using its excess
+  ! energies and momentum conservation. A directly injected species can have
+  ! a larger final bound when another parent also produces it as a daughter.
+  RadialCharacteristicSpeed=H     | 56997
+  RadialCharacteristicSpeed=H2    | 28869
+  RadialCharacteristicSpeed=C     | 13269
+  RadialCharacteristicSpeed=CH    | 12523
+  RadialCharacteristicSpeed=CH2   | 10463
+  RadialCharacteristicSpeed=N     | 8284
+  RadialCharacteristicSpeed=CH3   | 8546
+  RadialCharacteristicSpeed=NH    | 3799
+  RadialCharacteristicSpeed=CH4   | 6260
+  RadialCharacteristicSpeed=NH2   | 1531
+  RadialCharacteristicSpeed=O     | 7349
+  RadialCharacteristicSpeed=NH3   | 400
+  RadialCharacteristicSpeed=OH    | 5558
+  RadialCharacteristicSpeed=H2O   | 400
+  RadialCharacteristicSpeed=C2    | 6670
+  RadialCharacteristicSpeed=C2H   | 5687
+  RadialCharacteristicSpeed=C2H2  | 4713
+  RadialCharacteristicSpeed=CN    | 1423
+  RadialCharacteristicSpeed=HCN   | 400
+  RadialCharacteristicSpeed=C2H4  | 2900
+  RadialCharacteristicSpeed=CO    | 3683
+  RadialCharacteristicSpeed=C2H5  | 1629
+  RadialCharacteristicSpeed=HCO   | 695
+  RadialCharacteristicSpeed=C2H6  | 400
+  RadialCharacteristicSpeed=H2CO  | 400
+  RadialCharacteristicSpeed=CH3OH | 400
+  RadialCharacteristicSpeed=CO2   | 400
+
+  ! Dust and extended sources are outside this gas-only Halley case.
+  DustMode=off
+
+#endblock
+
+#end

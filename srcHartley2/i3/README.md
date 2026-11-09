@@ -1,9 +1,10 @@
 # 3I/ATLAS six-case radial campaign
 
 This directory owns the observation-derived data and deterministic runtime
-input generation for the six MAVEN/IUVS 3I/ATLAS cases supplied in
-`Archive.zip`. It does not put a 3I constant into the generic comet C++
-application.
+input generation for the six MAVEN/IUVS 3I/ATLAS cases supplied in the
+source-controlled test artifact
+`srcHartley2/tests/data/i3/Archive.zip`. It does not put a 3I constant into
+the generic comet C++ application.
 
 Run:
 
@@ -57,6 +58,9 @@ mpiexec -n 2 ./amps -i input/i3.in -case 1 --validate-runtime-input
 
 The supplied archive has SHA-256
 `344d33e69c913a5e76d57ddb7c92c1a8d1e52a92a03c06f2f5849f70e45597be`.
+Its canonical repository location is
+`srcHartley2/tests/data/i3/Archive.zip`; the portable orchestrator verifies
+that hash before regenerating the numerical brightness reference.
 Its embedded `Model_Table_6cases.pdf` has SHA-256
 `a88eadce0b9dbdd3f4fda0974ff00b6a791d516ff6be497e732b57bdb7f34e0c`.
 `reference/i3_cases.csv` transcribes its exposure times, heliocentric distance,
@@ -253,7 +257,7 @@ profiles on the reviewed numerical raster digitization in
 `visualization/references/i3_brightness_MAVEN/`.  The digitization preserves
 source-pixel anchors, hashes and limitations and can be rebuilt with
 `visualization/extract_i3_brightness_maven.py`; ordinary plotting does not
-require `Archive.zip`.  None of this evidence establishes convergence,
+read the archive. None of this evidence establishes convergence,
 optically thin H validity, or agreement with the observations. Those require
 later sampling windows, original quantitative uncertainties beyond what can
 be resolved in the supplied raster, and review of every H tau flag.

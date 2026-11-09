@@ -1,0 +1,37 @@
+{
+  "schema": "amps.comet.stage0-portable-baseline.v1",
+  "description": "Compact source-controlled Stage-0 protocol fixture derived from the 2026-11-04 18-rank Halley final window. It is a checker regression fixture, not a replacement for the complete science archive.",
+  "branch": "1d_comet_dev",
+  "mpi_processes": 18,
+  "sampling_length": 10000,
+  "final_output_index": 3,
+  "nominal_iteration": 40000,
+  "scientific_status": "nonconverged",
+  "artifacts": {
+    "production/run.log": "169b02808754050c6cf68aaa60f66b35bd129430d69f23086e04674e4f75b821",
+    "production/PT/plots/pic.C2.s=14.out=3.dat": "588407d631906d3332b9a52e87d17be1c420557ae72512ccb362ee56c2996835",
+    "production/PT/plots/rubin2011_comparison/comparison_profiles.csv": "c1f2ccaa7be1f1bb9e7a8015ea25de3e1e16e20b89bdb755386cc6329e9db225"
+  },
+  "c2": {
+    "row_count": 3010,
+    "mean_occupancy_all_cells": 0.14003317275747507,
+    "median_occupancy_positive_cells": 0.21885,
+    "maximum_occupancy": 1.55915,
+    "zero_cell_count": 2154,
+    "zero_cell_fraction": 0.7156146179401993,
+    "first_nonzero_radius_m": 6384136.0,
+    "last_nonzero_radius_m": 1000000000.0,
+    "weight_over_timestep_min_s-1": 5.468747336253055e27,
+    "weight_over_timestep_max_s-1": 5.468751544285267e27,
+    "density_at_10000_km_m-3": 681143.6827560823,
+    "comparison_amps_at_10000_km_cm-3": 0.6811436828,
+    "comparison_rubin_at_10000_km_cm-3": 81.45004565,
+    "amps_to_rubin_at_10000_km": 0.008362717017089849,
+    "integrated_change_status": "unavailable: exact AMPS cell measures were not supplied"
+  },
+  "rounding_policy": {
+    "integer_fields": "exact",
+    "output_derived_relative_tolerance": 1e-12,
+    "comparison_csv_relative_tolerance": 1e-9
+  }
+}
