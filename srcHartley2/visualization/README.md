@@ -45,6 +45,25 @@ to return to the shell.  Use `--no-show` on a batch node.  If neither
 `DISPLAY` nor `WAYLAND_DISPLAY` is available, the script saves the PNG and
 reports that no window can be opened.
 
+### Outer-boundary (edge) correction
+
+A spherical run removes particles at `mesh.outer_radius_m`, so long-lived H
+is missing from the far coma, and the brightness falls short more and more
+with distance. Add `--edge-correction` to overlay the AMPS brightness
+multiplied by N_full(b)/N_trunc(b). That ratio comes from the collisionless
+reference model in `comet_edge_correction.py`, which reads the run's own
+`i3.in`, `i3.conf`, and source-speed profile:
+
+```sh
+python3 srcHartley2/visualization/plot_i3_brightness_comparison.py --no-show \
+  --edge-correction --xmax 30 RUN/PT/plots/pic.H.brightness.s=0.out=6.dat --case 5
+```
+
+`python3 srcHartley2/visualization/comet_edge_correction.py TABLE --case N
+--csv OUT.csv` tabulates the factor. The method, validity, a worked I3
+example, reproduction commands, and the extension to 2D/3D are in
+`srcHartley2/EDGE_CORRECTION.md`.
+
 An alternate reference location must contain the same
 `maven_iuvs_brightness.csv` schema and is selected with:
 

@@ -6727,3 +6727,59 @@ table puts the time in the photochemistry phase and in particle exchange.
 The time is equal on every rank, including ranks without particles, so most
 of it is waiting at a synchronization point. The nodes are exclusive. The
 cause has not been found yet.
+
+## Outer-boundary (edge) brightness correction (2026-11-09)
+
+New tracked tool for the H column removed by the spherical outer boundary.
+Full description: `srcHartley2/EDGE_CORRECTION.md`.
+
+- `srcHartley2/visualization/comet_edge_correction.py` is a collisionless
+  steady-state reference model built from the run's own `i3.in`, `i3.conf`,
+  and source-speed profile. It returns C(b) = N_full/N_trunc, where the
+  truncated column counts only atoms whose whole history stayed inside the
+  domain. It generalizes the campaign-2 analysis script and agrees with it
+  within 0.7%. Seed noise is at most 0.14% with 3e6 parents.
+- `plot_i3_brightness_comparison.py --edge-correction` overlays the
+  corrected profile. The default plot is unchanged.
+- `srcHartley2/tests/test_comet_edge_correction.py` (7 tests, including the
+  1/r^2 closed form) runs in the `i3` group of `run_all_stage_tests.sh`.
+- I3 campaign 2 at the latest outputs: the median C at the H observation
+  points is 1.05, 1.05, 1.09, 1.14, 1.19, and 1.27 for cases 1–6. C is
+  1.000 for OH. In converged case 5, the corrected H model/obs ratio is
+  nearly flat at 0.84–0.92 beyond the innermost point, compared with 0.59–0.86
+  raw.
+- Not yet done: the two-radius experiment (1e9 versus 3e9 m, Section 7.3 of
+  the document), and radiation pressure in the reference model (estimated to
+  matter at the few-percent level only at the outermost points of cases 5–6).
+
+## I3 case 1 H Lyman-alpha deficit (2026-11-09)
+
+Analysis and test scripts are in
+`validation_runs/i3_campaign2_20261108/analysis_case1_h/README.md` (run
+archive, not tracked).
+
+- **Shape.** In converged case 1, OH matches but edge-corrected H is 0.60 of
+  the observations. The deficit is a uniform factor: a fit of
+  obs = k * model + c gives k = 1.72 and c = +0.008 kR. The model H/OH ratio
+  is 0.51–0.62 of the observed ratio.
+- **Case trend.** H/OH model/obs follows (CO+CO2)/H2O: 0.63 at 1.28 (case
+  1), 0.76 at 0.81 (case 2), and 0.89–1.13 at 0.06–0.07 (cases 4–6).
+- **Independent model.** The MAVEN team's red model curves in the supplied
+  rasters show the same H/OH deficit in cases 1–2.
+- **Q normalization.** The AMPS OH-matched Q divided by the team's plot Q
+  equals r_h^2 within ±8% in five of six cases. This suggests a 1-au
+  normalization in the legacy curves; it cancels in H/OH.
+- **Excluded or bounded.** Domain edge (5%), collisions (1%), optical depth
+  (tau <= 0.074), a constant background offset, and rising Q, which moves
+  H/OH the wrong way (x0.88–0.90). A falling Q would need Q 4–16 days earlier
+  to be about 9x the recent Q. An icy-grain water source changes H by only
+  x0.91–1.01.
+- **Leading candidate.** H-bearing volatiles other than water, about 20–25%
+  of Q(H2O) in molecules with about 4 H each in case 1.
+- **Next checks.**
+  - OH and Lyman-alpha fluorescence and solar input at r_dot = -40 km/s;
+    MAVEN EUVM Lyman-alpha instead of the F10.7 proxy.
+  - IUVS FUV/MUV relative calibration and background subtraction near Mars.
+  - The H2O -> H + OH energy partition, which sets the baseline for all
+    cases.
+

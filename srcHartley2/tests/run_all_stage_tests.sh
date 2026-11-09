@@ -767,7 +767,8 @@ print_plan() {
   printf '%s\n' \
     '  tests:' \
     '    Portable-data manifest, generic input parser, I3 generation/MAVEN' \
-    '            extraction, and comet/resonance brightness models' \
+    '            extraction/edge correction, and comet/resonance brightness' \
+    '            models' \
     '    Stage 0 focused MPI, analyzer, frozen baseline, production report' \
     '    Stage 1 parser/network, runtime policy, cadence, legacy equivalence' \
     '    Stage 2 pure planner and integrated 1/4/12 transaction evidence' \
@@ -1186,6 +1187,8 @@ run_test brightness brightness.focused \
   "$script_dir/run_comet_brightness_tests.sh"
 run_test i3 i3.maven-reference env PYTHONDONTWRITEBYTECODE=1 \
   python3 -m unittest "$script_dir/test_i3_brightness_reference.py"
+run_test i3 i3.edge-correction env PYTHONDONTWRITEBYTECODE=1 \
+  python3 -m unittest "$script_dir/test_comet_edge_correction.py"
 
 run_test stage0 stage0.complete env \
   HARTLEY2_MPIEXEC="$resolved_mpi_launcher" \

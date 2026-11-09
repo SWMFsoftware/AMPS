@@ -42,6 +42,11 @@ def build_parser() -> argparse.ArgumentParser:
   %(prog)s \
     validation_runs/i3_case1_run/production/PT/plots/pic.H.brightness.s=0.out=0.dat
 
+  # Add the outer-boundary (edge) correction from the collisionless reference
+  # model; the run directory is three levels above the table.
+  %(prog)s \
+    RUN/PT/plots/pic.H.brightness.s=0.out=6.dat --case 4 --edge-correction
+
   # Use the same CSV schema from another reference-data directory.
   %(prog)s PT/plots/pic.OH.brightness.s=3.out=0.dat \
     --case 1 --species OH --reference-dir /data/references/i3_MAVEN
@@ -118,6 +123,43 @@ require Archive.zip at plotting time.
     parser.add_argument(
         "--title",
         help="custom title (default identifies the case, species, and output index)",
+    )
+    edge = parser.add_argument_group(
+        "edge correction",
+        "Overlay AMPS x N_full/N_trunc from the collisionless reference model in "
+        "comet_edge_correction.py (see srcHartley2/EDGE_CORRECTION.md).",
+    )
+    edge.add_argument(
+        "--edge-correction",
+        action="store_true",
+        help="also plot the brightness corrected for the outer domain boundary",
+    )
+    edge.add_argument(
+        "--run-dir",
+        type=Path,
+        help="run directory holding i3.in, i3.conf and PT/plots (default: three levels above the table)",
+    )
+    edge.add_argument(
+        "--runtime-input",
+        type=Path,
+        help="runtime input for the correction (default: RUN/i3.in)",
+    )
+    edge.add_argument(
+        "--build-input",
+        type=Path,
+        help="compile-time input for the correction (default: RUN/i3.conf, else input/i3.conf)",
+    )
+    edge.add_argument(
+        "--edge-parents",
+        type=int,
+        default=3_000_000,
+        help="parent test particles per source in the reference model (default: 3000000)",
+    )
+    edge.add_argument(
+        "--edge-seed",
+        type=int,
+        default=20261109,
+        help="random seed of the reference model (default: 20261109)",
     )
     return parser
 
@@ -309,6 +351,68 @@ def output_path(requested: Path | None, case_number: int, species: str) -> Path:
     )
 
 
+def plot_edge_correction(
+    axis,
+    arguments: argparse.Namespace,
+    case_number: int,
+    species: str,
+    impact_m: np.ndarray,
+    brightness: np.ndarray,
+    observation: Dict[str, np.ndarray],
+) -> str:
+    """Plot AMPS x edge factor and return a one-line summary."""
+
+    import importlib.util
+
+    module_path = Path(__file__).resolve().parent / "comet_edge_correction.py"
+    specification = importlib.util.spec_from_file_location("comet_edge_correction", module_path)
+    edge = sys.modules.get(specification.name)
+    if edge is None:
+        edge = importlib.util.module_from_spec(specification)
+        sys.modules[specification.name] = edge  # dataclasses resolve their module
+        specification.loader.exec_module(edge)
+
+    run_dir = arguments.run_dir or edge.run_directory(arguments.brightness_file)
+    factors, inputs = edge.correction_for_run(
+        run_dir,
+        case_number,
+        edge.output_index(arguments.brightness_file),
+        impact_m,
+        (species,),
+        arguments.edge_parents,
+        arguments.edge_seed,
+        arguments.runtime_input,
+        arguments.build_input,
+    )
+    factor = factors[species]
+    corrected = brightness * factor
+    shown = (
+        np.isfinite(corrected)
+        & (corrected > 0.0)
+        & (impact_m <= 2.0 / 3.0 * inputs.outer_radius_m)
+        & (impact_m / 1.0e8 >= arguments.xmin)
+        & (impact_m / 1.0e8 <= arguments.xmax)
+    )
+    axis.plot(
+        impact_m[shown] / 1.0e8,
+        corrected[shown],
+        color="#e65100",
+        linewidth=1.8,
+        linestyle=(0, (5, 2)),
+        label=f"AMPS x edge correction (domain edge {inputs.outer_radius_m:.1e} m)",
+        zorder=5,
+    )
+    axis.axvline(inputs.outer_radius_m / 1.0e8, color="0.55", linewidth=0.8, linestyle="--", zorder=1)
+    ok = np.isfinite(factor) & (brightness > 0.0)
+    log_b, log_f = np.log(impact_m[ok]), np.log(factor[ok])
+    at_points = np.exp(np.interp(np.log(observation["x"] * 1.0e8), log_b, log_f))
+    return (
+        f"edge correction: domain edge {inputs.outer_radius_m:.3e} m; factor at the "
+        f"observation points median {np.median(at_points):.4f}, range "
+        f"{at_points.min():.4f}--{at_points.max():.4f}; plotted up to 2/3 of the edge"
+    )
+
+
 def plot_comparison(arguments: argparse.Namespace) -> Path:
     variables, data, tecplot_title = read_brightness(arguments.brightness_file)
     species = infer_species(arguments.brightness_file, variables, arguments.species)
@@ -406,6 +510,11 @@ def plot_comparison(arguments: argparse.Namespace) -> Path:
         label="AMPS particle-resolved brightness",
         zorder=5,
     )
+    edge_summary = None
+    if arguments.edge_correction:
+        edge_summary = plot_edge_correction(
+            axis, arguments, case_number, species, data[:, x_column], brightness, observation
+        )
 
     axis.set_xscale("log")
     axis.set_yscale("log")
@@ -448,6 +557,8 @@ def plot_comparison(arguments: argparse.Namespace) -> Path:
     print(f"observation points: {observation['x'].size}")
     print(f"AMPS profile: {arguments.brightness_file}")
     print(f"plotted AMPS samples: {x.size}; Y range: {ymin:g}--{arguments.ymax:g} kR")
+    if edge_summary is not None:
+        print(edge_summary)
     print(f"wrote: {destination.resolve()}")
     if show_figure:
         print("opening interactive Matplotlib window; close the window to return to the shell")
