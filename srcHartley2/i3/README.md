@@ -196,7 +196,7 @@ alter the physical production rates above.
 ## Brightness scope and limitations
 
 Each case requests 200 logarithmic impact parameters from the nucleus
-surface to the finite 10^6-km domain edge. The input selects the reusable core
+surface to the finite domain edge (3x10^6 km since campaign 2). The input selects the reusable core
 models `OH_AX00_SA1988_LOWELL_UNQUENCHED` and `H_LYA_IKL2020`, and supplies
 the observation's heliocentric radial velocity, explicit Sun/comet/observer
 geometry, and 1-AU LASP V4 Ly-alpha photon flux. The Lowell source quantity
@@ -234,7 +234,9 @@ radial force would be physically incorrect. Particle-resolved brightness is
 written as ordinary Tecplot data using
 `PT/plots/pic.<species>.brightness.s=<species-index>.out=<output-index>.dat`.
 The integral stops at the finite domain and performs no unreported outer-tail
-continuation.
+continuation. The far-coma (edge) correction used in the comparison plots is
+applied only in post-processing; see "What does 'corrected for the 3e9-m edge
+(collisionless reference)' mean?" below.
 
 ### Shared velocity-dependent fluorescence data
 
@@ -255,6 +257,136 @@ hash. Run them with:
 
 ```sh
 make -C src/models/resonance_fluorescence test
+```
+
+## What does "corrected for the 3e9-m edge (collisionless reference)" mean?
+
+### Short answer
+
+AMPS deletes every particle that crosses the outer boundary at 3e9 m (3
+million km). H atoms travel about 5e11 m before they are ionized, so every
+line of sight misses the part of the H coma that lies beyond the boundary.
+
+We estimate the missing part with a separate, much simpler model of the same
+coma. It uses the same reaction rates, product energies, and AMPS gas flow,
+but has no collisions after photodissociation. That model computes each
+column twice: once for an unbounded coma, and once counting only atoms that
+stayed inside 3e9 m, which is what AMPS can hold. The corrected curve is the
+AMPS brightness multiplied by the ratio of the two.
+
+- For H, the correction is +1–9% at the case-1 points and up to +30–73% at
+  the outermost points of cases 4–6.
+- OH is unchanged: it never reaches the boundary.
+
+### Detailed answer
+
+**What is missing, and why.** The outer boundary removes two kinds of atoms:
+
+- atoms that would be beyond 3e9 m on the line of sight;
+- atoms that would be inside, but whose parent (H2O, OH, or H2) left the
+  domain before decaying, so in AMPS they are never born.
+
+How much this matters depends on how far each species travels before it is
+destroyed:
+
+| Species | Speed | Lifetime at r_h = 1.36–1.75 au | Distance travelled | Compared with 3e9 m |
+| --- | --- | --- | --- | --- |
+| H | about 27 km/s | 1.6–2.8e7 s | 4–8e11 m | 150–250 times farther |
+| OH | about 1.6 km/s | 1.3–2.1e5 s | about 3e8 m | well inside |
+
+Inside the domain, the H density therefore falls almost exactly as 1/r^2.
+For a 1/r^2 coma, the fraction of the column lost at impact parameter b is
+1 - (2/pi) arctan(sqrt(R^2 - b^2)/b). That is 2% at b = 1e8 m, 9% at
+4e8 m, and 38% at 1.7e9 m.
+
+**The collisionless reference.** It is an independent steady-state Monte
+Carlo model built from the run's own files:
+
+- **Inputs:** case rates, nucleus radius, and `mesh.outer_radius_m` from
+  `i3.in`; reaction topology and recoil energies from `i3.conf`; the AMPS H2O
+  radial speed profile at the same output.
+- **Parents:** water molecules leave the nucleus along the AMPS bulk flow
+  and decay at sampled radii.
+- **Products:** they receive the same recoil law as in AMPS (momentum
+  conserved, full excess energy as translation). They fly in straight lines;
+  OH -> O + H and H2 -> 2H are followed through the chain.
+- **Steady-state density:** obtained by placing each H or OH at a
+  log-uniformly sampled age with weight age * ln(1e9) * exp(-beta * age).
+  The density is binned in 1,000 spherical shells and projected exactly onto
+  each impact parameter.
+- **Two columns from the same particles:**
+  - N_full(b): every atom;
+  - N_trunc(b): only atoms whose whole history (parent decay point, every
+    intermediate decay point, and present position) stayed within 3e9 m.
+
+  For straight-line motion this equals the population AMPS contains.
+
+**The factor.** C(b) = N_full(b) / N_trunc(b), and corrected(b) =
+AMPS(b) * C(b).
+
+- Only the ratio enters, so the reference model's absolute normalization
+  cancels.
+- Because both columns share the same random particles, the noise in C is
+  small: 0.14% between random seeds with 3e6 parents.
+- C is shown only up to 2e9 m, two-thirds of the edge. Near the edge
+  N_trunc goes to zero and C diverges.
+
+**Size of the correction.** Median (range) of C at the H observation points,
+campaign 2, latest outputs:
+
+| Case | C for H | Model/obs before | Model/obs after |
+| ---: | --- | ---: | ---: |
+| 1 | 1.051 (1.014–1.094) | 0.55 | 0.60 |
+| 2 | 1.046 (1.012–1.085) | 0.72 | 0.75 |
+| 3 | 1.086 (1.017–1.175) | 0.94 | 1.02 (not converged) |
+| 4 | 1.144 (1.036–1.296) | 1.01 | 1.16 |
+| 5 | 1.193 (1.039–1.437) | 0.73 | 0.89 |
+| 6 | 1.272 (1.045–1.727) | 0.91 | 1.19 |
+
+C = 1.000 for OH in every case. Cases 4–6 have the largest corrections
+because their observations reach 1.1–1.9e9 m.
+
+**Why it can be trusted.**
+
+- **AMPS against the truncated reference.** OH agrees within 2%. H agrees
+  within 1–8%, and that excess is the collisional effect AMPS includes and
+  the reference omits.
+- **Analytic limit.** In the 1/r^2 limit the model reproduces the closed form
+  within 0.6% (`srcHartley2/tests/test_comet_edge_correction.py`).
+- **Independent implementation.** A separate implementation written for the
+  campaign analysis agrees within 0.7%.
+
+**What it is not.**
+
+- It is not AMPS output: the raw AMPS curve is always plotted beside it.
+- It does not model collisions.
+- It ignores solar radiation pressure. The effect is about 1% at
+  b <= 5e8 m and a few percent at the outermost points of cases 5–6.
+- It assumes that the missing atoms have the same effective g-factor as the
+  included atoms on each ray. That g varies by 1–5% across a case.
+- It is a steady state.
+- It does not fix differences between the model and the observations inside
+  the domain. Case 1 is still 0.60 after correction.
+
+**More detail and reproduction.**
+
+- Method, I3 example, and the 2D/3D extension: `srcHartley2/EDGE_CORRECTION.md`.
+- Complete description of the reference model and both implementations:
+  `srcHartley2/COLLISIONLESS_REFERENCE.md`.
+- Code: `srcHartley2/visualization/comet_edge_correction.py`.
+
+Plot one case with the corrected curve:
+
+```sh
+python3 srcHartley2/visualization/plot_i3_brightness_comparison.py --no-show \
+  --edge-correction --xmax 30 RUN/PT/plots/pic.H.brightness.s=0.out=K.dat --case N
+```
+
+Tabulate C(b):
+
+```sh
+python3 srcHartley2/visualization/comet_edge_correction.py \
+  RUN/PT/plots/pic.H.brightness.s=0.out=K.dat --case N --csv OUT.csv
 ```
 
 ## Validation boundary

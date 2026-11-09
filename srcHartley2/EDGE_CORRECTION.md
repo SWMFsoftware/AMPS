@@ -103,7 +103,8 @@ b <= 2R/3.
 ## 3. How the factor is computed
 
 `comet_edge_correction.py` runs a collisionless steady-state test-particle
-model. It reads everything from the run directory `RUN`:
+model. Its full methodology and implementation are documented in
+`srcHartley2/COLLISIONLESS_REFERENCE.md`. It reads everything from the run directory `RUN`:
 
 | Input | Source |
 | --- | --- |

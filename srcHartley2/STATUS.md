@@ -6682,8 +6682,9 @@ implementation and fixture contracts; it is not a new converged comet run.
 
 Cases 1, 2, and 5 converged at iteration 70,000. Their windows 5–7 passed the
 5% criterion, and the runs ended normally after 6.8, 9.8, and 9.4 h. Cases 4
-and 6 have passed two of the three windows and should end at iteration
-80,000. Case 3 had passed none at iteration 45,600. No log contains an error.
+and 6 converged at iteration 80,000, after 13.1 and 13.6 h (update at
+13:15 CST). Case 3 had passed none of its windows at iteration 48,000. No
+log contains an error.
 Details, plots, and scripts are in
 `validation_runs/i3_campaign2_20261108/README.md`.
 
@@ -6698,11 +6699,11 @@ The table gives the median model/observed ratio at the latest output.
 | 1 | 6 | converged | 0.95 | 0.55 | 0.60 | 1.01 |
 | 2 | 6 | converged | 0.99 | 0.72 | 0.75 | 1.02 |
 | 3 | 3 | running | 0.97 | 0.94 | 1.02 | not converged |
-| 4 | 6 | running | 1.04 | 1.00 | 1.14 | 1.04 |
+| 4 | 7 | converged | 1.02 | 1.01 | 1.16 | 1.08 |
 | 5 | 6 | converged | 1.00 | 0.73 | 0.89 | 1.07 |
-| 6 | 6 | running | 1.03 | 0.89 | 1.16 | 1.02 |
+| 6 | 7 | converged | 1.06 | 0.91 | 1.19 | 1.06 |
 
-- OH: the rate scaling works. OH matches within 5% in every case.
+- OH: the rate scaling works. OH matches within 6% in every case.
 - Collisional H enhancement: 1–7%. This is smaller than the campaign-1
   estimate of 3–16%, so collisions with the added CO/CO2 do not explain the H
   deficit.
@@ -6763,7 +6764,7 @@ archive, not tracked).
   obs = k * model + c gives k = 1.72 and c = +0.008 kR. The model H/OH ratio
   is 0.51–0.62 of the observed ratio.
 - **Case trend.** H/OH model/obs follows (CO+CO2)/H2O: 0.63 at 1.28 (case
-  1), 0.76 at 0.81 (case 2), and 0.89–1.13 at 0.06–0.07 (cases 4–6).
+  1), 0.76 at 0.81 (case 2), and 0.89–1.14 at 0.06–0.07 (cases 4–6).
 - **Independent model.** The MAVEN team's red model curves in the supplied
   rasters show the same H/OH deficit in cases 1–2.
 - **Q normalization.** The AMPS OH-matched Q divided by the team's plot Q
@@ -6778,7 +6779,7 @@ archive, not tracked).
   of Q(H2O) in molecules with about 4 H each in case 1.
 - **Next checks.**
   - OH and Lyman-alpha fluorescence and solar input at r_dot = -40 km/s;
-    MAVEN EUVM Lyman-alpha instead of the F10.7 proxy.
+    MAVEN EUVM Lyman-alpha instead of the Earth-referenced LASP composite.
   - IUVS FUV/MUV relative calibration and background subtraction near Mars.
   - The H2O -> H + OH energy partition, which sets the baseline for all
     cases.
