@@ -540,7 +540,7 @@ void PIC::TimeStepInternal::ExecutionTrackFieldSolverECSIM(double& ParticleMovin
     //#endif
 
     double timeNow = PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::CPLR::FLUID::iCycle;    
-    if (PIC::ThisThread==0) printf("pic.cpp timeNow:%e,iCycle:%d\n",timeNow,PIC::CPLR::FLUID::iCycle);
+    if (PIC::ThisThread==0) printf("pic.cpp timeNow:%e,iCycle:%ld\n",timeNow,PIC::CPLR::FLUID::iCycle);
     PIC::CPLR::FLUID::write_output(timeNow);
     PIC::CPLR::FLUID::check_max_mem_usage();
     PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::Print();

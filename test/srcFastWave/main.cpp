@@ -563,16 +563,19 @@ int main(int argc,char **argv) {
   //generate mesh or read from file
   bool NewMeshGeneratedFlag=false;
 
-  char fullname[STRING_LENGTH];
-  sprintf(fullname,"%s/%s",PIC::UserModelInputDataPath,mesh);
+  // Both path components use the 2000-byte PIC string limit, whereas the old
+  // STRING_LENGTH destination held only 200 bytes.  Keep the complete path in
+  // dynamically sized storage so a long configured data path is neither
+  // overwritten nor silently truncated.
+  const std::string fullname=std::string(PIC::UserModelInputDataPath)+"/"+mesh;
 
   FILE *fmesh=NULL;
 
-  fmesh=fopen(fullname,"r");
+  fmesh=fopen(fullname.c_str(),"r");
 
   if (fmesh!=NULL) {
     fclose(fmesh);
-    PIC::Mesh::mesh->readMeshFile(fullname);
+    PIC::Mesh::mesh->readMeshFile(fullname.c_str());
   }
   else {
     NewMeshGeneratedFlag=true;
