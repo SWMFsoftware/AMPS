@@ -139,6 +139,8 @@ They run on the login node (no GPU), from `$APP` with `.venv/bin/python`. `late_
 `figures_12m_positive_cycles.sh` + `positive_cycles_table.py` (2026-11-08) draw the fit / fine-tuning cycles into `12M/model_vs_observations_positive_cycles/` (final state per lambda; first scan vs cycle-1 fit vs final; cycles_table.txt).
 `RATIO=1e-5 figures_12m_positive_cycles.sh` (2026-11-09) draws the ratio-1e-5 chains into `12M/model_vs_observations_positive_cycles_r1e-5/`.
 `figures_12m_clip_vs_positive.sh` (2026-11-09) draws the last round against the clipped-model refit (D0/D1/D2) into `12M/model_vs_observations_clip_vs_positive/`.
+`snapshot_positive.sh` (2026-11-09) snapshots the positive-activity work and the clipped refits (restart files hard-linked) into `12M/snapshot_positive_<UTC>/`.
+`shadow_classes.py` (2026-11-10; run copy in `$COPS_OUTPUT_ROOT/analysis/shadow_zero_activity_12m/`) classifies the seen facets of a fit by illumination (sunlit / cast shadow / night) over the fit's records, for zero-activity and active facets.
 
 ## Running on another machine
 
