@@ -1,0 +1,109 @@
+\chapter{Compile-time and runtime input}\label{ch:inputs}
+\section{Two layers with different lifetimes}
+Compile-time decks use the AMPS generator vocabulary: main/general/module
+blocks, species topology, source directories, field/particle layouts, module
+selectors and generated hooks. Runtime input sets the selected physical case
+within those compiled capabilities. An input file ending in .input is not the
+same language or lifetime as a generic runtime .in file.
+
+\begin{longtable}{L{0.24\textwidth}L{0.43\textwidth}L{0.20\textwidth}}
+\caption{Input ownership and rebuild requirements.}\\
+\toprule Layer & Typical choices & Rebuild?\\\midrule\endfirsthead
+\toprule Layer & Typical choices & Rebuild?\\\midrule\endhead
+Compile time & Species, dimension, module availability, block/ghost layout,
+particle extension capacity & Clean native rebuild.\\
+Runtime owner & Source rate/shape, epoch, supported reactions, numerical
+controls, observers & New run; no rebuild if capabilities suffice.\\
+External source/event file & Geometry, per-source strengths, kinematics,
+model identity and provenance & New run and validated receipt.\\
+Machine profile & Compiler/launcher argv, data/output paths, capabilities &
+Test setup; not a physical source law.\\
+\bottomrule
+\end{longtable}
+
+\section{The generic runtime grammar}
+The header-only reader in \path{src/general/input/amps_input.h} implements
+nestable \code{#begin KIND[: NAME]} and \code{#end KIND} blocks,
+\code{key = value} assignments, exclamation comments, trailing-backslash line
+continuation and \code{#include "PATH"}. Includes resolve relative to the
+including file and are cycle/depth checked. This grammar parses structure;
+each owner validates the meaning, units, required fields and supported values.
+
+\begin{lstlisting}
+#begin application: example
+  source.temperature_k = 175 ! illustrative owner-specific keys
+  #begin case: quiet
+    source.rate_s-1 = 8.0e27
+  #end case
+  #begin case: active
+    source.rate_s-1 = 2.8e29
+  #end case
+#end application
+\end{lstlisting}
+This demonstrates grammar only; there is no generic application named
+example installed by this manual. Owners reject unknown keys rather than
+ignoring misspellings. Keys are case-sensitive; structural block-kind matching
+follows the generic reader's normalization. Diagnostics retain the originating
+file and line, including included files.
+
+\section{Named cases and complete receipts}
+A direct named case overlays common assignments and recursively matching
+non-case child blocks. Cases cannot be nested. When cases exist, selection
+must be explicit; an absent/unknown selector is an error. A selector for an
+owner with no cases is also rejected. Only the selected case survives into
+the resolved configuration and its fingerprint.
+
+The generic reader does not prescribe one CLI spelling. Moon uses
+\code{-input}; Enceladus supports \code{-input} and \code{--input}; I3 uses
+\code{-i} and \code{-case}; current SEP owners document their aliases/default
+\path{amps.in}. Follow the application CLI, not an invented universal flag.
+
+\section{Examples of real owner controls}
+The maintained Enceladus receipt contains:
+\begin{lstlisting}
+#begin application: enceladus
+schema_version=2
+source_distribution_file=enceladus_e3_equal_h2o_co2_sources.in
+simulated_species=H2O,CO2
+injected_species=H2O,CO2
+chemistry_species=H2O
+reaction_products=discard
+primary_macroparticles_per_step.H2O=100
+primary_macroparticles_per_step.CO2=100
+characteristic_speed.H2O_m_s-1=300
+characteristic_speed.CO2_m_s-1=300
+courant.H2O=0.5
+courant.CO2=0.5
+sample_length_steps=1000
+total_iterations=10000
+particle_splitting_merging=off
+#end application
+\end{lstlisting}
+This is an excerpt: it omits other required controls and is not a complete
+run file. Use \path{input/enceladus.in} and its validated companion source
+receipt. Its source speeds and thermal law are supplied separately; the
+characteristic speed here controls the numerical timestep, not source fitting.
+
+\section{Source and observation files}
+The same Enceladus source grammar supports shape and absolute mode.
+Shape mode requires a user total per species and normalizes nonnegative
+component strengths. Absolute mode forbids a contradictory additional total.
+The file also names source distribution, frame, stripe projection, launch
+kinematics and all canonical components. A missing strength is an error,
+not an implicit zero. Documented future distribution identifiers must not be
+accepted before their geometry and source laws are implemented.
+
+Repeated named observation blocks select data products. Adding an event
+requires its data reduction/response, epoch/frame, trajectory or ray geometry,
+units and comparison operator. Comment the complete block to omit it;
+commenting only its first line leaves an invalid document. Data paths belong
+in the run receipt or machine data setup, not hidden compiled defaults.
+
+\section{Validation and provenance rules}
+Validate finite values, physical ranges and dependencies before allocation.
+Do not accept an inactive control whose meaning is undefined merely because
+it is not currently used. Preserve the expanded/canonical text, selected case,
+external-file hashes and compiled topology. The same-looking key in a retired
+INI deck is not current generic syntax; use maintained converters where
+provided, then validate the converted file.
+\source{src/INPUT_FILE.md; input/enceladus.in; srcEnceladus/SOURCE_DISTRIBUTION_FILE.md}

@@ -1,0 +1,66 @@
+\chapter{Particle movers, forces and field solvers}\label{ch:movers}
+\section{Neutral and charged characteristics}
+For a neutral under a prescribed force,
+$\dot{\boldsymbol x}=\boldsymbol v$ and
+$\dot{\boldsymbol v}=\boldsymbol F/m$.
+Gravity from a spherical body is
+$-\mathcal GM\,\boldsymbol r/r^3$ outside its mass distribution, with
+$\mathcal GM$ in $\mathrm{m^3\,s^{-2}}$. Nonspherical gravity requires a
+separately defined mass model; a surface shape alone does not determine it.
+Radiation pressure and gas drag are distinct accelerations with their own
+size, velocity and geometry dependence.
+
+Charged-particle trajectories satisfy
+\begin{equation}
+\dot{\boldsymbol v}=\frac{q}{m}
+(\boldsymbol E+\boldsymbol v\times\boldsymbol B)+\boldsymbol a_{\rm other}.
+\end{equation}
+The relativistic equation advances momentum
+$\boldsymbol p=\gamma m\boldsymbol v$ with
+$\gamma=\sqrt{1+p^2/(m^2c^2)}$; replacing $m$ by a constant guessed
+relativistic mass is generally incorrect. Validate gyrofrequency, phase,
+parallel acceleration and drift against independent solutions.
+
+\section{Selecting a mover}
+The ordinary host dispatch is
+\code{PIC::Mover::DispatchParticleMover(ptr, dt, node)}.
+Legacy macro selection remains the default. Pointer selection requires its
+compiled legacy-settings switch to be off and a valid
+\code{PIC::Mover::SetUserDefinedParticleMover} callback installed before
+advancing a particle. Boundary-specific or device bulk kernels can have
+separate selection paths. The callback owns deletion/list insertion/migration
+according to the configured mover contract.
+
+The timestep must resolve the fastest relevant gyroperiod and field scale,
+as well as cell crossings. Guiding-center motion assumes gyroaveraging is
+valid: gyroradius and gyroperiod must be small relative to background scales.
+Its drifts, mirror force and parallel electric force are not a valid fallback
+at a magnetic null; the field-local API provides typed invalid-domain status.
+
+\section{Electromagnetic PIC and ECSIM}
+Self-consistent PIC deposits particle charge/current and solves fields rather
+than reading a prescribed background. ECSIM is an energy-conserving
+semi-implicit formulation in the supported configuration. Verify the actual
+spatial operators, mass/moment assembly, boundary rows, solver residuals and
+particle-field energy accounting. Stability of a semi-implicit method does
+not remove resolution requirements for the phenomenon of interest.
+
+For deposited shape weights $S_i$, require the intended partition of unity
+and $\sum_i Q_i=q w$ for one particle. Current conservation additionally
+requires a compatible discrete continuity equation, not just a correct total
+charge. Manufactured field tests establish consistency of operators on the
+tested meshes; they are not a blanket validation of every production plasma.
+
+\section{Boundary events and complete trajectories}
+Find the earliest physical boundary intersection within the remaining
+trajectory interval. Reflect or absorb at that event, then process the
+remaining time exactly once. A particle reaching a remote block must be
+delivered to its owner even if its continuation marker is already zero.
+Repeated reflection, tangency and starts on/inside a boundary need explicit
+tolerance and ownership conventions.
+
+Use independent straight-line, constant-acceleration, uniform-field gyro,
+moving-plane and moving-sphere solutions as test oracles. Check phase-space
+invariants, event time, list membership, endpoint and represented losses;
+checking only final radius misses wrong velocity and duplicate ownership.
+\source{src/pic/README.md; test/srcCoreUnitTests/README.md; src/test/tests/pic/ecsim_operators/README.md}

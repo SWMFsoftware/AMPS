@@ -1,0 +1,86 @@
+\chapter{Extending applications and maintaining the code}\label{ch:development}
+\section{Begin with a physical and software contract}
+State the target equation, units, frame, initial/boundary conditions, source
+normalization, valid parameter domain and output observable before installing
+a callback. Distinguish a scientific assumption from an implementation detail.
+If a required physical closure is unspecified, request that decision rather
+than embedding a guessed default.
+
+Choose the owner of each responsibility. Generic algorithms belong in the
+core/shared model; target-specific geometry, fit coefficients and observation
+operators belong in applications. Keep application adapters small enough to
+review without reading all particle algorithms. Preserve the null/default
+path when adding an optional hook.
+
+\section{A practical new-application sequence}
+\begin{enumerate}
+\item Start from a small maintained native test or the nearest application
+with the same geometry and storage needs. Do not copy unrelated physics.
+\item Add an explicitly named compile-time deck under \path{input}; select
+its source directory, species, dimension, layouts and supported modules.
+\item Implement a runtime owner using the generic grammar where appropriate,
+with unknown-key rejection and cross-field validation.
+\item Register node/particle storage and callbacks before layout freezing.
+Build/allocate the mesh and initialize complete owner state.
+\item Add sources with a physical-rate ledger, the correct event law and
+native ownership. Derive time steps and weights from the declared numerical
+policy and measure the realized values.
+\item Install the mover/boundary/reaction callbacks with exact lifecycle and
+list-ownership rules. Complete exchange before dependent sampling/output.
+\item Add independent model tests, a bounded native end-to-end case and
+negative setup controls before a costly science campaign.
+\item Document exact commands, files, output interpretation, requirements
+and unsupported paths. Register application tests globally only when the
+adapter can truthfully import every owned result.
+\end{enumerate}
+
+\section{Comments and documentation}
+Explain equations, dimensional factors, sign conventions, approximations,
+algorithmic order, tolerances and typed failure behavior. A comment repeating
+the next assignment does not explain why the assignment is physically correct.
+Document owner/ghost and generation boundaries whenever state crosses MPI.
+Keep nearby READMEs current and update this manual when a public workflow or
+capability changes.
+
+Public interfaces should validate inputs before mutating state. Prefer an
+explicit unsupported/invalid outcome to a plausible fallback value.
+Separate model rejection from missing-data and build failures. Never clamp
+an invalid physical parameter solely to force a downstream solver to continue.
+When numerical roundoff bounds are appropriate, derive and document them
+separately from physical acceptance tolerances.
+
+\section{Portability and reproducibility}
+Use configured argv-based compilers/launchers; avoid host-specific paths in
+test implementations. Keep site settings in the required machine profiles
+or established native configuration workflow. Test both packed/aligned
+particle layouts when touching record access; verify DIM1/2/3 when touching
+tree or face indexing. Exercise one-/multi-rank ownership and changed
+decomposition when touching exchange or persistence.
+
+Compiler sanitizers cover only instrumented code. Linking an uninstrumented
+archive into a sanitized consumer does not instrument that archive.
+An optional CUDA compile probe does not qualify a device physics algorithm.
+Retain compiler flags, binary hashes, input/data fingerprints and exact
+commands with each qualification receipt.
+
+\section{Performance without changing the experiment}
+Profile initialization, transport, collisions, chemistry, exchange, sampling
+and output separately. Record mesh size, particle population and ranks along
+with wall time. CPU time in one rank can be synchronization wait rather than
+local physical work. Optimize allocation/search structure only after proving
+equivalent rate, random-draw and ownership behavior where those are required.
+
+Do not reduce a refinement matrix, filter a shock branch or increase a frozen
+routine timeout and then report the original acceptance as passed.
+Keep performance diagnostics distinct from physical qualification.
+Write scalable observables and avoid unnecessary full-volume text output.
+
+\section{Source and reference preservation}
+Use read-only Git inspection under the current repository policy. Leave edits
+unstaged and uncommitted; do not alter repository metadata or Git control
+files. A historical document suggesting commits is not authorization to run
+them. Import only reviewed source/reference inputs; generated run logs,
+plots and output trees are evidence rather than application source.
+Before every native rebuild, preserve the root/idle, generated-build removal,
+configuration and top-level -j16 sequence from Chapter~\ref{ch:installation}.
+\source{AGENTS.md; src/README.md; src/test/README.md}

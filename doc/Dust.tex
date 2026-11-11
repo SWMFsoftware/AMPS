@@ -1,0 +1,80 @@
+\chapter{Dust grains and grain populations}\label{ch:dust}
+\section{Size is a physical state}
+Dust is not a gas species with a larger fixed mass. Radius, material density,
+charge, velocity and any optical/material properties control its dynamics.
+For an ideal sphere of radius $a$ and density $\rho_d$,
+\begin{equation}
+m_d=\frac{4\pi}{3}\rho_da^3,\qquad
+\phi=\frac{q_d}{4\pi\epsilon_0a},\qquad
+\boldsymbol a_L=\frac{q_d}{m_d}
+(\boldsymbol E+\boldsymbol v\times\boldsymbol B).
+\end{equation}
+The potential relation assumes an isolated spherical conductor. Shielding,
+nonspherical grains and material effects require different closures.
+The Lorentz term includes neither gas drag, gravity nor radiation pressure.
+
+\section{Size distributions and importance weights}
+For a number distribution $d\dot N/da=Ca^{-p}$ on
+$[a_{\min},a_{\max}]$, total number and mass rates are different integrals:
+\begin{align}
+\dot N&=C\int a^{-p}\,da,\\
+\dot M&=\frac{4\pi\rho_dC}{3}\int a^{3-p}\,da .
+\end{align}
+The logarithmic limits $p=1$ and $p=4$ must be evaluated with their proper
+logarithms. A specified dust mass source does not determine a numerical
+particle weight until the size proposal and material density are given.
+For proposal density $g(a)$, an event's represented contribution contains
+the physical density divided by $g(a)$. This correction is independent of
+generic population splitting/merging.
+
+The PIC-coupled dust model requires positive individual weight corrections.
+Logarithmic radius bins are half-open, with the global upper endpoint owned
+by the final bin. A steep number distribution can coexist with most of the
+injected mass in the largest grains. The in-coma size distribution additionally
+depends on size-dependent speed and survival; it need not reproduce the
+source distribution.
+
+\section{Charging and forces}
+Charging integrates currents appropriate to the declared plasma/illumination
+model. Validate equilibrium roots and transient convergence across multiple
+radii, including the sign convention for collection and emission currents.
+A floating potential can be small while charge-to-mass acceleration is large.
+If plasma inputs are absent, an explicit neutral/uncharged model is required;
+zero-filled background data are not a physically justified charging solution.
+
+Gas drag, radiation pressure, gravity and Lorentz forces have distinct
+validity regimes. Couple each force to the same grain state and frame.
+Radiation/optical interpolation tables need wavelength, radius, refractive-
+index convention and out-of-range policy. A Mie table lookup test is not
+validation of an entire dust tail.
+
+\section{Dust-specific split and merge}
+The dependency-light dust API groups particles by log radius and requires the
+same native owner cell, compiled species and size group. Current merging
+additionally requires exactly equal intrinsic radius, mass and charge.
+Same-bin membership alone is insufficient: two radii can have different
+charging and drag physics even if their difference looks small numerically.
+
+Splitting clones one grain into $n$ representatives with weights $w/n$.
+The supported merge maps at least three compatible particles to two:
+total weight $W$, weighted mean velocity $\boldsymbol u$, and velocities
+$\boldsymbol u\pm d\boldsymbol e_j$, each with weight $W/2$, where
+$d^2$ is the weighted velocity variance. It conserves represented number,
+mass, charge, momentum and scalar kinetic energy. It does not generally
+preserve the pressure tensor, higher moments or mean speed. The API can
+reject a requested sampled-speed constraint transactionally.
+
+\scope{The dust split/merge physical kernel is implemented and tested.
+A general production PIC-list adapter is not supplied by that algebraic
+PASS. Generic gas split/merge must not be used to erase radius-dependent
+physics.}
+
+\section{Spherical injection and its ledger}
+The production sphere injector chooses surface position relative to the
+actual centre, applies native ownership and local-time acceptance, creates
+the record and dispatches the selected mover. A signed residual mass reservoir
+accounts for finite particle granularity. A negative residual is not negative
+physical grain mass; it records that an event has advanced a fractional budget.
+The native fixture checks this ledger over two intervals and verifies that
+gas NTC leaves steep-weight grain records unchanged.
+\source{src/models/dust/README.md; test/srcModelDustTest/README.md; test/srcModelDustInjectionTest/README.md}

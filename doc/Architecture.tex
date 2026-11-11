@@ -1,0 +1,100 @@
+\chapter{Core and application architecture}\label{ch:architecture}
+\section{Ownership of responsibilities}
+AMPS supplies reusable numerical machinery. An application supplies its
+physical target, configuration, sources, boundary laws, background selection
+and scientific products. A generic core callback must not acquire an
+Enceladus source rate or a comet-specific species assumption.
+
+\begin{longtable}{L{0.25\textwidth}L{0.65\textwidth}}
+\caption{Repository map and responsibilities.}\label{tab:tree}\\
+\toprule Path & Responsibility\\\midrule\endfirsthead
+\toprule Path & Responsibility\\\midrule\endhead
+\path{src/pic} & Particle records, movers, collisions, reactions, sampling,
+field algorithms, exchange, time stepping and persistence.\\
+\path{src/meshAMR} & Adaptive tree, blocks/nodes, geometric search,
+interpolation, internal boundaries and cut-cell operations.\\
+\path{src/general} & Containers, random streams, numerical tools, diagnostics
+and the header-only generic runtime-input reader.\\
+\path{src/models} & Shared physical models with their own contracts, data
+and focused tests. Some libraries are independent of PIC/MPI.\\
+\path{src/interface} & External-library and empirical-provider interfaces;
+distinct from the SWMF component bridge.\\
+\path{srcInterface} & SWMF PT/PC Fortran wrappers and the C++ AMPS bridge.\\
+\path{srcMoon}, \path{srcEnceladus} & Lunar exosphere and Enceladus
+source/observation applications.\\
+\path{srcHartley2}, \path{srcCG} & Generic radial/shape-based comet
+applications and comet gas/dust models.\\
+\path{srcEarth}, \path{srcSEP}, \path{srcSEP3D} & Planetary energetic-particle
+and heliospheric transport applications; their supported paths differ.\\
+\path{input} & Compile-time decks, parser scripts, shared data choices and
+selected runtime examples.\\
+\path{src/test}, \path{test} & Global registry/runners and native test
+applications, machine profiles and fixtures, respectively.\\
+\path{build}, \path{srcTemp} & Generated compilation/preprocessing products,
+not a second source authority.\\
+\path{doc} & This self-contained manual and its build scripts.\\
+\bottomrule
+\end{longtable}
+
+\section{Initialization and the simulation loop}
+The exact entry point is application-owned, but the essential dependency order
+is stable:
+\begin{enumerate}
+\item Resolve and validate configuration, external data and compile-time
+capabilities. Reject an unsupported combination before a costly run.
+\item Establish the correct MPI communicator and initialize the PIC core.
+\item Register particle fields, node data, source and output callbacks.
+\item Freeze associated-data offsets before allocating mesh blocks.
+\item Build/read the mesh, assign ownership and allocate physical storage.
+\item Initialize physical cell state, weights and time steps; publish owner
+state to ghosts before interpolation or output.
+\item Inject, advance, exchange and apply the selected reaction/collision
+operators in the configured driver order; complete any continuation stages.
+\item Sample completed physical state, finish output windows and checkpoint.
+\item Finalize application products and MPI through the owning driver.
+\end{enumerate}
+This is a dependency description, not a universal operator-splitting recipe.
+Inspect \path{src/pic/pic_time_step.cpp} and the selected application driver
+when establishing the order of collisions, chemistry, sampling or callbacks.
+An event inside a trajectory must not be processed again by a whole-step
+reaction callback.
+
+\section{Particles, lists and extensible storage}
+A model particle has a compiled species, position and velocity and may carry
+individual weight corrections, internal energy, dust attributes, trajectory
+metadata and application extension bytes. The byte layout is fixed by
+configuration. Use public record accessors rather than assuming offsets.
+Cloning a record and inserting it into a linked list are separate operations;
+copying intrusive-list links into an already linked particle corrupts ownership.
+Deletion must unlink the exact record and return its storage once.
+
+Cell-associated data have different lifetimes. Persistent background fields
+use static storage; accumulated moments use collecting/completed sampling
+buffers; derived display quantities may need no additional storage. Reserve
+all fields before \code{PIC::Mesh::initCellSamplingDataBuffer()}. Node buffers
+are byte-addressed: an application should use alignment-safe access, for
+example \code{std::memcpy}, when it cannot establish native alignment.
+
+\section{Ownership, MPI and optional parallelism}
+The replicated AMR topology is not the same as allocated physical blocks.
+A node can be known on a rank without its owner data being available there.
+Only the owning rank updates authoritative particle/cell state. Ghost
+exchange, migration and shared output must use the same completed generation.
+Do not replace a supplied component communicator with
+\code{MPI_COMM_WORLD}. A test that executes assertions only on rank zero does
+not verify remote-owner or received-ghost correctness.
+
+MPI, OpenMP and accelerator support are configuration-dependent. A host
+routine existing in source does not prove that its callbacks or diagnostics
+are thread-safe or device-enabled. Transactional photochemistry and some
+correction-aware diagnostics explicitly reject unsupported hybrid modes.
+Treat that rejection as part of the API rather than removing the check.
+
+\section{Public model libraries and application adapters}
+Keep geometry-independent rates, units, reaction networks and transport
+relations in shared models. Thin adapters translate application configuration
+and accepted model state into PIC storage or callbacks. Public analytical
+libraries intended for independent use must not require application, PIC or
+MPI headers. Their tests should compile a neutral consumer and independently
+grade equations and failure behavior.
+\source{src/README.md; src/pic/README.md; src/test/README.md}

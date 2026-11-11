@@ -1,0 +1,78 @@
+\chapter{Sampling, output, observations and restart}\label{ch:output}
+\section{Data lifetime and normalization}
+Accumulate raw represented moments into the collecting sample, then publish
+a completed window. Normalize once using the actual volume, exposure/time
+and sample measure. The completed buffer must remain immutable while output
+reads it. Clearing or swapping a buffer is a lifecycle operation, not a
+physical evolution of persistent background state.
+
+For weighted velocity moments, temperature uses the bulk-subtracted tensor,
+not mean speed squared. Cells with zero weight have undefined bulk moments;
+write a defined empty/validity policy rather than a fabricated physical value.
+Use physical cut-cell volumes where required. Distinguish number density
+($\mathrm{m^{-3}}$), mass density ($\mathrm{kg\,m^{-3}}$), surface flux
+($\mathrm{m^{-2}s^{-1}}$) and integrated column ($\mathrm{m^{-2}}$).
+
+\section{Application-defined node data and Tecplot}
+Register static/sampled storage and output callbacks before layout freezing.
+Output consists of variable names, interpolation and value printing in the
+same order. Interpolation can touch temporary nodes that have no associated
+AMR block: callbacks must not assume every printed node is owner-local.
+Populate owner state and exchange required ghosts before printing.
+
+\code{outputMeshTECPLOT} is geometry-only.
+\code{outputMeshDataTECPLOT} and
+\code{OutputDistributedDataTECPLOT} have different boundary/parallel traversal
+contracts. A registered sphere does not automatically clip whole output
+bricks. Use the writer appropriate to the geometric product and verify
+variable order, units, finite records and owner/ghost agreement.
+
+Full-volume ASCII output can dominate disk and runtime. Prefer a declared
+trajectory/ray product when it supplies the observable, retaining the same
+completed sampling window. Suppressing a visualization dump must not suppress
+physical accumulation or its conservation receipt.
+
+\section{Synthetic observations}
+For an optically thin emissivity with effective fluorescence rate $g$,
+brightness involves $\int n g\,ds$ with the chosen radiance convention and
+solid-angle conversion. Do not replace a velocity-dependent $g$ with a
+constant unless that approximation is part of the model. Occultation
+transmission instead uses optical depth
+$\tau_\lambda=\int n\sigma_\lambda\,ds$, with $I/I_0=e^{-\tau_\lambda}$
+in the simple absorption limit. Detector count rates additionally require
+response, binning, viewing direction and background treatment.
+
+Evaluate spacecraft density at its actual ephemeris and epoch. Map all
+comparison inputs to the same frame. Distinguish missing observations,
+out-of-domain model points and physical zeros. Record source-fit provenance:
+agreement with data used to fit a source is not independent validation.
+
+\section{Persistent formats and restart identity}
+Particle and data-file formats carry explicit kind/layout identities,
+checksums and compatibility policy. Atomic publication avoids accepting
+half-written output; it does not make an incompatible layout valid.
+The global-weight particle restart layout remains revision 2;
+local-weight restart has a separate revision-3 identity including block data.
+Unversioned local-weight payloads are rejected.
+
+Restart must preserve particles, weights, relevant time/RNG state, associated
+application data and any residual chemical/source estimators. An empty cell
+or block can still own physical state and must not be dropped solely because
+it has no particles. After local block-state restoration, publish owner
+values to ghosts before another face transfer.
+Application-owned structured bytes need a semantic layout fingerprint:
+an unchanged byte count alone does not identify a reaction-product ordering.
+
+\section{Continuation and archive practice}
+Verify both uninterrupted and split/restarted evolution with independent
+budgets and selected observables. A same-binary file round trip proves less
+than cross-decomposition continuation. A particle checksum alone does not
+test sample buffers, surface inventories or chemistry residual state.
+Do not interpret restart as a portable scientific interchange format.
+
+Archive the exact executable hash, compile/runtime/source receipts, external
+data hashes, seed/layout, units/frames, sampling intervals and process command.
+Keep generated runs apart from maintained numerical reference fixtures.
+Reference updates require scientific review; a new output is never its own
+independent expected solution.
+\source{src/README.md; src/pic/PERSISTENT_FORMATS.md; src/test/tests/pic/persistence/README.md}

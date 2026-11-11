@@ -1,0 +1,88 @@
+\chapter{Surfaces, arbitrary shapes and source boundaries}\label{ch:surfaces}
+\section{Geometry is separate from surface physics}
+Supported application geometries include analytic spherical boundaries and
+triangulated surfaces with cut-cell operations. Terrain-derived lunar meshes
+and comet shape models add data requirements. A valid triangle mesh does not
+specify temperature, composition, adsorption, sputtering yield or gravity.
+Those are explicit physical closures.
+
+Let $\boldsymbol n$ point from the solid into the gas. An incident particle
+has $(\boldsymbol v-\boldsymbol u_{\rm wall})\cdot\boldsymbol n<0$.
+Always state the surface-normal and wall-velocity conventions. For specular
+reflection,
+\begin{equation}
+\boldsymbol v'=\boldsymbol v-
+2[(\boldsymbol v-\boldsymbol u_{\rm wall})\cdot\boldsymbol n]\boldsymbol n .
+\end{equation}
+The invariant is kinetic energy in the local wall frame, not necessarily in
+the inertial frame. Moving walls can exchange physical work with particles.
+
+\section{Diffuse emission and accommodation}
+Fully diffuse thermal emission from a stationary surface at temperature $T$
+uses the outgoing flux distribution. With thermal tangential components,
+the positive normal component obeys
+\begin{equation}
+p(v_n)=\frac{m}{k_BT}v_n e^{-mv_n^2/(2k_BT)},\qquad v_n>0.
+\end{equation}
+Thus $v_n=\sqrt{-2k_BT\log(1-u)/m}$. Sampling the positive half of an ordinary
+Maxwellian is not the same boundary flux law.
+For Knudsen/cosine angular emission over the hemisphere,
+$p(\mu)=2\mu$, $0\leq\mu\leq1$, so $\mu=\sqrt u$; uniform solid angle
+instead has uniform $\mu$. Isotropic surface position is another independent
+distribution. Use the selected law explicitly.
+
+Accommodation, sticking, adsorption and desorption are separate probabilities
+or fluxes. Preserve a surface inventory balance,
+\begin{equation}
+N_{\rm surf}^{n+1}=N_{\rm surf}^{n}
++N_{\rm ads}-N_{\rm des}+N_{\rm other},
+\end{equation}
+with all terms using the same element area, time interval, species and
+represented weight. Emptying a flux buffer must not empty the physical
+surface reservoir.
+
+\section{Exosphere source processes}
+Applications can combine thermal desorption, photon-stimulated desorption,
+impact vaporization, sputtering, vertical or user-defined emission.
+Each has its own yield, energy/angular law, surface depletion and illumination
+dependence. A uniform sputtering rate fixture does not validate a
+plasma-dependent yield table. The native spherical exosphere owner compiles
+and exercises five bounded source modes with independent rate/inventory
+ledgers; external/background injection is a domain-boundary process with a
+different contract.
+
+\section{Importing an arbitrary shape}
+Before using a NASTRAN/triangle shape:
+\begin{enumerate}
+\item Declare coordinate units, body origin, orientation, epoch and external
+ID convention. Scale exactly once into the application frame.
+\item Reject malformed connectivity, zero-area facets and invalid IDs.
+Inspect normals and winding. A closed body needs a consistent inside/outside
+definition; an open sheet needs an explicitly different physical treatment.
+\item Verify bounds, known lengths, signed/enclosed volume where meaningful
+and surface area under controlled refinement.
+\item Check rays, tangencies, shared edges, concavities and translated copies.
+Round-trip the actual format without assuming dense consecutive node IDs.
+\item Resolve local geometric features with the transport/cut-cell mesh and
+establish area/volume and observable convergence.
+\end{enumerate}
+Generic I/O tests use synthetic sparse IDs and known geometry. They do not
+certify an arbitrary production shape for watertightness, self-intersection,
+small features or surface-source mapping. Large concave shape integrations
+can be costly during initialization even before the first particle step.
+
+\section{Source positions and normalization}
+For a uniform triangle, two uniforms can be transformed to barycentric
+weights with $\sqrt{u}$; choosing two unconstrained barycentric coordinates
+biases the area. Choose triangles proportional to integrated physical
+emission, not by triangle count unless every element has equal rate.
+For a source shape $f_i\geq0$ used with total $Q$,
+$Q_i=Q f_i/\sum_j f_j$; an absolute source file already supplies $Q_i$.
+Reject a contradictory additional total in absolute mode.
+
+Enceladus uses projected surface jets/stripes rather than adopting all their
+unprojected empirical fitting coordinates as physical launch points.
+Moon terrain, spherical exosphere and arbitrary comet surfaces have separate
+source/thermal adapters. An unchanged source file is part of comparison
+provenance, especially if rates were fitted to the same observations.
+\source{test/srcCoreExosphereTests/README.md; test/srcCoreMeshTests/README.md; srcEnceladus/SOURCE_DISTRIBUTION_FILE.md}

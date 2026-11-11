@@ -1,60 +1,79 @@
-%$Id$
-%
-
-\documentclass[oneside,11pt]{book}
-\usepackage{float}
-\usepackage{graphicx} %a package to import pictures to the document
-\usepackage{natbib}   %a package to use a type of citations via bibtex
-\usepackage[top=1.in, bottom=1.in, left=1.in, right=1.in]{geometry}
-\usepackage{tcolorbox}
-\usepackage{booktabs}
-\usepackage{tabularx}
-\usepackage{multirow}
-\usepackage{hyperref}
-\usepackage{longtable}
-\usepackage{amsmath, amssymb, listings, hyperref}
-\special{papersize=8.5in,11in}
-\setlength{\pdfpageheight}{\paperheight}
-\setlength{\pdfpagewidth}{\paperwidth}
-\title{Adaptive Mesh Particle Simulator \\ (AMPS)  \vspace {5cm} \\ User manual}
-\author{al.}
-\makeindex
-
+% Main entry point; all document inputs and graphics are local to doc/.
+\documentclass[11pt,oneside,openany]{book}
 \input{HEADER}
-
+\hypersetup{pdftitle={AMPS User and Developer Manual},pdfauthor={AMPS development team}}
 \begin{document}
+\frontmatter
+\begin{titlepage}
+\centering
+\vspace*{0.8cm}
+\includegraphics[width=0.86\textwidth,keepaspectratio]{AMPS_clean_sweep_white.jpg}
+\vspace{1.2cm}
+{\Huge\bfseries AMPS\par}
+\vspace{0.4cm}
+{\Large Adaptive Mesh Particle Simulator\par}
+\vspace{0.8cm}
+{\huge User and Developer Manual\par}
+\vspace{0.8cm}
+{\large Core, applications, physics, coupling and validation\par}
+\vfill
+{\large AMPS development team\par}
+\vspace{0.4cm}
+{Repository documentation edition: 10 November 2026\par}
+\vspace{0.6cm}
+\begin{minipage}{0.85\textwidth}\small
+This manual describes the source tree and bounded validation available at the
+edition date. A documented capability is not a claim that every combination of
+algorithms, inputs, machines or scientific applications has been qualified.
+\end{minipage}
+\end{titlepage}
+\chapter*{How to use this manual}
+\addcontentsline{toc}{chapter}{How to use this manual}
+Start with Chapters~\ref{ch:introduction}--\ref{ch:inputs} for a first run.
+Choose the physics and boundary chapters before choosing numerical controls.
+Chapter~\ref{ch:tests} explains evidence and test execution;
+Chapter~\ref{ch:examples} provides executable examples with explicit oracles.
+Developers should also read Chapters~\ref{ch:architecture}, \ref{ch:output}
+and~\ref{ch:development}. Paths in code listings are relative to the AMPS root
+unless a different working directory is shown.
 
-\maketitle
+\paragraph{Evidence vocabulary.}
+\emph{Implemented} means code exists. \emph{Verified} means a stated numerical
+or software contract has independent evidence. \emph{Scientifically validated}
+requires an appropriate physical reference or observations, error estimates
+and the declared domain of validity. These terms are deliberately distinct.
+The test catalog lists registered intent; an actual run receipt records execution.
+Historical numerical results in this manual are dated snapshots.
 
+\paragraph{Build independence.}
+The manual compiles from a copy of this directory with a suitable TeX engine;
+neither an AMPS executable nor SWMF, SPICE, a generated build tree or remote
+figures are required. The accompanying README gives the exact commands.
 \tableofcontents
-
-\newpage
-
-% Introduction
-\input{AMPS_introduction}
-
-%installation
-\input{AMPS_Installation}
-
-%models
-\input{idf}
-\input{turbulence}
-\input{parker_eq}
-\input{focused_transport}
-\input{focused_transport1}
-\input{shock}
-\input{ecsim}
-
-% Input commands
-\input{AMPS_InputCommands}
-
-%Example of the application
-\input{AMPS_Examples}
-
-\bibliographystyle{agu}
-\bibliography{AMPS}
-
+\listoftables
+\mainmatter
+\input{introduction}
+\input{Installation}
+\input{Architecture}
+\input{InputCommands}
+\input{Numerics}
+\input{Mesh}
+\input{Movers}
+\input{Collisions}
+\input{Photochemistry}
+\input{Dust}
+\input{Surfaces}
+\input{Planetary}
+\input{Heliosphere}
+\input{Coupling}
+\input{Output}
+\input{Testing}
+\input{Examples}
+\input{Development}
+\input{Troubleshooting}
+\appendix
+\input{Reference}
+\input{TestSuiteCatalog}
+\backmatter
+\input{References}
 \end{document}
-
-
-

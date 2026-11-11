@@ -1,0 +1,72 @@
+\chapter{Adaptive mesh, geometry and interpolation}\label{ch:mesh}
+\section{Tree, blocks and dimensionality}
+AMPS uses an adaptive tree with $2^D$ children per refined node in represented
+dimension $D$. Leaves identify physical mesh blocks; blocks contain configured
+cell and ghost-cell counts. Tree topology, allocated blocks, particle lists
+and cell-associated fields are different objects with different ownership.
+DIM1 radial geometry additionally requires spherical measures; it is not
+equivalent to a Cartesian line with unit cross section.
+
+For a radial spherical shell, the exact volume per steradian is
+\begin{equation}
+V_\Omega=\frac{r_R^3-r_L^3}{3}
+=\frac{(r_R-r_L)(r_R^2+r_Rr_L+r_L^2)}{3}.
+\end{equation}
+The factored form avoids subtraction of nearly equal large powers. Use a
+consistent volume centroid and surface measure in sampling, source and
+transport operators. A visually plausible radial grid with Cartesian
+normalization produces a physically incorrect density.
+
+\section{Resolution functions and adaptation}
+An application resolution function requests scales; the realized dyadic mesh
+is what controls transport and resource use. A flyby or limb ray can require
+refinement away from a surface. Refine the comparison region explicitly and
+record actual cells intersecting each observation, rather than relying on
+a small surface-cell size to resolve an entire trajectory.
+
+Adaptation requires transfer policies for persistent state, sampled moments
+and particle ownership. Coarsening must not simply average quantities whose
+physical measure differs. Distinguish conservative extensive quantities from
+primitive intensive state. A changed mesh invalidates cached stencils and
+owner mappings. Verify generation changes and restored connectivity through
+refine/coarsen cycles and mesh-file round trips.
+
+\section{Interpolation contracts}
+AMPS provides legacy pointer stencils and decomposition-independent row
+stencils. A row identifies physical owner cells even if their blocks are not
+allocated on the requesting rank. This is useful for exchanged fields and
+distributed output; it does not make remote values locally accessible without
+an exchange.
+
+Constant fields should be reproduced exactly within rounding error. A linear
+Cartesian field
+$g=1.25+2x-3y+0.5z$ is an independent trilinear interpolation oracle.
+At a coarse/fine interface, verify support, nonnegative weights, unit sum and
+affine reproduction. A sum-to-one check alone cannot detect a geometrically
+wrong stencil. Test every applicable face, edge and corner orientation,
+boundary truncation, periodic wrapping and cache invalidation.
+
+\section{Cut cells and internal boundaries}
+A triangulated surface intersects cells and modifies accessible physical
+volume. Surface interception and volume integration are distinct numerical
+tasks. A mover can correctly hit a triangle while a cell-density normalization
+still uses an incorrect accessible volume. Very small cut cells require a
+defined normalization/time-step policy; do not silently replace their volumes
+with a floor without changing and validating the model.
+
+Independent geometry controls include a planar cut of known volume,
+translated spheres, triangle areas/normals, tangent rays and convergence of
+area/volume with geometric resolution. Mesh topology and triangle indexing
+must survive reading, writing and reloading sparse external IDs.
+
+\section{Distributed geometry and output}
+Halo exchanges must transfer the correct fields for the current mesh and
+sampling generation. Mesh serialization and restart traverse $2^D$ children,
+not a hard-coded eight in lower dimensions. DIM1/DIM2 stored face caches
+still need valid initialization if a persistent mesh format reads them.
+
+Geometry-only Tecplot output does not validate physical field callbacks.
+Whole-brick data output does not automatically clip an internal sphere.
+Select the cut-cell-aware distributed writer when clipped boundary geometry
+is required, and validate both geometry and data ordering.
+\source{test/srcCoreMeshTests/README.md; test/srcCoreMPITests/README.md; src/README.md}

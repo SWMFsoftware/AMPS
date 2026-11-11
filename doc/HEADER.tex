@@ -1,8 +1,35 @@
-%$Id$
-%
-
-\usepackage{amsmath}
+% Ordinary LaTeX packages; no external SWMF style or AGU bibliography style.
+\usepackage[T1]{fontenc}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[utf8]{inputenc}
+\fi
+\usepackage{lmodern}
+\usepackage[letterpaper,margin=0.9in,headheight=15pt]{geometry}
 \usepackage{graphicx}
-\usepackage{natbib}
-\usepackage{hyperref} 
-
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs,longtable,tabularx,array}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{microtype}
+\usepackage{hyperref}
+\usepackage{bookmark}
+\usepackage{xurl}
+\hypersetup{colorlinks=true,linkcolor=blue!45!black,urlcolor=blue!45!black,
+ citecolor=blue!45!black,bookmarksnumbered=true}
+\setcounter{tocdepth}{1}
+\setcounter{secnumdepth}{2}
+\setlength{\emergencystretch}{3em}
+\setlength{\parskip}{0.35em}
+\setlength{\parindent}{0pt}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcommand{\code}[1]{\texttt{\small\detokenize{#1}}}
+\newcommand{\source}[1]{\par\smallskip{\small\textbf{Source guide: }\path{#1}}\par}
+\newcommand{\scope}[1]{\par\smallskip\noindent
+ \fbox{\begin{minipage}{0.94\linewidth}\small\textbf{Scope.} #1\end{minipage}}\par}
+\lstdefinestyle{amps}{basicstyle=\ttfamily\footnotesize,columns=fullflexible,
+ keepspaces=true,showstringspaces=false,breaklines=true,breakatwhitespace=false,
+ frame=single,framerule=0.25pt,rulecolor=\color{black!25},
+ backgroundcolor=\color{black!2},xleftmargin=0.1em,xrightmargin=0.1em,
+ aboveskip=0.8em,belowskip=0.8em,upquote=true,tabsize=2}
+\lstset{style=amps}

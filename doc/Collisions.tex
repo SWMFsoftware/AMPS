@@ -1,0 +1,91 @@
+\chapter{Collisions and internal degrees of freedom}\label{ch:collisions}
+\section{Binary collisions and the DSMC approximation}
+DSMC separates molecular free flight from stochastic collisions over a short
+physical interval \cite{bird1994}. Pair selection is local to a collision cell.
+For species densities $n_a,n_b$, the physical cross-species rate per volume is
+\begin{equation}
+R_{ab}=n_a n_b\langle \sigma_{ab}(g)g\rangle,\qquad
+g=|\boldsymbol v_a-\boldsymbol v_b|.
+\end{equation}
+For identical species the unordered-pair rate contains a factor $1/2$.
+Finite populations require the appropriate pair-count correction; sampling
+the same numerical particle twice is not a physical self collision.
+
+Elastic scattering preserves pair momentum and relative kinetic energy.
+Use the mass-weighted centre velocity and reduced mass:
+\begin{equation}
+\boldsymbol V=\frac{m_a\boldsymbol v_a+m_b\boldsymbol v_b}{m_a+m_b},
+\qquad E_{\rm rel}=\tfrac12\frac{m_am_b}{m_a+m_b}g^2.
+\end{equation}
+An isotropic hard-sphere angular law and a VSS angular law have different
+transport properties even when their total cross sections agree.
+
+\section{Models, parameters and selection}
+Hard-sphere (HS), variable-hard-sphere (VHS) and variable-soft-sphere (VSS)
+selectors are tested in separate compiled profiles. HS uses a constant total
+cross section. VHS introduces a speed dependence associated with the chosen
+viscosity exponent; VSS additionally changes the scattering-angle
+distribution. Read the generated reference-temperature, reference-cross-section
+and exponent conventions together: copying an exponent between definitions
+without its normalization changes the rate.
+
+Use a collision database only within the declared temperature/energy range.
+A missing species pair, an out-of-range law and a zero physical rate are
+different states. The reusable comet collision database makes those
+distinctions explicit. Record the pair law, units, source and valid range in
+the run provenance rather than describing the model simply as collisions on.
+
+\section{No-time-counter selection and unequal weights}
+The NTC algorithm uses a majorant of $\sigma g$ and a rejection step.
+The majorant, trial normalization and accepted-particle update probabilities
+must describe the same weighted population. A diagnostic trial count by
+itself is not the physical collision count.
+
+In the implemented general correction-aware NTC path, physical carrier
+$q_i=W_s c_i$ determines weighted selection. Cross-species trials use
+\begin{equation}
+N_{\rm trial}=\frac{(\sum_iq_i)(\sum_jq_j)
+(\sigma g)_{\max}\Delta t_{\max}}{q_{\min}V}.
+\end{equation}
+Selected particles are updated with the prescribed $q_{\min}/q_i$ and
+local-timestep factors. Same-species self draws are discarded, not repeatedly
+redrawn with a different pair law. The simplified kernel is not a substitute:
+it explicitly rejects the unsupported correction-on configuration.
+
+Dust is excluded before gas-species prefix sums are constructed. Otherwise a
+steep grain weight distribution can perturb gas pair selection even if no
+grain is ultimately collided. Reusable thread-local species buckets reduce
+allocation overhead without changing the intended traversal order.
+
+\section{Rotational and vibrational energy}
+For $f_{\rm rot}$ classical quadratic rotational degrees of freedom, equilibrium
+mean energy is $f_{\rm rot}k_BT/2$. Larsen--Borgnakke redistribution samples a
+microcanonical energy partition when the selected relaxation event occurs.
+The relaxation number $Z_{\rm rot}$ controls an event probability, not an
+energy multiplier: the maintained $Z=2$ and $Z=10$ profiles independently
+check probabilities $1/2$ and $1/10$.
+
+For an ideal harmonic vibrational mode with characteristic temperature
+$\Theta_v$, the thermal energy above its ground state is
+\begin{equation}
+\langle E_v\rangle=\frac{k_B\Theta_v}{\exp(\Theta_v/T)-1}.
+\end{equation}
+Use the production model's level convention and degeneracies. Equilibrium
+sampling, rotational relaxation, vibration--translation and vibration--vibration
+rates are separate capabilities; a rotational test does not establish all of
+them. Chemical formation energy must not be counted again as an internal
+relaxation source.
+
+\section{Independent validation}
+The core suites compare rates with analytic HS moments and independent
+Maxwell relative-speed quadrature for VHS. VSS checks angular moments as well
+as elastic invariants. Native particles in a 3-D AMR cell exercise actual
+collision and rotational-relaxation routines. Assess statistical error on
+accepted physical rates, relaxation times and equilibrium moments, and
+separately monitor conservation. A conservation-only test can pass a routine
+that performs no collisions at all.
+
+\scope{The documented tests cover bounded selectors and profile combinations.
+They do not qualify every unequal-weight collision law, every species-dependent
+relaxation model or all VT/VV processes. Consult the test receipt and profile.}
+\source{src/pic/README.md; test/srcCoreUnitTests/README.md; src/models/cometary_physics/README.md}

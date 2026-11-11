@@ -1,0 +1,170 @@
+\chapter{Examples that are also end-to-end tests}\label{ch:examples}
+\section{How to interpret an example}
+Each example below names an existing test owner, actual production path,
+independent acceptance and retained output. Use the global machine profile
+and a fresh output directory. Native owners perform the required clean
+configuration/build sequence. These examples are not newly executed science
+runs merely because they appear in the manual.
+
+\section{A 3-D kinetic application: motion, collisions and parent decay}
+\begin{lstlisting}
+python3 -B src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --test CORE-PIC-NATIVE-001 \
+  --output-dir test_output/example-3d-physics
+\end{lstlisting}
+The native core-test application allocates a small real 3-D AMR mesh, an
+analytic sphere and particle records. Production movers, NTC collisions,
+Larsen--Borgnakke relaxation and whole-mesh parent photodecay are exercised.
+The exact tests include \code{PHYS-3D-COLLISION-RATE-001},
+\code{PHYS-3D-COLLISION-RELAXATION-001} and
+\code{PHYS-3D-PHOTODECAY-001}. Their oracles include analytic collision rates,
+equilibrium internal/translational moments and exponential survival. Mover
+cases additionally test uniform-field trajectories and surface events.
+
+Inspect case results, native configure/build/run logs and independent numeric
+budgets in the output's artifact inventory. This fixture verifies coupled
+software operations, not a physical planetary atmosphere. Its default
+photodecay path does not claim daughter transport.
+
+\section{A daughter-producing photochemical mesh}
+\begin{lstlisting}
+python3 -B src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --test CORE-PHOTOCHEM-DAUGHTER-001 \
+  --output-dir test_output/example-daughters
+\end{lstlisting}
+This separate native profile selects individual weights and H2O to OH+H
+whole-mesh photochemistry. It checks parent disappearance, product species,
+AMR insertion and physical weight/mass/energy budgets using independent
+expected channel behavior. It is the appropriate example when daughter
+allocation is part of the contract; it must not be replaced by a parent-loss
+PASS from the preceding owner.
+
+\section{Surface sources and inventory in a native exosphere}
+\begin{lstlisting}
+python3 -B src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --test CORE-EXOSPHERE-SPHERE-NATIVE-001 \
+  --output-dir test_output/example-exosphere
+\end{lstlisting}
+The one-rank sphere compiles five bounded source modes, invokes the production
+source dispatch and mover, checks native ownership/individual weights, and
+closes production, adsorption/desorption and inventory ledgers. Independent
+expected weights and surface updates grade the realized events. Source
+occurrence counts establish observability, not measured physical yield fits.
+The configured fixture explicitly pins and verifies no-SPICE mode.
+
+\section{Dust charging and physical injection}
+\begin{lstlisting}
+python3 -B src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --test CORE-DUST-NATIVE-001 \
+  --output-dir test_output/example-dust-charge
+python3 -B src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --test CORE-DUST-INJECTION-NATIVE-001 \
+  --output-dir test_output/example-dust-source
+\end{lstlisting}
+The charging owner checks equilibrium/transient convergence at four radii.
+The injection owner allocates a 3-D mesh and translated sphere and exercises
+production source insertion, movement, individual-weight sampling and a
+signed two-interval mass reservoir. Its steep-weight dust records are also
+protected against the gas collision path. These are separate profiles and
+must not compile concurrently in one checkout. Algebraic dust split/merge
+and optical/size contracts are in \code{CORE-DUST-001}.
+
+\section{Adaptive geometry and actual MPI ownership}
+\begin{lstlisting}
+python3 -B src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --test CORE-MESH-NATIVE-001 \
+  --output-dir test_output/example-mesh
+python3 -B src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --test CORE-MESH-MPI-OWNERSHIP-001 \
+  --output-dir test_output/example-mesh-mpi
+\end{lstlisting}
+The first owner builds DIM1/2/3 profiles and verifies tree topology,
+refine/coarsen transfer, real mesh-file round trips, interpolation and
+triangle/NASTRAN geometry against dyadic/analytic references. The MPI owner
+runs its declared 1/2/4-rank matrix and reads actual owner/received-ghost,
+migration, periodic/loss and restart-decomposition state. Rank-zero local
+assertions are not substituted for remote evidence.
+
+\section{Enceladus E3: a physical forward-model campaign}
+Start with the dependency-light and pre-MPI owners, then request the evolving
+case on a properly provisioned machine:
+\begin{lstlisting}
+python3 -B src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --test APPLICATION-ENCELADUS-FORWARD-001 \
+  --output-dir test_output/example-e3-model
+python3 -B src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --test APPLICATION-ENCELADUS-NATIVE-STARTUP-001 \
+  --output-dir test_output/example-e3-startup
+python3 -B src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --config /path/to/e3-capability-overlay.json \
+  --test APPLICATION-ENCELADUS-E3-001 \
+  --output-dir test_output/example-e3-evolving
+\end{lstlisting}
+The overlay must explicitly enable the documented \code{enceladus-e3}
+capability. The extended owner retains 13 identities and otherwise SKIPs.
+The 10000-step run uses H2O/CO2 primaries and 1000-step sampling windows,
+with flyby refinement, no plasma and H2O parent loss only. Acceptance includes
+completion/injection, positive timestep, exact species conservation,
+finalization and trajectory Tecplot/PNG products, with actual flyby-cell
+resolution. The source geometry/strength receipt is fixed input, not a new
+fit performed by the forward test.
+
+Compare only supported INMS/UVIS operators; distinguish apparent CO2 and
+missing/out-of-domain data. A density dip caused by underresolved closest
+approach must be addressed by the mesh study, not by changing fitted strengths.
+
+\section{Moon: regression and science qualification are separate}
+\begin{lstlisting}
+python3 -B src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --test APPLICATION-MOON-REGRESSION-001 \
+  --output-dir test_output/example-moon
+\end{lstlisting}
+This owner requires the \code{moon-spice} capability and real SPICE paths.
+It imports the declared U01--U26 and linked I11--I20 outcomes. Quick wiring,
+full mesh convergence and observational comparisons keep distinct acceptance.
+The M0 owner retains its explicit skipped identities until its multi-build
+workflow meets mandatory native preflight. Missing data or deferred science
+must remain visible. The separate legacy \code{make -j test_Moon} comparison
+has its own frozen numerical reference and scope.
+
+\section{Generic comet chemistry and brightness}
+The standalone application suite is:
+\begin{lstlisting}
+# From the AMPS root; see the Stage-10 Git boundary below.
+srcHartley2/tests/run_all_stage_tests.sh
+\end{lstlisting}
+It is not currently one of the registered application streams. Its portable
+mode authenticates maintained fixtures, builds focused programs and checks
+staged chemistry/policy/brightness contracts; optional fresh modes require a
+reviewed native executable. A portable replay PASS must not be called a new
+converged I3 or Halley run. Stage-10 selftests intentionally create synthetic
+commits in isolated AMPS-local scratch repositories; the current Git-read-only
+policy requires explicit authorization before invoking such Git-writing tests.
+The command above documents the entry point, not an exception to that policy.
+
+I3 compiles from \path{input/i3.conf}; the actual physical cases are selected
+with \code{./amps -i input/i3.in -case 1}. Validate rates, transport, daughter
+weights and shell-chord brightness independently. Legacy Hartley DIM3 builds
+pass but its retained runtime did not finish cut-cell volumes before the
+smoke ceiling; the manual therefore claims no complete DIM3 runtime PASS.
+
+\section{Legacy electromagnetic wave regression}
+\begin{lstlisting}
+make test_fast-wave -j
+\end{lstlisting}
+The maintained legacy recipe applies native preflight and compares proton,
+electron and combined numerical diagnostics. Retained final-tree runs have
+empty difference files. Treat this as a regression for its declared wave
+configuration, complemented by manufactured operator/deposition tests;
+it does not qualify every electromagnetic boundary, plasma or accelerator.

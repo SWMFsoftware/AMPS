@@ -1,0 +1,76 @@
+\chapter{Diagnostics and troubleshooting}\label{ch:troubleshooting}
+\section{Start from the earliest failed boundary}
+Keep the full command, working directory, resolved inputs, machine profile,
+compiler/runtime logs, executable identity and first error. A final missing
+output often follows an earlier failed configuration, mesh or physics stage.
+Do not rerun into the same directory and erase the failing evidence.
+An initialization-only exit and a finished physical run must have different
+reported meanings.
+
+\begin{longtable}{L{0.27\textwidth}L{0.63\textwidth}}
+\caption{Symptom-to-diagnosis guide.}\\
+\toprule Symptom & Check first\\\midrule\endfirsthead
+\toprule Symptom & Check first\\\midrule\endhead
+Different application is built & Config.pl selection, staged deck,
+generated source directory and actual compile commands. Do not edit
+\path{.amps.conf} manually.\\
+Unresolved Fortran/SPICE symbols & Effective linkage, compatible compiler/MPI
+ABI, site libraries and explicit global SPICE mode. A component's SPICE-off
+key need not disable global CSPICE linkage.\\
+SPICE time/frame error & Exact kernels, load order, leap-second coverage,
+target/frame and requested epoch. Test a real state/orientation query.\\
+MPI fails before model startup & Launcher/rank options, socket/IPC permissions,
+allocation, ABI and environment. Report infrastructure ERROR, not physics FAIL.\\
+Very long initialization & Count blocks/triangles, inspect cut-cell volume
+integration/search stacks, compiler optimization and I/O; verify whether any
+particle iteration has actually started.\\
+Particle-buffer exhaustion & Source weights/counts, daughter multiplicity,
+split policy, event atomicity, receive-side headroom and ownership leaks.\\
+Density wrong by a constant & Weight, accessible volume, time/sample
+normalization, SI conversion and gross/net source definition.\\
+Dip near closest approach & Actual flyby cell sizes, surface/cut volume,
+trajectory frame/time, out-of-domain points and noise; do not fit away mesh bias.\\
+One species missing in comparison & Injected/simulated/chemistry lists,
+output metadata, domain support and observation response/data availability.\\
+Reaction rate changes after restart & Restored weights/time/RNG, network
+fingerprint, residual state and duplicate event processing.\\
+Only some ranks stall & Component communicator, collective ordering,
+owner migration, unfinished trajectory continuation and stale ghosts.\\
+No concurrency with many jobs & Exclusive suite barriers, stream count,
+sequential imported binaries and global checkout gate.\\
+Zero make exit but failed legacy test & Required diff files, nonempty
+differences, ignored recipe failures and missing/truncated outputs.\\
+Many SKIPs & Capability/data prerequisites, campaign selection and genuinely
+unimplemented gates; do not convert them to PASS.\\
+\bottomrule
+\end{longtable}
+
+\section{Native build identity and SPICE isolation}
+Inspect both requested and effective configuration. The native fixture helper
+checks saved selection, real make expansion and actual C++ commands for
+no-SPICE builds before MPI. Option order matters: a later undefine can remove
+an earlier define. A macro defined to zero is still defined to \code{#ifdef}.
+Use evidence from the compiled invocation, not substring matching in one
+configuration file.
+
+\section{Distinguish numerical error from missing physics}
+Conservation can coexist with wrong transport or no reactions; test the rate
+and shape of the solution. A high-resolution deterministic bias does not
+shrink with more random particles. A source fitted to observations can hide
+a wrong mesh or response. Compare independent units, limiting cases and
+discretizations before changing physical parameters.
+
+For surface/source bugs, inspect event time, local normal, wall-frame
+velocity, represented weight and destination list together.
+For coupling bugs, inspect the physical epoch and entire generation, including
+received ghosts. For restart bugs, compare the first post-restart operation,
+not only the state written immediately after reading.
+
+\section{Reporting a reproducible issue}
+Provide the smallest input and test selector that still demonstrates the
+defect, with the full nonpass log path and resource requirements. Include
+whether it reproduces in one rank, whether a clean native build was used,
+and the intended reference equation/tolerance. Retain a failing regression
+before changing production code. A fix must preserve the physical gate or
+explicitly obtain a reviewed scientific change to it.
+\source{src/test/lib/README.md; src/test/GEOMETRY_PERFORMANCE_INVESTIGATION.md; src/test/STATUS.md}

@@ -1,0 +1,86 @@
+\chapter{Reference map, units and documentation authority}\label{ch:reference}
+\section{Conventions}
+\begin{longtable}{L{0.20\textwidth}L{0.70\textwidth}}
+\caption{Common dimensional quantities.}\\
+\toprule Quantity & Convention\\\midrule\endfirsthead
+\toprule Quantity & Convention\\\midrule\endhead
+$\boldsymbol x,a,h$ & Position, grain radius, cell length: metres.\\
+$t,\Delta t,\beta$ & Time/step: seconds; first-order frequency:
+$\mathrm{s^{-1}}$.\\
+$n,\rho,p$ & Number density: $\mathrm{m^{-3}}$; mass density:
+$\mathrm{kg\,m^{-3}}$; pressure: Pa.\\
+$\boldsymbol v,\boldsymbol p$ & Velocity: $\mathrm{m\,s^{-1}}$;
+momentum: $\mathrm{kg\,m\,s^{-1}}$. Context distinguishes scalar pressure.\\
+$\boldsymbol E,\boldsymbol B,q$ & Electric field: $\mathrm{V\,m^{-1}}$;
+magnetic field: T; physical charge: C.\\
+$W,c$ & Base statistical multiplicity and positive individual correction;
+neither is a physical grain radius or particle mass.\\
+$Q,\dot M$ & Number production: $\mathrm{s^{-1}}$; mass production:
+$\mathrm{kg\,s^{-1}}$.\\
+$\sigma,k$ & Cross section: $\mathrm{m^2}$; binary rate coefficient:
+$\mathrm{m^3\,s^{-1}}$.\\
+$\boldsymbol n,\mu$ & Surface normal: unit vector from solid to gas in the
+surface chapter; pitch-angle cosine in heliospheric transport.\\
+\bottomrule
+\end{longtable}
+Application keys/tables may explicitly use eV, km, AU, degrees or cgs.
+Convert at their owning boundary and record the convention; never infer
+units from a column's magnitude. A coordinate transformation must specify
+origin, handedness, axes, epoch and velocity convention.
+
+\section{Where to find the authoritative detail}
+\begin{longtable}{L{0.31\textwidth}L{0.59\textwidth}}
+\caption{Maintained detailed contracts.}\\
+\toprule Topic & Repository authority\\\midrule\endfirsthead
+\toprule Topic & Repository authority\\\midrule\endhead
+Generic runtime grammar & \path{src/INPUT_FILE.md};
+\path{src/general/input/amps_input.h}.\\
+Node state and output ABI & \path{src/README.md}.\\
+Mover, weighted NTC and hooks & \path{src/pic/README.md}.\\
+Persistence envelope/layout & \path{src/pic/PERSISTENT_FORMATS.md}.\\
+Global tests and extension rules & \path{src/test/README.md},
+\path{src/test/TEST_CATALOG.md}, \path{src/test/STATUS.md}.\\
+Machine portability & \path{test/qualification-machine/README.md}.\\
+Arbitrary geometry & \path{test/srcCoreMeshTests/README.md};
+\path{src/meshAMR}.\\
+Dust & \path{src/models/dust/README.md}.\\
+Moon & \path{srcMoon/README.md}; \path{srcMoon/test/README.md}.\\
+Enceladus & \path{srcEnceladus/SOURCE_DISTRIBUTION_FILE.md};
+\path{srcEnceladus/test/README.md}.\\
+Generic comet and reference & \path{srcHartley2/README.md},
+\path{srcHartley2/CHEMISTRY.md},
+\path{srcHartley2/COLLISIONLESS_REFERENCE.md}.\\
+SEP applications & \path{srcSEP/README.md}, \path{srcSEP3D/README.md};
+their configuration and example guides.\\
+Full-CME qualification & \path{src/models/sep_corona_swcme/docs/CODEX_CME_PLAN.md};
+\path{src/models/sep_corona_swcme/README_CROSS_RAY.md}.\\
+\bottomrule
+\end{longtable}
+The manual is an entry point to these contracts, not a second implementation
+of their parsers. When source and prose disagree, preserve the discrepancy
+and verify the actual supported behavior before changing a scientific gate.
+
+\section{Supplementary legacy notes}
+This directory retains \path{idf.tex}, \path{ecsim.tex}, \path{parker_eq.tex},
+\path{focused_transport.tex}, \path{focused_transport1.tex},
+\path{turbulence.tex} and \path{shock.tex}. They contain longer historical
+derivations and research notes. They are not automatically included because
+their conventions, references and implementation claims need a separate
+editorial reconciliation. Core topics are covered in the maintained chapters
+of this edition; preserving these notes does not imply that every equation
+or optional mode is released.
+
+The four former operator chapters are preserved under \path{doc/legacy}.
+Their CVS instructions, machine scripts and historical input syntax are not
+current run instructions. \path{AMPS.bib} is retained as a historical
+bibliographic source; this edition embeds its selected bibliography and
+requires no external AGU style file or BibTeX pass.
+
+\section{Maintaining the manual}
+Update a chapter whenever a public CLI, physics scope, required input or
+acceptance boundary changes. Add a source pointer and executable verification
+recipe. Refresh the local suite appendix with \path{update_test_catalog.py}
+after registry changes; it is a snapshot, not runtime evidence.
+Keep every \code{\input} and figure below this directory. Run structural
+checks, compile until references settle and inspect title, equations, tables,
+listings and representative body pages before publishing a new PDF.

@@ -1,0 +1,55 @@
+\chapter{Introduction and model scope}\label{ch:introduction}
+\section{What AMPS solves}
+AMPS is a kinetic simulation framework for rarefied gas, neutral and charged
+particle populations on adaptive meshes. Applications use its particle
+records, transport, stochastic reactions/collisions, surface interactions,
+sampling and distributed data structures. Depending on configuration, fields
+are prescribed, coupled from another model, or advanced by supported PIC
+solvers. The same framework supports planetary exospheres, comet comae and
+dust, magnetospheric particles and heliospheric transport.
+
+AMPS can run standalone or as an SWMF component. A standalone application
+owns its outer lifecycle; SWMF supplies component communicators, scheduling
+and coupling epochs through wrappers. Shared numerical machinery does not
+make the scientific assumptions of one application valid in another.
+
+\section{Choose the physical problem first}
+A useful run description states the species, phase-space representation,
+geometry/frame, initial and external boundary conditions, injection rate and
+velocity law, force model, reaction network, surface physics and observable.
+Then state mesh, time-step, particle-weight and sampling policies. If any
+required physical information is absent, resolve it before running: numerical
+convenience is not a physical closure.
+
+For example, a neutral Enceladus parent-loss calculation can have H2O and CO2
+particles while allocating no photoproducts and using no plasma. A comet
+network can instead produce daughters with recoil and internal energy. A
+field-line SEP model and a full 3-D charged-particle mover have different
+transport approximations. A source-free analytical CME background test cannot
+qualify particle acceleration or a full downstream plasma volume.
+
+\section{Four kinds of evidence}
+\begin{enumerate}
+\item Structural checks verify grammar, registration, data identity and
+supported configuration. They need not evolve any physical state.
+\item Numerical verification compares an algorithm with independent equations,
+manufactured solutions, conservation or convergence.
+\item Regression testing detects change relative to reviewed fixtures and can
+include a full configure/build/run/output path.
+\item Scientific validation compares the declared physical model with relevant
+laboratory, observational or independently justified physical reference data.
+\end{enumerate}
+These layers complement each other. A model can conserve particles while
+using the wrong source law; it can reproduce a fitted observation without
+independently validating that source. Reports must preserve the distinction.
+
+\section{Reading and operating conventions}
+Bare dimensional values in modern application runtime keys generally use the
+SI units stated by the owner; older generators and external tables can have
+explicit different units. The applicable input parser is authoritative.
+A path shown in a command is relative to the repository root unless a working
+directory is declared. Placeholders must be supplied by the operator.
+The documented test commands use a required machine profile rather than
+hard-coded compiler/kernel paths. Native build examples require an idle
+checkout and a clean generated build as explained next.
+\source{src/README.md; src/pic/README.md; src/test/README.md}

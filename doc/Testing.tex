@@ -1,0 +1,144 @@
+\chapter{Verification, application tests and nightly reporting}\label{ch:tests}
+\section{What the global procedure does}
+\path{src/test/run_tests.py} selects exact suites/cases from a manifest, resolves
+machine tools and prerequisites, runs individual owners and reconciles their
+typed results. Core and registered application streams share one report.
+The registry owns \emph{what may run}; individual adapters own their mechanics
+and assertions; the component inventory owns the remaining coverage gaps.
+An installed optional tool is not evidence that its scientific interface works.
+
+Tests form several layers: dependency-light equations/algorithms, configured
+native PIC applications, MPI ownership/halo/migration, application startup and
+evolving end-to-end cases, portability/backend checks and expensive scientific
+qualification. Select the layer required by the change. A parser/startup PASS
+cannot replace an evolving simulation, and a regression reference cannot
+replace a convergence or observational test.
+
+\section{Required machine configuration}
+Every global invocation, including listing and coverage, requires
+\code{--config}. Profiles live under \path{test/qualification-machine}, outside
+the production source tree. Start from \path{template.json}; the checked-in
+\path{passion.json} is one host's actual choices, not a universal default.
+The profile records tools as argv vectors, output/work/data paths, MPI
+launcher/rank flag, resource limits and optional capabilities.
+
+Use a base profile and a small site/path overlay instead of editing runners:
+\begin{lstlisting}
+python3 -B src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --config /path/to/local-overlay.json --campaign smoke
+\end{lstlisting}
+The second path is a placeholder the operator must provide.
+Do not label unavailable SPICE, MPI, GPU, kernel or observation data as
+available just to remove a SKIP. Set work/output paths to writable storage
+with sufficient memory and quota. Distinguish compiler argv from shell text.
+
+\section{Short, full and core-only commands}
+All following commands run from the AMPS root. Use a new output directory
+for each campaign.
+\begin{lstlisting}
+PROFILE=test/qualification-machine/passion.json
+
+# Discover exact cases, grouped by stream.
+python3 -B src/test/run_tests.py --config "$PROFILE" --list
+
+# Fast control/library smoke campaign.
+python3 -B src/test/run_tests.py --config "$PROFILE" \
+  --campaign smoke --output-dir test_output/manual-smoke
+
+# Every registered CORE owner; exclude application streams.
+python3 -B src/test/run_tests.py --config "$PROFILE" \
+  --match 'CORE-*' --jobs 8 --build-jobs 16 \
+  --output-dir test_output/manual-core
+
+# All routine registered streams.
+python3 -B src/test/run_tests.py --config "$PROFILE" \
+  --all --streams 3 --jobs 2 \
+  --output-dir test_output/manual-all
+
+# Explicit expensive/portability/distributed/qualification union.
+python3 -B src/test/run_tests.py --config "$PROFILE" \
+  --full-validation --streams 3 --jobs 2 --build-jobs 16 \
+  --output-dir test_output/manual-full
+\end{lstlisting}
+\code{--all} selects the full registry; do not combine it with
+\code{--match 'CORE-*'} expecting core-only selection. Full validation
+activates costly campaigns but retains missing prerequisites and unimplemented
+gates as typed nonpasses. It does not fabricate data or release a model.
+
+\section{Concurrency and native builds}
+\code{--streams N} limits active independent streams and defaults to 1.
+The current streams are core, application-srcEnceladus and application-srcMoon.
+\code{--jobs N} limits nonexclusive suites within each stream;
+\code{--build-jobs N} controls compilation where supported.
+These are three different resource dimensions. MPI ranks and OpenMP threads
+are additional multipliers and must fit the allocation.
+
+The current checkout gate is stronger than a build mutex: an exclusive owner
+waits for all active readers and blocks other streams for its entire protected
+suite. This prevents another suite reading generated headers during
+reconfiguration. Thus requested stream concurrency is a maximum, not a
+promise that native owners overlap. The full-volume CME owner also runs its
+local binaries sequentially; raising global jobs does not parallelize them.
+Independent private-library owners can overlap when their declared isolation
+permits it.
+
+\section{Exact cases, reporting and failures}
+\begin{lstlisting}
+python3 -B src/test/run_tests.py --config "$PROFILE" \
+  --case PHYS-3D-COLLISION-RATE-001 \
+  --case PHYS-3D-PHOTODECAY-001 \
+  --output-dir test_output/manual-two-cases
+\end{lstlisting}
+Each case must have one stable owner. Progress identifies the case before it
+runs. Some imported model owners execute their complete local registry before
+filtering reported rows; consult their README before treating a case selector
+as a quick execution filter.
+
+\begin{longtable}{L{0.15\textwidth}L{0.74\textwidth}}
+\caption{Result vocabulary.}\\
+\toprule State & Meaning\\\midrule\endfirsthead
+\toprule State & Meaning\\\midrule\endhead
+PASS & The exact selected assertion/contract completed successfully.\\
+FAIL & Validly executed acceptance or governance criteria were not satisfied.\\
+SKIP & Explicit prerequisite/campaign/support limitation; no successful
+execution is inferred.\\
+ERROR & Build/setup/protocol/timeout or incomplete execution prevented a
+trustworthy physical assertion.\\
+\bottomrule
+\end{longtable}
+Preserve skipped and failed identities, not just totals. A crash after some
+markers cannot silently mark unreported cases PASS. The final global JSON and
+JUnit XML accompany per-stream JSON/logs, suite logs and artifacts. Use
+\path{amps-core-tests.json} for machine analysis and links to retained evidence,
+not a scraped terminal summary alone.
+
+\section{Independent oracles and qualification}
+Use analytic rates, manufactured fields/trajectories, independently integrated
+moments, conservation budgets and controlled refinement. Add a negative
+control proving the actual grader rejects a real defect. Do not generate the
+reference with the production function under test. Retain original failed
+attempts separately from corrected evidence.
+
+The 2026-11-10 core snapshot has 1067 cases: 825 PASS, 1 FAIL, 240 SKIP and
+1 ERROR; 50 suites: 43 PASS, 1 FAIL, 5 SKIP and 1 ERROR.
+All 785 original preintegration PASS identities remain PASS. The sole current
+FAIL is strict incomplete coverage; the ERROR is the original 180-s full
+production CME-refinement ceiling. BG3D-4/G1 and complete core coverage remain
+open. These are historical results, not a result of compiling this manual.
+
+\section{Adding a test}
+Provide an exact stable ID, owner, independent reference, deterministic setup,
+resource/isolation contract, all result states and meaningful retained logs.
+Update manifest/registry, component and source/configuration traceability,
+the relevant README and the generated \path{src/test/TEST_CATALOG.md}.
+Agents must update that catalog when adding tests. Run:
+\begin{lstlisting}
+python3 -B src/test/generate_test_catalog.py
+python3 -B src/test/generate_test_catalog.py --check
+python3 -B src/test/validate_traceability.py
+\end{lstlisting}
+Registration checks are governance evidence; they do not close physical
+coverage. A reference update is a reviewed model change, not a way to bless
+unexpected output.
+\source{src/test/README.md; src/test/TEST_CATALOG.md; src/test/STATUS.md}

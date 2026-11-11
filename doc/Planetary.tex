@@ -1,0 +1,91 @@
+\chapter{Planetary, satellite and comet applications}\label{ch:planetary}
+\section{A common kinetic engine, different physical targets}
+Planetary applications choose their own body shape, rotation, gravity,
+illumination, surface inventories, plasma/radiation fields and observation
+operators. A species list or successful mesh initialization is not a complete
+physical model. Record the target, epoch, frame, source law and loss/network
+scope with every run. Use ephemerides and orientation consistently in
+injection, acceleration, surface interception and synthetic observations.
+
+\section{The Moon: exosphere, terrain and observation geometry}
+\path{srcMoon} combines spherical or terrain-based surface geometry with
+target-specific exosphere processes and diagnostics. Its generic runtime
+block is selected with \code{-input FILE}; omission preserves the historical
+analytic-sphere regression. The terrain path requires declared LOLA products,
+labels, resolution and output paths. Do not replace unavailable topography
+with a sphere without recording a different physical case.
+
+Spatial targets distinguish the near-surface, far-field, terminator and polar
+regions. Quick, regression and full science receipts are different numerical
+campaigns. A completed coarse wiring run must retain its M1
+SKIPPED/NOT QUALIFIED designation when convergence criteria were not exercised.
+The lunar unit/integration runners cover geometry, source/thermal state,
+environment timing and bounded products; inspect their actual per-case status.
+Na tail and limb observations additionally require instrument geometry,
+velocity-dependent radiation, line-of-sight weighting and the declared
+exposure average.
+\source{srcMoon/README.md; srcMoon/test/README.md; srcMoon/examples/README.md}
+
+\section{Enceladus: sources, parent loss and Cassini comparisons}
+\path{srcEnceladus} separates a fitted-source exporter from the forward kinetic
+application. The currently implemented distribution identifier is
+\code{tenishev2014_hybrid_8}: eight point jets and seven stripe components.
+Stripe vertices are projected vertically onto the declared 252100-m reference
+sphere. The separate source file states geometry, kinematics, frame and
+whether strengths are absolute rates or a normalized shape.
+
+Equal-strength E3/E5 receipts exist to start and exercise the forward code.
+They are not a recovered individual-source fit. The E3/E5 mass-44
+normalizations are apparent CO2 and carry a documented impact-fragmentation
+bracket; they must not be reported as unqualified physical CO2 production.
+The schema-2 run transports neutral H2O/CO2 with selected H2O photolytic
+parent loss only, no daughter particles and no plasma.
+
+Observation requests select INMS density/count products and supported UVIS
+occultations. Density, detector count rate and occultation transmission are
+different operators. Only compare like quantities with compatible response,
+units, frame and epoch. A trajectory outside the mesh has no local density;
+do not interpolate across that gap or label it zero. Resolve closest approach
+with actual flyby cells, and plot sampling uncertainty and data availability.
+\source{srcEnceladus/SOURCE_DISTRIBUTION_FILE.md; srcEnceladus/test/README.md}
+
+\section{Comets: radial and shape-based gas/dust models}
+\path{srcHartley2} retains its historical name but contains a generic comet
+layer with a DIM1 spherical radial backend, legacy DIM3 shape application,
+configurable chemistry/collisions, internal energy, cooling and brightness.
+DIM2 axisymmetric execution is reserved rather than implemented. I3 uses
+\path{input/i3.conf} for compiled capabilities and \path{input/i3.in} plus
+\code{-case N} for physical cases. Halley and Hartley decks use their
+documented workflows; do not assume every alias stages the shared parser
+identically.
+
+The radial backend retains three-dimensional velocity/trajectory geometry
+while exploiting spherical symmetry for storage and sampling. It cannot
+represent an arbitrary asymmetric jet or shadowed nonspherical coma.
+For those cases use the appropriate DIM3 adapter with a qualified surface,
+thermal map and gravity model. Nucleus production and escaping/net production
+can differ because of returning particles; state which quantity is fitted.
+
+The separate collisionless reference supplies a far-coma column correction
+for selected I3 post-processing. It is not an extension of the DSMC domain.
+Its columns, normalization, assumptions and missing radiation-pressure effects
+are documented independently. Comparison tables imported from COMET1D are
+historical evidence, not new runs of this checkout.
+\source{srcHartley2/README.md; srcHartley2/COLLISIONLESS_REFERENCE.md; srcHartley2/i3/COMPARISON.md}
+
+\section{Planetary energetic particles}
+\path{srcEarth} includes backward-characteristic cutoff/access and
+instantaneous spectrum products using declared static/quasi-static field
+snapshots. A backward access calculation and a forward Monte Carlo density
+calculation are different estimators. Field, spectrum, detector response and
+observer epoch must form one accepted configuration with consistent units.
+Classify unresolved/trapped/escaped characteristics explicitly; an unfinished
+trajectory must not silently count as excluded flux.
+
+The coupled Step-10/11 contracts produce content-identified snapshots and
+product manifests. Their portable analytic/replay tests do not qualify
+all external-data or live SWMF release matrices. Magnetic-only instantaneous
+results do not imply electric acceleration or long-duration validity across
+changing fields. Other planetary application directories require their own
+input/data and acceptance review before reuse.
+\source{srcEarth/README.md}

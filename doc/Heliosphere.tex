@@ -1,0 +1,87 @@
+\chapter{Heliospheric and energetic-particle physics}\label{ch:helio}
+\section{Field-line and three-dimensional formulations}
+\path{srcSEP} transports particles along magnetic field lines embedded in
+three-dimensional space and contains particle--Alfv\'en-wave coupling.
+\path{srcSEP3D} supplies three-dimensional transport and background adapters.
+They share physical libraries and input vocabulary where supported, but a
+key accepted by one application need not be meaningful in the other.
+The schema table marks ownership and unsupported combinations.
+
+The isotropic Parker transport equation, in a common convention, is
+\begin{equation}
+\frac{\partial f}{\partial t}
+=\nabla\cdot(\boldsymbol\kappa\nabla f)
+-(\boldsymbol U+\boldsymbol v_d)\cdot\nabla f
++\frac{\nabla\cdot\boldsymbol U}{3}\,p\frac{\partial f}{\partial p}+Q.
+\end{equation}
+Here $f$ is phase-space density and $p$ momentum magnitude. Flux and
+differential-energy spectra include additional Jacobians; a power index for
+$f(p)$ is not automatically an index for $dN/dE$.
+Focused transport additionally resolves pitch angle
+$\mu=\boldsymbol v\cdot\boldsymbol b/v$, streaming/focusing and
+pitch-angle diffusion. A diffusion approximation is not valid merely
+because a mean free path parameter was supplied.
+
+\section{Mean free path, diffusion and turbulence}
+For suitable gyrotropic scattering,
+\begin{equation}
+\kappa_\parallel=\frac{v^2}{8}\int_{-1}^{1}
+\frac{(1-\mu^2)^2}{D_{\mu\mu}}\,d\mu,\qquad
+\lambda_\parallel=\frac{3\kappa_\parallel}{v}.
+\end{equation}
+Convergence near $D_{\mu\mu}=0$, resonance gaps and end points requires
+an explicit model and quadrature policy. Perpendicular diffusion, field-line
+wandering and deterministic drifts are different operators. Check
+normalization, stochastic-calculus convention and any drift correction
+against the actual stochastic differential equation.
+
+The SEP tree includes integrated and wave-number-resolved turbulence,
+advection/cascade and particle-wave terms. Their conservation and
+normalization require matching wave energy, resonance convention and particle
+weights. An uncoupled prescribed-turbulence test does not validate feedback.
+The older detailed derivations retained in this directory are supplementary
+reading; current public model contracts and test receipts determine support.
+
+\section{Background providers and physical state}
+An analytic Parker background, a PFSS/coronal ambient, a reduced front and
+a full spatial CME have different capabilities. Record epoch, frame,
+units, generation and validity interval for all sampled fields. Interpolation
+must not silently substitute quiet ambient after a rejected shock solution.
+Background advancement must not depend on particle allocation or source
+planning when the selected background contract is particle-independent.
+
+A reduced-front provider supplies the prescribed geometry, undisturbed
+ambient reference and front-local immediate Rankine--Hugoniot limits.
+It does not own a spatial sheath/ejecta volume. A geometric arrival is not
+necessarily an accepted fast-shock arrival. Diagnostics must retain normal
+speed, upstream-relative inflow, fast Mach number, obliquity, compression
+and admissibility rather than imposing a compression floor.
+
+\section{CME implementation and qualification boundary}
+Shared coronal, SWCME, full-volume and reduced-front libraries have separate
+software registries. Full-volume BG3D-4/G1 remains unqualified at this edition.
+The selected resumed analytical lateral-material development retains the
+3-D ambient, a field-threaded material contact and 1200-s startup corotation
+transition. Bounded transport/mesh/CT/contact/Cauchy kernels are tested;
+they do not constitute a production MHD runtime or a qualified regional map.
+
+For a regular material map $\boldsymbol X(\boldsymbol a,t)$,
+$F=\partial\boldsymbol X/\partial\boldsymbol a$, $J=\det F>0$, the adiabatic
+Cauchy relations are
+\begin{equation}
+\rho=\rho_0/J,\qquad
+\boldsymbol B=F\boldsymbol B_0/J,\qquad p=p_0J^{-\gamma}.
+\end{equation}
+They preserve material mass and flux for a compatible map; they do not select
+that map, supply shock matching, or close force/heating/work budgets.
+An isothermal expanding ambient needs explicit thermal work/heating beyond
+the adiabatic subset.
+
+The application can deliberately reject a source/provider even when its
+library exists. In particular, current srcSEP3D documentation rejects the
+unreleased SWCME runtime selection while preserving those decks as typed
+negative fixtures. The reduced-front source has a bounded constant-weight
+mode; log-uniform momentum importance remains reserved until its individual
+weight correction is implemented and qualified. Read the application
+capability check before selecting a historical example.
+\source{srcSEP/README.md; srcSEP3D/README.md; src/models/sep_corona_swcme/README_CROSS_RAY.md}

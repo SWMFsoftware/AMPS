@@ -1,0 +1,93 @@
+\chapter{SWMF and external background coupling}\label{ch:coupling}
+\section{Component lifecycle}
+SWMF builds model libraries into one framework executable. AMPS supplies PT
+(particle tracker) and PC (particle-in-cell) wrappers in \path{srcInterface}.
+The control module owns component registration, processor layout, sessions,
+execution/coupling schedules and framework restart requests.
+An AMPS standalone executable does not pass through the same outer driver.
+
+The wrapper actions include VERSION, MPI, READ, CHECK, STDOUT, FILEOUT and
+GRID, followed by session initialization, run, restart and finalize methods.
+READ can occur multiple times before CHECK. Fields and mesh descriptions
+must not be published before their initialization stage. The current AMPS
+wrappers contain partly stubbed checking/output-routing actions; this manual
+does not promote them to a validated full implementation.
+
+\section{Communicators and processor layout}
+Use the communicator supplied by the framework. The Fortran handle is
+converted with \code{MPI_Comm_f2c}; collective calls must involve exactly
+that component's participating ranks. Overlapping component processor sets
+execute sequentially on shared ranks. Disjoint sets permit concurrent
+evolution, subject to data dependencies. Thread support and actual affinity
+must be checked separately from processor counts.
+
+A schematic two-component layout, in a SWMF \path{PARAM.in}, is:
+\begin{lstlisting}
+#COMPONENTMAP
+GM  0  1  1
+PT  2  3  1
+\end{lstlisting}
+It requires four ranks and compatible compiled components. This is a layout
+fragment, not a complete runnable physical case.
+
+\section{Parameter ownership and schedules}
+SWMF compile-time model selection uses its own \code{Config.pl -v=...}.
+Its \code{#BEGIN_COMP PT} block carries component parameters; standalone
+AMPS generic runtime input is a different grammar.
+Always validate against the actual SWMF \path{PARAM.XML} and component XML:
+some historical prose examples reverse positional arguments.
+For example, a one-way physical-time cadence uses:
+\begin{lstlisting}
+#COUPLE1
+GM          NameSource
+PT          NameTarget
+-1          DnCouple
+10.0        DtCouple
+\end{lstlisting}
+This is a 10-s schedule, not a physical justification for that interval.
+Time-accurate components must respect supplied synchronization limits.
+Tight coupling additionally requires a supported master/slave timestep
+contract. Permitting a component to step past a coupling epoch changes
+temporal accuracy and must be declared.
+
+Three clocks matter: iterations since process start, accumulated steps
+including restart history, and physical simulation time. Returning a limit
+to the scheduler without advancing a physical state to that epoch is not
+evidence of synchronization. Test this explicitly for nonintegral ratios of
+the AMPS step to coupling interval and for first-data readiness.
+
+\section{Exchange contracts}
+Each exchanged quantity needs a species/fluid mapping, units, frame,
+location (cell centre, corner, face or field-line vertex), timestamp and
+validity. Transform vectors, velocities and electric fields with the
+correct frame convention; rotating-frame velocity is not just a rotation
+of an inertial vector. Keep magnetic interpolation compatible with any
+required divergence or flux constraint.
+
+Exchange a coherent state generation rather than mixing fresh density with
+old velocity. Verify owner and received-ghost values independently. A
+successful send count is not proof of correct physical data. Negative tests
+should reject missing variables, nonfinite values, stale epochs, mismatched
+layout and unsupported fluid counts before particles consume them.
+
+\section{File providers, SPICE and empirical models}
+Offline backgrounds need a versioned file format, dimensional identities,
+frame/epoch and explicit missing-domain policy. CDF/Kameleon, BATSRUS/BATL,
+ARMS, CCMC and SWMF are separate optional interfaces with different fixtures.
+Finding a library on disk does not qualify its adapter.
+SPICE supplies geometry, not plasma. Record exact kernel versions, load order,
+coverage and target/frame/aberration choices. Kernel readiness requires real
+state/orientation queries for the requested epoch.
+
+\section{Coupled testing and isolation}
+SWMF's legacy test Makefile serializes its top-level recipes and suppresses
+some command failures while retaining \path{.diff} artifacts. A wrapper runner
+must inspect expected outputs and classify missing evidence as ERROR.
+Never concurrently reconfigure the same SWMF/AMPS build tree for independent
+tests. Run isolated runtime cases from frozen executables after serialized
+configuration/build, keeping each result separate before aggregation.
+
+The AMPS global SWMF provider case remains SKIP without an independently
+registered exchange fixture. Synthetic ABI or replay tests are valuable but
+do not replace a live component-communicator and exchanged-field test.
+\source{srcInterface/PT_wrapper.f90; srcInterface/PC_wrapper.f90; srcInterface/amps2swmf.cpp}

@@ -1,0 +1,108 @@
+\chapter{Installation, configuration and execution}\label{ch:installation}
+\section{Prerequisites and source distribution}
+Use an existing authorized checkout or source archive with its maintained
+shared libraries, inputs and test fixtures. Preserve the supplied directory
+layout. This edition does not prescribe an obsolete CVS host or silently
+retrieve missing model data. Record the source revision and local changes
+with each production build.
+
+The native toolchain needs a compatible C++ compiler, make, Perl and MPI;
+dependency-light modern contracts commonly require C++17. Python 3 runs the
+global test procedure and many post-processors. A Fortran compiler and matching
+MPI interface are required for SWMF and selected linked modules. Optional
+capabilities can require CSPICE, external field libraries, numerical tables,
+matplotlib/NumPy or an accelerator toolchain. Inspect the chosen application
+and machine profile rather than assuming all dependencies are universal.
+
+\section{Site configuration and application selection}
+The established \path{Config.pl} workflow selects the application and site
+settings. It uses \path{input/NAME.input} first and falls back to
+\path{input/NAME.conf} only if the former does not exist. Initial installation
+and compiler selection are site-specific; inspect \code{./Config.pl -help}
+and the existing \path{Makefile.conf}. Preserve site libraries and settings.
+Do not edit \path{.amps.conf} directly.
+
+For a new compile-time application selection:
+\begin{lstlisting}
+./Config.pl -show
+./Config.pl -application=enceladus
+\end{lstlisting}
+Changing the runtime .in file selects only among compiled capabilities; it
+cannot change species IDs, dimension or allocated record layout.
+Generated files in \path{build} or \path{srcTemp} are not the maintained
+place to implement a lasting fix.
+
+\section{Mandatory native rebuild sequence}
+Before \emph{every} native AMPS rebuild, confirm the repository root and verify
+that no build or test simulation is using it. In the current workspace the
+root is \path{/home/vtenishe/Mars2/AMPS}. From that confirmed, idle root:
+\begin{lstlisting}
+# Remove only the generated root build directory.
+rm -rf -- build
+
+# Regenerate the chosen application's configuration/hooks.
+./Config.pl -application=enceladus
+
+# Use the established top-level compilation workflow.
+env MAKEFLAGS="-j16" make amps
+\end{lstlisting}
+Some application guides explicitly stage generator hooks before make:
+\begin{lstlisting}
+./ampsConfig.pl -input enceladus.input -no-compile
+\end{lstlisting}
+Follow the selected adapter's established sequence. Do not remove source directories,
+site settings, libraries or another checkout. A focused standalone compile of
+a shared-model test is not a native AMPS build.
+
+The global native test adapters perform and record this preflight under
+exclusive ownership. Prefer them for reproducible verification. Do not run a
+second manual Config.pl or make against their active checkout.
+
+\section{SPICE configuration and data readiness}
+SPICE-enabled applications require both the toolkit and appropriate kernels.
+Configure explicit local paths through the established workflow, for example:
+\begin{lstlisting}
+./Config.pl -spice-path=/path/to/SPICE/cspice \
+  -spice-kernels=/path/to/SPICE/Kernels
+\end{lstlisting}
+These paths are placeholders. A no-SPICE fixture selects
+\code{-spice-path=nospice}; a component-level SPICE-off input by itself may
+not remove an inherited global toolkit/link choice.
+Test actual state and orientation queries for the intended target, frame and
+epoch. The presence of a file with a plausible name is not proof of coverage.
+Record versions/hashes and load order; never substitute an unrelated mission
+ephemeris to make initialization succeed.
+
+\section{Run directories, MPI and batch execution}
+Use a fresh run directory and freeze the exact executable and inputs. Paths
+inside application files may resolve relative to the input file or the run
+directory; inspect the owner. Copy/include all dependent source distributions,
+event files and data receipts, preserving that relationship.
+A minimal launcher pattern, after preparing a complete run, is:
+\begin{lstlisting}
+cd /path/to/prepared/run
+mpiexec -n 4 ./amps -input run.in > run.log 2>&1
+\end{lstlisting}
+This is a launch pattern, not a universal CLI or rank recommendation. I3 uses
+\code{-i FILE -case N}; some legacy applications take no runtime file.
+Choose the MPI rank flag and launcher from the site's configuration. Allocate
+memory for blocks, ghosts, particles, node fields and output buffers; counts
+of CPUs alone do not establish that a case fits.
+
+A batch script should set the working directory, requested ranks/threads,
+required modules and log destinations explicitly. It must retain the real
+process return code. Do not assume a shell pipeline to a logging command
+preserves the simulation's failure code. Use the scheduler allocation, not
+an arbitrary host-specific job example from an old manual.
+
+\section{A first verification before a science run}
+Run the fast global campaign and then the relevant native/end-to-end owner:
+\begin{lstlisting}
+python3 -B src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --campaign smoke --output-dir test_output/first-smoke
+\end{lstlisting}
+For another host, supply its real machine profile. Read the final individual
+FAIL/ERROR/SKIP list and linked logs. Keep compiler/startup success separate
+from completed physical stepping and scientific qualification.
+\source{Config.pl; ampsConfig.pl; src/test/README.md; test/qualification-machine/README.md}
