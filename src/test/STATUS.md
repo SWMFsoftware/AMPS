@@ -2,6 +2,104 @@
 
 Last updated: 2026-11-10
 
+## Fast-wave P0–P4 implementation (2026-11-10)
+
+Implemented ordered per-peer periodic byte transport with a streaming
+fallback; complete uniform pointer stencils and per-call deposition geometry;
+exact full-width legacy CRC/canonical particle-copy improvements; and a
+solve-scoped compact scalar sparse operator. Source comments and adjacent
+READMEs document equations, arithmetic order, ownership/lifetimes, failure
+conditions, backend guards and fallback behavior. Physics settings, solver
+tolerances, deterministic checks and regression references are unchanged.
+
+The final exact `make test_fast-wave -j` passes: 79.387 s complete / 26.326 s
+simulation versus the prior optimized 87.082 / 35.043 s. All measured stages
+finish 60 iterations on four ranks, leave three empty diff files and reproduce
+six full sampled species files byte-for-byte. A second final-binary control
+passes in 26.410 s. See `test/srcFastWave/STATUS.md` for full evidence and
+portable interpretation limits.
+
+Eighteen new permanent cases bring the registry to 56 suites / 1,192 cases;
+the core selection is 51 / 1,085. The focused performance owner passes 13/13,
+general numerics 14/14 and native PIC 95/95. Complete core validation with
+documented retries finishes at **1,085 cases: 843 PASS / 1 FAIL / 240 SKIP /
+1 ERROR**; **51 suites: 44 PASS / 1 FAIL / 5 SKIP / 1 ERROR**. All **825
+previous PASS identities** remain PASS, no previous identity is missing and
+all eighteen new cases PASS. The final harness passes all 13 checks.
+
+The initial campaign takes 1,666.301 s. Registration/traceability omissions
+and stale explicit selection counts/sets cause three harness checks to fail.
+A competing documentation-only make also causes seven native preflight
+refusals, before physics execution. Metadata is repaired while physical
+kernel hashes remain frozen. The eight-owner retry takes 328.049 s; all seven
+native owners pass, with only the selection check still failing. Its corrected
+explicit expectations then pass the complete 13-case harness retry in
+11.513 s. No acceptance tolerance is relaxed. The source-freeze audit records
+metadata hashes separately; sum of execution intervals is 2,005.863 s.
+
+Evidence root: `test_output/fast-wave-optimization-20261110/`.
+`core-validation-reconciled.json` and `.xml` retain final dispositions, actual
+owner logs, the untouched first/retry reports and every attempt in provenance.
+`core-validation-comparison.json` records exact case-identity preservation,
+all eighteen new PASS identities and unchanged nonpasses. The raw report
+directories are `core-validation/`, `core-validation-retry/` and
+`core-harness-final/`; the reconciled report is explicitly a multi-attempt
+evidence assembly, not a claim of one all-green run.
+
+The only actual remaining nonpasses are unchanged:
+`CSWC-FULL-CSWC0628-MASS-TIME` ERROR at its existing 180 s routine ceiling,
+and `T12-COVERAGE-STRICT-001` FAIL for incomplete coverage. BG3D-4 and G1
+remain unqualified. The earlier core campaign below is historical.
+
+## Fast-wave individual-function profiling (2026-11-10)
+
+Completed isolated control and CPU/PMPI-profile runs of the previously
+validated frozen -O1 binary, with no AMPS rebuild or production algorithm
+change. Both PASS: 60 iterations, four rank logs, both unchanged numeric
+comparisons and all six sampled species files byte-identical to baseline.
+Elapsed times: control 35.191 s, profile 36.419 s (3.49% overhead).
+The sampler collected 14,313 main-thread CPU PCs at 100 Hz with no drops.
+
+Top self CPU outside wrapped MPI: deposition 14.58%, memory copy 10.47%,
+matrix-vector multiply 10.27%, particle signatures 9.10%, corner interpolation
+7.71%, cell-center interpolation 6.81% and the Lapenta mover body 6.75%.
+The periodic ghost-block MPI send/receive sites cost 5.325 s mean elapsed per
+rank; timer-report gathers cost only 0.00318 s per rank. Timer percentages,
+MPI elapsed and possible speedups are not interchangeable.
+
+Added optional profiling tools and detailed methodology under
+test/srcFastWave/profiling/. Proposed implementation stages, independent
+validation requirements, source pointers and limitations are in
+test/srcFastWave/PERFORMANCE_OPTIMIZATION_PLAN.md. The proposal preserves
+nightly sorting/checks, physical work and tolerances; it does not implement
+or claim any further speedup. Evidence and plots are under
+test_output/fast-wave-function-profile-20261110/. The full-core campaign
+result below remains historical.
+
+## Legacy fast-wave performance validation (2026-11-10)
+
+Timed and optimized the separate `make test_fast-wave -j` procedure. Its
+GCC-only `-O1` fallback applies when the effective C/C++ flags lack an explicit
+optimization level; it preserves configured levels, non-GNU/NVCC policies,
+site files and all physical/numerical gates. Disable with
+`FAST_WAVE_CXXFLAGS=`. The current host-generated recipe and maintained Table
+both forward the fallback only for the native fast-wave build.
+
+Four clean four-rank native runs PASS: baseline 119.036 s, explicit -O1
+86.989 s, explicit -O2 91.794 s and the exact command with the new default
+87.082 s. The final command is 26.8% faster; its simulation phase is 2.21x
+faster. Every run completes 60 iterations and all three diff files are empty;
+all six sampled species files are byte-identical across the four runs.
+Twelve compiler-policy make probes PASS. Native builds retain the prescribed
+preflight and -j16 top-level workflow. Reference hashes are unchanged and the
+original output symlink was restored. An initial sandbox MPI socket failure
+is retained separately and excluded from the successful native timings.
+
+Detailed commands, methodology and limits: `test/srcFastWave/README.md`.
+Evidence: `test_output/fast-wave-performance-20261110/summary.json`, policy
+probe JSON and per-run logs/timing/results. The complete core result below
+remains historical; this change does not claim a new all-core campaign.
+
 ## Complete core revalidation finished (2026-11-10)
 
 The source-frozen full core campaign finished in **1958.293 s**:

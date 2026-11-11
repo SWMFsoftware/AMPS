@@ -329,9 +329,13 @@ def test_selection_contract(context: Dict) -> None:
     streams = module.group_test_streams(full_selected)
     assert [item["id"] for item in streams] == [
         "core", "application-srcEnceladus", "application-srcMoon"]
-    assert [len(item["tests"]) for item in streams] == [50, 3, 2]
+    # The order-preserving performance owner adds one core suite and thirteen
+    # cases; CRC and native signatures add five more cases to existing owners.
+    # Pin the new independent totals explicitly rather than deriving expected
+    # values from production grouping, which would conceal a lost owner.
+    assert [len(item["tests"]) for item in streams] == [51, 3, 2]
     assert [sum(len(test["selected_cases"]) for _, test in item["tests"])
-            for item in streams] == [1067, 61, 46]
+            for item in streams] == [1085, 61, 46]
     listed = io.StringIO()
     with contextlib.redirect_stdout(listed):
         module.print_tests(
@@ -369,6 +373,7 @@ def test_selection_contract(context: Dict) -> None:
         "CORE-UNITS-001", "CORE-SPECIES-RADIATION-001",
         "CORE-COMET-LIBRARIES-001"}
     assert campaign_ids("nightly") == {
+        "CORE-PIC-PERFORMANCE-001",
         "CORE-HARNESS-001", "CORE-GENERAL-INPUT-001",
         "CORE-GENERAL-CONTAINERS-001", "CORE-GENERAL-NUMERICS-001",
         "CORE-GENERAL-RNG-001", "CORE-GENERAL-MPI-001",
@@ -396,8 +401,10 @@ def test_selection_contract(context: Dict) -> None:
         "CORE-PIC-CALLBACK-OUTPUT-001", "CORE-PIC-RESTART-001",
         "CORE-PIC-DATAFILE-001", "CORE-PIC-OUTPUT-001"}
     assert campaign_ids("distributed") == {
-        "CORE-GENERAL-MPI-001", "CORE-MESH-MPI-OWNERSHIP-001"}
+        "CORE-GENERAL-MPI-001", "CORE-MESH-MPI-OWNERSHIP-001",
+        "CORE-PIC-PERFORMANCE-001"}
     assert campaign_ids("extended") == {
+        "CORE-PIC-PERFORMANCE-001",
         "CORE-COMET-LIBRARIES-001",
         "CORE-INTERFACE-ABI-001", "CORE-PIC-NATIVE-001",
         "CORE-EXOSPHERE-SPHERE-NATIVE-001",

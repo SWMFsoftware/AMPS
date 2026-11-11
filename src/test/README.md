@@ -19,6 +19,32 @@ the acceptance gates and separates a test repair from physical qualification.
 
 ## Current validation and new development (2026-11-10)
 
+Fast-wave P0–P4 performance changes add **18 independent case identities**:
+seven MPI periodic-transport cases (each 1/2/4 ranks), three complete-stencil
+cases, three ordered sparse-multiply cases, four full-width legacy CRC cases
+and one native particle-signature case. The complete registry is now
+**56 suites / 1,192 cases**, with **51 core suites / 1,085 cases**. This is
+registration, not an assertion that every case qualifies on this machine.
+The focused performance suite passes 13/13, general numerics 14/14 and the
+native PIC owner 95/95. Complete core revalidation with explicit owner retries
+finishes at **843 PASS / 1 FAIL / 240 SKIP / 1 ERROR** (1,085 cases); suites:
+44 PASS / 1 FAIL / 5 SKIP / 1 ERROR. All 825 previous PASS identities remain
+PASS and all eighteen additions pass. The final harness passes 13/13.
+Initial registration/selection errors and seven documentation-make preflight
+refusals remain in the raw reports; the reconciled report preserves each
+attempt. The only remaining nonpasses are the same refinement timeout and
+strict incomplete-coverage gate. See `STATUS.md` for evidence and exact scope.
+
+The final native fast-wave run passes unchanged comparisons and six exact
+full-file hashes in 79.387 s total / 26.326 s simulation. Algorithm contracts,
+fallbacks, timings and campaign evidence are in
+[`test/srcFastWave/STATUS.md`](../../test/srcFastWave/STATUS.md). Source-local
+test instructions are in the
+[`performance-suite README`](tests/pic/performance/README.md) and
+[`general-numerics README`](tests/general/numerics/README.md).
+
+The following full-campaign result is the **previous** core checkpoint:
+
 The complete CORE-only campaign has **50 suites and 1,067 cases**:
 **825 PASS, 1 FAIL, 240 SKIP, 1 ERROR**, in 1958.293 seconds. All 792 previous
 PASS identities are preserved, all 32 new cases pass, and CMBGU05 changes

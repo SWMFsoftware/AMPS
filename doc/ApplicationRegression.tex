@@ -95,6 +95,16 @@ configuration and top-level -j16 build. Some other custom recipes hard-code
 MPI rank counts or run nested SWMF campaigns, so overriding \code{MPIRUN}
 does not universally change their resources. Read the individual run recipe.
 
+The fast-wave recipe alone adds a GNU host C/C++ \code{-O1} fallback if the
+site's effective flags specify no optimization level. An explicit level,
+NVCC or another compiler family keeps its existing policy. Disable the
+fallback with \code{FAST_WAVE_CXXFLAGS=}; site files and Fortran flags are
+preserved. On passion the complete clean four-rank command improved from
+119.04 to 87.08 seconds, with all six sampled species files byte-identical.
+This dated measurement retains the original comparison bounds; it is not a
+portable speed threshold. See \path{test/srcFastWave/README.md} for the exact
+timing method, controls and evidence.
+
 The generated \code{test_help} target is intended to list these names.
 In this edition, executing \code{make test_help} returns a shell quoting error:
 some generated echo lines lack their closing quote. Use the complete local

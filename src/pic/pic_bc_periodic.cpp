@@ -11,6 +11,9 @@
 
 
 #include "pic.h"
+#include "parallel/ordered_periodic_exchange.h"
+#include <cstdlib>
+#include <limits>
 
 //originaly requsted limits of the computational domain
 double PIC::BC::ExternalBoundary::Periodic::xminOriginal[3]={0.0,0.0,0.0};
@@ -319,48 +322,53 @@ void PIC::BC::ExternalBoundary::Periodic::UpdateGhostBlockData() {
 void PIC::BC::ExternalBoundary::Periodic::UpdateGhostBlockData(int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
     int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)) {
 
-  if (_PIC_BC__PERIODIC_MODE_ == _PIC_BC__PERIODIC_MODE_ON_) {
-    int iBlockPair,RealBlockThread,GhostBlockThread;  
+  if (_PIC_BC__PERIODIC_MODE_ != _PIC_BC__PERIODIC_MODE_ON_) return;
 
+  // Preserve the wire representation exactly: the old routine copies the
+  // low-index Nx*Ny*Nz corners followed by the same number of centers, including
+  // every associated-data field. The high corner planes are deliberately NOT
+  // added here; changing that support would change the periodic discretization.
+  // Record lengths are bytes, independent of the physical units of each field.
+  const std::size_t cells=std::size_t(_BLOCK_CELLS_X_)*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
+  const std::size_t corner=PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;
+  const std::size_t center=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
+  if (corner>std::numeric_limits<std::size_t>::max()-center ||
+      corner+center>std::numeric_limits<std::size_t>::max()/cells)
+    exit(__LINE__,__FILE__,"periodic associated-data byte count overflow");
+  const std::size_t bytes=cells*(corner+center);
 
-    int BlockDataLength=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+
-        _BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;
-
-    char *TargetDataBuffer=new char [BlockDataLength];
-    char *SourceDataBuffer=new char [BlockDataLength];
-
-    //loop through all blocks
-    for (iBlockPair=0;iBlockPair<BlockPairTableLength;iBlockPair++) {
-      GhostBlockThread=BlockPairTable[iBlockPair].GhostBlock->Thread;
-      RealBlockThread=BlockPairTable[iBlockPair].RealBlock->Thread;
-
-      //prepare the data
-      if (RealBlockThread==PIC::ThisThread) {
-        ExchangeBlockDataLocal(BlockPairTable[iBlockPair],TargetDataBuffer,NULL);
-
-        //send the data
-        if (RealBlockThread!=GhostBlockThread) {
-          MPI_Send(TargetDataBuffer,BlockDataLength,MPI_CHAR,GhostBlockThread,0,MPI_GLOBAL_COMMUNICATOR);
-        }
-      }
-
-      //read the data
-      if (GhostBlockThread==PIC::ThisThread) {
-
-        //recive the data
-        if (RealBlockThread!=GhostBlockThread) {
-          MPI_Status status;
-
-          MPI_Recv(SourceDataBuffer,BlockDataLength,MPI_CHAR,RealBlockThread,0,MPI_GLOBAL_COMMUNICATOR,&status);
-        }
-        else memcpy(SourceDataBuffer,TargetDataBuffer,BlockDataLength);
-
-        ExchangeBlockDataLocal(BlockPairTable[iBlockPair],NULL,SourceDataBuffer);
-      }
-    }
-
-    delete [] TargetDataBuffer;
-    delete [] SourceDataBuffer;
+  std::vector<amps_periodic_exchange::Pair> pairs;
+  pairs.reserve(BlockPairTableLength);
+  bool snapshot_safe=CopyCornerNodeAssociatedData==CopyCornerNodeAssociatedData_default &&
+                     CopyCenterNodeAssociatedData==CopyCenterNodeAssociatedData_default;
+  for (int i=0;i<BlockPairTableLength;i++) {
+    const auto& pair=BlockPairTable[i];
+    pairs.push_back({pair.RealBlock->Thread,pair.GhostBlock->Thread});
+    // Distinct real and ghost LEAF blocks occupy disjoint half-open boxes.
+    // Low-index corner support excludes each block's upper planes, so a node
+    // written in a ghost box cannot also be a serialized real-box source.
+    // Centers are interior. This proves pack-ahead independence even where
+    // adjacent blocks share upper-face corner storage. Do not apply that
+    // reasoning to a source flagged as ghost or to a user callback with
+    // side effects: those cases retain ordered streaming semantics.
+    if (pair.RealBlock==pair.GhostBlock || pair.RealBlock->IsGhostNodeFlag ||
+        !pair.GhostBlock->IsGhostNodeFlag) snapshot_safe=false;
+  }
+  // Diagnostic A/B control, consistently supplied to all ranks by the launcher.
+  // It selects the preserved algorithm, not fewer fields/iterations/checks.
+  if (std::getenv("AMPS_PERIODIC_EXCHANGE_REFERENCE")!=NULL) snapshot_safe=false;
+  static amps_periodic_exchange::Workspace workspace;
+  const auto stats=workspace.Exchange(pairs,bytes,PIC::ThisThread,PIC::nTotalThreads,
+      MPI_GLOBAL_COMMUNICATOR,
+      [&](std::size_t i,char* buffer) {ExchangeBlockDataLocal(BlockPairTable[i],buffer,NULL);},
+      [&](std::size_t i,char* buffer) {ExchangeBlockDataLocal(BlockPairTable[i],NULL,buffer);},
+      snapshot_safe);
+  static bool reported=false;
+  if (!reported && std::getenv("AMPS_PERIODIC_EXCHANGE_DIAGNOSTICS")!=NULL) {
+    printf("[periodic-exchange] rank=%d mode=%s record_bytes=%zu send_bytes=%zu recv_bytes=%zu send_messages=%zu recv_messages=%zu local_pairs=%zu\n",
+        PIC::ThisThread,snapshot_safe ? "batched" : "reference",bytes,
+        stats.send_bytes,stats.receive_bytes,stats.send_messages,stats.receive_messages,stats.local_pairs);
+    reported=true;
   }
 }
 

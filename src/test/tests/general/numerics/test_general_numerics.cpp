@@ -20,6 +20,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <thread>
+#include <array>
 
 // The general headers route invalid input through AMPS' trap-style exit.
 // Replacing only that terminal action with an exception preserves the exact
@@ -495,4 +497,73 @@ AMPS_TEST_CASE("GENERAL-NUM-QUADRATURE-DOMAIN-001",
   AMPS_EXPECT_NEAR(reversed, -forward, 2.0e-13);
   AMPS_EXPECT_NEAR(Quadrature::Gauss::Cube::GaussLegendre(
       1, 8, Exponential, lower, lower), 0.0, 0.0);
+}
+
+namespace {
+// Independent bitwise construction of each byte's polynomial contribution.
+// No production lookup table or slicing code is used. All operations retain
+// unsigned-long width, including the historical nonmasked LP64 upper bits.
+unsigned long ReferenceSignature(const unsigned char* data,std::size_t length,unsigned long state=0) {
+  for (std::size_t i=0;i<length;i++) {
+    unsigned long remainder=(((state>>24)^data[i])&255UL)<<24;
+    for (int bit=0;bit<8;bit++)
+      remainder=(remainder&0x80000000UL) ? (remainder<<1)^0x04c11db7UL:remainder<<1;
+    state=(state<<8)^remainder;
+  }
+  return state;
+}
+}
+
+AMPS_TEST_CASE("PERF-CRC-STREAM-001","optimized CRC matches independent full-width bit recurrence on unaligned/all-byte/long streams") {
+  std::vector<unsigned char> data(131079);
+  unsigned long random=0x12345678UL;
+  for (std::size_t i=0;i<data.size();i++) {
+    random=random*1664525UL+1013904223UL;
+    data[i]=i<256 ? static_cast<unsigned char>(i):static_cast<unsigned char>(random>>16);
+  }
+  for (int offset=0;offset<4;offset++) {
+    CRC32 actual;
+    actual.crc_accum=~0UL;
+    actual.add(data.data()+offset,data.size()-offset);
+    AMPS_EXPECT_EQ(actual.checksum(),ReferenceSignature(data.data()+offset,data.size()-offset,~0UL));
+  }
+}
+
+AMPS_TEST_CASE("PERF-CRC-SPLIT-001","chunk boundaries, scalar templates, clear and empty updates preserve the exact stream") {
+  std::array<unsigned char,517> data{};
+  for (std::size_t i=0;i<data.size();i++) data[i]=static_cast<unsigned char>(17*i+3);
+  for (int chunk=1;chunk<=19;chunk++) {
+    CRC32 actual;
+    for (std::size_t offset=0;offset<data.size();offset+=std::min<std::size_t>(chunk,data.size()-offset))
+      actual.add(data.data()+offset,std::min<std::size_t>(chunk,data.size()-offset));
+    AMPS_EXPECT_EQ(actual.checksum(),ReferenceSignature(data.data(),data.size()));
+    actual.clear(); actual.add(data.data(),0);
+    AMPS_EXPECT_EQ(actual.checksum(),0UL);
+  }
+  unsigned long words[4]={0UL,~0UL,17UL,913UL};
+  CRC32 scalar;
+  for (auto word:words) scalar.add(word);
+  AMPS_EXPECT_EQ(scalar.checksum(),ReferenceSignature(reinterpret_cast<unsigned char*>(words),sizeof(words)));
+}
+
+AMPS_TEST_CASE("PERF-CRC-COPY-001","copyable CRC objects retain the base table and independent update state") {
+  unsigned char a[7]={0,255,7,129,33,1,2},b[5]={3,4,5,6,7};
+  CRC32 original; original.add(a,7);
+  CRC32 copy=original; copy.add(b,5);
+  AMPS_EXPECT_EQ(original.checksum(),ReferenceSignature(a,7));
+  AMPS_EXPECT_EQ(copy.checksum(),ReferenceSignature(b,5,ReferenceSignature(a,7)));
+}
+
+AMPS_TEST_CASE("PERF-CRC-THREAD-001","shared immutable tables initialize safely for independent host threads") {
+  std::array<unsigned long,8> results{};
+  std::vector<std::thread> threads;
+  for (int id=0;id<8;id++) threads.emplace_back([&,id] {
+    unsigned char bytes[17]; for (int j=0;j<17;j++) bytes[j]=static_cast<unsigned char>(id*31+j);
+    CRC32 actual; actual.add(bytes,17); results[id]=actual.checksum();
+  });
+  for (auto& thread:threads) thread.join();
+  for (int id=0;id<8;id++) {
+    unsigned char bytes[17]; for (int j=0;j<17;j++) bytes[j]=static_cast<unsigned char>(id*31+j);
+    AMPS_EXPECT_EQ(results[id],ReferenceSignature(bytes,17));
+  }
 }

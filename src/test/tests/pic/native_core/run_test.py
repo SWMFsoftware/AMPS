@@ -31,7 +31,7 @@ from lib.runner_support import (  # noqa: E402
 
 PBUFFER_BASE_CASES = [
     "PIC-PBUFFER-INIT-001", "PIC-PBUFFER-STATE-001",
-    "PIC-PBUFFER-LIST-001",
+    "PIC-PBUFFER-LIST-001", "PIC-PBUFFER-SIGNATURE-001",
 ]
 
 # Keep exact IDs as literals.  Besides making profile ownership obvious in a

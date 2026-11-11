@@ -202,6 +202,7 @@
  */
 
 #include "pic.h"
+#include "interpolation/complete_stencil.h"
 #include "pic_deposition_kernels.h"
 
 #include <cstdint>
@@ -1437,6 +1438,28 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
   w[1]=jLoc-(j0+0.5);
   w[2]=kLoc-(k0+0.5);
 
+  // Fully allocated uniform pointer stencils need neither row topology nor
+  // per-insertion generic dispatch. Preserve the old i/j/k insertion order and
+  // each weight's exact multiplication order; even zero weights remain entries.
+  // Failed completeness/domain checks make no change and use the general path.
+  if (_AMR_MESH_TYPE_==_AMR_MESH_TYPE__UNIFORM_ && RowStencil==NULL && block!=NULL) {
+    const double logical[8]={
+      (1.0-w[0])*(1.0-w[1])*(1.0-w[2]), w[0]*(1.0-w[1])*(1.0-w[2]),
+      (1.0-w[0])*w[1]*(1.0-w[2]), w[0]*w[1]*(1.0-w[2]),
+      (1.0-w[0])*(1.0-w[1])*w[2], w[0]*(1.0-w[1])*w[2],
+      (1.0-w[0])*w[1]*w[2], w[0]*w[1]*w[2]};
+    PIC::Mesh::cDataCenterNode* nodes[8];
+    int ids[8], entry=0; double weights[8];
+    for (int a=0;a<2;a++) for (int b=0;b<2;b++) for (int c=0;c<2;c++,entry++) {
+      ids[entry]=_getCenterNodeLocalNumber(i0+a,j0+b,k0+c);
+      nodes[entry]=block->GetCenterNode(ids[entry]);
+      weights[entry]=logical[a+2*b+4*c];
+    }
+    if (amps_complete_stencil::Assign(nodes,ids,weights,
+        _PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_,
+        PIC::Mesh::mesh->xGlobalMin,PIC::Mesh::mesh->xGlobalMax,_MESH_DIMENSION_,Stencil)) return;
+  }
+
   //dropped-weight normalization criterion (see "NORMALIZATION" at the top of this file)
   bool RowDropped=false,PointerDropped=false;
 
@@ -1837,6 +1860,27 @@ void PIC::InterpolationRoutines::CornerBased::InitStencil(double *x,cTreeNodeAMR
 
   //return an empty stencil if the block is not allocated
   if ((block=node->block)==NULL) return; // PIC::InterpolationRoutines::CornerBased::StencilTable+ThreadOpenMP;
+
+  // Same guarded eight-entry path for corners. Coefficient-table indices
+  // retain the historical Gray ordering, while Stencil entries retain the
+  // i-outer/j-middle/k-inner order used by Normalize's floating-point sum.
+  if (_AMR_MESH_TYPE_==_AMR_MESH_TYPE__UNIFORM_) {
+    PIC::Mesh::cDataCornerNode* nodes[8];
+    int ids[8], entry=0; double weights[8];
+    for (int a=0;a<2;a++) for (int b=0;b<2;b++) for (int c=0;c<2;c++,entry++) {
+      ids[entry]=_getCornerNodeLocalNumber(iX[0]+a,iX[1]+b,iX[2]+c);
+      nodes[entry]=block->GetCornerNode(ids[entry]);
+      weights[entry]=LocalCornerWeight[a+2*b+4*c];
+    }
+    if (amps_complete_stencil::Assign(nodes,ids,weights,
+        _PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_,
+        PIC::Mesh::mesh->xGlobalMin,PIC::Mesh::mesh->xGlobalMax,_MESH_DIMENSION_,Stencil)) {
+      const int coefficient_index[8]={0,1,3,2,4,5,7,6};
+      for (int n=0;n<8;n++) InterpolationCoefficientTable[coefficient_index[n]]=LocalCornerWeight[n];
+      Stencil.Normalize();
+      return;
+    }
+  }
 
   for (iStencil=0;iStencil<2;iStencil++) for (jStencil=0;jStencil<2;jStencil++) for (kStencil=0;kStencil<2;kStencil++) {
     //get the local ID of the 'corner node'

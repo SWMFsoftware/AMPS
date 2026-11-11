@@ -379,3 +379,24 @@ The detailed mapping from every legacy `test/srcUnitTests` source to its
 replacement, including the T2 individual-weight split/merge profiles and
 identified legacy defects, is maintained in
 `src/test/SRC_UNIT_TESTS_MIGRATION.md`.
+
+## Native signature preservation (2026-11-10)
+
+`PIC-PBUFFER-SIGNATURE-001` is part of the baseline particle-buffer owner and
+its `CORE-PIC-PARTICLE-BUFFER-001` selection alias. It patterns every compiled
+record byte, including padding/extensions, and verifies canonical versus
+list-inclusive hashing with an independent bitwise, full-unsigned-long CRC
+reference. The canonical reference uses the unmodified legacy operation:
+clone into an initially zero record, preserving its zero intrusive links.
+It also verifies incremental seeded accumulation and that hashing does not
+change the particle record. This qualifies the single-copy canonicalization;
+the four general-numerics CRC cases independently qualify host table/slicing
+changes. Existing list/allocation checks and deterministic ordering remain on.
+
+The new case uses the existing transactional ParticleBufferScope and has one
+global manifest owner. It does not change native profile layout, particle
+physics, thresholds or historical qualification counts. See
+[`src/general/README.md`](../../src/general/README.md) and
+[`test/srcFastWave/STATUS.md`](../srcFastWave/STATUS.md) for compatibility details
+and final campaign evidence. Use the established global runner with a real
+machine profile; this fixture still requires the complete native preflight.

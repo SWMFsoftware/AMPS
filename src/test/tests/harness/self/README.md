@@ -115,12 +115,31 @@ strict exit was changed to hide them.
 
 ## Contributor / agent rule and limits
 
+The later fast-wave registry extension is independently revalidated at
+`test_output/fast-wave-optimization-20261110/core-harness-final/`: **13/13
+PASS**, including exact 51-suite/1,085-case core selection. The original
+10/13 attempt and intermediate 12/13 attempt remain in their raw reports;
+the latter exposed the old pinned selection snapshot after source ownership
+was repaired. `core-validation-reconciled.json` in the parent evidence
+directory retains all attempts and source/metadata provenance. This result
+does not promote the strict physical-coverage inventory to complete.
+
 New cases must update the manifest/registry, source/configuration ownership,
 this README and generated `src/test/TEST_CATALOG.md` in the same change. Run
 catalog generation/check and standalone traceability, then execute the real
 owner and inspect every case state. A fault fixture is useful only if the
 wrong runner behavior makes the control fail; a test-local replacement must
 not be mistaken for production execution.
+
+`HARNESS-SELECTION-001` deliberately pins exact stream suite/case totals and
+campaign sets. Adding the performance-kernel owner and its eighteen total new
+case identities changes the core snapshot from 50/1,067 to 51/1,085, while
+application totals remain 3/61 and 2/46. Update these explicit expectations
+when intentionally extending registration, including the nightly, extended
+and distributed sets. Do not replace them with counts derived from the same
+grouping function being tested: that would conceal omitted or broadened
+selection. Registration changes require a real full harness retry; standalone
+traceability alone does not exercise selection and scheduling contracts.
 
 These controls do not close all cross-platform, cross-stream, cancellation,
 sharding, filesystem-isolation, legacy-oracle or resource-stress gaps. The

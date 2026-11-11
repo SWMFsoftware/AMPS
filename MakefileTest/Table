@@ -2515,7 +2515,8 @@ Compile=
 >>>cd ./share/; mkdir -p lib
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/fast-wave ${TESTfast-waveKEYS} 
->>>@($(MAKE) -j16 amps)
+>>>@echo "[fast-wave] additional C/C++ flags: $(strip $(FLAGC_EXTRA) $(FAST_WAVE_CXXFLAGS))"
+>>>@($(MAKE) -j16 amps FLAGC_EXTRA="$(strip $(FLAGC_EXTRA) $(FAST_WAVE_CXXFLAGS))")
 >>>@echo "test_fast-wave_compile... done" >> test_fast-wave$(TESTfast-wave-REF).diff
 
 

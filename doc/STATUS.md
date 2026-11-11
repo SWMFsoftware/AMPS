@@ -2,6 +2,27 @@
 
 Edition: 2026-11-10.
 
+## Performance-test registry refresh
+
+Refreshed the modern suite appendix from the expanded registry after adding
+18 independent fast-wave optimization cases: 56 suites / 1,192 cases.
+The manual remains 87 pages and its current compilation passes. This table
+records registration rather than scientific qualification. Detailed algorithm
+contracts, measurements, core revalidation and known limitations remain in
+test/srcFastWave/STATUS.md and the adjacent core READMEs. The legacy
+application catalog is unchanged and its source check still passes.
+
+## Fast-wave performance controls documented
+
+Added the measured fast-wave-only GNU optimization fallback and opt-out to
+the individual regression chapter. Refreshed the legacy catalog source
+hashes and phase locations after the maintained Table/generated recipe
+change. Root make PDF and both catalog checks PASS; the PDF remains 87 pages
+and compiles without warnings. Native performance validation (four passing
+runs, unchanged bounds and byte-identical sampled output) is documented in
+test/srcFastWave/README.md and src/test/STATUS.md, with the machine-readable
+receipt at test_output/fast-wave-performance-20261110/summary.json.
+
 ## Architecture, application regressions and source-guide update
 
 Current PDF: 87 pages, 20 chapters and three appendices. Added the layered

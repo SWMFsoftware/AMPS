@@ -14,8 +14,8 @@ python3 src/test/generate_test_catalog.py
 python3 src/test/generate_test_catalog.py --check
 ```
 
-Registry summary: **55 suites / 1174 cases**. Registry SHA-256: `0f61cded003868b607653109d5eae37aee19af91780b873eea3a80559c148c2b`.
-Description provenance: **767 maintained source descriptions / 407 stable-ID fallbacks**.
+Registry summary: **56 suites / 1192 cases**. Registry SHA-256: `bed53273334a62f57d067b7558b51e90cda0fa0ca9f2510e7c431176ce47c384`.
+Description provenance: **785 maintained source descriptions / 407 stable-ID fallbacks**.
 
 ## Suite index
 
@@ -24,7 +24,7 @@ Description provenance: **767 maintained source descriptions / 407 stable-ID fal
 | `CORE-HARNESS-001` | `src/test` | unit | smoke, nightly | 13 | nonexclusive | Test registry, layered configuration, selection, and result-protocol self-test | [runner](tests/harness/self/run_test.py) |
 | `CORE-GENERAL-INPUT-001` | `src/general/input` | unit | smoke, nightly | 5 | nonexclusive | Generic runtime-input grammar, diagnostics, includes, and canonicalization | [runner](tests/general/input/run_test.py) |
 | `CORE-GENERAL-CONTAINERS-001` | `src/general` | unit | smoke, nightly | 6 | nonexclusive | General array, bit-array, stack, linked-container, string, and 4-D index utilities | [runner](tests/general/containers/run_test.py) |
-| `CORE-GENERAL-NUMERICS-001` | `src/general` | unit | smoke, nightly | 10 | nonexclusive | Rank-1 through rank-5 arrays, managed stack, special-function identities, and independent quadrature oracles | [runner](tests/general/numerics/run_test.py) |
+| `CORE-GENERAL-NUMERICS-001` | `src/general` | unit | smoke, nightly | 14 | nonexclusive | Rank-1 through rank-5 arrays, managed stack, special-function identities, and independent quadrature oracles | [runner](tests/general/numerics/run_test.py) |
 | `CORE-GENERAL-RNG-001` | `src/general` | unit | smoke, nightly | 7 | nonexclusive | Reproducible streams, endpoint exclusion, uniform/normal/gamma moments, and isotropic directions | [runner](tests/general/rng/run_test.py) |
 | `CORE-GENERAL-MPI-001` | `src/general` | module | nightly, distributed | 5 | nonexclusive | Two-rank CMPI_channel transfers and MPI-derived independent RNG seeding | [runner](tests/general/mpi_channel/run_test.py) |
 | `CORE-GENERAL-LOGGER-001` | `src/general` | unit | smoke, nightly | 4 | nonexclusive | Thread-safe diagnostic formatting, long lines, bounded rotation, durable flush, and fatal subprocess | [runner](tests/general/logger/run_test.py) |
@@ -49,9 +49,10 @@ Description provenance: **767 maintained source descriptions / 407 stable-ID fal
 | `CORE-DUST-001` | `src/models/dust` | module | nightly | 8 | nonexclusive | Dependency-light dust size distributions, charging/force limits, spherical source laws, Mie interpolation, moments, and dust-owned size-group split/merge | [runner](tests/models/dust/run_test.py) |
 | `CORE-DUST-NATIVE-001` | `src/models/dust` | integration | nightly, profile, extended | 1 | exclusive | Clean configured test/model-dust build and one-rank equilibrium/transient charging convergence across four grain radii | [runner](tests/models/dust_native/run_test.py) |
 | `CORE-DUST-INJECTION-NATIVE-001` | `src/models/dust` | integration | nightly, profile, extended | 1 | exclusive | Clean configured DUST build and one-rank production spherical injection, AMR ownership, individual-weight, mover, sampling, and mass-ledger qualification | [runner](tests/models/dust_injection_native/run_test.py) |
-| `CORE-PIC-NATIVE-001` | `src/pic` | module | nightly, profile, extended | 94 | exclusive | One configured native AMPS build covering generator/deck validation, particle buffers, global units, particle-weight/time-step contracts, and 3-D PIC physics | [runner](tests/pic/native_core/run_test.py) |
+| `CORE-PIC-NATIVE-001` | `src/pic` | module | nightly, profile, extended | 95 | exclusive | One configured native AMPS build covering generator/deck validation, particle buffers, global units, particle-weight/time-step contracts, and 3-D PIC physics | [runner](tests/pic/native_core/run_test.py) |
 | `CORE-PHOTOCHEM-DAUGHTER-001` | `src/models/photolytic_reactions` | module | nightly, profile, extended | 1 | exclusive | Production whole-mesh photochemistry dispatch with individual-weight H2O to OH+H daughter insertion and independent physical budgets | [runner](tests/pic/native_core/run_test.py) |
 | `CORE-T6-REACTIONS-NATIVE-001` | `src/models/electron_impact` | module | nightly, profile, extended | 7 | exclusive | Configured optional charge-exchange and Burger electron-impact archives with analytic rates, thresholds, branching, product identity, conservation, and typed unavailable domains | [runner](tests/pic/native_core/run_test.py) |
+| `CORE-PIC-PERFORMANCE-001` | `src/pic` | module | nightly, extended, distributed | 13 | nonexclusive | Order-preserving performance kernels: independent periodic copy, layout, fragmentation, alias fallback and communicator matrix at 1/2/4 ranks | [runner](tests/pic/performance/run_test.py) |
 | `CORE-PIC-PERIODIC-001` | `src/pic` | module | nightly, profile, extended | 1 | exclusive | Configured periodic AMR initialization, real/ghost pairing, particle wrapping, list transfer, and associated-data synchronization | [runner](tests/pic/native_core/run_test.py) |
 | `CORE-PIC-COLLISION-VHS-001` | `src/pic` | module | nightly, profile, extended | 1 | exclusive | Generated VHS parameter tables, speed-dependent cross sections, and independent Maxwell relative-speed quadrature | [runner](tests/pic/native_core/run_test.py) |
 | `CORE-PIC-COLLISION-VSS-001` | `src/pic` | module | nightly, profile, extended | 1 | exclusive | Generated VSS sigma/alpha parameters, analytical angular moments, and elastic invariants through the production selector dispatcher | [runner](tests/pic/native_core/run_test.py) |
@@ -126,7 +127,7 @@ General array, bit-array, stack, linked-container, string, and 4-D index utiliti
 
 ### 4. `CORE-GENERAL-NUMERICS-001`
 
-Rank-1 through rank-5 arrays, managed stack, special-function identities, and independent quadrature oracles **10 cases.** Eligible for suite-level concurrency.
+Rank-1 through rank-5 arrays, managed stack, special-function identities, and independent quadrature oracles **14 cases.** Eligible for suite-level concurrency.
 
 | Case | What | How | Why | Where |
 | --- | --- | --- | --- | --- |
@@ -140,6 +141,10 @@ Rank-1 through rank-5 arrays, managed stack, special-function identities, and in
 | `GENERAL-NUM-QUADRATURE-POLY-001` | Gauss-Legendre rules integrate their full polynomial degree exactly | unit; isolated suite adapter; tools mpi_cxx | partial coverage evidence for `src/general`; preserves this contract as an exact global result | [src/general](../general); [adapter](tests/general/numerics/run_test.py); [case source](tests/general/numerics/test_general_numerics.cpp) |
 | `GENERAL-NUM-QUADRATURE-CONVERGENCE-001` | quadrature error decreases for smooth and endpoint-sensitive functions | unit; isolated suite adapter; tools mpi_cxx | partial coverage evidence for `src/general`; preserves this contract as an exact global result | [src/general](../general); [adapter](tests/general/numerics/run_test.py); [case source](tests/general/numerics/test_general_numerics.cpp) |
 | `GENERAL-NUM-QUADRATURE-DOMAIN-001` | quadrature accepts oriented/zero domains and rejects invalid input | unit; isolated suite adapter; tools mpi_cxx | partial coverage evidence for `src/general`; preserves this contract as an exact global result | [src/general](../general); [adapter](tests/general/numerics/run_test.py); [case source](tests/general/numerics/test_general_numerics.cpp) |
+| `PERF-CRC-STREAM-001` | optimized CRC matches independent full-width bit recurrence on unaligned/all-byte/long streams | unit; isolated suite adapter; tools mpi_cxx | partial coverage evidence for `src/general`; preserves this contract as an exact global result | [src/general](../general); [adapter](tests/general/numerics/run_test.py); [case source](tests/general/numerics/test_general_numerics.cpp) |
+| `PERF-CRC-SPLIT-001` | chunk boundaries, scalar templates, clear and empty updates preserve the exact stream | unit; isolated suite adapter; tools mpi_cxx | partial coverage evidence for `src/general`; preserves this contract as an exact global result | [src/general](../general); [adapter](tests/general/numerics/run_test.py); [case source](tests/general/numerics/test_general_numerics.cpp) |
+| `PERF-CRC-COPY-001` | copyable CRC objects retain the base table and independent update state | unit; isolated suite adapter; tools mpi_cxx | partial coverage evidence for `src/general`; preserves this contract as an exact global result | [src/general](../general); [adapter](tests/general/numerics/run_test.py); [case source](tests/general/numerics/test_general_numerics.cpp) |
+| `PERF-CRC-THREAD-001` | shared immutable tables initialize safely for independent host threads | unit; isolated suite adapter; tools mpi_cxx | partial coverage evidence for `src/general`; preserves this contract as an exact global result | [src/general](../general); [adapter](tests/general/numerics/run_test.py); [case source](tests/general/numerics/test_general_numerics.cpp) |
 
 ### 5. `CORE-GENERAL-RNG-001`
 
@@ -435,7 +440,7 @@ Clean configured DUST build and one-rank production spherical injection, AMR own
 
 ### 29. `CORE-PIC-NATIVE-001`
 
-One configured native AMPS build covering generator/deck validation, particle buffers, global units, particle-weight/time-step contracts, and 3-D PIC physics **94 cases.** Runs behind an exclusive checkout barrier.
+One configured native AMPS build covering generator/deck validation, particle buffers, global units, particle-weight/time-step contracts, and 3-D PIC physics **95 cases.** Runs behind an exclusive checkout barrier.
 
 | Case | What | How | Why | Where |
 | --- | --- | --- | --- | --- |
@@ -445,6 +450,7 @@ One configured native AMPS build covering generator/deck validation, particle bu
 | `PIC-PBUFFER-INIT-001` | particle-buffer allocation and deletion counters | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py); [case source](../../test/srcCoreUnitTests/particle_buffer.cpp) |
 | `PIC-PBUFFER-STATE-001` | particle species, position, velocity, and clone state | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py); [case source](../../test/srcCoreUnitTests/particle_buffer.cpp) |
 | `PIC-PBUFFER-LIST-001` | intrusive particle-list insertion and exclusion | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py); [case source](../../test/srcCoreUnitTests/particle_buffer.cpp) |
+| `PIC-PBUFFER-SIGNATURE-001` | canonical and list-inclusive signatures preserve full-width legacy bytes without changing records | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py); [case source](../../test/srcCoreUnitTests/particle_buffer.cpp) |
 | `PIC-PBUFFER-LAYOUT-PACKED-FIXED-OFFSETS-001` | PIC pbuffer layout packed fixed offsets case 001 | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py) |
 | `PIC-PBUFFER-LAYOUT-PACKED-FIXED-CLONE-001` | PIC pbuffer layout packed fixed clone case 001 | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py) |
 | `PIC-PBUFFER-LAYOUT-PACKED-FIXED-REUSE-001` | PIC pbuffer layout packed fixed reuse case 001 | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py) |
@@ -556,7 +562,27 @@ Configured optional charge-exchange and Burger electron-impact archives with ana
 | `T6-ELECTRON-IMPACT-PRODUCTS-001` | Burger H2O product branching, identity and physical conservation | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/models/electron_impact`; preserves this contract as an exact global result | [src/models/electron_impact](../models/electron_impact); [adapter](tests/pic/native_core/run_test.py); [case source](../../test/srcCoreUnitTests/physics_t6_reactions.cpp) |
 | `T6-ELECTRON-IMPACT-CONDITIONED-001` | conditioned Burger products sample eligible channels and reject gaps | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/models/electron_impact`; preserves this contract as an exact global result | [src/models/electron_impact](../models/electron_impact); [adapter](tests/pic/native_core/run_test.py); [case source](../../test/srcCoreUnitTests/physics_t6_reactions.cpp) |
 
-### 32. `CORE-PIC-PERIODIC-001`
+### 32. `CORE-PIC-PERFORMANCE-001`
+
+Order-preserving performance kernels: independent periodic copy, layout, fragmentation, alias fallback and communicator matrix at 1/2/4 ranks **13 cases.** Eligible for suite-level concurrency.
+
+| Case | What | How | Why | Where |
+| --- | --- | --- | --- | --- |
+| `PERF-PERIODIC-LOCAL-001` | Exact asymmetric byte law through local ordered copies | module; 4-rank adapter; tools python, mpi_cxx, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/performance/run_test.py); [case source](tests/pic/performance/README.md) |
+| `PERF-PERIODIC-REMOTE-001` | Every destination checks remote records and byte counts | module; 4-rank adapter; tools python, mpi_cxx, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/performance/run_test.py); [case source](tests/pic/performance/README.md) |
+| `PERF-PERIODIC-LAYOUT-001` | Reuse workspace after source epochs, pair order and record sizes change | module; 4-rank adapter; tools python, mpi_cxx, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/performance/run_test.py); [case source](tests/pic/performance/README.md) |
+| `PERF-PERIODIC-CHUNK-001` | Force 17-byte chunks across record boundaries | module; 4-rank adapter; tools python, mpi_cxx, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/performance/run_test.py); [case source](tests/pic/performance/README.md) |
+| `PERF-PERIODIC-ALIAS-001` | Serial write-to-later-source chain must propagate 17, not stale 99 | module; 4-rank adapter; tools python, mpi_cxx, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/performance/run_test.py); [case source](tests/pic/performance/README.md) |
+| `PERF-PERIODIC-EMPTY-001` | Empty/zero payload and invalid owner handling | module; 4-rank adapter; tools python, mpi_cxx, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/performance/run_test.py); [case source](tests/pic/performance/README.md) |
+| `PERF-PERIODIC-COMMUNICATOR-001` | Split/reversed rank groups detect hidden world-communicator assumptions | module; 4-rank adapter; tools python, mpi_cxx, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/performance/run_test.py); [case source](tests/pic/performance/README.md) |
+| `PERF-STENCIL-EXACT-001` | complete stencil preserves nonmonotone IDs, zero weights and insertion order | module; 4-rank adapter; tools python, mpi_cxx, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/performance/run_test.py); [case source](tests/pic/performance/test_complete_stencil.cpp) |
+| `PERF-STENCIL-FALLBACK-001` | missing, outside or negative support rejects without partial writes | module; 4-rank adapter; tools python, mpi_cxx, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/performance/run_test.py); [case source](tests/pic/performance/test_complete_stencil.cpp) |
+| `PERF-STENCIL-REFRESH-001` | successive queries read new nodes and weights without stale topology | module; 4-rank adapter; tools python, mpi_cxx, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/performance/run_test.py); [case source](tests/pic/performance/test_complete_stencil.cpp) |
+| `PERF-SPMV-ORDER-001` | irregular and cancellation-sensitive rows preserve scalar accumulation order | module; 4-rank adapter; tools python, mpi_cxx, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/performance/run_test.py); [case source](tests/pic/performance/test_sparse_matvec.cpp) |
+| `PERF-SPMV-REFRESH-001` | new solves refresh coefficients/storage while iterative RHS values remain live | module; 4-rank adapter; tools python, mpi_cxx, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/performance/run_test.py); [case source](tests/pic/performance/test_sparse_matvec.cpp) |
+| `PERF-SPMV-EMPTY-INVALID-001` | empty snapshots and invalid rows, lengths or RHS pointers are rejected | module; 4-rank adapter; tools python, mpi_cxx, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/performance/run_test.py); [case source](tests/pic/performance/test_sparse_matvec.cpp) |
+
+### 33. `CORE-PIC-PERIODIC-001`
 
 Configured periodic AMR initialization, real/ghost pairing, particle wrapping, list transfer, and associated-data synchronization **1 cases.** Runs behind an exclusive checkout barrier.
 
@@ -564,7 +590,7 @@ Configured periodic AMR initialization, real/ghost pairing, particle wrapping, l
 | --- | --- | --- | --- | --- |
 | `T4-BOUNDARY-PERIODIC-001` | periodic AMR pairs wrap particles and synchronize node data | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py); [case source](../../test/srcCoreUnitTests/physics_t4.cpp) |
 
-### 33. `CORE-PIC-COLLISION-VHS-001`
+### 34. `CORE-PIC-COLLISION-VHS-001`
 
 Generated VHS parameter tables, speed-dependent cross sections, and independent Maxwell relative-speed quadrature **1 cases.** Runs behind an exclusive checkout barrier.
 
@@ -572,7 +598,7 @@ Generated VHS parameter tables, speed-dependent cross sections, and independent 
 | --- | --- | --- | --- | --- |
 | `T5-COLLISION-VHS-001` | generated VHS tables reproduce sigma(g) and Maxwell quadrature | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py); [case source](../../test/srcCoreUnitTests/physics_t5.cpp) |
 
-### 34. `CORE-PIC-COLLISION-VSS-001`
+### 35. `CORE-PIC-COLLISION-VSS-001`
 
 Generated VSS sigma/alpha parameters, analytical angular moments, and elastic invariants through the production selector dispatcher **1 cases.** Runs behind an exclusive checkout barrier.
 
@@ -580,7 +606,7 @@ Generated VSS sigma/alpha parameters, analytical angular moments, and elastic in
 | --- | --- | --- | --- | --- |
 | `T5-COLLISION-VSS-001` | VSS sigma, pair alpha, angular moments, and invariants are analytical | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py); [case source](../../test/srcCoreUnitTests/physics_t5.cpp) |
 
-### 35. `CORE-PIC-IDF-ROTZ-Z2-001`
+### 36. `CORE-PIC-IDF-ROTZ-Z2-001`
 
 Generated LB Zrot=2 profile and independent one-half RT event probability **1 cases.** Runs behind an exclusive checkout barrier.
 
@@ -588,7 +614,7 @@ Generated LB Zrot=2 profile and independent one-half RT event probability **1 ca
 | --- | --- | --- | --- | --- |
 | `T5-IDF-ROTZ-Z2-001` | configured Zrot=2 produces an RT probability of one half | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py); [case source](../../test/srcCoreUnitTests/physics_t5.cpp) |
 
-### 36. `CORE-PIC-IDF-ROTZ-Z10-001`
+### 37. `CORE-PIC-IDF-ROTZ-Z10-001`
 
 Generated LB Zrot=10 profile and independent one-tenth RT event probability **1 cases.** Runs behind an exclusive checkout barrier.
 
@@ -596,7 +622,7 @@ Generated LB Zrot=10 profile and independent one-tenth RT event probability **1 
 | --- | --- | --- | --- | --- |
 | `T5-IDF-ROTZ-Z10-001` | configured Zrot=10 produces an RT probability of one tenth | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py); [case source](../../test/srcCoreUnitTests/physics_t5.cpp) |
 
-### 37. `CORE-PIC-SPLIT-MERGE-001`
+### 38. `CORE-PIC-SPLIT-MERGE-001`
 
 Packed individual-weight particle layout and conservative Cartesian split/merge physical moments **15 cases.** Runs behind an exclusive checkout barrier.
 
@@ -618,7 +644,7 @@ Packed individual-weight particle layout and conservative Cartesian split/merge 
 | `T5-COLLISION-INDIVIDUAL-WEIGHT-NTC-001` | NTC preserves both directed rates for unequal record weights | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py); [case source](../../test/srcCoreUnitTests/physics_t5.cpp) |
 | `T5-COLLISION-INDIVIDUAL-WEIGHT-MF-001` | majorant-frequency preserves directed rates for unequal record weights | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py); [case source](../../test/srcCoreUnitTests/physics_t5.cpp) |
 
-### 38. `CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001`
+### 39. `CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001`
 
 Aligned-16 fixed-weight particle-record offsets, clone/reuse policy, list integrity, and isolated fatal paths **7 cases.** Runs behind an exclusive checkout barrier.
 
@@ -632,7 +658,7 @@ Aligned-16 fixed-weight particle-record offsets, clone/reuse policy, list integr
 | `PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-INVALID-001` | Invalid case 001 | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py) |
 | `PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-EXHAUSTION-001` | Exhaustion case 001 | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py) |
 
-### 39. `CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001`
+### 40. `CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001`
 
 Aligned-16 individual-weight particle layout plus independent split/merge regression profile **13 cases.** Runs behind an exclusive checkout barrier.
 
@@ -652,7 +678,7 @@ Aligned-16 individual-weight particle layout plus independent split/merge regres
 | `PIC-MERGE-ALIGNED-EXTENDED-STATE-001` | Merge aligned extended state case 001 | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py) |
 | `PIC-WEIGHT-ALIGNED-INDIVIDUAL-INVALID-001` | Weight aligned individual invalid case 001 | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py) |
 
-### 40. `CORE-PIC-WEIGHT-TIME-LOCAL-001`
+### 41. `CORE-PIC-WEIGHT-TIME-LOCAL-001`
 
 Generated species-local particle-weight and time-step profile using independent block-associated storage **5 cases.** Runs behind an exclusive checkout barrier.
 
@@ -664,7 +690,7 @@ Generated species-local particle-weight and time-step profile using independent 
 | `PIC-WEIGHT-TIMESTEP-LOCAL-INVALID-VALUE-001` | Weight timestep local invalid value case 001 | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py) |
 | `PIC-WEIGHT-TIMESTEP-LOCAL-INVALID-SPECIES-001` | Weight timestep local invalid species case 001 | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py) |
 
-### 41. `CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001`
+### 42. `CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001`
 
 Generated single-global particle-weight and time-step profile proving cross-species slot aliasing **4 cases.** Runs behind an exclusive checkout barrier.
 
@@ -675,7 +701,7 @@ Generated single-global particle-weight and time-step profile proving cross-spec
 | `PIC-WEIGHT-TIMESTEP-SINGLE-GLOBAL-INVALID-VALUE-001` | Weight timestep single global invalid value case 001 | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py) |
 | `PIC-WEIGHT-TIMESTEP-SINGLE-GLOBAL-INVALID-SPECIES-001` | Weight timestep single global invalid species case 001 | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/pic`; preserves this contract as an exact global result | [src/pic](../pic); [adapter](tests/pic/native_core/run_test.py) |
 
-### 42. `CORE-MESH-MPI-OWNERSHIP-001`
+### 43. `CORE-MESH-MPI-OWNERSHIP-001`
 
 Collective 1/2/4-rank AMR ownership, owner-to-ghost halo, send-mask, block/particle migration, periodic/loss, restart-decomposition, and rank-invariant global-state matrix **16 cases.** Runs behind an exclusive checkout barrier.
 
@@ -698,7 +724,7 @@ Collective 1/2/4-rank AMR ownership, owner-to-ghost halo, send-mask, block/parti
 | `PIC-MPI-RESTART-REPARTITION-001` | PIC MPI restart repartition case 001 | integration; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/meshAMR`; preserves this contract as an exact global result | [src/meshAMR](../meshAMR); [adapter](tests/pic/mpi_distributed/run_test.py) |
 | `PIC-MPI-RANK-INVARIANCE-001` | PIC MPI rank invariance case 001 | integration; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/meshAMR`; preserves this contract as an exact global result | [src/meshAMR](../meshAMR); [adapter](tests/pic/mpi_distributed/run_test.py) |
 
-### 43. `CORE-MESH-NATIVE-001`
+### 44. `CORE-MESH-NATIVE-001`
 
 Three clean one-rank DIM profiles covering AMR topology/adaptation/data transfer, cut-cell geometry, NASTRAN I/O, and production PIC interpolation **58 cases.** Runs behind an exclusive checkout barrier.
 
@@ -763,7 +789,7 @@ Three clean one-rank DIM profiles covering AMR topology/adaptation/data transfer
 | `MESH-CUTCELL-SPHERE-AREA-CONVERGENCE-001` | Mesh cutcell sphere area convergence case 001 | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/meshAMR`; preserves this contract as an exact global result | [src/meshAMR](../meshAMR); [adapter](tests/mesh/native/run_test.py) |
 | `MESH-CUTCELL-NASTRAN-ROUNDTRIP-001` | Mesh cutcell nastran roundtrip case 001 | module; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `src/meshAMR`; preserves this contract as an exact global result | [src/meshAMR](../meshAMR); [adapter](tests/mesh/native/run_test.py) |
 
-### 44. `CORE-MODEL-SEP-COMMON-001`
+### 45. `CORE-MODEL-SEP-COMMON-001`
 
 All archive, mean-free-path, parallel/perpendicular-diffusion and pitch-angle local registries with explicit acceptance limitations **143 cases.** Runs behind an exclusive checkout barrier.
 
@@ -913,7 +939,7 @@ All archive, mean-free-path, parallel/perpendicular-diffusion and pitch-angle lo
 | `SEP-COMMON-PITCH-AP-ENERGY-02` | Closed particle–wave box and topology change; separate explicit damping/escape run | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/sep_common/run_test.py); [case source](../models/sep_common/pitch_angle_diffusion/PITCH_ANGLE_SCATTERING_MODEL.md) |
 | `SEP-COMMON-PITCH-AP-GEOM-01-04` | Uniform B/ν on equivalent field-line and 3-D meshes with nonuniform resolution | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/sep_common/run_test.py); [case source](../models/sep_common/pitch_angle_diffusion/PITCH_ANGLE_SCATTERING_MODEL.md) |
 
-### 45. `CORE-MODEL-SWCME-001`
+### 46. `CORE-MODEL-SWCME-001`
 
 Executable bounded R1 plus complete dormant extended and observational registries with typed blockers **147 cases.** Runs behind an exclusive checkout barrier.
 
@@ -1067,7 +1093,7 @@ Executable bounded R1 plus complete dormant extended and observational registrie
 | `SWCME-VP15` | SEP time profile spectrum peak and fluence | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/swcme`; preserves this contract as an exact global result | [src/models/swcme](../models/swcme); [adapter](tests/models/swcme/run_test.py); [case source](../models/swcme/test/validation/campaign.json) |
 | `SWCME-VP16` | Held-out multi-event and cross-model skill assessment | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/swcme`; preserves this contract as an exact global result | [src/models/swcme](../models/swcme); [adapter](tests/models/swcme/run_test.py); [case source](../models/swcme/test/validation/campaign.json) |
 
-### 46. `CORE-MODEL-SEP-CORONAL-CME-001`
+### 47. `CORE-MODEL-SEP-CORONAL-CME-001`
 
 Authoritative 222-case staged coronal-CME software-verification registry **222 cases.** Runs behind an exclusive checkout barrier.
 
@@ -1296,7 +1322,7 @@ Authoritative 222-case staged coronal-CME software-verification registry **222 c
 | `SCCM-EVT3D01` | reserved campaign gate, not a generic Stage-13 software-release test. An independent-event transfer manifest freezes all equations, inference procedures, and only those numerical source, spectrum, scattering, reference-surface, return-po... | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_coronal_cme`; preserves this contract as an exact global result | [src/models/sep_coronal_cme](../models/sep_coronal_cme); [adapter](tests/models/cme/sep_coronal_cme/run_test.py); [case source](../models/sep_coronal_cme/test/individual/EVT3D01/README.md) |
 | `SCCM-XMD3D01` | reserved campaign gate, not a runtime imported-provider or generic Stage-13 software-release test. An immutable offline sample manifest evaluates analytic and thermodynamic-MHD backgrounds at matched epoch, inner-boundary magnetogram and... | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_coronal_cme`; preserves this contract as an exact global result | [src/models/sep_coronal_cme](../models/sep_coronal_cme); [adapter](tests/models/cme/sep_coronal_cme/run_test.py); [case source](../models/sep_coronal_cme/test/individual/XMD3D01/README.md) |
 
-### 47. `CORE-MODEL-SEP-CORONA-SWCME-FULL-001`
+### 48. `CORE-MODEL-SEP-CORONA-SWCME-FULL-001`
 
 Forty-six full-volume software/reference checks covering contact/slip, stable geometry, shared mesh/CT/energy and analytical material transport; BG3D-4/G1 remain unqualified **46 cases.** Runs behind an exclusive checkout barrier.
 
@@ -1349,7 +1375,7 @@ Forty-six full-volume software/reference checks covering contact/slip, stable ge
 | `CSWC-FULL-CSWC0628-XRAY-MATERIAL-REJECTION` | Rejects folds, unresolved rank, unrepresentable Jacobian and nonfinite map rates; distinguishes resolved small-J kernel behavior from the separate frozen physical minimum-J gate. Same source. | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_corona_swcme`; preserves this contract as an exact global result | [src/models/sep_corona_swcme](../models/sep_corona_swcme); [adapter](tests/models/cme/sep_corona_swcme_full/run_test.py); [case source](tests/models/cme/README.md) |
 | `CSWC-FULL-ARCHCSWC01` | Cswc full archcswc01 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_corona_swcme`; preserves this contract as an exact global result | [src/models/sep_corona_swcme](../models/sep_corona_swcme); [adapter](tests/models/cme/sep_corona_swcme_full/run_test.py) |
 
-### 48. `CORE-MODEL-SEP-CORONA-SWCME-REDUCED-001`
+### 49. `CORE-MODEL-SEP-CORONA-SWCME-REDUCED-001`
 
 Complete 97-row reduced-front plus ambient registry with 35 explicit routine native SKIPs **97 cases.** Runs behind an exclusive checkout barrier.
 
@@ -1453,7 +1479,7 @@ Complete 97-row reduced-front plus ambient registry with 35 explicit routine nat
 | `CSWC-REDUCED-NATIVE-RESTART-REPARTITION-4-RSH27` | Particle exclusion | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_corona_swcme`; preserves this contract as an exact global result | [src/models/sep_corona_swcme](../models/sep_corona_swcme); [adapter](tests/models/cme/sep_corona_swcme_reduced/run_test.py); [case source](../models/sep_corona_swcme/docs/shock-front/model.md) |
 | `CSWC-REDUCED-NATIVE-RESTART-REPARTITION-4-RSH29` | background-only restart reproduces later geometry/jumps/exports byte-for-byte and rejects a changed physics identity transactionally | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_corona_swcme`; preserves this contract as an exact global result | [src/models/sep_corona_swcme](../models/sep_corona_swcme); [adapter](tests/models/cme/sep_corona_swcme_reduced/run_test.py); [case source](../models/sep_corona_swcme/test/shock_front/test_reduced.cpp) |
 
-### 49. `CORE-LEGACY-REGISTRY-AUDIT-001`
+### 50. `CORE-LEGACY-REGISTRY-AUDIT-001`
 
 Explicit governance/disposition audit for every roadmap legacy application without behavioral migration qualification **13 cases.** Eligible for suite-level concurrency.
 
@@ -1473,7 +1499,7 @@ Explicit governance/disposition audit for every roadmap legacy application witho
 | `LEGACY-MODEL-COLLISION-TEST-001` | srcModelCollisionTest | module; isolated suite adapter; tools python | partial coverage evidence for `src/test`; preserves this contract as an exact global result | [src/test](.); [adapter](tests/legacy/registry/run_test.py) |
 | `LEGACY-MODEL-DUST-TEST-001` | srcModelDustTest | module; isolated suite adapter; tools python | partial coverage evidence for `src/test`; preserves this contract as an exact global result | [src/test](.); [adapter](tests/legacy/registry/run_test.py) |
 
-### 50. `CORE-T12-PORTABILITY-001`
+### 51. `CORE-T12-PORTABILITY-001`
 
 Bounded compiler, Fortran ABI, sanitizer, leak, OpenMP, MPI, CUDA and performance matrix plus the truthful strict-coverage gate **16 cases.** Eligible for suite-level concurrency.
 
@@ -1496,7 +1522,7 @@ Bounded compiler, Fortran ABI, sanitizer, leak, OpenMP, MPI, CUDA and performanc
 | `T12-PERFORMANCE-IO-001` | performance-io | integration; isolated suite adapter; tools python, cxx, mpi_cxx | partial coverage evidence for `src/general`; preserves this contract as an exact global result | [src/general](../general); [adapter](tests/portability/matrix/run_test.py) |
 | `T12-COVERAGE-STRICT-001` | Runs `--coverage --require-complete-coverage` and reports its real exit status. The current incomplete inventory is therefore `FAIL`, keeping T12 open. | integration; isolated suite adapter; tools python, cxx, mpi_cxx | partial coverage evidence for `src/general`; preserves this contract as an exact global result | [src/general](../general); [adapter](tests/portability/matrix/run_test.py); [case source](tests/portability/matrix/README.md) |
 
-### 51. `APPLICATION-ENCELADUS-FORWARD-001`
+### 52. `APPLICATION-ENCELADUS-FORWARD-001`
 
 Complete dependency-light Enceladus forward-model parser, source, chemistry, numerics and 31-value reference campaign **42 cases.** Eligible for suite-level concurrency.
 
@@ -1545,7 +1571,7 @@ Complete dependency-light Enceladus forward-model parser, source, chemistry, num
 | `ENCELADUS-REF-PARSED-NONUNIFORM-SPLIT-POSITION-SHIFT` | Ref parsed nonuniform split position shift | integration; isolated suite adapter; tools python, cxx | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus/run_test.py) |
 | `ENCELADUS-REF-NEGATIVE-VALIDATION-CHECKS` | Ref negative validation checks | integration; isolated suite adapter; tools python, cxx | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus/run_test.py) |
 
-### 52. `APPLICATION-ENCELADUS-NATIVE-STARTUP-001`
+### 53. `APPLICATION-ENCELADUS-NATIVE-STARTUP-001`
 
 Clean Enceladus build and exact import of all six pre-MPI native startup/configuration gates **6 cases.** Runs behind an exclusive checkout barrier.
 
@@ -1558,7 +1584,7 @@ Clean Enceladus build and exact import of all six pre-MPI native startup/configu
 | `ENCELADUS-N04-POINTER-MOVER-GENERATED` | N04 pointer mover generated | system; serialized configuration owner; tools python, make | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus_native/run_test.py) |
 | `ENCELADUS-N05-CHEMISTRY-PROCESSING-GENERATED` | N05 chemistry processing generated | system; serialized configuration owner; tools python, make | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus_native/run_test.py) |
 
-### 53. `APPLICATION-ENCELADUS-E3-001`
+### 54. `APPLICATION-ENCELADUS-E3-001`
 
 Capability-gated clean build and 10,000-step E3 process, transport-ledger, and flyby-product campaign **13 cases.** Runs behind an exclusive checkout barrier.
 
@@ -1578,7 +1604,7 @@ Capability-gated clean build and 10,000-step E3 process, transport-ledger, and f
 | `ENCELADUS-E3R11-FLYBY-MESH-RESOLUTION` | E3r11 flyby mesh resolution | system; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus_e3/run_test.py) |
 | `ENCELADUS-E3R12-FLYBY-PNG` | E3r12 flyby png | system; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus_e3/run_test.py) |
 
-### 54. `APPLICATION-MOON-REGRESSION-001`
+### 55. `APPLICATION-MOON-REGRESSION-001`
 
 Clean Moon/SPICE build plus all U01-U26 and bounded linked I11-I20 regression outcomes with typed scientific skips **36 cases.** Runs behind an exclusive checkout barrier.
 
@@ -1621,7 +1647,7 @@ Clean Moon/SPICE build plus all U01-U26 and bounded linked I11-I20 regression ou
 | `MOON-I19` | Moon i19 | system; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `srcMoon`; preserves this contract as an exact global result | [srcMoon](../../srcMoon); [adapter](tests/applications/moon_regression/run_test.py) |
 | `MOON-I20` | Moon i20 | system; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `srcMoon`; preserves this contract as an exact global result | [srcMoon](../../srcMoon); [adapter](tests/applications/moon_regression/run_test.py) |
 
-### 55. `APPLICATION-MOON-M0-001`
+### 56. `APPLICATION-MOON-M0-001`
 
 Complete Moon I01-I10 M0 registry with explicit non-execution until its multi-build workflow satisfies the mandatory native preflight **10 cases.** Eligible for suite-level concurrency.
 

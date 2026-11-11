@@ -41,6 +41,10 @@
   #define  _AVX_MATMUL_  _OFF_
 #endif
 
+#if _CUDA_MODE_ == _OFF_ && _PIC_MATMUL_MPI_MULTITHREAD_ == _PIC_MODE_OFF_ && _AVX_MATMUL_ == _OFF_
+#include "ordered_sparse_matvec.h"
+#endif
+
 class cLinearSystemCornerNodeDataRequestListElement {
 public:
   int CornerNodeID;
@@ -62,6 +66,17 @@ public:
 
   //counter of the matrix modifications 
   int nMartixModifications;
+
+#if _CUDA_MODE_ == _OFF_ && _PIC_MATMUL_MPI_MULTITHREAD_ == _PIC_MODE_OFF_ && _AVX_MATMUL_ == _OFF_
+  // Instance-owned compact metadata is valid only during one Solve invocation.
+  // Direct MultiplyVector calls keep reading live public coefficients. The
+  // first multiply after entry/coefficient update/topology or storage change
+  // binds current RHS buffers and snapshots coefficients in original row order.
+  amps_ordered_sparse::View CompactMultiplyView;
+  bool CompactSolveActive=false,CompactMultiplyValid=false;
+  int CompactMatrixGeneration=-1,CompactVectorLength=-1;
+#endif
+
 
   class cStencilElementData {
   public: 
@@ -2721,6 +2736,9 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   for (int irow=0;irow<MatrixRowTableLength;irow++) {
     UpdateMatrixRow(MatrixRowTable[irow]);
   }
+#if _CUDA_MODE_ == _OFF_ && _PIC_MATMUL_MPI_MULTITHREAD_ == _PIC_MODE_OFF_ && _AVX_MATMUL_ == _OFF_
+  CompactMultiplyValid=false;
+#endif
 }
 
 
@@ -3068,7 +3086,13 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
 
   static double **RecvExchangeBufferTable=NULL;
-  static int nMartixModificationsLocal=-1;  
+  static int nMartixModificationsLocal=-1;
+#if _AVX_MATMUL_ == _OFF_
+  const bool prepare_compact=CompactSolveActive && (!CompactMultiplyValid ||
+      CompactMatrixGeneration!=nMartixModifications || CompactVectorLength!=length);
+#else
+  const bool prepare_compact=false;
+#endif
 
   static double *x_local=NULL;
   static int length_local=-1;
@@ -3085,7 +3109,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   memcpy(x_local,x,length*sizeof(double));
   
 
-  if ((nMartixModificationsLocal!=nMartixModifications)&&(RecvExchangeBufferTable!=NULL)) {
+  if ((prepare_compact || nMartixModificationsLocal!=nMartixModifications)&&(RecvExchangeBufferTable!=NULL)) {
     RecvExchangeBufferTable[PIC::ThisThread]=NULL;
 
     for (int thread=0;thread<PIC::nTotalThreads;thread++) if (RecvExchangeBufferTable[thread]!=NULL) {
@@ -3099,7 +3123,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   ExchangeIntermediateUnknownsData(x,RecvExchangeBufferTable);
   RecvExchangeBufferTable[PIC::ThisThread]=x_local;
 
-  if ((nMartixModificationsLocal!=nMartixModifications)||(length_local!=length)) {
+  if (prepare_compact || (nMartixModificationsLocal!=nMartixModifications)||(length_local!=length)) {
     for (int irow=0;irow<MatrixRowTableLength;irow++) {
       int iElementMax=MatrixRowTable[irow]->nNonZeroElements;
       cStencilElementData *ElementDataTable=MatrixRowTable[irow]->ElementDataTable;
@@ -3115,6 +3139,24 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     length_local=length; 
   }
 
+#if _AVX_MATMUL_ == _OFF_
+  if (prepare_compact) {
+    // The fixed operator is captured after the existing exchange/rebinding.
+    // Receiver buffers were rebuilt on this first multiply, so a new matrix
+    // instance or solve cannot inherit another instance's static RHS storage.
+    // Keep the original x_local copy: callers may alias input/output vectors.
+    CompactMultiplyView.Build(MatrixRowTableLength,
+        [&](std::size_t row) {return MatrixRowTable[row]->nNonZeroElements;},
+        [&](std::size_t row,std::size_t i) {
+          const auto& entry=MatrixRowTable[row]->ElementDataTable[i];
+          return amps_ordered_sparse::Entry{entry.MatrixElementValue,entry.rhs};
+        });
+    CompactMatrixGeneration=nMartixModifications;
+    CompactVectorLength=length;
+    CompactMultiplyValid=true;
+  }
+#endif
+
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #pragma omp parallel default(none) shared (RecvExchangeBufferTable,PIC::ThisThread,PIC::nTotalThreads,p) firstprivate(length)
@@ -3126,6 +3168,12 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 #pragma omp for schedule(dynamic,4) 
 #endif
   for (int irow=0;irow<MatrixRowTableLength;irow++) {
+#if _AVX_MATMUL_ == _OFF_
+    if (CompactSolveActive && CompactMultiplyValid) {
+      p[irow]=CompactMultiplyView.Row(irow);
+      continue;
+    }
+#endif
 
     int iElementMax=MatrixRowTable[irow]->nNonZeroElements;
     cStencilElementData *ElementDataTable=MatrixRowTable[irow]->ElementDataTable;
@@ -3279,7 +3327,17 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 //  double ** precond_matrix_II;// pointer to precondition matrix; us  null if no preconditioner
   int lTest=(PIC::ThisThread==0);//1: need test output; 0: no test statement
 
+  { // Bound compact coefficients to this fixed-operator solve only.
+#if _CUDA_MODE_ == _OFF_ && _PIC_MATMUL_MPI_MULTITHREAD_ == _PIC_MODE_OFF_ && _AVX_MATMUL_ == _OFF_
+  struct CompactSolveScope {
+    bool& active;
+    explicit CompactSolveScope(bool& value):active(value) {active=true;}
+    ~CompactSolveScope() {active=false;}
+  } compact_scope(CompactSolveActive);
+  CompactMultiplyValid=false;
+#endif
   linear_solver_wrapper("GMRES", &Tol,&nMaxIter, &nVar, &nDim,&nI, &nJ, &nK, &nBlock, &iComm, Rhs_I,Sol_I, &PrecondParam, NULL, &lTest);
+  }
 
   //unpack the solution
   for (row=MatrixRowListFirst;row!=NULL;row=row->next) if (row->CornerNode!=NULL)  {

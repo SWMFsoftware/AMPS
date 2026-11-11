@@ -21,6 +21,7 @@ The Maple script used for calculating the lookup tables for the previous impleme
 
 #include "pic.h"
 #include "array_3d.h"
+#include <array>
 
 #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__ON_
 #include <immintrin.h>
@@ -1881,8 +1882,12 @@ static inline void ECSIM_AddGuidingCenterMagnetizationCurrentToCorners(
 _TARGET_HOST_ _TARGET_DEVICE_
 bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack,
     double *MassTable,double *ChargeTable,int particle_data_length,PIC::ParticleBuffer::byte *particle_data_buffer,cProcessCellData DataIn) {
-  double *B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_];
-  double *B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)];
+  double *B_CenterStorage[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_];
+  double *B_CornerStorage[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)];
+  // Per-call host views borrow node-data addresses, never previous-epoch fields.
+  // Device/independent callers use their original local neighborhoods.
+  double** B_Center=DataIn.CenterFieldNodes!=NULL ? DataIn.CenterFieldNodes:B_CenterStorage;
+  double** B_corner=DataIn.CornerFieldNodes!=NULL ? DataIn.CornerFieldNodes:B_CornerStorage;
   bool res=false;
 
 
@@ -1912,7 +1917,7 @@ pthread_t current_thread=pthread_self();
 pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
 */
 
-  if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_) {
+  if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_ && DataIn.CenterFieldNodes==NULL) {
     for (int k=kCellIn-1;k<=kCellIn+1;k++) {
       for (int j=jCellIn-1;j<=jCellIn+1;j++)  {
 
@@ -1929,7 +1934,7 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
   }
 
 
-  if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_) {
+  if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_ && DataIn.CornerFieldNodes==NULL) {
     for (int k=kCellIn-1;k<=kCellIn+1;k++) {
       for (int j=jCellIn-1;j<=jCellIn+1;j++)  {
 
@@ -1955,10 +1960,15 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
 
   auto GlobalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
 
-  #pragma ivdep
-  for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;
-
-  for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
+  if (DataIn.CellSize!=NULL) {
+    for (int d=0;d<3;d++) dx[d]=DataIn.CellSize[d];
+    CellVolume=DataIn.CellVolume;
+  }
+  else {
+    #pragma ivdep
+    for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;
+    for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
+  }
 
   long int ptr=FirstCellParticleTable[iCellIn+_BLOCK_CELLS_X_*(jCellIn+_BLOCK_CELLS_Y_*kCellIn)];
   double ParticleEnergyCell=0, vmean_cell[PIC::nTotalSpecies];
@@ -2439,8 +2449,12 @@ __syncwarp;
 #else //_AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
 _TARGET_HOST_ _TARGET_DEVICE_
 bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack,double *MassTable,double *ChargeTable,int particle_data_length,PIC::ParticleBuffer::byte *particle_data_buffer,cProcessCellData DataIn) {
-  double *B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_];
-  double *B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)];
+  double *B_CenterStorage[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_];
+  double *B_CornerStorage[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)];
+  // Per-call host views borrow node-data addresses, never previous-epoch fields.
+  // Device/independent callers use their original local neighborhoods.
+  double** B_Center=DataIn.CenterFieldNodes!=NULL ? DataIn.CenterFieldNodes:B_CenterStorage;
+  double** B_corner=DataIn.CornerFieldNodes!=NULL ? DataIn.CornerFieldNodes:B_CornerStorage;
   bool res=false;
 
   #ifndef __CUDA_ARCH__
@@ -2452,7 +2466,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
   #endif
 
 
-  if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_) {
+  if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_ && DataIn.CenterFieldNodes==NULL) {
     for (int k=kCellIn-1;k<=kCellIn+1;k++) {
       for (int j=jCellIn-1;j<=jCellIn+1;j++)  {
 
@@ -2469,7 +2483,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
   }
 
 
-  if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_) {
+  if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_ && DataIn.CornerFieldNodes==NULL) {
     for (int k=kCellIn-1;k<=kCellIn+1;k++) {
       for (int j=jCellIn-1;j<=jCellIn+1;j++)  {
 
@@ -2493,10 +2507,15 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
   double CellVolume=1;
   double dx[3];
 
-  #pragma ivdep
-  for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;
-
-  for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
+  if (DataIn.CellSize!=NULL) {
+    for (int d=0;d<3;d++) dx[d]=DataIn.CellSize[d];
+    CellVolume=DataIn.CellVolume;
+  }
+  else {
+    #pragma ivdep
+    for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;
+    for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
+  }
 
   long int ptr=FirstCellParticleTable[iCellIn+_BLOCK_CELLS_X_*(jCellIn+_BLOCK_CELLS_Y_*kCellIn)];
   double ParticleEnergyCell=0, vmean_cell[PIC::nTotalSpecies];
@@ -3773,12 +3792,58 @@ barrier.Sync();
   auto ThisThread=PIC::ThisThread;
   auto BlockTable=PIC::DomainBlockDecomposition::BlockTable;
 
+  // This call's block metadata is reconstructed before the parallel cell loop:
+  // ownership/allocation/mesh/layout changes cannot leave cached geometry or
+  // pointers current. Fields themselves are always read at the current particle
+  // stencil. Geometry uses the original division/product order in length_conv
+  // units. Cell order, particle order, OpenMP scheduling and accumulation order
+  // are unchanged. The resulting tables are read-only in all worker threads.
+  const int block_count=PIC::DomainBlockDecomposition::nLocalBlocks;
+  std::vector<unsigned char> block_active(block_count,0);
+  std::vector<std::array<double,3>> block_size(block_count);
+  std::vector<cProcessCellData> block_data(block_count);
+  std::vector<std::vector<double*>> block_fields(block_count);
+  const int cells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+  for (int ib=0;ib<block_count;ib++) {
+    auto* node=BlockTable[ib];
+    if (node->block==NULL || node->Thread!=ThisThread) continue;
+    bool boundary=false;
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_)
+      for (int face=0;face<6;face++) if (node->GetNeibFace(face,0,0,mesh_ptr)==NULL) boundary=true;
+    if (boundary) continue;
+    block_active[ib]=1;
+    block_data[ib].CellVolume=1.0;
+    for (int d=0;d<3;d++) block_size[ib][d]=(node->xmax[d]-node->xmin[d])/cells[d]*length_conv;
+    for (int d=0;d<3;d++) block_data[ib].CellVolume*=block_size[ib][d];
+    block_data[ib].CellSize=block_size[ib].data();
+    // Pointer-index reuse is restricted to the uniform-grid contract of this
+    // fast path. Adaptive interpolation can name support in a different leaf;
+    // those callers keep ProcessCell's original neighborhood construction.
+    if (_AMR_MESH_TYPE_==_AMR_MESH_TYPE__UNIFORM_ &&
+        _PIC_FIELD_SOLVER_B_MODE_==_PIC_FIELD_SOLVER_B_CENTER_BASED_) {
+      const int count=_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_;
+      block_fields[ib].assign(count,NULL);
+      for (int n=0;n<count;n++) if (auto* center=node->block->GetCenterNode(n))
+        block_fields[ib][n]=reinterpret_cast<double*>(center->GetAssociatedDataBufferPointer()+
+            PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset+CurrentBOffset);
+      block_data[ib].CenterFieldNodes=block_fields[ib].data();
+    }
+    else if (_AMR_MESH_TYPE_==_AMR_MESH_TYPE__UNIFORM_ &&
+        _PIC_FIELD_SOLVER_B_MODE_==_PIC_FIELD_SOLVER_B_CORNER_BASED_) {
+      const int count=(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1);
+      block_fields[ib].assign(count,NULL);
+      for (int n=0;n<count;n++) if (auto* corner=node->block->GetCornerNode(n))
+        block_fields[ib][n]=reinterpret_cast<double*>(corner->GetAssociatedDataBufferPointer()+
+            PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner+CurrentBOffset);
+      block_data[ib].CornerFieldNodes=block_fields[ib].data();
+    }
+  }
 
   // Loop through all blocks.
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 
 #pragma omp parallel default(none) shared (copy_manager_ptr,CellDataTable_Bank0,CellDataTable_Bank1,CellProcessingFlagTable,DomainBlockDecomposition::nLocalBlocks, \
-    ParticleEnergyTable,cflTable) firstprivate (PIC::ParticleBuffer::ParticleDataLength,PIC::ParticleBuffer::ParticleDataBuffer,mesh_ptr,ThisThread,BlockTable,ChargeTable,MassTable)
+    ParticleEnergyTable,cflTable,block_active,block_data) firstprivate (PIC::ParticleBuffer::ParticleDataLength,PIC::ParticleBuffer::ParticleDataBuffer,mesh_ptr,ThisThread,BlockTable,ChargeTable,MassTable)
   {
 
     int this_thread_id=omp_get_thread_num();
@@ -3809,26 +3874,11 @@ barrier.Sync();
 
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=BlockTable[nLocalNode];
 
-      if (node->block==NULL) continue;
+      if (block_active[nLocalNode]==0) continue;
       double StartTime=MPI_Wtime();
 
-      if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
-        bool BoundaryBlock=false;
-
-        for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,mesh_ptr)==NULL) {
-          //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
-          BoundaryBlock=true;
-          break;
-        }
-
-        if (BoundaryBlock==true) continue;
-      }
-
-      if (node->Thread!=ThisThread) continue;
-
-
       CellData_TH->clean();
-      CellProcessingFlagTable[this_thread_id]=ProcessCell(i,j,k,node,CellData_TH,0,1,MassTable,ChargeTable,PIC::ParticleBuffer::ParticleDataLength,PIC::ParticleBuffer::ParticleDataBuffer);
+      CellProcessingFlagTable[this_thread_id]=ProcessCell(i,j,k,node,CellData_TH,0,1,MassTable,ChargeTable,PIC::ParticleBuffer::ParticleDataLength,PIC::ParticleBuffer::ParticleDataBuffer,block_data[nLocalNode]);
 
       if (CellProcessingFlagTable[this_thread_id]==true) { // (CellData!=NULL) {
         double *target,*source;

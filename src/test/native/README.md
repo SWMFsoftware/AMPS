@@ -44,6 +44,13 @@ external commands; an operator must not launch a competing build after the
 check. It preserves site configuration and libraries and performs no Git
 operation.
 
+The Linux process guard is deliberately conservative: it treats a competing
+`make` process below the checkout as a possible native build even when the
+target is documentation-only. Schedule `make PDF` and other make targets
+before or after a native campaign. A refused preflight is an execution ERROR,
+not physics evidence; retain its first log and rerun the blocked owner from
+an idle root. Do not disable this guard to make a report green.
+
 The recipes are maintained in `MakefileTest/Table`; `Makefile.test` is the
 site-generated counterpart. The fast-wave AMPS compilation propagates build
 failure instead of continuing with an older executable. Historical reference
@@ -51,3 +58,35 @@ comparison recipes can still mask a numerical failure, so integration
 validation must inspect every generated `.diff` file and child log in
 addition to the make exit status. Application SPICE/input/reference paths
 remain site settings; this helper does not replace them.
+
+For fast-wave only, the native compile recipe forwards `FAST_WAVE_CXXFLAGS`
+through `FLAGC_EXTRA`. The root Makefile supplies `-O1` for GNU host C/C++
+when no explicit optimization level is already configured; existing site
+levels, NVCC and other compiler families retain their policy. Disable this
+fallback with `make test_fast-wave -j FAST_WAVE_CXXFLAGS=`. Site files and
+Fortran flags are preserved. The measured complete command improves from
+119.04 s to 87.08 s on passion, with all six sampled files byte-identical and
+the original comparison bounds unchanged. See
+[`test/srcFastWave/README.md`](../../../test/srcFastWave/README.md) for exact
+commands, timings, validation scope and evidence locations.
+
+Optional individual-function CPU sampling and MPI call-site measurement for
+this fixed fixture are documented in
+[`test/srcFastWave/profiling/README.md`](../../../test/srcFastWave/profiling/README.md).
+They reuse a frozen validated binary and repeat its unchanged checks in
+private directories; compiling the diagnostic interposer is not an AMPS
+rebuild. The resulting optimization proposal retains all native/core gates.
+
+The subsequent algorithm implementation is documented in
+[`test/srcFastWave/STATUS.md`](../../../test/srcFastWave/STATUS.md).
+Its final native regression takes 79.387 s total / 26.326 s simulation on
+passion and preserves six exact full-file hashes. The native particle owner
+adds `PIC-PBUFFER-SIGNATURE-001`: its compiled particle-record fixture checks
+canonical CloneParticle-equivalent bytes, an independent bitwise full-width
+CRC, list-field inclusion/exclusion, incremental state and source immutability.
+It runs as part of `CORE-PIC-NATIVE-001`; no separate configuration or
+production signature mode is introduced. MPI transport, stencil and sparse
+unit fixtures are separate nonexclusive owners under
+[`tests/pic/performance`](../tests/pic/performance/README.md); the core registry,
+component inventory, source traceability and generated catalog all register
+the additions. Native builds still serialize globally against other owners.

@@ -90,7 +90,11 @@
         "GENERAL-NUM-SPECFUNC-001",
         "GENERAL-NUM-QUADRATURE-POLY-001",
         "GENERAL-NUM-QUADRATURE-CONVERGENCE-001",
-        "GENERAL-NUM-QUADRATURE-DOMAIN-001"
+        "GENERAL-NUM-QUADRATURE-DOMAIN-001",
+        "PERF-CRC-STREAM-001",
+        "PERF-CRC-SPLIT-001",
+        "PERF-CRC-COPY-001",
+        "PERF-CRC-THREAD-001"
       ],
       "timeout_seconds": 180
     },
@@ -615,7 +619,8 @@
         "CORE-PIC-PARTICLE-BUFFER-001": [
           "PIC-PBUFFER-INIT-001",
           "PIC-PBUFFER-STATE-001",
-          "PIC-PBUFFER-LIST-001"
+          "PIC-PBUFFER-LIST-001",
+          "PIC-PBUFFER-SIGNATURE-001"
         ],
         "CORE-PIC-PBUFFER-LAYOUT-001": [
           "PIC-PBUFFER-LAYOUT-PACKED-FIXED-OFFSETS-001",
@@ -796,6 +801,7 @@
         "PIC-PBUFFER-INIT-001",
         "PIC-PBUFFER-STATE-001",
         "PIC-PBUFFER-LIST-001",
+        "PIC-PBUFFER-SIGNATURE-001",
         "PIC-PBUFFER-LAYOUT-PACKED-FIXED-OFFSETS-001",
         "PIC-PBUFFER-LAYOUT-PACKED-FIXED-CLONE-001",
         "PIC-PBUFFER-LAYOUT-PACKED-FIXED-REUSE-001",
@@ -957,6 +963,47 @@
       "timeout_seconds": 1800,
       "mpi_ranks": 1,
       "exclusive": true
+    },
+    {
+      "id": "CORE-PIC-PERFORMANCE-001",
+      "component": "src/pic",
+      "level": "module",
+      "tiers": [
+        "nightly",
+        "extended",
+        "distributed"
+      ],
+      "runner": "tests/pic/performance/run_test.py",
+      "description": "Order-preserving performance kernels: independent periodic copy, layout, fragmentation, alias fallback and communicator matrix at 1/2/4 ranks",
+      "requires": {
+        "tools": [
+          "python",
+          "mpi_cxx",
+          "mpiexec"
+        ],
+        "paths": [
+          "src/pic/parallel/ordered_periodic_exchange.h"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "PERF-PERIODIC-LOCAL-001",
+        "PERF-PERIODIC-REMOTE-001",
+        "PERF-PERIODIC-LAYOUT-001",
+        "PERF-PERIODIC-CHUNK-001",
+        "PERF-PERIODIC-ALIAS-001",
+        "PERF-PERIODIC-EMPTY-001",
+        "PERF-PERIODIC-COMMUNICATOR-001",
+        "PERF-STENCIL-EXACT-001",
+        "PERF-STENCIL-FALLBACK-001",
+        "PERF-STENCIL-REFRESH-001",
+        "PERF-SPMV-ORDER-001",
+        "PERF-SPMV-REFRESH-001",
+        "PERF-SPMV-EMPTY-INVALID-001"
+      ],
+      "timeout_seconds": 180,
+      "mpi_ranks": 4,
+      "exclusive": false
     },
     {
       "id": "CORE-PIC-PERIODIC-001",

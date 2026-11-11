@@ -9,6 +9,8 @@
 #include <math.h>
 #include <cmath>
 #include <cstdint>
+#include <array>
+#include <cstring>
 #include <iostream>
 #include <iostream>
 #include <limits>
@@ -459,6 +461,34 @@ private:
   unsigned long crc_table[256];
   int CallCounter;
 
+#ifndef __CUDA_ARCH__
+  // Host lookup tables implement the historical unsigned-long recurrence,
+  // including its upper bits on LP64. This is NOT a substitution of standard
+  // CRC-32 or CRC-32C. Sharing immutable tables removes per-object polynomial
+  // generation; each object's original base table is still initialized below
+  // so a host-constructed object remains valid when copied to a CUDA device.
+  static const std::array<std::array<unsigned long,256>,4>& HostTables() {
+    static const auto tables=[] {
+      std::array<std::array<unsigned long,256>,4> result{};
+      for (unsigned long i=0;i<256;i++) {
+        unsigned long state=i<<24;
+        for (int bit=0;bit<8;bit++)
+          state=(state&0x80000000UL) ? (state<<1)^0x04c11db7UL:state<<1;
+        result[0][i]=state;
+      }
+      // R(s,0)=(s<<8)^T[(s>>24)&255]. T[k] for k>0 is the
+      // previous table advanced by one zero byte, in the FULL accumulator
+      // width. Unsigned arithmetic supplies the same modulo-2^width behavior.
+      for (int table=1;table<4;table++) for (int i=0;i<256;i++) {
+        const unsigned long state=result[table-1][i];
+        result[table][i]=(state<<8)^result[0][(state>>24)&0xffUL];
+      }
+      return result;
+    }();
+    return tables;
+  }
+#endif
+
   //generate the table of CRC remainders for all possible bytes 
   _TARGET_HOST_ _TARGET_DEVICE_
   void generare_crc_table() { 
@@ -478,13 +508,39 @@ public:
   CRC32 () {
     CallCounter=0;
     crc_accum=0;
+#ifndef __CUDA_ARCH__
+    std::memcpy(crc_table,HostTables()[0].data(),sizeof(crc_table));
+#else
     generare_crc_table();
+#endif
   };
 
   //update the CRC on the data block one byte at a time
   template <class T> 
   _TARGET_HOST_ _TARGET_DEVICE_
   void add(T* buffer, long int size) {
+#ifndef __CUDA_ARCH__
+    const auto* bytes=reinterpret_cast<const unsigned char*>(buffer);
+    const long int count=size*sizeof(T);
+    const auto& table=HostTables();
+    unsigned long state=crc_accum;
+    long int j=0;
+    // Expanding four applications of R(s,b) gives the four table XORs.
+    // The surviving old state is s<<32 on LP64, zero on 32-bit unsigned long.
+    // Retaining it is essential: the public accumulator historically exposes
+    // upper bits. Byte loads avoid alignment/endianness assumptions. No byte
+    // stream, initialization, split-update behavior or returned width changes.
+    for (;j<count && count-j>=4;j+=4) {
+      unsigned long upper=0;
+      if constexpr (sizeof(unsigned long)>4) upper=state<<32;
+      state=upper^table[3][((state>>24)^bytes[j])&0xffUL]
+                 ^table[2][((state>>16)^bytes[j+1])&0xffUL]
+                 ^table[1][((state>>8)^bytes[j+2])&0xffUL]
+                 ^table[0][(state^bytes[j+3])&0xffUL];
+    }
+    for (;j<count;j++) state=(state<<8)^table[0][((state>>24)^bytes[j])&0xffUL];
+    crc_accum=state;
+#else
     char *data_blk_ptr=(char*)buffer;
     long int data_blk_size=size*sizeof(T); 
     long int i,j;
@@ -493,6 +549,7 @@ public:
       i=((int)(crc_accum>>24)^ *data_blk_ptr++)&0xff;
       crc_accum=(crc_accum<<8)^crc_table[i]; 
     }
+#endif
   } 
 
   template <class T>

@@ -4,7 +4,7 @@
     {
       "component": "src/general",
       "status": "partial",
-      "test_ids": ["CORE-GENERAL-CONTAINERS-001", "CORE-GENERAL-NUMERICS-001", "CORE-GENERAL-RNG-001", "CORE-GENERAL-MPI-001", "CORE-GENERAL-LOGGER-001", "CORE-T12-PORTABILITY-001"],
+      "test_ids": ["CORE-GENERAL-CONTAINERS-001", "CORE-GENERAL-NUMERICS-001", "CORE-GENERAL-RNG-001", "CORE-GENERAL-MPI-001", "CORE-GENERAL-LOGGER-001", "CORE-T12-PORTABILITY-001", "CORE-PIC-PERFORMANCE-001"],
       "remaining": "T1 numerics are covered and T12 adds a bounded compiler/sanitizer/OpenMP/leak/backend matrix for production array storage. Remaining non-T1 families are legacy cLogger daemon lifecycle, CRC/debug streams, thread/spinlock and CUDA helpers, general grid/distribution containers, whole-AMPS sanitizer profiles, configured performance budgets, and strict coverage closure."
     },
     {
@@ -112,7 +112,7 @@
     {
       "component": "src/pic",
       "status": "partial",
-      "test_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-PERIODIC-001", "CORE-PIC-COLLISION-VHS-001", "CORE-PIC-COLLISION-VSS-001", "CORE-PIC-IDF-ROTZ-Z2-001", "CORE-PIC-IDF-ROTZ-Z10-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001", "CORE-MESH-NATIVE-001", "CORE-PIC-AUXILIARY-001", "CORE-PIC-DEPOSITION-001", "CORE-PIC-FIELD-LINE-001", "CORE-PIC-CALLBACK-OUTPUT-001", "CORE-PIC-RESTART-001", "CORE-PIC-DATAFILE-001", "CORE-PIC-OUTPUT-001", "CORE-MESH-MPI-OWNERSHIP-001"],
+      "test_ids": ["CORE-PIC-NATIVE-001", "CORE-PIC-PERIODIC-001", "CORE-PIC-COLLISION-VHS-001", "CORE-PIC-COLLISION-VSS-001", "CORE-PIC-IDF-ROTZ-Z2-001", "CORE-PIC-IDF-ROTZ-Z10-001", "CORE-PIC-SPLIT-MERGE-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-FIXED-001", "CORE-PIC-PBUFFER-LAYOUT-ALIGNED-INDIVIDUAL-001", "CORE-PIC-WEIGHT-TIME-LOCAL-001", "CORE-PIC-WEIGHT-TIME-SINGLE-GLOBAL-001", "CORE-MESH-NATIVE-001", "CORE-PIC-AUXILIARY-001", "CORE-PIC-DEPOSITION-001", "CORE-PIC-FIELD-LINE-001", "CORE-PIC-CALLBACK-OUTPUT-001", "CORE-PIC-RESTART-001", "CORE-PIC-DATAFILE-001", "CORE-PIC-OUTPUT-001", "CORE-MESH-MPI-OWNERSHIP-001", "CORE-PIC-PERFORMANCE-001"],
             "remaining": "T2-T5 qualify bounded record, AMR, mover, boundary, injection, sampling, collision and internal-energy contracts. T8 adds deposition/field/callback contracts; T9 adds checked persistence. T10 adds production 1/2/4-rank owner-to-ghost halos, send masks, block/particle serialization and exact-once migration, load repartition, periodic/loss handling, restart across decomposition changes, and rank-invariant global number/weight/mass/momentum/energy/rate checksums. Remaining work includes CUDA/device diagnostics, semantic reduction of opaque extension fields, coarse/fine mover crossing, additional production surfaces/diffuse laws, distributed source injection, histogram policy, full callback-aware continuation, migration of legacy formats, application stopping tables, Yinsi individual weights, unequal cross-species Zrot, and VT/VV relaxation."
     },
     {
@@ -134,9 +134,15 @@
       "remaining": "T10 covers native owner/ghost integration, weighted migration, and distributed cut-cell consistency. Domain-boundary collector reductions and collector-specific physical field fixtures remain open."
     },
     {
+      "component": "src/pic/interpolation",
+      "status": "partial",
+      "test_ids": ["CORE-PIC-PERFORMANCE-001", "CORE-MESH-NATIVE-001"],
+      "remaining": "Guarded complete pointer stencils have exact order, fallback and refresh fixtures; native AMR interpolation retains its existing independent field tests. Additional backend-specific performance qualification remains open."
+    },
+    {
       "component": "src/pic/parallel",
       "status": "partial",
-      "test_ids": ["CORE-MESH-MPI-OWNERSHIP-001"],
+      "test_ids": ["CORE-MESH-MPI-OWNERSHIP-001", "CORE-PIC-PERFORMANCE-001"],
       "remaining": "T10 covers 1/2/4-rank Replace/Add halo transport, send-halo/mask geometry, received ghosts, exact-once migration, CPU-list discovery, and invariant reductions. Scheduler/cgroup-dependent affinity mutation and ECSIM remote-stencil consumption remain open."
     },
     {

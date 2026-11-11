@@ -1252,10 +1252,14 @@ unsigned long int PIC::ParticleBuffer::GetParticleSignature(long int ptr,CRC32* 
   }
   else {
     byte buffer[ParticleDataLength];
-
-    for (int i=0;i<ParticleDataLength;i++) buffer[i]=0;
-
-    CloneParticle(buffer,GetParticleDataPointer(ptr));
+    // Canonical bytes are exactly CloneParticle(zeroed_record,source): cloning
+    // copies EVERY source byte (including compiled layout/padding) and restores
+    // only the target's intrusive links. Copy once and zero those links directly
+    // to avoid initializing bytes that the clone would immediately overwrite.
+    // The original particle and its list membership remain untouched.
+    memcpy(buffer,GetParticleDataPointer(ptr),ParticleDataLength);
+    SetPrev(0,buffer);
+    SetNext(0,buffer);
     sig->add(buffer,ParticleDataLength);
   }
 

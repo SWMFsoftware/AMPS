@@ -66,3 +66,38 @@ AMPS_TEST_CASE("PIC-PBUFFER-LIST-001", "intrusive particle-list insertion and ex
   PIC::ParticleBuffer::ExcludeParticleFromList(second_inserted, first);
   AMPS_EXPECT_EQ(first, first_inserted);
 }
+
+AMPS_TEST_CASE("PIC-PBUFFER-SIGNATURE-001", "canonical and list-inclusive signatures preserve full-width legacy bytes without changing records") {
+  ParticleBufferScope scope(16);
+  const long int source=PIC::ParticleBuffer::GetNewParticle(true);
+  auto* record=PIC::ParticleBuffer::GetParticleDataPointer(source);
+  const std::size_t length=PIC::ParticleBuffer::ParticleDataLength;
+  // Pattern every compiled byte, including anonymous extensions and padding.
+  // The record is not attached to a mesh list; links are deliberate byte data
+  // for the inclusion/exclusion contract and restored by the fixture lifetime.
+  for (std::size_t i=0;i<length;i++) record[i]=static_cast<unsigned char>(31*i+7);
+  PIC::ParticleBuffer::SetPrev(-1,record);
+  PIC::ParticleBuffer::SetNext(-1,record);
+  PIC::ParticleBuffer::SetParticleAllocated(record);
+  const std::vector<unsigned char> before(record,record+length);
+  std::vector<unsigned char> canonical(length,0);
+  // This unmodified clone API is the previous canonicalization algorithm:
+  // zero destination bytes, copy all source bytes, preserve destination links.
+  PIC::ParticleBuffer::CloneParticle(canonical.data(),record);
+  auto reference=[](const unsigned char* bytes,std::size_t count,unsigned long state) {
+    for (std::size_t i=0;i<count;i++) {
+      unsigned long term=(((state>>24)^bytes[i])&255UL)<<24;
+      for (int bit=0;bit<8;bit++) term=(term&0x80000000UL) ? (term<<1)^0x04c11db7UL:term<<1;
+      state=(state<<8)^term;
+    }
+    return state;
+  };
+  AMPS_EXPECT_EQ(PIC::ParticleBuffer::GetParticleSignature(source,false),
+      reference(canonical.data(),length,0));
+  AMPS_EXPECT_EQ(PIC::ParticleBuffer::GetParticleSignature(source,true),
+      reference(before.data(),length,0));
+  CRC32 incremental; incremental.crc_accum=~0UL;
+  AMPS_EXPECT_EQ(PIC::ParticleBuffer::GetParticleSignature(source,&incremental,false),
+      reference(canonical.data(),length,~0UL));
+  AMPS_EXPECT_TRUE(std::memcmp(record,before.data(),length)==0);
+}

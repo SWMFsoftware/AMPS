@@ -430,7 +430,11 @@ void PIC::Parallel::ExchangeParticleData_unbuffered() {
     };
 
     //put together the particle list
-    vector <cParticleDescriptor> ParticleList;
+    // Capacity belongs to the calling host thread and survives between cells;
+    // contents are rebuilt in the same intrusive-list order on every call.
+    // Signatures, comparator, duplicate-key behavior and relinking are unchanged.
+    static thread_local vector <cParticleDescriptor> ParticleList;
+    ParticleList.clear();
     cParticleDescriptor p;
     long int Particle;
     CRC32 sig;
@@ -882,7 +886,10 @@ void PIC::Parallel::ExchangeParticleData_buffered() {
     };
 
     //put together the particle list
-    vector <cParticleDescriptor> ParticleList;
+    // Match the unbuffered path's capacity reuse without sharing mutable
+    // descriptors between host threads or retaining a previous cell's keys.
+    static thread_local vector <cParticleDescriptor> ParticleList;
+    ParticleList.clear();
     cParticleDescriptor p;
     long int Particle;
     CRC32 sig;

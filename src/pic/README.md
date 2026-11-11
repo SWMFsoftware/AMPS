@@ -2,6 +2,37 @@
 
 This directory contains the AMPS particle-in-cell interpolation infrastructure. The principal implementation is in `pic_interpolation_routines.cpp`; the public types and entry points are declared in `pic.h` under `PIC::InterpolationRoutines`.
 
+## Order-preserving performance work (2026-11-10)
+
+The fast-wave function profile led to four bounded optimizations. Periodic
+associated-data exchange now aggregates independent copies per peer and
+retains ordered streaming for custom/uncertain cases; the exact payload and
+ghost-write order remain unchanged. Fully allocated uniform pointer stencils
+use a guarded complete-entry path. Deposition reconstructs per-call block
+geometry/eligibility and uniform-grid field-node address views, preserving
+coordinate units, arithmetic order and the existing worker schedule.
+
+Particle signatures still hash exactly the canonical compiled record bytes;
+single-copy canonicalization, descriptor capacity reuse and a full-width-
+compatible host CRC implementation reduce work without disabling repeatability
+or list checks. The host scalar sparse-multiply adapter uses a compact view
+bounded to one fixed-operator solve. Iteration limits, solver tolerances,
+physical operators, weights, seeds, ranks and sampled products are unchanged.
+
+Detailed contracts, fallback domains and validation commands:
+
+- [Periodic transport](parallel/README.md).
+- [Complete stencils and deposition views](interpolation/README.md).
+- [CRC and compact arithmetic](../general/README.md).
+- [Linear-system snapshot lifecycle](../../srcInterface/README.md).
+- [Independent performance-kernel cases](../test/tests/pic/performance/README.md).
+- [Implementation ledger and measured wave results](../../test/srcFastWave/STATUS.md).
+
+Adaptive interpolation, missing/unallocated support and row-only stencils
+keep their general paths; evolving field values are never cached across a
+step. Explicit CUDA/AVX/std::thread sparse variants retain their previous
+kernels. Backend qualification is not inferred from a scalar timing gain.
+
 For the application-facing contract for associated center/corner storage,
 Tecplot variable/data callbacks, MPI ownership, sampled-data buffers, and
 temporary output-node interpolation, see the core developer guide in

@@ -10295,10 +10295,20 @@ class cProcessCellData {
 public:
   int MagneticField_RelativeOffset;
   int ElectricField_RelativeOffset;
+  // Optional per-call block geometry/pointer view for the host deposition
+  // loop. Lengths use the same length_conv convention as ProcessCell; values
+  // are never fields cached from an earlier epoch. Null pointers preserve the
+  // original standalone/device caller and incomplete-geometry behavior.
+  const double* CellSize;
+  double CellVolume;
+  double** CenterFieldNodes;
+  double** CornerFieldNodes;
 
   _TARGET_HOST_ _TARGET_DEVICE_
   cProcessCellData() {
     MagneticField_RelativeOffset=-1,ElectricField_RelativeOffset=-1;
+    CellSize=NULL; CellVolume=0.0;
+    CenterFieldNodes=NULL; CornerFieldNodes=NULL;
   } 
 };
 

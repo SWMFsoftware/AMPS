@@ -29,6 +29,8 @@ EXPECTED_CASES = [
     "GENERAL-NUM-QUADRATURE-POLY-001",
     "GENERAL-NUM-QUADRATURE-CONVERGENCE-001",
     "GENERAL-NUM-QUADRATURE-DOMAIN-001",
+    "PERF-CRC-STREAM-001", "PERF-CRC-SPLIT-001",
+    "PERF-CRC-COPY-001", "PERF-CRC-THREAD-001",
 ]
 
 
@@ -62,7 +64,7 @@ def main() -> int:
         include = prepare_header_mirror(repo, work)
         compiled = run_command(
             command(context, "mpi_cxx") + [
-                "-std=c++17", "-O2", "-Wall", "-Wextra", "-Wpedantic",
+                "-std=c++17", "-O2", "-Wall", "-Wextra", "-Wpedantic", "-pthread",
                 "-DOMPI_SKIP_MPICXX=1", "-I", str(include),
                 "-I", str(TEST_ROOT / "native"),
                 str(TEST_ROOT / "native" / "test_main.cpp"), str(source),
