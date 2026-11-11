@@ -37,6 +37,7 @@ COMPILE_CHARGE_EXCHANGE=on
 COMPILE_PHOTOLYTIC_REACTIONS=on
 COMPILE_EXOSPHERE=on
 COMPILE_SURFACE=on
+COMPILE_RESONANCE_FLUORESCENCE=on
 
 #the list of directories where object files are located
 LINK_DIRECTORY_LIST=  
@@ -77,8 +78,12 @@ ifeq ($(COMPILE_PHOTOLYTIC_REACTIONS),on)
         LINK_DIRECTORY_LIST+=models/photolytic_reactions/*.o
 endif
 
+ifeq ($(COMPILE_RESONANCE_FLUORESCENCE),on)
+        LINK_DIRECTORY_LIST+=models/resonance_fluorescence/*.o
+endif
+
 #the default value of the c++ compiler flags
-SEARCH_C=-DMPI_ON  -I${CWD}/${WSD}/pic -I${CWD}/${WSD}/main -I${CWD}/srcInterface -I${CWD}/${WSD}/meshAMR -I${CWD}/${WSD}/interface -I${CWD}/${WSD}/general -I${CWD}/${WSD}/models/electron_impact -I${CWD}/${WSD}/models/sputtering -I${CWD}/${WSD}/models/dust -I${CWD}/${WSD}/models/charge_exchange -I${CWD}/${WSD}/models/photolytic_reactions -I${CWD}/${WSD}/species -I${CWD}/${WSD}/models/exosphere -I${CWD}/${WSD}/models/surface -I${SPICE}/include -I${BOOST}/include -I${KAMELEON}/src -I${CWD}/utility/PostProcess -I${SHAREDIR}  -I${CWD}
+SEARCH_C=-DMPI_ON  -I${CWD}/${WSD}/pic -I${CWD}/${WSD}/main -I${CWD}/srcInterface -I${CWD}/${WSD}/meshAMR -I${CWD}/${WSD}/interface -I${CWD}/${WSD}/general -I${CWD}/${WSD}/models/electron_impact -I${CWD}/${WSD}/models/sputtering -I${CWD}/${WSD}/models/dust -I${CWD}/${WSD}/models/charge_exchange -I${CWD}/${WSD}/models/photolytic_reactions -I${CWD}/${WSD}/models/resonance_fluorescence -I${CWD}/${WSD}/species -I${CWD}/${WSD}/models/exosphere -I${CWD}/${WSD}/models/surface -I${SPICE}/include -I${BOOST}/include -I${KAMELEON}/src -I${CWD}/utility/PostProcess -I${SHAREDIR}  -I${CWD}
 
 SEARCH_C+=${EXTRACOMPILEROPTIONS}
 
@@ -354,6 +359,10 @@ ifeq ($(COMPILE_PHOTOLYTIC_REACTIONS),on)
 	cd ${WSD}/models/photolytic_reactions; $(MAKE) SEARCH_C="${SEARCH_C}"
 endif
 
+ifeq ($(COMPILE_RESONANCE_FLUORESCENCE),on)
+	cd ${WSD}/models/resonance_fluorescence; $(MAKE) SEARCH_C="${SEARCH_C}"
+endif
+
 	cd ${WSD}/main; $(MAKE) SEARCH_C="${SEARCH_C}"
 	cp -f ${WSD}/main/mainlib.a ${WSD}/libAMPS.a
 
@@ -398,3 +407,22 @@ share_lib:
 .PHONY: test
 test:
 	echo "Use make test_all to run the AMPS tests"
+
+# The smoke target is dependency-light, nightly selects the complete current
+# registry, and extended selects the configured native profile. The global
+# runner places that exclusive checkout-wide build behind leading/trailing
+# barriers so it cannot overlap another suite or a legacy application build.
+.PHONY: core_test core_test_nightly core_test_extended core_test_coverage
+core_test:
+	$(MAKE) -C src/test smoke
+
+core_test_nightly:
+	$(MAKE) -C src/test nightly
+
+core_test_extended:
+	$(MAKE) -C src/test extended
+
+core_test_coverage:
+	$(MAKE) -C src/test coverage
+
+test_all: core_test_nightly
