@@ -17,12 +17,49 @@
 #include <omp.h>
 #endif
 
+// This implementation requires a species-local timestep and either a
+// spatially global weight or one species-dependent weight stored in each
+// block.  In the local-weight case the face conversion below includes the
+// full W_old/W_new factor as well as dt_new/dt_old.  A particle's individual
+// correction c is deliberately unchanged at the face: it multiplies both the
+// incoming and outgoing carriers and therefore cancels from the required
+// residual-resampling multiplicity.  CloneParticle() copies c with the rest
+// of the record.  CUDA continuation sweeps are not implemented yet; failing
+// at compile time is safer than silently dropping the uncompleted trajectory.
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+#if _SIMULATION_TIME_STEP_MODE_ != _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
+#error "Local-timestep flux resampling requires SpeciesLocalTimeStep"
+#endif
+#if (_SIMULATION_PARTICLE_WEIGHT_MODE_ != _SINGLE_GLOBAL_PARTICLE_WEIGHT_) && \
+    (_SIMULATION_PARTICLE_WEIGHT_MODE_ != _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) && \
+    (_SIMULATION_PARTICLE_WEIGHT_MODE_ != _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_)
+#error "Local-timestep flux resampling requires a supported global or species-local particle weight"
+#endif
+#if _CUDA_MODE_ == _ON_
+#error "Local-timestep flux-resampling continuation is not implemented for CUDA"
+#endif
+#if _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
+#error "Local-timestep flux-resampling continuation requires a spatial AMR mover"
+#endif
+#if _PIC_BC__PERIODIC_MODE_ == _PIC_BC__PERIODIC_MODE_ON_
+#error "Local-timestep flux-resampling continuation is not implemented for periodic boundaries"
+#endif
+#endif
+
 PIC::Mover::fProcessOutsideDomainParticles PIC::Mover::ProcessOutsideDomainParticles=NULL;
 PIC::Mover::fProcessTriangleCutFaceIntersection PIC::Mover::ProcessTriangleCutFaceIntersection=NULL;
 PIC::Mover::fFindMovingSurfaceIntersection
     PIC::Mover::FindMovingSurfaceIntersection=NULL;
 PIC::Mover::fProcessMovingSurfaceIntersection
     PIC::Mover::ProcessMovingSurfaceIntersection=NULL;
+
+// Applications that do not need an in-flight event leave this complete set
+// NULL.  Keeping the pointers in generic core state (rather than compiling a
+// comet-specific branch) makes the legacy mover byte-for-byte unchanged up to
+// the one predictable null test and avoids any random-number consumption.
+PIC::Mover::fQueryTrajectoryEvent PIC::Mover::QueryTrajectoryEvent=NULL;
+PIC::Mover::fAdvanceTrajectoryEvent PIC::Mover::AdvanceTrajectoryEvent=NULL;
+PIC::Mover::fProcessTrajectoryEvent PIC::Mover::ProcessTrajectoryEvent=NULL;
 
 // Pointer-mode begins with the same mover used by the canonical legacy macro.
 // This is initialization of the dispatch mechanism, not a physical-model
@@ -32,6 +69,333 @@ PIC::Mover::UserDefinedParticleMover =
     PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_SecondOrder;
 
 int PIC::Mover::BackwardTimeIntegrationMode=_PIC_MODE_OFF_;
+
+// Reserved dynamically in Init_BeforeParser() only for builds that enable the
+// algorithm.  RequestDataStorage() appends this double to the normal particle
+// record, so both buffered and unbuffered MPI exchange carry it automatically.
+long int PIC::Mover::LocalTimeStepRemainderOffset=-1;
+PIC::Mover::cLocalTimeStepFluxDiagnostic
+    PIC::Mover::LocalTimeStepFluxDiagnostic={};
+
+namespace {
+PIC::Mover::fSpeciesDependentParticleMover LocalTimeStepValidationMover=NULL;
+
+// Return the first strictly positive intersection of a Cartesian ray with a
+// sphere.  DIM1 spherical symmetry stores only radius in the AMR tree, but
+// the particle state remains a three-component Cartesian vector.  Computing
+// both roots from fresh coefficients for each face avoids two subtle errors
+// in the historical inline code: the coefficients for the inner face were
+// sign-mutated and then reused for the outer face, and transverse position
+// components were omitted from the quadratic.
+bool GetFirstPositiveSphereIntersection(const double *position,
+    const double *velocity,double radius,double maximumTime,double &time) {
+  const double a=velocity[0]*velocity[0]+velocity[1]*velocity[1]+
+      velocity[2]*velocity[2];
+  if (!(a>0.0)) return false;
+
+  const double b=2.0*(position[0]*velocity[0]+
+      position[1]*velocity[1]+position[2]*velocity[2]);
+  const double c=position[0]*position[0]+position[1]*position[1]+
+      position[2]*position[2]-radius*radius;
+  const double discriminant=b*b-4.0*a*c;
+  if (!(discriminant>0.0)) return false;
+
+  // The q form retains precision when b and sqrt(discriminant) nearly cancel.
+  const double root=std::sqrt(discriminant);
+  const double q=-0.5*(b+std::copysign(root,b));
+  double candidates[2]={q/a,std::numeric_limits<double>::infinity()};
+  if (q!=0.0) candidates[1]=c/q;
+
+  double first=maximumTime;
+  bool found=false;
+  for (double candidate:candidates) {
+    if (candidate>0.0 && candidate<first) {
+      first=candidate;
+      found=true;
+    }
+  }
+  if (found) time=first;
+  return found;
+}
+
+// Convert a Cartesian state at a DIM1 spherical-symmetry face to the local
+// radial frame used by the particle record.  Only DIM position components are
+// stored by ParticleBuffer, so in DIM1 cloning a pre-normalized Cartesian
+// state would discard y and z while retaining an unrotated velocity.  That
+// inconsistent clone can appear on the wrong side of an MPI ownership face
+// and cross the same face a second time.  Normalizing before clone allocation
+// gives the original and every sibling identical, complete DIM1 state.
+void NormalizeSphericalParticleState(double *position,double *velocity) {
+  const double radius=std::sqrt(position[0]*position[0]+
+      position[1]*position[1]+position[2]*position[2]);
+  if (!(radius>1.0e-20)) return;
+
+  const double nx=position[0]/radius;
+  const double ny=position[1]/radius;
+  const double nz=position[2]/radius;
+  const double transverse=std::sqrt(nx*nx+ny*ny);
+  double cosZ=1.0,sinZ=0.0,cosY=0.0,sinY=nz;
+  if (transverse>1.0e-20) {
+    cosZ=nx/transverse;
+    sinZ=ny/transverse;
+    cosY=transverse;
+  }
+
+  const double localVelocity[3]={
+      cosY*cosZ*velocity[0]+cosY*sinZ*velocity[1]+sinY*velocity[2],
+      -sinZ*velocity[0]+cosZ*velocity[1],
+      -sinY*cosZ*velocity[0]-sinY*sinZ*velocity[1]+cosY*velocity[2]};
+  for (int dimension=0;dimension<3;dimension++)
+    velocity[dimension]=localVelocity[dimension];
+  position[0]=radius;
+  position[1]=0.0;
+  position[2]=0.0;
+}
+}
+
+void PIC::Mover::ResetLocalTimeStepFluxDiagnostic(bool enable) {
+  LocalTimeStepFluxDiagnostic=cLocalTimeStepFluxDiagnostic{};
+  LocalTimeStepFluxDiagnostic.Enabled=enable;
+}
+
+void PIC::Mover::SetLocalTimeStepValidationMover(
+    fSpeciesDependentParticleMover mover) {
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  if (mover!=NULL)
+    exit(__LINE__,__FILE__,
+        "local-timestep validation mover override requires an MPI-only build");
+#endif
+  LocalTimeStepValidationMover=mover;
+#else
+  if (mover!=NULL)
+    exit(__LINE__,__FILE__,
+        "local-timestep validation mover requested while resampling is off");
+  LocalTimeStepValidationMover=NULL;
+#endif
+}
+
+double PIC::Mover::GetLocalTimeStepRemainderFraction(
+    PIC::ParticleBuffer::byte *particleData) {
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+  double fraction;
+  std::memcpy(&fraction,particleData+LocalTimeStepRemainderOffset,
+      sizeof(fraction));
+  return fraction;
+#else
+  (void)particleData;
+  return 0.0;
+#endif
+}
+
+void PIC::Mover::SetLocalTimeStepRemainderFraction(double fraction,
+    PIC::ParticleBuffer::byte *particleData) {
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+  std::memcpy(particleData+LocalTimeStepRemainderOffset,&fraction,
+      sizeof(fraction));
+#else
+  // Calls with zero are harmless initialization in a legacy build.  A
+  // non-zero value would mean that a caller expects continuation storage even
+  // though the feature was compiled out, which must not pass unnoticed.
+  if (fraction!=0.0)
+    exit(__LINE__,__FILE__,
+        "local-timestep continuation storage is not enabled");
+  (void)particleData;
+#endif
+}
+
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+namespace {
+// Prepare a particle population for transfer from oldNode to newNode.  The
+// caller has already integrated exactly to the common face and nudged the
+// position into newNode.  This routine changes only statistical multiplicity
+// and the unused mover interval; it never perturbs velocity, so number, mass,
+// momentum, and kinetic-energy flux all obey the same expectation value.
+//
+// A model particle in the old block represents the rate W_old/dt_old.  One
+// model particle in the new block represents W_new/dt_new.  Therefore the
+// required expected destination multiplicity is
+//
+//   mu = (W_old/dt_old)/(W_new/dt_new)
+//      = W_old*dt_new/(W_new*dt_old).
+//
+// With a spatially global weight for each species, W_old=W_new and the ratio
+// reduces to dt_new/dt_old.  With species-local block weights, this full
+// expression is essential: using only the timestep ratio would change the
+// represented physical flux whenever the statistical weight changes across
+// the face.
+bool PrepareLocalTimeStepFaceTransfer(long int ptr,int species,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *oldNode,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode,
+    double *position,double *velocity,double &remainingTime,
+    std::vector<long int> &clones) {
+  if (oldNode==NULL || oldNode->block==NULL ||
+      newNode==NULL || newNode->block==NULL) {
+    exit(__LINE__,__FILE__,
+        "local-timestep face transfer requires both adjacent blocks");
+  }
+
+  const double oldTimeStep=oldNode->block->GetLocalTimeStep(species);
+  const double newTimeStep=newNode->block->GetLocalTimeStep(species);
+  const double oldWeight=oldNode->block->GetLocalParticleWeight(species);
+  const double newWeight=newNode->block->GetLocalParticleWeight(species);
+  if (!(oldTimeStep>0.0) || !std::isfinite(oldTimeStep) ||
+      !(newTimeStep>0.0) || !std::isfinite(newTimeStep) ||
+      !(oldWeight>0.0) || !std::isfinite(oldWeight) ||
+      !(newWeight>0.0) || !std::isfinite(newWeight)) {
+    exit(__LINE__,__FILE__,
+        "invalid timestep or particle weight at local-timestep block face");
+  }
+
+  PIC::ParticleBuffer::byte *particleData=
+      PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+  double individualCorrection=1.0;
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+  individualCorrection=
+      PIC::ParticleBuffer::GetIndividualStatWeightCorrection(particleData);
+  if (!(individualCorrection>0.0) ||
+      !std::isfinite(individualCorrection)) {
+    exit(__LINE__,__FILE__,
+        "invalid individual weight correction at local-timestep block face");
+  }
+#endif
+
+  const double meanMultiplicity=
+      oldWeight*newTimeStep/(newWeight*oldTimeStep);
+  if (!(meanMultiplicity>0.0) || !std::isfinite(meanMultiplicity) ||
+      meanMultiplicity>static_cast<double>(
+          std::numeric_limits<long int>::max()-1)) {
+    exit(__LINE__,__FILE__,
+        "invalid stochastic multiplicity at local-timestep block face");
+  }
+
+  // Residual (floor-plus-Bernoulli) resampling is unbiased for every particle
+  // and has lower variance than drawing an unrestricted Poisson count.  It
+  // naturally implements Russian roulette when mu<1 and cloning when mu>1.
+  const double integerPart=std::floor(meanMultiplicity);
+  const double residualProbability=meanMultiplicity-integerPart;
+  long int destinationMultiplicity=static_cast<long int>(integerPart);
+  if (rnd()<residualProbability) destinationMultiplicity++;
+
+  // Accumulate face-local represented rates before roulette can delete the
+  // source particle.  For a physical moment q, residual resampling has
+  // Var[sum(K*q*W_new/dt_new)] = p(1-p)*(q*W_new/dt_new)^2 per source.  These
+  // sums let the regression compare the actual production mover against its
+  // analytic Monte Carlo uncertainty without inferring crossings afterward.
+  if (PIC::Mover::LocalTimeStepFluxDiagnostic.Enabled) {
+    PIC::Mover::cLocalTimeStepFluxDiagnostic &diagnostic=
+        PIC::Mover::LocalTimeStepFluxDiagnostic;
+    // c is fixed during face transfer.  It cancels from meanMultiplicity but
+    // must remain in every physical diagnostic carrier; the corresponding
+    // residual-resampling variance therefore contains c^2 through the square
+    // of outgoingRate.
+    const double incomingRate=
+        oldWeight*individualCorrection/oldTimeStep;
+    const double outgoingRate=
+        newWeight*individualCorrection/newTimeStep;
+    const double mass=PIC::MolecularData::GetMass(species);
+    const double probabilityVariance=
+        residualProbability*(1.0-residualProbability);
+    const double energy=0.5*mass*(velocity[0]*velocity[0]+
+        velocity[1]*velocity[1]+velocity[2]*velocity[2]);
+    double internalEnergy=0.0;
+#if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
+    if (PIC::IDF::nTotalRotationalModes[species]>0)
+      internalEnergy+=PIC::IDF::GetRotE(particleData);
+    for (int mode=0;mode<PIC::IDF::nTotalVibtationalModes[species];mode++)
+      internalEnergy+=PIC::IDF::GetVibE(mode,particleData);
+#endif
+
+    diagnostic.FaceTransferCount++;
+    diagnostic.DestinationParticleCount+=destinationMultiplicity;
+    if (destinationMultiplicity==0) diagnostic.RouletteDeletionCount++;
+    if (destinationMultiplicity>1)
+      diagnostic.CloneCount+=destinationMultiplicity-1;
+
+    diagnostic.IncomingNumberFlux+=incomingRate;
+    diagnostic.OutgoingNumberFlux+=destinationMultiplicity*outgoingRate;
+    diagnostic.NumberFluxVariance+=probabilityVariance*outgoingRate*outgoingRate;
+
+    diagnostic.IncomingMassFlux+=incomingRate*mass;
+    diagnostic.OutgoingMassFlux+=destinationMultiplicity*outgoingRate*mass;
+    diagnostic.MassFluxVariance+=probabilityVariance*
+        outgoingRate*outgoingRate*mass*mass;
+
+    for (int dimension=0;dimension<3;dimension++) {
+      const double momentum=mass*velocity[dimension];
+      diagnostic.IncomingMomentumFlux[dimension]+=incomingRate*momentum;
+      diagnostic.OutgoingMomentumFlux[dimension]+=
+          destinationMultiplicity*outgoingRate*momentum;
+      diagnostic.MomentumFluxVariance[dimension]+=probabilityVariance*
+          outgoingRate*outgoingRate*momentum*momentum;
+    }
+
+    diagnostic.IncomingKineticEnergyFlux+=incomingRate*energy;
+    diagnostic.OutgoingKineticEnergyFlux+=
+        destinationMultiplicity*outgoingRate*energy;
+    diagnostic.KineticEnergyFluxVariance+=probabilityVariance*
+        outgoingRate*outgoingRate*energy*energy;
+
+    diagnostic.IncomingInternalEnergyFlux+=
+        incomingRate*internalEnergy;
+    diagnostic.OutgoingInternalEnergyFlux+=
+        destinationMultiplicity*outgoingRate*internalEnergy;
+    diagnostic.InternalEnergyFluxVariance+=probabilityVariance*
+        outgoingRate*outgoingRate*internalEnergy*internalEnergy;
+  }
+
+  if (destinationMultiplicity==0) {
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return false;
+  }
+
+  // Preserve the fractional progress through a block step.  remainingTime is
+  // the unused old-block interval because the mover subtracted the exact face
+  // flight time before calling this routine.
+  const double oldRemainingFraction=remainingTime/oldTimeStep;
+  remainingTime*=newTimeStep/oldTimeStep;
+  double remainingFraction=remainingTime/newTimeStep;
+  const double fractionTolerance=64.0*std::numeric_limits<double>::epsilon();
+  if (remainingFraction<0.0 ||
+      remainingFraction>1.0+fractionTolerance ||
+      !std::isfinite(remainingFraction)) {
+    exit(__LINE__,__FILE__,
+        "invalid remaining-step fraction at local-timestep block face");
+  }
+  if (remainingFraction>1.0) remainingFraction=1.0;
+  if (PIC::Mover::LocalTimeStepFluxDiagnostic.Enabled) {
+    const double invariantError=
+        std::fabs(remainingFraction-oldRemainingFraction);
+    if (invariantError>PIC::Mover::LocalTimeStepFluxDiagnostic.
+        MaximumRemainderInvariantError)
+      PIC::Mover::LocalTimeStepFluxDiagnostic.
+          MaximumRemainderInvariantError=invariantError;
+  }
+
+  PIC::ParticleBuffer::SetX(position,particleData);
+  PIC::ParticleBuffer::SetV(velocity,particleData);
+  PIC::Mover::SetLocalTimeStepRemainderFraction(
+      remainingFraction,particleData);
+
+  // Allocate siblings now, while all state is exactly at the interface.  They
+  // are inserted after the original reaches the common mover epilogue.  Every
+  // sibling receives a new tracker identity but otherwise has identical
+  // physical state; later stochastic collisions/chemistry decorrelate them.
+  for (long int copy=1;copy<destinationMultiplicity;copy++) {
+    const long int clone=PIC::ParticleBuffer::GetNewParticle();
+    PIC::ParticleBuffer::byte *cloneData=
+        PIC::ParticleBuffer::GetParticleDataPointer(clone);
+    PIC::ParticleBuffer::CloneParticle(cloneData,particleData);
+#if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
+    PIC::ParticleTracker::InitParticleID(cloneData);
+#endif
+    clones.push_back(clone);
+  }
+
+  return true;
+}
+}
+#endif
 
 
 double ** PIC::Mover::E_Corner = NULL;
@@ -74,6 +438,12 @@ void PIC::Mover::SetUserDefinedParticleMover(
 void PIC::Mover::DispatchParticleMover(
     long int ptr, double localTimeStep,
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+  if (LocalTimeStepValidationMover!=NULL) {
+    (void)LocalTimeStepValidationMover(ptr,localTimeStep,node);
+    return;
+  }
+#endif
 #if _PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ == _PIC_MODE_ON_
   _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr, localTimeStep, node);
 #else
@@ -86,6 +456,15 @@ void PIC::Mover::DispatchParticleMover(
 //====================================================
 //init the particle mover
 void PIC::Mover::Init_BeforeParser(){
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+  // This call precedes ParticleBuffer::Init().  Appending the field here keeps
+  // the default AMPS particle record unchanged when the algorithm is off and
+  // ensures that MPI packing, restart images, and cloning all include the
+  // continuation fraction when it is on.
+  PIC::ParticleBuffer::RequestDataStorage(LocalTimeStepRemainderOffset,
+      sizeof(double));
+#endif
+
   if (_PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_) {
     GuidingCenter::Init_BeforeParser();
   }
@@ -99,6 +478,19 @@ void PIC::Mover::Init_BeforeParser(){
 }
 
 void PIC::Mover::Init() {
+  // A preview without a commit callback, or a commit callback without the
+  // preview that limits the segment, can either duplicate an event across an
+  // MPI face or mutate a particle after it has passed the event point.  Reject
+  // partial installation during initialization, before a zero-particle run
+  // could otherwise hide the invalid setup.
+  const int trajectoryEventCallbackCount=
+      (QueryTrajectoryEvent!=NULL ? 1 : 0)+
+      (AdvanceTrajectoryEvent!=NULL ? 1 : 0)+
+      (ProcessTrajectoryEvent!=NULL ? 1 : 0);
+  if (trajectoryEventCallbackCount!=0 && trajectoryEventCallbackCount!=3)
+    exit(__LINE__,__FILE__,
+        "trajectory-event mover requires all three callbacks or none");
+
   // check if guiding center motion is used
   if (_PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_) {
     GuidingCenter::Init();
@@ -1140,6 +1532,125 @@ if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_T
   }//for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++)
 }
 
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+//====================================================
+// Resume the particles that stopped at a block face during the preceding
+// mover/exchange sweep.  This is deliberately a separate list traversal from
+// MoveParticles(): completed particles have a zero marker and must not receive
+// a second full timestep in the same outer AMPS iteration.
+long int PIC::Mover::MoveParticlesWithLocalTimeStepContinuation() {
+  long int movedParticleCount=0;
+  const int cellCount=
+      _BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
+
+  for (int blockIndex=0;
+       blockIndex<PIC::DomainBlockDecomposition::nLocalBlocks;
+       blockIndex++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=
+        PIC::DomainBlockDecomposition::BlockTable[blockIndex];
+    PIC::Mesh::cDataBlockAMR *block=node->block;
+    if (block==NULL) continue;
+
+    for (int cellIndex=0;cellIndex<cellCount;cellIndex++) {
+      long int &firstParticle=block->FirstCellParticleTable[cellIndex];
+      long int ptr=firstParticle;
+
+      while (ptr!=-1) {
+        // Save next before removing ptr from the doubly linked source list.
+        // DispatchParticleMover() may delete ptr or reuse all of its link
+        // fields when inserting it into a destination temp list.
+        const long int next=PIC::ParticleBuffer::GetNext(ptr);
+        PIC::ParticleBuffer::byte *particleData=
+            PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+        const double fraction=GetLocalTimeStepRemainderFraction(particleData);
+
+        if (fraction>0.0) {
+          if (!std::isfinite(fraction) || fraction>1.0) {
+            exit(__LINE__,__FILE__,
+                "invalid particle continuation fraction");
+          }
+
+          const int species=PIC::ParticleBuffer::GetI(particleData);
+          const double localTimeStep=block->GetLocalTimeStep(species);
+          if (!(localTimeStep>0.0) || !std::isfinite(localTimeStep)) {
+            exit(__LINE__,__FILE__,
+                "invalid destination timestep for particle continuation");
+          }
+
+          PIC::ParticleBuffer::ExcludeParticleFromList(ptr,firstParticle);
+
+          // Clear before dispatch.  If the particle finishes locally it stays
+          // zero; if it reaches another face the mover replaces it with the
+          // next destination fraction.  This makes the field a precise state
+          // flag rather than a historical value.
+          SetLocalTimeStepRemainderFraction(0.0,particleData);
+          DispatchParticleMover(ptr,fraction*localTimeStep,node);
+          if (LocalTimeStepFluxDiagnostic.Enabled) {
+            LocalTimeStepFluxDiagnostic.ContinuationMovedParticleCount++;
+            if (!PIC::ParticleBuffer::IsParticleAllocated(particleData))
+              LocalTimeStepFluxDiagnostic.ContinuationDeletedParticleCount++;
+          }
+          movedParticleCount++;
+        }
+
+        ptr=next;
+      }
+    }
+  }
+
+  // Continuation movers use the normal temp lists.  Unlike MoveParticles(),
+  // most FirstCellParticleTable entries still contain completed particles, so
+  // concatenate rather than overwrite them.
+  CommitTempParticleMovingListsToFirstCellParticleTable();
+  return movedParticleCount;
+}
+
+//====================================================
+// Count unfinished particles on both locally owned blocks and remote boundary
+// layers.  A particle staged in a boundary-layer block has not yet been sent;
+// including it keeps the collective continuation loop alive for the required
+// next exchange.
+long int PIC::Mover::CountLocalTimeStepContinuationParticles() {
+  long int count=0;
+  const int cellCount=
+      _BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
+
+  for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=
+        (thread==PIC::Mesh::mesh->ThisThread) ?
+        PIC::Mesh::mesh->ParallelNodesDistributionList[thread] :
+        PIC::Mesh::mesh->DomainBoundaryLayerNodesList[thread];
+
+    for (;node!=NULL;node=node->nextNodeThisThread) {
+      PIC::Mesh::cDataBlockAMR *block=node->block;
+      if (block==NULL) continue;
+
+      for (int cellIndex=0;cellIndex<cellCount;cellIndex++) {
+        for (long int ptr=block->FirstCellParticleTable[cellIndex];ptr!=-1;
+             ptr=PIC::ParticleBuffer::GetNext(ptr)) {
+          PIC::ParticleBuffer::byte *particleData=
+              PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+          const double fraction=
+              GetLocalTimeStepRemainderFraction(particleData);
+          if (fraction>0.0) count++;
+          else if (fraction<0.0 || !std::isfinite(fraction)) {
+            exit(__LINE__,__FILE__,
+                "corrupt local-timestep continuation marker");
+          }
+        }
+      }
+    }
+  }
+
+  return count;
+}
+#else
+// Legacy builds do not reserve continuation storage.  These no-op definitions
+// keep the public mover interface linkable without altering any particle data.
+long int PIC::Mover::MoveParticlesWithLocalTimeStepContinuation() {return 0;}
+long int PIC::Mover::CountLocalTimeStepContinuationParticles() {return 0;}
+#endif
+
 
 //====================================================
 //not forces, constant time step, constant particle weight
@@ -1155,6 +1666,20 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
 
   PIC::Mesh::cDataCenterNode *cell;
   bool MovingTimeFinished=false;
+  const int trajectoryEventCallbackCount=
+      (QueryTrajectoryEvent!=NULL ? 1 : 0)+
+      (AdvanceTrajectoryEvent!=NULL ? 1 : 0)+
+      (ProcessTrajectoryEvent!=NULL ? 1 : 0);
+  if (trajectoryEventCallbackCount!=0 && trajectoryEventCallbackCount!=3)
+    exit(__LINE__,__FILE__,
+        "incomplete trajectory-event callback set in first-order mover");
+  const bool trajectoryEventsEnabled=QueryTrajectoryEvent!=NULL;
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+  // Siblings created at a face cannot be linked into cell lists until the
+  // original particle reaches the normal mover epilogue.  Holding their
+  // buffer indices here preserves the existing list-ownership contract.
+  std::vector<long int> localTimeStepClones;
+#endif
 
   static long int nCallCounter=0;
   nCallCounter++;
@@ -1187,6 +1712,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
 #define _UNDEFINED_MIN_DT_INTERSECTION_CODE_UTSNFTT_        0
 #define _BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_       1
 #define _INTERNAL_SPHERE_MIN_DT_INTERSECTION_CODE_UTSNFTT_  2
+#define _TRAJECTORY_EVENT_MIN_DT_INTERSECTION_CODE_UTSNFTT_ 3
 
   int ParticleIntersectionCode=_UNDEFINED_MIN_DT_INTERSECTION_CODE_UTSNFTT_;
 
@@ -1260,11 +1786,27 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
     InternalBoundaryDescriptor_dtMin=NULL;
     ParticleIntersectionCode=_UNDEFINED_MIN_DT_INTERSECTION_CODE_UTSNFTT_;
 
+    // Species may change at an embedded trajectory event.  Re-read it at the
+    // beginning of every segment so force, geometry, local timestep, and a
+    // subsequent block-face transfer all use the committed post-event value.
+    int spec=PIC::ParticleBuffer::GetI(ParticleData);
+    double segmentLocalTimeStep=-1.0;
+    if (trajectoryEventsEnabled) {
+      if (spec<0 || spec>=PIC::nTotalSpecies)
+        exit(__LINE__,__FILE__,
+            "invalid particle species in trajectory-event capable mover");
+      if (startNode==NULL || startNode->block==NULL)
+        exit(__LINE__,__FILE__,
+            "trajectory-event capable mover requires an allocated start block");
+      segmentLocalTimeStep=startNode->block->GetLocalTimeStep(spec);
+      if (!(segmentLocalTimeStep>0.0) ||
+          !std::isfinite(segmentLocalTimeStep))
+        exit(__LINE__,__FILE__,
+            "invalid local timestep in trajectory-event capable mover");
+    }
+
 #if _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE_ == _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE__ON_
     double accl[3],vv;
-    int spec;
-
-    spec=PIC::ParticleBuffer::GetI(ParticleData);
     _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(accl,spec,ptr,x,v,startNode);
 
     a=sqrt(accl[0]*accl[0]+accl[1]*accl[1]+accl[2]*accl[2]);
@@ -1287,37 +1829,18 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
       }
       break;
     case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
-      //nface=0 -> rmin
-      a=v[0]*v[0]+v[1]*v[1]+v[2]*v[2];
-      b=2.0*v[0]*x[0];
-      c=x[0]*x[0]-xminBlock[0]*xminBlock[0];
-      d=b*b-4.0*a*c;
+      // Test each radial face with independent quadratic coefficients.  The
+      // helper uses the full Cartesian state even though the AMR coordinate
+      // is one-dimensional radius.
+      if (GetFirstPositiveSphereIntersection(x,v,xminBlock[0],dtMin,dtTemp))
+        dtMin=dtTemp,nface_dtMin=0,
+        ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,
+        MovingTimeFinished=false;
 
-      if (d>0.0) {
-        if (b<0.0) a*=-1.0,b*=-1.0,c*=-1.0;
-
-        sqrt_d=sqrt(d);
-        dtTemp=-(b+sqrt_d)/(2.0*a);
-        if ((0.0<dtTemp)&&(dtTemp<dtMin)) dtMin=dtTemp,nface_dtMin=0,ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
-
-        dtTemp=-2.0*c/(b+sqrt_d);
-        if ((0.0<dtTemp)&&(dtTemp<dtMin)) dtMin=dtTemp,nface_dtMin=0,ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
-      }
-
-      //nface=1 -> rmax
-      c=x[0]*x[0]-xmaxBlock[0]*xmaxBlock[0];
-      d=b*b-4.0*a*c;
-
-      if (d>0.0) {
-        if (b<0.0) a*=-1.0,b*=-1.0,c*=-1.0;
-
-        sqrt_d=sqrt(d);
-        dtTemp=-(b+sqrt_d)/(2.0*a);
-        if ((0.0<dtTemp)&&(dtTemp<dtMin)) dtMin=dtTemp,nface_dtMin=1,ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
-
-        dtTemp=-2.0*c/(b+sqrt_d);
-        if ((0.0<dtTemp)&&(dtTemp<dtMin)) dtMin=dtTemp,nface_dtMin=1,ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
-      }
+      if (GetFirstPositiveSphereIntersection(x,v,xmaxBlock[0],dtMin,dtTemp))
+        dtMin=dtTemp,nface_dtMin=1,
+        ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,
+        MovingTimeFinished=false;
       break;
     default:
       exit(__LINE__,__FILE__,"Error: the option is not recognized");
@@ -1446,6 +1969,42 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
     }
 #endif
 
+    // Let an application event compete with the already resolved geometric
+    // segment.  Query is a preview and must not update its particle state;
+    // only Advance below commits elapsed time.  Strictly earlier events win.
+    // Exact equality intentionally leaves a face/internal-surface event first,
+    // so flux resampling and MPI ownership transfer still see the pre-event
+    // species.  The copied zero event clock is then processed at the start of
+    // the next continuation.  Equality at an ordinary timestep endpoint has
+    // no competing geometry and therefore remains a real event.
+    if (trajectoryEventsEnabled) {
+      double eventTime=-1.0;
+      const int eventStatus=QueryTrajectoryEvent(ptr,spec,startNode,
+          segmentLocalTimeStep,dtMin,eventTime);
+      if (eventStatus!=TrajectoryEventNone &&
+          eventStatus!=TrajectoryEventPending)
+        exit(__LINE__,__FILE__,
+            "trajectory-event query returned an unsupported status");
+      if (eventStatus==TrajectoryEventPending) {
+        const double tolerance=64.0*std::numeric_limits<double>::epsilon()*
+            std::max(std::fabs(dtMin),std::fabs(segmentLocalTimeStep));
+        if (!std::isfinite(eventTime) || eventTime<0.0 ||
+            eventTime>dtMin+tolerance)
+          exit(__LINE__,__FILE__,
+              "trajectory-event query returned a time outside the segment");
+        if (eventTime>dtMin) eventTime=dtMin;
+        if (eventTime<dtMin ||
+            (eventTime==dtMin &&
+             ParticleIntersectionCode==
+                 _UNDEFINED_MIN_DT_INTERSECTION_CODE_UTSNFTT_)) {
+          dtMin=eventTime;
+          ParticleIntersectionCode=
+              _TRAJECTORY_EVENT_MIN_DT_INTERSECTION_CODE_UTSNFTT_;
+          MovingTimeFinished=false;
+        }
+      }
+    }
+
     //advance the particle's position
     for (idim=0;idim<3;idim++) {
 
@@ -1458,11 +2017,80 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
       v[0]+=dtMin*accl[0],v[1]+=dtMin*accl[1],v[2]+=dtMin*accl[2];
     }
 
+    // Commit the event clock before any face transfer clones the particle or
+    // an ownership exchange serializes it.  A zero-time due event performs no
+    // clock advance; ProcessTrajectoryEvent below must clear that event.
+    if (trajectoryEventsEnabled && dtMin>0.0)
+      AdvanceTrajectoryEvent(ptr,spec,startNode,segmentLocalTimeStep,dtMin);
+
     //adjust the particle moving time
     dtTotal-=dtMin;
 
+    if (trajectoryEventsEnabled && dtTotal<0.0) {
+      const double tolerance=64.0*std::numeric_limits<double>::epsilon()*
+          std::max(std::fabs(dtMin),std::fabs(segmentLocalTimeStep));
+      if (dtTotal < -tolerance)
+        exit(__LINE__,__FILE__,
+            "trajectory event advanced beyond the remaining mover interval");
+      dtTotal=0.0;
+    }
+
     //interaction with the faces of the block and internal surfaces
-    if (ParticleIntersectionCode==_INTERNAL_SPHERE_MIN_DT_INTERSECTION_CODE_UTSNFTT_) {
+    if (ParticleIntersectionCode==
+        _TRAJECTORY_EVENT_MIN_DT_INTERSECTION_CODE_UTSNFTT_) {
+      const int eventResult=ProcessTrajectoryEvent(ptr,x,v,spec,startNode,
+          segmentLocalTimeStep,dtTotal);
+      if (eventResult==TrajectoryEventDelete) {
+        // The callback reports physics only.  The mover remains the sole owner
+        // of particle-buffer deletion and list insertion, matching every
+        // surface/boundary path in this routine.
+        if (!PIC::ParticleBuffer::IsParticleAllocated(ParticleData))
+          exit(__LINE__,__FILE__,
+              "trajectory-event delete callback released the particle");
+        PIC::ParticleBuffer::DeleteParticle(ptr);
+        return _PARTICLE_LEFT_THE_DOMAIN_;
+      }
+      if (eventResult!=TrajectoryEventContinue)
+        exit(__LINE__,__FILE__,
+            "trajectory-event processor returned an unsupported result");
+      if (!PIC::ParticleBuffer::IsParticleAllocated(ParticleData) ||
+          spec<0 || spec>=PIC::nTotalSpecies ||
+          PIC::ParticleBuffer::GetI(ParticleData)!=spec ||
+          !std::isfinite(dtTotal) || dtTotal<0.0)
+        exit(__LINE__,__FILE__,
+            "trajectory-event processor committed an invalid particle state");
+      for (int dimension=0;dimension<3;dimension++)
+        if (!std::isfinite(x[dimension]) || !std::isfinite(v[dimension]))
+          exit(__LINE__,__FILE__,
+              "trajectory-event processor committed nonfinite phase space");
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      {
+        const double correction=
+            PIC::ParticleBuffer::GetIndividualStatWeightCorrection(
+                ParticleData);
+        if (!(correction>0.0) || !std::isfinite(correction))
+          exit(__LINE__,__FILE__,
+              "trajectory-event processor committed an invalid correction");
+      }
+#endif
+
+      // A due-zero event must be consumed exactly once.  Re-querying a zero
+      // segment is side-effect-free and catches a callback that forgot to
+      // clear its marker before the mover could enter an infinite loop.
+      double repeatedEventTime=-1.0;
+      const int repeatedStatus=QueryTrajectoryEvent(ptr,spec,startNode,
+          startNode->block->GetLocalTimeStep(spec),0.0,repeatedEventTime);
+      if (repeatedStatus!=TrajectoryEventNone)
+        exit(__LINE__,__FILE__,
+            "trajectory-event processor did not clear the due event");
+
+      // Process may convert from a parent to a product timestep.  It owns the
+      // corresponding rescaling of dtTotal; the next loop recomputes forces,
+      // geometry, and local timestep from the new species.  With no interval
+      // left, normal epilogue insertion is sufficient.
+      MovingTimeFinished=(dtTotal==0.0);
+    }
+    else if (ParticleIntersectionCode==_INTERNAL_SPHERE_MIN_DT_INTERSECTION_CODE_UTSNFTT_) {
       int code;
 
       FirstBoundaryFlag=true;
@@ -1517,7 +2145,13 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
       case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
       {
         double rProbe[3]={0.0,0.0,0.0};
-        rProbe[0]=sqrt(xProbe[0]*xProbe[0]+xProbe[1]*xProbe[1]+xProbe[2]*xProbe[2]);
+        // The AMR coordinate in DIM1 spherical symmetry is radius, not the
+        // Cartesian x direction.  Probe radially across the face; adding the
+        // offset only to Cartesian x can remain on the old side for a
+        // trajectory with a large transverse component.
+        rProbe[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2])+
+            iNeibNode[neibNodeDirection]*
+            (startNode->xmax[0]-startNode->xmin[0])/100.0;
         newNode=PIC::Mesh::mesh->findTreeNode(rProbe,startNode);
       }
       break;
@@ -1577,6 +2211,23 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
         break;
       }
 
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+      // Stop at every block interface.  PrepareLocalTimeStepFaceTransfer()
+      // rescales the unused interval and performs split/roulette before any
+      // particle enters the destination list.  The continuation manager will
+      // resume it after local list commit or MPI ownership transfer, avoiding
+      // traversal beyond the one allocated remote boundary layer.
+#if DIM == 1
+      if (_AMR_SYMMETRY_MODE_==_AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_)
+        NormalizeSphericalParticleState(x,v);
+#endif
+      if (!PrepareLocalTimeStepFaceTransfer(ptr,spec,startNode,newNode,x,v,
+              dtTotal,localTimeStepClones)) {
+        return _PARTICLE_LEFT_THE_DOMAIN_;
+      }
+      MovingTimeFinished=true;
+#endif
+
       //adjust the value of 'startNode'
       startNode=newNode;
     }
@@ -1616,7 +2267,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
     if (r>1.0E-20) {
       double xfinal[3];
 
-      xfinal[0]=x[0]/r,xfinal[1]=x[1]/r,xfinal[2]=x[1]/r;
+      xfinal[0]=x[0]/r,xfinal[1]=x[1]/r,xfinal[2]=x[2]/r;
       l=sqrt(pow(xfinal[0],2)+pow(xfinal[1],2));
 
       if (l>1.0E-20) {
@@ -1691,6 +2342,19 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
 
   PIC::ParticleBuffer::SetV(v,ParticleData);
   PIC::ParticleBuffer::SetX(x,ParticleData);
+
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+  // Insert cloned interface particles through the same epilogue as an
+  // ordinary particle.  A zero flight interval performs only symmetry
+  // normalization and list insertion; the copied positive remainder marker
+  // is left untouched for the continuation sweep.
+  for (std::vector<long int>::const_iterator clone=
+           localTimeStepClones.begin();
+       clone!=localTimeStepClones.end();++clone) {
+    UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection(
+        *clone,0.0,startNode,false);
+  }
+#endif
 
 
 
@@ -1897,7 +2561,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
     if (r>1.0E-20) {
       double xfinal[3];
 
-      xfinal[0]=x[0]/r,xfinal[1]=x[1]/r,xfinal[2]=x[1]/r;
+      xfinal[0]=x[0]/r,xfinal[1]=x[1]/r,xfinal[2]=x[2]/r;
       l=sqrt(pow(xfinal[0],2)+pow(xfinal[1],2));
 
       if (l>1.0E-20) {
@@ -2222,7 +2886,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
   double dtMin=-1.0,dtTemp,dtMinInit2,dtMinInit;
   PIC::ParticleBuffer::byte *ParticleData;
   double vInit[3],xInit[3]={0.0,0.0,0.0},vMiddle[3],xMiddle[3],vFinal[3],xFinal[3],xminBlock[3],xmaxBlock[3];
-  int idim;
+  int idim,nface_dtMin=-1;
   //  int iNeibNode[3],neibNodeDirection;
 
   long int LocalCellNumber;
@@ -2231,6 +2895,11 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
   PIC::Mesh::cDataCenterNode *cell;
   bool MovingTimeFinished=false;
   const double requestedFlightTime=dtTotal;
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+  // As in the first-order tracer, clones are held outside all particle lists
+  // until the original reaches the standard insertion epilogue.
+  std::vector<long int> localTimeStepClones;
+#endif
   double movingSurfacePosition[3]={0.0,0.0,0.0};
   double movingSurfaceNormal[3]={0.0,0.0,0.0};
   double movingSurfaceVelocity[3]={0.0,0.0,0.0};
@@ -2607,7 +3276,23 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
 
     _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(acclMiddle,spec,ptr,xMiddle,vMiddle,middleNode);
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
-    exit(__LINE__,__FILE__,"not implemented");
+    {
+      // DIM1 stores radius in the AMR tree while particle position and
+      // velocity remain three-component Cartesian vectors.  Locate the
+      // predictor midpoint using its radius and evaluate acceleration with
+      // the original Cartesian state.  A face-resolved step reaches at most
+      // the allocated neighbor in the single-face regression cases.
+      double radialMiddle[3]={
+          std::sqrt(xMiddle[0]*xMiddle[0]+xMiddle[1]*xMiddle[1]+
+              xMiddle[2]*xMiddle[2]),0.0,0.0};
+      middleNode=PIC::Mesh::mesh->findTreeNode(radialMiddle,startNode);
+      if (middleNode==NULL || middleNode->block==NULL)
+        exit(__LINE__,__FILE__,
+            "second-order spherical predictor midpoint is outside the allocated mesh");
+
+      _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(
+          acclMiddle,spec,ptr,xMiddle,vMiddle,middleNode);
+    }
 #else
     exit(__LINE__,__FILE__,"Error: the option is not recognized");
 #endif
@@ -2615,53 +3300,40 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
 
 
 
-    //Calculate the time of flight to the nearest block's face
-#if _PIC__PARTICLE_MOVER__CHECK_BLOCK_FACE_INTERSECTION__MODE_ == _PIC_MODE_ON_
+    // Calculate the time of flight to the nearest block face.  Legacy
+    // second-order builds may skip this work and locate only the final block.
+    // Local-timestep flux resampling cannot: it must stop at every interface
+    // before changing timestep or statistical multiplicity.
+#if (_PIC__PARTICLE_MOVER__CHECK_BLOCK_FACE_INTERSECTION__MODE_ == _PIC_MODE_ON_) || \
+    (_PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_)
 
 #if DIM == 1
 
     switch(_AMR_SYMMETRY_MODE_) {
     case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
-      if (fabs(v[0])>0.0) {
-        dtTemp=(xminBlock[0]-x[0])/v[0];
+      if (fabs(vMiddle[0])>0.0) {
+        dtTemp=(xminBlock[0]-xInit[0])/vMiddle[0];
         if ((0.0<dtTemp)&&(dtTemp<dtMin)) dtMin=dtTemp,nface_dtMin=0,ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
 
-        dtTemp=(xmaxBlock[0]-x[0])/v[0];
+        dtTemp=(xmaxBlock[0]-xInit[0])/vMiddle[0];
         if ((0.0<dtTemp)&&(dtTemp<dtMin)) dtMin=dtTemp,nface_dtMin=1,ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
       }
       break;
     case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
-      //nface=0 -> rmin
-      a=v[0]*v[0]+v[1]*v[1]+v[2]*v[2];
-      b=2.0*v[0]*x[0];
-      c=x[0]*x[0]-xminBlock[0]*xminBlock[0];
-      d=b*b-4.0*a*c;
+      // The midpoint velocity defines the second-order trajectory segment.
+      // Recompute the radial quadratic for each face and retain the full
+      // Cartesian position so inward and transverse paths are symmetric.
+      if (GetFirstPositiveSphereIntersection(xInit,vMiddle,xminBlock[0],
+              dtMin,dtTemp))
+        dtMin=dtTemp,nface_dtMin=0,
+        ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,
+        MovingTimeFinished=false;
 
-      if (d>0.0) {
-        if (b<0.0) a*=-1.0,b*=-1.0,c*=-1.0;
-
-        sqrt_d=sqrt(d);
-        dtTemp=-(b+sqrt_d)/(2.0*a);
-        if ((0.0<dtTemp)&&(dtTemp<dtMin)) dtMin=dtTemp,nface_dtMin=0,ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
-
-        dtTemp=-2.0*c/(b+sqrt_d);
-        if ((0.0<dtTemp)&&(dtTemp<dtMin)) dtMin=dtTemp,nface_dtMin=0,ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
-      }
-
-      //nface=1 -> rmax
-      c=x[0]*x[0]-xmaxBlock[0]*xmaxBlock[0];
-      d=b*b-4.0*a*c;
-
-      if (d>0.0) {
-        if (b<0.0) a*=-1.0,b*=-1.0,c*=-1.0;
-
-        sqrt_d=sqrt(d);
-        dtTemp=-(b+sqrt_d)/(2.0*a);
-        if ((0.0<dtTemp)&&(dtTemp<dtMin)) dtMin=dtTemp,nface_dtMin=1,ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
-
-        dtTemp=-2.0*c/(b+sqrt_d);
-        if ((0.0<dtTemp)&&(dtTemp<dtMin)) dtMin=dtTemp,nface_dtMin=1,ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
-      }
+      if (GetFirstPositiveSphereIntersection(xInit,vMiddle,xmaxBlock[0],
+              dtMin,dtTemp))
+        dtMin=dtTemp,nface_dtMin=1,
+        ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,
+        MovingTimeFinished=false;
       break;
     default: 
       exit(__LINE__,__FILE__,"Error: the option is not recognized");
@@ -3189,7 +3861,44 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
         }
         break;
       case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
-        exit(__LINE__,__FILE__,"Error: not implemented");
+      {
+        // xFinal is the Cartesian intersection with a spherical radial block
+        // face.  Probe across that face in the one-dimensional AMR radial
+        // coordinate, then nudge the Cartesian point just inside the selected
+        // neighbor.  This is the second-order counterpart of the established
+        // first-order spherical trace path.
+        const double radius=std::sqrt(xFinal[0]*xFinal[0]+
+            xFinal[1]*xFinal[1]+xFinal[2]*xFinal[2]);
+        const double direction=(nface_dtMin==0) ? -1.0 : 1.0;
+        double radialProbe[3]={radius+direction*
+            (startNode->xmax[0]-startNode->xmin[0])/100.0,0.0,0.0};
+        newNode=PIC::Mesh::mesh->findTreeNode(radialProbe,startNode);
+
+        if (newNode==NULL) {
+          PIC::ParticleBuffer::DeleteParticle(ptr);
+          return _PARTICLE_LEFT_THE_DOMAIN_;
+        }
+        if (newNode->IsUsedInCalculationFlag==false) {
+          PIC::ParticleBuffer::DeleteParticle(ptr);
+          return _PARTICLE_LEFT_THE_DOMAIN_;
+        }
+        if (newNode->block==NULL)
+          exit(__LINE__,__FILE__,
+              "second-order spherical face neighbor is not allocated");
+
+        double destinationRadius=radius;
+        if (destinationRadius<=newNode->xmin[0])
+          destinationRadius=newNode->xmin[0]+PIC::Mesh::mesh->EPS;
+        if (destinationRadius>=newNode->xmax[0])
+          destinationRadius=newNode->xmax[0]-PIC::Mesh::mesh->EPS;
+        if (!(radius>0.0) || !(destinationRadius>0.0))
+          exit(__LINE__,__FILE__,
+              "invalid radius at second-order spherical block face");
+
+        const double radialScale=destinationRadius/radius;
+        for (int dimension=0;dimension<3;dimension++)
+          xFinal[dimension]*=radialScale;
+      }
         break;
       default:
         exit(__LINE__,__FILE__,"Error: the option is nor defined");
@@ -3197,9 +3906,28 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
       }
 
 
-      //reserve the place for particle's cloning:
-      //if a particle crossed a face, the time step and particle weight are changed
-      //adjust the value of the dtLeft to match the time step for the species 'spec'
+      // A local-timestep transfer either uses the new constant-weight
+      // split/roulette algorithm or, in legacy builds, the historical
+      // individual weight-correction formula.
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+      if (newNode!=NULL) {
+#if DIM == 1
+        if (_AMR_SYMMETRY_MODE_==_AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_)
+          NormalizeSphericalParticleState(xFinal,vFinal);
+#endif
+        if (!PrepareLocalTimeStepFaceTransfer(ptr,spec,startNode,newNode,
+                xFinal,vFinal,dtTotal,localTimeStepClones)) {
+          return _PARTICLE_LEFT_THE_DOMAIN_;
+        }
+
+        // Finish this mover invocation at the face.  The continuation sweep
+        // resumes the preserved fractional interval after list commit/MPI
+        // exchange, preventing access beyond the remote ghost-block layer.
+        MovingTimeFinished=true;
+      }
+#else
+      // Legacy local-weight path: change the individual correction and keep
+      // integrating through subsequent blocks in this same mover call.
 #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
       //do nothing
 #elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
@@ -3217,6 +3945,7 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
 
 #else
       exit(__LINE__,__FILE__,"Error: option is not recognized");
+#endif
 #endif
 
     }
@@ -3250,7 +3979,15 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
         newNode=PIC::Mesh::mesh->findTreeNode(xFinal,middleNode);
         break;
       case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
-        exit(__LINE__,__FILE__,"not implemented");
+      {
+        // The DIM1 AMR tree is indexed by radius although xFinal is a
+        // Cartesian trajectory state.  The no-intersection path must use the
+        // same radial lookup as the block-face and internal-sphere paths.
+        double radialPosition[3]={
+            std::sqrt(xFinal[0]*xFinal[0]+xFinal[1]*xFinal[1]+
+                xFinal[2]*xFinal[2]),0.0,0.0};
+        newNode=PIC::Mesh::mesh->findTreeNode(radialPosition,middleNode);
+      }
         break;
       default:
         exit(__LINE__,__FILE__,"Error: the option is nor defined");
@@ -3615,7 +4352,7 @@ if (_PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIA
     if (r>1.0E-20) {
       double xfinal[3];
 
-      xfinal[0]=xFinal[0]/r,xfinal[1]=xFinal[1]/r,xfinal[2]=xFinal[1]/r;
+      xfinal[0]=xFinal[0]/r,xfinal[1]=xFinal[1]/r,xfinal[2]=xFinal[2]/r;
       l=sqrt(pow(xfinal[0],2)+pow(xfinal[1],2));
 
       if (l>1.0E-20) {
@@ -3694,6 +4431,18 @@ if (_PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIA
 
 #else
 #error The option is unknown
+#endif
+
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+  // A zero-duration call inserts each sibling through the same symmetry,
+  // cut-cell, tracker, and list code as the original.  Its copied positive
+  // remainder fraction is deliberately not cleared here.
+  for (std::vector<long int>::const_iterator clone=
+           localTimeStepClones.begin();
+       clone!=localTimeStepClones.end();++clone) {
+    UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection_SecondOrder(
+        *clone,0.0,startNode,false,NULL);
+  }
 #endif
 
   //save the trajectory point
@@ -4467,7 +5216,10 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
           // full velocity vector changes tangential motion and can create
           // nonphysical scattering, especially for grazing impacts.
           double blockScale = 0.0;
-          for (idim = 0; idim < 3; idim++) {
+          // Node bounds are stored with _MESH_DIMENSION_ entries.  Velocities
+          // and cut-face normals are three-component vectors, so their loops
+          // below intentionally remain three-dimensional.
+          for (idim = 0; idim < _MESH_DIMENSION_; idim++) {
               double s = startNode->xmax[idim] - startNode->xmin[idim];
               if (s > blockScale) blockScale = s;
           }

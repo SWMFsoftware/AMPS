@@ -531,10 +531,14 @@ def main() -> int:
                 "--coverage", "--require-complete-coverage"],
                 repo, timeout=timeout)
             passed = coverage.returncode == 0
-            results[coverage_id] = case(coverage_id, "PASS" if passed else "FAIL",
+            status = "PASS" if passed else (
+                "FAIL" if coverage.returncode == 1 else "ERROR")
+            results[coverage_id] = case(coverage_id, status,
                 "all inventory components are covered/exempt" if passed else
-                "strict coverage remains open (exit {}); see retained inventory output".format(
-                    coverage.returncode))
+                ("strict coverage remains open (exit 1); see retained inventory output"
+                 if status == "FAIL" else
+                 "strict coverage setup/governance failed (exit {}); see retained output".format(
+                     coverage.returncode)))
             transcripts.append("===== {} =====\n{}".format(
                 coverage_id, coverage.stdout or ""))
 

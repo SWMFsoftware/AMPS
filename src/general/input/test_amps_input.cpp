@@ -203,6 +203,74 @@ Outcome CanonicalAndOwnership() {
   return Pass("canonical round trip, flattening, unknown-block policy");
 }
 
+// INP-05: named cases are a generic overlay selected explicitly by the
+// application CLI. Common values remain visible, selected assignments and
+// nested sections replace their base counterparts, and every ambiguous or
+// inapplicable selector is diagnosed rather than guessed.
+Outcome CaseSelection() {
+  const std::string text =
+      "#begin application: comet\n"
+      "  common = retained\n"
+      "  changed = base\n"
+      "  #begin observer: mars\n    cadence = 10\n  #end observer\n"
+      "  #begin case: 1\n"
+      "    changed = one\n"
+      "    case_only = first\n"
+      "    #begin observer: mars\n      cadence = 20\n    #end observer\n"
+      "  #end case\n"
+      "  #begin case: 2\n    changed = two\n  #end case\n"
+      "#end application\n";
+  In::Document document;
+  In::Status status = In::ParseText(text, "cases.in", ".", &document);
+  if (!status.ok()) return Fail(status.message);
+  const In::Block* application =
+      document.root.FindBlock("application", "comet");
+  if (application == nullptr) return Fail("missing application fixture");
+
+  In::Block selected;
+  status = In::ResolveCase(*application, "1", &selected);
+  if (!status.ok()) return Fail(status.message);
+  if (!selected.BlocksOfKind("case").empty())
+    return Fail("resolved block retained case sections");
+  if (!selected.Find("common") || selected.Find("common")->value != "retained" ||
+      !selected.Find("changed") || selected.Find("changed")->value != "one" ||
+      selected.Find("changed")->where.line != 8 ||
+      !selected.Find("case_only") || selected.Find("case_only")->value != "first")
+    return Fail("case assignment overlay or source location");
+  const In::Block* observer = selected.FindBlock("observer", "mars");
+  if (!observer || !observer->Find("cadence") ||
+      observer->Find("cadence")->value != "20")
+    return Fail("case child-block overlay");
+
+  status = In::ResolveCase(*application, std::string(), &selected);
+  if (status.ok() || status.message.find("explicit case selector") == std::string::npos)
+    return Fail("case-bearing input accepted an implicit selection");
+  status = In::ResolveCase(*application, "missing", &selected);
+  if (status.ok() || status.message.find("available: 1, 2") == std::string::npos)
+    return Fail("unknown case did not list available cases");
+
+  In::Document noCases;
+  status = In::ParseText("#begin application: comet\nx = 1\n#end application\n",
+                         "plain.in", ".", &noCases);
+  if (!status.ok()) return Fail(status.message);
+  status = In::ResolveCase(*noCases.root.FindBlock("application", "comet"),
+                           "1", &selected);
+  if (status.ok() || status.message.find("contains no case sections") == std::string::npos)
+    return Fail("selector was accepted for a case-free block");
+
+  In::Document unnamed;
+  status = In::ParseText("#begin application: comet\n#begin case\n"
+                         "x = 1\n#end case\n#end application\n",
+                         "unnamed.in", ".", &unnamed);
+  if (!status.ok()) return Fail(status.message);
+  status = In::ResolveCase(*unnamed.root.FindBlock("application", "comet"),
+                           "1", &selected);
+  if (status.ok() || status.message.find("requires a name") == std::string::npos)
+    return Fail("unnamed case was accepted");
+
+  return Pass("explicit generic case overlay and selector diagnostics");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -220,6 +288,8 @@ int main(int argc, char** argv) {
        Includes},
       {"INP-04", "canonical round trip, flattening, and ownership policy",
        CanonicalAndOwnership},
+      {"INP-05", "explicit named-case overlays and selector diagnostics",
+       CaseSelection},
   };
 
   // Keep this dependency-light program's selection contract aligned with the

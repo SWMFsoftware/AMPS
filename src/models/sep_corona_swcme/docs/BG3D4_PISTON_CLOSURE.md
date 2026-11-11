@@ -1,5 +1,13 @@
 # BG3D-4 replacement production closure: per-ray Lagrangian piston
 
+> **2026-11-10:** the user selected retaining the 3-D ambient and expanding
+> conservative cross-ray transport. See
+> [CONSERVATIVE_CROSS_RAY_TRANSPORT.md](CONSERVATIVE_CROSS_RAY_TRANSPORT.md).
+> The legacy radial closure and its frozen failures remain preserved below.
+> New bounded kernel PASS results do not qualify the replacement regional
+> provider or change `per-ray-lagrangian-piston-v1` semantics.
+
+
 Status: **selected production closure under qualification; contact/ray
 identity, planar and spherical gas/MHD references, projected ambient sources,
 moving Parker boundaries, transactional ambient append and contact-driven

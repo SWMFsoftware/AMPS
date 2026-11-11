@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "observable": "MAVEN/IUVS radial brightness",
+  "distance_unit": "1e5 km",
+  "brightness_unit": "kR",
+  "source_archive": "srcHartley2/tests/data/i3/Archive.zip",
+  "source_archive_sha256": "344d33e69c913a5e76d57ddb7c92c1a8d1e52a92a03c06f2f5849f70e45597be",
+  "case_table": "srcHartley2/i3/reference/i3_cases.csv",
+  "case_table_sha256": "a322b317f74a522b8911f51e5724a3e41d5e623f3ad218106fc3829bde2d2363",
+  "anchor_table": "srcHartley2/visualization/references/i3_brightness_MAVEN/digitization_pixels.csv",
+  "anchor_table_sha256": "213453ca568c2b2ea3daf511e833ccc51da4bcf24cb3f7c9956825713c87940d",
+  "output_table": "maven_iuvs_brightness.csv",
+  "output_table_sha256": "a743d89ed8e1058c82a53290abac6c1e158e5d8e23d438ba1faefc2f603ea693",
+  "axis_limits": {
+    "distance_1e5_km": [
+      0.2,
+      20.0
+    ],
+    "brightness_kR": [
+      0.09,
+      20.0
+    ],
+    "scales": [
+      "log10",
+      "log10"
+    ]
+  },
+  "distance_definition": "point_index times case resolution_1e5_km; bounds are +/- one half resolution",
+  "vertical_uncertainty_policy": "Only visibly resolved vertical bars are tabulated; blank fields mean that no separate vertical uncertainty could be resolved from the raster.",
+  "panels": [
+    {
+      "member": "H_lyA_case1.png",
+      "payload_sha256": "f775436ec780e005cd1ce20e05a52ab6cf37142671087b90cfa678cecbdebf46",
+      "width_pixels": 568,
+      "height_pixels": 432,
+      "plot_box_pixels": [
+        89,
+        543,
+        19,
+        342
+      ]
+    },
+    {
+      "member": "OH_brightness_case1.png",
+      "payload_sha256": "0b0374722f3853217849bba9e83ae30f01dd7e9486a0ec3478c81702cd450027",
+      "width_pixels": 586,
+      "height_pixels": 448,
+      "plot_box_pixels": [
+        95,
+        559,
+        24,
+        355
+      ]
+    },
+    {
+      "member": "H_lyA_case2.png",
+      "payload_sha256": "35460661a29c81c0d13b6bd60504357c6834ed74939184d4d17b4d3fe2b3026e",
+      "width_pixels": 556,
+      "height_pixels": 432,
+      "plot_box_pixels": [
+        88,
+        527,
+        24,
+        338
+      ]
+    },
+    {
+      "member": "OH_brightness_case2.png",
+      "payload_sha256": "c075e07f0cb206f1d54e0ce051a1df1f61052ec47d10a125991c7311d49da2fb",
+      "width_pixels": 580,
+      "height_pixels": 444,
+      "plot_box_pixels": [
+        95,
+        548,
+        28,
+        351
+      ]
+    },
+    {
+      "member": "H_lyA_case3.png",
+      "payload_sha256": "2519e915b444d074a7c451b2f7911e3c5027dd80217e56d2d959b7d326e19c57",
+      "width_pixels": 556,
+      "height_pixels": 426,
+      "plot_box_pixels": [
+        87,
+        532,
+        19,
+        336
+      ]
+    },
+    {
+      "member": "OH_brightness_case3.png",
+      "payload_sha256": "92b94a839e17fc60c4bd6a01cd50a541422e0272ee9b044c55c4f633f7b4bdaf",
+      "width_pixels": 550,
+      "height_pixels": 426,
+      "plot_box_pixels": [
+        91,
+        527,
+        26,
+        338
+      ]
+    },
+    {
+      "member": "H_lyA_case4.png",
+      "payload_sha256": "2f72a4c30abf569029195b435ac6569192d9e3c1caf6e9dcd64f1cb140c1817d",
+      "width_pixels": 582,
+      "height_pixels": 444,
+      "plot_box_pixels": [
+        93,
+        552,
+        21,
+        349
+      ]
+    },
+    {
+      "member": "OH_brightness_case4.png",
+      "payload_sha256": "476fb573bc43ed33706e4ce57ec9f3bd31607324e365a60a48f2ab3ad3321fc0",
+      "width_pixels": 580,
+      "height_pixels": 448,
+      "plot_box_pixels": [
+        92,
+        554,
+        23,
+        352
+      ]
+    },
+    {
+      "member": "H_lyA_case5.png",
+      "payload_sha256": "b909ed416db7f22107b42fb0f67f8f05f40ea897b246127c73a9ba72f96d4a24",
+      "width_pixels": 582,
+      "height_pixels": 448,
+      "plot_box_pixels": [
+        94,
+        559,
+        19,
+        352
+      ]
+    },
+    {
+      "member": "OH_brightness_case5.png",
+      "payload_sha256": "6b76213506551d295861e34c28d6126b7877d906c16ab96789b7e439ef3cf008",
+      "width_pixels": 584,
+      "height_pixels": 448,
+      "plot_box_pixels": [
+        94,
+        560,
+        23,
+        355
+      ]
+    },
+    {
+      "member": "H_lyA_case6.png",
+      "payload_sha256": "aa6cd289816c50f4ea1a00197c8b5a4187140d4c1d5fb8fcb5d32122d7458f0a",
+      "width_pixels": 582,
+      "height_pixels": 450,
+      "plot_box_pixels": [
+        91,
+        558,
+        20,
+        353
+      ]
+    },
+    {
+      "member": "OH_brightness_case6.png",
+      "payload_sha256": "603488da17d74418d9683752154a863e3fac720f43bed76a17dfeb19aa34b37a",
+      "width_pixels": 586,
+      "height_pixels": 448,
+      "plot_box_pixels": [
+        91,
+        555,
+        25,
+        356
+      ]
+    }
+  ],
+  "row_count": 87
+}

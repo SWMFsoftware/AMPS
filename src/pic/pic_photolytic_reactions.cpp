@@ -7,7 +7,23 @@
 
 #include "pic.h"
 
+#include <climits>
+
 double *PIC::ChemicalReactions::PhotolyticReactions::ConstantTotalLifeTime=NULL;
+
+// These hooks are deliberately inactive by default.  They provide a generic
+// capacity-safe execution point without imposing comet-specific population
+// control or MPI collectives on other AMPS applications.
+PIC::ChemicalReactions::PhotolyticReactions::fBeginBatchedModel
+    PIC::ChemicalReactions::PhotolyticReactions::BeginBatchedModel=NULL;
+PIC::ChemicalReactions::PhotolyticReactions::fIsBatchedParticleEligible
+    PIC::ChemicalReactions::PhotolyticReactions::IsBatchedParticleEligible=NULL;
+PIC::ChemicalReactions::PhotolyticReactions::fGetBatchedParticleLimit
+    PIC::ChemicalReactions::PhotolyticReactions::GetBatchedParticleLimit=NULL;
+PIC::ChemicalReactions::PhotolyticReactions::fBatchedReactionProcessor
+    PIC::ChemicalReactions::PhotolyticReactions::BatchedReactionProcessor=NULL;
+PIC::ChemicalReactions::PhotolyticReactions::fFinishBatchedPass
+    PIC::ChemicalReactions::PhotolyticReactions::FinishBatchedPass=NULL;
 
 void PIC::ChemicalReactions::PhotolyticReactions::Init() {
   //only one particle transformation model can be used
@@ -150,12 +166,34 @@ void PIC::ChemicalReactions::PhotolyticReactions::ExecutePhotochemicalModel() {
   long int oldFirstCellParticle,newFirstCellParticle,p,pnext;
 
 
+  const bool batched=(BeginBatchedModel!=NULL ||
+      IsBatchedParticleEligible!=NULL || GetBatchedParticleLimit!=NULL ||
+      BatchedReactionProcessor!=NULL || FinishBatchedPass!=NULL);
+  if (batched && (BeginBatchedModel==NULL ||
+      IsBatchedParticleEligible==NULL || GetBatchedParticleLimit==NULL ||
+      BatchedReactionProcessor==NULL || FinishBatchedPass==NULL))
+    exit(__LINE__,__FILE__,
+        "incomplete photochemical transactional-batch callback set");
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  if (batched)
+    exit(__LINE__,__FILE__,
+        "transactional photochemistry is not yet implemented for hybrid OpenMP mode");
+#endif
+
+  if (batched) BeginBatchedModel();
+  long long globalRemaining=0;
+  int pass=0;
+  do {
+    const long int batchLimit=batched ? GetBatchedParticleLimit() : LONG_MAX;
+    if (batchLimit<0)
+      exit(__LINE__,__FILE__,"negative photochemical particle-batch limit");
+    long int attemptedParents=0,remainingParents=0;
+
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #pragma omp parallel for schedule(dynamic,1) default (none)  \
     private (k,j,i,node,oldFirstCellParticle,newFirstCellParticle,p,pnext) \
-    shared (DomainBlockDecomposition::nLocalBlocks,PIC::DomainBlockDecomposition::BlockTable)
+    shared (DomainBlockDecomposition::nLocalBlocks,PIC::DomainBlockDecomposition::BlockTable,batched,batchLimit,attemptedParents,remainingParents)
 #endif
-
 for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++)  for (i=0;i<_BLOCK_CELLS_X_;i++) {
     double StartTime=MPI_Wtime();
 
@@ -169,7 +207,27 @@ for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNo
 
          while (p!=-1) {
            pnext=PIC::ParticleBuffer::GetNext(p);
-           _PIC_PHOTOLYTIC_REACTIONS__REACTION_PROCESSOR_(p,newFirstCellParticle,node);
+           if (!batched) {
+             _PIC_PHOTOLYTIC_REACTIONS__REACTION_PROCESSOR_(p,newFirstCellParticle,node);
+           }
+           else if (!IsBatchedParticleEligible(p)) {
+             // A completed parent or a daughter created during an earlier
+             // pass must remain in the rebuilt cell list but must not react a
+             // second time in this outer AMPS iteration.
+             PhotolyticReactionProcessor_default(p,newFirstCellParticle,node);
+           }
+           else if (attemptedParents<batchLimit) {
+             attemptedParents++;
+             if (!BatchedReactionProcessor(p,newFirstCellParticle,node))
+               remainingParents++;
+           }
+           else {
+             // The application selected a conservative allocation budget for
+             // this pass.  Leave later eligible parents untouched; all ranks
+             // meet in FinishBatchedPass before any of them resume.
+             PhotolyticReactionProcessor_default(p,newFirstCellParticle,node);
+             remainingParents++;
+           }
            p=pnext;
          }
 
@@ -182,4 +240,16 @@ for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNo
 
     }
   }
+
+    if (batched) {
+      FinishBatchedPass(attemptedParents,remainingParents);
+      long long localRemaining=remainingParents;
+      MPI_Allreduce(&localRemaining,&globalRemaining,1,MPI_LONG_LONG,MPI_SUM,
+          MPI_GLOBAL_COMMUNICATOR);
+      if (++pass>1000000)
+        exit(__LINE__,__FILE__,
+            "transactional photochemistry did not drain its eligible-parent list");
+    }
+    else globalRemaining=0;
+  } while (globalRemaining!=0);
 }

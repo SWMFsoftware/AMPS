@@ -1,0 +1,37 @@
+{
+  "schema": "amps.resonance_fluorescence.reference_data.v1",
+  "retrieval_snapshot_utc": "2026-11-07",
+  "models": {
+    "H_LYA_IKL2020": {
+      "citation": "Kowalska-Leszczynska et al. 2020, ApJS 247:62",
+      "doi": "https://doi.org/10.3847/1538-4365/ab7b77",
+      "source_url": "https://users.cbk.waw.pl/~ikowalska/LyaModel/files/table1v4.txt",
+      "source_file": "h_lya_ikl2020/table1v4.txt",
+      "source_sha256": "3521490dba2d167b3535f07313af8eec81ed1758442b36ebaab4de2970e952b6",
+      "quantity": "irradiance-dependent analytic H Ly-alpha radiation-pressure profile",
+      "radial_velocity_range_km_s": [-200.0, 200.0],
+      "extrapolation": false,
+      "solar_lya_flux_units": "photons cm^-2 s^-1 at 1 AU"
+    },
+    "OH_AX00_SA1988_LOWELL_UNQUENCHED": {
+      "citation": "Schleicher and A'Hearn 1988, ApJ 331:1058",
+      "source_url": "https://asteroid.lowell.edu/api/comet/calc/gfactor",
+      "documentation_url": "https://asteroid.lowell.edu/docs/comet/comet-florescence",
+      "raw_file": "oh_ax00_schleicher_ahearn1988/lowell_oh00_raw.jsonl",
+      "raw_sha256": "6aa3a712ad51eff2d2a656bad668e1735bf9a6d790a2cf9ac5530c4adfa8d5d2",
+      "normalized_file": "oh_ax00_schleicher_ahearn1988/lowell_oh00_velocity_gfactor_1au.csv",
+      "normalized_sha256": "d44a72615affd63d714aecff2fd01e743544c57e1a35fd768df948d1668054d7",
+      "quantity": "unquenched OH A-X (0-0) band energy fluorescence efficiency",
+      "units": "erg s^-1 molecule^-1 at 1 AU",
+      "radial_velocity_range_km_s": [-60.0, 60.0],
+      "radial_velocity_step_km_s": 0.1,
+      "extrapolation": false,
+      "quenching": "unquenched"
+    }
+  },
+  "generated": {
+    "file": "../../generated/reference_tables.inc",
+    "sha256": "1fb36028af013311e14d9a7140fbdb08fba854c77efb11ec873a804869d6089d",
+    "generator": "../../tools/generate_reference_tables.py"
+  }
+}

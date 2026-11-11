@@ -1279,6 +1279,19 @@ def main() -> int:
             TEST_ROOT / "component_inventory.json", REPO_ROOT, tests)
         if inventory_errors:
             raise ManifestError("; ".join(inventory_errors))
+        if args.require_complete_coverage:
+            # A label-only edit to the inventory must not bypass the strict
+            # migration gate. Reconcile real source/configuration ownership,
+            # explicit gaps and registered cases through the same read-only
+            # authority as the standalone validator. This does not execute
+            # science tests or promote partial work; valid incomplete coverage
+            # still returns 1 below, while contradictory declarations are a
+            # configuration error (exit 2).
+            from validate_traceability import audit_repository
+            governance, _ = audit_repository()
+            if governance.errors:
+                raise ManifestError("strict coverage governance: " +
+                                    "; ".join(governance.errors))
         selected = order_tests(
             select_tests(tests, args), args.order, args.shuffle_seed)
     except (ConfigurationError, ManifestError) as error:

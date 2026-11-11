@@ -1,0 +1,356 @@
+# Comet 1P/Halley parameters from Rubin et al. (2011)
+
+This document records the provenance and limits of
+`input/halley1d.input`. The source is Rubin et al.,
+“Monte Carlo modeling of neutral gas and dust in the coma of Comet 1P/Halley,”
+Icarus 213 (2011) 655–677, doi:10.1016/j.icarus.2011.04.006. The local PDF
+`~/Downloads/Rubin-2011-icarus.pdf` was checked directly on 2026-10-27.
+
+The file is named for **Halley**. The Hartley 2 cases remain
+`input/hartley2.input` and `input/hartley2.radial.input`. Both use the same
+generic application code in the historically named `srcHartley2` directory.
+
+## Geometry and boundaries
+
+| Quantity | Paper value | Application representation |
+| --- | ---: | --- |
+| Symmetry | 1D spherical | `Dimension=1`, `Geometry=Spherical` |
+| Nucleus radius | 6 km | `NucleusRadius=6000 m` |
+| Inner boundary | top of Knudsen layer, a few metres above the surface | represented at the stated 6 km coordinate; no exact offset is published |
+| Outer boundary | `10^6 km` cometocentric | `DomainOuterRadius=1.0e9 m` |
+| Heliocentric distance | 0.90 AU | `HeliocentricDistanceAU=0.90` |
+| Parent injection temperature | 180 K | every parent `SurfaceSource` |
+| Initial parent bulk speed | 0 m/s | every parent `SurfaceSource` |
+| Surface distribution | uniform | `UNIFORM` |
+| Returning gas | fully thermalized and re-emitted | DIM1 inner-boundary callback at 180 K |
+| Outer crossing | particle removed | DIM1 outer-boundary callback |
+
+The paper says the near-surface collisional mean free path is “on the order of
+a fraction of a meter.” It does not publish an exact first-cell width, radial
+cell count, AMR hierarchy, or inner-boundary offset. The input uses the
+user-supplied 2,000 ideal cells and the reproducible mean-free-path estimate
+below; these are numerical case choices rather than paper values.
+
+## Parent composition and rates
+
+Table 2 gives abundances relative to water. Multiplying them by the stated
+`Q(H2O)=7.0e29 s^-1` produces the rates below. Their sum is
+`8.54e29 s^-1`, matching the paper.
+
+| Parent | Relative abundance | Rate, s^-1 |
+| --- | ---: | ---: |
+| H2O | 100% | `7.00e29` |
+| CO | 13% | `9.10e28` |
+| CO2 | 2.5% | `1.75e28` |
+| CH3OH | 1.7% | `1.19e28` |
+| H2CO | 1.5% | `1.05e28` |
+| NH3 | 1.5% | `1.05e28` |
+| CH4 | 0.6% | `4.20e27` |
+| C2H6 | 0.4% | `2.80e27` |
+| C2H4 | 0.3% | `2.10e27` |
+| C2H2 | 0.3% | `2.10e27` |
+| HCN | 0.2% | `1.40e27` |
+
+The neutral network tracks 27 species:
+
+```text
+H H2 C CH CH2 N CH3 NH CH4 NH2 O NH3 OH H2O C2 C2H C2H2 CN HCN
+C2H4 CO C2H5 HCO C2H6 H2CO CH3OH CO2
+```
+
+## Surface mean-free-path estimate
+
+An estimate can be calculated without attributing a nonexistent exact value
+to the paper. For each zero-drift half-Maxwellian parent,
+
+```text
+Gamma_i = Q_i/(4 pi R^2)
+<v_r,+> = sqrt(2 k T/(pi m_i))
+n_i = Gamma_i/<v_r,+>.
+```
+
+At `R=6000 m` and `T=180 K`, the 11 parent densities sum to
+`8.598305522e18 m^-3`. Weighting the Table 3 H2O-parent cross sections by
+those densities gives `2.496830337e-19 m^2`; the H2O-H2O component uses the
+published Crifo law at 180 K. The conventional hard-sphere expression
+
+```text
+lambda = 1/(sqrt(2) n sigma)
+```
+
+then gives `lambda ~= 0.329 m`. Omitting the equilibrium `sqrt(2)` factor gives
+`0.466 m`. The outward multi-species gas is not an equilibrium single-species
+Maxwellian, so these are documented resolution estimates, consistent with the
+paper’s “fraction of a meter,” rather than an exact mesh prescription.
+
+The AMPS boundary routine samples a flux-weighted Maxwellian. Residence-time
+weighting of those particles in the first cell recovers the outward spatial
+half-Maxwellian used in the density formula above; an extra factor of two is
+therefore not applied. `halley1d.input` uses
+`NucleusSurfaceResolution=0.3293692849882 m`.
+
+## Derived numerical controls
+
+The derivation can be repeated with:
+
+```text
+python3 srcHartley2/halley2011/derive_halley1d_controls.py
+```
+
+For the 2,000-cell geometric profile, the result is:
+
+| Control | Value | Basis |
+| --- | ---: | --- |
+| first ideal cell | `0.3293692849882 m` | surface H2O mean free path above |
+| geometric width ratio | `1.008573952117` | 2,000 widths spanning 6,000 m to `1.0e9 m` |
+| final ideal cell | `8.501013718e6 m` | geometric profile |
+| maximum AMR refinement | `29` | first dyadic AMR cell no wider than the target |
+| allocated AMR blocks | `373` | clean one-process mesh construction |
+| allocated AMR cells | `2,984` | dyadic approximation to the 2,000-cell ideal profile |
+| smallest allocated cell | `0.2328292 m` | level-29 AMR cell width |
+| Courant number | `0.25` | reduced from the initially supplied `0.5` after a four-rank run exposed a one-step traversal beyond the mover's one-block MPI boundary allocation |
+| direct-parent baseline speed | `400 m/s` | supplied numerical control |
+| reference injection count | `8` | at least 50 parent particles in the surface cell at Courant 0.25; reduced with the timestep so surface statistics are unchanged |
+| particle-buffer capacity | `20,000,000` per MPI rank | validation headroom retained after the superseded global-weight run overflowed 5,000,000; this is not a paper value |
+| block-weight adaptation | enabled, `50--200` model particles per cell | supplied numerical control; applied to each species using its whole-block instantaneous mean at complete sampling breaks; subsequent hard transport and chemistry constraints may raise weights further |
+| emergency particle-buffer utilization | `0.75` per MPI rank, plus a fixed sampling alarm at `10*nSpecies*maximum requested particles per cell` | supplied numerical controls; immediately before regular particle exchange, reaching 75% on any rank or consuming a sampling-population alarm doubles every block/species weight and applies unbiased one-half roulette globally; the buffer trigger repeats until all ranks are below its threshold |
+| allocation-burst low watermark | `0.50` per MPI rank | supplied numerical control; a transactional chemistry checkpoint repeats common factor-two roulette until every rank is at or below this utilization |
+| protected allocation reserve | `0.10` per MPI rank | supplied numerical control; the final ten percent of the particle buffer is unavailable to one chemistry transaction, whose ceiling is therefore 90% |
+| maximum face-transfer multiplicity | `1` model particle | supplied numerical control; equalizes `W/dt` by power-of-two increases across every face-connected component so a crossing never allocates clones |
+| photochemical daughters per reaction | at most `20` actual allocated model particles | supplied numerical control; initialization and every sampling break close the enabled reaction graph from represented and direct-source species, then raise present or absent product weights until the sum of `coefficient*ceil(C_parent/C_product)` is no greater than 20 for every reachable selected channel |
+| sampling-window length | `500 iterations` | supplied numerical control |
+| hard iteration ceiling | `10,000 iterations` | supplied numerical control |
+| convergence tolerance | `0.05` | supplied control; volume-weighted relative L1 density-profile change |
+| consecutive converged windows | `3` | supplied control; applies to every compiled species |
+
+For a zero-drift parent, the expected surface-cell population is
+
+```text
+N_cell = N_ref V_char / (C sqrt(2 k T/(pi m))).
+```
+
+The lightest direct parent, CH4, is limiting: `N_ref=8` gives `52.454`
+particles. The other direct parents range from `54.068` for NH3 to `86.985`
+for CO2. This estimate applies to directly injected parents. Daughter
+populations are set by their production and loss rates and cannot be forced to
+50 particles per cell through the surface injection count.
+
+Across the 2,984 allocated cells, the no-loss occupancy estimate sums to
+approximately `2.21e6` direct-parent model particles. The current
+twenty-million-slot per-rank buffer deliberately exceeds this estimate so a
+transport error is not hidden by the old five-million-slot limit; the actual
+high-water mark still must be measured in the convergence run.
+
+The input uses species-local particle weights proportional to local timestep.
+This prevents model-particle occupancy from growing with the width of the
+logarithmic cells. Individual AMPS weight correction is disabled. Both block
+faces and species-changing chemistry instead use unbiased residual resampling
+of `(W_source/dt_source)/(W_target/dt_target)` to conserve physical rates in
+expectation.
+
+At each complete 500-iteration sampling break, the input also enables
+power-of-two adaptation of those block weights. The requested 50--200 range
+is interpreted independently for each species as the instantaneous number of
+particles in an owner block divided by all eight radial cells in that block;
+empty cells therefore count as zero. The population-range controller does not
+resample a zero-population block/species pair. Starting from represented
+parents and configured direct surface sources, the chemistry controller
+follows all enabled reactions transitively. It raises present or absent
+product carriers by powers of two until the actual worst-case residual
+allocation, including upward Bernoulli rounding and every stoichiometric
+product, is no greater than 20 for any reachable selected channel. This runs
+before the first injection and after each complete sampling window. It changes
+no physical reaction rate and creates no particle by itself.
+
+The same numerical controller treats all transport faces, not only entry into
+an empty block. For each species it raises weights until every member of a
+face-connected component has the same carrier `W/dt`; populated blocks use
+unbiased roulette and empty blocks remain empty. Therefore both directed face
+ratios are at most one and the mover cannot allocate a clone. This is stronger
+than independent block-local statistical optimization and can increase Monte
+Carlo variance. The 50%, 75%, 10%, one-particle, and 20-particle values and
+their controllers are AMPS numerical safeguards, not physics or parameters
+reported by Rubin et al.; every paper comparison must identify them as such.
+
+The reaction-product timestep speeds start from `400 m/s` for every directly
+injected parent. For each Table 4 channel, the maximum center-of-mass recoil
+of product `i` is estimated from energy and momentum conservation as
+
+```text
+u_i = sqrt(2 E M_other/(m_i M_total)).
+```
+
+The script propagates `V_parent + u_i` through successive reactions and rounds
+up to a whole metre per second. A species that is injected at 400 m/s but is
+also produced by a faster dissociation receives the larger propagated value.
+This is a conservative timestep scale for the implemented energy-sharing
+algorithm. A Maxwellian has no finite strict maximum, so runtime displacement
+statistics still need to be checked.
+
+## Collisions and chemistry
+
+Table 3 supplies 66 hard-sphere cross sections for all unordered pairs of the
+11 parent species. The water self-collision law is
+
+```text
+sigma_H2O,H2O = 1.66e-19 (T/300 K)^-0.6 m^2
+```
+
+and the paper limits it to 50–300 K. The generated database enforces that
+interval. The other listed parent-pair values are constant. Molecules and
+atoms scatter over `4*pi`.
+
+Table 3 does **not** contain the full collision matrix for the 16 daughter-only
+species. The application deliberately reports a missing pair rather than
+assigning zero or inventing a cross section unless the case explicitly selects
+a documented completion policy. The Halley input now selects the approved
+Rubin--Combi--CHEMKIN/Lorentz hierarchy described below.
+
+A literature search found a useful measured/modelled subset but not the full
+Rubin network. Combi (1996), reproduced in Fougere's Table 2.1, gives all 21
+unordered pairs among H2O, OH, H2, H, O, and CO. Huang et al. (2016), ApJ
+833:160, Table 2 prints ten corresponding major-coma values. Together Rubin
+and Combi cover 84 of the 378 unordered pairs in the compiled 27-species set;
+three pairs occur in both sources. The standard CHEMKIN transport database
+contains Lennard-Jones diameters and well depths for all 27 species. Those
+transport parameters are not a measured cold-coma hard-sphere matrix.
+The input selects `COMBI1996_CHEMKIN_LORENTZ_HS`: it retains the 66 Rubin
+rows, adds the 18 nonoverlapping Combi rows, and completes the remaining 294
+pairs with the Lorentz rule `d_ij=(d_i+d_j)/2` and
+`sigma_ij=pi*d_ij^2`. The last tier is explicitly labeled as an analytical
+estimate in every generated row. The values, sources, provenance limits, and
+alternative transport mappings are recorded in
+[`COLLISION_DATA_REVIEW.md`](COLLISION_DATA_REVIEW.md).
+
+The repaired AMPS user-defined collision dispatch reaches the Crifo law before
+the first sampling window has produced a cell translational temperature.
+Following the requested numerical rule, `halley1d.input` sets
+`CollisionTemperatureFloor=180.0`. `CometPhysics` reads the most recent
+completed sample with `GetTranslationalTemperature(H2O)` and evaluates the
+law at `max(T_sampled,180 K)`. Thus 180 K is used before the first complete
+sample and for later samples at or below 180 K. Following the runtime finding
+that sparse outer-coma cells can report temperatures above the published
+interval, values above 300 K are capped at the Crifo record's 300 K endpoint
+rather than extrapolated. The input can also specify
+`CollisionTemperatureMinimumSampleParticleNumber`; cells below that
+completed-window mean H2O model-particle occupancy use 180 K. The Halley run
+sets this cutoff to `1.0`, corresponding to about 500 particle observations
+over a 500-iteration sampling window before temporal correlation. These are
+documented run controls, not values attributed to Rubin et al.
+
+Table 4 has been transcribed into the named `RUBIN2011` chemistry database.
+Rates are referenced to 1 AU and scale as inverse heliocentric distance
+squared. Electronic states are collapsed into the corresponding neutral
+species while retaining the channel excess energy. Ionization channels are
+neutral sinks because ions are outside this gas model.
+
+Rubin Table 4 gives four neutral OH photodissociation branches at 1 AU:
+
+| Excess energy | Rate, s^-1 |
+| ---: | ---: |
+| `0.36 eV` | `3e-6` to `6e-6` |
+| `0.67 eV` | `5.0e-7` |
+| `2.69 eV` | `1.4e-6` |
+| `3.84 eV` | `3.0e-7` |
+
+The three fixed neutral branches sum to `2.2e-6 s^-1`, so the neutral OH
+photodissociation total is `5.2e-6` to `8.2e-6 s^-1`. Table 4 separately gives
+OH photoionization as `1.2e-5 s^-1`; including that neutral sink makes the
+total modeled OH loss `1.72e-5` to `2.02e-5 s^-1` at 1 AU.
+
+Rubin cites Combi (1996) for the four neutral branches. Combi’s tabulation
+resolves the low-energy predissociation rate as a heliocentric-velocity and
+cross-section-dependent interval, with published alternatives of
+`3.0e-6`–`6.1e-6 s^-1` and `2.5e-6`–`5.6e-6 s^-1`. Schleicher and A'Hearn
+(1988, ApJ 331, 1058--1077, doi:10.1086/166622) calculate an A-state lifetime
+of `1.8e5`–`4.0e5 s` at 1 AU, equivalent to `2.5e-6`–`5.56e-6 s^-1` as the
+heliocentric radial velocity changes. They also quote the separate
+van Dishoeck--Dalgarno combined higher-state contribution as `1.85e-6 s^-1`
+at solar minimum and `3.43e-6 s^-1` at solar maximum, with about 25%
+uncertainty. These values describe different adopted solar spectra/channel
+groupings and do not select a unique number from Rubin’s input interval.
+
+The Halley input selects `3.0e-6 s^-1`, the lower endpoint of Rubin's printed
+range, for the 0.36 eV ground-state OH branch. This is an explicit run choice,
+not a value inferred from the excess energy. The methanol-to-formaldehyde
+branch is disabled as requested; this is the alternate case described by
+Table 4 footnote (a).
+
+## Cooling and omitted physics
+
+Rubin et al. include collisional relaxation and the Crovisier (1984)/Huebner
+(1985) water radiative-cooling approximation presented by Gombosi et al.
+(1986). Rubin et al. name this model but do not reproduce its equation. The
+generic `GOMBOSI1986_H2O` evaluator implements the published equation (48b):
+
+```text
+|Qrad| = 4.4e-22 Trot^3.35 nH2O exp(-tauIR),  Trot < 52 K
+|Qrad| = 2.0e-20 Trot^2.47 nH2O exp(-tauIR),  Trot >= 52 K
+tauIR = 0.4 nH2O r (4.0e-15 cm^2)
+```
+
+`Qrad` is in erg cm^-3 s^-1 when temperature, density, and radius use K,
+cm^-3, and cm. The code converts this to a positive J s^-1 per H2O molecule.
+The input explicitly selects `RadiativeCooling=H2O | GOMBOSI1986_H2O`; the
+law cannot be assigned to another species.
+
+The Halley input enables the AMPS Larsen-Borgnakke internal-energy model with
+three H2O rotational degrees of freedom, `Zrot=5`, RT relaxation, and
+hard-sphere temperature index 0.5 for H2O with each collision partner.
+Injected and thermally re-emitted particles initialize their rotational state
+through the core IDF API. After every particle iteration, the cooling adapter
+reads H2O density and rotational temperature from the most recent completed
+sample and removes energy from each H2O particle's rotational state. It is a
+no-op before the first complete sample. VT and VV relaxation remain disabled
+because the current core VT implementation explicitly exits as unverified.
+
+This Halley case is gas-only. Dust size groups, gas-dust momentum exchange,
+gravity-limited grains, and dust instrument comparisons are not enabled.
+
+## Numerical values absent from the paper
+
+The paper reports several million representative particles but does not give
+enough information to reconstruct all numerical controls. It does not state:
+
+- radial cell count, exact cell boundaries, or first-cell width;
+- timestep/Courant policy or per-species transport-speed bounds;
+- statistical particle weights or reference injection-particle count;
+- convergence metric, tolerance, or required consecutive-window count; or
+- a complete daughter collision matrix.
+
+The input records the user-supplied or derived controls above. Convergence is
+evaluated only after a complete 500-iteration sample. For species `s` and
+successive windows `k-1` and `k`, the implemented metric is
+
+```text
+sum_cells V |n_s,k - n_s,k-1| /
+max(sum_cells V |n_s,k|, sum_cells V |n_s,k-1|).
+```
+
+The maximum metric over all compiled species must not exceed `0.05` for three
+successive comparisons. A species absent from both windows has zero change;
+appearance or disappearance has relative change one. The first complete
+window establishes the reference and cannot count toward the three passes.
+
+## Figure-comparison scope
+
+Figures 1–21 compare modeled neutral densities, NMS mass channels, water bulk
+velocity, remote column densities, and OH aperture counts. Figures 22–23 are
+dust results. Tables 5 and 6 describe the NMS instrument response and belong
+in a Halley validation case rather than the generic chemistry database.
+
+The PDF does not provide numerical source tables for its plotted curves. The
+neutral DSMC density paths in Figs. 1--17 and the modeled H2O velocity in Fig.
+18 have therefore been extracted from the PDF's vector paths by
+`digitize_rubin2011.py`. The committed CSV and metadata under `reference/`
+record the exact source-PDF SHA-256, source pages, plot bounds, curve colors,
+piecewise logarithmic distance-axis mapping, and extraction method. These
+curves are digitized plot coordinates rather than original simulation tables;
+their precision is limited by the rendered paths and axis calibration.
+
+`compare_rubin2011.py` overlays those reference curves with AMPS output and
+writes paired values at common radii. It intentionally excludes the measured
+and simulated Giotto NMS mass-channel curves because those require an
+instrument-response model and are not neutral number densities. Any physical
+interpretation must also identify the 294 collision pairs supplied by the
+selected analytical completion rather than by Rubin et al.

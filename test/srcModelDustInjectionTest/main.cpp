@@ -15,9 +15,11 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <vector>
 
 namespace {
 
@@ -78,6 +80,52 @@ long int FindOnlyParticle() {
     }
   }
   return found;
+}
+
+bool GasNtcLeavesSteepDustWeightsUntouched(long int source_particle) {
+  // The imported gas-NTC bucket optimization must preserve the historical
+  // exclusion of dust. Use valid cloned grain records whose correction
+  // contrast is 1e40: 1 + 1e-40 rounds to 1 in binary64, so attempting the
+  // gas prefix-sum validation on this dust bucket would reject it. No gas is
+  // present, and the physically correct gas-kernel action is an exact no-op.
+  auto* source = PIC::ParticleBuffer::GetParticleDataPointer(source_particle);
+  double position[3];
+  PIC::ParticleBuffer::GetX(position, source);
+  auto* owner = PIC::Mesh::mesh->findTreeNode(position, NULL);
+  if (owner == NULL || owner->block == NULL) return false;
+  int i = 0, j = 0, k = 0;
+  if (PIC::Mesh::mesh->FindCellIndex(position, i, j, k, owner, false) < 0)
+    return false;
+  const int cell = i + _BLOCK_CELLS_X_*(j + _BLOCK_CELLS_Y_*k);
+  long int& head = owner->block->FirstCellParticleTable[cell];
+  const long int saved_head = head;
+  const long int small = PIC::ParticleBuffer::GetNewParticle(true);
+  const long int large = PIC::ParticleBuffer::GetNewParticle(true);
+  PIC::ParticleBuffer::CloneParticle(small, source_particle);
+  PIC::ParticleBuffer::CloneParticle(large, source_particle);
+  auto* small_data = PIC::ParticleBuffer::GetParticleDataPointer(small);
+  auto* large_data = PIC::ParticleBuffer::GetParticleDataPointer(large);
+  // Stay above the particle API's established 1e-50 correction floor.
+  PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0e-40, small_data);
+  PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0, large_data);
+  PIC::ParticleBuffer::SetNext(small, large_data);
+  PIC::ParticleBuffer::SetPrev(-1, large_data);
+  PIC::ParticleBuffer::SetNext(-1, small_data);
+  PIC::ParticleBuffer::SetPrev(large, small_data);
+  head = large;
+  const std::size_t length = PIC::ParticleBuffer::ParticleDataLength;
+  const std::vector<PIC::ParticleBuffer::byte> small_before(small_data, small_data + length);
+  const std::vector<PIC::ParticleBuffer::byte> large_before(large_data, large_data + length);
+  PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i, j, k, owner);
+  const bool unchanged = head == large &&
+      std::memcmp(small_before.data(), small_data, length) == 0 &&
+      std::memcmp(large_before.data(), large_data, length) == 0;
+  // The original injection list was temporarily detached, never rewritten.
+  // Restore it before returning the two private fixture records to the pool.
+  head = saved_head;
+  PIC::ParticleBuffer::DeleteParticle(small);
+  PIC::ParticleBuffer::DeleteParticle(large);
+  return unchanged;
 }
 
 }  // namespace
@@ -203,6 +251,11 @@ int main(int, char**) {
                 represented_mass_kg / kTimeStepS) <=
           2.0e-14 * represented_mass_kg / kTimeStepS;
 
+  const bool dust_ignored_by_gas_ntc = particle >= 0 &&
+      GasNtcLeavesSteepDustWeightsUntouched(particle);
+  pass = pass && dust_ignored_by_gas_ntc &&
+      PIC::ParticleBuffer::GetAllPartNum() == 1;
+
   std::cout << std::setprecision(17)
             << "dust_native first_injected=" << first_injected
             << " second_injected=" << second_injected
@@ -211,6 +264,7 @@ int main(int, char**) {
             << " final_residual_kg=" << final_residual
             << " sampled_mass_rate_kg_s="
             << ElectricallyChargedDust::SampledDustMassInjectionRate
+            << " gas_ntc_ignores_steep_dust=" << dust_ignored_by_gas_ntc
             << std::endl;
   std::cout << "[CORE-DUST-INJECTION-INTEGRATION-001] "
             << (pass ? "PASS" : "FAIL") << std::endl;

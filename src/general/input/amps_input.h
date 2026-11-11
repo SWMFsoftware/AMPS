@@ -56,6 +56,10 @@
 //   * Deterministic: the canonical text produced by ``ToCanonicalText`` is a
 //     pure function of the parsed tree (used for MPI broadcast, provenance
 //     and configuration fingerprints).
+//   * Case selection is generic rather than application-specific. An owner
+//     may put named ``#begin case: NAME`` blocks directly inside its block and
+//     call ``ResolveCase``. Common values form the base and the selected case
+//     overlays only the values it changes.
 //   * Every assignment keeps its source file and physical line, so an owner
 //     can report a domain error at the exact place the user wrote it.
 // ============================================================================
@@ -63,6 +67,7 @@
 #ifndef AMPS_GENERAL_INPUT_AMPS_INPUT_H
 #define AMPS_GENERAL_INPUT_AMPS_INPUT_H
 
+#include <algorithm>
 #include <cctype>
 #include <cstddef>
 #include <filesystem>
@@ -535,6 +540,108 @@ inline std::string ToCanonicalText(const Block& block) {
   std::string out;
   detail::AppendCanonical(block, 0, &out);
   return out;
+}
+
+// Resolve a generic named-case overlay owned by ``container``. Case blocks
+// are deliberately a grammar-level convention rather than an I3/comet
+// feature: any AMPS application can use the identical runtime-input and CLI
+// contract. Only direct ``case`` children participate. The result contains no
+// case blocks; common assignments/children are copied first, then the selected
+// case replaces matching keys and recursively overlays matching child blocks.
+// Source locations always come from the assignment that won, so application
+// diagnostics still point to the user's selected case.
+namespace detail {
+inline Status RejectNestedCase(const Block& block) {
+  for (const Block& child : block.blocks) {
+    if (child.kind == "case")
+      return ErrorAt(child.begin, "case blocks may not be nested; place "
+                     "'#begin case: NAME' directly inside the owning block");
+    Status status = RejectNestedCase(child);
+    if (!status.ok()) return status;
+  }
+  return Status::OK();
+}
+
+inline void OverlayBlockContents(const Block& overlay, Block* result) {
+  for (const Assignment& item : overlay.assignments) {
+    bool replaced = false;
+    for (Assignment& base : result->assignments) {
+      if (base.key == item.key) {
+        base = item;
+        replaced = true;
+        break;
+      }
+    }
+    if (!replaced) result->assignments.push_back(item);
+  }
+
+  for (const Block& child : overlay.blocks) {
+    Block* matching = nullptr;
+    for (Block& base : result->blocks)
+      if (base.kind == child.kind && base.name == child.name) {
+        matching = &base;
+        break;
+      }
+    if (matching == nullptr) result->blocks.push_back(child);
+    else OverlayBlockContents(child, matching);
+  }
+}
+}  // namespace detail
+
+inline Status ResolveCase(const Block& container,
+                          const std::string& requestedCase,
+                          Block* resolved) {
+  if (resolved == nullptr) return Status::Error("resolved case output is null");
+
+  std::vector<const Block*> cases;
+  for (const Block& child : container.blocks) {
+    if (child.kind != "case") continue;
+    if (child.name.empty())
+      return ErrorAt(child.begin, "a case block requires a name, for example "
+                     "'#begin case: 1'");
+    Status status = detail::RejectNestedCase(child);
+    if (!status.ok()) return status;
+    cases.push_back(&child);
+  }
+
+  if (cases.empty()) {
+    if (!requestedCase.empty())
+      return Status::Error("case '" + requestedCase +
+          "' was requested, but block '" + container.Label() +
+          "' contains no case sections");
+    *resolved = container;
+    return Status::OK();
+  }
+
+  if (requestedCase.empty())
+    return ErrorAt(cases.front()->begin,
+        "block '" + container.Label() + "' contains case sections; an "
+        "explicit case selector is required");
+  if (!detail::ValidName(requestedCase))
+    return Status::Error("invalid case selector '" + requestedCase +
+        "' (letters, digits, '_' and '-' only)");
+
+  const Block* selected = nullptr;
+  for (const Block* candidate : cases)
+    if (candidate->name == requestedCase) {
+      selected = candidate;
+      break;
+    }
+  if (selected == nullptr) {
+    std::string available;
+    for (const Block* candidate : cases)
+      available += (available.empty() ? "" : ", ") + candidate->name;
+    return Status::Error("unknown case '" + requestedCase + "' for block '" +
+        container.Label() + "' (available: " + available + ")");
+  }
+
+  *resolved = container;
+  resolved->blocks.erase(
+      std::remove_if(resolved->blocks.begin(), resolved->blocks.end(),
+          [](const Block& child) { return child.kind == "case"; }),
+      resolved->blocks.end());
+  detail::OverlayBlockContents(*selected, resolved);
+  return Status::OK();
 }
 
 // Flatten a block subtree into dotted keys relative to ``block``: a key ``k``

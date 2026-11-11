@@ -441,7 +441,7 @@ public:
       break;
     }
 
-    for (int i=0;i<nTotalFaces;i++) NeibTable[i]=neibNodeFace(i,mesh_ptr);
+    for (int i=0;i<nTotalFaces;i++) NeibTable[i]=findNeibNodeFace(i,mesh_ptr);
   }
 
   template <typename T>
@@ -582,7 +582,7 @@ public:
 
    template <typename T>
    _TARGET_HOST_ _TARGET_DEVICE_
-   cTreeNodeAMR<cBlockAMR>* neibNodeFace (int i,T* mesh_ptr) {
+   cTreeNodeAMR<cBlockAMR>* findNeibNodeFace (int i,T* mesh_ptr) {
      int ix[3];
 
      //numberic patter:
@@ -752,18 +752,20 @@ public:
    }
 
 
-#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_ 
-  #if _MESH_DIMENSION_ == 1
+#if _MESH_DIMENSION_ == 1
   cTreeNodeAMR *neibNodeFace[2];
-  #elif _MESH_DIMENSION_ == 2
-  cTreeNodeAMR *neibNodeFace[4*2],*neibNodeCorner[4];
-  #elif _MESH_DIMENSION_ == 3
+#elif _MESH_DIMENSION_ == 2
+  cTreeNodeAMR *neibNodeFace[4*2];
+  // Lower-dimensional face setters retain their stored face table for the
+  // radial transport extension. Corner storage, unlike that face table, is
+  // only read/written when global connectivity caching is enabled. Preserve
+  // the master's guard: in geometric-lookup mode neibNodeCorner is the member
+  // function above, and an unused array with the same name is ill-formed C++.
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
+  cTreeNodeAMR *neibNodeCorner[4];
+#endif
+#elif _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
   cTreeNodeAMR *neibNodeFace[6*4],*neibNodeCorner[8],*neibNodeEdge[12*2];
-  #endif
-#else
-
-  //cTreeNodeAMR *neibNodeEdge[12*2];
-
 #endif
 
 
@@ -806,21 +808,27 @@ public:
 
     for (int i=0;i<1<<_MESH_DIMENSION_;i++) downNode[i]=NULL;
 
-#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
+    // DIM1/DIM2 mesh files always contain the face table, including compact
+    // geometric-lookup builds. Initialize those stored pointers before any
+    // topology is built or serialized; an inactive lookup cache is not a
+    // license to serialize uninitialized addresses. DIM3 retains its optional
+    // global-connectivity storage and lookup behavior.
     #if _MESH_DIMENSION_ == 1
     for (int i=0;i<2;i++) neibNodeFace[i]=NULL;
 
     #elif _MESH_DIMENSION_ == 2
     for (int i=0;i<4*2;i++) neibNodeFace[i]=NULL;
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     for (int i=0;i<4;i++) neibNodeCorner[i]=NULL;
+#endif
 
     #elif _MESH_DIMENSION_ == 3
-
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     for (int i=0;i<8;i++) neibNodeCorner[i]=NULL;
     for (int i=0;i<6*4;i++) neibNodeFace[i]=NULL; 
     for (int i=0;i<12*2;i++) neibNodeEdge[i]=NULL;
-    #endif //_MESH_DIMENSION_
 #endif
+    #endif //_MESH_DIMENSION_
   }
 
 
@@ -924,7 +932,16 @@ public:
     if (nface>=2*_MESH_DIMENSION_) exit(__LINE__,__FILE__,"Error: 'nface' is out of range");
 
     #if _MESH_DIMENSION_ == 1
-    exit(__LINE__,__FILE__,"not implemented");
+    #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
+    res=1.0;
+    #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
+    {
+      const double radius=(nface==0) ? xmin[0] : xmax[0];
+      res=4.0*Pi*radius*radius;
+    }
+    #else
+    exit(__LINE__,__FILE__,"Error: symmetry mode is not supported for a one-dimensional mesh");
+    #endif
     #elif _MESH_DIMENSION_ == 2
     exit(__LINE__,__FILE__,"not implemented");
     #elif _MESH_DIMENSION_ == 3
@@ -961,7 +978,7 @@ public:
   _TARGET_HOST_ _TARGET_DEVICE_
   double GetCellFaceSurfaceArea(int nface) {
     #if _MESH_DIMENSION_ == 1
-    const static double CellSurfaceAreaMultiplyer[1]={1.0,1.0};
+    const static double CellSurfaceAreaMultiplyer[2]={1.0,1.0};
     #elif _MESH_DIMENSION_ == 2
     const static double CellSurfaceAreaMultiplyer[4]={_BLOCK_CELLS_Y_,_BLOCK_CELLS_Y_,
                                                       _BLOCK_CELLS_X_,_BLOCK_CELLS_X_};
@@ -1000,21 +1017,23 @@ public:
     FirstTriangleCutFace=NULL,neibFirstTriangleCutFace=NULL,neibFirstTriangleCutFace_temp=NULL;
 #endif
 
-    //Neighbors of the nodes
-#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
+    // Reset the same serialized face state as the constructor when stack
+    // entries are reused. In compact DIM1/DIM2 mode corner lookup remains
+    // geometric; only global-connectivity builds own corner/edge arrays.
     #if _MESH_DIMENSION_ == 1
     for (i=0;i<2;i++) neibNodeFace[i]=NULL;
     #elif _MESH_DIMENSION_ == 2
     for (i=0;i<4*2;i++) neibNodeFace[i]=NULL;
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     for (i=0;i<4;i++) neibNodeCorner[i]=NULL;
+#endif
     #elif _MESH_DIMENSION_ == 3
-
-
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     for (i=0;i<8;i++) neibNodeCorner[i]=NULL;
     for (i=0;i<6*4;i++) neibNodeFace[i]=NULL;
     for (i=0;i<12*2;i++) neibNodeEdge[i]=NULL;
-    #endif
 #endif
+    #endif
 
 
     #if _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_
@@ -1048,7 +1067,7 @@ public:
     // A 1-D leaf has at most one neighbor on either side.  The face table is
     // already refinement aware, so use it rather than reconstructing a
     // coordinate probe that can be ambiguous on a dyadic interface.
-    for (i=0;i<2;i++) if ((node=neibNodeFace(i,mesh_ptr))!=NULL) {
+    for (i=0;i<2;i++) if ((node=findNeibNodeFace(i,mesh_ptr))!=NULL) {
       if ((minNeibRefinmentLevel==-1)||(minNeibRefinmentLevel>node->RefinmentLevel)) minNeibRefinmentLevel=node->RefinmentLevel;
       if (maxNeibRefinmentLevel<node->RefinmentLevel) maxNeibRefinmentLevel=node->RefinmentLevel;
     }
@@ -1057,7 +1076,7 @@ public:
     // by the four corner slots.  Inspecting all slots gives the true minimum
     // and maximum adjacent refinement levels without counting null boundary
     // entries as physical neighbors.
-    for (i=0;i<4*2;i++) if ((node=neibNodeFace(i,mesh_ptr))!=NULL) {
+    for (i=0;i<4*2;i++) if ((node=findNeibNodeFace(i,mesh_ptr))!=NULL) {
       if ((minNeibRefinmentLevel==-1)||(minNeibRefinmentLevel>node->RefinmentLevel)) minNeibRefinmentLevel=node->RefinmentLevel;
       if (maxNeibRefinmentLevel<node->RefinmentLevel) maxNeibRefinmentLevel=node->RefinmentLevel;
     }
@@ -1067,7 +1086,7 @@ public:
     }
     #elif _MESH_DIMENSION_ == 3
     //connections through faces
-    for (i=0;i<6*4;i++) if ((node=neibNodeFace(i,mesh_ptr))!=NULL) {
+    for (i=0;i<6*4;i++) if ((node=findNeibNodeFace(i,mesh_ptr))!=NULL) {
       if ((minNeibRefinmentLevel==-1)||(minNeibRefinmentLevel>node->RefinmentLevel)) minNeibRefinmentLevel=node->RefinmentLevel;
       if (maxNeibRefinmentLevel<node->RefinmentLevel) maxNeibRefinmentLevel=node->RefinmentLevel;
     }
@@ -1173,11 +1192,11 @@ public:
 #endif
 #else
 #if _MESH_DIMENSION_ == 1
-    res=neibNodeFace(nface,mesh_ptr);
+    res=findNeibNodeFace(nface,mesh_ptr);
 #elif _MESH_DIMENSION_ == 2
-    res=neibNodeFace(iFace+2*nface,mesh_ptr);
+    res=findNeibNodeFace(iFace+2*nface,mesh_ptr);
 #else
-    res=neibNodeFace(iFace+2*(jFace+2*nface),mesh_ptr);
+    res=findNeibNodeFace(iFace+2*(jFace+2*nface),mesh_ptr);
 #endif
 #endif
 
@@ -1192,18 +1211,18 @@ public:
     if (neibNode!=NULL) if (neibNode->lastBranchFlag()!=_BOTTOM_BRANCH_TREE_) exit(__LINE__,__FILE__,"Error: neibNode is not a bottom tree node");
 #endif
 
-#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
+    // The lower-dimensional mesh-file layout stores these faces even when
+    // GetNeibFace() computes a neighbor geometrically. Maintain their valid
+    // identities as topology changes, so saveMeshFile/readMeshFile never
+    // dereference stale/uninitialized cache entries. This adds no new DIM3
+    // pointer authority and does not change the geometric lookup algorithm.
 #if _MESH_DIMENSION_ == 1
     neibNodeFace[nface]=neibNode;
 #elif _MESH_DIMENSION_ == 2
     neibNodeFace[iFace+2*nface]=neibNode;
-#else
+#elif _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     neibNodeFace[iFace+2*(jFace+2*nface)]=neibNode;
-#endif
 #else
-    /* In the default compact mode neighbors are derived from integer AMR
-     * coordinates by GetNeibFace(); there is intentionally no pointer table
-     * to update. */
     (void)neibNode,(void)nface,(void)iFace,(void)jFace;
 #endif
   }
@@ -7561,8 +7580,12 @@ if (CallsCounter==83) {
       dx[idim]=xGlobalMax[idim]-xGlobalMin[idim];
     }
 
-    if (1<<sizeof(int)<=_MAX_REFINMENT_LEVEL_) {
-      exit(__LINE__,__FILE__,"Size of int is not sufficient to feep the AMR tree with the number of refingments as in _MAX_REFINMENT_LEVEL_ -> _MAX_REFINMENT_LEVEL_ should be reduced");
+    // Refinement indices use expressions of the form 1 << level.  Compare the
+    // requested level with the number of usable bits in a signed int; the old
+    // 1 << sizeof(int) test treated the byte count as a bit count and rejected
+    // every level >= 16 on platforms with a four-byte int.
+    if (_MAX_REFINMENT_LEVEL_>=8*int(sizeof(int))-1) {
+      exit(__LINE__,__FILE__,"Size of int is not sufficient to keep the AMR tree with the number of refinements in _MAX_REFINMENT_LEVEL_; reduce _MAX_REFINMENT_LEVEL_");
     }
 
 
@@ -10459,7 +10482,7 @@ nMPIops++;
 //#endif
 
 //#ifdef _AMR_InitDomainBoundaryLayer_ADD_FACES_
-      for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((neibNode=node->neibNodeFace(i,this))!=NULL) if ((neibThread=neibNode->Thread)!=ThisThread) {
+      for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((neibNode=node->findNeibNodeFace(i,this))!=NULL) if ((neibThread=neibNode->Thread)!=ThisThread) {
         //check if the node is not in the list already
         found=false,tNode=DomainBoundaryLayerNodesList[neibThread];
 
@@ -13419,7 +13442,7 @@ if (TmpAllocationCounter==2437) {
           #endif  //_AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
 
            //add face-neighbors into the send list
-           for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeFace(i,this))!=NULL) if (sendNode->Thread==From) sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_FALSE_;
+           for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->findNeibNodeFace(i,this))!=NULL) if (sendNode->Thread==From) sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_FALSE_;
 
            //add the edge-neighbors to the send list
            if (_MESH_DIMENSION_==3) {
@@ -13460,7 +13483,7 @@ if (TmpAllocationCounter==2437) {
           }
           #endif //_AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
 
-         for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeFace(i,this))!=NULL) if ((sendNode->Thread==From)&&(sendNode->nodeDescriptor.NodeProcessingFlag==_AMR_FALSE_)&&(sendNode->IsUsedInCalculationFlag==true)) {
+         for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->findNeibNodeFace(i,this))!=NULL) if ((sendNode->Thread==From)&&(sendNode->nodeDescriptor.NodeProcessingFlag==_AMR_FALSE_)&&(sendNode->IsUsedInCalculationFlag==true)) {
            sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_TRUE_;
            GetAMRnodeID(nodeid,sendNode);
 
@@ -13547,7 +13570,7 @@ if (TmpAllocationCounter==2437) {
 
            cTreeNodeAMR<cBlockAMR>* NeibFace;
 
-           for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((NeibFace=recvNode->neibNodeFace(i,this))!=NULL) if (NeibFace->Thread==ThisThread) {
+           for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((NeibFace=recvNode->findNeibNodeFace(i,this))!=NULL) if (NeibFace->Thread==ThisThread) {
              found=true;
              fprintf(DiagnospticMessageStream,"$PREFIX:'recvNode' has neibours on 'ThisThread': (file=%s, line=%i)\n",__FILE__,__LINE__);
            }

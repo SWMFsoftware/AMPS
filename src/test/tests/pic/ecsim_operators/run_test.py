@@ -28,6 +28,8 @@ sys.path.insert(0, str(TEST_ROOT))
 from lib.runner_support import (  # noqa: E402
     RunnerError, case, command, error_result, load_context, main_guard,
     run_command, write_result)
+from lib.native_configuration import (  # noqa: E402
+    NativeConfigurationError, configure_no_spice, verify_no_spice_build)
 
 
 CASES: Dict[str, List[str]] = {
@@ -130,22 +132,23 @@ def main() -> int:
             return write_result(context, "ERROR",
                                 "could not remove generated build directory")
 
-        configured = run_command(
-            [str(repo / "Config.pl"), "-application=test/stencil"],
-            repo, timeout=timeout)
-        if configured.returncode != 0:
-            return write_result(context, "FAIL",
-                                "Config.pl could not select test/stencil")
+        # Manufactured Cartesian stencils need no ephemeris provider. Their
+        # dependency contract must not depend on the previous application.
+        configured = configure_no_spice(
+            context, "test/stencil", "input/test/stencil.input", "ecsim-operators")
+        make_command = command(context, "make") + ["amps"]
         built = run_command(
-            command(context, "make") + ["amps"], repo, timeout=timeout,
+            make_command, repo, timeout=timeout,
             env={"MAKEFLAGS": "-j16"})
         build_log = artifacts / "ecsim-operators-build.txt"
         build_log.write_text(
             (configured.stdout or "") + (built.stdout or ""), encoding="utf-8")
+        configured.evidence.append(str(build_log))
         if built.returncode != 0 or not (repo / "amps").is_file():
             return write_result(context, "FAIL",
                                 "native ECSIM stencil application did not build",
-                                evidence=[str(build_log)])
+                                evidence=configured.evidence)
+        verify_no_spice_build(configured, built.stdout or "")
 
         executable = artifacts / "amps-test-stencil"
         shutil.copy2(str(repo / "amps"), str(executable))
@@ -153,15 +156,18 @@ def main() -> int:
         atomic_json(identity, {
             "schema_version": 1,
             "application": "test/stencil",
-            "configure_command": ["./Config.pl", "-application=test/stencil"],
-            "build_command": ["env", "MAKEFLAGS=-j16", "make", "amps"],
+            "configure_command": configured.command,
+            "configuration_receipt": str(configured.receipt_path),
+            "expected_spice": "nospice",
+            "build_command": make_command,
+            "build_environment": {"MAKEFLAGS": "-j16"},
             "executable_sha256": sha256(executable),
             "input_deck_sha256": sha256(repo / "input/test/stencil.input"),
         })
 
         rank_flag = str(context["execution"].get("mpi_rank_flag", "-n"))
         results = []
-        evidence = [str(build_log), str(identity), str(executable)]
+        evidence = configured.evidence + [str(identity), str(executable)]
         for identifier in requested:
             print("[CASE] RUN  {} manufactured periodic convergence".format(
                 identifier), flush=True)
@@ -192,6 +198,10 @@ def main() -> int:
                 sum(result["status"] == "PASS" for result in results),
                 len(results)),
             cases=results, evidence=evidence)
+    except NativeConfigurationError as error:
+        return write_result(context, "ERROR", str(error),
+                            cases=[case(identifier, "ERROR", str(error))
+                                   for identifier in requested], evidence=error.evidence)
     except Exception as error:
         return error_result(context, error)
     finally:

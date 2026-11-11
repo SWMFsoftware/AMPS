@@ -354,8 +354,19 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    args = parse_args(sys.argv[1:] if argv is None else argv)
+def audit_repository() -> Tuple[Validation, Dict[str, Any]]:
+    """Read and reconcile every governance ledger without executing tests.
+
+    Both the standalone validator and the strict-coverage CLI use this exact
+    path. An inventory row alone cannot establish coverage: the owning source
+    area must agree, its named cases must exist, and a tested declaration may
+    not retain unresolved gaps. This is declaration consistency, not a fresh
+    physics qualification or a replacement for retained execution receipts.
+    The function only reads repository files; the caller owns output and exit
+    classification so malformed governance remains distinct from valid but
+    incomplete coverage.
+    """
+
     validation = Validation()
     trace = load_json(TEST_ROOT / "source_traceability.json", validation)
     contracts = load_json(TEST_ROOT / "configuration_contracts.json", validation)
@@ -376,6 +387,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     contract_counts = validate_contracts(contracts, manifest, trace, validation)
     expanded["configuration_contract_count"] = sum(contract_counts.values())
     expanded["configuration_contract_status_counts"] = contract_counts
+    return validation, expanded
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(sys.argv[1:] if argv is None else argv)
+    validation, expanded = audit_repository()
 
     if validation.errors:
         for error in validation.errors:

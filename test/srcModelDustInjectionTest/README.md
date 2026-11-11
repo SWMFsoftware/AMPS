@@ -15,7 +15,12 @@ production injection and boundary mover, and verifies:
 - one represented grain closes two half-grain physical source intervals via
   the signed residual mass reservoir; and
 - the sampled represented mass rate equals the inserted mass divided by the
-  production time step.
+  production time step; and
+- the general gas NTC kernel leaves dust records unchanged even with a
+  `1e40` contrast of individual corrections. The test supplies two valid
+  cloned grains, invokes the production kernel and compares their complete
+  record bytes. Dust must bypass gas prefix sums and gas collisions; its
+  steep size/weight law is not an invalid gas sampling distribution.
 
 The deterministic callback fixes radius and direction so the oracle tests
 native ownership/accounting rather than relying on a stochastic tolerance.
@@ -28,7 +33,14 @@ manual builds must use the same sequence from the repository root:
 
 ```sh
 rm -rf -- build
-./Config.pl -application=test/model-dust-injection
+./Config.pl -application=test/model-dust-injection -spice-path=nospice
 env MAKEFLAGS=-j16 make amps
 mpiexec -n 1 ./amps
 ```
+
+The manufactured sphere has no external ephemeris dependency. The adapter
+explicitly resets global SPICE selection, verifies effective compiler options,
+and checks actual clean-build commands before MPI. Its
+`dust-injection-native-configuration.json`/`.txt` receipts distinguish a
+configuration ERROR from the native physical ledger result. This prevents a
+previous application from silently adding a library/kernel requirement.

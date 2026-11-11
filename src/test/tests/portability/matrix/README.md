@@ -68,7 +68,7 @@ After registration in the global manifest, run:
 ```sh
 python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
   --test CORE-T12-PORTABILITY-001 \
-  --output-dir /tmp/amps-t12-portability --jobs 1
+  --output-dir test_output/t12-portability-check --jobs 1
 ```
 
 A nonzero final exit is expected while `T12-COVERAGE-STRICT-001` remains red.
@@ -88,3 +88,42 @@ that expected open gate as a suite PASS.
 - CUDA compilation/runtime does not qualify a CUDA particle mover or backend.
 - The strict coverage gate remains authoritative; the bounded green cases
   cannot upgrade partial/planned inventory entries.
+
+## Strict-coverage governance changes and current evidence
+
+The strict command now invokes the same read-only source/configuration/catalog
+audit as `validate_traceability.py`, before accepting component labels. The
+reusable entry point is `audit_repository()`. A source ledger retaining required
+gaps cannot become complete solely by relabeling the component inventory.
+
+The matrix's nested invocation inherits the resolved parent machine tools,
+paths and valid configuration fields through an explicit private profile.
+Execution-only intent fields are not serialized as machine configuration.
+The importer preserves this status distinction:
+
+- exit 0: consistent, genuinely complete coverage may PASS;
+- exit 1: a valid incomplete inventory is FAIL;
+- any other exit: setup/governance failure is ERROR, with the nested output
+  retained for diagnosis.
+
+The real inventory currently has **2 complete and 26 incomplete components**.
+`T12-COVERAGE-STRICT-001` therefore remains FAIL. The separate
+`HARNESS-COVERAGE-GATES-001` exercises actual standalone/strict CLIs and injects
+an unambiguous ledger contradiction into a private child process to require
+ERROR=2; a harness PASS verifies rejection behavior and does not close T12.
+See [the harness README](../../harness/self/README.md) for the exact controls.
+
+In the completed 2026-11-10 Passion core run this 16-case matrix reports
+**13 PASS, 2 SKIP, 1 FAIL**. Clang and TSan remain the two tool/runtime SKIPs;
+GNU debug/optimized, both ABI controls through the combined ABI case, ASan,
+UBSan, Valgrind, OpenMP, both MPI implementations, CUDA compile/runtime and the
+two bounded performance cases pass. Strict coverage is the sole FAIL.
+Evidence is under
+`test_output/remaining-failures-repair-20261110/core-current/artifacts/CORE-T12-PORTABILITY-001/`,
+with the combined report in `core-current/amps-core-tests.json`.
+
+Model-specific all-enabled ASan/UBSan/LeakSanitizer runs for the new cross-ray
+kernels are separate evidence. They do not silently change this matrix's
+bounded general-array ASan/leak policy or imply whole-AMPS sanitizer coverage.
+The remaining production mesh/push/collision/halo/restart performance campaigns
+and complete component qualification remain open.

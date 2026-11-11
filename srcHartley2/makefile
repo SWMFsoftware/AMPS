@@ -4,7 +4,11 @@ DEFAULT_TARGET : lib
 
 include ../../Makefile.conf
 
-MAINLIBOBJ = Gravity.o Comet.o CometData.o main_lib.o OrbitCalculation.o ColumnIntegral.o SurfaceDataCG.o SampleSizeDistribution.o
+# Dimension=1 replaces these two object lists during input preprocessing.
+# RadialSimulation.o contains the shared chemistry configuration and references
+# the brightness sampler at initialization. Link its existing implementation
+# in DIM3 too; brightness remains disabled unless explicitly configured.
+MAINLIBOBJ = Gravity.o Comet.o CometData.o CometModel.o CometChemistry.o CometDiagnostics.o CometPhysics.o CometRadiativeCooling.o main_lib.o OrbitCalculation.o ColumnIntegral.o SurfaceDataCG.o SampleSizeDistribution.o RadialMesh.o RadialMeshProfile.o RadialSimulation.o LocalTimeStepValidation.o CometBrightness.o
 MAINOBJ = main.o
 
 lib : $(MAINLIBOBJ)
@@ -13,4 +17,3 @@ lib : $(MAINLIBOBJ)
 
 amps : $(MAINOBJ) 
 	ar -rc main.a $(MAINOBJ)
-

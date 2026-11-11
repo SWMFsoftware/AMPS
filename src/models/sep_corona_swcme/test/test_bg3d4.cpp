@@ -2,6 +2,7 @@
 #include "sep_corona_swcme/sheath_diagnostics.h"
 #include "sep_coronal_cme/configuration_parser.h"
 #include "bg3d4_reference_fixtures.h"
+#include "contact_derivative_reference.h"
 
 #include <algorithm>
 #include <cmath>
@@ -135,11 +136,13 @@ Vec3 Apply(const std::array<Vec3,3>& columns,Vec3 value) {
 }
 
 Vec3 Fourth(Vec3 minus2,Vec3 minus,Vec3 plus,Vec3 plus2,double step) {
-  return (minus2-8*minus+8*plus-plus2)/(12*step);
+  return SEP::CoronaSwcme::TestReference::FourthOrderDifference(
+      minus2,minus,plus,plus2,step);
 }
 
 double Fourth(double minus2,double minus,double plus,double plus2,double step) {
-  return (minus2-8*minus+8*plus-plus2)/(12*step);
+  return SEP::CoronaSwcme::TestReference::FourthOrderDifference(
+      minus2,minus,plus,plus2,step);
 }
 
 std::array<Vec3,3> SpatialGradient(const std::array<Vec3,3>& positions,
@@ -367,19 +370,27 @@ void TestMaterialContactAndStartup() {
         contact.label.azimuthRad,20+2*h);
     Require(before2.ok()&&before.ok()&&after.ok()&&after2.ok(),
         "contact finite-difference stencil is unsupported");
-    const Vec3 boundaryVelocity=Fourth(before2.value.positionM,before.value.positionM,
-        after.value.positionM,after2.value.positionM,h);
-    leakage[level++]=std::abs(contact.primitive.massDensityKgM3*
-        Dot(contact.primitive.velocityMPerS-boundaryVelocity,contact.outwardNormal));
+    leakage[level++]=std::abs(
+        SEP::CoronaSwcme::TestReference::IndependentContactFluxKgM2S(
+            {before2.value.positionM,before.value.positionM,
+             after.value.positionM,after2.value.positionM},h,
+            contact.primitive.massDensityKgM3,
+            contact.primitive.velocityMPerS,contact.outwardNormal));
   }
   const double bound=event->regional.contactFluxAbsoluteToleranceKgM2S+
       event->regional.contactFluxRelativeTolerance*
           event->regional.contactFluxReferenceKgM2S;
   std::cout<<"[CMBGU05-CONTACT] flux_bound="<<bound
            <<" fd_fluxes="<<leakage[0]<<','<<leakage[1]<<','<<leakage[2]<<'\n';
-  Require(contact.relativeMassFluxKgM2S==0&&
-      leakage[1]<=bound&&leakage[2]<=bound&&leakage[1]<leakage[0],
+  // Preserve each frozen physical/convergence gate, but identify which one
+  // failed. All numerical fluxes may be below the physical bound while an
+  // unstable derivative still fails the convergence requirement.
+  Require(contact.relativeMassFluxKgM2S==0,
+      "material-contact API reports nonzero relative mass flux");
+  Require(leakage[1]<=bound&&leakage[2]<=bound,
       "material-contact pointwise dimensional leakage exceeds its frozen bound");
+  Require(leakage[1]<leakage[0],
+      "material-contact independent derivative does not converge at frozen steps");
   const double magneticPressure=Dot(contact.primitive.magneticFieldT,
       contact.primitive.magneticFieldT)/(2*1.25663706212e-6);
   const Vec3 expectedTraction=(contact.primitive.pressurePa+magneticPressure)*
@@ -397,7 +408,7 @@ void TestMaterialContactAndStartup() {
   std::array<double,3> absoluteLeakageKg{},reportedLeakageKg{},allowedLeakageKg{};
   std::array<double,3> derivativeUncertaintyKg{},maximumVelocityError{};
   std::array<int,3> supported{},unsupported{};
-  bool anyIndependentLevelUnqualified=false;
+  bool allIndependentLevelsQualified=true;
   for(int levelIndex=0;levelIndex<3;++levelIndex) {
     const int polarCells=2+levelIndex,azimuthCells=2*polarCells;
     const int timeCells=2+levelIndex;
@@ -453,8 +464,8 @@ void TestMaterialContactAndStartup() {
         absoluteLeakageKg[levelIndex]<=allowedLeakageKg[levelIndex]&&
         maximumVelocityError[levelIndex]<=
             event->regional.contactNormalVelocityNumericalTolerance;
-    anyIndependentLevelUnqualified=anyIndependentLevelUnqualified||
-        !independentlyQualified;
+    allIndependentLevelsQualified=allIndependentLevelsQualified&&
+        independentlyQualified;
     std::cout<<"[CMBGU05-CONTACT-INTEGRAL-L"<<levelIndex<<"] absolute_kg="
              <<absoluteLeakageKg[levelIndex]<<" allowed_kg="
              <<allowedLeakageKg[levelIndex]<<" supported="<<supported[levelIndex]
@@ -480,8 +491,15 @@ void TestMaterialContactAndStartup() {
            <<" supported="<<supported[0]<<','<<supported[1]<<','<<supported[2]
            <<" unsupported="<<unsupported[0]<<','<<unsupported[1]<<','
            <<unsupported[2]<<'\n';
-  Require(anyIndependentLevelUnqualified,
-      "experimental contact was unexpectedly qualified by its distributed derivative");
+  // Every independently measured contact level must satisfy the original
+  // dimensional flux and normal-velocity limits. The former expectation of
+  // at least one failed level was a historical diagnostic, not a physical
+  // acceptance condition. The positive physical gate requires every level
+  // to pass. The separate cross-stage authority
+  // and distributed force/work diagnostics still keep the full CME closure
+  // unqualified even when this local material-contact check passes.
+  Require(allIndependentLevelsQualified,
+      "material-contact absolute leakage or independent normal velocity exceeds frozen limits");
 }
 
 void TestInventoryAndRefinement() {

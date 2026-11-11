@@ -21,3 +21,11 @@ The adapter follows the native preflight, retains the executable and generated
 identity, and accepts only an exact case-qualified PASS record.  These tests
 cover periodic interior operators.  Physical-boundary rows, deposition,
 solvers, and wave propagation have separate T8 owners.
+
+This Cartesian fixture also requires a global no-SPICE build, independent of
+the previously configured application. Its adapter selects
+`Config.pl -application=test/stencil -spice-path=nospice`, verifies the saved
+selection and effective make flags, and checks actual C++ build commands before
+MPI. Configuration mismatches report ERROR for every requested case, with
+`ecsim-operators-configuration.json`/`.txt` retained beside the build identity.
+The manufactured Fourier fields and order/identity tolerances are unchanged.

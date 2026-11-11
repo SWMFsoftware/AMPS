@@ -49,6 +49,7 @@ $(BUILD)/test_bg3d3: test/test_bg3d3.cpp $(BUILD)/libsep_corona_swcme.a coronal-
 		$(CORONAL_ARCHIVE) -o $@
 
 $(BUILD)/test_bg3d4: test/test_bg3d4.cpp test/bg3d4_reference_fixtures.h \
+        test/contact_derivative_reference.h \
 		$(BUILD)/libsep_corona_swcme.a coronal-lib
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_corona_swcme.a \
 		$(CORONAL_ARCHIVE) -o $@
@@ -79,11 +80,13 @@ $(BUILD)/test_bg3d4_spherical_piston: test/test_bg3d4_spherical_piston.cpp \
 		$(CORONAL_ARCHIVE) -o $@
 
 $(BUILD)/test_bg3d4_ambient_balance: test/test_bg3d4_ambient_balance.cpp \
+		test/shell_quadrature_reference.h \
 		$(BUILD)/libsep_corona_swcme.a coronal-lib
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_corona_swcme.a \
 		$(CORONAL_ARCHIVE) -o $@
 
 $(BUILD)/test_bg3d4_append: test/test_bg3d4_append.cpp \
+		test/shell_quadrature_reference.h \
 		$(BUILD)/libsep_corona_swcme.a coronal-lib
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_corona_swcme.a \
 		$(CORONAL_ARCHIVE) -o $@
@@ -95,6 +98,57 @@ $(BUILD)/test_bg3d4_piston_sheath: test/test_bg3d4_piston_sheath.cpp \
 
 $(BUILD)/test_bg3d4_piston_refinement: test/test_bg3d4_piston_refinement.cpp \
 		$(BUILD)/libsep_corona_swcme.a coronal-lib
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_corona_swcme.a \
+		$(CORONAL_ARCHIVE) -o $@
+
+# This test shares only the independently differentiated-position grader with
+# CMBGU05. Its manufactured trajectories and imposed slip are separate from
+# the production material map, so agreement cannot be an API self-comparison.
+$(BUILD)/test_bg3d4_contact_derivative: test/test_bg3d4_contact_derivative.cpp \
+        test/contact_derivative_reference.h coronal-lib | $(BUILD)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(CORONAL_ARCHIVE) -o $@
+
+$(BUILD)/test_spherical_shell: test/test_spherical_shell.cpp \
+        include/sep_corona_swcme/spherical_shell.h | $(BUILD)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< -o $@
+
+$(BUILD)/test_cross_ray_transport: test/test_cross_ray_transport.cpp \
+        $(BUILD)/libsep_corona_swcme.a coronal-lib
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_corona_swcme.a \
+		$(CORONAL_ARCHIVE) -o $@
+
+$(BUILD)/test_spherical_sector: test/test_spherical_sector.cpp \
+        $(BUILD)/libsep_corona_swcme.a coronal-lib
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_corona_swcme.a \
+		$(CORONAL_ARCHIVE) -o $@
+
+$(BUILD)/test_cross_ray_mesh: test/test_cross_ray_mesh.cpp \
+        $(BUILD)/libsep_corona_swcme.a coronal-lib
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_corona_swcme.a \
+		$(CORONAL_ARCHIVE) -o $@
+
+$(BUILD)/test_cross_ray_ct: test/test_cross_ray_ct.cpp \
+        $(BUILD)/libsep_corona_swcme.a coronal-lib
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_corona_swcme.a \
+		$(CORONAL_ARCHIVE) -o $@
+
+$(BUILD)/test_cross_ray_reconstruction: test/test_cross_ray_reconstruction.cpp \
+        $(BUILD)/libsep_corona_swcme.a coronal-lib
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_corona_swcme.a \
+		$(CORONAL_ARCHIVE) -o $@
+
+$(BUILD)/test_cross_ray_fluid: test/test_cross_ray_fluid.cpp \
+        $(BUILD)/libsep_corona_swcme.a coronal-lib
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_corona_swcme.a \
+		$(CORONAL_ARCHIVE) -o $@
+
+$(BUILD)/test_cross_ray_contact: test/test_cross_ray_contact.cpp \
+        $(BUILD)/libsep_corona_swcme.a coronal-lib
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_corona_swcme.a \
+		$(CORONAL_ARCHIVE) -o $@
+
+$(BUILD)/test_material_transport: test/test_material_transport.cpp \
+        $(BUILD)/libsep_corona_swcme.a coronal-lib
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_corona_swcme.a \
 		$(CORONAL_ARCHIVE) -o $@
 
@@ -118,7 +172,13 @@ test: $(BUILD)/test_bg3d1 $(BUILD)/test_bg3d2 $(BUILD)/test_bg3d3 \
 		$(BUILD)/test_bg3d4_ambient_balance \
 		$(BUILD)/test_bg3d4_append \
 		$(BUILD)/test_bg3d4_piston_sheath \
-		$(BUILD)/test_bg3d4_piston_refinement check-architecture
+		$(BUILD)/test_bg3d4_piston_refinement \
+		$(BUILD)/test_bg3d4_contact_derivative \
+		$(BUILD)/test_spherical_shell $(BUILD)/test_cross_ray_transport \
+		$(BUILD)/test_spherical_sector $(BUILD)/test_cross_ray_mesh \
+		$(BUILD)/test_cross_ray_ct $(BUILD)/test_cross_ray_reconstruction \
+		$(BUILD)/test_cross_ray_fluid $(BUILD)/test_cross_ray_contact \
+		$(BUILD)/test_material_transport check-architecture
 	$(BUILD)/test_bg3d1
 	$(BUILD)/test_bg3d2
 	$(BUILD)/test_bg3d3
@@ -132,6 +192,16 @@ test: $(BUILD)/test_bg3d1 $(BUILD)/test_bg3d2 $(BUILD)/test_bg3d3 \
 	$(BUILD)/test_bg3d4_append
 	$(BUILD)/test_bg3d4_piston_sheath
 	$(BUILD)/test_bg3d4_piston_refinement
+	$(BUILD)/test_bg3d4_contact_derivative
+	$(BUILD)/test_spherical_shell
+	$(BUILD)/test_cross_ray_transport
+	$(BUILD)/test_spherical_sector
+	$(BUILD)/test_cross_ray_mesh
+	$(BUILD)/test_cross_ray_ct
+	$(BUILD)/test_cross_ray_reconstruction
+	$(BUILD)/test_cross_ray_fluid
+	$(BUILD)/test_cross_ray_contact
+	$(BUILD)/test_material_transport
 
 clean:
 	rm -rf $(BUILD)

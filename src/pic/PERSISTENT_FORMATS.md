@@ -46,6 +46,14 @@ identity do not yet have a portable payload contract. Applications using those
 capabilities must not infer deterministic continuation from the one-rank MPI
 receipt.
 
+The integrated comet local-weight payload has a distinct revision-3 identity
+that includes statistical-weight mode and the complete associated block-slice
+length. It preserves empty owner blocks as well as populated blocks and
+publishes restored block state to ghosts. The global-weight revision-2
+identity and payload remain unchanged. Legacy unversioned local-weight files
+are rejected. Multi-rank bitwise RNG continuation is not implied by restoring
+the block state; it remains outside the one-rank deterministic contract.
+
 Legacy boundary
 ---------------
 

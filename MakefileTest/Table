@@ -1528,6 +1528,12 @@ Check=
 
 #>
 Name=Moon
+Compile=
+>>>@echo "test_Moon_compile..." > test_Moon$(TESTMoon-REF).diff
+>>>python3 src/test/native/prepare_legacy_native.py
+>>>./Config.pl -application=Moon -spice-path=nospice -spice-kernels=nospice -model-data-path=$(PTDIR)/data/input/Moon -amps-test=on $(TESTMoonKEYS)
+>>>@($(MAKE) -j16 amps)
+>>>@echo "test_Moon_compile... done" >> test_Moon$(TESTMoon-REF).diff
 Time=2
 <#
 
@@ -2501,15 +2507,15 @@ Time=3
 
 Outs=
 
-Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/
 
 Compile=
 >>>@echo "test_fast-wave_compile..." > test_fast-wave$(TESTfast-wave-REF).diff
+>>>python3 src/test/native/prepare_legacy_native.py
 >>>cd ./share/; mkdir -p lib
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/fast-wave ${TESTfast-waveKEYS} 
->>>@rm -rf srcTemp
->>>-@($(MAKE) -j8  amps)
+>>>@($(MAKE) -j16 amps)
 >>>@echo "test_fast-wave_compile... done" >> test_fast-wave$(TESTfast-wave-REF).diff
 
 
@@ -2555,7 +2561,7 @@ Time=3
 
 Outs=
 
-Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/
 
 Compile=
 >>>@echo "test_fast-wave--legacy-ecsim_compile..." > test_fast-wave--legacy-ecsim$(TESTfast-wave--legacy-ecsim-REF).diff
@@ -2609,7 +2615,7 @@ Time=3
 
 Outs=
 
-Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/
 
 Compile=
 >>>@echo "test_fast-wave__correction_compile..." > test_fast-wave__correction$(TESTfast-wave__correction-REF).diff
@@ -2663,7 +2669,7 @@ Time=3
 
 Outs=
 
-Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/
 
 Compile=
 >>>@echo "test_fast-wave_rebalancing_compile..." > test_fast-wave_rebalancing$(TESTfast-wave_rebalancing-REF).diff
@@ -2733,7 +2739,7 @@ ExeptionCode=SKIP{pgcc}
 
 Outs=
 
-Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/
 
 Compile=
 >>>@echo "test_fast-wave_AVX256_compile..." > test_fast-wave_AVX256$(TESTfast-wave_AVX256-REF).diff
@@ -2791,7 +2797,7 @@ ExeptionCode=SKIP{gcc}@@(0+valeriy)
 
 Outs=
 
-Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/
 
 Compile=
 >>>@echo "test_fast-wave_AVX512_compile..." > test_fast-wave_AVX512$(TESTfast-wave_AVX512-REF).diff
@@ -2849,7 +2855,7 @@ ExeptionCode=SKIP{gcc}@@(0+valeriy)
 
 Outs=
 
-Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/
 
 Compile=
 >>>@echo "test_fast-wave_multithread_UpdateJMassMatrix_compile..." > test_fast-wave_multithread_UpdateJMassMatrix$(TESTfast-wave_multithread_UpdateJMassMatrix-REF).diff
@@ -2905,7 +2911,7 @@ ExeptionCode=SKIP{gcc}@@(0+valeriy)
 
 Outs=
 
-Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/
 
 Compile=
 >>>@echo "test_fast-wave_multithread_mover_UpdateJMassMatrix_compile..." > test_fast-wave_multithread_mover_UpdateJMassMatrix$(TESTfast-wave_multithread_mover_UpdateJMassMatrix-REF).diff
@@ -2961,7 +2967,7 @@ ExeptionCode=SKIP{gcc}@@(0+valeriy)
 
 Outs=
 
-Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/
 
 Compile=
 >>>@echo "test_fast-wave_multithread_mover_matmul_UpdateJMassMatrix_compile..." > test_fast-wave_multithread_mover_matmul_UpdateJMassMatrix$(TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrix-REF).diff
@@ -3016,7 +3022,7 @@ Time=3
 
 Outs=
 
-Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/
 
 Compile=
 >>>@echo "test_fast-wave-openmp_compile..." > test_fast-wave-openmp$(TESTfast-wave-openmp-REF).diff
@@ -3073,7 +3079,7 @@ Time=3
 
 Outs=
 
-Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/
 
 Compile=
 >>>@echo "test_fast-wave-openmp__shared_temp_list_compile..." > test_fast-wave-openmp__shared_temp_list$(TESTfast-wave-openmp__shared_temp_list-REF).diff

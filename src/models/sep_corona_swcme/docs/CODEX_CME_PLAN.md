@@ -1,5 +1,13 @@
 # CME execution plan — full background before particles
 
+> **Resumed on 2026-11-10:** the user explicitly selected "Resume the full-CME
+> implementation and qualification" while implementing the core failure-repair
+> plan. This supersedes the historical deferral below. Active work resumes at
+> G1/BG3D-4 mass/time convergence and its reopened common-contact dependency;
+> no BG3D stage is promoted by the resumption. G2/G3/G4 remain unauthorized.
+> Existing reduced-front implementations and their qualification evidence are
+> preserved and cannot substitute for full-volume validation.
+
 > **Deferred on 2026-10-04:** direct user authorization moved active work to
 > the reduced shock-front plus ambient campaign recorded in the repository-root
 > `CODEX_REDUCED_SHOCK_PLAN.md` and specified by `docs/shock-front/model.md`
@@ -12,6 +20,198 @@ CODEX_CME_PLAN.md interleaved L0–L7 execution order. Read the updated shared
 roadmap revision 1.3, especially Section 0, and the maintained coronal and
 Corona–SWCME composite physics specifications. This file records execution
 and evidence; the specifications own the equations and closure contracts.
+
+## Complete core revalidation finished (2026-11-10)
+
+The source-frozen full core campaign finished in **1958.293 s**:
+**1,067 cases = 825 PASS / 1 FAIL / 240 SKIP / 1 ERROR**;
+**50 suites = 43 PASS / 1 FAIL / 5 SKIP / 1 ERROR**. The return code is 1,
+retaining the two actual nonpasses. All 792 previously passing identities are
+still PASS, all 32 added cases PASS, no baseline case is missing, and the only
+changed baseline result is CMBGU05 FAIL -> PASS. The original 785-pass
+preintegration baseline remains protected by the retained earlier identity
+comparison and this complete 792-pass preservation.
+
+Exact executed command:
+
+```sh
+python3 -B src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --config test_output/remaining-failures-repair-20261110/local-machine.json \
+  --match 'CORE-*' --jobs 8 --build-jobs 16 \
+  --output-dir test_output/remaining-failures-repair-20261110/core-current
+```
+
+The explicit selector excludes application suites. The AMPS-local overlay
+keeps output/work below the permitted checkout. Native adapters recorded the
+required root/idle, generated-build removal, configuration workflow and -j16
+build preflight. All core native, 1/2/4-rank ownership, 1D/2D/3D mesh, physics,
+layout and weight/time cases pass. Existing typed provider/tool/campaign SKIPs
+remain. This is complete core regression evidence, not a native full-CME run.
+
+Remaining exact nonpasses:
+
+| Case | State | Reason / preserved gate |
+| --- | --- | --- |
+| `CSWC-FULL-CSWC0628-MASS-TIME` | ERROR | Unchanged full production refinement exceeds its original 180 s ceiling; no partial-level PASS is inferred. |
+| `T12-COVERAGE-STRICT-001` | FAIL | Valid real inventory still has 2 complete / 26 incomplete components; structural contradictions remain separate ERROR conditions. |
+
+The six T11 import/audit suites now report 668 rows: 434 PASS / 233 SKIP /
+1 ERROR. T12 reports 13 PASS / 2 SKIP / 1 FAIL: Clang and TSan are skipped,
+strict coverage fails, and the other bounded tool/ABI/sanitizer/backend/perf
+cases pass. The full-volume owner has 46 rows: 45 PASS / 1 ERROR.
+
+Full evidence directory:
+`/home/vtenishe/Mars2/AMPS/test_output/remaining-failures-repair-20261110/core-current/`.
+The combined result is `amps-core-tests.json`/`.xml`; stream progress/report is
+`streams/core.log`/`.json`; suite logs and local numeric transcripts are linked
+by each JSON suite row. `core-current-baseline-comparison.json` in the parent
+evidence directory retains identity comparisons and every remaining nonpass.
+`full-core-preservation.json` verifies no source/test change during the run,
+unchanged HEAD, and unchanged Makefile.conf/.amps.conf. Makefile.local was
+regenerated through the normal configuration workflow; no direct .amps.conf
+edit or Git mutation occurred. Current Git-read-only instructions remain in
+force; no Git-writing application test was selected.
+
+## Documentation and subsequent diagnostic boundary
+
+All new APIs/numerical repairs, units/frames, invariants, input/API boundaries,
+exact commands, independent oracles, portable settings, failure/report policy
+and unqualified physics are documented in the relevant READMEs:
+
+- `src/models/sep_corona_swcme/README.md` and `README_CROSS_RAY.md`;
+- `src/models/sep_corona_swcme/test/README.md`;
+- `src/test/README.md`, `tests/models/cme/README.md` and
+  `tests/models/cme/sep_corona_swcme_full/README.md`;
+- `src/test/tests/harness/self/README.md`,
+  `src/test/tests/portability/matrix/README.md`, `src/test/lib/README.md`, and
+  `src/test/tests/models/comet_libraries/README.md`.
+
+Documentation validation: all 60 local links across these ten READMEs
+resolve; the generated catalog check passes at 55 suites / 1,174 cases;
+traceability passes at 28 areas, 218 production translation units, 210 public
+contracts and 25 configuration contracts. The material-transport C++ example
+compiles with warnings treated as errors, links against the actual tested
+shared archives and prints the expected `8 0.25`. The harness governance
+recheck passes all 13 cases. `git diff --check` passes. Detailed receipts are
+`readme-link-audit.json`, `readme-example-validation.json`,
+`readme-governance-check/amps-core-tests.json` and
+`readme-documentation-validation.json` in the evidence root. These checks
+validate documentation, registration and governance; the full physics result
+above remains the source-frozen core receipt.
+
+The source-level physical implementation has not changed since this full run.
+The new comparison PNG uses recorded contact/advection/reconstruction errors:
+[bounded comparison plot](../../../../test_output/remaining-failures-repair-20261110/bounded-comparisons.png),
+with data/provenance JSON beside it.
+
+Private ambient-flow/variational diagnostics identify a numerical trace issue
+before adopting a production analytical lateral map. Closed-corotation/Parker
+probes conserve density/field to roundoff/about 1e-12. The open-PFSS 60 s probe
+has a timestep-independent density mismatch about 4.88e-8; an independent
+analytic dipolar invariant finds about 1.8e-6 pointwise relative density error
+from the existing endpoint trace. A PRIVATE exact-dipolar-trace prototype
+reduces the material-density mismatch to about 1.6e-10 and endpoint-density
+error to about 1e-13. Its complete unchanged-gate CMBGU05 run passes in 80.137 s.
+No such prototype or ambient-map production API is imported into source. The
+adiabatic probes also expose the expected need for explicit heating when
+matching the isothermal ambient; they do not qualify thermal/source balance.
+See README_CROSS_RAY.md and the analytical design document for provenance and
+next steps. These experiments do not replace the current production receipt.
+
+The following implementation checkpoints retain their historical snapshots.
+
+## 2026-11-10 analytical cross-ray implementation and validation
+
+The user explicitly resumed G1, retained the full 3-D ambient, and selected
+conservative lateral MATERIAL transport without an MHD runtime. The original
+runtime prohibition remains in force. HLL/static-fluid operators are reference
+conservation tools; they are not a production MHD time integrator. Further
+user decisions select a field-threaded ideal material contact, exact startup
+corotation, and a 1200-s quintic transition to zero angular rate. The final
+orientation retains the agreed 0.0985-degree offset without a reset.
+
+Implemented bounded components under `this shared model`:
+
+| Component | Independent new cases | Current evidence |
+| --- | ---: | --- |
+| SI MHD/ALE flux and conservative transfer references | 5 | Optimized, debug and ASan/UBSan/LeakSanitizer PASS |
+| Exact static spherical sectors | 3 | Analytic octant, rotations, thin cells and 336-cell shell PASS |
+| Shared face/edge topology | 3 | 792 internal interfaces, integer incidence, curved edges and authority PASS |
+| Static face-flux CT reference | 3 | Independent Stokes/Faraday and deliberate monopoles/stale data PASS |
+| Cell-field reconstruction | 3 | Constant rotated/scaled fields; affine-field errors 0.0152182/0.00391239/0.000984985 PASS |
+| Atomic fluid/CT energy reference | 4 | Uniform states, opposite transfers, explicit work and whole-epoch rejection PASS |
+| Corotating threaded-contact geometry | 4 | Full startup, independently differentiated motion, interface stress/E/work and exclusions PASS |
+| Analytical material transport | 4 | Full Cauchy mass/flux/entropy, independent rates, nonlinear transport and map rejection PASS |
+
+These are **29 new cross-ray cases**, plus independent contact-derivative and
+stable-shell controls. No production lateral velocity/map has been selected
+or guessed. No new runtime selector/application coupling is active. The
+remaining regional closure must supply one compatible map, initial/boundary
+states, EOS/entropy and force/heating/work, then satisfy the original computed-
+shock, mass/time/ray, contact, magnetic and validity gates. BG3D-4/G1 remain
+UNQUALIFIED. See the normative cross-ray, startup and material-transport docs.
+
+Key retained outcomes:
+
+- Complete `CMBGU05` PASS, retaining the original three derivative steps,
+  physical leakage bounds and convergence requirement. The user approved the
+  stronger distributed acceptance requiring EVERY level to pass unchanged
+  limits. Physical force/work and cross-stage authority mismatch remain
+  diagnostic; this software PASS does not qualify the old volume map.
+- Original complete coarse refinement: 471.164 s and TWO detected shock zones.
+  Algebraically stable exact shell moments: comparable coarse diagnostic
+  127.902 s, same printed shock values and two zones. The unchanged full matrix
+  retains ERROR at its 180 s routine limit; no smaller grid/ray/epoch set,
+  extra timeout, changed branch filter or relaxed physical gate is accepted.
+- Stable production shell geometry uses independent Gaussian polynomial
+  moments as its test oracle. A cancellation-sensitive old centroid oracle
+  initially exposed CSWC0625 failure and was corrected independently. Radial
+  flux error is now 4.01794e-16 against the unchanged 2e-13 bound; CSWC0624/26
+  also PASS. No PFSS optimization prototype was imported.
+- The stationary legacy HCI contact has initial ambient normal speeds from
+  -905 to +410 m/s on the four supported rays. The selected rotating contact
+  reduces maximum startup mass flux to 1.10794e-26 kg/m^2/s, below the unchanged
+  1e-20 bound, retaining abs(Bn)/abs(B) up to 0.323732. Actual two-sided ejecta
+  matching remains a later G1 gate.
+- Fresh complete 42-case model-owner plus 13-case harness snapshot:
+  **55 total, 54 PASS, 0 FAIL, 0 SKIP, 1 ERROR; 541.326 s**. The sole ERROR is
+  the original refinement ceiling. It predates the four subsequent material
+  cases and later private-factory/excluded-frame controls; those have separate
+  current build/debug/sanitizer receipts. Do not silently relabel this snapshot.
+- A fresh current archive/neutral-header build passes all 25 earlier cross-ray
+  cases, derivative/shell controls, CSWC0625 and architecture after validated-
+  factory-only construction and HCI exclusion bookkeeping. The four new
+  material cases independently pass optimized/debug and all sanitizers.
+- Latest harness: **13/13 PASS**. In addition to the real validator and strict
+  CLI, an injected ledger contradiction must produce ERROR=2 with its unique
+  diagnostic; the legitimate incomplete inventory remains FAIL=1. The first
+  new bootstrap fixture formatting error is retained, then corrected. No
+  production coverage component was promoted by these governance controls.
+
+Evidence root: `test_output/remaining-failures-repair-20261110/`. Important
+receipts: `model-owner-with-corotation/amps-core-tests.json`,
+`final-kernel-validation.json`, `cross-ray-sanitizer-factory-results.json`,
+`contact-latest-profiles.json`, `contact-latest-sanitizers.log`,
+`material-controls-current.json`, `material-profiles.json`,
+`material-sanitizers.log`, and
+`harness-final-controls-corrected/amps-core-tests.json`.
+
+Current registry: **55 suites / 1,174 cases**, including **50 core suites /
+1,067 core cases**. At that checkpoint a complete core campaign was running in
+`core-current/`, selected with `--match 'CORE-*' --jobs 8 --build-jobs 16` and
+explicit Passion plus AMPS-local path overlays. Registered applications have
+zero selected suites. Native adapters perform and record root/idle checks,
+removal of only `build`, Config.pl regeneration and top-level `make -j16`.
+Source/test definitions are frozen during the campaign; documentation updates
+continue. Its final counts and identity comparison are recorded above.
+The previous complete 1035-case receipt (792 PASS, 2 FAIL, 240 SKIP, 1 ERROR)
+remains historical evidence, not a claimed result for the enlarged registry.
+
+Strict coverage remains **2 complete / 26 incomplete** and exits 1. The
+separate Hartley2 3-D geometry/runtime limitation remains open. No Git state
+is modified; no test-output tree is imported as application source. No native
+one-/four-rank full-CME or completed-coverage qualification is claimed.
 
 ## Active user decision
 
@@ -426,6 +626,19 @@ any earlier diagnostic PASS to physical qualification.
 | Current implementation versus validation | Implemented: strict/fingerprinted controls, finite contact-driven radial tubes, moving Parker boundary, append, shock-zone evidence, deterministic private maintenance lattice.  Validated before the latest correction: standalone planar/spherical/MHD/ambient/append references and bounded CSWC0627 smoke.  Not validated after the correction: caller-cadence invariance, 3600-s mass convergence, timestep convergence, ray-count convergence, production RH applicability, `epsilon_t`, `epsilon_Q`, physical shock fit/normals, 3-D assembly/divergence, handoff plasma evolution or 1-AU propagation. |
 | Preservation | Mars2 HEAD remains `994978a05499337044b92fb9c54ac54cb52fef1b`; no commit/push.  No tracked srcSEP3D particle, generic PIC or particle-only file was modified.  Mars1 was only read; its HEAD remains `fde03997f408792a544291146c5f81f057aa32a8`.  Its current tracked-status digest is `6d13fc7300dd8fd3485d1df9d02a38eafbb302a4482c0819133eacd299f7c1fc`; this differs from the earlier recorded digest because Mars1 changed externally, not through this task. |
 | Next action | Rebuild the shared model and complete (1) a direct-versus-segmented caller-cadence regression, then (2) the 40/80/160 settled-epoch mass sequence with the deterministic maintenance lattice.  If multiple zones or nondecreasing changes persist, inspect their causal histories and revise the shock-tracking/numerical dissipation construction; do not change the frozen accuracy bounds.  Only after mass/time convergence passes should ray refinement and CSWC0629 validity work begin. |
+
+### G1 resumption and bounded test repair, 2026-11-10
+
+| Field | Current evidence and boundary |
+| --- | --- |
+| Authorization | Direct user response resumes full-CME implementation/qualification. Earliest unfinished production work remains BG3D-4/CSWC0628; the common-contact subset of BG3D-3 remains open. No later stage starts before its dependency passes. |
+| Contact test repair | Equivalent paired fourth-order differences remove unnecessary large-position cancellation. Frozen h=0.1/0.05/0.025 s and dimensional flux/normal-speed bounds are unchanged. The user explicitly approved replacing the historical assertion requiring a failed contact level with the positive requirement that all levels pass those same limits. |
+| Actual verification | Full original-library CMBGU05 executable PASS, exit 0, 223.624 s including concurrent diagnostic work. Contact fluxes are 2.81447e-20, 2.32102e-20, 8.10942e-20 kg/(m^2 s), bound 1.001e-17. All three absolute area-time contact integrals and normal-velocity limits pass. Later inventory, smooth identities, inverse, subfast transaction and residual checks all execute. The independent manufactured derivative/slip test passes ordinary/debug and ASan/UBSan/LeakSanitizer execution. |
+| Scope limitation | This is a bounded diagnostic-map software PASS, not qualification of its physical closure. Its cross-stage position mismatch remains 0.0100149 and distributed force ratio 0.645573; no tolerance or production state was changed to hide either. |
+| Refinement diagnosis | Original full refinement still exceeds its routine 180 s ceiling. A private degree-one PFSS evaluation prototype is insufficient and is not imported. Private stable exact shell formulas yield a completed 40-cell/3600-s measurement in 127.902 s, but two detected shock zones violate the frozen common-branch prerequisite. Complete unchanged-original comparison is in progress. No production solver, field, fixture or timeout modification is claimed. |
+| Governance | New strict-coverage controls and the complete harness PASS 13/13. Incomplete/contradictory declarations remain nonpassing; no component is promoted. |
+| Evidence | AMPS-local generated receipts under test_output/remaining-failures-repair-20261110/: contact-qualified.json/.log, contact-control-profiles.json, contact-controls-asan-ubsan-unsandboxed.json, harness-corrected/, refinement-original.json, refinement-gprof.txt, refinement-stable-shell.json/.log. Private prototype-linked and sandbox-restricted diagnostic failures remain retained separately. |
+| Next | Complete unchanged-original coarse diagnosis, inspect all Q/P zones and the stiff ray history, establish a real numerical/physical cause, then repair under the unchanged accuracy/branch gates. Complete all mass/time/ray prerequisites before validity/assembly/native work. No native rebuild was performed at this checkpoint. |
 
 ## Completion delivery
 

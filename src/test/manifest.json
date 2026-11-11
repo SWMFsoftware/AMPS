@@ -16,6 +16,7 @@
       },
       "expected_cases": [
         "HARNESS-CONFIG-001",
+        "HARNESS-NATIVE-CONFIG-ISOLATION-001",
         "HARNESS-MANIFEST-001",
         "HARNESS-SELECTION-001",
         "HARNESS-PROTOCOL-001",
@@ -25,7 +26,8 @@
         "HARNESS-SUBPROCESS-001",
         "HARNESS-TIMEOUT-001",
         "HARNESS-CONCURRENCY-001",
-        "HARNESS-TRACEABILITY-001"
+        "HARNESS-TRACEABILITY-001",
+        "HARNESS-COVERAGE-GATES-001"
       ],
       "timeout_seconds": 60
     },
@@ -41,7 +43,7 @@
         "paths": ["src/general/input/amps_input.h", "src/general/input/test_amps_input.cpp"],
         "capabilities": []
       },
-      "expected_cases": ["INP-01", "INP-02", "INP-03", "INP-04"],
+      "expected_cases": ["INP-01", "INP-02", "INP-03", "INP-04", "INP-05"],
       "timeout_seconds": 120
     },
     {
@@ -423,6 +425,17 @@
         "CHEM-SOLVER-INVALID-001",
         "CHEM-SOLVER-SINGULAR-001"
       ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "CORE-COMET-LIBRARIES-001",
+      "component": "src/models/cometary_physics",
+      "level": "module",
+      "tiers": ["smoke", "nightly", "extended"],
+      "runner": "tests/models/comet_libraries/run_test.py",
+      "description": "Imported reaction network, collision database, cooling, fluorescence and reference-data contracts",
+      "requires": {"tools": ["cxx", "python"], "paths": [], "capabilities": []},
+      "expected_cases": ["COMET-REACTION-NETWORK-001", "COMET-COLLISION-DATABASE-001", "COMET-RADIATIVE-COOLING-001", "COMET-FLUORESCENCE-001", "COMET-REFERENCE-DATA-001"],
       "timeout_seconds": 300
     },
     {
@@ -1504,7 +1517,7 @@
       "level": "integration",
       "tiers": ["extended"],
       "runner": "tests/models/cme/sep_corona_swcme_full/run_test.py",
-      "description": "Fifteen bounded full-volume software checks without BG3D-4 or G1 qualification",
+      "description": "Forty-six full-volume software/reference checks covering contact/slip, stable geometry, shared mesh/CT/energy and analytical material transport; BG3D-4/G1 remain unqualified",
       "requires": {
         "tools": ["python", "cxx", "make"],
         "paths": ["src/models/sep_corona_swcme/makefile"],

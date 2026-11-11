@@ -30,6 +30,8 @@ sys.path.insert(0, str(TEST_ROOT))
 from lib.runner_support import (  # noqa: E402
     RunnerError, case, command, error_result, load_context, main_guard,
     run_command, write_result)
+from lib.native_configuration import (  # noqa: E402
+    NativeConfigurationError, configure_no_spice, verify_no_spice_build)
 
 
 CASE_ID = "CORE-DUST-INJECTION-INTEGRATION-001"
@@ -113,15 +115,12 @@ def main() -> int:
             return write_result(
                 context, "ERROR", "could not remove generated build directory")
 
-        configured = run_command(
-            [str(repo / "Config.pl"),
-             "-application=test/model-dust-injection"],
-            repo, timeout=timeout)
-        if configured.returncode != 0:
-            return write_result(
-                context, "FAIL",
-                "Config.pl could not select test/model-dust-injection",
-                cases=[case(CASE_ID, "FAIL", "configuration failed")])
+        # This manufactured source uses a prescribed local sphere, not SPICE
+        # geometry. Apply the same explicit mode contract as the other native
+        # source fixtures, even when an inherited installation would link.
+        configured = configure_no_spice(
+            context, "test/model-dust-injection",
+            "input/test/model-dust-injection.input", "dust-injection-native")
 
         make_command = command(context, "make") + ["amps"]
         print("[preflight] build_environment=MAKEFLAGS=-j16 command={}".format(
@@ -132,11 +131,13 @@ def main() -> int:
         build_log = artifacts / "dust-injection-native-build.txt"
         build_log.write_text(
             (configured.stdout or "") + (built.stdout or ""), encoding="utf-8")
+        configured.evidence.append(str(build_log))
         if built.returncode != 0 or not (repo / "amps").is_file():
             return write_result(
                 context, "FAIL", "native dust injection application did not build",
                 cases=[case(CASE_ID, "FAIL", "make exit {}".format(
-                    built.returncode))], evidence=[str(build_log)])
+                    built.returncode))], evidence=configured.evidence)
+        verify_no_spice_build(configured, built.stdout or "")
 
         retained = artifacts / "amps-test-model-dust-injection"
         shutil.copy2(str(repo / "amps"), str(retained))
@@ -144,9 +145,11 @@ def main() -> int:
         identity.write_text(json.dumps({
             "schema_version": 1,
             "application": "test/model-dust-injection",
-            "configure_command": [
-                "./Config.pl", "-application=test/model-dust-injection"],
-            "build_command": ["env", "MAKEFLAGS=-j16", "make", "amps"],
+            "configure_command": configured.command,
+            "configuration_receipt": str(configured.receipt_path),
+            "expected_spice": "nospice",
+            "build_command": make_command,
+            "build_environment": {"MAKEFLAGS": "-j16"},
             "executable_sha256": _sha256(retained),
             "input_deck_sha256": _sha256(
                 repo / "input/test/model-dust-injection.input"),
@@ -171,7 +174,11 @@ def main() -> int:
         return write_result(
             context, "PASS" if exact_receipt else "FAIL", message,
             cases=[case(CASE_ID, "PASS" if exact_receipt else "FAIL", message)],
-            evidence=[str(build_log), str(identity), str(transcript)])
+            evidence=configured.evidence + [str(identity), str(transcript)])
+    except NativeConfigurationError as error:
+        return write_result(context, "ERROR", str(error),
+                            cases=[case(CASE_ID, "ERROR", str(error))],
+                            evidence=error.evidence)
     except Exception as error:
         return error_result(context, error)
     finally:

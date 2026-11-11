@@ -12,6 +12,7 @@
 #include "pic.h"
 #include "Dust.h"
 #include "Comet.h"
+#include "CometPhysics.h"
 #include "SingleVariableDiscreteDistribution.h"
 
 //the object name and the names of the frames
@@ -1856,138 +1857,12 @@ return false;
 }
 
 
-double Comet::radiativeCoolingRate_Crovisier(PIC::Mesh::cDataCenterNode *CenterNode){
-  double tau,r,res=0.0,dens,temp;
-  int idim;
-  double *position;
-
-  const double adsorptionCrossSection=4.0E-15;
-
-  position=CenterNode->GetX();
-
-  for (r=0.0,idim=0;idim<DIM;idim++) r+=pow(position[idim],2.0);
-  r=sqrt(r)*100.0; //convert r into cm
-
-  dens=CenterNode->GetNumberDensity(_H2O_SPEC_)*1.0e-6; //convert density into cm^{-3}
-  temp=PIC::IDF::LB::GetCellRotTemp(_H2O_SPEC_,CenterNode);
-
-  tau=0.4*dens*r*adsorptionCrossSection;
-
-  res=(temp<52.0) ? 4.4E-22*pow(temp,3.35) : 2.0E-20*pow(temp,2.47);
-  res*=dens*exp(-tau);
-
-  return (dens>0.0) ? res*1.0E-7/dens : 0.0; //convert energy into joule and the rate into the  rate per particle
-}
-
-void Comet::StepOverTime() {
-  double LocalTimeStep,Erot;
-  double radiativeCoolingRate=0.0;
-  
-  long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_],FirstCellParticle,ptr;
-  
-  int thread,i,j,k,idim,offset,cnt=0;
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
-  PIC::Mesh::cDataBlockAMR *block;
-  PIC::Mesh::cDataCenterNode *cell;
-
-  PIC::ParticleBuffer::byte *ParticleData;
-
-#if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
-
-  for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
-    block=node->block;
-    memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
-
-    for (i=0;i<_BLOCK_CELLS_X_;i++) {
-      for (j=0;j<_BLOCK_CELLS_Y_;j++)
-        for (k=0;k<_BLOCK_CELLS_Z_;k++) {
-	  FirstCellParticle=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
-          cell=block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k));
-
-	  if (FirstCellParticle!=-1 && cell!=NULL){
-	    radiativeCoolingRate=radiativeCoolingRate_Crovisier(cell);
-
-	  if (radiativeCoolingRate>0.0) {
-	    for (ptr=FirstCellParticle;ptr!=-1;ptr=PIC::ParticleBuffer::GetNext(ptr)) {
-	      if (PIC::ParticleBuffer::GetI(ptr)==_H2O_SPEC_) {
-		ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);		
-	  
-#if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
-  LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[PIC::ParticleBuffer::GetI(ptr)];
-#elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
-  LocalTimeStep=block->GetLocalTimeStep(PIC::ParticleBuffer::GetI(ptr)); //   node->Sphere->maxIntersectedNodeTimeStep[PIC::ParticleBuffer::GetI(ptr)];
-#else
-  exit(__LINE__,__FILE__,"Error: the time step node is not defined");
-#endif
-
-		Erot=PIC::IDF::LB::GetRotE(ParticleData);
-		Erot-=radiativeCoolingRate*LocalTimeStep;
-		
-		if(Erot<0.0) Erot=0.0;
-		PIC::IDF::LB::SetRotE(Erot,ParticleData);
-	      }
-	      }
-	    }
-	  }
-	}
-    }
-  }
-#endif
-}
-
-
 void Comet::GetNucleusNastranInfo(cInternalNastranSurfaceData *CG) {
   Comet::CG=CG;
 }
 
 double PIC::MolecularCollisions::ParticleCollisionModel::UserDefined::GetTotalCrossSection(double *v0,double *v1,int s0,int s1,PIC::Mesh::cDataBlockAMR *block,PIC::Mesh::cDataCenterNode *cell) {
-  double T=cell->GetTranslationalTemperature(_H2O_SPEC_);
-
-  if (s0==_H2O_SPEC_ && s1==_H2O_SPEC_) return (T>1.0) ? 1.66E-19/pow(T/300.0,0.6) : 0.0;
-#if  _MULTISPECIES_ANALYTICAL_MODE_ == _MULTISPECIES_ANALYTICAL_MODE_ON_
-  else if ((s0==_H2O_SPEC_ && s1==_CO2_SPEC_) || (s0==_CO2_SPEC_ && s1==_H2O_SPEC_)) return 3.4E-19;
-  else if (s0==_CO2_SPEC_ && s1==_CO2_SPEC_) return 3.4E-19;
-  /*  else if ((s0==_H2O_SPEC_ && s1==_CO_SPEC_) || (s0==_CO_SPEC_ && s1==_H2O_SPEC_)) return 3.2E-19;
-  else if ((s0==_CO2_SPEC_ && s1==_CO_SPEC_) || (s0==_CO_SPEC_ && s1==_CO2_SPEC_)) return 3.2E-19;
-    else if (s0==_CO_SPEC_ && s1==_CO_SPEC_) return 3.2E-19;
-  */
-#if _PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
-  //  else if ((s0==_H2O_SPEC_ && s1==_OH_SPEC_) || (s1==_H2O_SPEC_ && s0==_OH_SPEC_)) return 3.2E-19;
-  //else if ((s0==_CO2_SPEC_ && s1==_OH_SPEC_) || (s1==_CO2_SPEC_ && s0==_OH_SPEC_)) return 3.2E-19;
-
-  /* //else if (s0==_OH_SPEC_ && s1==_CO_SPEC_) return 3.0E-19;
-  //else if (s0==_H2_SPEC_ && s1==_CO_SPEC_) return 3.0E-19;
-  //else if (s0==_H_SPEC_ && s1==_CO_SPEC_) return 1.5E-19;
-  //else if (s0==_O_SPEC_ && s1==_CO_SPEC_) return 1.5E-19;
-
-
-  else if ((s0==_H2O_SPEC_ && s1==_H2_SPEC_) || (s0==_H2_SPEC_ && s1==_H2O_SPEC_)) return 3.2E-19;
-  else if ((s0==_H2O_SPEC_ && s1==_H_SPEC_) || (s0==_H_SPEC_ && s1==_H2O_SPEC_)) return 1.8E-19;
-  else if ((s0==_H2O_SPEC_ && s1==_O_SPEC_) || (s0==_O_SPEC_ && s1==_H2O_SPEC_)) return 1.8E-19;
-  else if (s0==_OH_SPEC_ && s1==_OH_SPEC_) return 3.0E-19;
-  else if ((s0==_OH_SPEC_ && s1==_H2_SPEC_) || (s0==_H2_SPEC_ && s1==_OH_SPEC_)) return 3.0E-19;
-  else if ((s0==_OH_SPEC_ && s1==_H_SPEC_) || (s0==_H_SPEC_ && s1==_OH_SPEC_)) return 1.5E-19;
-  else if ((s0==_OH_SPEC_ && s1==_O_SPEC_) || (s0==_O_SPEC_ && s1==_OH_SPEC_)) return 1.5E-19;
-  else if (s0==_H2_SPEC_ && s1==_H2_SPEC_) return 3.0E-19;
-  else if ((s0==_H2_SPEC_ && s1==_H_SPEC_) || (s0==_H_SPEC_ && s1==_H2_SPEC_)) return 1.5E-19;
-  else if ((s0==_H2_SPEC_ && s1==_O_SPEC_) || (s0==_O_SPEC_ && s1==_H2_SPEC_)) return 1.5E-19;
-  else if (s0==_H_SPEC_ && s1==_H_SPEC_) return 1.2E-19;
-  else if ((s0==_H_SPEC_ && s1==_O_SPEC_) || (s0==_O_SPEC_ && s1==_H_SPEC_)) return 1.2E-19;
-  else if (s0==_O_SPEC_ && s1==_O_SPEC_) return 1.2E-19;
-
-  else if ((s0==_H2O_SPEC_ && s1==_O2_SPEC_) || (s0==_O2_SPEC_ && s1==_H2O_SPEC_)) return 3.2E-19;
-  else if ((s0==_CO2_SPEC_ && s1==_O2_SPEC_) || (s0==_O2_SPEC_ && s1==_CO2_SPEC_)) return 3.2E-19;
-  else if (s0==_O2_SPEC_ && s1==_O2_SPEC_) return 3.2E-19;
-  else if ((s0==_OH_SPEC_ && s1==_O2_SPEC_) || (s0==_O2_SPEC_ && s1==_OH_SPEC_)) return 3.0E-19;
-  else if ((s0==_H2_SPEC_ && s1==_O2_SPEC_) || (s0==_O2_SPEC_ && s1==_H2_SPEC_)) return 3.0E-19;
-  else if ((s0==_H_SPEC_ && s1==_O2_SPEC_) || (s0==_O2_SPEC_ && s1==_H_SPEC_)) return 1.5E-19;
-  else if ((s0==_O_SPEC_ && s1==_O2_SPEC_) || (s0==_O2_SPEC_ && s1==_O_SPEC_)) return 1.5E-19;
-  //  else if ((s0==_CO_SPEC_ && s1==_O2_SPEC_) || (s0==_O2_SPEC_ && s1==_CO_SPEC_)) return 3.2E-19;
-  */
-#endif
-
-#endif
-else return 0.0;
+  return Comet::Physics::GetNeutralCrossSection(v0,v1,s0,s1,block,cell);
 }
 
 unsigned int Comet::GetParticleSurfaceElement(PIC::ParticleBuffer::byte *ParticleDataStart) {
@@ -2019,7 +1894,7 @@ void Comet::TrajectoryTracking::Init() {
 }
 
 bool Comet::TrajectoryTracking::TrajectoryTrackingCondition(double *x,double *v,int spec,void *ParticleData) {
-  bool res;
+  bool res=false;
   long int nZenithElement,nAzimuthalElement,el;
 
 #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
@@ -2038,8 +1913,9 @@ bool Comet::TrajectoryTracking::TrajectoryTrackingCondition(double *x,double *v,
   res=true; //PIC::ParticleTracker::TrajectoryTrackingCondition_default(x,v,spec,ParticleData);
 
   if (res==true) TracedParticleNumber_LOCAL[el]++;
-  return res;
 #endif
+
+  return res;
 }
 
 void Comet::TrajectoryTracking::UpdateParticleCounter() {
@@ -2377,5 +2253,3 @@ void Comet::Sampling::OutputDiagnosticMessage(CMPI_channel* pipe,long int nExcha
 
   DustMassEscapeRate=0.0;
 }
-
-

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Import dependency-light full-volume Corona--SWCME code checks.
 
-These tests exercise bounded kernels used by the deferred BG3D-4 program.
+These tests exercise bounded kernels used by the resumed, unqualified BG3D-4 program.
 Their marker PASS is never promoted into full-CME, G1, production, or
 observational qualification.
 """
@@ -26,6 +26,29 @@ LOCAL_IDS = [
     "CMBGU01", "CMBGU02", "CMBGU03", "CMBGU04", "CMBGU05",
     "CSWC0620", "CSWC0621", "CSWC0622", "CSWC0623", "CSWC0624",
     "CSWC0625", "CSWC0626", "CSWC0627", "CSWC0628-MASS-TIME",
+    "CMBGU05-DERIVATIVE-CONTROLS", "CMBGU05-SHELL-GEOMETRY-CONTROLS",
+    "CSWC0628-XRAY-FLUX", "CSWC0628-XRAY-ALE", "CSWC0628-XRAY-CONSERVATION",
+    "CSWC0628-XRAY-REJECTION", "CSWC0628-XRAY-ADVECTION",
+    "CSWC0628-XRAY-GEOMETRY", "CSWC0628-XRAY-MESH-CLOSURE",
+    "CSWC0628-XRAY-GEOMETRY-REJECTION", "CSWC0628-XRAY-TOPOLOGY",
+    "CSWC0628-XRAY-EDGE-GEOMETRY", "CSWC0628-XRAY-MESH-IDENTITY",
+    "CSWC0628-XRAY-CT-INITIALIZATION", "CSWC0628-XRAY-CT-FARADAY",
+    "CSWC0628-XRAY-CT-AUTHORITY",
+    "CSWC0628-XRAY-RECONSTRUCTION-CONSTANT",
+    "CSWC0628-XRAY-RECONSTRUCTION-CONVERGENCE",
+    "CSWC0628-XRAY-RECONSTRUCTION-REJECTION",
+    "CSWC0628-XRAY-FLUID-UNIFORM",
+    "CSWC0628-XRAY-FLUID-CONSERVATION",
+    "CSWC0628-XRAY-FLUID-ENERGY",
+    "CSWC0628-XRAY-FLUID-REJECTION",
+    "CSWC0628-XRAY-CONTACT-STARTUP",
+    "CSWC0628-XRAY-CONTACT-DERIVATIVES",
+    "CSWC0628-XRAY-CONTACT-INTERFACE",
+    "CSWC0628-XRAY-CONTACT-REJECTION",
+    "CSWC0628-XRAY-MATERIAL-INVARIANTS",
+    "CSWC0628-XRAY-MATERIAL-RATES",
+    "CSWC0628-XRAY-MATERIAL-NONLINEAR",
+    "CSWC0628-XRAY-MATERIAL-REJECTION",
     "ARCHCSWC01",
 ]
 
@@ -49,6 +72,40 @@ BINARY_CASES = [
     ("test_bg3d4_append", ["CSWC0626"]),
     ("test_bg3d4_piston_sheath", ["CSWC0627"]),
     ("test_bg3d4_piston_refinement", ["CSWC0628-MASS-TIME"]),
+    ("test_bg3d4_contact_derivative", ["CMBGU05-DERIVATIVE-CONTROLS"]),
+    ("test_spherical_shell", ["CMBGU05-SHELL-GEOMETRY-CONTROLS"]),
+    ("test_cross_ray_transport", [
+        "CSWC0628-XRAY-FLUX", "CSWC0628-XRAY-ALE", "CSWC0628-XRAY-CONSERVATION",
+        "CSWC0628-XRAY-REJECTION", "CSWC0628-XRAY-ADVECTION"]),
+    ("test_spherical_sector", ["CSWC0628-XRAY-GEOMETRY",
+        "CSWC0628-XRAY-MESH-CLOSURE", "CSWC0628-XRAY-GEOMETRY-REJECTION"]),
+    ("test_cross_ray_mesh", ["CSWC0628-XRAY-TOPOLOGY",
+        "CSWC0628-XRAY-EDGE-GEOMETRY", "CSWC0628-XRAY-MESH-IDENTITY"]),
+    ("test_cross_ray_ct", ["CSWC0628-XRAY-CT-INITIALIZATION",
+        "CSWC0628-XRAY-CT-FARADAY", "CSWC0628-XRAY-CT-AUTHORITY"]),
+    ("test_cross_ray_reconstruction", [
+        "CSWC0628-XRAY-RECONSTRUCTION-CONSTANT",
+        "CSWC0628-XRAY-RECONSTRUCTION-CONVERGENCE",
+        "CSWC0628-XRAY-RECONSTRUCTION-REJECTION",
+    ]),
+    ("test_cross_ray_fluid", [
+        "CSWC0628-XRAY-FLUID-UNIFORM",
+        "CSWC0628-XRAY-FLUID-CONSERVATION",
+        "CSWC0628-XRAY-FLUID-ENERGY",
+        "CSWC0628-XRAY-FLUID-REJECTION",
+    ]),
+    ("test_cross_ray_contact", [
+        "CSWC0628-XRAY-CONTACT-STARTUP",
+        "CSWC0628-XRAY-CONTACT-DERIVATIVES",
+        "CSWC0628-XRAY-CONTACT-INTERFACE",
+        "CSWC0628-XRAY-CONTACT-REJECTION",
+    ]),
+    ("test_material_transport", [
+        "CSWC0628-XRAY-MATERIAL-INVARIANTS",
+        "CSWC0628-XRAY-MATERIAL-RATES",
+        "CSWC0628-XRAY-MATERIAL-NONLINEAR",
+        "CSWC0628-XRAY-MATERIAL-REJECTION",
+    ]),
 ]
 
 
@@ -72,6 +129,8 @@ def main() -> int:
             raise RuntimeError("full-volume exact-registry build failed")
         imported_by_local = {}
         for binary, owned_ids in BINARY_CASES:
+            for local_id in owned_ids:
+                print("[CASE] RUN " + global_id("CSWC-FULL", local_id), flush=True)
             # The refinement study is intentionally much larger than the
             # other bounded binaries and can exceed ten minutes on this host.
             # A routine import gives it a documented three-minute ceiling and
@@ -90,7 +149,7 @@ def main() -> int:
                         global_id("CSWC-FULL", local_id), "ERROR",
                         "local_id={} executable={} exceeded routine {} s ceiling; "
                         "no PASS is inferred from partial refinement levels; "
-                        "BG3D-4-unqualified/deferred".format(
+                        "BG3D-4-unqualified/G1-open".format(
                             local_id, binary, case_timeout))
                 continue
             transcript_text += "\n$ build/{}\n{}".format(binary, result.stdout)
@@ -105,7 +164,7 @@ def main() -> int:
                 for local_id, status, message in markers:
                     imported_by_local[local_id] = case(
                         global_id("CSWC-FULL", local_id), status,
-                        "local_id={} BG3D-4-unqualified/deferred; {}".format(
+                        "local_id={} BG3D-4-unqualified/G1-open; {}".format(
                             local_id, message))
             elif markers:
                 # Preserve a maintained executable's typed nonzero result.
@@ -128,7 +187,7 @@ def main() -> int:
                     imported_by_local[local_id] = case(
                         global_id("CSWC-FULL", local_id), status,
                         "local_id={} executable={} exit={}; "
-                        "BG3D-4-unqualified/deferred; {}".format(
+                        "BG3D-4-unqualified/G1-open; {}".format(
                             local_id, binary, result.returncode, message))
             else:
                 # Several legacy binaries print "BG3D-4 FAIL: ..." rather
@@ -145,7 +204,7 @@ def main() -> int:
                     imported_by_local[local_id] = case(
                         global_id("CSWC-FULL", local_id),
                         "FAIL" if legacy_fail else "ERROR",
-                        "local_id={} executable={} exit={}; BG3D-4-unqualified/deferred; {}".format(
+                        "local_id={} executable={} exit={}; BG3D-4-unqualified/G1-open; {}".format(
                             local_id, binary, result.returncode, detail))
 
         architecture = run_command(
@@ -163,7 +222,7 @@ def main() -> int:
             raise RuntimeError("architecture exit/status mismatch")
         imported_by_local[local_id] = case(
             global_id("CSWC-FULL", local_id), arch_status,
-            "local_id={} BG3D-4-unqualified/deferred; {}".format(local_id, message))
+            "local_id={} BG3D-4-unqualified/G1-open; {}".format(local_id, message))
         transcript.write_text(transcript_text, encoding="utf-8")
         if list(imported_by_local) != LOCAL_IDS:
             raise RuntimeError("full-volume exact registry order/membership drift")
@@ -171,9 +230,9 @@ def main() -> int:
         imported = selected_rows(context, imported)
         return write_result(
             context, suite_status(imported),
-            "bounded code checks imported; BG3D-4 and G1 remain unqualified and deferred",
+            "bounded code checks imported; BG3D-4 and G1 remain unqualified",
             imported, evidence=[str(transcript)],
-            metrics={"local_registry_cases": 15,
+            metrics={"local_registry_cases": len(LOCAL_IDS),
                      "qualification": "bounded-software-checks-only"})
     except BaseException as error:
         return error_result(context, error)

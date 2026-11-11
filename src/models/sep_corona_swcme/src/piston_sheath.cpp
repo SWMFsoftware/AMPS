@@ -1,4 +1,5 @@
 #include "sep_corona_swcme/piston_sheath.h"
+#include "sep_corona_swcme/spherical_shell.h"
 
 #include <algorithm>
 #include <cmath>
@@ -10,8 +11,10 @@ using CoronalCME::KinematicValue;
 using CoronalCME::Vec3;
 
 double ShellCentroid(double left,double right) {
-  return 0.75*(std::pow(right,4)-std::pow(left,4))/
-      (std::pow(right,3)-std::pow(left,3));
+  // Initialization and appended ambient cells use the exact same geometric
+  // centroid as the evolving solver. This changes arithmetic conditioning,
+  // not the physical reference profile, ray weight or quadrature measure.
+  return SphericalShellCentroidM(left,right);
 }
 
 Core::Result<PistonInitialState> SampleAmbientColumn(

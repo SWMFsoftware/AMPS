@@ -1,4 +1,5 @@
 #include "sep_corona_swcme/piston_solver.h"
+#include "sep_corona_swcme/spherical_shell.h"
 
 #include <algorithm>
 #include <cmath>
@@ -41,15 +42,15 @@ double FaceArea(const PlanarPistonInput& in,double position) {
 
 double CellVolume(const PlanarPistonInput& in,double left,double right) {
   return in.geometry==PistonTubeGeometry::Planar?in.areaM2*(right-left):
-      in.solidAngleSr*(right*right*right-left*left*left)/3;
+      in.solidAngleSr*SphericalShellVolumePerSrM3(left,right);
 }
 
 double CellRadius(const PlanarPistonInput& in,double left,double right) {
   if(in.geometry==PistonTubeGeometry::Planar)return 0.5*(left+right);
-  // Volume centroid of r over a spherical sector.  The quotient remains well
-  // conditioned for qualified positive shell widths at current resolutions.
-  return 0.75*(std::pow(right,4)-std::pow(left,4))/
-      (std::pow(right,3)-std::pow(left,3));
+  // Exact positive-shell moment, including highly compressed material cells.
+  // The shared factored form avoids cancellation and generic powers without
+  // altering the spherical measure or the selected radial dynamics.
+  return SphericalShellCentroidM(left,right);
 }
 
 double PhysicalPosition(const PlanarPistonInput& in,double stored,double time) {

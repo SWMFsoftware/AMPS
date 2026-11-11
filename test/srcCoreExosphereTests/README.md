@@ -52,10 +52,20 @@ this checkout, then follow the repository preflight literally:
 
 ```sh
 rm -rf -- build
-./Config.pl -application=test/core-exosphere-sphere
+./Config.pl -application=test/core-exosphere-sphere -spice-path=nospice
 env MAKEFLAGS="-j16" make amps
 mpiexec -n 1 ./amps
 ```
+
+The input-block `SPICE=off` controls the component, while Config.pl's global
+`SPICE` selection controls linkage and `_NO_SPICE_CALLS_`. The runner pins both
+contracts so a previous SPICE-enabled application cannot introduce an ephemeris
+dependency into this manufactured fixture. Before compilation it checks the
+staged application/input, saved selection, and effective make compiler flags
+using a dependency-free probe target. After compilation it checks the actual
+C++ commands before starting MPI. A contradictory mode is an ERROR, with
+`exosphere-native-configuration.json` and `.txt` retained beside the build and
+runtime receipts. The existing source-rate and inventory checks are unchanged.
 
 The application is qualified only for one MPI rank.  It does not validate
 multi-rank source statistics, target-specific thermal maps, plasma/yield-mode

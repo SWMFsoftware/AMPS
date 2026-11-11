@@ -16,6 +16,11 @@ double PIC::Parallel::Latency=0.0;
 //the user-defiend function to perform MPI exchange of the model data
 PIC::Parallel::fUserDefinedMpiModelDataExchage PIC::Parallel::UserDefinedMpiModelDataExchage=NULL;
 
+// Optional collective application hook called before ordinary particle
+// migration.  Keeping the default NULL preserves the historical exchange path
+// for every application that does not explicitly install a capacity control.
+PIC::Parallel::fBeforeParticleDataExchange PIC::Parallel::BeforeParticleDataExchange=NULL;
+
 //processing 'corner' and 'center' node associated data vectors when perform syncronization
 PIC::Parallel::CornerBlockBoundaryNodes::fUserDefinedProcessNodeAssociatedData PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData=NULL;
 PIC::Parallel::CornerBlockBoundaryNodes::fUserDefinedProcessNodeAssociatedData PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData=NULL;
@@ -1511,17 +1516,20 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
     for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
       node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
       double eps = 0.3*PIC::Mesh::mesh->EPS;
-      double dx[3];
+      // Coordinates sent to the ownership tree retain three components, but
+      // AMR node bounds contain only _MESH_DIMENSION_ entries.  Zero inactive
+      // components and visit only the physical faces of this mesh.
+      double dx[3]={0.0,0.0,0.0};
       int nCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
-      for (int idim=0; idim<3; idim++) dx[idim]=(node->xmax[idim]-node->xmin[idim])/nCells[idim];
+      for (int idim=0; idim<_MESH_DIMENSION_; idim++) dx[idim]=(node->xmax[idim]-node->xmin[idim])/nCells[idim];
         
       if (node->Thread==PIC::ThisThread && node->block) { 
-        for (iface=0;iface<6;iface++) for (i=iFaceMin[iface];i<=iFaceMax[iface];i++) for (j=jFaceMin[iface];j<=jFaceMax[iface];j++) for (k=kFaceMin[iface];k<=kFaceMax[iface];k++) {
+        for (iface=0;iface<2*_MESH_DIMENSION_;iface++) for (i=iFaceMin[iface];i<=iFaceMax[iface];i++) for (j=jFaceMin[iface];j<=jFaceMax[iface];j++) for (k=kFaceMin[iface];k<=kFaceMax[iface];k++) {
 
-          double x[3];
+          double x[3]={0.0,0.0,0.0};
           int ind[3]={i,j,k};
           bool outBoundary=false;// atBoundary=false;
-          for (int idim=0; idim<3; idim++) {
+          for (int idim=0; idim<_MESH_DIMENSION_; idim++) {
             x[idim]=node->xmin[idim]+dx[idim]*(ind[idim]+0.5);
 
             if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_ && ((x[idim]-PIC::BC::ExternalBoundary::Periodic::xminOriginal[idim]+0.5*dx[idim])<-eps || (x[idim]-PIC::BC::ExternalBoundary::Periodic::xmaxOriginal[idim]-0.5*dx[idim])>eps)){
@@ -1584,17 +1592,17 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
       node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
 
       if (node->Thread==PIC::ThisThread && node->block) { 
-        double dx[3];
+        double dx[3]={0.0,0.0,0.0};
         int nCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
         double eps = 0.3*PIC::Mesh::mesh->EPS;
-        for (int idim=0; idim<3; idim++) dx[idim]=(node->xmax[idim]-node->xmin[idim])/nCells[idim];
+        for (int idim=0; idim<_MESH_DIMENSION_; idim++) dx[idim]=(node->xmax[idim]-node->xmin[idim])/nCells[idim];
 
-        for (iface=0;iface<6;iface++)  for (i=iFaceMin[iface];i<=iFaceMax[iface];i++) for (j=jFaceMin[iface];j<=jFaceMax[iface];j++) for (k=kFaceMin[iface];k<=kFaceMax[iface];k++) {          
-          double x[3];
+        for (iface=0;iface<2*_MESH_DIMENSION_;iface++)  for (i=iFaceMin[iface];i<=iFaceMax[iface];i++) for (j=jFaceMin[iface];j<=jFaceMax[iface];j++) for (k=kFaceMin[iface];k<=kFaceMax[iface];k++) {
+          double x[3]={0.0,0.0,0.0};
           int ind[3]={i,j,k};
           bool outBoundary=false;
           // if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_){
-          for (int idim=0; idim<3; idim++) {
+          for (int idim=0; idim<_MESH_DIMENSION_; idim++) {
             x[idim]=node->xmin[idim]+dx[idim]*(ind[idim]+0.5);
 
             if ((x[idim]-PIC::BC::ExternalBoundary::Periodic::xminOriginal[idim]+0.5*dx[idim])<-eps || (x[idim]-PIC::BC::ExternalBoundary::Periodic::xmaxOriginal[idim]-0.5*dx[idim])>eps) {
@@ -1604,11 +1612,11 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
           }
 
           if (!outBoundary){
-            for (int idim=0; idim<3; idim++) x[idim]=node->xmin[idim]+dx[idim]*(ind[idim]+0.5);
+            for (int idim=0; idim<_MESH_DIMENSION_; idim++) x[idim]=node->xmin[idim]+dx[idim]*(ind[idim]+0.5);
 
             for (int idim=0; idim<3; idim++)  {
 
-              if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+              if ((idim<_MESH_DIMENSION_) && (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_)) {
                 if (fabs(x[idim]-PIC::BC::ExternalBoundary::Periodic::xmaxOriginal[idim]-0.5*dx[idim])<eps) {
                   x[idim] = PIC::BC::ExternalBoundary::Periodic::xminOriginal[idim]-0.5*dx[idim];
                 }
@@ -3019,5 +3027,3 @@ switch(_PIC_BC__PERIODIC_MODE_) {
     break;
 }
 }
-
-

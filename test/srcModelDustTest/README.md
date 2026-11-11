@@ -15,10 +15,21 @@ python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
 
 The adapter is repository-exclusive because AMPS selects one generated
 application for the checkout. It verifies the root and active-process state,
-removes only `build`, invokes `Config.pl -application=test/model-dust`, and
+removes only `build`, invokes
+`Config.pl -application=test/model-dust -spice-path=nospice`, and
 compiles through top-level `make amps` with `MAKEFLAGS=-j16`. It never edits
 `.amps.conf` directly. Machine commands, rank flags and temporary/output roots
 come from the layered `src/test` configuration.
+
+The plasma/current oracle supplies its state directly and requires no SPICE
+frames or kernels. Component `SPICE=off` does not reset a globally configured
+installation, so the adapter also pins and verifies the no-SPICE compiler/link
+mode. A private make probe checks the effective selection/options before the
+build; the actual C++ commands are checked before MPI execution. Selection
+failures and contradictory modes retain `dust-native-configuration.json` and
+`.txt` and report ERROR. Build identity records the exact configure/build argv,
+environment, configuration receipt, and executable/deck hashes. The current
+and charge-convergence acceptance values below remain the physical authority.
 
 ## Physical and numerical contract
 

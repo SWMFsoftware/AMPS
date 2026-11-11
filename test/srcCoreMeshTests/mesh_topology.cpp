@@ -1,6 +1,7 @@
 #include "mesh_test_fixture.h"
 
 #include <cmath>
+#include <cstdio>
 #include <set>
 
 namespace AMPS {
@@ -242,7 +243,7 @@ AMPS_TEST_CASE(AMPS_MESH_CASE_ID("NEIGHBORS"),
 }
 
 AMPS_TEST_CASE(AMPS_MESH_CASE_ID("CHECKSUM"),
-               "canonical topology receipt is stable and node IDs are unique") {
+               "canonical topology and native mesh files preserve unique identities") {
   const std::uint64_t first = CanonicalTopologyChecksum();
   const std::uint64_t second = CanonicalTopologyChecksum();
   AMPS_EXPECT_TRUE(first != 0);
@@ -255,6 +256,59 @@ AMPS_TEST_CASE(AMPS_MESH_CASE_ID("CHECKSUM"),
   for (std::size_t i = 0; i < all.size(); ++i)
     for (std::size_t j = i + 1; j < all.size(); ++j)
       AMPS_EXPECT_TRUE(all[i]->AMRnodeID != all[j]->AMRnodeID);
+
+  // Exercise the real topology-file writer/reader, not only the address-free
+  // checksum above. The comet integration exposed an uninitialized face
+  // cache in compact DIM1/DIM2 builds: saveTreeStructure dereferenced garbage
+  // even though geometric neighbor queries were correct. A separate mesh
+  // keeps this persistence regression independent of other cases' allocation
+  // state and preserves the process-global PIC mesh authority.
+  Mesh original, restored;
+  double xmin[3] = {0.0, 0.0, 0.0};
+  double xmax[3] = {1.0, 1.0, 1.0};
+  original.AllowBlockAllocation = restored.AllowBlockAllocation = false;
+  original.init(xmin, xmax, BuildWorkflowResolution);
+  original.buildMesh();
+  restored.init(xmin, xmax, BuildWorkflowResolution);
+  const char* filename = "core-mesh-native-roundtrip.msh";
+  original.saveMeshFile(filename);
+  restored.readMeshFile(filename);
+
+  // The oracle is the exact root split of a unit D-cube. Child bit d chooses
+  // [0,1/2] or [1/2,1] on axis d. Verify identities, parent links, midpoint
+  // ownership and face neighbors against that geometry after deserialization.
+  // Comparing only a second production-generated hash could hide a shared
+  // serialization error, and comparing pointers across meshes would be wrong.
+  const int child_count = 1 << _MESH_DIMENSION_;
+  for (int child = 0; child < child_count; ++child) {
+    Node* node = restored.rootTree->downNode[child];
+    AMPS_EXPECT_TRUE(node != NULL);
+    AMPS_EXPECT_TRUE(node->upNode == restored.rootTree);
+    AMPS_EXPECT_EQ(static_cast<int>(node->RefinmentLevel), 1);
+    AMPS_EXPECT_TRUE(node->AMRnodeID == original.rootTree->downNode[child]->AMRnodeID);
+    double midpoint[3] = {0.0, 0.0, 0.0};
+    for (int d = 0; d < _MESH_DIMENSION_; ++d) {
+      const bool upper = ((child >> d) & 1) != 0;
+      AMPS_EXPECT_NEAR(node->xmin[d], upper ? 0.5 : 0.0, 0.0);
+      AMPS_EXPECT_NEAR(node->xmax[d], upper ? 1.0 : 0.5, 0.0);
+      midpoint[d] = upper ? 0.75 : 0.25;
+      const int face = 2*d + (upper ? 0 : 1);
+      AMPS_EXPECT_TRUE(node->GetNeibFace(face, 0, 0, &restored) ==
+          restored.rootTree->downNode[child ^ (1 << d)]);
+      // The native lower-dimensional file actually stores these face slots.
+      // Check them as well as the geometric accessor: zero-initialization
+      // alone would prevent the crash while silently losing setter updates.
+#if _MESH_DIMENSION_ == 1
+      AMPS_EXPECT_TRUE(node->neibNodeFace[face] ==
+          restored.rootTree->downNode[child ^ (1 << d)]);
+#elif _MESH_DIMENSION_ == 2
+      AMPS_EXPECT_TRUE(node->neibNodeFace[2*face] ==
+          restored.rootTree->downNode[child ^ (1 << d)]);
+#endif
+    }
+    AMPS_EXPECT_TRUE(restored.findTreeNode(midpoint) == node);
+  }
+  AMPS_EXPECT_EQ(std::remove(filename), 0);
 }
 
 void LinkMeshTopologyTests() {}

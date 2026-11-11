@@ -13,6 +13,64 @@ registered coverage. `partial` and `planned` are visible technical work, not
 implicit passes. The strict coverage target remains red until that work is
 actually complete.
 
+The [remaining-failure repair plan](REMAINING_FAILURES_FIX_PLAN.md) documents
+the current contact, refinement-runtime, and strict-coverage work. It preserves
+the acceptance gates and separates a test repair from physical qualification.
+
+## Current validation and new development (2026-11-10)
+
+The complete CORE-only campaign has **50 suites and 1,067 cases**:
+**825 PASS, 1 FAIL, 240 SKIP, 1 ERROR**, in 1958.293 seconds. All 792 previous
+PASS identities are preserved, all 32 new cases pass, and CMBGU05 changes
+FAIL to PASS. The remaining nonpasses are the original CSWC0628 refinement
+timeout and T12's strict incomplete-coverage gate. The complete registered
+core/application inventory is 55 suites / 1,174 cases; registry presence and
+local software PASS do not establish physical qualification.
+
+The 32 additions here are relative to the 1,035-case remaining-failure repair
+baseline. The earlier seven additions from the 1,028-case preintegration
+baseline are separately documented in the comet/parser/configuration READMEs.
+
+The new model work consists of 29 cross-ray/material/contact cases plus
+independent contact-derivative and stable-shell controls. The additional
+harness case exercises actual strict/standalone coverage CLIs and rejection
+of contradictory coverage. No new production MHD runtime is selected: the
+user retained an analytical/semi-empirical lateral material closure. Its
+production map and full-CME G1 qualification remain open.
+
+Detailed developer documentation is split by responsibility:
+
+| Documentation | What it explains |
+| --- | --- |
+| [Model APIs and equations](../models/sep_corona_swcme/README_CROSS_RAY.md) | Every new transport/geometry/CT/energy/contact/material API, SI/HCI conventions, numerical guards, examples, independent evidence and physical limits |
+| [Model-local tests](../models/sep_corona_swcme/test/README.md) | Exact quick build/run commands, all new binaries/case groups, independent references, unchanged gates, sanitizers and contributor rules |
+| [Full-volume global adapter](tests/models/cme/sep_corona_swcme_full/README.md) | Exact 46-row import, private builds, selection/concurrency, compiler/path overrides, timeouts, failure classification and reports |
+| [CME case descriptions](tests/models/cme/README.md) | Individual what/how/why/where descriptions for the newly registered cases |
+| [Shared runner/configuration support](lib/README.md) | Portable contexts, typed errors, saved/effective/compiler no-SPICE verification and pre-MPI evidence |
+| [Imported comet-library tests](tests/models/comet_libraries/README.md) | The earlier five reusable-library/data checks, their actual sources and qualification limits |
+| [Generic input parser](../general/input/README.md) | Named-case overlay/selector rules and the independent INP-05 fixture |
+| [Harness governance](tests/harness/self/README.md) | All 13 harness cases and the new actual-CLI/fault-injection coverage controls |
+| [T12 matrix](tests/portability/matrix/README.md) | Strict FAIL versus configuration ERROR, current tool results and bounded qualification scope |
+| [Current status/evidence](STATUS.md) | Exact full command, final counts, identity comparison, preserved failures and full evidence paths |
+
+For every registered CORE suite, use the explicit selector without `--all`:
+
+```sh
+python3 -B src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --match 'CORE-*' --jobs 8 --build-jobs 16 \
+  --output-dir test_output/core-validation
+```
+
+`--all` selects all registered streams, including applications. `--jobs`
+bounds nonexclusive suites within a stream; it does not parallelize the local
+binaries inside an exclusive model owner. Use `--streams` for independent
+registered core/application streams, retaining globally serialized native
+builds. Choose a fresh output directory and a real machine profile; local
+path/tool overlays are supported with repeated `--config` options.
+
+The stage-specific counts below are historical qualification checkpoints and
+are not rewritten to the current enlarged registry.
+
 The frozen T1 qualification registry contains 11 executable suites and 98
 individual cases, including 31 cases in the configured native suite.  Its
 retained normal, reverse, and seed-1729 shuffled campaigns each report 93
@@ -194,11 +252,11 @@ such as `--campaign smoke --list`, `--component srcMoon --list`, or
 registered-application summary.
 
 `--tier` remains a backward-compatible alias for `--campaign`. The top-level
-`test_all` target depends on `core_test_nightly`. The live registry has 54
-suites and 1,135 cases; use `--campaign NAME --list` for an exact campaign
+`test_all` target depends on `core_test_nightly`. The live registry has 55
+suites and 1,174 cases; use `--campaign NAME --list` for an exact campaign
 membership or bare `--list` for the complete registry. The
-routine `nightly` campaign intentionally remains the established 42-suite,
-375-case deterministic core selection, while `extended` owns the T11 model
+routine `nightly` campaign has 43 suites and 383 cases, including the generic
+case-selection grammar and five comet-library checks. `extended` owns the T11 model
 imports and bounded T12 portability matrix. The `distributed` campaign selects
 the five-case two-rank channel/RNG suite and the 16-case T10 collective
 1/2/4-rank matrix (two suites and 21 cases total).
@@ -662,7 +720,7 @@ boundary, and evidence files are documented in
 
 ### T11 local-registry adapters
 
-Six extended suites import 637 exact identities without duplicating their
+Six extended suites import 668 exact identities without duplicating their
 model-local physics oracles. Large identity lists are stored in
 `case_registries.json`; `lib/manifest.py` resolves them through the same
 validation path used by selection, reporting and traceability. Every adapter
@@ -670,15 +728,18 @@ validates the complete ordered central/local registry before applying an exact
 case selection, so deleting an expensive or failing case cannot create a
 smaller green campaign.
 
-The current T11 evidence is 402 PASS, 233 SKIP, one FAIL and one ERROR. The
-full-volume `CMBGU05` leakage failure and `CSWC0628-MASS-TIME` refinement
-timeout remain visible. SEP-common's 52 long Monte-Carlo acceptance cases,
-SWCME's unavailable extended/observational registries, SCCM's three missing
-campaign-evidence cases, and reduced-front's 35 native cases remain typed
-SKIPs. A reduced-front PASS never qualifies BG3D-4/G1, and the legacy audit
-proves only explicit directory/owner dispositions rather than complete legacy
-behavioral migration. Exact commands, evidence boundaries and limitations are
-documented beside each adapter under `tests/models/` and `tests/legacy/`.
+The 2026-11-10 T11 result is **434 PASS, 233 SKIP and one ERROR** across
+668 exact identities. CMBGU05 passes its unchanged physical bounds and
+user-approved stronger all-level gate. CSWC0628's original refinement timeout
+remains ERROR. The added 31 model rows validate numerical/reference kernels,
+not a full-CME provider. SEP-common's 52 long Monte-Carlo acceptance cases,
+SWCME's unavailable extended/observational registries, SCCM's missing campaign
+evidence, and reduced-front's 35 native cases remain typed SKIPs. A reduced
+PASS cannot qualify BG3D-4/G1; the legacy audit establishes directory/owner
+dispositions rather than complete legacy behavioral migration. See
+[the full-volume adapter README](tests/models/cme/sep_corona_swcme_full/README.md)
+and the model-local/individual-case documentation linked there for actual
+execution, markers, budgets, artifacts and known limitations.
 
 ### T12 bounded portability matrix
 
@@ -704,9 +765,11 @@ Machine files may override optional argv vectors using `fortran`,
 and `mpich_exec`; see `test/qualification-machine/template.json`. This is the
 mechanism for site wrappers and paths—test code contains no site-specific
 absolute path.
-On the current host the matrix is intentionally red at 10 PASS, five SKIP and
-one FAIL because strict coverage still has 2 covered and 22 incomplete
-components. See `tests/portability/matrix/README.md` for the exact boundary;
+On Passion in the complete 2026-11-10 run, the matrix reports **13 PASS,
+two SKIP and one FAIL**. Clang and TSan are skipped; strict coverage retains
+**2 covered and 26 incomplete components** and its real nonzero result.
+Contradictory coverage or a broken governance invocation is ERROR, distinct
+from that legitimate incomplete FAIL. See `tests/portability/matrix/README.md` for the exact boundary;
 whole-AMPS sanitizers and production mesh/push/collision/halo/restart
 performance budgets remain open.
 

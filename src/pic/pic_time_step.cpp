@@ -359,32 +359,126 @@ void PIC::TimeStepInternal::ExecutionTrackDefault(double& ParticleMovingTime,dou
 
   ParticleMovingTime=MPI_Wtime()-ParticleMovingTime;
 
-  //increase the number of particles if needed
-  switch (PIC::ParticleSplitting::Mode) {
-  case PIC::ParticleSplitting::_disactivated:
-    //do nothing
-    break;
-  case PIC::ParticleSplitting::_VelocityShift:
-    PIC::ParticleSplitting::Split::SplitWithVelocityShift(PIC::ParticleSplitting::particle_num_limit_min,PIC::ParticleSplitting::particle_num_limit_max);
-    break;
-  case PIC::ParticleSplitting::_Scatter:
-    PIC::ParticleSplitting::Split::Scatter(PIC::ParticleSplitting::particle_num_limit_min,PIC::ParticleSplitting::particle_num_limit_max);
-    break;
-  default:
-    exit(__LINE__,__FILE__,"Error: the option is unlnown");
-  }
+  // Keep the existing particle-splitting policy in one place.  Flux-resampling
+  // builds call it only after every trajectory continuation is complete;
+  // otherwise a generic splitter could copy a non-zero remainder marker and
+  // unintentionally duplicate an unfinished crossing.
+  auto ApplyParticleSplitting=[]() {
+    switch (PIC::ParticleSplitting::Mode) {
+    case PIC::ParticleSplitting::_disactivated:
+      break;
+    case PIC::ParticleSplitting::_VelocityShift:
+      PIC::ParticleSplitting::Split::SplitWithVelocityShift(
+          PIC::ParticleSplitting::particle_num_limit_min,
+          PIC::ParticleSplitting::particle_num_limit_max);
+      break;
+    case PIC::ParticleSplitting::_Scatter:
+      PIC::ParticleSplitting::Split::Scatter(
+          PIC::ParticleSplitting::particle_num_limit_min,
+          PIC::ParticleSplitting::particle_num_limit_max);
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the particle-splitting option is unknown");
+    }
+  };
 
-
-  //check the consistence of the particles lists
-  if ((_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_)&&(_CUDA_MODE_ == _OFF_)) {
-    CheckParticleLists(); 
-  }
-
-  //syncronize processes and exchange particle data
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-  ParticleExchangeTime=MPI_Wtime();
 
-  //if field lines are defined -> echange particles on the field lines; otherwise proceed with exchange the particles in the 3D computational domain
+#if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+  // One MPI exchange is insufficient when a particle's remaining interval can
+  // cross more than one ownership boundary.  First transfer the particles
+  // stopped by the main mover to their owning ranks.  Every continuation sweep
+  // then advances only unfinished particles and *always* performs a subsequent
+  // ownership exchange before testing for another sweep.  The unconditional
+  // post-move exchange is essential: a continuation can finish (marker == 0)
+  // inside a remote boundary-layer block.  Testing only positive markers before
+  // that exchange would strand the completed particle on the sending rank.
+  // Collisions, chemistry, and sampling remain outside this loop, so a physical
+  // trajectory is completed exactly once per AMPS iteration.
+  ParticleExchangeTime=0.0;
+  long int globalPendingParticles=0;
+  int continuationSweep=0;
+  const int maximumContinuationSweeps=1000000;
+
+  if (PIC::Mover::LocalTimeStepFluxDiagnostic.Enabled) {
+    const long int localInitialPending=
+        PIC::Mover::CountLocalTimeStepContinuationParticles();
+    MPI_Allreduce(&localInitialPending,&PIC::Mover::LocalTimeStepFluxDiagnostic.
+        InitialPendingParticleCount,1,MPI_LONG,MPI_SUM,
+        MPI_GLOBAL_COMMUNICATOR);
+  }
+
+  double segmentStart=MPI_Wtime();
+  PIC::Parallel::ExchangeParticleData();
+  ParticleExchangeTime+=MPI_Wtime()-segmentStart;
+
+  if (PIC::Mover::LocalTimeStepFluxDiagnostic.Enabled) {
+    const long int localPostExchangePending=
+        PIC::Mover::CountLocalTimeStepContinuationParticles();
+    MPI_Allreduce(&localPostExchangePending,
+        &PIC::Mover::LocalTimeStepFluxDiagnostic.
+            FirstPostExchangePendingParticleCount,
+        1,MPI_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  }
+
+  do {
+    segmentStart=MPI_Wtime();
+    PIC::Mover::MoveParticlesWithLocalTimeStepContinuation();
+    ParticleMovingTime+=MPI_Wtime()-segmentStart;
+
+    // MoveParticlesWithLocalTimeStepContinuation() may place either unfinished
+    // or already-completed particles in a remote boundary-layer block.  Flush
+    // both classes to their owner before counting continuation markers.
+    segmentStart=MPI_Wtime();
+    PIC::Parallel::ExchangeParticleData();
+    ParticleExchangeTime+=MPI_Wtime()-segmentStart;
+
+    const long int localPendingParticles=
+        PIC::Mover::CountLocalTimeStepContinuationParticles();
+    segmentStart=MPI_Wtime();
+    MPI_Allreduce(&localPendingParticles,&globalPendingParticles,1,MPI_LONG,
+        MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+    ParticleExchangeTime+=MPI_Wtime()-segmentStart;
+
+    continuationSweep++;
+    if (PIC::Mover::LocalTimeStepFluxDiagnostic.Enabled) {
+      PIC::Mover::LocalTimeStepFluxDiagnostic.ContinuationSweepCount=
+          continuationSweep;
+      PIC::Mover::LocalTimeStepFluxDiagnostic.FinalPendingParticleCount=
+          globalPendingParticles;
+      if (globalPendingParticles>PIC::Mover::LocalTimeStepFluxDiagnostic.
+          MaximumPendingParticleCount)
+        PIC::Mover::LocalTimeStepFluxDiagnostic.
+            MaximumPendingParticleCount=globalPendingParticles;
+    }
+    if (globalPendingParticles>0 &&
+        continuationSweep>=maximumContinuationSweeps) {
+      exit(__LINE__,__FILE__,
+          "local-timestep particle continuation did not terminate");
+    }
+  }
+  while (globalPendingParticles>0);
+
+  ApplyParticleSplitting();
+
+  // At this point no particle is staged in a remote boundary block and every
+  // positive remainder marker has been consumed, so the usual list checker
+  // sees the same completed state as in a legacy one-exchange iteration.
+  if ((_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_)&&
+      (_CUDA_MODE_ == _OFF_)) {
+    CheckParticleLists();
+  }
+#else
+  // Preserve the historical ordering for every build that did not explicitly
+  // request local-timestep flux resampling.
+  ApplyParticleSplitting();
+
+  if ((_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_)&&
+      (_CUDA_MODE_ == _OFF_)) {
+    CheckParticleLists();
+  }
+
+  ParticleExchangeTime=MPI_Wtime();
   if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_) {
     if (PIC::FieldLine::FieldLinesAll!=NULL) {
       PIC::ParallelFieldLines::ExchangeFieldLineParticles();
@@ -392,11 +486,10 @@ void PIC::TimeStepInternal::ExecutionTrackDefault(double& ParticleMovingTime,dou
     else exit(__LINE__,__FILE__,"Error: field lines are not allocated");
   }
   else {
-      PIC::Parallel::ExchangeParticleData();
+    PIC::Parallel::ExchangeParticleData();
   }
-
-
   ParticleExchangeTime=MPI_Wtime()-ParticleExchangeTime;
+#endif
 
   if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
     Debugger::logger.func_exit();

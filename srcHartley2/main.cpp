@@ -35,6 +35,10 @@
 #include "meshAMRcutcell.h"
 #include "cCutBlockSet.h"
 #include "Comet.h"
+#include "CometChemistry.h"
+#include "CometModel.h"
+#include "CometPhysics.h"
+#include "CometRadiativeCooling.h"
 #include "Exosphere.h"
 
 
@@ -214,7 +218,7 @@ double BulletLocalResolution(double *x) {
 //  return 200.0;
 }
 
-int SurfaceBoundaryCondition(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace) {
+int SurfaceBoundaryCondition(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   int spec=PIC::ParticleBuffer::GetI(ptr);
 
 #if _SAMPLE_BACKFLUX_MODE_ == _SAMPLE_BACKFLUX_MODE__OFF_
@@ -509,7 +513,8 @@ int main(int argc,char **argv) {
 
   //seed the random number generatore
   if (_COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_) {
-    rnd_seed(100); 
+    rnd_seed(static_cast<int>(Comet::Model::RandomSeed)+
+        (Comet::Model::RandomSeedConfigured ? PIC::ThisThread : 0));
   }
 
   //analyse the model output file                                                                                                 
@@ -544,7 +549,10 @@ int main(int argc,char **argv) {
   PIC::Alarm::SetAlarm(20*3600-10*60);
 
   //seed the random number generator
-  rnd_seed(100);
+  // An explicit generic-comet seed defines independent MPI streams. Inputs
+  // that omit it retain the historical seed 100 on every rank exactly.
+  rnd_seed(static_cast<int>(Comet::Model::RandomSeed)+
+      (Comet::Model::RandomSeedConfigured ? PIC::ThisThread : 0));
 
 
 /*#pragma omp parallel for
@@ -561,7 +569,9 @@ int main(int argc,char **argv) {
   //  CutCell::ReadNastranSurfaceMeshLongFormat("CG2.bdf",xmin,xmax,1.0E-8);
 
 
-  PIC::Mesh::IrregularSurface::ReadNastranSurfaceMeshLongFormat_km("hartley2.shape.nas",PIC::UserModelInputDataPath); //hartley2_2012_cart.nas
+  PIC::Mesh::IrregularSurface::ReadNastranSurfaceMeshLongFormat(
+      Comet::Model::SurfaceMeshFileName,PIC::UserModelInputDataPath,
+      Comet::Model::SurfaceMeshLengthUnit);
 
   //PIC::Mesh::IrregularSurface::ReadNastranSurfaceMeshLongFormat("cg.Sphere.nas");
   PIC::Mesh::IrregularSurface::GetSurfaceSizeLimits(xmin,xmax);
@@ -676,6 +686,7 @@ int main(int argc,char **argv) {
 
   //initialize the blocks
   PIC::Mesh::initCellSamplingDataBuffer();
+  Comet::Chemistry::RequestBlockData();
 
   PIC::Mesh::mesh->AllowBlockAllocation=true;
   PIC::Mesh::mesh->AllocateTreeBlocks();
@@ -718,6 +729,7 @@ int main(int argc,char **argv) {
       double xminTECPLOT[3]={-32,-32,-32},xmaxTECPLOT[3]={16,32,32};
 
       double RotationMatrix_BATSRUS2AMPS[3][3]={ { 0.725, 0.000, 0.689}, {0.000, 1.000, 0.000}, {-0.689, 0.000, 0.725}};
+      PIC::CPLR::DATAFILE::TECPLOT::cIonFluidDescriptor IonFluid;
 
     //  0.725  0.000  0.689
     //  0.000  1.000  0.000
@@ -730,11 +742,13 @@ int main(int argc,char **argv) {
       PIC::CPLR::DATAFILE::TECPLOT::SetDomainLimitsSPHERICAL(0.0,500.0);
 
       PIC::CPLR::DATAFILE::TECPLOT::DataMode=PIC::CPLR::DATAFILE::TECPLOT::DataMode_SPHERICAL;
-      PIC::CPLR::DATAFILE::TECPLOT::SetLoadedVelocityVariableData(5,1.0E3);
-      PIC::CPLR::DATAFILE::TECPLOT::SetLoadedIonPressureVariableData(11,1.0E-9);
+      IonFluid.BulkVelocity.Set(5-1,1.0E3);
+      IonFluid.Pressure.Set(11-1,1.0E-9);
+      IonFluid.Density.Set(4,1.0E6);
+      PIC::CPLR::DATAFILE::TECPLOT::IonFluidDescriptorTable.push_back(IonFluid);
+
       PIC::CPLR::DATAFILE::TECPLOT::SetLoadedElectronPressureVariableData(11,1.0E-9);
       PIC::CPLR::DATAFILE::TECPLOT::SetLoadedMagneticFieldVariableData(8,1.0E-9);
-      PIC::CPLR::DATAFILE::TECPLOT::SetLoadedDensityVariableData(4,1.0E6);
       PIC::CPLR::DATAFILE::TECPLOT::nTotalVarlablesTECPLOT=12;
       PIC::CPLR::DATAFILE::TECPLOT::ImportData("/Users/vtenishe/Debugger/eclipse-workspace/MERCURYAMPS/AMPS/data/input/CG/3d__var_4_n00230000-extracted.plt"); //data/input/Mercury/040915-Jia/3d__var_7_t00000200_n0300072.plt
 
@@ -892,6 +906,24 @@ int main(int argc,char **argv) {
 
 
   PIC::Init_AfterParser();
+  {
+    std::string validationError;
+    if (!Comet::Chemistry::Validate(&validationError)) {
+      std::fprintf(stderr,"Invalid comet chemistry: %s\n",
+          validationError.c_str());
+      return EXIT_FAILURE;
+    }
+    if (!Comet::Physics::Validate(&validationError)) {
+      std::fprintf(stderr,"Invalid comet collision physics: %s\n",
+          validationError.c_str());
+      return EXIT_FAILURE;
+    }
+    if (!Comet::RadiativeCooling::Validate(&validationError)) {
+      std::fprintf(stderr,"Invalid comet radiative cooling: %s\n",
+          validationError.c_str());
+      return EXIT_FAILURE;
+    }
+  }
   PIC::Mover::Init();
   Comet::Init_AfterParser(PIC::UserModelInputDataPath);
 
@@ -1145,9 +1177,9 @@ int main(int argc,char **argv) {
     }
 
 
-    #if _PIC_MODEL__RADIATIVECOOLING__MODE_ == _PIC_MODEL__RADIATIVECOOLING__MODE__CROVISIER_
-	Comet::StepOverTime();
-#endif
+    // The species and cooling law are compiled from the comet input.  The
+    // adapter is a no-op when no species selects radiative cooling.
+    Comet::RadiativeCooling::Apply();
   }
 
   //output the particle statistics for the nightly tests

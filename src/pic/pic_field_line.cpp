@@ -1881,7 +1881,7 @@ if (DIM != 3) {
         double misc2 = (R2Sun - R0) * Omega/SpeedSolarWind * sintheta;
       
         //magnetic field at location x
-        double B[DIM];
+        double B[3];
 
         B[0] = misc1 * (sintheta*cosphi + misc2 * sinphi);
         B[1] = misc1 * (sintheta*sinphi - misc2 * cosphi);

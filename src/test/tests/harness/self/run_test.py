@@ -24,11 +24,14 @@ from typing import Dict, List
 HERE = Path(__file__).resolve()
 TEST_ROOT = HERE.parents[3]
 sys.path.insert(0, str(TEST_ROOT))
+sys.path.insert(0, str(HERE.parent))
 
 from lib.configuration import ConfigurationError, load_configuration  # noqa: E402
 from lib.manifest import ManifestError, audit_inventory, load_manifest  # noqa: E402
 from lib.runner_support import (case, error_result, load_context, main_guard,  # noqa: E402
                                 write_result)
+from native_configuration_isolation import test_native_configuration_isolation  # noqa: E402
+from coverage_gates import test_coverage_gates  # noqa: E402
 
 
 def _global_module():
@@ -326,9 +329,9 @@ def test_selection_contract(context: Dict) -> None:
     streams = module.group_test_streams(full_selected)
     assert [item["id"] for item in streams] == [
         "core", "application-srcEnceladus", "application-srcMoon"]
-    assert [len(item["tests"]) for item in streams] == [49, 3, 2]
+    assert [len(item["tests"]) for item in streams] == [50, 3, 2]
     assert [sum(len(test["selected_cases"]) for _, test in item["tests"])
-            for item in streams] == [1028, 61, 46]
+            for item in streams] == [1067, 61, 46]
     listed = io.StringIO()
     with contextlib.redirect_stdout(listed):
         module.print_tests(
@@ -363,14 +366,15 @@ def test_selection_contract(context: Dict) -> None:
         "CORE-HARNESS-001", "CORE-GENERAL-INPUT-001",
         "CORE-GENERAL-CONTAINERS-001", "CORE-GENERAL-NUMERICS-001",
         "CORE-GENERAL-RNG-001", "CORE-GENERAL-LOGGER-001",
-        "CORE-UNITS-001", "CORE-SPECIES-RADIATION-001"}
+        "CORE-UNITS-001", "CORE-SPECIES-RADIATION-001",
+        "CORE-COMET-LIBRARIES-001"}
     assert campaign_ids("nightly") == {
         "CORE-HARNESS-001", "CORE-GENERAL-INPUT-001",
         "CORE-GENERAL-CONTAINERS-001", "CORE-GENERAL-NUMERICS-001",
         "CORE-GENERAL-RNG-001", "CORE-GENERAL-MPI-001",
         "CORE-GENERAL-LOGGER-001", "CORE-UNITS-001",
         "CORE-SPECIES-RADIATION-001", "CORE-INTERFACE-ABI-001",
-        "CORE-CHEMICAL-SOLVER-001",
+        "CORE-CHEMICAL-SOLVER-001", "CORE-COMET-LIBRARIES-001",
         "CORE-SURFACE-EXOSPHERE-001", "CORE-EXOSPHERE-SPHERE-NATIVE-001",
         "CORE-SPUTTERING-001",
         "CORE-DUST-001", "CORE-DUST-NATIVE-001",
@@ -394,6 +398,7 @@ def test_selection_contract(context: Dict) -> None:
     assert campaign_ids("distributed") == {
         "CORE-GENERAL-MPI-001", "CORE-MESH-MPI-OWNERSHIP-001"}
     assert campaign_ids("extended") == {
+        "CORE-COMET-LIBRARIES-001",
         "CORE-INTERFACE-ABI-001", "CORE-PIC-NATIVE-001",
         "CORE-EXOSPHERE-SPHERE-NATIVE-001",
         "CORE-PIC-PERIODIC-001", "CORE-PIC-COLLISION-VHS-001",
@@ -953,6 +958,9 @@ def main() -> int:
     tests: List[tuple] = [
         ("HARNESS-CONFIG-001", "configuration precedence and path resolution",
          test_layered_configuration),
+        ("HARNESS-NATIVE-CONFIG-ISOLATION-001",
+         "native adapters pin build mode and reject stale or contradictory configuration",
+         test_native_configuration_isolation),
         ("HARNESS-MANIFEST-001", "manifest and component-inventory consistency",
          test_registry_and_inventory),
         ("HARNESS-SELECTION-001", "exact test-selection contract",
@@ -973,6 +981,8 @@ def main() -> int:
          test_scheduler_concurrency),
         ("HARNESS-TRACEABILITY-001", "global case ownership registry",
          test_traceability_contract),
+        ("HARNESS-COVERAGE-GATES-001", "standalone and strict coverage governance with rejection controls",
+         test_coverage_gates),
     ]
     by_id = {item[0]: item for item in tests}
     selected = list(context["test"].get(

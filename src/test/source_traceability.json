@@ -39,6 +39,7 @@
     "src/test/tests/interface/test_geopack_contracts.cpp",
     "src/test/tests/interface/run_test.py",
     "src/test/tests/models/chemical_solver/run_test.py",
+    "src/test/tests/models/comet_libraries/run_test.py",
     "test/srcChemicalSolverTests/main.cpp",
     "src/test/tests/models/surface_exosphere/run_test.py",
     "src/test/tests/models/surface_exosphere/test_surface_exosphere.cpp",
@@ -93,7 +94,7 @@
       "path": "src/general/input",
       "status": "tested",
       "suite_ids": ["CORE-GENERAL-INPUT-001"],
-      "case_ids": ["INP-01", "INP-02", "INP-03", "INP-04"],
+      "case_ids": ["INP-01", "INP-02", "INP-03", "INP-04", "INP-05"],
       "local_registries": [],
       "reason": "The header-only parser contract has independent grammar, diagnostic, include, and canonicalization cases.",
       "gaps": []
@@ -165,11 +166,33 @@
       "component": "src/models/chemical_solver",
       "path": "src/models/chemical_solver",
       "status": "partial",
-      "suite_ids": ["CORE-CHEMICAL-SOLVER-001"],
+      "suite_ids": ["CORE-CHEMICAL-SOLVER-001", "CORE-COMET-LIBRARIES-001"],
       "case_ids": ["CHEM-SOLVER-DECAY-001", "CHEM-SOLVER-REVERSIBLE-001", "CHEM-SOLVER-ROBERTSON-001", "CHEM-SOLVER-CONSERVATION-CONVERGENCE-001", "CHEM-SOLVER-NETWORK-VALIDATION-001", "CHEM-SOLVER-INVALID-001", "CHEM-SOLVER-SINGULAR-001"],
       "local_registries": [],
       "reason": "A dependency-light registered suite checks analytic linear networks, a literal stiff Robertson reference, adaptive convergence, positivity, strict graph validation, and typed callback/rate/Jacobian/step failures.",
       "gaps": ["runtime-deck network assembly", "production cell coupling", "element and charge metadata validation", "application-level multi-network integration"]
+    },
+    {
+      "area_id": "cometary-physics",
+      "component": "src/models/cometary_physics",
+      "path": "src/models/cometary_physics",
+      "status": "partial",
+      "suite_ids": ["CORE-COMET-LIBRARIES-001"],
+      "case_ids": ["COMET-COLLISION-DATABASE-001", "COMET-RADIATIVE-COOLING-001"],
+      "local_registries": [],
+      "reason": "Maintained module tests check symmetric collision lookup, temperature-law validity, and independent radiative-cooling units and branches.",
+      "gaps": ["native application coupling is qualified separately by Hartley2 live runs"]
+    },
+    {
+      "area_id": "resonance-fluorescence",
+      "component": "src/models/resonance_fluorescence",
+      "path": "src/models/resonance_fluorescence",
+      "status": "partial",
+      "suite_ids": ["CORE-COMET-LIBRARIES-001"],
+      "case_ids": ["COMET-FLUORESCENCE-001", "COMET-REFERENCE-DATA-001"],
+      "local_registries": [],
+      "reason": "Maintained analytic/table tests and independent file hashes authenticate the published H/OH laws and immutable generated data.",
+      "gaps": ["observational and optically thick transfer acceptance are separate scientific work"]
     },
     {
       "area_id": "dust",
@@ -232,10 +255,10 @@
       "path": "src/models/sep_corona_swcme",
       "status": "partial",
       "suite_ids": ["CORE-MODEL-SEP-CORONA-SWCME-FULL-001", "CORE-MODEL-SEP-CORONA-SWCME-REDUCED-001"],
-      "case_ids": ["CSWC-FULL-CMBGU01", "CSWC-FULL-CSWC0628-MASS-TIME", "CSWC-REDUCED-SHARED-RSH-RSH00-01", "CSWC-REDUCED-PORTABLE-SRCSEP3D-RSHAPP04"],
+      "case_ids": ["CSWC-FULL-CMBGU01", "CSWC-FULL-CSWC0628-MASS-TIME", "CSWC-FULL-CMBGU05-DERIVATIVE-CONTROLS", "CSWC-FULL-CMBGU05-SHELL-GEOMETRY-CONTROLS", "CSWC-FULL-CSWC0628-XRAY-FLUX", "CSWC-FULL-CSWC0628-XRAY-ALE", "CSWC-FULL-CSWC0628-XRAY-CONSERVATION", "CSWC-FULL-CSWC0628-XRAY-REJECTION", "CSWC-FULL-CSWC0628-XRAY-ADVECTION", "CSWC-FULL-CSWC0628-XRAY-GEOMETRY", "CSWC-FULL-CSWC0628-XRAY-TOPOLOGY", "CSWC-FULL-CSWC0628-XRAY-CT-INITIALIZATION", "CSWC-FULL-CSWC0628-XRAY-CT-FARADAY", "CSWC-FULL-CSWC0628-XRAY-CT-AUTHORITY", "CSWC-FULL-CSWC0628-XRAY-RECONSTRUCTION-CONVERGENCE", "CSWC-FULL-CSWC0628-XRAY-FLUID-ENERGY", "CSWC-FULL-CSWC0628-XRAY-FLUID-CONSERVATION", "CSWC-REDUCED-SHARED-RSH-RSH00-01", "CSWC-REDUCED-PORTABLE-SRCSEP3D-RSHAPP04"],
       "local_registries": ["src/models/sep_corona_swcme/test/check_architecture.py", "src/models/sep_corona_swcme/test/shock_front/test_reduced.cpp"],
-      "reason": "T11 imports 15 bounded full-volume markers and the complete 97-row reduced-front registry while retaining their disjoint qualification labels.",
-      "gaps": ["BG3D-4/G1 remains deferred and unqualified", "35 reduced native rows are routine SKIP"]
+      "reason": "Imports 46 full-volume software/reference markers including independent numerical controls, static shared geometry/CT/energy, corotating threaded-contact diagnostics and analytical Cauchy material transport; imports the complete separate 97-row reduced registry without promoting either to G1 qualification.",
+      "gaps": ["BG3D-4/G1 implementation resumed but remains unqualified", "35 reduced native rows are routine SKIP"]
     },
     {
       "area_id": "sep-coronal-cme",
@@ -505,15 +528,16 @@
       "status": "exempt",
       "suite_ids": ["CORE-HARNESS-001", "CORE-LEGACY-REGISTRY-AUDIT-001"],
       "case_ids": [
-        "HARNESS-CONFIG-001", "HARNESS-MANIFEST-001", "HARNESS-SELECTION-001",
+        "HARNESS-CONFIG-001", "HARNESS-NATIVE-CONFIG-ISOLATION-001",
+        "HARNESS-MANIFEST-001", "HARNESS-SELECTION-001",
         "HARNESS-PROTOCOL-001", "HARNESS-SCHEDULER-001", "HARNESS-REPORT-001",
         "HARNESS-SCHEMA-001", "HARNESS-SUBPROCESS-001", "HARNESS-TIMEOUT-001",
-        "HARNESS-CONCURRENCY-001", "HARNESS-TRACEABILITY-001",
+        "HARNESS-CONCURRENCY-001", "HARNESS-TRACEABILITY-001", "HARNESS-COVERAGE-GATES-001",
         "LEGACY-UNIT-TESTS-001", "LEGACY-MODEL-DUST-TEST-001"
       ],
       "local_registries": [],
       "reason": "Test-control implementation is not a production source area; its demonstrated contracts are tracked by the harness suite, and T11 audits explicit directory/owner dispositions for all roadmap legacy applications without treating that governance receipt as behavioral migration qualification.",
-      "gaps": ["standalone traceability validator is not yet a manifest-owned case", "per-application legacy oracle/failure/path/determinism review", "cross-platform retained fault-injection receipts", "full order-isolation campaign"]
+      "gaps": ["per-application legacy oracle/failure/path/determinism review", "cross-platform retained fault-injection receipts", "full order-isolation campaign"]
     }
   ]
 }

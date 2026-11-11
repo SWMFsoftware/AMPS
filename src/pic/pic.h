@@ -5295,6 +5295,26 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
       //the limit of the collision number per a single model particles
       extern double CollisionLimitingThrehold;
 
+      // Disabled-by-default observability for focused validation of the
+      // general NTC estimator.  These are model-pair trials and individual
+      // particle updates, not physical collision-rate samples.  The normal
+      // production sampling buffers remain the authoritative science output.
+      // The diagnostic is intentionally process-local; a validation driver
+      // can reduce snapshots across MPI ranks with the reductions appropriate
+      // to each field (sum for counts, min/max for probabilities).
+      struct cNTCValidationDiagnostic {
+        bool Enabled;
+        unsigned long long TrialCount,SelfPairRejectionCount;
+        unsigned long long AcceptedCollisionCount,ParticleUpdateCount;
+        unsigned long long UpdateProbabilityCount;
+        unsigned long long InvalidUpdateProbabilityCount;
+        unsigned long long RoundoffClampCount;
+        double MinimumUpdateProbability,MaximumUpdateProbability;
+      };
+      extern cNTCValidationDiagnostic NTCValidationDiagnostic;
+      void ResetNTCValidationDiagnostic(bool enable);
+      cNTCValidationDiagnostic GetNTCValidationDiagnostic();
+
       //sample collision statistics
       namespace CollsionFrequentcySampling {
         extern int SamplingBufferOffset;
@@ -6257,6 +6277,49 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
         long int ptr, double localTimeStep,
         cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
 
+    // Optional event embedded in one force-free trajectory.  This interface
+    // lets an application stop the first-order trace mover at a physical
+    // event (for example, a forced chemical reaction), mutate the particle at
+    // the exact event point, and continue the unused local-timestep interval.
+    // It is deliberately a three-callback transaction:
+    //
+    //  * QueryTrajectoryEvent is a side-effect-free preview.  It may return
+    //    EventPending and an eventTime in [0,maximumSegment].
+    //  * AdvanceTrajectoryEvent commits the elapsed segment before a block-
+    //    face clone or MPI exchange copies application particle bytes.
+    //  * ProcessTrajectoryEvent commits a due event.  It may change velocity,
+    //    species, application fields, and remainingTime, but it must not own
+    //    list insertion or particle-buffer deletion.
+    //
+    // The mover owns deletion after EventDelete and owns all destination-list
+    // insertion after EventContinue.  Applications must install all three
+    // callbacks or none.  The default all-NULL state preserves every legacy
+    // mover path and consumes no extra random number.  Currently only
+    // UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection
+    // invokes this interface; other movers must reject an application mode
+    // that requires it until they implement the same continuation contract.
+    enum eTrajectoryEventStatus {
+      TrajectoryEventNone=0,
+      TrajectoryEventPending=1
+    };
+    enum eTrajectoryEventResult {
+      TrajectoryEventContinue=0,
+      TrajectoryEventDelete=1
+    };
+    typedef int (*fQueryTrajectoryEvent)(long int ptr,int species,
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
+        double localTimeStep,double maximumSegment,double& eventTime);
+    typedef void (*fAdvanceTrajectoryEvent)(long int ptr,int species,
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
+        double localTimeStep,double elapsedTime);
+    typedef int (*fProcessTrajectoryEvent)(long int ptr,double *position,
+        double *velocity,int& species,
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
+        double oldLocalTimeStep,double& remainingTime);
+    extern fQueryTrajectoryEvent QueryTrajectoryEvent;
+    extern fAdvanceTrajectoryEvent AdvanceTrajectoryEvent;
+    extern fProcessTrajectoryEvent ProcessTrajectoryEvent;
+
 
     //the vector containing the species specific particle moving procedures
 //    extern fSpeciesDependentParticleMover *MoveParticleTimeStep;
@@ -6291,6 +6354,63 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
     void Init_BeforeParser();
     void Init();
     void MoveParticles();
+
+    // The flux-resampling mover stops a trajectory at every block face.  A
+    // positive value stored in this optional particle field is the unused
+    // fraction of the destination block's full timestep.  Keeping a
+    // dimensionless fraction, rather than seconds, lets the destination rank
+    // reconstruct the correct interval after MPI migration and makes the
+    // invariant explicit:
+    //   dt_left_old/dt_old == dt_left_new/dt_new.
+    extern long int LocalTimeStepRemainderOffset;
+    double GetLocalTimeStepRemainderFraction(
+        PIC::ParticleBuffer::byte *particleData);
+    void SetLocalTimeStepRemainderFraction(double fraction,
+        PIC::ParticleBuffer::byte *particleData);
+
+    // Opt-in accounting used by the local-timestep regression driver.  The
+    // production mover does not touch these sums unless Enabled is true.
+    // Incoming and outgoing values are represented physical rates at each
+    // crossed face; Variance contains the analytic residual-resampling
+    // variance for the corresponding outgoing estimator.
+    struct cLocalTimeStepFluxDiagnostic {
+      bool Enabled;
+      long long FaceTransferCount,DestinationParticleCount;
+      long long RouletteDeletionCount,CloneCount;
+      double IncomingNumberFlux,OutgoingNumberFlux,NumberFluxVariance;
+      double IncomingMassFlux,OutgoingMassFlux,MassFluxVariance;
+      double IncomingMomentumFlux[3],OutgoingMomentumFlux[3];
+      double MomentumFluxVariance[3];
+      double IncomingKineticEnergyFlux,OutgoingKineticEnergyFlux;
+      double KineticEnergyFluxVariance;
+      // Internal energy is carried by the same statistical rate W*c/dt as
+      // number and translational moments.  Keeping it separate from kinetic
+      // energy makes the face regression sensitive to accidental loss of the
+      // rotational/vibrational particle record while cloning or exchanging a
+      // continuation particle.
+      double IncomingInternalEnergyFlux,OutgoingInternalEnergyFlux;
+      double InternalEnergyFluxVariance;
+      double MaximumRemainderInvariantError;
+      int ContinuationSweepCount;
+      long int MaximumPendingParticleCount,FinalPendingParticleCount;
+      long int InitialPendingParticleCount,FirstPostExchangePendingParticleCount;
+      long int ContinuationMovedParticleCount,ContinuationDeletedParticleCount;
+    };
+
+    extern cLocalTimeStepFluxDiagnostic LocalTimeStepFluxDiagnostic;
+    void ResetLocalTimeStepFluxDiagnostic(bool enable);
+
+    // The compiled application continues to use its configured mover.  The
+    // validation driver can temporarily select another trace mover through
+    // this narrowly scoped override so first- and second-order implementations
+    // are exercised by the same initialized mesh and continuation manager.
+    void SetLocalTimeStepValidationMover(fSpeciesDependentParticleMover mover);
+
+    // Resume only particles that stopped at a local-timestep block face.  The
+    // ordinary mover pass must not be repeated because particles that already
+    // exhausted their step would otherwise be advanced twice.
+    long int MoveParticlesWithLocalTimeStepContinuation();
+    long int CountLocalTimeStepContinuationParticles();
 
     //simple particle mover: forces are neglected, interaction with internal/expernal boundaries is neglected
     int Simple(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
@@ -6446,6 +6566,14 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
      typedef void (*fUserDefinedMpiModelDataExchage)();
      extern fUserDefinedMpiModelDataExchage UserDefinedMpiModelDataExchage;
 
+     // Optional application callback executed collectively immediately before
+     // every ordinary particle migration.  The callback may use MPI
+     // collectives, but it must not call ExchangeParticleData() recursively.
+     // It is intended for capacity controls that must run before the exchange
+     // allocates receive-side particle slots.
+     typedef void (*fBeforeParticleDataExchange)();
+     extern fBeforeParticleDataExchange BeforeParticleDataExchange;
+
      //the factor the trrigeres the emergency load rebalancing. The condition for the rebalancing:
      //(PIC::Parallel::CumulativeLatency>PIC::Parallel::EmergencyLoadRebalancingFactor*PIC::Parallel::RebalancingTime)
      extern double EmergencyLoadRebalancingFactor;
@@ -6493,6 +6621,8 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
      void ExchangeParticleData_buffered();
 
      inline void ExchangeParticleData() {
+       if (BeforeParticleDataExchange!=NULL) BeforeParticleDataExchange();
+
        switch (_PIC_PARTICLE_EXCHANGE_) {
        case _PIC_PARTICLE_EXCHANGE_UNBUFFERED_:
          ExchangeParticleData_unbuffered();
@@ -9319,6 +9449,28 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
 
 
       void InitProductStatWeight();
+
+      // Optional transactional batch interface.  Historical applications
+      // leave every pointer NULL and retain the original single-pass driver.
+      // An application that can create many daughters may install the full
+      // set before time stepping.  The core then processes only a bounded
+      // number of eligible parents per pass and reaches a collective-safe
+      // checkpoint between passes.  The processor must reinsert a deferred
+      // parent in FirstParticleCell and return false without otherwise
+      // changing it; returning true means that parent was completed.
+      typedef void (*fBeginBatchedModel)();
+      typedef bool (*fIsBatchedParticleEligible)(long int ptr);
+      typedef long int (*fGetBatchedParticleLimit)();
+      typedef bool (*fBatchedReactionProcessor)(long int ptr,
+          long int &FirstParticleCell,
+          cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+      typedef void (*fFinishBatchedPass)(long int attemptedParents,
+          long int remainingParents);
+      extern fBeginBatchedModel BeginBatchedModel;
+      extern fIsBatchedParticleEligible IsBatchedParticleEligible;
+      extern fGetBatchedParticleLimit GetBatchedParticleLimit;
+      extern fBatchedReactionProcessor BatchedReactionProcessor;
+      extern fFinishBatchedPass FinishBatchedPass;
 
       //the default function for processing the photolytic reactions -> the particle is removed if the reaction occured
       void PhotolyticReactionProcessor_default(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);

@@ -80,6 +80,134 @@ unverified/terminating and VV is not implemented. Exact covered tests and
 remaining T4/T5 boundaries are listed in
 [`../../test/srcCoreUnitTests/README.md`](../../test/srcCoreUnitTests/README.md).
 
+## Optional event inside a first-order trajectory
+
+The first-order force-free trace mover has a default-inactive, three-callback
+interface for an application event that must occur at an exact point inside a
+particle trajectory. The generic core does not define event physics. All
+three pointers begin as `NULL`, and an application must install either the
+complete set or none before `PIC::Mover::Init()`:
+
+```cpp
+PIC::Mover::QueryTrajectoryEvent;
+PIC::Mover::AdvanceTrajectoryEvent;
+PIC::Mover::ProcessTrajectoryEvent;
+```
+
+`QueryTrajectoryEvent` is a side-effect-free preview. Given the current
+species, owner block, local timestep, and maximum geometrically allowed
+segment, it returns either `TrajectoryEventNone` or `TrajectoryEventPending`
+with a finite event time in that segment. The mover compares this time with
+block faces and internal surfaces. A strictly earlier event wins. Exact
+equality gives the geometric boundary precedence; the event state is copied
+through the normal face transfer and is processed as a zero-time event by the
+next local or MPI continuation. Equality at an ordinary timestep endpoint has
+no competing boundary and remains an event.
+
+After moving a positive interval, the core calls `AdvanceTrajectoryEvent`
+before any face-resampling clone or MPI exchange can copy the particle. The
+application must commit only the elapsed event-clock state here. A useful
+local-timestep implementation stores a dimensionless remaining event fraction
+and subtracts `elapsedTime/localTimeStep`; the existing continuation machinery
+then preserves that fraction while changing timestep between blocks.
+
+At the event point, `ProcessTrajectoryEvent` receives mutable position,
+velocity, species, and remaining mover time. It may update application bytes,
+change species/velocity, and rescale the remaining interval for a new species.
+It returns `TrajectoryEventContinue` or `TrajectoryEventDelete`. The callback
+must not allocate, delete, or link particles: the caller must preallocate any
+branch particles before movement, and the mover remains the sole owner of
+particle-buffer deletion and destination-list insertion. A continuing event
+must leave a valid allocated particle, matching particle-buffer species,
+finite phase space and remaining time, and—when compiled—positive finite
+individual correction. The event marker must be cleared before returning;
+the mover re-queries a zero interval to prevent a forgotten marker from
+causing an infinite loop.
+
+This interface is currently implemented only by
+`UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection`, the
+first-order spatial mover used with local-timestep face continuation. An
+application must reject the mode with second-order, Boris, guiding-center,
+field-line, CUDA, or hybrid movers until those paths implement and validate
+equivalent semantics. With all pointers `NULL`, no callback or random draw is
+made and the historical trajectory path is retained.
+
+## Local-timestep block-face flux resampling
+
+The opt-in `_PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_` makes the trace mover
+stop exactly at each AMR block face and complete the unused local-step fraction
+through exchange/continuation sweeps. It supports a species-dependent local
+timestep with either a supported spatially global particle weight or a
+species-dependent particle weight stored in each block. A positive finite
+individual correction is retained by the parent and every clone: it cancels
+from the face multiplicity but remains in each represented physical moment.
+CUDA, field-line, and periodic configurations are rejected at compile time
+because those combinations do not implement this continuation contract.
+
+For a particle moving from block `old` to block `new`, one model particle
+carries physical flux `W/dt`. The destination multiplicity is drawn by
+residual resampling with mean
+
+```text
+mu = (W_old/dt_old)/(W_new/dt_new)
+   = W_old*dt_new/(W_new*dt_old).
+```
+
+The integer result is `floor(mu)` plus one with probability
+`mu-floor(mu)`. For `mu<1`, deletion therefore has probability `1-mu`; for
+`mu>1`, the original is retained and the remaining destination multiplicity is
+created by cloning. Position and velocity are unchanged, so number, mass,
+momentum, and kinetic-energy flux are conserved in expectation. The unused
+trajectory interval is separately scaled by `dt_new/dt_old`, preserving its
+dimensionless fraction of a local step; particle weight does not enter that
+kinematic scaling.
+
+Block-local weights are not stored in each particle record. They travel with
+the AMR block and are read from the source and destination blocks at the face;
+normal block migration already serializes the block-associated data. The
+optional per-particle continuation fraction is part of the dynamically sized
+particle record and is therefore copied by cloning, MPI exchange, and restart
+packing. Applications must initialize valid positive finite weights and
+timesteps on every allocated block copy before moving particles.
+
+## Species-local particle restart
+
+`PIC::Restart::SaveParticleData()` supports
+`_SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_`. The local format stores:
+
+- the global minimum-weight cache used by core bookkeeping;
+- the application-visible block-data byte length; and
+- the complete block-associated region beginning at
+  `UserAssociatedDataOffset` for every owner block, including blocks with no
+particles.
+
+The last rule is essential: an empty block still owns local timesteps, local
+particle weights, and application state that controls the first particle to
+enter it. Populated records then append the existing per-cell particle counts
+and particle payloads. The enveloped global-weight identity remains revision
+2. Local-weight files use a distinct revision-3 layout identity including
+weight mode and block-slice length, inside the checksum-protected AMPSPF1
+envelope and atomic publication workflow. Unversioned local-weight streams
+are rejected because their additional state has no authenticated layout.
+
+On restore, each current owner consumes its block record. AMPS immediately
+calls `ParallelBlockDataExchange()` before returning from the local-weight
+restart, publishing restored W/dt and application bytes to boundary ghosts
+before any face mover can use them. Restart/checksum tree recursion uses
+`1<<DIM`; a hard-coded eight-child traversal is invalid in DIM1 and DIM2.
+
+The core validates the application block-slice length but cannot identify its
+semantic record order. Applications that persist structured state in this
+slice must include their own layout version or fingerprint. The generic comet
+systematic-residual state stores a 53-bit reaction/product layout fingerprint
+in each initialized block and rejects a mismatched continuation.
+
+Required validation for changes to this format includes empty and populated
+blocks, owner-to-ghost publication, particle checksum continuation, state
+migration across MPI owners, and DIM1 plus an unrelated DIM3 global-weight
+restart. A local-weight file made by an executable with a different block-data
+length is rejected; restart files are not a portable interchange format.
+
 ## 1. Interpolation representations
 
 AMPS now provides two complementary representations of a cell-centered interpolation stencil.
@@ -436,3 +564,153 @@ the merged bytes. A native rebuild must follow the repository preflight:
 confirm the Mars2 root and that no build/test process is active, remove only
 the root `build`, regenerate the selected application and production hooks,
 then compile through the top-level workflow with `-j16`.
+
+## 11. Optional pre-exchange and transactional photochemistry hooks
+
+Two nullable interfaces allow an application to control particle-buffer
+capacity without embedding its population policy in the AMPS core.
+
+`PIC::Parallel::BeforeParticleDataExchange` is called collectively immediately
+before either ordinary exchange implementation allocates receive-side particle
+slots. The default is `NULL`, so existing applications retain their previous
+behavior. An installed callback may inspect and resample application particle
+populations and may use MPI collectives, but it must not call
+`ExchangeParticleData()` recursively. The location of this callback is part of
+its contract: moving it after the buffered/unbuffered dispatch would be too
+late to protect receive allocation.
+
+`PIC::ChemicalReactions::PhotolyticReactions` also provides a complete
+five-callback transactional batch interface:
+
+- `BeginBatchedModel` prepares per-stage application state;
+- `IsBatchedParticleEligible` distinguishes deferred parents from completed
+  parents and newly created daughters;
+- `GetBatchedParticleLimit` supplies the maximum parents attempted in the
+  current pass;
+- `BatchedReactionProcessor` commits one complete event or reinserts an
+  unchanged deferred parent and returns `false`; and
+- `FinishBatchedPass` is the collective-safe checkpoint at which the
+  application can create headroom before another pass.
+
+All five pointers must be either null or installed. A partial set terminates
+with an error. With a complete set, the core rebuilds cell lists on each pass,
+keeps ineligible particles without processing them again, globally counts
+remaining eligible parents, and repeats until the list is drained. The
+application owns event atomicity and eligibility metadata; the generic core
+does not assume a reaction network, statistical-weight law, or buffer
+watermark. The historical reaction processor and single-pass behavior are
+unchanged when all pointers are null.
+
+The current batch counters and application checkpoint protocol are validated
+for MPI compilation only. A hybrid/OpenMP build explicitly rejects an
+installed batch interface. Before a future master integration enables hybrid
+use, counters and list rebuilding must be made thread-safe and tested with
+multiple OpenMP threads. Merge `pic.h` and `pic_photolytic_reactions.cpp`
+together; merging declarations without the null definitions/driver, or the
+driver without the callback contract, creates an incomplete core API. The
+pre-exchange hook in `pic_parallel.cpp`/`pic.h` is a separate nullable core
+primitive and should be reviewed as a second semantic unit.
+
+## 12. Reusable NTC per-species particle buckets
+
+The general `ModelCellCollisions_ntc` path used by species-local weights and
+timesteps no longer allocates two scratch arrays for every occupied cell or
+rescans the cell linked list once for every species. It owns one
+`thread_local std::vector<cParticleDataList>` per compiled species. For each
+cell, one linked-list traversal fills those buckets and accumulates the
+species particle count, minimum individual weight correction, and weight sum.
+`clear()` empties a bucket without releasing its capacity, so later cells and
+timesteps reuse the allocation. `thread_local` is required: making this state
+process-global would introduce a race in OpenMP builds.
+
+The optimization does not change NTC physics. Particle order within a species
+is the original linked-list order; the fixed 100-probe majorant construction,
+pair-loop order, acceptance logic, and random-number calls are unchanged.
+Velocity changes are retained in the common bucket, so a species used by a
+later pair observes accepted collisions from earlier pairs exactly as it did
+when the old implementation repopulated its scratch array from the particle
+buffer. Flags are reset before a species becomes the first partner, and before
+a distinct second partner, then accepted updates are written back at the same
+pair/outer-loop boundaries as before.
+
+This is intentionally limited to the general NTC routine. Specialized
+uniform-weight collision paths were not changed and should not be folded into
+this implementation during master integration without separate deterministic
+and statistical validation.
+
+## 13. Individual corrections with local face transfer and general NTC
+
+Stage-4 comet work adds a narrowly scoped correction-aware path to the generic
+core. The feature remains selected by existing compile-time configuration and
+does not change correction-off builds.
+
+### Local-timestep face transfer
+
+`pic_mover.cpp` permits individual corrections when local-timestep flux
+resampling is enabled. The supported policy holds a particle's individual
+correction `c` fixed across a block face. Because the physical rate is
+`W*c/dt`, `c` cancels from the residual split/roulette multiplicity:
+
+```text
+mu = W_old*dt_new/(W_new*dt_old).
+```
+
+The original particle and all clones retain the complete particle record,
+including `c`, rotational energy, and vibrational state. The mover rejects a
+non-positive or non-finite correction before changing a particle. Its opt-in
+validation diagnostic uses `W*c/dt` for number, mass, momentum, kinetic
+energy, and internal energy; the variance terms contain the corresponding
+squared outgoing rate. The diagnostic is not a production sampler.
+
+### General NTC collisions
+
+For species bucket `s`, particle `i` has physical carrier
+`q_i=W_s*c_i`. `ModelCellCollisions_ntc()` builds strictly increasing
+correction prefix sums and selects each trial particle with probability
+`q_i/sum(q)`. Cross-species trials use
+
+```text
+N_trial = sum_i(q_i) sum_j(q_j) sigma_g,max dt_max / (q_min V),
+```
+
+with the usual one-half factor for one-species unordered pairs. A selected
+particle is updated with probability `q_min/q_i` times its local-timestep
+ratio. The implementation validates that every probability is finite and in
+`[0,1]`, allowing only a roundoff-sized clamp. Same-species draws are
+independent; a self pair is discarded rather than redrawn, preserving the
+ordered-pair normalization and preventing the historical one-particle loop.
+The collision limiter uses `ancoll/(N0*N1)` with explicit parentheses.
+
+`cNTCValidationDiagnostic` in `pic.h` is disabled by default. A focused MPI
+validator may enable it to count trials, accepted collisions, self-pair
+rejections, particle updates, invalid probabilities, and probability extrema.
+Enabling that process-local diagnostic in a hybrid build fails explicitly
+until a thread-safe reduction exists.
+
+The simplified NTC kernel is not correction-aware. In a correction-on build
+it terminates at entry with a nonzero exit code and directs the caller to the
+general NTC implementation. Application setup must similarly reject MF or
+any unvalidated collision implementation; the core does not reinterpret
+those models.
+
+### Qualification and merge constraints
+
+The comet validator covers corrections `1/16, 1/4, 1, 4, 16`, all-correction-
+one identity cases, local/remote/multiple faces, internal energy, adaptation,
+sampling, collision relaxation, boundary handling, restart, migration, and
+chemistry at 1, 4, and 12 MPI ranks. Evidence is listed in
+`srcHartley2/CHEMISTRY.md` and `srcHartley2/STATUS.md`.
+
+For a later master integration, treat the core work as two reviewable semantic
+units:
+
+1. merge the `pic.h` flux-diagnostic fields with `pic_mover.cpp`; and
+2. merge the `pic.h` NTC diagnostic interface with
+   `pic_particle_collision_models.cpp`.
+
+Do not merge only the declarations, weaken the simplified-NTC failure, or
+broaden the supported mover/collision matrix during conflict resolution.
+Retain default-off behavior and repeat correction-off plus correction-on
+1/4/12-rank tests after a clean regenerated build. CUDA, hybrid diagnostic
+reduction, field-line/periodic movers, and non-radial correction-on chemistry
+remain outside this qualification.

@@ -41,6 +41,17 @@ def main():
             '#include "sep_corona_swcme/ambient_state.h"\n'
             '#include "sep_corona_swcme/surface_shock.h"\n'
             '#include "sep_corona_swcme/sheath_model.h"\n'
+            # Include every new transport contract in the neutral consumer;
+            # successful library objects alone cannot establish public-header
+            # independence from application or native MPI definitions.
+            '#include "sep_corona_swcme/cross_ray_transport.h"\n'
+            '#include "sep_corona_swcme/spherical_sector.h"\n'
+            '#include "sep_corona_swcme/cross_ray_mesh.h"\n'
+            '#include "sep_corona_swcme/cross_ray_ct.h"\n'
+            '#include "sep_corona_swcme/cross_ray_reconstruction.h"\n'
+            '#include "sep_corona_swcme/cross_ray_fluid.h"\n'
+            '#include "sep_corona_swcme/cross_ray_contact.h"\n'
+            '#include "sep_corona_swcme/material_transport.h"\n'
             "int main() {\n"
             "  SEP::CoronaSwcme::AmbientPrimitive primitive;\n"
             "  SEP::CoronaSwcme::EventSupport support;\n"

@@ -17,8 +17,12 @@ migration from the retired formats — is [`../../INPUT_FILE.md`](../../INPUT_FI
 * It never interprets a key.  Each block is validated by its owner (the AMPS
   core, an application, or a model library under `src/models`).  Owner
   helpers: `RequireOnlyBlocks` (unknown blocks are fatal),
-  `RequireNoAssignments`, `Flatten` (dotted model vocabularies) and
-  `ToCanonicalText` (deterministic expanded text for broadcast/fingerprints).
+  `RequireNoAssignments`, `Flatten` (dotted model vocabularies),
+  `ResolveCase` (explicit named-case overlays), and `ToCanonicalText`
+  (deterministic expanded text for broadcast/fingerprints). `ResolveCase`
+  requires a selector when direct `case: NAME` children exist, rejects a
+  selector when none exist, and removes all unselected case blocks from the
+  resolved tree. The normative rules are in `src/INPUT_FILE.md`.
 
 It is C++17 and uses only the standard library, so model libraries that must
 stay free of PIC/MPI/application headers can use it by adding
@@ -30,6 +34,7 @@ stay free of PIC/MPI/application headers can use it by adding
 | Code | Use |
 |---|---|
 | `srcMoon/MoonInput.cpp` | flat `application: moon` runtime block and Moon-owned value validation |
+| `srcHartley2/CometRuntimeInput.cpp` | generic comet runtime block, named-case selection, MPI-consistency check and model installation |
 | `srcSEP3D/runtime/configuration_io.cpp` | complete srcSEP3D input (`kSrcSep3dLayout`) |
 | `srcSEP/util/sep_initialization.cpp` | complete srcSEP input (`kSrcSepLayout`) |
 | `src/models/sep_corona_swcme/shock_front/configuration.cpp` | reduced shock-front event (`physics: shock_front`) |
@@ -47,6 +52,9 @@ blocks, comments, continuation and locations (INP-01); fourteen structural
 errors with their `file:line` (INP-02); include resolution, include inside an
 open block, the balanced-file rule, cycles and missing files (INP-03); and the
 canonical-text round trip, flattening and the unknown-block policy (INP-04).
+INP-05 checks common/case overlay semantics, recursive child overlays,
+explicit-selection failures, unknown-case diagnostics and nested-case
+rejection.
 It prints `[INP-xx] PASS|FAIL message` lines and exits nonzero on failure; it
 is the `amps-input` step of `srcSEP/test/run_all_test.sh` and
 `srcSEP3D/test/run_all_test.sh`.

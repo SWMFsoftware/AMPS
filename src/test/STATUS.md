@@ -1,6 +1,351 @@
 # AMPS core-test status
 
-Last updated: 2026-11-08
+Last updated: 2026-11-10
+
+## Complete core revalidation finished (2026-11-10)
+
+The source-frozen full core campaign finished in **1958.293 s**:
+**1,067 cases = 825 PASS / 1 FAIL / 240 SKIP / 1 ERROR**;
+**50 suites = 43 PASS / 1 FAIL / 5 SKIP / 1 ERROR**. The return code is 1,
+retaining the two actual nonpasses. All 792 previously passing identities are
+still PASS, all 32 added cases PASS, no baseline case is missing, and the only
+changed baseline result is CMBGU05 FAIL -> PASS. The original 785-pass
+preintegration baseline remains protected by the retained earlier identity
+comparison and this complete 792-pass preservation.
+
+Exact executed command:
+
+```sh
+python3 -B src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --config test_output/remaining-failures-repair-20261110/local-machine.json \
+  --match 'CORE-*' --jobs 8 --build-jobs 16 \
+  --output-dir test_output/remaining-failures-repair-20261110/core-current
+```
+
+The explicit selector excludes application suites. The AMPS-local overlay
+keeps output/work below the permitted checkout. Native adapters recorded the
+required root/idle, generated-build removal, configuration workflow and -j16
+build preflight. All core native, 1/2/4-rank ownership, 1D/2D/3D mesh, physics,
+layout and weight/time cases pass. Existing typed provider/tool/campaign SKIPs
+remain. This is complete core regression evidence, not a native full-CME run.
+
+Remaining exact nonpasses:
+
+| Case | State | Reason / preserved gate |
+| --- | --- | --- |
+| `CSWC-FULL-CSWC0628-MASS-TIME` | ERROR | Unchanged full production refinement exceeds its original 180 s ceiling; no partial-level PASS is inferred. |
+| `T12-COVERAGE-STRICT-001` | FAIL | Valid real inventory still has 2 complete / 26 incomplete components; structural contradictions remain separate ERROR conditions. |
+
+The six T11 import/audit suites now report 668 rows: 434 PASS / 233 SKIP /
+1 ERROR. T12 reports 13 PASS / 2 SKIP / 1 FAIL: Clang and TSan are skipped,
+strict coverage fails, and the other bounded tool/ABI/sanitizer/backend/perf
+cases pass. The full-volume owner has 46 rows: 45 PASS / 1 ERROR.
+
+Full evidence directory:
+`/home/vtenishe/Mars2/AMPS/test_output/remaining-failures-repair-20261110/core-current/`.
+The combined result is `amps-core-tests.json`/`.xml`; stream progress/report is
+`streams/core.log`/`.json`; suite logs and local numeric transcripts are linked
+by each JSON suite row. `core-current-baseline-comparison.json` in the parent
+evidence directory retains identity comparisons and every remaining nonpass.
+`full-core-preservation.json` verifies no source/test change during the run,
+unchanged HEAD, and unchanged Makefile.conf/.amps.conf. Makefile.local was
+regenerated through the normal configuration workflow; no direct .amps.conf
+edit or Git mutation occurred. Current Git-read-only instructions remain in
+force; no Git-writing application test was selected.
+
+## Documentation and subsequent diagnostic boundary
+
+All new APIs/numerical repairs, units/frames, invariants, input/API boundaries,
+exact commands, independent oracles, portable settings, failure/report policy
+and unqualified physics are documented in the relevant READMEs:
+
+- `src/models/sep_corona_swcme/README.md` and `README_CROSS_RAY.md`;
+- `src/models/sep_corona_swcme/test/README.md`;
+- `src/test/README.md`, `tests/models/cme/README.md` and
+  `tests/models/cme/sep_corona_swcme_full/README.md`;
+- `src/test/tests/harness/self/README.md`,
+  `src/test/tests/portability/matrix/README.md`, `src/test/lib/README.md`, and
+  `src/test/tests/models/comet_libraries/README.md`.
+
+Documentation validation: all 60 local links across these ten READMEs
+resolve; the generated catalog check passes at 55 suites / 1,174 cases;
+traceability passes at 28 areas, 218 production translation units, 210 public
+contracts and 25 configuration contracts. The material-transport C++ example
+compiles with warnings treated as errors, links against the actual tested
+shared archives and prints the expected `8 0.25`. The harness governance
+recheck passes all 13 cases. `git diff --check` passes. Detailed receipts are
+`readme-link-audit.json`, `readme-example-validation.json`,
+`readme-governance-check/amps-core-tests.json` and
+`readme-documentation-validation.json` in the evidence root. These checks
+validate documentation, registration and governance; the full physics result
+above remains the source-frozen core receipt.
+
+The source-level physical implementation has not changed since this full run.
+The new comparison PNG uses recorded contact/advection/reconstruction errors:
+[bounded comparison plot](../../test_output/remaining-failures-repair-20261110/bounded-comparisons.png),
+with data/provenance JSON beside it.
+
+Private ambient-flow/variational diagnostics identify a numerical trace issue
+before adopting a production analytical lateral map. Closed-corotation/Parker
+probes conserve density/field to roundoff/about 1e-12. The open-PFSS 60 s probe
+has a timestep-independent density mismatch about 4.88e-8; an independent
+analytic dipolar invariant finds about 1.8e-6 pointwise relative density error
+from the existing endpoint trace. A PRIVATE exact-dipolar-trace prototype
+reduces the material-density mismatch to about 1.6e-10 and endpoint-density
+error to about 1e-13. Its complete unchanged-gate CMBGU05 run passes in 80.137 s.
+No such prototype or ambient-map production API is imported into source. The
+adiabatic probes also expose the expected need for explicit heating when
+matching the isothermal ambient; they do not qualify thermal/source balance.
+See README_CROSS_RAY.md and the analytical design document for provenance and
+next steps. These experiments do not replace the current production receipt.
+
+The following implementation checkpoints retain their historical snapshots.
+
+## 2026-11-10 analytical cross-ray implementation and validation
+
+The user explicitly resumed G1, retained the full 3-D ambient, and selected
+conservative lateral MATERIAL transport without an MHD runtime. The original
+runtime prohibition remains in force. HLL/static-fluid operators are reference
+conservation tools; they are not a production MHD time integrator. Further
+user decisions select a field-threaded ideal material contact, exact startup
+corotation, and a 1200-s quintic transition to zero angular rate. The final
+orientation retains the agreed 0.0985-degree offset without a reset.
+
+Implemented bounded components under `src/models/sep_corona_swcme`:
+
+| Component | Independent new cases | Current evidence |
+| --- | ---: | --- |
+| SI MHD/ALE flux and conservative transfer references | 5 | Optimized, debug and ASan/UBSan/LeakSanitizer PASS |
+| Exact static spherical sectors | 3 | Analytic octant, rotations, thin cells and 336-cell shell PASS |
+| Shared face/edge topology | 3 | 792 internal interfaces, integer incidence, curved edges and authority PASS |
+| Static face-flux CT reference | 3 | Independent Stokes/Faraday and deliberate monopoles/stale data PASS |
+| Cell-field reconstruction | 3 | Constant rotated/scaled fields; affine-field errors 0.0152182/0.00391239/0.000984985 PASS |
+| Atomic fluid/CT energy reference | 4 | Uniform states, opposite transfers, explicit work and whole-epoch rejection PASS |
+| Corotating threaded-contact geometry | 4 | Full startup, independently differentiated motion, interface stress/E/work and exclusions PASS |
+| Analytical material transport | 4 | Full Cauchy mass/flux/entropy, independent rates, nonlinear transport and map rejection PASS |
+
+These are **29 new cross-ray cases**, plus independent contact-derivative and
+stable-shell controls. No production lateral velocity/map has been selected
+or guessed. No new runtime selector/application coupling is active. The
+remaining regional closure must supply one compatible map, initial/boundary
+states, EOS/entropy and force/heating/work, then satisfy the original computed-
+shock, mass/time/ray, contact, magnetic and validity gates. BG3D-4/G1 remain
+UNQUALIFIED. See the normative cross-ray, startup and material-transport docs.
+
+Key retained outcomes:
+
+- Complete `CMBGU05` PASS, retaining the original three derivative steps,
+  physical leakage bounds and convergence requirement. The user approved the
+  stronger distributed acceptance requiring EVERY level to pass unchanged
+  limits. Physical force/work and cross-stage authority mismatch remain
+  diagnostic; this software PASS does not qualify the old volume map.
+- Original complete coarse refinement: 471.164 s and TWO detected shock zones.
+  Algebraically stable exact shell moments: comparable coarse diagnostic
+  127.902 s, same printed shock values and two zones. The unchanged full matrix
+  retains ERROR at its 180 s routine limit; no smaller grid/ray/epoch set,
+  extra timeout, changed branch filter or relaxed physical gate is accepted.
+- Stable production shell geometry uses independent Gaussian polynomial
+  moments as its test oracle. A cancellation-sensitive old centroid oracle
+  initially exposed CSWC0625 failure and was corrected independently. Radial
+  flux error is now 4.01794e-16 against the unchanged 2e-13 bound; CSWC0624/26
+  also PASS. No PFSS optimization prototype was imported.
+- The stationary legacy HCI contact has initial ambient normal speeds from
+  -905 to +410 m/s on the four supported rays. The selected rotating contact
+  reduces maximum startup mass flux to 1.10794e-26 kg/m^2/s, below the unchanged
+  1e-20 bound, retaining abs(Bn)/abs(B) up to 0.323732. Actual two-sided ejecta
+  matching remains a later G1 gate.
+- Fresh complete 42-case model-owner plus 13-case harness snapshot:
+  **55 total, 54 PASS, 0 FAIL, 0 SKIP, 1 ERROR; 541.326 s**. The sole ERROR is
+  the original refinement ceiling. It predates the four subsequent material
+  cases and later private-factory/excluded-frame controls; those have separate
+  current build/debug/sanitizer receipts. Do not silently relabel this snapshot.
+- A fresh current archive/neutral-header build passes all 25 earlier cross-ray
+  cases, derivative/shell controls, CSWC0625 and architecture after validated-
+  factory-only construction and HCI exclusion bookkeeping. The four new
+  material cases independently pass optimized/debug and all sanitizers.
+- Latest harness: **13/13 PASS**. In addition to the real validator and strict
+  CLI, an injected ledger contradiction must produce ERROR=2 with its unique
+  diagnostic; the legitimate incomplete inventory remains FAIL=1. The first
+  new bootstrap fixture formatting error is retained, then corrected. No
+  production coverage component was promoted by these governance controls.
+
+Evidence root: `test_output/remaining-failures-repair-20261110/`. Important
+receipts: `model-owner-with-corotation/amps-core-tests.json`,
+`final-kernel-validation.json`, `cross-ray-sanitizer-factory-results.json`,
+`contact-latest-profiles.json`, `contact-latest-sanitizers.log`,
+`material-controls-current.json`, `material-profiles.json`,
+`material-sanitizers.log`, and
+`harness-final-controls-corrected/amps-core-tests.json`.
+
+Current registry: **55 suites / 1,174 cases**, including **50 core suites /
+1,067 core cases**. At that checkpoint a complete core campaign was running in
+`core-current/`, selected with `--match 'CORE-*' --jobs 8 --build-jobs 16` and
+explicit Passion plus AMPS-local path overlays. Registered applications have
+zero selected suites. Native adapters perform and record root/idle checks,
+removal of only `build`, Config.pl regeneration and top-level `make -j16`.
+Source/test definitions are frozen during the campaign; documentation updates
+continue. Its final counts and identity comparison are recorded in the completed section above.
+The previous complete 1035-case receipt (792 PASS, 2 FAIL, 240 SKIP, 1 ERROR)
+remains historical evidence, not a claimed result for the enlarged registry.
+
+Strict coverage remains **2 complete / 26 incomplete** and exits 1. The
+separate Hartley2 3-D geometry/runtime limitation remains open. No Git state
+is modified; no test-output tree is imported as application source. No native
+one-/four-rank full-CME or completed-coverage qualification is claimed.
+
+The following checkpoints retain their historical counts and evidence.
+
+## Remaining-failure repair implementation in progress
+
+The full `CMBGU05` executable now passes with the unmodified coronal library
+(223.624 s in the retained run, including concurrent diagnostic work). The
+fourth-order position derivative uses equivalent paired differences, retaining
+all frozen steps and physical/convergence bounds. The user approved changing
+the old expectation that some distributed contact level fail into the stronger
+requirement that every level satisfy the unchanged limits. All subsequent
+inventory, material/differential, transactional, spatial-inverse and residual
+checks execute and pass. This remains bounded software validation: the old
+map still reports its physical force/work and cross-stage authority mismatch.
+
+The new independent derivative/slip controls pass optimized/debug execution and
+ASan/UBSan/LeakSanitizer. Restricted-sandbox LeakSanitizer failure is retained
+separately; the same binary passes with every sanitizer enabled outside that
+ptrace environment. A prototype-linked contact run is retained as superseded
+diagnostic evidence; the cited final contact receipt verifies the original
+coronal archive was rebuilt. The harness passes 13/13 after correcting its
+private inventory fixture's required schema version. Strict coverage now
+cross-checks the real source/configuration ledgers, rejects contradictory
+coverage labels, and preserves setup ERROR versus valid incomplete FAIL.
+
+Refinement remains open. The unchanged executable reproduces the 180-second
+timeout. A private degree-one field prototype also times out and has not been
+added to production. A separate algebraically stable shell-geometry diagnostic
+completes the 40-cell/3600-s level in 127.902 s but detects two shock zones;
+this single-level measurement is not an acceptance PASS. The unchanged
+original executable's complete coarse measurement is being checked next.
+At that earlier checkpoint there was no production piston-solver/geometry or PFSS change.
+The later stable shell changes and validation are described above.
+
+Evidence root: `test_output/remaining-failures-repair-20261110/`.
+Registry: 55 suites / 1,144 cases, including 50 core suites / 1,037 cases.
+No new complete core campaign or strict-coverage PASS is claimed.
+The user explicitly resumed full-CME implementation and qualification; work
+returns to G1/BG3D-4 in its authoritative ledger. G2 and later particle stages
+remain outside the resumed scope. All original numerical/physical gates remain.
+
+## Remaining-failure repair plan prepared
+
+The user requested a plan that preserves the validation gates. The detailed
+[remaining-failure repair plan](REMAINING_FAILURES_FIX_PLAN.md) covers
+`CSWC-FULL-CMBGU05`, `CSWC-FULL-CSWC0628-MASS-TIME`, and
+`T12-COVERAGE-STRICT-001` separately. Inspection identifies the immediate
+contact failure as its finite-difference monotonicity clause: all three
+printed pointwise fluxes are below the frozen physical bound. Roundoff remains
+a hypothesis requiring independent measurement; the plan does not remove the
+convergence condition. The refinement must complete every unchanged level
+within the existing 180-second routine limit. Strict coverage must earn actual
+closure of 26 incomplete components, without exemptions or label-only changes.
+This is planning only; the current 792 PASS / 2 FAIL / 240 SKIP / 1 ERROR
+receipt remains authoritative. The separate Hartley2 3-D geometry/runtime issue
+and deferred full-CME qualification remain open.
+
+## Native configuration-isolation repair validated
+
+The planned repair is implemented in the exosphere, dust charging/injection,
+and ECSIM stencil adapters. They explicitly select no-SPICE mode and verify
+saved/effective make settings and real compiler commands, retaining configuration
+receipts and rejecting contradictions before MPI. The new
+`HARNESS-NATIVE-CONFIG-ISOLATION-001` passes 24 synthetic adapter scenarios:
+eight valid enabled/disabled starts and sixteen expected rejection scenarios.
+The complete harness passes 12/12. Real exosphere and dust charging runs both
+PASS from independently seeded SPICE-enabled and disabled starts. All four
+native matrix rows and the reverse-order pair PASS, as does reselecting a
+SPICE-enabled application through Config.pl. Full core revalidation from that
+enabled initial state completed in 1,744.066 s: 1,035 cases = 792 PASS / 2 FAIL /
+240 SKIP / 1 ERROR; 50 suites = 43 PASS / 1 FAIL / 5 SKIP / 1 ERROR. All original
+785 baseline PASS identities are preserved, every other original status is
+unchanged, and all seven new cases PASS. Compared with the user's failing run,
+exactly the exosphere and dust charging cases change FAIL -> PASS; all 789
+previously passing cases remain PASS. The nonzero runner exit is caused by
+the original two failures and one error, not a new configuration failure.
+Evidence root:
+`test_output/native-config-isolation-20261110/`.
+
+Exact final full-core command (exit 1 retains the original nonpasses):
+
+```sh
+python3 -B src/test/run_tests.py --config test/qualification-machine/passion.json --match 'CORE-*' --streams 1 --jobs 8 --output-dir test_output/native-config-isolation-20261110/core-final
+```
+
+| Evidence | Result |
+| --- | --- |
+| `harness-final/amps-core-tests.json` | PASS 12/12; new control case includes 24 synthetic scenarios |
+| `native-matrix.json` | PASS: four independently seeded native rows plus the reverse-order pair (six actual physics-case executions) |
+| `spice-boundary.json` | PASS: normal application SPICE selection remains available |
+| `core-final/amps-core-tests.json` and `.xml` | Complete 50-suite / 1,035-case report, including exact retained nonpasses |
+| `baseline-comparison.json` | PASS 785/785 baseline passes; no original status changes |
+| `reported-run-comparison.json` | PASS; exactly the two requested FAIL -> PASS repairs |
+| `invariant-audit.json` | PASS: site file, Config.pl, ampsConfig.pl and all four native input decks unchanged; no staged paths; HEAD unchanged |
+
+Current registry: 55 suites / 1,142 cases globally; 50 suites / 1,035 cases in
+the core stream. The nightly selection has 43 suites / 382 cases. Historical
+1,034-case receipts below are retained without relabeling their counts.
+
+## Historical configuration failures and separate legacy 3-D runtime timeout
+
+The pre-repair user-reported run `run-20261110T092615Z-924820` under
+`/data/vtenishe/AMPS-test-results/`. It reports 789 PASS / 4 FAIL / 240 SKIP /
+1 ERROR, 50 suites, 1,723.884 seconds. Compared with the frozen baseline and
+the earlier passing integration campaign below, precisely two cases changed
+PASS -> FAIL:
+
+- `CORE-EXOSPHERE-SPHERE-INTEGRATION-001`: SPICE leapsecond-kernel error at runtime.
+- `CORE-DUST-CHARGING-DYNAMICS-001`: undefined `Exosphere::IAU_FRAME` at link time.
+
+Both adapters inherited global SPICE build selection instead of explicitly
+selecting their intended no-SPICE mode. The later Hartley2 build exposed this
+configuration-isolation gap. Before repair, 783/785 original passes remained
+PASS, with all six then-newly registered cases PASS. The accepted repair and
+current complete comparison are recorded above.
+The original two failed cases and timeout error are unchanged. Exact evidence:
+`test_output/comet-integration-20261109/provenance/core-reported-20261110T092615Z-comparison.json`.
+
+The [configuration-isolation repair plan](CONFIGURATION_ISOLATION_FIX_PLAN.md)
+is implemented and validated. Its original steps remain as the acceptance
+checklist; the current counts include the new harness case.
+
+The approved `1d_comet_dev` integration adds `INP-05` for the generic case
+selector and `CORE-COMET-LIBRARIES-001` for reaction-network, collision-data,
+radiative-cooling, fluorescence, and reference-data checks. The expanded
+comet-era registry was 55 suites / 1,141 cases; core alone was 50 suites / 1,034 cases.
+That nightly selection had 43 suites / 381 cases. Catalog generation and
+structural traceability pass. The earlier Passion integration campaign completed in
+1,719.797 seconds: 1,034 cases = 791 PASS / 2 FAIL / 240 SKIP / 1 ERROR;
+50 suites = 43 PASS / 1 FAIL / 5 SKIP / 1 ERROR. The exact baseline comparison
+preserves all 785 original PASS identities and every other baseline status;
+all six new cases PASS. The two failures and one error remain
+`CSWC-FULL-CMBGU05`, `T12-COVERAGE-STRICT-001`, and
+`CSWC-FULL-CSWC0628-MASS-TIME` (180-second routine ceiling).
+
+Evidence is under `test_output/comet-integration-20261109/core-qualified/`;
+the machine-readable identity comparison is
+`test_output/comet-integration-20261109/provenance/final-core-comparison.json`.
+Both final-tree legacy make regressions pass with zero-byte numerical diffs.
+Hartley2's all-stage runner passes 46 jobs across 14 groups, including fresh
+Stage-8/9 matrices at 1/4/12 MPI ranks; earlier fresh Stage-4–7 receipts are
+retained separately. The user approved the remaining two-file 3-D build
+exception on 2026-11-10. Clean DIM3/global-weight builds pass with the site
+default flags (63.932 s) and a make-only `OPT3=-O2 -g` override (97.007 s).
+The optimized 100-iteration/four-rank nightly run reached its local 1,800 s
+ceiling during initial cut-cell volume construction, before particle stepping.
+All owned MPI processes exited. The approved build fixes are verified, but
+the 3-D runtime is unvalidated. The user-selected performance investigation is
+complete; see [its diagnosis and proposed spatial-index validation plan](GEOMETRY_PERFORMANCE_INVESTIGATION.md).
+The geometry algorithm was unchanged during the investigation. See
+[the integration ledger](../../COMET_CORE_INTEGRATION_STATUS.md) for commands,
+all evidence paths and approved changes. These software
+checks do not close the existing coverage or physical-qualification gates.
 
 ## Core/application execution streams
 
@@ -9,7 +354,7 @@ registered manifest:
 
 | Stream | Suites | Cases | Ownership |
 | --- | ---: | ---: | --- |
-| `core` | 49 | 1,028 | Every validated `src/...` core/model owner |
+| `core` | 50 | 1,035 | Registered `src/...` core/model owners; coverage remains partial |
 | `application-srcEnceladus` | 3 | 61 | Forward, native startup, and E3 Enceladus owners |
 | `application-srcMoon` | 2 | 46 | Moon regression and M0 boundary owners |
 

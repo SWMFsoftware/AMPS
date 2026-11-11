@@ -34,8 +34,20 @@
     {
       "component": "src/models/chemical_solver",
       "status": "partial",
-      "test_ids": ["CORE-CHEMICAL-SOLVER-001"],
+      "test_ids": ["CORE-CHEMICAL-SOLVER-001", "CORE-COMET-LIBRARIES-001"],
       "remaining": "The dependency-light solver now has exact irreversible/reversible kinetics, a stiff Robertson reference, positivity, conservation/convergence, strict topology validation, and typed invalid/singular-path evidence. Remaining work is runtime-deck reaction-network assembly, production cell coupling, elemental/charge metadata validation, and multi-network application integration."
+    },
+    {
+      "component": "src/models/cometary_physics",
+      "status": "partial",
+      "test_ids": ["CORE-COMET-LIBRARIES-001"],
+      "remaining": "Standalone collision/cooling contracts are covered. Native comet transport and collision coupling require the separate fresh application campaign."
+    },
+    {
+      "component": "src/models/resonance_fluorescence",
+      "status": "partial",
+      "test_ids": ["CORE-COMET-LIBRARIES-001"],
+      "remaining": "Published analytic/table models and reference hashes are covered. Observation agreement and resonant transfer remain separate science gates."
     },
     {
       "component": "src/models/dust",
@@ -71,7 +83,7 @@
       "component": "src/models/sep_corona_swcme",
       "status": "partial",
       "test_ids": ["CORE-MODEL-SEP-CORONA-SWCME-FULL-001", "CORE-MODEL-SEP-CORONA-SWCME-REDUCED-001"],
-      "remaining": "T11 imports 15 bounded full-volume code checks and all 97 reduced-front rows without scope promotion. BG3D-4/G1 remain unqualified and deferred; routine reduced execution retains 35 native cases as explicit SKIP."
+      "remaining": "Imports 46 full-volume software/reference checks including numerical controls, static shared geometry/CT/energy, corotating contact and analytical material transport, plus all 97 separate reduced-front rows. The selected analytical production lateral map, moving geometry, ambient/thermal/source consistency, shock/contact/force/work coupling and BG3D-4/G1 qualification remain open; 35 reduced native rows remain routine SKIP."
     },
     {
       "component": "src/models/sep_coronal_cme",

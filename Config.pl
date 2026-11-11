@@ -21,6 +21,23 @@ my $MpiLocation;
 my $Mpirun="mpirun";
 my $TestRunProcessorNumber=4;
 
+# Resolve the compile-time application description without conflating it with
+# the runtime ``*.in`` model receipt.  Historical applications keep their
+# ``input/<name>.input`` file and therefore take precedence.  New two-layer
+# applications may instead provide ``input/<name>.conf``.  Keeping the lookup
+# here (rather than in a shell test embedded below) gives one documented rule
+# for interactive use, nightly tests, and later integration into master.
+sub resolve_application_compile_input {
+  my ($application_full_name)=@_;
+  for my $extension ("input","conf") {
+    my $candidate="input/$application_full_name.$extension";
+    return ($candidate,$extension) if -f $candidate;
+  }
+
+  die "Cannot configure application '$application_full_name': expected " .
+      "input/$application_full_name.input or input/$application_full_name.conf\n";
+}
+
 # name for the nightly tests
 our $TestName;
 our @Compilers;
@@ -96,7 +113,7 @@ foreach (@Arguments) {
      print "-spice-path=PATH\t\tpath to the location of the SPICE installation.\n";
      print "-spice-kernels=PATH\t\tpath to the location of the SPICE kernels.\n";
      print "-ices-path=PATH\t\t\tpath to the location of ICES\n";
-     print "-application=case\t\tthe name of the model case to use.\n";
+     print "-application=case\t\tthe application to compile; input/case.input is preferred, otherwise input/case.conf is used.\n";
      print "-boost-path=PATH\t\tthe path to the boost library.\n";
      print "-kameleon-path=PATH\t\tthe path for the Kameleon library.\n";
      print "-cplr-data-path=PATH\t\tthe path to the data files used to import other model results by PIC::CPLR::DATAFILE.\n";
@@ -184,19 +201,37 @@ foreach (@Arguments) {
      @list=split(' ',$application);
      $application=$list[$#list];
 
-     if (!check_amps_conf("APPLICATION=$application")) {
-       add_line_amps_conf("InputFileAMPS=$application.input");   
+    my ($compile_input_source,$compile_input_extension)=
+        resolve_application_compile_input($application_full_name);
+    my $compile_input_name="$application.$compile_input_extension";
+    my $application_changed=!check_amps_conf("APPLICATION=$application");
+    my $compile_input_changed=
+        !check_amps_conf("InputFileAMPS=$compile_input_name");
+
+     if ($application_changed || $compile_input_changed) {
+       add_line_amps_conf("InputFileAMPS=$compile_input_name");
        add_line_amps_conf("APPLICATION=$application");
-
-       `cp -f input/$application_full_name.* input/species.input .`;
-
-       #set defailt compilation module flags in Makefile.local
-       `sed '/COMPILE_/d' Makefile.local > Makefile.local.new`;
-       `rm Makefile.local`;
-       `mv Makefile.local.new Makefile.local`;
-
-       `echo "InputFileAMPS=$application.input" >> Makefile.local`;
      }
+
+     # Refresh the staged application files and Makefile.local selectors on
+     # every explicit -application request. This also repairs stale duplicate
+     # lines left by older Config.pl versions even when .amps.conf is already
+     # correct.
+     `cp -f input/$application_full_name.* input/species.input .`;
+
+     # Set default compilation module flags only when the application changes,
+     # but always replace stale application/input selectors. This is important
+     # during migration from <name>.input to <name>.conf: the application name
+     # can remain unchanged while the selected compile-time file changes.
+     my $filter=$application_changed ?
+         '/COMPILE_/d;/^InputFileAMPS=/d;/^APPLICATION=/d' :
+         '/^InputFileAMPS=/d;/^APPLICATION=/d';
+     `sed '$filter' Makefile.local > Makefile.local.new`;
+     `rm Makefile.local`;
+     `mv Makefile.local.new Makefile.local`;
+
+     `echo "APPLICATION=$application" >> Makefile.local`;
+     `echo "InputFileAMPS=$compile_input_name" >> Makefile.local`;
 
     next
   };

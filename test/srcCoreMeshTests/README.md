@@ -86,7 +86,13 @@ receipts.
 The topology cases validate physical search at every leaf midpoint, reciprocal
 same-level face connectivity, parent/child refinement and integer geometry,
 unique production AMR IDs, and an allocation-order-independent canonical
-checksum. In every dimension the uniform case also creates a private,
+checksum. The CHECKSUM case also writes and reads an actual native mesh file
+in a private mesh, then checks the exact unit-cube split, stable node IDs,
+parent links, midpoint ownership and reciprocal face geometry. This covers
+lower-dimensional face-table initialization and serialization, which an
+in-memory hash cannot exercise. The temporary file belongs to the case's
+isolated run directory and is removed after a successful check. In every
+dimension the uniform case also creates a private,
 topology-only mesh and exercises production `buildMesh` with bounded
 resolution, requiring the root split, the expected generation/maximum level,
 and a unique `2^D`-node bottom list. Adaptation cases validate accepted split

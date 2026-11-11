@@ -357,7 +357,7 @@ void InitSendHaloLayer_1D(cHalo& SendHalo, bool communicate_entire_block) {
 
     // Face neighbors: 0=x-, 1=x+
     for (int iface = 0; iface < nFaceIdx; ++iface) {
-      auto* neib = node->neibNodeFace(iface, mesh);
+      auto* neib = node->findNeibNodeFace(iface, mesh);
       if (!neib) continue;
 
       const int ToThread = neib->Thread;
@@ -513,7 +513,7 @@ void InitSendHaloLayer_2D(cHalo& SendHalo, bool communicate_entire_block) {
 
     // Face neighbors: faceDir = iface / nSeg
     for (int iface = 0; iface < nFaceIdx; ++iface) {
-      auto* neib = node->neibNodeFace(iface, mesh);
+      auto* neib = node->findNeibNodeFace(iface, mesh);
       if (!neib) continue;
 
       const int ToThread = neib->Thread;
@@ -674,7 +674,7 @@ void InitSendHaloLayer_3D(cHalo& SendHalo, bool communicate_entire_block) {
 
     // Face neighbors: faceDir = iface / nSeg
     for (int iface = 0; iface < nFaceIdx; ++iface) {
-      auto* neib = node->neibNodeFace(iface, mesh);
+      auto* neib = node->findNeibNodeFace(iface, mesh);
       if (!neib) continue;
 
       const int ToThread = neib->Thread;
@@ -753,4 +753,3 @@ void InitSendHaloLayer_3D(cHalo& SendHalo, bool communicate_entire_block) {
 
 } // namespace Parallel
 } // namespace PIC
-

@@ -28,6 +28,8 @@ sys.path.insert(0, str(TEST_ROOT))
 from lib.runner_support import (  # noqa: E402
     RunnerError, case, command, error_result, load_context, main_guard,
     run_command, write_result)
+from lib.native_configuration import (  # noqa: E402
+    NativeConfigurationError, configure_no_spice, verify_no_spice_build)
 
 
 CASE_ID = "CORE-DUST-CHARGING-DYNAMICS-001"
@@ -112,13 +114,11 @@ def main() -> int:
             return write_result(
                 context, "ERROR", "could not remove generated build directory")
 
-        configured = run_command(
-            [str(repo / "Config.pl"), "-application=test/model-dust"],
-            repo, timeout=timeout)
-        if configured.returncode != 0:
-            return write_result(
-                context, "FAIL", "Config.pl could not select test/model-dust",
-                cases=[case(CASE_ID, "FAIL", "configuration failed")])
+        # The charging oracle supplies its plasma directly and has no target
+        # ephemeris/frame. Pin the global mode as well as the component input,
+        # so a preceding SPICE-enabled application cannot alter this fixture.
+        configured = configure_no_spice(
+            context, "test/model-dust", "input/test/model-dust.input", "dust-native")
 
         make_command = command(context, "make") + ["amps"]
         print("[preflight] build_environment=MAKEFLAGS=-j16 command={}".format(
@@ -129,11 +129,13 @@ def main() -> int:
         build_log = artifacts / "dust-native-build.txt"
         build_log.write_text(
             (configured.stdout or "") + (built.stdout or ""), encoding="utf-8")
+        configured.evidence.append(str(build_log))
         if built.returncode != 0 or not (repo / "amps").is_file():
             return write_result(
                 context, "FAIL", "native dust application did not build",
                 cases=[case(CASE_ID, "FAIL", "make exit {}".format(
-                    built.returncode))], evidence=[str(build_log)])
+                    built.returncode))], evidence=configured.evidence)
+        verify_no_spice_build(configured, built.stdout or "")
 
         retained = artifacts / "amps-test-model-dust"
         shutil.copy2(str(repo / "amps"), str(retained))
@@ -141,8 +143,11 @@ def main() -> int:
         identity.write_text(json.dumps({
             "schema_version": 1,
             "application": "test/model-dust",
-            "configure_command": ["./Config.pl", "-application=test/model-dust"],
-            "build_command": ["env", "MAKEFLAGS=-j16", "make", "amps"],
+            "configure_command": configured.command,
+            "configuration_receipt": str(configured.receipt_path),
+            "expected_spice": "nospice",
+            "build_command": make_command,
+            "build_environment": {"MAKEFLAGS": "-j16"},
             "executable_sha256": _sha256(retained),
             "input_deck_sha256": _sha256(repo / "input/test/model-dust.input"),
         }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -176,8 +181,12 @@ def main() -> int:
         result = case(CASE_ID, "PASS" if exact_receipt else "FAIL", message)
         return write_result(
             context, "PASS" if exact_receipt else "FAIL", message,
-            cases=[result], evidence=[str(build_log), str(identity),
+            cases=[result], evidence=configured.evidence + [str(identity),
                                      str(transcript), str(model_output)])
+    except NativeConfigurationError as error:
+        return write_result(context, "ERROR", str(error),
+                            cases=[case(CASE_ID, "ERROR", str(error))],
+                            evidence=error.evidence)
     except Exception as error:
         return error_result(context, error)
     finally:

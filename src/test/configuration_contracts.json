@@ -4,6 +4,19 @@
   "statuses": ["tested", "partial", "planned", "exempt"],
   "contracts": [
     {
+      "mode_id": "config.native-nospice-isolation-v1",
+      "components": ["src/test"],
+      "authority": ["src/test/lib/native_configuration.py", "src/test/tests/models/exosphere_native/run_test.py", "src/test/tests/models/dust_native/run_test.py", "src/test/tests/models/dust_injection_native/run_test.py", "src/test/tests/pic/ecsim_operators/run_test.py"],
+      "profile": "native fixtures explicitly requiring no SPICE",
+      "selectors": ["Config.pl -application=<fixture> -spice-path=nospice"],
+      "generated_outputs": ["native configuration receipt", "effective make probe", "actual compiler-mode checks", "build identity"],
+      "status": "partial",
+      "suite_ids": ["CORE-HARNESS-001", "CORE-EXOSPHERE-SPHERE-NATIVE-001", "CORE-DUST-NATIVE-001", "CORE-DUST-INJECTION-NATIVE-001", "CORE-ECSIM-OPERATORS-001"],
+      "case_ids": ["HARNESS-NATIVE-CONFIG-ISOLATION-001", "CORE-EXOSPHERE-SPHERE-INTEGRATION-001", "CORE-DUST-CHARGING-DYNAMICS-001", "CORE-DUST-INJECTION-INTEGRATION-001", "ECSIM-STENCIL-CURL-001"],
+      "reason": "Explicit global no-SPICE selection and effective/compiler verification are implemented. Synthetic tool fixtures check enabled/disabled starts and rejected mismatches; real starting-state native evidence is recorded separately in STATUS.md.",
+      "gaps": ["arbitrary third-party make overrides", "native owners outside the four declared fixtures"]
+    },
+    {
       "mode_id": "machine.layered-profile-v1",
       "components": ["src/test"],
       "authority": ["src/test/config/default.json", "src/test/lib/configuration.py"],

@@ -6,15 +6,35 @@ shared code has no AMPS, PIC, MPI, source, or particle type.  `model.md` is the
 physics/design authority, `BG3D0_CONTRACT.md` freezes the selected G1 profile,
 and this file documents the implemented surface of the current stage.
 
+## Current cross-ray work (2026-11-10)
+
+The resumed G1 work retains the 3-D ambient and develops conservative
+analytical/semi-empirical lateral material transport without an MHD runtime.
+The selected material contact retains threaded magnetic flux, corotates at
+startup and tapers angular rate over 1200 s. The new transport/geometry/
+magnetic/energy/contact/material kernels and numerical repairs are described
+in [README_CROSS_RAY.md](README_CROSS_RAY.md), including every public API,
+SI/frame convention, invariant, rejection policy, example and limitation.
+[Model-local test instructions](test/README.md) map exact binaries to cases;
+[the global adapter](../../test/tests/models/cme/sep_corona_swcme_full/README.md)
+documents complete-registry execution, timeouts, reports and portability.
+
+The complete core campaign is 1,067 cases: **825 PASS, 1 FAIL, 240 SKIP,
+1 ERROR**. All 792 previous PASS identities remain PASS; all 32 new cases
+PASS; CMBGU05 is repaired. The original refinement timeout and incomplete
+strict coverage remain visible. BG3D-4 and G1 remain unqualified: the
+production lateral map, moving regional geometry, physical source/work closure,
+actual ejecta matching and native propagation are not completed.
+
 ## Status by G1 stage
 
 | Stage | Implemented | Independently validated |
 |---|---|---|
 | BG3D-1 input, launch and outer trajectory | Yes | Yes: `CMBGU01`–`02` |
-| BG3D-2 ambient plasma/IMF | Yes | Yes: `CMBGU03` |
+| BG3D-2 ambient plasma/IMF | Yes | `CMBGU03` bounded EOS/field/wind/coverage checks pass; new material-flow accuracy investigation is not a production qualification |
 | BG3D-3 front and local shocks | Yes | Yes: `CMBGU04` plus maintained RH/ellipsoid suites |
-| BG3D-3 shared contact/interface | Fixed-fraction reference only | No: reopened because it is not the BG3D-4 material contact authority |
-| BG3D-4 spatial sheath/compression | Diagnostic map implemented; ejecta-driven per-ray production closure specified only | No: the selected production equations, finite ambient ray inventory, common contact authority, computed shock and acceptance suite are not implemented |
+| BG3D-3 shared contact/interface | Independent piston geometry and new corotating/contact diagnostics | Bounded startup/geometry/interface references pass; common production plasma/contact coupling remains open |
+| BG3D-4 spatial sheath/compression | Diagnostic map and bounded contact-driven radial solver implemented; conservative analytical cross-ray extension in progress | Bounded references pass; full convergence, validity, common regional assembly and G1 qualification remain open |
 | BG3D-5 ejecta/remaining regions | No | No |
 | BG3D-6 material handoff | No | No |
 | BG3D-7/8 native storage, MPI and restart | No | No |
@@ -451,6 +471,21 @@ being accepted and ignored.
 
 ## Build and test
 
+The 2026-11-10 core repair adds `CMBGU05-DERIVATIVE-CONTROLS` in
+`test/test_bg3d4_contact_derivative.cpp`. It checks the actual independent
+contact-position derivative against translated planar and expanding spherical
+trajectories, fourth-order truncation, both signs of imposed slip, absolute
+leakage noncancellation and invalid/support data. The shared test helper pairs
+antisymmetric differences before weighting to reduce large-HCI-origin
+cancellation, without changing the stencil, frozen steps or flux thresholds.
+The original `CMBGU05` must now pass every distributed contact level's original
+physical limits, in addition to its pointwise convergence and all subsequent
+map/inventory/residual checks. This bounded software result does not promote
+the diagnostic material map to a qualified CME closure. The independent control
+ID is deliberately separate from the still-planned `CSWC0629` production
+validity gate. Current resumption and exact evidence are recorded in
+`docs/CODEX_CME_PLAN.md` and `src/test/STATUS.md` from the AMPS root.
+
 From the AMPS root:
 
 ```text
@@ -572,3 +607,24 @@ geometry evidence rather than being duplicated under new IDs.
 Before a later native AMPS rebuild, follow the repository-root `AGENTS.md`
 four-step clean/regenerate/hooks/`-j16` workflow exactly. The command above does
 not remove or regenerate the native root `build/` directory.
+
+
+## Resumed full-volume work: conservative cross-ray transport
+
+On 2026-11-10 the user authorized full-CME resumption and retaining the 3-D
+ambient with conservative lateral transport. The [implementation contract](docs/CONSERVATIVE_CROSS_RAY_TRANSPORT.md)
+documents SI/HCI equations, explicit mesh inputs, exact shared-library test
+commands, individual case identities, evidence and open coupling gates.
+Twenty-nine new bounded transport/sector/topology/CT/material/contact cases pass. Moving-region
+geometry, a complete analytical lateral map, actual ambient balance,
+piston/shock convergence and native G1 qualification remain open. The legacy
+per-ray and reduced providers retain their own identities and behavior.
+
+
+The subsequent user choice preserves the analytical/semi-empirical model and
+prohibits an MHD runtime. HLL/static-fluid operators are conservation references.
+[Material transport](docs/MATERIAL_TRANSPORT.md) documents full Cauchy mass,
+signed-flux, entropy and material derivatives; [contact startup](docs/CROSS_RAY_CONTACT_STARTUP.md)
+documents the selected 1200-s corotation transition and threaded-contact
+boundary diagnostics. The production lateral map, heating/work closure and
+coupling remain open; passing these local identities does not close BG3D-4.

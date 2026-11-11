@@ -1,4 +1,5 @@
 #include "sep_corona_swcme/piston_ambient.h"
+#include "shell_quadrature_reference.h"
 #include "sep_corona_swcme/piston_solver.h"
 
 #include <algorithm>
@@ -55,8 +56,7 @@ std::shared_ptr<const SEP::CoronaSwcme::EventConfiguration> Event() {
 }
 
 double ShellCentroid(double left,double right) {
-  return 0.75*(std::pow(right,4)-std::pow(left,4))/
-      (std::pow(right,3)-std::pow(left,3));
+  return SEP::CoronaSwcme::TestReference::ShellCentroidByGaussianMoments(left,right);
 }
 
 struct Errors {

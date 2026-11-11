@@ -1,0 +1,99 @@
+{
+  "schema": "amps.comet.stage10-release-policy.v1",
+  "development_branch": "1d_comet_dev",
+  "allowed_target_refs": [
+    "refs/remotes/origin/master",
+    "refs/heads/master"
+  ],
+  "allowed_tracked_dirty_exclusions": [
+    "Makefile"
+  ],
+  "allowed_untracked_artifact_prefixes": [
+    "build/",
+    "PT/",
+    "PT.",
+    "validation_runs/",
+    "data/",
+    "share/",
+    "util/",
+    "SWMF_data/",
+    "output/",
+    "error.log",
+    "halley1d.",
+    "hartley2."
+  ],
+  "allowed_untracked_artifact_exact_paths": [
+    "amps",
+    "SWMF_data",
+    "data",
+    "output",
+    "share",
+    "table_parser",
+    "util",
+    "comet.radial.mesh.msh",
+    "gitinfo.txt",
+    "species.input"
+  ],
+  "focused_all_stage": {
+    "expected_groups": 11,
+    "expected_tests": 39,
+    "required_stages": [
+      "stage0",
+      "stage1",
+      "stage2",
+      "stage3",
+      "stage4",
+      "stage5",
+      "stage6",
+      "stage7",
+      "stage8",
+      "stage9",
+      "stage10"
+    ]
+  },
+  "science_evidence": {
+    "manifest_schema": "amps.comet.stage9-science-manifest.v1",
+    "minimum_balanced_runs": 8,
+    "minimum_independent_seeds": 4,
+    "result_schema": "amps.comet.stage9-science-result.v1",
+    "rubin_schema": "amps.comet.stage9-rubin-comparison.v1",
+    "required_rubin_companions": [
+      ".csv",
+      ".png",
+      ".eps",
+      ".pdf"
+    ]
+  },
+  "path_classification": {
+    "core_source_prefixes": [
+      "src/"
+    ],
+    "input_policy_prefixes": [
+      "input/"
+    ],
+    "test_prefixes": [
+      "srcHartley2/tests/"
+    ],
+    "validation_prefixes": [
+      "srcHartley2/validation/"
+    ],
+    "reference_prefixes": [
+      "srcHartley2/halley2011/reference/"
+    ],
+    "visualization_prefixes": [
+      "srcHartley2/visualization/"
+    ],
+    "application_prefixes": [
+      "srcHartley2/"
+    ],
+    "build_configuration_paths": [
+      "ampsConfig.pl",
+      "Config.pl",
+      "Makefile"
+    ],
+    "documentation_suffixes": [
+      ".md"
+    ]
+  },
+  "authorization": "NOT_GRANTED"
+}
