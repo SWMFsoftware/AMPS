@@ -2,6 +2,46 @@
 
 Edition: 2026-11-10.
 
+## Architecture, application regressions and source-guide update
+
+Current PDF: 87 pages, 20 chapters and three appendices. Added the layered
+architecture illustration and its local vector PDF/PNG plus commented
+generator. The architecture chapter explains interfaces, lifecycle and
+ownership without prescribing a universal operator order.
+
+Added the individual application-regression chapter, further end-to-end
+examples, and a catalog derived from MakefileTest/Table and Makefile.test:
+153 declarations / 150 distinct targets, including all 100 currently generated
+host targets and the 50 additional declared names. Each generated entry
+records its purpose, source locations, comparison method, explicit tolerance
+overrides and detected prerequisites. The companion JSON and optional editorial
+generator preserve the distinction between registration and successful runs.
+Removed the repository instruction-file reference from the manual's source
+guide; verified its filename is absent from all reachable TeX sources and
+the rendered PDF. The repository instruction file itself remains in place.
+
+Validation PASS:
+
+- Exact root command make PDF; zero compiler warnings, unresolved references
+  or overflowing/underfull boxes.
+- Local structure check: 26 reachable TeX files, all local assets available.
+- Both catalog --check commands; modern snapshot remains 55 suites / 1174 cases.
+- Independent reconciliation against the generated compile-target names:
+  all 100 owners cataloged, all 100 target names present in the PDF.
+- Both legacy authority files retain the cataloged SHA-256 hashes.
+- Python syntax and documentation whitespace checks.
+- Visual inspection of architecture, application chapter and catalog pages
+  (PDF pages 16, 50 and 74).
+
+Receipt: build-manual/legacy-documentation-validation.json; build logs and
+PDF hash are also retained in build-manual/. The generated legacy test_help
+command has a pre-existing shell quoting failure (exit 2); this is documented,
+not repaired or reported as passing. No application simulation, native build,
+configuration or Git-writing operation was executed for this update.
+
+The sections below retain the earlier 65-page compilation/rename checkpoints;
+their page counts and archive inventories describe those earlier snapshots.
+
 ## Manual source filename cleanup
 
 Removed the AMPS_ prefix from all 22 chapter/appendix/bibliography TeX source

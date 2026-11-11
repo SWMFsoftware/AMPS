@@ -1,0 +1,212 @@
+\chapter{Individual application regression tests}\label{ch:application-regression}
+\section{The legacy application procedure and its authorities}
+AMPS also retains application regressions generated from
+\path{MakefileTest/Table} into \path{Makefile.test}. These tests configure an
+application, build a native executable, create a run directory, evolve it and
+compare selected output with maintained references. They complement the
+modern core/application registry of Chapter~\ref{ch:tests}; they are not
+automatically imported into that Python runner.
+
+The edition snapshot has 153 Table records, describing 150 distinct targets.
+Three mover names have alternative machine-specific declarations. The
+generated \code{HOSTNAME=passion} file contains 100 application owners;
+50 other declared targets are absent from this host snapshot.
+An omitted record is not an executed SKIP. A generated target is not
+necessarily enabled for the current compiler, provisioned with data, or
+physically qualified.
+
+Appendix~\ref{ch:legacy-catalog} describes all 100 generated owners
+individually, with source line numbers, named purpose, actual comparison type,
+explicit tolerance overrides and detected prerequisites. It separately lists
+all 50 omitted names and their machine selectors. The companion
+\path{doc/legacy_test_catalog.json} retains exact phase locations and both
+source hashes. These counts are an editorial inventory, not a new test run.
+
+\section{How Table records control generation}
+The maintained record is delimited by \code{#>} and \code{<#}.
+\begin{longtable}{L{0.22\textwidth}L{0.68\textwidth}}
+\caption{Application-regression declaration fields.}\\
+\toprule Field & Meaning\\\midrule\endfirsthead
+\toprule Field & Meaning\\\midrule\endhead
+\code{Name} & Application/test path. The generator removes the
+\code{test/} prefix from the target name. Example:
+\code{Name=test/fast-wave} produces \code{test_fast-wave}.\\
+\code{Time} & Declared approximate runtime used by the historical scheduling
+tools; not a measured duration or an enforced physical acceptance limit.\\
+\code{Type} & \code{amps} or \code{swmf}; distinguishes a standalone case
+from a custom framework-coupled campaign.\\
+\code{Keys} & Configuration options, frequently selecting SPICE, background
+data, OpenMP or vectorization. Machine-qualified alternatives are possible.\\
+\code{Outs} & Declared output basenames for the default comparison.
+When omitted, the default basename is \code{test_NAME}.\\
+\code{Ref} & Compiler/machine-dependent reference suffix, for example a
+number in brackets inserted before the rank-specific reference suffix.\\
+\code{ExeptionCode} & Historical spelling retained by the generator.
+A compiler-dependent SKIP can suppress aggregate execution. It is not a
+physical PASS and a direct target has its own actual behavior.\\
+\path{CustomRefSolutionPaths} & Site/reference locations used by custom
+recipes where defined; inspect the effective recipe for actual use.\\
+\code{Compile}, \code{Rundir}, \code{Run}, \code{Check} & Optional replacement
+recipes. Lines beginning with \code{>>>} acquire a recipe TAB; \code{<<<}
+preserves make-level text such as conditionals.\\
+\bottomrule
+\end{longtable}
+
+A missing machine selector applies everywhere. An inclusion selector such
+as \code{@@(0+passion+pleiades)} names permitted machines; an exclusion
+selector such as \code{@@(-pleiades)} excludes named machines.
+\code{@@(0+)} names no permitted host. Selection and precedence are implemented
+by the production generator; do not infer a case's effective options simply
+by concatenating every matching-looking Table line.
+
+The current \path{Config.pl} installation and \code{-test-blocks=N} paths
+compile/run \path{utility/TestScripts/table_parser.cpp}. The older Perl
+\path{utility/TestScripts/BuildTest.pl} and template files are historical
+implementation references and differ in some behavior. Installation normally
+generates two execution blocks; changing the count regenerates the file.
+Do not edit only the generated Makefile and expect a change to survive the
+next generation. Keep the source declaration and effective recipe consistent.
+
+\section{Four phases and an individual invocation}
+An owner normally provides:
+\begin{lstlisting}
+test_NAME
+test_NAME_compile
+test_NAME_rundir
+test_NAME_run
+test_NAME_check
+\end{lstlisting}
+The aggregate target calls those phases in order. The compile phase selects
+the application and libraries. Rundir usually recreates
+\path{run_test_NAME} and moves the executable into it. Run advances that
+frozen executable. Check evaluates the declared files and writes diff/log
+artifacts. Each phase needs its predecessor's exact state; an old run
+directory is not proof that the current binary ran.
+
+For the two currently preflight-adapted regression examples:
+\begin{lstlisting}
+# From the idle AMPS root; choose a launcher supported by the host.
+make test_Moon MPIRUN='mpiexec -n 4'
+make test_fast-wave MPIRUN='mpiexec -n 4'
+\end{lstlisting}
+Their compile recipes invoke
+\path{src/test/native/prepare_legacy_native.py}, then the established
+configuration and top-level -j16 build. Some other custom recipes hard-code
+MPI rank counts or run nested SWMF campaigns, so overriding \code{MPIRUN}
+does not universally change their resources. Read the individual run recipe.
+
+The generated \code{test_help} target is intended to list these names.
+In this edition, executing \code{make test_help} returns a shell quoting error:
+some generated echo lines lack their closing quote. Use the complete local
+catalog and actual target definitions until that separate generator defect
+is repaired. The manual documents the defect; it does not report the help
+command as passing.
+
+\section{Application and numerical families}
+\begin{longtable}{L{0.29\textwidth}L{0.61\textwidth}}
+\caption{The 100 currently generated application owners.}\\
+\toprule Family / owners & What the fixtures exercise\\\midrule\endfirsthead
+\toprule Family / owners & What the fixtures exercise\\\midrule\endhead
+Planetary/comet/dust: 13 & Saturn MOP; Moon baseline/cut-cell/restart;
+Enceladus and Mercury; CG gas/dust and tetrahedral variants; model dust;
+two Europa cases and Venus hot oxygen.\\
+Heliospheric/coupled: 29 & Parker equation, focused transport, Boris and
+field-line transport; 3-D prescribed or SWMF IMF; SC/IH field-line/node
+attachment and diffusion variants; ARMS background; BATS-R-US PIC, Europa,
+outer-heliosphere and dynamic-flux-rope couplings.\\
+Fields/waves/solvers: 22 & Linear solver and OpenMP variant, GMRES,
+uniform/nonuniform periodic boundaries, current-on/off light waves,
+reconnection, eleven fast-wave selector/vector/thread/rebalancing variants
+and constant-field boundary behavior.\\
+Trajectory/mover: 12 & Individual Lapenta2017, Markidis2010, Boris,
+relativistic Boris and guiding-centre paths; CCMC; corresponding mover
+applications and relativistic guiding-centre fixture.\\
+Numerical/process: 10 & Four legacy GoogleTest applications, NTC/MF
+collision distributions, two chemistry references, AMR interpolation through
+two adapters and CDAP diagnostic.\\
+Geospace: 14 & Gridless/mesh-backed and trajectory cutoff rigidity,
+vertical/hybrid variants, analytic dipole/T96 forward products, gridless
+directional density/flux fixtures and live SWMF/PT products.\\
+\bottomrule
+\end{longtable}
+The legacy Enceladus moment comparison is different from the modern
+10000-step E3 source/observation owner. The legacy Moon baseline is different
+from terrain/science qualification. A modern global mapping/audit that
+mentions a legacy directory does not execute every Table application:
+\code{CORE-LEGACY-REGISTRY-AUDIT-001} is a separate 13-directory governance
+audit, not the 100-case regression procedure.
+
+\section{References, tolerances and comparison artifacts}
+The default recipe compares
+\path{run_test_NAME/PT/plots/OUT.dat} with a maintained file under
+\path{output/test_NAME}, using the selected reference suffix and the actual
+rank-specific \code{ref_npN} convention. The historical \path{output} can be
+a link to a shared reference tree. Preserve those references and record their
+identity before a run.
+
+Custom checks can reduce rows, remove nondeterministic columns, compare
+trajectories/surfaces/volumes separately or import SWMF's own diff artifacts.
+The current catalog detects DiffNum in 93 owners, plain diff in three,
+and four custom checks with neither direct invocation. Those four include
+SWMF diff imports and the legacy unit-test stage/log check.
+
+\path{share/Scripts/DiffNum.pl} uses its own default absolute/relative
+criteria unless a recipe overrides them. The appendix reproduces explicit
+\code{-a=} and \code{-r=} settings; it does not silently substitute the
+modern core suite's tolerances. Plain diff is a text equality check.
+Compiler- and rank-specific references must match the actual executable and
+layout. Do not assume stochastic particle records are rank-identical.
+
+An empty final diff means agreement only if every prerequisite comparison
+actually ran and required files exist. Check each expected sub-diff and the
+final combined result, as well as process completion. Some default
+multi-output paths redirect repeatedly to one diff; a last empty comparison
+must not hide an earlier failure. Some custom recipes conditionally copy a
+framework result. Missing upstream evidence is not a successful comparison.
+
+The base \code{test_all} recipe suppresses some child make failures and
+clears old diff files. The root Makefile also adds a modern core-nightly
+prerequisite to \code{test_all}, so the effective target can combine both
+procedures. Use the explicit Python selection for the modern registry and an
+explicit reviewed individual legacy target for a bounded regression.
+Never infer all tests passed solely from the outer make return code.
+
+\section{Dependencies, preflight and concurrency}
+Site paths in \code{Keys} can require CSPICE/kernels, background archives,
+Kameleon, GoogleTest or a separately installed SWMF tree. Vector/thread
+variants require matching compiler, CPU and OpenMP settings. The catalog
+flags detected prerequisites; it is not a complete environment solver.
+Some recipes also copy files produced by another test: Moon-restart explicitly
+requires particle restart files from the matching Moon baseline.
+
+Many historical compile recipes remove \path{srcTemp}, use -j8, or switch
+applications without the current required root/idle/build-removal preflight.
+They must be reconciled before execution under the present policy.
+The shared native preflight helper is explicitly present in the current Moon
+and fast-wave recipes; its presence does not qualify every other target.
+Twenty-four generated owners contain Git instructions in custom recipes.
+The current Git-read-only policy does not permit executing those commands;
+documentation of them is not permission to clone, switch, pull or update.
+
+Historical execution blocks are not the Python runner's \code{--streams}
+abstraction. In particular, \code{test_compile} and
+\code{test_run_threadN} do not establish a safe cross-stream native-build
+lock. Do not run two legacy configuring/compiling targets concurrently in
+one checkout. A future global adapter must serialize mutable build work,
+freeze executables/inputs, retain per-case logs and faithfully import all
+FAIL/SKIP/ERROR states before combining reports.
+
+\section{Maintaining this documentation}
+After changing either authoritative file, refresh the local snapshot:
+\begin{lstlisting}
+python3 -B doc/update_legacy_test_catalog.py
+python3 -B doc/update_legacy_test_catalog.py --check
+make -C doc check
+make PDF
+\end{lstlisting}
+This editorial generator only reads declarations and recipes; it never
+regenerates \path{Makefile.test} or executes its commands. Add a reviewed
+purpose description for any new generated owner. Preserve all declarations,
+including machine-omitted entries, and never turn catalog membership into
+a reported runtime PASS.
+\source{MakefileTest/Table; Makefile.test; utility/TestScripts/table_parser.cpp}

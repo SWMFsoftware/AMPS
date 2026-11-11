@@ -168,3 +168,33 @@ electron and combined numerical diagnostics. Retained final-tree runs have
 empty difference files. Treat this as a regression for its declared wave
 configuration, complemented by manufactured operator/deposition tests;
 it does not qualify every electromagnetic boundary, plasma or accelerator.
+
+\section{Further Table-controlled application examples}
+The complete legacy procedure and exact per-target check locations are in
+Chapter~\ref{ch:application-regression} and
+Appendix~\ref{ch:legacy-catalog}. Additional end-to-end examples include:
+\begin{itemize}
+\item \code{test_Moon-restart}: build the declared continuation and consume
+the matching \code{test_Moon} particle restart files. A previous unrelated
+Moon directory is not a valid dependency. Compare the continuation's
+declared output with its rank-specific reference.
+\item \code{test_CG-dust-test} and
+\code{test_CG-dust-test-tetra-cut-mesh}: compare gas/dust diagnostics and the
+declared shape/cut-cell variant. Their custom checks include reduced water
+and dust samples; a gas-only comparison does not validate the dust products.
+\item \code{test_Collision-Test-NTC} and \code{test_Collision-Test-MF}:
+compare the legacy distribution outputs for the two collision selectors
+with their own reference families. Those regressions complement the
+independent analytic collision-rate tests of the core suite.
+\item \code{test_Chemistry-Test}: compare the two maintained chemical
+kinetic output fixtures. A plain configuration/launch success is insufficient.
+\item \code{test_InterpolateAMR-AMPS-test}: compare both centre- and
+corner-based interpolation outputs with the maintained reference.
+\item \code{test_Geospace-Flux-Gridless}: compare directional/spatial and
+dipole density/flux fixture products; the OpenMP/MPI variant is a separate
+generated owner with its own declared resources.
+\end{itemize}
+These recipe interfaces remain available, but the many historical build
+steps, site paths and reference mutations need the preflight review described
+in the application-regression chapter before execution under current policy.
+No additional application run is claimed by documenting these examples.

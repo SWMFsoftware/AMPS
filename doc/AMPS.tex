@@ -4,6 +4,9 @@
 \hypersetup{pdftitle={AMPS User and Developer Manual},pdfauthor={AMPS development team}}
 \begin{document}
 \frontmatter
+% The unnumbered title sheet and first front-matter page otherwise both
+% acquire the Roman-page anchor "i" when titlepage resets the counter.
+\hypersetup{pageanchor=false}
 \begin{titlepage}
 \centering
 \vspace*{0.8cm}
@@ -27,6 +30,7 @@ edition date. A documented capability is not a claim that every combination of
 algorithms, inputs, machines or scientific applications has been qualified.
 \end{minipage}
 \end{titlepage}
+\hypersetup{pageanchor=true}
 \chapter*{How to use this manual}
 \addcontentsline{toc}{chapter}{How to use this manual}
 Start with Chapters~\ref{ch:introduction}--\ref{ch:inputs} for a first run.
@@ -68,12 +72,14 @@ figures are required. The accompanying README gives the exact commands.
 \input{Coupling}
 \input{Output}
 \input{Testing}
+\input{ApplicationRegression}
 \input{Examples}
 \input{Development}
 \input{Troubleshooting}
 \appendix
 \input{Reference}
 \input{TestSuiteCatalog}
+\input{LegacyApplicationCatalog}
 \backmatter
 \input{References}
 \end{document}

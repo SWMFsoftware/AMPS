@@ -1,4 +1,34 @@
 \chapter{Core and application architecture}\label{ch:architecture}
+\section{Layered architecture and data flow}
+Figure~\ref{fig:architecture} separates physical case ownership from reusable
+numerical services. Configuration selects compiled capabilities and the
+runtime case. Applications translate those choices into source, force,
+boundary and observation hooks; shared physical models supply explicit
+equations and accepted state. A standalone driver and an SWMF wrapper can
+invoke the same core through different outer lifecycles.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{figures/architecture.pdf}
+\caption{AMPS responsibility architecture. Arrows denote interfaces and
+state dependencies, not a fixed order of collision, chemistry or transport
+operators. Application adapters connect target physics to the core; shared
+physical libraries keep their own units, validity and test contracts.
+Ownership/exchange, sampling and persistence are separate responsibilities.
+Common utilities support all layers; test receipts are evidence about those
+layers rather than an additional physical evolution stage.}
+\label{fig:architecture}
+\end{figure}
+
+The mesh identifies physical cells and surfaces; particles carry statistical
+state and follow characteristics; process/field modules update the selected
+physics. Sampling uses completed physical state, parallel exchange publishes
+the correct owner generation, and restart preserves the state needed for
+continuation. None of these services can supply a missing application
+source law or a scientifically unspecified boundary condition.
+The file map and initialization sections below connect each box to its
+maintained source and lifecycle.
+
 \section{Ownership of responsibilities}
 AMPS supplies reusable numerical machinery. An application supplies its
 physical target, configuration, sources, boundary laws, background selection

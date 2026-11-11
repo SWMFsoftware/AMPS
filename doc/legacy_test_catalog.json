@@ -1,0 +1,3603 @@
+{
+  "schema_version": 1,
+  "scope": "Registration/recipe documentation only; no tests executed",
+  "generated_hostname": "passion",
+  "table_records": 153,
+  "table_distinct_targets": 150,
+  "generated_targets": 100,
+  "omitted_targets": 50,
+  "source_sha256": {
+    "MakefileTest/Table": "34b7547c5f14866701bab750bb6c3c3c129c4e8131b5d9c1222dee90c9132766",
+    "Makefile.test": "f0dcbb2d5cc1f76d4c5c692ce312b935f7b3462185842628c4633daa47f9e2c7"
+  },
+  "generated": [
+    {
+      "target": "test_SEP--Parker3D--SWMF_IMF",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "Three-dimensional SEP transport with an SWMF-supplied IMF.",
+      "table": [
+        {
+          "application": "SEP--Parker3D--SWMF_IMF",
+          "target": "test_SEP--Parker3D--SWMF_IMF",
+          "selector": "all machines",
+          "table_line": 635
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [],
+      "phase_line_numbers": {
+        "compile": 1866,
+        "rundir": 1897,
+        "run": 1904,
+        "check": 1911
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_SEP--focused_transport-IH-mflampa-fl",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "SWMF inner-heliosphere focused-transport configuration mflampa-fl.",
+      "table": [
+        {
+          "application": "SEP--focused_transport-IH-mflampa-fl",
+          "target": "test_SEP--focused_transport-IH-mflampa-fl",
+          "selector": "all machines",
+          "table_line": 931
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [],
+      "phase_line_numbers": {
+        "compile": 1927,
+        "rundir": 1958,
+        "run": 1966,
+        "check": 1973
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_SEP--focused_transport-IH-Kartavykh-drift",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "SWMF inner-heliosphere focused-transport configuration Kartavykh-drift.",
+      "table": [
+        {
+          "application": "SEP--focused_transport-IH-Kartavykh-drift",
+          "target": "test_SEP--focused_transport-IH-Kartavykh-drift",
+          "selector": "all machines",
+          "table_line": 1003
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [],
+      "phase_line_numbers": {
+        "compile": 1987,
+        "rundir": 2018,
+        "run": 2026,
+        "check": 2033
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_SEP--focused_transport-IH-Kartavykh-drift_diffusion",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "SWMF inner-heliosphere focused-transport configuration Kartavykh-drift_diffusion.",
+      "table": [
+        {
+          "application": "SEP--focused_transport-IH-Kartavykh-drift_diffusion",
+          "target": "test_SEP--focused_transport-IH-Kartavykh-drift_diffusion",
+          "selector": "all machines",
+          "table_line": 1073
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [],
+      "phase_line_numbers": {
+        "compile": 2049,
+        "rundir": 2080,
+        "run": 2088,
+        "check": 2095
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_SEP--focused_transport-IH-Kartavykh",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "SWMF inner-heliosphere focused-transport configuration Kartavykh.",
+      "table": [
+        {
+          "application": "SEP--focused_transport-IH-Kartavykh",
+          "target": "test_SEP--focused_transport-IH-Kartavykh",
+          "selector": "all machines",
+          "table_line": 1144
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [],
+      "phase_line_numbers": {
+        "compile": 2111,
+        "rundir": 2142,
+        "run": 2150,
+        "check": 2157
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_SEP--focused_transport-IH-He",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "SWMF inner-heliosphere focused-transport configuration He.",
+      "table": [
+        {
+          "application": "SEP--focused_transport-IH-He",
+          "target": "test_SEP--focused_transport-IH-He",
+          "selector": "all machines",
+          "table_line": 1214
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [],
+      "phase_line_numbers": {
+        "compile": 2173,
+        "rundir": 2204,
+        "run": 2211,
+        "check": 2218
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_SEP--focused_transport-IH-He-drift",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "SWMF inner-heliosphere focused-transport configuration He-drift.",
+      "table": [
+        {
+          "application": "SEP--focused_transport-IH-He-drift",
+          "target": "test_SEP--focused_transport-IH-He-drift",
+          "selector": "all machines",
+          "table_line": 1282
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [],
+      "phase_line_numbers": {
+        "compile": 2234,
+        "rundir": 2265,
+        "run": 2272,
+        "check": 2279
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_SEP--focused_transport-IH-He-drift_diffusion",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "SWMF inner-heliosphere focused-transport configuration He-drift_diffusion.",
+      "table": [
+        {
+          "application": "SEP--focused_transport-IH-He-drift_diffusion",
+          "target": "test_SEP--focused_transport-IH-He-drift_diffusion",
+          "selector": "all machines",
+          "table_line": 1351
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [],
+      "phase_line_numbers": {
+        "compile": 2295,
+        "rundir": 2326,
+        "run": 2333,
+        "check": 2340
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_AMPS-BATSRUS-PIC-coupling",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "Live BATS-R-US/AMPS coupling configuration PIC-coupling.",
+      "table": [
+        {
+          "application": "test/AMPS-BATSRUS-PIC-coupling",
+          "target": "test_AMPS-BATSRUS-PIC-coupling",
+          "selector": "all machines",
+          "table_line": 5019
+        }
+      ],
+      "diffnum_calls": 0,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [],
+      "phase_line_numbers": {
+        "compile": 2356,
+        "rundir": 2375,
+        "run": 2380,
+        "check": 2390
+      },
+      "requirements_detected": [
+        "SWMF component tree",
+        "declared OpenMP setup"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_SEP_SWMF_test19_fl",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "SWMF test19 SEP coupling regression with field-line configuration.",
+      "table": [
+        {
+          "application": "SEP_SWMF_test19_fl",
+          "target": "test_SEP_SWMF_test19_fl",
+          "selector": "all machines",
+          "table_line": 5103
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [],
+      "phase_line_numbers": {
+        "compile": 2418,
+        "rundir": 2438,
+        "run": 2443,
+        "check": 2460
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_SEP_SWMF_test19",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "SWMF test19 SEP coupling regression.",
+      "table": [
+        {
+          "application": "SEP_SWMF_test19",
+          "target": "test_SEP_SWMF_test19",
+          "selector": "all machines",
+          "table_line": 5174
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [],
+      "phase_line_numbers": {
+        "compile": 2476,
+        "rundir": 2496,
+        "run": 2501,
+        "check": 2513
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_SEP-SC-IH--FL--FL-attachment--GC",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "Solar-corona/inner-heliosphere SEP attachment configuration FL--FL-attachment--GC.",
+      "table": [
+        {
+          "application": "SEP-SC-IH--FL--FL-attachment--GC",
+          "target": "test_SEP-SC-IH--FL--FL-attachment--GC",
+          "selector": "all machines",
+          "table_line": 5237
+        }
+      ],
+      "diffnum_calls": 4,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [],
+      "phase_line_numbers": {
+        "compile": 2527,
+        "rundir": 2546,
+        "run": 2552,
+        "check": 2561
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_SEP-SC-IH--FL--FL-attachment--Droge",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "Solar-corona/inner-heliosphere SEP attachment configuration FL--FL-attachment--Droge.",
+      "table": [
+        {
+          "application": "SEP-SC-IH--FL--FL-attachment--Droge",
+          "target": "test_SEP-SC-IH--FL--FL-attachment--Droge",
+          "selector": "all machines",
+          "table_line": 5303
+        }
+      ],
+      "diffnum_calls": 4,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/sep_focused_transport-ih--fl-Droge__diffusion"
+      ],
+      "phase_line_numbers": {
+        "compile": 2581,
+        "rundir": 2601,
+        "run": 2607,
+        "check": 2627
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "Solar-corona/inner-heliosphere SEP attachment configuration FL--FL-attachment--Droge_diffusion.",
+      "table": [
+        {
+          "application": "SEP-SC-IH--FL--FL-attachment--Droge_diffusion",
+          "target": "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion",
+          "selector": "all machines",
+          "table_line": 5389
+        }
+      ],
+      "diffnum_calls": 4,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/sep_focused_transport-ih--fl-Droge__diffusion"
+      ],
+      "phase_line_numbers": {
+        "compile": 2651,
+        "rundir": 2671,
+        "run": 2677,
+        "check": 2697
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_SEP-SC-IH--FL--FL-attachment--He_diffusion",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "Solar-corona/inner-heliosphere SEP attachment configuration FL--FL-attachment--He_diffusion.",
+      "table": [
+        {
+          "application": "SEP-SC-IH--FL--FL-attachment--He_diffusion",
+          "target": "test_SEP-SC-IH--FL--FL-attachment--He_diffusion",
+          "selector": "all machines",
+          "table_line": 5476
+        }
+      ],
+      "diffnum_calls": 4,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/sep_focused_transport-ih--fl-He__diffusion"
+      ],
+      "phase_line_numbers": {
+        "compile": 2721,
+        "rundir": 2741,
+        "run": 2747,
+        "check": 2768
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "Solar-corona/inner-heliosphere SEP attachment configuration FL--FL-attachment--Droge_diffusion_Borovikov.",
+      "table": [
+        {
+          "application": "SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov",
+          "target": "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov",
+          "selector": "all machines",
+          "table_line": 5566
+        }
+      ],
+      "diffnum_calls": 4,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/sep_focused_transport-ih--fl-Droge__diffusion"
+      ],
+      "phase_line_numbers": {
+        "compile": 2792,
+        "rundir": 2812,
+        "run": 2818,
+        "check": 2838
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "Solar-corona/inner-heliosphere SEP attachment configuration FL--FL-attachment--Droge_diffusion_FTE.",
+      "table": [
+        {
+          "application": "SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE",
+          "target": "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE",
+          "selector": "all machines",
+          "table_line": 5652
+        }
+      ],
+      "diffnum_calls": 4,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/sep_focused_transport-ih--fl-Droge__diffusion"
+      ],
+      "phase_line_numbers": {
+        "compile": 2862,
+        "rundir": 2882,
+        "run": 2888,
+        "check": 2908
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "Solar-corona/inner-heliosphere SEP attachment configuration FL--FL-attachment--Droge_diffusion_Parker.",
+      "table": [
+        {
+          "application": "SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker",
+          "target": "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker",
+          "selector": "all machines",
+          "table_line": 5739
+        }
+      ],
+      "diffnum_calls": 4,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/sep_focused_transport-ih--fl-Droge__diffusion"
+      ],
+      "phase_line_numbers": {
+        "compile": 2932,
+        "rundir": 2952,
+        "run": 2958,
+        "check": 2978
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "Solar-corona/inner-heliosphere SEP attachment configuration FL--FL-attachment--Droge_diffusion_Qin.",
+      "table": [
+        {
+          "application": "SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin",
+          "target": "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin",
+          "selector": "all machines",
+          "table_line": 5825
+        }
+      ],
+      "diffnum_calls": 4,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/sep_focused_transport-ih--fl-Droge__diffusion"
+      ],
+      "phase_line_numbers": {
+        "compile": 3002,
+        "rundir": 3022,
+        "run": 3028,
+        "check": 3048
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_SEP-SC-IH--FL--Node-attachment--GC",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "Solar-corona/inner-heliosphere SEP attachment configuration FL--Node-attachment--GC.",
+      "table": [
+        {
+          "application": "SEP-SC-IH--FL--Node-attachment--GC",
+          "target": "test_SEP-SC-IH--FL--Node-attachment--GC",
+          "selector": "all machines",
+          "table_line": 5914
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/sep_focused_transport-ih-mflampa"
+      ],
+      "phase_line_numbers": {
+        "compile": 3072,
+        "rundir": 3091,
+        "run": 3097,
+        "check": 3108
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_AMPS-BATSRUS-Europa",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "Live BATS-R-US/AMPS coupling configuration Europa.",
+      "table": [
+        {
+          "application": "test/AMPS-BATSRUS-Europa",
+          "target": "test_AMPS-BATSRUS-Europa",
+          "selector": "all machines",
+          "table_line": 5974
+        }
+      ],
+      "diffnum_calls": 0,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [],
+      "phase_line_numbers": {
+        "compile": 3123,
+        "rundir": 3142,
+        "run": 3147,
+        "check": 3154
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        2
+      ]
+    },
+    {
+      "target": "test_AMPS-BATSRUS-OH",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "Live BATS-R-US/AMPS coupling configuration OH.",
+      "table": [
+        {
+          "application": "test/AMPS-BATSRUS-OH",
+          "target": "test_AMPS-BATSRUS-OH",
+          "selector": "all machines",
+          "table_line": 6029
+        }
+      ],
+      "diffnum_calls": 0,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [],
+      "phase_line_numbers": {
+        "compile": 3170,
+        "rundir": 3189,
+        "run": 3194,
+        "check": 3220
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        2
+      ]
+    },
+    {
+      "target": "test_AMPS-BATSRUS_dynamic_fluxrope",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "Live BATS-R-US/AMPS coupling configuration dynamic_fluxrope.",
+      "table": [
+        {
+          "application": "test/AMPS-BATSRUS_dynamic_fluxrope",
+          "target": "test_AMPS-BATSRUS_dynamic_fluxrope",
+          "selector": "all machines",
+          "table_line": 6111
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [],
+      "phase_line_numbers": {
+        "compile": 3236,
+        "rundir": 3255,
+        "run": 3260,
+        "check": 3284
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_Geospace-SWMF-AMPS",
+      "family": "Geospace cutoff, access and flux",
+      "purpose": "Live SWMF geospace/PT setup followed by proton trajectory and volume-output comparisons.",
+      "table": [
+        {
+          "application": "test/Geospace-SWMF-AMPS",
+          "target": "test_Geospace-SWMF-AMPS",
+          "selector": "all machines",
+          "table_line": 8168
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": true,
+      "native_preflight_helper": false,
+      "applications": [],
+      "phase_line_numbers": {
+        "compile": 3298,
+        "rundir": 3334,
+        "run": 3340,
+        "check": 3348
+      },
+      "requirements_detected": [
+        "SWMF component tree"
+      ],
+      "hardcoded_mpi_ranks": [
+        20
+      ]
+    },
+    {
+      "target": "test_Saturn-MOP",
+      "family": "Planetary, comet and dust applications",
+      "purpose": "Saturn MOP water-population regression; reduced H2O mesh output.",
+      "table": [
+        {
+          "application": "test/Saturn-MOP",
+          "target": "test_Saturn-MOP",
+          "selector": "all machines",
+          "table_line": 45
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=4.0E-13"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/Saturn-MOP"
+      ],
+      "phase_line_numbers": {
+        "compile": 3378,
+        "rundir": 3385,
+        "run": 3391,
+        "check": 3397
+      },
+      "requirements_detected": [
+        "configured SPICE toolkit/kernels"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_SEP--Parker_spiral--ParkerEq",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "Prescribed Parker-spiral SEP transport; ParkerEq formulation.",
+      "table": [
+        {
+          "application": "SEP--Parker_spiral--ParkerEq",
+          "target": "test_SEP--Parker_spiral--ParkerEq",
+          "selector": "all machines",
+          "table_line": 489
+        }
+      ],
+      "diffnum_calls": 3,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/sep_parker_spiral__field_line"
+      ],
+      "phase_line_numbers": {
+        "compile": 3412,
+        "rundir": 3420,
+        "run": 3426,
+        "check": 3432
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_SEP--Parker_spiral--FTE",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "Prescribed Parker-spiral SEP transport; FTE formulation.",
+      "table": [
+        {
+          "application": "SEP--Parker_spiral--FTE",
+          "target": "test_SEP--Parker_spiral--FTE",
+          "selector": "all machines",
+          "table_line": 521
+        }
+      ],
+      "diffnum_calls": 3,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/sep_parker_spiral__field_line-fte"
+      ],
+      "phase_line_numbers": {
+        "compile": 3453,
+        "rundir": 3461,
+        "run": 3467,
+        "check": 3473
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_SEP--Parker_spiral--boris_relativistic",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "Prescribed Parker-spiral SEP transport; boris_relativistic formulation.",
+      "table": [
+        {
+          "application": "SEP--Parker_spiral--boris_relativistic",
+          "target": "test_SEP--Parker_spiral--boris_relativistic",
+          "selector": "all machines",
+          "table_line": 554
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/sep_parker_spiral__boris_relativistic"
+      ],
+      "phase_line_numbers": {
+        "compile": 3494,
+        "rundir": 3502,
+        "run": 3508,
+        "check": 3514
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_SEP--Parker_spiral--field_line",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "Prescribed Parker-spiral SEP transport; field_line formulation.",
+      "table": [
+        {
+          "application": "SEP--Parker_spiral--field_line",
+          "target": "test_SEP--Parker_spiral--field_line",
+          "selector": "all machines",
+          "table_line": 580
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/sep_parker_spiral__field_line"
+      ],
+      "phase_line_numbers": {
+        "compile": 3529,
+        "rundir": 3537,
+        "run": 3543,
+        "check": 3549
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_SEP--Parker3D--ParkerIMF",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "Three-dimensional Parker-background SEP transport regression.",
+      "table": [
+        {
+          "application": "SEP--Parker3D--ParkerIMF",
+          "target": "test_SEP--Parker3D--ParkerIMF",
+          "selector": "all machines",
+          "table_line": 606
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/sep_3d_cut-domain_parkerimf_parker3d"
+      ],
+      "phase_line_numbers": {
+        "compile": 3564,
+        "rundir": 3572,
+        "run": 3578,
+        "check": 3584
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_unit_test",
+      "family": "Numerical and process fixtures",
+      "purpose": "Legacy GoogleTest application; inspect assertions/exit and stage log, not an empty numeric diff alone.",
+      "table": [
+        {
+          "application": "unit_test",
+          "target": "test_unit_test",
+          "selector": "all machines",
+          "table_line": 1420
+        }
+      ],
+      "diffnum_calls": 0,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/unit-tests/unit-test"
+      ],
+      "phase_line_numbers": {
+        "compile": 3600,
+        "rundir": 3611,
+        "run": 3617,
+        "check": 3623
+      },
+      "requirements_detected": [
+        "GoogleTest"
+      ],
+      "hardcoded_mpi_ranks": [
+        1
+      ]
+    },
+    {
+      "target": "test_unit_test_field-lines",
+      "family": "Numerical and process fixtures",
+      "purpose": "Legacy GoogleTest field-line suite and summary-report comparison.",
+      "table": [
+        {
+          "application": "unit_test_field-lines",
+          "target": "test_unit_test_field-lines",
+          "selector": "all machines",
+          "table_line": 1446
+        }
+      ],
+      "diffnum_calls": 0,
+      "plain_diff_calls": 1,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/unit-tests/unit-test-field-lines"
+      ],
+      "phase_line_numbers": {
+        "compile": 3636,
+        "rundir": 3646,
+        "run": 3652,
+        "check": 3658
+      },
+      "requirements_detected": [
+        "GoogleTest"
+      ],
+      "hardcoded_mpi_ranks": [
+        1
+      ]
+    },
+    {
+      "target": "test_unit_test_particle_distribution",
+      "family": "Numerical and process fixtures",
+      "purpose": "Legacy GoogleTest particle-distribution suite and summary-report comparison.",
+      "table": [
+        {
+          "application": "unit_test_particle_distribution",
+          "target": "test_unit_test_particle_distribution",
+          "selector": "all machines",
+          "table_line": 1472
+        }
+      ],
+      "diffnum_calls": 0,
+      "plain_diff_calls": 1,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/unit-tests/unit-test-distribution"
+      ],
+      "phase_line_numbers": {
+        "compile": 3672,
+        "rundir": 3682,
+        "run": 3688,
+        "check": 3694
+      },
+      "requirements_detected": [
+        "GoogleTest"
+      ],
+      "hardcoded_mpi_ranks": [
+        1
+      ]
+    },
+    {
+      "target": "test_unit_test_collisions",
+      "family": "Numerical and process fixtures",
+      "purpose": "Legacy GoogleTest collision suite and summary-report comparison.",
+      "table": [
+        {
+          "application": "unit_test_collisions",
+          "target": "test_unit_test_collisions",
+          "selector": "all machines",
+          "table_line": 1499
+        }
+      ],
+      "diffnum_calls": 0,
+      "plain_diff_calls": 1,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/unit-tests/unit-test-collisions"
+      ],
+      "phase_line_numbers": {
+        "compile": 3708,
+        "rundir": 3718,
+        "run": 3724,
+        "check": 3730
+      },
+      "requirements_detected": [
+        "GoogleTest"
+      ],
+      "hardcoded_mpi_ranks": [
+        1
+      ]
+    },
+    {
+      "target": "test_Moon",
+      "family": "Planetary, comet and dust applications",
+      "purpose": "Lunar exosphere particle-moment baseline and restart producer.",
+      "table": [
+        {
+          "application": "Moon",
+          "target": "test_Moon",
+          "selector": "all machines",
+          "table_line": 1529
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": true,
+      "applications": [
+        "Moon"
+      ],
+      "phase_line_numbers": {
+        "compile": 3744,
+        "rundir": 3751,
+        "run": 3757,
+        "check": 3763
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Moon-tetra-cut-cells",
+      "family": "Planetary, comet and dust applications",
+      "purpose": "Lunar tetrahedral cut-cell mesh and particle-output regression.",
+      "table": [
+        {
+          "application": "Moon-tetra-cut-cells",
+          "target": "test_Moon-tetra-cut-cells",
+          "selector": "all machines",
+          "table_line": 1540
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=4.0E-13"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "Moon-tetra-cut-cells"
+      ],
+      "phase_line_numbers": {
+        "compile": 3780,
+        "rundir": 3787,
+        "run": 3793,
+        "check": 3799
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Moon-restart",
+      "family": "Planetary, comet and dust applications",
+      "purpose": "Lunar continuation using particle restart files from test_Moon.",
+      "table": [
+        {
+          "application": "Moon-restart",
+          "target": "test_Moon-restart",
+          "selector": "all machines",
+          "table_line": 1565
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "Moon-restart"
+      ],
+      "phase_line_numbers": {
+        "compile": 3818,
+        "rundir": 3825,
+        "run": 3831,
+        "check": 3843
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Enceladus",
+      "family": "Planetary, comet and dust applications",
+      "purpose": "Legacy Enceladus application moment regression; distinct from the newer E3 forward campaign.",
+      "table": [
+        {
+          "application": "Enceladus",
+          "target": "test_Enceladus",
+          "selector": "all machines",
+          "table_line": 1629
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "Enceladus"
+      ],
+      "phase_line_numbers": {
+        "compile": 3860,
+        "rundir": 3867,
+        "run": 3873,
+        "check": 3879
+      },
+      "requirements_detected": [
+        "external background data"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Mercury-test",
+      "family": "Planetary, comet and dust applications",
+      "purpose": "Mercury application particle-output baseline.",
+      "table": [
+        {
+          "application": "Mercury-test",
+          "target": "test_Mercury-test",
+          "selector": "all machines",
+          "table_line": 1685
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "Mercury-test"
+      ],
+      "phase_line_numbers": {
+        "compile": 3896,
+        "rundir": 3903,
+        "run": 3909,
+        "check": 3915
+      },
+      "requirements_detected": [
+        "configured SPICE toolkit/kernels",
+        "external background data"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_linear-system-solver",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Standalone linear-system solver diagnostic and reference-output regression.",
+      "table": [
+        {
+          "application": "test/linear-system-solver",
+          "target": "test_linear-system-solver",
+          "selector": "all machines",
+          "table_line": 2132
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=1.0E-6"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/linear-system-solver"
+      ],
+      "phase_line_numbers": {
+        "compile": 3932,
+        "rundir": 3942,
+        "run": 3948,
+        "check": 3954
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_linear-system-solver-openmp",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "OpenMP linear-system solver variant with its reference diagnostic.",
+      "table": [
+        {
+          "application": "test/linear-system-solver-openmp",
+          "target": "test_linear-system-solver-openmp",
+          "selector": "all machines",
+          "table_line": 2159
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=1.0E-6"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/linear-system-solver"
+      ],
+      "phase_line_numbers": {
+        "compile": 3970,
+        "rundir": 3982,
+        "run": 3988,
+        "check": 3994
+      },
+      "requirements_detected": [
+        "declared OpenMP setup"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_periodic-bc-gmres",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "GMRES/periodic-boundary solver regression.",
+      "table": [
+        {
+          "application": "test/periodic-bc-gmres",
+          "target": "test_periodic-bc-gmres",
+          "selector": "all machines",
+          "table_line": 2187
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-7"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/periodic-bc-gmres"
+      ],
+      "phase_line_numbers": {
+        "compile": 4010,
+        "rundir": 4020,
+        "run": 4026,
+        "check": 4032
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_lightwave-current-on",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Electromagnetic light-wave regression with configuration current-on.",
+      "table": [
+        {
+          "application": "test/lightwave-current-on",
+          "target": "test_lightwave-current-on",
+          "selector": "all machines",
+          "table_line": 2223
+        }
+      ],
+      "diffnum_calls": 11,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/lightwave-current-on"
+      ],
+      "phase_line_numbers": {
+        "compile": 4054,
+        "rundir": 4064,
+        "run": 4070,
+        "check": 4076
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_magnetic-reconnection",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Magnetic-reconnection diagnostic regression.",
+      "table": [
+        {
+          "application": "test/magnetic-reconnection",
+          "target": "test_magnetic-reconnection",
+          "selector": "all machines",
+          "table_line": 2359
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/magnetic-reconnection"
+      ],
+      "phase_line_numbers": {
+        "compile": 4124,
+        "rundir": 4134,
+        "run": 4140,
+        "check": 4146
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_magnetic-reconnection_avx256",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Magnetic-reconnection diagnostic regression using AVX256.",
+      "table": [
+        {
+          "application": "test/magnetic-reconnection_avx256",
+          "target": "test_magnetic-reconnection_avx256",
+          "selector": "all machines",
+          "table_line": 2450
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/magnetic-reconnection"
+      ],
+      "phase_line_numbers": {
+        "compile": 4168,
+        "rundir": 4180,
+        "run": 4186,
+        "check": 4192
+      },
+      "requirements_detected": [
+        "matching CPU/compiler vector target"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_fast-wave",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Electromagnetic fast-wave baseline regression, with proton/electron diagnostics.",
+      "table": [
+        {
+          "application": "test/fast-wave",
+          "target": "test_fast-wave",
+          "selector": "all machines",
+          "table_line": 2504
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": true,
+      "applications": [
+        "test/fast-wave"
+      ],
+      "phase_line_numbers": {
+        "compile": 4215,
+        "rundir": 4225,
+        "run": 4231,
+        "check": 4237
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_fast-wave--legacy-ecsim",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Electromagnetic fast-wave legacy ECSIM regression, with proton/electron diagnostics.",
+      "table": [
+        {
+          "application": "test/fast-wave--legacy-ecsim",
+          "target": "test_fast-wave--legacy-ecsim",
+          "selector": "all machines",
+          "table_line": 2558
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/fast-wave--legacy-ecsim"
+      ],
+      "phase_line_numbers": {
+        "compile": 4269,
+        "rundir": 4279,
+        "run": 4285,
+        "check": 4291
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_fast-wave__correction",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Electromagnetic fast-wave correction-enabled regression, with proton/electron diagnostics.",
+      "table": [
+        {
+          "application": "test/fast-wave__correction",
+          "target": "test_fast-wave__correction",
+          "selector": "all machines",
+          "table_line": 2612
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/fast-wave__correction"
+      ],
+      "phase_line_numbers": {
+        "compile": 4323,
+        "rundir": 4333,
+        "run": 4339,
+        "check": 4345
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_fast-wave_rebalancing",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Electromagnetic fast-wave load-rebalancing regression, with proton/electron diagnostics.",
+      "table": [
+        {
+          "application": "test/fast-wave_rebalancing",
+          "target": "test_fast-wave_rebalancing",
+          "selector": "all machines",
+          "table_line": 2666
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/fast-wave"
+      ],
+      "phase_line_numbers": {
+        "compile": 4377,
+        "rundir": 4390,
+        "run": 4396,
+        "check": 4402
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_fast-wave_AVX256",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Electromagnetic fast-wave AVX256 regression, with proton/electron diagnostics.",
+      "table": [
+        {
+          "application": "test/fast-wave_AVX256",
+          "target": "test_fast-wave_AVX256",
+          "selector": "all machines",
+          "table_line": 2735
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/fast-wave"
+      ],
+      "phase_line_numbers": {
+        "compile": 4441,
+        "rundir": 4453,
+        "run": 4459,
+        "check": 4465
+      },
+      "requirements_detected": [
+        "matching CPU/compiler vector target"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_fast-wave_AVX512",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Electromagnetic fast-wave AVX512 regression, with proton/electron diagnostics.",
+      "table": [
+        {
+          "application": "test/fast-wave_AVX512",
+          "target": "test_fast-wave_AVX512",
+          "selector": "(-pleiades)",
+          "table_line": 2792
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/fast-wave"
+      ],
+      "phase_line_numbers": {
+        "compile": 4497,
+        "rundir": 4509,
+        "run": 4515,
+        "check": 4521
+      },
+      "requirements_detected": [
+        "matching CPU/compiler vector target"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_fast-wave_multithread_UpdateJMassMatrix",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Electromagnetic fast-wave threaded current/mass-matrix update regression, with proton/electron diagnostics.",
+      "table": [
+        {
+          "application": "test/fast-wave_multithread_UpdateJMassMatrix",
+          "target": "test_fast-wave_multithread_UpdateJMassMatrix",
+          "selector": "all machines",
+          "table_line": 2850
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/fast-wave_multithread"
+      ],
+      "phase_line_numbers": {
+        "compile": 4553,
+        "rundir": 4563,
+        "run": 4569,
+        "check": 4575
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_fast-wave_multithread_mover_UpdateJMassMatrix",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Electromagnetic fast-wave threaded mover and current/mass-matrix update regression, with proton/electron diagnostics.",
+      "table": [
+        {
+          "application": "test/fast-wave_multithread_mover_UpdateJMassMatrix",
+          "target": "test_fast-wave_multithread_mover_UpdateJMassMatrix",
+          "selector": "all machines",
+          "table_line": 2906
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/fast-wave_multithread_mover"
+      ],
+      "phase_line_numbers": {
+        "compile": 4607,
+        "rundir": 4617,
+        "run": 4623,
+        "check": 4629
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_fast-wave_multithread_mover_matmul_UpdateJMassMatrix",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Electromagnetic fast-wave threaded mover/matrix multiply/current update regression, with proton/electron diagnostics.",
+      "table": [
+        {
+          "application": "test/fast-wave_multithread_mover_matmul_UpdateJMassMatrix",
+          "target": "test_fast-wave_multithread_mover_matmul_UpdateJMassMatrix",
+          "selector": "all machines",
+          "table_line": 2962
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/fast-wave_multithread_matmul"
+      ],
+      "phase_line_numbers": {
+        "compile": 4661,
+        "rundir": 4671,
+        "run": 4677,
+        "check": 4683
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_fast-wave-openmp",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Electromagnetic fast-wave OpenMP regression, with proton/electron diagnostics.",
+      "table": [
+        {
+          "application": "test/fast-wave-openmp",
+          "target": "test_fast-wave-openmp",
+          "selector": "all machines",
+          "table_line": 3019
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/fast-wave"
+      ],
+      "phase_line_numbers": {
+        "compile": 4715,
+        "rundir": 4727,
+        "run": 4733,
+        "check": 4739
+      },
+      "requirements_detected": [
+        "declared OpenMP setup"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_fast-wave-openmp__shared_temp_list",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Electromagnetic fast-wave OpenMP shared temporary particle list regression, with proton/electron diagnostics.",
+      "table": [
+        {
+          "application": "test/fast-wave-openmp__shared_temp_list",
+          "target": "test_fast-wave-openmp__shared_temp_list",
+          "selector": "all machines",
+          "table_line": 3076
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/fast-wave__shared_temp_list"
+      ],
+      "phase_line_numbers": {
+        "compile": 4771,
+        "rundir": 4783,
+        "run": 4789,
+        "check": 4795
+      },
+      "requirements_detected": [
+        "declared OpenMP setup"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_lightwave-current-off",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Electromagnetic light-wave regression with configuration current-off.",
+      "table": [
+        {
+          "application": "test/lightwave-current-off",
+          "target": "test_lightwave-current-off",
+          "selector": "all machines",
+          "table_line": 3178
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/lightwave-current-off"
+      ],
+      "phase_line_numbers": {
+        "compile": 4827,
+        "rundir": 4837,
+        "run": 4843,
+        "check": 4849
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_lightwave-current-off-openmp",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Electromagnetic light-wave regression with configuration current-off-openmp.",
+      "table": [
+        {
+          "application": "test/lightwave-current-off-openmp",
+          "target": "test_lightwave-current-off-openmp",
+          "selector": "all machines",
+          "table_line": 3222
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=2.0E-14"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/lightwave-current-off"
+      ],
+      "phase_line_numbers": {
+        "compile": 4877,
+        "rundir": 4889,
+        "run": 4895,
+        "check": 4901
+      },
+      "requirements_detected": [
+        "declared OpenMP setup"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Periodic-BC",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Uniform periodic-boundary wave/particle outputs and tracked-trajectory regression.",
+      "table": [
+        {
+          "application": "test/Periodic-BC",
+          "target": "test_Periodic-BC",
+          "selector": "all machines",
+          "table_line": 3270
+        }
+      ],
+      "diffnum_calls": 9,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=4.0E-13"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/Periodic-BC"
+      ],
+      "phase_line_numbers": {
+        "compile": 4929,
+        "rundir": 4936,
+        "run": 4942,
+        "check": 4948
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Periodic-BC-NonUniform",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Nonuniform periodic-boundary wave/particle outputs and tracked trajectories.",
+      "table": [
+        {
+          "application": "test/Periodic-BC-NonUniform",
+          "target": "test_Periodic-BC-NonUniform",
+          "selector": "all machines",
+          "table_line": 3365
+        }
+      ],
+      "diffnum_calls": 9,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=4.0E-13"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/Periodic-BC-NonUniform"
+      ],
+      "phase_line_numbers": {
+        "compile": 5014,
+        "rundir": 5021,
+        "run": 5027,
+        "check": 5033
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_SEP3D-ARMS-coupling",
+      "family": "Heliospheric transport and coupled plasma",
+      "purpose": "SEP application with ARMS background data; compares the configured SEP3D diagnostic.",
+      "table": [
+        {
+          "application": "SEP3D-ARMS-coupling",
+          "target": "test_SEP3D-ARMS-coupling",
+          "selector": "all machines",
+          "table_line": 3500
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "SEP3D"
+      ],
+      "phase_line_numbers": {
+        "compile": 5099,
+        "rundir": 5107,
+        "run": 5113,
+        "check": 5119
+      },
+      "requirements_detected": [
+        "external background data"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_CG",
+      "family": "Planetary, comet and dust applications",
+      "purpose": "Comet CG gas-coma application baseline.",
+      "table": [
+        {
+          "application": "CG",
+          "target": "test_CG",
+          "selector": "all machines",
+          "table_line": 3724
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "CG"
+      ],
+      "phase_line_numbers": {
+        "compile": 5134,
+        "rundir": 5143,
+        "run": 5149,
+        "check": 5155
+      },
+      "requirements_detected": [
+        "external background data"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_CG-dust-test",
+      "family": "Planetary, comet and dust applications",
+      "purpose": "Comet gas/dust regression including water and dust sample outputs.",
+      "table": [
+        {
+          "application": "CG-dust-test",
+          "target": "test_CG-dust-test",
+          "selector": "(0+valeriy+pleiades+stampede+amps-gpu+passion)",
+          "table_line": 3757
+        }
+      ],
+      "diffnum_calls": 3,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=4.0E-13"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "CG-dust-test"
+      ],
+      "phase_line_numbers": {
+        "compile": 5172,
+        "rundir": 5179,
+        "run": 5185,
+        "check": 5193
+      },
+      "requirements_detected": [
+        "configured SPICE toolkit/kernels",
+        "external background data"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_CG-dust-test-tetra-cut-mesh",
+      "family": "Planetary, comet and dust applications",
+      "purpose": "Comet gas/dust regression on the tetrahedral cut-cell mesh.",
+      "table": [
+        {
+          "application": "CG-dust-test-tetra-cut-mesh",
+          "target": "test_CG-dust-test-tetra-cut-mesh",
+          "selector": "(0+valeriy+pleiades+stampede+amps-gpu+passion)",
+          "table_line": 3809
+        }
+      ],
+      "diffnum_calls": 3,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-a=4.0E-13"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "CG-dust-test-tetra-cut-mesh"
+      ],
+      "phase_line_numbers": {
+        "compile": 5218,
+        "rundir": 5225,
+        "run": 5231,
+        "check": 5239
+      },
+      "requirements_detected": [
+        "configured SPICE toolkit/kernels",
+        "external background data"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_model-dust",
+      "family": "Planetary, comet and dust applications",
+      "purpose": "Legacy dust charging/size model application regression.",
+      "table": [
+        {
+          "application": "test/model-dust",
+          "target": "test_model-dust",
+          "selector": "all machines",
+          "table_line": 3860
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/model-dust"
+      ],
+      "phase_line_numbers": {
+        "compile": 5264,
+        "rundir": 5271,
+        "run": 5277,
+        "check": 5283
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Individual_Trajectories--Lapenta2017",
+      "family": "Individual trajectories and mover applications",
+      "purpose": "Charged-particle Lapenta2017 trajectory/mover fixture.",
+      "table": [
+        {
+          "application": "test/Individual_Trajectories--Lapenta2017",
+          "target": "test_Individual_Trajectories--Lapenta2017",
+          "selector": "all machines",
+          "table_line": 3867
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-r=2.0e-3"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/Individual_Trajectories--Lapenta2017"
+      ],
+      "phase_line_numbers": {
+        "compile": 5300,
+        "rundir": 5307,
+        "run": 5313,
+        "check": 5319
+      },
+      "requirements_detected": [
+        "Kameleon and its data",
+        "external background data"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Individual_Trajectories--Markidis2010",
+      "family": "Individual trajectories and mover applications",
+      "purpose": "Charged-particle Markidis2010 trajectory/mover fixture.",
+      "table": [
+        {
+          "application": "test/Individual_Trajectories--Markidis2010",
+          "target": "test_Individual_Trajectories--Markidis2010",
+          "selector": "all machines",
+          "table_line": 3904
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-r=2.0e-2"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/Individual_Trajectories--Markidis2010"
+      ],
+      "phase_line_numbers": {
+        "compile": 5333,
+        "rundir": 5340,
+        "run": 5346,
+        "check": 5352
+      },
+      "requirements_detected": [
+        "Kameleon and its data",
+        "external background data"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Individual_Trajectories--Boris",
+      "family": "Individual trajectories and mover applications",
+      "purpose": "Charged-particle Boris trajectory/mover fixture.",
+      "table": [
+        {
+          "application": "test/Individual_Trajectories--Boris",
+          "target": "test_Individual_Trajectories--Boris",
+          "selector": "all machines",
+          "table_line": 3940
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-r=2.0e-3"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/Individual_Trajectories--Boris"
+      ],
+      "phase_line_numbers": {
+        "compile": 5366,
+        "rundir": 5373,
+        "run": 5379,
+        "check": 5385
+      },
+      "requirements_detected": [
+        "Kameleon and its data",
+        "external background data"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Individual_Trajectories--Boris-relativistic",
+      "family": "Individual trajectories and mover applications",
+      "purpose": "Charged-particle Boris-relativistic trajectory/mover fixture.",
+      "table": [
+        {
+          "application": "test/Individual_Trajectories--Boris-relativistic",
+          "target": "test_Individual_Trajectories--Boris-relativistic",
+          "selector": "all machines",
+          "table_line": 3975
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-r=2.0e-3"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/Individual_Trajectories--Boris-relativistic"
+      ],
+      "phase_line_numbers": {
+        "compile": 5399,
+        "rundir": 5406,
+        "run": 5412,
+        "check": 5418
+      },
+      "requirements_detected": [
+        "Kameleon and its data",
+        "external background data"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Individual_Trajectories--guiding-center",
+      "family": "Individual trajectories and mover applications",
+      "purpose": "Charged-particle guiding-center trajectory/mover fixture.",
+      "table": [
+        {
+          "application": "test/Individual_Trajectories--guiding-center",
+          "target": "test_Individual_Trajectories--guiding-center",
+          "selector": "all machines",
+          "table_line": 4010
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-r=2.0e-2"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/Individual_Trajectories--guiding-center"
+      ],
+      "phase_line_numbers": {
+        "compile": 5432,
+        "rundir": 5439,
+        "run": 5445,
+        "check": 5451
+      },
+      "requirements_detected": [
+        "Kameleon and its data",
+        "external background data"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_CCMC-Individual_Trajectories",
+      "family": "Individual trajectories and mover applications",
+      "purpose": "CCMC individual charged-particle trajectory regression.",
+      "table": [
+        {
+          "application": "CCMC-Individual_Trajectories",
+          "target": "test_CCMC-Individual_Trajectories",
+          "selector": "all machines",
+          "table_line": 4079
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "CCMC-Individual_Trajectories"
+      ],
+      "phase_line_numbers": {
+        "compile": 5465,
+        "rundir": 5472,
+        "run": 5478,
+        "check": 5484
+      },
+      "requirements_detected": [
+        "Kameleon and its data",
+        "external background data"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Mover-guiding-center",
+      "family": "Individual trajectories and mover applications",
+      "purpose": "Charged-particle guiding-center trajectory/mover fixture.",
+      "table": [
+        {
+          "application": "test/Mover-guiding-center",
+          "target": "test_Mover-guiding-center",
+          "selector": "(0+valeriy)",
+          "table_line": 4154
+        },
+        {
+          "application": "test/Mover-guiding-center",
+          "target": "test_Mover-guiding-center",
+          "selector": "(0+stampede+pleiades+amps-gpu+passion)",
+          "table_line": 4180
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-r=2.0e-5"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/Mover-guiding-center"
+      ],
+      "phase_line_numbers": {
+        "compile": 5501,
+        "rundir": 5509,
+        "run": 5515,
+        "check": 5521
+      },
+      "requirements_detected": [
+        "external background data"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Mover-Lapenta2017",
+      "family": "Individual trajectories and mover applications",
+      "purpose": "Charged-particle Lapenta2017 trajectory/mover fixture.",
+      "table": [
+        {
+          "application": "test/Mover-Lapenta2017",
+          "target": "test_Mover-Lapenta2017",
+          "selector": "all machines",
+          "table_line": 4208
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/Mover-Lapenta2017"
+      ],
+      "phase_line_numbers": {
+        "compile": 5536,
+        "rundir": 5544,
+        "run": 5550,
+        "check": 5556
+      },
+      "requirements_detected": [
+        "external background data"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Mover-Markidis2010",
+      "family": "Individual trajectories and mover applications",
+      "purpose": "Charged-particle Markidis2010 trajectory/mover fixture.",
+      "table": [
+        {
+          "application": "test/Mover-Markidis2010",
+          "target": "test_Mover-Markidis2010",
+          "selector": "all machines",
+          "table_line": 4237
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/Mover-Markidis2010"
+      ],
+      "phase_line_numbers": {
+        "compile": 5571,
+        "rundir": 5579,
+        "run": 5585,
+        "check": 5591
+      },
+      "requirements_detected": [
+        "external background data"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Mover-Boris",
+      "family": "Individual trajectories and mover applications",
+      "purpose": "Charged-particle Boris trajectory/mover fixture.",
+      "table": [
+        {
+          "application": "test/Mover-Boris",
+          "target": "test_Mover-Boris",
+          "selector": "(0+valeriy)",
+          "table_line": 4268
+        },
+        {
+          "application": "test/Mover-Boris",
+          "target": "test_Mover-Boris",
+          "selector": "(0+stampede+pleiades+amps-gpu+passion)",
+          "table_line": 4291
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/Mover-Boris"
+      ],
+      "phase_line_numbers": {
+        "compile": 5606,
+        "rundir": 5614,
+        "run": 5620,
+        "check": 5626
+      },
+      "requirements_detected": [
+        "external background data"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Mover-Boris-relativistic",
+      "family": "Individual trajectories and mover applications",
+      "purpose": "Charged-particle Boris-relativistic trajectory/mover fixture.",
+      "table": [
+        {
+          "application": "test/Mover-Boris-relativistic",
+          "target": "test_Mover-Boris-relativistic",
+          "selector": "(0+valeriy)",
+          "table_line": 4318
+        },
+        {
+          "application": "test/Mover-Boris-relativistic",
+          "target": "test_Mover-Boris-relativistic",
+          "selector": "(0+stampede+pleiades+amps-gpu+passion)",
+          "table_line": 4341
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/Mover-Boris-relativistic"
+      ],
+      "phase_line_numbers": {
+        "compile": 5641,
+        "rundir": 5649,
+        "run": 5655,
+        "check": 5661
+      },
+      "requirements_detected": [
+        "external background data"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Mover-gca-relativistic",
+      "family": "Individual trajectories and mover applications",
+      "purpose": "Relativistic guiding-centre mover application baseline.",
+      "table": [
+        {
+          "application": "Mover-gca-relativistic",
+          "target": "test_Mover-gca-relativistic",
+          "selector": "all machines",
+          "table_line": 4366
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "gca_mover"
+      ],
+      "phase_line_numbers": {
+        "compile": 5676,
+        "rundir": 5684,
+        "run": 5690,
+        "check": 5696
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Europa-test1",
+      "family": "Planetary, comet and dust applications",
+      "purpose": "First maintained Europa source/particle regression configuration.",
+      "table": [
+        {
+          "application": "Europa-test1",
+          "target": "test_Europa-test1",
+          "selector": "all machines",
+          "table_line": 4393
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "Europa-test1"
+      ],
+      "phase_line_numbers": {
+        "compile": 5712,
+        "rundir": 5719,
+        "run": 5725,
+        "check": 5731
+      },
+      "requirements_detected": [
+        "Kameleon and its data",
+        "external background data"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Europa-test2",
+      "family": "Planetary, comet and dust applications",
+      "purpose": "Second maintained Europa source/particle regression configuration.",
+      "table": [
+        {
+          "application": "Europa-test2",
+          "target": "test_Europa-test2",
+          "selector": "all machines",
+          "table_line": 4411
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "Europa-test2"
+      ],
+      "phase_line_numbers": {
+        "compile": 5746,
+        "rundir": 5753,
+        "run": 5759,
+        "check": 5768
+      },
+      "requirements_detected": [
+        "Kameleon and its data",
+        "external background data"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Collision-Test-NTC",
+      "family": "Numerical and process fixtures",
+      "purpose": "No-time-counter collision fixture with multiple distribution/reference subchecks.",
+      "table": [
+        {
+          "application": "test/Collision-Test-NTC",
+          "target": "test_Collision-Test-NTC",
+          "selector": "all machines",
+          "table_line": 4525
+        }
+      ],
+      "diffnum_calls": 8,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/Collision-Test-NTC"
+      ],
+      "phase_line_numbers": {
+        "compile": 5788,
+        "rundir": 5795,
+        "run": 5801,
+        "check": 5807
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Collision-Test-MF",
+      "family": "Numerical and process fixtures",
+      "purpose": "Majorant-frequency collision fixture with multiple distribution/reference subchecks.",
+      "table": [
+        {
+          "application": "test/Collision-Test-MF",
+          "target": "test_Collision-Test-MF",
+          "selector": "all machines",
+          "table_line": 4562
+        }
+      ],
+      "diffnum_calls": 8,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/Collision-Test-MF"
+      ],
+      "phase_line_numbers": {
+        "compile": 5837,
+        "rundir": 5844,
+        "run": 5850,
+        "check": 5856
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Chemistry-Test",
+      "family": "Numerical and process fixtures",
+      "purpose": "Chemical-solver application comparing two maintained kinetic reference outputs.",
+      "table": [
+        {
+          "application": "test/Chemistry-Test",
+          "target": "test_Chemistry-Test",
+          "selector": "all machines",
+          "table_line": 4599
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/Chemistry-Test"
+      ],
+      "phase_line_numbers": {
+        "compile": 5886,
+        "rundir": 5893,
+        "run": 5899,
+        "check": 5905
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Venus-Hot-Oxygen",
+      "family": "Planetary, comet and dust applications",
+      "purpose": "Venus hot-oxygen application particle-moment regression.",
+      "table": [
+        {
+          "application": "test/Venus-Hot-Oxygen",
+          "target": "test_Venus-Hot-Oxygen",
+          "selector": "all machines",
+          "table_line": 4662
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/Venus-Hot-Oxygen"
+      ],
+      "phase_line_numbers": {
+        "compile": 5923,
+        "rundir": 5930,
+        "run": 5936,
+        "check": 5942
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_InterpolateAMR-test",
+      "family": "Numerical and process fixtures",
+      "purpose": "AMR interpolation reference values through the maintained test adapter.",
+      "table": [
+        {
+          "application": "test/InterpolateAMR-test",
+          "target": "test_InterpolateAMR-test",
+          "selector": "all machines",
+          "table_line": 4728
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/InterpolateAMR-test"
+      ],
+      "phase_line_numbers": {
+        "compile": 5956,
+        "rundir": 5967,
+        "run": 5973,
+        "check": 5980
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_InterpolateAMR-AMPS-test",
+      "family": "Numerical and process fixtures",
+      "purpose": "Native AMPS centre- and corner-based AMR interpolation against one maintained reference.",
+      "table": [
+        {
+          "application": "test/InterpolateAMR-AMPS-test",
+          "target": "test_InterpolateAMR-AMPS-test",
+          "selector": "all machines",
+          "table_line": 4760
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/InterpolateAMR-AMPS-test"
+      ],
+      "phase_line_numbers": {
+        "compile": 5994,
+        "rundir": 6001,
+        "run": 6007,
+        "check": 6014
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_cdap_test",
+      "family": "Numerical and process fixtures",
+      "purpose": "CDAP diagnostic application and its configured numeric baseline.",
+      "table": [
+        {
+          "application": "test/cdap_test",
+          "target": "test_cdap_test",
+          "selector": "all machines",
+          "table_line": 6184
+        }
+      ],
+      "diffnum_calls": 1,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/cdap_test"
+      ],
+      "phase_line_numbers": {
+        "compile": 6033,
+        "rundir": 6043,
+        "run": 6049,
+        "check": 6055
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_const-field-bc",
+      "family": "Fields, waves, solvers and periodic boundaries",
+      "purpose": "Constant-field boundary application; compares its declared numerical boundary products.",
+      "table": [
+        {
+          "application": "test/const-field-bc",
+          "target": "test_const-field-bc",
+          "selector": "all machines",
+          "table_line": 6207
+        }
+      ],
+      "diffnum_calls": 6,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/const-field-bc"
+      ],
+      "phase_line_numbers": {
+        "compile": 6072,
+        "rundir": 6079,
+        "run": 6085,
+        "check": 6134
+      },
+      "requirements_detected": [],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Earth-cutoff-rigidity-gridless-steadystate_t96",
+      "family": "Geospace cutoff, access and flux",
+      "purpose": "Steady-state gridless cutoff-rigidity regression with T96 field.",
+      "table": [
+        {
+          "application": "Earth-cutoff-rigidity-gridless-steadystate_t96",
+          "target": "test_Earth-cutoff-rigidity-gridless-steadystate_t96",
+          "selector": "all machines",
+          "table_line": 6353
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/geospace/geospace"
+      ],
+      "phase_line_numbers": {
+        "compile": 6198,
+        "rundir": 6206,
+        "run": 6212,
+        "check": 6228
+      },
+      "requirements_detected": [
+        "configured SPICE toolkit/kernels"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Earth-vertical-cutoff-rigidity-gridless",
+      "family": "Geospace cutoff, access and flux",
+      "purpose": "Gridless vertical cutoff-rigidity baseline.",
+      "table": [
+        {
+          "application": "Earth-vertical-cutoff-rigidity-gridless",
+          "target": "test_Earth-vertical-cutoff-rigidity-gridless",
+          "selector": "all machines",
+          "table_line": 6419
+        }
+      ],
+      "diffnum_calls": 5,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/geospace/geospace"
+      ],
+      "phase_line_numbers": {
+        "compile": 6253,
+        "rundir": 6261,
+        "run": 6267,
+        "check": 6283
+      },
+      "requirements_detected": [
+        "configured SPICE toolkit/kernels"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Earth-vertical-cutoff-rigidity-gridless-hybrid",
+      "family": "Geospace cutoff, access and flux",
+      "purpose": "MPI/OpenMP gridless vertical cutoff-rigidity baseline.",
+      "table": [
+        {
+          "application": "Earth-vertical-cutoff-rigidity-gridless-hybrid",
+          "target": "test_Earth-vertical-cutoff-rigidity-gridless-hybrid",
+          "selector": "all machines",
+          "table_line": 6517
+        }
+      ],
+      "diffnum_calls": 5,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/geospace/geospace"
+      ],
+      "phase_line_numbers": {
+        "compile": 6335,
+        "rundir": 6343,
+        "run": 6349,
+        "check": 6365
+      },
+      "requirements_detected": [
+        "configured SPICE toolkit/kernels"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Geospace-Flux-Gridless",
+      "family": "Geospace cutoff, access and flux",
+      "purpose": "Gridless geospace density/flux regression for directional, spatial and dipole fixtures.",
+      "table": [
+        {
+          "application": "Geospace-Flux-Gridless",
+          "target": "test_Geospace-Flux-Gridless",
+          "selector": "all machines",
+          "table_line": 6616
+        }
+      ],
+      "diffnum_calls": 20,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/geospace/geospace"
+      ],
+      "phase_line_numbers": {
+        "compile": 6417,
+        "rundir": 6425,
+        "run": 6431,
+        "check": 6509
+      },
+      "requirements_detected": [
+        "configured SPICE toolkit/kernels"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Geospace-Flux-Gridless-hybrid",
+      "family": "Geospace cutoff, access and flux",
+      "purpose": "MPI/OpenMP variant of the gridless density/flux fixture set.",
+      "table": [
+        {
+          "application": "Geospace-Flux-Gridless-hybrid",
+          "target": "test_Geospace-Flux-Gridless-hybrid",
+          "selector": "all machines",
+          "table_line": 6932
+        }
+      ],
+      "diffnum_calls": 20,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/geospace/geospace"
+      ],
+      "phase_line_numbers": {
+        "compile": 6675,
+        "rundir": 6683,
+        "run": 6689,
+        "check": 6767
+      },
+      "requirements_detected": [
+        "configured SPICE toolkit/kernels"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Earth-cutoff-rigidity-gridless-trajectory",
+      "family": "Geospace cutoff, access and flux",
+      "purpose": "Gridless cutoff-rigidity products along the declared trajectory.",
+      "table": [
+        {
+          "application": "Earth-cutoff-rigidity-gridless-trajectory",
+          "target": "test_Earth-cutoff-rigidity-gridless-trajectory",
+          "selector": "all machines",
+          "table_line": 7250
+        }
+      ],
+      "diffnum_calls": 8,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [
+        "-r=1e-2"
+      ],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/geospace/geospace"
+      ],
+      "phase_line_numbers": {
+        "compile": 6933,
+        "rundir": 6941,
+        "run": 6947,
+        "check": 7024
+      },
+      "requirements_detected": [
+        "configured SPICE toolkit/kernels"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Earth-vertical-cutoff-rigidity-gridless-trajectory",
+      "family": "Geospace cutoff, access and flux",
+      "purpose": "Gridless vertical cutoff along a spacecraft trajectory.",
+      "table": [
+        {
+          "application": "Earth-vertical-cutoff-rigidity-gridless-trajectory",
+          "target": "test_Earth-vertical-cutoff-rigidity-gridless-trajectory",
+          "selector": "all machines",
+          "table_line": 7476
+        }
+      ],
+      "diffnum_calls": 8,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/geospace/geospace"
+      ],
+      "phase_line_numbers": {
+        "compile": 7114,
+        "rundir": 7122,
+        "run": 7128,
+        "check": 7205
+      },
+      "requirements_detected": [
+        "configured SPICE toolkit/kernels"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only",
+      "family": "Geospace cutoff, access and flux",
+      "purpose": "Dipole-only gridless vertical cutoff trajectory fixture.",
+      "table": [
+        {
+          "application": "Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only",
+          "target": "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only",
+          "selector": "all machines",
+          "table_line": 7713
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/geospace/geospace"
+      ],
+      "phase_line_numbers": {
+        "compile": 7307,
+        "rundir": 7315,
+        "run": 7321,
+        "check": 7333
+      },
+      "requirements_detected": [
+        "configured SPICE toolkit/kernels"
+      ],
+      "hardcoded_mpi_ranks": []
+    },
+    {
+      "target": "test_Earth-cutoff-rigidity-3d",
+      "family": "Geospace cutoff, access and flux",
+      "purpose": "Mesh-backed three-dimensional cutoff-rigidity application regression.",
+      "table": [
+        {
+          "application": "Earth-cutoff-rigidity-3d",
+          "target": "test_Earth-cutoff-rigidity-3d",
+          "selector": "all machines",
+          "table_line": 7782
+        }
+      ],
+      "diffnum_calls": 4,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/geospace/geospace"
+      ],
+      "phase_line_numbers": {
+        "compile": 7364,
+        "rundir": 7372,
+        "run": 7378,
+        "check": 7394
+      },
+      "requirements_detected": [
+        "configured SPICE toolkit/kernels"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_Earth-cutoff-rigidity-3d-analytic",
+      "family": "Geospace cutoff, access and flux",
+      "purpose": "Three-dimensional cutoff-rigidity analytic-fixture configuration.",
+      "table": [
+        {
+          "application": "Earth-cutoff-rigidity-3d-analytic",
+          "target": "test_Earth-cutoff-rigidity-3d-analytic",
+          "selector": "all machines",
+          "table_line": 7873
+        }
+      ],
+      "diffnum_calls": 4,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/geospace/geospace"
+      ],
+      "phase_line_numbers": {
+        "compile": 7440,
+        "rundir": 7448,
+        "run": 7454,
+        "check": 7470
+      },
+      "requirements_detected": [
+        "configured SPICE toolkit/kernels"
+      ],
+      "hardcoded_mpi_ranks": [
+        8
+      ]
+    },
+    {
+      "target": "test_Earth-3d_forward-dipole_analytic",
+      "family": "Geospace cutoff, access and flux",
+      "purpose": "Forward three-dimensional analytic-dipole fixture; trajectory and volume products.",
+      "table": [
+        {
+          "application": "Earth-3d_forward-dipole_analytic",
+          "target": "test_Earth-3d_forward-dipole_analytic",
+          "selector": "all machines",
+          "table_line": 7964
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/geospace/geospace"
+      ],
+      "phase_line_numbers": {
+        "compile": 7516,
+        "rundir": 7524,
+        "run": 7530,
+        "check": 7542
+      },
+      "requirements_detected": [
+        "configured SPICE toolkit/kernels"
+      ],
+      "hardcoded_mpi_ranks": [
+        48
+      ]
+    },
+    {
+      "target": "test_Earth-3d_forward-t96_analytic",
+      "family": "Geospace cutoff, access and flux",
+      "purpose": "Forward three-dimensional T96/analytic-fixture configuration.",
+      "table": [
+        {
+          "application": "Earth-3d_forward-t96_analytic",
+          "target": "test_Earth-3d_forward-t96_analytic",
+          "selector": "all machines",
+          "table_line": 8032
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/geospace/geospace"
+      ],
+      "phase_line_numbers": {
+        "compile": 7572,
+        "rundir": 7580,
+        "run": 7586,
+        "check": 7598
+      },
+      "requirements_detected": [
+        "configured SPICE toolkit/kernels"
+      ],
+      "hardcoded_mpi_ranks": [
+        48
+      ]
+    },
+    {
+      "target": "test_Earth-3d_forward-t96",
+      "family": "Geospace cutoff, access and flux",
+      "purpose": "Forward three-dimensional T96 trajectory/volume regression.",
+      "table": [
+        {
+          "application": "Earth-3d_forward-t96",
+          "target": "test_Earth-3d_forward-t96",
+          "selector": "all machines",
+          "table_line": 8100
+        }
+      ],
+      "diffnum_calls": 2,
+      "plain_diff_calls": 0,
+      "explicit_tolerances": [],
+      "git_instructions_present": false,
+      "native_preflight_helper": false,
+      "applications": [
+        "test/geospace/geospace"
+      ],
+      "phase_line_numbers": {
+        "compile": 7628,
+        "rundir": 7636,
+        "run": 7642,
+        "check": 7654
+      },
+      "requirements_detected": [
+        "configured SPICE toolkit/kernels"
+      ],
+      "hardcoded_mpi_ranks": [
+        48
+      ]
+    }
+  ],
+  "not_generated": [
+    [
+      {
+        "application": "test/Mars-ions",
+        "target": "test_Mars-ions",
+        "selector": "(0+)",
+        "table_line": 77
+      }
+    ],
+    [
+      {
+        "application": "test/Mercury-ions",
+        "target": "test_Mercury-ions",
+        "selector": "(0+)",
+        "table_line": 89
+      }
+    ],
+    [
+      {
+        "application": "Titan",
+        "target": "test_Titan",
+        "selector": "(0+)",
+        "table_line": 117
+      }
+    ],
+    [
+      {
+        "application": "test/COPS",
+        "target": "test_COPS",
+        "selector": "(0+)",
+        "table_line": 127
+      }
+    ],
+    [
+      {
+        "application": "CG-Rosina-Liouville--Trajectory",
+        "target": "test_CG-Rosina-Liouville--Trajectory",
+        "selector": "(0+)",
+        "table_line": 176
+      }
+    ],
+    [
+      {
+        "application": "CG-Rosina-Liouville",
+        "target": "test_CG-Rosina-Liouville",
+        "selector": "(0+)",
+        "table_line": 240
+      }
+    ],
+    [
+      {
+        "application": "test/SC-Cont",
+        "target": "test_SC-Cont",
+        "selector": "(0+)",
+        "table_line": 295
+      }
+    ],
+    [
+      {
+        "application": "test-1853-shape",
+        "target": "test_test-1853-shape",
+        "selector": "(0+)",
+        "table_line": 355
+      }
+    ],
+    [
+      {
+        "application": "test/X-Wing",
+        "target": "test_X-Wing",
+        "selector": "(0+)",
+        "table_line": 383
+      }
+    ],
+    [
+      {
+        "application": "CCMC",
+        "target": "test_CCMC",
+        "selector": "(0+)",
+        "table_line": 445
+      }
+    ],
+    [
+      {
+        "application": "SEP--Multiple_Parker_spiral--boris_relativistic",
+        "target": "test_SEP--Multiple_Parker_spiral--boris_relativistic",
+        "selector": "(0+)",
+        "table_line": 463
+      }
+    ],
+    [
+      {
+        "application": "SEP--focused_transport-IH-mflampa",
+        "target": "test_SEP--focused_transport-IH-mflampa",
+        "selector": "(0+)",
+        "table_line": 709
+      }
+    ],
+    [
+      {
+        "application": "SEP-CME--focused_transport--mflampa-fl",
+        "target": "test_SEP-CME--focused_transport--mflampa-fl",
+        "selector": "(0+pleiades)",
+        "table_line": 779
+      }
+    ],
+    [
+      {
+        "application": "SEP-CME--focused_transport--fl-7au-droge",
+        "target": "test_SEP-CME--focused_transport--fl-7au-droge",
+        "selector": "(0+pleiades)",
+        "table_line": 830
+      }
+    ],
+    [
+      {
+        "application": "SEP-CME--focused_transport--3D",
+        "target": "test_SEP-CME--focused_transport--3D",
+        "selector": "(0+pleiades)",
+        "table_line": 881
+      }
+    ],
+    [
+      {
+        "application": "test/ices-reader",
+        "target": "test_ices-reader",
+        "selector": "(0+)",
+        "table_line": 1580
+      }
+    ],
+    [
+      {
+        "application": "test/tecplot-reader",
+        "target": "test_tecplot-reader",
+        "selector": "(0+)",
+        "table_line": 1590
+      }
+    ],
+    [
+      {
+        "application": "test/binary-reader",
+        "target": "test_binary-reader",
+        "selector": "(0+)",
+        "table_line": 1596
+      }
+    ],
+    [
+      {
+        "application": "test/kameleon-reader",
+        "target": "test_kameleon-reader",
+        "selector": "(0+)",
+        "table_line": 1619
+      }
+    ],
+    [
+      {
+        "application": "Rosetta",
+        "target": "test_Rosetta",
+        "selector": "(0+)",
+        "table_line": 1635
+      }
+    ],
+    [
+      {
+        "application": "test/OH",
+        "target": "test_OH",
+        "selector": "(0+)",
+        "table_line": 1652
+      }
+    ],
+    [
+      {
+        "application": "Tempel1",
+        "target": "test_Tempel1",
+        "selector": "(0+)",
+        "table_line": 1671
+      }
+    ],
+    [
+      {
+        "application": "test/batl-reader",
+        "target": "test_batl-reader",
+        "selector": "(0+)",
+        "table_line": 1697
+      }
+    ],
+    [
+      {
+        "application": "Earth",
+        "target": "test_Earth",
+        "selector": "(0+)",
+        "table_line": 1736
+      }
+    ],
+    [
+      {
+        "application": "Earth-cutoff-rigidity",
+        "target": "test_Earth-cutoff-rigidity",
+        "selector": "(0+)",
+        "table_line": 1795
+      }
+    ],
+    [
+      {
+        "application": "Earth-cutoff-rigidity_t05",
+        "target": "test_Earth-cutoff-rigidity_t05",
+        "selector": "(0+)",
+        "table_line": 1868
+      }
+    ],
+    [
+      {
+        "application": "Earth-cutoff-rigidity-points_t05",
+        "target": "test_Earth-cutoff-rigidity-points_t05",
+        "selector": "(0+)",
+        "table_line": 1912
+      }
+    ],
+    [
+      {
+        "application": "Earth-geo_t05",
+        "target": "test_Earth-geo_t05",
+        "selector": "(0+)",
+        "table_line": 1971
+      }
+    ],
+    [
+      {
+        "application": "Earth-cutoff-rigidity_t96",
+        "target": "test_Earth-cutoff-rigidity_t96",
+        "selector": "(0+)",
+        "table_line": 2015
+      }
+    ],
+    [
+      {
+        "application": "test/Earth-T96",
+        "target": "test_Earth-T96",
+        "selector": "(0+)",
+        "table_line": 2052
+      }
+    ],
+    [
+      {
+        "application": "test/Earth-Impulse-Source",
+        "target": "test_Earth-Impulse-Source",
+        "selector": "(0+)",
+        "table_line": 2090
+      }
+    ],
+    [
+      {
+        "application": "test/Earth-Impulse-Neutron-Source",
+        "target": "test_Earth-Impulse-Neutron-Source",
+        "selector": "(0+)",
+        "table_line": 2114
+      }
+    ],
+    [
+      {
+        "application": "test/lightwave-current-on-openmp",
+        "target": "test_lightwave-current-on-openmp",
+        "selector": "(0+)",
+        "table_line": 2305
+      }
+    ],
+    [
+      {
+        "application": "test/magnetic-reconnection-openmp",
+        "target": "test_magnetic-reconnection-openmp",
+        "selector": "(0+)",
+        "table_line": 2410
+      }
+    ],
+    [
+      {
+        "application": "photon-test",
+        "target": "test_photon-test",
+        "selector": "(0+)",
+        "table_line": 3134
+      }
+    ],
+    [
+      {
+        "application": "photon-test-openmp",
+        "target": "test_photon-test-openmp",
+        "selector": "(0+)",
+        "table_line": 3151
+      }
+    ],
+    [
+      {
+        "application": "Legacy_2dCG",
+        "target": "test_Legacy_2dCG",
+        "selector": "(0+)",
+        "table_line": 3460
+      }
+    ],
+    [
+      {
+        "application": "CG-PostProcess--Read-Trajectories--on",
+        "target": "test_CG-PostProcess--Read-Trajectories--on",
+        "selector": "(0+)",
+        "table_line": 3529
+      }
+    ],
+    [
+      {
+        "application": "CG-PostProcess--Read-Trajectories--off",
+        "target": "test_CG-PostProcess--Read-Trajectories--off",
+        "selector": "(0+)",
+        "table_line": 3597
+      }
+    ],
+    [
+      {
+        "application": "CG-VIRTIS-Inversion-Legacy",
+        "target": "test_CG-VIRTIS-Inversion-Legacy",
+        "selector": "(0+)",
+        "table_line": 3649
+      }
+    ],
+    [
+      {
+        "application": "CG-DFMS-Inversion-Legacy",
+        "target": "test_CG-DFMS-Inversion-Legacy",
+        "selector": "(0+)",
+        "table_line": 3687
+      }
+    ],
+    [
+      {
+        "application": "test/Individual_Trajectories--guiding-center--KAMELEON",
+        "target": "test_Individual_Trajectories--guiding-center--KAMELEON",
+        "selector": "(0+valeriy)",
+        "table_line": 4046
+      }
+    ],
+    [
+      {
+        "application": "CCMC-Individual_Trajectories--KAMELEON",
+        "target": "test_CCMC-Individual_Trajectories--KAMELEON",
+        "selector": "(0+valeriy)",
+        "table_line": 4098
+      }
+    ],
+    [
+      {
+        "application": "CCMC-Individual_Trajectories--KAMELEON-multifile",
+        "target": "test_CCMC-Individual_Trajectories--KAMELEON-multifile",
+        "selector": "(0+valeriy)",
+        "table_line": 4132
+      }
+    ],
+    [
+      {
+        "application": "LOS",
+        "target": "test_LOS",
+        "selector": "(0+)",
+        "table_line": 4446
+      }
+    ],
+    [
+      {
+        "application": "test/Mars-Hot-Oxygen",
+        "target": "test_Mars-Hot-Oxygen",
+        "selector": "(0+)",
+        "table_line": 4618
+      }
+    ],
+    [
+      {
+        "application": "test/Mars-Hot-Carbon",
+        "target": "test_Mars-Hot-Carbon",
+        "selector": "(0+)",
+        "table_line": 4689
+      }
+    ],
+    [
+      {
+        "application": "test/Drag-Coefficient--Specular-Reflection",
+        "target": "test_Drag-Coefficient--Specular-Reflection",
+        "selector": "(0+)",
+        "table_line": 4786
+      }
+    ],
+    [
+      {
+        "application": "test/Sphere-drag-coefficient",
+        "target": "test_Sphere-drag-coefficient",
+        "selector": "(0+)",
+        "table_line": 4839
+      }
+    ],
+    [
+      {
+        "application": "test/CG-BATSRUS-dust-coupling",
+        "target": "test_CG-BATSRUS-dust-coupling",
+        "selector": "(0+)",
+        "table_line": 4930
+      }
+    ]
+  ]
+}
