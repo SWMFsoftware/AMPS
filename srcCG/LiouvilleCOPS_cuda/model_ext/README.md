@@ -168,6 +168,7 @@ They run on the login node (no GPU), from `$APP` with `.venv/bin/python`. `late_
 `figures_12m_model_families.sh` (2026-11-11) draws the best fit of each of the four families of 2026-11-08 ... 11-10 (D2, positive, slope multipliers, bumps) into `12M/model_vs_observations_model_families/`.
 `figures_12m_nonneg.sh` (2026-11-11; extended 19:26 UTC with every chain stage, cycle 1 vs final and all families) draws the softplus and squared chains (124162, 124165) into `12M/model_vs_observations_nonneg/`.
 `figures_12m_nonneg5.sh` (2026-11-12) draws the 5-cycle softplus and squared chains (124310, 124313; cycle-1 fit and the state after each cycle, and both vs D2 and the best positive fit) into `12M/model_vs_observations_nonneg_5cycles/`, with MAPS.txt pointing to the maps of the final states.
+`pub_ng_rg_altitude.py` (2026-11-12) draws the publication figure of COPS NG / RG and the softplus model's NG / RG vs altitude (5-cycle final state, legend on the right, gap in the NG data hatched) into `12M/publication_softplus/`.
 
 ## MPI helpers (`mpi_multinode/`, run copies in `$COPS_OUTPUT_ROOT/mpi_multinode/`)
 
