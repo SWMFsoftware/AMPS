@@ -1,18 +1,23 @@
 # model_ext: dust grain in the nude gauge and the NG = RG crossing constraint
 
 The code used for the grain fits on Voyager and for every later model change built on them (2026-10-27 …
-2026-11-06). The jobs ran the files from `$COPS_OUTPUT_ROOT/model_ext/`, `$COPS_OUTPUT_ROOT/jobs/` and
-`$COPS_OUTPUT_ROOT/figures_cluster/scripts/` (`COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output`), outside git.
-This folder keeps them under version control:
+2026-11-11). The jobs ran the files from `$COPS_OUTPUT_ROOT/model_ext/`, `$COPS_OUTPUT_ROOT/jobs/`,
+`$COPS_OUTPUT_ROOT/figures_cluster/scripts/` and `$COPS_OUTPUT_ROOT/mpi_multinode/`
+(`COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output`), outside git. This folder keeps them under version control:
 
 * `grain_crossing.py`, `grain_fit.py`, `grain_finetune.py`, `grain.sbatch`, `grain_finetune.sbatch` (committed in
-  `af48d01`): byte-identical to the run copies. Their SHA256 values match the ones recorded in every production
-  fit's `fit_manifest.json["model_extension"]` and in `<run>/grain/provenance-<job>/model_ext.sha256`.
-* Every other file (added 2026-11-06; sections "Extensions after 2026-10-27", "Job scripts", "Figure scripts"
-  below) is the run copy **plus a header block of comments** at the top (after the `#!` line): what the file is for,
-  which runs used it, how to run it, and the SHA256 of the run copy. Nothing else is changed.
+  `af48d01`): byte-identical to the run copies (no header; rows in `RUN_COPIES.sha256` since 2026-11-11). Their
+  SHA256 values match the ones recorded in every production fit's `fit_manifest.json["model_extension"]` and in
+  `<run>/grain/provenance-<job>/model_ext.sha256`.
+* Every other file (added 2026-11-06 and later; sections "Extensions after 2026-10-27", "Job scripts", "Figure
+  scripts", "MPI helpers" below) is the run copy **plus a header block of comments** at the top (after the `#!` line):
+  what the file is for, which runs used it, how to run it, and the SHA256 of the run copy. Nothing else is changed.
+  The block lies between the lines `# ==== version-controlled copy: header added <date>, …` and
+  `# ==== end of header ====` (`//` instead of `#` in `kernels/*.cu`; in `PERFORMANCE.md` an HTML comment
+  `<!-- ==== version-controlled copy: … ` … `==== end of header ==== -->`).
   * `RUN_COPIES.sha256` lists, for each such file, the SHA256 of its run copy and the run copy's path.
-  * `./check_copies.sh` removes the header blocks and checks every file against those values (OK / DIFFERS).
+  * `./check_copies.sh` removes the header blocks (all three forms; from 2026-11-11, before only `#`) and checks every
+    file against those values (OK / DIFFERS).
   * The SHA256 values are also the ones in each job's `provenance-<job>/model_ext.sha256` (for the job scripts:
     the copy in the provenance folder), so a fit can be matched to the code here.
 
@@ -79,6 +84,13 @@ grain code. Each file's header says how to run it; the `jobs/` scripts show comp
 | per-facet fine tuning of a positive-activity fit (A_e = exp(s_e + delta_e), down to the floor, no cap, the fit's lambda, grain refitted), and fit / fine-tuning cycles with the change held in the next fit | `positive_finetune.py` (`--facets late_only --window-min 5`: only the facets seen exclusively in the last 5 min, earlier pressures unchanged; or `all_seen`); `jobs/positive_finetune.sbatch`; cycles: `jobs/positive_cycles.sh`; next fit: `positive_fit.py --start-restart`, `--held-exponent`, `--ratio 0.002` | `kernels/finetune.cu` (J^T u), `positive_problem.py`; test `test_positive_finetune.py` | 2026-11-08 (12M, ratio 0.002, six lambdas x 3 cycles; frozen code `model_ext_frozen/c1_20261108T000327Z` for the fits, `ft_20261108T032615Z` / `ft_20261108T034023Z` for the fine tunings) |
 | refit the earlier clipped model (original-T cycle 6) on another base, with or without the gauge time response (diagnostic) | `clip_refit.py --variant D1|D2 --start-restart <c6 restart>`; `jobs/clip_refit.sbatch` (VARIANT D0|D1|D2) | `clip_problem.py` (uses positive_problem's W10x5 functions), `clip_compare.py`; test `test_clip_refit.py`, `jobs/clip_refit_bitwise.sbatch` | 2026-11-08 (D0 122880, D1 122865, D2 122866) |
 | ratio 1e-5 with a CO2 flux floor, and an explicit start override | `positive_fit.py --ratio 1e-5` (sets COPS_POS_FLOOR_CO2=1: F_CO2 = max(kappa Q_CO2 ACO2, r qmax_C ACO2)), `--start-set kappa=1`; `jobs/positive_fit.sbatch` RATIO=1e-5, START_SET; `positive_cycles.sh --ratio 1e-5 --c1-start-set kappa=1` | `kernels/pressure.cu` (eval_fused_m_p5f/p14f), `positive_activity.py`, `positive_problem.py`; check `positive_activity_check.py` | 2026-11-09 (six chains 122951-123076; snapshot `r1e-5k_20261109T023540Z`) |
+| one activity multiplier per effective-gravitational-slope bin (0-40, 40-50, ..., 80-90, 90-180 deg; 0-40 held at 1) on the 25 signed harmonics, floor 1e-5 A_orig, D2's setup without templates | `slope_mult_fit.py --start srccg` (user 2026-11-10: original srcCG coefficients, multipliers 1, kappa 1, D2's grain); `jobs/slope_mult_fit.sbatch` START, L_THREADS=32 (chunked, bitwise); bin bundle `slope_bins.py` (`jobs/slope_mult_cpu.sbatch STEP=bins`); figures `figures/figures_12m_slope_mult.sh` | `slope_mult.py` (GPU patch of the host-activity path, kernels unchanged), `slope_mult_problem.py` (D2 core of `clip_problem.py`); tests `test_slope_mult.py` (`jobs/slope_mult_cpu.sbatch STEP=tests`), `jobs/slope_mult_threads_test.sbatch` | 2026-11-10 (bins 123624; fit 123786; threads 123891, 123979) |
+| Gaussian bumps x slope multipliers (option 3a), fit / fine-tuning cycles (dropped by the user 2026-11-11) | `slope_bumps.py` (bump bundle, NNLS start; CPU job 123981), `slope_mult_fit.py --bump-bundle` (BUMPS, START=nnls / chain), `slope_finetune.py` (`jobs/slope_finetune.sbatch`), chain `jobs/slope_cycles.sh` with guard jobs `jobs/slope_chain_guard.sbatch`; figures `figures/figures_12m_slope_bumps.sh` | `slope_mult.py`, `slope_mult_problem.py`; tests `jobs/slope_bumps_test.sbatch`, `jobs/slope_ft_diag.sbatch` (checks 6/7), `jobs/slope_bumps_threads_test.sbatch` (never submitted) | 2026-11-10 (chain 124008-124086, snapshots v6 `slopemul_20261110T201212Z`, v8 `slopemul_20261110T221713Z`) |
+| non-negative activity by construction with the slope multipliers: softplus A = m_b s ln(1 + exp(L/s)), s = 1e-5 A_orig, or squared harmonics A = m_b (A_s (Y b)^2 + A_s sum ft_c*); D2's ft_c1..ft_c6 held at 1; fine tuning with no lower bound | `nonneg_fit.py --model softplus\|squared` (`jobs/nonneg_fit.sbatch`), `nonneg_finetune.py` (`jobs/nonneg_finetune.sbatch`), squared start `nonneg_start.py` (`jobs/nonneg_start.sbatch`); production as one job per chain (`jobs/chain_onejob.sh --kind nonneg`); figures `figures/figures_12m_nonneg.sh` | `nonneg_mult.py`, `nonneg_problem.py` (+ slope_mult helpers); tests `test_nonneg.py` (`jobs/nonneg_cpu.sbatch`), `jobs/nonneg_test.sbatch`, `jobs/nonneg_start_determinism.sbatch` | 2026-11-11 (softplus 124162, squared 124165; snapshot `nonneg_20261111T044920Z`) |
+| a whole fit / fine-tuning chain as ONE job (records bound once; same products and layout as the split chain) | `jobs/chain_onejob.sh` (dry run; `--submit`) -> `jobs/chain_onejob.sbatch` -> `chain_onejob.py`; KIND positive (default), slope (one cycle only), nonneg | the stage modules of the chosen kind; tests and the split-vs-one-job compare `test_chain_onejob.py` | 2026-11-10 (positive tests 124091-124095, bitwise); 2026-11-11 (nonneg tests 124143/124148, production 124162/124165; frozen `chain_onejob_20261111T060742Z`) |
+| one fit split across one or two GPU nodes (MPI, one rank per GPU) | `jobs/mpi_fit_submit.sh 1\|2\|auto <spec>` -> `jobs/mpi_fit.sbatch` (SPEC files in `mpi_multinode/specs/`); probe `jobs/mpi_probe.sbatch` | `mpi_support.py` (per-rank wrapper); comparisons `mpi_multinode/compare_tests.py`, `compare_slope.py` | 2026-11-10 (tests 123623-123649 only; the production fits ran on one node) |
+| which configuration (nodes, CPU threads, one job per chain) is fastest | `PERFORMANCE.md` (measured 2026-11-10/11) | — | — |
+| retries without starting a stage behind a failed upstream (guard job per stage) | `jobs/slope_cycles.sh`, `jobs/positive_cycles.sh` (from 2026-11-10); guards `jobs/slope_chain_guard.sbatch`, `jobs/positive_chain_guard.sbatch`; layout test `jobs/test_chain_deps.sh` | — | 2026-11-10 (dummy jobs 124035-124058; 3a chain guards 124068-124086; positive guard not yet submitted) |
 
 Notes:
 
@@ -120,6 +132,14 @@ Notes:
 | `positive_activity_check.sbatch`, `positive_unit_12m.sbatch`, `positive_fit_test.sbatch` | positive-activity kernel checks, unit tests, smoke test (λ 0, 4 evaluations, Jacobian check) | 122298, —, 122303 |
 | `positive_fit.sbatch` | positive-activity fit, LAMBDA required, max_nfev 4000, resume segments; from 2026-11-08 also RATIO, CYCLE, START_RESTART, GRAIN_*, HELD, MODEL_EXT (figures: `figures/figures_12m_positive_scan.sh`) | 122307, 122310–122312, 122319, 122320; cycle-1 fits 122449–122454 |
 | `positive_finetune.sbatch`, `positive_cycles.sh`, `positive_held_test.sbatch` | per-facet fine tuning (FACETS required); fit / fine-tuning chains for one lambda with retry attempts; held-term GPU tests (figures: `figures/figures_12m_positive_cycles.sh`) | chains 122596–122703 (λ 0 again 122706–122723); tests 122445, 122446, 122448–122477, 122594, 122595, 122704, 122705 |
+| `positive_cycles.sh` (2026-11-10 version), `positive_chain_guard.sbatch` | guard-job layout (user 2026-11-10 "Apply the guard fix"): attempts behind one gate job, a CPU guard job per stage that exits 0 only for a complete stage; settings and products unchanged | not yet used for a submission (dry runs only) |
+| `slope_mult_fit.sbatch`, `slope_mult_cpu.sbatch`, `slope_mult_threads_test.sbatch` | slope-multiplier fit (START, L_THREADS, BUMPS, HELD, CHAIN; one node); CPU steps (STEP=bins \| tests); threaded / chunked L test (figures: `figures/figures_12m_slope_mult.sh`) | fit 123786 (earlier script version); bins 123624; CPU tests 123625, 123628, 123636, 123892, 123978, 123983, 124012, 124062; threads 123891, 123979 |
+| `slope_cycles.sh`, `slope_finetune.sbatch`, `slope_chain_guard.sbatch` | bump + slope-multiplier chain (option 3a, 3 cycles, guard job per stage); its late-facet fine tuning; the guard (figures: `figures/figures_12m_slope_bumps.sh`) | c1 fit 124008 (by hand), 124064–124086 |
+| `slope_bumps_test.sbatch`, `slope_ft_diag.sbatch`, `slope_bumps_threads_test.sbatch`, `test_chain_deps.sh` | 3a GPU tests (STEP=fits \| ft); read-only diagnostic of the fine-tuning checks 6/7; 64-thread timing (never submitted); dummy-job test of the chain dependency layouts | 123984, 123985, 124013, 124063; 124034; —; 124035–124058 |
+| `nonneg_fit.sbatch`, `nonneg_finetune.sbatch`, `nonneg_start.sbatch` | softplus / squared fit (MODEL required); its late-facet fine tuning (no lower bound); the squared start (CPU) (figures: `figures/figures_12m_nonneg.sh`) | split tests 124139–124142, 124144–124147; inside nonneg_test.sbatch 124130–124133; start 124129 (test), 124138 (production) |
+| `nonneg_cpu.sbatch`, `nonneg_test.sbatch`, `nonneg_start_determinism.sbatch` | CPU tests; GPU tests (STEP=fits \| ft, one MODEL per job); determinism of the squared start per CPU type | 124128; 124130–124133; 124149–124153 |
+| `chain_onejob.sh`, `chain_onejob.sbatch` | ONE job per fit / fine-tuning chain (KIND positive \| slope \| nonneg) | positive tests 123990, 124091–124095 (earlier script); nonneg tests 124143, 124148; production 124162 (softplus), 124165 (squared) |
+| `mpi_fit.sbatch`, `mpi_fit_submit.sh`, `mpi_probe.sbatch` | one fit over 1 or 2 nodes with MPI (SPEC in `mpi_multinode/specs/`, NODES=1\|2\|auto); submit helper; MPI probe | tests 123629–123649 (earlier script versions; the current one not submitted); probe 123623 |
 | `grain_rough.sbatch`, `prepare_12m_rough.sbatch` | 12M rough-surface base and the C30 fit on it | 122033, 122034 |
 | `prepare_44m.sbatch`, `grain_44m_c30.sbatch` | 44M preparation; C30 with the 12M conditions on 44M | 121996/122020, 122078 |
 | `refine_12m.sbatch`, `refine_20m.sbatch` | local mesh refinement tests | 122009, 122011 |
@@ -141,6 +161,228 @@ They run on the login node (no GPU), from `$APP` with `.venv/bin/python`. `late_
 `figures_12m_clip_vs_positive.sh` (2026-11-09) draws the last round against the clipped-model refit (D0/D1/D2) into `12M/model_vs_observations_clip_vs_positive/`.
 `snapshot_positive.sh` (2026-11-09) snapshots the positive-activity work and the clipped refits (restart files hard-linked) into `12M/snapshot_positive_<UTC>/`.
 `shadow_classes.py` (2026-11-10; run copy in `$COPS_OUTPUT_ROOT/analysis/shadow_zero_activity_12m/`) classifies the seen facets of a fit by illumination (sunlit / cast shadow / night) over the fit's records, for zero-activity and active facets.
+`figures_12m_slope_mult.sh` (2026-11-10) draws the slope-multiplier fit 123786 against D2 and the best positive fit into `12M/model_vs_observations_slope_mult/`.
+`figures_12m_slope_bumps.sh` (2026-11-10) draws the bump + slope-multiplier chain (3a, 124008-124086) into `12M/model_vs_observations_slope_bumps/`.
+`figures_12m_model_families.sh` (2026-11-11) draws the best fit of each of the four families of 2026-11-08 ... 11-10 (D2, positive, slope multipliers, bumps) into `12M/model_vs_observations_model_families/`.
+`figures_12m_nonneg.sh` (2026-11-11; extended 19:26 UTC with every chain stage, cycle 1 vs final and all families) draws the softplus and squared chains (124162, 124165) into `12M/model_vs_observations_nonneg/`.
+
+## MPI helpers (`mpi_multinode/`, run copies in `$COPS_OUTPUT_ROOT/mpi_multinode/`)
+
+Test and comparison scripts of the multi-node work (user decisions 2026-11-10 "one fit split across both nodes", "make
+it also runnable on one node"; no physics). The launcher is `jobs/mpi_fit.sbatch` (+ `jobs/mpi_fit_submit.sh`), the
+per-rank wrapper `mpi_support.py`; results in `PERFORMANCE.md`.
+
+| File | Role | Jobs |
+|---|---|---|
+| `mpi_multinode/mpi_probe.py` | MPI probe: rank -> GPU map, ping-pong, Bcast of 96 MB, the transport's request/reply round (run by `jobs/mpi_probe.sbatch`) | 123623 (`mpi_multinode/probe-123623/`) |
+| `mpi_multinode/specs/clip_D2.sh` | SPEC for `jobs/mpi_fit.sbatch`: clip_refit.py --variant D2 as job 122866 (test) | 123629–123632, 123638, 123645, 123647, 123649 |
+| `mpi_multinode/specs/slope_mult.sh` | SPEC for `jobs/mpi_fit.sbatch`: the slope-multiplier fit over MPI (host activity) | 123646, 123648 (bitwise = 123635) |
+| `mpi_multinode/compare_tests.py` | comparison of the launcher's test fits (local / 8 / 16 ranks: costs, SHA-256 of x / residuals / Jacobian, timing, memory) | `clip_refit_tests/mpi_20261110/compare_*` |
+| `mpi_multinode/compare_slope.py` | slope-multiplier MPI tests vs the one-node test 123635 | `slope_mult_tests/mpi_*_srccg_20261110T094013Z/compare_vs_123635.json` |
+
+## How to run the model (fit, fine tuning, cycles, figures)
+
+Added 2026-11-11. All commands are as run on Voyager (paths in "Site-specific values" above). GPU work runs only
+inside Slurm jobs; the job scripts write their provenance (commands, git, environment, code copy, module/pip lists)
+next to the products.
+
+**Environment** (every job script sets it; for a shell on a compute node):
+
+```bash
+export AMPS=/data001/highresolu_vt/AMPS APP=$AMPS/srcCG/LiouvilleCOPS_cuda
+export COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output
+export T=/data001/highresolu_vt/cops_cluster_transfer_20261026 COPS_DATA_ROOT=$T/rosetta_data_end_of_mission_cops
+export CUDA_PATH=/usr/local/cuda-12.9 CUDA_HOME=/usr/local/cuda-12.9 CUPY_CACHE_DIR=$COPS_OUTPUT_ROOT/.cupy
+export PATH=$CUDA_HOME/bin:$PATH LD_LIBRARY_PATH=$CUDA_HOME/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONUNBUFFERED=1
+cd $APP     # interpreter: $APP/.venv/bin/python
+```
+
+**What a run needs:**
+- a fitting base (`runs/<run>/base`, built by the runner or by a job such as `jobs/prepare_12m_lategrid.sbatch`)
+  and its template bundle (`runs/<run>/bundle/restart_templates.npz`);
+- a start (a fit's `fit_restart.npz`);
+- the code: a **frozen snapshot** of `$COPS_OUTPUT_ROOT/model_ext` for every production run. Copy the files the job
+  needs into `model_ext_frozen/<name>_<UTC>/`, write `SHA256SUMS`, make it read-only, and pass it as `MODEL_EXT=`.
+  The job copies the snapshot into its provenance folder and runs that copy.
+
+**Three ways to run, from the smallest to the largest unit:**
+
+1. **One stage.** A fit job script (`jobs/positive_fit.sbatch`, `jobs/clip_refit.sbatch`,
+   `jobs/slope_mult_fit.sbatch`, `jobs/nonneg_fit.sbatch`) or a fine-tuning job script (`jobs/positive_finetune.sbatch`,
+   `jobs/slope_finetune.sbatch`, `jobs/nonneg_finetune.sbatch`), configured with `sbatch --export=ALL,VAR=value,...`.
+   The variables are listed in each script's header.
+   - A fit stops before its time limit at its best state and exits 75; resubmitting the same command continues it as
+     the next segment (`segNN/`, `final` link when complete).
+   - A fine tuning runs validation checks 1-8 in its first segment and refuses to optimize if one fails.
+2. **A split chain of cycles,** each stage its own job: `jobs/positive_cycles.sh` or `jobs/slope_cycles.sh`. Run it
+   without `--submit` first (dry run), then with it. A guard job after every stage starts the next stage only if the
+   stage really completed. Each stage has retries that continue after a time-limit stop.
+3. **A whole chain in ONE job** (records bound once, bitwise equal to the split chain; about 12 min saved per 3-cycle
+   chain): `jobs/chain_onejob.sh --kind positive|nonneg ...` (dry run, then `--submit`), which runs
+   `jobs/chain_onejob.sbatch` -> `chain_onejob.py`. A chain that hits the 8-h limit continues in the next attempt and
+   skips the completed stages. The bump/slope kind (`--kind slope`) runs one-cycle chains only.
+
+**Speed:** one node, local transport, chunked L step with 32 threads (`L_THREADS=32` / `--l-threads 32`; bitwise
+equal to 1 thread). Two nodes (MPI) pay off only for the clipped models with device activity. Details:
+`PERFORMANCE.md`.
+
+**Figures:** each `figures/figures_12m_*.sh` (login node, no GPU) writes `figures_cluster/12M/model_vs_observations_*/`
+with the figures, the tables, `HOW-TO-RERUN.md` (every stage's exact command, AMPS commit, code commits) and `code/`.
+
+**Bitwise reproducibility.** It holds on the same CPU type at any thread count. Across CPU types the CPU steps that go
+through numpy's OpenBLAS differ at rounding level, because OpenBLAS (DYNAMIC_ARCH) picks its kernels by CPU: node023
+(EPYC 7763, `Zen`) vs node032 (EPYC 9554, `Cooperlake`) gave 8e-15 in the squared start (jobs 124149-124153).
+
+## Softplus and squared-harmonics models (2026-11-10/11)
+
+**Why** (user, 2026-11-10): "make step back to clipped D2 with 6 templates; propose a global decomposition of the
+activity map that is non-negative by construction". Both models replace D2's clip max(0, ·) and its additive
+`cliff_ge_60deg` template with an activity that cannot be negative.
+
+**Models** (user decisions 2026-11-10/11, `/data001/highresolu_vt/AMPS/handoff.md` §10). H2O activity per facet e:
+
+- **softplus:** A_e = m_b(e) · s_e ln(1 + exp(L_e / s_e)) · exp(h_e), with
+  - L = Σ a_lm Y_lm (25 signed harmonics, degree ≤ 4) + A_s Σ_k T_k (D2's six ft templates ft_c1..ft_c6, held at 1);
+  - s_e = 1e-5 · A_orig,e (A_orig = the original srcCG map). Where A_orig,e = 0 (0.71 % of the facets) A_e = max(0, L_e).
+  - D2 is the limit s → 0.
+- **squared harmonics:** A_e = m_b(e) · (A_s (Σ b_lm Y_lm)² + A_s Σ_k T_k) · exp(h_e). The templates stay outside the
+  square.
+- **Both:**
+  - m_b: one multiplier per effective-gravitational-slope bin [0,40) (held at 1), [40,50), [50,60), [60,70), [70,80),
+    [80,90), [90,180] deg (≥ 0; bundle `slope_bins.npz`);
+  - no floor, no `cliff_ge_60deg`;
+  - h_e: the accumulated per-facet fine-tuning term (0 in cycle 1);
+  - everything else as D2: lategrid base (gauge +1.5 m along +Z), W10x5 gauge response from 10:33:10 UTC, original
+    temperature law held (Tmax 182.09922, T75 136.11149, Tmin 133 K), κ free, grain + NG = RG crossing (weight 10),
+    λ = 0, max_nfev 4000, `--tbounds 30 400`;
+  - 34 free parameters: 25 harmonics, 6 multipliers, κ, grain A and B.
+- **Starts (cycle 1, user "Both from D2"):**
+  - softplus: D2's harmonic coefficients;
+  - squared: b by area-weighted least squares so that the activity at m = 1 matches D2's max(0, field)
+    (`nonneg_start.py`);
+  - multipliers 1, κ and grain from D2.
+- **Fine tuning (each cycle):** a factor exp(δ_e) on the facets seen only in the last 5 min (late_only), no lower bound
+  and no cap, grain refitted, λ = 0, MAXNFEV 500, validation checks 1-8. Facets with A_e = 0 cannot be tuned. The
+  next cycle's fit holds h = the accumulated δ. 3 cycles.
+
+**Code:**
+- modules: `nonneg_mult.py` (model, CPU stand-in, GPU patch), `nonneg_problem.py` (fit hooks), `nonneg_fit.py`
+  (fit driver), `nonneg_start.py` (squared start), `nonneg_finetune.py`, `test_nonneg.py`;
+- jobs: `jobs/nonneg_{fit,finetune,start,cpu,test}.sbatch`, `jobs/chain_onejob.{sh,sbatch}` (kind nonneg);
+- snapshots used: `model_ext_frozen/nonneg_20261111T044920Z` (model) and `model_ext_frozen/chain_onejob_20261111T060742Z`
+  (driver).
+
+**Results** (2026-11-11, one job per model):
+
+| model | final data cost | rms ln NG / RG | fits stop | κ |
+|---|---|---|---|---|
+| softplus (job 124162, gpu001, 50 min) | 4.3697e-03 | 0.0710 / 0.0608 | ftol (1517, 134, 291 evaluations) | 3e-36 (bound 0) |
+| squared (job 124165, gpu002, 3 h 05 min) | 6.9398e-03 | 0.0902 / 0.0758 | max_nfev 4000 in every cycle | 7e-36 (bound 0) |
+| D2, for reference | 4.8864e-03 | 0.0778 / 0.0610 | max_nfev 4000 | 2e-36 |
+
+- **softplus:**
+  - With s = 1e-5 A_orig and D2's very negative field, it underflows to exactly 0 on most of the seen surface. At the
+    start that is 94.7 % of the seen area, as in D2; in the final fit 96.4 %.
+  - Four multipliers end at 0; 60-70 deg is ×26.3 and 90-180 deg ×4.27.
+  - 61 % of the seen production comes from slopes > 90 deg.
+  - Only 73 of the 271 late facets are tunable.
+- **squared:**
+  - No facet is at 0.
+  - The multipliers are 50-60 deg ×16.7 and 90-180 deg ×3.48; the others ≤ 8e-4.
+  - 80 % of the seen production comes from slopes > 90 deg.
+
+Figures: `figures_cluster/12M/model_vs_observations_nonneg/`.
+
+### Running them from scratch
+
+Each step's products are the next step's inputs. `$J=$COPS_OUTPUT_ROOT/jobs`,
+`$R=$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5`.
+
+**0. Earlier inputs, built before 2026-11-07:**
+- the 12M base `runs/shap8_012m_flat_earlier/base` and its bundle and gravity cache: the runner campaign
+  (`../tools/cluster/README.md`, `../quick_guide.md` §4e3);
+- the original-temperature fit / fine-tuning cycles 1-6, which give D2's start (c6 `fit_restart.npz`) and the
+  templates ft_c1..ft_c6: `figures_cluster/12M/model_vs_observations_grain_ft_cycles_Torig/HOW-TO-RERUN.md` and
+  `jobs/grain_ft_cycle_Torig.sbatch`.
+
+**1. Lategrid base** (the 1150 observations plus a 1-s model grid in the late window, gauge +1.5 m; GPU, about 172 GB;
+job of 2026-11-07):
+
+```bash
+sbatch --export=ALL,STOP_AFTER=base $J/prepare_12m_lategrid.sbatch     # -> $R/{late_grid.h,late_grid_points.txt,base,bundle}
+```
+
+**2. D2** (clipped refit of the c6 model on the lategrid base, W10x5; job 122866). The exact commands are in
+`figures_cluster/12M/model_vs_observations_clip_vs_positive/HOW-TO-RERUN.md`:
+
+```bash
+sbatch --nodelist=gpu002 --export=ALL,VARIANT=D2,MODEL_EXT=$COPS_OUTPUT_ROOT/model_ext_frozen/clip_20261108T234013Z $J/clip_refit.sbatch
+                                                                     # -> $R/clip_refit/D2/final
+```
+
+**3. Slope bins** (CPU; job 123624):
+
+```bash
+sbatch --export=ALL,STEP=bins,MODEL_EXT=$COPS_OUTPUT_ROOT/model_ext_frozen/slopemul_20261110T091946Z $J/slope_mult_cpu.sbatch
+                                                                     # -> $R/slope_mult/bundle/slope_bins.npz
+```
+
+**4. Freeze the code.** Copy the files listed in `model_ext_frozen/nonneg_20261111T044920Z/SHA256SUMS` from
+`$COPS_OUTPUT_ROOT/model_ext` into `model_ext_frozen/nonneg_<UTC>/`, and `chain_onejob.py` and `test_chain_onejob.py`
+into `model_ext_frozen/chain_onejob_<UTC>/`. Write `SHA256SUMS` in both and make them read-only (`chmod -R a-w`).
+Below, `NX` and `CX` are these two folders.
+
+**5. Squared start** (CPU, about 1 min; job 124138):
+
+```bash
+sbatch --export=ALL,MODEL_EXT=$NX $J/nonneg_start.sbatch     # -> $R/nonneg/bundle/squared_start.npz (+ .json, provenance)
+```
+
+**6. Tests** (recommended before production; jobs 124128-124133):
+- CPU: `sbatch --export=ALL,MODEL_EXT=$NX $J/nonneg_cpu.sbatch`;
+- GPU, one node per model: `sbatch --nodelist=<node> --export=ALL,MODEL_EXT=$NX,TAG=<tag>,MODEL=<model>,STEP=fits
+  $J/nonneg_test.sbatch`, then `STEP=ft`. They check the start cost against an independent evaluation, the
+  softplus → clip limit, the full Jacobian, fine tuning with 32 threads vs 1 bitwise, and cycle 2 starting at the
+  fine-tuning cost.
+
+**7. The two chains, one job per model, concurrently** (jobs 124162 and 124165; 3 cycles; attempts 2 and 3 only
+continue after a time-limit stop):
+
+```bash
+cd $J
+./chain_onejob.sh --kind nonneg --model softplus --chain-root $R/nonneg/softplus/<name> --model-ext $NX --chain-code $CX \
+  --cycles 3 --nfev 4000 --check 1 --ft-maxnfev 500 --ft-facets late_only --ft-window-min 5 --l-threads 32 \
+  --node gpu001 --time 08:00:00 --attempts 3                # dry run; add --submit
+./chain_onejob.sh --kind nonneg --model squared --chain-root $R/nonneg/squared/<name> --model-ext $NX --chain-code $CX \
+  --start-file $R/nonneg/bundle/squared_start.npz \
+  --cycles 3 --nfev 4000 --check 1 --ft-maxnfev 500 --ft-facets late_only --ft-window-min 5 --l-threads 32 \
+  --node gpu002 --time 08:00:00 --attempts 3                # dry run; add --submit
+```
+
+Products: `<chain-root>/c<k>/{fit,ft}/` (`segNN/`, `final`, `provenance-<job>-<stage>/commands.sh` reruns that stage
+alone) and `<chain-root>/provenance-<job>/`.
+
+**Split alternative (one job per stage, same results bitwise):**
+
+```bash
+# cycle 1 fit
+sbatch --nodelist=gpu001 --export=ALL,MODEL=softplus,START=d2,NFEV=4000,CHECK=1,L_THREADS=32,FITDIR=<chain>/c1/fit,MODEL_EXT=$NX $J/nonneg_fit.sbatch
+#   (squared: MODEL=squared,START=lsq,START_FILE=$R/nonneg/bundle/squared_start.npz)
+# its fine tuning
+sbatch --nodelist=gpu001 --export=ALL,FIT=<chain>/c1/fit/final,OUT=<chain>/c1/ft,FACETS=late_only,WINDOW_MIN=5,MAXNFEV=500,L_THREADS=32,MODEL_EXT=$NX $J/nonneg_finetune.sbatch
+# cycle k > 1 fit: from the previous cycle
+sbatch ... --export=ALL,MODEL=<model>,START=chain,START_RESTART=<chain>/c<k-1>/fit/final/fit_restart.npz,HELD=<chain>/c<k-1>/ft/finetune_state.npz,GRAIN_FROM=<chain>/c<k-1>/ft/finetune_state.npz,NFEV=4000,CHECK=1,L_THREADS=32,FITDIR=<chain>/c<k>/fit,MODEL_EXT=$NX $J/nonneg_fit.sbatch
+```
+
+Submit each stage only after the previous one is complete. The one-job chain runs exactly these commands, token for
+token; its stage commands are in each stage's `provenance-<job>-<stage>/commands.sh`.
+
+**8. Figures** (login node):
+
+```bash
+$COPS_OUTPUT_ROOT/figures_cluster/scripts/figures_12m_nonneg.sh   # -> figures_cluster/12M/model_vs_observations_nonneg/
+```
 
 ## Running on another machine
 
