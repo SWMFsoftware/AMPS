@@ -13,6 +13,16 @@ Courant 0.5, ten 1,000-step sampling windows, seed 184467, and no split/merge.
 The E5 source receipt remains an explicit one-line alternative, but changing
 flyby or any numerical control creates a distinct run configuration.
 
+New standalone fits export separate source receipts automatically for hybrid
+8+7, Porco 98, Portyankina 41 and explicit Porco 99 geometries. Select the
+desired target/strategy `.in` from its `amps_sources/index.json` with
+`source_distribution_file`; no fit changes this default run deck. Absolute
+mode supplies physical rates directly. Shape mode additionally requires the
+per-species `total_source_rate.SPECIES_s-1` inputs. E3/E5 apparent CO2 has no
+automatic physical absolute file until a fragmentation correction is chosen.
+The exact handoff and geometry rules are in
+[`SOURCE_DISTRIBUTION_FILE.md`](SOURCE_DISTRIBUTION_FILE.md).
+
 The forward model reads one explicit `application: enceladus` block. It uses
 the repository-wide grammar in `src/INPUT_FILE.md`; unknown or duplicated keys
 are fatal.

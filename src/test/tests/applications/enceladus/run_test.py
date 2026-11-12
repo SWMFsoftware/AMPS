@@ -29,7 +29,8 @@ from lib.runner_support import (  # noqa: E402
 
 LOCAL_CASES = [
     "U00_exporter", "U01_source_export", "U02_core_compile",
-    "U03b_canonical_source_geometry", "U03_source_parser",
+    "U03b_canonical_source_geometry", "U03c_catalog_source_geometry",
+    "U03_source_parser",
     "U04_runtime_parser", "U04b_transport_only_parser", "U05_chemistry",
     "U06_source_law", "U07_numerics", "U08_validation",
 ]

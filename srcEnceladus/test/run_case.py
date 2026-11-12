@@ -19,6 +19,7 @@ CASES = {
     "U02_core_compile": None,
     "U03_source_parser": "source",
     "U03b_canonical_source_geometry": "source_geometry",
+    "U03c_catalog_source_geometry": "catalog",
     "U04_runtime_parser": "input",
     "U04b_transport_only_parser": "input",
     "U05_chemistry": "chemistry",
@@ -40,7 +41,9 @@ def main() -> int:
 
     if args.case == "U00_exporter":
         result = suite.run([sys.executable, "-m", "unittest",
-                            "standalone.tests.test_export_forward_sources"])
+                            "standalone.tests.test_export_forward_sources",
+                            "standalone.tests.test_fit_source_export",
+                            "standalone.tests.test_export_forward_observations"])
         detail = result.stdout + result.stderr
         passed = result.returncode == 0
         values: dict[str, object] = {}
@@ -68,6 +71,10 @@ def main() -> int:
                     result = compiled
                 elif exported.returncode != 0:
                     result = exported
+                elif args.case == "U03c_catalog_source_geometry":
+                    result = suite.run([sys.executable,
+                        str(suite.TEST/"run_source_export_roundtrip.py"),
+                        "--executable", str(binary)])
                 else:
                     runtime_input = temp / "enceladus.in"
                     if args.case == "U04b_transport_only_parser":

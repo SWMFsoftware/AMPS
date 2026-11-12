@@ -242,9 +242,9 @@ def main():
         e3, e5 = by_key[case, "E3"], by_key[case, "E5"]
         report.append(
             f"| {SHORT[case]} | {e3['rank']} / {e3['fitted_columns']} "
-            f"({e3['effective_rank_1e-3']}) | {e3['condition_number_scaled']:.3e} | "
+            f"({e3['effective_rank_1e-3']}) | {float(e3['condition_number_scaled']):.3e} | "
             f"{e5['rank']} / {e5['fitted_columns']} "
-            f"({e5['effective_rank_1e-3']}) | {e5['condition_number_scaled']:.3e} |")
+            f"({e5['effective_rank_1e-3']}) | {float(e5['condition_number_scaled']):.3e} |")
 
     report += ["", "## Combined fitting by instrument", "",
                "One vector is fitted jointly to E3+E5 and a different vector is "

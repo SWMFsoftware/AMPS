@@ -234,10 +234,12 @@ def markdown_report(rows: list[dict], summaries: list[dict], paths: dict) -> str
             f"{row['candidate_source_fraction']:.6g} | "
             f"{row['candidate_source_rate_s-1']:.6g} |")
     lines += ["", "## Strategy-level diagnostic", "",
-              "The training objective is the sum of chi-square per sample over the data "
-              "sets used to determine that strategy's shared shape. For independent fits, "
-              "it is the sum of the separately optimized objectives.", "",
-              "| Family | Strategy | Delta training objective | Delta across all targets | Maximum candidate fraction |",
+              "The score below sums the final target-refit chi-square per sample over "
+              "targets used in shape training. The retained CSV keys named training_* "
+              "are historical names for this post-normalization score; this is not the "
+              "original common-vector pooled training loss. UVIS native optical-depth "
+              "and absolute-column-proxy objectives must also be distinguished.", "",
+              "| Family | Strategy | Delta target-refit score on training targets | Delta across all targets | Maximum candidate fraction |",
               "|---|---|---:|---:|---:|"]
     for row in summaries:
         lines.append(
@@ -247,17 +249,15 @@ def markdown_report(rows: list[dict], summaries: list[dict], paths: dict) -> str
             f"{row['maximum_candidate_fraction']:.6g} |")
     lines += [
         "", "## Interpretation", "",
-        "The E17 candidate is selected only weakly when all 99 source amplitudes are free. "
-        "Its clearest independent-profile effect is in E17 CO2; the other CO2 flybys put "
-        "essentially zero weight on it. The UVIS independent fits assign small but nonzero "
-        "fractions, while E3/E5 H2O do not select it. Consequently, the candidate is not a "
-        "globally required persistent source under this steady ballistic model.", "",
+        "The tables and heatmaps give this run's candidate fractions and residual "
+        "changes. The candidate was selected using E17; improvement there is not an "
+        "independent geological detection or an untouched validation result.", "",
         "A nested 99-source nonnegative fit should never have a larger optimized training "
         "objective than the 98-source fit because zero candidate amplitude reproduces the "
-        "old model. Any negative training-objective delta therefore diagnoses numerical "
-        "sensitivity in this severely ill-conditioned inverse problem, not evidence that "
-        "the physical candidate makes the data worse. Cross-prediction targets may worsen "
-        "legitimately because their shape was trained on different observations.", "",
+        "old model. This nesting argument applies to the actual optimized pooled "
+        "loss, not to the post-normalization target-refit score above. Audit the stored "
+        "combined-fit losses and KKT diagnostics before attributing a negative delta "
+        "to numerical error. Cross-prediction targets can worsen legitimately.", "",
         "## Products", "",
         f"- Detailed per-observation table: `{paths['detail']}`",
         f"- Strategy summary: `{paths['summary']}`",

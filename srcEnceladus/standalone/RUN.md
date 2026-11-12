@@ -1,5 +1,29 @@
 # Enceladus Stage-0 neutral-plume runbook
 
+## 2026-11-11 manuscript campaign and automatic AMPS handoff
+
+The dedicated H2O/CO2 campaign repeats 124 target fits, including the complete
+99-source sensitivity case, without running the unrelated CH4 family below:
+
+```bash
+python3 srcEnceladus/standalone/run_fitting_campaign.py --validation-data-root /absolute/path/to/cassini_validation_data --paper /absolute/path/to/Enceladus.pdf --output-dir /absolute/path/to/new_campaign --jobs 3
+python3 srcEnceladus/standalone/build_campaign_report.py --campaign /absolute/path/to/new_campaign --validation-receipt /absolute/path/to/actual_validation.json
+```
+
+New CLI fits project stripe geometry to 252100 m before fitting and use
+per-observation backgrounds in pooled training. For historical reproduction
+select `--stripe-surface-mapping legacy_coordinates --no-amps-export` and,
+where appropriate, `--pooled-backgrounds shared_legacy`. Old output tables
+are therefore historical diagnostics rather than fixed references for new
+defaults. Every new fit exports its actual source vector automatically;
+study bundles place manifests, absolute/shape `.in` files and the geometry
+snapshot under `amps_sources/`. No default forward-run input is replaced.
+E3/E5 apparent-CO2 absolute files are deferred until a physical correction is
+chosen. Detailed geometry/strength syntax is in
+[`SOURCE_DISTRIBUTION_FILE.md`](../SOURCE_DISTRIBUTION_FILE.md), and the
+actual campaign receipts are listed in
+[`FITTING_CAMPAIGN_111126.md`](../FITTING_CAMPAIGN_111126.md).
+
 ## 1. Case description
 
 This standalone application fits a steady, collisionless, gravity-free neutral plume to Cassini observations without building AMPS. It supports the `tenishev2014_hybrid_8` case (eight discrete jets, seven tiger-stripe line components, and two empirical backgrounds), the `porco2014_98` case, and the `portyankina2022_solar_41` case. The default source law is the production-normalized Tenishev (2010) point-source law. H2O is fitted to E3/E5 INMS density and the 2007/2010 UVIS occultations; CO2 is fitted to E3, E5, E14, E17, and E18; and CH4-equivalent mass-15 profiles are fitted for E3, E5, E7, E14, E17, E18, and E21, with E14/E17/E18 forming the primary low-impact set. The local `e17_extra_jet_candidate.json` is an optional 99th-source sensitivity case and is never enabled unless `--extra-jet` is explicitly present.

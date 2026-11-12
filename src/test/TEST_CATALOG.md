@@ -14,8 +14,8 @@ python3 src/test/generate_test_catalog.py
 python3 src/test/generate_test_catalog.py --check
 ```
 
-Registry summary: **56 suites / 1192 cases**. Registry SHA-256: `bed53273334a62f57d067b7558b51e90cda0fa0ca9f2510e7c431176ce47c384`.
-Description provenance: **785 maintained source descriptions / 407 stable-ID fallbacks**.
+Registry summary: **56 suites / 1193 cases**. Registry SHA-256: `1f75aba7ad0df2ae245a69f1f8d1843e5ae19bdeead580a3bb4acb54712d5267`.
+Description provenance: **785 maintained source descriptions / 408 stable-ID fallbacks**.
 
 ## Suite index
 
@@ -72,7 +72,7 @@ Description provenance: **785 maintained source descriptions / 407 stable-ID fal
 | `CORE-MODEL-SEP-CORONA-SWCME-REDUCED-001` | `src/models/sep_corona_swcme` | integration | extended | 97 | exclusive | Complete 97-row reduced-front plus ambient registry with 35 explicit routine native SKIPs | [runner](tests/models/cme/sep_corona_swcme_reduced/run_test.py) |
 | `CORE-LEGACY-REGISTRY-AUDIT-001` | `src/test` | module | extended | 13 | nonexclusive | Explicit governance/disposition audit for every roadmap legacy application without behavioral migration qualification | [runner](tests/legacy/registry/run_test.py) |
 | `CORE-T12-PORTABILITY-001` | `src/general` | integration | extended | 16 | nonexclusive | Bounded compiler, Fortran ABI, sanitizer, leak, OpenMP, MPI, CUDA and performance matrix plus the truthful strict-coverage gate | [runner](tests/portability/matrix/run_test.py) |
-| `APPLICATION-ENCELADUS-FORWARD-001` | `srcEnceladus` | integration | extended, application-smoke | 42 | nonexclusive | Complete dependency-light Enceladus forward-model parser, source, chemistry, numerics and 31-value reference campaign | [runner](tests/applications/enceladus/run_test.py) |
+| `APPLICATION-ENCELADUS-FORWARD-001` | `srcEnceladus` | integration | extended, application-smoke | 43 | nonexclusive | Complete dependency-light Enceladus forward-model parser, source, chemistry, numerics and 31-value reference campaign | [runner](tests/applications/enceladus/run_test.py) |
 | `APPLICATION-ENCELADUS-NATIVE-STARTUP-001` | `srcEnceladus` | system | extended, application-smoke | 6 | exclusive | Clean Enceladus build and exact import of all six pre-MPI native startup/configuration gates | [runner](tests/applications/enceladus_native/run_test.py) |
 | `APPLICATION-ENCELADUS-E3-001` | `srcEnceladus` | system | extended | 13 | exclusive | Capability-gated clean build and 10,000-step E3 process, transport-ledger, and flyby-product campaign | [runner](tests/applications/enceladus_e3/run_test.py) |
 | `APPLICATION-MOON-REGRESSION-001` | `srcMoon` | system | extended, application-smoke | 36 | exclusive | Clean Moon/SPICE build plus all U01-U26 and bounded linked I11-I20 regression outcomes with typed scientific skips | [runner](tests/applications/moon_regression/run_test.py) |
@@ -1524,7 +1524,7 @@ Bounded compiler, Fortran ABI, sanitizer, leak, OpenMP, MPI, CUDA and performanc
 
 ### 52. `APPLICATION-ENCELADUS-FORWARD-001`
 
-Complete dependency-light Enceladus forward-model parser, source, chemistry, numerics and 31-value reference campaign **42 cases.** Eligible for suite-level concurrency.
+Complete dependency-light Enceladus forward-model parser, source, chemistry, numerics and 31-value reference campaign **43 cases.** Eligible for suite-level concurrency.
 
 | Case | What | How | Why | Where |
 | --- | --- | --- | --- | --- |
@@ -1532,6 +1532,7 @@ Complete dependency-light Enceladus forward-model parser, source, chemistry, num
 | `ENCELADUS-U01-SOURCE-EXPORT` | U01 source export | integration; isolated suite adapter; tools python, cxx | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus/run_test.py) |
 | `ENCELADUS-U02-CORE-COMPILE` | U02 core compile | integration; isolated suite adapter; tools python, cxx | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus/run_test.py) |
 | `ENCELADUS-U03B-CANONICAL-SOURCE-GEOMETRY` | U03b canonical source geometry | integration; isolated suite adapter; tools python, cxx | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus/run_test.py) |
+| `ENCELADUS-U03C-CATALOG-SOURCE-GEOMETRY` | U03c catalog source geometry | integration; isolated suite adapter; tools python, cxx | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus/run_test.py) |
 | `ENCELADUS-U03-SOURCE-PARSER` | U03 source parser | integration; isolated suite adapter; tools python, cxx | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus/run_test.py) |
 | `ENCELADUS-U04-RUNTIME-PARSER` | U04 runtime parser | integration; isolated suite adapter; tools python, cxx | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus/run_test.py) |
 | `ENCELADUS-U04B-TRANSPORT-ONLY-PARSER` | U04b transport only parser | integration; isolated suite adapter; tools python, cxx | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus/run_test.py) |

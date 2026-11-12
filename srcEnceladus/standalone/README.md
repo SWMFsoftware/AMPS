@@ -49,6 +49,91 @@ study also fits E14/E17/E18 in order to measure cross-epoch mass-44 variation;
 those flybys therefore cease to be untouched validation cases for any model
 or source geometry selected with that study.
 
+## Automatic AMPS export and manuscript campaign
+
+New fitting CLI runs default to `--stripe-surface-mapping
+local_vertical_to_reference_sphere`: all stripe nodes are projected radially
+to the 252100 m surface before evaluating the fit. This deliberately changes
+the old hybrid operator. `load_config()` without an override still reads
+legacy configurations unchanged. Historical CLI reproduction requires
+`--stripe-surface-mapping legacy_coordinates --no-amps-export`.
+
+Single-profile results automatically create `<result_stem>_amps_sources/`;
+H2O/CO2 studies create `amps_sources/`. Every target/strategy gets a complete
+canonical source vector, absolute and normalized shape manifests, schema-2
+`.in` files, a resolved geometry snapshot and a hashed `index.json`. All four
+geometries (hybrid, 98, 41, explicit 99) are supported by the writer and AMPS
+reader. Backgrounds are excluded; zeros are retained; no preferred strategy
+or forward-run total is silently selected. See
+[`SOURCE_DISTRIBUTION_FILE.md`](../SOURCE_DISTRIBUTION_FILE.md).
+
+E3/E5 CO2 absolute exports are **deferred** until the physical mass-44
+fragmentation correction is specified. Their apparent totals remain in the
+reports and their conditional normalized shapes can be exported. This does
+not turn an apparent source estimate into an absolute physical CO2 rate.
+
+Pooled training defaults to `--pooled-backgrounds per_observation`: one
+common physical source vector is fitted with independent nuisance columns
+for each observation. Normalizing that vector and refitting each target's
+total is the documented template procedure, not a jointly optimized
+free-amplitude shared-shape inversion. `shared_legacy` is available only for
+explicit historical comparison. Native UVIS optical-depth residuals and
+absolute-column-proxy residuals are both saved and have different meanings.
+An exactly singular condition number is encoded as the JSON string
+`Infinity`; other nonfinite scientific output is rejected. Solver KKT
+diagnostics are numerical stationarity checks, not source uncertainties.
+
+If TRF reports stagnation, the density/pooled solver retries the identical
+scaled nonnegative problem with active-set NNLS. Recovery must not increase
+the failed iterate's objective beyond roundoff and must satisfy normalized
+dual/complementarity KKT residuals <=1e-12. The failure and recovery losses,
+method and diagnostics are retained; no regularization or physical rate prior
+is added. The catalog's azimuth endpoint 360 degrees is exported as the
+equivalent 0-degree direction and that notation conversion is recorded.
+
+Reproduce the complete manuscript matrix in a **new** output directory:
+
+```bash
+python3 srcEnceladus/standalone/run_fitting_campaign.py \
+  --validation-data-root /absolute/path/to/cassini_validation_data \
+  --paper /absolute/path/to/Enceladus.pdf \
+  --output-dir /absolute/path/to/new_campaign --jobs 3
+```
+
+This executes 48 base H2O/UVIS target fits, 45 base CO2 fits, the E17 search,
+and 31 complete 99-source refits (124 target fits), plus quadrature,
+component-ablation, cross-prediction, geometry/candidate and orbital-proxy
+diagnostics. Fit processes use one BLAS thread each. Each command has a
+separate log/receipt under `execution/`; `campaign.json` distinguishes fit
+completion from report completion. Existing scientific outputs are never
+overwritten. The source snapshot and hashes are retained under `provenance/`.
+`--resume` retains successful steps and can repair source serialization from
+an intact saved fit without recomputing its amplitudes. An incomplete failed
+fit requires the explicit additional `--resume-solver-repair` flag; its old
+directory and logs are archived and a solver-code hash change is recorded.
+Changes to physical operators require a new campaign. No failed receipt is
+silently converted into a successful original command.
+See [`FITTING_CAMPAIGN_111126.md`](../FITTING_CAMPAIGN_111126.md) for actual
+execution evidence and retained observation/operator limitations.
+
+After fitting, create the audited comparison tables/figures and Word/PDF
+report (requires LibreOffice in addition to the fitting dependencies):
+
+```bash
+python3 srcEnceladus/standalone/build_campaign_report.py \
+  --campaign /absolute/path/to/new_campaign \
+  --validation-receipt /absolute/path/to/validation.json
+```
+
+The validation receipt is a JSON mapping of actual check names to outcomes;
+the report copies it verbatim and does not manufacture PASS results. The
+builder verifies all 124 targets, 7843 component rows and 224 source files,
+checks export hashes, plots every strategy against native observations and
+embeds eight comparison figures into the Word file. Rounded manuscript
+Tables 2–5 are retained as a 93-row historical comparison, never as test
+expected values. `report/actual_pooled_training_losses.csv` distinguishes the
+20 original balanced losses from post-normalization target-refit scores.
+
 ## Portable data-root input
 
 Observation products and generated studies remain outside this code directory.

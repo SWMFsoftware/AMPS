@@ -335,7 +335,7 @@ def test_selection_contract(context: Dict) -> None:
     # values from production grouping, which would conceal a lost owner.
     assert [len(item["tests"]) for item in streams] == [51, 3, 2]
     assert [sum(len(test["selected_cases"]) for _, test in item["tests"])
-            for item in streams] == [1085, 61, 46]
+            for item in streams] == [1085, 62, 46]
     listed = io.StringIO()
     with contextlib.redirect_stdout(listed):
         module.print_tests(

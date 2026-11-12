@@ -1359,9 +1359,10 @@ void FinalizeNumericsAfterMeshAllocation() {
     PIC::Sampling::SaveOutputDataFile[species] =
         gConfiguration.volumeFieldOutput && IsSimulated(ParticleSymbol(species));
 
-  // The analytic recurrence used by the exact hybrid-8 source sampler is
-  // independently qualified for a=s*c>=-2. Check the entire allowed outward
-  // hemisphere, not only whichever random direction is drawn first.
+  // Test the most adverse outward ray before allocating injection work. The
+  // hybrid recurrence covers s*c>=-2; tilted catalog jets additionally use
+  // the independently checked positive-quadrature negative-tail branch. A
+  // numerical underflow/invalid normalization remains an explicit error.
   for (const std::string& symbol : gConfiguration.injectedSpecies) {
     const int species = Species(symbol);
     const double mass = PIC::MolecularData::GetMass(species);
@@ -1376,9 +1377,12 @@ void FinalizeNumericsAfterMeshAllocation() {
       const double minimumCosine = -std::sqrt(std::max(0.0, 1.0-gamma*gamma));
       const double thermal =
           std::sqrt(2.0*kBoltzmann*source.temperatureK/mass);
-      if (source.bulkSpeedMPerS/thermal*minimumCosine < -2.0)
-        Stop(source.id + " exceeds the qualified Tenishev sampler range for " +
-             symbol + " (minimum speed_ratio*direction_cosine < -2)");
+      double moment=0.0,quantile=0.0;
+      Status check=Tenishev2010FluxMoment3(
+          minimumCosine,source.bulkSpeedMPerS/thermal,&moment);
+      if (check.success) check=Tenishev2010SpeedQuantile(
+          minimumCosine,source.bulkSpeedMPerS/thermal,0.5,&quantile);
+      if (!check.success) Stop(source.id+" sampler for "+symbol+": "+check.message);
     }
   }
 

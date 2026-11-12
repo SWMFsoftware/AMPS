@@ -18,6 +18,10 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parent
+# Import also works when the dependency-free exporter is loaded by file path.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from source_contract import CASES, HYBRID, SOLAR, source_ids, project_vertices
 DEFAULT_CONFIG = ROOT / "config" / "tenishev2014_stage0.json"
 SOURCE_IDS = (
     "jet:I_baghdad", "jet:II_damascus", "jet:III_damascus",
@@ -90,8 +94,9 @@ def validate_manifest(manifest: dict) -> tuple[str, str, dict[str, dict[str, flo
         raise ValueError("unknown manifest keys: " + ", ".join(unknown))
     if manifest.get("schema_version") != 1:
         raise ValueError("manifest schema_version must be integer 1")
-    if manifest.get("source_case") != "tenishev2014_hybrid_8":
-        raise ValueError("only source_case=tenishev2014_hybrid_8 is supported")
+    if manifest.get("source_case") not in CASES:
+        raise ValueError("unsupported source_case")
+    required_ids = source_ids(manifest["source_case"])
     name = manifest.get("distribution_name")
     if not isinstance(name, str) or PORTABLE_NAME.fullmatch(name) is None:
         raise ValueError(
@@ -110,15 +115,15 @@ def validate_manifest(manifest: dict) -> tuple[str, str, dict[str, dict[str, flo
             raise ValueError(f"species.{symbol} must be an object")
         if not all(isinstance(label, str) for label in strengths):
             raise ValueError(f"species.{symbol}: every source label must be a string")
-        missing = sorted(set(SOURCE_IDS) - set(strengths))
-        extra = sorted(set(strengths) - set(SOURCE_IDS))
+        missing = sorted(set(required_ids) - set(strengths))
+        extra = sorted(set(strengths) - set(required_ids))
         if missing or extra:
             raise ValueError(
-                f"species.{symbol} labels differ from the canonical 15; "
+                f"species.{symbol} labels differ from the canonical {len(required_ids)}; "
                 f"missing={missing}, extra={extra}")
         values = {source: finite_nonnegative(strengths[source],
                                              f"species.{symbol}.{source}")
-                  for source in SOURCE_IDS}
+                  for source in required_ids}
         total = math.fsum(values.values())
         if not total > 0:
             raise ValueError(f"species.{symbol}: total strength must be positive")
@@ -141,7 +146,8 @@ def render(manifest_path: Path, config_path: Path) -> str:
     manifest = load_json(manifest_path)
     config = load_json(config_path)
     name, mode, species = validate_manifest(manifest)
-    if config.get("source_case") != "tenishev2014_hybrid_8":
+    source_case = manifest["source_case"]
+    if config.get("source_case") != source_case:
         raise ValueError(f"{config_path}: wrong source_case")
     if config.get("frame") != "IAU_ENCELADUS":
         raise ValueError(f"{config_path}: frame must be IAU_ENCELADUS")
@@ -153,13 +159,21 @@ def render(manifest_path: Path, config_path: Path) -> str:
         config.get("reference_radius_m"),
         f"{config_path}: reference_radius_m", 0.0, math.inf,
         lower_inclusive=False)
-    stripe_path = Path(config["stripe_geometry_file"])
-    if not stripe_path.is_absolute():
-        stripe_path = (config_path.parent / stripe_path).resolve()
-    stripe_document = load_json(stripe_path)
-    stripes = stripe_document.get("stripes")
-    if not isinstance(stripes, dict):
-        raise ValueError(f"{stripe_path}: stripes object not found")
+    # Automatic fit exports carry a fully resolved geometry snapshot. Catalog
+    # data are thus not needed by AMPS, and optimized kinematics are not reset
+    # to the checked-in reference configuration. Legacy explicit manifests
+    # retain their original raw-geometry projection path and provenance text.
+    resolved = bool(config.get("_resolved_export_geometry", False))
+    stripe_path = None
+    stripes = {}
+    if config.get("tiger_stripes"):
+        stripe_path = Path(config.get("_stripe_geometry_path") or config["stripe_geometry_file"])
+        if not stripe_path.is_absolute():
+            stripe_path = (config_path.parent / stripe_path).resolve()
+        stripe_document = load_json(stripe_path)
+        stripes = stripe_document.get("stripes")
+        if not isinstance(stripes, dict):
+            raise ValueError(f"{stripe_path}: stripes object not found")
     provenance = json.dumps(manifest.get("fit_provenance", {}),
                             sort_keys=True, separators=(",", ":"))
     lines = [
@@ -169,11 +183,11 @@ def render(manifest_path: Path, config_path: Path) -> str:
         f"! geometry_config={config_path.resolve()}",
         f"! geometry_config_sha256={sha256(config_path)}",
         f"! stripe_geometry={stripe_path}",
-        f"! stripe_geometry_sha256={sha256(stripe_path)}",
+        f"! stripe_geometry_sha256={sha256(stripe_path) if stripe_path else 'not_applicable'}",
         f"! fit_provenance={provenance}",
         f"#begin source_distribution: {name}",
         "schema_version=2",
-        "source_case=tenishev2014_hybrid_8",
+        f"source_case={source_case}",
         "frame=IAU_ENCELADUS",
         f"mode={mode}",
         "source_law=tenishev2010_point",
@@ -184,26 +198,19 @@ def render(manifest_path: Path, config_path: Path) -> str:
 
     jets = config.get("discrete_jets")
     stripe_config = config.get("tiger_stripes")
-    if not isinstance(jets, list) or len(jets) != 8:
-        raise ValueError(f"{config_path}: expected eight discrete_jets")
-    if not isinstance(stripe_config, list) or len(stripe_config) != 7:
-        raise ValueError(f"{config_path}: expected seven tiger_stripes")
+    required = source_ids(source_case)
+    expected_jets = {label[4:] for label in required if label.startswith("jet:")}
+    expected_stripes = {label[7:] for label in required if label.startswith("stripe:")}
+    if not isinstance(jets, list) or not isinstance(stripe_config, list):
+        raise ValueError("source geometry must contain jet and stripe lists")
     if not all(isinstance(item, dict) for item in jets + stripe_config):
-        raise ValueError(f"{config_path}: every source entry must be an object")
+        raise ValueError("every source entry must be an object")
     jet_ids = [item.get("id") for item in jets]
     stripe_ids = [item.get("id") for item in stripe_config]
-    if (not all(isinstance(value, str) for value in jet_ids) or
-            len(set(jet_ids)) != len(jet_ids) or
-            set(jet_ids) != set(JET_IDS)):
-        raise ValueError(
-            f"{config_path}: discrete_jets must contain each canonical jet "
-            "exactly once")
-    if (not all(isinstance(value, str) for value in stripe_ids) or
-            len(set(stripe_ids)) != len(stripe_ids) or
-            set(stripe_ids) != set(STRIPE_IDS)):
-        raise ValueError(
-            f"{config_path}: tiger_stripes must contain each canonical stripe "
-            "exactly once")
+    if len(jet_ids) != len(expected_jets) or set(jet_ids) != expected_jets:
+        raise ValueError("discrete_jets must contain each canonical jet exactly once")
+    if len(stripe_ids) != len(expected_stripes) or set(stripe_ids) != expected_stripes:
+        raise ValueError("tiger_stripes must contain each canonical stripe exactly once")
 
     def add_strengths(label: str) -> None:
         for symbol in sorted(species):
@@ -227,6 +234,8 @@ def render(manifest_path: Path, config_path: Path) -> str:
         if azimuth == 360.0:
             raise ValueError(
                 f"jet {source_id} azimuth_deg: value must be in [0,360)")
+        if source_case == SOLAR and (tilt != 0.0 or azimuth != 0.0):
+            raise ValueError("Portyankina solar sources require local-normal axes")
         speed = finite_nonnegative(jet["bulk_speed_m_s"],
                                    f"jet {source_id} bulk_speed_m_s")
         temperature = bounded_number(jet["temperature_K"],
@@ -251,7 +260,7 @@ def render(manifest_path: Path, config_path: Path) -> str:
         geometry_id = item["geometry_id"]
         if geometry_id != source_id or geometry_id not in stripes:
             raise ValueError(f"unexpected stripe id/geometry {source_id}/{geometry_id}")
-        points = stripes[geometry_id]
+        points = item.get("points_m") if resolved else stripes[geometry_id]
         if not isinstance(points, list) or len(points) < 2:
             raise ValueError(f"stripe {geometry_id} needs at least two vertices")
         speed = finite_nonnegative(item["bulk_speed_m_s"],
@@ -283,8 +292,13 @@ def render(manifest_path: Path, config_path: Path) -> str:
             # direction. Preserve that direction exactly and replace only the
             # radius, placing every emitted stripe node on the declared source
             # surface. This is a geometry mapping, not an altitude offset.
-            scale = reference_radius / radius
-            projected = tuple(scale * value for value in coordinates)
+            if resolved:
+                if abs(radius - reference_radius) > 1.0e-6:
+                    raise ValueError("resolved fitted stripe is not on the AMPS reference sphere")
+                projected = coordinates
+            else:
+                scale = reference_radius / radius
+                projected = tuple(scale * value for value in coordinates)
             if previous == projected:
                 raise ValueError(
                     f"stripe {geometry_id} segment ending at {index} has zero length")

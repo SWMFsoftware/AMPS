@@ -5,10 +5,11 @@ import os
 from pathlib import Path
 
 import numpy as np
-from scipy.optimize import least_squares, lsq_linear
+from scipy.optimize import least_squares, lsq_linear, nnls
 
 from plume_model import (POINT_SOURCE_LAW, Plume, design_matrix, line_source,
                          spherical_source)
+from source_contract import project_vertices
 
 
 SOURCE_CASES = (
@@ -123,10 +124,12 @@ def _materialize_catalog_case(config, catalog, source_case):
 
 
 def load_config(path, source_case=None, jet_catalog_path=None,
-                validation_data_root=None):
+                validation_data_root=None, stripe_surface_mapping=None):
     """Load JSON and resolve one of the three published source configurations."""
     config_path = Path(path).resolve()
     config = json.loads(config_path.read_text())
+    if stripe_surface_mapping is not None:
+        config["stripe_surface_mapping"] = stripe_surface_mapping
     selected_case = source_case or config.get(
         "source_case", "tenishev2014_hybrid_8")
     if selected_case not in SOURCE_CASES:
@@ -157,7 +160,16 @@ def load_config(path, source_case=None, jet_catalog_path=None,
             key = stripe.get("geometry_id")
             if key not in table:
                 raise ValueError("Missing stripe geometry: "+str(key))
-            stripe["points_m"] = table[key]
+            # Preserve legacy paper inputs by default. A campaign explicitly
+            # selecting local vertical projection fits the very same R*x/|x|
+            # vertices later emitted to AMPS; line_source then recomputes the
+            # trapezoidal physical arc-length weights on that geometry.
+            mapping = config.get("stripe_surface_mapping", "legacy_coordinates")
+            if mapping not in ("legacy_coordinates", "local_vertical_to_reference_sphere"):
+                raise ValueError("unsupported stripe_surface_mapping: " + str(mapping))
+            stripe["points_m"] = (
+                project_vertices(table[key], config["reference_radius_m"])
+                if mapping == "local_vertical_to_reference_sphere" else table[key])
         config["_stripe_geometry_path"] = str(geometry_path)
     return config
 
@@ -277,9 +289,33 @@ def solve_amplitudes(matrix, density, sigma):
     scaled = weighted/safe_scale
     fit = lsq_linear(scaled, y/sd, bounds=(0, np.inf),
                      tol=1e-12, max_iter=5000)
+    solution = fit.x
+    method = "scipy_lsq_linear_trf"
+    recovery = {}
     if not fit.success:
-        raise RuntimeError("Amplitude solve failed: "+fit.message)
-    coefficients = fit.x/safe_scale
+        # Separate per-observation nuisance blocks can leave exactly dependent
+        # catalog columns. TRF may stagnate there even though the convex NNLS
+        # problem is well-defined. Recover with an independent active-set
+        # algorithm on exactly the same unit-norm weighted matrix/target.
+        # No regularization, clipping, changed data weight or relaxed source
+        # constraint is introduced. Require the recovered objective not to
+        # exceed the failed iterate (apart from roundoff) and both normalized
+        # KKT residuals <= the original 1e-12 optimization tolerance.
+        recovered, _ = nnls(scaled, y/sd, maxiter=10000)
+        diagnostics = nonnegative_optimality(scaled, recovered, y/sd)
+        previous_loss = float(np.sum((scaled@solution-y/sd)**2))
+        recovered_loss = float(np.sum((scaled@recovered-y/sd)**2))
+        roundoff = 128*np.finfo(float).eps*max(1.0,previous_loss)
+        if (recovered_loss > previous_loss+roundoff or
+            diagnostics["kkt_negative_gradient_over_target_norm"] > 1e-12 or
+            diagnostics["kkt_complementarity_over_solution_target_norm"] > 1e-12):
+            raise RuntimeError("Amplitude solve and independently checked NNLS recovery failed: "+fit.message)
+        recovery={"original_trf_status":int(fit.status),"original_trf_message":str(fit.message),
+                  "original_trf_loss":previous_loss,"recovered_loss":recovered_loss,
+                  "recovery_kkt_tolerance":1e-12}
+        solution = recovered
+        method = "scipy_nnls_recovery_after_trf_failure"
+    coefficients = solution/safe_scale
     coefficients[~observable] = 0.0
     predicted = a @ coefficients
     singular = np.linalg.svd(scaled, compute_uv=False)
@@ -320,7 +356,37 @@ def solve_amplitudes(matrix, density, sigma):
         "unobserved_columns": np.where(~observable)[0],
         "rank_deficient": rank < a.shape[1],
         "fit_warnings": warnings,
+        # These are numerical stationarity diagnostics of the actual scaled
+        # NNLS problem, not uncertainties or evidence of source identifiability.
+        # g=B^T(Bx-z) must be nonnegative with x_i*g_i=0 at a constrained
+        # optimum. Preserve the unscaled visibility norms as well as ranks.
+        "solver_diagnostics": {
+            "method": method, "status": int(fit.status),
+            "iterations": int(fit.nit), "reported_optimality": float(fit.optimality),
+            "column_weighted_norms": scale,
+            **recovery, **nonnegative_optimality(scaled, solution, y/sd)},
     }
+
+
+def nonnegative_optimality(matrix, solution, target):
+    """Report KKT residuals without changing the declared optimization gate.
+
+    Columns supplied here have unit weighted norm. Raw gradient and
+    complementarity retain their actual magnitudes; normalized versions divide
+    by max(1,||z||_2) and max(1,||x||_inf*||z||_2), respectively. A small value
+    does not remove null-space uncertainty or qualify an observational fit.
+    """
+    residual = matrix@solution-target
+    gradient = matrix.T@residual
+    dual = float(np.max(np.maximum(-gradient, 0))) if len(gradient) else 0.0
+    complementarity = float(np.max(np.abs(solution*gradient))) if len(solution) else 0.0
+    target_scale = max(1.0, float(np.linalg.norm(target)))
+    solution_scale = max(1.0, float(np.max(np.abs(solution)))) if len(solution) else 1.0
+    return {"kkt_max_negative_gradient": dual,
+            "kkt_max_abs_complementarity": complementarity,
+            "kkt_negative_gradient_over_target_norm": dual/target_scale,
+            "kkt_complementarity_over_solution_target_norm": complementarity/(solution_scale*target_scale),
+            "kkt_minimum_coefficient": float(np.min(solution)) if len(solution) else 0.0}
 
 
 def fit_density(config, points, density, sigma):

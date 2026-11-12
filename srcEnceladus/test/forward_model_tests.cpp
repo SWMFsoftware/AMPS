@@ -94,6 +94,32 @@ int SourceCase(const std::string& sourceFile) {
   return EXIT_SUCCESS;
 }
 
+int CatalogCase(const std::string& file, std::size_t expected,
+                bool requireSubnormal = false) {
+  FM::SourceDistribution distribution;
+  const auto status=FM::ParseSourceDistribution(file,&distribution);
+  if (!status.success) return Fail(status.message);
+  if (distribution.sources.size()!=expected) return Fail("catalog source count differs");
+  // This decimal is supplied independently by the Python wire fixture.
+  // Require its actual binary64 value, rather than merely accepting a file
+  // after silently rounding the tiny strength down to zero.
+  if (requireSubnormal &&
+      distribution.sources.front().strength.at("H2O") != 3.7637234148938442e-317)
+    return Fail("subnormal source strength was not preserved");
+  std::map<std::string,double> totals;
+  for (const auto& source:distribution.sources) {
+    if (source.geometry!=FM::SourceGeometry::PointJet) return Fail("catalog contains a stripe");
+    for (const auto& item:source.strength) totals[item.first]+=item.second;
+  }
+  for (const auto& item:totals) {
+    if (!(item.second>0) || !std::isfinite(item.second)) return Fail("invalid catalog total");
+    if (distribution.mode==FM::SourceMode::Shape && std::abs(item.second-1)>1e-12)
+      return Fail("catalog shape is not normalized");
+  }
+  Value("catalog_source_count",static_cast<double>(expected));
+  return EXIT_SUCCESS;
+}
+
 int ChemistryCase() {
   const FM::Reaction* photo =
       FM::FindReaction("burger2007.photo.h2o_to_oh_h");
@@ -176,10 +202,25 @@ int SourceLawCase() {
   if (std::abs(static_cast<double>(partial/direct)-probability) > 2.0e-9)
     return Fail("Tenishev inverse CDF disagrees with direct quadrature");
 
-  double rejected = 0.0;
-  status = FM::Tenishev2010FluxMoment3(-0.5, 5.0, &rejected);
-  if (status.success)
-    return Fail("unqualified Tenishev recurrence tail was not rejected");
+  // Tilted Porco sources reach s*c<-2. Keep the same independent defining
+  // integral oracle; extending support must reproduce the physical tail,
+  // rather than weakening the old guard or clipping small source fluxes.
+  for (const auto& pair:std::vector<std::pair<double,double>>{
+      {-0.5,5.0},{-0.95,6.0},{-1.0,8.0}}) {
+    double tail=0,tailQuantile=0;
+    status=FM::Tenishev2010FluxMoment3(pair.first,pair.second,&tail);
+    if (!status.success) return Fail(status.message);
+    const long double independent=DirectFluxIntegral(pair.first,pair.second,16);
+    if (std::abs(tail/static_cast<double>(independent)-1)>2.0e-9)
+      return Fail("negative-tail K3 differs from independent quadrature");
+    for (double probability:{0.0001,0.1,0.73,0.9999}) {
+      status=FM::Tenishev2010SpeedQuantile(pair.first,pair.second,probability,&tailQuantile);
+      if (!status.success) return Fail(status.message);
+      const long double cdf=DirectFluxIntegral(pair.first,pair.second,tailQuantile)/independent;
+      if (std::abs(static_cast<double>(cdf)-probability)>2.0e-9)
+        return Fail("negative-tail inverse CDF differs from independent quadrature");
+    }
+  }
   Value("tenishev_k3_c-0.35_s4.8", moment);
   Value("tenishev_q73_c-0.35_s4.8", quantile);
   return EXIT_SUCCESS;
@@ -442,6 +483,9 @@ int main(int argc, char** argv) {
   if (argc < 2) return Fail("usage: forward_model_tests CASE [arguments]");
   const std::string test = argv[1];
   if (test == "source" && argc == 3) return SourceCase(argv[2]);
+  if (test == "catalog" && argc == 4) return CatalogCase(argv[2],std::stoul(argv[3]));
+  if (test == "catalog_subnormal" && argc == 4)
+    return CatalogCase(argv[2],std::stoul(argv[3]),true);
   if (test == "chemistry" && argc == 2) return ChemistryCase();
   if (test == "source_law" && argc == 2) return SourceLawCase();
   if (test == "numerics" && argc == 3) return NumericsCase(argv[2]);

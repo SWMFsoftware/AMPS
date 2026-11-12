@@ -1,7 +1,7 @@
 # Enceladus fitted-source distribution file, schema 2
 
 This file is the handoff between the standalone fit and the AMPS forward
-model. It carries the complete `tenishev2014_hybrid_8` geometry, gas
+model. It carries a complete explicitly named geometry, gas
 kinematics, and either normalized source shapes or absolute source rates. The
 forward model does not choose a fit strategy or silently substitute a compiled
 source map. A production run must name an exported file explicitly.
@@ -64,15 +64,15 @@ fatal.
 | Key | Required value |
 | --- | --- |
 | `schema_version` | Integer `2`. |
-| `source_case` | `tenishev2014_hybrid_8` in this implementation. Later source cases receive new explicit values and validators. |
+| `source_case` | `tenishev2014_hybrid_8`, `porco2014_98`, `portyankina2022_solar_41`, or `porco2014_98_plus_e17_candidate`; exact membership below. |
 | `frame` | `IAU_ENCELADUS`. Cartesian coordinates are metres in that body-fixed frame. |
 | `mode` | `shape` or `absolute`, described below. |
 | `source_law` | `tenishev2010_point`. Emission events have the production-flux measure described below; this is not the alternative `surface_flux_maxwellian` angular law. |
 | `stripe_surface_mapping` | `local_vertical_to_reference_sphere`. Each published stripe direction is retained and its radius is replaced by the declared reference radius. |
 | `stripe_reference_radius_m` | Finite positive spherical source radius in metres. It must agree with the compiled Enceladus internal boundary within `1e-6 m`. |
 
-The distribution must contain exactly the canonical eight point jets and
-seven stripe components:
+For `tenishev2014_hybrid_8` the distribution must contain exactly the canonical
+eight point jets and seven stripe components:
 
 ```text
 I_baghdad, II_damascus, III_damascus, IV_alexandria,
@@ -80,6 +80,26 @@ V_cairo, VI_baghdad, VII_baghdad, VIII_cairo,
 alexandria, baghdad, cairo, damascus,
 baghdad_extra, cairo_extra, damascus_extra
 ```
+
+For `porco2014_98`, require 98 point jets `porco_001` through `porco_098`.
+For `portyankina2022_solar_41`, require the following 41 Porco identifiers,
+with three-digit zero padding, and local-normal axes (`tilt_deg=azimuth_deg=0`):
+
+```text
+1,4,6,8,9,11,12,13,14,15,16,17,18,21,24,25,27,28,32,35,36,
+37,40,54,60,61,62,63,66,67,68,73,84,85,86,89,90,91,92,93,94
+```
+
+For `porco2014_98_plus_e17_candidate`, require all 98 Porco jets plus the
+point jet `e17_candidate_baghdad`. Its coordinates are supplied by the selected
+fit; its presence is a development hypothesis, not evidence of a new vent.
+Catalog positions, axes, temperature and speed come from the fitted geometry
+snapshot, not a hard-coded substitute. Catalog cases contain no stripes.
+An angular endpoint of 360 degrees is serialized as its equivalent 0-degree
+direction and recorded in `_angle_endpoint_canonicalization`; the fitted
+physical direction is unchanged. Finite representable subnormal strengths
+are retained. Overflow and numerical underflow to zero remain input errors;
+the reader does not impose an arbitrary source-rate floor.
 
 This strict receipt prevents a missing fitted coefficient from being treated
 as a physical zero. Every source must have a `strength.SPECIES` key for every
@@ -202,6 +222,40 @@ must be replaced by the later standalone-fit handoff.
 
 ## Standalone exporter contract
 
+### Automatic fitted-result export (2026-11-11)
+
+`plume_fit.py`, `joint_fitting_study.py` and `co2_fitting_study.py` now export
+sources automatically. Single fits create `<result_stem>_amps_sources/`;
+complete studies create `amps_sources/`. Each contains `index.json`,
+`resolved_geometry.json`, and separate manifest/source-file pairs for every
+target, strategy and supported mode. Absolute strengths are molecules/s;
+shape strengths sum to one per species. The index records hashes, fit-result
+provenance, raw totals and explicit deferrals. No strategy is chosen for a
+forward run. Set `source_distribution_file` to the desired `.in` explicitly;
+for shape mode also provide `total_source_rate.SPECIES_s-1` in that run deck.
+
+The fitting CLI defaults to projecting stripe nodes radially to 252100 m
+**before constructing the design matrix**. The same positions and fitted gas
+kinematics are exported without a second geometry change. To reproduce old
+buried-node fits, select `--stripe-surface-mapping legacy_coordinates
+--no-amps-export`; such results cannot silently acquire projected geometry
+after optimization. The library loader retains its legacy JSON default.
+
+E3/E5 mass-44 results retain their apparent CO2 rates in fit diagnostics.
+Their automatic **absolute** source files are explicitly deferred pending
+the user's physical fragmentation correction. Conditional normalized shape
+files are available. Zero-total vectors are deferred without inventing a
+normalization. Empirical background coefficients are never emitted.
+
+The native speed sampler evaluates negative shifted-Maxwellian tails with a
+positive scaled quadrature rather than cancelling large recurrence terms.
+For `a=s*cos(theta)=-b<-2`, it integrates
+`exp(-s*s)/b^4 * integral z^3 exp(-2*z-(z/b)^2) dz` and inverts that same
+positive CDF. The old analytic branch is retained for `a>=-2`. Independent
+moment/CDF tests cover negative shifts through -8; native startup still
+checks each positive-rate source/species combination. Numerical sampling
+validation is separate from physical validation of the collisionless fit.
+
 `standalone/export_forward_sources.py` is the reference writer. The fitting
 workflow supplies a small JSON manifest:
 
@@ -229,7 +283,8 @@ workflow supplies a small JSON manifest:
 }
 ```
 
-All 15 labels are mandatory for each species, even when their value is zero.
+All canonical labels of the selected case are mandatory for each species,
+even when their value is zero (15, 98, 41 or 99 components respectively).
 Distribution names must match `[A-Za-z0-9][A-Za-z0-9_.-]*`, and species names
 must match `[A-Za-z][A-Za-z0-9_]*`, so generated block names and
 `strength.SPECIES` keys cannot alter the AMPS grammar.

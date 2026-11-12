@@ -17,8 +17,9 @@ from scipy.optimize import lsq_linear, nnls
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 from fitting import (SOURCE_CASES, append_extra_jet, load_config, matrix_from_config,
-                     solve_amplitudes, sources_from_config)  # noqa: E402
+                     solve_amplitudes, sources_from_config, nonnegative_optimality)  # noqa: E402
 from plume_fit import load_density  # noqa: E402
+from fit_source_export import add_export_arguments, export_study  # noqa: E402
 from plume_model import (line_of_sight_design_matrix,
                          outward_ray_design_matrix)  # noqa: E402
 from validation_paths import (PLUME_FIT_RELATIVE,  # noqa: E402
@@ -42,6 +43,26 @@ def json_default(value):
     if isinstance(value, Path):
         return str(value)
     raise TypeError(type(value).__name__)
+
+
+def strict_diagnostic_json(value, key=None):
+    """Keep an exactly singular condition diagnostic without invalid JSON.
+
+    A zero singular value means kappa=+infinity, not failed source physics.
+    JSON has no IEEE infinity literal: encode this one named diagnostic as
+    the string ``Infinity`` (readers may use float()). Every other nonfinite
+    scalar remains a hard error; in particular no invalid rate or residual
+    can disappear into a null or a fabricated finite ceiling.
+    """
+    if isinstance(value, dict):
+        return {k: strict_diagnostic_json(v, k) for k, v in value.items()}
+    if isinstance(value, (list, tuple, np.ndarray)):
+        return [strict_diagnostic_json(v, key) for v in value]
+    if isinstance(value, (float, np.floating)) and not np.isfinite(value):
+        if key == "condition_number_scaled" and value == float("inf"):
+            return "Infinity"
+        raise ValueError("nonfinite scientific output: "+str(key))
+    return value
 
 
 def read_csv(path):
@@ -129,6 +150,9 @@ def bounded_weighted_fit(matrix, values, sigma, signed_last=False):
     relative = singular/singular[0] if len(singular) else singular
     return {
         "solver": solver,
+        "solver_diagnostics": (nonnegative_optimality(scaled_source, solution, projected_target)
+            if signed_last and scaled_source.shape[1] else
+            nonnegative_optimality(diagnostic, fit.x, target) if not signed_last else {}),
         "coefficient": coefficient,
         "prediction": prediction,
         "residual": (prediction-values)/sigma,
@@ -253,6 +277,7 @@ def fit_uvis(column_matrix, tau, sigma_tau, published_column,
         "rank": shape["rank"],
         "effective_rank": shape["effective_rank"],
         "condition_number_scaled": shape["condition_number_scaled"],
+        "solver_diagnostics": shape["solver_diagnostics"],
         "published_peak_column_m2": published_column,
         "published_peak_column_sigma_m2": published_sigma,
         "absolute_scale_fractional_sigma": published_sigma/published_column,
@@ -295,7 +320,8 @@ def density_metric(matrix, vector, density, sigma):
     }
 
 
-def solve_combined_blocks(blocks, balance_by_dataset=True):
+def solve_combined_blocks(blocks, balance_by_dataset=True, labels=None,
+                          separate_backgrounds=False):
     """Fit one nonnegative vector to several observation blocks.
 
     Each block is ``(name, matrix, value, sigma)``.  Dataset balancing
@@ -307,10 +333,15 @@ def solve_combined_blocks(blocks, balance_by_dataset=True):
     if not blocks:
         raise ValueError("At least one dataset block is required")
     columns = np.asarray(blocks[0][1]).shape[1]
+    background = ([i for i, label in enumerate(labels) if label.startswith("background:")]
+                  if labels is not None else [])
+    if separate_backgrounds and (labels is None or len(labels) != columns):
+        raise ValueError("separate observation backgrounds require exact component labels")
+    expanded_columns = columns + (len(blocks)-1)*len(background) if separate_backgrounds else columns
     matrices, values, sigmas, prepared = [], [], [], []
     weighting = {}
     samples = {}
-    for name, matrix, value, sigma in blocks:
+    for block_index, (name, matrix, value, sigma) in enumerate(blocks):
         matrix = np.asarray(matrix, dtype=float)
         value = np.asarray(value, dtype=float)
         sigma = np.asarray(sigma, dtype=float)
@@ -319,7 +350,18 @@ def solve_combined_blocks(blocks, balance_by_dataset=True):
                 or sigma.shape != value.shape or len(value) == 0):
             raise ValueError("Invalid combined-fit block: "+str(name))
         multiplier = np.sqrt(len(value)) if balance_by_dataset else 1.0
-        matrices.append(matrix)
+        # Physical source columns are common during pooled-template training.
+        # Nuisance density/column backgrounds occupy disjoint block columns,
+        # so one encounter's baseline cannot force another's plume amplitude.
+        # Dataset balancing remains exactly sigma*sqrt(N); this is still the
+        # declared common-absolute-vector training, not a bilinear Q_d,f fit.
+        expanded = np.zeros((len(matrix), expanded_columns))
+        expanded[:, :columns] = matrix
+        if separate_backgrounds and block_index:
+            expanded[:, background] = 0.0
+            start = columns+(block_index-1)*len(background)
+            expanded[:, start:start+len(background)] = matrix[:, background]
+        matrices.append(expanded)
         values.append(value)
         sigmas.append(sigma*multiplier)
         prepared.append((name, matrix, value, sigma))
@@ -333,12 +375,28 @@ def solve_combined_blocks(blocks, balance_by_dataset=True):
         samples[name] = len(value)
     fit = solve_amplitudes(
         np.vstack(matrices), np.concatenate(values), np.concatenate(sigmas))
+    expanded_coefficients = np.asarray(fit["coefficients"]).copy()
+    fit["background_model"] = "per_observation" if separate_backgrounds else "shared_legacy"
+    fit["dataset_coefficients"] = {}
+    if separate_backgrounds:
+        fit["expanded_coefficients"] = expanded_coefficients
+        # The public template is source-only; there is no unique shared
+        # background vector. Every actual training prediction has its own
+        # complete vector below, and all expanded coefficients are retained.
+        fit["coefficients"] = expanded_coefficients[:columns].copy()
+        fit["coefficients"][background] = 0.0
+    for block_index, (name, _, _, _) in enumerate(prepared):
+        vector = expanded_coefficients[:columns].copy()
+        if separate_backgrounds and block_index:
+            start = columns+(block_index-1)*len(background)
+            vector[background] = expanded_coefficients[start:start+len(background)]
+        fit["dataset_coefficients"][name] = vector
     fit["datasets"] = list(samples)
     fit["dataset_weighting"] = weighting
     fit["balance_by_dataset"] = bool(balance_by_dataset)
     fit["per_dataset"] = {}
     for name, matrix, value, sigma in prepared:
-        residual = (matrix@fit["coefficients"]-value)/sigma
+        residual = (matrix@fit["dataset_coefficients"][name]-value)/sigma
         chi2 = float(residual@residual)
         fit["per_dataset"][name] = {
             "samples": len(value),
@@ -426,6 +484,7 @@ def fit_rate_for_fixed_source_shape(matrix, values, sigma, labels, shape_vector)
         "rank": fit["rank"],
         "samples": len(values),
         "condition_number_scaled": fit["condition_number_scaled"],
+        "solver_diagnostics": fit["solver_diagnostics"],
     }
 
 
@@ -486,6 +545,9 @@ def main():
         help="plume_fit_v1 directory; overrides the conventional validation-root location")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--quadrature-order", type=int, default=96)
+    parser.add_argument("--pooled-backgrounds", choices=("per_observation", "shared_legacy"),
+                        default="per_observation")
+    add_export_arguments(parser)
     args = parser.parse_args()
     try:
         validation_root = resolve_validation_root(args.validation_data_root)
@@ -498,7 +560,7 @@ def main():
     args.output_dir.mkdir(parents=True)
 
     config = load_config(args.config, args.source_case, args.jet_catalog,
-                         validation_root)
+                         validation_root, args.stripe_surface_mapping)
     if args.extra_jet:
         append_extra_jet(config, args.extra_jet)
     sources, full_labels = sources_from_config(config)
@@ -615,7 +677,8 @@ def main():
         data = density_data[flyby]
         inms_blocks.append((flyby.upper(), density_matrices[flyby],
                             data["y"], data["sigma"]))
-    inms_combined = solve_combined_blocks(inms_blocks)
+    inms_combined = solve_combined_blocks(inms_blocks, labels=full_labels,
+        separate_backgrounds=args.pooled_backgrounds == "per_observation")
     vectors["INMS_combined"] = inms_combined["coefficients"]
 
     uvis_blocks = []
@@ -628,14 +691,16 @@ def main():
         uvis_blocks.append((event, matrix, pseudo_column, pseudo_sigma))
         uvis_full_blocks.append((event, full, pseudo_column, pseudo_sigma))
         uvis_column_diagnostics[event] = diagnostic
-    uvis_combined = solve_combined_blocks(uvis_blocks)
+    uvis_combined = solve_combined_blocks(uvis_blocks, labels=uvis_labels,
+        separate_backgrounds=args.pooled_backgrounds == "per_observation")
     uvis_combined["component_labels"] = uvis_labels
     vectors["UVIS_combined"] = full_vector(
         uvis_labels, uvis_combined["coefficients"], full_labels)
 
     # Existing all-observation balanced diagnostic, now built from the same
     # checked blocks as the two instrument-family combined fits.
-    steady = solve_combined_blocks(inms_blocks+uvis_full_blocks)
+    steady = solve_combined_blocks(inms_blocks+uvis_full_blocks, labels=full_labels,
+        separate_backgrounds=args.pooled_backgrounds == "per_observation")
     vectors["steady_balanced_diagnostic"] = steady["coefficients"]
 
     # Separate spatial-shape inference from epoch-to-epoch normalization.
@@ -727,12 +792,37 @@ def main():
                 "samples": fit["samples"],
             })
 
+    combined_models = {"INMS_combined": (inms_combined, full_labels),
+        "UVIS_combined": (uvis_combined, uvis_labels),
+        "steady_balanced_diagnostic": (steady, full_labels)}
+
+    def target_vector(model_name, target):
+        # A pooled source vector has no common nuisance background. Recover
+        # the independently fitted training background for that target. For
+        # an untrained density target, condition only its nuisance backgrounds
+        # on its data while keeping the source vector/rate frozen. This is a
+        # conditional cross-prediction diagnostic, never a blind prediction.
+        if model_name not in combined_models:
+            return vectors[model_name]
+        fitted, labels = combined_models[model_name]
+        if target in fitted["dataset_coefficients"]:
+            return full_vector(labels, fitted["dataset_coefficients"][target], full_labels)
+        vector = np.asarray(vectors[model_name]).copy()
+        if target in ("E3", "E5"):
+            data = density_data[target.lower()]
+            matrix = density_matrices[target.lower()]
+            bg = [i for i, label in enumerate(full_labels) if label.startswith("background:")]
+            residual = data["y"]-matrix@vector
+            nuisance = bounded_weighted_fit(matrix[:, bg], residual, data["sigma"])
+            vector[bg] = nuisance["coefficient"]
+        return vector
+
     cross_rows = []
     cross = {}
     for model_name, vector in vectors.items():
         cross[model_name] = {}
         for flyby in ("e3", "e5"):
-            metric = density_metric(density_matrices[flyby], vector,
+            metric = density_metric(density_matrices[flyby], target_vector(model_name, flyby.upper()),
                                     density_data[flyby]["y"],
                                     density_data[flyby]["sigma"])
             target = flyby.upper()
@@ -740,9 +830,9 @@ def main():
             cross_rows.append({"model": model_name, "target": target,
                                "metric": "density_chi2_per_sample",
                                "value": metric["chi2_per_sample"]})
-        uv_vector = np.asarray([vector[full_labels.index(label)]
-                                for label in uvis_labels])
         for event in uvis_files:
+            uv_vector = np.asarray([target_vector(model_name, event)[full_labels.index(label)]
+                                    for label in uvis_labels])
             metric = uvis_shape_metric(
                 uvis_matrices[event], uv_vector, uvis_data[event]["tau"],
                 uvis_data[event]["sigma_tau"],
@@ -808,9 +898,9 @@ def main():
                     color="black", elinewidth=.4, label="INMS qualified H2O")
         ax.semilogy(time, density_matrices[flyby]@vectors[flyby.upper()+"_independent"],
                     color=color, lw=2, label="independent fit")
-        ax.semilogy(time, density_matrices[flyby]@vectors["INMS_combined"],
+        ax.semilogy(time, density_matrices[flyby]@target_vector("INMS_combined", flyby.upper()),
                     color="#756bb1", lw=1.5, label="combined INMS fit")
-        ax.semilogy(time, density_matrices[flyby]@vectors["steady_balanced_diagnostic"],
+        ax.semilogy(time, density_matrices[flyby]@target_vector("steady_balanced_diagnostic", flyby.upper()),
                     color="#31a354", lw=1.2, label="all-data combined diagnostic")
         ax.set(title=flyby.upper(), xlabel="Time from flyby reference (s)",
                ylabel="H2O number density (m$^{-3}$)")
@@ -827,7 +917,7 @@ def main():
                 ("steady_balanced_diagnostic", "all-data combined diagnostic",
                  "#31a354", 1.1)):
             physical = np.asarray([
-                vectors[model_name][full_labels.index(label)]
+                target_vector(model_name, event)[full_labels.index(label)]
                 for label in uvis_labels])
             metric = uvis_shape_metric(
                 uvis_matrices[event], physical, data["tau"],
@@ -850,6 +940,50 @@ def main():
     for name, vector in vectors.items():
         totals[name] = float(sum(value for label, value in zip(full_labels, vector)
                                  if label.startswith(("jet:", "stripe:")))*1.0e28)
+    # Retain every observation/strategy profile, including its actual proxy
+    # objective and original native observable. Shared UVIS columns map back
+    # through the independently determined proxy scale/baseline; they are not
+    # a new calibrated sample-by-sample absolute column retrieval.
+    profiles = args.output_dir/"profiles"
+    profiles.mkdir()
+    profile_index = []
+    matrix_archive = {}
+    for target, (matrix, observed, sigma) in target_blocks.items():
+        matrix_archive[target+"__matrix"] = matrix
+        matrix_archive[target+"__observed"] = observed
+        matrix_archive[target+"__sigma"] = sigma
+        is_uvis = target.startswith("uvis_")
+        time = uvis_data[target]["time"] if is_uvis else np.asarray([
+            float(r["time_ca_s"]) for r in density_data[target.lower()]["rows"]])
+        for strategy, result in rate_strategies.items():
+            fitted = result["target_fits"][target]
+            vector = (vectors[independent_keys[target]] if strategy == "independent_each_observation"
+                      else fitted["full_coefficients"])
+            prediction = matrix@vector
+            native_observed = uvis_data[target]["tau"] if is_uvis else observed
+            native_sigma = uvis_data[target]["sigma_tau"] if is_uvis else sigma
+            if is_uvis:
+                diagnostic = uvis_column_diagnostics[target]
+                native_prediction = (uvis_fits[target]["tau_prediction"]
+                    if strategy == "independent_each_observation" else
+                    prediction/diagnostic["tau_to_column_scale_m-2"]+
+                    diagnostic["tau_baseline_from_independent_shape_fit"])
+            else:
+                native_prediction = prediction
+            path = profiles/(strategy+"__"+target+".csv")
+            write_csv(path, [{"time_s": float(t), "objective_observed": float(y),
+                "objective_sigma": float(sd), "objective_model": float(p),
+                "native_observed": float(ny), "native_sigma": float(ns),
+                "native_model": float(npred)} for t,y,sd,p,ny,ns,npred in zip(
+                    time,observed,sigma,prediction,native_observed,native_sigma,native_prediction)])
+            profile_index.append({"strategy": strategy, "target": target,
+                "file": str(path.relative_to(args.output_dir)),
+                "objective_units": "m^-2 column proxy" if is_uvis else "m^-3",
+                "native_units": "optical-depth proxy" if is_uvis else "m^-3",
+                "native_chi2": float(np.sum(((native_prediction-native_observed)/native_sigma)**2)),
+                "source_total_s-1": fitted["total_source_rate_s"]})
+    with (args.output_dir/"design_matrices.npz").open("xb") as stream:
+        np.savez_compressed(stream, **matrix_archive)
     summary = {
         "study": "E3/E5 local-density and 2007/2010 UVIS occultation fitting",
         "config": str(args.config.resolve()),
@@ -859,10 +993,17 @@ def main():
                 Path(__file__).resolve(),
                 ROOT/"fitting.py",
                 ROOT/"plume_fit.py",
-                ROOT/"plume_model.py")
+                ROOT/"plume_model.py", ROOT/"fit_source_export.py",
+                ROOT/"source_contract.py", ROOT/"export_forward_sources.py")
         },
         "source_case": config["source_case"],
         "source_variant": config.get("source_variant", config["source_case"]),
+        "resolved_geometry": config,
+        "stripe_surface_mapping": args.stripe_surface_mapping,
+        "pooled_backgrounds": args.pooled_backgrounds,
+        "profiles": profile_index,
+        "design_matrix_file": "design_matrices.npz",
+        "cross_prediction_policy": "pooled training targets use their own nuisance backgrounds; unseen density targets refit backgrounds only; UVIS diagnostics refit optical scale/baseline",
         "extra_jet": config.get("_extra_jet_path"),
         "extra_jet_sha256": (
             sha256(config["_extra_jet_path"])
@@ -898,7 +1039,8 @@ def main():
         ],
     }
     with (args.output_dir/"study_results.json").open("x", encoding="utf-8") as stream:
-        json.dump(summary, stream, indent=2, default=json_default, allow_nan=False)
+        json.dump(strict_diagnostic_json(summary), stream, indent=2,
+                  default=json_default, allow_nan=False)
         stream.write("\n")
 
     report = [
@@ -1070,6 +1212,8 @@ def main():
                "`component_amplitudes.csv`, and `study_results.json` for the "
                "full diagnostics.", ""]
     (args.output_dir/"fitting_study.md").write_text("\n".join(report), encoding="utf-8")
+    if not args.no_amps_export:
+        export_study(summary, config, args.output_dir, "H2O")
     print(json.dumps({"output": str(args.output_dir),
                       "total_source_rate_s": totals,
                       "quadrature_convergence": convergence},

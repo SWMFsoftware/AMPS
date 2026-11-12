@@ -203,6 +203,7 @@ def main() -> int:
 
     standalone = run([sys.executable, "-m", "unittest",
                       "standalone.tests.test_export_forward_sources",
+                      "standalone.tests.test_fit_source_export",
                       "standalone.tests.test_export_forward_observations"])
     outcomes.append(("U00_exporter", standalone.returncode == 0,
                      standalone.stdout + standalone.stderr))
@@ -246,6 +247,10 @@ def main() -> int:
                 wrong_geometry_result.returncode != 0 and
                 "must use geometry=" in wrong_geometry_text,
                 wrong_geometry_text))
+            catalog = run([sys.executable, str(TEST/"run_source_export_roundtrip.py"),
+                           "--executable", str(binary)])
+            outcomes.append(("U03c_catalog_source_geometry", catalog.returncode == 0,
+                             catalog.stdout+catalog.stderr))
             runtime_input = temp / "amps.in"
             write_input(runtime_input, source.name)
             transport_input = temp / "transport_only.in"

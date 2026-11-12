@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import numpy as np
 from fitting import SOURCE_CASES, append_extra_jet, fit_density, load_config
+from fit_source_export import add_export_arguments, export_single
 from validation_paths import (PLUME_FIT_RELATIVE,
                               add_validation_root_argument,
                               resolve_validation_root)
@@ -73,6 +74,7 @@ def main():
     parser.add_argument('--observations', help='Qualified density CSV; never L1A counts')
     parser.add_argument('--metadata', help='Observation provenance/units/response JSON')
     parser.add_argument('--output', required=True, help='New result JSON; existing files are refused')
+    add_export_arguments(parser)
     args = parser.parse_args()
     try:
         validation_root = resolve_validation_root(args.validation_data_root)
@@ -89,7 +91,7 @@ def main():
         args.observations = Path(args.observations).expanduser().resolve()
         args.metadata = Path(args.metadata).expanduser().resolve()
         config = load_config(args.config, args.source_case, args.jet_catalog,
-                             validation_root)
+                             validation_root, args.stripe_surface_mapping)
         if args.extra_jet:
             append_extra_jet(config, args.extra_jet)
         x, y, sigma, metadata = load_density(args.observations, args.metadata)
@@ -113,6 +115,8 @@ def main():
         with Path(args.output).open('x') as f:
             json.dump(result, f, default=json_value, indent=2, allow_nan=False)
             f.write('\n')
+        if not args.no_amps_export:
+            export_single(result, args.output, (args.flyby or Path(args.observations).stem).upper())
     except (ValueError, KeyError, OSError, RuntimeError, ArithmeticError) as exc:
         parser.exit(2, 'ERROR: '+str(exc)+'\n')
 

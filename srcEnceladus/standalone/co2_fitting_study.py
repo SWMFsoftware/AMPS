@@ -24,10 +24,13 @@ from fitting import (SOURCE_CASES, append_extra_jet, load_config,  # noqa: E402
                      solve_amplitudes, sources_from_config)
 from joint_fitting_study import (fit_rate_for_fixed_source_shape,  # noqa: E402
                                  json_default, normalized_source_shape,
-                                 solve_combined_blocks)
+                                 solve_combined_blocks, strict_diagnostic_json)
 from validation_paths import (CO2_FIT_RELATIVE,  # noqa: E402
                               add_validation_root_argument,
                               resolve_input_path, resolve_validation_root)
+
+
+from fit_source_export import add_export_arguments, export_study
 
 
 CO2_MASS_KG = 44.0095 * 1.66053906660e-27
@@ -95,6 +98,7 @@ def direct_fit_result(fit: dict[str, object], labels: list[str], samples: int) -
         "rank": fit["rank"],
         "samples": samples,
         "condition_number_scaled": fit["condition_number_scaled"],
+        "solver_diagnostics": fit["solver_diagnostics"],
     }
 
 
@@ -162,6 +166,9 @@ def main() -> int:
         help="co2_fit_v1 directory; overrides the conventional validation-root location")
     parser.add_argument("--h2o-study-result", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--pooled-backgrounds", choices=("per_observation", "shared_legacy"),
+                        default="per_observation")
+    add_export_arguments(parser)
     args = parser.parse_args()
     try:
         validation_root = resolve_validation_root(args.validation_data_root)
@@ -175,7 +182,7 @@ def main() -> int:
     args.output_dir.mkdir(parents=True)
 
     config = load_config(args.config, args.source_case, args.jet_catalog,
-                         validation_root)
+                         validation_root, args.stripe_surface_mapping)
     config = copy.deepcopy(config)
     if args.extra_jet:
         append_extra_jet(config, args.extra_jet)
@@ -212,7 +219,8 @@ def main() -> int:
     for strategy, (description, training) in combined_definitions.items():
         blocks = [(flyby, matrices[flyby], data[flyby]["density"],
                    data[flyby]["sigma"]) for flyby in training]
-        combined = solve_combined_blocks(blocks, balance_by_dataset=True)
+        combined = solve_combined_blocks(blocks, balance_by_dataset=True, labels=labels,
+            separate_backgrounds=args.pooled_backgrounds == "per_observation")
         combined_fits[strategy] = combined
         rate_strategies[strategy] = {
             "description": (
@@ -313,10 +321,41 @@ def main() -> int:
     fig.savefig(args.output_dir / "co2_fit_profiles.pdf")
     plt.close(fig)
 
+    profiles = args.output_dir/"profiles"
+    profiles.mkdir()
+    profile_index = []
+    matrix_archive = {}
+    for flyby in FLYBYS:
+        matrix_archive[flyby+"__matrix"] = matrices[flyby]
+        matrix_archive[flyby+"__observed"] = data[flyby]["density"]
+        matrix_archive[flyby+"__sigma"] = data[flyby]["sigma"]
+        for strategy, result in rate_strategies.items():
+            fit = result["target_fits"][flyby]
+            prediction = matrices[flyby]@fit["full_coefficients"]
+            path = profiles/(strategy+"__"+flyby+".csv")
+            write_csv(path, [{"time_s": float(t), "observed_density_m3": float(y),
+                "sigma_m3": float(sd), "model_density_m3": float(p)}
+                for t,y,sd,p in zip(data[flyby]["time"],data[flyby]["density"],data[flyby]["sigma"],prediction)])
+            profile_index.append({"strategy": strategy, "target": flyby,
+                "file": str(path.relative_to(args.output_dir)),
+                "interpretation": "apparent_CO2" if flyby in ("E3", "E5") else "CO2"})
+    with (args.output_dir/"design_matrices.npz").open("xb") as stream:
+        np.savez_compressed(stream, **matrix_archive)
     summary = {
         "study": "E3/E5/E14/E17/E18 CO2 source fitting and H2O composition transfer",
         "source_case": args.source_case,
         "source_variant": source_variant,
+        "resolved_geometry": config,
+        "software_sha256": {str(path): sha256(path) for path in (
+            Path(__file__).resolve(), ROOT/"fitting.py", ROOT/"plume_model.py",
+            ROOT/"joint_fitting_study.py", ROOT/"fit_source_export.py",
+            ROOT/"source_contract.py", ROOT/"export_forward_sources.py")},
+        "input_sha256": {str(path): sha256(path) for path in
+            sorted(args.co2_data_root.glob("*.csv"))},
+        "stripe_surface_mapping": args.stripe_surface_mapping,
+        "pooled_backgrounds": args.pooled_backgrounds,
+        "profiles": profile_index,
+        "design_matrix_file": "design_matrices.npz",
         "extra_jet": config.get("_extra_jet_path"),
         "extra_jet_sha256": (
             sha256(config["_extra_jet_path"])
@@ -344,7 +383,8 @@ def main() -> int:
         ],
     }
     with (args.output_dir / "study_results.json").open("x", encoding="utf-8") as stream:
-        json.dump(summary, stream, indent=2, default=json_default, allow_nan=False)
+        json.dump(strict_diagnostic_json(summary), stream, indent=2,
+                  default=json_default, allow_nan=False)
         stream.write("\n")
 
     report = [
@@ -379,6 +419,8 @@ def main() -> int:
                "`h2o_co2_source_rate_ratios.csv`, `h2o_proxy_source_rates.csv`, "
                "and `study_results.json`.", ""]
     (args.output_dir / "fitting_study.md").write_text("\n".join(report), encoding="utf-8")
+    if not args.no_amps_export:
+        export_study(summary, config, args.output_dir, "CO2")
     print(json.dumps({"output": str(args.output_dir), "source_case": source_variant,
                       "ratios": ratios}, indent=2))
     return 0

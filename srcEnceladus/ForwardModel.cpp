@@ -3,6 +3,7 @@
 #include "../src/general/input/amps_input.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cerrno>
 #include <cmath>
@@ -42,7 +43,16 @@ bool ParseFinite(const std::string& text, double* output) {
   errno = 0;
   char* end = nullptr;
   const double value = std::strtod(scalar.c_str(), &end);
-  if (errno == ERANGE || end == scalar.c_str() || *end != '\0' ||
+  // A fitted nonnegative coefficient may be a representable subnormal.
+  // strtod is allowed to set ERANGE for gradual underflow even when it
+  // returns that finite, nonzero value. Preserve it instead of deleting a
+  // source coefficient or imposing an arbitrary rate cutoff. Overflow and
+  // underflow all the way to zero remain typed input errors; normal-range
+  // ERANGE results are also rejected. This changes representation handling,
+  // not the finite/nonnegative physical constraint on a source strength.
+  const bool lostRange = errno == ERANGE &&
+      (value == 0.0 || std::abs(value) >= std::numeric_limits<double>::min());
+  if (lostRange || end == scalar.c_str() || *end != '\0' ||
       !std::isfinite(value)) return false;
   *output = value;
   return true;
@@ -213,6 +223,26 @@ const std::vector<std::string>& HybridSourceIds() {
       "V_cairo", "VI_baghdad", "VII_baghdad", "VIII_cairo",
       "alexandria", "baghdad", "cairo", "damascus", "baghdad_extra",
       "cairo_extra", "damascus_extra"};
+  return ids;
+}
+
+std::vector<std::string> CanonicalSourceIds(const std::string& sourceCase) {
+  if (sourceCase == "tenishev2014_hybrid_8") return HybridSourceIds();
+  // Published Portyankina 2010 positive-coefficient selection, expressed in
+  // the one-based Porco Table-2 convention. It selects a basis; no published
+  // coefficient is substituted for the fitted source strength in the receipt.
+  const std::set<int> solar = {1,4,6,8,9,11,12,13,14,15,16,17,18,21,24,25,
+      27,28,32,35,36,37,40,54,60,61,62,63,66,67,68,73,84,85,86,89,90,91,92,93,94};
+  const bool selectedSolar = sourceCase == "portyankina2022_solar_41";
+  const bool candidate = sourceCase == "porco2014_98_plus_e17_candidate";
+  if (!selectedSolar && !candidate && sourceCase != "porco2014_98") return {};
+  std::vector<std::string> ids;
+  for (int i=1;i<=98;++i) {
+    if (selectedSolar && solar.count(i)==0) continue;
+    const std::string number=std::to_string(i);
+    ids.push_back("porco_"+std::string(3-number.size(),'0')+number);
+  }
+  if (candidate) ids.push_back("e17_candidate_baghdad");
   return ids;
 }
 
@@ -627,14 +657,15 @@ Status ParseSourceDistribution(const std::string& file,
   if (mode == "shape") candidate.mode = SourceMode::Shape;
   else if (mode == "absolute") candidate.mode = SourceMode::Absolute;
   else return InputError(*settings.at("mode"), "mode must be shape or absolute");
-  if (candidate.sourceCase != "tenishev2014_hybrid_8")
+  const std::vector<std::string> required = CanonicalSourceIds(candidate.sourceCase);
+  if (required.empty())
     return InputError(*settings.at("source_case"),
-        "this implementation supports only tenishev2014_hybrid_8");
+        "unsupported source_case; expected hybrid 8+7, Porco 98, solar 41, or explicit E17-candidate 99");
   if (candidate.frame != "IAU_ENCELADUS")
     return InputError(*settings.at("frame"), "frame must be IAU_ENCELADUS");
   if (candidate.sourceLaw != "tenishev2010_point")
     return InputError(*settings.at("source_law"),
-        "tenishev2014_hybrid_8 requires source_law=tenishev2010_point");
+        "source distributions require source_law=tenishev2010_point");
 
   std::set<std::string> ids;
   for (const AMPS::Input::Block& child : block.blocks) {
@@ -647,22 +678,28 @@ Status ParseSourceDistribution(const std::string& file,
       return BlockError(child, "duplicate source id '" + source.id + "'");
     candidate.sources.push_back(std::move(source));
   }
-  const std::vector<std::string>& required = HybridSourceIds();
+  const bool hybrid = candidate.sourceCase == "tenishev2014_hybrid_8";
   if (candidate.sources.size() != required.size())
     return BlockError(block,
-        "tenishev2014_hybrid_8 requires exactly 8 jets and 7 stripes");
+        candidate.sourceCase+" requires exactly "+std::to_string(required.size())+" canonical sources");
   for (const std::string& id : required)
     if (ids.count(id) == 0)
-      return BlockError(block, "missing canonical hybrid source '" + id + "'");
+      return BlockError(block, "missing canonical source '" + id + "'");
   for (const Source& source : candidate.sources) {
     const auto found = std::find(required.begin(), required.end(), source.id);
     const bool requiresPointJet =
-        std::distance(required.begin(), found) < 8;
+        !hybrid || std::distance(required.begin(), found) < 8;
     const SourceGeometry requiredGeometry = requiresPointJet
         ? SourceGeometry::PointJet : SourceGeometry::PolylineStripe;
     if (source.geometry != requiredGeometry)
-      return BlockError(block, "canonical hybrid source '" + source.id +
+      return BlockError(block, "canonical source '" + source.id +
           "' must use geometry=" + Name(requiredGeometry));
+    // This named 41-source hypothesis uses local-normal gas axes, rather
+    // than the particulate tilts in the parent catalog. An altered direction
+    // requires a distinct physical case instead of silently reusing its name.
+    if (candidate.sourceCase == "portyankina2022_solar_41" &&
+        (source.tiltDeg != 0.0 || source.azimuthDeg != 0.0))
+      return BlockError(block, "solar-41 sources require local-normal axes");
   }
 
   std::set<std::string> species;
@@ -1376,6 +1413,45 @@ Status StripeNodeWeights(const Source& source, std::vector<double>* weights) {
 
 namespace {
 
+long double NegativeTailIntegral(long double b, long double upper) {
+  // For a=s*c=-b<-2, write K3=exp(-s^2)/b^4 * I(b), where
+  // I(b)=integral_0^infinity z^3 exp[-2z-(z/b)^2] dz and z=b*t.
+  // All summands are positive: this avoids cancellation between erfc-based
+  // moments for the tilted Porco sources. z=30 leaves less than 1e-20 of
+  // the normalized tail for b>=2. A fixed 64-point Gauss-Legendre rule on
+  // [0,upper] is independently checked against direct Simpson/SciPy integrals.
+  // Coordinates/speeds are dimensionless here; the caller restores SI speed.
+  struct Rule { std::array<long double,64> x,w; };
+  static const Rule rule=[] {
+    Rule q{};
+    const long double pi=std::acos(-1.0L);
+    for (int i=0;i<32;++i) {
+      long double x=std::cos(pi*(i+0.75L)/64.5L), derivative=0.0L;
+      for (int step=0;step<64;++step) {
+        long double p0=1.0L,p1=x;
+        for (int n=2;n<=64;++n) {
+          const long double next=((2*n-1)*x*p1-(n-1)*p0)/n;
+          p0=p1;p1=next;
+        }
+        derivative=64*(x*p1-p0)/(x*x-1);
+        const long double delta=p1/derivative;
+        x-=delta;
+        if (std::abs(delta)<4*std::numeric_limits<long double>::epsilon()) break;
+      }
+      q.x[i]=-x;q.x[63-i]=x;
+      q.w[i]=q.w[63-i]=2/((1-x*x)*derivative*derivative);
+    }
+    return q;
+  }();
+  const long double limit=std::min(30.0L,std::max(0.0L,upper));
+  long double total=0.0L;
+  for (int i=0;i<64;++i) {
+    const long double z=0.5L*limit*(rule.x[i]+1);
+    total+=rule.w[i]*z*z*z*std::exp(-2*z-(z/b)*(z/b));
+  }
+  return 0.5L*limit*total;
+}
+
 // Return J_3(a)=integral_0^infinity t^3 exp[-(t-a)^2] dt.  The recurrence
 // follows integration by parts.  Long-double intermediates retain accuracy
 // down to a=-2, the documented recurrence boundary also used by the
@@ -1412,11 +1488,10 @@ Status Tenishev2010FluxMoment3(double directionCosine, double speedRatio,
   const long double c = directionCosine;
   const long double s = speedRatio;
   const long double a = s*c;
-  if (a < -2.0L)
-    return Status::Error(
-        "Tenishev recurrence is qualified only for speed_ratio*direction_cosine>=-2");
-  const long double value =
-      std::exp(-s*s*(1.0L-c*c))*ShiftedMoment3Total(a);
+  const long double b=-a;
+  const long double value = a < -2.0L
+      ? std::exp(-s*s)*NegativeTailIntegral(b,30)/(b*b*b*b)
+      : std::exp(-s*s*(1.0L-c*c))*ShiftedMoment3Total(a);
   *moment = static_cast<double>(value);
   if (!std::isfinite(*moment) || !(*moment > 0.0))
     return Status::Error("Tenishev flux moment is non-finite or non-positive");
@@ -1436,9 +1511,24 @@ Status Tenishev2010SpeedQuantile(double directionCosine, double speedRatio,
         "Tenishev quantile requires c in [-1,1], finite s>=0, and p in (0,1)");
   const long double a = static_cast<long double>(speedRatio) *
                         static_cast<long double>(directionCosine);
-  if (a < -2.0L)
-    return Status::Error(
-        "Tenishev recurrence is qualified only for speed_ratio*direction_cosine>=-2");
+  if (a < -2.0L) {
+    // The common exp(-s^2)/b^4 cancels in the conditional CDF. Invert the
+    // positive scaled integral, then return t=z/b. No tiny probability is
+    // converted to a zero speed or discarded emission direction.
+    const long double b=-a, total=NegativeTailIntegral(b,30);
+    if (!(total>0) || !std::isfinite(total))
+      return Status::Error("Tenishev negative-tail normalization is invalid");
+    long double lower=0,upper=30;
+    const long double target=probability*total;
+    for (int iteration=0;iteration<96;++iteration) {
+      const long double middle=0.5L*(lower+upper);
+      if (NegativeTailIntegral(b,middle)<target) lower=middle;
+      else upper=middle;
+    }
+    *speedOverThermal=static_cast<double>(0.5L*(lower+upper)/b);
+    return std::isfinite(*speedOverThermal) && *speedOverThermal>0
+        ? Status::Ok() : Status::Error("Tenishev negative-tail quantile is invalid");
+  }
   const long double total = ShiftedMoment3Total(a);
   if (!(total > 0.0L) || !std::isfinite(total))
     return Status::Error("Tenishev conditional speed normalization is invalid");

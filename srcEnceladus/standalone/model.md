@@ -1118,6 +1118,14 @@ cannot support free kinematics for many sources without strong external priors.
 ### Combined fits and dataset balancing
 
 `solve_combined_blocks()` fits one nonnegative vector to multiple datasets.
+The current study CLI defaults to independent nuisance backgrounds: write
+the prediction as `A_source,d q_source + B_d b_d`, with one shared physical
+source vector and a disjoint background vector for every dataset. The stacked
+matrix is block diagonal only in its background columns. In the equations
+below `A_d q` denotes this expanded design. The source template excludes
+background entries; stored `dataset_coefficients` supply each actual training
+prediction. The library's historical shared-background mode remains available
+for explicit reproduction and is labelled `shared_legacy`, not the CLI default.
 When balancing is enabled, every point uncertainty in dataset `d` is multiplied
 by `sqrt(N_d)`. The minimized objective becomes
 
@@ -1141,6 +1149,23 @@ stellar occultation solely because it has more rows. The result records the
 raw chi-square, chi-square per sample, and balanced contribution for each
 dataset. This balanced objective is a diagnostic, not a formal joint
 likelihood across heterogeneous instruments.
+
+If TRF stagnates, active-set NNLS may recover the same scaled problem only
+when its loss does not exceed the failed iterate beyond floating-point
+roundoff and its normalized negative-gradient/complementarity residuals are
+at most 1e-12. Both algorithms' diagnostics are retained. This is numerical
+recovery of a convex problem, not a prior, regularization or identification
+of weakly observed source amplitudes. A zero singular value is reported in
+strict JSON as the named condition diagnostic string `Infinity`; nonfinite
+physical coefficients and residuals remain errors.
+
+Cross-basis nesting requires identical observations, uncertainties and
+pre-existing matrix columns. The absolute UVIS column proxy is constructed
+from a basis-dependent independently fitted optical baseline and scale.
+Consequently the 98/99 pooled UVIS/all-data problems can have different proxy
+targets and weights. Compare the saved `design_matrices.npz` arrays before
+using a nested-objective inequality. The campaign report performs that audit;
+post-normalization target-refit scores are another distinct diagnostic.
 
 The study calculates:
 

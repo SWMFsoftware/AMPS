@@ -13,7 +13,7 @@ toolchain:
 python3 test/run_tests.py --cxx clang++
 ```
 
-The same complete 42-result receipt is registered in the repository-wide
+The same complete 43-result receipt is registered in the repository-wide
 procedure and uses its configured C++ compiler:
 
 ```bash
@@ -26,7 +26,7 @@ python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
   --test APPLICATION-ENCELADUS-E3-001
 ```
 
-The first owner imports the 42 dependency-light checks below. The native owner
+The first owner imports the 43 dependency-light checks below. The native owner
 performs a clean configured AMPS build and imports all six startup gates. The
 E3 owner retains all 13 long-run identities but defaults to explicit `SKIP`;
 enable the optional `enceladus-e3` machine capability only on a host approved
@@ -50,6 +50,22 @@ python3 test/run_case.py U08_validation
 
 `python3 test/run_case.py --help` lists all exporter, compile, parser,
 chemistry, source-law, numerics, and negative-validation cases.
+
+The exporter owner also checks automatic per-fit source snapshots, exact
+nonuniform and zero strengths for all four geometries, exclusion of nuisance
+backgrounds, deferred apparent-CO2 absolute exports, preservation of fitted
+kinematics, and independent per-observation background recovery. The new
+`U03c_catalog_source_geometry` runs 98-, 41- and 99-source absolute/shape
+files through the actual dependency-light C++ reader, then corrupts source
+membership and requires rejection. These are synthetic contract fixtures;
+real catalog coordinates and source-rate inference require campaign evidence.
+The same case requires exact preservation of a finite subnormal binary64
+strength and rejection of overflow and underflow to zero; acceptance alone
+cannot hide an accidental zeroing of a tiny fitted coefficient.
+`U06_source_law` additionally compares negative shifted-Maxwellian moments
+and quantiles against independent integration through shift -8. Its original
+analytic-range references and tolerances are retained. No fitting result is
+used as a numerical expected value.
 
 Select the application through the repository workflow (never by editing
 `.amps.conf`), confirm no Mars2 AMPS build/run is active, remove only the

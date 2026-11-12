@@ -1,8 +1,123 @@
 # Enceladus forward-model status
 
-Last updated: 2026-11-01 (America/Chicago)
+Last updated: 2026-11-11 (America/Chicago)
 
-## Current outcome — E7 density and E21 native-count observations
+## Current outcome — automatic fitted sources and manuscript campaign
+
+The complete requested manuscript fitting matrix has been repeated at:
+
+`/data/vtenishe/cassini_validation_data/studies/fitting_compain_111126`
+
+It contains 124 target fits: 48 base H2O/UVIS fits, 45 base CO2 fits and 31
+complete 99-source candidate refits. All four source geometries are supported
+by both automatic standalone export and the actual AMPS reader: hybrid 8+7,
+Porco 98, Portyankina 41 and explicit Porco 99. The E17 search, window and
+direction sensitivities, component ablations, cross predictions, quadrature
+checks, geometry/candidate comparisons and orbital-proxy analyses were also
+executed. The new E17 search selected the same coordinates as the historical
+candidate; this remains a selected development hypothesis, not a vent discovery.
+
+### Scientific decisions and export behavior
+
+- Stripe vertices are projected radially to the 252100 m surface **before**
+  fitting; the exporter serializes the same vertices and fitted kinematics.
+  Library loading of old JSON is unchanged; the CLI's new projected default
+  and explicit legacy/no-export options are documented in the standalone README.
+- Pooled template training has separate nuisance backgrounds for every
+  observation. Only physical source amplitudes are shared. Normalization and
+  target-specific rate/background refits remain the manuscript's template
+  procedure, not a newly introduced bilinear shared-shape inversion.
+- `plume_fit.py`, `joint_fitting_study.py` and `co2_fitting_study.py` export
+  automatically via `fit_source_export.py`. Each strategy/target receives its
+  own manifest, complete canonical vector, resolved geometry, hash index and
+  schema-2 source files. Exact zero components remain present; empirical
+  backgrounds are excluded. No preferred strategy or new default forward
+  source distribution is selected automatically.
+- There are 124 conditional shape and 100 absolute files (224 total). The
+  24 E3/E5 apparent-CO2 absolute exports are explicitly deferred as requested;
+  no physical fragmentation factor in [2,5] was chosen. Apparent totals and
+  conditional shape files remain available. Single-profile E3/E5 CO2 export
+  follows the same deferral rule.
+- The catalog's 360-degree azimuth endpoint is recorded as its identical
+  0-degree direction in the half-open native syntax. Finite representable
+  subnormal strengths are preserved, including the E18 candidate-fit tail
+  near 3.8e-317. Overflow and underflow to zero remain fatal input errors.
+
+### Numerical implementation and interpretation
+
+Tilted catalog sources require negative shifted-Maxwellian speed tails.
+The old analytic branch is retained for `a=s*cos(theta)>=-2`; for more
+negative shifts, positive scaled Gauss-Legendre quadrature and inverse-CDF
+bisection avoid recurrence cancellation. Independent moment/quantile tests
+extend through shift -8 without changing the old numerical references.
+
+The 98-source CO2 E3/E5-pooled TRF solve stagnated. Recovery solves the exact
+same scaled NNLS problem with an independent active-set method, requires
+objective nonincrease beyond roundoff and normalized dual/complementarity
+KKT residuals <=1e-12, and retains the original failure and recovery losses.
+No source prior, regularization, data reweighting or gate relaxation was added.
+An exactly singular condition diagnostic is encoded as the strict-JSON string
+`Infinity`; nonfinite rates and residuals are errors.
+
+The report separates actual pooled training losses from post-normalization
+target-refit scores. Its input-array audit also shows that independently
+calibrated UVIS column proxies differ between 98/99 bases, so their pooled
+objectives are not the same nested problem. One returned H2O INMS-only
+99-source TRF result has normalized KKT residuals about 8.6e-10, above the
+report's 1e-12 stationarity audit. That numerical limitation is reported, not
+silently refitted or declared qualified. Large independent catalog totals
+remain inverse-problem artifacts rather than physical production estimates.
+
+### Validation evidence
+
+| Check | Final result |
+| --- | --- |
+| Standalone mathematical/data/export tests | 62 PASS, no FAIL/SKIP |
+| Global harness + Enceladus application | 56 cases / 2 suites PASS, no FAIL/SKIP/ERROR |
+| Clean native Enceladus build | PASS, required root/idle/clean/configure/-j16 workflow |
+| Native startup gates | 6 PASS |
+| Every generated source through production validation | 224 PASS |
+| Actual one-rank H2O/CO2 runs, four geometries | 8 PASS; 20 iterations, 200 injections, zero ledger residual each |
+| Generated global catalog / manual snapshot | PASS; 56 suites / 1193 cases |
+
+The final source-only catalog case additionally requires exact subnormal
+preservation and rejection of range-losing literals. The global registration
+adds `ENCELADUS-U03C-CATALOG-SOURCE-GEOMETRY`; the application-independent
+receipt has 43 stable results. Native smoke runs validate source integration,
+not statistically converged plume physics or observational agreement.
+
+Local detailed evidence is under
+`test_output/enceladus-fitting-111126/`. Final native build logs are in
+`native-final-build/`; startup is `native-startup-final/test_receipt.json`;
+all exports are in `native-all-exports-final/receipt.json`; evolving runs are
+`native-catalog-final/<case>/<species>/receipt.json`. The final global receipt
+is `global/run-20261111T073812Z-235/amps-core-tests.json`. Copies, original
+failed attempts, commands, input products and software snapshots are retained
+inside the external campaign's `validation/`, `execution/` and `provenance/`.
+The old 19 GiB application test-output directory was moved only temporarily
+during source-tree generation and restored intact. Git remained read-only;
+unrelated user changes and site configuration were preserved.
+
+### Delivered report and numerical products
+
+The Word report, PDF preview, HTML, eight comparison PNG/PDF pairs and full
+tables are in `<campaign>/report/`. The main document is
+`Enceladus_fitting_campaign_111126.docx`. Tables include all 124 target rates,
+7843 component rows including zeros, 20 actual pooled losses/KKT diagnostics,
+224 export paths/hashes, and all 93 comparisons with rounded manuscript
+Tables 2–5. Source files are in `<campaign>/{h2o,co2}/<case>/amps_sources/`.
+`FITTING_CAMPAIGN_111126.md` and the standalone README give exact commands,
+case definitions, software changes, provenance and reproduction instructions.
+
+Known inherited limits are retained: steady collisionless/gravity-free
+physics, digitized outbound E3/E5 water, common calibration systematics,
+non-identifiable source partitions, approximate 2007 rays and 308 outward
+2010 rays beginning at the tangent instead of the actual observer. This
+campaign does not claim to repair those observation operators or qualify a
+new long AMPS flyby simulation. The checked-in equal-rate startup sources and
+default runtime deck are unchanged.
+
+## Previous outcome — E7 density and E21 native-count observations
 
 The runtime observation mechanism now distinguishes three contracts without
 mixing units:
