@@ -773,13 +773,24 @@ if (ptr!=-1) {
     case _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__FUNSTION_CALCULATED_NORMAL_DIRECTION_:
       exit(__LINE__,__FILE__,"Error: not implemented");
 
-    case _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__CONSTANT_DIRECTION_ORIGIN_:
-      lParallelTemperatureSampleDirection[0]=node->xmin[0]+(i+0.5)*(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_;
-      lParallelTemperatureSampleDirection[1]=node->xmin[1]+(j+0.5)*(node->xmax[1]-node->xmin[1])/_BLOCK_CELLS_Y_;
-      lParallelTemperatureSampleDirection[2]=node->xmin[2]+(k+0.5)*(node->xmax[2]-node->xmin[2])/_BLOCK_CELLS_Z_;
+    case _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__CONSTANT_DIRECTION_ORIGIN_: {
+      // The parallel direction points from the origin to the cell centre.
+      // node->xmin/xmax hold only _MESH_DIMENSION_ coordinates, so the
+      // inactive Cartesian components of the centre are zero: in DIM1 the
+      // direction is radial. Indexing them up to 2 in DIM1/DIM2 read the
+      // neighbouring node members and padding, which made the parallel and
+      // tangential temperatures depend on memory contents.
+      const int cellIndex[3]={i,j,k};
+      const int blockCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+
+      for (int iDir=0;iDir<3;iDir++) {
+        lParallelTemperatureSampleDirection[iDir]=(iDir<_MESH_DIMENSION_) ?
+          node->xmin[iDir]+(cellIndex[iDir]+0.5)*(node->xmax[iDir]-node->xmin[iDir])/blockCells[iDir] : 0.0;
+      }
 
       Vector3D::Normalize(lParallelTemperatureSampleDirection);
       break;
+    }
 
     default:
       exit(__LINE__,__FILE__,"Error: the option is not implemented");
