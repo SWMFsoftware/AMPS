@@ -1,7 +1,7 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-11, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/chain_onejob.sh (on Voyager: /data001/highresolu_vt/cops_output/jobs/chain_onejob.sh)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 9de892e918dd87c79e4309de18634e759d283417916624017653953c5f495d41
+# SHA256 of the run copy = SHA256 of this file without these header lines: 76f39cad56f81647bc0996188cd17ca9aaa18e4c1cb7d931a3645acbb1ee1fc8
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: submit helper. Submits one-job chains (jobs/chain_onejob.sbatch; user decision 2026-11-10): dry run by default,
 #   --submit logs every job in model_ext/logs/submissions.txt; attempts with afterok:<after>,afternotok:A1:.. (an
@@ -10,6 +10,7 @@
 # RUN: chain_onejob.sh --kind nonneg --model softplus --chain-root <dir> --model-ext <frozen> --chain-code <frozen>
 #   --cycles 3 --nfev 4000 --check 1 --ft-maxnfev 500 --ft-facets late_only --ft-window-min 5 --l-threads 32 --node
 #   gpu001 --time 08:00:00 --attempts 3 --submit   (124162-124164; squared with --start-file on gpu002: 124165-124167)
+# 2026-11-13: --slope-mult-min V (softplus, value 1); production 124664 (5 cycles), 124772 (extended to 9).
 # ==== end of header ====
 # Submit ONE-JOB fit / fine-tuning chains (jobs/chain_onejob.sbatch, model_ext/chain_onejob.py; user decision
 # 2026-11-10 "yes, implement (b)"): the whole chain c1 fit -> c1 ft -> ... -> c<N> ft of one lambda in one job that
@@ -40,6 +41,8 @@
 #       [--source <cycle-1 --start-restart, default D2 final>] [--start-file S (squared, nonneg_start.py)] \
 #       [--slope-start X] [--slope-bundle B] [--ft-templates-from M] [--checkparams a:b] --node gpu001 --time T
 #   --kind slope --model bumps: the 3a model (slope_mult_fit / slope_finetune).
+#   --slope-mult-min 1 (nonneg softplus only; user 2026-11-12 refit: multipliers >= 1): lower bound of the free slope multipliers, every
+#   cycle's fit (SLOPE_MULT_MIN); absent: unchanged.
 #   --lambda / --ratio / --c1-start-set are positive-only; --chain-root is required for these kinds.
 set -uo pipefail
 ROOT_OUT=/data001/highresolu_vt/cops_output
@@ -49,6 +52,7 @@ LAMBDA=""; RATIO=""; SOURCE=""; CYCLES=3; NFEV=4000; CHECK=1; C1_START_SET=""; M
 CHAIN_ROOT=""; NODE=""; GPUS=""; TIME="08:00:00"; ATTEMPTS=3; OPTS_EXTRA=""; FT_MAXNFEV=""; FT_FACETS=""
 FT_WINDOW_MIN=""; FT_EXPORT=""; MINMIN=""; AFTER=""; SUBMIT=0
 KIND=positive; SMODEL=""; SSTART=""; START_FILE=""; LT=""; LMODE=chunked; CHECKPARAMS=""; SBUNDLE=""; FTT=""; BUMPS=""
+SMM=""
 die() { echo "chain_onejob.sh: $*" >&2; exit 2; }
 while [ $# -gt 0 ]; do
     case $1 in
@@ -69,7 +73,8 @@ while [ $# -gt 0 ]; do
         --l-threads) LT=$2; shift 2;;           --l-mode) LMODE=$2; shift 2;;
         --checkparams) CHECKPARAMS=$2; shift 2;; --slope-bundle) SBUNDLE=$2; shift 2;;
         --ft-templates-from) FTT=$2; shift 2;;  --bumps) BUMPS=$2; shift 2;;
-        -h|--help) sed -n '2,37p' "$0"; exit 0;;
+        --slope-mult-min) SMM=$2; shift 2;;
+        -h|--help) sed -n '2,39p' "$0"; exit 0;;
         *) die "unknown argument $1 (--help)";;
     esac
 done
@@ -160,6 +165,11 @@ VARS+=",FT_FACETS=$FT_FACETS,CHAIN_CODE=$CHAIN_CODE,CHAIN_ROOT=$CHAIN_ROOT"
 [ -n "$SBUNDLE" ] && VARS+=",SLOPE_BUNDLE=$(readlink -f "$SBUNDLE")"
 [ -n "$FTT" ] && VARS+=",FT_TEMPLATES_FROM=$(readlink -f "$FTT")"
 [ -n "$BUMPS" ] && VARS+=",BUMPS=$(readlink -f "$BUMPS")"
+if [ -n "$SMM" ]; then
+    [ "$KIND/$SMODEL" = nonneg/softplus ] || die "--slope-mult-min: nonneg softplus only (user 2026-11-12)"
+    case $SMM in 1|1.0) ;; *) die "--slope-mult-min $SMM: the user's decision is 1";; esac
+    VARS+=",SLOPE_MULT_MIN=$SMM"
+fi
 fi
 [ -n "$FT_WINDOW_MIN" ] && VARS+=",FT_WINDOW_MIN=$FT_WINDOW_MIN"
 [ -n "$MODEL_EXT" ] && VARS+=",MODEL_EXT=$MODEL_EXT"

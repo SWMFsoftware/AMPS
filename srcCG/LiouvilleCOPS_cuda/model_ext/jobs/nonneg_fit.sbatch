@@ -1,7 +1,7 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-11, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/nonneg_fit.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/nonneg_fit.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 3004eefdb77ead66326db5a1b1c8f4e5dd3cc5c440055bfa4d598e219ceabba9
+# SHA256 of the run copy = SHA256 of this file without these header lines: 9584c5cae6f97b906c35616730678684a45ab0fa88b830f63aacda21a7ae7119
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job. Softplus / squared fit on the lategrid base (user decisions 2026-11-11): MODEL required, START d2 | lsq |
 #   chain, START_FILE, FT_FROM, HELD, GRAIN_FROM, NFEV 4000, CHECK, L_THREADS, MODEL_EXT, TESTMODE; everything else as
@@ -9,6 +9,7 @@
 # RUN: sbatch --nodelist=gpu001 --export=ALL,MODEL=softplus,L_THREADS=32,MODEL_EXT=<snapshot> nonneg_fit.sbatch   (tests
 #   124130-124133 inside nonneg_test.sbatch; split tests 124139, 124141, 124144, 124146; the production stages run its
 #   logic inside chain_onejob.py)
+# 2026-11-13: SLOPE_MULT_MIN (softplus; user 2026-11-12: multipliers >= 1) -> --slope-mult-min; GPU test 124659.
 # ==== end of header ====
 # Non-negative H2O activity fit on the lategrid base (user decisions 2026-11-11, handoff.md section 10; model_ext/
 # nonneg_mult.py, nonneg_problem.py, driver nonneg_fit.py; adapted from jobs/slope_mult_fit.sbatch):
@@ -28,6 +29,9 @@
 #   HELD, GRAIN_FROM  START=chain: the previous fine tuning's finetune_state.npz (held_next; grain A, B)
 #   NFEV (default 4000), CHECK (1: segment 1 runs the full Jacobian check, default 1), CHECKPARAMS (':'-separated)
 #   L_THREADS     N: every 12.4M-facet host step of the fitter with N chunked threads (bitwise; nonneg_fit.py --l-threads)
+#   SLOPE_MULT_MIN  softplus only (user 2026-11-12): lower bound of the six free multipliers (nonneg_fit.py
+#                 --slope-mult-min; the decision: 1); unset: the fitter's lower bound 0 (unchanged). A resume and a chain
+#                 start must use the same value (the restart marker records it)
 #   FITDIR        product directory (default runs/.../nonneg/<MODEL>/fit); TESTNAME: runs/.../nonneg_tests/<TESTNAME>
 #   TESTMODE      independent (needs TESTNAME): stop after the start check, then an UNPATCHED process evaluates the
 #                 independently computed activity (test_nonneg.py --gpu-independent); clip: the same with softplus
@@ -58,7 +62,7 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONUNBUFFER
 UNSET=$(env | grep -o -E '^(COPS_POS_[A-Z_]*|COPS_SLOPEMUL_[A-Z_]*|COPS_NONNEG_[A-Z_]*)' | sort | paste -sd' ' -)
 [ -n "$UNSET" ] && unset $UNSET
 NFEV=${NFEV:-4000}; CHECK=${CHECK:-1}; CHECKPARAMS=${CHECKPARAMS:-}; TESTNAME=${TESTNAME:-}; TESTMODE=${TESTMODE:-}
-CHAIN=${CHAIN:-0}; MODEL=${MODEL:-}; L_THREADS=${L_THREADS:-}
+CHAIN=${CHAIN:-0}; MODEL=${MODEL:-}; L_THREADS=${L_THREADS:-}; SLOPE_MULT_MIN=${SLOPE_MULT_MIN:-}
 HELD=${HELD:-}; GRAIN_FROM=${GRAIN_FROM:-}; FITDIR=${FITDIR:-}
 case $MODEL in softplus) START=${START:-d2};; squared) START=${START:-lsq};; *) echo "MODEL must be softplus or squared" >&2; exit 2;; esac
 [ -n "$HELD" ] && HELD=$(readlink -f "$HELD"); [ -n "$GRAIN_FROM" ] && GRAIN_FROM=$(readlink -f "$GRAIN_FROM")
@@ -86,6 +90,7 @@ elif [ -n "$FITDIR" ]; then D=$(readlink -m "$FITDIR"); NAME=nonneg_fit_$(basena
 else NAME=nonneg_${MODEL}_fit; D=$R/nonneg/$MODEL/fit; fi
 MOPT=(--model "$MODEL" --ft-templates-from "$FT_FROM"); [ -n "$HELD" ] && MOPT+=(--held "$HELD")
 [ "$START" = lsq ] && MOPT+=(--start-file "$START_FILE")
+[ -n "$SLOPE_MULT_MIN" ] && MOPT+=(--slope-mult-min "$SLOPE_MULT_MIN")
 P=$D/provenance-$SLURM_JOB_ID
 FILES=(nonneg_fit.py nonneg_mult.py nonneg_problem.py nonneg_start.py nonneg_finetune.py test_nonneg.py
        slope_mult.py slope_mult_problem.py test_slope_mult.py positive_finetune.py clip_problem.py clip_refit.py
@@ -181,7 +186,7 @@ nvidia-smi -q > "$P/nvidia_smi_q.txt" 2>&1
 nvidia-smi -L > "$P/nvidia_smi_L.txt" 2>&1
 { nvcc --version; gcc --version | head -1; grep -m1 CSPICE /home/vtenishev/SPICE/cspice/doc/version.txt; } > "$P/toolchain.txt" 2>&1
 ~/.local/bin/uv pip list --python "$APP/.venv/bin/python" > "$P/pip_list.txt" 2>&1
-env | grep -E '^(CUDA_[A-Z_]*|CUPY_[A-Z_]*|COPS_[A-Z_]*|NFEV|CHECK|CHECKPARAMS|TESTNAME|TESTMODE|MODEL|START|START_RESTART|START_FILE|FT_FROM|L_THREADS|HELD|GRAIN_FROM|FITDIR|BUNDLE|CHAIN|MODEL_EXT|OMP_[A-Z_]*|OPENBLAS_[A-Z_]*|MKL_[A-Z_]*|PYTHONUNBUFFERED|LD_LIBRARY_PATH|PATH|SLURM_JOB_GPUS|SLURM_JOB_NODELIST|SLURM_JOB_NUM_NODES|CUDA_VISIBLE_DEVICES)=' | sort > "$P/environment.txt"
+env | grep -E '^(CUDA_[A-Z_]*|CUPY_[A-Z_]*|COPS_[A-Z_]*|NFEV|CHECK|CHECKPARAMS|TESTNAME|TESTMODE|MODEL|START|START_RESTART|START_FILE|FT_FROM|L_THREADS|SLOPE_MULT_MIN|HELD|GRAIN_FROM|FITDIR|BUNDLE|CHAIN|MODEL_EXT|OMP_[A-Z_]*|OPENBLAS_[A-Z_]*|MKL_[A-Z_]*|PYTHONUNBUFFERED|LD_LIBRARY_PATH|PATH|SLURM_JOB_GPUS|SLURM_JOB_NODELIST|SLURM_JOB_NUM_NODES|CUDA_VISIBLE_DEVICES)=' | sort > "$P/environment.txt"
 # commands.sh: every command of this job with all arguments resolved, runnable as is (HOW-TO-RERUN.md)
 { echo '#!/bin/bash'; echo "# job $SLURM_JOB_ID on $(hostname), $(date -u +%FT%TZ); AMPS $(git -C "$AMPS" rev-parse HEAD)"
   grep '^export ' "$0"; echo "cd $APP"; } > "$P/commands.sh"
@@ -190,6 +195,7 @@ free -g > "$P/free_at_start.txt"; df -h "$R" > "$P/df_at_start.txt" 2>&1
 { echo "fit $NAME, model $MODEL, directory $D; start $START; start restart (segment 1) $START_RESTART; slope bundle $BUNDLE"
   echo "ft templates from $FT_FROM; start file ${LSQ_FILE[*]:-none}; held ${HELD:-none}; grain from (segment 1) ${GRAIN_FROM:-the start restart}"
   echo "host steps of the fitter process: ${L_THREADS:-1} thread(s) (chunked, bitwise); OPENBLAS_NUM_THREADS=$OPENBLAS_NUM_THREADS"
+  echo "multiplier lower bound: ${SLOPE_MULT_MIN:-0 (the fitter default, unchanged)}"
   echo "model_ext copied and run: $X (MODEL_EXT); test mode: ${TESTMODE:-none}"
   echo "node $(hostname) (SLURM_JOB_NODELIST ${SLURM_JOB_NODELIST:-?}, nodes ${SLURM_JOB_NUM_NODES:-1}); transport local"
   [ -n "$UNSET" ] && echo "unset (inherited from the submitting shell): $UNSET"

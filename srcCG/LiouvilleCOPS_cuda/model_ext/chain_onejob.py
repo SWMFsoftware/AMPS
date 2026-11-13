@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-11, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/chain_onejob.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/chain_onejob.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 0421e9ddc0085f4289ad6f306118db58d6a2c983e6d10bb2028c26c9d5147a64
+# SHA256 of the run copy = SHA256 of this file without these header lines: 560780acebbeea6d75d59e4bee1d02ca7388d20749f1303005163c6f2b4bf9a2
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: driver. One Slurm job, one process: a whole fit / fine-tuning chain (c1 fit -> c1 ft -> ... -> c<N> ft) on ONE
 #   bound multi-GPU backend (user decision 2026-11-10 "yes, implement (b)"): the records are bound once, the template
@@ -12,6 +12,9 @@
 # USED BY: jobs/chain_onejob.sbatch (submitted with jobs/chain_onejob.sh): nonneg GPU tests 124143, 124148 (bitwise =
 #   the split chains, compares 124160, 124161) and the production chains 124162 (softplus) and 124165 (squared),
 #   2026-11-11. The positive-kind tests 123990, 124091-124095 ran v3 / v5 (backups *.before_*).
+# 2026-11-13: v6.4: --slope-mult-min V (kind nonneg, softplus, value 1) passed to every fit argv of every cycle and
+#   resumed segment, at the end of MOPT as jobs/nonneg_fit.sbatch; frozen chain_onejob_20261113T041215Z (jobs 124664,
+#   124772).
 # ==== end of header ====
 """One Slurm job, one driver process: a whole fit / fine-tuning chain on ONE bound multi-GPU backend
 (user decision 2026-11-10, "yes, implement (b)").
@@ -1423,6 +1426,7 @@ class NonnegFitStage(SlopeFitStage):
                                r"grain_fit: |fit data|selection profile)")
     env_regex = re.compile(r"^(CUDA_[A-Z_]*|CUPY_[A-Z_]*|COPS_[A-Z_]*|NFEV|CHECK|CHECKPARAMS|TESTNAME|TESTMODE|MODEL|START|"
                            r"START_RESTART|START_FILE|FT_FROM|L_THREADS|HELD|GRAIN_FROM|FITDIR|BUNDLE|CHAIN|MODEL_EXT|"
+                           r"SLOPE_MULT_MIN|"
                            r"OMP_[A-Z_]*|OPENBLAS_[A-Z_]*|MKL_[A-Z_]*|PYTHONUNBUFFERED|LD_LIBRARY_PATH|PATH|"
                            r"SLURM_JOB_GPUS|SLURM_JOB_NODELIST|SLURM_JOB_NUM_NODES|CUDA_VISIBLE_DEVICES)=")
 
@@ -1446,18 +1450,25 @@ class NonnegFitStage(SlopeFitStage):
 
     def _model_args(self, c):
         """nonneg_fit.sbatch MOPT without --held (SlopeFitStage._argv appends --held after it, as MOPT does): --model,
-        --ft-templates-from; --start-file comes after --held in MOPT (see _argv)."""
+        --ft-templates-from; --start-file and --slope-mult-min come after --held in MOPT (see _argv)."""
         return ["--model", c.args.slope_model, "--ft-templates-from", str(readlink_f(c.args.ft_templates_from))]
 
     def label(self):
         return "nonneg_fit_%s_%s" % (self.directory.parent.name, self.directory.name)
 
     def _argv(self, SEG, LEFT, SOPT, O):
+        """nonneg_fit.sbatch lines 79-81: MOPT = --model M --ft-templates-from F [--held H] [--start-file S (START lsq)]
+        [--slope-mult-min V (SLOPE_MULT_MIN; user 2026-11-12, softplus: 1; every cycle and segment: the restart marker
+        refuses a resume or chain start with another value)], then SOPT."""
         argv = SlopeFitStage._argv(self, SEG, LEFT, SOPT, O)
         argv[0] = str(HERE / "nonneg_fit.py")
-        if self.start == "lsq":                        # MOPT: ... [--held H] [--start-file S]
-            k = argv.index(SOPT[0]) if SOPT else len(argv)
-            argv[k:k] = ["--start-file", str(readlink_f(self.chain.args.start_file))]
+        tail = []
+        if self.start == "lsq":
+            tail += ["--start-file", str(readlink_f(self.chain.args.start_file))]
+        if self.chain.args.slope_mult_min is not None:
+            tail += ["--slope-mult-min", self.chain.args.slope_mult_min]
+        k = argv.index(SOPT[0]) if SOPT else len(argv)
+        argv[k:k] = tail
         return argv
 
     def check_held_identity(self, k):
@@ -1489,6 +1500,8 @@ class NonnegFitStage(SlopeFitStage):
             plan.env.pop("BUMPS", None)
             plan.env.pop("SLOPE_MODEL", None)
             plan.env.update(MODEL=a.slope_model, FT_FROM=str(readlink_f(a.ft_templates_from)))
+            if a.slope_mult_min is not None:
+                plan.env["SLOPE_MULT_MIN"] = a.slope_mult_min
             if self.start == "lsq":
                 plan.env["START_FILE"] = str(readlink_f(a.start_file))
             plan.env.pop("L_MODE", None)
@@ -2264,6 +2277,9 @@ def parse_args(argv):
     ap.add_argument("--ft-templates-from", default=str(RUN / "clip_refit" / "D2" / "final" / "fit_manifest.json"),
                     help="nonneg: D2's fit_manifest.json (the ft_c1..ft_c6 templates, held at 1)")
     ap.add_argument("--start-file", default=None, help="nonneg squared: the LSQ start file of nonneg_start.py")
+    ap.add_argument("--slope-mult-min", default=None,
+                    help="nonneg: lower bound of the free slope multipliers (nonneg_fit.py --slope-mult-min, every cycle; "
+                         "user 2026-11-12: 1 for the softplus refit); absent: the fits' default (commands unchanged)")
     ap.add_argument("--ft-window-min", default=None)
     ap.add_argument("--ft-lsmr-maxiter", type=int, default=50)
     ap.add_argument("--ft-checkpoint-min", default="30")
@@ -2293,6 +2309,16 @@ def parse_args(argv):
         models = SLOPE_MODELS if args.kind == "slope" else NONNEG_MODELS
         if args.slope_model not in models:
             ap.error("--kind %s needs --slope-model, one of %s" % (args.kind, sorted(models)))
+        if args.slope_mult_min is not None:
+            if args.kind != "nonneg" or args.slope_model != "softplus":
+                ap.error("--slope-mult-min: nonneg softplus only (user 2026-11-12)")
+            try:
+                ok = float(args.slope_mult_min) == 1.0
+            except ValueError:
+                ok = False
+            if not ok:
+                ap.error("--slope-mult-min %s: the user's decision is 1 (nonneg_problem refuses any other value)"
+                         % args.slope_mult_min)
         if args.kind == "nonneg" and args.l_threads and args.l_mode != "chunked":
             ap.error("--kind nonneg: --l-mode chunked only (agent 1)")
         if args.kind == "nonneg" and args.slope_model == "squared" and not args.start_file and not args.plan_only \

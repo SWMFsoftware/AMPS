@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-11, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/test_nonneg.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/test_nonneg.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: abc93acfca6b30bcbf6f5498b695b26b56ce488915bd20d5ec58e3a05ce6ae01
+# SHA256 of the run copy = SHA256 of this file without these header lines: 860ab10ba97bdf246150e39a929fa47e89472a4a4530dff3cb952edb02bf5d14
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: test. Tests of the softplus / squared models (unit: softplus value and derivative, host fields, threads bitwise,
 #   one-job requirements A and B; workers; e2e on the synthetic grid base: D2 -> fits with full Jacobian checks,
 #   softplus s = 0 == clipped model bitwise, squared start, fine tunings with checks 1-8, cycle-2 start, main() twice in
 #   one process) and the GPU helper --gpu-independent. 2026-11-11.
 # USED BY: jobs/nonneg_cpu.sbatch (CPU job 124128: 20 tests, 0 failed), jobs/nonneg_test.sbatch (124130-124133).
+# 2026-11-13: six multmin tests (option absent = previous snapshot bitwise; bounds [1, inf); TRF start on the bound;
+#   records; marker refusals); CPU job 124658: 26 tests, 0 failed.
 # ==== end of header ====
 """Tests of the non-negative activity models (nonneg_mult.py, nonneg_problem.py, nonneg_fit.py, nonneg_start.py,
 nonneg_finetune.py; user decisions 2026-11-11).
@@ -391,11 +393,43 @@ def cpu_drive(args, argv, fit_args_, devices, max_nfev, template_start, comm, de
     return tcr.cpu_drive(args, argv, fit_args_, devices, max_nfev, template_start, comm, deadline)
 
 
+def install_xlog(path):
+    """Test instrumentation (innermost, below every hook): record the multipliers of every point at which scipy's
+    least_squares evaluates fun / jac, and the bounds it was given."""
+    from cops_cuda import reference
+    reference.bind()
+    fit_cops = reference.load("fit_cops")
+    original = fit_cops.least_squares
+
+    def least_squares(fun, x0, jac="2-point", **kwargs):
+        P = fit_cops.P
+        idx = [k for k, n in enumerate(P.names) if n.startswith("c_slope_")]
+        bounds = kwargs.get("bounds")
+        rec = {"names": [P.names[k] for k in idx], "x0": [float(x0[k]) for k in idx],
+               "lower": [float(bounds[0][k]) for k in idx] if bounds is not None else None,
+               "upper": [float(bounds[1][k]) for k in idx] if bounds is not None else None, "fun": [], "jac": []}
+
+        def f(x, *a, **k):
+            rec["fun"].append([float(x[i]) for i in idx])
+            return fun(x, *a, **k)
+
+        def j(x, *a, **k):
+            rec["jac"].append([float(x[i]) for i in idx])
+            return jac(x, *a, **k)
+        try:
+            return original(f, x0, jac=j if callable(jac) else jac, **kwargs)
+        finally:
+            Path(path).write_text(json.dumps(rec) + "\n")
+    fit_cops.least_squares = least_squares
+
+
 def child(spec):
     import gpu_fit
     gpu_fit.drive = cpu_drive
     import nonneg_mult as nm
     nm.install_gpu = lambda cfg: nm._STATE.update(installed=True, config=dict(cfg), role="cpu-test") or True
+    if os.environ.get("NONNEG_TEST_XLOG"):
+        install_xlog(os.environ["NONNEG_TEST_XLOG"])
     import nonneg_fit
     rcs = []
     for argv in spec["argvs"]:
@@ -403,17 +437,117 @@ def child(spec):
             rc = nonneg_fit.main(argv)
         except SystemExit as exc:
             rc = exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 1)
+            if not isinstance(exc.code, int) and exc.code is not None:
+                print("CHILD_SYSTEMEXIT %s" % exc.code, flush=True)
         rcs.append(rc)
         print("CHILD_RC %s" % rc, flush=True)
     return 0 if all(r == 0 for r in rcs) else 1
 
 
-def run_child(root, name, argvs):
+def run_child(root, name, argvs, script=None, env_extra=None):
     log = Path(root) / (name + ".log")
     spec = json.dumps({"argvs": [[str(a) for a in argv] for argv in argvs]})
-    rc = subprocess.call([sys.executable, "-W", "ignore", __file__, "--child", spec], stdout=log.open("w"),
-                         stderr=subprocess.STDOUT)
+    env = dict(os.environ, **(env_extra or {}))
+    rc = subprocess.call([sys.executable, "-W", "ignore", str(script or __file__), "--child", spec], stdout=log.open("w"),
+                         stderr=subprocess.STDOUT, env=env)
     return rc, log.read_text()
+
+
+V_PREVIOUS = OUT_ROOT / "model_ext_frozen/nonneg_20261111T044920Z"     # the snapshot before --slope-mult-min
+
+
+def same_products(a, b):
+    """Fit products of two runs: evaluations, final x, COPS_model.dat rows, nonneg_facets.npz arrays (bitwise)."""
+    out = {"evaluations": evals(a) == evals(b)}
+    za, zb = np.load(str(Path(a) / "fit_restart.npz")), np.load(str(Path(b) / "fit_restart.npz"))
+    out["x"] = bool(np.array_equal(za["x"], zb["x"]))
+    rows = lambda d: [l for l in open(Path(d) / "COPS_model.dat") if l.strip() and not l.startswith("#")]  # noqa: E731
+    out["COPS_model.dat"] = rows(a) == rows(b)
+    fa, fb = np.load(str(Path(a) / "nonneg_facets.npz")), np.load(str(Path(b) / "nonneg_facets.npz"))
+    out["facets"] = all(np.array_equal(fa[k], fb[k]) for k in fa.files if k != "meta_json")
+    tab = lambda d: [l for l in open(Path(d) / "nonneg_bins.txt") if not l.startswith("#")]  # noqa: E731
+    out["nonneg_bins.txt rows"] = tab(a) == tab(b)
+    return out
+
+
+def test_multmin(root, run_g, points, bins_npz, D2, head_sp, SP):
+    """--slope-mult-min 1 (user 2026-11-12, softplus): option absent == the previous snapshot (bitwise); option present:
+    the six free multipliers have lower bound 1 in the optimizer, every optimizer point >= 1, the start check at m = 1
+    equals the unbounded fit's, scipy TRF's shift of a start on the bound, the records; the restart marker refuses a
+    mismatch (resume and chain, both directions)."""
+    # (a) absent == previous snapshot
+    OLD = root / "sp_c1_previous_snapshot"
+    argv = head_sp + fit_tail(run_g, OLD, 8)
+    rc, t = run_child(root, "sp_c1_previous_snapshot", [argv], script=V_PREVIOUS / "test_nonneg.py")
+    NEW = root / "sp_c1_absent"
+    rc2, t2 = run_child(root, "sp_c1_absent", [head_sp + fit_tail(run_g, NEW, 8)])
+    sp_ = same_products(OLD, NEW) if rc == 0 and rc2 == 0 else {"exit": (rc, rc2)}
+    report("multmin: option absent == the previous snapshot nonneg_20261111T044920Z (bitwise products)",
+           rc == 0 and rc2 == 0 and all(sp_.values()), "%s" % sp_)
+    # (b) present: bounds, every optimizer point >= 1, start, records
+    SB = root / "sp_c1_multmin"
+    xlog = root / "sp_c1_multmin_xlog.json"
+    rc, t = run_child(root, "sp_c1_multmin", [head_sp + ["--slope-mult-min", "1"] + fit_tail(run_g, SB, 12)],
+                      env_extra={"NONNEG_TEST_XLOG": str(xlog)})
+    if rc:
+        report("multmin: bounded fit", False, t[-3000:])
+        return
+    xl = json.loads(xlog.read_text())
+    pts = xl["fun"] + xl["jac"]
+    mins = [min(v) for v in pts]
+    m, rec = manifest_record(SB)
+    mU, recU = manifest_record(NEW)
+    names = m["parameters"]["names"] if "parameters" in m and "names" in m["parameters"] else None
+    lb = dict(zip(rec["model_check"]["layout"], (m.get("optimizer_settings") or {}).get("lower_bounds") or
+                  m.get("parameters", {}).get("lower_bounds") or []))
+    zB = np.load(str(SB / "fit_restart.npz"))
+    zU = np.load(str(NEW / "fit_restart.npz"))
+    xb = dict(zip(rec["model_check"]["layout"], zB["x"]))
+    xu = dict(zip(recU["model_check"]["layout"], zU["x"]))
+    below_unb = [n for n in xl["names"] if xu[n] < 1.0]
+    meta = json.loads(str(zB["meta_json"]))
+    ok = (xl["lower"] == [1.0] * 6 and all(np.isinf(xl["upper"])) and xl["x0"] == [1.0] * 6 and min(mins) >= 1.0 and
+          all(xb[n] >= 1.0 for n in xl["names"]) and
+          rec["clip_core"]["start_check"]["start"]["cost"] == recU["clip_core"]["start_check"]["start"]["cost"] and
+          meta["model_extension"].get("slope_mult_min") == 1.0 and
+          rec["model_check"]["multiplier_lower_bound"]["value"] == 1.0)
+    report("multmin: --slope-mult-min 1: optimizer bounds [1, inf), every optimizer point >= 1, start check = unbounded",
+           ok, "bounds %s..%s; %d optimizer points, min multiplier %.17g (first fun point %s); final %s; unbounded fit "
+           "below 1: %s; start cost %.15e == %.15e; marker %s" % (
+               xl["lower"], xl["upper"], len(pts), min(mins), xl["fun"][0], {n: float(xb[n]) for n in xl["names"]},
+               below_unb, rec["clip_core"]["start_check"]["start"]["cost"],
+               recU["clip_core"]["start_check"]["start"]["cost"], meta["model_extension"].get("slope_mult_min")))
+    first = xl["fun"][0]
+    report("multmin: scipy TRF moves the start on the bound to lb + 1e-10 before its first evaluation",
+           all(v == 1.0 + 1e-10 for v in first), "first optimizer point %s (start %s)" % (first, xl["x0"]))
+    txt = (SB / "NONNEG_MODEL.txt").read_text()
+    bins_txt = (SB / "nonneg_bins.txt").read_text()
+    rep_ok = ("MULTIPLIER LOWER BOUND" in txt and "multiplier lower bound 1.0" in bins_txt and
+              "slope_mult_min" in json.dumps(rec["config"]) and lb.get("c_slope_40_50", 1.0) == 1.0)
+    report("multmin: records (manifest config, model_check, marker, NONNEG_MODEL.txt, nonneg_bins.txt)", rep_ok,
+           "bins note: %s" % [l for l in bins_txt.splitlines() if "lower bound" in l][:1])
+    # (c) marker refuses a mismatch
+    ftgrain = None
+    h_res = ["--model", "softplus"] + d2_head(points, bins_npz, D2) + ["--start", "d2", "--restart-from",
+                                                                       SB / "fit_restart.npz"]
+    R1 = root / "sp_resume_without"
+    rc1, t1 = run_child(root, "sp_resume_without", [h_res + fit_tail(run_g, R1, 3)])
+    h_res2 = ["--model", "softplus"] + d2_head(points, bins_npz, D2) + ["--start", "d2", "--slope-mult-min", "1",
+                                                                        "--restart-from", NEW / "fit_restart.npz"]
+    R2 = root / "sp_resume_with_from_unbounded"
+    rc2, t2 = run_child(root, "sp_resume_with_from_unbounded", [h_res2 + fit_tail(run_g, R2, 3)])
+    R3 = root / "sp_resume_with"
+    rc3, t3 = run_child(root, "sp_resume_with", [["--model", "softplus"] + d2_head(points, bins_npz, D2) + [
+        "--start", "d2", "--slope-mult-min", "1", "--restart-from", SB / "fit_restart.npz"] + fit_tail(run_g, R3, 3)])
+    ok = (rc1 != 0 and "multiplier lower bound" in t1 and rc2 != 0 and "multiplier lower bound" in t2 and rc3 == 0)
+    report("multmin: the restart marker refuses a resume with another --slope-mult-min (both directions); same value ok",
+           ok, "without on a bounded restart: exit %s; with on an unbounded restart: exit %s; same value: exit %s" % (
+               rc1, rc2, rc3))
+    return SB
+
+
+def run_child_unused():
+    return None
 
 
 def manifest_record(out):
@@ -724,6 +858,21 @@ def test_e2e(scratch):
                ok, "exit %s; c1 %s, c2 %s, c1 again %s" % (rc, evals(A1) == evals(SP) if rc == 0 else None,
                                                          evals(A2) == evals(C2s) if rc == 0 else None,
                                                          evals(A3_) == evals(SP) if rc == 0 else None))
+    test_multmin_chain(root, run_g, points, bins_npz, D2, head_sp, SP, out)
+
+
+def test_multmin_chain(root, run_g, points, bins_npz, D2, head_sp, SP, out):
+    SB = test_multmin(root, run_g, points, bins_npz, D2, head_sp, SP)
+    if SB is None or "softplus" not in out:
+        return
+    FT = out["softplus"][0]
+    # chain start: a bounded cycle-k fit from an unbounded previous fit is refused, and vice versa
+    h2 = ["--model", "softplus"] + d2_head(points, bins_npz, D2) + [
+        "--start", "chain", "--start-restart", SP / "fit_restart.npz", "--held", FT / "finetune_state.npz",
+        "--grain-from", FT / "finetune_state.npz", "--slope-mult-min", "1"]
+    rc, t = run_child(root, "sp_c2_bounded_from_unbounded", [h2 + fit_tail(run_g, root / "sp_c2_bfu", 3)])
+    report("multmin: a chain start with --slope-mult-min from a fit without it is refused", rc != 0 and
+           "multiplier lower bound" in t, "exit %s; %s" % (rc, [l for l in t.splitlines() if "lower bound" in l][-1:]))
 
 
 # ------------------------------------------------------------------------------------------------ GPU independent check

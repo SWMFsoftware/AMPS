@@ -1,12 +1,15 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-12, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/nonneg_maps.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/nonneg_maps.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: e067172fcea2362051936226422b92b25dad2a648c3800e67acff4c7f692b676
+# SHA256 of the run copy = SHA256 of this file without these header lines: a6cbbf085a8defb212ed7e42a0a178cf22045d18a4acebee0c2cc150a0f24fa5
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: job script (CPU, normal128cores). Activity and source-rate maps of one final state (FT and FIT dirs): tests, geometry build + validation against the
-#   kernel records, maps (.vtu + Tecplot), verify and ParaView read-back; products <chain>/maps, per-job geometry and
-#   build in runs/<run>/maps_geometry/job_<id>/; MODEL_EXT = model_ext_frozen/nonneg_maps_20261112T021623Z.
-# USED BY: test 124322 (3-cycle states); production 124324 (softplus), 124325 (squared) of the 5-cycle chains.
+# WHAT: job script (CPU, normal128cores). Activity and source-rate maps of one final state (FT and FIT dirs): tests,
+#   geometry build + validation against the kernel records, maps (.vtu + Tecplot), verify and ParaView read-back;
+#   products <chain>/<MAPS_NAME> (default maps; 2026-11-13 option MAPS_NAME, e.g. maps_c9, so a later state of the same
+#   chain does not touch the earlier maps), per-job geometry and build in runs/<run>/maps_geometry/job_<id>/;
+#   EXPECT_CYCLES guard; MODEL_EXT = model_ext_frozen/nonneg_maps_20261112T021623Z.
+# RUN: test 124322 (3-cycle states); production 124324 (softplus), 124325 (squared), 124667 (softplus, multipliers >=
+#   1, c5); 124775 (the same chain, c9: MAPS_NAME=maps_c9 EXPECT_CYCLES=9)
 # ==== end of header ====
 # Activity and instantaneous source-rate maps of the non-negative H2O activity models (softplus, squared harmonics x
 # slope multipliers) for visualization: model_ext/nonneg_maps.py. CPU node (normal128cores), no GPU.
@@ -25,7 +28,9 @@
 #   5. ParaView read-back of each maps dir (/usr/bin/pvpython model_ext/nonneg_maps_pvcheck.py)
 # Environment: MODEL_EXT (code dir; default $COPS_OUTPUT_ROOT/model_ext; production: a frozen snapshot), CHAINS
 #   (space-separated chain roots), EXPECT_CYCLES (optional: required last cycle number), PROCS (default
-#   SLURM_CPUS_PER_TASK). Job products: $R/maps_geometry/job_<jobid>/ (provenance, build, times, geometry, logs).
+#   SLURM_CPUS_PER_TASK), MAPS_NAME (output folder name inside each chain, default maps; 2026-11-13: maps_c9 for the
+#   extended chain, so that the c5 maps stay). Job products: $R/maps_geometry/job_<jobid>/ (provenance, build, times,
+#   geometry, logs).
 #SBATCH --job-name=cops_nonneg_maps
 #SBATCH --partition=normal128cores
 #SBATCH --nodes=1
@@ -50,6 +55,8 @@ export MODEL_EXT=$(readlink -f "${MODEL_EXT:-$COPS_OUTPUT_ROOT/model_ext}")
 PROCS=${PROCS:-${SLURM_CPUS_PER_TASK:-8}}
 CHAINS=${CHAINS:-}
 EXPECT_CYCLES=${EXPECT_CYCLES:-}
+MAPS_NAME=${MAPS_NAME:-maps}
+case $MAPS_NAME in */*|"") echo "MAPS_NAME must be a plain folder name"; exit 2;; esac
 PY=$APP/.venv/bin/python
 PVPY=/usr/bin/pvpython
 CXXF="-O3 -march=native -std=c++17 -fopenmp -Wall -Wextra -Wno-unused-parameter"
@@ -67,7 +74,7 @@ P=$J/provenance-$SLURM_JOB_ID
 mkdir -p "$R/maps_geometry" || exit 1
 mkdir "$J" "$P" || exit 1
 cd "$APP" || exit 1
-stamp "job $SLURM_JOB_ID on $(hostname): MODEL_EXT=$MODEL_EXT CHAINS=[$CHAINS] EXPECT_CYCLES=[$EXPECT_CYCLES] PROCS=$PROCS J=$J"
+stamp "job $SLURM_JOB_ID on $(hostname): MODEL_EXT=$MODEL_EXT CHAINS=[$CHAINS] EXPECT_CYCLES=[$EXPECT_CYCLES] MAPS_NAME=$MAPS_NAME PROCS=$PROCS J=$J"
 
 # ---------------------------------------------------------------- provenance (CLAUDE.md rule 8)
 cp -p "$0" "$P/nonneg_maps.sbatch.used"
@@ -84,7 +91,8 @@ done
   command -v nvcc >/dev/null 2>&1 && nvcc --version | tail -2 || echo "nvcc: not used"; lscpu | grep -E 'Model name|^CPU\(s\)';
   "$PVPY" --version 2>&1 | head -1; } > "$P/toolchain.txt" 2>&1
 ~/.local/bin/uv pip list --python "$PY" > "$P/pip_list.txt" 2>&1 || "$PY" -m pip list > "$P/pip_list.txt" 2>&1
-env | grep -E '^(SLURM_JOB_ID|SLURM_JOB_NODELIST|SLURM_CPUS_PER_TASK|MODEL_EXT|CHAINS|EXPECT_CYCLES|PROCS|OMP_NUM_THREADS)=' > "$P/env.txt"
+env | grep -E '^(SLURM_JOB_ID|SLURM_JOB_NODELIST|SLURM_CPUS_PER_TASK|MODEL_EXT|CHAINS|EXPECT_CYCLES|MAPS_NAME|PROCS|OMP_NUM_THREADS)=' > "$P/env.txt"
+echo "MAPS_NAME=$MAPS_NAME" >> "$P/env.txt"
 { echo '#!/bin/bash'; grep '^export ' "$0"; echo "export MODEL_EXT=$MODEL_EXT"; echo "cd $APP"; } > "$P/commands.sh"
 run() { printf '%q ' "$@" >> "$P/commands.sh"; echo >> "$P/commands.sh"; "$@"; }
 free -g > "$P/free_start.txt" 2>&1; df -h "$COPS_OUTPUT_ROOT" > "$P/df_start.txt" 2>&1
@@ -125,7 +133,7 @@ for C in $CHAINS; do
   C=${C%/}
   MODEL=$(basename "$(dirname "$C")")
   N=$(ls -d "$C"/c[0-9]* 2>/dev/null | sed 's#.*/c##' | sort -n | tail -1)
-  FT=$C/c$N/ft/final; FIT=$C/c$N/fit/final; OUT=$C/maps
+  FT=$C/c$N/ft/final; FIT=$C/c$N/fit/final; OUT=$C/$MAPS_NAME
   stamp "4. maps $MODEL: $C (last cycle c$N)"
   if [ -z "$N" ] || [ ! -e "$FT/finetune_state.npz" ] || [ ! -e "$FIT/nonneg_facets.npz" ]; then stamp "  no final state in $C"; nfail=$((nfail+1)); continue; fi
   if [ -n "$EXPECT_CYCLES" ] && [ "$N" != "$EXPECT_CYCLES" ]; then stamp "  last cycle c$N, expected c$EXPECT_CYCLES"; nfail=$((nfail+1)); continue; fi
@@ -153,6 +161,6 @@ for C in $CHAINS; do
 done
 free -g > "$P/free_end.txt" 2>&1; df -h "$COPS_OUTPUT_ROOT" > "$P/df_end.txt" 2>&1
 stamp "done: $nfail failures"
-for C in $CHAINS; do C=${C%/}; [ -d "$C/maps/provenance-$SLURM_JOB_ID" ] && cp -p "$COPS_OUTPUT_ROOT/jobs/logs/cops_nonneg_maps-$SLURM_JOB_ID.out" "$C/maps/provenance-$SLURM_JOB_ID/job.log"; done
+for C in $CHAINS; do C=${C%/}; [ -d "$C/$MAPS_NAME/provenance-$SLURM_JOB_ID" ] && cp -p "$COPS_OUTPUT_ROOT/jobs/logs/cops_nonneg_maps-$SLURM_JOB_ID.out" "$C/$MAPS_NAME/provenance-$SLURM_JOB_ID/job.log"; done
 cp -p "$COPS_OUTPUT_ROOT/jobs/logs/cops_nonneg_maps-$SLURM_JOB_ID.out" "$P/job.log"
 [ $nfail -eq 0 ]

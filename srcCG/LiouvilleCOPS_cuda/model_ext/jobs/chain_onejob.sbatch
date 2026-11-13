@@ -1,7 +1,7 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-11, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/chain_onejob.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/chain_onejob.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 74a6a72f8dd4e911031c8a3ded78b25831c768b7eebbc009a60178838f923c85
+# SHA256 of the run copy = SHA256 of this file without these header lines: 18a91f5989556f0ee5c659eeae203d57dc3f4fe9d0841f46bd0a667cfb5f9f0a
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job. ONE job for a whole fit / fine-tuning chain (user decision 2026-11-10 "yes, implement (b)"): environment,
 #   job-level provenance and code copy, then model_ext/chain_onejob.py; KIND=positive | slope | nonneg (v6, 2026-11-11),
@@ -10,6 +10,7 @@
 # RUN: through jobs/chain_onejob.sh (dry run by default). This version: nonneg tests 124143, 124148, production 124162
 #   (softplus) and 124165 (squared); the positive-kind tests 123990, 124091-124095 ran the version before KIND
 #   (.before_kinds_*).
+# 2026-11-13: SLOPE_MULT_MIN (kind nonneg only).
 # ==== end of header ====
 # ONE job for a whole positive-activity fit / fine-tuning chain of ONE lambda (user decision 2026-11-10, "yes,
 # implement (b)"): one driver process (model_ext/chain_onejob.py) binds the 12M lategrid base's records on the node's
@@ -49,6 +50,8 @@
 #   SLOPE_BUNDLE    the slope-bin bundle (default runs/.../slope_mult/bundle/slope_bins.npz); BUMPS (bumps: bumps32.npz);
 #   FT_TEMPLATES_FROM (nonneg: D2's final fit_manifest.json, the ft_c1..ft_c6 templates)
 #   L_THREADS, L_MODE (chunked): the fits' and fine tunings' chunked L threads (user 2026-11-10/11: 32); CHECKPARAMS
+#   SLOPE_MULT_MIN  nonneg: lower bound of the free slope multipliers (nonneg_fit.py --slope-mult-min, every cycle;
+#                   user 2026-11-12: 1 for the softplus refit); unset: the fits' default
 #   FT_FACETS must be late_only; LAMBDA / RATIO / C1_START_SET / FT_FLOOR_RATIO are positive-only
 # Products: CHAIN_ROOT/c<k>/fit/seg<NN>, c<k>/fit/final, c<k>/ft/seg<NN>, c<k>/ft/final + product links; per stage
 # CHAIN_ROOT/c<k>/{fit,ft}/provenance-<job>-c<k>{fit,ft}/; per job CHAIN_ROOT/provenance-<job>/ (this script, the code
@@ -119,7 +122,8 @@ else
 UNSET=$(env | grep -o -E '^(COPS_POS_[A-Z_]*|COPS_SLOPEMUL_[A-Z_]*|COPS_NONNEG_[A-Z_]*)' | sort | paste -sd' ' -)
 [ -n "$UNSET" ] && unset $UNSET
 SLOPE_MODEL=${SLOPE_MODEL:-}; SLOPE_START=${SLOPE_START:-}; START_FILE=${START_FILE:-}; L_THREADS=${L_THREADS:-}
-L_MODE=${L_MODE:-chunked}; CHECKPARAMS=${CHECKPARAMS:-}
+L_MODE=${L_MODE:-chunked}; CHECKPARAMS=${CHECKPARAMS:-}; SLOPE_MULT_MIN=${SLOPE_MULT_MIN:-}
+[ -z "$SLOPE_MULT_MIN" ] || [ "$KIND" = nonneg ] || die "SLOPE_MULT_MIN: nonneg kind only"
 SOURCE=${SOURCE:-$R/clip_refit/D2/final/fit_restart.npz}
 SLOPE_BUNDLE=$(readlink -f "${SLOPE_BUNDLE:-$R/slope_mult/bundle/slope_bins.npz}")
 FT_TEMPLATES_FROM=$(readlink -f "${FT_TEMPLATES_FROM:-$R/clip_refit/D2/final/fit_manifest.json}")
@@ -184,6 +188,7 @@ else
     [ -n "$START_FILE" ] && CMD+=(--start-file "$START_FILE")
     [ -n "$L_THREADS" ] && CMD+=(--l-threads "$L_THREADS" --l-mode "$L_MODE")
     [ -n "$CHECKPARAMS" ] && CMD+=(--checkparams "$CHECKPARAMS")
+    [ -n "$SLOPE_MULT_MIN" ] && CMD+=(--slope-mult-min "$SLOPE_MULT_MIN")
 fi
 { echo '#!/bin/bash'; echo "# job $SLURM_JOB_ID on $(hostname), $(date -u +%FT%TZ); AMPS $(git -C "$AMPS" rev-parse HEAD)"
   grep '^export ' "$0" | grep -v COPS_POS_

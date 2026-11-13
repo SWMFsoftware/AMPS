@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-11, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/test_chain_onejob.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/test_chain_onejob.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: f39a43d4bde853a3021244f231e5698b6b9e5db8f26c5d4c98a35ccbaf89a38a
+# SHA256 of the run copy = SHA256 of this file without these header lines: f400e9a3b69426d6f4dd71c3984faef36ec0053a3c926ed64e1b85374c6c8b1a
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: test. CPU tests of chain_onejob.py (the planned stage commands equal, token by token, the commands.sh of the
 #   split chains: positive jobs 123035-123052, the 3a chain 124008-124074, the nonneg job scripts; stage states; module
@@ -9,6 +9,8 @@
 #   (split vs one job). User decision 2026-11-10 "yes, implement (b)".
 # USED BY: login node / CPU jobs (realfit 124090, nonneg kind 124134); this version ran the nonneg comparisons 124160
 #   and 124161 (ALL STAGES BITWISE IDENTICAL).
+# 2026-11-13: test 1c softplus case with SLOPE_MULT_MIN=1 (token-equal to jobs/nonneg_fit.sbatch), test 3d (CPU job
+#   124663); quick CPU set 87 checks pass.
 # ==== end of header ====
 """Tests of model_ext/chain_onejob.py (CPU) and the split-vs-one-job comparison (after the GPU test jobs).
 
@@ -199,7 +201,7 @@ def test_slope_commands(scratch):
 
 
 # ------------------------------------------------------------------------------------------------ 1c nonneg commands
-NONNEG_SNAP = ROOT_OUT / "model_ext_frozen" / "nonneg_20261111T044920Z"
+NONNEG_SNAP = ROOT_OUT / "model_ext_frozen" / "nonneg_20261113T035423Z"     # (20261111T044920Z + --slope-mult-min)
 NONNEG_TEST_START = RUN / "nonneg_tests" / "start" / "squared_start.npz"
 RUN_LINES = {"nonneg_fit.sbatch": '''bash -c 'echo 1000 > /proc/self/oom_score_adj; exec "$@"' _ "${CMD[@]}" > "$P/fit.log" 2>&1; rc=$?''',
              "nonneg_finetune.sbatch": '''bash -c 'echo 1000 > /proc/self/oom_score_adj; exec "$@"' _ "${CMD[@]}" > "$P/finetune.log" 2>&1; rc=$?'''}
@@ -266,42 +268,58 @@ def test_nonneg_commands(scratch):
     d = scratch / "nonneg_commands"
     d.mkdir()
     common = {"NFEV": "5", "CHECK": "1", "CHAIN": "1", "L_THREADS": "32", "MODEL_EXT": str(NONNEG_SNAP)}
-    for model in ("softplus", "squared"):
+    smm_known = "SLOPE_MULT_MIN" in (ROOT_OUT / "jobs" / "nonneg_fit.sbatch").read_text()
+    cases = [("softplus", None), ("squared", None)] + ([("softplus", "1")] if smm_known else [])
+    if not smm_known:
+        print("SKIP nonneg --slope-mult-min case: jobs/nonneg_fit.sbatch has no SLOPE_MULT_MIN yet (agent 1)")
+    for model, smm in cases:
         extra = ["--start-file", str(NONNEG_TEST_START)] if model == "squared" else []
         sf = {"START_FILE": str(NONNEG_TEST_START)} if model == "squared" else {}
         # cycle 1 fit (empty roots), cycle 1 fine tuning and cycle 2 fit (c1 done), both sides the same layout
-        for stage, done in (("c1fit", None), ("c1ft", 0), ("c2fit", 1)):
-            split, mine = d / ("split_%s_%s" % (model, stage)), d / ("mine_%s_%s" % (model, stage))
-            if done is not None:
+        smv = {"SLOPE_MULT_MIN": smm} if smm is not None else {}
+        sma = ["--slope-mult-min", smm] if smm is not None else []
+        tag0 = model + ("_smm%s" % smm if smm is not None else "")
+        stages = (("c1fit", None), ("c1ft", 0), ("c2fit", 1)) + ((("c1fit_seg02", "resume"),) if smm else ())
+        for stage, done in stages:
+            split, mine = d / ("split_%s_%s" % (tag0, stage)), d / ("mine_%s_%s" % (tag0, stage))
+            if done == "resume":                          # an interrupted segment 1 of the c1 fit (synthetic marker)
+                for r in (split, mine):
+                    seg = r / "c1" / "fit" / "seg01"
+                    seg.mkdir(parents=True)
+                    _npz(seg / "fit_restart.npz", {"status": "interrupted", "segments": [{"nfev": 2}],
+                                                    "model_extension": {"fit_chain": {"start_restart": {"path": str(
+                                                        (RUN / "clip_refit" / "D2" / "final" / "fit_restart.npz").resolve())}},
+                                                        "start_choice": "d2"}})
+            elif done is not None:
                 _fake_chain(split, done)
                 _fake_chain(mine, done)
             else:
                 split.mkdir()
                 mine.mkdir()
-            if stage == "c1fit":
+            if stage in ("c1fit", "c1fit_seg02"):
                 ref = emulate_sbatch("nonneg_fit.sbatch", dict(common, MODEL=model, FITDIR=str(split / "c1" / "fit"),
-                                                               **sf), d, "%s_%s" % (model, stage))
+                                                               **sf, **smv), d, "%s_%s" % (tag0, stage))
             elif stage == "c2fit":
                 ref = emulate_sbatch("nonneg_fit.sbatch", dict(
                     common, MODEL=model, FITDIR=str(split / "c2" / "fit"), START="chain",
                     START_RESTART=str(split / "c1" / "fit" / "final" / "fit_restart.npz"),
                     HELD=str(split / "c1" / "ft" / "finetune_state.npz"),
-                    GRAIN_FROM=str(split / "c1" / "ft" / "finetune_state.npz")), d, "%s_%s" % (model, stage))
+                    GRAIN_FROM=str(split / "c1" / "ft" / "finetune_state.npz"), **smv), d, "%s_%s" % (tag0, stage))
             else:
                 ref = emulate_sbatch("nonneg_finetune.sbatch", {
                     "FIT": str(split / "c1" / "fit" / "final"), "OUT": str(split / "c1" / "ft"), "FACETS": "late_only",
                     "WINDOW_MIN": "5", "MAXNFEV": "3", "L_THREADS": "32", "MODEL_EXT": str(NONNEG_SNAP)}, d,
-                    "%s_%s" % (model, stage))
+                    "%s_%s" % (tag0, stage))
             args = co.parse_args(["--kind", "nonneg", "--slope-model", model, "--chain-root", str(mine), "--cycles", "2",
                                   "--nfev", "5", "--check", "1", "--ft-maxnfev", "3", "--ft-facets", "late_only",
                                   "--ft-window-min", "5", "--l-threads", "32", "--model-ext", str(NONNEG_SNAP),
                                   "--devices", "0,1,2,3,4,5,6,7", "--source",
-                                  str(RUN / "clip_refit" / "D2" / "final" / "fit_restart.npz")] + extra)
+                                  str(RUN / "clip_refit" / "D2" / "final" / "fit_restart.npz")] + extra + sma)
             chain = co.Chain(args)
-            st = next(s for s in chain.stages if s.name == stage)
+            st = next(s for s in chain.stages if s.name == stage.split("_")[0])
             plan = st.prepare()
             if not check(plan.rc is None and not plan.done, "nonneg %s %s: planned (rc %s %s)" % (
-                    model, stage, plan.rc, plan.notes[-1:])):
+                    tag0, stage, plan.rc, plan.notes[-1:])):
                 continue
             a_ = _norm_roots(co.PY + plan.argv, [(mine, "<root>")])
             b_ = _norm_roots(ref, [(split, "<root>")])
@@ -309,7 +327,7 @@ def test_nonneg_commands(scratch):
                 import difflib
                 print("\n".join(difflib.unified_diff(b_, a_, "nonneg sbatch", "chain_onejob", lineterm="")))
             check(a_ == b_, "nonneg %s %s: command == the emulated %s (%d tokens)" % (
-                model, stage, "nonneg_finetune.sbatch" if stage.endswith("ft") else "nonneg_fit.sbatch", len(b_)))
+                tag0, stage, "nonneg_finetune.sbatch" if stage.endswith("ft") else "nonneg_fit.sbatch", len(b_)))
 
 
 # ------------------------------------------------------------------------------------------------ 2 states
@@ -670,7 +688,8 @@ args = co.parse_args(["--kind", "nonneg", "--slope-model", sys.argv[3], "--chain
                       "--nfev", "5", "--check", "1", "--ft-maxnfev", "3", "--ft-facets", "late_only",
                       "--ft-window-min", "5", "--l-threads", "32", "--model-ext", str(CODE), "--devices", "0",
                       "--source", str(RUN / "clip_refit" / "D2" / "final" / "fit_restart.npz")]
-                     + (["--start-file", sys.argv[4]] if sys.argv[3] == "squared" else []))
+                     + (["--start-file", sys.argv[4]] if sys.argv[3] == "squared" else [])
+                     + (["--slope-mult-min", sys.argv[5]] if len(sys.argv) > 5 and sys.argv[5] != "-" else []))
 chain = co.Chain(args)
 os.environ[co.KIND_ENV] = "nonneg"
 setup = chain.parent_setup()
@@ -696,6 +715,11 @@ res["purged"] = sorted(rep["purged"])
 import nonneg_fit as nf2
 cfg2 = nf2.process_config_from_argv(c2.config_argv())
 res["c2_config_equal"] = nm.canonical(cfg2) == nm.canonical(cfg1)
+import nonneg_problem as npb
+res["slope_mult_min_in_c1_argv"] = "--slope-mult-min" in c1.config_argv()
+res["slope_mult_min_in_c2_argv"] = "--slope-mult-min" in c2.config_argv()
+res["rewrite_c1"] = npb.rewrite_arguments(nf2._split_threads(c1.config_argv())[0])[0].get("slope_mult_min")
+res["rewrite_c2"] = npb.rewrite_arguments(nf2._split_threads(c2.config_argv())[0])[0].get("slope_mult_min")
 try:
     res["c2_install"] = nm.install_gpu(cfg2)
 except Exception as exc:
@@ -711,8 +735,9 @@ print("NNKIND", json.dumps(res, default=str))
 def nonneg_kind(code_dir, scratch, ref3a_ft_state):
     """CPU job: the nonneg process kind with the real snapshot code (both models)."""
     out = {}
-    for model in ("softplus", "squared"):
-        root = Path(scratch) / ("nnkind_" + model)
+    for model, smm in (("softplus", None), ("squared", None), ("softplus", "1")):
+        tag = model + ("_smm" + smm if smm else "")
+        root = Path(scratch) / ("nnkind_" + tag)
         (root / "c1" / "fit" / "seg01").mkdir(parents=True)
         (root / "c1" / "fit" / "seg01" / "fit_restart.npz").write_text("x")
         os.symlink("seg01", str(root / "c1" / "fit" / "final"))
@@ -721,7 +746,7 @@ def nonneg_kind(code_dir, scratch, ref3a_ft_state):
         env = {k: v for k, v in os.environ.items() if not k.startswith(("COPS_POS_", "COPS_SLOPEMUL_", "COPS_NONNEG_"))}
         env.update(OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1", MKL_NUM_THREADS="1")
         r = subprocess.run([PY, "-W", "ignore", "-c", NNKIND_CHILD, str(code_dir), str(root), model,
-                            str(NONNEG_TEST_START)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            str(NONNEG_TEST_START), smm or "-"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                            universal_newlines=True, env=env, timeout=2400)
         line = [l for l in r.stdout.splitlines() if l.startswith("NNKIND ")]
         if not line:
@@ -729,17 +754,24 @@ def nonneg_kind(code_dir, scratch, ref3a_ft_state):
             check(False, "nonneg kind %s: the child did not report (exit %d)" % (model, r.returncode))
             continue
         res = json.loads(line[-1][7:])
-        out[model] = res
-        print("nonneg kind %s: %s" % (model, json.dumps(res)[:1600]))
+        out[tag] = res
+        print("nonneg kind %s: %s" % (tag, json.dumps(res)[:1600]))
+        if smm:
+            check(res["slope_mult_min_in_c1_argv"] and res["slope_mult_min_in_c2_argv"]
+                  and res["rewrite_c1"] == float(smm) and res["rewrite_c2"] == float(smm),
+                  "nonneg kind %s: --slope-mult-min %s in the cycle-1 and cycle-2 fit arguments, accepted by "
+                  "nonneg_problem.rewrite_arguments for both (value %s / %s)" % (tag, smm, res["rewrite_c1"],
+                                                                                res["rewrite_c2"]))
+        model_ = model
         check(res["installed"] and res["frozen_env"] and "slope_mult" in res["keep_names"]
               and res["c1_install_again"] in (False, True) and res["after_restore_installed"]
               and res["after_restore_patch_kept"] and res["slope_mult_kept"]
               and "nonneg_fit" in res["purged"] and "nonneg_problem" in res["purged"],
               "nonneg kind %s: nonneg_mult installed in the parent (frozen env set), slope_mult kept with it, a stage's "
-              "install with the cycle-1 configuration accepted, restore keeps the patch, stage modules purged" % model)
+              "install with the cycle-1 configuration accepted, restore keeps the patch, stage modules purged" % tag)
         check(res["c2_config_equal"] and not str(res["c2_install"]).startswith("refused") and res["held_set"],
               "nonneg kind %s: requirement A met (the cycle-2 configuration with --held equals cycle 1's; the held term "
-              "is set per stage)" % model)
+              "is set per stage)" % tag)
     return out
 
 

@@ -1,12 +1,16 @@
-# ==== version-controlled copy: header added 2026-11-11, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/nonneg_problem.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/nonneg_problem.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 241b0566f492a45730eb67b7ac6870d870ee93947d09d1c49be86e1750081fae
+# SHA256 of the run copy = SHA256 of this file without these header lines: 5c5416d1f7c16a40bcceacd79c696d14e1cb41d7e0a8134def16f62b1c7338bd
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: module. Fit-level hooks of the softplus / squared models around the unchanged grain_fit_fixed.py path: D2's core
 #   (clip_problem.install_core: grid rows, W10x5, start check, full Jacobian check), model checks (the 7 bin templates +
 #   D2's ft_c1..ft_c6 held at 1, no cliff_ge_60deg), the start (--start d2 | lsq | chain; user 2026-11-11: both models
 #   from D2), diagnostics, products, restart marker.
 # USED BY: nonneg_fit.py (snapshot nonneg_20261111T044920Z).
+# 2026-11-13: --slope-mult-min 1 (user 2026-11-12, softplus only): lower bound 1 instead of the fitter's 0 on the six
+#   free slope-bin multipliers (start 1, no upper bound), set on the Problem's bounds in the existing hook; recorded in
+#   the manifest, restart marker, NONNEG_MODEL.txt, nonneg_bins.txt; a resume / chain start with another value is
+#   refused. Snapshot nonneg_20261113T035423Z (production chain 124664/124772).
 # ==== end of header ====
 """Fit-level part of the non-negative activity models (softplus / squared harmonics with slope-bin multipliers; user
 decisions 2026-11-11, handoff.md section 10); the model and the GPU patch are nonneg_mult.py, the driver nonneg_fit.py.
@@ -65,6 +69,7 @@ START_CHOICES = {
               "the previous fine tuning (--grain-from), the accumulated fine-tuning term held (--held)")}
 MODEL_STARTS = {"softplus": ("d2", "chain"), "squared": ("lsq", "chain")}
 GRAIN_TERM_RTOL = 1e-6
+SLOPE_MULT_MIN_CHOICES = (1.0,)    # user 2026-11-12 (softplus): "do not allow the multiplier factor decrease below 1"
 LOG = "nonneg:"
 FT_PREFIX = "ft_c"
 
@@ -120,8 +125,9 @@ def rewrite_arguments(argv):
     bin columns are added as --activity-template in bin order), --ft-templates-from <D2 fit dir | fit_manifest.json>
     (its ft_c* templates are added in D2's order and held at 1), --start d2|lsq|chain (required for a new fit),
     --start-restart R.npz, --start-file S.npz (lsq), --held F --grain-from F (chain), --s-ratio 0 --test-clip
-    (softplus test only: the hard clip everywhere), --check-full-jacobian, --check-parameters a,b,..,
-    --stop-after-checks. Inserted when absent: gpu_fit --template-start 0, --fix c_slope_00_40=1, --fix c_<ft>=1."""
+    (softplus test only: the hard clip everywhere), --slope-mult-min 1 (softplus, user 2026-11-12: lower bound 1 of the
+    six free multipliers instead of the fitter's 0; absent: unchanged), --check-full-jacobian, --check-parameters
+    a,b,.., --stop-after-checks. Inserted when absent: gpu_fit --template-start 0, --fix c_slope_00_40=1, --fix c_<ft>=1."""
     argv = list(argv)
     if "--" not in argv:
         raise SystemExit("nonneg: need '--' before the fit_cops arguments")
@@ -133,11 +139,22 @@ def rewrite_arguments(argv):
            "start_restart": _pop(head, "--start-restart"), "start_file": _pop(head, "--start-file"),
            "start_choice": _pop(head, "--start"), "held": _pop(head, "--held"), "grain_from": _pop(head, "--grain-from"),
            "s_ratio": _pop(head, "--s-ratio"), "test_clip": _flag(head, "--test-clip"),
+           "slope_mult_min": _pop(head, "--slope-mult-min"),
            "check_full_jacobian": _flag(head, "--check-full-jacobian"),
            "stop_after_checks": _flag(head, "--stop-after-checks"), "check_parameters": list(CHECK_PARAMETERS),
            "variant": "D2"}
     if cfg["model"] not in nm.MODELS:
         raise SystemExit("nonneg: --model %r: choose one of %s" % (cfg["model"], nm.MODELS))
+    if cfg["slope_mult_min"] is None:
+        del cfg["slope_mult_min"]               # absent: today's fit, its records unchanged
+    else:
+        v = float(cfg["slope_mult_min"])
+        if cfg["model"] != "softplus":
+            raise SystemExit("nonneg: --slope-mult-min is a decision for the softplus model only (user 2026-11-12)")
+        if v not in SLOPE_MULT_MIN_CHOICES:
+            raise SystemExit("nonneg: --slope-mult-min %r is not a decision (user 2026-11-12: %s)" % (
+                v, SLOPE_MULT_MIN_CHOICES))
+        cfg["slope_mult_min"] = v
     names = _pop(head, "--check-parameters")
     if names:
         cfg["check_parameters"] = [n.strip() for n in names.split(",") if n.strip()]
@@ -286,6 +303,9 @@ def check_restart_marker(path, cfg, model_cfg, held):
     marked = ext.get("start_choice")
     if cfg.get("start_choice") is not None and marked != cfg["start_choice"]:
         problems.append("the fit started with --start %r, this command gives %r" % (marked, cfg["start_choice"]))
+    if ext.get("slope_mult_min") != cfg.get("slope_mult_min"):
+        problems.append("multiplier lower bound (--slope-mult-min) %r in the restart, %r in this command" % (
+            ext.get("slope_mult_min"), cfg.get("slope_mult_min")))
     if problems:
         raise SystemExit("nonneg: --restart-from %s is not a segment of this fit: %s" % (path, "; ".join(problems)))
     return {"path": str(Path(path).resolve()), "sha256": sha256(path), "parameterization": want,
@@ -446,7 +466,7 @@ def start_lsq(P, el, path, record, cfg):
     return x
 
 
-def start_chain(P, el, path, record, grain_from, model_cfg, held):
+def start_chain(P, el, path, record, grain_from, model_cfg, held, slope_mult_min=None):
     from cops_cuda import restart as rs
     state = rs.read(path)
     _check_source_state(P, el, state, path)
@@ -463,6 +483,9 @@ def start_chain(P, el, path, record, grain_from, model_cfg, held):
         problems.append("parameters %s vs %s" % (names_r, list(P.names)))
     if state.meta.get("status") != "complete":
         problems.append("status %r (the previous fit must be complete)" % state.meta.get("status"))
+    if ext.get("slope_mult_min") != slope_mult_min:
+        problems.append("multiplier lower bound (--slope-mult-min) %r in the previous fit, %r in this command" % (
+            ext.get("slope_mult_min"), slope_mult_min))
     if problems:
         raise SystemExit("nonneg: --start chain from %s: %s" % (path, "; ".join(problems)))
     x = np.asarray(state.x, float).copy()
@@ -716,7 +739,28 @@ def write_bin_table(out, P, r, el, seen, st):
                 row["zero_area_frac"], row["seen_zero_area_frac"], row["production_share"],
                 row["production_share_seen"]))
         f.write("# total production sum(area*A) = %.9e (seen %.9e)\n" % (ptot, pseen))
+        lb = (cfg_of(P) or {}).get("slope_mult_min")
+        if lb is not None:
+            atb = at_bound(rows[:-1], lb)
+            f.write("# multiplier lower bound %r (user 2026-11-12; --slope-mult-min) on the six free multipliers, no "
+                    "upper bound; m - lb per bin %s; at the lower bound (m - lb <= %g max(1, lb); scipy TRF keeps its "
+                    "iterates strictly inside, ~1e-10 above a bound it rests on): %s; sigma is the local unconstrained "
+                    "Gauss-Newton value (not a two-sided uncertainty at the bound)\n" % (
+                        lb, {r_["bin"]: "%.3g" % (r_["multiplier"] - lb) for r_ in rows[:-1] if r_["bin"] != nm.FIXED_BIN},
+                        AT_BOUND_RTOL, atb if atb else "none"))
     return path, rows
+
+
+def cfg_of(P):
+    return getattr(P, "nonneg_cfg", None)
+
+
+AT_BOUND_RTOL = 1e-8                 # reporting only: a multiplier within 1e-8 max(1, lb) of its lower bound is "at" it
+
+
+def at_bound(rows, lb):
+    return [r_["bin"] for r_ in rows if r_["bin"] != nm.FIXED_BIN and
+            r_["multiplier"] - lb <= AT_BOUND_RTOL * max(1.0, abs(lb))]
 
 
 TEXT = """\
@@ -760,6 +804,7 @@ def write_text(out, P, cfg, record):
     columns = {"softplus": "dA/da_j = m g'(L) exp(h) Y_j, dA/dm_k = [bin = k] g(L) exp(h), g' = sigmoid(L/s)",
                "squared": "dA/da_j = m (2 u / A_s) exp(h) Y_j, dA/dm_k = [bin = k] (u^2/A_s + TS) exp(h)"}[model]
     held = nm.stage_held()
+    lbv = cfg.get("slope_mult_min")
     text = TEXT.format(
         utc=utc_now(), pid=P.nonneg_parameterization, description=DESCRIPTION[model], policy=nm.POLICY[model],
         model=model, definition=definition, bundle=cfg["slope_bundle"], fixed=nm.FIXED_BIN,
@@ -770,6 +815,17 @@ def write_text(out, P, cfg, record):
         ngrid=len(lay.grid_rows) if lay is not None else 0, nng=int(P.NNG), nrg=int(P.NRG), late=pp.LATE_START_UTC,
         nlate=len(lay.late_rows) if lay is not None else "?", start=start,
         aunits=" (= A_s b in the squared model)" if model == "squared" else "")
+    if lbv is not None:
+        x = np.asarray(record.get("final_x") or [], float)
+        names = list(P.names)
+        atb = [n for k, n in enumerate(names) if n.startswith("c_slope_") and len(x) and
+               x[k] - lbv <= AT_BOUND_RTOL * max(1.0, abs(lbv))]
+        text = text.replace("\nBase: ", "\nMULTIPLIER LOWER BOUND (user 2026-11-12, --slope-mult-min %r): the six free "
+                            "multipliers have lower bound %r (not the fitter's 0), no upper bound, start 1; at the bound "
+                            "in this fit (within 1e-8; scipy TRF keeps its iterates ~1e-10 inside): %s. fit_result.txt's header line 'template coefficients have lower bound zero' "
+                            "does not hold for c_slope_* (the bounds are in fit_manifest.json lower_bounds); sigma is "
+                            "the local unconstrained Gauss-Newton value.\nBase: " % (lbv, lbv, atb if atb else "none"),
+                            1)
     path = Path(out) / "NONNEG_MODEL.txt"
     with path.open("x") as f:
         f.write(text)
@@ -815,6 +871,8 @@ def install_restart_marker(record, cfg, model_cfg):
                                                    "window_installed")},
             "warning": "activity_linear in this file is Y a + A_s B b (the fitter's additive layout), NOT this "
                        "model's activity (nonneg_facets.npz has A); its fine tuning is nonneg_finetune.py"}
+        if cfg.get("slope_mult_min") is not None:
+            state.meta["model_extension"]["slope_mult_min"] = cfg["slope_mult_min"]
         return state
     from_fit._nonneg_marker = True
     rs.from_fit = from_fit
@@ -847,6 +905,7 @@ def install_outer(fit_cops, cfg, model_cfg, record, source=None, held=None):
             super().__init__(M, el, coef, args)
             self.nonneg_parameterization = pid
             self.nonneg_model = dict(model_cfg)
+            self.nonneg_cfg = cfg
             names = list(self.names)
             free_m = ["c_" + n for n in nm.BIN_NAMES if n != nm.FIXED_BIN]
             expected = ["a%02d" % j for j in range(25)] + free_m + ["kappa"] + list(GRAIN_NAMES)
@@ -907,6 +966,27 @@ def install_outer(fit_cops, cfg, model_cfg, record, source=None, held=None):
             if record["model_check"]["template_min"] is not None and record["model_check"]["template_min"] < 0.0:
                 raise SystemExit("nonneg: a template column is negative (the model needs T_k >= 0)")
             self._nonneg_el = el
+            vmin = cfg.get("slope_mult_min")
+            if vmin is not None:               # user 2026-11-12: the six free multipliers >= vmin (fitter: >= 0)
+                lo = np.array(self.lo, dtype=float, copy=True)
+                changed = []
+                for k, name in enumerate(self.names):
+                    if name in free_m:
+                        if not (lo[k] == 0.0 and np.isinf(self.hi[k])):
+                            raise SystemExit("nonneg: %s has bounds [%r, %r], expected the fitter's [0, inf]" % (
+                                name, lo[k], self.hi[k]))
+                        lo[k] = vmin
+                        changed.append(name)
+                self.lo = lo
+                record["model_check"]["multiplier_lower_bound"] = {
+                    "value": vmin, "parameters": changed, "upper_bound": "inf",
+                    "policy": "user 2026-11-12: do not allow the multiplier factor decrease below 1; start all of "
+                              "them with 1; they can grow (fitter default lower bound 0 replaced here)",
+                    "scipy_trf_start_on_bound": "least_squares(method='trf') shifts a start on a bound to "
+                                                "lb + 1e-10 max(1, |lb|) (make_strictly_feasible) before its first "
+                                                "evaluation; the start check evaluates the start itself"}
+                say("multiplier lower bound %r on %s (user 2026-11-12; the fitter's default 0 replaced), no upper "
+                    "bound" % (vmin, changed))
             if cfg.get("start_restart"):
                 ch = cfg["start_choice"]
                 if ch == "d2":
@@ -915,7 +995,12 @@ def install_outer(fit_cops, cfg, model_cfg, record, source=None, held=None):
                     self.restart_start = start_lsq(self, el, cfg["start_restart"], record, cfg)
                 else:
                     self.restart_start = start_chain(self, el, cfg["start_restart"], record, cfg["grain_from"],
-                                                     model_cfg, held)
+                                                     model_cfg, held, vmin)
+            if vmin is not None and getattr(self, "restart_start", None) is not None:
+                xs = np.asarray(self.restart_start, float)
+                bad = [n for k, n in enumerate(self.names) if xs[k] < self.lo[k] or xs[k] > self.hi[k]]
+                if bad:
+                    raise SystemExit("nonneg: the start of %s is outside the bounds" % bad)
 
     fit_cops.Problem = NonnegOuter
     install_activity_diagnostics(fit_cops, model_cfg)
