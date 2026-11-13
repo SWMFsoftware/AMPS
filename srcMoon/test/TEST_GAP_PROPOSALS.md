@@ -6,6 +6,34 @@ before implementation.
 
 ## Legitimate extensions of existing IDs
 
+### November 12 M2 supporting coverage
+
+The approved development-order exception allows implementation/supporting
+checks while I11/I13 remain unresolved; formal I14-I20 retain their gates.
+No new permanent IDs or relaxed thresholds were introduced.
+
+- U09 now reproduces and fixes shared-vertex misses on a closed icosphere.
+  Supporting I14 verifies 513/513 LOLA radial rays and collisions on all seven
+  eligible ranks in an eight-rank run. The actual selected force mover now
+  enters the moving-surface callback, and source position/flight share a
+  departure epoch. Mesh/time/collision convergence remains a formal gate.
+- U11 adds the analytical uniform radiative-equilibrium invariant at three
+  step sizes. This does not replace I17 spin-up or transient convergence.
+- U12 checks integrated competing finite-release hazards, including stiff and
+  semigroup limits. Supporting I19 closes Na/Ar gas and evolving finite stocks
+  over 20 ordinary steps, with actual adsorption/release/escape and weighted
+  packets. This closes that scoped production/accounting gap, while formal
+  I19, other source/mover/chemistry layouts and temporal/weight convergence
+  remain open. Population-independent sputtering is explicitly unsupported
+  with finite stocks until its depletion coupling is specified.
+- D03 selected-input package qualification is now reproducible and READY;
+  D02 remains PARTIAL. Actual D02 integration epochs and the extended-disc
+  temporal comparison are missing. I16/I17/I20 operator, hold-out and
+  predecessor requirements remain; data readiness is never validation.
+
+The older audit bullets below describe initial gaps. This dated entry records
+the precise subset addressed; it does not declare their complete scopes closed.
+
 - **U01 / I01:** expose a thin adapter around the same production ray/sphere
   intersection and LOS integration routines used by sampling; add tangent,
   miss, inside-origin, and reversed-direction analytical fixtures.
@@ -27,9 +55,21 @@ before implementation.
   for that production-wiring test.
 - **U06 / I08:** enable a declared ion species, mass, charge, E/B fixture, and
   compare the production mover with the analytic gyro-orbit.
+- **I11 statistical-support audit (2026-11-11):** `I11Sampling::Analyze`
+  assigns zero relative CI width when both the five-batch mean and its
+  empirical variance are zero. A deterministic structural zero and a sparse
+  Monte Carlo bin with no sampled events need different evidence. Extend I11
+  with boundary-case statistics fixtures and an explicitly reviewed support
+  policy before relying on this shortcut for qualification; do not invent
+  event counts or a probability law for weighted/correlated samples. No
+  threshold or current run is changed by this proposal. The corrected live
+  480/240 km runs each contain 1175 metrics and have no all-zero nine-window
+  series; their observed first failure is independence, not this potential
+  edge case. No new permanent ID is assigned.
 - **I13 reference review (I11/I12 implementation complete):** I11 now runs the
-  full 40/20/10/5 km production campaign and I12 verifies the linked realized
-  mesh. I13 cannot PASS until a passing I11 run produces its candidate science
+  approved 480/240/120/60 km campaign (explicit legacy FULL remains
+  40/20/10/5 km), and I12 verifies the linked realized mesh. I13 cannot PASS
+  until a passing I11 run produces its candidate science
   CSV and deterministic configuration JSON, and an investigator reviews and
   freezes them as `I13_archived_baseline_metrics.csv` and
   `I13_archived_configuration.json`. Do not automate that scientific approval
@@ -71,6 +111,14 @@ before implementation.
 - **U14-U15 / I21-I22:** generate species-specific rates from qualified D04
   inputs and verify shadow gating, branching, daughter creation, and survival
   statistics without using AMPS output as the oracle.
+  The November 12 supporting I11 fixture now checks the actual configured
+  neutral-Na processor against exponential sunlit survival and exact shadow
+  survival. It exposed and corrected a generic H/O-only processor bypass of
+  the Moon Na lifetime callback. This closes that specific dispatch gap;
+  it does not qualify the legacy coefficient against D04, daughter kinetics,
+  multispecies branching, or the complete I21/I22 scope. The neutral-Na sphere
+  event ledger closes actual gas events, but complete I19 surface-reservoir,
+  evolving-geometry and multispecies conservation remain open.
 - **U16 / I23:** replace or qualify the fixed cross-section/speed constants
   against D05 and test rate integration over a declared electron distribution.
 - **U17 / I24:** declare reactants/products and authoritative charge-exchange

@@ -1,5 +1,124 @@
 # `srcMoon` subsystem verification tests
 
+Current-core integration has a separate regression-preservation audit, described
+in [CORE_INTEGRATION.md](../CORE_INTEGRATION.md). The existing global core
+registry remains the authority for suite/case membership. The helper
+`compare_core_regressions.py` reads its aggregate reports and `selection.json`,
+protects every actual baseline PASS, and refuses missing cases or a later
+failed retry that attempts to borrow an earlier PASS. Repeat `--baseline` and
+`--candidate` in explicit attempt/retry order, and choose a new output directory.
+It emits `result.json` plus `comparison.csv`, with runner/log locations. Its
+three protocol checks execute automatically; protocol fixtures are never
+observations. A preservation PASS does not mean the registry is all green or
+that a Moon milestone is qualified. Existing FAIL/ERROR/SKIP remain visible.
+
+For relocated Enceladus regression inputs, the optional
+`prepare_core_regression_inputs.py` helper runs the existing production exporter
+and changes only three absolute host-path comment lines. It requires both
+complete non-path payloads to remain identical, backs up their original bytes,
+and records hashes/commands. Missing or changed scientific content is ERROR.
+It performs no calibration, numerical-reference replacement or observation
+processing. The missing native fixture provenance is retained separately in
+[`src/test/NATIVE_FIXTURE_PROVENANCE.md`](../../src/test/NATIVE_FIXTURE_PROVENANCE.md).
+These helpers support existing registry tests; neither introduces a new U/I ID.
+
+The approved M2 development-order exception has a separate global mode:
+
+```sh
+python3 -B srcMoon/test/test_runner.py --phase m2-development --mpi-ranks 8 \
+  --output-dir test_output/srcMoon/M2-development-NEW
+```
+
+It runs U08-U13 and supporting production I14/I18/I19 checks plus read-only
+data QA, preserving formal I14-I20 as I13-blocked SKIPPED. The dedicated clean
+Na/Ar build has chemistry OFF and individual weights ON; the canonical
+Moon/SPICE configuration is restored afterward. A retained binary may be
+supplied through `--m2-amps` only with its matching current generated tree.
+See [RUN.md](../RUN.md#m2-supporting-verification-before-m1-closure) and
+[M2_IMPLEMENTATION_PLAN.md](M2_IMPLEMENTATION_PLAN.md) for commands, physics,
+oracles, resource guards and output paths. Supporting checks have separate
+counts and cannot open formal gates. FAIL/ERROR in either namespace makes the
+global command fail; an actual SKIPPED remains visible (and fails the command
+when `--strict-skips` is requested).
+
+New tests must remain registered in the global runner and the frozen test
+registry. The new I19 parser/builder unit checks are invoked automatically by
+`integration-tests/I19/test.py` and the development driver, under existing I19,
+not new permanent IDs. They produce a unittest exit status; the child runner
+then writes its standard `result.json`. Every new supporting check must emit
+`status` as PASS/FAIL/SKIPPED/ERROR, its `check` name, runner/log paths for
+executed failures, and an explicit supporting scope. Never insert supporting
+PASS into the formal `results` namespace or fabricate a predecessor result.
+
+For a one-hour M1 launch budget after a clean Moon/SPICE build, the existing
+global runner can launch four isolated meshes concurrently:
+
+```sh
+python3 -B srcMoon/test/run_all_test.py --skip-build \
+  --campaign-mode qualification --only I11 --only I12 --only I13 \
+  --m1-input srcMoon/examples/m1_memory200.in --mpi-ranks 8 \
+  --i11-parallel-levels 4 --test-runtime-seconds 3600 \
+  --output-dir test_output/srcMoon/m1-parallel-NEW
+```
+
+This uses 32 hardware threads; `--mpi-ranks` applies to each mesh. I11 first
+executes its linked sampling-window and event-budget/Na-chemistry prerequisites
+automatically, so new storage
+regressions remain registered through its existing global I11 entry. See the
+[I11 README](integration-tests/I11/README.md) and
+[sampling contract](integration-tests/I11/SAMPLING_CONTRACT.md) for exact
+oracles, guards, artifacts and scope. The default serial schedule is retained.
+
+The event prerequisite is specified in
+[BUDGET_CONTRACT.md](integration-tests/I11/BUDGET_CONTRACT.md). Its actual
+sunlit/shadow survival check protects the production chemistry dispatcher,
+which a local lifetime test cannot verify. `test_diagnostics.py` is also
+automatically run by I11, and final stages generate an independent per-metric
+statistics CSV plus PNG/EPS plots. These are supporting checks under the
+existing I11 ID, never extra permanent IDs or observational validation.
+
+For the bounded coarsest-grid diagnostic pilot:
+
+```sh
+python3 -B srcMoon/test/integration-tests/I11/run_duration_pilot.py \
+  --amps ./amps --input srcMoon/examples/m1_memory200.in --mpi-ranks 8 \
+  --wall-seconds 3600 --memory-limit-gib 200 \
+  --output-dir test_output/srcMoon/I11-duration-pilot-NEW
+```
+
+A cooperative wall stop writes a PARTIAL diagnostic with closing ledger and
+receipt; it never reports formal I11 PASS or changes the 5000-step formal cap.
+I12/I13 reuse verified finest-mesh initialization receipts when available and
+retain separate scores. A timeout produces ERROR for incomplete children;
+I13 remains SKIPPED until I11 passes and its candidate is explicitly reviewed.
+
+The 2026-11-11 corrected-sampler campaign on `passion` completed this
+four-by-eight-rank schedule in 37.14 minutes at 64.35 GiB peak aggregate RSS,
+retaining about 1.28 GB. Its formal result was I11 FAIL, I12 PASS, I13 SKIPPED,
+zero ERROR. All I11 stages reached the cap without statistical qualification;
+the runtime measurement is operational evidence, not numerical qualification.
+See [`STATUS.md` section 5.4](../STATUS.md#54-resumed-verification--2026-11-11)
+for exact results, manifests, commands and remaining decisions.
+
+The authoritative campaign procedure is
+[`TESTING_PROCEDURE.md`](TESTING_PROCEDURE.md), and the current formal
+milestone/evidence ledger is [`../STATUS.md`](../STATUS.md).  The single
+top-level entry point is:
+
+```bash
+python3 -B srcMoon/test/test_runner.py --phase audit
+python3 -B srcMoon/test/test_runner.py --phase implemented \
+  --campaign-mode qualification --mpi-ranks 8 \
+  --output-dir test_output/srcMoon/qualification-YYYYMMDD
+```
+
+The first command checks the U01-U26/I01-I20 runner, README, and reference
+contract structure without making a physics claim.  The second delegates the
+roadmap-ordered scientific work to the established phase runners.  I21-I46
+remain frozen roadmap IDs without executable runners and are reported as
+explicit gaps by `test_runner.py --phase release`; they are never represented
+by placeholder PASS results.
+
 The 200 GB allocation check reuses the registered I12 runner with
 `--only I12 --m1-input srcMoon/examples/m1_memory200.in --mpi-ranks 8`.
 See [the profile contract and direct command](../examples/README.md#200-gb-memory-budget-mesh-2026-10-14).
@@ -26,6 +145,14 @@ formal I15/I17/I20 `SKIPPED / NOT VALIDATED` status. The default zero-duration
 result is the explicit input initial condition, while any transient or
 periodic-spinup run is selected visibly on the command line and preserved in
 the receipt.
+
+For the bounded Tenishev et al. (2013) Case-1 neutral-Na model, use
+[`sodium_exosphere_demo/run.py`](sodium_exosphere_demo/README.md). It executes
+the ordinary MPI production source, mover, surface-impact, photochemistry and
+sampling paths after U03/U04/U05/U12/U14/U22 pass. It is intentionally outside
+`run_all_test.py`: successful artifact generation is `EXPERIMENTAL`, while
+convergence and the unavailable qualified 1991 observation comparison remain
+separately NOT RUN/SKIPPED.
 
 I17's runner now includes its launcher/plot-reader infrastructure checks
 automatically and enforces the approved 2026-10-14 three-step thermal numerical
@@ -179,9 +306,11 @@ remain global SKIP; they are never upgraded from a zero convenience exit.
 
 ### Complete campaign
 
-`run_all_test.py` is the single entry point for all 36 currently registered
-`srcMoon` U-series and linked tests: U01-U26 followed by I11-I20. By default
-it runs the bounded `regression` campaign with eight MPI ranks: I11 and I13
+`run_all_test.py` is the phase engine for all 36 currently registered
+`srcMoon` U-series and linked tests: U01-U26 followed by I11-I20. The global
+entry point is `test_runner.py`, which also orders the separate I01-I10 M0
+engine and exposes the later roadmap gaps. By default `run_all_test.py` runs
+the bounded `regression` campaign with eight MPI ranks: I11 and I13
 produce explicit `SKIPPED` non-execution records, while I12 runs the actual
 production initialization and wiring with `srcMoon/examples/m1_regression.in`.
 The default regression campaign builds only the canonical Na executable,
@@ -198,11 +327,18 @@ both recorded in `<output-dir>/build.log` and as separate steps in
 python3 srcMoon/test/run_all_test.py
 ```
 
+Before each linked I-test, the script prints and flushes a `RUNNING` line with
+the test ID, individual runner and log path. Completed PASS/FAIL/SKIPPED/ERROR
+lines are flushed too, including when redirected to a file. `RUNNING` is only
+progress text and is excluded from result counts. For concurrent I11, inspect
+`I11/campaign_resources.csv` for live aggregate resources and each
+`I11/<resolution>km/stdout.log` for particle-step progress.
+
 The default build sequence is equivalent to:
 
 ```sh
 rm -rf build
-./Config.pl -application=moon \
+./Config.pl -application=moon -amps-test=off \
   -spice-path=/home/vtenishe/SPICE/cspice \
   -spice-kernels=/home/vtenishe/SPICE/Kernels
 make -j "OPT3=-O3 -g"
@@ -229,7 +365,15 @@ confidence widths. A case that reaches the cap without every criterion reports
 `FAIL`; it does not authorize I13 or observational scoring. After every
 completed resolution, cumulative raw diagnostic CSV/PNG/EPS/JSON artifacts are
 written with an explicit unqualified/non-observational label and are excluded
-from formal scoring.
+from formal scoring. Full volumetric and legacy visualization text writers are
+suppressed only inside linked I11 because they are not scored; normal
+production sampling and the linked scoring callback remain active.
+
+The separate physical-duration pilot is intentionally not registered in
+`run_all_test.py`, because running it as I11 would confuse pilot completion
+with a formal four-resolution result. It is launched explicitly with
+`integration-tests/I11/run_duration_pilot.py`; see that directory's README for
+the command, resource guards, artifact contract, and status semantics.
 Override `--amps` or `--m1-input` only when the
 alternate executable/input identity is intentional and will be captured in the
 linked manifests. These M1 meshes can be substantially more expensive than
@@ -393,7 +537,7 @@ U04 additionally requires the SPICE-enabled Moon configuration and exact
 frozen kernel bytes. Configure and clean-build before running it:
 
 ```sh
-./Config.pl -application=moon \
+./Config.pl -application=moon -amps-test=off \
   -spice-path=/home/vtenishe/SPICE/cspice \
   -spice-kernels=/home/vtenishe/SPICE/Kernels
 rm -rf build
@@ -426,6 +570,13 @@ relocated `--spice-path` and `--spice-kernels` roots. Every output directory
 must be new or empty; scientifically meaningful earlier runs are never
 overwritten. The final `baseline_summary.json` reports separate local-
 prerequisite, I01-I10, and combined M0 gate states.
+
+The M0 orchestrator passes `OPT3=-O3 -g` to `make -j`, including the
+canonical nightly target, to retain debug symbols and the optimization used
+for the diagnostic executable. Exact commands and compiler output are kept
+in `build_logs/`. Its nightly run lives under the campaign's `nightly/`
+directory, preserving earlier reviewed root `run_test_Moon/` evidence. The
+generated root `Makefile` remains a local configuration artifact.
 
 Individual linked runners require an executable built for their declared
 configuration. For example:
@@ -506,7 +657,7 @@ campaign supplies equilibrated profiles, return flux, column density, and
 brightness and both the science CSV and deterministic configuration JSON are
 reviewed. The runner never generates or updates either reference automatically.
 I11 preserves separate derived inputs,
-logs, manifests, production block metrics, and resource histories for all four
+logs, manifests, production block/criterion metrics, and resource histories for all four
 levels. Unequal-epoch, unequal-seed, or unequal-layout runs are not numerical-
 convergence evidence.
 
@@ -535,7 +686,7 @@ convergence evidence.
 | U19 | helium source | SKIPPED | Source file exists but He is disabled and reservoir physics is unresolved. |
 | U20 | neon source | SKIPPED | Source file exists but Ne is disabled. |
 | U21 | argon source | local uniform kernel verified; full ID SKIPPED | The species-specific continuous source conserves its 3.8e20 atoms/s reference-sphere area partition and rejects unsupported maps. D10 is regional/QA-incomplete, Ar-linked stochastic injection and transient/K-weighted modes are absent, so this is not source validation. |
-| U22 | Na sources | implemented linked probe and configuration guard | M0 built-in impact-on/`MySource`-off invariant, impact normalization, and PSD density kernel; no night-to-day reservoir claim. |
+| U22 | Na sources | implemented linked probe and configuration guard | M0 built-in impact-on/`MySource`-off invariant, impact normalization, PSD density kernel, and exact Tenishev-2013 Case-1 parser/runtime scalars; no linked prescribed-reservoir or night-to-day migration claim. |
 | U23 | meteoroid driver | SKIPPED | No production forcing path. |
 | U24 | H2O/OH chemistry | SKIPPED | No production species/chemistry path. |
 | U25 | data provenance | SKIPPED | Requires a selected Dxx package and linked campaign context. |

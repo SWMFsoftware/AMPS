@@ -19,7 +19,9 @@ namespace IntegrationTests {
 // UTF-8 key/value receipt consumed by the Python I-series runner.  Returning 0
 // means the diagnostic executed; scientific PASS/FAIL is decided independently
 // by the runner from the frozen acceptance contract.
-int Run(const std::string& testId,const std::string& outputFile);
+int Run(const std::string& testId,const std::string& outputFile,
+        bool i11DurationPilot=false,bool i11SamplingCheck=false,
+        bool i11BudgetCheck=false,bool m2BudgetCheck=false);
 
 }  // namespace IntegrationTests
 }  // namespace Moon

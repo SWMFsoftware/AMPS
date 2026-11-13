@@ -14,4 +14,9 @@ checked = subprocess.run([sys.executable, "-B",
 if checked.returncode:
     raise SystemExit(2)
 
+checked = subprocess.run([sys.executable, "-B",
+    str(Path(__file__).with_name("test_diagnostics.py"))], check=False)
+if checked.returncode:
+    raise SystemExit(2)
+
 raise SystemExit(main())

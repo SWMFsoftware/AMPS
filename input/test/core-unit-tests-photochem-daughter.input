@@ -1,0 +1,13 @@
+! T6 daughter-insertion profile.  The included application supplies the
+! production mesh, H2O/OH/H species, and individual statistical-weight field.
+! Only the photochemistry processor hook changes here: the generic whole-mesh
+! traversal remains production code, while the application callback converts
+! one admitted H2O parent to OH+H and closes physical weight and kinematics.
+#include input/test/core-unit-tests-individual-weight.input
+
+#General
+  define _AMPS_CORE_TEST_T6_DAUGHTER_PROCESSOR_MODE_ _AMPS_CORE_TEST_T6_DAUGHTER_PROCESSOR_MODE__ON_
+  define _PIC_PHOTOLYTIC_REACTIONS__REACTION_PROCESSOR_(ptr,FirstParticleCell,node) ::AMPS::CoreTests::T6PhotochemistryDaughterProcessor(ptr,FirstParticleCell,node)
+#endGeneral
+
+#end

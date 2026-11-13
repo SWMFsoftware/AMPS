@@ -244,6 +244,25 @@ def render_i11_stage_diagnostic(
             "I11 stage diagnostic renderer returned malformed metadata") from exception
     if metadata.get("accepted_convergence_input") is not False:
         raise RuntimeError("I11 diagnostic artifact was not marked unqualified")
+    if formal_status in (PASS, FAIL, "PILOT"):
+        # Final stage diagnostics include all per-metric statistics. A pending
+        # preview cannot consume the final directory, and a pilot may already
+        # have generated the same diagnostics before its stage plot.
+        level = campaign / f"{completed_resolutions_km[-1]}km"
+        statistics_directory = level / "diagnostics"
+        summary = statistics_directory / "diagnostics.json"
+        if summary.is_file():
+            identity = json.loads(summary.read_text())
+            if identity["source_files"].get(str((level / "block_metrics.csv").resolve())) != sha256(level / "block_metrics.csv"):
+                raise ValueError("existing I11 statistics diagnostics have a different raw-data identity")
+        else:
+            computed = subprocess.run([sys.executable, "-B", str(TEST_ROOT /
+                "integration-tests/I11/analyze_diagnostics.py"), "--level-dir",
+                str(level.resolve()), "--output-dir", str(statistics_directory.resolve())],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+            if computed.returncode:
+                raise RuntimeError("I11 independent diagnostics failed: " + computed.stderr)
+        metadata["independent_diagnostics"] = str(summary)
     return metadata
 
 
@@ -849,7 +868,24 @@ def check(test_id: str, receipt: dict[str, object], work: Path) -> tuple[str, di
         diff = work / "test_Moon.diff"
         size = diff.stat().st_size if diff.exists() else -1
         metrics["test_Moon_diff_bytes"] = size
-        return (PASS if size == 0 else FAIL), metrics, "canonical sampler regression"
+        identity = work / "test_Moon.reference.json"
+        if not identity.is_file():
+            return ERROR, metrics, "canonical reference identity receipt is missing"
+        reference = json.loads(identity.read_text())
+        metrics["reference_identity"] = reference
+        frozen_hash = json.loads((TEST_ROOT /
+            "integration-tests/I04/reference/acceptance.json").read_text())["data_hashes"][
+                "output/test_Moon/test_Moon.ref_np4"]
+        if (reference.get("status") not in (PASS, FAIL) or
+                reference.get("actual_sha256") != frozen_hash or
+                reference.get("expected_sha256") != frozen_hash):
+            return ERROR, metrics, "canonical reviewed reference identity failed"
+        provenance_hash = json.loads((TEST_ROOT /
+            "integration-tests/I04/reference/acceptance.json").read_text())["data_hashes"][
+                "reference/provenance.json"]
+        if reference.get("provenance_sha256") != provenance_hash:
+            return ERROR, metrics, "canonical reference provenance identity failed"
+        return (PASS if size == 0 and reference["status"] == PASS else FAIL), metrics, "canonical sampler regression"
     if test_id == "I05":
         x0, v0 = list(receipt["initial_x_m"]), list(receipt["initial_v_m_s"])  # type: ignore[arg-type]
         duration = float(receipt["total_time_s"])
@@ -1254,8 +1290,17 @@ def check(test_id: str, receipt: dict[str, object], work: Path) -> tuple[str, di
             model_radius = float(row["vertex_radius_m"])
             ray_radius = float(row["ray_radius_m"])
             if not all(math.isfinite(value) for value in
-                       (latitude, longitude, model_radius, ray_radius)):
+                       (latitude, longitude, model_radius)):
                 raise ValueError("I14 geometry contains a non-finite value")
+            if int(row["ray_face"])<0:
+                # A declared ray miss is an evaluated production geometry
+                # failure, not a corrupt CSV/parser error. Preserve the miss
+                # rows and avoid manufacturing a finite intersection value.
+                return FAIL,{"missed_vertex":int(row["vertex_index"]),
+                    "radial_query_count":receipt["radial_query_count"],
+                    "radial_hit_count":receipt["radial_hit_count"]},"production radial ray missed the closed surface"
+            if not math.isfinite(ray_radius):
+                raise ValueError("I14 claims a hit with a non-finite radius")
             reference_radius = 1_737_400.0 + ldem4_elevation_m(
                 image, latitude, longitude)
             errors_m.append(abs(model_radius - reference_radius))
@@ -1820,6 +1865,10 @@ def manifest(test_id: str, executable: Path, command: list[str], seed: object | 
              Path("/data/vtenishe/moon_validation_data/development_and_validation.md")]
     if test_id == "I08":
         files.append(REPO / "input/moon-i08.input")
+    if test_id == "I04":
+        files.extend([TEST_ROOT / "integration-tests/I04/reference/test_Moon.ref_np4",
+                      REPO / "test_Moon.reference.json",
+                      TEST_ROOT / "integration-tests/I04/reference/provenance.json"])
     if application_input is not None:
         files.append(application_input)
     if test_id == "I13":
@@ -1831,10 +1880,14 @@ def manifest(test_id: str, executable: Path, command: list[str], seed: object | 
             "integration-tests/I13/reference/I13_archived_configuration.json")
         if frozen_configuration.is_file():
             files.append(frozen_configuration)
-    # Only the seven kernels declared by the frozen DE421 M0 configuration are
+    # Only the kernels declared by the frozen DE421 M0 configuration are
     # dependencies.  Hashing unrelated files elsewhere in the installation
     # would make the manifest host-dependent without improving provenance.
-    kernels = ([] if test_id in ("I05", "I08") else
+    # The canonical I04 make recipe is also explicitly NO-SPICE. Installed
+    # kernels are not consumed by that executable and cannot be presented as
+    # required external dependencies merely because this host has them.
+    uses_spice = test_id not in ("I04", "I05", "I08")
+    kernels = ([] if not uses_spice else
                [SPICE_ROOT / relative for relative in SPICE_FILES
                 if (SPICE_ROOT / relative).is_file()])
     external_data = {
@@ -1912,6 +1965,7 @@ def manifest(test_id: str, executable: Path, command: list[str], seed: object | 
             if path.is_file()
         },
         "random_seed": seed,
+        "uses_spice_kernels": uses_spice,
         "species_fixture": ("Na,NA_PLUS" if test_id == "I08" else
                             ("Na,Ar" if test_id in ("I18", "I19", "I20")
                              else "Na")),
@@ -1922,10 +1976,29 @@ def manifest(test_id: str, executable: Path, command: list[str], seed: object | 
     }
 
 
+def prepare_i11_level(executable: Path, template: Path, output: Path,
+                      resolution: int, ranks: int) -> dict:
+    """Prepare one isolated launch once, before concurrent execution starts."""
+    directory = output / f"{resolution}km"
+    directory.mkdir(parents=True, exist_ok=True)
+    derived = directory / "application.in"
+    derive_i11_input(template.resolve(), derived, resolution)
+    (directory / "runtime").mkdir(exist_ok=True)
+    command = ["mpiexec", "-n", str(ranks), str(executable.resolve()),
+               "--moon-integration-test", "I11", "--integration-output",
+               str((directory / "receipt.txt").resolve()), "-input", str(derived.resolve())]
+    evidence = manifest("I11", executable, command, 731993, derived, ranks)
+    (directory / "run_manifest.json").write_text(
+        json.dumps(evidence, indent=2, sort_keys=True) + "\n")
+    return {"directory": directory, "command": command}
+
+
 def run_i11_campaign(executable: Path, output_root: Path,
                      application_input: Path | None,
                      mpi_ranks: int = 1,
-                     campaign_mode: str = "qualification") -> int:
+                     campaign_mode: str = "qualification",
+                     parallel_levels: int = 1,
+                     wall_seconds: float = 3600.0) -> int:
     """Run the approved memory-budget or legacy FULL production campaign."""
     output = output_root / "I11"
     output.mkdir(parents=True, exist_ok=True)
@@ -1976,6 +2049,29 @@ def run_i11_campaign(executable: Path, output_root: Path,
             raise MissingPrerequisite(
                 "I11 requires mesh_output_tecplot=false; full-volume text "
                 "visualization is not a science artifact and can exhaust disk")
+        # The linked storage identity is a required infrastructure gate. It
+        # exercises real Sampling() before any costly physical campaign and
+        # preserves its own result rather than counting it as I11 convergence.
+        sampling_command = [sys.executable, "-B", str(TEST_ROOT /
+            "integration-tests/I11/run_sampling_check.py"), "--amps",
+            str(executable.resolve()), "--input", str(application_input.resolve()),
+            "--mpi-ranks", str(mpi_ranks), "--output-dir",
+            str((output / "sampling_check").resolve())]
+        with (output / "sampling_check.log").open("w") as sampling_log:
+            sampling_code = subprocess.run(sampling_command, stdout=sampling_log,
+                stderr=subprocess.STDOUT, check=False).returncode
+        if sampling_code != 0:
+            raise RuntimeError("I11 production sampling-window prerequisite failed; see sampling_check.log")
+        budget_command = [sys.executable, "-B", str(TEST_ROOT /
+            "integration-tests/I11/run_budget_check.py"), "--amps",
+            str(executable.resolve()), "--input", str(application_input.resolve()),
+            "--mpi-ranks", str(mpi_ranks), "--output-dir",
+            str((output / "budget_check").resolve())]
+        with (output / "budget_check.log").open("w") as budget_log:
+            budget_code = subprocess.run(budget_command, stdout=budget_log,
+                stderr=subprocess.STDOUT, check=False).returncode
+        if budget_code != 0:
+            raise RuntimeError("I11 production event/chemistry prerequisite failed; see budget_check.log")
         shutil.copy2(application_input.resolve(), output / "application.in")
         (output / "stdout.log").write_text(
             "I11 aggregate runner: per-resolution model stdout is retained "
@@ -1998,6 +2094,8 @@ def run_i11_campaign(executable: Path, output_root: Path,
                 I11_MAXIMUM_COMPLETE_SAMPLES,
             "particle_restart_writes": False,
             "resolution_sequence_km": list(levels),
+            "parallel_levels": parallel_levels,
+            "test_runtime_budget_s": wall_seconds if parallel_levels > 1 else None,
             "levels": {}}
         (output / "run_manifest.json").write_text(
             json.dumps(initial_manifest, indent=2, sort_keys=True) + "\n",
@@ -2006,15 +2104,27 @@ def run_i11_campaign(executable: Path, output_root: Path,
         level_receipts: dict[int, dict[str, object]] = {}
         level_summaries: dict[str, object] = {}
         bounded_failures: list[str] = []
+        budget_failures: list[str] = []
         completed_diagnostic_levels: list[int] = []
         environment = dict(os.environ); environment["OMP_NUM_THREADS"] = "1"
+
+        # Scheduling does not duplicate the physical run or its scorer. All
+        # children use identical rank layouts and isolated mesh-cache CWDs.
+        prepared, parallel_codes, runtime_errors = {}, {}, []
+        if parallel_levels > 1:
+            from m1_execution import execute_levels
+            available_cpus = len(os.sched_getaffinity(0))
+            if parallel_levels * mpi_ranks > available_cpus:
+                raise ValueError("concurrent MPI rank count exceeds available hardware threads")
+            prepared = {resolution: prepare_i11_level(
+                executable, application_input, output, resolution, mpi_ranks)
+                for resolution in levels}
+            parallel_codes = execute_levels(prepared, output, parallel_levels, wall_seconds)
 
         for resolution in levels:
             level = output / f"{resolution}km"
             level.mkdir(parents=True, exist_ok=True)
             derived_input = level / "application.in"
-            derive_i11_input(application_input.resolve(), derived_input,
-                             resolution)
             receipt = level / "receipt.txt"
             stdout, stderr = level / "stdout.log", level / "stderr.log"
             command = ["mpiexec", "-n", str(mpi_ranks),
@@ -2022,20 +2132,24 @@ def run_i11_campaign(executable: Path, output_root: Path,
                        "--moon-integration-test", "I11",
                        "--integration-output", str(receipt.resolve()),
                        "-input", str(derived_input.resolve())]
-            level_manifest = manifest("I11", executable, command, 731993,
-                                      derived_input, mpi_ranks)
-            (level / "run_manifest.json").write_text(
-                json.dumps(level_manifest, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8")
             runtime = level / "runtime"
-            runtime.mkdir(exist_ok=True)
-            returncode = run_monitored(
-                command, runtime, environment, stdout, stderr,
-                level / "process_resource_metrics.csv")
+            if resolution in parallel_codes:
+                returncode = parallel_codes[resolution]
+            else:
+                prepare_i11_level(executable, application_input, output,
+                                  resolution, mpi_ranks)
+                returncode = run_monitored(
+                    command, runtime, environment, stdout, stderr,
+                    level / "process_resource_metrics.csv")
             if returncode != 0 or not receipt.is_file():
-                raise RuntimeError(
-                    f"I11 {resolution} km executable exited {returncode}; "
-                    f"see {stdout} and {stderr}")
+                # An interrupted finer run must not hide completed coarse
+                # evidence. Harvest every child before classifying aggregate.
+                failure = {"id": "I11", "status": ERROR,
+                           "reason": f"{resolution} km executable exited {returncode}; see {stdout} and {stderr}"}
+                (level / "result.json").write_text(json.dumps(failure, indent=2) + "\n")
+                level_summaries[f"{resolution}km"] = failure
+                runtime_errors.append(f"{resolution}km")
+                continue
             parsed = parse_receipt(receipt)
             shutil.copy2(receipt, output / "receipt.txt")
             if parsed.get("test_id") != "I11":
@@ -2044,6 +2158,13 @@ def run_i11_campaign(executable: Path, output_root: Path,
             level_manifest_entry = {  # type: ignore[var-annotated]
                 "input_sha256": sha256(derived_input),
                 "manifest_sha256": sha256(level / "run_manifest.json"),
+                # This instantaneous particle-list diagnostic is independent
+                # of sampled density storage and is essential evidence when
+                # diagnosing accumulation. Bind it even for a capped FAIL.
+                "particle_diagnostics_sha256": sha256(
+                    level / "particle_diagnostics.csv"),
+                "particle_budget_sha256": sha256(level / "particle_budget.csv"),
+                "particle_sources_sha256": sha256(level / "particle_sources.csv"),
             }
             initial_manifest["levels"][f"{resolution}km"] = level_manifest_entry  # type: ignore[index]
             (output / "run_manifest.json").write_text(
@@ -2062,9 +2183,13 @@ def run_i11_campaign(executable: Path, output_root: Path,
                     I11_SAMPLE_LENGTH_STEPS and
                 int(parsed["maximum_particle_steps"]) ==
                     I11_MAXIMUM_PARTICLE_STEPS and
+                int(parsed["iteration_limit_enabled"]) == 1 and
                 int(parsed["production_particle_steps_executed"]) <=
                     I11_MAXIMUM_PARTICLE_STEPS and
-                int(parsed["particle_restart_writes_enabled"]) == 0)
+                int(parsed["particle_restart_writes_enabled"]) == 0 and
+                int(parsed["production_volume_output_suppressed"]) == 1 and
+                parsed.get("i11_execution_contract") ==
+                    "bounded-formal-qualification")
             wiring_ok = (bounded_controls_ok and
                          parsed.get("simulation_environment_mode") == "frozen" and
                          et_drift == 0.0 and
@@ -2076,6 +2201,27 @@ def run_i11_campaign(executable: Path, output_root: Path,
                     f"I11 {resolution} km bounded-control, frozen-environment, "
                     "or deterministic wiring invariant failed")
 
+            # Statistical stationarity cannot qualify an unexplained gas
+            # inventory change or a known numerical removal. The independent
+            # event ledger is an additional supporting invariant, not a fitted
+            # source correction or replacement for the statistical gates.
+            if int(parsed["particle_budget_valid"]) != 1:
+                completed_diagnostic_levels.append(resolution)
+                diagnostic = render_i11_stage_diagnostic(
+                    output, completed_diagnostic_levels, FAIL)
+                failure = {"id": "I11", "resolution_km": resolution,
+                    "status": FAIL,
+                    "reason": "actual-event gas budget failed closure or recorded numerical removals",
+                    "artifacts": {"particle_budget": str(level/"particle_budget.csv"),
+                                  "particle_sources": str(level/"particle_sources.csv"),
+                                  "stage_diagnostic": diagnostic["artifacts"]}}
+                (level/"result.json").write_text(json.dumps(failure, indent=2, sort_keys=True)+"\n")
+                level_manifest_entry.update(receipt_sha256=sha256(receipt),
+                    result_sha256=sha256(level/"result.json"))
+                (output/"run_manifest.json").write_text(json.dumps(initial_manifest, indent=2, sort_keys=True)+"\n")
+                level_summaries[f"{resolution}km"] = failure
+                budget_failures.append(f"{resolution}km")
+                continue
             criteria_met = int(parsed["convergence_criteria_met"]) == 1
             if not criteria_met:
                 steps = int(parsed["production_particle_steps_executed"])
@@ -2113,6 +2259,10 @@ def run_i11_campaign(executable: Path, output_root: Path,
                     },
                     "artifacts": {
                         "block_metrics": str(level / "block_metrics.csv"),
+                        "particle_diagnostics": str(
+                            level / "particle_diagnostics.csv"),
+                        "analysis_diagnostics": str(
+                            level / "analysis_diagnostics.csv"),
                         "resource_metrics": str(level / "resource_metrics.csv"),
                         "process_resource_metrics": str(
                             level / "process_resource_metrics.csv"),
@@ -2131,6 +2281,8 @@ def run_i11_campaign(executable: Path, output_root: Path,
                     "result_sha256": sha256(level / "result.json"),
                     "block_metrics_sha256": sha256(
                         level / "block_metrics.csv"),
+                    "analysis_diagnostics_sha256": sha256(
+                        level / "analysis_diagnostics.csv"),
                     "resource_metrics_sha256": sha256(
                         level / "resource_metrics.csv"),
                     "process_resource_metrics_sha256": sha256(
@@ -2193,7 +2345,9 @@ def run_i11_campaign(executable: Path, output_root: Path,
                             "independent_batch_count": int(
                                 parsed["retained_independent_batch_count"]),
                             "stage_diagnostic_notice": diagnostic["notice"]},
-                "artifacts": {"stage_diagnostic": diagnostic["artifacts"]},
+                "artifacts": {"stage_diagnostic": diagnostic["artifacts"],
+                              "particle_diagnostics": str(
+                                  level / "particle_diagnostics.csv")},
             }
             (level / "result.json").write_text(
                 json.dumps(level_result, indent=2, sort_keys=True) + "\n",
@@ -2202,6 +2356,8 @@ def run_i11_campaign(executable: Path, output_root: Path,
                 "receipt_sha256": sha256(receipt),
                 "result_sha256": sha256(level / "result.json"),
                 "block_metrics_sha256": sha256(level / "block_metrics.csv"),
+                "analysis_diagnostics_sha256": sha256(
+                    level / "analysis_diagnostics.csv"),
                 "resource_metrics_sha256": sha256(
                     level / "resource_metrics.csv"),
                 "process_resource_metrics_sha256": sha256(
@@ -2225,11 +2381,17 @@ def run_i11_campaign(executable: Path, output_root: Path,
                               metrics={"levels": level_summaries})
                 raise StopIteration
 
-        if bounded_failures:
+        if runtime_errors:
+            result.update(status=ERROR, reason="execution incomplete at: " + ", ".join(runtime_errors),
+                          metrics={"levels": level_summaries})
+            raise StopIteration
+        if bounded_failures or budget_failures:
             result.update(
                 status=FAIL,
-                reason=("iteration cap reached before statistical qualification "
-                        "at: " + ", ".join(bounded_failures)),
+                reason=(("iteration cap reached before statistical qualification at: " +
+                         ", ".join(bounded_failures) + "; " if bounded_failures else "") +
+                        ("event-budget invariant failed at: " + ", ".join(budget_failures)
+                         if budget_failures else "")),
                 metrics={"levels": level_summaries,
                          "sample_length_particle_steps":
                              I11_SAMPLE_LENGTH_STEPS,
@@ -2318,14 +2480,16 @@ def run_i11_campaign(executable: Path, output_root: Path,
 def run(test_id: str, executable: Path, output_root: Path,
         application_input: Path | None = None,
         mpi_ranks: int = 1,
-        campaign_mode: str = "qualification") -> int:
+        campaign_mode: str = "qualification",
+        parallel_levels: int = 1, wall_seconds: float = 3600.0) -> int:
     # Reject invalid layouts before constructing a command or manifest.  This
     # guard also protects direct Python callers, which bypass argparse below.
     if mpi_ranks < 1:
         raise ValueError("mpi_ranks must be a positive integer")
     if test_id == "I11":
         return run_i11_campaign(executable, output_root, application_input,
-                                mpi_ranks, campaign_mode)
+                                mpi_ranks, campaign_mode, parallel_levels,
+                                wall_seconds)
     output = output_root / test_id
     output.mkdir(parents=True, exist_ok=True)
     effective_input = application_input
@@ -2481,9 +2645,10 @@ def run(test_id: str, executable: Path, output_root: Path,
                 "point-Sun ray; D02 requires the published extended-solar-disc "
                 "18.6-year/one-hour operator before observational scoring"),
             "I19": (
-                "production-wide weighted counters for external injection, "
-                "desorption, adsorption, escape, and numerical domain loss "
-                "are not yet all wired for synchronized Na/Ar closure"),
+                "the supporting Na/Ar finite-inventory ledger does not "
+                "establish the complete formal I19 campaign, all required "
+                "production paths and time/weight convergence; retain its "
+                "separate development results until those gates pass"),
             "I20": (
                 "I20 requires passing linked I15, I17, I18, and I19 evidence; "
                 "the prepared D02/PRP tables do not substitute for those "
@@ -2621,7 +2786,52 @@ def run(test_id: str, executable: Path, output_root: Path,
             # history for I12/I13 that I11 records. This is observation only:
             # it imposes no timeout or memory threshold. Actual C++ allocation
             # failure remains responsible for the detailed AMPS fatal exit.
-            returncode = run_monitored(
+            # I11 already initialized the identical finest production mesh.
+            # Reuse its read-only I12/I13 receipt only after verifying input,
+            # executable and rank identity. The independent checker below is
+            # unchanged. A direct invocation without this evidence still runs
+            # the normal production initializer.
+            shared = None
+            # Regression I12 deliberately exercises a bounded CUSTOM mesh.
+            # It has no qualified finest-grid I11 companion; querying the
+            # qualification-only grid policy here would skip before the real
+            # production initializer and leave the claimed receipt/logs absent.
+            # Reuse remains an optimization of qualified campaigns only. The
+            # normal scorer below still evaluates CUSTOM wiring and reports
+            # SKIPPED, never qualification PASS, after actual linked execution.
+            if (campaign_mode == "qualification" and
+                    test_id in ("I12", "I13") and application_input is not None):
+                finest = qualification_levels(application_input.resolve())[-1]
+                child = output_root / "I11" / f"{finest}km"
+                companion = child / f"{test_id}_initialization_receipt.txt"
+                child_manifest = child / "run_manifest.json"
+                if companion.is_file() and child_manifest.is_file():
+                    evidence = json.loads(child_manifest.read_text())
+                    if test_id == "I12":
+                        # I12's human template and I11's finest child have the
+                        # same approved settings but different comment bytes.
+                        # Reproduce and archive the exact child transformation
+                        # before comparing identities, never strip comments.
+                        effective_input = output / "application.in"
+                        derive_i11_input(application_input.resolve(), effective_input, finest)
+                        run_manifest["inputs"][str(effective_input)] = sha256(effective_input)
+                    if (sha256(child / "application.in") != sha256(effective_input) or
+                            evidence["executable"]["sha256"] != sha256(executable) or
+                            evidence["mpi_ranks"] != mpi_ranks):
+                        raise ValueError(f"{test_id} shared initialization identity mismatch")
+                    shared = companion
+                    shutil.copy2(shared, receipt_path)
+                    shutil.copy2(child / "process_resource_metrics.csv",
+                                 output / "process_resource_metrics.csv")
+                    stdout_path.write_text(f"Shared production initialization: {shared}\n")
+                    stderr_path.write_text("")
+                    run_manifest.update(execution="shared-production-initialization",
+                        command=evidence["command"],
+                        shared_receipt={"path": str(shared), "sha256": sha256(shared)},
+                        shared_manifest_sha256=sha256(child_manifest))
+                    (output / "run_manifest.json").write_text(
+                        json.dumps(run_manifest, indent=2, sort_keys=True) + "\n")
+            returncode = 0 if shared is not None else run_monitored(
                 command, runtime_directory, environment, stdout_path,
                 stderr_path, output / "process_resource_metrics.csv")
             if returncode != 0 or not receipt_path.is_file():
@@ -2729,11 +2939,18 @@ def main() -> int:
         default="qualification",
         help=("REGRESSION permits only the bounded linked wiring path; "
               "QUALIFICATION runs the formal M1 gate (default: qualification)"))
+    parser.add_argument("--parallel-levels", type=int, choices=(1, 2, 4), default=1,
+                        help="concurrent isolated I11 meshes; ranks apply per mesh")
+    parser.add_argument("--test-runtime-seconds", type=float, default=3600,
+                        help="parallel I11 launch budget; unfinished children are ERROR")
     arguments = parser.parse_args()
     if arguments.mpi_ranks < 1:
         parser.error("--mpi-ranks must be a positive integer")
+    if arguments.test_runtime_seconds <= 0 or not math.isfinite(arguments.test_runtime_seconds):
+        parser.error("--test-runtime-seconds must be finite and positive")
     return run(arguments.test_id, arguments.amps, arguments.output_dir.resolve(),
-               arguments.input, arguments.mpi_ranks, arguments.campaign_mode)
+               arguments.input, arguments.mpi_ranks, arguments.campaign_mode,
+               arguments.parallel_levels, arguments.test_runtime_seconds)
 
 
 if __name__ == "__main__":

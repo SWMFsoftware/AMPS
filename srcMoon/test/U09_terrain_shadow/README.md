@@ -20,3 +20,12 @@ occulter, and partial overlap of equal radii. This establishes the local circle
 geometry only. It does not verify SPICE wiring, terrestrial-atmosphere light,
 terrain/eclipsing-body composition, thermal response, or Diviner agreement;
 those remain linked I17 responsibilities.
+
+The November 12 extension adds closed-surface radial rays through shared
+vertices of a translated/scaled icosphere, in addition to planar edge/vertex
+and distant-coordinate cases. The independent oracle is geometric: a ray
+aimed through a closed convex surface vertex must hit, at its prescribed
+radius. A pre-fix run missed 49 vertices. Production BVH slab and barycentric
+bounds now include floating-point arithmetic enclosures scaled by coordinate
+magnitude and triangle conditioning. These are numerical roundoff bounds,
+not an adjustable physical clearance or relaxed acceptance threshold.

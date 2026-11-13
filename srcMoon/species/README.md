@@ -5,6 +5,15 @@ and should not be embedded in the generic Exosphere library. Generic terrain,
 thermal, inventory, mover, and chemistry services remain in their existing
 modules; moving them here would incorrectly make shared physics species-local.
 
+`SodiumCase1.{h,cpp}` is the narrowly scoped production adapter for the exact
+Tenishev et al. (2013) Case-1 demonstration. It supplies input-validated MIV
+rate/temperature and photoionization lifetime to the generic production
+kernels, initializes and maintains the prescribed uniform surface reservoir,
+and verifies the generated PSD/TD/source switches before a run. It does not
+duplicate the PSD distribution, force law, impact handler, chemistry, or
+samplers. Inputs without `sodium_exosphere_model=tenishev-2013-case1` do not
+install any of its callbacks.
+
 `Argon.cpp` implements the optional continuous radiogenic `40Ar` source. Its
 pure parameter validator and uniform reference-sphere area partition are used
 by U21. Its production callbacks use the normal AMPS user-defined-source
@@ -28,6 +37,16 @@ approved I19 budget, and removes every application-specific generated file.
 The aggregate runner then restores the canonical Na-only build. Its linked
 runner derives the fourth setting in the preserved per-test `application.in`;
 neither source input file is edited in place.
+
+The M2 build also requires individual particle weights ON to represent a final
+fractional finite-release packet. The shared Exosphere finite-inventory
+implementation owns depletion and departure sampling; Argon retains its
+ordinary physical rate and Maxwell-flux source law. During resolved moving
+source injection, early spherical MPI ownership is deferred until the final
+terrain position at the sampled departure epoch. An intermediate spherical
+point can have a different owner; discarding it early would lose valid atoms.
+The eight-rank supporting I18/I19 checks exercise this production path, while
+formal qualification and temporal/weight convergence remain open.
 
 The runtime parser then accepts only a continuous uniform-global source and
 fails if Ar is absent from the compiled species table. Potassium-weighted

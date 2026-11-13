@@ -338,7 +338,9 @@ then rejected so a misspelled or ignored physics receipt cannot look active.
   error, never an ignored source.
 - `cold_trap_retention_timescale_s` is a diagnostic comparison timescale; it
   does not create a permanent sink. `surface_inventory_initial_state` is
-  `zero` or `checkpoint`. The checkpoint setting is a base name: restart
+  `zero`, `checkpoint`, or `prescribed-uniform`. The last choice is accepted
+  only with an enabled paper-specific reservoir adapter; it is not a dynamic
+  inventory. The checkpoint setting is a base name: restart
   requires both `<base>.Na` and `<base>.Ar`. Literal `none` disables periodic
   writes and is normalized to an empty internal path.
 
@@ -349,6 +351,44 @@ supplies the energy-mixing definition and the paper evaluates `a=0.2`.
 Selecting another model or coefficient is permitted only through the explicit
 per-species fields above; AMPS does not silently substitute the legacy
 linear-speed interpretation.
+
+#### Optional Tenishev-2013 Case-1 sodium group
+
+`srcMoon/examples/tenishev2013_case1.in` demonstrates the optional all-or-none
+paper-reproduction group. Existing inputs omit it and retain their established
+behavior. If `sodium_exosphere_model` appears, it is either `disabled` with no
+other group keys or `tenishev-2013-case1` with every key below:
+
+```text
+sodium_exosphere_model = tenishev-2013-case1
+sodium_exosphere_reference = "Tenishev_et_al_2013_doi_10.1016/j.icarus.2013.08.021"
+sodium_impact_vaporization_rate_s = 1.67e22
+sodium_impact_vaporization_temperature_k = 6000
+sodium_photoionization_lifetime_s = 129600
+sodium_surface_reservoir_model = prescribed-uniform
+sodium_surface_density_m2 = 2.65e16
+simple_cosine_night_temperature_k = 100
+simple_cosine_day_amplitude_k = 300
+simple_cosine_exponent = 0.25
+particle_iteration_limit = 5000
+particle_sample_length_steps = 500
+particle_maximum_sample_length_steps = 500
+```
+
+The named Case-1 model is an exact contract, not a parameter family. The
+parser also requires `m2_environment=enabled`, `surface_geometry=sphere`,
+`surface_temperature_mode=simple-cosine`,
+`surface_inventory_initial_state=prescribed-uniform`, no inventory checkpoint,
+and constant-unity Na sticking. The production initializer verifies that MIV,
+PSD, TD, photochemistry, and no-sputtering were compiled and that generated
+PSD/TD coefficients match the paper configuration. Returned Na is permanently
+removed from the exosphere; its weight is not added to the externally
+prescribed reservoir.
+
+The three particle controls bound a demonstration and its output cadence.
+They are not equilibrium, independence, uncertainty, or convergence criteria.
+The 30 September 1991 paper figures do not publish an exact UTC; the runner
+therefore requires one explicitly and does not claim observational validation.
 
 ### 2.2 General selection rules
 

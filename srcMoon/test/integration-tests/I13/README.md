@@ -1,5 +1,12 @@
 # I13 — controlled spherical-Moon baseline
 
+A same-campaign finest I11 run may supply `I13_initialization_receipt.txt`.
+The runner verifies executable, input and MPI identities before reusing it for
+the independent geometry/configuration checks. Qualified science metrics still
+come from passing I11, and explicit review/freeze remains mandatory. A later
+independent campaign is needed for reproduction after a new reference is
+approved; reusing initialization never approves or writes a frozen reference.
+
 I13 derives the exact finest receipt (60 km for the approved memory campaign,
 5 km for legacy FULL) with the same transformation as I11 and requires its
 hash to match the passing `I11/<finest>km/application.in`; it

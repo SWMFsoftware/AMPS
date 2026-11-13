@@ -15,6 +15,31 @@
 #include "global.h"
 #include "PhotolyticReactions.h"
 
+PIC::ParticleEvents::ObserverFunction PIC::ParticleEvents::Observer=NULL;
+
+PIC::ParticleEvents::DomainExitClassifierFunction
+    PIC::ParticleEvents::DomainExitClassifier=NULL;
+void PIC::ParticleEvents::RecordDomainExit(long int particle,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
+    const double* position,const double* velocity) {
+  if (Observer==NULL) return;
+  RecordParticle(DomainExitClassifier==NULL ? Escape :
+      DomainExitClassifier(position,velocity),particle,node);
+}
+
+void PIC::ParticleEvents::RecordParticle(Event event,long int particle,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int detail) {
+  if (Observer==NULL) return;
+  if (node==NULL || node->block==NULL)
+    exit(__LINE__,__FILE__,"particle event diagnostic needs an allocated weight owner");
+  const int species=PIC::ParticleBuffer::GetI(particle);
+  double weight=node->block->GetLocalParticleWeight(species);
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+  weight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(particle);
+#endif
+  Record(event,species,weight,detail);
+}
+
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
 #include "../../srcInterface/amps2swmf.h"
 #endif
@@ -1315,6 +1340,28 @@ void PIC::Sampling::Sampling() {
       LastSampleLength=CollectingSampleCounter;
       CollectingSampleCounter=0;
 
+      // A buffer switch makes the previous completed window the new
+      // collecting window. Clear it once for ALL species, even when no
+      // visualization file is requested or the output cadence is skipped.
+      // Previously this reset lived inside SaveOutputDataFile[s], so turning
+      // every species file off accumulated alternating old windows forever.
+      // The completed offset still points at the just-finished data: output
+      // writers and external completed-sample callbacks may safely read it.
+      for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=
+               PIC::Mesh::mesh->ParallelNodesDistributionList[
+                   PIC::Mesh::mesh->ThisThread];
+           node!=NULL;node=node->nextNodeThisThread) {
+        if (node->block==NULL) continue;
+        for (int kk=0;kk<(DIM==3 ? _BLOCK_CELLS_Z_ : 1);++kk)
+          for (int jj=0;jj<(DIM>1 ? _BLOCK_CELLS_Y_ : 1);++jj)
+            for (int ii=0;ii<_BLOCK_CELLS_X_;++ii) {
+              const int cell=_getCenterNodeLocalNumber(ii,jj,kk);
+              PIC::Mesh::cDataCenterNode* center=node->block->GetCenterNode(cell);
+              if (center!=NULL) PIC::Mesh::flushCollectingSamplingBuffer(center);
+            }
+      }
+
+
       //flush sampling buffers in the internal surfaces installed into the mesh
   #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_OFF_
       //do nothing
@@ -1428,26 +1475,6 @@ void PIC::Sampling::Sampling() {
           
           if (SamplingMode==_SINGLE_OUTPUT_FILE_SAMPING_MODE_) {
             SamplingMode=_TEMP_DISABLED_SAMPLING_MODE_;
-          }
-        }
-
-        if ((SamplingMode==_RESTART_SAMPLING_MODE_)||(SamplingMode==_SINGLE_OUTPUT_FILE_SAMPING_MODE_)||(SamplingMode==_TEMP_DISABLED_SAMPLING_MODE_)) {
-          for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
-            PIC::Mesh::cDataBlockAMR *block=node->block;
-
-            if (!block) continue;
-            for (k=0;k<_BLOCK_CELLS_Z_;k++) {
-              for (j=0;j<_BLOCK_CELLS_Y_;j++) {
-                for (i=0;i<_BLOCK_CELLS_X_;i++) {
-                  LocalCellNumber=_getCenterNodeLocalNumber(i,j,k);
-                  PIC::Mesh::flushCollectingSamplingBuffer(block->GetCenterNode(LocalCellNumber));
-                }
-
-                if (DIM==1) break;
-              }
-
-              if ((DIM==1)||(DIM==2)) break;
-            }
           }
         }
 

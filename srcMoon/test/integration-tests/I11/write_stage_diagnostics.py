@@ -268,17 +268,24 @@ def render(levels: list[dict[str, object]], current_status: str,
 
 
 def produce(campaign: Path, resolutions: list[int], current_status: str) -> dict[str, object]:
-    """Create one immutable diagnostic set after the latest completed stage."""
+    """Preserve separate pending and scored diagnostics for a finished stage.
+
+    PENDING is an execution-progress label, never a test result. Concurrent
+    runs can finish out of mesh order, so their early raw figures need their
+    own filenames. The later coarse-to-fine scorer must not overwrite those
+    early artifacts or mislabel an unevaluated stage as SKIPPED.
+    """
     if not resolutions:
         raise ValueError("at least one completed resolution is required")
     levels = [summarize_level(
         resolution, campaign / f"{resolution}km" / "block_metrics.csv")
         for resolution in resolutions]
     destination = campaign / f"{resolutions[-1]}km"
-    csv_path = destination / "stage_diagnostic.csv"
-    png_path = destination / "stage_diagnostic.png"
-    eps_path = destination / "stage_diagnostic.eps"
-    json_path = destination / "stage_diagnostic.json"
+    stem = "stage_diagnostic_pending" if current_status == "PENDING" else "stage_diagnostic"
+    csv_path = destination / f"{stem}.csv"
+    png_path = destination / f"{stem}.png"
+    eps_path = destination / f"{stem}.eps"
+    json_path = destination / f"{stem}.json"
     write_csv(levels, csv_path)
     render(levels, current_status, png_path, eps_path)
     metadata = {
@@ -315,8 +322,9 @@ def main() -> int:
     parser.add_argument("--completed-resolutions-km", type=int, nargs="+",
                         required=True)
     parser.add_argument("--formal-level-status",
-                        choices=("PASS", "FAIL", "SKIPPED", "ERROR"),
-                        required=True)
+                        choices=("PASS", "FAIL", "SKIPPED", "ERROR", "PENDING", "PILOT"),
+                        required=True,
+                        help="PENDING preserves a separate preview before formal scoring; it is not a result status")
     arguments = parser.parse_args()
     try:
         metadata = produce(arguments.campaign_dir.resolve(),

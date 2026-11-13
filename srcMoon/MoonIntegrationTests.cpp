@@ -15,6 +15,8 @@
 #include "MoonDivinerObservation.h"
 #include "MoonSurfaceEnvironment.h"
 #include "MoonSurfaceTemperature.h"
+#include "MoonParticleBudget.h"
+#include "MoonM2Budget.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -167,6 +169,14 @@ int RunI14(Receipt* receipt,const std::string& receiptPath) {
   receipt->Scalar("configuration_error_spice_required",1);
   return 4;
 #else
+  // The first ordinary step initializes frozen force/frame state. Calling
+  // a force-aware terrain mover immediately after amps_init otherwise uses
+  // zero Earth state, giving NaN acceleration and invalid radiation-table
+  // indices. This is fixture initialization, not a replacement force law.
+  Moon::nIterationCounter=0;
+  amps_time_step();
+  receipt->Scalar("initialization_steps",1);
+  receipt->Scalar("fixture_epoch_tdb_s",Moon::OrbitalMotion::et);
   if (!Moon::Runtime::HasConfiguration()) {
     receipt->Scalar("configuration_error_missing_input",1);
     return 4;
@@ -956,6 +966,15 @@ namespace I11Sampling {
 constexpr long int SampleLengthSteps=500;
 constexpr long int MaximumParticleSteps=5000;
 
+// The duration pilot is an execution aid, not a second acceptance contract.
+// Its only permitted difference from bounded I11 is removal of the 5000-step
+// stop so that the unchanged statistical gates can determine a candidate
+// physical spin-up/sampling duration at the coarsest approved grid.  The
+// Python pilot runner enforces operational memory/free-space guards and labels
+// every resulting artifact NOT QUALIFIED.  Formal I11 always leaves this
+// false and continues to use MaximumParticleSteps above.
+bool durationPilot=false;
+
 // One entry in the frozen M1 scoring vector.  ``pointwise`` selects the
 // predeclared 10% spatial-convergence and 3.33% CI gates; the two global
 // budgets use the stricter 5% and 1.67% integrated gates.
@@ -967,11 +986,18 @@ struct MetricDefinition {
 std::vector<MetricDefinition> definitions;
 std::vector<std::vector<double> > baseBlocks;
 std::filesystem::path artifactDirectory;
-std::ofstream blockFile,resourceFile;
+std::ofstream blockFile,resourceFile,analysisFile,particleFile;
 bool complete=false;
 int retainedBatchSize=0,retainedBatchCount=0;
 std::vector<double> retainedMean,retainedRelativeCi,retainedLagOne;
 std::chrono::steady_clock::time_point startTime;
+
+void SuppressExternalOutput(int) {
+  // PIC's completed-sample callback has an integer output-file index.  I11
+  // needs the completed in-memory buffers but not legacy visualization files;
+  // replacing only the writer callback leaves each registered per-step
+  // SamplingProcessor and all production sampling state active.
+}
 
 double DensityAt(const double direction[3],double altitudeM) {
   // A zero-altitude request lies exactly on the analytic boundary.  Move it
@@ -1287,6 +1313,7 @@ bool Analyze() {
 
     std::vector<double> lag(metricCount,0.0);
     bool independent=true;
+    int independenceFailedMetrics=0;
     const double significance=1.96/std::sqrt(static_cast<double>(batches));
     for (int metric=0;metric<metricCount;metric++) {
       double average=0.0;
@@ -1300,24 +1327,50 @@ bool Analyze() {
           numerator+=delta*(means[batch+1][metric]-average);
       }
       lag[metric]=denominator==0.0 ? 0.0 : numerator/denominator;
-      if (std::fabs(lag[metric])>significance) independent=false;
+      if (std::fabs(lag[metric])>significance) {
+        independent=false;
+        ++independenceFailedMetrics;
+      }
     }
-    if (!independent) continue;
+    if (!independent) {
+      // Preserve the first failed invariant for every admissible batching
+      // attempt.  These counts diagnose why a pilot is still running; they do
+      // not alter batch selection or any acceptance threshold.
+      if (PIC::ThisThread==0) {
+        analysisFile << count << ',' << batchSize << ',' << batches << ','
+                     << significance << ',' << independenceFailedMetrics
+                     << ",,,independence\n";
+        analysisFile.flush();
+      }
+      continue;
+    }
 
     // Four independent batch means establish three consecutive <=2%
     // changes.  The following five batches are kept disjoint for the science
     // mean and Student-t 95% confidence interval.
     bool equilibrated=true;
+    int equilibriumFailedChecks=0;
     const int equilibriumStart=batches-9;
     for (int metric=0;metric<metricCount;metric++)
       for (int change=0;change<3;change++)
         if (RelativeChange(means[equilibriumStart+change][metric],
-                           means[equilibriumStart+change+1][metric])>0.02)
+                           means[equilibriumStart+change+1][metric])>0.02) {
           equilibrated=false;
-    if (!equilibrated) continue;
+          ++equilibriumFailedChecks;
+        }
+    if (!equilibrated) {
+      if (PIC::ThisThread==0) {
+        analysisFile << count << ',' << batchSize << ',' << batches << ','
+                     << significance << ",0," << equilibriumFailedChecks
+                     << ",,equilibrium\n";
+        analysisFile.flush();
+      }
+      continue;
+    }
 
     std::vector<double> scienceMean(metricCount,0.0),relativeCi(metricCount,0.0);
     bool precise=true;
+    int confidenceFailedMetrics=0;
     for (int metric=0;metric<metricCount;metric++) {
       for (int batch=batches-5;batch<batches;batch++)
         scienceMean[metric]+=means[batch][metric]/5.0;
@@ -1331,9 +1384,25 @@ bool Analyze() {
           (halfWidth==0.0 ? 0.0 : std::numeric_limits<double>::infinity()) :
           halfWidth/std::fabs(scienceMean[metric]);
       const double gate=definitions[metric].pointwise ? 0.0333 : 0.0167;
-      if (!(relativeCi[metric]<=gate)) precise=false;
+      if (!(relativeCi[metric]<=gate)) {
+        precise=false;
+        ++confidenceFailedMetrics;
+      }
     }
-    if (!precise) continue;
+    if (!precise) {
+      if (PIC::ThisThread==0) {
+        analysisFile << count << ',' << batchSize << ',' << batches << ','
+                     << significance << ",0,0," << confidenceFailedMetrics
+                     << ",confidence_interval\n";
+        analysisFile.flush();
+      }
+      continue;
+    }
+    if (PIC::ThisThread==0) {
+      analysisFile << count << ',' << batchSize << ',' << batches << ','
+                   << significance << ",0,0,0,pass\n";
+      analysisFile.flush();
+    }
     retainedBatchSize=batchSize;
     retainedBatchCount=batches;
     retainedMean=std::move(scienceMean);
@@ -1345,11 +1414,42 @@ bool Analyze() {
 }
 
 void Capture(int outputNumber) {
+  // PIC samples at the beginning of a step, before source/chemistry/motion.
+  // nIterationCounter therefore records completed transport steps at this
+  // checkpoint. The final post-loop snapshot covers the remainder explicitly.
+  Moon::ParticleBudget::Snapshot(Moon::nIterationCounter,"sample");
   std::vector<double> values;
   SampleProfiles(&values);
   SampleSurfaceFlux(&values);
   SampleLimb(&values);
   SampleInventory(&values);
+  // A live particle-list sum is independent of the density sampling buffers.
+  // It distinguishes actual accumulation from stale-window accounting. Units
+  // are model particles and represented Na atoms at this instant, whereas
+  // global_particle_inventory in block_metrics.csv is a window mean.
+  double localParticles[2]={0.0,0.0},globalParticles[2];
+  for (auto* node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread];
+       node!=NULL;node=node->nextNodeThisThread) {
+    if (node->block==NULL) continue;
+    for (int cell=0;cell<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;++cell)
+      for (long int particle=node->block->FirstCellParticleTable[cell];
+           particle!=-1;particle=PIC::ParticleBuffer::GetNext(particle)) {
+        if (PIC::ParticleBuffer::GetI(particle)!=_NA_SPEC_) continue;
+        double weight=node->block->GetLocalParticleWeight(_NA_SPEC_);
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+        weight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(particle);
+#endif
+        localParticles[0]+=1.0;
+        localParticles[1]+=weight;
+      }
+  }
+  MPI_Allreduce(localParticles,globalParticles,2,MPI_DOUBLE,MPI_SUM,
+                MPI_GLOBAL_COMMUNICATOR);
+  if (PIC::ThisThread==0) {
+    particleFile << baseBlocks.size()+1 << ',' << globalParticles[0] << ','
+                 << globalParticles[1] << '\n';
+    particleFile.flush();
+  }
   if (values.size()!=definitions.size())
     exit(__LINE__,__FILE__,"I11 scoring-vector shape changed between blocks");
   baseBlocks.push_back(values);
@@ -1374,12 +1474,21 @@ void Configure(const std::filesystem::path& directory) {
   if (PIC::ThisThread==0) {
     blockFile.open((artifactDirectory/"block_metrics.csv").string());
     resourceFile.open((artifactDirectory/"resource_metrics.csv").string());
-    if (!blockFile || !resourceFile)
+    analysisFile.open((artifactDirectory/"analysis_diagnostics.csv").string());
+    particleFile.open((artifactDirectory/"particle_diagnostics.csv").string());
+    if (!blockFile || !resourceFile || !analysisFile || !particleFile)
       exit(__LINE__,__FILE__,"I11 cannot create block/resource metric artifacts");
     blockFile << std::setprecision(17)
               << "base_block,production_output_number,metric,value_si\n";
     resourceFile << "production_output_number,wall_seconds,current_rss_kib,"
                     "peak_rss_kib,host_mem_available_kib\n";
+    analysisFile << "base_blocks,batch_size_base_blocks,batch_count,"
+                    "lag1_significance,independence_failed_metrics,"
+                    "equilibrium_failed_checks,ci_failed_metrics,"
+                    "first_failed_gate\n";
+    particleFile << std::setprecision(17)
+                 << "base_block,instantaneous_na_model_particles,"
+                    "instantaneous_na_inventory_atoms\n";
   }
   startTime=std::chrono::steady_clock::now();
   PIC::Sampling::ExternalSamplingLocalVariables::RegisterSamplingRoutine(
@@ -1808,7 +1917,214 @@ int RunI10(Receipt* receipt) {
 #endif
 }
 
-int RunI11(Receipt* receipt,const std::string& receiptPath) {
+// Reuse the actual production mesh for the independent I12 and I13 scorers.
+// These declarations avoid creating a second geometry or selector formula.
+int RunI12(Receipt* receipt);
+int RunI13(Receipt* receipt);
+
+namespace SamplingWindowCheck {
+PIC::Mesh::cDataCenterNode* cell=NULL;
+int callbacks=0;
+double maximumError=0.0;
+
+double Marker(int index) { return 1.0+(index%8)/8.0; }
+
+void Capture(int) {
+  ++callbacks;
+  const double* completed=reinterpret_cast<const double*>(
+      cell->GetAssociatedDataBufferPointer()+
+      PIC::Mesh::completedCellSampleDataPointerOffset);
+  const int count=PIC::Mesh::sampleSetDataLength/sizeof(double);
+  for (int index=0;index<count;++index)
+    maximumError=std::max(maximumError,
+        std::fabs(completed[index]-Marker(index)));
+}
+}
+
+int RunSamplingWindowCheck(Receipt* receipt) {
+  // The fixture adds exactly representable, dimensionless markers to actual
+  // production storage. No particles, forces, source laws or observations
+  // are manufactured. PIC::Sampling::Sampling still switches, exchanges,
+  // clears and dispatches the completed callback through its normal path.
+  using namespace SamplingWindowCheck;
+  for (auto* node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread];
+       node!=NULL && cell==NULL;node=node->nextNodeThisThread) {
+    // The one-argument index includes ghost cells; zero is a halo entry,
+    // not interior (i,j,k)=(0,0,0). A halo marker is exchanged from another
+    // rank and is not covered by the owned-cell reset being tested. Select
+    // a genuine interior cell through the production coordinate overload.
+    if (node->block!=NULL)
+      cell=node->block->GetCenterNode(_BLOCK_CELLS_X_/2,
+          _BLOCK_CELLS_Y_/2,_BLOCK_CELLS_Z_/2);
+  }
+  if (cell==NULL || PIC::Mesh::sampleSetDataLength==0)
+    exit(__LINE__,__FILE__,"I11 sampling fixture needs an owned allocated cell");
+  PIC::Sampling::RuntimeSamplingSwitch=false;
+  PIC::SamplingMode=_RESTART_SAMPLING_MODE_;
+  PIC::RequiredSampleLength=1;
+  PIC::CollectingSampleCounter=0;
+  PIC::Sampling::minIterationNumberForDataOutput=0;
+  PIC::Sampling::SupressOutputFlag=false;
+  PIC::Sampling::SkipOutputStep=1;
+  for (int routine=0;routine<PIC::Sampling::ExternalSamplingLocalVariables::
+           SamplingRoutinesRegistrationCounter;++routine)
+    PIC::Sampling::ExternalSamplingLocalVariables::PrintOutputFile[routine]=
+        I11Sampling::SuppressExternalOutput;
+  PIC::Sampling::ExternalSamplingLocalVariables::RegisterSamplingRoutine(
+      Moon::Sampling::SubsolarLimbColumnIntegrals::EmptyFunction,Capture);
+  const int count=PIC::Mesh::sampleSetDataLength/sizeof(double);
+  std::fill_n(reinterpret_cast<double*>(cell->GetAssociatedDataBufferPointer()+
+      PIC::Mesh::completedCellSampleDataPointerOffset),count,0.0);
+  PIC::Mesh::flushCollectingSamplingBuffer(cell);
+  double collectingError=0.0;
+  for (int layout=0;layout<3;++layout) {
+    for (int species=0;species<PIC::nTotalSpecies;++species)
+      PIC::Sampling::SaveOutputDataFile[species]=
+          layout==2 || (layout==1 && species==0);
+    for (int window=0;window<3;++window) {
+      double* collecting=reinterpret_cast<double*>(
+          cell->GetAssociatedDataBufferPointer()+
+          PIC::Mesh::collectingCellSampleDataPointerOffset);
+      for (int index=0;index<count;++index)
+        collecting[index]+=Marker(index);
+      // Below FirstPrintedOutputFile: skip costly cell visualization while
+      // retaining the species-enabled branch and every completed callback.
+      PIC::DataOutputFileNumber=-2;
+      PIC::Sampling::Sampling();
+      collecting=reinterpret_cast<double*>(
+          cell->GetAssociatedDataBufferPointer()+
+          PIC::Mesh::collectingCellSampleDataPointerOffset);
+      for (int index=0;index<count;++index)
+        collectingError=std::max(collectingError,std::fabs(collecting[index]));
+    }
+  }
+  double local[3]={maximumError,collectingError,std::fabs(callbacks-9.0)};
+  double global[3];
+  MPI_Allreduce(local,global,3,MPI_DOUBLE,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+  receipt->Scalar("sampling_check_completed_error",global[0]);
+  receipt->Scalar("sampling_check_collecting_error",global[1]);
+  receipt->Scalar("sampling_check_callback_error",global[2]);
+  receipt->Scalar("sampling_check_windows",9);
+  receipt->Scalar("sampling_check_species",PIC::nTotalSpecies);
+  return 0;
+}
+
+// Allocate controlled initial particles through the real AMPS lists. These
+// states are numerical fixtures, never observational evidence or a source-law
+// substitute. Only the leaf's MPI owner allocates its particles.
+void AddBudgetFixture(double* position,double* velocity,int count,int species=_NA_SPEC_) {
+  auto* node=PIC::Mesh::mesh->findTreeNode(position);
+  if (node==NULL) exit(__LINE__,__FILE__,"budget fixture lies outside the mesh");
+  if (node->Thread!=PIC::ThisThread) return;
+  int i,j,k;
+  PIC::Mesh::mesh->FindCellIndex(position,i,j,k,node);
+  auto& first=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+  for (int index=0;index<count;++index) {
+    const long int particle=PIC::ParticleBuffer::GetNewParticle(first);
+    PIC::ParticleBuffer::SetI(species,particle);
+    PIC::ParticleBuffer::SetX(position,particle);
+    PIC::ParticleBuffer::SetV(velocity,particle);
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+    PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,particle);
+#endif
+    auto* data=PIC::ParticleBuffer::GetParticleDataPointer(particle);
+    Exosphere::Sampling::SetParticleSourceID(_EXOSPHERE_SOURCE__ID__IMPACT_VAPORIZATION_,data);
+    Exosphere::Sampling::SetParicleOriginSurfaceElementNumber(0,data);
+  }
+}
+
+int RunBudgetCheck(Receipt* receipt,const std::string& receiptPath) {
+  if (PIC::nTotalSpecies!=1 || _NA_SPEC_<0 || !Moon::Runtime::HasConfiguration())
+    return 4;
+  const auto directory=std::filesystem::path(receiptPath).parent_path();
+  std::filesystem::create_directories(directory/"chemistry");
+  std::filesystem::create_directories(directory/"transport");
+  const double radius=_RADIUS_(_MOON_);
+  double lit[3]={2.0*radius,0.0,0.0},shadow[3]={-1.1*radius,0.0,0.0};
+  double velocity[3]={0.0,0.0,0.0};
+  constexpr int Population=4096;
+  // amps_init allocates geometry, but the first real step populates the
+  // decomposition's chemistry-walker table and frozen Sun/Earth state. Run
+  // that ordinary initialization step before constructing controlled states;
+  // otherwise an empty walker and zero Earth position would invalidate the
+  // fixture itself. Its particles are cleared outside the ledger interval.
+  Moon::nIterationCounter=0;
+  amps_time_step();
+  PIC::ParticleBuffer::DeleteAllParticles();
+  AddBudgetFixture(lit,velocity,Population);
+  AddBudgetFixture(shadow,velocity,Population);
+  // Preserve a mechanistic control: the formerly configured generic processor
+  // has no Na model and leaves every lit fixture unchanged. This calls the
+  // existing processor itself, not a copied lifetime/table implementation.
+  for (auto* node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread];
+       node!=NULL;node=node->nextNodeThisThread) if (node->block!=NULL)
+    for (int cell=0;cell<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;++cell) {
+      auto& first=node->block->FirstCellParticleTable[cell];
+      long int current=first;first=-1;
+      while (current!=-1) {
+        const long int next=PIC::ParticleBuffer::GetNext(current);
+        Exosphere::ChemicalModel::PhotochemicalModelProcessor(current,first,node);
+        current=next;
+      }
+    }
+  const double normalDt=PIC::ParticleWeightTimeStep::GlobalTimeStep[_NA_SPEC_];
+  bool allowed=false;
+  const double lifetime=Moon::ExospherePhotoionizationLifeTime(lit,_NA_SPEC_,-1,allowed,NULL);
+  if (!allowed || !(lifetime>0.0)) return 4;
+  PIC::ParticleWeightTimeStep::GlobalTimeStep[_NA_SPEC_]=lifetime*std::log(2.0);
+  Moon::ParticleBudget::Begin(directory/"chemistry");
+  receipt->Scalar("generic_processor_control_survivors",Moon::ParticleBudget::GasCount());
+  rnd_seed(731993+PIC::ThisThread);
+  // Exercise the configured macro through the real PIC list walker. A future
+  // input dispatch regression therefore fails even if the Moon kernel passes.
+  PIC::ChemicalReactions::PhotolyticReactions::ExecutePhotochemicalModel();
+  Moon::ParticleBudget::Snapshot(1,"chemistry");
+  receipt->Scalar("chemistry_budget_valid",Moon::ParticleBudget::Valid() ? 1:0);
+  receipt->Scalar("chemistry_loss_count",Moon::ParticleBudget::Count(PIC::ParticleEvents::PhotolyticLoss));
+  long long local[2]={0,0},global[2];
+  for (auto* node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread];
+       node!=NULL;node=node->nextNodeThisThread) if (node->block!=NULL)
+    for (int cell=0;cell<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;++cell)
+      for (long int p=node->block->FirstCellParticleTable[cell];p!=-1;p=PIC::ParticleBuffer::GetNext(p)) {
+        double position[3];PIC::ParticleBuffer::GetX(position,p);
+        ++local[position[0]>0.0 ? 0:1];
+      }
+  MPI_Allreduce(local,global,2,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  receipt->Scalar("sunlit_survivors",global[0]);
+  receipt->Scalar("shadow_survivors",global[1]);
+  receipt->Scalar("initial_population_per_site",Population);
+  receipt->Scalar("fixture_chemistry_dt_s",lifetime*std::log(2.0));
+  receipt->Scalar("fixture_lifetime_s",lifetime);
+  Moon::ParticleBudget::End();
+  PIC::ParticleWeightTimeStep::GlobalTimeStep[_NA_SPEC_]=normalDt;
+  PIC::ParticleBuffer::DeleteAllParticles();
+  // Normal transport retains its configured dt, sources and stochastic
+  // surface kernel. Multiple night-side particles make surface coverage
+  // robust without forcing a sticking outcome or changing its coefficient.
+  double impact[3]={-radius-100.0,0.0,0.0},inward[3]={1000.0,0.0,0.0};
+  double outside[3]={PIC::Mesh::mesh->rootTree->xmax[0]-10.0,0.0,0.0};
+  double outward[3]={1000.0,0.0,0.0};
+  AddBudgetFixture(impact,inward,64);
+  AddBudgetFixture(outside,outward,1);
+  PIC::RequiredSampleLength=500;
+  PIC::CollectingSampleCounter=0;
+  Moon::nIterationCounter=0;
+  rnd_seed(731993+PIC::ThisThread);
+  Moon::ParticleBudget::Begin(directory/"transport");
+  for (int step=0;step<20;++step) { amps_time_step();++Moon::nIterationCounter; }
+  Moon::ParticleBudget::Snapshot(20,"final");
+  receipt->Scalar("transport_budget_valid",Moon::ParticleBudget::Valid() ? 1:0);
+  receipt->Scalar("maximum_count_residual",Moon::ParticleBudget::MaximumCountResidual());
+  receipt->Scalar("emission_count",Moon::ParticleBudget::Count(PIC::ParticleEvents::Emission));
+  receipt->Scalar("adsorption_count",Moon::ParticleBudget::Count(PIC::ParticleEvents::Adsorption));
+  receipt->Scalar("escape_count",Moon::ParticleBudget::Count(PIC::ParticleEvents::Escape));
+  receipt->Scalar("numerical_removal_count",Moon::ParticleBudget::Count(PIC::ParticleEvents::NumericalRemoval));
+  Moon::ParticleBudget::End();
+  return 0;
+}
+
+int RunI11(Receipt* receipt,const std::string& receiptPath,
+           bool durationPilot) {
 #if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ != _PIC_MODE_ON_
   receipt->Scalar("configuration_error_spice_required",1);
   return 4;
@@ -1835,6 +2151,23 @@ int RunI11(Receipt* receipt,const std::string& receiptPath) {
   // receipt below records the exact value exercised by the production sampler.
   PIC::RequiredSampleLength=I11Sampling::SampleLengthSteps;
   PIC::CollectingSampleCounter=0;
+  I11Sampling::durationPilot=durationPilot;
+
+  // A completed production sample normally emits a full volumetric Tecplot
+  // field plus application-specific column/velocity maps.  The 2026-10-31
+  // bounded campaign showed that those visualization copies consumed 20--71
+  // GB per resolution even though I11 scores the already-completed in-memory
+  // density/surface buffers.  Disable only file writers here: particle
+  // transport, production sampling, buffer exchange/switching, source and
+  // boundary callbacks, and the I11 Capture callback below remain unchanged.
+  // This is therefore an output-policy change, not a test-only physics path.
+  for (int species=0;species<PIC::nTotalSpecies;species++)
+    PIC::Sampling::SaveOutputDataFile[species]=false;
+  const int suppressedExternalWriters=PIC::Sampling::ExternalSamplingLocalVariables::
+      SamplingRoutinesRegistrationCounter;
+  for (int routine=0;routine<suppressedExternalWriters;routine++)
+    PIC::Sampling::ExternalSamplingLocalVariables::PrintOutputFile[routine]=
+        I11Sampling::SuppressExternalOutput;
   const Moon::Runtime::Configuration& configuration=
       Moon::Runtime::GetConfiguration();
   receipt->Scalar("simulation_environment_mode",
@@ -1844,13 +2177,37 @@ int RunI11(Receipt* receipt,const std::string& receiptPath) {
     return 4;
   }
 
+  // Capture independent initialization diagnostics in the same allocated
+  // production mesh. Each receives its own receipt and independent Python
+  // status; neither can grant I11 convergence or freeze an I13 reference.
+  for (const std::string id : {"I12","I13"}) {
+    Receipt companion((std::filesystem::path(receiptPath).parent_path()/
+        (id+"_initialization_receipt.txt")).string(),PIC::ThisThread==0);
+    if (!companion.Good())
+      exit(__LINE__,__FILE__,"I11 cannot create shared initialization receipt");
+    companion.Scalar("test_id",id);
+    companion.Scalar("mpi_ranks",PIC::nTotalThreads);
+    const int status=id=="I12" ? RunI12(&companion) : RunI13(&companion);
+    if (status!=0) return status;
+  }
+
   receipt->Scalar("random_seed",configuration.randomSeed);
   receipt->Scalar("mesh_profile",configuration.meshProfile);
   receipt->Scalar("mesh_output_tecplot",
       configuration.meshOutputTecplot ? 1 : 0);
+  receipt->Scalar("i11_execution_contract",
+      durationPilot ? "duration-pilot-not-qualified" :
+                      "bounded-formal-qualification");
+  receipt->Scalar("production_volume_output_suppressed",1);
+  receipt->Scalar("external_visualization_writers_suppressed",
+      suppressedExternalWriters);
   receipt->Scalar("base_block_length_steps",PIC::RequiredSampleLength);
+  // Zero means that no scientific step ceiling is applied by the pilot.  The
+  // Python runner records/enforces independent operational resource guards.
+  // Formal I11 continues to record the literal reviewed 5000-step cap.
   receipt->Scalar("maximum_particle_steps",
-      I11Sampling::MaximumParticleSteps);
+      durationPilot ? 0 : I11Sampling::MaximumParticleSteps);
+  receipt->Scalar("iteration_limit_enabled",durationPilot ? 0 : 1);
   receipt->Scalar("equilibrium_relative_change_gate",0.02);
   receipt->Scalar("equilibrium_consecutive_changes",3);
   receipt->Scalar("minimum_independent_science_blocks",5);
@@ -1862,6 +2219,7 @@ int RunI11(Receipt* receipt,const std::string& receiptPath) {
   // before PIC flushes them, while all transport, sources, chemistry, and
   // surface interactions continue through amps_time_step().
   I11Sampling::Configure(std::filesystem::path(receiptPath).parent_path());
+  Moon::ParticleBudget::Begin(std::filesystem::path(receiptPath).parent_path());
 
   Moon::nIterationCounter=0;
   amps_time_step();
@@ -1885,13 +2243,24 @@ int RunI11(Receipt* receipt,const std::string& receiptPath) {
   // not ERROR or PASS; the Python runner executes the remaining mesh levels so
   // all four bounded diagnostic cases have complete provenance.
   while (!I11Sampling::complete &&
-         Moon::nIterationCounter<I11Sampling::MaximumParticleSteps) {
+         (durationPilot ||
+          Moon::nIterationCounter<I11Sampling::MaximumParticleSteps)) {
+    // A bounded diagnostic runner requests a stop via this run-owned file.
+    // Check only between complete production steps; final receipts and event
+    // snapshots then survive a wall-time stop without a particle restart.
+    if (durationPilot && std::filesystem::exists(
+        std::filesystem::path(receiptPath).parent_path()/"pilot_stop.request"))
+      break;
     amps_time_step();
     Moon::nIterationCounter++;
   }
+  Moon::ParticleBudget::Snapshot(Moon::nIterationCounter,"final");
+  receipt->Scalar("particle_budget_valid",Moon::ParticleBudget::Valid() ? 1:0);
+  receipt->Scalar("particle_budget_maximum_count_residual",Moon::ParticleBudget::MaximumCountResidual());
+  Moon::ParticleBudget::End();
   if (I11Sampling::complete) I11Sampling::WriteFinal();
   const bool iterationLimitReached=
-      !I11Sampling::complete &&
+      !durationPilot && !I11Sampling::complete &&
       Moon::nIterationCounter>=I11Sampling::MaximumParticleSteps;
   receipt->Scalar("production_particle_steps_executed",
       Moon::nIterationCounter);
@@ -1906,6 +2275,8 @@ int RunI11(Receipt* receipt,const std::string& receiptPath) {
   receipt->Scalar("iteration_limit_reached",iterationLimitReached ? 1 : 0);
   receipt->Scalar("convergence_metrics_available",
       I11Sampling::complete ? 1 : 0);
+  receipt->Scalar("pilot_stop_requested",durationPilot &&
+      std::filesystem::exists(std::filesystem::path(receiptPath).parent_path()/"pilot_stop.request") ? 1:0);
   return 0;
 #endif
 }
@@ -2104,15 +2475,99 @@ int RunI13(Receipt* receipt) {
 
 }  // namespace
 
+namespace {
+int RunM2BudgetCheck(Receipt* receipt,const std::string& path) {
+#if _PIC_PHOTOLYTIC_REACTIONS_MODE_ != _PIC_PHOTOLYTIC_REACTIONS_MODE_OFF_
+  std::cerr << "I19 supporting budget requires photolytic chemistry OFF\n";
+  return 6;
+#endif
+  if (_NA_SPEC_<0 || _AR_SPEC_<0 || PIC::nTotalSpecies!=2) return 6;
+  constexpr int Steps=20;
+  constexpr double SeedPacketsPerSpecies=32.0;
+  // Equal simulated seconds for both species are essential for a transient
+  // atom/mass window. Select the smaller initialized production dt, retain
+  // its exact value, and restore both controls after the bounded fixture.
+  const std::array<double,2> saved{{
+      PIC::ParticleWeightTimeStep::GlobalTimeStep[_NA_SPEC_],
+      PIC::ParticleWeightTimeStep::GlobalTimeStep[_AR_SPEC_]}};
+  const double dt=std::min(saved[0],saved[1]);
+  PIC::ParticleWeightTimeStep::GlobalTimeStep[_NA_SPEC_]=dt;
+  PIC::ParticleWeightTimeStep::GlobalTimeStep[_AR_SPEC_]=dt;
+  rnd_seed(731993+PIC::ThisThread);
+  Moon::nIterationCounter=0;amps_time_step();
+  const auto& terrain=Moon::SurfaceEnvironment::ProductionTerrain()->triangulation();
+  const auto& face=terrain.faces.front();
+  const auto& a=terrain.verticesM[face[0]];
+  const auto& b=terrain.verticesM[face[1]];
+  const auto& c=terrain.verticesM[face[2]];
+  double e0[3],e1[3],normal[3],body[6]={},lso[6]={};
+  for (int i=0;i<3;++i) {e0[i]=b[i]-a[i];e1[i]=c[i]-a[i];}
+  normal[0]=e0[1]*e1[2]-e0[2]*e1[1];
+  normal[1]=e0[2]*e1[0]-e0[0]*e1[2];
+  normal[2]=e0[0]*e1[1]-e0[1]*e1[0];
+  const double length=Norm(normal);
+  for (int i=0;i<3;++i) {
+    normal[i]/=length;
+    body[i]=(a[i]+b[i]+c[i])/3.0+100.0*normal[i];
+    body[i+3]=-1000.0*normal[i];
+  }
+  for (int row=0;row<6;++row) for (int col=0;col<6;++col)
+    lso[row]+=Moon::OrbitalMotion::IAU_to_SO_TransformationMartix[row][col]*body[col];
+  // Controlled incoming verification particles guarantee actual surface
+  // callback coverage. Allocation occurs only on the true mesh owner, before
+  // the ledger's initial state; these are not counted as physical sources.
+  AddBudgetFixture(lso,lso+3,64,_NA_SPEC_);
+  AddBudgetFixture(lso,lso+3,64,_AR_SPEC_);
+  double exitPosition[3]={PIC::Mesh::mesh->xGlobalMax[0]-100.0,0.0,0.0};
+  double exitVelocity[3]={3000.0,0.0,0.0};
+  AddBudgetFixture(exitPosition,exitVelocity,1,_NA_SPEC_);
+  AddBudgetFixture(exitPosition,exitVelocity,1,_AR_SPEC_);
+  const int element=PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber/2;
+  for (int species:std::array<int,2>{{_NA_SPEC_,_AR_SPEC_}}) {
+    // Deterministic INITIAL verification state, not an emission or an
+    // observation. In particular Ar exercises dt >> residence time without
+    // a Poisson-attempt loop or changing its literature binding energy.
+    Moon::Planet->SurfaceElementPopulation[species][element]+=
+        SeedPacketsPerSpecies*PIC::ParticleWeightTimeStep::GlobalParticleWeight[species];
+  }
+  const auto csv=std::filesystem::path(path).parent_path()/"m2_budget.csv";
+  Moon::M2Budget::Begin(csv);
+  double classificationPosition[3]={29.9*_RADIUS_(_MOON_),0.0,0.0};
+  double boundVelocity[3]={1.0,0.0,0.0};
+  receipt->Scalar("positive_energy_exit_classified_escape",
+      PIC::ParticleEvents::DomainExitClassifier(classificationPosition,exitVelocity)==PIC::ParticleEvents::Escape?1:0);
+  receipt->Scalar("bound_exit_classified_numerical",
+      PIC::ParticleEvents::DomainExitClassifier(classificationPosition,boundVelocity)==PIC::ParticleEvents::NumericalRemoval?1:0);
+  for (int step=1;step<=Steps;++step) {
+    Moon::nIterationCounter=step;amps_time_step();
+    Moon::M2Budget::Snapshot(step);
+  }
+  receipt->Scalar("execution_scope","supporting-M2-development-not-I19-qualification");
+  receipt->Scalar("seed",731993);
+  receipt->Scalar("steps",Steps);
+  receipt->Scalar("synchronized_timestep_s",dt);
+  receipt->Scalar("initial_fixture_packets_per_species",SeedPacketsPerSpecies);
+  receipt->Scalar("initial_fixture_surface_element",element);
+  receipt->Scalar("photochemistry_enabled",0);
+  receipt->Scalar("budget_valid",Moon::M2Budget::Valid()?1:0);
+  Moon::M2Budget::End();
+  PIC::ParticleWeightTimeStep::GlobalTimeStep[_NA_SPEC_]=saved[0];
+  PIC::ParticleWeightTimeStep::GlobalTimeStep[_AR_SPEC_]=saved[1];
+  return 0;
+}
+}
+
 int Moon::IntegrationTests::Run(const std::string& testId,
-                                const std::string& outputFile) {
+                                const std::string& outputFile,
+                                bool i11DurationPilot,bool i11SamplingCheck,
+                                bool i11BudgetCheck,bool m2BudgetCheck) {
   // I11--I13 explicitly support distributed AMR ownership and reduce all
   // process-local fields or counts before scoring.  Earlier M0 diagnostics
   // retain their frozen one-rank contract because several create/move local
   // particles and have not been reviewed for distributed execution.
   const bool distributedLinked=(testId=="I11" || testId=="I12" ||
       testId=="I13" || testId=="I14" || testId=="I16" ||
-      testId=="I17" || testId=="I18");
+      testId=="I17" || testId=="I18" || (testId=="I19" && m2BudgetCheck));
   if (PIC::nTotalThreads!=1 && !distributedLinked) {
     if (PIC::ThisThread==0)
       std::cerr << "M0 linked diagnostics require exactly one MPI rank\n";
@@ -2128,6 +2583,7 @@ int Moon::IntegrationTests::Run(const std::string& testId,
   }
   receipt.Scalar("test_id",testId);
   receipt.Scalar("mpi_ranks",PIC::nTotalThreads);
+  if (testId=="I19" && m2BudgetCheck) return RunM2BudgetCheck(&receipt,outputFile);
 #if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
   receipt.Scalar("orbit_mode",1);
 #else
@@ -2137,7 +2593,12 @@ int Moon::IntegrationTests::Run(const std::string& testId,
   // All ranks must enter each M1 diagnostic because their ownership checks or
   // sampled fields use MPI collectives. Other linked tests are one-rank-only
   // above, so these branches change no existing M0 execution semantics.
-  if (testId=="I11") return RunI11(&receipt,outputFile);
+  if (testId=="I11" && i11SamplingCheck)
+    return RunSamplingWindowCheck(&receipt);
+  if (testId=="I11" && i11BudgetCheck)
+    return RunBudgetCheck(&receipt,outputFile);
+  if (testId=="I11")
+    return RunI11(&receipt,outputFile,i11DurationPilot);
   if (testId=="I12") return RunI12(&receipt);
   if (testId=="I13") return RunI13(&receipt);
   if (testId=="I14") return RunI14(&receipt,outputFile);

@@ -12,12 +12,19 @@
 #include "pic.h"
 #include "Exosphere.h"
 
+#include <cmath>
+
 // NULL is the ABI-stable legacy behavior.  A production application installs
 // this only after its runtime surface-physics receipt has been validated.
 Exosphere::SourceProcesses::ThermalDesorption::
     fRuntimeSurfaceElementProductionRate
     Exosphere::SourceProcesses::ThermalDesorption::
         RuntimeSurfaceElementProductionRate=NULL;
+Exosphere::SourceProcesses::ImpactVaporization::fRuntimeSourceRate
+    Exosphere::SourceProcesses::ImpactVaporization::RuntimeSourceRate=NULL;
+Exosphere::SourceProcesses::ImpactVaporization::fRuntimeSourceTemperature
+    Exosphere::SourceProcesses::ImpactVaporization::
+        RuntimeSourceTemperature=NULL;
 
 //init the model
 void Exosphere::SourceProcesses::Init() {
@@ -102,7 +109,13 @@ void Exosphere::SourceProcesses::SolarWindSputtering::Init() {
 
 /*--------------------------------- SOURCE: Impact Vaporization -----------------------------------*/
 double Exosphere::SourceProcesses::ImpactVaporization::GetTotalProductionRate(int spec,int BoundaryElementType,void *SphereDataPointer) {
-  return ImpactVaporization_SourceRate[spec]*pow(ImpactVaporization_HeliocentricDistance/Exosphere::xObjectRadial,ImpactVaporization_SourceRatePowerIndex);
+  const double sourceRate=RuntimeSourceRate==NULL ?
+      ImpactVaporization_SourceRate[spec] : RuntimeSourceRate(spec);
+  if (!std::isfinite(sourceRate) || sourceRate<0.0)
+    exit(__LINE__,__FILE__,
+        "runtime impact-vaporization rate must be finite and non-negative");
+  return sourceRate*pow(ImpactVaporization_HeliocentricDistance/
+      Exosphere::xObjectRadial,ImpactVaporization_SourceRatePowerIndex);
 }
 
 double Exosphere::SourceProcesses::VerticalInjection::GetTotalProductionRate(int spec,int BoundaryElementType,void *SphereDataPointer) {

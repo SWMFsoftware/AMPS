@@ -1,0 +1,45 @@
+#main
+SpeciesList=DUST
+makefile SOURCES=src
+makefile RUNDIR=run
+makefile MPIRUN=mpiexec -n 1
+ProjectSourceDirectory=test/srcModelDustInjectionTest
+WorkingSourceDirectory=srcTemp
+SourceDirectory=src
+ErrorLog=PT/amps_error.log
+Prefix=AMPS
+DiagnosticStream=PT
+OutputDirectory=PT/plots
+DebuggerMode=off
+ForceRepeatableSimulationPath=on
+StdoutErrorLog=on
+TimeStepMode=SpeciesGlobalTimeStep
+ParticleWeightMode=SpeciesGlobalParticleWeight
+ParticleWeightCorrectionMode=on
+CouplerMode=off
+#endmain
+
+#include species.input
+
+#General
+  defineLocation(pic/picGlobal.dfn) DIM 3
+  BlockCells=2,2,2
+  GhostCells=1,1,1
+  Rnd=MersenneTwister
+  InternalBoundary=on
+  NastranSurfaceUserData=on
+  ControlParticleInsideNastranSurface=off
+  define _PIC_MODEL__DUST__MODE_ _PIC_MODEL__DUST__MODE__ON_
+  define _PIC_MODEL__DUST__ELECTRIC_CHARGE_MODE_ _PIC_MODEL__DUST__ELECTRIC_CHARGE_MODE__OFF_
+#endGeneral
+
+#block ../exosphere.pl
+  SPICE=off
+  define _TARGET_ _TARGET_NONE_
+#endblock
+
+#Dust
+  dustmode=on
+#endDust
+
+#end

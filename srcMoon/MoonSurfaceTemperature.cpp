@@ -637,7 +637,8 @@ bool InitializeProductionState(const Runtime::Configuration& configuration,
       candidate.lastCheckpointEtS=epoch;
     }
   }
-  else if (configuration.surfaceInventoryInitialState!="zero") {
+  else if (configuration.surfaceInventoryInitialState!="zero" &&
+          configuration.surfaceInventoryInitialState!="prescribed-uniform") {
     *error="unsupported M2 surface-inventory initial state";
     return false;
   }
@@ -687,7 +688,13 @@ double ProductionTemperatureK(const double* positionLsoM) {
     for (int dimension=0;dimension<3;++dimension)
       cosine+=body[dimension]/radius*sun[dimension];
     if (cosine<0.0 || EarthShadowCheck(const_cast<double*>(positionLsoM)))
-      return 100.0;
+      return gProduction.configuration->sodiumExosphereEnabled ?
+          gProduction.configuration->simpleCosineNightTemperatureK : 100.0;
+    if (gProduction.configuration->sodiumExosphereEnabled)
+      return gProduction.configuration->simpleCosineDayAmplitudeK*
+          std::pow(cosine,
+                   gProduction.configuration->simpleCosineExponent)+
+          gProduction.configuration->simpleCosineNightTemperatureK;
     return 280.0*std::pow(cosine,0.25)+100.0;
   }
   const double latitude=std::asin(body[2]/radius)*180.0/kPi;
@@ -1009,7 +1016,12 @@ bool ProductionAccommodationCoefficient(int species,double temperatureK,
 }
 
 bool UseProductionFluxBalancedInventory() {
-  return gProduction.initialized;
+  // Tenishev et al. (2013) Case 1 prescribes a time-independent uniform Na
+  // surface abundance and permanently removes returned particles.  It is not
+  // the finite flux-balanced M2 inventory used by migration/cold-trap runs.
+  return gProduction.initialized &&
+      gProduction.configuration->surfaceInventoryInitialState!=
+          "prescribed-uniform";
 }
 
 bool WriteProductionInventoryCheckpoint(double ephemerisTimeS,

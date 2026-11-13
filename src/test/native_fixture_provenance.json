@@ -1,0 +1,127 @@
+{
+  "files": [
+    {
+      "path": "input/test/core-unit-tests-individual-weight.input",
+      "sha256": "a6bb283e3ec7989db8abd0e3428bca42bc9094c6ccb3025d49892019db11b97b",
+      "source_path": "/home/vtenishe/Mars2/AMPS/input/test/core-unit-tests-individual-weight.input",
+      "source_tracked": false
+    },
+    {
+      "path": "input/test/core-unit-tests-local.input",
+      "sha256": "366098a103c95476779d7ca70b785e176f242aa7d0a3d14a9398d8976bfb901e",
+      "source_path": "/home/vtenishe/Mars2/AMPS/input/test/core-unit-tests-local.input",
+      "source_tracked": false
+    },
+    {
+      "path": "input/test/core-unit-tests-single-global.input",
+      "sha256": "cd6997e621dbc3448397c27d21b538e40482eebcd6dce5d7fa1a08e9a80b84ad",
+      "source_path": "/home/vtenishe/Mars2/AMPS/input/test/core-unit-tests-single-global.input",
+      "source_tracked": false
+    },
+    {
+      "path": "input/test/core-mesh-1d.input",
+      "sha256": "b5627a7973248553244faa55364b3ca7f281b6d99530b1a72ddf354e27aff40b",
+      "source_path": "/home/vtenishe/Mars2/AMPS/input/test/core-mesh-1d.input",
+      "source_tracked": false
+    },
+    {
+      "path": "input/test/core-mesh-2d.input",
+      "sha256": "d0dd2a68870dedeb1bebe227a325c293907b53d7ac6f5531bb775dba0dbca6ae",
+      "source_path": "/home/vtenishe/Mars2/AMPS/input/test/core-mesh-2d.input",
+      "source_tracked": false
+    },
+    {
+      "path": "input/test/core-mesh-3d.input",
+      "sha256": "5d30ea09df34236e625a4980c63032842b191f70c47eddbf3bba4adc6f74eca8",
+      "source_path": "/home/vtenishe/Mars2/AMPS/input/test/core-mesh-3d.input",
+      "source_tracked": false
+    },
+    {
+      "path": "input/test/core-unit-tests-periodic.input",
+      "sha256": "5b2b345b3a3b73ff699c6b737e2b5db77695ded26e75bbba32a2d55defd353a6",
+      "source_path": "/home/vtenishe/Mars2/AMPS/input/test/core-unit-tests-periodic.input",
+      "source_tracked": false
+    },
+    {
+      "path": "input/test/core-unit-tests-vhs.input",
+      "sha256": "685e854ad2e147f276f0b42cd1fd1829ed5c1cf927d19fdf01730cd39dfce6de",
+      "source_path": "/home/vtenishe/Mars2/AMPS/input/test/core-unit-tests-vhs.input",
+      "source_tracked": false
+    },
+    {
+      "path": "input/test/core-unit-tests-vss.input",
+      "sha256": "830aa7cfac607e1e12376d0756962d7df4619198844fc70a5032e6bdc50d6066",
+      "source_path": "/home/vtenishe/Mars2/AMPS/input/test/core-unit-tests-vss.input",
+      "source_tracked": false
+    },
+    {
+      "path": "input/test/core-unit-tests-rotz2.input",
+      "sha256": "83a06d98217c42bc1f264e38afcb4a1bc7e14254d71eb824eff5eb1f51ec3b2b",
+      "source_path": "/home/vtenishe/Mars2/AMPS/input/test/core-unit-tests-rotz2.input",
+      "source_tracked": false
+    },
+    {
+      "path": "input/test/core-unit-tests-rotz10.input",
+      "sha256": "240a4af0e3921bd5f8d5866ab9a2c0ab9310a22e9fb5f7fda7ded9db0a22f0c3",
+      "source_path": "/home/vtenishe/Mars2/AMPS/input/test/core-unit-tests-rotz10.input",
+      "source_tracked": false
+    },
+    {
+      "path": "input/test/core-unit-tests-photochem-daughter.input",
+      "sha256": "394978dcfb194ebca5906e49078c387c28f6cdda754776de5fdd01ee88e2402b",
+      "source_path": "/home/vtenishe/Mars2/AMPS/input/test/core-unit-tests-photochem-daughter.input",
+      "source_tracked": false
+    },
+    {
+      "path": "input/test/core-unit-tests-reactions.input",
+      "sha256": "a85cae81ff39f335fa172a6e8b91b32b1f9cc6b08e45653010b5c1ac3aacfb09",
+      "source_path": "/home/vtenishe/Mars2/AMPS/input/test/core-unit-tests-reactions.input",
+      "source_tracked": false
+    },
+    {
+      "path": "input/test/core-exosphere-sphere.input",
+      "sha256": "b652c3d2ca6630d29b8013f7ea3e3996c2a8642a9932138bf43395c397b0cbc9",
+      "source_path": "/home/vtenishe/Mars2/AMPS/input/test/core-exosphere-sphere.input",
+      "source_tracked": false
+    },
+    {
+      "path": "input/test/core-mpi.input",
+      "sha256": "cb2940347d251e0b1671ec599983392e1656205fe4176c61ec0181ae11839135",
+      "source_path": "/home/vtenishe/Mars2/AMPS/input/test/core-mpi.input",
+      "source_tracked": false
+    },
+    {
+      "path": "input/test/core-mpi-periodic.input",
+      "sha256": "fdaa6f4ba172b1e336251e6d49d47e9439d5ff44cd3813eb817a6b39a57cd72c",
+      "source_path": "/home/vtenishe/Mars2/AMPS/input/test/core-mpi-periodic.input",
+      "source_tracked": false
+    },
+    {
+      "path": "input/test/core-unit-tests.input",
+      "sha256": "ed84de785ada1bea9e66555d3e61c4e1cc958e1346b66cbcb6f9d8b72c4ed22f",
+      "source_path": "/home/vtenishe/Mars2/AMPS/input/test/core-unit-tests.input",
+      "source_tracked": true
+    },
+    {
+      "path": "input/test/model-dust-injection.input",
+      "sha256": "14f521e19e86e04d06bffbf589815170896b78ca40edad42a3f99736dbcbaa1d",
+      "source_path": "/home/vtenishe/Mars2/AMPS/input/test/model-dust-injection.input",
+      "source_tracked": false
+    },
+    {
+      "path": "srcEnceladus/test/data/shape_manifest.json",
+      "sha256": "8dd7e15a7f602c0fa2e543641ad6be1d1b1a23e57ca7ae3e06ea42a0b0abed96",
+      "source_path": "/home/vtenishe/Mars2/AMPS/srcEnceladus/test/data/shape_manifest.json",
+      "source_tracked": false
+    },
+    {
+      "path": "CODEX_REDUCED_SHOCK_TASK.txt",
+      "sha256": "7a65f3c0c244d01c0e44c81d9fd7194bd0298c4d892bbba5b903fab36fac3d49",
+      "source_path": "/home/vtenishe/Mars2/AMPS/CODEX_REDUCED_SHOCK_TASK.txt",
+      "source_tracked": false
+    }
+  ],
+  "purpose": "existing native/source fixtures omitted by upstream ignore rules, never observations",
+  "source_checkout": "/home/vtenishe/Mars2/AMPS",
+  "source_head": "d068476edbfdecc5e2a9a23408e199898f35fb5a"
+}

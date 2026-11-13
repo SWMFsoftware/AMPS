@@ -1,0 +1,70 @@
+{
+  "approval": {
+    "by": "user",
+    "condition": "all previously passing core/application regressions preserved",
+    "condition_satisfied": true,
+    "date": "2026-11-12",
+    "decision": "Approve current-core reference (Recommended)",
+    "timezone": "America/Chicago"
+  },
+  "budget_result": {
+    "path": "/tmp/amps-moon-core-integration-20261112T224309Z-ehx53mh8/results/integrated-budget-8/result.json",
+    "sha256": "dce9cff7ddbf1838dc709a72cfee54ee6e0ea8e2c88f82f02fd4848f2dceb52b"
+  },
+  "candidate_sha256": "ed875cefc604e4ae3580fb89b8c528146929b6b9be099b41b61697faee7f0080",
+  "candidate_values": {
+    "mean_speed_m_s": 2211.773,
+    "mean_vx_m_s": -66.4774,
+    "mean_vy_m_s": 71.77334,
+    "mean_vz_m_s": -23.58575
+  },
+  "delivered_third_run": {
+    "executable_sha256": "1469b1617eed61e82fc0f12d191a009e2564ac9f65adfc135f303379121147ec",
+    "output_sha256": "ed875cefc604e4ae3580fb89b8c528146929b6b9be099b41b61697faee7f0080",
+    "path": "/tmp/amps-moon-core-integration-20261112T224309Z-ehx53mh8/results/delivered-nightly"
+  },
+  "first_run": "/tmp/amps-moon-core-integration-20261112T224309Z-ehx53mh8/results/integrated-m0/nightly",
+  "frozen_reference_sha256": "4bb811b3e05d72fa708359f1bea0344efd1a9f7e89609d7e8a3ca7eade808cba",
+  "generator": {
+    "path": "srcMoon/test/integration-tests/I04/prepare_reference_candidate.py",
+    "sha256": "d49cf4d19420d33475e085e8e4d6fec4d9a17cff7c1c917b53aa8ad904912052"
+  },
+  "input_sha256": "60efa41fecbb16b3453278f771eba823658f0581d8f38a082eeb26c6ed4709b5",
+  "installed": true,
+  "nightly_executable_sha256": "ba7b7f253e723f5616eaf01478e5c54fdf9ab59017b961c568620519343f5e0b",
+  "note": "No tolerance, physical coefficient, external SWMF_data file or I13 baseline changed. This is a reviewed regression reference, not independent physical or observational truth.",
+  "previous_reviewed_evidence": {
+    "acceptance.json": {
+      "path": "srcMoon/test/integration-tests/I04/reference/superseded/acceptance.pre-current-core-09fabea5.json",
+      "sha256": "06432b8917e3e016c2cabfed9a86d6dae9a58b39eaf99b2f54a663c4d1e07e2d"
+    },
+    "provenance.json": {
+      "path": "srcMoon/test/integration-tests/I04/reference/superseded/provenance.pre-current-core-09fabea5.json",
+      "sha256": "2facd9d35ef2017e7d0e6c8ab7da19e1f055e70e42957f9bf85e530231f2bfb0"
+    },
+    "test_Moon.ref_np4": {
+      "path": "srcMoon/test/integration-tests/I04/reference/superseded/test_Moon.ref_np4.pre-current-core-09fabea5",
+      "sha256": "4bb811b3e05d72fa708359f1bea0344efd1a9f7e89609d7e8a3ca7eade808cba"
+    }
+  },
+  "previous_values": {
+    "mean_speed_m_s": 2237.848,
+    "mean_vx_m_s": -16.639,
+    "mean_vy_m_s": -12.42036,
+    "mean_vz_m_s": 49.94022
+  },
+  "reason": "Retained current-core Poisson waiting-time, cumulative source-selection and corrected source-angle samplers during Moon integration; Moon Na physical coefficients and lifetime are unchanged.",
+  "reference_sha256": "ed875cefc604e4ae3580fb89b8c528146929b6b9be099b41b61697faee7f0080",
+  "regression_comparison": {
+    "path": "/tmp/amps-moon-core-integration-20261112T224309Z-ehx53mh8/results/regression-comparison-final/result.json",
+    "preserved_passes": 919,
+    "protected_passes": 919,
+    "sha256": "a06b74c92eea4172966d31fc59b02e9e45b00f9b9719ae01a0c5036314e7099a",
+    "status": "PASS"
+  },
+  "reviewed_at_utc": "2026-11-13T00:17:47.819017+00:00",
+  "second_run": "/tmp/amps-moon-core-integration-20261112T224309Z-ehx53mh8/results/integrated-nightly-repeat",
+  "source_is_dirty": true,
+  "source_revision": "09fabea55e367f07a530460b488fa7a981ff6176",
+  "status": "REVIEWED"
+}

@@ -18,6 +18,11 @@ import sys
 
 from integration_common import ERROR, FAIL, PASS, REPO, run
 
+# Match the optimized, symbol-bearing executable used to diagnose the Na
+# dispatch. Pass this as a make variable, never by editing generated Makefile
+# copies; the command log records the exact compiler optimization/debug choice.
+BUILD_OPT3 = "OPT3=-O3 -g"
+
 
 def command_log(command: list[str], log: Path) -> int:
     """Run one build command at repository root and append its exact stream."""
@@ -37,9 +42,17 @@ def clean_configure_build(application: str, spice_path: str,
     if build.exists():
         shutil.rmtree(build)
     log = output / "build_logs" / f"{label}.log"
-    config = [str(REPO / "Config.pl"), f"-application={application}",
+    # Config.pl persists TESTMODE across application changes. Normal fixtures
+    # and the final production restore must explicitly leave nightly mode,
+    # which otherwise changes iteration/debug/sorting/load-balancing policy.
+    # The separate canonical make test_Moon target still selects mode ON.
+    config = [str(REPO / "Config.pl"), f"-application={application}", "-amps-test=off",
               f"-spice-path={spice_path}", f"-spice-kernels={kernels}"]
-    if command_log(config, log) != 0 or command_log(["make", "-j"], log) != 0:
+    # Match the current core's bounded native build policy. An unbounded -j
+    # can start one compiler per generated unit and crowd out a concurrent
+    # independent regression checkout; -j16 preserves parallel compilation
+    # without changing optimization, physics or any numerical criterion.
+    if command_log(config, log) != 0 or command_log(["make", "-j16", BUILD_OPT3], log) != 0:
         raise RuntimeError(f"{label} configuration/build failed; see {log}")
     source = REPO / "amps"
     destination = output / "executables" / label / "amps"
@@ -54,6 +67,28 @@ def load_result(output: Path, test_id: str) -> dict[str, object]:
         return {"id": test_id, "status": ERROR,
                 "reason": f"runner did not create {path}"}
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def evaluated_reference_failure(directory: Path, receipt_path: Path) -> bool:
+    """Recognize an evaluated nightly mismatch after make exits nonzero.
+
+    The strict checker deliberately stops make on numerical disagreement. A
+    completed comparison is a scientific/regression FAIL, whereas an absent
+    executable/output, corrupt receipt or failed comparator is infrastructure
+    ERROR. A stale root receipt from another run must not bless this run: its
+    actual compared path must identify this campaign's unique nightly output.
+    The ordinary I04 scorer subsequently verifies frozen reference/provenance
+    identities; this helper cannot waive or replace those checks.
+    """
+    try:
+        reference=json.loads(receipt_path.read_text(encoding="utf-8"))
+        command=reference.get("command",[])
+        output=directory/"PT/plots/test_Moon.dat"
+        return (reference.get("status")==FAIL and len(command)==3 and
+                Path(command[1]).resolve()==output.resolve() and
+                output.is_file() and (directory/"amps").is_file())
+    except (OSError,ValueError,TypeError,AttributeError):
+        return False
 
 
 def main() -> int:
@@ -80,8 +115,16 @@ def main() -> int:
         # capabilities remain honest SKIPPED; M0 uses only the documented local
         # prerequisite subset.  U06 is rerun below in its dedicated ion build.
         u_output = output / "u-series"
+        # The M0 fixture needs the local U prerequisites only.  Pass every
+        # frozen U ID explicitly so a later expansion of the aggregate runner
+        # cannot silently launch I11+ convergence/environment campaigns inside
+        # this configuration-separated baseline build.  This also prevents a
+        # recursive global-campaign invocation now that test_runner.py can
+        # delegate the complete implemented stack.
         u_command = [sys.executable, str(REPO / "srcMoon/test/run_all_test.py"),
                      "--skip-build", "--output-dir", str(u_output)]
+        for number in range(1, 27):
+            u_command.extend(["--only", f"U{number:02d}"])
         u_log = output / "build_logs" / "u-series.log"
         prerequisite_artifacts["u_series_returncode"] = command_log(u_command, u_log)
         prerequisite_artifacts["u_series_summary"] = str(u_output / "run_all_summary.json")
@@ -119,13 +162,26 @@ def main() -> int:
         if build.exists():
             shutil.rmtree(build)
         regression_log = output / "build_logs" / "test_Moon.log"
-        regression_code = command_log(["make", "-j", "test_Moon"], regression_log)
+        # The canonical recipe normally recreates root run_test_Moon. Keep
+        # this campaign's execution under its new evidence directory instead,
+        # preserving earlier reviewed production runs and their provenance.
+        regression_directory = output / "nightly"
+        regression_code = command_log(["make", "-j16", BUILD_OPT3,
+            f"TESTMoonDIR={regression_directory}", "test_Moon"], regression_log)
         i04_dir = output / "I04"; i04_dir.mkdir(parents=True, exist_ok=True)
         diff = REPO / "test_Moon.diff"
         if diff.is_file():
             shutil.copy2(diff, i04_dir / "test_Moon.diff")
-        regression_executable = REPO / "run_test_Moon/amps"
-        if regression_code == 0 and regression_executable.is_file():
+        # The canonical target now binds the exact reviewed reference rather
+        # than whichever SWMF_data HEAD another checkout most recently pulled.
+        # Preserve that identity check alongside the ordinary numerical diff.
+        reference_receipt = REPO / "test_Moon.reference.json"
+        if reference_receipt.is_file():
+            shutil.copy2(reference_receipt, i04_dir / reference_receipt.name)
+        regression_executable = regression_directory / "amps"
+        if regression_executable.is_file() and (
+                regression_code == 0 or evaluated_reference_failure(
+                    regression_directory,reference_receipt)):
             run("I04", regression_executable, output)
         else:
             result = {"id": "I04", "status": ERROR,

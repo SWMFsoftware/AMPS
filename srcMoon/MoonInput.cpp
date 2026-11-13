@@ -551,6 +551,16 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
       "surface_inventory_initial_state",
       "surface_inventory_checkpoint_file",
       "surface_inventory_checkpoint_interval_s"};
+  const char* sodiumExosphereRequired[] = {
+      "sodium_exosphere_model", "sodium_exosphere_reference",
+      "sodium_impact_vaporization_rate_s",
+      "sodium_impact_vaporization_temperature_k",
+      "sodium_photoionization_lifetime_s",
+      "sodium_surface_reservoir_model", "sodium_surface_density_m2",
+      "simple_cosine_night_temperature_k",
+      "simple_cosine_day_amplitude_k", "simple_cosine_exponent",
+      "particle_iteration_limit", "particle_sample_length_steps",
+      "particle_maximum_sample_length_steps"};
   for (const char* key : required) {
     if (settings.find(key) == settings.end()) {
       *error = At(inputFile, 0,
@@ -562,7 +572,10 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
     if (std::find(std::begin(required), std::end(required), item.first) ==
             std::end(required) &&
         std::find(std::begin(m2Required), std::end(m2Required), item.first) ==
-            std::end(m2Required)) {
+            std::end(m2Required) &&
+        std::find(std::begin(sodiumExosphereRequired),
+                  std::end(sodiumExosphereRequired), item.first) ==
+            std::end(sodiumExosphereRequired)) {
       *error = At(item.second,
                   "unrecognized application: moon setting '" +
                   item.first + "'");
@@ -597,6 +610,54 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
       *error=At(settings[key],std::string(key)+
           " is not allowed while m2_environment=disabled");
       return false;
+    }
+  }
+
+  // The paper-specific sodium group is optional as a whole so existing M0--
+  // M2 receipts retain byte-for-byte behavior.  Once its selector appears,
+  // however, a partial receipt is rejected: using a compiled rate, lifetime,
+  // surface abundance, or run length would no longer reproduce a declared
+  // paper case.
+  const auto sodiumModeSetting=settings.find("sodium_exosphere_model");
+  if (sodiumModeSetting==settings.end()) {
+    for (const char* key:sodiumExosphereRequired) {
+      if (std::string(key)=="sodium_exosphere_model") continue;
+      if (settings.find(key)!=settings.end()) {
+        *error=At(settings[key],std::string(key)+
+            " requires sodium_exosphere_model");
+        return false;
+      }
+    }
+  }
+  else {
+    candidate.sodiumExosphereModel=Lower(Unquote(Trim(
+        sodiumModeSetting->second.value)));
+    if (candidate.sodiumExosphereModel!="disabled" &&
+        candidate.sodiumExosphereModel!="tenishev-2013-case1") {
+      *error=At(sodiumModeSetting->second,
+          "sodium_exosphere_model must be disabled or "
+          "tenishev-2013-case1");
+      return false;
+    }
+    candidate.sodiumExosphereEnabled=
+        candidate.sodiumExosphereModel=="tenishev-2013-case1";
+    if (!candidate.sodiumExosphereEnabled) {
+      for (const char* key:sodiumExosphereRequired) {
+        if (std::string(key)=="sodium_exosphere_model") continue;
+        if (settings.find(key)!=settings.end()) {
+          *error=At(settings[key],std::string(key)+
+              " is not allowed when sodium_exosphere_model=disabled");
+          return false;
+        }
+      }
+    }
+    else {
+      for (const char* key:sodiumExosphereRequired)
+        if (settings.find(key)==settings.end()) {
+          *error=At(inputFile,0,std::string(
+              "tenishev-2013-case1 is missing required ")+key);
+          return false;
+        }
     }
   }
   const std::string geometry = Lower(Unquote(settings["surface_geometry"].value));
@@ -863,6 +924,73 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
     *error = At(settings["tail_beam_diameter_deg"],
         "tail_beam_diameter_deg cannot exceed the full map width");
     return false;
+  }
+
+  if (candidate.sodiumExosphereEnabled) {
+    // Parse the paper model independently of generated srcMoon constants.
+    // All dimensional key names carry their SI units; strict positivity also
+    // catches a disabled source accidentally presented as Case 1.
+    const char* positiveKeys[]={
+        "sodium_impact_vaporization_rate_s",
+        "sodium_impact_vaporization_temperature_k",
+        "sodium_photoionization_lifetime_s", "sodium_surface_density_m2",
+        "simple_cosine_night_temperature_k",
+        "simple_cosine_day_amplitude_k", "simple_cosine_exponent"};
+    double* positiveTargets[]={
+        &candidate.sodiumImpactVaporizationRateS,
+        &candidate.sodiumImpactVaporizationTemperatureK,
+        &candidate.sodiumPhotoionizationLifetimeS,
+        &candidate.sodiumSurfaceDensityM2,
+        &candidate.simpleCosineNightTemperatureK,
+        &candidate.simpleCosineDayAmplitudeK,
+        &candidate.simpleCosineExponent};
+    for (std::size_t index=0;index<std::size(positiveKeys);++index)
+      if (!ParsePositiveFinite(settings[positiveKeys[index]].value,
+                               positiveTargets[index])) {
+        *error=At(settings[positiveKeys[index]],std::string(
+            positiveKeys[index])+" must be finite and positive");
+        return false;
+      }
+    candidate.sodiumSurfaceReservoirModel=Lower(Unquote(Trim(
+        settings["sodium_surface_reservoir_model"].value)));
+    if (candidate.sodiumSurfaceReservoirModel!="prescribed-uniform") {
+      *error=At(settings["sodium_surface_reservoir_model"],
+          "tenishev-2013-case1 requires prescribed-uniform; the paper does "
+          "not evolve a flux-balanced surface inventory");
+      return false;
+    }
+    candidate.sodiumExosphereReference=Unquote(Trim(
+        settings["sodium_exosphere_reference"].value));
+    if (candidate.sodiumExosphereReference.empty()) {
+      *error=At(settings["sodium_exosphere_reference"],
+          "sodium_exosphere_reference cannot be empty");
+      return false;
+    }
+    if (!ParsePositiveInteger(settings["particle_iteration_limit"].value,
+                              &candidate.particleIterationLimit) ||
+        !ParsePositiveInteger(settings["particle_sample_length_steps"].value,
+                              &candidate.particleSampleLengthSteps) ||
+        !ParsePositiveInteger(
+            settings["particle_maximum_sample_length_steps"].value,
+            &candidate.particleMaximumSampleLengthSteps)) {
+      *error=At(inputFile,0,
+          "particle iteration/sample controls must be positive integers");
+      return false;
+    }
+    if (candidate.particleSampleLengthSteps>
+        candidate.particleMaximumSampleLengthSteps) {
+      *error=At(settings["particle_maximum_sample_length_steps"],
+          "particle_maximum_sample_length_steps cannot be smaller than "
+          "particle_sample_length_steps");
+      return false;
+    }
+    if (candidate.particleIterationLimit<
+        candidate.particleSampleLengthSteps) {
+      *error=At(settings["particle_iteration_limit"],
+          "particle_iteration_limit must permit at least one complete "
+          "sampling interval");
+      return false;
+    }
   }
 
   std::string gridReason;
@@ -1225,9 +1353,11 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
     candidate.surfaceInventoryInitialState=Lower(Unquote(Trim(
         settings["surface_inventory_initial_state"].value)));
     if (candidate.surfaceInventoryInitialState!="zero" &&
-        candidate.surfaceInventoryInitialState!="checkpoint") {
+        candidate.surfaceInventoryInitialState!="checkpoint" &&
+        candidate.surfaceInventoryInitialState!="prescribed-uniform") {
       *error=At(settings["surface_inventory_initial_state"],
-          "surface_inventory_initial_state must be zero or checkpoint");
+          "surface_inventory_initial_state must be zero, checkpoint, or "
+          "prescribed-uniform");
       return false;
     }
     const std::string divinerValue=Lower(Unquote(Trim(
@@ -1297,6 +1427,52 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
     }
     candidate.surfaceInventoryCheckpointFile=checkpointValue=="none" ?
         std::string() : inventoryCheckpoint.string();
+  }
+
+  if (candidate.sodiumExosphereEnabled) {
+    // The named model is a reproduction contract, not a tunable family.  A
+    // changed number must acquire a different model name so manifests cannot
+    // describe a sensitivity experiment as the published Case 1.
+    const auto exact=[](double left,double right) { return left==right; };
+    if (!candidate.m2EnvironmentEnabled ||
+        candidate.surfaceGeometry!=SurfaceGeometry::Sphere ||
+        candidate.surfaceTemperatureMode!="simple-cosine" ||
+        candidate.surfaceInventoryInitialState!="prescribed-uniform" ||
+        candidate.sodiumStickingModel!="constant" ||
+        !std::all_of(candidate.sodiumStickingProbability.begin(),
+                     candidate.sodiumStickingProbability.end(),
+                     [](double value) { return value==1.0; }) ||
+        !exact(candidate.sodiumImpactVaporizationRateS,1.67e22) ||
+        !exact(candidate.sodiumImpactVaporizationTemperatureK,6000.0) ||
+        !exact(candidate.sodiumPhotoionizationLifetimeS,36.0*3600.0) ||
+        !exact(candidate.sodiumSurfaceDensityM2,2.65e16) ||
+        !exact(candidate.simpleCosineNightTemperatureK,100.0) ||
+        !exact(candidate.simpleCosineDayAmplitudeK,300.0) ||
+        !exact(candidate.simpleCosineExponent,0.25)) {
+      *error=At(inputFile,0,
+          "tenishev-2013-case1 requires M2 enabled, spherical geometry, "
+          "simple-cosine temperature 100+300*cos(chi)^0.25 K, a prescribed "
+          "uniform 2.65e16 m^-2 Na reservoir, unity constant Na sticking, "
+          "MIV 1.67e22 s^-1 at 6000 K, and a 129600 s illuminated "
+          "photoionization lifetime");
+      return false;
+    }
+    if (!candidate.surfaceInventoryCheckpointFile.empty()) {
+      *error=At(settings["surface_inventory_checkpoint_file"],
+          "tenishev-2013-case1 uses no restart/checkpoint surface inventory; "
+          "set surface_inventory_checkpoint_file=none");
+      return false;
+    }
+  }
+  else if (candidate.surfaceInventoryInitialState=="prescribed-uniform") {
+    // At present the only production owner of this policy is the named
+    // Tenishev-2013 adapter.  Accepting it without that adapter would disable
+    // the flux-balanced M2 inventory but install no prescribed-density
+    // callback, silently falling back to the generated legacy abundance.
+    *error=At(settings["surface_inventory_initial_state"],
+        "prescribed-uniform requires "
+        "sodium_exosphere_model=tenishev-2013-case1");
+    return false;
   }
 
   fs::path spiceRoot, image, label, cea, tecplot;

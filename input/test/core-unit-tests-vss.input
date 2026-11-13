@@ -1,0 +1,17 @@
+! T5 compile profile for the variable-soft-sphere molecular parameters.
+! CHI denotes the positive, dimensionless Koura--Matsumoto alpha in
+! cos(scattering_angle)=2*U^(1/alpha)-1. The production binary-pair closure
+! uses the arithmetic mean of the two species values; alpha=1 recovers the
+! isotropic VHS angular distribution.
+#include input/test/core-unit-tests.input
+
+#ParticleCollisions
+  model=NTC
+  SampleCollisionFrequency=on
+  ! D_REF [m], CR_REF [m/s], POWERINDEX and CHI dimensionless.
+  CollisionCrossSection=VSS \\
+    D_REF(H2O)=3.2E-10 CR_REF(H2O)=500 POWERINDEX(H2O)=0.25 CHI(H2O)=1.70 \\
+    D_REF(O)=2.8E-10 CR_REF(O)=700 POWERINDEX(O)=0.15 CHI(O)=2.10
+#endParticleCollisions
+
+#end

@@ -1,0 +1,57 @@
+#main
+
+! T10 periodic companion profile.  It intentionally differs from
+! core-mpi.input only by the production periodic-boundary compile-time mode.
+SpeciesList=H2O
+
+makefile SOURCES=src
+makefile RUNDIR=run
+makefile MPIRUN=mpiexec -n 1
+
+ExcludeModule=ELECTRON_IMPACT
+ExcludeModule=SPUTTERING
+ExcludeModule=DUST
+ExcludeModule=CHARGE_EXCHANGE
+ExcludeModule=EXOSPHERE
+ExcludeModule=SURFACE
+
+ProjectSourceDirectory=test/srcCoreMPITests
+WorkingSourceDirectory=srcTemp
+SourceDirectory=src
+
+ErrorLog=PT/amps_error.log
+Prefix=AMPS
+DiagnosticStream=PT
+OutputDirectory=PT/plots
+
+DebuggerMode=off
+ForceRepeatableSimulationPath=on
+StdoutErrorLog=on
+TimeStepMode=SpeciesGlobalTimeStep
+ParticleWeightMode=SpeciesGlobalParticleWeight
+ParticleWeightCorrectionMode=off
+CouplerMode=off
+
+#endmain
+
+#include species.input
+
+#General
+  defineLocation(pic/picGlobal.dfn) DIM 3
+  BlockCells=2,2,2
+  GhostCells=1,1,1
+  Rnd=MersenneTwister
+  define _PIC_BC__PERIODIC_MODE_ _PIC_BC__PERIODIC_MODE_ON_
+  NastranSurfaceUserData=off
+  ControlParticleInsideNastranSurface=off
+  ! Enable the empty production boundary container required by generic PIC
+  ! traversal; this profile still registers no physical internal surface.
+  InternalBoundary=on
+#endGeneral
+
+#block ../exosphere.pl
+  SPICE=off
+  define _TARGET_ _TARGET_NONE_
+#endblock
+
+#end

@@ -3,7 +3,7 @@
   "name": "Na photoionization-rate and survival-kernel verification",
   "purpose": "Verify the compiled Na lifetime and the LSO lunar-shadow enabled/disabled return contract.",
   "production_capability": "Moon::ExospherePhotoionizationLifeTime.",
-  "production_entry_points": ["Moon::ExospherePhotoionizationLifeTime", "Exosphere::ChemicalModel::PhotochemicalModelProcessor"],
+  "production_entry_points": ["Moon::ExospherePhotoionizationLifeTime"],
   "configuration": "Na-only; constant legacy lifetime; orbit-on additionally uses the frozen SPICE state for Earth-shadow geometry.",
   "inputs": ["Na at +2 lunar radii on the LSO sunward axis", "Na at -2 lunar radii in the cylindrical lunar shadow"],
   "independent_reference": "Direct 3600*5.8/0.4^2 seconds evaluation and the declared LSO +X-to-Sun cylindrical-shadow geometry.",

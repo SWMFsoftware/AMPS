@@ -27,7 +27,9 @@
 #include "MoonSurfaceTemperature.h"
 #include "MoonDivinerObservation.h"
 #include "MoonThermalModel.h"
+#include "FiniteSurfaceRelease.h"
 #include "species/Argon.h"
+#include "species/SodiumCase1.h"
 
 double ArgonStickingProbability(double &reemission_fraction, double temperature_k);
 double SodiumStickingProbability(double &reemission_fraction, double temperature_k);
@@ -184,6 +186,44 @@ int sodium_sources() {
       Exosphere::SourceProcesses::PhotonStimulatedDesorption::
           EnergyDistributionFunction(energy_j, &species),
       expected_psd, 1.0e-14);
+
+  // Parse the committed paper receipt rather than constructing a permissive
+  // fixture.  This checks the complete-group and exact Case-1 contracts,
+  // including the fixed reservoir and bounded run controls.  No surface or
+  // particle is created in U22; linked inventory/source wiring remains a
+  // separate integration responsibility.
+  Moon::Runtime::Configuration case1;
+  std::string error;
+  if (!Moon::Runtime::ParseApplicationInput(
+          "srcMoon/examples/tenishev2013_case1.in",&case1,&error) ||
+      !Moon::Runtime::InstallConfiguration(case1,&error)) {
+    std::fprintf(stderr,"FAIL tenishev_case1_parser %s\n",error.c_str());
+    return 1;
+  }
+  Exosphere::SourceProcesses::ImpactVaporization::RuntimeSourceRate=
+      Moon::Species::SodiumCase1::ImpactVaporizationRate;
+  Exosphere::SourceProcesses::ImpactVaporization::RuntimeSourceTemperature=
+      Moon::Species::SodiumCase1::ImpactVaporizationTemperatureK;
+  failures += report("tenishev_case1_impact_rate_s-1",
+      Exosphere::SourceProcesses::ImpactVaporization::GetTotalProductionRate(
+          species,_INTERNAL_BOUNDARY_TYPE_SPHERE_,nullptr),
+      1.67e22,1.0e-14);
+  failures += report("tenishev_case1_impact_temperature_k",
+      Exosphere::SourceProcesses::ImpactVaporization::GetSourceTemperature(
+          species),6000.0,0.0);
+  failures += report("tenishev_case1_photoionization_lifetime_s",
+      Moon::Species::SodiumCase1::PhotoionizationLifetimeS(),129600.0,0.0);
+  failures += report("tenishev_case1_surface_density_m-2",
+      case1.sodiumSurfaceDensityM2,2.65e16,0.0);
+  failures += report("tenishev_case1_temperature_subsolar_k",
+      case1.simpleCosineNightTemperatureK+
+          case1.simpleCosineDayAmplitudeK,400.0,0.0);
+  failures += report("tenishev_case1_iteration_limit",
+      case1.particleIterationLimit,5000.0,0.0);
+  failures += report("tenishev_case1_sample_length",
+      case1.particleSampleLengthSteps,500.0,0.0);
+  failures += report_string("tenishev_case1_reservoir",
+      case1.surfaceInventoryInitialState,"prescribed-uniform");
   return failures == 0 ? 0 : 1;
 }
 
@@ -332,10 +372,37 @@ int terrain_shadow() {
   failures+=report("ridge_hit_distance_m",hit.distanceM,
       std::sqrt(1.25),1.0e-14);
 
+  // Translation of a Cartesian terrain and rescaling a ray direction do not
+  // change its physical hit distance. Test at lunar-sized coordinates to
+  // expose BVH tolerances that accidentally depend on distance from origin.
+  for (auto& vertex:mesh.verticesM) {
+    vertex[0]+=1737400.0;vertex[1]-=1000000.0;vertex[2]+=500000.0;
+  }
+  if (!tracer.Initialize(mesh,&error)) return 1;
+  for (double scale:{1.0e-9,1.0,1.0e9}) {
+    if (!tracer.IntersectRay({{1737400.0,-1000000.0,500000.0}},
+        {{scale,0.0,0.5*scale}},1.0e-9,100.0,0,&hit,&error) || !hit.hit) return 1;
+    failures+=report(("translated_ridge_ray_scale_"+std::to_string(scale)).c_str(),
+        hit.distanceM,std::sqrt(1.25),1.0e-9);
+  }
+
   // Independently verify the analytical overlap branches used by production
   // eclipse forcing.  These fixtures are dimensionless circle geometry, so
   // they do not depend on SPICE ephemerides or an observed eclipse.
   const double angularRadius=0.01;
+  // A ray from the centre to ANY vertex of a closed triangulation must hit
+  // that very vertex. Shared-edge/vertex membership is closed, not strict.
+  // This oracle uses vector length only, independently of the ray algorithm.
+  Moon::Surface::Triangulation sphere;
+  if (!Moon::Surface::BuildIcosphere(1737400.0,100000.0,&sphere,&error) ||
+      !tracer.Initialize(sphere,&error)) return 1;
+  int missedVertices=0;
+  for (std::size_t i=0;i<sphere.verticesM.size();i+=20) {
+    if (!tracer.IntersectRay({{0.0,0.0,0.0}},sphere.verticesM[i],0.0,
+        2000000.0,std::numeric_limits<std::size_t>::max(),&hit,&error) || !hit.hit)
+      ++missedVertices;
+  }
+  failures+=report("closed_surface_shared_vertex_misses",missedVertices,0.0,0.0);
   failures+=report("solar_disc_no_overlap",
       Moon::SurfaceTemperature::UniformSolarDiscVisibleFraction(
           angularRadius,angularRadius,2.1*angularRadius),1.0,0.0);
@@ -518,6 +585,23 @@ int thermal_inertia() {
   failures+=report("thermal_energy_relative_residual",
       column.LastEnergyResidualJm2()/std::max(1.0,std::abs(boundaryEnergy)),
       0.0,0.0,2.0e-5);
+  // Isothermal radiative equilibrium is an independent exact solution: with
+  // no basal heat flux and absorbed sunlight epsilon*sigma*T^4, no layer or
+  // surface may change, regardless of the integration step length. This
+  // verifies forcing/conduction coupling, not a Diviner observation.
+  configuration.geothermalFluxWm2=0.0;
+  configuration.solarConstantWm2=configuration.infraredEmissivity*
+      5.670374419e-8*std::pow(250.0,4)/(1.0-configuration.normalBondAlbedo);
+  for (double dt:{1.0,60.0,3600.0}) {
+    Moon::Thermal::Column equilibrium;
+    if (!equilibrium.Initialize(configuration,250.0,&error) ||
+        !equilibrium.Advance(dt,1.0,1.0,1.0,&error)) return 1;
+    double maximum=std::abs(equilibrium.SurfaceTemperatureK()-250.0);
+    for (double temperature:equilibrium.LayerTemperatureK())
+      maximum=std::max(maximum,std::abs(temperature-250.0));
+    failures+=report(("isothermal_equilibrium_maximum_change_K_"+
+        std::to_string(dt)).c_str(),maximum,0.0,0.0,1.0e-8);
+  }
   return failures==0?0:1;
 }
 
@@ -539,6 +623,23 @@ int surface_physics() {
   const double expected=6.62607015e-34/(1.380649e-23*temperature)*
       std::exp(28000.0/(8.31446261815324*temperature));
   int failures=0;
+  // Two equal competing first-order hazards release 3/4 of the inventory in
+  // one interval when each alone has survival 1/2. Each gets 3/8, rather than
+  // independently releasing half and incorrectly exhausting the reservoir.
+  const double hazard=std::log(2.0)/5.0;
+  const auto competing=Exosphere::SourceProcesses::IntegrateFiniteRelease(
+      80.0,{hazard,hazard},5.0);
+  failures+=report("finite_competing_remaining_atoms",competing.remainingAtoms,20.0,1e-14);
+  failures+=report("finite_competing_first_atoms",competing.atoms[0],30.0,1e-14);
+  failures+=report("finite_competing_second_atoms",competing.atoms[1],30.0,1e-14);
+  const auto stiff=Exosphere::SourceProcesses::IntegrateFiniteRelease(80.0,{1e20},5.0);
+  failures+=report("finite_stiff_remaining_atoms",stiff.remainingAtoms,0.0,0.0);
+  failures+=report("finite_stiff_released_atoms",stiff.atoms[0],80.0,0.0);
+  const auto half=Exosphere::SourceProcesses::IntegrateFiniteRelease(80.0,{hazard,hazard},2.5);
+  const auto twoHalves=Exosphere::SourceProcesses::IntegrateFiniteRelease(
+      half.remainingAtoms,{hazard,hazard},2.5);
+  failures+=report("finite_step_composition_remaining_atoms",twoHalves.remainingAtoms,
+      competing.remainingAtoms,1e-14);
   failures+=report("argon_modified_arrhenius_residence_s",
       Moon::SurfacePhysics::ResidenceTimeS(argon,temperature),expected,
       1.0e-14);

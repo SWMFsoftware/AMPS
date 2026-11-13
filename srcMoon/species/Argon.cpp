@@ -227,7 +227,12 @@ bool GenerateParticleProperties(
       positionSoM[row] += transform[row][column] * positionBodyM[column];
   }
   startNode = PIC::Mesh::mesh->findTreeNode(positionSoM, startNode);
-  if (startNode == nullptr || startNode->Thread != PIC::Mesh::mesh->ThisThread)
+  // Moving-terrain injection resolves ownership only after the final point
+  // has been transformed at its actual departure epoch. Rejecting by the
+  // provisional logical-sphere point loses candidates near MPI partitions.
+  if (startNode == nullptr ||
+      (!std::isfinite(PIC::Mover::MovingSurfaceInjectionTimeOffsetS) &&
+       startNode->Thread != PIC::Mesh::mesh->ThisThread))
     return false;
 
   const double cosineSubsolar =

@@ -1,0 +1,54 @@
+#main
+SpeciesList=H2O
+makefile SOURCES=src
+makefile RUNDIR=run
+makefile MPIRUN=mpiexec -n 1
+ExcludeModule=ELECTRON_IMPACT
+ExcludeModule=SPUTTERING
+ExcludeModule=DUST
+ExcludeModule=CHARGE_EXCHANGE
+ExcludeModule=EXOSPHERE
+ExcludeModule=SURFACE
+ProjectSourceDirectory=test/srcCoreMeshTests
+WorkingSourceDirectory=srcTemp
+SourceDirectory=src
+ErrorLog=PT/amps_error.log
+Prefix=AMPS
+DiagnosticStream=PT
+OutputDirectory=PT/plots
+DebuggerMode=off
+ForceRepeatableSimulationPath=on
+StdoutErrorLog=on
+TimeStepMode=SpeciesGlobalTimeStep
+ParticleWeightMode=SpeciesGlobalParticleWeight
+ParticleWeightCorrectionMode=off
+CouplerMode=off
+#endmain
+
+#include species.input
+
+#General
+  ! DIM is a compile-time contract: the executable and its globally unique
+  ! case IDs are profile-qualified and may never be reused for another deck.
+  defineLocation(pic/picGlobal.dfn) DIM 1
+  BlockCells=2,2,2
+  GhostCells=1,1,1
+  Rnd=MersenneTwister
+  NastranSurfaceUserData=off
+  ControlParticleInsideNastranSurface=off
+  ! Keep the generic boundary descriptor type graph compiled, as production
+  ! PIC translation units reference that public list even when it is empty.
+  ! This deck registers no boundary and therefore adds no surface physics.
+  InternalBoundary=on
+#endGeneral
+
+! The mesh surface descriptors are part of the generic public type graph even
+! though this profile registers no physical internal boundary.  Install only
+! their default data structures; no exosphere source, target, or SPICE behavior
+! is enabled.
+#block ../exosphere.pl
+  SPICE=off
+  define _TARGET_ _TARGET_NONE_
+#endblock
+
+#end

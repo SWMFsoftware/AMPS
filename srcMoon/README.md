@@ -1,5 +1,59 @@
 # AMPS lunar exosphere application (`srcMoon`)
 
+The November 12 current-core integration retains the upstream production source
+samplers and documents necessary optional shared extensions in
+[CORE_INTEGRATION.md](CORE_INTEGRATION.md). Regression-preservation evidence,
+reviewed-reference status and milestone qualification are recorded separately
+in [STATUS.md](STATUS.md). No source preflight or regression-only PASS qualifies
+an observational comparison.
+
+The November 12 user-approved development-order amendment permits experimental
+M2 implementation and local/supporting verification before M1 closure. Formal
+I14-I20 remain gated on same-campaign I13. Run the bounded development work
+through `test/test_runner.py --phase m2-development --mpi-ranks 8`; its
+supporting checks and formally SKIPPED results have separate counts. See
+`test/M2_IMPLEMENTATION_PLAN.md`, STATUS.md and RUN.md.
+
+Finite Na/Ar inventories now use the approved integrated competing thermal/PSD
+release path with individual packet weights, exact continuous remainders and
+actual departure-epoch geometry. Actual gas/surface transfer ledgers and
+supporting terrain collisions are exercised through production callbacks.
+Selected D03 inputs are package-READY after official archive byte verification;
+that is data readiness only. M1, formal M2 and observational gates remain open.
+
+The November 12 event-budget audit found and repaired a production Na
+photochemistry dispatch defect: the formerly configured generic processor
+has no Na entry and never applies the configured Moon lifetime. The input now
+uses `Moon::Chemistry::ProcessParticle` with the existing lifetime/shadow law.
+Linked sunlit/shadow survival and exact event-count closure are verified on
+one/eight ranks. The changed nightly microscopic output was explicitly
+approved on November 12 after two identical runs; I04 now has a reviewed
+replacement reference. The clean corrected M0 campaign PASSes I01-I10 with
+zero failures/errors and a zero-byte nightly diff. The one-hour eight-rank
+diagnostic pilot closed all 54 gas-budget checkpoints, but ended PARTIAL
+without statistical qualification. See STATUS.md for the retained evidence.
+No observational rate validation
+or M1 completion is claimed by this correction.
+
+The I11 sampling-window defect found on 2026-11-11 is repaired in the common
+PIC sampler: disabling every species visualization file now still clears the
+new collecting buffer after each completed window. The retained November 1--3
+pilot's apparent long-term density growth is affected by this defect and cannot
+establish a physical equilibration duration. The deterministic production-path
+prerequisite, direct particle-inventory diagnostics and optional four-mesh,
+eight-rank-per-mesh M1 scheduler are described in
+[`test/integration-tests/I11/README.md`](test/integration-tests/I11/README.md).
+Current execution evidence and unresolved regressions are recorded in STATUS.md.
+
+The latest formally completed milestone is **M0**.  **M1 is the active
+qualification frontier**: I11-I13 have not all passed, so the implemented LOLA,
+illumination, thermal, and surface-physics work remains M2
+`EXPERIMENTAL / NOT QUALIFIED`.  See the maintained
+[`STATUS.md`](STATUS.md) for the exact blockers and evidence, and
+[`test/TESTING_PROCEDURE.md`](test/TESTING_PROCEDURE.md) for the single global
+runner, individual-test contracts, reference solutions, and comparison-artifact
+rules.
+
 For the 200 GB memory-budget volume mesh, use
 [`examples/m1_memory200.in`](examples/m1_memory200.in) for the spherical
 allocation check; [`examples/lola_surface.in`](examples/lola_surface.in)
@@ -11,8 +65,10 @@ qualification campaign; convergence must still be demonstrated, not assumed.
 ## Scope and evidence
 
 This document describes the code that is present in this checkout, not a
-desired lunar model inferred from file names or downloaded data.  The audit was
-last rechecked at source revision `92386a37737eab45cc8a855587a881d16bcefcd1`.
+desired lunar model inferred from file names or downloaded data.  The formal
+status audit was last rechecked at source revision
+`22ad748432ce032775189ba234be7a3d339a4d8d`; later uncommitted work is identified
+as such in `STATUS.md`.
 Generated files under `build/` were inspected to determine the effective
 configuration, but they are build products and must never be patched as the
 primary implementation.
@@ -20,7 +76,7 @@ primary implementation.
 The controlling verification contract is
 [`development_and_validation.md`](development_and_validation.md).  Its SHA-256
 is
-`8a9a7f16cd929b4848da869ba9e41de0368e0633a6e444d3d4b38a96d2fb068a`.
+`08d53e71daa8e27bde364f4d46a82323dabeaf5b518440d9072491df1d93f18a`.
 The external roadmap at
 `/data/vtenishe/moon_validation_data/development_and_validation.md` has the
 SHA-256
@@ -131,7 +187,7 @@ The M0 frame test uses `2009-01-24T00:00:00 UTC`. Configure the checkout with:
 
 ```sh
 rm -rf build
-./Config.pl -application=moon \
+./Config.pl -application=moon -amps-test=off \
   -spice-path=/home/vtenishe/SPICE/cspice \
   -spice-kernels=/home/vtenishe/SPICE/Kernels
 make -j
@@ -330,6 +386,18 @@ complete samples allow the unchanged nine-batch gate to be evaluated once
 when raw samples are independent; a missed independence, equilibrium, or
 precision criterion at the cap remains `FAIL`. Particle restart output is
 disabled because it does not preserve I11's in-memory statistical state.
+Completed-sample full-volume and legacy visualization file writers are also
+disabled only during linked I11. The scoring callback still reads the normal
+completed production density and surface buffers, while the retained
+`analysis_diagnostics.csv` reports which unchanged statistical gate is
+currently blocking qualification.
+
+`srcMoon/test/integration-tests/I11/run_duration_pilot.py` provides a separate
+480 km pilot that continues beyond 5000 steps until the same statistical gates
+pass or an explicit resource guard terminates the MPI process group. It exists
+only to determine a reviewable common physical duration. Its result is labeled
+`pilot-only-not-I11-qualification` and cannot be used as I11 PASS, an I13
+baseline, or permission to proceed to M2.
 
 The separate `srcMoon/test/lola_surface_demo/run.py` utility generates a
 meeting-ready D01 surface package at a requested 10--1000 km edge target. It
@@ -398,9 +466,11 @@ density and both Na D brightnesses on both projected-Sun branches, and global
 inventory. Batch duration doubles until all lag-one correlations are within
 `1.96/sqrt(N)`. Four independent means establish three consecutive <=2%
 equilibrium changes; five following disjoint means supply Student-t 95%
-intervals. Runs have no wall-time or memory cap. Resource histories are
-archived; actual allocation failure terminates through the AMPS fatal path
-with resource-reduction guidance and cannot produce a PASS.
+intervals. Formal I11 has the reviewed 5000-step ceiling. The separate duration
+pilot has no scientific step ceiling, but applies a 200 GiB process-tree RSS
+guard plus documented host-memory and filesystem-free-space floors. Resource
+histories are archived; allocation failure or a pilot resource guard cannot
+produce a PASS.
 
 For I11 resolution derivation, the surface, near-surface, SZA/angular, and
 polar targets scale through 40/20/10/5 km, while far-field and outer-domain
@@ -686,12 +756,45 @@ There is no cycle-count cutoff. Allocation failure or externally exhausted job
 resources terminate as an error with the preserved resource history.
 
 The generic exosphere library has flux-balanced adsorption/desorption machinery
-and thermal/PSD source depletion counters.  In the active configuration,
-however, the user-defined fixed surface density overwrites the evolved Na
-population after applying net flux.  Thus it does **not** implement a conserved
-accumulating reservoir, a physical residence-time distribution, PSR trapping,
-or delayed release.  Those capabilities remain experimental/missing and must
-not be inferred from the allocation of surface arrays.
+and thermal/PSD source depletion counters. An ordinary enabled M2 receipt uses
+that evolving inventory. The optional `tenishev-2013-case1` adapter instead
+selects an explicit prescribed-reservoir branch: before evaluating PSD and TD,
+every logical Na element is reset to `area × 2.65e16 atoms m^-2`, net returned/
+desorbed weights are discarded from the boundary state, and a stuck particle
+is deleted. This reproduces the paper's fixed uniform abundance/permanent-loss
+boundary model; it is not a conserved accumulating reservoir, PSR trapping, or
+delayed night-to-day release model.
+
+### Tenishev et al. (2013) Case-1 demonstration
+
+`srcMoon/examples/tenishev2013_case1.in` activates a narrowly named runtime
+contract without changing legacy M0--M2 receipts. The production source path
+then uses `1.67e22 atoms s^-1` at 6000 K for uniform impact vaporization, the
+compiled PSD law (`U=0.052 eV`, `b=0.7`, photon flux `2e18 m^-2 s^-1`, cross
+section `3e-25 m^2`), the compiled TD law (`1.85 eV`, `1e13 s^-1`), complete
+sticking, no sputtering, the Combi-1997 radiation-pressure table, and the
+ordinary force/mover/sampler callbacks. The simple temperature service changes
+only in this named mode to the paper's `100+300 cos(chi)^0.25 K`; the historical
+law remains `100+280 cos(chi)^0.25 K`.
+
+The parser requires all paper scalars, fixed-reservoir selection, run bounds,
+and reference string together. Startup checks the generated source switches
+and PSD/TD coefficients, so a stale or incompatible build terminates before
+particles are advanced. The runner requires the exact 30 September 1991 UTC
+because the paper supplies only the date. It preserves production density,
+column, and Na D-line brightness outputs but labels them `EXPERIMENTAL`: the
+5000-step/500-sample bound is not convergence evidence, and no qualified
+machine-readable Flynn/Mendillo image/profile or exact observation time is
+available for residual scoring.
+
+For this bounded run, the production observation evidence is the per-stage
+`pic.LimbColumnDensity.*`, `pic.ColumnDensityMap.spherical.*`, and
+`pic.Moon.Anti-sunwardColumnIntegrals.*` family. Their headers expose Na column
+density and both 5891.58/5897.56-A brightness variables; the limb family also
+records tangent altitude in metres. The separate
+`pic.Moon.AltitudeDistribution.*` writer is triggered only after a lunar
+orbital-direction cycle and therefore is not a physically meaningful required
+artifact for the approximately 19-hour, 5000-step demonstration.
 
 ## Chemistry and plasma
 
@@ -699,7 +802,9 @@ The active photochemical lifetime function accepts Na only and, with orbit mode
 off, returns the constant
 `3600 × 5.8 / 0.4^2 = 130500 s` with reactions allowed everywhere.  In an
 orbit-on build it additionally gates reactions using lunar and terrestrial
-shadow geometry.  The generic photochemical processor is selected.  Whether a
+shadow geometry. The named Case-1 receipt replaces only the illuminated
+lifetime with its explicit 129600 s (36-hour) value and retains both shadow
+gates and the generic photochemical processor. Whether a
 daughter ion can be represented depends on the species table; Na+ is absent in
 the active table, so a local lifetime PASS is not linked neutral-to-ion
 conversion verification.
@@ -740,38 +845,38 @@ provenance, QA report, and hashes before use.
 
 | Component | Production source / caller | Switches, inputs → outputs; units/frame | Data / stochastic state | Coverage and first gap |
 |---|---|---|---|---|
-| initialization/configuration | `main.cpp`, `main_lib.cpp::amps_init`, `Moon::Init_AfterParser` | `moon.input` → callbacks, mesh, weights, samplers | parser-generated tree | U02 source guard; linked baseline I01-I10 pending |
-| species/mass/charge/weights/timestep | `species.input`, PIC molecular tables, `localTimeStep`, PIC weight initialization | species; cell size → seconds and statistical weights | Na only; RNG enters weight/injection use | no complete local contract; multi-species paths disabled |
-| volume AMR/refinement | `localResolution`, mesh init/build; optional `outputMeshTECPLOT` | metres in LSO → target cell size; explicit `mesh_output_tecplot` gates only full-volume visualization | deterministic targets; I11 uses seed 731993 and MPI=1/OpenMP=1; text visualization may require hundreds of GB | U07 callback and linked I11 sampler/I12 realization gate implemented; I11 execution evidence and I13 reviewed freeze remain pending |
+| initialization/configuration | `main.cpp`, `main_lib.cpp::amps_init`, `Moon::Init_AfterParser` | `moon.input` → callbacks, mesh, weights, samplers | parser-generated tree | U02 and clean corrected I01-I10 PASS; preserve through M1 |
+| species/mass/charge/weights/timestep | `species.input`, PIC molecular tables, `localTimeStep`, PIC weight initialization | species; cell size → seconds and statistical weights | normal baseline neutral Na; dedicated Na/Na+ ion and Na+Ar storage/surface fixtures; RNG enters injection | I03 initialization PASS; dedicated U06/I08 PASS; general multispecies physical qualification remains open |
+| volume AMR/refinement | `localResolution`, mesh init/build; optional `outputMeshTECPLOT` | metres in LSO → target cell size; explicit `mesh_output_tecplot` gates only full-volume visualization | deterministic targets; I11 uses seed 731993, explicit equal MPI ranks across meshes and OpenMP=1; text visualization may require hundreds of GB | U07 PASS; I12 realization gate implemented; no passing I11 campaign or reviewed I13 freeze |
 | spherical surface | `amps_init`, `cInternalSphericalData` | 60×100, lunar radius → areas/normals/elements | deterministic geometry | U07 arithmetic; intersections/area invariants pending U01/I14 |
 | LOLA triangulated geometry | `MoonInput.cpp`, `LunarSurface.cpp`, `MoonSurfaceEnvironment.cpp`, `amps_init` | native IMG/LBL and requested max edge m → body-fixed terrain/BVH plus optional CEA/Tecplot mesh | D01 package READY with frozen raw hashes; moving geometry requires SPICE | U08 PASS; orbit-enabled moving intersection is wired; linked I14 remains predecessor-gated |
-| intersections/normals | `MoonSurfaceEnvironment.cpp` called by the second-order mover | LSO segment and TDB epoch → hit time/position, LSO and body normals, facet velocity | deterministic BVH and SPICE state transforms | U09 analytic ray fixtures; linked I14 collision/convergence gate pending |
+| intersections/normals | `MoonSurfaceEnvironment.cpp` called by the configured force SecondOrder mover | LSO second-order trajectory and TDB epoch → hit time/position, LSO and body normals, facet velocity | deterministic BVH with shared-edge arithmetic bounds; SPICE transforms; source departure epoch shared by geometry and flight | U09 closed-surface vertex rays PASS; supporting I14 has 513/513 rays and 7/7 eligible-rank moving collisions; formal collision/convergence gate pending |
 | illumination/Earth eclipse/PSR | production terrain BVH and separate Earth-eclipse test; thermal/source callers | body-fixed facet/Sun and SPICE epoch → separate terrain/eclipsed flags | D02 raw acquisition complete but package PARTIAL | U09 PASS; independent I15/I20 comparison SKIPPED |
 | simple temperature | `Exosphere::GetSurfaceTemperature` | cosine, LSO position → K | deterministic | U12 linked probe PASS-capable |
-| Diviner/dynamic thermal state and observation | `MoonSurfaceTemperature.cpp`, `MoonThermalModel.cpp`, `MoonDivinerObservation.cpp`, ordinary time-step update | processed D03 or forcing/thermal parameters → kinetic K, depth-column state, finite-disc direct irradiance, epsilon-sigma-T^4 and bolometric brightness K | GCP/PRP and frozen June/December RDR files exist; observation-free periodic spin-up and a June-only experimental comparison path are implemented, while D03 package metadata and a reviewed/frozen pre-holdout threshold remain incomplete | U09--U11 local gates cover overlap/solver/operator mathematics; linked I17 can emit June CSV/PNG/EPS only after I13+D03 readiness and remains SKIPPED / NOT VALIDATED until threshold freeze and untouched hold-out scoring |
-| lunar gravity | `Moon::TotalParticleAcceleration`; mover macro | m → m s^-2, LSO | deterministic | U03 linked analytic probe; trajectory I05 pending |
-| Sun/Earth differential and rotating forces | `Moon::OrbitalDynamics` helpers; `amps_time_step` populates state | DE421 at fixed UTC; J2000/LSO, m, m/s, rad/s → m/s² | exact seven-file kernel set and hashes frozen in U04 | U04 linked-kernel probe PASS-capable; full executable I06/I10 pending |
-| Na radiation pressure | same kernel plus `Na.h` table | heliocentric radial speed/distance → m/s² | embedded table; Combi Figure 7 digitization and hashes frozen in U05 | U05 local curve/scaling/shadow qualified to graphical uncertainty; linked mover gating I07 pending |
-| Lorentz/ion mover | same kernel; typical or coupled E/B | q, kg, V/m, T, m/s → m/s² | no active ion; D06 ERROR | U06/U18 SKIPPED |
+| Diviner/dynamic thermal state and observation | `MoonSurfaceTemperature.cpp`, `MoonThermalModel.cpp`, `MoonDivinerObservation.cpp`, ordinary time-step update | processed D03 or forcing/thermal parameters → kinetic K, depth-column state, finite-disc direct irradiance, epsilon-sigma-T^4 and bolometric brightness K | D03 selected GCP/PRP/frozen June-December RDR inputs READY with 214 official checksum matches; GCP brightness is not uniquely kinetic temperature; periodic spin-up and June-only experimental path implemented | U09--U11 local gates cover overlap/solver/operator and steady thermal invariant; formal I17 remains SKIPPED until I13, convergence, reviewed threshold and untouched hold-out scoring |
+| lunar gravity | `Moon::TotalParticleAcceleration`; mover macro | m → m s^-2, LSO | deterministic | U03 and linked I05 analytical orbit PASS |
+| Sun/Earth differential and rotating forces | `Moon::OrbitalDynamics` helpers; `amps_time_step` populates state | DE421 at fixed UTC; J2000/LSO, m, m/s, rad/s → m/s² | exact configured kernel hashes frozen in U04 and linked manifests | U04 and full executable I06/I10 PASS; I10 observed order approximately 2 |
+| Na radiation pressure | same kernel plus `Na.h` table | heliocentric radial speed/distance → m/s² | embedded table; Combi Figure 7 digitization and hashes frozen in U05 | U05 local curve/scaling/shadow qualified to graphical uncertainty; linked mover gating I07 PASS; observational validation remains later |
+| Lorentz/ion mover | same kernel; typical or coupled E/B | q, kg, V/m, T, m/s → m/s² | normal neutral baseline; dedicated Na/Na+ analytical uniform-field fixture; measured D06 drivers unqualified | dedicated U06/I08 PASS; U18/real-driver qualification remains SKIPPED |
 | surface impact classification | generic surface-interaction callback plus `species/Argon.cpp` source generator | species/state/weight → delete or re-emit | Bernoulli RNG and Maxwell/Maxwell-flux draws | U12 PASS; I18 linked Na+Ar sampler implemented and awaiting the same-campaign I13 gate |
 | sticking/accommodation/re-emission | `Moon.cpp` plus generic callback | K/probability; incident velocity → outward m/s | RNG for decision/speed/direction | U12 control points; distribution/conservation pending |
-| surface inventory/release | runtime Exosphere flux-balance callback plus `MoonSurfaceTemperature.cpp` checkpoints | weighted adsorption/desorption per element → continuous Na/Ar population and source rates | MPI reduction; zero/checkpoint initial state | U12/U13 PASS; complete linked counters and I19 budget closure pending |
+| surface inventory/release | Exosphere flux-balance callback, `FiniteSurfaceRelease.h`, `Exosphere_FiniteInventory.cpp`, `MoonSurfaceTemperature.cpp` checkpoints | atoms and constant competing hazards [1/s] over dt [s] → analytic remaining stock and weighted release packets; prescribed mode separately resets population | replicated stock counted once; rank-zero RNG, broadcast and exactly one final AMR owner; global species steps, individual weights ON, OpenMP=1; unsupported finite-stock sputtering fails explicitly | U12 exact/stiff/semigroup PASS; eight-rank supporting I19 Na/Ar gas+surface closure PASS; formal and split-step/weight convergence remain open |
 | cold trapping | `MoonSurfacePhysics.cpp`, production temperature/inventory service | residence time and explicit comparison timescale → diagnostic classification; warming releases continuously | D02/D03 packages not fully qualified | U13 PASS; I20 SKIPPED |
-| photoionization/dissociation | `ExospherePhotoionizationLifeTime`, generic processor | species/position → lifetime s/reaction | reaction RNG in linked model; D04 QA PASS | U14 legacy lifetime only; U15 and I21/I22 pending |
+| photoionization/dissociation | `Moon.h::ExospherePhotoionizationLifeTime`, `Moon.cpp::Chemistry::ProcessParticle`, configured PIC chemistry list walker | species/LSO position, dt [s] → actual neutral-Na survival/removal; existing lifetime/shadow law | Bernoulli seed 731993 in linked fixture; neutral Na production, charged-product configuration rejected; D04 rate qualification remains separate | U14 lifetime kernel; linked I11 prerequisite verifies p=1/2 sunlit and exact shadow survival; former generic Na bypass corrected; I21/I22 and Na+ products pending |
 | electron impact | `Moon::ElectronImpactIonizationRate` | species, fixed density/speed/cross section → s^-1 | D05 not qualified | U16/I23 SKIPPED |
 | charge exchange | generic library available; no lunar configuration found | undeclared | required authoritative cross sections absent | U17/I24 SKIPPED |
 | plasma/magnetic driver | typical fields or dormant coupler/datafile path | driver fields → E/B/plasma state | D06 QA ERROR | U18/I25/I26/I35/I40 SKIPPED |
 | He source/reservoir | `Exosphere_Helium.cpp`; no production registration | projected alpha flux → rate/Maxwellian particle | RNG; no reservoir contract | U19/I27/I34/I35 SKIPPED |
 | Ne source/accommodation | `Exosphere_Neon.cpp`; no production registration | projected flux → rate | incomplete generator path | U20/I27/I36 SKIPPED |
-| radiogenic Ar | sticking function only | no geography/transient source | D10 supports later comparison but is incomplete | U21/I28/I37-I39 SKIPPED |
-| Na impact/PSD/thermal/sputtering | generic exosphere called by sphere injection | configured rates/energies/population → particles/s | multiple RNG draws; built-in impact path active once, historical `MySource` disabled | U22 kernels; I02/I03 linked dispatch/rate audit and I29 budget/statistics pending |
+| radiogenic Ar | `species/Argon.cpp` plus generic registered source/surface paths | experimental uniform global 40Ar source; geography/transients absent | D10 geography remains incomplete | local uniform rate partition checked; complete U21/I28/I37-I39 remain SKIPPED |
+| Na impact/PSD/thermal/sputtering | generic exosphere called by sphere injection | configured rates/energies/population → particles/s | multiple RNG draws; built-in impact path active once, historical `MySource` disabled | U22 and I02/I03 PASS; supporting I11 counts actual accepted emission by generated source ID; full I29 source/statistical qualification pending |
 | meteoroid forcing | no production path | undeclared | D11 required | U23/I30 SKIPPED |
 | H2O/OH migration/chemistry | no production path/species | undeclared | D04/D15 required | U24/I31/I39 SKIPPED |
-| LOS/brightness/column operators | `Moon.cpp`, subsolar/velocity samplers | density, velocity, ray, g factor → m^-2, mean m/s, rayleigh | mesh sampling; observer geometry | U01/U26 SKIPPED; operator gates required |
+| LOS/brightness/column operators | `Moon.cpp`, subsolar/velocity samplers | density, velocity, ray, g factor → m^-2, mean m/s, rayleigh | mesh sampling; observer geometry | U01 local geometry PASS; U26 mission-operator qualification SKIPPED; full observation gates required |
 | mission operators | Kaguya tables/code; no qualified LADEE/LAMP/LACE/PACE adapters | epochs/attitude/FOV/mass-energy-angle cuts → observables | D07-D09/D12-D15 mixed readiness | U26 and I32-I40 pending |
-| diagnostics/budgets | generic source, loss, return, sticking, surface samplers | statistical weights/time → rates/densities | MPI reductions and sampling window | no closed conservation gate yet |
-| checkpoint/restart | PIC particle restart configured in `moon.input` | particle state → restart file | every 20 iterations | surface/RNG/sampler continuity unverified |
-| MPI/OpenMP/stochastic behavior | generic PIC/exosphere plus input `random_seed` | layout and seed → statistical solution | I11 freezes seed 731993 and MPI=1/OpenMP=1; later layout sensitivity remains open | I11 controls implemented; I42-I46 pending |
+| diagnostics/budgets | `PIC::ParticleEvents`, Exosphere source/surface/chemistry and selected movers; `MoonParticleBudget.cpp` (I11), `MoonM2Budget.cpp` (supporting I19) | actual accepted event weights plus independent owned gas/replicated surface sums → particle counts, atoms, kg, signed supply and roundoff-bounded residuals | append-only surface transfer events; optional I09-energy exit classifier distinguishes escape/numerical loss; MPI reductions, no observer RNG draws | I11 neutral-Na fixture verified; supporting Na/Ar I19 closes 42 rows with exact count closure and max relative imbalance 1.06645e-15; full formal scope and other mover/species layouts remain open |
+| checkpoint/restart | PIC particle restart configured in `moon.input` | particle state → restart file when enabled | particle writes currently off, including bounded I11 and pilot | full surface/RNG/sampler continuity unverified; no pilot resume claim |
+| MPI/OpenMP/stochastic behavior | generic PIC/exosphere plus input `random_seed` | layout and seed → statistical solution | I11 seed 731993 and explicit identical rank count per mesh; pilot eight ranks/OpenMP=1 | sampling and event fixtures PASS on one/eight ranks; I42-I46 layout/reproducibility qualification pending |
 | provenance/run manifests | linked Python runner in `test/integration_common.py` | revision/build/config/data hashes/layout/seed → manifest | canonical data root external | I01 and I11-I13 manifests implemented; release gates I42-I46 pending |
 
 ### M0 production mover and linked diagnostics

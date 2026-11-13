@@ -1,5 +1,12 @@
 # I12 — linked angular surface refinement
 
+When a same-campaign I11 finest mesh has already emitted
+`I12_initialization_receipt.txt`, the runner reuses this exact production
+initialization after checking executable hash, derived input hash and MPI rank
+count. It archives the shared receipt/manifest identities and applies the same
+independent formula and realized-cell scorer. This avoids allocating the mesh
+twice in a one-hour M1 campaign; I12's individual result remains separate.
+
 For the 200 GB resource check, pass
 `--input srcMoon/examples/m1_memory200.in --mpi-ranks 8` instead of the
 FULL template. The [profile contract](../../../examples/README.md#200-gb-memory-budget-mesh-2026-10-14)
@@ -77,3 +84,15 @@ production initialization, callback, AMR realization, MPI ownership, and
 independent Python formula checks.  Because it is explicitly `custom`, passing
 wiring metrics remain `SKIPPED / NOT QUALIFIED`; a violated evaluated metric
 is still `FAIL`, and a build/runtime problem is still `ERROR`.
+## Current-core integration: regression receipt preservation
+
+The bounded CUSTOM regression case runs the actual production initializer and
+evaluates the unchanged angular/realized-cell criteria before reporting
+SKIPPED (its mesh is not approved for qualification). Shared I11 initialization
+receipt reuse applies only to qualification mode. Applying its approved-grid
+query to CUSTOM regression before launch caused missing stdout/stderr/receipt
+artifacts and an aggregate ERROR; the original failed attempt is retained.
+The fix does not approve CUSTOM grids, change physical input, or relax a gate.
+The existing campaign infrastructure suite in I11 checks this launcher protocol
+with explicit non-science fixtures; the registered eight-rank MOON-I12 rerun
+must separately preserve the real production receipt, logs, manifest and input.

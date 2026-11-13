@@ -20,3 +20,13 @@ computes the kinetic-energy identity in Tenishev et al. (2013), Eq. 14, and
 checks its zero- and unity-accommodation limits. This deterministic U-test does
 not replace I18's linked stochastic angular/speed-distribution and inventory
 budget gates.
+
+The November 12 finite-release extension calls the actual shared production
+`IntegrateFiniteRelease` kernel. For constant competing first-order rates it
+checks `N_j=N0*(1-exp(-sum(k)*dt))*k_j/sum(k)`, conservation, the zero-rate
+limit, stiff complete depletion and the semigroup identity (one interval
+versus two consecutive intervals). Rates have units s^-1, populations atoms
+and interval seconds. This is the approved continuous-reservoir law; weighted
+packets sample velocity, position and conditional exponential departure time,
+not microscopic atom-count shot noise. Coupled varying-temperature/deposition
+convergence remains a linked requirement. Negative/nonfinite inputs are errors.

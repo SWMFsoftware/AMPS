@@ -1,0 +1,40 @@
+{
+  "approval": {
+    "by": "user",
+    "date": "2026-11-12",
+    "decision": "Approve corrected I04 reference (Recommended)"
+  },
+  "budget_result": {
+    "path": "/data/vtenishe/Moon-test/AMPS/test_output/srcMoon/m1-budget-audit-20261112T064009Z/budget-8-initialized/result.json",
+    "sha256": "c9161306e42e4c6532da3d25ba0c9a7c616fdb49a19add68f52d547d29ed40f6"
+  },
+  "candidate_sha256": "4bb811b3e05d72fa708359f1bea0344efd1a9f7e89609d7e8a3ca7eade808cba",
+  "candidate_values": {
+    "mean_speed_m_s": 2237.848,
+    "mean_vx_m_s": -16.639,
+    "mean_vy_m_s": -12.42036,
+    "mean_vz_m_s": 49.94022
+  },
+  "first_run": "/data/vtenishe/Moon-test/AMPS/run_test_Moon",
+  "frozen_reference_sha256": "abc1d9c91f61a1c44e06e98bde8739b2de1650b7a6caef783bb97081f2eb80b4",
+  "generator": {
+    "path": "srcMoon/test/integration-tests/I04/prepare_reference_candidate.py",
+    "sha256": "90f0e863326f09cbc5f3a0fd976d47f95ac19ea9618f0b3366738a1692775fea"
+  },
+  "input_sha256": "60efa41fecbb16b3453278f771eba823658f0581d8f38a082eeb26c6ed4709b5",
+  "installed": true,
+  "nightly_executable_sha256": "07357ed1607b1db54ecbe298e287b96131b406732f34195ce3880d688d5c0550",
+  "note": "No tolerance, archived reference, shared SWMF_data file or I13 baseline was changed.",
+  "previous_values": {
+    "mean_speed_m_s": 2224.937,
+    "mean_vx_m_s": -38.64898,
+    "mean_vy_m_s": 11.29292,
+    "mean_vz_m_s": 8.845359
+  },
+  "reason": "corrected the configured neutral-Na photochemistry dispatch; physical lifetime unchanged",
+  "reference_sha256": "4bb811b3e05d72fa708359f1bea0344efd1a9f7e89609d7e8a3ca7eade808cba",
+  "second_run": "/data/vtenishe/Moon-test/AMPS/test_output/srcMoon/m1-budget-audit-20261112T064009Z/nightly-repeat",
+  "source_is_dirty": true,
+  "source_revision": "22ad748432ce032775189ba234be7a3d339a4d8d",
+  "status": "REVIEWED"
+}

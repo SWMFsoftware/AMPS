@@ -283,6 +283,13 @@ namespace Exosphere {
 
   //sources
   namespace SourceProcesses {
+    // Serial source-dispatch context, reset after each finite-reservoir draw.
+    // A nonnegative element lets the ordinary PSD/thermal generators supply
+    // their existing velocity/energy laws for one declared reservoir cell.
+    // Only rank zero generates this candidate; the finite injector broadcasts
+    // it and resolves its final geometric owner before allocation.
+    extern int FiniteReservoirElement;
+    long int InjectFiniteSurfaceInventory(int spec,int boundaryType,void* boundary);
 
     //init the model
     void Init();
@@ -299,7 +306,8 @@ namespace Exosphere {
     int nZenithElement,nAzimuthalElement;
     unsigned int idim,el;
 
-    el=SurfaceInjectionDistribution->DistributeVariable();
+    el=FiniteReservoirElement>=0 ? FiniteReservoirElement :
+        SurfaceInjectionDistribution->DistributeVariable();
     Exosphere::Planet->GetSurfaceElementIndex(nZenithElement,nAzimuthalElement,el);
     Exosphere::Planet->GetSurfaceElementRandomDirection(ExternalNormal,nZenithElement,nAzimuthalElement);
 
@@ -332,7 +340,8 @@ namespace Exosphere {
 
     //determine if the particle belongs to this processor
     startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-    if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
+    if (FiniteReservoirElement<0 && !std::isfinite(PIC::Mover::MovingSurfaceInjectionTimeOffsetS) &&
+        startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
 
     //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
 #if _EXOSPHERE__ENERGY_DISTRIBUTION_INVERSION_ == _EXOSPHERE__ENERGY_DISTRIBUTION_INVERSION__NUMERIC_
@@ -520,7 +529,8 @@ namespace Exosphere {
         int nZenithElement,nAzimuthalElement;
         unsigned int el;
 
-        el=SurfaceInjectionDistribution[spec].DistributeVariable();
+        el=FiniteReservoirElement>=0 ? FiniteReservoirElement :
+            SurfaceInjectionDistribution[spec].DistributeVariable();
         Exosphere::Planet->GetSurfaceElementIndex(nZenithElement,nAzimuthalElement,el);
         Exosphere::Planet->GetSurfaceElementRandomDirection(ExternalNormal,nZenithElement,nAzimuthalElement);
 
@@ -555,7 +565,8 @@ namespace Exosphere {
 
         //determine if the particle belongs to this processor
         startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-        if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
+        if (FiniteReservoirElement<0 && !std::isfinite(PIC::Mover::MovingSurfaceInjectionTimeOffsetS) &&
+            startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
 
         //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
         double SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};
@@ -770,7 +781,8 @@ namespace Exosphere {
 
 	        //determine if the particle belongs to this processor
         startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-        if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
+        if (!std::isfinite(PIC::Mover::MovingSurfaceInjectionTimeOffsetS) &&
+            startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
 
         //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
         double temp,CosSubSolarAngle;
@@ -820,6 +832,21 @@ namespace Exosphere {
       static const double ImpactVaporization_SourceRatePowerIndex=0.0;
       static const double ImpactVaporization_SourceTemperature[]={0.0};
 
+      // Runtime receipts may override the generated whole-body source rate
+      // [particles s^-1] and Maxwellian temperature [K].  The hooks are used
+      // by the ordinary production source dispatch and particle generator;
+      // NULL retains every generated application's historical constants.
+      typedef double (*fRuntimeSourceRate)(int spec);
+      typedef double (*fRuntimeSourceTemperature)(int spec);
+      extern fRuntimeSourceRate RuntimeSourceRate;
+      extern fRuntimeSourceTemperature RuntimeSourceTemperature;
+
+      inline double GetSourceTemperature(int spec) {
+        return RuntimeSourceTemperature==NULL ?
+            ImpactVaporization_SourceTemperature[spec] :
+            RuntimeSourceTemperature(spec);
+      }
+
       double GetTotalProductionRate(int spec,int BoundaryElementType,void *SphereDataPointer);
 
       //evaluate nemerically the source rate
@@ -857,10 +884,17 @@ namespace Exosphere {
 
         //determine if the particle belongs to this processor
         startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-        if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
+        if (!std::isfinite(PIC::Mover::MovingSurfaceInjectionTimeOffsetS) &&
+            startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
 
         //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
-        PIC::Distribution::InjectMaxwellianDistribution(v_LOCAL_IAU_OBJECT,vbulk,ImpactVaporization_SourceTemperature[spec],ExternalNormal,spec);
+        const double sourceTemperature=GetSourceTemperature(spec);
+        if (!std::isfinite(sourceTemperature) || sourceTemperature<=0.0)
+          exit(__LINE__,__FILE__,
+              "runtime impact-vaporization temperature must be finite and "
+              "positive");
+        PIC::Distribution::InjectMaxwellianDistribution(v_LOCAL_IAU_OBJECT,
+            vbulk,sourceTemperature,ExternalNormal,spec);
 
 
 /*
@@ -890,7 +924,7 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*4.0E3;
 #if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
 
   #if _PIC_INTERNAL_DEGREES_OF_FREEDOM__RT_RELAXATION_MODE_  == _PIC_MODE_ON_
-        PIC::IDF::InitRotTemp(ImpactVaporization_SourceTemperature[spec],tempParticleData);
+        PIC::IDF::InitRotTemp(sourceTemperature,tempParticleData);
   #endif
 
   #if _PIC_INTERNAL_DEGREES_OF_FREEDOM__VT_RELAXATION_MODE_  == _PIC_MODE_ON_
@@ -1031,6 +1065,18 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*4.0E3;
   // must make the choice explicit in its immutable input receipt.
   typedef bool (*fUseFluxBalancedSurfaceInventory)();
   extern fUseFluxBalancedSurfaceInventory UseFluxBalancedSurfaceInventory;
+
+  // A prescribed surface reservoir is neither the legacy generated macro nor
+  // a flux-balanced inventory.  Applications may provide an immutable number
+  // density [m^-2] for every species/element; the exchange routine then
+  // discards adsorption/desorption increments and restores that density
+  // before evaluating surface sources.  This matches models that treat the
+  // regolith abundance as an external boundary condition.  NULL preserves
+  // the historical path exactly.
+  typedef bool (*fRuntimePrescribedSurfaceInventoryDensity)(
+      int spec,int surfaceElement,double* numberDensityM2);
+  extern fRuntimePrescribedSurfaceInventoryDensity
+      RuntimePrescribedSurfaceInventoryDensity;
   void ExchangeSurfaceAreaDensity();
 
 

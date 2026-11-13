@@ -150,6 +150,10 @@ def main() -> int:
 
         configured = run_command([
             str(repo / "Config.pl"), "-application=moon",
+            # Config.pl retains TESTMODE from an earlier legacy nightly run.
+            # This owner verifies normal production Moon; select OFF without
+            # changing the canonical test_Moon target's explicit mode ON.
+            "-amps-test=off",
             "-spice-path={}".format(spice_path),
             "-spice-kernels={}".format(spice_kernels),
         ], repo, timeout=timeout)
@@ -176,6 +180,7 @@ def main() -> int:
             "application": "moon",
             "configure_command": [
                 "./Config.pl", "-application=moon",
+                "-amps-test=off",
                 "-spice-path={}".format(spice_path),
                 "-spice-kernels={}".format(spice_kernels),
             ],

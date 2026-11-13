@@ -38,6 +38,26 @@ Tecplot variable/data callbacks, MPI ownership, sampled-data buffers, and
 temporary output-node interpolation, see the core developer guide in
 [`../README.md`](../README.md).
 
+## Sampling-window lifetime and visualization flags
+
+`PIC::Sampling::Sampling()` exchanges completed cell samples and switches the
+completed/collecting offsets at a sample boundary. It then clears the new
+collecting storage exactly once on every locally owned cell, across all
+compiled species. The just-completed storage remains readable by output and
+external completed-sample callbacks. This reset is independent of
+`SaveOutputDataFile`, the minimum output sample length, and visualization
+cadence. The per-species flag controls file creation only. Tying reset to that
+flag caused alternating previous windows to accumulate when every flag was
+false, including the srcMoon I11 duration pilot.
+
+The production-path regression and constant-window oracle are documented in
+[`../../srcMoon/test/integration-tests/I11/SAMPLING_CONTRACT.md`](../../srcMoon/test/integration-tests/I11/SAMPLING_CONTRACT.md).
+The fixture tests three consecutive windows with all species files disabled,
+only the first enabled, and all enabled. Its callback checks completed storage
+before the next collection, and it checks zero collecting storage afterward.
+Scientific sampling values and the normal enabled-output regression must both
+remain qualified; a storage-fixture PASS alone is not physical validation.
+
 ## Particle-mover selection
 
 Ordinary host-side single-particle advances now pass through
@@ -558,6 +578,52 @@ interface exists, applications with such state should disable the automatic
 `ParticleSplitting::Mode` and call an application-aware boundary controller
 that uses `GetNewParticle`, `CloneParticle`, and `DeleteParticle` only for list
 mechanics.
+
+## Read-only accepted-particle event diagnostics
+
+`PIC::ParticleEvents` declares a null-by-default observer in `pic.h`, with its
+storage and particle-weight resolver in `pic.cpp`. Exosphere records accepted
+emissions only after allocation/rejection checks, adsorption with the whole
+removed gas weight, reflection as an informational event, actual chemical
+parent losses/daughter creations, and signed prescribed reservoir supply.
+The selected Moon first/second-order mover branches record outer-domain escape
+and known numerical removals before releasing particle storage. Migration
+between MPI ranks is not a physical event. The default observer changes no
+RNG draws, particle data, output flags, force/source law or sampling buffers.
+
+Applications own the observer's scope and counters. The supporting srcMoon
+ledger currently requires neutral Na, a sphere and its declared global-weight
+configuration; it independently sums owned real particle lists and records
+counts/atoms, never just rates. Uninstrumented paths show up as unexplained
+residuals. This is not a claim that all PIC movers/species/GPU configurations
+have complete event instrumentation. See
+`srcMoon/test/integration-tests/I11/BUDGET_CONTRACT.md` for the exact oracle,
+MPI reductions, weighted roundoff bound, units, timing and tests.
+
+The November 12 extension appends `SurfaceDeposit` and `SurfaceRelease`
+without changing existing event numbers. These describe represented atoms in
+the surface ledger and are informational for the older Na-only gas-count
+identity. `DomainExitClassifier` is optional: the application classifies an
+actual boundary exit from its current position/velocity before deletion; a
+null classifier keeps the previous Escape event. Moon uses the existing I09
+instantaneous lunar-energy definition, distinguishing bound finite-box loss
+from positive-energy lunar escape. This is not ultimate three-body escape.
+`MoonM2Budget.cpp` independently sums owned Na/Ar gas lists and logical surface
+stocks counted once; its supporting scope does not cover every PIC mover.
+
+`cMovingInjectionEpochScope` temporarily supplies a source departure offset
+[s] during source placement and shortened boundary injection. Outside that
+scope its NaN sentinel selects the ordinary full-step trajectory. An injection
+scope is a complete no-op for that sentinel: it neither reads nor writes the
+shared departure context, preserving parallel legacy injectors without moving
+geometry. Finite-offset moving injection retains its documented threading
+restriction. The selected
+force SecondOrder entry now routes to its boundary tracer when the moving
+surface callback exists. Collision search uses that mover's constant initial
+acceleration position extension, and hit-velocity evaluation uses a shortened
+midpoint force evaluation. This is still a second-order numerical trajectory;
+time/space convergence is required. Static-boundary and null-callback modes
+retain their existing dispatch.
 
 ## 10. CCMC nightly trajectory receipt
 

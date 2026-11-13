@@ -1,0 +1,113 @@
+#main
+
+! T4 periodic-boundary profile.  It deliberately mirrors the baseline native
+! core fixture so the only material compile-time difference is periodic AMR
+! ownership.  Keeping the same species and extension layout also makes a
+! periodic receipt directly comparable with the baseline T4 executable.
+SpeciesList=H2O,OH,H,O,H2,O2,CO2,H_PLUS,ELECTRON
+
+makefile SOURCES=src
+makefile RUNDIR=run
+makefile MPIRUN=mpiexec -n 1
+
+ExcludeModule=ELECTRON_IMPACT
+ExcludeModule=SPUTTERING
+ExcludeModule=DUST
+ExcludeModule=CHARGE_EXCHANGE
+ExcludeModule=EXOSPHERE
+ExcludeModule=SURFACE
+
+ProjectSourceDirectory=test/srcCoreUnitTests
+WorkingSourceDirectory=srcTemp
+SourceDirectory=src
+
+ErrorLog=PT/amps_error.log
+Prefix=AMPS
+DiagnosticStream=PT
+OutputDirectory=PT/plots
+
+DebuggerMode=off
+ForceRepeatableSimulationPath=on
+StdoutErrorLog=on
+
+TimeStepMode=SpeciesGlobalTimeStep
+ParticleWeightMode=SpeciesGlobalParticleWeight
+ParticleWeightCorrectionMode=off
+CouplerMode=off
+
+#endmain
+
+#include species.input
+
+#General
+  BlockCells=2,2,2
+  GhostCells=1,1,1
+  Rnd=MersenneTwister
+  define _PIC_BC__PERIODIC_MODE_ _PIC_BC__PERIODIC_MODE_ON_
+  define _PIC_PHOTOLYTIC_REACTIONS_MODE_ _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
+  define _PIC_VOLUME_PARTICLE_INJECTION_MODE_ _PIC_VOLUME_PARTICLE_INJECTION_MODE__ON_
+  ! Match the baseline sampling record exactly. The periodic test does not
+  ! consume the tensor, but keeping identical associated-data layout isolates
+  ! periodic ownership/wrapping as this profile's only intended difference.
+  define _PIC_SAMPLE__VELOCITY_TENSOR_MODE_ _PIC_MODE_ON_
+  NastranSurfaceUserData=off
+  ControlParticleInsideNastranSurface=off
+  InternalBoundary=on
+  define _PIC_PARTICLE_MOVER__BORIS_SPLIT_ACCELERATION_(acceleration,rotation,species,particle,position,velocity,node) ::AMPS::CoreTests::BorisUniformFieldAcceleration(acceleration,rotation,species,particle,position,velocity,node)
+  define _PIC_PARTICLE_MOVER__RELATIVISTIC_BORIS_GET_FIELDS_(electric_field,magnetic_field) ::AMPS::CoreTests::RelativisticBorisUniformFields(electric_field,magnetic_field)
+#endGeneral
+
+#block ../exosphere.pl
+  SPICE=off
+  define _TARGET_ _TARGET_NONE_
+  addPhysicalModelHeader=core_test_fields.h
+#endblock
+
+#ParticleCollisions
+  model=NTC
+  SampleCollisionFrequency=on
+  CollisionCrossSection=const \\
+    const(H2O,H2O)=3.4E-19 \\
+    const(H2O,O)=3.4E-19 \\
+    const(O,O)=3.4E-19
+#endParticleCollisions
+
+#IDF
+  Model=LB
+  vtRelaxation=off
+  vvRelaxation=off
+  rtRelaxation=on
+
+  nVibModes(H2O=3)
+  nVibModes(OH=1)
+  nVibModes(H=0)
+  nVibModes(O=0)
+  nVibModes(H2=1)
+  nVibModes(O2=1)
+  nVibModes(CO2=4)
+
+  nRotModes(H2O=3)
+  nRotModes(OH=2)
+  nRotModes(H=0)
+  nRotModes(O=0)
+  nRotModes(H2=2)
+  nRotModes(O2=2)
+  nRotModes(CO2=2)
+
+  RotZnum(H2O=5)
+  RotZnum(OH=5)
+  RotZnum(H2=5)
+  RotZnum(O2=5)
+  RotZnum(CO2=5)
+
+  TemperatureIndex(H2O,H2O)=0.5
+  TemperatureIndex(H2O,O)=0.5
+
+  VibTemp(H2O=200,300,400)
+  VibTemp(OH=500)
+  VibTemp(H2=600)
+  VibTemp(O2=700)
+  VibTemp(CO2=800,900,1000,1100)
+#endIDF
+
+#end

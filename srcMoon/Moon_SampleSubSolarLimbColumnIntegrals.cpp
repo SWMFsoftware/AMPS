@@ -230,7 +230,11 @@ void Moon::Sampling::SubsolarLimbColumnIntegrals::PrintDataFile() {
     fprintf(fout,"ZONE T=\"the Moon moves outward from the Sun, total run accumulated sample\",I=%i\n",nSampledIntervals);
 
     for (el=0,nSampledIntervals=0;el<nPhaseAngleIntervals;el++) if (SampleBuffer_AntiSunwardMotion__TotalModelRun[el].nSamples!=0) {
-      fprintf(fout,"%e  %e\n",(el+0.5)*dPhaseAngle/Pi*180.0,SampleBuffer_AntiSunwardMotion__TotalModelRun[el].JulianDate);
+      // Keep the independent variables and every accumulated column/emission
+      // value on one Tecplot row.  The historical newline here split each
+      // anti-sunward record across two lines, producing a malformed table for
+      // the same limb diagnostics consumed by the Case-1 demonstration.
+      fprintf(fout,"%e  %e",(el+0.5)*dPhaseAngle/Pi*180.0,SampleBuffer_AntiSunwardMotion__TotalModelRun[el].JulianDate);
       for (int i=0;i<StateVectorLength;i++) fprintf(fout,"   %e",SampleBuffer_AntiSunwardMotion__TotalModelRun[el].SampleColumnIntegrals[i]/SampleBuffer_AntiSunwardMotion__TotalModelRun[el].nSamples);
       fprintf(fout,"\n");
     }

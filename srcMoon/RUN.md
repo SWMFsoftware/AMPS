@@ -1,15 +1,188 @@
-# Running the srcMoon demonstration runners
+# Running srcMoon diagnostic and demonstration runners
 
-This document describes two independent demonstration runners:
+## Current-core integration regressions
+
+This package compares every registered case in separate upstream/candidate
+checkouts, then executes the Moon configuration-separated M0 and supporting
+production-path checks. See [CORE_INTEGRATION.md](CORE_INTEGRATION.md) for the
+full preparation, native build, application campaign and per-case audit
+commands, including the authentic missing-fixture provenance and checkout-path
+metadata preparation. Each campaign writes its own aggregate JSON/JUnit,
+selection, owner logs and build/input/executable receipts. The audit writes
+`result.json` and `comparison.csv`; its PASS means every upstream PASS was
+preserved, with existing nonpasses still reported. It does not close M1/M2 or
+approve a new I04/I13 reference. Use fresh output directories for every run.
+
+## M2 supporting verification before M1 closure
+
+### Description
+
+This is the approved bounded development campaign. It clean-builds a dedicated
+Na/Ar executable with chemistry OFF and individual weights ON, runs local
+U08-U13, audits D01/D02/D03 provenance, and exercises the production LOLA
+geometry/mover (I14 scope), surface distributions (I18 scope) and gas/surface
+accounting (I19 scope). It then restores the canonical Na-only Moon/SPICE build.
+Supporting results have separate counts. Formal I14-I20 remain SKIPPED until
+same-campaign I13 is PASS; this command does not close M1 or M2.
+
+### Commands
+
+From the AMPS checkout, with no other build or model process using it:
+
+```sh
+python3 -B srcMoon/test/test_runner.py --phase m2-development \
+  --mpi-ranks 8 \
+  --output-dir test_output/srcMoon/M2-development-NEW
+```
+
+The runner uses `/home/vtenishe/SPICE/cspice` and
+`/home/vtenishe/SPICE/Kernels`; override with `--spice-path` and
+`--spice-kernels`. It removes `build/` before configuring and runs
+`make -j 'OPT3=-O3 -g'`. Use a fresh output directory. Only when the current
+generated tree already matches a retained dedicated M2 executable, reuse it:
+
+```sh
+python3 -B srcMoon/test/test_runner.py --phase m2-development \
+  --mpi-ranks 8 --m2-amps /absolute/path/to/amps-moon-m2-na-ar \
+  --output-dir test_output/srcMoon/M2-development-reuse-NEW
+```
+
+### Expected results and artifacts
+
+`test_summary.json` records registered tests and separate `development_counts`.
+The `m2-development/` child contains `development_summary.json`, build and
+restore logs, `local/`, `data-audit/`, `supporting/I14/`, `supporting/I18/`,
+`supporting/I19/` and genuine predecessor-blocked `formal/I14` through `I20`.
+Each linked supporting run retains input, manifest, receipt, stdout/stderr and
+resource history. I14/I18 write `comparison.csv/.png/.eps`; I19 writes
+`m2_budget.csv`, `budget.png` and `budget.eps`. The I19 fixture is 20 ordinary
+steps with declared incoming/outgoing particles and initial surface atoms;
+these are verification initial conditions, never observations.
+
+The November 12 retained example is
+`test_output/srcMoon/m2-development-20261112T084925Z/campaign-5/`:
+six local PASS, seven formal SKIPPED; supporting checks six PASS and one D02
+SKIPPED, with zero FAIL/ERROR. D03 selected inputs are READY; D02 remains
+PARTIAL pending authoritative illumination-integration epochs and operator
+qualification. See STATUS.md section 5.7 for metrics and limitations.
+
+## M1 event-budget and physical-duration diagnostic runner
+
+This numerical diagnostic uses the approved spherical 480 km M1 configuration.
+It checks real sampling storage and the configured Na chemistry/event ledger,
+then advances the ordinary production model on eight MPI ranks under an
+explicit wall/resource budget. It is separate from the demonstrations below
+and cannot complete M1 or produce observational validation.
+
+With a clean configured Moon/SPICE executable, run from the AMPS root:
+
+```sh
+python3 -B srcMoon/test/integration-tests/I11/run_duration_pilot.py \
+  --amps ./amps --input srcMoon/examples/m1_memory200.in --mpi-ranks 8 \
+  --wall-seconds 3600 --memory-limit-gib 200 \
+  --output-dir test_output/srcMoon/I11-duration-pilot-NEW
+```
+
+The output root preserves prerequisite subdirectories, manifest and
+`pilot_result.json`. `480km/` contains model stdout/stderr, input/receipt,
+`particle_budget.csv`, `particle_sources.csv`, sampled `block_metrics.csv` and
+resource histories. With completed samples, `480km/diagnostics/` contains
+`metric_statistics.csv`, statistics/budget PNG and EPS, and provenance JSON.
+The stage diagnostic is also CSV/PNG/EPS. A normal wall-budget stop is PARTIAL
+with no duration candidate; COMPLETE means only that the unchanged coarsest
+diagnostic gates passed and proposed durations still require review. There is
+no particle-restart/resume claim. Use a new output directory for every run.
+
+This document describes three independent demonstration runners:
 
 1. `environment_demo/run.py` generates illumination, shadowing, and thermal
    state products from one production-kernel run.
 2. `lola_surface_demo/run.py` generates and checks the triangulated LOLA
    surface without advancing the illumination or thermal models.
+3. `sodium_exosphere_demo/run.py` executes the bounded production sodium
+   exosphere for Tenishev et al. (2013) Case 1.
 
 The runners have different purposes and output directories. A successful
 execution of one runner does not imply that the other runner, or a formal
 I-series validation test, has passed.
+
+## Runner 3 — Tenishev-2013 Case-1 sodium exosphere
+
+### Description
+
+`srcMoon/test/sodium_exosphere_demo/run.py` runs the normal MPI production
+executable with the exact accepted Case-1 physical receipt. It uses the fixed
+uniform `2.65e16 atoms m^-2` Na reservoir, complete sticking/permanent loss,
+the paper's `100+300 cos(chi)^0.25 K` surface temperature, MIV at
+`1.67e22 atoms s^-1` and 6000 K, production PSD and TD, Combi radiation
+pressure, and a 129600 s illuminated photoionization lifetime. Direct
+sputtering is disabled. Ten 500-step sampling intervals are bounded by a
+5000-step limit and particle restart writes remain disabled.
+
+The paper associates Figs. 8--9 with 30 September 1991 but does not state the
+observation time. The runner therefore has no UTC default: supply an exact UTC
+on that date only after establishing it independently. A process-completion
+PASS remains an `EXPERIMENTAL` demonstration. It is not I11 convergence or I32
+validation, and no Flynn/Mendillo observation values are digitized from the
+published plot.
+
+### Commands
+
+```sh
+cd /data/vtenishe/Moon-test/AMPS
+
+rm -rf build
+./Config.pl -application=moon -amps-test=off \
+  -spice-path=/home/vtenishe/SPICE/cspice \
+  -spice-kernels=/home/vtenishe/SPICE/Kernels
+make -j
+
+RUN_OUTPUT=test_output/srcMoon/sodium-exosphere-demo/case1-19910930
+
+python3 -B srcMoon/test/sodium_exosphere_demo/run.py \
+  --simulation-start-utc 1991-09-30THH:MM:SSZ \
+  --mpi-ranks 8 \
+  --output-dir "$RUN_OUTPUT"
+
+python3 -m json.tool "$RUN_OUTPUT/result.json"
+```
+
+Replace `HH:MM:SS` with an independently supported observation time. Use a new
+output directory for each run. Alternatively add `--rebuild` to the Python
+command to request the same clean configuration/build sequence from the
+runner.
+
+### Expected results and artifacts
+
+The derived `application.in`, `stdout.log`, `stderr.log`, local U03/U04/U05/
+U12/U14/U22 gate artifacts, `run_manifest.json`, and `result.json` are written
+directly under `RUN_OUTPUT`. Untouched AMPS mesh, density, source-budget, limb,
+column-density, and Na D-line brightness files are under
+`RUN_OUTPUT/runtime/PT/plots/`. `result.json` records the required science
+families and formal convergence/validation status separately. Completion
+requires nonempty volumetric
+Na density plus the per-stage `pic.LimbColumnDensity.*`,
+`pic.ColumnDensityMap.spherical.*`, and
+`pic.Moon.Anti-sunwardColumnIntegrals.*` products. Their headers contain Na
+column density and both D-line brightness variables, and the limb product
+contains tangent altitude in metres; an orbital ephemeris alone cannot satisfy
+the runner.
+
+The separate `pic.Moon.LimbIntegrals.*` and
+`pic.Moon.AltitudeDistribution.*` tables are month-scale accumulated products:
+their production writer is triggered only after an orbital-direction cycle.
+They are not a valid completion requirement for this approximately 19-hour
+bounded demonstration. To recover receipt generation after an older runner
+rejected an otherwise completed preserved run, repeat the Python command with
+`--finalize-existing`. This mode does not launch AMPS and fails closed unless
+the exact UTC receipt, normal completion trailer, six local PASS artifacts,
+and all four bounded-run product families are present.
+
+The run manifest hashes the exact paper PDF, application receipt, executable,
+production library, source/data roadmaps, and every model output. A missing or
+changed paper, failed local gate, incompatible generated source configuration,
+nonzero MPI exit, or absent science output is an `ERROR`, never a validation
+PASS.
 
 ## Runner 1 — Illumination, shadowing, and thermal state
 
@@ -54,7 +227,7 @@ test -r /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.IMG
 test -r /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.LBL
 
 rm -rf build
-./Config.pl -application=moon \
+./Config.pl -application=moon -amps-test=off \
   -spice-path=/home/vtenishe/SPICE/cspice \
   -spice-kernels=/home/vtenishe/SPICE/Kernels
 make -j
@@ -200,7 +373,7 @@ test -r /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.IMG
 test -r /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.LBL
 
 rm -rf build
-./Config.pl -application=moon \
+./Config.pl -application=moon -amps-test=off \
   -spice-path=/home/vtenishe/SPICE/cspice \
   -spice-kernels=/home/vtenishe/SPICE/Kernels
 make -j

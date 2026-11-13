@@ -19,7 +19,22 @@ namespace Moon {
 
   namespace Runtime { struct Configuration; }
 
+  namespace Chemistry {
+    // Actual PIC list-processing callback for the configured neutral-Na
+    // lifetime/shadow law. The generic Exosphere table has no Na entry and
+    // cannot implement this contract. Other neutral species retain their
+    // existing generic dispatch; charged Na product weights need qualification.
+    void ProcessParticle(long int particle,long int& firstParticle,
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+  }
+
   namespace Species {
+    namespace SodiumCase1 {
+      // Runtime Case-1 lifetime [s], or the historical srcMoon lifetime when
+      // the optional paper receipt is absent.  Declared here because the
+      // photochemistry callback below is inline in this production header.
+      double PhotoionizationLifetimeS();
+    }
     namespace Argon {
       // Production adapter for the application-specific radiogenic 40Ar
       // source.  Config.pl can register the two functions below through its
@@ -550,7 +565,7 @@ namespace Moon {
 
 
   inline double ExospherePhotoionizationLifeTime(double *x,int spec,long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
-    static const double LifeTime=3600.0*5.8/pow(0.4,2);
+    const double LifeTime=Species::SodiumCase1::PhotoionizationLifetimeS();
 
 
     //only sodium can be ionized

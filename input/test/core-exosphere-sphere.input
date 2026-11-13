@@ -1,0 +1,73 @@
+#main
+! The fixture deliberately compiles one neutral species.  Its purpose is to
+! qualify the shared spherical source dispatcher and surface ledgers, not a
+! target-specific chemistry network.
+SpeciesList=H2O
+
+makefile SOURCES=src
+makefile RUNDIR=run
+makefile MPIRUN=mpiexec -n 1
+
+ProjectSourceDirectory=test/srcCoreExosphereTests
+WorkingSourceDirectory=srcTemp
+SourceDirectory=src
+
+ErrorLog=PT/amps_error.log
+Prefix=AMPS
+DiagnosticStream=PT
+OutputDirectory=PT/plots
+
+DebuggerMode=off
+ForceRepeatableSimulationPath=on
+StdoutErrorLog=on
+
+TimeStepMode=SpeciesGlobalTimeStep
+ParticleWeightMode=SpeciesGlobalParticleWeight
+! The native receipt verifies the individual correction stored on every
+! injected particle.  The selected rate/weight ratio remains below the
+! injector's population cap, so the expected correction is exactly one.
+ParticleWeightCorrectionMode=on
+CouplerMode=off
+#endmain
+
+#include species.input
+
+#General
+  defineLocation(pic/picGlobal.dfn) DIM 3
+  BlockCells=2,2,2
+  GhostCells=1,1,1
+  Rnd=MersenneTwister
+  InternalBoundary=on
+  NastranSurfaceUserData=off
+  ControlParticleInsideNastranSurface=off
+#endGeneral
+
+#block ../exosphere.pl
+  SPICE=off
+  define _TARGET_ _TARGET_NONE_
+
+  ! Keep the inventory update local to adsorption/desorption:
+  ! N_e(t+dt)=N_e(t)+A_e-D_e, with all terms in represented molecules.
+  SurfaceVolatileDensity=FluxBalance
+
+  ! These are all currently compiled legacy *spherical* source modes used by
+  ! this qualification profile.  Rates are comparable (about 3.2e10 s^-1
+  ! each after the 32-element surface is populated) so a deterministic random
+  ! stream observes every dispatch branch without changing production RNG.
+  Source:ImpactVaporization=on HeliocentricDistance=1.0*_AU_ SourceRatePowerIndex=0.0 SourceRate(H2O)=3.2E10 SourceTemperature(H2O)=250.0
+
+  Source:PhotonStimulatedDesorption=on PhotonFlux_1AU=2.0E17 CrossSection(H2O)=2.0E-20 InjectionVelocityRange(H2O)=100.0,200.0
+
+  Source:ThermalDesorption=on uThermal(H2O)=0.0 VibrationalFrequency(H2O)=1.0E-3
+
+  Source:Sputtering=on Mode=UniformUserDefinedSourceRate SourceRate(H2O)=3.2E10 Yield(H2O)=1.0 InjectionVelocityRange(H2O)=100.0,200.0
+
+  Source:VerticalInjection=on SourceRate(H2O)=3.2E10 BulkVelocity(H2O)=150.0
+
+  ! The application callback makes sticking deterministic and supplies a
+  ! re-emission fraction of 0.75; this generated value still exercises the
+  ! ordinary compile-time coefficient table in the linked surface kernel.
+  AccommodationCoefficient=constant const(H2O)=0.5
+#endblock
+
+#end

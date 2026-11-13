@@ -1,0 +1,17 @@
+! T5 compile profile for the variable-hard-sphere cross-section closure.
+! The baseline deck supplies the native harness, species layout, LB storage,
+! and collision sampling.  This later block intentionally replaces only the
+! molecular cross-section function and its generated SI parameter tables.
+#include input/test/core-unit-tests.input
+
+#ParticleCollisions
+  model=NTC
+  SampleCollisionFrequency=on
+  ! D_REF [m], CR_REF [m/s], POWERINDEX dimensionless.  The generated law is
+  ! d(g)=d_ref*(g_ref/g)^power and sigma=pi*d(g)^2.
+  CollisionCrossSection=VHS \\
+    D_REF(H2O)=3.2E-10 CR_REF(H2O)=500 POWERINDEX(H2O)=0.25 \\
+    D_REF(O)=2.8E-10 CR_REF(O)=700 POWERINDEX(O)=0.15
+#endParticleCollisions
+
+#end

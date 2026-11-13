@@ -7,6 +7,12 @@ invokes the application aggregate with `--skip-build`. Every local
 PASS/FAIL/SKIPPED/ERROR becomes an exact global PASS/FAIL/SKIP/ERROR case;
 the adapter never treats process launch as scientific success.
 
+The normal configuration explicitly passes `-amps-test=off`. Config.pl retains
+TESTMODE across application changes unless it is specified; inheriting a legacy
+nightly run would otherwise change default iteration, debug, particle sorting
+and load-balancing policies. The build-identity receipt records this argument.
+The separate canonical `make test_Moon` target still selects nightly mode ON.
+
 The default local mode is the bounded regression campaign. I11 and I13 remain
 intentional non-execution SKIPs there, and dependent M2 cases may also SKIP.
 Those statuses are preserved. This suite does not claim M1/M2 qualification.

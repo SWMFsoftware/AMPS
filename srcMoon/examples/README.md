@@ -1,5 +1,22 @@
 # `srcMoon` application-input examples
 
+## Tenishev et al. (2013) Case-1 sodium demonstration
+
+`tenishev2013_case1.in` is the exact paper-specific production receipt used by
+`test/sodium_exosphere_demo/run.py`. It is not a generic M2 default. The input
+selects the spherical surface, prescribed uniform `2.65e16 atoms m^-2` Na
+reservoir, complete sticking, `100+300 cos(chi)^0.25 K`, MIV at
+`1.67e22 atoms s^-1` and 6000 K, 36-hour illuminated photoionization, and
+bounded 500-by-5000-step demonstration controls. Generated PSD/TD coefficients
+are checked at startup; sputtering or restart output makes the runner fail
+closed.
+
+The timestamp in the committed file is only a parser-valid placeholder. The
+paper names 30 September 1991 but supplies no exact UTC, so the runner requires
+`--simulation-start-utc` and always writes a derived receipt. No plot values
+from the paper are treated as observations. See [`../RUN.md`](../RUN.md) for
+the full clean-build and eight-rank command.
+
 ## 200 GB memory-budget mesh (2026-10-14)
 
 **Subsequent approval on 2026-10-14:** The 480/240/120/60 km qualification
@@ -106,12 +123,19 @@ species files and fails before AMPS initialization if either is missing.
 
 `run_all_test.py` does not require a developer to edit `input/moon.input` for
 I18. When an M2 Na+Ar ID is selected without `--skip-build`, the runner creates
-a uniquely named temporary Config.pl input, verifies that its only physical
-compile-time changes are `SpeciesList=Na,Ar` and the `RadiogenicArgon` block,
+a uniquely named temporary Config.pl input, verifies the reviewed
+`SpeciesList=Na,Ar`, `RadiogenicArgon` registration, photolytic chemistry OFF
+and individual statistical weights ON (fractional finite-release packets),
 saves the executable and build hashes inside the campaign, deletes those
 temporary inputs, and restores the canonical Na-only build. With
 `--skip-build`, pass that executable explicitly as `--m2-amps`; it must not
 replace canonical `--amps`.
+
+The sampling-only builder purpose adds Ar/source registration while retaining
+canonical chemistry/weight controls; it is not the M2 accounting executable.
+The new global `test_runner.py --phase m2-development` uses the same M2 helper
+and the same LOLA receipt, writes separate supporting results, and restores
+canonical Moon/SPICE. See RUN.md for its complete command and artifact layout.
 
 The Na sticking table and immediate non-sticking accommodation are separate
 receipt choices. The example selects `temperature-table` sticking from

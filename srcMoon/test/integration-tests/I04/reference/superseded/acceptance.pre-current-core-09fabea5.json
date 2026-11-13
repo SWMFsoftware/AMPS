@@ -1,0 +1,17 @@
+{
+  "id": "I04", "name": "Production sampler regression",
+  "purpose": "Preserve canonical Moon sampled output after LOS/record-format corrections.",
+  "production_capability": "Full canonical test_Moon build/run and output comparison.",
+  "production_entry_points": ["make test_Moon", "srcMoon samplers", "DiffNum.pl"],
+  "configuration": "Canonical test_Moon configuration and registered processor count.",
+  "inputs": ["bundled user-reviewed corrected-Na four-rank reference and provenance"], "independent_reference": "Reviewed production regression reference, used only because no first-principles oracle covers the complete sampled file; linked lifetime/survival and budget identities separately verify the Na correction.",
+  "units": "mixed sampler output units", "frame_time_convention": "canonical test_Moon input",
+  "deterministic_stochastic_controls": "ForceRepeatableSimulationPath and canonical MPI layout.",
+  "procedure": "Run make -j test_Moon, verify the bundled reviewed four-rank reference and provenance hashes through check_reference.py, and inspect test_Moon.diff. The 2026-11-12 user-approved replacement follows two identical corrected-Na production runs and linked survival/budget checks; the prior SWMF_data revision 7a1c437 reference is archived unchanged under reference/superseded.", "metrics": ["diff byte count", "reviewed reference SHA-256"],
+  "acceptance_criteria": "test_Moon.diff exists and is exactly zero bytes.", "expected_pass_result": "Zero-byte diff.",
+  "expected_failure_modes": ["build error", "runtime error", "missing reference", "nonzero numerical/output diff"],
+  "required_data": ["reference/test_Moon.ref_np4", "reference/provenance.json"], "data_hashes": {"output/test_Moon/test_Moon.ref_np4": "4bb811b3e05d72fa708359f1bea0344efd1a9f7e89609d7e8a3ca7eade808cba", "reference/provenance.json": "2facd9d35ef2017e7d0e6c8ab7da19e1f055e70e42957f9bf85e530231f2bfb0", "superseded_pre_na_photochemistry_reference": "abc1d9c91f61a1c44e06e98bde8739b2de1650b7a6caef783bb97081f2eb80b4", "superseded_no_force_reference": "9386ea2d353db638ce84bf1f202d55cb7276443f800938c6365807be8a8deef3"},
+  "predecessor_gates": ["U01", "I01", "I02", "I03"],
+  "artifacts": ["build.log", "test_Moon.diff", "result.json", "run_manifest.json"],
+  "status_semantics": "PASS is regression agreement; missing reference/build output is ERROR, not SKIPPED or PASS."
+}

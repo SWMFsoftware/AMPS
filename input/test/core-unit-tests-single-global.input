@@ -1,0 +1,59 @@
+#main
+
+! T2 compile profile for one statistical weight and one time step shared by
+! every species.  It isolates the slot-zero aliasing branch from the default
+! species-global and the local associated-data branches.
+! Charged records keep the shared native test translation units compilable;
+! the single-global suite itself selects only storage-contract cases.
+SpeciesList=H2O,OH,H,O,H2,O2,CO2,H_PLUS,ELECTRON
+
+makefile SOURCES=src
+makefile RUNDIR=run
+makefile MPIRUN=mpiexec -n 1
+
+ExcludeModule=ELECTRON_IMPACT
+ExcludeModule=SPUTTERING
+ExcludeModule=DUST
+ExcludeModule=CHARGE_EXCHANGE
+ExcludeModule=EXOSPHERE
+ExcludeModule=SURFACE
+
+ProjectSourceDirectory=test/srcCoreUnitTests
+WorkingSourceDirectory=srcTemp
+SourceDirectory=src
+
+ErrorLog=PT/amps_error.log
+Prefix=AMPS
+DiagnosticStream=PT
+OutputDirectory=PT/plots
+
+DebuggerMode=off
+ForceRepeatableSimulationPath=on
+StdoutErrorLog=on
+
+TimeStepMode=SingleGlobalTimeStep
+ParticleWeightMode=SingleGlobalParticleWeight
+ParticleWeightCorrectionMode=off
+CouplerMode=off
+
+#endmain
+
+#include species.input
+
+#General
+  BlockCells=2,2,2
+  GhostCells=1,1,1
+  Rnd=MersenneTwister
+  NastranSurfaceUserData=off
+  ControlParticleInsideNastranSurface=off
+  InternalBoundary=on
+#endGeneral
+
+! Supply the user-data base classes inherited by AMPS internal-boundary
+! types.  No exosphere source or SPICE behavior is enabled.
+#block ../exosphere.pl
+  SPICE=off
+  define _TARGET_ _TARGET_NONE_
+#endblock
+
+#end

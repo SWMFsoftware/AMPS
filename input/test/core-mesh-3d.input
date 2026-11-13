@@ -1,0 +1,57 @@
+#main
+SpeciesList=H2O
+makefile SOURCES=src
+makefile RUNDIR=run
+makefile MPIRUN=mpiexec -n 1
+ExcludeModule=ELECTRON_IMPACT
+ExcludeModule=SPUTTERING
+ExcludeModule=DUST
+ExcludeModule=CHARGE_EXCHANGE
+ExcludeModule=EXOSPHERE
+ExcludeModule=SURFACE
+ProjectSourceDirectory=test/srcCoreMeshTests
+WorkingSourceDirectory=srcTemp
+SourceDirectory=src
+ErrorLog=PT/amps_error.log
+Prefix=AMPS
+DiagnosticStream=PT
+OutputDirectory=PT/plots
+DebuggerMode=off
+ForceRepeatableSimulationPath=on
+StdoutErrorLog=on
+TimeStepMode=SpeciesGlobalTimeStep
+ParticleWeightMode=SpeciesGlobalParticleWeight
+ParticleWeightCorrectionMode=off
+CouplerMode=off
+#endmain
+
+#include species.input
+
+#General
+  defineLocation(pic/picGlobal.dfn) DIM 3
+  BlockCells=2,2,2
+  GhostCells=1,1,1
+  Rnd=MersenneTwister
+  ! Cut-cell tests install their own deterministic triangles; no model surface
+  ! or external geometry file participates in the interpolation oracle.
+  NastranSurfaceUserData=on
+  ControlParticleInsideNastranSurface=off
+  InternalBoundary=on
+#endGeneral
+
+! Select AMPS' production cell-centered AMR interpolation implementation.
+! No external coupler is connected; this block only enables the row/pointer
+! stencil path exercised by the T3 interpolation contracts.
+#Interface
+  cell_centered_linear_interpolation_mode=amps
+  cell_centered_linear_interpolation_src=default
+#endInterface
+
+! Supplies the internal-surface data types without enabling an exosphere
+! source, SPICE, or any application target.
+#block ../exosphere.pl
+  SPICE=off
+  define _TARGET_ _TARGET_NONE_
+#endblock
+
+#end

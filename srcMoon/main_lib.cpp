@@ -8,6 +8,7 @@
 #include "MoonInput.h"
 #include "MoonSurfaceEnvironment.h"
 #include "MoonSurfaceTemperature.h"
+#include "species/SodiumCase1.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1157,13 +1158,27 @@ bool ResolvedSurfaceInjectionAdapter(int spec,int sourceProcessId,
   const double bodyState[6]={xBodyFixed[0],xBodyFixed[1],xBodyFixed[2],
       vBodyFixed[0],vBodyFixed[1],vBodyFixed[2]};
   double lsoState[6]={0.0,0.0,0.0,0.0,0.0,0.0};
+  const double (*sourceTransform)[6]=
+      Moon::OrbitalMotion::IAU_to_SO_TransformationMartix;
+#if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
+  SpiceDouble injectionTransform[6][6];
+  if (std::isfinite(PIC::Mover::MovingSurfaceInjectionTimeOffsetS)) {
+    // The normal orbital updater stores the END-step transform. A source
+    // departing earlier must use its own epoch, including the derivative
+    // block that adds the rotating facet velocity. Its subsequent moving-
+    // surface trace uses the same scoped departure offset.
+    sxform_c(Moon::Frames::BodyFixed,Moon::Frames::SolarOrbital,
+        Moon::SurfaceEnvironment::ProductionInjectionEpochS(),injectionTransform);
+    sourceTransform=injectionTransform;
+  }
+#endif
   // Multiply the generic AMPS 6x6 state transform directly.  Calling the
   // CSPICE convenience routine mxvg_c here would make even the legacy
   // no-SPICE regression require SpiceUsr.h, although the matrix itself is an
   // ordinary double array supplied by the orbital-motion layer.
   for (int row=0;row<6;++row) for (int column=0;column<6;++column)
     lsoState[row]+=
-        Moon::OrbitalMotion::IAU_to_SO_TransformationMartix[row][column]*
+        sourceTransform[row][column]*
         bodyState[column];
   for (int i=0;i<3;i++) xSo[i]=lsoState[i],vSo[i]=lsoState[i+3];
   // The radial displacement can cross an AMR block or MPI partition.  Always
@@ -1270,6 +1285,18 @@ void amps_init() {
     else
       rnd_seed();
 
+    if (Moon::Runtime::HasConfiguration() &&
+        Moon::Runtime::GetConfiguration().sodiumExosphereEnabled) {
+      // Install source scalars before Moon::Init_AfterParser initializes the
+      // Chamberlain helper.  Surface-reservoir wiring still waits until the
+      // logical sphere exists later in this routine.
+      Exosphere::SourceProcesses::ImpactVaporization::RuntimeSourceRate=
+          Moon::Species::SodiumCase1::ImpactVaporizationRate;
+      Exosphere::SourceProcesses::ImpactVaporization::
+          RuntimeSourceTemperature=
+              Moon::Species::SodiumCase1::ImpactVaporizationTemperatureK;
+    }
+
 
 
     //char inputFile[]="mercury.input";
@@ -1314,6 +1341,14 @@ void amps_init() {
       break;
     default:
       exit(__LINE__,__FILE__,"Error: not implemented");
+    }
+    if (Moon::Runtime::HasConfiguration() &&
+        Moon::Runtime::GetConfiguration().sodiumExosphereEnabled) {
+      // The bounded paper demonstration declares its base sampling interval
+      // in the preserved .in receipt.  This is a diagnostic run control, not
+      // evidence that 500 steps establish equilibrium or convergence.
+      PIC::RequiredSampleLength=
+          Moon::Runtime::GetConfiguration().particleSampleLengthSteps;
     }
 
     Moon::OrbitalMotion::nOrbitalPositionOutputMultiplier=10;
@@ -1390,6 +1425,21 @@ void amps_init() {
                   << configuration.tailExposureDurationS
                   << ", tail_beam_response="
                   << configuration.tailBeamResponse
+                  << ", sodium_exosphere_model="
+                  << (configuration.sodiumExosphereEnabled ?
+                         configuration.sodiumExosphereModel : "disabled")
+                  << ", sodium_miv_rate_s="
+                  << configuration.sodiumImpactVaporizationRateS
+                  << ", sodium_miv_temperature_k="
+                  << configuration.sodiumImpactVaporizationTemperatureK
+                  << ", sodium_photoionization_lifetime_s="
+                  << configuration.sodiumPhotoionizationLifetimeS
+                  << ", sodium_surface_density_m2="
+                  << configuration.sodiumSurfaceDensityM2
+                  << ", particle_iteration_limit="
+                  << configuration.particleIterationLimit
+                  << ", particle_sample_length_steps="
+                  << configuration.particleSampleLengthSteps
                   << std::endl;
       }
     }
@@ -1550,6 +1600,13 @@ void amps_init() {
         if (!Moon::SurfaceTemperature::InitializeProductionState(
                 Moon::Runtime::GetConfiguration(),Sphere,&stateError))
           exit(__LINE__,__FILE__,stateError.c_str());
+        // The optional paper reproduction uses the same logical surface and
+        // ordinary Exosphere source/impact paths as production.  Configure it
+        // only after allocation so its prescribed m^-2 reservoir can be
+        // converted to atoms with the actual element areas.
+        if (!Moon::Species::SodiumCase1::ConfigureProduction(
+                Moon::Runtime::GetConfiguration(),Sphere,&stateError))
+          exit(__LINE__,__FILE__,stateError.c_str());
         // Configure the radiogenic 40Ar source only after both the runtime
         // receipt and logical surface are immutable.  An enabled source with
         // Ar missing from the compile-time SpeciesList fails here instead of
@@ -1569,6 +1626,10 @@ void amps_init() {
             Moon::SurfaceTemperature::UseProductionFluxBalancedInventory;
         Exosphere::SurfaceInteraction::RuntimeAccommodationCoefficient=
             Moon::SurfaceTemperature::ProductionAccommodationCoefficient;
+        if (Moon::Species::SodiumCase1::ProductionEnabled()) {
+          Exosphere::RuntimePrescribedSurfaceInventoryDensity=
+              Moon::Species::SodiumCase1::PrescribedSurfaceDensityM2;
+        }
       }
       if (useResolvedLolaSurface)
         Sphere->PrintSurfaceData(surfaceDataFile.c_str(),0);

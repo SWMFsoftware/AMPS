@@ -248,8 +248,10 @@ ReferenceGroundBasedObservationTime= \\
     n=60.0E6
 
 !----------------------------  Photolytic Reaction -------------------------------------------
+  ! The generic Exosphere processor uses its internal H/O lifetime table,
+  ! which has no Na entry. Dispatch the actual Moon lifetime/shadow law.
   PhotolyticReactions=on \\ ! on, off
-    ReactionProcessor=Exosphere::ChemicalModel::PhotochemicalModelProcessor \\ !! Moon::ExospherePhotoionizationReactionProcessor    \\
+    ReactionProcessor=Moon::Chemistry::ProcessParticle \\
     LifeTime=Moon::ExospherePhotoionizationLifeTime    
 
 

@@ -1,0 +1,129 @@
+#main
+
+! This generated-layout profile intentionally mirrors core-unit-tests.input.
+! Its sole compile-time difference is individual statistical-weight storage,
+! which is mutually exclusive with the baseline layout and is required by the
+! conservative split/merge kernels exercised by the T2 profile campaign.
+!
+! The neutral prefix retains the production chemistry/IDF IDs. H+ and electron
+! records are compile fixtures for the shared T4 translation unit; this T2/T5
+! profile does not select charged-particle movers or plasma chemistry.
+SpeciesList=H2O,OH,H,O,H2,O2,CO2,H_PLUS,ELECTRON
+
+makefile SOURCES=src
+makefile RUNDIR=run
+makefile MPIRUN=mpiexec -n 1
+
+ExcludeModule=ELECTRON_IMPACT
+ExcludeModule=SPUTTERING
+ExcludeModule=DUST
+ExcludeModule=CHARGE_EXCHANGE
+ExcludeModule=EXOSPHERE
+ExcludeModule=SURFACE
+
+! Reuse the same native core-test sources; only the generated particle record
+! layout changes in this profile.
+ProjectSourceDirectory=test/srcCoreUnitTests
+WorkingSourceDirectory=srcTemp
+SourceDirectory=src
+
+ErrorLog=PT/amps_error.log
+Prefix=AMPS
+DiagnosticStream=PT
+OutputDirectory=PT/plots
+
+DebuggerMode=off
+ForceRepeatableSimulationPath=on
+StdoutErrorLog=on
+
+TimeStepMode=SpeciesGlobalTimeStep
+ParticleWeightMode=SpeciesGlobalParticleWeight
+ParticleWeightCorrectionMode=on
+CouplerMode=off
+
+#endmain
+
+#include species.input
+
+#General
+  BlockCells=2,2,2
+  GhostCells=1,1,1
+  Rnd=MersenneTwister
+  define _PIC_PHOTOLYTIC_REACTIONS_MODE_ _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
+  NastranSurfaceUserData=off
+  ControlParticleInsideNastranSurface=off
+  InternalBoundary=on
+#endGeneral
+
+! AMPS' mesh types inherit the surface-data classes installed by the
+! exosphere input generator whenever spherical user data is enabled.  The
+! target-free block supplies those type definitions without enabling any
+! exosphere source, boundary, or SPICE behavior in this core test fixture.
+#block ../exosphere.pl
+  SPICE=off
+  define _TARGET_ _TARGET_NONE_
+  ! The declaration is inert in ordinary individual-weight profiles.  The
+  ! dedicated T6 daughter deck enables its typed callback and redirects the
+  ! production whole-mesh photochemistry hook through a later General block.
+  addPhysicalModelHeader=core_test_chemistry.h
+#endblock
+
+! NTC is enabled so the configured production collision subsystem is linked
+! and initialized. Kernel tests exercise pair scattering; the populated-cell
+! case selects collision pairs, updates real particle records, and relaxes
+! translational energy into rotation.
+#ParticleCollisions
+  model=NTC
+  SampleCollisionFrequency=on
+  CollisionCrossSection=const \\
+    const(H2O,H2O)=3.4E-19 \\
+    const(H2O,O)=3.4E-19 \\
+    const(O,O)=3.4E-19
+#endParticleCollisions
+
+! Classical Larsen-Borgnakke storage and equilibrium samplers. Mode counts
+! are molecular degrees of freedom: 3N-6 for nonlinear H2O vibration and
+! 3N-5 for linear molecules. RT is active for the populated H2O collision
+! cell. VT remains off because the production VT path declares itself
+! unverified; enabling it would terminate rather than provide valid coverage.
+#IDF
+  Model=LB
+  vtRelaxation=off
+  vvRelaxation=off
+  rtRelaxation=on
+
+  nVibModes(H2O=3)
+  nVibModes(OH=1)
+  nVibModes(H=0)
+  nVibModes(O=0)
+  nVibModes(H2=1)
+  nVibModes(O2=1)
+  nVibModes(CO2=4)
+
+  nRotModes(H2O=3)
+  nRotModes(OH=2)
+  nRotModes(H=0)
+  nRotModes(O=0)
+  nRotModes(H2=2)
+  nRotModes(O2=2)
+  nRotModes(CO2=2)
+
+  RotZnum(H2O=5)
+  RotZnum(OH=5)
+  RotZnum(H2=5)
+  RotZnum(O2=5)
+  RotZnum(CO2=5)
+
+  TemperatureIndex(H2O,H2O)=0.5
+  TemperatureIndex(H2O,O)=0.5
+
+  VibTemp(H2O=200,300,400)
+  VibTemp(OH=500)
+  VibTemp(H2=600)
+  VibTemp(O2=700)
+  VibTemp(CO2=800,900,1000,1100)
+#endIDF
+
+! Deliberately terminate at EOF so narrowly scoped derived profiles can append
+! one generated-mode override and their own final #end.  Direct use remains a
+! complete valid deck because ampsConfig.pl accepts EOF after a closed block.

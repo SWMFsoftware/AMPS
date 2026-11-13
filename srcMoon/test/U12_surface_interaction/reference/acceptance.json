@@ -12,7 +12,7 @@
   "deterministic_stochastic_controls": "Kernel calls are deterministic; stochastic Bernoulli/re-emission distributions remain for linked testing.",
   "procedure": "Call compiled legacy and new production kernels at breakpoints, compare residence/desorption results to direct closed-form evaluations, and parse the committed M2 receipt through Moon::Runtime::ParseApplicationInput to verify that its independent Na/Ar model and coefficient selections reach runtime configuration.",
   "metrics": ["temperature error", "sticking error", "reemission-fraction error", "linear-speed and kinetic-energy accommodation errors", "zero/unity accommodation limits", "parsed Na/Ar sticking model", "parsed Na/Ar accommodation model and coefficient", "parsed Na table node count"],
-  "acceptance_criteria": "Control values within 1e-14 relative or exact where integral; all probabilities in [0,1].",
+  "acceptance_criteria": "Control values within 1e-14 relative or exact where integral; all probabilities in [0,1]. Equal competing first-order hazards each with isolated survival 1/2 leave 1/4 of initial atoms and release 3/8 per channel; stiff complete release and two-half-step composition satisfy the same 1e-14 criterion.",
   "reference_values": {
     "surface_temperature_K": {"cos=-0.25": 100.0, "cos=0": 100.0, "cos=0.0625": 240.0, "cos=1": 380.0},
     "sodium_sticking_at_100K": 0.9983,

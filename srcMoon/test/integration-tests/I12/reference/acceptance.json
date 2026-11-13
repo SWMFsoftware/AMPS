@@ -19,5 +19,5 @@
   "data_hashes": "captured in run_manifest.json",
   "predecessor_gates": ["U07", "I01", "I10"],
   "artifacts": ["receipt.txt", "stdout.log", "stderr.log", "result.json", "run_manifest.json", "input snapshot"],
-  "status_semantics": "PASS requires mesh_profile=full and verifies requested and realized angular refinement only; it does not establish AMR convergence of science observables, which is I11. QUICK/CUSTOM runs that meet every wiring criterion are SKIPPED / NOT QUALIFIED for the M1 gate while retaining their metrics."
+  "status_semantics": "PASS requires the approved m1_memory200.in-derived qualification profile or legacy mesh_profile=full and verifies requested and realized angular refinement only; it does not establish AMR convergence of science observables, which is I11. Unapproved QUICK/CUSTOM runs that meet every wiring criterion are SKIPPED / NOT QUALIFIED for the M1 gate while retaining their metrics. The approved memory-profile exception follows the 2026-10-14 source-roadmap amendment and existing I12 README/scorer; no numerical tolerance changes."
 }

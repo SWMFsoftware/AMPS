@@ -202,6 +202,8 @@ void Exosphere::ChemicalModel::PhotochemicalModelProcessor(long int ptr,long int
        newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
 
        PIC::ParticleBuffer::CloneParticle(newParticleData,(PIC::ParticleBuffer::byte *)tempParticleData);
+       PIC::ParticleEvents::Record(PIC::ParticleEvents::PhotolyticProduct,
+           specProduct,ProductParticleWeight*ProductWeightCorrection,spec);
      }
   }
 
@@ -217,6 +219,8 @@ void Exosphere::ChemicalModel::PhotochemicalModelProcessor(long int ptr,long int
   else {
     //the particle is removed from the system
     TotalLossRate[spec]+=ParentParticleWeight/ParentTimeStep;
+    PIC::ParticleEvents::Record(PIC::ParticleEvents::PhotolyticLoss,spec,
+        ParentParticleWeight);
     PIC::ParticleBuffer::DeleteParticle(ptr);
   }
 }

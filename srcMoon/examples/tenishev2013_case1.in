@@ -1,0 +1,162 @@
+! Tenishev et al. (2013), Icarus 226, 1538--1549, Case 1.
+! DOI:10.1016/j.icarus.2013.08.021
+!
+! This is an EXPERIMENTAL reproduction receipt, not observational validation.
+! The paper specifies 30 September 1991 for Figs. 8--9 but does not give the
+! observation UTC.  The committed timestamp below is only a syntactically
+! complete template value: sodium_exosphere_demo/run.py ALWAYS replaces it
+! with the caller's explicit --simulation-start-utc and rejects another date.
+#begin application: moon
+spice_path = /home/vtenishe/SPICE
+surface_geometry = sphere
+surface_mesh_resolution_m = 200000
+
+! Memory-bounded near-Moon demonstration mesh.  Its numerical convergence is
+! not established; the runner therefore labels every output EXPERIMENTAL.
+mesh_profile = custom
+mesh_near_surface_cell_size_m = 120000
+mesh_near_surface_extent_m = 200000
+mesh_far_field_cell_size_m = 480000
+mesh_far_field_extent_m = 10000000
+mesh_outer_cell_size_m = 104226000
+mesh_output_tecplot = false
+mesh_angular_resolution_m_by_sza = 0:120000,30:120000,60:120000,90:120000,120:120000,180:120000
+mesh_terminator_half_width_deg = 15
+mesh_polar_cap_start_latitude_deg = 75
+mesh_polar_resolution_m = 120000
+
+! The parser requires complete surface-path provenance in both geometry modes.
+! These immutable D01 inputs and output names are not read/written in sphere
+! mode, but their presence prevents switching to LOLA with undeclared files.
+lola_product_id = LDEM_4
+lola_image_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.IMG
+lola_label_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.LBL
+surface_cea_file = ../../test_output/srcMoon/sodium-exosphere-demo/sphere-unused.cea
+surface_tecplot_file = ../../test_output/srcMoon/sodium-exosphere-demo/sphere-unused.dat
+
+m2_environment = enabled
+surface_temperature_mode = simple-cosine
+diviner_temperature_table_file = none
+diviner_eclipse_history_file = none
+diviner_eclipse_selection_contract_file = none
+
+! These terrain/thermal-column fields are mandatory members of the complete
+! M2 receipt but are not evaluated by spherical simple-cosine Case 1.
+illumination_ray_origin_offset_m = 0.001
+surface_collision_maximum_segment_length_m = 1000
+surface_collision_time_tolerance_s = 1e-8
+surface_collision_distance_tolerance_m = 1e-4
+surface_collision_maximum_iterations = 80
+thermal_solar_constant_w_m2 = 1361
+thermal_infrared_emissivity = 0.95
+thermal_normal_bond_albedo = 0.12
+thermal_albedo_coefficient_a = 0.06
+thermal_albedo_coefficient_b = 0.25
+thermal_surface_density_kg_m3 = 1100
+thermal_deep_density_kg_m3 = 1800
+thermal_density_scale_height_m = 0.06
+thermal_surface_conductivity_w_m_k = 0.00074
+thermal_deep_conductivity_w_m_k = 0.0034
+thermal_radiative_conductivity_parameter = 2.7
+thermal_heat_capacity_coefficients_j_kg_k = -3.6125,2.7431,0.0023616,-0.000012340,0.0000000089093
+thermal_geothermal_flux_w_m2 = 0.018
+thermal_bottom_depth_m = 2.0
+thermal_layer_count = 80
+thermal_time_step_s = 300
+thermal_initial_temperature_k = 250
+thermal_nonlinear_tolerance_k = 0.001
+thermal_nonlinear_maximum_iterations = 50
+thermal_eclipse_direct_irradiance_model = apparent-disc-overlap
+thermal_solar_disc_radiance_model = uniform
+thermal_earth_atmosphere_transmission_model = disabled
+thermal_solar_disc_radius_m = 695700000
+thermal_opaque_earth_radius_m = 6371000
+thermal_spinup_cycle_start_utc = 1991-09-01T00:00:00Z
+thermal_spinup_cycle_end_utc = 1991-09-30T00:00:00Z
+thermal_spinup_temperature_tolerance_k = 0.01
+thermal_spinup_energy_tolerance_j_m2 = 10000
+
+! Case 1 uses complete sticking.  The accommodation values are unreachable
+! because no non-sticking branch exists; zero records that no scattered-speed
+! accommodation is applied.  TD still uses U=1.85 eV and nu=1e13 s^-1.
+sodium_activation_energy_ev = 1.85
+sodium_attempt_frequency_hz = 10000000000000
+sodium_sticking_model = constant
+sodium_sticking_probability_by_temperature_k = 1:1.0,1000:1.0
+sodium_accommodation_speed_model = kinetic-energy
+sodium_accommodation_coefficient = 0.0
+sodium_surface_interaction_reference = "Tenishev_et_al_2013_Case1_complete_sticking"
+
+! Ar is not compiled into the Na-only paper runner.  These values complete the
+! shared M2 schema and never create an Ar source, particle, or reservoir.
+argon_desorption_energy_j_mol = 28000
+argon_sticking_model = constant
+argon_sticking_probability_by_temperature_k = 1:1.0,1000:1.0
+argon_accommodation_speed_model = kinetic-energy
+argon_accommodation_coefficient = 1.0
+argon_surface_interaction_reference = "unused_in_Na_only_Case1"
+argon_source_enabled = false
+argon_source_spatial_model = uniform-global
+argon_source_rate_atoms_s = 3.8e20
+argon_source_time_model = continuous
+argon_source_map_file = none
+argon_source_reference = "unused_in_Na_only_Case1"
+ion_surface_interaction_mode = unconfigured
+cold_trap_retention_timescale_s = 2550240
+
+! The paper holds the reservoir fixed and permanently removes particles that
+! return to the surface.  No checkpoint is written or read.
+surface_inventory_initial_state = prescribed-uniform
+surface_inventory_checkpoint_file = none
+surface_inventory_checkpoint_interval_s = 86400
+
+! Exact accepted Case-1 physical contract.  PSD uses the generated production
+! kernel (2e18 photons m^-2 s^-1, 3e-25 m^2, U=0.052 eV, b=0.7); the runtime
+! adapter verifies those compiled coefficients before the first particle step.
+sodium_exosphere_model = tenishev-2013-case1
+sodium_exosphere_reference = "Tenishev_et_al_2013_doi_10.1016/j.icarus.2013.08.021"
+sodium_impact_vaporization_rate_s = 1.67e22
+sodium_impact_vaporization_temperature_k = 6000
+sodium_photoionization_lifetime_s = 129600
+sodium_surface_reservoir_model = prescribed-uniform
+sodium_surface_density_m2 = 2.65e16
+simple_cosine_night_temperature_k = 100
+simple_cosine_day_amplitude_k = 300
+simple_cosine_exponent = 0.25
+
+! Meeting-demonstration resource bound approved separately from formal V&V.
+! Ten 500-step samples are diagnostic only; reaching 5000 steps never means
+! equilibrium, statistical independence, or numerical convergence.
+particle_iteration_limit = 5000
+particle_sample_length_steps = 500
+particle_maximum_sample_length_steps = 500
+
+simulation_start_utc = 1991-09-30T00:00:00Z
+simulation_environment_mode = evolving
+random_seed = 731993
+
+profile_altitude_near_maximum_m = 200000
+profile_altitude_near_step_m = 5000
+profile_altitude_middle_maximum_m = 1000000
+profile_altitude_middle_step_m = 25000
+profile_altitude_far_maximum_m = 10000000
+profile_altitude_far_points_per_decade = 8
+profile_solar_zenith_angles_deg = 0,30,60,90,120,180
+profile_include_body_fixed_poles = true
+profile_include_shell_average = true
+profile_shell_angular_weighting = solid-angle
+
+limb_observer = earth
+limb_plane = sun-moon-earth
+limb_sides = both
+limb_branch_reference = projected-sun
+limb_tangent_maximum_altitude_m = 1000000
+tail_center_direction = anti-lunar
+tail_map_coordinate_system = j2000-ra-dec
+tail_map_display_orientation = west-right
+tail_map_half_width_deg = 7.5
+tail_beam_diameter_deg = 1.0
+tail_exposure_duration_s = 120
+tail_beam_response = unresolved
+tail_temporal_operator = exposure-average
+#end application

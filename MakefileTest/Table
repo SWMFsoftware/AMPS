@@ -1535,6 +1535,13 @@ Compile=
 >>>@($(MAKE) -j16 amps)
 >>>@echo "test_Moon_compile... done" >> test_Moon$(TESTMoon-REF).diff
 Time=2
+
+Check=
+>>>@# I04 pins its reviewed reference; shared SWMF_data HEAD can belong to newer numerics.
+>>>@python3 -B srcMoon/test/integration-tests/I04/test_reference.py
+>>>@python3 -B srcMoon/test/integration-tests/I04/check_reference.py --run-dir ${TESTMoonDIR} --diff-file test_Moon.diff --diffnum ${SCRIPTDIR}/DiffNum.pl
+>>>@ls -l test_Moon.diff
+>>>@echo Test test_Moon has finished: `date`
 <#
 
 #>

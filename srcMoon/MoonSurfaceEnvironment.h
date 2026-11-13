@@ -66,6 +66,9 @@ bool InitializeProductionTerrain(const Surface::Triangulation& triangulation,
 bool ProductionTerrainInitialized();
 const TerrainRayTracer* ProductionTerrain();
 void BeginProductionParticleStep(double ephemerisTimeBeginS);
+// Actual source-departure epoch [TDB s] when the scoped PIC injection context
+// is active. Outside injection, callers should use their ordinary frame epoch.
+double ProductionInjectionEpochS();
 bool FindProductionMovingSurfaceIntersection(long int particle,
     const double* segmentPositionLsoM,const double* segmentVelocityLsoMPerS,
     const double* segmentAccelerationLsoMPerS2,double elapsedFlightTimeS,

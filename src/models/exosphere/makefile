@@ -5,6 +5,7 @@ DEFAULT_TARGET : exosphere
 include ../../../Makefile.conf
 
 EXOSPHEREOBJ = Exosphere.o \
+	Exosphere_FiniteInventory.o \
 	Exosphere_OrbitalMotion.o \
 	Exosphere_SourceProcesses.o \
 	Exosphere_Parallel.o \

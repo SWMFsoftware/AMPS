@@ -12,7 +12,7 @@
   "deterministic_stochastic_controls": "Deterministic solver and fixed tolerances.",
   "procedure": "Evaluate density/conductivity control points, advance one fully implicit step with visible-solar-disc fraction exactly zero, require cooling, and independently integrate polynomial heat capacity for the energy residual.",
   "metrics": ["temperature error", "phase lag", "energy residual", "convergence order"],
-  "acceptance_criteria": "Material controls within 1e-14 relative; eclipse surface cools; absolute energy residual divided by max(1 J m^-2, boundary-energy magnitude) <=2e-5.",
+  "acceptance_criteria": "Material controls within 1e-14 relative; eclipse surface cools; absolute energy residual divided by max(1 J m^-2, boundary-energy magnitude) <=2e-5. Additional exact isothermal radiative-equilibrium cases at 1/60/3600 s keep every surface/layer temperature within 1e-8 K of 250 K.",
   "expected_pass_result": "Dynamic temperature converges and conserves energy within declared tolerances.",
   "expected_failure_modes": ["solver absent", "unstable step", "wrong boundary flux", "unclosed energy", "time mismatch"],
   "required_data": [],

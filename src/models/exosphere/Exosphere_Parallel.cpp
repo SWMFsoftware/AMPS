@@ -13,8 +13,12 @@
 #include "pic.h"
 #include "Exosphere.h"
 
+#include <cmath>
+
 Exosphere::fUseFluxBalancedSurfaceInventory
     Exosphere::UseFluxBalancedSurfaceInventory=NULL;
+Exosphere::fRuntimePrescribedSurfaceInventoryDensity
+    Exosphere::RuntimePrescribedSurfaceInventoryDensity=NULL;
 
 void Exosphere::ExchangeSurfaceAreaDensity() {
 
@@ -71,9 +75,17 @@ void Exosphere::ExchangeSurfaceAreaDensity() {
       const bool runtimeFluxBalance=
           UseFluxBalancedSurfaceInventory!=NULL &&
           UseFluxBalancedSurfaceInventory();
+      double prescribedProbe=0.0;
+      const bool runtimePrescribedInventory=
+          RuntimePrescribedSurfaceInventoryDensity!=NULL &&
+          RuntimePrescribedSurfaceInventoryDensity(spec,0,&prescribedProbe);
+      if (runtimeFluxBalance && runtimePrescribedInventory)
+        exit(__LINE__,__FILE__,
+            "runtime surface inventory cannot be both flux-balanced and "
+            "prescribed");
 
       //redistribute the surface content
-      if (!runtimeFluxBalance) {
+      if (!runtimeFluxBalance && !runtimePrescribedInventory) {
   #if _EXOSPHERE__SURFACE_CONTENT_ == _EXOSPHERE__SURFACE_CONTENT__BALANCE_FLUXES_
       //do noting
   #elif _EXOSPHERE__SURFACE_CONTENT_ == _EXOSPHERE__SURFACE_CONTENT__UNIFORM_
@@ -123,7 +135,27 @@ void Exosphere::ExchangeSurfaceAreaDensity() {
         double t;
 
         t=TotalFlux_GLOBAL[el];
-        Sphere->SurfaceElementPopulation[spec][el]+=t;
+        // Compare the final prescribed state with the state that a conservative
+        // flux update would have produced. This includes the runtime prescribed
+        // branch, which resets population before the legacy prescription.
+        const double populationBeforePrescription=
+            Sphere->SurfaceElementPopulation[spec][el]+t;
+        if (runtimePrescribedInventory) {
+          double densityM2=0.0;
+          if (!RuntimePrescribedSurfaceInventoryDensity(
+                  spec,el,&densityM2) || !std::isfinite(densityM2) ||
+              densityM2<0.0)
+            exit(__LINE__,__FILE__,
+                "runtime prescribed surface density is invalid or changed "
+                "policy within one exchange");
+          // The prescribed reservoir is external to the Monte-Carlo budget:
+          // particles that stick are permanently removed from the exosphere,
+          // while their weights do not accumulate in this boundary state.
+          Sphere->SurfaceElementPopulation[spec][el]=
+              SurfaceElementArea[el]*densityM2;
+          t=0.0;
+        }
+        else Sphere->SurfaceElementPopulation[spec][el]+=t;
 
   #if _EXOSPHERE__SURFACE_CONTENT_ == _EXOSPHERE__SURFACE_CONTENT__USER_DEFINED_
         //use the user defined function for the local surface content
@@ -131,6 +163,17 @@ void Exosphere::ExchangeSurfaceAreaDensity() {
           Sphere->SurfaceElementPopulation[spec][el]=SurfaceElementArea[el]*(_EXOSPHERE__SURFACE_CONTENT_DENSITY__USER_DEFINED__FUNCTION_(spec,el));
   #endif
 
+        // The logical surface arrays are replicated after MPI_Allreduce.
+        // Record prescribed external replenishment once, on rank zero, and
+        // separately from emissions into the gas. Signed atoms preserve both
+        // additions and withdrawals. This observer never changes population.
+        if (PIC::ThisThread==0) {
+          const double supplied=Sphere->SurfaceElementPopulation[spec][el]-
+              populationBeforePrescription;
+          if (supplied!=0.0)
+            PIC::ParticleEvents::Record(PIC::ParticleEvents::ReservoirSupply,
+                spec,supplied,el);
+        }
 
     #if _EXOSPHERE_SOURCE__PHOTON_STIMULATED_DESPRPTION_ == _EXOSPHERE_SOURCE__ON_
         t=Exosphere::SourceProcesses::PhotonStimulatedDesorption::GetSurfaceElementProductionRate(spec,el,Sphere);

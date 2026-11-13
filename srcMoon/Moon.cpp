@@ -10,11 +10,54 @@
 //$Id$
 
 #include "pic.h"
+#include "Moon.h"
 
 #include "MoonInput.h"
 #include "MoonSurfaceTemperature.h"
 
 #include <string>
+#include <cmath>
+
+void Moon::Chemistry::ProcessParticle(long int particle,long int& firstParticle,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+  const int species=PIC::ParticleBuffer::GetI(particle);
+  if (species!=_NA_SPEC_) {
+    Exosphere::ChemicalModel::PhotochemicalModelProcessor(
+        particle,firstParticle,node);
+    return;
+  }
+  if (_NA_PLUS_SPEC_>=0)
+    exit(__LINE__,__FILE__,
+        "Neutral-Na chemistry cannot silently create Na+ with unqualified "
+        "product weights. Use the neutral-Na production configuration; "
+        "qualify Na+ product weights and kinetics before enabling that case.");
+  double position[3];
+  PIC::ParticleBuffer::GetX(position,particle);
+  bool allowed=false;
+  const double lifetime=Moon::ExospherePhotoionizationLifeTime(
+      position,species,particle,allowed,node);
+  const double dt=node->block->GetLocalTimeStep(species);
+  if (!(dt>0.0) || (allowed && (!(lifetime>0.0) || !std::isfinite(lifetime))))
+    exit(__LINE__,__FILE__,"Na chemistry needs a finite positive allowed lifetime and timestep [s]");
+  // Bernoulli removal implements the existing lifetime exactly over this
+  // production step. expm1 retains accuracy when dt/tau is very small. No
+  // draw is needed in shadow, where the declared reaction probability is zero.
+  if (allowed && rnd() < -std::expm1(-dt/lifetime)) {
+    PIC::ParticleEvents::RecordParticle(PIC::ParticleEvents::PhotolyticLoss,
+        particle,node);
+    double weight=node->block->GetLocalParticleWeight(species);
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+    weight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(particle);
+#endif
+    Exosphere::ChemicalModel::TotalLossRate[species]+=weight/dt;
+    PIC::ParticleBuffer::DeleteParticle(particle);
+    return;
+  }
+  PIC::ParticleBuffer::SetNext(firstParticle,particle);
+  PIC::ParticleBuffer::SetPrev(-1,particle);
+  if (firstParticle!=-1) PIC::ParticleBuffer::SetPrev(particle,firstParticle);
+  firstParticle=particle;
+}
 
 // Production target and frame names.  Exosphere retains the legacy variable
 // name IAU_FRAME, but the selected lunar body frame is the DE421 mean-Earth /
@@ -81,8 +124,17 @@ void Moon::Init_AfterParser() {
   double ExosphereEscapeRate[PIC::nTotalSpecies],ExospehreTemsprature[PIC::nTotalSpecies];
 
   for (int spec=0;spec<PIC::nTotalSpecies;spec++) { //ExosphereEscapeRate[spec]=0.0,ExospehreTemsprature[spec]=1000.0;
-    ExosphereEscapeRate[spec]=Exosphere::SourceProcesses::ImpactVaporization::ImpactVaporization_SourceRate[spec];
-    ExospehreTemsprature[spec]=Exosphere::SourceProcesses::ImpactVaporization::ImpactVaporization_SourceTemperature[spec];
+    // Preserve the generated legacy arrays unless an application explicitly
+    // installs both runtime callbacks before this initializer.
+    ExosphereEscapeRate[spec]=
+        Exosphere::SourceProcesses::ImpactVaporization::RuntimeSourceRate==
+            nullptr ?
+        Exosphere::SourceProcesses::ImpactVaporization::
+            ImpactVaporization_SourceRate[spec] :
+        Exosphere::SourceProcesses::ImpactVaporization::RuntimeSourceRate(spec);
+    ExospehreTemsprature[spec]=
+        Exosphere::SourceProcesses::ImpactVaporization::GetSourceTemperature(
+            spec);
   }
 
   Exosphere::ChamberlainExosphere::Init(ExosphereEscapeRate,ExospehreTemsprature);

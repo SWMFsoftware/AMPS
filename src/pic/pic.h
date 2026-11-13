@@ -6131,6 +6131,36 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
   }
 
 
+  // Optional read-only lifecycle diagnostics. Applications may observe actual
+  // accepted events without coupling the PIC/exosphere libraries to a target
+  // application. Weights are represented physical particles, not rates; the
+  // signed ReservoirSupply event is informational and never a gas birth.
+  // The default NULL observer consumes no random numbers or sampling storage.
+  namespace ParticleEvents {
+    enum Event { Emission, Adsorption, Reflection, PhotolyticLoss,
+                 PhotolyticProduct, Escape, NumericalRemoval,
+                 ReservoirSupply, SurfaceDeposit, SurfaceRelease, EventCount };
+    typedef void (*ObserverFunction)(Event,int,double,int);
+    extern ObserverFunction Observer;
+    // Optional application-specific classification, used only for diagnostic
+    // events. State is the actual mover exit/predictor state [m,m/s], not the
+    // particle buffer's possibly stale initial position. Default preserves
+    // the historical unclassified boundary-event diagnostic.
+    typedef Event (*DomainExitClassifierFunction)(const double*,const double*);
+    extern DomainExitClassifierFunction DomainExitClassifier;
+    void RecordDomainExit(long int particle,
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
+        const double* position,const double* velocity);
+    inline void Record(Event event,int species,double weight,int detail=0) {
+      if (Observer!=NULL) Observer(event,species,weight,detail);
+    }
+    // Resolve the actual local species weight and individual correction
+    // before the mover releases particle storage. MPI migration must not call
+    // this function: it changes ownership rather than physical inventory.
+    void RecordParticle(Event event,long int particle,
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int detail=0);
+  }
+
   namespace Mover {
 
     //mover data stored in cells
@@ -6348,6 +6378,30 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
         const double *surfaceVelocity,
         cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
     extern fFindMovingSurfaceIntersection FindMovingSurfaceIntersection;
+    // NaN outside source injection; otherwise departure seconds from the
+    // current particle-step start. The scoped context keeps source position,
+    // rotating-frame velocity and remaining mover time on the SAME epoch.
+    extern double MovingSurfaceInjectionTimeOffsetS;
+    struct cMovingInjectionEpochScope {
+      double previous;
+      bool active;
+      explicit cMovingInjectionEpochScope(double value):previous(0.0),active(std::isfinite(value)) {
+        // Ordinary applications without moving geometry pass the NaN sentinel.
+        // Keep that default path completely inert: even writing NaN back to a
+        // shared context would introduce a race in parallel legacy injectors.
+        // Finite moving departure offsets [s] alone install/restore context;
+        // their application still owns the documented source-thread policy.
+        if (active) {
+          previous=MovingSurfaceInjectionTimeOffsetS;
+          MovingSurfaceInjectionTimeOffsetS=value;
+        }
+      }
+      ~cMovingInjectionEpochScope() {
+        if (active) MovingSurfaceInjectionTimeOffsetS=previous;
+      }
+      cMovingInjectionEpochScope(const cMovingInjectionEpochScope&)=delete;
+      cMovingInjectionEpochScope& operator=(const cMovingInjectionEpochScope&)=delete;
+    };
     extern fProcessMovingSurfaceIntersection
         ProcessMovingSurfaceIntersection;
 

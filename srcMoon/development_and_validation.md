@@ -1879,6 +1879,20 @@ comparisons. These meeting/debug artifacts are excluded from the formal
 scorer, are not observations, and cannot replace qualified metrics or a failed
 earlier layer.
 
+**Physical-duration diagnostic amendment, 2026-11-01:** The bounded campaign
+demonstrated that the production timestep halves across the approved mesh
+sequence, so 5000 particle steps provide unequal physical durations and none
+of the four grids reached the unchanged statistical gates. A distinct 480 km
+pilot may therefore continue past 5000 steps solely to identify a candidate
+common physical duration at which the existing independence, equilibrium, and
+confidence-interval tests pass. It uses the normal production physics and
+sampling path, suppresses only non-scoring completed-sample visualization
+files, and is protected by recorded process-memory, host-memory, and disk-space
+guards. Pilot artifacts are labeled `NOT EVALUATED` for formal I11: they cannot
+establish spatial convergence, open I13/M2, change an acceptance threshold, or
+be applied to the finer grids until the duration is reviewed and explicitly
+frozen. The formal bounded I11 contract above remains unchanged.
+
 **Why this step exists**
 
 Near-surface Na/Ne/Ar scale lengths can be far below the legacy coarse debug mesh. Scientific validation is meaningless until discretization error is smaller than observational/model uncertainty.
@@ -2037,6 +2051,21 @@ Milestone M1 when R1.1–R1.3 pass.
 
 ## Phase 2 — Real Lunar Surface, Illumination, Thermal State, and Surface Physics
 
+**Approved development-order amendment, 2026-11-12:** The user authorized
+M2 implementation and local/supporting production-path verification while
+M1 remains open. Work may complete production gas/surface event accounting,
+LOLA/illumination/thermal analytical fixtures, and D02/D03 package QA without
+waiting for an I13 freeze. These are explicitly EXPERIMENTAL development
+results; they do not complete M1, open observational scoring, or qualify M2.
+Formal I14-I20 still require same-campaign I13 PASS and their existing data,
+numerical, operator, and physics gates. Keep U01-U26/I01-I46 meanings and all
+acceptance criteria unchanged. A separate bounded development runner must
+report supporting checks independently from formally SKIPPED predecessor-
+blocked I-series tests, preserve actual production artifacts, and never
+install its own I13 reference. Fast regression and full qualification remain
+separate execution modes. The external roadmap/raw data are unchanged;
+`test/ROADMAP_RECONCILIATION.md` records the hashes and controlling contracts.
+
 **Implementation status, 2026-10-13.** Production kernels and adapters now
 exist for the time-dependent body-fixed LOLA boundary, BVH terrain horizon,
 strict Diviner-table interpolation, depth-resolved 1-D thermal columns,
@@ -2066,6 +2095,19 @@ complete production-wide weighted event counters, and I20 depends on those
 gates.
 Therefore M2 remains `EXPERIMENTAL / NOT QUALIFIED`; the unchecked boxes below
 remain intentional.
+
+**Finite-inventory development, 2026-11-12:** The user approved continuous
+finite-inventory release with analytically integrated competing first-order
+thermal/PSD hazards and explicitly weighted emitted packets. This replaces
+the frozen-rate Poisson/stock-rejection path only for the explicitly selected
+flux-balanced inventory. Coefficients remain fixed over the production
+operator-split interval; time/weight convergence is still required. Prescribed
+reservoirs and M0/M1 retain their legacy behavior. Population-independent
+sputtering is not silently reinterpreted as a first-order hazard and is
+rejected in the finite path until its coupling is specified. Supporting
+Na/Ar event ledgers and local geometric/thermal identities do not waive I13,
+I19 or observational gates. No species parameter or acceptance criterion is
+changed by the representation correction.
 
 ### [ ] R2.1 — Promote LOLA topography into the production particle-surface boundary
 

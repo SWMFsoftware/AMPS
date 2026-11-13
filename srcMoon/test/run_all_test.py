@@ -76,12 +76,14 @@ U_TESTS: tuple[tuple[str, str], ...] = (
 # M1 linked tests use the same executable and reviewed application receipt but
 # retain separate runners and artifacts. They are registered explicitly here
 # so adding a directory cannot silently omit it from the aggregate campaign.
-# I11 has no statistical time/block ceiling in QUALIFICATION mode: unresolved
-# confidence intervals keep its production campaign running. REGRESSION mode
-# still invokes all three runners, but I11/I13 return explicit SKIPPED records
-# without starting their expensive linked models. I12 performs the one bounded
-# coarse production initialization/wiring run. The aggregate preserves every
-# runner status and never converts successful process launch into PASS.
+# Formal I11 retains the reviewed 5000-step ceiling in QUALIFICATION mode.
+# The separate, explicitly invoked run_duration_pilot.py may continue beyond
+# that ceiling, but it is intentionally absent from this formal test registry
+# and cannot be confused with I11 PASS. REGRESSION mode still invokes all three
+# runners, but I11/I13 return explicit SKIPPED records without starting their
+# expensive linked models. I12 performs the one bounded coarse production
+# initialization/wiring run. The aggregate preserves every runner status and
+# never converts successful process launch into PASS.
 LINKED_M1_TESTS: tuple[tuple[str, str], ...] = (
     ("I11", "integration-tests/I11/test.py"),
     ("I12", "integration-tests/I12/test.py"),
@@ -259,6 +261,10 @@ def clean_build(
     configure_command = [
         str(REPO_ROOT / "Config.pl"),
         "-application=moon",
+        # Application selection alone preserves a preceding nightly TESTMODE.
+        # This campaign owns a normal production build; test_Moon selects ON
+        # separately, through its unchanged canonical make target.
+        "-amps-test=off",
         f"-spice-path={spice_path}",
         f"-spice-kernels={spice_kernels}",
     ]
@@ -286,7 +292,9 @@ def clean_build(
     # avoiding the effectively -O0 production executable produced when OPT3 is
     # replaced by bare ``-g``.  Makefile.conf and Makefile remain generated,
     # local files and are never edited or proposed for commit by this runner.
-    build_command = ["make", "-j", "OPT3=-O3 -g"]
+    # Keep the native build's parallelism consistent with the current core
+    # owners. This bounds compiler resources, not model steps or test gates.
+    build_command = ["make", "-j16", "OPT3=-O3 -g"]
     build_started = time.monotonic()
     build_returncode = run_logged(build_command, log_path, stream, append=True)
     build_result = {
@@ -513,6 +521,8 @@ def run_test(
     campaign_mode: str,
     mpi_ranks: int,
     m2_amps: Path | None,
+    i11_parallel_levels: int = 1,
+    test_runtime_seconds: float = 3600.0,
 ) -> dict[str, Any]:
     """Execute one registered CLI runner and consume its structured result."""
     runner = (TEST_ROOT / runner_name).resolve()
@@ -544,6 +554,11 @@ def run_test(
             "--mpi-ranks",
             str(mpi_ranks),
         ]
+        if test_id == "I11":
+            # Only I11 owns concurrent mesh launches. Each child retains the
+            # same requested MPI layout and its independent result/artifacts.
+            command.extend(["--parallel-levels", str(i11_parallel_levels),
+                            "--test-runtime-seconds", str(test_runtime_seconds)])
     else:
         command = [
             sys.executable,
@@ -627,6 +642,10 @@ def main() -> int:
         help=("positive MPI process count passed to every linked M1 runner "
               "and recorded in each manifest (default: 8)"),
     )
+    parser.add_argument("--i11-parallel-levels", type=int, choices=(1, 2, 4), default=1,
+                        help="concurrent I11 meshes, with --mpi-ranks per mesh")
+    parser.add_argument("--test-runtime-seconds", type=float, default=3600,
+                        help="parallel I11 launch budget; interrupted children are ERROR")
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -792,19 +811,22 @@ def main() -> int:
 
     results: list[dict[str, Any]] = []
     for test_id in selected:
-        # Announce the exact individual test before its runner starts.  The
-        # optional prefix lets a parent registry display collision-free global
-        # IDs without changing this application's authoritative local IDs or
-        # any scientific artifact schema.
+        # Preserve the current core registry's collision-free case announcement
+        # for all U/I tests and the linked runner/log detail needed during long
+        # Moon runs. These lines are progress, never scientific result records.
         print(f"[CASE] RUN  {args.case_id_prefix}{test_id} {registry[test_id]}",
               flush=True)
+        if test_id.startswith("I"):
+            print(f"RUNNING {test_id}  runner={registry[test_id]}  "
+                  f"log={output_root / 'runner_logs' / (test_id + '.log')}",
+                  flush=True)
         result = run_test(
             test_id, registry[test_id], build_dir, output_root, args.stream,
             amps, m1_input, m2_input, args.campaign_mode, args.mpi_ranks,
-            m2_amps,
+            m2_amps, args.i11_parallel_levels, args.test_runtime_seconds,
         )
         results.append(result)
-        print(f"{result['status']:7s} {test_id}  log={result['log']}")
+        print(f"{result['status']:7s} {test_id}  log={result['log']}", flush=True)
 
     counts = {status: 0 for status in VALID_STATUSES}
     for result in results:

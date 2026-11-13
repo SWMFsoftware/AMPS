@@ -99,8 +99,63 @@ archives.  Its history, frozen-contract, and processor SHA-256 values are
 `870577c82b430b098d816d210b528c714ec6cfa3a20ae9be3f6482a3639ae182`,
 `88fc5196fee5863691937a505873d420990b98056db8a1e8167255cd736189b0`, and
 `5a5d29d0f6dba88cd49c899e541a980eb84ce24717481b0cad471f8012459a65`.
-This processor receipt does not make the D03 package or I17 observational
-comparison READY; see the I17 README for predecessor and scoring gates.
+That processor receipt alone did not make the D03 package READY. The November
+12 package qualification below establishes scoped input readiness separately;
+I17 observational scoring still requires its predecessor/operator gates.
+
+## D02/D03 readiness and reproducible D03 qualification
+
+Run the read-only package/hash/frozen-I17-chain audit at any time:
+
+```sh
+python3 -B srcMoon/test/data_processing/audit_m2_packages.py \
+  --output-dir test_output/srcMoon/data-audit-NEW
+```
+
+For a fresh reproduction, first run the GCP and PRP processors above, using
+`M2-data/D03-GCP` and `M2-data/D03-PRP` respectively, then:
+
+```sh
+python3 -B srcMoon/test/data_processing/verify_diviner_archive.py \
+  --processed-dir test_output/srcMoon/M2-data \
+  --output-dir test_output/srcMoon/diviner-archive-proof-NEW
+
+python3 -B srcMoon/test/data_processing/qualify_d03_package.py \
+  --processed-dir test_output/srcMoon/M2-data \
+  --archive-proof test_output/srcMoon/diviner-archive-proof-NEW/result.json \
+  --output-dir test_output/srcMoon/diviner-package-candidate-NEW
+```
+
+The archive verifier preserves official calibrated and derived PDS manifests,
+bundle metadata and the instrument-team calibration-version statement. It
+compares each selected raw file with both its frozen local SHA-256 and the
+official MD5 entry. Ambiguous/missing manifest entries are unavailable evidence
+(SKIPPED); altered bytes are ERROR. Calibration release 3.1 and native PDS4
+product-label version 1.0 are distinct fields and are preserved separately.
+`--provenance-cache` may reuse only hash-verified preserved evidence. No model
+output or residual enters either processor.
+
+The qualifier requires all selected archive comparisons and GCP/PRP/I17
+processor QA to pass, verifies their hashes/native XML identities, copies the
+science CSV bytes unchanged and generates scoped package metadata. Its
+optional `--publish` installs only new metadata/processed destinations and
+refuses existing destinations; it never replaces raw or existing I17 files.
+Use the candidate-only command for an already-qualified canonical package.
+
+The retained November 12 proof is
+`test_output/srcMoon/m2-development-20261112T084925Z/diviner-archive-proof-2/`:
+214/214 files matched. Published metadata under
+`/data/vtenishe/moon_validation_data/diviner/` declares D03 READY for 18 GCP
+TAB/XML pairs, two PRP TAB/XML pairs and the frozen 87 RDR ZIP/XML pairs only.
+It does not qualify model capability, infer GCP uncertainty, turn brightness
+temperature into kinetic temperature, or permit December residual inspection.
+
+D02 remains PARTIAL. `prepare_d02_reference.py` produced 366 independent
+spatial rows, but the actual start/end epochs of the published 18.6-year hourly
+illumination integration remain unresolved; native terrain-product dates do
+not establish that interval. Production extended-disc/time integration and
+its comparison are also required. See the code excerpts and pending factual
+question in the repository's `question.md`.
 
 The default root is `/data/vtenishe/moon_validation_data`; `--data-root` may
 select an equivalent package for an isolated reproducibility check. The exact
@@ -108,10 +163,11 @@ authoritative source URLs and the native body-fixed frame are written to
 `lola/provenance.json`.
 
 The source-tree roadmap (SHA-256
-`8a9a7f16cd929b4848da869ba9e41de0368e0633a6e444d3d4b38a96d2fb068a`)
+`2761b447b46539edb21395550cd1b5d9ff6add4839b0db5a7e6d734cf2a4f02a`)
 contains the current implementation status and
 controls code/test decisions.  The external-data roadmap (SHA-256
 `d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4`)
 is the processing contract for immutable raw data.  They differ because the
-source copy contains newer implementation-status entries; no scientific
+source copy contains newer implementation-status entries and the approved
+M2 development-order exception; no scientific
 requirement is silently reconciled or discarded.

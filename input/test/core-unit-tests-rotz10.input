@@ -1,0 +1,39 @@
+! T5 LB sensitivity profile identical to the baseline except for Z_rot=10.
+! Its RT event probability is therefore 1/10, with no production law inferred
+! for unequal cross-species values.
+#include input/test/core-unit-tests.input
+
+#IDF
+  Model=LB
+  vtRelaxation=off
+  vvRelaxation=off
+  rtRelaxation=on
+  nVibModes(H2O=3)
+  nVibModes(OH=1)
+  nVibModes(H=0)
+  nVibModes(O=0)
+  nVibModes(H2=1)
+  nVibModes(O2=1)
+  nVibModes(CO2=4)
+  nRotModes(H2O=3)
+  nRotModes(OH=2)
+  nRotModes(H=0)
+  nRotModes(O=0)
+  nRotModes(H2=2)
+  nRotModes(O2=2)
+  nRotModes(CO2=2)
+  RotZnum(H2O=10)
+  RotZnum(OH=10)
+  RotZnum(H2=10)
+  RotZnum(O2=10)
+  RotZnum(CO2=10)
+  TemperatureIndex(H2O,H2O)=0.5
+  TemperatureIndex(H2O,O)=0.5
+  VibTemp(H2O=200,300,400)
+  VibTemp(OH=500)
+  VibTemp(H2=600)
+  VibTemp(O2=700)
+  VibTemp(CO2=800,900,1000,1100)
+#endIDF
+
+#end

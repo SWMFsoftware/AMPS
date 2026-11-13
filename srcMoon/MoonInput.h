@@ -164,6 +164,34 @@ struct Configuration {
   // observation operator is not implemented yet.
   std::string tailTemporalOperator;
 
+  // Optional Tenishev et al. (2013) sodium-exosphere reproduction mode.
+  // This group is deliberately absent from legacy/M0--M2 receipts.  When it
+  // is enabled, every physical and run-control quantity below is mandatory
+  // in the .in file; none is inferred from a generated input/moon.input
+  // constant.  The explicit model name prevents these paper-specific choices
+  // from silently becoming a generic lunar-sodium default.
+  bool sodiumExosphereEnabled = false;
+  std::string sodiumExosphereModel;
+  std::string sodiumExosphereReference;
+  double sodiumImpactVaporizationRateS = 0.0;       // atoms s^-1, whole Moon.
+  double sodiumImpactVaporizationTemperatureK = 0.0;
+  double sodiumPhotoionizationLifetimeS = 0.0;     // Illuminated Na only.
+  std::string sodiumSurfaceReservoirModel;
+  double sodiumSurfaceDensityM2 = 0.0;             // atoms m^-2.
+
+  // Parameters of T=Tnight+A*max(cos(chi),0)^p [K].  Keeping all three in
+  // the receipt is necessary because the 2013 paper uses A=300 K whereas the
+  // historical srcMoon compiled law uses 280 K.
+  double simpleCosineNightTemperatureK = 0.0;
+  double simpleCosineDayAmplitudeK = 0.0;
+  double simpleCosineExponent = 0.0;
+
+  // Bounded demonstration controls.  These control only particle time steps
+  // and AMPS sampling output; they are not physical convergence criteria.
+  int particleIterationLimit = 0;
+  int particleSampleLengthSteps = 0;
+  int particleMaximumSampleLengthSteps = 0;
+
   // M2 surface/environment selection.  ``disabled`` preserves the reviewed
   // M0/M1 problem exactly.  ``enabled`` requires every field in the M2 group;
   // there are no compiled fallback constants for a science run.

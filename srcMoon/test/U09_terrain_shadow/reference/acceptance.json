@@ -12,7 +12,7 @@
   "deterministic_stochastic_controls": "No randomness; edge cases predeclared.",
   "procedure": "Call the production BVH ray service for overhead, single-ridge, back-facing, and exact ridge-distance cases; call the production apparent-disc overlap kernel for disjoint, total, contained, and partial equal-radius circles.",
   "metrics": ["classification confusion matrix", "intersection distance error", "unocculted solar-disc fraction", "edge-case count"],
-  "acceptance_criteria": "All three terrain classifications exact, ridge intersection distance within 1e-14 relative, and every closed-form circle-overlap branch within 1e-14 relative.",
+  "acceptance_criteria": "All three terrain classifications exact, original ridge intersection distance within 1e-14 relative, and every closed-form circle-overlap branch within 1e-14 relative. Additional lunar-coordinate translation/ray-direction-rescaling fixtures preserve hit distance within 1e-9 relative; this separate floating-point cancellation check does not relax the original fixtures.",
   "expected_pass_result": "Production terrain shadowing is geometrically correct and independently classified.",
   "expected_failure_modes": ["self-shadow", "wrong normal", "frame mismatch", "grazing tolerance instability"],
   "required_data": [],
@@ -21,5 +21,6 @@
   "artifacts": ["result.json", "shadow_cases.csv", "data_hashes.json"],
   "status_semantics": "PASS verifies the production terrain-ray kernel only; it is not D02 observational validation or linked I15 wiring.",
   "implementation": "linked-production-probe",
+  "shared_vertex_regression": "Every twentieth vertex of a lunar-radius production icosphere must be hit by its centre-to-vertex radial ray. Zero misses required. The oracle is closed-surface vertex membership, not a frozen production output.",
   "probe_modes": ["terrain-shadow"]
 }

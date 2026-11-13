@@ -2187,11 +2187,15 @@ long int Exosphere::SourceProcesses::InjectionBoundaryModel(int spec,int Boundar
     exit(__LINE__,__FILE__,"Error: the time step node is not defined");
   }
 
+  const bool finiteInventory=UseFluxBalancedSurfaceInventory!=NULL &&
+      UseFluxBalancedSurfaceInventory();
+  if (finiteInventory)
+    nInjectedParticles+=InjectFiniteSurfaceInventory(spec,BoundaryElementType,BoundaryElement);
   ModelParticlesInjectionRate=totalProductionRate(spec,BoundaryElementType,BoundaryElement)/ParticleWeight;
 
-  if (ModelParticlesInjectionRate*ParticleWeight*LocalTimeStep<1.0E-10) return 0;
+  if (!finiteInventory && ModelParticlesInjectionRate*ParticleWeight*LocalTimeStep<1.0E-10) return 0;
 
-  if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_) {
+  if (!finiteInventory && _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_) {
     if (ModelParticlesInjectionRate*LocalTimeStep>nMaxInjectedParticles) {
       SpeciesWeightCorrection=ModelParticlesInjectionRate*LocalTimeStep/nMaxInjectedParticles;
       ModelParticlesInjectionRate/=SpeciesWeightCorrection;
@@ -2225,13 +2229,13 @@ long int Exosphere::SourceProcesses::InjectionBoundaryModel(int spec,int Boundar
 #if _EXOSPHERE_SOURCE__PHOTON_STIMULATED_DESPRPTION_ == _EXOSPHERE_SOURCE__ON_
 //  Flux_PSD=Exosphere::SourceProcesses::PhotonStimulatedDesorption::GetTotalProductionRate(_NA_SPEC_,SphereDataPointer);
   FluxSourceProcess[_EXOSPHERE_SOURCE__ID__PHOTON_STIMULATED_DESPRPTION_]=Exosphere::SourceProcesses::PhotonStimulatedDesorption::GetTotalProductionRate(spec,BoundaryElementType,BoundaryElement);
-  if (FluxSourceProcess[_EXOSPHERE_SOURCE__ID__PHOTON_STIMULATED_DESPRPTION_]>0.0) PhotonStimulatedDesorption::SurfaceInjectionDistribution[spec].Init(&spec);
+  if (!finiteInventory && FluxSourceProcess[_EXOSPHERE_SOURCE__ID__PHOTON_STIMULATED_DESPRPTION_]>0.0) PhotonStimulatedDesorption::SurfaceInjectionDistribution[spec].Init(&spec);
 #endif
 
 #if _EXOSPHERE_SOURCE__THERMAL_DESORPTION_ == _EXOSPHERE_SOURCE__ON_
 //  Flux_TD=Exosphere::SourceProcesses::ThermalDesorption::GetTotalProductionRate(_NA_SPEC_,SphereDataPointer);
   FluxSourceProcess[_EXOSPHERE_SOURCE__ID__THERMAL_DESORPTION_]=Exosphere::SourceProcesses::ThermalDesorption::GetTotalProductionRate(spec,BoundaryElementType,BoundaryElement);
-  if (FluxSourceProcess[_EXOSPHERE_SOURCE__ID__THERMAL_DESORPTION_]>0.0) ThermalDesorption::SurfaceInjectionDistribution[spec].Init(&spec);
+  if (!finiteInventory && FluxSourceProcess[_EXOSPHERE_SOURCE__ID__THERMAL_DESORPTION_]>0.0) ThermalDesorption::SurfaceInjectionDistribution[spec].Init(&spec);
 #endif
 
 #if _EXOSPHERE_SOURCE__SOLAR_WIND_SPUTTERING_ == _EXOSPHERE_SOURCE__ON_
@@ -2265,8 +2269,45 @@ long int Exosphere::SourceProcesses::InjectionBoundaryModel(int spec,int Boundar
   if (Flux_SW_Sputtering>0.0) SolarWindSputtering::SurfaceInjectionDistribution.Init();*/
 
 
+  if (finiteInventory) {
+    // The accepted finite packets above already debited every supported
+    // surface-release process. Only externally supplied sources may remain
+    // in the ordinary Poisson injector; otherwise release is counted twice.
+    TotalFlux=0.0;
+    for (iSource=0;iSource<=_EXOSPHERE__SOURCE_MAX_ID_VALUE_;++iSource) {
+      if (Source_DeplitSurfaceSpeciesAbundance_Flag[iSource]) {
+        bool supported=false;
+#if _EXOSPHERE_SOURCE__THERMAL_DESORPTION_ == _EXOSPHERE_SOURCE__ON_
+        supported=supported || iSource==_EXOSPHERE_SOURCE__ID__THERMAL_DESORPTION_;
+#endif
+#if _EXOSPHERE_SOURCE__PHOTON_STIMULATED_DESPRPTION_ == _EXOSPHERE_SOURCE__ON_
+        supported=supported || iSource==_EXOSPHERE_SOURCE__ID__PHOTON_STIMULATED_DESPRPTION_;
+#endif
+        if (!supported && FluxSourceProcess[iSource]>0.0)
+          exit(__LINE__,__FILE__,"active finite-reservoir process lacks a specified integrated depletion law");
+        FluxSourceProcess[iSource]=0.0;
+      }
+      TotalFlux+=FluxSourceProcess[iSource];
+    }
+    ModelParticlesInjectionRate=TotalFlux/ParticleWeight;
+    if (!(ModelParticlesInjectionRate>0.0)) return nInjectedParticles;
+    if (ModelParticlesInjectionRate*LocalTimeStep>nMaxInjectedParticles) {
+      SpeciesWeightCorrection=ModelParticlesInjectionRate*LocalTimeStep/nMaxInjectedParticles;
+      ModelParticlesInjectionRate/=SpeciesWeightCorrection;
+    }
+  }
+  // Retain the current core's endpoint-safe inverse-CDF waiting sampler and
+  // cumulative source selector below. Finite first-order releases have already
+  // been integrated above; only the remaining external rates [atoms/s] enter
+  // this stationary Poisson stream. This separation preserves the upstream
+  // source law without drawing a second set of finite-reservoir releases.
   while ((TimeCounter+=Exosphere::SurfaceSource::PoissonWaitingTime(
               ModelParticlesInjectionRate,rnd()))<LocalTimeStep) {
+    const bool movingSurface=PIC::Mover::FindMovingSurfaceIntersection!=NULL;
+    if (movingSurface && PostProcessSurfaceInjection==NULL)
+      exit(__LINE__,__FILE__,"moving-surface injection requires a final geometry/ownership postprocessor");
+    PIC::Mover::cMovingInjectionEpochScope injectionEpoch(movingSurface ?
+        TimeCounter:std::numeric_limits<double>::quiet_NaN());
     //determine the source process to generate a particle's properties
     // Select through the cumulative physical-rate distribution rather than
     // rejection over a uniformly chosen process ID.  Both methods have the
@@ -2436,13 +2477,23 @@ cout << __FILE__ << "@" << __LINE__ << "  " << x_IAU_OBJECT[0] << "  " << x_IAU_
    PIC::ParticleBuffer::CloneParticle(newParticleData,tempParticleData);
    nInjectedParticles++;
 
+   // Count only accepted, allocated particles, after every ownership,
+   // timestep and reservoir rejection. Sampling::CalculatedSourceRate above
+   // is a visualization rate and is not an actual-event conservation oracle.
+   PIC::ParticleEvents::Record(PIC::ParticleEvents::Emission,spec,
+       ParticleWeight*ParticleWeightCorrection,SourceProcessID);
+
    //for the secondary source processes accout for the decrease of the surface density
    if (BoundaryElementType==_INTERNAL_BOUNDARY_TYPE_SPHERE_) {
      if (Source_DeplitSurfaceSpeciesAbundance_Flag[SourceProcessID]==true) {
        Sphere->GetSurfaceElementProjectionIndex(x_IAU_OBJECT,nZenithElement,nAzimuthalElement);
        el=Sphere->GetLocalSurfaceElementNumber(nZenithElement,nAzimuthalElement);
 
-       if (Sphere->SurfaceElementDesorptionFluxUP!=NULL) Sphere->SurfaceElementDesorptionFluxUP[spec][el]+=ParticleWeight*ParticleWeightCorrection;
+       if (Sphere->SurfaceElementDesorptionFluxUP!=NULL) {
+         Sphere->SurfaceElementDesorptionFluxUP[spec][el]+=ParticleWeight*ParticleWeightCorrection;
+         PIC::ParticleEvents::Record(PIC::ParticleEvents::SurfaceRelease,
+             spec,ParticleWeight*ParticleWeightCorrection,el);
+       }
      }
    }
 
@@ -2456,7 +2507,9 @@ cout << __FILE__ << "@" << __LINE__ << "  " << x_IAU_OBJECT[0] << "  " << x_IAU_
 #endif
 
    PIC::ParticleBuffer::SetParticleAllocated(newParticle);
-   _PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_(newParticle,startNode->block->GetLocalTimeStep(spec)*rnd(),startNode,true);
+   _PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_(newParticle,
+       movingSurface ? LocalTimeStep-TimeCounter :
+           startNode->block->GetLocalTimeStep(spec)*rnd(),startNode,true);
  }
 
  return nInjectedParticles;
@@ -2575,7 +2628,15 @@ int Exosphere::SurfaceInteraction::ParticleSurfaceInteraction_SurfaceAccomodatio
     el=Sphere->GetLocalSurfaceElementNumber(nZenithElement,nAzimuthalElement);
 
     Sphere->SurfaceElementAdsorptionFluxDOWN[spec][el]+=ReemissionParticleFraction*ParticleWeight;
+    if (ReemissionParticleFraction>0.0)
+      PIC::ParticleEvents::Record(PIC::ParticleEvents::SurfaceDeposit,spec,
+          ReemissionParticleFraction*ParticleWeight,el);
     Exosphere::Sampling::PlanetSurfaceStickingRate[spec]+=ParticleWeight;
+
+    // The whole gas particle is removed; ReemissionParticleFraction controls
+    // the distinct surface reservoir credit and must not scale gas loss.
+    PIC::ParticleEvents::Record(PIC::ParticleEvents::Adsorption,spec,
+        ParticleWeight,el);
 
 //    PIC::ParticleBuffer::DeleteParticle(ptr);
     return _PARTICLE_DELETED_ON_THE_FACE_;
@@ -2679,6 +2740,8 @@ int Exosphere::SurfaceInteraction::ParticleSurfaceInteraction_SurfaceAccomodatio
 
 
   memcpy(v_SO_OBJECT,v_LOCAL_SO_OBJECT,3*sizeof(double));
+  PIC::ParticleEvents::Record(PIC::ParticleEvents::Reflection,spec,
+      ParticleWeight,el);
   return _PARTICLE_REJECTED_ON_THE_FACE_;
 }
 

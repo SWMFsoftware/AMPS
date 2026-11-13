@@ -50,6 +50,8 @@ PIC::Mover::fProcessOutsideDomainParticles PIC::Mover::ProcessOutsideDomainParti
 PIC::Mover::fProcessTriangleCutFaceIntersection PIC::Mover::ProcessTriangleCutFaceIntersection=NULL;
 PIC::Mover::fFindMovingSurfaceIntersection
     PIC::Mover::FindMovingSurfaceIntersection=NULL;
+double PIC::Mover::MovingSurfaceInjectionTimeOffsetS=
+    std::numeric_limits<double>::quiet_NaN();
 PIC::Mover::fProcessMovingSurfaceIntersection
     PIC::Mover::ProcessMovingSurfaceIntersection=NULL;
 
@@ -2161,6 +2163,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
 
       if (newNode==NULL) {
         //the particle left the computational domain
+        PIC::ParticleEvents::RecordDomainExit(ptr,startNode,x,v);
         PIC::ParticleBuffer::DeleteParticle(ptr);
         return _PARTICLE_LEFT_THE_DOMAIN_;
       }
@@ -2646,6 +2649,14 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
 
 //======================================================================================
 int PIC::Mover::UniformWeight_UniformTimeStep_SecondOrder(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+  // A moving terrain can intersect a trajectory even when the starting leaf
+  // has no static boundary descriptor. Route the ACTUALLY SELECTED force
+  // mover through its force-aware segment tracer whenever the application
+  // installs moving geometry. The similarly named noForce entry alone is
+  // insufficient: normal srcMoon dispatch does not select that entry.
+  if (FindMovingSurfaceIntersection!=NULL)
+    return UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection_SecondOrder(
+        ptr,dt,startNode,false);
   PIC::ParticleBuffer::byte *ParticleData;
   double vInit[3],xInit[3]={0.0,0.0,0.0},vMiddle[3],xMiddle[3],vFinal[3],xFinal[3],dt2;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* newNode=NULL,*middleNode=NULL;
@@ -2758,6 +2769,7 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
     // a midpoint outside the finite mesh before asking any force model to use
     // its node; this preserves the mover's existing domain-loss status.
     if (middleNode==NULL) {
+      PIC::ParticleEvents::RecordDomainExit(ptr,startNode,xMiddle,vMiddle);
       PIC::ParticleBuffer::DeleteParticle(ptr);
       return _PARTICLE_LEFT_THE_DOMAIN_;
     }
@@ -2804,6 +2816,7 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
 
     if (newNode==NULL) {
       //the particle left the computational domain
+      PIC::ParticleEvents::RecordDomainExit(ptr,startNode,xFinal,vFinal);
       PIC::ParticleBuffer::DeleteParticle(ptr);
       return _PARTICLE_LEFT_THE_DOMAIN_;
     }
@@ -3098,6 +3111,7 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
             startNode->block->GetLocalTimeStep(spec);
 
         PIC::Mover::Sampling::Errors::AddRemovedParticleData(Rate,spec,__LINE__,__FILE__);
+        PIC::ParticleEvents::RecordParticle(PIC::ParticleEvents::NumericalRemoval,ptr,startNode,__LINE__);
 
         //remove the particle
         PIC::ParticleBuffer::DeleteParticle(ptr);
@@ -3142,8 +3156,8 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
     InternalBoundaryDescriptor_dtMin=NULL;
     ParticleIntersectionCode=_UNDEFINED_MIN_DT_INTERSECTION_CODE_UTSNFTT_;
 
+    double acclInit[3]={0.0,0.0,0.0},acclMiddle[3]={0.0,0.0,0.0},vv;
 #if _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE_ == _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE__ON_
-    double acclInit[3],acclMiddle[3],vv;
 
     _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(acclInit,spec,ptr,xInit,vInit,startNode);
 
@@ -3260,6 +3274,7 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
 
       switch (code) {
       case _PARTICLE_DELETED_ON_THE_FACE_:
+        PIC::ParticleEvents::RecordDomainExit(ptr,startNode,xInit,vInit);
         PIC::ParticleBuffer::DeleteParticle(ptr);
         return _PARTICLE_LEFT_THE_DOMAIN_;
       case _PARTICLE_REJECTED_ON_THE_FACE_:
@@ -3562,6 +3577,23 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
         xFinal[dimension]=movingSurfacePosition[dimension];
         vFinal[dimension]=vInit[dimension]+dtMin*acclInit[dimension];
       }
+      // Recompute the midpoint at the SHORTENED collision interval. Using
+      // the original full-segment midpoint or initial acceleration alone
+      // would lower the incoming velocity update to first order at terrain.
+#if _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE_ == _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE__ON_
+      double collisionMidX[3],collisionMidV[3],collisionMidA[3];
+      for (int dimension=0;dimension<3;++dimension) {
+        collisionMidX[dimension]=xInit[dimension]+0.5*dtMin*vInit[dimension];
+        collisionMidV[dimension]=vInit[dimension]+0.5*dtMin*acclInit[dimension];
+      }
+      auto* collisionMidNode=PIC::Mesh::mesh->findTreeNode(collisionMidX,startNode);
+      if (collisionMidNode==NULL)
+        exit(__LINE__,__FILE__,"moving collision midpoint lies outside the AMR domain");
+      _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(collisionMidA,spec,ptr,
+          collisionMidX,collisionMidV,collisionMidNode);
+      for (int dimension=0;dimension<3;++dimension)
+        vFinal[dimension]=vInit[dimension]+dtMin*collisionMidA[dimension];
+#endif
       newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
       if (newNode==NULL)
         exit(__LINE__,__FILE__,
@@ -3705,6 +3737,7 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
                 startNode->block->GetLocalTimeStep(spec);
 
             PIC::Mover::Sampling::Errors::AddRemovedParticleData(Rate,spec,__LINE__,__FILE__);
+        PIC::ParticleEvents::RecordParticle(PIC::ParticleEvents::NumericalRemoval,ptr,startNode,__LINE__);
 
             //remove the particle
             PIC::ParticleBuffer::DeleteParticle(ptr);
@@ -3845,6 +3878,7 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
 
         if (newNode!=NULL) {
           if (newNode->IsUsedInCalculationFlag==false) {
+            PIC::ParticleEvents::RecordParticle(PIC::ParticleEvents::NumericalRemoval,ptr,startNode,__LINE__);
             PIC::ParticleBuffer::DeleteParticle(ptr);
             return _PARTICLE_LEFT_THE_DOMAIN_;
           }
@@ -4094,6 +4128,7 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
 
       switch (code) {
       case _PARTICLE_DELETED_ON_THE_FACE_:
+        PIC::ParticleEvents::RecordDomainExit(ptr,startNode,xInit,vInit);
         PIC::ParticleBuffer::DeleteParticle(ptr);
         return _PARTICLE_LEFT_THE_DOMAIN_;
       case _PARTICLE_REJECTED_ON_THE_FACE_:

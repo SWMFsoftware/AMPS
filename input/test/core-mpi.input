@@ -1,0 +1,60 @@
+#main
+
+! T10 distributed-core validation profile.  This application owns no model
+! physics: it links the production AMR/PIC communication paths and constructs
+! a manufactured, nonuniform 3-D domain in its test main.
+SpeciesList=H2O
+
+makefile SOURCES=src
+makefile RUNDIR=run
+makefile MPIRUN=mpiexec -n 1
+
+ExcludeModule=ELECTRON_IMPACT
+ExcludeModule=SPUTTERING
+ExcludeModule=DUST
+ExcludeModule=CHARGE_EXCHANGE
+ExcludeModule=EXOSPHERE
+ExcludeModule=SURFACE
+
+ProjectSourceDirectory=test/srcCoreMPITests
+WorkingSourceDirectory=srcTemp
+SourceDirectory=src
+
+ErrorLog=PT/amps_error.log
+Prefix=AMPS
+DiagnosticStream=PT
+OutputDirectory=PT/plots
+
+DebuggerMode=off
+ForceRepeatableSimulationPath=on
+StdoutErrorLog=on
+TimeStepMode=SpeciesGlobalTimeStep
+ParticleWeightMode=SpeciesGlobalParticleWeight
+ParticleWeightCorrectionMode=off
+CouplerMode=off
+
+#endmain
+
+#include species.input
+
+#General
+  defineLocation(pic/picGlobal.dfn) DIM 3
+  BlockCells=2,2,2
+  GhostCells=1,1,1
+  Rnd=MersenneTwister
+  NastranSurfaceUserData=off
+  ControlParticleInsideNastranSurface=off
+  ! The PIC core unconditionally compiles internal-boundary traversal when the
+  ! standard spherical-data types are present.  Keep the container enabled;
+  ! the T10 fixture registers no surface, so the list remains empty.
+  InternalBoundary=on
+#endGeneral
+
+! The target-free block supplies the standard spherical-data declarations
+! required by cDataBlockAMR without enabling SPICE or an exosphere source.
+#block ../exosphere.pl
+  SPICE=off
+  define _TARGET_ _TARGET_NONE_
+#endblock
+
+#end

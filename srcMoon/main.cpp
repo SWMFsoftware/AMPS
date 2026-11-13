@@ -70,6 +70,10 @@ int main(int argc,char **argv) {
   // application.  Parse before PIC::InitMPI(): syntax/path failures then
   // produce one deterministic diagnostic without partially initialized ranks.
   std::string applicationInput,integrationTest,integrationOutput;
+  bool i11DurationPilot=false;
+  bool i11SamplingCheck=false;
+  bool i11BudgetCheck=false;
+  bool m2BudgetCheck=false;
   for (int argument=1;argument<argc;argument++) {
     const std::string option(argv[argument]);
     if ((option=="-input") && argument+1<argc) {
@@ -81,17 +85,60 @@ int main(int argc,char **argv) {
     else if ((option=="--integration-output") && argument+1<argc) {
       integrationOutput=argv[++argument];
     }
+    else if (option=="--i11-duration-pilot") {
+      // This switch is intentionally separate from the formal I11 runner.
+      // It lets the reviewed 480 km pilot continue until the unchanged
+      // stationarity/precision gates pass, so a common physical duration can
+      // be proposed before the four-grid qualification is rerun.  It changes
+      // no production physics and is never interpreted as I11 PASS evidence.
+      i11DurationPilot=true;
+    }
+    else if (option=="--i11-sampling-check") {
+      // Deterministic storage regression through PIC's real sampler; this
+      // flag never requests a physical-convergence or observation score.
+      i11SamplingCheck=true;
+    }
+    else if (option=="--i11-budget-check") {
+      // Linked event accounting and actual configured chemistry dispatch.
+      // This supporting fixture cannot request I11 spatial qualification.
+      i11BudgetCheck=true;
+    }
+    else if (option=="--m2-budget-check") {
+      // Supporting I19 production accounting, explicitly distinct from a
+      // formal predecessor-qualified I19 campaign.
+      m2BudgetCheck=true;
+    }
     else {
       std::cerr << "Usage: " << argv[0]
                 << " [-input application.in]"
                 << " [--moon-integration-test U01|U01_INSIDE|U06|I02|I03|I05|I06|I07|I08|I09|I10|I11|I12|I13|I14|I16|I17|I18"
-                << " --integration-output receipt.txt]\n";
+                << " --integration-output receipt.txt]"
+                << " [--i11-duration-pilot|--i11-sampling-check|--i11-budget-check]"
+                << " [--m2-budget-check (I19 supporting fixture)]\n";
       return EXIT_FAILURE;
     }
   }
 
   if (integrationTest.empty()!=integrationOutput.empty()) {
     std::cerr << "--moon-integration-test and --integration-output must be used together\n";
+    return EXIT_FAILURE;
+  }
+  if (i11DurationPilot && integrationTest!="I11") {
+    std::cerr << "--i11-duration-pilot is valid only with "
+                 "--moon-integration-test I11\n";
+    return EXIT_FAILURE;
+  }
+  if (i11SamplingCheck && (integrationTest!="I11" || i11DurationPilot)) {
+    std::cerr << "--i11-sampling-check requires I11 without the duration pilot\n";
+    return EXIT_FAILURE;
+  }
+  if (i11BudgetCheck && (integrationTest!="I11" || i11DurationPilot || i11SamplingCheck)) {
+    std::cerr << "--i11-budget-check requires I11 without another fixture/pilot flag\n";
+    return EXIT_FAILURE;
+  }
+  if (m2BudgetCheck && (integrationTest!="I19" || i11DurationPilot ||
+      i11SamplingCheck || i11BudgetCheck)) {
+    std::cerr << "--m2-budget-check requires I19 without an I11 fixture\n";
     return EXIT_FAILURE;
   }
 
@@ -122,8 +169,8 @@ t.Start("main",__LINE__);
   // Consequently a PASS can establish linked wiring rather than source-level
   // presence.  The normal no-argument science/regression path is unchanged.
   if (!integrationTest.empty()) {
-    const int status=Moon::IntegrationTests::Run(integrationTest,
-                                                 integrationOutput);
+    const int status=Moon::IntegrationTests::Run(
+        integrationTest,integrationOutput,i11DurationPilot,i11SamplingCheck,i11BudgetCheck,m2BudgetCheck);
     MPI_Finalize();
     return status;
   }
@@ -139,6 +186,10 @@ t.SwitchTimeSegment(__LINE__,"first switch");
 
   int nTotalIterations=100000001;
   if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) nTotalIterations=100;
+  if (Moon::Runtime::HasConfiguration() &&
+      Moon::Runtime::GetConfiguration().sodiumExosphereEnabled)
+    nTotalIterations=
+        Moon::Runtime::GetConfiguration().particleIterationLimit;
 
   //time step
   static int LastDataOutputFileNumber=0;
@@ -168,7 +219,13 @@ t.SwitchTimeSegment(__LINE__,"another switch");
 
     if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
       PIC::RequiredSampleLength*=2;
-      if (PIC::RequiredSampleLength>40000) PIC::RequiredSampleLength=40000;
+      long maximumSampleLength=40000;
+      if (Moon::Runtime::HasConfiguration() &&
+          Moon::Runtime::GetConfiguration().sodiumExosphereEnabled)
+        maximumSampleLength=Moon::Runtime::GetConfiguration().
+            particleMaximumSampleLengthSteps;
+      if (PIC::RequiredSampleLength>maximumSampleLength)
+        PIC::RequiredSampleLength=maximumSampleLength;
 
 
       LastDataOutputFileNumber=PIC::DataOutputFileNumber;

@@ -10,6 +10,9 @@
     "PIC::TimeStep",
     "production sampling callbacks"
   ],
+  "sampling_prerequisite": "SAMPLING_CONTRACT.md: nine deterministic windows through PIC::Sampling::Sampling; completed markers unchanged, collecting buffer zero and one callback per window for every compiled species and MPI owner, across all-off/first-on/all-on species output flags. This prerequisite is recorded separately and cannot establish I11 convergence.",
+  "budget_prerequisite": "BUDGET_CONTRACT.md: actual configured Na chemistry survival in sunlight/shadow, plus ordinary source/mover/surface event accounting and independently summed owned-particle inventory. Every count residual must be zero; weighted residuals must satisfy the declared summation bound and numerical removals must be zero. This neutral-Na sphere prerequisite is separate from full I19 and cannot establish I11 convergence.",
+  "parallel_execution": "Optional 1/2/4 isolated meshes with identical MPI rank counts per mesh, aggregate RSS <=200 GiB, host available >8 GiB, disk free >100 GiB and explicit wall budget (default 3600 s). Interrupted children are ERROR; completed science results are retained. I12/I13 initialization receipts may be reused only with matching input/executable/rank identities and their independent scorers; I13 still requires passing I11 and reviewed frozen references.",
   "configuration": "Approved memory-budget sphere template m1_memory200.in: 480, 240, 120, 60 km; legacy FULL m1_sphere.in retains 40, 20, 10, 5 km when explicitly selected. Other CUSTOM/QUICK inputs rejected. Frozen environment, sample length 500 particle steps, maximum 5000 particle steps per resolution, particle restart writes disabled, unchanged seeds/MPI/OpenMP layout and accuracy criteria.",
   "inputs": [
     "srcMoon/examples/m1_memory200.in (default) or explicit legacy m1_sphere.in",
@@ -20,7 +23,8 @@
   "units": "metres, seconds, number density per cubic metre, return flux per square metre per second, column density per square metre, Rayleigh",
   "frame_time_convention": "Moon-centred LSO; MOON_ME_DE421 body controls; all external environment quantities frozen at the receipt UTC converted to TDB ET.",
   "deterministic_stochastic_controls": "Production random seed 731993; one explicitly recorded positive MPI rank count and OpenMP=1 at every resolution; 500 particle steps per completed sample; hard limit of 5000 particle steps per resolution; particle restart writes disabled; adaptive non-overlapping batch means with lag-one significance bound 1.96/sqrt(N); four independent means for three equilibrium changes followed by five disjoint science means.",
-  "procedure": "Derive and archive 480/240/120/60 km (or explicitly selected legacy 40/20/10/5 km) receipts by scaling the surface, near-surface, angular, and polar targets while keeping physical extents and far/outer targets fixed; verify the frozen production environment; run every resolution for no more than 5000 particle steps while monitoring process-tree and block resource use; MPI-reduce production-owned samples every 500 steps; after every completed stage render explicitly unqualified raw CSV/PNG/EPS/JSON diagnostics; apply the unchanged independence, equilibrium, CI, and successive-grid criteria. When the cap is reached first, preserve raw diagnostics, mark the level and campaign FAIL, run the remaining requested levels, and do not create accepted cross-grid metrics from unqualified means.",
+  "procedure": "Derive and archive 480/240/120/60 km (or explicitly selected legacy 40/20/10/5 km) receipts by scaling the surface, near-surface, angular, and polar targets while keeping physical extents and far/outer targets fixed; verify the frozen production environment; run every resolution for no more than 5000 particle steps while monitoring process-tree and block resource use; suppress completed-sample full-volume/legacy visualization file writers while retaining normal production sampling and the I11 scoring callback; MPI-reduce production-owned samples every 500 steps; after every completed stage render explicitly unqualified raw CSV/PNG/EPS/JSON diagnostics; apply the unchanged independence, equilibrium, CI, and successive-grid criteria. When the cap is reached first, preserve raw diagnostics, mark the level and campaign FAIL, run the remaining requested levels, and do not create accepted cross-grid metrics from unqualified means.",
+  "duration_pilot": "run_duration_pilot.py may execute only the approved 480 km member beyond 5000 steps with unchanged physics, samples, and statistical gates to propose a common physical-duration contract. It has a 200 GiB process-tree RSS guard and explicit host-memory/filesystem floors, is labeled pilot-only-not-I11-qualification, and cannot report I11 PASS or open I13/M2. Candidate durations require investigator review and freeze before use at finer grids.",
   "metrics": [
     "ephemeris and external-state drift",
     "block equilibration changes",
@@ -60,6 +64,9 @@
     "run_manifest.json",
     "input snapshots",
     "block metrics",
+    "actual-event particle_budget.csv and source-ID legend particle_sources.csv",
+    "independently reconstructed per-metric statistics CSV and statistical/budget PNG/EPS diagnostics",
+    "analysis diagnostics by statistical gate",
     "four-level convergence table only after all four levels qualify",
     "resource metrics",
     "per-stage unqualified diagnostic CSV/PNG/EPS/JSON"

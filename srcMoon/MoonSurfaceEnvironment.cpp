@@ -65,13 +65,21 @@ bool BoxIntersection(const std::array<double,3>& origin,
                      const std::array<double,3>& maximum,
                      double lowerLimit,double upperLimit) {
   for (int dimension=0;dimension<3;++dimension) {
+    // Outward floating-point enclosure: a mathematically closed shared
+    // vertex must not be culled by a rounded ray/slab comparison before the
+    // triangle predicate sees it. This is a coordinate-scaled arithmetic
+    // bound, not a terrain-resolution or fitted physical tolerance.
+    const double rounding=64.0*std::numeric_limits<double>::epsilon()*
+        std::max({std::abs(origin[dimension]),std::abs(minimum[dimension]),
+                  std::abs(maximum[dimension])});
+    const double low=minimum[dimension]-rounding;
+    const double high=maximum[dimension]+rounding;
     if (direction[dimension]==0.0) {
-      if (origin[dimension]<minimum[dimension] ||
-          origin[dimension]>maximum[dimension]) return false;
+      if (origin[dimension]<low || origin[dimension]>high) return false;
       continue;
     }
-    double first=(minimum[dimension]-origin[dimension])/direction[dimension];
-    double second=(maximum[dimension]-origin[dimension])/direction[dimension];
+    double first=(low-origin[dimension])/direction[dimension];
+    double second=(high-origin[dimension])/direction[dimension];
     if (first>second) std::swap(first,second);
     lowerLimit=std::max(lowerLimit,first);
     upperLimit=std::min(upperLimit,second);
@@ -102,10 +110,18 @@ bool TriangleIntersection(const Surface::Triangulation& mesh,
   const double inverse=1.0/determinant;
   const auto relative=Subtract(origin,a);
   const double u=Dot(relative,p)*inverse;
-  if (u<0.0 || u>1.0) return false;
+  // A closed triangle contains its edges and vertices. Strict u/v>=0 tests
+  // created real holes when radial rays met shared LOLA vertices. Enclose
+  // the barycentric arithmetic error using machine epsilon, origin/edge
+  // scale and determinant conditioning. Interior/exterior points farther
+  // than this arithmetic uncertainty retain the original classification.
+  const double barycentricRoundoff=64.0*std::numeric_limits<double>::epsilon()*
+      (1.0+Norm(relative)/std::min(Norm(edge0),Norm(edge1)))*
+      scale/std::abs(determinant);
+  if (u < -barycentricRoundoff || u>1.0+barycentricRoundoff) return false;
   const auto q=Cross(relative,edge0);
   const double v=Dot(direction,q)*inverse;
-  if (v<0.0 || u+v>1.0) return false;
+  if (v < -barycentricRoundoff || u+v>1.0+barycentricRoundoff) return false;
   const double distance=Dot(edge1,q)*inverse;
   if (distance<minimumDistance || distance>maximumDistance) return false;
   auto normal=Cross(edge0,edge1);
@@ -124,6 +140,7 @@ bool TriangleIntersection(const Surface::Triangulation& mesh,
 
 bool EvaluateSignedTerrainDistance(double segmentTimeS,
     const double* segmentPositionLsoM,const double* segmentVelocityLsoMPerS,
+    const double* segmentAccelerationLsoMPerS2,
     double absoluteEpochS,double* signedDistanceM,RayHit* radialHit,
     std::array<double,3>* positionBodyM,std::string* error) {
 #ifdef _NO_SPICE_CALLS_
@@ -133,6 +150,7 @@ bool EvaluateSignedTerrainDistance(double segmentTimeS,
   (void)segmentTimeS;
   (void)segmentPositionLsoM;
   (void)segmentVelocityLsoMPerS;
+  (void)segmentAccelerationLsoMPerS2;
   (void)absoluteEpochS;
   (void)signedDistanceM;
   (void)radialHit;
@@ -147,7 +165,8 @@ bool EvaluateSignedTerrainDistance(double segmentTimeS,
   double positionLso[3];
   for (int dimension=0;dimension<3;++dimension)
     positionLso[dimension]=segmentPositionLsoM[dimension]+
-        segmentTimeS*segmentVelocityLsoMPerS[dimension];
+        segmentTimeS*segmentVelocityLsoMPerS[dimension]+
+        0.5*segmentTimeS*segmentTimeS*segmentAccelerationLsoMPerS2[dimension];
   SpiceDouble rotation[3][3];
   pxform_c(Frames::SolarOrbital,Frames::BodyFixed,absoluteEpochS,rotation);
   for (int row=0;row<3;++row) {
@@ -355,6 +374,11 @@ void BeginProductionParticleStep(double ephemerisTimeBeginS) {
     exit(__LINE__,__FILE__,"invalid moving-surface particle-step epoch");
   gParticleStepBeginEtS=ephemerisTimeBeginS;
 }
+double ProductionInjectionEpochS() {
+  return gParticleStepBeginEtS+(
+      std::isfinite(PIC::Mover::MovingSurfaceInjectionTimeOffsetS) ?
+      PIC::Mover::MovingSurfaceInjectionTimeOffsetS:0.0);
+}
 
 bool FindProductionMovingSurfaceIntersection(long int particle,
     const double* segmentPositionLsoM,const double* segmentVelocityLsoMPerS,
@@ -369,7 +393,6 @@ bool FindProductionMovingSurfaceIntersection(long int particle,
   (void)particle;
   (void)segmentPositionLsoM;
   (void)segmentVelocityLsoMPerS;
-  (void)segmentAccelerationLsoMPerS2;
   (void)elapsedFlightTimeS;
   (void)maximumFlightTimeS;
   (void)hitFlightTimeS;
@@ -385,6 +408,7 @@ bool FindProductionMovingSurfaceIntersection(long int particle,
   if (gProductionTerrain==nullptr || gProductionConfiguration==nullptr)
     return false;
   if (segmentPositionLsoM==nullptr || segmentVelocityLsoMPerS==nullptr ||
+      segmentAccelerationLsoMPerS2==nullptr ||
       hitPositionLsoM==nullptr || outwardNormalLso==nullptr ||
       surfaceVelocityLsoMPerS==nullptr ||
       !std::isfinite(elapsedFlightTimeS) || elapsedFlightTimeS<0.0 ||
@@ -392,22 +416,30 @@ bool FindProductionMovingSurfaceIntersection(long int particle,
     exit(__LINE__,__FILE__,"invalid moving LOLA collision segment");
 
   const Runtime::Configuration& configuration=*gProductionConfiguration;
+  // The production RK2 position extension is x(t)=x0+v0*t+a0*t^2/2.
+  // Searching a straight ray while the mover advances an accelerated segment
+  // gives the wrong collision epoch/position. Bound its particle arc speed
+  // over this segment by |v0|+|a0|*dt when choosing geometric subdivisions.
   const double speed=std::sqrt(
       segmentVelocityLsoMPerS[0]*segmentVelocityLsoMPerS[0]+
       segmentVelocityLsoMPerS[1]*segmentVelocityLsoMPerS[1]+
-      segmentVelocityLsoMPerS[2]*segmentVelocityLsoMPerS[2]);
+      segmentVelocityLsoMPerS[2]*segmentVelocityLsoMPerS[2])+
+      maximumFlightTimeS*std::sqrt(
+          segmentAccelerationLsoMPerS2[0]*segmentAccelerationLsoMPerS2[0]+
+          segmentAccelerationLsoMPerS2[1]*segmentAccelerationLsoMPerS2[1]+
+          segmentAccelerationLsoMPerS2[2]*segmentAccelerationLsoMPerS2[2]);
   if (!(speed>0.0)) return false;
   const std::size_t intervals=std::max<std::size_t>(1,
       static_cast<std::size_t>(std::ceil(speed*maximumFlightTimeS/
           configuration.surfaceCollisionMaximumSegmentLengthM)));
   const double absoluteSegmentStart=
-      gParticleStepBeginEtS+elapsedFlightTimeS;
+      ProductionInjectionEpochS()+elapsedFlightTimeS;
   std::string error;
   double lowerTime=0.0,lowerDistance=0.0;
   RayHit lowerHit;
   std::array<double,3> lowerBody;
   if (!EvaluateSignedTerrainDistance(0.0,segmentPositionLsoM,
-          segmentVelocityLsoMPerS,absoluteSegmentStart,&lowerDistance,
+          segmentVelocityLsoMPerS,segmentAccelerationLsoMPerS2,absoluteSegmentStart,&lowerDistance,
           &lowerHit,&lowerBody,&error))
     exit(__LINE__,__FILE__,error.c_str());
   if (lowerDistance<-
@@ -423,7 +455,7 @@ bool FindProductionMovingSurfaceIntersection(long int particle,
   for (std::size_t interval=1;interval<=intervals;++interval) {
     upperTime=maximumFlightTimeS*static_cast<double>(interval)/intervals;
     if (!EvaluateSignedTerrainDistance(upperTime,segmentPositionLsoM,
-            segmentVelocityLsoMPerS,absoluteSegmentStart+upperTime,
+            segmentVelocityLsoMPerS,segmentAccelerationLsoMPerS2,absoluteSegmentStart+upperTime,
             &upperDistance,&upperHit,&upperBody,&error))
       exit(__LINE__,__FILE__,error.c_str());
     if (lowerDistance>
@@ -450,7 +482,7 @@ bool FindProductionMovingSurfaceIntersection(long int particle,
     RayHit middleHit;
     std::array<double,3> middleBody;
     if (!EvaluateSignedTerrainDistance(middleTime,segmentPositionLsoM,
-            segmentVelocityLsoMPerS,absoluteSegmentStart+middleTime,
+            segmentVelocityLsoMPerS,segmentAccelerationLsoMPerS2,absoluteSegmentStart+middleTime,
             &middleDistance,&middleHit,&middleBody,&error))
       exit(__LINE__,__FILE__,error.c_str());
     if (middleDistance>0.0) {
@@ -478,7 +510,8 @@ bool FindProductionMovingSurfaceIntersection(long int particle,
               lowerBody : upperBody;
       for (int dimension=0;dimension<3;++dimension)
         hitPositionLsoM[dimension]=segmentPositionLsoM[dimension]+
-            hitFlightTimeS*segmentVelocityLsoMPerS[dimension];
+            hitFlightTimeS*segmentVelocityLsoMPerS[dimension]+
+            0.5*hitFlightTimeS*hitFlightTimeS*segmentAccelerationLsoMPerS2[dimension];
       const double epoch=absoluteSegmentStart+hitFlightTimeS;
       SpiceDouble bodyToLso[6][6],bodyState[6]={body[0],body[1],body[2],
                                                 0.0,0.0,0.0};
