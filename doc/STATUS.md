@@ -2,6 +2,40 @@
 
 Edition: 2026-11-10.
 
+## PDF build repair — 2026-11-13
+
+The root `make PDF` target failed because `doc/build_manual.py` was absent.
+The working driver in `~/Mars2/AMPS/doc` was ignored there by the broad
+`*build*` Git rule and consequently missing from this checkout. Restored the
+source driver and added a narrow `.gitignore` exception. Generated TeX engines,
+package/font caches, build products and partial PDFs are explicitly ignored.
+The driver also resolves an explicit `tectonic` name to the same local compiler
+as auto mode, so the documented cached build works without changing PATH.
+
+This host's compiler and TeX cache were copied locally from the working Mars
+checkout. The compiler matches its existing download receipt SHA-256
+`a98aa59ad5c1df39a6c9e56cbfc5088f2b11d6c179c0130b97998e4bd46a46da`.
+The original source/Makefile/PDF backups are under
+`/tmp/amps-pdf-fix-0xzsq6zr`; local-copy provenance is in
+`.build-tools/local-copy-receipt.json`. The maintained driver is visible to
+ordinary Git source selection, while generated dependencies remain ignored.
+
+Validation PASS:
+
+- `make PDF` from the AMPS root: rebuilt `doc/AMPS.pdf`, 87 pages, zero TeX
+  warnings, unresolved references or overfull/underfull boxes.
+- `make -C doc check`: 26 reachable TeX sources with all local assets,
+  unique labels and resolved citations/references.
+- `python3 -B doc/build_manual.py --engine tectonic --only-cached`: successful
+  offline compilation using the locally installed engine/package cache.
+- Source inclusion/ignore checks and `git diff --check`.
+
+The final PDF hash, engine hash and compiler transcript are retained in
+`build-manual/build-receipt.json` and `build-manual/compiler.log`.
+No manual science content, application source, AMPS configuration, root
+Makefile or regression reference was changed. No application was compiled or
+run, and no Git commit/push was performed. The manual edition below is unchanged.
+
 ## Performance-test registry refresh
 
 Refreshed the modern suite appendix from the expanded registry after adding

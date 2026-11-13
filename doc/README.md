@@ -39,6 +39,11 @@ that directory**. Compiler transcripts, dependency records and
 build-receipt.json are retained in build-manual/.
 None of these commands builds, configures or runs the AMPS physics code.
 
+`build_manual.py` is a maintained source dependency of both Makefile entry
+points. The repository's broad `*build*` ignore rule has a specific exception
+for this file; include the driver when committing manual build changes.
+An existing `AMPS.pdf` alone does not provide the missing build driver.
+
 Requirements:
 
 - Python 3.8 or newer and make.
@@ -72,6 +77,12 @@ That generated compiler/cache is not a required source asset. A recipient can
 use their own TeX installation. The maintained
 [Tectonic installation instructions](https://github.com/tectonic-typesetting/tectonic/blob/master/docs/src/installation/index.md)
 describe platform-specific distributions.
+
+For the November 13 repair on this host, the working compiler and cached TeX
+packages were copied from `~/Mars2/AMPS/doc` into this directory. The compiler
+was checked against that checkout's download receipt before use. Details are
+in `.build-tools/local-copy-receipt.json`. Normal builds do not depend on the
+other checkout: the compiler/cache are local, generated, and ignored by Git.
 
 ## Self-contained source files
 
