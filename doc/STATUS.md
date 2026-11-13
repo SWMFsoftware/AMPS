@@ -2,6 +2,39 @@
 
 Edition: 2026-11-10.
 
+## Compiler portability — 2026-11-13
+
+Compiler selection is evaluated on the receiving machine. Normal PATH tools
+are invoked as `pdflatex` or `tectonic`, rather than using a stored compiler
+installation prefix. `LATEX_ENGINE` and `--engine` accept names; explicit paths
+remain optional. The receipt separately records `engine_command` and the
+actual absolute executable/hash for provenance. It is never read back as
+compiler configuration. Explicit/relative tool paths retain their original
+format-selecting symlink name and are made absolute only to survive the
+compiler's working-directory change.
+
+Validation PASS:
+
+- Root `make PDF`: invokes `pdflatex` by name and produces the 87-page manual.
+- A source-only copy under `/tmp/amps-manual-portability-c86323ux/relocated manual`
+  builds with `make PDF LATEX_ENGINE=pdflatex`. No local compiler, TeX cache,
+  AMPS sources or generated build tree was copied into that manual directory.
+- The same copied source builds from another working directory with
+  `LATEX_ENGINE=pdflatex` and a different compiler prefix on PATH, containing
+  spaces. The receipt identifies the changed prefix; no source was edited.
+- `python3 -B doc/build_manual.py --engine tectonic --only-cached`: local
+  fallback and offline build remain supported.
+- `make -C doc check`: local include/asset/reference checks pass.
+
+These are local relocation/PATH tests, not execution on a second physical
+machine. The current pdfLaTeX build retains its pre-existing one overfull-box
+warning; no manual TeX content was changed by the portability work. The root
+and documentation Makefiles are unchanged. Evidence and exact compiler
+identities are in `build-manual/portability-validation.json` and the compiler
+logs; source revision is be7ede4cce60c1cd98950768a7f9a43714ce9bed plus these
+uncommitted documentation changes. No application configuration/build/run,
+regression reference change, commit or push was performed.
+
 ## PDF build repair — 2026-11-13
 
 The root `make PDF` target failed because `doc/build_manual.py` was absent.

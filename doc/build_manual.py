@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Build the local manual without importing AMPS/SWMF make configuration.
 
-The standard-library-only driver accepts a real executable path, never shell
-text. It keeps compiler/cache products below doc/, preserves failed logs, and
+The standard-library-only driver discovers compiler names on PATH and accepts
+an optional executable path, never shell text. Compiler locations are discovered
+on each machine, not read back from an earlier build receipt. It keeps products
+below doc/, preserves failed logs, and
 publishes AMPS.pdf only after successful compilation and reference checks.
 It does not execute the scientific commands printed in the manual.
 """
@@ -36,37 +38,61 @@ def run(argv, env, log_path, timeout=600):
 
 
 def choose_engine(request):
-    """Prefer conventional pdfLaTeX; permit Tectonic and a local explicit path."""
+    """Return (invocation, identity path), resolving tools on this machine.
+
+    A normal PATH installation is invoked as pdflatex/tectonic, so the build
+    command needs no machine-specific compiler prefix. The separately returned
+    absolute path is only for provenance/hashing. Preserve a symlink's public
+    name: TeX installations commonly use the invoked name to choose a format.
+    Explicit paths and relative PATH entries need an absolute invocation,
+    because compilation itself runs from the manual directory, not the caller's
+    original working directory. These paths are computed, never hard-coded.
+    """
+    def installed(name):
+        candidate = shutil.which(name)
+        if not candidate:
+            return None
+        identity = Path(candidate).absolute()
+        invocation = (name if Path(name).name == name and
+                      Path(candidate).is_absolute() else str(identity))
+        return invocation, identity
+
     if request != "auto":
-        candidate = shutil.which(request)
-        if not candidate and Path(request).is_file():
-            candidate = str(Path(request).resolve())
+        # Expand ~ only for an explicitly supplied path. The default search
+        # never assumes a home directory, TeX Live version or installation root.
+        request = os.path.expanduser(request)
+        candidate = installed(request)
+        if candidate:
+            return candidate
+        if Path(request).is_file():
+            identity = Path(request).absolute()
+            return str(identity), identity
         # The documented explicit name must find the same project-local
         # Tectonic as auto mode. A local installation is intentionally not
         # added to the user's PATH; this also makes --only-cached usable
         # without changing the shell environment. Explicit paths and requests
         # for other engines never silently select a different compiler.
         local = ROOT / ".build-tools" / "tectonic"
-        if not candidate and request == "tectonic" and local.is_file():
-            candidate = str(local)
-        if not candidate:
-            raise RuntimeError("TeX engine not found: " + request)
-        return Path(candidate)
+        if request == "tectonic" and local.is_file():
+            return str(local), local
+        raise RuntimeError("TeX engine not found: " + request)
     for name in ("pdflatex", "tectonic"):
-        candidate = shutil.which(name)
+        candidate = installed(name)
         if candidate:
-            return Path(candidate)
+            return candidate
     candidate = ROOT / ".build-tools" / "tectonic"
     if candidate.is_file():
-        return candidate
+        return str(candidate), candidate
     raise RuntimeError(
-        "No pdflatex/tectonic found. Install a TeX distribution or supply "
-        "LATEX_ENGINE=/path/to/tectonic. See doc/README.md.")
+        "No pdflatex/tectonic found. Install a TeX distribution and put its "
+        "compiler on PATH, or optionally supply LATEX_ENGINE=/path/to/compiler. "
+        "See doc/README.md.")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--engine", default="auto")
+    parser.add_argument("--engine", default=os.environ.get("LATEX_ENGINE", "auto"),
+                        help="auto, a compiler name on PATH, or an optional executable path; defaults to LATEX_ENGINE or auto")
     parser.add_argument("--only-cached", action="store_true",
                         help="Tectonic: disable TeX package network retrieval")
     parser.add_argument("--clean", action="store_true")
@@ -86,7 +112,7 @@ def main():
 
     subprocess.run([sys.executable, "-B", str(ROOT / "check_manual.py")],
                    cwd=str(ROOT), check=True)
-    engine = choose_engine(args.engine)
+    compiler_command, engine = choose_engine(args.engine)
     BUILD.mkdir(exist_ok=True)
     env = os.environ.copy()
     # Tectonic bootstraps ordinary TeX packages. Never write a user-wide cache
@@ -94,7 +120,7 @@ def main():
     env["XDG_CACHE_HOME"] = str(ROOT / ".tex-cache")
     env["XDG_CONFIG_HOME"] = str(ROOT / ".tex-config")
     if "tectonic" in engine.name.lower():
-        argv = [engine, "--keep-logs", "--keep-intermediates",
+        argv = [compiler_command, "--keep-logs", "--keep-intermediates",
                 "--outdir", BUILD, "--makefile-rules", BUILD / "dependencies.mk"]
         if args.only_cached:
             argv.append("--only-cached")
@@ -103,7 +129,7 @@ def main():
         # Three passes settle the contents, tables, citations and cross refs.
         # Bibliography is local TeX, so no BibTeX/style download is necessary.
         for number in range(1, 4):
-            run([engine, "-interaction=nonstopmode", "-halt-on-error",
+            run([compiler_command, "-interaction=nonstopmode", "-halt-on-error",
                  "-file-line-error", "-recorder",
                  "-output-directory=" + str(BUILD), "AMPS.tex"],
                 env, BUILD / ("compiler-pass-{}.log".format(number)))
@@ -122,7 +148,8 @@ def main():
     staged.write_bytes(content)
     staged.replace(ROOT / "AMPS.pdf")
     receipt = {
-        "status": "PASS", "engine": str(engine),
+        "status": "PASS", "engine_command": compiler_command,
+        "engine": str(engine),
         "engine_sha256": hashlib.sha256(engine.read_bytes()).hexdigest(),
         "pdf_sha256": hashlib.sha256(content).hexdigest(),
         "pdf_bytes": len(content),

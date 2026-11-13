@@ -53,13 +53,32 @@ Requirements:
   microtype, hyperref, bookmark and xurl. They are standard distribution
   packages; no SWMF style, custom bibliography style or shell escape is used.
 
-The build driver prefers pdflatex, then tectonic in PATH, then a local
-.build-tools/tectonic if present. An explicit executable can be selected:
+The build driver discovers the compiler on each machine: pdflatex on PATH,
+then tectonic on PATH, then a local .build-tools/tectonic if present. The normal
+command needs no installation prefix, user name or TeX Live version:
+
+~~~sh
+make PDF
+make PDF LATEX_ENGINE=pdflatex
+make PDF LATEX_ENGINE=tectonic
+~~~
+
+Install the selected compiler and its packages on the receiving machine and
+put its executable directory on PATH. For a direct Python invocation,
+`--engine` or the `LATEX_ENGINE` environment variable selects the compiler;
+otherwise discovery defaults to auto. The source directory can be moved or
+copied independently of the AMPS checkout; no compiler path from an earlier
+build is reused. An executable path remains an optional local override:
 
 ~~~sh
 make -C doc PDF LATEX_ENGINE=/path/to/pdflatex
 make -C doc PDF LATEX_ENGINE=/path/to/tectonic
 ~~~
+
+Build receipts record both the invoked command name (`engine_command`) and
+the compiler's discovered absolute location (`engine`) and SHA-256. Absolute
+paths in that generated receipt identify the machine used for that build;
+they are not configuration that needs editing when the sources move.
 
 Tectonic's first use retrieves ordinary TeX resources. Its caches/configuration
 stay under this directory in .tex-cache/ and .tex-config/; subsequent
