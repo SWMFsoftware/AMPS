@@ -50,8 +50,12 @@ Requirements:
 - Either a working pdfLaTeX distribution or Tectonic.
 - Ordinary TeX packages: fontenc/inputenc, Latin Modern, geometry, graphicx,
   amsmath/amssymb, booktabs, longtable, tabularx/array, xcolor, listings,
-  microtype, hyperref, bookmark and xurl. They are standard distribution
+  microtype, hyperref, bookmark and url. They are standard distribution
   packages; no SWMF style, custom bibliography style or shell escape is used.
+- HEADER.tex always uses standard `url` with document-local wrapping rules
+  for long source paths, test identifiers and hashes. `xurl` is neither loaded
+  nor checked; the same rules apply on every machine. If an older checkout
+  reports `File xurl.sty not found`, update HEADER.tex and rerun `make PDF`.
 
 The build driver discovers the compiler on each machine: pdflatex on PATH,
 then tectonic on PATH, then a local .build-tools/tectonic if present. The normal

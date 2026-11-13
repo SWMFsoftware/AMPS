@@ -2,6 +2,68 @@
 
 Edition: 2026-11-10.
 
+## Unconditional standard-url formatting — 2026-11-13
+
+Supersedes the optional-xurl implementation recorded below. HEADER.tex now
+always loads standard `url` and applies the same ASCII letter/digit wrapping
+rules. There is no xurl load, availability check, or alternate URL-formatting
+branch. Existing punctuation breaks, displayed text and link targets remain
+intact. README.md describes the resulting dependency requirements.
+
+Validation PASS:
+
+- Root `make PDF`: 87 pages; xurl does not appear in the input recorder even
+  though it is installed on this host.
+- A relocated source-only manual compiled using real pdfLaTeX with xurl hidden
+  from TEXINPUTS and standard url available; no system package was modified.
+- `pdftotext -layout` output is byte-identical across the previous xurl-based
+  PDF, the new ordinary build and the build with xurl unavailable. All retain
+  the same one existing overfull box (4.52621 pt), with no additional overflow.
+- `make -C doc check` and documentation whitespace checks pass.
+
+The preceding temporary four-way comparison found 25 overflow warnings with
+plain url, four with its hyphens option, and one with either xurl or the retained
+project wrapping rules. This motivated keeping those rules unconditionally.
+Evidence: `build-manual/url-only-validation.json`; dependency-absence transcript:
+`/tmp/amps-url-only-611unmr6/without-xurl-build.log`. The comparison remains under
+`/tmp/amps-url-layout-plcbeddw/`. These are local TeX tests, not remote macOS runs.
+Source revision is 183c8b2514a1cc5c46af05740afbcf9bf5149d82 plus the uncommitted
+manual changes. Application sources/configuration and both Makefiles remain
+unchanged. No commit or push was performed. Earlier sections retain their
+historical implementation and validation context.
+
+## Optional xurl dependency — 2026-11-13
+
+A macOS TeX installation reported `File xurl.sty not found` in HEADER.tex.
+Made the extended URL-wrapping package optional with `\IfFileExists`.
+If absent, the header uses the standard `url` package already needed by
+hyperref and extends its break opportunities to ASCII letters/digits. Long
+source paths and registry hashes still wrap without changing displayed
+characters or hyperlink targets. Core TeX dependencies remain required;
+no package installation or system-wide changes are performed by this fallback.
+The chosen fallback is reported in the compiler log.
+
+Validation PASS:
+
+- Root `make PDF` with installed xurl: 87-page manual compiled successfully.
+- A relocated source-only manual compiled with real pdfLaTeX under a restricted
+  TEXINPUTS tree containing its actual package dependencies except xurl.
+  `kpsewhich xurl.sty` finds nothing; `kpsewhich url.sty` succeeds. The log
+  confirms `using url fallback`, and the input recorder shows no xurl loaded.
+- Extracted text/layout (`pdftotext -layout`) is byte-identical between the
+  installed-xurl and fallback PDFs. Both have 87 pages and retain the existing
+  single overfull box; the fallback adds no layout warnings.
+
+No system TeX file was renamed/removed. Tests are local dependency-absence
+checks, not a claim of execution on the reported macOS host. Transfer the
+updated `doc/HEADER.tex` to that checkout and rerun `make PDF`. Required versus
+optional dependencies are clarified in README.md. Evidence is preserved in
+`build-manual/xurl-compatibility-validation.json` and
+`/tmp/amps-manual-xurl-6wa5wvuc/without-xurl-build.log`.
+Source revision: 183c8b2514a1cc5c46af05740afbcf9bf5149d82 plus these uncommitted
+documentation changes. Application code, configuration, both Makefiles and
+scientific references are untouched; no commit or push was performed.
+
 ## Compiler portability — 2026-11-13
 
 Compiler selection is evaluated on the receiving machine. Normal PATH tools
