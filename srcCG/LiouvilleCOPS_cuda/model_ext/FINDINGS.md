@@ -10,6 +10,30 @@ relative to `COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output` unless absolut
 
 ## A. Findings
 
+### A10. Most of the modelled NG signal comes from the big lobe; near the end the local east rise takes over (2026-11-13)
+
+* Bounded softplus fit, c9 final state; per-facet NG contributions as the fit computes them (frozen nonneg_contrib
+  path; the 95 late sums match the contribution data to 2.6e-14). Lobes split by a plane through the neck (narrowest
+  cross-section): head 18.5 km², body 34.9 km². **The touchdown point (lon 12.16°, lat 31.69°) is on the head (small
+  lobe), 1018 m from the neck plane.**
+* Mean per-observation share of the modelled NG surface signal: all 934 NG observations: **body 76.2 %**, head 23.8 %
+  (72 % from 1–3 km away); 95 late observations (W10x5, 297 → 5.5 m): body 46.4 %, head 53.6 % (44 % from 30–100 m).
+  The body's share per late observation falls with altitude: 89 % at 297 m, 50 % at 141 m, 12 % at 101 m, 0 below
+  ~88 m.
+* Dominant regions: one 100 m cell 79 m east of the touchdown point (the rise east of the impact, 25 m higher;
+  lon 14.7°, lat 32.1°) gives 44.9 % of the late NG signal; on the body, 1.67 km away at azimuth 105° (lon 66.6°,
+  lat 12.6°) 18.7 % of the late and 11.6 % of the all-observation signal, and 2.67 km away at azimuth 46° (lon 149°,
+  lat 55°) 12.6 % of the all-observation signal.
+* Topography: the impact site lies in a depression; seen from 2 m above the touchdown point the highest skyline is the
+  east rise (24.7° elevation at azimuth 91°, 37–39 m high within 78–82 m); this rise hides the body from NG below
+  ~88 m. Higher but farther walls: 79–80 m at 280 m to the north-west, 106–127 m at 450–860 m to the south and
+  south-west.
+* Caveat: model-dependent (bounded softplus c9); facet slopes on the 12M mesh are not used as cliff evidence (55–83 %
+  of facets are steeper than 60°: surface roughness).
+* Evidence: job 124913 (`figures_cluster/scripts/ng_source_map.py`, `ng_source_regions.py`,
+  `ng_lobe_share_vs_altitude.py`); `figures_cluster/12M/movies_softplus_smm1_9cycles_detach300_pan/analysis/`
+  (`ng_source_regions_c9_map.png`, `ng_lobe_share_vs_altitude_c9.png/.tsv`).
+
 ### A9. Late in the descent the modelled RG signal comes mostly from outside the RG IK field of view (2026-11-13)
 
 * The fit integrates RG over the whole front half-space of its boresight (RGAcceptance = hemisphere) and NG with the
@@ -263,6 +287,7 @@ Data cost (lower is better; all on the lategrid base with the gauge +1.5 m and t
 
 ## D. Change log of this file
 
+* 2026-11-13 (night): A10 (where the NG signal comes from: big lobe 76 % over the descent, east rise near the end).
 * 2026-11-13 (evening): A9 update: RG acceptance axisymmetric (round 6 mm opening); fov_share with circular cones;
   A7 contact times of the spacecraft model with the 12M surface on the RORB trajectory (first contact −Y wing
   10:39:30.624 UTC).

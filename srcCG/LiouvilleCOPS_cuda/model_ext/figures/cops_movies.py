@@ -1,19 +1,14 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/figures_cluster/scripts/cops_movies.py (on Voyager: /data001/highresolu_vt/cops_output/figures_cluster/scripts/cops_movies.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 77c422c29cd2c1a218e6eb3e4418a869173ce54ff72af75fffc9115e5e7c3a60
+# SHA256 of the run copy = SHA256 of this file without these header lines: c2cf00fb8a00494bb8a25e8688239e0d817312f0a42b9a260d8426940d175e15
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: figure / movie script. One-minute movies of the final descent seen from the COPS gauges (camera at the gauge
-#   along the RG axis, sunlit 12M nucleus tinted by the gauges' acceptance weights, NG/RG time series): prep, plan,
-#   validate, render (GPU, dynamic frame claims), compose, encode, compare; from 2026-11-13 also fov / validate_fov, sc
-#   / validate_sc, diagnose, frametable; plan --camera fixed, the gauges' line of sight, validate_fixed, touchdown,
-#   compose --touchdown (waving finish flag); circular FOVs (--mask-* cone:<deg>), prep --extend-to-utc, contact, sc
-#   --hga-ck, plan --camera detach (--detach-altitude) with the spacecraft model, its shadow and the FOV cones; compose
-#   --flag-on-top (no depth test for the flag). Defaults reproduce every earlier movie bit for bit.
-# RUN: jobs/cops_movies_{prep,render,encode,qc}.sbatch (OUTPUT_VISUALIZATION.md 3.7); frozen copies
-#   model_ext_frozen/cops_movies_fixedcam_20261113T215921Z, cops_movies_detach200_20261114T005334Z,
-#   cops_movies_flagontop_*; tests tests/movies_fixedcam_touchdown_20261113/, movies_detach200_20261113/,
-#   movies_detach300_20261113/
+# WHAT: COPS movies (prep, plan, render, compose, encode, checks); 2026-11-14: plan --camera detach --pan-to / --pan-
+#   start-frame / --pan-end-frame (camera moves after the detach to a final pose: smootherstep, arc around the pivot,
+#   quaternion slerp, focal length geometric; held after the end frame, labelled) and compose --no-sub-mark; defaults
+#   unchanged (tests/movies_detach300_pan_20261113, validation/regression of the panorama set).
+# RUN: jobs/cops_movies_{prep,render,encode,qc}.sbatch (Slurm, gpu002 / normal128cores); see 12M/movies_*/HOW-TO-
+#   RERUN.md
 # ==== end of header ====
 """One-minute movies of Rosetta's final descent (2016-09-30) as seen from the COPS gauges, with the softplus activity
 model after 5 fit / fine-tuning cycles (final state).
@@ -110,6 +105,13 @@ Added 2026-11-13, second set (new options; the defaults reproduce every earlier 
                (pole along the projected surface normal when it is >= FLAG_NORMAL_MIN_DEG from the line of sight, else
                image up), waving (travelling sine wave, phase = frame / FPS in all three movies), anti-aliased, fixed size
                in output pixels, drawn when the point is visible from the camera; legend "touchdown (impact) <UTC> UTC"
+2026-11-14 (panorama set; new options, the defaults unchanged):
+  plan --camera detach --pan-to <pose.json> [--pan-start-frame K] [--pan-end-frame K]: after the detach the camera moves
+               to the final pose of the json (camera_position_m, forward, up, fov_horizontal_deg, pivot_m): smootherstep in
+               the frame index, position on an arc around the pivot (direction slerp, distance geometric), orientation by
+               quaternion slerp, focal length geometric; checks (clearance, pivot and COPS in the image, steps) in
+               camera_checks.json "pan". render / validate_fixed / touchdown / frametable use the pose of each frame.
+  compose --no-sub-mark: the sub-spacecraft point (+) is not drawn (user: "remove the white cross")
 """
 
 import argparse
@@ -161,6 +163,7 @@ SC_COL = {"bus": (0.17, 0.17, 0.18), "bus_back": (0.17, 0.17, 0.18), "cells": (0
 SC_LINE_COL = (0.72, 0.72, 0.75)     # V-yoke arms and the HGA strut (drawn as lines: their diameters are not documented)
 CONE_N = 24                    # generator lines per FOV cone
 CONE_COL = {"RG": (1.0, 0.62, 0.11), "NG": (0.31, 0.76, 0.97)}
+NO_SUB_MARK = False                 # 2026-11-14 (user): compose --no-sub-mark drops the sub-spacecraft "+" (default: drawn)
 CONE_ALPHA = 0.55
 CONTACT_TOL = 0.01             # m: the model "touches" the surface when a sample comes this close (unsigned distance)
 # fixed camera (2026-11-13, user decisions: the COPS position and the RG / NG boresights when the COPS altitude is 100 m,
@@ -1911,7 +1914,7 @@ def cmd_plan(a):
     say("plan: frames where the smoothed scale had to be reduced to fit the nucleus: %d" % nclip)
     sub, sub_f = FIG.intercept_track(cp.asnumpy(rnd.nodes), cp.asnumpy(rnd.faces).reshape(-1, 3), P["x"], a.device)
     if getattr(a, "camera", "gauge") == "detach":         # 2026-11-13: detach-200 m set (new option)
-        return plan_detach_save(a, work, P, proj, F, C, th, box, Freq, cen, k_switch, sub, sub_f)
+        return plan_detach_save(a, work, P, proj, F, C, th, box, Freq, cen, k_switch, sub, sub_f, rnd)
     np.savez(work / "plan.npz", proj=proj, F=F, center=C, theta_max_deg=th, box=box, F_req=Freq, center_req=cen,
              k_switch=k_switch, sub=sub, sub_face=sub_f)
     say("plan: perspective for frames 0..%d (theta_max <= %.0f deg), fisheye from frame %d (%s UTC, %.1f m); "
@@ -1921,7 +1924,7 @@ def cmd_plan(a):
     return 0
 
 
-def plan_detach_save(a, work, P, proj, F, C, th, box, Freq, cen, k_switch, sub, sub_f):
+def plan_detach_save(a, work, P, proj, F, C, th, box, Freq, cen, k_switch, sub, sub_f, rnd=None):
     """plan of the detach-200 m movies (2026-11-13, user decisions): frames before the detach frame k_d = the first frame
     whose COPS altitude is <= --detach-altitude use the gauge camera exactly as the gauge-view plan (camera at COPS
     along the RG axis; the same framing: perspective, fisheye from k_switch); from k_d on the camera stays at the COPS
@@ -1955,13 +1958,155 @@ def plan_detach_save(a, work, P, proj, F, C, th, box, Freq, cen, k_switch, sub, 
            "frames_attached": k_d, "frames_detached": NF - k_d, "gauge_plan_fisheye_from_frame": int(k_switch),
            "gauge_plan_at_detach": {"projection": "fisheye" if k_d >= k_switch else "perspective"}}
     say("detach camera: %s" % json.dumps(chk))
+    extra = {}
+    if getattr(a, "pan_to", ""):               # 2026-11-14 (user): the camera moves after the detach (new option)
+        extra = plan_pan(a, P, rnd, k_d, cx, cbr, cbn, F, th, chk)
     np.savez(work / "plan.npz", proj=proj, F=F, center=C, theta_max_deg=th, box=box, F_req=Freq, center_req=cen,
              k_switch=k_switch, sub=sub, sub_face=sub_f, camera_mode=np.array("detach"), k_detach=k_d,
              detach_utc=np.array(str(P["utc"][k_d])), detach_altitude_m=float(alt[k_d]), cam_fov_deg=float(a.fov_deg),
-             cam_x_frames=cx, cam_b_rg_frames=cbr, cam_b_ng_frames=cbn, cam_checks=np.array(json.dumps(chk)))
+             cam_x_frames=cx, cam_b_rg_frames=cbr, cam_b_ng_frames=cbn, cam_checks=np.array(json.dumps(chk)), **extra)
     json.dump(chk, open(work / "camera_checks.json", "w"), indent=1)
     say("plan (detach) done: attached frames 0..%d, detached %d..%d" % (k_d - 1, k_d, NF - 1))
     return 0
+
+
+def quat_from_basis(right, up, f):
+    """unit quaternion (w, x, y, z) of the rotation whose columns are (right, up, -f) (camera -> comet frame; right =
+    f x up, so (right, up, -f) is right-handed)."""
+    m = np.column_stack((right, up, -np.asarray(f, float)))
+    if np.linalg.det(m) < 0.999999:
+        raise SystemExit("quat_from_basis: not a rotation")
+    tr = m[0, 0] + m[1, 1] + m[2, 2]
+    if tr > 0:
+        S_ = math.sqrt(tr + 1.0) * 2
+        q = np.array([0.25 * S_, (m[2, 1] - m[1, 2]) / S_, (m[0, 2] - m[2, 0]) / S_, (m[1, 0] - m[0, 1]) / S_])
+    elif m[0, 0] > m[1, 1] and m[0, 0] > m[2, 2]:
+        S_ = math.sqrt(1.0 + m[0, 0] - m[1, 1] - m[2, 2]) * 2
+        q = np.array([(m[2, 1] - m[1, 2]) / S_, 0.25 * S_, (m[0, 1] + m[1, 0]) / S_, (m[0, 2] + m[2, 0]) / S_])
+    elif m[1, 1] > m[2, 2]:
+        S_ = math.sqrt(1.0 + m[1, 1] - m[0, 0] - m[2, 2]) * 2
+        q = np.array([(m[0, 2] - m[2, 0]) / S_, (m[0, 1] + m[1, 0]) / S_, 0.25 * S_, (m[1, 2] + m[2, 1]) / S_])
+    else:
+        S_ = math.sqrt(1.0 + m[2, 2] - m[0, 0] - m[1, 1]) * 2
+        q = np.array([(m[1, 0] - m[0, 1]) / S_, (m[0, 2] + m[2, 0]) / S_, (m[1, 2] + m[2, 1]) / S_, 0.25 * S_])
+    return q / np.linalg.norm(q)
+
+
+def basis_from_quat(q):
+    w, x, y, z = q / np.linalg.norm(q)
+    m = np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                  [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                  [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+    return m[:, 0], m[:, 1], -m[:, 2]
+
+
+def slerp(a, b, s):
+    """spherical linear interpolation of unit vectors / quaternions a -> b (b's sign chosen for the short arc by the
+    caller for quaternions)."""
+    d = float(np.clip(np.dot(a, b), -1.0, 1.0))
+    om = math.acos(d)
+    if om < 1e-12:
+        return np.asarray(a, float).copy()
+    return (math.sin((1 - s) * om) * a + math.sin(s * om) * b) / math.sin(om)
+
+
+def smootherstep(t):
+    t = min(max(t, 0.0), 1.0)
+    return t * t * t * (t * (6 * t - 15) + 10)
+
+
+def plan_pan(a, P, rnd, k_d, cx, cbr, cbn, F, th, chk):
+    """camera path after the detach (2026-11-14, user: "after detaching the camera from the spacecraft, slowly move the
+    camera and change its orientation such that in the last frame ..."): --pan-to <json> gives the final pose in the
+    comet frame (camera_position_m, forward, up, fov_horizontal_deg, pivot_m). From the detach pose (frame k_d) to the
+    final pose between frames --pan-start-frame (default k_d) and --pan-end-frame (default the last frame):
+    s = smootherstep (6t^5 - 15t^4 + 10t^3, t linear in the frame index: zero speed and acceleration at both ends);
+    position on an arc around the pivot (direction from the pivot by slerp, distance geometric in s); orientation by
+    quaternion slerp (short arc) of the camera bases; focal length geometric in s (perspective, principal point at the
+    image centre). Frames after the end keep the final pose. Fills cx, cbr (= forward), cbn (= up), F, th in place for
+    k >= k_d; checks per frame: clearance (nearest surface distance), the pivot and the gauge in the image, steps."""
+    import cupy as cp
+    spec = json.load(open(a.pan_to))
+    NF = len(P["utc"])
+    ks = k_d if a.pan_start_frame < 0 else int(a.pan_start_frame)
+    ke = NF - 1 if a.pan_end_frame < 0 else int(a.pan_end_frame)
+    if not (k_d <= ks < ke <= NF - 1):
+        raise SystemExit("pan: need detach frame <= start < end <= last frame (%d %d %d %d)" % (k_d, ks, ke, NF - 1))
+    piv = np.asarray(spec["pivot_m"], float)
+    x0 = np.asarray(cx[k_d], float)
+    f0 = unit(cbr[k_d])
+    u0 = unit(np.asarray(cbn[k_d], float) - np.dot(cbn[k_d], f0) * f0)
+    r0_ = np.cross(f0, u0)
+    x1 = np.asarray(spec["camera_position_m"], float)
+    f1 = unit(spec["forward"])
+    u1 = unit(np.asarray(spec["up"], float) - np.dot(spec["up"], f1) * f1)
+    r1_ = np.cross(f1, u1)
+    q0, q1 = quat_from_basis(r0_, u0, f0), quat_from_basis(r1_, u1, f1)
+    if np.dot(q0, q1) < 0:
+        q1 = -q1
+    d0, d1 = x0 - piv, x1 - piv
+    R0, R1 = np.linalg.norm(d0), np.linalg.norm(d1)
+    n0, n1 = d0 / R0, d1 / R1
+    F0 = float(F[k_d])
+    F1 = (W / 2.0) / math.tan(math.radians(float(spec["fov_horizontal_deg"])) / 2.0)
+    sv = np.zeros(NF)
+    for k in range(k_d, NF):
+        s = smootherstep((k - ks) / float(ke - ks))
+        sv[k] = s
+        rr = R0 ** (1 - s) * R1 ** s
+        cx[k] = piv + rr * slerp(n0, n1, s)
+        r_, u_, f_ = basis_from_quat(slerp(q0, q1, s))
+        cbr[k] = f_
+        cbn[k] = u_
+        F[k] = F0 ** (1 - s) * F1 ** s
+        th[k] = math.degrees(math.atan(math.hypot(W / 2.0, H / 2.0) / F[k]))
+    # checks
+    ksel = np.arange(k_d, NF)
+    nodes_h = cp.asnumpy(rnd.nodes)
+    faces_h = cp.asnumpy(rnd.faces).reshape(-1, 3)
+    _, clear, _ = FIG.ground_track(nodes_h, faces_h, cx[ksel])
+    vis_piv, _, _, dpiv = rnd.points_visible(cx[ksel], np.tile(piv, (len(ksel), 1)), np.full(len(ksel), -1))
+    pix_piv, pix_g, ang_step, pos_step = [], [], [0.0], [0.0]
+    for j, k in enumerate(ksel):
+        f_, u_ = unit(cbr[k]), unit(cbn[k])
+        r_ = np.cross(f_, u_)
+        for pt, lst in ((piv, pix_piv), (np.asarray(P["x"][k], float), pix_g)):
+            v = pt - cx[k]
+            lst.append(to_pixel((float(v @ r_), float(v @ u_), float(v @ f_)), "perspective", float(F[k]), (0.0, 0.0)))
+        if j:
+            ang_step.append(math.degrees(math.acos(np.clip(np.dot(f_, unit(cbr[k - 1])), -1, 1))))
+            pos_step.append(float(np.linalg.norm(cx[k] - cx[k - 1])))
+
+    def margin(px):
+        if px is None:
+            return -1e9
+        return float(min(px[0], W - px[0], px[1], H - px[1]))
+    mp_ = np.array([margin(v) for v in pix_piv])
+    far_g = np.linalg.norm(np.asarray(P["x"])[ksel] - cx[ksel], axis=1) > 1.0   # the gauge is the camera at the detach
+    mg_ = np.array([margin(v) if fg else np.inf for v, fg in zip(pix_g, far_g)])
+    pc = {"spec_file": str(Path(a.pan_to).resolve()), "spec": spec, "start_frame": ks, "end_frame": ke,
+          "start_utc": str(P["utc"][ks]), "end_utc": str(P["utc"][ke]), "easing": "smootherstep in the frame index",
+          "position": "arc around the pivot: slerp of the direction, distance geometric", "orientation": "quaternion slerp",
+          "focal_length": "geometric", "start": {"x": x0.tolist(), "forward": f0.tolist(), "up": u0.tolist(),
+                                                 "fov_horizontal_deg": float(chk["fov_horizontal_deg"]),
+                                                 "pivot_distance_m": float(R0)},
+          "end": {"x": x1.tolist(), "forward": f1.tolist(), "up": u1.tolist(),
+                  "fov_horizontal_deg": float(spec["fov_horizontal_deg"]), "pivot_distance_m": float(R1)},
+          "rotation_angle_deg": math.degrees(2 * math.acos(min(1.0, abs(float(np.dot(q0, q1)))))),
+          "pivot_arc_angle_deg": math.degrees(math.acos(np.clip(np.dot(n0, n1), -1, 1))),
+          "mid_frame": int(ks + np.argmin(np.abs(sv[ks:ke + 1] - 0.5))),
+          "min_clearance_m": float(clear.min()), "min_clearance_frame": int(ksel[np.argmin(clear)]),
+          "pivot_visible_frames": int(vis_piv.sum()), "frames": int(len(ksel)),
+          "pivot_not_visible_frames": [int(v) for v in ksel[~vis_piv]][:50],
+          "pivot_min_margin_px": float(mp_.min()), "pivot_min_margin_frame": int(ksel[np.argmin(mp_)]),
+          "gauge_min_margin_px": float(mg_.min()), "gauge_min_margin_frame": int(ksel[np.argmin(mg_)]),
+          "gauge_margin_frames": "frames with COPS more than 1 m from the camera: %d" % int(far_g.sum()),
+          "max_axis_step_deg_per_frame": float(max(ang_step)), "max_position_step_m_per_frame": float(max(pos_step)),
+          "final_pivot_pixel": pix_piv[-1], "final_gauge_pixel": pix_g[-1]}
+    chk["pan"] = pc
+    say("pan: %s" % json.dumps({k: v for k, v in pc.items() if k not in ("spec",)}))
+    return {"pan_s": sv, "pan_start_frame": ks, "pan_end_frame": ke, "pan_spec": np.array(json.dumps(spec)),
+            "pan_clearance_m": np.concatenate([np.full(k_d, np.nan), clear])}
 
 
 def plan_fixed(a, work, P, rnd):
@@ -2510,6 +2655,9 @@ def render_detach(a, P, Q, rnd, specs, FV, SCZ, tints, ucol, fd, order):
     n_obs = int(P["n_obs_frames"]) if "n_obs_frames" in P else len(P["utc"])
     xc = np.asarray(Q["cam_x_frames"][k_d], float)
     Fd = float(Q["F"][k_d])
+    cbr_c, cbn_c = Q["cam_b_rg_frames"][k_d], Q["cam_b_ng_frames"][k_d]
+    pan = "pan_s" in Q.files                   # 2026-11-14: the moving camera after the detach (plan --pan-to)
+    vkey = None
     camd_base = {"mode": "detach", "detach_frame": k_d, "detach_utc": str(Q["detach_utc"]),
                  "detach_altitude_m": float(Q["detach_altitude_m"]), "fov_deg": float(Q["cam_fov_deg"])}
     host = socket.gethostname()
@@ -2529,9 +2677,14 @@ def render_detach(a, P, Q, rnd, specs, FV, SCZ, tints, ucol, fd, order):
             meta = _detach_attached_frame(a, P, Q, rnd, specs, FV, SCZ, tints, ucol, fd, k, parts, host, t0)
             meta["camera"] = dict(camd_base, attached=True)
         else:
+            if pan:                            # the frame's own camera pose; the view is recomputed when it changes
+                xk, brk, bnk = frame_camera(P, Q, k)
+                key = (xk.tobytes(), np.asarray(brk).tobytes(), np.asarray(bnk).tobytes(), float(Q["F"][k]))
+                if key != vkey:
+                    vw0 = None
+                    xc, cbr_c, cbn_c, Fd, vkey = xk, brk, bnk, float(Q["F"][k]), key
             if vw0 is None:
-                vw0 = rnd.fixed_geometry(xc, Q["cam_b_rg_frames"][k_d], Q["cam_b_ng_frames"][k_d], "perspective", Fd,
-                                         (0.0, 0.0))
+                vw0 = rnd.fixed_geometry(xc, cbr_c, cbn_c, "perspective", Fd, (0.0, 0.0))
                 fdraw = cp.unique(vw0["fid"])
                 adraw = cp.asarray(rnd.area_h)[fdraw]
                 cen_d = rnd.cent[fdraw]
@@ -2587,7 +2740,9 @@ def render_detach(a, P, Q, rnd, specs, FV, SCZ, tints, ucol, fd, order):
                     "mask_design": {g: dict(mask_design(g, specs[g], FV), line_of_sight=True) for g in ("RG", "NG")},
                     "camera": dict(camd_base, attached=False, x=xc.tolist(), f=[float(v) for v in f_],
                                    up=[float(v) for v in up_], right=[float(v) for v in right_],
-                                   axis_surface_distance_m=axis_dist),
+                                   axis_surface_distance_m=axis_dist, **({} if not pan else {
+                                       "pan": True, "pan_s": float(Q["pan_s"][k]),
+                                       "fov_deg": 2 * math.degrees(math.atan((W / 2.0) / Fd))})),
                     "sc_model": {"triangles": int(len(M["T"])), "drawn": ndrawn,
                                  "pixels_ss": int(cp.asnumpy(sc_front.sum())), "hga_held": bool(SCZ["hga_held"][k]),
                                  "sa_held": bool(SCZ["held"][k])},
@@ -2928,6 +3083,16 @@ def overlay(img, meta, which, scale=1.0, full=True, text_scale=None, td=None, k=
                 "horizontal field of view %.0f°" % (cam["detach_utc"][11:19], fmt_alt(cam["detach_altitude_m"]), hf)
                 if full else "camera detached at %s UTC (%s), perspective, %.0f°" % (
                     cam["detach_utc"][11:19], fmt_alt(cam["detach_altitude_m"]), hf))
+        if cam.get("pan"):                     # 2026-11-14: the moving camera (plan --pan-to)
+            note = ("camera detached at %s UTC (COPS %s), then moving to a panoramic view; perspective, horizontal "
+                    "field of view %.0f°" % (cam["detach_utc"][11:19], fmt_alt(cam["detach_altitude_m"]), hf)
+                    if full else "camera detached at %s UTC (%s), moving; perspective, %.0f°" % (
+                        cam["detach_utc"][11:19], fmt_alt(cam["detach_altitude_m"]), hf))
+            if cam.get("pan_s", 0.0) >= 1.0:   # the final pose reached (held until the end)
+                note = ("camera detached at %s UTC (COPS %s), now held at its final panoramic view; perspective, "
+                        "horizontal field of view %.0f°" % (cam["detach_utc"][11:19], fmt_alt(cam["detach_altitude_m"]), hf)
+                        if full else "camera detached at %s UTC (%s), final view held; perspective, %.0f°" % (
+                            cam["detach_utc"][11:19], fmt_alt(cam["detach_altitude_m"]), hf))
     if attached_d:
         note = note + ("; camera at COPS until %s, then detached" % fmt_alt(cam["detach_altitude_m"]) if full else
                        " (camera at COPS until %s)" % fmt_alt(cam["detach_altitude_m"]))
@@ -2943,11 +3108,12 @@ def overlay(img, meta, which, scale=1.0, full=True, text_scale=None, td=None, k=
         x0, y0 = pad, bb[1] - int(22 * t)
         d.rectangle((x0, y0 - 4 * t, x0 + npx, y0), fill=(255, 255, 255))
         lab = ("%g km" % (L / 1000)) if L >= 1000 else ("%g m" % L)
-        d.text((x0 + npx + 8 * t, y0 + 2 * t), lab + " at the sub-spacecraft point (+)", font=fn, fill=(255, 255, 255),
+        d.text((x0 + npx + 8 * t, y0 + 2 * t), lab + (" at the sub-spacecraft point" if NO_SUB_MARK else
+                                                      " at the sub-spacecraft point (+)"), font=fn, fill=(255, 255, 255),
                anchor="ls")
         px, py = meta["sub_pixel"]
         px, py = px * s, py * s
-        if 0 <= px < Wi and 0 <= py < Hi:
+        if 0 <= px < Wi and 0 <= py < Hi and not NO_SUB_MARK:
             r = 9 * t
             d.line((px - r, py, px + r, py), fill=(255, 255, 255), width=lw)
             d.line((px, py - r, px, py + r), fill=(255, 255, 255), width=lw)
@@ -2959,10 +3125,11 @@ def overlay(img, meta, which, scale=1.0, full=True, text_scale=None, td=None, k=
             x0, y0 = pad, bb[1] - int(22 * t)
             d.rectangle((x0, y0 - 4 * t, x0 + npx, y0), fill=(255, 255, 255))
             lab = ("%g km" % (L / 1000)) if L >= 1000 else ("%g m" % L)
-            d.text((x0 + npx + 8 * t, y0 + 2 * t), lab + (" at the image centre; +: sub-spacecraft point; ring: COPS"
+            d.text((x0 + npx + 8 * t, y0 + 2 * t), lab + (((" at the image centre; ring: COPS" if NO_SUB_MARK else
+                                                            " at the image centre; +: sub-spacecraft point; ring: COPS"))
                                                            if full else " at the image centre"),
                    font=fn, fill=(255, 255, 255), anchor="ls")
-        if meta.get("sub_visible") and meta.get("sub_pixel"):
+        if meta.get("sub_visible") and meta.get("sub_pixel") and not NO_SUB_MARK:
             px, py = meta["sub_pixel"][0] * s, meta["sub_pixel"][1] * s
             if 0 <= px < Wi and 0 <= py < Hi:
                 r = 9 * t
@@ -3136,6 +3303,10 @@ def cmd_compose(a):
             td["_on_top"] = True
             say("flag drawn on top (no depth test) where its point projects into the image: %d frames" % int(
                 np.sum(td["in_front"] & td["in_image"])))
+    if getattr(a, "no_sub_mark", False):      # 2026-11-14 (user): "remove the white cross" (new option)
+        global NO_SUB_MARK
+        NO_SUB_MARK = True
+        say("sub-spacecraft mark (+) not drawn")
     jobs = [(k, a.work, str(out), ts) if td is None else (k, a.work, str(out), ts, td) for k in ks]
     with mp.get_context("fork").Pool(a.procs) as pool:
         for i, _ in enumerate(pool.imap_unordered(compose_one, jobs, chunksize=4)):
@@ -3181,6 +3352,8 @@ def cmd_frametable(a):
         MD = M
         if M[0]["camera"].get("mode") == "detach":         # detach-200 m set: the detached frames only
             MD = [m for m in M if not m["camera"].get("attached")]
+        if MD[0]["camera"].get("pan"):         # 2026-11-14: moving camera: per frame the plan's pose; same pose, same view
+            return frametable_pan(a, fd, out, M, MD)
         ref = (MD[0]["camera"], MD[0]["face_sha256"])
         bad = [m["k"] for m in MD if (m.get("camera"), m.get("face_sha256")) != ref]
         chk = {"frames": len(MD), "first_frame": MD[0]["k"], "frames_with_a_different_camera_or_face_buffer": bad, "camera": ref[0],
@@ -3240,6 +3413,64 @@ def cmd_frametable(a):
                 row += [int(bool(m.get("sub_visible"))), int(bool(m.get("gauge_visible"))), "%.2f" % gp[0], "%.2f" % gp[1],
                         "%.4f" % m.get("gauge_distance_from_camera_m", float("nan"))]
             row += [m["host"], m["device"], "%.3f" % m["t_total_s"]]
+            f.write("\t".join(str(v) for v in row) + "\n")
+    say("wrote %s" % out)
+    return 0
+
+
+def frametable_pan(a, fd, out, M, MD):
+    """frametable of the moving-camera (pan) frames (2026-11-14): checks that each detached frame used the plan's pose
+    of its frame (position, forward, up, focal length) and that frames with the same pose have the same face buffer;
+    then writes the table as cmd_frametable (camera columns added)."""
+    Q = np.load(Path(a.work) / "plan.npz", allow_pickle=False)
+    bad, groups = [], {}
+    for m in MD:
+        k = m["k"]
+        f = unit(Q["cam_b_rg_frames"][k])
+        up = unit(np.asarray(Q["cam_b_ng_frames"][k], float) - np.dot(Q["cam_b_ng_frames"][k], f) * f)
+        c = m["camera"]
+        if (np.max(np.abs(np.asarray(c["x"]) - Q["cam_x_frames"][k])) > 0 or np.max(np.abs(np.asarray(c["f"]) - f)) > 1e-12
+                or np.max(np.abs(np.asarray(c["up"]) - up)) > 1e-12 or m["F"] != float(Q["F"][k])):
+            bad.append(k)
+        groups.setdefault(json.dumps([c["x"], c["f"], c["up"], m["F"]]), set()).add(m["face_sha256"])
+    fb = [g for g, v in groups.items() if len(v) > 1]
+    chk = {"frames": len(MD), "first_frame": MD[0]["k"], "frames_not_matching_the_plan_pose": bad,
+           "distinct_poses": len(groups), "poses_with_more_than_one_face_buffer": len(fb),
+           "pan_start_frame": int(Q["pan_start_frame"]), "pan_end_frame": int(Q["pan_end_frame"]),
+           "hosts_devices": sorted({"%s:%s" % (m["host"], m["device"]) for m in M}),
+           "jobs": sorted({str(m["job"]) for m in M})}
+    json.dump(chk, open(str(out) + ".camera_check.json", "x"), indent=1)
+    say("pan camera check: %d detached frames, %d not matching the plan, %d poses, %d with more than one face buffer" % (
+        len(MD), len(bad), len(groups), len(fb)))
+    if bad or fb:
+        raise SystemExit("pan camera: %d frames differ from the plan, %d poses with several face buffers" % (len(bad), len(fb)))
+    cols = ["frame", "movie_s", "utc", "altitude_m", "projection", "F_px_per_unit", "fov_horizontal_deg", "pan_s",
+            "cam_x", "cam_y", "cam_z", "lit_frac_day", "enclosed_px", "filled_px", "no_hit_px"]
+    for g in ("RG", "NG"):
+        cols += ["%s_mask" % g, "%s_visible_area_frac_in_mask" % g, "%s_visible_area_m2_in_mask" % g,
+                 "%s_nucleus_pixel_frac_in_mask" % g, "%s_fov_area_m2" % g, "%s_fov_facing_area_m2" % g]
+    cols += ["gauge_px_x", "gauge_px_y", "gauge_distance_from_camera_m", "host", "device", "t_total_s"]
+    nan = float("nan")
+    with open(out, "x") as f:
+        f.write("# one row per movie frame (%s/meta); movie time = frame / %d s; detach camera moving after the detach "
+                "(plan --pan-to); attached frames: camera at COPS\n" % (fd, FPS))
+        f.write("\t".join(cols) + "\n")
+        for m in M:
+            h = m["holes"]
+            c = m.get("camera", {})
+            x = c.get("x", [nan] * 3) if not c.get("attached") else list(Q["cam_x_frames"][m["k"]])
+            row = [m["k"], "%.3f" % (m["k"] / FPS), m["utc"], "%.4f" % m["altitude_m"], m["projection"], "%.3f" % m["F"],
+                   "%.3f" % (2 * math.degrees(math.atan((W / 2.0) / m["F"]))) if m["projection"] == "perspective" else "nan",
+                   "%.6f" % c.get("pan_s", 0.0), "%.4f" % x[0], "%.4f" % x[1], "%.4f" % x[2], "%.4f" % m["lit_frac_day"],
+                   h["enclosed_px"], h["filled_px"], h["no_hit_px"]]
+            for g in ("RG", "NG"):
+                st = m["masks"][g]
+                row += [st.get("mask"), "%.5f" % st.get("visible_area_frac", nan),
+                        "%.6g" % st.get("visible_area_m2_in_mask", nan), "%.5f" % st.get("nucleus_pixel_frac", nan),
+                        "%.6g" % st.get("fov_area_m2", nan), "%.6g" % st.get("fov_facing_area_m2", nan)]
+            gp = m.get("gauge_pixel") or [nan, nan]
+            row += ["%.2f" % gp[0], "%.2f" % gp[1], "%.4f" % m.get("gauge_distance_from_camera_m", nan), m["host"],
+                    m["device"], "%.3f" % m["t_total_s"]]
             f.write("\t".join(str(v) for v in row) + "\n")
     say("wrote %s" % out)
     return 0
@@ -3821,7 +4052,20 @@ def cmd_validate_fixed(a):
     od.mkdir(exist_ok=True)
     idx, pts, fid, nrm = vw0["idx"], vw0["pts"], vw0["fid"], vw0["nrm"]
     Hs, Ws = H * SS, W * SS
+    pan = is_detach(Q) and "pan_s" in Q.files  # 2026-11-14: moving camera: each test frame with its own pose
+    vkey = (xc.tobytes(), np.asarray(cbr).tobytes(), np.asarray(cbn).tobytes(), F)
     for k in [int(v) for v in a.test_frames.split(",")]:
+        if pan and k >= int(Q["k_detach"]):
+            xk, brk, bnk = frame_camera(P, Q, k)
+            key = (xk.tobytes(), np.asarray(brk).tobytes(), np.asarray(bnk).tobytes(), float(Q["F"][k]))
+            if key != vkey:
+                vw0 = None
+                vw0 = rnd.fixed_geometry(xk, brk, bnk, "perspective", float(Q["F"][k]), (0.0, 0.0))
+                xc, vkey = xk, key
+                fdraw = cp.unique(vw0["fid"])
+                adraw = cp.asarray(rnd.area_h)[fdraw]
+                cen_d = rnd.cent[fdraw]
+                idx, pts, fid, nrm = vw0["idx"], vw0["pts"], vw0["fid"], vw0["nrm"]
         t0 = time.time()
         R = fixed_frame(rnd, P, FV, SCZ, specs, k, vw0, cen_d, fdraw, adraw, a.sc_samples, sc_parts=parts)
         t_fr = time.time() - t0
@@ -3979,6 +4223,10 @@ def main():
                    "the camera leaves the gauge and stays")
     p.add_argument("--camera-altitude", type=float, default=100.0, help="fixed camera: the COPS altitude [m] of its time")
     p.add_argument("--fov-deg", type=float, default=90.0, help="fixed camera: horizontal field of view [deg]")
+    p.add_argument("--pan-to", default="", help="2026-11-14: detach camera: move to this final pose after the detach "
+                   "(json: camera_position_m, forward, up, fov_horizontal_deg, pivot_m; default: frozen camera)")
+    p.add_argument("--pan-start-frame", type=int, default=-1, help="pan: first frame of the motion (default the detach frame)")
+    p.add_argument("--pan-end-frame", type=int, default=-1, help="pan: frame at which the final pose is reached (default last)")
     p.add_argument("--kernels", default=None)
     p.add_argument("--geom-exe", default=None)
     p.add_argument("--gauge-offset", default="0,0,1.5")
@@ -4039,6 +4287,8 @@ def main():
     p.add_argument("--frames", default="")
     p.add_argument("--touchdown", default="", help="touchdown.npz (cops_movies.py touchdown): draw the touchdown flag "
                    "(2026-11-13; default: none)")
+    p.add_argument("--no-sub-mark", action="store_true", help="2026-11-14: do not draw the sub-spacecraft point (+) "
+                   "(default: drawn)")
     p.add_argument("--flag-on-top", action="store_true", help="2026-11-13: draw the flag on top (no depth test against "
                    "the nucleus or the spacecraft) wherever its point projects into the image")
     p = sub.add_parser("compare", parents=[c])

@@ -1,14 +1,11 @@
 #!/bin/bash
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/cops_movies_encode.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/cops_movies_encode.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 6131b0af76d9dc3f9383ae97a06d5f6ca1f996e183704e5ca3efe228336aecd1
+# SHA256 of the run copy = SHA256 of this file without these header lines: 4daa7643927a7414b887f73a40b7aaa6fea4fd975840e683778a609ad7add4b5
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: job script (CPU, normal128cores): compare, frametable, compose (overlays, colour bars, the movie-3 time
-#   series; TS_LABEL; TOUCHDOWN = touchdown.npz: the waving touchdown flag; FLAG_ON_TOP=1: drawn on top, no depth
-#   test), encode (H.264 1920x1080 CRF 18, 1280x720 CRF 26 faststart); MOVIES_PY selects the cops_movies.py to run.
-# RUN: STEPS=frametable,compose,encode OUT=... TABLE=... [TS_LABEL=... TOUCHDOWN=... FLAG_ON_TOP=1] sbatch
-#   --export=ALL cops_movies_encode.sbatch (OUTPUT_VISUALIZATION.md 3.7). Jobs: 124631-124634, 124732, 124734, 124866,
-#   124868, 124896, 124911 (detach-300 m)
+# WHAT: COPS movies step 3 (frametable, compose, encode); 2026-11-14: NO_SUB_MARK=1 for compose --no-sub-mark
+#   (default unchanged).
+# RUN: sbatch --export=ALL (see the header)
 # ==== end of header ====
 # COPS movies, step 3 (CPU): compare (split check of two rendered frame folders), compose (movie frames 1, 2, 3 with
 # overlays and the NG / RG time series), encode (H.264 MP4, 1920x1080 CRF 18 and 1280x720 CRF 26, faststart).
@@ -22,6 +19,7 @@
 #   movies' "COPS data and the softplus activity model (final state, 5 cycles)"); TOUCHDOWN (2026-11-13: touchdown.npz of
 #   cops_movies.py touchdown -> compose --touchdown: the touchdown flag; default none); MOVIES_PY (the cops_movies.py to
 #   run, default figures_cluster/scripts/cops_movies.py); FLAG_ON_TOP=1 (2026-11-13: the flag drawn on top, no depth test).
+#   NO_SUB_MARK=1 (2026-11-14: compose --no-sub-mark, the sub-spacecraft "+" not drawn; default drawn).
 #SBATCH --job-name=cops_movies_encode
 #SBATCH --partition=normal128cores
 #SBATCH --account=general
@@ -44,14 +42,14 @@ TABLE=${TABLE:-$COPS_OUTPUT_ROOT/figures_cluster/12M/full_set_softplus_5cycles/m
 CMP_A=${CMP_A:-$WORK/frames}; CMP_B=${CMP_B:-}; FRAMETABLE=${FRAMETABLE:-$OUT/validation/frames.tsv}; TS_LABEL=${TS_LABEL:-}
 FFMPEG=$COPS_OUTPUT_ROOT/tools/imageio_ffmpeg/imageio_ffmpeg/binaries/ffmpeg-linux-x86_64-v9.0.2
 S=$COPS_OUTPUT_ROOT/figures_cluster/scripts
-MPY=${MOVIES_PY:-$S/cops_movies.py}; TOUCHDOWN=${TOUCHDOWN:-}; FLAG_ON_TOP=${FLAG_ON_TOP:-}
+MPY=${MOVIES_PY:-$S/cops_movies.py}; TOUCHDOWN=${TOUCHDOWN:-}; FLAG_ON_TOP=${FLAG_ON_TOP:-}; NO_SUB_MARK=${NO_SUB_MARK:-}
 PY="$APP/.venv/bin/python -W ignore"
 stamp() { echo "$(date -u +%FT%TZ) $*"; }
 heavy() { bash -c 'echo 1000 > /proc/self/oom_score_adj; exec "$@"' heavy "$@"; }
 P=$WORK/provenance-$SLURM_JOB_ID; mkdir "$P" || exit 1
 cd "$APP" || exit 1
 stamp "job $SLURM_JOB_ID on $(hostname): STEPS=$STEPS"
-for v in WORK STEPS COMPOSED FRAMES PROCS OUT TABLE CMP_A CMP_B FFMPEG TS_LABEL TOUCHDOWN FLAG_ON_TOP MPY; do printf '%s=%s\n' "$v" "${!v}"; done > "$P/inputs.txt"
+for v in WORK STEPS COMPOSED FRAMES PROCS OUT TABLE CMP_A CMP_B FFMPEG TS_LABEL TOUCHDOWN FLAG_ON_TOP NO_SUB_MARK MPY; do printf '%s=%s\n' "$v" "${!v}"; done > "$P/inputs.txt"
 cp -p "$0" "$P/cops_movies_encode.sbatch.used"
 mkdir "$P/code" && cp -p "$MPY" "$APP/cops_cuda/figures.py" "$P/code/" && (cd "$P/code" && sha256sum * > SHA256SUMS)
 { git -C "$AMPS" rev-parse HEAD; git -C "$AMPS" status --short; } > "$P/git.txt" 2>&1
@@ -78,7 +76,7 @@ if [[ ",$STEPS," == *,compose,* ]]; then
     stamp "compose -> $COMPOSED"
     mkdir -p "$COMPOSED" || exit 1
     run heavy $PY "$MPY" compose --work "$WORK" --out "$COMPOSED" --table "$TABLE" --procs "$PROCS" \
-        ${FRAMES:+--frames "$FRAMES"} ${TS_LABEL:+--ts-label "$TS_LABEL"} ${TOUCHDOWN:+--touchdown "$TOUCHDOWN"} ${FLAG_ON_TOP:+--flag-on-top} > "$P/compose.log" 2>&1 || { stamp "compose FAILED"; nfail=$((nfail+1)); }
+        ${FRAMES:+--frames "$FRAMES"} ${TS_LABEL:+--ts-label "$TS_LABEL"} ${TOUCHDOWN:+--touchdown "$TOUCHDOWN"} ${FLAG_ON_TOP:+--flag-on-top} ${NO_SUB_MARK:+--no-sub-mark} > "$P/compose.log" 2>&1 || { stamp "compose FAILED"; nfail=$((nfail+1)); }
     tail -n 3 "$P/compose.log"
 fi
 if [[ ",$STEPS," == *,encode,* ]] && [ $nfail -eq 0 ]; then

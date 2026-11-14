@@ -1,15 +1,11 @@
 #!/bin/bash
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/cops_movies_prep.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/cops_movies_prep.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 224a55686c3e6631b5aaef41f70f02317a97dc0626c0f968da0a8db654b3aa26
+# SHA256 of the run copy = SHA256 of this file without these header lines: 8de150fa2fa1d535f1ae796ebc7ef1e896fcd8331faf8d9074c1af7f2145089f
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: job script (GPU, 1 GPU): movie preparation with provenance: build the SPICE helper; cops_movies.py prep, fov,
-#   sc, plan, validate, validate_fov, validate_sc (STEPS); 2026-11-13 also copy (FROM_WORK; with contact.json when
-#   present), plan with CAMERA=fixed or CAMERA=detach (CAMERA_ALT / DETACH_ALT, FOV_DEG), validate_fixed (MASK_RG,
-#   MASK_NG, SAMPLES, TEST_FRAMES), touchdown (TRACK_BASE, IMPACT_JSON), contact (HGA_CK, HGA_HOLD_UTC, SA_HOLD_UTC),
-#   prep with EXTEND_TO_CONTACT / EXTEND_TO_UTC, sc with HGA_CK; MOVIES_PY selects the cops_movies.py to run.
-# RUN: STEPS=... WORK=... GEOM=... sbatch --export=ALL cops_movies_prep.sbatch (OUTPUT_VISUALIZATION.md 3.7). Jobs:
-#   124615-124634, 124708, 124724, 124725, 124786, 124787, 124863, 124864, 124894 (detach-200 m), 124909 (detach-300 m)
+# WHAT: COPS movies step 1 (copy, contact, prep, fov, sc, plan, validate*, touchdown); 2026-11-14: PAN_TO / PAN_START
+#   / PAN_END for plan --pan-to (defaults unchanged).
+# RUN: sbatch --export=ALL (see the header)
 # ==== end of header ====
 # COPS movies, step 1 (user request 2026-11-12, one-minute movies of the descent as seen from RG / NG):
 # build the SPICE geometry helper (figures_cluster/scripts/cops_movies_geom.cpp, CSPICE), then
@@ -33,6 +29,9 @@
 #   surface (HGA_CK, HGA_HOLD_UTC, SA_HOLD_UTC) -> $WORK/contact.json, run before prep; prep with EXTEND_TO_CONTACT=1
 #   (frames after the last observation to that contact; or EXTEND_TO_UTC); sc with HGA_CK (HGA and solar-array frames in
 #   sc.npz); plan with CAMERA=detach (DETACH_ALT, default 200 m; FOV_DEG); validate_fixed with TEST_FRAMES.
+# 2026-11-14 (panorama set; defaults unchanged): plan with CAMERA=detach and PAN_TO (pose json) = plan --pan-to (the camera
+#   moves to that final pose after the detach; PAN_START / PAN_END: --pan-start-frame / --pan-end-frame, default the
+#   detach frame / the last frame).
 # Provenance in $WORK/provenance-<job>/. Shared-node rule: heavy processes with oom_score_adj 1000.
 #SBATCH --job-name=cops_movies_prep
 #SBATCH --partition=gpu
@@ -60,6 +59,7 @@ MASK_RG=${MASK_RG:-ik_fov}; MASK_NG=${MASK_NG:-ik_fov}; SAMPLES=${SAMPLES:-2000}
 TRACK_BASE=${TRACK_BASE:-$COPS_OUTPUT_ROOT/runs/shap8_012m_flat_earlier/base}; IMPACT_JSON=${IMPACT_JSON:-}
 HGA_CK=${HGA_CK:-}; HGA_HOLD_UTC=${HGA_HOLD_UTC:-}; EXTEND_TO_CONTACT=${EXTEND_TO_CONTACT:-}; EXTEND_TO_UTC=${EXTEND_TO_UTC:-}
 DETACH_ALT=${DETACH_ALT:-200}; TEST_FRAMES=${TEST_FRAMES:-}; SA_HOLD_UTC=${SA_HOLD_UTC:-}
+PAN_TO=${PAN_TO:-}; PAN_START=${PAN_START:-}; PAN_END=${PAN_END:-}
 PY="$APP/.venv/bin/python -W ignore"
 stamp() { echo "$(date -u +%FT%TZ) $*"; }
 heavy() { bash -c 'echo 1000 > /proc/self/oom_score_adj; exec "$@"' heavy "$@"; }
@@ -67,7 +67,7 @@ mkdir -p "$WORK" || exit 1
 P=$WORK/provenance-$SLURM_JOB_ID; mkdir "$P" || exit 1
 cd "$APP" || exit 1
 stamp "job $SLURM_JOB_ID on $(hostname): STEPS=$STEPS WORK=$WORK"
-for v in RUN BASE CH GEOM WORK STEPS MPY FROM_WORK CAMERA CAMERA_ALT FOV_DEG MASK_RG MASK_NG SAMPLES TRACK_BASE IMPACT_JSON HGA_CK HGA_HOLD_UTC EXTEND_TO_CONTACT EXTEND_TO_UTC DETACH_ALT TEST_FRAMES SA_HOLD_UTC; do printf '%s=%s\n' "$v" "${!v}"; done > "$P/inputs.txt"
+for v in RUN BASE CH GEOM WORK STEPS MPY FROM_WORK CAMERA CAMERA_ALT FOV_DEG MASK_RG MASK_NG SAMPLES TRACK_BASE IMPACT_JSON HGA_CK HGA_HOLD_UTC EXTEND_TO_CONTACT EXTEND_TO_UTC DETACH_ALT TEST_FRAMES SA_HOLD_UTC PAN_TO PAN_START PAN_END; do printf '%s=%s\n' "$v" "${!v}"; done > "$P/inputs.txt"
 cp -p "$0" "$P/cops_movies_prep.sbatch.used"
 mkdir "$P/code" && cp -p "$MPY" "$S/cops_movies_geom.cpp" "$APP/cops_cuda/figures.py" "$APP/cops_cuda/kernels/render.cu" "$P/code/" || exit 1
 (cd "$P/code" && sha256sum * > SHA256SUMS)
@@ -158,7 +158,9 @@ if [[ ",$STEPS," == *,plan,* ]]; then
     stamp "plan${CAMERA:+ (camera $CAMERA)}"
     if [ "$CAMERA" = detach ]; then
         run heavy $PY "$MPY" plan --work "$WORK" --geometry "$GEOM" --device 0 --camera detach --detach-altitude "$DETACH_ALT" \
-            --fov-deg "$FOV_DEG" > "$P/plan.log" 2>&1 || { stamp "plan FAILED"; nfail=$((nfail+1)); }
+            --fov-deg "$FOV_DEG" ${PAN_TO:+--pan-to "$PAN_TO"} ${PAN_START:+--pan-start-frame "$PAN_START"} \
+            ${PAN_END:+--pan-end-frame "$PAN_END"} > "$P/plan.log" 2>&1 || { stamp "plan FAILED"; nfail=$((nfail+1)); }
+        [ -n "$PAN_TO" ] && cp -p "$PAN_TO" "$P/pan_to.json"
     elif [ "$CAMERA" = fixed ]; then
         helper || exit 1
         run heavy $PY "$MPY" plan --work "$WORK" --geometry "$GEOM" --device 0 --camera fixed --camera-altitude "$CAMERA_ALT" \

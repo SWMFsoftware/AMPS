@@ -386,6 +386,31 @@ spacecraft, wherever its point projects into the image; tested: without the opti
 bit). Distances on the surface at the last frame (10:39:30.624): sub-bus point 0.16 m from the flag, the bus's first
 contact (10:39:30.753) 1.29 m, the wing's first contact 16.3 m (`tests/movies_detach300_20261113/flag_distances.json`).
 
+**Panorama set (2026-11-14 UTC; user decisions in section 5):** `figures_cluster/12M/movies_softplus_smm1_9cycles_detach300_pan/`
+(work `<chain>/movies_work_c9_detach300_pan`, prep/fov/sc/contact copied from the detach-300 m work; jobs 124930 copy/plan/
+validate_fixed/touchdown/validate_sc with `PAN_TO=analysis/poses/pan_B.json PAN_END=1800`, 124931 render (8 A100, 9:45),
+124936 frametable/compose/encode with `FLAG_ON_TOP=1 NO_SUB_MARK=1`, 124937 qc). As the detach-300 m set, but after the
+detach (frame 901, 300 m) the camera moves to pose B (120 m north-north-west of the touchdown point, 220 m above it,
+looking toward azimuth 99°, 57° down, level horizon, field of view 105.5°): `plan --camera detach --pan-to <pose.json>
+[--pan-start-frame K] [--pan-end-frame K]` = smootherstep in the frame index, position on an arc around the pivot (the
+touchdown point; direction slerp, distance geometric), orientation by quaternion slerp, focal length geometric; the final
+pose reached at frame 1800 (10:39:26.03 UTC) and held to the end; checks in `camera_checks.json` "pan" (clearance, pivot
+and COPS in the image, steps) and the pan check of `frametable` (each frame the plan's pose; one face buffer per pose).
+`compose --no-sub-mark`: no sub-spacecraft "+". Analysis behind the pose (`analysis/`): `ng_source_map.py` (per-facet NG
+source sums, late and all observations; job 124913), `ng_source_regions.py` (lobes by the neck plane, shares by lobe,
+distance and azimuth, skyline and relief, map figure), `ng_lobe_share_vs_altitude.py` (big-lobe share per late
+observation), `pan_candidates.py` (grid of final poses with target framing, visible shares of the big-lobe and relief NG
+sources; jobs 124915, 124918), candidate stills A/B/C (`cops_movies_pan_stills.sbatch`, jobs 124919, 124920). Defaults of
+`cops_movies.py` unchanged (compose, plan and render bit for bit: `validation/regression/`).
+```bash
+STEPS=copy,plan,validate_fixed,touchdown,validate_sc CAMERA=detach DETACH_ALT=300 FOV_DEG=90 PAN_TO=<pose.json> PAN_END=1800 \
+  MASK_RG=cone:45 MASK_NG=cone:77.5 TEST_FRAMES=<frames along the path> FROM_WORK=$CHAIN/movies_work_c9_detach300 \
+  sbatch --nodelist=gpu002 --mem=80G --export=ALL cops_movies_prep.sbatch
+# render as the detach-300 m set; then
+FLAG_ON_TOP=1 NO_SUB_MARK=1 OUT=... TABLE=... TS_LABEL=... TOUCHDOWN=$WORK/touchdown.npz STEPS=frametable,compose,encode \
+  PROCS=32 sbatch --export=ALL cops_movies_encode.sbatch
+```
+
 ### 3.6 Other analysis figures and tables
 
 * `figures_cluster/scripts/positive_table.py`, `positive_cycles_table.py`, `finetune_table.py`, `scan_summary.py`:
@@ -500,6 +525,20 @@ contact (10:39:30.753) 1.29 m, the wing's first contact 16.3 m (`tests/movies_de
   because at the last frame the sub-bus point (bus centre along the local normal) is 0.16 m from the flag (limit given:
   ~5 m); camera detached at COPS 300 m with the same rules (frozen in 67P/C-G_CK, fixed 90° perspective, labelled, near
   handling as before); everything else as the detach-200 m set.
+* 2026-11-13 (movies; user ~20:05 CST "after detaching the camera from the spacecraft, slowly move the camera and change
+  its orientation such that in the last frame the camera [shows] the fields of view of both gauges as well as a panoramic
+  view on the mountains and the other comet's lobe that contributes most to the NG data; remove the white cross"; lead's
+  specification; user choices ~20:55 CST): a NEW set `movies_softplus_smm1_9cycles_detach300_pan/` (the detach-300 m set
+  stays); the white cross (sub-spacecraft "+") removed in every frame (`compose --no-sub-mark`); "the other lobe" = the big
+  lobe (body), from the c9 NG source analysis (big lobe 76 % of the all-observation NG surface signal, 46 % of the late;
+  FINDINGS.md A10); "the mountains" = the rise 77-82 m east of the impact point (37-39 m high, 45 % of the late NG signal)
+  with the big lobe beyond the head's edge; the camera moves smoothly (ease-in/ease-out, arc around the touchdown point,
+  orientation slerp, field of view 90° -> 105.5°) from the detach pose to the final pose B chosen by the user from three
+  candidates (A west 300 m up, B north-north-west 220 m up, C south-south-west 300 m up; stills in
+  `stills_candidates/`); the final pose is reached at frame 1800 (10:39:26, last COPS point) and held during the touchdown
+  (frames 1800-1958); the RG field of view is accepted to be invisible in the last frames (a ~2.8 m disc under the
+  spacecraft at contact; visible earlier during the motion; said in the captions); flag on top, cones, spacecraft model and
+  timeline as the detach-300 m set.
 
 ## 6. Change log of this file
 
@@ -528,3 +567,7 @@ contact (10:39:30.753) 1.29 m, the wing's first contact 16.3 m (`tests/movies_de
   `fov_share.py --cone-*`), section 5 decisions of 2026-11-13 (detach set).
 * 2026-11-14 (UTC): 3.7 the detach-300 m set and `compose --flag-on-top` (job variable FLAG_ON_TOP), the copy step also
   copies contact.json; section 5 decisions (flag on top, detach at 300 m).
+* 2026-11-14 (UTC): 3.7 the panorama set (`plan --pan-to`, `--pan-start-frame`, `--pan-end-frame`, `compose --no-sub-mark`;
+  job variables PAN_TO, PAN_START, PAN_END, NO_SUB_MARK; `ng_source_map.py`, `ng_source_regions.py`,
+  `ng_lobe_share_vs_altitude.py`, `pan_candidates.py`, `cops_movies_pan_stills.sbatch`); section 5 decisions of 2026-11-13
+  (panorama, white cross removed, pose B, hold from frame 1800, RG FOV invisible at the end accepted).
