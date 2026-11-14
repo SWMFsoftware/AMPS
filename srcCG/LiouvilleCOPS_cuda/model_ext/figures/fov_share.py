@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/figures_cluster/scripts/fov_share.py (on Voyager: /data001/highresolu_vt/cops_output/figures_cluster/scripts/fov_share.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: e07d3707c5d0be4aeb2f57735a65a1bce170026e6323f744631a3de259815e49
+# SHA256 of the run copy = SHA256 of this file without these header lines: f2699ce0bb60910c084ee54739e90f2b33e1ddecb32d1847e2606434c3017645
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: share of the modelled NG / RG surface signal from directions outside each gauge's IK field of view (frozen
-#   nonneg_contrib record contributions; late rows W10x5); 2026-11-13 --cone-rg / --cone-ng: circular cones instead of
-#   the IK rectangles.
-# RUN: jobs/fov_share.sbatch (CONE_RG, CONE_NG); jobs 124731 (c5), 124789 (c9), 124885 (c9, circles 45 / 77.5 deg)
+# WHAT: Share of the modelled NG / RG surface signal outside the gauges' fields of view (IK rectangles, --cone-
+#   rg/--cone-ng circles); 2026-11-14: --hemi-sc (front half-spaces minus the spacecraft seen from the deck point: back
+#   / shield part and spacecraft-blocked part, blocked solid-angle fractions); defaults unchanged (job 124945 vs
+#   124885).
+# RUN: jobs/fov_share.sbatch (normal128cores, CPU)
 # ==== end of header ====
 """Share of the MODELLED NG and RG surface signal that comes from directions outside each gauge's IK field of view
 (lead / user 2026-11-13, with the movies of the observable part: "for each of the 95 post-gap observations and for the
@@ -31,6 +32,14 @@ late observations).
 Added 2026-11-13 (detach-200 m movies; user: circular fields of view): --cone-rg DEG / --cone-ng DEG replace that gauge's
 IK rectangle by a circular cone of DEG half-angle around its boresight (unit direction d inside when d.b >= cos DEG; the
 boresight of the row time from fov.npz); default: the IK rectangles (unchanged).
+Added 2026-11-14 (panorama movies with the fit's half-spaces; user: "the field of view of NG is 2pi half space (everything
+that is not blocked by the spacecraft body)"): --hemi-sc <sc_rows.npz> --movies-py <cops_movies.py> --prep <prep.npz>
+[--deck rosina-deck|x,y,z]: per record the direction d from the fit's gauge (kernel header) to the facet centroid; RG
+coloured when d.b_RG > 0 and the segment deck point -> centroid misses the spacecraft model (cops_movies
+sc_segments_blocked: bus box, ten solar-array panels, HGA disc, at the row time from sc_rows.npz); NG coloured when
+d.b_NG > 0 and not blocked; boresights b from prep.npz rows_b_* (SPICE, the base build's kernels). Reported: the share
+NOT coloured, split into the back half-space part (NG: the srccg_shield part behind) and the spacecraft-blocked front
+part, and the blocked fraction of each half-space's solid angle seen from the deck point.
 """
 
 import argparse
@@ -76,6 +85,20 @@ def row_task(task):
         out["in_" + g] = float(c[m].sum())
         out["recs_in_" + g] = int(m.sum())
     out["records"] = int(len(rec))
+    if _FOV.get("hemi") is not None:          # 2026-11-14: half-spaces minus the spacecraft (--hemi-sc)
+        H_ = _FOV["hemi"]
+        CM, SCR = H_["CM"], H_["scr"]
+        prim = CM.sc_primitives(SCR, row)
+        deck = CM.sc_point_body(SCR, row, H_["deck_sc"])
+        blk = CM.sc_segments_blocked(np, deck, _FOV["cent"][face], prim)
+        for g, c in (("NG", ng), ("RG", rg)):
+            b = np.asarray(H_["b_" + g][row], np.float64)
+            fr = (d @ (b / np.linalg.norm(b))) > 0.0
+            out["back_" + g] = float(c[~fr].sum())
+            out["blk_" + g] = float(c[fr & blk].sum())
+            out["in_" + g] = float(c[fr & ~blk].sum())
+            out["hs_blocked_" + g] = CM.halfspace_blocked_frac(deck, b, prim, n=100000)
+        out["deck_vs_gauge_m"] = float(np.linalg.norm(deck - x))
     return out
 
 
@@ -86,6 +109,11 @@ def main():
     ap.add_argument("--procs", type=int, default=16)
     ap.add_argument("--cone-rg", type=float, default=None, help="RG: circular cone of this half-angle [deg] instead of the IK rectangle")
     ap.add_argument("--cone-ng", type=float, default=None, help="NG: circular cone of this half-angle [deg] instead of the IK rectangle")
+    ap.add_argument("--hemi-sc", default=None, help="2026-11-14: sc_rows.npz: both gauges' front half-spaces minus the "
+                    "spacecraft-blocked directions (needs --movies-py, --prep)")
+    ap.add_argument("--movies-py", default=None)
+    ap.add_argument("--prep", default=None)
+    ap.add_argument("--deck", default="rosina-deck")
     a = ap.parse_args()
     t0 = time.time()
     out = Path(a.out)
@@ -138,6 +166,19 @@ def main():
                  "bs_NG": F["rows_bs_ng"], "bounds_NG": F["rows_bounds_ng"],
                  "bs_RG": F["rows_bs_rg"], "bounds_RG": F["rows_bounds_rg"],
                  "cone_RG": a.cone_rg, "cone_NG": a.cone_ng})
+    if a.hemi_sc:
+        import importlib.util
+        spec_ = importlib.util.spec_from_file_location("cops_movies_for_share", a.movies_py)
+        CM = importlib.util.module_from_spec(spec_)
+        sys.argv = [a.movies_py]
+        spec_.loader.exec_module(CM)
+        SCR = dict(np.load(a.hemi_sc, allow_pickle=False))
+        PR = np.load(a.prep, allow_pickle=False)
+        if not np.array_equal(np.asarray(PR["rows_ipoint"], np.int64), ipoint) or len(SCR["R_sc2body"]) != len(ipoint):
+            raise SystemExit("prep rows / sc_rows differ from the base rows")
+        _FOV["hemi"] = {"CM": CM, "scr": SCR, "deck_sc": CM.deck_point_sc(a.deck, SCR), "b_NG": PR["rows_b_ng"],
+                        "b_RG": PR["rows_b_rg"]}
+        print("hemi-sc: deck point %s m in ROS_SPACECRAFT" % _FOV["hemi"]["deck_sc"].tolist(), flush=True)
     if len(F["rows_bs_ng"]) != len(ipoint):
         raise SystemExit("fov.npz rows (%d) differ from the base rows (%d)" % (len(F["rows_bs_ng"]), len(ipoint)))
     tasks = sorted(((r, int(ipoint[r])) for r in range(len(ipoint))),
@@ -151,6 +192,8 @@ def main():
                 print("  %d / %d rows (%.0f s)" % (n, len(tasks), time.time() - t0), flush=True)
     nrow = len(ipoint)
     tot = {k: np.array([R[r][k] for r in range(nrow)]) for k in ("ng", "rg", "in_NG", "in_RG")}
+    if a.hemi_sc:
+        return hemi_summary(a, out, R, tot, layout, W, nrow, ipoint, utc, et, alt, refng, refrg, t0)
     late, gr = layout.late_rows, layout.grid_rows
     mod = {k: v.copy() for k, v in tot.items()}
     for k in mod:
@@ -217,6 +260,79 @@ def main():
     Path(str(out) + "_summary.txt").write_text("\n".join(T_) + "\n")
     print("\n".join(T_))
     print("fov_share done in %.0f s" % (time.time() - t0))
+    return 0
+
+
+def hemi_summary(a, out, R, tot, layout, W, nrow, ipoint, utc, et, alt, refng, refrg, t0):
+    """--hemi-sc output (2026-11-14): per row and per class (before the NG gap, gap, late W10x5) the share of the
+    modelled NG / RG surface signal NOT coloured by the half-space movies: back half-space part + spacecraft-blocked
+    front part; the blocked solid-angle fraction of each half-space (late: mean of the grid rows weighted by W)."""
+    for k in ("back_NG", "blk_NG", "back_RG", "blk_RG", "hs_blocked_NG", "hs_blocked_RG", "deck_vs_gauge_m"):
+        tot[k] = np.array([R[r][k] for r in range(nrow)])
+    late, gr = layout.late_rows, layout.grid_rows
+    mod = {k: v.copy() for k, v in tot.items()}
+    for k in ("ng", "rg", "in_NG", "in_RG", "back_NG", "blk_NG", "back_RG", "blk_RG"):
+        mod[k][late] = W @ tot[k][gr]
+    Wn = W.multiply(1.0 / np.asarray(W.sum(axis=1)).ravel()[:, None]).tocsr()
+    for k in ("hs_blocked_NG", "hs_blocked_RG", "deck_vs_gauge_m"):
+        mod[k][late] = Wn @ tot[k][gr]
+    q = {"NG_not_coloured": 1.0 - mod["in_NG"] / mod["ng"], "NG_back_shield": mod["back_NG"] / mod["ng"],
+         "NG_spacecraft_blocked": mod["blk_NG"] / mod["ng"], "RG_not_coloured": 1.0 - mod["in_RG"] / mod["rg"],
+         "RG_spacecraft_blocked": mod["blk_RG"] / mod["rg"], "RG_back": mod["back_RG"] / mod["rg"],
+         "NG_halfspace_solid_angle_blocked": mod["hs_blocked_NG"], "RG_halfspace_solid_angle_blocked": mod["hs_blocked_RG"]}
+    grid = np.zeros(nrow, bool)
+    grid[gr] = True
+    is_late = np.zeros(nrow, bool)
+    is_late[late] = True
+    obs = ((refng > 0) | (refrg > 0)) & ~grid
+    r_late0 = min(late, key=lambda r: et[r])
+    ng_obs = [r for r in range(nrow) if obs[r] and refng[r] > 0 and not is_late[r]]
+    r_gap = max(ng_obs, key=lambda r: et[r])
+    classes = {"before the NG gap (observation rows up to %s)" % utc[r_gap]: obs & ~is_late & (et <= et[r_gap]),
+               "in the NG gap (RG observation rows after %s, before %s)" % (utc[r_gap], utc[r_late0]):
+               obs & ~is_late & (et > et[r_gap]),
+               "late window (95 observations, W10x5)": is_late}
+    summ = {"definition": {
+        "not_coloured": "share of the modelled surface signal (frozen nonneg_contrib record_contributions, H2O + CO2, "
+                        "NG grain excluded) from records the half-space movies do not colour: NG = back half-space "
+                        "(d.b_NG <= 0: the srccg_shield part) + front records whose segment deck point -> facet centroid "
+                        "hits the spacecraft model; RG = front records hit by the spacecraft (+ back records, RG_back)",
+        "deck": "ROS_ROSINA (-226300) moved along +Z onto the bus top face + 1 mm (rosina-deck) unless --deck x,y,z",
+        "direction": "d = facet centroid - the fit's gauge position (kernel header); b from prep.npz rows_b_* (SPICE)",
+        "halfspace_solid_angle_blocked": "fraction of the half-space d.b > 0 seen from the deck point covered by the "
+                                         "spacecraft model (Fibonacci sphere, 100000 points)",
+        "late": "W10x5 of the 1-s grid rows (signals); W-weighted mean (fractions)"}, "inputs": vars(a), "classes": {}}
+    for name, m in classes.items():
+        ent = {"rows": int(m.sum())}
+        for key, v in q.items():
+            g = key[:2]
+            sel = m & np.isfinite(v) & ((refng > 0) if g == "NG" else (refrg > 0))
+            if sel.any():
+                ent[key] = {"rows": int(sel.sum()), "median": float(np.median(v[sel])), "min": float(v[sel].min()),
+                            "max": float(v[sel].max()), "mean": float(v[sel].mean())}
+        summ["classes"][name] = ent
+    lines = ["# fov_share.py --hemi-sc: per row iPoint UTC altitude_m class " + " ".join(q) + " model_NG_Pa model_RG_Pa", ""]
+    for r in range(nrow):
+        if not obs[r] and not is_late[r]:
+            continue
+        cl = [n for n, m in classes.items() if m[r]]
+        lines.append("%d %s %.3f %s %s %.6e %.6e" % (ipoint[r], utc[r], alt[r], (cl[0].split(" (")[0] if cl else "-").replace(
+            " ", "_"), " ".join("%.6f" % q[k][r] for k in q), mod["ng"][r], mod["rg"][r]))
+    Path(str(out) + ".txt").write_text("\n".join(lines) + "\n")
+    json.dump(summ, open(str(out) + "_summary.json", "x"), indent=1, default=str)
+    T_ = ["# share of the modelled surface signal NOT coloured by the half-space movies (RG: front half-space minus the "
+          "spacecraft; NG: front half-space minus the spacecraft, the shield part behind not shown); deck point %s" % a.deck, ""]
+    for name, ent in summ["classes"].items():
+        T_.append("%s: %d rows" % (name, ent["rows"]))
+        for key in q:
+            if key in ent:
+                e = ent[key]
+                T_.append("  %s: median %.4f, range %.4f-%.4f, mean %.4f (%d rows)" % (key, e["median"], e["min"], e["max"],
+                                                                                    e["mean"], e["rows"]))
+    T_.append("deck point to the fit's gauge: %.3f-%.3f m" % (tot["deck_vs_gauge_m"].min(), tot["deck_vs_gauge_m"].max()))
+    Path(str(out) + "_summary.txt").write_text("\n".join(T_) + "\n")
+    print("\n".join(T_))
+    print("fov_share (hemi-sc) done in %.0f s" % (time.time() - t0))
     return 0
 
 

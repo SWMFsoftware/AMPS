@@ -1,10 +1,10 @@
 #!/bin/bash
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/cops_movies_prep.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/cops_movies_prep.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 8de150fa2fa1d535f1ae796ebc7ef1e896fcd8331faf8d9074c1af7f2145089f
+# SHA256 of the run copy = SHA256 of this file without these header lines: 0efff29ff948d8144324affcaa03bca8dff876103e354fd9b049c7ac6b9f0904
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: COPS movies step 1 (copy, contact, prep, fov, sc, plan, validate*, touchdown); 2026-11-14: PAN_TO / PAN_START
-#   / PAN_END for plan --pan-to (defaults unchanged).
+#   / PAN_END, SC_BLOCK_FROM and the step scrows (defaults unchanged).
 # RUN: sbatch --export=ALL (see the header)
 # ==== end of header ====
 # COPS movies, step 1 (user request 2026-11-12, one-minute movies of the descent as seen from RG / NG):
@@ -32,6 +32,8 @@
 # 2026-11-14 (panorama set; defaults unchanged): plan with CAMERA=detach and PAN_TO (pose json) = plan --pan-to (the camera
 #   moves to that final pose after the detach; PAN_START / PAN_END: --pan-start-frame / --pan-end-frame, default the
 #   detach frame / the last frame).
+# 2026-11-14 (half-space set; defaults unchanged): SC_BLOCK_FROM (rosina-deck or x,y,z) = validate_fixed --sc-block-from;
+#   step scrows = the spacecraft geometry at the observation-row times (HGA_CK, HGA_HOLD_UTC, SA_HOLD_UTC) -> sc_rows.npz.
 # Provenance in $WORK/provenance-<job>/. Shared-node rule: heavy processes with oom_score_adj 1000.
 #SBATCH --job-name=cops_movies_prep
 #SBATCH --partition=gpu
@@ -59,7 +61,7 @@ MASK_RG=${MASK_RG:-ik_fov}; MASK_NG=${MASK_NG:-ik_fov}; SAMPLES=${SAMPLES:-2000}
 TRACK_BASE=${TRACK_BASE:-$COPS_OUTPUT_ROOT/runs/shap8_012m_flat_earlier/base}; IMPACT_JSON=${IMPACT_JSON:-}
 HGA_CK=${HGA_CK:-}; HGA_HOLD_UTC=${HGA_HOLD_UTC:-}; EXTEND_TO_CONTACT=${EXTEND_TO_CONTACT:-}; EXTEND_TO_UTC=${EXTEND_TO_UTC:-}
 DETACH_ALT=${DETACH_ALT:-200}; TEST_FRAMES=${TEST_FRAMES:-}; SA_HOLD_UTC=${SA_HOLD_UTC:-}
-PAN_TO=${PAN_TO:-}; PAN_START=${PAN_START:-}; PAN_END=${PAN_END:-}
+PAN_TO=${PAN_TO:-}; PAN_START=${PAN_START:-}; PAN_END=${PAN_END:-}; SC_BLOCK_FROM=${SC_BLOCK_FROM:-}
 PY="$APP/.venv/bin/python -W ignore"
 stamp() { echo "$(date -u +%FT%TZ) $*"; }
 heavy() { bash -c 'echo 1000 > /proc/self/oom_score_adj; exec "$@"' heavy "$@"; }
@@ -67,7 +69,7 @@ mkdir -p "$WORK" || exit 1
 P=$WORK/provenance-$SLURM_JOB_ID; mkdir "$P" || exit 1
 cd "$APP" || exit 1
 stamp "job $SLURM_JOB_ID on $(hostname): STEPS=$STEPS WORK=$WORK"
-for v in RUN BASE CH GEOM WORK STEPS MPY FROM_WORK CAMERA CAMERA_ALT FOV_DEG MASK_RG MASK_NG SAMPLES TRACK_BASE IMPACT_JSON HGA_CK HGA_HOLD_UTC EXTEND_TO_CONTACT EXTEND_TO_UTC DETACH_ALT TEST_FRAMES SA_HOLD_UTC PAN_TO PAN_START PAN_END; do printf '%s=%s\n' "$v" "${!v}"; done > "$P/inputs.txt"
+for v in RUN BASE CH GEOM WORK STEPS MPY FROM_WORK CAMERA CAMERA_ALT FOV_DEG MASK_RG MASK_NG SAMPLES TRACK_BASE IMPACT_JSON HGA_CK HGA_HOLD_UTC EXTEND_TO_CONTACT EXTEND_TO_UTC DETACH_ALT TEST_FRAMES SA_HOLD_UTC PAN_TO PAN_START PAN_END SC_BLOCK_FROM; do printf '%s=%s\n' "$v" "${!v}"; done > "$P/inputs.txt"
 cp -p "$0" "$P/cops_movies_prep.sbatch.used"
 mkdir "$P/code" && cp -p "$MPY" "$S/cops_movies_geom.cpp" "$APP/cops_cuda/figures.py" "$APP/cops_cuda/kernels/render.cu" "$P/code/" || exit 1
 (cd "$P/code" && sha256sum * > SHA256SUMS)
@@ -154,6 +156,15 @@ if [[ ",$STEPS," == *,sc,* ]]; then
         ${SA_HOLD_UTC:+--sa-hold-utc "$SA_HOLD_UTC"} ${HGA_CK:+--hga-ck "$HGA_CK"} ${HGA_HOLD_UTC:+--hga-hold-utc "$HGA_HOLD_UTC"} > "$P/sc.log" 2>&1 || { stamp "sc FAILED"; cat "$P/sc.log"; exit 1; }
     tail -n 3 "$P/sc.log"
 fi
+if [[ ",$STEPS," == *,scrows,* ]]; then        # 2026-11-14: spacecraft geometry at the row times
+    stamp "scrows"
+    [ -n "$HGA_CK" ] || { stamp "scrows needs HGA_CK"; exit 1; }
+    helper || exit 1
+    run $PY "$MPY" scrows --work "$WORK" --kernels "$WORK/kernels.txt" --geom-exe "$P/cops_movies_geom_job" --hga-ck "$HGA_CK" \
+        ${HGA_HOLD_UTC:+--hga-hold-utc "$HGA_HOLD_UTC"} ${SA_HOLD_UTC:+--sa-hold-utc "$SA_HOLD_UTC"} > "$P/scrows.log" 2>&1 \
+        || { stamp "scrows FAILED"; cat "$P/scrows.log"; exit 1; }
+    tail -n 2 "$P/scrows.log"
+fi
 if [[ ",$STEPS," == *,plan,* ]]; then
     stamp "plan${CAMERA:+ (camera $CAMERA)}"
     if [ "$CAMERA" = detach ]; then
@@ -174,7 +185,7 @@ fi
 if [[ ",$STEPS," == *,validate_fixed,* ]]; then
     stamp "validate_fixed"
     run heavy $PY "$MPY" validate_fixed --work "$WORK" --geometry "$GEOM" --device 0 --mask-rg "$MASK_RG" --mask-ng "$MASK_NG" \
-        --samples "$SAMPLES" ${TEST_FRAMES:+--test-frames "$TEST_FRAMES"} > "$P/validate_fixed.log" 2>&1 || { stamp "validate_fixed FAILED"; nfail=$((nfail+1)); }
+        --samples "$SAMPLES" ${TEST_FRAMES:+--test-frames "$TEST_FRAMES"} ${SC_BLOCK_FROM:+--sc-block-from "$SC_BLOCK_FROM"} > "$P/validate_fixed.log" 2>&1 || { stamp "validate_fixed FAILED"; nfail=$((nfail+1)); }
     tail -n 30 "$P/validate_fixed.log"
 fi
 if [[ ",$STEPS," == *,touchdown,* ]]; then

@@ -411,6 +411,55 @@ FLAG_ON_TOP=1 NO_SUB_MARK=1 OUT=... TABLE=... TS_LABEL=... TOUCHDOWN=$WORK/touch
   PROCS=32 sbatch --export=ALL cops_movies_encode.sbatch
 ```
 
+**Half-space set (2026-11-14 UTC; user decisions in section 5):** `figures_cluster/12M/movies_softplus_smm1_9cycles_detach300_pan_hemi/`
+(work `<chain>/movies_work_c9_detach300_pan_hemi`, products copied from the panorama work; jobs 124942 copy/scrows/plan/
+validate_fixed/touchdown, 124943 render, 124944 `fov_share.py --hemi-sc` (replaces fov_share for this set), encode and qc;
+regression 124945, tests 124940). As the panorama set (pose B, pan to frame 1800 and hold, flag on top, no "+"), but each
+gauge's field of view = the fitted model's acceptance region: the front half-space of its boresight (`--mask-rg hemisphere
+--mask-ng hemisphere`; RG tint -l·b_RG 0–1, NG tint the front factor 1 - l·b_NG 1–2), minus the directions in which the
+spacecraft model (bus box, ten solar-array panels, HGA disc) hides the surface from the deck point (`--sc-block-from
+rosina-deck`: SPICE ROS_ROSINA (0.8928, -0.7447, 2.6058) m in ROS_SPACECRAFT moved onto the bus top face z = 2.655 m + 1 mm;
+exact segment test `sc_segments_blocked`, checked against render.cu ray_first_hit on the drawn triangles: 0 mismatches);
+direction, weight, facing and line of sight from the fit's gauge point as before; line of sight for a half-space by cube
+faces (`gauge_los_cube`); no 3D cone lines (outline on the surface only); NG's shield part behind is not shown (captions).
+`scrows` writes the spacecraft geometry at the observation rows for `fov_share.py --hemi-sc` (share not coloured = NG back
+part + spacecraft-blocked front part; RG spacecraft-blocked part; blocked solid-angle fraction of each half-space).
+```bash
+STEPS=copy,scrows,plan,validate_fixed,touchdown HGA_CK=<ROS_HGA_2016_V0043.BC> HGA_HOLD_UTC=... SA_HOLD_UTC=... CAMERA=detach DETACH_ALT=300 \
+  FOV_DEG=90 PAN_TO=<pan_B.json> PAN_END=1800 MASK_RG=hemisphere MASK_NG=hemisphere SC_BLOCK_FROM=rosina-deck \
+  FROM_WORK=$CHAIN/movies_work_c9_detach300_pan sbatch --nodelist=gpu002 --mem=100G --export=ALL cops_movies_prep.sbatch
+MASK_RG=hemisphere MASK_NG=hemisphere SC_SHADOW=1 SC_BLOCK_FROM=rosina-deck NGPU=8 ... cops_movies_render.sbatch
+NCYC=9 FOV=$WORK/fov.npz OUTP=<folder>/validation/hemi_share/hemi_share_c9 HEMI_SC=$WORK/sc_rows.npz HPREP=$WORK/prep.npz \
+  HMOVIES=<cops_movies.py> sbatch --export=ALL fov_share.sbatch
+FLAG_ON_TOP=1 NO_SUB_MARK=1 ... cops_movies_encode.sbatch
+```
+
+**Contribution set (2026-11-14 UTC; user decisions in section 5):** `figures_cluster/12M/movies_softplus_smm1_9cycles_detach300_pan_contrib/`
+(work `<chain>/movies_work_c9_detach300_pan_contrib`; frames base `runs/shap8_012m_lategrid_dz1.5/frames_base_pan1959` (frames
+0-1808, job 124961, stopped at the end of the RG temperature table) + `frames_base_pan1959_tail` (frames 1808-1958, job 124969,
+TemperatureRGMode constant 253.438 K); contributions `<chain>/frame_contrib_c9_pan1959` (job 124972); jobs 124966 prep, 124975
+render, 124976 compose/encode, 124977 qc). As the half-space set's camera, spacecraft and flag, but the colour is the fitted
+model's contribution per unit surface area at the frame time, exactly as the fit computes it: the fitting base's executable
+and boundary.in run at the 1959 frame times (`frames_base.sbatch`), per record the frozen nonneg_contrib arithmetic with the c9
+state (`frame_contrib.py`): NG density F (√π β/2) K_n / A [m⁻⁵] (the fit's NG weight incl. the shield side inside K_n), RG
+flux F (K_Φ + V·b √π β/2 K_V) / A [m⁻⁴ s⁻¹]; no spacecraft blocking; facets without a kernel record uncoloured. Fixed log
+range per gauge (`contrib_range.py`): bottom = the per-area level above which the facets carry 90 % of the surface signal at
+frame 0, top = the 99.99th percentile of the per-area values of frames 1790-1799 (the last 10 frames with COPS data; the
+literal rule on frames 1949-1958 fails for RG: the model's RG flux falls to 1.4e-18 m⁻² s⁻¹ at contact). No field-of-view
+outlines, mask boundary lines or cone lines; log colour bars in physical units. `compose --hold-seconds 15`: 450 frames
+holding the last frame with the flag waving ("touchdown — final frame held"). Verification (`verification.json`): the
+decomposition equals record_contributions to 1.6e-15; with the base's own source the sums equal the frames base's
+COPS_model.dat n / Φ columns to 4.9e-11 (print precision); frame 1799 = base row 1549 record for record.
+```bash
+FB=$RUN/frames_base_pan1959 OBSF=<frame-time observation file> sbatch --nodelist=gpu002 --export=ALL frames_base.sbatch
+FB=$RUN/frames_base_pan1959_tail OBSF=<same> FIRST=1808 TRG_CONST=253.438 sbatch --nodelist=gpu002 --export=ALL frames_base.sbatch
+CHAIN=... FB=... FB_TAIL=... OUTC=$CHAIN/frame_contrib_c9_pan1959 sbatch --export=ALL frame_contrib.sbatch
+contrib_range.py $CHAIN/frame_contrib_c9_pan1959 $CHAIN/frame_contrib_c9_pan1959/color_range_last_obs.json
+STEPS=copy,plan,touchdown CAMERA=detach DETACH_ALT=300 FOV_DEG=90 PAN_TO=<pan_B.json> PAN_END=1800 FROM_WORK=<half-space work> ... cops_movies_prep.sbatch
+SC_SHADOW=1 COLOR_CONTRIB=<frame_contrib dir> COLOR_RANGE=<color_range_last_obs.json> NGPU=8 ... cops_movies_render.sbatch
+FLAG_ON_TOP=1 NO_SUB_MARK=1 HOLD_SECONDS=15 ... cops_movies_encode.sbatch
+```
+
 ### 3.6 Other analysis figures and tables
 
 * `figures_cluster/scripts/positive_table.py`, `positive_cycles_table.py`, `finetune_table.py`, `scan_summary.py`:
@@ -539,6 +588,36 @@ FLAG_ON_TOP=1 NO_SUB_MARK=1 OUT=... TABLE=... TS_LABEL=... TOUCHDOWN=$WORK/touch
   (frames 1800-1958); the RG field of view is accepted to be invisible in the last frames (a ~2.8 m disc under the
   spacecraft at contact; visible earlier during the motion; said in the captions); flag on top, cones, spacecraft model and
   timeline as the detach-300 m set.
+* 2026-11-13 (movies; user ~22:20 CST "modify the movie: 1) the field of view of NG is 2pi half space (everything that is
+  not blocked by the spacecraft body); 2) verify the field of view of RG: is that actually 45 degrees? what was used in the
+  fitting model"; the lead verified that the fit uses RGAcceptance = hemisphere (front half-space, weight -l·b_RG, no 45°
+  cut; the 45° is only the IK's nominal width); user choices): a NEW set `movies_softplus_smm1_9cycles_detach300_pan_hemi/`
+  (the panorama set stays); RG = the fit's front half-space (2π) with tint -l·b_RG (0–1) minus directions blocked by the
+  spacecraft body; NG = the front half-space of the NG boresight (2π) with tint the fit's front factor 1 - l·b_NG (1–2)
+  minus directions blocked by the spacecraft body; the fit's srccg_shield part behind NG is NOT shown (said in the
+  captions); blocking tested from the SPICE ROSINA point moved onto the +Z deck (it lies 4.9 cm inside the SPICE bus box;
+  z = 2.655 m + 1 mm), against the spacecraft model (bus, both wings, HGA); a surface point is coloured for a gauge when it
+  is in the gauge's front half-space (direction from the fit's gauge point, as the fit computes l and the weight), faces
+  the gauge, has a free line of sight to the fit's gauge point and the segment deck point -> surface point misses the
+  spacecraft; raw factors and colour bars kept (RG 0–1, NG 0–2); no translucent cone lines (a half-space has no cone),
+  only the outline on the surface; the shares of the modelled signal the movie does not colour replace fov_share for
+  this set; everything else as the panorama set (pose B, pan to frame 1800 then hold, flag on top, no white cross,
+  Rosetta model, end at the first contact).
+* 2026-11-13/14 (movies; user ~23:10 CST "prepare recolored movies; use the fixed log range; add 15 sec pause time after
+  the last frame with the waving flag; closer to the end of the movies an isoline appeared on the surface -- remove that; at
+  some point during descent, a circle is shown presenting the limited field of view of the RG. that circle is shown only for
+  a few frames -- remove that circle at all"; lead's specification, user decision on the colour): a NEW set
+  `movies_softplus_smm1_9cycles_detach300_pan_contrib/` (the half-space set stays): colour = the contribution per unit
+  surface area exactly as the fitted model computes it (no spacecraft blocking; NG including its back side through the
+  shield; RG its full front hemisphere; facets the gauge cannot see contribute 0 as in the kernels): NG density per m² of
+  surface [m⁻³ m⁻²], RG flux into RG per m² [m⁻² s⁻¹ m⁻²]; computed per frame from fitting-base kernels at the frame
+  times; fixed log range per gauge over the whole movie (bottom: 90 % of the signal at the first frame; top: 99.99th
+  percentile at the end - taken over the last 10 frames with COPS data, because the model's RG surface flux falls
+  from 5e15 m⁻² s⁻¹ at 10:39:28.9 to 1.4e-18 from 10:39:29.8 UTC, COPS 2.1 m: RG then sees only facets at the activity floor); below the bottom uncoloured relief, above the top the top colour; ALL field-of-view outlines and mask
+  boundary lines removed (the "isoline" was the white half-space edge line on the surface; the RG "circle" was the 90°
+  half-space edge drawn across the sky of the attached fisheye frames 688-900, and the 45° cone outline in the earlier
+  cone sets); no cone lines; a 15 s hold of the last frame with the flag waving; everything else as the panorama /
+  half-space sets (pose B, pan to frame 1800 then hold, flag on top, no white cross, Rosetta model, end at first contact).
 
 ## 6. Change log of this file
 
@@ -571,3 +650,11 @@ FLAG_ON_TOP=1 NO_SUB_MARK=1 OUT=... TABLE=... TS_LABEL=... TOUCHDOWN=$WORK/touch
   job variables PAN_TO, PAN_START, PAN_END, NO_SUB_MARK; `ng_source_map.py`, `ng_source_regions.py`,
   `ng_lobe_share_vs_altitude.py`, `pan_candidates.py`, `cops_movies_pan_stills.sbatch`); section 5 decisions of 2026-11-13
   (panorama, white cross removed, pose B, hold from frame 1800, RG FOV invisible at the end accepted).
+* 2026-11-14 (UTC): 3.7 the half-space set (`render/validate_fixed --sc-block-from`, `hemisphere` in the detach render with
+  the cube-face line of sight, `scrows`, `fov_share.py --hemi-sc`; job variables SC_BLOCK_FROM, step scrows, HEMI_SC,
+  HPREP, HMOVIES, DECK); section 5 decisions of 2026-11-13 (half-spaces minus the spacecraft, RG verified as the fit's
+  hemisphere, shield part not shown, deck point, no cone lines).
+* 2026-11-14 (UTC): 3.7 the contribution set (`render --color-contrib/--color-range`, `compose --hold-seconds`,
+  `frames_base.sbatch`, `frame_contrib.py`, `contrib_range.py`; job variables COLOR_CONTRIB, COLOR_RANGE, HOLD_SECONDS,
+  FIRST, TRG_CONST); section 5 decisions of 2026-11-13/14 (contribution colour, fixed log range, no outlines, no RG
+  circle, 15 s hold).

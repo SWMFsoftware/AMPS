@@ -10,6 +10,25 @@ relative to `COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output` unless absolut
 
 ## A. Findings
 
+### A11. Spacecraft occlusion of the gauges: none for RG, up to ~45 % of the modelled NG signal at the very end (2026-11-13)
+
+* The fit has no spacecraft occlusion (LiouvilleCOPS README §4.5: the NG shield table "is an instrument-response
+  approximation, not a spacecraft CAD occlusion model"). Test with the SPICE spacecraft model (bus box from
+  ROS_SPACECRAFT_C1..C8, ten solar-array panels, 2.2 m HGA disc; SA and HGA C-kernels, held after 10:39:19.851) seen
+  from the only documented ROSINA location, ROS_ROSINA (-226300) = (0.8928, −0.7447, 2.6058) m in ROS_SPACECRAFT, which
+  lies 4.9 cm inside the SPICE bus box and was lifted to 1 mm above the +Z face (the COPS boom geometry is undocumented).
+* Fraction of the gauge's front half-space blocked by the spacecraft: RG (boresight +Z, toward the comet) 0.000 at
+  every row (the wings and HGA lie behind the deck plane); NG (boresight −Y) 0.498, essentially constant (the bus
+  behind the deck plane).
+* Share of the modelled signal (c9 bounded softplus, the fit's weights; late window with W10x5) that falls in those
+  blocked directions: RG ≤ 1.7 % (mean 0.03 %, maximum at 5.5 m); NG 0 before the gap; in the late window up to
+  **45.3 % at 5.5 m** (mean 2.7 %), starting below ~37 m. Separately, NG's back-side shield part (in the fit) is up to
+  38.5 % of the late NG signal (mean 3.0 %, below ~50 m) and 18.5 % mean / 1.24 % median before the gap.
+* Consequence: in the last ~40 m the modelled NG pressure may be overestimated if the bus shields NG as this geometry
+  suggests; the size depends on the real NG position (boom), which is unknown here. RG is not affected.
+* Evidence: jobs 124942 (scrows), 124944 (`fov_share.py --hemi-sc`),
+  `figures_cluster/12M/movies_softplus_smm1_9cycles_detach300_pan_hemi/validation/hemi_share/`, `rosina_point.c/.log`.
+
 ### A10. Most of the modelled NG signal comes from the big lobe; near the end the local east rise takes over (2026-11-13)
 
 * Bounded softplus fit, c9 final state; per-facet NG contributions as the fit computes them (frozen nonneg_contrib
@@ -28,6 +47,13 @@ relative to `COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output` unless absolut
   east rise (24.7° elevation at azimuth 91°, 37–39 m high within 78–82 m); this rise hides the body from NG below
   ~88 m. Higher but farther walls: 79–80 m at 280 m to the north-west, 106–127 m at 450–860 m to the south and
   south-west.
+* RG near the end (2026-11-14, exact kernels at the movie frame times, job 124972): below ~8 m the modelled RG surface
+  flux comes from a south-facing slope ~17 m north of the touchdown point. Extrapolated past the last observation along
+  the SPICE trajectory, the modelled RG flux drops from 5.2e15 to ~1e-18 m⁻² s⁻¹ between 2.9 m and 2.1 m, when RG sees
+  only facets with (numerically) zero activity — model-only, beyond the data.
+* The fitted active regions have sharp edges (softplus with s = 1e-5 A_orig switches from active to ~0 within a
+  narrow band of L), so contribution maps show crisp-edged patches, e.g. a near-circular active patch on the rise east
+  of the touchdown point (visible from ~300 m to 40 m); these edges are activity edges, not instrument fields of view.
 * Caveat: model-dependent (bounded softplus c9); facet slopes on the 12M mesh are not used as cliff evidence (55–83 %
   of facets are steeper than 60°: surface roughness).
 * Evidence: job 124913 (`figures_cluster/scripts/ng_source_map.py`, `ng_source_regions.py`,
@@ -284,9 +310,13 @@ Data cost (lower is better; all on the lategrid base with the gauge +1.5 m and t
 * RG angular acceptance: hemisphere (as fitted) or the IK field of view? Late in the descent 53–99 % of the modelled RG
   signal comes from outside the IK FOV (A9).
 * Does Rosetta's own shadow (A7) change the late NG/RG? Not estimated (user 2026-11-13: movies only).
+* Spacecraft occlusion of NG in the last ~40 m (A11): where exactly is the NG (boom tip) relative to the bus, and
+  should the fit block directions through the spacecraft?
 
 ## D. Change log of this file
 
+* 2026-11-13 (late night): A11 (spacecraft occlusion: RG none, NG up to 45 % of the late signal at 5.5 m; shield
+  part); C new question.
 * 2026-11-13 (night): A10 (where the NG signal comes from: big lobe 76 % over the descent, east rise near the end).
 * 2026-11-13 (evening): A9 update: RG acceptance axisymmetric (round 6 mm opening); fov_share with circular cones;
   A7 contact times of the spacecraft model with the 12M surface on the RORB trajectory (first contact −Y wing

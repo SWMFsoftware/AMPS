@@ -1,14 +1,11 @@
 #!/bin/bash
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/cops_movies_render.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/cops_movies_render.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 7f9cea0371edbefdd38792b0971bdecb27b560c8cd3745987dfe45f628e92dac
+# SHA256 of the run copy = SHA256 of this file without these header lines: bdfeea022d7d3d4b487675e0ebe373f7d190286a2f8fc429cd4a6cc315971c86
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: job script (GPU, all GPUs of the allocation): cops_movies.py render, one worker per GPU, dynamic frame claims
-#   (split-independent); MASK_RG/MASK_NG/TINT_*/SC_SHADOW/SC_SAMPLES/NO_BOUNDARY options; a fixed-camera plan.npz makes
-#   it the fixed-camera render (2026-11-13); MOVIES_PY selects the cops_movies.py to run.
-# RUN: NGPU=8 WORKER0=0 NWORKERS=8 [MASK_RG=ik_fov MASK_NG=ik_fov SC_SHADOW=1] sbatch --nodelist=<gpu> --gpus-per-
-#   node=8 --export=ALL cops_movies_render.sbatch (OUTPUT_VISUALIZATION.md 3.7). Jobs: 124616-124630 (first movies),
-#   124730 (c5), 124788 (c9 gauge view), 124865 (c9 fixed camera)
+# WHAT: COPS movies step 2 (render on all GPUs); 2026-11-14: SC_BLOCK_FROM, COLOR_CONTRIB / COLOR_RANGE (defaults
+#   off).
+# RUN: sbatch --export=ALL (see the header)
 # ==== end of header ====
 # COPS movies, step 2: render the clean view frames (RG tint and NG tint) on all GPUs of the allocation.
 # figures_cluster/scripts/cops_movies.py render: one worker per GPU; every worker claims frames dynamically (exclusive
@@ -52,6 +49,10 @@ MOPTS=(); [ "$MASK_RG$MASK_NG" != nonenone ] && MOPTS=(--mask-rg "$MASK_RG" --ma
 [ -n "$NO_BOUNDARY" ] && MOPTS+=(--no-boundary)
 SC_SHADOW=${SC_SHADOW:-}; SC_SAMPLES=${SC_SAMPLES:-64}
 [ -n "$SC_SHADOW" ] && MOPTS+=(--sc-shadow --sc-samples "$SC_SAMPLES")
+SC_BLOCK_FROM=${SC_BLOCK_FROM:-}      # 2026-11-14: render --sc-block-from (default off)
+[ -n "$SC_BLOCK_FROM" ] && MOPTS+=(--sc-block-from "$SC_BLOCK_FROM")
+COLOR_CONTRIB=${COLOR_CONTRIB:-}; COLOR_RANGE=${COLOR_RANGE:-}    # 2026-11-14: render --color-contrib / --color-range (default off)
+[ -n "$COLOR_CONTRIB" ] && MOPTS+=(--color-contrib "$COLOR_CONTRIB" --color-range "$COLOR_RANGE")
 S=$COPS_OUTPUT_ROOT/figures_cluster/scripts
 MPY=${MOVIES_PY:-$S/cops_movies.py}
 PY="$APP/.venv/bin/python -W ignore"
@@ -60,7 +61,7 @@ for f in "$WORK/prep.npz" "$WORK/plan.npz" "$MPY"; do [ -e "$f" ] || { stamp "mi
 P=$WORK/provenance-$SLURM_JOB_ID; mkdir "$P" || exit 1
 cd "$APP" || exit 1
 stamp "job $SLURM_JOB_ID on $(hostname): NGPU=$NGPU WORKER0=$WORKER0 NWORKERS=$NWORKERS CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}"
-for v in RUN CH GEOM WORK NGPU WORKER0 NWORKERS FRAMES_DIR ONLY MASK_RG MASK_NG TINT_RG TINT_NG NO_BOUNDARY SC_SHADOW SC_SAMPLES MPY; do printf '%s=%s\n' "$v" "${!v}"; done > "$P/inputs.txt"
+for v in RUN CH GEOM WORK NGPU WORKER0 NWORKERS FRAMES_DIR ONLY MASK_RG MASK_NG TINT_RG TINT_NG NO_BOUNDARY SC_SHADOW SC_SAMPLES SC_BLOCK_FROM COLOR_CONTRIB COLOR_RANGE MPY; do printf '%s=%s\n' "$v" "${!v}"; done > "$P/inputs.txt"
 cp -p "$0" "$P/cops_movies_render.sbatch.used"
 mkdir "$P/code" && cp -p "$MPY" "$APP/cops_cuda/figures.py" "$APP/cops_cuda/kernels/render.cu" "$P/code/" && (cd "$P/code" && sha256sum * > SHA256SUMS)
 { git -C "$AMPS" rev-parse HEAD; git -C "$AMPS" status --short; } > "$P/git.txt" 2>&1
