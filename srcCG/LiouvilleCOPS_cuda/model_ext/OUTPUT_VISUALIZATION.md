@@ -357,6 +357,35 @@ WORK=... OUT=<movie folder> TABLE=<the fit's table> TS_LABEL='...' TOUCHDOWN=$WO
   PROCS=32 sbatch --export=ALL cops_movies_encode.sbatch; WORK=... OUT=... sbatch --export=ALL cops_movies_qc.sbatch
 ```
 
+**Detach-200 m set (2026-11-13/14; user decisions in section 5):** `figures_cluster/12M/movies_softplus_smm1_9cycles_detach200/`
+(work `<chain>/movies_work_c9_detach200`; jobs 124894 contact/prep/fov/sc/plan/validate_fixed/touchdown/validate_sc,
+124895 render, 124896 frametable/compose/encode, 124897 qc; fov_share with circles 124885). Circular fields of view
+(`--mask-rg cone:45 --mask-ng cone:77.5`); the camera at COPS (gauge view) until the first frame at or below 200 m
+(frame 992, 10:35:12.2 UTC), then frozen there (perspective 90°); the spacecraft model (bus, wings as five panels each,
+HGA disc; Lambert; near clipping 1 m), its shadow incl. the HGA, the translucent FOV cones (24 generators) and the
+footprints; frames after the last observation uniform in time to the first contact of the model with the surface
+(10:39:30.624 UTC, -Y wing). New in `cops_movies.py` (defaults unchanged, tested bit for bit, jobs 124887/124892 + CPU
+compose): `contact`, `prep --extend-to-utc`, `sc --hga-ck --hga-hold-utc`, `plan --camera detach --detach-altitude`,
+the detach render; `cops_movies_geom hgageom`; `fov_share.py --cone-rg/--cone-ng` (job variables CONE_RG/CONE_NG).
+HGA C-kernel: `cops_output/kernels_extra/20261113T232248Z/ROS_HGA_2016_V0043.BC` (ESA SPICE archive; SOURCE.txt).
+```bash
+export WORK=$CHAIN/movies_work_<new> HGA_CK=<ROS_HGA_2016_V0043.BC> HGA_HOLD_UTC=2016-09-30T10:39:19.851 IMPACT_JSON=<...>
+STEPS=contact,prep,fov,sc,plan,validate_fixed,touchdown,validate_sc EXTEND_TO_CONTACT=1 CAMERA=detach DETACH_ALT=200 FOV_DEG=90 \
+  MASK_RG=cone:45 MASK_NG=cone:77.5 TEST_FRAMES=<frames after the detach> sbatch --exclude=gpu003 --mem=80G --time=02:00:00 --export=ALL cops_movies_prep.sbatch
+MASK_RG=cone:45 MASK_NG=cone:77.5 SC_SHADOW=1 SC_SAMPLES=64 NGPU=8 WORKER0=0 NWORKERS=8 sbatch --nodelist=<gpu> --gpus-per-node=8 \
+  --cpus-per-task=32 --mem=200G --export=ALL cops_movies_render.sbatch
+OUT=... TABLE=... TS_LABEL=... TOUCHDOWN=$WORK/touchdown.npz STEPS=frametable,compose,encode PROCS=32 sbatch --export=ALL cops_movies_encode.sbatch
+OUTP=<folder>/validation/fov_share/<prefix> CONE_RG=45 CONE_NG=77.5 FOV=$WORK/fov.npz NCYC=9 sbatch --export=ALL fov_share.sbatch
+```
+**Detach-300 m set (2026-11-14 UTC; user decisions in section 5):** `figures_cluster/12M/movies_softplus_smm1_9cycles_detach300/`
+(work `<chain>/movies_work_c9_detach300`, prep/fov/sc/contact copied from the detach-200 m work; jobs 124909 copy/plan/
+validate_fixed/touchdown/validate_sc with `DETACH_ALT=300`, 124910 render, 124911 compose/encode with `FLAG_ON_TOP=1`,
+124912 qc). As the detach-200 m set but the camera detaches at the first frame at or below 300 m (frame 901, 10:33:05.7
+UTC, 299.98 m), and the touchdown flag is drawn on top (`compose --flag-on-top`: no depth test against the nucleus or the
+spacecraft, wherever its point projects into the image; tested: without the option the earlier frames reproduce bit for
+bit). Distances on the surface at the last frame (10:39:30.624): sub-bus point 0.16 m from the flag, the bus's first
+contact (10:39:30.753) 1.29 m, the wing's first contact 16.3 m (`tests/movies_detach300_20261113/flag_distances.json`).
+
 ### 3.6 Other analysis figures and tables
 
 * `figures_cluster/scripts/positive_table.py`, `positive_cycles_table.py`, `finetune_table.py`, `scan_summary.py`:
@@ -447,6 +476,31 @@ WORK=... OUT=<movie folder> TABLE=<the fit's table> TS_LABEL='...' TOUCHDOWN=$WO
   "touchdown (impact) 10:39:33.8 UTC" with a small static flag icon; check against the SPICE trajectory (RORB) crossing
   the 12M surface.
 
+* 2026-11-13 (movies; user "redo the movie: 1) is the field of view of RG a square? I thought it is a circle -- verify that
+  and if it is a circle then adjust the rendering; 2) during the descent -- detach the camera from the spacecraft at the
+  altitude of 200 m and freeze its location and orientation, and then render the descending spacecraft, its shadows and the
+  field of view of each gauge ..."; AskUserQuestion answers, relayed by the lead): a NEW set
+  `movies_softplus_smm1_9cycles_detach200/`: circular fields of view RG 45°, NG 77.5° half-angle around the boresights
+  (the RG entrance is a round 6 mm opening into a 60 mm spherical cavity, Pestoni et al. 2021; the IK rectangle is only
+  SPICE's encoding), same inclusion rule as the fixed camera (cone from the true gauge position, facing, line of sight),
+  tint = the fit's weight; camera as the gauge-view movies until COPS 200 m, then detached and frozen (position and axis
+  in 67P/C-G_CK) with a fixed 90° perspective (the switch labelled); the spacecraft as a 3D model (bus box, both
+  solar-array wings, the 2.2 m HGA disc, Sun-lit Lambert; no self- or nucleus shadow on it), its shadow on the surface
+  (bus, wings, HGA), the gauges' fields of view as the tinted footprint AND translucent 3D cone lines from the gauge
+  positions; COPS booms NOT drawn (no documented geometry; the fit's gauge point marked "COPS (fit)"); HGA orientation held
+  after its C-kernel ends (10:39:19.851 UTC), as the solar arrays; frames: the 1800 log-altitude frames to 5.5 m, then
+  uniform in time at the last step to the first contact of the model with the 12M surface (computed from the trajectory
+  and the model; no penetration shown); the time series ends at 10:39:26 UTC (said on the frames); the touchdown flag at
+  the ground-track impact point as before; fov_share recomputed for the circles.
+* 2026-11-13 (movies; user ~19:25 CST "draw the flag on top so it is always visible -- make Rosetta touchdown near the
+  flag; detach the camera at the altitude of 300 m"; lead's specification): a NEW set `movies_softplus_smm1_9cycles_detach300/`
+  (the detach-200 m set stays): the flag drawn on top in every frame where its point projects into the image, also in the
+  attached part, legend without "not visible", captions say it is drawn on top; the flag stays at the ground-track impact
+  point (centre-of-mass crossing 10:39:33.874) and the movie still ends at the first contact (10:39:30.624, -Y wing),
+  because at the last frame the sub-bus point (bus centre along the local normal) is 0.16 m from the flag (limit given:
+  ~5 m); camera detached at COPS 300 m with the same rules (frozen in 67P/C-G_CK, fixed 90° perspective, labelled, near
+  handling as before); everything else as the detach-200 m set.
+
 ## 6. Change log of this file
 
 * 2026-11-12: created (sections 1–6; 3.5 pending).
@@ -469,3 +523,8 @@ WORK=... OUT=<movie folder> TABLE=<the fit's table> TS_LABEL='...' TOUCHDOWN=$WO
   `validate_fixed`, `touchdown`, `compose --touchdown` (waving finish flag), job variables `MOVIES_PY`, `FROM_WORK`,
   `CAMERA`, `TOUCHDOWN`; the c9 movie sets `movies_softplus_smm1_9cycles/` and `movies_softplus_smm1_9cycles_fixedcam/`;
   section 5 decisions (fixed camera, line of sight, touchdown flag).
+* 2026-11-14 (UTC): 3.7 the detach-200 m set (circular FOVs, detach camera, spacecraft model with HGA, FOV cones, frames
+  to the first contact; `contact`, `prep --extend-to-utc`, `sc --hga-ck`, `plan --camera detach`, `hgageom`,
+  `fov_share.py --cone-*`), section 5 decisions of 2026-11-13 (detach set).
+* 2026-11-14 (UTC): 3.7 the detach-300 m set and `compose --flag-on-top` (job variable FLAG_ON_TOP), the copy step also
+  copies contact.json; section 5 decisions (flag on top, detach at 300 m).

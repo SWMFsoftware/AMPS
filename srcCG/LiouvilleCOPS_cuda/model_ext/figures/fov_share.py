@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/figures_cluster/scripts/fov_share.py (on Voyager: /data001/highresolu_vt/cops_output/figures_cluster/scripts/fov_share.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: c4c9fe0dd06cc7c5b1cae0105c7b5da070b547f90a2460a9c8610d820a433ca4
+# SHA256 of the run copy = SHA256 of this file without these header lines: e07d3707c5d0be4aeb2f57735a65a1bce170026e6323f744631a3de259815e49
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: analysis. Share of the modelled NG / RG surface signal (frozen nonneg_contrib.py record contributions) from
-#   directions outside each gauge's IK field of view, per base row and for the 95 late observations (W10x5); classes
-#   before / in the NG gap / late (2026-11-13).
-# RUN: jobs/fov_share.sbatch (CPU, 64 cores; NPY_DISABLE_CPU_FEATURES as nonneg_contrib.sbatch)
+# WHAT: share of the modelled NG / RG surface signal from directions outside each gauge's IK field of view (frozen
+#   nonneg_contrib record contributions; late rows W10x5); 2026-11-13 --cone-rg / --cone-ng: circular cones instead of
+#   the IK rectangles.
+# RUN: jobs/fov_share.sbatch (CONE_RG, CONE_NG); jobs 124731 (c5), 124789 (c9), 124885 (c9, circles 45 / 77.5 deg)
 # ==== end of header ====
 """Share of the MODELLED NG and RG surface signal that comes from directions outside each gauge's IK field of view
 (lead / user 2026-11-13, with the movies of the observable part: "for each of the 95 post-gap observations and for the
@@ -28,6 +28,9 @@ Run (CPU job, jobs/fov_share.sbatch):
       --geometry <maps geometry of the chain> --fov <movies_work/fov.npz> --out <prefix> [--procs N]
 Writes <prefix>.txt (per row) and <prefix>_summary.json / .txt (medians, ranges: before the NG gap, in the gap, the 95
 late observations).
+Added 2026-11-13 (detach-200 m movies; user: circular fields of view): --cone-rg DEG / --cone-ng DEG replace that gauge's
+IK rectangle by a circular cone of DEG half-angle around its boresight (unit direction d inside when d.b >= cos DEG; the
+boresight of the row time from fov.npz); default: the IK rectangles (unchanged).
 """
 
 import argparse
@@ -66,7 +69,10 @@ def row_task(task):
     d /= np.linalg.norm(d, axis=1)[:, None]
     out = {"row": row, "ip": ip, "ng": float(ng.sum()), "rg": float(rg.sum())}
     for g, c in (("NG", ng), ("RG", rg)):
-        m = inside(d, _FOV["bs_" + g][row], _FOV["bounds_" + g][row])
+        if _FOV.get("cone_" + g) is not None:          # circular cone (2026-11-13 option)
+            m = (d @ np.asarray(_FOV["bs_" + g][row], np.float64)) >= np.cos(np.radians(_FOV["cone_" + g]))
+        else:
+            m = inside(d, _FOV["bs_" + g][row], _FOV["bounds_" + g][row])
         out["in_" + g] = float(c[m].sum())
         out["recs_in_" + g] = int(m.sum())
     out["records"] = int(len(rec))
@@ -78,6 +84,8 @@ def main():
     for k in ("--contrib-code", "--ft-dir", "--fit-dir", "--base", "--geometry", "--fov", "--out"):
         ap.add_argument(k, required=True)
     ap.add_argument("--procs", type=int, default=16)
+    ap.add_argument("--cone-rg", type=float, default=None, help="RG: circular cone of this half-angle [deg] instead of the IK rectangle")
+    ap.add_argument("--cone-ng", type=float, default=None, help="NG: circular cone of this half-angle [deg] instead of the IK rectangle")
     a = ap.parse_args()
     t0 = time.time()
     out = Path(a.out)
@@ -128,7 +136,8 @@ def main():
     fov_utc = None
     _FOV.update({"NC": NC, "cent": el["centroid"],
                  "bs_NG": F["rows_bs_ng"], "bounds_NG": F["rows_bounds_ng"],
-                 "bs_RG": F["rows_bs_rg"], "bounds_RG": F["rows_bounds_rg"]})
+                 "bs_RG": F["rows_bs_rg"], "bounds_RG": F["rows_bounds_rg"],
+                 "cone_RG": a.cone_rg, "cone_NG": a.cone_ng})
     if len(F["rows_bs_ng"]) != len(ipoint):
         raise SystemExit("fov.npz rows (%d) differ from the base rows (%d)" % (len(F["rows_bs_ng"]), len(ipoint)))
     tasks = sorted(((r, int(ipoint[r])) for r in range(len(ipoint))),
@@ -166,7 +175,11 @@ def main():
         "share_outside": "1 - (modelled surface signal from records whose facet-centroid direction is inside the gauge's "
                          "IK FOV) / (total modelled surface signal); NG grain excluded; late = W10x5 of the grid rows",
         "contributions": "frozen nonneg_contrib.py record_contributions (the fit's FP32 records, H2O + CO2)",
-        "fov": "LiouvilleCOPS Geometry.cpp InsideFOV on the getfov bounds rotated to 67P/C-G_CK at the row time"},
+        "fov": ("LiouvilleCOPS Geometry.cpp InsideFOV on the getfov bounds rotated to 67P/C-G_CK at the row time"
+                if a.cone_rg is None and a.cone_ng is None else
+                "RG: %s; NG: %s (circular cone: d.b >= cos(half-angle), the getfov boresight at the row time)" % (
+                    "IK rectangle (InsideFOV)" if a.cone_rg is None else "circular cone of %g deg half-angle" % a.cone_rg,
+                    "IK rectangle (InsideFOV)" if a.cone_ng is None else "circular cone of %g deg half-angle" % a.cone_ng))},
         "inputs": vars(a), "classes": {}}
     lines = ["# fov_share.py: modelled surface-signal share from OUTSIDE the IK FOV, per row (iPoint UTC altitude_m "
              "class share_out_NG share_out_RG model_NG_Pa model_RG_Pa); late rows = W10x5", ""]
@@ -189,6 +202,11 @@ def main():
     json.dump(summ, open(str(out) + "_summary.json", "x"), indent=1, default=str)
     T_ = ["# share of the modelled surface signal from directions OUTSIDE the IK FOV (RG: 45 x 45 deg rectangle; NG: "
           "77.5 x 77.5 deg); the fit integrates RG over the hemisphere and NG with the srccg_shield acceptance", ""]
+    if a.cone_rg is not None or a.cone_ng is not None:
+        T_[0] = ("# share of the modelled surface signal from directions OUTSIDE the field of view (RG: %s; NG: %s); the fit "
+                 "integrates RG over the hemisphere and NG with the srccg_shield acceptance" % (
+                     "45 x 45 deg IK rectangle" if a.cone_rg is None else "circular cone, %g deg half-angle" % a.cone_rg,
+                     "77.5 x 77.5 deg IK rectangle" if a.cone_ng is None else "circular cone, %g deg half-angle" % a.cone_ng))
     for name, ent in summ["classes"].items():
         T_.append("%s: %d rows" % (name, ent["rows"]))
         for g in ("RG", "NG"):

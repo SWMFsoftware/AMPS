@@ -1,12 +1,12 @@
 // ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 // Run copy: $COPS_OUTPUT_ROOT/figures_cluster/scripts/cops_movies_geom.cpp (on Voyager: /data001/highresolu_vt/cops_output/figures_cluster/scripts/cops_movies_geom.cpp)
-// SHA256 of the run copy = SHA256 of this file without these header lines: 378fa7948668bd3a5683f9d64b84958eb34bc70e5fd34ddd467c5b82eca3f861
+// SHA256 of the run copy = SHA256 of this file without these header lines: 60324a2a795d7cf43faafce949569a894bc7c37be04b7c321e5fc47992a2b2fb
 // Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-// WHAT: SPICE helper of cops_movies.py (CSPICE): geom (gauge position, Sun, NG/RG boresights as LiouvilleCOPS
-//   Geometry.cpp), shield (BuildShieldTable copy), fov / fovinfo (IK FOVs rotated to 67P/C-G_CK, 2026-11-13), scgeom
-//   (spacecraft bus and solar-array corners, attitude, SA hold, 2026-11-13).
-// RUN: built in jobs/cops_movies_prep.sbatch: g++ -O2 -std=c++17 -I$CSPICE/include cops_movies_geom.cpp
-//   $CSPICE/lib/cspice.a -lm
+// WHAT: SPICE helper of the movies (CSPICE, read only): geom, shield, fov/fovinfo, scgeom; 2026-11-13 hgageom (HGA
+//   dish centre, ROS_HGA rotation, gimbal, solar-array frames and gimbals; HGA held after its C-kernel ends, solar
+//   arrays after theirs).
+// RUN: built by jobs/cops_movies_prep.sbatch: g++ -O2 -std=c++17 -I<cspice>/include cops_movies_geom.cpp
+//   <cspice>/lib/cspice.a -lm
 // ==== end of header ====
 // cops_movies_geom.cpp -- observation geometry for the COPS movies (user request 2026-11-12), read only.
 //
@@ -42,6 +42,12 @@
 //     from ROSETTA) | r_h [m]. NOTE (ROS_V38.TF): the origin of ROS_SPACECRAFT (-226000) is the launch-vehicle interface
 //     point, the origin of ROSETTA (-226) the centre of gravity; ROS_STRUCT_V8.BSP gives the structure relative to
 //     -226000 and no loaded kernel links -226000 to -226: the caller places -226000 relative to ROSETTA (option).
+//   cops_movies_geom hgageom <kernel list> <extra CK> <HGA hold UTC> <SA hold UTC>  < utc_list  > hga.txt
+//     (2026-11-13, detach-200 m movies: spacecraft model) per UTC line: utc et et_hga held_hga(0/1) et_sa | HGA dish rim
+//     centre ROS_HGA (-226075) relative to ROS_SPACECRAFT (-226000) in ROS_SPACECRAFT [m] at et_hga | rotation ROS_HGA ->
+//     ROS_SPACECRAFT (9, row-major) at et_hga | HGA gimbal ROS_HGA_GIMBAL (-226070) [m] | rotations ROS_SA+Y and ROS_SA-Y ->
+//     ROS_SPACECRAFT (9 + 9) at et_sa | SA gimbals ROS_SA+Y_GIMBAL (-226010), ROS_SA-Y_GIMBAL (-226020) [m]; et_hga =
+//     min(et, HGA hold) (the HGA C-kernel ends there; orientation held, user decision 2026-11-13), et_sa = min(et, SA hold)
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -223,7 +229,45 @@ static int scgeom(int argc, char** argv) {
   return 0;
 }
 
+static int hgageom(int argc, char** argv) {
+  erract_c("SET", 0, (SpiceChar*)"RETURN");
+  errprt_c("SET", 0, (SpiceChar*)"NONE");
+  load_kernels(argv[2]);
+  furnsh_c(argv[3]); check(argv[3]);
+  SpiceDouble et_hh, et_sh;
+  utc2et_c(argv[4], &et_hh); check("utc2et_c(hga hold)");
+  utc2et_c(argv[5], &et_sh); check("utc2et_c(sa hold)");
+  char line[1024];
+  while (fgets(line, sizeof line, stdin)) {
+    line[strcspn(line, "\r\n")] = 0;
+    if (!line[0]) continue;
+    SpiceDouble et, r[3][3];
+    utc2et_c(line, &et); check("utc2et_c");
+    double et_h = et <= et_hh ? et : et_hh, et_s = et <= et_sh ? et : et_sh;
+    printf("%s %.6f %.6f %d %.6f", line, et, et_h, et > et_hh ? 1 : 0, et_s);
+    double v[3];
+    spk_rel("-226075", et_h, "ROS_SPACECRAFT", "-226000", v);
+    printf(" %.9f %.9f %.9f", v[0], v[1], v[2]);
+    pxform_c("ROS_HGA", "ROS_SPACECRAFT", et_h, r); check("pxform_c(ROS_HGA)");
+    for (int i = 0; i < 3; i++) printf(" %.17g %.17g %.17g", r[i][0], r[i][1], r[i][2]);
+    spk_rel("-226070", et_h, "ROS_SPACECRAFT", "-226000", v);
+    printf(" %.9f %.9f %.9f", v[0], v[1], v[2]);
+    const char* saf[2] = {"ROS_SA+Y", "ROS_SA-Y"};
+    for (int k = 0; k < 2; k++) {
+      pxform_c(saf[k], "ROS_SPACECRAFT", et_s, r); check(saf[k]);
+      for (int i = 0; i < 3; i++) printf(" %.17g %.17g %.17g", r[i][0], r[i][1], r[i][2]);
+    }
+    spk_rel("-226010", et_s, "ROS_SPACECRAFT", "-226000", v);
+    printf(" %.9f %.9f %.9f", v[0], v[1], v[2]);
+    spk_rel("-226020", et_s, "ROS_SPACECRAFT", "-226000", v);
+    printf(" %.9f %.9f %.9f\n", v[0], v[1], v[2]);
+  }
+  return 0;
+}
+
 int main(int argc, char** argv) {
+  if (argc >= 6 && !strcmp(argv[1], "hgageom"))
+    return hgageom(argc, argv);
   if (argc >= 4 && !strcmp(argv[1], "scgeom"))
     return scgeom(argc, argv);
   if (argc >= 7 && !strcmp(argv[1], "shield"))

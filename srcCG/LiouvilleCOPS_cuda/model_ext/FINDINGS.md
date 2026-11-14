@@ -24,6 +24,15 @@ relative to `COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output` unless absolut
 
   RG by altitude: 0 % above 2 km, 21 % at 1–2 km, 53 % at 100–297 m, 80 % at 30–100 m, 91 % at 10–30 m, 99 % below
   10 m. Above 7.3 km the nucleus lies entirely outside the NG IK FOV.
+* **Update 2026-11-13 (c9 state, circular fields of view):** the RG entrance is a round 6 mm opening into a 60 mm
+  equilibrium sphere (Pestoni et al. 2021, A&A, arXiv:2012.01495), so its acceptance is axisymmetric; the IK rectangle
+  is only SPICE's encoding (no angular width is documented besides the IK's 90° / 155° full widths). With circular
+  cones (RG 45°, NG 77.5° half-angle) the shares outside are: RG before the gap median 0 % (up to 87 %, mean 20 %), in
+  the NG gap median 88 % (75–90 %), late window median 62 % (18–100 %); NG before the gap median 17 % (0.6–100 %),
+  late median 0.03 %. Evidence: job 124885,
+  `figures_cluster/12M/movies_softplus_smm1_9cycles_detach200/validation/fov_share/`. A thin round opening by itself
+  accepts the whole front hemisphere with a cosine weight, which is what the fit assumes; the 45° cone is the IK's
+  nominal width only.
 * **Consequence:** below ~1 km the modelled RG pressure depends on the assumed RG angular acceptance; with an IK-FOV
   acceptance most of the late RG signal of this model would be lost. Which acceptance is right is open (C). The IK
   itself is inconsistent: the same file lists FOV_ANGULAR_SIZE = π rad (180°) for RG and 5.41 rad (310°) for NG.
@@ -212,6 +221,9 @@ Data cost (lower is better; all on the lategrid base with the gauge +1.5 m and t
   298–7.0 m). Rosetta impact (extrapolated from the last two observations): 10:39:33.8 UTC, lon 12.164°, lat 31.685°
   (facet 11,194,754 of the 12M mesh); check 2026-11-13: the SPICE RORB trajectory of ROSETTA crosses the 12M surface on
   the same facet, 7.4 mm from this point, at 10:39:33.874 UTC (the COPS track, +1.5 m, 8.7 mm away, 1.70 s earlier).
+  With the SPICE spacecraft model (bus box, solar-array wings, 2.2 m HGA; SA and HGA orientation held after
+  10:39:19.851) the first contact with the 12M surface is the −Y solar-array wing at 10:39:30.624 UTC (±1 cm), i.e.
+  ~3.2 s before the centre of mass reaches the surface; the bus +Z face ~10:39:30.8.
 * None of the models reproduces the NG dip around 10:35–10:37.
 
 ## B. Method facts for the publication's methods section
@@ -251,6 +263,9 @@ Data cost (lower is better; all on the lategrid base with the gauge +1.5 m and t
 
 ## D. Change log of this file
 
+* 2026-11-13 (evening): A9 update: RG acceptance axisymmetric (round 6 mm opening); fov_share with circular cones;
+  A7 contact times of the spacecraft model with the 12M surface on the RORB trajectory (first contact −Y wing
+  10:39:30.624 UTC).
 * 2026-11-13 (later): A8 update with the 9-cycle continuation (c9 state; source areas stable vs c5); A6 row; A7 the
   touchdown point check: the RORB trajectory meets the 12M surface 7.4 mm from the ground-track impact point
   (10:39:33.874 UTC, facet 11,194,754).

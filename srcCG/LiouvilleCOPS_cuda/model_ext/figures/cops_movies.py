@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/figures_cluster/scripts/cops_movies.py (on Voyager: /data001/highresolu_vt/cops_output/figures_cluster/scripts/cops_movies.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 74125d596af745753cdf1eaaa94c682512410976784f3820ca2888c747891c9b
+# SHA256 of the run copy = SHA256 of this file without these header lines: 77c422c29cd2c1a218e6eb3e4418a869173ce54ff72af75fffc9115e5e7c3a60
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: figure / movie script. One-minute movies of the final descent seen from the COPS gauges (camera at the gauge
 #   along the RG axis, sunlit 12M nucleus tinted by the gauges' acceptance weights, NG/RG time series): prep, plan,
-#   validate, render (GPU, dynamic frame claims), compose, encode, compare; from 2026-11-13 also fov / validate_fov
-#   (IK-FOV observable-part masks), sc / validate_sc (spacecraft shadow, movies only), diagnose (dark-pixel
-#   classification), frametable; and (2026-11-13, second set) plan --camera fixed (camera frozen in the body frame at
-#   the COPS position and attitude of 100 m altitude), the gauges' line of sight from the true gauge position (depth
-#   map + exact edge refinement), validate_fixed, touchdown (the ground-track impact point, visibility, SPICE check)
-#   and compose --touchdown (waving chequered finish flag). Defaults reproduce the earlier movies bit for bit.
-# RUN: jobs/cops_movies_{prep,render,encode,qc}.sbatch (OUTPUT_VISUALIZATION.md 3.7); c9 jobs 124863-124868 ran it as
-#   the frozen copy model_ext_frozen/cops_movies_fixedcam_20261113T215921Z (identical); tests in
-#   tests/movies_fixedcam_touchdown_20261113/ (jobs 124819, 124844, 124845)
+#   validate, render (GPU, dynamic frame claims), compose, encode, compare; from 2026-11-13 also fov / validate_fov, sc
+#   / validate_sc, diagnose, frametable; plan --camera fixed, the gauges' line of sight, validate_fixed, touchdown,
+#   compose --touchdown (waving finish flag); circular FOVs (--mask-* cone:<deg>), prep --extend-to-utc, contact, sc
+#   --hga-ck, plan --camera detach (--detach-altitude) with the spacecraft model, its shadow and the FOV cones; compose
+#   --flag-on-top (no depth test for the flag). Defaults reproduce every earlier movie bit for bit.
+# RUN: jobs/cops_movies_{prep,render,encode,qc}.sbatch (OUTPUT_VISUALIZATION.md 3.7); frozen copies
+#   model_ext_frozen/cops_movies_fixedcam_20261113T215921Z, cops_movies_detach200_20261114T005334Z,
+#   cops_movies_flagontop_*; tests tests/movies_fixedcam_touchdown_20261113/, movies_detach200_20261113/,
+#   movies_detach300_20261113/
 # ==== end of header ====
 """One-minute movies of Rosetta's final descent (2016-09-30) as seen from the COPS gauges, with the softplus activity
 model after 5 fit / fine-tuning cycles (final state).
@@ -151,6 +151,18 @@ MASK_LINE_ALPHA = 0.85
 R_SUN_M = 6.957e8                         # IAU 2015 nominal solar radius [m]
 SA_HOLD_UTC = "2016-09-30T10:39:19.851"   # end of ROS_SA_2016_V0042.BC coverage (ckbrief), orientation held after it
 SC_SAMPLES = 64
+# detach-200 m movies (2026-11-13, user decisions; new options, defaults unchanged): spacecraft model and FOV cones
+HGA_DIAMETER = 2.2             # m: "A 2.2m diameter HGA" (PDS INSTHOST.CAT; ESA); drawn as a flat disc (no depth documented)
+SA_PANELS, SA_PANEL_LEN = 5, 2.736   # five panels per wing, substrate 2.25 x 2.736 m (PDS INSTHOST.CAT)
+SC_NEAR = 1.0                  # m: spacecraft geometry closer than this to the camera is not drawn (near clipping)
+SC_TESS = 0.25                 # m: tessellation of the drawn spacecraft model (perspective depth interpolation)
+SC_COL = {"bus": (0.17, 0.17, 0.18), "bus_back": (0.17, 0.17, 0.18), "cells": (0.12, 0.16, 0.40),
+          "sa_back": (0.21, 0.21, 0.22), "gap": (0.06, 0.06, 0.07), "hga": (0.15, 0.16, 0.16)}
+SC_LINE_COL = (0.72, 0.72, 0.75)     # V-yoke arms and the HGA strut (drawn as lines: their diameters are not documented)
+CONE_N = 24                    # generator lines per FOV cone
+CONE_COL = {"RG": (1.0, 0.62, 0.11), "NG": (0.31, 0.76, 0.97)}
+CONE_ALPHA = 0.55
+CONTACT_TOL = 0.01             # m: the model "touches" the surface when a sample comes this close (unsigned distance)
 # fixed camera (2026-11-13, user decisions: the COPS position and the RG / NG boresights when the COPS altitude is 100 m,
 # frozen in 67P/C-G_CK; perspective, 90 deg horizontal field of view; the gauges' visible surface from the true gauge
 # position: IK FOV, facing the gauge, line of sight); default: the camera at the gauge (the earlier movies)
@@ -502,11 +514,157 @@ def cmd_sc(a):
     if chk["bus_corners_vs_spice_max_m"] > 1e-3 or (chk["wing_corners_vs_spice_max_m (frames not held)"] or 0) > 1e-3 \
             or chk["gauge_position_vs_prep_max_m"] > 1e-3:
         raise SystemExit("spacecraft geometry checks failed")
+    extra = {}
+    if getattr(a, "hga_ck", None):            # detach-200 m set (2026-11-13): HGA dish and solar-array frames
+        extra, chk_h = sc_hga_geometry(a, utcs)
+        chk.update(chk_h)
+        say("HGA checks: %s" % json.dumps(chk_h))
     np.savez(work / "sc.npz", et=et, et_sa=et_sa, held=held, x_rosetta=xros, x_rosetta_cog=x_cog, R_sc2body=R,
-             bus_sc=bus, wing_sc=wing, sun_sc=sun_sc, rh_m=rh, origin_offset=off)
+             bus_sc=bus, wing_sc=wing, sun_sc=sun_sc, rh_m=rh, origin_offset=off, **extra)
     json.dump(chk, open(work / "sc_checks.json", "w"), indent=1)
     say("sc done")
     return 0
+
+
+def hgageom_rows(a, utcs):
+    """cops_movies_geom hgageom for the UTC strings: dict of arrays (HGA dish centre, ROS_HGA rotation, gimbal; solar-array
+    frame rotations and gimbals), all in ROS_SPACECRAFT relative to -226000."""
+    r = subprocess.run([a.geom_exe, "hgageom", a.kernels, a.hga_ck, a.hga_hold_utc, a.sa_hold_utc],
+                       input="\n".join(utcs) + "\n", capture_output=True, text=True, check=True)
+    L = [ln.split() for ln in r.stdout.split("\n") if ln.strip()]
+    if len(L) != len(utcs):
+        raise SystemExit("hgageom: %d lines for %d times" % (len(L), len(utcs)))
+    V = np.array([[float(x) for x in t[1:]] for t in L])
+    o = 4
+    out = {"et_hga": V[:, 1], "hga_held": V[:, 2].astype(bool)}
+    out["hga_c_sc"] = V[:, o:o + 3]; o += 3
+    out["hga_R"] = V[:, o:o + 9].reshape(-1, 3, 3); o += 9
+    out["hga_gim_sc"] = V[:, o:o + 3]; o += 3
+    out["sa_R_py"] = V[:, o:o + 9].reshape(-1, 3, 3); o += 9
+    out["sa_R_my"] = V[:, o:o + 9].reshape(-1, 3, 3); o += 9
+    out["sa_gim_py"] = V[:, o:o + 3]; o += 3
+    out["sa_gim_my"] = V[:, o:o + 3]
+    return out
+
+
+def sc_hga_geometry(a, utcs):
+    """sc step with --hga-ck: the HGA and solar-array frame geometry of every frame time -> extra sc.npz keys + checks."""
+    G = hgageom_rows(a, utcs)
+    d = np.linalg.norm(G["hga_c_sc"] - G["hga_gim_sc"], axis=1)
+    bs = G["hga_R"][:, :, 2]
+    chk = {"hga_ck": str(Path(a.hga_ck).resolve()), "hga_ck_sha256": sha256_file(a.hga_ck), "hga_hold_utc": a.hga_hold_utc,
+           "hga_frames_held": int(G["hga_held"].sum()), "hga_diameter_m": HGA_DIAMETER,
+           "hga_gimbal_to_dish_centre_m_min_max": [float(d.min()), float(d.max())],
+           "hga_boresight_last_sc_frame": bs[-1].tolist(),
+           "hga_rotation_orthonormal_max_err": float(np.abs(np.einsum("kij,kil->kjl", G["hga_R"], G["hga_R"]) -
+                                                            np.eye(3)[None]).max()),
+           "sa_gimbals_sc_m": [G["sa_gim_py"][0].tolist(), G["sa_gim_my"][0].tolist()]}
+    return G, chk
+
+
+def sc_model(scz, k, tess=SC_TESS):
+    """Spacecraft model of frame k in ROS_SPACECRAFT relative to -226000 (detach-200 m movies, 2026-11-13): the bus box of
+    ROS_SPACECRAFT_C1..C8 (outward normals, drawn one-sided), the two solar-array wings (each the rectangle of its SPICE
+    corners ROS_SA+-Y_C1..C4, split into SA_PANELS panels of SA_PANEL_LEN along its length with equal gaps; cell side =
+    +Z of ROS_SA+-Y; two-sided), the HGA dish (a flat disc of HGA_DIAMETER around ROS_HGA, normal = its boresight +Z;
+    two-sided); lines: the V-yoke arms (SA gimbal -> the two inner wing corners) and the HGA strut (gimbal -> dish
+    centre). Returns dict V (n,3), T (m,3), part (m,), col_front, col_back (m,3), two_sided (m,), normal (m,3), lines."""
+    Vs, Ts, part, cf, cb, two, nrm = [], [], [], [], [], [], []
+
+    def add(Vq, Tq, pid, c_front, c_back, two_sided):
+        base = sum(len(v) for v in Vs)
+        Vs.append(Vq)
+        Ts.append(Tq + base)
+        e1, e2 = Vq[Tq[:, 1]] - Vq[Tq[:, 0]], Vq[Tq[:, 2]] - Vq[Tq[:, 0]]
+        n = np.cross(e1, e2)
+        nrm.append(n / np.linalg.norm(n, axis=1)[:, None])
+        part.append(np.full(len(Tq), pid)); cf.append(np.tile(c_front, (len(Tq), 1))); cb.append(np.tile(c_back, (len(Tq), 1)))
+        two.append(np.full(len(Tq), two_sided))
+
+    def grid(p0, e1, e2, step):
+        n1 = max(1, int(math.ceil(np.linalg.norm(e1) / step)))
+        n2 = max(1, int(math.ceil(np.linalg.norm(e2) / step)))
+        s_, t_ = np.meshgrid(np.linspace(0, 1, n1 + 1), np.linspace(0, 1, n2 + 1), indexing="ij")
+        Vq = p0[None, :] + s_.reshape(-1, 1) * e1[None, :] + t_.reshape(-1, 1) * e2[None, :]
+        idx = np.arange((n1 + 1) * (n2 + 1)).reshape(n1 + 1, n2 + 1)
+        a_, b_, c_, d_ = idx[:-1, :-1].ravel(), idx[1:, :-1].ravel(), idx[1:, 1:].ravel(), idx[:-1, 1:].ravel()
+        return Vq, np.concatenate([np.stack([a_, b_, c_], 1), np.stack([a_, c_, d_], 1)])
+
+    bus = np.asarray(scz["bus_sc"][k], float)
+    lo, hi = bus.min(axis=0), bus.max(axis=0)
+    L = hi - lo
+    for ax in range(3):
+        b_, c_ = (ax + 1) % 3, (ax + 2) % 3
+        eb, ec = np.zeros(3), np.zeros(3)
+        eb[b_], ec[c_] = L[b_], L[c_]
+        p_hi, p_lo = lo.copy(), lo.copy()
+        p_hi[ax] = hi[ax]
+        Vq, Tq = grid(p_hi, eb, ec, tess)                  # + face: eb x ec along +ax
+        add(Vq, Tq, 0, SC_COL["bus"], SC_COL["bus_back"], False)
+        Vq, Tq = grid(p_lo, ec, eb, tess)                  # - face
+        add(Vq, Tq, 0, SC_COL["bus"], SC_COL["bus_back"], False)
+    wing = np.asarray(scz["wing_sc"][k], float)
+    lines = []
+    for wi, (i0, gkey, rkey) in enumerate(((0, "sa_gim_py", "sa_R_py"), (4, "sa_gim_my", "sa_R_my"))):
+        w = wing[i0:i0 + 4]
+        g = np.asarray(scz[gkey][k], float)
+        zc = np.asarray(scz[rkey][k], float)[:, 2]           # cell side
+        # w0 -> w1 is the long edge (14.36 m), w1 -> w2 the width (2.25 m); the inner end is the one nearer the gimbal
+        i_in = 0 if np.linalg.norm(w[0] - g) < np.linalg.norm(w[1] - g) else 1
+        p_inner, p_outer = w[i_in], w[1 - i_in]
+        p_inner2 = w[3] if i_in == 0 else w[2]           # the other corner of the inner edge
+        el = p_outer - p_inner
+        Lw = float(np.linalg.norm(el))
+        ul = el / Lw
+        gap = (Lw - SA_PANELS * SA_PANEL_LEN) / (SA_PANELS - 1)
+        for pnl in range(SA_PANELS):
+            s0 = pnl * (SA_PANEL_LEN + gap)
+            p0 = p_inner + ul * s0
+            e1, e2 = ul * SA_PANEL_LEN, (p_inner2 - p_inner)
+            if np.dot(np.cross(e1, e2), zc) < 0:
+                p0, e1, e2 = p0 + e1, -e1, e2                    # flip so that the triangle normal is the cell side
+            Vq, Tq = grid(p0, e1, e2, tess)
+            add(Vq, Tq, 1 + wi, SC_COL["cells"], SC_COL["sa_back"], True)
+        lines += [(g, p_inner, SC_LINE_COL), (g, p_inner2, SC_LINE_COL)]
+    c_h = np.asarray(scz["hga_c_sc"][k], float)
+    Rh = np.asarray(scz["hga_R"][k], float)
+    xh, yh, zh = Rh[:, 0], Rh[:, 1], Rh[:, 2]
+    rr = np.linspace(0.0, 0.5 * HGA_DIAMETER, max(2, int(math.ceil(0.5 * HGA_DIAMETER / tess))) + 1)
+    na = 48
+    ang = np.linspace(0, 2 * np.pi, na, endpoint=False)
+    Vq = [c_h[None, :]]
+    for r_ in rr[1:]:
+        Vq.append(c_h[None, :] + r_ * (np.cos(ang)[:, None] * xh[None, :] + np.sin(ang)[:, None] * yh[None, :]))
+    Vq = np.vstack(Vq)
+    Tq = []
+    for j in range(na):
+        Tq.append([0, 1 + j, 1 + (j + 1) % na])
+    for ri in range(1, len(rr) - 1):
+        o0, o1 = 1 + (ri - 1) * na, 1 + ri * na
+        for j in range(na):
+            j1 = (j + 1) % na
+            Tq += [[o0 + j, o1 + j, o1 + j1], [o0 + j, o1 + j1, o0 + j1]]
+    Tq = np.array(Tq)
+    # orient: normal along the boresight +Z
+    e1, e2 = Vq[Tq[0, 1]] - Vq[Tq[0, 0]], Vq[Tq[0, 2]] - Vq[Tq[0, 0]]
+    if np.dot(np.cross(e1, e2), zh) < 0:
+        Tq = Tq[:, [0, 2, 1]]
+    add(Vq, Tq, 3, SC_COL["hga"], SC_COL["hga"], True)
+    lines.append((np.asarray(scz["hga_gim_sc"][k], float), c_h, SC_LINE_COL))
+    return {"V": np.vstack(Vs), "T": np.vstack(Ts).astype(np.int64), "part": np.concatenate(part),
+            "col_front": np.vstack(cf), "col_back": np.vstack(cb), "two_sided": np.concatenate(two),
+            "normal": np.vstack(nrm), "lines": lines}
+
+
+def sc_model_body(scz, k, tess=SC_TESS):
+    """sc_model in the body frame: x_rosetta + R_sc2body p."""
+    M = sc_model(scz, k, tess)
+    R = np.asarray(scz["R_sc2body"][k], float)
+    x = np.asarray(scz["x_rosetta"][k], float)
+    M["V"] = x[None, :] + M["V"] @ R.T
+    M["normal"] = M["normal"] @ R.T
+    M["lines"] = [(x + R @ p0, x + R @ p1, c) for p0, p1, c in M["lines"]]
+    return M
 
 
 class ScShadow:
@@ -525,6 +683,11 @@ class ScShadow:
         allp = np.vstack([bus, w])
         self.c_sc = 0.5 * (allp.min(axis=0) + allp.max(axis=0))
         self.rb = float(np.linalg.norm(allp - self.c_sc, axis=1).max())
+        self.hga = None                        # detach-200 m set (2026-11-13): the HGA dish, a flat 2.2 m disc
+        if "hga_c_sc" in getattr(scz, "files", ()):
+            c_h = np.asarray(scz["hga_c_sc"][k], float)
+            self.hga = (c_h, unit(np.asarray(scz["hga_R"][k], float)[:, 2]), 0.5 * HGA_DIAMETER)
+            self.rb_hga = max(self.rb, float(np.linalg.norm(c_h - self.c_sc)) + 0.5 * HGA_DIAMETER)
         self.s_body = unit(sun_body)
         self.s_sc = self.R.T @ self.s_body
         self.alpha = R_SUN_M / float(scz["rh_m"][k])
@@ -540,7 +703,8 @@ class ScShadow:
         wv = cp.asarray(self.c_sc)[None, :] - o
         tc = wv @ cp.asarray(self.s_sc)
         d2 = cp.sum(wv * wv, axis=1) - tc * tc
-        cand = cp.nonzero((tc > 0) & (d2 < (self.rb + 2.0 * self.alpha * cp.abs(tc) + 0.01) ** 2))[0]
+        rb = self.rb_hga if ("hga" in parts and self.hga is not None) else self.rb
+        cand = cp.nonzero((tc > 0) & (d2 < (rb + 2.0 * self.alpha * cp.abs(tc) + 0.01) ** 2))[0]
         out = cp.zeros(len(Pb))
         if len(cand) == 0:
             return out, 0
@@ -570,9 +734,217 @@ class ScShadow:
                     vv = (q @ cp.asarray(dvec)) / det
                     t = (q @ cp.asarray(e2)) / det
                     hit |= (u >= 0) & (u <= 1) & (vv >= 0) & (u + vv <= 1) & (t > 0)
+            if "hga" in parts and self.hga is not None:
+                c_h, n_h, r_h = self.hga
+                dn = float(np.dot(dvec, n_h))
+                if abs(dn) > 1e-14:
+                    t = ((cp.asarray(c_h)[None, :] - oc) @ cp.asarray(n_h)) / dn
+                    pnt = oc + t[:, None] * cp.asarray(dvec)[None, :] - cp.asarray(c_h)[None, :]
+                    hit |= (t > 0) & (cp.sum(pnt * pnt, axis=1) <= r_h * r_h)
             acc += hit
         out[cand] = acc / len(self.dirs)
         return out, int(len(cand))
+
+
+def sc_rows(a, utcs):
+    """scgeom + hgageom for UTC strings -> dict of arrays as sc.npz (bus_sc, wing_sc, R_sc2body, x_rosetta (offset 0),
+    HGA and solar-array keys)."""
+    r = subprocess.run([a.geom_exe, "scgeom", a.kernels, a.sa_hold_utc], input="\n".join(utcs) + "\n",
+                       capture_output=True, text=True, check=True)
+    V = np.array([[float(x) for x in l.split()[1:]] for l in r.stdout.split("\n") if l.strip()])
+    o = 3
+    out = {"et": V[:, 0], "x_rosetta": V[:, o:o + 3]}
+    o += 3
+    out["R_sc2body"] = V[:, o:o + 9].reshape(-1, 3, 3); o += 9
+    out["bus_sc"] = V[:, o:o + 24].reshape(-1, 8, 3); o += 24
+    out["wing_sc"] = V[:, o:o + 24].reshape(-1, 8, 3)
+    out.update(hgageom_rows(a, utcs))
+    return out
+
+
+def cmd_contact(a):
+    """First contact of the spacecraft model (sc_model: bus box, the two solar-array wings as their five panels, the HGA
+    disc; solar arrays and HGA held after their C-kernels end) with the 12M surface on the SPICE trajectory (ROSETTA,
+    RORB; structure origin -226000 at ROSETTA): contact at time t when a sample point of the model (5 cm grid) lies on or
+    below the surface (signed distance to the nearest of the 48 facets with the nearest centroids, sign by the facet
+    normal) or a mesh vertex lies inside the bus box or has crossed a panel or the HGA disc (sign of its distance to the
+    plate changed since --t-start, inside the plate outline). Coarse scan (0.1 s, 25 cm model), fine scan (5 ms, 5 cm)
+    from 0.2 s before the coarse distance first drops below 0.4 m, bisection to 0.1 ms -> <work>/contact.json.
+    The distance used is UNSIGNED (the sign from the nearest facet's normal is not reliable next to cliffs and
+    overhangs): contact = the first time a model sample comes within CONTACT_TOL of the surface or a mesh vertex crosses
+    a plate / enters the bus; the model is outside the nucleus before (ray parity check of its closest point at
+    --t-start); fine-scan steps of 5 ms (< 1 cm of motion at 0.9 m/s) so no sample can pass through unseen."""
+    from scipy.spatial import cKDTree
+    work = Path(a.work)
+    work.mkdir(parents=True, exist_ok=True)
+    if (work / "contact.json").exists():
+        raise SystemExit("%s/contact.json exists" % work)
+    nodes, faces, cent, norm, area = load_mesh(a.geometry)
+    tree = cKDTree(cent)
+    say("contact: mesh %d facets, KD-tree built" % len(faces))
+    e0 = None
+
+    def utc_of(et):
+        return (DAY0 + dt.timedelta(seconds=float(et - OFF))).strftime("%Y-%m-%dT%H:%M:%S.%f")
+
+    # et <-> UTC offset (no leap second in the interval): from one SPICE call
+    r = subprocess.run([a.geom_exe, "geom", a.kernels, "0", "0", "0"], input=a.t_start + "\n", capture_output=True,
+                       text=True, check=True)
+    et_s = float(r.stdout.split()[1])
+    t_s = dt.datetime.strptime(a.t_start[:19], "%Y-%m-%dT%H:%M:%S")
+    OFF = et_s - (t_s - DAY0).total_seconds() - (float("0" + a.t_start[19:]) if len(a.t_start) > 19 else 0.0)
+
+    def signed_min(G, k, tess):
+        M = sc_model(G, k, tess)
+        R, x = G["R_sc2body"][k], G["x_rosetta"][k]
+        Pb = x[None, :] + M["V"] @ R.T
+        _, idx = tree.query(Pb, k=48)
+        tri = nodes[faces[idx]]
+        pc, dist = FIG._closest_on_triangles(Pb, tri[:, :, 0], tri[:, :, 1], tri[:, :, 2])
+        j = np.argmin(dist, axis=1)
+        rows = np.arange(len(Pb))
+        sd = dist[rows, j]                    # unsigned (see the docstring)
+        i = int(np.argmin(sd))
+        vpart = np.repeat(M["part"], 1)
+        # part of the closest vertex: map vertex -> a triangle's part
+        vp = np.zeros(len(M["V"]), int)
+        vp[M["T"][:, 0]] = M["part"]
+        vp[M["T"][:, 1]] = M["part"]
+        vp[M["T"][:, 2]] = M["part"]
+        return float(sd[i]), int(vp[i]), Pb[i]
+
+    plates_ref = {}
+
+    def vertex_test(G, k, ref=False):
+        """mesh vertices inside the bus box or crossing a panel / the HGA disc (sign change since the reference)."""
+        R, x = G["R_sc2body"][k], G["x_rosetta"][k]
+        near = tree.query_ball_point(x, 40.0)
+        if not near:
+            return False, None
+        vid = np.unique(faces[np.asarray(near)].ravel())
+        p = (nodes[vid] - x[None, :]) @ R               # spacecraft frame
+        bus = G["bus_sc"][k]
+        lo, hi = bus.min(axis=0), bus.max(axis=0)
+        inside_bus = np.all((p >= lo) & (p <= hi), axis=1)
+        hit = bool(inside_bus.any())
+        what = "mesh vertex inside the bus" if hit else None
+        M = sc_model(G, k, 10.0)                      # coarse: only the plate outlines are needed
+        plates = []
+        wing = G["wing_sc"][k]
+        for wi, i0 in enumerate((0, 4)):
+            w = wing[i0:i0 + 4]
+            plates.append(("wing%+d" % (1 - 2 * wi), w[0], w[1] - w[0], w[3] - w[0]))
+        c_h, Rh = G["hga_c_sc"][k], G["hga_R"][k]
+        for name, p0, e1, e2 in plates:
+            n = np.cross(e1, e2)
+            n /= np.linalg.norm(n)
+            q = p - p0[None, :]
+            u = (q @ e1) / np.dot(e1, e1)
+            v = (q @ e2) / np.dot(e2, e2)
+            wv = q @ n
+            inr = (u >= 0) & (u <= 1) & (v >= 0) & (v <= 1)
+            key = name
+            if ref:
+                plates_ref[key] = (vid, np.sign(wv))
+            else:
+                rv, rs = plates_ref[key]
+                pos = dict(zip(rv.tolist(), rs.tolist()))
+                s_ref = np.array([pos.get(int(i), 0.0) for i in vid])
+                cross = inr & (s_ref != 0) & (np.sign(wv) != s_ref)
+                if cross.any():
+                    hit, what = True, "mesh vertex crossed %s" % name
+        q = p - c_h[None, :]
+        wv = q @ Rh[:, 2]
+        rad = np.linalg.norm(q - wv[:, None] * Rh[:, 2][None, :], axis=1)
+        if ref:
+            plates_ref["hga"] = (vid, np.sign(wv))
+        else:
+            rv, rs = plates_ref["hga"]
+            pos = dict(zip(rv.tolist(), rs.tolist()))
+            s_ref = np.array([pos.get(int(i), 0.0) for i in vid])
+            cross = (rad <= 0.5 * HGA_DIAMETER) & (s_ref != 0) & (np.sign(wv) != s_ref)
+            if cross.any():
+                hit, what = True, "mesh vertex crossed the HGA disc"
+        return hit, what
+
+    G0 = sc_rows(a, [a.t_start])
+    sd0, p0_, pt0 = signed_min(G0, 0, 0.05)
+    vertex_test(G0, 0, ref=True)
+    say("contact: at %s the model is %.3f m above the surface" % (a.t_start, sd0))
+    if sd0 <= CONTACT_TOL:
+        raise SystemExit("contact: the model already touches the surface at --t-start")
+    # the closest model point at --t-start is outside the nucleus: ray parity over all facets (3 directions)
+    A_, B_, C_ = nodes[faces[:, 0]], nodes[faces[:, 1]], nodes[faces[:, 2]]
+    E1, E2 = B_ - A_, C_ - A_
+
+    def crossings(o, d):
+        h = np.cross(d[None, :], E2)
+        det = np.einsum("ij,ij->i", E1, h)
+        ok = np.abs(det) > 1e-14
+        inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
+        s_ = o[None, :] - A_
+        u_ = np.einsum("ij,ij->i", s_, h) * inv
+        q_ = np.cross(s_, E1)
+        v_ = (q_ @ d) * inv
+        t_ = np.einsum("ij,ij->i", E2, q_) * inv
+        return int((ok & (u_ >= 0) & (v_ >= 0) & (u_ + v_ <= 1) & (t_ > 1e-9)).sum())
+    par = [crossings(np.asarray(pt0, float), unit(dd)) for dd in ([0, 0, 1.0], [0.3, -0.5, 0.81], [-0.6, 0.2, 0.77])]
+    del A_, B_, C_, E1, E2
+    if any(c % 2 for c in par):
+        raise SystemExit("contact: the closest model point at --t-start is inside the nucleus (crossings %s)" % par)
+    say("contact: closest model point at --t-start outside the nucleus (ray crossings %s)" % par)
+    # coarse scan
+    t = et_s
+    tc = None
+    while t < et_s + a.max_seconds:
+        t += 0.1
+        G = sc_rows(a, [utc_of(t)])
+        sd, _, _ = signed_min(G, 0, SC_TESS)
+        if sd < 0.4:
+            tc = t
+            break
+    if tc is None:
+        raise SystemExit("contact: no approach within %g s" % a.max_seconds)
+    # fine scan
+    t = tc - 0.2
+    t_hit = None
+    while t < tc + 2.0:
+        G = sc_rows(a, [utc_of(t)])
+        sd, part, pnt = signed_min(G, 0, 0.05)
+        vh, what = vertex_test(G, 0)
+        if sd <= CONTACT_TOL or vh:
+            t_hit = t
+            break
+        t += 0.005
+    if t_hit is None:
+        raise SystemExit("contact: no contact found")
+    t_lo, t_hi = t_hit - 0.005, t_hit
+    for _ in range(14):
+        tm = 0.5 * (t_lo + t_hi)
+        G = sc_rows(a, [utc_of(tm)])
+        sd, part, pnt = signed_min(G, 0, 0.05)
+        vh, what = vertex_test(G, 0)
+        if sd <= CONTACT_TOL or vh:
+            t_hi = tm
+        else:
+            t_lo = tm
+    G = sc_rows(a, [utc_of(t_hi)])
+    sd_hi, part_hi, pnt_hi = signed_min(G, 0, 0.05)
+    vh_hi, what_hi = vertex_test(G, 0)
+    G = sc_rows(a, [utc_of(t_lo)])
+    sd_lo, part_lo, pnt_lo = signed_min(G, 0, 0.05)
+    names = {0: "bus", 1: "+Y solar-array wing", 2: "-Y solar-array wing", 3: "HGA dish"}
+    res = {"definition": cmd_contact.__doc__, "t_start": a.t_start, "contact_utc": utc_of(t_hi), "contact_et": t_hi,
+           "last_free_utc": utc_of(t_lo), "bisection_resolution_s": t_hi - t_lo,
+           "min_distance_at_contact_m": sd_hi, "min_distance_before_m": sd_lo, "contact_tolerance_m": CONTACT_TOL,
+           "closest_point_at_t_start_ray_crossings": par, "distance_at_t_start_m": sd0,
+           "part_at_contact": names.get(part_hi), "point_at_contact_body_m": pnt_hi.tolist(),
+           "vertex_test_at_contact": what_hi, "model_sample_spacing_m": 0.05,
+           "sa_hold_utc": a.sa_hold_utc, "hga_hold_utc": a.hga_hold_utc, "hga_ck": a.hga_ck,
+           "structure_origin": "ROS_SPACECRAFT (-226000) at ROSETTA (-226), offset 0"}
+    json.dump(res, open(work / "contact.json", "x"), indent=1, default=float)
+    say("contact: %s" % json.dumps({k: v for k, v in res.items() if k != "definition"}))
+    return 0
 
 
 def cmd_prep(a):
@@ -595,6 +967,20 @@ def cmd_prep(a):
     utc_f = [(DAY0 + dt.timedelta(seconds=float(e - off))).strftime("%Y-%m-%dT%H:%M:%S.%f") for e in et_f]
     say("frames: %d, altitude %.2f m (%s) -> %.3f m (%s), uniform in log altitude" % (
         NFRAMES, alt_f[0], utc_f[0], alt_f[-1], utc_f[-1]))
+    ext = None
+    if getattr(a, "extend_to_utc", None):     # detach-200 m set (2026-11-13): frames after the last observation
+        tt = dt.datetime.strptime(a.extend_to_utc[:19], "%Y-%m-%dT%H:%M:%S")
+        et_end = (tt - DAY0).total_seconds() + (float("0" + a.extend_to_utc[19:]) if len(a.extend_to_utc) > 19 else 0.0) + off
+        step = float(et_f[-1] - et_f[-2])
+        n_ext = int(math.floor((et_end - et_f[-1]) / step + 1e-9))
+        et_x = et_f[-1] + step * np.arange(1, n_ext + 1)
+        if et_end - (et_x[-1] if n_ext else et_f[-1]) > 1e-6:
+            et_x = np.append(et_x, et_end)
+        ext = {"n_obs_frames": len(et_f), "step_s": step, "end_utc": a.extend_to_utc, "frames": len(et_x)}
+        et_f = np.concatenate([et_f, et_x])
+        utc_f = utc_f + [(DAY0 + dt.timedelta(seconds=float(e - off))).strftime("%Y-%m-%dT%H:%M:%S.%f") for e in et_x]
+        say("frames extended: %d frames uniform in time (step %.4f s, the last log-altitude step) after the last "
+            "observation, to %s: %d frames in all" % (len(et_x), step, utc_f[-1], len(et_f)))
     (out / "frame_utc.txt").write_text("\n".join(utc_f) + "\n")
     (out / "rows_utc.txt").write_text("\n".join(tab["utc"]) + "\n")
     gtimes = [l.split() for l in open(Path(a.geometry) / "times.txt") if not l.startswith("#") and l.split()]
@@ -621,6 +1007,16 @@ def cmd_prep(a):
     chk["gauge_position_vs_kernel_headers_max_m"] = float(max(np.abs(h["sc"] - rw["x"][i]).max() for i, h in enumerate(kh)))
     chk["sun_vs_maps_geometry_max_angle_rad"] = float(max(
         np.linalg.norm(unit(s) - mp["sun"][i]) for i, (_, _, s) in enumerate(gt_map)))
+    if ext is not None:                       # COPS altitude of the added frames: nearest distance to the shape model
+        nodes_m, faces_m = load_mesh(a.geometry)[:2]
+        n0 = ext["n_obs_frames"]
+        _, d_x, _ = FIG.ground_track(nodes_m, faces_m, np.vstack([fr["x"][n0 - 1:n0], fr["x"][n0:]]))
+        ext["last_observation_nearest_distance_m"] = float(d_x[0])
+        ext["last_observation_table_altitude_m"] = float(alt_f[-1])
+        alt_f = np.concatenate([alt_f, d_x[1:]])
+        ext["altitude_m_first_last_added"] = [float(d_x[1]), float(d_x[-1])]
+        chk["extension"] = ext
+        del nodes_m, faces_m
     sf = np.loadtxt(out / "shield_table.txt")
     chk["shield_table"] = {"bins": len(sf), "SF(0)": float(sf[0]), "SF(0.5)": float(sf[1000]), "SF(1)": float(sf[-1])}
     say("geometry checks: %s" % json.dumps(chk))
@@ -633,7 +1029,9 @@ def cmd_prep(a):
              b_ng=fr["b_ng"], b_rg=fr["b_rg"], alt=alt_f, shield=sf, k_end=k_end,
              maps_labels=np.array([t[0] for t in gt_map]), maps_utc=np.array([t[1] for t in gt_map]),
              maps_sun=mp["sun"], rows_utc=np.array(rw["utc"]), rows_et=rw["et"], rows_x=rw["x"], rows_sun=rw["sun"],
-             rows_b_ng=rw["b_ng"], rows_b_rg=rw["b_rg"], rows_ipoint=tab["iPoint"], rows_alt=alt)
+             rows_b_ng=rw["b_ng"], rows_b_rg=rw["b_rg"], rows_ipoint=tab["iPoint"], rows_alt=alt,
+             **({} if ext is None else {"n_obs_frames": ext["n_obs_frames"], "extend_step_s": ext["step_s"],
+                                        "extend_end_utc": np.array(ext["end_utc"])}))
     json.dump(chk, open(out / "prep_checks.json", "w"), indent=1)
     say("prep done: %s" % out)
     return 0
@@ -1265,6 +1663,125 @@ class Renderer:
             img = cp.where(e2[..., None], img * (1.0 - MASK_LINE_ALPHA) + MASK_LINE_ALPHA * cp.asarray(MASK_LINE), img)
         return cp.asnumpy(cp.clip(img * 255.0 + 0.5, 0, 255).astype(cp.uint8))
 
+    # ---------------------------------------------------------------- detach-200 m movies (2026-11-13)
+    def raster_model(self, cam, basis, F, center, V, T, draw, near=SC_NEAR, ss=SS):
+        """perspective z-buffer of a small triangle model (body-frame vertices V (n, 3), triangles T (m, 3), draw (m,))
+        for the camera at cam (basis f, up, right): per supersampled pixel the triangle index (-1: none) and its distance
+        (linear in screen space; the model is tessellated to SC_TESS). Triangles with a vertex closer than `near` to the
+        camera or behind its near plane are not drawn (near clipping)."""
+        cp = self.cp
+        f, up, right = basis
+        q = cp.asarray(np.asarray(V, float) - np.asarray(cam, float)[None, :])
+        z = q @ cp.asarray(f)
+        xx = q @ cp.asarray(right)
+        yy = q @ cp.asarray(up)
+        dist = cp.sqrt(cp.sum(q * q, axis=1))
+        Fs = F * ss
+        Ws_, Hs_ = W * ss, H * ss
+        zz = cp.where(z > ZNEAR, z, 1.0)
+        u = cp.ascontiguousarray(Ws_ / 2.0 + Fs * (xx / zz - center[0]))
+        v = cp.ascontiguousarray(Hs_ / 2.0 - Fs * (yy / zz - center[1]))
+        okv = (z > ZNEAR) & (dist >= near)
+        Tg = cp.asarray(np.asarray(T, np.int64))
+        d = cp.asarray(np.asarray(draw, bool)) & okv[Tg[:, 0]] & okv[Tg[:, 1]] & okv[Tg[:, 2]]
+        zbuf = cp.full(Ws_ * Hs_, np.iinfo(np.uint64).max, dtype=cp.uint64)
+        nt = int(len(T))
+        blocks = int(max(1, min((nt + 255) // 256, 65535 * 4)))
+        self.raster((blocks,), (256,), (u, v, cp.ascontiguousarray(dist), cp.ascontiguousarray(Tg.ravel()),
+                                         d.astype(cp.uint8), np.int64(nt), np.int32(Ws_), np.int32(Hs_),
+                                         np.int32(max(Ws_, Hs_) + 1), zbuf))
+        empty = zbuf == cp.uint64(np.iinfo(np.uint64).max)
+        tri = cp.where(empty, -1, (zbuf & cp.uint64(0xffffffff)).astype(cp.int64))
+        dep = cp.where(empty, cp.inf, (zbuf >> cp.uint64(32)).astype(cp.uint32).view(cp.float32).astype(cp.float64))
+        return tri.reshape(Hs_, Ws_), dep.reshape(Hs_, Ws_), int(cp.asnumpy(d.sum()))
+
+    def paint_lines(self, segs, cam, basis, F, center, depth, ss=SS, half=1):
+        """depth-tested lines in the supersampled image: segs = [(p0, p1, rgb, alpha)] in the body frame (perspective
+        camera); a sample point is drawn where it is nearer than the scene (depth (Hs, Ws), inf = sky) by 1e-4 of its
+        distance, as a (2 half + 1)^2 supersampled-pixel dot (half = 1: 1.5 output pixels wide). Returns (alpha, rgb)."""
+        cp = self.cp
+        f, up, right = (np.asarray(v, float) for v in basis)
+        cam = np.asarray(cam, float)
+        Hs_, Ws_ = H * ss, W * ss
+        A = cp.zeros(Hs_ * Ws_)
+        RGB = cp.zeros((Hs_ * Ws_, 3))
+        Fs = F * ss
+        dflat = depth.ravel()
+        for p0, p1, rgb, al in segs:
+            p0, p1 = np.asarray(p0, float), np.asarray(p1, float)
+            seg = p1 - p0
+            Ls = float(np.linalg.norm(seg))
+            if Ls <= 0:
+                continue
+            tt = np.clip(np.dot(cam - p0, seg) / (Ls * Ls), 0.0, 1.0)
+            dmin = max(float(np.linalg.norm(p0 + tt * seg - cam)), 0.05)
+            n = int(min(400000, 2 + math.ceil(2.0 * Ls / dmin * Fs)))
+            t = cp.linspace(0.0, 1.0, n)
+            pts = cp.asarray(p0)[None, :] + t[:, None] * cp.asarray(seg)[None, :]
+            q = pts - cp.asarray(cam)[None, :]
+            z = q @ cp.asarray(f)
+            ok = z > ZNEAR
+            zz = cp.where(ok, z, 1.0)
+            px = Ws_ / 2.0 + Fs * ((q @ cp.asarray(right)) / zz - center[0])
+            py = Hs_ / 2.0 - Fs * ((q @ cp.asarray(up)) / zz - center[1])
+            dist = cp.sqrt(cp.sum(q * q, axis=1))
+            ii = cp.floor(px).astype(cp.int64)
+            jj = cp.floor(py).astype(cp.int64)
+            for dj in range(-half, half + 1):
+                for di in range(-half, half + 1):
+                    i2, j2 = ii + di, jj + dj
+                    m = ok & (i2 >= 0) & (i2 < Ws_) & (j2 >= 0) & (j2 < Hs_)
+                    idx = (j2 * Ws_ + i2)[m]
+                    vis = dist[m] < dflat[idx] * (1.0 - 1e-4)
+                    idx = idx[vis]
+                    A[idx] = cp.maximum(A[idx], al)
+                    RGB[idx] = cp.asarray(rgb)[None, :]
+        return A.reshape(Hs_, Ws_), RGB.reshape(Hs_, Ws_, 3)
+
+    def colorize_detach(self, vw, which, w, mask, fovm, sc_front, sc_img, lines, tint="weight", uniform_color=None,
+                        boundary=True, ss=SS, sunfac=None):
+        """detached frames: colorize_fixed's nucleus (tint where the gauge sees the surface, sunlit grey elsewhere), the
+        spacecraft model where it is in front (sc_front, sc_img), the depth-tested lines (cone generators, yoke, strut)
+        blended in, then the FOV boundary on the visible nucleus (not where the spacecraft covers it)."""
+        cp = self.cp
+        bright = AMBIENT + DIFFUSE * cp.maximum(vw["cos"], 0.0) * vw["lit"]
+        wmax = 1.0 if which == "rg" else 2.0
+        if tint == "weight":
+            k = cp.clip((w / wmax * 255.0 + 0.5).astype(cp.int64), 0, 255)
+            col = self.lut[k]
+        else:
+            col = cp.broadcast_to(cp.asarray(uniform_color, dtype=cp.float64)[None, None, :], mask.shape + (3,))
+        col = cp.where(mask[..., None], col, cp.asarray(GREY_ZERO)[None, None, :])
+        face = vw["face"]
+        m = face >= 0
+        b = cp.zeros(face.shape, dtype=cp.float64)
+        if sunfac is None:
+            b[m] = bright[face[m]]
+        else:
+            b[m] = AMBIENT + (bright[face[m]] - AMBIENT) * sunfac[m]
+        img = col * b[..., None]
+        if sc_front is not None:
+            img = cp.where(sc_front[..., None], sc_img, img)
+        if lines is not None:
+            Al, RGBl = lines
+            img = img * (1.0 - Al[..., None]) + Al[..., None] * RGBl
+        img = img.reshape(H, ss, W, ss, 3).mean(axis=(1, 3))
+        if boundary:
+            mm = m if sc_front is None else (m & ~sc_front)
+            fm = fovm if sc_front is None else (fovm & ~sc_front)
+            md = fm.reshape(H, ss, W, ss).mean(axis=(1, 3))
+            nd = mm.reshape(H, ss, W, ss).mean(axis=(1, 3))
+            full = nd >= 1.0
+            mb = md >= 0.5
+            edge = (md > 0.0) & (md < nd)
+            edge[:, 1:] |= (mb[:, 1:] != mb[:, :-1]) & full[:, 1:] & full[:, :-1]
+            edge[1:, :] |= (mb[1:, :] != mb[:-1, :]) & full[1:, :] & full[:-1, :]
+            e2 = edge.copy()
+            e2[:, 1:] |= edge[:, :-1]
+            e2[1:, :] |= edge[:-1, :]
+            img = cp.where(e2[..., None], img * (1.0 - MASK_LINE_ALPHA) + MASK_LINE_ALPHA * cp.asarray(MASK_LINE), img)
+        return cp.asnumpy(cp.clip(img * 255.0 + 0.5, 0, 255).astype(cp.uint8))
+
     def first_hits(self, orig, dirs):
         """first facet hit of rays orig (n, 3) + t dirs (n, 3, unit) over all facets (render.cu ray_first_hit, FP64;
         t stored as float32 in the key). Returns (face or -1, t or inf) as numpy arrays."""
@@ -1353,24 +1870,25 @@ def cmd_plan(a):
     rnd = Renderer(a.geometry, P, a.device)
     if getattr(a, "camera", "gauge") == "fixed":          # 2026-11-13: the fixed camera (new option)
         return plan_fixed(a, work, P, rnd)
+    NF = len(P["utc"])                      # number of frames (1800; more with prep --extend-to-utc)
     ext = []
-    for k in range(NFRAMES):
+    for k in range(NF):
         ext.append(rnd.extent(P["x"][k], P["b_rg"][k], P["b_ng"][k]))
         if k % 300 == 0:
             say("plan: frame %d theta_max %.1f deg" % (k, ext[-1]["theta_max_deg"]))
     th = np.array([e["theta_max_deg"] for e in ext])
     over = np.nonzero([choose_projection(e) == "fisheye" for e in ext])[0]
-    k_switch = int(over[0]) if len(over) else NFRAMES
-    proj = np.array(["perspective" if k < k_switch else "fisheye" for k in range(NFRAMES)])
+    k_switch = int(over[0]) if len(over) else NF
+    proj = np.array(["perspective" if k < k_switch else "fisheye" for k in range(NF)])
     box = np.array([e["box_persp"] if proj[k] == "perspective" else e["box_fish"] for k, e in enumerate(ext)])
-    Freq = np.empty(NFRAMES)
-    cen = np.empty((NFRAMES, 2))
-    for k in range(NFRAMES):
+    Freq = np.empty(NF)
+    cen = np.empty((NF, 2))
+    for k in range(NF):
         Freq[k], cen[k] = frame_from_box(box[k])
     hw = 15
-    F = np.empty(NFRAMES)
-    C = np.empty((NFRAMES, 2))
-    for s0, s1 in ((0, k_switch), (k_switch, NFRAMES)):
+    F = np.empty(NF)
+    C = np.empty((NF, 2))
+    for s0, s1 in ((0, k_switch), (k_switch, NF)):
         if s1 <= s0:
             continue
         n = s1 - s0
@@ -1382,7 +1900,7 @@ def cmd_plan(a):
         # +-hw, which never exceeds the F that fits the frame's own box.
         C[s0:s1] = cen[s0:s1]
     nclip = 0
-    for k in range(NFRAMES):                    # the smoothed frame must still contain the nucleus
+    for k in range(NF):                    # the smoothed frame must still contain the nucleus
         x0, x1, y0, y1 = box[k]
         hx = max(x1 - C[k, 0], C[k, 0] - x0)
         hy = max(y1 - C[k, 1], C[k, 1] - y0)
@@ -1392,12 +1910,57 @@ def cmd_plan(a):
         F[k] = min(F[k], Ffit)
     say("plan: frames where the smoothed scale had to be reduced to fit the nucleus: %d" % nclip)
     sub, sub_f = FIG.intercept_track(cp.asnumpy(rnd.nodes), cp.asnumpy(rnd.faces).reshape(-1, 3), P["x"], a.device)
+    if getattr(a, "camera", "gauge") == "detach":         # 2026-11-13: detach-200 m set (new option)
+        return plan_detach_save(a, work, P, proj, F, C, th, box, Freq, cen, k_switch, sub, sub_f)
     np.savez(work / "plan.npz", proj=proj, F=F, center=C, theta_max_deg=th, box=box, F_req=Freq, center_req=cen,
              k_switch=k_switch, sub=sub, sub_face=sub_f)
     say("plan: perspective for frames 0..%d (theta_max <= %.0f deg), fisheye from frame %d (%s UTC, %.1f m); "
         "sub-spacecraft hits %d / %d" % (k_switch - 1, PERSPECTIVE_MAX_DEG, k_switch,
-                                         P["utc"][min(k_switch, NFRAMES - 1)], P["alt"][min(k_switch, NFRAMES - 1)],
-                                         int((sub_f >= 0).sum()), NFRAMES))
+                                         P["utc"][min(k_switch, NF - 1)], P["alt"][min(k_switch, NF - 1)],
+                                         int((sub_f >= 0).sum()), NF))
+    return 0
+
+
+def plan_detach_save(a, work, P, proj, F, C, th, box, Freq, cen, k_switch, sub, sub_f):
+    """plan of the detach-200 m movies (2026-11-13, user decisions): frames before the detach frame k_d = the first frame
+    whose COPS altitude is <= --detach-altitude use the gauge camera exactly as the gauge-view plan (camera at COPS
+    along the RG axis; the same framing: perspective, fisheye from k_switch); from k_d on the camera stays at the COPS
+    position of frame k_d with the RG / NG boresights of frame k_d (frozen in 67P/C-G_CK) and a perspective projection
+    with --fov-deg horizontal field of view, principal point at the image centre."""
+    NF = len(P["utc"])
+    alt = P["alt"]
+    k_d = int(np.argmax(alt <= a.detach_altitude))
+    if not alt[k_d] <= a.detach_altitude or k_d == 0:
+        raise SystemExit("detach: no frame at or below %g m" % a.detach_altitude)
+    Fd = (W / 2.0) / math.tan(math.radians(a.fov_deg) / 2.0)
+    proj = np.array([str(v) for v in proj])
+    proj[k_d:] = "perspective"
+    F = np.asarray(F, float).copy()
+    F[k_d:] = Fd
+    C = np.asarray(C, float).copy()
+    C[k_d:] = 0.0
+    th = np.asarray(th, float).copy()
+    th[k_d:] = math.degrees(math.atan(math.hypot(W / 2.0, H / 2.0) / Fd))
+    cx = np.asarray(P["x"], float).copy()
+    cbr = np.asarray(P["b_rg"], float).copy()
+    cbn = np.asarray(P["b_ng"], float).copy()
+    cx[k_d:] = P["x"][k_d]
+    cbr[k_d:] = P["b_rg"][k_d]
+    cbn[k_d:] = P["b_ng"][k_d]
+    chk = {"detach_frame": k_d, "detach_utc": str(P["utc"][k_d]), "detach_altitude_m": float(alt[k_d]),
+           "previous_frame_altitude_m": float(alt[k_d - 1]), "detach_altitude_target_m": a.detach_altitude,
+           "camera_position_m": P["x"][k_d].tolist(), "axis_b_rg": unit(P["b_rg"][k_d]).tolist(),
+           "b_ng": unit(P["b_ng"][k_d]).tolist(), "fov_horizontal_deg": a.fov_deg, "F_px": Fd,
+           "fov_vertical_deg": 2 * math.degrees(math.atan((H / 2.0) / Fd)), "frames": NF,
+           "frames_attached": k_d, "frames_detached": NF - k_d, "gauge_plan_fisheye_from_frame": int(k_switch),
+           "gauge_plan_at_detach": {"projection": "fisheye" if k_d >= k_switch else "perspective"}}
+    say("detach camera: %s" % json.dumps(chk))
+    np.savez(work / "plan.npz", proj=proj, F=F, center=C, theta_max_deg=th, box=box, F_req=Freq, center_req=cen,
+             k_switch=k_switch, sub=sub, sub_face=sub_f, camera_mode=np.array("detach"), k_detach=k_d,
+             detach_utc=np.array(str(P["utc"][k_d])), detach_altitude_m=float(alt[k_d]), cam_fov_deg=float(a.fov_deg),
+             cam_x_frames=cx, cam_b_rg_frames=cbr, cam_b_ng_frames=cbn, cam_checks=np.array(json.dumps(chk)))
+    json.dump(chk, open(work / "camera_checks.json", "w"), indent=1)
+    say("plan (detach) done: attached frames 0..%d, detached %d..%d" % (k_d - 1, k_d, NF - 1))
     return 0
 
 
@@ -1465,13 +2028,14 @@ def plan_fixed(a, work, P, rnd):
     if abs(chk["et_spice_minus_interpolated_s"]) > 1e-5 or chk["camera_vs_table_position_linear_interp_m"] > 0.1:
         raise SystemExit("fixed camera: SPICE does not reproduce the base table at the camera time")
     hd = chk["fov_diagonal_half_deg"]
-    np.savez(work / "plan.npz", proj=np.array(["perspective"] * NFRAMES), F=np.full(NFRAMES, F),
-             center=np.zeros((NFRAMES, 2)), theta_max_deg=np.full(NFRAMES, hd), k_switch=NFRAMES, sub=sub,
+    NF = len(P["utc"])
+    np.savez(work / "plan.npz", proj=np.array(["perspective"] * NF), F=np.full(NF, F),
+             center=np.zeros((NF, 2)), theta_max_deg=np.full(NF, hd), k_switch=NF, sub=sub,
              sub_face=sub_f, camera_mode=np.array("fixed"), cam_utc=np.array(cam["utc"]), cam_et=cam["et"],
              cam_x=cam["x"], cam_b_rg=cam["b_rg"], cam_b_ng=cam["b_ng"], cam_f=f, cam_up=up, cam_right=right,
              cam_altitude_target_m=h, cam_fov_deg=float(a.fov_deg), cam_checks=np.array(json.dumps(chk)))
     json.dump(chk, open(work / "camera_checks.json", "w"), indent=1)
-    say("plan (fixed camera) done: sub-spacecraft hits %d / %d" % (int((sub_f >= 0).sum()), NFRAMES))
+    say("plan (fixed camera) done: sub-spacecraft hits %d / %d" % (int((sub_f >= 0).sum()), NF))
     return 0
 
 
@@ -1479,8 +2043,15 @@ def is_fixed(Q):
     return "camera_mode" in Q.files and str(Q["camera_mode"]) == "fixed"
 
 
+def is_detach(Q):
+    return "camera_mode" in Q.files and str(Q["camera_mode"]) == "detach"
+
+
 def frame_camera(P, Q, k):
     """camera position and (b_rg, b_ng) defining its basis in frame k: the gauge of the frame, or the fixed camera."""
+    if is_detach(Q):
+        return (np.asarray(Q["cam_x_frames"][k], float), np.asarray(Q["cam_b_rg_frames"][k], float),
+                np.asarray(Q["cam_b_ng_frames"][k], float))
     if is_fixed(Q):
         return np.asarray(Q["cam_x"], float), np.asarray(Q["cam_b_rg"], float), np.asarray(Q["cam_b_ng"], float)
     return np.asarray(P["x"][k], float), np.asarray(P["b_rg"][k], float), np.asarray(P["b_ng"][k], float)
@@ -1615,13 +2186,15 @@ def cmd_render(a):
     fd = Path(a.frames_dir) if a.frames_dir else work / "frames"
     for sub in ("rg_clean", "ng_clean", "meta", "claims"):
         (fd / sub).mkdir(parents=True, exist_ok=True)
-    order = [int(v) for v in a.only.split(",")] if a.only else list(range(NFRAMES))
+    order = [int(v) for v in a.only.split(",")] if a.only else list(range(len(P["utc"])))
     nw = max(1, a.nworkers)
     order = order[a.worker::nw] + [k for i, k in enumerate(order) if i % nw != a.worker]  # own stride, then help
     done, t_sum = 0, 0.0
     host = socket.gethostname()
     if is_fixed(Q):                            # 2026-11-13: the fixed camera (plan --camera fixed; new option)
         return render_fixed(a, P, Q, rnd, specs, FV, SCZ, tints, ucol, fd, order)
+    if is_detach(Q):                           # 2026-11-13: the detach-200 m set (plan --camera detach; new option)
+        return render_detach(a, P, Q, rnd, specs, FV, SCZ, tints, ucol, fd, order)
     for k in order:
         if (fd / "meta" / ("f%05d.json" % k)).exists():
             continue
@@ -1744,7 +2317,7 @@ def fixed_camera_meta(Q, vw0, axis_dist):
             "right": [float(v) for v in right], "axis_surface_distance_m": axis_dist}
 
 
-def fixed_frame(rnd, P, FV, SCZ, specs, k, vw0, cen_d, fdraw, adraw, sc_samples, refine=True):
+def fixed_frame(rnd, P, FV, SCZ, specs, k, vw0, cen_d, fdraw, adraw, sc_samples, refine=True, sc_parts=("bus", "wings")):
     """per-frame products of the fixed camera: lighting, per gauge the weight, FOV mask, seen mask (FOV, facing,
     line of sight: depth map + exact refinement along the edges of the unseen parts), statistics (the area statistics
     of the camera-visible facets use the depth-map test at their centroids); spacecraft shadow factor."""
@@ -1759,7 +2332,7 @@ def fixed_frame(rnd, P, FV, SCZ, specs, k, vw0, cen_d, fdraw, adraw, sc_samples,
     sunfac, scst = None, None
     if SCZ is not None:
         sh = ScShadow(cp, SCZ, k, P["sun"][k], sc_samples)
-        bl, ncand = sh.blocked(pts)
+        bl, ncand = sh.blocked(pts, sc_parts)
         sunfac = cp.ones(Hs * Ws)
         sunfac[idx] = 1.0 - bl
         sunfac = sunfac.reshape(Hs, Ws)
@@ -1896,6 +2469,231 @@ def render_fixed(a, P, Q, rnd, specs, FV, SCZ, tints, ucol, fd, order):
     return 0
 
 
+def cone_segments(rnd, x_g, axis, half_deg, rgb, alt):
+    """generator lines of a FOV cone (CONE_N, translucent) from the gauge point x_g around axis: each to its first hit on
+    the nucleus (exact ray, all facets); generators without a hit to the longest hit length (2 x the COPS altitude if
+    none hits)."""
+    b = unit(axis)
+    a0 = np.array([1.0, 0, 0]) if abs(b[0]) < 0.9 else np.array([0, 1.0, 0])
+    e1 = unit(np.cross(b, a0))
+    e2 = np.cross(b, e1)
+    ang = np.radians(half_deg)
+    phi = np.linspace(0, 2 * np.pi, CONE_N, endpoint=False)
+    dirs = np.cos(ang) * b[None, :] + np.sin(ang) * (np.cos(phi)[:, None] * e1[None, :] + np.sin(phi)[:, None] * e2[None, :])
+    hf, th = rnd.first_hits(np.tile(np.asarray(x_g, float), (CONE_N, 1)), dirs)
+    hit = hf >= 0
+    Lmax = float(th[hit].max()) if hit.any() else 2.0 * max(float(alt), 1.0)
+    L = np.where(hit, th, Lmax)
+    segs = [(np.asarray(x_g, float), np.asarray(x_g, float) + L[i] * dirs[i], rgb, CONE_ALPHA) for i in range(CONE_N)]
+    return segs, {"generators": CONE_N, "hitting": int(hit.sum()), "length_m_min_max": [float(L.min()), float(L.max())]}
+
+
+def render_detach(a, P, Q, rnd, specs, FV, SCZ, tints, ucol, fd, order):
+    """render of the detach-200 m movies (2026-11-13): frames before the detach frame as the gauge-view movies (camera
+    at COPS along the RG axis; tint by the pixel direction inside the gauge's cone; spacecraft shadow incl. the HGA);
+    from the detach frame on the frozen perspective camera (fixed_geometry once): per frame the surface each gauge sees
+    from its true position (cone, facing, line of sight, as the fixed camera), the spacecraft model (sc_model: bus, wings,
+    HGA; Lambert, Sun of the frame time; near clipping SC_NEAR), its shadow (bus, wings, HGA), the depth-tested
+    translucent FOV cone of the movie's gauge and the yoke / strut lines."""
+    from PIL import Image
+    cp = rnd.cp
+    if SCZ is None or "hga_c_sc" not in SCZ.files:
+        raise SystemExit("detach render needs --sc-shadow and an sc.npz with the HGA (cops_movies.py sc --hga-ck)")
+    for g, sp in specs.items():
+        if parse_mask(sp)[0] != "cone":
+            raise SystemExit("detach render: --mask-%s must be cone:<deg> (user decision: circular FOVs)" % g.lower())
+    fixed_check_masks(specs)
+    parts = ("bus", "wings", "hga")
+    work = Path(a.work)
+    td = load_touchdown(work / "touchdown.npz") if (work / "touchdown.npz").exists() else None
+    k_d = int(Q["k_detach"])
+    n_obs = int(P["n_obs_frames"]) if "n_obs_frames" in P else len(P["utc"])
+    xc = np.asarray(Q["cam_x_frames"][k_d], float)
+    Fd = float(Q["F"][k_d])
+    camd_base = {"mode": "detach", "detach_frame": k_d, "detach_utc": str(Q["detach_utc"]),
+                 "detach_altitude_m": float(Q["detach_altitude_m"]), "fov_deg": float(Q["cam_fov_deg"])}
+    host = socket.gethostname()
+    vw0 = None
+    done, t_sum = 0, 0.0
+    for k in order:
+        if (fd / "meta" / ("f%05d.json" % k)).exists():
+            continue
+        try:
+            fdesc = os.open(fd / "claims" / ("f%05d" % k), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            continue
+        os.write(fdesc, ("%s %s worker %d device %s\n" % (host, os.environ.get("SLURM_JOB_ID"), a.worker, a.device)).encode())
+        os.close(fdesc)
+        t0 = time.time()
+        if k < k_d:
+            meta = _detach_attached_frame(a, P, Q, rnd, specs, FV, SCZ, tints, ucol, fd, k, parts, host, t0)
+            meta["camera"] = dict(camd_base, attached=True)
+        else:
+            if vw0 is None:
+                vw0 = rnd.fixed_geometry(xc, Q["cam_b_rg_frames"][k_d], Q["cam_b_ng_frames"][k_d], "perspective", Fd,
+                                         (0.0, 0.0))
+                fdraw = cp.unique(vw0["fid"])
+                adraw = cp.asarray(rnd.area_h)[fdraw]
+                cen_d = rnd.cent[fdraw]
+                hf0, th0 = rnd.first_hits(xc[None, :], np.asarray(vw0["basis"][0])[None, :])
+                axis_dist = float(th0[0]) if hf0[0] >= 0 else None
+                nuc_depth = cp.full(H * SS * W * SS, cp.inf)
+                nuc_depth[vw0["idx"]] = cp.sqrt(cp.sum((vw0["pts"] - cp.asarray(xc)[None, :]) ** 2, axis=1))
+                nuc_depth = nuc_depth.reshape(H * SS, W * SS)
+                say("detached camera view: %d nucleus pixels, %d facets, face buffer %s" % (
+                    int(vw0["idx"].size), int(fdraw.size), vw0["face_sha256"][:16]))
+            f_, up_, right_ = vw0["basis"]
+            R = fixed_frame(rnd, P, FV, SCZ, specs, k, vw0, cen_d, fdraw, adraw, a.sc_samples, sc_parts=parts)
+            t1 = time.time()
+            # spacecraft model
+            M = sc_model_body(SCZ, k)
+            cen_t = M["V"][M["T"]].mean(axis=1)
+            facing = np.einsum("ij,ij->i", M["normal"], xc[None, :] - cen_t) > 0
+            draw = M["two_sided"] | facing
+            tri, dep, ndrawn = rnd.raster_model(xc, vw0["basis"], Fd, (0.0, 0.0), M["V"], M["T"], draw)
+            s_b = unit(P["sun"][k])
+            nv = np.where(facing[:, None], M["normal"], -M["normal"])
+            colt = np.where(facing[:, None], M["col_front"], M["col_back"])
+            bt = AMBIENT + DIFFUSE * np.maximum(0.0, nv @ s_b)
+            rgb_t = cp.asarray(colt * bt[:, None])
+            sc_front = (tri >= 0) & (dep < nuc_depth)
+            sc_img = rgb_t[cp.clip(tri, 0, None)]
+            depth = cp.where(sc_front, dep, nuc_depth)
+            segs = [(p0, p1, c, 1.0) for p0, p1, c in M["lines"]]
+            xg = np.asarray(P["x"][k], float)
+            cone_st = {}
+            mstats = {}
+            for which, g in (("rg", "RG"), ("ng", "NG")):
+                cs, cone_st[g] = cone_segments(rnd, xg, P["b_rg"][k] if g == "RG" else P["b_ng"][k],
+                                               parse_mask(specs[g])[1], CONE_COL[g], P["alt"][k])
+                lines = rnd.paint_lines(segs + cs, xc, vw0["basis"], Fd, (0.0, 0.0), depth)
+                G = R["g"][g]
+                img = rnd.colorize_detach(R["vw"], which, _full(rnd, vw0["idx"], G["w"], cp.float64),
+                                          _full(rnd, vw0["idx"], G["seen"], bool), _full(rnd, vw0["idx"], G["fov"], bool),
+                                          sc_front, sc_img, lines, tints[g], ucol, not a.no_boundary, sunfac=R["sunfac"])
+                Image.fromarray(img).save(fd / ("%s_clean" % which) / ("f%05d.png" % k), compress_level=1)
+                st = G["stats"]
+                st["tint"] = tints[g]
+                mstats[g] = st
+                del lines
+            vw = R["vw"]
+            meta = {"k": k, "utc": str(P["utc"][k]), "et": float(P["et"][k]), "altitude_m": float(P["alt"][k]),
+                    "projection": "perspective", "F": Fd, "theta_max_deg": float(Q["theta_max_deg"][k]),
+                    "sub_point": [float(v) for v in Q["sub"][k]], "lit_frac_day": float(cp.asnumpy(
+                        (vw["lit"].sum() / cp.maximum((vw["cos"] > 0).sum(), 1)))),
+                    "drawn_pixels": int(vw0["idx"].size), "host": host, "job": os.environ.get("SLURM_JOB_ID"),
+                    "worker": a.worker, "device": a.device, "t_view_s": t1 - t0, "holes": vw0["holes"],
+                    "face_sha256": vw0["face_sha256"], "masks": mstats,
+                    "mask_design": {g: dict(mask_design(g, specs[g], FV), line_of_sight=True) for g in ("RG", "NG")},
+                    "camera": dict(camd_base, attached=False, x=xc.tolist(), f=[float(v) for v in f_],
+                                   up=[float(v) for v in up_], right=[float(v) for v in right_],
+                                   axis_surface_distance_m=axis_dist),
+                    "sc_model": {"triangles": int(len(M["T"])), "drawn": ndrawn,
+                                 "pixels_ss": int(cp.asnumpy(sc_front.sum())), "hga_held": bool(SCZ["hga_held"][k]),
+                                 "sa_held": bool(SCZ["held"][k])},
+                    "cones": cone_st, "center": [0.0, 0.0]}
+            if R["sc"] is not None:
+                meta["sc_shadow"] = R["sc"]
+            if axis_dist is not None:
+                meta["m_per_px_at_center"] = axis_dist / Fd
+            sp = np.asarray(Q["sub"][k], float)
+            okp = bool(np.all(np.isfinite(sp)))
+            pts_ = [sp if okp else xc + f_, xg]
+            vis, _, _, dist = rnd.points_visible(np.vstack([xc, xc]), np.vstack(pts_), [int(Q["sub_face"][k]), -1])
+            for name, p_, ok_ in (("sub", pts_[0], okp), ("gauge", pts_[1], True)):
+                v_ = p_ - xc
+                pix = to_pixel((float(v_ @ right_), float(v_ @ up_), float(v_ @ f_)), "perspective", Fd, (0.0, 0.0)) if ok_ else None
+                meta["%s_pixel" % name] = pix
+                vis_ = bool(ok_ and pix is not None and vis[0 if name == "sub" else 1])
+                if name == "sub" and vis_ and 0 <= pix[0] < W and 0 <= pix[1] < H:   # hidden by the spacecraft?
+                    ii, jj = int(pix[0] * SS), int(pix[1] * SS)
+                    vis_ = not bool(cp.asnumpy(sc_front[jj, ii]))
+                meta["%s_visible" % name] = vis_ if name == "sub" else bool(pix is not None)   # the gauge point: always marked
+                meta["%s_distance_from_camera_m" % name] = float(dist[0 if name == "sub" else 1])
+            if td is not None and bool(td["visible"][k]):
+                bx, by = td["base_px"][k]
+                if 0 <= bx < W and 0 <= by < H:
+                    ii, jj = int(bx * SS), int(by * SS)
+                    meta["sc_hides_touchdown"] = bool(cp.asnumpy(sc_front[jj, ii] & (dep[jj, ii] < float(td["distance_m"][k]))))
+            del R, vw, tri, dep, sc_front, sc_img, depth
+        meta["after_last_obs"] = bool(k >= n_obs)
+        meta["t_total_s"] = time.time() - t0
+        json.dump(meta, open(fd / "meta" / ("f%05d.json" % k), "w"))
+        done += 1
+        t_sum += time.time() - t0
+        if done % 25 == 0:
+            say("worker %d (%s dev %s): %d frames, mean %.2f s/frame" % (a.worker, host, a.device, done, t_sum / done))
+    say("worker %d (%s device %s) finished: %d frames, %.1f s, mean %.2f s/frame (detach)" % (
+        a.worker, host, a.device, done, t_sum, t_sum / max(done, 1)))
+    return 0
+
+
+def _detach_attached_frame(a, P, Q, rnd, specs, FV, SCZ, tints, ucol, fd, k, parts, host, t0):
+    """an attached frame of the detach-200 m movies: the gauge-view render of cmd_render (masked path) with the
+    spacecraft shadow incl. the HGA (parts); returns the frame metadata."""
+    from PIL import Image
+    cp = rnd.cp
+    proj, F, center = str(Q["proj"][k]), float(Q["F"][k]), tuple(float(v) for v in Q["center"][k])
+    vw = rnd.view(P["x"][k], P["b_rg"][k], P["b_ng"][k], P["sun"][k], proj, F, center)
+    t1 = time.time()
+    pw = rnd.pixel_weights(vw)
+    mstats = {}
+    dirs = rnd.pixel_dirs_world(vw)
+    sh = ScShadow(cp, SCZ, k, P["sun"][k], a.sc_samples)
+    pidx, pts = rnd.pixel_points(vw, dirs, P["x"][k])
+    bl, ncand = sh.blocked(pts, parts)
+    sunfac = cp.ones(vw["face"].size)
+    sunfac[pidx] = 1.0 - bl
+    sunfac = sunfac.reshape(vw["face"].shape)
+    nb = cp.asnumpy(bl)
+    scst = {"samples": int(a.sc_samples), "parts": list(parts), "candidate_pixels_ss": ncand,
+            "umbra_pixels_ss": int((nb >= 1.0).sum()), "penumbra_pixels_ss": int(((nb > 0) & (nb < 1.0)).sum()),
+            "sa_held": bool(SCZ["held"][k]), "hga_held": bool(SCZ["hga_held"][k]),
+            "solar_angular_radius_deg": math.degrees(sh.alpha)}
+    del pts, bl
+    fdraw = cp.unique(vw["face"][vw["face"] >= 0])
+    dc = rnd.cent[fdraw] - cp.asarray(np.asarray(P["x"][k], float))[None, :]
+    dc /= cp.linalg.norm(dc, axis=1)[:, None]
+    adraw = cp.asarray(rnd.area_h)[fdraw]
+    for which, g in (("rg", "RG"), ("ng", "NG")):
+        bnd = FV["frame_bounds_%s" % which][k] if FV is not None else None
+        mk = rnd.mask_dirs(dirs, g, specs[g], P["b_rg"][k], P["b_ng"][k], bnd)
+        img = rnd.colorize_masked(vw, which, pw, mk, tints[g], ucol, not a.no_boundary, sunfac=sunfac)
+        mf = rnd.mask_dirs((dc[:, 0], dc[:, 1], dc[:, 2]), g, specs[g], P["b_rg"][k], P["b_ng"][k], bnd)
+        st = rnd.mask_stats(vw, P["x"][k], mk, pw[0] if which == "rg" else pw[1])
+        st["visible_area_frac"] = float(cp.asnumpy(adraw[mf].sum() / adraw.sum()))
+        st["visible_area_m2_in_mask"] = float(cp.asnumpy(adraw[mf].sum()))
+        st["mask"], st["tint"] = specs[g], tints[g]
+        mstats[g] = st
+        Image.fromarray(img).save(fd / ("%s_clean" % which) / ("f%05d.png" % k), compress_level=1)
+        del mk, mf
+    meta = {"k": k, "utc": str(P["utc"][k]), "et": float(P["et"][k]), "altitude_m": float(P["alt"][k]),
+            "projection": proj, "F": F, "theta_max_deg": float(Q["theta_max_deg"][k]),
+            "sub_point": [float(v) for v in Q["sub"][k]], "lit_frac_day": float(cp.asnumpy(
+                (vw["lit"].sum() / cp.maximum((vw["cos"] > 0).sum(), 1)))),
+            "drawn_pixels": int((vw["face"] >= 0).sum()), "host": host, "job": os.environ.get("SLURM_JOB_ID"),
+            "worker": a.worker, "device": a.device, "t_view_s": t1 - t0, "holes": vw["holes"], "sc_shadow": scst,
+            "masks": mstats, "mask_design": {g: mask_design(g, specs[g], FV) for g in ("RG", "NG")}}
+    f, up, right = rnd.camera(P["x"][k], P["b_rg"][k], P["b_ng"][k])
+    meta["center"] = list(center)
+    meta["rg_axis_pixel"] = to_pixel((0.0, 0.0, 1.0), proj, F, center)
+    bng = unit(P["b_ng"][k])
+    meta["ng_axis_pixel"] = to_pixel((float(bng @ right), float(bng @ up), float(bng @ f)), proj, F, center)
+    sp = np.asarray(Q["sub"][k]) - P["x"][k]
+    if np.all(np.isfinite(sp)):
+        zz, xx, yy = sp @ f, sp @ right, sp @ up
+        px, py = to_pixel((xx, yy, zz), proj, F, center)
+        dsub = float(np.linalg.norm(sp))
+        th = math.atan2(math.hypot(xx, yy), zz)
+        meta["sub_pixel"] = [px, py]
+        meta["sub_distance_m"] = dsub
+        meta["sub_theta_deg"] = math.degrees(th)
+        meta["m_per_px_at_sub"] = (dsub * math.cos(th) / F if proj == "perspective" else
+                                   (dsub * math.sin(th) / (F * th) if th > 1e-9 else dsub / F))
+    del vw, pw, dirs, dc
+    return meta
+
+
 # ============================================================================================ compose
 def font(size):
     import matplotlib
@@ -1931,6 +2729,21 @@ def fixed_texts(meta, which, gname, md):
                                                 (" (%.2f–%.3g)" % tuple(wr)) if (wr and tint == "weight") else "",
                                                 gname, lab, gname))
     short = "%s (tint: %s weight where %s sees the surface: IK FOV, facing, line of sight)" % (gname, gname, gname)
+    return title, sub1, short
+
+
+def detach_texts(meta, which, gname, md):
+    """title, subtitle and short title of the detached frames of the detach-200 m movies (2026-11-13)."""
+    cam = meta["camera"]
+    title = ("RG: where RG sees the surface (tint); camera detached at %s" % fmt_alt(cam["detach_altitude_m"])
+             if which == "rg" else "NG: where NG sees the surface (tint); the same detached camera")
+    what = "RG acceptance weight -l·b_RG" if which == "rg" else "NG acceptance weight 1 - l·b_NG"
+    wr = md.get("weight_range")
+    ang = md.get("max_angle_deg")
+    sub1 = ("tint: %s%s where the surface is inside its %g° cone (white line on the surface, translucent lines "
+            "from COPS), faces %s and is in its line of sight" % (
+                what, (" (%.2f–%.3g)" % tuple(wr)) if wr else "", ang, gname))
+    short = "%s (tint: %s weight in its %g° cone, facing, line of sight)" % (gname, gname, ang)
     return title, sub1, short
 
 
@@ -2017,12 +2830,20 @@ def load_touchdown(path):
     return {key: z[key] for key in z.files}
 
 
-def td_legend(img, d, td, k, t, pad, full=True):
+def td_show(td, k, meta):
+    """draw the flag in frame k: depth-tested (visible from the camera, not behind the spacecraft model), or with
+    compose --flag-on-top (2026-11-13) whenever its point projects into the image."""
+    if td.get("_on_top"):
+        return bool(td["in_front"][k]) and bool(td["in_image"][k])
+    return bool(td["visible"][k]) and not meta.get("sc_hides_touchdown")
+
+
+def td_legend(img, d, td, k, t, pad, full=True, sc_hidden=False):
     """legend of the touchdown flag: a small static flag icon and "touchdown (impact) <UTC> UTC" (right-aligned, above
     the scale-bar line)."""
     Wi, Hi = img.size
     fn = font(int(round(20 * t)))
-    vis = bool(td["visible"][k])
+    vis = (bool(td["visible"][k]) and not sc_hidden) or bool(td.get("_on_top"))
     text = "touchdown (impact) %s UTC%s" % (str(td["utc"])[11:], "" if vis else (
         ": not visible from the camera" if full else ": not visible"))
     icon, (ibx, iby) = flag_layer(0, 0.42 * t, (0.0, -1.0), static=True)
@@ -2070,6 +2891,15 @@ def overlay(img, meta, which, scale=1.0, full=True, text_scale=None, td=None, k=
     fixed = cam is not None and cam.get("mode") == "fixed"
     if fixed:                                  # 2026-11-13: the fixed camera
         title, sub1, short = fixed_texts(meta, which, gname, md)
+    detached = cam is not None and cam.get("mode") == "detach" and not cam.get("attached")
+    attached_d = cam is not None and cam.get("mode") == "detach" and bool(cam.get("attached"))
+    if detached:                               # 2026-11-13: the detach-200 m set
+        title, sub1, short = detach_texts(meta, which, gname, md)
+    if attached_d and md and parse_mask(md["spec"])[0] == "cone":
+        short = "%s view (tint: %s weight inside its %g° cone, outlined)" % (gname, gname, parse_mask(md["spec"])[1])
+    if meta.get("after_last_obs"):
+        when = "%s UTC   COPS altitude %s (after the last COPS observation; SPICE trajectory)" % (
+            meta["utc"][:21].replace("T", " "), fmt_alt(meta["altitude_m"]))
     lines = [(title, f1), (sub1, f2), (when, f1)] if full else [(short, f2), (when, f2)]
     y = pad
     for text, fnt in lines:
@@ -2093,6 +2923,14 @@ def overlay(img, meta, which, scale=1.0, full=True, text_scale=None, td=None, k=
                 "horizontal field of view %.0f°" % (cam["utc"][11:19], fmt_alt(cam["altitude_target_m"]), hf)
                 if full else "fixed camera: COPS at %s UTC (%s), perspective, %.0f°" % (
                     cam["utc"][11:19], fmt_alt(cam["altitude_target_m"]), hf))
+    if detached:
+        note = ("camera detached at %s UTC (COPS %s): position and axis frozen in the comet frame; perspective, "
+                "horizontal field of view %.0f°" % (cam["detach_utc"][11:19], fmt_alt(cam["detach_altitude_m"]), hf)
+                if full else "camera detached at %s UTC (%s), perspective, %.0f°" % (
+                    cam["detach_utc"][11:19], fmt_alt(cam["detach_altitude_m"]), hf))
+    if attached_d:
+        note = note + ("; camera at COPS until %s, then detached" % fmt_alt(cam["detach_altitude_m"]) if full else
+                       " (camera at COPS until %s)" % fmt_alt(cam["detach_altitude_m"]))
     fn = font(int(round(20 * t)))
     bb = d.textbbox((pad, Hi - pad), note, font=fn, anchor="ls")
     d.rectangle((bb[0] - 4 * t, bb[1] - 3 * t, bb[2] + 4 * t, bb[3] + 3 * t), fill=(0, 0, 0))
@@ -2113,7 +2951,7 @@ def overlay(img, meta, which, scale=1.0, full=True, text_scale=None, td=None, k=
             r = 9 * t
             d.line((px - r, py, px + r, py), fill=(255, 255, 255), width=lw)
             d.line((px, py - r, px, py + r), fill=(255, 255, 255), width=lw)
-    if fixed:                                  # scale bar at the image centre; the sub-spacecraft point; the gauge
+    if fixed or detached:                      # scale bar at the image centre; the sub-spacecraft point; the gauge
         if "m_per_px_at_center" in meta:
             mpp = meta["m_per_px_at_center"] / s
             L = nice_length(0.18 * Wi * mpp)
@@ -2137,7 +2975,7 @@ def overlay(img, meta, which, scale=1.0, full=True, text_scale=None, td=None, k=
                 r = 8 * t
                 d.ellipse((px - r, py - r, px + r, py + r), outline=(0, 0, 0), width=lw + 2)
                 d.ellipse((px - r, py - r, px + r, py + r), outline=(255, 120, 200), width=lw)
-                d.text((px - r - 4 * t, py), "COPS", font=fn, fill=(255, 120, 200), anchor="rm",
+                d.text((px - r - 4 * t, py), "COPS" if fixed else "COPS (fit)", font=fn, fill=(255, 120, 200), anchor="rm",
                        stroke_width=max(1, int(round(2 * t))), stroke_fill=(0, 0, 0))
     # colour bar (right); the block is right-aligned inside the frame
     ch = int(Hi * 0.46)
@@ -2157,7 +2995,7 @@ def overlay(img, meta, which, scale=1.0, full=True, text_scale=None, td=None, k=
         d.text((cx0 + cw + 9 * t, yy), "%g" % v, font=fn, fill=(255, 255, 255), anchor="lm")
     d.text((cx0, cy0 - int(12 * t)), "%s weight" % gname, font=fn, fill=(255, 255, 255), anchor="ls")
     if td is not None:                         # 2026-11-13: touchdown legend
-        td_legend(img, d, td, k, t, pad, full)
+        td_legend(img, d, td, k, t, pad, full, bool(meta.get("sc_hides_touchdown")))
     return img
 
 
@@ -2234,7 +3072,7 @@ def compose_one(args):
             if td is None:
                 overlay(img, meta, which, 1.0, True).save(p, compress_level=1)
             else:
-                if bool(td["visible"][k]):
+                if td_show(td, k, meta):
                     draw_flag(img, td["base_px"][k], td["up_px"][k], k, 1.0)
                 overlay(img, meta, which, 1.0, True, td=td, k=k).save(p, compress_level=1)
     p3 = Path(out) / "movie3" / ("f%05d.png" % k)
@@ -2247,16 +3085,22 @@ def compose_one(args):
             if td is None:
                 canvas.paste(overlay(img, meta, which, 0.5, False, text_scale=0.75), (i * W // 2, 0))
             else:
-                if bool(td["visible"][k]):
+                if td_show(td, k, meta):
                     draw_flag(img, 0.5 * np.asarray(td["base_px"][k]), td["up_px"][k], k, 0.75)
                 canvas.paste(overlay(img, meta, which, 0.5, False, text_scale=0.75, td=td, k=k), (i * W // 2, 0))
         ts_img = Image.fromarray(bg.copy())
         d = ImageDraw.Draw(ts_img)
         la = math.log10(meta["altitude_m"])
+        after = bool(meta.get("after_last_obs"))      # 2026-11-13: frames after the last COPS observation
+        if after:
+            la = xmap[0]["la1"]                       # the line stays at the end of the time series (10:39:26 UTC)
         for j, (m, g) in enumerate(zip(xmap, ("NG", "RG"))):
             x = m["x0"] + (la - m["la0"]) / (m["la1"] - m["la0"]) * (m["x1"] - m["x0"])
             d.line((x, m["y_top"], x, m["y_bot"]), fill=(200, 0, 0), width=3)
         tlab = "%s UTC, %s" % (meta["utc"][11:19], fmt_alt(meta["altitude_m"]))
+        if after:
+            tlab = "%s UTC, COPS %s: after the last observation (time series ends at 10:39:26 UTC)" % (
+                meta["utc"][11:21], fmt_alt(meta["altitude_m"]))
         x = xmap[0]["x0"] + (la - xmap[0]["la0"]) / (xmap[0]["la1"] - xmap[0]["la0"]) * (xmap[0]["x1"] - xmap[0]["x0"])
         fn = font(18)
         bb = d.textbbox((x, xmap[0]["y_top"] - 4), tlab, font=fn, anchor="mb")
@@ -2275,10 +3119,11 @@ def cmd_compose(a):
     for i in (1, 2, 3):
         (out / ("movie%d" % i)).mkdir(parents=True, exist_ok=True)
     P = load_prep(a.work)
-    bg, xmap, model, ylims = timeseries_background(a.table, P["alt"], W, H // 2,
+    alt_ts = P["alt"][:int(P["n_obs_frames"])] if "n_obs_frames" in P else P["alt"]   # time series ends at the last observation
+    bg, xmap, model, ylims = timeseries_background(a.table, alt_ts, W, H // 2,
                                                    a.ts_label.replace("\\n", "\n") if a.ts_label else TS_LABEL_DEFAULT)
     ts = (bg, xmap, model, ylims, None)
-    ks = [int(v) for v in a.frames.split(",")] if a.frames else list(range(NFRAMES))
+    ks = [int(v) for v in a.frames.split(",")] if a.frames else list(range(len(P["utc"])))
     missing = [k for k in ks if not (Path(a.work) / "frames" / "meta" / ("f%05d.json" % k)).exists()]
     if missing:
         raise SystemExit("%d frames not rendered (first %d)" % (len(missing), missing[0]))
@@ -2286,7 +3131,11 @@ def cmd_compose(a):
     if getattr(a, "touchdown", ""):            # 2026-11-13: the touchdown flag (new option)
         td = load_touchdown(a.touchdown)
         say("touchdown flag from %s: %s UTC, visible in %d of %d frames" % (a.touchdown, str(td["utc"]),
-                                                                          int(np.sum(td["visible"])), NFRAMES))
+                                                                          int(np.sum(td["visible"])), len(P["utc"])))
+        if getattr(a, "flag_on_top", False):   # 2026-11-13 (user): drawn on top, no depth test
+            td["_on_top"] = True
+            say("flag drawn on top (no depth test) where its point projects into the image: %d frames" % int(
+                np.sum(td["in_front"] & td["in_image"])))
     jobs = [(k, a.work, str(out), ts) if td is None else (k, a.work, str(out), ts, td) for k in ks]
     with mp.get_context("fork").Pool(a.procs) as pool:
         for i, _ in enumerate(pool.imap_unordered(compose_one, jobs, chunksize=4)):
@@ -2325,13 +3174,16 @@ def cmd_frametable(a):
     out = Path(a.out)
     if out.exists():
         raise SystemExit("%s exists" % out)
-    M = [json.load(open(fd / "meta" / ("f%05d.json" % k))) for k in range(NFRAMES)]
+    M = [json.load(open(fd / "meta" / ("f%05d.json" % k))) for k in range(len(load_prep(a.work)["utc"]))]
     masked = "masks" in M[0]
     fixed = "camera" in M[0]                   # 2026-11-13: fixed-camera frames (extra columns, camera check)
     if fixed:
-        ref = (M[0]["camera"], M[0]["face_sha256"])
-        bad = [m["k"] for m in M if (m.get("camera"), m.get("face_sha256")) != ref]
-        chk = {"frames": len(M), "frames_with_a_different_camera_or_face_buffer": bad, "camera": ref[0],
+        MD = M
+        if M[0]["camera"].get("mode") == "detach":         # detach-200 m set: the detached frames only
+            MD = [m for m in M if not m["camera"].get("attached")]
+        ref = (MD[0]["camera"], MD[0]["face_sha256"])
+        bad = [m["k"] for m in MD if (m.get("camera"), m.get("face_sha256")) != ref]
+        chk = {"frames": len(MD), "first_frame": MD[0]["k"], "frames_with_a_different_camera_or_face_buffer": bad, "camera": ref[0],
                "face_buffer_sha256": ref[1], "hosts_devices": sorted({"%s:%s" % (m["host"], m["device"]) for m in M}),
                "jobs": sorted({str(m["job"]) for m in M})}
         json.dump(chk, open(str(out) + ".camera_check.json", "x"), indent=1)
@@ -2379,8 +3231,10 @@ def cmd_frametable(a):
                 for g in ("RG", "NG"):
                     st = m["masks"][g]
                     ls = st.get("los", {})
-                    row += ["%.5f" % st["fov_pixel_frac"], "%.5f" % st["fov_facing_pixel_frac"], "%.6g" % st["fov_area_m2"],
-                            "%.6g" % st["fov_facing_area_m2"], ls.get("blocked", 0), ls.get("near_plane_facets_tested", 0),
+                    nan = float("nan")
+                    row += ["%.5f" % st.get("fov_pixel_frac", nan), "%.5f" % st.get("fov_facing_pixel_frac", nan),
+                            "%.6g" % st.get("fov_area_m2", nan), "%.6g" % st.get("fov_facing_area_m2", nan),
+                            ls.get("blocked", 0), ls.get("near_plane_facets_tested", 0),
                             "x".join(str(v) for v in ls.get("map_px", []))]
                 gp = m.get("gauge_pixel") or [float("nan"), float("nan")]
                 row += [int(bool(m.get("sub_visible"))), int(bool(m.get("gauge_visible"))), "%.2f" % gp[0], "%.2f" % gp[1],
@@ -2741,7 +3595,7 @@ def _cmp_one(args):
 
 def cmd_compare(a):
     import multiprocessing as mp
-    ks = [int(v) for v in a.frames.split(",")] if a.frames else list(range(NFRAMES))
+    ks = [int(v) for v in a.frames.split(",")] if a.frames else list(range(len(load_prep(a.work)["utc"])))
     with mp.get_context("fork").Pool(a.procs) as pool:
         res = pool.map(_cmp_one, [(k, a.a, a.b) for k in ks], chunksize=8)
     bad = [r for r in res if r[1] or r[2] or r[3]]
@@ -2802,7 +3656,7 @@ def cmd_touchdown(a):
             raise SystemExit("the touchdown point differs from the ground-track figures' impact point")
     say("touchdown: %s UTC, lon %.3f, lat %.3f, facet %d, point %s" % (imp["utc"], imp["lon_deg"], imp["lat_deg"], ftd,
                                                                         ptd.tolist()))
-    N = NFRAMES
+    N = len(P["utc"])
     base = np.full((N, 2), np.nan)
     tip = np.full((N, 2), np.nan)
     upv = np.tile(np.array([0.0, -1.0]), (N, 1))
@@ -2926,8 +3780,8 @@ def cmd_validate_fixed(a):
     work = Path(a.work)
     P = load_prep(work)
     Q = np.load(work / "plan.npz", allow_pickle=False)
-    if not is_fixed(Q):
-        raise SystemExit("validate_fixed: plan.npz is not a fixed-camera plan")
+    if not (is_fixed(Q) or is_detach(Q)):
+        raise SystemExit("validate_fixed: plan.npz is not a fixed-camera or detach plan")
     FV = load_fov(work)
     if FV is None:
         raise SystemExit("validate_fixed needs fov.npz")
@@ -2936,12 +3790,21 @@ def cmd_validate_fixed(a):
     info = json.load(open(work / "fov_checks.json"))
     specs = {"RG": a.mask_rg, "NG": a.mask_ng}
     fixed_check_masks(specs)
-    xc = np.asarray(Q["cam_x"], float)
-    F = float(Q["F"][0])
+    if is_detach(Q):                           # detach-200 m set: the frozen camera of the detached frames
+        k_d = int(Q["k_detach"])
+        xc = np.asarray(Q["cam_x_frames"][k_d], float)
+        F = float(Q["F"][k_d])
+        cbr, cbn = Q["cam_b_rg_frames"][k_d], Q["cam_b_ng_frames"][k_d]
+        parts = ("bus", "wings", "hga")
+    else:
+        xc = np.asarray(Q["cam_x"], float)
+        F = float(Q["F"][0])
+        cbr, cbn = Q["cam_b_rg"], Q["cam_b_ng"]
+        parts = ("bus", "wings")
     t0 = time.time()
-    vw0 = rnd.fixed_geometry(xc, Q["cam_b_rg"], Q["cam_b_ng"], "perspective", F, (0.0, 0.0))
+    vw0 = rnd.fixed_geometry(xc, cbr, cbn, "perspective", F, (0.0, 0.0))
     t_view = time.time() - t0
-    vw1 = rnd.fixed_geometry(xc, Q["cam_b_rg"], Q["cam_b_ng"], "perspective", F, (0.0, 0.0))
+    vw1 = rnd.fixed_geometry(xc, cbr, cbn, "perspective", F, (0.0, 0.0))
     fdraw = cp.unique(vw0["fid"])
     adraw = cp.asarray(rnd.area_h)[fdraw]
     cen_d = rnd.cent[fdraw]
@@ -2960,7 +3823,7 @@ def cmd_validate_fixed(a):
     Hs, Ws = H * SS, W * SS
     for k in [int(v) for v in a.test_frames.split(",")]:
         t0 = time.time()
-        R = fixed_frame(rnd, P, FV, SCZ, specs, k, vw0, cen_d, fdraw, adraw, a.sc_samples)
+        R = fixed_frame(rnd, P, FV, SCZ, specs, k, vw0, cen_d, fdraw, adraw, a.sc_samples, sc_parts=parts)
         t_fr = time.time() - t0
         xg = np.asarray(P["x"][k], float)
         l = cp.asarray(xg)[None, :] - pts
@@ -2983,6 +3846,11 @@ def cmd_validate_fixed(a):
             bb = np.degrees(np.arctan2(dI @ e2, fwd))
             expect = (fwd > 0) & (np.abs(aa) <= ha[0]) & (np.abs(bb) <= ha[1])
             near = (np.abs(np.abs(aa) - ha[0]) < 1e-9) | (np.abs(np.abs(bb) - ha[1]) < 1e-9)
+            if parse_mask(specs[g])[0] == "cone":   # circular cone: the angle from the boresight (prep), in degrees
+                bP = unit(P["b_rg"][k] if g == "RG" else P["b_ng"][k])
+                angd = np.degrees(np.arccos(np.clip(dB @ bP, -1.0, 1.0)))
+                expect = angd <= parse_mask(specs[g])[1]
+                near = np.abs(angd - parse_mask(specs[g])[1]) < 1e-6
             got = cp.asnumpy(G["fov"])
             sel = G["fov"] & facing
             seen = G["seen"]
@@ -3102,9 +3970,13 @@ def main():
     p.add_argument("--kernels", required=True)
     p.add_argument("--geom-exe", required=True)
     p.add_argument("--gauge-offset", default="0,0,1.5")
+    p.add_argument("--extend-to-utc", default=None, help="2026-11-13: add frames uniform in time (the last log-altitude "
+                   "step) after the last observation up to this UTC (default: none)")
     p = sub.add_parser("plan", parents=[c])
-    p.add_argument("--camera", default="gauge", choices=("gauge", "fixed"),
-                   help="gauge (default: the camera at the gauge, the earlier movies) or fixed (2026-11-13)")
+    p.add_argument("--camera", default="gauge", choices=("gauge", "fixed", "detach"),
+                   help="gauge (default: the camera at the gauge, the earlier movies), fixed or detach (2026-11-13)")
+    p.add_argument("--detach-altitude", type=float, default=200.0, help="detach camera: the COPS altitude [m] at which "
+                   "the camera leaves the gauge and stays")
     p.add_argument("--camera-altitude", type=float, default=100.0, help="fixed camera: the COPS altitude [m] of its time")
     p.add_argument("--fov-deg", type=float, default=90.0, help="fixed camera: horizontal field of view [deg]")
     p.add_argument("--kernels", default=None)
@@ -3135,6 +4007,16 @@ def main():
     p.add_argument("--sa-hold-utc", default=SA_HOLD_UTC)
     p.add_argument("--origin-offset", default="0,0,0", help="position of ROS_SPACECRAFT's origin (-226000) relative to "
                    "ROSETTA (-226) in ROS_SPACECRAFT [m]; no kernel gives it (default 0)")
+    p.add_argument("--hga-ck", default=None, help="2026-11-13: HGA C-kernel -> HGA and solar-array frames in sc.npz")
+    p.add_argument("--hga-hold-utc", default=SA_HOLD_UTC, help="HGA orientation held after this UTC (end of the C-kernel)")
+    p = sub.add_parser("contact", parents=[c])
+    p.add_argument("--kernels", required=True)
+    p.add_argument("--geom-exe", required=True)
+    p.add_argument("--hga-ck", required=True)
+    p.add_argument("--hga-hold-utc", default=SA_HOLD_UTC)
+    p.add_argument("--sa-hold-utc", default=SA_HOLD_UTC)
+    p.add_argument("--t-start", default="2016-09-30T10:39:26")
+    p.add_argument("--max-seconds", type=float, default=15.0)
     p = sub.add_parser("validate_sc", parents=[c])
     p.add_argument("--test-frames", default="1200,1500,1600,1700,1799")
     p = sub.add_parser("validate_fov", parents=[c])
@@ -3157,6 +4039,8 @@ def main():
     p.add_argument("--frames", default="")
     p.add_argument("--touchdown", default="", help="touchdown.npz (cops_movies.py touchdown): draw the touchdown flag "
                    "(2026-11-13; default: none)")
+    p.add_argument("--flag-on-top", action="store_true", help="2026-11-13: draw the flag on top (no depth test against "
+                   "the nucleus or the spacecraft) wherever its point projects into the image")
     p = sub.add_parser("compare", parents=[c])
     p.add_argument("--a", required=True)
     p.add_argument("--b", required=True)
@@ -3183,7 +4067,7 @@ def main():
     return {"prep": cmd_prep, "plan": cmd_plan, "validate": cmd_validate, "render": cmd_render, "compose": cmd_compose,
             "compare": cmd_compare, "encode": cmd_encode, "fov": cmd_fov, "validate_fov": cmd_validate_fov,
             "frametable": cmd_frametable, "diagnose": cmd_diagnose, "sc": cmd_sc, "validate_sc": cmd_validate_sc,
-            "touchdown": cmd_touchdown, "validate_fixed": cmd_validate_fixed}[a.cmd](a)
+            "touchdown": cmd_touchdown, "validate_fixed": cmd_validate_fixed, "contact": cmd_contact}[a.cmd](a)
 
 
 if __name__ == "__main__":
