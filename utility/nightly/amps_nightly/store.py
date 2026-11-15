@@ -1,6 +1,6 @@
 """Results store (SQLite) and ingestion of uploaded run directories on the server.
 
-Server layout (root defaults to ~/AMPSTEST/nightly on passion):
+Server layout (root: the server_root of the server's machine file, /data/vtenishe/AMPSTEST on passion):
 
     <root>/incoming/<run-id>.tar.gz           uploads from `amps-nightly pack` (hidden names are still arriving)
     <root>/incoming/[<anything>/]<run-id>/   run directories; only directories containing DONE are taken

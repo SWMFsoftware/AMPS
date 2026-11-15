@@ -82,6 +82,7 @@ def run(ws: Path, machine: Machine, items: Sequence[Item], env: Dict[str, str], 
     timing: Dict[str, float] = {}
     over: Dict[str, str] = {}          # test -> "stage exceeded its time limit of N s"
     not_started: List[str] = []
+    no_space: Dict[str, str] = {}      # test -> why it was not started (too little free space)
 
     def stage(name: str, which: str) -> bool:
         target = "test_{}_{}".format(name, which)
@@ -103,6 +104,10 @@ def run(ws: Path, machine: Machine, items: Sequence[Item], env: Dict[str, str], 
     for name in planned:                                   # phase A: one at a time
         if time.time() >= deadline:
             not_started.append(name)
+            continue
+        free = shutil.disk_usage(str(ws)).free / 2 ** 30
+        if free < machine.min_free_gb:
+            no_space[name] = "not started: only {:.1f} GB free (min_free_gb = {:g})".format(free, machine.min_free_gb)
             continue
         stage(name, "compile")
         if name not in over:
@@ -127,6 +132,8 @@ def run(ws: Path, machine: Machine, items: Sequence[Item], env: Dict[str, str], 
         result = results.pop(name, None)
         if name in not_started:
             row = {"status": "SKIPPED", "stage": "", "reason": "not started: the night's time limit was reached"}
+        elif name in no_space:
+            row = {"status": "SKIPPED", "stage": "", "reason": no_space[name]}
         elif result is None:
             row = {"status": "FAILED", "stage": "compile", "reason": "no result file test_{}*.diff was written".format(name)}
         else:

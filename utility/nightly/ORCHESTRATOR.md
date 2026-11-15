@@ -127,9 +127,13 @@ So, already in phase 1:
 
 - The night's commit is taken once from a persistent mirror (`{workdir}/mirror/AMPS.git`, updated with
   `git fetch`), so every runner and configuration tests the same commit.
-- Each runner with `workspace: configured` gets `git worktree add --detach <commit>`, the companions (BATL
-  cloned; SWMF_data is one persistent shared clone, linked in), and the configuration's `Config.pl`
-  calls run with `AMPS_TABLE_HOST={table_host}`.
+- Each runner gets its own copy in `{workdir}/<COMPILER>/<runner>/AMPS` (one folder per compiler, as the
+  old `~/Tmp_AMPS_test/GNU/AMPS`), made with `git worktree add --detach <commit>`, with the companions
+  (share, util, BATL as worktrees; SWMF_data, the nightly's own copy, linked in). For `workspace:
+  configured` the configuration's `Config.pl` calls and `after_install` lines run there with
+  `AMPS_TABLE_HOST={table_host}`. `{out}` and `{tmp}` are `<COMPILER>/<runner>/out` and `tmp`. The night
+  starts by deleting the previous night's copies (only folders holding the `.amps-nightly` marker).
+- No runner and no Makefile.test test starts with less than `min_free_gb` free in `{workdir}`.
 - A configured tree cannot simply be copied, because `Makefile.def` holds absolute paths
   (`PTDIR`, `MYDIR`). Phase 1 measures how long the per-workspace `Config.pl -install` takes.
 - The orchestrator's own working directory is `{workdir}`, never inside a workspace. Runners are started
@@ -141,8 +145,8 @@ So, already in phase 1:
   - Every inherited `AMPS_TEST_*` variable is removed.
   - `TMPDIR={tmp}`, because several runners use fixed temp-file names.
   - A marker `AMPS_NIGHTLY_TAG=<run-id>/<runner>` (see §5).
-- Workspaces of runners whose tests all passed are deleted once their logs are archived. Failed ones are
-  kept until the next night for debugging (`keep_workspaces: "failures"`). The checkout is about 140 MB;
+- Copies of runners whose tests all passed are deleted once their logs are archived. Failed ones are
+  kept until the next night starts, for debugging (`keep_workspaces: "failures"`). The checkout is about 140 MB;
   a `src/test` run directory is about 700 MB, mostly work directories that are not archived.
 
 This isolation is also what makes phase 2 a scheduling change only (§7).
@@ -195,7 +199,7 @@ cases_total, cases_failed, log}`.
    written when the run starts, and `progress.jsonl` are removed.
 5. `amps-nightly pack` (a separate step, `transfer.py`):
    - tars each finished run folder that is not `PACKED` into `{workdir}/outbox/<run_id>.tar.gz`, `DONE` last;
-   - sends it to the machine file's `upload`: `rsync` to `passion:AMPSTEST/nightly/incoming`, or a local
+   - sends it to the machine file's `upload`: `rsync` to `passion:/data/vtenishe/AMPSTEST/incoming`, or a local
      copy on passion; the file shows up under its final name only once it is complete;
    - an unsent tarball stays in the outbox and is retried by the next `pack`; sent ones are deleted after
      14 days;
@@ -270,7 +274,7 @@ The archive has the same shape as the legacy `AMPS_TEST_RESULTS/YYYY/MM/DD/<fold
 column and night:
 
 ```
-~/AMPSTEST/nightly/www/archive/2026/11/14/passion-gnu/
+/data/vtenishe/AMPSTEST/www/archive/2026/11/14/passion-gnu/
     index.html            summary of the night: commit, runners with time, exit code and status, links to logs
     run.json  results.jsonl  runners.json
     logs/

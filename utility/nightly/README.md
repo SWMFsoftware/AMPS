@@ -34,7 +34,7 @@ What runs where is decided by four files:
 **Add a machine** (no other file needs to change):
 
 1. `cp machines/passion.json machines/<name>.json` and edit it: `machine` (= file name), `hostnames`
-   (`hostname` output there), `workdir`, `upload` (`passion.ndc.nasa.gov:AMPSTEST/nightly/incoming`
+   (`hostname` output there), `workdir`, `upload` (`passion.ndc.nasa.gov:/data/vtenishe/AMPSTEST/incoming`
    from any other machine), `start`, `lanes`, `timeouts_s`, `capabilities`, and one entry in `configs` per
    compiler (`config_pl` = the `Config.pl` calls, `setup` = module loads).
 2. src/test suites need that machine's profile: `cp test/qualification-machine/template.json
@@ -79,7 +79,20 @@ Three steps, like the three scripts of the old routine:
 
 1. **`nightly_run.sh`** (`amps-nightly run`) checks out the head of `master` (local mirrors in
    `{workdir}/mirrors`), then for each enabled configuration runs the runners of `runners.json` one after
-   another, each in its own worktree. Results and logs go to `{workdir}/nights/<YYYYMMDD-HHMM>/runs/<column>/`.
+   another. Each runner gets its own installed copy, in one folder per compiler as in the old routine:
+
+   ```
+   ~/Tmp_AMPS_test/                       the machine file's "workdir" (TESTDIR of the ~/bin script)
+       AMPS/  AMPS.prev/                  tonight's download (the orchestrator, runners.json, machines/)
+       mirrors/                           AMPS.git share.git util.git BATL.git
+       GNU/<runner>/AMPS                  installed copy of each runner (Intel/<runner>/AMPS, ... for more
+       GNU/<runner>/out  GNU/<runner>/tmp   compilers); replaced the next night, deleted early if all passed
+       nights/<YYYYMMDD-HHMM>/            orchestrator.log, runs/<column>/ (results and logs until pack sends them)
+       outbox/                            the tarballs
+   ```
+
+   No runner, and no Makefile.test test, starts with less than `min_free_gb` (default 5 GB) free there;
+   it is reported SKIPPED with the reason.
    Each step of a log keeps its first 256 KB and last 768 KB; the middle of very long output is left out.
 2. **`nightly_pack.sh`** (`amps-nightly pack`) writes every finished run not sent yet into
    `{workdir}/outbox/<run_id>.tar.gz` (run.json, results.jsonl, runners.json, logs/: everything the pages
@@ -124,12 +137,14 @@ the crontab is saved to `$AMPSTEST/backup/` first. `amps-nightly uninstall` remo
 Each night the script
 
 1. takes a lock (one night at a time);
-2. downloads AMPS: `git clone --depth 1` of `BRANCH` into `$AMPSTEST/tool/AMPS` (the night before is kept
-   as `tool/AMPS.prev` and used if the download fails);
+2. downloads AMPS: `git clone --depth 1` of `BRANCH` into `$TESTDIR/AMPS` (`~/Tmp_AMPS_test/AMPS`; the
+   night before is kept as `AMPS.prev` and used if the download fails);
 3. pulls SWMF_data: the nightly's own copy at the machine file's `swmf_data`, reset to the newest commit
    and cleaned every night, because some Makefile.test checks edit reference files in it
    (`RemoveColumn.pl`, `perl -i.tmp`) and later runs would see the edits;
-4. runs `tool/AMPS/utility/nightly/nightly_run.sh --commit <downloaded commit>`, then `nightly_pack.sh`,
+4. writes the night's plan to the log (where each runner is installed and with which `Config.pl` calls:
+   `run --dry-run`), runs `$TESTDIR/AMPS/utility/nightly/nightly_run.sh --commit <downloaded commit>`, then
+   `nightly_pack.sh`,
    and on the server (`UPDATE_SITE=yes`) `nightly_update.sh`;
 5. logs everything to `$AMPSTEST/logs/nightly-YYYYMMDD-HHMM.log` (kept 60 days).
 
@@ -140,7 +155,7 @@ branch has a different version of it, the night's log and summary page show a wa
 Arguments of the script go to `nightly_run.sh`, so `~/bin/amps_nightly_test.sh --only moon --no-upload` is a trial
 of the whole chain.
 
-Another test machine installs with `"upload": "passion.ndc.nasa.gov:AMPSTEST/nightly/incoming"` in its
+Another test machine installs with `"upload": "passion.ndc.nasa.gov:/data/vtenishe/AMPSTEST/incoming"` in its
 machine file (so `UPDATE_SITE=no`), and passion picks its tarballs up with one more crontab line,
 `30 10 * * * <AMPS>/utility/nightly/nightly_update.sh` (or with its own night's update).
 
@@ -149,7 +164,9 @@ format, add a reader function to `amps_nightly/readers.py`. Try it with `run --o
 
 ## Server data
 
-Server data lives in `--root` (default `$AMPS_NIGHTLY_ROOT`, else `~/AMPSTEST/nightly`):
+Server data lives in `--root` (default `$AMPS_NIGHTLY_ROOT`, else the `server_root` of this host's machine
+file, else `~/AMPSTEST/nightly`). On passion that is `/data/vtenishe/AMPSTEST`, which also holds the nightly's
+`logs/` and `SWMF_data/` (`~/AMPSTEST/nightly` is a link to it, for the nights before the move):
 
 ```
 incoming/   <run_id>.tar.gz from `pack` (hidden names are still arriving); run directories with DONE also work
@@ -161,8 +178,9 @@ www/archive/YYYY/MM/DD/<machine>-<config>/   one night of one column, like the l
 ```
 
 On passion, Firefox runs under an AppArmor profile that lets it read files under `$HOME` and `/tmp`
-but not under `/data`: a page there just keeps loading. Keep `--root` under `$HOME` (the default), and to
-view `mockup/index.html` from a `/data` checkout use `google-chrome` or a copy under `$HOME`.
+but not under `/data`: a page there just keeps loading (a link from `$HOME` does not help). Open the report
+with `google-chrome /data/vtenishe/AMPSTEST/www/index.html`, or serve it and use any browser:
+`python3 -m http.server 8000 --directory /data/vtenishe/AMPSTEST/www`, then `http://localhost:8000/`.
 
 ## Feeding it from the legacy nightly (until the new runner exists)
 

@@ -20,7 +20,7 @@ Started 2026-11-13. Replaces the per-machine csh/perl scripts in `utility/TestSc
 |---|---|
 | Grouping of legacy tests | a `Family=<id>` line in every `MakefileTest/Table` block |
 | Report columns | one per **machine + compiler configuration** (e.g. `passion · GNU`) |
-| Server and web host | **passion** (`~/AMPSTEST/nightly`) |
+| Server and web host | **passion** (`/data/vtenishe/AMPSTEST`; tests run in `~/Tmp_AMPS_test`) |
 | Implementation language | Python 3, standard library only, 3.8 compatible (cron on passion runs `/usr/bin/python3` 3.8) |
 | Test statuses | `PASS`, `FAILED`, `SKIPPED`; harness errors and timeouts are `FAILED` with a reason |
 | Machines | one file per machine, `machines/<machine>.json`; its enabled configurations are the report columns |
@@ -42,7 +42,7 @@ Started 2026-11-13. Replaces the per-machine csh/perl scripts in `utility/TestSc
 ```
  each test machine (cron, or a PBS/Slurm job)          server: passion
  ───────────────────────────────────────────           ──────────────────────────────────────────
- 1 nightly_run.sh  (amps-nightly run)                  ~/AMPSTEST/nightly/
+ 1 nightly_run.sh  (amps-nightly run)                  /data/vtenishe/AMPSTEST/
    checkout → run tests → run directory                   incoming/<run-id>.tar.gz
      run.json, results.jsonl, logs/, DONE    2 pack      3 nightly_update.sh (amps-nightly update):
  2 nightly_pack.sh (amps-nightly pack)     ───────────►   ingest  → results.db (SQLite)

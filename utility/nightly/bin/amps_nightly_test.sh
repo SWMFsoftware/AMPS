@@ -7,21 +7,31 @@
 #
 # Each night it
 #   1. takes a lock, so that only one night runs at a time on this machine;
-#   2. downloads AMPS: git clone --depth 1 of $BRANCH into $AMPSTEST/tool/AMPS (the previous night's copy
-#      is kept as tool/AMPS.prev, and used if the download fails);
+#   2. downloads AMPS: git clone --depth 1 of $BRANCH into $TESTDIR/AMPS (the previous night's copy
+#      is kept as $TESTDIR/AMPS.prev, and used if the download fails);
 #   3. pulls SWMF_data: the nightly's own copy, at the "swmf_data" var of this machine's file
 #      (cloned the first time, then updated to the newest commit of its branch);
 #   4. runs the orchestrator of the downloaded copy on the downloaded commit:
-#      tool/AMPS/utility/nightly/nightly_run.sh --commit <sha>
+#      $TESTDIR/AMPS/utility/nightly/nightly_run.sh --commit <sha>
 #   5. packs the results and sends them to the server: nightly_pack.sh
 #   6. on the results server only (UPDATE_SITE=yes): nightly_update.sh (results.db, archive, web pages).
+#
+# Where AMPS is installed: the download in $TESTDIR/AMPS only provides the orchestrator and its files;
+# Config.pl is never run in it. The orchestrator installs AMPS once for every runner (runners.json) and
+# every compiler of the machine file, as the old routine's $TESTDIR/GNU/AMPS:
+#     $TESTDIR/<COMPILER>/<runner>/AMPS     e.g. ~/Tmp_AMPS_test/GNU/legacy/AMPS, ~/Tmp_AMPS_test/GNU/core/AMPS
+# a copy of the night's commit with share, util and BATL and a link to SWMF_data, in which it runs the
+# "config_pl" calls (./Config.pl -install -compiler=..., ...) and "after_install" lines (make share_lib) of
+# machines/<machine>.json before the runner starts. Every night's log lists these commands (step 1), and
+# each runner's log (logs/<runner>/runner.log, "### configure") shows them running.
 # The orchestrator, runners.json and machines/ come from the download, so a change to them pushed to $BRANCH
 # takes effect the next night. This script does not replace itself: when the downloaded copy has a
 # different version of it, the night's log and the night's summary page say so, and
 # 'amps-nightly install' updates ~/bin.
 #
 # Settings: amps_nightly_test.conf next to this script (written by 'amps-nightly install'):
-#   AMPSTEST=/data/vtenishe/AMPSTEST   all nightly files of this machine: tool/, work/, logs/
+#   AMPSTEST=/data/vtenishe/AMPSTEST   the nightly's logs/ and SWMF_data/ (on the server also its results)
+#   TESTDIR=~/Tmp_AMPS_test            where the tests run: the "workdir" of the machine file
 #   BRANCH=master                      the AMPS branch that is downloaded and tested
 #   UPDATE_SITE=no                     yes on the results server (passion)
 #   PYTHON=python3                     the Python (3.8 or newer) that runs amps-nightly
@@ -41,6 +51,7 @@ if [ -z "${AMPSTEST:-}" ]; then
     echo "amps_nightly_test.sh: AMPSTEST is not set in $conf" >&2
     exit 2
 fi
+TESTDIR=${TESTDIR:-$AMPSTEST/tool}
 BRANCH=${BRANCH:-master}
 UPDATE_SITE=${UPDATE_SITE:-no}
 PYTHON=${PYTHON:-python3}
@@ -52,7 +63,7 @@ PATH=/usr/local/bin:/usr/bin:/bin:$PATH          # cron's PATH is only /usr/bin:
 AMPS_NIGHTLY_PYTHON=$PYTHON                     # used by nightly_run.sh, nightly_pack.sh, nightly_update.sh
 export PATH AMPS_NIGHTLY_PYTHON
 
-mkdir -p "$AMPSTEST/logs" "$AMPSTEST/tool" || exit 2
+mkdir -p "$AMPSTEST/logs" "$TESTDIR" || exit 2
 log="$AMPSTEST/logs/nightly-$(date +%Y%m%d-%H%M).log"
 exec >>"$log" 2>&1
 
@@ -77,7 +88,7 @@ esac
 say "AMPS nightly test on $(hostname); settings $conf; script $self"
 
 # 2. download AMPS
-tool=$AMPSTEST/tool
+tool=$TESTDIR
 rm -rf "$tool/AMPS.new"
 say "downloading AMPS ($BRANCH) from $REPOSITORY"
 if git clone --quiet --depth 1 --branch "$BRANCH" "$REPOSITORY" "$tool/AMPS.new"; then
@@ -133,6 +144,8 @@ else
 fi
 
 # 4.-6. run, pack, update
+say "the night's plan: where each runner is installed, the install commands and each runner's command"
+"$PYTHON" "$nightly/amps-nightly" run --dry-run "$@" | sed 's/^/    /'
 say "step 1/3: nightly_run.sh --commit $commit $*"
 if [ -n "$notes" ]; then
     "$nightly/nightly_run.sh" --commit "$commit" --note "$notes" "$@"

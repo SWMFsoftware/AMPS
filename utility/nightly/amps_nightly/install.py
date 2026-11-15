@@ -26,10 +26,11 @@ SCRIPT = Path(__file__).resolve().parent.parent / "bin" / "amps_nightly_test.sh"
 SCRIPT_NAME = "amps_nightly_test.sh"
 CONF_NAME = "amps_nightly_test.conf"
 MARKER = "# amps-nightly: AMPS nightly testing (added by 'amps-nightly install'; remove with 'amps-nightly uninstall')"
-SETTINGS = ("AMPSTEST", "BRANCH", "UPDATE_SITE", "PYTHON", "REPOSITORY", "SWMF_DATA_REPOSITORY",
+SETTINGS = ("AMPSTEST", "TESTDIR", "BRANCH", "UPDATE_SITE", "PYTHON", "REPOSITORY", "SWMF_DATA_REPOSITORY",
             "SWMF_DATA_BRANCH", "KEEP_LOG_DAYS")
 CONF_HEADER = """# Settings of ~/bin/amps_nightly_test.sh (written by 'amps-nightly install'; see the script's header).
-# AMPSTEST: all nightly files of this machine; BRANCH: the AMPS branch downloaded and tested;
+# AMPSTEST: the nightly's logs and SWMF_data (and on the server: results, archive, web pages);
+# TESTDIR: where the tests run (the machine file's workdir); BRANCH: the AMPS branch downloaded and tested;
 # UPDATE_SITE: yes on the results server; PYTHON: the Python 3.8+ that runs amps-nightly.
 """
 

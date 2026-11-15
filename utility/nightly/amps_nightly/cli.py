@@ -37,11 +37,22 @@ from .registry import Registry, RegistryError
 from .runners import Routine, RoutineError
 from .table import check_table, read_table
 
-DEFAULT_ROOT = Path(os.environ.get("AMPS_NIGHTLY_ROOT", str(Path.home() / "AMPSTEST" / "nightly")))
+FALLBACK_ROOT = Path.home() / "AMPSTEST" / "nightly"
+
+
+def server_root(machines_dir: Optional[str] = None) -> Path:
+    """$AMPS_NIGHTLY_ROOT, else the "server_root" of this host's machine file, else ~/AMPSTEST/nightly."""
+    if os.environ.get("AMPS_NIGHTLY_ROOT"):
+        return Path(os.environ["AMPS_NIGHTLY_ROOT"]).expanduser()
+    machines, _ = load_machines(machines_dir)
+    machine = find_machine(machines, hostname=socket.gethostname()) or find_machine(machines, hostname=socket.getfqdn())
+    if machine is not None and machine.server_root:
+        return Path(machine.server_root).expanduser()
+    return FALLBACK_ROOT
 
 
 def _paths(args: argparse.Namespace) -> Tuple[Path, Path]:
-    root = Path(args.root).expanduser()
+    root = Path(args.root).expanduser() if args.root else server_root(getattr(args, "machines", None))
     www = Path(args.www).expanduser() if getattr(args, "www", None) else root / "www"
     return root, www
 
@@ -246,8 +257,9 @@ def cmd_install(args: argparse.Namespace) -> int:
     old = install.read_conf(bin_dir / install.CONF_NAME)
     server = bool(machine.upload) and not transfer.is_remote(machine.upload)
     settings = dict(old)
-    settings["AMPSTEST"] = str(Path(args.root or old.get("AMPSTEST") or
+    settings["AMPSTEST"] = str(Path(args.root or old.get("AMPSTEST") or machine.server_root or
                                     Path(machine.workdir).expanduser().parent).expanduser())
+    settings["TESTDIR"] = str(Path(machine.workdir).expanduser())
     settings["BRANCH"] = args.branch or old.get("BRANCH") or "master"
     settings["UPDATE_SITE"] = args.update_site or old.get("UPDATE_SITE") or ("yes" if server else "no")
     settings["PYTHON"] = args.python or old.get("PYTHON") or "python3"
@@ -451,8 +463,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub.required = True
 
     def server(p: argparse.ArgumentParser, www: bool = True) -> None:
-        p.add_argument("--root", default=str(DEFAULT_ROOT),
-                       help="server data directory (default: $AMPS_NIGHTLY_ROOT or ~/AMPSTEST/nightly)")
+        p.add_argument("--root", help="server data directory: results.db, incoming/, www/ (default: "
+                                      "$AMPS_NIGHTLY_ROOT, else this host's server_root, else ~/AMPSTEST/nightly)")
         if www:
             p.add_argument("--www", help="web directory for the pages (default: ROOT/www)")
 
@@ -465,8 +477,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("install", help="install ~/bin/amps_nightly_test.sh, its settings and its crontab line "
                                         "(shows the changes and asks first)")
-    p.add_argument("--root", help="AMPSTEST: all nightly files of this machine (default: the settings already "
-                                  "installed, else the parent of the machine file's workdir)")
+    p.add_argument("--root", help="AMPSTEST: the nightly's logs, SWMF_data and (on the server) results "
+                                  "(default: as installed, else the machine file's server_root, else the "
+                                  "parent of its workdir)")
     p.add_argument("--branch", help="AMPS branch to download and test (default: as installed, else master)")
     p.add_argument("--update-site", choices=("yes", "no"),
                    help="also update the results and pages here (default: yes if the machine uploads to a local directory)")

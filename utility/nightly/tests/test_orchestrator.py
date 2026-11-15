@@ -1,5 +1,6 @@
 import json
 import os
+import datetime as dt
 import io
 import subprocess
 import sys
@@ -189,6 +190,8 @@ class Night_(unittest.TestCase):
             self.assertEqual(runners["crash"]["exit_code"], 3)
             self.assertTrue(runners["good"]["workspace_kept"])            # it has a failure
             ws = Path(runners["good"]["workspace"])
+            self.assertEqual(ws, tmp / "work" / "GNU" / "good" / "AMPS")        # <workdir>/<COMPILER>/<runner>/AMPS
+            self.assertTrue((ws.parent / ".amps-nightly").is_file())
             self.assertEqual((ws / ".configured").read_text().split(), ["configured", "box", "-install", "-compiler=gcc"])
             self.assertTrue((ws / "share" / "README").is_file())
             self.assertFalse((Path(runners["crash"]["workspace"]) / ".configured").exists())   # plain workspace
@@ -212,6 +215,18 @@ class Night_(unittest.TestCase):
                 accepted, rejected = ingest(tmp, tmp / "www", st)
             self.assertEqual((accepted, rejected), ([run["run_id"]], []))
             self.assertEqual(list((tmp / "incoming").iterdir()), [])
+
+            # the next night installs into the same folders again, and a full disk stops runners from starting
+            later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=1)
+            rundir2, = Night(machine, routine, Registry.load(), machine.configs, echo=lines.append, now=later).run()
+            _, rows2 = read_run_dir(rundir2)
+            self.assertEqual({r["test"]: r["status"] for r in rows2}["Alpha"], "PASS")
+            machine.min_free_gb = 1e12
+            rundir3, = Night(machine, routine, Registry.load(), machine.configs, echo=lines.append,
+                             now=later + dt.timedelta(hours=1)).run()
+            _, rows3 = read_run_dir(rundir3)
+            self.assertTrue(rows3 and all(r["status"] == "SKIPPED" and "GB free" in r["reason"] for r in rows3
+                                          if r["test"] != "gpu"))
             night = list((tmp / "www" / "archive").glob("*/*/*/box-gnu"))[0]
             index = (night / "index.html").read_text()
             self.assertIn("Runners", index)

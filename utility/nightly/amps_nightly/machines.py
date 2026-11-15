@@ -26,7 +26,7 @@ _TIME = re.compile(r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
 _MACHINE_KEYS = {"schema_version", "machine", "enabled", "description", "hostnames", "table_host", "workdir",
                  "upload", "start", "core_profile", "capabilities", "lanes", "timeouts_s", "configs",
                  "python", "search_path", "mpiexec", "vars", "make_vars", "cores", "memory_gb", "max_parallel",
-                 "night_limit_h", "keep_workspaces"}
+                 "night_limit_h", "keep_workspaces", "server_root", "min_free_gb"}
 KEEP_WORKSPACES = ("failures", "always", "never")
 _CONFIG_KEYS = {"config", "enabled", "compiler", "toolchain", "setup", "config_pl", "after_install", "sources"}
 
@@ -51,6 +51,12 @@ class Config:
     @property
     def column(self) -> str:
         return column_id(self.machine, self.config)
+
+    @property
+    def folder(self) -> str:
+        """Directory of this configuration's workspaces in the workdir: the compiler name (GNU, Intel, ...),
+        as the per-compiler folders of the old routine's ~/Tmp_AMPS_test."""
+        return re.sub(r"[^A-Za-z0-9._+-]", "_", self.compiler or self.config)
 
 
 @dataclass
@@ -79,6 +85,8 @@ class Machine:
     max_parallel: int = 1             # runners at once; 1 = sequential (phase 1)
     night_limit_h: float = 14         # runners not started within this many hours are reported as skipped
     keep_workspaces: str = "failures"
+    server_root: str = ""             # results server only: results.db, incoming/, www/ (amps-nightly update)
+    min_free_gb: float = 5            # no runner or Makefile.test test starts with less free space in workdir
 
     def active_configs(self) -> List[Config]:
         return [c for c in self.configs if c.enabled] if self.enabled else []
@@ -182,6 +190,13 @@ def parse_machine(raw: Any, path: Path) -> Machine:
             after_install=_strings(item, "after_install", at, []),
             sources=None if sources is None else _strings(item, "sources", at)))
 
+    folders = [c.folder for c in configs]
+    for folder in set(folders):
+        if folders.count(folder) > 1:
+            raise MachineError("{}: configs {} have the same compiler {!r}, so their workspaces would share "
+                               "{}/{}; give them different \"compiler\" names".format(
+                                   where, ", ".join(c.config for c in configs if c.folder == folder), folder,
+                                   "<workdir>", folder))
     return Machine(
         machine=name, path=path, enabled=_bool(raw, "enabled", where, True),
         description=_str(raw, "description", where, ""),
@@ -199,7 +214,15 @@ def parse_machine(raw: Any, path: Path) -> Machine:
         memory_gb=0 if raw.get("memory_gb", 0) == 0 else _positive(raw.get("memory_gb"), "memory_gb", where),
         max_parallel=_positive(raw.get("max_parallel", 1), "max_parallel", where),
         night_limit_h=_hours(raw.get("night_limit_h", 14), where),
-        keep_workspaces=_choice(raw, "keep_workspaces", KEEP_WORKSPACES, where))
+        keep_workspaces=_choice(raw, "keep_workspaces", KEEP_WORKSPACES, where),
+        server_root=_str(raw, "server_root", where, ""), min_free_gb=_free(raw, where))
+
+
+def _free(raw: Dict[str, Any], where: str) -> float:
+    value = raw.get("min_free_gb", 5)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        raise MachineError("{}: min_free_gb must be a number of GB, 0 or more".format(where))
+    return float(value)
 
 
 def _mapping(raw: Dict[str, Any], key: str, where: str) -> Dict[str, str]:

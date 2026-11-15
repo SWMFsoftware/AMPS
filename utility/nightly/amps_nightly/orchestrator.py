@@ -6,10 +6,13 @@ workspace (workspace.py), its commands run under a time limit with every process
 its report is read into result rows (readers.py, makefile_runner.py), and its logs are copied into the
 night's run directory. `amps-nightly pack` (transfer.py) then sends each run directory to the server:
 
+    {workdir}/<COMPILER>/<runner>/      one folder per compiler, as the old ~/Tmp_AMPS_test/GNU/AMPS:
+        AMPS/                           the runner's installed copy (worktree + share, util, BATL, SWMF_data link;
+                                        Config.pl calls of the machine file), replaced the next night
+        out/  tmp/                      the runner's output directory and TMPDIR
     {workdir}/nights/<YYYYMMDD-HHMM>/
         orchestrator.log
         runs/<column>/       run.json results.jsonl runners.json logs/<runner>/... DONE   (packed and sent)
-        ws/<config>/<runner>/  out/<config>/<runner>/  tmp/<config>/<runner>/              (local only)
 
 Every step's output in a log is cut to its first 256 KB and last 768 KB (trim_log): some tests print
 hundreds of thousands of lines, and the start and the end of a step are what explain a failure.
@@ -44,6 +47,7 @@ MAX_LOG_BYTES = 50 * 2 ** 20                     # larger logs keep their first 
 TRIM_HEAD, TRIM_TAIL = 256 * 2 ** 10, 768 * 2 ** 10   # bytes kept of each step of a log (trim_log)
 _PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _KEEP_ENV = ("HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TZ", "SSH_AUTH_SOCK")
+WORKSPACE_MARK = ".amps-nightly"     # in <workdir>/<COMPILER>/<runner>/: only such folders are ever deleted
 
 
 class NightError(RuntimeError):
@@ -165,6 +169,13 @@ class Night:
         self.mirrors = workspace.Mirrors(self.workdir / "mirrors", routine.checkout)
         self.log_file = self.root / "orchestrator.log"
 
+    def runner_dir(self, config: Config, runner: str) -> Path:
+        """<workdir>/<COMPILER>/<runner>: the runner's installed copy (AMPS/), its out/ and tmp/."""
+        return self.workdir / config.folder / runner
+
+    def free_gb(self) -> float:
+        return shutil.disk_usage(str(self.workdir)).free / 2 ** 30
+
     def log(self, message: str) -> None:
         line = "{} {}".format(dt.datetime.now().strftime("%H:%M:%S"), message)
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -222,10 +233,14 @@ class Night:
             lock.close()
 
     def _clean_old_nights(self) -> None:
+        # the previous night's installed copies (the old routine started with rm -rf GNU)
+        for config in self.machine.configs:
+            folder = self.workdir / config.folder
+            for old in sorted(folder.iterdir()) if folder.is_dir() else []:
+                if (old / WORKSPACE_MARK).is_file():
+                    shutil.rmtree(str(old), ignore_errors=True)
         nights = self.workdir / "nights"
-        if self.machine.keep_workspaces == "always" or not nights.is_dir():
-            return
-        for old in sorted(nights.iterdir()):
+        for old in sorted(nights.iterdir()) if nights.is_dir() else []:
             if not old.is_dir() or old == self.root:
                 continue
             if any(r.is_dir() and not (r / transfer.PACKED_FILE).exists() for r in (old / "runs").glob("*")):
@@ -233,7 +248,7 @@ class Night:
                 for child in old.iterdir():
                     if child.name not in ("runs", "orchestrator.log"):
                         shutil.rmtree(str(child), ignore_errors=True) if child.is_dir() else child.unlink()
-            else:
+            elif self.machine.keep_workspaces != "always":
                 shutil.rmtree(str(old), ignore_errors=True)
         for mirror in (self.workdir / "mirrors").glob("*.git"):
             subprocess.run(["git", "worktree", "prune"], cwd=str(mirror), stdout=subprocess.DEVNULL,
@@ -266,6 +281,12 @@ class Night:
                     self.log("{}: skipped ({})".format(sp.source.id, sp.items[0].reason))
                 elif time.time() >= self.deadline:
                     reason = "not started: the night's time limit of {:g} h was reached".format(self.machine.night_limit_h)
+                    rows.extend(self._skipped(sp, reason))
+                    info.update(state="skipped", note=reason)
+                    self.log("{}: {}".format(sp.source.id, reason))
+                elif self.free_gb() < self.machine.min_free_gb:
+                    reason = "not started: only {:.1f} GB free in {} (min_free_gb = {:g})".format(
+                        self.free_gb(), self.workdir, self.machine.min_free_gb)
                     rows.extend(self._skipped(sp, reason))
                     info.update(state="skipped", note=reason)
                     self.log("{}: {}".format(sp.source.id, reason))
@@ -302,9 +323,14 @@ class Night:
     # ------------------------------------------------------------------ one runner
     def run_runner(self, sp: SourcePlan, config: Config, run_id: str, rundir: Path, info: Dict[str, Any]) -> List[Dict]:
         source = sp.source
-        ws = self.root / "ws" / config.config / source.id
-        out = self.root / "out" / config.config / source.id
-        tmp = self.root / "tmp" / config.config / source.id
+        home = self.runner_dir(config, source.id)
+        ws, out, tmp = home / "AMPS", home / "out", home / "tmp"
+        if home.exists():
+            workspace.remove(ws, self.mirrors)          # also forgets its git worktrees
+            shutil.rmtree(str(home), ignore_errors=True)
+        home.mkdir(parents=True, exist_ok=True)
+        (home / WORKSPACE_MARK).write_text("installed copy of runner {} for night {}; replaced by the next night\n".format(
+            source.id, self.root.name))
         logs = rundir / "logs" / source.id
         runner_log = logs / "runner.log"
         for path in (out, tmp, logs):
@@ -375,8 +401,7 @@ class Night:
         keep = self.machine.keep_workspaces == "always" or (self.machine.keep_workspaces == "failures" and failed)
         if not keep:
             workspace.remove(ws, self.mirrors)
-            shutil.rmtree(str(out), ignore_errors=True)
-            shutil.rmtree(str(tmp), ignore_errors=True)
+            shutil.rmtree(str(home), ignore_errors=True)
         info["workspace_kept"] = bool(keep)
         self.log("{}: {} PASS, {} FAILED, {} SKIPPED in {:.0f} min{}".format(
             source.id, info["counts"]["PASS"], failed, info["counts"]["SKIPPED"], info["elapsed_s"] / 60,
@@ -500,7 +525,8 @@ def describe(machine: Machine, routine: Routine, registry: Registry, configs: Se
     lines = []
     night = Night(machine, routine, registry, configs, only, echo=lambda _: None)
     for config in configs:
-        lines.append("{} (column {}), workspaces under {}".format(config.config, config.column, night.root / "ws"))
+        lines.append("{} (column {}): each runner is installed in {}/<runner>/AMPS".format(
+            config.config, config.column, night.workdir / config.folder))
         for sp in plan(machine, config, routine, registry, night.local_start.date()):
             if only and sp.source.id not in only:
                 continue
@@ -510,11 +536,15 @@ def describe(machine: Machine, routine: Routine, registry: Registry, configs: Se
             if sp.items and all(i.action == SKIP for i in sp.items):
                 lines.append("  {:<10} skipped: {}".format(sp.source.id, sp.items[0].reason))
                 continue
-            ws = night.root / "ws" / config.config / sp.source.id
-            values = night.values(ws, night.root / "out" / config.config / sp.source.id,
-                                  night.root / "tmp" / config.config / sp.source.id, sp.source)
-            lines.append("  {:<10} {} workspace, limit {} min".format(sp.source.id, sp.source.workspace,
-                                                                     sp.source.time_limit_min))
+            home = night.runner_dir(config, sp.source.id)
+            values = night.values(home / "AMPS", home / "out", home / "tmp", sp.source)
+            lines.append("  {:<10} {} {} copy, limit {} min".format(sp.source.id, home / "AMPS", sp.source.workspace,
+                                                                  sp.source.time_limit_min))
+            if sp.source.workspace == "configured":
+                for call in config.config_pl:
+                    lines.append("      install: ./Config.pl " + call)
+                for line in config.after_install:
+                    lines.append("      install: " + line)
             if sp.source.kind == "makefile":
                 lines.append("      make test_<X>_compile/_rundir (one at a time), _run/_check ({} lanes) "
                              "for {} tests".format(machine.lanes, sum(1 for i in sp.items if i.action == RUN)))

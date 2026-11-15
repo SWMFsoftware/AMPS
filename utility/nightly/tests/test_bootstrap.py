@@ -68,7 +68,7 @@ class Bootstrap(unittest.TestCase):
         self.tmp.cleanup()
 
     def conf(self, **extra):
-        settings = dict(AMPSTEST=str(self.root), BRANCH="master", UPDATE_SITE="yes", PYTHON=sys.executable,
+        settings = dict(AMPSTEST=str(self.root), TESTDIR=str(self.root / "Tmp_AMPS_test"), BRANCH="master", UPDATE_SITE="yes", PYTHON=sys.executable,
                         SWMF_DATA_REPOSITORY="file://" + str(self.swmf))
         settings.update(extra)
         (self.bin / install.CONF_NAME).write_text(install.conf_text(settings))
@@ -105,7 +105,7 @@ class Bootstrap(unittest.TestCase):
         self.assertIn("--note WARNING: {} differs from".format(self.bin / install.SCRIPT_NAME), calls[0])
         self.assertEqual((self.data / "PT/ref.dat").read_text(), "2\n")
         self.assertFalse((self.data / "PT/ref.dat.tmp").exists())
-        self.assertTrue((self.root / "tool/AMPS.prev").is_dir())
+        self.assertTrue((self.root / "Tmp_AMPS_test/AMPS.prev").is_dir())         # TESTDIR/AMPS, as before
 
         # the download fails: the previous copy is used
         self.conf(REPOSITORY="file://" + str(self.t / "nowhere"))
