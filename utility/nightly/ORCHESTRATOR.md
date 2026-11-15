@@ -209,6 +209,15 @@ cases_total, cases_failed, log}`.
    links, at most 8 GB), then ingests it like a run folder. A bad tarball goes to `rejected/` with
    `REJECTED.txt`.
 
+**Starting the night (`bin/amps_nightly_test.sh`).** Cron starts the copy of this script in `~/bin`
+(installed with `amps-nightly install`; README "Installing the nightly on a machine"). It downloads AMPS
+(`git clone --depth 1` of the branch), updates the nightly's own SWMF_data copy (reset and cleaned every night:
+Makefile.test checks edit reference files in place), and runs `nightly_run.sh --commit <sha>` from the
+download, so the tool, `runners.json`, the machine files and the tested code are all the same commit; then
+`nightly_pack.sh` and, on the server, `nightly_update.sh`. `--commit` must be on the branch. The commits of
+share, util, BATL and SWMF_data go into the run's notes, and so do the script's warnings (`--note`), such as
+"the `~/bin` copy differs from the branch's version"; the night's summary page shows both.
+
 **Process control.**
 
 - Each command is started in its own session, with the marker variable `AMPS_NIGHTLY_TAG` set.

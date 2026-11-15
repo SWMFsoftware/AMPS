@@ -1,5 +1,7 @@
 """amps-nightly command line.
 
+    amps-nightly install [--root DIR]            put amps_nightly_test.sh in ~/bin and its line in crontab
+    amps-nightly uninstall                       take them out again
     amps-nightly check                           Table, families.json, runners.json and machines/ agree
     amps-nightly machines                        machine files, their columns and last uploads
     amps-nightly plan [--machine M] [--list]     what the runners run (and skip, and why) on a machine
@@ -25,7 +27,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from . import legacy, report, store as store_mod, transfer
+from . import install, legacy, report, store as store_mod, transfer
 from .checks import check_all
 from .machines import declared_columns, find_machine, load_machines
 from .orchestrator import Night, NightError, describe
@@ -84,6 +86,20 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 def cmd_machines(args: argparse.Namespace) -> int:
     machines, problems = load_machines(args.machines)
+    if args.var:
+        # for scripts: only the value on stdout (amps_nightly_test.sh reads swmf_data this way)
+        machine = (find_machine(machines, args.machine) if args.machine else
+                   find_machine(machines, hostname=socket.gethostname()) or
+                   find_machine(machines, hostname=socket.getfqdn()))
+        if machine is None:
+            print("no machine file for {}".format(args.machine or socket.gethostname()), file=sys.stderr)
+            return 1
+        value = machine.vars.get(args.var)
+        if value is None:
+            print("{} defines no var {!r}".format(machine.path, args.var), file=sys.stderr)
+            return 1
+        print(value)
+        return 0
     root, _ = _paths(args)
     last: Dict[str, str] = {}
     if (root / "results.db").exists():
@@ -147,7 +163,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("\n".join(describe(machine, routine, registry, configs, args.only)))
         return 0
     try:
-        runs = Night(machine, routine, registry, configs, args.only, tests=args.test, keep_local=args.no_upload).run()
+        runs = Night(machine, routine, registry, configs, args.only, tests=args.test, keep_local=args.no_upload,
+                     commit=args.commit, note=args.note).run()
     except NightError as error:
         print("error:", error)
         return 3
@@ -210,6 +227,85 @@ def cmd_pack(args: argparse.Namespace) -> int:
     if not finished and not waiting:
         print("nothing to pack or send: every run under {} has been sent".format(workdir / "nights"))
     return status
+
+
+def _confirm(yes: bool) -> bool:
+    if yes:
+        return True
+    if not sys.stdin.isatty():
+        print("nothing changed: run again with --yes to make these changes")
+        return False
+    return input("Make these changes? [y/N] ").strip().lower() in ("y", "yes")
+
+
+def cmd_install(args: argparse.Namespace) -> int:
+    machine = _machine(args)
+    if machine is None:
+        return 1
+    bin_dir = Path(args.bin).expanduser()
+    old = install.read_conf(bin_dir / install.CONF_NAME)
+    server = bool(machine.upload) and not transfer.is_remote(machine.upload)
+    settings = dict(old)
+    settings["AMPSTEST"] = str(Path(args.root or old.get("AMPSTEST") or
+                                    Path(machine.workdir).expanduser().parent).expanduser())
+    settings["BRANCH"] = args.branch or old.get("BRANCH") or "master"
+    settings["UPDATE_SITE"] = args.update_site or old.get("UPDATE_SITE") or ("yes" if server else "no")
+    settings["PYTHON"] = args.python or old.get("PYTHON") or "python3"
+    start = args.time or machine.start or "20:00"
+    try:
+        crontab = install.read_crontab()
+        plan = install.plan_install(bin_dir, settings, start, crontab)
+    except (install.InstallError, ValueError, OSError) as error:
+        print("error:", error)
+        return 1
+    print("amps-nightly install for {} (machine file {}):".format(machine.machine, machine.path))
+    for line in plan.lines:
+        print("  " + line)
+    data = machine.vars.get("swmf_data")
+    if data and not Path(data).expanduser().exists():
+        print("  note: SWMF_data ({}) does not exist yet; the first night clones it (about 4 GB)".format(data))
+    print("  note: each night downloads AMPS {} from GitHub; utility/nightly must be on that branch".format(
+        settings["BRANCH"]))
+    if not plan.changes:
+        print("nothing to change")
+        return 0
+    if args.dry_run or not _confirm(args.yes):
+        return 0 if args.dry_run else 1
+    try:
+        install.apply(plan, crontab)
+    except (install.InstallError, OSError) as error:
+        print("error:", error)
+        return 1
+    print("installed: the nightly starts at {} every day; its log is {}/logs/nightly-<date>.log".format(
+        start, settings["AMPSTEST"]))
+    return 0
+
+
+def cmd_uninstall(args: argparse.Namespace) -> int:
+    bin_dir = Path(args.bin).expanduser()
+    old = install.read_conf(bin_dir / install.CONF_NAME)
+    backups = Path(old.get("AMPSTEST") or Path.home()).expanduser() / "backup"
+    try:
+        crontab = install.read_crontab()
+    except install.InstallError as error:
+        print("error:", error)
+        return 1
+    plan = install.plan_uninstall(bin_dir, crontab, backups)
+    if not plan.changes:
+        print("nothing to remove: no {} in the crontab or in {}".format(install.SCRIPT_NAME, bin_dir))
+        return 0
+    print("amps-nightly uninstall (the nightly's data in {} stays):".format(old.get("AMPSTEST", "AMPSTEST")))
+    for line in plan.lines:
+        print("  " + line)
+    if args.dry_run or not _confirm(args.yes):
+        return 0 if args.dry_run else 1
+    try:
+        install.apply(plan, crontab)
+    except (install.InstallError, OSError) as error:
+        print("error:", error)
+        return 1
+    print("removed")
+    return 0
 
 
 def cmd_relocate(args: argparse.Namespace) -> int:
@@ -367,12 +463,36 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--runners", help="runners.json path (default: utility/nightly/runners.json)")
         p.add_argument("--machines", help="machine files directory (default: utility/nightly/machines)")
 
+    p = sub.add_parser("install", help="install ~/bin/amps_nightly_test.sh, its settings and its crontab line "
+                                        "(shows the changes and asks first)")
+    p.add_argument("--root", help="AMPSTEST: all nightly files of this machine (default: the settings already "
+                                  "installed, else the parent of the machine file's workdir)")
+    p.add_argument("--branch", help="AMPS branch to download and test (default: as installed, else master)")
+    p.add_argument("--update-site", choices=("yes", "no"),
+                   help="also update the results and pages here (default: yes if the machine uploads to a local directory)")
+    p.add_argument("--python", help="Python 3.8+ that runs amps-nightly (default: as installed, else python3)")
+    p.add_argument("--time", help="start time HH:MM (default: the machine file's start)")
+    p.add_argument("--machine", help="machine name (default: the machine file listing this host)")
+    p.add_argument("--machines", help="machine files directory (default: utility/nightly/machines)")
+    p.add_argument("--bin", default="~/bin", help="where the script goes (default: ~/bin)")
+    p.add_argument("--dry-run", action="store_true", help="only show the changes")
+    p.add_argument("--yes", action="store_true", help="make the changes without asking")
+    p.set_defaults(func=cmd_install)
+
+    p = sub.add_parser("uninstall", help="remove the crontab line and ~/bin/amps_nightly_test.sh (data stays)")
+    p.add_argument("--bin", default="~/bin", help="where the script is (default: ~/bin)")
+    p.add_argument("--dry-run", action="store_true", help="only show the changes")
+    p.add_argument("--yes", action="store_true", help="make the changes without asking")
+    p.set_defaults(func=cmd_uninstall)
+
     p = sub.add_parser("check", help="validate the Table, families.json, runners.json and machines/ together")
     config_files(p)
     p.set_defaults(func=cmd_check)
 
     p = sub.add_parser("machines", help="list the machine files, their columns and last uploads")
     p.add_argument("--machines", help="machine files directory (default: utility/nightly/machines)")
+    p.add_argument("--var", metavar="NAME", help="print only this var of this host's machine file (for scripts)")
+    p.add_argument("--machine", help="with --var: this machine instead of the one listing this host")
     server(p, www=False)
     p.set_defaults(func=cmd_machines)
 
@@ -393,6 +513,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="only Makefile.test tests matching this glob (repeatable; for trials)")
     p.add_argument("--no-upload", action="store_true",
                    help="keep the results on this machine: 'amps-nightly pack' will not send them (for trials)")
+    p.add_argument("--commit", default="", metavar="SHA",
+                   help="test this commit of the branch instead of its head (amps_nightly_test.sh passes the "
+                        "commit it downloaded, so the tool and the tested code are the same)")
+    p.add_argument("--note", default="", help="text added to the notes of every run (shown on the night's page)")
     p.add_argument("--dry-run", action="store_true", help="print the commands each runner would execute")
     config_files(p, table=False)
     p.set_defaults(func=cmd_run)

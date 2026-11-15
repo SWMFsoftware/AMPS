@@ -43,12 +43,14 @@ What runs where is decided by four files:
 3. `table_host` is the name the Table's `@@(0+...)` selectors use for this machine. Use a new name and add it
    to the selectors of the tests that need machine-specific `Ref=`/`Keys=` lines, or reuse the name of a
    machine with the same paths (e.g. `"table_host": "passion"`).
-4. `amps-nightly check` and `amps-nightly plan --machine <name> --list`, then commit.
+4. `amps-nightly check` and `amps-nightly plan --machine <name> --list`, then commit and push.
    The report shows the new columns at once, marked "No results yet" until the first upload.
+5. On the new machine: clone AMPS anywhere and run `utility/nightly/amps-nightly install` (section
+   "Installing the nightly on a machine").
 
 **Pause a machine**: `"enabled": false` in its file (or in one entry of `configs` to pause one compiler).
 Nothing runs there, and its columns leave the report; their history stays in the results store and comes
-back when it is switched on again. **Remove a machine**: delete its file (and its cron line).
+back when it is switched on again. **Remove a machine**: `amps-nightly uninstall` there, then delete its file.
 
 ## Adding and removing tests
 
@@ -98,20 +100,49 @@ utility/nightly/nightly_pack.sh --no-send                     # only write the t
 utility/nightly/nightly_update.sh ~/somewhere/<run_id>.tar.gz # a tarball brought by hand
 ```
 
-Crontab on passion, which is test machine and server (the night starts at 20:00 and stops starting runners
-after `night_limit_h` = 14 h):
+Workspaces of runners with failures are kept until the next night starts (`keep_workspaces`).
+
+## Installing the nightly on a machine (cron)
+
+As in the old routine (`Config.pl -set-test`, `~/bin/run_test_amps.sh`), cron starts one script in `~/bin`.
+Its version-controlled original is `bin/amps_nightly_test.sh`; the copy in `~/bin` is installed with
+
+```sh
+<AMPS>/utility/nightly/amps-nightly install --dry-run       # show what would change
+<AMPS>/utility/nightly/amps-nightly install                 # make the changes (asks first)
+```
+
+which writes `~/bin/amps_nightly_test.sh`, its settings `~/bin/amps_nightly_test.conf` (`AMPSTEST`,
+`BRANCH`, `UPDATE_SITE`, `PYTHON`), and one crontab line at the machine file's `start`, below a marker comment;
+the crontab is saved to `$AMPSTEST/backup/` first. `amps-nightly uninstall` removes them again. On passion:
 
 ```
-# m  h  dom mon dow  command
-00 20 * * *  D=/data/vtenishe/TEST/AMPS/utility/nightly; $D/nightly_run.sh; $D/nightly_pack.sh; $D/nightly_update.sh
+# amps-nightly: AMPS nightly testing (added by 'amps-nightly install'; remove with 'amps-nightly uninstall')
+00 20 * * *  /home/vtenishe/bin/amps_nightly_test.sh >> /data/vtenishe/AMPSTEST/logs/cron.log 2>&1
 ```
 
-Another test machine runs `nightly_run.sh; nightly_pack.sh` with `"upload": "passion.ndc.nasa.gov:AMPSTEST/nightly/incoming"`,
-and passion adds `30 10 * * * $D/nightly_update.sh` to pick its tarballs up in the morning.
+Each night the script
 
-The tool, `runners.json` and the machine files are read from the checkout that holds `amps-nightly`; the
-tests run on the commit at the head of `master`. Workspaces of runners with failures are kept until the next
-night starts (`keep_workspaces`).
+1. takes a lock (one night at a time);
+2. downloads AMPS: `git clone --depth 1` of `BRANCH` into `$AMPSTEST/tool/AMPS` (the night before is kept
+   as `tool/AMPS.prev` and used if the download fails);
+3. pulls SWMF_data: the nightly's own copy at the machine file's `swmf_data`, reset to the newest commit
+   and cleaned every night, because some Makefile.test checks edit reference files in it
+   (`RemoveColumn.pl`, `perl -i.tmp`) and later runs would see the edits;
+4. runs `tool/AMPS/utility/nightly/nightly_run.sh --commit <downloaded commit>`, then `nightly_pack.sh`,
+   and on the server (`UPDATE_SITE=yes`) `nightly_update.sh`;
+5. logs everything to `$AMPSTEST/logs/nightly-YYYYMMDD-HHMM.log` (kept 60 days).
+
+So the orchestrator, `runners.json` and the machine files come from the branch on GitHub, and a change to them
+takes effect the night after it is pushed; a working checkout does not affect the nightly. The tests run on
+the same commit as the tool. The `~/bin` script itself changes only by `amps-nightly install`: when the
+branch has a different version of it, the night's log and summary page show a warning with the command to run.
+Arguments of the script go to `nightly_run.sh`, so `~/bin/amps_nightly_test.sh --only moon --no-upload` is a trial
+of the whole chain.
+
+Another test machine installs with `"upload": "passion.ndc.nasa.gov:AMPSTEST/nightly/incoming"` in its
+machine file (so `UPDATE_SITE=no`), and passion picks its tarballs up with one more crontab line,
+`30 10 * * * <AMPS>/utility/nightly/nightly_update.sh` (or with its own night's update).
 
 **Adding a runner** = one entry in `runners.json` (fields: ORCHESTRATOR.md section 2). If its report has a new
 format, add a reader function to `amps_nightly/readers.py`. Try it with `run --only <id> --no-upload`.

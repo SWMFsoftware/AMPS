@@ -149,11 +149,14 @@ def _safe(name: str) -> str:
 class Night:
     def __init__(self, machine: Machine, routine: Routine, registry: Registry, configs: Sequence[Config],
                  only: Sequence[str] = (), echo: Callable[[str], None] = print,
-                 now: Optional[dt.datetime] = None, tests: Sequence[str] = (), keep_local: bool = False):
+                 now: Optional[dt.datetime] = None, tests: Sequence[str] = (), keep_local: bool = False,
+                 commit: str = "", note: str = ""):
         self.machine, self.routine, self.registry = machine, routine, registry
         self.configs, self.only, self.echo = list(configs), set(only), echo
         self.tests = list(tests)          # --test globs: limit the Makefile.test runner (trials and debugging)
         self.keep_local = keep_local      # --no-upload: `amps-nightly pack` never sends these results
+        self.pin = commit                 # --commit: test this commit instead of the branch head
+        self.note = note                  # --note: added to every run's notes (shown on the night's page)
         self.started = (now or dt.datetime.now(dt.timezone.utc)).astimezone(dt.timezone.utc)
         self.local_start = self.started.astimezone()
         self.workdir = Path(machine.workdir).expanduser()
@@ -203,7 +206,9 @@ class Night:
                 ", ".join(s.id for s in self.routine.sources if s.enabled and (not self.only or s.id in self.only))))
             checkout_error = ""
             try:
-                self.mirrors.update(self.log)
+                linked = {c.path: machine_vars(self.machine).get(c.link_var, "")
+                          for c in self.routine.checkout.companions if c.link_var}
+                self.mirrors.update(self.log, self.pin, {p: d for p, d in linked.items() if d})
             except (workspace.WorkspaceError, subprocess.SubprocessError, OSError) as error:
                 checkout_error = str(error)
                 self.log("ERROR: checkout failed: " + checkout_error)
@@ -291,7 +296,8 @@ class Night:
                 "commit": self.mirrors.commits.get("", ""), "commit_inferred": False,
                 "started": utc_text(self.started), "finished": utc_text(finished), "complete": complete,
                 "producer": "amps-nightly run", "night": self.local_start.strftime("%Y-%m-%d"),
-                "notes": "; ".join("{} {}".format(p, c[:12]) for p, c in self.mirrors.commits.items() if p)}
+                "notes": "; ".join(["{} {}".format(p, c[:12]) for p, c in self.mirrors.commits.items() if p]
+                                   + ([self.note] if self.note else []))}
 
     # ------------------------------------------------------------------ one runner
     def run_runner(self, sp: SourcePlan, config: Config, run_id: str, rundir: Path, info: Dict[str, Any]) -> List[Dict]:

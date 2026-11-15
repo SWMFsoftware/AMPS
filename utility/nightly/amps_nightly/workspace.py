@@ -49,8 +49,13 @@ class Mirrors:
     def path(self, repository: str) -> Path:
         return self.root / (_name(repository) + ".git")
 
-    def update(self, log) -> None:
-        """Clone missing mirrors, fetch the others, and pin each repository's branch head for tonight."""
+    def update(self, log, pin: str = "", linked: Optional[Dict[str, str]] = None) -> None:
+        """Clone missing mirrors, fetch the others, and pin each repository's branch head for tonight.
+
+        pin: test this AMPS commit instead of the branch head (it must be on the branch); linked: the
+        directories of link companions (path -> directory), whose commits are recorded when they are git
+        repositories (SWMF_data).
+        """
         self.root.mkdir(parents=True, exist_ok=True)
         repos = [("", self.checkout.repository, self.checkout.branch)] + \
                 [(c.path, c.repository, c.branch) for c in self.checkout.companions if c.repository]
@@ -63,7 +68,27 @@ class Mirrors:
                 log("clone --mirror " + repository)
                 _git("clone", "--mirror", "--quiet", repository, str(mirror))
             self.commits[path] = _git("rev-parse", "refs/heads/" + branch, cwd=mirror)
-            log("  {} {} = {}".format(path or "AMPS", branch, self.commits[path]))
+            if not path and pin:
+                try:
+                    commit = _git("rev-parse", "--verify", "--quiet", pin + "^{commit}", cwd=mirror)
+                except WorkspaceError:
+                    raise WorkspaceError("commit {} (--commit) is not in {}".format(pin, repository))
+                try:
+                    _git("merge-base", "--is-ancestor", commit, self.commits[path], cwd=mirror)
+                except WorkspaceError:
+                    raise WorkspaceError("commit {} (--commit) is not on branch {}".format(pin, branch))
+                log("  AMPS {} head = {}; tonight tests {} (--commit)".format(branch, self.commits[path], commit))
+                self.commits[path] = commit
+            else:
+                log("  {} {} = {}".format(path or "AMPS", branch, self.commits[path]))
+        for path, directory in (linked or {}).items():
+            where = Path(directory).expanduser()
+            if (where / ".git").exists():
+                try:
+                    self.commits[path] = _git("rev-parse", "HEAD", cwd=where)
+                    log("  {} ({}) = {}".format(path, where, self.commits[path]))
+                except WorkspaceError:
+                    pass
 
     @property
     def commit(self) -> str:

@@ -414,6 +414,15 @@ def write_run_index(directory: Path) -> Path:
                 " · " + link("logs/orchestrator.log", "orchestrator log") if (directory / "logs").is_dir() else "")]
     if run.get("complete") is False and run.get("notes"):
         head.append('<p class="src"><span class="warn">{}Incomplete run: {}</span></p>'.format(ICON["WARN"], esc(run["notes"])))
+    elif run.get("notes"):
+        # companion commits (share, util, BATL, SWMF_data) and warnings of the ~/bin script (--note)
+        parts = [p.strip() for p in run["notes"].split(";") if p.strip()]
+        plain = [p for p in parts if not p.startswith("WARNING")]
+        if plain:
+            label = "With" if run.get("producer") == "amps-nightly run" else "Note:"
+            head.append('<p class="src">{} {}</p>'.format(label, esc(", ".join(plain))))
+        for warning in (p for p in parts if p.startswith("WARNING")):
+            head.append('<p class="src"><span class="warn">{}{}</span></p>'.format(ICON["WARN"], esc(warning)))
     if runners:
         head.append('<section class="card night"><h2>Runners</h2><table class="tbl"><tr><th>Runner</th><th>State</th>'
                     '<th>Minutes</th><th>Pass</th><th>Failed</th><th>Skipped</th><th>Log</th><th>Note</th></tr>')
