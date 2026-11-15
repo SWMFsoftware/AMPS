@@ -128,6 +128,7 @@ string makefile_header_base="TESTMPIRUN1=\n"
 
 
 string makefile_header_app_base="TEST<APP>DIR=run_test_<APP>\n" 
+    "TEST<APP>FAMILY=<APPFAMILY>\n"
     "TEST<APP>KEYS=<APPKEYS>\n" 
     "TEST<APP>CUSTOMREFSOLUTIONPATHS=<APPCUSTOMREFSOLUTIONPATHS>\n" 
     "TEST<APP>OUTFILES=<APPOUTS>\n" 
@@ -190,12 +191,14 @@ public:
   double Time;
   string PathName,Name,Compile,Rundir,Run,Check,Keys;
   string Ref,CustomRefSolutionPath,Outs,ExeptionCode;
+  string Family; //test family shown on the nightly report page (utility/nightly/families.json)
   int type;
 
 
   void clear() {
     Time=0.0; 
     Ref="",type=_type_amps;
+    Family="";
 
     PathName="",Name="",Compile="",Rundir="",Run="",Check="",Keys="";
     CustomRefSolutionPath="",Outs="",ExeptionCode="";
@@ -344,6 +347,12 @@ void ParseTable() {
               cout << "Error: not recognized" << endl;
               exit(0);
             }
+          }
+
+          //================================= Family ==================
+          else if (keyword=="Family") {
+            trim(line);
+            test.Family=line;
           }
 
           //================================= Time ====================
@@ -517,6 +526,13 @@ int main(int argc, char** argv) {
     Host="pleiades";
   }
 
+  //the nightly runner (utility/nightly) sets AMPS_TABLE_HOST to the "table_host" of the machine file,
+  //so a new test machine needs no edit here
+  if ((getenv("AMPS_TABLE_HOST")!=NULL)&&(getenv("AMPS_TABLE_HOST")[0]!=0)) {
+    Host=getenv("AMPS_TABLE_HOST");
+    printf("Host name used for MakefileTest/Table selection: %s\n",Host.c_str());
+  }
+
   //determine the number of the execution blocks 
   int test_execution_blocks=2;
 
@@ -552,6 +568,7 @@ int main(int argc, char** argv) {
 
       FindAndReplaceAll(t,"<APP>",it->Name);
 
+      FindAndReplaceAll(t,"<APPFAMILY>",it->Family);
       FindAndReplaceAll(t,"<APPKEYS>",it->Keys);
       FindAndReplaceAll(t,"<APPCUSTOMREFSOLUTIONPATHS>",it->CustomRefSolutionPath);
 
@@ -586,6 +603,21 @@ int main(int argc, char** argv) {
 
   PrintHelpTarget(TestsSWMF);
   PrintHelpTarget(TestsAMPS);
+
+  //=============== test_manifest ============================
+  //one line per test selected for this host: name|family|reference index|exception code|type
+  //make evaluates the compiler-dependent Ref and ExeptionCode, so readers of this list
+  //(utility/nightly) never re-implement the @@(machines) and {compiler} selection rules
+  auto PrintManifestTarget = [&] (list<cTest>& Tests,const string& type) {
+    for (it=Tests.begin();it!=Tests.end();it++) {
+      fMakefile << "\t@echo \"" + it->Name + "|$(TEST" + it->Name + "FAMILY)|$(TEST" + it->Name + "-REF)|$(TEST" + it->Name + "-EXEPTIONCODE)|" + type + "\"\n";
+    }
+  };
+
+  fMakefile << "\ntest_manifest:\n";
+
+  PrintManifestTarget(TestsSWMF,"swmf");
+  PrintManifestTarget(TestsAMPS,"amps");
 
   //=============== test_all ================================
   auto PrintAllTarget = [&] (list<cTest>& Tests) {

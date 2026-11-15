@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "groups": [
+    {"id": "legacy", "title": "Legacy nightly tests", "source": "Makefile.test, generated from MakefileTest/Table"},
+    {"id": "core", "title": "Core unit and module tests", "source": "src/test/run_tests.py --tier nightly"},
+    {"id": "app", "title": "Application test campaigns", "source": "each application's own test runner"},
+    {"id": "other", "title": "Other results", "source": "results whose family is not registered here"}
+  ],
+  "families": [
+    {"id": "pic-field-solver", "group": "legacy", "title": "PIC field solver (ECSIM)"},
+    {"id": "sep", "group": "legacy", "title": "SEP field-line & focused transport"},
+    {"id": "sep-swmf", "group": "legacy", "title": "SEP coupled with SWMF"},
+    {"id": "earth", "group": "legacy", "title": "Earth & Geospace"},
+    {"id": "movers", "group": "legacy", "title": "Particle movers & trajectories"},
+    {"id": "planets", "group": "legacy", "title": "Planetary exospheres"},
+    {"id": "comet-dust", "group": "legacy", "title": "Comet & dust"},
+    {"id": "bats-coupling", "group": "legacy", "title": "AMPS – BATS-R-US coupling"},
+    {"id": "physics-models", "group": "legacy", "title": "Collisions, chemistry & photons"},
+    {"id": "mesh-geometry", "group": "legacy", "title": "Mesh, geometry & interpolation"},
+    {"id": "readers", "group": "legacy", "title": "Data readers"},
+    {"id": "unit-tests", "group": "legacy", "title": "GoogleTest unit tests"},
+
+    {"id": "core-general", "group": "core", "title": "Core: general utilities & harness",
+     "suite_prefixes": ["CORE-HARNESS-", "CORE-GENERAL-", "CORE-UNITS-", "CORE-T12-", "CORE-LEGACY-"]},
+    {"id": "core-pic", "group": "core", "title": "Core: PIC", "suite_prefixes": ["CORE-PIC-", "CORE-ECSIM-"]},
+    {"id": "core-mesh", "group": "core", "title": "Core: AMR mesh", "suite_prefixes": ["CORE-MESH-"]},
+    {"id": "core-models", "group": "core", "title": "Core: physics models", "suite_prefixes": ["CORE-"]},
+
+    {"id": "app-sep", "group": "app", "title": "srcSEP (field-line SEP model)", "runner": "srcSEP/test/run_tests.py"},
+    {"id": "app-sep3d", "group": "app", "title": "srcSEP3D (3-D SEP model)", "runner": "srcSEP3D/test/run_tests.py"},
+    {"id": "app-earth", "group": "app", "title": "srcEarth (Earth & geospace)", "runner": "srcEarth/test/test_runner.py"},
+    {"id": "app-moon", "group": "app", "title": "srcMoon (lunar exosphere)", "runner": "srcMoon/test/run_tests.py",
+     "suite_prefixes": ["APPLICATION-MOON-"]},
+    {"id": "app-enceladus", "group": "app", "title": "srcEnceladus (plume forward model)", "runner": "srcEnceladus/test/run_tests.py",
+     "suite_prefixes": ["APPLICATION-ENCELADUS-"]},
+
+    {"id": "unassigned", "group": "other", "title": "Tests not in the current Table"}
+  ]
+}

@@ -3,6 +3,8 @@ Table of all nightly AMPS tests.
 -------------------------------------------------------------------------------
 Format:
 Name=<APP>       @@(machines): name of the test;                       required
+Family=<FAMILY-ID>           : test family on the nightly report page; required
+                               (ids are defined in utility/nightly/families.json)
 Time=<APPRUNTIME>            : approximate runtime on supercomputer;   required
 Keys=<APPKEYS>   @@(machines): keys specific for <APP>;                optional
 Outs=<APPOUTFILE>@@(machines): output files for <APP>, space-separated;optional
@@ -44,6 +46,7 @@ started with a 'TAB'. If a line starts with '<<<' the 'TAB' is omitted.
 
 #>
 Name=test/Saturn-MOP 
+Family=planets
 Time=2
 
 Type=amps
@@ -76,6 +79,7 @@ Check=
 
 #>
 Name=test/Mars-ions@@(0+) 
+Family=planets
 Time=2
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+valeriy)
 Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+amps-gpu+passion)
@@ -88,6 +92,7 @@ Keys=-cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_P
 
 #>
 Name=test/Mercury-ions@@(0+) 
+Family=planets
 Time=2
 
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/MERCURY-IONS@@(0+valeriy)
@@ -116,6 +121,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=Titan@@(0+) 
+Family=planets
 Time=3
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/TITAN/YINGJUAN_MA--2007GRL_3D_T9@@(0+valeriy)
 Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/TITAN/YINGJUAN_MA--2007GRL_3D_T9@@(0+amps-gpu+passion)
@@ -126,6 +132,7 @@ Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/TITAN/YINGJUAN_MA--2007GRL
 -------------------------------------------------------------------------------
 #>
 Name=test/COPS@@(0+) 
+Family=comet-dust
 Time=20 
 
 Ref=2{icc}@@(0+valeriy)
@@ -175,6 +182,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=CG-Rosina-Liouville--Trajectory@@(0+) 
+Family=comet-dust
 Time=3
 
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 @@(0+valeriy)
@@ -239,6 +247,7 @@ Check=
 
 #>
 Name=CG-Rosina-Liouville@@(0+) 
+Family=comet-dust
 Time=3
 
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 @@(0+valeriy)
@@ -294,6 +303,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/SC-Cont@@(0+) 
+Family=mesh-geometry
 Time=60 
 
 Ref=2{icc}@@(0+valeriy)
@@ -354,6 +364,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test-1853-shape@@(0+) 
+Family=mesh-geometry
 Time=5
 
 Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/SURFACE -model-data-path=/home/vtenishe/AMPS_DATA_TEST/SURFACE @@(0+amps-gpu+passion) 
@@ -382,6 +393,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/X-Wing@@(0+) 
+Family=mesh-geometry
 Time=54 
 
 Ref=2{icc}@@(0+valeriy)
@@ -444,6 +456,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=CCMC@@(0+)  
+Family=movers
 Time=4
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/CCMC@@(0+valeriy)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/CCMC@@(0+amps-gpu+passion)
@@ -462,6 +475,7 @@ Compile=
 -------------------------------------------------------------------------------
 #>
 Name=SEP--Multiple_Parker_spiral--boris_relativistic@@(0+) 
+Family=sep
 Time=4
 
 Ref=2{icc}@@(0+valeriy)
@@ -488,6 +502,7 @@ Check=
 
 #>
 Name=SEP--Parker_spiral--ParkerEq 
+Family=sep
 Time=4
 
 Compile=
@@ -520,6 +535,7 @@ Check=
 
 #>
 Name=SEP--Parker_spiral--FTE 
+Family=sep
 Time=4
 
 Compile=
@@ -553,6 +569,7 @@ Check=
 
 #>
 Name=SEP--Parker_spiral--boris_relativistic      
+Family=sep
 Time=4
 
 Ref=2{icc}@@(0+valeriy)
@@ -579,6 +596,7 @@ Check=
 
 #>
 Name=SEP--Parker_spiral--field_line         
+Family=sep
 Time=4
 
 Ref=2{icc}@@(0+valeriy)
@@ -605,6 +623,7 @@ Check=
 
 #>
 Name=SEP--Parker3D--ParkerIMF 
+Family=sep
 Time=4
 
 Ref=2{icc}@@(0+valeriy)
@@ -634,6 +653,7 @@ Check=
 
 #>
 Name=SEP--Parker3D--SWMF_IMF
+Family=sep
 Time=4
 Type=swmf
 
@@ -708,6 +728,7 @@ Check=
 
 #>
 Name=SEP--focused_transport-IH-mflampa@@(0+) 
+Family=sep
 Time=4
 Type=swmf
 
@@ -778,6 +799,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=SEP-CME--focused_transport--mflampa-fl@@(0+pleiades) 
+Family=sep
 Time=4
 Type=swmf
 
@@ -829,6 +851,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=SEP-CME--focused_transport--fl-7au-droge@@(0+pleiades)
+Family=sep
 Time=4
 Type=swmf
 
@@ -880,6 +903,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=SEP-CME--focused_transport--3D@@(0+pleiades)
+Family=sep
 Time=4
 Type=swmf
 
@@ -930,6 +954,7 @@ Check=
 
 #>
 Name=SEP--focused_transport-IH-mflampa-fl 
+Family=sep
 Time=4
 Type=swmf
 
@@ -1002,6 +1027,7 @@ Check=
 ------------------------------------------------------------------------------
 #>
 Name=SEP--focused_transport-IH-Kartavykh-drift 
+Family=sep
 Time=4
 Type=swmf
 
@@ -1072,6 +1098,7 @@ Check=
 ------------------------------------------------------------------------------
 #>
 Name=SEP--focused_transport-IH-Kartavykh-drift_diffusion 
+Family=sep
 Time=4
 Type=swmf
 
@@ -1143,6 +1170,7 @@ Check=
 
 #>
 Name=SEP--focused_transport-IH-Kartavykh
+Family=sep
 Time=4
 Type=swmf
 
@@ -1213,6 +1241,7 @@ Check=
 ------------------------------------------------------------------------------
 #>
 Name=SEP--focused_transport-IH-He 
+Family=sep
 Time=4
 Type=swmf
 
@@ -1281,6 +1310,7 @@ Check=
 ------------------------------------------------------------------------------
 #>
 Name=SEP--focused_transport-IH-He-drift 
+Family=sep
 Time=4
 Type=swmf
 
@@ -1350,6 +1380,7 @@ Check=
 
 #>
 Name=SEP--focused_transport-IH-He-drift_diffusion 
+Family=sep
 Time=4
 Type=swmf
 
@@ -1419,6 +1450,7 @@ Check=
 
 #>
 Name=unit_test
+Family=unit-tests
 Time=2
 
 Compile=
@@ -1445,6 +1477,7 @@ Check=
 
 #>
 Name=unit_test_field-lines 
+Family=unit-tests
 Time=2
 
 Compile=
@@ -1471,6 +1504,7 @@ Check=
 
 #>
 Name=unit_test_particle_distribution 
+Family=unit-tests
 Time=2
 
 Compile=
@@ -1498,6 +1532,7 @@ Check=
 
 #>
 Name=unit_test_collisions
+Family=unit-tests
 Time=2
 
 Compile=
@@ -1528,6 +1563,7 @@ Check=
 
 #>
 Name=Moon
+Family=planets
 Compile=
 >>>@echo "test_Moon_compile..." > test_Moon$(TESTMoon-REF).diff
 >>>python3 src/test/native/prepare_legacy_native.py
@@ -1546,6 +1582,7 @@ Check=
 
 #>
 Name=Moon-tetra-cut-cells  
+Family=planets
 Time=2
 
 Check=
@@ -1571,6 +1608,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=Moon-restart
+Family=planets
 Time=2
 Run=
 >>>@echo "test_Moon-restart_run..." >> test_Moon-restart.diff
@@ -1586,6 +1624,7 @@ Run=
 -------------------------------------------------------------------------------
 #>
 Name=test/ices-reader@@(0+) 
+Family=readers
 
 Time=2
 ExeptionCode=SKIP{icc}
@@ -1597,12 +1636,14 @@ Keys=-ices-path=/Users/vtenishe/ices/ICES/Models@@(0+valeriy)
 #>
 Time=1
 Name=test/tecplot-reader@@(0+)  
+Family=readers
 Keys=-cplr-data-path=${PTDIR}/data/input/Europa/Martin-Multifluid 
 <#
 
 #>
 Time=1
 Name=test/binary-reader@@(0+)
+Family=readers
 
 Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/BINARY-READER@@(0+stampede+pleiades)
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/BINARY-READER@@(0+valeriy) 
@@ -1625,6 +1666,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/kameleon-reader@@(0+)
+Family=readers
 Time=2
 
 ExeptionCode=SKIP{pgcc}
@@ -1635,12 +1677,14 @@ Keys=-boost-path=/Users/ccmc/boost -kameleon-path=/Users/ccmc/Kameleon-plus -cpl
 -------------------------------------------------------------------------------
 #>
 Name=Enceladus 
+Family=planets
 Time=2
 Keys=-cplr-data-path=${PTDIR}/data/input/Enceladus 
 <#
 -------------------------------------------------------------------------------
 #>
 Name=Rosetta@@(0+) 
+Family=comet-dust
 Time=17 
 
 Ref=2{icc}@@(0+valeriy)
@@ -1658,6 +1702,7 @@ Ref=6{icc}@@(0+stampede)
 -------------------------------------------------------------------------------
 #>
 Name=test/OH@@(0+) 
+Family=planets
 Time=2
 
 Ref=2{icc}@@(0+valeriy)
@@ -1677,6 +1722,7 @@ Ref=5{gcc}@@(0+amps-gpu+passion)
 -------------------------------------------------------------------------------
 #>
 Name=Tempel1@@(0+) 
+Family=comet-dust
 Time=3
 
 Ref=2{icc}@@(0+valeriy)
@@ -1691,6 +1737,7 @@ Keys=-model-data-path=${PTDIR} -spice-path=/scratch/02452/vtenishe/SPICE/cspice 
 -------------------------------------------------------------------------------
 #>
 Name=Mercury-test 
+Family=planets
 Time=2
 
 Ref=2{icc}@@(0+valeriy)
@@ -1703,6 +1750,7 @@ Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02
 -------------------------------------------------------------------------------
 #>
 Name=test/batl-reader@@(0+) 
+Family=readers
 Time=2
 
 Ref=1{pgcc}@@(0+pleiades)
@@ -1742,6 +1790,7 @@ Compile=
 
 #>
 Name=Earth@@(0+) 
+Family=earth
 Time=2
 
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels @@(0+valeriy)
@@ -1801,6 +1850,7 @@ Check=
 
 #>
 Name=Earth-cutoff-rigidity@@(0+) 
+Family=earth
 Time=15 
 
 Ref=2{icc}@@(0+valeriy)
@@ -1874,6 +1924,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=Earth-cutoff-rigidity_t05@@(0+) 
+Family=earth
 Time=15
 
 Ref=2{icc}@@(0+valeriy)
@@ -1918,6 +1969,7 @@ Check=
 
 #>
 Name=Earth-cutoff-rigidity-points_t05@@(0+) 
+Family=earth
 Time=15
 
 Ref=2{icc}@@(0+valeriy)
@@ -1977,6 +2029,7 @@ Check=
 
 #>
 Name=Earth-geo_t05@@(0+) 
+Family=earth
 Time=15
 
 Ref=2{icc}@@(0+valeriy)
@@ -2021,6 +2074,7 @@ Check=
 
 #>
 Name=Earth-cutoff-rigidity_t96@@(0+) 
+Family=earth
 Time=15
 
 Ref=2{icc}@@(0+valeriy)
@@ -2058,6 +2112,7 @@ Check=
 -------------------------------------------------------------------------------
 #> 
 Name=test/Earth-T96@@(0+) 
+Family=earth
 Time=3
 
 CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2/output-sig=0x103010036592e5d@@(0+amps-gpu+passion)
@@ -2096,6 +2151,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/Earth-Impulse-Source@@(0+) 
+Family=earth
 Time=6 
 
 Outs=test_Earth
@@ -2120,6 +2176,7 @@ Compile=
 
 #>
 Name=test/Earth-Impulse-Neutron-Source@@(0+) 
+Family=earth
 Time=6
 
 Outs=test_Earth-Impulse-Neutron 
@@ -2138,6 +2195,7 @@ Compile=
 -------------------------------------------------------------------------------
 #>
 Name=test/linear-system-solver
+Family=pic-field-solver
 Time=10
 
 Outs=Diffusion.out=190
@@ -2165,6 +2223,7 @@ Check=
 
 #>
 Name=test/linear-system-solver-openmp 
+Family=pic-field-solver
 Time=10
 
 Outs=Diffusion.out=190
@@ -2193,6 +2252,7 @@ Check=
 
 #>
 Name=test/periodic-bc-gmres 
+Family=pic-field-solver
 Time=3
 
 Outs=Transport.out=190
@@ -2229,6 +2289,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/lightwave-current-on 
+Family=pic-field-solver
 Time=3
 
 Ref=2{icc}@@(0+valeriy)
@@ -2311,6 +2372,7 @@ Check=
 
 #>
 Name=test/lightwave-current-on-openmp@@(0+) 
+Family=pic-field-solver
 Time=3
 
 Ref=2{icc}@@(0+valeriy)
@@ -2365,6 +2427,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/magnetic-reconnection
+Family=pic-field-solver
 Time=10
 
 Ref=2{icc}@@(0+valeriy)
@@ -2416,6 +2479,7 @@ Check=
 
 #>
 Name=test/magnetic-reconnection-openmp@@(0+) 
+Family=pic-field-solver
 Time=10
 
 Ref=2{icc}@@(0+valeriy)
@@ -2456,6 +2520,7 @@ Check=
 
 #>
 Name=test/magnetic-reconnection_avx256
+Family=pic-field-solver
 Time=10
 
 Ref=2{icc}@@(0+valeriy)
@@ -2510,6 +2575,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/fast-wave
+Family=pic-field-solver
 Time=3
 
 Outs=
@@ -2565,6 +2631,7 @@ Check=
 
 #>
 Name=test/fast-wave--legacy-ecsim
+Family=pic-field-solver
 Time=3
 
 Outs=
@@ -2619,6 +2686,7 @@ Check=
 
 #>
 Name=test/fast-wave__correction
+Family=pic-field-solver
 Time=3
 
 Outs=
@@ -2673,6 +2741,7 @@ Check=
 
 #>
 Name=test/fast-wave_rebalancing
+Family=pic-field-solver
 Time=3
 
 Outs=
@@ -2742,6 +2811,7 @@ Check=
 
 #>
 Name=test/fast-wave_AVX256
+Family=pic-field-solver
 Time=3
 ExeptionCode=SKIP{pgcc}
 
@@ -2799,6 +2869,7 @@ Check=
 
 #>
 Name=test/fast-wave_AVX512@@(-pleiades) 
+Family=pic-field-solver
 Time=3
 ExeptionCode=SKIP{pgcc}
 ExeptionCode=SKIP{gcc}@@(0+valeriy)
@@ -2857,6 +2928,7 @@ Check=
 
 #>
 Name=test/fast-wave_multithread_UpdateJMassMatrix
+Family=pic-field-solver
 Time=3
 ExeptionCode=SKIP{pgcc}
 ExeptionCode=SKIP{gcc}@@(0+valeriy)
@@ -2913,6 +2985,7 @@ Check=
 
 #>
 Name=test/fast-wave_multithread_mover_UpdateJMassMatrix
+Family=pic-field-solver
 Time=3
 ExeptionCode=SKIP{pgcc}
 ExeptionCode=SKIP{gcc}@@(0+valeriy)
@@ -2969,6 +3042,7 @@ Check=
 
 #>
 Name=test/fast-wave_multithread_mover_matmul_UpdateJMassMatrix
+Family=pic-field-solver
 Time=3
 ExeptionCode=SKIP{pgcc}
 ExeptionCode=SKIP{gcc}@@(0+valeriy)
@@ -3026,6 +3100,7 @@ Check=
 
 #>
 Name=test/fast-wave-openmp 
+Family=pic-field-solver
 Time=3
 
 Outs=
@@ -3083,6 +3158,7 @@ Check=
 
 #>
 Name=test/fast-wave-openmp__shared_temp_list
+Family=pic-field-solver
 Time=3
 
 Outs=
@@ -3141,6 +3217,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=photon-test@@(0+) 
+Family=physics-models
 Time=3
 
 Check=
@@ -3158,6 +3235,7 @@ Check=
 
 #>
 Name=photon-test-openmp@@(0+) 
+Family=physics-models
 Time=3
 
 Compile=
@@ -3185,6 +3263,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/lightwave-current-off 
+Family=pic-field-solver
 Time=2
 
 Outs=
@@ -3229,6 +3308,7 @@ Check=
 
 #>
 Name=test/lightwave-current-off-openmp 
+Family=pic-field-solver
 Time=2
 
 Outs=
@@ -3277,6 +3357,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/Periodic-BC  
+Family=pic-field-solver
 Time=6
 
 Check=
@@ -3372,6 +3453,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/Periodic-BC-NonUniform  
+Family=pic-field-solver
 Time=6
 
 Check=
@@ -3467,6 +3549,7 @@ Check=
 
 #>
 Name=Legacy_2dCG@@(0+)
+Family=comet-dust
 Time=8
 
 ExeptionCode=SKIP{pgcc}@@(0+valeriy)
@@ -3507,6 +3590,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=SEP3D-ARMS-coupling 
+Family=sep-swmf
 Time=2
 
 Ref=2{icc}@@(0+valeriy)
@@ -3536,6 +3620,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=CG-PostProcess--Read-Trajectories--on@@(0+)
+Family=comet-dust
 Time=26
 
 ExeptionCode=SKIP{pgcc}
@@ -3604,6 +3689,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=CG-PostProcess--Read-Trajectories--off@@(0+) 
+Family=comet-dust
 Time=2
 
 ExeptionCode=SKIP{pgcc}
@@ -3656,6 +3742,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=CG-VIRTIS-Inversion-Legacy@@(0+) 
+Family=comet-dust
 Time=9
 
 Compile=
@@ -3694,6 +3781,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=CG-DFMS-Inversion-Legacy@@(0+) 
+Family=comet-dust
 Time=5
 
 Compile=
@@ -3731,6 +3819,7 @@ Check=
 -----------------------------------------------------------------------------------------------
 #>
 Name=CG
+Family=comet-dust
 Time=4
 
 Ref=2{icc}@@(0+valeriy)
@@ -3764,6 +3853,7 @@ Compile=
 -------------------------------------------------------------------------------
 #>
 Name=CG-dust-test@@(0+valeriy+pleiades+stampede+amps-gpu+passion)
+Family=comet-dust
 Time=3
 
 Ref=1{gcc}@@(0+valeriy)
@@ -3816,6 +3906,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=CG-dust-test-tetra-cut-mesh@@(0+valeriy+pleiades+stampede+amps-gpu+passion)
+Family=comet-dust
 Time=100 
 
 Ref=1{gcc}@@(0+valeriy)
@@ -3867,6 +3958,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/model-dust
+Family=comet-dust
 Time=2
 <#
 
@@ -3874,6 +3966,7 @@ Time=2
 
 #>
 Name=test/Individual_Trajectories--Lapenta2017 
+Family=movers
 Time=4
 
 Ref=2{icc}@@(0+valeriy)
@@ -3911,6 +4004,7 @@ Check=
 
 #>
 Name=test/Individual_Trajectories--Markidis2010 
+Family=movers
 Time=4
 
 Ref=2{icc}@@(0+valeriy)
@@ -3947,6 +4041,7 @@ Check=
 
 #>
 Name=test/Individual_Trajectories--Boris 
+Family=movers
 Time=4
 
 Ref=2{icc}@@(0+valeriy)
@@ -3982,6 +4077,7 @@ Check=
 
 #>
 Name=test/Individual_Trajectories--Boris-relativistic 
+Family=movers
 Time=4
 
 Ref=2{icc}@@(0+valeriy)
@@ -4017,6 +4113,7 @@ Check=
 
 #>
 Name=test/Individual_Trajectories--guiding-center 
+Family=movers
 Time=4
 
 Ref=2{icc}@@(0+valeriy)
@@ -4053,6 +4150,7 @@ Check=
 
 #>
 Name=test/Individual_Trajectories--guiding-center--KAMELEON@@(0+valeriy)
+Family=movers
 Time=4
 
 ExeptionCode=SKIP{pgcc}
@@ -4086,6 +4184,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=CCMC-Individual_Trajectories
+Family=movers
 Time=4
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/CCMC -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/CCMC@@(0+valeriy)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/home/vtenishe/AMPS_DATA_TEST/CCMC -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/CCMC@@(0+amps-gpu+passion)
@@ -4105,6 +4204,7 @@ Check=
 
 #>
 Name=CCMC-Individual_Trajectories--KAMELEON@@(0+valeriy)
+Family=movers
 Time=4
 
 ExeptionCode=SKIP{pgcc}
@@ -4139,6 +4239,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=CCMC-Individual_Trajectories--KAMELEON-multifile@@(0+valeriy)
+Family=movers
 Time=4
 
 ExeptionCode=SKIP{pgcc}
@@ -4161,6 +4262,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/Mover-guiding-center@@(0+valeriy) 
+Family=movers
 Time=3
 
 Ref=5{gcc}@@(0+pleiades)
@@ -4187,6 +4289,7 @@ Check=
 
 #>
 Name=test/Mover-guiding-center@@(0+stampede+pleiades+amps-gpu+passion)
+Family=movers
 Time=3
 
 Ref=2{icc}@@(0+valeriy)
@@ -4215,6 +4318,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/Mover-Lapenta2017 
+Family=movers
 Time=7
 
 Keys=/Users/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+valeriy)
@@ -4244,6 +4348,7 @@ Check=
 
 #>
 Name=test/Mover-Markidis2010
+Family=movers
 Time=7
 
 Keys=/Users/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+valeriy)
@@ -4275,6 +4380,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/Mover-Boris@@(0+valeriy)
+Family=movers
 Time=20
 
 Keys=/Users/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+valeriy)
@@ -4298,6 +4404,7 @@ Check=
 
 #>
 Name=test/Mover-Boris@@(0+stampede+pleiades+amps-gpu+passion)
+Family=movers
 Time=20
 
 Ref=2{gcc}@@(0+stampede)
@@ -4325,6 +4432,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/Mover-Boris-relativistic@@(0+valeriy)
+Family=movers
 Time=20
 
 Keys=/Users/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+valeriy)
@@ -4348,6 +4456,7 @@ Check=
 
 #>
 Name=test/Mover-Boris-relativistic@@(0+stampede+pleiades+amps-gpu+passion)
+Family=movers
 Time=20
 
 Ref=2{gcc}@@(0+stampede)
@@ -4373,6 +4482,7 @@ Check=
 ---------------------------------------------------------------------------
 #>
 Name=Mover-gca-relativistic
+Family=movers
 Time=20
 
 Ref=2{gcc}@@(0+stampede)
@@ -4400,6 +4510,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=Europa-test1
+Family=planets
 Time=3
 
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EUROPA@@(0+valeriy) 
@@ -4418,6 +4529,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=Europa-test2
+Family=planets
 Time=3
 
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EUROPA/MultiFluid@@(0+valeriy)
@@ -4453,6 +4565,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=LOS@@(0+) 
+Family=mesh-geometry
 Time=4
 Compile=
 >>>cd ${PTDIR}/utility/LOS/ && julia Config.jl --tmpDir ${PTDIR}/utility/LOS/Tmp
@@ -4532,6 +4645,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/Collision-Test-NTC 
+Family=physics-models
 Time=3
 
 Check=
@@ -4569,6 +4683,7 @@ Check=
 
 #>
 Name=test/Collision-Test-MF
+Family=physics-models
 Time=4
 
 Check=
@@ -4606,6 +4721,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/Chemistry-Test
+Family=physics-models
 Time=4
 
 Check=
@@ -4625,6 +4741,7 @@ Check=
 /------------------------------------------------------------------------------
 #>
 Name=test/Mars-Hot-Oxygen@@(0+) 
+Family=planets
 Time=50 
 
 Ref=2{icc}@@(0+valeriy)
@@ -4669,6 +4786,7 @@ Check=
 /------------------------------------------------------------------------------
 #>
 Name=test/Venus-Hot-Oxygen
+Family=planets
 Time=50 
 
 Ref=2{icc}@@(0+valeriy)
@@ -4696,6 +4814,7 @@ Check=
 /------------------------------------------------------------------------------
 #>
 Name=test/Mars-Hot-Carbon@@(0+) 
+Family=planets
 Time=1
 
 Compile=
@@ -4735,6 +4854,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/InterpolateAMR-test
+Family=mesh-geometry
 Time=2
 
 ExeptionCode=SKIP{pgcc}
@@ -4767,6 +4887,7 @@ Check=
 
 #>
 Name=test/InterpolateAMR-AMPS-test
+Family=mesh-geometry
 Time=2
 
 Run=
@@ -4793,6 +4914,7 @@ Check=
 /------------------------------------------------------------------------------
 #>
 Name=test/Drag-Coefficient--Specular-Reflection@@(0+) 
+Family=mesh-geometry
 Time=1
 
 Ref=2{icc}@@(0+valeriy)
@@ -4846,6 +4968,7 @@ Check=
 /------------------------------------------------------------------------------
 #>
 Name=test/Sphere-drag-coefficient@@(0+) 
+Family=mesh-geometry
 Time=32
 
 Keys=-model-data-path=${PTDIR}/data/input/DragCoefficient
@@ -4937,6 +5060,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/CG-BATSRUS-dust-coupling@@(0+) 
+Family=bats-coupling
 Time=2
 
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 @@(0+valeriy)
@@ -5026,6 +5150,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=test/AMPS-BATSRUS-PIC-coupling
+Family=bats-coupling
 Time=30 
 Type=swmf
 
@@ -5110,6 +5235,7 @@ Check=
 --------------------------------------------------------------------------------------------------------------------------
 #>
 Name=SEP_SWMF_test19_fl
+Family=sep-swmf
 Time=10 
 Type=swmf
 
@@ -5181,6 +5307,7 @@ Check=
 --------------------------------------------------------------------------------------------------------------------------
 #>
 Name=SEP_SWMF_test19
+Family=sep-swmf
 Time=10
 Type=swmf
 
@@ -5244,6 +5371,7 @@ Check=
 
 #>
 Name=SEP-SC-IH--FL--FL-attachment--GC
+Family=sep-swmf
 Time=5
 Type=swmf
 
@@ -5310,6 +5438,7 @@ Check=
 
 #>
 Name=SEP-SC-IH--FL--FL-attachment--Droge 
+Family=sep-swmf
 Time=5
 Type=swmf
 
@@ -5396,6 +5525,7 @@ Check=
 
 #>
 Name=SEP-SC-IH--FL--FL-attachment--Droge_diffusion 
+Family=sep-swmf
 Time=5
 Type=swmf
 
@@ -5483,6 +5613,7 @@ Check=
 
 #>
 Name=SEP-SC-IH--FL--FL-attachment--He_diffusion 
+Family=sep-swmf
 Time=5
 Type=swmf
 
@@ -5573,6 +5704,7 @@ Check=
 
 #>
 Name=SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov 
+Family=sep-swmf
 Time=5
 Type=swmf
 
@@ -5659,6 +5791,7 @@ Check=
 
 #>
 Name=SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE 
+Family=sep-swmf
 Time=5
 Type=swmf
 
@@ -5746,6 +5879,7 @@ Check=
 
 #>
 Name=SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker 
+Family=sep-swmf
 Time=5
 Type=swmf
 
@@ -5832,6 +5966,7 @@ Check=
 
 #>
 Name=SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin 
+Family=sep-swmf
 Time=5
 Type=swmf
 
@@ -5921,6 +6056,7 @@ Check=
 
 #>
 Name=SEP-SC-IH--FL--Node-attachment--GC
+Family=sep-swmf
 Time=5
 Type=swmf
 
@@ -5981,6 +6117,7 @@ Check=
 
 #>
 Name=test/AMPS-BATSRUS-Europa 
+Family=bats-coupling
 Time=15 
 Type=swmf
 
@@ -6036,6 +6173,7 @@ Check=
 
 #>
 Name=test/AMPS-BATSRUS-OH  
+Family=bats-coupling
 Time=15 
 Type=swmf
 
@@ -6118,6 +6256,7 @@ Check=
 
 #>
 Name=test/AMPS-BATSRUS_dynamic_fluxrope  
+Family=bats-coupling
 Time=15 
 Type=swmf
 
@@ -6191,6 +6330,7 @@ Check=
 
 #>
 Name=test/cdap_test
+Family=comet-dust
 Time=3
 
 Outs=
@@ -6214,6 +6354,7 @@ Test for Constant E and B Boundary Conditions for Field Solver
 
 #>
 Name=test/const-field-bc
+Family=pic-field-solver
 Time=5
 
 Type=amps
@@ -6360,6 +6501,7 @@ Test for Gridless Cutoff Rigidity Steady State with T96 Background Magnetic Fiel
 
 #>
 Name=Earth-cutoff-rigidity-gridless-steadystate_t96
+Family=earth
 Time=5
 
 Type=amps
@@ -6426,6 +6568,7 @@ Points and Shells
 
 #>
 Name=Earth-vertical-cutoff-rigidity-gridless
+Family=earth
 Time=5
 
 Type=amps
@@ -6524,6 +6667,7 @@ using HYBRID Mover: Points and Shells
 
 #>
 Name=Earth-vertical-cutoff-rigidity-gridless-hybrid
+Family=earth
 Time=5
 
 Type=amps
@@ -6623,6 +6767,7 @@ Anisotropy, Regression, Spatial, and Density subtests
 
 #>
 Name=Geospace-Flux-Gridless
+Family=earth
 Time=5
 
 Type=amps
@@ -6939,6 +7084,7 @@ using HYBRID Mover: Anisotropy, Regression, Spatial, and Density subtests
 
 #>
 Name=Geospace-Flux-Gridless-hybrid
+Family=earth
 Time=5
 
 Type=amps
@@ -7257,6 +7403,7 @@ To add a new model: duplicate the T05 blocks in Run, Check, cat, ls, and Outs
 
 #>
 Name=Earth-cutoff-rigidity-gridless-trajectory
+Family=earth
 Time=5
 
 Type=amps
@@ -7483,6 +7630,7 @@ To add a new model: duplicate the T05 blocks in Run, Check, cat, ls, and Outs
 
 #>
 Name=Earth-vertical-cutoff-rigidity-gridless-trajectory
+Family=earth
 Time=5
 
 Type=amps
@@ -7720,6 +7868,7 @@ Trajectory mode
 
 #>
 Name=Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only
+Family=earth
 Time=5
 
 Type=amps
@@ -7789,6 +7938,7 @@ Points and Shells (default field evaluation)
 
 #>
 Name=Earth-cutoff-rigidity-3d
+Family=earth
 Time=5
 
 Type=amps
@@ -7880,6 +8030,7 @@ Points and Shells (ANALYTIC field evaluation)
 
 #>
 Name=Earth-cutoff-rigidity-3d-analytic
+Family=earth
 Time=5
 
 Type=amps
@@ -7971,6 +8122,7 @@ H+ trajectory and volume output (ANALYTIC field evaluation)
 
 #>
 Name=Earth-3d_forward-dipole_analytic
+Family=earth
 Time=5
 
 Type=amps
@@ -8039,6 +8191,7 @@ H+ trajectory and volume output (ANALYTIC field evaluation)
 
 #>
 Name=Earth-3d_forward-t96_analytic
+Family=earth
 Time=5
 
 Type=amps
@@ -8107,6 +8260,7 @@ H+ trajectory and volume output
 
 #>
 Name=Earth-3d_forward-t96
+Family=earth
 Time=5
 
 Type=amps
@@ -8175,6 +8329,7 @@ H+ trajectory and volume output driven by SWMF SWPC magnetosphere
 
 #>
 Name=test/Geospace-SWMF-AMPS
+Family=earth
 Time=30
 Type=swmf
 

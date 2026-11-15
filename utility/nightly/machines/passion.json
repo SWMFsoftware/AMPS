@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "machine": "passion",
+  "enabled": true,
+  "description": "NASA NDC workstation (36 cores, 251 GB); also the results server",
+  "hostnames": ["passion", "passion.ndc.nasa.gov"],
+  "table_host": "passion",
+  "workdir": "/data/vtenishe/AMPSTEST/work",
+  "upload": "~/AMPSTEST/nightly/incoming",
+  "start": "20:00",
+  "night_limit_h": 14,
+  "max_parallel": 1,
+  "cores": 36,
+  "memory_gb": 240,
+  "keep_workspaces": "failures",
+  "python": "/usr/bin/python3",
+  "mpiexec": "mpiexec",
+  "core_profile": "test/qualification-machine/passion.json",
+  "capabilities": ["spice", "swmf-data"],
+  "vars": {
+    "spice_path": "/home/vtenishe/SPICE/cspice",
+    "spice_kernels": "/home/vtenishe/SPICE/Kernels",
+    "swmf_data": "/home/vtenishe/SWMF_data",
+    "enceladus_shape_manifest": "/home/vtenishe/Mars2/AMPS/srcEnceladus/test/data/shape_manifest.json"
+  },
+  "_vars_note": "enceladus_shape_manifest is temporary: the file is excluded from git by the .gitignore pattern 'data' (to decide 2026-11-15)",
+  "make_vars": {"MPIRUN": "mpirun -np 8", "TESTMPIRUN4": "mpirun -np 4", "TESTMPIRUN1": "mpirun -np 1"},
+  "lanes": 10,
+  "timeouts_s": {"compile": 3600, "rundir": 600, "run": 7200, "check": 900},
+  "configs": [
+    {
+      "config": "gnu",
+      "compiler": "GNU",
+      "toolchain": "GCC 9.4 · Open MPI 4.0",
+      "setup": [],
+      "config_pl": ["-install -compiler=gfortran,gcc_mpicc", "-f-link-option=-lmpi_cxx",
+                    "-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels"],
+      "after_install": ["make share_lib"]
+    }
+  ]
+}

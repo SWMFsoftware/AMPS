@@ -343,6 +343,7 @@ sub get_next_test{
           $ErrorRead='1';
         }
       }
+      elsif ($line =~ m/^Family=/) {} #nightly-report family; used by table_parser.cpp and utility/nightly
       elsif ($line =~ m/Time=([0-9]+)/) {$Time+=$1;}
       elsif ($line =~ m/Keys=(.*)/) {$Keys="$Keys$1,," if($1);}
       elsif ($line =~ m/CustomRefSolutionPaths=(.*)/) {$CustomRefSolutionPaths="$CustomRefSolutionPaths$1,," if($1);}

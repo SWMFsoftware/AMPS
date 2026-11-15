@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "_doc": "The test runners the nightly orchestrator executes, in this order. See ORCHESTRATOR.md section 2.",
+  "checkout": {
+    "repository": "git@github.com:SWMFsoftware/AMPS.git",
+    "branch": "master",
+    "companions": [
+      {"path": "share", "repository": "git@github.com:SWMFsoftware/share.git"},
+      {"path": "util", "repository": "git@github.com:SWMFsoftware/util.git"},
+      {"path": "BATL", "repository": "git@github.com:SWMFsoftware/BATL.git"},
+      {"path": "SWMF_data", "link_var": "swmf_data"}
+    ]
+  },
+  "runners": [
+    {
+      "id": "core",
+      "title": "src/test core suites (campaign nightly)",
+      "command": ["{python}", "src/test/run_tests.py", "--config", "{core_profile}", "--campaign", "nightly",
+                  "--jobs", "{jobs}", "--output-dir", "{out}/run", "--json", "{out}/report.json"],
+      "env": {"AMPS_TEST_TEMP_ROOT": "{tmp}"},
+      "jobs": 8,
+      "time_limit_min": 120,
+      "results": {"reader": "src-test-json", "file": "{out}/report.json"},
+      "families": "by-prefix",
+      "expect": {"src_test_campaign": "nightly"},
+      "logs": ["{out}/run/logs/*.log", "{out}/run/streams/*.log"],
+      "requires_vars": ["core_profile"]
+    },
+    {
+      "id": "enceladus",
+      "title": "srcEnceladus forward-model tests",
+      "workspace": "plain",
+      "prepare": ["mkdir -p srcEnceladus/test/data && cp {enceladus_shape_manifest} srcEnceladus/test/data/shape_manifest.json"],
+      "command": ["{python}", "srcEnceladus/test/run_tests.py", "--output", "{out}/run"],
+      "time_limit_min": 15,
+      "results": {"reader": "enceladus-receipt", "file": "{out}/run/test_receipt.json"},
+      "families": "app-enceladus",
+      "requires_vars": ["enceladus_shape_manifest"]
+    },
+    {
+      "id": "sep",
+      "title": "srcSEP: build and all test steps (tools/sep_test_orchestrator.py)",
+      "command": ["{python}", "tools/sep_test_orchestrator.py", "--app", "srcsep", "--output-dir", "{out}/run"],
+      "env": {"MAKEFLAGS": "-j{jobs}"},
+      "jobs": 16,
+      "time_limit_min": 120,
+      "results": {"reader": "sep-orchestrator-json", "file": "{out}/run/run_all_test.json"},
+      "families": "app-sep",
+      "logs": ["{out}/run/*.log", "{out}/run/failed_tests.txt"]
+    },
+    {
+      "id": "sep3d",
+      "title": "srcSEP3D: build and the regular test steps (--quick; long steps run in sep3d-long)",
+      "command": ["{python}", "tools/sep_test_orchestrator.py", "--app", "srcsep3d", "--quick", "--output-dir", "{out}/run"],
+      "env": {"MAKEFLAGS": "-j{jobs}"},
+      "jobs": 16,
+      "time_limit_min": 120,
+      "results": {"reader": "sep-orchestrator-json", "file": "{out}/run/run_all_test.json"},
+      "families": "app-sep3d",
+      "logs": ["{out}/run/*.log", "{out}/run/failed_tests.txt"]
+    },
+    {
+      "id": "moon",
+      "title": "srcMoon unit tests U01-U26",
+      "prepare": ["rm -rf build && ./Config.pl -application=moon -amps-test=off -spice-path={spice_path} -spice-kernels={spice_kernels} && make -j{jobs} 'OPT3=-O3 -g'"],
+      "command": ["{python}", "srcMoon/test/run_tests.py", "--all", "--output-dir", "{out}/run", "--build-dir", "{ws}/build"],
+      "env": {"MOON_SPICE_KERNEL_ROOT": "{spice_kernels}", "MOON_SPICE_TOOLKIT_ROOT": "{spice_path}"},
+      "jobs": 16,
+      "time_limit_min": 90,
+      "results": {"reader": "moon-summary", "file": "{out}/run/summary.json"},
+      "families": "app-moon",
+      "logs": ["{out}/run/*/result.json", "{out}/run/*/*.log"],
+      "requires": ["spice"],
+      "requires_vars": ["spice_path", "spice_kernels"]
+    },
+    {
+      "id": "earth",
+      "title": "srcEarth test list (srcEarth/test/list)",
+      "prepare": ["make test_Earth-cutoff-rigidity-3d-analytic_compile",
+                  "./amps -h 2>&1 | grep -q 'AMPS Earth' || { echo 'ERROR: ./amps is not an Earth build (make amps failed)'; exit 1; }"],
+      "command": ["{python}", "srcEarth/test/test_runner.py", "srcEarth/test/list", "-j", "{jobs}",
+                  "--log-dir", "{out}/logs", "--report-prefix", "{out}/report",
+                  "--last-pass-results-file", "{out}/last_pass.json", "--timeout", "5400"],
+      "jobs": 6,
+      "time_limit_min": 300,
+      "results": {"reader": "earth-report", "file": "{out}/report.json"},
+      "families": "app-earth",
+      "logs": ["{out}/report*.txt", "{out}/report*.csv"]
+    },
+    {
+      "id": "legacy",
+      "kind": "makefile",
+      "title": "MakefileTest/Table tests (Makefile.test)",
+      "time_limit_min": 600,
+      "note": "the test list is 'make -s test_manifest'; add or remove tests in MakefileTest/Table"
+    },
+    {
+      "id": "sep3d-long",
+      "title": "srcSEP3D long validation steps (last: they get the rest of the night)",
+      "command": ["{python}", "tools/sep_test_orchestrator.py", "--app", "srcsep3d", "--output-dir", "{out}/run",
+                  "--only", "build", "--only", "reduced-front", "--only", "positive-shock", "--only", "point-sampling",
+                  "--only", "pitch-angle-native", "--only", "pitch-angle-library", "--only", "corona-swcme"],
+      "env": {"MAKEFLAGS": "-j{jobs}"},
+      "jobs": 16,
+      "time_limit_min": 420,
+      "results": {"reader": "sep-orchestrator-json", "file": "{out}/run/run_all_test.json"},
+      "families": "app-sep3d",
+      "logs": ["{out}/run/*.log", "{out}/run/failed_tests.txt"]
+    }
+  ],
+  "disabled": []
+}
