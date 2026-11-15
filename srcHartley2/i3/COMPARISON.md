@@ -68,10 +68,13 @@ Brightness:
   g-factor (Swings and Greenstein effects included).
 - H Lyman-alpha g-factor: IKL2020 solar-profile model, driven by the 1-au
   solar Lyman-alpha photon flux from the LASP/LISIRD Version-4 daily
-  composite (Machol et al. 2019). This record is referenced to Earth. In
-  cases 1-3 the comet saw a solar hemisphere far from the one facing Earth.
-  F10.7P (shifted to the Earth-equivalent time) is used only for the
-  photochemical rates.
+  composite (Machol et al. 2019). The composite is measured from Earth's
+  side of the Sun, but the comet saw a different solar hemisphere (128-172
+  deg away in heliocentric longitude). The flux is therefore averaged over
+  the same Earth-equivalent interval as F10.7P, i.e. shifted by solar
+  rotation to the comet's solar longitude. This recipe reproduces the six
+  case values to within 1e-5 (checked 2026-11-14 against a fresh LISIRD
+  download). F10.7P itself enters only the photochemical rates.
 - OH(0,0) g-factor: Schleicher & A'Hearn (1988) Lowell table, -60 to
   +60 km/s, unquenched.
 - Emission is optically thin. Rays with H line-centre optical depth above
@@ -206,8 +209,10 @@ from more than 4 days earlier).
     - Q(H2O), and with it the model H, scales as 1/g_OH. An OH g-factor
       overestimated by 1.5-1.7 at -40 km/s, or a Lyman-alpha g-factor or
       solar flux underestimated by that much, would explain case 1.
-    - Our solar Lyman-alpha is the Earth-referenced LASP composite, not a
-      measurement at the comet's solar longitude.
+    - Our solar Lyman-alpha is the LASP composite measured from Earth and
+      shifted by solar rotation (10-13 days) to the comet's solar
+      longitude, not a measurement at the comet. Active regions may have
+      changed during the shift.
     - Our OH photodissociation rates have no velocity dependence.
 
 (c) Observation-side effects: background subtraction, the FUV/MUV relative
@@ -345,8 +350,9 @@ D. The red "Model" curves
 E. Solar input
 
   E1. Could you provide MAVEN EUVM solar Lyman-alpha irradiance at Mars for
-      the six exposure windows? We currently use the Earth-referenced
-      LASP/LISIRD composite; the comet was close to Mars in cases 1-3.
+      the six exposure windows? We currently use the LASP/LISIRD composite,
+      measured from Earth and shifted by solar rotation to the comet's
+      solar longitude; the comet was close to Mars in cases 1-3.
   E2. Which OH g-factor do you adopt at r_dot = -39.7 and -36.2 km/s, and
       with which solar spectrum?
 
