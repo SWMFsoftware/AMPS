@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/test_nonneg.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/test_nonneg.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 860ab10ba97bdf246150e39a929fa47e89472a4a4530dff3cb952edb02bf5d14
+# SHA256 of the run copy = SHA256 of this file without these header lines: d27bfcc4e8e41e4def13b7e2f32a25bf033e78564dc47520b304c6b8ee68a196
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: test. Tests of the softplus / squared models (unit: softplus value and derivative, host fields, threads bitwise,
 #   one-job requirements A and B; workers; e2e on the synthetic grid base: D2 -> fits with full Jacobian checks,
@@ -10,6 +10,8 @@
 # USED BY: jobs/nonneg_cpu.sbatch (CPU job 124128: 20 tests, 0 failed), jobs/nonneg_test.sbatch (124130-124133).
 # 2026-11-13: six multmin tests (option absent = previous snapshot bitwise; bounds [1, inf); TRF start on the bound;
 #   records; marker refusals); CPU job 124658: 26 tests, 0 failed.
+# 2026-11-13/14: multiplier lower bound tests; options A, B, D (unit, e2e, absent = bitwise, D penalty and uniform start, sos LM refinement); CPU job 125065 41 of 41.
+# 2026-11-13/14: multiplier lower bound tests; options A, B, D (unit, e2e, absent = bitwise, D penalty and uniform start, sos LM refinement); CPU job 125065 41 of 41.
 # ==== end of header ====
 """Tests of the non-negative activity models (nonneg_mult.py, nonneg_problem.py, nonneg_fit.py, nonneg_start.py,
 nonneg_finetune.py; user decisions 2026-11-11).
@@ -101,7 +103,7 @@ def test_unit():
     m = np.array([1.0, 0.3, 2.0, 0.0, 1.5, 0.7, 4.0])
     gh = np.exp(rng.normal(0, 0.3, n))
     same = []
-    for model in nm.MODELS:
+    for model in ("softplus", "squared"):
         nm.set_L_threads(None)
         ref = nm.host_fields(model, Y, a, Bft, c, scale, bins, m, s if model == "softplus" else None, gh, True)
         for th in (2, 8):
@@ -158,7 +160,7 @@ def test_cpu_columns(scratch):
                                       "ah2o_sha256": nm.sha256_bytes(np.ascontiguousarray(el["AH2O"])),
                                       "mesh_identity": "test"}}
     worst = {}
-    for model in nm.MODELS:
+    for model in ("softplus", "squared"):
         cfg = nm.process_config(model, meta, [{"name": "ft_c1", "bundle": {"sha256": "x"}}])
         nm._STATE["config"] = cfg
         Cls = nm.cpu_model_class(fit_cops, cfg)
@@ -641,6 +643,10 @@ class CpuEngine:
         nm.set_stage_held(held["path"] if held else None, (held or {}).get("key", "held_next"), ctx.nf,
                           expect_sha256=(held or {}).get("sha256"))
         nm.set_override(None)
+        nm.set_col_mode(0)
+        if ctx.model_cfg["model"] in nm.NEW_MODELS:
+            import nonneg_alt
+            nm.set_extra(nonneg_alt.extra_from_restart(ctx.model_cfg, ctx.names, ctx.x, float(ctx.meta["ascale"])))
         Cls = nm.cpu_model_class(fit_cops, ctx.model_cfg)
         self.M = Cls(str(ctx.run), ctx.header, ctx.cols, ctx.table_rows, ctx.el, ctx.coef)
         self.ctx = ctx
@@ -859,6 +865,8 @@ def test_e2e(scratch):
                                                          evals(A2) == evals(C2s) if rc == 0 else None,
                                                          evals(A3_) == evals(SP) if rc == 0 else None))
     test_multmin_chain(root, run_g, points, bins_npz, D2, head_sp, SP, out)
+    test_alt_absent(root, run_g, points, bins_npz, D2, head_sp, SQS)
+    test_alt_e2e(root, run_g, points, bins_npz, D2, ft, el)
 
 
 def test_multmin_chain(root, run_g, points, bins_npz, D2, head_sp, SP, out):
@@ -875,6 +883,415 @@ def test_multmin_chain(root, run_g, points, bins_npz, D2, head_sp, SP, out):
            "multiplier lower bound" in t, "exit %s; %s" % (rc, [l for l in t.splitlines() if "lower bound" in l][-1:]))
 
 
+# ------------------------------------------------------------------------------------------------ alternative models
+V_ALT_PREVIOUS = OUT_ROOT / "model_ext_frozen/nonneg_20261113T035423Z"     # the snapshot before options A, B, D
+
+
+def test_alt_unit():
+    """Options A, B, D (2026-11-14): non-negativity of A on random fields (incl. A_orig = 0, strongly negative u / L);
+    the column factors D, E, P vs central FD of A (harmonics via u, sos L columns, A_bg, multipliers); chunked == 1
+    thread (bitwise); the spread matrix: ||S a||^2 == sum_seen w (u - u_bar)^2."""
+    import nonneg_mult as nm
+    import nonneg_alt as na
+    rng = np.random.default_rng(17)
+    n, k = 9001, 25
+    Y = np.ascontiguousarray(rng.normal(size=(n, k)))
+    Bft = np.ascontiguousarray(np.where(rng.random((n, 2)) < 0.1, rng.uniform(0, 0.3, (n, 2)), 0.0))
+    scale = 2.2e18
+    aorig = rng.uniform(0.0, 3.0, n) * 1e17
+    aorig[rng.random(n) < 0.05] = 0.0
+    s = 1e-5 * aorig
+    bins = rng.integers(0, 7, n).astype(np.int8)
+    m = np.array([1.0, 1.3, 2.0, 1.0, 1.5, 3.7, 4.0])
+    gh = np.exp(rng.normal(0, 0.3, n))
+    c = np.ones(2)
+    res = {}
+    for model, a, extra in (("sos", rng.normal(size=k) * 3e17, {"L_extra": np.tril(rng.normal(size=(k, 2)) * 3e17, -1)}),
+                            ("background", rng.normal(size=k) * 3e17, {"A_bg": 0.01}),
+                            ("logspread", rng.normal(size=k) * 0.3 * scale, {})):
+        ao = aorig if model != "sos" else None
+        sw = s if model == "background" else None
+        nm.set_L_threads(None)
+        f = nm.host_fields(model, Y, a, Bft, c, scale, bins, m, sw, gh, True, extra=extra, aorig=ao)
+        nonneg = bool(np.all(f["A"] >= 0) and np.all(np.isfinite(f["A"])))
+        nm.set_L_threads(4)
+        f4 = nm.host_fields(model, Y, a, Bft, c, scale, bins, m, sw, gh, True, extra=extra, aorig=ao)
+        nm.set_L_threads(None)
+        same = all(np.array_equal(f[x], f4[x]) for x in ("A", "D", "E", "P"))
+        # dA/da_j = D Y_j (FD in a_j)
+        worst = 0.0
+        for j in (0, 5, 24):
+            h = 1e-6 * max(abs(a[j]), 1e15)
+            ap, am = a.copy(), a.copy()
+            ap[j] += h
+            am[j] -= h
+            fd = (nm.host_fields(model, Y, ap, Bft, c, scale, bins, m, sw, gh, False, extra=extra, aorig=ao)["A"] -
+                  nm.host_fields(model, Y, am, Bft, c, scale, bins, m, sw, gh, False, extra=extra, aorig=ao)["A"]) / (2 * h)
+            an = f["D"] * Y[:, j]
+            sel = np.abs(an) > 0
+            worst = max(worst, float(np.max(np.abs(fd - an)) / max(np.max(np.abs(an)), 1e-300)))
+        # multipliers: dA/dm_k = [bin = k] P
+        for kk in (1, 5):
+            h = 1e-6
+            mp, mm = m.copy(), m.copy()
+            mp[kk] += h
+            mm[kk] -= h
+            fd = (nm.host_fields(model, Y, a, Bft, c, scale, bins, mp, sw, gh, False, extra=extra, aorig=ao)["A"] -
+                  nm.host_fields(model, Y, a, Bft, c, scale, bins, mm, sw, gh, False, extra=extra, aorig=ao)["A"]) / (2 * h)
+            an = np.where(bins == kk, f["P"], 0.0)
+            worst = max(worst, float(np.max(np.abs(fd - an)) / max(np.max(np.abs(an)), 1e-300)))
+        # extra parameters
+        if model == "sos":
+            for (i, j) in ((1, 1), (20, 1), (24, 2)):
+                h = 1e-6 * 3e17
+                ep, em = {"L_extra": extra["L_extra"].copy()}, {"L_extra": extra["L_extra"].copy()}
+                ep["L_extra"][i, j - 1] += h
+                em["L_extra"][i, j - 1] -= h
+                fd = (nm.host_fields(model, Y, a, Bft, c, scale, bins, m, None, gh, False, extra=ep)["A"] -
+                      nm.host_fields(model, Y, a, Bft, c, scale, bins, m, None, gh, False, extra=em)["A"]) / (2 * h)
+                Dj = nm.host_fields(model, Y, a, Bft, c, scale, bins, m, None, gh, True, extra=extra, mode=j)["D"]
+                an = Dj * Y[:, i]
+                worst = max(worst, float(np.max(np.abs(fd - an)) / max(np.max(np.abs(an)), 1e-300)))
+        if model == "background":
+            h = 1e-6
+            fd = (nm.host_fields(model, Y, a, Bft, c, scale, bins, m, sw, gh, False, extra={"A_bg": 0.01 + h}, aorig=ao)["A"]
+                  - nm.host_fields(model, Y, a, Bft, c, scale, bins, m, sw, gh, False, extra={"A_bg": 0.01 - h},
+                                   aorig=ao)["A"]) / (2 * h)
+            an = nm.host_fields(model, Y, a, Bft, c, scale, bins, m, sw, gh, True, extra=extra, aorig=ao, mode="raw")["D"]
+            worst = max(worst, float(np.max(np.abs(fd - an)) / max(np.max(np.abs(an)), 1e-300)))
+        pos = float(np.mean(f["A"] > 0))
+        res[model] = {"nonneg": nonneg, "bitwise_4_threads": same, "fd_worst": worst, "A_positive_fraction": pos}
+    ok = all(v["nonneg"] and v["bitwise_4_threads"] and v["fd_worst"] < 1e-6 for v in res.values())
+    report("alt unit: sos / background / logspread: A >= 0, factors vs FD, 4 threads == 1 (bitwise)", ok, "%s" % res)
+    # spread matrix
+    area = rng.uniform(0.5, 2.0, n)
+    seen = rng.random(n) < 0.6
+    S, C, ybar, W = na.spread_matrix(Y, area, seen, chunk=1000)
+    a = rng.normal(size=k)
+    u = Y @ a
+    w = np.where(seen, area, 0.0) / area[seen].sum()
+    ub = np.sum(w * u)
+    direct = float(np.sum(w * (u - ub) ** 2))
+    via = float(np.sum((S @ a) ** 2))
+    report("alt unit: spread penalty ||S a||^2 == sum_seen w (u - u_bar)^2", abs(via / direct - 1) < 1e-12,
+           "direct %.15e, via S %.15e (rel %.1e)" % (direct, via, abs(via / direct - 1)))
+
+
+def test_sos_refine():
+    """nonneg_start.py --refine lm (option A start proposal, 2026-11-14): on a synthetic rank-3 problem it recovers
+    L L^T of the truth from a perturbed start; its gradient J^T r matches central FD of the cost; 8 threads == serial
+    (bitwise, fixed chunks)."""
+    import nonneg_start as ns
+    from concurrent.futures import ThreadPoolExecutor
+    rng = np.random.default_rng(23)
+    n, r = 20000, 3
+    Y = rng.standard_normal((n, 25))
+    Lt = np.tril(rng.standard_normal((25, r))) * 0.3
+    V = Y @ Lt
+    S = np.abs(rng.standard_normal(n)) * 0.01
+    t = np.sum(V * V, axis=1) + S
+    w = np.full(n, 1.0 / n)
+    L0 = Lt + 0.2 * np.tril(rng.standard_normal((25, r)))
+    L0[np.triu_indices(25, 1, r)] = 0.0
+    rec = {}
+    Lp = ns.solve_sos(Y, S, t, w, L0, None, 300, rec)
+    err = float(np.abs(Lp @ Lp.T - Lt @ Lt.T).max())
+    lower = bool(np.all(np.triu(Lp, 1) == 0.0) and np.all(np.diag(Lp[:r, :r]) >= 0))
+    idx = [(i, j) for j in range(r) for i in range(j, 25)]
+
+    def cost(L_):
+        V_ = Y @ L_
+        res_ = np.sum(V_ * V_, 1) + S - t
+        return float(np.sum(w * res_ * res_))
+    V1 = Y @ L0
+    res1 = np.sum(V1 * V1, 1) + S - t
+    g = np.array([2.0 * np.sum(w * res1 * 2.0 * V1[:, j] * Y[:, i]) for i, j in idx])
+    gfd = []
+    for i, j in idx:
+        Lp_, Lm_ = L0.copy(), L0.copy()
+        Lp_[i, j] += 1e-6
+        Lm_[i, j] -= 1e-6
+        gfd.append((cost(Lp_) - cost(Lm_)) / 2e-6)
+    gerr = float(np.abs(g - np.array(gfd)).max() / np.abs(gfd).max())
+    chunk0 = ns.CHUNK
+    try:
+        ns.CHUNK = 4096
+        r1, r2 = {}, {}
+        A = ns.solve_sos(Y, S, t, w, L0, None, 40, r1)
+        B = ns.solve_sos(Y, S, t, w, L0, ThreadPoolExecutor(8), 40, r2)
+    finally:
+        ns.CHUNK = chunk0
+    same = bool(np.array_equal(A, B) and r1["final_cost"] == r2["final_cost"])
+    report("sos start --refine lm: recovers L L^T, gradient vs FD, 8 threads == serial (bitwise)",
+           err < 1e-10 and lower and gerr < 1e-7 and same and rec["final_cost"] < 1e-20 * rec["start_cost"],
+           "max |L L^T - truth| %.2e, lower-trapezoidal %s, cost %.3e -> %.3e (%d iterations, %s), gradient rel %.1e, "
+           "threads bitwise %s" % (err, lower, rec["start_cost"], rec["final_cost"], rec["iterations"], rec["stop"],
+                                   gerr, same))
+
+
+def independent_A_alt(model, run, xb, ascale, A_s, ft_bundles, rank=None):
+    """The alternative models' activity at m = 1 from their definitions (unchunked numpy, separately written)."""
+    from cops_cuda import reference
+    reference.bind()
+    fit_cops = reference.load("fit_cops")
+    at = reference.load("activity_templates")
+    el = fit_cops.read_elements(str(Path(run) / "elements.bin"))
+    a = np.array([xb["a%02d" % j] for j in range(25)]) * ascale
+    T = np.column_stack([at.select_templates(at.load_bundle(str(p), el["centroid"], el["area"]), [nm_])
+                         for p, nm_ in ft_bundles])
+    TS = A_s * (T @ np.ones(T.shape[1]))
+    ao = np.asarray(el["AH2O"], float)
+    if model == "sos":
+        L = np.zeros((25, rank))
+        L[:, 0] = a
+        for name, v in xb.items():
+            if name.startswith("sosL_"):
+                L[int(name[5:7]), int(name[8:])] = v * ascale
+        V = el["Y"] @ L
+        return np.sum(V * V, axis=1) / A_s + TS
+    if model == "background":
+        return xb["A_bg"] * ao + softplus_independent(el["Y"] @ a + TS, 1e-5 * ao)
+    return ao * np.exp((el["Y"] @ a) / A_s) + TS
+
+
+def test_alt_e2e(root, run_g, points, bins_npz, D2, ft, el):
+    """Options A (sos r 3), B (background, bg_min 1e-2) and D (logspread, f 1, C_ref 4.2688066575e-03, start uniform): fits
+    from D2 with --slope-mult-min 1 and
+    the full Jacobian check of every parameter (incl. the extra block), start cost vs an independent evaluation, A >= 0,
+    fine tuning with validation 1-8, cycle-2 start cost = fine-tuning final; option absent: softplus / squared ==
+    the previous snapshot."""
+    import nonneg_start
+    import nonneg_finetune as nft
+    import nonneg_mult as nm
+    import nonneg_alt as na
+    ftb = [(ft, "ft_c1")]
+    ascale = float(json.loads(str(np.load(str(D2 / "fit_restart.npz"))["meta_json"]))["ascale"])
+    SOS_START = root / "sos_start_r3.npz"
+    rc_s = nonneg_start.main(["--model", "sos", "--rank", "3", "--run", str(run_g), "--d2", str(D2 / "fit_restart.npz"),
+                              "--ft-templates-from", str(D2), "--out", str(SOS_START), "--threads", "2"])
+    q = json.loads(str(np.load(str(SOS_START))["meta_json"]))["quality"]
+    report("alt e2e: sos start (Gram LSQ, PSD projection, rank 3)", rc_s == 0,
+           "full LSQ Q %s; rank-3 PSD %s; kept fraction %s; normal matrix rank %s of %s" % (
+               q["lsq_full_Q"], q["rank_r_psd"], q["eigenvalue_kept_fraction"], q["normal_matrix_rank"],
+               q["normal_matrix_size"]))
+    cases = {"sos": ["--model", "sos", "--sos-rank", "3", "--start", "gram", "--start-file", SOS_START],
+             "background": ["--model", "background", "--bg-min", "1e-2", "--start", "d2"],
+             "logspread": ["--model", "logspread", "--spread-f", "1", "--spread-cref", "4.2688066575e-03", "--start",
+                           "uniform"]}
+    fits = {}
+    for model, opts in cases.items():
+        names = (["a%02d" % j for j in range(25)] + ["c_" + n for n in nm.BIN_NAMES[1:]] + ["kappa"] +
+                 na.extra_names({"model": model, "sos_rank": 3}) + ["grain_A_uPa", "grain_B_uPa_per_100s"])
+        head = opts + d2_head(points, bins_npz, D2) + ["--start-restart", D2 / "fit_restart.npz", "--slope-mult-min", "1"]
+        F = root / ("alt_%s_c1" % model)
+        rc, t = run_child(root, "alt_%s_c1" % model, [head + ["--check-full-jacobian", "--check-parameters",
+                                                              ",".join(names)] + fit_tail(run_g, F, 8)])
+        if rc:
+            report("alt e2e: %s fit" % model, False, t[-4000:])
+            continue
+        m_, rec = manifest_record(F)
+        jc = rec["clip_core"]["jacobian_check"]["columns"]
+        worst = max(v["data"] for v in jc.values() if isinstance(v, dict))
+        xb = dict(zip(m_["parameters"]["names"], rec["start_restart"]["x_start"]))
+        A_s = rec["model_check"]["A_scale"]
+        A_ind = independent_A_alt(model, run_g, xb, ascale, A_s, ftb, rank=3)
+        cost, info = independent_cost(run_g, points, F / "start_check_model.npz", xb, rec["grain_window"]["t_end_et"],
+                                      A_ind)
+        c_drv = rec["clip_core"]["start_check"]["start"]["data_cost"]
+        with np.load(str(F / "nonneg_facets.npz")) as z:
+            A_fin, seen = np.asarray(z["A"]), np.asarray(z["seen"], bool)
+        area = np.asarray(el["area"])
+        pos_seen = float(area[seen & (A_fin > 0)].sum() / area[seen].sum())
+        zF = np.load(str(F / "fit_restart.npz"))
+        xf = dict(zip(json.loads(str(zF["meta_json"]))["names"], zF["x"]))
+        ok = (worst < 1e-5 and len(jc) == len(names) and abs(cost / c_drv - 1) <= 1e-12 and np.all(A_fin >= 0) and
+              all(xf["c_" + n] >= 1.0 for n in nm.BIN_NAMES[1:]) and (model != "background" or xf["A_bg"] >= 1e-2))
+        report("alt e2e: %s fit from D2 (--slope-mult-min 1): full Jacobian check (%d columns), independent start, A >= 0"
+               % (model, len(names)), ok, "worst data %.2e; driver %.15e independent %.15e (rel %.1e); A > 0 on %.4f "
+               "of the seen area; final multipliers >= 1 %s%s; %s" % (
+                   worst, c_drv, cost, abs(cost / c_drv - 1), pos_seen,
+                   all(xf["c_" + n] >= 1.0 for n in nm.BIN_NAMES[1:]),
+                   ("; A_bg %.6g" % xf["A_bg"]) if model == "background" else "",
+                   rec["model_check"].get("alternative")))
+        if model == "logspread":
+            sp = rec["model_check"]["alternative"]["spread"]
+            un = rec["model_check"]["alternative"]["uniform_start"]
+            fin = sp["final"]
+            # independent penalty: f C_ref x the area-weighted variance of u = Y a / A_s over the seen facets
+            af = np.array([xf["a%02d" % j] for j in range(25)]) * ascale
+            u = (np.asarray(el["Y"]) @ af) / A_s
+            w = np.where(seen, area, 0.0) / area[seen].sum()
+            var = float(np.sum(w * (u - np.sum(w * u)) ** 2))
+            pen_ind = 1.0 * 4.2688066575e-03 * var
+            # the uniform start: u constant = ln s; an optimum of the recorded objective; penalty 0 at the start
+            a0 = np.array([xb["a%02d" % j] for j in range(25)]) * ascale
+            u0 = (np.asarray(el["Y"]) @ a0) / A_s
+            cst = float(np.max(np.abs(u0 - un["ln_s"])))
+            opt_ = un["sum_sq_dln"] < min(un["sum_sq_dln_at_ln_s_minus_plus_0p01"])
+            ok2 = (abs(fin["penalty"] / pen_ind - 1) <= 1e-9 and abs(fin["penalty"] / fin["penalty_formula"] - 1) <= 1e-12
+                   and cst <= 1e-12 and opt_ and sp["penalty_cost_at_start"] <= 1e-20 and
+                   un["linearity_check_max_rel"] <= 1e-9 and sp["f"] == 1.0 and sp["C_ref"] == 4.2688066575e-03)
+            report("alt e2e: logspread penalty P = f C_ref Var_w(u) (independent) and the uniform start", ok2,
+                   "P %.15e independent %.15e (rel %.1e), formula rel %.1e; data cost %.6e; start u - ln s max %.1e, "
+                   "s %.10e, objective %.6e < %s, penalty at the start %.1e, linearity %.1e" % (
+                       fin["penalty"], pen_ind, abs(fin["penalty"] / pen_ind - 1),
+                       abs(fin["penalty"] / fin["penalty_formula"] - 1), fin["data_cost"], cst, un["s"],
+                       un["sum_sq_dln"], un["sum_sq_dln_at_ln_s_minus_plus_0p01"], sp["penalty_cost_at_start"],
+                       un["linearity_check_max_rel"]))
+        fits[model] = (F, head)
+    test_alt_restart(root, run_g, fits, el, ascale)
+    test_alt_absent_new(root, run_g, fits)
+    # fine tuning of each, then cycle 2
+    for model, (F, head) in fits.items():
+        FT = root / ("alt_%s_ft" % model)
+        args = nft.parse_args(["--fit", str(F), "--out", str(FT), "--facets", "late_only", "--window-min", "5",
+                               "--max-nfev", "15", "--validate", "--l-threads", "2"])
+        try:
+            rc = nft.run(args, engine_factory=lambda ctx: CpuEngine(ctx), command=["test"])
+        except SystemExit as exc:
+            rc = str(exc)
+        v = json.loads((FT / "validation.json").read_text()) if (FT / "validation.json").is_file() else {}
+        ok = rc == 0 and bool(v.get("passed"))
+        fm = {}
+        if (FT / "finetune_state.npz").is_file():
+            fm = json.loads(str(np.load(str(FT / "finetune_state.npz"))["meta_json"]))
+        report("alt e2e: %s fine tuning: validation 1-8" % model, ok, "exit %s; checks %s; parameters %s" % (
+            rc, {k: (vv.get("passed") if isinstance(vv, dict) else vv) for k, vv in v.items()}, fm.get("parameters")))
+        if not ok:
+            continue
+        C2 = root / ("alt_%s_c2" % model)
+        h2 = [o for o in head]
+        i = h2.index("--start")
+        h2[i + 1] = "chain"
+        if "--start-file" in h2:
+            j = h2.index("--start-file")
+            del h2[j:j + 2]
+        j = h2.index("--start-restart")
+        h2[j + 1] = F / "fit_restart.npz"
+        h2 += ["--held", FT / "finetune_state.npz", "--grain-from", FT / "finetune_state.npz"]
+        rc, t = run_child(root, "alt_%s_c2" % model, [h2 + fit_tail(run_g, C2, 3)])
+        if rc:
+            report("alt e2e: %s cycle-2 fit" % model, False, t[-3000:])
+            continue
+        m4, rec4 = manifest_record(C2)
+        c2s = rec4["clip_core"]["start_check"]["start"]["data_cost"]
+        ftf = fm["costs_final"]["cost_data"]
+        report("alt e2e: %s cycle-2 start cost = the fine tuning's final data cost (1e-8)" % model,
+               abs(c2s / ftf - 1) <= 1e-8, "c2 %.15e ft %.15e (rel %.1e)" % (c2s, ftf, abs(c2s / ftf - 1)))
+
+
+V_ALT_D = OUT_ROOT / "model_ext_frozen/nonneg_20261114T085147Z"     # the stage-1 D snapshot (before restart / u0)
+CREF_TEST = 4.2688066575e-03
+U0_TEST = -0.25
+
+
+def _restart_head(head, src):
+    h = [o for o in head]
+    i = h.index("--start")
+    h[i + 1] = "restart"
+    if "--start-file" in h:
+        j = h.index("--start-file")
+        del h[j:j + 2]
+    j = h.index("--start-restart")
+    h[j + 1] = Path(src) / "fit_restart.npz"
+    return h
+
+
+def test_alt_restart(root, run_g, fits, el, ascale):
+    """--start restart (user 2026-11-14): for each new model the continuation starts at the source fit's final state
+    (start data cost == the source's final data cost, x == the source's final x); logspread with --spread-u0: P = f C_ref
+    [Var_w(u) + (u_bar - u0)^2] at the start (from the source's final u) and at the end (independent); refusals:
+    another model's restart, --spread-u0 with another model, --start restart without --start-restart."""
+    area = np.asarray(el["area"])
+    for model, (F, head) in fits.items():
+        h = _restart_head(head, F) + (["--spread-u0", str(U0_TEST)] if model == "logspread" else [])
+        Rr = root / ("alt_%s_restart" % model)
+        rc, t = run_child(root, "alt_%s_restart" % model, [h + fit_tail(run_g, Rr, 4)])
+        if rc:
+            report("alt restart: %s continuation" % model, False, t[-3000:])
+            continue
+        m_, rec = manifest_record(Rr)
+        msrc, recs = manifest_record(F)
+        c0 = rec["clip_core"]["start_check"]["start"]["data_cost"]
+        cs = float(msrc["optimizer_results"][0]["data_cost"])
+        zs = np.load(str(F / "fit_restart.npz"))
+        xs_ok = bool(np.array_equal(np.asarray(rec["start_restart"]["x_start"]), np.asarray(zs["x"])))
+        ok = abs(c0 / cs - 1) <= 1e-12 and xs_ok and rec["start_restart"]["start_choice"] == "restart"
+        det = "start data cost %.15e, source final %.15e (rel %.1e); x_start == source x %s" % (c0, cs, abs(c0 / cs - 1),
+                                                                                          xs_ok)
+        if model == "logspread":
+            sp, sps = rec["model_check"]["alternative"]["spread"], recs["model_check"]["alternative"]["spread"]["final"]
+            want0 = 1.0 * CREF_TEST * (sps["var_w_u"] + (sps["mean_u"] - U0_TEST) ** 2)
+            fin = sp["final"]
+            zf = np.load(str(Rr / "fit_restart.npz"))
+            xf = dict(zip(json.loads(str(zf["meta_json"]))["names"], zf["x"]))
+            with np.load(str(Rr / "nonneg_facets.npz")) as z:
+                seen = np.asarray(z["seen"], bool)
+            A_s = rec["model_check"]["A_scale"]
+            u = (np.asarray(el["Y"]) @ (np.array([xf["a%02d" % j] for j in range(25)]) * ascale)) / A_s
+            w = np.where(seen, area, 0.0) / area[seen].sum()
+            pen_ind = 1.0 * CREF_TEST * float(np.sum(w * (u - U0_TEST) ** 2))
+            ok2 = (abs(sp["penalty_cost_at_start"] / want0 - 1) <= 1e-9 and abs(fin["penalty"] / pen_ind - 1) <= 1e-9
+                   and abs(fin["penalty"] / fin["penalty_formula"] - 1) <= 1e-12 and sp["u0"] == U0_TEST
+                   and abs(fin["var_w_u"] + fin["dev2_mean_u0"] - float(np.sum(w * (u - U0_TEST) ** 2))) <= 1e-9 *
+                   max(1.0, fin["var_w_u"] + fin["dev2_mean_u0"]))
+            ok = ok and ok2
+            det += ("; u0 %r: start penalty %.15e expected %.15e (rel %.1e); final P %.15e independent %.15e (rel %.1e), "
+                    "Var_w %.6e, (u_bar - u0)^2 %.6e" % (U0_TEST, sp["penalty_cost_at_start"], want0,
+                                                        abs(sp["penalty_cost_at_start"] / want0 - 1), fin["penalty"],
+                                                        pen_ind, abs(fin["penalty"] / pen_ind - 1), fin["var_w_u"],
+                                                        fin["dev2_mean_u0"]))
+        report("alt restart: %s --start restart%s" % (model, " --spread-u0" if model == "logspread" else ""), ok, det)
+    # refusals
+    if "logspread" in fits and "background" in fits:
+        Fb = fits["background"][0]
+        h = _restart_head(fits["logspread"][1], Fb)
+        rc, t = run_child(root, "alt_restart_wrong_model", [h + fit_tail(run_g, root / "alt_restart_wrong_model", 2)])
+        report("alt restart: a background restart refused for --model logspread", rc != 0 and "--start restart from" in t,
+               "exit %s; %s" % (rc, [l for l in t.splitlines() if "start restart" in l][-1:]))
+        hb = fits["background"][1] + ["--spread-u0", "0"]
+        rc, t = run_child(root, "alt_u0_wrong_model", [hb + fit_tail(run_g, root / "alt_u0_wrong_model", 2)])
+        report("alt: --spread-u0 refused for --model background", rc != 0 and "--spread-u0 belongs to --model logspread" in t,
+               "exit %s" % rc)
+        h = [o for o in fits["background"][1]]
+        h[h.index("--start") + 1] = "restart"
+        j = h.index("--start-restart")
+        del h[j:j + 2]
+        rc, t = run_child(root, "alt_restart_no_source", [h + fit_tail(run_g, root / "alt_restart_no_source", 2)])
+        report("alt: --start restart without --start-restart refused", rc != 0 and ("needs --start-restart" in t or
+                                                                                   "give --start" in t), "exit %s" % rc)
+
+
+def test_alt_absent_new(root, run_g, fits):
+    """Options absent for the new models (no --start restart, no --spread-u0): sos, background, logspread == the stage-1
+    snapshot nonneg_20261114T085147Z (bitwise products)."""
+    out = {}
+    for model, (F, head) in fits.items():
+        OLD, NEW = root / ("absent_new_%s_previous" % model), root / ("absent_new_%s_new" % model)
+        rc1, _ = run_child(root, "absent_new_%s_previous" % model, [head + fit_tail(run_g, OLD, 5)],
+                           script=V_ALT_D / "test_nonneg.py")
+        rc2, _ = run_child(root, "absent_new_%s_new" % model, [head + fit_tail(run_g, NEW, 5)])
+        out[model] = same_products(OLD, NEW) if rc1 == 0 and rc2 == 0 else {"exit": (rc1, rc2)}
+    ok = all(all(v.values()) if "exit" not in v else False for v in out.values())
+    report("alt: new options absent: sos, background, logspread == snapshot nonneg_20261114T085147Z", ok, "%s" % out)
+
+
+def test_alt_absent(root, run_g, points, bins_npz, D2, head_sp, SQS):
+    """Option absent: softplus (with and without --slope-mult-min) and squared == the snapshot before options A, B, D."""
+    out = {}
+    for name, head in (("softplus", head_sp), ("softplus_smm1", head_sp + ["--slope-mult-min", "1"]),
+                       ("squared", ["--model", "squared"] + d2_head(points, bins_npz, D2) + [
+                           "--start", "lsq", "--start-restart", D2 / "fit_restart.npz", "--start-file", SQS])):
+        OLD, NEW = root / ("absent_%s_previous" % name), root / ("absent_%s_new" % name)
+        rc1, _ = run_child(root, "absent_%s_previous" % name, [head + fit_tail(run_g, OLD, 6)],
+                           script=V_ALT_PREVIOUS / "test_nonneg.py")
+        rc2, _ = run_child(root, "absent_%s_new" % name, [head + fit_tail(run_g, NEW, 6)])
+        out[name] = same_products(OLD, NEW) if rc1 == 0 and rc2 == 0 else {"exit": (rc1, rc2)}
+    ok = all(all(v.values()) if "exit" not in v else False for v in out.values())
+    report("alt: options absent: softplus, softplus --slope-mult-min 1, squared == snapshot nonneg_20261113T035423Z",
+           ok, "%s" % out)
+
+
 # ------------------------------------------------------------------------------------------------ GPU independent check
 def gpu_independent(out_dir, devices):
     """UNPATCHED process: the model's activity A recomputed independently on the host (independent_A) as the only
@@ -888,12 +1305,16 @@ def gpu_independent(out_dir, devices):
     m, rec = manifest_record(out_dir)
     cfg = rec["config"]
     run = Path(cfg["run"])
-    xb = dict(zip(rec["model_check"]["layout"], rec["start_restart"]["x_start"]))
+    names_ = rec["start_restart"].get("names") or rec["model_check"]["layout"]
+    xb = dict(zip(names_, rec["start_restart"]["x_start"]))
     with np.load(str(cfg["start_restart"]), allow_pickle=False) as z:
         ascale = float(json.loads(str(z["meta_json"]))["ascale"])
     A_s = rec["model_check"]["A_scale"]
     ftb = [(t["bundle"]["path"], t["name"]) for t in cfg["ft_templates"]]
-    A = independent_A(cfg["model"], run, xb, ascale, A_s, ftb, cfg["s_ratio"] or 0.0)
+    if cfg["model"] in ("sos", "background", "logspread"):
+        A = independent_A_alt(cfg["model"], run, xb, ascale, A_s, ftb, rank=cfg.get("sos_rank"))
+    else:
+        A = independent_A(cfg["model"], run, xb, ascale, A_s, ftb, cfg["s_ratio"] or 0.0)
     os.environ[precision.RECORD_PRECISION_ENVIRONMENT] = "fp32"
     gpu_model.REGISTRY.configure(devices[0], "tree", 4096, devices=devices, transport="local", activity="host")
     fit_cops.Model = gpu_model.gpu_model_class()
@@ -901,7 +1322,7 @@ def gpu_independent(out_dir, devices):
                                   rec["grain_window"]["t_end_et"], A)
     c_drv = rec["clip_core"]["start_check"]["start"]["data_cost"]
     rel = abs(cost / c_drv - 1.0)
-    tol = 0.0 if cfg["model"] == "squared" else 1e-12
+    tol = 0.0 if cfg["model"] == "squared" else 1e-12          # the others: independent expressions, rel 1e-12
     report("GPU: %s start cost == UNPATCHED evaluation of the independently computed A (%s)" % (
         cfg["model"], "bitwise" if tol == 0 else "rel <= 1e-12"), rel <= tol,
         "driver %.15e independent %.15e (rel %.1e); %s" % (c_drv, cost, rel, info))
@@ -926,7 +1347,8 @@ def main():
             raise SystemExit("scratch exists: %s" % scratch)
         scratch.mkdir(parents=True)
         only = set(args.only.split(",")) if args.only else None
-        for name, fn in (("unit", lambda: (test_unit(), test_held_requirement_a(), test_cpu_columns(scratch))),
+        for name, fn in (("unit", lambda: (test_unit(), test_held_requirement_a(), test_cpu_columns(scratch),
+                                           test_alt_unit(), test_sos_refine())),
                          ("workers", lambda: test_workers(scratch)), ("e2e", lambda: test_e2e(scratch))):
             if only is None or name in only:
                 try:

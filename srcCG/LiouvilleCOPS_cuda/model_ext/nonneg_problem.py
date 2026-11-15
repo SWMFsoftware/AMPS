@@ -1,6 +1,6 @@
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/nonneg_problem.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/nonneg_problem.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 5c5416d1f7c16a40bcceacd79c696d14e1cb41d7e0a8134def16f62b1c7338bd
+# SHA256 of the run copy = SHA256 of this file without these header lines: dc684305533d2b96fa9fb479b8805b852a5f61460ac5c3f64815dab40bc2c413
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: module. Fit-level hooks of the softplus / squared models around the unchanged grain_fit_fixed.py path: D2's core
 #   (clip_problem.install_core: grid rows, W10x5, start check, full Jacobian check), model checks (the 7 bin templates +
@@ -11,6 +11,8 @@
 #   free slope-bin multipliers (start 1, no upper bound), set on the Problem's bounds in the existing hook; recorded in
 #   the manifest, restart marker, NONNEG_MODEL.txt, nonneg_bins.txt; a resume / chain start with another value is
 #   refused. Snapshot nonneg_20261113T035423Z (production chain 124664/124772).
+# 2026-11-13: --slope-mult-min 1 (softplus). 2026-11-14: --model sos|background|logspread, --sos-rank, --bg-min, --spread-f, --spread-cref, starts gram / uniform, the spread penalty in NONNEG_MODEL.txt.
+# 2026-11-13: --slope-mult-min 1 (softplus). 2026-11-14: --model sos|background|logspread, --sos-rank, --bg-min, --spread-f, --spread-cref, starts gram / uniform, the spread penalty in NONNEG_MODEL.txt.
 # ==== end of header ====
 """Fit-level part of the non-negative activity models (softplus / squared harmonics with slope-bin multipliers; user
 decisions 2026-11-11, handoff.md section 10); the model and the GPU patch are nonneg_mult.py, the driver nonneg_fit.py.
@@ -42,7 +44,10 @@ import positive_problem as pp      # point-table helpers, used unchanged
 import nonneg_mult as nm
 
 PARAMETERIZATION = {"softplus": "nonneg_softplus_slope_multiplier_w10x5_v1",
-                    "squared": "nonneg_squared_slope_multiplier_w10x5_v1"}
+                    "squared": "nonneg_squared_slope_multiplier_w10x5_v1",
+                    "sos": "nonneg_sos_slope_multiplier_w10x5_v1",
+                    "background": "nonneg_background_slope_multiplier_w10x5_v1",
+                    "logspread": "nonneg_logspread_slope_multiplier_w10x5_v1"}
 PARAMETERIZATION_TEST = {"softplus": "nonneg_softplus_slope_multiplier_w10x5_TEST_s0_v1"}
 DESCRIPTION = {
     "softplus": ("H2O activity A = m_b s ln(1 + exp(L / s)) exp(h), L = Y a + A_s sum_k T_k (D2's ft_c* templates held at "
@@ -51,7 +56,14 @@ DESCRIPTION = {
                  "grain at the time stamp" % pp.LATE_START_UTC),
     "squared": ("H2O activity A = m_b (A_s (Y b)^2 + A_s sum_k T_k) exp(h) (a = A_s b; D2's ft_c* templates held at 1, "
                 "outside the square), one multiplier per effective-gravitational-slope bin (m_[0,40) = 1 held); W10x5 "
-                "for the observations from %s UTC (D2), grain at the time stamp" % pp.LATE_START_UTC)}
+                "for the observations from %s UTC (D2), grain at the time stamp" % pp.LATE_START_UTC),
+    "sos": ("H2O activity A = m_b (||L^T y||^2 / A_s + A_s sum_k T_k) exp(h), y = the 25 harmonics, L 25 x r "
+            "lower-trapezoidal (option A, user 2026-11-14), slope-bin multipliers; D2's scheme otherwise"),
+    "background": ("H2O activity A = m_b (A_bg A_orig + s ln(1 + exp(L / s))) exp(h), L = Y a + A_s sum_k T_k, s = 1e-5 "
+                   "A_orig, A_bg >= bg_min (option B, user 2026-11-14), slope-bin multipliers; D2's scheme otherwise"),
+    "logspread": ("H2O activity A = m_b (A_orig exp(Y a / A_s) + A_s sum_k T_k) exp(h) with the spread penalty f C_ref "
+                  "Var_w(u) over the seen facets (option D, user 2026-11-14), slope-bin multipliers; D2's scheme otherwise")}
+ALT_KEYS = ("slope_mult_min", "bg_min", "spread_f", "spread_cref", "spread_u0")   # settings a resume / chain must repeat
 USER_T0 = (182.09922, 136.11149, 133.0)
 GRAIN_NAMES = ("grain_A_uPa", "grain_B_uPa_per_100s")
 CHECK_PARAMETERS = tuple("c_" + n for n in nm.BIN_NAMES if n != nm.FIXED_BIN) + (
@@ -64,10 +76,24 @@ START_CHOICES = {
     "lsq": ("user 2026-11-11 (squared): b = the area-weighted least-squares fit of A(m = 1) = A_s ((Y b)^2 + sum_k T_k) "
             "to D2's activity max(0, D2 field) over all facets (nonneg_start.py, --start-file), a = A_s b; kappa and "
             "grain A, B by name from D2 (--start-restart); every free multiplier 1"),
+    "gram": ("option A (lead 2026-11-14): L = the top-r eigenvectors (x sqrt(eigenvalue), lower-trapezoidal) of the "
+             "area-weighted least-squares Gram matrix Q (PSD-projected) of D2's activity (nonneg_start.py --model sos, "
+             "--start-file); kappa and grain by name from D2; every free multiplier 1"),
+    "uniform": ("option D (user 2026-11-14): uniform u = ln s (a00 only, every other harmonic 0; A = m (s A_orig + A_s sum "
+                "T)), s = the least-squares fit in ln p of the model pressures to D2's modelled pressures over the fit's used "
+                "NG and RG rows (D2's stored predictions = its COPS_model.dat, matched by UTC as in the start check; "
+                "unweighted); kappa and grain by name from D2; every free multiplier 1"),
     "chain": ("user 2026-11-11 (fit / fine-tuning cycles): every parameter of the previous cycle's fit of this model "
               "(--start-restart = its fit_restart.npz, by name, exact optimizer coordinates), the grain A and B from "
               "the previous fine tuning (--grain-from), the accumulated fine-tuning term held (--held)")}
-MODEL_STARTS = {"softplus": ("d2", "chain"), "squared": ("lsq", "chain")}
+START_CHOICES["restart"] = (
+    "continuation (user 2026-11-14, after the stage-1 diagnosis): every parameter by name, in exact optimizer "
+    "coordinates, from the complete fit restart of the SAME model (--start-restart), no held term; a new scipy "
+    "least_squares call, so its x_scale='jac' scale is rebuilt from the Jacobian at this point")
+MODEL_STARTS = {"softplus": ("d2", "chain"), "squared": ("lsq", "chain"), "sos": ("gram", "chain", "restart"),
+                "background": ("d2", "chain", "restart"), "logspread": ("uniform", "chain", "restart")}
+EXTRA_CHECK_PARAMETERS = {"sos": ("sosL_01_1", "sosL_12_1", "sosL_24_1", "sosL_02_2", "sosL_24_2"),
+                          "background": ("A_bg",), "logspread": ()}
 GRAIN_TERM_RTOL = 1e-6
 SLOPE_MULT_MIN_CHOICES = (1.0,)    # user 2026-11-12 (softplus): "do not allow the multiplier factor decrease below 1"
 LOG = "nonneg:"
@@ -139,18 +165,45 @@ def rewrite_arguments(argv):
            "start_restart": _pop(head, "--start-restart"), "start_file": _pop(head, "--start-file"),
            "start_choice": _pop(head, "--start"), "held": _pop(head, "--held"), "grain_from": _pop(head, "--grain-from"),
            "s_ratio": _pop(head, "--s-ratio"), "test_clip": _flag(head, "--test-clip"),
-           "slope_mult_min": _pop(head, "--slope-mult-min"),
+           "slope_mult_min": _pop(head, "--slope-mult-min"), "sos_rank": _pop(head, "--sos-rank"),
+           "bg_min": _pop(head, "--bg-min"), "spread_f": _pop(head, "--spread-f"),
+           "spread_cref": _pop(head, "--spread-cref"), "spread_u0": _pop(head, "--spread-u0"),
            "check_full_jacobian": _flag(head, "--check-full-jacobian"),
            "stop_after_checks": _flag(head, "--stop-after-checks"), "check_parameters": list(CHECK_PARAMETERS),
            "variant": "D2"}
+    if cfg["model"] == "localnn":
+        raise SystemExit("nonneg: --model localnn (option C, local non-negative hat functions) is the separate module of "
+                         "another agent, not nonneg_fit.py")
     if cfg["model"] not in nm.MODELS:
         raise SystemExit("nonneg: --model %r: choose one of %s" % (cfg["model"], nm.MODELS))
+    # option parameters of the alternative models (2026-11-14): each belongs to one model; absent keys keep the
+    # records of the existing models unchanged
+    for key, opt, mdl in (("sos_rank", "--sos-rank", "sos"), ("bg_min", "--bg-min", "background"),
+                          ("spread_f", "--spread-f", "logspread"), ("spread_cref", "--spread-cref", "logspread"),
+                          ("spread_u0", "--spread-u0", "logspread")):
+        if cfg[key] is None:
+            if cfg["model"] == mdl and key != "spread_u0":         # --spread-u0 is optional (absent: mean-centred)
+                raise SystemExit("nonneg: --model %s needs %s" % (mdl, opt))
+            del cfg[key]
+            continue
+        if cfg["model"] != mdl:
+            raise SystemExit("nonneg: %s belongs to --model %s" % (opt, mdl))
+        cfg[key] = int(cfg[key]) if key == "sos_rank" else float(cfg[key])
+    if cfg.get("sos_rank") is not None and not 1 <= cfg["sos_rank"] <= 25:
+        raise SystemExit("nonneg: --sos-rank %r outside 1..25" % cfg["sos_rank"])
+    if cfg.get("bg_min") is not None and not cfg["bg_min"] > 0.0:
+        raise SystemExit("nonneg: --bg-min must be > 0 (a positive background floor relative to A_orig)")
+    if cfg.get("spread_f") is not None and not cfg["spread_f"] >= 0.0:
+        raise SystemExit("nonneg: --spread-f must be >= 0")
+    if cfg.get("spread_cref") is not None and not cfg["spread_cref"] > 0.0:
+        raise SystemExit("nonneg: --spread-cref must be > 0 (the reference data cost)")
     if cfg["slope_mult_min"] is None:
         del cfg["slope_mult_min"]               # absent: today's fit, its records unchanged
     else:
         v = float(cfg["slope_mult_min"])
-        if cfg["model"] != "softplus":
-            raise SystemExit("nonneg: --slope-mult-min is a decision for the softplus model only (user 2026-11-12)")
+        if cfg["model"] not in ("softplus",) + nm.NEW_MODELS:
+            raise SystemExit("nonneg: --slope-mult-min is a decision for the softplus model (user 2026-11-12) and "
+                             "the alternative models (2026-11-14) only")
         if v not in SLOPE_MULT_MIN_CHOICES:
             raise SystemExit("nonneg: --slope-mult-min %r is not a decision (user 2026-11-12: %s)" % (
                 v, SLOPE_MULT_MIN_CHOICES))
@@ -158,6 +211,10 @@ def rewrite_arguments(argv):
     names = _pop(head, "--check-parameters")
     if names:
         cfg["check_parameters"] = [n.strip() for n in names.split(",") if n.strip()]
+    elif cfg["model"] in nm.NEW_MODELS:
+        cfg["check_parameters"] = list(CHECK_PARAMETERS) + [n for n in EXTRA_CHECK_PARAMETERS[cfg["model"]]
+                                                            if cfg["model"] != "sos" or int(n.rsplit("_", 1)[1]) <
+                                                            cfg["sos_rank"]]
     for key, opt in (("point_table", "--point-table"), ("slope_bundle", "--slope-bundle"),
                      ("ft_templates_from", "--ft-templates-from")):
         if cfg[key] is None:
@@ -195,10 +252,10 @@ def rewrite_arguments(argv):
             cfg["start_choice"], cfg["model"], MODEL_STARTS[cfg["model"]]))
     if cfg["start_restart"] is not None and cfg["start_choice"] is None:
         raise SystemExit("nonneg: a new fit needs --start (%s)" % ", ".join(MODEL_STARTS[cfg["model"]]))
-    if cfg["start_choice"] == "lsq" and cfg["start_file"] is None:
-        raise SystemExit("nonneg: --start lsq needs --start-file <nonneg_start.py output>")
-    if cfg["start_file"] is not None and cfg["start_choice"] != "lsq" and cfg["restart_from"] is None:
-        raise SystemExit("nonneg: --start-file belongs to --start lsq")
+    if cfg["start_choice"] in ("lsq", "gram") and cfg["start_file"] is None:
+        raise SystemExit("nonneg: --start %s needs --start-file <nonneg_start.py output>" % cfg["start_choice"])
+    if cfg["start_file"] is not None and cfg["start_choice"] not in ("lsq", "gram") and cfg["restart_from"] is None:
+        raise SystemExit("nonneg: --start-file belongs to --start lsq / gram")
     if cfg["start_choice"] == "chain" and cfg["start_restart"] is not None:
         if cfg["held"] is None or cfg["grain_from"] is None:
             raise SystemExit("nonneg: --start chain needs --held and --grain-from (the previous finetune_state.npz)")
@@ -206,6 +263,8 @@ def rewrite_arguments(argv):
         raise SystemExit("nonneg: --grain-from belongs to --start chain")
     if cfg["held"] is not None and cfg["restart_from"] is None and cfg["start_choice"] != "chain":
         raise SystemExit("nonneg: --held belongs to --start chain (or a resume of such a fit)")
+    if cfg["start_choice"] == "restart" and cfg["start_restart"] is None and cfg["restart_from"] is None:
+        raise SystemExit("nonneg: --start restart needs --start-restart <the fit restart to continue>")
     ts = _value(head, "--template-start")
     if ts is None:
         head += ["--template-start", "0"]
@@ -266,7 +325,8 @@ def model_config(cfg):
     """The constant process configuration (nonneg_mult.process_config): no held term."""
     from cops_cuda import figures as fg
     meta = fg.bundle_metadata(cfg["slope_bundle"])
-    return nm.process_config(cfg["model"], meta, cfg["ft_templates"], cfg["s_ratio"], cfg["slope_bundle"]), meta
+    return nm.process_config(cfg["model"], meta, cfg["ft_templates"], cfg["s_ratio"], cfg["slope_bundle"],
+                             sos_rank=cfg.get("sos_rank")), meta
 
 
 def held_of(cfg, model_cfg):
@@ -292,7 +352,7 @@ def check_restart_marker(path, cfg, model_cfg, held):
     if ext.get("parameterization") != want:
         problems.append("marker %r, this fit %r" % (ext.get("parameterization"), want))
     src = ext.get("model") or {}
-    for k in ("model", "s_ratio", "bins_sha256", "templates", "ah2o_sha256"):
+    for k in ("model", "s_ratio", "bins_sha256", "templates", "ah2o_sha256", "sos_rank"):
         if src.get(k) != model_cfg.get(k):
             problems.append("model %s %r vs %r" % (k, src.get(k), model_cfg.get(k)))
     if (ext.get("held") or {}).get("sha256") != (held or {}).get("sha256"):
@@ -306,6 +366,9 @@ def check_restart_marker(path, cfg, model_cfg, held):
     if ext.get("slope_mult_min") != cfg.get("slope_mult_min"):
         problems.append("multiplier lower bound (--slope-mult-min) %r in the restart, %r in this command" % (
             ext.get("slope_mult_min"), cfg.get("slope_mult_min")))
+    for k in ("bg_min", "spread_f", "spread_cref", "spread_u0"):
+        if ext.get(k) != cfg.get(k):
+            problems.append("%s %r in the restart, %r in this command" % (k, ext.get(k), cfg.get(k)))
     if problems:
         raise SystemExit("nonneg: --restart-from %s is not a segment of this fit: %s" % (path, "; ".join(problems)))
     return {"path": str(Path(path).resolve()), "sha256": sha256(path), "parameterization": want,
@@ -475,9 +538,13 @@ def start_chain(P, el, path, record, grain_from, model_cfg, held, slope_mult_min
     problems = []
     if ext.get("parameterization") != parameterization_of(model_cfg):
         problems.append("marker %r, this model %r" % (ext.get("parameterization"), parameterization_of(model_cfg)))
-    for k in ("model", "s_ratio", "bins_sha256", "templates"):
+    for k in ("model", "s_ratio", "bins_sha256", "templates", "sos_rank"):
         if m_src.get(k) != model_cfg.get(k):
             problems.append("%s %r vs %r" % (k, m_src.get(k), model_cfg.get(k)))
+    alt = (getattr(P, "nonneg_cfg", None) or {})
+    for k in ("bg_min", "spread_f", "spread_cref", "spread_u0"):
+        if ext.get(k) != alt.get(k):
+            problems.append("%s %r in the previous fit, %r in this command" % (k, ext.get(k), alt.get(k)))
     names_r = list(state.meta.get("names") or [])
     if names_r != list(P.names):
         problems.append("parameters %s vs %s" % (names_r, list(P.names)))
@@ -510,6 +577,50 @@ def start_chain(P, el, path, record, grain_from, model_cfg, held, slope_mult_min
     return x
 
 
+def start_restart(P, el, path, record, model_cfg, cfg):
+    """--start restart (options A, B, D; user 2026-11-14): continue a COMPLETE stage-1 fit of the same model: every
+    parameter by name from its restart (exact optimizer coordinates, grain included), no held term. The same model
+    settings are required (marker, model keys, bg_min, spread_f, spread_cref, multiplier lower bound, parameter
+    names); the spread centre (--spread-u0) may differ (user 2026-11-14: the fixed-level penalty for the D
+    continuations) and is recorded."""
+    from cops_cuda import restart as rs
+    state = rs.read(path)
+    _check_source_state(P, el, state, path)
+    ext = state.meta.get("model_extension") or {}
+    m_src = ext.get("model") or {}
+    problems = []
+    if ext.get("parameterization") != parameterization_of(model_cfg):
+        problems.append("marker %r, this model %r" % (ext.get("parameterization"), parameterization_of(model_cfg)))
+    for k in ("model", "s_ratio", "bins_sha256", "templates", "sos_rank"):
+        if m_src.get(k) != model_cfg.get(k):
+            problems.append("%s %r vs %r" % (k, m_src.get(k), model_cfg.get(k)))
+    for k in ("bg_min", "spread_f", "spread_cref", "slope_mult_min"):
+        if ext.get(k) != cfg.get(k):
+            problems.append("%s %r in the source fit, %r in this command" % (k, ext.get(k), cfg.get(k)))
+    if (ext.get("held") or {}).get("sha256") is not None:
+        problems.append("the source fit has a held fine-tuning term (--start restart continues stage-1 fits only)")
+    names_r = list(state.meta.get("names") or [])
+    if names_r != list(P.names):
+        problems.append("parameters %s vs %s" % (names_r[:4], list(P.names)[:4]))
+    if state.meta.get("status") != "complete":
+        problems.append("status %r (the source fit must be complete)" % state.meta.get("status"))
+    if problems:
+        raise SystemExit("nonneg: --start restart from %s: %s" % (path, "; ".join(problems)))
+    x = np.asarray(state.x, float).copy()
+    opt = state.meta.get("optimizer") or {}
+    out = {"path": str(Path(path).resolve()), "sha256": sha256(path), "start_choice": "restart",
+           "start_definition": START_CHOICES["restart"], "names_from_restart": list(P.names),
+           "source_fit_directory": state.meta.get("fit_directory"), "source_cost": float(opt.get("cost")),
+           "source_nfev": sum(int(sg.get("nfev", 0)) for sg in state.meta.get("segments", [])),
+           "source_message": opt.get("message"), "source_spread_u0": ext.get("spread_u0"),
+           "spread_u0_this_fit": cfg.get("spread_u0"), "x_start": [float(v) for v in x]}
+    record["start_restart"] = out
+    say("start restart: every parameter by name from %s (cost %.12e, %d evaluations, %s); spread u0 source %r, this "
+        "fit %r" % (path, out["source_cost"], out["source_nfev"], opt.get("message"), ext.get("spread_u0"),
+                    cfg.get("spread_u0")))
+    return x
+
+
 # ------------------------------------------------------------------------------------------------ host state, reports
 def facet_state(P, x, el):
     """Per facet: u = Y a, TS = A_s sum c T, q-related fields, A, bins, m (nonneg_mult.host_fields, this stage's held
@@ -520,10 +631,19 @@ def facet_state(P, x, el):
     bins = nm.sm.bins_from_basis(np.asarray(P.enhancement_basis)[:, :nb])
     Bft = np.ascontiguousarray(np.asarray(P.enhancement_basis, np.float64)[:, nb:nb + nt])
     f = nm.host_fields(cfg["model"], el["Y"], np.asarray(a, float), Bft, np.asarray(b, float)[nb:nb + nt],
-                       float(P.enhancement_scale), bins, np.asarray(b, float)[:nb], nm.width(cfg), nm.held_g(), True)
+                       float(P.enhancement_scale), bins, np.asarray(b, float)[:nb], nm.width(cfg), nm.held_g(), True,
+                       **alt_kwargs(cfg))
     f.update(a=a, m=np.asarray(b, float)[:nb], c=np.asarray(b, float)[nb:nb + nt], T=T, kappa=kappa, bins=bins,
              h=nm.held_h())
     return f
+
+
+def alt_kwargs(model_cfg):
+    """host_fields' extra arguments of the alternative models (none for softplus / squared: their calls unchanged)."""
+    if model_cfg["model"] not in nm.NEW_MODELS:
+        return {}
+    return {"extra": nm.get_extra(), "aorig": nm.a_orig() if model_cfg["model"] in ("background", "logspread") else None,
+            "mode": 0}
 
 
 def zero_share(P, x, el, seen=None):
@@ -644,9 +764,11 @@ def install_activity_diagnostics(fit_cops, model_cfg):
         Bft = np.ascontiguousarray(np.asarray(enhancement_basis, np.float64)[:, nb:nb + nt])
         b = np.asarray(b, float)
         f = nm.host_fields(model_cfg["model"], el["Y"], np.asarray(a, float), Bft, b[nb:nb + nt],
-                           float(enhancement_scale), bins, b[:nb], nm.width(model_cfg), nm.held_g(), False)
+                           float(enhancement_scale), bins, b[:nb], nm.width(model_cfg), nm.held_g(), False,
+                           **alt_kwargs(model_cfg))
         f1 = nm.host_fields(model_cfg["model"], el["Y"], np.asarray(a, float), Bft, b[nb:nb + nt],
-                            float(enhancement_scale), bins, np.ones(nb), nm.width(model_cfg), nm.held_g(), False)
+                            float(enhancement_scale), bins, np.ones(nb), nm.width(model_cfg), nm.held_g(), False,
+                            **alt_kwargs(model_cfg))
         act, act1 = f["A"], f1["A"]
         active = act > 0.0
         act0 = np.maximum(el["Y"] @ coef[0], 0.0)
@@ -800,9 +922,26 @@ def write_text(out, P, cfg, record):
     model = P.nonneg_model["model"]
     definition = {"softplus": "A = m_b s ln(1 + exp(L/s)) exp(h), L = Y a + A_s sum_k T_k, s = %r A_orig (max(0, L) "
                               "where A_orig = 0)" % P.nonneg_model["s_ratio"],
-                  "squared": "A = m_b (A_s (Y b)^2 + A_s sum_k T_k) exp(h), a = A_s b"}[model]
+                  "squared": "A = m_b (A_s (Y b)^2 + A_s sum_k T_k) exp(h), a = A_s b",
+                  "sos": "A = m_b (||L^T y||^2 / A_s + A_s sum_k T_k) exp(h), L 25 x %s lower-trapezoidal (column 0 = a; "
+                         "the other columns sosL_i_j)" % P.nonneg_model.get("sos_rank"),
+                  "background": "A = m_b (A_bg A_orig + s ln(1 + exp(L/s))) exp(h), L = Y a + A_s sum_k T_k, s = %r A_orig, "
+                                "A_bg >= %r" % (P.nonneg_model["s_ratio"], cfg.get("bg_min")),
+                  "logspread": ("A = m_b (A_orig exp(u) + A_s sum_k T_k) exp(h), u = Y a / A_s; spread penalty P = f C_ref "
+                                "Var_w(u), Var_w = the area-weighted variance of u over the seen facets (w = area / seen "
+                                "area), f = %r, C_ref = %r; P is a term of the fitter's cost 0.5 r.r (rows sqrt(2 f C_ref) "
+                                "S b), reported apart from the data cost" % (cfg.get("spread_f"), cfg.get("spread_cref"))
+                                if cfg.get("spread_u0") is None else
+                                "A = m_b (A_orig exp(u) + A_s sum_k T_k) exp(h), u = Y a / A_s; spread penalty about the fixed "
+                                "level u0 = %r (user 2026-11-14): P = f C_ref sum_seen w (u - u0)^2 = f C_ref [Var_w(u) + "
+                                "(u_bar - u0)^2] (w = area / seen area), f = %r, C_ref = %r; 26 rows of the fitter's cost "
+                                "0.5 r.r, reported apart from the data cost" % (cfg.get("spread_u0"), cfg.get("spread_f"),
+                                                                                 cfg.get("spread_cref")))}[model]
     columns = {"softplus": "dA/da_j = m g'(L) exp(h) Y_j, dA/dm_k = [bin = k] g(L) exp(h), g' = sigmoid(L/s)",
-               "squared": "dA/da_j = m (2 u / A_s) exp(h) Y_j, dA/dm_k = [bin = k] (u^2/A_s + TS) exp(h)"}[model]
+               "squared": "dA/da_j = m (2 u / A_s) exp(h) Y_j, dA/dm_k = [bin = k] (u^2/A_s + TS) exp(h)",
+               "sos": "dA/dL_ij = m (2 v_j / A_s) exp(h) Y_i (v = L^T y), dA/dm_k = [bin = k] q exp(h)",
+               "background": "dA/da_j = m g'(L) exp(h) Y_j, dA/dA_bg = m A_orig exp(h), dA/dm_k = [bin = k] q exp(h)",
+               "logspread": "dA/da_j = m A_orig exp(u) exp(h) Y_j / A_s, dA/dm_k = [bin = k] q exp(h)"}[model]
     held = nm.stage_held()
     lbv = cfg.get("slope_mult_min")
     text = TEXT.format(
@@ -826,6 +965,22 @@ def write_text(out, P, cfg, record):
                             "does not hold for c_slope_* (the bounds are in fit_manifest.json lower_bounds); sigma is "
                             "the local unconstrained Gauss-Newton value.\nBase: " % (lbv, lbv, atb if atb else "none"),
                             1)
+    sp = ((record.get("model_check") or {}).get("alternative") or {}).get("spread")
+    if sp is not None:
+        fin = sp.get("final") or {}
+        if sp.get("u0") is not None:
+            text = text.replace("\nBase: ", "\nSPREAD CENTRE (user 2026-11-14): fixed level u0 = %r, P = f C_ref [Var_w(u) + "
+                                "(u_bar - u0)^2]; final u_bar %s, (u_bar - u0)^2 %s.\nBase: " % (
+                                    sp["u0"], *("%.10e" % fin[k] if fin.get(k) is not None else "?" for k in
+                                                ("mean_u", "dev2_mean_u0"))), 1)
+        text = text.replace("\nBase: ", "\nSPREAD PENALTY (option D, user 2026-11-14): P = f C_ref Var_w(u), f = %r, C_ref = %r; "
+                            "Var_w(u) = the area-weighted variance of u = Y a / A_s (the exponent of A_orig) over the %d seen facets "
+                            "(w = area / seen area). Final state: data cost %s, penalty P %s, Var_w(u) %s (rms spread %s "
+                            "neper), total %s (+ the crossing rows). The data cost in fit_result.txt / fit_manifest.json "
+                            "excludes P.\nBase: " % (
+                                sp.get("f"), sp.get("C_ref"), sp.get("seen_facets", -1),
+                                *("%.10e" % fin[k] if fin.get(k) is not None else "?" for k in
+                                  ("data_cost", "penalty", "var_w_u", "rms_spread", "data_plus_penalty"))), 1)
     path = Path(out) / "NONNEG_MODEL.txt"
     with path.open("x") as f:
         f.write(text)
@@ -871,8 +1026,9 @@ def install_restart_marker(record, cfg, model_cfg):
                                                    "window_installed")},
             "warning": "activity_linear in this file is Y a + A_s B b (the fitter's additive layout), NOT this "
                        "model's activity (nonneg_facets.npz has A); its fine tuning is nonneg_finetune.py"}
-        if cfg.get("slope_mult_min") is not None:
-            state.meta["model_extension"]["slope_mult_min"] = cfg["slope_mult_min"]
+        for k in ALT_KEYS:
+            if cfg.get(k) is not None:
+                state.meta["model_extension"][k] = cfg[k]
         return state
     from_fit._nonneg_marker = True
     rs.from_fit = from_fit
@@ -987,7 +1143,7 @@ def install_outer(fit_cops, cfg, model_cfg, record, source=None, held=None):
                                                 "evaluation; the start check evaluates the start itself"}
                 say("multiplier lower bound %r on %s (user 2026-11-12; the fitter's default 0 replaced), no upper "
                     "bound" % (vmin, changed))
-            if cfg.get("start_restart"):
+            if cfg.get("start_restart") and not getattr(self, "_nonneg_defer_start", False):
                 ch = cfg["start_choice"]
                 if ch == "d2":
                     self.restart_start = start_d2(self, el, cfg["start_restart"], record, cfg)
@@ -996,18 +1152,28 @@ def install_outer(fit_cops, cfg, model_cfg, record, source=None, held=None):
                 else:
                     self.restart_start = start_chain(self, el, cfg["start_restart"], record, cfg["grain_from"],
                                                      model_cfg, held, vmin)
-            if vmin is not None and getattr(self, "restart_start", None) is not None:
+            if vmin is not None and getattr(self, "restart_start", None) is not None and \
+                    not getattr(self, "_nonneg_defer_start", False):
                 xs = np.asarray(self.restart_start, float)
                 bad = [n for k, n in enumerate(self.names) if xs[k] < self.lo[k] or xs[k] > self.hi[k]]
                 if bad:
                     raise SystemExit("nonneg: the start of %s is outside the bounds" % bad)
 
-    fit_cops.Problem = NonnegOuter
+    if model_cfg["model"] in nm.NEW_MODELS:
+        import sys as _sys
+        import nonneg_alt
+        fit_cops.Problem = nonneg_alt.make_class(NonnegOuter, fit_cops, cfg, model_cfg, record, held,
+                                                 _sys.modules[__name__])
+    else:
+        fit_cops.Problem = NonnegOuter
     install_activity_diagnostics(fit_cops, model_cfg)
     original_write = fit_cops.write_fit
 
     def write_fit(out, r, *rest):
         record["final_x"] = [float(v) for v in r["x"]]
+        if model_cfg["model"] == "logspread":            # the penalty at the final state, apart from the data cost
+            P_ = fit_cops.P
+            record["model_check"]["alternative"]["spread"]["final"] = P_.spread_report(np.asarray(r["x"], float))
         diag = original_write(out, r, *rest)
         P = fit_cops.P
         el, seen = rest[6], rest[7]

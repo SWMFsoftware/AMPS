@@ -1,6 +1,6 @@
 # ==== version-controlled copy: header added 2026-11-11, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/nonneg_mult.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/nonneg_mult.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 560dbac48ea6912f09f021e7763b8865017e11679421cfb289c4d98a8c904c01
+# SHA256 of the run copy = SHA256 of this file without these header lines: 547d495ba725761e665fcb51d0a7a1890542c1bf84dfc460d12662993347ecd9
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: module. Non-negative-by-construction H2O activity with slope-bin multipliers (user decisions 2026-11-11:
 #   "implement option 1 and 2 ...; use 6 cliff templates as multipliers"; D2's ft_c1..ft_c6 held at 1, no floor):
@@ -9,6 +9,7 @@
 #   the host, GPU patch of the host-activity path.
 # USED BY: nonneg_fit.py, nonneg_finetune.py, chain_onejob.py --kind nonneg (snapshot
 #   model_ext_frozen/nonneg_20261111T044920Z; production chains 124162 softplus, 124165 squared).
+# 2026-11-14: options A, B, D (sos, background, logspread): fields, extra parameters, column modes, shm mode flag.
 # ==== end of header ====
 """Non-negative H2O activity models in the slope-multiplier framework (user decisions 2026-11-11, handoff.md section 10,
 "softplus and squared-harmonics models (D2 step back)"): model math, CPU stand-in and the GPU patch of the
@@ -68,7 +69,15 @@ import slope_mult as sm             # helpers only (bins, chunk bounds, BLAS inf
 HERE = Path(__file__).resolve().parent
 BIN_NAMES, BIN_EDGES_DEG, BIN_LABELS = sm.BIN_NAMES, sm.BIN_EDGES_DEG, sm.BIN_LABELS
 FIXED_BIN, FIXED_VALUE = sm.FIXED_BIN, sm.FIXED_VALUE
-MODELS = ("softplus", "squared")
+MODELS = ("softplus", "squared", "sos", "background", "logspread")
+# 2026-11-14 (user: "prepare suggestions for modification of the minimization polynomial ... non-negative ... more seen
+# surface contributing"; options A, B, D of the lead):
+#   sos:        A = m (||L^T y||^2 / A_s + A_s sum c T) exp(h), L 25 x r lower-triangular (column 0 = the fitter's a)
+#   background: A = m (A_bg A_orig + s ln(1 + exp(L / s))) exp(h), L = Y a + A_s sum c T (the softplus), A_bg >= bg_min
+#   logspread:  A = m (A_orig exp(Y a / A_s) + A_s sum c T) exp(h) (u = Y a / A_s = Y b, b = a / A_s dimensionless as in
+#               the squared model; + the fit-level spread penalty, nonneg_problem)
+# option C (local non-negative hat functions, "localnn") is a separate module of another agent.
+NEW_MODELS = ("sos", "background", "logspread")
 S_RATIO = 1e-5                      # softplus width s_e = 1e-5 A_orig,e (user 2026-11-11)
 TEST_S_RATIOS = (0.0,)              # test only: s = 0 everywhere = the hard clip max(0, L) (softplus -> clip check)
 ENV_FROZEN = "COPS_NONNEG_FROZEN_CONFIG"
@@ -82,7 +91,13 @@ POLICY = {
                  "at 1, six free >= 0); no floor; no cliff_ge_60deg"),
     "squared": ("user 2026-11-11: A = m_b (A_s (Y b)^2 + A_s sum ft_c1..ft_c6) exp(h) (templates outside the square, "
                 "held at 1; a = A_s b); 7 slope-bin multipliers (0-40 held at 1, six free >= 0); no floor; no "
-                "cliff_ge_60deg")}
+                "cliff_ge_60deg"),
+    "sos": ("lead 2026-11-14 option A: A = m_b (||L^T y||^2 / A_s + A_s sum ft_c1..ft_c6) exp(h), L 25 x r "
+            "lower-trapezoidal; 7 slope-bin multipliers; no floor"),
+    "background": ("lead 2026-11-14 option B: A = m_b (A_bg A_orig + s ln(1 + exp(L / s))) exp(h), L = Y a + A_s sum "
+                   "ft_c1..ft_c6, s = 1e-5 A_orig, A_bg >= bg_min; 7 slope-bin multipliers"),
+    "logspread": ("user 2026-11-14 option D: A = m_b (A_orig exp(Y a / A_s) + A_s sum ft_c1..ft_c6) exp(h), spread penalty "
+                  "f C_ref Var_w(u) over the seen facets (fit level); 7 slope-bin multipliers")}
 WORKER_REQUESTS = {"nonneg_seen": "nonneg_seen_rows", "nonneg_sens": "nonneg_sensitivities",
                    "nonneg_detach": "nonneg_detach"}
 LOG = "nonneg_mult:"
@@ -90,6 +105,7 @@ LOG = "nonneg_mult:"
 _STATE = {"installed": False, "config": None, "originals": {}, "role": None,
           "pool": None, "threads": None, "mode": None,
           "held": None, "override": None, "A_orig": None, "A_orig_sha256": None,
+          "extra": {}, "col_mode": 0,
           "shm": {}, "timing": {"fields_calls": 0, "fields_s": 0.0, "first_s": None, "max_s": 0.0},
           "checks": {"colbasis": None}}
 
@@ -144,6 +160,19 @@ def matvec(M, v):
     return sm.chunked_matvec(M, v, pool, n)
 
 
+def matmat(M, B):
+    """M @ B (M C-contiguous float64 (n, k), B (k, r)); row chunks on the pool when set (bitwise: rows independent)."""
+    B = np.ascontiguousarray(B, dtype=np.float64)
+    pool, n = _STATE["pool"], _STATE["threads"]
+    if pool is None or n is None or n <= 1:
+        return M @ B
+    out = np.empty((M.shape[0], B.shape[1]))
+    futures = [pool.submit(np.matmul, M[c0:c1], B, out=out[c0:c1]) for c0, c1 in sm.chunk_bounds(M.shape[0], n)]
+    for f in futures:
+        f.result()
+    return out
+
+
 def elementwise(fn, nrows, *outs):
     """fn(c0, c1) fills outs[..][c0:c1] for row chunks (on the pool when set). Elementwise numpy: bitwise."""
     pool, n = _STATE["pool"], _STATE["threads"]
@@ -173,10 +202,14 @@ def softplus(L, s):
     return g, d
 
 
-def fields(model, u, TS, s, mrow, gh, scale, want_cols):
+def fields(model, u, TS, s, mrow, gh, scale, want_cols, V=None, abg=None, aorig=None, mode=0):
     """Host fields of one chunk: (A, D, E, P) (D, E, P None unless want_cols). u = Y a, TS = A_s sum c T, s the softplus
     width, mrow = m[bin], gh = exp(h) (or None), scale = A_s. The one definition used by the GPU patch, the CPU stand-in,
-    the products and the fine tuning (same operations, same order)."""
+    the products and the fine tuning (same operations, same order). New models (2026-11-14): V = Y L[:, 1:] (sos),
+    abg = A_bg and aorig = A_orig (background), aorig (logspread); mode: the column factor D of the harmonic columns
+    (sos: 0 = column 0 of L = a, j = column j; background: "raw" = dA/dA_bg = m A_orig exp(h))."""
+    if model in NEW_MODELS:
+        return _fields_new(model, u, TS, s, mrow, gh, scale, want_cols, V, abg, aorig, mode)
     if model == "softplus":
         L = u + TS
         q, dq = softplus(L, s)
@@ -203,11 +236,55 @@ def fields(model, u, TS, s, mrow, gh, scale, want_cols):
     return A, D, E, P
 
 
-def host_fields(model, Y, a, Bft, c, scale, bins, m, s, gh, want_cols, override=None, out=None):
-    """The model's per-facet fields for every facet (chunked): returns dict(A, D, E, P, u, TS, q). override:
-    (facets, g_values) replacing gh at those facets (fine tuning)."""
+def _fields_new(model, u, TS, s, mrow, gh, scale, want_cols, V, abg, aorig, mode):
+    if model == "sos":
+        ss = u * u
+        if V is not None:
+            for j in range(V.shape[1]):
+                ss = ss + V[:, j] * V[:, j]
+        q = ss / scale + TS
+        dq = None
+    elif model == "background":
+        g, dq = softplus(u + TS, s)
+        q = abg * aorig + g
+    else:                                       # logspread: u / A_s is the exponent
+        base = aorig * np.exp(u / scale)
+        q = base + TS
+        dq = None
+    P = q if gh is None else q * gh
+    A = mrow * P
+    if not want_cols:
+        return A, None, None, None
+    if model == "sos":
+        vj = u if mode == 0 else V[:, int(mode) - 1]
+        D = mrow * ((2.0 * vj) / scale)
+        E = mrow.copy()
+    elif model == "background":
+        D = mrow * aorig if mode == "raw" else mrow * dq
+        E = mrow * dq
+    else:
+        D = mrow * (base / scale)
+        E = mrow.copy()
+    if gh is not None:
+        D = D * gh
+        E = E * gh
+    return A, D, E, P
+
+
+def host_fields(model, Y, a, Bft, c, scale, bins, m, s, gh, want_cols, override=None, out=None, extra=None,
+                aorig=None, mode=0):
+    """The model's per-facet fields for every facet (chunked): returns dict(A, D, E, P, u, TS (, V)). override:
+    (facets, g_values) replacing gh at those facets (fine tuning); extra: the model's extra parameters (sos: L_extra
+    (25, r - 1); background: A_bg); aorig: A_orig (background, logspread); mode: the harmonic column factor."""
     n = Y.shape[0]
     u = matvec(Y, a)
+    extra = extra or {}
+    V = None
+    if model == "sos" and extra.get("L_extra") is not None and np.asarray(extra["L_extra"]).size:
+        V = matmat(Y, extra["L_extra"])
+    abg = float(extra["A_bg"]) if model == "background" else None
+    if model in ("background", "logspread") and aorig is None:
+        raise ValueError("nonneg_mult: model %s needs A_orig" % model)
     if Bft is not None and Bft.shape[1]:
         TS = scale * matvec(Bft, c)
     else:
@@ -223,19 +300,28 @@ def host_fields(model, Y, a, Bft, c, scale, bins, m, s, gh, want_cols, override=
     E = np.empty(n) if want_cols else None
     P = np.empty(n) if want_cols else None
 
+    newm = model in NEW_MODELS
+
     def fn(c0, c1):
-        r = fields(model, u[c0:c1], TS[c0:c1], None if s is None else s[c0:c1], mrow[c0:c1],
-                   None if gh is None else gh[c0:c1], scale, want_cols)
+        if newm:
+            r = fields(model, u[c0:c1], TS[c0:c1], None if s is None else s[c0:c1], mrow[c0:c1],
+                       None if gh is None else gh[c0:c1], scale, want_cols, V=None if V is None else V[c0:c1],
+                       abg=abg, aorig=None if aorig is None else aorig[c0:c1], mode=mode)
+        else:
+            r = fields(model, u[c0:c1], TS[c0:c1], None if s is None else s[c0:c1], mrow[c0:c1],
+                       None if gh is None else gh[c0:c1], scale, want_cols)
         A[c0:c1] = r[0]
         if want_cols:
             D[c0:c1], E[c0:c1], P[c0:c1] = r[1], r[2], r[3]
     elementwise(fn, n)
     o.update(A=A, D=D, E=E, P=P, u=u, TS=TS)
+    if V is not None:
+        o["V"] = V
     return o
 
 
 # ------------------------------------------------------------------------------------------------ configuration
-def process_config(model, slope_meta, ft_templates, s_ratio=S_RATIO, slope_bundle=None):
+def process_config(model, slope_meta, ft_templates, s_ratio=S_RATIO, slope_bundle=None, sos_rank=None):
     """The constant configuration every process shares (no held term, no stage data): model, s ratio, bins, A_orig
     digest, mesh, the ft template names and bundle digests. ft_templates: [{"name", "bundle": {"path", "sha256"}}]."""
     if model not in MODELS:
@@ -246,12 +332,12 @@ def process_config(model, slope_meta, ft_templates, s_ratio=S_RATIO, slope_bundl
     if list(smb.get("names") or []) != list(BIN_NAMES) or [float(v) for v in smb["edges_deg"]] != list(BIN_EDGES_DEG):
         raise ValueError("nonneg_mult: bundle bins are not the slope model's")
     f = float(s_ratio)
-    if model == "softplus" and not (f == S_RATIO or f in TEST_S_RATIOS):
+    if model in ("softplus", "background") and not (f == S_RATIO or (model == "softplus" and f in TEST_S_RATIOS)):
         raise ValueError("nonneg_mult: softplus s ratio %r is not the decision %r (test only: %s)" % (f, S_RATIO,
                                                                                                     TEST_S_RATIOS))
-    if model == "squared":
+    if model in ("squared", "sos", "logspread"):
         f = None
-    return {"version": CONFIG_VERSION, "model": model, "s_ratio": f,
+    out = {"version": CONFIG_VERSION, "model": model, "s_ratio": f,
             "test_only": model == "softplus" and f != S_RATIO,
             "bin_names": list(BIN_NAMES), "bin_edges_deg": list(BIN_EDGES_DEG), "fixed_bin": FIXED_BIN,
             "nfaces": int(smb["nfaces"]), "bins_sha256": smb["bins_sha256"],
@@ -259,6 +345,14 @@ def process_config(model, slope_meta, ft_templates, s_ratio=S_RATIO, slope_bundl
             "mesh_identity": smb["mesh_identity"],
             "templates": [{"name": t["name"], "bundle_sha256": t["bundle"]["sha256"]} for t in ft_templates],
             "n_templates": len(ft_templates)}
+    if model == "sos":
+        r = int(sos_rank)
+        if not 1 <= r <= 25:
+            raise ValueError("nonneg_mult: sos rank %r outside 1..25" % sos_rank)
+        out["sos_rank"] = r
+    elif sos_rank is not None:
+        raise ValueError("nonneg_mult: sos_rank belongs to the sos model")
+    return out
 
 
 def installed_config():
@@ -284,8 +378,8 @@ def set_A_orig(ah2o):
 
 
 def width(cfg):
-    """s = s_ratio A_orig (softplus; cached); None for the squared model."""
-    if cfg["model"] != "softplus":
+    """s = s_ratio A_orig (softplus, background; cached); None otherwise."""
+    if cfg["model"] not in ("softplus", "background"):
         return None
     if _STATE["A_orig"] is None:
         raise RuntimeError("nonneg_mult: A_orig not registered (set_A_orig)")
@@ -356,6 +450,27 @@ def set_override(facets, g_values=None):
     return len(facets)
 
 
+def set_extra(extra):
+    """The model's extra (non-fitter-layout) parameters of THIS stage (parent, host fields): sos {"L_extra": (25, r-1)
+    physical}, background {"A_bg": value}; {} for the others. Set by nonneg_problem before every evaluation."""
+    _STATE["extra"] = dict(extra or {})
+
+
+def get_extra():
+    return dict(_STATE["extra"])
+
+
+def set_col_mode(mode):
+    """The factor of the harmonic columns for the next Jacobian evaluations (sos: 0 .. r-1; background: "raw")."""
+    _STATE["col_mode"] = mode
+
+
+def a_orig():
+    if _STATE["A_orig"] is None:
+        raise RuntimeError("nonneg_mult: A_orig not registered (set_A_orig)")
+    return _STATE["A_orig"]
+
+
 # ------------------------------------------------------------------------------------------------ per-basis host data
 def basis_parts(obj, cfg):
     """(bins int8, B_ft C-contiguous (n, K)) of the bound basis of a backend / model object (cached per digest)."""
@@ -383,9 +498,12 @@ def state_fields(obj, cfg, state, want_cols):
     bins, Bft = basis_parts(obj, cfg)
     b = np.asarray(state.b, np.float64)
     t0 = time.perf_counter()
+    newm = cfg["model"] in NEW_MODELS
     out = host_fields(cfg["model"], obj.Y, np.asarray(state.a, np.float64), Bft, b[nb:nb + nt],
                       float(obj.enhancement_scale), bins, b[:nb], width(cfg), held_g(), want_cols,
-                      override=_STATE["override"])
+                      override=_STATE["override"], extra=_STATE["extra"] if newm else None,
+                      aorig=a_orig() if cfg["model"] in ("background", "logspread") else None,
+                      mode=_STATE["col_mode"] if newm else 0)
     dt_ = time.perf_counter() - t0
     tm = _STATE["timing"]
     tm["fields_calls"] += 1
@@ -468,7 +586,11 @@ def cpu_model_class(fit_cops, cfg):
                 JaRG = cRG["H2O"][:, None] * (self.csr(self.wp["H2O"] + bm["H2O"] * self.wv["H2O"] * u) @ masked)
                 return JaNG, JaRG
             basis_index = [] if basis_index is None else list(basis_index)
-            if basis_index:
+            if basis_index and _STATE["col_mode"] == "raw":
+                JaNG, JaRG = activity_columns(np.repeat(f["D"][:, None], len(basis_index), axis=1))
+                for k, j in enumerate(basis_index):
+                    J[("a", j)] = (JaNG[:, k], JaRG[:, k])
+            elif basis_index:
                 JaNG, JaRG = activity_columns(f["D"][:, None] * self.Y[:, basis_index])
                 for k, j in enumerate(basis_index):
                     J[("a", j)] = (JaNG[:, k], JaRG[:, k])
@@ -510,7 +632,8 @@ def _shm_names():
 
 
 def _shm_arrays(nfaces, create):
-    """(D, E, P) global float64 arrays in shared memory (parent: create on first use; worker: attach)."""
+    """(D, E, P) global float64 arrays in shared memory (parent: create on first use; worker: attach). A 4th segment
+    (one int64, "M": the column mode, 0 = D Y_j, 1 = raw D) is created when the names list it (new models)."""
     shm = _STATE["shm"]
     if shm.get("arrays") is not None:
         return shm["arrays"]
@@ -526,8 +649,20 @@ def _shm_arrays(nfaces, create):
             seg = shared_memory.SharedMemory(name=nm_)
         segs.append(seg)
         arrs.append(np.ndarray((int(nfaces),), dtype=np.float64, buffer=seg.buf))
-    shm.update(segments=segs, arrays=tuple(arrs), owner=bool(create))
+    flag = None
+    if names.get("M"):
+        seg = (shared_memory.SharedMemory(name=names["M"], create=True, size=8) if create else
+               shared_memory.SharedMemory(name=names["M"]))
+        segs.append(seg)
+        flag = np.ndarray((1,), dtype=np.int64, buffer=seg.buf)
+        if create:
+            flag[0] = 0
+    shm.update(segments=segs, arrays=tuple(arrs), owner=bool(create), flag=flag)
     return shm["arrays"]
+
+
+def _shm_flag():
+    return _STATE["shm"].get("flag")
 
 
 def _shm_close(unlink=False):
@@ -623,6 +758,9 @@ def install_gpu(cfg):
                 f = state_fields(self, cfg, state, True)
                 D, E, P = _shm_arrays(len(f["A"]), create=True)
                 D[:], E[:], P[:] = f["D"], f["E"], f["P"]
+                fl = _shm_flag()
+                if fl is not None:
+                    fl[0] = 1 if _STATE["col_mode"] == "raw" else 0
                 self._nonneg_pending = (state, f["A"])
         try:
             return orig["MG._evaluate"](self, state, request)
@@ -681,11 +819,14 @@ def install_gpu(cfg):
         return orig["B._upload_activity"](self, state)
 
     def _factors(self, state):
-        """Global (D, E, P): a worker reads them from the parent's shared memory, a single process computes them."""
+        """Global (D, E, P, raw): a worker reads them from the parent's shared memory, a single process computes
+        them; raw = the harmonic columns are D itself (background's A_bg column) instead of D Y_j."""
         if self.activity_source is not None:
-            return _shm_arrays(int(self.dataset.inputs.nfaces), create=False)
+            D, E, P = _shm_arrays(int(self.dataset.inputs.nfaces), create=False)
+            fl = _shm_flag()
+            return D, E, P, bool(fl is not None and fl[0] == 1)
         f = state_fields(self, cfg, state, True)
-        return f["D"], f["E"], f["P"]
+        return f["D"], f["E"], f["P"], _STATE["col_mode"] == "raw"
 
     def _upload_columns(self, request):
         state = getattr(self, "_nonneg_state", None)
@@ -694,7 +835,7 @@ def install_gpu(cfg):
         d = _ensure(self)
         cupy, ds = self.cupy, self.dataset
         nf = int(ds.nfaces_device)
-        D, E, P = self._factors(state)
+        D, E, P, raw = self._factors(state)
         Dl = np.ascontiguousarray(ds.gather_faces(D))
         El = np.ascontiguousarray(ds.gather_faces(E))
         Pl = np.ascontiguousarray(ds.gather_faces(P))
@@ -705,7 +846,10 @@ def install_gpu(cfg):
             d["P"].set(Pl)
             k = 0
             for j in request.basis_index:
-                cupy.multiply(d["D"], d["YT"][int(j)], out=cb[k * nf:(k + 1) * nf])
+                if raw:
+                    cb[k * nf:(k + 1) * nf] = d["D"]
+                else:
+                    cupy.multiply(d["D"], d["YT"][int(j)], out=cb[k * nf:(k + 1) * nf])
                 k += 1
             for i in request.enhancement_index:
                 i = int(i)
@@ -727,7 +871,8 @@ def install_gpu(cfg):
             bins_l = d["bins_host"]
             at_h = d["AT"].get() if d["AT"] is not None else None
             for j in request.basis_index:
-                worst = max(worst, float(np.max(np.abs(host[kk] - Dl * np.asarray(Yl[:, int(j)], np.float64)))))
+                want = Dl if raw else Dl * np.asarray(Yl[:, int(j)], np.float64)
+                worst = max(worst, float(np.max(np.abs(host[kk] - want))))
                 kk += 1
             for i in request.enhancement_index:
                 i = int(i)
@@ -883,7 +1028,10 @@ def install_gpu(cfg):
     os.environ[ENV_FROZEN] = text
     if role == "driver":
         tag = "nonneg_%d_%s" % (os.getpid(), hashlib.sha256(text.encode()).hexdigest()[:8])
-        os.environ[ENV_SHM] = json.dumps({"D": tag + "_D", "E": tag + "_E", "P": tag + "_P"})
+        names_ = {"D": tag + "_D", "E": tag + "_E", "P": tag + "_P"}
+        if cfg["model"] in NEW_MODELS:
+            names_["M"] = tag + "_M"          # the column-mode flag (new models only: the old env unchanged)
+        os.environ[ENV_SHM] = json.dumps(names_)
         atexit.register(_shm_close, True)
     _STATE["config"] = dict(cfg)
     _STATE["installed"] = True

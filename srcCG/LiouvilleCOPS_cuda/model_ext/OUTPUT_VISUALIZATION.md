@@ -460,6 +460,66 @@ SC_SHADOW=1 COLOR_CONTRIB=<frame_contrib dir> COLOR_RANGE=<color_range_last_obs.
 FLAG_ON_TOP=1 NO_SUB_MARK=1 HOLD_SECONDS=15 ... cops_movies_encode.sbatch
 ```
 
+### 3.8 Contribution density maps and region shares (2026-11-14)
+
+In the full set of a state (`figures_cluster/12M/full_set_softplus_smm1_9cycles/`, first made for c9):
+* `contribution_density/12M_contrib_density_<HHMMSS|pre_gap|gap|late>_{NG_RG,NG,RG}`: lon/lat maps (global + a close-up fitted
+  to the maps' 90 % source areas near the impact) of the contribution per unit surface area exactly as the fit computes it
+  (NG density F (√π β/2) K_n / A [m⁻³ per m²], the shield side included; RG flux F (K_Φ + V·b √π β/2 K_V) / A [m⁻² s⁻¹ per
+  m²]; no spacecraft blocking): snapshots at base rows (10:33:10, 10:37:31.282 = 100 m, 10:39:09.282 = 20 m, 10:39:26 =
+  5.5 m; instantaneous, no time response) and phase time means (NG and RG before the NG gap, RG in the gap, the late window
+  as W10x5 of the grid rows). Log colour per map: top = 99.99th percentile of the values > 0, bottom = the level above which
+  99 % of the map's signal lies or 3 decades below the top if lower; white contours = the 50 % (solid) / 90 % (dashed)
+  source areas of the map (smoothed pixel mask). Captions give the share of each map's signal from the facets drawn in the
+  lon/lat maps (overhang facets are not drawn).
+* `regions/12M_region_share_{lobe,distance}_{NG,RG,NG_RG}`: stacked share of the modelled surface pressure by lobe (neck
+  plane of FINDINGS A10) and by distance shell from the touchdown point (0-30, 30-100, 100-300, 300-1000, 1000-3000, > 3000 m)
+  along the descent, in the style of the cliff figures (NG gap hatched in NG, dashed in RG, late window boxed).
+```bash
+CHAIN=<chain> OUTD=<chain>/contrib_phase_c<N> sbatch --export=ALL contrib_phase_data.sbatch                # CPU
+DATA=<chain>/contrib_phase_c<N> OUTF=<full set> sbatch --nodelist=gpu002 --export=ALL pub_contrib_density.sbatch   # 1 GPU, ~5 min
+regions_figures.py --data <chain>/contrib_phase_c<N> --base <fit base> --bundle <bundle> --out-dir <full set>/regions   # CPU
+```
+
+### 3.9 Stage-1 non-negative activity options vs the data and the softplus c9 (2026-11-14)
+
+`figures_cluster/12M/model_vs_observations_nonneg_options_stage1/` (the four options of FINDINGS / model_ext README
+"Alternative non-negative activity models": A sum of squares rank 3, B background bg 1e-3/1e-2/1e-1, C local non-negative
+basis f 0.1/1/10, D log form with spread penalty f 0.1/1/10; single fits from D2):
+* `12M_options_<A|B|C|D>_{time,altitude,altitude_NG,altitude_RG,altitude_NG_RG}`: every setting of one option (dashed /
+  dash-dot / dotted) vs the COPS data and the bounded softplus c9 (solid), model_obs_figures style.
+* `12M_options_best_*`: the lowest-data-cost setting of each option + c9 + the clipped D2 (dotted).
+* `summary.txt` / `summary.csv` / `best.json`: per fit data cost, penalty, nfev / termination, rms ln NG/RG (all, before the
+  10:33:10 gap, late), multipliers, parameters at bounds, Q_H2O at 10:33:10, active seen-area fraction (A above 1 % of the
+  srcCG median over the seen facets), seen area holding 50/90 % of the production, NG/RG shares of the active area; read
+  from each run's `summary.txt.json` (A, B, D) or `analysis/report.json` (C), nothing recomputed.
+* `activity_maps/12M_options_activity_best`: A of the best setting of each option and of c9 (rows), global + impact
+  close-up, continuous log colour above the 1 % threshold on one scale, light green seen below it, grey unseen.
+* Only runs whose summary / report and `fit/final/COPS_model.dat` exist are included; rerun into a new folder when the
+  others finish (the wrapper refuses an existing OUT).
+* v2 (`..._stage1_v2/`, 2026-11-14 evening): the same fits with `DIAG=figures_cluster/scripts/data/stage1_convergence_20261114.json`
+  (summary convergence column + section: verdict of the CPU diagnosis checks/stage1_diag_20261114 with its scaled gradient,
+  Gauss-Newton predicted decrease and best trial step; also in the captions), `RESID=1`
+  (`12M_options_best_residuals`: ln(model/obs) vs altitude, (a) NG (b) RG, best of each option + c9 + D2, every fit solid in
+  its colour of the best figure, the fits' own residuals incl. W10x5 late, rms recomputed and checked against the summary)
+  and `ACT_FROM=<first folder>` (activity maps copied after checking that the best settings, roots and inputs are
+  unchanged; COPIED_FROM.txt). Option-C captions state the GPU cross-check from gpu_eval/gpu_check.json.
+* final (`..._stage1_final/`, 2026-11-15): `RUNS=figures_cluster/scripts/data/stage1_final_runs_20261115.json` (the latest
+  completed fit per setting: B/A continuations stage1c_*, D refits with the fixed-level penalty, C f 0.1/1/10 and the
+  multiplier-penalty variant f 10 P_m 0.01), `TEXTS=.../stage1_final_texts_20261115.json` (caption texts), `CONV_TERM=1`
+  (convergence from each fit's termination: ftol / not converged), `RESID=1`; summary.txt/.csv carry the stage-1 costs each
+  continuation started from (prev_*) and the C multiplier penalty (penalty_mult); activity maps by a new GPU job
+  (`options_activity_maps.sbatch`, job 131968), since the best C, A, B, D settings changed.
+```bash
+cd $COPS_OUTPUT_ROOT
+# v2 variables: DIAG=figures_cluster/scripts/data/stage1_convergence_20261114.json RESID=1 ACT_FROM=<earlier folder>
+# final variables: RUNS=figures_cluster/scripts/data/stage1_final_runs_20261115.json TEXTS=figures_cluster/scripts/data/stage1_final_texts_20261115.json CONV_TERM=1 RESID=1
+OUT=<folder> srun -p normal128cores -A general -N1 -n1 -c 8 --mem=64G -t 00:50:00 bash figures_cluster/scripts/figures_12m_nonneg_options_stage1.sh
+sbatch --export=ALL,OPT_DIR=<folder> jobs/options_activity_maps.sbatch          # 1 GPU, short
+.venv/bin/python figures_cluster/scripts/options_howto.py --folder <folder> --wrapper-log <log> --maps-job <job>
+.venv/bin/python figures_cluster/scripts/collect_captions.py <folder> --title "..." --order ""   # CAPTIONS.md incl. the maps
+```
+
 ### 3.6 Other analysis figures and tables
 
 * `figures_cluster/scripts/positive_table.py`, `positive_cycles_table.py`, `finetune_table.py`, `scan_summary.py`:
@@ -618,6 +678,25 @@ FLAG_ON_TOP=1 NO_SUB_MARK=1 HOLD_SECONDS=15 ... cops_movies_encode.sbatch
   half-space edge drawn across the sky of the attached fisheye frames 688-900, and the 45° cone outline in the earlier
   cone sets); no cone lines; a 15 s hold of the last frame with the flag waving; everything else as the panorama /
   half-space sets (pose B, pan to frame 1800 then hold, flag on top, no white cross, Rosetta model, end at first contact).
+* 2026-11-14 (user: "the range rule is OK"): the colour-range top is the 99.99th percentile of the per-area contribution
+  over the last 10 frames WITH COPS data (frames 1790-1799, up to 10:39:26 UTC), not over the last frames of the movie;
+  bottom unchanged (level enclosing 90 % of the first frame's signal). Ranges of the c9 set: NG 1.185e7-7.48e14
+  m⁻³ m⁻², RG 4.81e9-2.27e15 m⁻² s⁻¹ m⁻² (`validation/contributions/color_range*.json`). Use this rule for later reruns.
+
+* 2026-11-14 (user: "make comparison plot of the results with the data and the current softplus fit"; lead's
+  specification): a new folder for the stage-1 option fits: per option all settings vs the data and c9; the best (lowest
+  data cost) setting of each option + c9 + D2; a table per fit read from the runs' summaries; activity maps of the best
+  settings and c9 side by side; CPU where possible; update when the remaining fits (C f1) finish.
+
+* 2026-11-14 (~20:00 CST, user: "prepare the comparison plots for stage-1 fits completed to this point"; lead): v2 folder
+  with the completed fits (C f 1 still running, left out and said so), convergence verdicts of the CPU diagnosis in the
+  table and captions, a residual figure ln(model/obs) vs altitude (NG, RG; best of each + c9 + D2), the activity maps
+  copied from the first folder (inputs unchanged); the first folder kept.
+
+* 2026-11-15 (11:30 CST, lead: all stage-1 fits complete): the FINAL stage-1 comparison in a new folder (v1 / v2 kept) with
+  the latest completed fit per setting (B/A continuations, D fixed-level penalty, C incl. f 1 and the P_m variant), the
+  pre-continuation stage-1 costs in the table, convergence from the terminations (ftol = converged in the optimizer's
+  sense, max_nfev = not converged), the residual figure, and new activity maps (best settings changed).
 
 ## 6. Change log of this file
 
@@ -658,3 +737,11 @@ FLAG_ON_TOP=1 NO_SUB_MARK=1 HOLD_SECONDS=15 ... cops_movies_encode.sbatch
   `frames_base.sbatch`, `frame_contrib.py`, `contrib_range.py`; job variables COLOR_CONTRIB, COLOR_RANGE, HOLD_SECONDS,
   FIRST, TRG_CONST); section 5 decisions of 2026-11-13/14 (contribution colour, fixed log range, no outlines, no RG
   circle, 15 s hold).
+* 2026-11-14: §5 user confirmation of the colour-range rule of the contribution movies (top from the last frames with COPS data).
+* 2026-11-14 (UTC): 3.8 contribution density maps and region shares (`contrib_phase_data.py`, `pub_contrib_density_figures.py`,
+  `regions_figures.py`, jobs `contrib_phase_data.sbatch`, `pub_contrib_density.sbatch`) in the c9 full set; the c9 full set,
+  model_vs_observations and publication sets checked complete and current (nothing regenerated).
+* 2026-11-14 (UTC): 3.9 stage-1 option comparison (`figures_12m_nonneg_options_stage1.sh`, `options_table.py`,
+  `options_captions.py`, `options_howto.py`, `pub_options_activity_maps.py`, job `options_activity_maps.sbatch`); §5 decision.
+* 2026-11-14 (UTC 2026-11-15): 3.9 v2 (`DIAG`, `RESID`, `ACT_FROM`; `options_residual_figure.py`, `data/stage1_convergence_20261114.json`; caption wording "completed so far", "stopped on ftol"; table column width); §5 decision.
+* 2026-11-15 (UTC): 3.9 final (`RUNS`, `TEXTS`, `CONV_TERM`; `options_table.py` prev_* / penalty_mult / --conv-from-termination / setting width, `options_captions.py --texts`, `options_howto.py` ftol line; data files `stage1_final_runs_20261115.json`, `stage1_final_texts_20261115.json`; maps job 131968); §5 decision.

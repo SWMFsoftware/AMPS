@@ -90,10 +90,12 @@ grain code. Each file's header says how to run it; the `jobs/` scripts show comp
 | activity and instantaneous H2O / CO2 source-rate maps of a final state for visualization (ParaView .vtu, Tecplot ASCII), flux exactly as the fitter computes it, sun angle and cast shadow for every facet at chosen UTC times | `jobs/nonneg_maps.sbatch` (CHAINS = chain directories, MODEL_EXT) -> `nonneg_maps.py` (+ `nonneg_maps_geom.cpp`, `nonneg_maps_shadow.cpp`, `nonneg_maps_pvcheck.py`, `test_nonneg_maps.py`, diagnostic `nonneg_maps_diag_dispatch.py`) | `nonneg_maps.py` | 2026-11-11/12 (124322 test; 124324, 124325 production) |
 | softplus with the six free slope multipliers bounded below by 1 (user 2026-11-12: "does not allow the multiplier factor decrease below 1; start all of them with 1; they can grow") | `nonneg_fit.py --slope-mult-min 1` (`jobs/nonneg_fit.sbatch` SLOPE_MULT_MIN=1); chains `jobs/chain_onejob.sh --kind nonneg --model softplus --slope-mult-min 1` | `nonneg_problem.py` (bounds override in the existing hook; marker refuses a mixed resume); tests `test_nonneg.py` (multmin), `test_chain_onejob.py` (1c, 3d) | 2026-11-13 (5 cycles 124664, extended to 9 cycles 124772; snapshots `nonneg_20261113T035423Z`, `chain_onejob_20261113T041215Z`; FINDINGS.md A8) |
 | per-facet contributions of a final state to the modelled NG / RG signals: P% source areas, source-area occurrence, slope-bin fractions | `jobs/nonneg_contrib.sbatch` (CHAIN, CYCLE, GEOM, MODEL_EXT[, CONTRIB_NAME]) -> `nonneg_contrib.py` (+ `test_nonneg_contrib.py`) | `nonneg_contrib.py` (frozen `nonneg_contrib_20261112T210012Z`) | 2026-11-12 (124549); bounded c5 124668, c9 124776 |
+| alternative non-negative activity models (options A, B, D; user 2026-11-14 "a polynomial that is non-negative and would allow fit with more seen surface contributing"): sum of squares A = m_b (‖Lᵀy‖²/A_s + A_s ΣT), background A = m_b (A_bg A_orig + softplus), log-normal spread A = m_b (A_orig e^u + A_s ΣT) with the penalty f C_ref Var_w(u) | `nonneg_fit.py --model sos\|background\|logspread` (`jobs/nonneg_fit.sbatch` MODEL, SOS_RANK, BG_MIN, SPREAD_F, SPREAD_CREF), stage 1 `jobs/nonneg_alt_stage1.sh`, summary `jobs/nonneg_alt_summary.sbatch` | `nonneg_alt.py`, `nonneg_alt_summary.py` (+ nonneg_mult / nonneg_problem); tests `test_nonneg.py`, `jobs/nonneg_alt_test.sbatch` | 2026-11-14 (stage 1: B 125032-125046, A 125101-125105 with the LM start, D 125072-125086) |
 | a whole fit / fine-tuning chain as ONE job (records bound once; same products and layout as the split chain) | `jobs/chain_onejob.sh` (dry run; `--submit`) -> `jobs/chain_onejob.sbatch` -> `chain_onejob.py`; KIND positive (default), slope (one cycle only), nonneg | the stage modules of the chosen kind; tests and the split-vs-one-job compare `test_chain_onejob.py` | 2026-11-10 (positive tests 124091-124095, bitwise); 2026-11-11 (nonneg tests 124143/124148, production 124162/124165; frozen `chain_onejob_20261111T060742Z`) |
 | one fit split across one or two GPU nodes (MPI, one rank per GPU) | `jobs/mpi_fit_submit.sh 1\|2\|auto <spec>` -> `jobs/mpi_fit.sbatch` (SPEC files in `mpi_multinode/specs/`); probe `jobs/mpi_probe.sbatch` | `mpi_support.py` (per-rank wrapper); comparisons `mpi_multinode/compare_tests.py`, `compare_slope.py` | 2026-11-10 (tests 123623-123649 only; the production fits ran on one node) |
 | which configuration (nodes, CPU threads, one job per chain) is fastest | `PERFORMANCE.md` (measured 2026-11-10/11) | — | — |
 | retries without starting a stage behind a failed upstream (guard job per stage) | `jobs/slope_cycles.sh`, `jobs/positive_cycles.sh` (from 2026-11-10); guards `jobs/slope_chain_guard.sbatch`, `jobs/positive_chain_guard.sbatch`; layout test `jobs/test_chain_deps.sh` | — | 2026-11-10 (dummy jobs 124035-124058; 3a chain guards 124068-124086; positive guard not yet submitted) |
+| non-negative activity from a LOCAL basis (option C): hat functions of a 150 m coarse triangulation, c >= 0, x the 7 slope-bin multipliers (>= 1), D2's templates on/off, smoothness lambda_C x^T Lg x; CPU fit from precomputed design matrices | `jobs/localnn_build.sbatch` (mesh, design, verify, start, tests), `jobs/localnn_fit.sbatch` (TEMPLATES, SMOOTH_FACTOR or SMOOTH_LAMBDA, NFEV, RUNROOT) | `localnn_mesh.py`, `localnn_design.py`, `localnn_problem.py`, `localnn_fit.py`, `localnn_direct.py`; tests `test_localnn.py` | 2026-11-14 (build 125004; timing test 124995; frozen `localnn_20261114T081912Z`) |
 
 Notes:
 
@@ -143,17 +145,22 @@ Notes:
 | `nonneg_cpu.sbatch`, `nonneg_test.sbatch`, `nonneg_start_determinism.sbatch` | CPU tests; GPU tests (STEP=fits \| ft, one MODEL per job); determinism of the squared start per CPU type | 124128; 124130–124133; 124149–124153 |
 | `nonneg_maps.sbatch` | activity and source-rate maps of one final state (CPU, normal128cores): tests, geometry build and validation against the base's kernel records, maps (.vtu + Tecplot), verify, ParaView read-back; frozen code `model_ext_frozen/nonneg_maps_20261112T021623Z`; 2026-11-13 output name `MAPS_NAME` (default `maps`) and the `EXPECT_CYCLES` guard | 124318-124322 (development and 3-cycle test maps), 124324 (softplus), 124325 (squared), 124667 (multipliers >= 1, c5), 124775 (the same chain, c9: `maps_c9`) |
 | `nonneg_contrib.sbatch` | per-facet contributions of a final state to the modelled NG / RG signals (P% source areas, occurrence, slope-bin fractions; CPU, frozen nonneg_contrib code, NPY_DISABLE_CPU_FEATURES for the bitwise state check); `CYCLE`, output name `CONTRIB_NAME` (2026-11-13, default `contributions`) | 124549 (softplus 5 cycles), 124668 (multipliers >= 1, c5), 124776 (c9: `contributions_c9`) |
+| `nonneg_alt_test.sbatch`, `nonneg_alt_stage1.sh`, `nonneg_alt_summary.sbatch`, `nonneg_multmin_test.sbatch` | options A, B, D: GPU test per model (independent start cost, 5 evaluations with the full Jacobian check); stage-1 launcher (3 attempts, guard, summary; run roots `nonneg/<model>/stage1_<setting>_<UTC>/`); CPU summary of one fit; the softplus multiplier-bound GPU test | 124998, 124999, 125028; B 125032-125046, A 125101-125105, D 125072-125086; 125030 (test); 124659 |
 | `chain_onejob.sh`, `chain_onejob.sbatch` | ONE job per fit / fine-tuning chain (KIND positive \| slope \| nonneg) | positive tests 123990, 124091–124095 (earlier script); nonneg tests 124143, 124148; production 124162 (softplus), 124165 (squared) |
 | `pub_maps_figures.sbatch`, `pub_maps_v2.sbatch`, `pub_source_areas.sbatch` | full / version-2 figure sets (GPU; inputs from the environment) | 124492-124516, 124565-124595, 124677-124683, 124722 |
 | `cops_movies_prep.sbatch`, `cops_movies_render.sbatch`, `cops_movies_encode.sbatch`, `cops_movies_qc.sbatch`, `cops_movies_diag.sbatch` | movies: preparation and validation, render on all GPUs, compose / encode, MP4 check, dark-surface diagnosis; 2026-11-13 also the fixed camera (`CAMERA=fixed`, `FROM_WORK` + step `copy`, step `validate_fixed`), the touchdown data (step `touchdown`), the flag (`TOUCHDOWN`) and `MOVIES_PY` | 124615-124635, 124707-124735, 124786-124788, 124863-124869 |
 | `ng_source_map.sbatch`, `pan_candidates.sbatch`, `cops_movies_pan_stills.sbatch` | 2026-11-14 panorama movie: per-facet NG source sums (late and all NG observations; CPU), candidate final camera poses (1 GPU), candidate stills (plan `--pan-to`, mid-path and last frame; 1 GPU per pose); `cops_movies_prep.sbatch` `PAN_TO`/`PAN_START`/`PAN_END` and `cops_movies_encode.sbatch` `NO_SUB_MARK` (defaults unchanged) | 124913, 124915, 124918, 124919, 124920; production 124930, 124931, 124936, 124937 |
 | `cops_movies_prep.sbatch` (`SC_BLOCK_FROM`, step `scrows`), `cops_movies_render.sbatch` (`SC_BLOCK_FROM`), `fov_share.sbatch` (`HEMI_SC`, `HPREP`, `HMOVIES`, `DECK`) | 2026-11-14 half-space movies: the fit's RG / NG front half-spaces minus the directions hidden by the spacecraft from the ROSINA deck point; the shares of the modelled signal the movies do not colour (defaults unchanged) | 124942-124945; tests 124940 |
 | `frames_base.sbatch`, `frame_contrib.sbatch`; `cops_movies_render.sbatch` (`COLOR_CONTRIB`, `COLOR_RANGE`), `cops_movies_encode.sbatch` (`HOLD_SECONDS`) | 2026-11-14 contribution movies: fitting-base kernels at the 1959 frame times (the lategrid base's executable and boundary.in), the fitted model's contribution per unit area per frame, verification, colour range; render coloured by it; 15 s hold at the end (defaults unchanged) | 124961, 124969, 124972, 124975-124977; tests 124974 |
+| `contrib_phase_data.sbatch`, `pub_contrib_density.sbatch` | 2026-11-14 full set of the c9 state: contribution per unit area at snapshot rows and phase means (data, CPU) and their maps (GPU, short); region shares by lobe / distance (`regions_figures.py`, CPU) | 124979, 124990 |
+| `options_activity_maps.sbatch` | 2026-11-14 activity maps of the best stage-1 setting of each non-negative option and the bounded softplus c9 (`figures/pub_options_activity_maps.py`; 1 GPU, ~3 min) | 125205; final 131968 |
 | `fov_share.sbatch`, `source_area_compare.sbatch` | signal share outside the IK FOVs; source areas of two fits (CPU) | 124731, 124727; c9: 124789, 124784, 124785 |
 | `mpi_fit.sbatch`, `mpi_fit_submit.sh`, `mpi_probe.sbatch` | one fit over 1 or 2 nodes with MPI (SPEC in `mpi_multinode/specs/`, NODES=1\|2\|auto); submit helper; MPI probe | tests 123629–123649 (earlier script versions; the current one not submitted); probe 123623 |
 | `grain_rough.sbatch`, `prepare_12m_rough.sbatch` | 12M rough-surface base and the C30 fit on it | 122033, 122034 |
 | `prepare_44m.sbatch`, `grain_44m_c30.sbatch` | 44M preparation; C30 with the 12M conditions on 44M | 121996/122020, 122078 |
 | `refine_12m.sbatch`, `refine_20m.sbatch` | local mesh refinement tests | 122009, 122011 |
+| `localnn_build.sbatch`, `localnn_fit.sbatch` | option C (local non-negative basis): CPU build (coarse mesh, design matrices, D2 / c9 verification, starts, tests) and one CPU fit (wall-time stop / exit 75, RUNROOT resume, direct facet-sum check) | build 125004; timing test 124995 (dev grid); start-rule stage 1 125014-125016 (cancelled, superseded); pilot 125071; anchored stage 1 125107, 125113, 125119 (+ continuations 125108, 125114, 125120) |
+| `localnn_gpu_eval.sbatch`, `localnn_tools.sbatch`, `localnn_report.sbatch` | option C after a fit: GPU standard evaluation (gpu002, D2's path, 1 h), the frozen maps / contribution tools through the localnn adapter (CPU), the item-5 numbers and run-root README.md / HOW-TO-RERUN.md (CPU) | tests 125017, 125052, 125019-125031; start-rule stage 1 125053-125064 (cancelled); anchored stage 1 125109-125112, 125115-125118, 125121-125124 |
 
 The job scripts in this folder itself (`grain*.sbatch`, `area_scaling.sbatch`) ran from `$COPS_OUTPUT_ROOT/model_ext/`.
 
@@ -183,6 +190,7 @@ They run on the login node (no GPU), from `$APP` with `.venv/bin/python`. `late_
 `figures_12m_nonneg5_smm1.sh` (2026-11-13) draws the softplus refit with slope multipliers >= 1 (chain 124664) vs the unbounded softplus and D2 into `12M/model_vs_observations_softplus_smm1/`; `source_area_compare.py` compares the source areas and slope-bin shares of two fits (`full_set_softplus_smm1_5cycles/comparison_vs_unbounded/`).
 `cops_movies.py` + `cops_movies_geom.cpp` (2026-11-12; observable-part masks, spacecraft shadow and the dark-surface diagnosis 2026-11-13) make the one-minute movies of the descent seen from RG / NG (`12M/movies_softplus_5cycles/`, `12M/movies_softplus_smm1_5cycles/`); `fov_share.py` gives the share of the modelled signal from outside the IK fields of view. Since 2026-11-13 (second set) `cops_movies.py` also has the fixed camera (`plan --camera fixed`: frozen in the body frame at the COPS position and attitude of 100 m altitude), the gauges' line of sight from the true gauge position (depth map + exact edge refinement; `validate_fixed`), `touchdown` (the ground-track impact point, its visibility, SPICE check) and `compose --touchdown` (a waving chequered finish flag): `12M/movies_softplus_smm1_9cycles/` (gauge view) and `12M/movies_softplus_smm1_9cycles_fixedcam/`; and (2026-11-13/14) circular fields of view (`cone:<deg>` masks), `contact`, `prep --extend-to-utc`, `sc --hga-ck`, `plan --camera detach` and the detach render with a spacecraft model (bus, wings, HGA), its shadow and the FOV cones (`cops_movies_geom hgageom`): `12M/movies_softplus_smm1_9cycles_detach200/`; `fov_share.py --cone-rg/--cone-ng` gives the share outside circular fields of view. 2026-11-14: `plan --camera detach --pan-to <pose.json>` (the camera moves after the detach to a final pose: smootherstep in the frame index, arc around the pivot, quaternion slerp, focal length geometric) and `compose --no-sub-mark` (no sub-spacecraft +); `ng_source_map.py` (per-facet NG source sums), `ng_source_regions.py` (lobes, shares by lobe / distance / azimuth, relief, map), `ng_lobe_share_vs_altitude.py` (big-lobe share per late observation) and `pan_candidates.py` (candidate final poses): `12M/movies_softplus_smm1_9cycles_detach300_pan/` (the panorama movies with the user's pose B, held from frame 1800; analysis and candidate stills). 2026-11-14: `render/validate_fixed --sc-block-from rosina-deck` (fields of view minus the spacecraft model, exact segment test), the `hemisphere` mask in the detach render (line of sight by cube faces), `scrows`, `fov_share.py --hemi-sc`: `12M/movies_softplus_smm1_9cycles_detach300_pan_hemi/`. 2026-11-14: `render --color-contrib/--color-range` (colour = the fitted model's contribution per unit surface area, `frame_contrib.py` on the frames base `frames_base.sbatch`, range `contrib_range.py`), `compose --hold-seconds`: `12M/movies_softplus_smm1_9cycles_detach300_pan_contrib/`.
 `figures_12m_nonneg9_smm1.sh` (2026-11-13) draws the same bounded chain after 9 cycles (jobs 124664, 124772) vs its c5 state, the unbounded softplus and D2, and the cycles c1-c5 / c5-c9, into `12M/model_vs_observations_softplus_smm1_9cycles/`.
+`figures_12m_nonneg_options_stage1.sh` (2026-11-14) compares the stage-1 fits of the non-negative activity options (A sum of squares, B background, C local basis, D log spread) with the COPS data, the bounded softplus c9 and D2 in `12M/model_vs_observations_nonneg_options_stage1/` (per option all settings, the best of each, CPU); `options_table.py` (summary.txt / .csv / best.json from the runs' summaries), `options_captions.py` (captions), `options_howto.py` (HOW-TO-RERUN.md, README.txt), `pub_options_activity_maps.py` (activity maps of the best settings and c9; job `jobs/options_activity_maps.sbatch`, 1 GPU). v2 (2026-11-14 evening, `..._stage1_v2/`): wrapper variables `DIAG` (convergence verdicts of the CPU diagnosis, `figures/data/stage1_convergence_20261114.json` -> `options_table.py --diag`), `RESID=1` (`options_residual_figure.py`: ln(model/obs) vs altitude, NG and RG) and `ACT_FROM` (copy unchanged activity maps); defaults unchanged (tested). Final (2026-11-15, `..._stage1_final/`): `RUNS` (candidate list file, `figures/data/stage1_final_runs_20261115.json`: the latest completed fit per setting), `TEXTS` (`figures/data/stage1_final_texts_20261115.json`, `options_captions.py --texts`), `CONV_TERM=1` (convergence from the terminations); continuation rows carry the stage-1 costs they started from (prev_*); activity maps job 131968; defaults unchanged (tested).
 
 ## MPI helpers (`mpi_multinode/`, run copies in `$COPS_OUTPUT_ROOT/mpi_multinode/`)
 
@@ -411,6 +419,453 @@ token; its stage commands are in each stage's `provenance-<job>-<stage>/commands
 ```bash
 $COPS_OUTPUT_ROOT/figures_cluster/scripts/figures_12m_nonneg.sh   # -> figures_cluster/12M/model_vs_observations_nonneg/
 ```
+
+## Option C: local non-negative basis (2026-11-14)
+
+**Why** (user 2026-11-14, relayed by the lead): the clipped / softplus models (25 harmonics of degree <= 4 x 7 slope-bin
+multipliers) switch off ~97 % of the seen surface, because a global low-degree basis can only make local sources by
+clipping; the user wants non-negative alternatives that let more of the seen surface contribute. Options A, B, D are
+`nonneg_problem.py --model sos|background|logspread` (another agent); option C is this section.
+
+**Model** (per facet e, slope bin b(e)):
+
+- A_e = m_b(e) (sum_j c_j phi_j(e) + TS_e), c_j >= 0; phi_j = piecewise-linear hat functions of a coarse triangulation
+  of the 12M surface (three per facet, phi >= 0, sum_j phi_j = 1 at every facet);
+- TS = A_s sum_k ft_ck (D2's six fine-tuning templates held at 1) with `--templates on`, 0 with `--templates off`
+  (user 2026-11-14: on, added as is because the sum is >= 0 on every facet; the six bundles are >= 0 everywhere, 265 facets each, so the activity is >= 0
+  without a wrapper; the products apply max(0, .) and report 0 clipped facets);
+- m_b: the 7 slope bins of `slope_mult/bundle/slope_bins.npz`, m_[0,40) = 1 held, six free >= 1 (start 1), no upper
+  bound (as the bounded softplus, user 2026-11-12);
+- everything else = D2: lategrid base (1551 rows), D2's selection (934 NG, 1150 RG), W10x5 for the 95 observations from
+  10:33:10 UTC (`positive_problem.LateLayout`), grain at the time stamp, crossing weight 10, original T law held, kappa
+  >= 0, grain A, B >= 0, ln-residual cost of fit_cops (0.5 sum r^2), scipy TRF (bounds, x_scale jac, exact trust-region
+  solver, ftol = xtol = gtol = 1e-10);
+- smoothness: lambda_C x_c^T Lg x_c (x_c = c / A_s, A_s = 2.2228299497402522e18; Lg = the P1 stiffness matrix =
+  cotangent-weighted graph Laplacian of the coarse mesh, x^T Lg x = integral of |grad sum c phi|^2 over the coarse
+  surface), as residual rows sqrt(2 lambda_C) R x_c, R^T R = Lg;
+- start (`--start d2`): c = the area-weighted NNLS projection of max(0, D2 field) (minus TS with templates on), m = 1,
+  kappa and grain from D2;
+- no fine-tuning term h_e yet (stage 1).
+
+**Grid** (`localnn_mesh.py`, `runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/grid_150m`, job 125004): n = round(2 S /
+(sqrt 3 h^2)) = 2745 nodes for S = 53.495 km^2, h = 150 m; seeds by area-weighted farthest-point sampling, 6 Lloyd
+iterations of the geodesic Voronoi partition of the 12M facets (multi-source Dijkstra on the facet-adjacency graph);
+coarse triangles = the dual (5486 triangles, 8229 edges, every edge in exactly 2 triangles; Euler characteristic 2: the
+four small tunnels of the genus-4 12M surface are bridged at 150 m); coarse edge length median 141 m (p10 120, p90
+171 m); region area 13.6-37.3 x 10^3 m^2. Hat functions: barycentric coordinates of each facet centroid projected on the
+plane of the best coarse triangle of its node (2-ring as fallback); 97.1 % of the area inside a triangle, 2.84 % outside
+every candidate (negative coordinates set to 0 and renormalized; median -0.012); max |sum phi - 1| = 2.2e-16. Continuity:
+L1 jump of phi across fine edges median 0.022 (p99 0.069); jumps > 0.5 on 3627 of 18.5 M fine edges (0.085 % of the
+area, mostly steep folded terrain). 2207 nodes have support on seen facets; the other 538 are set by the smoothness term.
+
+**Design matrices** (`localnn_design.py`): for fixed T the pressures are linear in A and kappa, so G^(b)[row, node] =
+sum over the row's records with bin b of g_r phi_j(e_r) (g_r = the H2O contribution at A = 1 from the frozen
+`nonneg_contrib.record_contributions`: FP32 records, FP64 arithmetic), template and CO2 columns; one pass over the 4.74e9
+records, 94 s on 64 cores; design route vs direct facet sums <= 9.3e-15 (every row).
+
+**Verification** (`localnn_fit.py verify`, `test_localnn.py`; job 125004): D2's final activity: data cost
+4.8864368867405e-03 (reported 4.886436886740517e-03, rel 8.9e-16), crossing 0, COPS_model.dat pNG / pRG of all 1551 rows
+and late_window_model.dat (surface, grain): 0 printed differences; softplus c9 final state: 4.268806657481031e-03
+(reported 4.268806657481027e-03, rel 1.1e-15), pressure_comparison.txt (10 digits, all rows): 0 printed differences;
+an independent activity at 4 rows by direct facet sums: <= 1.8e-15; Jacobian vs finite differences <= 6.8e-6; bounds;
+partition of unity; stiffness (Lg 1 = 0, linear-function energy 4e-16). After a complete fit `localnn_direct.py`
+re-evaluates the final per-facet activity by direct facet sums at every row (timing test 124995: cost rel 4.8e-15).
+
+**Lambda rule** (proposed 2026-11-14, accepted by the user the same day; `localnn_fit.py start` writes the values): lambda_C = f data_cost(start) /
+x_c0^T Lg x_c0, f = 0.1 / 1 / 10 (weak / medium / strong): templates off: start data cost 1.6089, x_c0^T Lg x_c0 =
+3.0513e5, lambda_C = 5.27e-7 / 5.27e-6 / 5.27e-5; templates on: 0.11387, 3.0318e5, 3.76e-8 / 3.76e-7 / 3.76e-6.
+
+**Stage 1 (user / lead decisions 2026-11-14, ~02:35 CST, "implement the recommendations")**:
+
+- templates: A_s sum_k ft_ck is >= 0 on every facet of the bundles in D2's fit manifest (265 facets > 0, 12,364,025 = 0,
+  0 < 0; max 7.894e23, smallest positive 1.70e-6; `runs/.../nonneg/localnn/template_signs_20261114.json`), so it is
+  added as is: `TEMPLATES=on`, A = m_b (sum_j c_j phi_j + A_s sum_k ft_ck);
+- lambda_C (SUPERSEDED ~02:55 CST by the solution-anchored rule below): three fits with the start penalty 0.1, 1, 10 x the
+  start data cost (0.11387): lambda_C = 3.7559e-8, 3.7559e-7, 3.7559e-6; start = the NNLS projection of max(0, D2) - A_s sum ft (templates on), m = 1, kappa and grain
+  from D2; max_nfev 4000; frozen `model_ext_frozen/localnn_20261114T081912Z`;
+- jobs (start rule; cancelled after ~150 evaluations, superseded): f 0.1: 125014 (+125025), f 1: 125015 (+125026),
+  f 10: 125016 (+125027); run roots kept as `runs/.../nonneg/localnn/stage1_f<f>_<UTC>.superseded_20261114T090228Z/` (the first three submissions 125007-125009 were
+  cancelled after one minute because Slurm put all three on the shared node023; kept as `*.incomplete_20261114T083031Z`);
+- after each fit (chained afterok; for the anchored fits from `model_ext_frozen/localnn_anch_20261114T090437Z`): `jobs/localnn_tools.sbatch`
+  (export + the frozen maps and contribution tools -> `tools_state/`, `contributions/`, `maps/`),
+  `jobs/localnn_report.sbatch` (`analysis/report.{json,txt}`, `fit/final/nonneg_bins.txt`, README.md, HOW-TO-RERUN.md),
+  `jobs/localnn_gpu_eval.sbatch` (gpu002: the GPU standard evaluation -> `gpu_eval/fit`, `gpu_eval/gpu_check.json`), then
+  README.md once more with the GPU check (`DOCS_ONLY=1`).
+
+**Stage 1, solution-anchored lambda (user decision via the lead, 2026-11-14 ~02:55 CST; replaces the start rule)**:
+
+- lambda_C = f C_ref / R_pilot, f = 0.1 / 1 / 10; C_ref = 4.268806657481027e-03 (the bounded softplus c9 data cost; the
+  lead's 4.2688066575e-03); R_pilot = x_c^T Lg x_c (the penalty's normalization) of the pilot state = the templates-on
+  start-rule f = 0.1 fit (lambda_C = 3.7558561837e-8) after 200 evaluations: data cost 3.799870121e-03, penalty 1.943515624e-05, 200 evaluations (max_nfev, not converged), job 125071 (`runs/.../nonneg/localnn/pilot_startrule_f0.1_n200_20261114T090209Z`);
+  `localnn_anchor.py` -> `runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/lambda_rule_anchored_20261114.json` (given to the
+  fits as `SMOOTH_RULE_FILE`, checked and recorded in each fit's lambda_source);
+- R_pilot = 517.4627377999832 (= the pilot's penalty / lambda exactly); lambda_C = 8.249495752351284e-07 (f 0.1), 8.249495752351283e-06 (f 1), 8.249495752351283e-05 (f 10); the penalty of the pilot state with these values is 0.1 / 1 / 10 x C_ref;
+- the start-rule fits 125014-125016 (and 125025-125027, 125053-125064) were cancelled after ~150 evaluations; their run
+  roots are kept as `stage1_f<f>_<UTC>.superseded_20261114T090228Z` (SUPERSEDED.txt); the pilot (job 125071, the same
+  command as 125014 with --max-nfev 200, same snapshot and CPU type) reproduces 125014's logged objectives at
+  evaluations 50 / 100 / 150 to all printed digits: 5.1129033437e-03, 4.8626753969e-03, 4.2835120963e-03;
+- the anchored fits (templates on, start = the NNLS projection of D2 minus the template part, max_nfev 4000; frozen
+  `model_ext_frozen/localnn_anch_20261114T090437Z`; EPYC 7763 nodes, 16 threads, 12 h; continuation afterany; the same
+  post-fit chain): f 0.1: 125107 (node001; continuation 125108; tools 125109, report 125110, GPU 125111, docs 125112), f 1: 125113 (node002; 125114; 125115, 125116, 125117, 125118), f 10: 125119 (node016; 125120; 125121, 125122, 125123, 125124); submitted 2026-11-14 09:42 UTC (03:42 CST) with `tests/localnn_20261114/submit_anchored.sh <rule.json>`; run roots `runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage1_anch_f<f>_<UTC>/`.
+
+**Stage-1 anchored results and incidents (2026-11-14, up to 16:30 CST)**:
+
+| f | lambda_C | data cost | penalty | stop | rms ln NG / RG (all; before the gap; late) | multipliers 40-50 .. 90-180 | c_j at 0 | active seen area | GPU check |
+|---|---|---|---|---|---|---|---|---|---|
+| 0.1 | 8.2495e-7 | 2.8331230e-3 | 1.494e-5 | max_nfev 4000 (2 segments) | 0.0553 / 0.0510; 0.0412 / 0.0527; 0.1229 / 0.0638 | 1, 1.001, 29.3, 675, 2269, 3.35 | 36 % | 0.136 | passed (125185: cost rel 2.2e-16) |
+| 1 | 8.2495e-6 | - | - | resubmitted (125177) | - | - | - | - | chained (125181) |
+| 10 | 8.2495e-5 | 2.8306496e-3 | 6.305e-5 | max_nfev 4000 (2 segments) | 0.0558 / 0.0505; 0.0426 / 0.0536; 0.1205 / 0.0501 | 1, 1.504, 209, 1608, 3617, 3.33 | 9.3 % | 0.201 | passed (125183) |
+
+(D2 4.886e-3, bounded softplus c9 4.2688e-3; kappa and grain B at 0 in both; Q_H2O(10:33:10) 1.10e26 / 2.89e25 s^-1;
+50 % of the seen production from 0.05 % / 0.09 % of the seen area; `<run root>/analysis/report.txt`.)
+
+- f = 1: the first run (125113) died with node002 (NODE_FAIL at 08:18 CST after ~1400 evaluations; no segment, the fit
+  writes its state only at a segment's end); moved aside as `stage1_anch_f1_20261114T094258Z.incomplete_*`; resubmitted
+  on node016 (125177, continuation 125178 not pinned, post-fit chain 125179-125182; run root
+  `stage1_anch_f1_20261114T222136Z`).
+- GPU check: with grain A, B held the D2 path fails (125052, 125123: `fixed_parameters` sets the grain start at x0[-2]
+  and `grain_crossing` reads the grain from the last two entries of the reduced vector); fixed in
+  `model_ext_frozen/localnn_post2_20261114T222122Z`: grain A, B free (the fitter's start, A = the observed jump, B = 0),
+  `--max-nfev 1`, the CPU state evaluated with the GPU's grain for the comparison. f = 10 (125183): data cost GPU
+  2.841486039784887e-3 vs CPU 2.8414860397848836e-3 (rel 1.2e-15), 0 printed differences in COPS_model.dat (all rows)
+  and late_window_model.dat.
+- m_b vs c_j (`localnn_degeneracy.py`, `<run root>/analysis_degeneracy/`): the c-field is nearly bin-independent at
+  150 m (<sum c phi> over the bins' seen facets 3.7-6.1e15 for f 10), so the multipliers alone set the steep/flat
+  contrast: <A> on the seen facets relative to 0-40 deg = 0.77, 1.05, 134, 979, 2156, 703 (f 10). No node is dominated by
+  a steep bin (<= 2 nodes with >= 50 % of their seen support in a bin >= 40 deg), so the trade-off is not node-local:
+  it is the global level of the c-field, which the Laplacian does not penalize: lowering every c_j and raising the six
+  multipliers by the same factor changes the residual vector by only 2.3 % (f 10) / 4.3 % (f 0.1) of the multiplier step
+  alone (only the 0-40 deg bin, m held at 1, and the 90-180 deg template part change); a single multiplier is
+  compensated by the c_j to rho = 0.2-0.3 % (full Jacobian with the smoothness rows). The absolute multipliers and the
+  flat-terrain activity level are therefore weakly determined; the activity on the 60-90 deg facets (92-94 % of the late
+  NG, 86-90 % of the late RG model signal, f 0.1 / 10) is what the data fix.
+
+**Multiplier penalty P_m (user decision 2026-11-14 ~17:30 CST; for stage 2, chosen by the user later)**:
+
+- P_m = f_m C_ref sum_b (ln m_b)^2 over the six free multipliers, f_m = 0.01, C_ref = 4.268806657481027e-03 (the bounded
+  softplus c9 data cost; the lead's 4.2688066575e-03): the multipliers stay as small as the data allow, one point of
+  the flat direction (A12) is picked. Residual rows sqrt(2 f_m C_ref) ln m_b (0.5 r.r scale), exact Jacobian
+  sqrt(2 f_m C_ref) / m_b; reported separately (`final_mult_penalty` in fit_result.txt, `costs.mult_penalty` and
+  `mult_penalty` in fit_manifest.json); objective = data + crossing + smoothness + P_m.
+- `localnn_fit.py fit --mult-penalty-f F` (`jobs/localnn_fit.sbatch` MULT_PENALTY_F; default off); `localnn_fit.py start
+  --start state --state-file <seg>/localnn_state.npz` starts at another fit's end point (START= of the job);
+  `jacobian_check`'s node-column step is now scaled by the state's median x_c (at a converged state x_c ~ 1e-3; the old
+  step 1e-4 x 1 gave FD truncation errors of 5e-4, with or without P_m). Frozen `model_ext_frozen/localnn_mp_20261115T020233Z`.
+- tests (`test_localnn_multpen.py`, `tests/localnn_20261114/multpen/tests_multpen.json`): option absent and f_m = 0 =
+  the previous code bitwise (fun, jac and a 3-evaluation TRF run vs `localnn_anch_20261114T090437Z`); P_m rows = f_m C_ref
+  sum (ln m)^2 (rel 2e-16); Jacobian vs finite differences <= 8.5e-6 (multiplier columns 3e-9).
+- check run (user: "one continuation of the f = 10 fit from its end point with P_m on"): job 125360 (node001,
+  max_nfev 1000), report 125361, degeneracy 125362; run root
+  `runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage1_anch_f10_pm0.01_cont_20261115T020243Z`. At the f = 10 end point
+  P_m = 6.48e-3 = 2.3 x its data cost (2.8306e-3): f_m = 0.01 is not weak there. Result: ftol after 219 of 1000 evaluations (converged, first-order optimality 3.5e-9). Data cost 3.2655e-3 (+15.4 % vs the f = 10 end point 2.8306e-3; still -23.5 % vs c9), smoothness 1.69e-4, P_m 1.96e-3 (6.48e-3 at the start), objective 5.395e-3 (9.374e-3); rms ln NG / RG 0.0604 / 0.0537 (late 0.130 / 0.063). Multipliers 40-50 1 (bound), 50-60 1 (bound), 60-70 1.010, 70-80 827, 80-90 1.003, 90-180 2.42: the penalty removes the 60-70 and 80-90 deg enhancement and keeps one steep bin; mean activity on the seen facets relative to 0-40 deg 0.87, 0.81, 0.80, 654, 0.79, 190; the 70-80 deg bin carries 86 % of the seen production, 88 % of the late NG and 80 % of the late RG signal; the c-field level rose (<sum c phi> 1.3e16 on every bin, was 3.7-6.1e15) while 63 % of the nodes went to 0; active seen area 24.5 % (f = 10: 20.1 %); 50 % / 90 % of the seen production from 0.10 % / 0.47 % of the seen area; the global level direction now costs 6.2 % of the multiplier step (was 2.3 %), and the multiplier weight in the 12 weakest directions is on 70-80 deg only (0.94); direct facet-sum check passed (7.8e-16); `<run root>/analysis/report.txt`, `analysis_degeneracy/degeneracy.txt`.
+
+**Post-fit tools**:
+
+- `localnn_gpu_eval.py` + `jobs/localnn_gpu_eval.sbatch`: the final per-facet activity through D2's own GPU path
+  (`clip_refit.py --variant D2`, frozen `clip_20261108T234013Z`, unchanged grain_fit_fixed / gpu_fit / fit_cops):
+  template localnn_a = A / A_s held at 1, a00..a24 = 0, kappa, grain A, B, T held (exact repr), one free amplitude
+  that cannot change any pressure (template probe_unseen = 1 at one facet no fit point sees; fixed_parameters refuses
+  to hold every parameter and fit_cops refuses an all-zero template), `--max-nfev 1` (TRF returns its start); the
+  fitter's standard products and a comparison with the CPU products;
+- `localnn_tools.py` + `jobs/localnn_tools.sbatch`: the frozen `nonneg_maps.py` / `nonneg_contrib.py` (folder
+  `nonneg_contrib_20261112T210012Z`) run UNCHANGED on a localnn state: an export folder in the chain layout (marked: no
+  fine tuning; `fit_restart.npz` there is not a gpu_fit restart) and `state_activity` replaced by a localnn version (A
+  re-derived bitwise from c, m, the grid and TS). Tested on the 40-evaluation timing state: contributions (the tool's
+  own verification vs the tables: every row within 4.8e-10) and maps (VTU bitwise, Tecplot re-parse within 5e-10;
+  ~15 GB per state);
+- `localnn_report.py` + `jobs/localnn_report.sbatch`: the numbers of the lead's item 5 (with D2 and c9 for comparison)
+  and the run-root documents.
+
+**Cost**: CPU only; the TRF step's dense SVD (8516 x 2754) is 5.7 s at 16 OpenBLAS threads (node032; 32/64/128
+threads slower); the timing test ran 10.0 s per evaluation on a shared node023 with 32 threads.
+
+**Code and jobs**: `localnn_mesh.py`, `localnn_design.py`, `localnn_problem.py`, `localnn_fit.py` (verify | start | fit),
+`localnn_direct.py`, `test_localnn.py`; `jobs/localnn_build.sbatch` (CPU: mesh, design, verify, start, tests),
+`jobs/localnn_fit.sbatch` (CPU: one fit, wall-time stop / exit 75, `RUNROOT=` to continue, then the direct check);
+snapshot `model_ext_frozen/localnn_20261114T081912Z` (with an unchanged copy of `positive_problem.py`); the contribution
+arithmetic comes from `model_ext_frozen/nonneg_contrib_20261112T210012Z`.
+
+**Running it** (`$J=$COPS_OUTPUT_ROOT/jobs`, `$LX` = the frozen snapshot):
+
+```bash
+sbatch --export=ALL,MODEL_EXT=$LX $J/localnn_build.sbatch          # -> runs/.../nonneg/localnn/grid_150m (job 125004)
+sbatch --export=ALL,MODEL_EXT=$LX,TEMPLATES=off,SMOOTH_FACTOR=1,NFEV=<n> $J/localnn_fit.sbatch
+                                                                    # -> runs/.../nonneg/localnn/localnn_toff_f1_<UTC>/fit
+sbatch --export=ALL,MODEL_EXT=$LX,TEMPLATES=off,SMOOTH_FACTOR=1,NFEV=<n>,RUNROOT=<run root> $J/localnn_fit.sbatch
+                                                                    # continue after exit 75 (wall-time stop)
+# 2026-11-14, solution-anchored lambda: the rule file from localnn_anchor.py, one lambda of it per fit (exact repr),
+# fit + continuation + post-fit chain for f = 0.1, 1, 10 (as run):
+$COPS_OUTPUT_ROOT/tests/localnn_20261114/submit_anchored.sh $R/nonneg/localnn/lambda_rule_anchored_20261114.json
+```
+
+Products of a fit (`<run root>/fit/segNN`, `final` -> the segment that ended by an optimizer condition):
+`fit_result.txt`, `localnn_state.npz`, `nonneg_facets.npz` (u, TS, A, P, bin, seen, held = 0, area), `COPS_model.dat`,
+`late_window_model.dat` (D2's formats; CPU design route, checked by `direct_check_segNN/`), `fit_manifest.json`,
+`README.txt`, `HOW-TO-RERUN.md`; `<run root>/provenance-<job>/`. The maps / contribution tools (`nonneg_maps.py`,
+`nonneg_contrib.py`) check the softplus / squared reproduction and need an adapter for this model.
+
+## Alternative non-negative activity models (options A-D, 2026-11-14)
+
+**Why** (user, 2026-11-14): "prepare suggestions for modification of the minimization polynomial: the current approach
+shuts down almost all the surface, and I need a polynomial that is non-negative and would allow fit with more seen
+surface contributing". "All those options need to be switchable in CLI". In the bounded softplus fit (s = 1e-5 A_orig)
+A is exactly 0 on about 96 % of the seen area. Then "implement the recommendations" (2026-11-14 ~02:35 CST).
+
+The options are in `nonneg_alt.py`, with `nonneg_mult.py` and `nonneg_problem.py`:
+- A: `--model sos`;
+- B: `--model background`;
+- D: `--model logspread`.
+
+Option C (`--model localnn`, local non-negative hat functions) is a separate module of another agent; it follows the
+same template and reporting rules.
+
+**Common scheme (user decisions 2026-11-14):**
+- lategrid base, D2's setup: W10x5 from 10:33:10 UTC, grain at the time stamp, NG = RG crossing weight 10, original
+  temperature law held (Tmax 182.09922, T75 136.11149, Tmin 133 K), κ free, λ = 0, `--tbounds 30 400`;
+- D2's six ft templates ft_c1..ft_c6 held at amplitude 1, no `cliff_ge_60deg`;
+- slope-bin multipliers m_b: [0,40) deg held at 1, the six others free with lower bound 1 and start 1
+  (`--slope-mult-min 1`);
+- max_nfev 4000; κ and grain A, B start from D2, by name.
+
+**Templates (user decision 1):** B puts them inside the softplus argument, exactly as the softplus model does. For A
+and D the rule is: if A_s Σ T_k ≥ 0 on every facet, add it as is; otherwise add max(0, A_s Σ T_k). Check of
+2026-11-14 (`checks/ft_template_sign_20261114/`):
+- each template is > 0 on the same 265 facets and 0 elsewhere (negative on 0 facets);
+- A_s Σ T_k: minimum 0, maximum 7.894e23 (3.55e5 A_s); 350.9 m² in total;
+- all 265 facets are seen; latitudes 0.5° to 69.0°, longitudes −11.6° to 166.7°.
+
+So the sum is added as is: outside the non-negative map, times m_b exp(h) like the rest.
+
+**Models.** H2O activity per facet e, with y_e = the 25 real harmonics (degree ≤ 4), A_s = D2's enhancement scale,
+T = Σ_k T_k (the ft templates), h_e = the accumulated fine-tuning term (0 in cycle 1), A_orig = the srcCG map:
+
+| option | `--model` | activity A_e | extra parameters |
+|---|---|---|---|
+| A, sum of squares | `sos --sos-rank r` | m_b (‖Lᵀ y_e‖² / A_s + A_s T_e) exp(h_e); L is 25 × r lower-trapezoidal | column 0 of L = a00..a24; the other columns `sosL_<i>_<j>` (i ≥ j ≥ 1). At r = 3: 25 + 24 + 23 = 72 parameters, 81 in the fit |
+| B, background | `background --bg-min V` | m_b (A_bg A_orig,e + s_e ln(1 + exp(L_e / s_e))) exp(h_e); L = Y a + A_s T, s = 1e-5 A_orig | `A_bg` (dimensionless, relative to A_orig), lower bound V, start V |
+| D, log-normal spread | `logspread --spread-f f --spread-cref C` | m_b (A_orig,e exp(u_e) + A_s T_e) exp(h_e); u = Y a / A_s | none; the spread penalty below |
+
+- **A:** A = 0 only where all r harmonic combinations vanish together. r = 1 is the squared model.
+- **B:** every facet with A_orig > 0 keeps at least A_bg·A_orig (× m_b exp(h)). The softplus part is the current
+  softplus model.
+- **D:** A > 0 wherever A_orig > 0.
+- **The other models:** `softplus` and `squared` are unchanged (bitwise against the 2026-11-13 snapshot) and do not
+  use `nonneg_alt.py`.
+
+**D penalty (user decision 2):**
+- definition: P = f · C_ref · Var_w(u), where Var_w(u) = Σ_seen w_e (u_e − ū)² with w_e = area_e / seen area, over the
+  facets seen by the fit;
+- values: C_ref = 4.2688066575e-03 (the data cost of the bounded-softplus c9 fit), f = 0.1, 1, 10;
+- meaning: an rms spread of 1 neper costs f × the current misfit;
+- implementation: P is a term of the fitter's cost 0.5 r·r, on the same scale as the data cost. It enters as 25 rows
+  √(2 f C_ref) S b, with SᵀS = the seen-area-weighted covariance of y and b = a / A_s, so that
+  0.5 ‖rows‖² = P exactly;
+- reporting: P is not part of the data cost. `fit_manifest.json` (`model_extension.nonneg.model_check.alternative.spread`:
+  f, C_ref, the value at the start and at the final state) and `NONNEG_MODEL.txt` report the data cost and P apart.
+
+**Starts (cycle 1; user decisions 3 and 4):**
+- **A, `--start gram --start-file <npz>`:** the rank-r least-squares fit of D2's activity (user decision 4: "A start:
+  least-squares fit of D2's activity"). It is built in two steps:
+  - `nonneg_start.py --model sos --rank r` (job 124994): the area-weighted least-squares Gram matrix Q of D2's
+    activity (minimum-norm, since the products y_i y_j span only degree ≤ 8), projected onto the PSD matrices; a
+    lower-trapezoidal L from its top-r eigenpairs. Relative rms 0.95, total activity × 11.0.
+  - `--refine lm` (job 125003, `sos_start_r3_lm.npz`): Levenberg-Marquardt on the rank-r problem itself, from that
+    start. Relative rms 0.129, total activity × 1.66; stopped at 300 iterations.
+  - The lead chose the LM start on 2026-11-14 (the same decision, implemented better). Data costs by direct facet sums
+    on CPU (`checks/sos_start_costs_20261114/`, job 125100): Gram 33.70346689911884 (equal to the GPU start check of
+    job 124998 in every printed digit), LM 9.519127043550094; D2 is 4.886e-03.
+  - The first A root (Gram start) was moved aside as `sos/stage1_r3_20261114T084711Z.superseded_20261114T091321Z`
+    before it ran.
+- **B, `--start d2`:** D2's harmonics a00..a24 (as the softplus), with A_bg at its lower bound V.
+- **D, `--start uniform`:** u = ln s on every facet (a00 only; every other harmonic 0).
+  - s is the unweighted least-squares fit in ln p of the model pressures to D2's modelled pressures, over the fit's
+    used NG and RG rows. D2's predictions are matched by UTC as in the start check.
+  - The pressures are linear in s, so two evaluations give p(s) = P0 + s P1; a third checks it.
+  - The manifest records s, the fit-weighted alternative value and the rms d ln p
+    (`model_check.alternative.uniform_start`).
+- **Every model, `--start chain`:** the previous cycle, as for softplus.
+
+**Fine tuning:** the same as softplus/squared. It applies A_e = m q_e exp(h_e + δ_e) on the late_only facets with A > 0
+(`nonneg_finetune.py`, validation checks 1-8). The extra parameters are read from the fit restart by name.
+
+**CLI** (`nonneg_fit.py`, before `--`):
+```
+--model sos --sos-rank 3 --start gram --start-file $R/nonneg/bundle/sos_start_r3.npz --slope-mult-min 1
+--model background --bg-min 1e-3 --start d2 --slope-mult-min 1
+--model logspread --spread-f 1 --spread-cref 4.2688066575e-03 --start uniform --slope-mult-min 1
+```
+- Every other option is as for softplus (`--ft-templates-from`, `--start-restart`, `--held`, `--grain-from`, ...).
+- The model options are refused with the wrong model.
+- A resume or chain refuses a changed value (the restart marker records `slope_mult_min`, `bg_min`, `spread_f`,
+  `spread_cref`).
+- When an option is absent, the records of the other models are unchanged.
+
+**Job variables:**
+- `jobs/nonneg_fit.sbatch`:
+  - `MODEL=sos|background|logspread`;
+  - `SOS_RANK`, `BG_MIN`, `SPREAD_F` + `SPREAD_CREF` (each required for its model);
+  - `SLOPE_MULT_MIN=1`;
+  - `START` (defaults: gram, d2 and uniform, or chain);
+  - `START_FILE` (sos; default `$R/nonneg/bundle/sos_start_r<r>.npz`);
+  - `HELD`, `GRAIN_FROM` (chain);
+  - `NFEV`, `CHECK`, `L_THREADS`, `FITDIR`, `MODEL_EXT`.
+- `jobs/nonneg_start.sbatch`: `MODEL=sos RANK=r [REFINE=lm]`.
+- `jobs/nonneg_alt_test.sbatch`: a GPU test per model. It checks the start cost against an independent evaluation,
+  then runs 5 evaluations with the full Jacobian check.
+- `jobs/nonneg_alt_stage1.sh --model-ext <snapshot> --utc <UTC> --runs bg:1e-3,bg:1e-2,bg:1e-1,sos:3,ls:0.1,ls:1,ls:10
+  --spread-cref 4.2688066575e-03 [--submit]`. It submits the stage-1 fits, one 8-GPU job each, in that order on any GPU
+  node but gpu003:
+  - 3 attempts per fit (attempt a > 1 afternotok of all earlier ones);
+  - a guard (`positive_chain_guard.sbatch KIND=fit`) and the summary job;
+  - run roots `runs/shap8_012m_lategrid_dz1.5/nonneg/<model>/stage1_<setting>_<UTC>/` with `fit/` (`fit/final`),
+    `README.md`, `HOW-TO-RERUN.md` and `summary.txt`.
+- `jobs/nonneg_alt_summary.sbatch FIT=<fit/final> OUT=<summary.txt>` (`nonneg_alt_summary.py`) computes:
+  - the data cost and the penalties, the termination, nfev;
+  - rms ln NG/RG overall / before the gap / late window;
+  - the parameters at bounds;
+  - Q_H2O at 10:33:10;
+  - the active seen area (A > 1 % of the srcCG median A_orig of the seen facets);
+  - the seen area holding 50 % / 90 % of the seen production;
+  - the NG/RG shares from the active area (the fitted forward model term by term, FP32 records as in the fit).
+
+**GPU tests (gpu002):**
+
+| test | start cost vs independent | Jacobian check (worst) | time per evaluation | A > 0 |
+|---|---|---|---|---|
+| sos r 3 (124998) | 3.370346689911884e+01, rel 0.0 | 18 columns, 4.7e-7 | fun 0.38 s, jac 2.03 s | all seen facets |
+| background 1e-2 (124999) | 1.409815714818658e-01, rel 0.0 | 14 columns, 1.9e-5 | fun 0.29 s, jac 1.17 s | 0.9935 of the seen facets |
+| logspread f 1, start uniform (125028) | 2.557169268575762e-01, rel 0.0 | 13 columns, 7.7e-8 | fun 0.32 s, jac 0.63 s | 0.9916 of the seen facets |
+
+- The background worst case (1.9e-5, in the harmonics) is the finite-difference crossing of the softplus kink, as in
+  the softplus tests (3.5e-5).
+- The D uniform start: s = 1.5503152609e-01 (ln s = −1.8641; the fit-weighted alternative would give 1.586e-01).
+  - rms d ln p against D2: NG 0.343, RG 0.616; before 10:33:10 0.464, late window 0.852.
+  - Linearity check: 4.4e-15.
+- After 5 evaluations: data cost 0.070869, penalty 0.001526 = f C_ref Var_w(u) with Var_w(u) = 0.3575 (rms spread 0.598
+  neper). fit_cops' `cost` = data + spread penalty (0.072395); the crossing penalty is reported apart.
+- Per-fit time estimates (gpu002, 4000 evaluations, about 0.91 Jacobians per evaluation as in the softplus fit, plus
+  about 10 min of binding and checks):
+  - B: about 1.8 h;
+  - A: about 2.8 h;
+  - D: about 1.2 h.
+
+**CPU tests:** `jobs/nonneg_cpu.sbatch`, 41 of 41 passed. They cover:
+- softplus/squared bitwise against the previous snapshot;
+- each new model's full Jacobian against FD;
+- the independent start activity and A ≥ 0;
+- the D penalty against an independent f C_ref Var_w(u), and the uniform start;
+- fine-tuning checks 1-8, and cycle 2 starting at the fine-tuning cost;
+- the sos LM refinement.
+
+**Code:**
+- modules: `nonneg_alt.py` (new), `nonneg_alt_summary.py` (new), and `nonneg_mult.py`, `nonneg_problem.py`,
+  `nonneg_finetune.py`, `nonneg_start.py` and `test_nonneg.py` (extended);
+- snapshots:
+  - `model_ext_frozen/nonneg_20261114T084032Z`: the stage-1 fits B and A;
+  - `model_ext_frozen/nonneg_20261114T085147Z`: the stage-1 fits D (= 084032Z plus a text fix in NONNEG_MODEL.txt;
+    CPU 41 of 41, job 125065);
+  - `model_ext_frozen/nonneg_summary_20261114T090853Z`: the summaries (`nonneg_summary_20261114T084417Z` was its test).
+
+**Stage-1 runs (submitted 2026-11-14, `jobs/nonneg_alt_stage1.sh`; `runs/shap8_012m_lategrid_dz1.5/nonneg/`):**
+
+| run root | fit attempts, guard, summary |
+|---|---|
+| `background/stage1_bg1e-3_20261114T084711Z` | 125032-125034, 125035, 125093 |
+| `background/stage1_bg1e-2_20261114T084711Z` | 125037-125039, 125040, 125094 |
+| `background/stage1_bg1e-1_20261114T084711Z` | 125042-125044, 125045, 125095 |
+| `sos/stage1_r3_20261114T091354Z` (LM start; replaces the Gram-start root `stage1_r3_20261114T084711Z`, moved aside before it ran) | 125101-125103, 125104, 125105 |
+| `logspread/stage1_f0.1_20261114T090251Z` | 125072-125074, 125075, 125097 |
+| `logspread/stage1_f1_20261114T090251Z` | 125077-125079, 125080, 125098 |
+| `logspread/stage1_f10_20261114T090251Z` | 125082-125084, 125085, 125099 |
+
+Each root has README.md, HOW-TO-RERUN.md (the exact commands) and, when the fit is complete, summary.txt.
+
+**Stage-1 convergence diagnosis (2026-11-14 ~16:20-17:20 CST, `checks/stage1_diag_20261114/stage1_diag.py`).** The
+check runs on CPU from each fit's products. It reproduces the fit exactly: activity bitwise, data cost to 1e-15,
+Jacobian singular values to 1e-9. It then computes the gradient scaled by the Jacobian column norms, the
+bound-constrained Gauss-Newton (GN) step, and the actual objective along that step and along steepest descent:
+- D f = 1 and f = 10 are genuine minima of data + penalty: scaled gradient about 2e-7, GN-predicted remaining decrease
+  1e-10 relative. Their early ftol stops are real.
+- D f = 0.1 is a scaling artefact on top of a model degeneracy:
+  - the multiplier Jacobian columns shrank 1.2e3 to 1.8e3 times since the start, and scipy's x_scale='jac' keeps the
+    largest column norm seen, so the trust region along the multipliers froze;
+  - Var_w(u) does not see the uniform level a00, which trades against the free multipliers (6180 and 20637).
+- B (all three) and A did not converge at max_nfev:
+  - descent is still available only in small steps (B 1e-3 to 1e-2 of the GN step; A has scaled gradient 2.3e-2 and
+    lost 3.2 % of its cost over the last 100 evaluations);
+  - in B the softplus is active on only 2.6 to 5 % of the seen area.
+
+**Continuation (`--start restart`, user 2026-11-14 ~17:30 CST).** A new fit starts from a COMPLETE fit of the same
+model (sos, background, logspread):
+- every parameter is taken by name, in exact optimizer coordinates, from its `fit_restart.npz` (grain included), with
+  no held term;
+- a new scipy least_squares call rebuilds the x_scale='jac' scale from the Jacobian at that point;
+- the model settings must equal the source's (marker, s_ratio, bins, templates, sos_rank, bg_min, spread_f,
+  spread_cref, multiplier lower bound, parameter names); otherwise the fit is refused. The spread centre may differ;
+- the start check compares the start with the source's final cost (equal data cost).
+
+I did not implement `--scale-reset N` (restarting least_squares every N evaluations inside one job). One restart per
+continuation rebuilds the scale. A further continuation does it again if the multipliers keep growing.
+
+CLI: `--start restart --start-restart <fit>/final/fit_restart.npz`. Job variable: `START=restart` with `START_RESTART`
+(required).
+
+**D penalty about a fixed level (`--spread-u0 U`, user 2026-11-14):**
+- definition: P = f · C_ref · Σ_seen w_e (u_e − u0)² = f · C_ref · [Var_w(u) + (ū − u0)²];
+- implementation: one more residual row √(2 f C_ref)·(ū − u0), with ū = Σ_seen w y_e · b (26 rows in total);
+- default, option absent: the mean-centred penalty, unchanged (bitwise against `nonneg_20261114T085147Z`);
+- value used: u0 = −1.864126788612443, the stage-1 uniform start level ln s (`model_check.alternative.uniform_start`);
+- records: `model_check.alternative.spread` holds u0, the centre, Var_w(u), ū, (ū − u0)² and both penalty parts, at the
+  start and at the final state. NONNEG_MODEL.txt and summary.txt report them apart from the data cost;
+- job variable: `SPREAD_U0`.
+
+**Launcher:** `jobs/nonneg_alt_stage1c.sh --model-ext <snapshot> --utc <UTC> --from ROOT[,...] [--spread-u0 U]
+[--submit]`.
+- It reads the model settings from each source fit and adds 4000 evaluations.
+- Queue mechanics are as in stage 1: 3 attempts, guard, summary.
+- Run roots are `nonneg/<model>/stage1c_<setting>_<UTC>/`; their README.md and HOW-TO-RERUN.md say "continuation of
+  <source root>".
+
+**Tests:**
+- CPU (`jobs/nonneg_cpu.sbatch`, 48 of 48 passed):
+  - the restart start of each model starts at the source's final data cost and x (bitwise);
+  - the u0 penalty at the start and at the end matches an independent f C_ref Σ w (u − u0)²;
+  - refusals: another model's restart, `--spread-u0` with another model, restart without a source;
+  - the new options absent for sos, background and logspread are bitwise equal to the stage-1 snapshot.
+- GPU: `jobs/nonneg_restart_test.sbatch` (job 125365; results below).
+
+**Snapshots:** `model_ext_frozen/nonneg_20261115T020314Z` (code) and `model_ext_frozen/nonneg_summary_20261115T020314Z`
+(summary).
+
+**GPU test (job 125365, gpu002):** all three PASS. In each case the start data cost equals the source's final data
+cost (rel ≤ 2.2e-16) and x_start equals the source x:
+
+| test | start data cost | Jacobian check, worst column |
+|---|---|---|
+| background bg1e-2 | 5.378360708129928e-03 | 4.1e-4 |
+| logspread f0.1 + u0 | 7.420894283555133e-03 | 1.6e-4 |
+| sos r3 | 1.618620951583266e-02 | 6.8e-8 |
+
+- background: the 4.1e-4 is the softplus kink, as in the stage-1 tests.
+- logspread: the 1.6e-4 is in multiplier columns at their bound whose bins carry e^-9.7 of the activity
+  (finite-difference noise).
+- logspread start: Var_w(u) = 3.597 (= the source's final), ū = −9.70, so (ū − u0)² = 61.3. The level penalty is
+  0.0262 of the start penalty 0.0277: the stage-1 f0.1 end point had lowered the uniform level by 7.8 neper and
+  compensated with the multipliers.
+
+**Stage-1 continuations (submitted 2026-11-15T02:34Z = 2026-11-14 20:34 CST, `jobs/nonneg_alt_stage1c.sh`,
+snapshot `nonneg_20261115T020314Z`, +4000 evaluations each; D with u0 = −1.864126788612443; in this order on any
+GPU node but gpu003):**
+
+| run root (`runs/shap8_012m_lategrid_dz1.5/nonneg/`) | continuation of | fit attempts, guard, summary |
+|---|---|---|
+| `background/stage1c_bg1e-2_20261115T023450Z` | `background/stage1_bg1e-2_20261114T084711Z` | 125950-125952, 125953, 125954 |
+| `background/stage1c_bg1e-3_20261115T023450Z` | `background/stage1_bg1e-3_20261114T084711Z` | 125955-125957, 125958, 125959 |
+| `logspread/stage1c_f0.1_20261115T023450Z` | `logspread/stage1_f0.1_20261114T090251Z` | 125960-125962, 125963, 125964 |
+| `logspread/stage1c_f1_20261115T023450Z` | `logspread/stage1_f1_20261114T090251Z` | 125965-125967, 125968, 125969 |
+| `logspread/stage1c_f10_20261115T023450Z` | `logspread/stage1_f10_20261114T090251Z` | 125970-125972, 125973, 125974 |
+| `sos/stage1c_r3_20261115T023450Z` | `sos/stage1_r3_20261114T091354Z` | 125975-125977, 125978, 125979 |
+| `background/stage1c_bg1e-1_20261115T023450Z` | `background/stage1_bg1e-1_20261114T084711Z` | 125980-125982, 125983, 125984 |
 
 ## Running on another machine
 

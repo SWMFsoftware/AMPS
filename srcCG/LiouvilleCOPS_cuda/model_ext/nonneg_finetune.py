@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-11, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/nonneg_finetune.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/nonneg_finetune.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: d2ae6c3f6b99c5860ca519ce7ff9e54a8f70371a2880fd91650139a4ca9863f7
+# SHA256 of the run copy = SHA256 of this file without these header lines: d1bdaff0778e669658e22bd6dbd5dde97d89c782c35b2f25e5deb54897c435ba
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: tool. Late-facet fine tuning of a softplus / squared fit (user decisions 2026-11-11): A_e = A_fit,e exp(delta_e)
 #   on the late_only facets (5 min) with A_fit > 0, NO lower bound, no cap, grain refitted, the fit's full objective; G
 #   = dp/dA once on the GPU; validation checks 1-8 (slope_finetune v8 steps); BACKEND_PROVIDER for the one-job chain.
 # USED BY: jobs/nonneg_finetune.sbatch (tests 124132, 124133, 124140, 124142, 124145, 124147) and chain_onejob.py --kind
 #   nonneg (production 124162, 124165).
+# 2026-11-14: fine tuning of the options A, B, D (extra parameters from the restart, A = m q exp(h + delta)).
 # ==== end of header ====
 """Late-facet fine tuning of a non-negative activity fit (softplus / squared harmonics with slope multipliers; user
 decisions 2026-11-11, handoff.md section 10). Adapted from slope_finetune.py (v8: pressure-sized validation steps).
@@ -61,7 +62,9 @@ import positive_finetune as pf      # Rows, Objective, Jacobian, Tracker, optimi
 import nonneg_mult as nm
 
 PARAMETERIZATION_ID = "nonneg_late_finetune_v1"
-FIT_PREFIXES = ("nonneg_softplus_slope_multiplier_w10x5", "nonneg_squared_slope_multiplier_w10x5")
+FIT_PREFIXES = ("nonneg_softplus_slope_multiplier_w10x5", "nonneg_squared_slope_multiplier_w10x5",
+                "nonneg_sos_slope_multiplier_w10x5", "nonneg_background_slope_multiplier_w10x5",
+                "nonneg_logspread_slope_multiplier_w10x5")
 BACKEND_PROVIDER = None     # one-job chain: callable(ctx, devices) -> the bound backend (None: bind here)
 POLICY = ("user 2026-11-11: fine tuning per facet exp(delta) on the late_only facets (WINDOW_MIN 5), NO lower bound, no "
           "cap, lambda 0, MAXNFEV 500, grain refitted, the fit's full objective; A_e -> m_b q_e exp(h_e + delta_e); the "
@@ -218,6 +221,7 @@ class NonnegFitContext:
             self.bins = np.asarray(z["bin"])
             self.seen_fit = np.asarray(z["seen"], bool)
             self.held_prev = np.asarray(z["held"], float) if "held" in z.files else np.zeros(self.nf)
+            self.P_fit = np.asarray(z["P"], float) if "P" in z.files else None
         hs = (self.held_record or {}).get("sha256")
         if hs is not None and nm.sha256_bytes(self.held_prev) != hs:
             raise SystemExit("the facets npz held term differs from the fit's held term record")
@@ -231,9 +235,13 @@ class NonnegFitContext:
         gh = np.exp(self.held_prev) if hs is not None else None
         mrow = np.asarray(self.b[:nb], float)[self.bins.astype(np.intp)]
         A_chk = np.empty(self.nf)
-        elementwise(lambda i0, i1: nm.fields(self.model_cfg["model"], self.u_fit[i0:i1], self.TS_fit[i0:i1],
-                                             swidth[i0:i1], mrow[i0:i1], None if gh is None else gh[i0:i1],
-                                             self.escale, False)[0], self.nf, A_chk, pool)
+        if self.model_cfg["model"] in nm.NEW_MODELS:      # A = m q exp(h) = m P (the fields' last operation)
+            P_ = self.P_fit
+            elementwise(lambda i0, i1: mrow[i0:i1] * P_[i0:i1], self.nf, A_chk, pool)
+        else:
+            elementwise(lambda i0, i1: nm.fields(self.model_cfg["model"], self.u_fit[i0:i1], self.TS_fit[i0:i1],
+                                                 swidth[i0:i1], mrow[i0:i1], None if gh is None else gh[i0:i1],
+                                                 self.escale, False)[0], self.nf, A_chk, pool)
         if not np.array_equal(A_chk, self.A_fit):
             raise SystemExit("the fit's activity cannot be reproduced from its facets npz (u, TS, m, s, held)")
         self.active_fit = self.A_fit > 0.0
@@ -337,6 +345,12 @@ class GpuModelEngine:
         nm.set_stage_held(held["path"] if held else None, (held or {}).get("key", "held_next"), ctx.nf,
                           expect_sha256=(held or {}).get("sha256"))
         nm.set_override(None)
+        nm.set_col_mode(0)
+        if ctx.model_cfg["model"] in nm.NEW_MODELS:        # the fit's extra parameters (sos L columns, A_bg)
+            import nonneg_alt
+            nm.set_extra(nonneg_alt.extra_from_restart(ctx.model_cfg, ctx.names, ctx.x, float(ctx.meta["ascale"])))
+        else:
+            nm.set_extra({})
         if l_threads:
             nm.set_L_threads(int(l_threads), l_mode)
         if backend is None and BACKEND_PROVIDER is not None:

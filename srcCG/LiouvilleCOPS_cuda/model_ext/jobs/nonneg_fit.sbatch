@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/nonneg_fit.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/nonneg_fit.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 9584c5cae6f97b906c35616730678684a45ab0fa88b830f63aacda21a7ae7119
+# SHA256 of the run copy = SHA256 of this file without these header lines: e5b7f724a388badfcd35fe8c2627bb2d2fd1b07a35f9c5eb74e29ac81ab04293
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job. Softplus / squared fit on the lategrid base (user decisions 2026-11-11): MODEL required, START d2 | lsq |
 #   chain, START_FILE, FT_FROM, HELD, GRAIN_FROM, NFEV 4000, CHECK, L_THREADS, MODEL_EXT, TESTMODE; everything else as
@@ -10,6 +10,8 @@
 #   124130-124133 inside nonneg_test.sbatch; split tests 124139, 124141, 124144, 124146; the production stages run its
 #   logic inside chain_onejob.py)
 # 2026-11-13: SLOPE_MULT_MIN (softplus; user 2026-11-12: multipliers >= 1) -> --slope-mult-min; GPU test 124659.
+# 2026-11-14: MODEL=sos|background|logspread, SOS_RANK, BG_MIN, SPREAD_F, SPREAD_CREF; START gram / uniform.
+# 2026-11-14: MODEL=sos|background|logspread, SOS_RANK, BG_MIN, SPREAD_F, SPREAD_CREF; START gram / uniform.
 # ==== end of header ====
 # Non-negative H2O activity fit on the lategrid base (user decisions 2026-11-11, handoff.md section 10; model_ext/
 # nonneg_mult.py, nonneg_problem.py, driver nonneg_fit.py; adapted from jobs/slope_mult_fit.sbatch):
@@ -29,7 +31,17 @@
 #   HELD, GRAIN_FROM  START=chain: the previous fine tuning's finetune_state.npz (held_next; grain A, B)
 #   NFEV (default 4000), CHECK (1: segment 1 runs the full Jacobian check, default 1), CHECKPARAMS (':'-separated)
 #   L_THREADS     N: every 12.4M-facet host step of the fitter with N chunked threads (bitwise; nonneg_fit.py --l-threads)
-#   SLOPE_MULT_MIN  softplus only (user 2026-11-12): lower bound of the six free multipliers (nonneg_fit.py
+#   MODEL=sos | background | logspread (options A, B, D of 2026-11-14; nonneg_alt.py):
+#     SOS_RANK      sos: the rank r of L (--sos-rank; required); START gram (default; START_FILE default
+#                   runs/.../nonneg/bundle/sos_start_r<r>.npz, nonneg_start.py --model sos) | chain
+#     BG_MIN        background: the lower bound and start of A_bg (--bg-min; required); START d2 (default) | chain
+#     SPREAD_F, SPREAD_CREF  logspread: penalty f C_ref Var_w(u) (--spread-f, --spread-cref; both required; user
+#                   2026-11-14: C_ref 4.2688066575e-03, f 0.1 | 1 | 10); START uniform (default) | chain
+#     SPREAD_U0     logspread, optional (user 2026-11-14): spread about the fixed level u0 (--spread-u0): P = f C_ref
+#                   [Var_w(u) + (u_bar - u0)^2]; absent: about the mean (Var_w(u)), as before
+#     START=restart (sos, background, logspread; user 2026-11-14): continue a complete fit of the same model from its
+#                   fit_restart.npz (START_RESTART required; every parameter by name; no held term; new optimizer scale)
+#   SLOPE_MULT_MIN  softplus and the options A, B, D (user 2026-11-12): lower bound of the six free multipliers (nonneg_fit.py
 #                 --slope-mult-min; the decision: 1); unset: the fitter's lower bound 0 (unchanged). A resume and a chain
 #                 start must use the same value (the restart marker records it)
 #   FITDIR        product directory (default runs/.../nonneg/<MODEL>/fit); TESTNAME: runs/.../nonneg_tests/<TESTNAME>
@@ -63,11 +75,19 @@ UNSET=$(env | grep -o -E '^(COPS_POS_[A-Z_]*|COPS_SLOPEMUL_[A-Z_]*|COPS_NONNEG_[
 [ -n "$UNSET" ] && unset $UNSET
 NFEV=${NFEV:-4000}; CHECK=${CHECK:-1}; CHECKPARAMS=${CHECKPARAMS:-}; TESTNAME=${TESTNAME:-}; TESTMODE=${TESTMODE:-}
 CHAIN=${CHAIN:-0}; MODEL=${MODEL:-}; L_THREADS=${L_THREADS:-}; SLOPE_MULT_MIN=${SLOPE_MULT_MIN:-}
+SOS_RANK=${SOS_RANK:-}; BG_MIN=${BG_MIN:-}; SPREAD_F=${SPREAD_F:-}; SPREAD_CREF=${SPREAD_CREF:-}; SPREAD_U0=${SPREAD_U0:-}
 HELD=${HELD:-}; GRAIN_FROM=${GRAIN_FROM:-}; FITDIR=${FITDIR:-}
-case $MODEL in softplus) START=${START:-d2};; squared) START=${START:-lsq};; *) echo "MODEL must be softplus or squared" >&2; exit 2;; esac
+case $MODEL in softplus) START=${START:-d2};; squared) START=${START:-lsq};;
+    sos) START=${START:-gram}; [ -n "$SOS_RANK" ] || { echo "MODEL=sos needs SOS_RANK" >&2; exit 2; };;
+    background) START=${START:-d2}; [ -n "$BG_MIN" ] || { echo "MODEL=background needs BG_MIN" >&2; exit 2; };;
+    logspread) START=${START:-uniform}; [ -n "$SPREAD_F" ] && [ -n "$SPREAD_CREF" ] || { echo "MODEL=logspread needs SPREAD_F and SPREAD_CREF" >&2; exit 2; };;
+    *) echo "MODEL must be softplus, squared, sos, background or logspread" >&2; exit 2;; esac
 [ -n "$HELD" ] && HELD=$(readlink -f "$HELD"); [ -n "$GRAIN_FROM" ] && GRAIN_FROM=$(readlink -f "$GRAIN_FROM")
-case $MODEL:$START in softplus:d2|softplus:chain|squared:lsq|squared:chain) ;; *) echo "START=$START is not a start of $MODEL" >&2; exit 2;; esac
+case $MODEL:$START in softplus:d2|softplus:chain|squared:lsq|squared:chain|sos:gram|sos:chain|background:d2|background:chain|logspread:uniform|logspread:chain|sos:restart|background:restart|logspread:restart) ;;
+    *) echo "START=$START is not a start of $MODEL" >&2; exit 2;; esac
 if [ "$START" = chain ] && { [ -z "$HELD" ] || [ -z "$GRAIN_FROM" ]; }; then echo "START=chain needs HELD and GRAIN_FROM" >&2; exit 2; fi
+if [ "$START" = restart ] && [ -z "${START_RESTART:-}" ]; then echo "START=restart needs START_RESTART (the fit to continue)" >&2; exit 2; fi
+[ -n "$SPREAD_U0" ] && [ "$MODEL" != logspread ] && { echo "SPREAD_U0 belongs to MODEL=logspread" >&2; exit 2; }
 BOPT=(); [ -n "$L_THREADS" ] && BOPT=(--l-threads "$L_THREADS" --l-mode chunked)
 export MODEL_EXT=$(readlink -f "${MODEL_EXT:-$COPS_OUTPUT_ROOT/model_ext}")
 R=$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5
@@ -75,7 +95,8 @@ X=$MODEL_EXT; PY="$APP/.venv/bin/python -W ignore"
 BASE=$R/base; PTS=$R/late_grid_points.txt
 BUNDLE=$(readlink -f "${BUNDLE:-$R/slope_mult/bundle/slope_bins.npz}")
 FT_FROM=$(readlink -f "${FT_FROM:-$R/clip_refit/D2/final/fit_manifest.json}")
-START_FILE=$(readlink -f "${START_FILE:-$R/nonneg/bundle/squared_start.npz}")
+if [ "$MODEL" = sos ]; then START_FILE=$(readlink -f "${START_FILE:-$R/nonneg/bundle/sos_start_r${SOS_RANK}.npz}")
+else START_FILE=$(readlink -f "${START_FILE:-$R/nonneg/bundle/squared_start.npz}"); fi
 START_RESTART=$(readlink -f "${START_RESTART:-$R/clip_refit/D2/final/fit_restart.npz}")
 FIX=(--fix Tmax=182.09922 --fix T75=136.11149 --fix Tmin=133.0 --fix c_slope_00_40=1)
 case $TESTMODE in
@@ -89,14 +110,18 @@ if [ -n "$TESTNAME" ]; then NAME=nonneg_test_$TESTNAME; D=$R/nonneg_tests/$TESTN
 elif [ -n "$FITDIR" ]; then D=$(readlink -m "$FITDIR"); NAME=nonneg_fit_$(basename "$(dirname "$D")")_$(basename "$D")
 else NAME=nonneg_${MODEL}_fit; D=$R/nonneg/$MODEL/fit; fi
 MOPT=(--model "$MODEL" --ft-templates-from "$FT_FROM"); [ -n "$HELD" ] && MOPT+=(--held "$HELD")
-[ "$START" = lsq ] && MOPT+=(--start-file "$START_FILE")
+{ [ "$START" = lsq ] || [ "$START" = gram ]; } && MOPT+=(--start-file "$START_FILE")
 [ -n "$SLOPE_MULT_MIN" ] && MOPT+=(--slope-mult-min "$SLOPE_MULT_MIN")
+[ -n "$SOS_RANK" ] && MOPT+=(--sos-rank "$SOS_RANK"); [ -n "$BG_MIN" ] && MOPT+=(--bg-min "$BG_MIN")
+[ -n "$SPREAD_F" ] && MOPT+=(--spread-f "$SPREAD_F"); [ -n "$SPREAD_CREF" ] && MOPT+=(--spread-cref "$SPREAD_CREF")
+[ -n "$SPREAD_U0" ] && MOPT+=(--spread-u0 "$SPREAD_U0")
 P=$D/provenance-$SLURM_JOB_ID
 FILES=(nonneg_fit.py nonneg_mult.py nonneg_problem.py nonneg_start.py nonneg_finetune.py test_nonneg.py
        slope_mult.py slope_mult_problem.py test_slope_mult.py positive_finetune.py clip_problem.py clip_refit.py
        grain_fit_fixed.py fixed_parameters.py grain_fit.py grain_crossing.py positive_problem.py late_response_eval.py
        test_clip_refit.py test_positive_fit.py)
-LSQ_FILE=(); [ "$START" = lsq ] && LSQ_FILE=("$START_FILE")
+[ -f "$X/nonneg_alt.py" ] && FILES+=(nonneg_alt.py)      # options A, B, D (snapshots from 2026-11-14 on)
+LSQ_FILE=(); { [ "$START" = lsq ] || [ "$START" = gram ]; } && LSQ_FILE=("$START_FILE")
 for f in "$BASE/COPS_model.dat" "$BASE/elements.bin" "$BASE/kernels" "$PTS" "$START_RESTART" "$BUNDLE" "$FT_FROM" "${LSQ_FILE[@]}" \
          ${HELD:+"$HELD"} ${GRAIN_FROM:+"$GRAIN_FROM"} \
          $(printf "$X/%s\n" "${FILES[@]}"); do
@@ -186,7 +211,7 @@ nvidia-smi -q > "$P/nvidia_smi_q.txt" 2>&1
 nvidia-smi -L > "$P/nvidia_smi_L.txt" 2>&1
 { nvcc --version; gcc --version | head -1; grep -m1 CSPICE /home/vtenishev/SPICE/cspice/doc/version.txt; } > "$P/toolchain.txt" 2>&1
 ~/.local/bin/uv pip list --python "$APP/.venv/bin/python" > "$P/pip_list.txt" 2>&1
-env | grep -E '^(CUDA_[A-Z_]*|CUPY_[A-Z_]*|COPS_[A-Z_]*|NFEV|CHECK|CHECKPARAMS|TESTNAME|TESTMODE|MODEL|START|START_RESTART|START_FILE|FT_FROM|L_THREADS|SLOPE_MULT_MIN|HELD|GRAIN_FROM|FITDIR|BUNDLE|CHAIN|MODEL_EXT|OMP_[A-Z_]*|OPENBLAS_[A-Z_]*|MKL_[A-Z_]*|PYTHONUNBUFFERED|LD_LIBRARY_PATH|PATH|SLURM_JOB_GPUS|SLURM_JOB_NODELIST|SLURM_JOB_NUM_NODES|CUDA_VISIBLE_DEVICES)=' | sort > "$P/environment.txt"
+env | grep -E '^(CUDA_[A-Z_]*|CUPY_[A-Z_]*|COPS_[A-Z_]*|NFEV|CHECK|CHECKPARAMS|TESTNAME|TESTMODE|MODEL|START|START_RESTART|START_FILE|FT_FROM|L_THREADS|SLOPE_MULT_MIN|SOS_RANK|BG_MIN|SPREAD_F|SPREAD_CREF|SPREAD_U0|HELD|GRAIN_FROM|FITDIR|BUNDLE|CHAIN|MODEL_EXT|OMP_[A-Z_]*|OPENBLAS_[A-Z_]*|MKL_[A-Z_]*|PYTHONUNBUFFERED|LD_LIBRARY_PATH|PATH|SLURM_JOB_GPUS|SLURM_JOB_NODELIST|SLURM_JOB_NUM_NODES|CUDA_VISIBLE_DEVICES)=' | sort > "$P/environment.txt"
 # commands.sh: every command of this job with all arguments resolved, runnable as is (HOW-TO-RERUN.md)
 { echo '#!/bin/bash'; echo "# job $SLURM_JOB_ID on $(hostname), $(date -u +%FT%TZ); AMPS $(git -C "$AMPS" rev-parse HEAD)"
   grep '^export ' "$0"; echo "cd $APP"; } > "$P/commands.sh"
@@ -195,7 +220,7 @@ free -g > "$P/free_at_start.txt"; df -h "$R" > "$P/df_at_start.txt" 2>&1
 { echo "fit $NAME, model $MODEL, directory $D; start $START; start restart (segment 1) $START_RESTART; slope bundle $BUNDLE"
   echo "ft templates from $FT_FROM; start file ${LSQ_FILE[*]:-none}; held ${HELD:-none}; grain from (segment 1) ${GRAIN_FROM:-the start restart}"
   echo "host steps of the fitter process: ${L_THREADS:-1} thread(s) (chunked, bitwise); OPENBLAS_NUM_THREADS=$OPENBLAS_NUM_THREADS"
-  echo "multiplier lower bound: ${SLOPE_MULT_MIN:-0 (the fitter default, unchanged)}"
+  echo "multiplier lower bound: ${SLOPE_MULT_MIN:-0 (the fitter default, unchanged)}; sos rank ${SOS_RANK:--}; bg_min ${BG_MIN:--}; spread f ${SPREAD_F:--}, C_ref ${SPREAD_CREF:--}, u0 ${SPREAD_U0:--}"
   echo "model_ext copied and run: $X (MODEL_EXT); test mode: ${TESTMODE:-none}"
   echo "node $(hostname) (SLURM_JOB_NODELIST ${SLURM_JOB_NODELIST:-?}, nodes ${SLURM_JOB_NUM_NODES:-1}); transport local"
   [ -n "$UNSET" ] && echo "unset (inherited from the submitting shell): $UNSET"

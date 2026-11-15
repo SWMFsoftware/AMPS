@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==== version-controlled copy: header added 2026-11-11, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/nonneg_finetune.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/nonneg_finetune.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 862176d6a93678eee283d0e2c5d09ac3dd4880140345e8661d978462c0b42805
+# SHA256 of the run copy = SHA256 of this file without these header lines: a442d9f4748806783e9c26e16af26730fe9e0f031e7091500fe67c5081ea3e04
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job. Late-facet fine tuning of a softplus / squared fit (model_ext/nonneg_finetune.py; user decisions
 #   2026-11-11): FACETS=late_only WINDOW_MIN=5, NO lower bound, grain refitted, MAXNFEV 500, L_THREADS, VALIDATE (checks
@@ -9,6 +9,7 @@
 # RUN: sbatch --export=ALL,FIT=<fit>/final,OUT=<dir>,FACETS=late_only,WINDOW_MIN=5,L_THREADS=32,MODEL_EXT=<snapshot>
 #   nonneg_finetune.sbatch   (tests 124132, 124133 inside nonneg_test.sbatch; split tests 124140, 124142, 124145,
 #   124147; the production stages run its logic inside chain_onejob.py)
+# 2026-11-14: copies nonneg_alt.py when the snapshot has it.
 # ==== end of header ====
 # Late-facet fine tuning of a non-negative activity fit (softplus / squared harmonics with slope multipliers;
 # model_ext/nonneg_finetune.py; user decisions 2026-11-11): FACETS=late_only WINDOW_MIN=5, A_e -> m_b q_e exp(h_e +
@@ -60,6 +61,7 @@ export MODEL_EXT=$(readlink -f "${MODEL_EXT:-$COPS_OUTPUT_ROOT/model_ext}")
 X=$MODEL_EXT; PY="$APP/.venv/bin/python -W ignore"
 MODFILES=(nonneg_finetune.py nonneg_mult.py nonneg_problem.py slope_mult.py positive_finetune.py positive_problem.py
           grain_crossing.py clip_problem.py test_nonneg.py)
+[ -f "$X/nonneg_alt.py" ] && MODFILES+=(nonneg_alt.py)      # options A, B, D (snapshots from 2026-11-14 on)
 PRODUCTS=(finetune_state.npz finetune_result.txt COPS_model.dat late_window_model.dat pressure_comparison.txt
           fine_tuning.json validation.json)
 [ -n "${FIT:-}" ] || { echo "set FIT" >&2; exit 2; }

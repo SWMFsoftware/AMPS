@@ -10,6 +10,71 @@ relative to `COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output` unless absolut
 
 ## A. Findings
 
+### A13. Forcing more of the seen surface to be active costs fit quality; the best fit (local basis) concentrates production on steep facets (2026-11-15, stage 1)
+
+* Four non-negative activity parameterizations, all with the 7 slope-bin multipliers (0-40 held 1, six >= 1), D2's
+  ft templates (sum >= 0 on 265 facets) and D2's setup, stage-1 single fits from D2 (B/A/D continued once from their
+  end points with the optimizer scale rebuilt; D with the fixed-level spread penalty). Data cost vs the active seen-area
+  fraction (A > 1 % of the srcCG median of the seen facets):
+
+  | model | data cost | vs softplus c9 | active seen area | converged |
+  |---|---|---|---|---|
+  | C local hat basis 150 m, smoothness f = 1 | **2.689e-3** | −37 % | 12.5 % | max_nfev |
+  | C, f = 10 / f = 0.1 | 2.831e-3 / 2.833e-3 | −34 % | 20.1 / 13.6 % | max_nfev |
+  | C, f = 10 + multiplier penalty 0.01 | 3.266e-3 | −23 % | 24.5 % | ftol |
+  | softplus c9 (reference) | 4.269e-3 | — | 2.6 % | — |
+  | B background >= 1e-2 A_orig | 5.366e-3 | +26 % | 55 % | ftol |
+  | D log form, f = 0.1 (fixed level) | 8.390e-3 (+1.7e-3 penalty) | +97 % | 88 % | ftol |
+  | A sum of squares rank 3 | 1.271e-2 | ×3.0 | 96 % | max_nfev |
+  | B background >= 1e-1 | 6.617e-2 | ×15 | 88 % | max_nfev |
+
+* **The data allow a fit 37 % better than the softplus**, but only with a local basis, and that fit still makes 50 % of
+  the seen production on 0.06 % of the seen area (steep 60-90 deg facets, A12). Models that force activity over most of
+  the seen surface (B, D, A with 55-96 % active) fit 1.3-15x worse. So "more seen surface contributing" is not favoured
+  by the data under the present physics (production law with q_min = 0.2 q_max, original T law, gauge response without
+  spacecraft occlusion).
+* In the last ~100 m every new model is below the NG data (C −0.25, A −0.47 in ln) and above the last RG points; the
+  softplus c9 is better there because its 9 cycles include late-facet fine tuning (stage-1 fits have none).
+* Caveats: stage 1 only (no fine-tuning cycles); most fits not converged (max_nfev); multipliers not determined (A12).
+* Evidence: `figures_cluster/12M/model_vs_observations_nonneg_options_stage1_final/` (summary.txt/csv, figures,
+  activity maps), run roots under `runs/shap8_012m_lategrid_dz1.5/nonneg/{background,sos,logspread,localnn}/`,
+  `checks/stage1_diag_20261114/`.
+
+### A12. A local non-negative basis (option C) fits better than D2 and c9 and puts the activity on 60–90° facets; the multipliers' absolute values are not determined (2026-11-14, preliminary)
+
+* **Setup** (lead / user 2026-11-14): A = m_b (sum_j c_j phi_j + A_s sum ft_ck), c_j >= 0 on 2745 hat functions of a 150 m
+  coarse triangulation, the 7 slope-bin multipliers (0-40 deg held at 1, six >= 1), D2's templates held at 1, D2's data,
+  W10x5, grain and crossing; smoothness lambda_C x_c^T Lg x_c with lambda_C = f C_ref / R_pilot (f = 0.1, 1, 10; C_ref
+  = 4.2688e-3, R_pilot = 517.46 of a 200-evaluation pilot); start = the NNLS projection of D2; max_nfev 4000 (not
+  converged). f = 1 is still running (resubmitted after a node failure).
+* **Fit quality:** data cost f 0.1: 2.8331e-3, f 10: 2.8306e-3, i.e. -34 % vs the bounded softplus c9 (4.2688e-3) and
+  -42 % vs D2 (4.886e-3); rms ln NG / RG 0.0553 / 0.0510 and 0.0558 / 0.0505 (c9: 0.0690 / 0.0614); late window NG 0.123
+  / 0.121, RG 0.064 / 0.050. Already the 200-evaluation pilot reached 3.80e-3.
+* **More of the seen surface is active, but the production is more concentrated:** A > 1 % of the srcCG median on 13.6 %
+  (f 0.1) / 20.1 % (f 10) of the seen area (D2 5.3 %, c9 2.6 %); yet 50 % of the seen H2O production at 10:33:10 comes
+  from 0.05 % / 0.09 % of the seen area (D2 0.71 %, c9 < 0.01 %) and 90 % from 0.33 % / 0.66 %.
+* **Where:** the 60-90 deg bins give 92-94 % of the late NG and 86-90 % of the late RG model signal (whole descent:
+  NG 96-98 %, RG 95-97 %); mean activity on the seen facets relative to 0-40 deg: 60-70 deg 17 / 134, 70-80 deg 345 /
+  979, 80-90 deg 1067 / 2156 (f 0.1 / f 10); flat terrain is ~10-40x less active than in D2.
+* **Not determined:** the c-field is nearly the same on every bin at 150 m (it cannot follow the slope pattern), so the
+  multipliers alone make the steep / flat contrast (m 70-80 = 675 / 1608, m 80-90 = 2269 / 3617). No 150 m node is
+  dominated by a steep bin, but the global level of the c-field is free under the Laplacian penalty: lowering all c_j
+  and raising the six multipliers by the same factor changes the residual vector by only 2.3-4.3 % of the multiplier
+  step alone, and each multiplier is compensated by the c_j to 0.2-0.3 %. So the multipliers and the flat-terrain
+  activity level are weakly constrained (only by the 0-40 deg share of the signal, 4-6 % late NG, 9-13 % late RG); the
+  steep-facet activity is what the data fix.
+* **With the multiplier penalty** (user 2026-11-14 ~17:30 CST: P_m = 0.01 C_ref sum (ln m_b)^2; one continuation of
+  the f = 10 fit, job 125360, converged by ftol after 219 evaluations): data cost 3.2655e-3 (+15 % vs the f = 10 end
+  point, still -24 % vs c9), P_m 1.96e-3; the 60-70 and 80-90 deg multipliers drop to 1.01 / 1.003, 40-60 deg stay at
+  the bound 1, and only 70-80 deg keeps a large one (827; 90-180 deg 2.4): one steep bin then carries 86 % of the seen
+  production and 88 % / 80 % of the late NG / RG signal. So the data accept either several steep bins (no P_m) or
+  essentially one (with P_m) at a 15 % higher data cost; which steep bin carries the signal is not fixed by the data.
+* **Evidence:** `runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage1_anch_f{0.1,10}_*/analysis/report.txt`,
+  `analysis_degeneracy/degeneracy.txt`, `gpu_eval/gpu_check.json` (f 10: GPU standard evaluation = CPU to 1.2e-15 in
+  the cost); jobs 125107/125108, 125119/125120, pilot 125071; README.md "Option C".
+* **Caveats:** not converged (max_nfev); f = 1 pending; Q_H2O differences between the models are dominated by unseen
+  terrain (the smoothness extension), not by data.
+
 ### A11. Spacecraft occlusion of the gauges: none for RG, up to ~45 % of the modelled NG signal at the very end (2026-11-13)
 
 * The fit has no spacecraft occlusion (LiouvilleCOPS README §4.5: the NG shield table "is an instrument-response
@@ -312,8 +377,15 @@ Data cost (lower is better; all on the lategrid base with the gauge +1.5 m and t
 * Does Rosetta's own shadow (A7) change the late NG/RG? Not estimated (user 2026-11-13: movies only).
 * Spacecraft occlusion of NG in the last ~40 m (A11): where exactly is the NG (boom tip) relative to the bus, and
   should the fit block directions through the spacecraft?
+* Option C (A12): is the steep / flat activity contrast physical, or the only way a 150 m basis can make local sources?
+  The multipliers trade off with the global level of the c-field; a penalty on the level (or m held) would decide it.
 
 ## D. Change log of this file
+
+* 2026-11-15: A13 (stage-1 comparison of the four non-negative options: active area vs fit quality).
+* 2026-11-14 (20:50 CST): A12 update: the multiplier-penalty continuation (125360).
+* 2026-11-14 (16:40 CST): A12 (option C local basis: better fits, steep-facet activity, undetermined multipliers;
+  preliminary, f = 1 pending); C new question.
 
 * 2026-11-13 (late night): A11 (spacecraft occlusion: RG none, NG up to 45 % of the late signal at 5.5 m; shield
   part); C new question.
