@@ -707,6 +707,16 @@ auto lineIntersectsPlane = [EPS](const double* p1, const double* p2, double plan
   extern fCheckPointInsideDomain CheckPointInsideDomain;
   bool CheckPointInsideDomain_default(double *x,cTriangleFace* SurfaceTriangulation,int nSurfaceTriangulation,bool ParallelCheck,double EPS);
 
+  /* true when point x is in the computational domain, i.e. outside the closed
+   * surface SurfaceTriangulation.  This is the deterministic classification
+   * (fixed ray direction, no MPI, no ray-tracing module) that
+   * GetRemainedBlockVolume() applies to the parts of a cell that the surface
+   * does not cut; it searches the faces through the tree of an active
+   * cVolumeIntegrationAcceleration of the same surface and EPS, and tests
+   * every face otherwise.  The cell-measure initialization uses it to
+   * classify the blocks and cells that the surface does not cut. */
+  bool PointInComputationalDomain(double *x,cTriangleFace* SurfaceTriangulation,int nSurfaceTriangulation,double EPS);
+
   typedef void (*fInitRayTracingModule)();
   extern fInitRayTracingModule InitRayTracingModule;
   void InitRayTracingModule_default();
@@ -850,6 +860,24 @@ auto lineIntersectsPlane = [EPS](const double* p1, const double* p2, double plan
   };
 
   extern cAMRstack<cTriangleFaceDescriptor> BoundaryTriangleFaceDescriptor;
+
+  /* While an object of this class exists, the point classification of
+   * GetRemainedBlockVolume() against SurfaceTriangulation (with this EPS)
+   * searches its faces through a bounding-volume tree instead of testing every
+   * face.  The decisions are the same as those of the linear scan.  The
+   * surface must not change while the object exists; create it for the
+   * duration of one volume initialization (see InitCellMeasure()). */
+  class cVolumeIntegrationAcceleration {
+  public:
+    cVolumeIntegrationAcceleration(cTriangleFace* SurfaceTriangulation,int nSurfaceTriangulation,double EPS);
+    ~cVolumeIntegrationAcceleration();
+
+  private:
+    void *tree,*previous;
+
+    cVolumeIntegrationAcceleration(const cVolumeIntegrationAcceleration&);
+    cVolumeIntegrationAcceleration& operator=(const cVolumeIntegrationAcceleration&);
+  };
 
   double GetRemainedBlockVolume(double* xCellMin,double* xCellMax,double EPS,double RelativeError, cTriangleFace* SurfaceTriangulation,int nSurfaceTriangulation,cTriangleFaceDescriptor* TriangleCutFaceDescriptorList);
   //double GetRemainedBlockVolume(double* xCellMin,double* xCellMax,double EPS,double RelativeError, cTriangleFace* SurfaceTriangulation,int nSurfaceTriangulation,cTriangleFaceDescriptor* TriangleCutFaceDescriptorList,int maxIntegrationLevel,int IntegrationLevel);

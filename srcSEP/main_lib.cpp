@@ -181,8 +181,53 @@ int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &
 
 
 
+// Register the segment datums of the Alfven turbulence model before
+// PIC::FieldLine::Init() allocates the segment data.  This used to be done only
+// in the stand-alone main(): the SWMF-coupled library path (amps_init_mesh()
+// called from srcInterface) had no turbulence storage, and the first step
+// stopped with "integrated turbulence datum is absent" (and "Cannot access
+// G_plus/G_minus streaming arrays").  It runs once and after the run-time
+// options (CLI or SWMF PARAM.in) have set ActiveFlag and the spectral mode.
+static void RegisterTurbulenceSegmentDatums() {
+  static bool registered=false;
+  if (registered) return;
+  registered=true;
+
+  if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
+    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
+    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity);
+
+    // The wave-number-resolved model stores E+(k_j) and E-(k_j) in an
+    // additional hidden segment datum.  It is registered only when selected by
+    // the CLI to avoid increasing memory in legacy integrated-turbulence runs.
+    if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
+      PIC::FieldLine::cFieldLineSegment::AddDatumStored(
+          &SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::SpectralWaveEnergy);
+
+      // Hidden diagnostic datum used by the 2-D spectrum writer.  It stores the
+      // per-bin wave-energy exchange rates caused by cascade, particle coupling,
+      // and reflection during the current main-loop iteration.  It is registered
+      // only in wave-number-resolved mode to avoid extra memory in legacy runs.
+      PIC::FieldLine::cFieldLineSegment::AddDatumStored(
+          &SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::SpectralWaveEnergyExchangeRate);
+    }
+
+    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S);
+    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S_pm);
+
+
+    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming);
+    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::G_minus_streaming);
+    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::gamma_plus_array);
+    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::gamma_minus_array);
+
+  }
+}
+
 void amps_init_mesh() {
   PIC::InitMPI();
+
+  RegisterTurbulenceSegmentDatums();
 
   // The first file-driven workflow intentionally defines one Parker spiral.
   // Reject compile-time domain variants explicitly instead of accepting an
@@ -535,10 +580,10 @@ void amps_init_mesh() {
   if (PIC::Mesh::mesh->ThisThread==0) {
     PIC::Mesh::mesh->buildMesh();
     PIC::Mesh::mesh->saveMeshFile("mesh.msh");
-    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   }
   else {
-    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
     PIC::Mesh::mesh->readMeshFile("mesh.msh");
   }
 */
@@ -706,6 +751,14 @@ void amps_init() {
   // pointer is installed but unused, preserving the historical behavior.
   PIC::Mover::SetUserDefinedParticleMover(&SEP::Mover::DispatchProductionMover);
 
+  // Field-line sampling divides by the flux-tube volume of a segment through
+  // the hook PIC::FieldLine::SegmentVolume.  The standalone driver installs it
+  // in main.cpp; the SWMF-coupled library path (amps_init() called from
+  // srcInterface) never did, so the first sampled particle stopped the run
+  // with "hook SegmentVolume is not initialized".  Installing it here covers
+  // both drivers with the same function.
+  PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
+
 
   //set up the time step
   PIC::ParticleWeightTimeStep::LocalTimeStep=SEP::Mesh::localTimeStep;
@@ -804,7 +857,13 @@ void amps_init() {
               PIC::Mesh::mesh->InitCellMeasureBlock(startNode);
 
               if (cell->Measure==0.0) {
-                PIC::Mesh::mesh->CenterNodes.deleteElement(cell);
+                // A center node is shared by every block that has it in its ghost
+                // layer and is reference counted (DeallocateBlock() releases it).
+                // Deleting it here left dangling pointers in the neighbor blocks:
+                // after a load-balancing block move the recycled node reported
+                // 'the node's connections becomes negative'. Release only this
+                // block's reference; the node is freed with its last reference.
+                if (cell->decrementConnectionCounter()==0) PIC::Mesh::mesh->CenterNodes.deleteElement(cell);
                 startNode->block->SetCenterNode(NULL,LocalCellNumber);
                 continue;
               }
@@ -1041,14 +1100,15 @@ void amps_time_step(){
     //make the time advance
     static int LastDataOutputFileNumber=0;
 
-    //perform test after the first coupling with the SWMF
-    static bool TestCompleted=false;
-
     #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-    if ((TestCompleted==false)&&(AMPS2SWMF::MagneticFieldLineUpdate::FirstCouplingFlag==true)) {
-      TestCompleted=true;
-      TestManager();
-    }
+    // The development diagnostics TestManager() are not run here.  They used to
+    // run once after the first SWMF coupling; since the immutable background
+    // snapshots (2026-09-13, bb49886b) their movers stop the coupled run with
+    // "particle step requested before a background snapshot was published",
+    // because they move test particles outside the particle read phase that
+    // amps_time_step() opens below.  The standalone driver runs them only on
+    // request (--test-manager), and AGENTS.md requires that the SWMF-coupled
+    // library entry points do not run standalone tests automatically.
 
 
     //prepopulate the magnetic filed lines with particles if needed
@@ -1160,6 +1220,10 @@ start:
          run.populationControl.pitchBins,
          run.populationControl.minimumParticlesPerCell,
          run.populationControl.maximumParticlesPerCell);
+
+     // A split clone carries its parent's stable id (CloneParticle copies the
+     // whole record); give it its own id before the next particle step
+     SEP::Transport::PICAdapter::RekeyClonedParticles();
 
 
      // write output file

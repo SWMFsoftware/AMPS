@@ -249,8 +249,13 @@ CouplerMode=file(tecplot) !!off, ices, swmf
     n=60.0E6
 
 !----------------------------  Photolytic Reaction -------------------------------------------
+  ! The reaction processor must have the (ptr,FirstParticleCell,node) interface of
+  ! _PIC_PHOTOLYTIC_REACTIONS__REACTION_PROCESSOR_ and must agree with the 'define' above:
+  ! the two definitions are appended to picGlobal.dfn and Exosphere.dfn outside of their
+  ! include guards, so the one that is included last wins. Mercury::ExospherePhotoionizationReactionProcessor
+  ! has the old (xInit,xFinal,vFinal,ptr,spec,ParticleData,node) interface and does not compile.
   PhotolyticReactions=on \\ ! on, off
-    ReactionProcessor=Mercury::ExospherePhotoionizationReactionProcessor    \\
+    ReactionProcessor=Exosphere::ChemicalModel::PhotochemicalModelProcessor \\ !! Mercury::ExospherePhotoionizationReactionProcessor    \\
     LifeTime=Mercury::ExospherePhotoionizationLifeTime    
 
 

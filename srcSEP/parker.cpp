@@ -245,7 +245,13 @@ void SEP::ParkerSpiral::InitDomain(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* start
             PIC::Mesh::mesh->InitCellMeasureBlock(startNode);
 
             if (cell->Measure==0.0) {
-              PIC::Mesh::mesh->CenterNodes.deleteElement(cell);
+              // A center node is shared by every block that has it in its ghost
+              // layer and is reference counted (DeallocateBlock() releases it).
+              // Deleting it here left dangling pointers in the neighbor blocks:
+              // after a load-balancing block move the recycled node reported
+              // 'the node's connections becomes negative'. Release only this
+              // block's reference; the node is freed with its last reference.
+              if (cell->decrementConnectionCounter()==0) PIC::Mesh::mesh->CenterNodes.deleteElement(cell);
               startNode->block->SetCenterNode(NULL,LocalCellNumber);
               continue;
             }

@@ -1781,6 +1781,11 @@ void DeleteAttachedParticles();
 
 	if (Segment==NULL) return -1.0;
 
+        // A zero increment is the identity.  The backward branch below handles
+        // an integer SInit by stepping into the previous segment, so it returned
+        // -1 (outside the line) for SInit=0 and the previous segment otherwise.
+        if (Increment==0.0) return SInit;
+
         double Length = Segment->GetLength();
         double remain;
 
@@ -2537,7 +2542,8 @@ void DeleteAttachedParticles();
     void Init();
 
     bool GetBlockExitPoint(double *xBlockMin,double *xBlockMax,double *x0Ray,double *lRay,double *xBlockExit, double *xFaceExitLocal, int &nExitFace);
-    bool TestDirectAccess(double *xStart,double *xTarget);
+    //ExeptionFace: the face xStart lies on (it is not an obstacle for the ray); NULL if none
+    bool TestDirectAccess(double *xStart,double *xTarget,void* ExeptionFace=NULL);
     int CountFaceIntersectionNumber(double *xStart,double *xTarget,int MeshFileID,bool ParallelCheck,void* ExeptionFace);
     bool CountFaceIntersectionNumberAlongPointingDirection(int& nIntersections,double *xStart,double *l,int MeshFileID,bool ParallelCheck,void* ExeptionFace);
     int FindFistIntersectedFace(double *x0Ray,double *lRay,double *xIntersection,bool ParallelCheck,void* ExeptionFace);
@@ -6491,6 +6497,17 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
 
 
     int Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+
+    //Interaction of a particle with the first internal sphere registered in PIC::Mesh::mesh->InternalBoundaryList
+    //(centered at the sphere's OriginPosition, radius Sphere->Radius). When xFinal is inside the sphere the particle
+    //is moved onto the sphere surface and the sphere's ParticleSphereInteraction() is applied. Returns true when the
+    //particle was deleted (the caller returns _PARTICLE_LEFT_THE_DOMAIN_); newNode is set to the block of the (moved)
+    //particle location (NULL when it is outside the domain). Without a registered sphere only newNode is set.
+    //Used by PIC::Mover::Boris() in every application, and by the other movers in applications without a target
+    //(_TARGET_NONE_, e.g. CCMC), where their legacy test against _RADIUS_(_TARGET_) does not exist.
+    bool RegisteredInternalSphereInteraction(int spec,long int ptr,double *xFinal,double *vFinal,double dt,
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* &newNode);
+
     void BorisSplitAcceleration_default(double *accl, double *rotation, int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
 
     //particle mover for the energy conserving scheme (Stefano Markidis et al., 2010, Mathematics and Computers in Simulation 80 (2010) 1509–1519
@@ -7571,7 +7588,10 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
     inline void FinishExecution() {
       MPI_Finalize();
       printf("$PREFIX:!!!!! Execution is finished by the alarm (PIC::Alarm) !!!!!!\n");
-      exit(__LINE__,__FILE__,"!!!!! Execution is finished by the alarm !!!!!!");
+      fflush(stdout);
+      //the requested wall time was reached: a planned stop, not an error (and MPI is already
+      //finalized, so the error exit's MPI_Abort() must not be called)
+      ::exit(0);
     }
   }
 

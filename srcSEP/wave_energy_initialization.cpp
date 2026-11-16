@@ -278,7 +278,7 @@ void InitializeWaveEnergyInAllSegments(
     bool verbose
 ) {
     int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
     
     int initialized_segments = 0;
     double total_wave_energy_initialized = 0.0;
@@ -395,8 +395,8 @@ void InitializeWaveEnergyInAllSegments(
     int total_initialized_segments = 0;
     double global_total_wave_energy = 0.0;
     
-    MPI_Allreduce(&initialized_segments, &total_initialized_segments, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-    MPI_Allreduce(&total_wave_energy_initialized, &global_total_wave_energy, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&initialized_segments, &total_initialized_segments, 1, MPI_INT, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce(&total_wave_energy_initialized, &global_total_wave_energy, 1, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
     
     if (rank == 0) {
         std::cout << "Wave energy initialization complete:" << std::endl;
@@ -539,7 +539,7 @@ void InitializeWaveEnergyFromPhysicalParameters(
   namespace FL = PIC::FieldLine;
 
   int rank = 0;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
 
   // Lambda: compute total wave energy density W_total at a location given:
   //    - B_local: local magnetic field magnitude [T]
@@ -812,7 +812,7 @@ void PrintWaveEnergyProfile(
     int max_segments_print
 ) {
     int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
     
     if (rank != 0) return; // Only rank 0 prints
     
@@ -875,7 +875,7 @@ void PrintWaveEnergyProfile(
 
 void PrintWaveEnergyInitializationSummary(PIC::Datum::cDatumStored& WaveEnergy) {
     int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
     
     // Calculate local statistics
     int local_segment_count = 0;
@@ -924,12 +924,12 @@ void PrintWaveEnergyInitializationSummary(PIC::Datum::cDatumStored& WaveEnergy) 
     double global_min_energy_density = 0.0;
     double global_max_energy_density = 0.0;
     
-    MPI_Allreduce(&local_segment_count, &global_segment_count, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-    MPI_Allreduce(&local_total_energy, &global_total_energy, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-    MPI_Allreduce(&local_min_distance, &global_min_distance, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
-    MPI_Allreduce(&local_max_distance, &global_max_distance, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
-    MPI_Allreduce(&local_min_energy_density, &global_min_energy_density, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
-    MPI_Allreduce(&local_max_energy_density, &global_max_energy_density, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+    MPI_Allreduce(&local_segment_count, &global_segment_count, 1, MPI_INT, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce(&local_total_energy, &global_total_energy, 1, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce(&local_min_distance, &global_min_distance, 1, MPI_DOUBLE, MPI_MIN, MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce(&local_max_distance, &global_max_distance, 1, MPI_DOUBLE, MPI_MAX, MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce(&local_min_energy_density, &global_min_energy_density, 1, MPI_DOUBLE, MPI_MIN, MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce(&local_max_energy_density, &global_max_energy_density, 1, MPI_DOUBLE, MPI_MAX, MPI_GLOBAL_COMMUNICATOR);
     
     if (rank == 0) {
         std::cout << "\n=== Wave Energy Initialization Summary ===" << std::endl;
@@ -954,7 +954,7 @@ bool ValidateWaveEnergyInitialization(
     double tolerance
 ) {
     int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
     
     bool validation_passed = true;
     int error_count = 0;
@@ -1023,7 +1023,7 @@ bool ValidateWaveEnergyInitialization(
     // MPI reduction for global validation result
     int global_validation_passed = validation_passed ? 1 : 0;
     int global_validation_result = 0;
-    MPI_Allreduce(&global_validation_passed, &global_validation_result, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+    MPI_Allreduce(&global_validation_passed, &global_validation_result, 1, MPI_INT, MPI_MIN, MPI_GLOBAL_COMMUNICATOR);
     
     if (rank == 0) {
         if (global_validation_result == 1) {

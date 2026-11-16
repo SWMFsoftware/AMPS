@@ -27,7 +27,8 @@
   },
   "_vars_note": "swmf_data is the nightly's own copy: amps_nightly_test.sh resets it to the newest SWMF_data commit each night (tests edit reference files in it). enceladus_shape_manifest is temporary: the file is excluded from git by the .gitignore pattern 'data' (to decide 2026-11-15)",
   "make_vars": {"MPIRUN": "mpirun -np 8", "TESTMPIRUN4": "mpirun -np 4", "TESTMPIRUN1": "mpirun -np 1"},
-  "lanes": 10,
+  "lanes": 4,
+  "_lanes_note": "4 Makefile.test runs at once (most use 8 MPI ranks): 32 ranks on 36 cores. With 10 lanes (80 ranks) the long tests ran 2-3 times slower and magnetic-reconnection, fast-wave_rebalancing and CG-dust hit the 2-hour limit (2026-11-14/15); OpenMP threads per rank: makefile_runner.OMP_THREADS",
   "timeouts_s": {"compile": 3600, "rundir": 600, "run": 7200, "check": 900},
   "configs": [
     {

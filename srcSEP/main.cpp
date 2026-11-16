@@ -698,36 +698,9 @@ int main(int argc,char **argv) {
     SEP::Mover::PrintRuntimeConfiguration(std::cout);
   }
 
-  //setup datum to store the segment's data for the Alfven turbulence model
-  if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
-    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy);
-    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity);
-
-    // The wave-number-resolved model stores E+(k_j) and E-(k_j) in an
-    // additional hidden segment datum.  It is registered only when selected by
-    // the CLI to avoid increasing memory in legacy integrated-turbulence runs.
-    if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
-      PIC::FieldLine::cFieldLineSegment::AddDatumStored(
-          &SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::SpectralWaveEnergy);
-
-      // Hidden diagnostic datum used by the 2-D spectrum writer.  It stores the
-      // per-bin wave-energy exchange rates caused by cascade, particle coupling,
-      // and reflection during the current main-loop iteration.  It is registered
-      // only in wave-number-resolved mode to avoid extra memory in legacy runs.
-      PIC::FieldLine::cFieldLineSegment::AddDatumStored(
-          &SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::SpectralWaveEnergyExchangeRate);
-    }
-
-    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S);
-    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S_pm);
-
-
-    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::G_plus_streaming);
-    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::G_minus_streaming);
-    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::gamma_plus_array);
-    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::gamma_minus_array);
-
-  }
+  // The segment datums of the Alfven turbulence model are registered in
+  // amps_init_mesh() (main_lib.cpp), which the SWMF-coupled library path
+  // calls as well, before PIC::FieldLine::Init() allocates the segment data.
 
   //set up datum to store distance of a field line vertex to the location of the shock
   PIC::FieldLine::UserDefinedfDataProcessingManager=SEP::FieldLine::CalculateVertexShockDistances;
@@ -957,6 +930,14 @@ auto set_background_plasma_density = []() {
 
                 // store it in the vertex
                 vtx->SetPlasmaDensity(density); //SetDatum(density, PIC::FieldLine::DatumAtVertexPlasmaDensity);
+
+                // The analytic profile is static: the previous background epoch
+                // equals the current one (as install_reduced_background_on_field_lines()
+                // does for its first generation). The movers read both epochs
+                // (SEP::Transport::PICAdapter::EvaluateLocalBackground()) and stop
+                // with "current and previous plasma density must be positive"
+                // when the previous one is left unset (zero).
+                vtx->SetDatum(PIC::FieldLine::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,density);
             }
         }
     }

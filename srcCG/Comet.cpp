@@ -9,6 +9,7 @@
 //$Id: Comet.cpp,v 1.77 2017/07/03 20:14:49 shyinsi Exp $
 
 
+#include <unordered_set>
 #include "pic.h"
 #include "Dust.h"
 #include "Comet.h"
@@ -363,6 +364,10 @@ void Comet::InitGravityData(){
   const double rmin=1.5*4.0E3;
   const double rmax=2.0*4.0E3;
 
+  //a center node in the ghost layer of a block is usually the same object as a cell of the neighboring block:
+  //evaluate the (expensive) gravity of the nucleus only once for each center node
+  std::unordered_set<PIC::Mesh::cDataCenterNode*> ProcessedCells;
+
   //get coordinated of the center points
   for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) if (node->block!=NULL) {
     block=node->block;
@@ -372,7 +377,7 @@ void Comet::InitGravityData(){
         for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
           cell=block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k));
 
-          if (cell!=NULL) {
+          if ((cell!=NULL)&&(ProcessedCells.insert(cell).second==true)) {
             position=cell->GetX();
             r=sqrt(position[0]*position[0]+position[1]*position[1]+position[2]*position[2]);
 

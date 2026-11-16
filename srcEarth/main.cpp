@@ -2253,8 +2253,20 @@ int main(int argc,char **argv) {
         // Constructing this metadata creates the same production field snapshot
         // used by the movers.  Successful construction is therefore the startup
         // evidence that Geopack RECALC/IGRF (when required) ran for this epoch.
+        //
+        // TRAJECTORY: every sample carries its own authoritative UTC (validated
+        // above), and #BACKGROUND_FIELD normally has no EPOCH, so p.field.epoch keeps
+        // its 2000-01-01 default.  A snapshot at that epoch fails the driver-table
+        // coverage check and aborted every file-driven trajectory run here; build the
+        // batch snapshot at the first sample epoch instead.  p itself is unchanged, so
+        // the solvers still re-initialize the field per sample.
+        EarthUtil::AmpsParam pBatchSnapshot=p;
+        if (EarthUtil::ToUpper(p.output.mode)=="TRAJECTORY" &&
+            !p.output.trajectories.empty() &&
+            !p.output.trajectories.front().samples.empty())
+          pBatchSnapshot.field.epoch=p.output.trajectories.front().samples.front().timeUTC;
         const Earth::Field::SnapshotMetadata batchMetadata=
-            Earth::GridlessMode::FrozenFieldSnapshotMetadata(p);
+            Earth::GridlessMode::FrozenFieldSnapshotMetadata(pBatchSnapshot);
         standalonePlan.snapshotId=batchMetadata.snapshotId;
         standalonePlan.geopackInitialized=
             !SP::RequiresGeopackInitialization(standalonePlan.fieldModel) ||
@@ -2275,14 +2287,14 @@ int main(int argc,char **argv) {
           const int status=Earth::GridlessMode::RunCutoffRigidity(p);
           if (status!=0) standaloneStatus=status;
           Earth::Field::RequireSameSnapshot(
-              batchMetadata,Earth::GridlessMode::FrozenFieldSnapshotMetadata(p),
+              batchMetadata,Earth::GridlessMode::FrozenFieldSnapshotMetadata(pBatchSnapshot),
               "standalone gridless cutoff product");
         }
         if (standalonePlan.products.fluxSpectrum) {
           const int status=Earth::GridlessMode::RunDensityAndSpectrum(p);
           if (status!=0) standaloneStatus=status;
           Earth::Field::RequireSameSnapshot(
-              batchMetadata,Earth::GridlessMode::FrozenFieldSnapshotMetadata(p),
+              batchMetadata,Earth::GridlessMode::FrozenFieldSnapshotMetadata(pBatchSnapshot),
               "standalone gridless flux/spectrum product");
         }
 

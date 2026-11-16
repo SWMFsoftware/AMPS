@@ -2474,7 +2474,13 @@ namespace PB = PIC::ParticleBuffer;
 
   // Define initial number of bins per dimension
   int nBinsPerDimension = 10; // Starting value; adjust as needed
-  const int minBinsPerDimension = 6; // Minimum allowed value
+  // Pairs are sought in the finest velocity partition that has any, but the partition is coarsened
+  // down to a single bin: the 2->3 split conserves weight, momentum and energy for any pair, and a
+  // minimum of 6 bins per dimension left small populations (e.g. 20 particles) unsplit whenever no two
+  // of them happened to share one of 1000 bins (unit test ParticleSplitTest, field lines). The merge
+  // routine above coarsens down to 1 as well.
+  const int minBinsPerDimension = 1; // Minimum allowed value
+  auto CoarserPartition = [](int n) {return (n>2) ? n-2 : n-1;}; // 10, 8, 6, 4, 2, 1
 
   while (nBinsPerDimension >= minBinsPerDimension && nTotalActiveParticles < nRequestedParticleNumber ) {
     // Step 3: Define velocity bins using vMin and vMax with safety margin
@@ -2539,7 +2545,7 @@ namespace PB = PIC::ParticleBuffer;
     // No bin contains a valid pair.  Do not call std::next(end()); retry only
     // if the next coarser velocity partition can join a pair.
     if (binList.empty()) {
-      nBinsPerDimension = nBinsPerDimension / 2;
+      nBinsPerDimension = CoarserPartition(nBinsPerDimension);
       continue;
     }
 
@@ -2554,8 +2560,11 @@ namespace PB = PIC::ParticleBuffer;
       std::list<ParticleInfo*>& particlePtrs = *(binNode.particlePtrs);
 
       if (particlePtrs.size()<2) {
-        //There is not more bins with the number of particles > 3 => break the current loop and repeat with smaller number if bins
-        break;
+        //No pair is left in this bin: drop it and continue with the next one (ending the whole pass here
+        //skipped every other bin of the partition). currentBinIt is always binList.begin().
+        currentBinIt = binList.erase(currentBinIt);
+        nextBinSize = (currentBinIt!=binList.end() && std::next(currentBinIt)!=binList.end()) ? std::next(currentBinIt)->binSize : -1;
+        continue;
       }
 
       // While there are at least three particles to merge in the bin
@@ -2697,7 +2706,7 @@ namespace PB = PIC::ParticleBuffer;
 
     // If the merging was successful, exit the while loop
     // Decrease nBinsPerDimension and retry
-    nBinsPerDimension -= 2;
+    nBinsPerDimension = CoarserPartition(nBinsPerDimension);
     if (nBinsPerDimension < minBinsPerDimension) {
       break;
     }      

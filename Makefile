@@ -295,8 +295,13 @@ tar:
 	cd ../pic-tower/sources/dsmc; rm -f *.o *.a
 	tar -cvf sources.tar sources
 
-${WSD}:
-	./ampsConfig.pl -input ${InputFileAMPS} -no-compile 
+# ${WSD} depends on the application input file that Config.pl -application copies here, so a new
+# application (or an edited input file) re-runs the preprocessor, which recreates ${WSD} when the input
+# file's name or modification time differs from the last one. Without the prerequisite an existing
+# ${WSD} was always "up to date": in SWMF (target LIB -> AMPSLIB) switching the PT application with
+# 'Config.pl -o=PT:application=...' kept compiling the previously configured application.
+${WSD}: ${InputFileAMPS}
+	./ampsConfig.pl -input ${InputFileAMPS} -no-compile
 
 ifeq ($(CHECKMACRO),on)
 	./utility/CheckMacro.pl ${WSD} -in-place

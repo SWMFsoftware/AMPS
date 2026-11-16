@@ -2753,7 +2753,13 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   for (int irow=0;irow<MatrixRowTableLength;irow++) {
     cMatrixRow* row=MatrixRowTable[irow];
 
-    row->Rhs=fSetRhs(row->iVar,row->RhsSupportTable_CornerNodes,row->RhsSupportLength_CornerNodes,row->RhsSupportTable_CenterNodes,row->RhsSupportLength_CenterNodes,row->support_corner_vector,row->support_center_vector);
+    //A row without any RHS support (e.g. a Dirichlet boundary row, whose RHS is the boundary value set
+    //in BuildMatrix()) keeps its RHS. Without this test, which 11b5970d dropped, such rows got RHS=0
+    //after the first UpdateRhs() (cLinearSystemCenterNode::UpdateRhs() keeps the same test).
+    if ((row->RhsSupportLength_CornerNodes!=0)||(row->RhsSupportLength_CenterNodes!=0)||
+        (!row->support_corner_vector.empty())||(!row->support_center_vector.empty())) {
+      row->Rhs=fSetRhs(row->iVar,row->RhsSupportTable_CornerNodes,row->RhsSupportLength_CornerNodes,row->RhsSupportTable_CenterNodes,row->RhsSupportLength_CenterNodes,row->support_corner_vector,row->support_center_vector);
+    }
   }
 }
 
@@ -2769,6 +2775,9 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
   static double **RecvExchangeBufferTable=NULL;
   static int nMartixModificationsLocal=-1;  
+
+  //p and x hold one value per matrix row; a shorter vector would be written past its end below
+  if (length<MatrixRowTableLength) exit(__LINE__,__FILE__,"Error: the vector is shorter than the number of matrix rows");
 
   static double *x_local=NULL;
   static int length_local=-1;
@@ -2882,6 +2891,9 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
   static double **RecvExchangeBufferTable=NULL;
   static int nMartixModificationsLocal=-1;
+
+  //p and x hold one value per matrix row; a shorter vector would be written past its end below
+  if (length<MatrixRowTableLength) exit(__LINE__,__FILE__,"Error: the vector is shorter than the number of matrix rows");
 
   static double *x_local=NULL;
   static int length_local=-1;
@@ -3087,6 +3099,9 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
   static double **RecvExchangeBufferTable=NULL;
   static int nMartixModificationsLocal=-1;
+
+  //p and x hold one value per matrix row; a shorter vector would be written past its end below
+  if (length<MatrixRowTableLength) exit(__LINE__,__FILE__,"Error: the vector is shorter than the number of matrix rows");
 #if _AVX_MATMUL_ == _OFF_
   const bool prepare_compact=CompactSolveActive && (!CompactMultiplyValid ||
       CompactMatrixGeneration!=nMartixModifications || CompactVectorLength!=length);
@@ -3282,7 +3297,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
   for (i=0;i<NodeUnknownVariableVectorLength;i++) MeanRhs[i]=0.0,MeanRhsCounter[i]=0;
 
-  for (row=MatrixRowListFirst;row!=NULL;cnt++,row=row->next) if (row->CornerNode!=NULL) {
+  for (cnt=0,row=MatrixRowListFirst;row!=NULL;cnt++,row=row->next) if (row->CornerNode!=NULL) {
     MeanRhs[row->iVar]+=row->Rhs;
     MeanRhsCounter[row->iVar]++;
   }
@@ -3310,12 +3325,19 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   }
 
   //call the iterative solver
-  int nVar=NodeUnknownVariableVectorLength; //variable number
+  //The unknown vector has one entry per matrix row: the cnt rows packed above. That is not
+  //NodeUnknownVariableVectorLength*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*(nRealBlocks+nVirtualBlocks)
+  //in general: without periodic boundaries BuildMatrix() also makes rows of the corner nodes on the
+  //domain's max faces. With that shorter length MultiplyVector() wrote past the end of the solver's
+  //vectors (NaN from the second solve on, or the debugger's "out of bound" exit). The solver runs
+  //without a preconditioner (PrecondParam=0), so nVar*nI*nJ*nK*nBlock only sets the vector length.
+  if (cnt!=MatrixRowTableLength) exit(__LINE__,__FILE__,"Error: the row list and the row table differ in length");
+  int nVar=1; //one unknown per matrix row
   int nDim = 3; //dimension
-  int nI=_BLOCK_CELLS_X_;
-  int nJ=_BLOCK_CELLS_Y_;
-  int nK=_BLOCK_CELLS_Z_;
-  int nBlock = nRealBlocks+nVirtualBlocks;
+  int nI=1;
+  int nJ=1;
+  int nK=1;
+  int nBlock=cnt;
 
   MPI_Fint iComm = MPI_Comm_c2f(MPI_GLOBAL_COMMUNICATOR);
 

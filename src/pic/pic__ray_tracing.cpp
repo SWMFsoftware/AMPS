@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <vector>
+#include <algorithm>
+#include <limits>
 #include <string.h>
 #include <list>
 #include <math.h>
@@ -46,7 +48,15 @@ bool PIC::RayTracing::GetBlockExitPoint(double *xBlockMin,double *xBlockMax,doub
   return status==PIC::GeometryKernels::RayBoxStatus::Success;
 }
 
-bool PIC::RayTracing::TestDirectAccess(double *xStart,double *xTarget) {
+/* Return true when no face of the surface triangulation intersects the ray
+ * from xStart toward xTarget.  SetCutCellShadowAttribute() starts the ray at
+ * the center of the face whose illumination it determines, and that face has
+ * to be skipped (ExeptionFace): the origin lies on its plane, so whether
+ * RayIntersection() reported the face itself as an obstacle depended only on
+ * the sign of the rounding error of the origin-plane distance, which shadowed
+ * about half of the sunlit faces at random; since RayIntersection() accepts
+ * hits up to EPS behind the origin (as t=0) it shadowed all of them. */
+bool PIC::RayTracing::TestDirectAccess(double *xStart,double *xTarget,void* ExeptionFace) {
 	double c=0.0,l[3],x[3];
 	int idim;
 
@@ -81,7 +91,7 @@ bool PIC::RayTracing::TestDirectAccess(double *xStart,double *xTarget) {
         TriangleFace=t->TriangleFace;
 
         if (PIC::Mesh::IrregularSurface::CutFaceAccessCounter::IsFirstAccecssWithAccessCounterUpdate(TriangleFace)==true) {
-          if (TriangleFace->RayIntersection(x,l,IntersectionTime,PIC::Mesh::mesh->EPS)==true) return false;
+          if ((TriangleFace!=(PIC::Mesh::IrregularSurface::cTriangleFace*)ExeptionFace)&&(TriangleFace->RayIntersection(x,l,IntersectionTime,PIC::Mesh::mesh->EPS)==true)) return false;
         }
       }
 		}
@@ -107,9 +117,25 @@ bool PIC::RayTracing::TestDirectAccess(double *xStart,double *xTarget) {
 	return true;
 }
 
+/* Count the crossings of the surface triangulation by the ray xStart+s*l,
+ * s>=0, l=(xTarget-xStart)/|xTarget-xStart|; callers use the parity of the
+ * count (CheckPointInsideDomain(), the orientation of the external normals in
+ * InitExternalNormalVector()).
+ *
+ * cTriangleFace::RayIntersection() accepts a hit up to EPS outside the edges
+ * of a triangle (and up to EPS behind the origin), so a ray that crosses the
+ * surface within EPS of an edge shared by two triangles is reported by both of
+ * them.  Counting each report flipped the parity for such rays: some external
+ * normals were oriented into the body (and particles injected from those faces
+ * started inside the nucleus), and points next to the surface were classified
+ * on the wrong side.  As in the classification of the cut-cell volume
+ * integration, the path length s of every hit is therefore recorded and hits
+ * that coincide within the geometric tolerance count as one crossing. */
 int PIC::RayTracing::CountFaceIntersectionNumber(double *xStart,double *xTarget,int MeshFileID,bool ParallelCheck,void* ExeptionFace) {
   double c=0.0,l[3],x[3];
   int cnt=-1,idim,IntersectionCounter=0;
+  std::vector<double> CrossingPathLength; //path length from xStart of every reported hit
+  double PathLengthToBlockEntry=0.0; //path length from xStart to 'x'
 
 
   //clculate the pointing vector
@@ -146,7 +172,7 @@ int PIC::RayTracing::CountFaceIntersectionNumber(double *xStart,double *xTarget,
         if (PIC::Mesh::IrregularSurface::CutFaceAccessCounter::IsFirstAccecssWithAccessCounterUpdate(TriangleFace)==true) {
           if ( ((MeshFileID<0)||(TriangleFace->MeshFileID==MeshFileID)) && ((ParallelCheck==false)||((++cnt)%PIC::nTotalThreads==PIC::ThisThread)) ) {
             code=TriangleFace->RayIntersection(x,l,IntersectionTime,PIC::Mesh::mesh->EPS);
-            if ((TriangleFace!=(PIC::Mesh::IrregularSurface::cTriangleFace*)ExeptionFace) && (code==true)) IntersectionCounter++;
+            if ((TriangleFace!=(PIC::Mesh::IrregularSurface::cTriangleFace*)ExeptionFace) && (code==true)) CrossingPathLength.push_back(PathLengthToBlockEntry+IntersectionTime);
           }
         }
       }
@@ -167,13 +193,37 @@ int PIC::RayTracing::CountFaceIntersectionNumber(double *xStart,double *xTarget,
       node=PIC::Mesh::mesh->findTreeNode(xNodeExit,node);
     }
 
+    for (idim=0;idim<3;idim++) PathLengthToBlockEntry+=(xNodeExit[idim]-x[idim])*l[idim];
     memcpy(x,xNodeExit,3*sizeof(double));
   }
 
-  //combine the counter value
+  //with ParallelCheck each process has tested a part of the faces: collect all hits
   if (ParallelCheck==true) {
-    int t=IntersectionCounter;
-    MPI_Allreduce(&t,&IntersectionCounter,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+    int nLocal=CrossingPathLength.size(),nTotal=0;
+    std::vector<int> nHits(PIC::nTotalThreads),offset(PIC::nTotalThreads);
+
+    MPI_Allgather(&nLocal,1,MPI_INT,nHits.data(),1,MPI_INT,MPI_GLOBAL_COMMUNICATOR);
+    for (int thread=0;thread<PIC::nTotalThreads;thread++) offset[thread]=nTotal,nTotal+=nHits[thread];
+
+    std::vector<double> all(nTotal>0 ? nTotal : 1);
+    MPI_Allgatherv(CrossingPathLength.data(),nLocal,MPI_DOUBLE,all.data(),nHits.data(),offset.data(),MPI_DOUBLE,MPI_GLOBAL_COMMUNICATOR);
+    all.resize(nTotal);
+    CrossingPathLength.swap(all);
+  }
+
+  //hits closer than the tolerance of RayIntersection() along the ray are one crossing
+  std::sort(CrossingPathLength.begin(),CrossingPathLength.end());
+
+  const double tolerance=2.0*fabs(PIC::Mesh::mesh->EPS);
+  double previous=0.0;
+
+  for (std::vector<double>::const_iterator it=CrossingPathLength.begin();it!=CrossingPathLength.end();it++) {
+    const double scale=std::max(1.0,fabs(*it));
+
+    if ((IntersectionCounter==0)||(fabs(*it-previous)>std::max(tolerance,128.0*std::numeric_limits<double>::epsilon()*scale))) {
+      previous=*it;
+      IntersectionCounter++;
+    }
   }
 
   return IntersectionCounter;
@@ -329,7 +379,7 @@ void PIC::RayTracing::SetCutCellShadowAttribute(double *xLightSource,bool Parall
     }
     else {
       //trace the ray to the light source
-      if (TestDirectAccess(xTriangle,xLightSource)==false) {
+      if (TestDirectAccess(xTriangle,xLightSource,PIC::Mesh::IrregularSurface::BoundaryTriangleFaces+i)==false) {
         PIC::Mesh::IrregularSurface::BoundaryTriangleFaces[i].pic__shadow_attribute=_PIC__CUT_FACE_SHADOW_ATTRIBUTE__TRUE_;
       }
       else {

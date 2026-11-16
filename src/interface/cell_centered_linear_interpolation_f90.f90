@@ -138,84 +138,12 @@
   end subroutine interface__cell_centered_linear_interpolation__init_stencil
 
   !===============================================================
-
-  subroutine interface__cell_centered_linear_interpolation__init_stencil_gc(&
-       nDim, XyzIn_D, XyzMinIn_D, DXyzIn_D, nCellIn_D, DiLevelNeiIn_III, &
-       nCellOut, iCellOut_II, Weight_I, iIsSecondOrder)
-
-    !including AMR interpolation module itself
-    USE ModInterpolateAMR, ONLY: interpolate_amr_gc
-
-    implicit none
-
-    !\
-    ! INPUT PARAMETERS
-    !/
-    !\
-    ! Number of dimensions
-    !/
-    integer, intent(in) :: nDim
-    !\
-    ! Point coordinates
-    !/
-    real,    intent(in) :: XyzIn_D(nDim)
-    !\
-    ! Corner coordinates of the block
-    !/
-    real,    intent(in) :: XyzMinIn_D(nDim)
-    !\
-    ! Cell size of the block
-    !/
-    real,    intent(in) :: DxyzIn_D(nDim)
-    !\
-    ! Block AMR Grid characteristic: number of cells
-    !/
-    integer, intent(in) :: nCellIn_D(nDim)
-    !\
-    ! Resolution level difference with neighbors
-    !/
-    integer, intent(in) :: DiLevelNeiIn_III(-1:1,-1:1,-1:1)
-    !\
-    !OUTPUT PARAMETERS
-    !/
-    !\
-    !Number of grid points involved into interpolation
-    !/
-    integer, intent(out):: nCellOut
-    !\
-    ! Cell indexes for grid points to be involved into interpolation
-    !/
-    integer, intent(out):: iCellOut_II(nDim,2**nDim)
-    !\
-    ! Interpolation weights (only the first nGridOut values are meaningful
-    !/
-    real,    intent(out):: Weight_I(2**nDim)
-    !\
-    !The following is true if stencil does not employ
-    !the out-of-grid points
-    !0-> .false., 1-> .true. to avoid type conversion errors
-    !/
-    integer, intent(out):: iIsSecondOrder 
-
-    logical::IsSecondOrder
-    !--------------------------------------------------------------------
-    ! call the interpolation procedure itself
-    call interpolate_amr_gc(&
-         nDim=nDim, &
-         Xyz_D=XyzIn_D, &
-         XyzMin_D = XyzMinIn_D, &
-         Dxyz_D=DxyzIn_D, &
-         nCell_D=nCellIn_D,&
-         DiLevelNei_III=DiLevelNeiIn_III, &
-         nCellOut=nCellOut,&
-         iCellOut_II=iCellOut_II,&
-         Weight_I=Weight_I,&
-         IsSecondOrder=IsSecondOrder)
-
-    if(IsSecondOrder) then
-       iIsSecondOrder = 1
-    else
-       iIsSecondOrder = 0
-    end if
-
-  end subroutine interface__cell_centered_linear_interpolation__init_stencil_gc
+  ! The wrapper interface__cell_centered_linear_interpolation__init_stencil_gc
+  ! (block-local interpolation with ghost cells through
+  ! ModInterpolateAMR::interpolate_amr_gc) was removed: share's
+  ! ModInterpolateAMR dropped interpolate_amr_gc and get_reference_block
+  ! (share commit 08ea4c97, "Remove obsolete routines", 2026-10-24), and the
+  ! wrapper was never called by AMPS. Interpolation with ghost cells is done by
+  ! the generic interpolate_amr(..., UseGhostCell=.true.) above, which is what
+  ! AMPS uses (iUseGhostCell=1 in pic_interpolation_routines.cpp) and what
+  ! share's own test (Library/test/test_interpolate_amr.f90) now exercises.

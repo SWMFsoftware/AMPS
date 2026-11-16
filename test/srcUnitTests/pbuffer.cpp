@@ -5,6 +5,29 @@
 
 void pbuffer_test_for_linker() {}
  
+// In field-line mode the aligned velocity components (V_parallel, V_normal) are kept either in dedicated
+// particle-data slots (_USE_PARTICLE_V_PARALLEL_NORM_ on; since 24d76aba the 3D velocity is then kept as
+// set, e.g. v_parallel*b+v_drift) or in the first two entries of the velocity vector (off). Check the
+// layout that is compiled: the tests written before 24d76aba assumed the second one in every build.
+static void ExpectAlignedVelocity(long int ptr,const double* readVel,const double* vel) {
+#if _USE_PARTICLE_V_PARALLEL_NORM_ == _PIC_MODE_ON_
+  for (int i=0;i<3;i++) EXPECT_DOUBLE_EQ(vel[i],readVel[i]);
+
+  PIC::ParticleBuffer::SetVParallel(1.5,ptr);
+  PIC::ParticleBuffer::SetVNormal(-2.5,ptr);
+  EXPECT_DOUBLE_EQ(PIC::ParticleBuffer::GetVParallel(ptr),1.5);
+  EXPECT_DOUBLE_EQ(PIC::ParticleBuffer::GetVNormal(ptr),-2.5);
+
+  double v[3];
+  PIC::ParticleBuffer::GetV(v,ptr);
+  for (int i=0;i<3;i++) EXPECT_DOUBLE_EQ(vel[i],v[i]);  //the aligned components are stored apart from v
+#else
+  EXPECT_DOUBLE_EQ(PIC::ParticleBuffer::GetVParallel(ptr),readVel[0]);
+  EXPECT_DOUBLE_EQ(PIC::ParticleBuffer::GetVNormal(ptr),readVel[1]);
+  EXPECT_DOUBLE_EQ(readVel[2],0.0);
+#endif
+}
+
 TEST(InlineTest, IntegerEquality) {
     EXPECT_EQ(5, 5);  // Passes
     EXPECT_NE(5, 3);  // Passes
@@ -115,7 +138,7 @@ TEST_F(ParticleBufferTest, ParticleDataAccessTest) {
     }
     else {
       double readPos[3],readVel[3];
-      double S=4.5,readS,v_parallel,v_normal;
+      double S=4.5,readS;
 
       // Set position and velocity
       PIC::ParticleBuffer::SetFieldLineCoord(S,ptr); 
@@ -132,14 +155,7 @@ TEST_F(ParticleBufferTest, ParticleDataAccessTest) {
       EXPECT_DOUBLE_EQ(S,readS);
 
       
-      v_parallel=PIC::ParticleBuffer::GetVParallel(ptr);
-      EXPECT_DOUBLE_EQ(v_parallel, readVel[0]);
-
-      
-      v_normal=PIC::ParticleBuffer::GetVNormal(ptr);
-      EXPECT_DOUBLE_EQ(v_normal, readVel[1]); 
-
-      EXPECT_DOUBLE_EQ(readVel[2],0.0);
+      ExpectAlignedVelocity(ptr,readVel,vel);
     }
     
 }
@@ -172,7 +188,7 @@ TEST_F(ParticleBufferTest, ParticleCloneTest) {
       }
     }
     else {
-      double readVel[3],readS,v_parallel,v_normal;
+      double readVel[3],readS;
 
       readS=PIC::ParticleBuffer::GetFieldLineCoord(destPtr);
       PIC::ParticleBuffer::GetV(readVel,destPtr);
@@ -184,14 +200,7 @@ TEST_F(ParticleBufferTest, ParticleCloneTest) {
       EXPECT_DOUBLE_EQ(S,readS);
 
 
-      v_parallel=PIC::ParticleBuffer::GetVParallel(destPtr);
-      EXPECT_DOUBLE_EQ(v_parallel, readVel[0]);
-
-
-      v_normal=PIC::ParticleBuffer::GetVNormal(destPtr);
-      EXPECT_DOUBLE_EQ(v_normal, readVel[1]);
-
-      EXPECT_DOUBLE_EQ(readVel[2],0.0);
+      ExpectAlignedVelocity(destPtr,readVel,vel);
     }
 
 }
@@ -289,7 +298,7 @@ TEST(ParticleBuffer, RequestDataStorageBeforeInit) {
       }
     }
     else {
-       double readVel[3],readS,v_parallel,v_normal;
+       double readVel[3],readS;
 
        readS=PIC::ParticleBuffer::GetFieldLineCoord(ptr);
        PIC::ParticleBuffer::GetV(readVel,ptr);
@@ -300,14 +309,7 @@ TEST(ParticleBuffer, RequestDataStorageBeforeInit) {
 
        EXPECT_DOUBLE_EQ(pos[0],readS);
 
-       v_parallel=PIC::ParticleBuffer::GetVParallel(ptr);
-       EXPECT_DOUBLE_EQ(v_parallel, readVel[0]);
-
-
-       v_normal=PIC::ParticleBuffer::GetVNormal(ptr);
-       EXPECT_DOUBLE_EQ(v_normal, readVel[1]);
-
-       EXPECT_DOUBLE_EQ(readVel[2],0.0);
+       ExpectAlignedVelocity(ptr,readVel,vel);
     }
 
     EXPECT_DOUBLE_EQ(*((double*)(ParticleData+offset)),a);

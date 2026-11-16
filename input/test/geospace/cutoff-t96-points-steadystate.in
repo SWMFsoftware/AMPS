@@ -19,6 +19,10 @@ CUTOFF_EMIN            1.0          ! MeV/n
 CUTOFF_EMAX            1000.0       ! MeV/n
 CUTOFF_MAX_PARTICLES   500              ! per injection point
 CUTOFF_NENERGY         50               ! log-spaced energy bins
+CUTOFF_MAX_TRAJ_TIME   20               ! sec; at Rmax (1.7 GV) both points are deep in the Stormer-forbidden
+                                        ! region (Rc_min ~5-8 GV), so every direction is forbidden and the
+                                        ! non-escaping ones ran to the MAX_STEPS/MAX_TRACE_TIME caps (300000 steps,
+                                        ! 7200 s: 11 min per point on 8 ranks); the result (-1) does not depend on the cap
 
 
 #PARTICLE_SPECIES
@@ -61,7 +65,7 @@ SPEC_EMAX              1000.0       ! MeV/n
 OUTPUT_MODE            POINTS
 FLUX_DT                1.0           ! min (trajectory cadence; ignored for POINTS/SHELLS)
 POINTS_BEGIN
-!POINT                 7000 0 0
+POINT                 7000 0 0
 POINT                 9000 0 0
 POINTS_END
 

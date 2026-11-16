@@ -10,6 +10,8 @@
 #include <vector>
 #include <cstring>
 #include <limits>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace SEP {
 namespace Transport {
@@ -125,6 +127,61 @@ void InitializeParticleTransportState(long int pointer,
   *reinterpret_cast<double*>(data + SEP::Offset::MfpOpticalDepth) =
       std::numeric_limits<double>::quiet_NaN();
   *reinterpret_cast<std::uint64_t*>(data + SEP::Offset::MfpEventIndex) = 0;
+}
+
+void RekeyClonedParticles() {
+  namespace FL = PIC::FieldLine;
+  namespace PB = PIC::ParticleBuffer;
+  if (FL::FieldLinesAll == NULL || SEP::Offset::StableParticleId < 0) return;
+
+  std::unordered_map<std::uint64_t, std::uint64_t> occurrences;
+  std::unordered_set<std::uint64_t> used;
+  std::vector<long int> repeated;
+
+  // First pass: all ids in use on this process, in the deterministic list order
+  for (int line = 0; line < FL::nFieldLine; ++line) {
+    if (FL::FieldLinesAll[line].IsInitialized() == false) continue;
+    for (FL::cFieldLineSegment* segment = FL::FieldLinesAll[line].GetFirstSegment();
+         segment != NULL; segment = segment->GetNext()) {
+      for (long int ptr = segment->FirstParticleIndex; ptr != -1; ptr = PB::GetNext(ptr)) {
+        const std::uint64_t id = *reinterpret_cast<std::uint64_t*>(
+            PB::GetParticleDataPointer(ptr) + SEP::Offset::StableParticleId);
+        if (used.insert(id).second == false) repeated.push_back(ptr);
+      }
+    }
+  }
+
+  // Second pass: a new id for every repeated one (a clone made by splitting)
+  for (long int ptr : repeated) {
+    PB::byte* data = PB::GetParticleDataPointer(ptr);
+    std::uint64_t& id = *reinterpret_cast<std::uint64_t*>(
+        data + SEP::Offset::StableParticleId);
+    std::uint64_t candidate;
+
+    do {
+      const std::uint64_t k = ++occurrences[id];
+      std::uint64_t hash = UINT64_C(1469598103934665603);
+      const std::uint64_t words[3] = {UINT64_C(0x434c4f4e45), id, k};
+      const unsigned char* bytes = reinterpret_cast<const unsigned char*>(words);
+      for (std::size_t i = 0; i < sizeof(words); ++i) {
+        hash ^= bytes[i];
+        hash *= UINT64_C(1099511628211);
+      }
+      candidate = (hash == 0) ? UINT64_C(1) : hash;
+    }
+    while (used.count(candidate) != 0);
+
+    used.insert(candidate);
+    id = candidate;
+
+    // The clone is a new independent particle: draw a fresh optical depth for
+    // the mean-free-path mover (memoryless, so the statistics are unchanged)
+    if (SEP::Offset::MfpOpticalDepth >= 0)
+      *reinterpret_cast<double*>(data + SEP::Offset::MfpOpticalDepth) =
+          std::numeric_limits<double>::quiet_NaN();
+    if (SEP::Offset::MfpEventIndex >= 0)
+      *reinterpret_cast<std::uint64_t*>(data + SEP::Offset::MfpEventIndex) = 0;
+  }
 }
 
 void QueueWaveContribution(const CouplingRecord& value) {
@@ -515,9 +572,14 @@ Status EvaluateLocalBackgroundAt(const ParticleContext& context,
   // A mover may never integrate beyond the immutable background generation it
   // acquired.  The driver opens the read phase at the authoritative PIC time;
   // subtracting that time from valid_until gives the exact remaining interval.
+  // A static (analytic) or open-ended (SWMF) snapshot is valid until +inf
+  // (SEP::Background::PrepareSnapshotForParticleStep()); the remaining time is
+  // then +inf, which the movers and ComposeSnapshotValidityLimit() accept.
+  // Rejecting every non-finite value stopped each analytic-background run at
+  // its first particle.  Only NaN and an expired interval are errors.
   background->snapshotSecondsRemaining =
       snapshot.valid_until_seconds() - Background::SimulationTimeSeconds();
-  if (!std::isfinite(background->snapshotSecondsRemaining) ||
+  if (std::isnan(background->snapshotSecondsRemaining) ||
       background->snapshotSecondsRemaining < 0.0) {
     return Status::Error(StatusCode::InvalidParticleState,
                          "background snapshot validity interval has expired");

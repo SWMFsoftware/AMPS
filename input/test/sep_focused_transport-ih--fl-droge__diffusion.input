@@ -6,7 +6,10 @@
   define _SEP_MODEL_ON_
 
   define _PIC_PARTICLE_LIST_ATTACHING_ _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_
-  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) ::SEP::ParticleMover_Droge_2009_AJ(ptr,LocalTimeStep,node)
+  ! The Droge (2009) mover ::SEP::ParticleMover_Droge_2009_AJ was removed from srcSEP (Step 5, 2026-09);
+  ! its replacement is the production mover fte-dmumu. srcSEP selects the mover at run time
+  ! (#SEP_MOVER1D in the SWMF PARAM.in); ::SEP::ParticleMover is the dispatcher.
+  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) ::SEP::ParticleMover(ptr,LocalTimeStep,node)
 
   define _SEP_DIFFUSION_MODEL_ _DIFFUSION_JOKIPII1966AJ_
 #endGeneral

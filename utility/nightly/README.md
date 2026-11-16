@@ -56,9 +56,9 @@ back when it is switched on again. **Remove a machine**: `amps-nightly uninstall
 
 | to … | Makefile.test tests | src/test suites | another test program |
 |---|---|---|---|
-| add | a block in `MakefileTest/Table` with `Name=`, `Family=` (+ reference files) | add `nightly` to the suite's tiers in `src/test/manifest.json` | a `"kind": "command"` source in `routine.json` and its family in `families.json` |
+| add | a block in `MakefileTest/Table` with `Name=`, `Family=` (+ reference files) | add `nightly` to the suite's tiers in `src/test/manifest.json` | a `"kind": "command"` source in `runners.json` and its family in `families.json` |
 | run only on some machines | `Name=<test>@@(0+passion+pleiades)` | `requires.capabilities` of the suite (run_tests.py checks them against the machine's profile) | `requires` a capability, or list the source in the machines' `sources` |
-| switch off for now (shown as SKIPPED with the reason) | an entry in `routine.json` `disabled` | same | same |
+| switch off for now (shown as SKIPPED with the reason) | an entry in `runners.json` `disabled` | same | same |
 | remove | delete the block, or `Name=<test>@@(0+)` | remove `nightly` from its tiers | delete the source, or `"enabled": false` |
 
 A `disabled` entry needs a `reason`; `until` (a date) makes it lapse by itself, and `check` warns once it has:
@@ -72,6 +72,12 @@ A `disabled` entry needs a `reason`; `until` (a date) makes it lapse by itself, 
 
 `test` is a shell glob on the test name (Table name or src/test suite ID); `machines`, `configs` and
 `source` are optional filters. A removed test disappears from the report; its history stays in the store.
+
+The Makefile.test tests are compiled one after another in one workspace. Before each one the runner puts
+the files Config.pl rewrites (`Makefile`, `Makefile.local`, `Makefile.conf`, `.amps.conf`, `.general.conf`)
+back to their state after the install, and the test's log says so when an earlier test had changed them.
+So a test's compile rule must set everything it needs (`-application`, data paths, `-openmp`, link and
+compiler options) and cannot rely on what an earlier test configured.
 
 ## Running the nightly procedure
 

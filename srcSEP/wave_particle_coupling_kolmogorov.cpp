@@ -550,7 +550,7 @@ double CalculateTotalParticleEnergyInSystem(
 
     // Sum total energy across all MPI processes
     double total_energy = 0.0;
-    MPI_Allreduce(&local_total_energy, &total_energy, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&local_total_energy, &total_energy, 1, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
 
     // Calculate global min/max ranges across all MPI processes (if requested)
     if (min_energy || max_energy || min_velocity || max_velocity) {
@@ -558,12 +558,12 @@ double CalculateTotalParticleEnergyInSystem(
         double global_min_velocity, global_max_velocity;
         
         // Find global minimum and maximum energies
-        MPI_Allreduce(&local_min_energy, &global_min_energy, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
-        MPI_Allreduce(&local_max_energy, &global_max_energy, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+        MPI_Allreduce(&local_min_energy, &global_min_energy, 1, MPI_DOUBLE, MPI_MIN, MPI_GLOBAL_COMMUNICATOR);
+        MPI_Allreduce(&local_max_energy, &global_max_energy, 1, MPI_DOUBLE, MPI_MAX, MPI_GLOBAL_COMMUNICATOR);
         
         // Find global minimum and maximum velocities
-        MPI_Allreduce(&local_min_velocity, &global_min_velocity, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
-        MPI_Allreduce(&local_max_velocity, &global_max_velocity, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+        MPI_Allreduce(&local_min_velocity, &global_min_velocity, 1, MPI_DOUBLE, MPI_MIN, MPI_GLOBAL_COMMUNICATOR);
+        MPI_Allreduce(&local_max_velocity, &global_max_velocity, 1, MPI_DOUBLE, MPI_MAX, MPI_GLOBAL_COMMUNICATOR);
         
         // Return range values if pointers provided
         if (min_energy) *min_energy = global_min_energy;
@@ -755,7 +755,7 @@ void WaveParticleCouplingManager(
     
     double B0, rho;
     int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
 
     int processed_segments = 0;
     double total_wave_energy_change_system = 0.0;
@@ -874,7 +874,7 @@ void WaveParticleCouplingManager(
     // Sum total wave energy change across all MPI processes
     double global_wave_energy_change = 0.0;
     MPI_Allreduce(&total_wave_energy_change_system, &global_wave_energy_change, 
-                  1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+                  1, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
     
     // Calculate actual wave energy change from initial/final values
     double actual_wave_energy_change = final_total_wave_energy - initial_total_wave_energy;
@@ -2215,7 +2215,7 @@ double CalculateTotalWaveEnergyInSystem(PIC::Datum::cDatumStored& WaveEnergy) {
 
     // Sum across all MPI processes
     double total_energy = 0.0;
-    MPI_Allreduce(&local_total_energy, &total_energy, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&local_total_energy, &total_energy, 1, MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
 
     return total_energy;  // [J]
 }
@@ -2233,7 +2233,7 @@ void CheckEnergyConservation(PIC::Datum::cDatumStored& WaveEnergy, bool verbose)
     double total_energy = wave_energy + particle_energy;
 
     int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
 
     if (rank == 0) {
         if (verbose) {

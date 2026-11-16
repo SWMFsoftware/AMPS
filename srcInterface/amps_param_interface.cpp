@@ -261,14 +261,38 @@ exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_")
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
 
-      if (t=="HE_2019_AJL") SEP::ParticleMoverSet(SEP::_HE_2019_AJL_);
-      else if (t=="Kartavykh_2016_AJ") SEP::ParticleMoverSet(SEP::_Kartavykh_2016_AJ_);
-      else if (t=="BOROVIKOV_2019_ARXIV") SEP::ParticleMoverSet(SEP::_BOROVIKOV_2019_ARXIV_);
-      else if (t=="Droge_2009_AJ") SEP::ParticleMoverSet(SEP::_Droge_2009_AJ_);
-      else if (t=="Parker_MeanFreePath") SEP::ParticleMoverSet(SEP::_ParkerMeanFreePath_FL_);
-      else if (t=="MeanFreePathScattering") SEP::ParticleMoverSet(SEP::_MeanFreePathScattering_);
-      else if (t=="Tenishev_2005_FL") SEP::ParticleMoverSet(SEP::_Tenishev_2005_FL_);
-      else exit(__LINE__,__FILE__,"Error: the parameter value is not recognized");
+      // srcSEP selects one of its three production movers at run time
+      // (srcSEP/PRODUCTION_MOVER_API.md).  The value is parsed by the same
+      // registry as the standalone option --particle-mover, so exactly the
+      // canonical names parker, fte-dmumu and fte-mfp are accepted.  The values
+      // used before srcSEP Step 5/14 (September 2026) named implementations
+      // that no longer exist (SEP::ParticleMoverSet and its codes were
+      // removed); they are rejected with the replacement documented in
+      // srcSEP/MIGRATION_MANIFEST.md instead of being mapped silently, because
+      // a different mover is a different physical model.
+      SEP::Mover::ProductionMover mover;
+      std::string warning;
+
+      if (SEP::Mover::ParseProductionMover(t,mover,warning)) {
+        SEP::Mover::SelectProductionMover(mover);
+        if (warning.empty()==false) cout << "PT: WARNING: " << warning << endl;
+        cout << "PT: SEP production mover: " << SEP::Mover::Describe(mover).canonicalName << endl;
+      }
+      else {
+        std::string replacement;
+
+        if (t=="Droge_2009_AJ") replacement="fte-dmumu (ParticleMover_Droge_2009_AJ was replaced by ParticleMover_FocusedTransport_Dmumu)";
+        else if ((t=="Parker_MeanFreePath")||(t=="MeanFreePathScattering")||(t=="Tenishev_2005_FL")) {
+          replacement="fte-mfp (the event-driven mean-free-path mover ParticleMover_FocusedTransport_EventDriven; the mean free path is selected with #SEP_MEAN_FREE_PATH_MODEL)";
+        }
+        else if ((t=="HE_2019_AJL")||(t=="Kartavykh_2016_AJ")||(t=="BOROVIKOV_2019_ARXIV")) {
+          replacement="none in srcSEP: these movers need a 3-D particle state that srcSEP no longer has";
+        }
+        else replacement="parker, fte-dmumu or fte-mfp";
+
+        std::string msg="Error: #SEP_MOVER1D value '"+t+"' is not a srcSEP production mover; use "+replacement+" (see srcSEP/MIGRATION_MANIFEST.md)";
+        exit(__LINE__,__FILE__,msg.c_str());
+      }
       #else
 exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
 #endif
@@ -419,11 +443,10 @@ exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_")
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
 
-      if (t == "T") {
-        SEP::AccountTransportCoefficient=true;
-      }
-      else if (t=="F") {
-        SEP::AccountTransportCoefficient=false;
+      // Retired with SEP::AccountTransportCoefficient: the variable had no
+      // effect in the canonical movers (srcSEP/MIGRATION_MANIFEST.md).
+      if ((t=="T")||(t=="F")) {
+        cout << "PT: WARNING: #SEP_TRANSPORT_FORCE is retired and ignored (no effect in the srcSEP production movers)" << endl;
       }
       else exit(__LINE__,__FILE__);
       #else
@@ -466,14 +489,13 @@ exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_")
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
 
-      if (t == "RK1") {
-        SEP::ParticleFieldLineDisplacementMethod=_TRAJECTORY_INTEGRATION_FIELD_LINE_3D__RK1_;
-      }
-      else if (t=="RK2") {
-        SEP::ParticleFieldLineDisplacementMethod=_TRAJECTORY_INTEGRATION_FIELD_LINE_3D__RK2_;
-      }
-      else if (t=="RK4") {
-        SEP::ParticleFieldLineDisplacementMethod=_TRAJECTORY_INTEGRATION_FIELD_LINE_3D__RK4_;
+      // Retired with SEP::ParticleFieldLineDisplacementMethod: srcSEP moves
+      // particles along a field line through FieldLine::move only, so there is
+      // no integration method to select.  Input key
+      // ParticleTrajectoryIntegrationAlongFieldLine3D is ignored the same way
+      // (input/sep.input.pl).
+      if ((t=="RK1")||(t=="RK2")||(t=="RK4")) {
+        cout << "PT: WARNING: #SEP_TRAJECTORY_INTEGRATION_METHOD is retired and ignored (srcSEP integrates along the field line with FieldLine::move)" << endl;
       }
       else exit(__LINE__,__FILE__);
       #else
@@ -509,11 +531,12 @@ exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_")
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
 
-      if (t == "T") {
-        SEP::PerpendicularDiffusionMode=true;
-      }
-      else if (t=="F") {
-        SEP::PerpendicularDiffusionMode=false;
+      // Retired with SEP::PerpendicularDiffusionMode: srcSEP keeps particles on
+      // their field line (cross-field displacement was removed in Step 5).
+      // Input key PerpendicularDiffusionMode is ignored the same way
+      // (input/sep.input.pl).
+      if ((t=="T")||(t=="F")) {
+        cout << "PT: WARNING: #SEP_PERPENDICULAR_DIFFUSION is retired and ignored (srcSEP has no cross-field particle displacement)" << endl;
       }
       else exit(__LINE__,__FILE__);
       #else
@@ -549,11 +572,10 @@ exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_")
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
 
-      if (t == "T") {
-        SEP::LimitScatteringUpcomingWave=true;
-      }
-      else if (t=="F") {
-        SEP::LimitScatteringUpcomingWave=false;
+      // Retired with SEP::LimitScatteringUpcomingWave: the variable had no
+      // effect in the canonical movers (srcSEP/MIGRATION_MANIFEST.md).
+      if ((t=="T")||(t=="F")) {
+        cout << "PT: WARNING: #SEP_SCATTER_ONLY_INCOMING_WAVES is retired and ignored (no effect in the srcSEP production movers)" << endl;
       }
       else exit(__LINE__,__FILE__);
       #else
@@ -716,8 +738,9 @@ exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_")
       t=param_list.front().first;
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
-      SEP::NumericalScatteringEventLimiter=atof(t.c_str());
-      SEP::NumericalScatteringEventMode=true;
+      // Retired with SEP::NumericalScatteringEventMode/Limiter: they had no
+      // effect in the canonical movers (srcSEP/MIGRATION_MANIFEST.md).
+      cout << "PT: WARNING: #SEP_LIMIT_SCATTERING_EVENT_NUMBER is retired and ignored (no effect in the srcSEP production movers)" << endl;
       #else
 exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
 #endif

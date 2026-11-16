@@ -543,7 +543,7 @@ namespace GYROKINETIC {
     *tempFirstCellParticlePtr = ptr;
 
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-    PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable::cEntry *ThreadTemp =
+    PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable *ThreadTemp =
       block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(),i,j,k);
 
     PIC::ParticleBuffer::SetNext(ThreadTemp->first,ParticleData);
@@ -722,7 +722,7 @@ namespace GYROKINETIC {
     *tempFirstCellParticlePtr = ptr;
 
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-    PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable::cEntry *ThreadTemp =
+    PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable *ThreadTemp =
       block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(),i,j,k);
 
     PIC::ParticleBuffer::SetNext(ThreadTemp->first,ParticleData);

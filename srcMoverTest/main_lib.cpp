@@ -94,7 +94,13 @@ long int PrepopulateDomain() {
     x[0] = xLoc;
     x[1] = dy*rnd()+yLoc[0];
     x[2] = 0.0;
-      
+
+    //the gyrophase is drawn on every MPI process. All processes are seeded alike (rnd_seed(100)) and
+    //place the same particles only while they consume the same random numbers: drawing it only on the
+    //process that owns the particle shifted that process' sequence, so the processes then drew different
+    //positions and created a set of particles that depended on the domain decomposition (55 instead of
+    //nTotal=50 particles of each species with 8 processes)
+    double phi = 2*Pi*rnd();
       
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node = PIC::Mesh::mesh->findTreeNode(x,NULL);
       
@@ -103,7 +109,6 @@ long int PrepopulateDomain() {
 	double v[3];
 	int spec0=0,spec1=1;
 	double weightCorrection=1.0;
-	double phi = 2*Pi*rnd();
 	v[0]=-0.2*SpeedOfLight;
 	
 	v[1]=0.1*SpeedOfLight*cos(phi);

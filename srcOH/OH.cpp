@@ -1124,9 +1124,9 @@ void OH::Sampling::OriginLocation::SampleParticleData(char *ParticleData,double 
     if (OriginID>=nSampledOriginLocations) {
       char msg[500];
 
-      sprintf(msg,"$PREFIX:Error: OriginID is out of range. Update the input file with the corrected value of the number of the source regions");
-      sprintf(msg,"%s\n$PREFIX:Error: OriginID=%i",msg,OriginID);
-      sprintf(msg,"%s\n$PREFIX:Error: nSampledOriginLocations=%i\n",msg,nSampledOriginLocations);
+      //one snprintf: sprintf(msg,"%s...",msg,...) reads from the buffer it writes (undefined behavior)
+      snprintf(msg,sizeof(msg),"$PREFIX:Error: OriginID is out of range. Update the input file with the corrected value of the number of the source regions\n"
+        "$PREFIX:Error: OriginID=%i\n$PREFIX:Error: nSampledOriginLocations=%i\n",OriginID,nSampledOriginLocations);
 
       exit(__LINE__,__FILE__,msg);
     }

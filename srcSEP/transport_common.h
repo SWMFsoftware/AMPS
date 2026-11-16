@@ -119,6 +119,13 @@ struct CouplingRecord {
 void QueueWaveContribution(const CouplingRecord& record);
 void FlushWaveContributions();
 
+// PIC::ParticleBuffer::CloneParticle() (population-control splitting) copies the
+// complete particle record, including the stable particle id that keys the
+// transport random streams and the deterministic coupling reduction.  The driver
+// calls RekeyClonedParticles() after splitting: every repeated id on this MPI
+// process gets a new deterministic id, so clones evolve independently.
+void RekeyClonedParticles();
+
 }  // namespace PICAdapter
 }  // namespace Transport
 }  // namespace SEP

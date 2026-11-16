@@ -844,6 +844,17 @@ void PIC::MolecularCollisions::ParticleCollisionModel::CollisionModelManager(voi
   //global offsets
   int LoadBalancingMeasureOffset=PIC::Mesh::cDataBlockAMR_static_data::LoadBalancingMeasureOffset;
 
+  // The cell loop below visits only the blocks listed in
+  // DomainBlockDecomposition::BlockTable. PIC::TimeStep() refreshes that table
+  // before it calls the collision model, but ntc()/mf()/mf_Yinsi() are public
+  // and are also called directly (e.g., test/srcModelCollisionTest). Without a
+  // refresh, a caller that never ran PIC::TimeStep() sees nLocalBlocks==0 and
+  // the collision step silently does nothing; after a mesh change the table
+  // could also point at blocks this rank no longer owns. UpdateBlockTable()
+  // returns immediately when the mesh is unchanged, so this is a no-op on the
+  // PIC::TimeStep() path.
+  PIC::DomainBlockDecomposition::UpdateBlockTable();
+
   //simulate particle's collisions
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
   if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
@@ -985,7 +996,15 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_si
     double m0 = PIC::MolecularData::GetMass(s0);
     double LocalTimeStep = block->GetLocalTimeStep(s0);  // Same for all species
     double LocalParticleWeight = block->GetLocalParticleWeight(s0);  // Same for all species
-    
+
+    // A non-positive weight (e.g., the -1 "not initialized" global weight)
+    // makes MajorantFrequency negative, and the majorant time counter below
+    // then decreases forever instead of reaching LocalTimeStep.
+    if (!(LocalParticleWeight > 0.0) || !std::isfinite(LocalParticleWeight) ||
+        !(LocalTimeStep > 0.0) || !std::isfinite(LocalTimeStep))
+      exit(__LINE__,__FILE__,
+          "simplified MF requires a positive finite particle weight and time step");
+
     // Populate s0 particle list
     cParticleDataList *s0List = s0ParticleDataList;
     int cnt = 0;

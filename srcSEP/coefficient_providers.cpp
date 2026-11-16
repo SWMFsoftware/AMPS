@@ -51,6 +51,35 @@ ParticleContext AtRelativeArcLength(const ParticleContext& origin,
   return sampled;
 }
 
+// The transport cores sample the coefficients at a predicted location along
+// the step (e.g. AdvanceFocusedTransportDmumu() at the predicted midpoint).
+// For a particle that leaves the domain through an end of the field line in
+// this step that location lies beyond the line, and the strict lookup above
+// stopped the run ("coefficient sample lies outside the field line") at the
+// first exiting particle.  Such a sample uses the coefficient at that end of
+// the line; the particle itself is removed by AdvanceAlongFieldLine().  The
+// derivative stencils (FiniteKappaAt) keep the strict lookup: they rely on it
+// to select one-sided differences at the ends of the line.
+ParticleContext AtRelativeArcLengthOrLineEnd(const ParticleContext& origin,
+                                             double relativeArcLengthM,
+                                             Status* status) {
+  ParticleContext sampled = AtRelativeArcLength(origin, relativeArcLengthM,
+                                                status);
+  if (status && !status->ok() && status->code == StatusCode::OutOfDomain) {
+    PIC::FieldLine::cFieldLine& line =
+        PIC::FieldLine::FieldLinesAll[origin.state.fieldLineId];
+    if (line.GetSegment(origin.state.coordinate) != NULL) {
+      sampled = origin;
+      sampled.state.coordinate = (relativeArcLengthM < 0.0)
+          ? 0.0
+          : std::nextafter(static_cast<double>(line.GetTotalSegmentNumber()), 0.0);
+      sampled.segment = line.GetSegment(sampled.state.coordinate);
+      if (sampled.segment) *status = Status::Ok();
+    }
+  }
+  return sampled;
+}
+
 std::uint64_t HashBytes(std::uint64_t hash, const void* data,
                         std::size_t size) {
   const unsigned char* bytes = static_cast<const unsigned char*>(data);
@@ -600,7 +629,7 @@ PICMeanFreePathProvider::PICMeanFreePathProvider(
 MeanFreePathSample PICMeanFreePathProvider::Evaluate(
     double sM, double momentumKgMPerS, double) const {
   Status locationStatus;
-  const ParticleContext sampled = AtRelativeArcLength(
+  const ParticleContext sampled = AtRelativeArcLengthOrLineEnd(
       context_, sM, &locationStatus);
   if (!locationStatus.ok()) {
     MeanFreePathSample result;
@@ -637,7 +666,7 @@ SpatialDiffusionSample PICSpatialDiffusionProvider::Evaluate(
     double sM, double speedMPerS) const {
   SpatialDiffusionSample sample;
   Status locationStatus;
-  const ParticleContext sampled = AtRelativeArcLength(
+  const ParticleContext sampled = AtRelativeArcLengthOrLineEnd(
       context_, sM, &locationStatus);
   if (!locationStatus.ok()) { sample.status = locationStatus; return sample; }
   const Status sourceStatus = ValidateConfiguredSource();
@@ -751,7 +780,7 @@ PitchAngleDiffusionSample PICPitchAngleDiffusionProvider::Evaluate(
   const Status sourceStatus = ValidateConfiguredSource();
   if (!sourceStatus.ok()) { sample.status = sourceStatus; return sample; }
   Status locationStatus;
-  const ParticleContext sampled = AtRelativeArcLength(
+  const ParticleContext sampled = AtRelativeArcLengthOrLineEnd(
       context_, sM, &locationStatus);
   if (!locationStatus.ok()) { sample.status = locationStatus; return sample; }
   CP::LocalInputView input;

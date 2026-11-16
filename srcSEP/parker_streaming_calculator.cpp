@@ -115,7 +115,7 @@ void CalculateParkerGrowthRatesFromScalar(
     // MPI SETUP
     // ========================================================================
     int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
     
     // Create non-const copies for GetDatum_ptr calls
     PIC::Datum::cDatumStored S_scalar_copy = S_scalar;
@@ -304,7 +304,7 @@ void CalculateParkerGrowthRatesIntegrated(
     
     // MPI setup
     int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
     PIC::Datum::cDatumStored S_scalar_copy = S_scalar;
     
     // Direct accumulators (no arrays!)

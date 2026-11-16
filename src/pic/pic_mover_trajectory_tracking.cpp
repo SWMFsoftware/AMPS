@@ -1308,8 +1308,12 @@ double vInit_debug[3]={vInit[0],vInit[1],vInit[2]};
     }
 
 
-    //advance the particle location and velocity
-    if (dtTotal<dt) {
+    //advance the particle location and velocity.
+    //A particle that would stop less than EPS in front of the cut face it is flying to is moved to the face and
+    //the intersection is processed now: GetCutSurfaceIntersectionTime() ignores intersections closer than EPS
+    //(so that a particle that has just left a face does not hit it again), so in the next time step such
+    //a particle would cross the surface undetected and continue inside the body.
+    if ((dtTotal<dt)&&!((IntersectionMode==_cut_triangle)&&((dt-dtTotal)*Vector3D::Length(vInit)<=PIC::Mesh::mesh->EPS))) {
       for (idim=0;idim<3;idim++) {
         xInit[idim]+=dtTotal*vInit[idim];
         vInit[idim]+=0.0;
@@ -1360,7 +1364,10 @@ double vInit_debug[3]={vInit[0],vInit[1],vInit[2]};
 
         startNode=PIC::Mesh::mesh->findTreeNode(x_test,startNode);
         if (startNode==NULL) {
-          for (int i=0;i<3;i++) xInit[idim]=x_test[idim];
+          //the particle has left the domain: continue with the test point outside of it.
+          //(The index used to be idim, which is 3 after the loop above: xInit[3] was written,
+          //a stack overflow that aborts the run with 'stack smashing detected'.)
+          for (int i=0;i<3;i++) xInit[i]=x_test[i];
         }
 
         break;
@@ -1409,7 +1416,7 @@ double vInit_debug[3]={vInit[0],vInit[1],vInit[2]};
     //       if (ProcessOutsideDomainParticles!=NULL) {
     //determine through which face the particle left the domain
 
-    int nface,nIntersectionFace;
+    int nface,nIntersectionFace=-1;
     double tVelocityIncrement,cx,cv,r0[3],dt,vMiddle[3]={0.5*(vInit[0]+vFinal[0]),0.5*(vInit[1]+vFinal[1]),0.5*(vInit[2]+vFinal[2])},c,dtIntersection=-1.0;
 
     for (nface=0;nface<6;nface++) {

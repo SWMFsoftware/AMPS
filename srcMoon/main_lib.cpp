@@ -1847,8 +1847,14 @@ void amps_init() {
    // leaves it disabled because there is no receipt that could authorize or
    // provenance the output.  ``mesh.msh`` below remains unconditional: rank 0
    // writes that AMR-tree exchange file and other MPI ranks read it.
-   const bool writeMeshTecplot = Moon::Runtime::HasConfiguration() &&
-       Moon::Runtime::GetConfiguration().meshOutputTecplot;
+   // Exception: a nightly-test build (-amps-test=on) without a runtime receipt
+   // keeps the historical output.  Its mesh is the coarse regression mesh, and
+   // test_Moon-tetra-cut-cells (MakefileTest/Table) compares the cut-cell
+   // tetrahedral mesh tetra_mesh.thread=1.dat with its reference.  Writing the
+   // diagnostic does not change the particle state.
+   const bool writeMeshTecplot = Moon::Runtime::HasConfiguration() ?
+       Moon::Runtime::GetConfiguration().meshOutputTecplot :
+       (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_);
 
 
     fname=std::string(PIC::OutputDataFileDirectory)+"/mesh.msh";

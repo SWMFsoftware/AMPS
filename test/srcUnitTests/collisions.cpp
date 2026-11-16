@@ -54,6 +54,34 @@ namespace AMPS_COLLISON_TEST  {
     }
 }
 
+  //Set the particle weight/time step of species 's' to exactly 'value' for the
+  //duration of a heat-bath experiment, and restore the saved state afterwards.
+  //In the global modes cDataBlockAMR::SetLocalParticleWeight()/SetLocalTimeStep()
+  //only lower the global value (they build the minimum over blocks during the
+  //initialization) and reject the -1 "not initialized" sentinel, so they can
+  //neither raise a value nor restore the initial state of a test that started
+  //before the weight was ever set. Write the global table directly in those
+  //modes; in the local modes the block setters are exact.
+  void SetExactParticleWeight(PIC::Mesh::cDataBlockAMR *block,int s,double value) {
+#if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
+    PIC::ParticleWeightTimeStep::GlobalParticleWeight[s]=value;
+#elif _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SINGLE_GLOBAL_PARTICLE_WEIGHT_
+    PIC::ParticleWeightTimeStep::GlobalParticleWeight[0]=value;
+#else
+    if (value>0.0) block->SetLocalParticleWeight(value,s);
+#endif
+  }
+
+  void SetExactTimeStep(PIC::Mesh::cDataBlockAMR *block,int s,double value) {
+#if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
+    PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=value;
+#elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
+    PIC::ParticleWeightTimeStep::GlobalTimeStep[0]=value;
+#else
+    if (value>0.0) block->SetLocalTimeStep(value,s);
+#endif
+  }
+
 
   void  VelocityAfterCollision(double &RelativeErrorMomentum,double &RelativeErrorEnergy,double &RelativeErrorVel,int s0,int s1,void (*fVelocityAfterCollision)(double*,double,double*,double,double*,double*)) {
     double v_s0[3],v_s1[3],m_s0,m_s1,am,vrel[3],vbulk[3]={0.0,0.0,0.0},energy_sum_init,energy_sum_after,mvsum_init[3],mvsum_after[3],vcm[3];
@@ -289,26 +317,47 @@ namespace AMPS_COLLISON_TEST  {
 	    }
     }
 
-    block->SetLocalTimeStep(dt[ispec],s);
-    block->SetLocalParticleWeight(StatWeight[ispec],s);
+    SetExactTimeStep(block,s,dt[ispec]);
+    SetExactParticleWeight(block,s,StatWeight[ispec]);
 
     n[ispec]=StatWeight[ispec]*nTotalInjectedParticles/Measure; 
   }
+
+    //Pair count of a same-species collision: the general NTC
+    //(ModelCellCollisions_ntc) draws both partners independently and discards
+    //a self draw, i.e., it samples the N(N-1)/2 distinct pairs of the N model
+    //particles of the cell; the MF and the simplified kernels redraw the partner
+    //and use N^2/2. With the fixed N of this heat bath the former gives (N-1)/N
+    //of the continuum rate n^2*sigma*<g> (for a Poisson N both are unbiased).
+    auto SelfPairFactor=[&](int nModelParticles) -> double {
+      return (fCellCollision==MC::ParticleCollisionModel::ModelCellCollisions_ntc) ?
+        (nModelParticles-1.0)/nModelParticles : 1.0;
+    };
 
     if (s0==s1) {
       MeanRelativeVelocity=sqrt(16.0*Kbol*Tkin/(Pi*m_s0));
       sigma=MD::MolecularModels::GetTotalCrossSection(s0,vv,s0,vv);
 
-      CollsionFrequentcyTheory[0][0]=pow(n[0]+n[1],2)*sigma*MeanRelativeVelocity;     
+      CollsionFrequentcyTheory[0][0]=pow(n[0]+n[1],2)*sigma*MeanRelativeVelocity*SelfPairFactor(2*nTotalInjectedParticles);
       CollsionFrequentcyTheory[1][1]=CollsionFrequentcyTheory[0][0];
     }
     else {
+      //CollsionFrequentcy[si][sj] is the sampled rate density of collisions of
+      //species si with partner sj (a same-species collision is counted for both
+      //partners), so every entry has its own reduced mass, cross section and
+      //density product. Comparing the self entries with the cross-species rate,
+      //as before, carries an intrinsic mismatch of <g_ss>/<g_01>-1 (-3.0% for
+      //H2O and +2.9% for O at equal n) -- the size of the 3% tolerance itself.
       for (i=0;i<2;i++) for (j=0;j<2;j++) {
-        m=m_s0*m_s1/(m_s0+m_s1);
+        int si=(i==0) ? s0 : s1,sj=(j==0) ? s0 : s1;
+        double mi=MD::GetMass(si),mj=MD::GetMass(sj);
+
+        m=mi*mj/(mi+mj);
         MeanRelativeVelocity=sqrt(8.0*Kbol*Tkin/(Pi*m));
-        sigma=MD::MolecularModels::GetTotalCrossSection(s0,vv,s1,vv); 
-        CollsionFrequentcyTheory[i][j]=n[0]*n[1]*sigma*MeanRelativeVelocity;
-      }   
+        sigma=MD::MolecularModels::GetTotalCrossSection(si,vv,sj,vv);
+        CollsionFrequentcyTheory[si][sj]=n[i]*n[j]*sigma*MeanRelativeVelocity*
+          ((si==sj) ? SelfPairFactor(nTotalInjectedParticles) : 1.0);
+      }
     }
 
 
@@ -405,16 +454,20 @@ namespace AMPS_COLLISON_TEST  {
       ptr=ptr_next;
     }
 
-    //7. Restore the initial state
+    //the particles of the cell are deleted: empty the cell list right away, so
+    //nothing below can leave it pointing at released particle slots
+    block->FirstCellParticleTable[icell+_BLOCK_CELLS_X_*(jcell+_BLOCK_CELLS_Y_*kcell)]=-1;
+
+    //7. Restore the initial state (in the global modes it can be the -1
+    //"not initialized" sentinel, see SetExactParticleWeight())
     for (ispec=0;ispec<2;ispec++) {
       s=(ispec==0) ? s0 : s1;
 
-      block->SetLocalTimeStep(InitTimeStep[ispec],s); 
-      block->SetLocalParticleWeight(InitWeight[ispec],s);
+      SetExactTimeStep(block,s,InitTimeStep[ispec]);
+      SetExactParticleWeight(block,s,InitWeight[ispec]);
     }
 
-
-    block->FirstCellParticleTable[icell+_BLOCK_CELLS_X_*(jcell+_BLOCK_CELLS_Y_*kcell)]=-1;
+    cell->Measure=InitMeasure;
   }
 }
 
@@ -432,6 +485,13 @@ class ParticleCollisionTest :
 protected:
     void SetUp() override {
         ParticleTestBase<>::SetUp();
+
+        //ParticleTestBase::SetUp() replaces the particle buffer, so any list left
+        //in the heat-bath cell by an earlier case that stopped early (failed
+        //assertion or exception) indexes the previous buffer. Linking new
+        //particles to such a list can make it cyclic and hang the next case.
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
+        if ((node!=NULL)&&(node->block!=NULL)) node->block->FirstCellParticleTable[0]=-1;
     }
 
     void TearDown() override {
@@ -515,6 +575,13 @@ TEST_P(ParticleCollisionTest, MyHandlesInputs) {
   //evaluate temparature
   double TkinInit[2],Tkin[2],Trot[2]={0.0,0.0};
   cRelativeDiff RelativeDiff;
+
+  //report the sampled collision frequencies and their expected values
+  for (int i=0;i<((s0==s1) ? 1 : 2);i++) for (int j=0;j<((s0==s1) ? 1 : 2);j++) {
+    std::cout << "  collision frequency [" << i << "][" << j << "]: sampled=" << (double)CollsionFrequentcy[i][j]
+              << ", expected=" << (double)CollsionFrequentcyTheory[i][j]
+              << ", relative difference=" << RelativeDiff(CollsionFrequentcy[i][j],CollsionFrequentcyTheory[i][j]) << std::endl;
+  }
 
   if (s0==s1) {
     EXPECT_LT(RelativeDiff(energySumInit,energySumAfter),1.0E-10); 

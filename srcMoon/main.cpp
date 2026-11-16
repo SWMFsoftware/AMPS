@@ -243,6 +243,18 @@ t.SwitchTimeSegment(__LINE__);
   const std::string fname=std::string(PIC::OutputDataFileDirectory)+"/test_Moon.dat";
   PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname.c_str());
 
+#if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
+  // The nightly test_Moon-restart (MakefileTest/Table, input/moon-restart.input)
+  // continues this regression from its final particle state.  moon.input
+  // deliberately disables the periodic particle autosave because the long I11
+  // campaigns cannot use particle-only checkpoints; those campaigns are always
+  // configured with -amps-test=off, so only the nightly regression build writes
+  // this single file, after test_Moon.dat has been written.
+  if (_PIC_AUTOSAVE_PARTICLE_DATA_RESTART_FILE__MODE_ !=
+      _PIC_AUTOSAVE_PARTICLE_DATA_RESTART_FILE__MODE_ON_)
+    PIC::Restart::SaveParticleData("ParticleData.restart");
+#endif
+
 t.SwitchTimeSegment(__LINE__);
 t.Stop(__LINE__);
 

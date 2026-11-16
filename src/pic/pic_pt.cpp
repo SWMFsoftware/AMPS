@@ -357,7 +357,7 @@
  *     PhysicalData) so that stale/incompatible files are detected at read time.
  *
  * =============================================================================
- * CONFIGURATION (input file keywords, parsed in pic_parser.cpp)
+ * CONFIGURATION (keywords of the #main block of the input file, parsed by ampsConfig.pl)
  * =============================================================================
  *
  *   TRAJECTORY_OUTPUT_POINTS = N

@@ -450,14 +450,18 @@ double  nucleusGravity::gravity(double * gravitypermass, double * position) {
      //clean the acceleartion vector
      for (idim=0;idim<3;idim++) gravitypermass[idim]=0.0;
 
+     //the sum runs over all tetrahedrons of the nucleus volume mesh (about 1e6 for SHAP5_Volume.bdf) for every
+     //evaluated point; r^3 is computed as r^2*sqrt(r^2) rather than with pow(), which made the initialization of
+     //the gravity field near the nucleus take hours (the two expressions agree to within the last bit)
      for (nfc=0;nfc<ntetras;nfc++){
         double r_3,r2Center[3],r_squared=0.0;
 
 	for (idim=0;idim<3;idim++) {
-	  r_squared+=pow((r2Center[idim]=position[idim]-xThetrahedronCenter[nfc][idim]),2.0);
+	  r2Center[idim]=position[idim]-xThetrahedronCenter[nfc][idim];
+	  r_squared+=r2Center[idim]*r2Center[idim];
 	}
 
-        r_3=1.0/pow(r_squared,3.0/2.0); 
+        r_3=1.0/(r_squared*sqrt(r_squared));
 
 	for (idim=0;idim<3;idim++) {
 	  gravitypermass[idim]-=ThetrahedronVolume[nfc]*r2Center[idim]*r_3;				       

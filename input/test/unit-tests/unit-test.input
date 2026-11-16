@@ -62,6 +62,12 @@ ParticleWeightCorrectionMode=off !on,off
 
   Rnd=MersenneTwister !!default ! default,MersenneTwister
 
+  !the unit tests are linked only when requested (test/srcUnitTests/main.cpp): without
+  !this define the executable contains no tests and GoogleTest runs 0 of them.
+  !Test unit_test runs the particle buffer tests in the default configuration
+  !(no field lines, no particle weight correction)
+  define LINK_BUFFER_TEST
+
   NastranSurfaceUserData=on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,of
 

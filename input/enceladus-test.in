@@ -1,0 +1,38 @@
+! Enceladus per-run input for the nightly regression test_Enceladus
+! (MakefileTest/Table passes it with -input; see srcEnceladus/RUNTIME_INPUT.md).
+!
+! Since 4c0e1eae the Enceladus executable refuses to start without a run deck,
+! and the checked-in input/enceladus.in is the 10,000-iteration E3 science run
+! with machine-specific observation data.  This deck is the short, self-contained
+! regression: the same species, chemistry, source receipt and numerics as
+! input/enceladus.in, but the 150 iterations of the historical nightly test, no
+! flyby/observation products (no external data) and no flyby mesh refinement.
+! Changing any value here changes the test_Enceladus reference solution.
+
+#begin application: enceladus
+schema_version=2
+source_distribution_file=enceladus_e3_equal_h2o_co2_sources.in
+
+simulated_species=H2O,CO2
+injected_species=H2O,CO2
+chemistry_species=H2O
+reaction_products=discard
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+solar_activity=active
+plasma_background_mode=none
+
+primary_macroparticles_per_step.H2O=100
+primary_macroparticles_per_step.CO2=100
+characteristic_speed.H2O_m_s-1=300
+characteristic_speed.CO2_m_s-1=300
+courant.H2O=0.5
+courant.CO2=0.5
+
+sample_length_steps=100
+total_iterations=150
+volume_field_output=false
+flyby_density_output=false
+flyby_mesh_refinement=false
+random_seed=184467
+particle_splitting_merging=off
+#end application

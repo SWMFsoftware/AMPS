@@ -7,5 +7,5 @@
 
 ta16 :
 	${COMPILE.f77} ${Cflag3} TA16.for
-	${COMPILE.mpicxx} ${FLAGC} -std=c++14 TA16Interface.cpp -o TA16Interface.o
+	${COMPILE.mpicxx} ${FLAGCC} TA16Interface.cpp -o TA16Interface.o
 	ar -src TA16.a TA16.o TA16Interface.o

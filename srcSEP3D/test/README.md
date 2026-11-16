@@ -16,7 +16,11 @@ shock-front runner and positive 1-AU qualification, the native point-sampling
 acceptance (`point-sampling`), the pitch-angle library's global runner
 (`pitch-angle-library`: `src/models/sep_common/pitch_angle_diffusion/run_all_tests.py`,
 its unit, reference and statistical acceptance tests; the acceptance
-campaign, ~2.3 h on 16 idle cores, is reused when its binary is unchanged),
+campaign, ~2.3 h on 16 idle cores, is reused when its binary is unchanged;
+`[long]`), its nightly tier (`pitch-angle-nightly`: the same runner with
+`--nightly-acceptance`, the unit and reference tests plus 10 acceptance cases of
+the released pairs at 1/8 of the particles, ~7 min on 8 threads; not skipped by
+`--quick`),
 the native pitch-angle binding smoke test (`pitch-angle-native`:
 `run_pitch_angle_native.py`, PAN01-PAN06), the shock-front viewer tests, the shared `sep_corona_swcme` tests (run with `make -i` so every test
 binary runs; BG3D-4 is still UNQUALIFIED and its FAIL is expected evidence) and

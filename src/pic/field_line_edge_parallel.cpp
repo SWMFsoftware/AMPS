@@ -46,7 +46,7 @@ EXAMPLE 2: Distribute initial conditions from master process
 ------------------------------------------------------------
 ```cpp
 int rank;
-MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
 
 PIC::Datum::cDatumStored initialConditions;
 
@@ -67,7 +67,7 @@ EXAMPLE 3: Collect simulation results for output
 ------------------------------------------------
 ```cpp
 int rank;
-MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
 
 PIC::Datum::cDatumStored simulationResults;
 // ... each process computes local results ...
@@ -123,7 +123,7 @@ int main(int argc, char** argv) {
     MPI_Init(&argc, &argv);
     
     int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
     
     // NO INITIALIZATION NEEDED - just use the functions directly!
     
@@ -240,6 +240,15 @@ THREAD SAFETY:
 */
 
 #include "pic.h"
+
+// All collectives use MPI_GLOBAL_COMMUNICATOR, the communicator of this AMPS
+// instance, not MPI_COMM_WORLD.  They are the same in a standalone run.  In
+// SWMF, MPI_COMM_WORLD also holds the processors of the other components, and
+// with _PIC_DISCONNECTED_MPI_PROCESSES_ (each rank is an independent AMPS with
+// its own field lines; MPI_GLOBAL_COMMUNICATOR=MPI_COMM_SELF, pic_swmf.cpp)
+// the per-rank buffers have different lengths: an MPI_Allreduce over
+// MPI_COMM_WORLD then wrote past the shorter ones and corrupted the heap
+// (SEP::Turbulence::PICAdapter::Advance -> MPIAllReduceDatumStoredAtEdge).
 #include <iostream>
 #include <vector>
 
@@ -492,7 +501,7 @@ void UnpackProcessData(int target_process, const cDatumStored& S, const std::vec
 
 void MPIAllReduceDatumStoredAtEdge(const cDatumStored& S) {
     int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
     
     // Pack all data into buffer
     std::vector<double> buffer;
@@ -507,7 +516,7 @@ void MPIAllReduceDatumStoredAtEdge(const cDatumStored& S) {
     
     // Single MPI_Allreduce call
     int result = MPI_Allreduce(MPI_IN_PLACE, buffer.data(), buffer.size(), 
-                               MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+                               MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
     
     if (result != MPI_SUCCESS) {
         std::cerr << "Error: MPI_Allreduce failed with code " << result << std::endl;
@@ -525,8 +534,8 @@ void MPIAllReduceDatumStoredAtEdge(const cDatumStored& S) {
 
 void MPIReduceDatumStoredAtEdge(cDatumStored& S, int root_rank) {
     int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
+    MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &size);
 
     if (root_rank < 0 || root_rank >= size) {
         std::cerr << "Error: Invalid root_rank " << root_rank << std::endl;
@@ -554,7 +563,7 @@ void MPIReduceDatumStoredAtEdge(cDatumStored& S, int root_rank) {
     int result = MPI_Reduce(send_buffer.data(), 
                            (rank == root_rank) ? recv_buffer.data() : nullptr,
                            send_buffer.size(), MPI_DOUBLE, MPI_SUM, 
-                           root_rank, MPI_COMM_WORLD);
+                           root_rank, MPI_GLOBAL_COMMUNICATOR);
     
     if (result != MPI_SUCCESS) {
         std::cerr << "Error: MPI_Reduce failed with code " << result << std::endl;
@@ -571,8 +580,8 @@ void MPIReduceDatumStoredAtEdge(cDatumStored& S, int root_rank) {
 
 void MPIBcastDatumStoredAtEdge(cDatumStored& S, int root_rank) {
     int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
+    MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &size);
 
     if (root_rank < 0 || root_rank >= size) {
         std::cerr << "Error: Invalid root_rank " << root_rank << std::endl;
@@ -592,7 +601,7 @@ void MPIBcastDatumStoredAtEdge(cDatumStored& S, int root_rank) {
     
     // Broadcast buffer
     int result = MPI_Bcast(buffer.data(), buffer.size(), MPI_DOUBLE, 
-                          root_rank, MPI_COMM_WORLD);
+                          root_rank, MPI_GLOBAL_COMMUNICATOR);
     
     if (result != MPI_SUCCESS) {
         std::cerr << "Error: MPI_Bcast failed with code " << result << std::endl;
@@ -610,8 +619,8 @@ void MPIBcastDatumStoredAtEdge(cDatumStored& S, int root_rank) {
 
 void MPIGatherDatumStoredAtEdge(cDatumStored& S, int root_rank) {
     int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
+    MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &size);
 
     if (root_rank < 0 || root_rank >= size) {
         std::cerr << "Error: Invalid root_rank " << root_rank << std::endl;
@@ -626,12 +635,12 @@ void MPIGatherDatumStoredAtEdge(cDatumStored& S, int root_rank) {
         if (segments_count > 0) {
             // Send buffer size first, then data
             int buffer_size = send_buffer.size();
-            MPI_Send(&buffer_size, 1, MPI_INT, root_rank, rank * 2, MPI_COMM_WORLD);
-            MPI_Send(send_buffer.data(), buffer_size, MPI_DOUBLE, root_rank, rank * 2 + 1, MPI_COMM_WORLD);
+            MPI_Send(&buffer_size, 1, MPI_INT, root_rank, rank * 2, MPI_GLOBAL_COMMUNICATOR);
+            MPI_Send(send_buffer.data(), buffer_size, MPI_DOUBLE, root_rank, rank * 2 + 1, MPI_GLOBAL_COMMUNICATOR);
         } else {
             // Send zero size to indicate no data
             int buffer_size = 0;
-            MPI_Send(&buffer_size, 1, MPI_INT, root_rank, rank * 2, MPI_COMM_WORLD);
+            MPI_Send(&buffer_size, 1, MPI_INT, root_rank, rank * 2, MPI_GLOBAL_COMMUNICATOR);
         }
     } else {
         // Root: receive from all other processes
@@ -642,13 +651,13 @@ void MPIGatherDatumStoredAtEdge(cDatumStored& S, int root_rank) {
             
             // Receive buffer size first
             int buffer_size;
-            MPI_Recv(&buffer_size, 1, MPI_INT, proc, proc * 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(&buffer_size, 1, MPI_INT, proc, proc * 2, MPI_GLOBAL_COMMUNICATOR, MPI_STATUS_IGNORE);
             
             if (buffer_size > 0) {
                 // Receive data and unpack
                 std::vector<double> recv_buffer(buffer_size);
                 MPI_Recv(recv_buffer.data(), buffer_size, MPI_DOUBLE, proc, proc * 2 + 1, 
-                        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                        MPI_GLOBAL_COMMUNICATOR, MPI_STATUS_IGNORE);
                 
                 UnpackProcessData(proc, S, recv_buffer);
             }
@@ -661,7 +670,7 @@ void MPIGatherDatumStoredAtEdge(cDatumStored& S, int root_rank) {
 
 void MPIAllReduceDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S) {
     int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
     
     if (field_line_idx < 0 || field_line_idx >= nFieldLine) {
         std::cerr << "Error: Invalid field_line_idx " << field_line_idx << std::endl;
@@ -681,7 +690,7 @@ void MPIAllReduceDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S)
     
     // All-reduce for this field line
     int result = MPI_Allreduce(MPI_IN_PLACE, buffer.data(), buffer.size(), 
-                               MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+                               MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
     
     if (result != MPI_SUCCESS) {
         std::cerr << "Error: MPI_Allreduce failed for field line " << field_line_idx 
@@ -700,8 +709,8 @@ void MPIAllReduceDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S)
 
 void MPIAllGatherDatumStoredAtEdge(cDatumStored& S) {
     int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
+    MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &size);
 
     // Pack process-specific data
     std::vector<double> send_buffer;
@@ -711,7 +720,7 @@ void MPIAllGatherDatumStoredAtEdge(cDatumStored& S) {
     // Gather buffer sizes from all processes
     std::vector<int> all_buffer_sizes(size);
     int result = MPI_Allgather(&my_buffer_size, 1, MPI_INT, 
-                               all_buffer_sizes.data(), 1, MPI_INT, MPI_COMM_WORLD);
+                               all_buffer_sizes.data(), 1, MPI_INT, MPI_GLOBAL_COMMUNICATOR);
     
     if (result != MPI_SUCCESS) {
         std::cerr << "Error: MPI_Allgather (sizes) failed with code " << result << std::endl;
@@ -732,7 +741,7 @@ void MPIAllGatherDatumStoredAtEdge(cDatumStored& S) {
     // Gather all process data
     result = MPI_Allgatherv(send_buffer.data(), my_buffer_size, MPI_DOUBLE,
                            all_data.data(), all_buffer_sizes.data(), 
-                           displacements.data(), MPI_DOUBLE, MPI_COMM_WORLD);
+                           displacements.data(), MPI_DOUBLE, MPI_GLOBAL_COMMUNICATOR);
     
     if (result != MPI_SUCCESS) {
         std::cerr << "Error: MPI_Allgatherv failed with code " << result << std::endl;
@@ -765,8 +774,8 @@ void MPIAllGatherDatumStoredAtEdge(cDatumStored& S) {
 
 void MPIAllGatherDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S) {
     int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
+    MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &size);
     
     if (field_line_idx < 0 || field_line_idx >= nFieldLine) {
         std::cerr << "Error: Invalid field_line_idx " << field_line_idx << std::endl;
@@ -805,7 +814,7 @@ void MPIAllGatherDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S)
     // Gather buffer sizes from all processes
     std::vector<int> all_buffer_sizes(size);
     int result = MPI_Allgather(&my_buffer_size, 1, MPI_INT, 
-                               all_buffer_sizes.data(), 1, MPI_INT, MPI_COMM_WORLD);
+                               all_buffer_sizes.data(), 1, MPI_INT, MPI_GLOBAL_COMMUNICATOR);
     
     if (result != MPI_SUCCESS) {
         std::cerr << "Error: MPI_Allgather (sizes) failed for field line " << field_line_idx 
@@ -827,7 +836,7 @@ void MPIAllGatherDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S)
     // Gather all process data for this field line
     result = MPI_Allgatherv(send_buffer.data(), my_buffer_size, MPI_DOUBLE,
                            all_data.data(), all_buffer_sizes.data(), 
-                           displacements.data(), MPI_DOUBLE, MPI_COMM_WORLD);
+                           displacements.data(), MPI_DOUBLE, MPI_GLOBAL_COMMUNICATOR);
     
     if (result != MPI_SUCCESS) {
         std::cerr << "Error: MPI_Allgatherv failed for field line " << field_line_idx 
@@ -877,8 +886,8 @@ void MPIAllGatherDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S)
 
 void MPIReduceDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S, int root_rank) {
     int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
+    MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &size);
     
     if (field_line_idx < 0 || field_line_idx >= nFieldLine) {
         std::cerr << "Error: Invalid field_line_idx " << field_line_idx << std::endl;
@@ -911,7 +920,7 @@ void MPIReduceDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S, in
     int result = MPI_Reduce(send_buffer.data(), 
                            (rank == root_rank) ? recv_buffer.data() : nullptr,
                            send_buffer.size(), MPI_DOUBLE, MPI_SUM, 
-                           root_rank, MPI_COMM_WORLD);
+                           root_rank, MPI_GLOBAL_COMMUNICATOR);
     
     if (result != MPI_SUCCESS) {
         std::cerr << "Error: MPI_Reduce failed for field line " << field_line_idx 
@@ -929,8 +938,8 @@ void MPIReduceDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S, in
 
 void MPIBcastDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S, int root_rank) {
     int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
+    MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &size);
     
     if (field_line_idx < 0 || field_line_idx >= nFieldLine) {
         std::cerr << "Error: Invalid field_line_idx " << field_line_idx << std::endl;
@@ -955,7 +964,7 @@ void MPIBcastDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S, int
     
     // Broadcast buffer for this field line
     int result = MPI_Bcast(buffer.data(), buffer.size(), MPI_DOUBLE, 
-                          root_rank, MPI_COMM_WORLD);
+                          root_rank, MPI_GLOBAL_COMMUNICATOR);
     
     if (result != MPI_SUCCESS) {
         std::cerr << "Error: MPI_Bcast failed for field line " << field_line_idx 
@@ -974,8 +983,8 @@ void MPIBcastDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S, int
 
 void MPIGatherDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S, int root_rank) {
     int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
+    MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &size);
     
     if (field_line_idx < 0 || field_line_idx >= nFieldLine) {
         std::cerr << "Error: Invalid field_line_idx " << field_line_idx << std::endl;
@@ -1018,12 +1027,12 @@ void MPIGatherDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S, in
         if (my_segments > 0) {
             // Send buffer size first, then data
             int buffer_size = send_buffer.size();
-            MPI_Send(&buffer_size, 1, MPI_INT, root_rank, rank * 2, MPI_COMM_WORLD);
-            MPI_Send(send_buffer.data(), buffer_size, MPI_DOUBLE, root_rank, rank * 2 + 1, MPI_COMM_WORLD);
+            MPI_Send(&buffer_size, 1, MPI_INT, root_rank, rank * 2, MPI_GLOBAL_COMMUNICATOR);
+            MPI_Send(send_buffer.data(), buffer_size, MPI_DOUBLE, root_rank, rank * 2 + 1, MPI_GLOBAL_COMMUNICATOR);
         } else {
             // Send zero size to indicate no data
             int buffer_size = 0;
-            MPI_Send(&buffer_size, 1, MPI_INT, root_rank, rank * 2, MPI_COMM_WORLD);
+            MPI_Send(&buffer_size, 1, MPI_INT, root_rank, rank * 2, MPI_GLOBAL_COMMUNICATOR);
         }
     } else {
         // Root: receive from all other processes for this field line
@@ -1036,13 +1045,13 @@ void MPIGatherDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S, in
             
             // Receive buffer size first
             int buffer_size;
-            MPI_Recv(&buffer_size, 1, MPI_INT, proc, proc * 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(&buffer_size, 1, MPI_INT, proc, proc * 2, MPI_GLOBAL_COMMUNICATOR, MPI_STATUS_IGNORE);
             
             if (buffer_size > 0) {
                 // Receive data and unpack
                 std::vector<double> recv_buffer(buffer_size);
                 MPI_Recv(recv_buffer.data(), buffer_size, MPI_DOUBLE, proc, proc * 2 + 1, 
-                        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                        MPI_GLOBAL_COMMUNICATOR, MPI_STATUS_IGNORE);
                 
                 // Unpack to segments belonging to this process in this field line
                 cDatumStored S_copy = S;

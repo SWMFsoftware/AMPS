@@ -192,7 +192,8 @@ void PIC::ChemicalReactions::PhotolyticReactions::ExecutePhotochemicalModel() {
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #pragma omp parallel for schedule(dynamic,1) default (none)  \
     private (k,j,i,node,oldFirstCellParticle,newFirstCellParticle,p,pnext) \
-    shared (DomainBlockDecomposition::nLocalBlocks,PIC::DomainBlockDecomposition::BlockTable,batched,batchLimit,attemptedParents,remainingParents)
+    shared (DomainBlockDecomposition::nLocalBlocks,PIC::DomainBlockDecomposition::BlockTable,batched,batchLimit,attemptedParents,remainingParents, \
+            IsBatchedParticleEligible,BatchedReactionProcessor)
 #endif
 for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++)  for (i=0;i<_BLOCK_CELLS_X_;i++) {
     double StartTime=MPI_Wtime();

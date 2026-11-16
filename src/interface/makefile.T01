@@ -8,5 +8,5 @@
 
 t01 :
 	${COMPILE.f77} ${Cflag3} T01.for
-	${COMPILE.mpicxx} ${FLAGC} -std=c++14 T01Interface.cpp -o T01Interface.o
+	${COMPILE.mpicxx} ${FLAGCC} T01Interface.cpp -o T01Interface.o
 	ar -src T01.a T01.o T01Interface.o

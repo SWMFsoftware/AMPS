@@ -306,7 +306,40 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   //velocity of the shock wave
   double swept_volume_m3;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::Search::FindBlock(xMiddle);
-  if (node==NULL || node->block==NULL) return 0;
+  if (node==NULL) return 0;
+
+  // Field-line segments are distributed over the MPI processes independently
+  // of the AMR blocks: the block that contains the injection segment is often
+  // owned by another process and then is not allocated here (node->block==NULL).
+  // Returning 0 in that case (as done since 88fb9d15) silently disabled the
+  // injection, so a parallel run had no particles at all. The block is only
+  // needed for the time step and the particle weight; in the global time-step
+  // and particle-weight modes these do not depend on the block.
+  PIC::Mesh::cDataBlockAMR* InjectionBlock=node->block;
+
+  auto InjectionTimeStep=[&] () -> double {
+    switch (_SIMULATION_TIME_STEP_MODE_) {
+    case _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_:
+      return PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
+    case _SINGLE_GLOBAL_TIME_STEP_:
+      return PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+    default:
+      if (InjectionBlock==NULL) exit(__LINE__,__FILE__,"Error: a local time step is used, but the block that contains the injection segment is not allocated on this MPI process");
+      return InjectionBlock->GetLocalTimeStep(spec);
+    }
+  };
+
+  auto InjectionParticleWeight=[&] () -> double {
+    switch (_SIMULATION_PARTICLE_WEIGHT_MODE_) {
+    case _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_:
+      return PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
+    case _SINGLE_GLOBAL_PARTICLE_WEIGHT_:
+      return PIC::ParticleWeightTimeStep::GlobalParticleWeight[0];
+    default:
+      if (InjectionBlock==NULL) exit(__LINE__,__FILE__,"Error: a local particle weight is used, but the block that contains the injection segment is not allocated on this MPI process");
+      return InjectionBlock->GetLocalParticleWeight(spec);
+    }
+  };
 
   const double local_fraction=S-iShockFieldLine;
 
@@ -315,14 +348,14 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     swept_volume_m3=SEP::FieldLine::FluxTubeGeometry::SweptVolumeM3(
         Segment,iFieldLine,local_fraction,
         AMPS2SWMF::ShockData[iFieldLine].ShockSpeed,
-        node->block->GetLocalTimeStep(spec));
+        InjectionTimeStep());
   }
   else {
     if (AMPS2SWMF::MinShockSpeed==0.0) exit(__LINE__,__FILE__,"Error: AMPS2SWMF::MinShockSpeed is not set");
 
     swept_volume_m3=SEP::FieldLine::FluxTubeGeometry::SweptVolumeM3(
         Segment,iFieldLine,local_fraction,AMPS2SWMF::MinShockSpeed,
-        node->block->GetLocalTimeStep(spec));
+        InjectionTimeStep());
   }
   #else
     switch (InjectionParameters::UseAnalyticShockModel) {
@@ -340,7 +373,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
     switch( _SIMULATION_TIME_STEP_MODE_) {
     case _SPECIES_DEPENDENT_LOCAL_TIME_STEP_:
-      LocalTimeStep=node->block->GetLocalTimeStep(spec);
+      LocalTimeStep=InjectionTimeStep();
       break;
     case  _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_:
       LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
@@ -380,7 +413,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   // configured species.  Legacy mode returns one here and is bit-compatible
   // with the former single-parameter source.
   anpart=speciesSource.abundanceFraction*injected_physical_particles;
-  anpart/=node->block->GetLocalParticleWeight(spec);
+  anpart/=InjectionParticleWeight();
 #else
   n_sw_end=1.0;
 
@@ -388,7 +421,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   case InjectionParameters::AnalyticShockModel_Tenishev2005:
     anpart=ExplicitSourceScale(speciesSource)*swept_volume_m3*
         SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate()/
-        node->block->GetLocalParticleWeight(spec);
+        InjectionParticleWeight();
     cout << "Shock locaiton=" << Vector3D::Length(xInjection)/_AU_ << "[AU], Source Rate=" << SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate() << endl << flush;
     break;
   case InjectionParameters::AnalyticShockModel_none:

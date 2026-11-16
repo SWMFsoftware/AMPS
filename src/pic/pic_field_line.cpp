@@ -221,6 +221,15 @@ namespace PIC {
        return Add(xIn);
     }
 
+    // VerticesAll and SegmentsAll are stacks that hand out released elements as
+    // they are: a vertex or segment released by Delete(), CutBack() or CutFront()
+    // keeps its old prev/next links.  Add() therefore sets every link of the
+    // element it allocates.  It used to leave 'next' of the new last vertex and
+    // segment (and both links of the first ones) as they were, so a field line
+    // rebuilt from released elements -- e.g. the import in amps_get_bline_c_()
+    // after DeleteAll() -- ended in a stale link: the last segment pointed back
+    // to the previous one, and every loop 'for (s=FirstSegment;s!=NULL;
+    // s=s->GetNext())' (UpdateLength(), Delete(), ...) never ended.
     cFieldLineVertex* cFieldLine::Add(double *xIn) {
 
       if (PIC::ParticleBuffer::OptionalParticleFieldAllocationManager.MomentumParallelNormal==false) {
@@ -233,6 +242,8 @@ namespace PIC {
           //allocate the first vertex
           LastVertex = (FirstVertex = VerticesAll.newElement());
           FirstVertex->SetX(xIn);
+          FirstVertex->SetPrev(NULL);
+          FirstVertex->SetNext(NULL);
 
           //the first segment can't be allocated yet
           nSegment = 0; TotalLength = 0.0; IsSet = 0;
@@ -242,11 +253,14 @@ namespace PIC {
          LastVertex = VerticesAll.newElement();
          LastVertex->SetX(xIn);
          LastVertex->SetPrev(FirstVertex);
+         LastVertex->SetNext(NULL);
          FirstVertex->SetNext(LastVertex);
 
          //allocate the first segment
          LastSegment = (FirstSegment = SegmentsAll.newElement());
          LastSegment->SetVertices(LastVertex->GetPrev(), LastVertex);
+         LastSegment->SetPrev(NULL);
+         LastSegment->SetNext(NULL);
          nSegment++; TotalLength+= LastSegment->GetLength(); IsSet = 1;
 
          SegmentPointerTable.push_back(FirstSegment);
@@ -263,6 +277,7 @@ namespace PIC {
      //connect it to the last vertex in the field line
      LastVertex->SetNext(newVertex);
      newVertex->SetPrev(LastVertex);
+     newVertex->SetNext(NULL);
       
      //now the new vertex is the last one
      LastVertex = newVertex;
@@ -275,6 +290,7 @@ namespace PIC {
      //connect it to the last segment in the line
      LastSegment->SetNext(newSegment);
      newSegment->SetPrev(LastSegment);
+     newSegment->SetNext(NULL);
       
      //now the new segment is the last one
      LastSegment = newSegment;
@@ -752,6 +768,12 @@ namespace PIC {
         return;
       }
       
+      // the longest datum printed at a vertex: sizes the per-vertex value buffer below
+      int MaxVertexDatumLength=3;
+
+      for (auto d : DataStoredAtVertex) if (d->length>MaxVertexDatumLength) MaxVertexDatumLength=d->length;
+      for (auto d : DataSampledAtVertex) if (d->length>MaxVertexDatumLength) MaxVertexDatumLength=d->length;
+
       int nSegmentParticles[nSegment],nSegmentParticles_mu_negative[nSegment],nSegmentParticles_mu_positive[nSegment];
       double ModelParticleSpeedTable[nSegment],v[3];
 
@@ -798,7 +820,11 @@ namespace PIC {
       for (iVertex=0; iVertex<nVertex; iVertex++) {
         //print coordinates
         double x[DIM];
-        double Value[3];
+        // A vertex datum can be longer than a 3-vector (e.g., the energy-binned
+        // number density DatumAtVertexNumberDensityEnergyBinned has 10 bins);
+        // a fixed 'double Value[3]' was overrun by GetDatum*() (stack smashing)
+        std::vector<double> ValueBuffer(MaxVertexDatumLength);
+        double *Value=ValueBuffer.data();
         vector<cDatumStored*>::iterator itrDatumStored;
 
         Vertex->GetX(x);

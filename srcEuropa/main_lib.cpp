@@ -1175,7 +1175,8 @@ void amps_init() {
    if (_O_SPEC_>=0) PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_O_SPEC_, _H2O_SPEC_, 1.0);
    if (_O_PLUS_SPEC_>=0) PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_O_PLUS_SPEC_, _O_SPEC_, 1.0);
 
-   if (_OH_SPEC_>=0) PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_O_SPEC_, _OH_SPEC_, 1.0);
+   //OH is the target: the arguments were swapped, which copied the still uninitialized (-1) OH weight into O
+   if (_OH_SPEC_>=0) PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_OH_SPEC_, _H2O_SPEC_, 1.0);
    if (_OH_PLUS_SPEC_>=0) PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_OH_PLUS_SPEC_, _OH_SPEC_, 1.0);
 
    if (_H_SPEC_>=0) PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_H_SPEC_, _H2O_SPEC_, 1.0);

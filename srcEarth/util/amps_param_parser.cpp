@@ -2498,6 +2498,10 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
     if (!line.empty() && line[0]=='#') {
       if (line.size()==1) continue;
       const std::string candidateSection=ToUpper(Trim(line));
+      // #END ends the input as in SWMF PARAM.in files: nothing after it is read.
+      // Many AMPS_PARAM.in decks (nightly geospace/trajectory tests among them)
+      // end with it; the block checks after the loop still catch an open block.
+      if (candidateSection=="#END") break;
       if (IsRecognizedAmpsParamSection(candidateSection)) {
         section=candidateSection;
         continue;
@@ -3496,7 +3500,11 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
   // Roadmap Step 7 fail-fast selector.  Apply this only when a backward product
   // was explicitly requested: legacy coupled-forward inputs inherit the historical
   // default CALC_TARGET string but do not select the standalone path.
-  if (p.calc.targetExplicit) {
+  // CALC_TARGET DENSITY_3D is the forward (-mode 3d_forward and SWMF-coupled geospace)
+  // product, validated below with the #DENSITY_3D controls; it is not a standalone
+  // backward product, and sending it through ParseProductSelection rejected every
+  // forward input deck ("Unknown CALC_TARGET component 'DENSITY_3D'").
+  if (p.calc.targetExplicit && ToUpper(Trim(p.calc.target))!="DENSITY_3D") {
     try {
       (void)Earth::StandaloneProducts::ParseProductSelection(p.calc.target);
       bool supportedFieldModel=

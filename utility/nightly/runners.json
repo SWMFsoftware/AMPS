@@ -99,14 +99,26 @@
       "title": "srcSEP3D long validation steps (last: they get the rest of the night)",
       "command": ["{python}", "tools/sep_test_orchestrator.py", "--app", "srcsep3d", "--output-dir", "{out}/run",
                   "--only", "build", "--only", "reduced-front", "--only", "positive-shock", "--only", "point-sampling",
-                  "--only", "pitch-angle-native", "--only", "pitch-angle-library", "--only", "corona-swcme"],
+                  "--only", "pitch-angle-native", "--only", "corona-swcme"],
       "env": {"MAKEFLAGS": "-j{jobs}"},
       "jobs": 16,
       "time_limit_min": 420,
+      "note": "not pitch-angle-library: that is the library's certification campaign (52 cases, ~37 CPU-hours, 14 documented FAILs of non-certified pairs); its nightly regression tier is the regular step pitch-angle-nightly of the sep3d runner",
       "results": {"reader": "sep-orchestrator-json", "file": "{out}/run/run_all_test.json"},
       "families": "app-sep3d",
       "logs": ["{out}/run/*.log", "{out}/run/failed_tests.txt"]
     }
   ],
-  "disabled": []
+  "disabled": [
+    {"test": "SEP-SC-IH--FL--FL-attachment--*", "source": "legacy",
+     "reason": "the SWMF-coupled srcSEP path moves no particles yet (no prepopulation; with it every mover stops on its first step): the runs (20-35 min on 8 ranks each) check nothing until the srcSEP owner designs the coupled setup (turbulence datums, coefficient providers, prepopulation energies)"},
+    {"test": "SEP_SWMF_test19_fl", "source": "legacy",
+     "reason": "needs SWMF test19 and a 710 s SC+IH+OH time-accurate restart (hours) plus the coupled srcSEP path; its cnt=299 reference predates 2023"},
+    {"test": "SEP3D-ARMS-coupling", "source": "legacy",
+     "reason": "srcSEP3D needs a runtime amps.in since 2c06362b (2026-09-16) and has no ARMS DATAFILE background: to be re-specified by the srcSEP3D owner"},
+    {"test": "cdap_test", "source": "legacy",
+     "reason": "writes no output file and has no reference; its GMRES solves never converge (being investigated)"},
+    {"test": "Europa-test*", "source": "legacy", "machines": ["passion"],
+     "reason": "needs Tecplot (tec360) for the background-plasma import and the data file 3d__mhd_3_n00045039-extracted.plt, neither on passion"}
+  ]
 }

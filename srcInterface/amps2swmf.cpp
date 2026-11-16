@@ -329,10 +329,23 @@ extern "C" {
         std::filesystem::path(componentDirectory)/"restartOUT";
     EnsureDirectoryExists(restartDirectory);
 
+    // With _PIC_DISCONNECTED_MPI_PROCESSES_ every process of the component is
+    // an independent AMPS (MPI_GLOBAL_COMMUNICATOR=MPI_COMM_SELF, ThisThread=0,
+    // output in amps-out.thread=N, see PIC::CPLR::SWMF::ConvertMpiCommunicatorFortran2C()).
+    // All of them wrote the same restart files and their temporary parts, so
+    // the atomic publication failed ("atomic sampling-restart publication
+    // failed") at the end of every such run.  Each process writes its own files.
+    std::string restartSuffix;
+    if (_PIC_DISCONNECTED_MPI_PROCESSES_==_PIC_MODE_ON_) {
+      int worldRank=0;
+      MPI_Comm_rank(MPI_COMM_WORLD,&worldRank);
+      restartSuffix=".thread="+std::to_string(worldRank);
+    }
+
     const std::string fieldRestartFile=
-        (restartDirectory/"restart_field.dat").string();
+        (restartDirectory/("restart_field"+restartSuffix+".dat")).string();
     const std::string particleRestartFile=
-        (restartDirectory/"restart_particle.dat").string();
+        (restartDirectory/("restart_particle"+restartSuffix+".dat")).string();
     PIC::Restart::SamplingData::Save(fieldRestartFile.c_str());
     PIC::Restart::SaveParticleData(particleRestartFile.c_str());
 
@@ -757,6 +770,17 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
 
   void amps_get_bline_c_(double *DataInputTime,int* nVertexMax, int* nLine, int* nVertex_B,int *nMHData,char* NameVar_V, double* MHData_VIB) {
     using namespace PIC::FieldLine;
+
+    // The background of this run is the field lines (and the plasma state on
+    // them) imported from SWMF here.  Models that select their background
+    // provider from the coupling flags (srcSEP:
+    // SEP::Background::ConfiguredProvider() returns Provider::Swmf only when
+    // BlCouplingFlag is set) otherwise take an SWMF-coupled run for an analytic
+    // one: they never publish the SWMF coupling epochs and reject the second
+    // import with "distinct density states require ordered physical background
+    // epochs".  The flag was set here in 2021 (56104636) and lost when this
+    // file was rolled back the next day (3cb3c3c6).
+    PIC::CPLR::SWMF::BlCouplingFlag=true;
 
     if (AMPS2SWMF::MagneticFieldLineUpdate::FirstCouplingFlag==false) {
       AMPS2SWMF::MagneticFieldLineUpdate::FirstCouplingFlag=true;
@@ -1201,6 +1225,36 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
 
     for (int i=0;i<*nLine;i++) {
       UpdateSingleFieldLine(i);
+    }
+
+    // The first data import has no previous coupling state: the 'previous'
+    // vertex buffers (DatumAtVertexPrevious::*) still hold the zeros of the
+    // freshly allocated vertices.  Movers that use the time derivative of the
+    // background between two couplings (e.g. srcSEP/transport_common.cpp,
+    // which stops with "current and previous plasma density must be positive")
+    // then see a zero previous state.  The first imported state is therefore
+    // also used as the previous one, i.e. the background is taken as
+    // stationary until the second coupling provides a real previous state.
+    if (AMPS2SWMF::FieldLineUpdateCounter==0) {
+      auto CopyCurrentToPrevious = [&] (bool Active,cDatumStored& Current,cDatumStored& Previous) {
+        if (Active==false) return;
+
+        for (int iLine=0;iLine<*nLine;iLine++) {
+          for (cFieldLineVertex* Vertex=FieldLinesAll[iLine].GetFirstVertex();Vertex!=NULL;Vertex=Vertex->GetNext()) {
+            double *src=Vertex->GetDatum_ptr(Current),*dst=Vertex->GetDatum_ptr(Previous);
+
+            if ((src!=NULL)&&(dst!=NULL)) for (int i=0;i<Current.length;i++) dst[i]=src[i];
+          }
+        }
+      };
+
+      CopyCurrentToPrevious(VertexAllocationManager.PreviousVertexData.MagneticField,DatumAtVertexMagneticField,DatumAtVertexPrevious::DatumAtVertexMagneticField);
+      CopyCurrentToPrevious(VertexAllocationManager.PreviousVertexData.ElectricField,DatumAtVertexElectricField,DatumAtVertexPrevious::DatumAtVertexElectricField);
+      CopyCurrentToPrevious(VertexAllocationManager.PreviousVertexData.PlasmaVelocity,DatumAtVertexPlasmaVelocity,DatumAtVertexPrevious::DatumAtVertexPlasmaVelocity);
+      CopyCurrentToPrevious(VertexAllocationManager.PreviousVertexData.PlasmaDensity,DatumAtVertexPlasmaDensity,DatumAtVertexPrevious::DatumAtVertexPlasmaDensity);
+      CopyCurrentToPrevious(VertexAllocationManager.PreviousVertexData.PlasmaTemperature,DatumAtVertexPlasmaTemperature,DatumAtVertexPrevious::DatumAtVertexPlasmaTemperature);
+      CopyCurrentToPrevious(VertexAllocationManager.PreviousVertexData.PlasmaPressure,DatumAtVertexPlasmaPressure,DatumAtVertexPrevious::DatumAtVertexPlasmaPressure);
+      CopyCurrentToPrevious(VertexAllocationManager.PreviousVertexData.PlasmaWaves,DatumAtVertexPlasmaWaves,DatumAtVertexPrevious::DatumAtVertexPlasmaWaves);
     }
 
     // PIC::ThisThread and cnt are both int.  The former implementation passed

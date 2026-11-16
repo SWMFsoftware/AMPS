@@ -54,7 +54,7 @@ EXAMPLE 2: Distribute initial conditions from master process (multi-species)
 ---------------------------------------------------------------------------
 ```cpp
 int rank;
-MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
 
 PIC::Datum::cDatum* initialConditions;
 
@@ -90,6 +90,15 @@ PIC::FieldLine::Parallel::MPIBcastDatumStoredAtVertexFieldLine(0, temperatureDat
 */
 
 #include "pic.h"
+
+// All collectives use MPI_GLOBAL_COMMUNICATOR, the communicator of this AMPS
+// instance, not MPI_COMM_WORLD.  They are the same in a standalone run.  In
+// SWMF, MPI_COMM_WORLD also holds the processors of the other components, and
+// with _PIC_DISCONNECTED_MPI_PROCESSES_ (each rank is an independent AMPS with
+// its own field lines; MPI_GLOBAL_COMMUNICATOR=MPI_COMM_SELF, pic_swmf.cpp)
+// the per-rank buffers have different lengths: an MPI_Allreduce over
+// MPI_COMM_WORLD then wrote past the shorter ones and corrupted the heap
+// (SEP::Turbulence::PICAdapter::Advance -> MPIAllReduceDatumStoredAtEdge).
 #include <iostream>
 #include <vector>
 #include <cmath>
@@ -564,7 +573,7 @@ void UnpackFieldLineVertexData(int field_line_idx, PIC::Datum::cDatum* S, const 
 
 void MPIAllReduceDatumStoredAtVertex(PIC::Datum::cDatum* S) {
     int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
     
     // Pack all vertex data into buffer
     std::vector<double> buffer;
@@ -579,7 +588,7 @@ void MPIAllReduceDatumStoredAtVertex(PIC::Datum::cDatum* S) {
     
     // Single MPI_Allreduce call
     int result = MPI_Allreduce(MPI_IN_PLACE, buffer.data(), buffer.size(), 
-                               MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+                               MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
     
     if (result != MPI_SUCCESS) {
         std::cerr << "Error: MPI_Allreduce failed with code " << result << std::endl;
@@ -598,8 +607,8 @@ void MPIAllReduceDatumStoredAtVertex(PIC::Datum::cDatum* S) {
 
 void MPIReduceDatumStoredAtVertex(PIC::Datum::cDatum* S, int root_rank) {
     int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
+    MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &size);
 
     if (root_rank < 0 || root_rank >= size) {
         std::cerr << "Error: Invalid root_rank " << root_rank << std::endl;
@@ -627,7 +636,7 @@ void MPIReduceDatumStoredAtVertex(PIC::Datum::cDatum* S, int root_rank) {
     int result = MPI_Reduce(send_buffer.data(), 
                            (rank == root_rank) ? recv_buffer.data() : nullptr,
                            send_buffer.size(), MPI_DOUBLE, MPI_SUM, 
-                           root_rank, MPI_COMM_WORLD);
+                           root_rank, MPI_GLOBAL_COMMUNICATOR);
     
     if (result != MPI_SUCCESS) {
         std::cerr << "Error: MPI_Reduce failed with code " << result << std::endl;
@@ -645,8 +654,8 @@ void MPIReduceDatumStoredAtVertex(PIC::Datum::cDatum* S, int root_rank) {
 
 void MPIBcastDatumStoredAtVertex(PIC::Datum::cDatum* S, int root_rank) {
     int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
+    MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &size);
 
     if (root_rank < 0 || root_rank >= size) {
         std::cerr << "Error: Invalid root_rank " << root_rank << std::endl;
@@ -666,7 +675,7 @@ void MPIBcastDatumStoredAtVertex(PIC::Datum::cDatum* S, int root_rank) {
     
     // Broadcast buffer
     int result = MPI_Bcast(buffer.data(), buffer.size(), MPI_DOUBLE, 
-                          root_rank, MPI_COMM_WORLD);
+                          root_rank, MPI_GLOBAL_COMMUNICATOR);
     
     if (result != MPI_SUCCESS) {
         std::cerr << "Error: MPI_Bcast failed with code " << result << std::endl;
@@ -685,7 +694,7 @@ void MPIBcastDatumStoredAtVertex(PIC::Datum::cDatum* S, int root_rank) {
 
 void MPIAllReduceDatumStoredAtVertexFieldLine(int field_line_idx, PIC::Datum::cDatum* S) {
     int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
     
     if (field_line_idx < 0 || field_line_idx >= nFieldLine) {
         std::cerr << "Error: Invalid field_line_idx " << field_line_idx << std::endl;
@@ -705,7 +714,7 @@ void MPIAllReduceDatumStoredAtVertexFieldLine(int field_line_idx, PIC::Datum::cD
     
     // All-reduce for this field line's vertices
     int result = MPI_Allreduce(MPI_IN_PLACE, buffer.data(), buffer.size(), 
-                               MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+                               MPI_DOUBLE, MPI_SUM, MPI_GLOBAL_COMMUNICATOR);
     
     if (result != MPI_SUCCESS) {
         std::cerr << "Error: MPI_Allreduce failed for field line " << field_line_idx 
@@ -725,8 +734,8 @@ void MPIAllReduceDatumStoredAtVertexFieldLine(int field_line_idx, PIC::Datum::cD
 
 void MPIReduceDatumStoredAtVertexFieldLine(int field_line_idx, PIC::Datum::cDatum* S, int root_rank) {
     int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
+    MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &size);
     
     if (field_line_idx < 0 || field_line_idx >= nFieldLine) {
         std::cerr << "Error: Invalid field_line_idx " << field_line_idx << std::endl;
@@ -759,7 +768,7 @@ void MPIReduceDatumStoredAtVertexFieldLine(int field_line_idx, PIC::Datum::cDatu
     int result = MPI_Reduce(send_buffer.data(), 
                            (rank == root_rank) ? recv_buffer.data() : nullptr,
                            send_buffer.size(), MPI_DOUBLE, MPI_SUM, 
-                           root_rank, MPI_COMM_WORLD);
+                           root_rank, MPI_GLOBAL_COMMUNICATOR);
     
     if (result != MPI_SUCCESS) {
         std::cerr << "Error: MPI_Reduce failed for field line " << field_line_idx 
@@ -779,8 +788,8 @@ void MPIReduceDatumStoredAtVertexFieldLine(int field_line_idx, PIC::Datum::cDatu
 
 void MPIBcastDatumStoredAtVertexFieldLine(int field_line_idx, PIC::Datum::cDatum* S, int root_rank) {
     int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
+    MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &size);
     
     if (field_line_idx < 0 || field_line_idx >= nFieldLine) {
         std::cerr << "Error: Invalid field_line_idx " << field_line_idx << std::endl;
@@ -805,7 +814,7 @@ void MPIBcastDatumStoredAtVertexFieldLine(int field_line_idx, PIC::Datum::cDatum
     
     // Broadcast buffer for this field line's vertices
     int result = MPI_Bcast(buffer.data(), buffer.size(), MPI_DOUBLE, 
-                          root_rank, MPI_COMM_WORLD);
+                          root_rank, MPI_GLOBAL_COMMUNICATOR);
     
     if (result != MPI_SUCCESS) {
         std::cerr << "Error: MPI_Bcast failed for field line " << field_line_idx 

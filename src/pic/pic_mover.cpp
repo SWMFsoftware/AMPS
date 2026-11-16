@@ -4172,6 +4172,13 @@ if (_PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIA
       for (int iFace=0;(iFace<2)&&(flag==false);iFace++) if (NodeList[iFace]!=NULL) for (t=NodeList[iFace]->FirstTriangleCutFace;t!=NULL;t=t->next) {
         double x0Face[3],FaceNorm[3];
 
+        //skip the face the particle has been placed on by the boundary condition of the previous cycle (it leaves the
+        //face with v.n>0, and the search above skips that face as well): xInit lies on its plane, so the sign of r0
+        //below is the sign of a rounding error; when it was negative the step was taken for a crossing of that face,
+        //xFinal was moved back onto it, and the particle stayed on the surface for the rest of the simulation
+        //(CG-dust-test: such particles are classified as inside the nucleus)
+        if (t->TriangleFace==lastIntersectedTriangleFace_LastCycle) continue;
+
         memcpy(x0Face,t->TriangleFace->x0Face,3*sizeof(double));
         memcpy(FaceNorm,t->TriangleFace->ExternalNormal,3*sizeof(double));
 
@@ -4561,7 +4568,11 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
 }
 
 int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_SecondOrder(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode)  {
-  if (( _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_)&&(_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_)) { 
+  //The simplified mover (9349815c) records no trajectory points, so with the particle tracker on the
+  //full mover is used: otherwise trajectory tracking stops without a message (test Periodic-BC
+  //sampled 0 trajectories of its 10 particles).
+  if (( _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_)&&(_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_)&&
+      (_PIC_PARTICLE_TRACKER_MODE_ != _PIC_MODE_ON_)) {
     return UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection_Simplified(ptr,dtTotal,startNode,false);  
   }
   
@@ -5048,69 +5059,131 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
           // Include neighbor descriptors for the same reason as above: a face
           // crossed near a block boundary may be accessible through the
           // neighboring cut-face list rather than FirstTriangleCutFace alone.
-          if ((potentialNewNode->FirstTriangleCutFace != NULL) ||
-              (potentialNewNode->neibCutFaceListDescriptorList != NULL)) {
+          // The step xOriginal -> x can pass through blocks other than startNode
+          // and potentialNewNode, e.g. a diagonal step across a block edge or
+          // corner.  A cut face crossed inside such an intermediate block is
+          // listed only in that block: the cut-face lists hold the faces that
+          // intersect the block itself, and the neighbor descriptor lists are
+          // empty unless nCutFaceInformationCopyAttempts>0.  Testing only
+          // potentialNewNode therefore let particles pass through the surface
+          // into the body (CG tests: about 1 of 1e5 moves).  Test the cut faces
+          // of every block crossed by the step; the face access counter keeps
+          // each face from being tested twice.
+          const int CrossedBlockTableLength=32;
+          cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* CrossedBlockTable[CrossedBlockTableLength];
+          int nCrossedBlocks=0;
 
-              CutCell::cTriangleFaceDescriptor *t;
-              CutCell::cTriangleFace *TriangleFace;
-              double TimeOfFlight;
-              double xLocalIntersection[2], xIntersection[3];
+          {
+            const double speed=Vector3D::Length(v);
+            const double stepLength=speed*dtMin;
+            cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* WalkNode=startNode;
+            double l[3],xWalk[3],s=0.0;
 
-              for (int ipass = 0; ipass < 2; ipass++) {
-                  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>::cCutFaceListDescriptor *D;
-                  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>::cCutFaceListDescriptor descTemp;
+            if (speed>0.0) {
+              for (idim=0;idim<3;idim++) l[idim]=v[idim]/speed,xWalk[idim]=xOriginal[idim];
 
-                  switch (ipass) {
-                  case 0:
-                      descTemp.next = NULL;
-                      descTemp.node = potentialNewNode;
-                      descTemp.FirstTriangleCutFace = potentialNewNode->FirstTriangleCutFace;
-                      D = &descTemp;
-                      break;
-                  case 1:
-                      D = potentialNewNode->neibCutFaceListDescriptorList;
-                      break;
-                  default:
-                      D = NULL;
-                      break;
-                  }
+              while (nCrossedBlocks<CrossedBlockTableLength-1) {
+                double xExit[3],xExitLocal[2],xProbe[3],ds=0.0,probe;
+                int nExitFace;
+                cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* next=NULL;
 
-                  for (; D != NULL; D = D->next) {
-                      for (t = D->FirstTriangleCutFace; t != NULL; t = t->next) {
-                          if ((TriangleFace = t->TriangleFace) != lastIntersectedTriangleFace) {
-                              if (PIC::Mesh::IrregularSurface::CutFaceAccessCounter::IsFirstAccecssWithAccessCounterUpdate(TriangleFace) == true) {
-                                  if (TriangleFace->RayIntersection(xOriginal, v, TimeOfFlight,
-                                                                 xLocalIntersection, xIntersection,
-                                                                 PIC::Mesh::mesh->EPS) == true) {
+                if (PIC::RayTracing::GetBlockExitPoint(WalkNode->xmin,WalkNode->xmax,xWalk,l,xExit,xExitLocal,nExitFace)==false) break;
 
-                                      // Use the exact geometric intersection time.  The
-                                      // post-intersection outward-normal displacement below is
-                                      // responsible for moving the particle safely away from the
-                                      // triangulated surface.
+                for (idim=0;idim<3;idim++) ds+=(xExit[idim]-xWalk[idim])*l[idim];
+                s+=ds;
+                if (s>=stepLength) break;
 
-                                      if ((TimeOfFlight < dtMinCutFace) && (TimeOfFlight > 0.0)) {
-                                          dtMinCutFace = TimeOfFlight;
-                                          foundCutFaceIntersection = true;
+                //the block on the other side of the exit point
+                probe=1.0E-6*(WalkNode->xmax[0]-WalkNode->xmin[0]);
 
-                                          #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-                                          if (isfinite(dtMinCutFace)==false) exit(__LINE__,__FILE__,"Error: non finite");
-                                          if (std::fpclassify(dtMinCutFace) == FP_SUBNORMAL) exit(__LINE__,__FILE__,"Error: non finite");
-                                          #endif
+                for (int itry=0;itry<4;itry++,probe*=100.0) {
+                  for (idim=0;idim<3;idim++) xProbe[idim]=xExit[idim]+probe*l[idim];
+                  next=PIC::Mesh::mesh->findTreeNode(xProbe,WalkNode);
+                  if (next!=WalkNode) break;
+                }
 
-                                          // Update intersection data
-                                          IntersectionFace = TriangleFace;
-                                          memcpy(xLocalIntersectionFace, xLocalIntersection, 2 * sizeof(double));
-                                          memcpy(xIntersectionFace, xIntersection, 3 * sizeof(double));
-                                          ParticleIntersectionCode = _BOUNDARY_FACE_MIN_DT_INTERSECTION_CODE_;
-                                      }
-                                  }
-                              }
-                          }
-                      }
-                  }
+                if ((next==NULL)||(next==WalkNode)||(next==potentialNewNode)) break;
+
+                bool listed=false;
+                for (int i=0;i<nCrossedBlocks;i++) if (CrossedBlockTable[i]==next) listed=true;
+                if (listed==false) CrossedBlockTable[nCrossedBlocks++]=next;
+
+                WalkNode=next,s+=probe;
+                memcpy(xWalk,xProbe,3*sizeof(double));
               }
+            }
           }
+
+          CrossedBlockTable[nCrossedBlocks++]=potentialNewNode;
+
+          for (int iCrossedBlock=0;iCrossedBlock<nCrossedBlocks;iCrossedBlock++) {
+            cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* CrossedNode=CrossedBlockTable[iCrossedBlock];
+
+            if ((CrossedNode->FirstTriangleCutFace != NULL) ||
+                (CrossedNode->neibCutFaceListDescriptorList != NULL)) {
+
+                CutCell::cTriangleFaceDescriptor *t;
+                CutCell::cTriangleFace *TriangleFace;
+                double TimeOfFlight;
+                double xLocalIntersection[2], xIntersection[3];
+
+                for (int ipass = 0; ipass < 2; ipass++) {
+                    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>::cCutFaceListDescriptor *D;
+                    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>::cCutFaceListDescriptor descTemp;
+
+                    switch (ipass) {
+                    case 0:
+                        descTemp.next = NULL;
+                        descTemp.node = CrossedNode;
+                        descTemp.FirstTriangleCutFace = CrossedNode->FirstTriangleCutFace;
+                        D = &descTemp;
+                        break;
+                    case 1:
+                        D = CrossedNode->neibCutFaceListDescriptorList;
+                        break;
+                    default:
+                        D = NULL;
+                        break;
+                    }
+
+                    for (; D != NULL; D = D->next) {
+                        for (t = D->FirstTriangleCutFace; t != NULL; t = t->next) {
+                            if ((TriangleFace = t->TriangleFace) != lastIntersectedTriangleFace) {
+                                if (PIC::Mesh::IrregularSurface::CutFaceAccessCounter::IsFirstAccecssWithAccessCounterUpdate(TriangleFace) == true) {
+                                    if (TriangleFace->RayIntersection(xOriginal, v, TimeOfFlight,
+                                                                   xLocalIntersection, xIntersection,
+                                                                   PIC::Mesh::mesh->EPS) == true) {
+
+                                        // Use the exact geometric intersection time.  The
+                                        // post-intersection outward-normal displacement below is
+                                        // responsible for moving the particle safely away from the
+                                        // triangulated surface.
+
+                                        if ((TimeOfFlight < dtMinCutFace) && (TimeOfFlight > 0.0)) {
+                                            dtMinCutFace = TimeOfFlight;
+                                            foundCutFaceIntersection = true;
+
+                                            #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+                                            if (isfinite(dtMinCutFace)==false) exit(__LINE__,__FILE__,"Error: non finite");
+                                            if (std::fpclassify(dtMinCutFace) == FP_SUBNORMAL) exit(__LINE__,__FILE__,"Error: non finite");
+                                            #endif
+
+                                            // Update intersection data
+                                            IntersectionFace = TriangleFace;
+                                            memcpy(xLocalIntersectionFace, xLocalIntersection, 2 * sizeof(double));
+                                            memcpy(xIntersectionFace, xIntersection, 3 * sizeof(double));
+                                            ParticleIntersectionCode = _BOUNDARY_FACE_MIN_DT_INTERSECTION_CODE_;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
           
+          }
+
           // If cut face intersection found, limit dtMin and recalculate position
           if (foundCutFaceIntersection) {
               dtMin = dtMinCutFace;
@@ -5556,6 +5629,36 @@ void PIC::Mover::CommitTempParticleMovingListsToFirstCellParticleTable() {
   thread_id_table_size = omp_get_num_threads();
 #endif
 
+#if _PIC_MOVER__MPI_MULTITHREAD_ != _PIC_MODE_ON_ && _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  // OpenMP build: there is no block->tempParticleMovingListTable (see cDataBlockAMR in pic.h);
+  // each OpenMP thread stages its particles in its own {first,last} list per cell
+  // (GetTempParticleMovingListMultiThreadTable). Link every non-empty thread list in front
+  // of the cell's existing list, exactly as update_openmp() in MoveParticles() does, and
+  // reset it. With _PIC_TEMP_PARTICLE_LIST_MODE__SHARED_ all threads map to one list, which
+  // the first pass commits and resets.
+  auto commit_block = [&](Block_t* b) {
+    if (b == NULL) return;
+
+    for (int k = 0; k < _BLOCK_CELLS_Z_; ++k) for (int j = 0; j < _BLOCK_CELLS_Y_; ++j) for (int i = 0; i < _BLOCK_CELLS_X_; ++i) {
+      long int* head = b->FirstCellParticleTable + i + _BLOCK_CELLS_X_ * (j + _BLOCK_CELLS_Y_ * k);
+
+      for (int thread_OpenMP = 0; thread_OpenMP < PIC::nTotalThreadsOpenMP; ++thread_OpenMP) {
+        PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* staged =
+          b->GetTempParticleMovingListMultiThreadTable(thread_OpenMP, i, j, k);
+
+        if (staged->last != -1) {
+          PIC::ParticleBuffer::SetPrev(-1, staged->first);              // the staged head stays a head
+          PIC::ParticleBuffer::SetNext(*head, staged->last);           // last->next = existing head
+          if (*head != -1) PIC::ParticleBuffer::SetPrev(staged->last, *head);  // existing head->prev = last
+          *head = staged->first;
+        }
+
+        staged->first = -1;
+        staged->last = -1;
+      }
+    }
+  };
+#else
   auto commit_block = [&](Block_t* b) {
     if (b == NULL) return;
 
@@ -5594,6 +5697,7 @@ void PIC::Mover::CommitTempParticleMovingListsToFirstCellParticleTable() {
       b->tempParticleMovingListTable[icell] = -1;
     }
   };
+#endif
 
   // --------------------------------------------------------------------------
   // 1) Commit boundary-layer blocks owned by other threads (same as mover)

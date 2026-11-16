@@ -748,6 +748,59 @@ void PhotochemicalModelWrapper(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode
 
 
 //================================================================================================
+//Statistical verdict of a test, written to 'fname' (the file the nightly check compares).
+//Every prepopulated H2O model particle is processed once per time step by
+//Exosphere::ChemicalModel::PhotochemicalModelProcessor(): it is removed with the
+//probability p=1-exp(-dt_H2O/tau) and, independently, it produces a model particle of
+//species s with the probability a_s=Y_s*(1-exp(-dt_s/tau))*W_H2O/W_s. The numbers of the
+//lost H2O and of the produced daughter model particles are therefore binomial with
+//analytic means and variances. |z|<4 accepts every valid random realization and rejects
+//a rate, yield, weight or time-step error larger than 4 sigma (one sigma is 3.4% of the
+//H2O loss, 1.2% of the O and 2.6% of the H2 production for the parameters of this test).
+//The file holds only the verdicts and the deterministic model parameters (the tabulated
+//lifetime and yields), so it does not depend on the random-number sequence, which changes
+//whenever a code change alters the number of rnd() calls: the numerical lifetimes printed
+//in test_Chemistry-Test<n>.dat are one realization and had been compared exactly with a
+//reference that no current code reproduces (the reason the test failed for years).
+void PrintStatisticalVerdict(const char *TestName,const char *fname,double *InitialCounter,double *FinalCounter,
+    double ReactionYieldTable[PIC::nTotalSpecies][PIC::nTotalSpecies],double LifeTime) {
+  const double zMax=4.0;
+  std::fstream fout;
+
+  fout.open(fname,std::fstream::out);
+  fout << TestName << ": theoretical H2O lifetime [s]: " << LifeTime << endl;
+  fout << TestName << ": reaction yield of the H2O photolysis (spec yield):";
+  for (int s=0;s<PIC::nTotalSpecies;s++) if (s!=_H2O_SPEC_) fout << "  " << s << " " << ReactionYieldTable[_H2O_SPEC_][s];
+  fout << endl;
+
+  auto Check=[&](const char *what,double observed,double nTrials,double probability) {
+    double frac=probability-floor(probability);
+    double mean=nTrials*probability,sigma=sqrt(nTrials*frac*(1.0-frac));
+    double z=(sigma>0.0) ? (observed-mean)/sigma : ((observed==mean) ? 0.0 : 1.0E10);
+    bool passed=(fabs(z)<zMax);
+
+    printf("%s: %s: observed=%e expected=%e sigma=%e z=%+.2f: %s\n",TestName,what,observed,mean,sigma,z,(passed==true) ? "PASS" : "FAIL");
+    fout << TestName << ": " << what << ": |z|<" << zMax << ": " << ((passed==true) ? "PASS" : "FAIL") << endl;
+  };
+
+  double nParent=InitialCounter[_H2O_SPEC_];
+  double dtParent=PIC::ParticleWeightTimeStep::GlobalTimeStep[_H2O_SPEC_];
+  char msg[200];
+
+  Check("loss of H2O",nParent-FinalCounter[_H2O_SPEC_],nParent,1.0-exp(-dtParent/LifeTime));
+
+  for (int s=0;s<PIC::nTotalSpecies;s++) if ((s!=_H2O_SPEC_)&&(ReactionYieldTable[_H2O_SPEC_][s]>0.0)) {
+    double a=ReactionYieldTable[_H2O_SPEC_][s]*(1.0-exp(-PIC::ParticleWeightTimeStep::GlobalTimeStep[s]/LifeTime))*
+        PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H2O_SPEC_]/PIC::ParticleWeightTimeStep::GlobalParticleWeight[s];
+
+    sprintf(msg,"production of %s",PIC::MolecularData::GetChemSymbol(s));
+    Check(msg,FinalCounter[s]-InitialCounter[s],nParent,a);
+  }
+
+  fout.close();
+}
+
+//================================================================================================
 //test 1:
 //run the photochemistry model directly calling the model processor from PIC::ChemicalReactions::PhotolyticReactions::ExecutePhotochemicalModel();
 void Test1(double ReactionYieldTable[PIC::nTotalSpecies][PIC::nTotalSpecies]) {
@@ -825,6 +878,10 @@ void Test1(double ReactionYieldTable[PIC::nTotalSpecies][PIC::nTotalSpecies]) {
     }
 
     fout.close();
+
+    //the file compared by the nightly check: verdicts and deterministic parameters only
+    sprintf(fname,"%s/test_Chemistry-Test1-validation.dat",PIC::OutputDataFileDirectory);
+    PrintStatisticalVerdict("Test 1",fname,GlobalInitialParticleCounter,GlobalProductParticleCounter,ReactionYieldTable,h2oTheoreticalLifeTime);
   }
 }
 
@@ -908,6 +965,10 @@ void Test2(double ReactionYieldTable[PIC::nTotalSpecies][PIC::nTotalSpecies]) {
 
 
     fout.close();
+
+    //the file compared by the nightly check: verdicts and deterministic parameters only
+    sprintf(fname,"%s/test_Chemistry-Test2-validation.dat",PIC::OutputDataFileDirectory);
+    PrintStatisticalVerdict("Test 2",fname,GlobalInitialParticleCounter,GlobalProductParticleCounter,ReactionYieldTable,h2oTheoreticalLifeTime);
   }
 }
 

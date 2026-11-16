@@ -237,7 +237,7 @@ void ReflectTurbulenceEnergyAllFieldLines(
   namespace FL = PIC::FieldLine;
 
   int rank = 0;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
 
   int processed_lines = 0;
   long long segments_updated = 0;

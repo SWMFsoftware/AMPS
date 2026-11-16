@@ -1,0 +1,18 @@
+
+#include input/test/sep_focused_transport-ih-mflampa.input
+
+#General
+
+  define _SEP_MODEL_ON_
+
+  define _PIC_PARTICLE_LIST_ATTACHING_ _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_
+  ! The He (2011) mover ::SEP::ParticleMover_He_2011_AJ was removed from srcSEP (Step 5, 2026-09);
+  ! its replacement is the production mover fte-mfp. srcSEP selects the mover at run time
+  ! (#SEP_MOVER1D in the SWMF PARAM.in); ::SEP::ParticleMover is the dispatcher.
+  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) ::SEP::ParticleMover(ptr,LocalTimeStep,node)
+
+  define _SEP_DIFFUSION_MODEL_ _DIFFUSION_JOKIPII1966AJ_
+ 
+  define _PIC_DEBUGGER_MODE_  _PIC_DEBUGGER_MODE_OFF_
+#endGeneral
+

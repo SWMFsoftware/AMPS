@@ -130,20 +130,25 @@ void exit(long int nline, const char* fname, const char* msg) {
 
   fflush(stdout);
 
-  #ifndef __CUDA_ARCH__  
+  //An error exit must not report success. With the code 0 (t2 is 0 unless SetExitErrorCode() was
+  //called) MPI_Abort() made mpirun return 0, and Makefile.test and the nightly runner took aborted
+  //runs for completed ones (e.g. Periodic-BC, which aborts on a negative interpolation weight).
+  const int ErrorCode=(t2!=0) ? t2 : 1;
+
+  #ifndef __CUDA_ARCH__
   char str[1000];
   PrintErrorLog(str);
 
   switch (_GENERIC_EXIT_FUNCTION_MODE_) {
-  case  _GENERIC_EXIT_FUNCTION__MPI_ABORT_: 
-    MPI_Abort(MPI_COMM_WORLD,t2);
+  case  _GENERIC_EXIT_FUNCTION__MPI_ABORT_:
+    MPI_Abort(MPI_COMM_WORLD,ErrorCode);
     break;
   default:
-    exit(0);
+    exit(ErrorCode);
   }
   #endif
 
-  exit(0);
+  exit(ErrorCode);
 }
 
 void PrintLineMark(long int nline ,char* fname ,char* msg) {

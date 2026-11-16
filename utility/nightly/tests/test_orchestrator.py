@@ -34,6 +34,8 @@ MAKEFILE_TEST = """test_manifest:
 \t@echo "Alpha|pic-field-solver|||amps"
 \t@echo "Beta|pic-field-solver|||amps"
 \t@echo "Gamma|pic-field-solver||SKIP|amps"
+\t@echo "Delta|pic-field-solver|||amps"
+\t@echo "Epsilon|pic-field-solver|||amps"
 test_compile:
 \t@true
 test_Alpha_compile:
@@ -46,6 +48,22 @@ test_Alpha_run:
 \t@echo "running Alpha with $(MPIRUN)"
 test_Alpha_check:
 \t@: > test_Alpha.diff
+test_Epsilon_compile:
+\t@echo "test_Epsilon_compile..." > test_Epsilon.diff
+\t@echo "test_Epsilon_compile... done" >> test_Epsilon.diff
+test_Epsilon_rundir:
+\t@echo "test_Epsilon_rundir... done" >> test_Epsilon.diff
+test_Epsilon_run:
+\t@echo "AMPS: exit: line=8328, file=pic.h, message=Error: found a negative interpolation weight (error code=0.0)"
+\t@echo "test_Epsilon_run... done" >> test_Epsilon.diff
+test_Epsilon_check:
+\t@echo "WARNING in DiffNum.pl: there are extra numbers in ref" >> test_Epsilon.diff
+test_Delta_compile:
+\t@echo "test_Delta_compile..." > test_Delta.diff
+\t@echo "main.cpp:12:3: error: 'Coefficient' was not declared"
+\t@echo "test_Delta_compile... done" >> test_Delta.diff
+test_Delta_rundir:
+\t@echo "rundir must not run after a failed build"; exit 7
 test_Beta_compile:
 \t@echo "test_Beta_compile..." > test_Beta.diff
 \t@echo "compiler error in Beta"; exit 1
@@ -185,6 +203,11 @@ class Night_(unittest.TestCase):
             self.assertEqual(got["Alpha"]["status"], "PASS")
             self.assertEqual((got["Beta"]["status"], got["Beta"]["stage"]), ("FAILED", "compile"))
             self.assertEqual(got["Gamma"]["status"], "SKIPPED")
+            self.assertEqual((got["Delta"]["status"], got["Delta"]["stage"]), ("FAILED", "compile"))
+            self.assertEqual((got["Epsilon"]["status"], got["Epsilon"]["stage"]), ("FAILED", "run"))
+            self.assertIn("the run aborted: AMPS: exit: line=8328", got["Epsilon"]["reason"])
+            self.assertIn("error: 'Coefficient' was not declared", got["Delta"]["reason"])
+            self.assertNotIn("rundir must not run", (rundir / "logs/legacy/tests/Delta.log").read_text())
             self.assertIn("running Alpha with mpirun -np 2", (rundir / "logs/legacy/tests/Alpha.log").read_text())
             runners = {r["runner"]: r for r in json.loads((rundir / "runners.json").read_text())}
             self.assertEqual(runners["crash"]["exit_code"], 3)

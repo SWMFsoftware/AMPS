@@ -28,6 +28,23 @@ const double dxDomain=1.0;
 
 double TimeStepMultiplierTable[PIC::nTotalSpecies]={1.0,1.0,1.0};
 
+//execute one collision step with the model selected in the input file
+//(#ParticleCollisions, model=NTC|MF), the same way PIC::TimeStep() does.
+//Collision-Test-NTC and Collision-Test-MF are built from the same source and
+//differ only in that selector, so the driver must not hard-code ntc().
+void SimulateParticleCollisions() {
+  switch (_PIC__PARTICLE_COLLISION_MODEL_) {
+  case _PIC__PARTICLE_COLLISION_MODEL__NTC_:
+    PIC::MolecularCollisions::ParticleCollisionModel::ntc();
+    break;
+  case _PIC__PARTICLE_COLLISION_MODEL__MF_:
+    PIC::MolecularCollisions::ParticleCollisionModel::mf();
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the collision model selected in the input file is not supported by the test");
+  }
+}
+
 //functions that returns the local resolution and time step
 double localResolution(double *x) {
   return dxDomain;
@@ -356,7 +373,7 @@ int main(int argc,char **argv) {
     }
 
     //callc particle collision model
-    PIC::MolecularCollisions::ParticleCollisionModel::ntc();
+    SimulateParticleCollisions();
 
     //remove all particles
     DeleteAllParticles(PIC::Mesh::mesh->rootTree);
@@ -503,7 +520,7 @@ int main(int argc,char **argv) {
 
   //collision loop
   for (n=0;n<nTotalTestIterations;n++) {
-    PIC::MolecularCollisions::ParticleCollisionModel::ntc();
+    SimulateParticleCollisions();
   }
 
   for (s0=0;s0<PIC::nTotalSpecies;s0++) for (s1=0;s1<PIC::nTotalSpecies;s1++) RelativeSpeed[s0][s1]=0.0,RelativeSpeedCouter[s0][s1]=0;
@@ -584,7 +601,7 @@ int main(int argc,char **argv) {
     }
 
     //callc particle collision model
-    PIC::MolecularCollisions::ParticleCollisionModel::ntc();
+    SimulateParticleCollisions();
 
     //remove all particles
     DeleteAllParticles(PIC::Mesh::mesh->rootTree);
@@ -729,7 +746,7 @@ int main(int argc,char **argv) {
 
   //collision loop
   for (n=0;n<nTotalTestIterations;n++) {
-    PIC::MolecularCollisions::ParticleCollisionModel::ntc();
+    SimulateParticleCollisions();
   }
 
   for (s0=0;s0<PIC::nTotalSpecies;s0++) for (s1=0;s1<PIC::nTotalSpecies;s1++) RelativeSpeed[s0][s1]=0.0,RelativeSpeedCouter[s0][s1]=0;

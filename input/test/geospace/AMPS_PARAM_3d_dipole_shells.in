@@ -60,7 +60,10 @@ R_INNER                1.0           ! RE inner loss sphere
 
 
 #TEMPORAL
-TEMPORAL_MODE          TIME_SERIES
+! the dipole field does not depend on time: one snapshot.  TIME_SERIES would ask Mode3D for one
+! cutoff solve every FIELD_UPDATE_DT over EVENT_START..EVENT_END (1105 identical snapshots) and
+! needs a Tsyganenko driver table, which a dipole run does not have
+TEMPORAL_MODE          STEADY_STATE
 EVENT_START            2017-09-07T00:00   ! UTC
 EVENT_END              2017-09-10T20:00   ! UTC
 FIELD_UPDATE_DT        5                ! min

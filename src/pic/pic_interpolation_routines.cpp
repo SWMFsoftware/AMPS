@@ -851,6 +851,25 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
     jLoc=(XyzIn_D[1]-xmin[1])/(xmax[1]-xmin[1])*_BLOCK_CELLS_Y_;
     kLoc=(XyzIn_D[2]-xmin[2])/(xmax[2]-xmin[2])*_BLOCK_CELLS_Z_;
 
+    //More than half a cell outside the given block the trilinear weights are negative (an extrapolation
+    //from the block's outermost cells), which AddCell() rejects since b8d94ba9. Callers may pass the
+    //block a point came from rather than the one it is in (e.g. test/srcPeriodicBCTest traces corner
+    //nodes back across the block faces), so use the block that contains the point. Points within half
+    //a cell of the block keep the given block, as before.
+    if ((iLoc<-0.5)||(iLoc>_BLOCK_CELLS_X_+0.5)||(jLoc<-0.5)||(jLoc>_BLOCK_CELLS_Y_+0.5)||(kLoc<-0.5)||(kLoc>_BLOCK_CELLS_Z_+0.5)) {
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *containing=PIC::Mesh::mesh->findTreeNode(XyzIn_D,node);
+
+      if ((containing!=NULL)&&(containing!=node)&&((containing->block!=NULL)||(RowStencil!=NULL))) {
+        node=containing;
+        xmin=node->xmin;
+        xmax=node->xmax;
+
+        iLoc=(XyzIn_D[0]-xmin[0])/(xmax[0]-xmin[0])*_BLOCK_CELLS_X_;
+        jLoc=(XyzIn_D[1]-xmin[1])/(xmax[1]-xmin[1])*_BLOCK_CELLS_Y_;
+        kLoc=(XyzIn_D[2]-xmin[2])/(xmax[2]-xmin[2])*_BLOCK_CELLS_Z_;
+      }
+    }
+
     #if _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE_ == _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE__AMPS_
     //in case the mesh is uniform (_AMR_MESH_TYPE_ == _AMR_MESH_TYPE__UNIFORM_) -> use simple trilinear interpolation
     if (_AMR_MESH_TYPE_ == _AMR_MESH_TYPE__UNIFORM_) {

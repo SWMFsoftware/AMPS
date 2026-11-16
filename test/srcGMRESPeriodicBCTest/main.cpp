@@ -69,7 +69,10 @@ namespace TransportEquation {
   void GetTestStencilTimeDependent(int i,int j,int k,int iVar,cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,1,7,6,1,1,1>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,
     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,1,7,6,1,1,1>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,
     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,1,7,6,1,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, 
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,
+    vector<cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,1,7,6,1,1,1>::cRhsSupportTable>& support_corner_vector,
+    vector<cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,1,7,6,1,1,1>::cRhsSupportTable>& support_center_vector) {
+    //this test fills only the fixed-size RHS support tables; the support vectors (entries beyond them) stay empty
 
 
     MatrixRowNonZeroElementTable[0].i=i-1;
@@ -92,10 +95,10 @@ namespace TransportEquation {
     MatrixRowNonZeroElementTable[2].iVar=0;
 
 
-    RhsSupportTable_CornerNodes[0].Coefficient=1.0; 
+    RhsSupportTable_CornerNodes[0].coeff=1.0; 
     RhsSupportTable_CornerNodes[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
 
- //   RhsSupportTable_CornerNodes[1].Coefficient=0.1;
+ //   RhsSupportTable_CornerNodes[1].coeff=0.1;
  //   RhsSupportTable_CornerNodes[1].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i+1,j,k))->GetAssociatedDataBufferPointer();
 
 
@@ -103,7 +106,7 @@ namespace TransportEquation {
     RhsSupportLength_CenterNodes=0;
     NonZeroElementsFound=3;
 
-   if (RhsSupportLength_CornerNodes!=0) for (i=0,rhs=0.0;i<RhsSupportLength_CornerNodes;i++) rhs+=*((double*)(RhsSupportTable_CornerNodes[i].AssociatedDataPointer+CurrentCornerNodeOffset))*RhsSupportTable_CornerNodes[i].Coefficient;
+   if (RhsSupportLength_CornerNodes!=0) for (i=0,rhs=0.0;i<RhsSupportLength_CornerNodes;i++) rhs+=*((double*)(RhsSupportTable_CornerNodes[i].AssociatedDataPointer+CurrentCornerNodeOffset))*RhsSupportTable_CornerNodes[i].coeff;
 
 return ;
 
@@ -118,14 +121,14 @@ return ;
     MatrixRowNonZeroElementTable[0].MatrixElementValue=1.0;
     MatrixRowNonZeroElementTable[0].iVar=0;
 
-    RhsSupportTable_CornerNodes[0].Coefficient=1.0;
+    RhsSupportTable_CornerNodes[0].coeff=1.0;
     RhsSupportTable_CornerNodes[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i-1,j,k))->GetAssociatedDataBufferPointer();
 
     RhsSupportLength_CornerNodes=1;
     RhsSupportLength_CenterNodes=0; 
     NonZeroElementsFound=1;
 
-   if (RhsSupportLength_CornerNodes!=0) for (i=0,rhs=0.0;i<RhsSupportLength_CornerNodes;i++) rhs+=*((double*)(RhsSupportTable_CornerNodes[i].AssociatedDataPointer+CurrentCornerNodeOffset))*RhsSupportTable_CornerNodes[i].Coefficient;
+   if (RhsSupportLength_CornerNodes!=0) for (i=0,rhs=0.0;i<RhsSupportLength_CornerNodes;i++) rhs+=*((double*)(RhsSupportTable_CornerNodes[i].AssociatedDataPointer+CurrentCornerNodeOffset))*RhsSupportTable_CornerNodes[i].coeff;
 
 return ;
 
@@ -180,31 +183,31 @@ return ;
     MatrixRowNonZeroElementTable[6].iVar=0;
 
     //right-hand side
-    RhsSupportTable_CornerNodes[0].Coefficient=c[0];
+    RhsSupportTable_CornerNodes[0].coeff=c[0];
     RhsSupportTable_CornerNodes[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i+1,j,k))->GetAssociatedDataBufferPointer();
 
-    RhsSupportTable_CornerNodes[1].Coefficient=-c[0];
+    RhsSupportTable_CornerNodes[1].coeff=-c[0];
     RhsSupportTable_CornerNodes[1].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i-1,j,k))->GetAssociatedDataBufferPointer();
 
 
-    RhsSupportTable_CornerNodes[2].Coefficient=c[1];
+    RhsSupportTable_CornerNodes[2].coeff=c[1];
     RhsSupportTable_CornerNodes[2].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j+1,k))->GetAssociatedDataBufferPointer();
 
-    RhsSupportTable_CornerNodes[3].Coefficient=-c[1];
+    RhsSupportTable_CornerNodes[3].coeff=-c[1];
     RhsSupportTable_CornerNodes[3].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j-1,k))->GetAssociatedDataBufferPointer();
 
 
-    RhsSupportTable_CornerNodes[4].Coefficient=c[2];
+    RhsSupportTable_CornerNodes[4].coeff=c[2];
     RhsSupportTable_CornerNodes[4].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k+1))->GetAssociatedDataBufferPointer();
 
-    RhsSupportTable_CornerNodes[5].Coefficient=-c[2];
+    RhsSupportTable_CornerNodes[5].coeff=-c[2];
     RhsSupportTable_CornerNodes[5].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k-1))->GetAssociatedDataBufferPointer();
 
 
     RhsSupportLength_CornerNodes=6;
     NonZeroElementsFound=7;
 
-  if (RhsSupportLength_CornerNodes!=0) for (i=0,rhs=0.0;i<RhsSupportLength_CornerNodes;i++) rhs+=*((double*)(RhsSupportTable_CornerNodes[i].AssociatedDataPointer+CurrentCornerNodeOffset))*RhsSupportTable_CornerNodes[i].Coefficient;
+  if (RhsSupportLength_CornerNodes!=0) for (i=0,rhs=0.0;i<RhsSupportLength_CornerNodes;i++) rhs+=*((double*)(RhsSupportTable_CornerNodes[i].AssociatedDataPointer+CurrentCornerNodeOffset))*RhsSupportTable_CornerNodes[i].coeff;
 
   }
 
@@ -214,11 +217,16 @@ return ;
   //update the RHS vector
   double UpdateRhs(int iVar,
     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,1,7,6,1,1,1>::cRhsSupportTable* RhsSupportTable_CornerNodes,int RhsSupportLength_CornerNodes,
-    cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,1,7,6,1,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int RhsSupportLength_CenterNodes) {
+    cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,1,7,6,1,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int RhsSupportLength_CenterNodes,
+    vector<cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,1,7,6,1,1,1>::cRhsSupportTable>& support_corner_vector,
+    vector<cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,1,7,6,1,1,1>::cRhsSupportTable>& support_center_vector) {
     int i;
     double res=0.0;
 
-    for (i=0;i<RhsSupportLength_CornerNodes;i++) res+=((double*)(RhsSupportTable_CornerNodes[i].AssociatedDataPointer+CurrentCornerNodeOffset))[iVar]*RhsSupportTable_CornerNodes[i].Coefficient;
+    for (i=0;i<RhsSupportLength_CornerNodes;i++) res+=((double*)(RhsSupportTable_CornerNodes[i].AssociatedDataPointer+CurrentCornerNodeOffset))[iVar]*RhsSupportTable_CornerNodes[i].coeff;
+
+    //entries beyond the fixed table (none in this test, kept so that the sum stays complete)
+    for (auto& e : support_corner_vector) res+=((double*)(e.AssociatedDataPointer+CurrentCornerNodeOffset))[iVar]*e.coeff;
 
     return res;
   }

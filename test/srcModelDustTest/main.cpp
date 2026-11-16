@@ -46,8 +46,16 @@ int main(int argc,char **argv) {
   // never overwrites a user's PT/plots result.  Direct legacy runs retain the
   // historical OutputDataFileDirectory destination.  This environment
   // variable changes only the diagnostic receipt, never the charging physics.
+  //
+  // The historical file PT/plots/test_model-dust.dat is compared by the
+  // legacy nightly test (MakefileTest/Table, test_model-dust_check) with the
+  // reference output/test_model-dust/test_model-dust.ref_np*, which has the
+  // default 6-digit stream precision and only the charging histories.  Keep
+  // that format there; the full-precision receipt with the published-current
+  // fixture is written only to the private artifact path.
   const char* TestOutputOverride=getenv("AMPS_TEST_MODEL_DUST_OUTPUT");
-  string TestFileName=(TestOutputOverride!=NULL && TestOutputOverride[0]!='\0') ?
+  const bool LegacyOutputFormat=(TestOutputOverride==NULL || TestOutputOverride[0]=='\0');
+  string TestFileName=(LegacyOutputFormat==false) ?
       string(TestOutputOverride) :
       string(PIC::OutputDataFileDirectory)+"/test_model-dust.dat";
 
@@ -57,7 +65,7 @@ int main(int argc,char **argv) {
 
   bool TestPassed=true;
   if (PIC::ThisThread==0) {
-    OutFile<<setprecision(17);
+    if (LegacyOutputFormat==false) OutFile<<setprecision(17);
     cout<<"[CASE] RUN  CORE-DUST-CHARGING-DYNAMICS-001 "
           "configured equilibrium and transient grain charging"<<endl;
     if (!OutFile.is_open()) TestPassed=false;
@@ -140,7 +148,7 @@ int main(int argc,char **argv) {
               <<" expected="<<expected[component]<<endl;
       }
     }
-    if(PIC::ThisThread==0)
+    if ((PIC::ThisThread==0)&&(LegacyOutputFormat==false))
       OutFile<<"Published-current fixture phi="
           <<PublishedCurrents[i].potential_v<<" V: Je="<<electronCurrent
           <<" A, Ji="<<ionCurrent<<" A, Jpe="<<photoCurrent

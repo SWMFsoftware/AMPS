@@ -34,6 +34,27 @@
 // --quick divides every particle count by 50 for development; its results
 // are labelled QUICK and are not acceptance evidence.
 // Output: "[ID] PASS|FAIL|SKIP message" per case (read by run_all_tests.py).
+//
+// Nightly regression tier.  The same file compiled with
+// -DPITCH_ANGLE_NIGHTLY_TIER gives build/test_pitch_angle_montecarlo_nightly
+// (the acceptance binary above is not changed by it: every addition is inside
+// #ifdef PITCH_ANGLE_NIGHTLY_TIER, so its SHA-256, and with it the reuse of a
+// recorded campaign, stays valid).  The tier runs the released (certified)
+// kernel/step pairs of every acceptance family, one or two cases each, with
+// 1/8 of the campaign's particle counts (same seeds, same 128 batches), and
+// judges each comparison with a regression criterion:
+//     |Y_hat - Y_ref| <= eps_Y + z SE + eps_ref,   and   z SE <= eps_Y,
+// i.e. the estimate must be consistent, at family-wise confidence 99% (the
+// campaign's z), with an error no larger than the certified budget eps_Y.
+// With 1/8 of the particles z SE is about 0.6 eps_Y, so any change of the
+// kernels, coefficients or references that moves an observable by more than
+// about 2-3 eps_Y fails (a broken kernel moves them by much more); the
+// certified cases use 20-55% of their budget in the campaign, so a PASS is
+// not marginal.  The run is deterministic like the campaign.  It is a
+// regression check of the released pairs, not certification evidence: the
+// non-certified pairs (Euler-Maruyama, PA-EPS, Milstein at nu_max dt = 0.01,
+// AP-FOC-01 xi = +5 at 0.003), whose documented FAILs keep the full campaign
+// from ever passing as a whole, are not part of it.
 // ============================================================================
 
 #include "pitch_angle_diffusion.h"
@@ -61,6 +82,24 @@ namespace {
 int gThreads = 16;
 double gScale = 1.0;  // particle-count scale (1 = acceptance, 1/50 = quick)
 bool gQuick = false;
+#ifdef PITCH_ANGLE_NIGHTLY_TIER
+// Particle-count scale of the nightly tier and its cases (released pairs only;
+// see the header).  Measured on passion (2026-11-15, shared node, 8 threads):
+// 10 cases in 6.8 min, 53 CPU-minutes, against ~37 CPU-hours for the campaign;
+// AP-FOC-01 xi = 5 at f = 0.001 is about half of it.
+constexpr double kNightlyScale = 1.0 / 8.0;
+const char* const kNightlyCases[] = {
+    "AP-ISO-01.milstein.f0.003",        // Legendre decay, Eqs. (174)/(177)
+    "AP-ISO-01.rotation.f0.01",         // the rotation kernel
+    "AP-ISO-02.milstein.f0.001.t10",    // finite-time streaming displacement
+    "AP-ISO-02.rotation.f0.003.t10",
+    "AP-TIME-01.milstein",              // rate update inside a host interval
+    "AP-TIME-01.rotation",
+    "AP-ZERO-02.eps0.milstein",         // the eps = 0 barrier
+    "AP-FOC-01.milstein.xi-0.1.f0.003", // focusing, finite-volume reference
+    "AP-FOC-01.milstein.xi1.5.f0.003",  // focusing, F-FOC-04 reference
+    "AP-FOC-01.milstein.xi5.f0.001"};   // strongest focusing at the certified step
+#endif
 constexpr int kBatches = 128;
 constexpr double kPi = 3.14159265358979323846;
 
@@ -181,9 +220,61 @@ struct CaseResult {
   std::string message;
 };
 
+#ifdef PITCH_ANGLE_NIGHTLY_TIER
+// The nightly tier's regression criterion (see the header): consistent with an
+// error within the certified budget, and noise small enough to be sensitive.
+CaseResult JudgeNightly(const std::string& id, const std::vector<Comparison>& family,
+                        double seconds) {
+  const int k = static_cast<int>(family.size());
+  const double z = InverseNormal(1.0 - 0.01 / (2.0 * k));
+  int failures = 0, designFailures = 0;
+  double worstUse = 0.0;
+  std::string worstName, firstFailure;
+  for (const Comparison& c : family) {
+    const double scale = c.relative ? std::fabs(c.reference) : 1.0;
+    const double budget = c.budget * scale;
+    const double error = std::fabs(c.value.mean - c.reference);
+    const double allowed = budget + z * c.value.se + c.referenceError;
+    std::ostringstream m;
+    m.precision(6);
+    if (z * c.value.se > budget) {
+      ++designFailures;
+      m << c.name << ": z*SE=" << z * c.value.se << " exceeds the budget " << budget
+        << " (too few particles to detect a regression)";
+    } else if (error > allowed) {
+      ++failures;
+      m << c.name << ": estimate " << c.value.mean << " +- " << c.value.se << " vs reference "
+        << c.reference << " (ref. error " << c.referenceError << "), |err|=" << error
+        << " > budget+zSE+eps_ref=" << allowed;
+    }
+    if (firstFailure.empty() && !m.str().empty()) firstFailure = m.str();
+    if (error / allowed > worstUse) { worstUse = error / allowed; worstName = c.name; }
+  }
+  CaseResult r;
+  r.id = id;
+  std::ostringstream m;
+  m.precision(3);
+  if (failures + designFailures == 0) {
+    r.status = "PASS";
+    m << k << " comparisons, z=" << z << ", worst |err|/(budget+zSE) " << worstUse * 100
+      << "% (" << worstName << "), " << seconds << " s";
+  } else {
+    r.status = "FAIL";
+    m << failures << " regression and " << designFailures << " design failures of " << k
+      << "; first: " << firstFailure;
+  }
+  m << " [nightly tier, 1/8 particles: regression check, not certification evidence]";
+  r.message = m.str();
+  return r;
+}
+#endif
+
 // Apply the predeclared criterion to a family of comparisons.
 CaseResult Judge(const std::string& id, const std::vector<Comparison>& family,
                  double seconds) {
+#ifdef PITCH_ANGLE_NIGHTLY_TIER
+  return JudgeNightly(id, family, seconds);
+#endif
   const int k = static_cast<int>(family.size());
   const double z = InverseNormal(1.0 - 0.01 / (2.0 * k));
   int failures = 0, designFailures = 0;
@@ -694,6 +785,9 @@ CaseResult ApZero02Disconnected(KernelChoice kernel) {
   // Milstein correction produces for D ~ |mu| near 0, is the exact result).
   const bool decreasing = crossed[1] <= crossed[0] && crossed[2] <= crossed[1];
   CaseResult r{id, decreasing ? "PASS" : "FAIL", m.str()};
+#ifdef PITCH_ANGLE_NIGHTLY_TIER
+  r.message += " [nightly tier, 1/8 particles: regression check, not certification evidence]";
+#endif
   if (gQuick) r.status = "QUICK-" + r.status;
   return r;
 }
@@ -846,6 +940,9 @@ int main(int argc, char** argv) {
     else { std::fprintf(stderr, "unknown argument %s\n", argv[i]); return 2; }
   }
   gThreads = std::max(1, gThreads);
+#ifdef PITCH_ANGLE_NIGHTLY_TIER
+  if (!gQuick) gScale = kNightlyScale;
+#endif
   using Factory = std::function<CaseResult()>;
   std::vector<std::pair<std::string, Factory>> cases;
   const KernelChoice ito[2] = {KernelChoice::EulerMaruyama, KernelChoice::Milstein};
@@ -927,6 +1024,22 @@ int main(int argc, char** argv) {
     const std::string id = s.first, reason = s.second;
     cases.push_back({id, [id, reason]() { return Skip(id, reason); }});
   }
+#ifdef PITCH_ANGLE_NIGHTLY_TIER
+  {
+    // keep the nightly cases only; a listed case that no longer exists is an error
+    std::vector<std::pair<std::string, Factory>> nightly;
+    for (const char* name : kNightlyCases) {
+      bool found = false;
+      for (const auto& c : cases)
+        if (c.first == name) { nightly.push_back(c); found = true; }
+      if (!found) {
+        std::printf("[AP-NIGHTLY] FAIL nightly case %s is not a campaign case\n", name);
+        return 1;
+      }
+    }
+    cases.swap(nightly);
+  }
+#endif
   if (list) {
     for (const auto& c : cases) std::printf("%s\n", c.first.c_str());
     return 0;
@@ -941,7 +1054,12 @@ int main(int argc, char** argv) {
     else if (r.status == "SKIP") ++skips;
     else ++passes;
   }
+#ifdef PITCH_ANGLE_NIGHTLY_TIER
+  std::printf("pitch-angle nightly summary: %d passed, %d failed, %d skipped%s\n",
+              passes, failures, skips, gQuick ? " (quick)" : "");
+#else
   std::printf("pitch-angle acceptance summary: %d passed, %d failed, %d skipped%s\n",
               passes, failures, skips, gQuick ? " (quick, not acceptance)" : "");
+#endif
   return failures ? 1 : 0;
 }

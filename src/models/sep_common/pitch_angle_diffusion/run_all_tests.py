@@ -13,6 +13,14 @@ Stages (in order; each prints '[ID] STATUS message' lines):
                cores (3.9 h measured on a shared node); each case's
                result is printed as soon as it finishes
 
+  AP-* nightly  --nightly-acceptance: the campaign's regression tier
+               (build/test_pitch_angle_montecarlo_nightly, same source with
+               -DPITCH_ANGLE_NIGHTLY_TIER): the released kernel/step pairs of
+               every acceptance family, 10 cases, 1/8 of the particles, judged
+               "consistent with the certified budget" at 99%; ~7 min on 8
+               shared cores.  It replaces the campaign in the nightly tests;
+               it is a regression check, not certification evidence
+
 Acceptance evidence reuse.  The campaign is deterministic: every batch has
 its own seeded random stream, so a run of the same binary reproduces the same
 numbers bit for bit, independently of the thread count.  The runner
@@ -27,6 +35,7 @@ Options:
   --rerun-acceptance   ignore a recorded run and execute the campaign
   --skip-acceptance    do not run or reuse it (reported as SKIP)
   --quick-acceptance   1/50 particle counts; reported as SKIP (not evidence)
+  --nightly-acceptance run the nightly regression tier instead of the campaign
   --threads N          campaign threads (default 16)
   --json PATH          machine-readable summary
 
@@ -117,6 +126,17 @@ def stage_acceptance(args) -> None:
     if args.skip_acceptance:
         emit("AP", "SKIP", "acceptance campaign skipped (--skip-acceptance)", "acceptance")
         return
+    if args.nightly_acceptance:
+        nightly = BUILD / "test_pitch_angle_montecarlo_nightly"
+        started = time.time()
+        result = run([str(nightly), "--threads", str(args.threads)])
+        parse_lines(result.stdout, "acceptance")
+        if "pitch-angle nightly summary" not in result.stdout:
+            emit("AP", "FAIL", f"nightly tier exited {result.returncode} without a summary: "
+                               f"{(result.stdout + result.stderr)[-500:]}", "acceptance")
+        print(f"acceptance: nightly tier finished in {time.time() - started:.0f} s on "
+              f"{args.threads} threads", flush=True)
+        return
     if args.quick_acceptance:
         result = run([str(binary), "--quick", "--threads", str(args.threads)])
         parse_lines(result.stdout, "acceptance")
@@ -162,6 +182,7 @@ def main() -> int:
     parser.add_argument("--rerun-acceptance", action="store_true")
     parser.add_argument("--skip-acceptance", action="store_true")
     parser.add_argument("--quick-acceptance", action="store_true")
+    parser.add_argument("--nightly-acceptance", action="store_true")
     parser.add_argument("--threads", type=int, default=16)
     parser.add_argument("--json", type=Path)
     args = parser.parse_args()

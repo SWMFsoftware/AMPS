@@ -234,7 +234,18 @@ python3 run_all_tests.py --rerun-acceptance   # force the campaign (52 cases, ~2
                                               # on 16 idle cores; 3.9 h measured on a
                                               # shared node)
 python3 run_all_tests.py --skip-acceptance    # fast stages only
+python3 run_all_tests.py --nightly-acceptance --threads 8
+                           # fast stages + the campaign's nightly regression tier
+                           # (10 cases of the released pairs, 1/8 particles, ~7 min)
 ```
+
+The nightly tests (`tools/sep_test_orchestrator.py` step `pitch-angle-nightly`,
+run by the nightly's `sep3d` runner) use `--nightly-acceptance`; the full campaign
+is the `[long]` step `pitch-angle-library` and is not part of the nightly run.
+The nightly tier is a separate binary (`build/test_pitch_angle_montecarlo_nightly`,
+the same source compiled with `-DPITCH_ANGLE_NIGHTLY_TIER`), so the acceptance
+binary and the reuse of a recorded campaign are not affected by it; its criterion
+is in the header of `test_pitch_angle_montecarlo.cpp`.
 
 `reference_checks.py` and the supplement's `check_physics.py` need numpy,
 scipy and mpmath (`python3 -m pip install --user mpmath`). A missing

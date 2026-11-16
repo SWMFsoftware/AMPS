@@ -781,7 +781,7 @@ void ApplyPopulationControlAtBoundary() {
   const std::uint64_t step = ApplicationRuntime().counters().currentTick;
   if (step % options.populationControlCadenceSteps != 0) return;
 
-  AMPS::Movers::PopulationControlRequest request;
+  SEP3D::AMPS::Movers::PopulationControlRequest request;
   request.step = step;
   request.campaignSeed = options.campaignSeed;
   request.minimumParticlesPerCellPerSpecies =
@@ -790,8 +790,8 @@ void ApplyPopulationControlAtBoundary() {
       options.targetParticlesPerCellPerSpecies;
   request.maximumParticlesPerCellPerSpecies =
       options.maximumParticlesPerCellPerSpecies;
-  const AMPS::Movers::PopulationControlReport local =
-      AMPS::Movers::ApplyPopulationControl(request);
+  const SEP3D::AMPS::Movers::PopulationControlReport local =
+      SEP3D::AMPS::Movers::ApplyPopulationControl(request);
   if (!local.status.ok()) {
     std::cerr << "[srcSEP3D] rank " << PIC::ThisThread
               << " population control failed: "
@@ -1403,7 +1403,7 @@ long int InjectReducedShockSurfaceParticles() {
       status=ResolvePopulationMagneticDirection(event.positionM,node,&bHat);
       if(!status.ok())StopWithStatus("reduced-front source magnetic basis",status);
       double mu=0,gyrophase=0;
-      status=AMPS::Movers::GyrotropicCoordinatesForDirection(
+      status=SEP3D::AMPS::Movers::GyrotropicCoordinatesForDirection(
           antiSunward,bHat,&mu,&gyrophase);
       if(!status.ok())StopWithStatus("reduced-front source direction",status);
 
@@ -1426,8 +1426,8 @@ long int InjectReducedShockSurfaceParticles() {
       localPlan.particles.push_back(std::move(injected));
     }
 
-    const AMPS::Movers::InjectionOutcome outcome=
-        AMPS::Movers::InjectParticles(localPlan);
+    const SEP3D::AMPS::Movers::InjectionOutcome outcome=
+        SEP3D::AMPS::Movers::InjectParticles(localPlan);
     if(!outcome.status.ok())
       StopWithStatus("reduced-front AMPS particle allocation",outcome.status);
     status=gParticleLedger.RecordInjection(
@@ -2786,7 +2786,7 @@ void PublishObserversAtBoundary() {
               i + _BLOCK_CELLS_X_ * (j + _BLOCK_CELLS_Y_ * k)];
           while (ptr != -1) {
             Adapters::ParticleRecord particle;
-            const Core::Status read = AMPS::Movers::ReadParticle(ptr, &particle);
+            const Core::Status read = SEP3D::AMPS::Movers::ReadParticle(ptr, &particle);
             if (!read.ok()) StopWithStatus("observer particle translation", read);
             localParticles.push_back({
                 particle.stableId, cells[found->second].stableId,
@@ -2892,7 +2892,7 @@ void WriteCheckpointAtBoundary() {
               i + _BLOCK_CELLS_X_ * (j + _BLOCK_CELLS_Y_ * k)];
           while (ptr != -1) {
             Adapters::ParticleRecord particle;
-            status = AMPS::Movers::ReadParticle(ptr, &particle);
+            status = SEP3D::AMPS::Movers::ReadParticle(ptr, &particle);
             if (!status.ok()) StopWithStatus("checkpoint particle translation", status);
             localParticles.push_back({
                 particle.stableId, cells[found->second].stableId,
@@ -3388,7 +3388,7 @@ void SEP3D::Init_BeforeParser() {
   // immutable configuration (from the runtime input or a typed host) is
   // already installed when AMPS reaches this point.
   (void)Configuration();
-  const Core::Status particleStorage = AMPS::Movers::RequestParticleStorage();
+  const Core::Status particleStorage = SEP3D::AMPS::Movers::RequestParticleStorage();
   if (!particleStorage.ok())
     StopWithStatus("particle-buffer storage request", particleStorage);
   if (!gStorageCallbacksRegistered) {

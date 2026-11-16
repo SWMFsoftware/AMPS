@@ -489,11 +489,18 @@ public:
         cFrac t;
         int cnt = 0;
 
-        // Create a copy for sorting without modifying original
-        std::list<cStencilElement> sortedData = StencilData;
+        // Print the simplified stencil (entries with the same i,j,k combined, zero coefficients
+        // dropped), sorted, without modifying this one. Print() simplified the stencil itself until
+        // ea282a66 made it const, and the stencils the nightly tests compare with (e.g. the
+        // GradDivE_*.ref of lightwave-current-on) are in that form: without it, a stencil built from
+        // shifted sums printed every partial term (1153 lines instead of 75 for GradDivE_0_Ex).
+        cStencil simplified(*this);
+        simplified.Simplify();
+        std::list<cStencilElement> sortedData = simplified.StencilData;
         sortedData.sort(SortList);
 
-	fprintf(fout,"%s\n",symbol.c_str());
+        // the name line (a7ea1fe1) only for a named stencil: an unnamed one printed an empty first line
+        if (!symbol.empty()) fprintf(fout,"%s\n",symbol.c_str());
         
         for (const auto& elem : sortedData) {
             fprintf(fout, "%i ", cnt++);

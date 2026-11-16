@@ -11,7 +11,13 @@ CELL_CENTERED_LINEAR_INTERPOLATION_OBJ_EXTERNAL=\
   ModMpi.o					\
   ModIoUnit.o					\
   ModUtility.o					\
+  ModUtility_c.o					\
   ModInterpolateAMR.o
+
+# ModUtility_c.o is the C part of ModUtility.o (make_dir_c, share commit f0a7fbb9, 2023-03-16).
+# ModInterpolateAMR.o needs ModUtility.o (CON_stop), so without it linking amps fails with
+# "undefined reference to `make_dir_c'". It was dropped here in 2020 (d22afa4a), when share
+# had removed ModUtility_c.
 
 
 cell_centered_linear_interpolation :

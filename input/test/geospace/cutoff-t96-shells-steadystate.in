@@ -57,7 +57,7 @@ R_INNER                1.0           ! RE inner loss sphere
 
 #TEMPORAL
 TEMPORAL_MODE          STEADY_STATE
-EPOCH                  2017-09-10T16:00
+! the snapshot epoch is EPOCH in #BACKGROUND_FIELD; #TEMPORAL has no EPOCH keyword
 
 #SPECTRUM
 SPECTRUM_TYPE          POWER_LAW

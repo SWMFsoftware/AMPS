@@ -75,9 +75,13 @@ int PIC::TimeStep() {
    double UserDefinedParticleProcessingTime=0.0;
    static double summIterationExecutionTime=0.0;
 
-   //update the global simualtion time step 
-   //when _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_: the simulation time comes from the SWMF 
-   if ((_SIMULATION_TIME_STEP_MODE_==_SINGLE_GLOBAL_TIME_STEP_)&&(_PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_)) {
+   //update the global simualtion time step
+   //when _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_: the simulation time comes from the SWMF
+   //when _PIC_GLOBAL_TIME_COUNTER_MODE_ == _PIC_MODE_ON_: the time counter is advanced once per
+   //step by PIC::SimulationTime::Update() at the end of this function; advancing it here as well
+   //would count every time step twice (e.g., the Saturn-MOP moon positions would move at double speed)
+   if ((_SIMULATION_TIME_STEP_MODE_==_SINGLE_GLOBAL_TIME_STEP_)&&(_PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_)&&
+       (_PIC_GLOBAL_TIME_COUNTER_MODE_ != _PIC_MODE_ON_)) {
      PIC::SimulationTime::TimeCounter+=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
    }
 

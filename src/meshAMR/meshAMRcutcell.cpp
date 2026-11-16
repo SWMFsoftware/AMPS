@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <algorithm>
+#include <atomic>
 #include <vector>
 #include <string.h>
 #include <list>
@@ -109,33 +110,444 @@ bool AssignSurfaceMeshFileName(char (&destination)[Capacity],
   return AssignSurfaceMeshFileName(destination,completePath);
 }
 
-/* Classify a point against a closed triangular surface without consulting the
- * process-global ray-tracing mesh.  The fixed direction has irrational-looking
+/* The fixed direction of the classification ray.  It has irrational-looking
  * component ratios so manufactured axis-aligned surfaces do not repeatedly
- * hit shared edges.  We still sort and merge equal ray parameters because two
- * triangles share every polygonal edge: one physical crossing must contribute
- * one parity event, not two.  An even number of forward crossings is the AMPS
- * computational domain (outside an internal body); an odd number is excluded.
- * EPS has length units and is converted to a ray-parameter tolerance.
+ * hit shared edges.  The candidate tree below relies only on it being a
+ * nonzero vector. */
+const double ClassificationRayDirection[3]={1.0,0.3713906763541037,0.5291502622129182};
+
+/* Candidate search for the classification ray of
+ * PointInTriangulatedComputationalDomain().
+ *
+ * Testing every face of the surface for every point made the cut-cell volume
+ * integration of GetRemainedBlockVolume() scale as (number of classified
+ * points) x (number of faces): with the 100,000-face comet surface of the CG
+ * tests the cell-volume initialization took many hours instead of about a
+ * minute (see src/test/GEOMETRY_PERFORMANCE_INVESTIGATION.md, which found the
+ * same path for Hartley2).  The tree is a bounding-volume hierarchy of the
+ * faces.  It only removes faces from the search that cannot be hit: every
+ * face for which cTriangleFace::RayIntersection() can return true is still
+ * tested with that same predicate, so the set of hit parameters, their
+ * sorted order, the merging of shared crossings and the parity are the same
+ * as in the linear scan.  For that the face bounds are conservative:
+ *
+ *  - a hit point is x+l*t with t>=0, or x itself when a hit up to EPS behind
+ *    the origin is clamped to t=0;
+ *  - the projection of a hit point onto the face plane lies inside the face
+ *    enlarged by the barycentric tolerance EPS/faceLength (and by
+ *    -xLocalMargin when that margin is negative): at most 3*EPS (resp.
+ *    3*|xLocalMargin|*faceLength) from the face; the clamped hit point x is
+ *    at most EPS from the plane.  Each face box is therefore enlarged by
+ *    4*EPS+3*max(0,-xLocalMargin)*faceLength;
+ *  - the box is enlarged further by 1e-6*faceLength plus 64 rounding units
+ *    of the coordinates, which bounds the rounding of the projected local
+ *    coordinates of well-conditioned faces with sin(angle)^2>1e-6 by a wide
+ *    margin.  Faces that are more ill-conditioned than that, or have
+ *    nonfinite data, are not bounded at all: they are tested for every point,
+ *    exactly as before.
+ *
+ * The tree belongs to one surface and one EPS and is valid only while the
+ * geometry does not change.  It is therefore created explicitly for the
+ * duration of one volume initialization by
+ * CutCell::cVolumeIntegrationAcceleration (see InitCellMeasure()) and is used
+ * only for queries on that surface with that EPS and the xLocalMargin it was
+ * built with; any other query uses the linear scan.  It is read-only after
+ * construction, so concurrent queries from OpenMP tasks are safe.
+ *
+ * The rays of the classification all have the fixed direction
+ * ClassificationRayDirection, so the faces are also indexed in a grid over
+ * the plane perpendicular to it (see GetCandidatesClassificationDirection()):
+ * a query reads one grid cell, which is several times faster than the descent
+ * of the tree; the tree serves rays of other directions.
+ *
+ * Setting the environment variable AMPS_CUTCELL_VERIFY_ACCELERATION=N
+ * repeats every N-th accelerated query with the linear scan (N=1: all of
+ * them) and stops on any difference of the hit parameters. */
+class cClassificationRayTree {
+public:
+  cClassificationRayTree(CutCell::cTriangleFace *s,int n,double eps) :
+      surface(s),nSurface(n),EPS(eps),LocalMargin(CutCell::xLocalMargin) {
+    const double spatialTolerance=(EPS>0.0) ? EPS : 0.0;
+    const double roundoff=64.0*numeric_limits<double>::epsilon();
+
+    FaceMin.resize(3*(size_t)nSurface);
+    FaceMax.resize(3*(size_t)nSurface);
+    FaceCenter.resize(3*(size_t)nSurface);
+    FaceIndex.reserve(nSurface);
+
+    for (int nface=0;nface<nSurface;nface++) {
+      const CutCell::cTriangleFace& f=surface[nface];
+      const double *v[3]={f.x0Face,f.x1Face,f.x2Face};
+      double lo[3],hi[3],vmax=0.0;
+      bool finite=isfinite(f.c) && isfinite(f.c00) && isfinite(f.c11);
+
+      for (int idim=0;idim<3;idim++) {
+        lo[idim]=fmin(v[0][idim],fmin(v[1][idim],v[2][idim]));
+        hi[idim]=fmax(v[0][idim],fmax(v[1][idim],v[2][idim]));
+        for (int i=0;i<3;i++) {
+          if (!isfinite(v[i][idim])) finite=false;
+          vmax=fmax(vmax,fabs(v[i][idim]));
+        }
+      }
+
+      double edge2=0.0;
+      for (int idim=0;idim<3;idim++) edge2+=(v[2][idim]-v[1][idim])*(v[2][idim]-v[1][idim]);
+      const double faceLength=fmax(f.e0Length,fmax(f.e1Length,sqrt(edge2)));
+      const bool wellConditioned=finite && (faceLength>0.0) && isfinite(faceLength) &&
+          (f.c>1.0E-6*f.c00*f.c11);
+
+      if (!wellConditioned) {
+        AlwaysTested.push_back(nface);
+        continue;
+      }
+
+      const double inflate=4.0*spatialTolerance+3.0*fmax(0.0,-LocalMargin)*faceLength+
+          1.0E-6*faceLength+roundoff*fmax(vmax,1.0);
+
+      for (int idim=0;idim<3;idim++) {
+        FaceMin[3*nface+idim]=lo[idim]-inflate;
+        FaceMax[3*nface+idim]=hi[idim]+inflate;
+        FaceCenter[3*nface+idim]=0.5*(lo[idim]+hi[idim]);
+      }
+
+      FaceIndex.push_back(nface);
+    }
+
+    if (!FaceIndex.empty()) {
+      Nodes.reserve(2*FaceIndex.size()/LeafSize+2);
+      Build(0,(int)FaceIndex.size());
+      BuildProjectionGrid();
+    }
+  }
+
+  bool Matches(const CutCell::cTriangleFace *s,int n,double eps) const {
+    return (s==surface)&&(n==nSurface)&&(eps==EPS)&&(CutCell::xLocalMargin==LocalMargin);
+  }
+
+  //append to 'candidates' every face that the ray x+l*t, t>=0, can hit
+  void GetCandidates(const double *x,const double *l,vector<int>& candidates) const {
+    if ((l[0]==ClassificationRayDirection[0])&&(l[1]==ClassificationRayDirection[1])&&(l[2]==ClassificationRayDirection[2])&&(GridSize>0)) {
+      GetCandidatesClassificationDirection(x,candidates);
+      return;
+    }
+
+    candidates.insert(candidates.end(),AlwaysTested.begin(),AlwaysTested.end());
+    if (Nodes.empty()) return;
+
+    int stack[128],nStack=0;
+    stack[nStack++]=0;
+
+    while (nStack>0) {
+      const cNode& node=Nodes[stack[--nStack]];
+
+      if (!RayHitsBox(x,l,node.lo,node.hi)) continue;
+
+      if (node.count>0) {
+        for (int i=node.first;i<node.first+node.count;i++) {
+          const int nface=FaceIndex[i];
+          if (RayHitsBox(x,l,&FaceMin[3*nface],&FaceMax[3*nface])) candidates.push_back(nface);
+        }
+      }
+      else {
+        if (nStack+2>128) exit(__LINE__,__FILE__,"Error: the classification ray tree is too deep");
+        stack[nStack++]=node.right;
+        stack[nStack++]=node.left;
+      }
+    }
+  }
+
+  /* The rays of the point classification all have the direction
+   * ClassificationRayDirection.  For them the faces are also indexed in a
+   * uniform grid over the plane perpendicular to that direction: a ray from
+   * x is the single point (x.u,x.v) of that plane, so a query reads one grid
+   * cell instead of descending the tree.  A face is a candidate when the
+   * projection of its (inflated, conservative) box onto the plane, enlarged
+   * by a rounding margin, contains (x.u,x.v) and the box reaches x.d or
+   * beyond along the ray; every face that the ray can hit passes this test
+   * (the ray meets the box only where the projections overlap and at s>=x.d),
+   * so the candidates are a superset of the tree's and the hits, which
+   * RayIntersection() decides, are the same. */
+  void GetCandidatesClassificationDirection(const double *x,vector<int>& candidates) const {
+    const double pu=x[0]*GridU[0]+x[1]*GridU[1]+x[2]*GridU[2];
+    const double pv=x[0]*GridV[0]+x[1]*GridV[1]+x[2]*GridV[2];
+    const double ps=x[0]*GridD[0]+x[1]*GridD[1]+x[2]*GridD[2];
+
+    candidates.insert(candidates.end(),AlwaysTested.begin(),AlwaysTested.end());
+
+    for (size_t n=0;n<GridLarge.size();n++) if (ProjectionContains(GridLarge[n],pu,pv,ps)) candidates.push_back(GridLarge[n]);
+
+    const int i=GridCell(pu,0),j=GridCell(pv,1);
+    if ((i<0)||(j<0)) return;
+
+    for (int k=GridStart[i+GridSize*j];k<GridStart[i+GridSize*j+1];k++) {
+      if (ProjectionContains(GridFace[k],pu,pv,ps)) candidates.push_back(GridFace[k]);
+    }
+  }
+
+private:
+  struct cNode {
+    double lo[3],hi[3];
+    int first,count; //faces FaceIndex[first..first+count-1] of a leaf (count>0)
+    int left,right;  //children of an internal node (count==0)
+  };
+
+  //the grid of the faces projected along ClassificationRayDirection (GridSize x GridSize cells)
+  double GridU[3],GridV[3],GridD[3],GridMin[2],GridMax[2],GridCellSize[2];
+  int GridSize=0;
+  vector<int> GridStart,GridFace,GridLarge;  //GridLarge: faces too large for the grid, tested at every query
+  vector<double> FaceProjection;             //per face: umin,umax,vmin,vmax,smax
+
+  bool ProjectionContains(int nface,double pu,double pv,double ps) const {
+    const double *p=&FaceProjection[5*nface];
+    return (p[0]<=pu)&&(pu<=p[1])&&(p[2]<=pv)&&(pv<=p[3])&&(ps<=p[4]);
+  }
+
+  //the grid cell of a projected coordinate (-1 outside the grid); the cells of the faces are found the same way
+  int GridCell(double p,int idim) const {
+    if ((p<GridMin[idim])||(p>GridMax[idim])) return -1;
+    return GridCellClamped(p,idim);
+  }
+
+  int GridCellClamped(double p,int idim) const {
+    const double c=floor((p-GridMin[idim])/GridCellSize[idim]);
+    return (c<0.0) ? 0 : ((c>=GridSize) ? GridSize-1 : (int)c);
+  }
+
+  void BuildProjectionGrid() {
+    //orthonormal basis: GridD along the classification direction, GridU and GridV perpendicular to it
+    double l=0.0,a[3]={0.0,0.0,0.0};
+
+    for (int idim=0;idim<3;idim++) l+=ClassificationRayDirection[idim]*ClassificationRayDirection[idim];
+    for (int idim=0;idim<3;idim++) GridD[idim]=ClassificationRayDirection[idim]/sqrt(l);
+
+    a[(fabs(GridD[0])<0.9) ? 0 : 1]=1.0;
+    double ad=a[0]*GridD[0]+a[1]*GridD[1]+a[2]*GridD[2];
+    for (int idim=0;idim<3;idim++) GridU[idim]=a[idim]-ad*GridD[idim];
+    l=sqrt(GridU[0]*GridU[0]+GridU[1]*GridU[1]+GridU[2]*GridU[2]);
+    for (int idim=0;idim<3;idim++) GridU[idim]/=l;
+    GridV[0]=GridD[1]*GridU[2]-GridD[2]*GridU[1];
+    GridV[1]=GridD[2]*GridU[0]-GridD[0]*GridU[2];
+    GridV[2]=GridD[0]*GridU[1]-GridD[1]*GridU[0];
+
+    //the projected boxes of the faces, enlarged by a rounding margin of the projections; a face hit up to EPS
+    //behind x is also a hit (RayIntersection() clamps it to t=0): its inflated box extends beyond x along the ray
+    double lo[2]={numeric_limits<double>::infinity(),numeric_limits<double>::infinity()},hi[2]={-numeric_limits<double>::infinity(),-numeric_limits<double>::infinity()};
+
+    FaceProjection.assign(5*(size_t)nSurface,0.0);
+
+    for (size_t n=0;n<FaceIndex.size();n++) {
+      const int nface=FaceIndex[n];
+      double p[5]={numeric_limits<double>::infinity(),-numeric_limits<double>::infinity(),numeric_limits<double>::infinity(),-numeric_limits<double>::infinity(),-numeric_limits<double>::infinity()};
+      double scale=1.0;
+
+      for (int corner=0;corner<8;corner++) {
+        double c[3];
+
+        for (int idim=0;idim<3;idim++) {
+          c[idim]=((corner>>idim)&1) ? FaceMax[3*nface+idim] : FaceMin[3*nface+idim];
+          scale=fmax(scale,fabs(c[idim]));
+        }
+
+        const double cu=c[0]*GridU[0]+c[1]*GridU[1]+c[2]*GridU[2];
+        const double cv=c[0]*GridV[0]+c[1]*GridV[1]+c[2]*GridV[2];
+        const double cs=c[0]*GridD[0]+c[1]*GridD[1]+c[2]*GridD[2];
+
+        p[0]=fmin(p[0],cu),p[1]=fmax(p[1],cu),p[2]=fmin(p[2],cv),p[3]=fmax(p[3],cv),p[4]=fmax(p[4],cs);
+      }
+
+      const double margin=1.0E-12*scale;
+      p[0]-=margin,p[1]+=margin,p[2]-=margin,p[3]+=margin,p[4]+=margin;
+
+      for (int i=0;i<5;i++) FaceProjection[5*nface+i]=p[i];
+      lo[0]=fmin(lo[0],p[0]),hi[0]=fmax(hi[0],p[1]),lo[1]=fmin(lo[1],p[2]),hi[1]=fmax(hi[1],p[3]);
+    }
+
+    GridSize=(int)fmin(2048.0,fmax(1.0,ceil(2.0*sqrt((double)FaceIndex.size()))));
+
+    for (int idim=0;idim<2;idim++) {
+      GridMin[idim]=lo[idim],GridMax[idim]=hi[idim];
+      GridCellSize[idim]=(hi[idim]-lo[idim])/GridSize;
+      if (!(GridCellSize[idim]>0.0)||!isfinite(GridCellSize[idim])) GridCellSize[idim]=1.0;
+    }
+
+    //compressed lists of the faces of the cells; a face that covers more than 1024 cells is tested at every query
+    vector<int> count((size_t)GridSize*GridSize+1,0);
+
+    for (int pass=0;pass<2;pass++) {
+      if (pass==1) {
+        GridStart.assign((size_t)GridSize*GridSize+1,0);
+        for (size_t c=0;c<(size_t)GridSize*GridSize;c++) GridStart[c+1]=GridStart[c]+count[c];
+        GridFace.assign(GridStart.back(),0);
+        std::fill(count.begin(),count.end(),0);
+      }
+
+      for (size_t n=0;n<FaceIndex.size();n++) {
+        const int nface=FaceIndex[n];
+        const double *p=&FaceProjection[5*nface];
+        const int i0=GridCellClamped(p[0],0),i1=GridCellClamped(p[1],0),j0=GridCellClamped(p[2],1),j1=GridCellClamped(p[3],1);
+
+        if ((long int)(i1-i0+1)*(j1-j0+1)>1024) {
+          if (pass==0) GridLarge.push_back(nface);
+          continue;
+        }
+
+        for (int j=j0;j<=j1;j++) for (int i=i0;i<=i1;i++) {
+          const size_t c=i+(size_t)GridSize*j;
+
+          if (pass==1) GridFace[GridStart[c]+count[c]]=nface;
+          count[c]++;
+        }
+      }
+    }
+  }
+
+  static const int LeafSize=4;
+
+  CutCell::cTriangleFace *surface;
+  int nSurface;
+  double EPS,LocalMargin;
+
+  vector<double> FaceMin,FaceMax,FaceCenter;
+  vector<int> FaceIndex,AlwaysTested;
+  vector<cNode> Nodes;
+
+  int Build(int first,int count) {
+    const int nnode=(int)Nodes.size();
+    Nodes.push_back(cNode());
+
+    double lo[3],hi[3],clo[3],chi[3];
+    for (int idim=0;idim<3;idim++) lo[idim]=clo[idim]=numeric_limits<double>::infinity(),hi[idim]=chi[idim]=-numeric_limits<double>::infinity();
+
+    for (int i=first;i<first+count;i++) {
+      const int nface=FaceIndex[i];
+      for (int idim=0;idim<3;idim++) {
+        lo[idim]=fmin(lo[idim],FaceMin[3*nface+idim]),hi[idim]=fmax(hi[idim],FaceMax[3*nface+idim]);
+        clo[idim]=fmin(clo[idim],FaceCenter[3*nface+idim]),chi[idim]=fmax(chi[idim],FaceCenter[3*nface+idim]);
+      }
+    }
+
+    for (int idim=0;idim<3;idim++) Nodes[nnode].lo[idim]=lo[idim],Nodes[nnode].hi[idim]=hi[idim];
+
+    if (count<=LeafSize) {
+      Nodes[nnode].first=first,Nodes[nnode].count=count,Nodes[nnode].left=Nodes[nnode].right=-1;
+      return nnode;
+    }
+
+    //split at the median of the face centers along the longest extent of the centers
+    int axis=0;
+    for (int idim=1;idim<3;idim++) if (chi[idim]-clo[idim]>chi[axis]-clo[axis]) axis=idim;
+
+    const int half=count/2;
+    const vector<double>& center=FaceCenter;
+    nth_element(FaceIndex.begin()+first,FaceIndex.begin()+first+half,FaceIndex.begin()+first+count,
+        [&center,axis](int a,int b) {return center[3*a+axis]<center[3*b+axis];});
+
+    const int left=Build(first,half);
+    const int right=Build(first+half,count-half);
+
+    Nodes[nnode].first=first,Nodes[nnode].count=0,Nodes[nnode].left=left,Nodes[nnode].right=right;
+    return nnode;
+  }
+
+  //conservative slab test of the ray x+l*t, t>=0, against the box [lo,hi]
+  static bool RayHitsBox(const double *x,const double *l,const double *lo,const double *hi) {
+    double tEnter=0.0,tExit=numeric_limits<double>::infinity();
+
+    for (int idim=0;idim<3;idim++) {
+      if (l[idim]==0.0) {
+        if ((x[idim]<lo[idim])||(x[idim]>hi[idim])) return false;
+        continue;
+      }
+
+      double t0=(lo[idim]-x[idim])/l[idim],t1=(hi[idim]-x[idim])/l[idim];
+      if (t0>t1) swap(t0,t1);
+
+      tEnter=fmax(tEnter,t0);
+      tExit=fmin(tExit,t1);
+    }
+
+    //the rounding of the slab parameters is far below the margins of the boxes;
+    //the slack only makes the comparison safe at exact contact
+    return tEnter<=tExit+1.0E-12*fmax(1.0,fmax(fabs(tEnter),fabs(tExit)));
+  }
+};
+
+//the tree used by the volume initialization that is currently running (if any)
+cClassificationRayTree *ActiveClassificationRayTree=NULL;
+
+//AMPS_CUTCELL_VERIFY_ACCELERATION=N (N>0): repeat every N-th accelerated query with the linear scan
+bool VerifyClassificationAcceleration() {
+  static const long int period=[] {
+    const char *s=getenv("AMPS_CUTCELL_VERIFY_ACCELERATION");
+    return (s!=NULL) ? atol(s) : 0L;
+  }();
+  static std::atomic<long int> counter(0);
+
+  return (period>0)&&(counter.fetch_add(1)%period==0);
+}
+
+/* Classify a point against a closed triangular surface without consulting the
+ * process-global ray-tracing mesh.  We sort and merge equal ray parameters
+ * because two triangles share every polygonal edge: one physical crossing
+ * must contribute one parity event, not two.  An even number of forward
+ * crossings is the AMPS computational domain (outside an internal body); an
+ * odd number is excluded.  EPS has length units and is converted to a
+ * ray-parameter tolerance.  The candidate faces come from the active
+ * cClassificationRayTree when it belongs to this surface, otherwise every
+ * face is tested.
  */
 bool PointInTriangulatedComputationalDomain(
     double *x,CutCell::cTriangleFace *surface,int nSurface,double EPS) {
   if (surface==NULL || nSurface<=0) return true;
 
-  double direction[3]={1.0,0.3713906763541037,0.5291502622129182};
+  double direction[3]={ClassificationRayDirection[0],ClassificationRayDirection[1],ClassificationRayDirection[2]};
   const double directionLength=sqrt(direction[0]*direction[0]+
       direction[1]*direction[1]+direction[2]*direction[2]);
   vector<double> parameters;
-  parameters.reserve(nSurface);
 
-  for (int nface=0;nface<nSurface;nface++) {
-    double t;
-    if (surface[nface].RayIntersection(x,direction,t,EPS)) {
-      parameters.push_back(t);
+  const cClassificationRayTree *tree=ActiveClassificationRayTree;
+
+  if ((tree!=NULL)&&(tree->Matches(surface,nSurface,EPS))) {
+    vector<int> candidates;
+
+    tree->GetCandidates(x,direction,candidates);
+
+    for (vector<int>::const_iterator it=candidates.begin();it!=candidates.end();++it) {
+      double t;
+      if (surface[*it].RayIntersection(x,direction,t,EPS)) {
+        parameters.push_back(t);
+      }
+    }
+
+    sort(parameters.begin(),parameters.end());
+
+    if (VerifyClassificationAcceleration()) {
+      vector<double> reference;
+
+      for (int nface=0;nface<nSurface;nface++) {
+        double t;
+        if (surface[nface].RayIntersection(x,direction,t,EPS)) {
+          reference.push_back(t);
+        }
+      }
+
+      sort(reference.begin(),reference.end());
+      if (reference!=parameters) exit(__LINE__,__FILE__,"Error: the accelerated surface classification differs from the linear scan");
     }
   }
+  else {
+    parameters.reserve(nSurface);
 
-  sort(parameters.begin(),parameters.end());
+    for (int nface=0;nface<nSurface;nface++) {
+      double t;
+      if (surface[nface].RayIntersection(x,direction,t,EPS)) {
+        parameters.push_back(t);
+      }
+    }
+
+    sort(parameters.begin(),parameters.end());
+  }
+
   int crossings=0;
   double previous=0.0;
   const double absoluteTolerance=((EPS>0.0) ? EPS : 0.0)/directionLength;
@@ -156,6 +568,10 @@ bool PointInTriangulatedComputationalDomain(
 
 } // namespace
 
+bool CutCell::PointInComputationalDomain(double *x,CutCell::cTriangleFace *SurfaceTriangulation,int nSurfaceTriangulation,double EPS) {
+  return PointInTriangulatedComputationalDomain(x,SurfaceTriangulation,nSurfaceTriangulation,EPS);
+}
+
 CutCell::cTriangleFace *CutCell::BoundaryTriangleFaces=NULL;
 int CutCell::nBoundaryTriangleFaces=0;
 
@@ -170,6 +586,24 @@ CutCell::fCheckPointInsideDomain CutCell::CheckPointInsideDomain=CutCell::CheckP
 CutCell::fInitRayTracingModule CutCell::InitRayTracingModule=CutCell::InitRayTracingModule_default;
 
 double CutCell::xLocalMargin=0.0;
+
+CutCell::cVolumeIntegrationAcceleration::cVolumeIntegrationAcceleration(cTriangleFace* SurfaceTriangulation,int nSurfaceTriangulation,double EPS) {
+  previous=ActiveClassificationRayTree,tree=NULL;
+
+  if ((SurfaceTriangulation!=NULL)&&(nSurfaceTriangulation>0)) {
+    cClassificationRayTree *t=new cClassificationRayTree(SurfaceTriangulation,nSurfaceTriangulation,EPS);
+
+    tree=t;
+    ActiveClassificationRayTree=t;
+  }
+}
+
+CutCell::cVolumeIntegrationAcceleration::~cVolumeIntegrationAcceleration() {
+  if (tree!=NULL) {
+    ActiveClassificationRayTree=static_cast<cClassificationRayTree*>(previous);
+    delete static_cast<cClassificationRayTree*>(tree);
+  }
+}
 
 /*struct cNodeCoordinates {
   double *x;
@@ -1758,6 +2192,19 @@ double CutCell::GetRemainedBlockVolume(double* xCellMin,double* xCellMax,double 
   cTriangleFaceDescriptor *FaceDescriptor;
 
   for (FaceDescriptor=TriangleCutFaceDescriptorList;FaceDescriptor!=NULL;FaceDescriptor=FaceDescriptor->next) BlockTriangulationSet.push_back(FaceDescriptor->TriangleFace)  ;
+
+  /* The terminal tetrahedral reconstruction takes the cut point of a sub-cell
+   * edge from the first face of the list that crosses the edge, so the volume
+   * depends on the order of the faces.  The cut-face lists of the blocks come
+   * in different orders on the process that generated the mesh and on the
+   * processes that read it from the mesh file (readMeshFile() prepends each
+   * face), and in a list collected for a box of cells they come in yet
+   * another order.  Sorting the faces by their position in the surface
+   * (SurfaceTriangulation is one array) makes the volume a function of the
+   * cell and the surface only: it does not depend on the process or on the
+   * block whose list is used. */
+  BlockTriangulationSet.sort();
+  BlockTriangulationSet.unique();
 
   return GetRemainedBlockVolume(xCellMin,xCellMax,EPS,RelativeError,
       BlockTriangulationSet,maxIntegrationLevel,0,

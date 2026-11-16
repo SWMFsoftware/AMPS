@@ -643,6 +643,22 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::computeMassMatrixOffsetTable() {
 }
 
 
+// The divE correction (#DIVE in PARAM.in; DoDivECorrection is set only by the FLUID coupler, pic_fluid.cpp) solves a
+// Poisson equation for the correction potential on the cell centers (PoissonSolver: cLinearSystemCenterNode with
+// PoissonGetStencil() and PoissonUpdateRhs()) and then moves the particles (CorrectParticleLocation()). It does not
+// use the RHS support tables of the corner-node E solver, which GetStencil()/UpdateRhs() populate with the new
+// (semantic) support vectors since commit 203a8256 (2025-12-27): PoissonGetStencil(), cLinearSystemCenterNode and
+// the whole divECorrection() chain are as they were when the GM-PC/AMPS tests with #DIVE T last passed (2025-10),
+// except that cRhsSupportTable::Coefficient was renamed to coeff. At the domain boundary PoissonGetStencil() sets
+// phi=0 in the cells found by isBoundaryCell(), i.e. at the boundary of the region coupled with the fluid model.
+// A non-periodic domain without the FLUID coupler (the Dirichlet/domain_bc boundaries that GetStencil() applies
+// in standalone runs) is not handled, so the correction is limited to the FLUID coupler.
+static void CheckDivECorrectionSupported() {
+  if (_PIC_COUPLER_MODE_!=_PIC_COUPLER_MODE__FLUID_) {
+    exit(__LINE__,__FILE__,"Error: the divE correction is implemented for the FLUID coupler only (PoissonGetStencil() does not apply the domain boundary conditions of a standalone run; see GetStencil())");
+  }
+}
+
 void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonGetStencil(int i, int j, int k, int iVar,
                        cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
  
@@ -660,7 +676,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonGetStencil(int i, int j, i
     //convert length
     dx[iDim] =dx_no[iDim]* length_conv;
     CoeffSqr[iDim] = 1./(dx[iDim]*dx[iDim]);
-    x[iDim]=node->xmin[iDim]*length_conv+(index[iDim]+0.5)*dx_no[iDim];
+    //the cell center in the mesh units: isBoundaryCell() compares it with node->xmin/xmax and dx_no
+    //(xmin was multiplied by length_conv, which differs from 1 for _PIC_FIELD_SOLVER_INPUT_UNIT_SI_)
+    x[iDim]=node->xmin[iDim]+(index[iDim]+0.5)*dx_no[iDim];
   }
 
   if (isBoundaryCell(x,dx_no,node)) {  
@@ -4389,6 +4407,7 @@ __syncwarp;
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection(){
+  CheckDivECorrectionSupported();
   PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::DivECorrectionFieldTime.Start();
   ComputeNetCharge(true);
   ComputeDivE();
@@ -4406,11 +4425,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection(){
   PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::DivECorrectionFieldTime.Start();
   ComputeNetCharge(false);
   PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::DivECorrectionFieldTime.UpdateTimer();
-
-
-  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_) {
-    exit(__LINE__,__FILE__,"error: divECorrection() is not generalized for the case _PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_; See GetStencil() as an example");
-  }
 }
 
 void exchangeParticleLocal(){
@@ -6217,8 +6231,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix() {
 
 
   if (DoDivECorrection){
-    exit(__LINE__,__FILE__,"Error: PoissonGetStencil need to be updated with the new method for populating the support vectors; See GetStencil() [new implementation] and GetStencil_Legacy() [old implementation]"); 
-
+    //the Poisson system of the divE correction is independent of the support vectors of the E solver (see CheckDivECorrectionSupported())
+    CheckDivECorrectionSupported();
 
     PoissonSolver->Reset();
     PoissonSolver->BuildMatrix(PoissonGetStencil);

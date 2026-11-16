@@ -329,7 +329,7 @@ void AdvectTurbulenceEnergyAllFieldLines(
     namespace FL = PIC::FieldLine;
     
     int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
     
     const double mu0 = 4.0e-7 * M_PI;  // Permeability of free space [H/m]
     const double proton_mass = 1.67262192e-27;  // Proton mass [kg]
@@ -930,7 +930,7 @@ double GetGlobalMaxStableTimeStep() {
     double global_dt_max;
 
     // Find minimum across all MPI processes (most restrictive constraint)
-    MPI_Allreduce(&local_dt_max, &global_dt_max, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+    MPI_Allreduce(&local_dt_max, &global_dt_max, 1, MPI_DOUBLE, MPI_MIN, MPI_GLOBAL_COMMUNICATOR);
 
     return global_dt_max;
 }

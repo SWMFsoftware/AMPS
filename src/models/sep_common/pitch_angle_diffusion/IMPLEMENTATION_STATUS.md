@@ -161,6 +161,32 @@ Findings:
   crossing fraction decreases with the step for both Itô kernels (Milstein
   crosses exactly zero at f ≤ 0.003).
 
+## Nightly regression tier (2026-11-15)
+
+The full campaign cannot be a nightly test: it needs ~37 CPU-hours (2.3 h on
+16 idle cores; on passion's shared nightly node it was stopped by the time
+limit two nights in a row) and it never passes as a whole, because its 14
+documented FAILs of the non-certified pairs (Euler-Maruyama, PA-EPS, Milstein at
+f = 0.01 and at f = 0.003 for xi = +5) are part of the record.  The nightly
+tests therefore run its regression tier, `run_all_tests.py --nightly-acceptance`
+(`build/test_pitch_angle_montecarlo_nightly`, `-DPITCH_ANGLE_NIGHTLY_TIER`):
+
+* cases: the released pairs of every family -- AP-ISO-01 Milstein f = 0.003 and
+  rotation f = 0.01, AP-ISO-02 Milstein f = 0.001 and rotation f = 0.003 (to
+  nu t = 10), AP-TIME-01 Milstein and rotation, AP-ZERO-02 eps = 0 Milstein,
+  AP-FOC-01 Milstein xi = -0.1 and 1.5 at f = 0.003 and xi = 5 at f = 0.001;
+* 1/8 of the campaign's particle counts, the same seeds and 128 batches;
+* criterion |err| <= eps_Y + z SE + eps_ref and z SE <= eps_Y (same z): the
+  estimate must be consistent at family-wise 99% with an error within the
+  certified budget; with z SE ~ 0.6 eps_Y it detects any change that moves an
+  observable by more than ~2-3 eps_Y.
+
+The acceptance binary built after this change is bit-identical to the one of
+the campaign above (SHA-256 `8e79b97e...`), so the recorded campaign remains
+valid.  First run (passion, 8 threads, shared node): 10/10 PASS in 6.8 min
+(53 CPU-minutes), worst |err|/(eps_Y + z SE) 36.9% (AP-ISO-01 Milstein P4);
+with the unit and reference stages the step takes ~7 min.
+
 ## Certification matrix
 
 `pitch_angle_certified_pairs.inc` (not linked into the acceptance binary:

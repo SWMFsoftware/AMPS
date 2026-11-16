@@ -141,7 +141,16 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
 
     const double shockCrossingS =
         ShockCrossingTimeS(context, signedStreamingSpeed);
-    if (std::isfinite(shockCrossingS) && shockCrossingS > 0.0)
+    // A particle that is already at the shock within roundoff (it was injected
+    // there, or a previous substep limited by the shock stopped it a roundoff
+    // distance short of it) has a crossing time far below the minimum substep;
+    // the limit then stopped the run ("stability limit is below the declared
+    // minimum substep"), and flooring it at the minimum substep let a slow
+    // particle approach the shock without ever crossing it (its displacement
+    // is below the resolution of the field-line coordinate).  Such a particle
+    // is on the shock: the crossing is not resolved further.
+    if (std::isfinite(shockCrossingS) && shockCrossingS > 0.0 &&
+        tolerances.shockFraction * shockCrossingS >= tolerances.minimumStepS)
       limits.push_back(StepLimit(
           "fte-mfp-shock", tolerances.shockFraction * shockCrossingS));
 

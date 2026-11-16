@@ -883,6 +883,10 @@ public:
     // requested epoch and initialized RECALC_08.  This call evaluates only the
     // internal spherical-harmonic field; no T96/T01/T05/TA15/TA16 contribution
     // is added.  Coordinates and the returned field are both in GSM SI units.
+    // GEOPACK (and geopackContext_) exist only in the standalone build; in the
+    // SWMF-coupled build IGRF, like the Tsyganenko models, falls through to the
+    // coupler field below.
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
     if (branch_==FieldBranch_::Igrf) {
       double x_arr[3]={x_m.x,x_m.y,x_m.z};
       double b_arr[3]={0.0,0.0,0.0};
@@ -892,6 +896,7 @@ public:
       B_T.x=b_arr[0]; B_T.y=b_arr[1]; B_T.z=b_arr[2];
       return;
     }
+#endif
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
     // Live SWMF-coupled path.
@@ -5297,9 +5302,15 @@ auto printCollectiveTaskProgress = [&](long long doneTasks, long long progressTo
   // read-only with respect to that process-global wrapper state.
   std::vector<std::unique_ptr<cFieldEvaluator>> gridlessWorkerFields;
   gridlessWorkerFields.reserve((std::size_t)gridlessThreadCount);
+  // The initial snapshot uses the epoch of the first location (frozenEpoch), not
+  // prm.field.epoch: in TRAJECTORY mode #BACKGROUND_FIELD has no EPOCH, so the default
+  // 2000-01-01 epoch lies outside any driver table and the coverage check in
+  // ReinitGeopack aborted the run before a single sample was traced.  Each task then
+  // re-initializes the evaluator to its own sample epoch (ProcessTask), as before.
+  // For POINTS/SHELLS frozenEpoch equals prm.field.epoch, so nothing changes there.
   cStandaloneFieldProvider gridlessFieldProvider(prm);
   for (int iw=0; iw<gridlessThreadCount; ++iw)
-    gridlessWorkerFields.emplace_back(gridlessFieldProvider.CreateTypedSnapshot());
+    gridlessWorkerFields.emplace_back(gridlessFieldProvider.CreateTypedSnapshot(frozenEpoch));
 
   const bool gridlessSharedThreadsActive =
       (gridlessBackend != GridlessParallelBackend_::SERIAL && gridlessThreadCount > 1);

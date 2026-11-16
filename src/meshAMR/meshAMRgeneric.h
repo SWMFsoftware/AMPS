@@ -10679,7 +10679,74 @@ nMPIops++;
   }
 
 
-  //save/load the binary file containing the center node measures
+  /* save/load the binary file containing the center node measures
+   *
+   * The file amr.sig=<mesh signature>.CenterNodeMeasure.v<version>.bin caches the cell measures of a mesh. The mesh signature
+   * does not change when the calculation of the measures changes: the version in the name of the file and in its header keeps
+   * InitCellMeasure() from loading measures that another version of the calculation saved. Increment
+   * GetCenterNodeMeasureFileVersion() whenever a change of InitCellMeasure() changes the calculated measures.
+   *   version 1: the files amr.sig=<signature>.CenterNodeMeasure.bin without a version (until 2026-11): a block without an
+   *              internal-boundary descriptor got the full volume also inside a body, and the first block that reached a
+   *              shared ghost cell set its measure;
+   *   version 2: every cell is calculated by its owner; a cell inside a body has measure 0 (see InitCellMeasure()).
+   * The header holds a marker, the version, the number of the records per leaf of the tree and the number of the leaves. */
+  static int GetCenterNodeMeasureFileVersion() {return 2;}
+
+  static void GetCenterNodeMeasureFileName(char *fname,const char *path,unsigned long Signature) {
+    if (path==NULL) sprintf(fname,"amr.sig=0x%lx.CenterNodeMeasure.v%i.bin",Signature,GetCenterNodeMeasureFileVersion());
+    else sprintf(fname,"%s/amr.sig=0x%lx.CenterNodeMeasure.v%i.bin",path,Signature,GetCenterNodeMeasureFileVersion());
+  }
+
+  static int GetCenterNodeMeasureFileRecordsPerLeaf() {
+    int res=_BLOCK_CELLS_X_+2*_GHOST_CELLS_X_;
+
+    if (_MESH_DIMENSION_>1) res*=_BLOCK_CELLS_Y_+2*_GHOST_CELLS_Y_;
+    if (_MESH_DIMENSION_>2) res*=_BLOCK_CELLS_Z_+2*_GHOST_CELLS_Z_;
+
+    return res;
+  }
+
+  long int GetTreeLeafNumber(cTreeNodeAMR<cBlockAMR>* node) {
+    long int res=0;
+
+    if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) return 1;
+    for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (node->downNode[nDownNode]!=NULL) res+=GetTreeLeafNumber(node->downNode[nDownNode]);
+
+    return res;
+  }
+
+  void WriteCenterNodeMeasureFileHeader(FILE *fout) {
+    char marker[32];
+    int version=GetCenterNodeMeasureFileVersion(),nRecordsPerLeaf=GetCenterNodeMeasureFileRecordsPerLeaf();
+    long int nLeaves=GetTreeLeafNumber(rootTree);
+
+    memset(marker,0,sizeof(marker));
+    strncpy(marker,"AMPS-CENTER-NODE-MEASURE",sizeof(marker)-1);
+
+    fwrite(marker,sizeof(char),sizeof(marker),fout);
+    fwrite(&version,sizeof(int),1,fout);
+    fwrite(&nRecordsPerLeaf,sizeof(int),1,fout);
+    fwrite(&nLeaves,sizeof(long int),1,fout);
+  }
+
+  //read and verify the header: false if the file is of another version or for another tree
+  bool ReadCenterNodeMeasureFileHeader(FILE *fin) {
+    char marker[32],expected[32];
+    int version,nRecordsPerLeaf;
+    long int nLeaves;
+
+    memset(expected,0,sizeof(expected));
+    strncpy(expected,"AMPS-CENTER-NODE-MEASURE",sizeof(expected)-1);
+
+    if (fread(marker,sizeof(char),sizeof(marker),fin)!=sizeof(marker)) return false;
+    if (memcmp(marker,expected,sizeof(marker))!=0) return false;
+    if (fread(&version,sizeof(int),1,fin)!=1) return false;
+    if (fread(&nRecordsPerLeaf,sizeof(int),1,fin)!=1) return false;
+    if (fread(&nLeaves,sizeof(long int),1,fin)!=1) return false;
+
+    return (version==GetCenterNodeMeasureFileVersion())&&(nRecordsPerLeaf==GetCenterNodeMeasureFileRecordsPerLeaf())&&(nLeaves==GetTreeLeafNumber(rootTree));
+  }
+
   void SaveCenterNodeMeasure() {
     CMPI_channel pipe(10000);
     FILE* fout=NULL;
@@ -10691,9 +10758,11 @@ nMPIops++;
 
       //open the file
       char fname[500];
-      sprintf(fname,"amr.sig=0x%lx.CenterNodeMeasure.bin",Signature);
+      GetCenterNodeMeasureFileName(fname,NULL,Signature);
 
       fout=fopen(fname,"w");
+      if (fout==NULL) exit(__LINE__,__FILE__,"Error: cannot open the file of the cell measures");
+      WriteCenterNodeMeasureFileHeader(fout);
     }
     else pipe.openSend(0);
 
@@ -10776,12 +10845,7 @@ nMPIops++;
       //open the file
       char fname[600];
 
-      if (CellMeasureFilePath==NULL) {
-        sprintf(fname,"amr.sig=0x%lx.CenterNodeMeasure.bin",getMeshSignature());
-      }
-      else {
-        sprintf(fname,"%s/amr.sig=0x%lx.CenterNodeMeasure.bin",CellMeasureFilePath,getMeshSignature());
-      }
+      GetCenterNodeMeasureFileName(fname,CellMeasureFilePath,getMeshSignature());
 
       fData=fopen(fname,"r");
 
@@ -10790,8 +10854,19 @@ nMPIops++;
         if (ThisThread==0) printf("$PREFIX: the calculated volume data file %s is not found\n",fname);
         return false;
       }
+      else if (ReadCenterNodeMeasureFileHeader(fData)==false) {
+        //the file was saved by another version of the calculation or for another tree -> the measure has to be calculated directly
+        if (ThisThread==0) printf("$PREFIX: the calculated volume data file %s is of another version or for another mesh: it is not used\n",fname);
+        fclose(fData);
+        fData=NULL;
+        return false;
+      }
       else {
         if (ThisThread==0) printf("$PREFIX: the calculated volume data file %s is found: loading....  ",fname);
+
+        //the ghost cells are saved with every block that has them: an interior cell takes the value of the block that
+        //owns it, a ghost cell the value of the first block in the tree order (as InitCellMeasure() calculates them)
+        InitCellMeasure_ResetToZero(rootTree);
       }
     }
 
@@ -10826,7 +10901,12 @@ nMPIops++;
           if (fread(&Measure,sizeof(double),1,fData)!=1) exit(__LINE__,__FILE__,"Error: fread failed");
 
           nd=getCenterNodeLocalNumber(i,j,k);
-          if ((CenterNode=node->block->GetCenterNode(nd))!=NULL) CenterNode->Measure=Measure;
+
+          if ((CenterNode=node->block->GetCenterNode(nd))!=NULL) {
+            bool InteriorCell=(0<=i)&&(i<_BLOCK_CELLS_X_)&&(0<=j)&&(j<((_MESH_DIMENSION_>1) ? _BLOCK_CELLS_Y_ : 1))&&(0<=k)&&(k<((_MESH_DIMENSION_>2) ? _BLOCK_CELLS_Z_ : 1));
+
+            if ((InteriorCell==true)||(CenterNode->Measure<0.0)) CenterNode->Measure=Measure;
+          }
         }
       }
       else {
@@ -11173,173 +11253,552 @@ nMPIops++;
     return res;
   }
 
-  void InitCellMeasureBlock(cTreeNodeAMR<cBlockAMR>* startNode) {
-       double *xNodeMin,*xNodeMax,Measure,xCellMin[3],xCellMax[3],dx=0.0,dy=0.0,dz=0.0,xTotalMin[3]={0.0,0.0,0.0},xTotalMax[3]={0.0,0.0,0.0};
-       long int i,j,k,nd;
-       cCenterNode *centerNode;
-       int IntersectionCode=_AMR_BLOCK_INSIDE_DOMAIN_;
+  /* ======================================================================
+   * Measures (volumes) of the cells: the center nodes
+   *
+   * Values of cCenterNode::Measure:
+   *   Measure<0   the measure is not calculated yet (AllocateBlock() and
+   *               InitCellMeasure_ResetToZero() set -1);
+   *   Measure==0  the cell has no volume in the computational domain: it is
+   *               entirely inside an internal body;
+   *   Measure>0   the volume of the part of the cell that is in the domain.
+   *
+   * The center nodes of the ghost cells of a block are shared with the
+   * neighboring blocks: a ghost cell of a block is an interior cell of the
+   * neighbor of the same refinement level when that neighbor is allocated,
+   * and the same ghost cell can belong to several blocks.  Every cell is
+   * therefore calculated once, by the block that owns it:
+   *
+   *   pass 1  every block calculates its interior cells with the geometry of
+   *           its own box: the analytic internal boundaries that intersect
+   *           the box, and the cut faces of the triangulated surface that the
+   *           mesh generation attached to the block (FirstTriangleCutFace,
+   *           complete for the block's box);
+   *   pass 2  the ghost cells that are not an interior cell of any allocated
+   *           block (Measure<0 after pass 1) are calculated by the first
+   *           block in the tree order that has them, with the geometry of
+   *           the block's box including the ghost cells (the cut faces are
+   *           collected from all leaves of the tree that this box overlaps).
+   *
+   * With several processes, InitCellMeasure() of the whole mesh runs both
+   * passes for the blocks of this process only; the cells of the ghost blocks
+   * (the blocks of other processes allocated here) come from their owners
+   * (cCellMeasureExchange), so that no block is calculated by two processes,
+   * and the interior cells of the blocks that a triangulated surface cuts
+   * are calculated by all processes in turn (CalculateCutBlockInteriorCells())
+   * to balance the time of their numerical integration.
+   *
+   * A box that no boundary intersects is classified against all internal
+   * boundaries registered in the mesh (InternalBoundaryList) and not only
+   * against the descriptors attached to the block: the mesh generation
+   * attaches a descriptor only to the blocks that a boundary intersects, so
+   * a block entirely inside a body has none.  The analytic bodies classify
+   * the box with their BlockIntersection(); the triangulated surface
+   * classifies the center of an uncut box with the deterministic point test
+   * of the cut-cell integration (CutCell::PointInComputationalDomain).
+   *
+   * The measure of a cell is thus a function of the cell and of the
+   * geometry only, and the result does not depend on the traversal order of
+   * the blocks, on the domain decomposition or on the number of threads.
+   * ====================================================================== */
 
+  //the geometry of the internal boundaries in a box of cells, used to calculate the measures of these cells
+  class cCellMeasureGeometry {
+  public:
+    double xmin[3],xmax[3];
 
-#if _MESH_DIMENSION_ == 1
-       static const int iMin=-_GHOST_CELLS_X_,iMax=_BLOCK_CELLS_X_+_GHOST_CELLS_X_;
-       static const int jMin=0,jMax=1;
-       static const int kMin=0,kMax=1;
-#elif _MESH_DIMENSION_ == 2
-       static const int iMin=-_GHOST_CELLS_X_,iMax=_BLOCK_CELLS_X_+_GHOST_CELLS_X_;
-       static const int jMin=-_GHOST_CELLS_Y_,jMax=_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;
-       static const int kMin=0,kMax=1;
-#elif _MESH_DIMENSION_ == 3
-       static const int iMin=-_GHOST_CELLS_X_,iMax=_BLOCK_CELLS_X_+_GHOST_CELLS_X_;
-       static const int jMin=-_GHOST_CELLS_Y_,jMax=_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;
-       static const int kMin=-_GHOST_CELLS_Z_,kMax=_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;
-#else
-       exit(__LINE__,__FILE__,"Error: unknown option");
-#endif
+    //the box is entirely inside an analytic body (sphere, circle, 1D sphere, body of rotation)
+    bool Excluded;
 
+    //the analytic internal boundaries that intersect the box
+    vector<cInternalBoundaryConditionsDescriptor*> AnalyticBoundaries;
 
-       if (startNode->block==NULL)  exit(__LINE__,__FILE__,"Error: the block is not allocated");
+    //the triangulated (NASTRAN) surface is a registered internal boundary
+    bool Triangulation;
 
-       xNodeMin=startNode->xmin,xNodeMax=startNode->xmax;
+    //the faces of the triangulated surface that intersect the box (NULL: none);
+    //when CutFaces==NULL InDomain tells whether the box is outside the triangulated body
+    CutCell::cTriangleFaceDescriptor *CutFaces;
+    bool InDomain;
 
-       dx=(xNodeMax[0]-xNodeMin[0])/_BLOCK_CELLS_X_;
-       Measure=dx;
-       xTotalMin[0]=xNodeMin[0]-dx*_GHOST_CELLS_X_,xTotalMax[0]=xNodeMax[0]+dx*_GHOST_CELLS_X_;
+    //storage for CutFaces when the list is collected for the box
+    vector<CutCell::cTriangleFaceDescriptor> CutFaceBuffer;
 
-       if (_MESH_DIMENSION_>1) {
-         dy=(xNodeMax[1]-xNodeMin[1])/_BLOCK_CELLS_Y_;
-         Measure*=dy;
-         xTotalMin[1]=xNodeMin[1]-dy*_GHOST_CELLS_Y_,xTotalMax[1]=xNodeMax[1]+dy*_GHOST_CELLS_Y_;
-       }
+    cCellMeasureGeometry() : Excluded(false),Triangulation(false),CutFaces(NULL),InDomain(true) {
+      for (int idim=0;idim<3;idim++) xmin[idim]=0.0,xmax[idim]=1.0;
+    }
+  };
 
-       if (_MESH_DIMENSION_>2) {
-         dz=(xNodeMax[2]-xNodeMin[2])/_BLOCK_CELLS_Z_;
-         Measure*=dz;
-         xTotalMin[2]=xNodeMin[2]-dz*_GHOST_CELLS_Z_,xTotalMax[2]=xNodeMax[2]+dz*_GHOST_CELLS_Z_;
-       }
+  //the box of a block, the size of its cells and the full measure of a cell
+  class cCellMeasureBlockGeometry {
+  public:
+    double dx[3],xmin[3],xmax[3],xTotalMin[3],xTotalMax[3],CellMeasure;
+  };
+
+  void GetCellMeasureBlockGeometry(cTreeNodeAMR<cBlockAMR>* node,cCellMeasureBlockGeometry& b) {
+    //the coordinates of the dimensions that the mesh does not have span [0,1]
+    for (int idim=0;idim<3;idim++) b.dx[idim]=1.0,b.xmin[idim]=0.0,b.xmax[idim]=1.0,b.xTotalMin[idim]=0.0,b.xTotalMax[idim]=1.0;
+
+    b.xmin[0]=node->xmin[0],b.xmax[0]=node->xmax[0];
+    b.dx[0]=(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_;
+    b.CellMeasure=b.dx[0];
+    b.xTotalMin[0]=node->xmin[0]-b.dx[0]*_GHOST_CELLS_X_,b.xTotalMax[0]=node->xmax[0]+b.dx[0]*_GHOST_CELLS_X_;
+
+    if (_MESH_DIMENSION_>1) {
+      b.xmin[1]=node->xmin[_MESH_DIMENSION_>1 ? 1 : 0],b.xmax[1]=node->xmax[_MESH_DIMENSION_>1 ? 1 : 0];
+      b.dx[1]=(b.xmax[1]-b.xmin[1])/_BLOCK_CELLS_Y_;
+      b.CellMeasure*=b.dx[1];
+      b.xTotalMin[1]=b.xmin[1]-b.dx[1]*_GHOST_CELLS_Y_,b.xTotalMax[1]=b.xmax[1]+b.dx[1]*_GHOST_CELLS_Y_;
+    }
+
+    if (_MESH_DIMENSION_>2) {
+      b.xmin[2]=node->xmin[_MESH_DIMENSION_>2 ? 2 : 0],b.xmax[2]=node->xmax[_MESH_DIMENSION_>2 ? 2 : 0];
+      b.dx[2]=(b.xmax[2]-b.xmin[2])/_BLOCK_CELLS_Z_;
+      b.CellMeasure*=b.dx[2];
+      b.xTotalMin[2]=b.xmin[2]-b.dx[2]*_GHOST_CELLS_Z_,b.xTotalMax[2]=b.xmax[2]+b.dx[2]*_GHOST_CELLS_Z_;
+    }
+  }
 
 #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
-       if (startNode->InternalBoundaryDescriptorList!=NULL) {
-         int IntersectionCodeTemp=-1;
+  //intersection of the box [xmin,xmax] with an analytic internal boundary
+  int GetAnalyticBoundaryIntersection(cInternalBoundaryConditionsDescriptor *bc,double *xmin,double *xmax) {
+    switch (bc->BondaryType) {
+    case _INTERNAL_BOUNDARY_TYPE_SPHERE_:
+      return ((cInternalSphericalData*)(bc->BoundaryElement))->BlockIntersection(xmin,xmax,EPS);
+    case _INTERNAL_BOUNDARY_TYPE_CIRCLE_:
+      return ((cInternalCircleData*)(bc->BoundaryElement))->BlockIntersection(xmin,xmax,EPS);
+    case _INTERNAL_BOUNDARY_TYPE_1D_SPHERE_:
+      return ((cInternalSphere1DData*)(bc->BoundaryElement))->BlockIntersection(xmin,xmax,EPS);
+    case _INTERNAL_BOUNDARY_TYPE_BODY_OF_ROTATION_:
+      return ((cInternalRotationBodyData*)(bc->BoundaryElement))->BlockIntersection(xmin,xmax,EPS);
+    default:
+      exit(__LINE__,__FILE__,"Error: unknown boundary type");
+    }
 
-         for (cInternalBoundaryConditionsDescriptor *bc=startNode->InternalBoundaryDescriptorList;bc!=NULL;bc=bc->nextInternalBCelement) {
-            if (bc->BondaryType==_INTERNAL_BOUNDARY_TYPE_SPHERE_) {
-              IntersectionCodeTemp=((cInternalSphericalData*)(bc->BoundaryElement))->BlockIntersection(xTotalMin,xTotalMax,EPS);
-            }
-            else if (bc->BondaryType==_INTERNAL_BOUNDARY_TYPE_CIRCLE_) {
-              IntersectionCodeTemp=((cInternalCircleData*)(bc->BoundaryElement))->BlockIntersection(xTotalMin,xTotalMax,EPS);
-            }
-            else if (bc->BondaryType==_INTERNAL_BOUNDARY_TYPE_1D_SPHERE_) {
-              IntersectionCodeTemp=((cInternalSphere1DData*)(bc->BoundaryElement))->BlockIntersection(xTotalMin,xTotalMax,EPS);
-            }
-            else if (bc->BondaryType==_INTERNAL_BOUNDARY_TYPE_BODY_OF_ROTATION_) {
-              IntersectionCodeTemp=((cInternalRotationBodyData*)(bc->BoundaryElement))->BlockIntersection(xTotalMin,xTotalMax,EPS);
-            }
-            else if (bc->BondaryType==_INTERNAL_BOUNDARY_TYPE_NASTRAN_SURFACE_) {
-              IntersectionCodeTemp=((cInternalNastranSurfaceData*)(bc->BoundaryElement))->BlockIntersection(xTotalMin,xTotalMax,EPS);
-            }
-            else exit(__LINE__,__FILE__,"Error: unknown boundary type");
+    return _AMR_BLOCK_INSIDE_DOMAIN_;
+  }
 
-            if (IntersectionCodeTemp==_AMR_BLOCK_OUTSIDE_DOMAIN_) IntersectionCode=_AMR_BLOCK_OUTSIDE_DOMAIN_;
-            else if ((IntersectionCodeTemp==_AMR_BLOCK_INTERSECT_DOMAIN_BOUNDARY_)&&(IntersectionCode!=_AMR_BLOCK_OUTSIDE_DOMAIN_)) IntersectionCode=_AMR_BLOCK_INTERSECT_DOMAIN_BOUNDARY_;
-         }
+  //the volume of the part of the box [xmin,xmax] outside of an analytic internal boundary
+  double GetAnalyticBoundaryRemainedVolume(cInternalBoundaryConditionsDescriptor *bc,double *xmin,double *xmax) {
+    int IntersectionStatus;
 
+    switch (bc->BondaryType) {
+    case _INTERNAL_BOUNDARY_TYPE_SPHERE_:
+      return ((cInternalSphericalData*)(bc->BoundaryElement))->GetRemainedBlockVolume(xmin,xmax,EPS,&IntersectionStatus);
+    case _INTERNAL_BOUNDARY_TYPE_CIRCLE_:
+      return ((cInternalCircleData*)(bc->BoundaryElement))->GetRemainedBlockVolume(xmin,xmax,EPS,&IntersectionStatus);
+    case _INTERNAL_BOUNDARY_TYPE_1D_SPHERE_:
+      return ((cInternalSphere1DData*)(bc->BoundaryElement))->GetRemainedBlockVolume(xmin,xmax,EPS,&IntersectionStatus);
+    case _INTERNAL_BOUNDARY_TYPE_BODY_OF_ROTATION_:
+      return ((cInternalRotationBodyData*)(bc->BoundaryElement))->GetRemainedBlockVolume(xmin,xmax,EPS,&IntersectionStatus);
+    default:
+      exit(__LINE__,__FILE__,"Error: unknown boundary type");
+    }
 
-       }
+    return 0.0;
+  }
+
+  //collect the faces of the triangulated surface that intersect the box of 'g'. Every face that intersects
+  //the box intersects a leaf of the tree that the box overlaps, and the cut-face list of every leaf
+  //(FirstTriangleCutFace) is complete for the leaf's box. The faces are kept in the order of the surface.
+  void CollectCellMeasureCutFaces(cCellMeasureGeometry& g) {
+    vector<CutCell::cTriangleFace*> faces;
+    const double margin=2.0*fabs(EPS);
+
+    std::function<void(cTreeNodeAMR<cBlockAMR>*)> SearchTree;
+
+    SearchTree=[&] (cTreeNodeAMR<cBlockAMR>* node) -> void {
+      for (int idim=0;idim<_MESH_DIMENSION_;idim++) {
+        if ((node->xmax[idim]<g.xmin[idim]-margin)||(g.xmax[idim]+margin<node->xmin[idim])) return;
+      }
+
+      if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+        for (CutCell::cTriangleFaceDescriptor *t=node->FirstTriangleCutFace;t!=NULL;t=t->next) faces.push_back(t->TriangleFace);
+      }
+      else for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (node->downNode[nDownNode]!=NULL) SearchTree(node->downNode[nDownNode]);
+    };
+
+    SearchTree(rootTree);
+
+    sort(faces.begin(),faces.end());
+    faces.erase(unique(faces.begin(),faces.end()),faces.end());
+
+    vector<CutCell::cTriangleFace*> CutFaces;
+
+    for (size_t n=0;n<faces.size();n++) if (faces[n]->BlockIntersection(g.xmin,g.xmax,EPS)==true) CutFaces.push_back(faces[n]);
+
+    g.CutFaceBuffer.resize(CutFaces.size());
+
+    for (size_t n=0;n<CutFaces.size();n++) {
+      g.CutFaceBuffer[n].TriangleFace=CutFaces[n];
+      g.CutFaceBuffer[n].prev=(n>0) ? &g.CutFaceBuffer[n-1] : NULL;
+      g.CutFaceBuffer[n].next=(n+1<CutFaces.size()) ? &g.CutFaceBuffer[n+1] : NULL;
+    }
+
+    g.CutFaces=(CutFaces.size()!=0) ? &g.CutFaceBuffer[0] : NULL;
+  }
 #endif
 
-       if (IntersectionCode==_AMR_BLOCK_OUTSIDE_DOMAIN_) Measure=-1.0;
+  //init the geometry 'g' of the box [xmin,xmax]: the box of 'node' (OwnBox==true), whose cut faces of the triangulated surface are
+  //node->FirstTriangleCutFace, or a larger box (the block including its ghost cells), whose cut faces are collected from the tree
+  void InitCellMeasureGeometry(cCellMeasureGeometry& g,double *xmin,double *xmax,cTreeNodeAMR<cBlockAMR>* node,bool OwnBox) {
+    for (int idim=0;idim<3;idim++) g.xmin[idim]=xmin[idim],g.xmax[idim]=xmax[idim];
 
-       for (k=kMin;k<kMax;k++) {
-         if (_MESH_DIMENSION_>2) xCellMin[2]=xNodeMin[2]+k*dz,xCellMax[2]=xNodeMin[2]+(k+1)*dz;
+#if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
+    for (list<cInternalBoundaryConditionsDescriptor>::iterator bc=InternalBoundaryList.begin();bc!=InternalBoundaryList.end();bc++) {
+      if (bc->BondaryType==_INTERNAL_BOUNDARY_TYPE_NASTRAN_SURFACE_) {
+        g.Triangulation=true;
+        continue;
+      }
 
-         for (j=jMin;j<jMax;j++) {
-           if (_MESH_DIMENSION_>1) xCellMin[1]=xNodeMin[1]+j*dy,xCellMax[1]=xNodeMin[1]+(j+1)*dy;
+      int IntersectionCode=GetAnalyticBoundaryIntersection(&(*bc),g.xmin,g.xmax);
 
-           for (i=iMin;i<iMax;i++) {
-             xCellMin[0]=xNodeMin[0]+i*dx,xCellMax[0]=xNodeMin[0]+(i+1)*dx;
-             nd=getCenterNodeLocalNumber(i,j,k);
+      if (IntersectionCode==_AMR_BLOCK_OUTSIDE_DOMAIN_) g.Excluded=true;
+      else if (IntersectionCode==_AMR_BLOCK_INTERSECT_DOMAIN_BOUNDARY_) g.AnalyticBoundaries.push_back(&(*bc));
+    }
 
-             if ((centerNode=startNode->block->GetCenterNode(nd))!=NULL) if (centerNode->Measure<=0.0) {
-               if ((IntersectionCode==_AMR_BLOCK_OUTSIDE_DOMAIN_)||(IntersectionCode==_AMR_BLOCK_INSIDE_DOMAIN_)) {
-                 //set the cell measure with the accounting for possible symmetry cases
+    if ((g.Triangulation==true)&&(g.Excluded==false)) {
+      if (OwnBox==true) g.CutFaces=node->FirstTriangleCutFace;
+      else CollectCellMeasureCutFaces(g);
+
+      if (g.CutFaces==NULL) {
+        double xCenter[3];
+
+        for (int idim=0;idim<3;idim++) xCenter[idim]=0.5*(g.xmin[idim]+g.xmax[idim]);
+        g.InDomain=CutCell::PointInComputationalDomain(xCenter,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,EPS);
+      }
+    }
+#endif
+  }
+
+  //the measure of the cell [xCellMin,xCellMax] in the box of 'g'; BlockCellMeasure is the full measure of a cell of the block
+  double GetCellMeasure(double *xCellMin,double *xCellMax,double BlockCellMeasure,cCellMeasureGeometry& g) {
+    double FullMeasure;
+
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-                 centerNode->Measure=Measure;
+    FullMeasure=BlockCellMeasure;
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
-                 centerNode->Measure=4.0*Pi/3.0*fabs(pow(fabs(xCellMax[0]),3)-pow(fabs(xCellMin[0]),3));
+    FullMeasure=4.0*Pi/3.0*fabs(pow(fabs(xCellMax[0]),3)-pow(fabs(xCellMin[0]),3));
 #else
-                 exit(__LINE__,__FILE__,"Error: the option is not recognized");
+    exit(__LINE__,__FILE__,"Error: the option is not recognized");
 #endif
-               }
 
-               else if (startNode->FirstTriangleCutFace!=NULL) {
-
-
-                 //TEST
-                 double *a=&centerNode->Measure;
-
-                 if ((a==(double*)0x14f374938) || (a==(double*)0x14ab5f938) || (centerNode->Temp_ID==9444) )  {
-                   double test=0;
-
-                   test+=1;
-                 }
-
-                 //END TEST
-
-
-                 //the block is cutted by a list of triangulat faces
-                 centerNode->Measure=GetRemainedBlockVolume(xCellMin,xCellMax,EPS,1.0E-2,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,startNode->FirstTriangleCutFace);
-               }
-
-
-
-               else {
 #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
-                 int BoundarySurfaceCounter;
-                 cInternalBoundaryConditionsDescriptor *bc;
+    if (g.Excluded==true) return 0.0;
 
-                 if (centerNode->Measure<=0.0) {
-                   for (BoundarySurfaceCounter=0,bc=startNode->InternalBoundaryDescriptorList;bc!=NULL;bc=bc->nextInternalBCelement,BoundarySurfaceCounter++) {
-                     int cellIntersectionStatus;
+    cInternalBoundaryConditionsDescriptor *CutBoundary=NULL;
+    int nCutBoundaries=0;
 
-                     if (bc->BondaryType==_INTERNAL_BOUNDARY_TYPE_SPHERE_) {
-                       centerNode->Measure=((cInternalSphericalData*)(bc->BoundaryElement))->GetRemainedBlockVolume(xCellMin,xCellMax,EPS,&cellIntersectionStatus);
-                     }
-                     else if (bc->BondaryType==_INTERNAL_BOUNDARY_TYPE_CIRCLE_) {
-                       centerNode->Measure=((cInternalCircleData*)(bc->BoundaryElement))->GetRemainedBlockVolume(xCellMin,xCellMax,EPS,&cellIntersectionStatus);
-                     }
-                     else if (bc->BondaryType==_INTERNAL_BOUNDARY_TYPE_1D_SPHERE_) {
-                       centerNode->Measure=((cInternalSphere1DData*)(bc->BoundaryElement))->GetRemainedBlockVolume(xCellMin,xCellMax,EPS,&cellIntersectionStatus);
-                     }
-                     else if (bc->BondaryType==_INTERNAL_BOUNDARY_TYPE_BODY_OF_ROTATION_) {
-                       centerNode->Measure=((cInternalRotationBodyData*)(bc->BoundaryElement))->GetRemainedBlockVolume(xCellMin,xCellMax,EPS,&cellIntersectionStatus);
-                     }
-                     else if (bc->BondaryType==_INTERNAL_BOUNDARY_TYPE_NASTRAN_SURFACE_) {
-                       centerNode->Measure=((cInternalNastranSurfaceData*)(bc->BoundaryElement))->GetRemainedBlockVolume(xCellMin,xCellMax,EPS,&cellIntersectionStatus);
-                     }
-                     else exit(__LINE__,__FILE__,"Error: unknown boundary type");
+    for (size_t n=0;n<g.AnalyticBoundaries.size();n++) {
+      int IntersectionCode=GetAnalyticBoundaryIntersection(g.AnalyticBoundaries[n],xCellMin,xCellMax);
 
+      if (IntersectionCode==_AMR_BLOCK_OUTSIDE_DOMAIN_) return 0.0;
+      else if (IntersectionCode==_AMR_BLOCK_INTERSECT_DOMAIN_BOUNDARY_) CutBoundary=g.AnalyticBoundaries[n],nCutBoundaries++;
+    }
 
-                   }
+    if (g.Triangulation==true) {
+      if (g.CutFaces!=NULL) return CutCell::GetRemainedBlockVolume(xCellMin,xCellMax,EPS,1.0E-2,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,g.CutFaces);
+      if (g.InDomain==false) return 0.0;
+    }
 
-                   if (BoundarySurfaceCounter!=1) exit(__LINE__,__FILE__,"Error: only one internal surface is permitted for a cell");
-                 }
+    if (nCutBoundaries>1) exit(__LINE__,__FILE__,"Error: only one internal surface is permitted for a cell");
+    if (nCutBoundaries==1) return GetAnalyticBoundaryRemainedVolume(CutBoundary,xCellMin,xCellMax);
 
-#else
-                 exit(__LINE__,__FILE__,"Error: unknown option");
+    //a cell that no boundary cuts in a box that a boundary cuts gets the boundary's own volume of an uncut cell (as it always did)
+    if (g.AnalyticBoundaries.size()==1) return GetAnalyticBoundaryRemainedVolume(g.AnalyticBoundaries[0],xCellMin,xCellMax);
 #endif
-               }
 
-             }
+    return FullMeasure;
+  }
 
+  //the ranges of the local indexes of the cells of a block including the ghost cells (iMin<=i<iMax) and of its interior cells (0<=i<iInteriorMax)
+  static void GetCellMeasureIndexRange(int *iMin,int *iMax,int *iInteriorMax) {
+    iMin[0]=-_GHOST_CELLS_X_,iMax[0]=_BLOCK_CELLS_X_+_GHOST_CELLS_X_,iInteriorMax[0]=_BLOCK_CELLS_X_;
+    iMin[1]=0,iMax[1]=1,iInteriorMax[1]=1;
+    iMin[2]=0,iMax[2]=1,iInteriorMax[2]=1;
 
-           }
-         }
-       }
+    if (_MESH_DIMENSION_>1) iMin[1]=-_GHOST_CELLS_Y_,iMax[1]=_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_,iInteriorMax[1]=_BLOCK_CELLS_Y_;
+    if (_MESH_DIMENSION_>2) iMin[2]=-_GHOST_CELLS_Z_,iMax[2]=_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_,iInteriorMax[2]=_BLOCK_CELLS_Z_;
+  }
 
+  //the box of the cell (i,j,k) of a block
+  static void GetCellMeasureCellBox(cCellMeasureBlockGeometry& b,int i,int j,int k,double *xCellMin,double *xCellMax) {
+    int idx[3]={i,j,k};
 
+    for (int idim=0;idim<3;idim++) {
+      if (idim<_MESH_DIMENSION_) xCellMin[idim]=b.xmin[idim]+idx[idim]*b.dx[idim],xCellMax[idim]=b.xmin[idim]+(idx[idim]+1)*b.dx[idim];
+      else xCellMin[idim]=b.xmin[idim],xCellMax[idim]=b.xmax[idim];
+    }
+  }
+
+  //calculate the measure of the cell (i,j,k) of block 'node'
+  void SetCellMeasure(cTreeNodeAMR<cBlockAMR>* node,int i,int j,int k,cCellMeasureBlockGeometry& b,cCellMeasureGeometry& g) {
+    cCenterNode *centerNode=node->block->GetCenterNode(getCenterNodeLocalNumber(i,j,k));
+    double xCellMin[3],xCellMax[3];
+
+    if (centerNode==NULL) return;
+
+    GetCellMeasureCellBox(b,i,j,k,xCellMin,xCellMax);
+    centerNode->Measure=GetCellMeasure(xCellMin,xCellMax,b.CellMeasure,g);
+  }
+
+  //the measures of the interior cells of block 'node' (in the order k,j,i) as pass 1 calculates them; the block need not be
+  //allocated: the geometry is in the tree, which every process has
+  void GetCellMeasureBlockInterior(cTreeNodeAMR<cBlockAMR>* node,double *Measure) {
+    cCellMeasureBlockGeometry b;
+    cCellMeasureGeometry g;
+    int iMin[3],iMax[3],iInteriorMax[3],n=0;
+    double xCellMin[3],xCellMax[3];
+
+    GetCellMeasureBlockGeometry(node,b);
+    GetCellMeasureIndexRange(iMin,iMax,iInteriorMax);
+    InitCellMeasureGeometry(g,b.xmin,b.xmax,node,true);
+
+    for (int k=0;k<iInteriorMax[2];k++) for (int j=0;j<iInteriorMax[1];j++) for (int i=0;i<iInteriorMax[0];i++) {
+      GetCellMeasureCellBox(b,i,j,k,xCellMin,xCellMax);
+      Measure[n++]=GetCellMeasure(xCellMin,xCellMax,b.CellMeasure,g);
+    }
+  }
+
+  //pass 1: the interior cells of block 'node'
+  void InitCellMeasureBlockInterior(cTreeNodeAMR<cBlockAMR>* node) {
+    cCellMeasureBlockGeometry b;
+    cCellMeasureGeometry g;
+    int iMin[3],iMax[3],iInteriorMax[3];
+
+    if (node->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not allocated");
+
+    GetCellMeasureBlockGeometry(node,b);
+    GetCellMeasureIndexRange(iMin,iMax,iInteriorMax);
+    InitCellMeasureGeometry(g,b.xmin,b.xmax,node,true);
+
+    for (int k=0;k<iInteriorMax[2];k++) for (int j=0;j<iInteriorMax[1];j++) for (int i=0;i<iInteriorMax[0];i++) SetCellMeasure(node,i,j,k,b,g);
+  }
+
+  //pass 2: the ghost cells of block 'node' listed in GhostCells (i,j,k for each cell)
+  void InitCellMeasureBlockGhost(cTreeNodeAMR<cBlockAMR>* node,const vector<int>& GhostCells) {
+    cCellMeasureBlockGeometry b;
+    cCellMeasureGeometry g;
+
+    if (node->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not allocated");
+    if (GhostCells.size()==0) return;
+
+    GetCellMeasureBlockGeometry(node,b);
+    InitCellMeasureGeometry(g,b.xTotalMin,b.xTotalMax,node,false);
+
+    for (size_t n=0;n+2<GhostCells.size();n+=3) SetCellMeasure(node,GhostCells[n],GhostCells[n+1],GhostCells[n+2],b,g);
+  }
+
+  //the value of Measure that marks a ghost cell assigned to a block in pass 2 of InitCellMeasure() until the block calculates it
+  static double GetCellMeasureAssignedMark() {return -2.0;}
+
+  //the ghost cells of block 'node' whose measure is not calculated (Measure<0) and not assigned to another block;
+  //Assign==true assigns them to 'node' (marks them with GetCellMeasureAssignedMark())
+  void GetCellMeasureUncalculatedGhostCells(cTreeNodeAMR<cBlockAMR>* node,vector<int>& GhostCells,bool Assign) {
+    const double AssignedMark=GetCellMeasureAssignedMark();
+    int iMin[3],iMax[3],iInteriorMax[3];
+    cCenterNode *centerNode;
+
+    GetCellMeasureIndexRange(iMin,iMax,iInteriorMax);
+
+    for (int k=iMin[2];k<iMax[2];k++) for (int j=iMin[1];j<iMax[1];j++) for (int i=iMin[0];i<iMax[0];i++) {
+      if ((0<=i)&&(i<iInteriorMax[0])&&(0<=j)&&(j<iInteriorMax[1])&&(0<=k)&&(k<iInteriorMax[2])) continue;
+      if ((centerNode=node->block->GetCenterNode(getCenterNodeLocalNumber(i,j,k)))==NULL) continue;
+
+      if ((centerNode->Measure<0.0)&&(centerNode->Measure!=AssignedMark)) {
+        GhostCells.push_back(i),GhostCells.push_back(j),GhostCells.push_back(k);
+        if (Assign==true) centerNode->Measure=AssignedMark;
+      }
+    }
+  }
+
+  //calculate the measures of the cells of a single block (e.g., a block allocated after the initialization of the mesh):
+  //its interior cells, and the ghost cells that are not calculated yet
+  void InitCellMeasureBlock(cTreeNodeAMR<cBlockAMR>* startNode) {
+#if _AMR_CENTER_NODE_ == _ON_AMR_MESH_
+    vector<int> GhostCells;
+
+    InitCellMeasureBlockInterior(startNode);
+    GetCellMeasureUncalculatedGhostCells(startNode,GhostCells,false);
+    InitCellMeasureBlockGhost(startNode,GhostCells);
+#endif
   }
 
 
+  /* The exchange of the cell measures between the processes in InitCellMeasure() of the whole mesh. A process
+   * allocates its own blocks and the blocks of the other processes next to them (the ghost blocks of the domain
+   * boundary layer). Each process calculates the cells of its own blocks only, and receives the cells of its
+   * ghost blocks from the processes that own them, so that no block is calculated twice and every cell gets
+   * the value of the process of the block that owns it. */
+  class cCellMeasureExchange {
+  public:
+    vector<cTreeNodeAMR<cBlockAMR>*> Leaves;   //all leaves of the tree in the tree order (the same on all processes)
+    vector<vector<long int> > Received;        //[t]: the leaves of process t that this process has allocated
+    vector<vector<long int> > Sent;            //[r]: the leaves of this process that process r has allocated
+  };
+
+  void InitCellMeasureExchange(cCellMeasureExchange& x) {
+    std::function<void(cTreeNodeAMR<cBlockAMR>*)> CollectLeaves;
+
+    CollectLeaves=[&] (cTreeNodeAMR<cBlockAMR>* node) -> void {
+      if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) x.Leaves.push_back(node);
+      else for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (node->downNode[nDownNode]!=NULL) CollectLeaves(node->downNode[nDownNode]);
+    };
+
+    CollectLeaves(rootTree);
+    x.Received.assign(nTotalThreads,vector<long int>());
+    x.Sent.assign(nTotalThreads,vector<long int>());
+
+    for (long int n=0;n<(long int)x.Leaves.size();n++) {
+      int thread=x.Leaves[n]->Thread;
+
+      if ((x.Leaves[n]->block!=NULL)&&(thread!=ThisThread)&&(thread>=0)&&(thread<nTotalThreads)) x.Received[thread].push_back(n);
+    }
+
+    //tell the owners which of their blocks this process has allocated
+    vector<int> SendCount(nTotalThreads),RecvCount(nTotalThreads),SendOffset(nTotalThreads),RecvOffset(nTotalThreads);
+    vector<long int> SendBuffer,RecvBuffer;
+    int nSend=0,nRecv=0;
+
+    for (int t=0;t<nTotalThreads;t++) SendCount[t]=x.Received[t].size();
+    MPI_Alltoall(SendCount.data(),1,MPI_INT,RecvCount.data(),1,MPI_INT,MPI_GLOBAL_COMMUNICATOR);
+
+    for (int t=0;t<nTotalThreads;t++) {
+      SendOffset[t]=nSend,RecvOffset[t]=nRecv;
+      nSend+=SendCount[t],nRecv+=RecvCount[t];
+      SendBuffer.insert(SendBuffer.end(),x.Received[t].begin(),x.Received[t].end());
+    }
+
+    RecvBuffer.resize(nRecv);
+    MPI_Alltoallv(SendBuffer.data(),SendCount.data(),SendOffset.data(),MPI_LONG,RecvBuffer.data(),RecvCount.data(),RecvOffset.data(),MPI_LONG,MPI_GLOBAL_COMMUNICATOR);
+
+    for (int t=0;t<nTotalThreads;t++) x.Sent[t].assign(RecvBuffer.begin()+RecvOffset[t],RecvBuffer.begin()+RecvOffset[t]+RecvCount[t]);
+  }
+
+  //send the measures of the interior cells (InteriorCells==true) or of the ghost cells of the own blocks to the processes
+  //that have them allocated, and receive those of the ghost blocks of this process. The interior cells of a ghost block take
+  //the values of the owner; a ghost cell takes the owner's value only if it is not calculated yet (it is an interior cell of
+  //no block of this process). A value that the owner does not have (-1) is not used.
+  void ExchangeCellMeasure(cCellMeasureExchange& x,bool InteriorCells) {
+    int iMin[3],iMax[3],iInteriorMax[3];
+    vector<int> cells;
+
+    GetCellMeasureIndexRange(iMin,iMax,iInteriorMax);
+
+    for (int k=iMin[2];k<iMax[2];k++) for (int j=iMin[1];j<iMax[1];j++) for (int i=iMin[0];i<iMax[0];i++) {
+      bool interior=(0<=i)&&(i<iInteriorMax[0])&&(0<=j)&&(j<iInteriorMax[1])&&(0<=k)&&(k<iInteriorMax[2]);
+      if (interior==InteriorCells) cells.push_back(getCenterNodeLocalNumber(i,j,k));
+    }
+
+    const int nCells=cells.size();
+    vector<int> SendCount(nTotalThreads),RecvCount(nTotalThreads),SendOffset(nTotalThreads),RecvOffset(nTotalThreads);
+    vector<double> SendBuffer,RecvBuffer;
+    int nSend=0,nRecv=0;
+    cCenterNode *centerNode;
+
+    for (int t=0;t<nTotalThreads;t++) {
+      SendCount[t]=x.Sent[t].size()*nCells,RecvCount[t]=x.Received[t].size()*nCells;
+      SendOffset[t]=nSend,RecvOffset[t]=nRecv;
+      nSend+=SendCount[t],nRecv+=RecvCount[t];
+
+      for (size_t n=0;n<x.Sent[t].size();n++) {
+        cTreeNodeAMR<cBlockAMR>* node=x.Leaves[x.Sent[t][n]];
+
+        for (int nc=0;nc<nCells;nc++) {
+          double Measure=-1.0;
+
+          if (node->block!=NULL) if ((centerNode=node->block->GetCenterNode(cells[nc]))!=NULL) Measure=centerNode->Measure;
+          SendBuffer.push_back(Measure);
+        }
+      }
+    }
+
+    RecvBuffer.resize(nRecv);
+    MPI_Alltoallv(SendBuffer.data(),SendCount.data(),SendOffset.data(),MPI_DOUBLE,RecvBuffer.data(),RecvCount.data(),RecvOffset.data(),MPI_DOUBLE,MPI_GLOBAL_COMMUNICATOR);
+
+    for (int t=0;t<nTotalThreads;t++) for (size_t n=0;n<x.Received[t].size();n++) {
+      cTreeNodeAMR<cBlockAMR>* node=x.Leaves[x.Received[t][n]];
+      const double *Measure=RecvBuffer.data()+RecvOffset[t]+n*nCells;
+
+      for (int nc=0;nc<nCells;nc++) if ((Measure[nc]>=0.0)&&((centerNode=node->block->GetCenterNode(cells[nc]))!=NULL)) {
+        if ((InteriorCells==true)||(centerNode->Measure<0.0)) centerNode->Measure=Measure[nc];
+      }
+    }
+  }
+
+  /* The interior cells of the blocks that the triangulated surface cuts take most of the time of the calculation, and the
+   * numbers of these blocks of the processes differ widely. With several processes they are therefore calculated by all
+   * processes in turn (the n-th block of the tree order that the surface cuts by process n%nTotalThreads) and sent to the
+   * processes that own the blocks. A process can calculate any block because the geometry is in the tree, which every
+   * process has, and the result is the same as that of the owner (the measure of a cell is a function of the cell and of
+   * the surface). Returns true when the interior cells of the own cut blocks are set this way. */
+  bool CalculateCutBlockInteriorCells(cCellMeasureExchange& x) {
+    bool Triangulation=false;
+
+#if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
+    for (list<cInternalBoundaryConditionsDescriptor>::iterator bc=InternalBoundaryList.begin();bc!=InternalBoundaryList.end();bc++) if (bc->BondaryType==_INTERNAL_BOUNDARY_TYPE_NASTRAN_SURFACE_) Triangulation=true;
+#endif
+
+    if (Triangulation==false) return false;
+
+    int iMin[3],iMax[3],iInteriorMax[3];
+    GetCellMeasureIndexRange(iMin,iMax,iInteriorMax);
+    const int nInterior=iInteriorMax[0]*iInteriorMax[1]*iInteriorMax[2];
+
+    vector<cTreeNodeAMR<cBlockAMR>*> CutBlocks;
+    for (size_t n=0;n<x.Leaves.size();n++) if ((x.Leaves[n]->FirstTriangleCutFace!=NULL)&&(x.Leaves[n]->Thread>=0)&&(x.Leaves[n]->Thread<nTotalThreads)) CutBlocks.push_back(x.Leaves[n]);
+
+    //the blocks of this process, and the values for each owner in the order of the cut blocks
+    vector<long int> Calculated;
+    for (long int n=ThisThread;n<(long int)CutBlocks.size();n+=nTotalThreads) Calculated.push_back(n);
+
+    vector<double> Values(Calculated.size()*nInterior);
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+    #pragma omp parallel for schedule(dynamic,1) default(shared)
+#endif
+    for (long int m=0;m<(long int)Calculated.size();m++) GetCellMeasureBlockInterior(CutBlocks[Calculated[m]],Values.data()+m*nInterior);
+
+    vector<int> SendCount(nTotalThreads,0),RecvCount(nTotalThreads,0),SendOffset(nTotalThreads),RecvOffset(nTotalThreads);
+    vector<double> SendBuffer,RecvBuffer;
+    int nSend=0,nRecv=0;
+
+    for (int t=0;t<nTotalThreads;t++) {
+      SendOffset[t]=nSend;
+
+      for (size_t m=0;m<Calculated.size();m++) if (CutBlocks[Calculated[m]]->Thread==t) {
+        SendBuffer.insert(SendBuffer.end(),Values.begin()+m*nInterior,Values.begin()+(m+1)*nInterior);
+        SendCount[t]+=nInterior;
+      }
+
+      nSend+=SendCount[t];
+    }
+
+    for (long int n=0;n<(long int)CutBlocks.size();n++) if (CutBlocks[n]->Thread==ThisThread) RecvCount[n%nTotalThreads]+=nInterior;
+    for (int t=0;t<nTotalThreads;t++) RecvOffset[t]=nRecv,nRecv+=RecvCount[t];
+
+    RecvBuffer.resize(nRecv);
+    MPI_Alltoallv(SendBuffer.data(),SendCount.data(),SendOffset.data(),MPI_DOUBLE,RecvBuffer.data(),RecvCount.data(),RecvOffset.data(),MPI_DOUBLE,MPI_GLOBAL_COMMUNICATOR);
+
+    //the values from process t come in the order of the cut blocks that t calculated
+    vector<int> RecvPosition(RecvOffset);
+
+    for (long int n=0;n<(long int)CutBlocks.size();n++) if (CutBlocks[n]->Thread==ThisThread) {
+      const int t=n%nTotalThreads;
+      const double *Measure=RecvBuffer.data()+RecvPosition[t];
+      cCenterNode *centerNode;
+      int nc=0;
+
+      RecvPosition[t]+=nInterior;
+      if (CutBlocks[n]->block==NULL) continue;
+
+      for (int k=0;k<iInteriorMax[2];k++) for (int j=0;j<iInteriorMax[1];j++) for (int i=0;i<iInteriorMax[0];i++,nc++) {
+        if ((centerNode=CutBlocks[n]->block->GetCenterNode(getCenterNodeLocalNumber(i,j,k)))!=NULL) centerNode->Measure=Measure[nc];
+      }
+    }
+
+    return true;
+  }
 
   void InitCellMeasure(const char* CellMeasureFilePath,cTreeNodeAMR<cBlockAMR>* startNode=NULL) {
    #if _AMR_CENTER_NODE_ == _ON_AMR_MESH_
@@ -11357,55 +11816,113 @@ nMPIops++;
       startNode=rootTree;
     }
 
+    //the volumes of the cells cut by the surface triangulation classify many points against the whole surface:
+    //search its faces through a tree for the duration of this initialization (the surface does not change meanwhile)
+    CutCell::cVolumeIntegrationAcceleration CutCellVolumeAcceleration(CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,EPS);
 
     if (startNode==rootTree) InitCellMeasure_ResetToZero(rootTree);
 
+    //the whole mesh is calculated by all processes together (each process its own blocks, see cCellMeasureExchange);
+    //a subtree is calculated by the calling process alone
+    const bool Exchange=(startNode==rootTree)&&(nTotalThreads>1);
+    cCellMeasureExchange ExchangeData;
 
+    if (Exchange==true) InitCellMeasureExchange(ExchangeData);
 
+    //the allocated blocks of the subtree in the tree order, and those that this process calculates
+    vector<cTreeNodeAMR<cBlockAMR>*> BlockList,CalculatedBlockList;
+    std::function<void(cTreeNodeAMR<cBlockAMR>*)> CollectBlocks;
 
-//=============   DEBUG ==================
-/*
-    if (startNode!=NULL) if (startNode->Temp_ID==5096) {
-  *DiagnospticMessageStream << __FILE__ << "@" << __LINE__ << std::endl;
-}
-*/
-//=============  END DEBUG ===============
+    CollectBlocks=[&] (cTreeNodeAMR<cBlockAMR>* node) -> void {
+      if (node->lastBranchFlag()!=_BOTTOM_BRANCH_TREE_) {
+        for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (node->downNode[nDownNode]!=NULL) CollectBlocks(node->downNode[nDownNode]);
+      }
+      else if (node->block!=NULL) {
+        BlockList.push_back(node);
+        if ((Exchange==false)||(node->Thread==ThisThread)) CalculatedBlockList.push_back(node);
+      }
+    };
 
+    CollectBlocks(startNode);
 
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  //allocate the Thread::FirstPBufferParticle array and distribute particles between processes
-  #pragma omp parallel
-  {
-    #pragma omp single
-    {
-#endif
+    const long int nBlocks=CalculatedBlockList.size();
+    time_t LastReportTime=time(NULL);
 
-    if (startNode->lastBranchFlag()!=_BOTTOM_BRANCH_TREE_) {
-      for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) InitCellMeasure(startNode->downNode[nDownNode]);
-    }
-    else if (startNode->block!=NULL) { //set up the cell's volume
-      static long int nProcessedBlocks=0;
-      static  time_t LastTimeValue=time(NULL);
+    auto ReportProgress=[&] (const char *pass,long int nProcessedBlocks) {
       time_t TimeValue=time(NULL);
 
-      #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-      #pragma omp task default (none) firstprivate (startNode)
-      #endif
-      InitCellMeasureBlock(startNode);
-
-      nProcessedBlocks++;
-
-      if (TimeValue-LastTimeValue>120.0) {
+      if (TimeValue-LastReportTime>120) {
         tm *ct=localtime(&TimeValue);
 
-        LastTimeValue=TimeValue;
-        printf("MESH: InitMeasure: Processed %li blocks (thread=%i; %i/%i %i:%i:%i)\n",nProcessedBlocks,ThisThread,ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec);
+        LastReportTime=TimeValue;
+        printf("MESH: InitMeasure: %s: processed %li of %li blocks (thread=%i; %i/%i %i:%i:%i)\n",pass,nProcessedBlocks,nBlocks,ThisThread,ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec);
       }
-    }
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-    }}
-#endif
+    };
 
+    //calculate the ghost cells of the blocks of 'list' that are not calculated yet. Each of them is assigned to the
+    //first block in the tree order that has it, so that it is calculated once (also with several threads).
+    auto CalculateGhostCells=[&] (vector<cTreeNodeAMR<cBlockAMR>*>& list) {
+      vector<vector<int> > GhostCellList(list.size());
+
+      for (size_t nBlock=0;nBlock<list.size();nBlock++) GetCellMeasureUncalculatedGhostCells(list[nBlock],GhostCellList[nBlock],true);
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+      #pragma omp parallel for schedule(dynamic,1) default(shared)
+#endif
+      for (long int nBlock=0;nBlock<(long int)list.size();nBlock++) {
+        InitCellMeasureBlockGhost(list[nBlock],GhostCellList[nBlock]);
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+        #pragma omp critical (InitCellMeasureProgress)
+#endif
+        ReportProgress("ghost cells",nBlock+1);
+      }
+    };
+
+    //pass 1: the interior cells of the blocks (a center node is an interior cell of one block only); with several processes
+    //those of the blocks that the triangulated surface cuts are calculated by all processes in turn
+    const bool CutBlocksDistributed=(Exchange==true) ? CalculateCutBlockInteriorCells(ExchangeData) : false;
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+    #pragma omp parallel for schedule(dynamic,1) default(shared)
+#endif
+    for (long int nBlock=0;nBlock<nBlocks;nBlock++) {
+      if ((CutBlocksDistributed==false)||(CalculatedBlockList[nBlock]->FirstTriangleCutFace==NULL)) InitCellMeasureBlockInterior(CalculatedBlockList[nBlock]);
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+      #pragma omp critical (InitCellMeasureProgress)
+#endif
+      ReportProgress("interior cells",nBlock+1);
+    }
+
+    if (Exchange==true) ExchangeCellMeasure(ExchangeData,true);
+
+    //pass 2: the ghost cells that no allocated block owns
+    CalculateGhostCells(CalculatedBlockList);
+
+    if (Exchange==true) {
+      ExchangeCellMeasure(ExchangeData,false);
+
+      //a cell of a ghost block whose owner did not have it is calculated here
+      vector<cTreeNodeAMR<cBlockAMR>*> RemainingBlocks;
+      int iMin[3],iMax[3],iInteriorMax[3];
+      cCenterNode *centerNode;
+
+      GetCellMeasureIndexRange(iMin,iMax,iInteriorMax);
+
+      for (size_t nBlock=0;nBlock<BlockList.size();nBlock++) if (BlockList[nBlock]->Thread!=ThisThread) {
+        bool found=false;
+
+        for (int k=0;(k<iInteriorMax[2])&&(found==false);k++) for (int j=0;(j<iInteriorMax[1])&&(found==false);j++) for (int i=0;(i<iInteriorMax[0])&&(found==false);i++) {
+          if ((centerNode=BlockList[nBlock]->block->GetCenterNode(getCenterNodeLocalNumber(i,j,k)))!=NULL) if (centerNode->Measure<0.0) found=true;
+        }
+
+        if (found==true) InitCellMeasureBlockInterior(BlockList[nBlock]);
+        RemainingBlocks.push_back(BlockList[nBlock]);
+      }
+
+      CalculateGhostCells(RemainingBlocks);
+    }
 
     if (startNode==rootTree) {
       //try to save the file with the cell measures

@@ -769,7 +769,20 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
         }
       }
 
-      if (SendDataBuffer!=NULL) {
+      if ((SendDataBuffer!=NULL)&&(CenterNode==NULL)) {
+        // An application may remove a center node that has no volume (e.g.,
+        // srcSEP deletes the cells inside the Sun, see SEP::ParkerSpiral::InitDomain()).
+        // The message layout is defined by the send mask only, so a removed
+        // node still occupies its slot: send zeros, the receiver skips the slot.
+        for (iDataInterval=0;iDataInterval<nCenterNodeStateVectorIntervals;iDataInterval++) {
+          memset(SendDataBuffer+SendBufferIndex,0,CenterNodeStateVectorIntervalLength[iDataInterval]);
+          SendBufferIndex+=CenterNodeStateVectorIntervalLength[iDataInterval];
+        }
+
+        memset(SendDataBuffer+SendBufferIndex,0,sizeof(double));
+        SendBufferIndex+=sizeof(double);
+      }
+      else if (SendDataBuffer!=NULL) {
         for (iDataInterval=0;iDataInterval<nCenterNodeStateVectorIntervals;iDataInterval++) {
           memcpy(SendDataBuffer+SendBufferIndex,CenterNode->associatedDataPointer+iCenterNodeStateVectorIntervalBegin[iDataInterval],CenterNodeStateVectorIntervalLength[iDataInterval]);
           SendBufferIndex+=CenterNodeStateVectorIntervalLength[iDataInterval];
@@ -1027,7 +1040,7 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
         }
       }
 
-      if (RecvDataBuffer!=NULL) {
+      if ((RecvDataBuffer!=NULL)&&(CenterNode!=NULL)) {
         for (iDataInterval=0;iDataInterval<nCenterNodeStateVectorIntervals;iDataInterval++) {
           memcpy(CenterNode->associatedDataPointer+iCenterNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CenterNodeStateVectorIntervalLength[iDataInterval]);
           RecvDataBufferIndex+=CenterNodeStateVectorIntervalLength[iDataInterval];
@@ -1037,6 +1050,7 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
         RecvDataBufferIndex+=sizeof(double);
       }
       else {
+        //no buffer, or a removed (NULL) center node: skip the slot, which the sender packed in any case
         for (iDataInterval=0;iDataInterval<nCenterNodeStateVectorIntervals;iDataInterval++) {
           RecvDataBufferIndex+=CenterNodeStateVectorIntervalLength[iDataInterval];
         }
@@ -1220,11 +1234,29 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
     pipe->send(CenterNode->Measure);
      */
 
-    if (pipe!=NULL) {
+    if (CenterNode==NULL) {
+      // A removed (zero-volume) center node keeps its slot in the message;
+      // recvBoundaryLayerBlockData() skips it (see PackBlockData_Internal()).
+      if (pipe!=NULL) {
+        std::vector<char> zeros(cDataCenterNode_static_data::totalAssociatedDataLength,0);
+        double ZeroMeasure=0.0;
+
+        pipe->send(zeros.data(),cDataCenterNode_static_data::totalAssociatedDataLength);
+        pipe->send(ZeroMeasure);
+      }
+      else if (SendDataBuffer!=NULL) {
+        memset(SendDataBuffer+SendBufferIndex,0,cDataCenterNode_static_data::totalAssociatedDataLength+sizeof(double));
+        SendBufferIndex+=cDataCenterNode_static_data::totalAssociatedDataLength+sizeof(double);
+      }
+      else {
+        SendBufferIndex+=cDataCenterNode_static_data::totalAssociatedDataLength+sizeof(double);
+      }
+    }
+    else if (pipe!=NULL) {
       pipe->send(CenterNode->associatedDataPointer,cDataCenterNode_static_data::totalAssociatedDataLength);
       pipe->send(CenterNode->Measure);
     }
-    else if (SendDataBuffer!=NULL) { 
+    else if (SendDataBuffer!=NULL) {
       memcpy(SendDataBuffer+SendBufferIndex,CenterNode->associatedDataPointer,cDataCenterNode_static_data::totalAssociatedDataLength);
       SendBufferIndex+=cDataCenterNode_static_data::totalAssociatedDataLength;
 
@@ -1467,7 +1499,20 @@ int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int 
     pipe->recv(CenterNode->Measure,From);
      */
 
-    if (pipe!=NULL) {
+    if (CenterNode==NULL) {
+      //a removed (zero-volume) center node: consume and discard its slot
+      if (pipe!=NULL) {
+        std::vector<char> discard(cDataCenterNode_static_data::totalAssociatedDataLength);
+        double DiscardMeasure;
+
+        pipe->recv(discard.data(),cDataCenterNode_static_data::totalAssociatedDataLength,From);
+        pipe->recv(DiscardMeasure,From);
+      }
+      else {
+        RecvDataBufferIndex+=cDataCenterNode_static_data::totalAssociatedDataLength+sizeof(double);
+      }
+    }
+    else if (pipe!=NULL) {
       pipe->recv(CenterNode->associatedDataPointer,cDataCenterNode_static_data::totalAssociatedDataLength,From);
       pipe->recv(CenterNode->Measure,From);
     }

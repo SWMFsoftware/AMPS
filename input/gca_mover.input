@@ -54,6 +54,12 @@ TimeStepMode=SpeciesGlobalTimeStep
 ParticleWeightMode=SpeciesGlobalParticleWeight
 ParticleWeightCorrectionMode=on
 
+!test Mover-gca-relativistic compares every step of the 600-step trajectories with the reference:
+!output all sampled points (the default dyadic thinning of src/pic/pic_pt.cpp keeps at most
+!512 points of a trajectory and printed every second step of these 600-step trajectories)
+TRAJECTORY_SAMPLING_THINNING=off
+TRAJECTORY_OUTPUT_POINTS=1000
+
 #endmain
 
 #include species.input
@@ -74,7 +80,9 @@ ParticleWeightCorrectionMode=on
   ReferenceInjectionParticleNumber=1000 
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=on !on,off
-  OutputMode=SingleFile !!SingleFile !SingleFile,DistributedFiles
+  !no macroscopic mesh-data output: the test checks only the trajectories, and the six outputs of the two species
+  !(pic.*.out=*.dat, 350 MB each, 4.2 GB in total) took ~98% of the run time (2824 s in the nightly of 2026-11-15)
+  OutputMode=off !!SingleFile !SingleFile,DistributedFiles,off
 
 ! ReferenceInjectionParticleNumber=200
 ! MaxMeshRefinmentLevel=8! 2 !4

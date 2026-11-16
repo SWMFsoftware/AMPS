@@ -474,6 +474,39 @@ for (int i=0;i<3;i++) indexer[i].reset();
 auto boundary_short_circuit = [&]() -> bool {
   if (_PIC_BC__PERIODIC_MODE_ != _PIC_BC__PERIODIC_MODE_OFF_) return false;
 
+  // (0) FLUID coupler (GM-PC/AMPS): E on the boundary of the PIC region is set by the fluid model
+  //     (setE_*_BC()). The corners of that boundary are the ones isBoundaryCorner() finds, and
+  //     GetStencil_Legacy() gives them the Dirichlet row below. The bc_type branch that follows
+  //     does not cover them, so they got an interior row, from which the compaction further down
+  //     drops every coupling to a boundary corner, including the row's own diagonal: the system
+  //     was inconsistent, and GMRES stopped at EFieldIter iterations with a residual of 0.1-0.4
+  //     in the GM-PC tests (with this branch: ~30 iterations to 1e-8, as GetStencil_Legacy()).
+  //     Dirichlet row in increment form: dE = 0 -> A[I,I] = 1, rhs = 0.
+  if ((_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_) && isBoundaryCorner(x,node)) {
+    MatrixRowNonZeroElementTable[0].i = i;
+    MatrixRowNonZeroElementTable[0].j = j;
+    MatrixRowNonZeroElementTable[0].k = k;
+    MatrixRowNonZeroElementTable[0].Node = node;
+    MatrixRowNonZeroElementTable[0].iVar = iVar;
+    MatrixRowNonZeroElementTable[0].MatrixElementValue = 0.0;
+    MatrixRowNonZeroElementTable[0].MatrixElementParameterTable[0] = 1.0;
+    MatrixRowNonZeroElementTable[0].MatrixElementParameterTableLength = 1;
+    MatrixRowNonZeroElementTable[0].MatrixElementSupportTableLength = 0;
+    MatrixRowNonZeroElementTable[0].MatrixElementSupportTable[0] = NULL;
+    NonZeroElementsFound = 1;
+
+    rhs = 0.0;
+    RhsSupportLength_CornerNodes = 0;
+    RhsSupportLength_CenterNodes = 0;
+    support_corner_vector.clear();
+    support_center_vector.clear();
+
+    //the corner on the "right" boundary belongs to the neighbor block (as in GetStencil_Legacy())
+    if (isRightBoundaryCorner(x, node)) NonZeroElementsFound = 0;
+
+    return true;
+  }
+
   // Corner-node index extents (corners are Nx+1, Ny+1, Nz+1)
   const int NxC = _BLOCK_CELLS_X_ + 1;
   const int NyC = _BLOCK_CELLS_Y_ + 1;

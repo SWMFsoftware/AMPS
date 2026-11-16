@@ -123,6 +123,60 @@ void PIC::Mover::BorisSplitAcceleration_default(double *accl, double *rotation, 
 }
 
 
+//interaction of a particle with the first internal sphere registered in the mesh (see pic.h)
+bool PIC::Mover::RegisteredInternalSphereInteraction(int spec,long int ptr,double *xFinal,double *vFinal,double dt,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* &newNode) {
+#if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
+  // Cache pointer to the (first) registered internal sphere.
+  // NOTE: Internal surfaces are registered before mesh init; by the time movers run,
+  //       InternalBoundaryList is finalized and stable for the run.
+  static cInternalSphericalData* const Sphere=[] () {
+    for (auto it=PIC::Mesh::mesh->InternalBoundaryList.begin();it!=PIC::Mesh::mesh->InternalBoundaryList.end();++it) {
+      if ((it->BondaryType==_INTERNAL_BOUNDARY_TYPE_SPHERE_)&&(it->BoundaryElement!=NULL)) return (cInternalSphericalData*)it->BoundaryElement;
+    }
+
+    return (cInternalSphericalData*)NULL;
+  }();
+
+  // If a sphere is registered: penetration test using the registered center (no _TARGET_)
+  if (Sphere!=NULL) {
+    const double* x0=Sphere->OriginPosition;
+    const double  R=Sphere->Radius;
+
+    const double dx0=xFinal[0]-x0[0];
+    const double dx1=xFinal[1]-x0[1];
+    const double dx2=xFinal[2]-x0[2];
+    const double r2=dx0*dx0+dx1*dx1+dx2*dx2;
+
+    if (r2<R*R) {
+      double r=sqrt(r2);
+      if (r<=0.0) r=1.0; // guard against exactly at center
+
+      // project to sphere surface
+      xFinal[0]=x0[0]+dx0*(R/r);
+      xFinal[1]=x0[1]+dx1*(R/r);
+      xFinal[2]=x0[2]+dx2*(R/r);
+
+      // update node and apply the registered callback
+      newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
+
+      int code=Sphere->ParticleSphereInteraction(spec,ptr,xFinal,vFinal,dt,(void*)newNode,(void*)Sphere);
+
+      if (code==_PARTICLE_DELETED_ON_THE_FACE_) {
+        PIC::ParticleBuffer::DeleteParticle(ptr);
+        return true;
+      }
+
+      return false;
+    }
+  }
+#endif //_INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
+
+  newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
+  return false;
+}
+
+
 int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode=NULL;
   PIC::ParticleBuffer::byte *ParticleData;
@@ -293,70 +347,8 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
   }
 
   //interaction with the faces of the block and internal surfaces
-  //check whether the particle trajectory is intersected the spherical body
-  #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
-  // Cache pointer to the (first) registered internal sphere.
-  // NOTE: Internal surfaces are registered before mesh init; by the time movers run,
-  //       InternalBoundaryList is finalized and stable for the run.
-  static cInternalSphericalData* Sphere = NULL;
-  static bool SphereIsResolved = false;
-
-  if (SphereIsResolved == false) {
-    SphereIsResolved = true; // ensure we do this only once
-
-    for (auto it = PIC::Mesh::mesh->InternalBoundaryList.begin();
-         it != PIC::Mesh::mesh->InternalBoundaryList.end(); ++it) {
-
-      if (it->BondaryType != _INTERNAL_BOUNDARY_TYPE_SPHERE_) continue;
-      if (it->BoundaryElement == NULL) continue;
-
-      Sphere = (cInternalSphericalData*)it->BoundaryElement;
-      break; // take the first sphere
-    }
-  }
-
-  // If no sphere is registered, skip internal-boundary sphere handling
-  if (Sphere != NULL) {
-    const double* x0 = Sphere->OriginPosition;
-    const double  R  = Sphere->Radius;
-
-    // penetration test using the registered center (no _TARGET_)
-    const double dx0 = xFinal[0] - x0[0];
-    const double dx1 = xFinal[1] - x0[1];
-    const double dx2 = xFinal[2] - x0[2];
-    const double r2  = dx0*dx0 + dx1*dx1 + dx2*dx2;
-
-    if (r2 < R*R) {
-      double r = sqrt(r2);
-      if (r <= 0.0) r = 1.0; // guard against exactly at center
-
-      // project to sphere surface
-      xFinal[0] = x0[0] + dx0 * (R / r);
-      xFinal[1] = x0[1] + dx1 * (R / r);
-      xFinal[2] = x0[2] + dx2 * (R / r);
-
-      // update node and apply the registered callback
-      newNode = PIC::Mesh::mesh->findTreeNode(xFinal, startNode);
-
-      int code = Sphere->ParticleSphereInteraction(
-        spec, ptr, xFinal, vFinal, dtTotal, (void*)newNode, (void*)Sphere
-      );
-
-      if (code == _PARTICLE_DELETED_ON_THE_FACE_) {
-        PIC::ParticleBuffer::DeleteParticle(ptr);
-        return _PARTICLE_LEFT_THE_DOMAIN_;
-      }
-    }
-    else {
-     newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
-    }
-  }
-  else {
-    newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
-  }
-#else 
-  newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
-#endif //_TARGET_ == _TARGET_NONE_
+  //check whether the particle trajectory is intersected the spherical body (the first sphere registered in the mesh)
+  if (RegisteredInternalSphereInteraction(spec,ptr,xFinal,vFinal,dtTotal,startNode,newNode)==true) return _PARTICLE_LEFT_THE_DOMAIN_;
 
 
   if (newNode==NULL) {
@@ -659,7 +651,9 @@ int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh:
     newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
   }
 #else
-  newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
+  //no target (e.g. a CCMC run): the sphere registered by the application, as in PIC::Mover::Boris(). The test
+  //above needs _RADIUS_(_TARGET_), so particles used to pass through such a sphere (e.g. through the Earth)
+  if (RegisteredInternalSphereInteraction(spec,ptr,xFinal,vFinal,dtTotal,startNode,newNode)==true) return _PARTICLE_LEFT_THE_DOMAIN_;
 #endif //_TARGET_ == _TARGET_NONE_
 
 
@@ -1151,6 +1145,11 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
   else {
     newNode=data->mesh->findTreeNode(xFinal,startNode);
   }
+#elif _CUDA_MODE_ == _OFF_
+  //no target (e.g. a CCMC run): the sphere registered by the application, as in PIC::Mover::Boris(). The test
+  //above needs _RADIUS_(_TARGET_), so particles used to pass through such a sphere (e.g. through the Earth).
+  //(data->mesh is PIC::Mesh::mesh, see PIC::Mover::Lapenta2017(ptr,dtTotal,startNode); the helper is host code)
+  if (RegisteredInternalSphereInteraction(spec,ptr,xFinal,vFinal,dtTotal,startNode,newNode)==true) return _PARTICLE_LEFT_THE_DOMAIN_;
 #else
   newNode=data->mesh->findTreeNode(xFinal,startNode);
 #endif //_TARGET_ == _TARGET_NONE_

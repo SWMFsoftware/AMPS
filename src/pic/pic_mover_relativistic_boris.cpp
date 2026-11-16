@@ -301,7 +301,9 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
       newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
     }
 #else
-    newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
+    //no target (e.g. a CCMC run): the sphere registered by the application, as in PIC::Mover::Boris(). The test
+    //above needs _RADIUS_(_TARGET_), so particles used to pass through such a sphere (e.g. through the Earth)
+    if (PIC::Mover::RegisteredInternalSphereInteraction(spec,ptr,xFinal,vFinal,dt,startNode,newNode)==true) return _PARTICLE_LEFT_THE_DOMAIN_;
 #endif //_TARGET_ == _TARGET_NONE_
 
 

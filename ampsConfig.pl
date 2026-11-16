@@ -517,6 +517,10 @@ sub AssambleInputFile {
   my $nline=0;
   
   my $StatmentEnd=1;
+
+  #$_[1] is set when the file is included by another input file: its '#end' then
+  #terminates only the included file, and the including file continues after the #include
+  my $IncludedFile=(defined $_[1]) ? $_[1] : 0;
   
   open (my $Input,"<",$_[0]) || die "Cannot find file \"$_[0]\"\n";
   
@@ -555,7 +559,10 @@ sub AssambleInputFile {
       ($s0,$line)=split(' ',$line,2);
       ($s0,$line)=split(' ',$line,2);     
      
-      AssambleInputFile($s0);
+      AssambleInputFile($s0,1);
+    }
+    elsif (($IncludedFile==1)&&($s0 eq "#END")) {
+      last;
     }
     else {   
       no warnings 'uninitialized';
@@ -772,6 +779,33 @@ sub ReadMainBlock {
       ($s0,$s1)=split(' ',$s1,2);
 
       ampsConfigLib::ChangeValueOfVariable("int PIC::Mover::MoverDataLength",$s0,"pic/pic_mover.cpp");
+    }
+
+    #output of the sampled particle trajectories (src/pic/pic_pt.cpp documents these keywords; they were not parsed):
+    #TRAJECTORY_OUTPUT_POINTS=N -- the requested number of the output points per trajectory (N>=2, default 1000)
+    #TRAJECTORY_SAMPLING_THINNING=on|off -- dyadic-grid thinning of the sampled points (on, default: C/2<M<=C+1 points
+    #are output, C is the largest power of 2 <=N; off: every point is kept and min(N,K) of the K sampled points are output)
+    elsif (($s0 eq "TRAJECTORY_OUTPUT_POINTS")||($s0 eq "TRAJECTORYOUTPUTPOINTS")||($s0 eq "PARTICLETRACKER_OUTPUT_POINTS")||($s0 eq "PARTICLETRACKEROUTPUTPOINTS")) {
+      ($s0,$s1)=split(' ',$s1,2);
+
+      if ((!defined $s0)||($s0!~/^\d+$/)||($s0<2)) {
+        die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled: the number of the trajectory output points must be an integer >= 2\n";
+      }
+
+      ampsConfigLib::ChangeValueOfVariable("int  PIC::ParticleTracker::OutputTrajectoryPointNumber",$s0,"pic/pic_pt.cpp");
+    }
+    elsif (($s0 eq "TRAJECTORY_SAMPLING_THINNING")||($s0 eq "TRAJECTORYSAMPLINGTHINNING")||($s0 eq "PARTICLETRACKER_SAMPLING_THINNING")) {
+      ($s0,$s1)=split(' ',$s1,2);
+
+      if ($s0 eq "ON") {
+        ampsConfigLib::ChangeValueOfVariable("bool PIC::ParticleTracker::TrajectorySamplingThinningMode","true","pic/pic_pt.cpp");
+      }
+      elsif ($s0 eq "OFF") {
+        ampsConfigLib::ChangeValueOfVariable("bool PIC::ParticleTracker::TrajectorySamplingThinningMode","false","pic/pic_pt.cpp");
+      }
+      else {
+        die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+      }
     }
 
     #the number of the background ion fluids used in PIC::CPLR::DATAFILE

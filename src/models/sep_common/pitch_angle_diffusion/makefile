@@ -3,7 +3,7 @@
 # flattens the library objects into its mainlib.a (srcSEP3D/makefile).
 #
 #   make            build libpitch_angle_diffusion.a
-#   make tests      build the unit, acceptance and driver binaries
+#   make tests      build the unit, acceptance (and its nightly tier) and driver binaries
 #   make verify     python3 run_all_tests.py (every library test)
 #   make clean
 SHELL := /bin/sh
@@ -20,6 +20,7 @@ OBJECTS := $(BUILD_DIR)/pitch_angle_diffusion.o $(BUILD_DIR)/pitch_angle_kernels
            $(BUILD_DIR)/pitch_angle_certification.o
 UNIT_TEST := $(BUILD_DIR)/test_pitch_angle_diffusion
 ACCEPTANCE_TEST := $(BUILD_DIR)/test_pitch_angle_montecarlo
+NIGHTLY_TEST := $(BUILD_DIR)/test_pitch_angle_montecarlo_nightly
 DRIVER := $(BUILD_DIR)/pitch_angle_driver
 HEADERS := pitch_angle_diffusion.h pitch_angle_kernels.h pitch_angle_quadrature.h \
            pitch_angle_registry.inc pitch_angle_certified_pairs.inc
@@ -49,10 +50,18 @@ $(ACCEPTANCE_TEST): test_pitch_angle_montecarlo.cpp pitch_angle_diffusion.cpp \
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -O3 -flto -pthread test_pitch_angle_montecarlo.cpp \
 	    pitch_angle_diffusion.cpp pitch_angle_kernels.cpp -o $@
 
+# The nightly regression tier of the campaign (test_pitch_angle_montecarlo.cpp
+# header): the same source and flags with -DPITCH_ANGLE_NIGHTLY_TIER, a binary of
+# its own so that the acceptance binary (and its recorded campaign) is unchanged.
+$(NIGHTLY_TEST): test_pitch_angle_montecarlo.cpp pitch_angle_diffusion.cpp \
+                 pitch_angle_kernels.cpp $(HEADERS) | $(BUILD_DIR)
+	$(CXX) $(CPPFLAGS) -DPITCH_ANGLE_NIGHTLY_TIER $(CXXFLAGS) -O3 -flto -pthread \
+	    test_pitch_angle_montecarlo.cpp pitch_angle_diffusion.cpp pitch_angle_kernels.cpp -o $@
+
 $(DRIVER): pitch_angle_driver.cpp $(LIBRARY) $(HEADERS)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< -L. -lpitch_angle_diffusion -o $@
 
-tests: $(UNIT_TEST) $(ACCEPTANCE_TEST) $(DRIVER)
+tests: $(UNIT_TEST) $(ACCEPTANCE_TEST) $(NIGHTLY_TEST) $(DRIVER)
 
 verify: tests
 	python3 run_all_tests.py

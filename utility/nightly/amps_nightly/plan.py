@@ -125,7 +125,7 @@ def core_suites(source: Source, manifest: Optional[Path] = None) -> List[str]:
 # ----------------------------------------------------------------------------- plan
 def apply_rules(items: List[Item], source: Source, machine: Machine, config: Config, routine: Routine,
                 today: dt.date) -> None:
-    """Mark as SKIP, with the reason, the tests this machine cannot run or routine.json switches off."""
+    """Mark as SKIP, with the reason, the tests this machine cannot run or runners.json switches off."""
     missing = [c for c in source.requires if c not in machine.capabilities]
     values = machine_vars(machine)
     missing_vars = [v for v in source.requires_vars if not values.get(v)]
