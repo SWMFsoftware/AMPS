@@ -59,6 +59,69 @@ allocation:
 mpiexec -n 2 ./amps -i input/i3.in -case 1 --validate-runtime-input
 ```
 
+## Nightly regression test
+
+The nightly test `i3` (block `Name=i3` in `MakefileTest/Table`, family
+`comet-dust`) runs this application end to end and compares its output with
+references:
+
+```sh
+make test_i3 MPIRUN="mpirun -np 4"      # compile, run directory, run, check
+cat test_i3.diff                        # empty: the test passed
+```
+
+- **Build.** The production build of `input/i3.conf`, with `-amps-test=off`
+  and a removed `build/` directory. `-amps-test=on` cannot be used: its
+  debugger mode aborts every DIM1 run at the first particle check
+  (`src/pic/pic_pbuffer.cpp` compares all three particle coordinates with
+  `node->xmin`/`node->xmax`, which have `_MESH_DIMENSION_` elements).
+- **Input.** `input/i3-test.in` holds cases 1 and 5 of `input/i3.in`
+  unchanged. Only three run controls of the common block differ:
+  `simulation.reference_injection_particles = 8` (59) and
+  `simulation.max_iterations = 10000` (150000), with
+  `simulation.sampling_length = 10000` as before. Each case thus runs one
+  sampling window, and output `out=0` is written at iteration 10000.
+- **Run.** Case 1 runs in `run_test_i3/case1` and case 5 in `run_test_i3/case5`.
+  Each run's log is in `amps.log` there, and the results are copied unchanged
+  to `run_test_i3/res/<case>.<species>.dat` and
+  `run_test_i3/res/<case>.<species>.brightness.dat`. That makes 18 files: the
+  seven radial profiles and the H and OH brightness profiles of each case.
+- **Check.** Each result is compared (`share/Scripts/DiffNum.pl`, default
+  tolerances) with `output/test_i3/<case>.<species>[.brightness].ref_np<N>.gz`.
+  These references live in SWMF_data under `PT/AMPS/data/output/test_i3`. They
+  are the unchanged output files, and N is the number of MPI processes in the
+  case's `amps.log`.
+  - Three profile columns are removed from both files before the comparison
+    because they are not reproducible between builds. Column 3, `Temp_ID`, is
+    an internal node counter. Columns 12 and 13 are the parallel and
+    tangential translational temperatures. In DIM1, the sampling direction of
+    this split in `src/pic/pic.cpp` is built from `node->xmin[0..2]` and
+    `node->xmax[0..2]`, and indices 1 and 2 lie outside these
+    `_MESH_DIMENSION_`-element arrays. The two columns are therefore undefined
+    in every DIM1 run, whereas the total translational temperature and the
+    transport are unaffected.
+  - The brightness files are compared whole.
+- **References.** They exist for N = 4 and N = 8, made on 2026-11-16 with
+  GCC 11.5 and Open MPI 4.1.7. The runs are bit-for-bit reproducible for a
+  given compiler, MPI library and N, and the results depend on N because each
+  rank has its own random stream. References made with another compiler, for
+  example GCC 9.4 on the nightly machine passion, are not expected to match.
+  To regenerate them for one N after a `make test_i3` run with that N:
+
+  ```sh
+  N=8
+  for f in run_test_i3/res/*.dat; do
+    gzip -n -9 -c $f > data/output/test_i3/$(basename $f .dat).ref_np$N.gz
+  done
+  ```
+
+- **Cost.** The whole `make test_i3` takes 12 min with 4 MPI processes: the
+  compilation takes 1.3 min, case 1 3.8 min and case 5 6.7 min. With 8
+  processes it takes 8 min (AMD EPYC 7763). There are about 1.9e5 model
+  particles at iteration 10000. Each MPI process uses about 1.9 GB of memory,
+  whatever the particle number, because `input/i3.conf` requests a buffer of
+  2e7 particles.
+
 ## Archived observation table
 
 The supplied archive has SHA-256

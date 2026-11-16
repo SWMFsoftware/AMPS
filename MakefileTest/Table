@@ -1887,6 +1887,85 @@ Keys=-model-data-path=${PTDIR} -spice-path=/scratch/02452/vtenishe/SPICE/cspice 
 <#
 
 -------------------------------------------------------------------------------
+I3 (3I/ATLAS): regression test of the DIM1 radial comet model with brightness
+(srcHartley2, built from input/i3.conf). Cases 1 and 5 of input/i3-test.in (cases 1
+and 5 of input/i3.in with fewer model particles), 10000 iterations each with one
+sampling window of 10000 iterations. The seven radial profiles and the H Lyman-alpha
+and OH brightness profiles of each case (output out=0) are compared with their
+references output/test_i3/<case>.<species>[.brightness].ref_np<N>.gz, the unchanged
+AMPS output files for N MPI processes (references exist for N=4 and N=8).
+
+#>
+Name=i3
+Family=comet-dust
+Time=12
+
+Outs=case1.H case1.H2 case1.O case1.OH case1.H2O case1.CO case1.CO2 case1.H.brightness case1.OH.brightness case5.H case5.H2 case5.O case5.OH case5.H2O case5.CO case5.CO2 case5.H.brightness case5.OH.brightness
+
+Compile=
+>>>@echo "test_i3_compile..." > test_i3$(TESTi3-REF).diff
+>>>@# The production build of input/i3.conf. -amps-test=on is not used: its debugger mode aborts every DIM1 run at the
+>>>@# first particle check (src/pic/pic_pbuffer.cpp compares all three coordinates with node->xmin/xmax, which have
+>>>@# _MESH_DIMENSION_ elements). -amps-test=off is explicit, so that the TESTMODE of an earlier test is not reused.
+>>>./Config.pl -application=i3 -spice-path=nospice -spice-kernels=nospice -amps-test=off $(TESTi3KEYS)
+>>>@# input/i3.conf sets WorkingSourceDirectory=build: remove it, so that no object of an earlier build is reused
+>>>rm -rf srcTemp build
+>>>@($(MAKE) -j16 amps)
+>>>@echo "test_i3_compile... done" >> test_i3$(TESTi3-REF).diff
+
+Rundir=
+>>>@echo "test_i3_rundir..." >> test_i3$(TESTi3-REF).diff
+>>>rm -rf   $(TESTi3DIR)
+>>>mkdir -p $(TESTi3DIR)/case1 $(TESTi3DIR)/case5 $(TESTi3DIR)/res
+>>>mv amps  $(TESTi3DIR)
+>>>cp input/i3-test.in $(TESTi3DIR)
+>>>@echo "test_i3_rundir... done" >> test_i3$(TESTi3-REF).diff
+
+Run=
+>>>@echo "test_i3_run..." >> test_i3$(TESTi3-REF).diff
+>>>@echo Test test_i3 has started: `date`
+>>>@# Each case runs in its own directory (AMPS writes PT/ and the mesh files into the current directory).
+>>>@# Its log amps.log also gives the number of MPI processes to the Check rule.
+>>>cd $(TESTi3DIR)/case1 && ${MPIRUN} ../amps -i ../i3-test.in -case 1 2>&1 | tee amps.log
+>>>cd $(TESTi3DIR)/case5 && ${MPIRUN} ../amps -i ../i3-test.in -case 5 2>&1 | tee amps.log
+>>>@# The results res/<case>.<species>.dat and res/<case>.<species>.brightness.dat are the unchanged output files.
+>>>-@for C in 1 5; do                                                                                 \
+>>>for S in H.s=0 H2.s=1 O.s=2 OH.s=3 H2O.s=4 CO.s=5 CO2.s=6 H.brightness.s=0 OH.brightness.s=3; do  \
+>>>cp $(TESTi3DIR)/case$$C/PT/plots/pic.$$S.out=0.dat $(TESTi3DIR)/res/case$$C.$${S%%.s=*}.dat;       \
+>>>done; done
+>>>@echo "test_i3_run... done" >> test_i3$(TESTi3-REF).diff
+
+Check=
+>>>@echo "test_i3_check..." >> test_i3$(TESTi3-REF).diff
+>>>@# Each result res/<OUT>.dat is compared with its reference for the number of MPI processes of its case,
+>>>@# output/test_i3/<OUT>.ref_np<N>.gz. The reference is unpacked into the run directory, so SWMF_data is
+>>>@# never modified, and a missing reference is reported as a difference of that result.
+>>>@# Three columns of the radial profiles are removed from both files before the comparison: 3 (Temp_ID, an
+>>>@# internal node counter), and 12 and 13 (parallel and tangential translational temperature: in DIM1 the
+>>>@# sampling direction of that split is built from undefined coordinates, see srcHartley2/i3/README.md,
+>>>@# "Nightly regression test"). Neither is reproducible between builds. The brightness files are compared whole.
+>>>@# (The foreach body must not contain unbalanced parentheses or commas, hence findstring and no shell "case".)
+>>>@rm -f test_i3--*.diff
+>>>-@$(foreach OUT,$(TESTi3OUTFILES),                                                                \
+>>>(R=$(TESTi3DIR)/res/$(OUT); C=`echo $(OUT) | cut -d. -f1`;                                         \
+>>>NP=`grep -m1 'The total number of the MPI processes=' $(TESTi3DIR)/$$C/amps.log | sed 's/.*=//'`; \
+>>>REF=output/test_i3/$(OUT).ref_np$$NP.gz;                                                            \
+>>>if [ -f $$REF ]; then gunzip -c $$REF > $$R.ref; cp $$R.dat $$R.cmp;                              \
+>>>if [ -z "$(findstring brightness,$(OUT))" ]; then for F in $$R.cmp $$R.ref; do                     \
+>>>utility/RemoveColumn.pl -c=13 $$F; utility/RemoveColumn.pl -c=12 $$F; utility/RemoveColumn.pl -c=3 $$F; \
+>>>done; fi; ${SCRIPTDIR}/DiffNum.pl $$R.cmp $$R.ref > test_i3--$(OUT).diff;                          \
+>>>else echo "reference $$REF is missing" > test_i3--$(OUT).diff; fi);)
+>>>@# The test's own result file gets the differences of all results (empty: all agree with their references).
+>>>@# If not every result has its .diff file, the comparison itself failed, and that is reported instead.
+>>>@if [ `ls test_i3--*.diff 2>/dev/null | wc -l` -eq $(words $(TESTi3OUTFILES)) ]; then                \
+>>>cat test_i3--*.diff > test_i3$(TESTi3-REF).diff;                                                      \
+>>>else N=`ls test_i3--*.diff 2>/dev/null | wc -l`;                                                    \
+>>>echo "test_i3_check: only $$N of $(words $(TESTi3OUTFILES)) results were compared" > test_i3$(TESTi3-REF).diff; fi
+>>>@ls -l test_i3--*.diff test_i3$(TESTi3-REF).diff
+>>>@echo Test test_i3 has finished: `date`
+<#
+
+-------------------------------------------------------------------------------
 #>
 Name=Mercury-test 
 Family=planets
