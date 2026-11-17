@@ -2,7 +2,6 @@
 
 New AMPS nightly testing: result records, results store and report pages. Design: [DESIGN.md](DESIGN.md);
 test orchestrator: [ORCHESTRATOR.md](ORCHESTRATOR.md).
-Look-and-feel mockup: [mockup/index.html](mockup/index.html).
 
 Everything is one tool, `amps-nightly` (Python 3.8+, standard library only):
 
