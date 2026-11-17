@@ -2571,6 +2571,11 @@ void PIC::FieldLine::PopulateSegment(int spec,double NumberDensity,double Temper
     // pointer particle to the particle to be injected
     PB::byte ptrData[PB::ParticleDataLength];
 
+    // A fresh source template follows the same zero-payload contract as
+    // GetNewParticle. Cloning uninitialized extension bytes would otherwise
+    // undo the allocator's initialization before an application birth hook.
+    memset(ptrData,0,PB::ParticleDataLength);
+
     //default settings
     PB::SetIndividualStatWeightCorrection(WeightCorrectionFactor,ptrData);
     PB::SetI(spec, ptrData);
@@ -2607,14 +2612,79 @@ void PIC::FieldLine::PopulateSegment(int spec,double NumberDensity,double Temper
   } 
 }
 
+PIC::FieldLine::MaxwellianLineBeginningPreflight
+PIC::FieldLine::PreflightMaxwellianLineBeginning(int spec,int iFieldLine) {
+  MaxwellianLineBeginningPreflight result;
+  using Code=MaxwellianLineBeginningPreflight::Code;
+  if(spec<0||spec>=PIC::nTotalSpecies||!FieldLinesAll||iFieldLine<0||iFieldLine>=nFieldLine||
+      !FieldLinesAll[iFieldLine].GetFirstSegment()||!FieldLinesAll[iFieldLine].GetFirstVertex()) {
+    result.message="Maxwellian line source has invalid species or geometry";return result;
+  }
+  auto* segment=FieldLinesAll[iFieldLine].GetFirstSegment();
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=nullptr;
+  if(_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) {
+    result.ownerRank=segment->Thread;
+    if(result.ownerRank<0||result.ownerRank>=PIC::nTotalThreads) {
+      result.message="Maxwellian line source has an invalid segment owner";return result;
+    }
+    if(result.ownerRank!=PIC::ThisThread){result.code=Code::NonOwner;return result;}
+  }
+  const bool localTime=_SIMULATION_TIME_STEP_MODE_==_SPECIES_DEPENDENT_LOCAL_TIME_STEP_;
+  const bool localWeight=_SIMULATION_PARTICLE_WEIGHT_MODE_==_SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_;
+  if(localTime||localWeight||_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_NODE_) {
+    if(!PIC::Mesh::mesh) {
+      result.code=Code::UnsupportedConfiguration;result.message="Maxwellian line source needs an initialized local AMR owner";return result;
+    }
+    double x[3];FieldLinesAll[iFieldLine].GetFirstVertex()->GetX(x);
+    node=PIC::Mesh::mesh->findTreeNode(x,nullptr);
+    if(!node){result.message="Maxwellian line source endpoint is outside the AMR domain";return result;}
+    if(_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_NODE_) {
+      result.ownerRank=node->Thread;
+      if(result.ownerRank!=PIC::ThisThread){result.code=Code::NonOwner;return result;}
+    }
+    if(node->Thread!=PIC::ThisThread||!node->block) {
+      result.code=Code::UnsupportedConfiguration;
+      result.message="Maxwellian field-line source local timestep/weight block is absent on the segment owner; remote lookup is unspecified";
+      return result;
+    }
+  }
+  if(_PIC_PARTICLE_LIST_ATTACHING_!=_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_&&
+      _PIC_PARTICLE_LIST_ATTACHING_!=_PIC_PARTICLE_LIST_ATTACHING_NODE_) {
+    result.code=Code::UnsupportedConfiguration;result.message="unsupported Maxwellian source particle attachment";return result;
+  }
+  switch(_SIMULATION_TIME_STEP_MODE_) {
+    case _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_:result.timeStepS=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];break;
+    case _SINGLE_GLOBAL_TIME_STEP_:result.timeStepS=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];break;
+    case _SPECIES_DEPENDENT_LOCAL_TIME_STEP_:result.timeStepS=node->block->GetLocalTimeStep(spec);break;
+    default:result.code=Code::UnsupportedConfiguration;result.message="unsupported Maxwellian source timestep mode";return result;
+  }
+  switch(_SIMULATION_PARTICLE_WEIGHT_MODE_) {
+    case _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_:result.particleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];break;
+    case _SINGLE_GLOBAL_PARTICLE_WEIGHT_:result.particleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[0];break;
+    case _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_:result.particleWeight=node->block->GetLocalParticleWeight(spec);break;
+    default:result.code=Code::UnsupportedConfiguration;result.message="unsupported Maxwellian source weight mode";return result;
+  }
+  if(!std::isfinite(result.timeStepS)||result.timeStepS<=0.0||
+      !std::isfinite(result.particleWeight)||result.particleWeight<=0.0) {
+    result.message="Maxwellian line source requires finite positive timestep and particle weight";return result;
+  }
+  result.code=Code::Ready;return result;
+}
+
 //inject particles at the beginning of a segment
-int PIC::FieldLine::InjectMaxwellianLineBeginning(int spec,double NumberDensity,double Temperature,double* BulkVelocity,double InjectionArea,int iFieldLine,int nMaxInjectedParticles) {
+int PIC::FieldLine::InjectMaxwellianLineBeginning(int spec,double NumberDensity,double Temperature,double* BulkVelocity,double InjectionArea,int iFieldLine,int nMaxInjectedParticles,
+    void (*postFreshParticle)(long int,std::uint64_t,void*),void* sourceContext) {
   namespace FL = PIC::FieldLine;
   namespace PB = PIC::ParticleBuffer; 
+  const auto preflight=PreflightMaxwellianLineBeginning(spec,iFieldLine);
+  if(preflight.code==MaxwellianLineBeginningPreflight::Code::NonOwner)return 0;
+  if(preflight.code!=MaxwellianLineBeginningPreflight::Code::Ready)
+    exit(__LINE__,__FILE__,preflight.message.c_str());
   
   int nInjectedParticles=0;
   int npart;
-  double dtTotal,SourceRate,n_sw,t_sw,v_v[3],l[3],anpart,ParticleWeight,*x,GlobalWeightCorrectionFactor=1.0;
+  double dtTotal=preflight.timeStepS,SourceRate,n_sw,t_sw,v_v[3],l[3],anpart,
+      ParticleWeight=preflight.particleWeight,x[3],GlobalWeightCorrectionFactor=1.0;
   auto Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();
   FL::cFieldLineVertex* FirstVertex=Segment->GetBegin();
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=NULL;
@@ -2630,16 +2700,12 @@ int PIC::FieldLine::InjectMaxwellianLineBeginning(int spec,double NumberDensity,
   SourceRate=PIC::BC::CalculateInjectionRate_MaxwellianDistribution(NumberDensity,Temperature,BulkVelocity,l,spec);
 
   //determine the number of the injected model particles 
-  x=FirstVertex->GetX();
-  node=PIC::Mesh::mesh->findTreeNode(x,node);
-
-  if (node==NULL) exit(__LINE__,__FILE__,"Error: the location of the vertex is not found");
-  if (node->Thread!=PIC::ThisThread) return 0;
-  
-  if (node->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not allocated - something is wrong");
-  
-  dtTotal=node->block->GetLocalTimeStep(spec);
-  ParticleWeight=node->block->GetLocalParticleWeight(spec);
+  // Cartesian output belongs to the newborn, never to the provider vertex.
+  // The former pointer alias let GetCartesian(x,S) silently move the first
+  // physical vertex at every injection without rebuilding its segment metric.
+  FirstVertex->GetX(x);
+  if(_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_NODE_)
+    node=PIC::Mesh::mesh->findTreeNode(x,nullptr);
   anpart=dtTotal*SourceRate/ParticleWeight*InjectionArea;
 
   if ((nMaxInjectedParticles!=-1)&&(anpart>nMaxInjectedParticles)) {
@@ -2656,7 +2722,8 @@ int PIC::FieldLine::InjectMaxwellianLineBeginning(int spec,double NumberDensity,
   nInjectedParticles=npart;
 
   //populate new particles 
-  for (;npart>0;npart--) {
+  std::uint64_t sourceMacro=0;
+  for (;npart>0;npart--,++sourceMacro) {
     //get particle location 
     double vp[3],vParallel,vNormal,WeightCorrectionFactor,S=0.0;
 
@@ -2668,6 +2735,10 @@ int PIC::FieldLine::InjectMaxwellianLineBeginning(int spec,double NumberDensity,
     //add the particle to the particle list   
     // pointer particle to the particle to be injected
     PB::byte ptrData[PB::ParticleDataLength];
+
+    // Preserve the complete fresh-record initialization contract, including
+    // application extensions not interpreted by this generic source helper.
+    memset(ptrData,0,PB::ParticleDataLength);
 
     //default settings
     PB::SetIndividualStatWeightCorrection(WeightCorrectionFactor*GlobalWeightCorrectionFactor,ptrData);
@@ -2704,6 +2775,7 @@ int PIC::FieldLine::InjectMaxwellianLineBeginning(int spec,double NumberDensity,
     default:
       exit(__LINE__,__FILE__,"Error: the option is unknown");
     }
+    if(postFreshParticle&&NewParticle!=-1)postFreshParticle(NewParticle,sourceMacro,sourceContext);
   } 
   
   return nInjectedParticles;

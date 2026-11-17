@@ -1,10 +1,40 @@
 #include "tests.h"
 #include "util/sep_acceptance_cases.h"
 #include "util/sep_mover_validation.h"
+#include "util/sep_rng_validation.h"
+#include "util/sep_background_derivative_validation.h"
+#include "util/sep_analytic_radial_native_validation.h"
+#include "util/sep_analytic_radial_validation.h"
+#include "util/sep_host_step_native_validation.h"
+#include "util/sep_analytic_shock_epoch_validation.h"
+#include "util/sep_coefficient_radius_native_validation.h"
+#include "util/sep_wave_normalization_validation.h"
+#include "util/sep_real_wave_normalization_validation.h"
+#include "util/sep_polarized_wave_state_validation.h"
+#include "util/sep_polarized_native_validation.h"
+#include "util/sep_birth_window_validation.h"
+#include "util/sep_birth_native_validation.h"
+#include "util/sep_frozen_collision_transaction_validation.h"
+#include "util/sep_flux_tube_state_validation.h"
+#include "util/sep_polarized_wkb_validation.h"
+#include "util/sep_maxwell_juttner_flux_validation.h"
+#include "util/sep_material_tube_kinematics_validation.h"
+#include "util/sep_standard_batsrus_wave_validation.h"
+#include "util/sep_population_native_validation.h"
+#include "util/sep_conservation_resampling_validation.h"
+#include "util/sep_resonant_collision_validation.h"
+#include "util/sep_checkpoint_native_validation.h"
+#include "util/sep_source_native_validation.h"
+#include "util/sep_maxwellian_native_validation.h"
+#include "util/sep_cli_campaign_validation.h"
+#include "util/sep_production_cli_validation.h"
 #include "util/sep_scientific_validation.h"
 #include "util/sep_swcme_validation.h"
 #include "util/sep_initialization_validation.h"
 #include "util/sep_turbulence_validation.h"
+#include "util/sep_cli.h"
+#include "util/sep_source_lifecycle.h"
+#include "transport_common.h"
 #include "validation/cases/CV01/cv01_model.h"
 #include "validation/cases/controlled_transport_models.h"
 #include "validation/cases/advanced_validation_models.h"
@@ -20,8 +50,172 @@
 #include <sstream>
 #include <stdexcept>
 #include <vector>
+#include <filesystem>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <random>
+#include <unistd.h>
 
 namespace {
+
+SEP::Testing::CampaignOptions campaignOptions;
+SEP::Util::CLI::Options::TestFormat campaignFormat=SEP::Util::CLI::Options::TestFormat::Text;
+std::string campaignJson,campaignJunit,campaignDirectory;
+bool campaignConfigured=false,campaignKeepArtifacts=false,campaignStateFailed=false;
+
+std::string AbsolutePath(const std::string& path) {
+  return std::filesystem::absolute(std::filesystem::path(path)).lexically_normal().string();
+}
+void WritableParent(const std::string& path) {
+  const std::filesystem::path target(path);
+  if(std::filesystem::exists(target)&&std::filesystem::is_directory(target))
+    throw std::runtime_error("structured report target is a directory: "+path);
+  const auto parent=target.parent_path();
+  if(!parent.empty())std::filesystem::create_directories(parent);
+  const auto pattern=(parent/".srcsep-evidence-probe.XXXXXX").string();
+  std::vector<char> probe(pattern.begin(),pattern.end());probe.push_back('\0');
+  const int descriptor=mkstemp(probe.data());
+  if(descriptor<0)throw std::runtime_error("cannot write requested evidence directory: "+parent.string());
+  close(descriptor);std::remove(probe.data());
+}
+void BroadcastString(std::string& value) {
+  int overflow=PIC::ThisThread==0&&
+      value.size()>static_cast<std::size_t>(std::numeric_limits<int>::max())?1:0;
+  MPI_Bcast(&overflow,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+  if(overflow)throw std::runtime_error("test campaign path exceeds MPI count range");
+  int length=PIC::ThisThread==0?static_cast<int>(value.size()):0;
+  MPI_Bcast(&length,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);value.resize(length);
+  if(length)MPI_Bcast(&value[0],length,MPI_CHAR,0,MPI_GLOBAL_COMMUNICATOR);
+}
+
+// All numerical test cases run after worker joins. Preserve the pre-existing
+// snapshot metadata even for a pure callback which explicitly ResetForTests.
+// Restoring this test fixture is not a provider fallback in a production step.
+class NativeTestStateScope {
+ public:
+  const std::shared_ptr<const SEP::Background::BackgroundSnapshot> background=
+      SEP::Background::SnapshotStore::Instance().Current();
+  const std::uint64_t previousCampaign=SEP::Transport::PICAdapter::CampaignRandomSeed;
+  SEP::SourceLifecycle::State source;
+  bool sourceValid=false;
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_ && _CUDA_MODE_ == _OFF_
+  const unsigned long legacySeed=RandomNumberGenerator::rndLastSeed;
+  const std::mt19937 legacyEngine=RandomNumberGenerator::gen;
+  const std::uniform_real_distribution<double> legacyDistribution=RandomNumberGenerator::dist;
+  const bool legacyHasNormal=RandomNumberGenerator::NormalSpareAvailable;
+  const double legacyNormal=RandomNumberGenerator::NormalSpare;
+#endif
+  explicit NativeTestStateScope(const SEP::Testing::Descriptor& descriptor) {
+    const auto& context=SEP::Testing::GetExecutionContext();
+    const bool native=descriptor.initialization==SEP::Testing::InitializationLevel::FieldLineModel;
+    if(!native)return;
+    source=SEP::SourceLifecycle::CaptureNativeState();sourceValid=!source.fixedLineLayout.empty();
+    if(context.seedActive) {
+#if _COMPILATION_MODE_ != _COMPILATION_MODE__MPI_ || _CUDA_MODE_ != _OFF_
+      if(descriptor.id=="FTE01"||descriptor.id=="PARKER01"||descriptor.id=="PARKER02")
+        throw std::runtime_error("legacy native seed override is qualified only for MPI/CUDA-off; hybrid/device RNG restoration is unsupported");
+#endif
+      const int local=PIC::ParticleBuffer::GetAllPartNum()==0&&sourceValid?1:0;
+      int ready=0;MPI_Allreduce(&local,&ready,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+      if(!ready)throw std::runtime_error("native test seed override requires an empty population and initialized source history on every rank");
+      auto independent=source;
+      independent.campaign=SEP::Testing::TestSeed(0,UINT64_C(0x4e4154495645));
+      independent.counters.clear();
+      SEP::Transport::PICAdapter::CampaignRandomSeed=independent.campaign;
+      const auto restored=SEP::SourceLifecycle::RestoreNativeState(independent);
+      if(!restored.ok()) {
+        SEP::Transport::PICAdapter::CampaignRandomSeed=previousCampaign;
+        throw std::runtime_error(restored.message);
+      }
+    }
+  }
+  ~NativeTestStateScope() {
+    try {
+      SEP::Transport::PICAdapter::CampaignRandomSeed=previousCampaign;
+      if(sourceValid) {
+        const auto restored=SEP::SourceLifecycle::RestoreNativeState(source);
+        if(!restored.ok())throw std::runtime_error(restored.message);
+      }
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_ && _CUDA_MODE_ == _OFF_
+      RandomNumberGenerator::rndLastSeed=legacySeed;
+      RandomNumberGenerator::gen=legacyEngine;RandomNumberGenerator::dist=legacyDistribution;
+      RandomNumberGenerator::NormalSpareAvailable=legacyHasNormal;
+      RandomNumberGenerator::NormalSpare=legacyNormal;
+#endif
+      auto& store=SEP::Background::SnapshotStore::Instance();
+      store.ResetForTests();if(background)store.Publish(*background);
+    } catch(const std::exception&) {campaignStateFailed=true;}
+  }
+};
+
+class NativeArtifactScope {
+ public:
+  const SEP::Testing::ExecutionContext context=SEP::Testing::GetExecutionContext();
+  const std::filesystem::path original=std::filesystem::current_path();
+  std::string directory,scratch,transcript;
+  std::ofstream output;
+  std::streambuf* previousOutput=nullptr;
+  NativeArtifactScope() {
+    if(context.artifactDirectory.empty())return;
+    directory=context.artifactDirectory;
+    if(PIC::ThisThread!=0)directory+="/rank-"+std::to_string(PIC::ThisThread);
+    std::filesystem::create_directories(directory);
+    const auto pattern=directory+"/scratch.XXXXXX";
+    std::vector<char> name(pattern.begin(),pattern.end());name.push_back('\0');
+    if(!mkdtemp(name.data()))throw std::runtime_error("cannot create isolated test scratch directory");
+    scratch=name.data();transcript=directory+"/native-log.txt";
+    output.open(transcript);if(!output.good())throw std::runtime_error("cannot open native test transcript");
+    std::filesystem::current_path(scratch);
+    auto local=context;local.artifactDirectory=directory;
+    SEP::Testing::SetExecutionContext(local);
+    previousOutput=std::cout.rdbuf(output.rdbuf());
+  }
+  void Finish(SEP::Testing::Result& result) {
+    if(directory.empty())return;
+    bool declaredScratchRoot=false;
+    for(auto& artifact:result.artifacts) {
+      const std::filesystem::path item(artifact);
+      const auto local=item.is_absolute()?item:std::filesystem::path(scratch)/item;
+      if(std::filesystem::exists(local)) {
+        // Only move files owned by this invocation's scratch tree. A callback
+        // may also reference an immutable input through ../ or a symlink;
+        // retaining that reference must never rename an external/user file.
+        const auto resolved=std::filesystem::canonical(local);
+        const auto base=std::filesystem::canonical(scratch);
+        const auto relative=resolved.lexically_relative(base);
+        if(relative.empty()||*relative.begin()=="..") {
+          artifact=resolved.string();continue;
+        }
+        if(relative==".") {
+          declaredScratchRoot=true;artifact=resolved.string();continue;
+        }
+        const auto permanent=std::filesystem::path(directory)/relative;
+        std::filesystem::create_directories(permanent.parent_path());
+        std::filesystem::rename(local,permanent);artifact=permanent.string();
+      } else if(!item.is_absolute())artifact=(std::filesystem::path(context.artifactDirectory)/item).string();
+    }
+    if(previousOutput) {
+      std::cout.flush();std::cout.rdbuf(previousOutput);previousOutput=nullptr;
+    }
+    output.flush();output.close();
+    if(output.fail()) {
+      result.status=SEP::Testing::Status::Error;
+      result.message="failed while retaining native test transcript: "+transcript;
+    }
+    result.artifacts.push_back(transcript);
+    std::filesystem::current_path(original);
+    if(result.status==SEP::Testing::Status::Pass&&!campaignKeepArtifacts&&!declaredScratchRoot)
+      std::filesystem::remove_all(scratch);
+    else result.artifacts.push_back(scratch);
+  }
+  ~NativeArtifactScope() {
+    if(previousOutput)std::cout.rdbuf(previousOutput);
+    output.flush();output.close();
+    try{std::filesystem::current_path(original);}catch(const std::exception&){campaignStateFailed=true;}
+    SEP::Testing::SetExecutionContext(context);
+  }
+};
 
 SEP::Testing::Result BooleanResult(bool passed, const char* passMessage,
                                    const char* failMessage) {
@@ -44,32 +238,54 @@ SEP::Testing::Result RunDxx() {
   return result;
 }
 
+std::uint64_t LegacyTestSeed(std::uint64_t original) {
+  const auto derived=SEP::Testing::TestSeed(original,UINT64_C(0x4c4547414359));
+  // rnd_seed accepts a signed int. Keep the historical default exactly and
+  // explicitly map an active 64-bit test key to the positive odd31 domain.
+  // This avoids the legacy multiplicative generator's even fixed/short-period
+  // states. The full key mapping and actual int seed are both retained.
+  return SEP::Testing::GetExecutionContext().seedActive?
+      SEP::Util::CLI::LegacyTestSeedFromKey(derived):original;
+}
+
 SEP::Testing::Result RunFteConvection() {
-  // Registry adapters use fixed seeds because their process exits after the
-  // selected test set.  Re-seeding before each stochastic test makes results
-  // independent of earlier selector overlap/order without perturbing any
-  // subsequent production simulation (there is none in test-only mode).
-  const std::uint64_t seed = 1002;
+  // The native fixture scope saves/restores the entire supported legacy RNG
+  // state. Apply the requested seed before the actual legacy diagnostic,
+  // including its random fixture particle creation.
+  const std::uint64_t seed = LegacyTestSeed(1002);
   rnd_seed(static_cast<int>(seed));
   SEP::Testing::Result result = BooleanResult(FTE_Convectoin(),
       "focused-transport convection preserved the expected displacement and velocity",
       "focused-transport convection exceeded its existing numerical tolerance");
   result.hasSeed = true;
   result.seed = seed;
+  result.configuration.push_back("legacy_seed_bridge=positive-odd31-v1;historical-default-unchanged");
   result.configuration.push_back("trials=10000");
   result.configuration.push_back("plasma_velocity_m_per_s=0,0,0");
   result.configuration.push_back("dt_s=1");
+  result.configuration.push_back("reference=signed-metric-arc-length;constant-|B|-tube;zero-scattering");
+  const auto& metrics=GetLastFteConvectionMetrics();
+  SEP::Testing::Metric path;
+  path.name="maximum_relative_arc_error";path.value=metrics.maximumRelativePathError;
+  path.tolerance=1.0e-2;path.comparison="<=";path.units="dimensionless";
+  result.metrics.push_back(path);
+  path.name="maximum_parallel_velocity_error";
+  path.value=metrics.maximumParallelVelocityErrorMPerS;
+  path.tolerance=1.0e-5;path.units="m/s";result.metrics.push_back(path);
+  path.name="maximum_normal_velocity_error";
+  path.value=metrics.maximumNormalVelocityErrorMPerS;result.metrics.push_back(path);
   return result;
 }
 
 SEP::Testing::Result RunParkerConvection() {
-  const std::uint64_t seed = 1001;
+  const std::uint64_t seed = LegacyTestSeed(1001);
   rnd_seed(static_cast<int>(seed));
   SEP::Testing::Result result = BooleanResult(ParkerModelMoverTest_convection(),
       "Parker convection and adiabatic momentum assertions passed",
       "Parker convection or adiabatic momentum assertion failed");
   result.hasSeed = true;
   result.seed = seed;
+  result.configuration.push_back("legacy_seed_bridge=positive-odd31-v1;historical-default-unchanged");
   result.configuration.push_back("trials=10000");
   result.configuration.push_back("density_jump=1_to_4");
   result.configuration.push_back("dt_s=1");
@@ -77,7 +293,7 @@ SEP::Testing::Result RunParkerConvection() {
 }
 
 SEP::Testing::Result RunParkerDistribution() {
-  const std::uint64_t seed = 1003;
+  const std::uint64_t seed = LegacyTestSeed(1003);
   rnd_seed(static_cast<int>(seed));
   SEP::Testing::Result result = BooleanResult(
       ParkerModelMoverTest_const_plasma_field(),
@@ -85,6 +301,7 @@ SEP::Testing::Result RunParkerDistribution() {
       "stochastic Parker campaign produced no in-range histogram or output failed");
   result.hasSeed = true;
   result.seed = seed;
+  result.configuration.push_back("legacy_seed_bridge=positive-odd31-v1;historical-default-unchanged");
   result.configuration.push_back("trials=4000000");
   result.configuration.push_back("dt_s=3");
   result.configuration.push_back("histogram_bins=100");
@@ -550,7 +767,7 @@ std::string SerializeRankEvidence(const SEP::Testing::Result& result) {
   // writers own escaping, so rank-local diagnostics cannot corrupt either
   // output format.
   std::ostringstream evidence;
-  evidence << "status=" << SEP::Testing::StatusName(result.status)
+  evidence << std::setprecision(17) << "status=" << SEP::Testing::StatusName(result.status)
            << ";message=" << result.message;
   if (result.hasSeed) evidence << ";seed=" << result.seed;
   for (std::size_t i = 0; i < result.configuration.size(); ++i)
@@ -575,6 +792,81 @@ SEP::Testing::Status StatusFromSeverity(int severity) {
 
 }  // namespace
 
+bool ConfigureComponentTestCampaign(const SEP::Util::CLI::Options& options,
+                                    std::string* error) {
+  // Selection/help/list validation has already happened in main. MPI alone is
+  // initialized here; PIC::InitMPI is reentrant, so subsequent model setup uses
+  // this same communicator. All test-only exits are finalized by main's guard.
+  PIC::InitMPI();
+  const auto originalContext=SEP::Testing::GetExecutionContext();
+  const auto selectedForConfiguration=ComponentTestRegistry().Select(options.testIds,options.testGroups,
+      options.runAllTests,options.testExpressions);
+  // Real PIC::TimeStep owns private first-call/statistics/restart state with
+  // no complete restore API. Such callbacks may execute only as one explicit
+  // protocol case in a fresh native process. Catalog/routine discovery without
+  // that input remains an honest SKIP at the descriptor, not a hidden host run.
+  bool processExclusive=false;
+  for(const auto* descriptor:selectedForConfiguration)
+    processExclusive=processExclusive||std::find(descriptor->tags.begin(),descriptor->tags.end(),
+        "native-process-exclusive")!=descriptor->tags.end();
+  const int localInvalidExclusive=processExclusive&&!originalContext.inputPath.empty()&&
+      (selectedForConfiguration.size()!=1||options.testRepeat!=1)?1:0;
+  int invalidExclusive=0;
+  MPI_Allreduce(&localInvalidExclusive,&invalidExclusive,1,MPI_INT,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+  if(invalidExclusive) {
+    if(error)*error="an explicit native host-step protocol requires exactly one selected case and repeat one in a fresh process";
+    return false;
+  }
+  std::ostringstream signature;
+  signature<<options.testSeedProvided<<':'<<options.testSeed<<':'<<options.testRepeat<<':'
+      <<options.testFailFast<<':'<<options.keepTestArtifacts<<':'<<static_cast<int>(options.testFormat)
+      <<':'<<options.testOutputDirectory<<':'<<options.testJsonPath<<':'<<options.testJunitPath
+      <<':'<<originalContext.inputPath<<':'<<originalContext.artifactDirectory;
+  for(const auto* descriptor:selectedForConfiguration)signature<<';'<<descriptor->id<<':'
+          <<static_cast<int>(descriptor->seedCapability)<<':'<<descriptor->repeatSupported;
+  SEP::Util::CLI::PrintTurbulenceOptions(options,signature);
+  std::string rootSignature=PIC::ThisThread==0?signature.str():std::string();
+  BroadcastString(rootSignature);
+  const int localMismatch=rootSignature==signature.str()?0:1;
+  int mismatch=0;MPI_Allreduce(&localMismatch,&mismatch,1,MPI_INT,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+  if(mismatch) {if(error)*error="test selection/options differ between MPI ranks";return false;}
+  std::string failure;
+  std::string input=originalContext.inputPath,artifacts=originalContext.artifactDirectory;
+  if(PIC::ThisThread==0)try {
+    if(!input.empty())input=AbsolutePath(input);
+    if(!artifacts.empty())artifacts=AbsolutePath(artifacts);
+    if(options.testOutputDirectory.empty()) {
+      const auto now=std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+      std::tm utc{};gmtime_r(&now,&utc);
+      std::ostringstream name;name<<"test_output/srcsep-native-"<<std::put_time(&utc,"%Y%m%dT%H%M%SZ")
+          <<'-'<<static_cast<long long>(getpid());
+      campaignDirectory=AbsolutePath(name.str());
+    } else campaignDirectory=AbsolutePath(options.testOutputDirectory);
+    std::filesystem::create_directories(campaignDirectory);
+    campaignJson=options.testJsonPath.empty()?campaignDirectory+"/results.json":AbsolutePath(options.testJsonPath);
+    campaignJunit=options.testJunitPath.empty()?campaignDirectory+"/results.xml":AbsolutePath(options.testJunitPath);
+    if(campaignJson==campaignJunit)throw std::runtime_error("JSON and JUnit report paths must be distinct");
+    WritableParent(campaignJson);WritableParent(campaignJunit);
+  } catch(const std::exception& exception) {failure=exception.what();}
+  BroadcastString(failure);
+  if(!failure.empty()) {if(error)*error=failure;return false;}
+  BroadcastString(campaignDirectory);BroadcastString(campaignJson);BroadcastString(campaignJunit);
+  BroadcastString(input);BroadcastString(artifacts);
+  auto context=originalContext;context.inputPath=input;context.artifactDirectory=artifacts;
+  SEP::Testing::SetExecutionContext(context);
+  campaignOptions.seedProvided=options.testSeedProvided;
+  campaignOptions.campaignSeed=options.testSeed;
+  campaignOptions.repeatCount=options.testRepeat;
+  campaignOptions.failFast=options.testFailFast;
+  // Existing reviewed one-case artifact paths remain exact in legacy mode.
+  // New campaign controls request distinct case/replicate namespaces.
+  campaignOptions.artifactRoot=context.artifactDirectory.empty()?campaignDirectory:
+      options.testCampaignControlsProvided?(options.testOutputDirectory.empty()?context.artifactDirectory:campaignDirectory):std::string();
+  campaignFormat=options.testFormat;campaignKeepArtifacts=options.keepTestArtifacts;
+  campaignStateFailed=false;campaignConfigured=true;
+  return true;
+}
+
 const SEP::Testing::Registry& ComponentTestRegistry() {
   // Function-local static construction avoids cross-translation-unit
   // initialization ordering.  Registry construction also validates every
@@ -594,6 +886,94 @@ const SEP::Testing::Registry& ComponentTestRegistry() {
         SEP::Testing::ControlledMoverDescriptors();
     descriptors.insert(descriptors.end(), mover_descriptors.begin(),
                        mover_descriptors.end());
+    // Repeated adapter calls and checkpoints must continue the same physical
+    // stochastic stream. These exact lifecycle callbacks are also executed by
+    // the dependency-light sanitizer runner; neither launcher owns a second
+    // set of expected values or treats source-only evidence as native PIC work.
+    const std::vector<SEP::Testing::Descriptor> rng_descriptors =
+        SEP::Testing::RngLifecycleDescriptors();
+    descriptors.insert(descriptors.end(), rng_descriptors.begin(),
+                       rng_descriptors.end());
+    const std::vector<SEP::Testing::Descriptor> derivative_descriptors =
+        SEP::Testing::BackgroundDerivativeDescriptors();
+    descriptors.insert(descriptors.end(), derivative_descriptors.begin(),
+                       derivative_descriptors.end());
+    const auto analytic_native_descriptors=SEP::Testing::AnalyticRadialNativeDescriptors();
+    descriptors.insert(descriptors.end(),analytic_native_descriptors.begin(),analytic_native_descriptors.end());
+    const auto analytic_radial_descriptors=SEP::Testing::AnalyticRadialDescriptors();
+    descriptors.insert(descriptors.end(),analytic_radial_descriptors.begin(),analytic_radial_descriptors.end());
+    const auto host_step_descriptors=SEP::Testing::HostStepNativeDescriptors();
+    descriptors.insert(descriptors.end(),host_step_descriptors.begin(),host_step_descriptors.end());
+    const auto source_epoch_descriptors=SEP::Testing::AnalyticShockEpochDescriptors();
+    descriptors.insert(descriptors.end(),source_epoch_descriptors.begin(),source_epoch_descriptors.end());
+    const auto radius_descriptors=SEP::Testing::CoefficientRadiusNativeDescriptors();
+    descriptors.insert(descriptors.end(),radius_descriptors.begin(),radius_descriptors.end());
+    const std::vector<SEP::Testing::Descriptor> wave_normalization_descriptors =
+        SEP::Testing::WaveNormalizationDescriptors();
+    descriptors.insert(descriptors.end(), wave_normalization_descriptors.begin(),
+                       wave_normalization_descriptors.end());
+    const auto real_wave_descriptors=SEP::Testing::RealWaveNormalizationDescriptors();
+    descriptors.insert(descriptors.end(),real_wave_descriptors.begin(),
+                       real_wave_descriptors.end());
+    const auto polarized_descriptors=SEP::Testing::PolarizedWaveStateDescriptors();
+    descriptors.insert(descriptors.end(),polarized_descriptors.begin(),
+                       polarized_descriptors.end());
+    const auto polarized_native_descriptors=SEP::Testing::PolarizedNativeDescriptors();
+    descriptors.insert(descriptors.end(),polarized_native_descriptors.begin(),
+                       polarized_native_descriptors.end());
+    const auto birth_window_descriptors=SEP::Testing::BirthWindowDescriptors();
+    descriptors.insert(descriptors.end(),birth_window_descriptors.begin(),
+                       birth_window_descriptors.end());
+    const auto birth_native_descriptors=SEP::Testing::BirthNativeDescriptors();
+    descriptors.insert(descriptors.end(),birth_native_descriptors.begin(),
+                       birth_native_descriptors.end());
+    const auto frozen_transaction_descriptors=SEP::Testing::FrozenCollisionTransactionDescriptors();
+    descriptors.insert(descriptors.end(),frozen_transaction_descriptors.begin(),
+                       frozen_transaction_descriptors.end());
+    const auto flux_state_descriptors=SEP::Testing::FluxTubeStateDescriptors();
+    descriptors.insert(descriptors.end(),flux_state_descriptors.begin(),
+                       flux_state_descriptors.end());
+    const auto wkb_descriptors=SEP::Testing::PolarizedWkbDescriptors();
+    descriptors.insert(descriptors.end(),wkb_descriptors.begin(),wkb_descriptors.end());
+    // Full-particle thermal flux tests remain separately selectable: passing
+    // this kernel does not qualify its reduction to a gyrotropic SEP source.
+    const auto thermal_flux_descriptors=SEP::Testing::MaxwellJuttnerFluxDescriptors();
+    descriptors.insert(descriptors.end(),thermal_flux_descriptors.begin(),thermal_flux_descriptors.end());
+    const auto material_geometry_descriptors=SEP::Testing::MaterialTubeKinematicsDescriptors();
+    descriptors.insert(descriptors.end(),material_geometry_descriptors.begin(),material_geometry_descriptors.end());
+    const auto batsrus_wave_descriptors=SEP::Testing::StandardBatsrusWaveDescriptors();
+    descriptors.insert(descriptors.end(),batsrus_wave_descriptors.begin(),batsrus_wave_descriptors.end());
+    const auto batsrus_native_descriptors=SEP::Testing::StandardBatsrusWaveNativeDescriptors();
+    descriptors.insert(descriptors.end(),batsrus_native_descriptors.begin(),batsrus_native_descriptors.end());
+    const std::vector<SEP::Testing::Descriptor> population_native_descriptors =
+        SEP::Testing::PopulationNativeDescriptors();
+    descriptors.insert(descriptors.end(), population_native_descriptors.begin(),
+                       population_native_descriptors.end());
+    const std::vector<SEP::Testing::Descriptor> resampling_descriptors =
+        SEP::Testing::ConservationResamplingDescriptors();
+    descriptors.insert(descriptors.end(), resampling_descriptors.begin(),
+                       resampling_descriptors.end());
+    const auto resonant_descriptors=SEP::Testing::ResonantCollisionDescriptors();
+    descriptors.insert(descriptors.end(),resonant_descriptors.begin(),
+                       resonant_descriptors.end());
+    const auto checkpoint_descriptors=SEP::Testing::CheckpointNativeDescriptors();
+    descriptors.insert(descriptors.end(),checkpoint_descriptors.begin(),
+                       checkpoint_descriptors.end());
+    const auto fresh_checkpoint_descriptors=SEP::Testing::FreshProcessCheckpointDescriptors();
+    descriptors.insert(descriptors.end(),fresh_checkpoint_descriptors.begin(),
+                       fresh_checkpoint_descriptors.end());
+    const auto source_descriptors=SEP::Testing::SourceNativeDescriptors();
+    descriptors.insert(descriptors.end(),source_descriptors.begin(),
+                       source_descriptors.end());
+    const auto maxwellian_descriptors=SEP::Testing::MaxwellianBirthNativeDescriptors();
+    descriptors.insert(descriptors.end(),maxwellian_descriptors.begin(),
+                       maxwellian_descriptors.end());
+    const auto cli_campaign_descriptors=SEP::Testing::CliCampaignDescriptors();
+    descriptors.insert(descriptors.end(),cli_campaign_descriptors.begin(),
+                       cli_campaign_descriptors.end());
+    const auto production_cli_descriptors=SEP::Testing::ProductionCliDescriptors();
+    descriptors.insert(descriptors.end(),production_cli_descriptors.begin(),
+                       production_cli_descriptors.end());
     const std::vector<SEP::Testing::Descriptor> turbulence_descriptors =
         SEP::Testing::ControlledTurbulenceDescriptors();
     descriptors.insert(descriptors.end(), turbulence_descriptors.begin(),
@@ -720,7 +1100,7 @@ const SEP::Testing::Registry& ComponentTestRegistry() {
           SEP::Testing::RuntimeClass::Routine, "fixed registry seed 1002",
           "adapter reseeds; plasma/coefficient/particle/list state is restored; process exits after tests", RunFteConvection),
       MakeDescriptor("PARKER01", "Parker convection and adiabatic momentum", "parker",
-          "Check stationary line coordinates and the density-driven analytical momentum update.",
+          "Check stationary line coordinates and exact adiabatic momentum in a manufactured transverse compression.",
           SEP::Testing::InitializationLevel::FieldLineModel,
           SEP::Testing::RuntimeClass::Routine, "fixed registry seed 1001",
           "adapter reseeds; plasma/coefficient/particle/list state is restored; process exits after tests", RunParkerConvection),
@@ -729,6 +1109,20 @@ const SEP::Testing::Registry& ComponentTestRegistry() {
         legacy_descriptors,
         legacy_descriptors + sizeof(legacy_descriptors) /
             sizeof(legacy_descriptors[0]));
+    // Tags are explicit catalog metadata. Selection must not infer a mover or
+    // geometry capability from substrings in a human-readable test name.
+    for(auto& descriptor:descriptors) {
+      if(descriptor.id=="FTE01"||descriptor.id=="PARKER01"||descriptor.id=="PARKER02") {
+        descriptor.seedCapability=SEP::Testing::SeedCapability::Context;
+        descriptor.repeatSupported=true;
+        descriptor.seedPolicy="TestSeed schema1; legacy positive-odd31-v1 bridge; historical defaults1001..1003; MPI/CUDA-off override qualified";
+      }
+      if(descriptor.group=="parker"||descriptor.group=="fte-dmumu"||
+         descriptor.group=="fte-mfp")
+        descriptor.tags.push_back("mover:"+descriptor.group);
+      if(descriptor.id=="INIT02"||descriptor.id=="INIT03")
+        descriptor.tags.push_back("geometry");
+    }
     return descriptors;
   }());
   return registry;
@@ -739,6 +1133,9 @@ SEP::Testing::InitializationLevel RequiredInitializationLevel(
   SEP::Testing::InitializationLevel required =
       SEP::Testing::InitializationLevel::None;
   for (const SEP::Testing::Descriptor* descriptor : selected) {
+    if(campaignConfigured&&descriptor&&
+       ((campaignOptions.seedProvided&&descriptor->seedCapability==SEP::Testing::SeedCapability::FixedContract)||
+        (campaignOptions.repeatCount>1&&!descriptor->repeatSupported)))continue;
     if (descriptor &&
         descriptor->initialization ==
             SEP::Testing::InitializationLevel::FieldLineModel) {
@@ -750,103 +1147,135 @@ SEP::Testing::InitializationLevel RequiredInitializationLevel(
 
 int RunSelectedComponentTests(
     const std::vector<const SEP::Testing::Descriptor*>& selected,
-    std::ostream& out,
-    const std::string& jsonReportPath,
-    const std::string& junitReportPath) {
-  SEP::Testing::Summary summary;
-  const SEP::Testing::Registry& registry = ComponentTestRegistry();
-
-  for (const SEP::Testing::Descriptor* descriptor : selected) {
-    SEP::Testing::Result result = registry.RunOne(*descriptor);
-
-    // Every required rank executes the callback.  Reduce the categorical result
-    // by severity and duration by maximum so rank-local failure cannot be hidden
-    // by a root PASS and the reported time reflects the slowest participant.
-    int initialized = 0;
-    MPI_Initialized(&initialized);
-    if (initialized) {
-      int rank = 0;
-      int ranks = 1;
-      MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
-      MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR, &ranks);
-
-      // Gather the full pre-reduction outcome from every rank.  A severity-only
-      // reduction gives a correct exit status but would discard the message,
-      // seed, metrics, and artifact paths from a failing non-root rank.  These
-      // payloads make JSON/JUnit reports sufficient to diagnose MPI failures.
-      const std::string localEvidence = SerializeRankEvidence(result);
-      const int localLength = static_cast<int>(localEvidence.size());
-      std::vector<int> lengths(rank == 0 ? ranks : 0, 0);
-      MPI_Gather(&localLength, 1, MPI_INT,
-                 rank == 0 ? lengths.data() : NULL, 1, MPI_INT, 0,
-                 MPI_GLOBAL_COMMUNICATOR);
-      std::vector<int> displacements(rank == 0 ? ranks : 0, 0);
-      int totalLength = 0;
-      if (rank == 0) {
-        for (int i = 0; i < ranks; ++i) {
-          displacements[i] = totalLength;
-          totalLength += lengths[i];
-        }
-      }
-      std::vector<char> gathered(rank == 0 ? totalLength : 0);
-      MPI_Gatherv(localEvidence.data(), localLength, MPI_CHAR,
-                  rank == 0 && totalLength != 0 ? gathered.data() : NULL,
-                  rank == 0 ? lengths.data() : NULL,
-                  rank == 0 ? displacements.data() : NULL,
-                  MPI_CHAR, 0, MPI_GLOBAL_COMMUNICATOR);
-
-      const int localSeverity = StatusSeverity(result.status);
-      int globalSeverity = localSeverity;
-      double globalDuration = result.elapsedSeconds;
-      MPI_Allreduce(&localSeverity, &globalSeverity, 1, MPI_INT, MPI_MAX,
-                    MPI_GLOBAL_COMMUNICATOR);
-      MPI_Allreduce(&result.elapsedSeconds, &globalDuration, 1, MPI_DOUBLE,
-                    MPI_MAX, MPI_GLOBAL_COMMUNICATOR);
-      if (globalSeverity != localSeverity) {
-        result.message = "one or more MPI ranks reported a more severe outcome";
-      }
-      result.status = StatusFromSeverity(globalSeverity);
-      result.elapsedSeconds = globalDuration;
-      if (rank == 0) {
-        for (int i = 0; i < ranks; ++i) {
-          result.configuration.push_back(
-              "mpi_rank_" + std::to_string(i) + "=" +
-              std::string(gathered.data() + displacements[i], lengths[i]));
-        }
-      }
-    }
-
-    if (PIC::ThisThread == 0) SEP::Testing::PrintResult(result, out);
-    summary.Add(result);
-  }
-
-  if (PIC::ThisThread == 0) {
-    out << "Component-test summary: PASS=" << summary.passed
-        << " FAIL=" << summary.failed << " SKIP=" << summary.skipped
-        << " ERROR=" << summary.errors << '\n';
-  }
-
-  // Only MPI root writes shared report paths.  A requested report is acceptance
-  // evidence, so open/write failure is broadcast as ERROR to every rank and
-  // changes the process status rather than being reduced to a console warning.
-  int reportError = 0;
-  if (PIC::ThisThread == 0) {
+    std::ostream& out,const std::string& jsonReportPath,const std::string& junitReportPath) {
+  namespace T=SEP::Testing;
+  if(!campaignConfigured) {
+    SEP::Util::CLI::Options defaults;
+    for(const auto* descriptor:selected)defaults.testIds.push_back(descriptor->id);
+    defaults.testJsonPath=jsonReportPath;defaults.testJunitPath=junitReportPath;
     std::string error;
-    if (!jsonReportPath.empty() &&
-        !SEP::Testing::WriteJsonSummary(summary, jsonReportPath, &error)) {
-      out << "ERROR: " << error << '\n';
-      reportError = 1;
-    }
-    error.clear();
-    if (!junitReportPath.empty() &&
-        !SEP::Testing::WriteJUnitSummary(summary, junitReportPath, &error)) {
-      out << "ERROR: " << error << '\n';
-      reportError = 1;
+    if(!ConfigureComponentTestCampaign(defaults,&error)) {
+      if(PIC::ThisThread==0)out<<"ERROR: "<<error<<'\n';
+      return 2;
     }
   }
-  int initialized = 0;
-  MPI_Initialized(&initialized);
-  if (initialized)
-    MPI_Bcast(&reportError, 1, MPI_INT, 0, MPI_GLOBAL_COMMUNICATOR);
-  return reportError ? 2 : summary.ExitCode();
+  const auto& registry=ComponentTestRegistry();
+  auto execute=[&registry](const T::Descriptor& descriptor) {
+    T::Result result;
+    if(campaignStateFailed) {
+      result.id=descriptor.id;result.status=T::Status::Error;
+      result.message="test state restoration failed; dependent callbacks are blocked";
+    } else {
+      T::Descriptor scoped=descriptor;
+      scoped.callback=[&descriptor]() {
+        T::Result local;
+        std::unique_ptr<NativeArtifactScope> artifacts;
+        std::string artifactError;
+        try{artifacts.reset(new NativeArtifactScope());}
+        catch(const std::exception& exception){artifactError=exception.what();}
+        const int localArtifactFailure=artifactError.empty()?0:1;
+        int globalArtifactFailure=0;
+        // Artifact setup is rank-local, whereas native seed/fixture setup may
+        // contain collectives. All ranks must agree to enter it, even when a
+        // single writer's directory cannot be created.
+        MPI_Allreduce(&localArtifactFailure,&globalArtifactFailure,1,MPI_INT,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+        if(globalArtifactFailure) {
+          local.status=T::Status::Error;
+          local.message=artifactError.empty()?"another MPI rank could not prepare its artifact directory":artifactError;
+          if(artifacts)artifacts->Finish(local);
+          return local;
+        }
+        try {
+          NativeTestStateScope state(descriptor);
+          local=descriptor.callback();
+        } catch(const std::exception& exception) {
+          local.status=T::Status::Error;local.message=exception.what();
+        } catch(...) {
+          local.status=T::Status::Error;local.message="unexpected non-standard native fixture exception";
+        }
+        if(campaignStateFailed) {
+          local.status=T::Status::Error;local.message="native test failed to restore original source/RNG/background state";
+        }
+        const auto& localContext=T::GetExecutionContext();
+        if(!localContext.inputPath.empty())local.configuration.push_back("test_input="+localContext.inputPath);
+        local.configuration.push_back("test_artifact_directory="+localContext.artifactDirectory);
+        artifacts->Finish(local);return local;
+      };
+      result=registry.RunOne(scoped);
+    }
+    result.configuration.push_back("run_purpose=controlled-diagnostic");
+    result.configuration.push_back("production_polarized_closure=unqualified");
+    int localIsolationFailure=campaignStateFailed?1:0,globalIsolationFailure=0;
+    MPI_Allreduce(&localIsolationFailure,&globalIsolationFailure,1,MPI_INT,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+    if(globalIsolationFailure) {
+      campaignStateFailed=true;result.status=T::Status::Error;
+      result.message="one or more MPI ranks failed test-state restoration; subsequent callbacks are blocked";
+    }
+    int rank=0,ranks=1;
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&rank);MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR,&ranks);
+    // Preserve complete local evidence before status reduction. A non-root
+    // assertion, actual seed or artifact must never disappear behind rank0.
+    auto localEvidence=SerializeRankEvidence(result);
+    int localOverflow=localEvidence.size()>static_cast<std::size_t>(std::numeric_limits<int>::max())?1:0;
+    int evidenceOverflow=0;
+    MPI_Allreduce(&localOverflow,&evidenceOverflow,1,MPI_INT,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+    if(evidenceOverflow) {
+      result.status=T::Status::Error;result.message="rank test evidence exceeds MPI count range";
+      localEvidence="status=ERROR;message=rank evidence exceeds MPI count range";
+    }
+    const int localLength=static_cast<int>(localEvidence.size());
+    std::vector<int> lengths(rank==0?ranks:0),displacements(rank==0?ranks:0);
+    MPI_Gather(&localLength,1,MPI_INT,rank==0?lengths.data():nullptr,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+    int totalLength=0;int combinedOverflow=0;
+    if(rank==0)for(int i=0;i<ranks;++i) {
+      if(lengths[i]<0||lengths[i]>std::numeric_limits<int>::max()-totalLength) {
+        combinedOverflow=1;break;
+      }
+      displacements[i]=totalLength;totalLength+=lengths[i];
+    }
+    MPI_Bcast(&combinedOverflow,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+    std::vector<char> gathered(rank==0&&!combinedOverflow?totalLength:0);
+    if(combinedOverflow) {
+      result.status=T::Status::Error;result.message="combined rank test evidence exceeds MPI count range";
+    } else MPI_Gatherv(localEvidence.data(),localLength,MPI_CHAR,rank==0?gathered.data():nullptr,
+          rank==0?lengths.data():nullptr,rank==0?displacements.data():nullptr,MPI_CHAR,0,MPI_GLOBAL_COMMUNICATOR);
+    const int localSeverity=StatusSeverity(result.status);int globalSeverity=localSeverity;
+    double duration=result.elapsedSeconds;
+    MPI_Allreduce(&localSeverity,&globalSeverity,1,MPI_INT,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce(&result.elapsedSeconds,&duration,1,MPI_DOUBLE,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+    if(globalSeverity!=localSeverity)result.message="one or more MPI ranks reported a more severe outcome";
+    result.status=StatusFromSeverity(globalSeverity);result.elapsedSeconds=duration;
+    if(rank==0&&!combinedOverflow)for(int i=0;i<ranks;++i)result.configuration.push_back(
+        "mpi_rank_"+std::to_string(i)+"="+std::string(gathered.data()+displacements[i],lengths[i]));
+    return result;
+  };
+  std::ostringstream suppressed;
+  T::Summary summary=registry.RunCampaign(selected,campaignOptions,
+      PIC::ThisThread==0&&campaignFormat==SEP::Util::CLI::Options::TestFormat::Text?out:suppressed,execute);
+  // Unsupported fixed/reviewed controls are rejected by the dependency-free
+  // registry before callbacks. Keep their native diagnostic-purpose label too.
+  for(auto& result:summary.results) {
+    result.configuration.push_back("run_purpose=controlled-diagnostic");
+    result.configuration.push_back("production_polarized_closure=unqualified");
+    for(auto& invocation:result.invocations)if(invocation.result) {
+      invocation.result->configuration.push_back("run_purpose=controlled-diagnostic");
+      invocation.result->configuration.push_back("production_polarized_closure=unqualified");
+    }
+  }
+  int reportError=0;
+  if(PIC::ThisThread==0) {
+    std::string error;
+    if(!T::WriteJsonSummary(summary,campaignJson,&error)||!T::WriteJUnitSummary(summary,campaignJunit,&error)) {
+      out<<"ERROR: "<<error<<'\n';reportError=1;
+    }
+    if(!reportError&&campaignFormat!=SEP::Util::CLI::Options::TestFormat::Text) {
+      const auto& path=campaignFormat==SEP::Util::CLI::Options::TestFormat::Json?campaignJson:campaignJunit;
+      std::ifstream report(path.c_str(),std::ios::binary);
+      if(!report) {out<<"ERROR: cannot read completed summary "<<path<<'\n';reportError=1;}
+      else out<<report.rdbuf();
+    }
+  }
+  MPI_Bcast(&reportError,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+  campaignConfigured=false;
+  return reportError?2:summary.ExitCode();
 }

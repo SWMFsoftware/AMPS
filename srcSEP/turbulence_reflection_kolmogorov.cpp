@@ -130,6 +130,7 @@ Notes
 */
 
 #include "sep.h"
+#include "polarized_wave_native_adapter.h"
 #include <cmath>
 #include <limits>
 #include <algorithm>
@@ -234,6 +235,7 @@ void ReflectTurbulenceEnergyAllFieldLines(
     const double grad_floor,          // [1/m]
     const bool   enable_logging)
 {
+  SEP::Turbulence::Polarized::PICAdapter::RequireLegacyMutationAllowed("reflect integrated legacy wave energy");
   namespace FL = PIC::FieldLine;
 
   int rank = 0;

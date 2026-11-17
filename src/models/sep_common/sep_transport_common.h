@@ -193,10 +193,42 @@ class RandomStream {
   virtual double Normal01() = 0;
 };
 
+// Complete dimensionless state of the keyed generator.  All integer flags use
+// explicit uint64_t fields rather than bool/object padding so a particle record
+// can carry these values through MPI migration and the host checkpoint format.
+// A Box--Muller spare is physical stochastic history: omitting it changes every
+// subsequent normal draw after an odd number of calls to Normal01().
+const std::uint64_t KeyedRandomStreamSchema = UINT64_C(2);
+
+struct KeyedRandomStreamState {
+  std::uint64_t schema = KeyedRandomStreamSchema;
+  std::uint64_t keyIdentity = 0;
+  std::uint64_t integerState = 0;
+  std::uint64_t hasSpareNormal = 0;
+  double spareNormal = 0.0;
+};
+
+// The accepted-interval counter is an identity for completed transport work,
+// independent of a background generation and of how often a mover is invoked.
+// The generator state determines random draws; this counter labels contributions
+// and is not a replacement for persisting the generator's actual history.
+struct OperatorRandomState {
+  KeyedRandomStreamState stream;
+  std::uint64_t acceptedIntervals = 0;
+};
+
+// Map the high 53 bits to m*2^-53, rejecting m=0. Conditional on acceptance,
+// every one of the 2^53-1 interior grid points has equal probability. Unlike
+// adding 0.5 to a 53-bit integer in binary64, this cannot round the largest
+// grid point to one. Rejection leaves *value unchanged; the RNG consumes the
+// next word and retries rather than clipping an endpoint or inventing a value.
+bool UniformOpen01FromBits(std::uint64_t bits, double* value);
+
 // SplitMix64 gives a small, deterministic keyed stream suitable for numerical
-// reproducibility tests.  A production campaign should construct one stream
-// from its campaign seed, particle identity, operator ID, and event index; MPI
-// rank and thread scheduling must not enter those keys.
+// reproducibility tests. Construct a stream once for its physical realization
+// from campaign seed, particle identity, operator ID, and initial event key,
+// then resume its complete saved state across mover calls. MPI rank, thread,
+// and the current limiter/outer-step partition must not restart the stream.
 class KeyedRandomStream : public RandomStream {
  public:
   KeyedRandomStream(std::uint64_t campaignSeed,
@@ -207,13 +239,30 @@ class KeyedRandomStream : public RandomStream {
   double UniformOpen01() override;
   double Normal01() override;
 
+  KeyedRandomStreamState SaveState() const;
+  // Restore only a state produced by the same seed/particle/operator/event key.
+  // Validation precedes mutation.  Incompatible/corrupt checkpoint state is an
+  // explicit failure, never an instruction to restart a stochastic realization.
+  Status RestoreState(const KeyedRandomStreamState& saved);
+
  private:
+  std::uint64_t keyIdentity_;
   std::uint64_t state_;
   bool hasSpareNormal_ = false;
   double spareNormal_ = 0.0;
 
   std::uint64_t NextU64();
 };
+
+// Production adapters use these same dependency-free lifecycle operations.
+// Stage updates a private candidate only; the host commits that candidate with
+// its corresponding phase-space state. It rejects counter rollback/key changes.
+Status ResumeOperatorRandomStream(const OperatorRandomState& saved,
+                                  KeyedRandomStream* random,
+                                  std::uint64_t* acceptedIntervals);
+Status StageOperatorRandomStream(OperatorRandomState* candidate,
+                                 const KeyedRandomStream& random,
+                                 std::uint64_t acceptedIntervals);
 
 }  // namespace Transport
 }  // namespace SEP

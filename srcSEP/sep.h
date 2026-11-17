@@ -2014,6 +2014,17 @@ double e_mev=e*J2MeV;
     extern int StableParticleId;
     extern int MfpOpticalDepth;
     extern int MfpEventIndex;
+    // Three complete OperatorRandomState records, one for each production
+    // mover. Native migration/checkpoint copies include their Box--Muller cache
+    // and accepted-interval counter; no stream is restarted at a global step.
+    extern int OperatorRandomStates;
+    // Number of exact split events performed by this physical representative.
+    // It is checkpointed with the particle; rank/list order never keys children.
+    extern int SplitEventCounter;
+    // Explicit birth/window history and pending remaining first-step time.
+    // Native migration, exact splitting and corrected checkpoints copy this
+    // value record together with the phase space and stochastic history.
+    extern int BirthRecord;
   }
 
   //request data in the particle state vector

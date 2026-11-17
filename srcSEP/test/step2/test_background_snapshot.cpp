@@ -211,6 +211,42 @@ void TestFingerprintStability() {
         "provider-affecting configuration changes the fingerprint");
 }
 
+void TestCorrectedCheckpointRestore() {
+  using namespace SEP::Background;
+  SnapshotStore& store=SnapshotStore::Instance();
+  store.ResetForTests();store.Publish(AnalyticSnapshot(0.0,1.0,7));
+  const auto saved=store.Current();
+  store.Publish(AnalyticSnapshot(1.0,2.0,7));
+  store.ValidateCheckpointRestore(*saved);
+  {
+    auto read=store.BeginParticleRead(1.0);
+    CheckThrows<std::logic_error>([&](){store.ValidateCheckpointRestore(*saved);},
+        "checkpoint preflight rejects an active particle read phase");
+    CheckThrows<std::logic_error>([&](){store.RestoreCheckpoint(saved);},
+        "checkpoint commit rejects an active particle read phase");
+    Check(store.Current()->epoch_seconds()==1.0,
+        "rejected active-phase checkpoint preserves live epoch");
+  }
+  const BackgroundSnapshot otherProvider(Provider::Swcme,Ownership::ModelOwned,
+      0.0,0.0,1.0,7,saved->configuration_fingerprint(),"wrong checkpoint provider");
+  CheckThrows<std::logic_error>([&](){store.RestoreCheckpoint(otherProvider);},
+      "checkpoint cannot substitute another provider");
+  const BackgroundSnapshot otherConfiguration(Provider::Analytic,Ownership::ModelOwned,
+      0.0,0.0,1.0,7,"changed-physics","wrong checkpoint configuration");
+  CheckThrows<std::logic_error>([&](){store.RestoreCheckpoint(otherConfiguration);},
+      "checkpoint cannot substitute another frozen configuration");
+  CheckThrows<std::logic_error>([&](){store.RestoreCheckpoint(
+      std::shared_ptr<const BackgroundSnapshot>());},"missing staged snapshot is rejected");
+  Check(store.Current()->epoch_seconds()==1.0,
+      "incompatible checkpoint candidates leave live background unchanged");
+  store.RestoreCheckpoint(saved);
+  Check(store.Current()==saved&&store.Current()->epoch_seconds()==0.0&&
+      store.Current()->field_line_generation()==7,
+      "explicit corrected checkpoint restores exact prior immutable metadata");
+  CheckThrows<std::logic_error>([&](){store.Publish(*saved);},
+      "ordinary publication still rejects an ambiguous same-generation epoch");
+}
+
 }  // namespace
 
 int main() {
@@ -218,6 +254,7 @@ int main() {
   TestPublicationAndReadPhase();
   TestProviderIsolationAndHandoff();
   TestConcurrentMoverViews();
+  TestCorrectedCheckpointRestore();
   TestFingerprintStability();
 
   if (failures != 0) {

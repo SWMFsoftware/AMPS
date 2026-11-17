@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <iosfwd>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,8 @@ enum class InitializationLevel { None, FieldLineModel };
 // out of routine CI because their Monte-Carlo sample counts are intentionally
 // large.
 enum class RuntimeClass { Routine, Extended };
+enum class SeedCapability { FixedContract, Deterministic, Context };
+const std::uint64_t TestSeedSchema=1;
 
 struct Metric {
   Metric() = default;
@@ -66,6 +69,11 @@ RefinementOrderEstimate EstimateRefinementOrder(double coarseError,
                                                  double coarseResolution,
                                                  double fineResolution);
 
+struct Result;
+struct Invocation {
+  std::uint32_t replicateIndex=0;
+  std::shared_ptr<Result> result;
+};
 struct Result {
   Status status = Status::Error;
   std::string id;
@@ -79,6 +87,10 @@ struct Result {
   std::vector<std::string> configuration;
   std::vector<Metric> metrics;
   std::vector<std::string> artifacts;
+  // Stable aggregate ID remains unique in results[]. Every executed replicate
+  // retains its complete result here, so older readers cannot deduplicate away
+  // distinct seeds, failures or artifacts. Child results have no nested runs.
+  std::vector<Invocation> invocations;
 };
 
 // Optional file context for end-to-end cases executed by the linked
@@ -89,10 +101,25 @@ struct Result {
 struct ExecutionContext {
   std::string inputPath;
   std::string artifactDirectory;
+  // Optional metadata was appended after the original two path fields. Keep
+  // its empty default explicit so existing two-field aggregate initializers
+  // remain valid under -Werror=missing-field-initializers. This preserves the
+  // aggregate API and leaves ordinary non-campaign clients without a test ID.
+  std::string testId{};
+  bool seedActive=false;
+  std::uint64_t campaignSeed=0,caseSeed=0;
+  std::uint32_t replicateIndex=0,replicateCount=1;
 };
 
 void SetExecutionContext(const ExecutionContext& context);
 const ExecutionContext& GetExecutionContext();
+// A versioned, order/rank-independent case/replicate key. TestSeed preserves
+// legacy defaults when no seed/repeat control is requested, and otherwise
+// derives a purpose-tagged actual seed. Distinct old seed constants remain
+// distinct domains. It records the actual mapping, not only report metadata.
+std::uint64_t DeriveTestCaseSeed(std::uint64_t campaignSeed,
+    const std::string& canonicalId,std::uint32_t replicateIndex);
+std::uint64_t TestSeed(std::uint64_t defaultSeed,std::uint64_t purpose=0);
 
 using TestCallback = std::function<Result()>;
 
@@ -106,7 +133,17 @@ struct Descriptor {
   RuntimeClass runtime = RuntimeClass::Routine;
   std::string seedPolicy;
   std::string stateIsolation;
+  SeedCapability seedCapability=SeedCapability::FixedContract;
+  bool repeatSupported=false;
+  std::vector<std::string> tags;
   TestCallback callback;
+};
+struct CampaignOptions {
+  bool seedProvided=false;
+  std::uint64_t campaignSeed=0;
+  std::uint32_t repeatCount=1;
+  bool failFast=false;
+  std::string artifactRoot;
 };
 
 struct Summary {
@@ -115,6 +152,8 @@ struct Summary {
   int failed = 0;
   int skipped = 0;
   int errors = 0;
+  std::vector<std::string> notRun;
+  std::uint64_t notRunInvocationCount=0;
 
   // PASS and SKIP produce a successful command status.  A requested SKIP is
   // still displayed explicitly and is never relabelled PASS; FAIL and ERROR
@@ -138,11 +177,18 @@ class Registry {
   // and sorted by canonical ID, independent of selector order or link order.
   std::vector<const Descriptor*> Select(const std::vector<std::string>& ids,
                                         const std::vector<std::string>& groups,
-                                        bool allRoutine) const;
+                                        bool allRoutine,
+                                        const std::vector<std::string>& expressions={}) const;
 
   Result RunOne(const Descriptor& descriptor) const;
   Summary Run(const std::vector<const Descriptor*>& selected,
               std::ostream& out) const;
+  // Runner optionally supplies native fixture/seed scope and MPI outcome
+  // reduction. It must return the globally authoritative result before this
+  // loop applies fail-fast; canonical registry code has no PIC/MPI dependency.
+  Summary RunCampaign(const std::vector<const Descriptor*>& selected,
+      const CampaignOptions& options,std::ostream& out,
+      const std::function<Result(const Descriptor&)>& runner={}) const;
   void PrintList(std::ostream& out) const;
 
  private:

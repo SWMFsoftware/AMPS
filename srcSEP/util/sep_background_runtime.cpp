@@ -1,9 +1,12 @@
 #include "sep_background_runtime.h"
+#include "sep_provider_radius_frame.h"
 
 #include "../sep.h"
 #include "../adapters/reduced_shock_background_adapter.h"
 #include "../adapters/swcme1d_adapter.h"
 #include "sep_run_configuration.h"
+#include "sep_analytic_radial_background.h"
+#include "sep_standard_batsrus_waves.h"
 
 #include <algorithm>
 #include <cmath>
@@ -19,6 +22,18 @@ namespace SEP {
 namespace Background {
 
 namespace {
+
+std::string RunIdentityExcludingMover() {
+  // The full run/checkpoint fingerprint intentionally includes transport
+  // choice and provenance. Background identity excludes precisely those two
+  // coordinates: canonicalize a PRIVATE COPY, never install or execute this
+  // sentinel mover and never modify the authoritative frozen configuration.
+  // Every other existing run coordinate retains its original identity effect.
+  auto projected=Run::Active().get();
+  projected.mover.value=Mover::ProductionMover::Parker;
+  projected.mover.source=Run::ValueSource::Default;
+  return Run::Fingerprint(projected);
+}
 
 double SwmfEpochSeconds() {
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
@@ -70,8 +85,9 @@ std::string CurrentConfigurationFingerprint() {
   // Only settings that define the background realization belong here.  The
   // particle mover and its scattering parameterization are intentionally not
   // included, preserving identical provider state in cross-mover comparisons.
-  canonical << "schema=srcsep-background-v2"
+  canonical << "schema=srcsep-background-v3"
             << ";provider=" << ProviderName(ConfiguredProvider())
+            << ";coefficient-radius-frame=" << RadiusFrame::ContractIdentity(ConfiguredProvider())
             << ";reduced-event="
             << (ReducedShock::Enabled() ? ReducedShock::EventIdentity() : "none")
             << ";domain=" << SEP::DomainType
@@ -83,7 +99,7 @@ std::string CurrentConfigurationFingerprint() {
             // The complete frozen run fingerprint includes the D01 policy and
             // fallback SI values. Naming the policy again keeps human-readable
             // provenance intelligible without decoding the hash.
-            << ";run-configuration=" << SEP::Run::Active().fingerprint()
+            << ";run-configuration-excluding-mover=" << RunIdentityExcludingMover()
             << ";swcme-failure-policy="
             << SEP::SW1DAdapter::FailurePolicyName(
                    SEP::SW1DAdapter::GetFailurePolicy())
@@ -95,6 +111,16 @@ std::string CurrentConfigurationFingerprint() {
                     : "integrated")
             << ";field-line-mode=" << _PIC_FIELD_LINE_MODE_
             << ";coupler-mode=" << _PIC_COUPLER_MODE_;
+
+  if(ConfiguredProvider()==Provider::Analytic) {
+    // Only the physical origin/speed enters from the initialization owner.
+    // Its complete fingerprint also contains the mover and output choices,
+    // which must not redefine this background when transport is switched.
+    canonical<<";analytic-radial="<<AnalyticRadial::CanonicalDeclaration(
+        AnalyticRadial::DeclaredNativeWind());
+  }
+  if(ConfiguredProvider()==Provider::Swmf)
+    canonical<<";imported-wave-contract="<<Waves::StandardBatsrus::ContractIdentity();
 
   return FingerprintConfiguration(canonical.str());
 }

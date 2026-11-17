@@ -17,6 +17,13 @@ The [remaining-failure repair plan](REMAINING_FAILURES_FIX_PLAN.md) documents
 the current contact, refinement-runtime, and strict-coverage work. It preserves
 the acceptance gates and separates a test repair from physical qualification.
 
+The [2026-11-17 upstream/SEP integration receipt](STATUS.md) preserves all
+843 historical and pristine-upstream PASS identities across the complete
+1,085-case CORE selection. It also records the narrow optional-context
+compatibility correction, raw full attempts, scoped retries and unchanged
+coverage/refinement nonpasses. The earlier campaign counts below remain
+historical checkpoints.
+
 ## Current validation and new development (2026-11-10)
 
 Fast-wave P0–P4 performance changes add **18 independent case identities**:

@@ -543,24 +543,40 @@ const char* Name(EnergyChannelSpacing spacing) {
       ? "logarithmic" : "linear";
 }
 
+Transport::Status ValidateParkerLine(const Configuration& c) {
+  // Native Parker list creation has no run/source/output contract. Validate
+  // exactly its physical geometry rather than manufacturing those unrelated
+  // fields to satisfy the complete runtime parser's gate. This one validator
+  // is also called by Validate, so the two public entry paths cannot drift.
+  if(!Finite(c.parkerOriginM)||!Finite(c.parkerInitialPointM)||
+      !std::isfinite(c.parkerLengthM)||!std::isfinite(c.solarWindSpeedMPerS)||
+      !std::isfinite(c.solarRotationRateRadPerS)||!std::isfinite(c.innerRadiusM))
+    return Error("Parker geometry contains a non-finite physical input");
+  if(c.parkerPointCount<2||c.parkerPointCount>10000000ULL||
+      c.parkerLengthM<=0||c.solarWindSpeedMPerS<=0||
+      c.solarRotationRateRadPerS<0||c.innerRadiusM<=0)
+    return Error("Parker geometry point count, length, wind, rotation or source radius is outside its supported range");
+  const Vec3 relative=Subtract(c.parkerInitialPointM,c.parkerOriginM);
+  const double sourceRadius=Norm(relative);
+  if(!Finite(relative)||!std::isfinite(sourceRadius)||sourceRadius<=0)
+    return Error("Parker initial point requires a positive finite radius about its declared origin");
+  if(std::fabs(sourceRadius-c.innerRadiusM)>1e-10*c.innerRadiusM)
+    return Error("Parker initial point must lie on mesh.domain.inner_radius_m");
+  return Transport::Status::Ok();
+}
+
 Transport::Status Validate(const Configuration& c) {
-  if (!Finite(c.parkerOriginM) || !Finite(c.parkerInitialPointM))
-    return Error("Parker origin or initial point is not finite");
+  const auto geometry=ValidateParkerLine(c);
+  if(!geometry.ok())return geometry;
   const double values[] = {
-      c.parkerOriginM.x, c.parkerOriginM.y, c.parkerOriginM.z,
-      c.parkerInitialPointM.x, c.parkerInitialPointM.y,
-      c.parkerInitialPointM.z, c.parkerLengthM, c.solarWindSpeedMPerS,
-      c.solarRotationRateRadPerS, c.innerRadiusM, c.outerRadiusM,
+      c.outerRadiusM,
       c.globalCellSizeM, c.minimumCellSizeM, c.solarSurfaceCellSizeM,
       c.solarTransitionOuterRadiusM, c.solarExponent,
       c.tubeReferenceRadiusM, c.tubeRadiusAtReferenceM,
       c.tubeCenterCellSizeM, c.tubeExponent};
   for (double value : values)
     if (!std::isfinite(value)) return Error("configuration contains a non-finite value");
-  if (c.parkerPointCount < 2 ||
-      c.parkerPointCount > 10000000ULL || c.parkerLengthM <= 0.0 ||
-      c.solarWindSpeedMPerS <= 0.0 || c.solarRotationRateRadPerS < 0.0 ||
-      c.innerRadiusM <= 0.0 || c.outerRadiusM <= c.innerRadiusM ||
+  if (c.outerRadiusM <= c.innerRadiusM ||
       c.minimumCellSizeM <= 0.0 || c.globalCellSizeM < c.minimumCellSizeM ||
       c.maximumMeshLevel > 19 || c.solarExponent <= 0.0 ||
       c.tubeExponent <= 0.0) {
@@ -610,9 +626,6 @@ Transport::Status Validate(const Configuration& c) {
         observer.pitchAngleBins == 0 || observer.pitchAngleBins > 1000000U)
       return Error("one-dimensional observer identity, location, or spectrum is invalid");
   }
-  const double sourceRadius = Norm(Subtract(c.parkerInitialPointM, c.parkerOriginM));
-  if (std::fabs(sourceRadius - c.innerRadiusM) > 1.0e-10 * c.innerRadiusM)
-    return Error("Parker initial point must lie on mesh.domain.inner_radius_m");
   if (c.solarRefinementEnabled &&
       (c.solarSurfaceCellSizeM < c.minimumCellSizeM ||
        c.solarSurfaceCellSizeM > c.globalCellSizeM ||
@@ -1093,7 +1106,7 @@ std::string Fingerprint(const Configuration& c) {
 Transport::Status BuildParkerLine(const Configuration& c,
                                   std::vector<Vec3>* points) {
   if (points == NULL) return Error("Parker line output is null");
-  const Transport::Status valid = Validate(c);
+  const Transport::Status valid = ValidateParkerLine(c);
   if (!valid.ok()) return valid;
   std::vector<Vec3> candidate;
   candidate.reserve(static_cast<std::size_t>(c.parkerPointCount));
@@ -1106,9 +1119,11 @@ Transport::Status BuildParkerLine(const Configuration& c,
     const Vec3 first = ParkerTangent(relative, c);
     const Vec3 midpoint = Add(relative, Scale(0.5 * step, first));
     const Vec3 tangent = ParkerTangent(midpoint, c);
-    if (!(Norm(first) > 0.0) || !(Norm(tangent) > 0.0))
-      return Error("Parker tangent vanished during line generation");
+    if (!Finite(relative)||!Finite(midpoint)||!Finite(first)||!Finite(tangent)||
+        !(Norm(first) > 0.0) || !(Norm(tangent) > 0.0))
+      return Error("Parker geometry or tangent is unresolved during line generation");
     point = Add(point, Scale(step, tangent));
+    if(!Finite(point))return Error("Parker generated position is not representable");
     candidate.push_back(point);
   }
   points->swap(candidate);
@@ -1118,6 +1133,10 @@ Transport::Status BuildParkerLine(const Configuration& c,
 Transport::Status WriteParkerLineTecplot(const Configuration& c,
                                          const std::string& path) {
   if (path.empty()) return Error("Parker-line Tecplot path is empty");
+  // Preserve this writer's complete-configuration contract even though its
+  // geometry subroutine now intentionally accepts geometry-only records.
+  const auto valid=Validate(c);
+  if(!valid.ok())return valid;
   std::vector<Vec3> points;
   const Transport::Status built = BuildParkerLine(c, &points);
   if (!built.ok()) return built;

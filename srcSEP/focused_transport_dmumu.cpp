@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -29,6 +30,9 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
         "focused-transport timestep must be finite and nonnegative"));
   }
 
+  status = PICAdapter::PrepareParticleStep(&context, dtTotal, &dtTotal);
+  if (!status.ok()) AbortFocusedStatus(status);
+
   double speed = std::hypot(context.state.vParallelMPerS,
                             context.state.vNormalMPerS);
   ScalarResult momentum = MomentumFromSpeed(
@@ -39,8 +43,16 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
 
   double elapsedS = 0.0;
   std::uint64_t eventIndex = 0;
+  KeyedRandomStream random(PICAdapter::CampaignRandomSeed,
+                           context.stableParticleId, 8, 0);
+  status = PICAdapter::ResumeRandomStream(
+      context, PICAdapter::StochasticOperator::Dmumu, &random, &eventIndex);
+  if (!status.ok()) AbortFocusedStatus(status);
   StepDiagnostics diagnostics;
   while (elapsedS < dtTotal) {
+    if (eventIndex == std::numeric_limits<std::uint64_t>::max())
+      AbortFocusedStatus(Status::Error(StatusCode::StepUnderflow,
+          "Dmumu accepted-interval identity exhausted"));
     const NumericalTolerances& tolerances = ActiveNumericalTolerances();
     PICAdapter::LocalBackground local;
     status = PICAdapter::EvaluateLocalBackground(context, &local);
@@ -80,10 +92,8 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
       limits.push_back(StepLimit(
           "fte-cooling", tolerances.coolingLogChange /
                              std::fabs(local.velocityDivergencePerS)));
-    const ScalarResult snapshotLimit = ComposeSnapshotValidityLimit(
-        context.particleStepEpochS, elapsedS,
-        context.particleStepEpochS + local.snapshotSecondsRemaining,
-        context.snapshotGeneration, local.generation);
+    const ScalarResult snapshotLimit = PICAdapter::ParticleSnapshotRemaining(
+        context, elapsedS, local.generation);
     if (!snapshotLimit.status.ok() || snapshotLimit.value <= 0.0)
       AbortFocusedStatus(snapshotLimit.status.ok()
           ? Status::Error(StatusCode::StepUnderflow,
@@ -92,16 +102,14 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
     if (std::isfinite(snapshotLimit.value))
       limits.push_back(StepLimit("fte-dmumu-snapshot", snapshotLimit.value));
 
-    const ScalarResult selected = SelectSubstep(
-        dtTotal - elapsedS, limits, tolerances.minimumStepS, &diagnostics);
+    const ScalarResult selected = PICAdapter::SelectParticleSubstep(
+        context, elapsedS, limits, tolerances.minimumStepS, &diagnostics);
     if (!selected.status.ok()) AbortFocusedStatus(selected.status);
 
     const double startCoordinate = context.state.coordinate;
     const double preMomentum = momentum.value;
     const double preParallel = context.state.vParallelMPerS;
     const double preNormal = context.state.vNormalMPerS;
-    KeyedRandomStream random(PICAdapter::CampaignRandomSeed,
-                             context.stableParticleId, 8, eventIndex);
     ThreadLocalWaveAccumulator identityAccumulator;
     FocusedTransportBackground focusedBackground(
         local.dLnAbsBdsPerM, local.plasmaAdvectionMPerS,
@@ -193,6 +201,9 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
     eventIndex++;
   }
 
+  status = PICAdapter::StageRandomStream(
+      &context, PICAdapter::StochasticOperator::Dmumu, random, eventIndex);
+  if (!status.ok()) AbortFocusedStatus(status);
   status = PICAdapter::CommitAndAttach(context);
   if (!status.ok()) AbortFocusedStatus(status);
 

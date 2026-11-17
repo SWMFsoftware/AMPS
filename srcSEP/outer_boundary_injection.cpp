@@ -6,6 +6,7 @@
  */
 
 #include "sep.h"
+#include "source_capabilities.h"
 
 
 
@@ -33,6 +34,9 @@ bool SEP::ParticleSource::OuterBoundary::BoundingBoxParticleInjectionIndicator(c
 
 //injection of model particles through the faces of the bounding box
 long int SEP::ParticleSource::OuterBoundary::BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+  const auto sourceStatus=SEP::Sources::CartesianBirthPreflight(
+      SEP::Sources::CartesianSource::ThermalOuterBox);
+  if(!sourceStatus.ok())exit(__LINE__,__FILE__,sourceStatus.message.c_str());
   bool ExternalFaces[6];
   double ParticleWeight,LocalTimeStep,TimeCounter,ExternalNormal[3],x[3],x0[3],e0[3],e1[3],c0,c1;
   int nface,idim;

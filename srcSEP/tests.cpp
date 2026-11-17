@@ -4,6 +4,9 @@
 #include <string>
 #include <list>
 #include <math.h>
+#include <cmath>
+#include <limits>
+#include <stdexcept>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -24,10 +27,54 @@
 #include "tests.h"
 #include "amps2swmf.h"
 #include "util/sep_background_runtime.h"
+#include "transport_common.h"
+#include "coefficient_providers.h"
 
 using namespace std;
 
 namespace {
+
+FteConvectionMetrics gFteConvectionMetrics;
+
+class ZeroPitchDiffusionConfiguration {
+ public:
+  ZeroPitchDiffusionConfiguration()
+      :saved_(SEP::Transport::Coefficient::ActiveConfiguration()) {
+    auto controlled=saved_;
+    controlled.pitchAngle=SEP::Transport::Coefficient::PitchAngleKind::Constant;
+    controlled.constantDmumuPerS=0.0;
+    const auto status=SEP::Transport::Coefficient::SetActiveConfiguration(controlled);
+    if(!status.ok())throw std::runtime_error(status.message);
+  }
+  ~ZeroPitchDiffusionConfiguration() {
+    SEP::Transport::Coefficient::SetActiveConfiguration(saved_);
+  }
+ private: SEP::Transport::Coefficient::Configuration saved_;
+};
+
+bool InitializeFixtureTransportState(long int particle,
+                                      std::uint64_t fixture,
+                                      std::uint64_t trial) {
+  namespace PB = PIC::ParticleBuffer;
+  const int species = PB::GetI(particle);
+  const double mass = PIC::MolecularData::GetMass(species);
+  const double parallel = PB::GetVParallel(particle);
+  const double normal = PB::GetVNormal(particle);
+  const double speed = std::hypot(parallel, normal);
+  const SEP::Transport::ScalarResult momentum =
+      SEP::Transport::MomentumFromSpeed(speed, mass, SpeedOfLight);
+  if (!momentum.status.ok()) return false;
+  const double scale = speed == 0.0 ? 0.0 : momentum.value / speed;
+  const double momentumVector[3] = {scale * parallel, scale * normal, 0.0};
+  // Every loop iteration below is an independently initialized physical trial,
+  // even when its buffer slot is reused. Source/trial keys distinguish births;
+  // arbitrary old extension bytes are never interpreted as checkpoint history.
+  PB::SetFieldLineId(0, particle);
+  PB::SetIndividualStatWeightCorrection(1.0, particle);
+  SEP::Transport::PICAdapter::InitializeParticleTransportState(
+      particle, fixture, trial, momentumVector);
+  return true;
+}
 
 // Several historical tests temporarily replace the process-wide pitch-angle
 // diffusion callback.  The registry can run multiple IDs in one process, so a
@@ -54,6 +101,10 @@ class PitchAngleDiffusionPointerGuard {
 };
 
 }  // namespace
+
+const FteConvectionMetrics& GetLastFteConvectionMetrics() {
+  return gFteConvectionMetrics;
+}
 
 void TestManager() {
 
@@ -175,6 +226,7 @@ bool ParkerModelMoverTest_const_plasma_field() {
   array_1d<double> SamplingBuffer(nSampleIntervals);
   SamplingBuffer=0.0;
   long int acceptedSamples=0;
+  bool fixtureGood=true;
 
   double dtTotal=3.0;
 
@@ -206,6 +258,12 @@ bool ParkerModelMoverTest_const_plasma_field() {
     PB::SetVParallel(v_comp,ptr);
     PB::SetVNormal(v_comp,ptr);
     PB::SetFieldLineCoord(xParticleCoordinate,ptr); 
+
+    if (!InitializeFixtureTransportState(ptr, UINT64_C(1003),
+                                          static_cast<std::uint64_t>(ntest))) {
+      fixtureGood=false;
+      break;
+    }
 
     SEP::ParticleMover_Parker(ptr,dtTotal,node);
 
@@ -277,7 +335,7 @@ bool ParkerModelMoverTest_const_plasma_field() {
   // validation.  Its authoritative contract is narrower: the full stochastic
   // mover campaign must produce at least one in-range sample and commit a
   // writable histogram.  The README records this limitation explicitly.
-  return outputGoodInt!=0 && globalAcceptedSamples>0;
+  return fixtureGood && outputGoodInt!=0 && globalAcceptedSamples>0;
 }  
 
 
@@ -296,9 +354,11 @@ bool ParkerModelMoverTest_convection() {
   bool res=_pass;
 
   list <cVertexData> VertexData;
-  double DensityOld=1.0,DensityCurrent=4.0;
-  double SolarWindVelocityOld[3]={1.0E3,0.0,0.0};
-  double SolarWindVelocityCurrent[3]={4.0E3,0.0,0.0};
+  double DensityOld=5.0e6,DensityCurrent=2.0e7;
+  // Exact manufactured transverse compression: U vanishes on the curved
+  // centerline, while grad U=(divU/2)(I-tt). Continuity gives n'=4*n and
+  // isotropic adiabatic transport gives p'=p*4^(1/3) over dtTotal.
+  double SolarWindVelocityCurrent[3]={0.0,0.0,0.0};
   double dtTotal=1.0;
   
   PitchAngleDiffusionPointerGuard diffusionPointerGuard;
@@ -312,8 +372,6 @@ bool ParkerModelMoverTest_convection() {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
   auto Segment=FL::FieldLinesAll[0].GetSegment(xTestSegment);; 
 
-  auto Vertex0=Segment->GetBegin(); 
-  auto Vertex1=Vertex0->GetNext();
 
   int nTotalTests=10000;
   double logEmin=log(100.0*KeV2J);
@@ -326,8 +384,6 @@ bool ParkerModelMoverTest_convection() {
   ptr=PB::GetNewParticle();
   PB::SetI(0,ptr);
 
-  bool shock_reached=false;
-
   for (auto Vertex=FL::FieldLinesAll[0].GetFirstVertex();Vertex!=NULL;Vertex=Vertex->GetNext()) {
     cVertexData t;
 
@@ -337,18 +393,9 @@ bool ParkerModelMoverTest_convection() {
 
     VertexData.push_back(t);
 
-    if (shock_reached==false) {
-      Vertex->SetDatum(FL::DatumAtVertexPlasmaDensity,DensityCurrent);
-      Vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,DensityOld);
-      Vertex->SetPlasmaVelocity(SolarWindVelocityCurrent);
-
-      if (Vertex==Vertex0) shock_reached=true;
-    }
-    else {
-      Vertex->SetDatum(FL::DatumAtVertexPlasmaDensity,DensityOld);
-      Vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,DensityOld);
-      Vertex->SetPlasmaVelocity(SolarWindVelocityOld);
-    }
+    Vertex->SetDatum(FL::DatumAtVertexPlasmaDensity,DensityCurrent);
+    Vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,DensityOld);
+    Vertex->SetPlasmaVelocity(SolarWindVelocityCurrent);
   }
 
   // Fixture mutations are complete before the read phase begins.  From this
@@ -357,6 +404,8 @@ bool ParkerModelMoverTest_convection() {
   // PIC::TimeStep().  The nested scope ends the read phase before the original
   // vertex values are restored below.
   {
+    SEP::Transport::PICAdapter::ScopedVelocityGradientFixture derivatives(
+        -std::log(DensityCurrent/DensityOld)/dtTotal);
     SEP::Background::ParticleReadPhase backgroundRead =
         SEP::Background::SnapshotStore::Instance().BeginParticleRead(
             SEP::Background::SimulationTimeSeconds());
@@ -409,7 +458,7 @@ bool ParkerModelMoverTest_convection() {
       break;
     }
 
-    if ((PlasmaDensity1_new!=DensityOld)||(PlasmaDensity0_new!=DensityCurrent)) {
+    if ((PlasmaDensity1_new!=DensityCurrent)||(PlasmaDensity0_new!=DensityCurrent)) {
       res=_fail;
       break;
     }
@@ -419,22 +468,21 @@ bool ParkerModelMoverTest_convection() {
     ::AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime=dtTotal;
     #endif
 
-    //calculate div(vSW) : Dln(Rho)=-div(vSW)*dt
-    double w0,w1,d_ln_rho_dt;
-
-    w1=s0-((int)s0);
-    w0=1.0-w1;
-
-    d_ln_rho_dt=log((w0*DensityCurrent+w1*DensityOld)/DensityOld)/dtTotal;  
-    p1_theory=p0*exp(d_ln_rho_dt*dtTotal/3.0);
+    // The reference is the exact continuity/adiabatic solution of the
+    // independently declared manufactured velocity field.
+    p1_theory=p0*std::pow(DensityCurrent/DensityOld,1.0/3.0);
 
     //simulate Parker equation
+    if (!InitializeFixtureTransportState(ptr, UINT64_C(1001),
+                                          static_cast<std::uint64_t>(ntest))) {
+      res=_fail;
+      break;
+    }
     SEP::ParticleMover_Parker(ptr,dtTotal,node);
 
     // Evaluate the post-move momentum.  The legacy diagnostic calculated p1
     // before calling the mover and therefore could not authoritatively test the
-    // adiabatic update.  This is test-result plumbing only: the mover inputs,
-    // timestep, analytical reference, and production algorithm are unchanged.
+    // adiabatic update of the exact manufactured compression above.
     vParallel=PB::GetVParallel(ptr);
     vNorm=PB::GetVNormal(ptr);
     p1=Relativistic::Speed2Momentum(
@@ -489,22 +537,28 @@ bool FTE_Convectoin() {
   namespace FL = PIC::FieldLine;
 
   struct cVertexData {
-    double Vsw,DensityOld,DensityCurrent,v[3];
+    double Vsw,DensityOld,DensityCurrent,v[3],b[3],bOld[3];
   };
 
   const bool _pass=true;
   const bool _fail=false;
 
   bool res=_pass;
+  gFteConvectionMetrics=FteConvectionMetrics();
+  if(FL::nFieldLine<1||FL::FieldLinesAll[0].GetTotalSegmentNumber()<=67) {
+    gFteConvectionMetrics.failedTrials=1;
+    return false;
+  }
 
   list <cVertexData> VertexData;
-  double Density=1.0;
+  double Density=5.0e6;
   double SolarWindVelocity[3]={0.0,0.0,0.0};
   double dtTotal=1.0;
 
   PitchAngleDiffusionPointerGuard diffusionPointerGuard;
   auto DiffusionCoeffcient=diffusionPointerGuard.Saved();
   SEP::Diffusion::GetPitchAngleDiffusionCoefficient=NULL;
+  ZeroPitchDiffusionConfiguration zeroPitchDiffusion;
 
   //determine the particle location and the starting node
   double xTestSegment=67.5;
@@ -535,12 +589,23 @@ bool FTE_Convectoin() {
     Vertex->GetDatum(FL::DatumAtVertexPlasmaDensity,&t.DensityCurrent);
     Vertex->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&t.DensityOld);
     Vertex->GetPlasmaVelocity(t.v);
+    Vertex->GetMagneticField(t.b);
+    Vertex->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexMagneticField,t.bOld);
 
     VertexData.push_back(t);
 
     Vertex->SetDatum(FL::DatumAtVertexPlasmaDensity,Density);
     Vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,Density);
     Vertex->SetPlasmaVelocity(SolarWindVelocity);
+    // A uniform-magnitude curved flux tube has no magnetic focusing.
+    // Preserve the actual field direction and geometry while declaring this
+    // manufactured scalar |B| profile, independently of the Parker r^-2 law.
+    const double norm=Vector3D::Length(t.b);
+    if(!(norm>0.0))exit(__LINE__,__FILE__,"FTE01 requires nonzero native B direction");
+    double uniformB[3];
+    for(int d=0;d<3;++d)uniformB[d]=5e-9*t.b[d]/norm;
+    Vertex->SetMagneticField(uniformB);
+    Vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexMagneticField,uniformB);
   }
 
   // The focused-transport fixture uses temporary uniform vertex data, but its
@@ -548,6 +613,10 @@ bool FTE_Convectoin() {
   // coefficient path as production.  Enter the immutable phase only after the
   // temporary data are installed and retain it through every mover call.
   {
+    // This fixture declares constant Cartesian velocity, whose full tensor
+    // vanishes. Its magnetic line may curve; d(U.b)/ds is not bb:grad U.
+    SEP::Transport::PICAdapter::ScopedVelocityGradientFixture derivatives(
+        std::array<double,9>{{0,0,0,0,0,0,0,0,0}});
     SEP::Background::ParticleReadPhase backgroundRead =
         SEP::Background::SnapshotStore::Instance().BeginParticleRead(
             SEP::Background::SimulationTimeSeconds());
@@ -571,6 +640,11 @@ bool FTE_Convectoin() {
     FL::FieldLinesAll[0].GetCartesian(x0,s0);
     node=PIC::Mesh::mesh->findTreeNode(x0);
 
+    if (!InitializeFixtureTransportState(ptr, UINT64_C(1002),
+                                          static_cast<std::uint64_t>(ntest))) {
+      res=_fail;
+      break;
+    }
     SEP::ParticleMover_FocusedTransport_Dmumu(ptr,dtTotal,node);
 
     //check the new particle location: it sould no change
@@ -578,28 +652,33 @@ bool FTE_Convectoin() {
 
     double vParallel_new=PB::GetVParallel(ptr);
     double vNorm_new=PB::GetVNormal(ptr);
-    double s,x1[3];
-    int idim;
-
-    FL::FieldLinesAll[0].GetCartesian(x1,s1);
-
-    for (s=0.0,idim=0;idim<3;idim++) {
-      double t=x0[idim]-x1[idim];
-   
-      s+=t*t;
+    // Sum the independent physical segment lengths. The characteristic is in
+    // arc length; a Cartesian endpoint chord shortens a curved trajectory.
+    const double lower=std::min(s0,s1),upper=std::max(s0,s1);
+    double path=0.0;
+    for(int index=static_cast<int>(std::floor(lower));
+        index<static_cast<int>(std::ceil(upper));++index) {
+      const double fraction=std::min(upper,double(index+1))-
+          std::max(lower,double(index));
+      path+=fraction*FL::FieldLinesAll[0].GetSegment(index)->GetLength();
     }
-
-    s=sqrt(s); 
-
-    double diff=1.0-s/(dtTotal*fabs(vParallel));
-    double ds=s1-s0;
-
-    if (mu!=1.0) if ((fabs(1.0-s/(dtTotal*fabs(vParallel)))>1.0E-2)||(fabs(vParallel_new-vParallel)>1.0E-5)||(fabs(vNorm_new-vNorm)>1.0E-5)) { 
+    if(s1<s0)path=-path;
+    const double expectedPath=dtTotal*vParallel;
+    const double relativePathError=expectedPath==0.0?
+        (path==0.0?0.0:std::numeric_limits<double>::infinity()):
+        std::fabs(1.0-path/expectedPath);
+    const double parallelError=std::fabs(vParallel_new-vParallel);
+    const double normalError=std::fabs(vNorm_new-vNorm);
+    ++gFteConvectionMetrics.completedTrials;
+    gFteConvectionMetrics.maximumRelativePathError=std::max(
+        gFteConvectionMetrics.maximumRelativePathError,relativePathError);
+    gFteConvectionMetrics.maximumParallelVelocityErrorMPerS=std::max(
+        gFteConvectionMetrics.maximumParallelVelocityErrorMPerS,parallelError);
+    gFteConvectionMetrics.maximumNormalVelocityErrorMPerS=std::max(
+        gFteConvectionMetrics.maximumNormalVelocityErrorMPerS,normalError);
+    if(relativePathError>1e-2||parallelError>1e-5||normalError>1e-5) {
       res=_fail;
-   
-      PB::SetFieldLineCoord(s0,ptr);
-      SEP::ParticleMover_FocusedTransport_Dmumu(ptr,dtTotal,node);
-      s1=PB::GetFieldLineCoord(ptr);
+      ++gFteConvectionMetrics.failedTrials;
     }
     }
   }
@@ -612,6 +691,8 @@ bool FTE_Convectoin() {
     Vertex->SetDatum(FL::DatumAtVertexPlasmaDensity,p->DensityCurrent);
     Vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,p->DensityOld);
     Vertex->SetPlasmaVelocity(p->v);
+    Vertex->SetMagneticField(p->b);
+    Vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexMagneticField,p->bOld);
   }
 
   SEP::Diffusion::GetPitchAngleDiffusionCoefficient=DiffusionCoeffcient;

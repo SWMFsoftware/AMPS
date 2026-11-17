@@ -1,9 +1,14 @@
 #include "turbulence_production_adapter.h"
+#include "polarized_wave_native_adapter.h"
 
 #include "sep.h"
 #include "transport_common.h"
 #include "util/sep_background_runtime.h"
 #include "util/sep_turbulence_core.h"
+#include "util/sep_background_derivatives.h"
+#include "util/sep_resonant_collision.h"
+#include "adapters/swcme1d_adapter.h"
+#include "adapters/reduced_shock_background_adapter.h"
 
 #include <cmath>
 #include <memory>
@@ -34,6 +39,8 @@ double TotalPicWaveEnergyJ() {
 }
 
 Transport::Status ImportFieldLine(int fieldLineId, State* state) {
+  const auto authority=Polarized::PICAdapter::LegacyMutationPreflight("legacy two-branch core import");
+  if(!authority.ok())return authority;
   namespace FL = PIC::FieldLine;
   FL::cFieldLine* line = &FL::FieldLinesAll[fieldLineId];
   const int segmentCount = line->GetTotalSegmentNumber();
@@ -79,6 +86,31 @@ Transport::Status ImportFieldLine(int fieldLineId, State* state) {
     segment->GetPlasmaDensity(0.5, numberDensity);
     cell.massDensityKgPerM3 =
         numberDensity * PIC::CPLR::SWMF::MeanPlasmaAtomicMass;
+    // The same provider composition used by particle scattering determines
+    // wave propagation. Electron number density is not generally rho/m_p.
+    const auto snapshot=Background::SnapshotStore::Instance().Current();
+    if(!snapshot)return Transport::Status::Error(
+        Transport::StatusCode::InvalidParticleState,
+        "turbulence mapping requires a published background generation");
+    double position[3];segment->GetCartesian(position,0.5);
+    if(snapshot->provider()==Background::Provider::Swcme) {
+      const auto query=SW1DAdapter::QueryAtRadius(Vector3D::Length(position),false);
+      if(query.code!=SW1DAdapter::StatusCode::Success||
+          query.epoch_seconds!=snapshot->epoch_seconds()||
+          !query.sample.magnetic_and_composition_available())
+        return Transport::Status::Error(Transport::StatusCode::InvalidParticleState,
+            "turbulence SWCME composition differs from frozen background");
+      cell.massDensityKgPerM3=numberDensity*query.sample.mass_density_kg_m3()/
+          query.sample.number_density_m3();
+    } else if(snapshot->provider()==Background::Provider::ReducedShock) {
+      ReducedShock::AmbientSample sample;std::string error;
+      if(ReducedShock::Metadata().epochS!=snapshot->epoch_seconds()||
+          ReducedShock::Metadata().generation!=snapshot->field_line_generation()||
+          !ReducedShock::EvaluateAmbient({{position[0],position[1],position[2]}},&sample,&error))
+        return Transport::Status::Error(Transport::StatusCode::InvalidParticleState,
+            "turbulence reduced composition differs from frozen background: "+error);
+      cell.massDensityKgPerM3=numberDensity*sample.massDensityKgM3/sample.numberDensityM3;
+    }
     if (!(cell.magneticFieldT > 0.0) ||
         !(cell.massDensityKgPerM3 > 0.0))
       return Transport::Status::Error(Transport::StatusCode::InvalidParticleState,
@@ -92,6 +124,10 @@ Transport::Status ImportFieldLine(int fieldLineId, State* state) {
     segment->GetEnd()->GetPlasmaVelocity(velocity1);
     double direction[3] = {0.0, 0.0, 0.0};
     segment->GetDir(direction);
+    const auto polarity=Transport::MagneticPolarityAlongFieldLine(
+        magneticField,direction);
+    if(!polarity.status.ok())return polarity.status;
+    cell.magneticPolarityAlongLine=polarity.value>0?1:-1;
     cell.plasmaSpeedMPerS = 0.5 *
         (Vector3D::DotProduct(velocity0, direction) +
          Vector3D::DotProduct(velocity1, direction));
@@ -103,8 +139,11 @@ Transport::Status ImportFieldLine(int fieldLineId, State* state) {
         return Transport::Status::Error(
             Transport::StatusCode::InvalidParticleState,
             "spectral turbulence authority is absent");
-      const std::size_t bins = state->configuration.spectralBins;
-      cell.spectralEnergyJ.assign(spectrum, spectrum + 2 * bins);
+      const auto copied=Polarized::PICAdapter::CopyLegacyNativeSpectrum(
+          state->configuration,spectrum,
+          static_cast<std::size_t>(AlfvenTurbulence_Kolmogorov::WaveNumberResolved::SpectralWaveEnergy.length),
+          &cell.spectralEnergyJ);
+      if(!copied.ok())return copied;
     }
   }
 
@@ -140,6 +179,12 @@ Transport::Status ImportFieldLine(int fieldLineId, State* state) {
 }
 
 Transport::Status ExportFieldLine(int fieldLineId, const State& state) {
+  const auto authority=Polarized::PICAdapter::LegacyMutationPreflight("legacy two-branch core export");
+  if(!authority.ok())return authority;
+  if(state.configuration.representation==Representation::Spectral) {
+    const auto grid=Polarized::PICAdapter::LegacyFixedSpectralPreflight(state.configuration,"legacy spectral core export");
+    if(!grid.ok())return grid;
+  }
   namespace FL = PIC::FieldLine;
   FL::cFieldLine* line = &FL::FieldLinesAll[fieldLineId];
   for (std::size_t i = 0; i < state.cells.size(); ++i) {
@@ -151,9 +196,10 @@ Transport::Status ExportFieldLine(int fieldLineId, const State& state) {
     if (!energy || !derived)
       return Transport::Status::Error(Transport::StatusCode::InvalidParticleState,
                                       "turbulence export datum is absent");
+    const DerivedCell view = DeriveCell(state.cells[i]);
+    if (!view.status.ok()) return view.status;
     energy[0] = state.cells[i].ePlusJ;
     energy[1] = state.cells[i].eMinusJ;
-    const DerivedCell view = DeriveCell(state.cells[i]);
     derived[0] = view.wPlusJPerM3;
     derived[1] = view.wMinusJPerM3;
     derived[2] = view.crossHelicity;
@@ -168,6 +214,31 @@ Transport::Status ExportFieldLine(int fieldLineId, const State& state) {
 }
 
 }  // namespace
+
+CheckpointCache CaptureCheckpointCache() {
+  CheckpointCache cache;cache.ledger=gLastStepLedger;
+  cache.shockContributions=gShockContributions;cache.shockDiagnostics=gShockDiagnostics;
+  return cache;
+}
+Transport::Status ValidateCheckpointCache(const CheckpointCache& cache) {
+  const double entries[]={cache.ledger.shockSourceJ,cache.ledger.particleExchangeJ,
+    cache.ledger.boundaryExchangeJ,cache.ledger.physicalDissipationJ,
+    cache.ledger.limiterCorrectionJ,cache.ledger.closureResidualJ};
+  for(double value:entries)if(!std::isfinite(value))return Transport::Status::Error(
+      Transport::StatusCode::InvalidParticleState,"nonfinite turbulence checkpoint ledger");
+  for(const auto& source:cache.shockContributions)
+    if(source.fieldLine<0||source.fieldLine>=PIC::FieldLine::nFieldLine||
+        source.segment<0||source.segment>=PIC::FieldLine::FieldLinesAll[source.fieldLine].GetTotalSegmentNumber()||
+        !std::isfinite(source.plusJ)||!std::isfinite(source.minusJ)||
+        source.plusJ<0.0||source.minusJ<0.0||source.provenance.empty())
+      return Transport::Status::Error(Transport::StatusCode::InvalidParticleState,
+          "invalid turbulence source checkpoint history");
+  return Transport::Status::Ok();
+}
+void RestoreCheckpointCache(CheckpointCache* cache) {
+  gLastStepLedger=cache->ledger;gShockDiagnostics=cache->shockDiagnostics;
+  gShockContributions.swap(cache->shockContributions);
+}
 
 Transport::Status QueueShockContribution(const ShockContribution& c) {
   if (c.fieldLine<0 || c.segment<0 || !std::isfinite(c.plusJ) ||
@@ -201,6 +272,12 @@ Transport::Status Advance(double dtS, double shockRadiusBeforeM,
   if (!(dtS > 0.0) || !std::isfinite(dtS))
     return Transport::Status::Error(Transport::StatusCode::InvalidArgument,
                                     "production turbulence dt must be positive");
+
+  // Capability checks precede queue reduction, shock sources and every native
+  // wave write. The approved polarized closure is currently a neutral tested
+  // kernel; the legacy two-array updater cannot silently stand in for it.
+  const auto capability=Transport::PICAdapter::ProductionClosurePreflight();
+  if(!capability.ok())return capability;
 
   // This is the transaction boundary for all particle records.  No mover holds
   // a live pointer in the queue, and no turbulence operator can observe a

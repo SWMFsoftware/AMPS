@@ -150,6 +150,7 @@ MORE:
 
 
 #include "sep.h"
+#include "polarized_wave_native_adapter.h"
 #include <algorithm>
 #include <cmath>
 
@@ -741,6 +742,7 @@ void WaveParticleCouplingManager(
     PIC::Datum::cDatumStored& WaveEnergy,
     double dt
 ) {
+    SEP::Turbulence::Polarized::PICAdapter::RequireLegacyMutationAllowed("legacy wave-particle coupling manager");
     /*
     Optimized version that processes each segment only once:
     1. Calculates growth rates from accumulated flux data
@@ -1256,6 +1258,7 @@ void CalculateGrowthRatesFromAccumulatedFlux(
     double& Gamma_plus,                         // Output: integrated growth rate for outward waves [s⁻¹]
     double& Gamma_minus                         // Output: integrated growth rate for inward waves [s⁻¹]
 ) {
+    SEP::Turbulence::Polarized::PICAdapter::RequireLegacyMutationAllowed("legacy integrated wave growth calculation");
     // ========================================================================
     // INPUT VALIDATION
     // ========================================================================
@@ -1567,6 +1570,7 @@ void RedistributeWaveEnergyToParticles(
     double particle_energy_change,               // Total particle energy change [J]
     int sigma                                    // Wave direction: +1 (outward), -1 (inward)
 ) {
+    SEP::Turbulence::Polarized::PICAdapter::RequireLegacyMutationAllowed("legacy branch wave-energy redistribution");
     // Static variable for adaptive sizing
     static int MAX_PARTICLES = 10000;
     
@@ -1845,6 +1849,7 @@ void RedistributeWaveEnergyToParticles(
     PIC::FieldLine::cFieldLineSegment* segment,  // Target field line segment
     double particle_energy_change                // Total particle energy change [J]
 ) {
+    SEP::Turbulence::Polarized::PICAdapter::RequireLegacyMutationAllowed("legacy integrated wave-energy redistribution");
     // Static variable for adaptive sizing
     static int MAX_PARTICLES = 10000;
     

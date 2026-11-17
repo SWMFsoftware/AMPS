@@ -75,11 +75,39 @@ class BackgroundSample {
   double number_density_m3() const { return number_density_m3_; }
   double speed_m_s() const { return speed_m_s_; }
   double divergence_s_inv() const { return divergence_s_inv_; }
+  double radial_field_t() const { return radial_field_t_; }
+  double azimuthal_field_t() const { return azimuthal_field_t_; }
+  double mass_density_kg_m3() const { return mass_density_kg_m3_; }
+  bool magnetic_and_composition_available() const {
+    return magnetic_and_composition_available_;
+  }
+  bool thermal_state_available() const { return thermal_state_available_; }
+  double pressure_pa() const { return pressure_pa_; }
+  double proton_temperature_k() const { return proton_temperature_k_; }
+
+  BackgroundSample(double number_density_m3,double speed_m_s,
+      double divergence_s_inv,double radial_field_t,double azimuthal_field_t,
+      double mass_density_kg_m3,bool thermal_state_available,
+      double pressure_pa,double proton_temperature_k)
+      : number_density_m3_(number_density_m3),speed_m_s_(speed_m_s),
+        divergence_s_inv_(divergence_s_inv),radial_field_t_(radial_field_t),
+        azimuthal_field_t_(azimuthal_field_t),
+        mass_density_kg_m3_(mass_density_kg_m3),
+        magnetic_and_composition_available_(true),
+        thermal_state_available_(thermal_state_available),
+        pressure_pa_(pressure_pa),proton_temperature_k_(proton_temperature_k) {}
 
  private:
   double number_density_m3_ = 0.0;
   double speed_m_s_ = 0.0;
   double divergence_s_inv_ = 0.0;
+  double radial_field_t_ = 0.0;
+  double azimuthal_field_t_ = 0.0;
+  double mass_density_kg_m3_ = 0.0;
+  bool magnetic_and_composition_available_ = false;
+  bool thermal_state_available_ = false;
+  double pressure_pa_ = 0.0;
+  double proton_temperature_k_ = 0.0;
 };
 
 struct QueryResult {

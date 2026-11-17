@@ -1,0 +1,55 @@
+{
+  "schema": "srcsep-finite-amplitude-controls-v1",
+  "provenance": "Version2 numerical refinement of parent protocol f28ac567c909b0953137091be9be56f2219eb0a6817a187828ccb234c25efd1f; parent controls e3abb9131bea2f470dec1fb3ff2698c143f100e52bc3589c9bcd245fe484e453; parent study ec2a315f05f59ab016ee47bc5365227669a06fdc2a16cb3746232b7164885268. Physical inputs, acceptance criteria, reference algorithms and global-maximum DOP853 subset estimator unchanged. Only time/phase refinement axes and total-work resource allowance change; no physical cutoff selected.",
+  "alfven_speed_source": "alfven_total_mass_mps",
+  "probe": {
+    "species": "proton",
+    "kinetic_energy_ev": "1000000",
+    "mean_pitch": "0.5",
+    "branch": 1,
+    "helicity": 1
+  },
+  "amplitudes_delta_b_over_b0": [
+    "0.0001",
+    "0.01",
+    "0.1",
+    "0.3"
+  ],
+  "observation_gyroperiods": [
+    "0.5",
+    "2",
+    "8"
+  ],
+  "ensemble": {
+    "kind": "single-mode-probes",
+    "resonant_k_ratios": [
+      "0.5",
+      "1",
+      "2"
+    ]
+  },
+  "orbit_steps_per_gyroperiod": [
+    256,
+    512,
+    1024
+  ],
+  "phase_counts": [
+    32,
+    64,
+    128
+  ],
+  "numerical_controls": {
+    "relative_response_target": "0.002",
+    "absolute_pitch_target": "1e-10",
+    "sampled_invariant_over_initial_kinetic_target": "1e-9",
+    "dop853_rtol": "1e-11",
+    "dop853_atol": "1e-13",
+    "dop853_phase_samples": 4,
+    "linear_reference_digits": [
+      40,
+      70
+    ],
+    "maximum_steps_per_trajectory": 100000,
+    "maximum_total_trajectory_updates": 50000000
+  }
+}

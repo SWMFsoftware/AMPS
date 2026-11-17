@@ -1,5 +1,21 @@
 # srcSEP standalone component tests
 
+The correctness amendment adds source sanitizer gates selectable through
+`make -C srcSEP test-rng-lifecycle-unit`,
+`make -C srcSEP test-background-derivatives-unit`, and
+`make -C srcSEP test-wave-normalization-unit`. The exact descriptor callbacks
+are also linked into the native catalog under `rng-lifecycle`,
+`background-derivatives`, and `wave-normalization`; their pure-kernel evidence
+does not certify native particle storage or restart. `POPN01` and `POPN02`,
+group `population-native`, exercise actual PIC field-line splitting and
+byte-exact particle cloning. All four groups are reachable from the shared
+orchestrator. Source and native execution records retain their evidence level.
+
+Current requirements and unresolved qualification gates are maintained in
+[`../validation/development_requirements.json`](../validation/development_requirements.json).
+External reference locators and their limitations are in
+[`../validation/reference_sources.json`](../validation/reference_sources.json).
+
 ## Build and run everything: `run_all_test.sh`
 
 `test/run_all_test.sh` performs a clean native srcSEP build (AGENTS.md
@@ -501,6 +517,39 @@ dependency-light Make suites. It does not contain test callbacks, movers, or
 analytical physics: stable IDs/groups are discovered from the linked executable
 and execution status comes from the registry JSON. Matplotlib is the only
 additional runtime dependency for figures.
+
+Native discovery, selected groups, and each `--all` case now run in unique
+`native-work/<label>-<unique>/` directories below the requested evidence root.
+This includes linked CV/IV/XM/OV/EV realizations and the orchestrator's PNW
+group. PIC `PT/thread=*.log`, mesh caches, and incidental files belong to that
+directory; concurrent campaigns do not share source-tree scratch names.
+Source-only Make suites keep their existing `srcSEP` working directory.
+
+Python-owned `--amps`, `--output-dir`, and `--case-input` paths remain relative
+to the caller. Forwarded native path arguments retain their historic `srcSEP`
+base and become absolute before launch; no existence-based fallback search is
+performed. The reviewed flat native CV/controlled argument manifests and their
+`--initial-particles` / `--source-history-csv` leaf inputs are copied byte for
+byte into the owned run, then only those declared leaf references are rewritten
+to the copied absolute paths. `native-execution.json` records requested and
+resolved arguments, the original base, retained input paths, and SHA-256 hashes.
+Unknown nested manifest schemas fail explicitly and require a reviewed adapter.
+Versioned production `--input` retains its own parser's nested-path contract;
+the component-test CLI currently rejects combining it with a test selection.
+Bare `--list` uses a disposable temporary working directory. Campaign discovery
+retains `discovery.log` and its working directory with the other evidence.
+
+The runner isolation regression uses an actual child that writes PIC-style
+scratch before both discovery and execution. It verifies that a source-tree
+sentinel and the original relative manifest/CSV remain unchanged, all three
+native working directories differ, and the linked portfolio launcher also
+owns its discovery and execution scratch. These checks validate infrastructure,
+without implying a physical model qualification:
+
+```sh
+python3 -B srcSEP/test/test_python_test_runner.py
+python3 -B tools/test_sep_test_orchestrator.py
+```
 
 Run `python3 test/run_tests.py --help` for annotated, copy-and-paste examples of
 every selection mode, MPI execution, report replotting, plot controls, and
@@ -1415,3 +1464,847 @@ normal Python `--all` procedure executes them individually.  Do not remove
 them from the native registry or replace their negative controls with a source
 scan; the focused gate is fast feedback, while the linked registry proves the
 packaged production objects contain the feature.
+
+## Conservative population control and native lifecycle gates
+
+`sh test/run_conservation_resampling_tests.sh` builds the same `CRS01`–`CRS10`
+callbacks used by the native registry, with strict C++11 warnings, ASan and
+UBSan. Set `SRCSEP_REPORT_DIR` to retain its JSON/JUnit reports. The group is
+`conservative-resampling`; these callbacks require no PIC initialization.
+
+| ID | Independent gate |
+| --- | --- |
+| CRS01 | Both positive weight endpoints preserve number, charge, relativistic kinetic energy, parallel momentum, first/second pitch moments and local spatial moment. |
+| CRS02 | Pivoted Householder QR matches an analytical sixth finite-difference null vector and its endpoint probabilities. |
+| CRS03 | Full-rank sparse populations return explicit no-reduction; cold/identical constraints retain their actual rank. |
+| CRS04 | Every phase point has its original conditional expected weight; endpoint selection obeys a fixed five-sigma frequency gate. |
+| CRS05 | SI-scale negative controls reject 50% losses at approximately `1e-14 J` and `1e-19 kg m/s`, including signed-momentum cancellation. |
+| CRS06 | Invalid physical/numerical inputs and an unmet zero residual budget reject without substituting another model. |
+| CRS07 | Current and stress changes are reported separately; their ensemble expectations remain unchanged. |
+| CRS08 | Repeated conservative deletion retains original phase points and stops at the constraint rank. |
+| CRS09 | A bounded 1000-to-800 particle stress run retains original SI moments; measured duration is reported without a portable speed claim. |
+| CRS10 | A predictable stop retains expected weights; a selective whole-pass rollback negative control demonstrates its bias. |
+
+The weight-only algorithm follows [Gonoskov, CPC 271 (2022) 108200](https://doi.org/10.1016/j.cpc.2021.108200)
+([primary preprint](https://arxiv.org/html/1607.03755v2)). Its two nonnegative
+endpoints lie along a null direction of the moment matrix. Sampling them with
+the derived probabilities preserves each input weight in expectation. Existing
+phase points survive or receive zero weight; the algorithm creates no new
+positions, velocities, gyrophases, identities, RNG histories or hazard clocks.
+
+The fixed same-species, same-segment basis is
+`[1, K_rel, p_parallel, mu, mu^2, local_fraction]`. Charge follows number for a
+fixed charge state. Each residual uses its own `sum(abs(weight*quantity))` SI
+scale, with no dimensionless `max(1,...)` floor. Current and pressure/stress
+moments need additional independent constraints to be exact when energies
+vary; preserving `mu^2` alone does not conserve the pressure tensor. Production
+reports their signed changes explicitly in `C m/s` and `J`, before any sampling
+volume normalization.
+
+The production adapter retains configured spatial/parallel-velocity/normal-
+velocity bins, using local segment fractions and ordered tuple keys. It does
+not coarsen bins to reach a target. Sparse or rank-limited bins report
+`sparse-no-reduction`. Both possible endpoints are checked against the original
+whole-segment residual budget before drawing. A numerical stop retains previous
+validated updates; the failed attempt changes no weights. This predictable,
+bounded stopping preserves unbiasedness. A redundant final-gate inconsistency
+terminates explicitly. Population randomness uses the persisted source
+scheduler's separate `PopulationControl` channel and physical line/species/
+segment keys; it never consumes a retained particle's mover stream.
+
+After a native rebuild, `POPN01`–`POPN03` (group `population-native`) exercise
+actual PIC storage and the existing core controllers:
+
+| ID | Native gate |
+| --- | --- |
+| POPN01 | Actual exact splits from 10 to 12 to 14 records retain the true parent's ID, cached RNG, event/hazard history and persisted split counter; children receive their own keyed future. |
+| POPN02 | Ordinary `CloneParticle` retains every requested byte and destination linkage, including split serial and cached-normal continuation. |
+| POPN03 | Actual conservative merging on a nonzero segment preserves relativistic energy and every survivor byte except weight/list links; a sparse pass retains the exact population without legacy fallback. |
+
+These fixtures restore original lists, temporary lists, allocations, callback
+pointers and source counters. The private population pass cache is regenerated
+by the next required `BeginConservativePopulationPass`. Native execution still
+requires real serial/MPI reports; these tests alone do not qualify checkpoint
+I/O, decomposition invariance or a long physical campaign. Distribution/bin/
+particle-count and multi-seed refinement remain required for unpreserved
+observables, along with moving/imported geometry once its stable physical-line
+identity contract is supplied.
+
+### Native test campaign CLI (DEV01)
+
+The existing parser also accepts a selector union through `--tests`: canonical
+IDs, group names, explicit tags, and `id:`, `group:`, or `tag:` prefixes. Commas
+or quoted whitespace separate selectors; matches are case insensitive,
+deduplicated and sorted by canonical ID. `geometry` and `mover:parker` are
+explicit catalog tags. The original plan's complete `all` selection is
+`--tests all`, including extended cases. The existing `--all-tests` remains the
+bounded routine set for compatibility. A complete catalog selection does not
+supply reviewed physical inputs or constitute a successful full validation
+campaign.
+
+```sh
+./amps --tests 'RNG01,RNG04,group:conservative-resampling' --test-seed 123 --test-repeat 2 --test-output /tmp/sep-cli-seeds
+./amps --tests 'tag:geometry,mover:parker' --test-output /tmp/sep-selected-tests
+./amps --test CLIEX01 --test-repeat 2 --test-format junit --keep-test-artifacts --test-output /tmp/sep-cli-probe
+python3 srcSEP/test/run_native_cli_campaign_tests.py --amps /absolute/path/to/amps --output /tmp/sep-native-cli-proof
+```
+
+`--test-seed` is a strict unsigned 64-bit decimal value. `--test-repeat` is a
+strict positive 32-bit count. Each converted stochastic callback uses a
+versioned case/replicate key independent of selection order, MPI rank and
+thread scheduling; `TestSeed(default,purpose)` maps its actual stream seed and
+retains that mapping. With no seed/repeat request, historical stream defaults
+are unchanged. The catalog records `context`, `deterministic`, or
+`fixed-or-unconverted` capability plus explicit repeat support. Unsupported
+seed/repeat controls produce `ERROR` without executing that callback. Reviewed
+CV/IV/XM/OV/EV campaign inputs retain their declared seeds and cannot be
+overridden by generic test controls.
+
+Converted families include RNG lifecycle, conservative resampling, pure
+mover/neutral resonant tests, and native population fixtures. RNG07/RNG08 and
+deterministic endpoint/mover cases consume no random variates; a supplied
+campaign seed is therefore inapplicable to their numerical result. All MFP
+fixtures draw a persistent optical-depth clock, including ballistic cases,
+and are identified as stochastic. The legacy FTE01/PARKER01/PARKER02 fixtures
+map active keys to a positive odd 31-bit seed accepted by `rnd_seed`; the
+actual int seed is reported. Their override is qualified only for MPI with
+CUDA disabled; hybrid/device builds explicitly reject that unsupported RNG
+restoration path. The declared `positive-odd31-v1` bridge avoids even
+fixed/short-period states of the legacy multiplicative generator, including
+the `2^30` seed whose uniforms are all `0.5`. Historical defaults remain
+unchanged. The native SOURCE02 fixture has a private actual-core negative
+control for this failure mode.
+
+The default evidence root is a timestamp/process-specific directory below
+`test_output`, or use `--test-output`. JSON and JUnit are always retained;
+`--test-format text|json|junit` chooses the displayed summary. Legacy
+initialization diagnostics may precede that summary on stdout, so use the
+committed report file for machine parsing. `--test-json` and `--test-junit`
+remain exact report path overrides. Output directories are checked before
+model initialization. Root alone commits shared summaries; callback outputs
+live under `ID/replicate-N`, with a separate `rank-N` directory for non-root
+ranks. Existing reviewed one-case `--test-output-dir` remains exact when no new
+campaign controls are requested.
+
+JSON retains one stable aggregate ID with complete `invocations` records;
+replicate metrics and seeds are never collapsed into the first run. JUnit
+names executed cases `ID[replicate=N]`. `--fail-fast` waits for MPI outcome
+reduction, stops every rank on the first `FAIL` or `ERROR`, and records compact
+unexecuted ranges with their invocation count. Status exits remain 0 for
+PASS/SKIP, 1 for FAIL and 2 for ERROR. Worker joins are required before fixture
+execution. Native fixture scopes restore supported complete RNG/cache,
+source-scheduler, campaign and background state; failed restoration blocks
+dependent callbacks and reports `ERROR`.
+
+Declared artifacts and per-rank `native-log.txt` transcripts remain available.
+Harness-owned successful scratch directories are removed by default;
+`--keep-test-artifacts` retains them, and failed/error scratch is retained.
+This flag does not change a callback's private `tmpfile` lifecycle. The native
+CLI subprocess proof checks real file retention rather than a metadata flag.
+
+CLIEX01 (group `cli-infrastructure`, initialization `none`) is an
+**infrastructure probe, not physics validation**. It performs actual keyed
+uniform/normal draws and transactional per-rank artifact writes. Controlled
+fault testing requires explicit `--test-input` with schema
+`srcsep-cli-fault-v1` and exactly `fault_rank=N` and `fault_replicate=N`; unknown,
+duplicate, malformed or out-of-range input is rejected. The exact input is
+archived. The small reviewed fixture
+`test/fixtures/cli_fault_rank1_rep0.txt` requests rank 1 to fail on replicate 0
+of a two-rank campaign, proving non-root failures drive collective fail-fast.
+Normal catalog invocation supplies no fault and passes. Native two-rank
+evidence must be produced by the subprocess proof after rebuilding; parser
+tests alone do not qualify MPI behavior.
+
+The dependency-light RNG and conservative-resampling sanitizer launchers also
+run fixed campaigns with seeds 123 and 456, two replicates, and reversed
+execution order. They assert changes in **actual stochastic observables**, not
+only reported keys. `SRCSEP_REPORT_DIR` retains all default and seeded JSON /
+JUnit reports. Mover/neutral resonant families have a separate actual-draw
+trace check. Statistical tolerances and physical invariants are unchanged.
+
+Unsupported fixed/unconverted repeats produce one contract `ERROR` and a
+compact range for all remaining requested invocations, including a
+`UINT32_MAX` request without fail-fast. Later supported descriptors still run
+when fail-fast is disabled. The parser test checks this bound and its exact
+not-run count.
+
+`run_native_cli_campaign_tests.py` writes transactional `summary.json` with
+stable infrastructure IDs NCLI01–NCLI09, each command, expected/actual process
+exit, individual postchecks and process-log path. An expected child failure is
+an infrastructure PASS only after its provenance and collective stopping
+checks pass. Launch/timeout/postcheck failures are recorded before propagation,
+and blocked jobs are SKIP. The `native-cli-campaign` orchestrator step reads
+these individual records. Its reader rejects a false PASS containing a failed
+postcheck. Independent subprocess negative controls test both launch and exit
+failures; they do not count as native model execution.
+
+The `production-cli` native group contains PCLI01–PCLI12. It calls the same
+production parser and `ApplyTurbulenceOptions`, then checks the actual coupling,
+cascade/reflection, injection count, mover registry, wave representation,
+coefficient provider, tolerances and diagnostic cadence. It restores every
+changed production variable and requires zero prior mover-dispatch evidence
+before mutation, since selecting a mover resets that counter. The tests cover
+defaults, help, frozen Boolean aliases, case/value syntax, numeric boundaries,
+errors, actual application, input-layer precedence, configuration warnings,
+legacy TestManager control mapping, 192 applied option combinations, and parser
+repetition.
+
+PCLI09 checks warning output against the preserved advertised capability table.
+All three selectable movers currently advertise streaming accumulation, so
+the historical missing-capability warning branch is unreachable and remains
+explicitly unexercised. That metadata is not proof of physically qualified
+four-spectrum streaming; the separate production closure gate remains active.
+
+```sh
+python3 srcSEP/test/run_native_production_cli_tests.py --amps /absolute/path/to/amps --output /tmp/sep-production-cli
+```
+
+This companion runner executes both MPI ranks twice, retains individual native
+PCLI results, checks fresh executable help/errors with a hostile `amps.in`, and
+records source hashes for the limited input-order/coupled-ownership callsite
+audit. The orchestrator step is `production-cli-compatibility`. **These software
+checks do not complete the original PCLI11 production-evolution or PCLI12 full
+SWMF-run gates.** Those missing gates remain explicit SKIP records. The heavy
+legacy TestManager is not silently executed by a registry test. Its parser
+control mapping is covered; executing that historical diagnostic remains a
+separate gate. Current canonical mover names follow the documented Step14
+migration, while the original misspelled cascade alias remains accepted.
+
+An enabled legacy TestManager and component execution selector now reject as
+conflicting modes. Previously, the test-only return silently bypassed that
+enabled legacy request. Unmixed legacy diagnostics retain their behavior;
+`--run-test-manager --no-test-manager --test PCLI01` remains valid under the
+existing last-occurrence-wins rule. Parser and linked PCLI10 checks verify the
+conflict without invoking the heavy diagnostic.
+
+### Independent physical normalization and polarized wave values
+
+`make -C srcSEP test-real-wave-normalization-unit` runs RWN01/RWN02, the
+independent real-field normalization gates. RWN01 integrates full Lorentz
+orbits in declared real circular fields and compares finite-time Kubo variance
+and time-step refinement with the one-helicity resonant coefficient. RWN02
+uses explicitly balanced independent real L/R fields and positive-wavenumber
+spectrum integrals to check the Jokipii and static Florinskiy normalization
+against total magnetic variance. These are deterministic prescribed-wave
+experiments, not evidence that the native particle-wave adapter is fully
+qualified. They are extended native cases in group `resonant-collision`; the
+orchestrator source step is `real-wave-normalization`.
+
+`make -C srcSEP test-polarized-wave-state-unit` runs the private immutable-value
+tests in group `polarized-wave-state`; the orchestrator step has the same name.
+
+| ID | Value contract |
+| --- | --- |
+| PWS01 | Missing directional/helicity allocation rejects; polarization must be supplied explicitly. |
+| PWS02 | Declared logarithmic centers and width give geometric internal edges and outer half bins. |
+| PWS03 | Exact finite-bin integrals preserve initial branch energy with signed rounding residuals. |
+| PWS04 | The resonant kernel consumes the authoritative four directional/helicity arrays. |
+| PWS05 | Invalid initialization leaves the previously published immutable value unchanged. |
+| PWS06 | Native spectral count/grid mismatches reject before source reads or destination mutation, including counts above allocated NK. |
+| PWS07 | Restore owns an exact immutable copy of all four arrays and signed ledgers; changed bins, grid, revision or ledger reject. |
+
+These value tests do not prove production ownership across a native coupled
+step. In particular, restoring evolved helicities must use the stored arrays;
+an initial equal-L/R prescription is not a replacement for evolved state.
+
+### Narrow native Maxwellian birth geometry evidence
+
+SOURCE02, in `source-native`, exercises the existing generic PIC field-line
+Maxwellian routine with an explicitly short diagnostic interval and global
+time-step/statistical-weight mode. It forces the segment owner to differ from
+the AMR endpoint owner on multiple ranks, checks two actual initialized births,
+and verifies physical vertex coordinates, attachment, fresh extension state and
+post-birth stable identities. The fixture restores geometry, owner, numerics,
+full legacy RNG state and allocations. A missing fixed line, nonempty process,
+or unsupported local numerical mode is an explicit SKIP.
+
+This is **geometry/initial-owner software evidence only**. It excludes the
+physical plasma-versus-lab injection frame, within-step birth-time law,
+segment-crossing routing, purpose-keyed Maxwellian sampler, decomposition-
+independent sampling and production source normalization. The short interval
+prevents a segment crossing; it does not validate crossing behavior. The
+production Maxwellian source remains unqualified while those contracts are
+unresolved.
+
+### Explicit birth windows and native four-spectrum gates
+
+`make -C srcSEP test-birth-window-unit` runs BIRTH01–BIRTH07 with strict warnings,
+ASan and UBSan; `SRCSEP_REPORT_DIR` retains its JSON/JUnit. The `birth-window`
+orchestrator step reads each stable ID, rather than counting the executable as
+one test. These are time-lifecycle value tests, with seconds as the time unit;
+they do not qualify an untested native source adapter or choose its physical
+birth-time law.
+
+| ID | Time contract |
+| --- | --- |
+| BIRTH01 | The driver supplies a finite, representable complete host-step window. |
+| BIRTH02 | A late birth retains its exact positive remaining duration even when its displayed absolute epoch rounds to the step end. |
+| BIRTH03 | First-movement consumption is staged; the original birth history stays unchanged until commit. |
+| BIRTH04 | Unknown history, invalid phases, mismatched windows and unequal host durations reject without output mutation. |
+| BIRTH05 | Immutable snapshot coverage includes the complete parent window and the birth-relative movement interval. |
+| BIRTH06 | An explicit initial condition is distinct from a scheduled source birth. |
+| BIRTH07 | A prescribed positive terminal remainder is completed; an accuracy-requested subdivision below the numerical floor still rejects. |
+
+The tiny-remainder negative control uses `nextafter(1,0)` at epoch `1e12 s`.
+It preserves the positive duration without clipping or redrawing the supplied
+phase. Permitting that prescribed remainder does not relax adaptive error
+controls.
+
+PNW01–PNW04, group `polarized-wave-native`, require spectral storage to be
+registered **before** field-line initialization. The default integrated model
+cannot exercise these native buffer contracts. Run the explicitly configured
+two-rank gate, also registered as orchestrator step `polarized-wave-native`:
+
+```sh
+mpiexec -n 2 ./amps --test-group polarized-wave-native --turbulence-model wave-number-resolved --turbulence-source self-consistent-spectral --coupling off --cascade off --reflection off --test-output /tmp/sep-polarized-native
+```
+
+| ID | Native contract |
+| --- | --- |
+| PNW01 | Actual four-spectrum values reproduce finite-bin and branch moments, initial signed rounding ledgers, and MPI diagnostic readback. |
+| PNW02 | Malformed collective initialization rejects before replacing the owner or changing host diagnostic buffers. |
+| PNW03 | Staged restore retains the exact evolved four arrays and ledgers; it does not reconstruct initial equal helicities. |
+| PNW04 | Invalid amplitudes, terminal magnetic field and radial endpoints reject before host writes; explicit zero amplitude remains zero. |
+
+These are native initialization/restore contracts, not qualification of coupled
+physical evolution. The orchestrator expects all four cases in this configured
+step. A missing case or prerequisite SKIP becomes a step ERROR while the child
+report preserves its original status and explanation; an accidentally omitted
+spectral flag cannot produce a green native gate.
+
+### Validation-only warm parallel Maxwellian study
+
+`make -C srcSEP test-warm-parallel-study-unit` runs the Python mathematical
+verification suite. The `warm-parallel-study` orchestrator step uses the actual
+verbose unittest reader, preserving each test name, status and failure block.
+It covers independent Landau-contour integration, signed cold-plasma limits,
+the first warm MHD correction, precision/continuation refinement, extreme
+neutral cancellation, serialization round trips, winding aliasing, singular
+predictor rejection and mandatory equilibrium inputs.
+
+The separate study requires explicit proton/electron densities, temperatures,
+rest masses, charge magnitude, magnetic field, zero drifts, physical constants,
+distribution, propagation and provenance. The small checked-in manifest is a
+declared controlled verification case, not an inferred production equilibrium:
+
+```sh
+python3 srcSEP/validation/physics/warm_parallel_maxwellian.py --case srcSEP/validation/physics/controlled_ep_maxwellian_baseline.json --kdi .001 .01 .1 1 --helicities Right Left --digits 40 --verification-digits 70 --output /tmp/sep-warm-controlled.json
+```
+
+The example requests study points; it selects no accepted production domain.
+The solver retains displacement current, both species' inertia/thermal
+responses and the entire Landau continuation. It records convergence-based
+frequency uncertainty, output rounding, raw requested points, input hash and a
+content-addressed implementation archive. A serialized-frequency regression
+checks the emitted values against their reported uncertainty at higher
+precision. Winding uses noncommensurate grids plus an independently averaged
+analytic logarithmic derivative; a manufactured 65-root negative control
+detects the former doubled-grid alias.
+
+Root isolation remains numerical, with no interval-arithmetic proof. Damping
+below estimated numerical uncertainty is unresolved, not exact zero. The
+Hermitian wave-energy ratio is a weak-damping diagnostic; no damping acceptance
+threshold is supplied. The declared model is homogeneous, isotropic,
+nonrelativistic and strictly parallel; it does not establish oblique,
+inhomogeneous, nonlinear or observational validity. Study artifacts keep
+`physical_production_qualified=false` and `domain_limits_selected=false`.
+
+## Frozen accepted-proposal transaction: FCT01–FCT09
+
+`SEP::Transport::FrozenCollisionTransaction::Prepare` is a neutral bookkeeping
+component for an explicitly declared frozen-wave operator batch. It accepts
+already weighted resonant-collision proposals, pins their snapshot, epoch,
+geometry, background, physical cell, parent state, lifecycle token and stable
+particle/event key, and calls the canonical `RC::ValidateProposal` for the
+elastic orbit and branch/helicity/bin partition. It consumes no random numbers.
+The enclosing driver supplies the accepted-event phase identity: this helper
+does not reprove stochastic acceptance or neighbor membership in an unspecified
+generator, and it does not certify the owner's opaque RNG/hazard token.
+Exact encoded parent momenta must match: an approximate inverse Lorentz
+transform cannot silently replace the parent's actual stored phase point.
+Identity zero remains the native/source missing-identity sentinel; event zero
+is the valid first accepted event.
+
+Events reduce in stable particle/event order into canonical physical bins.
+Statistical weight is applied once by the collision proposal and checked at
+the transaction seam. All net magnetic bin budgets are checked before any
+candidate is exposed. A negative budget or an unresolvable nonzero stored
+transfer returns `UnresolvedCoefficient`; no clipping, accepted-event removal,
+redraw or partial update occurs. The caller supplies a dimensionless numerical
+tolerance. Each bin's stored-change roundoff must satisfy that tolerance
+relative to its requested net transfer, with no SI floor or reservoir-sized
+normalization. Ordinary bounded roundoff has a signed ledger and is not heat.
+Total nondispersive Alfvén wave energy is twice magnetic energy. The canonical
+proposal's requested invariant increment is kept separate from the actual
+energy difference of the encoded before/after particle momenta. That difference
+uses a stable relativistic difference-of-squares calculation without subtracting
+rest-mass-dominated energies. Every event's particle rounding is signed and must
+resolve its requested transfer at the same explicit tolerance. A nonzero
+requested increment represented as zero, the wrong sign, or unresolved encoded
+energy returns `UnresolvedCoefficient` before any wave debit. The total actual
+residual uses actual encoded particle energy plus twice the actual stored
+magnetic change and must also pass the explicit numerical tolerance.
+
+The helper returns staged particle records plus an immutable wave candidate
+from `Polarized::PrepareEvolutionCandidate`, which alone owns canonical wave
+hashing/revision. It has no public commit operation and owns no production
+state. A private test-only bundle demonstrates an atomic pointer swap after
+precondition checks. Future native publication must coordinate actual PIC
+particles, lists, RNG/hazard state and wave ownership in one outer transaction.
+Frozen-wave batching does not recompute hazards after intermediate deposits
+and is not an exact coupled CTMC or a production-qualified collision driver.
+
+| ID | Actual focused contract |
+| --- | --- |
+| FCT01 | Weighted SI particle energy agrees with an independent relativistic reference; both propagation branches close against twice-magnetic wave transfer. |
+| FCT02 | Ordinary storage roundoff is bounded and signed; sub-ULP debit fails unresolved with no particle or wave candidate. |
+| FCT03 | A whole batch containing an over-budget event is rejected after private staging, with unchanged inputs. |
+| FCT04 | Stale generation/epoch/identity, mismatched phase/weight/lifecycle, one-ULP wrong parent, and tampered orbit or branch/helicity/bin exchanges fail. |
+| FCT05 | Exact chained parent states and consecutive events succeed; duplicate/missing/overflow events and reserved particle identity zero fail. |
+| FCT06 | Reversed particle/event input gives identical staged values, signed reductions and canonical snapshot identity. |
+| FCT07 | Missing frozen phase, stale snapshot/background contracts and invalid explicit numerical tolerances fail. |
+| FCT08 | A private fixture rejects stale wave/particle publication preconditions and swaps one complete immutable bundle. |
+| FCT09 | Actual encoded particle energy and signed roundoff are checked; an RC-valid roundoff-scale wire with resolvable wave debit but zero encoded particle transfer fails unresolved. |
+
+```sh
+make -C srcSEP test-frozen-collision-transaction-unit
+python3 -B srcSEP/test/run_tests.py --suite frozen-collision-transaction --output-dir /tmp/sep-fct-source --plot none
+python3 -B srcSEP/test/run_tests.py --amps ./amps --group frozen-collision-transaction --output-dir /tmp/sep-fct-native --plot none
+python3 -B tools/sep_test_orchestrator.py --app srcsep --skip-build --only frozen-collision-transaction --output-dir /tmp/sep-fct-orchestrator
+```
+
+The source command compiles the same native-selectable deterministic callbacks
+with C++11 strict warnings, ASan and UBSan in `/tmp`. Native commands require an
+executable rebuilt with this factory. The dedicated orchestrator reader retains
+individual FCT PASS/FAIL/ERROR/SKIP records; a source PASS makes no PIC-commit claim.
+The focused source runner records hashes of all source-owned translation units,
+local headers and its own script before compilation and after compilation and
+execution. A changed input discards the entire run with nonzero status.
+
+## Native source birth lifecycle: BIRTHN01–BIRTHN06
+
+The `birth-window-native` group exercises actual registered PIC storage and
+mover adapters: Parker (BIRTHN01), Dmumu (BIRTHN02), and MFP (BIRTHN03) consume
+the declared positive remaining birth duration; BIRTHN04 checks invalid timing
+and late intervals; BIRTHN05 checks clone/split/migration birth history; BIRTHN06
+checks that completed-state checkpoint creation refuses pending first movement.
+The separate `birth-window-native` orchestrator step runs the isolated native
+runner on two MPI ranks and requires all six IDs to report PASS. A missing case
+or SKIP is surfaced as an ERROR in that required-native gate. This verifies
+native lifecycle plumbing against controlled fixtures, without certifying a
+source sampler, frame convention, physical injection history or production
+particle/wave coupling.
+
+## Local numerical MFLAMPA comparison: verified feasibility and required contracts
+
+The local `SWMF_data/SP/MFLAMPA/data` files are archived numerical regression
+inputs and outputs. They are distinct from the digitized MFLAMPA publication
+curves used by XM02/XM03 and from measured detector observations. A source/build
+audit found a clean local MFLAMPA checkout at official commit
+`38e9defc9c525bd3d49669bc2e7d8014987de488`; an isolated standalone build from
+that commit and pinned local `share`/`util` sources compiled and linked in
+`/tmp/srcsep-mflampa-audit-kbou2cbd`. The exact named upstream `test_mflampa`
+regression subsequently passed on two MPI ranks with its unchanged parameter
+file, full grid/defaults, and all available input states through 600 s. The
+actual solver exited zero in 9.79 s; 33 selected output files/blocks passed
+75 setup/header/shape/name/time checks, and the upstream
+`DiffNum -BLESS=NO -t -r=1e-6 -a=1e-6` comparison exited zero with an empty diff.
+The initial wall-time bound was 120 s; no physics or source reductions were
+made. Protected source/binary/input/reference hashes remained unchanged.
+This is upstream software-regression evidence, with no AMPS cross-model score,
+observational validation or adopted polarized-gap qualification.
+`validation/reference_sources.json` records the source commits,
+executable checksum, binary-input coverage and detailed feasibility evidence.
+This new executable is not identified as the historical reference producer.
+
+The [official MFLAMPA Makefile](https://github.com/SWMFsoftware/MFLAMPA/blob/38e9defc9c525bd3d49669bc2e7d8014987de488/Makefile)
+maps the local references as follows:
+
+| Upstream target | Parameter realization | Archived numerical output |
+| --- | --- | --- |
+| `test_mflampa` | `Param/PARAM.in.test`; Parker upwind | `MH_data.ref.gz` |
+| `test_poisson` | `Param/PARAM.in.test.poisson`; Parker Poisson brackets | `MH_poisson_data.ref.gz` |
+| `test_steady` | steady start and restart parameter files | `MH_steady_data.ref.gz` |
+| `test_spectra` | `Param/PARAM.in.test.spectra` | `MH_spectra_data.ref.gz`, `Distr_spectra_data.ref.gz`, `Distraj_spectra_data.ref.gz` |
+
+The existing AMPS `Makefile.test` target
+`test_SEP--focused_transport-IH-mflampa-fl` configures a coupled SC/IH/PT build
+and compares AMPS energy/pitch histograms against `output/test_SEP3D` references.
+It does not establish agreement with these standalone SP numerical references.
+Its configuration/build/run recipes modify their build trees, so they must not
+be launched in the user's current checkout as an isolated comparison.
+
+The checked local input archive contains 112 numerical files: 16 field lines
+at seven actual times, `0,100,...,600 s`. All 112 files passed a source-guided
+Fortran-record/header/shape audit: little-endian four-byte record markers,
+binary64 arrays, one Lagrangian coordinate, 13 state variables, six scalar
+parameters, and 3942–4200 vertices. The control header and tag list declare
+13 epochs through 1200 s, but the files after 600 s are absent. The official
+two-session stop at 600 s fits the available coverage; the tag list cannot
+justify extrapolation or a longer run.
+
+Source-resolved settings also matter. The official test uses
+`nVertexMax=20000`, `nMomentum=100`, `nPitchAngle=1`, initial integral flux
+`0.01 pfu`, finite kinetic-energy range `10 keV`–`10^7 keV`, default parallel
+`sokolov2004` diffusion, and disabled perpendicular diffusion/drift. Its second
+session's `MeanFreePath0InAu=0.3` selects an upstream normalization:
+`lambda_parallel = 0.3 AU (r/AU) (p c / 1 GeV)^(1/3)` where
+`r > 1.1 r(iShock)`. It is not a constant 0.3 AU at every location and energy.
+The near-Sun/momentum boundary policies, thermal injection, nonshock injection
+floor, solver switches and session transition must be preserved explicitly.
+These are verified defaults of the inspected source, not proof of the exact
+compiler/dependency tuple that generated each archived reference.
+[The upstream diffusion implementation](https://github.com/SWMFsoftware/MFLAMPA/blob/38e9defc9c525bd3d49669bc2e7d8014987de488/src/ModDiffusion.f90)
+also consumes `deltaB^2 = mu0 (Wave1 + Wave2)`; units `J/m3` alone do not
+identify magnetic versus total wave energy or provide circular polarization.
+
+An equivalent native replay needs a reviewed input contract before scoring:
+
+1. Pin producer/dependency/compiler versions and physical constants. Validate
+   every field's units and full Lagrangian vertex/line identity across actual
+   snapshots, including offsets, new nodes and three-dimensional geometry.
+2. Resolve density/composition and velocity-frame semantics from producer code
+   and provenance. The current coupler divides SI mass density by proton mass;
+   the archive header's `amu/m3` label cannot independently define the import.
+   The current MFLAMPA file reader explicitly treats stored temperature as
+   thermal energy in keV. The PT coupling default expects Kelvin, so those
+   input arrays cannot be fed directly to that interface without conversion.
+   Use explicit UTC/calendar, Julian date and simulation-time provenance;
+   `StartTime` is seconds from the compiled 1965 epoch, not Unix seconds.
+3. Implement a declared, read-only offline background adapter with immutable
+   epochs. Match the initial distribution, both spatial and momentum boundaries,
+   represented volume/flux measure, source normalization and observer projection.
+4. Approve the common scattering experiment. A prescribed finite-lambda Parker
+   diagnostic tests transport numerics; it does not validate the adopted
+   four-spectrum finite-band polarized collision law. MFLAMPA's optional FTE
+   implementation floors its near-zero-pitch Kolmogorov scattering factor;
+   suppressing native gaps or inferring four helicities would change the model.
+5. Predeclare matched time/energy/channel bins, sampling uncertainty and
+   space/time/momentum refinement gates. Start with separately identified
+   upstream regression reproduction, then equivalent-input comparison; neither
+   is observational validation. Do not fit an arbitrary global amplitude.
+
+The comparison wrapper must capture the actual solver exit separately from
+`tee`, enumerate/sort output files explicitly, and validate headers, shapes and
+provenance before numerical tolerances. The upstream aggregate Make target
+ignores some child errors, its checks use brace globs under `/bin/sh`, and
+`DiffNum -t` ignores text between numbers. A zero Make exit alone is insufficient
+evidence. Copies of immutable references must remain outside any `BLESS=YES`
+path; the isolated build's `data` directory is deliberately private and empty.
+
+## Flux-owner, controlled WKB and relativistic material-plane source suites
+
+The Python catalog exposes the following source suites. Each invokes the
+existing Make target and source runner; none cleans, configures or relinks the
+enclosing native AMPS executable. The `run_all_test` orchestrator exposes the
+same three step names and retains each callback's bracketed verdict. Its
+readers require every listed ID: missing callbacks and SKIP become ERROR for
+these explicitly requested source-family gates. Compiler, sanitizer and child
+process failures also propagate through the outer step exit status.
+
+| Python suite / orchestrator step | Source runner | Required callback IDs and evidence scope |
+| --- | --- | --- |
+| `flux-tube-state` | `test/run_flux_tube_state_tests.sh` | FLCP01–04: exact explicit magnetic-flux owner values/provenance, physical-state rejection, transactional codec rejection, and `A=Phi/B` SI area normalization. These are private value/codec tests, without native owner mutation. |
+| `polarized-wkb` | `test/run_polarized_wkb_tests.sh` | WKB01–08: immutable incoming four-spectrum reservoirs, controlled ideal-MHD work/ray escape, independent spatial/spectral convergence, ALE geometric conservation, rejection, material side pressure and exact multiscale external accounts. Native material-grid publication remains separate. |
+| `maxwell-juttner-flux` | `test/run_maxwell_juttner_flux_tests.sh` | MJ01–06: proper-density normalization, material-plane Lorentz measure, radial/angular sampling, cold limits, atomic numerical rejection and keyed six-draw lifecycle. This is a full-particle mathematical kernel; the gyroaveraged native source bridge remains gated. |
+
+For example, run one source gate or select all three orchestrator steps:
+
+```sh
+python3 -B srcSEP/test/run_tests.py --suite flux-tube-state --output-dir /tmp/sep-flux-state --plot none
+python3 -B srcSEP/test/run_tests.py --suite polarized-wkb --output-dir /tmp/sep-wkb --plot none
+python3 -B srcSEP/test/run_tests.py --suite maxwell-juttner-flux --output-dir /tmp/sep-mj --plot none
+python3 -B tools/sep_test_orchestrator.py --app srcsep --skip-build --only flux-tube-state --only polarized-wkb --only maxwell-juttner-flux --output-dir /tmp/sep-new-source-gates
+```
+
+The FLCP native descriptor group is currently `flux-checkpoint`; the Python
+source-suite alias and orchestrator step are `flux-tube-state`. WKB and MJ use
+the same group names as their Python aliases. A passing catalog/reader self-test
+proves discovery and failure accounting, not the mathematical callback verdicts.
+In particular, independent review found an extreme cold-boost encoded-momentum
+counterexample now included in MJ05. The kernel must reject a thermal crossing
+that binary64 momentum cannot resolve before committing output or RNG. Track
+that correction and its actual re-execution in
+[`MAXWELL_JUTTNER_FLUX_IMPLEMENTATION.md`](../validation/physics/MAXWELL_JUTTNER_FLUX_IMPLEMENTATION.md)
+and [`STATUS.md`](../STATUS.md); historical six-case PASS evidence does not
+cover the added negative control.
+
+## Paired fresh-process native checkpoint gate
+
+The `fresh-process-checkpoint` orchestrator step runs
+`test/run_fresh_process_checkpoint_tests.py` on two MPI ranks. CP05F01, CP05F02
+and CP05F03 cover the fixed analytic diagnostic Parker, Dmumu and MFP API
+continuations respectively. Each case launches a write job and then a separate
+resume job. Each role owns a distinct artifact directory and private PIC cwd;
+only the explicitly named checkpoint/final artifacts cross the process boundary.
+An ordinary single `--test CP05F01` invocation cannot establish this paired
+protocol and may correctly report SKIP when its role input is absent.
+
+```sh
+python3 -B srcSEP/test/run_fresh_process_checkpoint_tests.py --amps ./amps --mpi-ranks 2 --output /tmp/sep-fresh-checkpoint
+python3 -B tools/sep_test_orchestrator.py --app srcsep --skip-build --only fresh-process-checkpoint --output-dir /tmp/sep-fresh-checkpoint-orchestrator
+```
+
+Choose new or empty output directories. The runner retains
+`summary.json` with schema `srcsep-fresh-process-checkpoint-v1`, the executable's
+initial SHA-256, role exit/status/duration, child JSON reports, complete native
+logs and owned working directories. Its own per-role postchecks require an
+unchanged executable, zero exit and the requested native PASS. Final
+`physics.expected` and `physics.resumed` files must exist and match byte for
+byte. The summary is published by temporary-file rename after all selected
+cases have been recorded.
+
+The orchestrator independently reads that evidence. It requires all three case
+IDs exactly once, both write/resume roles in order, integer zero exits, both
+role statuses PASS, exactly the requested PASS in each child native report,
+the current executable matching the initial hash, the runner's equality check,
+and actual final-file byte equality. Missing/unreadable reports or final files,
+SKIP, duplicate/missing cases, changed binaries and contradictory PASS labels
+cannot satisfy the gate. Keep the binary and retained files available while
+reading the result; a removed/replaced binary is explicitly unavailable evidence.
+Harness tests damage each prerequisite independently while leaving the summary's
+PASS labels intact. These synthetic fixtures test software accounting only.
+
+An independent application of this strict reader to the retained build-8
+three-case campaign also passed all three cases, including all six actual
+write/resume child reports and final-byte comparisons. Its executable was pinned
+outside the mutable build path with SHA-256
+`049a1959918dd154e5a81d75ed7ebb18a57764f29c09c3917c81b4068f9c58eb`.
+This evidence establishes that campaign's declared diagnostic API scope only.
+
+This gate establishes the declared fresh-process diagnostic API continuation.
+It does not establish a production resume CLI, output-file continuation,
+MPI repartitioning, material-grid evolution, adopted four-spectrum collision
+physics or native relativistic source qualification. Those require their own
+input contracts and independently executed gates.
+
+## Fixed analytic radial startup and geometry-only Parker construction
+
+`analytic-radial` is a source suite/orchestrator step using
+`test/run_analytic_radial_background_tests.sh`; its strict C++17, ASan and UBSan
+gate compiles the actual shared radial helper and initialization builder. It
+hashes 23 listed source inputs before compilation, after compilation and after
+execution, and discards verdicts if those inputs change. Set
+`SRCSEP_REPORT_DIR` to retain its JSON/JUnit reports and input-hash record.
+The native `analytic-radial-native` step uses two MPI ranks through the isolated
+Python runner and requires all four native cases; missing or skipped native
+cases cannot satisfy this explicit gate.
+
+| ID | Scope |
+| --- | --- |
+| ARB01 | A translated 3-4-5 radial direction with explicit 725 km/s speed, including invariance under a joint point/origin translation. |
+| ARB02 | Independent Cartesian projection-matrix tensor, `div U=2v/r`, radial zero strain and transverse `v/r` strain. |
+| ARB03 | Central differences of velocity independently recover the full tensor, with a declared displacement and dimensionless truncation/roundoff gate. |
+| ARB04 | Invalid speed/origin and undefined radial positions reject without changing output; a legacy-origin/wind mismatch is rejected rather than supplying another provider. |
+| ARB05 | Geometry-only Parker construction needs no invented run/source/output fields, while complete configuration validation and rejected-output atomicity remain strict. |
+| ARB06 | The existing canonical background hash distinguishes adjacent representable origin/speed values and preserves physical signed-zero equivalence. |
+| ARBN01 | Read-only inspection of actual generated analytic startup U and exact current/previous B/U/n agreement with the existing inverse-square density. |
+| ARBN02 | Actual translated-origin/nondefault-speed Parker generator and PIC registration, followed by exact retention of arbitrary imported list U; appended fixture lines are deleted and the original registry count restored. |
+| ARBN03 | A finite early history sentinel on every rank and bad later current U on only rank one (rank zero in serial) require collective whole-transaction rejection with byte-identical B/U/n arrays everywhere; every modified datum is restored afterward. |
+| ARBN04 | Actual frozen run mover values and provenance are varied/restored while the background identity stays fixed; runtime mover selection and dispatch diagnostics remain untouched. |
+
+```sh
+make -C srcSEP test-analytic-radial-background-unit
+python3 -B srcSEP/test/run_tests.py --suite analytic-radial --output-dir /tmp/sep-radial-source --plot none
+python3 -B srcSEP/test/run_tests.py --amps ./amps --group analytic-radial-native --mpi-np 2 --output-dir /tmp/sep-radial-native --plot none
+python3 -B tools/sep_test_orchestrator.py --app srcsep --skip-build --only analytic-radial --only analytic-radial-native --output-dir /tmp/sep-radial-gates
+```
+
+The recorded before-fix native run reached a clean ARBN01/ARBN02 FAIL, exit one:
+startup previous B/U did not match current storage, and the configured generator
+was blocked by unrelated full-runtime validation. An earlier diagnostic run
+also retained that generator's fatal PIC exit/signal-handler failure; it is
+failure evidence, not a clean component verdict. The corrected builder uses one
+geometry validator shared by full validation and geometry construction. Source
+ARB05 failed before that split and passed afterward, while INIT01–03 and the
+shipped input still pass their complete configuration gates. Native after-fix
+results belong to their actual executable/source manifest in
+[`STATUS.md`](../STATUS.md); source passes alone do not establish native PASS.
+The build-8 two-rank report now records ARB01–06 and ARBN01–04 PASS, with both
+rank dispositions retained. ARBN01 inspected 4001 actual startup vertices with
+zero reported velocity error; ARBN03 passed its one-rank invalid-endpoint
+collective rejection, and ARBN04 preserved background identity across frozen
+mover/provenance changes. The retained build-8 binary hash is given in the paired
+checkpoint section above. These are the bounded fixed-background gates, not an
+extension to imported/moving backgrounds or production closure.
+
+The helper's explicit wind declaration supplies `U=v rhat` and
+`G=(v/r)(I-rhat*rhat)` about the same origin. It creates no mutable background
+authority or thermal profile. At native fixed-analytic startup, the whole
+realization is validated before the existing `n(1 AU)=5e6 m^-3`, inverse-square
+density and identical initial previous B/U/n are committed collectively. The
+application background identity schema is version three: a private identity-only
+run projection excludes just mover value/source, without changing the complete
+run/checkpoint fingerprint or executing its canonical sentinel. Registration retains
+imported U but does not infer its derivatives or previous physical epoch. These
+tests do not qualify imported/moving material backgrounds, a source frame,
+temperature closure, full wave physics or production collision closure. The
+existing schema-6 SWCME provider selection is unchanged.
+
+## Controlled material-tube and standard BATSRUS wave-view suites
+
+The source suite `material-tube-kinematics` maps to
+`test-material-tube-kinematics-unit` and
+`test/run_material_tube_kinematics_tests.sh`. Its shared descriptor group is
+`material-tube`, with MTG01–06. These checks cover pointwise Cauchy induction and
+Nanson area, exact material dilation/mass/cap-side geometric conservation,
+shear/translation/tilted caps, independently integrated curved-reference
+geometry, the explicit nonaffine cell limitation, and atomic invalid-geometry
+rejection. The `material-tube-native` orchestrator step executes those same six
+value callbacks in the linked native registry; that proves packaging/execution
+and does not create a PIC material-grid publication path.
+
+The source suite `standard-batsrus-waves` maps to
+`test-standard-batsrus-wave-unit` and
+`test/run_standard_batsrus_wave_tests.sh`. SBW01–05 use the user-selected
+standard BATSRUS producer contract: Wave1/Wave2 contain total Alfvén-wave energy
+densities in the along-B/opposite-B branches, with magnetic fraction one half.
+The typed view checks conversion, orientation/order, complete endpoint identity,
+interpolation numerical limits and atomic rejection. It does not derive four
+circular polarizations from two integrated values. SBWN01/02, group
+`standard-batsrus-waves-native`, exercise controlled imported native wave buffers
+and read-only ownership/rejection. They do not demonstrate a live SWMF producer,
+complete imported velocity-gradient/composition contracts or full production
+closure. The background fingerprint uses the adapter's single contract identity;
+the Python tooling neither duplicates nor selects a different normalization.
+
+```sh
+python3 -B srcSEP/test/run_tests.py --suite material-tube-kinematics --output-dir /tmp/sep-material-source --plot none
+python3 -B srcSEP/test/run_tests.py --amps ./amps --group material-tube --output-dir /tmp/sep-material-native --plot none
+python3 -B srcSEP/test/run_tests.py --suite standard-batsrus-waves --output-dir /tmp/sep-batsrus-source --plot none
+python3 -B srcSEP/test/run_tests.py --amps ./amps --group standard-batsrus-waves-native --mpi-np 2 --output-dir /tmp/sep-batsrus-native --plot none
+python3 -B tools/sep_test_orchestrator.py --app srcsep --skip-build --only material-tube-kinematics --only material-tube-native --only standard-batsrus-waves --only standard-batsrus-waves-native --output-dir /tmp/sep-material-batsrus-gates
+```
+
+All four orchestrator steps require complete callback coverage. A source/native
+SKIP or missing MTG/SBW/SBWN case becomes ERROR for its explicitly requested
+gate, retaining the child's original report. Native steps use two MPI ranks and
+owned cwd/output directories. Negative reader tests leave an initial SKIP and
+omit the remaining cases to verify that partial or unexercised runs cannot
+appear green. These tooling fixtures prove failure accounting; the actual
+mathematical/native outcomes are recorded against their tested build separately.
+The build-8 six-case material baseline predates the later extreme-shear
+flux-precision negative control. That uncovered condition is being corrected
+and revalidated within MTG06; the earlier six PASS verdicts do not qualify it.
+
+## Actual host-step birth and analytic source-epoch gates
+
+`analytic-shock-epoch` selects ASE01–05 and the strict/sanitized source runner
+`test/run_analytic_shock_epoch_tests.sh`. Independent constant-speed and
+linear-speed exponential references check radius and speed at an explicit
+departure [s], arbitrary query order, atomic invalid inputs, and mixed-view
+provenance rejection. ASE05 rejects unprepared/foreign/stale owners, including
+different future knot tables with exactly coincident departure radius and
+speed. The helper evaluates the existing trajectory law; it
+neither reads PIC's mutable clock nor advances a native owner. All 13 compiled
+source/header/launcher inputs are hashed before and after compilation and
+execution. A source change discards the verdicts. These five value tests do
+not establish that a real PIC timestep dispatches a source or moves a newborn.
+
+HOST01–03 (`host-step-native`) address that separate integration seam, once per
+production mover, using the actual `amps_time_step` → `PIC::TimeStep` → source
+and mover callbacks. Each ID requires a fresh native process and exactly one
+explicit input protocol with repeat one. The ordinary catalog invocation
+without the protocol returns SKIP; that SKIP cannot qualify a requested host
+gate. The dedicated runner supplies
+`test/fixtures/host_step_smoke.json` through the versioned
+`SEP_NATIVE_HOST_STEP 1` protocol. Its numerical/source controls are a declared
+software diagnostic, not a selected physical thermal, guiding-center, source
+frame, or observational model. The fixture uses the retained zero-origin
+analytic shock law and explicitly constant source energy/pitch controls,
+prescribed frozen waves and disabled wave coupling/evolution.
+
+The native callbacks observe two actual host steps without setting or manually
+advancing PIC's clock. They require pending step-start birth records, their
+full first movement exactly once, matching initial Cartesian X and field-line
+coordinate S, one actual clock increment per step, and completed analytic shock
+geometry/ledger endpoints. Public fixture controls are restored; PIC private
+first-call/statistics state is contained by process termination. The runner
+also proves the existing multiple-input-ID rejection and the additive
+exclusive-process repeat rejection before mesh initialization.
+
+Each rank publishes immutable cumulative `host-step-trace-000000.json`,
+`host-step-trace-000001.json`, … snapshots and normal transactional manifests.
+Trace schema `srcsep-native-host-step-trace-v2` carries the sequence, compiled
+counter policy, requested/completed step counts, a final-complete marker, and
+the actual source/mover event records. The reader requires contiguous names,
+unchanged cumulative prefixes and a complete last snapshot; early files remain
+available after a fatal mover exit. It verifies every rank and first-birth
+identity coverage. A real native assertion FAIL with exit one remains FAIL;
+missing traces, SKIP, changed executable/input, contradictory exits and harness
+errors become ERROR. Both outcomes return nonzero from the campaign.
+Both the JSON fixture and the actual generated native `fixture.args` are
+hashed; the strict reader also requires the latter to be the exact versioned
+serialization of the former. A changed native input cannot hide behind an
+unchanged higher-level fixture.
+
+```sh
+make -C srcSEP test-analytic-shock-epoch-unit
+python3 -B srcSEP/test/run_tests.py --suite analytic-shock-epoch --output-dir /tmp/sep-source-epoch --plot none
+python3 -B srcSEP/test/run_native_host_step_tests.py --amps ./amps --fixture srcSEP/test/fixtures/host_step_smoke.json --mpi-ranks 2 --output /tmp/sep-real-host-steps
+python3 -B tools/sep_test_orchestrator.py --app srcsep --skip-build --only analytic-shock-epoch --only host-step-native --output-dir /tmp/sep-host-gates
+```
+
+The archived build-10b test-only native run reached all three real host
+callbacks, completed two steps and eight first-birth moves per case, and failed
+the initial X/S and completed shock-epoch assertions. It also exposed the first
+fixture's repeated immutable-output name; the sequenced trace revision corrects
+that harness defect without changing the physical assertions. No remote-AMR
+block/timestep failure occurred in this run, so no core timestep repair is
+claimed or applied. Current native results are recorded against their exact
+staged binary in [`STATUS.md`](../STATUS.md); an ASE or harness PASS does not
+replace the native gate. The tested native counter policy is ON; an OFF build
+requires its own evidence. No full production/source-frame/thermal/material/
+polarized closure or source-driven observation comparison is qualified here.
+
+The `coefficient-radius-native` orchestrator step separately invokes
+`test/run_native_coefficient_radius_tests.py`, default RADIUSN01. This uses the
+tagged schema-6 native startup protocol and the reviewed complete input
+template, with declared translated geometry/nondefault wind edits retained in
+the manifest. It checks the actual read-only QLT1 provider against an independent
+translated-radius law, distinguishes the former global-zero radius, and rejects
+an imported radius with no declared origin. No host timestep/source or inferred
+SWMF coordinate frame is included. Its strict reader requires native zero exit,
+the exact requested PASS with zero assertions, and unchanged executable,
+template and owned input hashes. `--prepare-only` is PREPARED and never PASS.
+The separate `coefficient-radius-library-native` step requests RADIUSN02 through
+`--case RADIUSN02` and the reviewed parallel-diffusion input template. It checks
+the actual configured radius/speed-dependent library route with its declared
+power-law inputs, using the provider's translated heliocentric position. Its
+reader pins that selected ID and its own template hash; a RADIUSN01 result
+cannot satisfy the library gate. Neither test invents an origin for imported
+data whose coordinate frame is unknown.
+
+```sh
+python3 -B srcSEP/test/run_native_coefficient_radius_tests.py --amps ./amps --mpi-ranks 2 --output /tmp/sep-radius-native
+python3 -B srcSEP/test/run_native_coefficient_radius_tests.py --amps ./amps --case RADIUSN02 --mpi-ranks 2 --output /tmp/sep-radius-library-native
+python3 -B tools/sep_test_orchestrator.py --app srcsep --skip-build --only coefficient-radius-native --only coefficient-radius-library-native --output-dir /tmp/sep-radius-gate
+```
+
+## Bounded finite-amplitude response study checks
+
+The source-suite alias and orchestrator step `finite-amplitude-study` invoke
+`test-finite-amplitude-study-unit` and
+`test/run_finite_amplitude_study_tests.sh`. This launches the 16 verbose Python
+unit tests in `test_finite_amplitude_response.py`, with before/after hashes of
+the listed solver/protocol/plotter/input/test closure. It does not launch the
+broad study or choose physical limits. The checks cover independent exact gyro
+motion/order, analytic finite-time Lorentz forcing and helicity signs, weak/full
+orbit comparison, DOP853 and energy/momentum invariants, separate phase/mode
+quadratures, finite-gap semantics, numerical underflow/undefined pitch, explicit
+resource failures, raw-coordinate/provenance binding and portable pinned plots.
+
+The result reader uses the actual verbose-unittest class/method IDs and
+retains individual failure blocks. All 16 named checks are required; missing or
+SKIP prerequisites become ERROR. A source-only success is bounded mathematical
+and reproducibility evidence, not a production error budget, kinetic dispersion
+qualification, adopted gap bridge or full coupled/native convergence. The
+experiment's exact physical/numerical inputs and remaining domain limits are
+documented in
+[`FINITE_AMPLITUDE_RESPONSE_STUDY.md`](../validation/physics/FINITE_AMPLITUDE_RESPONSE_STUDY.md).
+
+```sh
+make -C srcSEP test-finite-amplitude-study-unit
+python3 -B srcSEP/test/run_tests.py --suite finite-amplitude-study --output-dir /tmp/sep-finite-bounded --plot none
+python3 -B tools/sep_test_orchestrator.py --app srcsep --skip-build --only finite-amplitude-study --output-dir /tmp/sep-finite-gate
+```

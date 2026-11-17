@@ -4,6 +4,10 @@ Step 2 establishes one explicit state boundary between background providers and
 particle transport. It does not change the governing transport equations or
 select a different mover.
 
+Current implementation and qualification are tracked in [STATUS.md](STATUS.md).
+The later CP03 correction supersedes the original density-history derivative
+reconstruction described in earlier reports.
+
 ## Authoritative clock
 
 `PIC::SimulationTime` is the only owner of application time. srcSEP reads it
@@ -43,6 +47,17 @@ particle mover. Changing from Parker transport to either focused-transport
 parameterization must not change the background provider, time origin, shock,
 IMF, or turbulence representation.
 
+The application fingerprint's content schema is `srcsep-background-v3`. The
+existing full run/checkpoint fingerprint remains unchanged; background identity
+uses a private projection that removes only the run mover value and its source
+provenance. Its fixed canonical mover sentinel is never installed or executed.
+All other existing run identity inputs are retained. For analytic backgrounds,
+the same declared native origin/speed enters as full binary64 scientific text;
+distinct representable winds therefore receive distinct identities. For SWMF,
+the standard BATSRUS wave contract identity comes from its single typed adapter
+authority. A two-wave import supplies no circular polarization merely because
+its normalization is now explicit.
+
 The snapshot does not deep-copy the large AMPS field-line arrays for every
 particle. Instead, `SnapshotStore` freezes their provider/generation identity.
 Publication is prohibited during the global particle read phase, and every
@@ -52,12 +67,58 @@ guard owns the snapshot, and an atomic phase marker avoids a mutex/reference-cou
 operation in every particle call. This gives all scheduler threads one read-only
 realization without a per-particle field-array copy.
 
-`EvaluateLocalBackgroundAt` derives density-based `div(U)` from the previous
-and current physical epochs. A static zero-length epoch pair is valid only when
-the two density values agree. Every mover composes the same snapshot-validity
-limit and verifies the field-line generation before each substep shell; reaching
-the closed validity endpoint requires the driver to end the read phase before
-continuing with a new snapshot.
+`EvaluateLocalBackgroundAt` obtains an explicit Cartesian velocity gradient
+`G_ij=partial U_i/partial x_j` [s^-1] from the declared provider. Divergence is
+`trace(G)` and field-aligned strain is `b_i G_ij b_j`, using the physical B
+direction. A derivative of `U dot b` along a curved line also contains a
+curvature term and is not interchangeable with that strain. Temporal density
+history alone supplies neither quantity without a material-coordinate,
+continuity/source and composition contract.
+
+The analytic radial and supported canonical SWCME/reduced branches have explicit
+derivative contracts. Imported SWMF lines lack a complete gradient contract and
+reject dependent transport rather than infer it. The canonical SWCME1D
+FULL_ICME interface also lacks regional thermodynamics needed for a coherent
+native publication and is rejected before mutation.
+
+Every mover composes snapshot validity with its departure-relative substep
+time and verifies the field-line generation. A scheduled birth additionally
+requires one snapshot covering its whole explicit parent window. Schema-4
+native birth integration is in progress; its next native gate is pending.
+Reaching a validity endpoint does not authorize silently changing the provider
+or using a second background realization inside a particle read phase.
+
+For a fixed analytic generated domain, shared `amps_init()` now validates the
+whole native realization collectively before installing the existing inverse-square density
+and initial histories. Every current magnetic vector must be finite/nonzero;
+every current velocity must match its explicit radial declaration; and all
+current/previous B/U/n slots must exist. Only then are current n and previous
+B/U/n written, with each previous value equal to its current fixed-background
+value. Every rank finishes preparation before any rank writes; the first failing
+rank's status/context is returned consistently to all ranks. A bad later endpoint
+on one rank leaves every rank's earlier primitives/history untouched. No
+temperature or pressure profile is created.
+
+`util/sep_analytic_radial_background.*` evaluates the explicit constant-speed
+field `U=v (x-origin)/r` and its Cartesian tensor
+`G=(v/r) (I-rhat*rhat)`, in SI. Its native declaration reads the existing active
+initialization origin and wind speed; without runtime input it preserves the
+documented legacy origin zero and 400 km/s. It has no independent mutable
+configuration, fingerprint or snapshot publisher. Generated Parker/straight
+lists now carry declared U themselves; mesh registration copies it exactly and
+also preserves arbitrary imported list velocities. An imported line does not
+thereby receive an analytic derivative or fixed initial history contract.
+Selecting an imported domain with analytic history ownership fails explicitly
+instead of replacing its primitives.
+
+`ARB01`–`ARB06` provide independent translated-origin/nondefault-speed values,
+Cartesian tensor and velocity-difference checks, invalid-input atomic rejection,
+the geometry-only Parker builder contract, and origin/speed identity sensitivity.
+`ARBN01`–`ARBN04` inspect actual
+native startup histories, configured generator/list registration and atomic
+whole-history rejection and frozen-mover/provenance identity exclusion. Their executed build/results and broader limitations
+remain in [STATUS.md](STATUS.md). These fixed-background repairs do not qualify
+time-dependent material geometry, source-frame mapping or production closure.
 
 ## Provider ownership and handoff
 
@@ -221,3 +282,45 @@ outside `PIC::TimeStep()`, as enforced by the store API. Later steps still need
 to move particle-wave source accumulation to thread-local storage and perform a
 deterministic post-mover reduction. That work is intentionally not folded into
 this state/clock change.
+
+## Explicit analytic shock departure and completed host geometry
+
+The fixed analytic host prepares the existing shock trajectory explicitly at
+the physical departure before capturing the previous radius or opening the
+particle read phase. `Shock::EvaluateSourceAtEpoch` returns an immutable
+configuration/epoch/radius/speed view; native injection requests it at its
+frozen step-start birth epoch. Count, compression, intersection and swept speed
+consume that same view. No mutable PIC counter query or lazy trajectory write
+is permitted in this path. Known injection S is passed to the existing core
+allocation helper, so initial S and Cartesian X have one coordinate authority.
+
+After actual PIC work, migration and the read guard have joined, the host closes
+the birth window and collectively advances the analytic owner to that window's
+completed epoch. Only then does it derive the wave-work shock-radius interval.
+This prevents a cached departure radius from masquerading as completed geometry
+and prevents the old uninitialized sentinel-to-launch displacement from being
+counted as physical shock work. A restored previous radius inconsistent with
+the declared departure rejects instead of bridging a stale interval. Candidate
+validation and MPI agreement precede native cache publication.
+
+This repair preserves the existing radius-dependent speed/compression/density
+laws. That legacy source remains global-zero-centered; a translated analytic
+wind has no newly inferred source count/sphere contract and is rejected when
+this source host path is requested. SWCME retains its prepared provider-owned
+trajectory, and imported/SWMF clocks are never replaced by this analytic API.
+The fixed-background accessor tests may use translated origins without running
+a shock-source host step. No thermal or guiding-center source closure is added.
+
+The source-specific native query and consumers require an active frozen driver
+window and exactly matching prepared owner/departure/full trajectory config.
+They reject unprepared or foreign views without consulting PIC's mutable clock
+or modifying the output. General arbitrary-time trajectory mathematics remains
+available separately through `EvaluateSourceAtEpoch`; it cannot by itself
+authorize native source consumption.
+
+ASE01–05 check explicit-time values and owner binding only. HOST01–03 are separate, exclusive
+fresh-process diagnostics of real PIC/host steps; ordinary catalog SKIP is not
+native evidence. The complete input protocol, immutable per-rank traces,
+counter-policy distinction and exact qualification limits are documented in
+[`test/README.md`](test/README.md). Native completion is tied to the staged
+binary/status record, rather than inferred from the source-only trajectory gate.

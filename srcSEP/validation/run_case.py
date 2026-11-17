@@ -29,6 +29,17 @@ from xml.sax.saxutils import escape as xml_escape
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "validation" / "case_registry.json"
 
+# The runner is also loaded by filename in source-only tests. Resolve this
+# sibling from its source location, never from the caller's process directory.
+# Imported validation modules are source-owned and must not acquire caches.
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    from sep_native_execution import (create_native_work_directory,
+                                      isolate_native_arguments)
+finally:
+    sys.path.pop(0)
+
 # Publication-derived cases are immutable scientific definitions.  The public
 # test/run_tests.py front end enforces the same rule, while duplicating the
 # guard here protects operators who invoke this lower-level runner directly.
@@ -185,7 +196,8 @@ def _totals(results: Iterable[Dict[str, Any]]) -> Dict[str, int]:
 
 def _verify_linked_registry(executable: Path,
                             selected_ids: Sequence[str],
-                            timeout: Optional[float]) -> None:
+                            timeout: Optional[float],
+                            working_directory: Path) -> None:
     """Fail before case setup unless the requested linked binary advertises it.
 
     Executing ``--list-tests`` is deliberately part of the gate: an arbitrary
@@ -197,7 +209,7 @@ def _verify_linked_registry(executable: Path,
             f"linked srcSEP/AMPS executable is missing or not executable: {executable}")
     try:
         completed = subprocess.run(
-            [str(executable), "--list-tests"], cwd=str(ROOT), text=True,
+            [str(executable), "--list-tests"], cwd=str(working_directory), text=True,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
             timeout=timeout)
     except subprocess.TimeoutExpired as error:
@@ -206,6 +218,9 @@ def _verify_linked_registry(executable: Path,
     except OSError as error:
         raise CaseRunnerError(
             f"cannot execute linked srcSEP/AMPS application {executable}: {error}") from error
+    (working_directory/"discovery.log").write_text(
+        "COMMAND: "+str(executable)+" --list-tests\nWORKING_DIRECTORY: "+str(working_directory)+
+        "\n"+completed.stdout+"\nEXIT: "+str(completed.returncode)+"\n",encoding="utf-8")
     if completed.returncode != 0:
         raise CaseRunnerError(
             "linked srcSEP/AMPS executable rejected --list-tests "
@@ -242,9 +257,13 @@ def run(selected_ids: Sequence[str], output_dir: Path,
     # The validation portfolio is explicitly an application-level gate. Every
     # case must be present in the linked registry before Python generates any
     # evidence or calls a reference solution.
-    _verify_linked_registry(executable, requested, timeout)
-
     output_dir.mkdir(parents=True, exist_ok=True)
+    # Discovery belongs to this campaign too: even an outdated executable
+    # which initializes PIC before listing must not write PT/mesh into srcSEP.
+    discovery = create_native_work_directory(output_dir, "discovery")
+    isolate_native_arguments([],discovery,ROOT)
+    _verify_linked_registry(executable, requested, timeout, discovery)
+
     results: List[Dict[str, Any]] = []
     case_records: List[Dict[str, Any]] = []
     for case_id in sorted(set(requested)):

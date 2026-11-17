@@ -24,6 +24,11 @@ struct AmbientSample {
   double numberDensityM3 = 0.0;
   double pressurePa = 0.0;
   double protonTemperatureK = 0.0;
+  double massDensityKgM3 = 0.0;
+  // Cartesian row-major G_ij=partial U_i/partial x_j [1/s], from the
+  // provider's branch-preserving derivative evaluator.
+  std::array<double,9> velocityGradientPerS{};
+  bool derivativesValid = false;
 };
 
 // Metadata that binds native field-line storage to one immutable provider

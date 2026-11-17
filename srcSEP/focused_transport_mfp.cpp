@@ -60,6 +60,9 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
     AbortMfpStatus(Status::Error(StatusCode::InvalidArgument,
         "event-driven focused timestep must be finite and nonnegative"));
   }
+  status = PICAdapter::PrepareParticleStep(&context, dtTotal, &dtTotal);
+  if (!status.ok()) AbortMfpStatus(status);
+
   if (dtTotal == 0.0) {
     status = PICAdapter::CommitAndAttach(context);
     if (!status.ok()) AbortMfpStatus(status);
@@ -75,19 +78,18 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
   mu = std::max(-1.0, std::min(1.0, mu));
 
   double elapsedS = 0.0;
-  std::uint64_t eventIndex = *reinterpret_cast<std::uint64_t*>(
-      context.data + SEP::Offset::MfpEventIndex);
+  std::uint64_t eventIndex = context.mfpEventIndex;
   std::uint64_t shellIndex = 0;
-  double residualOpticalDepth = *reinterpret_cast<double*>(
-      context.data + SEP::Offset::MfpOpticalDepth);
-  if (!(residualOpticalDepth > 0.0) ||
-      !std::isfinite(residualOpticalDepth))
-    residualOpticalDepth = std::numeric_limits<double>::quiet_NaN();
+  double residualOpticalDepth = context.mfpOpticalDepth;
   StepDiagnostics stepDiagnostics;
-  // One keyed stream spans every deterministic shell in this particle step.
-  // Segment/snapshot partitioning therefore cannot restart the hazard stream.
+  // Carry the actual consumed stream across outer calls as well as deterministic
+  // shells. Residual optical depth alone cannot restore event branch/pitch draws.
   KeyedRandomStream eventRandom(PICAdapter::CampaignRandomSeed,
                                 context.stableParticleId, 9, 0);
+  status = PICAdapter::ResumeRandomStream(
+      context, PICAdapter::StochasticOperator::MeanFreePath,
+      &eventRandom, &shellIndex);
+  if (!status.ok()) AbortMfpStatus(status);
   while (elapsedS < dtTotal) {
     const NumericalTolerances& tolerances = ActiveNumericalTolerances();
     PICAdapter::LocalBackground local;
@@ -128,10 +130,8 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
     // The elapsed portion of this particle step consumes the same immutable
     // snapshot validity budget.  A non-positive residual is a hard error: using
     // new fields would require ending the global PIC read phase first.
-    const ScalarResult snapshotLimit = ComposeSnapshotValidityLimit(
-        context.particleStepEpochS, elapsedS,
-        context.particleStepEpochS + local.snapshotSecondsRemaining,
-        context.snapshotGeneration, local.generation);
+    const ScalarResult snapshotLimit = PICAdapter::ParticleSnapshotRemaining(
+        context, elapsedS, local.generation);
     if (!snapshotLimit.status.ok() || snapshotLimit.value <= 0.0) {
       AbortMfpStatus(Status::Error(StatusCode::StepUnderflow,
           "event-driven mover reached the background validity boundary"));
@@ -154,8 +154,8 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
       limits.push_back(StepLimit(
           "fte-mfp-shock", tolerances.shockFraction * shockCrossingS));
 
-    const ScalarResult selected = SelectSubstep(
-        remainingS, limits, tolerances.minimumStepS, &stepDiagnostics);
+    const ScalarResult selected = PICAdapter::SelectParticleSubstep(
+        context, elapsedS, limits, tolerances.minimumStepS, &stepDiagnostics);
     if (!selected.status.ok()) AbortMfpStatus(selected.status);
 
     const double startCoordinate = context.state.coordinate;
@@ -172,6 +172,7 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
         SEP::AccountAdiabaticCoolingFlag
             ? local.velocityDivergencePerS : 0.0,
         local.alfvenSpeedMPerS);
+    focusedBackground.magneticPolarityAlongLine=local.magneticPolarityAlongLine;
     focusedBackground.fieldAlignedStrainPerS =
         SEP::AccountAdiabaticCoolingFlag
             ? local.fieldAlignedStrainPerS : 0.0;
@@ -184,6 +185,12 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
             SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode
                 ? &identityAccumulator : NULL);
     if (!increment.status.ok()) AbortMfpStatus(increment.status);
+    const std::uint64_t intervals = static_cast<std::uint64_t>(
+        increment.diagnostics.deterministicIntervals);
+    if (intervals > std::numeric_limits<std::uint64_t>::max() - shellIndex)
+      AbortMfpStatus(Status::Error(StatusCode::StepUnderflow,
+          "MFP accepted-interval identity exhausted"));
+    const std::uint64_t nextShellIndex = shellIndex + intervals;
     RecordAcceptedStep(&stepDiagnostics);
 
     status = PICAdapter::AdvanceAlongFieldLine(
@@ -191,11 +198,8 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
     momentum.value = increment.state.momentumKgMPerS;
     mu = increment.state.mu;
     residualOpticalDepth = increment.state.remainingOpticalDepth;
-    *reinterpret_cast<double*>(
-        context.data + SEP::Offset::MfpOpticalDepth) = residualOpticalDepth;
-    *reinterpret_cast<std::uint64_t*>(
-        context.data + SEP::Offset::MfpEventIndex) =
-            increment.state.nextEventIndex;
+    context.mfpOpticalDepth = residualOpticalDepth;
+    context.mfpEventIndex = increment.state.nextEventIndex;
     const ScalarResult updatedSpeed = SpeedFromMomentum(
         momentum.value, context.state.massKg, SpeedOfLight);
     if (!updatedSpeed.status.ok()) AbortMfpStatus(updatedSpeed.status);
@@ -250,8 +254,7 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
         contribution.signedPathM = emitted.displacementM;
         contribution.eventIndex = emitted.eventIndex;
         contribution.resonantBranch = emitted.resonantBranch;
-        contribution.intervalIndex =
-            (shellIndex << 32) | static_cast<std::uint64_t>(i);
+        contribution.intervalIndex = shellIndex + static_cast<std::uint64_t>(i);
         contribution.pitchAngleResolved = true;
         contribution.crossedBoundary = intervalSegment == NULL;
         contribution.eventType = contribution.crossedBoundary
@@ -284,7 +287,7 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
 
     elapsedS += selected.value;
     eventIndex = increment.state.nextEventIndex;
-    ++shellIndex;
+    shellIndex = nextShellIndex;
   }
 
   if (SEP::Offset::MeanFreePath != -1 &&
@@ -300,6 +303,10 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
         sample.lambdaParallelM;
   }
 
+  status = PICAdapter::StageRandomStream(
+      &context, PICAdapter::StochasticOperator::MeanFreePath,
+      eventRandom, shellIndex);
+  if (!status.ok()) AbortMfpStatus(status);
   status = PICAdapter::CommitAndAttach(context);
   if (!status.ok()) AbortMfpStatus(status);
   return _PARTICLE_MOTION_FINISHED_;

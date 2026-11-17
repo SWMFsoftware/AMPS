@@ -144,6 +144,15 @@ bool EvaluateAmbient(const std::array<double,3>& positionM,
       state.value.primitive.plasma.electronNumberDensityM3;
   candidate.pressurePa=state.value.primitive.plasma.pressurePa;
   candidate.protonTemperatureK=state.value.primitive.protonTemperatureK;
+  candidate.massDensityKgM3=state.value.primitive.plasma.massDensityKgM3;
+  candidate.velocityGradientPerS=state.value.gradientU;
+  candidate.derivativesValid=state.value.derivativesValid;
+  if(!candidate.derivativesValid)return Fail(
+      "reduced ambient provider did not supply a valid velocity gradient",error);
+  for(double value:candidate.velocityGradientPerS)if(!std::isfinite(value))
+    return Fail("reduced ambient velocity gradient is not finite",error);
+  if(!std::isfinite(candidate.massDensityKgM3)||candidate.massDensityKgM3<=0.0)
+    return Fail("reduced ambient mass density is not positive",error);
   if(!FiniteSample(candidate))return Fail(
       "reduced ambient query returned nonphysical primitive state",error);
   *sample=candidate;

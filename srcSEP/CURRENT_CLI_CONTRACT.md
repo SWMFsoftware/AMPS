@@ -262,3 +262,53 @@ results instead of development `SKIP` results.
 All options support both `--name value` and `--name=value`. The scheme is
 currently the fingerprinted `LieFirstOrder` implementation; no CLI option
 silently selects a different temporal order.
+
+## Corrective test-campaign extensions and qualification
+
+The following additions use the same parser; existing production aliases,
+Boolean/value syntax, last-occurrence rules and input/CLI precedence remain
+the compatibility surface. [STATUS.md](STATUS.md) records the current tested
+native build and outstanding physical qualification.
+
+| Option | Contract |
+|---|---|
+| `--tests <selectors>` | Union of comma-separated registered IDs, groups and tags; explicit `all` includes extended cases. Unknown selectors fail before model setup. |
+| `--test-seed <uint64>` | A versioned per-case/per-replicate derivation drives converted test streams. Fixed-input or unconverted contracts reject unsupported overrides explicitly. |
+| `--test-repeat <N>` | Positive uint32 repetition count, default 1. Stable aggregate case IDs retain individual invocation results. Unsupported huge repeats report one error and a compact not-run range. |
+| `--test-output <directory>` | Root for campaign reports and per-case/per-replicate/per-rank artifacts. It does not replace a case's reviewed physical input. |
+| `--test-format <text\|json\|junit>` | Selects campaign presentation; JSON/JUnit files remain authoritative. Legacy initialization may still print text, so stdout is not promised to be a pure structured stream. |
+| `--fail-fast` | Collectively stop subsequent invocations after failure/error, retaining individual rank results and explicit not-run entries. |
+| `--keep-test-artifacts=on` | Retain harness-owned successful scratch as well as published artifacts; failed evidence remains available. Never rename/delete user input to implement retention. |
+
+`--all-tests` retains its routine-only compatibility behavior; it is distinct
+from explicit `--tests all`. The Python runner's `--all` discovers every ID and
+runs each in an isolated native process. `--test-input` and
+`--test-output-dir` remain the separate paired controls for a reviewed native
+case protocol, rather than aliases of `--test-output`.
+
+Enabled legacy TestManager diagnostics and component-test execution are mutually
+exclusive. Combining them now fails explicitly instead of silently skipping
+the enabled legacy path. Disabling TestManager remains compatible with component
+selection. Help and discovery return before native initialization; malformed
+options never enter the production loop. Coupled entry points do not parse
+standalone process arguments or launch these campaigns.
+
+Native evidence directories are preflighted before field-line/model setup.
+Only the designated writer commits shared JSON/JUnit, and rank-specific files
+have separate directories. The Python runner also places incidental `PT`,
+mesh/cache and discovery output in unique artifact-owned working directories.
+Forwarded native relative paths preserve their original `srcSEP` base through
+explicit resolution/provenance; unknown nested test-input schemas reject rather
+than acquire an invented path interpretation. Source-only Make suites keep
+their source-directory cwd.
+
+Legacy diagnostics that still use PIC's small scalar seed have a documented
+positive-odd31 override mapping. The full persistent production operator streams
+retain their separate 64-bit keyed contract; the test bridge does not imply a
+one-to-one mapping of all uint64 campaign seeds to 31-bit legacy states.
+
+Native PCLI01–PCLI12 check actual applied globals and software behavior. Their
+companion runner keeps PCLI11 production advancement and PCLI12 real SWMF
+execution as separate explicit qualification gaps. Passing configuration
+application, source ownership audits or test reporting does not qualify the
+unfinished four-spectrum physical closure.

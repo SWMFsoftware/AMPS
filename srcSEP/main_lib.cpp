@@ -15,6 +15,7 @@
 #include <fstream>
 #include <filesystem>
 #include <limits>
+#include <stdexcept>
 #include <time.h>
 
 #include <sys/time.h>
@@ -34,8 +35,15 @@
 #include "util/sep_background_runtime.h"
 #include "transport_common.h"
 #include "turbulence_production_adapter.h"
+#include "polarized_wave_native_adapter.h"
 #include "util/sep_run_configuration.h"
 #include "util/sep_initialization.h"
+#include "util/sep_analytic_radial_background.h"
+#include "util/sep_analytic_shock_epoch.h"
+#include "util/sep_source_lifecycle.h"
+#include "physics_checkpoint_state.h"
+#include "util/sep_population_production_adapter.h"
+#include "source_capabilities.h"
 #include "sep.dfn"
 #include "tests.h"
 
@@ -60,6 +68,8 @@ const double dxMinSphere=DebugRunMultiplier*4.0*1.0/100/2.5,dxMaxSphere=DebugRun
 const double MarkNotUsedRadiusLimit=100.0;
 
 void install_reduced_background_on_field_lines(double epochS);
+void install_swcme_background_on_field_lines(double epochS,double validUntilS,
+                                             bool publishMetadata);
 
 namespace {
 
@@ -135,10 +145,7 @@ double CurrentShockRadiusM() {
   return std::numeric_limits<double>::quiet_NaN();
 }
 
-struct ShockRadiusHistory {
-  bool initialized = false;
-  double previousRadiusM = std::numeric_limits<double>::quiet_NaN();
-};
+SEP::PhysicsCheckpoint::HostStepCache gHostStepCache;
 
 // Install one explicit startup timestep and statistical weight on every
 // allocated leaf block.  AMPS normally derives these quantities from local
@@ -162,6 +169,23 @@ void InstallConfiguredParticleNumerics(
 }
 
 }  // namespace
+
+SEP::PhysicsCheckpoint::HostStepCache
+SEP::PhysicsCheckpoint::CaptureHostStepCache() {return gHostStepCache;}
+
+SEP::Transport::Status SEP::PhysicsCheckpoint::ValidateHostStepCache(
+    const HostStepCache& cache) {
+  if(cache.shockHistoryInitialized &&
+     (!std::isfinite(cache.previousShockRadiusM)||cache.previousShockRadiusM<0.0))
+    return Transport::Status::Error(Transport::StatusCode::InvalidArgument,
+                                    "checkpoint host shock history is invalid");
+  return Transport::Status::Ok();
+}
+
+void SEP::PhysicsCheckpoint::RestoreHostStepCache(const HostStepCache& cache) {
+  // The checkpoint transaction validates every owner before committing any.
+  gHostStepCache=cache;
+}
 
 double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   double res=1.0;
@@ -201,6 +225,12 @@ static void RegisterTurbulenceSegmentDatums() {
     // additional hidden segment datum.  It is registered only when selected by
     // the CLI to avoid increasing memory in legacy integrated-turbulence runs.
     if (SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::IsActive()) {
+      // One resolved grid fixes diagnostic dimensions before AMPS activates
+      // offsets. Four-spectrum authority lives in its immutable owner; these
+      // 2*N values are only derived propagation-branch diagnostics.
+      const auto layout=SEP::Turbulence::Polarized::PICAdapter::
+          ConfigureNativeDiagnosticsBeforeFieldLineInit();
+      if(!layout.ok())exit(__LINE__,__FILE__,layout.message.c_str());
       PIC::FieldLine::cFieldLineSegment::AddDatumStored(
           &SEP::AlfvenTurbulence_Kolmogorov::WaveNumberResolved::SpectralWaveEnergy);
 
@@ -564,6 +594,17 @@ void amps_init_mesh() {
   //init domain decomposition of the field lines
   PIC::ParallelFieldLines::StaticDecompositionFieldLineLength(0.005);
 
+  // Core AMR restart loading occurs lazily at the first timestep. An empty
+  // buffer here therefore does not prove a fresh campaign. Initialize source
+  // event counters only on a declared fresh fixed-line start; a corrected
+  // field-line restart must restore them with its particle/geometry state.
+  if(_PIC_READ_PARTICLE_DATA_RESTART_FILE__MODE_==
+       _PIC_READ_PARTICLE_DATA_RESTART_FILE__MODE_OFF_ &&
+       !PIC::Restart::LoadRestartSWMF && PIC::FieldLine::nFieldLine>0) {
+    const auto sourceStatus=SEP::SourceLifecycle::InitializeNativeFresh();
+    if(!sourceStatus.ok())exit(__LINE__,__FILE__,sourceStatus.message.c_str());
+  }
+
   //refining the mesh along a set of magnetic field lines: use onle wher model SEP
   if (_MODEL_CASE_==_MODEL_CASE_SEP_TRANSPORT_) {
     PIC::Mesh::mesh->UserNodeSplitCriterion=SEP::Mesh::NodeSplitCriterion;
@@ -730,6 +771,134 @@ void amps_init_mesh() {
 
 }
 
+SEP::Background::AnalyticRadial::Wind
+SEP::Background::AnalyticRadial::DeclaredNativeWind() {
+  Wind declaration;
+  // Runtime initialization is the sole configured authority. Preserve the
+  // documented legacy values only when no such input is installed; these are
+  // not defaults inferred from a zero native endpoint or another provider.
+  declaration.speedMPerS=400000.0;
+  if(SEP::Initialization::HasActive()) {
+    const auto& configuration=SEP::Initialization::Active();
+    declaration.originM={{configuration.parkerOriginM.x,
+        configuration.parkerOriginM.y,configuration.parkerOriginM.z}};
+    declaration.speedMPerS=configuration.solarWindSpeedMPerS;
+  }
+  return declaration;
+}
+
+// The fixed analytic provider already declares n(1 AU)=5e6 m^-3, with n~r^-2.
+// Generated lists now carry their actual declared U. Stage all current B/U/n
+// and storage prerequisites before installing a coherent initial previous
+// epoch; zero-filled previous B/U is not a physically valid history. Imported
+// and time-dependent providers retain their separate history ownership.
+SEP::Transport::Status
+SEP::Background::AnalyticRadial::InitializeFixedNativeHistory() {
+  namespace FL=PIC::FieldLine;
+  namespace BG=SEP::Background;
+  namespace T=SEP::Transport;
+  // This shared-startup API is collective even on its nonanalytic no-op path.
+  // A provider-selection disagreement must not strand one rank in a later
+  // readiness reduction or permit another rank to publish a partial history.
+  const int enabled=BG::ConfiguredProvider()==BG::Provider::Analytic?1:0;
+  int minimumEnabled=0,maximumEnabled=0;
+  MPI_Allreduce(&enabled,&minimumEnabled,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&enabled,&maximumEnabled,1,MPI_INT,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+  if(minimumEnabled!=maximumEnabled)
+    return T::Status::Error(T::StatusCode::UnsupportedConfiguration,
+        "analytic startup provider ownership differs across MPI ranks");
+  if(!maximumEnabled)return T::Status::Ok();
+  struct Pending {
+    FL::cFieldLineVertex* vertex;
+    std::array<double,3> magneticT,velocityMPerS;
+    double numberDensityPerM3;
+  };
+  std::vector<Pending> pending;
+  constexpr double densityAtOneAuPerM3=5.0e6;
+  constexpr double oneAuM=1.495978707e11;
+  const auto prepare=[&]()->T::Status {
+  if(SEP::DomainType!=SEP::DomainType_ParkerSpiral&&SEP::DomainType!=SEP::DomainType_StraitLine)
+    return T::Status::Error(T::StatusCode::UnsupportedConfiguration,
+        "fixed analytic startup histories require a generated analytic domain; imported primitives need an explicit provider/history contract");
+  BG::SnapshotStore::Instance().AssertProviderMayWrite(BG::Provider::Analytic);
+  const auto declaration=DeclaredNativeWind();
+  for(int line=0;line<FL::nFieldLine;++line)
+    for(auto* vertex=FL::FieldLinesAll[line].GetFirstVertex();vertex;vertex=vertex->GetNext()) {
+      Pending candidate;candidate.vertex=vertex;
+      Sample radial;
+      const auto evaluated=Evaluate(declaration,vertex->GetX(),&radial);
+      if(!evaluated.ok())return evaluated;
+      // Allocation is checked before reading any datum. A missing primitive
+      // or previous slot is a model-state error, never permission to synthesize
+      // B, U, temperature, pressure or an imported history.
+      PIC::Datum::cDatumStored* datums[]={
+          &FL::DatumAtVertexMagneticField,&FL::DatumAtVertexPlasmaVelocity,
+          &FL::DatumAtVertexPlasmaDensity,
+          &FL::DatumAtVertexPrevious::DatumAtVertexMagneticField,
+          &FL::DatumAtVertexPrevious::DatumAtVertexPlasmaVelocity,
+          &FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity};
+      for(auto* datum:datums)if(!vertex->GetDatum_ptr(*datum))
+        return T::Status::Error(T::StatusCode::InvalidParticleState,
+            "fixed analytic startup requires allocated current/previous B,U,n storage");
+      vertex->GetMagneticField(candidate.magneticT.data());
+      vertex->GetPlasmaVelocity(candidate.velocityMPerS.data());
+      const auto velocityStatus=ValidateVelocity(declaration,vertex->GetX(),candidate.velocityMPerS.data(),2e-12);
+      if(!velocityStatus.ok())return velocityStatus;
+      for(double component:candidate.magneticT)if(!std::isfinite(component))
+        return T::Status::Error(T::StatusCode::InvalidParticleState,"analytic startup current magnetic field is not finite");
+      const double magnitudeT=std::hypot(std::hypot(candidate.magneticT[0],candidate.magneticT[1]),candidate.magneticT[2]);
+      if(!std::isfinite(magnitudeT)||magnitudeT<=0)
+        return T::Status::Error(T::StatusCode::InvalidParticleState,"analytic startup requires its declared nonzero magnetic field");
+      const double radiusAu=radial.radiusM/oneAuM;
+      const double density=densityAtOneAuPerM3/(radiusAu*radiusAu);
+      if(!std::isfinite(density)||density<=0.0)
+        return T::Status::Error(T::StatusCode::InvalidParticleState,
+            "analytic density startup requires the declared positive inverse-square density to be representable");
+      candidate.numberDensityPerM3=density;pending.push_back(candidate);
+    }
+  if(pending.empty())return T::Status::Error(T::StatusCode::InvalidParticleState,
+      "fixed analytic startup requires at least one native generated vertex");
+  return T::Status::Ok();
+  };
+  T::Status localStatus;
+  try {localStatus=prepare();}
+  catch(const std::exception& error) {
+    localStatus=T::Status::Error(T::StatusCode::InvalidParticleState,
+        std::string("analytic startup preparation failed: ")+error.what());
+  }
+  // Every potentially allocating operation and provider/storage/domain check
+  // precedes agreement. Select one deterministic failing rank, then broadcast
+  // its bounded diagnostic so all ranks return the same failure. None writes
+  // on this path, including otherwise valid ranks with fully prepared arrays.
+  int failingRank=localStatus.ok()?std::numeric_limits<int>::max():PIC::ThisThread;
+  int firstFailingRank=0;
+  MPI_Allreduce(&failingRank,&firstFailingRank,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  if(firstFailingRank!=std::numeric_limits<int>::max()) {
+    int code=static_cast<int>(localStatus.code);
+    char reason[2048]={};
+    if(PIC::ThisThread==firstFailingRank)
+      std::snprintf(reason,sizeof(reason),"analytic startup rejected on rank %d: %s",
+          firstFailingRank,localStatus.message.c_str());
+    MPI_Bcast(&code,1,MPI_INT,firstFailingRank,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Bcast(reason,static_cast<int>(sizeof(reason)),MPI_CHAR,firstFailingRank,MPI_GLOBAL_COMMUNICATOR);
+    return T::Status::Error(static_cast<T::StatusCode>(code),reason);
+  }
+  // Validate the complete realization before publishing any native primitive;
+  // a bad endpoint must not leave partly replaced density/history arrays.
+  // All ranks are now ready; these setters only copy into prevalidated existing
+  // storage, with no allocation or remaining fallible operation after agreement.
+  // These are initial identical epochs of a fixed Eulerian background, not
+  // an imported previous state or a material-grid evolution approximation.
+  for(auto& item:pending) {
+    item.vertex->SetPlasmaDensity(item.numberDensityPerM3);
+    item.vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,
+        item.numberDensityPerM3);
+    item.vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexMagneticField,item.magneticT.data());
+    item.vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaVelocity,item.velocityMPerS.data());
+  }
+  return T::Status::Ok();
+}
+
 void amps_init() {
 
 
@@ -779,6 +948,8 @@ void amps_init() {
   //create the list of mesh nodes where the injection boundary conditinos are applied
   if (_DOMAIN_GEOMETRY_==_DOMAIN_GEOMETRY_BOX_&&
       !SEP::ReducedShock::Enabled()) {
+    const auto sourceCapability=SEP::Sources::ValidateConfiguredSources();
+    if(!sourceCapability.ok())exit(__LINE__,__FILE__,sourceCapability.message.c_str());
     PIC::BC::BlockInjectionBCindicatior=SEP::BoundingBoxInjection::InjectionIndicator;
     PIC::BC::userDefinedBoundingBlockInjectionFunction=SEP::BoundingBoxInjection::InjectionProcessor;
     PIC::BC::InitBoundingBoxInjectionBlockList();
@@ -894,8 +1065,14 @@ void amps_init() {
   // background consumed by srcSEP movers.  Install generation one before the
   // initialization data product is written so a preview cannot claim reduced
   // coupling while retaining the legacy Parker values on its actual line.
+  const auto analyticHistoryStatus=SEP::Background::AnalyticRadial::InitializeFixedNativeHistory();
+  if(!analyticHistoryStatus.ok())
+    exit(__LINE__,__FILE__,analyticHistoryStatus.message.c_str());
   install_reduced_background_on_field_lines(
       SEP::Background::SimulationTimeSeconds());
+  install_swcme_background_on_field_lines(
+      SEP::Background::SimulationTimeSeconds(),
+      std::numeric_limits<double>::infinity(),false);
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;
@@ -935,6 +1112,116 @@ void amps_init() {
 // storage.  The staging vector is not an optimization: it is the transaction
 // boundary that prevents a failed query near the end of a line from leaving a
 // mixture of old and new epochs in the mover-visible AMPS arrays.
+// The canonical 1-D state supplies the complete SHOCK_ONLY primitive state.
+// FULL_ICME pressure/heating is not exposed by that canonical API and cannot
+// be replaced with an upstream isothermal closure here. Refuse publication
+// before changing a single vertex when that capability is unavailable.
+void install_swcme_background_on_field_lines(double epochS,double validUntilS,
+                                             bool publishMetadata) {
+  namespace FL=PIC::FieldLine;
+  namespace BG=SEP::Background;
+  if(BG::ConfiguredProvider()!=BG::Provider::Swcme)return;
+  auto& store=BG::SnapshotStore::Instance();
+  store.AssertProviderMayWrite(BG::Provider::Swcme);
+  const auto current=store.Current();
+  if(current&&current->epoch_seconds()==epochS)return;
+  if(current&&(epochS<current->epoch_seconds()||
+      current->configuration_fingerprint()!=BG::CurrentConfigurationFingerprint()))
+    exit(__LINE__,__FILE__,"SWCME native publication would reverse time or change configuration");
+  if(!std::isfinite(epochS)||std::isnan(validUntilS)||validUntilS<epochS)
+    exit(__LINE__,__FILE__,"SWCME native publication has invalid epoch interval");
+  const auto prepared=SEP::SW1DAdapter::PrepareState(epochS);
+  if(!prepared.ok())exit(__LINE__,__FILE__,prepared.detail.c_str());
+  struct Pending {
+    FL::cFieldLineVertex* vertex;
+    double b[3],u[3],n,p,t;
+  };
+  std::vector<Pending> pending;
+  for(int line=0;line<FL::nFieldLine;++line) {
+    auto& fieldLine=FL::FieldLinesAll[line];
+    for(int index=0;index<=fieldLine.GetTotalSegmentNumber();++index) {
+      Pending item{};
+      item.vertex=fieldLine.GetVertex(index);
+      if(!item.vertex)exit(__LINE__,__FILE__,"SWCME publication found a missing vertex");
+      const double* x=item.vertex->GetX();
+      const double r=std::sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
+      const auto query=SEP::SW1DAdapter::QueryAtRadius(r,false);
+      // A coherent physical publication cannot accept radius clamping or a
+      // diagnostic fallback that has no matching B/composition derivatives.
+      if(query.code!=SEP::SW1DAdapter::StatusCode::Success||
+          query.epoch_seconds!=epochS)
+        exit(__LINE__,__FILE__,("SWCME native query failed: "+query.detail).c_str());
+      const auto& sample=query.sample;
+      if(!sample.thermal_state_available())exit(__LINE__,__FILE__,
+          "canonical SWCME1D FULL_ICME does not expose regional pressure/temperature; native publication requires that explicit capability");
+      const double cylindrical=std::hypot(x[0],x[1]);
+      if(!(cylindrical>0.0)&&sample.azimuthal_field_t()!=0.0)
+        exit(__LINE__,__FILE__,"SWCME azimuthal field is undefined at the Cartesian polar axis");
+      const double phi[3]={cylindrical>0.0?-x[1]/cylindrical:0.0,
+                           cylindrical>0.0?x[0]/cylindrical:0.0,0.0};
+      for(int d=0;d<3;++d) {
+        item.u[d]=sample.speed_m_s()*x[d]/r;
+        item.b[d]=sample.radial_field_t()*x[d]/r+
+            sample.azimuthal_field_t()*phi[d];
+      }
+      item.n=sample.number_density_m3();
+      item.p=sample.pressure_pa();
+      item.t=sample.proton_temperature_k();
+      if(!std::isfinite(item.n)||item.n<=0.0||
+          !std::isfinite(item.p)||item.p<=0.0||
+          !std::isfinite(item.t)||item.t<=0.0)
+        exit(__LINE__,__FILE__,"SWCME native primitive query is nonphysical");
+      pending.push_back(item);
+    }
+  }
+  if(pending.empty())exit(__LINE__,__FILE__,"SWCME publication has no native vertices");
+  // Every query and capability check precedes mutation. Preserve the actual
+  // outgoing native generation; at initialization no earlier epoch exists.
+  for(auto& item:pending) {
+    double oldB[3],oldU[3],oldN=0.0,oldT=0.0,oldP=0.0;
+    item.vertex->GetMagneticField(oldB);item.vertex->GetPlasmaVelocity(oldU);
+    item.vertex->GetPlasmaDensity(oldN);item.vertex->GetPlasmaTemperature(oldT);
+    item.vertex->GetPlasmaPressure(oldP);
+    item.vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexMagneticField,
+        current?oldB:item.b);
+    item.vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaVelocity,
+        current?oldU:item.u);
+    item.vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,
+        current?oldN:item.n);
+    item.vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaTemperature,
+        current?oldT:item.t);
+    item.vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaPressure,
+        current?oldP:item.p);
+    item.vertex->SetMagneticField(item.b);item.vertex->SetPlasmaVelocity(item.u);
+    item.vertex->SetPlasmaDensity(item.n);item.vertex->SetPlasmaPressure(item.p);
+    item.vertex->SetPlasmaTemperature(item.t);
+    double installedB[3],installedU[3],installedN=0.0,installedP=0.0,installedT=0.0;
+    item.vertex->GetMagneticField(installedB);
+    item.vertex->GetPlasmaVelocity(installedU);
+    item.vertex->GetPlasmaDensity(installedN);
+    item.vertex->GetPlasmaPressure(installedP);
+    item.vertex->GetPlasmaTemperature(installedT);
+    bool matches=installedN==item.n&&installedP==item.p&&installedT==item.t;
+    for(int d=0;d<3;++d)
+      matches=matches&&installedB[d]==item.b[d]&&installedU[d]==item.u[d];
+    if(!matches)exit(__LINE__,__FILE__,"SWCME native primitive readback differs from prepared state");
+  }
+  const auto& endpoint=pending.back();
+  const double localCheck[9]={endpoint.b[0],endpoint.b[1],endpoint.b[2],
+      endpoint.u[0],endpoint.u[1],endpoint.u[2],endpoint.n,endpoint.t,endpoint.p};
+  double minima[9],maxima[9];
+  MPI_Allreduce(localCheck,minima,9,MPI_DOUBLE,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(localCheck,maxima,9,MPI_DOUBLE,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+  for(int i=0;i<9;++i)if(minima[i]!=maxima[i])exit(__LINE__,__FILE__,
+      "SWCME native primitive state differs between MPI ranks");
+  if(publishMetadata)BG::PublishModelOwnedSnapshot(BG::Provider::Swcme,
+      epochS,validUntilS,"canonical SWCME1D n_e, radial U, Parker B and exact ambient thermodynamics on native vertices");
+  if(PIC::ThisThread==0)std::cout<<"SWCME_BACKGROUND epoch_s="<<epochS
+      <<" vertices="<<pending.size()<<" endpoint_n_m3="<<endpoint.n
+      <<" endpoint_t_k="<<endpoint.t<<" endpoint_p_pa="<<endpoint.p
+      <<" metadata_published="<<(publishMetadata?1:0)<<std::endl;
+}
+
 void install_reduced_background_on_field_lines(double epochS) {
   if(!SEP::ReducedShock::Enabled())return;
   std::string error;
@@ -1119,10 +1406,8 @@ void amps_time_step(){
     #endif
 
 
-    static bool init_divVsw=false;
-
-    if ((init_divVsw==false)&&(SEP::AccountAdiabaticCoolingFlag==true)) {
-       init_divVsw=true;
+    if ((!gHostStepCache.adiabaticInitialized)&&(SEP::AccountAdiabaticCoolingFlag==true)) {
+       gHostStepCache.adiabaticInitialized=true;
 
        if (_PIC_COUPLER_MODE_!=_PIC_COUPLER_MODE__SWMF_) {
           PIC::DomainBlockDecomposition::UpdateBlockTable();
@@ -1136,19 +1421,35 @@ void amps_time_step(){
 
 start:
 
+    const bool timedAnalyticShock=!SEP::ReducedShock::Enabled()&&
+        SEP::Background::ConfiguredProvider()==SEP::Background::Provider::Analytic&&
+        SEP::ShockModelType==SEP::cShockModelType::Analytic1D;
+    if(timedAnalyticShock) {
+      // Initialize/advance the existing governing trajectory explicitly at the
+      // actual departure before capturing host history or opening particle
+      // reads. The source must not lazily replace a sentinel launch radius or
+      // choose an epoch from whichever PIC counter policy happens to be used.
+      const auto trajectory=SEP::ParticleSource::ShockWave::Tenishev2005::PrepareAnalyticTrajectoryAtEpoch(
+          SEP::Background::SimulationTimeSeconds());
+      if(!trajectory.ok())exit(__LINE__,__FILE__,trajectory.message.c_str());
+    }
+
     // The application-level timestep is the sole owner of turbulence
     // evolution.  Capture the previously published shock position before the
     // particle phase and the new position after it, then pass that interval to
     // the same transaction that reduces particle-wave exchange.  A static
     // history is intentional here: amps_time_step() is the common standalone
     // and coupled entry point, so neither caller may perform a second Advance.
-    // On the first call the before/after radii are identical and no artificial
-    // shock source is deposited.
-    static ShockRadiusHistory shockHistory;
-    if (!shockHistory.initialized) {
-      shockHistory.previousRadiusM = CurrentShockRadiusM();
-      shockHistory.initialized = true;
+    // On the first call use the real launch/departure radius; a real first-step
+    // displacement is retained, while no sentinel-to-launch interval is ever
+    // deposited as physical shock work.
+    if (!gHostStepCache.shockHistoryInitialized) {
+      gHostStepCache.previousShockRadiusM = CurrentShockRadiusM();
+      gHostStepCache.shockHistoryInitialized = true;
     }
+    else if(timedAnalyticShock&&gHostStepCache.previousShockRadiusM!=CurrentShockRadiusM())
+      exit(__LINE__,__FILE__,
+          "analytic host shock history differs from its explicit departure epoch; stale checkpoint/lagged intervals cannot be silently bridged");
 
     // Bind the whole AMPS particle phase to one immutable background snapshot.
     // PrepareSnapshotForParticleStep() observes a new SWMF coupling epoch only
@@ -1159,10 +1460,35 @@ start:
     // common SEP::ParticleMover wrapper.
     try {
       SEP::Background::PrepareSnapshotForParticleStep();
-      SEP::Background::ParticleReadPhase background_read =
-          SEP::Background::SnapshotStore::Instance().BeginParticleRead(
-              SEP::Background::SimulationTimeSeconds());
-      PIC::TimeStep();
+      // Source timestamps must refer to the physical interval before PIC
+      // changes its clock. Freeze it once for all sources/species, then hold
+      // one background generation throughout particle work. A birth keeps its
+      // explicit remaining duration even if its absolute timestamp rounds to
+      // the step end; neither a source nor a mover infers age from PIC's clock.
+      const auto sourceWindow=SEP::Transport::PICAdapter::FreezeNativeDriverWindow();
+      if(!sourceWindow.ok())throw std::runtime_error(sourceWindow.message);
+      SEP::Transport::Birth::DriverWindow physicalWindow;
+      const auto windowRead=SEP::Transport::PICAdapter::GetNativeDriverWindow(&physicalWindow);
+      if(!windowRead.ok())throw std::runtime_error(windowRead.message);
+      {
+        SEP::Background::ParticleReadPhase background_read =
+            SEP::Background::SnapshotStore::Instance().BeginParticleRead(
+                SEP::Background::SimulationTimeSeconds());
+        PIC::TimeStep();
+      }
+      // The read guard and worker/migration phases have joined before closing.
+      // Closing validates the clock and every surviving birth record; an
+      // unconsumed first movement is an error, never silently discarded.
+      const auto completedWindow=SEP::Transport::PICAdapter::CloseNativeDriverWindow();
+      if(!completedWindow.ok())throw std::runtime_error(completedWindow.message);
+      if(timedAnalyticShock) {
+        // Workers/migration/read phase have joined. Commit geometry at the
+        // completed physical epoch before deriving the shock wave-work interval;
+        // the departure source view did not mutate this native owner cache.
+        const auto advanced=SEP::ParticleSource::ShockWave::Tenishev2005::AdvanceAnalyticTrajectoryToEpoch(
+            physicalWindow.endEpochS);
+        if(!advanced.ok())throw std::runtime_error(advanced.message);
+      }
     }
     catch (const std::exception& exception) {
       // A missing/stale snapshot is a model-state error, not a condition under
@@ -1172,7 +1498,7 @@ start:
       std::cerr << "ERROR: cannot enter SEP particle step: "
                 << exception.what() << std::endl;
       exit(__LINE__, __FILE__,
-           "Error: invalid SEP background snapshot state");
+           "Error: invalid SEP background snapshot or source-window state");
     }
 
     // Coupled-library and standalone runs use this one post-particle
@@ -1184,11 +1510,11 @@ start:
       const SEP::Transport::Status turbulenceStatus =
           SEP::Turbulence::PICAdapter::Advance(
               PIC::ParticleWeightTimeStep::GlobalTimeStep[0],
-              shockHistory.previousRadiusM, currentShockRadiusM);
+              gHostStepCache.previousShockRadiusM, currentShockRadiusM);
       if (!turbulenceStatus.ok())
         exit(__LINE__, __FILE__, turbulenceStatus.message.c_str());
     }
-    shockHistory.previousRadiusM = currentShockRadiusM;
+    gHostStepCache.previousShockRadiusM = currentShockRadiusM;
 
     // Zero particles is a physical mode invariant, not merely an input label.
     // Check the actual allocated AMPS population after every native step and
@@ -1208,6 +1534,8 @@ start:
 
 
      const SEP::Run::Configuration& run=SEP::Run::Active().get();
+     SEP::Transport::PICAdapter::BeginPopulationControl();
+     SEP::PopulationControl::BeginConservativePopulationPass();
      PIC::ParticleSplitting::FledLine::WeightedParticleMerging(
          run.populationControl.spatialBins,
          run.populationControl.momentumBins,
@@ -1220,11 +1548,6 @@ start:
          run.populationControl.pitchBins,
          run.populationControl.minimumParticlesPerCell,
          run.populationControl.maximumParticlesPerCell);
-
-     // A split clone carries its parent's stable id (CloneParticle copies the
-     // whole record); give it its own id before the next particle step
-     SEP::Transport::PICAdapter::RekeyClonedParticles();
-
 
      // write output file
      if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {

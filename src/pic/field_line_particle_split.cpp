@@ -13,6 +13,15 @@
 
 #include "pic.h"
 
+PIC::ParticleSplitting::FledLine::fParticleIdentity
+    PIC::ParticleSplitting::FledLine::ParticleIdentity = NULL;
+PIC::ParticleSplitting::FledLine::fPrepareExactSplit
+    PIC::ParticleSplitting::FledLine::PrepareExactSplit = NULL;
+PIC::ParticleSplitting::FledLine::fPostExactSplit
+    PIC::ParticleSplitting::FledLine::PostExactSplit = NULL;
+PIC::ParticleSplitting::FledLine::fMergeController
+    PIC::ParticleSplitting::FledLine::MergeController = NULL;
+
 
 // Structure to hold particle data for binning
 struct cParticleData {
@@ -58,6 +67,12 @@ void PIC::FieldLine::cFieldLineSegment::WeightedParticleMerging(int spec,long in
                              int nParticleRangeMin, int nParticleRangeMax,
                              int mergeThreshold) {
     namespace PB = PIC::ParticleBuffer;
+    const auto controller=PIC::ParticleSplitting::FledLine::MergeController;
+    if(controller) {
+      controller(spec,head,numBinsSpatial,numBinsVParallel,numBinsVNormal,sRange,
+                 nParticleRangeMin,nParticleRangeMax,mergeThreshold);
+      return;
+    }
 
     // Initial bin sizes (will be updated after dynamic V_MAX calculation)
     double binSizeSpatial = sRange / numBinsSpatial;
@@ -245,9 +260,20 @@ void PIC::FieldLine::cFieldLineSegment::WeightedParticleSplitting(int spec,long 
                                int nParticleRangeMin, int nParticleRangeMax,
                                int splitThreshold) {
     namespace PB = PIC::ParticleBuffer;
+    namespace Split = PIC::ParticleSplitting::FledLine;
+
+    // This controller is an exact phase-space clone, not a velocity-bin
+    // reconstruction. These historical arguments do not affect its selection.
+    (void)numBinsSpatial;
+    (void)numBinsVParallel;
+    (void)numBinsVNormal;
+    (void)sRange;
+    (void)vParallelRange;
+    (void)vNormalRange;
+    (void)splitThreshold;
 
     // First pass: Count particles and collect particle data
-    std::vector<cParticleData> particles;
+    std::vector<Split::ExactSplit::Candidate> particles;
     long int p_temp = head;
     int totalParticles = 0;
 
@@ -255,18 +281,8 @@ void PIC::FieldLine::cFieldLineSegment::WeightedParticleSplitting(int spec,long 
         if (PB::GetI(p_temp) == spec) {
             PIC::ParticleBuffer::byte *p_data_temp = PB::GetParticleDataPointer(p_temp);
 
-            // Collect particle data
-            cParticleData pdata;
-            pdata.s = PB::GetFieldLineCoord(p_data_temp);
-            pdata.vParallel = PB::GetVParallel(p_data_temp);
-            pdata.vNormal = PB::GetVNormal(p_data_temp);
-            pdata.w = PB::GetIndividualStatWeightCorrection(p_data_temp);
-            pdata.id = p_temp;
-
-	    if (isfinite(pdata.w)==false) exit(__LINE__,__FILE__,"Error: nan is found");
-	    if (pdata.w==0.0) exit(__LINE__,__FILE__,"Error: stat weight is zero");
-	    if (std::isnormal(pdata.w)==false) exit(__LINE__,__FILE__,"Error: nan is found");
-
+            Split::ExactSplit::Candidate pdata = {
+                p_temp, PB::GetIndividualStatWeightCorrection(p_data_temp), 0};
             particles.push_back(pdata);
             totalParticles++;
         }
@@ -284,57 +300,35 @@ void PIC::FieldLine::cFieldLineSegment::WeightedParticleSplitting(int spec,long 
     //Limit the number of new particle to be created by increased the total number of particle 
     if (targetParticles>1.2*totalParticles) targetParticles=static_cast<int>(1.2*totalParticles); 
 
-    // Sort particles by weight in descending order
-    std::sort(particles.begin(), particles.end(),
-              [](const cParticleData& a, const cParticleData& b) {
-                  return a.w > b.w;
-              });
+    // A no-op population must not consume a lineage counter or require keys.
+    if (totalParticles >= targetParticles) return;
+    const Split::ExactSplit::Status preparation =
+        Split::ExactSplit::Prepare(particles, Split::ParticleIdentity);
+    if (preparation != Split::ExactSplit::Status::Success)
+      exit(__LINE__,__FILE__,
+          "exact field-line split requires positive normal weights and unique nonzero application identities");
 
-    // Track energy conservation
-    double totalEnergyBefore = 0.0;
-    double totalEnergyAfter = 0.0;
+    struct NativeOperations {
+      long int& head;
+      void SetWeight(long int particle, double weight) {
+        PIC::ParticleBuffer::SetIndividualStatWeightCorrection(weight,particle);
+      }
+      long int Allocate() {
+        return PIC::ParticleBuffer::GetNewParticle(head);
+      }
+      void Clone(long int child, long int parent) {
+        PIC::ParticleBuffer::CloneParticle(child,parent);
+      }
+    } operations = {head};
 
     // Split particles starting with highest weights until target is reached
     for (auto& p_to_split : particles) {
         if (totalParticles >= targetParticles) break;
 
-        double newWeight = p_to_split.w / 2.0;
-
-        // Calculate energy before splitting
-        double energyBefore = 0.5 * p_to_split.w * (p_to_split.vParallel * p_to_split.vParallel +
-                                                   p_to_split.vNormal * p_to_split.vNormal);
-
-
-        if (std::isnormal(newWeight)==false) continue;
-
-        // Update weight of original particle
-        PB::SetIndividualStatWeightCorrection(newWeight,p_to_split.id);
-
-        // Create new particle with half the weight
-        long int newParticle = PB::GetNewParticle(head);
-        PB::CloneParticle(newParticle, p_to_split.id);
-
-        double energyAfter = 0.5 * newWeight * (p_to_split.vParallel * p_to_split.vParallel +
-                                              p_to_split.vNormal * p_to_split.vNormal) * 2;
-
-        // Update energy trackers
-        totalEnergyBefore += energyBefore;
-        totalEnergyAfter += energyAfter;
-
-        totalParticles++;
+        if (Split::ExactSplit::Apply(p_to_split,operations,Split::PostExactSplit,
+                                     Split::PrepareExactSplit))
+          totalParticles++;
     }
-
-    /*
-    // Report results
-    std::cout << std::fixed << std::setprecision(6);
-    std::cout << "Splitting completed. Final particle count: " << totalParticles << "\n";
-    std::cout << "Target was: " << targetParticles << "\n";
-    std::cout << "Total Kinetic Energy Before: " << totalEnergyBefore << " J\n";
-    std::cout << "Total Kinetic Energy After:  " << totalEnergyAfter << " J\n";
-    std::cout << "Energy Discrepancy: " <<
-                 2 * fabs(totalEnergyAfter - totalEnergyBefore)/(totalEnergyAfter + totalEnergyBefore) <<
-                 " J\n";
-		 */
 }
 
 

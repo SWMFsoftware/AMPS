@@ -5,6 +5,9 @@
 #include "transport_common.h"
 #include "amps2swmf.h"
 #include "util/sep_initialization.h"
+#include "util/sep_source_lifecycle.h"
+#include "source_capabilities.h"
+#include "util/sep_analytic_shock_epoch.h"
 
 // field_line.cpp is copied to build/main and compiled by AMPS's generic
 // object rule.  That rule always exposes the AMPS root, but it does not inherit
@@ -12,12 +15,16 @@
 // model headers through the same canonical-path adapter used by public srcSEP
 // headers so the source works in both source/srcSEP and copied build/main.
 #include "util/sep_common_header_path.h"
+#include "util/sep_background_runtime.h"
 #include SRCSEP_SEP_COMMON_HEADER(sep_species_source.h)
 #include SRCSEP_SEP_COMMON_HEADER(sep_injection_spectrum.h)
 
 #include <cmath>
 #include <cstring>
 #include <string>
+#include <sstream>
+#include <iomanip>
+#include <limits>
 
 
 int SEP::FieldLine::InjectionParameters::nParticlesPerIteration=300;
@@ -42,25 +49,41 @@ int SEP::FieldLine::InjectionParameters::UseAnalyticShockModel=SEP::FieldLine::I
 
 namespace {
 
-std::uint64_t InjectionEventKey() {
-  const double epoch=SEP::Background::SimulationTimeSeconds();
-  std::uint64_t bits=0;
-  static_assert(sizeof(bits)==sizeof(epoch),"double event key must be 64 bits");
-  std::memcpy(&bits,&epoch,sizeof(bits));
-  return bits;
+SEP::SourceLifecycle::Scheduler sourceScheduler;
+bool sourceSchedulerReady=false;
+
+std::string FixedNativeLineLayout() {
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  exit(__LINE__,__FILE__,"SWMF source identity requires an explicit stable physical line mapping; fixed native array slots cannot represent remapped lines");
+#endif
+  // The full coordinate sequence defines this restricted fixed-line namespace.
+  // Re-evaluating it detects line reordering, replacement, or motion before an
+  // event counter can be reused for a different physical source. Native SWMF
+  // remapping is deliberately unsupported until it provides stable line ids.
+  std::ostringstream layout;
+  layout<<"fixed-native-lines-v1:"<<PIC::FieldLine::nFieldLine;
+  layout<<std::hexfloat;
+  for(int line=0;line<PIC::FieldLine::nFieldLine;++line) {
+    auto& fieldLine=PIC::FieldLine::FieldLinesAll[line];
+    const int segments=fieldLine.GetTotalSegmentNumber();
+    layout<<';'<<line<<':'<<segments;
+    for(int vertex=0;vertex<=segments;++vertex) {
+      auto* point=fieldLine.GetVertex(vertex);
+      if(!point)exit(__LINE__,__FILE__,"fixed source namespace has a missing field-line vertex");
+      const double* x=point->GetX();
+      for(int d=0;d<3;++d) {
+        if(!std::isfinite(x[d]))exit(__LINE__,__FILE__,"fixed source namespace has nonfinite geometry");
+        layout<<','<<x[d];
+      }
+    }
+  }
+  return layout.str();
 }
 
 SEP::Transport::KeyedRandomStream SourceRandom(
-    int fieldLine,int species,std::uint64_t macro,
+    const SEP::SourceLifecycle::Event& event,std::uint64_t macro,
     SEP::Injection::RandomPurpose purpose) {
-  SEP::Injection::RandomKey key;
-  key.campaign=0; // WP30 replaces this with the frozen campaign seed.
-  key.event=InjectionEventKey();
-  key.fieldLine=static_cast<std::uint64_t>(fieldLine);
-  key.species=static_cast<std::uint64_t>(species);
-  key.macroparticle=macro;
-  key.purpose=purpose;
-  return SEP::Injection::MakeRandomStream(key);
+  return SEP::SourceLifecycle::Random(event,macro,static_cast<std::uint64_t>(purpose));
 }
 
 void SampleIsotropicMomentum(double magnitude,
@@ -157,10 +180,60 @@ double ExplicitSourceScale(
 
 }  // namespace
 
+SEP::SourceLifecycle::Event SEP::SourceLifecycle::BeginNativeEvent(
+    Kind kind,int species,int line) {
+  if(!sourceSchedulerReady)exit(__LINE__,__FILE__,
+      "missing source scheduler history: a verified fresh run must initialize it explicitly, and a corrected checkpoint must restore it; continuation cannot recreate source event zero");
+  if(species<0||species>=PIC::nTotalSpecies||line<0||line>=PIC::FieldLine::nFieldLine)
+    exit(__LINE__,__FILE__,"source event has invalid species or physical line");
+  const auto ready=sourceScheduler.Initialize(
+      SEP::Transport::PICAdapter::CampaignRandomSeed,FixedNativeLineLayout());
+  if(!ready.ok())exit(__LINE__,__FILE__,ready.message.c_str());
+  Channel channel;channel.kind=kind;channel.line=line;channel.species=species;
+  Event event;const auto status=sourceScheduler.Begin(channel,&event);
+  if(!status.ok())exit(__LINE__,__FILE__,status.message.c_str());
+  return event;
+}
+SEP::SourceLifecycle::State SEP::SourceLifecycle::CaptureNativeState() {
+  return sourceScheduler.Capture();
+}
+SEP::Transport::Status SEP::SourceLifecycle::InitializeNativeFresh() {
+  if(PIC::ParticleBuffer::GetAllPartNum()!=0)return SEP::Transport::Status::Error(
+      SEP::Transport::StatusCode::InvalidParticleState,
+      "fresh source scheduler initialization requires an empty native particle population");
+  const auto status=sourceScheduler.Initialize(
+      SEP::Transport::PICAdapter::CampaignRandomSeed,FixedNativeLineLayout());
+  if(status.ok())sourceSchedulerReady=true;
+  return status;
+}
+SEP::Transport::Status SEP::SourceLifecycle::RestoreNativeState(const State& state) {
+  Scheduler staged;const auto status=PrepareNativeRestore(state,&staged);
+  if(status.ok())CommitNativeRestore(&staged);
+  return status;
+}
+SEP::Transport::Status SEP::SourceLifecycle::ValidateNativeState(const State& state) {
+  Scheduler staged;return PrepareNativeRestore(state,&staged);
+}
+SEP::Transport::Status SEP::SourceLifecycle::PrepareNativeRestore(
+    const State& state,Scheduler* staged) {
+  if(!staged)return SEP::Transport::Status::Error(
+      SEP::Transport::StatusCode::InvalidArgument,"null staged source scheduler");
+  return staged->Restore(state,SEP::Transport::PICAdapter::CampaignRandomSeed,
+                         FixedNativeLineLayout());
+}
+void SEP::SourceLifecycle::CommitNativeRestore(Scheduler* staged) {
+  sourceScheduler.Swap(staged);sourceSchedulerReady=true;
+}
+
 
 
 long int SEP::FieldLine::InjectParticleFieldLineBeginning(int spec,int iFieldLine) {
   namespace FL = PIC::FieldLine;
+  SEP::Transport::Birth::Record sourceBirth;
+  const auto birthStatus=SEP::Transport::PICAdapter::MakeStepStartBirthRecord(&sourceBirth);
+  if(!birthStatus.ok())exit(__LINE__,__FILE__,birthStatus.message.c_str());
+  const auto sourceEvent=SEP::SourceLifecycle::BeginNativeEvent(
+      SEP::SourceLifecycle::Kind::FixedBeginning,spec,iFieldLine);
 
   long int newParticle;
   PIC::ParticleBuffer::byte *newParticleData;
@@ -181,18 +254,16 @@ long int SEP::FieldLine::InjectParticleFieldLineBeginning(int spec,int iFieldLin
   for (int i=0;i<npart;i++) {
     //generate a particle
     SEP::Transport::KeyedRandomStream random=SourceRandom(
-        iFieldLine,spec,static_cast<std::uint64_t>(i),
+        sourceEvent,static_cast<std::uint64_t>(i),
         SEP::Injection::RandomPurpose::PitchAngle);
     SampleIsotropicMomentum(pAbs,random,p);
 
     if (Vector3D::DotProduct(p,l)<0.0) for (int idim=0;idim<3;idim++) p[idim]=-p[idim];
 
     if ((newParticle=PIC::FieldLine::InjectParticle_default(spec,p,ParticleWeightCorrectionFactor,iFieldLine,0))!=-1) {
-      SEP::Transport::PICAdapter::InitializeParticleTransportState(
-          newParticle, UINT64_C(1),
-          (static_cast<std::uint64_t>(iFieldLine) << 32) |
-              static_cast<std::uint64_t>(i),
-          p);
+      const auto initialized=SEP::Transport::PICAdapter::InitializeParticleTransportStateWithIdentity(
+          newParticle,SEP::SourceLifecycle::ParticleIdentity(sourceEvent,i),sourceBirth);
+      if(!initialized.ok())exit(__LINE__,__FILE__,initialized.message.c_str());
       nInjectedParticles++;
 
     }
@@ -203,6 +274,10 @@ long int SEP::FieldLine::InjectParticleFieldLineBeginning(int spec,int iFieldLin
 
 long int InjectSolarWindIons(int spec,int iFieldLine) {
   namespace FL = PIC::FieldLine;
+  const auto sourceStatus=SEP::Sources::MaxwellianFieldLinePreflight();
+  if(!sourceStatus.ok())exit(__LINE__,__FILE__,sourceStatus.message.c_str());
+  const auto sourceEvent=SEP::SourceLifecycle::BeginNativeEvent(
+      SEP::SourceLifecycle::Kind::MaxwellianBeginning,spec,iFieldLine);
 
   double InjectionArea,n_sw,t_sw,v_sw[3];
   auto Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();
@@ -217,12 +292,49 @@ long int InjectSolarWindIons(int spec,int iFieldLine) {
       FirstVertex,iFieldLine);
 
   //inject model partiles
-  return PIC::FieldLine::InjectMaxwellianLineBeginning(spec,n_sw,t_sw,v_sw,InjectionArea,iFieldLine,200);
+  const auto initialize=[](long particle,std::uint64_t macro,void* context) {
+    const auto& event=*static_cast<const SEP::SourceLifecycle::Event*>(context);
+    SEP::Transport::PICAdapter::InitializeParticleTransportStateWithIdentity(
+        particle,SEP::SourceLifecycle::ParticleIdentity(event,macro));
+  };
+  return PIC::FieldLine::InjectMaxwellianLineBeginning(spec,n_sw,t_sw,v_sw,
+      InjectionArea,iFieldLine,200,initialize,
+      const_cast<SEP::SourceLifecycle::Event*>(&sourceEvent));
 }
 
 
 long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine) {
   namespace FL = PIC::FieldLine;
+  // This existing source performs no helper pre-drift: injection is a boundary
+  // operation at the frozen step start, followed by the full native mover pass.
+  // Declare that timing before reserving an event counter or drawing momentum.
+  SEP::Transport::Birth::Record sourceBirth;
+  const auto birthStatus=SEP::Transport::PICAdapter::MakeStepStartBirthRecord(&sourceBirth);
+  if(!birthStatus.ok())exit(__LINE__,__FILE__,birthStatus.message.c_str());
+  // Advance on every rank before source-location and ownership returns. Empty
+  // events are real scheduler events too; otherwise changing shock activity or
+  // MPI ownership can reuse a birth realization on a subsequent dispatch.
+  SEP::Shock::SourceEpochView analyticSourceView;
+  bool hasAnalyticSourceView=false;
+#if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
+  if(InjectionParameters::InjectLocation==InjectionParameters::_InjectShockLocations&&
+      InjectionParameters::UseAnalyticShockModel==InjectionParameters::AnalyticShockModel_Tenishev2005&&
+      SEP::ShockModelType==SEP::cShockModelType::Analytic1D) {
+    // The host prepared the trajectory before particle reads. Evaluate this
+    // source from the frozen birth departure even when counter-OFF PIC has
+    // already advanced its mutable clock. Querying is read-only and precedes
+    // the persistent event reservation, RNG and native particle allocation.
+    const auto queried=SEP::ParticleSource::ShockWave::Tenishev2005::QueryAnalyticSourceAtEpoch(
+        sourceBirth.parent.startEpochS,&analyticSourceView);
+    if(!queried.ok())exit(__LINE__,__FILE__,queried.message.c_str());
+    const auto timing=SEP::Sources::MovingShockDeparturePreflight(
+        sourceBirth.parent.startEpochS,analyticSourceView.trajectory.epochS);
+    if(!timing.ok())exit(__LINE__,__FILE__,timing.message.c_str());
+    hasAnalyticSourceView=true;
+  }
+#endif
+  const auto sourceEvent=SEP::SourceLifecycle::BeginNativeEvent(
+      SEP::SourceLifecycle::Kind::Shock,spec,iFieldLine);
 
   int iShockFieldLine,npart;
   double xInjection[3]={0.0,0.0,0.0},S=0.0,anpart,p[3],ParticleWeightCorrectionFactor;
@@ -259,7 +371,11 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
       #else
       switch (InjectionParameters::UseAnalyticShockModel) {
       case InjectionParameters::AnalyticShockModel_Tenishev2005:
-	iShockFieldLine=SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(iFieldLine,S,xInjection);
+        if(hasAnalyticSourceView) {
+          const auto located=SEP::ParticleSource::ShockWave::Tenishev2005::InjectionLocationAt(
+              analyticSourceView,iFieldLine,&iShockFieldLine,&S,xInjection);
+          if(!located.ok())exit(__LINE__,__FILE__,located.message.c_str());
+        } else iShockFieldLine=SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(iFieldLine,S,xInjection);
 	injection_coordinate_was_set=(iShockFieldLine>=0);
 	break;
       case InjectionParameters::AnalyticShockModel_none:
@@ -360,7 +476,8 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   #else
     switch (InjectionParameters::UseAnalyticShockModel) {
     case InjectionParameters::AnalyticShockModel_Tenishev2005:
-      swept_volume_m3=SEP::ParticleSource::ShockWave::Tenishev2005::GetShockSpeed();
+      swept_volume_m3=hasAnalyticSourceView?analyticSourceView.speedMPerS:
+          SEP::ParticleSource::ShockWave::Tenishev2005::GetShockSpeed();
       break;
     case InjectionParameters::AnalyticShockModel_none:
       swept_volume_m3=1.0;
@@ -419,10 +536,16 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
   switch (InjectionParameters::UseAnalyticShockModel) {
   case InjectionParameters::AnalyticShockModel_Tenishev2005:
-    anpart=ExplicitSourceScale(speciesSource)*swept_volume_m3*
-        SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate()/
-        InjectionParticleWeight();
-    cout << "Shock locaiton=" << Vector3D::Length(xInjection)/_AU_ << "[AU], Source Rate=" << SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate() << endl << flush;
+    {
+      double sourceRate=0;
+      if(hasAnalyticSourceView) {
+        const auto rate=SEP::ParticleSource::ShockWave::Tenishev2005::InjectionRateAt(analyticSourceView);
+        if(!rate.status.ok())exit(__LINE__,__FILE__,rate.status.message.c_str());
+        sourceRate=rate.value;
+      } else sourceRate=SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate();
+      anpart=ExplicitSourceScale(speciesSource)*swept_volume_m3*sourceRate/InjectionParticleWeight();
+      cout<<"Shock location="<<Vector3D::Length(xInjection)/_AU_<<"[AU], Source Rate="<<sourceRate<<endl<<flush;
+    }
     break;
   case InjectionParameters::AnalyticShockModel_none:
     anpart=InjectionParameters::nParticlesPerIteration;
@@ -461,7 +584,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
   npart=(int)anpart;
   SEP::Transport::KeyedRandomStream countRandom=SourceRandom(
-      iFieldLine,spec,0,SEP::Injection::RandomPurpose::EventCount);
+      sourceEvent,0,SEP::Injection::RandomPurpose::EventCount);
   if (anpart-npart>countRandom.UniformOpen01()) npart++;
 
   auto GetMomentum_Tenishev2005AIAA = [&] (double *pAbsTable,double *WeightCorrectionTable,int nParticles) -> bool {
@@ -478,11 +601,13 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
       s=AMPS2SWMF::ShockData[iFieldLine].CompressionRatio;
       break;
     default:
-      s=SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio();    //InjectionParameters::PowerIndex;
-
       switch (SEP::ShockModelType) {
       case SEP::cShockModelType::Analytic1D:
-        s=SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio();
+        if(hasAnalyticSourceView) {
+          const auto compression=SEP::ParticleSource::ShockWave::Tenishev2005::CompressionRatioAt(analyticSourceView);
+          if(!compression.status.ok())exit(__LINE__,__FILE__,compression.status.message.c_str());
+          s=compression.value;
+        } else s=SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio();
         break;
       case SEP::cShockModelType::SwCme1d:
         s=SEP::SW1DAdapter::CompressionRatio();
@@ -524,7 +649,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     spectrum.powerIndex=q-2.0;
     for (int i=0;i<nParticles;i++) {
       SEP::Transport::KeyedRandomStream random=SourceRandom(
-          iFieldLine,spec,static_cast<std::uint64_t>(i),
+          sourceEvent,static_cast<std::uint64_t>(i),
           SEP::Injection::RandomPurpose::Spectrum);
       const SEP::Transport::ScalarResult sample=SEP::Injection::InverseCdf(
           spectrum,random.UniformOpen01());
@@ -556,7 +681,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     spectrum.powerIndex=speciesSource.spectralIndex;
     for (int i=0;i<nParticles;i++) {
       SEP::Transport::KeyedRandomStream random=SourceRandom(
-          iFieldLine,spec,static_cast<std::uint64_t>(i),
+          sourceEvent,static_cast<std::uint64_t>(i),
           SEP::Injection::RandomPurpose::Spectrum);
       const SEP::Transport::ScalarResult sample=SEP::Injection::InverseCdf(
           spectrum,random.UniformOpen01());
@@ -606,31 +731,31 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
       Segment->GetDir(l);
       mu=SEP::FieldLine::InjectionParameters::ConstMuInjectionValue;
       SEP::Transport::KeyedRandomStream gyrophaseRandom=SourceRandom(
-          iFieldLine,spec,static_cast<std::uint64_t>(i),
+          sourceEvent,static_cast<std::uint64_t>(i),
           SEP::Injection::RandomPurpose::Gyrophase);
       SamplePitchAngleMomentum(pAbsTable[i],mu,l,gyrophaseRandom,p);
     }
     else {
       SEP::Transport::KeyedRandomStream directionRandom=SourceRandom(
-          iFieldLine,spec,static_cast<std::uint64_t>(i),
+          sourceEvent,static_cast<std::uint64_t>(i),
           SEP::Injection::RandomPurpose::PitchAngle);
       SampleIsotropicMomentum(pAbsTable[i],directionRandom,p);
     }
 
     long int newParticle;
 
-    if ((newParticle=PIC::FieldLine::InjectParticle_default(spec,p,GlobalWeightCorrectionFactor*WeightCorrectionTable[i],iFieldLine,iShockFieldLine))!=-1) {
-      SEP::Transport::PICAdapter::InitializeParticleTransportState(
-          newParticle, UINT64_C(2),
-          (static_cast<std::uint64_t>(iFieldLine) << 32) |
-              static_cast<std::uint64_t>(i),
-          p);
+    // The resolved source coordinate owns both native S and Cartesian X from
+    // allocation onward. Do not first draw an unrelated legacy random point
+    // in the segment and overwrite S alone afterward.
+    if ((newParticle=PIC::FieldLine::InjectParticle_default(spec,p,GlobalWeightCorrectionFactor*WeightCorrectionTable[i],iFieldLine,iShockFieldLine,S))!=-1) {
+      const auto initialized=SEP::Transport::PICAdapter::InitializeParticleTransportStateWithIdentity(
+          newParticle,SEP::SourceLifecycle::ParticleIdentity(sourceEvent,i),sourceBirth);
+      if(!initialized.ok())exit(__LINE__,__FILE__,initialized.message.c_str());
       nInjectedParticles++;
 
-      //Set the local coordinte to the shock location
-      PIC::ParticleBuffer::SetFieldLineCoord(S,newParticle);
-
-      //set the initiali distance of the particle from the assigned magnetic field line
+      // InjectParticle_default received the resolved S above and committed
+      // both S and Cartesian X from that same point. There is deliberately no
+      // second coordinate authority after initialization of the birth record.
     }
   }
 

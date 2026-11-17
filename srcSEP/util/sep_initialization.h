@@ -181,6 +181,12 @@ Transport::Status ParseText(const std::string& text, Configuration* result);
 Transport::Status LoadFile(const std::string& path, Configuration* result);
 Transport::Status Validate(const Configuration& configuration);
 
+// Validate only inputs consumed by the Parker curve generator: explicit SI
+// origin/initial point, positive length/speed/source radius, finite rotation,
+// supported point count and initial/source-radius consistency. The parser and
+// Install still require Validate's complete run/mesh/source/output contract.
+Transport::Status ValidateParkerLine(const Configuration& configuration);
+
 // Retarget all declared initialization products to one command-line-selected
 // directory while preserving the leaf names declared in [output].  This is a
 // pure configuration transform; the MPI-aware runtime creates parent
@@ -199,7 +205,9 @@ std::string Fingerprint(const Configuration& configuration);
 
 // Generate an outward Parker curve at uniform arc-length spacing. pointCount
 // includes both endpoints. The midpoint tangent method is second-order in the
-// geometry while preserving each requested segment length to roundoff.
+// geometry while preserving each requested segment length to roundoff. This
+// public geometry-only API calls ValidateParkerLine; it never fabricates time
+// steps, particle sampling, observer settings or output paths.
 Transport::Status BuildParkerLine(const Configuration& configuration,
                                   std::vector<Vec3>* points);
 

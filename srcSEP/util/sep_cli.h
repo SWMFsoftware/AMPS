@@ -2,6 +2,7 @@
 #define SEP_UTIL_SEP_CLI_H
 
 #include <iosfwd>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -100,6 +101,18 @@ struct Options {
   bool runAllTests = false;
   std::vector<std::string> testIds;
   std::vector<std::string> testGroups;
+  std::vector<std::string> testExpressions;
+  bool testSeedProvided=false;
+  std::uint64_t testSeed=0;
+  std::uint32_t testRepeat=1;
+  enum class TestFormat { Text, Json, JUnit };
+  TestFormat testFormat=TestFormat::Text;
+  std::string testOutputDirectory;
+  bool testFailFast=false;
+  bool keepTestArtifacts=false;
+  // Distinguishes an explicitly requested campaign control from its default;
+  // explicit controls cannot silently turn into a production run or a listing.
+  bool testCampaignControlsProvided=false;
 
   // Structured reports are opt-in and valid only for an executing component
   // test selection.  Empty paths disable the corresponding writer; report
@@ -179,6 +192,13 @@ struct Options {
 
   bool printHelp = false;
 };
+
+// Native legacy diagnostics still consume the core 31-bit multiplicative
+// generator. Restrict an active derived key to positive odd seeds: arbitrary
+// signed-int seeds can contain fixed/short-period even states (2^30 gives a
+// constant 0.5 stream). Historical defaults are preserved by the caller.
+// This explicit bridge is test infrastructure, not a new production RNG law.
+std::uint32_t LegacyTestSeedFromKey(std::uint64_t key);
 
 // Print the command-line help for the standalone SEP driver.  This routine does
 // not modify the model state; it only describes the available switches.

@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <sstream>
 #include <string>
@@ -22,6 +23,37 @@ namespace {
 
 const double kSpeedOfLightMPerS = 299792458.0;
 const double kProtonMassKg = 1.67262192369e-27;
+
+std::uint64_t gConsumedStreams=0;
+std::uint64_t gConsumedStateTrace=UINT64_C(1469598103934665603);
+class ObservedKeyedRandomStream final:public Transport::KeyedRandomStream {
+ public:
+  ObservedKeyedRandomStream(std::uint64_t seed,std::uint64_t particle,
+      std::uint64_t operation,std::uint64_t purpose)
+      :Transport::KeyedRandomStream(seed,particle,operation,purpose),
+       before_(SaveState()) {}
+  ~ObservedKeyedRandomStream() {
+    const auto after=SaveState();
+    if(after.integerState==before_.integerState&&
+        after.hasSpareNormal==before_.hasSpareNormal&&
+        after.spareNormal==before_.spareNormal)return;
+    ++gConsumedStreams;
+    std::uint64_t spareBits=0;
+    std::memcpy(&spareBits,&after.spareNormal,sizeof(spareBits));
+    for(std::uint64_t value:{after.keyIdentity,after.integerState,
+                            after.hasSpareNormal,spareBits}) {
+      gConsumedStateTrace^=value;
+      gConsumedStateTrace*=UINT64_C(1099511628211);
+    }
+  }
+ private:Transport::KeyedRandomStreamState before_;
+};
+
+bool StochasticMoverCase(const std::string& id) {
+  return id=="PARK02"||id=="PARK07"||id=="FTED01"||id=="FTED08"||
+      id=="FTEM01"||id=="FTEM02"||id=="FTEM03"||id=="FTEM04"||
+      id=="FTEM05"||id=="FTEM06"||id=="FTEM07"||id=="FTEM08";
+}
 
 bool NearAbsolute(double actual, double expected, double tolerance) {
   return std::fabs(actual - expected) <= tolerance;
@@ -50,9 +82,29 @@ Descriptor MakeDescriptor(const char* id, const char* name, const char* group,
       "linked CLI and source-only C++11 ASan/UBSan runner";
   descriptor.runtime = runtime;
   descriptor.seedPolicy = seed_policy;
+  const bool stochastic=StochasticMoverCase(id);
+  descriptor.seedCapability=stochastic?SeedCapability::Context:SeedCapability::Deterministic;
+  descriptor.repeatSupported=true;
+  if(stochastic)descriptor.seedPolicy="context seed override; default: "+descriptor.seedPolicy;
   descriptor.stateIsolation =
       "stack/vector-owned controlled state and injected coefficient providers";
-  descriptor.callback = callback;
+  descriptor.callback = [callback,stochastic]() {
+    gConsumedStreams=0;
+    gConsumedStateTrace=UINT64_C(1469598103934665603);
+    Result result=callback();
+    const bool capabilityMatches=stochastic?gConsumedStreams>0:gConsumedStreams==0;
+    if(!capabilityMatches) {
+      result.status=Status::Fail;
+      result.message+="; descriptor seed capability disagrees with actual RNG consumption";
+    }
+    result.metrics.push_back({"streams_with_consumed_random_state",
+        static_cast<double>(gConsumedStreams),0,stochastic?">":"==","count"});
+    if(stochastic) {
+      std::ostringstream trace;trace<<"rng_consumption_order_trace_hex="<<std::hex<<gConsumedStateTrace;
+      result.configuration.push_back(trace.str());
+    }
+    return result;
+  };
   return descriptor;
 }
 
@@ -167,7 +219,7 @@ Transport::FocusedTransportIncrement FocusedStep(
     double dt_s, const Transport::PitchAngleDiffusionProvider& provider,
     std::uint64_t particle,
     Transport::ThreadLocalWaveAccumulator* accumulator = NULL) {
-  Transport::KeyedRandomStream random(31, particle, 8, 0);
+  ObservedKeyedRandomStream random(TestSeed(31), particle, 8, 0);
   return Transport::AdvanceFocusedTransportDmumu(
       state, background, kProtonMassKg, kSpeedOfLightMPerS, dt_s,
       provider, random, accumulator);
@@ -181,7 +233,7 @@ Transport::FocusedTransportMfpIncrement AdvanceMfp(
   const Transport::ScalarResult momentum = Transport::MomentumFromSpeed(
       speed_m_per_s, kProtonMassKg, kSpeedOfLightMPerS);
   ConstantMfpProvider provider(lambda_m);
-  Transport::KeyedRandomStream random(91, particle_id, 9, 0);
+  ObservedKeyedRandomStream random(TestSeed(91), particle_id, 9, 0);
   return Transport::AdvanceFocusedTransportMfp(
       {0.0, momentum.value, mu}, background, kProtonMassKg,
       kSpeedOfLightMPerS, dt_s, maximum_interval_s, provider, random, NULL);
@@ -189,7 +241,7 @@ Transport::FocusedTransportMfpIncrement AdvanceMfp(
 
 Result RunPark01() {
   ConstantSpatialProvider provider(0.0, 0.0);
-  Transport::KeyedRandomStream random(1, 1, 7, 0);
+  ObservedKeyedRandomStream random(TestSeed(1), 1, 7, 0);
   const Transport::ParkerIncrement step = Transport::AdvanceParker(
       {2.0, 3.0e-19}, {400000.0, 0.0}, 1.0e7, 5.0, provider, random);
   const double expected_displacement_m = 2.0e6;
@@ -198,7 +250,7 @@ Result RunPark01() {
       "zero-diffusion Parker state follows the exact convection characteristic",
       "Parker convection differs from U*dt");
   result.hasSeed = true;
-  result.seed = 1;
+  result.seed = TestSeed(1);
   result.configuration = {"U_parallel_m_per_s=400000", "dt_s=5", "kappa=0"};
   result.metrics.push_back(
       {"displacement_absolute_error", error_m, 1.0e-9, "<=", "m"});
@@ -206,7 +258,7 @@ Result RunPark01() {
 }
 
 Result RunPark02() {
-  const std::uint64_t seed = 2;
+  const std::uint64_t seed = TestSeed(2);
   const int samples = 120000;
   const double kappa = 2.5e10;
   const double dt_s = 3.0;
@@ -215,7 +267,7 @@ Result RunPark02() {
   long double sum2 = 0.0L;
   bool status_ok = true;
   for (int i = 0; i < samples; ++i) {
-    Transport::KeyedRandomStream random(seed, static_cast<unsigned>(i), 7, 0);
+    ObservedKeyedRandomStream random(seed, static_cast<unsigned>(i), 7, 0);
     const Transport::ParkerIncrement step = Transport::AdvanceParker(
         {0.0, 1.0e-19}, {0.0, 0.0}, 1.0e6, dt_s, provider, random);
     status_ok = status_ok && step.status.ok();
@@ -244,7 +296,7 @@ Result RunPark02() {
 
 Result RunPark03() {
   ConstantSpatialProvider provider(0.0, 12.5);
-  Transport::KeyedRandomStream random(3, 1, 7, 0);
+  ObservedKeyedRandomStream random(TestSeed(3), 1, 7, 0);
   const Transport::ParkerIncrement step = Transport::AdvanceParker(
       {0.0, 1.0e-19}, {0.0, 0.0}, 1.0e6, 4.0, provider, random);
   const double error_m = std::fabs(step.displacementM - 50.0);
@@ -252,7 +304,7 @@ Result RunPark03() {
       "Ito variable-kappa drift has the analytical positive gradient sign",
       "Ito variable-kappa drift has the wrong sign or magnitude");
   result.hasSeed = true;
-  result.seed = 3;
+  result.seed = TestSeed(3);
   result.configuration = {"d_kappa_ds_m_per_s=12.5", "dt_s=4", "kappa=0"};
   result.metrics.push_back(
       {"drift_displacement_error", error_m, 1.0e-14, "<=", "m"});
@@ -261,7 +313,7 @@ Result RunPark03() {
 
 Result RunPark04() {
   ConstantSpatialProvider provider(0.0, 0.0);
-  Transport::KeyedRandomStream random(4, 1, 7, 0);
+  ObservedKeyedRandomStream random(TestSeed(4), 1, 7, 0);
   const double p0 = 2.0e-19;
   const Transport::ParkerIncrement step = Transport::AdvanceParker(
       {0.0, p0}, {0.0, 3.0e-4}, 1.0e6, 5.0, provider, random);
@@ -271,7 +323,7 @@ Result RunPark04() {
       "Parker momentum follows the exact adiabatic characteristic",
       "Parker momentum differs from the analytical cooling solution");
   result.hasSeed = true;
-  result.seed = 4;
+  result.seed = TestSeed(4);
   result.configuration = {"p0_kg_m_per_s=2e-19", "divU_s^-1=3e-4", "dt_s=5"};
   result.metrics.push_back(
       {"momentum_absolute_error", error, 1.0e-32, "<=", "kg m s^-1"});
@@ -294,7 +346,7 @@ Result RunPark05() {
 
 double IntegrateLinearParker(double dt_s) {
   LinearDriftSpatialProvider provider(0.4);
-  Transport::KeyedRandomStream random(6, 1, 7, 0);
+  ObservedKeyedRandomStream random(TestSeed(6), 1, 7, 0);
   Transport::ParkerState state = {1.0, 1.0e-19};
   for (double time_s = 0.0; time_s < 1.0 - 0.5 * dt_s; time_s += dt_s)
     state = Transport::AdvanceParker(
@@ -316,7 +368,7 @@ Result RunPark06() {
       "variable-kappa manufactured drift converges under refinement",
       "variable-kappa drift does not show the required observed order");
   result.hasSeed = true;
-  result.seed = 6;
+  result.seed = TestSeed(6);
   result.configuration = {"ds_dt_s^-1=0.4*s", "duration_s=1", "dt_s=0.1,0.05"};
   result.metrics.push_back({"observed_refinement_order", order.observedOrder,
       minimum_order, ">=", "dimensionless"});
@@ -326,7 +378,7 @@ Result RunPark06() {
 }
 
 Result RunPark07() {
-  const std::uint64_t seed = 407;
+  const std::uint64_t seed = TestSeed(407);
   const std::size_t particles = 20000;
   const double minimum_m = -1.0;
   const double maximum_m = 1.0;
@@ -341,7 +393,7 @@ Result RunPark07() {
   long double sum_time = 0.0L;
   bool status_ok = true;
   for (std::size_t particle = 0; particle < particles && status_ok; ++particle) {
-    Transport::KeyedRandomStream random(seed, particle, 7, 4070);
+    ObservedKeyedRandomStream random(seed, particle, 7, 4070);
     Transport::ParkerState state = {initial_m, 1.0e-19};
     for (double time_s = 0.0; time_s < maximum_time_s; time_s += dt_s) {
       const Transport::ParkerIncrement step = Transport::AdvanceParker(
@@ -422,7 +474,7 @@ Result RunPark07() {
 }
 
 Result RunFted01() {
-  const std::uint64_t seed = 31;
+  const std::uint64_t seed = TestSeed(31);
   const int samples = 120000;
   const double diffusion = 0.2;
   const double dt_s = 0.01;
@@ -591,7 +643,7 @@ Result RunFted07() {
       "symmetric deterministic focusing split converges under refinement",
       "focused deterministic split misses its observed-order target");
   result.hasSeed = true;
-  result.seed = 31;
+  result.seed = TestSeed(31);
   result.configuration = {"dlnB_ds_m^-1=-2e-9", "duration_s=1", "dt_s=0.02,0.01,0.0005"};
   result.metrics.push_back({"observed_refinement_order", order.observedOrder,
       minimum_order, ">=", "dimensionless"});
@@ -615,7 +667,7 @@ double SampleLegendreP2(double amplitude, Transport::RandomStream& random) {
 }
 
 Result RunFted08() {
-  const std::uint64_t seed = 308;
+  const std::uint64_t seed = TestSeed(308);
   const std::size_t particles = 40000;
   const std::size_t steps = 100;
   const double dt_s = 0.005;
@@ -629,10 +681,10 @@ Result RunFted08() {
   long double sum2 = 0.0L;
   bool status_ok = momentum.status.ok();
   for (std::size_t particle = 0; particle < particles; ++particle) {
-    Transport::KeyedRandomStream initial_random(seed, particle, 0, 3080);
+    ObservedKeyedRandomStream initial_random(seed, particle, 0, 3080);
     double mu = SampleLegendreP2(amplitude, initial_random);
     for (std::size_t step_index = 0; step_index < steps; ++step_index) {
-      Transport::KeyedRandomStream mover_random(
+      ObservedKeyedRandomStream mover_random(
           seed, particle, step_index, 3081);
       const Transport::FocusedTransportIncrement step =
           Transport::AdvanceFocusedTransportDmumu(
@@ -674,13 +726,13 @@ Result RunFted08() {
 }
 
 Result RunFtem01() {
-  const std::uint64_t seed = 101;
+  const std::uint64_t seed = TestSeed(101);
   const int samples = 120000;
   const double rate_per_s = 2.5;
   long double sum = 0.0L;
   bool status_ok = true;
   for (int i = 0; i < samples; ++i) {
-    Transport::KeyedRandomStream random(seed, i, 9, 0);
+    ObservedKeyedRandomStream random(seed, i, 9, 0);
     const Transport::ScalarResult wait =
         Transport::SampleExponentialWaitingTime(rate_per_s, random);
     status_ok = status_ok && wait.status.ok();
@@ -717,7 +769,7 @@ Result RunFtem02() {
       "event counts reproduce the analytical Poisson mean",
       "event-count mean exceeds its statistical tolerance");
   result.hasSeed = true;
-  result.seed = 91;
+  result.seed = TestSeed(91);
   result.configuration = {"histories=30000", "nu_s^-1=2", "duration_s=1"};
   result.metrics.push_back({"event_mean_absolute_error", error, 0.025, "<", "count"});
   return result;
@@ -741,12 +793,14 @@ Result RunFtem03() {
       "infinite mean free path follows the exact ballistic characteristic",
       "ballistic MFP limit differs from (U+v*mu)*dt");
   result.configuration = {"speed_m_per_s=2e6", "mu=0.25", "U_m_per_s=4e5", "dt_s=3", "lambda=inf"};
+  result.hasSeed=true;result.seed=TestSeed(91);
+  result.configuration.push_back("phase_characteristic=deterministic;residual_optical_depth=sampled");
   result.metrics.push_back({"displacement_relative_error", relative_error, 2.0e-14, "<=", "dimensionless"});
   return result;
 }
 
 Result RunFtem04() {
-  Transport::KeyedRandomStream random(104, 1, 9, 0);
+  ObservedKeyedRandomStream random(TestSeed(104), 1, 9, 0);
   const Transport::WaveFrameScatterResult scatter =
       Transport::ScatterIsotropicallyInWaveFrame(
           0.7 * kSpeedOfLightMPerS, 0.6, -4.0e5,
@@ -761,9 +815,11 @@ Result RunFtem04() {
       "Lorentz scattering preserves speed in the selected Alfven-wave frame",
       "wave-frame elastic-scattering invariant was violated");
   result.hasSeed = true;
-  result.seed = 104;
+  result.seed = TestSeed(104);
   result.configuration = {"speed=0.7c", "mu=0.6", "wave_speed_m_per_s=-4e5"};
   result.metrics.push_back({"wave_frame_speed_relative_error", relative_error, 3.0e-14, "<=", "dimensionless"});
+  result.metrics.push_back({"scattered_pitch_mu",scatter.mu,-1,">=","dimensionless"});
+  result.metrics.push_back({"scattered_speed_fraction_c",scatter.speedMPerS/kSpeedOfLightMPerS,1,"<","dimensionless"});
   return result;
 }
 
@@ -784,6 +840,8 @@ Result RunFtem05() {
       "MFP focusing characteristic converges under interval refinement",
       "MFP focusing split misses its observed-order target");
   result.configuration = {"dlnB_ds_m^-1=-8e-8", "duration_s=2", "max_interval_s=0.1,0.05,0.0005"};
+  result.hasSeed=true;result.seed=TestSeed(91);
+  result.configuration.push_back("phase_characteristic=deterministic;residual_optical_depth=sampled");
   result.metrics.push_back({"observed_refinement_order", order.observedOrder,
       minimum_order, ">=", "dimensionless"});
   result.metrics.push_back({"coarse_to_fine_error_ratio",
@@ -807,6 +865,8 @@ Result RunFtem06() {
       "MFP mover applies the exact plasma-frame cooling characteristic",
       "MFP momentum differs from its analytical cooling solution");
   result.configuration = {"speed_m_per_s=3e6", "divU_s^-1=4e-4", "dt_s=5", "lambda=inf"};
+  result.hasSeed=true;result.seed=TestSeed(91);
+  result.configuration.push_back("phase_characteristic=deterministic;residual_optical_depth=sampled");
   result.metrics.push_back({"momentum_relative_error", relative_error, 5.0e-14, "<=", "dimensionless"});
   return result;
 }
@@ -830,6 +890,8 @@ Result RunFtem07() {
       "combined MFP characteristic converges under interval refinement",
       "combined MFP split misses its observed-order target");
   result.configuration = {"duration_s=1", "lambda=inf", "max_interval_s=0.05,0.025,0.0005"};
+  result.hasSeed=true;result.seed=TestSeed(91);
+  result.configuration.push_back("phase_characteristic=deterministic;residual_optical_depth=sampled");
   result.metrics.push_back({"observed_refinement_order", order.observedOrder,
       minimum_order, ">=", "dimensionless"});
   result.metrics.push_back({"coarse_to_fine_error_ratio",
@@ -844,7 +906,7 @@ struct PersistentFlightMoment {
 
 PersistentFlightMoment MeasurePersistentFlightMsd(
     double duration_s, std::uint64_t stream_purpose) {
-  const std::uint64_t seed = 908;
+  const std::uint64_t seed = TestSeed(908);
   const std::size_t particles = 40000;
   const double speed_m_per_s = 1.0e6;
   const double lambda_m = 1.0e7;
@@ -857,11 +919,11 @@ PersistentFlightMoment MeasurePersistentFlightMsd(
     // Initial pitch and event history use distinct purpose keys.  This avoids
     // introducing an artificial correlation between the isotropic initial
     // ensemble and the first exponentially distributed scattering time.
-    Transport::KeyedRandomStream initial_random(
+    ObservedKeyedRandomStream initial_random(
         seed, particle, 9, stream_purpose);
     const double initial_mu =
         2.0 * initial_random.UniformOpen01() - 1.0;
-    Transport::KeyedRandomStream mover_random(
+    ObservedKeyedRandomStream mover_random(
         seed, particle, 9, stream_purpose + 1);
     const Transport::FocusedTransportMfpIncrement step =
         Transport::AdvanceFocusedTransportMfp(
@@ -924,7 +986,7 @@ Result RunFtem08() {
       "event-driven MFP transport matches persistent-flight and diffusion-limit MSD",
       "event-driven MFP mean-square displacement misses its analytical limits");
   result.hasSeed = true;
-  result.seed = 908;
+  result.seed = TestSeed(908);
   result.configuration = {"particles=40000", "speed_m_per_s=1e6",
       "lambda_parallel_m=1e7", "nu_s^-1=0.1",
       "short_duration_s=2", "long_duration_s=500",

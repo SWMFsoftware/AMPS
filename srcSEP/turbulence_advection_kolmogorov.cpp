@@ -208,6 +208,8 @@ Cache Efficiency: On-demand data access minimizes memory bandwidth
 
 
 #include "sep.h"
+#include "polarized_wave_native_adapter.h"
+#include "physics_checkpoint_state.h"
 
 //the flag determines whether coupling of the particle and turbumence active
 bool SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode=true;
@@ -245,7 +247,37 @@ void EnsureRightBoundaryStorage() {
 
 } // anonymous namespace
 
+SEP::PhysicsCheckpoint::BoundaryCache CaptureIntegratedBoundaryCache() {
+    SEP::PhysicsCheckpoint::BoundaryCache cache;
+    cache.lineCount=RightBoundaryInitialNFieldLine;cache.components=1;
+    cache.values=RightBoundaryInitialEminus;
+    cache.isSet=RightBoundaryInitialEminusIsSet;
+    return cache;
+}
+SEP::Transport::Status ValidateIntegratedBoundaryCache(
+    const SEP::PhysicsCheckpoint::BoundaryCache& cache) {
+    if(cache.components!=1||!cache.spectra.empty()||cache.lineCount<-1||
+       (cache.lineCount==-1&&(!cache.values.empty()||!cache.isSet.empty()))||
+       (cache.lineCount>=0&&(cache.lineCount!=PIC::FieldLine::nFieldLine||
+           cache.values.size()!=static_cast<std::size_t>(cache.lineCount)||
+           cache.isSet.size()!=cache.values.size())))
+      return SEP::Transport::Status::Error(SEP::Transport::StatusCode::InvalidParticleState,
+          "incompatible integrated incoming-wave reservoir checkpoint");
+    for(std::size_t i=0;i<cache.values.size();++i)
+      if(!std::isfinite(cache.values[i])||cache.values[i]<0.0||
+          (cache.isSet[i]!=0&&cache.isSet[i]!=1))
+        return SEP::Transport::Status::Error(SEP::Transport::StatusCode::InvalidParticleState,
+            "invalid integrated incoming-wave reservoir checkpoint");
+    return SEP::Transport::Status::Ok();
+}
+void RestoreIntegratedBoundaryCache(SEP::PhysicsCheckpoint::BoundaryCache* cache) {
+    RightBoundaryInitialNFieldLine=cache->lineCount;
+    RightBoundaryInitialEminus.swap(cache->values);
+    RightBoundaryInitialEminusIsSet.swap(cache->isSet);
+}
+
 void ResetRightBoundaryEminusInitialCondition() {
+    SEP::Turbulence::Polarized::PICAdapter::RequireLegacyMutationAllowed("reset integrated legacy wave boundary");
     // Clear the cached boundary state.  Use this if the field lines are rebuilt
     // or if a new turbulence initial condition is generated during the same run.
     RightBoundaryInitialEminus.clear();
@@ -256,6 +288,7 @@ void ResetRightBoundaryEminusInitialCondition() {
 void CaptureRightBoundaryEminusInitialCondition(
     PIC::Datum::cDatumStored& WaveEnergy
 ) {
+    SEP::Turbulence::Polarized::PICAdapter::RequireLegacyMutationAllowed("capture integrated legacy wave boundary");
     EnsureRightBoundaryStorage();
 
     for (int field_line_idx = 0; field_line_idx < PIC::FieldLine::nFieldLine; ++field_line_idx) {
@@ -284,6 +317,7 @@ void CaptureRightBoundaryEminusInitialCondition(
 void EnforceRightBoundaryEminusInitialCondition(
     PIC::Datum::cDatumStored& WaveEnergy
 ) {
+    SEP::Turbulence::Polarized::PICAdapter::RequireLegacyMutationAllowed("enforce integrated legacy wave boundary");
     EnsureRightBoundaryStorage();
 
     for (int field_line_idx = 0; field_line_idx < PIC::FieldLine::nFieldLine; ++field_line_idx) {
@@ -326,6 +360,7 @@ void AdvectTurbulenceEnergyAllFieldLines(
     double TurbulenceLevelBeginning,                    // Turbulence level at field line beginning
     double TurbulenceLevelEnd                           // Turbulence level at field line end
 ) {
+    SEP::Turbulence::Polarized::PICAdapter::RequireLegacyMutationAllowed("advect integrated legacy wave energy");
     namespace FL = PIC::FieldLine;
     
     int rank;

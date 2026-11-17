@@ -26,12 +26,6 @@ void HashWord(std::uint64_t tag, std::uint64_t value, std::uint64_t* hash) {
   }
 }
 
-double RelativeError(double before, double after) {
-  const double scale = std::max(1.0, std::max(std::fabs(before),
-                                              std::fabs(after)));
-  return std::fabs(after - before) / scale;
-}
-
 }  // namespace
 
 Transport::Status ValidateConfiguration(const Configuration& c) {
@@ -87,16 +81,38 @@ InvariantReport CompareInvariants(const std::vector<ParticleRecord>& before,
   }
   report.before = ComputeMoments(before);
   report.after = ComputeMoments(after);
-  const double lhs[] = {report.before.number, report.before.chargeC,
-      report.before.energyJ, report.before.parallelMomentumKgMPerS,
-      report.before.muFirst, report.before.muSecond};
-  const double rhs[] = {report.after.number, report.after.chargeC,
-      report.after.energyJ, report.after.parallelMomentumKgMPerS,
-      report.after.muFirst, report.after.muSecond};
+  // Normalize every invariant with its own dimensional sum of absolute input
+  // contributions. A max(1,...) floor in SI would silently accept order-one
+  // losses of ~1e-14 J kinetic energy or ~1e-19 kg m/s momentum. Signed moments
+  // may cancel exactly, so their physical scale is sum|w*q|, not |sum(w*q)|.
+  // An identically zero input row must remain exactly zero; no unitless floor
+  // supplies an invented absolute physical tolerance.
+  long double lhs[6]={},rhs[6]={},scale[6]={};
+  const auto accumulate=[](const std::vector<ParticleRecord>& particles,
+                           long double total[6],long double* magnitude) {
+    for(const auto& p:particles) {
+      const long double values[6]={1.0L,p.chargeC,p.kineticEnergyJ,
+          p.parallelMomentumKgMPerS,p.mu,static_cast<long double>(p.mu)*p.mu};
+      for(std::size_t i=0;i<6;++i) {
+        const long double contribution=static_cast<long double>(p.weight)*values[i];
+        total[i]+=contribution;
+        if(magnitude)magnitude[i]+=std::fabs(contribution);
+      }
+    }
+  };
+  accumulate(before,lhs,scale);accumulate(after,rhs,nullptr);
   const char* names[] = {"number", "charge", "energy", "parallel-momentum",
                          "mu-first", "mu-second"};
   for (std::size_t i = 0; i < 6; ++i) {
-    const double error = RelativeError(lhs[i], rhs[i]);
+    if(!std::isfinite(lhs[i])||!std::isfinite(rhs[i])||!std::isfinite(scale[i])||
+       std::fabs(lhs[i])>std::numeric_limits<double>::max()||
+       std::fabs(rhs[i])>std::numeric_limits<double>::max()) {
+      report.status=Error("population invariant accumulation exceeds finite SI storage");
+      return report;
+    }
+    const long double difference=std::fabs(lhs[i]-rhs[i]);
+    const double error=scale[i]?static_cast<double>(difference/scale[i]):
+        (difference==0.0L?0.0:std::numeric_limits<double>::infinity());
     report.maximumRelativeError = std::max(report.maximumRelativeError, error);
     if (error > tolerance) report.failedInvariants.push_back(names[i]);
   }

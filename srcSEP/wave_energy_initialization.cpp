@@ -263,6 +263,9 @@ VERSION: 1.0
 */
 
 #include "sep.h"
+#include "polarized_wave_native_adapter.h"
+#include <climits>
+#include <stdexcept>
 
 namespace SEP {
 namespace AlfvenTurbulence_Kolmogorov {
@@ -277,6 +280,7 @@ void InitializeWaveEnergyInAllSegments(
     double reference_distance,
     bool verbose
 ) {
+    SEP::Turbulence::Polarized::PICAdapter::RequireLegacyMutationAllowed("legacy radial integrated wave initialization");
     int rank;
     MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
     
@@ -526,268 +530,138 @@ void InitializeWaveEnergyInAllSegments(
 /// by the turbulence cascade, advection, reflection, and wave–particle coupling modules.
 ///
 /// ********************************************************************************************
-void InitializeWaveEnergyFromPhysicalParameters(
-    PIC::Datum::cDatumStored& WaveEnergy,
-    double B0_1AU,
-    double turbulence_level_beginning_fl,
-    double turbulence_level_end_fl,
-    double turbulence_level_decay_power_index,
-    bool   UseScaledReferenceB,
-    bool   verbose) {
-
-  using namespace PIC;
-  namespace FL = PIC::FieldLine;
-
-  int rank = 0;
-  MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR, &rank);
-
-  // Lambda: compute total wave energy density W_total at a location given:
-  //    - B_local: local magnetic field magnitude [T]
-  //    - turbulence_level: δB/B at that point
-  //
-  // Model:
-  //    δB = turbulence_level * B_local
-  //    W_total = δB^2 / (2 μ0)
-  //
-  auto CalculateLocalWaveEnergyDensity =
-      [](double B_local, double turbulence_level) -> double {
-        if (B_local <= 0.0 || turbulence_level <= 0.0) return 0.0;
-        const double deltaB = turbulence_level * B_local;
-        return 0.5 * deltaB * deltaB / VacuumPermeability;
-      };
-
-  // Optional console header from rank 0
-  if (verbose && rank == 0) {
-    std::cout << std::endl;
-    std::cout << "=== InitializeWaveEnergyFromPhysicalParameters (per-segment) ===" << std::endl;
-    std::cout << " B0(1 AU)                    = " << B0_1AU << std::endl;
-    std::cout << " turbulence_level_beginning   = " << turbulence_level_beginning_fl << std::endl;
-    std::cout << " turbulence_level_end         = " << turbulence_level_end_fl << std::endl;
-    std::cout << " turbulence_level_decay_index = " << turbulence_level_decay_power_index << std::endl;
-    std::cout << " UseScaledReferenceB          = " << (UseScaledReferenceB ? "true" : "false") << std::endl;
-    std::cout << " nFieldLine                   = " << FL::nFieldLine << std::endl;
-    std::cout << "---------------------------------------------------------------" << std::endl;
-  }
-
-  // Loop over all field lines in the domain
-  for (int iLine = 0; iLine < FL::nFieldLine; ++iLine) {
-    FL::cFieldLine* field_line = &FL::FieldLinesAll[iLine];
-    const int nSegments = field_line->GetTotalSegmentNumber();
-    if (nSegments <= 0) continue;
-
-    // ------------------- Determine r_begin and r_end for this field line -------------------
-    // r_begin  : heliocentric distance at the field-line beginning
-    // r_end    : heliocentric distance at the field-line end
-    // These define the interpolation domain for the turbulence level profile.
-    double r_begin = 0.0, r_end = 0.0;
-
-    {
-      // First and last segments of the field line
-      FL::cFieldLineSegment* seg0   = field_line->GetSegment(0);
-      FL::cFieldLineSegment* segN_1 = field_line->GetSegment(nSegments - 1);
-
-      // Corresponding boundary vertices
-      FL::cFieldLineVertex* v_begin = seg0   ? seg0->GetBegin() : nullptr;
-      FL::cFieldLineVertex* v_end   = segN_1 ? segN_1->GetEnd() : nullptr;
-
-      double xb[3] = {0.0, 0.0, 0.0};
-      double xe[3] = {0.0, 0.0, 0.0};
-
-      if (v_begin) v_begin->GetX(xb);
-      if (v_end)   v_end->GetX(xe);
-
-      // Radii at the endpoints
-      r_begin = std::sqrt(xb[0]*xb[0] + xb[1]*xb[1] + xb[2]*xb[2]);
-      r_end   = std::sqrt(xe[0]*xe[0] + xe[1]*xe[1] + xe[2]*xe[2]);
-
-      // Avoid degenerate case where r_end ≈ r_begin (e.g., pathological geometry)
-      if (r_end <= r_begin) {
-        r_end = r_begin + 1.0e-6; // small offset to prevent division by zero
+SEP::Transport::Status InitializeWaveEnergyFromPhysicalParametersChecked(
+    PIC::Datum::cDatumStored& WaveEnergy,double B0_1AU,
+    double beginLevel,double endLevel,double power,bool scaledReference,bool verbose) {
+  namespace FL=PIC::FieldLine;
+  using SEP::Transport::Status;using SEP::Transport::StatusCode;
+  struct Row {double* target;int line,segment;double radiusAu,fieldT,volumeM3,level,energyJ;};
+  std::vector<Row> staged;std::vector<double> physical,minimum,maximum;
+  Status local=SEP::Turbulence::Polarized::PICAdapter::LegacyMutationPreflight("physical wave initializer");
+  auto invalid=[&](const std::string& text) {local=Status::Error(StatusCode::InvalidArgument,text);};
+  auto finiteVector=[](const double* x) {return x&&std::isfinite(x[0])&&std::isfinite(x[1])&&std::isfinite(x[2]);};
+  auto magnitude=[](const double* x) {return std::sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);};
+  try {
+    if(local.ok()&&(WaveEnergy.length!=2||!WaveEnergy.is_active()||!std::isfinite(beginLevel)||beginLevel<0||
+        !std::isfinite(endLevel)||endLevel<0||!std::isfinite(power)||
+        (scaledReference&&(!std::isfinite(B0_1AU)||B0_1AU<=0))))
+      invalid("physical wave initializer requires a two-value active datum, finite nonnegative amplitudes and a declared valid B model");
+    for(int line=0;local.ok()&&line<FL::nFieldLine;++line) {
+      auto& fieldLine=FL::FieldLinesAll[line];const int count=fieldLine.GetTotalSegmentNumber();
+      if(count<=0){invalid("physical wave initializer encountered an empty field line");break;}
+      auto* first=fieldLine.GetSegment(0);auto* last=fieldLine.GetSegment(count-1);
+      if(!first||!last||!first->GetBegin()||!last->GetEnd()) {invalid("physical initializer radial boundary vertices are absent");break;}
+      double start[3],finish[3];first->GetBegin()->GetX(start);last->GetEnd()->GetX(finish);
+      const double rBegin=finiteVector(start)?magnitude(start):0,rEnd=finiteVector(finish)?magnitude(finish):0;
+      if(!std::isfinite(rBegin)||rBegin<=0||!std::isfinite(rEnd)||rEnd<=rBegin) {
+        invalid("physical initializer requires finite positive radially ordered line endpoints; no fictitious radial offset is allowed");break;
+      }
+      for(int index=0;local.ok()&&index<count;++index) {
+        auto* segment=fieldLine.GetSegment(index);
+        if(!segment||!segment->GetBegin()||!segment->GetEnd()||
+            !std::isfinite(segment->GetLength())||segment->GetLength()<=0) {
+          invalid("physical initializer segment/vertices/positive length are unavailable");break;
+        }
+        double x0[3],x1[3],mid[3];segment->GetBegin()->GetX(x0);segment->GetEnd()->GetX(x1);
+        if(!finiteVector(x0)||!finiteVector(x1)){invalid("physical initializer vertex position is nonfinite");break;}
+        double displacement[3];for(int d=0;d<3;++d)displacement[d]=x1[d]-x0[d];
+        const double actualLength=magnitude(displacement);
+        if(!std::isfinite(actualLength)||actualLength<=0||std::fabs(actualLength-segment->GetLength())>
+            64*std::numeric_limits<double>::epsilon()*std::max(actualLength,segment->GetLength())) {
+          invalid("physical initializer cached segment length disagrees with actual vertex geometry");break;
+        }
+        for(int d=0;d<3;++d)mid[d]=0.5*x0[d]+0.5*x1[d];
+        const double radius=magnitude(mid),fraction=(radius-rBegin)/(rEnd-rBegin);
+        if(!std::isfinite(radius)||radius<=0||!std::isfinite(fraction)||fraction<0||fraction>1) {
+          invalid("physical initializer midpoint lies outside its declared radial interpolation domain; no clipping/extrapolation is allowed");break;
+        }
+        // p<=0 is the documented linear profile family, not an error fallback.
+        // For p>0, evaluate the same normalized endpoint blend with scaled
+        // exponentials so a large exponent cannot trigger an arithmetic mean.
+        long double profile=0;
+        if(power<=0)profile=static_cast<long double>(beginLevel)+fraction*(static_cast<long double>(endLevel)-beginLevel);
+        else if(fraction==0)profile=beginLevel;
+        else if(fraction==1)profile=endLevel;
+        else {
+          const long double a=static_cast<long double>(power)*std::log1p(-static_cast<long double>(fraction));
+          const long double b=static_cast<long double>(power)*std::log(static_cast<long double>(fraction));
+          const long double scale=std::max(a,b),left=std::exp(a-scale),right=std::exp(b-scale);
+          profile=(beginLevel*left+endLevel*right)/(left+right);
+        }
+        const double level=static_cast<double>(profile);
+        const bool positiveProfile=fraction==0?beginLevel>0:fraction==1?endLevel>0:beginLevel>0||endLevel>0;
+        if(!std::isfinite(level)||level<0||(positiveProfile&&level==0)) {
+          invalid("physical initializer profile is nonfinite, negative or below representable positive resolution");break;
+        }
+        // Validate BOTH vertex fields, including geometry's midpoint field,
+        // before asking the volume provider. Invalid B cannot select its area
+        // callback or the old scaled-reference fallback implicitly.
+        double* beginB=segment->GetBegin()->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+        double* endB=segment->GetEnd()->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+        double middleB[3];segment->GetMagneticField(0.5,middleB);
+        if(!finiteVector(beginB)||!finiteVector(endB)||!finiteVector(middleB)||
+            !std::isfinite(magnitude(beginB))||!std::isfinite(magnitude(endB))||!std::isfinite(magnitude(middleB))||
+            !(magnitude(beginB)>0)||!(magnitude(endB)>0)||!(magnitude(middleB)>0)) {
+          invalid("physical initializer requires finite positive endpoint/midpoint B; reference-field/area substitution is prohibited");break;
+        }
+        double field=0;
+        if(scaledReference)field=B0_1AU*std::pow(WaveEnergyConstants::ONE_AU/radius,2);
+        else if(index==0)field=magnitude(beginB);
+        else if(index==count-1)field=magnitude(endB);
+        else {
+          double average[3];for(int d=0;d<3;++d)average[d]=0.5*beginB[d]+0.5*endB[d];
+          field=magnitude(average);
+        }
+        const double volume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment,line);
+        if(!std::isfinite(field)||field<=0||!std::isfinite(volume)||volume<=0) {
+          invalid("physical initializer B/flux-tube volume is nonfinite or nonpositive");break;
+        }
+        const long double delta=static_cast<long double>(level)*field;
+        const long double branchEnergy=delta*delta*volume/(4*static_cast<long double>(VacuumPermeability));
+        const double energy=static_cast<double>(branchEnergy);
+        double* target=segment->GetDatum_ptr(WaveEnergy);
+        if(!target||!std::isfinite(energy)||energy<0||(level>0&&energy==0)) {
+          invalid("physical initializer target or finite positive magnetic energy resolution is unavailable");break;
+        }
+        staged.push_back({target,line,index,radius/WaveEnergyConstants::ONE_AU,field,volume,level,energy});
+        physical.insert(physical.end(),{static_cast<double>(line),static_cast<double>(index),radius,field,volume,level,energy});
       }
     }
-
-    // Header for detailed diagnostics on the first field line
-    if (verbose && rank == 0 && iLine == 0) {
-      std::cout << "Field line 0: segment-by-segment initialization" << std::endl;
-      std::cout << " seg  "
-                << "  r[AU]   "
-                << "  Eplus[J]     "
-                << "  Eminus[J]    "
-                << "  Wplus[J/m^3] "
-                << "  Wminus[J/m^3]"
-                << "  B[T]         "
-                << std::endl;
-      std::cout << "---------------------------------------------------------------------" << std::endl;
-    }
-
-    // ------------------------ Loop over segments on this field line ------------------------
-    for (int iSeg = 0; iSeg < nSegments; ++iSeg) {
-      FL::cFieldLineSegment* segment = field_line->GetSegment(iSeg);
-      if (segment == nullptr) continue;
-
-      // ----- Geometry and heliocentric distance at segment midpoint -----
-      FL::cFieldLineVertex* v0 = segment->GetBegin();
-      FL::cFieldLineVertex* v1 = segment->GetEnd();
-
-      double x0[3], x1[3], xmid[3];
-      v0->GetX(x0);
-      v1->GetX(x1);
-
-      for (int d = 0; d < 3; ++d) {
-        xmid[d] = 0.5 * (x0[d] + x1[d]);
-      }
-
-      const double r_helio = std::sqrt(xmid[0]*xmid[0] +
-                                       xmid[1]*xmid[1] +
-                                       xmid[2]*xmid[2]);
-      const double r_AU = r_helio / WaveEnergyConstants::ONE_AU;
-
-      // ----- Construct local turbulence level δB/B(r) along the line -----
-      // Normalized coordinate f ∈ [0,1] measuring the position between r_begin and r_end.
-      double f = (r_helio - r_begin) / (r_end - r_begin);
-      if (f < 0.0) f = 0.0;
-      if (f > 1.0) f = 1.0;
-
-      const double p = turbulence_level_decay_power_index;
-
-      double turbulence_level_local = 0.0;
-      if (p <= 0.0) {
-        // If power index is non-positive, fall back to a simple linear interpolation in f.
-        turbulence_level_local =
-            turbulence_level_beginning_fl +
-            f * (turbulence_level_end_fl - turbulence_level_beginning_fl);
-      } else {
-        // Power-shaped interpolation between beginning and end:
-        //   tl(r) = ( tl_begin * (1-f)^p + tl_end * f^p ) / ( (1-f)^p + f^p )
-        const double w_begin = std::pow(1.0 - f, p);
-        const double w_end   = std::pow(f, p);
-        const double denom   = w_begin + w_end;
-
-        if (denom > 0.0) {
-          turbulence_level_local =
-              (turbulence_level_beginning_fl * w_begin +
-               turbulence_level_end_fl       * w_end) / denom;
-        } else {
-          // Extremely degenerate case (should not normally happen):
-          // fall back to the arithmetic mean of the endpoint values.
-          turbulence_level_local =
-              0.5 * (turbulence_level_beginning_fl + turbulence_level_end_fl);
-        }
-      }
-
-      // ----- Local magnetic field magnitude B_local -----
-      double B_local = 0.0;
-
-      if (UseScaledReferenceB) {
-        // Use heliospheric scaling of B0_1AU from 1 AU to the actual radius r_helio.
-        B_local = ApplyHeliosphericScaling(
-                    B0_1AU,
-                    WaveEnergyConstants::ONE_AU,
-                    r_helio);
-      } else {
-        // Use B from vertices of the magnetic field line:
-        //   * First segment:  |B at first vertex|
-        //   * Last segment:   |B at last vertex|
-        //   * Elsewhere:      |(B_begin + B_end)/2|
-        double* B0_begin = v0->GetDatum_ptr(FL::DatumAtVertexMagneticField);
-        double* B0_end   = v1->GetDatum_ptr(FL::DatumAtVertexMagneticField);
-
-        auto magnitude_or_zero = [](double* B) -> double {
-          if (B == nullptr) return 0.0;
-          return std::sqrt(B[0]*B[0] + B[1]*B[1] + B[2]*B[2]);
-        };
-
-        if (iSeg == 0) {
-          B_local = magnitude_or_zero(B0_begin);
-        } else if (iSeg == nSegments - 1) {
-          B_local = magnitude_or_zero(B0_end);
-        } else {
-          double B_vec[3] = {0.0, 0.0, 0.0};
-          int n_valid = 0;
-
-          if (B0_begin != nullptr) {
-            for (int d = 0; d < 3; ++d) B_vec[d] += B0_begin[d];
-            ++n_valid;
-          }
-          if (B0_end != nullptr) {
-            for (int d = 0; d < 3; ++d) B_vec[d] += B0_end[d];
-            ++n_valid;
-          }
-
-          if (n_valid > 0) {
-            for (int d = 0; d < 3; ++d) B_vec[d] /= static_cast<double>(n_valid);
-            B_local = std::sqrt(B_vec[0]*B_vec[0] +
-                                B_vec[1]*B_vec[1] +
-                                B_vec[2]*B_vec[2]);
-          } else {
-            B_local = 0.0;
-          }
-        }
-
-        // Fallback if vertex-based B is unusable
-        if (B_local <= 0.0) {
-          B_local = ApplyHeliosphericScaling(
-                      B0_1AU,
-                      WaveEnergyConstants::ONE_AU,
-                      r_helio);
-        }
-      }
-
-      // ----- Compute wave energy density W_total(r) from B_local and δB/B(r) -----
-      const double W_total = CalculateLocalWaveEnergyDensity(B_local,
-                                                             turbulence_level_local);
-
-      // Assume balanced turbulence: W⁺ = W⁻ = ½ W_total.
-      const double W_plus  = 0.5 * W_total;
-      const double W_minus = 0.5 * W_total;
-
-      // ----- Convert to integrated wave energies using the segment volume -----
-      const double V_segment = SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3(segment, iLine);
-
-      const double E_plus  = W_plus  * V_segment;
-      const double E_minus = W_minus * V_segment;
-
-      // ----- Store E⁺ and E⁻ into the provided WaveEnergy datum -----
-      // Convention:
-      //   wave_data[0] = E⁺
-      //   wave_data[1] = E⁻
-      double* wave_data = segment->GetDatum_ptr(WaveEnergy);
-      if (wave_data != nullptr) {
-        wave_data[0] = E_plus;
-        wave_data[1] = E_minus;
-      }
-
-      // ----- Optional diagnostics: print first/last 10 segments of field line 0 -----
-      if (verbose && rank == 0 && iLine == 0) {
-        const bool in_head = (iSeg < 10);
-        const bool in_tail = (iSeg >= std::max(0, nSegments - 10));
-
-        if (in_head || in_tail) {
-          std::cout << std::setw(4) << iSeg << "  "
-                    << std::fixed << std::setprecision(3)
-                    << std::setw(7) << r_AU << "  "
-                    << std::scientific << std::setprecision(6)
-                    << std::setw(12) << E_plus  << "  "
-                    << std::setw(12) << E_minus << "  "
-                    << std::setw(12) << W_plus  << "  "
-                    << std::setw(12) << W_minus << "  "
-                    << std::setw(12) << B_local
-                    << std::endl;
-        }
-
-        // One-time ellipsis between head and tail sections if there is a gap
-        if (iSeg == 9 && nSegments > 20) {
-          std::cout << "  ... (skipping interior segments) ..." << std::endl;
-        }
-      }
-    } // end segment loop
-  }   // end field-line loop
-
-  // Final footer
-  if (verbose && rank == 0) {
-    std::cout << "=================================================================" << std::endl
-              << std::endl;
+    if(local.ok()&&(staged.empty()||physical.size()>static_cast<std::size_t>(INT_MAX)))
+      invalid("physical initializer has no cells or exceeds collective buffer dimensions");
+    if(local.ok()){minimum.resize(physical.size());maximum.resize(physical.size());}
+  } catch(const std::exception& error) {
+    local=Status::Error(StatusCode::InvalidArgument,std::string("physical initializer preflight failed: ")+error.what());
   }
+  int ready=local.ok()?1:0,allReady=0;
+  MPI_Allreduce(&ready,&allReady,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  if(!allReady)return local.ok()?Status::Error(StatusCode::InvalidArgument,
+      "another MPI rank rejected physical wave initialization; no host values changed"):local;
+  unsigned long long count=physical.size(),smallest=0,largest=0;
+  MPI_Allreduce(&count,&smallest,1,MPI_UNSIGNED_LONG_LONG,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&count,&largest,1,MPI_UNSIGNED_LONG_LONG,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+  if(smallest!=largest)return Status::Error(StatusCode::InvalidArgument,
+      "MPI physical initializer cell namespaces differ; no host values changed");
+  MPI_Allreduce(physical.data(),minimum.data(),static_cast<int>(count),MPI_DOUBLE,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(physical.data(),maximum.data(),static_cast<int>(count),MPI_DOUBLE,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+  if(minimum!=maximum)return Status::Error(StatusCode::InvalidArgument,
+      "MPI physical initializer geometry/B/volume/profile/energy differ; no host values changed");
+  // Collective preflight succeeded. These writes cannot allocate or encounter
+  // a later physical rejection; every target was validated before publication.
+  for(const auto& row:staged){row.target[0]=row.energyJ;row.target[1]=row.energyJ;}
+  if(verbose&&PIC::ThisThread==0) {
+    std::cout<<"Physical magnetic wave initialization committed: segments="<<staged.size()
+        <<"; Eplus=Eminus; no geometry/B/volume/profile fallback; deltaB endpoints="
+        <<beginLevel<<","<<endLevel<<std::endl;
+  }
+  return Status::Ok();
+}
+
+void InitializeWaveEnergyFromPhysicalParameters(PIC::Datum::cDatumStored& WaveEnergy,
+    double B0_1AU,double beginLevel,double endLevel,double power,bool scaledReference,bool verbose) {
+  const auto status=InitializeWaveEnergyFromPhysicalParametersChecked(WaveEnergy,B0_1AU,
+      beginLevel,endLevel,power,scaledReference,verbose);
+  if(!status.ok())throw std::runtime_error(status.message);
 }
 
 // ============================================================================

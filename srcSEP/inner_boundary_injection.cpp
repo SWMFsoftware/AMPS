@@ -7,6 +7,7 @@
 
 #include "sep.h"
 #include "transport_common.h"
+#include "source_capabilities.h"
 
 
 double SEP::ParticleSource::InnerBoundary::sphereInjectionRate(int spec,int BoundaryElementType,void *BoundaryElement) {
@@ -17,6 +18,14 @@ double SEP::ParticleSource::InnerBoundary::sphereInjectionRate(int spec,int Boun
 }
 
 long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,int BoundaryElementType,void *SphereDataPointer) {
+  // The retained rank-local legacy surface sampler has no collective logical
+  // source-event identity. It is not installed by the field-line application;
+  // reject a direct invocation rather than inventing a continuation from local
+  // accepted births or sampled momentum. The supported source dispatch is the
+  // explicitly scheduled SEP::FieldLine::InjectParticles path.
+  const auto sourceStatus=SEP::Sources::CartesianBirthPreflight(
+      SEP::Sources::CartesianSource::SphericalInnerBoundary);
+  if(!sourceStatus.ok())exit(__LINE__,__FILE__,sourceStatus.message.c_str());
   cInternalSphericalData *Sphere;
   double ParticleWeight,LocalTimeStep,/*ExternalNormal[3],*/x[3],v[3],/*r,*/*sphereX0,sphereRadius;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=NULL;

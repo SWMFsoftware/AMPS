@@ -112,6 +112,7 @@ IMPLEMENTATION NOTES
 */
 
 #include "sep.h"
+#include "polarized_wave_native_adapter.h"
 #include <cmath>
 #include <limits>
 #include <algorithm>
@@ -205,6 +206,7 @@ void CascadeTurbulenceEnergyAllFieldLines(
     const double dt,                   // [s]
     const bool   enable_logging)       // print summary on rank 0
 {
+  SEP::Turbulence::Polarized::PICAdapter::RequireLegacyMutationAllowed("cascade integrated legacy wave energy");
   namespace FL = PIC::FieldLine;
 
   int rank = 0;

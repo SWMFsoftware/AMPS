@@ -1,12 +1,17 @@
 
 #include "sep.h"
 #include "adapters/swcme1d_adapter.h"
+#include "transport_common.h"
+#include "util/sep_population_production_adapter.h"
 
 int SEP::Offset::MeanFreePath=-1;
 int SEP::Offset::TransportSchema=-1;
 int SEP::Offset::StableParticleId=-1;
 int SEP::Offset::MfpOpticalDepth=-1;
 int SEP::Offset::MfpEventIndex=-1;
+int SEP::Offset::OperatorRandomStates=-1;
+int SEP::Offset::SplitEventCounter=-1;
+int SEP::Offset::BirthRecord=-1;
 
 //selector of the shock wave model
 SEP::cShockModelType SEP::ShockModelType=SEP::cShockModelType::Analytic1D;
@@ -148,14 +153,30 @@ void SEP::RequestParticleData() {
   // These are scalar field-line transport state, not a second Cartesian
   // position/momentum representation.  AMPS checkpoints include requested
   // particle storage, so stochastic event continuity survives restart.
-  PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(double));
+  PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(double),alignof(double));
   Offset::MeanFreePath=offset;
-  PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(std::uint64_t));
+  PIC::ParticleBuffer::RequestDataStorage(
+      offset,sizeof(std::uint64_t),alignof(std::uint64_t));
   Offset::TransportSchema=offset;
-  PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(std::uint64_t));
+  PIC::ParticleBuffer::RequestDataStorage(
+      offset,sizeof(std::uint64_t),alignof(std::uint64_t));
   Offset::StableParticleId=offset;
-  PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(double));
+  PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(double),alignof(double));
   Offset::MfpOpticalDepth=offset;
-  PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(std::uint64_t));
+  PIC::ParticleBuffer::RequestDataStorage(
+      offset,sizeof(std::uint64_t),alignof(std::uint64_t));
   Offset::MfpEventIndex=offset;
+  PIC::ParticleBuffer::RequestDataStorage(
+      offset,3*sizeof(SEP::Transport::OperatorRandomState),
+      alignof(SEP::Transport::OperatorRandomState));
+  Offset::OperatorRandomStates=offset;
+  PIC::ParticleBuffer::RequestDataStorage(
+      offset,sizeof(std::uint64_t),alignof(std::uint64_t));
+  Offset::SplitEventCounter=offset;
+  PIC::ParticleBuffer::RequestDataStorage(
+      offset,sizeof(SEP::Transport::Birth::Record),
+      alignof(SEP::Transport::Birth::Record));
+  Offset::BirthRecord=offset;
+  SEP::Transport::PICAdapter::RegisterPopulationControlHooks();
+  SEP::PopulationControl::RegisterConservativeMerger();
 }

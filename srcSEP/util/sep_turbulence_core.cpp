@@ -1,4 +1,6 @@
 #include "sep_turbulence_core.h"
+#include "sep_common_header_path.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_coefficient_physics.h)
 
 #include <algorithm>
 #include <cmath>
@@ -212,9 +214,9 @@ void AdvectBranch(State* state, bool plus, double dt, EnergyLedger* ledger,
     const CellState& left = state->cells[face];
     const CellState& right = state->cells[face + 1];
     const double speedLeft = left.plasmaSpeedMPerS +
-        (plus ? left.alfvenSpeedMPerS : -left.alfvenSpeedMPerS);
+        (plus ? 1.0 : -1.0)*left.magneticPolarityAlongLine*left.alfvenSpeedMPerS;
     const double speedRight = right.plasmaSpeedMPerS +
-        (plus ? right.alfvenSpeedMPerS : -right.alfvenSpeedMPerS);
+        (plus ? 1.0 : -1.0)*right.magneticPolarityAlongLine*right.alfvenSpeedMPerS;
     const double speed = 0.5 * (speedLeft + speedRight);
     const CellState& upwind = speed >= 0.0 ? left : right;
     const double upwindEnergy = plus ? upwind.ePlusJ : upwind.eMinusJ;
@@ -233,8 +235,9 @@ void AdvectBranch(State* state, bool plus, double dt, EnergyLedger* ledger,
     const CellState& right = state->cells[0];
     const double speed = 0.5 *
         (left.plasmaSpeedMPerS + right.plasmaSpeedMPerS +
-         (plus ? left.alfvenSpeedMPerS + right.alfvenSpeedMPerS
-               : -left.alfvenSpeedMPerS - right.alfvenSpeedMPerS));
+         (plus ? 1.0 : -1.0)*
+          (left.magneticPolarityAlongLine*left.alfvenSpeedMPerS+
+           right.magneticPolarityAlongLine*right.alfvenSpeedMPerS));
     const CellState& upwind = speed >= 0.0 ? left : right;
     const double energy = plus ? upwind.ePlusJ : upwind.eMinusJ;
     const double area = 0.5 * (left.volumeM3 / left.lengthM +
@@ -248,9 +251,9 @@ void AdvectBranch(State* state, bool plus, double dt, EnergyLedger* ledger,
     const CellState& first = state->cells.front();
     const CellState& last = state->cells.back();
     const double innerSpeed = first.plasmaSpeedMPerS +
-        (plus ? first.alfvenSpeedMPerS : -first.alfvenSpeedMPerS);
+        (plus ? 1.0 : -1.0)*first.magneticPolarityAlongLine*first.alfvenSpeedMPerS;
     const double outerSpeed = last.plasmaSpeedMPerS +
-        (plus ? last.alfvenSpeedMPerS : -last.alfvenSpeedMPerS);
+        (plus ? 1.0 : -1.0)*last.magneticPolarityAlongLine*last.alfvenSpeedMPerS;
     const double firstEnergy = plus ? first.ePlusJ : first.eMinusJ;
     const double lastEnergy = plus ? last.ePlusJ : last.eMinusJ;
 
@@ -473,6 +476,8 @@ Transport::Status InitializeState(State* state) {
   const std::size_t bins = state->configuration.spectralBins;
   for (std::size_t i = 0; i < state->cells.size(); ++i) {
     CellState& cell = state->cells[i];
+    if(cell.magneticPolarityAlongLine!=1&&cell.magneticPolarityAlongLine!=-1)
+      return Error("cell magnetic polarity must be +1 or -1");
     if (!(cell.lengthM > 0.0) || !(cell.volumeM3 > 0.0) ||
         !std::isfinite(cell.lengthM) || !std::isfinite(cell.volumeM3) ||
         !FiniteNonNegative(cell.ePlusJ) || !FiniteNonNegative(cell.eMinusJ))
@@ -539,14 +544,37 @@ Transport::Status SynchronizeDerivedRepresentation(State* state) {
 
 DerivedCell DeriveCell(const CellState& cell) {
   DerivedCell result;
-  if (!(cell.volumeM3 > 0.0)) return result;
+  if (!(cell.volumeM3 > 0.0) || !std::isfinite(cell.volumeM3) ||
+      !std::isfinite(cell.ePlusJ) || !std::isfinite(cell.eMinusJ) ||
+      cell.ePlusJ < 0.0 || cell.eMinusJ < 0.0) {
+    result.status = Transport::Status::Error(
+        Transport::StatusCode::InvalidParticleState,
+        "magnetic wave view requires finite positive volume and nonnegative energies");
+    return result;
+  }
   result.wPlusJPerM3 = cell.ePlusJ / cell.volumeM3;
   result.wMinusJPerM3 = cell.eMinusJ / cell.volumeM3;
-  result.deltaB2T2 = 2.0 * kMu0 *
-      (result.wPlusJPerM3 + result.wMinusJPerM3);
-  const double total = cell.ePlusJ + cell.eMinusJ;
-  result.crossHelicity = total > 0.0 ?
-      (cell.ePlusJ - cell.eMinusJ) / total : 0.0;
+  if ((cell.ePlusJ > 0.0 && result.wPlusJPerM3 == 0.0) ||
+      (cell.eMinusJ > 0.0 && result.wMinusJPerM3 == 0.0)) {
+    result.status = Transport::Status::Error(
+        Transport::StatusCode::StepUnderflow,
+        "positive magnetic branch energy underflowed during volume conversion");
+    return result;
+  }
+  const Transport::CoefficientPhysics::MagneticVariance variance =
+      Transport::CoefficientPhysics::MagneticVarianceFromEnergyDensity(
+          result.wPlusJPerM3, result.wMinusJPerM3);
+  result.status = variance.status;
+  if (!result.status.ok()) return result;
+  result.deltaB2T2 = variance.totalT2;
+  // Normalize before summing to avoid overflow when two valid large integrated
+  // branch energies share a large volume. The ratio remains dimensionless.
+  const double scale = std::max(cell.ePlusJ, cell.eMinusJ);
+  if (scale > 0.0) {
+    const double plus = cell.ePlusJ / scale;
+    const double minus = cell.eMinusJ / scale;
+    result.crossHelicity = (plus - minus) / (plus + minus);
+  }
   return result;
 }
 
@@ -690,6 +718,10 @@ CoefficientView DeriveCoefficients(const State& state, std::size_t cellIndex,
   }
   const CellState& cell = state.cells[cellIndex];
   const DerivedCell derived = DeriveCell(cell);
+  if (!derived.status.ok()) {
+    result.status = derived.status;
+    return result;
+  }
   if (!(derived.deltaB2T2 > 0.0) || !(cell.magneticFieldT > 0.0)) {
     result.status = Transport::Status::Error(
         Transport::StatusCode::InvalidCoefficient,
@@ -1039,7 +1071,7 @@ Transport::Status RemapConservatively(const State& oldState,
 Transport::Status SerializeCheckpoint(const State& state, std::string* text) {
   if (!text) return Error("checkpoint output pointer is null");
   std::ostringstream out;
-  out << "SEP_TURBULENCE_CHECKPOINT 2\n" << std::setprecision(17)
+  out << "SEP_TURBULENCE_CHECKPOINT 3\n" << std::setprecision(17)
       << static_cast<int>(state.configuration.source) << ' '
       << static_cast<int>(state.configuration.representation) << ' '
       << static_cast<int>(state.configuration.coupling) << '\n';
@@ -1079,7 +1111,8 @@ Transport::Status SerializeCheckpoint(const State& state, std::string* text) {
   for (std::size_t i = 0; i < state.cells.size(); ++i) {
     const CellState& c = state.cells[i];
     out << c.lengthM << ' ' << c.volumeM3 << ' ' << c.plasmaSpeedMPerS << ' '
-        << c.alfvenSpeedMPerS << ' ' << c.dLnAlfvenSpeeddsPerM << ' '
+        << c.alfvenSpeedMPerS << ' ' << c.magneticPolarityAlongLine << ' '
+        << c.dLnAlfvenSpeeddsPerM << ' '
         << c.magneticFieldT << ' ' << c.massDensityKgPerM3 << ' '
         << c.ePlusJ << ' ' << c.eMinusJ << ' '
         << c.pendingParticlePlusJ << ' ' << c.pendingParticleMinusJ << ' '
@@ -1100,7 +1133,7 @@ Transport::Status DeserializeCheckpoint(const std::string& text, State* state) {
   int version = 0, source = 0, representation = 0, coupling = 0, phase = 0;
   int splitting = 0;
   State parsed;
-  if (!(in >> magic >> version) || magic != "SEP_TURBULENCE_CHECKPOINT" || version != 2)
+  if (!(in >> magic >> version) || magic != "SEP_TURBULENCE_CHECKPOINT" || version != 3)
     return Error("unsupported turbulence checkpoint schema");
   if (!(in >> source >> representation >> coupling) || source < 0 || source > 4 ||
       representation < 0 || representation > 1 || coupling < 0 || coupling > 1)
@@ -1150,7 +1183,8 @@ Transport::Status DeserializeCheckpoint(const std::string& text, State* state) {
     CellState& c = parsed.cells[i];
     std::size_t spectralSize = 0;
     if (!(in >> c.lengthM >> c.volumeM3 >> c.plasmaSpeedMPerS >>
-          c.alfvenSpeedMPerS >> c.dLnAlfvenSpeeddsPerM >> c.magneticFieldT >>
+          c.alfvenSpeedMPerS >> c.magneticPolarityAlongLine >>
+          c.dLnAlfvenSpeeddsPerM >> c.magneticFieldT >>
           c.massDensityKgPerM3 >> c.ePlusJ >> c.eMinusJ >>
           c.pendingParticlePlusJ >> c.pendingParticleMinusJ >>
           c.pendingShockPlusJ >> c.pendingShockMinusJ >> spectralSize))

@@ -18,6 +18,10 @@ namespace SEP {
 namespace Util {
 namespace CLI {
 
+std::uint32_t LegacyTestSeedFromKey(std::uint64_t key) {
+  return static_cast<std::uint32_t>(UINT64_C(1)+UINT64_C(2)*(key%UINT64_C(1073741824)));
+}
+
 namespace {
 
 // Convert a string to lower case for case-insensitive command-line values.  The
@@ -46,6 +50,22 @@ bool ParseBoolValue(const std::string& raw_value, bool& value) {
   }
 
   return false;
+}
+
+// Seeds/counters are exact decimal identities, not floating point or signed
+// values. Accumulate with a pre-multiply bound so overflow is rejected even
+// when unsigned long long and uint64_t happen to have different widths.
+bool ParseTestUnsigned(const std::string& raw,std::uint64_t maximum,
+                        std::uint64_t& value) {
+  if(raw.empty())return false;
+  std::uint64_t result=0;
+  for(unsigned char c:raw) {
+    if(c<'0'||c>'9')return false;
+    const std::uint64_t digit=c-'0';
+    if(result>(maximum-digit)/10)return false;
+    result=result*10+digit;
+  }
+  value=result;return true;
 }
 
 
@@ -427,6 +447,8 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "  --testmanager <on|off>       Alias for --test-manager.\n"
       << "  --run-test-manager           Shortcut for --test-manager on.\n"
       << "  --no-test-manager            Shortcut for --test-manager off.\n"
+      << "                               Enabled legacy diagnostics cannot be combined\n"
+      << "                               with component-test execution selectors.\n"
       << "\n"
       << "Selectable standalone component tests (test-only execution):\n"
       << "  --list-tests                 List stable test IDs and metadata, then exit\n"
@@ -435,10 +457,22 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "  --test=<ID>                  Equivalent equals-sign form.\n"
       << "  --test-group <GROUP>         Run every test in a group; repeatable.\n"
       << "  --test-group=<GROUP>         Equivalent equals-sign form.\n"
+      << "  --tests <expression>         Union of comma/space-separated IDs, groups\n"
+      << "                               or explicit tags; quote spaces. 'all' also\n"
+      << "                               selects extended cases and reviewed inputs\n"
+      << "                               remain required by their case contracts.\n"
       << "  --all-tests                  Run the bounded routine component-test set.\n"
       << "                               Extended tests remain individually selectable.\n"
       << "                               IDs/groups are case-insensitive and overlaps\n"
       << "                               execute once in stable ID order.\n"
+      << "  --test-seed <uint64>         Campaign seed for converted test streams;\n"
+      << "                               fixed/unconverted overrides report ERROR.\n"
+      << "  --test-repeat <N>            Positive repetition count; default 1.\n"
+      << "  --test-output <directory>    Campaign evidence root (default timestamp\n"
+      << "                               under test_output); JSON is always retained.\n"
+      << "  --test-format <text|json|junit> Select the summary format; default text.\n"
+      << "  --fail-fast[=on|off]          Stop collectively after first FAIL/ERROR.\n"
+      << "  --keep-test-artifacts[=on|off] Keep successful temporary diagnostics.\n"
       << "  --test-json <path>           Write the complete result/metric/evidence\n"
       << "                               summary as srcsep-component-tests-v1 JSON.\n"
       << "  --test-junit <path>          Write the same outcomes as JUnit XML.\n"
@@ -566,21 +600,64 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
       continue;
     }
 
-    if (option_name == "--test" || option_name == "--test-group") {
+    if (option_name == "--test" || option_name == "--test-group" || option_name=="--tests") {
       std::string selector;
       if (!GetOptionValue(argc, argv, i, option_name, value_from_equals,
                           selector, err)) {
         return false;
       }
-      if (selector.empty()) {
+      if (selector.find_first_not_of(" ,\t\r\n")==std::string::npos) {
         err << "ERROR: option '" << option_name
             << "' requires a non-empty selector.\n";
         return false;
       }
 
       if (option_name == "--test") options.testIds.push_back(selector);
-      else options.testGroups.push_back(selector);
+      else if(option_name=="--test-group")options.testGroups.push_back(selector);
+      else options.testExpressions.push_back(selector);
       continue;
+    }
+
+    if(option_name=="--test-seed"||option_name=="--test-repeat") {
+      std::string raw;
+      if(!GetOptionValue(argc,argv,i,option_name,value_from_equals,raw,err))return false;
+      std::uint64_t parsed=0;
+      const std::uint64_t maximum=option_name=="--test-seed"?
+          std::numeric_limits<std::uint64_t>::max():std::numeric_limits<std::uint32_t>::max();
+      if(!ParseTestUnsigned(raw,maximum,parsed)||(option_name=="--test-repeat"&&parsed==0)) {
+        err<<"ERROR: invalid decimal value '"<<raw<<"' for "<<option_name<<".\n";return false;
+      }
+      if(option_name=="--test-seed") {options.testSeed=parsed;options.testSeedProvided=true;}
+      else options.testRepeat=static_cast<std::uint32_t>(parsed);
+      options.testCampaignControlsProvided=true;continue;
+    }
+    if(option_name=="--test-output"||option_name=="--test-format") {
+      std::string raw;
+      if(!GetOptionValue(argc,argv,i,option_name,value_from_equals,raw,err))return false;
+      if(raw.empty()) {err<<"ERROR: "<<option_name<<" requires a nonempty value.\n";return false;}
+      if(option_name=="--test-output")options.testOutputDirectory=raw;
+      else {
+        const auto format=ToLower(raw);
+        if(format=="text")options.testFormat=Options::TestFormat::Text;
+        else if(format=="json")options.testFormat=Options::TestFormat::Json;
+        else if(format=="junit")options.testFormat=Options::TestFormat::JUnit;
+        else {err<<"ERROR: --test-format requires text, json or junit.\n";return false;}
+      }
+      options.testCampaignControlsProvided=true;continue;
+    }
+    if(option_name=="--fail-fast"||option_name=="--keep-test-artifacts") {
+      bool parsed=true;
+      if(arg.find('=')!=std::string::npos) {
+        if(!ParseBoolValue(value_from_equals,parsed)) {
+          err<<"ERROR: invalid Boolean value for "<<option_name<<".\n";return false;
+        }
+      } else if(i+1<argc) {
+        bool next=false;
+        if(ParseBoolValue(argv[i+1]?argv[i+1]:"",next)) {parsed=next;++i;}
+      }
+      if(option_name=="--fail-fast")options.testFailFast=parsed;
+      else options.keepTestArtifacts=parsed;
+      options.testCampaignControlsProvided=true;continue;
     }
 
     if (option_name == "--test-json" || option_name == "--test-junit" ||
@@ -1149,6 +1226,17 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
   }
 
   const bool executionRequested = IsComponentTestExecutionRequested(options);
+  // Test-only execution returns before the legacy TestManager call. Reject an
+  // enabled legacy request rather than silently ignoring it. Last-occurrence
+  // semantics still allow an explicit --no-test-manager before dispatch.
+  if(executionRequested&&options.runTestManager) {
+    err<<"ERROR: enabled legacy TestManager diagnostics cannot be combined with component-test execution; disable TestManager or select one mode.\n";
+    return false;
+  }
+  if(options.testCampaignControlsProvided&&!executionRequested) {
+    err<<"ERROR: test campaign controls require --test, --test-group, --tests or --all-tests.\n";
+    return false;
+  }
   // Default runtime input (user-approved change of the no-argument default,
   // 2026-10-10).  Without -input/--input a production run reads ./amps.in
   // from the working directory when that file exists, exactly like srcSEP3D
@@ -1208,7 +1296,7 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
   // simultaneous explicit selector prevents scripts from assuming that an
   // extended test was included in --all-tests when routine-only policy omits it.
   if (options.runAllTests &&
-      (!options.testIds.empty() || !options.testGroups.empty())) {
+      (!options.testIds.empty() || !options.testGroups.empty()||!options.testExpressions.empty())) {
     err << "ERROR: --all-tests cannot be combined with --test or --test-group.\n";
     return false;
   }
@@ -1232,7 +1320,7 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
   }
   if (hasTestInput &&
       (options.testIds.size() != 1 || !options.testGroups.empty() ||
-       options.runAllTests)) {
+       !options.testExpressions.empty()||options.runAllTests)) {
     err << "ERROR: end-to-end test input requires exactly one explicit --test ID.\n";
     return false;
   }
@@ -1352,7 +1440,7 @@ bool ValidateMoverDependentOptions(const Options& options, std::ostream& err) {
 
 bool IsComponentTestExecutionRequested(const Options& options) {
   return options.runAllTests || !options.testIds.empty() ||
-         !options.testGroups.empty();
+         !options.testGroups.empty()||!options.testExpressions.empty();
 }
 
 #ifndef SEP_CLI_PARSE_ONLY

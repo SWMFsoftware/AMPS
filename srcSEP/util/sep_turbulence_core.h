@@ -88,7 +88,11 @@ struct Configuration {
   double cascadeCoefficient = 0.8;
   double perpendicularCorrelationLengthM = 1.0e7;
   double electronHeatingFraction = 0.3;
-  double spectralKMinPerM = 1.0e-10;
+  // Grid contract v2: first/last k values are logarithmic BIN CENTERS.
+  // The default reproduces the actual pre-existing native initializer grid;
+  // the old core-only 1e-10 default disagreed with its native 1e-8 authority.
+  // This does not change the separate prescribed-coefficient spectral bounds.
+  double spectralKMinPerM = 1.0e-8;
   double spectralKMaxPerM = 1.0e-2;
   std::size_t spectralBins = 128;
   std::size_t diagnosticCadence = 100;
@@ -109,6 +113,9 @@ struct CellState {
   double volumeM3 = 0.0;
   double plasmaSpeedMPerS = 0.0;
   double alfvenSpeedMPerS = 0.0;
+  // E+ propagates along B, E- opposite B. This sign maps that authority
+  // to increasing geometric field-line coordinate; v_A remains a magnitude.
+  int magneticPolarityAlongLine = 1;
   double dLnAlfvenSpeeddsPerM = 0.0;
   double magneticFieldT = 0.0;
   double massDensityKgPerM3 = 0.0;
@@ -215,6 +222,7 @@ struct State {
 };
 
 struct DerivedCell {
+  Transport::Status status;
   double wPlusJPerM3 = 0.0;
   double wMinusJPerM3 = 0.0;
   double deltaB2T2 = 0.0;

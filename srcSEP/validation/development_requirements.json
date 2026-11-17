@@ -1,0 +1,2050 @@
+{
+  "schema": "srcsep-development-requirements-v1",
+  "purpose": "Source-owned traceability for the original development/validation plans and their 2026-11-16 corrective amendment; this is not a generated campaign result or a completion certificate.",
+  "plan_documents": [
+    "srcSEP/improvement_and_validation_plan.docx",
+    "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx"
+  ],
+  "status_policy": {
+    "implementation_status_values": [
+      "planned",
+      "present-unassessed",
+      "partial",
+      "implemented",
+      "experimental",
+      "unassessed"
+    ],
+    "validation_status_values": [
+      "not-assessed",
+      "incomplete-to-original-plan",
+      "passed-at-required-level",
+      "failed"
+    ],
+    "present-unassessed": "The implementation/registration exists; full conformance to its original requirement has not been audited.",
+    "partial": "A source-proven unmet implementation or scope requirement is identified. Other aspects may still require audit.",
+    "not-assessed": "No current completion claim at the required evidence level is made by this source-owned matrix.",
+    "completion": "Only current reproducible evidence meeting the original or explicitly amended requirement may support passed-at-required-level; isolated kernels, registration, historical reports, and lower evidence classes cannot be substituted.",
+    "changes": "Record an explicit scientific/requirement amendment before treating a reduced reconstruction, pilot or narrower fixture as original-plan completion."
+  },
+  "requirement_counts": {
+    "development": 16,
+    "validation_cases": 28,
+    "corrective_amendment": 8,
+    "clarifications": 7
+  },
+  "common_prerequisites": [
+    "The governing transport/distribution/frame and wave-energy/exchange definitions must be established from authoritative sources or user clarification.",
+    "Retain independent expected solutions, negative controls, predeclared statistics, and correct source/native/external evidence labels.",
+    "Unresolved physical input blocks only dependent implementation; no missing background/comparator/observation may be invented.",
+    "Native build, MPI/thread/migration/population control and restart must exercise current production code; a source audit or pure-core callback cannot certify these seams."
+  ],
+  "requirements": [
+    {
+      "id": "DEV00",
+      "kind": "development",
+      "title": "Preserve and measure the current baseline",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "section": "Step 0 Preserve and measure the current baseline"
+      },
+      "original_objective": "Create a recoverable boundary between the current combined application and the field-line-only implementation.",
+      "original_completion_gate": "The tag, manifest, build record, production CLI contract, test results, and output hashes are stored before any mover is removed or any CLI option is renamed.",
+      "implementation_status": "unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/MIGRATION_MANIFEST.md"
+        },
+        {
+          "path": "srcSEP/CURRENT_CLI_CONTRACT.md"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Establish the required migration tag/commit and retained pre-migration native baseline evidence; this audit did not verify their existence.",
+        "Baseline all supported native configurations and their runtime/resource/configuration identities."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "DEV01",
+      "kind": "development",
+      "title": "Preserve and extend the existing CLI with a selectable test registry",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "section": "Step 1 Preserve and extend the existing CLI with a selectable test registry"
+      },
+      "original_objective": "Keep the current production CLI fully functional and covered by regression tests while evolving the unstructured TestManager entry into a selectable test service.",
+      "original_completion_gate": "PCLI01-PCLI12 pass against the preserved production behavior; one command lists tests; one command runs a single case; legacy --test-manager behavior is accounted for; and coupled library initialization never parses CLI options or triggers the standalone test manager.",
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/util/sep_cli.cpp"
+        },
+        {
+          "path": "src/models/sep_common/sep_test_registry.cpp"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "The additive original-plan test CLI options are implemented; build6 native MPI campaign9/9 and applied production software companion18 PASS/2 explicit SKIP. Actual production advancement and SWMF execution remain unqualified.",
+        "PCLI11 production advancement and PCLI12 actual SWMF coupled execution remain distinct unqualified gates; global application and source ownership audits do not replace them.",
+        "Retained --all-tests routine-only compatibility and explicit --tests all extended-selection behavior require reconciliation against the original planned interface."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "DEV02",
+      "kind": "development",
+      "title": "Create an immutable background snapshot and one simulation clock",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "section": "Step 2 Create an immutable background snapshot and one simulation clock"
+      },
+      "original_objective": "Make every production mover use the same field-line and plasma state for the same physical time interval.",
+      "original_completion_gate": "The first particle step uses a valid time-zero state, every operator in a step reports the same epoch, and no imported velocity density IMF or turbulence is overwritten.",
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "src/models/sep_common/sep_background_snapshot.cpp"
+        },
+        {
+          "path": "srcSEP/util/sep_background_runtime.cpp"
+        },
+        {
+          "path": "srcSEP/transport_common.cpp",
+          "symbol": "EvaluateLocalBackgroundAt"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Explicit provider Cartesian tensors replace density-only divergence and projected-flow strain; CP03G01-04 pass. Configured analytic origin/speed and coherent static previous B/U initialization remain a separately identified repair.",
+        "Qualify first-step, epoch, generation, provider-isolation, and read-only import behavior through actual native adapters."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q03",
+        "Q05"
+      ]
+    },
+    {
+      "id": "DEV03",
+      "kind": "development",
+      "title": "Correct shared units flux tube geometry and source normalization",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "section": "Step 3 Correct shared units flux tube geometry and source normalization"
+      },
+      "original_objective": "Remove dimensional defects that would contaminate all three movers and observational intensity comparisons.",
+      "original_completion_gate": "Area and volume tests converge; all injection branches are sanitizer-clean; and equivalent analytic, SWCME, and SWMF shock states inject the same total physical source.",
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/flux_tube_geometry.cpp"
+        },
+        {
+          "path": "srcSEP/util/sep_flux_tube_geometry_core.cpp"
+        },
+        {
+          "path": "srcSEP/field_line.cpp"
+        },
+        {
+          "path": "srcSEP/coefficient_providers.cpp"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Resolve the wave-energy/amplitude conversion disagreement across producers and consumers.",
+        "Verify all native injection branches, represented physical source equality, and source/sampling normalization under the agreed physical conventions."
+      ],
+      "clarification_dependencies": [
+        "Q02",
+        "Q03"
+      ]
+    },
+    {
+      "id": "DEV04",
+      "kind": "development",
+      "title": "Introduce the three mover public API",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "section": "Step 4 Introduce the three mover public API"
+      },
+      "original_objective": "Create the stable production interface before changing individual algorithms.",
+      "original_completion_gate": "Only three canonical mover choices appear in --help and --list-movers; capability-based dispatch replaces pointer comparison.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/util/sep_production_mover.cpp"
+        },
+        {
+          "path": "srcSEP/production_mover_runtime.cpp"
+        },
+        {
+          "path": "srcSEP/PRODUCTION_MOVER_API.md"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "The native discovery baseline exposes exactly three mover names; full descriptor/dispatch/attachment and migration compatibility requirements remain to be qualified against the original plan."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "DEV05",
+      "kind": "development",
+      "title": "Transfer and remove full three dimensional movers",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "section": "Step 5 Transfer and remove full three dimensional movers"
+      },
+      "original_objective": "Remove full three-dimensional particle transport from srcSEP without removing three-dimensional field-line geometry.",
+      "original_completion_gate": "srcSEP links no transferred mover object, exposes no full-3D mover selector, and still imports and advances three-dimensional field lines.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/MIGRATION_MANIFEST.md"
+        },
+        {
+          "path": "srcSEP/test/run_step5_tests.sh"
+        },
+        {
+          "path": "srcSEP3D/makefile"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Verify destination commit/tag provenance and independent current native builds of srcSEP and the receiving 3-D application."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "DEV06",
+      "kind": "development",
+      "title": "Extract shared field line numerical kernels",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "section": "Step 6 Extract shared field line numerical kernels"
+      },
+      "original_objective": "Remove duplicated calculations before consolidating the three movers.",
+      "original_completion_gate": "All three mover shells compile against the common kernels, and duplicated focus, cooling, reflection, and attachment logic is removed.",
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "src/models/sep_common/sep_transport_common.cpp"
+        },
+        {
+          "path": "srcSEP/transport_common.cpp"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Correct repeated-call stochastic continuity and background-derivative semantics in the actual shared adapter.",
+        "Qualify all supported frame, coordinate, boundary, and attachment contracts natively."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q05",
+        "Q06",
+        "Q07"
+      ]
+    },
+    {
+      "id": "DEV07",
+      "kind": "development",
+      "title": "Implement the Parker production mover",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "section": "Step 7 Implement the Parker production mover"
+      },
+      "original_objective": "Consolidate the pitch-angle-averaged field-line Parker transport paths into one validated mover.",
+      "original_completion_gate": "The mover passes manufactured solutions and no longer contains pitch-angle or perpendicular-displacement code.",
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/parker_mover.cpp"
+        },
+        {
+          "path": "srcSEP/util/sep_parker_core.cpp"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Correct RNG lifetime across outer calls and authoritative divergence input.",
+        "Review the physical distribution measure/flux-tube metric and reduced-feedback contract against the governing equation.",
+        "Run native repeated-call, boundary, refinement, and restart evidence."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q04",
+        "Q05",
+        "Q07"
+      ]
+    },
+    {
+      "id": "DEV08",
+      "kind": "development",
+      "title": "Implement the focused transport diffusion mover",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "section": "Step 8 Implement the focused transport diffusion mover"
+      },
+      "original_objective": "Replace the present hard-coded QLT path with a coefficient-driven pitch-angle SDE.",
+      "original_completion_gate": "The mover has no hard-coded background, passes stochastic moment and manufactured-solution tests, and produces deterministic wave-coupling accumulators for fixed streams.",
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/focused_transport_dmumu.cpp"
+        },
+        {
+          "path": "srcSEP/util/sep_focused_transport_core.cpp"
+        },
+        {
+          "path": "srcSEP/coefficient_providers.cpp"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Correct RNG lifetime and supplied divergence/strain; reconcile wave-amplitude normalization.",
+        "Qualify the production scattering-to-feedback transaction and unchanged physical behavior of cooling controls."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q02",
+        "Q04",
+        "Q05",
+        "Q07"
+      ]
+    },
+    {
+      "id": "DEV09",
+      "kind": "development",
+      "title": "Implement the focused transport mean free path mover",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "section": "Step 9 Implement the focused transport mean free path mover"
+      },
+      "original_objective": "Consolidate all mean-free-path scattering implementations into one event-driven field-line mover.",
+      "original_completion_gate": "The public fte-mfp mover is the only event-driven mean-free-path mover and passes distributional and conservation tests with deterministic seeds.",
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/focused_transport_mfp.cpp"
+        },
+        {
+          "path": "srcSEP/util/sep_focused_transport_mfp_core.cpp"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Persistent RNG/cache, residual optical depth and event identities now pass source and scoped native continuation tests; full joint polarized-spectrum production law and evolving-wave transactions remain incomplete.",
+        "Qualify branch/energy transactions and boundary partitions using actual production adapters.",
+        "Exact split/conservative resampling and corrected-schema-only checkpoint policy are implemented in scoped native paths; qualify full decomposition/thread/migration and physical source behavior."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q02",
+        "Q04",
+        "Q06",
+        "Q07"
+      ]
+    },
+    {
+      "id": "DEV10",
+      "kind": "development",
+      "title": "Unify coefficient providers across backgrounds and movers",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "section": "Step 10 Unify coefficient providers across backgrounds and movers"
+      },
+      "original_objective": "Ensure that a mover uses the coefficient selected by configuration rather than a coefficient implied by its source file.",
+      "original_completion_gate": "Each mover can be paired with every supported background and turbulence source through explicit validated configuration.",
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "src/models/sep_common/sep_coefficient_registry.cpp"
+        },
+        {
+          "path": "src/models/sep_common/sep_coefficient_physics.cpp"
+        },
+        {
+          "path": "srcSEP/coefficient_providers.cpp"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Unify source-specific magnetic-variance/energy conventions with independently verified imported semantics.",
+        "Qualify each supported provider/background/representation combination through the native path."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q02",
+        "Q03"
+      ]
+    },
+    {
+      "id": "DEV11",
+      "kind": "development",
+      "title": "Retain stabilize and validate self-consistent Alfven turbulence",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "section": "Step 11 Retain stabilize and validate self-consistent Alfven turbulence"
+      },
+      "original_objective": "Preserve the existing self-consistent turbulence capability as a production subsystem; separate it cleanly from particle movers; and make its integrated and wave-number-resolved implementations conservative, reproducible, restartable, and scientifically testable.",
+      "original_completion_gate": "All three production movers consume the selected turbulence state through one interface; integrated and spectral modes pass their conservation and convergence gates; read-only data are never modified; local evolution is restartable; and standalone and coupled drivers produce equivalent updates from the same frozen input snapshot.",
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/util/sep_turbulence_core.cpp"
+        },
+        {
+          "path": "srcSEP/turbulence_production_adapter.cpp"
+        },
+        {
+          "path": "srcSEP/WP42_WP64_DISPOSITION.json"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Resolve physical energy and exchange laws.",
+        "Establish native persistent ownership, one-time SWMF handoff, pending transactions, remap/restart, and complete signed source/sink accounting.",
+        "Component checkpoints and ledgers do not establish application-level persistence or physical particle-wave closure."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q02",
+        "Q03",
+        "Q04",
+        "Q07"
+      ]
+    },
+    {
+      "id": "DEV12",
+      "kind": "development",
+      "title": "Enforce thread and MPI reproducibility",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "section": "Step 12 Enforce thread and MPI reproducibility"
+      },
+      "original_objective": "Remove order-dependent shared writes from particle movement and test execution.",
+      "original_completion_gate": "Fixed-seed results meet the declared bitwise or numerical reproducibility policy for every supported execution layout.",
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/util/sep_reproducible_reduction.cpp"
+        },
+        {
+          "path": "srcSEP/transport_common.cpp"
+        },
+        {
+          "path": "src/models/sep_common/sep_transport_common.cpp"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Eliminate repeated stochastic sequences across outer mover calls.",
+        "Qualify physical identity and accumulation ordering under actual MPI/thread/migration/splitting layouts, rather than synthetic partitions alone."
+      ],
+      "clarification_dependencies": [
+        "Q06",
+        "Q07"
+      ]
+    },
+    {
+      "id": "DEV13",
+      "kind": "development",
+      "title": "Complete component and cross mover tests",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "section": "Step 13 Complete component and cross mover tests"
+      },
+      "original_objective": "Turn the test CLI into the primary acceptance mechanism for the cleaned application.",
+      "original_completion_gate": "No registered test can set a hidden failure flag and return PASS; every group is selectable and the complete suite returns a reliable exit code.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/test/run_tests.py"
+        },
+        {
+          "path": "src/models/sep_common/sep_test_registry.cpp"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Run current complete routine/extended suites under their declared execution and sanitizer policies.",
+        "Verify that each case exercises the stated physics and that source-only PASS cannot certify a native or original-plan requirement."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "DEV14",
+      "kind": "development",
+      "title": "Remove compatibility code and update documentation",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "section": "Step 14 Remove compatibility code and update documentation"
+      },
+      "original_objective": "Finish the cleanup after the three canonical movers and test CLI have passed their acceptance gates.",
+      "original_completion_gate": "The production executable advertises exactly three movers, the build contains no full-3D mover objects, and documentation reproduces every supported command.",
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/MIGRATION_MANIFEST.md"
+        },
+        {
+          "path": "srcSEP/README.md"
+        },
+        {
+          "path": "srcSEP/test/README.md"
+        },
+        {
+          "path": "srcSEP/background/README.md"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Reconcile stale documentation with current runtime behavior and correct the srcSEP3D-specific background README.",
+        "Verify full native strict-warning/static-analysis/sanitizer and source-package hygiene gates."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "DEV15",
+      "kind": "development",
+      "title": "Run numerical cross model and observational validation",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "section": "Step 15 Run numerical cross model and observational validation"
+      },
+      "original_objective": "Establish scientific readiness after the architecture and component tests are stable.",
+      "original_completion_gate": "A release report separates numerical verification, coupled integration, cross-model comparison, and observational skill; no synthetic fixture is labeled as observational validation.",
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/validation/run_campaign.py"
+        },
+        {
+          "path": "srcSEP/STEP15_VALIDATION_REPORT.md"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Complete each original controlled, integrated, cross-model, observational, and ensemble requirement or record an explicit approved amendment.",
+        "Supply current real SWMF replay, instrument-aware held-out event evidence, native lifecycle conservation, and independent clean-checkout reproduction."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q02",
+        "Q03",
+        "Q04",
+        "Q05",
+        "Q06",
+        "Q07"
+      ]
+    },
+    {
+      "id": "CV01",
+      "kind": "validation-case",
+      "title": "Ballistic streaming on a uniform field line",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 01  CV01  Ballistic streaming on a uniform field line"
+      },
+      "original_validation_question": "Does an initially localized distribution translate by the exact characteristic distance s = s\u2080 + \u03bcvt while retaining its shape and particle weight?",
+      "original_acceptance_gate": "For deterministic movers, max trajectory error \u2264 10\u207b\u00b9\u00b2 of line length and weight conservation \u2264 10\u207b\u00b9\u00b3. For binned Monte Carlo output, centroid z-score < 3 and escaped-weight accounting closes to five standard errors.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/CV01/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/CV01/cv01_model.cpp"
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "CV02",
+      "kind": "validation-case",
+      "title": "Constant-coefficient spatial diffusion Green function",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 02  CV02  Constant-coefficient spatial diffusion Green function"
+      },
+      "original_validation_question": "Does the ensemble converge to f(s,t) = N(4\u03c0\u03bat)\u207b\u00b9\u141f\u00b2 exp[\u2212(s\u2212s\u2080)\u00b2/(4\u03bat)] with Var(s)=2\u03bat?",
+      "original_acceptance_gate": "|\u03bafit/\u03ba\u22121| \u2264 2%; mean within 3 standard errors; integrated-density error consistent with N\u207b\u00b9\u141f\u00b2; and refinement shows the documented weak order before the run reaches a boundary.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/CV02/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/controlled_transport_models.cpp"
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "CV03",
+      "kind": "validation-case",
+      "title": "Nonuniform diffusion and stochastic-calculus drift",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 03  CV03  Nonuniform diffusion and stochastic-calculus drift"
+      },
+      "original_validation_question": "Does the particle method solve the intended conservative Fokker\u2013Planck equation for \u03ba(s), including the required spatial drift?",
+      "original_acceptance_gate": "Zero-flux equilibrium remains uniform to the 99% Monte Carlo confidence band; transient L\u2082 error decreases at the designed weak order; probability closes within five standard errors.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/CV03/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/controlled_transport_models.cpp"
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "CV04",
+      "kind": "validation-case",
+      "title": "Adiabatic momentum change in expanding solar wind",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 04  CV04  Adiabatic momentum change in expanding solar wind"
+      },
+      "original_validation_question": "Does momentum follow dp/dt = \u2212(p/3)\u2207\u00b7Vsw along a prescribed trajectory and preserve the expected phase-space transformation?",
+      "original_acceptance_gate": "Single-particle relative momentum error \u2264 10\u207b\u2079 for an exactly integrated coefficient or demonstrates the declared time order; ensemble spectral moments agree within combined numerical and sampling uncertainty.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/CV04/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/controlled_transport_models.cpp"
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "CV05",
+      "kind": "validation-case",
+      "title": "Magnetic focusing in a prescribed field gradient",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 05  CV05  Magnetic focusing in a prescribed field gradient"
+      },
+      "original_validation_question": "Are the guiding-center focusing characteristics and the corresponding distribution transformation reproduced for known B(s)?",
+      "original_acceptance_gate": "Characteristic errors converge at the declared mover order; moment errors fall within 3\u03c3; no particles leave the physical \u03bc interval except at roundoff level.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/CV05/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/controlled_transport_models.cpp"
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "CV06",
+      "kind": "validation-case",
+      "title": "Legendre-mode pitch-angle diffusion",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 06  CV06  Legendre-mode pitch-angle diffusion"
+      },
+      "original_validation_question": "For D\u03bc\u03bc=D\u2080(1\u2212\u03bc\u00b2), does each P\u2113(\u03bc) decay as exp[\u2212\u2113(\u2113+1)D\u2080t] without coupling to other modes?",
+      "original_acceptance_gate": "Decay-rate error \u2264 2% for resolved modes, modal leakage below 1% of the initial amplitude, and isotropic mode conserved within five standard errors; demonstrate time-step convergence.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/CV06/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/advanced_validation_models.cpp"
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "CV07",
+      "kind": "validation-case",
+      "title": "Telegraph transport and diffusion limit",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 07  CV07  Telegraph transport and diffusion limit"
+      },
+      "original_validation_question": "Does the model capture the ballistic fronts, their decay, and the late-time diffusion coefficient implied by the switching/scattering rate?",
+      "original_acceptance_gate": "No probability outside |s\u2212s\u2080|\u2264vt beyond numerical tolerance; front mass and second moment within 3\u03c3; \u03baeff approaches the analytic limit within 3%.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/CV07/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/advanced_validation_models.cpp"
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "CV08",
+      "kind": "validation-case",
+      "title": "Absorbing-boundary first-passage distribution",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 08  CV08  Absorbing-boundary first-passage distribution"
+      },
+      "original_validation_question": "Does drift\u2013diffusion reach an absorbing boundary with the analytical inverse-Gaussian first-passage distribution?",
+      "original_acceptance_gate": "KS test does not reject at predeclared \u03b1=0.01 across at least 10 independent seeds; mean and variance within 3\u03c3; overshoot shrinks with the documented time order.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/CV08/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/advanced_validation_models.cpp"
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "CV09",
+      "kind": "validation-case",
+      "title": "Planar diffusive shock acceleration spectrum",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 09  CV09  Planar diffusive shock acceleration spectrum"
+      },
+      "original_validation_question": "Does a stationary planar shock generate f(p)\u221dp\u207bq with q=3r/(r\u22121) for compression ratio r under resolved diffusion?",
+      "original_acceptance_gate": "|qfit\u2212q|\u22640.1 after spatial/time refinement; acceleration time within 10%; particle and escaped-weight accounting closes within five standard errors.",
+      "implementation_status": "partial",
+      "validation_status": "incomplete-to-original-plan",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/CV09/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/advanced_validation_models.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/advanced_validation_models.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/CV09/README.md"
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "Current C++ implementation uses a constant-gain/escape shock-cycle construction. The original plan requires resolved piecewise-flow/diffusion shock transport, independent f(p)/j(E) fits, physical boundary escape, and spatial/time refinement."
+      ],
+      "clarification_dependencies": [
+        "Q01"
+      ]
+    },
+    {
+      "id": "CV10",
+      "kind": "validation-case",
+      "title": "Nonuniform turbulence advection",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 10  CV10  Nonuniform turbulence advection"
+      },
+      "original_validation_question": "Does an imposed wave-power packet advect through a variable-speed or variable-area field-line tube with the correct amplitude and integral invariant?",
+      "original_acceptance_gate": "Invariant error \u226410\u207b\u2078 for the discrete conservation test or converges at the documented order; profile L\u2082 error shows expected refinement; no negative wave power.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/CV10/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/advanced_validation_models.cpp"
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "CV11",
+      "kind": "validation-case",
+      "title": "Time-dependent resonant wave growth and damping",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 11  CV11  Time-dependent resonant wave growth and damping"
+      },
+      "original_validation_question": "For prescribed \u0393(k,t), does wave power obey W(k,t)=W\u2080(k)exp[2\u222b(\u0393\u2212\u03b3)d t] with correct resonance-bin mapping?",
+      "original_acceptance_gate": "Rate error \u22640.5% in resolved bins, positivity preserved, no change in zero-rate bins, and expected temporal order across three step sizes.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/CV11/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/advanced_validation_models.cpp"
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "CV12",
+      "kind": "validation-case",
+      "title": "Controlled particle-wave total-energy exchange",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 12  CV12  Controlled particle\u2013wave total-energy exchange"
+      },
+      "original_validation_question": "In a closed periodic domain with no external work or damping, is particle energy lost to resonant interactions gained by waves, and vice versa?",
+      "original_acceptance_gate": "Cumulative total-energy drift \u22640.1% over the benchmark or demonstrates convergence to zero; instantaneous exchange residual closes within the predicted sampling uncertainty; uncoupled controls remain constant.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/CV12/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/advanced_validation_models.cpp"
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "IV01",
+      "kind": "validation-case",
+      "title": "Streaming plus Parker-spiral focusing",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 13  IV01  Streaming plus Parker-spiral focusing"
+      },
+      "original_validation_question": "Does focused propagation along an analytic Parker spiral reproduce independently integrated characteristics and angular moments?",
+      "original_acceptance_gate": "Ballistic arrival and \u03bc characteristic errors show designed convergence; weak-scattering moments remain within stochastic 3\u03c3 bands; no dependence on segment numbering or line direction.",
+      "implementation_status": "partial",
+      "validation_status": "incomplete-to-original-plan",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/IV01/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/integrated_validation_models.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/integrated_validation_models.cpp",
+          "symbol": "IV01",
+          "line": 111
+        },
+        {
+          "path": "srcSEP/validation/cases/IV01/reference_solution.py"
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "The orientation loop changes output metadata only; it does not construct or reverse actual stored field-line geometry. Reversed-layout invariance is therefore not demonstrated by the duplicated rows.",
+        "Add actual provider/metric/field orientation reversal and independent physical-characteristic comparisons."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q05"
+      ]
+    },
+    {
+      "id": "IV02",
+      "kind": "validation-case",
+      "title": "Scattering-focusing equilibrium",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 14  IV02  Scattering\u2013focusing equilibrium"
+      },
+      "original_validation_question": "Does the coupled \u03bc-space operator approach the known zero-flux stationary distribution for constant focusing length and D\u03bc\u03bc?",
+      "original_acceptance_gate": "Stationary L\u2081 error \u22642% with uncertainty; relaxation rate within 5%; starting distributions converge to the same equilibrium; operator-splitting refinement has the expected order.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/IV02/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/integrated_validation_models.cpp"
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "IV03",
+      "kind": "validation-case",
+      "title": "Manufactured spatial-pitch-momentum transport",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 15  IV03  Manufactured spatial\u2013pitch\u2013momentum transport"
+      },
+      "original_validation_question": "Does the discretized equation reproduce a smooth prescribed f(s,\u03bc,p,t) when the exact residual is supplied as a manufactured source?",
+      "original_acceptance_gate": "Observed order within 0.25 of the documented design order over at least three resolved levels; every isolated operator and the combined solve pass; no unexplained error plateau.",
+      "implementation_status": "partial",
+      "validation_status": "incomplete-to-original-plan",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/IV03/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/integrated_validation_models.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/integrated_validation_models.cpp",
+          "symbol": "Residual",
+          "line": 152
+        },
+        {
+          "path": "srcSEP/validation/cases/IV03/reference_solution.py",
+          "line": 5
+        },
+        {
+          "path": "srcSEP/validation/cases/integrated_case_runner.py",
+          "symbol": "_iv03",
+          "line": 79
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "Current callback samples analytic and finite-difference residuals at 100 points; it does not evolve f(s,mu,p,t) with the manufactured forcing through the transport solver.",
+        "The Python reference emits design_order, positivity and operator count rather than an independent residual/evolved solution; scoring reads both exact_residual and numerical_residual from the same native output.",
+        "The stated pitch operator must be reconciled with the planned pitch-diffusion operator: current Residual uses -D*f_mu rather than evaluating the pitch-diffusion divergence.",
+        "Complete isolated/joint space/time/pitch/momentum refinement, distribution/moment errors, conservation, and independent forcing/source generation."
+      ],
+      "clarification_dependencies": [
+        "Q01"
+      ]
+    },
+    {
+      "id": "IV04",
+      "kind": "validation-case",
+      "title": "Moving field-line grid conservation and GCL",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 16  IV04  Moving field-line grid conservation and geometric conservation law"
+      },
+      "original_validation_question": "Does a uniform physical state remain uniform under prescribed grid motion, and does a transported profile match the same problem on a fixed grid?",
+      "original_acceptance_gate": "Uniform-state deviation \u226410\u207b\u00b9\u00b2 in the deterministic remap; conserved quantity closes at roundoff or documented solver tolerance; mapped-profile error converges at design order.",
+      "implementation_status": "partial",
+      "validation_status": "incomplete-to-original-plan",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/IV04/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/integrated_validation_models.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/integrated_validation_models.cpp",
+          "symbol": "IV04",
+          "line": 160
+        },
+        {
+          "path": "srcSEP/validation/cases/integrated_case_runner.py",
+          "symbol": "_iv04",
+          "line": 87
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "Current callback remaps a uniform state once between normalized segment partitions. The original plan also requires transported profiles, known advection, fixed/moving-grid comparisons, node velocities, Jacobians, and time-refinement order."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q05"
+      ]
+    },
+    {
+      "id": "IV05",
+      "kind": "validation-case",
+      "title": "Moving shock crossing and acceleration",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 17  IV05  Moving shock crossing and acceleration"
+      },
+      "original_validation_question": "Are crossing times, energy changes, and accelerated spectra invariant between equivalent stationary-shock and moving-shock frames?",
+      "original_acceptance_gate": "Frame-equivalent observables agree within combined numerical/Monte Carlo uncertainty; crossing-time bias converges with \u0394t; spectral slope meets CV09 after resolution criteria are satisfied.",
+      "implementation_status": "partial",
+      "validation_status": "incomplete-to-original-plan",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/IV05/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/integrated_validation_models.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/integrated_validation_models.cpp",
+          "symbol": "IV05",
+          "line": 167
+        },
+        {
+          "path": "srcSEP/validation/cases/integrated_case_runner.py",
+          "symbol": "_iv05",
+          "line": 96
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "The moving/stationary frame loop changes the output frame label only; momentum and sampled shock cycles use the same unchanged parameters in both rows. No velocity or momentum frame transformation is performed.",
+        "Complete frame-transformed resolved transport, physical energy/work and escaped-flux accounting, and the required crossing/frame diagnostic stream."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q05"
+      ]
+    },
+    {
+      "id": "IV06",
+      "kind": "validation-case",
+      "title": "Coupled self-generated turbulence feedback",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 18  IV06  Coupled self-generated turbulence feedback"
+      },
+      "original_validation_question": "Does enabling resonant growth produce the expected wave-band enhancement and self-limiting reduction of particle streaming relative to a frozen-turbulence control?",
+      "original_acceptance_gate": "Early growth rate agrees with the prescribed/derived linear rate; enhanced power is localized to resolved resonant bins; two-way coupling reduces streaming relative to one-way control; total-energy gate passes.",
+      "implementation_status": "partial",
+      "validation_status": "incomplete-to-original-plan",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/IV06/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/integrated_validation_models.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/integrated_validation_models.cpp",
+          "symbol": "IV06",
+          "line": 181
+        },
+        {
+          "path": "srcSEP/validation/cases/IV06/reference_solution.py",
+          "line": 5
+        },
+        {
+          "path": "srcSEP/validation/cases/integrated_case_runner.py",
+          "symbol": "_iv06",
+          "line": 107
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "Current wave state uses integrated energy; resonant_bin is hard-coded as 3 in model output, reference, and scorer. Local B/rigidity resonance and resolved spectral localization are not calculated.",
+        "Growth is a prescribed scalar expression; a separate scalar reservoir is decremented by the applied source while simulated particles evolve pitch only at fixed momentum. This closure is not a demonstrated transfer of actual particle kinetic energy.",
+        "Complete independent particle/time/segment/k-bin/seed refinements, physical resonance, and native causal exchange using the agreed energy and growth laws."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q02",
+        "Q04"
+      ]
+    },
+    {
+      "id": "XM01",
+      "kind": "validation-case",
+      "title": "Independent focused-transport PDE solver comparison",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 19  XM01  Independent focused-transport PDE solver comparison"
+      },
+      "original_validation_question": "For identical one-dimensional coefficients and boundary/source terms, do srcSEP moments and distributions agree with a separately implemented conservative PDE solve?",
+      "original_acceptance_gate": "Differences shrink toward a common solution under independent refinement; in the resolved regime, log-intensity RMSE \u22640.05 dex and first angular-moment difference \u22640.02 for nonzero signal regions.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/XM01/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/cross_model_validation_models.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/XM01/README.md"
+        },
+        {
+          "path": "srcSEP/validation/cases/XM01/reference_solution.py"
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "Review complete equation/frame/measure equivalence; current reference documentation uses a reduced momentum characteristic.",
+        "Verify the originally required neutral coefficient interchange, independent refinements of both solvers, uncertainty, and retained blind comparison provenance."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q05"
+      ]
+    },
+    {
+      "id": "XM02",
+      "kind": "validation-case",
+      "title": "Publication-informed M-FLAMPA transport reconstruction",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 20  XM02  M-FLAMPA canonical Parker-spiral comparison"
+      },
+      "original_validation_question": "With matched Parker geometry, injection, scattering, and solar-wind profiles, are flux-time profiles and spectra consistent within declared differences in governing assumptions?",
+      "original_acceptance_gate": "This is an agreement and discrepancy-attribution gate: all requested quantities and input differences must be reported; target resolved log-RMSE \u22640.3 dex and timing difference \u22642 h, but no pass/fail is assigned until equivalence is reviewed.",
+      "implementation_status": "partial",
+      "validation_status": "incomplete-to-original-plan",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/XM02/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/cross_model_validation_models.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/cross_model_validation_models.cpp",
+          "symbol": "RunXM02",
+          "line": 262
+        },
+        {
+          "path": "srcSEP/validation/cases/XM02/publication_input.json"
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "Current reconstruction compares monoenergetic 10.1-MeV first-passage shapes for three MFPs with digitized event curves using prescribed release clocks, zero convection/focusing, a reflecting inner boundary, and independent unit-peak normalization.",
+        "The original canonical matched-geometry/source/coefficient community-model comparison, requested >10/>30/>50-MeV channels, differential products, and reviewed assumption-equivalence agreement are not supplied by this reconstruction.",
+        "Obtain comparator version/run ID, equivalent inputs and differential outputs; do not invent unavailable background or source histories."
+      ],
+      "clarification_dependencies": [
+        "Q01"
+      ]
+    },
+    {
+      "id": "XM03",
+      "kind": "validation-case",
+      "title": "2013 April 11 Earth spectra in Liu Figure 12",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 21  XM03  Published M-FLAMPA 2013 April 11 event reproduction"
+      },
+      "original_validation_question": "Can srcSEP reproduce the comparator\u2019s spacecraft-channel timing and intensity when driven with equivalent background and source information, and can remaining differences be traced to documented assumptions?",
+      "original_acceptance_gate": "Reproduce the published setup within an auditable parameter mapping; report model\u2013model and model\u2013data scores separately. Provisional target: onset within 1 h, peak time within 3 h, fluence and peak within factor 3 after channel folding.",
+      "implementation_status": "partial",
+      "validation_status": "incomplete-to-original-plan",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/XM03/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/cross_model_validation_models.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/cross_model_validation_models.cpp",
+          "symbol": "RunXM03",
+          "line": 844
+        },
+        {
+          "path": "srcSEP/validation/cases/XM03/publication_input.json"
+        },
+        {
+          "path": "srcSEP/validation/cases/XM03/README.md"
+        }
+      ],
+      "required_evidence_level": "native-amps",
+      "registered_release_status": "not-specified",
+      "unmet_or_unverified_gates": [
+        "Current implementation is an event-informed one-field-line Parker calculation compared with Earth spectra, with reduced shock/geometry substitutions and fitted global amplitude.",
+        "The original equivalent-background/source M-FLAMPA event reproduction, frozen/evolving background comparison, separate model-model/model-data scores, channel-folded timing/fluence/peak gates, and requested numerical comparator output remain unmet."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q03"
+      ]
+    },
+    {
+      "id": "OV01",
+      "kind": "validation-case",
+      "title": "2013 April 11 near-Earth observational release gate",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 22  OV01  2013 April 11 near-Earth observational benchmark"
+      },
+      "original_validation_question": "Can one predeclared srcSEP configuration reproduce the observed near-Earth proton onset, rise, peak, decay, anisotropy where available, and spectrum across multiple instruments?",
+      "original_acceptance_gate": "Provisional scientific targets: onset error \u226460 min; peak-time error \u22643 h; peak and fluence ratios in [1/3,3]; log-profile RMSE \u22640.5 dex; spectral-index error \u22640.5. Freeze final thresholds after a documented pilot, before held-out scoring.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/OV01/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/cross_model_validation_models.cpp"
+        }
+      ],
+      "required_evidence_level": "observational-validation",
+      "registered_release_status": "release-gate",
+      "unmet_or_unverified_gates": [
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "OV02",
+      "kind": "validation-case",
+      "title": "2020 May 29 PSP and STEREO-A radial benchmark",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 23  OV02  Radial-conjunction transport case"
+      },
+      "original_validation_question": "Does one injection history and one radial transport prescription reproduce the time delay, intensity evolution, anisotropy change, and spectral softening between inner and outer observers?",
+      "original_acceptance_gate": "Selection criteria and event dossier are mandatory. For a clean conjunction, target differential onset difference within 1 h, radial fluence exponent within \u00b10.5, and spectral-index change within \u00b10.5; otherwise classify the case diagnostic rather than silently relax thresholds.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/OV02/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/cross_model_validation_models.cpp"
+        }
+      ],
+      "required_evidence_level": "observational-validation",
+      "registered_release_status": "release-gate",
+      "unmet_or_unverified_gates": [
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "OV03",
+      "kind": "validation-case",
+      "title": "2013 May 22 interacting-CME diagnostic",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 24  OV03  2013 May 22\u201323 interacting-CME event"
+      },
+      "original_validation_question": "Can srcSEP reproduce major intensity and spectral features using an explicitly documented multi-shock/interaction scenario, and which residuals are attributable to uncertain connectivity?",
+      "original_acceptance_gate": "No single scalar pass/fail. Required success is an auditable decomposition: scores for pre-shock, shock-associated, and decay windows; sensitivity to alternate shock histories; and identification of residuals outside 1D scope.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/OV03/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/cross_model_validation_models.cpp"
+        }
+      ],
+      "required_evidence_level": "observational-validation",
+      "registered_release_status": "diagnostic-only",
+      "unmet_or_unverified_gates": [
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "OV04",
+      "kind": "validation-case",
+      "title": "2014 January 6 connectivity-sensitive diagnostic",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 25  OV04  2014 January 6\u20139 connectivity-sensitive event"
+      },
+      "original_validation_question": "Across plausible connection solutions, which timing and anisotropy features are robust consequences of transport and which are dominated by source/field uncertainty?",
+      "original_acceptance_gate": "Diagnostic gate: report the ensemble envelope and whether observations fall within it. A model improvement is supported only if it improves preregistered metrics across the ensemble, not merely the best-connected member.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/OV04/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/cross_model_validation_models.cpp"
+        }
+      ],
+      "required_evidence_level": "observational-validation",
+      "registered_release_status": "diagnostic-only",
+      "unmet_or_unverified_gates": [
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "OV05",
+      "kind": "validation-case",
+      "title": "September 2017 compound-event diagnostic",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 26  OV05  September 2017 widespread and compound events"
+      },
+      "original_validation_question": "Can srcSEP explain well-connected portions of the compound interval, and does the residual pattern correctly reveal physics beyond a single field line?",
+      "original_acceptance_gate": "Well-connected subwindows use provisional OV01 targets. The STEREO-A wide-separation response is diagnostic only for a 1D model; required output is a quantified residual and a documented decision on whether perpendicular transport or multi-line injection is needed.",
+      "implementation_status": "present-unassessed",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/OV05/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/cross_model_validation_models.cpp"
+        }
+      ],
+      "required_evidence_level": "observational-validation",
+      "registered_release_status": "diagnostic-only",
+      "unmet_or_unverified_gates": [
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "EV01",
+      "kind": "validation-case",
+      "title": "Calibration ensemble and parameter identifiability pilot",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 27  EV01  Calibration ensemble and parameter identifiability"
+      },
+      "original_validation_question": "Can a single parameterization or declared covariate model explain a preselected training set without event-by-event retuning?",
+      "original_acceptance_gate": "Before fitting, declare objective function, priors/bounds, and metrics. Require stable parameters under bootstrap/event resampling and report identifiability; a narrow fit with poor held-out performance fails even if training RMSE is low.",
+      "implementation_status": "partial",
+      "validation_status": "incomplete-to-original-plan",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/EV01/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/cross_model_validation_models.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/EV01/input.json"
+        },
+        {
+          "path": "srcSEP/validation/cases/campaign_evidence_runner.py",
+          "symbol": "run_campaign_case",
+          "line": 353
+        }
+      ],
+      "required_evidence_level": "observational-validation",
+      "registered_release_status": "pilot-incomplete",
+      "unmet_or_unverified_gates": [
+        "The registered input is a nine-event pilot with six training events and one validation event, not the original 15-30 event/non-event cohort.",
+        "The source table and runner currently score peak flux/time and classification, a subset of the originally required onset/end/threshold/fluence/profile/spectral/uncertainty metrics.",
+        "Establish the larger frozen cohort, no-leakage split, declared priors/objective, full metrics and instrument/processing contracts without synthetic substitutes."
+      ],
+      "clarification_dependencies": [
+        "Q01"
+      ]
+    },
+    {
+      "id": "EV02",
+      "kind": "validation-case",
+      "title": "Locked held-out validation campaign pilot",
+      "plan_reference": {
+        "path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "Test 28  EV02  Locked held-out and forward validation campaign"
+      },
+      "original_validation_question": "With code, configuration, thresholds, and event rules frozen, what skill does srcSEP achieve on unseen events and non-events?",
+      "original_acceptance_gate": "Publish all preregistered metrics with bootstrap confidence intervals and per-event results. No parameter or threshold changes after unsealing. Any correction creates a new version and a new untouched cohort; it never overwrites the original score.",
+      "implementation_status": "partial",
+      "validation_status": "incomplete-to-original-plan",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/component_tests.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/EV02/case.py"
+        },
+        {
+          "path": "srcSEP/validation/cases/cross_model_validation_models.cpp"
+        },
+        {
+          "path": "srcSEP/validation/cases/EV02/input.json"
+        },
+        {
+          "path": "srcSEP/validation/cases/campaign_evidence_runner.py",
+          "symbol": "run_campaign_case",
+          "line": 353
+        }
+      ],
+      "required_evidence_level": "observational-validation",
+      "registered_release_status": "pilot-incomplete",
+      "unmet_or_unverified_gates": [
+        "The registered input contains two holdout events and remains a pilot; it does not establish the original release-tagged sealed cohort and prospective evaluation.",
+        "The current pilot subset of metrics does not provide all originally required timings, fluence, profile, spectral, uncertainty-coverage and bootstrap release scores.",
+        "Establish release/unseal provenance and appropriate untouched events/non-events after any model revisions; preserve earlier scores and separate retrospective/prospective claims."
+      ],
+      "clarification_dependencies": [
+        "Q01"
+      ]
+    },
+    {
+      "id": "CP00",
+      "kind": "corrective-amendment",
+      "title": "Establish physical contracts and a requirement-to-evidence matrix",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "companion_path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "2026-11-16 amendment / CP00"
+      },
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/development_requirements.json"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Resolve authoritative physics and open questions; maintain decisions and requirement/evidence links."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q02",
+        "Q03",
+        "Q04",
+        "Q05",
+        "Q06",
+        "Q07"
+      ]
+    },
+    {
+      "id": "CP01",
+      "kind": "corrective-amendment",
+      "title": "Introduce regressions that expose the current failures",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "companion_path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "2026-11-16 amendment / CP01"
+      },
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/util/sep_rng_validation.cpp"
+        },
+        {
+          "path": "srcSEP/util/sep_background_derivative_validation.cpp"
+        },
+        {
+          "path": "srcSEP/util/sep_wave_normalization_validation.cpp"
+        },
+        {
+          "path": "srcSEP/util/sep_population_native_validation.cpp"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Independent source regressions and native FTE01/PARKER01/WN01-WN06 now pass after correcting the fixture and stale-header ABI issue. Current full native repeated-adapter/lifecycle coverage remains incomplete.",
+        "RWN01/RWN02 independently exposed and verify removal of a factor-of-two real-wave normalization error. New source and native suites must stay reachable through the common orchestrator."
+      ],
+      "clarification_dependencies": []
+    },
+    {
+      "id": "CP02",
+      "kind": "corrective-amendment",
+      "title": "Preserve stochastic continuity through the production particle lifecycle",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "companion_path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "2026-11-16 amendment / CP02"
+      },
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/transport_common.cpp"
+        },
+        {
+          "path": "srcSEP/util/sep_source_lifecycle.cpp"
+        },
+        {
+          "path": "srcSEP/util/sep_rng_validation.cpp"
+        },
+        {
+          "path": "src/pic/pic_field_line_population.h"
+        },
+        {
+          "path": "srcSEP/util/sep_birth_native_validation.cpp"
+        },
+        {
+          "path": "srcSEP/test/run_fresh_process_checkpoint_tests.py"
+        },
+        {
+          "path": "srcSEP/flux_tube_checkpoint_state.h"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Persistent streams/source identities/exact split and conservative resampling have passing focused and native source/population tests.",
+        "Transport schema4 and checkpoint inner-schema4 now pass build8 BIRTHN01-06, CP05C01-05 and separate-process CP05F01-03 on two ranks, including synchronized Cartesian views, decoded-XYZ/strict-hazard rejection, and actual flux cache persistence. Full PIC::TimeStep/source-driver coverage, live-four-wave codec and changing layouts remain unqualified.",
+        "Full live-four-wave codec, supported threads/migration/decomposition changes, source physics and production evolution remain incomplete."
+      ],
+      "clarification_dependencies": [
+        "Q06",
+        "Q07"
+      ]
+    },
+    {
+      "id": "CP03",
+      "kind": "corrective-amendment",
+      "title": "Supply the correct background derivatives",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "companion_path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "2026-11-16 amendment / CP03"
+      },
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/transport_common.cpp"
+        },
+        {
+          "path": "srcSEP/adapters/swcme1d_adapter.cpp"
+        },
+        {
+          "path": "srcSEP/adapters/reduced_shock_background_adapter.cpp"
+        },
+        {
+          "path": "srcSEP/util/sep_background_derivative_validation.cpp"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Provider derivative regressions and native CP03G01-04/FTE01/PARKER01 pass. Imported SWMF full velocity-gradient contract and FULL_ICME regional thermodynamics remain unavailable and reject explicitly.",
+        "Complete evolving/remapped-geometry, frame and source-background derivative qualification at the originally required evidence level.",
+        "The analytic configured-origin/speed, complete generated U, imported-U preservation, initial previous B/U/n, collective rank-local rejection and mover-independent background identity now pass build8 ARB01-06/ARBN01-04. A separate coefficient-radius projection still assumes global zero; moving ideal-MHD geometry remains a distinct unfinished provider."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q03",
+        "Q05"
+      ]
+    },
+    {
+      "id": "CP04",
+      "kind": "corrective-amendment",
+      "title": "Reconcile wave-energy meaning and normalization",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "companion_path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "2026-11-16 amendment / CP04"
+      },
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "src/models/sep_common/sep_coefficient_physics.h"
+        },
+        {
+          "path": "src/models/sep_common/sep_coefficient_physics.cpp"
+        },
+        {
+          "path": "srcSEP/coefficient_providers.cpp"
+        },
+        {
+          "path": "srcSEP/util/sep_wave_normalization_validation.cpp"
+        },
+        {
+          "path": "srcSEP/util/sep_standard_batsrus_waves.cpp"
+        },
+        {
+          "path": "srcSEP/standard_batsrus_wave_adapter.cpp"
+        },
+        {
+          "path": "srcSEP/validation/physics/SWMF_FIELD_LINE_CONTRACT_AUDIT.md"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Magnetic conversion, relativistic resonance, polarity and real-wave normalization pass independent source tests plus14-case two-rank native normalization/value suite.",
+        "Native four-state PNW01-04 pass N128 on one/two ranks andN129 on two ranks. Tests qualify staged initialization/value restore within explicit quiescent scope, not global production evolution or full checkpoints.",
+        "User selected standard BATSRUS total-energy imports; readonly magnetic views=raw/2 and Wave1 along B/Wave2 opposite B pass source SBW01-05 and build8 native SBWN01-02. Full actual SWMF provider execution, composition, gradient and imported polarization/spectrum remain unqualified."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q02",
+        "Q03"
+      ]
+    },
+    {
+      "id": "CP05",
+      "kind": "corrective-amendment",
+      "title": "Verify native particle-wave exchange and persistent turbulence ownership",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "companion_path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "2026-11-16 amendment / CP05"
+      },
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/turbulence_production_adapter.cpp"
+        },
+        {
+          "path": "srcSEP/physics_checkpoint_state.h"
+        },
+        {
+          "path": "srcSEP/util/sep_frozen_collision_transaction.cpp"
+        },
+        {
+          "path": "srcSEP/util/sep_polarized_wkb_transport.cpp"
+        },
+        {
+          "path": "srcSEP/validation/physics/MATERIAL_TUBE_WKB_STAGING.md"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "A conservative finite-band four-polarization joint collision kernel and immutable value owner now have independent and refinement regressions. Actual PIC four-state evolution and atomic particle-wave transactions remain under development.",
+        "Legacy isotropic MFP reset, fixed-plasma-momentum Dmumu kick, aggregate-power reconstruction and heuristic growth/reflection do not qualify the adopted closure. Dependent production runs reject explicitly; diagnostic fixtures retain unqualified metadata.",
+        "Controlled WKB01-08 now implement signed-characteristic reservoirs, spectral ray transfer, exact external energy/action accounts and background side/cap work; build7 all8 callbacks PASS on two ranks. Actual native material geometry, coupled publication and complete physical-domain study remain unqualified.",
+        "Material Cauchy/Nanson and affine cap+side GCL MTG01-06 pass source and build9 native callbacks after independent review exposed encoded-flux cancellation; the expanded regression fails before the fix. Certified reference-scale signed-dot checks and true curved-density mass now pass, with independent exact-rational2000-case review and native related31/31. Actual native material mapping/publication and arbitrary nonaffine cell integration remain unimplemented."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q02",
+        "Q03",
+        "Q04",
+        "Q07"
+      ]
+    },
+    {
+      "id": "CP06",
+      "kind": "corrective-amendment",
+      "title": "Close original validation-plan scope gaps",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "companion_path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "2026-11-16 amendment / CP06"
+      },
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/validation/cases"
+        },
+        {
+          "path": "srcSEP/validation/case_registry.json"
+        },
+        {
+          "path": "srcSEP/validation/reference_sources.json"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Complete original IV03/XM02/XM03/EV requirements and other proven narrowed-case gaps, or record a justified explicit user-approved amendment; obtain required external inputs.",
+        "Pinned local upstream MFLAMPA build and exact upstream two-rank test_mflampa regression PASS (33 output blocks,75 checks, upstreamDiffNum exit0). This supplies a numerical comparator baseline, not an equivalent-input AMPS comparison or observational qualification."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q02",
+        "Q03",
+        "Q04",
+        "Q05"
+      ]
+    },
+    {
+      "id": "CP07",
+      "kind": "corrective-amendment",
+      "title": "Reconcile documentation and qualify the combined application",
+      "plan_reference": {
+        "path": "srcSEP/improvement_and_validation_plan.docx",
+        "companion_path": "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx",
+        "section": "2026-11-16 amendment / CP07"
+      },
+      "implementation_status": "partial",
+      "validation_status": "not-assessed",
+      "implementation_evidence": [
+        {
+          "path": "srcSEP/README.md"
+        },
+        {
+          "path": "srcSEP/test/README.md"
+        },
+        {
+          "path": "srcSEP/NATIVE_INTEGRATION.md"
+        },
+        {
+          "path": "srcSEP/validation/README.md"
+        },
+        {
+          "path": "tools/sep_test_orchestrator.py"
+        },
+        {
+          "path": "srcSEP/STATUS.md"
+        }
+      ],
+      "unmet_or_unverified_gates": [
+        "Run corrected focused/native/MPI/thread/migration/population/restart and external gates; reconcile documentation and obtain independent clean-checkout reproduction.",
+        "Build8 actual combined two-rank component regression116/116, separate-process corrected checkpoint pairs3/3, nativeCLI9/9, productionCLIsoftware18 PASS/2 explicit SKIP. Source readers independently verify actual artifacts; physical production advancement and actual SWMF execution are not counted as passed."
+      ],
+      "clarification_dependencies": [
+        "Q01",
+        "Q02",
+        "Q03",
+        "Q04",
+        "Q05",
+        "Q06",
+        "Q07"
+      ]
+    }
+  ],
+  "clarifications": [
+    {
+      "id": "Q01",
+      "status": "partially-resolved",
+      "question_and_dependency": "Which governing publication or model specification is authoritative for the focused transport, wave-energy definition, and particle-wave exchange laws when existing code and prose disagree? Blocks the corresponding physics selections in CP03-CP05.",
+      "resolution": "User adopted small-amplitude nondispersive MHD Alfven waves with prescribed-background energy ledger, shared polarized spectrum-derived scattering for both focused movers, separate left/right spectra per propagation branch and the unbridged finite-band resonance gap. Remaining transport/cooling/provider details require their own source-defined contracts.",
+      "authority": "User clarifications in this session, 2026-11-16; Afanasiev/Vainio2013 and Thomas/Pfrommer2019 governing framework, with explicit exceptions recorded in both DOCX plans."
+    },
+    {
+      "id": "Q02",
+      "status": "resolved",
+      "question_and_dependency": "Do E+/E- represent magnetic energy, total fluctuation energy, or another defined invariant? What magnetic/kinetic partition and branch decomposition does the intended model require? No equipartition default is selected. Blocks CP04 and dependent conservation work.",
+      "resolution": "Local evolved/input-adapted wave energies are magnetic alone; local spectral bins are integrated joules. The latest explicit user selection targets standard BATSRUS total-energy exports: convert each raw Wave1/Wave2 density by one half to local magnetic energy. Wave1/local+ propagates along B, Wave2/local- opposite B. Linear small-amplitude Alfven total energy is twice magnetic energy. Four local polarized spectra start equal L/R per branch then evolve separately; existing logarithmic k values remain bin centers.",
+      "authority": "Explicit user clarifications, 2026-11-16; bin measure independently traced in turbulence_wave_number_resolved header and normalized bin initialization/summation implementation."
+    },
+    {
+      "id": "Q03",
+      "status": "partially-resolved",
+      "question_and_dependency": "Which upstream interface specification defines imported SWMF wave quantities, branch signs, units, spectral measure, density meaning, composition, and derivative availability? Blocks only affected imports/conversions/reconstructions.",
+      "resolution": "User selected the audited standard BATSRUS total-energy export: local magnetic density is raw/2; Wave1 along B, Wave2 opposite B with no radial/line-order swap. Exact representative/historical producers, composition, temperature units, missing L/R spectra and full derivative import still need their own contracts. Unknown unsupported imports reject. See SWMF_FIELD_LINE_CONTRACT_AUDIT.md.",
+      "authority": "Explicit user clarification plus pinned producer/consumer source audit; see validation/physics/SWMF_FIELD_LINE_CONTRACT_AUDIT.md. No coupling qualification inferred."
+    },
+    {
+      "id": "Q04",
+      "status": "partially-resolved",
+      "question_and_dependency": "What is the intended physical treatment when requested scattering would withdraw more energy than the available wave state, and what transaction/rollback behavior is required? Independent wave clipping is not an accepted resolution. Blocks affected CP05 implementation.",
+      "resolution": "Adopted closure requires -deltaK total wave change and -deltaK/2 stored magnetic change. Depleted-bin/global transaction treatment still needs a physically justified convergent implementation; no independent clipping, arbitrary redraw or suppressed event is approved.",
+      "authority": "User-adopted closure and original no-shortcut requirement, 2026-11-16."
+    },
+    {
+      "id": "Q05",
+      "status": "partially-resolved",
+      "question_and_dependency": "What do vertex density histories follow in each provider, what density/source/composition continuity law applies, and does AccountAdiabaticCoolingFlag disable momentum cooling alone or additional terms? Blocks the corresponding CP03 choices.",
+      "resolution": "Analytic radial and canonical SWCME/reduced full-tensor branches now use explicit provider derivatives. No density-only divergence reconstruction remains. Imported SWMF tensor is unavailable; FULL_ICME canonical1D does not expose regional thermodynamics and is rejected before native publication. Cooling-switch and evolving/remapped geometry qualifications remain open.",
+      "authority": "Provider/code contracts audited during CP03; no missing histories inferred."
+    },
+    {
+      "id": "Q06",
+      "status": "partially-resolved",
+      "question_and_dependency": "What stochastic interpretation should split/merged macroparticles retain, including lineage identity, child correlation, and carried MFP hazards? Blocks changes to those population-control semantics, while independent repeated-call RNG correction work remains possible.",
+      "resolution": "User requested reuse/improvement of core PIC population control. Exact splitter reused with explicit parent/child lifecycle, stable tie breaking and persisted serial. Improved merging uses conservative positive-weight resampling of existing phase points and preserves the original-plan moment basis; implementation and native/refinement qualification remain ongoing.",
+      "authority": "User directions, original invariant plan and Gonoskov conservative downsampling reference, 2026-11-16."
+    },
+    {
+      "id": "Q07",
+      "status": "resolved",
+      "question_and_dependency": "Which existing checkpoint formats and campaigns require migration, and what compatibility behavior is required when prior records lack stochastic or physical-convention metadata? Exact old-realization continuation cannot be claimed from missing state. Blocks affected restart migration.",
+      "resolution": "Corrected-model checkpoints only. Transport schema4 stores birth/operator histories; fixed-analytic checkpoint inner-schema3 adds geometric flux registry. Build7 CP05C01-05 and separate-process CP05F01-03 PASS on two ranks with byte-identical final artifacts. Full production resume entry points, live-four-wave codec, output continuation and changing rank/ownership layouts remain unsupported or unqualified.",
+      "authority": "Explicit user selection, 2026-11-16."
+    }
+  ],
+  "external_inputs_required": [
+    {
+      "requirements": [
+        "XM02"
+      ],
+      "inputs": [
+        "Reviewed canonical M-FLAMPA run/version identifier and equivalent geometry/source/scattering/background configuration",
+        "Numerical differential/integral comparator outputs and energy-channel definitions",
+        "Reviewed mapping of non-equivalent model assumptions before result inspection"
+      ]
+    },
+    {
+      "requirements": [
+        "XM03"
+      ],
+      "inputs": [
+        "Equivalent Earth-connected AWSoM/SOFIE field-line and shock/source histories for 2013 April 11",
+        "Comparator revision/configuration/restart and numerical outputs sufficient for frozen/evolving-background and timing/fluence/spectrum comparisons",
+        "Instrument channel response and uncertainty/provenance required by the original case"
+      ]
+    },
+    {
+      "requirements": [
+        "EV01",
+        "EV02"
+      ],
+      "inputs": [
+        "Versioned 15-30 event/non-event cohort and immutable training/validation/held-out partition",
+        "Full required instrument/processing/uncertainty and event-metric products",
+        "Tagged-release unseal protocol and prospective archive when operational inputs exist"
+      ]
+    },
+    {
+      "requirements": [
+        "DEV15",
+        "CP05",
+        "CP07"
+      ],
+      "inputs": [
+        "Real read-only SWMF replay with current archived data, configuration and checksums",
+        "Runnable native site campaign with actual input/restart interfaces and canonical state artifacts",
+        "Independent clean-checkout reproduction and signed review record"
+      ]
+    }
+  ],
+  "adopted_physical_decisions": {
+    "date": "2026-11-16",
+    "wave_storage": "magnetic energy; joules integrated in each logarithmic k bin",
+    "total_wave_partition": "linear small-amplitude MHD: kinetic = magnetic",
+    "local_branch_convention": "+ along B; - opposite B",
+    "polarization": "Use existing initializer; equal initial L/R within each propagation branch, then evolve all four independently (explicit user decision).",
+    "scattering": "shared spectrum-derived joint momentum/pitch law; derive lambda where defined",
+    "finite_band_gap": "preserved; no interpolation/floor/broadening",
+    "background": "prescribed; signed background work/heating ledger until feedback",
+    "domain_limits": "unselected; convergence study requested before choosing limits",
+    "checkpoint_compatibility": "corrected only",
+    "spectral_grid": "Existing logarithmic k values remain bin centers; edges are halfway in log(k), with the declared constant spacing. No live grid remap is implied.",
+    "dispersion_study_family": "Controlled proton-electron Maxwellian cases, parallel propagation; explicit n, T_i, T_e and B for every experiment. No ambient conditions inferred.",
+    "incoming_spatial_waves": "Continuously hold initial magnetic energy density per bin fixed on signed incoming characteristics relative to the grid; outgoing characteristics leave freely.",
+    "spectral_edges": "Zero incoming power outside modeled k range; outgoing energy/action enters explicit external spectral account.",
+    "first_qualification_operators": "Reflection and cascade disabled for first qualification case; original-plan closure/qualification requirements retained.",
+    "grid_motion": "Material magnetic tube for first qualification: grid vertices move with plasma U; particle coordinates use relative velocity U-v_grid and a geometric conservation law.",
+    "thermal_injection": "Drifting relativistic Maxwell-Juttner flux distribution; verify low-temperature Maxwellian limit. Proper density/temperature and moving-boundary flux inputs must be explicit."
+  },
+  "maintained_status": "srcSEP/STATUS.md",
+  "adopted_physics": {
+    "swmf_standard_batsrus_import": "Raw standard-energy Wave1/Wave2 are total Alfven-wave energy densities[J/m3]; derive immutable local magnetic branches by raw/2, Wave1 along B and Wave2 opposite B. No inferred L/R spectra or composition."
+  }
+}

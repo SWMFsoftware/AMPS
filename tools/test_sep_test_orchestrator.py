@@ -17,11 +17,14 @@ Needs no AMPS build; it is registered as the ``orchestrator-selftest`` step.
 from __future__ import annotations
 
 import argparse
+import ast
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -147,6 +150,283 @@ class NativeJson(Fixture):
         self.assertEqual((record.status, record.line), ("FAIL", 2))
         self.assertEqual(record.evidence, [str(report), "/a/x"])
 
+    def test_required_native_layout_cannot_pass_by_skip_or_missing_cases(self):
+        report = self.write_json("spectral/results.json", {"results": [
+            {"id": "PNW01", "status": "PASS", "message": "bins"},
+            {"id": "PNW02", "status": "SKIP", "message": "spectral datum absent"},
+            {"id": "PNW03", "status": "FAIL", "message": "restore changed helicity"}]})
+        records = orch.reader_required_native_json(report, ["PNW01", "PNW02", "PNW03", "PNW04"])(
+            self.ctx("polarized-wave-native"))
+        self.assertEqual([(r.test_id, r.status) for r in records],
+                         [("PNW01", "PASS"), ("PNW02", "ERROR"), ("PNW03", "FAIL"), ("PNW04", "ERROR")])
+        self.assertIn("not exercised", records[1].message)
+
+
+class NativeCliCampaign(Fixture):
+    def test_individual_job_logs_and_failed_postchecks_are_authoritative(self):
+        report = self.write_json("cli/summary.json", {
+            "schema": "srcsep-native-cli-campaign-v1", "results": [
+                {"id": "NCLI01", "status": "PASS", "message": "draws", "log": "/cli/seed.log",
+                 "exit_code": 0, "expected_exit_code": 0, "postchecks": [{"status": "PASS"}]},
+                {"id": "NCLI04", "status": "PASS", "message": "expected rank fault", "log": "/cli/fault.log",
+                 "exit_code": 1, "expected_exit_code": 1, "postchecks": [{"status": "PASS"}]},
+                {"id": "NCLI05", "status": "PASS", "message": "false green", "log": "/cli/invalid.log",
+                 "postchecks": [{"status": "FAIL", "message": "missing failure provenance"}]}]})
+        records = orch.reader_native_cli_campaign(report)(self.ctx("native-cli-campaign"))
+        self.assertEqual([(r.test_id, r.status) for r in records],
+                         [("NCLI01", "PASS"), ("NCLI04", "PASS"), ("NCLI05", "ERROR")])
+        self.assertEqual(records[1].log, "/cli/fault.log")
+        self.assertIn("missing failure provenance", records[2].message)
+        self.assertEqual(records[0].evidence, [str(report)])
+
+    def test_runner_records_launch_and_exit_failures_before_raising(self):
+        script = orch.AMPS_ROOT / "srcSEP/test/run_native_cli_campaign_tests.py"
+        for name, launcher, expected in (("missing", str(self.out / "no-launcher"), "ERROR"),
+                                          ("bad-exit", "/bin/false", "FAIL")):
+            output = self.out / name
+            process = subprocess.run([sys.executable, str(script), "--amps", "/bin/true",
+                                      "--mpiexec", launcher, "--output", str(output)],
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            self.assertNotEqual(process.returncode, 0)
+            payload = json.loads((output / "summary.json").read_text())
+            self.assertEqual(len(payload["results"]), 9)
+            self.assertEqual(payload["results"][0]["status"], expected)
+            self.assertEqual(payload["results"][0]["id"], "NCLI01")
+            self.assertEqual(payload["totals"]["SKIP"], 8)
+            self.assertTrue(Path(payload["results"][0]["log"]).is_file())
+            self.assertTrue(payload["results"][0]["postchecks"])
+
+    def test_wave_and_cli_steps_have_explicit_readers(self):
+        steps = {step.name: step for step in orch.srcsep_steps(self.out, argparse.Namespace())}
+        for name, target, ids in (
+                ("real-wave-normalization", "test-real-wave-normalization-unit", ["RWN01", "RWN02"]),
+                ("polarized-wave-state", "test-polarized-wave-state-unit", ["PWS01", "PWS02", "PWS03", "PWS04", "PWS05", "PWS06"])):
+            step = steps[name]
+            self.assertEqual(step.commands, [["make", "-C", "srcSEP", target]])
+            log = "".join("[%s] %s explicit gate\n" % (identifier, "FAIL" if index == 0 else "PASS")
+                          for index, identifier in enumerate(ids))
+            records = step.reader(self.ctx(name, log, exit_code=1))
+            self.assertEqual([r.test_id for r in records], ids)
+            self.assertEqual(records[0].status, "FAIL")
+        self.assertTrue(steps["native-cli-campaign"].reader)
+        self.assertEqual(steps["native-cli-campaign"].namespace, "srcsep-cli-infrastructure")
+
+
+class FreshProcessCheckpoint(Fixture):
+    """Literal retained files test the evidence boundary, without native PIC.
+
+    A summary saying PASS is deliberately held constant in negative controls.
+    Each control damages one actual prerequisite so that self-consistent
+    summary labels cannot hide missing processes, reports, or final bytes.
+    """
+
+    def make_evidence(self):
+        root = self.out / "fresh"
+        executable = self.out / "fixture-native"
+        executable.write_bytes(b"literal linked fixture executable")
+        rows = []
+        for identifier in ("CP05F01", "CP05F02", "CP05F03"):
+            roles = []
+            for name in ("write", "resume"):
+                child = self.write_json("fresh/%s/%s/srcsep-tests.json" % (identifier, name),
+                                        {"results": [{"id": identifier, "status": "PASS"}]})
+                log = child.with_name("native.log")
+                log.write_text("literal child process log\n")
+                roles.append({"role": name, "status": "PASS", "exit_code": 0,
+                              "report": str(child), "log": str(log)})
+            (root / identifier / "physics.expected").write_bytes(b"complete encoded final state\0\xff")
+            (root / identifier / "physics.resumed").write_bytes(b"complete encoded final state\0\xff")
+            rows.append({"id": identifier, "status": "PASS", "message": "", "roles": roles,
+                         "final_artifact_equality": True})
+        payload = {"schema": "srcsep-fresh-process-checkpoint-v1", "executable": str(executable),
+                   "executable_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
+                   "results": rows}
+        report = self.write_json("fresh/summary.json", payload)
+        return report, payload, executable
+
+    def test_success_requires_all_retained_native_roles_and_bytes(self):
+        report, _, executable = self.make_evidence()
+        records = orch.reader_fresh_process_checkpoint(report)(self.ctx("fresh-process-checkpoint"))
+        self.assertEqual([(record.test_id, record.status) for record in records],
+                         [("CP05F01", "PASS"), ("CP05F02", "PASS"), ("CP05F03", "PASS")])
+        self.assertIn(str(executable), records[0].evidence)
+        self.assertIn("/resume/", records[0].log)
+        self.assertTrue(any(path.endswith("physics.expected") for path in records[0].evidence))
+
+    def test_pass_summary_cannot_hide_missing_skip_exit_binary_or_byte_failures(self):
+        for defect in ("missing-case", "duplicate-case", "skip-case", "missing-role", "skip-role",
+                       "nonzero-exit", "boolean-exit", "missing-child", "skip-child", "wrong-child-id",
+                       "malformed-child", "unequal-bytes", "missing-bytes", "false-equality",
+                       "changed-binary", "missing-hash"):
+            with self.subTest(defect=defect):
+                report, payload, executable = self.make_evidence()
+                row = payload["results"][0]
+                role = row["roles"][1]
+                if defect == "missing-case": payload["results"].pop(0)
+                elif defect == "duplicate-case": payload["results"].append(row.copy())
+                elif defect == "skip-case": row["status"] = "SKIP"
+                elif defect == "missing-role": row["roles"].pop()
+                elif defect == "skip-role": role["status"] = "SKIP"
+                elif defect == "nonzero-exit": role["exit_code"] = 17
+                elif defect == "boolean-exit": role["exit_code"] = False
+                elif defect == "missing-child": Path(role["report"]).unlink()
+                elif defect == "skip-child": Path(role["report"]).write_text(json.dumps({"results": [{"id": "CP05F01", "status": "SKIP"}]}))
+                elif defect == "wrong-child-id": Path(role["report"]).write_text(json.dumps({"results": [{"id": "CP05F02", "status": "PASS"}]}))
+                elif defect == "malformed-child": Path(role["report"]).write_text("[]")
+                elif defect == "unequal-bytes": (report.parent / "CP05F01/physics.resumed").write_bytes(b"different")
+                elif defect == "missing-bytes": (report.parent / "CP05F01/physics.resumed").unlink()
+                elif defect == "false-equality": row["final_artifact_equality"] = False
+                elif defect == "changed-binary": executable.write_bytes(b"changed executable")
+                elif defect == "missing-hash": payload.pop("executable_sha256")
+                report.write_text(json.dumps(payload))
+                records = orch.reader_fresh_process_checkpoint(report)(self.ctx("fresh-process-checkpoint"))
+                first = next(record for record in records if record.test_id == "CP05F01")
+                self.assertEqual(first.status, "ERROR", first.message)
+                self.assertTrue(first.message)
+
+    def test_failed_child_stays_failed_and_schema_does_not_fall_back(self):
+        report, payload, _ = self.make_evidence()
+        payload["results"][0]["status"] = "FAIL"
+        report.write_text(json.dumps(payload))
+        records = orch.reader_fresh_process_checkpoint(report)(self.ctx("fresh-process-checkpoint", exit_code=1))
+        self.assertEqual(records[0].status, "FAIL")
+        payload["schema"] = "unknown-version"
+        report.write_text(json.dumps(payload))
+        with self.assertRaises(orch.ResultsUnavailable):
+            orch.reader_fresh_process_checkpoint(report)(self.ctx())
+
+
+class NativeIsolatedCampaigns(Fixture):
+    """A green aggregate cannot replace retained process/input/trace evidence."""
+
+    def make_host(self):
+        executable = self.out / "amps-pinned"
+        executable.write_bytes(b"explicit linked executable fixture")
+        fixture = self.write_json("host-fixture.json", {
+            "schema": "srcsep-native-host-step-fixture-v1", "steps": 2, "source_macros": 4,
+            "source_energy_mev": 1, "source_mu": 0.5, "constant_dmumu_per_s": 0.2})
+        protocol = self.out / "fixture.args"
+        protocol.write_text("SEP_NATIVE_HOST_STEP 1\nsteps 2\nsource_macros 4\nsource_energy_mev 1\nsource_mu 0.5\nconstant_dmumu_per_s 0.20000000000000001\n")
+        guards = []
+        for name, code, text in (("single-case", 1, "end-to-end test input requires exactly one explicit --test ID"),
+                                 ("repeat-one", 2, "requires a fresh process")):
+            log = self.out / (name + ".log");log.write_text(text)
+            guards.append({"name": name, "status": "PASS", "exit_code": code, "log": str(log)})
+        jobs = []
+        for index, (identifier, mover) in enumerate((("HOST01", "parker"), ("HOST02", "fte-dmumu"), ("HOST03", "fte-mfp"))):
+            child = self.write_json(identifier + "/srcsep-tests.json", {"results": [{"id": identifier, "status": "PASS", "metrics": [
+                {"name": "assertion_failures", "value": 0}, {"name": "completed_host_steps", "value": 2},
+                {"name": "global_first_birth_moves", "value": 2}]}]})
+            for rank in range(2):
+                prefix = identifier + "/artifacts/" + ("" if rank == 0 else "rank-1/")
+                events = []
+                for step in range(2):
+                    event = {"step": step, "particle": 100 * (index + 1) + rank + 1000 * step,
+                             "phase": "source", "clock_s": step, "parent_start_s": step, "parent_end_s": step + 1,
+                             "first_duration_s": 1, "requested_s": 0, "source_radius_m": 1e10,
+                             "pending_first": True, "cartesian_matches": True}
+                    events.extend([event, dict(event, phase="mover", requested_s=1)])
+                for sequence in range(2):
+                    self.write_json(prefix + "host-step-trace-" + format(sequence, "06d") + ".json",
+                        {"schema": "srcsep-native-host-step-trace-v2", "case_id": identifier,
+                         "mover": mover, "rank": rank, "counter_at_end": True,
+                         "snapshot_sequence": sequence, "complete": sequence == 1,
+                         "requested_host_steps": 2, "completed_host_steps": 2 if sequence else 0,
+                         "events": events if sequence else events[:1]})
+            jobs.append({"id": identifier, "status": "PASS", "exit_code": 0, "report": str(child),
+                         "log": str(child.parent / "native.log"), "postchecks": [{"status": "PASS"}]})
+        payload = {"schema": "srcsep-native-host-step-campaign-v1", "executable": str(executable),
+                   "executable_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(), "fixture": str(fixture),
+                   "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(), "mpi_ranks": 2,
+                   "protocol_input": str(protocol), "protocol_input_sha256": hashlib.sha256(protocol.read_bytes()).hexdigest(),
+                   "preflight_checks": guards, "results": jobs}
+        return self.write_json("host-summary.json", payload), payload
+
+    def test_host_reader_requires_real_guard_child_and_rank_trace_evidence(self):
+        report, payload = self.make_host()
+        rows = orch.reader_native_host_step(report)(self.ctx("host-step-native"))
+        self.assertEqual([row.status for row in rows], ["PASS"] * 3)
+        # Each defect starts from a newly materialized consistent campaign;
+        # these are reader negative controls, never native physics evidence.
+        for defect in ("binary", "fixture", "protocol", "protocol-mismatch", "guard-exit", "guard-diagnostic", "guard-mesh", "child-exit",
+                       "child-skip", "extra-child", "missing-trace", "duplicate-first", "bad-x", "incomplete", "rewrite-prefix",
+                       "failed-postcheck", "duplicate-job", "missing-job", "runner-exit"):
+            with self.subTest(defect=defect):
+                report, payload = self.make_host()
+                job = payload["results"][0]
+                if defect in ("binary", "fixture", "protocol", "protocol-mismatch"):
+                    key = {"binary": "executable", "fixture": "fixture", "protocol": "protocol_input", "protocol-mismatch": "protocol_input"}[defect]
+                    path = Path(payload[key]);path.write_bytes(b"changed")
+                    if defect == "protocol-mismatch":payload[key + "_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+                elif defect == "guard-exit":payload["preflight_checks"][0]["exit_code"] = 2
+                elif defect == "guard-diagnostic":Path(payload["preflight_checks"][0]["log"]).write_text("must be provided together")
+                elif defect == "guard-mesh":
+                    path = Path(payload["preflight_checks"][0]["log"]);path.write_text(path.read_text() + " The mesh is generated")
+                elif defect == "child-exit":job["exit_code"] = 7
+                elif defect in ("child-skip", "extra-child"):
+                    child = Path(job["report"]);value = json.loads(child.read_text())
+                    if defect == "child-skip":value["results"][0]["status"] = "SKIP"
+                    else:value["results"].append(value["results"][0])
+                    child.write_text(json.dumps(value))
+                elif defect in ("missing-trace", "duplicate-first", "bad-x", "incomplete", "rewrite-prefix"):
+                    trace = Path(job["report"]).parent / "artifacts/rank-1/host-step-trace-000001.json"
+                    if defect == "missing-trace":trace.unlink()
+                    else:
+                        value = json.loads(trace.read_text())
+                        if defect == "duplicate-first":value["events"].append(value["events"][-1])
+                        elif defect == "bad-x":value["events"][0]["cartesian_matches"] = False
+                        elif defect == "incomplete":value["complete"] = False
+                        else:value["events"][0]["source_radius_m"] += 1e5
+                        trace.write_text(json.dumps(value))
+                elif defect == "failed-postcheck":job["postchecks"][0]["status"] = "FAIL"
+                elif defect == "duplicate-job":payload["results"].append(job)
+                elif defect == "missing-job":payload["results"].pop(0)
+                report.write_text(json.dumps(payload))
+                rows = orch.reader_native_host_step(report)(self.ctx("host-step-native", exit_code=1 if defect == "runner-exit" else 0))
+                self.assertEqual(rows[0].status, "ERROR")
+                self.assertTrue(rows[0].message)
+
+    def make_radius(self):
+        payload = {"schema": "srcsep-native-coefficient-radius-v1", "id": "RADIUSN01", "status": "PASS", "exit_code": 0}
+        for key in ("executable", "template", "owned_input"):
+            path = self.out / (key + ".input");path.write_text("retained " + key)
+            payload[key] = str(path);payload[key + "_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+        child = self.write_json("radius/srcsep-tests.json", {"results": [{"id": "RADIUSN01", "status": "PASS",
+            "metrics": [{"name": "assertion_failures", "value": 0}]}]})
+        payload["report"] = str(child)
+        return self.write_json("radius-summary.json", payload), payload
+
+    def test_radius_reader_rejects_prepared_changed_input_skip_and_hidden_child(self):
+        report, _ = self.make_radius()
+        self.assertEqual(orch.reader_native_coefficient_radius(report)(self.ctx())[0].status, "PASS")
+        for defect in ("prepared", "binary", "template", "owned-input", "exit", "runner-exit", "skip", "extra-child", "assertion"):
+            with self.subTest(defect=defect):
+                report, payload = self.make_radius()
+                if defect == "prepared":payload["status"] = "PREPARED"
+                elif defect in ("binary", "template", "owned-input"):
+                    key = {"binary": "executable", "template": "template", "owned-input": "owned_input"}[defect]
+                    Path(payload[key]).write_text("changed")
+                elif defect == "exit":payload["exit_code"] = 1
+                elif defect in ("skip", "extra-child", "assertion"):
+                    child = Path(payload["report"]);value = json.loads(child.read_text())
+                    if defect == "skip":value["results"][0]["status"] = "SKIP"
+                    elif defect == "extra-child":value["results"].append(value["results"][0])
+                    else:value["results"][0]["metrics"][0]["value"] = 1
+                    child.write_text(json.dumps(value))
+                report.write_text(json.dumps(payload))
+                row = orch.reader_native_coefficient_radius(report)(self.ctx(exit_code=1 if defect == "runner-exit" else 0))[0]
+                self.assertEqual(row.status, "ERROR")
+
+    def test_radius_reader_pins_selected_library_case_in_same_versioned_schema(self):
+        report, payload = self.make_radius()
+        payload["id"] = "RADIUSN02"
+        child = Path(payload["report"]);value = json.loads(child.read_text())
+        value["results"][0]["id"] = "RADIUSN02";child.write_text(json.dumps(value))
+        report.write_text(json.dumps(payload))
+        row = orch.reader_native_coefficient_radius(report, "RADIUSN02")(self.ctx())[0]
+        self.assertEqual((row.test_id, row.status), ("RADIUSN02", "PASS"))
+        self.assertEqual(orch.reader_native_coefficient_radius(report)(self.ctx())[0].status, "ERROR")
+
 
 class Coupled(Fixture):
     def test_existing_diagnostic_used_else_output_copied(self):
@@ -244,6 +524,163 @@ class MakeRecipe(Fixture):
                           "test_d": "ERROR"})
         self.assertEqual(records["test_c"].message, "exited with status 139")
         self.assertEqual(records["test_c"].line, 8)
+
+
+class RngLifecycleRegistration(Fixture):
+    def test_finite_amplitude_step_requires_all_sixteen_actual_unittest_names(self):
+        steps = {step.name: step for step in orch.srcsep_steps(self.out, argparse.Namespace())}
+        step = steps["finite-amplitude-study"]
+        self.assertEqual(step.commands, [["make", "-C", "srcSEP", "test-finite-amplitude-study-unit"]])
+        # Inspect definitions only; never execute the mathematical study while
+        # checking its discovery/report wiring. This catches misspelled class
+        # or method selectors in the independently declared required-ID list.
+        source = orch.AMPS_ROOT / "srcSEP/test/test_finite_amplitude_response.py"
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        names = [node.name + "." + method.name for node in tree.body if isinstance(node, ast.ClassDef)
+                 for method in node.body if isinstance(method, ast.FunctionDef) and method.name.startswith("test_")]
+        self.assertEqual(len(names), 16)
+        def line(identifier, verdict):
+            owner, method = identifier.split(".", 1)
+            return method + " (__main__." + owner + ") ... " + verdict + "\n"
+        records = step.reader(self.ctx("finite-amplitude-study", "".join(line(name, "ok") for name in names)))
+        self.assertEqual({record.test_id for record in records}, set(names))
+        self.assertTrue(all(record.status == "PASS" for record in records))
+        broken = "".join(line(name, "skipped 'unavailable prerequisite'" if index == 0 else "ok")
+                         for index, name in enumerate(names[:-1]))
+        records = step.reader(self.ctx("finite-amplitude-study", broken))
+        by_id = {record.test_id: record.status for record in records}
+        self.assertEqual(by_id[names[0]], "ERROR")
+        self.assertEqual(by_id[names[-1]], "ERROR")
+        self.assertEqual(len(records), 16)
+
+    def test_new_source_families_and_fresh_checkpoint_have_complete_readers(self):
+        steps = {step.name: step for step in orch.srcsep_steps(self.out, argparse.Namespace())}
+        for name, target, prefix, number in (
+                ("analytic-radial", "test-analytic-radial-background-unit", "ARB", 6),
+                ("analytic-shock-epoch", "test-analytic-shock-epoch-unit", "ASE", 5),
+                ("material-tube-kinematics", "test-material-tube-kinematics-unit", "MTG", 6),
+                ("standard-batsrus-waves", "test-standard-batsrus-wave-unit", "SBW", 5),
+                ("flux-tube-state", "test-flux-tube-state-unit", "FLCP", 4),
+                ("polarized-wkb", "test-polarized-wkb-unit", "WKB", 8),
+                ("maxwell-juttner-flux", "test-maxwell-juttner-flux-unit", "MJ", 6)):
+            with self.subTest(family=name):
+                step = steps[name]
+                self.assertEqual(step.commands, [["make", "-C", "srcSEP", target]])
+                identifiers = ["%s%02d" % (prefix, index) for index in range(1, number + 1)]
+                log = "".join("[%s] %s literal callback\n" % (identifier, "SKIP" if index == 0 else "PASS")
+                              for index, identifier in enumerate(identifiers[:-1]))
+                records = step.reader(self.ctx(name, log))
+                by_id = {record.test_id: record.status for record in records}
+                self.assertEqual(by_id[identifiers[0]], "ERROR")
+                self.assertEqual(by_id[identifiers[-1]], "ERROR")
+                self.assertEqual(len(records), number)
+        fresh = steps["fresh-process-checkpoint"]
+        self.assertEqual(fresh.commands[0][:3], ["python3", "-B", "srcSEP/test/run_fresh_process_checkpoint_tests.py"])
+        command = fresh.commands[0]
+        self.assertEqual(command[command.index("--mpi-ranks") + 1], "2")
+        self.assertEqual(command[command.index("--output") + 1], str(self.out / "fresh-process-checkpoint"))
+        radial = steps["analytic-radial-native"]
+        command = radial.commands[0]
+        self.assertEqual(command[:3], ["python3", "-B", "srcSEP/test/run_tests.py"])
+        self.assertEqual(command[command.index("--group")+1], "analytic-radial-native")
+        self.assertEqual(command[command.index("--mpi-np")+1], "2")
+        report = self.write_json("analytic-radial-native/srcsep-tests.json", {"results": [
+            {"id": "ARBN01", "status": "PASS"}, {"id": "ARBN02", "status": "SKIP"}]})
+        records = radial.reader(self.ctx("analytic-radial-native"))
+        self.assertEqual([(record.test_id, record.status) for record in records],
+                         [("ARBN01", "PASS"), ("ARBN02", "ERROR"), ("ARBN03", "ERROR"), ("ARBN04", "ERROR")])
+        for name, script in (("host-step-native", "run_native_host_step_tests.py"),
+                             ("coefficient-radius-native", "run_native_coefficient_radius_tests.py"),
+                             ("coefficient-radius-library-native", "run_native_coefficient_radius_tests.py")):
+            command = steps[name].commands[0]
+            self.assertEqual(command[:3], ["python3", "-B", "srcSEP/test/" + script])
+            self.assertEqual(command[command.index("--mpi-ranks") + 1], "2")
+            self.assertEqual(command[command.index("--output") + 1], str(self.out / name))
+        host_command = steps["host-step-native"].commands[0]
+        self.assertEqual(host_command[host_command.index("--fixture") + 1], "srcSEP/test/fixtures/host_step_smoke.json")
+        library_command = steps["coefficient-radius-library-native"].commands[0]
+        self.assertEqual(library_command[library_command.index("--case") + 1], "RADIUSN02")
+        for name, group, required in (
+                ("material-tube-native", "material-tube", ["MTG01", "MTG02", "MTG03", "MTG04", "MTG05", "MTG06"]),
+                ("standard-batsrus-waves-native", "standard-batsrus-waves-native", ["SBWN01", "SBWN02"])):
+            with self.subTest(native=name):
+                step = steps[name]
+                command = step.commands[0]
+                self.assertEqual(command[:3], ["python3", "-B", "srcSEP/test/run_tests.py"])
+                self.assertEqual(command[command.index("--group")+1], group)
+                self.assertEqual(command[command.index("--mpi-np")+1], "2")
+                self.write_json(name+"/srcsep-tests.json", {"results": [{"id": required[0], "status": "SKIP"}]})
+                records = step.reader(self.ctx(name))
+                self.assertEqual({record.test_id: record.status for record in records},
+                                 {identifier: "ERROR" for identifier in required})
+
+    def test_birth_warm_and_native_polarized_steps_retain_individual_gates(self):
+        steps = {step.name: step for step in orch.srcsep_steps(self.out, argparse.Namespace())}
+        birth = steps["birth-window"]
+        self.assertEqual(birth.commands, [["make", "-C", "srcSEP", "test-birth-window-unit"]])
+        records = birth.reader(self.ctx("birth-window", "[BIRTH01] PASS interval\n[BIRTH02] FAIL rounded-away positive remainder\n"))
+        self.assertEqual([(r.test_id, r.status) for r in records], [("BIRTH01", "PASS"), ("BIRTH02", "FAIL")])
+        warm = steps["warm-parallel-study"]
+        self.assertEqual(warm.commands, [["make", "-C", "srcSEP", "test-warm-parallel-study-unit"]])
+        warm_log = ("test_default_precision_serialized_frequency_roundtrip (__main__.WarmParallelTests) ... ok\n"
+                    "test_winding_alias_negative_control (__main__.WarmParallelTests) ... FAIL\n")
+        records = warm.reader(self.ctx("warm-parallel-study", warm_log, exit_code=1))
+        self.assertEqual([(r.test_id, r.status) for r in records],
+                         [("WarmParallelTests.test_default_precision_serialized_frequency_roundtrip", "PASS"),
+                          ("WarmParallelTests.test_winding_alias_negative_control", "FAIL")])
+        native = steps["polarized-wave-native"]
+        command = native.commands[0]
+        self.assertEqual(command[:4], ["python3", "-B", "srcSEP/test/run_tests.py", "--amps"])
+        self.assertEqual(command[command.index("--mpi-np")+1], "2")
+        self.assertEqual(command[command.index("--group")+1], "polarized-wave-native")
+        self.assertEqual(command[command.index("--turbulence-model")+1], "wave-number-resolved")
+        self.assertEqual(command[command.index("--turbulence-source")+1], "self-consistent-spectral")
+        self.assertEqual(command[command.index("--coupling")+1], "off")
+        birth_native=steps["birth-window-native"].commands[0]
+        self.assertEqual(birth_native[:4],["python3","-B","srcSEP/test/run_tests.py","--amps"])
+        self.assertEqual(birth_native[birth_native.index("--group")+1],"birth-window-native")
+        self.assertEqual(birth_native[birth_native.index("--mpi-np")+1],"2")
+        frozen=steps["frozen-collision-transaction"]
+        self.assertEqual(frozen.commands,[["make","-C","srcSEP","test-frozen-collision-transaction-unit"]])
+        records=frozen.reader(self.ctx("frozen-collision-transaction","[FCT01] PASS ledger\n[FCT03] FAIL budget\n",exit_code=1))
+        self.assertEqual([(record.test_id,record.status) for record in records],[("FCT01","PASS"),("FCT03","FAIL")])
+
+    def test_background_gradient_gate_retains_its_failed_physics_case(self):
+        steps = {step.name: step for step in
+                 orch.srcsep_steps(self.out, argparse.Namespace())}
+        step = steps["background-derivatives"]
+        self.assertEqual(step.commands,
+                         [["make", "-C", "srcSEP", "test-background-derivatives-unit"]])
+        log = ("[CP03G01] FAIL fixed-vertex expansion\n"
+               "[CP03G02] PASS curved-field strain\n"
+               "[CP03G03] PASS tensor validation\n")
+        records = step.reader(self.ctx("background-derivatives", log, exit_code=1,
+                                       namespace=step.namespace))
+        self.assertEqual([(r.test_id, r.status) for r in records],
+                         [("CP03G01", "FAIL"), ("CP03G02", "PASS"),
+                          ("CP03G03", "PASS")])
+
+    def test_source_lifecycle_gate_is_selectable_and_keeps_individual_failures(self):
+        # The development-plan contract requires this source gate to remain
+        # reachable from run_all_test.sh even before a new AMPS binary exists.
+        # A literal child log verifies that one failed stochastic assertion is
+        # retained individually instead of being hidden by five passing cases.
+        steps = {step.name: step for step in
+                 orch.srcsep_steps(self.out, argparse.Namespace())}
+        step = steps["rng-lifecycle"]
+        self.assertEqual(step.commands,
+                         [["make", "-C", "srcSEP", "test-rng-lifecycle-unit"]])
+        self.assertEqual(step.namespace, "srcsep-registry")
+        log = ("[RNG01] PASS snapshot\n[RNG02] PASS cache\n"
+               "[RNG03] FAIL repeated-call variance\n"
+               "[RNG04] PASS event partitions\n[RNG05] PASS restored identity\n"
+               "[RNG06] PASS invalid state rejected\n")
+        records = step.reader(self.ctx("rng-lifecycle", log, exit_code=1,
+                                       namespace=step.namespace))
+        self.assertEqual(len(records), 6)
+        self.assertEqual([(r.test_id, r.status) for r in records
+                          if r.status != "PASS"], [("RNG03", "FAIL")])
+        self.assertEqual(records[2].message, "repeated-call variance")
 
 
 class StepGuards(Fixture):

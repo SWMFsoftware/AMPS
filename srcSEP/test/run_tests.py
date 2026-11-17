@@ -40,6 +40,7 @@ import shlex
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -47,6 +48,15 @@ from xml.sax.saxutils import escape as _xml_escape
 
 
 ROOT = Path(__file__).resolve().parents[1]
+# Registry discovery and native helpers are source-owned Python modules, not
+# generated products. Keep their imports from creating source-tree caches.
+sys.dont_write_bytecode = True
+sys.path.insert(0,str(ROOT/"validation"))
+try:
+    from sep_native_execution import (NativeExecutionError,
+        create_native_work_directory,isolate_native_arguments)
+finally:
+    sys.path.pop(0)
 _DIAGNOSTIC_EXCERPT_LIMIT = 16 * 1024
 
 # Make target names are kept in one audited mapping.  The Python interface uses
@@ -81,6 +91,31 @@ SOURCE_SUITES: Dict[str, str] = {
     "mover-api": "test-mover-api-unit",
     "field-line-scope": "test-field-line-scope-unit",
     "transport-common": "test-transport-common-unit",
+    # Uses the same versioned stream/cache state as the particle adapters and
+    # the same callbacks linked into --test RNG01 ... RNG10.
+    "rng-lifecycle": "test-rng-lifecycle-unit",
+    "background-derivatives": "test-background-derivatives-unit",
+    "analytic-radial": "test-analytic-radial-background-unit",
+    "analytic-shock-epoch": "test-analytic-shock-epoch-unit",
+    "material-tube-kinematics": "test-material-tube-kinematics-unit",
+    "standard-batsrus-waves": "test-standard-batsrus-wave-unit",
+    "wave-normalization": "test-wave-normalization-unit",
+    "real-wave-normalization": "test-real-wave-normalization-unit",
+    "polarized-wave-state": "test-polarized-wave-state-unit",
+    # These aliases execute the source-owned descriptor callbacks through
+    # Make's strict/sanitized runners. They establish value-level contracts;
+    # selecting a source suite never enables a native physics subsystem.
+    "flux-tube-state": "test-flux-tube-state-unit",
+    "polarized-wkb": "test-polarized-wkb-unit",
+    "maxwell-juttner-flux": "test-maxwell-juttner-flux-unit",
+    "birth-window": "test-birth-window-unit",
+    "warm-parallel-study": "test-warm-parallel-study-unit",
+    "finite-amplitude-study": "test-finite-amplitude-study-unit",
+    "conservative-resampling": "test-conservation-resampling-unit",
+    "resonant-collision": "test-resonant-collision-unit",
+    # Bookkeeping only: frozen accepted proposals, deterministic magnetic/
+    # total ledgers and whole-batch rejection. No production collision driver.
+    "frozen-collision-transaction": "test-frozen-collision-transaction-unit",
     "parker": "test-parker-unit",
     "fte-dmumu": "test-fte-dmumu-unit",
     "fte-mfp": "test-fte-mfp-unit",
@@ -466,6 +501,7 @@ def _run_streaming(command: Sequence[str], cwd: Path, log_path: Path,
     started = _datetime.datetime.now(_datetime.timezone.utc)
     with log_path.open("a", encoding="utf-8") as log:
         log.write(f"\n[{started.isoformat()}] RUN {shlex.join(command)}\n")
+        log.write(f"WORKING_DIRECTORY: {cwd}\n")
         log.flush()
         if captured_output is not None:
             captured_output.clear()
@@ -545,13 +581,28 @@ def _parse_list_output(text: str) -> List[str]:
     return sorted(set(ids), key=str.casefold)
 
 
-def _discover_all_ids(executable: Path, model_args: Sequence[str]) -> List[str]:
+def _discover_all_ids(executable: Path, model_args: Sequence[str],
+                      working_directory: Optional[Path] = None) -> List[str]:
+    """Run discovery without allowing even a faulty executable to write ROOT.
+
+    --all retains its discovery scratch under the campaign. A bare --list has
+    no output campaign, so use a disposable, exclusively owned temporary cwd.
+    Inputs still resolve from the historical native ROOT before the launch.
+    """
+    if working_directory is None:
+        with tempfile.TemporaryDirectory(prefix="srcsep-native-discovery-") as temporary:
+            return _discover_all_ids(executable,model_args,Path(temporary))
     if not executable.is_file() or not os.access(executable, os.X_OK):
         raise RunnerError(f"linked srcSEP executable is not executable: {executable}")
+    try:resolved,_=isolate_native_arguments(model_args,working_directory,ROOT)
+    except NativeExecutionError as error:raise RunnerError(str(error)) from error
     completed = subprocess.run(
-        [str(executable), "--list-tests", *model_args], cwd=str(ROOT),
+        [str(executable), "--list-tests", *resolved], cwd=str(working_directory),
         text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         check=False)
+    (working_directory/"discovery.log").write_text(
+        "WORKING_DIRECTORY: "+str(working_directory)+"\n"+completed.stdout+
+        "\nEXIT: "+str(completed.returncode)+"\n",encoding="utf-8")
     sys.stdout.write(completed.stdout)
     if completed.returncode != 0:
         raise RunnerError(
@@ -560,7 +611,7 @@ def _discover_all_ids(executable: Path, model_args: Sequence[str]) -> List[str]:
 
 
 def _native_command(args: argparse.Namespace, report_json: Path,
-                    report_junit: Path) -> List[str]:
+                    report_junit: Path, model_args: Optional[Sequence[str]] = None) -> List[str]:
     executable = Path(args.amps).expanduser().resolve()
     if not executable.is_file() or not os.access(executable, os.X_OK):
         raise RunnerError(f"linked srcSEP executable is not executable: {executable}")
@@ -583,10 +634,25 @@ def _native_command(args: argparse.Namespace, report_json: Path,
 
     command = [str(executable), *selection,
                "--test-json", str(report_json),
-               "--test-junit", str(report_junit), *args.model_args]
+               "--test-junit", str(report_junit),
+               *(args.model_args if model_args is None else model_args)]
     if args.mpi_np:
         command = [args.mpiexec, "-n", str(args.mpi_np), *command]
     return command
+
+
+def _native_scope(args: argparse.Namespace, output: Path, label: str) -> Tuple[Path,List[str]]:
+    """Prepare a unique native cwd and retain its input-resolution provenance.
+
+    This scope changes only native execution. In particular, source Make
+    recipes retain ROOT as their cwd and therefore keep existing build rules.
+    """
+    work=create_native_work_directory(output,label)
+    try:resolved,provenance=isolate_native_arguments(args.model_args,work,ROOT)
+    except NativeExecutionError as error:raise RunnerError(str(error)) from error
+    if not hasattr(args,"native_execution_scopes"):args.native_execution_scopes=[]
+    args.native_execution_scopes.append(provenance)
+    return work,resolved
 
 
 def _load_report(path: Path) -> Dict[str, Any]:
@@ -858,7 +924,8 @@ def _run_all_tests(args: argparse.Namespace, output_dir: Path,
     exact application input and independent-reference workflow is preserved.
     """
     executable = Path(args.amps).expanduser().resolve()
-    ids = _discover_all_ids(executable, args.model_args)
+    discovery=create_native_work_directory(output_dir,"discovery")
+    ids = _discover_all_ids(executable, args.model_args,discovery)
     validation_ids = _validation_case_ids()
     individual = output_dir / "individual"
     individual.mkdir(parents=True, exist_ok=True)
@@ -872,6 +939,9 @@ def _run_all_tests(args: argparse.Namespace, output_dir: Path,
         test_directory.mkdir(parents=True, exist_ok=True)
         report_path = test_directory / f"{test_id}.json"
         junit_path = test_directory / f"{test_id}.xml"
+        # A case's native process and orchestration each get private PIC/cache
+        # names. Shared source_root remains an explicit input location only.
+        native_cwd,resolved_model_args=_native_scope(args,test_directory,test_id)
         if test_id in validation_ids:
             if args.mpi_np is not None:
                 command: List[str] = []
@@ -898,7 +968,7 @@ def _run_all_tests(args: argparse.Namespace, output_dir: Path,
         else:
             command = [str(executable), "--test", test_id,
                        "--test-json", str(report_path),
-                       "--test-junit", str(junit_path), *args.model_args]
+                       "--test-junit", str(junit_path), *resolved_model_args]
             if args.mpi_np:
                 command = [args.mpiexec, "-n", str(args.mpi_np), *command]
             launch_error = None
@@ -917,7 +987,7 @@ def _run_all_tests(args: argparse.Namespace, output_dir: Path,
         if launch_error is None:
             try:
                 status = _run_streaming(
-                    command, ROOT, log_path, dict(os.environ),
+                    command, native_cwd, log_path, dict(os.environ),
                     orchestration_timeout)
             except RunnerError as error:
                 launch_error = str(error)
@@ -1353,8 +1423,12 @@ def _run_validation_cases(args: argparse.Namespace, output_dir: Path,
     if args.timeout is not None:
         command.extend(("--timeout", str(args.timeout)))
     command.extend(("--output-dir", str(output_dir)))
+    # Case entry points receive explicit absolute code/input/output paths.
+    # Keep even their enclosing Python process out of srcSEP so a reference
+    # subprocess cannot inherit a writable source-tree scratch directory.
+    work=create_native_work_directory(output_dir,"validation-orchestration")
     exit_code = _run_streaming(
-        command, ROOT, log_path, dict(os.environ), args.timeout)
+        command, work, log_path, dict(os.environ), args.timeout)
     return exit_code, output_dir / "srcsep-tests.json", command
 
 
@@ -1526,9 +1600,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             command = build_commands + native_commands
             report = _load_report(report_path)
         else:
-            command = _native_command(args, report_path, junit_path)
+            native_cwd,resolved_model_args=_native_scope(args,output_dir,"selected")
+            command = _native_command(args, report_path, junit_path,resolved_model_args)
             exit_code = _run_streaming(
-                command, ROOT, log_path, dict(os.environ), args.timeout)
+                command, native_cwd, log_path, dict(os.environ), args.timeout)
             report = _load_report(report_path) if report_path.is_file() else None
 
     # Native AMPS output is not assumed to use a stable human-readable layout.
@@ -1552,6 +1627,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "validation_all": args.validation_all,
         "report": str(report_path) if report_path else None,
         "exit_code": exit_code,
+        "native_execution_scopes": getattr(args,"native_execution_scopes",[]),
     }
     if native_selection or validation_selection:
         executable = Path(args.amps).expanduser().resolve()

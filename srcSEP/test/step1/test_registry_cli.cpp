@@ -1,17 +1,22 @@
 #include "../../util/sep_cli.h"
 #include "sep_test_registry.h"
+#include "sep_transport_common.h"
 
 #include <cmath>
 #include <cstdlib>
 #include <cstdio>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <limits>
+#include <cerrno>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 #include <unistd.h>
+#include <sys/stat.h>
 
 namespace {
 
@@ -244,6 +249,18 @@ void TestCli05LegacyAndErrors() {
         "CLI05", "legacy TestManager aliases/Boolean values/last-wins changed");
   Check(!SEP::Util::CLI::IsComponentTestExecutionRequested(legacy),
         "CLI05", "legacy TestManager must not imply new test-only mode");
+  for(const auto& selection:std::vector<std::vector<std::string>>{{"--test","A01"},
+      {"--test-group","alpha"},{"--tests","A01"},{"--all-tests"}}) {
+    auto arguments=std::vector<std::string>{"sep","--run-test-manager"};
+    arguments.insert(arguments.end(),selection.begin(),selection.end());
+    SEP::Util::CLI::Options mixed;
+    Check(!Parse(arguments,mixed,error)&&error.find("TestManager")!=std::string::npos,
+          "CLI05","enabled legacy diagnostics were silently ignored by component-only execution");
+  }
+  SEP::Util::CLI::Options disabledLegacy;
+  Check(Parse({"sep","--run-test-manager","--no-test-manager","--test","A01"},disabledLegacy,error)&&
+        !disabledLegacy.runTestManager&&SEP::Util::CLI::IsComponentTestExecutionRequested(disabledLegacy),
+        "CLI05","explicit last-occurrence legacy disable must remain compatible with component execution");
 
   SEP::Util::CLI::Options wp30;
   Check(Parse({"sep", "--total-iterations=42", "--shock-model", "analytical",
@@ -450,6 +467,157 @@ void TestCli06MoverPrecedence() {
                  "time even with --input");
 }
 
+void TestCampaignOptionsAndSeeds() {
+  // Active native legacy keys must never map to the core multiplicative
+  // generator's even fixed state 2^30. Historical defaults remain untouched.
+  Check(SEP::Util::CLI::LegacyTestSeedFromKey(0)==1&&
+        SEP::Util::CLI::LegacyTestSeedFromKey(UINT64_C(1073741823))==UINT32_C(2147483647)&&
+        SEP::Util::CLI::LegacyTestSeedFromKey(UINT64_C(1073741824))==1,
+        "CLI02","legacy odd31 seed bridge changed declared domain endpoints");
+  for(std::uint64_t key:{UINT64_C(0),UINT64_C(1),UINT64_C(1073741823),
+      UINT64_C(1073741824),UINT64_C(2147483647),std::numeric_limits<std::uint64_t>::max()}) {
+    const auto native=SEP::Util::CLI::LegacyTestSeedFromKey(key);
+    Check(native>0&&(native&1)==1&&native<=UINT32_C(2147483647),"CLI02",
+          "active legacy test seed enters an even fixed/short-period state");
+  }
+  namespace T=SEP::Testing;
+  SEP::Util::CLI::Options options;std::string error;
+  Check(Parse({"sep","--tests","id:A01,tag:geometry","--test-seed=18446744073709551615",
+      "--test-repeat","3","--test-output","CaseSensitive/Results","--test-format=JuNiT",
+      "--fail-fast","--keep-test-artifacts=on"},options,error)&&
+      options.testExpressions.size()==1&&options.testSeedProvided&&
+      options.testSeed==std::numeric_limits<std::uint64_t>::max()&&options.testRepeat==3&&
+      options.testOutputDirectory=="CaseSensitive/Results"&&
+      options.testFormat==SEP::Util::CLI::Options::TestFormat::JUnit&&
+      options.testFailFast&&options.keepTestArtifacts,
+      "CLI02","additive campaign controls did not reach the existing Options object");
+  for(const std::vector<std::string>& args:{
+      std::vector<std::string>{"sep","--test","A01","--test-seed","18446744073709551616"},
+      {"sep","--test","A01","--test-seed","-1"},
+      {"sep","--test","A01","--test-seed","1.5"},
+      {"sep","--test","A01","--test-repeat","0"},
+      {"sep","--test","A01","--test-repeat","4294967296"},
+      {"sep","--test","A01","--test-format","yaml"},
+      {"sep","--test-seed","42"},
+      {"sep","--list-tests","--fail-fast"}}) {
+    SEP::Util::CLI::Options invalid;
+    Check(!Parse(args,invalid,error),"CLI03","malformed/unscoped campaign request was accepted");
+  }
+  SEP::Util::CLI::Options scalar;
+  Check(Parse({"sep","--test","A01","--test-seed","1","--test-seed=2",
+      "--test-repeat=2","--test-repeat","4","--fail-fast","--fail-fast=off",
+      "--keep-test-artifacts","no"},scalar,error)&&scalar.testSeed==2&&
+      scalar.testRepeat==4&&!scalar.testFailFast&&!scalar.keepTestArtifacts,
+      "CLI02","campaign scalar last-occurrence-wins/Boolean compatibility failed");
+
+  int draws=0,fixedCalls=0,fakeCalls=0;
+  auto seeded=Descriptor("A01","alpha",T::RuntimeClass::Routine,T::Status::Pass,&draws);
+  seeded.tags={"geometry","mover:parker"};
+  seeded.seedCapability=T::SeedCapability::Context;seeded.repeatSupported=true;
+  seeded.callback=[&draws]() {
+    ++draws;const auto seed=T::TestSeed(41);
+    SEP::Transport::KeyedRandomStream random(seed,17,3,0);
+    const double observed=random.UniformOpen01();
+    const auto directory=T::GetExecutionContext().artifactDirectory;
+    for(std::size_t length=directory.find('/');;length=directory.find('/',length+1)) {
+      const std::string prefix=length==std::string::npos?directory:directory.substr(0,length);
+      if(!prefix.empty()&&mkdir(prefix.c_str(),0700)!=0&&errno!=EEXIST)
+        throw std::runtime_error("cannot create actual draw fixture directory");
+      if(length==std::string::npos)break;
+    }
+    const auto artifact=directory+"/draw.txt";
+    std::ofstream file(artifact.c_str());file<<std::setprecision(17)<<observed<<'\n';file.close();
+    if(file.fail())throw std::runtime_error("cannot write actual draw fixture artifact");
+    T::Result result;result.status=T::Status::Pass;result.message="actual keyed draw";
+    result.hasSeed=true;result.seed=seed;
+    result.metrics.push_back({"observed_uniform",observed,0,"observed","dimensionless"});
+    result.artifacts.push_back(artifact);
+    return result;
+  };
+  auto fixed=Descriptor("B01","beta",T::RuntimeClass::Extended,T::Status::Pass,&fixedCalls);
+  auto fake=Descriptor("C01","gamma",T::RuntimeClass::Routine,T::Status::Pass,&fakeCalls);
+  fake.seedCapability=T::SeedCapability::Context;fake.repeatSupported=true;
+  const T::Registry registry({seeded,fixed,fake});
+  Check(registry.Select({}, {},false,{"id:A01,tag:geometry"}).size()==1,
+        "CLI02","expression union did not deduplicate an explicit ID and tag");
+  Check(registry.Select({}, {},false,{"mover:parker"}).front()->id=="A01"&&
+        registry.Select({}, {},false,{"all"}).size()==3,
+        "CLI02","tag or explicit complete-suite selector did not resolve");
+  bool rejected=false;
+  try{registry.Select({}, {},false,{"tag:missing"});}catch(const std::invalid_argument&){rejected=true;}
+  Check(rejected,"CLI03","unknown tag was silently ignored");
+  T::CampaignOptions campaign;campaign.seedProvided=true;campaign.campaignSeed=123;
+  campaign.repeatCount=3;campaign.artifactRoot="campaign-artifacts";
+  std::ostringstream log;
+  const auto first=registry.RunCampaign(registry.Select({"A01"},{},false),campaign,log);
+  const auto second=registry.RunCampaign(registry.Select({}, {},false,{"tag:geometry"}),campaign,log);
+  Check(first.results.size()==1&&first.results[0].invocations.size()==3&&draws==6,
+        "CLI02","repetition lost a stable aggregate ID or an invocation");
+  if(first.results.size()==1&&first.results[0].invocations.size()==3&&second.results.size()==1) {
+    for(unsigned i=0;i<3;++i) {
+      const auto& a=*first.results[0].invocations[i].result;
+      const auto& b=*second.results[0].invocations[i].result;
+      Check(a.seed==b.seed&&a.metrics[0].value==b.metrics[0].value,
+            "CLI02","same campaign/test/replicate changed actual draws with selector form");
+      Check(a.artifacts[0].find("replicate-"+std::to_string(i))!=std::string::npos,
+            "REPORT","replicates did not receive distinct artifact namespaces");
+      std::ifstream evidence(a.artifacts[0].c_str());double observed=0;evidence>>observed;
+      Check(evidence.good()&&observed==a.metrics[0].value,"REPORT",
+            "reported draw artifact did not retain the actual generated variate");
+    }
+    Check(first.results[0].invocations[0].result->seed!=first.results[0].invocations[1].result->seed&&
+          first.results[0].invocations[0].result->metrics[0].value!=first.results[0].invocations[1].result->metrics[0].value,
+          "CLI02","distinct replicates changed metadata but replayed the same actual draw");
+  }
+  campaign.repeatCount=1;
+  const auto unsupported=registry.RunCampaign(registry.Select({"B01"},{},false),campaign,log);
+  Check(unsupported.errors==1&&fixedCalls==0,"CLI03","fixed-contract seed override executed or falsely passed");
+  const auto metadataOnly=registry.RunCampaign(registry.Select({"C01"},{},false),campaign,log);
+  Check(metadataOnly.errors==1&&fakeCalls==1,"CLI04","metadata-only seeded callback was accepted without applying a stream seed");
+
+  int a=0,b=0,d=0;
+  auto pass=Descriptor("A","g",T::RuntimeClass::Routine,T::Status::Pass,&a);
+  auto fail=Descriptor("B","g",T::RuntimeClass::Routine,T::Status::Fail,&b);
+  auto untouched=Descriptor("D","g",T::RuntimeClass::Routine,T::Status::Pass,&d);
+  pass.seedCapability=fail.seedCapability=untouched.seedCapability=T::SeedCapability::Deterministic;
+  pass.repeatSupported=fail.repeatSupported=untouched.repeatSupported=true;
+  const T::Registry stopRegistry({untouched,fail,pass});
+  campaign.repeatCount=3;campaign.failFast=true;
+  const auto stopped=stopRegistry.RunCampaign(stopRegistry.Select({}, {},true),campaign,log);
+  Check(a==3&&b==1&&d==0&&stopped.failed==1&&stopped.notRun.size()==2&&stopped.notRunInvocationCount==5,
+        "CLI04","fail-fast did not preserve completed replicates and explicit not-run evidence");
+  Check(T::WriteJsonSummary(first,"campaign-results.json",&error)&&
+        T::WriteJUnitSummary(first,"campaign-results.xml",&error),
+        "REPORT","nested replicate reports could not be written transactionally");
+  const auto json=ReadFile("campaign-results.json"),xml=ReadFile("campaign-results.xml");
+  Check(json.find("\"replicate_index\": 0")!=std::string::npos&&
+        json.find("\"replicate_index\": 2")!=std::string::npos&&
+        json.find(std::to_string(first.results.front().invocations.back().result->seed))!=std::string::npos&&
+        xml.find("tests=\"3\"")!=std::string::npos&&
+        xml.find("A01[replicate=2]")!=std::string::npos,
+        "REPORT","JSON/JUnit dropped replicate seed, index or unique testcase evidence");
+  Check(!T::WriteJsonSummary(first,"campaign-results.json/missing",&error)&&
+        ReadFile("campaign-results.json")==json,
+        "REPORT","failed report creation damaged previously committed evidence");
+  campaign.repeatCount=std::numeric_limits<std::uint32_t>::max();
+  const auto bounded=stopRegistry.RunCampaign(stopRegistry.Select({"B"},{},false),campaign,log);
+  Check(bounded.results.size()==1&&bounded.notRun.size()==1&&
+        bounded.notRunInvocationCount==std::numeric_limits<std::uint32_t>::max()-UINT64_C(1),
+        "CLI04","fail-fast materialized billions of skipped repetitions or lost their count");
+  campaign.failFast=false;
+  const auto unsupportedHuge=registry.RunCampaign(registry.Select({"B01"},{},false),campaign,log);
+  Check(unsupportedHuge.errors==1&&unsupportedHuge.results.size()==1&&
+        unsupportedHuge.results[0].invocations.size()==1&&fixedCalls==0&&
+        unsupportedHuge.notRun==std::vector<std::string>{"B01#1..4294967294"}&&
+        unsupportedHuge.notRunInvocationCount==UINT64_C(4294967294),
+        "CLI04","unsupported UINT32_MAX repeat allocated duplicate errors or lost compact non-execution evidence");
+  campaign.repeatCount=2;
+  const auto fixedThenDeterministic=stopRegistry.RunCampaign({&fixed,&pass},campaign,log);
+  Check(fixedThenDeterministic.errors==1&&fixedThenDeterministic.passed==1&&a==5&&
+        fixedThenDeterministic.notRunInvocationCount==1,
+        "CLI04","unsupported-contract rejection incorrectly stopped later supported descriptors without fail-fast");
+}
+
 }  // namespace
 
 int main() {
@@ -470,6 +638,7 @@ int main() {
   TestRefinementOrder();
   TestStructuredReportsAndHiddenFailures();
   TestCli06MoverPrecedence();
+  TestCampaignOptionsAndSeeds();
 
   if (failures != 0) {
     std::cerr << "Step 1 focused summary: PASS=0 FAIL=" << failures

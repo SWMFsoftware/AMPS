@@ -1,0 +1,3 @@
+srcsep-cli-fault-v1
+fault_rank=1
+fault_replicate=0

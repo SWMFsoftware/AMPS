@@ -4,12 +4,58 @@
 #include "sep_transport_common.h"
 
 #include <cstdint>
+#include <cmath>
 #include <functional>
 #include <string>
 
 namespace SEP {
 namespace Transport {
 namespace CoefficientPhysics {
+
+// All SEP branch energies at this boundary are magnetic fluctuation energy,
+// as specified by the model owner. This value matches AMPS constants.h; the
+// PIC bridge checks the equality at compile time rather than allowing a second
+// slightly different permeability to alter an amplitude during conversion.
+constexpr double MagneticEnergyPermeabilitySI = 1.256637062e-6;
+
+struct MagneticVariance {
+  Status status;
+  double plusT2 = 0.0;
+  double minusT2 = 0.0;
+  double totalT2 = 0.0;
+};
+
+// W_B is magnetic energy density [J/m^3], not magnetic-plus-kinetic wave
+// energy. Consequently deltaB_branch^2=2*mu0*W_B,branch [T^2]. Zero is a real
+// empty branch; negative, nonfinite, overflowing, or underflowed positive input
+// is reported explicitly. This inline kernel is the single production formula
+// used by the common turbulence core and the PIC coefficient-source adapters.
+inline MagneticVariance MagneticVarianceFromEnergyDensity(
+    double plusJPerM3, double minusJPerM3) {
+  MagneticVariance result;
+  if (!std::isfinite(plusJPerM3) || !std::isfinite(minusJPerM3) ||
+      plusJPerM3 < 0.0 || minusJPerM3 < 0.0) {
+    result.status = Status::Error(StatusCode::InvalidCoefficient,
+        "magnetic branch energy densities must be finite and nonnegative");
+    return result;
+  }
+  result.plusT2 = 2.0 * MagneticEnergyPermeabilitySI * plusJPerM3;
+  result.minusT2 = 2.0 * MagneticEnergyPermeabilitySI * minusJPerM3;
+  result.totalT2 = result.plusT2 + result.minusT2;
+  if (!std::isfinite(result.totalT2)) {
+    result.status = Status::Error(StatusCode::InvalidCoefficient,
+        "magnetic energy-to-variance conversion overflowed");
+    return result;
+  }
+  if ((plusJPerM3 > 0.0 && result.plusT2 == 0.0) ||
+      (minusJPerM3 > 0.0 && result.minusT2 == 0.0)) {
+    result.status = Status::Error(StatusCode::StepUnderflow,
+        "positive magnetic branch energy is below represented variance range");
+    return result;
+  }
+  result.status = Status::Ok();
+  return result;
+}
 
 // A floating-point sentinel is not sufficient to distinguish a deliberate
 // ballistic limit from absent data or numerical failure.  This enum accompanies
@@ -29,8 +75,14 @@ struct SpeciesProperties {
 };
 
 Status ValidateSpecies(const SpeciesProperties& species);
+// Rest/nonrelativistic cyclotron angular frequency Omega0=|q|B/m_rest.
 ScalarResult GyrofrequencyRadPerS(double magneticFieldT,
                                   const SpeciesProperties& species);
+// Lab/plasma-frame gyration frequency Omega=Omega0/gamma [rad/s].
+// v is total particle speed [m/s]; luminal/superluminal values are invalid.
+ScalarResult RelativisticGyrofrequencyRadPerS(double magneticFieldT,
+    const SpeciesProperties& species,double speedMPerS,
+    double speedOfLightMPerS=299792458.0);
 ScalarResult LarmorRadiusM(double perpendicularMomentumKgMPerS,
                            double magneticFieldT,
                            const SpeciesProperties& species);
@@ -67,6 +119,9 @@ struct LocalInputView {
   double deltaBPlus2T2 = 0.0;
   double deltaBMinus2T2 = 0.0;
   double alfvenSpeedMPerS = 0.0;
+  // PIC native pitch uses geometric coordinate; pure QLT pitch uses B.
+  int magneticPolarityAlongLine = 1;
+  bool branchDirectionsKnown = true;
 };
 
 Status ValidateLocalInput(const LocalInputView& input);
@@ -87,7 +142,10 @@ struct PitchAngleResult {
 PitchAngleResult EvaluateConstantDmumu(double configuredDmumuPerS,
                                        double mu);
 
-// Magnetostatic slab QLT with a normalized power-law spectrum.  D and dD/dmu
+// Magnetostatic slab QLT restricted to equal left/right magnetic helicities.
+// The positive-k power-law integral is the total real transverse variance;
+// each resonant helicity therefore contains half that power. This historical
+// scalar API cannot represent independently polarized spectra. D and dD/dmu
 // are evaluated from one piecewise expression, including resonant-k dependence
 // and finite one-sided endpoint limits.  Exact band transitions are returned
 // as Nondifferentiable rather than hidden by division through 1-mu^2.
@@ -107,6 +165,11 @@ struct FlorinskiyParameters {
 PitchAngleResult EvaluateFlorinskiySlab(
     const LocalInputView& input, const FlorinskiyParameters& parameters,
     const SpeciesProperties& species, double speedMPerS, double mu);
+// Explicit coordinate boundary: mu is relative to increasing field-line
+// coordinate. E+ remains along B; the derivative follows the chain rule.
+PitchAngleResult EvaluateFlorinskiyAlongFieldLine(
+    const LocalInputView& input,const FlorinskiyParameters& parameters,
+    const SpeciesProperties& species,double speedMPerS,double muAlongLine);
 
 // Species-aware QLT1 closure.  momentum is total relativistic momentum [kg
 // m/s], not energy per nucleon; signed charge enters through |q| in r_L.

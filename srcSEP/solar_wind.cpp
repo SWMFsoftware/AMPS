@@ -4,6 +4,8 @@
 
 #include "sep.h"
 #include "transport_common.h"
+#include "source_capabilities.h"
+#include "util/sep_source_lifecycle.h"
 
 namespace SEP {
     namespace SolarWind {
@@ -561,6 +563,10 @@ long int SEP::SolarWind::InitializeSolarWindPopulation(int spec, int nParticlesP
 
 long int SEP::SolarWind::InitializeSolarWindFieldLine(int spec, int iFieldLine, int nParticlesPerFieldLine) {
     namespace FL = PIC::FieldLine;
+    const auto sourceCapability=SEP::Sources::ThermalPopulationPreflight();
+    if(!sourceCapability.ok())exit(__LINE__,__FILE__,sourceCapability.message.c_str());
+    const auto sourceEvent=SEP::SourceLifecycle::BeginNativeEvent(
+        SEP::SourceLifecycle::Kind::SolarWindPopulation,spec,iFieldLine);
 
     long int nInjectedParticles = 0;
     int nSegments = FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber();
@@ -654,11 +660,12 @@ long int SEP::SolarWind::InitializeSolarWindFieldLine(int spec, int iFieldLine, 
                 spec, p, weightCorrectionFactor, iFieldLine, iSegment, S);
 
             if (newParticle != -1) {
-                SEP::Transport::PICAdapter::InitializeParticleTransportState(
-                    newParticle, UINT64_C(4),
-                    (static_cast<std::uint64_t>(iFieldLine) << 32) |
-                        static_cast<std::uint64_t>(nInjectedParticles),
-                    p);
+                // Segment and within-segment macro are physical source labels;
+                // a rank-local successful-birth count changes under repartition.
+                const std::uint64_t macro=(static_cast<std::uint64_t>(iSegment)<<32)|
+                    static_cast<std::uint64_t>(ipart);
+                SEP::Transport::PICAdapter::InitializeParticleTransportStateWithIdentity(
+                    newParticle,SEP::SourceLifecycle::ParticleIdentity(sourceEvent,macro));
                 nInjectedParticles++;
             }
         }
@@ -668,7 +675,11 @@ long int SEP::SolarWind::InitializeSolarWindFieldLine(int spec, int iFieldLine, 
 }
 
 long int SEP::SolarWind::InjectSolarWindAtFieldLineBeginning(int spec, int iFieldLine, double dt) {
+    const auto sourceCapability=SEP::Sources::ThermalBeginningPreflight();
+    if(!sourceCapability.ok())exit(__LINE__,__FILE__,sourceCapability.message.c_str());
     namespace FL = PIC::FieldLine;
+    const auto sourceEvent=SEP::SourceLifecycle::BeginNativeEvent(
+        SEP::SourceLifecycle::Kind::SolarWindBeginning,spec,iFieldLine);
 
     long int nInjectedParticles = 0;
 
@@ -760,11 +771,8 @@ long int SEP::SolarWind::InjectSolarWindAtFieldLineBeginning(int spec, int iFiel
             spec, p, weightCorrectionFactor, iFieldLine, 0, S);
 
         if (newParticle != -1) {
-            SEP::Transport::PICAdapter::InitializeParticleTransportState(
-                newParticle, UINT64_C(5),
-                (static_cast<std::uint64_t>(iFieldLine) << 32) |
-                    static_cast<std::uint64_t>(ipart),
-                p);
+            SEP::Transport::PICAdapter::InitializeParticleTransportStateWithIdentity(
+                newParticle,SEP::SourceLifecycle::ParticleIdentity(sourceEvent,ipart));
             nInjectedParticles++;
 
             // Shift particle location by random fraction of time step

@@ -16,8 +16,20 @@ import os
 from pathlib import Path
 import shlex
 import subprocess
+import sys
 import time
 from typing import Any, Dict, Iterable, List, Optional, Sequence
+
+
+# Case modules can be imported by path without validation/ on sys.path. The
+# execution adapter is code-owned; source_root remains only the declared base
+# for legacy input arguments, never a scratch working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+try:
+    from sep_native_execution import (create_native_work_directory,
+                                      isolate_native_arguments)
+finally:
+    sys.path.pop(0)
 
 
 def load_input(path: Path, case_id: str) -> Dict[str, Any]:
@@ -115,6 +127,8 @@ def run_linked_model(*, case_id: str, arguments: Sequence[str],
         "--test-json", str(report),
         "--test-junit", str(junit),
     ]
+    work = create_native_work_directory(native, case_id)
+    command, _ = isolate_native_arguments(command, work, source_root)
     # The higher-level runner prints its Python orchestration command, but the
     # linked application is the numerical system under test. Print the exact,
     # shell-escaped AMPS invocation as a separate line so a user can audit or
@@ -122,16 +136,16 @@ def run_linked_model(*, case_id: str, arguments: Sequence[str],
     print("RUN:", shlex.join(command), flush=True)
     try:
         completed = subprocess.run(
-            command, cwd=str(source_root), text=True, stdout=subprocess.PIPE,
+            command, cwd=str(work), text=True, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, check=False, timeout=timeout)
     except subprocess.TimeoutExpired as error:
         partial = error.stdout or ""
         if isinstance(partial, bytes):
             partial = partial.decode("utf-8", errors="replace")
-        log.write_text("COMMAND: " + " ".join(command) + "\n" + partial +
+        log.write_text("COMMAND: " + " ".join(command) + "\nWORKING_DIRECTORY: " + str(work) + "\n" + partial +
                        "\nTIMEOUT\n", encoding="utf-8")
         raise RuntimeError(f"linked {case_id} exceeded {timeout} seconds") from error
-    log.write_text("COMMAND: " + " ".join(command) + "\n" + completed.stdout +
+    log.write_text("COMMAND: " + " ".join(command) + "\nWORKING_DIRECTORY: " + str(work) + "\n" + completed.stdout +
                    f"\nEXIT: {completed.returncode}\n", encoding="utf-8")
     if completed.returncode != 0:
         raise RuntimeError(f"linked {case_id} exited {completed.returncode}; see {log}")

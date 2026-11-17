@@ -162,6 +162,14 @@ class SnapshotStore {
   std::shared_ptr<const BackgroundSnapshot> Current() const;
   bool HasSnapshot() const;
 
+  // A corrected physics checkpoint is an explicit replacement transaction,
+  // distinct from advancing the live provider. It may restore an earlier epoch
+  // only while quiescent and only for the identical provider/ownership/config.
+  // The application validates all backing arrays before calling RestoreCheckpoint.
+  void ValidateCheckpointRestore(const BackgroundSnapshot& snapshot) const;
+  void RestoreCheckpoint(const BackgroundSnapshot& snapshot);
+  void RestoreCheckpoint(const std::shared_ptr<const BackgroundSnapshot>& snapshot);
+
   // Test-only reset.  Production code must never erase provenance mid-run.
   void ResetForTests();
 

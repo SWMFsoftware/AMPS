@@ -75,6 +75,24 @@ SEP_CORONA_SWCME_OBJECTS := $(patsubst \
 # from a source-only archive.  Every production build target still requires the
 # enclosing AMPS configuration exactly as before.
 STANDALONE_GOALS := test-cli-unit test-state-unit test-geometry-source-unit \
+                    test-rng-lifecycle-unit \
+                    test-background-derivatives-unit \
+                    test-analytic-radial-background-unit \
+                    test-analytic-shock-epoch-unit \
+                    test-wave-normalization-unit \
+                    test-real-wave-normalization-unit \
+                    test-polarized-wave-state-unit \
+                    test-birth-window-unit \
+                    test-warm-parallel-study-unit \
+                    test-finite-amplitude-study-unit \
+                    test-frozen-collision-transaction-unit \
+                    test-flux-tube-state-unit \
+                    test-polarized-wkb-unit \
+                    test-maxwell-juttner-flux-unit \
+                    test-material-tube-kinematics-unit \
+                    test-standard-batsrus-wave-unit \
+                    test-conservation-resampling-unit \
+                    test-resonant-collision-unit \
                     test-initialization-unit \
                     test-parallel-diffusion-binding-unit \
                     test-mover-api-unit test-field-line-scope-unit \
@@ -126,6 +144,11 @@ CPPFLAGS += $(MODEL_INCLUDE_FLAGS)
 CXXFLAGS += $(MODEL_INCLUDE_FLAGS)
 INCLUDE += $(MODEL_INCLUDE_FLAGS)
 
+# The enclosing AMPS suffix rule consumes FLAGC_EXTRA, rather than CXXFLAGS.
+# Track every transitive header: changing a stored physics struct must rebuild
+# all consumers, otherwise a successfully linked archive can contain mixed ABIs.
+FLAGC_EXTRA += -MMD -MP
+
 # Compile only the two SWCME-facing translation units with the canonical model
 # directory on their private include path. Historical AMPS Makefile.conf
 # generic rules do not consistently consume application-appended CPPFLAGS,
@@ -133,15 +156,58 @@ INCLUDE += $(MODEL_INCLUDE_FLAGS)
 # those variables to find swcme1d_input.hpp. Keeping this list private also
 # leaves sep.h and every unrelated AMPS translation unit independent of SWCME.
 SWCME_CONSUMER_CXXFLAGS := -std=c++17 -Wall -Wextra -Wpedantic -O3 \
-                           -Iadapters -Iutil $(MODEL_INCLUDE_FLAGS)
+                           -MMD -MP -Iadapters -Iutil $(MODEL_INCLUDE_FLAGS)
 
 MAINLIBOBJ = exosphere_module.o  main_lib.o inner_boundary_injection.o outer_boundary_injection.o mesh.o mover_state.o production_mover_runtime.o transport_common.o coefficient_providers.o parker_mover.o focused_transport_dmumu.o focused_transport_mfp.o turbulence_production_adapter.o parker.o scattering.o sep.o field_line.o flux_tube_geometry.o sampling.o diffusion.o shock_injection.o BoundaryInjection.o BoundaryInjection_GCR.o GCR_Badavi2011ASR.o parser.o diffusion_dxx.o tests.o component_tests.o validation/cases/CV01/cv01_model.o validation/cases/controlled_transport_models.o validation/cases/advanced_validation_models.o util/sep_acceptance_cases.o util/sep_scientific_validation.o util/sep_mover_validation.o util/sep_swcme_validation.o util/sep_turbulence_validation.o util/sep_background_runtime.o util/sep_flux_tube_geometry_core.o util/sep_sampling_products.o util/sep_shock_source_core.o util/sep_transactional_output.o util/sep_run_configuration.o util/sep_population_control.o util/sep_configuration_matrix.o util/sep_evidence.o util/sep_system_ledger.o util/sep_validation_tools.o util/sep_observation_forward_model.o util/sep_production_mover.o util/sep_parker_core.o util/sep_focused_transport_core.o util/sep_focused_transport_mfp_core.o util/sep_turbulence_core.o util/sep_reproducible_reduction.o util/sep_initialization.o util/sep_initialization_validation.o shock_analytical_model.o diffusion_dmumu.o DLT.o QLT.o cooling.o QLT1.o sampling_output.o output_fl_background.o shock_analytical_model2D.o solar_wind.o alfven_turbulence.o parker_streaming_calculator.o turbulence_advection_kolmogorov.o wave_energy_initialization.o test_wave_energy_initialization.o wave_particle_coupling_kolmogorov.o growth_rate_validation_test.o kolmogorov.o kolmogorov_scatter.o shock1d_vertex_distance.o adapters/swcme1d_adapter.o adapters/reduced_shock_background_adapter.o adapters/parallel_diffusion_adapter.o turbulence_cascade_kolmogorov.o turbulence_reflection_kolmogorov.o turbulence_wave_number_resolved/turbulence_wave_number_resolved.o
 # Integrated IV01-IV06 model stages are linked into the same application-level
 # registry as CV01-CV12; they are not standalone substitutes for AMPS.
 MAINLIBOBJ += validation/cases/integrated_validation_models.o
+# The native registry and the focused runner share the stochastic lifecycle
+# descriptors, including complete RNG/cache checkpoint and repeated-call tests.
+MAINLIBOBJ += util/sep_rng_validation.o
+MAINLIBOBJ += util/sep_background_derivative_validation.o
+MAINLIBOBJ += util/sep_analytic_radial_native_validation.o
+MAINLIBOBJ += util/sep_analytic_radial_background.o util/sep_analytic_radial_validation.o
+MAINLIBOBJ += util/sep_host_step_native_validation.o
+MAINLIBOBJ += util/sep_analytic_shock_epoch.o util/sep_analytic_shock_epoch_validation.o
+MAINLIBOBJ += util/sep_coefficient_radius_native_validation.o
+MAINLIBOBJ += util/sep_wave_normalization_validation.o
+MAINLIBOBJ += util/sep_real_wave_normalization_validation.o
+MAINLIBOBJ += util/sep_polarized_wave_state.o util/sep_polarized_wave_state_validation.o
+MAINLIBOBJ += polarized_wave_native_adapter.o util/sep_polarized_native_validation.o
+MAINLIBOBJ += util/sep_birth_window.o util/sep_birth_window_validation.o
+MAINLIBOBJ += birth_window_native.o
+MAINLIBOBJ += util/sep_birth_native_validation.o
+MAINLIBOBJ += util/sep_frozen_collision_transaction.o util/sep_frozen_collision_transaction_validation.o
+MAINLIBOBJ += util/sep_flux_tube_state.o util/sep_flux_tube_state_validation.o
+MAINLIBOBJ += util/sep_exact_nonnegative_sum.o util/sep_polarized_wkb_transport.o util/sep_polarized_wkb_validation.o
+MAINLIBOBJ += util/sep_maxwell_juttner_flux.o util/sep_maxwell_juttner_flux_validation.o
+MAINLIBOBJ += util/sep_material_tube_kinematics.o util/sep_material_tube_kinematics_validation.o
+MAINLIBOBJ += util/sep_standard_batsrus_waves.o standard_batsrus_wave_adapter.o
+MAINLIBOBJ += util/sep_standard_batsrus_wave_validation.o util/sep_standard_batsrus_wave_native_validation.o
+MAINLIBOBJ += util/sep_population_native_validation.o
+MAINLIBOBJ += util/sep_source_lifecycle.o
+MAINLIBOBJ += util/sep_conservative_resampling.o
+MAINLIBOBJ += util/sep_conservation_resampling_validation.o
+MAINLIBOBJ += util/sep_population_production_adapter.o
+MAINLIBOBJ += util/sep_resonant_collision.o util/sep_resonant_collision_validation.o
+MAINLIBOBJ += physics_checkpoint.o util/sep_checkpoint_native_validation.o
+MAINLIBOBJ += source_capabilities.o util/sep_source_native_validation.o
+MAINLIBOBJ += util/sep_maxwellian_native_validation.o
+MAINLIBOBJ += util/sep_cli_campaign_validation.o
+MAINLIBOBJ += util/sep_production_cli_validation.o
 # XM01-XM03 callbacks must be linked into the production executable so their
 # native artifacts cannot be generated by an untracked Python replacement.
 MAINLIBOBJ += validation/cases/cross_model_validation_models.o
+
+# Bootstrap dependency files once for objects left by an older configured tree.
+# This preserves generated configuration while preventing stale header consumers
+# from surviving the first build after dependency tracking is introduced.
+SEP_APP_OBJECTS := $(MAINOBJ) $(MAINLIBOBJ)
+SEP_DEPENDENCY_OBJECTS := $(patsubst %.d,%.o,$(wildcard $(SEP_APP_OBJECTS:.o=.d)))
+.PHONY: sep-header-dependency-bootstrap
+$(filter-out $(SEP_DEPENDENCY_OBJECTS),$(SEP_APP_OBJECTS)): sep-header-dependency-bootstrap
+-include $(SEP_APP_OBJECTS:.o=.d)
 
 # sep_cli.o is kept under srcSEP/util to separate command-line parsing from
 # the physics driver.  It is archived into main.a because only the standalone
@@ -346,6 +412,137 @@ test-field-line-scope-unit:
 test-transport-common-unit:
 	./test/run_step6_tests.sh
 
+.PHONY: test-rng-lifecycle-unit
+test-rng-lifecycle-unit:
+	./test/run_rng_lifecycle_tests.sh
+
+# The same bounded state-continuity gate belongs to both routine development
+# aggregates; the native registry separately executes its shared descriptors.
+test test-controlled-analytical: test-rng-lifecycle-unit
+
+.PHONY: test-background-derivatives-unit
+test-background-derivatives-unit:
+	./test/run_background_derivative_tests.sh
+
+test test-controlled-analytical: test-background-derivatives-unit
+
+.PHONY: test-wave-normalization-unit
+test-wave-normalization-unit:
+	./test/run_wave_normalization_tests.sh
+
+test test-controlled-analytical: test-wave-normalization-unit
+
+# An independent real circular-wave Lorentz integration fixes the one-sided
+# polarization convention; this is deliberately distinct from unit conversion.
+.PHONY: test-real-wave-normalization-unit
+test-real-wave-normalization-unit:
+	./test/run_real_wave_normalization_tests.sh
+
+test test-controlled-analytical: test-real-wave-normalization-unit
+
+.PHONY: test-polarized-wave-state-unit
+test-polarized-wave-state-unit:
+	./test/run_polarized_wave_state_tests.sh
+
+test test-controlled-analytical: test-polarized-wave-state-unit
+
+.PHONY: test-birth-window-unit
+test-birth-window-unit:
+	./test/run_birth_window_tests.sh
+
+test test-controlled-analytical: test-birth-window-unit
+
+# Validation-only parallel warm-plasma reference; no production dependency or
+# inferred physical cutoff is introduced by this numerical verification suite.
+.PHONY: test-warm-parallel-study-unit
+test-warm-parallel-study-unit:
+	./test/run_warm_parallel_study_tests.sh
+
+test test-controlled-analytical: test-warm-parallel-study-unit
+
+# Bounded mathematical/protocol verification of the independent prescribed-wave
+# Lorentz study. Production limits and the opt-in orbit campaigns are separate.
+.PHONY: test-finite-amplitude-study-unit
+test-finite-amplitude-study-unit:
+	./test/run_finite_amplitude_study_tests.sh
+
+test test-controlled-analytical: test-finite-amplitude-study-unit
+
+# Prepare-only coupled bookkeeping: accepted frozen-wave proposals must pass
+# provenance, representable transfer and all-bin budgets before a candidate
+# exists. This target does not claim native publication or exact coupled rates.
+.PHONY: test-frozen-collision-transaction-unit
+test-frozen-collision-transaction-unit:
+	./test/run_frozen_collision_transaction_tests.sh
+
+test test-controlled-analytical: test-frozen-collision-transaction-unit
+
+.PHONY: test-flux-tube-state-unit
+test-flux-tube-state-unit:
+	./test/run_flux_tube_state_tests.sh
+
+test test-controlled-analytical: test-flux-tube-state-unit
+
+# Controlled ideal-MHD WKB equations and exact external-account arithmetic;
+# publication into evolving native material geometry is a separate gate.
+.PHONY: test-polarized-wkb-unit
+test-polarized-wkb-unit:
+	./test/run_polarized_wkb_tests.sh
+
+test test-controlled-analytical: test-polarized-wkb-unit
+
+# The exact relativistic material-plane flux and its independently evaluated
+# cold limit are tested without enabling a native guiding-center injection.
+.PHONY: test-maxwell-juttner-flux-unit
+test-maxwell-juttner-flux-unit:
+	./test/run_maxwell_juttner_flux_tests.sh
+
+test test-controlled-analytical: test-maxwell-juttner-flux-unit
+
+# Cauchy induction, true material mass and cap/side geometric conservation are
+# qualified here only for the explicit neutral deformation/map capabilities.
+.PHONY: test-material-tube-kinematics-unit
+test-material-tube-kinematics-unit:
+	./test/run_material_tube_kinematics_tests.sh
+
+test test-controlled-analytical: test-material-tube-kinematics-unit
+
+# Standard BATSRUS total wave energy has an explicit immutable magnetic view;
+# the dependency-light conversion is separate from actual native array reads.
+.PHONY: test-standard-batsrus-wave-unit
+test-standard-batsrus-wave-unit:
+	./test/run_standard_batsrus_wave_tests.sh
+
+test test-controlled-analytical: test-standard-batsrus-wave-unit
+
+# A fixed analytic provider must use its declared origin/speed and exact
+# Cartesian derivative; geometry-only creation has its own validation boundary.
+.PHONY: test-analytic-radial-background-unit
+test-analytic-radial-background-unit:
+	./test/run_analytic_radial_background_tests.sh
+
+test test-controlled-analytical: test-analytic-radial-background-unit
+
+# Source radius and speed must belong to one immutable departure epoch; this
+# tests the existing trajectory law without reading or advancing a host clock.
+.PHONY: test-analytic-shock-epoch-unit
+test-analytic-shock-epoch-unit:
+	./test/run_analytic_shock_epoch_tests.sh
+
+test test-controlled-analytical: test-analytic-shock-epoch-unit
+
+.PHONY: test-conservation-resampling-unit
+test-conservation-resampling-unit:
+	./test/run_conservation_resampling_tests.sh
+
+test test-controlled-analytical: test-conservation-resampling-unit
+
+.PHONY: test-resonant-collision-unit
+test-resonant-collision-unit:
+	./test/run_resonant_collision_tests.sh
+
+test test-controlled-analytical: test-resonant-collision-unit
+
 test-parker-unit:
 	./test/run_step7_tests.sh
 
@@ -484,6 +681,22 @@ test-observational-validation:
 # Runs every dependency-light sanitizer target sequentially.  Each child uses a
 # disposable build directory and propagates its nonzero status immediately.
 test-sanitizer:
+	./test/run_rng_lifecycle_tests.sh
+	./test/run_background_derivative_tests.sh
+	./test/run_analytic_radial_background_tests.sh
+	./test/run_analytic_shock_epoch_tests.sh
+	./test/run_wave_normalization_tests.sh
+	./test/run_real_wave_normalization_tests.sh
+	./test/run_polarized_wave_state_tests.sh
+	./test/run_birth_window_tests.sh
+	./test/run_frozen_collision_transaction_tests.sh
+	./test/run_flux_tube_state_tests.sh
+	./test/run_polarized_wkb_tests.sh
+	./test/run_maxwell_juttner_flux_tests.sh
+	./test/run_material_tube_kinematics_tests.sh
+	./test/run_standard_batsrus_wave_tests.sh
+	./test/run_conservation_resampling_tests.sh
+	./test/run_resonant_collision_tests.sh
 	@set -e; for step in 3 6 7 8 9 10 11 12 13; do \
 		./test/run_step$${step}_tests.sh; \
 	done; \
@@ -501,7 +714,19 @@ require-sep-executable:
 		exit 2; \
 	}
 
-test-cli: test-cli-unit require-sep-executable
+.PHONY: test-cli-native test-cli-campaign-native
+# These execute the linked program, including applied model globals and MPI
+# failure propagation. Their reports retain unqualified production/SWMF gates;
+# the software compatibility target does not turn those SKIPs into validation.
+test-cli-native: require-sep-executable
+	@PYTHONDONTWRITEBYTECODE=1 python3 test/run_native_production_cli_tests.py \
+	  --amps "$(SEP_EXECUTABLE)"
+
+test-cli-campaign-native: require-sep-executable
+	@PYTHONDONTWRITEBYTECODE=1 python3 test/run_native_cli_campaign_tests.py \
+	  --amps "$(SEP_EXECUTABLE)"
+
+test-cli: test-cli-unit test-cli-native test-cli-campaign-native require-sep-executable
 	@"$(SEP_EXECUTABLE)" --help >/dev/null
 	@"$(SEP_EXECUTABLE)" --list-tests >/dev/null
 

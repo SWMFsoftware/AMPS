@@ -54,6 +54,8 @@ from __future__ import annotations
 
 import argparse
 import datetime as _datetime
+import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -397,6 +399,301 @@ def reader_native_json(report: Path) -> Reader:
     return read
 
 
+def reader_required_native_json(report: Path, required_ids: Sequence[str]) -> Reader:
+    """A configured native qualification step must actually run every case.
+
+    Preserve SKIP in the child artifact, but surface it as a step ERROR: an
+    explicitly requested native layout prerequisite was not exercised.
+    """
+    native = reader_native_json(report)
+    def read(ctx: StepContext) -> List[TestRecord]:
+        records = native(ctx)
+        found = {record.test_id for record in records}
+        for record in records:
+            if record.test_id in required_ids and record.status == "SKIP":
+                record.status = "ERROR"
+                record.message = "configured native prerequisite was not exercised: " + record.message
+        for identifier in required_ids:
+            if identifier not in found:
+                records.append(ctx.record(identifier, "ERROR", "required native case did not report",
+                                          evidence=[str(report)]))
+        return records
+    return read
+
+
+def reader_native_cli_campaign(report: Path,
+                               schema: str = "srcsep-native-cli-campaign-v1") -> Reader:
+    """Infrastructure jobs have stable NCLI IDs and their own process logs.
+
+    A deliberately failing child is PASS only when its expected exit and all
+    postchecks passed. Preserve failures recorded before runner exceptions.
+    """
+    def read(ctx: StepContext) -> List[TestRecord]:
+        payload = read_json(report)
+        if payload.get("schema") != schema:
+            raise ResultsUnavailable("unsupported native CLI campaign schema: " + str(report))
+        records = []
+        for item in payload.get("results", []):
+            status = normalize_status(item.get("status"))
+            failed = [check for check in item.get("postchecks", [])
+                      if normalize_status(check.get("status")) in ("FAIL", "ERROR")]
+            message = str(item.get("message", ""))
+            if failed and status == "PASS":
+                status = "ERROR"
+                message = "runner reported PASS with failed postcheck: " + str(failed[0].get("message", ""))
+            records.append(ctx.record(str(item.get("id", "?")), status, message,
+                                      log=str(item.get("log", "")),
+                                      evidence=[str(report)] + [str(path) for path in item.get("artifacts", [])]))
+        return records
+    return read
+
+
+def reader_fresh_process_checkpoint(report: Path) -> Reader:
+    """Verify both retained native roles and their actual continuation bytes.
+
+    The version-1 runner's summary is an index into the owned evidence, not a
+    second authority for a native PASS. In particular, a stale/edited summary
+    cannot replace a missing child report, a nonzero MPI exit, a changed linked
+    executable, or unequal uninterrupted/resumed final-state bytes. This is a
+    fixed analytic diagnostic API checkpoint gate, not production-resume or
+    material-grid/four-spectrum qualification.
+    """
+    required = ("CP05F01", "CP05F02", "CP05F03")
+
+    def read(ctx: StepContext) -> List[TestRecord]:
+        payload = read_json(report)
+        if not isinstance(payload, dict) or payload.get("schema") != "srcsep-fresh-process-checkpoint-v1":
+            raise ResultsUnavailable("unsupported fresh-process checkpoint schema: " + str(report))
+        # Rehash the actual executable once for this reader. The runner also
+        # checks after each role; a role status alone is insufficient evidence
+        # when an archived report outlives or disagrees with its pinned binary.
+        binary_problem = ""
+        executable = Path(str(payload.get("executable", "")))
+        expected_hash = str(payload.get("executable_sha256", ""))
+        try:
+            if not re.fullmatch(r"[0-9a-f]{64}", expected_hash):
+                raise ValueError("missing or malformed initial executable SHA-256")
+            digest = hashlib.sha256()
+            with executable.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            if digest.hexdigest() != expected_hash:
+                raise ValueError("linked executable changed since the paired run began")
+        except (OSError, ValueError) as error:
+            binary_problem = str(error)
+        items = payload.get("results", [])
+        if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+            raise ResultsUnavailable("malformed fresh-process checkpoint results: " + str(report))
+        records = []
+        for identifier in required:
+            matches = [item for item in items if item.get("id") == identifier]
+            problems = [binary_problem] if binary_problem else []
+            evidence = [str(report), str(executable)]
+            status, message, log = "ERROR", "", ""
+            if len(matches) != 1:
+                problems.append("required paired case must report exactly once")
+            else:
+                item = matches[0]
+                status = normalize_status(item.get("status"))
+                message = str(item.get("message", ""))
+                if status != "PASS":
+                    problems.append("paired case did not PASS: " + status)
+                roles = item.get("roles", [])
+                # Exact role multiplicity/order is part of the protocol:
+                # resume must be a fresh process following one successful write.
+                if not isinstance(roles, list) or any(not isinstance(role, dict) for role in roles):
+                    roles = []
+                if [role.get("role") for role in roles] != ["write", "resume"]:
+                    problems.append("both write and resume roles are required exactly once in order")
+                for role in roles:
+                    name = str(role.get("role", "?"))
+                    child_report = Path(str(role.get("report", "")))
+                    evidence.append(str(child_report))
+                    if role.get("log"):
+                        evidence.append(str(role["log"]))
+                        log = str(role["log"])
+                    if role.get("status") != "PASS" or type(role.get("exit_code")) is not int or role.get("exit_code") != 0:
+                        problems.append(name + " role must PASS with integer exit code zero")
+                    try:
+                        child_payload = read_json(child_report)
+                        children = child_payload.get("results", []) if isinstance(child_payload, dict) else []
+                        if (not isinstance(children, list) or len(children) != 1 or
+                                not isinstance(children[0], dict) or children[0].get("id") != identifier or
+                                children[0].get("status") != "PASS"):
+                            problems.append(name + " native child report must contain exactly the requested PASS")
+                    except ResultsUnavailable as error:
+                        problems.append(name + " native report unavailable: " + str(error))
+                expected = report.parent / identifier / "physics.expected"
+                resumed = report.parent / identifier / "physics.resumed"
+                evidence.extend((str(expected), str(resumed)))
+                try:
+                    equal = expected.read_bytes() == resumed.read_bytes()
+                    if not equal:
+                        problems.append("uninterrupted and resumed final bytes differ")
+                except OSError as error:
+                    problems.append("final continuation artifact unavailable: " + str(error))
+                if item.get("final_artifact_equality") is not True:
+                    problems.append("runner did not establish final artifact equality")
+            if problems:
+                # A child FAIL remains FAIL. SKIP, missing data, and contradictory
+                # PASS summaries become ERROR, never an unexercised green gate.
+                status = "FAIL" if status == "FAIL" else "ERROR"
+                message = "; ".join(filter(None, [message] + problems))
+            records.append(ctx.record(identifier, status, message, log=log, evidence=evidence))
+        for item in items:
+            if item.get("id") not in required:
+                records.append(ctx.record(str(item.get("id", "?")), "ERROR",
+                                          "unexpected paired checkpoint case", evidence=[str(report)]))
+        return records
+    return read
+
+
+def _verify_native_file_identity(path: Path, expected: object) -> None:
+    """Check retained evidence against its initial SHA, including large AMPS.
+
+    A summary is only an index: changing the executable or explicit input after
+    a run must not leave an independently reread PASS. Streaming avoids loading
+    the entire linked executable while several campaign readers are active.
+    """
+    if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected):
+        raise ValueError("missing/malformed initial SHA-256 for " + str(path))
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    if digest.hexdigest() != expected:
+        raise ValueError("native executable/input identity changed: " + str(path))
+
+
+def _read_one_native_pass(report: Path, identifier: str) -> dict:
+    """No missing, duplicate, extra or SKIP child can qualify an explicit job."""
+    payload = read_json(report)
+    rows = payload.get("results", []) if isinstance(payload, dict) else []
+    if (not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict) or
+            rows[0].get("id") != identifier or rows[0].get("status") != "PASS"):
+        raise ValueError("native report must contain exactly the requested PASS: " + str(report))
+    return rows[0]
+
+
+def reader_native_coefficient_radius(report: Path, identifier: str = "RADIUSN01") -> Reader:
+    """Verify the immutable-input radius diagnostic, never PREPARED as PASS.
+
+    This uses the tagged real schema6 startup pipeline and one read-only
+    coefficient accessor. It is separate from a host/source campaign and does
+    not supply an imported radial origin or qualify transport convergence.
+    """
+    def read(ctx: StepContext) -> List[TestRecord]:
+        payload = read_json(report)
+        if not isinstance(payload, dict) or payload.get("schema") != "srcsep-native-coefficient-radius-v1":
+            raise ResultsUnavailable("unsupported native coefficient-radius schema: " + str(report))
+        status, message = normalize_status(payload.get("status")), str(payload.get("message", ""))
+        evidence = [str(report)]
+        try:
+            if payload.get("id") != identifier or status != "PASS":
+                raise ValueError("required radius job did not PASS")
+            if type(payload.get("exit_code")) is not int or payload["exit_code"] != 0 or ctx.exit_code != 0:
+                raise ValueError("native radius job and runner must exit zero")
+            for key in ("executable", "template", "owned_input"):
+                path = Path(str(payload.get(key, "")));evidence.append(str(path))
+                _verify_native_file_identity(path, payload.get(key + "_sha256"))
+            child = Path(str(payload.get("report", "")));evidence.append(str(child))
+            row = _read_one_native_pass(child, identifier)
+            metrics = {item.get("name"): item.get("value") for item in row.get("metrics", [])}
+            if type(metrics.get("assertion_failures")) not in (int, float) or metrics["assertion_failures"] != 0:
+                raise ValueError("native radius assertions were not established")
+        except (OSError, ValueError, TypeError, AttributeError, ResultsUnavailable) as error:
+            status = "FAIL" if status == "FAIL" else "ERROR"
+            message = "; ".join(filter(None, [message, str(error)]))
+        return [ctx.record(identifier, status, message, log=str(payload.get("log", "")), evidence=evidence)]
+    return read
+
+
+def reader_native_host_step(report: Path) -> Reader:
+    """Recheck every fresh host job, guard and actual retained per-rank trace.
+
+    The source-owned runner owns the trace checker. Reuse that exact software
+    timing contract rather than inventing a second shock law or accepting an
+    aggregate PASS as proof of a real PIC step. PIC private state remains inside
+    one child process per mover, and these diagnostics never enable production.
+    """
+    def read(ctx: StepContext) -> List[TestRecord]:
+        payload = read_json(report)
+        if not isinstance(payload, dict) or payload.get("schema") != "srcsep-native-host-step-campaign-v1":
+            raise ResultsUnavailable("unsupported native host-step schema: " + str(report))
+        source = AMPS_ROOT / "srcSEP" / "test"
+        specification = importlib.util.spec_from_file_location("srcsep_host_trace_checker", source / "run_native_host_step_tests.py")
+        if specification is None or specification.loader is None:
+            raise ResultsUnavailable("native host trace checker unavailable")
+        checker = importlib.util.module_from_spec(specification)
+        sys.path.insert(0, str(source))
+        try:
+            specification.loader.exec_module(checker)
+        finally:
+            sys.path.pop(0)
+        common, values, ranks = [], {}, 0
+        try:
+            if ctx.exit_code != 0:
+                raise ValueError("native host campaign runner did not exit zero")
+            for key in ("executable", "fixture", "protocol_input"):
+                _verify_native_file_identity(Path(str(payload.get(key, ""))), payload.get(key + "_sha256"))
+            values = checker.load_fixture(Path(payload["fixture"]))
+            if Path(payload["protocol_input"]).read_text(encoding="utf-8") != checker.fixture_protocol(values):
+                raise ValueError("actual native protocol does not serialize the pinned explicit host fixture")
+            ranks = payload.get("mpi_ranks")
+            if type(ranks) is not int or ranks < 1:
+                raise ValueError("invalid host MPI layout")
+            guards = payload.get("preflight_checks", [])
+            if not isinstance(guards, list) or [guard.get("name") for guard in guards] != ["single-case", "repeat-one"]:
+                raise ValueError("both ordered fresh-process guard negatives are required")
+            for guard, expected, diagnostic in zip(guards, (1, 2),
+                    ("end-to-end test input requires exactly one explicit --test ID", "fresh process")):
+                text = Path(str(guard.get("log", ""))).read_text(encoding="utf-8")
+                if (guard.get("status") != "PASS" or type(guard.get("exit_code")) is not int or
+                        guard["exit_code"] != expected or diagnostic not in text or "The mesh is generated" in text):
+                    raise ValueError("host exclusivity negative did not prove its declared pre-mesh rejection")
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+            common.append(str(error))
+        items = payload.get("results", [])
+        if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+            raise ResultsUnavailable("malformed host-step results")
+        records = []
+        for identifier, mover in checker.CASES.items():
+            matches = [item for item in items if item.get("id") == identifier]
+            status, message, log, evidence = "ERROR", "", "", [str(report)]
+            problems = list(common)
+            if len(matches) != 1:
+                problems.append("required host case must report exactly once")
+            else:
+                item = matches[0];status = normalize_status(item.get("status"))
+                message = str(item.get("message", ""));log = str(item.get("log", ""))
+                try:
+                    if status != "PASS" or type(item.get("exit_code")) is not int or item["exit_code"] != 0:
+                        raise ValueError("actual host child must PASS and exit zero")
+                    child = Path(str(item.get("report", "")));evidence.append(str(child))
+                    row = _read_one_native_pass(child, identifier)
+                    metrics = {metric.get("name"): metric.get("value") for metric in row.get("metrics", [])}
+                    if (type(metrics.get("assertion_failures")) not in (int, float) or metrics["assertion_failures"] != 0 or
+                            metrics.get("completed_host_steps") != values["steps"] or
+                            type(metrics.get("global_first_birth_moves")) not in (int, float) or metrics["global_first_birth_moves"] <= 0):
+                        raise ValueError("native host metrics do not establish actual completed steps/first births")
+                    checks = item.get("postchecks", [])
+                    if not checks or any(check.get("status") != "PASS" for check in checks):
+                        raise ValueError("native host postchecks missing or failed")
+                    trace_checks = checker.inspect_traces(child.parent / "artifacts", identifier, mover, ranks, values["steps"])
+                    evidence.extend(str(check["artifact"]) for check in trace_checks if "artifact" in check)
+                except (OSError, ValueError, KeyError, TypeError, AttributeError, ResultsUnavailable) as error:
+                    problems.append(str(error))
+            if problems:
+                status = "FAIL" if status == "FAIL" else "ERROR"
+                message = "; ".join(filter(None, [message] + problems))
+            records.append(ctx.record(identifier, status, message, log=log, evidence=evidence))
+        for item in items:
+            if item.get("id") not in checker.CASES:
+                records.append(ctx.record(str(item.get("id", "?")), "ERROR", "unexpected host case", evidence=[str(report)]))
+        return records
+    return read
+
+
 def reader_coupled(output_dir: Path) -> Reader:
     """run_coupled_sep_corona.py --output-dir DIR: DIR/summary.json.
 
@@ -530,6 +827,27 @@ def read_unittest(ctx: StepContext) -> List[TestRecord]:
     return list(records.values())
 
 
+def reader_required_unittest(required_ids: Sequence[str]) -> Reader:
+    """Require the declared bounded study checks without launching its scan.
+
+    Reuse verbose-unittest parsing so class/test IDs and real failure blocks
+    retain their source logs. Explicitly requested numerical prerequisites may
+    not turn a skipped or missing check into a green study gate.
+    """
+    def read(ctx: StepContext) -> List[TestRecord]:
+        records = read_unittest(ctx)
+        found = {record.test_id for record in records}
+        for record in records:
+            if record.test_id in required_ids and record.status == "SKIP":
+                record.status = "ERROR"
+                record.message = "required bounded study check was skipped: " + record.message
+        for identifier in required_ids:
+            if identifier not in found:
+                records.append(ctx.record(identifier, "ERROR", "required bounded study check did not report"))
+        return records
+    return read
+
+
 _BRACKET = re.compile(r"^\[([A-Za-z0-9_.:/-]+)\] (PASS|FAIL|SKIP|ERROR)\b(.*)$")
 _NAMED = re.compile(r"^([A-Za-z0-9_.-]+) (PASS|FAIL|SKIP|ERROR): (.*)$")
 
@@ -553,6 +871,27 @@ def read_bracket_text(ctx: StepContext) -> List[TestRecord]:
     if not records:
         raise ResultsUnavailable("no [ID] STATUS result lines in the step log")
     return list(records.values())
+
+
+def reader_required_bracket_text(required_ids: Sequence[str]) -> Reader:
+    """Retain each source callback verdict and reject incomplete execution.
+
+    Sanitizer/compiler failures already propagate through the outer process.
+    This additional coverage guard prevents a truncated successful child log
+    or SKIP from satisfying a newly declared complete source-family step.
+    """
+    def read(ctx: StepContext) -> List[TestRecord]:
+        records = read_bracket_text(ctx)
+        found = {record.test_id for record in records}
+        for record in records:
+            if record.test_id in required_ids and record.status == "SKIP":
+                record.status = "ERROR"
+                record.message = "required source callback was not exercised: " + record.message
+        for identifier in required_ids:
+            if identifier not in found:
+                records.append(ctx.record(identifier, "ERROR", "required source callback did not report"))
+        return records
+    return read
 
 
 _MAKE_IGNORED = re.compile(r"^make(?:\[\d+\])?: \[.*\] Error (\d+) \(ignored\)")
@@ -702,6 +1041,258 @@ def srcsep_steps(out: Path, args: argparse.Namespace) -> List[Step]:
     pd_json = out / "pd-mover.json"
     return [
         build_step("test/sep_parker_spiral__field_line"),
+        Step("rng-lifecycle",
+             "persistent stochastic state: repeated mover calls, full normal "
+             "cache/checkpoint restoration, and MFP event partitioning",
+             [["make", "-C", "srcSEP", "test-rng-lifecycle-unit"]],
+             reader=read_bracket_text,
+             runner="srcSEP/test/run_rng_lifecycle_tests.sh",
+             namespace="srcsep-registry"),
+        Step("background-derivatives",
+             "provider-defined radial/tensor velocity derivatives: steady "
+             "expansion, curved-field strain, and invalid-input rejection",
+             [["make", "-C", "srcSEP", "test-background-derivatives-unit"]],
+             reader=read_bracket_text,
+             runner="srcSEP/test/run_background_derivative_tests.sh",
+             namespace="srcsep-registry"),
+        Step("analytic-radial",
+             "explicit translated-origin radial U and Cartesian tensor, atomic invalid-input rejection and geometry-only Parker construction",
+             [["make", "-C", "srcSEP", "test-analytic-radial-background-unit"]],
+             reader=reader_required_bracket_text(["ARB01", "ARB02", "ARB03", "ARB04", "ARB05", "ARB06"]),
+             runner="srcSEP/test/run_analytic_radial_background_tests.sh",
+             namespace="srcsep-registry"),
+        Step("analytic-radial-native",
+             "actual two-rank fixed analytic startup B/U/n history, translated configured generator, preserved imported list U and atomic native-history rejection",
+             [["python3", "-B", "srcSEP/test/run_tests.py", "--amps", "./amps",
+               "--group", "analytic-radial-native", "--mpi-np", "2",
+               "--output-dir", str(out / "analytic-radial-native"), "--plot", "none"]],
+             reader=reader_required_native_json(out / "analytic-radial-native" / "srcsep-tests.json",
+                                               ["ARBN01", "ARBN02", "ARBN03", "ARBN04"]),
+             runner="srcSEP/test/run_tests.py --group analytic-radial-native (isolated native cwd)",
+             namespace="srcsep-registry"),
+        Step("analytic-shock-epoch",
+             "immutable explicit source-departure radius/speed with independent constant and linear-speed references; no native host qualification",
+             [["make", "-C", "srcSEP", "test-analytic-shock-epoch-unit"]],
+             reader=reader_required_bracket_text(["ASE01", "ASE02", "ASE03", "ASE04", "ASE05"]),
+             runner="srcSEP/test/run_analytic_shock_epoch_tests.sh",
+             namespace="srcsep-registry"),
+        Step("host-step-native",
+             "three fresh actual PIC/host processes with explicit controlled source fixture, one-step birth timing and completed analytic shock geometry",
+             [["python3", "-B", "srcSEP/test/run_native_host_step_tests.py", "--amps", "./amps",
+               "--fixture", "srcSEP/test/fixtures/host_step_smoke.json", "--mpi-ranks", "2",
+               "--output", str(out / "host-step-native")]],
+             reader=reader_native_host_step(out / "host-step-native" / "summary.json"),
+             runner="srcSEP/test/run_native_host_step_tests.py (one fresh native process per mover)",
+             namespace="srcsep-registry"),
+        Step("coefficient-radius-native",
+             "actual immutable translated-origin runtime input and read-only QLT1 radius/provenance consumer; imported unmapped radius rejects",
+             [["python3", "-B", "srcSEP/test/run_native_coefficient_radius_tests.py", "--amps", "./amps",
+               "--mpi-ranks", "2", "--output", str(out / "coefficient-radius-native")]],
+             reader=reader_native_coefficient_radius(out / "coefficient-radius-native" / "summary.json"),
+             runner="srcSEP/test/run_native_coefficient_radius_tests.py (tagged actual schema6 initialization)",
+             namespace="srcsep-registry"),
+        Step("coefficient-radius-library-native",
+             "actual immutable configured parallel-diffusion input uses provider-owned translated heliocentric position; no invented imported coordinate frame",
+             [["python3", "-B", "srcSEP/test/run_native_coefficient_radius_tests.py", "--amps", "./amps",
+               "--case", "RADIUSN02", "--mpi-ranks", "2", "--output", str(out / "coefficient-radius-library-native")]],
+             reader=reader_native_coefficient_radius(out / "coefficient-radius-library-native" / "summary.json", "RADIUSN02"),
+             runner="srcSEP/test/run_native_coefficient_radius_tests.py --case RADIUSN02 (real parallel-diffusion input)",
+             namespace="srcsep-registry"),
+        Step("material-tube-kinematics",
+             "controlled material deformation Cauchy induction, Nanson caps and geometric conservation references; no native material-grid publication",
+             [["make", "-C", "srcSEP", "test-material-tube-kinematics-unit"]],
+             reader=reader_required_bracket_text(["MTG01", "MTG02", "MTG03", "MTG04", "MTG05", "MTG06"]),
+             runner="srcSEP/test/run_material_tube_kinematics_tests.sh",
+             namespace="srcsep-registry"),
+        Step("material-tube-native",
+             "packaged native registry execution of six mathematical material-tube value contracts; no PIC material-grid integration claim",
+             [["python3", "-B", "srcSEP/test/run_tests.py", "--amps", "./amps",
+               "--group", "material-tube", "--mpi-np", "2",
+               "--output-dir", str(out / "material-tube-native"), "--plot", "none"]],
+             reader=reader_required_native_json(out / "material-tube-native" / "srcsep-tests.json",
+                                               ["MTG01", "MTG02", "MTG03", "MTG04", "MTG05", "MTG06"]),
+             runner="srcSEP/test/run_tests.py --group material-tube (value callbacks in native registry)",
+             namespace="srcsep-registry"),
+        Step("standard-batsrus-waves",
+             "declared standard BATSRUS total-to-magnetic Alfven energy and B-directed branch view, with provenance and numerical rejection controls",
+             [["make", "-C", "srcSEP", "test-standard-batsrus-wave-unit"]],
+             reader=reader_required_bracket_text(["SBW01", "SBW02", "SBW03", "SBW04", "SBW05"]),
+             runner="srcSEP/test/run_standard_batsrus_wave_tests.sh",
+             namespace="srcsep-registry"),
+        Step("standard-batsrus-waves-native",
+             "controlled native two-wave buffers retain imported ownership and standard BATSRUS magnetic-energy contract; full SWMF provider/polarizations excluded",
+             [["python3", "-B", "srcSEP/test/run_tests.py", "--amps", "./amps",
+               "--group", "standard-batsrus-waves-native", "--mpi-np", "2",
+               "--output-dir", str(out / "standard-batsrus-waves-native"), "--plot", "none"]],
+             reader=reader_required_native_json(out / "standard-batsrus-waves-native" / "srcsep-tests.json",
+                                               ["SBWN01", "SBWN02"]),
+             runner="srcSEP/test/run_tests.py --group standard-batsrus-waves-native (controlled imported buffers)",
+             namespace="srcsep-registry"),
+        Step("wave-normalization",
+             "magnetic energy density and integrated spectral-bin amplitude "
+             "conversion, with independent coefficient normalization checks",
+             [["make", "-C", "srcSEP", "test-wave-normalization-unit"]],
+             reader=read_bracket_text,
+             runner="srcSEP/test/run_wave_normalization_tests.sh",
+             namespace="srcsep-registry"),
+        Step("real-wave-normalization",
+             "independent Lorentz/Kubo calibration of magnetic coefficient normalization",
+             [["make", "-C", "srcSEP", "test-real-wave-normalization-unit"]],
+             reader=read_bracket_text,
+             runner="srcSEP/test/run_real_wave_normalization_tests.sh",
+             namespace="srcsep-registry"),
+        Step("polarized-wave-state",
+             "four nonnegative directional/helicity spectra and finite-volume spectral grid contracts",
+             [["make", "-C", "srcSEP", "test-polarized-wave-state-unit"]],
+             reader=read_bracket_text,
+             runner="srcSEP/test/run_polarized_wave_state_tests.sh",
+             namespace="srcsep-registry"),
+        Step("flux-tube-state",
+             "explicit conserved magnetic-flux owner values, SI area normalization and atomic checkpoint codec rejection",
+             [["make", "-C", "srcSEP", "test-flux-tube-state-unit"]],
+             reader=reader_required_bracket_text(["FLCP01", "FLCP02", "FLCP03", "FLCP04"]),
+             runner="srcSEP/test/run_flux_tube_state_tests.sh",
+             namespace="srcsep-registry"),
+        Step("polarized-wkb",
+             "controlled ideal-MHD four-spectrum reservoirs, WKB/ALE work and ray transport, refinement and exact external-account arithmetic; no native publication",
+             [["make", "-C", "srcSEP", "test-polarized-wkb-unit"]],
+             reader=reader_required_bracket_text(["WKB01", "WKB02", "WKB03", "WKB04", "WKB05", "WKB06", "WKB07", "WKB08"]),
+             runner="srcSEP/test/run_polarized_wkb_tests.sh",
+             namespace="srcsep-registry"),
+        Step("maxwell-juttner-flux",
+             "relativistic full-particle material-plane flux normalization, sampled phase and staged six-draw RNG; native guiding-center source bridge excluded",
+             [["make", "-C", "srcSEP", "test-maxwell-juttner-flux-unit"]],
+             reader=reader_required_bracket_text(["MJ01", "MJ02", "MJ03", "MJ04", "MJ05", "MJ06"]),
+             runner="srcSEP/test/run_maxwell_juttner_flux_tests.sh",
+             namespace="srcsep-registry"),
+        Step("polarized-wave-native",
+             "actual two-rank native four-spectrum moment, publication and restore checks with explicitly registered spectral storage",
+             # Reuse the native runner's owned cwd and absolute path adapter.
+             # Launching amps directly from the orchestrator's AMPS_ROOT would
+             # otherwise share PIC PT/mesh caches with unrelated campaigns.
+             [["python3", "-B", "srcSEP/test/run_tests.py", "--amps", "./amps",
+               "--group", "polarized-wave-native", "--mpi-np", "2",
+               "--output-dir", str(out / "polarized-wave-native"), "--plot", "none", "--",
+               "--turbulence-model", "wave-number-resolved",
+               "--turbulence-source", "self-consistent-spectral",
+               "--coupling", "off", "--cascade", "off", "--reflection", "off"]],
+             reader=reader_required_native_json(out / "polarized-wave-native" / "srcsep-tests.json",
+                                               ["PNW01", "PNW02", "PNW03", "PNW04"]),
+             runner="amps --test-group polarized-wave-native (spectral configuration)",
+             namespace="srcsep-registry"),
+        Step("birth-window",
+             "exact positive source birth remainder, staged first movement, immutable interval and adaptive terminal-step contracts",
+             [["make", "-C", "srcSEP", "test-birth-window-unit"]],
+             reader=read_bracket_text,
+             runner="srcSEP/test/run_birth_window_tests.sh",
+             namespace="srcsep-registry"),
+        Step("birth-window-native",
+             "actual two-rank native mover birth remainder, rejection, clone/split/migration and pending-birth checkpoint refusal",
+             [["python3", "-B", "srcSEP/test/run_tests.py", "--amps", "./amps",
+               "--group", "birth-window-native", "--mpi-np", "2",
+               "--output-dir", str(out / "birth-window-native"), "--plot", "none"]],
+             reader=reader_required_native_json(out / "birth-window-native" / "srcsep-tests.json",
+                                               ["BIRTHN01", "BIRTHN02", "BIRTHN03", "BIRTHN04", "BIRTHN05", "BIRTHN06"]),
+             runner="srcSEP/test/run_tests.py --group birth-window-native (isolated native cwd)",
+             namespace="srcsep-registry"),
+        Step("warm-parallel-study",
+             "independent validation-only parallel Maxwellian dispersion: Landau contour, cold/MHD limits, uncertainty and winding negative controls",
+             [["make", "-C", "srcSEP", "test-warm-parallel-study-unit"]],
+             reader=read_unittest,
+             runner="srcSEP/test/run_warm_parallel_study_tests.sh",
+             namespace="srcsep-warm-parallel-mathematics"),
+        Step("finite-amplitude-study",
+             "sixteen bounded real-Lorentz mathematical/provenance tests; no broad finite-amplitude scan or production-domain recommendation",
+             [["make", "-C", "srcSEP", "test-finite-amplitude-study-unit"]],
+             reader=reader_required_unittest([
+                 "LorentzReferences.test_uniform_field_exact_gyro_and_fourth_order",
+                 "LorentzReferences.test_analytic_force_integral_resonance_and_wrong_helicity",
+                 "LorentzReferences.test_weak_full_orbit_recovers_finite_time_linear_response",
+                 "LorentzReferences.test_finite_amplitude_dop853_and_exact_energy_momentum_invariant",
+                 "LorentzReferences.test_phase_and_mode_quadrature_are_separate_ensembles",
+                 "LorentzReferences.test_gap_has_no_k_floor_or_implicit_bridge",
+                 "LorentzReferences.test_decimal_underflow_rejects_without_zero_substitution",
+                 "LorentzReferences.test_both_branches_charges_and_helicities",
+                 "LorentzReferences.test_zero_momentum_pitch_is_unresolved_without_normalization",
+                 "ProtocolChecks.test_prepare_is_explicit_and_archived_replay_is_portable",
+                 "ProtocolChecks.test_tampered_source_and_coordinates_reject",
+                 "ProtocolChecks.test_unknown_physics_and_nonaligned_observation_grid_reject",
+                 "ProtocolChecks.test_resource_failure_preserves_complete_unresolved_coverage",
+                 "ProtocolChecks.test_nonzero_analytic_response_underflow_stays_unresolved",
+                 "ProtocolChecks.test_archived_plot_and_coordinate_binding",
+                 "ProtocolChecks.test_plot_positive_underflow_rejects"]),
+             runner="srcSEP/test/run_finite_amplitude_study_tests.sh (bounded unittest protocol)",
+             namespace="srcsep-finite-amplitude-mathematics"),
+        Step("native-cli-campaign",
+             "native two-rank CLI infrastructure: actual seeds, repeats, independent writers and collective failure controls",
+             [["python3", "srcSEP/test/run_native_cli_campaign_tests.py", "--amps", "./amps",
+               "--output", str(out / "native-cli-campaign")]],
+             reader=reader_native_cli_campaign(out / "native-cli-campaign" / "summary.json"),
+             runner="srcSEP/test/run_native_cli_campaign_tests.py",
+             namespace="srcsep-cli-infrastructure"),
+        Step("production-cli-compatibility",
+             "native applied production globals plus fresh help/errors and limited coupled callsite ownership; production/SWMF gates remain explicit",
+             [["python3", "srcSEP/test/run_native_production_cli_tests.py", "--amps", "./amps",
+               "--output", str(out / "production-cli-compatibility")]],
+             reader=reader_native_cli_campaign(out / "production-cli-compatibility" / "summary.json",
+                                               "srcsep-production-cli-compatibility-v1"),
+             runner="srcSEP/test/run_native_production_cli_tests.py",
+             namespace="srcsep-registry"),
+        Step("population-native",
+             "actual PIC field-line exact splitting, lineage/RNG lifecycle, "
+             "and byte-exact migration clone preservation",
+             [["python3", "srcSEP/test/run_tests.py", "--amps", "./amps",
+               "--group", "population-native", "--output-dir",
+               str(out / "population-native")]],
+             reader=reader_srcsep_run_tests(out / "population-native"),
+             runner="srcSEP/test/run_tests.py", namespace="srcsep-registry"),
+        Step("conservative-resampling",
+             "positive weight resampling with relativistic and pitch moments, "
+             "conditional unbiasedness and dimensional SI rejection controls",
+             [["make", "-C", "srcSEP", "test-conservation-resampling-unit"]],
+             reader=read_bracket_text,
+             runner="srcSEP/test/run_conservation_resampling_tests.sh",
+             namespace="srcsep-registry"),
+        Step("resonant-collision",
+             "polarized finite-band joint collision kernel: wave-frame "
+             "invariant, conservative diffusion and event-clock refinement",
+             [["make", "-C", "srcSEP", "test-resonant-collision-unit"]],
+             reader=read_bracket_text,
+             runner="srcSEP/test/run_resonant_collision_tests.sh",
+             namespace="srcsep-registry"),
+        Step("frozen-collision-transaction",
+             "prepare-only frozen-wave accepted proposal batching, canonical provenance, nonnegative magnetic budgets and total/roundoff ledgers; no PIC commit or coupled-CTMC claim",
+             [["make", "-C", "srcSEP", "test-frozen-collision-transaction-unit"]],
+             reader=read_bracket_text,
+             runner="srcSEP/test/run_frozen_collision_transaction_tests.sh",
+             namespace="srcsep-registry"),
+        Step("physics-checkpoint-native",
+             "actual fixed-line analytic PIC physics save/resume and atomic "
+             "rejection; same MPI ownership, output continuation excluded",
+             [["python3", "srcSEP/test/run_tests.py", "--amps", "./amps",
+               "--group", "physics-checkpoint-native", "--output-dir",
+               str(out / "physics-checkpoint-native")]],
+             reader=reader_srcsep_run_tests(out / "physics-checkpoint-native"),
+             runner="srcSEP/test/run_tests.py", namespace="srcsep-registry"),
+        Step("fresh-process-checkpoint",
+             "paired two-rank native write/fresh-resume API roles, unchanged linked executable and byte-exact final continuation; fixed analytic diagnostic scope",
+             # Each child role creates its own private PIC working directory.
+             # The runner exchanges only named checkpoint artifacts, and its
+             # reader rechecks the retained child reports and final bytes.
+             [["python3", "-B", "srcSEP/test/run_fresh_process_checkpoint_tests.py",
+               "--amps", "./amps", "--mpi-ranks", "2",
+               "--output", str(out / "fresh-process-checkpoint")]],
+             reader=reader_fresh_process_checkpoint(out / "fresh-process-checkpoint" / "summary.json"),
+             runner="srcSEP/test/run_fresh_process_checkpoint_tests.py",
+             namespace="srcsep-registry"),
+        Step("source-native",
+             "typed unsupported-source preflight and actual native field-line "
+             "birth lifecycle/geometry invariants",
+             [["python3", "srcSEP/test/run_tests.py", "--amps", "./amps",
+               "--group", "source-native", "--output-dir",
+               str(out / "source-native")]],
+             reader=reader_srcsep_run_tests(out / "source-native"),
+             runner="srcSEP/test/run_tests.py", namespace="srcsep-registry"),
         Step("run-tests",
              "srcSEP/test/run_tests.py --all against the new executable: every "
              "test in the linked registry plus the CV/IV/XM/OV/EV validation "

@@ -1,6 +1,63 @@
 # AMPS core-test status
 
-Last updated: 2026-11-10
+Last updated: 2026-11-17
+
+## Upstream core and SEP integration (2026-11-17)
+
+Integrated the shared core from upstream
+`74974c2b2fc1b4cf09a73c320064a22370c0ca94` into the SEP working tree based on
+`c65494f5a6eff5988136db181abd3750b7cec8a7`, retaining the required local
+particle-lifecycle, conservation, stochastic-state and registry contracts.
+Source integration remains uncommitted. Incoming algorithms and their native
+test oracles are reused from upstream; no physical acceptance limit changes.
+
+The complete pristine and reconciled merged CORE inventories are identical:
+**51 suites / 1,085 cases: 843 PASS / 1 FAIL / 240 SKIP / 1 ERROR**. All
+**843 historical and current baseline PASS identities remain PASS**, with no
+missing/added identities, changed statuses or new nonpasses. The two unchanged
+nonpasses are `T12-COVERAGE-STRICT-001` and
+`CSWC-FULL-CSWC0628-MASS-TIME` at its original 180-second ceiling.
+
+The first merged full receipt retains a strict compilation failure in the
+unchanged reduced-shock harness: locally appended optional test metadata lacked
+an explicit member initializer for a two-field aggregate client. The minimal
+shared-header correction is `std::string testId{};`. Fail-before/pass-after
+strict compilation and aggregate/layout/default checks pass; no upstream
+application or oracle is edited. Exact scoped retries of only the SEP-common
+and reduced-shock owners execute 240 cases (153 PASS / 87 SKIP), exit 0.
+The reconciled result names both raw attempts, the one-header source amendment
+and those exact two owner replacements. It is a multi-attempt receipt.
+
+The four newly imported upstream native campaigns additionally pass all
+32 launch contracts, 578 native assertions and 13 exact one/four-rank byte
+comparisons. Both gas missing-input controls reject with their required
+messages. Their source, inputs, tolerances and compiler flags remain unchanged.
+The 97-case reduced-shock owner also receives its existing checksum-pinned
+root-discovery fixture, authenticated by `native_fixture_provenance.json`;
+the fixture supplies no runtime physical parameters.
+
+Full CORE command, separately in the pristine and merged isolated checkouts:
+
+```sh
+python3 src/test/run_tests.py --config /tmp/srcsep-upstream-merge.1q31gpks/PHASE/machine.json \
+  --match 'CORE-*' --jobs 4 --build-jobs 16 --output-dir /tmp/srcsep-upstream-merge.1q31gpks/PHASE/results
+```
+
+`PHASE` is `baseline-final-evidence` or `candidate-final-evidence`. Private
+dependency archives are built first; each checkout has its own native lock,
+configuration and outputs. Initial sandbox-MPI/missing-dependency attempts
+remain separate infrastructure history. No source, oracle or limit is weakened
+for a retry. Source/dependency/profile/fixture rehashes and independent identity
+and reconciliation corruption controls pass.
+
+Evidence root: `/tmp/srcsep-upstream-merge.1q31gpks/`. Primary records are
+`core-identity-comparison.json`, `core-final-audit.md`,
+`core-final-independent-audit.json`, `core-postcompatibility-source-identity.json`
+and `candidate-core-reconciled/amps-core-tests.json`. The exact source scope,
+workspace publication backup and separate SEP verification are described in
+[the integration record](../../srcSEP/CORE_UPSTREAM_INTEGRATION.md).
+
+The earlier validation checkpoints below remain historical receipts.
 
 ## Fast-wave P0–P4 implementation (2026-11-10)
 

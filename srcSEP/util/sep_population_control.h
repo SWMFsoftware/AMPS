@@ -59,6 +59,8 @@ struct InvariantReport {
 };
 
 Moments ComputeMoments(const std::vector<ParticleRecord>& particles);
+// Each row uses sum_i |w_i q_i| as its SI scale; no max(1,...) dimensional
+// floor. This also gives a finite scale when a signed invariant cancels.
 InvariantReport CompareInvariants(const std::vector<ParticleRecord>& before,
                                   const std::vector<ParticleRecord>& after,
                                   double relativeTolerance);

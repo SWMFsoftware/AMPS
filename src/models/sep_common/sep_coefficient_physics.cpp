@@ -10,6 +10,7 @@ namespace CoefficientPhysics {
 namespace {
 
 const double Pi = 3.141592653589793238462643383279502884;
+const double SpeedOfLightMPerS = 299792458.0;
 
 PitchAngleResult Error(StatusCode code, const std::string& message) {
   PitchAngleResult result;
@@ -47,8 +48,8 @@ double FlorinskiyValue(const LocalInputView& input,
                        const FlorinskiyParameters& parameters,
                        const SpeciesProperties& species,
                        double speedMPerS, double mu) {
-  const ScalarResult omega = GyrofrequencyRadPerS(
-      input.magneticFieldT, species);
+  const ScalarResult omega = RelativisticGyrofrequencyRadPerS(
+      input.magneticFieldT,species,speedMPerS,SpeedOfLightMPerS);
   if (!omega.status.ok()) return std::numeric_limits<double>::quiet_NaN();
   const double parallelSpeed = speedMPerS * mu;
   const double plusDenominator =
@@ -163,6 +164,24 @@ ScalarResult GyrofrequencyRadPerS(double magneticFieldT,
   return result;
 }
 
+ScalarResult RelativisticGyrofrequencyRadPerS(double magneticFieldT,
+    const SpeciesProperties& species,double speedMPerS,double lightSpeed) {
+  ScalarResult result;
+  if(!std::isfinite(speedMPerS)||speedMPerS<0.0||
+      !std::isfinite(lightSpeed)||lightSpeed<=0.0||speedMPerS>=lightSpeed) {
+    result.status=Status::Error(StatusCode::InvalidArgument,
+        "relativistic gyrofrequency requires finite 0<=v<c");
+    return result;
+  }
+  result=GyrofrequencyRadPerS(magneticFieldT,species);
+  if(!result.status.ok())return result;
+  const double beta=speedMPerS/lightSpeed;
+  result.value*=std::sqrt((1.0-beta)*(1.0+beta));
+  if(!std::isfinite(result.value))result.status=Status::Error(
+      StatusCode::InvalidCoefficient,"relativistic gyrofrequency is not finite");
+  return result;
+}
+
 ScalarResult LarmorRadiusM(double perpendicularMomentumKgMPerS,
                            double magneticFieldT,
                            const SpeciesProperties& species) {
@@ -265,14 +284,21 @@ PitchAngleResult EvaluateJokipiiSlab(
     return Error(spectrumStatus.code, spectrumStatus.message);
   if (!speciesStatus.ok()) return Error(speciesStatus.code, speciesStatus.message);
   if (!std::isfinite(speedMPerS) || speedMPerS <= 0.0 ||
+      speedMPerS>=SpeedOfLightMPerS||
       !std::isfinite(mu) || std::fabs(mu) > 1.0) {
     return Error(StatusCode::InvalidArgument,
-                 "Jokipii kernel requires v>0 and |mu|<=1");
+                 "Jokipii kernel requires 0<v<c and |mu|<=1");
   }
 
   PitchAngleResult result;
   result.valueState = ValueState::Finite;
-  const ScalarResult omega = GyrofrequencyRadPerS(input.magneticFieldT, species);
+  // Relativistic gyroresonance: k_res=Omega/(v|mu|)=|q|B/(p|mu|).
+  // This retains the existing weak-turbulence magnetostatic slab QLT model;
+  // correcting relativistic kinematics does not add resonance broadening or
+  // change its finite-band/no-resonance policies. See Baring et al. (2017),
+  // MNRAS464,4875,Eq19,doi:10.1093/mnras/stw2344 (CGS converted to SI).
+  const ScalarResult omega = RelativisticGyrofrequencyRadPerS(
+      input.magneticFieldT,species,speedMPerS,SpeedOfLightMPerS);
   if (!omega.status.ok()) return Error(omega.status.code, omega.status.message);
   const double kMin = ScaledWavenumber(
       spectrum.kMinAtReferencePerM, spectrum.referenceRadiusM,
@@ -314,7 +340,14 @@ PitchAngleResult EvaluateJokipiiSlab(
   const double normalization = (index - 1.0) * input.deltaB2T2 /
       normalizationDenominator;
   const double powerT2M = normalization * std::pow(kRes, -index);
-  const double amplitude = (Pi / 2.0) * omega.value * omega.value *
+  // This legacy scalar API supplies total real transverse variance and is
+  // symmetric under mu -> -mu; it can represent only equal L/R magnetic
+  // helicities. A particle resonates with one helicity, P_h=P_total/2.
+  // Random-phase Lorentz/Kubo diffusion is (pi/2)*Omega^2*(1-mu^2)*P_h/
+  // (B0^2*|v mu|), hence pi/4 for this positive-k total-variance spectrum.
+  // This helicity factor is separate from deltaB^2=2*mu0*W_B and from the
+  // Alfvén-wave equipartition relation E_total=2*E_magnetic (RWN01/RWN02).
+  const double amplitude = (Pi / 4.0) * omega.value * omega.value *
       powerT2M /
       (input.magneticFieldT * input.magneticFieldT * resonantSpeed);
   result.dMuMuPerS = amplitude * (1.0 - mu * mu);
@@ -347,11 +380,14 @@ PitchAngleResult EvaluateFlorinskiySlab(
   const Status speciesStatus = ValidateSpecies(species);
   if (!inputStatus.ok()) return Error(inputStatus.code, inputStatus.message);
   if (!speciesStatus.ok()) return Error(speciesStatus.code, speciesStatus.message);
+  if(!input.branchDirectionsKnown)return Error(StatusCode::UnsupportedConfiguration,
+      "dynamic branch-resolved QLT requires declared wave directions relative to B");
   if (!std::isfinite(parameters.spectralIndex) ||
       parameters.spectralIndex <= 1.0 ||
       !std::isfinite(parameters.parallelCorrelationLengthM) ||
       parameters.parallelCorrelationLengthM <= 0.0 ||
       !std::isfinite(speedMPerS) || speedMPerS <= 0.0 ||
+      speedMPerS>=SpeedOfLightMPerS||
       !std::isfinite(mu) || std::fabs(mu) > 1.0) {
     return Error(StatusCode::InvalidArgument,
                  "Florinskiy kernel received invalid parameters, speed, or mu");
@@ -401,6 +437,17 @@ PitchAngleResult EvaluateFlorinskiySlab(
                  "Florinskiy coefficient or bounded derivative is invalid");
   }
   result.status = Status::Ok();
+  return result;
+}
+
+PitchAngleResult EvaluateFlorinskiyAlongFieldLine(
+    const LocalInputView& input,const FlorinskiyParameters& parameters,
+    const SpeciesProperties& species,double speedMPerS,double muAlongLine) {
+  if(input.magneticPolarityAlongLine!=1&&input.magneticPolarityAlongLine!=-1)
+    return Error(StatusCode::InvalidArgument,"field-line magnetic polarity must be +1 or -1");
+  auto result=EvaluateFlorinskiySlab(input,parameters,species,speedMPerS,
+      input.magneticPolarityAlongLine*muAlongLine);
+  result.dDmuMuDmuPerS*=input.magneticPolarityAlongLine;
   return result;
 }
 

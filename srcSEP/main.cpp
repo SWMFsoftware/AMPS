@@ -40,6 +40,7 @@
 #include "util/sep_cli.h"
 #include "util/sep_background_runtime.h"
 #include "util/sep_initialization.h"
+#include "util/sep_native_startup_input.h"
 #include "util/sep_run_configuration.h"
 #include "debug/sep_debug_fieldline_datum.h"
 
@@ -49,6 +50,8 @@ void amps_init();
 void amps_init_mesh();
 void amps_time_step();
 void install_reduced_background_on_field_lines(double epochS);
+void install_swcme_background_on_field_lines(double epochS,double validUntilS,
+                                             bool publishMetadata);
 
 /**
  * Prepare and publish SWCME at the one authoritative PIC clock epoch.
@@ -79,9 +82,8 @@ void publish_sw1d_for_particle_step(double epoch_seconds, double dt,
     exit(__LINE__, __FILE__, message.str().c_str());
   }
 
-  SEP::Background::PublishModelOwnedSnapshot(
-      SEP::Background::Provider::Swcme, epoch_seconds, epoch_seconds + dt,
-      "standalone SWCME StepState and Parker field-line background");
+  install_swcme_background_on_field_lines(
+      epoch_seconds,epoch_seconds+dt,true);
 
   // One call does everything: n, V, Br, Bphi, |B|, ∇·V → Tecplot POINT file
   if ((PIC::ThisThread==0)&&((iteration+1)%10==0)) {
@@ -102,7 +104,21 @@ void publish_sw1d_for_particle_step(double epoch_seconds, double dt,
 }
 
 int main(int argc,char **argv) {
-  //      MPI_Init(&argc,&argv);
+  // Help/list/parse exits must not initialize MPI. Once a test campaign or the
+  // native model does initialize it, every normal return (including a later
+  // usage/report failure) must finalize collectively. Existing explicit normal
+  // finalizers remain valid; the guard observes MPI_Finalized and then does no
+  // work. Coupled library entry points do not enter this standalone main.
+  struct FinalizeStandaloneMpi {
+    ~FinalizeStandaloneMpi() {
+      int initialized=0,finalized=0;
+      MPI_Initialized(&initialized);
+      if(initialized) {
+        MPI_Finalized(&finalized);
+        if(!finalized)MPI_Finalize();
+      }
+    }
+  } finalizeStandaloneMpi;
 
   // --------------------------------------------------------------------------
   // Parse standalone-driver command-line options before the AMPS/SEP model is
@@ -142,26 +158,29 @@ int main(int argc,char **argv) {
 
   const bool componentTestMode =
       SEP::Util::CLI::IsComponentTestExecutionRequested(cli_options);
+  SEP::Transport::PICAdapter::SetStandaloneRunPurpose(componentTestMode?
+      SEP::Transport::PICAdapter::RunPurpose::ControlledDiagnostic:
+      SEP::Transport::PICAdapter::RunPurpose::Production);
   std::vector<const SEP::Testing::Descriptor*> selectedComponentTests;
   if (componentTestMode) {
     try {
       selectedComponentTests = componentTestRegistry.Select(
           cli_options.testIds, cli_options.testGroups,
-          cli_options.runAllTests);
+          cli_options.runAllTests,cli_options.testExpressions);
     }
     catch (const std::exception& exception) {
       if (PIC::ThisThread == 0) {
         std::cerr << "ERROR: cannot resolve component-test selection: "
                   << exception.what() << '\n';
       }
-      return 1;
+      return 2;
     }
 
     if (selectedComponentTests.empty()) {
       if (PIC::ThisThread == 0) {
         std::cerr << "ERROR: component-test selection resolved to no tests.\n";
       }
-      return 1;
+      return 2;
     }
 
     if (PIC::ThisThread == 0) {
@@ -180,6 +199,13 @@ int main(int argc,char **argv) {
     testContext.inputPath = cli_options.testInputPath;
     testContext.artifactDirectory = cli_options.testArtifactDirectory;
     SEP::Testing::SetExecutionContext(testContext);
+    std::string campaignError;
+    if(!ConfigureComponentTestCampaign(cli_options,&campaignError)) {
+      if(PIC::ThisThread==0)
+        std::cerr<<"ERROR: component-test campaign preflight failed: "
+                 <<campaignError<<'\n';
+      return 2;
+    }
 
     // Initialization-free callbacks are executed immediately.  This makes
     // component tests of pure formulas genuinely lightweight and proves that
@@ -193,18 +219,33 @@ int main(int argc,char **argv) {
   }
 
 
+  // Only an explicitly opted-in, individually selected native fixture may
+  // interpret --test-input as the full scientific startup record. Other tests
+  // keep their existing manifest protocols, and --input remains forbidden in
+  // test mode by the production CLI parser. Freeze the effective path locally:
+  // the turbulence-layer CLI reparse below replaces cli_options, but must not
+  // change the physical record already selected for LoadFile/Install.
+  const bool nativeStartupInput = componentTestMode &&
+      selectedComponentTests.size()==1 && !cli_options.testInputPath.empty() &&
+      std::find(selectedComponentTests.front()->tags.begin(),
+                selectedComponentTests.front()->tags.end(),
+                SEP::Testing::NativeStartupInput::DescriptorTag()) !=
+          selectedComponentTests.front()->tags.end();
+  const std::string effectiveInitializationPath = nativeStartupInput
+      ? cli_options.testInputPath : cli_options.inputPath;
+
   // Parse and freeze the optional mesh/field-line initialization contract
   // before the historical post-compile parser, SWCME setup, MPI, or AMPS mesh
   // allocation.  Failure is therefore atomic: no partially initialized AMPS
-  // state survives a malformed scientific input.  An absent --input leaves
+  // state survives a malformed scientific input. An absent effective path leaves
   // HasActive()==false and the legacy mesh path remains unchanged.
   // True when the effective mover came from application.sep.transport;
   // recorded as InputFile provenance in the WP30 run configuration below.
   bool particleMoverFromInputFile = false;
-  if (!cli_options.inputPath.empty()) {
+  if (!effectiveInitializationPath.empty()) {
     SEP::Initialization::Configuration initialization;
     const SEP::Transport::Status loaded =
-        SEP::Initialization::LoadFile(cli_options.inputPath, &initialization);
+        SEP::Initialization::LoadFile(effectiveInitializationPath, &initialization);
     if (!loaded.ok()) {
       if (PIC::ThisThread == 0)
         std::cerr << "ERROR: initialization input: " << loaded.message << '\n';
@@ -227,7 +268,7 @@ int main(int argc,char **argv) {
         if (PIC::ThisThread == 0)
           std::cerr << "ERROR: the command line is incompatible with "
                        "application.sep.turbulence in "
-                    << cli_options.inputPath << '\n';
+                    << effectiveInitializationPath << '\n';
         return 1;
       }
       cli_options = layered;
@@ -308,8 +349,9 @@ int main(int argc,char **argv) {
       return 1;
     }
     if (PIC::ThisThread == 0)
-      std::cout << "Initialization input=" << cli_options.inputPath
-                << (cli_options.inputPathFromDefault ? " (default ./amps.in)" : "")
+      std::cout << "Initialization input=" << effectiveInitializationPath
+                << (nativeStartupInput ? " (opted-in native --test-input)"
+                    : cli_options.inputPathFromDefault ? " (default ./amps.in)" : "")
                 << " fingerprint="
                 << SEP::Initialization::Fingerprint(initialization) << '\n';
 
@@ -385,7 +427,7 @@ int main(int argc,char **argv) {
       SEP::SW1DAdapter::ParameterAssignment assignment;
       assignment.key = raw.key;
       assignment.value = raw.value;
-      assignment.origin = cli_options.inputPath;
+      assignment.origin = effectiveInitializationPath;
       assignment.line = raw.line;
       swcmeRequest.input_assignments.push_back(assignment);
     }
@@ -488,7 +530,7 @@ int main(int argc,char **argv) {
       cli_options.reducedShockEventPath.empty() &&
       runConfiguration.shockModel.value != SEP::Run::ShockModel::Swcme1d) {
     if (PIC::ThisThread==0)
-      std::cerr<<"ERROR: "<<cli_options.inputPath<<" declares the SWCME "
+      std::cerr<<"ERROR: "<<effectiveInitializationPath<<" declares the SWCME "
                <<"background and shock, but the post-compile input selects "
                <<"the analytical shock model (use --shock-model to override)\n";
     return 1;
@@ -693,6 +735,25 @@ int main(int argc,char **argv) {
   // here: doing so previously made startup metadata disagree with the source
   // that the user had requested.
   SEP::Util::CLI::ApplyTurbulenceOptions(cli_options);
+  // Component fixtures are closed numerical experiments and never invoke the
+  // legacy Cartesian box sources. Disable that source explicitly for this
+  // standalone scope; production must pass its own field-line source preflight.
+  struct ControlledSourceScope {
+    bool saved;
+    explicit ControlledSourceScope(bool diagnostic)
+        :saved(SEP::BoundingBoxInjection::BoundaryInjectionMode) {
+      if(diagnostic)SEP::BoundingBoxInjection::BoundaryInjectionMode=false;
+    }
+    ~ControlledSourceScope() {SEP::BoundingBoxInjection::BoundaryInjectionMode=saved;}
+  } controlledSourceScope(componentTestMode);
+  const auto closurePreflight=SEP::Transport::PICAdapter::ProductionClosurePreflight();
+  if(!cli_options.initializationOnly&&!closurePreflight.ok()) {
+    if(PIC::ThisThread==0)std::cerr<<"ERROR: "<<closurePreflight.message<<'\n';
+    return 1;
+  }
+  if(componentTestMode&&PIC::ThisThread==0)
+    std::cout<<"Physics execution purpose=controlled-diagnostic; "
+        "polarized production closure=unqualified; Cartesian box source=disabled\n";
   if (PIC::ThisThread == 0) {
     SEP::Util::CLI::PrintTurbulenceOptions(cli_options, std::cout);
     SEP::Mover::PrintRuntimeConfiguration(std::cout);
@@ -791,8 +852,13 @@ int main(int argc,char **argv) {
         SEP::Background::PrepareSnapshotForParticleStep();
       }
     }
-    return RunSelectedComponentTests(selectedComponentTests, std::cout,
+    const int testExitCode=RunSelectedComponentTests(selectedComponentTests, std::cout,
         cli_options.testJsonPath, cli_options.testJunitPath);
+    // This branch has initialized the native MPI model. All ranks must finish
+    // the test/report collectives and finalize before returning to mpiexec;
+    // otherwise a fully passing report still exits as an abnormal MPI job.
+    MPI_Finalize();
+    return testExitCode;
   }
 
   // --------------------------------------------------------------------------
@@ -831,8 +897,8 @@ int main(int argc,char **argv) {
   // and record its one-time handoff; treating that mode as an ordinary startup
   // would destroy the very SWMF state it is required to inherit.  The
   // configurable prescribed amplitude is reused as the initial self-consistent
-  // deltaB/B; the named 1-AU field constant is only a fallback for malformed or
-  // missing local magnetic-field values inside the legacy initializer.
+  // deltaB/B. The named 1-AU field constant is used only when reference-field
+  // scaling is explicitly selected; malformed native fields reject before writes.
   const SEP::Turbulence::Source turbulenceSource =
       SEP::Turbulence::ActiveConfiguration().source;
   const bool locallyOwnedFromStartup =
@@ -895,63 +961,8 @@ int main(int argc,char **argv) {
   }
 
 
-  //set background plasma density
-auto set_background_plasma_density = []() {
-    // reference density at 1 AU [m⁻³]
-    constexpr double n0 = 5.0e6;
-    // 1 astronomical unit in meters
-    constexpr double AU = 1.495978707e11;
-
-    // Loop over all field lines
-    for (int fldIdx = 0; fldIdx < PIC::FieldLine::nFieldLine; ++fldIdx) {
-        auto fieldLine = &PIC::FieldLine::FieldLinesAll[fldIdx];
-        if (!fieldLine) continue;
-
-        int nSeg = fieldLine->GetTotalSegmentNumber();
-        if (nSeg < 1) continue;
-
-        // Loop over all segments in this field line
-        for (int segIdx = 0; segIdx < nSeg; ++segIdx) {
-            auto seg = fieldLine->GetSegment(segIdx);
-            if (!seg) continue;
-
-            // Process both end‐points (left & right) of the segment
-            PIC::FieldLine::cFieldLineVertex* vertices[2] = { seg->GetBegin(), seg->GetEnd() };
-            for (auto vtx : vertices) {
-                if (!vtx) continue;
-
-                // get pointer to {x,y,z} [m]
-                double* X = vtx->GetX();
-                // compute radial distance from Sun [m]
-                double r = std::sqrt(X[0]*X[0] + X[1]*X[1] + X[2]*X[2]);
-
-                // scale density as n0/(r/AU)^2
-                double density = n0 / ((r/AU) * (r/AU));
-
-                // store it in the vertex
-                vtx->SetPlasmaDensity(density); //SetDatum(density, PIC::FieldLine::DatumAtVertexPlasmaDensity);
-
-                // The analytic profile is static: the previous background epoch
-                // equals the current one (as install_reduced_background_on_field_lines()
-                // does for its first generation). The movers read both epochs
-                // (SEP::Transport::PICAdapter::EvaluateLocalBackground()) and stop
-                // with "current and previous plasma density must be positive"
-                // when the previous one is left unset (zero).
-                vtx->SetDatum(PIC::FieldLine::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,density);
-            }
-        }
-    }
-};
-
-
- // Analytic Parker runs own their plasma profile and may create the r^-2
- // density used by the legacy field-line geometry.  SWCME and SWMF provide
- // authoritative plasma state; overwriting either provider here previously
- // made the snapshot metadata disagree with the arrays consumed by movers.
- if (SEP::Background::ConfiguredProvider() ==
-     SEP::Background::Provider::Analytic) {
-   set_background_plasma_density();
- }
+  // The analytic density/current+previous profile is installed by shared
+  // amps_init(), before initialization output and native component tests.
 
   // Calculate turbulence wave enregy density from wave energy integrated over the segments of the magnetic tube:
 auto CalculateWaveEnergyDensity = [&]() {

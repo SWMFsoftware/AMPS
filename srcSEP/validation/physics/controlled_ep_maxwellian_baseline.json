@@ -1,0 +1,27 @@
+{
+  "provenance": "Explicit controlled proton-electron verification equilibrium; n, total B, Tp and separately recorded Te use the documented SWCME ambient baseline; Maxwellian distributions are the user-selected study model, not an inferred production EOS or measured distribution.",
+  "distribution": "isotropic-nonrelativistic-Maxwellian",
+  "propagation": "parallel",
+  "proton_density_m3": "5000000",
+  "electron_density_m3": "5000000",
+  "magnetic_field_t": "5e-9",
+  "proton_temperature_k": "120000",
+  "electron_temperature_k": "120000",
+  "proton_mass_kg": "1.67262192369e-27",
+  "electron_mass_kg": "9.1093837015e-31",
+  "charge_magnitude_c": "1.602176634e-19",
+  "light_speed_mps": "299792458",
+  "vacuum_permeability_hpm": "1.256637062e-6",
+  "boltzmann_jpk": "1.380649e-23",
+  "proton_drift_mps": "0",
+  "electron_drift_mps": "0",
+  "context": {
+    "baseline_source": "src/models/swcme/swcme_defaults.hpp: N1AU_CM3, B1AU_TOTAL_NT, T_K and ELECTRON_T_K",
+    "production_eos_scope": "The documented production default closure is ProtonOnly; it does not establish an electron Maxwellian or regional downstream Te.",
+    "constant_scope": "The decimal constants above are explicit verification inputs. They are not asserted identical to every compiled AMPS or SWCME constant set.",
+    "wave_amplitude_scope": "The production initializer's deltaB/B=0.3 is a separate amplitude-study input. This linear dispersion calculation cannot qualify finite fluctuation amplitude.",
+    "native_grid_scope": "The reused default native k centers are 1e-8..1e-2 m^-1, N=128; log-bin outer edges extend by half the center spacing. No automatic support truncation or MHD acceptance limits are selected.",
+    "physical_error_acceptance_budget": null,
+    "physical_production_qualified": false
+  }
+}

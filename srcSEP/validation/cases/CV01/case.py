@@ -15,6 +15,16 @@ import time
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 
+# Native realizations retain their own fixed-name PIC scratch. Resolve the
+# adapter by code location because this module is dynamically loaded by path.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+try:
+    from sep_native_execution import (create_native_work_directory,
+                                      isolate_native_arguments)
+finally:
+    sys.path.pop(0)
+
+
 CASE_ID = "CV01"
 
 
@@ -143,6 +153,7 @@ def _run(command: Sequence[str], cwd: Path, log: Path,
     print("RUN:", shlex.join(command), flush=True)
     with log.open("a", encoding="utf-8") as stream:
         stream.write("COMMAND: " + " ".join(command) + "\n")
+        stream.write("WORKING_DIRECTORY: " + str(cwd) + "\n")
         try:
             completed = subprocess.run(command, cwd=str(cwd), text=True,
                                        stdout=subprocess.PIPE,
@@ -631,7 +642,13 @@ def run_case(*, source_root: Path, input_path: Path, output_dir: Path,
                 "--initial-particles", str(particles_path), "--dt-s", str(dt_s),
                 "--boundary", str(boundary), "--output", str(reference_path),
             ]
-            _run(model_command, source_root, log_path, timeout=timeout)
+            # Each boundary/time-step realization has independent native
+            # scratch. Copy the exact reviewed packet and manifest before
+            # changing cwd; the independent reference keeps its old explicit
+            # source-root contract and never consumes PIC scratch files.
+            work = create_native_work_directory(native_dir, CASE_ID)
+            model_command, _ = isolate_native_arguments(model_command, work, source_root)
+            _run(model_command, work, log_path, timeout=timeout)
             _validate_native_report(native_json, model_path)
             _run(reference_command, source_root, log_path, timeout=timeout)
             commands.extend((model_command, reference_command))

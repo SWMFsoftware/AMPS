@@ -238,6 +238,8 @@ FocusedTransportMfpIncrement AdvanceFocusedTransportMfp(
       !std::isfinite(background.velocityDivergencePerS) ||
       !std::isfinite(background.fieldAlignedStrainPerS) ||
       !std::isfinite(background.alfvenSpeedMPerS) ||
+      (background.magneticPolarityAlongLine!=1&&
+       background.magneticPolarityAlongLine!=-1)||
       std::fabs(background.alfvenSpeedMPerS) >= speedOfLightMPerS ||
       (!std::isnan(initial.remainingOpticalDepth) &&
        (!std::isfinite(initial.remainingOpticalDepth) ||
@@ -344,6 +346,15 @@ FocusedTransportMfpIncrement AdvanceFocusedTransportMfp(
         rates0.totalPerS, rates1.totalPerS, trialIntervalS, trialIntervalS);
     const bool eventOccurs = trialHazard >= result.state.remainingOpticalDepth &&
         trialHazard > 0.0;
+    // Event identity is persistent physical bookkeeping. Wrapping it would
+    // reuse a completed event key after restart/reduction. Reject before the
+    // deterministic/event candidate consumes state or any scattering variate.
+    if (eventOccurs && result.state.nextEventIndex ==
+        std::numeric_limits<std::uint64_t>::max()) {
+      result.status = Status::Error(StatusCode::StepUnderflow,
+          "persistent scattering-event identity exhausted");
+      return result;
+    }
     const double intervalS = eventOccurs
         ? LocateHazardEvent(result.state.remainingOpticalDepth,
                             rates0.totalPerS, rates1.totalPerS,
@@ -414,7 +425,8 @@ FocusedTransportMfpIncrement AdvanceFocusedTransportMfp(
       const WaveFrameScatterResult scattered =
           ScatterIsotropicallyInWaveFrame(
               finalSpeed.value, result.state.mu,
-              branchSign * std::fabs(background.alfvenSpeedMPerS),
+              branchSign * background.magneticPolarityAlongLine *
+                  std::fabs(background.alfvenSpeedMPerS),
               speedOfLightMPerS, random);
       if (!scattered.status.ok()) {
         result.status = scattered.status;

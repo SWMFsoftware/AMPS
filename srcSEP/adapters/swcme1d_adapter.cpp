@@ -483,8 +483,18 @@ QueryResult QueryAtRadius(double radius_m, bool apply_sheath_clamp) {
     speed_m_s = std::min(std::max(speed_m_s, minimum_speed), maximum_speed);
   }
 
-  const BackgroundSample sample(number_density_m3, speed_m_s,
-                                divergence_s_inv);
+  // Composition is explicitly frozen in the canonical prepared state.  The
+  // single-fluid density compression applies to every species. Regional
+  // pressure/heating, however, is not exposed by the canonical 1-D API:
+  // advertise thermal fields only in its exact ambient SHOCK_ONLY branch.
+  const auto thermodynamics=swcme::solarwind::thermodynamic_state(
+      state.common.solar_wind,number_density_m3);
+  const bool thermal_available=
+      state.region_config.mode==swcme::regions::Mode::ShockOnly;
+  const BackgroundSample sample(number_density_m3,speed_m_s,divergence_s_inv,
+      radial_field_t,azimuthal_field_t,thermodynamics.mass_density_kg_m3,
+      thermal_available,thermal_available?thermodynamics.pressure_Pa:0.0,
+      thermal_available?state.common.solar_wind.T_K:0.0);
   const Status validation = ValidateSample(sample);
   if (!validation.ok()) {
     std::string field = "background-sample";

@@ -1,4 +1,5 @@
 #include "sep.h"
+#include "source_capabilities.h"
 //analytic shock for 2D case 
 
 //the shoch is represented with a schere 
@@ -123,6 +124,9 @@ int SEP::ParticleSource::ShockWaveSphere::GetInjectionSurfaceElement(double *x) 
 
 //__attribute__((optimize("O0")))
 long int SEP::ParticleSource::ShockWaveSphere::InjectionModel() {
+  const auto sourceStatus=SEP::Sources::CartesianBirthPreflight(
+      SEP::Sources::CartesianSource::SphericalShock);
+  if(!sourceStatus.ok())exit(__LINE__,__FILE__,sourceStatus.message.c_str());
   int res=0;
   long int newParticle;
   PIC::ParticleBuffer::byte *newParticleData;

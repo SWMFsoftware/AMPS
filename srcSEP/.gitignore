@@ -1,0 +1,20 @@
+# Application sources and immutable reviewed fixtures belong in this tree.
+# Native builds and reproducible campaign products belong outside the source.
+*.o
+*.a
+*.d
+*.gcda
+*.gcno
+*.profraw
+*.pyc
+__pycache__/
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+controlled-*-results.json
+controlled-*-results.xml
+step15-*-results.json
+step15-*-results.xml
+test_output/
+output/

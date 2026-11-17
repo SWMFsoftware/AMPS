@@ -3,6 +3,7 @@
 
 #include "util/sep_common_header_path.h"
 #include SRCSEP_SEP_COMMON_HEADER(sep_transport_common.h)
+#include <vector>
 
 namespace SEP {
 namespace Turbulence {
@@ -38,6 +39,18 @@ struct ShockSourceDiagnostics {
   std::uint64_t invalidGeometry = 0;
   std::uint64_t invalidPhysics = 0;
 };
+
+// Exact native owner state at a completed application-step boundary. Source
+// rows are retained even after import because the existing adapter clears its
+// per-step history at the next Advance entry, rather than at the end.
+struct CheckpointCache {
+  ProductionLedger ledger;
+  std::vector<ShockContribution> shockContributions;
+  ShockSourceDiagnostics shockDiagnostics;
+};
+CheckpointCache CaptureCheckpointCache();
+Transport::Status ValidateCheckpointCache(const CheckpointCache& cache);
+void RestoreCheckpointCache(CheckpointCache* cache);
 
 // Shock adapters enqueue typed, immutable source records.  The next Advance
 // imports them into CellState::pendingShock*, after which only the common core

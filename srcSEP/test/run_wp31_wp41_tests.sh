@@ -51,7 +51,14 @@ grep -q 'PlanAdvance' "$src_root/turbulence_production_adapter.cpp" || \
   grep -q 'Turbulence::Advance' "$src_root/turbulence_production_adapter.cpp"
 grep -q 'populationControl.spatialBins' "$src_root/main_lib.cpp"
 grep -q 'ConfigurationMatrix::Preflight' "$src_root/util/sep_cli.cpp"
-grep -q 'PICAdapter::Advance' "$src_root/main.cpp"
+# Standalone and coupled callers share amps_time_step(); only that common
+# driver may advance turbulence. Requiring another Advance in main.cpp would
+# certify a double application of the physical sources and transport.
+grep -q 'amps_time_step[[:space:]]*(' "$src_root/main.cpp"
+if grep -q 'PICAdapter::Advance[[:space:]]*(' "$src_root/main.cpp"; then
+  echo "FAIL WP41-SOURCE: standalone main duplicates turbulence evolution" >&2
+  exit 1
+fi
 grep -q 'PICAdapter::Advance' "$src_root/main_lib.cpp"
 flush_owners=$(grep -R 'FlushWaveContributions[[:space:]]*(' \
   "$src_root"/*.cpp "$src_root"/util/*.cpp | \

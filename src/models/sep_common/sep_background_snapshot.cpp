@@ -164,6 +164,37 @@ void SnapshotStore::Publish(const BackgroundSnapshot& snapshot) {
   PublishLocked(snapshot, false, snapshot.provider());
 }
 
+void SnapshotStore::ValidateCheckpointRestore(const BackgroundSnapshot& snapshot) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if(active_read_phases_.load(std::memory_order_acquire)!=0)
+    throw std::logic_error("checkpoint restore requires a quiescent background store");
+  if(!current_||current_->provider()!=snapshot.provider()||
+      current_->ownership()!=snapshot.ownership()||
+      current_->configuration_fingerprint()!=snapshot.configuration_fingerprint())
+    throw std::logic_error("checkpoint cannot change background provider, ownership, or configuration");
+}
+
+void SnapshotStore::RestoreCheckpoint(const BackgroundSnapshot& snapshot) {
+  // Allocate the immutable replacement before taking ownership away from the
+  // live state. Validate again under this lock so a read phase cannot begin in
+  // the interval between the application's collective preflight and commit.
+  const std::shared_ptr<const BackgroundSnapshot> staged(
+      new BackgroundSnapshot(snapshot));
+  RestoreCheckpoint(staged);
+}
+
+void SnapshotStore::RestoreCheckpoint(
+    const std::shared_ptr<const BackgroundSnapshot>& staged) {
+  if(!staged)throw std::logic_error("missing staged checkpoint snapshot");
+  std::lock_guard<std::mutex> lock(mutex_);
+  if(active_read_phases_.load(std::memory_order_acquire)!=0||!current_||
+      current_->provider()!=staged->provider()||
+      current_->ownership()!=staged->ownership()||
+      current_->configuration_fingerprint()!=staged->configuration_fingerprint())
+    throw std::logic_error("checkpoint background changed after collective preflight");
+  current_=staged;
+}
+
 void SnapshotStore::PublishHandoff(
     const BackgroundSnapshot& snapshot,
     Provider expected_previous_provider) {

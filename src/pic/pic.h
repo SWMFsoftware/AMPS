@@ -60,6 +60,7 @@
 
 #include "global.h"
 #include "pic_background_update_mode.h"
+#include "pic_field_line_population.h"
 #include "FluidPicInterface.h"
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -633,7 +634,26 @@ namespace PIC {
     void PopulateSegment(int spec,double NumberDensity,double Temparature,double* BulkVelocity,double Volume,int iSegment,int iFieldLine,int nMaxInjectedParticles=-1);
 
     //inject particles with Maxwellian distrivution at the beginning of a field line
-    int InjectMaxwellianLineBeginning(int spec,double NumberDensity,double Temperature,double* BulkVelocity,double InjectionArea,int iFieldLine,int nMaxInjectedParticles);
+    // Optional source-only birth hook. Generic CloneParticle intentionally
+    // remains byte-exact for migration/restart; an application can initialize
+    // new history only at this actual fresh-injection boundary. Macro indices
+    // are local to the caller's immutable logical source event, never rank ids.
+    int InjectMaxwellianLineBeginning(int spec,double NumberDensity,double Temperature,double* BulkVelocity,double InjectionArea,int iFieldLine,int nMaxInjectedParticles,
+        void (*postFreshParticle)(long int,std::uint64_t,void*)=NULL,
+        void* sourceContext=NULL);
+
+    struct MaxwellianLineBeginningPreflight {
+      enum class Code { Ready, NonOwner, InvalidInput, UnsupportedConfiguration };
+      Code code=Code::InvalidInput;
+      int ownerRank=-1;
+      double timeStepS=0.0;
+      double particleWeight=0.0; // represented physical particles/macroparticle
+      std::string message;
+    };
+    // Observational: no RNG draw, allocation, provider write, or hidden remote
+    // AMR lookup. FL attachment follows the physical segment owner. Local
+    // numerics require an allocated block on that owner or explicit rejection.
+    MaxwellianLineBeginningPreflight PreflightMaxwellianLineBeginning(int spec,int iFieldLine);
 
     class cParticleFieldLineData {
     public:

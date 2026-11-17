@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -29,6 +30,9 @@ int SEP::ParticleMover_Parker(
                                    "Parker timestep must be finite and nonnegative"));
   }
 
+  status = PICAdapter::PrepareParticleStep(&context, dtTotal, &dtTotal);
+  if (!status.ok()) AbortMoverStatus(status);
+
   const double initialSpeed = std::hypot(context.state.vParallelMPerS,
                                          context.state.vNormalMPerS);
   ScalarResult momentum = MomentumFromSpeed(
@@ -38,9 +42,17 @@ int SEP::ParticleMover_Parker(
   double elapsedS = 0.0;
   double currentSpeed = initialSpeed;
   std::uint64_t eventIndex = 0;
+  KeyedRandomStream random(PICAdapter::CampaignRandomSeed,
+                           context.stableParticleId, 7, 0);
+  status = PICAdapter::ResumeRandomStream(
+      context, PICAdapter::StochasticOperator::Parker, &random, &eventIndex);
+  if (!status.ok()) AbortMoverStatus(status);
   StepDiagnostics stepDiagnostics;
 
   while (elapsedS < dtTotal) {
+    if (eventIndex == std::numeric_limits<std::uint64_t>::max())
+      AbortMoverStatus(Status::Error(StatusCode::StepUnderflow,
+          "Parker accepted-interval identity exhausted"));
     const NumericalTolerances& tolerances = ActiveNumericalTolerances();
     PICAdapter::LocalBackground local;
     status = PICAdapter::EvaluateLocalBackground(context, &local);
@@ -66,10 +78,8 @@ int SEP::ParticleMover_Parker(
           "parker-diffusion",
           target * target / (2.0 * coefficient.kappaParallelM2PerS)));
     }
-    const ScalarResult snapshotLimit = ComposeSnapshotValidityLimit(
-        context.particleStepEpochS, elapsedS,
-        context.particleStepEpochS + local.snapshotSecondsRemaining,
-        context.snapshotGeneration, local.generation);
+    const ScalarResult snapshotLimit = PICAdapter::ParticleSnapshotRemaining(
+        context, elapsedS, local.generation);
     if (!snapshotLimit.status.ok() || snapshotLimit.value <= 0.0)
       AbortMoverStatus(snapshotLimit.status.ok()
           ? Status::Error(StatusCode::StepUnderflow,
@@ -78,15 +88,13 @@ int SEP::ParticleMover_Parker(
     if (std::isfinite(snapshotLimit.value))
       limits.push_back(StepLimit("parker-snapshot", snapshotLimit.value));
 
-    const ScalarResult selected = SelectSubstep(
-        dtTotal - elapsedS, limits, tolerances.minimumStepS, &stepDiagnostics);
+    const ScalarResult selected = PICAdapter::SelectParticleSubstep(
+        context, elapsedS, limits, tolerances.minimumStepS, &stepDiagnostics);
     if (!selected.status.ok()) AbortMoverStatus(selected.status);
 
-    // The stream key contains no rank or thread identifier.  For fixed campaign
-    // seed, particle handle, mover operator, and substep index, the stochastic
-    // displacement is invariant under OpenMP/MPI scheduling.
-    KeyedRandomStream random(PICAdapter::CampaignRandomSeed,
-                             context.stableParticleId, 7, eventIndex);
+    // One resumed stream spans every shell and outer call for this particle.
+    // Its complete state is staged only after the successful mover call; a
+    // repeated call must not replay the first Gaussian increment.
     // Preserve the established cooling switch without introducing a second
     // equation: disabling cooling supplies zero divergence to the same exact
     // plasma-frame momentum operator.
@@ -184,6 +192,9 @@ int SEP::ParticleMover_Parker(
   // Parker feedback is intentionally restricted to the existing isotropic
   // streaming closure.  When that subsystem is inactive, the mover remains
   // one-way coupled and never mutates wave energy directly.
+  status = PICAdapter::StageRandomStream(
+      &context, PICAdapter::StochasticOperator::Parker, random, eventIndex);
+  if (!status.ok()) AbortMoverStatus(status);
   status = PICAdapter::CommitAndAttach(context);
   if (!status.ok()) AbortMoverStatus(status);
   return _PARTICLE_MOTION_FINISHED_;

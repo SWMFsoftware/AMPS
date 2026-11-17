@@ -70,10 +70,11 @@ struct KappaSample {
 //
 //   massKg, signedChargeC     species rest mass [kg] and charge [C];
 //   momentumKgMPerS           total momentum magnitude [kg m s^-1];
-//   positionM[3]              Cartesian position [m] in srcSEP's
-//                             heliocentric frame (Sun at (0,0,0); a field
-//                             line need not start at the origin), so |x| is
-//                             the heliocentric radius;
+//   positionM[3]              solar-relative Cartesian position [m], already
+//                             translated by the native background provider's
+//                             declared origin. |x| is heliocentric radius;
+//                             arbitrary mesh-global coordinates are invalid.
+//                             Translation does not rotate the vector basis;
 //   meanFieldT[3]             background magnetic field vector [T];
 //   timeS                     simulation time of the background snapshot [s];
 //   backgroundRevision        snapshot generation, copied to provenance.

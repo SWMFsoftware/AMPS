@@ -1,0 +1,183 @@
+{
+  "schema": "srcsep-weak-alfven-domain-study-v1",
+  "status": "in-progress: independent normalization, parallel warm-plasma dispersion and finite-time Lorentz response/refinement studies executed; no production domain limits selected",
+  "authorization": "User adopted small-amplitude nondispersive MHD Alfven closure and requested a convergence study before choosing domain limits, 2026-11-16.",
+  "plan_documents": [
+    "srcSEP/improvement_and_validation_plan.docx",
+    "srcSEP/srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx"
+  ],
+  "scientific_decisions": {
+    "date": "2026-11-16",
+    "wave_storage": "magnetic energy; joules integrated in each logarithmic k bin",
+    "total_wave_partition": "linear small-amplitude MHD: kinetic = magnetic",
+    "local_branch_convention": "+ along B; - opposite B",
+    "polarization": "Use existing initializer; equal initial L/R within each propagation branch, then evolve all four independently (explicit user decision).",
+    "scattering": "shared spectrum-derived joint momentum/pitch law; derive lambda where defined",
+    "finite_band_gap": "preserved; no interpolation/floor/broadening",
+    "background": "prescribed; signed background work/heating ledger until feedback",
+    "domain_limits": "unselected; convergence study requested before choosing limits",
+    "checkpoint_compatibility": "corrected only",
+    "spectral_grid": "Existing logarithmic k values remain bin centers; edges are halfway in log(k), with the declared constant spacing. No live grid remap is implied.",
+    "dispersion_study_family": "Controlled proton-electron Maxwellian cases, parallel propagation; explicit n, T_i, T_e and B for every experiment. No ambient conditions inferred.",
+    "incoming_spatial_waves": "Continuously hold initial magnetic energy density per bin fixed on signed incoming characteristics relative to the grid; outgoing characteristics leave freely.",
+    "spectral_edges": "Zero incoming power outside modeled k range; outgoing energy/action enters explicit external spectral account.",
+    "first_qualification_operators": "Reflection and cascade disabled for first qualification case; original-plan closure/qualification requirements retained.",
+    "grid_motion": "Material magnetic tube for first qualification: grid vertices move with plasma U; particle coordinates use relative velocity U-v_grid and a geometric conservation law.",
+    "thermal_injection": "Drifting relativistic Maxwell-Juttner flux distribution; verify low-temperature Maxwellian limit. Proper density/temperature and moving-boundary flux inputs must be explicit.",
+    "swmf_import": "Explicit user-selected standard BATSRUS total Alfven wave energy; immutable magnetic view=raw/2, Wave1 along B/Wave2 opposite B, without inferred L/R spectra."
+  },
+  "distinct_questions": [
+    {
+      "id": "NUM",
+      "question": "Do numerical approximations converge to the adopted polarized-wave equations?",
+      "reference": "independently implemented conservative Fokker-Planck solve and exact manufactured/invariant solutions",
+      "axes": [
+        "time step",
+        "pitch/event grid",
+        "spatial grid",
+        "spectral bin width",
+        "quadrature tolerance",
+        "particle count"
+      ],
+      "required_outputs": [
+        "observed order/error plateaus",
+        "Monte Carlo confidence intervals and power",
+        "particle/wave/background conservation",
+        "positivity and event-clock checks"
+      ]
+    },
+    {
+      "id": "QLT",
+      "question": "Where does weak-turbulence/gyroaveraged scattering agree with independent Lorentz orbits?",
+      "reference": "independent relativistic Lorentz-orbit integrator with fully specified electromagnetic waves, analytic gyro/wave-frame checks and its own temporal convergence",
+      "axes": [
+        "deltaB/B0",
+        "v_A/v",
+        "particle rigidity/pitch",
+        "polarization",
+        "cross helicity",
+        "spectral shape/bandwidth"
+      ],
+      "required_outputs": [
+        "angular distribution and mode decay",
+        "joint energy/pitch diffusion and resonance localization",
+        "finite-gap behavior",
+        "physical discrepancy after numerical and sampling errors are bounded"
+      ],
+      "limitation": "Imposed nondispersive waves cannot validate nondispersive MHD wave dispersion."
+    },
+    {
+      "id": "MHD",
+      "question": "Where is nondispersive MHD wave dispersion/polarization physically adequate?",
+      "reference": "independent Hall/kinetic dispersion solver verified against known limiting solutions; model scope must be declared",
+      "axes": [
+        "k*rho_i",
+        "k*d_i",
+        "omega/Omega_i",
+        "plasma beta",
+        "ion/electron temperature ratio",
+        "composition",
+        "propagation angle"
+      ],
+      "required_inputs": [
+        "ion species/charge/density",
+        "thermal/distribution model for every species",
+        "electron thermal/distribution model",
+        "propagation geometry"
+      ],
+      "required_outputs": [
+        "phase/group-speed discrepancy",
+        "polarization discrepancy",
+        "resonance-location and resulting transport error"
+      ],
+      "limitation": "A Hall approximation does not by itself certify kinetic damping or thermal resonances."
+    }
+  ],
+  "exploratory_sampling_policy": "Use explicitly declared dimensionless controlled experiments; freeze exploratory grid and reference identities before evaluating candidate code. Proposed study coordinates are experiments, not inferred ambient conditions or production validity defaults.",
+  "blocking_inputs": [
+    "An accuracy requirement must be declared before selecting physical domain limits; error curves can be computed before that selection.",
+    "Explicit controlled equilibrium and numerical tables are now frozen for the parallel warm and single-wave response studies. Broader scattering/thermal/composition/production cases still need their own declared inputs and qualifying references."
+  ],
+  "acceptance_policy": [
+    "Separate numerical, reference, sampling and physical-model errors.",
+    "Estimate uncertainty and ensure it resolves the physical discrepancy.",
+    "Preserve original-plan gates; do not tune acceptance to obtained results.",
+    "Recommend numerical domain limits only after references and refinement results support the requested observable accuracy."
+  ],
+  "artifacts_required": [
+    "exact input/configuration/source/executable hashes",
+    "independent-reference version and verification",
+    "per-axis error/uncertainty plots and tables",
+    "conservation/positivity/resonance diagnostics",
+    "supported-domain proposal with exclusions",
+    "complete PASS/FAIL/SKIP/ERROR records at correct evidence levels"
+  ],
+  "governing_references": [
+    "https://doi.org/10.1088/0067-0049/207/2/29",
+    "https://academic.oup.com/mnras/article/485/3/2977/5301415"
+  ],
+  "reporting_policy": "Report numerical/reference/sampling errors separately from physical discrepancy. Proposed 1%, 5%, 10% contours are reporting coordinates only, not approved tolerances or production domain limits.",
+  "completed_partial_studies": [
+    {
+      "axis": "QLT",
+      "scope": "RWN01/RWN02 independent relativistic Lorentz normalization at explicitly weak amplitudes; this does not replace amplitude/domain or full coupled transport convergence.",
+      "implementation": "srcSEP/util/sep_real_wave_normalization_validation.cpp",
+      "source_result": "PASS2/2 with ASan/UBSan",
+      "native_result": "PASS on2MPI ranks in a14-case normalization/four-state value campaign; /tmp/srcsep-development.AilCx1/native-normalization-build4/results.json"
+    },
+    {
+      "axis": "MHD",
+      "scope": "Full parallel transverse susceptibility for explicitly isotropic zero-drift proton/electron Maxwellians, finite electron inertia/displacement current and Landau continuation; nonrelativistic thermal reference only.",
+      "implementation": "srcSEP/validation/physics/warm_parallel_maxwellian.py",
+      "equilibrium": "srcSEP/validation/physics/controlled_ep_maxwellian_baseline.json",
+      "verification": "9/9 numerical reference checks; independent SI-contour/sign/derivative/energy and serialized-uncertainty review passed.",
+      "pilot": "24/24 resolved controlled points; /tmp/srcsep-controlled-warm-reviewed-pilot.json",
+      "nominal_native_support_scan": "260 roots across both helicities:231 resolved,29 right-branch UNRESOLVED due to continuation mode identity; /tmp/srcsep-controlled-warm-reviewed-nativegrid.json",
+      "coordinate_contract": "Nominal high-precision grid and actual native double grid distinguished; /tmp/srcsep-native-warm-study-grid-map.json records max relative coordinate difference1.37469557674e-15. Root error estimates are conditional on the exact requested coordinates.",
+      "limits": "No accepted physical-error budget, physical cutoff, automatic spectral truncation or production qualification. Strongly damped Hermitian energy response is not an exact conserved mode energy."
+    },
+    {
+      "axis": "QLT-finite-time-response",
+      "scope": "Independent relativistic test-particle response to one prescribed circular mode per trajectory; separates orbit/phase/reference/encoding errors. Not a broadband/Markov diffusion validation.",
+      "implementation": "srcSEP/validation/physics/finite_amplitude_response.py",
+      "protocol": "srcSEP/validation/physics/run_finite_amplitude_study.py",
+      "reference_verification": "16/16 bounded mathematical/protocol tests under8-input hash closure; independent force/oracle/lineage/coverage review passed.",
+      "pilot": "36rows:9numerically resolved/27unresolved; /tmp/srcsep-finite-amplitude-pilot.u_c362x1; no tuned acceptance.",
+      "refinement": "Same execution code/equilibrium/physical inputs/criteria as pilot; steps256/512/1024,phases32/64/128,31,457,280updates;31numerically resolved/5phase-unresolved; /tmp/srcsep-finite-amplitude-refinement-v2.t2skvlkb",
+      "unresolved_cases_a_kRatio_gyroperiods": [
+        [
+          0.1,
+          1,
+          2
+        ],
+        [
+          0.1,
+          2,
+          2
+        ],
+        [
+          0.1,
+          2,
+          8
+        ],
+        [
+          0.3,
+          2,
+          2
+        ],
+        [
+          0.3,
+          2,
+          8
+        ]
+      ],
+      "limitations": [
+        "Convergence/encoding uncertainties are estimates, not certified physical error bounds.",
+        "The max(full,linear) per-axis numerical criterion does not guarantee0.2percent relative accuracy of the full response; combined/full reaches6.13percent in one resolved case.",
+        "DOP853 checks4phase trajectories and uses their global sampled-time maximum; it is a numerical subset crosscheck.",
+        "Relative discrepancy is undefined at zero or below-resolution linear response; physical contrast identification can be marginal.",
+        "No Markov diffusion coefficient, production amplitude/k cutoff, or kinetic-wave qualification follows from this prescribed coherent-wave study."
+      ]
+    }
+  ]
+}

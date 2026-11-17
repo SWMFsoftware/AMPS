@@ -5,6 +5,11 @@ component contracts have stabilized. It deliberately reports five evidence
 classes separately. Passing a manufactured solution is not called coupled
 validation, and passing coupled code is not called observational validation.
 
+Current corrective work and exact native build results are tracked in
+[STATUS.md](../STATUS.md). [External input requirements](EXTERNAL_VALIDATION_REQUIREMENTS.md)
+describe the numerical MFLAMPA data already found and the additional contracts
+and observations needed to complete the original external gates.
+
 ## Included cases
 
 | Case | Evidence class | Reference | Current status/prerequisite |

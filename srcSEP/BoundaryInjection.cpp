@@ -10,11 +10,20 @@
 
 #include "pic.h"
 #include "sep.h"
+#include "source_capabilities.h"
 
 //enable/disable injection of the particles from the boundary of the computational domain
 bool SEP::BoundingBoxInjection::BoundaryInjectionMode=true;
 
 bool SEP::BoundingBoxInjection::InjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+ if(!BoundaryInjectionMode)return false;
+#if _PIC_EARTH_GCR__MODE_ == _PIC_MODE_OFF_
+ return false;
+#else
+ const auto sourceStatus=::SEP::Sources::CartesianBirthPreflight(
+     ::SEP::Sources::CartesianSource::GalacticCosmicRayBox);
+ if(!sourceStatus.ok())exit(__LINE__,__FILE__,sourceStatus.message.c_str());
+#endif
  bool ExternalFaces[6];
  double ExternalNormal[3],ModelParticlesInjectionRate=0.0;
  int nface,spec;
@@ -37,6 +46,10 @@ bool SEP::BoundingBoxInjection::InjectionIndicator(cTreeNodeAMR<PIC::Mesh::cData
 
 //injection of model particles through the faces of the bounding box
 long int SEP::BoundingBoxInjection::InjectionProcessor(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+ if(!BoundaryInjectionMode)return 0;
+ const auto sourceStatus=::SEP::Sources::CartesianBirthPreflight(
+     ::SEP::Sources::CartesianSource::GalacticCosmicRayBox);
+ if(!sourceStatus.ok())exit(__LINE__,__FILE__,sourceStatus.message.c_str());
  bool ExternalFaces[6];
  double ParticleWeight,LocalTimeStep,TimeCounter,ExternalNormal[3],x[3],x0[3],e0[3],e1[3],c0,c1;
  int nface,idim;
@@ -135,6 +148,10 @@ long int SEP::BoundingBoxInjection::InjectionProcessor(int spec,cTreeNodeAMR<PIC
 }
 
 long int SEP::BoundingBoxInjection::InjectionProcessor(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+ if(!BoundaryInjectionMode)return 0;
+ const auto sourceStatus=::SEP::Sources::CartesianBirthPreflight(
+     ::SEP::Sources::CartesianSource::GalacticCosmicRayBox);
+ if(!sourceStatus.ok())exit(__LINE__,__FILE__,sourceStatus.message.c_str());
   long int nInjectedParticles=0;
 
   for (int s=0;s<PIC::nTotalSpecies;s++) nInjectedParticles+=InjectionProcessor(s,startNode);

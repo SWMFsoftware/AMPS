@@ -126,6 +126,10 @@ KappaSample EvaluateKappa(double massKg, double signedChargeC,
 
   PD::LocalState local;
   local.timeS = timeS;
+  // The PIC-facing caller has established the provider's physical origin and
+  // supplied x-origin in the same Cartesian basis as B. This PIC-free binding
+  // cannot infer an origin from an arbitrary native coordinate or rescale a
+  // radius-dependent model to conceal an unsupported frame.
   local.positionM = {{positionM[0], positionM[1], positionM[2]}};
   local.meanFieldT = std::array<double, 3>{{meanFieldT[0], meanFieldT[1],
                                             meanFieldT[2]}};

@@ -34,14 +34,14 @@ struct FocusedTransportMfpBackground {
         parallelVelocityGradientPerS(parallelGradient),
         velocityDivergencePerS(divergence), alfvenSpeedMPerS(alfvenSpeed) {}
 
-  // Particle velocity and pitch angle are in the local plasma frame. The
-  // signed Alfven speed is not stored: the resonance rule selects the branch
-  // opposite to the particle's parallel direction at each event.
+  // Particle pitch is measured along increasing geometric line coordinate.
+  // E+ propagates along B; polarity maps that direction to this coordinate.
   double dLnAbsBdsPerM = 0.0;
   double plasmaAdvectionMPerS = 0.0;
   double parallelVelocityGradientPerS = 0.0;
   double velocityDivergencePerS = 0.0;
   double alfvenSpeedMPerS = 0.0;
+  int magneticPolarityAlongLine = 1;
   double fieldAlignedStrainPerS = 0.0;
   FocusedEquationMode equationMode =
       FocusedEquationMode::ReducedFieldAligned1D;

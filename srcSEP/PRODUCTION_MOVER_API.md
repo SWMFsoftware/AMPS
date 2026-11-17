@@ -5,19 +5,44 @@ movers. The registry describes physics and state capabilities independently of
 implementation addresses; the PIC callback enters through one validating
 adapter.
 
+See [STATUS.md](STATUS.md) for current qualification. The registry and retained
+coefficient interfaces exist, but the adopted four-spectrum joint scattering
+law is still being connected to native particle/wave transactions. Advertised
+streaming capability does not establish physical qualification; dependent
+production paths reject explicitly while controlled diagnostic tests remain
+available.
+
 ## Canonical movers
 
 | CLI name | Public enum | Production implementation | Coefficient contract |
 |---|---|---|---|
 | `parker` | `ProductionMover::Parker` | `ParticleMover_Parker` | `SpatialDiffusionProvider`: `kappa_parallel` [m²/s], `d(kappa_parallel)/ds` [m/s], and provenance |
 | `fte-dmumu` | `ProductionMover::FocusedTransportDiffusion` | `ParticleMover_FocusedTransport_Dmumu` | `PitchAngleDiffusionProvider`: `Dmumu` [s^-1], `dDmumu/dmu` [s^-1], provenance, and turbulence-state identity |
-| `fte-mfp` | `ProductionMover::FocusedTransportMeanFreePath` | `ParticleMover_FocusedTransport_EventDriven` | `MeanFreePathProvider`: `lambda_parallel` [m], validity, provenance, turbulence identity, and exact `nu=v/lambda` events |
+| `fte-mfp` | `ProductionMover::FocusedTransportMeanFreePath` | `ParticleMover_FocusedTransport_EventDriven` | Required adopted law: same polarized spectrum-derived joint operator as `fte-dmumu`; derive `lambda_parallel` [m] where defined. The retained `MeanFreePathProvider`/isotropic `nu=v/lambda` path is not its qualified replacement. |
 
 Self-consistent turbulence is deliberately absent from this table. Step 11
 selects its source and integrated/spectral authority through
 `Turbulence::Configuration`; it remains a coefficient/state subsystem consumed
 by these movers, never a fourth dispatch entry. Step 12 changes only the
 deterministic reduction of deferred particle-to-wave contributions.
+
+The selected event process carries residual optical depth and draws a branch
+mark only when its combined physical hazard expires. A scalar mean free path
+does not determine that angular law. If the summed pitch diffusion vanishes on
+a positive-width interior interval, the usual fixed-momentum diffusion-limit
+integral diverges: local scattering can still occur elsewhere, but a finite
+global diffusion mean free path and its Parker reduction are unavailable.
+Preserving that gap forbids a numerical scattering floor or isotropic reset.
+
+Native particle state retains all three operator streams, cached normal state,
+event history and split serial. Schema 4 is being integrated with an explicit
+source-driver window and persisted first-movement duration; only fresh source
+or initial-condition APIs may create that history. Phase space, RNG and pending
+birth consumption commit together. Completed checkpoints reject unfinished
+source windows/births. Build 6b passes BIRTHN01–06 on one and two ranks after
+correcting the fixture's explicit static epoch; snapshot ownership assertions
+remain intact. Fresh-process and complete source/coupling qualification remain
+separate, as recorded in STATUS.md.
 
 These are one-dimensional transport models along field lines embedded in 3-D
 space. The field geometry remains three-dimensional. Fully 3-D particle

@@ -1,9 +1,15 @@
 #include "sep.h"
+#include "flux_tube_checkpoint_state.h"
+#include "transport_common.h"
+#include "util/sep_background_runtime.h"
+#include "util/sep_run_configuration.h"
 
 #include <cmath>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <limits>
+#include <utility>
 
 namespace {
 
@@ -15,6 +21,13 @@ double g_reference_area_m2 = Pi;
 SEP::FieldLine::FluxTubeGeometry::ExplicitAreaProfile g_explicit_area = NULL;
 std::vector<SEP::FieldLine::FluxTubeGeometryCore::MagneticFluxRecord>
     g_field_line_flux;
+// This serial invalidates outstanding software restore plans; it is never a
+// physical key, source event, random seed or age and therefore is not persisted.
+std::uint64_t g_flux_revision=0;
+void RequireFluxRevision() {
+  if(g_flux_revision==std::numeric_limits<std::uint64_t>::max())
+    throw std::runtime_error("flux-owner mutation serial exhausted before state change");
+}
 
 double MagneticMagnitudeT(PIC::FieldLine::cFieldLineVertex* vertex) {
   if (vertex == NULL) return 0.0;
@@ -43,8 +56,6 @@ void SEP::FieldLine::FluxTubeGeometry::SetMagneticFluxWb(
   if (iFieldLine<0 || !std::isfinite(magnetic_flux_Wb) ||
       magnetic_flux_Wb<=0.0 || provenance==NULL || provenance[0]=='\0')
     throw std::invalid_argument("FluxTubeGeometry magnetic-flux record is invalid");
-  if (g_field_line_flux.size()<=static_cast<std::size_t>(iFieldLine))
-    g_field_line_flux.resize(static_cast<std::size_t>(iFieldLine)+1);
   FluxTubeGeometryCore::MagneticFluxRecord record;
   record.magneticFluxWb=magnetic_flux_Wb;
   record.generation=static_cast<std::uint64_t>(generation);
@@ -52,7 +63,15 @@ void SEP::FieldLine::FluxTubeGeometry::SetMagneticFluxWb(
   const SEP::Transport::Status status=
       FluxTubeGeometryCore::ValidateMagneticFluxRecord(record);
   if (!status.ok()) throw std::invalid_argument(status.message);
-  g_field_line_flux[static_cast<std::size_t>(iFieldLine)]=record;
+  RequireFluxRevision();
+  if(g_field_line_flux.size()<=static_cast<std::size_t>(iFieldLine)) {
+    // Growth and provenance allocation are staged privately. An allocation
+    // failure cannot leave new holes or partially replaced flux in the owner.
+    auto staged=g_field_line_flux;staged.resize(static_cast<std::size_t>(iFieldLine)+1);
+    staged[static_cast<std::size_t>(iFieldLine)]=std::move(record);
+    g_field_line_flux.swap(staged);
+  } else std::swap(g_field_line_flux[static_cast<std::size_t>(iFieldLine)],record);
+  ++g_flux_revision;
 }
 
 double SEP::FieldLine::FluxTubeGeometry::GetMagneticFluxWb(int iFieldLine) {
@@ -81,7 +100,9 @@ void SEP::FieldLine::FluxTubeGeometry::SetReferenceAreaM2(
     throw std::invalid_argument(
         "FluxTubeGeometry reference area must be finite and positive");
   }
-  g_reference_area_m2 = reference_area_m2;
+  if(g_reference_area_m2!=reference_area_m2) {
+    RequireFluxRevision();g_reference_area_m2=reference_area_m2;++g_flux_revision;
+  }
 }
 
 void SEP::FieldLine::FluxTubeGeometry::SetExplicitAreaProfile(
@@ -90,12 +111,92 @@ void SEP::FieldLine::FluxTubeGeometry::SetExplicitAreaProfile(
     throw std::invalid_argument(
         "FluxTubeGeometry explicit area profile cannot be null");
   }
-  g_explicit_area = profile;
+  if(g_explicit_area!=profile){RequireFluxRevision();g_explicit_area=profile;++g_flux_revision;}
 }
 
 void SEP::FieldLine::FluxTubeGeometry::ClearExplicitAreaProfile() {
-  g_explicit_area = NULL;
+  if(g_explicit_area){RequireFluxRevision();g_explicit_area=NULL;++g_flux_revision;}
 }
+
+namespace SEP { namespace FieldLine { namespace FluxTubeGeometry { namespace {
+Transport::Status CheckpointError(const std::string& text) {
+  return Transport::Status::Error(Transport::StatusCode::InvalidParticleState,text);
+}
+Transport::Status CheckpointQuiescent() {
+  if(g_explicit_area)return Transport::Status::Error(Transport::StatusCode::UnsupportedConfiguration,
+      "flux checkpoint cannot serialize an opaque area callback; explicit typed area ownership is required");
+  if(Transport::PICAdapter::NativeDriverWindowActive())
+    return CheckpointError("flux checkpoint requires a completed native driver window");
+  const auto snapshot=Background::SnapshotStore::Instance().Current();
+  if(snapshot)Background::SnapshotStore::Instance().AssertProviderMayWrite(snapshot->provider());
+  return Transport::Status::Ok();
+}
+} // namespace
+struct CheckpointRestorePlan::Implementation {
+  FluxTubeState::State state;
+  std::uint64_t expectedRevision=0;
+  bool ready=false;
+};
+CheckpointRestorePlan::CheckpointRestorePlan()=default;
+CheckpointRestorePlan::~CheckpointRestorePlan()=default;
+CheckpointRestorePlan::CheckpointRestorePlan(CheckpointRestorePlan&&)noexcept=default;
+CheckpointRestorePlan& CheckpointRestorePlan::operator=(CheckpointRestorePlan&&)noexcept=default;
+bool HasOpaqueAreaProfile(){return g_explicit_area!=NULL;}
+Transport::Status ValidateCheckpointState(const FluxTubeState::State& state) {
+  try {
+    const auto quiet=CheckpointQuiescent();if(!quiet.ok())return quiet;
+    return FluxTubeState::Validate(state,static_cast<std::size_t>(PIC::FieldLine::nFieldLine),
+        Run::Active().get().fieldLineSeedAreaM2.value);
+  }catch(const std::exception& error){return CheckpointError(error.what());}
+}
+Transport::Status CaptureCheckpointState(FluxTubeState::State* output) {
+  if(!output)return CheckpointError("flux checkpoint output is absent");
+  try {
+    const auto quiet=CheckpointQuiescent();if(!quiet.ok())return quiet;
+    FluxTubeState::State candidate;candidate.referenceAreaM2=g_reference_area_m2;
+    candidate.records=g_field_line_flux;
+    const auto valid=ValidateCheckpointState(candidate);if(!valid.ok())return valid;
+    *output=std::move(candidate);return Transport::Status::Ok();
+  }catch(const std::exception& error){return CheckpointError(error.what());}
+}
+Transport::Status StageCheckpointRestore(const FluxTubeState::State& state,CheckpointRestorePlan* plan) {
+  if(!plan)return CheckpointError("flux restore-plan output is absent");
+  plan->implementation_.reset();
+  const auto valid=ValidateCheckpointState(state);if(!valid.ok())return valid;
+  try {
+    RequireFluxRevision();
+    auto staged=std::unique_ptr<CheckpointRestorePlan::Implementation>(new CheckpointRestorePlan::Implementation);
+    staged->state=state;staged->expectedRevision=g_flux_revision;
+    plan->implementation_=std::move(staged);return Transport::Status::Ok();
+  }catch(const std::exception& error){return CheckpointError(error.what());}
+}
+Transport::Status ValidateCheckpointReady(const CheckpointRestorePlan& plan) {
+  if(!plan.implementation_)return CheckpointError("flux restore plan is absent");
+  auto& staged=*plan.implementation_;staged.ready=false;
+  const auto valid=ValidateCheckpointState(staged.state);if(!valid.ok())return valid;
+  if(staged.expectedRevision!=g_flux_revision||g_flux_revision==std::numeric_limits<std::uint64_t>::max())
+    return CheckpointError("flux owner changed after restore staging");
+  staged.ready=true;return Transport::Status::Ok();
+}
+bool CommitCheckpointRestore(CheckpointRestorePlan* plan)noexcept {
+  if(!plan||!plan->implementation_)return false;
+  auto& staged=*plan->implementation_;
+  if(!staged.ready||staged.expectedRevision!=g_flux_revision||g_explicit_area||
+      g_flux_revision==std::numeric_limits<std::uint64_t>::max())return false;
+  try {const auto quiet=CheckpointQuiescent();if(!quiet.ok())return false;}
+  catch(...){return false;}
+  try {
+    if(PIC::FieldLine::nFieldLine<0||staged.state.records.size()>static_cast<std::size_t>(PIC::FieldLine::nFieldLine)||
+        staged.state.referenceAreaM2!=Run::Active().get().fieldLineSeedAreaM2.value)return false;
+  }catch(...){return false;}
+  // The enclosing all-rank transaction has validated shape/configuration and
+  // joined all writers. Commit swaps already allocated values and consumes the
+  // plan; deleting the old vector allocates nothing and preserves no codeptr.
+  std::swap(g_reference_area_m2,staged.state.referenceAreaM2);
+  g_field_line_flux.swap(staged.state.records);++g_flux_revision;
+  plan->implementation_.reset();return true;
+}
+} } }
 
 double SEP::FieldLine::FluxTubeGeometry::AreaAtVertexM2(
     PIC::FieldLine::cFieldLineVertex* vertex,

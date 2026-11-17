@@ -1,0 +1,350 @@
+{
+  "schema": "srcsep-external-reference-discovery-v1",
+  "checked_utc_date": "2026-11-17",
+  "purpose": "Locators traced from existing validation-runner provenance; discovery is not a validation result or equivalence approval.",
+  "existing_bundled_references": [
+    {
+      "case": "XM02",
+      "provenance": "srcSEP/validation/cases/XM02/reference/provenance.json",
+      "source": "https://arxiv.org/html/2309.16903v1",
+      "evidence_class": "digitized published M-FLAMPA figure curves; not an equivalent-input run export"
+    },
+    {
+      "case": "XM03",
+      "provenance": "srcSEP/validation/cases/XM03/reference/provenance.json",
+      "source": "https://arxiv.org/html/2412.07581v2",
+      "evidence_class": "published figure spectrum, observational points and separate source-curve proxy; preserve distinction"
+    },
+    {
+      "cases": [
+        "EV01",
+        "EV02"
+      ],
+      "source": "https://ccmc.gsfc.nasa.gov/assessment/topics/SEP/campaign2020/sep_events.php",
+      "evidence_class": "CCMC challenge event summary tables; not raw detector time series"
+    }
+  ],
+  "candidate_sources": [
+    {
+      "name": "CLEAR-SRAG SEP Benchmark Dataset v2.0",
+      "url": "https://ccmc.gsfc.nasa.gov/swxcoe/clear/benchmark.php",
+      "operational_event_list": {
+        "url": "https://ccmc.gsfc.nasa.gov/swxcoe/clear/clear_data/core_lists/GOES_integral_PRIMARY.1986-02-03.2025-09-10_sep_events.csv",
+        "csv_records": 534,
+        "local_evidence": "/tmp/srcsep-development.AilCx1/clear-operational-events.csv",
+        "size_bytes": 2029516,
+        "sha256": "baad618c21aad1d7f51b43d94f94f24c8cb597647cb2288eecd2109e715dded5"
+      },
+      "calibrated_event_list": {
+        "url": "https://ccmc.gsfc.nasa.gov/swxcoe/clear/clear_data/core_lists/GOES_differential_energy_bin_calibrated_PRIMARY.2010-08-02.2017-09-20_sep_events.csv",
+        "csv_records": 98,
+        "local_evidence": "/tmp/srcsep-development.AilCx1/clear-calibrated-events.csv",
+        "size_bytes": 514646,
+        "sha256": "79361b27ffabf6a006f1faabd908be7fdd22e63a6eed53b4950bf738e96581f1"
+      },
+      "requirements": [
+        "Use event summary records for an explicitly defined summary-metric campaign. Obtain matching flux time series, channel calibration, quality flags and timing for time-profile validation.",
+        "Predeclare development/held-out event cohorts and scoring rules before model tuning."
+      ],
+      "bulk_download_status": "Not downloaded. Site lists full dataset 2.01 GB and individual GOES-13 integral time series 61.45 MB."
+    },
+    {
+      "name": "Public AWSoM/M-FLAMPA 2013-Apr-11 candidate run",
+      "run_id": "Lulu_Zhao_071525_SH_1",
+      "url": "https://ccmc.gsfc.nasa.gov/ror/results/viewrun.php?runnumber=Lulu_Zhao_071525_SH_1",
+      "metadata": {
+        "url": "https://ccmc.gsfc.nasa.gov/ror/api/run_metadata.php?runnumber=Lulu_Zhao_071525_SH_1",
+        "local_evidence": "/tmp/srcsep-development.AilCx1/mflampa-run-metadata.json",
+        "size_bytes": 2251,
+        "sha256": "383bcec567931c5e3420353e6ace298b96b88329d785c632d1bdc1e62adbe72d"
+      },
+      "output_file_index": {
+        "url": "https://ccmc.gsfc.nasa.gov/ror/api/run_files.php?runnumber=Lulu_Zhao_071525_SH_1&format=json",
+        "indexed_files": 1083,
+        "indexed_SP_files": 884,
+        "indexed_SP_total_bytes": 72644634,
+        "local_evidence": "/tmp/srcsep-development.AilCx1/mflampa-file-index.json",
+        "size_bytes": 305771,
+        "sha256": "8a3a92f94ad20307711399ddd093cb9e3e9e73579f33fe0e62452a41d442ba7f"
+      },
+      "SP_input": {
+        "url": "https://ccmc.gsfc.nasa.gov/RoR_WWW/SH/SWMF-AWSoM/2025/Lulu_Zhao_071525_SH_1/inputs/SP.in",
+        "local_evidence": "/tmp/srcsep-development.AilCx1/mflampa-SP.in",
+        "size_bytes": 925,
+        "sha256": "264d6b2005c71df3e219610223e87df330cb1dba53f3d0f44a0979dbef01e79e"
+      },
+      "verified_parameters": {
+        "fixed_upstream_mfp_AU": 0.3,
+        "injection_efficiency": 0.0001,
+        "injection_spectral_index": 5,
+        "solve_parker": true,
+        "CME_speed_from_run_metadata": 800
+      },
+      "equivalence_status": "Unverified. Metadata differs from the bundled published source configurations; do not identify this run as that publication realization. SP input plus file names alone do not establish available output variable units or shared field-line histories.",
+      "sample_output_attempt": {
+        "file": "SP/MH_data_R_0215.00_010_003.out",
+        "listed_size_bytes": 52243,
+        "http_result": "500 Internal Server Error on 2026-11-16; numeric contents unavailable, not validated."
+      },
+      "requirements": [
+        "Obtain accessible numeric output headers and arrays, observer connectivity/time origin, background/geometry/source/scattering inputs, solver version and output conventions.",
+        "Review equivalence before calculating cross-model agreement gates."
+      ],
+      "bulk_download_status": "Not downloaded. Run page lists full result size 19.92 GB."
+    },
+    {
+      "last_reference_commit": "2c817a7e5d5f30fd9bac60c391b6eba51e97dc4b",
+      "outputs": [
+        {
+          "path": "SWMF_data/SP/MFLAMPA/data/output/test_mflampa/Distr_spectra_data.ref.gz",
+          "size_bytes": 4207707,
+          "sha256": "3144e82732b2e8014fe21d7fe008f1a4f2578c8caa515640b3a06bd8948d005f",
+          "header": [
+            "MFLAMPA: Distribution data on a sphere at fixed heliocentric distance; Coordindate system: HGR; Units: log10[kev] sec log10[pfu/kev]",
+            "         6  6.0000000000E+02  2  0  1",
+            "     102       6",
+            "Log10Energy Time Log10DiffEnergyFlux",
+            "  1.0000000000E+00  1.0000000000E+02 -5.9393173372E+00",
+            "  1.0680130587E+00  1.0000000000E+02 -8.6060528865E+00"
+          ]
+        },
+        {
+          "path": "SWMF_data/SP/MFLAMPA/data/output/test_mflampa/Distraj_spectra_data.ref.gz",
+          "size_bytes": 6046,
+          "sha256": "2ad648c4225f1bd1effdac84c692b5e888663cfc79c7b25dd48aef5443911500",
+          "header": [
+            "Test Triangulation in MFLAMPA: Distribution along the trajectory of earth, with outputs: Units: log10[kev] log10[pfu/kev]",
+            "         1  1.0000000000E+02  1  0  1",
+            "     102",
+            "Log10Energy Log10DiffEnergyFlux",
+            "  1.0000000000E+00 -5.9395410613E+00",
+            "  1.0680130587E+00 -8.1810388373E+00"
+          ]
+        },
+        {
+          "path": "SWMF_data/SP/MFLAMPA/data/output/test_mflampa/MH_data.ref.gz",
+          "size_bytes": 8876892,
+          "sha256": "cdc71c9c16aa63e523d8c87faff51c2f55fdf9074e0af2eed3707eacaa40cda8",
+          "header": [
+            "MFLAMPA: data on a field line at fixed heliocentric distance; Coordindate system: HGR; Units: RSun RSun RSun pfu pfu pfu pfu pfu pfu pfu kev/cm2*s*sr",
+            "         6  6.0000000000E+02  1  2 11",
+            "       6",
+            "  1.4850576000E+09  2.4559496667E+06",
+            "Time  X Y Z flux_total flux_Channel01 flux_Channel02 flux_Channel03 flux_Channel04 flux_Channel05 flux_Channel06 eflux  StartTime StartTimeJulian",
+            "  1.0000000000E+02 -5.2627415335E+01  1.7457639342E+02  1.1392291696E+02  9.9998454677E-03  9.9948570505E-03  9.9898573340E-03  9.9698582867E-03  9.9498590939E-03  9.9398594653E-03  9.8998608135E-03  4.9999321228E+04"
+          ]
+        },
+        {
+          "path": "SWMF_data/SP/MFLAMPA/data/output/test_mflampa/MH_poisson_data.ref.gz",
+          "size_bytes": 8852276,
+          "sha256": "2d65f075085454d95ec46730fc3810904795782a1faed37b1ea19856db7d845d",
+          "header": [
+            "MFLAMPA: data on a field line at fixed heliocentric distance; Coordindate system: HGR; Units: RSun RSun RSun pfu pfu pfu pfu pfu pfu pfu kev/cm2*s*sr",
+            "         6  6.0000000000E+02  1  2 11",
+            "       6",
+            "  1.4850576000E+09  2.4559496667E+06",
+            "Time  X Y Z flux_total flux_Channel01 flux_Channel02 flux_Channel03 flux_Channel04 flux_Channel05 flux_Channel06 eflux  StartTime StartTimeJulian",
+            "  1.0000000000E+02 -5.2627415335E+01  1.7457639342E+02  1.1392291696E+02  9.9998553043E-03  9.9948669222E-03  9.9898671933E-03  9.9698680997E-03  9.9498688640E-03  9.9398692148E-03  9.8998704850E-03  4.9999360885E+04"
+          ]
+        },
+        {
+          "path": "SWMF_data/SP/MFLAMPA/data/output/test_mflampa/MH_spectra_data.ref.gz",
+          "size_bytes": 583626,
+          "sha256": "42d87beaa270ddb9ab6ca7dd51113937af9c60ae40db7159b9c801374a08f674",
+          "header": [
+            "MFLAMPA: data on a field line at fixed heliocentric distance; Coordindate system: HGR; Units: RSun RSun RSun pfu pfu pfu pfu pfu pfu pfu kev/cm2*s*sr",
+            "         6  6.0000000000E+02  1  2 11",
+            "       6",
+            "  1.4850576000E+09  2.4559496667E+06",
+            "Time  X Y Z flux_total flux_Channel01 flux_Channel02 flux_Channel03 flux_Channel04 flux_Channel05 flux_Channel06 eflux  StartTime StartTimeJulian",
+            "  1.0000000000E+02 -5.4650083206E+01  1.8191807341E+02  1.0071831942E+02  1.9494426779E-01  1.9493810296E-01  1.9492512016E-01  1.9475470509E-01  1.9436465911E-01  1.9408683091E-01  1.9247116470E-01  3.8892862395E+05"
+          ]
+        },
+        {
+          "path": "SWMF_data/SP/MFLAMPA/data/output/test_mflampa/MH_steady_data.ref.gz",
+          "size_bytes": 9315320,
+          "sha256": "0462abd3c46aca612023920c3610f7eb252a21712136413d5896caed315da5e8",
+          "header": [
+            "MFLAMPA: data along a field line; Coordindate system: HGR; Units: RSun RSun RSun amu/m3 kev m/s m/s m/s T T T J/m3 J/m3 pfu pfu pfu pfu pfu pfu pfu kev/cm2*s*sr",
+            "        20  0.0000000000E+00  1  8 21",
+            "    4021",
+            "  0.0000000000E+00 -9.8024769747E-01 -3.0499236698E-01  5.1826065613E-01 -1.0000000000E+00 -1.0000000000E+00  1.4850576000E+09  2.4559496667E+06",
+            "LagrID      X Y Z Rho T Ux Uy Uz Bx By Bz Wave1 Wave2 flux_total flux_Channel01 flux_Channel02 flux_Channel03 flux_Channel04 flux_Channel05 flux_Channel06 eflux  LagrID X Y Z iShock RShock StartTime StartTimeJulian",
+            "  1.0000000000E+00 -9.8139407419E-01 -3.0487069771E-01  5.1864632842E-01  1.0322124802E+14  1.0057252613E-01 -1.4461024372E+04  1.8036860146E+03  5.3264231238E+03 -7.4552378403E-04  6.9046567603E-05  2.5797266921E-04  3.2589312692E-04  1.5750297642E-05  5.3004649797E+02  2.3192612685E+01  1.5691108537E+01  8.0966062951E+00  5.7969084048E+00  5.1168277429E+00  3.5399406982E+00  2.2706066415E+06"
+          ]
+        }
+      ],
+      "inputs": [
+        {
+          "path": "SWMF_data/SP/MFLAMPA/data/input/test_mflampa/MH_data_e20120123.tgz",
+          "size_bytes": 45962439,
+          "sha256": "beb5ad90fcde34941658c6d6d739815c95fcd7310921391f307deebc94fac2d3",
+          "header": "\n#CHECKGRIDSIZE\n   20000                    nParticleMax\n       4                            nLon\n       4                            nLat\n\n#MHDATA\nreal8                           TypeFile\n      13                       nFileRead\nMH_data.lst                  NameTagFile\n\n#END\n"
+        },
+        {
+          "path": "SWMF_data/SP/MFLAMPA/data/input/test15/MH_data.tgz",
+          "size_bytes": 10929498,
+          "sha256": "744ef3b6b532956a0a9fbdcf4ec60bf1b50e0ac2737b50295577d564ba15016e",
+          "header": "\n#CHECKGRIDSIZE\n    2000                    nParticleMax\n       4                            nLon\n       4                            nLat\n\n#MHDATA\nascii                           TypeFile\n      11                       nFileRead\nMH_data.lst                  NameTagFile\n\n#END\n\n"
+        }
+      ],
+      "name": "Existing local SWMF MFLAMPA regression inputs and numerical outputs",
+      "repository_url": "https://github.com/SWMFsoftware/SWMF_data",
+      "source_root": "SWMF_data/SP/MFLAMPA/data",
+      "discovery_status": "Local checksums/binary metadata and source build verified; exact named upstream test_mflampa reproduced under its declared numerical policy; equivalent-input AMPS comparison not implemented.",
+      "units_contract": "Headers declare HGR positions in RSun, mass density amu/m3, T as energy in keV, velocities m/s, B in T, Wave1/Wave2 J/m3, integral flux pfu; spectral outputs declare log10(keV), log10(pfu/keV). Preserve per-file header and variable order.",
+      "time_contract": "StartTimeJulian=2455949.6667 and official test start2012-01-23T04:00. StartTime=1485057600 is a legacy SWMF epoch; do not interpret as Unix seconds.",
+      "matching_official_test_parameters": {
+        "url": "https://github.com/SWMFsoftware/MFLAMPA/blob/38e9defc9c525bd3d49669bc2e7d8014987de488/Param/PARAM.in.test",
+        "content_sha256": "b6e12e3b044409da1b9293a149885d601956002683985994e69f5527f8fd4448",
+        "input_archive": "MH_data_e20120123",
+        "start_utc": "2012-01-23T04:00:00Z",
+        "trace_shock": false,
+        "turbulence_scale_AU": 0.2402397832,
+        "session1_stop_s": 300,
+        "session2_stop_s": 600,
+        "session2_fixed_upstream_mfp_AU": 0.3,
+        "comparison_sphere_RSun": 215.0,
+        "git_blob_sha1": "37d2e3db3358919a2d56191d31314460300ce5be"
+      },
+      "requirements": [
+        "Resolve exact MFLAMPA executable/configuration/defaults and association of each reference output to its parameter variant; current official parameter file does not establish the historical binary identity.",
+        "Implement a checksum-verified parser with shape, variable, units and time validation, and a physically equivalent native forcing/source/scattering/observer adapter.",
+        "Do not treat regression-reference curves as observations. Do not map aggregate imported waves to four polarized spectra without an explicit polarization contract.",
+        "No large dataset download performed; all listed numeric references and archives already exist through the user workspace symlink."
+      ],
+      "verified_source_build_audit": {
+        "evidence": "/tmp/srcsep-mflampa-audit-kbou2cbd/feasibility.json",
+        "sha256": "42f638eb3f54638199c5057d0c6f73b88b89ece8c32e445ce45b0c1846c045aa",
+        "source_commits": {
+          "MFLAMPA": "38e9defc9c525bd3d49669bc2e7d8014987de488",
+          "share": "c5f8beef8d48cb1dfa2ea517ec7dbdda4938344f",
+          "util": "ddb96a4c9a8beb087e3dc9bf6822e1bc4fbe36c0"
+        },
+        "configuration": {
+          "maximum_vertices": 20000,
+          "momentum_cells": 100,
+          "pitch_angle_cells": 1,
+          "solver": "Parker"
+        },
+        "executable_sha256": "84bfe6d4a88d4c7bfbe1186b0f3961652f99f53c7dc23ff61ce0426e32284204",
+        "build_status": "isolated compilation/link succeeded; subsequent upstream regression recorded separately",
+        "equivalence_status": "not implemented; exact reference producer and common physical inputs remain required",
+        "official_sources": [
+          "https://github.com/SWMFsoftware/MFLAMPA/blob/38e9defc9c525bd3d49669bc2e7d8014987de488/Makefile",
+          "https://github.com/SWMFsoftware/MFLAMPA/blob/38e9defc9c525bd3d49669bc2e7d8014987de488/src/ModDiffusion.f90",
+          "https://github.com/SWMFsoftware/MFLAMPA/blob/38e9defc9c525bd3d49669bc2e7d8014987de488/src/ModReadMhData.f90",
+          "https://github.com/SWMFsoftware/share/blob/c5f8beef8d48cb1dfa2ea517ec7dbdda4938344f/Library/src/ModConst.f90"
+        ]
+      },
+      "verified_regression_mapping": {
+        "test_mflampa": {
+          "parameter": "Param/PARAM.in.test",
+          "reference": "MH_data.ref.gz",
+          "solver": "Parker upwind"
+        },
+        "test_poisson": {
+          "parameter": "Param/PARAM.in.test.poisson",
+          "reference": "MH_poisson_data.ref.gz",
+          "solver": "Parker Poisson bracket"
+        },
+        "test_steady": {
+          "parameters": [
+            "Param/PARAM.in.test.steady.start",
+            "Param/PARAM.in.test.steady.restart"
+          ],
+          "reference": "MH_steady_data.ref.gz",
+          "evidence": "steady-state plus restart regression"
+        },
+        "test_spectra": {
+          "parameter": "Param/PARAM.in.test.spectra",
+          "references": [
+            "MH_spectra_data.ref.gz",
+            "Distr_spectra_data.ref.gz",
+            "Distraj_spectra_data.ref.gz"
+          ]
+        },
+        "amps_IH_mflampa_fl_target": "Makefile.test checks AMPS energy/pitch histograms against output/test_SEP3D references, not MFLAMPA test_mflampa outputs"
+      },
+      "verified_archive_coverage": {
+        "records": 112,
+        "field_lines": 16,
+        "available_times_s": [
+          0.0,
+          100.0,
+          200.0,
+          300.0,
+          400.0,
+          500.0,
+          600.0
+        ],
+        "vertices_min": 3942,
+        "vertices_max": 4200,
+        "dimensions": 1,
+        "state_variables": 13,
+        "scalar_parameters": 6,
+        "byte_order": "little",
+        "record_marker_bytes": 4,
+        "tag_list_entries": 13,
+        "declared_header_reads": 13,
+        "missing_future_times_s": [
+          700,
+          800,
+          900,
+          1000,
+          1100,
+          1200
+        ],
+        "evidence": "/tmp/srcsep-mflampa-audit-kbou2cbd/input-binary-headers.json",
+        "evidence_sha256": "32e6704bf0c29711b386b060ba8e32e8b0fc1bcc4650e005dc647321abceba02"
+      },
+      "verified_current_source_caveats": [
+        "where r>1.1*r(iShock), session2 lambda_parallel=0.3AU*(r/AU)*(p*c/1GeV)^(1/3); not a constant0.3AU throughout space/energy; downstream retains MHD-turbulence closure",
+        "verified current consumption is deltaB^2=mu0*(Wave1+Wave2); file headers J/m3 do not identify magnetic versus total-wave energy or circular polarization",
+        "nMu>1 is not the archived standard baseline. Its scattering implementation floors the near-mu0 Kolmogorov factor and uses lambda_mumu=(14/27)lambda_parallel. Do not treat that imposed finite-lambda bridge as equivalent to the adopted finite-band polarized-gap physics.",
+        "current BL_put_from_mh divides physical mass density by cProtonMass, transforms velocity into requested coordinate frame, applies chosen energy conversion, and copies wave values; this is not proof of historical archive producer identity",
+        "Actual pinned time constant is1965; do not interpret StartTime as Unix seconds or trust the stale1585 comment.",
+        "Historical archive wave/density/temperature/frame semantics require producer/version evidence; source defaults are not historical binary provenance."
+      ],
+      "next_equivalent_input_gates": [
+        "First reproduce a named upstream Parker regression in an isolated run with actual solver exit, complete output/parser checks, copied immutable references and predeclared tolerances; no observational claim.",
+        "Resolve producer versions and constants, full line/vertex Lagrangian identity and geometry histories, density/composition, temperature energy, velocity frame, initial distribution, both spatial/momentum boundaries and session change at300s.",
+        "Implement an explicit read-only native replay adapter with immutable epochs and output intensity normalization; do not feed keV archive temperatures directly to the Kelvin PT coupling interface.",
+        "Before cross-model scoring, approve the common scattering experiment: upstream empirical finite-lambda Parker diagnostic versus native adopted polarized-gap physics are different models; do not suppress gaps or infer four helicities from aggregate waves.",
+        "Predeclare field-line/observer selection, projection and matching time/energy/channel bins, Monte Carlo sampling uncertainty and space/time/momentum refinement gates without fitting a global amplitude."
+      ],
+      "verified_upstream_regression": {
+        "target": "test_mflampa",
+        "status": "PASS",
+        "scope": "named upstream software regression; no AMPS equivalence, observational or adopted polarized-gap qualification",
+        "summary": "/tmp/srcsep-mflampa-audit-kbou2cbd/run_test_mflampa_55c2ca57e09e-summary.json",
+        "summary_sha256": "9282101edd87569dcbca938cf4cc7c2872336c72c42893f5e822e1abcaadf5ad",
+        "runtime": "/tmp/srcsep-mflampa-audit-kbou2cbd/MFLAMPA/run_test_mflampa_55c2ca57e09e",
+        "policy": {
+          "target": "test_mflampa",
+          "parameter": "Param/PARAM.in.test",
+          "ranks": 2,
+          "rank_source": "configured Makefile.def NP=2/MPIRUN=mpiexec -n2",
+          "patterns": [
+            "MH_data_*???_???.out",
+            "MH_data_*n000006.out"
+          ],
+          "absolute_tolerance": 1e-06,
+          "relative_tolerance": 1e-06,
+          "ignore_text_between_numbers": true,
+          "BLESS": "NO"
+        },
+        "model_exit_code": 0,
+        "model_elapsed_seconds": 9.78971426608041,
+        "comparison_exit_code": 0,
+        "selected_files": 33,
+        "parsed_blocks": 33,
+        "postchecks_passed": 75,
+        "protected_source_binary_inputs_references_unchanged": true,
+        "AMPS_equivalence": "NOT IMPLEMENTED",
+        "observational_validation": false,
+        "adopted_polarized_gap_physics_qualified": false
+      }
+    }
+  ]
+}

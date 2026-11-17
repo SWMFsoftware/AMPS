@@ -13,9 +13,11 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import hashlib
 import os
 from pathlib import Path
 import subprocess
+import re
 import sys
 import tempfile
 import textwrap
@@ -58,6 +60,242 @@ def _load_cross_model_runner():
 
 
 class PythonTestRunnerTests(unittest.TestCase):
+    def test_new_source_family_aliases_use_existing_strict_make_runners(self):
+        """Catalog aliases select audited runners; they do not rebuild AMPS.
+
+        Assert the real Make recipe and existing source runner, so a misspelled
+        alias cannot pass a table-only test while remaining unreachable.
+        """
+        runner = _load_runner_module()
+        makefile = (ROOT / "makefile").read_text()
+        for suite, target, script in (
+                ("analytic-radial", "test-analytic-radial-background-unit", "run_analytic_radial_background_tests.sh"),
+                ("analytic-shock-epoch", "test-analytic-shock-epoch-unit", "run_analytic_shock_epoch_tests.sh"),
+                ("finite-amplitude-study", "test-finite-amplitude-study-unit", "run_finite_amplitude_study_tests.sh"),
+                ("material-tube-kinematics", "test-material-tube-kinematics-unit", "run_material_tube_kinematics_tests.sh"),
+                ("standard-batsrus-waves", "test-standard-batsrus-wave-unit", "run_standard_batsrus_wave_tests.sh"),
+                ("flux-tube-state", "test-flux-tube-state-unit", "run_flux_tube_state_tests.sh"),
+                ("polarized-wkb", "test-polarized-wkb-unit", "run_polarized_wkb_tests.sh"),
+                ("maxwell-juttner-flux", "test-maxwell-juttner-flux-unit", "run_maxwell_juttner_flux_tests.sh")):
+            with self.subTest(suite=suite):
+                self.assertEqual(runner.SOURCE_SUITES[suite], target)
+                self.assertIn(target + ":\n\t./test/" + script, makefile)
+                self.assertTrue((ROOT / "test" / script).is_file())
+
+    def test_fct_source_guard_discards_compile_and_execution_mutations(self):
+        """Actual shell gate rejects changed source, even after a child PASS.
+
+        A recording fake compiler works only inside a disposable mirrored
+        fixture. This tests the source/evidence validity boundary without
+        recompiling physics or mutating any real checkout file.
+        """
+        source_script=ROOT/"test/run_frozen_collision_transaction_tests.sh"
+        script=source_script.read_text()
+        originals=re.findall(r'"((?:util/|test/|\.\./src/models/sep_common/)[^"\n]+)"',script)
+        protected=ROOT/"util/sep_frozen_collision_transaction.h"
+        original_hash=hashlib.sha256(protected.read_bytes()).hexdigest()
+        with tempfile.TemporaryDirectory(prefix="srcsep-source-guard-") as temporary:
+            temporary=Path(temporary)
+            app=temporary/"tree/srcSEP"
+            for relative in set(originals):
+                target=(app/relative).resolve()
+                self.assertIn(temporary,target.parents)
+                target.parent.mkdir(parents=True,exist_ok=True)
+                target.write_bytes((ROOT/relative).read_bytes())
+            runner=app/"test/run_frozen_collision_transaction_tests.sh"
+            runner.chmod(0o755)
+            mutated=app/"util/sep_frozen_collision_transaction.h"
+            fixture_original=mutated.read_bytes()
+            marker=temporary/"executed"
+            compiler=temporary/"fake-cxx"
+            compiler.write_text("#!"+sys.executable+"\n"+textwrap.dedent('''\
+                import os
+                from pathlib import Path
+                import sys
+                target=Path(os.environ["SRCSEP_GUARD_TARGET"])
+                output=Path(sys.argv[sys.argv.index("-o")+1])
+                if os.environ["SRCSEP_GUARD_PHASE"]=="compile":
+                    target.write_text(target.read_text()+"\\n// simulated concurrent edit\\n")
+                program=("#!"+sys.executable+"\\nimport os\\nfrom pathlib import Path\\n"
+                    "Path(os.environ['SRCSEP_GUARD_MARKER']).write_text('executed')\\n"
+                    "target=Path(os.environ['SRCSEP_GUARD_TARGET'])\\n"
+                    "target.write_text(target.read_text()+'\\\\n// simulated execution edit\\\\n')\\n"
+                    "print('[FCT01] PASS fixture child verdict; source guard must discard it')\\n")
+                output.write_text(program)
+                output.chmod(0o755)
+                '''),encoding="utf-8")
+            compiler.chmod(0o755)
+            for phase,diagnostic in (("compile","compilation"),("execute","execution")):
+                with self.subTest(phase=phase):
+                    mutated.write_bytes(fixture_original);marker.unlink(missing_ok=True)
+                    environment=dict(os.environ,CXX=str(compiler),PYTHONDONTWRITEBYTECODE="1",
+                        SRCSEP_GUARD_TARGET=str(mutated),SRCSEP_GUARD_MARKER=str(marker),SRCSEP_GUARD_PHASE=phase)
+                    child=subprocess.run([str(runner)],cwd=str(temporary),env=environment,text=True,
+                        stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=False)
+                    self.assertEqual(child.returncode,2,child.stdout)
+                    self.assertIn("source changed during "+diagnostic,child.stdout)
+                    self.assertEqual(marker.exists(),phase=="execute")
+                    if phase=="execute":self.assertIn("[FCT01] PASS",child.stdout)
+            self.assertEqual(hashlib.sha256(protected.read_bytes()).hexdigest(),original_hash)
+
+    def test_native_cwd_isolation_covers_discovery_and_relative_input_assets(self):
+        """A real child deliberately writes PIC names; srcSEP stays unchanged.
+
+        This is an infrastructure fault fixture, not model validation. Writing
+        before --list-tests returns makes a discovery regression observable as
+        well as an execution regression. Relative CSV paths intentionally use
+        the historic native srcSEP base, not the manifest's parent directory.
+        """
+        runner = _load_runner_module()
+        with tempfile.TemporaryDirectory(prefix="srcsep-native-cwd-") as temporary:
+            root = Path(temporary)
+            source, caller, output = root / "source", root / "caller", root / "evidence"
+            (source / "PT").mkdir(parents=True)
+            caller.mkdir()
+            protected = source / "PT" / "thread=0.log"
+            protected.write_text("source sentinel\n", encoding="utf-8")
+            (source / "fixtures").mkdir()
+            asset = source / "particles.csv"
+            asset.write_text("id,mu\n8,0.25\n", encoding="utf-8")
+            manifest = source / "fixtures" / "case.txt"
+            manifest_bytes = ("srcsep-cv01-native-args-v1\n--initial-particles\n"
+                              "particles.csv\n--dt-s\n0.125\n")
+            manifest.write_text(manifest_bytes, encoding="utf-8")
+            trace = root / "calls.jsonl"
+            executable = root / "amps"
+            executable.write_text("#!" + sys.executable + "\n" + textwrap.dedent('''\
+                import json
+                import os
+                from pathlib import Path
+                import sys
+                args=sys.argv[1:]
+                cwd=Path.cwd()
+                (cwd/"PT").mkdir(exist_ok=True)
+                (cwd/"PT/thread=0.log").write_text("native scratch")
+                (cwd/"mesh.cache").write_text("native cache")
+                record={"cwd":str(cwd),"arguments":args}
+                if "--test-input" in args:
+                    lines=Path(args[args.index("--test-input")+1]).read_text().splitlines()
+                    leaf=Path(lines[lines.index("--initial-particles")+1])
+                    record["asset_path"]=str(leaf)
+                    record["asset_bytes"]=leaf.read_text()
+                with Path(os.environ["SRCSEP_CWD_TRACE"]).open("a") as stream:
+                    stream.write(json.dumps(record)+"\\n")
+                if "--list-tests" in args:
+                    print("PCLI01 | cli | deterministic | infrastructure only")
+                    raise SystemExit(0)
+                report={"schema":"srcsep-component-tests-v1","exit_code":0,
+                    "totals":{"passed":1,"failed":0,"skipped":0,"errors":0},
+                    "results":[{"id":"PCLI01","status":"PASS","message":"cwd fixture",
+                        "elapsed_seconds":0,"seed":None,"configuration":[],"metrics":[],
+                        "artifacts":[str(cwd/"mesh.cache")]}]}
+                Path(args[args.index("--test-json")+1]).write_text(json.dumps(report))
+                Path(args[args.index("--test-junit")+1]).write_text("<testsuite/>")
+                '''), encoding="utf-8")
+            executable.chmod(0o755)
+            previous = Path.cwd()
+            try:
+                # Caller-owned --amps and --output-dir retain caller-relative
+                # semantics while forwarded native paths retain source base.
+                os.chdir(caller)
+                with mock.patch.object(runner, "ROOT", source), \
+                        mock.patch.object(runner, "_validation_case_ids", return_value=set()), \
+                        mock.patch.dict(os.environ, {"SRCSEP_CWD_TRACE":str(trace),
+                                                     "PYTHONDONTWRITEBYTECODE":"1"}), \
+                        mock.patch("sys.stdout", new_callable=io.StringIO):
+                    for selection, label in ((["--test","PCLI01"],"selected"),(["--all"],"all")):
+                        self.assertEqual(runner.main([
+                            "--amps","../amps",*selection,"--output-dir","../evidence/"+label,
+                            "--plot","none","--","--test-input","fixtures/case.txt"]),0)
+            finally:
+                os.chdir(previous)
+            records = [json.loads(line) for line in trace.read_text().splitlines()]
+            self.assertEqual(len(records),3)  # selected + all discovery + all case
+            directories = [Path(record["cwd"]) for record in records]
+            self.assertEqual(len(set(directories)),3)
+            for record, directory in zip(records,directories):
+                self.assertIn(output,directory.parents)
+                self.assertEqual(record["asset_bytes"],asset.read_text())
+                self.assertIn(directory,Path(record["asset_path"]).parents)
+                provenance=json.loads((directory/"native-execution.json").read_text())
+                self.assertEqual(provenance["native_relative_path_base"],str(source))
+                self.assertTrue(any(item["original"]==str(asset) for item in provenance["input_artifacts"]))
+                self.assertTrue((directory/"PT/thread=0.log").is_file())
+            self.assertEqual(protected.read_text(),"source sentinel\n")
+            self.assertFalse((source/"mesh.cache").exists())
+            self.assertEqual(manifest.read_text(),manifest_bytes)
+            self.assertEqual(asset.read_text(),"id,mu\n8,0.25\n")
+
+    def test_native_unknown_nested_schema_fails_without_launch_or_path_guess(self):
+        """An undeclared nested path base is a hard infrastructure error."""
+        runner = _load_runner_module()
+        with tempfile.TemporaryDirectory(prefix="srcsep-native-schema-") as temporary:
+            root=Path(temporary)
+            source=root/"source";source.mkdir()
+            (source/"case.txt").write_text("new-unknown-schema\nrelative/data.csv\n")
+            args=SimpleNamespace(model_args=["--test-input=case.txt"])
+            with mock.patch.object(runner,"ROOT",source), \
+                    mock.patch.object(runner.subprocess,"Popen") as launch:
+                with self.assertRaisesRegex(runner.RunnerError,"no declared nested-path isolation contract"):
+                    runner._native_scope(args,root/"evidence","unknown")
+                launch.assert_not_called()
+            self.assertEqual((source/"case.txt").read_text(),"new-unknown-schema\nrelative/data.csv\n")
+
+    def test_linked_validation_native_launch_and_discovery_own_their_scratch(self):
+        """Exercise the shared CV/IV/XM launcher through real subprocesses.
+
+        The fixture publishes literal minimal CSV and PASS records only. It
+        proves executable selection and file ownership, with no numerical
+        acceptance claim for the named case.
+        """
+        def load(name, path):
+            specification=importlib.util.spec_from_file_location(name,path)
+            module=importlib.util.module_from_spec(specification)
+            specification.loader.exec_module(module)
+            return module
+        linked=load("srcsep_linked_scope_fixture",ROOT/"validation/cases/linked_case_common.py")
+        cases=load("srcsep_case_scope_fixture",CASE_RUNNER)
+        with tempfile.TemporaryDirectory(prefix="srcsep-linked-cwd-") as temporary:
+            root=Path(temporary);source=root/"source";source.mkdir()
+            (source/"history.csv").write_text("time_s,rate\n0,1\n")
+            output=root/"evidence";output.mkdir()
+            executable=root/"amps"
+            executable.write_text("#!"+sys.executable+"\n"+textwrap.dedent('''\
+                import json
+                from pathlib import Path
+                import sys
+                args=sys.argv[1:]
+                Path("PT").mkdir(exist_ok=True)
+                Path("PT/thread=0.log").write_text("owned scratch")
+                if "--list-tests" in args:
+                    print("CV02 | controlled-analytical | deterministic")
+                    raise SystemExit(0)
+                cid=args[args.index("--test")+1]
+                lines=Path(args[args.index("--test-input")+1]).read_text().splitlines()
+                assert Path(lines[lines.index("--source-history-csv")+1]).read_text()=="time_s,rate\\n0,1\\n"
+                model=Path(args[args.index("--test-output-dir")+1])/(cid+"_model.csv")
+                model.write_text("fixture,value\\n1,2\\n")
+                Path(args[args.index("--test-json")+1]).write_text(json.dumps(
+                    {"results":[{"id":cid,"status":"PASS"}]}))
+                Path(args[args.index("--test-junit")+1]).write_text("<testsuite/>")
+                '''),encoding="utf-8")
+            executable.chmod(0o755)
+            discovery=output/"discovery";discovery.mkdir()
+            cases._verify_linked_registry(executable,["CV02"],10,discovery)
+            with mock.patch("sys.stdout",new_callable=io.StringIO):
+                result=linked.run_linked_model(case_id="CV02",arguments=["--source-history-csv","history.csv"],
+                    source_root=source,output_dir=output,executable=executable,timeout=10)
+            self.assertFalse((source/"PT").exists())
+            self.assertTrue((discovery/"PT/thread=0.log").exists())
+            self.assertIn("WORKING_DIRECTORY:",result["log"].read_text())
+            records=list((output/"native/native-work").glob("*/native-execution.json"))
+            self.assertEqual(len(records),1)
+            provenance=json.loads(records[0].read_text())
+            self.assertEqual(provenance["native_relative_path_base"],str(source))
+            self.assertTrue((records[0].parent/"PT/thread=0.log").exists())
+            self.assertTrue(any(item["original"]==str(source/"history.csv")
+                                for item in provenance["input_artifacts"]))
+
     def test_help_contains_annotated_selection_and_plot_examples(self):
         """Keep the command-line quick-start available to archive users."""
         completed = subprocess.run(
@@ -291,11 +529,13 @@ PARK01 | parker | duplicate
                 }), encoding="utf-8")
                 return 0, report_path, [[str(executable), "--test", "D01"]]
 
-            with (mock.patch.object(runner, "_rebuild_linked_application",
-                                    side_effect=fake_rebuild),
+            # Keep multiple-context syntax compatible with the Python 3.8
+            # interpreter supported by this source tree.
+            with mock.patch.object(runner, "_rebuild_linked_application",
+                                    side_effect=fake_rebuild), \
                   mock.patch.object(runner, "_run_all_tests",
-                                    side_effect=fake_all),
-                  mock.patch("sys.stdout", io.StringIO())):
+                                    side_effect=fake_all), \
+                  mock.patch("sys.stdout", io.StringIO()):
                 exit_code = runner.main([
                     "--amps", str(executable), "--all", "--rebuild",
                     "--amps-source", str(temporary), "--make-config",
@@ -359,13 +599,13 @@ PARK01 | parker | duplicate
                 return 1 if result_status == "FAIL" else 0
 
             stdout = io.StringIO()
-            with (mock.patch.object(runner, "_discover_all_ids",
-                                    return_value=["BAD02", "FAIL03", "GOOD01"]),
+            with mock.patch.object(runner, "_discover_all_ids",
+                                    return_value=["BAD02", "FAIL03", "GOOD01"]), \
                   mock.patch.object(runner, "_validation_case_ids",
-                                    return_value=set()),
+                                    return_value=set()), \
                   mock.patch.object(runner, "_run_streaming",
-                                    side_effect=fake_run),
-                  mock.patch("sys.stdout", stdout)):
+                                    side_effect=fake_run), \
+                  mock.patch("sys.stdout", stdout):
                 exit_code, report_path, commands = runner._run_all_tests(
                     arguments, output, output / "test-run.log")
                 # main() calls the final summary only after plot/manifest output;
@@ -434,9 +674,9 @@ PARK01 | parker | duplicate
 
         with tempfile.TemporaryDirectory(prefix="srcsep-source-results-") as tmp:
             output = Path(tmp)
-            with (mock.patch.dict(runner.SOURCE_SUITES, targets, clear=False),
+            with mock.patch.dict(runner.SOURCE_SUITES, targets, clear=False), \
                   mock.patch.object(runner, "_run_streaming",
-                                    side_effect=fake_run)):
+                                    side_effect=fake_run):
                 exit_code, report_path, commands = runner._run_source_suites(
                     arguments, output, output / "test-run.log")
 
@@ -502,10 +742,10 @@ PARK01 | parker | duplicate
             arguments = SimpleNamespace(
                 suites=["fixture-real-compile"], keep_going=True,
                 timeout=30.0)
-            with (mock.patch.dict(
+            with mock.patch.dict(
                     runner.SOURCE_SUITES,
-                    {"fixture-real-compile": "target-compile"}, clear=False),
-                  mock.patch.object(runner, "ROOT", temporary)):
+                    {"fixture-real-compile": "target-compile"}, clear=False), \
+                  mock.patch.object(runner, "ROOT", temporary):
                 exit_code, report_path, _ = runner._run_source_suites(
                     arguments, output, output / "test-run.log")
             report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -542,9 +782,9 @@ PARK01 | parker | duplicate
 
         with tempfile.TemporaryDirectory(prefix="srcsep-source-blocked-") as tmp:
             output = Path(tmp)
-            with (mock.patch.dict(runner.SOURCE_SUITES, mapping, clear=False),
+            with mock.patch.dict(runner.SOURCE_SUITES, mapping, clear=False), \
                   mock.patch.object(runner, "_run_streaming",
-                                    side_effect=fail_first)):
+                                    side_effect=fail_first):
                 exit_code, report_path, _ = runner._run_source_suites(
                     arguments, output, output / "test-run.log")
             report = json.loads(report_path.read_text(encoding="utf-8"))

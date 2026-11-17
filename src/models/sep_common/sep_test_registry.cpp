@@ -10,6 +10,9 @@
 #include <sstream>
 #include <stdexcept>
 #include <utility>
+#include <limits>
+#include <cstdio>
+#include <unistd.h>
 
 namespace SEP {
 namespace Testing {
@@ -20,6 +23,14 @@ namespace {
 // validation and before registry dispatch. Component callbacks receive a const
 // view, preventing one case from redirecting a later case's input or evidence.
 ExecutionContext executionContext;
+struct SeedUse {std::uint64_t original,purpose,actual;};
+std::vector<SeedUse> seedUses;
+void HashWord(std::uint64_t value,std::uint64_t& hash) {
+  for(unsigned byte=0;byte<8;++byte) {
+    hash^=static_cast<unsigned char>(value>>(8*byte));
+    hash*=UINT64_C(1099511628211);
+  }
+}
 
 }  // namespace
 
@@ -29,6 +40,24 @@ void SetExecutionContext(const ExecutionContext& context) {
 
 const ExecutionContext& GetExecutionContext() {
   return executionContext;
+}
+std::uint64_t DeriveTestCaseSeed(std::uint64_t campaign,const std::string& id,
+                                std::uint32_t replicate) {
+  std::uint64_t hash=UINT64_C(14695981039346656037);
+  HashWord(UINT64_C(0x5445535443415345),hash);HashWord(TestSeedSchema,hash);
+  HashWord(campaign,hash);
+  for(unsigned char value:id) {hash^=static_cast<unsigned char>(std::toupper(value));hash*=UINT64_C(1099511628211);}
+  HashWord(replicate,hash);return hash;
+}
+std::uint64_t TestSeed(std::uint64_t original,std::uint64_t purpose) {
+  if(!executionContext.seedActive)return original;
+  for(const auto& use:seedUses)
+    if(use.original==original&&use.purpose==purpose)return use.actual;
+  std::uint64_t hash=UINT64_C(14695981039346656037);
+  HashWord(UINT64_C(0x5445535453454544),hash);HashWord(TestSeedSchema,hash);
+  HashWord(executionContext.caseSeed,hash);HashWord(original,hash);HashWord(purpose,hash);
+  SeedUse use;use.original=original;use.purpose=purpose;use.actual=hash;seedUses.push_back(use);
+  return hash;
 }
 namespace {
 
@@ -86,19 +115,31 @@ std::string XmlEscape(const std::string& value) {
   return result;
 }
 
-bool OpenReport(const std::string& path, std::ofstream* output,
-                std::string* error) {
-  if (path.empty()) {
-    if (error) *error = "structured report path is empty";
-    return false;
+class AtomicReport {
+ public:
+  std::ofstream stream;
+  std::string temporary;
+  ~AtomicReport(){if(!temporary.empty())std::remove(temporary.c_str());}
+  bool Open(const std::string& path,std::string* error) {
+    if(path.empty()) {if(error)*error="structured report path is empty";return false;}
+    const auto pattern=path+".tmp.XXXXXX";
+    std::vector<char> name(pattern.begin(),pattern.end());name.push_back('\0');
+    const int fd=mkstemp(name.data());
+    if(fd<0) {if(error)*error="cannot create temporary structured report: "+path;return false;}
+    close(fd);temporary=name.data();stream.open(temporary.c_str());
+    if(!stream.good()) {if(error)*error="cannot open temporary structured report: "+path;return false;}
+    return true;
   }
-  output->open(path.c_str(), std::ios::out | std::ios::trunc);
-  if (!output->good()) {
-    if (error) *error = "cannot open structured report: " + path;
-    return false;
+  bool Commit(const std::string& path,std::string* error) {
+    stream.flush();stream.close();
+    if(stream.fail()) {if(error)*error="failed while writing structured report: "+path;return false;}
+    if(std::rename(temporary.c_str(),path.c_str())!=0) {
+      if(error)*error="cannot atomically commit structured report: "+path;
+      return false;
+    }
+    temporary.clear();return true;
   }
-  return true;
-}
+};
 
 void WriteJsonFloatingPoint(std::ostream& out, double value) {
   // JSON has no NaN or infinity tokens. Preserve non-finite failure evidence as
@@ -108,6 +149,41 @@ void WriteJsonFloatingPoint(std::ostream& out, double value) {
   if (std::isfinite(value)) out << std::setprecision(17) << value;
   else if (std::isnan(value)) out << "\"nan\"";
   else out << (value > 0.0 ? "\"+infinity\"" : "\"-infinity\"");
+}
+void WriteJsonResult(std::ostream& out,const Result& result) {
+  out<<"{\"id\": \""<<JsonEscape(result.id)<<"\", \"status\": \""<<StatusName(result.status)
+      <<"\", \"message\": \""<<JsonEscape(result.message)<<"\", \"elapsed_seconds\": ";
+  WriteJsonFloatingPoint(out,result.elapsedSeconds);out<<", \"seed\": ";
+  if(result.hasSeed)out<<result.seed;else out<<"null";
+  out<<", \"configuration\": [";
+  for(std::size_t j=0;j<result.configuration.size();++j) {
+    if(j)out<<", ";
+    out<<'"'<<JsonEscape(result.configuration[j])<<'"';
+  }
+  out<<"], \"metrics\": [";
+  for(std::size_t j=0;j<result.metrics.size();++j) {
+    if(j)out<<", ";
+    const auto& metric=result.metrics[j];
+    out<<"{\"name\": \""<<JsonEscape(metric.name)<<"\", \"value\": ";
+    WriteJsonFloatingPoint(out,metric.value);out<<", \"tolerance\": ";
+    WriteJsonFloatingPoint(out,metric.tolerance);
+    out<<", \"comparison\": \""<<JsonEscape(metric.comparison)<<"\", \"units\": \""
+        <<JsonEscape(metric.units)<<"\"}";
+  }
+  out<<"], \"artifacts\": [";
+  for(std::size_t j=0;j<result.artifacts.size();++j) {
+    if(j)out<<", ";
+    out<<'"'<<JsonEscape(result.artifacts[j])<<'"';
+  }
+  out<<"], \"invocations\": [";
+  for(std::size_t j=0;j<result.invocations.size();++j) {
+    if(j)out<<", ";
+    out<<"{\"replicate_index\": "<<result.invocations[j].replicateIndex<<", \"result\": ";
+    if(result.invocations[j].result)WriteJsonResult(out,*result.invocations[j].result);
+    else out<<"null";
+    out<<'}';
+  }
+  out<<"]}";
 }
 
 }  // namespace
@@ -201,6 +277,10 @@ Registry::Registry(std::vector<Descriptor> descriptors)
     if (!foldedIds.insert(foldedId).second) {
       throw std::invalid_argument("duplicate component-test ID: " + descriptor.id);
     }
+    std::set<std::string> tags;
+    for(const auto& tag:descriptor.tags)
+      if(tag.empty()||!tags.insert(FoldCase(tag)).second)
+        throw std::invalid_argument("test tags must be nonempty and unique: "+descriptor.id);
   }
 
   std::sort(descriptors_.begin(), descriptors_.end(), DescriptorIdLess);
@@ -209,11 +289,35 @@ Registry::Registry(std::vector<Descriptor> descriptors)
 std::vector<const Descriptor*> Registry::Select(
     const std::vector<std::string>& ids,
     const std::vector<std::string>& groups,
-    bool allRoutine) const {
+    bool allRoutine,const std::vector<std::string>& expressions) const {
   std::set<std::string> requestedIds;
   std::set<std::string> requestedGroups;
   for (const std::string& id : ids) requestedIds.insert(FoldCase(id));
   for (const std::string& group : groups) requestedGroups.insert(FoldCase(group));
+  bool allComplete=false;
+  std::set<std::string> requestedTags;
+  for(const auto& expression:expressions) {
+    std::string normalized=expression;
+    std::replace(normalized.begin(),normalized.end(),',',' ');
+    std::istringstream tokens(normalized);std::string token;bool any=false;
+    while(tokens>>token) {
+      any=true;token=FoldCase(token);
+      if(token=="all") {allComplete=true;continue;}
+      if(token.compare(0,3,"id:")==0) {requestedIds.insert(token.substr(3));continue;}
+      if(token.compare(0,6,"group:")==0) {requestedGroups.insert(token.substr(6));continue;}
+      if(token.compare(0,4,"tag:")==0) {requestedTags.insert(token.substr(4));continue;}
+      bool id=false,group=false,tag=false;
+      for(const auto& descriptor:descriptors_) {
+        id=id||FoldCase(descriptor.id)==token;group=group||FoldCase(descriptor.group)==token;
+        for(const auto& item:descriptor.tags)tag=tag||FoldCase(item)==token;
+      }
+      if(id)requestedIds.insert(token);
+      else if(group)requestedGroups.insert(token);
+      else if(tag)requestedTags.insert(token);
+      else throw std::invalid_argument("unknown component-test expression: "+token);
+    }
+    if(!any)throw std::invalid_argument("empty component-test expression");
+  }
 
   // Diagnose every unknown selector before initialization.  Silent empty group
   // matches are especially dangerous because they could otherwise turn a test
@@ -235,6 +339,12 @@ std::vector<const Descriptor*> Registry::Select(
       throw std::invalid_argument("unknown component-test group: " + requestedGroup);
     }
   }
+  for(const auto& requested:requestedTags) {
+    bool found=false;
+    for(const auto& descriptor:descriptors_)for(const auto& tag:descriptor.tags)
+      found=found||FoldCase(tag)==requested;
+    if(!found)throw std::invalid_argument("unknown component-test tag: "+requested);
+  }
 
   std::vector<const Descriptor*> selected;
   for (const Descriptor& descriptor : descriptors_) {
@@ -243,9 +353,11 @@ std::vector<const Descriptor*> Registry::Select(
     const bool selectedByGroup =
         requestedGroups.count(FoldCase(descriptor.group)) != 0;
     const bool selectedByAll =
-        allRoutine && descriptor.runtime == RuntimeClass::Routine;
+        allComplete||(allRoutine && descriptor.runtime == RuntimeClass::Routine);
+    bool selectedByTag=false;
+    for(const auto& tag:descriptor.tags)selectedByTag=selectedByTag||requestedTags.count(FoldCase(tag))!=0;
 
-    if (selectedById || selectedByGroup || selectedByAll) {
+    if (selectedById || selectedByGroup || selectedByAll||selectedByTag) {
       selected.push_back(&descriptor);
     }
   }
@@ -256,6 +368,7 @@ std::vector<const Descriptor*> Registry::Select(
 }
 
 Result Registry::RunOne(const Descriptor& descriptor) const {
+  seedUses.clear();
   const std::chrono::steady_clock::time_point start =
       std::chrono::steady_clock::now();
   Result result;
@@ -293,7 +406,91 @@ Result Registry::RunOne(const Descriptor& descriptor) const {
       }
     }
   }
+  if(executionContext.seedActive) {
+    result.configuration.push_back("test_seed_schema="+std::to_string(TestSeedSchema));
+    result.configuration.push_back("test_campaign_seed="+std::to_string(executionContext.campaignSeed));
+    result.configuration.push_back("test_case_seed="+std::to_string(executionContext.caseSeed));
+    for(const auto& use:seedUses)result.configuration.push_back(
+        "test_stream_seed default="+std::to_string(use.original)+" purpose="+
+        std::to_string(use.purpose)+" actual="+std::to_string(use.actual));
+    if(descriptor.seedCapability==SeedCapability::Context&&seedUses.empty()&&
+       result.status==Status::Pass) {
+      result.status=Status::Error;
+      result.message="context-seeded callback did not apply TestSeed to an actual stream";
+    }
+  }
   return result;
+}
+
+Summary Registry::RunCampaign(const std::vector<const Descriptor*>& selected,
+    const CampaignOptions& options,std::ostream& out,
+    const std::function<Result(const Descriptor&)>& runner) const {
+  if(options.repeatCount==0)throw std::invalid_argument("test-repeat must be positive");
+  if(!selected.empty()&&options.repeatCount>std::numeric_limits<std::size_t>::max()/selected.size())
+    throw std::invalid_argument("test selection times repetition count overflows campaign storage");
+  const ExecutionContext saved=executionContext;
+  struct Restore {ExecutionContext context;~Restore(){executionContext=context;seedUses.clear();}} restore{saved};
+  Summary summary;bool stopped=false;
+  const auto severity=[](Status status){return status==Status::Error?3:status==Status::Fail?2:status==Status::Skip?1:0;};
+  for(const Descriptor* descriptor:selected) {
+    if(!descriptor)throw std::invalid_argument("campaign selection contains null descriptor");
+    if(stopped) {
+      summary.notRun.push_back(descriptor->id+"#0.."+std::to_string(options.repeatCount-1));
+      summary.notRunInvocationCount+=options.repeatCount;continue;
+    }
+    Result aggregate;aggregate.id=descriptor->id;aggregate.status=Status::Pass;
+    for(std::uint32_t replicate=0;replicate<options.repeatCount;++replicate) {
+      executionContext=saved;seedUses.clear();
+      executionContext.testId=descriptor->id;executionContext.campaignSeed=options.campaignSeed;
+      executionContext.caseSeed=DeriveTestCaseSeed(options.campaignSeed,descriptor->id,replicate);
+      executionContext.replicateIndex=replicate;executionContext.replicateCount=options.repeatCount;
+      executionContext.seedActive=(options.seedProvided||options.repeatCount>1)&&
+          descriptor->seedCapability==SeedCapability::Context;
+      if(!options.artifactRoot.empty())executionContext.artifactDirectory=options.artifactRoot+
+          "/"+descriptor->id+"/replicate-"+std::to_string(replicate);
+      Result result;
+      const bool unsupported=(options.seedProvided&&descriptor->seedCapability==SeedCapability::FixedContract)||
+         (options.repeatCount>1&&!descriptor->repeatSupported);
+      if(unsupported) {
+        result.status=Status::Error;result.id=descriptor->id;
+        result.message="requested seed/repeat is unsupported by this fixed or unconverted test contract";
+      } else result=runner?runner(*descriptor):RunOne(*descriptor);
+      Invocation invocation;invocation.replicateIndex=replicate;
+      invocation.result=std::make_shared<Result>(result);aggregate.invocations.push_back(invocation);
+      if(aggregate.invocations.size()==1) {
+        aggregate.message=result.message;aggregate.hasSeed=result.hasSeed;aggregate.seed=result.seed;
+        aggregate.configuration=result.configuration;aggregate.metrics=result.metrics;aggregate.artifacts=result.artifacts;
+      } else {
+        aggregate.hasSeed=aggregate.hasSeed&&result.hasSeed&&aggregate.seed==result.seed;
+        aggregate.metrics.clear();aggregate.artifacts.insert(aggregate.artifacts.end(),result.artifacts.begin(),result.artifacts.end());
+      }
+      if(severity(result.status)>severity(aggregate.status))aggregate.status=result.status;
+      aggregate.elapsedSeconds+=result.elapsedSeconds;
+      if(unsupported||(options.failFast&&(result.status==Status::Fail||result.status==Status::Error))) {
+        // An unsupported contract cannot execute any requested replicate.
+        // Report one authoritative ERROR, then retain the other requested
+        // invocations as a compact range even without global fail-fast. This
+        // avoids allocating billions of identical contract errors while still
+        // continuing to the next selected descriptor when fail-fast is off.
+        stopped=options.failFast;
+        const std::uint64_t remaining=options.repeatCount-replicate-1;
+        if(remaining) {
+          summary.notRun.push_back(descriptor->id+"#"+std::to_string(replicate+1)+".."+
+              std::to_string(options.repeatCount-1));
+          summary.notRunInvocationCount+=remaining;
+        }
+        break;
+      }
+    }
+    if(!aggregate.invocations.empty()) {
+      if(options.repeatCount>1)aggregate.configuration.push_back("test_replicates_executed="+
+          std::to_string(aggregate.invocations.size())+" requested="+std::to_string(options.repeatCount));
+      summary.Add(aggregate);PrintResult(aggregate,out);
+    }
+  }
+  out<<"Component-test summary: PASS="<<summary.passed<<" FAIL="<<summary.failed
+      <<" SKIP="<<summary.skipped<<" ERROR="<<summary.errors<<'\n';
+  return summary;
 }
 
 Summary Registry::Run(const std::vector<const Descriptor*>& selected,
@@ -321,101 +518,72 @@ Summary Registry::Run(const std::vector<const Descriptor*>& selected,
   return summary;
 }
 
-bool WriteJsonSummary(const Summary& summary, const std::string& path,
-                      std::string* error) {
-  std::ofstream out;
-  if (!OpenReport(path, &out, error)) return false;
-  out << "{\n  \"schema\": \"srcsep-component-tests-v1\",\n"
-      << "  \"exit_code\": " << summary.ExitCode() << ",\n"
-      << "  \"totals\": {\"passed\": " << summary.passed
-      << ", \"failed\": " << summary.failed
-      << ", \"skipped\": " << summary.skipped
-      << ", \"errors\": " << summary.errors << "},\n"
-      << "  \"results\": [\n";
-  for (std::size_t i = 0; i < summary.results.size(); ++i) {
-    const Result& result = summary.results[i];
-    out << "    {\"id\": \"" << JsonEscape(result.id)
-        << "\", \"status\": \"" << StatusName(result.status)
-        << "\", \"message\": \"" << JsonEscape(result.message)
-        << "\", \"elapsed_seconds\": ";
-    WriteJsonFloatingPoint(out, result.elapsedSeconds);
-    out << ", \"seed\": ";
-    if (result.hasSeed) out << result.seed;
-    else out << "null";
-    out << ", \"configuration\": [";
-    for (std::size_t j = 0; j < result.configuration.size(); ++j) {
-      if (j != 0) out << ", ";
-      out << '"' << JsonEscape(result.configuration[j]) << '"';
-    }
-    out << "], \"metrics\": [";
-    for (std::size_t j = 0; j < result.metrics.size(); ++j) {
-      if (j != 0) out << ", ";
-      const Metric& metric = result.metrics[j];
-      out << "{\"name\": \"" << JsonEscape(metric.name)
-          << "\", \"value\": ";
-      WriteJsonFloatingPoint(out, metric.value);
-      out << ", \"tolerance\": ";
-      WriteJsonFloatingPoint(out, metric.tolerance);
-      out << ", \"comparison\": \"" << JsonEscape(metric.comparison)
-          << "\", \"units\": \"" << JsonEscape(metric.units) << "\"}";
-    }
-    out << "], \"artifacts\": [";
-    for (std::size_t j = 0; j < result.artifacts.size(); ++j) {
-      if (j != 0) out << ", ";
-      out << '"' << JsonEscape(result.artifacts[j]) << '"';
-    }
-    out << "]}" << (i + 1 == summary.results.size() ? "\n" : ",\n");
+bool WriteJsonSummary(const Summary& summary,const std::string& path,std::string* error) {
+  AtomicReport transaction;
+  if(!transaction.Open(path,error))return false;
+  auto& out=transaction.stream;
+  out<<"{\n  \"schema\": \"srcsep-component-tests-v1\",\n"
+      <<"  \"test_seed_schema\": "<<TestSeedSchema<<",\n"
+      <<"  \"exit_code\": "<<summary.ExitCode()<<",\n"
+      <<"  \"not_run_invocation_count\": "<<summary.notRunInvocationCount<<",\n"
+      <<"  \"totals\": {\"passed\": "<<summary.passed<<", \"failed\": "<<summary.failed
+      <<", \"skipped\": "<<summary.skipped<<", \"errors\": "<<summary.errors<<"},\n"
+      <<"  \"not_run\": [";
+  for(std::size_t i=0;i<summary.notRun.size();++i) {
+    if(i)out<<", ";
+    out<<'"'<<JsonEscape(summary.notRun[i])<<'"';
   }
-  out << "  ]\n}\n";
-  out.close();
-  if (out.fail()) {
-    if (error) *error = "failed while writing JSON report: " + path;
-    return false;
+  out<<"],\n  \"results\": [\n";
+  for(std::size_t i=0;i<summary.results.size();++i) {
+    out<<"    ";WriteJsonResult(out,summary.results[i]);
+    out<<(i+1==summary.results.size()?"\n":",\n");
   }
-  return true;
+  out<<"  ]\n}\n";
+  return transaction.Commit(path,error);
 }
 
-bool WriteJUnitSummary(const Summary& summary, const std::string& path,
-                       std::string* error) {
-  std::ofstream out;
-  if (!OpenReport(path, &out, error)) return false;
-  out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-      << "<testsuite name=\"srcSEP component tests\" tests=\""
-      << summary.results.size() << "\" failures=\"" << summary.failed
-      << "\" errors=\"" << summary.errors << "\" skipped=\""
-      << summary.skipped << "\">\n";
-  for (std::size_t i = 0; i < summary.results.size(); ++i) {
-    const Result& result = summary.results[i];
-    out << "  <testcase classname=\"srcSEP\" name=\""
-        << XmlEscape(result.id) << "\" time=\"" << std::setprecision(17)
-        << result.elapsedSeconds << "\">\n";
-    if (result.status == Status::Fail)
-      out << "    <failure message=\"" << XmlEscape(result.message)
-          << "\"/>\n";
-    else if (result.status == Status::Error)
-      out << "    <error message=\"" << XmlEscape(result.message)
-          << "\"/>\n";
-    else if (result.status == Status::Skip)
-      out << "    <skipped message=\"" << XmlEscape(result.message)
-          << "\"/>\n";
-    out << "    <system-out>";
-    if (result.hasSeed) out << "seed=" << result.seed << "\n";
-    for (std::size_t j = 0; j < result.configuration.size(); ++j)
-      out << XmlEscape(result.configuration[j]) << "\n";
-    for (std::size_t j = 0; j < result.metrics.size(); ++j)
-      out << XmlEscape(result.metrics[j].name) << '='
-          << result.metrics[j].value << "\n";
-    for (std::size_t j = 0; j < result.artifacts.size(); ++j)
-      out << "artifact=" << XmlEscape(result.artifacts[j]) << "\n";
-    out << "</system-out>\n  </testcase>\n";
+bool WriteJUnitSummary(const Summary& summary,const std::string& path,std::string* error) {
+  std::vector<std::pair<std::string,const Result*>> executions;
+  unsigned failures=0,errors=0,skipped=0;
+  for(const auto& aggregate:summary.results) {
+    if(aggregate.invocations.empty())executions.emplace_back(aggregate.id,&aggregate);
+    else for(const auto& invocation:aggregate.invocations) {
+      if(!invocation.result) {if(error)*error="null invocation in structured report";return false;}
+      executions.emplace_back(aggregate.id+"[replicate="+std::to_string(invocation.replicateIndex)+"]",invocation.result.get());
+    }
   }
-  out << "</testsuite>\n";
-  out.close();
-  if (out.fail()) {
-    if (error) *error = "failed while writing JUnit report: " + path;
-    return false;
+  for(const auto& execution:executions) {
+    failures+=execution.second->status==Status::Fail;
+    errors+=execution.second->status==Status::Error;
+    skipped+=execution.second->status==Status::Skip;
   }
-  return true;
+  AtomicReport transaction;
+  if(!transaction.Open(path,error))return false;
+  auto& out=transaction.stream;
+  out<<"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+      <<"<testsuite name=\"srcSEP component tests\" tests=\""<<executions.size()
+      <<"\" failures=\""<<failures<<"\" errors=\""<<errors<<"\" skipped=\""<<skipped<<"\">\n";
+  for(const auto& execution:executions) {
+    const Result& result=*execution.second;
+    out<<"  <testcase classname=\"srcSEP."<<XmlEscape(result.id)<<"\" name=\""
+        <<XmlEscape(execution.first)<<"\" time=\""<<std::setprecision(17)<<result.elapsedSeconds<<"\">\n";
+    if(result.status==Status::Fail)out<<"    <failure message=\""<<XmlEscape(result.message)<<"\"/>\n";
+    else if(result.status==Status::Error)out<<"    <error message=\""<<XmlEscape(result.message)<<"\"/>\n";
+    else if(result.status==Status::Skip)out<<"    <skipped message=\""<<XmlEscape(result.message)<<"\"/>\n";
+    out<<"    <system-out>";
+    if(result.hasSeed)out<<"seed="<<result.seed<<"\n";
+    for(const auto& setting:result.configuration)out<<XmlEscape(setting)<<"\n";
+    for(const auto& metric:result.metrics)out<<XmlEscape(metric.name)<<'='<<metric.value<<"\n";
+    for(const auto& artifact:result.artifacts)out<<"artifact="<<XmlEscape(artifact)<<"\n";
+    out<<"</system-out>\n  </testcase>\n";
+  }
+  if(!summary.notRun.empty()) {
+    out<<"  <system-out>";
+    for(const auto& id:summary.notRun)out<<"not_run="<<XmlEscape(id)<<"\n";
+    out<<"</system-out>\n";
+  }
+  out<<"</testsuite>\n";
+  return transaction.Commit(path,error);
 }
 
 void Registry::PrintList(std::ostream& out) const {
@@ -429,6 +597,12 @@ void Registry::PrintList(std::ostream& out) const {
         << descriptor.description << '\n';
     out << "  seed: " << descriptor.seedPolicy << '\n'
         << "  state/isolation: " << descriptor.stateIsolation << '\n';
+    out<<"  seed-capability: "<<(descriptor.seedCapability==SeedCapability::Context?"context":
+        descriptor.seedCapability==SeedCapability::Deterministic?"deterministic":"fixed-or-unconverted")
+       <<"; repeat-supported: "<<(descriptor.repeatSupported?"yes":"no")<<'\n';
+    out<<"  tags:";
+    for(const auto& tag:descriptor.tags)out<<' '<<tag;
+    out<<'\n';
   }
 }
 

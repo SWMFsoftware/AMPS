@@ -349,6 +349,62 @@ KeyedRandomStream::KeyedRandomStream(std::uint64_t campaignSeed,
   state_ = Mix(state_ ^ Mix(UINT64_C(2)) ^ Mix(particleId));
   state_ = Mix(state_ ^ Mix(UINT64_C(3)) ^ Mix(operatorId));
   state_ = Mix(state_ ^ Mix(UINT64_C(4)) ^ Mix(eventIndex));
+  keyIdentity_ = state_;
+}
+
+KeyedRandomStreamState KeyedRandomStream::SaveState() const {
+  KeyedRandomStreamState saved;
+  saved.keyIdentity = keyIdentity_;
+  saved.integerState = state_;
+  saved.hasSpareNormal = hasSpareNormal_ ? UINT64_C(1) : UINT64_C(0);
+  // An unavailable cache has one canonical serialization; its old consumed
+  // value cannot affect future draws and must not introduce history-only bytes.
+  saved.spareNormal = hasSpareNormal_ ? spareNormal_ : 0.0;
+  return saved;
+}
+
+Status KeyedRandomStream::RestoreState(const KeyedRandomStreamState& saved) {
+  if (saved.schema != KeyedRandomStreamSchema ||
+      saved.keyIdentity != keyIdentity_ || saved.hasSpareNormal > UINT64_C(1) ||
+      !std::isfinite(saved.spareNormal) ||
+      (saved.hasSpareNormal == 0 && saved.spareNormal != 0.0)) {
+    return Status::Error(StatusCode::InvalidParticleState,
+        "incompatible or invalid keyed random-stream state; exact stochastic "
+        "continuation requires the original key and complete state");
+  }
+  state_ = saved.integerState;
+  hasSpareNormal_ = saved.hasSpareNormal != 0;
+  spareNormal_ = saved.spareNormal;
+  return Status::Ok();
+}
+
+Status ResumeOperatorRandomStream(const OperatorRandomState& saved,
+                                  KeyedRandomStream* random,
+                                  std::uint64_t* acceptedIntervals) {
+  if (!random || !acceptedIntervals)
+    return Status::Error(StatusCode::InvalidArgument,
+                          "operator RNG resume requires output storage");
+  const Status status = random->RestoreState(saved.stream);
+  if (!status.ok()) return status;
+  *acceptedIntervals = saved.acceptedIntervals;
+  return Status::Ok();
+}
+
+Status StageOperatorRandomStream(OperatorRandomState* candidate,
+                                 const KeyedRandomStream& random,
+                                 std::uint64_t acceptedIntervals) {
+  if (!candidate)
+    return Status::Error(StatusCode::InvalidArgument,
+                          "operator RNG stage requires candidate storage");
+  const KeyedRandomStreamState next = random.SaveState();
+  if (candidate->stream.schema != next.schema ||
+      candidate->stream.keyIdentity != next.keyIdentity ||
+      acceptedIntervals < candidate->acceptedIntervals)
+    return Status::Error(StatusCode::InvalidParticleState,
+        "operator RNG stage changed identity or rolled back accepted work");
+  candidate->stream = next;
+  candidate->acceptedIntervals = acceptedIntervals;
+  return Status::Ok();
 }
 
 std::uint64_t KeyedRandomStream::NextU64() {
@@ -357,11 +413,16 @@ std::uint64_t KeyedRandomStream::NextU64() {
 }
 
 double KeyedRandomStream::UniformOpen01() {
-  // Retain 53 random bits and offset by half a bin so neither zero nor one is
-  // returned.  Logarithms in Box-Muller and event-time kernels are then finite.
-  const std::uint64_t mantissa = NextU64() >> 11;
-  return (static_cast<double>(mantissa) + 0.5) /
-         9007199254740992.0;
+  double value = 0.0;
+  while (!UniformOpen01FromBits(NextU64(), &value)) {}
+  return value;
+}
+
+bool UniformOpen01FromBits(std::uint64_t bits, double* value) {
+  const std::uint64_t mantissa = bits >> 11;
+  if (!value || mantissa == 0) return false;
+  *value = static_cast<double>(mantissa) / 9007199254740992.0;
+  return true;
 }
 
 double KeyedRandomStream::Normal01() {

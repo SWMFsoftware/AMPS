@@ -8,6 +8,7 @@
 
 #include "sep.h"
 #include "util/sep_initialization.h"
+#include "util/sep_analytic_radial_background.h"
 
 
 #include <iostream>
@@ -115,6 +116,14 @@ void SEP::ParkerSpiral::CreateFileLine(list<SEP::cFieldLine> *field_line,double 
   const int npoints=4000;
 
   double u_sw=400.0E3;
+  SEP::Background::AnalyticRadial::Wind wind;
+  wind.speedMPerS=u_sw;
+  const auto setVelocity=[&](SEP::cFieldLine* point) {
+    SEP::Background::AnalyticRadial::Sample sample;
+    const auto status=SEP::Background::AnalyticRadial::Evaluate(wind,point->x,&sample);
+    if(!status.ok())exit(__LINE__,__FILE__,status.message.c_str());
+    std::copy(sample.velocityMPerS.begin(),sample.velocityMPerS.end(),point->U);
+  };
 
   dl=length_rsun*_RADIUS_(_SUN_)/npoints;
 
@@ -123,6 +132,7 @@ void SEP::ParkerSpiral::CreateFileLine(list<SEP::cFieldLine> *field_line,double 
   }
 
   GetB(p.B,p.x,u_sw);
+  setVelocity(&p);
   field_line->push_back(p);
 
 
@@ -133,6 +143,7 @@ void SEP::ParkerSpiral::CreateFileLine(list<SEP::cFieldLine> *field_line,double 
     for (idim=0;idim<3;idim++) p.x[idim]+=l[idim];
 
     GetB(p.B,p.x,u_sw);
+    setVelocity(&p);
     field_line->push_back(p);
   }
 }
@@ -147,9 +158,9 @@ void SEP::ParkerSpiral::CreateFileLine(
     exit(__LINE__, __FILE__, "null argument in configured Parker line creation");
 
   // Reuse the AMPS-independent initializer rather than maintaining a second
-  // curve integrator in the PIC adapter.  The adapter's only responsibility is
-  // translating each SI point into the historical cFieldLine record and
-  // attaching a magnetic vector parallel to the same configured geometry.
+  // curve integrator in the PIC adapter. The geometry-only builder validates
+  // its own explicit inputs, without fabricated run/source/output values.
+  // Translate each SI point into a complete cFieldLine B/U declaration.
   SEP::Initialization::Configuration configuration;
   configuration.parkerOriginM = {origin_m[0], origin_m[1], origin_m[2]};
   configuration.parkerInitialPointM =
@@ -162,25 +173,14 @@ void SEP::ParkerSpiral::CreateFileLine(
       std::pow(initial_m[0] - origin_m[0], 2) +
       std::pow(initial_m[1] - origin_m[1], 2) +
       std::pow(initial_m[2] - origin_m[2], 2));
-  // The following mesh fields are irrelevant to line generation, but the one
-  // public validation gate intentionally validates a complete configuration.
-  configuration.outerRadiusM = configuration.innerRadiusM + length_m;
-  configuration.minimumCellSizeM = 1.0;
-  configuration.globalCellSizeM = 1.0;
-  configuration.maximumMeshLevel = 0;
-  configuration.solarRefinementEnabled = false;
-  configuration.solarSurfaceCellSizeM = 1.0;
-  configuration.solarTransitionOuterRadiusM = configuration.outerRadiusM;
-  configuration.tubeRefinementEnabled = false;
-  configuration.tubeReferenceRadiusM = configuration.outerRadiusM;
-  configuration.tubeRadiusAtReferenceM = 1.0;
-  configuration.tubeCenterCellSizeM = 1.0;
-
   std::vector<SEP::Initialization::Vec3> points;
   const SEP::Transport::Status built =
       SEP::Initialization::BuildParkerLine(configuration, &points);
   if (!built.ok()) exit(__LINE__, __FILE__, built.message.c_str());
 
+  SEP::Background::AnalyticRadial::Wind wind;
+  std::copy(origin_m,origin_m+3,wind.originM.begin());
+  wind.speedMPerS=solar_wind_speed_m_per_s;
   for (std::size_t i = 0; i < points.size(); ++i) {
     SEP::cFieldLine point;
     point.x[0] = points[i].x;
@@ -189,6 +189,13 @@ void SEP::ParkerSpiral::CreateFileLine(
     GetB(point.B, point.x, origin_m, configuration.innerRadiusM,
          solar_wind_speed_m_per_s, solar_rotation_rate_rad_per_s,
          radial_field_at_one_au_t);
+    // cFieldLine starts with U=0, which carries no analytic-wind provenance.
+    // Declare the complete velocity on the list itself so native registration
+    // remains a byte/value adapter and never supplies its own physical field.
+    SEP::Background::AnalyticRadial::Sample sample;
+    const auto velocityStatus=SEP::Background::AnalyticRadial::Evaluate(wind,point.x,&sample);
+    if(!velocityStatus.ok())exit(__LINE__,__FILE__,velocityStatus.message.c_str());
+    std::copy(sample.velocityMPerS.begin(),sample.velocityMPerS.end(),point.U);
     field_line->push_back(point);
   }
 }
@@ -201,6 +208,14 @@ void SEP::ParkerSpiral::CreateStraitFileLine(list<SEP::cFieldLine> *field_line,d
   const int npoints=4000;
 
   double u_sw=400.0E3;
+  SEP::Background::AnalyticRadial::Wind wind;
+  wind.speedMPerS=u_sw;
+  const auto setVelocity=[&](SEP::cFieldLine* point) {
+    SEP::Background::AnalyticRadial::Sample sample;
+    const auto status=SEP::Background::AnalyticRadial::Evaluate(wind,point->x,&sample);
+    if(!status.ok())exit(__LINE__,__FILE__,status.message.c_str());
+    std::copy(sample.velocityMPerS.begin(),sample.velocityMPerS.end(),point->U);
+  };
 
   dl=length_rsun*_RADIUS_(_SUN_)/npoints;
 
@@ -210,6 +225,7 @@ void SEP::ParkerSpiral::CreateStraitFileLine(list<SEP::cFieldLine> *field_line,d
   }
 
   GetB(p.B,p.x,u_sw);
+  setVelocity(&p);
   field_line->push_back(p);
 
   Vector3D::Normalize(l,dl);
@@ -217,6 +233,7 @@ void SEP::ParkerSpiral::CreateStraitFileLine(list<SEP::cFieldLine> *field_line,d
   for (int ipoint=0;ipoint<npoints;ipoint++) {
     for (idim=0;idim<3;idim++) p.x[idim]+=l[idim];
 
+    setVelocity(&p);
     field_line->push_back(p);
   }
 }

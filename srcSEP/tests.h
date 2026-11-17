@@ -32,6 +32,12 @@ void TestManager();
 // standalone main program; SWMF library entry points never invoke it.
 const SEP::Testing::Registry& ComponentTestRegistry();
 
+namespace SEP { namespace Util { namespace CLI {struct Options;} } }
+// Standalone test-only setup: MPI rank ownership and evidence paths are resolved
+// before mesh allocation. Coupled library entry points never call this API.
+bool ConfigureComponentTestCampaign(const SEP::Util::CLI::Options& options,
+                                    std::string* error);
+
 // Execute an already-resolved selection on every participating MPI rank, emit
 // one root summary, and return the process status defined by Testing::Summary.
 int RunSelectedComponentTests(
@@ -51,6 +57,14 @@ bool ParkerModelMoverTest_const_plasma_field();
 bool ParkerModelMoverTest_convection();
 
 bool FTE_Convectoin();
+struct FteConvectionMetrics {
+  int completedTrials=0;
+  int failedTrials=0;
+  double maximumRelativePathError=0.0;
+  double maximumParallelVelocityErrorMPerS=0.0;
+  double maximumNormalVelocityErrorMPerS=0.0;
+};
+const FteConvectionMetrics& GetLastFteConvectionMetrics();
 void FTE_Acceleration();
 void FTE_Diffusion();
 

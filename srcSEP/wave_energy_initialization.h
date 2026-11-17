@@ -78,6 +78,8 @@ VERSION: 1.0
 // INCLUDES
 // ============================================================================
 #include "pic.h"
+#include "util/sep_common_header_path.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_transport_common.h)
 #include <vector>
 #include <iostream>
 #include <cmath>
@@ -175,8 +177,9 @@ void InitializeWaveEnergyInAllSegments(
 /// UseScaledReferenceB
 ///   If true, the local magnetic–field magnitude B(r) is obtained by scaling B0_1AU
 ///   using `ApplyHeliosphericScaling`. If false, B(r) is taken from the magnetic–field
-///   vectors stored at the field–line vertices (averaged over the segment endpoints),
-///   with a fallback to the scaled–reference model when vertex data are not available.
+///   vectors stored at the field–line vertices. The existing first/last endpoint
+///   convention is retained; other segments average their two endpoint vectors.
+///   Missing, zero or nonfinite physical inputs reject collectively before writes.
 ///
 /// verbose
 ///   If true (and on MPI rank 0), the function prints diagnostic information and the
@@ -197,6 +200,16 @@ void InitializeWaveEnergyFromPhysicalParameters(
     double turbulence_level_decay_power_index,
     bool   UseScaledReferenceB,
     bool   verbose = false);
+
+// Typed transactional entry point. Every local segment is checked/staged and
+// all MPI ranks must agree before any target value changes. No geometry/B/
+// volume/profile fallback, clipping or endpoint extrapolation is permitted.
+// The void compatibility wrapper throws with this status on rejection.
+SEP::Transport::Status InitializeWaveEnergyFromPhysicalParametersChecked(
+    PIC::Datum::cDatumStored& WaveEnergy,double B0_1AU,
+    double turbulence_level_beginning_fl,double turbulence_level_end_fl,
+    double turbulence_level_decay_power_index,bool UseScaledReferenceB,
+    bool verbose = false);
 
 // ============================================================================
 // PHYSICAL PARAMETER CALCULATIONS

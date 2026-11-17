@@ -1,0 +1,8 @@
+{
+  "schema": "srcsep-native-host-step-fixture-v1",
+  "steps": 2,
+  "source_macros": 4,
+  "source_energy_mev": 1.0,
+  "source_mu": 0.5,
+  "constant_dmumu_per_s": 0.2
+}

@@ -43,6 +43,8 @@ wave-number bin, not pointwise spectral densities.
 */
 
 #include "turbulence_wave_number_resolved.h"
+#include "../polarized_wave_native_adapter.h"
+#include "../physics_checkpoint_state.h"
 #include "adapters/swcme1d_adapter.h"
 #include "../sep.h"
 #include "../wave_particle_coupling_kolmogorov.h"
@@ -58,6 +60,7 @@ wave-number bin, not pointwise spectral densities.
 #include <fstream>
 #include <limits>
 #include <vector>
+#include <stdexcept>
 
 namespace SEP {
 namespace AlfvenTurbulence_Kolmogorov {
@@ -73,6 +76,14 @@ using SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::P_MIN;
 using SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::P_MAX;
 using SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::GetKBinIndex;
 using SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::RedistributeWaveEnergyToParticles;
+
+namespace {
+void RequireLegacyFixedSpectrum(const char* operation) {
+  const auto status=SEP::Turbulence::Polarized::PICAdapter::LegacyFixedSpectralPreflight(
+      SEP::Turbulence::ActiveConfiguration(),operation);
+  if(!status.ok())throw std::runtime_error(status.message);
+}
+}
 
 // Default remains the legacy branch-integrated model.  The CLI switches this to
 // WaveNumberResolved only when explicitly requested by the user.
@@ -996,13 +1007,48 @@ void RedistributeWaveNumberBinEnergyToParticles(
 
 } // anonymous namespace
 
+SEP::PhysicsCheckpoint::BoundaryCache CaptureSpectralBoundaryCache() {
+  SEP::PhysicsCheckpoint::BoundaryCache cache;
+  cache.lineCount=RightBoundaryInitialSpectrumNFieldLine;cache.components=NK;
+  cache.spectra=RightBoundaryInitialWminusSpectrum;
+  cache.isSet=RightBoundaryInitialSpectrumIsSet;
+  return cache;
+}
+SEP::Transport::Status ValidateSpectralBoundaryCache(
+    const SEP::PhysicsCheckpoint::BoundaryCache& cache) {
+  if(cache.components!=NK||!cache.values.empty()||cache.lineCount<-1||
+      (cache.lineCount==-1&&(!cache.spectra.empty()||!cache.isSet.empty()))||
+      (cache.lineCount>=0&&(cache.lineCount!=PIC::FieldLine::nFieldLine||
+          cache.spectra.size()!=static_cast<std::size_t>(cache.lineCount)||
+          cache.isSet.size()!=cache.spectra.size())))
+    return SEP::Transport::Status::Error(SEP::Transport::StatusCode::InvalidParticleState,
+        "incompatible spectral incoming-wave reservoir checkpoint");
+  for(std::size_t line=0;line<cache.spectra.size();++line) {
+    if(cache.spectra[line].size()!=static_cast<std::size_t>(NK)||
+        (cache.isSet[line]!=0&&cache.isSet[line]!=1))
+      return SEP::Transport::Status::Error(SEP::Transport::StatusCode::InvalidParticleState,
+          "invalid spectral incoming-wave reservoir shape");
+    for(double value:cache.spectra[line])if(!std::isfinite(value)||value<0.0)
+      return SEP::Transport::Status::Error(SEP::Transport::StatusCode::InvalidParticleState,
+          "invalid spectral incoming-wave reservoir value");
+  }
+  return SEP::Transport::Status::Ok();
+}
+void RestoreSpectralBoundaryCache(SEP::PhysicsCheckpoint::BoundaryCache* cache) {
+  RightBoundaryInitialSpectrumNFieldLine=cache->lineCount;
+  RightBoundaryInitialWminusSpectrum.swap(cache->spectra);
+  RightBoundaryInitialSpectrumIsSet.swap(cache->isSet);
+}
+
 void ResetRightBoundarySpectrumInitialCondition() {
+  RequireLegacyFixedSpectrum("reset legacy spectral boundary");
   RightBoundaryInitialWminusSpectrum.clear();
   RightBoundaryInitialSpectrumIsSet.clear();
   RightBoundaryInitialSpectrumNFieldLine = -1;
 }
 
 void ResetSpectralEnergyExchangeRates() {
+  RequireLegacyFixedSpectrum("reset legacy spectral exchange diagnostics");
   // The exchange-rate datum is a per-iteration diagnostic.  It must be cleared
   // before the wave-particle coupling, reflection, and cascade operators are
   // applied; otherwise the Tecplot file would show an accumulated history rather
@@ -1035,6 +1081,7 @@ void ResetSpectralEnergyExchangeRates() {
 }
 
 void InitializeSpectrumFromIntegratedEnergy(PIC::Datum::cDatumStored& IntegratedWaveEnergy) {
+  RequireLegacyFixedSpectrum("initialize legacy two-branch spectrum");
   std::vector<double> weights;
   BuildKolmogorovLogBinWeights(weights);
 
@@ -1072,6 +1119,7 @@ void InitializeSpectrumFromIntegratedEnergy(PIC::Datum::cDatumStored& Integrated
 }
 
 void UpdateIntegratedEnergyFromSpectrum(PIC::Datum::cDatumStored& IntegratedWaveEnergy) {
+  RequireLegacyFixedSpectrum("derive integrated energy from legacy fixed-NK spectrum");
   for (int field_line_idx=0; field_line_idx<PIC::FieldLine::nFieldLine; ++field_line_idx) {
     PIC::FieldLine::cFieldLine* field_line = &PIC::FieldLine::FieldLinesAll[field_line_idx];
     if (!field_line) continue;
@@ -1097,6 +1145,7 @@ void UpdateIntegratedEnergyFromSpectrum(PIC::Datum::cDatumStored& IntegratedWave
 }
 
 void ProjectIntegratedEnergyToSpectrum(PIC::Datum::cDatumStored& IntegratedWaveEnergy) {
+  RequireLegacyFixedSpectrum("project integrated energy into legacy spectrum");
   std::vector<double> weights;
   BuildKolmogorovLogBinWeights(weights);
 
@@ -1140,6 +1189,7 @@ void ProjectIntegratedEnergyToSpectrum(PIC::Datum::cDatumStored& IntegratedWaveE
 }
 
 void CaptureRightBoundarySpectrumInitialCondition() {
+  RequireLegacyFixedSpectrum("capture legacy spectral boundary");
   EnsureRightBoundarySpectrumStorage();
 
   for (int field_line_idx=0; field_line_idx<PIC::FieldLine::nFieldLine; ++field_line_idx) {
@@ -1167,6 +1217,7 @@ void CaptureRightBoundarySpectrumInitialCondition() {
 }
 
 void EnforceRightBoundarySpectrumInitialCondition() {
+  RequireLegacyFixedSpectrum("enforce legacy spectral boundary");
   EnsureRightBoundarySpectrumStorage();
 
   for (int field_line_idx=0; field_line_idx<PIC::FieldLine::nFieldLine; ++field_line_idx) {
@@ -1194,6 +1245,7 @@ void EnforceRightBoundarySpectrumInitialCondition() {
 }
 
 void AdvectSpectrumAllFieldLines(double dt, double TurbulenceLevelBeginning, double TurbulenceLevelEnd) {
+  RequireLegacyFixedSpectrum("advect legacy spectral state");
   (void)TurbulenceLevelEnd;
 
   if (dt <= 0.0) return;
@@ -1346,6 +1398,7 @@ void ReflectSpectrumAllFieldLines(
     double C_reflection,
     double grad_floor,
     bool enable_logging) {
+  RequireLegacyFixedSpectrum("reflect legacy spectral state");
 
   if (dt <= 0.0 || C_reflection <= 0.0) return;
 
@@ -1435,6 +1488,7 @@ void CascadeSpectrumAllFieldLines(
     bool enable_cross_helicity_modulation,
     bool two_sweep_imex,
     bool enable_logging) {
+  RequireLegacyFixedSpectrum("cascade legacy spectral state");
 
   if (dt <= 0.0 || C_nl <= 0.0 || lambda_perp_m <= 0.0) return;
 
@@ -1496,6 +1550,7 @@ void CascadeSpectrumAllFieldLines(
 
 
 void OutputSpectrumTecplot2D(long int iteration, double simulation_time) {
+  RequireLegacyFixedSpectrum("output legacy fixed-NK spectral diagnostics");
   // The writer is meaningful only for the spectral model.  Keeping the guard in
   // the routine itself makes accidental calls harmless when the legacy
   // branch-integrated turbulence model is selected from the CLI.
@@ -1712,6 +1767,7 @@ void OutputSpectrumTecplot2D(long int iteration, double simulation_time) {
 }
 
 void WaveParticleCouplingManager(PIC::Datum::cDatumStored& IntegratedWaveEnergy, double dt) {
+  RequireLegacyFixedSpectrum("couple particles through legacy spectral state");
   if (dt <= 0.0) return;
 
   int processed_segments = 0;

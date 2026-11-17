@@ -7,6 +7,77 @@ providers, SWCME, or an SWMF coupling.  The source also contains the
 self-consistent Alfvén-turbulence subsystem, including integrated and
 wave-number-resolved representations and particle-wave coupling.
 
+## Development requirements and physical clarification
+
+The maintained implementation and verification record is
+[STATUS.md](STATUS.md). It separates the last tested native build from ongoing
+source changes, physical decisions, unresolved requirements and evidence paths.
+The [upstream core integration record](CORE_UPSTREAM_INTEGRATION.md) pins the
+incoming revision, source scope, retained SEP contracts and core PASS-identity
+comparison. Its acceptance status is updated as the isolated campaigns finish.
+
+Both DOCX plans contain the **2026-11-16 amendment: physical correctness and
+production qualification**. It defines CP00–CP07 and requires an independent
+reference, a regression that detects the defect, and production-path evidence
+for each correction. Unresolved physical definitions require user clarification
+before dependent implementation; passing a component test does not resolve a
+missing model definition.
+
+The requirement-to-evidence inventory is
+[`validation/development_requirements.json`](validation/development_requirements.json).
+It distinguishes implementation from qualification and records original-plan
+scope gaps, including IV01/IV05 transformations, full IV03 manufactured
+evolution, IV06 physical feedback, equivalent-input XM comparisons, and the
+EV01/EV02 pilot cohort. The plans remain incomplete until their stated gates
+are met or an explicit amendment changes an original requirement.
+
+The clarified local wave state is **magnetic energy alone**, in joules integrated
+over each logarithmic wavenumber bin. Its direct bin sum is branch magnetic
+energy; divide by cell volume for J/m³ and by the bin width for a spectral
+density. The common conversion is δB² = 2μ₀ W_B. Local E+ propagates along B,
+and E− opposite B. The selected standard BATSRUS Wave1/Wave2 exports carry
+total Alfvén-wave energy density; derive their local magnetic view by dividing
+by two, with Wave1 along B and Wave2 opposite B. These
+definitions do not by themselves establish a particle–wave exchange closure.
+
+The adopted small-amplitude MHD closure evolves four spectra: L/R circular
+polarizations for each propagation branch. The user selected equal L/R energy
+at initialization, using the existing initializer, followed by independent
+evolution. Existing k values remain logarithmic bin centers. Physical validity
+limits await the convergence study; dependent production paths reject an
+unqualified closure explicitly. Controlled diagnostic tests remain available.
+
+Corrected particle storage now uses transport schema 4 and keyed-stream schema 2.
+It retains all three operator streams, cached normal variates, accepted-interval
+counters, residual scattering optical depth, scattering-event index and split
+serial, plus the declared birth window and first-movement duration. Schema-4
+native birth tests now pass on one and two ranks after correcting an explicit
+fixture epoch; current same-process checkpoint tests also pass with schema 4.
+Fixed-analytic API continuation now also passes separate write/resume MPI
+processes for all three movers, including persisted geometric flux caches.
+Production resume entry points and live-four-state persistence remain open.
+Exact PIC splitting
+initializes children at the actual split site;
+the original parent retains its stochastic history, and a byte clone used for
+migration retains the complete record. Older/unknown particle schemas are
+rejected. Generic AMR checkpoint traversal does not serialize particles attached
+to field-line segments: the corrected physics checkpoint uses explicit native
+line traversal. Its documented fixed-geometry scope does not qualify evolving
+geometry, changed decomposition or output continuation.
+
+The [SWMF producer audit](validation/physics/SWMF_FIELD_LINE_CONTRACT_AUDIT.md)
+traces Wave1 to propagation along B and Wave2 opposite B for the inspected
+standard-energy export. It also records energy-normalization and composition
+differences that must be resolved before enabling an imported physical path.
+
+The runner's observation and M-FLAMPA provenance leads to public CCMC sources
+recorded in [`validation/reference_sources.json`](validation/reference_sources.json).
+This inventory distinguishes bundled figure-derived curves from numerical
+exports, records local numerical M-FLAMPA reference/input archives and small
+public metadata/event-list checksums, and identifies missing
+equivalent-input and time-series evidence. It is a source discovery record,
+not an observational or cross-model validation claim.
+
 ## Reduced corona/SWCME background-only mode
 
 `--reduced-shock-event PATH` selects the shared reduced shock-front plus
@@ -997,7 +1068,9 @@ Startup writes are also source-owned:
 - prescribed and SWMF-read-only sources retain their provider values;
 - `swmf-initial-then-local` retains the imported generation until the explicit
   one-time handoff copies it into locally owned turbulence state;
-- the legacy radial density initializer runs only for the analytic background;
+- fixed analytic generated-domain startup preflights B/U and installs the
+  existing radial density with coherent initial previous B/U/n; generated U
+  uses its declared origin/speed and imported list velocities are preserved;
   SWCME and SWMF plasma arrays are never overwritten; and
 - the standalone driver publishes a prepared SWCME generation only when SWCME
   is the configured provider. Analytic and SWMF generations are prepared by the
@@ -1122,9 +1195,9 @@ Source-only checks use the documented `--suite`/Make targets instead.
 If either native command reports `No rule to make target 'test/stage1'` or
 `'clean-standalone'`, restore the field-line runner under `srcSEP/test`.
 Adding dummy targets to the srcSEP makefile does not restore the application-
-specific registry, validation case routing or evidence contract. See
-[RUNNER_RESTORE_20261002.md](RUNNER_RESTORE_20261002.md) for installation and
-verification.
+specific registry, validation case routing or evidence contract. See the
+[runner documentation](test/README.md#python-runner-and-analytical-comparison-plots)
+for the maintained commands and verification procedure.
 
 `test/run_tests.py` is the single orchestration interface for selecting one,
 several, a group, the bounded routine set, or every registered test. It calls
@@ -1431,3 +1504,30 @@ make test-parallel-diffusion-binding-unit   # physics: parallel_diffusion + appl
 `INIT01` and `INIT02` are also native routine descriptors.  After rebuilding
 the linked AMPS executable, `test/run_tests.py --all --amps ../amps ...`
 discovers and executes them with the rest of the catalog.
+
+The explicit Parker geometry API now validates geometry independently of a
+complete run configuration. `ValidateParkerLine` checks its origin, initial
+point/source-radius consistency, positive length/speed, finite nonnegative
+rotation and supported point count. The parser, installation and Tecplot writer
+still require the complete run/mesh/source/output contract. Geometry generation
+does not manufacture time steps, sampling counts, observers or output paths.
+
+The same analytic radial declaration supplies generated endpoint U and its
+Cartesian velocity gradient. Native list registration preserves both generated
+and imported velocities. For a fixed analytic generated domain, shared startup
+stages the existing `n(1 AU)=5e6 m^-3` inverse-square density and identical initial
+previous B/U/n after validating every endpoint. It leaves imported/time-dependent
+providers and thermal profiles under their existing owners. This adds no schema-6
+provider option: the file-driven SWCME provider contract above is unchanged.
+See [BACKGROUND_STATE.md](BACKGROUND_STATE.md) and the `analytic-radial` /
+`analytic-radial-native` tests for the exact scope and evidence limits.
+
+The fixed analytic shock source now has an explicit departure-epoch view and
+separate host-owned completed geometry. Source creation uses the frozen birth
+window; the host advances the existing trajectory after PIC finishes and before
+wave-work radius accounting. Initial particle S and Cartesian X come from the
+same resolved source coordinate. This preserves the existing zero-centered
+shock law and adds no translated-source, thermal or guiding-center closure.
+See [BACKGROUND_STATE.md](BACKGROUND_STATE.md) and the ASE01–05 / isolated
+HOST01–03 protocols in [test/README.md](test/README.md) for native evidence and
+counter-policy limits; source tests alone do not qualify the full host path.

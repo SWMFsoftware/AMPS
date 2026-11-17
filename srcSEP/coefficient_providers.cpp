@@ -1,10 +1,13 @@
 #include "coefficient_providers.h"
 #include "adapters/parallel_diffusion_adapter.h"
+#include "standard_batsrus_wave_adapter.h"
+#include "util/sep_provider_radius_frame.h"
 
 #include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstring>
+#include <iomanip>
 #include <limits>
 #include <sstream>
 
@@ -14,6 +17,9 @@ namespace PICAdapter {
 namespace {
 
 namespace CP = CoefficientPhysics;
+
+static_assert(CP::MagneticEnergyPermeabilitySI == VacuumPermeability,
+              "SEP magnetic-energy conversion must match AMPS permeability");
 
 std::atomic<std::uint64_t> gInvalidSamples(0);
 std::atomic<std::uint64_t> gBallisticSubstitutions(0);
@@ -111,6 +117,13 @@ CP::SpeciesProperties SpeciesFor(const ParticleContext& context) {
   return species;
 }
 
+Status RequireProviderRadius(const LocalBackgroundView& background) {
+  if(!background.heliocentricRadiusKnown||!std::isfinite(background.heliocentricRadiusM)||background.heliocentricRadiusM<=0.0)
+    return Status::Error(StatusCode::UnsupportedConfiguration,
+        "radius-dependent coefficient source has no resolved provider radial frame: "+background.radiusFrameIdentity);
+  return Status::Ok();
+}
+
 Status BuildSourceBoundInput(const ParticleContext& context,
                              CP::LocalInputView* input) {
   if (!input || !context.segment) {
@@ -121,21 +134,20 @@ Status BuildSourceBoundInput(const ParticleContext& context,
   Status status = EvaluateLocalBackground(context, &background);
   if (!status.ok()) return status;
 
-  double positionM[3] = {0.0, 0.0, 0.0};
-  // A particle coordinate stores segment index plus local fraction, whereas
-  // cFieldLineSegment::GetCartesian expects only the local [0,1] fraction.
-  // Passing the global coordinate would extrapolate positions on every segment
-  // after segment zero and corrupt all radius-scaled coefficient parameters.
-  const double localFraction = context.state.coordinate -
-      std::floor(context.state.coordinate);
-  context.segment->GetCartesian(positionM, localFraction);
-  input->heliocentricRadiusM = Vector3D::Length(positionM);
+  status=RequireProviderRadius(background);if(!status.ok())return status;
+  // Geometry and physical-origin ownership belong to the same immutable
+  // background view as B/rho/U. Recomputing |global x| here disagreed with
+  // translated analytic initialization while its velocity tensor used x-origin.
+  input->heliocentricRadiusM=background.heliocentricRadiusM;
   input->magneticFieldT = background.magneticFieldMagnitudeT;
   input->alfvenSpeedMPerS = background.alfvenSpeedMPerS;
+  input->magneticPolarityAlongLine=background.magneticPolarityAlongLine;
+  input->branchDirectionsKnown=true;
   input->generation = background.generation;
   input->source = Coefficient::SourceName(
       Coefficient::ActiveConfiguration().source);
-  input->representation = "integrated-branch-energy";
+  input->representation = "integrated-magnetic-branch-energy";
+  std::uint64_t importedContractChecksum=0;
 
   const Coefficient::Configuration& configuration =
       Coefficient::ActiveConfiguration();
@@ -155,37 +167,31 @@ Status BuildSourceBoundInput(const ParticleContext& context,
       return Status::Error(StatusCode::InvalidCoefficient,
           "self-consistent coefficient source lacks authoritative E+/E- density");
     }
-    // For the model's Alfvén-wave energy convention, magnetic variance is
-    // mu0 times energy density.  Both branches are converted before entering
-    // the pure SI kernel; the kernel never reads PIC datums or global state.
-    input->deltaBPlus2T2 = VacuumPermeability * wave[0];
-    input->deltaBMinus2T2 = VacuumPermeability * wave[1];
-    input->deltaB2T2 = input->deltaBPlus2T2 + input->deltaBMinus2T2;
+    // Local integrated/spectral arrays store magnetic energy alone. The SWMF
+    // standard-total-energy conversion is a separate typed read-only path
+    // below; shared PIC imported storage is never globally rescaled.
+    const CP::MagneticVariance variance =
+        CP::MagneticVarianceFromEnergyDensity(wave[0], wave[1]);
+    if (!variance.status.ok()) return variance.status;
+    input->deltaBPlus2T2 = variance.plusT2;
+    input->deltaBMinus2T2 = variance.minusT2;
+    input->deltaB2T2 = variance.totalT2;
   }
   else {
-    PIC::FieldLine::cFieldLineVertex* begin = context.segment->GetBegin();
-    PIC::FieldLine::cFieldLineVertex* end = context.segment->GetEnd();
-    double* wave0 = begin ? begin->GetDatum_ptr(
-        PIC::FieldLine::DatumAtVertexPlasmaWaves) : NULL;
-    double* wave1 = end ? end->GetDatum_ptr(
-        PIC::FieldLine::DatumAtVertexPlasmaWaves) : NULL;
-    if (!wave0 || !wave1) {
-      return Status::Error(StatusCode::InvalidCoefficient,
-          "SWMF coefficient source lacks imported branch wave energy");
-    }
-    const double fraction = context.state.coordinate -
-        std::floor(context.state.coordinate);
-    const double plus = (1.0 - fraction) * wave0[0] + fraction * wave1[0];
-    const double minus = (1.0 - fraction) * wave0[1] + fraction * wave1[1];
-    if (!std::isfinite(plus) || !std::isfinite(minus) ||
-        plus < 0.0 || minus < 0.0) {
-      return Status::Error(StatusCode::InvalidCoefficient,
-                           "SWMF branch wave energy is invalid");
-    }
-    input->deltaBPlus2T2 = VacuumPermeability * plus;
-    input->deltaBMinus2T2 = VacuumPermeability * minus;
-    input->deltaB2T2 = input->deltaBPlus2T2 + input->deltaBMinus2T2;
-    input->representation = "swmf-read-only-branch-energy";
+    // Adopted standard BATSRUS export: raw Wave1/2 are TOTAL Alfven energy,
+    // whereas the coefficient boundary consumes magnetic energy. The typed
+    // accessor validates both raw endpoints and snapshot ownership/generation,
+    // forms W_B=raw/2 privately, then uses the common 2*mu0*W_B conversion.
+    // Wave1 stays E+ along B and Wave2 E- opposite B even when B or line order
+    // reverses. No circular polarization or spectral shape is fabricated.
+    Waves::StandardBatsrus::MagneticBranchView wave;
+    status=ReadStandardBatsrusWaveView(context,&wave);if(!status.ok())return status;
+    input->deltaBPlus2T2=wave.plusVarianceT2;
+    input->deltaBMinus2T2=wave.minusVarianceT2;
+    input->deltaB2T2=wave.totalVarianceT2;
+    input->branchDirectionsKnown=wave.branchDirectionsKnown;
+    input->representation=Waves::StandardBatsrus::Representation();
+    importedContractChecksum=wave.checksum;
   }
 
   const double meanField2 = input->magneticFieldT * input->magneticFieldT;
@@ -211,6 +217,10 @@ Status BuildSourceBoundInput(const ParticleContext& context,
   checksum = HashBytes(checksum, input->representation.data(),
                        input->representation.size());
   checksum = HashBytes(checksum, &input->generation, sizeof(input->generation));
+  checksum = HashBytes(checksum,&input->magneticPolarityAlongLine,
+                       sizeof(input->magneticPolarityAlongLine));
+  checksum = HashBytes(checksum,&input->branchDirectionsKnown,
+                       sizeof(input->branchDirectionsKnown));
   checksum = HashBytes(checksum, &input->heliocentricRadiusM,
                        sizeof(input->heliocentricRadiusM));
   checksum = HashBytes(checksum, &input->magneticFieldT,
@@ -219,6 +229,8 @@ Status BuildSourceBoundInput(const ParticleContext& context,
                        sizeof(input->deltaBPlus2T2));
   checksum = HashBytes(checksum, &input->deltaBMinus2T2,
                        sizeof(input->deltaBMinus2T2));
+  if(importedContractChecksum!=0)
+    checksum=HashBytes(checksum,&importedContractChecksum,sizeof(importedContractChecksum));
   input->checksum = checksum == 0 ? UINT64_C(1) : checksum;
   return CP::ValidateLocalInput(*input);
 }
@@ -237,7 +249,9 @@ std::string Provenance(const char* quantity, const char* provider,
       << Coefficient::ConfigurationFingerprint(
              Coefficient::ActiveConfiguration())
       << ";generation=" << input.generation
-      << ";source-checksum=" << input.checksum;
+      << ";source-checksum=" << input.checksum
+      << ";radius-frame=" << Background::RadiusFrame::ContractIdentity(snapshot.provider())
+      << ";heliocentric-radius-m=" << std::setprecision(std::numeric_limits<double>::max_digits10) << input.heliocentricRadiusM;
   return out.str();
 }
 
@@ -284,9 +298,10 @@ CP::PitchAngleResult EvaluatePitchKernel(
     case Coefficient::PitchAngleKind::Jokipii1966:
       return CP::EvaluateJokipiiSlab(
           input, configuration.spectrum, species, speed.value, mu);
-    case Coefficient::PitchAngleKind::Florinskiy:
-      return CP::EvaluateFlorinskiySlab(
-          input, configuration.florinskiy, species, speed.value, mu);
+    case Coefficient::PitchAngleKind::Florinskiy: {
+      return CP::EvaluateFlorinskiyAlongFieldLine(input,configuration.florinskiy,
+          species,speed.value,mu);
+    }
     case Coefficient::PitchAngleKind::Configured:
       break;
   }
@@ -378,10 +393,10 @@ CP::SpatialDiffusionResult EvaluateLibraryKappa(
   // sample from the same immutable snapshot the other providers use:
   //   * species rest mass and signed charge from the compiled PIC table;
   //   * |p| = gamma m v from the Parker speed (exact relativistic relation);
-  //   * Cartesian position from the segment's local fraction.  All srcSEP
-  //     Cartesian positions are in the heliocentric frame with the Sun at
-  //     (0,0,0) (the field line itself may start elsewhere), so the vector is
-  //     passed unchanged as LocalState::positionM;
+  //   * solar-relative Cartesian position from the provider's immutable
+  //     background view, computed from its declared origin. The canonical
+  //     library requires this translated vector, not arbitrary mesh-global
+  //     coordinates. Translation preserves the B/U Cartesian vector basis;
   //   * the snapshot's magnetic-field vector and generation, and the
   //     particle-step epoch as LocalState::timeS.
   // The along-line derivative d(kappa)/ds is not taken from the library: the
@@ -396,6 +411,8 @@ CP::SpatialDiffusionResult EvaluateLibraryKappa(
   LocalBackgroundView background;
   Status status = EvaluateLocalBackground(context, &background);
   if (!status.ok()) { result.status = status; return result; }
+  status=RequireProviderRadius(background);
+  if(!status.ok()){result.status=status;return result;}
   const CP::SpeciesProperties species = SpeciesFor(context);
   status = CP::ValidateSpecies(species);
   if (!status.ok()) { result.status = status; return result; }
@@ -403,15 +420,10 @@ CP::SpatialDiffusionResult EvaluateLibraryKappa(
       speedMPerS, species.restMassKg, SpeedOfLight);
   if (!momentum.status.ok()) { result.status = momentum.status; return result; }
 
-  double positionM[3] = {0.0, 0.0, 0.0};
-  const double localFraction = context.state.coordinate -
-      std::floor(context.state.coordinate);
-  context.segment->GetCartesian(positionM, localFraction);
-
   const ParallelDiffusionBinding::KappaSample sample =
       ParallelDiffusionBinding::EvaluateKappa(
           species.restMassKg, species.signedChargeC, momentum.value,
-          positionM, background.magneticFieldT, context.particleStepEpochS,
+          background.heliocentricPositionM, background.magneticFieldT, context.particleStepEpochS,
           background.generation);
   result.evaluations = 1;
   if (!sample.status.ok()) { result.status = sample.status; return result; }
@@ -646,8 +658,14 @@ MeanFreePathSample PICMeanFreePathProvider::Evaluate(
           ? 0.0 : speed.value / result.lambdaParallelM;
       double plusFraction = 0.5;
       CP::LocalInputView input;
-      if (BuildSourceBoundInput(sampled, &input).ok() &&
-          input.deltaB2T2 > 0.0) {
+      const auto inputStatus=BuildSourceBoundInput(sampled,&input);
+      if(!inputStatus.ok()){result.status=inputStatus;return result;}
+      if(!input.branchDirectionsKnown) {
+        result.status=Status::Error(StatusCode::UnsupportedConfiguration,
+            "MFP wave-frame events require declared B-directed branch identities");
+        return result;
+      }
+      if (input.deltaB2T2 > 0.0) {
         plusFraction = input.deltaBPlus2T2 / input.deltaB2T2;
       }
       result.nuPlusPerS = plusFraction * total;
@@ -692,6 +710,16 @@ SpatialDiffusionSample PICSpatialDiffusionProvider::Evaluate(
   }
 
   std::size_t evaluations = 0;
+  if(Coefficient::ActiveConfiguration().spatial==Coefficient::SpatialKind::ParallelDiffusionLibrary) {
+    // The finite-difference helper intentionally returns only success/failure
+    // while choosing available endpoint stencils. Preserve a missing physical
+    // origin as a typed capability rejection before entering that numerical
+    // wrapper, so it cannot be mislabeled as an unresolved derivative or be
+    // evaluated at an invented global-zero center/stencil.
+    LocalBackgroundView background;auto status=EvaluateLocalBackground(sampled,&background);
+    if(status.ok())status=RequireProviderRadius(background);
+    if(!status.ok()){sample.status=status;return sample;}
+  }
   if (!FiniteKappaAt(sampled, 0.0, speedMPerS,
                      &sample.kappaParallelM2PerS, &evaluations)) {
     sample.status = Status::Error(StatusCode::UnresolvedCoefficient,

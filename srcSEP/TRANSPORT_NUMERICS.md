@@ -6,6 +6,15 @@ transport equations. The kernels under `util/` intentionally depend on neither
 PIC nor MPI, while `transport_common.*`, `coefficient_providers.*`, and the
 three canonical mover adapters connect those kernels to the host application.
 
+The 2026-11-16 user decisions require shared polarized-spectrum scattering for
+both focused movers, with the finite-band resonance gap preserved. Its new
+joint momentum/pitch operator is under development. The retained plasma-frame
+Dmumu kick and isotropic MFP reset described below remain implementation
+history; they do not qualify that selected physical coupling. The current
+requirements and study design are recorded in
+`validation/development_requirements.json` and
+`validation/studies/weak_alfven_domain.json`.
+
 ## State, frames, and units
 
 The common particle state contains species, field-line identifier, host line
@@ -16,12 +25,20 @@ distance to `FieldLine::move`; this is the single metric conversion.
 
 Momentum is relativistic SI momentum [kg m/s]. `MomentumFromSpeed` requires
 `0 <= v < c`; `SpeedFromMomentum` accepts finite nonnegative momentum. Neither
-routine clips an invalid state. Cooling is evaluated in the local plasma frame:
+routine clips an invalid state. In the Parker/isotropic limit, cooling is
+evaluated in the local plasma frame:
 
 `dp/dt = -(p/3) div(U)`, therefore `p(t+dt)=p(t) exp[-div(U) dt/3]`.
 
-The immutable background read phase supplies `U_parallel`, `dU_parallel/ds`,
-`div(U)`, `d ln|B|/ds`, Alfvén speed, and snapshot validity from one generation.
+The geometric coordinate and stored parallel velocity follow the line tangent
+`t`; the retained fixed-grid adapters use bulk advection `U·t`. The user's
+material-tube choice requires vertices moving with `U` and particle coordinates
+relative to that grid; that moving-grid transport port remains separate and is
+not qualified by the retained-adapter timing tests below. Magnetic branch signs follow B, with an explicit
+polarity conversion. The immutable background read phase supplies the full
+provider velocity-gradient tensor, `div(U)`, `bb:grad(U)`, the separate
+projected-velocity derivative, `d ln|B|/ds`, Alfvén speed, and snapshot validity
+from one generation. Temporal vertex density alone does not supply divergence.
 The focusing length convention
 is `L=-1/(d ln|B|/ds)`; a uniform magnetic field has infinite `L` and zero
 focusing rather than an error.
@@ -55,6 +72,194 @@ keys. The open-interval uniform generator supports Box–Muller normals without 
 singular logarithm, and an identical key reproduces an identical stream
 independently of scheduling.
 
+Transport schema 4 persists the complete three operator streams, including
+key identity, algorithm version, cached normal, and accepted-interval count.
+Stream schema 2 uses rejection of zero mantissas to return strictly open
+uniforms; the previous endpoint-rounding algorithm is rejected on restore.
+MFP residual optical depth/event count and exact-split serial are also stored.
+Fresh source identities come from persisted source-kind/physical-line/species/
+event/macroparticle tuples and exclude sampled momentum. Exact splitting keeps
+the parent's history and gives only the actual child an independent stream.
+Migration byte copies preserve the entire record. Complete field-line physics
+checkpoint qualification remains separate from these storage/kernel checks.
+
+### Native birth windows and first movement (schema 4)
+
+The common native adapter now stores a padding-free 64-byte `Birth::Record`
+with every particle. It distinguishes an explicitly created initial condition,
+a source applied at the beginning of a timestep, and a uniform-in-time source
+birth. A scheduled birth records the frozen parent start/end epochs [s], its
+physical parent duration [s], its positive remaining first-move duration [s],
+and whether that movement remains pending. Default/unknown records are errors;
+loading an existing particle never supplies a fresh epoch or event zero.
+
+The shared host driver prepares one background snapshot, collectively freezes
+the source window, opens the particle read phase, calls `PIC::TimeStep()`,
+releases the read guard, and closes the window before wave evolution. Freeze
+uses the authoritative PIC clock and the active global timestep. Audited
+standalone single-global builds advance the clock at start (counter OFF) or end
+(counter ON). Species-global builds currently advance it only for one compiled
+species with counter ON; equal multi-species durations alone do not implement
+core clock synchronization and are rejected. Unequal species durations and
+externally owned SWMF clocks also return `UnsupportedConfiguration` before
+source mutation; the latter need an explicit host-end contract.
+The same snapshot must cover the complete parent interval; replacement after
+freeze or closing while particle readers/workers remain active is rejected.
+Closure also requires the PIC clock at its declared end and no pending birth.
+Failed closure preserves the active window and stored histories for diagnosis
+or a valid retry.
+
+All three movers resolve their effective duration before coefficient or random
+draws. A pending uniform birth uses `(1-phase)*parent_duration`, once, instead
+of receiving both helper pre-drift and a full host step. The remaining duration
+is authoritative even when its absolute departure epoch rounds to the parent
+end at a large PIC epoch. Snapshot time remaining is evaluated as
+`(snapshot_until-parent_end)+(first_duration-elapsed)`, retaining that small
+interval independently of the PIC counter's start/end update order. A declared
+positive terminal first interval below the adaptive refinement floor is
+completed whole; a physical/stability limit that requires a smaller interval
+still returns `StepUnderflow`. No phase is clipped, redrawn, or discarded.
+
+Successful phase-space, complete RNG/hazard history, and first-move consumption
+are committed together. A statistical split copies the parent's physical birth
+provenance to both representatives; the child receives its separately audited
+lineage identity and future stream without inventing a new physical age.
+Weight-only merging preserves the birth records of surviving phase points.
+Native migration copies pending/consumed history exactly. Completed physics
+checkpoints reject active driver windows and any pending first move; schema-3
+records and incompatible layouts are rejected without migration or guessed age.
+The retained checkpoint codec also rejects a live four-polarization authority
+until its complete serializer and collective restore transaction are qualified.
+
+Current nonthermal field-line sources declare their existing no-pre-drift,
+step-start timing explicitly before reserving source counters. Two-argument
+fresh initialization is initial-condition-only and cannot run inside an active
+source window. The new overload accepts an explicit birth record and existing
+local-plasma-frame phase space; it does not infer or transform a velocity frame.
+Maxwellian beginning and optional thermal solar-wind helpers remain gated before
+RNG/counter/allocation mutation. The user selected drifting relativistic
+Maxwell–Jüttner flux injection with verification of its Maxwellian limit.
+The separate full-particle material-plane kernel is now implemented and its
+`MJ01`–`MJ06` strict-warning/ASan/UBSan callbacks pass **6/6**, including
+the actual cold flux-weighted moments and expanded cold/high-Gamma rejection.
+Independent review's cold-boost counterexample failed the old code; its new
+precision preflight/error budget now rejects unresolved encoded crossings
+before RNG/output commit. The expanded MJ01–06 also pass natively in build8
+on two MPI ranks.
+Its explicit proper density/temperature,
+bulk velocity and boundary velocity/normal inputs do not establish their native
+provider mapping. The source count, material face geometry, time integration,
+native frame/storage and guiding-center boundary bridge remain separate from
+temporal bookkeeping. The retained classical/truncated helpers
+are not the selected law and are not enabled by new timing metadata.
+
+`util/sep_maxwell_juttner_flux.*` samples the exact material-plane radial
+gamma-two/gamma-three mixture and cosine-weighted proper-frame hemisphere,
+retaining full rest and boosted momenta. It stages six keyed uniforms per
+event and commits RNG/output together; an unrepresentable event returns an
+explicit status without a tail redraw or clipping. The SI rate uses proper
+density and scaled K2 normalization. Independent high-precision references,
+original positive integrals, boosted moving-plane quadrature and campaign/
+repeat/order controls pass. A tilted cap's full-particle gyromotion crossing
+flux cannot simply be projected into the gyroaveraged mover state. This API
+enables no native source until a matching reduced boundary law or explicit
+proper-frame cap/B alignment domain is established. Numerical methods, tested
+range, physical limits and reproducible commands are in
+[MAXWELL_JUTTNER_FLUX_IMPLEMENTATION.md](validation/physics/MAXWELL_JUTTNER_FLUX_IMPLEMENTATION.md).
+
+The retained analytic moving-shock query still advances its trajectory using
+the mutable PIC epoch. Its source entry now compares that query epoch to the
+declared frozen departure and rejects a mismatch before even reserving a source
+event. This affects the normal counter-OFF/end-counter source ordering; fixed
+boundary sources remain available. No end-epoch shock is labeled as a
+step-start birth. A pure trajectory query at departure plus a separate end-step
+geometry/energy-ledger update is required before enabling the affected path;
+no new temporal quadrature is inferred by this guard.
+
+`BIRTH01`–`BIRTH08` exercise the shared value core under ASan/UBSan, including
+the late-epoch counterexample and atomic rejection. The new native descriptors
+`BIRTHN01`–`BIRTHN06` compare actual Parker/Dmumu/MFP remaining-time movement
+against explicit-duration references, retain a full-host negative control, and
+exercise read-phase close rejection, a tiny positive MFP interval, actual
+clone/split/MPI history preservation, and pending-checkpoint rejection. These
+native schema-4 cases pass **6/6 on one and two MPI ranks in build6b** and the
+expanded Cartesian-view/atomic rejection gates pass **6/6 on two ranks in
+build8**. Initial
+build6 evidence is retained: `BIRTHN04` passed while five fixtures correctly hit
+duplicate-publication rejection at startup's epoch/generation. Static fixtures
+now explicitly run one second after the saved startup epoch; the immutable
+publication invariant is unchanged. These cases execute actual mover managers,
+core clone/split and MPI migration, with an explicitly controlled PIC clock.
+An actual `PIC::TimeStep`/host-driver counter-advancement gate remains separate,
+as do real moving-shock and relativistic thermal-source qualification. See
+[STATUS.md](STATUS.md) for current gates.
+The schema-4 CP05 cases and separate fresh-process pairs also pass in build8;
+those software diagnostics do not qualify actual thermal-source physics.
+
+### Conserved-flux checkpoint owner and process boundary
+
+The corrected native codec's inner schema 4 captures actual flux-owner
+state: configured reference seed area [m²], per-line conserved magnetic flux
+[Wb], each record's generation/provenance, and exact lazy/uninitialized table
+slots. Capture is observational; it does not call the lazy flux getter. Incoming
+records are validated against the fixed physical line count and frozen seed
+area before staging. Decoded B/flux must also give finite positive production
+Simpson areas/volumes. An opaque area callback rejects Save/Load before any
+publication or native replacement; its address is neither serialized nor
+silently cleared. Staged vectors own all allocations, a nonphysical mutation
+serial detects stale plans, and the collective commit swaps ready values.
+Replicated epoch/configuration/source/flux state must agree across ranks on
+both save and load. This schema also persists fieldwise
+vertex XYZ triples outside their native associated buffers. They must be finite
+and exactly match the declared fixed geometry; they are the decoded oracle for
+finite/exact particle Cartesian views. A drawn residual optical depth must be
+strictly positive, matching `LoadParticle`; zero and negative zero reject before
+replacement. Unknown earlier corrected schemas are rejected.
+
+`FLCP01`–`FLCP04` pass the dependency-light fieldwise-codec/validation tests with
+ASan/UBSan. New native `CP05C05` exercises the actual value owner, stale commit
+and opaque callback. Paired `CP05F01`–`CP05F03` use separate MPI processes:
+the writer installs an explicit flux/provenance different from startup, saves
+after one step, and records uninterrupted final state; the reader configures
+operators without warming caches or creating sources, loads, advances, and
+compares final checkpoint bytes. Hardened schema-4 `CP05C01`–`CP05C05` pass
+**5/5 on two ranks in build8**, including CRC-valid Cartesian/hazard negatives.
+All three separate-process `CP05F01`–`CP05F03` writer/reader pairs pass with
+byte-identical final artifacts and actual nondefault flux restoration. This
+qualifies the bounded fixed-geometry diagnostic API, not a general production
+resume interface or real-source integration.
+
+The mover commit now preflights canonical `GetCartesian(coordinate)` and
+publishes PB::X together with phase, RNG and birth state. The coordinate remains
+the sole authority. Build7a's independent tests first reproduced stale views
+after all three movers and partial publication on nonfinite geometry; build8
+passes these independent assertions without tolerance changes. Future material geometry
+publication must also refresh derived views for records whose coordinate does
+not move; the fixed-geometry diagnostic does not establish that transaction.
+
+Run the paired API fixture through the existing test-input interface:
+
+```sh
+python3 -B srcSEP/test/run_fresh_process_checkpoint_tests.py \
+  --amps ./amps --mpi-ranks 2 --output /tmp/sep-fresh-checkpoint-new
+```
+
+The output directory must be new/empty; every role owns separate retained
+scratch and structured reports. This qualifies only the explicitly bounded
+fixed analytic diagnostic API when it passes. It is separate from a production
+resume CLI, material-grid geometry continuation, four-polarization persistence,
+and output/sample continuation. Current execution gates remain in
+[STATUS.md](STATUS.md).
+
+The build8 evidence point is binary SHA256
+`049a1959918dd154e5a81d75ed7ebb18a57764f29c09c3917c81b4068f9c58eb`,
+with its captured 162 native/23 canonical source manifest. The combined two-rank
+campaign passed 116/116 without SKIP; the fresh checkpoint cases used separate
+writer/reader processes with that same binary. The source hashes/reports are
+tracked by STATUS. The later independently exposed extreme-shear material-flux
+conditioning case remains outside this baseline pass and does not acquire
+qualification from its six original MTG callbacks.
+
 WP24 additionally makes key composition ordered and purpose tagged. The source
 tuple is `(campaign,event,field-line,species,macroparticle,purpose)`; swapping
 two fields changes the stream, and count/spectrum/pitch/gyrophase draws cannot
@@ -81,6 +286,33 @@ a nonzero seed must set it before particle motion; leaving it at zero is still
 deterministic and explicit.
 
 ## Parker equation
+
+Fixed analytic generated-domain startup now uses one explicit radial origin and
+speed for list U and the Cartesian tensor
+`G=(v/r)(I-rhat*rhat)`. Parker/straight generators declare U; native registration
+preserves declared list/imported U. Shared startup preflights the whole analytic
+realization before applying the existing inverse-square density law and
+identical initial previous B/U/n. The runtime initializer is the configuration
+authority; imported/time-dependent providers and thermal profiles are not
+synthesized. `ARB01`–`ARB05` and `ARBN01`–`ARBN04` track pure/native scope;
+production closure and material-grid qualification remain separate. The
+coefficient provider now consumes the explicit radius/frame in the same
+background view: analytic `|x-origin|`, declared SWCME/reduced global radius,
+and unavailable SWMF/handoff origin. This is established independently of
+controlled derivative fixtures, with no new endpoint-U validation. Its versioned
+frame contract enters the existing background fingerprint and coefficient
+provenance; matching wire layout does not authorize an older physical
+interpretation. The optional parallel-diffusion bridge consumes the view's
+solar-relative Cartesian vector in the unchanged B/U basis and rejects an
+unknown origin before its numerical stencil wrapper. `RADIUSN01`/`RADIUSN02`
+use explicitly tagged schema6 `--test-input` in separate actual immutable
+startup processes, through the same LoadFile/Install owner. Their independent
+QLT1 and speed/radius power-law references have strong global-zero negative
+controls. Production `--input` remains incompatible with test mode. Both
+old-producer callbacks fail as intended on two MPI ranks in isolated BUILD10a:
+QLT1 and the optional library match their independently computed old-global
+negative controls. Post-fix native execution remains pending; see
+[PROVIDER_RADIUS_CONTRACT.md](validation/physics/PROVIDER_RADIUS_CONTRACT.md).
 
 `SpatialDiffusionProvider` returns `kappa_parallel` [m²/s],
 `d(kappa_parallel)/ds` [m/s], status, and provenance together. The Itô update is
@@ -148,6 +380,44 @@ sample and ballistic-substitution counters. The canonical mover has no silent
 minimum/maximum lambda clamp.
 
 ## QLT coefficient normalization
+
+### Standard BATSRUS imported wave view
+
+The user selected standard BATSRUS exports: raw Wave1/Wave2 contain **total**
+Alfvén-wave energy [J/m³], Wave1 propagates along actual B and Wave2 opposite B.
+`util/sep_standard_batsrus_waves.*` converts to a private local magnetic view
+with `W_B+=Wave1/2`, `W_B-=Wave2/2`; the canonical magnetic conversion remains
+`deltaB_branch²=2 mu0 W_B,branch`. Thus the independent raw reference is
+`deltaB²=mu0(Wave1+Wave2)`. Local integrated/spectral magnetic energy is
+unchanged. This explicit producer contract supersedes the earlier claim that
+raw SWMF columns themselves were magnetic-only.
+
+`ReadStandardBatsrusWaveView` is the actual coefficient-path native accessor.
+It requires an active read-only SWMF snapshot matching the context generation,
+valid coordinate/segment and allocated two-field vertex storage. Both endpoints
+are validated before interpolation, including a zero-weight endpoint; invalid,
+nonfinite and unrepresentable positive energy/variance reject before output
+replacement. Imported PIC arrays remain total energy and are never halved in
+place. The standard contract, raw endpoints, fraction and generation bind the
+view checksum; representation/checksum feed coefficient provenance, and the
+SWMF background fingerprint uses the same contract authority.
+
+Wave labels are relative to B, so neither field polarity nor geometric line
+ordering swaps Wave1 and Wave2. No circular polarization or spectral shape is
+invented; two integrated exports cannot initialize four independent imported
+spectra. A local evolution handoff needs its own explicit exactly-once
+conversion/owner transaction. This adapter does not enable that handoff or
+resolve SWMF velocity gradients, composition/density/temperature basis, frames,
+material geometry or the full focused-transport provider.
+
+`SBW01`–`SBW05` pass the strict-warning/ASan/UBSan pure contract suite;
+`SBWN01`–`SBWN02` use actual native vertex arrays and this same accessor, with
+controlled read-only metadata, polarity/endpoint-order controls, raw-byte and
+RNG/PB-count preservation. All five pure and both native cases pass on two
+MPI ranks in build8; the pure sanitizer gate also passes. `WN02` remains a
+synthetic already-magnetic, unknown-direction view; it makes no raw SWMF claim
+and retains the generic unknown-mapping controls. Details and commands are in
+[STANDARD_BATSRUS_WAVE_ADAPTER.md](validation/physics/STANDARD_BATSRUS_WAVE_ADAPTER.md).
 
 For `P(k)=C k^(-5/3)` on `[kmin,kmax]`, the normalization is
 
@@ -263,8 +533,8 @@ special case cannot masquerade as convergence. `PARK07` adds exact absorbing
 first-passage statistics, and `FTEM08` adds the finite-time persistent-flight
 MSD and its `kappa_parallel=v*lambda_parallel/3` diffusion asymptote.
 
-A complete AMPS checkout is still required to compile the PIC-facing adapters,
-run a particle through every registered shell, compare serial/OpenMP/MPI
-histograms, exercise SWMF coupling epochs, and execute long-run conservation
-and observational validation. Those native and scientific gates cannot be
-claimed from this source-only archive.
+PIC-facing adapter, shell, MPI, restart, SWMF, long-run conservation and
+observational gates require their actual configured application runs. Source
+checks and dependency-light tests do not replace them. The current native build
+and campaign dispositions are recorded in [STATUS.md](STATUS.md); each passed
+software diagnostic remains distinct from production/scientific qualification.

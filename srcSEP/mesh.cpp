@@ -286,7 +286,21 @@ void SEP::Mesh::InitFieldLineAMPS(list<SEP::cFieldLine> *field_line) {
 
   namespace FL=PIC::FieldLine;
 
+  if(!field_line||field_line->size()<2)
+    exit(__LINE__,__FILE__,"field-line registration requires a declared list with at least two vertices");
   if(FL::nFieldLine == FL::nFieldLineMax) exit(__LINE__,__FILE__,"ERROR: reached limit for field line number");
+
+  // Registration does not own an analytic background. Preflight all declared
+  // SI primitives before allocating any vertex, then preserve both generated
+  // and imported U exactly. A generator's constructor-zero velocity must be
+  // repaired by that generator, never interpreted as permission for a radial
+  // 400 km/s replacement here. Zero U is valid for an explicitly static list.
+  for(const auto& point:*field_line) {
+    for(int dimension=0;dimension<3;++dimension)
+      if(!std::isfinite(point.x[dimension])||!std::isfinite(point.B[dimension])||
+          !std::isfinite(point.U[dimension]))
+        exit(__LINE__,__FILE__,"field-line list contains a nonfinite declared SI position, B or U");
+  }
 
   for (ip=0,it=field_line->begin();it!=field_line->end();it++,ip++) {
     //add vertex to the spiral
@@ -296,14 +310,6 @@ void SEP::Mesh::InitFieldLineAMPS(list<SEP::cFieldLine> *field_line) {
 
     Vertex->SetMagneticField(it->B);
     Vertex->SetPlasmaVelocity(it->U);
-
-    //set the background plasma velocity
-    const double speed=400.0E3;
-    double v[3];
-
-    Vertex->GetX(v);
-    Vector3D::Normalize(v,speed);
-    Vertex->SetPlasmaVelocity(v);
 
     if (FL::DatumAtVertexPlasmaWaves.offset>=0) Vertex->SetDatum(FL::DatumAtVertexPlasmaWaves,it->Wave);
   }
