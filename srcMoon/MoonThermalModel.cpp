@@ -204,6 +204,17 @@ bool Column::Advance(double timeStepS, double solarIncidenceCosine,
     *error = "directional Bond albedo is outside its physical domain";
     return false;
   }
+  return AdvanceWithAbsorbedFlux(timeStepS,absorbed,error);
+}
+
+bool Column::AdvanceWithAbsorbedFlux(double timeStepS,double absorbed,
+                                    std::string* error) {
+  if (error==nullptr) return false;
+  error->clear();
+  if (!initialized_ || !PositiveFinite(timeStepS) || !std::isfinite(absorbed) || absorbed<0) {
+    *error="invalid integrated thermal forcing: positive dt and nonnegative finite W m^-2 required";
+    return false;
+  }
   lastAbsorbedSolarFluxWm2_ = absorbed;
 
   const std::vector<double> oldTemperature = layerTemperatureK_;

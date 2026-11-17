@@ -3,23 +3,78 @@
   "name": "Diviner temperature-product ingest and interpolation verification",
   "purpose": "Verify metadata-driven D03 ingestion and interpolation without using model residuals.",
   "production_capability": "Diviner-backed surface-temperature boundary and Paige/Williams bolometric observation operator.",
-  "production_entry_points": ["Moon::SurfaceTemperature::DivinerTable::LoadCsv", "Moon::SurfaceTemperature::DivinerTable::Interpolate", "Moon::DivinerObservation::BolometricBrightnessTemperatureK", "Moon::DivinerObservation::GreyBolometricBrightnessTemperatureK", "Moon::DivinerObservation::RectangularBandRadianceWm2Sr"],
+  "production_entry_points": [
+    "Moon::SurfaceTemperature::DivinerTable::LoadCsv",
+    "Moon::SurfaceTemperature::DivinerTable::Interpolate",
+    "Moon::DivinerObservation::BolometricBrightnessTemperatureK",
+    "Moon::DivinerObservation::GreyBolometricBrightnessTemperatureK",
+    "Moon::DivinerObservation::RectangularBandRadianceWm2Sr",
+    "Moon::DivinerObservation::GreyKineticTemperatureK",
+    "Moon::SurfaceTemperature::InitializeProductionState",
+    "Moon::SurfaceTemperature::AdvanceProductionState",
+    "Moon::SurfaceTemperature::ProductionTemperatureK",
+    "Moon::SurfaceTemperature::ProductionElementTemperatureK",
+    "Moon::SurfaceTemperature::ProductionThermalDesorptionRate",
+    "Moon::SurfaceTemperature::SampleProductionElementKinetics"
+  ],
   "configuration": "Strict frozen CSV schema, a deterministic 2x2x2 affine temperature fixture, native RDR mask fixtures, published Paige et al. channel sensitivity floors, and an analytical grey-surface fixture.",
-  "inputs": ["complete affine latitude/longitude/local-time grid", "native-node and midpoint queries", "analytical qca/qge/qmi records", "duplicate-radiance native-calibration nodes", "C3-C9 brightness-temperature vector", "cold positive C9 with one-sigma uncertainty larger than its mean", "240 K grey surface with emissivity 0.81"],
-  "independent_reference": "Exact native-node value, hand-computed trilinear affine-field midpoint, epsilon^(1/4) T Stefan-Boltzmann identity, and round-trip inversion of the monotonically integrated Planck radiance.",
+  "inputs": [
+    "complete affine latitude/longitude/local-time grid",
+    "native-node and midpoint queries",
+    "analytical qca/qge/qmi records",
+    "duplicate-radiance native-calibration nodes",
+    "C3-C9 brightness-temperature vector",
+    "cold positive C9 with one-sigma uncertainty larger than its mean",
+    "240 K grey surface with emissivity 0.81"
+  ],
+  "independent_reference": "Exact native-node value, hand-computed trilinear affine-field midpoint, epsilon^(1/4) T Stefan-Boltzmann identity, and round-trip inversion of the monotonically integrated Planck radiance. Exact fourth-root inverse anchors plus a complete analytical periodic brightness grid and retained radial-cosine law predict kinetic temperature and SI Arrhenius desorption at actual production terrain points and two explicit SPICE epochs.",
   "units": "K, degrees, hours local solar time, W m^-2, W m^-2 sr^-1",
   "frame_time_convention": "Product longitude/LST convention transformed explicitly to the production lunar frame.",
   "deterministic_stochastic_controls": "No randomness; query set frozen.",
   "procedure": "Load the deterministic processed-format fixture through the production loader, reproduce a native node, evaluate the eight-corner midpoint and propagated uncertainty, verify locale-independent RDR UTC and exact native quality-mask decisions, verify radiance-coordinate native calibration inversion, verify the published low-sensitivity substitution chain, exercise local-Jacobian T_bol uncertainty propagation when the C9 one-sigma interval crosses zero, verify the grey-surface bolometric identity, and invert C6-C9 diagnostic rectangular-band Planck radiances.",
-  "metrics": ["native-node error", "interpolation error", "invalid/fill handling", "seam continuity", "UTC parse identity", "native quality-mask decisions", "duplicate-radiance calibration mean", "C3-C9 sensitivity substitutions", "cold-C9 propagated uncertainty finiteness", "zero local sensitivity of substituted channels", "grey bolometric-temperature error", "C6-C9 diagnostic Planck round-trip errors"],
-  "acceptance_criteria": "Native nodes and declared parser/mask identities exact; interpolation and diagnostic channel inversions <=1e-12 relative to independent identities; grey bolometric temperature <=1e-14 relative; invalid values never interpolate silently; every below-threshold channel follows the published next-longer-channel rule. Rectangular passbands are diagnostic verification only and are not the I17 bolometric acceptance oracle.",
+  "metrics": [
+    "native-node error",
+    "interpolation error",
+    "invalid/fill handling",
+    "seam continuity",
+    "UTC parse identity",
+    "native quality-mask decisions",
+    "duplicate-radiance calibration mean",
+    "C3-C9 sensitivity substitutions",
+    "cold-C9 propagated uncertainty finiteness",
+    "zero local sensitivity of substituted channels",
+    "grey bolometric-temperature error",
+    "C6-C9 diagnostic Planck round-trip errors"
+  ],
+  "acceptance_criteria": "Native nodes and declared parser/mask identities exact; interpolation and diagnostic channel inversions <=1e-12 relative to independent identities; grey bolometric temperature <=1e-14 relative; invalid values never interpolate silently; every below-threshold channel follows the published next-longer-channel rule. Rectangular passbands are diagnostic verification only and are not the I17 bolometric acceptance oracle. Exact inverse anchors match and invalid inverse inputs return NaN. Prescribed source-cache/point temperatures match independent values within 1e-12 relative, desorption/residence within 1e-11 relative, retention boolean and configured timescale exactly; cache must change over the declared six-hour interval. Missing map support is unavailable with unchanged diagnostic outputs and zero release for zero stock.",
   "expected_pass_result": "Diviner temperatures enter production with documented coordinates and the model is converted from kinetic temperature to a matching blackbody-equivalent observation without invented data.",
-  "expected_failure_modes": ["schema mismatch", "duplicate coordinate", "fill/quality leakage", "native mask regression", "locale-dependent UTC parsing", "radiance/Tb inverse regression", "negative-temperature uncertainty perturbation", "sensitivity-branch crossing during local differentiation", "longitude/LST mismatch"],
-  "required_data": [],
-  "data_hashes": "none; the affine fixture is an analytical kernel oracle and I16 owns D03 scoring",
-  "predecessor_gates": ["U02"],
-  "artifacts": ["result.json", "interpolation_residuals.csv", "data_hashes.json"],
+  "expected_failure_modes": [
+    "schema mismatch",
+    "duplicate coordinate",
+    "fill/quality leakage",
+    "native mask regression",
+    "locale-dependent UTC parsing",
+    "radiance/Tb inverse regression",
+    "negative-temperature uncertainty perturbation",
+    "sensitivity-branch crossing during local differentiation",
+    "longitude/LST mismatch"
+  ],
+  "required_data": [
+    "configured compiled SPICE kernel set for prescribed production wiring; no observational product"
+  ],
+  "data_hashes": "Analytical affine/periodic tables are kernel oracles; compiled SPICE dependencies and hashes are preserved by the common probe runner; I16 owns D03 scoring.",
+  "predecessor_gates": [
+    "U02"
+  ],
+  "artifacts": [
+    "result.json",
+    "interpolation_residuals.csv",
+    "data_hashes.json"
+  ],
   "status_semantics": "PASS verifies strict processed-product ingestion/interpolation and local observation-operator mathematics only; it is neither I16 nor I17 observational agreement.",
   "implementation": "linked-production-probe",
-  "probe_modes": ["diviner-temperature"]
+  "probe_modes": [
+    "diviner-temperature",
+    "prescribed-temperature"
+  ]
 }

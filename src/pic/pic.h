@@ -6184,6 +6184,12 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
                  ReservoirSupply, SurfaceDeposit, SurfaceRelease, EventCount };
     typedef void (*ObserverFunction)(Event,int,double,int);
     extern ObserverFunction Observer;
+    // Optional passive particle-record observer, called before deallocation.
+    // Uses the same resolved SI atom weight as the ordinary event ledger.
+    // NULL neither changes particle layout nor consumes stochastic state.
+    typedef void (*ParticleObserverFunction)(Event,int,long int,double,int);
+    extern ParticleObserverFunction ParticleObserver;
+
     // Optional application-specific classification, used only for diagnostic
     // events. State is the actual mover exit/predictor state [m,m/s], not the
     // particle buffer's possibly stale initial position. Default preserves

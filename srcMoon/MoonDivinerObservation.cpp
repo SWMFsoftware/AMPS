@@ -160,6 +160,18 @@ double GreyBolometricBrightnessTemperatureK(double temperatureK,
   return std::pow(exitance/kStefanBoltzmannWm2K4,0.25);
 }
 
+double GreyKineticTemperatureK(double bolometricTemperatureK,
+                                double emissivity) {
+  if (!ValidTemperature(bolometricTemperatureK) ||
+      !std::isfinite(emissivity) || emissivity<=0.0 || emissivity>1.0)
+    return std::numeric_limits<double>::quiet_NaN();
+  // Divide by the fourth root directly: forming T_bol^4 first could overflow
+  // even when the requested positive finite kinetic temperature is valid.
+  const double temperatureK=bolometricTemperatureK/std::sqrt(std::sqrt(emissivity));
+  return ValidTemperature(temperatureK) ? temperatureK :
+      std::numeric_limits<double>::quiet_NaN();
+}
+
 double RectangularBandRadianceWm2Sr(int channel,double temperatureK,
                                     double emissivity) {
   const ChannelDefinition* definition=Definition(channel);

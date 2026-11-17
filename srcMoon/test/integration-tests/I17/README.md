@@ -1,5 +1,17 @@
 # I17 — Time-dependent thermal inertia and eclipse response
 
+**Current implementation checkpoint — 2026-11-16.** The isolated June path is
+preserved. An explicit, review-gated December path now exists, with independent
+observation-free periodic spin-up, selected-only native input/output, three-dt
+convergence, and an independent frozen-criterion scorer. The source/data/native
+build identities, scientific model-scope evidence and investigator approval are
+checked before a December CSV is parsed for staging. No actual approved
+threshold file or December interval is created by the runner. Current formal
+I13/threshold/operator prerequisites remain unavailable; these implementation
+and protocol tests are not an I17 PASS or Diviner validation. Selected D03
+package inputs became READY in the November 12 qualification; the October
+package-metadata limitations retained below are historical.
+
 ## Status and scope
 
 I17 is the linked numerical/observational gate for the production
@@ -239,7 +251,7 @@ writes the science CSV under a temporary name, atomically publishes it only
 after all bins finish, and publishes the QA receipt last; a killed run cannot
 leave a new file/receipt pair that appears READY.
 
-## Current processed-evidence receipt
+## Historical processed-evidence receipt — 2026-10-13
 
 The 2026-10-13 processor execution examined 77,075,901 native records from 87
 immutable ZIP/XML archive pairs, retained 25,848,333 records under the frozen
@@ -257,12 +269,144 @@ records these SHA-256 values:
 - frozen contract: `88fc5196fee5863691937a505873d420990b98056db8a1e8167255cd736189b0`;
 - processor: `5a5d29d0f6dba88cd49c899e541a980eb84ce24717481b0cad471f8012459a65`.
 
-`READY` here applies only to the processed I17 transformation. D03 as a
-dataset package is still not READY because its package-level README,
-provenance, and QA records are absent.  I17 also still lacks the linked
-June execution evidence and a reviewed/frozen numerical threshold artifact.
-The production spin-up and first-plot code now exist, but no plot is created
-while I13 or D03 readiness blocks launch. When those prerequisites pass, June
-plots are experimental training diagnostics and I17 remains
-`SKIPPED / NOT VALIDATED`; the real processed observations are not a substitute
-for predecessor, threshold-freeze, or untouched-holdout gates.
+`READY` in that historical receipt applied only to the processed I17
+transformation. At that checkpoint D03 package README/provenance/QA were
+absent; the November qualification subsequently made the selected package
+inputs READY. Data readiness still does not supply I13, linked thermal
+qualification, an investigator-reviewed acceptance artifact or an untouched
+hold-out result. June plots remain experimental training diagnostics until
+all corresponding scientific gates exist.
+
+## Reviewed December execution — implementation completed 2026-11-16
+
+The user approved **independent December spin-up**. Its interval must be
+declared in the reviewed December `.in`; the runner neither copies June's
+final state nor invents another lunation. Keep the material, surface geometry,
+forcing and species settings identical to June. Supply these explicit keys:
+
+```text
+diviner_eclipse_selection = holdout
+diviner_eclipse_freeze_file = /absolute/path/to/committed/reviewed_holdout.json
+thermal_spinup_cycle_start_utc = <reviewed UTC start>
+thermal_spinup_cycle_end_utc = <reviewed UTC end on 2011-12-10>
+simulation_start_utc = <reviewed December initialization UTC>
+```
+
+The angle brackets are documentation placeholders, not accepted input values.
+The ordinary `thermal_time_step_s`, full-column temperature/enthalpy criteria,
+and all original production parameters remain explicit. CSPICE validates UTC
+syntax and ordering; the native adapter refuses an observation preceding the
+spin-up end. Allocation/runtime failure remains ERROR, without a shortened
+spin-up or looser physical/numerical criterion.
+
+[`i17_holdout.py`](../../i17_holdout.py) defines the release schema
+`srcMoon-I17-reviewed-holdout-v1`. An investigator creates and separately
+commits the artifact after reviewing actual June evidence. The script has no
+approve/freeze command. Required content is:
+
+| Field | Meaning and required evidence |
+|---|---|
+| `status`, `approved_by`, `approved_utc` | Exactly `APPROVED_FROZEN`, a named reviewer and explicit UTC timestamp. A candidate or missing record stays SKIPPED. |
+| `frozen_before_holdout_residuals` | Must be true; membership/parameters/limits are frozen before December residual inspection. |
+| `holdout_campaign_id` | Basename of the one planned aggregate output directory. Another directory cannot reuse that release automatically. |
+| `initialization` | Exactly `independent-observation-free-periodic-spinup`, the user-approved method. |
+| `processed_history_sha256`, `selection_contract_sha256`, `processor_sha256` | Exact canonical processed history, unchanged selection contract and producing script. |
+| `executable_sha256`, `production_source_identity_sha256` | Exact retained executable and compact/sorted JSON hash of authoritative native build-input hashes. The June/December binary and native source must match. |
+| `training_evidence` | Hash-bound `input`, `candidate`, `result`, `manifest`, `model_csv`, and `convergence_csv` records, each with `path` and `sha256`. June must actually pass the unchanged numerical gate. |
+| `reviewed_holdout_input` | `path`/`sha256` of the exact independently reviewed December receipt, including its explicit spin-up interval. |
+| `model_scope_qualification` | READY plus hash-bound evidence of the physical approximation and observation-operator scope. A scalar threshold cannot qualify absent atmospheric transmission or an unresolved terrain/footprint operator. |
+| `acceptance` | Explicit reviewed limits listed below; never filled from December output or assigned by the script. |
+| `phase_amplitude_groups` | Frozen named groups of exact `site_time_bin_ids`, at least three unique bins per group, established without December model residuals. |
+
+The freeze source must be tracked and byte-identical to its own HEAD Git blob;
+the enclosing repository, revision and blob identity are retained. The review
+may remain in its original committed checkout during private native builds.
+All Git operations are read-only. An untracked/edited candidate cannot become
+approved merely because its JSON says READY. The complete reviewed hold-out
+input is byte-bound. A second identity check permits only declared epoch,
+dt-refinement and file-transport differences from the June receipt; changes to
+material/geometry/forcing remain errors. JSON file paths resolve relative to
+the review artifact, while `.in` paths keep the native input-file convention.
+
+Supported acceptance fields are `weighted_rmse_k_max`,
+`absolute_weighted_bias_k_max`, `normalized_residual_rms_max`,
+`coverage_sigma`, `minimum_coverage_fraction`,
+`sampled_phase_error_s_max` and `sampled_amplitude_error_k_max`. All must be
+explicit, finite and nonnegative; coverage fraction lies in [0,1]. They have
+**no defaults**. A reviewer must also explicitly select
+`phase_amplitude_operator = sampled-extrema-on-frozen-bin-groups` before that
+implemented operator can be used; its scientific suitability/group membership
+has not been approved by implementing the backend.
+
+For each group the scorer requires the same native model latitude/longitude
+and distinct actual epochs. Sampled amplitude is max(T_bol)-min(T_bol) on
+those exact bins; sampled phase is the epoch of the unique sampled minimum.
+The model/reference differences are compared to the predeclared limits. No
+interpolation, gap filling, curve fitting or post-hoc site selection occurs.
+These metrics describe sampled extrema, not an assumed continuously observed
+eclipse minimum. An ambiguous observed minimum is SKIPPED because phase is
+unidentifiable; a model with no unique sampled minimum FAILs that declared
+test. Missing/mismatched bins are ERROR. Absent reviewed operator, group,
+scope or threshold evidence remains SKIPPED before launch.
+
+The release is claimed once under `_m2_validation_data/D03-RDR-I17/` before
+December science staging. The claim covers the predeclared dt, dt/2 and dt/4
+executions, not three independently tuned observational experiments. A failed
+or interrupted campaign preserves the claim and artifacts; another execution
+requires investigator review and a newly authorized campaign/release. The
+runner does not append seeds, modify limits or silently inspect December
+again. Fine-step model CSV, comparison CSV/PNG/EPS and channel diagnostics are
+preserved; no observational comparison is produced if numerical convergence
+fails first.
+Reviewing an infrastructure retry does not permit changing frozen membership,
+physics or acceptance limits after hold-out inspection. An evaluated scientific
+FAIL and the original observations remain evidence, rather than an invitation
+to select a more agreeable case.
+
+After review/hash qualification and selected-only staging, the runner writes
+`holdout_native_authorization.txt` and supplies its generated path through
+`diviner_eclipse_authorization_file`. This optional input transport key is
+added to the derived receipt if absent. Do not hand-author the sidecar as an
+approval substitute. Production `MoonI17Authorization::Validate` checks its
+exact schema, selection/status, staged history/review/validation paths,
+SHA-token shape and committed-review token before the native adapter opens
+December observations. Full JSON approval and actual file SHA-256 checks
+remain in Python and the run manifest: this is an accident guard, not a
+cryptographic signature or separate qualification. Missing, duplicate, extra,
+wrong-selection/path/token or unavailable-file records stop the native run.
+The same production header is exercised by a compiled thin protocol adapter
+inside `test_holdout.py`; its temporary files contain no science values.
+
+Once all scientific predecessors, data and review evidence actually exist:
+
+```bash
+python3 -B srcMoon/test/integration-tests/I17/test.py \
+  --amps /absolute/path/to/qualified/amps \
+  --input /absolute/path/to/reviewed-december.in \
+  --output-dir test_output/srcMoon/<approved-campaign-id> --mpi-ranks 8
+```
+
+The same-campaign I13 PASS must already be present in that qualification
+directory. Use the normal aggregate runner to construct the predecessor chain;
+this individual command does not bypass it. With unavailable prerequisites
+the command emits a truthful SKIPPED result and does not launch the model.
+
+### Protocol tests registered in the individual/global runner
+
+`test.py` always runs both `test_infrastructure.py` and `test_holdout.py`
+before delegating the scientific ID, so the global runner includes the new
+coverage without assigning another U/I number. Run their inexpensive checks
+directly with:
+
+```bash
+python3 -B srcMoon/test/integration-tests/I17/test_infrastructure.py
+python3 -B srcMoon/test/integration-tests/I17/test_holdout.py
+```
+
+They cover pre-CSV/pre-plot rejection, source/data/build/input hashes, approval
+and campaign binding, independent explicit initialization, unchanged physical
+parameters, one-time release, selected-only staging, tamper detection, matched
+three-dt bins, and frozen arithmetic phase/amplitude/coverage decisions.
+All tiny CSV/JSON values live in temporary protocol fixtures. They are never
+observations, comparison figures or thermal/Diviner validation evidence. Actual
+December observations were not scored to implement or test this control path.

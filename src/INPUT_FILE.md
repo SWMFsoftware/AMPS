@@ -257,7 +257,17 @@ then rejected so a misspelled or ignored physics receipt cannot look active.
 
 - `surface_temperature_mode` is `simple-cosine`, `diviner-map`, or
   `thermal-model`. `diviner-map` additionally requires an existing processed
-  D03 CSV; `none` is valid only for the other modes.
+  D03 CSV and the explicit declaration
+  `diviner_map_kinetic_interpretation = isothermal-grey`; there is no default
+  interpretation for an older map input. Native D03 values are bolometric
+  brightness temperature [K]. The approved isothermal grey resolved-facet
+  approximation converts them to the callback's kinetic [K] through
+  `T_kin = T_bol / thermal_infrared_emissivity^(1/4)`, with emissivity in
+  (0,1]. The corresponding comparison uses the forward brightness operator.
+  This cannot invert an anisothermal footprint or an unknown emissivity
+  spectrum. Real map gaps remain unavailable, rather than being filled;
+  requesting particle/source physics at an unavailable temperature fails
+  explicitly. The table path `none` is valid only for the other modes.
 - `diviner_eclipse_history_file` and
   `diviner_eclipse_selection_contract_file` are the paired I17 observation
   receipt. Both may be literal `none` in a non-I17 run. Otherwise both paths
@@ -277,6 +287,15 @@ then rejected so a misspelled or ignored physics receipt cannot look active.
   density/conductivity depth laws, the five heat-capacity polynomial
   coefficients, geothermal flux, depth/layers, update size, initial
   temperature, and nonlinear tolerances. Dimensional suffixes are normative.
+- `thermal_initialization_mode` selects `declared-uniform` (the retained
+  diagnostic default, using `thermal_initial_temperature_k`) or
+  `periodic-spinup`. The latter applies the existing observation-free solver
+  **before** production source/weight queries; its explicitly declared
+  `thermal_spinup_cycle_end_utc` must equal `simulation_start_utc` after SPICE
+  UTC/TDB conversion. No interval or qualifying initial condition is inferred.
+  A uniform development transient is not automatically a qualified lunar
+  initial state. Completed periodic initialization can be reused by I17/I20
+  only while that exact thermal state has not advanced.
 - Eclipse forcing is also explicit. The currently implemented experimental
   contract requires
   `thermal_eclipse_direct_irradiance_model=apparent-disc-overlap`,
@@ -286,7 +305,7 @@ then rejected so a misspelled or ignored physics receipt cannot look active.
   angular radii, evaluates the analytical overlap of their circular apparent
   discs, and multiplies direct solar flux by the unocculted solar-disc area.
   `thermal_solar_disc_radius_m` and `thermal_opaque_earth_radius_m` state the
-  physical radii used in that geometry. Terrain horizon blocking remains an
+  physical radii used in that geometry. In default `point-sun` mode, terrain horizon blocking remains an
   independent all-or-none ray test to the solar centre. The unocculted area
   fraction scales the direct flux evaluated with the solar-centre incidence
   cosine; neither incidence nor terrain blocking is integrated across the
@@ -295,6 +314,10 @@ then rejected so a misspelled or ignored physics receipt cannot look active.
   scattered, or transmitted terrestrial-atmosphere irradiance. It therefore
   produces `EXPERIMENTAL / NOT VALIDATED` eclipse comparisons; the parser
   rejects names implying unimplemented limb darkening or atmosphere physics.
+  The opt-in `uniform-disc` terrain mode instead integrates joint terrain/
+  Earth masks, incidence and directional absorption over the declared ray
+  grid; see the illumination controls below. It retains the uniform-radiance
+  and opaque-Earth physical assumptions and requires numerical qualification.
 - `thermal_spinup_cycle_start_utc` and `thermal_spinup_cycle_end_utc` define
   the observation-free forcing interval replayed before an I17 comparison.
   No Diviner temperature initializes the model. Replay continues without an
@@ -306,6 +329,17 @@ then rejected so a misspelled or ignored physics receipt cannot look active.
   values. CSPICE controls UTC/TDB conversion; a non-positive interval is a
   runtime error. Allocation or job-resource exhaustion is an `ERROR`, not
   evidence of convergence.
+- Within the complete `m2_verification_*` numerical-test control group,
+  optional `m2_verification_record_initial_thermal_state=true` requests the
+  actual full boundary/layer-column CSV before I19 changes numerical weights
+  or seeds cohorts. The default is false. Cluster preparation requests this
+  evidence and preserves the reviewed physical AMR/source/thermal inputs;
+  it cannot silently substitute the short I18 mesh. Formal initial-state
+  qualification must bind the actual applied method/epoch/state bytes and
+  executable/physics, with reviewed evidence. A state file is model provenance,
+  not independent observations or a physical reference solution. Its export
+  is separate from optional particle/inventory restart writes, and initialization
+  compute/storage cost remains part of cluster feasibility.
 - Na and Ar each declare a `*_sticking_model`, a strictly increasing
   `temperature_k:probability` table, an `*_accommodation_speed_model`, a
   bounded accommodation coefficient, and a non-empty literature-reference
@@ -855,8 +889,10 @@ are exact.
 
 ## 9. Current limitations
 
-* Only srcSEP, srcSEP3D and the SEP model libraries use this format so far;
-  the planetary applications still configure runs at compile time.
+* srcSEP, srcSEP3D and the SEP model libraries use the shared typed format.
+  srcMoon additionally accepts an application-owned flat lunar runtime block
+  with these container boundaries; its species/build selection remains a
+  compile-time configuration. See the lunar extension below for that scope.
 * A coupled SWMF srcSEP run does not read `./amps.in` (only the standalone
   srcSEP executable falls back to it).
 * srcSEP and srcSEP3D files for the same event still differ where one
@@ -868,3 +904,79 @@ are exact.
   `src/models/sep_common/parallel_diffusion/README.md`,
   `src/models/sep_common/pitch_angle_diffusion/README.md`,
   `src/models/sep_corona_swcme/shock_front/README.md`).
+
+## 10. Lunar runtime and numerical-verification extension
+
+`srcMoon` accepts `#begin application: moon` through `#end application`, with
+flat `key = value` settings and `!` comments. Its application parser owns the
+lunar vocabulary; this does not make SEP-specific blocks valid lunar inputs.
+The CLI uses `-input path/to/case.in`. Production surface, LOLA, SPICE,
+thermal, species-dependent surface and source settings are documented in
+[`srcMoon/README.md`](../srcMoon/README.md).
+
+The complete optional `m2_verification_*` group is a numerical test adapter,
+accepted only with the linked I19 budget check. It specifies case/profile,
+coarse steps, independent timestep/weight divisors, common physical horizon,
+explicit or native-reference timestep/weights, initial cohort scale, logical
+surface elements and source-integral tolerance. SI units, valid values,
+failure behavior and a commented complete template are documented in
+[`M2_NUMERICAL_PROTOCOL.md`](../srcMoon/test/M2_NUMERICAL_PROTOCOL.md) and
+[`m2_development.in`](../srcMoon/examples/m2_development.in). Omitting this
+optional group retains ordinary production behavior. The runtime group cannot
+enable missing compiled species, chemistry/layout modes or SPICE support.
+
+Optional Moon M2 completion scalars use the same flat application block:
+`illumination_terrain_solar_model` is `point-sun` (legacy default) or
+`uniform-disc`; uniform-disc requires explicit positive
+`illumination_disc_radial_points` and `illumination_disc_azimuth_points` >=4,
+divisible by four. `illumination_aberration_correction` is explicitly one of
+`NONE`, `LT`, `LT+S`, `CN`, `CN+S` (case-sensitive CSPICE names). Formal use
+must match authoritative product conventions; no correction is inferred.
+
+`m2_formal_contract_file` selects reviewed I15/I19/I20 documents or a hash-bound
+contract set. `m2_illumination_queries_file` and `m2_polar_queries_file` are
+geometry-only runtime products staged by those runners. Paths resolve against
+the containing `.in`; `none` means unavailable. `diviner_eclipse_selection`
+defaults to `training`; `holdout` requires a reviewed
+`diviner_eclipse_freeze_file` and runner-generated
+`diviner_eclipse_authorization_file` before native access. The independently
+declared thermal spin-up bounds in the hold-out input are mandatory scientific
+configuration. These controls never waive package, predecessor, observation
+operator, or review requirements. See the individual srcMoon test READMEs.
+
+### Optional Moon atomic electron rate service (M3 development)
+
+Within `#begin application: moon`, this complete optional group selects the
+approved Maxwellian/Voronov scalar rate law:
+
+```text
+electron_impact_rate_model = maxwellian-voronov
+electron_impact_coefficients_file = /path/to/native/cfit.dat
+electron_density_m3 = 2500000
+electron_temperature_ev = 10
+```
+
+The numerical bath values above are explicit verification examples, not
+measured lunar plasma or built-in defaults. Temperature means k_B*T_e in eV,
+not kelvin; density is m^-3. The native 406-row Voronov file supplies He/Na/Ne/Ar
+neutral coefficients and their inclusive fit bounds (currently 1..20000 eV).
+There is no extrapolation or density inferred from ion moments. Zero density
+is allowed; temperature and its validity are still checked. Unknown closure,
+missing key/file, NaN/infinity, negative density and out-of-domain temperature
+are refused. Coefficients are loaded transactionally before MPI initialization,
+then remain immutable throughout the run.
+
+This scalar coefficient service takes no relative electron/neutral bulk-drift
+distribution. Its local rate verification does not establish applicability
+to a drifting/non-Maxwellian measured bath; that scope must be qualified
+before enabling particle reactions.
+
+Absent selection, or `electron_impact_rate_model = legacy`, retains the old
+callback. A legacy receipt cannot contain active Maxwellian fields. This
+group configures a **rate service**, not an enabled particle reaction. The PIC
+electron-impact particle executor remains disabled; combining its compile
+switch with this new mode is explicitly refused until ion-product transfers,
+weights, kinetics and budgets are qualified. Positive rates cannot silently
+discard uncompiled product ions. No existing Na photolytic lifetime/reference
+is replaced. See `srcMoon/examples/m3_atomic_rates.in`, U16 and
+`srcMoon/test/M3_INITIAL_IMPLEMENTATION_CONTRACT.md` for exact scope.

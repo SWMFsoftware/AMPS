@@ -9,7 +9,10 @@ already frozen I17 history as bytes and verifies its source/processor chain.
 import argparse
 import json
 from pathlib import Path
+import subprocess
 import sys
+
+from audit_d02_temporal_contract import inspect as inspect_d02
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from integration_common import dataset_package_preflight,sha256,validation_data_root
@@ -23,7 +26,7 @@ def verify_file(path,expected):
     return {"path":str(path),"sha256":actual,"bytes":path.stat().st_size}
 
 
-def inspect():
+def inspect(output_directory=None):
     root=validation_data_root();records=[]
     for dataset in ("D01","D02","D03"):
         record={"check":dataset+"-package","dataset":dataset,"scope":"data-readiness-only"}
@@ -39,6 +42,20 @@ def inspect():
                     if not p.is_absolute():p=package/p
                     verified.append(verify_file(p,source["sha256"]))
             record["verified_raw_files"]=verified
+            if dataset=="D02":
+                # Metadata integrity cannot supply the missing averaging
+                # epochs. Preserve the explicit native/operator audit while
+                # keeping partial D02 data and formal I15/I20 unqualified.
+                temporal=inspect_d02(package)
+                record["native_temporal_audit"]=temporal
+                if output_directory is not None:
+                    artifact=output_directory/"d02_native_temporal_audit.json"
+                    artifact.write_text(json.dumps(temporal,indent=2,sort_keys=True)+"\n")
+                    record["temporal_audit_artifact"]=str(artifact)
+                if temporal["status"]=="ERROR":
+                    record.update(status="ERROR",reason=temporal["reason"])
+                elif temporal["status"]=="SKIPPED":
+                    record.update(status="SKIPPED",reason=temporal["reason"])
         except FileNotFoundError as error:record.update(status="SKIPPED",reason=f"required data unavailable: {error}")
         except (OSError,ValueError,KeyError) as error:record.update(status="ERROR",reason=str(error))
         records.append(record)
@@ -69,7 +86,20 @@ if __name__=="__main__":
     p.add_argument("--output-dir",required=True,type=Path);a=p.parse_args()
     if a.output_dir.exists() and any(a.output_dir.iterdir()):p.error("output directory must be new or empty")
     a.output_dir.mkdir(parents=True,exist_ok=True)
-    result=inspect()
+    # Register metadata protocol checks through the existing global M2 data
+    # entry, without adding permanent U/I IDs or scientific PASS outcomes.
+    checks=Path(__file__).with_name("test_d02_temporal_contract.py")
+    with (a.output_dir/"d02_protocol_checks.log").open("w") as stream:
+        code=subprocess.run([sys.executable,"-B",str(checks)],stdout=stream,
+                            stderr=subprocess.STDOUT,check=False).returncode
+    result=inspect(a.output_dir.resolve())
+    result["d02_protocol_checks"]={"status":"PASS" if code==0 else "ERROR",
+        "runner":str(checks),"log":str((a.output_dir/"d02_protocol_checks.log").resolve())}
+    if code:
+        result["records"].append({"check":"D02-metadata-protocol","status":"ERROR",
+            "scope":"infrastructure-only","reason":"metadata protocol self-check failed",
+            "runner":str(checks),"log":str((a.output_dir/"d02_protocol_checks.log").resolve())})
+        result["counts"]["ERROR"]+=1
     (a.output_dir/"result.json").write_text(json.dumps(result,indent=2,sort_keys=True)+"\n")
     print(json.dumps({"counts":result["counts"],"result":str(a.output_dir/"result.json")},indent=2))
     raise SystemExit(2 if result["counts"]["ERROR"] else 0)

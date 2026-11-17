@@ -73,8 +73,10 @@ class InfrastructureContract(unittest.TestCase):
                 (root / "I13/result.json").write_text('{"status":"PASS"}')
                 captured = {}
 
-                def prepare(source, destination, output_root):
+                def prepare(source, destination, output_root, **identity):
                     destination.write_text("derived sentinel\n")
+                    if test_id == "I17":
+                        self.assertEqual(identity["executable"], root / "unused-executable")
 
                 def stop_at_manifest(tid, executable, command, seed, receipt, ranks):
                     captured.update(command=command[:], receipt=receipt, ranks=ranks)

@@ -4,7 +4,66 @@ These are coverage gaps found during the source audit.  They do not allocate
 new permanent test IDs.  Each item should be reconciled with the test registry
 before implementation.
 
+## November 13 approved implementation checkpoint
+
+The user approved v3. Existing U12/I19/I20 contracts and source roadmap are
+extended consistently; no new permanent ID is assigned. Active numerical
+controls, passive cohorts and the whole-command/cluster execution infrastructure
+are described in [M2_NUMERICAL_PROTOCOL.md](M2_NUMERICAL_PROTOCOL.md).
+The review history below retains the original gaps at their recorded dates;
+statements there that the design is unapproved describe those earlier dates.
+The current implementation must be verified by real native execution. Formal
+convergence, measured cluster feasibility, native D02 temporal/operator evidence,
+independent thermal/PSR comparisons and M1/I13 closure remain open.
+
 ## Legitimate extensions of existing IDs
+
+### November 12 follow-up: D02 operator and formal I19/I20 protocol
+
+Primary-source research is recorded in D02_ILLUMINATION_RESEARCH.md. The native
+AVGVISIB observable is the fraction of sampled times with any solar-disc
+visibility, not mean visible area or flux. Neither general PGDA descriptions,
+older six-hour calculations nor native date fields establish the complete
+201608 averaging contract. Exact epochs/sampling and an independent
+time-resolved I15 benchmark remain missing. No synthetic epoch labels can be
+derived from the averaged maps.
+
+The spatial processor's unsupported exact-product timing claims are removed
+from QA, with all 366 selected CSV rows byte-identical. Overall QA remains
+PARTIAL while spatial processing is READY. Ten automatically registered
+metadata protocol checks protect this distinction; they extend the existing
+M2 data-audit entry and introduce no scientific test ID or validation PASS.
+
+M2_I19_I20_PROTOCOL_PROPOSAL.md/JSON propose synchronized physical-time
+accounting, independent dt/weight refinement, fixed independent replicates,
+simultaneous equivalence budgets and censored reversible-retention diagnostics.
+These remain unapproved, unconsumed proposals. Full source/mover coverage,
+physical-time diagnostics, formal convergence and I20 qualification remain
+open; the short supporting ledger cannot close them. Review the protocol and
+update the existing I19/I20 contracts/roadmap consistently before implementation
+or formal execution. No new permanent ID is proposed.
+
+The subsequent v2 review identifies the Ar timestep copy (0.1 times Na after
+initial messages), the supporting fixture's hard-coded seed, and missing
+physical-time/cohort diagnostics. It defines two separate physical cases,
+288 potential full-duration runs, first-release versus re-adsorption metrics,
+an explicitly conditional statistical approximation, and bounded capacity
+planning. These proposals are not implementation or approval. The complete
+clock/seed/tag/source-path contracts must be verified before formal execution;
+current 20-step checks do not establish month-long convergence or precision.
+
+### November 12 execution-budget follow-up
+
+V3 records the user-required one-hour aggregate development campaign and
+deferred cluster qualification of order a few hundred CPU-core hours. The
+current runner resets its child timeout for each linked test and leaves
+build/QA/plot/cleanup outside that guard. Whole-command deadline propagation
+and safe process-group termination remain infrastructure gaps, not completed
+features. The proposed short 24/48/96-step, two-seed cases provide scoped
+production/conservation diagnostics only; long convergence and full seed
+qualification remain separately SKIPPED until executed. A candidate 288-run
+cluster matrix must be costed against an aggregate allocation before launch,
+not granted an unbounded per-job allowance. No acceptance gate is relaxed.
 
 ### November 12 M2 supporting coverage
 
@@ -151,6 +210,27 @@ the precise subset addressed; it does not declare their complete scopes closed.
   not the numerical raster, per-beam timestamps, spectra, or beam response.
 
 ## Cross-cutting gaps
+
+### M3 chemistry event/product audit — 2026-11-17
+
+The initial M3 audit identified uncovered production seams in the existing
+generic electron and photolytic executors: independently sampled product
+birth/parent-loss packets, unequal species dt/weight transfer, a shadowed
+electron product-loop cell index, and collapsed O(3P/1D/1S) identities. A
+correct coefficient table cannot verify event-level nucleus/charge/momentum
+closure or physical daughter transport. Molecular archived mean energies do
+not supply joint distributions; the experimental OH source also needs
+authoritative wavelength/threshold-tail interpretation.
+
+Extend the EXISTING I21-I24 contracts with actual conservative transfer,
+same-cell insertion and unequal-weight/time-step cases when those production
+capabilities are implemented. Extend U15/U24 with complete channel/state
+identity and required-data refusal. Preserve every original numeric criterion;
+these are legitimate existing-test extensions, not new permanent IDs. The
+current U16 verifies coefficients and rate/configuration wiring only. No
+generic executor is activated or fixed by silently substituting a test-only
+law. Details and proposed physics choices are in `M3_INITIAL_IMPLEMENTATION_CONTRACT.md`
+and the two `M3_*_PROPOSAL.md` research documents.
 
 - Add deterministic random-seed control and statistical confidence intervals
   to every stochastic source, surface, chemistry, and mover test.

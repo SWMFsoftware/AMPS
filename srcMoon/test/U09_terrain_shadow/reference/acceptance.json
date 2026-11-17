@@ -3,24 +3,92 @@
   "name": "Topographic illumination and horizon-shadow verification",
   "purpose": "Verify facet/ray occlusion and terrain horizon classification independently of observational scoring.",
   "production_capability": "Triangulated-surface ray tracing, terrain shadow attributes, and uniform apparent-disc Earth-eclipse overlap.",
-  "production_entry_points": ["Moon::SurfaceEnvironment::TerrainRayTracer::IntersectRay", "Moon::SurfaceEnvironment::TerrainRayTracer::IsSunVisible", "Moon::SurfaceTemperature::UniformSolarDiscVisibleFraction"],
+  "production_entry_points": [
+    "Moon::SurfaceEnvironment::TerrainRayTracer::IntersectRay",
+    "Moon::SurfaceEnvironment::TerrainRayTracer::IsSunVisible",
+    "Moon::SurfaceTemperature::UniformSolarDiscVisibleFraction",
+    "Moon::SurfaceEnvironment::EvaluateSolarDisc",
+    "Moon::SurfaceEnvironment::TemporalVisibility::Add",
+    "Exosphere::SourceProcesses::PhotonStimulatedDesorption::GetSurfaceElementProductionRate",
+    "Exosphere::SourceProcesses::PhotonStimulatedDesorption::GetTotalProductionRate"
+  ],
   "configuration": "Deterministic horizontal facet and vertical-ridge fixture; 1 micrometre ray-origin offset declared by the fixture.",
-  "inputs": ["analytical facet arrangement", "unit Sun directions", "explicit excluded source face"],
+  "inputs": [
+    "analytical facet arrangement",
+    "unit Sun directions",
+    "explicit excluded source face"
+  ],
   "independent_reference": "Closed-form line/plane intersection and facet-normal sign.",
   "units": "m and dimensionless visibility/classification",
   "frame_time_convention": "One declared lunar body-fixed frame and fixed Sun vector/epoch.",
   "deterministic_stochastic_controls": "No randomness; edge cases predeclared.",
   "procedure": "Call the production BVH ray service for overhead, single-ridge, back-facing, and exact ridge-distance cases; call the production apparent-disc overlap kernel for disjoint, total, contained, and partial equal-radius circles.",
-  "metrics": ["classification confusion matrix", "intersection distance error", "unocculted solar-disc fraction", "edge-case count"],
+  "metrics": [
+    "classification confusion matrix",
+    "intersection distance error",
+    "unocculted solar-disc fraction",
+    "edge-case count"
+  ],
   "acceptance_criteria": "All three terrain classifications exact, original ridge intersection distance within 1e-14 relative, and every closed-form circle-overlap branch within 1e-14 relative. Additional lunar-coordinate translation/ray-direction-rescaling fixtures preserve hit distance within 1e-9 relative; this separate floating-point cancellation check does not relax the original fixtures.",
   "expected_pass_result": "Production terrain shadowing is geometrically correct and independently classified.",
-  "expected_failure_modes": ["self-shadow", "wrong normal", "frame mismatch", "grazing tolerance instability"],
+  "expected_failure_modes": [
+    "self-shadow",
+    "wrong normal",
+    "frame mismatch",
+    "grazing tolerance instability"
+  ],
   "required_data": [],
   "data_hashes": "none; I15, not U09, owns independent D02 scoring",
-  "predecessor_gates": ["U08"],
-  "artifacts": ["result.json", "shadow_cases.csv", "data_hashes.json"],
+  "predecessor_gates": [
+    "U08"
+  ],
+  "artifacts": [
+    "result.json",
+    "shadow_cases.csv",
+    "data_hashes.json"
+  ],
   "status_semantics": "PASS verifies the production terrain-ray kernel only; it is not D02 observational validation or linked I15 wiring.",
   "implementation": "linked-production-probe",
   "shared_vertex_regression": "Every twentieth vertex of a lunar-radius production icosphere must be hit by its centre-to-vertex radial ray. Zero misses required. The oracle is closed-surface vertex membership, not a frozen production output.",
-  "probe_modes": ["terrain-shadow"]
+  "probe_modes": [
+    "terrain-shadow",
+    "psd-illumination"
+  ],
+  "psd_geometry_wiring_extension": {
+    "scope": "Existing U09 direct illumination geometry applied through the actual shared-core PSD kernel; deterministic local fixtures, never source-strength validation or observations",
+    "law": "physical atoms times compiled effective cross section [m2] times compiled 1-AU photon flux [m^-2 s^-1] times unabsorbed projected direct-photon 1-AU factor",
+    "configuration": "2-by-4 logical unit-radius sphere, 64 physical Na atoms in one element, existing positive compiled Na PSD coefficients, production 32-by-128 finite-disc grid",
+    "oracles": [
+      "NULL hook retains exact legacy expression and cached-total behavior",
+      "full perpendicular flux, half central incidence, backface zero",
+      "actual-point inverse-square dilution at twice distance",
+      "opaque Earth totality and production BVH ridge umbra",
+      "exact zero stock skips geometry callback",
+      "live total/current-stock sum and per-area ceiling/diagnostic",
+      "total refresh preserves stock and pending deposit/release counters"
+    ],
+    "relative_tolerance": 2e-13,
+    "legacy_zero_stock_counter_tolerance": 0,
+    "failure_probe": "psd-illumination-invalid must terminate through the AMPS finite/nonnegative factor diagnostic; run separately as expected-error infrastructure coverage",
+    "unavailable": "SKIPPED when the compiled build lacks positive Na PSD coefficients; source coefficients are never changed by this fixture",
+    "limits": "Does not establish source strength, actual epoch registration, CDF/finite-hazard linked transport, M1 convergence or I15/I19 qualification"
+  },
+  "finite_disc_extension": {
+    "scope": "Uniform-radiance projected-disc quadrature; production BVH and correlated opaque-Earth masks; deterministic numerical verification only",
+    "grid": "Explicit 32x128 coarse and 256x512 fine analytical horizon; no default scientific ray resolution",
+    "area_and_full_flux_relative_tolerance": 2e-13,
+    "half_disc_horizon_flux_absolute_tolerance": 2e-06,
+    "trend": "fine analytical horizon error smaller than coarse",
+    "cases": [
+      "full disc and perpendicular irradiance",
+      "directional absorptivity callback",
+      "half-disc analytic horizon",
+      "correlated Earth/horizon masks",
+      "nested Earth occultation",
+      "occurrence distinct from mean disc area",
+      "invalid grid transactional rejection",
+      "BVH ridge half-disc penumbra and umbra"
+    ],
+    "qualification_limit": "finite ray grids can miss arbitrarily thin visible slivers; D02 use requires independent angular/temporal resolution qualification and exact authoritative sampling metadata"
+  }
 }

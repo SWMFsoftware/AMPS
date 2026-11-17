@@ -3,6 +3,7 @@
 #include "MoonSurfaceEnvironment.h"
 
 #include "Moon.h"
+#include "MoonSurfaceTemperature.h"
 
 #include <algorithm>
 #include <atomic>
@@ -352,6 +353,209 @@ bool TerrainRayTracer::IsSunVisible(
   return true;
 }
 
+bool ApparentSolarSystemGeometryAtPoint(double et,
+    const std::array<double,3>& pointM,const std::string& abcorr,
+    std::array<double,3>* sunRelativeM,std::array<double,3>* earthRelativeM,
+    std::string* error) {
+  if (error==nullptr) return false;
+  error->clear();
+  if (sunRelativeM==nullptr || earthRelativeM==nullptr || sunRelativeM==earthRelativeM ||
+      !std::isfinite(et) || !ValidVector(pointM) ||
+      (abcorr!="NONE" && abcorr!="LT" && abcorr!="LT+S" && abcorr!="CN" && abcorr!="CN+S")) {
+    *error="invalid fixed-site illumination geometry: finite TDB epoch/point, distinct outputs and explicit reception correction required";
+    return false;
+  }
+#ifdef _NO_SPICE_CALLS_
+  *error="fixed-site illumination geometry requires a SPICE-enabled build; no geometric/apparent fallback is supplied";
+  return false;
+#else
+  // NAIF spkcpo_c: obspos is km, constant in obsref relative to obsctr.
+  // OBSERVER evaluates the non-inertial output axes at reception et. CSPICE
+  // then computes light time AND observer-velocity stellar aberration for
+  // this actual rotating site. Correcting the Moon-centred target vector
+  // first and subtracting pointM is not equivalent for non-NONE corrections.
+  // Primary API/semantics: https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/spkcpo_c.html
+  SpiceDouble observerKm[3],sun[6],earth[6],lightTime=0;
+  for (int k=0;k<3;++k) observerKm[k]=pointM[k]/1000.0;
+  if (failed_c()) {
+    *error="SPICE already has a pending error before the fixed-site geometry query";
+    return false; // Do not erase an error owned by a preceding caller.
+  }
+  // This bool API must report a kernel/frame failure without publishing one
+  // target and leaving the other stale. Preserve the caller's error policy;
+  // only errors originating in these two calls are cleared before restoring
+  // it. No kernel pool, ephemeris epoch or print setting is changed.
+  SpiceChar previousAction[SPICE_ERROR_SMSGLN];
+  SpiceChar returnAction[]="RETURN";
+  erract_c("GET",sizeof(previousAction),previousAction);
+  erract_c("SET",0,returnAction);
+  spkcpo_c("SUN",et,Frames::BodyFixed,"OBSERVER",abcorr.c_str(),observerKm,
+           ObjectName,Frames::BodyFixed,sun,&lightTime);
+  if (!failed_c())
+    spkcpo_c("EARTH",et,Frames::BodyFixed,"OBSERVER",abcorr.c_str(),observerKm,
+             ObjectName,Frames::BodyFixed,earth,&lightTime);
+  const bool failed=failed_c();
+  SpiceChar detail[SPICE_ERROR_LMSGLN]={0};
+  if (failed) { getmsg_c("LONG",sizeof(detail),detail);reset_c(); }
+  erract_c("SET",0,previousAction);
+  if (failed) {
+    *error=std::string("SPICE fixed-site Sun/Earth geometry failed: ")+detail;
+    return false;
+  }
+  std::array<double,3> candidateSun,candidateEarth;
+  for (int k=0;k<3;++k) { candidateSun[k]=1000.0*sun[k];candidateEarth[k]=1000.0*earth[k]; }
+  const double sunRangeM=std::hypot(candidateSun[0],candidateSun[1],candidateSun[2]);
+  const double earthRangeM=std::hypot(candidateEarth[0],candidateEarth[1],candidateEarth[2]);
+  if (!ValidVector(candidateSun) || !ValidVector(candidateEarth) ||
+      !PositiveFinite(sunRangeM) || !PositiveFinite(earthRangeM)) {
+    *error="SPICE fixed-site geometry returned a nonfinite or zero target distance";
+    return false;
+  }
+  *sunRelativeM=candidateSun;*earthRelativeM=candidateEarth;
+  return true;
+#endif
+}
+
+bool EvaluateSolarDisc(const TerrainRayTracer* terrain,
+    const SolarDiscRequest& request,SolarDiscSample* output,
+    std::string* error,const std::function<double(double)>& absorptivity) {
+  if (output==nullptr || error==nullptr) return false;
+  error->clear();
+  const double sunDistance=Norm(request.pointToSunM);
+  const double normalLength=Norm(request.outwardNormal);
+  const double earthDistance=Norm(request.pointToEarthM);
+  if (!ValidVector(request.surfacePositionM) ||
+      !ValidVector(request.outwardNormal) ||
+      !ValidVector(request.pointToSunM) || !ValidVector(request.pointToEarthM) ||
+      !PositiveFinite(normalLength) || !PositiveFinite(sunDistance) ||
+      !PositiveFinite(request.solarRadiusM) ||
+      !(sunDistance>request.solarRadiusM) ||
+      !std::isfinite(request.opaqueEarthRadiusM) || request.opaqueEarthRadiusM<0 ||
+      (request.opaqueEarthRadiusM>0 && (!PositiveFinite(earthDistance) ||
+          !(earthDistance>request.opaqueEarthRadiusM))) ||
+      !PositiveFinite(request.rayOriginOffsetM) || request.radialPoints<1 ||
+      request.azimuthPoints<4 || request.azimuthPoints%4!=0 ||
+      static_cast<std::size_t>(request.radialPoints)>
+          std::numeric_limits<std::size_t>::max()/request.azimuthPoints) {
+    *error="invalid finite-disc geometry/grid: explicit positive radii/offset, "
+        "external observer and radial>=1, azimuth>=4 divisible by four required";
+    return false;
+  }
+  std::array<double,3> centre=request.pointToSunM,normal=request.outwardNormal;
+  for (int k=0;k<3;++k) { centre[k]/=sunDistance; normal[k]/=normalLength; }
+  // Pick the least aligned Cartesian axis; no pole/special-frame singularity.
+  int axis=0;
+  for (int k=1;k<3;++k) if (std::abs(centre[k])<std::abs(centre[axis])) axis=k;
+  std::array<double,3> auxiliary{{0,0,0}}; auxiliary[axis]=1;
+  auto tangent=Cross(centre,auxiliary);
+  const double tangentLength=Norm(tangent);
+  for (double& x:tangent) x/=tangentLength;
+  const auto second=Cross(centre,tangent);
+  const double sinRadius=request.solarRadiusM/sunDistance;
+  const double pi=std::acos(-1.0);
+  SolarDiscSample candidate;
+  candidate.rayCount=static_cast<std::size_t>(request.radialPoints)*request.azimuthPoints;
+  const double weight=1.0/static_cast<double>(candidate.rayCount);
+  for (int ring=0;ring<request.radialPoints;++ring) {
+    // Midpoint in r^2 gives equal PROJECTED disc areas. With uniform radiance,
+    // dOmega=dA_projected/cos(rho); therefore irradiance needs the 1/cos(rho)
+    // Jacobian below. Averaging cos(incidence) alone would be a different law.
+    const double sine=sinRadius*std::sqrt((ring+0.5)/request.radialPoints);
+    const double cosine=std::sqrt(1.0-sine*sine);
+    for (int azimuth=0;azimuth<request.azimuthPoints;++azimuth) {
+      const double phi=2*pi*(azimuth+0.5)/request.azimuthPoints;
+      std::array<double,3> ray;
+      for (int k=0;k<3;++k)
+        ray[k]=cosine*centre[k]+sine*(std::cos(phi)*tangent[k]+std::sin(phi)*second[k]);
+      const double incidence=std::max(-1.0,std::min(1.0,Dot(normal,ray)));
+      bool terrainVisible=!request.applyLocalSelfHorizon || incidence>0;
+      if (terrain && terrainVisible) {
+        if (request.applyLocalSelfHorizon) {
+          if (!terrain->IsSunVisible(request.surfacePositionM,normal,ray,
+                  request.rayOriginOffsetM,request.sourceFace,&terrainVisible,error)) return false;
+        } else {
+          std::array<double,3> origin=request.surfacePositionM;
+          for (int k=0;k<3;++k) origin[k]+=request.rayOriginOffsetM*normal[k];
+          RayHit obstruction;
+          if (!terrain->IntersectRay(origin,ray,0,std::numeric_limits<double>::infinity(),
+                  request.sourceFace,&obstruction,error)) return false;
+          terrainVisible=!obstruction.hit;
+        }
+      }
+      bool earthVisible=true;
+      if (request.opaqueEarthRadiusM>0) {
+        // Intersect the SAME ray with the opaque Earth. Multiplying separate
+        // terrain/occultation area fractions would be wrong for overlapping
+        // masks (e.g. a ridge covers the very part eclipsed by Earth).
+        const double along=Dot(request.pointToEarthM,ray);
+        const double perpendicular2=std::max(0.0,earthDistance*earthDistance-along*along);
+        const double discriminant=request.opaqueEarthRadiusM*request.opaqueEarthRadiusM-perpendicular2;
+        if (along>0 && discriminant>=0) {
+          const double nearEarth=along-std::sqrt(discriminant);
+          const double alongSun=Dot(request.pointToSunM,ray);
+          const double sunDiscriminant=std::max(0.0,request.solarRadiusM*request.solarRadiusM-
+              std::max(0.0,sunDistance*sunDistance-alongSun*alongSun));
+          const double nearSun=alongSun-std::sqrt(sunDiscriminant);
+          earthVisible=!(nearEarth>=0 && nearEarth<nearSun);
+        }
+      }
+      if (earthVisible) candidate.earthVisibleAreaFraction+=weight;
+      if (!terrainVisible) continue;
+      candidate.terrainVisibleAreaFraction+=weight;
+      candidate.sampledAnyTerrainVisible=true;
+      if (!earthVisible) continue;
+      candidate.jointlyVisibleAreaFraction+=weight;
+      candidate.sampledAnyJointlyVisible=true;
+      if (incidence<=0) continue; // Visible sky does not imply inward facet heating.
+      const double projected=weight*incidence/cosine;
+      const double absorption=absorptivity ? absorptivity(incidence):1.0;
+      if (!std::isfinite(absorption) || absorption<0 || absorption>1) {
+        *error="finite-disc directional absorptivity is outside [0,1]";
+        return false;
+      }
+      candidate.projectedIncidence+=projected;
+      candidate.absorbedProjectedIncidence+=projected*absorption;
+    }
+  }
+  // Enclose accumulated unit-fraction roundoff, not a physical correction.
+  candidate.terrainVisibleAreaFraction=std::min(1.0,candidate.terrainVisibleAreaFraction);
+  candidate.earthVisibleAreaFraction=std::min(1.0,candidate.earthVisibleAreaFraction);
+  candidate.jointlyVisibleAreaFraction=std::min(1.0,candidate.jointlyVisibleAreaFraction);
+  *output=candidate;
+  return true;
+}
+
+bool TemporalVisibility::Add(const SolarDiscSample& sample,std::string* error) {
+  if (error==nullptr) return false;
+  error->clear();
+  // Forward bound for positive quadrature accumulation, plus fixed per-ray
+  // geometry arithmetic. This scales with the ACTUAL configured grid; a
+  // legitimate fine non-power-of-two grid must not fail a fixed-epsilon test.
+  const double arithmetic=(64.0+static_cast<double>(sample.rayCount))*
+      std::numeric_limits<double>::epsilon();
+  const double rounding=arithmetic<1 ? arithmetic/(1-arithmetic):
+      std::numeric_limits<double>::infinity();
+  if (!sample.rayCount || epochCount==std::numeric_limits<std::size_t>::max() ||
+      !std::isfinite(sample.jointlyVisibleAreaFraction) ||
+      sample.jointlyVisibleAreaFraction<0 || sample.jointlyVisibleAreaFraction>1 ||
+      !std::isfinite(sample.projectedIncidence) || sample.projectedIncidence<0 ||
+      arithmetic>=1 || sample.projectedIncidence>1+rounding ||
+      sample.sampledAnyJointlyVisible!=(sample.jointlyVisibleAreaFraction>0)) {
+    *error="invalid equal-epoch visibility sample or counter overflow";
+    return false;
+  }
+  ++epochCount;
+  if (sample.sampledAnyJointlyVisible) ++sampledAnyVisibleCount;
+  meanVisibleAreaFraction+=(sample.jointlyVisibleAreaFraction-meanVisibleAreaFraction)/epochCount;
+  meanProjectedIncidence+=(sample.projectedIncidence-meanProjectedIncidence)/epochCount;
+  return true;
+}
+
+double TemporalVisibility::SampledAnyDiscOccurrenceFraction() const {
+  return epochCount ? static_cast<double>(sampledAnyVisibleCount)/epochCount:
+      std::numeric_limits<double>::quiet_NaN();
+}
+
 bool InitializeProductionTerrain(const Surface::Triangulation& triangulation,
                                  const Runtime::Configuration& configuration,
                                  std::string* error) {
@@ -373,7 +577,16 @@ void BeginProductionParticleStep(double ephemerisTimeBeginS) {
   if (!std::isfinite(ephemerisTimeBeginS))
     exit(__LINE__,__FILE__,"invalid moving-surface particle-step epoch");
   gParticleStepBeginEtS=ephemerisTimeBeginS;
+  // Synchronously prepare direct-photon factors before source callbacks can
+  // run in particle threads. The callbacks then read immutable coefficients
+  // at one declared SOURCE-BEGIN epoch, with no CSPICE/RNG/cache mutation.
+  if (Moon::SurfaceTemperature::ProductionStateInitialized()) {
+    std::string error;
+    if (!Moon::SurfaceTemperature::RefreshProductionPhotonFluxCache(ephemerisTimeBeginS,&error))
+      exit(__LINE__,__FILE__,error.c_str());
+  }
 }
+double ProductionSourceEpochS() { return gParticleStepBeginEtS; }
 double ProductionInjectionEpochS() {
   return gParticleStepBeginEtS+(
       std::isfinite(PIC::Mover::MovingSurfaceInjectionTimeOffsetS) ?

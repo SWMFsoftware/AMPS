@@ -2,6 +2,7 @@ import importlib.util
 import json
 import math
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 
@@ -125,6 +126,52 @@ class ForwardSourceExportTests(unittest.TestCase):
                 self.assertEqual(
                     receipt.read_text(encoding="utf-8"),
                     EXPORT.render(manifest_path, EXPORT.DEFAULT_CONFIG))
+
+    def test_complete_export_is_identical_after_checkout_relocation(self):
+        # Exercise the real exporter loaded from two different directory
+        # trees.  Inputs are byte-identical repository fixtures, not fitted or
+        # synthetic observations.  Compare the complete deck, including every
+        # provenance comment and physical source/geometry value; never strip
+        # comments to make a checkout-specific result look reproducible.
+        relative_files = (
+            "srcEnceladus/standalone/export_forward_sources.py",
+            "srcEnceladus/standalone/source_contract.py",
+            "srcEnceladus/standalone/config/tenishev2014_stage0.json",
+            "srcEnceladus/standalone/data/published_stripes_2014.json",
+            "srcEnceladus/standalone/results/e3_equal_h2o_co2_startup_manifest.json",
+        )
+        rendered = []
+        with tempfile.TemporaryDirectory() as directory:
+            for index, label in enumerate(("checkout alpha", "checkout beta")):
+                checkout = Path(directory) / label
+                for relative in relative_files:
+                    target = checkout / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(ROOT.parents[1] / relative, target)
+                module_path = checkout / relative_files[0]
+                spec = importlib.util.spec_from_file_location(
+                    "relocated_exporter_" + str(index), module_path)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                manifest = checkout / relative_files[-1]
+                text = module.render(manifest, module.DEFAULT_CONFIG)
+                self.assertIn("! manifest=" + relative_files[-1] + "\n", text)
+                self.assertIn("! geometry_config=" + relative_files[2] + "\n", text)
+                self.assertIn("! stripe_geometry=" + relative_files[3] + "\n", text)
+                self.assertNotIn(str(checkout), text)
+                rendered.append(text)
+        self.assertEqual(rendered[0], rendered[1])
+
+    def test_external_manifest_keeps_absolute_provenance(self):
+        # An input outside the source repository must not be mistaken for a
+        # similarly named owned file.  Its actual path and content hash remain
+        # available even though repository inputs use portable relative names.
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / "manifest.json"
+            manifest.write_text(json.dumps(self.manifest()), encoding="utf-8")
+            text = EXPORT.render(manifest, EXPORT.DEFAULT_CONFIG)
+            self.assertIn("! manifest=" + str(manifest.resolve()) + "\n", text)
+            self.assertIn("! manifest_sha256=" + EXPORT.sha256(manifest) + "\n", text)
 
     def test_unsafe_distribution_and_species_names_are_rejected(self):
         manifest = self.manifest()

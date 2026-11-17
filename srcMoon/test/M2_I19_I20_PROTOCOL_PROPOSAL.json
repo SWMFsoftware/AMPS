@@ -1,0 +1,324 @@
+{
+  "active_protocol": "M2_I19_I20_PROTOCOL.json",
+  "chemistry": "off",
+  "clock_alignment": {
+    "coarse_dt_s": "H/(8*m)",
+    "coarse_steps": "8*m",
+    "dt_bound": "minimum final initialized Na and Ar production dt",
+    "finest_steps": "32*m",
+    "illustrative_aligned_coarse_dt_s": 0.6855852465186301,
+    "illustrative_aligned_coarse_steps": 3719800,
+    "illustrative_finest_steps": 14879200,
+    "illustrative_total_steps_two_cases_full_design": 2499705600,
+    "legacy_argon_factor_policy": "do not remove 0.1 timestep copy solely for runtime; independently justify and review an alternative restriction",
+    "m": "ceil(H/(8*dt_bound))",
+    "retained_fixture_dt_s": 0.6855865301040126,
+    "timestamp_policy": "start TDB epoch plus integer-indexed elapsed seconds with documented roundoff; no inventory interpolation or unsupported fractional mover step"
+  },
+  "cohort_metrics": {
+    "constant_thermal_oracle": "S(t)=exp(-t/tau); mu_H=-tau*expm1(-H/tau); no-release limit H",
+    "first_release_fraction": "1-first_release_survival; gross repeated-release flux is distinct",
+    "first_release_survival": "never-left fraction of t0 stock",
+    "oracle_error_budget_fraction_of_numerical_margin": 0.01,
+    "passive_tag_controls": "preserve actual atom stock and packet weights, mixed-reservoir fractions and first-release history; no extra RNG or physical surrogate",
+    "restricted_mean_first_residence": "integral of first-release survival from 0 to H, including censored residents",
+    "surface_occupancy": "fraction currently on any surface, including returned atoms",
+    "temperature_history_scope": "conditional kinetic verification; independent thermal qualification still required",
+    "thermal_timescale_flag": "tau>=H is only diagnostic; tau=H gives exp(-1) thermal-only survival",
+    "variable_hazard_oracle": "independently converged integral of all enabled release hazards, not mean-temperature substitution"
+  },
+  "consumed_by_runners": false,
+  "development_design": {
+    "checkpoint_count_including_initial": 9,
+    "coarse_steps": 24,
+    "common_physical_duration": "24*common_coarse_dt_s; shared across all short refinements",
+    "dt_weight_grid_cells": 9,
+    "formal_confidence_inference": false,
+    "full_500_step_science_sample_expected": false,
+    "physical_case_count": 2,
+    "physics_semantics": "production wiring, conservation and analytical controls; short resolution differences are diagnostics",
+    "proposed_rank_seed": "base+1009*j+rank",
+    "seed_base": 2000003,
+    "seed_indices": [
+      0,
+      1
+    ],
+    "seed_stride": 1009,
+    "short_case_count": 36,
+    "status": "proposed workload; aggregate hour is a requirement; implementation/timing qualification pending",
+    "step_counts_by_dt_level": [
+      24,
+      48,
+      96
+    ]
+  },
+  "environment_mode": "evolving in both coupled cases; frozen forcing only in separate analytical controls; qualify thermal initial state at actual t0",
+  "execution_policy_user_directed": true,
+  "existing_conservation_limits": {
+    "closed_cohort": "exact count/weighted conservation; source-normalized criterion not divided by zero",
+    "count_residual": 0,
+    "deterministic_weighted_residual": "existing forward-error bound from production arithmetic; unchanged",
+    "dominant_source_relative_imbalance_strict_upper_limit": 0.005,
+    "external_source_normalization_review": "retain existing supporting check; formal source-fed external-supply denominator must be explicitly reviewed because current analyzer also uses internal-transfer totals; no zero-source division or silent reinterpretation",
+    "photolytic_conversion_terms": 0
+  },
+  "external_roadmap_sha256": "d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4",
+  "factor_design": "full 3 by 3 tensor; fixed physical geometry/source/thermal controls",
+  "formal_full_duration_run_count": 288,
+  "formal_predecessors": [
+    "M0",
+    "I11",
+    "I12",
+    "I13",
+    "applicable U gates",
+    "each existing I19 predecessor",
+    "I15/I17/I18/I19 in I20 order",
+    "READY exact external inputs for I20"
+  ],
+  "independent_seed_count": 16,
+  "mpi_ranks_per_run": 8,
+  "normalization": "common per-species initial gas plus surface atoms plus predeclared expected external supply integral over H, frozen before refinement; never divide by a different random realized supply in each run",
+  "openmp_threads_per_rank": 1,
+  "particle_clock_mode": "dedicated common-global Na/Ar timestep from final initialized species dt; synchronize gas/source/surface/thermal/SPICE intervals; preserve canonical modes",
+  "particle_step_factors": [
+    1.0,
+    0.5,
+    0.25
+  ],
+  "particle_weight_factors": [
+    1.0,
+    0.5,
+    0.25
+  ],
+  "physical_case_count": 2,
+  "physical_cases": [
+    {
+      "equilibrium_claim": false,
+      "external_sources": "all input-declared Na sources and continuous uniform 3.8e20 atoms/s Ar",
+      "initial_gas": "existing declared normal initialization policy",
+      "initial_surface_atoms": "zero as in approved input",
+      "name": "source-fed-startup"
+    },
+    {
+      "external_injection": "OFF",
+      "initial_gas_atoms": 0,
+      "initial_surface_atoms_per_site_species": "32 times full-precision ordinary-initialization W_start; freeze before reference-weight selection",
+      "interpretation": "controlled verification initial state, never observed lunar abundance",
+      "name": "controlled-surface-cohorts",
+      "release_reimpact_readsorption": "normal production paths; tags do not consume RNG"
+    }
+  ],
+  "physical_checkpoint_fractions": [
+    0.0,
+    0.125,
+    0.25,
+    0.375,
+    0.5,
+    0.625,
+    0.75,
+    0.875,
+    1.0
+  ],
+  "physical_duration_s": 2550240,
+  "physical_duration_scope": "2550240 s is the candidate cluster horizon; development uses a separate fixed short physical interval",
+  "proposal_version": 3,
+  "proposed_numerical_budgets": {
+    "acceptance": "all simultaneous intervals wholly inside equivalence margins and half-width at most margin/2; reject resolved timestep sensitivity growth; weight refinement requires equivalence/precision, not monotone single-seed means",
+    "confidence_method": "paired-seed Student-t Bonferroni simultaneous approximate intervals, conditional on justified independent-stream and marginal-interval assumptions; finite variance alone is insufficient",
+    "familywise_error_probability": 0.05,
+    "inventory_and_integrated_transfer_normalized_absolute_difference": 0.01,
+    "maximum_confidence_half_width_fraction_of_equivalence_margin": 0.5,
+    "numerical_domain_loss_fraction_of_available_atoms_upper_limit": 0.001,
+    "restricted_mean_surface_residence_over_duration_relative_to_duration": 0.01,
+    "retention_and_release_fraction_absolute_difference": 0.01,
+    "scope_limit": "A_s-normalized stock convergence is not 1% relative accuracy of a scarce gas phase or small source; preserve own-population diagnostics and freeze later science-specific tolerances before observational use"
+  },
+  "proposed_site_selection": {
+    "absolute_latitude_band_edges_deg": [
+      65,
+      75,
+      80,
+      85,
+      90
+    ],
+    "collocation": "predeclare native coordinate/footprint and frame/datum rule before scoring; preserve ambiguous/shared-facet support and missing strata",
+    "edge_rule": "existing native eight-neighbour D02 ambiguity exclusion; never enlarge after residual inspection",
+    "hash_encoding": "compact JSON [product_id,line_1_based,sample_1_based], UTF-8, no spaces/newline; tie by product ID and integer indices",
+    "hemispheres": [
+      "N",
+      "S"
+    ],
+    "latitude_band_convention": "half-open, last band includes 90 degrees",
+    "maximum_sites": 48,
+    "missing_strata": "report unavailable; never replace using AMPS agreement",
+    "native_psr_classes": [
+      0,
+      1
+    ],
+    "scope": "coverage probes; not independent representative global observational sampling",
+    "selection": "lowest SHA-256(product_id,line,sample) among native-valid D02/D03 collocations; freeze before model evaluation",
+    "sites_per_band_class": 3
+  },
+  "remaining_implementation": [
+    "whole-development-command 3600-second deadline including build/QA/plots/cleanup; child remaining-budget propagation and safe process-group shutdown",
+    "explicit common-clock, weight, seed and case controls following src/INPUT_FILE.md",
+    "synchronized physical-time window/cumulative ledger and full advertised source/mover coverage",
+    "passive conserved cohort tags and censored first-residence accounting",
+    "independent constant/warming references and statistical support preflight",
+    "fixed-design replicate launcher and independent simultaneous equivalence scorer",
+    "metadata-only frozen site registry with reviewed collocation and D02 temporal operator",
+    "separate opt-in cluster tier and aggregate allocated/actual CPU-hour accounting with retries"
+  ],
+  "resource_and_output_policy": {
+    "begin_concurrent_jobs": 1,
+    "cluster_qualification": {
+      "accounting": "sum allocated cores times wall seconds / 3600 over all jobs and attempts; record actual scheduler CPU/charging separately",
+      "average_job_minutes_available_if_full_design_fits": 7.812500000000001,
+      "candidate_full_duration_case_count": 288,
+      "cpu_hour_scale_user_authorized": "few hundred CPU-core hours",
+      "deferred_status": "SKIPPED / NOT QUALIFIED",
+      "eight_rank_summed_job_wall_hours_at_target": 37.5,
+      "feasibility_established": false,
+      "ideal_two_job_wall_hours_at_target": 18.75,
+      "on_forecast_excess": "review a staged scientific protocol before launch or leave expensive remainder deferred; no shortened horizon/seed selection/looser thresholds",
+      "per_seed_allowance": false,
+      "proposed_aggregate_allocated_core_hour_target": 300,
+      "selection": "explicit opt-in; excluded from development defaults",
+      "target_status": "concrete planning recommendation; adjust before launch using measurements"
+    },
+    "concurrent_mpi_jobs": 2,
+    "development": {
+      "extra_planning": "must fit within same command hour or be separately selected for cluster; v2 twenty-job schedule is superseded",
+      "headroom_and_termination_reserve_s": 600,
+      "implementation_gap": "current runner has per-linked-child timeouts only; whole-command guard not implemented",
+      "includes": [
+        "required configuration and clean builds",
+        "data QA",
+        "all selected local/linked tests",
+        "plots and manifests",
+        "aggregation",
+        "cleanup"
+      ],
+      "overrun_status": "ERROR for selected incomplete work, retaining completed results and logs; no automatic reduced-workload PASS",
+      "planned_work_target_s": 3000,
+      "reuse": "only verified matching source/config/executable; no hiding required compilation outside hour",
+      "target_phase_seconds": {
+        "planned_cleanup_reporting": 180,
+        "plots_manifests_aggregation": 180,
+        "preflight": 180,
+        "required_clean_build_variants": 1500,
+        "reserve": 600,
+        "selected_local_baseline_and_short_linked_cases": 960
+      },
+      "timeout_policy": "one monotonic campaign deadline; pass remaining time to every phase/child; no per-child 3600 s reset",
+      "user_required_end_to_end_wall_limit_s": 3600
+    },
+    "execution_tiers": [
+      "development",
+      "cluster_qualification"
+    ],
+    "full_duration_job_count": 288,
+    "host_reserves": "named memory/disk reserves and current other-host usage must be accounted for; aggregate RSS applies across all jobs",
+    "long_formal_m2_execution": "deferred explicit cluster work; no assumption that 288 long simulations fit a few hundred allocated core-hours; remaining scientific design and prerequisites still require review",
+    "m1_iteration_cap_change": false,
+    "particle_restart_writes": false,
+    "proposed_aggregate_process_rss_limit_bytes": 200000000000,
+    "proposed_campaign_artifact_limit_bytes": 50000000000,
+    "resource_interruption_status": "ERROR with last closing ledger and detailed remediation; full evaluated criterion miss FAIL",
+    "stage_artifacts": [
+      "raw CSV",
+      "PNG",
+      "EPS",
+      "result.json",
+      "run_manifest.json",
+      "resource history"
+    ],
+    "surface_checkpoint_writes": false,
+    "volume_mesh_output": false
+  },
+  "sampling_length_steps": 500,
+  "schema": "srcMoon-M2-I19-I20-protocol-proposal-v3",
+  "scope": "numerical verification budgets; not observational agreement thresholds",
+  "seed_base": 731993,
+  "seed_stride": 1009,
+  "source_and_inventory_controls": {
+    "argon_external_source_atoms_s": 3.8e+20,
+    "epoch_selection": "existing frozen inputs; do not infer a D02 integration epoch or expose December residuals",
+    "initial_surface_inventory": "zero for source-fed case; separately labelled fixed controlled stocks for cohort case",
+    "physical_duration_interpretation": "existing 2550240 s reporting interval; not exact lunation, I17 spin-up cycle or D02 averaging window",
+    "retention_reporting_timescale_s": 2550240,
+    "surface_laws": "existing frozen Na/Ar literature laws; no coefficient fitting"
+  },
+  "source_revision": "06eafde4802f0344694612c8f3c21f2b28e1a09f",
+  "source_roadmap_sha256": "bde5f001bdcbe072d7a8452d3f2afec93856f50cd1146560da3cd3027a96d2dc",
+  "species": [
+    "Na",
+    "Ar"
+  ],
+  "statistical_design": {
+    "all_zero_stochastic_policy": "no zero-error PASS without independent structural/analytical justification",
+    "bonferroni_family_size_fixed_upper_bound": 8640,
+    "confidence_interval": "mean(d) +/- t_(1-0.05/(2*8640),15) * sd(d)/sqrt(16)",
+    "current_seed_wiring_gap": "RunM2BudgetCheck hard-codes 731993+rank; input/manifest alone cannot implement replicate selection",
+    "formal_seed_indices": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "global_case_count": 2,
+    "global_metrics": [
+      "gas_atoms",
+      "surface_atoms",
+      "integrated_external_injection_atoms",
+      "integrated_adsorption_atoms",
+      "integrated_release_atoms",
+      "integrated_escape_atoms"
+    ],
+    "global_nonzero_checkpoint_count": 8,
+    "global_species_count": 2,
+    "grid_comparisons": "union of 12 adjacent axis pairs and 8 non-finest-to-finest pairs, deduplicated",
+    "illustrative_paired_sd_for_halfwidth_0_005": 0.0029322904408954913,
+    "illustrative_t_critical": 6.8206067588216825,
+    "marginal_assumptions": "require documented aggregate-event support and independent statistical preflight; non-rejection by a normality test is not proof",
+    "maximum_global_scalar_comparisons": 3456,
+    "maximum_site_endpoint_comparisons": 5184,
+    "precision_or_assumption_failure": "FAIL / insufficient statistical qualification; preserve all runs; do not silently append seeds, change method or widen thresholds",
+    "proposed_rank_seed": "731993+1009*j+rank; audit active production RNG and full reseeding; no implicit stream-independence proof",
+    "site_primary_endpoints_at_H": [
+      "first_release_survival",
+      "current_surface_occupancy",
+      "restricted_mean_first_residence_divided_by_H"
+    ],
+    "unique_grid_comparison_count": 18
+  },
+  "status": "APPROVED_SUPERSEDED_BY_ACTIVE_PROTOCOL",
+  "status_scope": "scientific/numerical criteria remain proposed; end-to-end development hour and deferred few-hundred-core-hour cluster scale are user-directed",
+  "unchanged_contracts": {
+    "active_acceptance_json_edited": false,
+    "m1_500_step_samples_5000_step_cap_changed": false,
+    "observations_or_frozen_selection_edited": false,
+    "production_implementation_changed": false,
+    "roadmaps_edited": "source-only user-directed execution-budget amendment; external unchanged"
+  },
+  "weight_selection": {
+    "W_ref": "W_start/2^b per species; nonnegative integer b chosen by separate capacity/precision planning and frozen before formal execution",
+    "W_start": "full-precision reference from ordinary initialization, preserved in manifest",
+    "dt_changes_do_not_recompute_weight": true,
+    "observational_agreement_used": false,
+    "physical_cohort_atoms_do_not_change_with_weight": true,
+    "refinement_weights": "W_ref, W_ref/2, W_ref/4"
+  }
+}

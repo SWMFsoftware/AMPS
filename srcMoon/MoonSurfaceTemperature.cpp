@@ -7,17 +7,22 @@
 #include "MoonSurfacePhysics.h"
 #include "MoonSurfaceEnvironment.h"
 #include "MoonThermalModel.h"
+#include "MoonDivinerObservation.h"
 
 #include <algorithm>
 #include <array>
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>
+#include <cstdio>
+#include <filesystem>
 #include <fstream>
+#include <fcntl.h>
 #include <limits>
 #include <set>
 #include <sstream>
 #include <tuple>
+#include <unistd.h>
 
 #ifndef _NO_SPICE_CALLS_
 #include "SpiceUsr.h"
@@ -40,6 +45,18 @@ struct ProductionState {
   SurfacePhysics::SpeciesParameters sodium;
   SurfacePhysics::SpeciesParameters argon;
   double lastCheckpointEtS = -std::numeric_limits<double>::infinity();
+  double photonFluxEpochS=std::numeric_limits<double>::quiet_NaN();
+  std::vector<double> photonFluxFactors;
+  double prescribedTemperatureEpochS=std::numeric_limits<double>::quiet_NaN();
+  ProductionThermalInitializationInfo thermalInitialization;
+  bool thermalInitializationAvailable=false;
+  bool initialThermalStateStillApplied=false;
+  double currentThermalEpochS=std::numeric_limits<double>::quiet_NaN();
+  // A completed spin-up can be reused only while these exact columns have
+  // not evolved. An epoch comparison alone is insufficient: replaying an
+  // interval can end at the same timestamp with different physical columns.
+  bool completedSpinupAtCurrentState=false;
+  SpinUpMetrics completedSpinup;
 };
 
 ProductionState gProduction;
@@ -97,6 +114,7 @@ struct EpochIlluminationGeometry {
   std::array<double,3> earthStateKm{{0.0,0.0,0.0}};
   std::array<double,3> unitSunBodyFixed{{0.0,0.0,0.0}};
   double heliocentricDistanceAu=0.0;
+  double ephemerisTimeS=0.0;
 };
 
 // Element-local quantities used both by the thermal time integrator and by
@@ -112,6 +130,10 @@ struct ElementIlluminationGeometry {
   bool terrainOccluded=false;
   double solarDiscVisibleFraction=0.0;
   double directBeamFraction=0.0;
+  double absorbedSolarFluxWm2=0.0;
+  double heliocentricDistanceAu=0.0;
+  double pointSunDistanceM=0.0;
+  double projectedSolarIncidence=0.0;
 };
 
 bool EvaluateEpochIlluminationGeometry(double ephemerisTimeS,
@@ -120,9 +142,9 @@ bool EvaluateEpochIlluminationGeometry(double ephemerisTimeS,
     return false;
   SpiceDouble sunState[6],earthState[6],lightTime;
   spkezr_c("SUN",ephemerisTimeS,Frames::BodyFixed,
-      Frames::ForceAberrationCorrection,ObjectName,sunState,&lightTime);
+      gProduction.configuration->illuminationAberrationCorrection.c_str(),ObjectName,sunState,&lightTime);
   spkezr_c("EARTH",ephemerisTimeS,Frames::BodyFixed,
-      Frames::ForceAberrationCorrection,ObjectName,earthState,&lightTime);
+      gProduction.configuration->illuminationAberrationCorrection.c_str(),ObjectName,earthState,&lightTime);
   const double sunLength=std::sqrt(sunState[0]*sunState[0]+
       sunState[1]*sunState[1]+sunState[2]*sunState[2]);
   if (!(sunLength>0.0) || !std::isfinite(sunLength)) {
@@ -136,15 +158,18 @@ bool EvaluateEpochIlluminationGeometry(double ephemerisTimeS,
     geometry->unitSunBodyFixed[dimension]=sunState[dimension]/sunLength;
   }
   geometry->heliocentricDistanceAu=sunLength/1.495978707e8;
+  geometry->ephemerisTimeS=ephemerisTimeS;
   return true;
 }
 
 bool EvaluateElementIlluminationGeometry(std::size_t element,
     const EpochIlluminationGeometry& epoch,
-    ElementIlluminationGeometry* geometry,std::string* error) {
+    ElementIlluminationGeometry* geometry,std::string* error,
+    bool includeAbsorbedFlux=true) {
   if (geometry==nullptr || error==nullptr || gProduction.logicalSurface==nullptr ||
       element>=gProduction.temperaturesK.size()) return false;
   const Runtime::Configuration& configuration=*gProduction.configuration;
+  geometry->heliocentricDistanceAu=epoch.heliocentricDistanceAu;
   double radialNormal[3];
   gProduction.logicalSurface->GetSurfaceElementNormal(
       radialNormal,static_cast<int>(element));
@@ -169,18 +194,6 @@ bool EvaluateElementIlluminationGeometry(std::size_t element,
     terrainFace=radialHit.face;
   }
 
-  geometry->solarIncidenceCosine=Dot(
-      geometry->terrainNormal,epoch.unitSunBodyFixed);
-  geometry->sunAboveLocalHorizon=geometry->solarIncidenceCosine>0.0;
-  geometry->terrainSunVisible=geometry->sunAboveLocalHorizon;
-  if (terrain!=nullptr && geometry->terrainSunVisible &&
-      !terrain->IsSunVisible(geometry->surfacePositionM,
-          geometry->terrainNormal,epoch.unitSunBodyFixed,
-          configuration.illuminationRayOriginOffsetM,terrainFace,
-          &geometry->terrainSunVisible,error)) return false;
-  geometry->terrainOccluded=geometry->sunAboveLocalHorizon &&
-      !geometry->terrainSunVisible;
-
   // Earth eclipse is independent of terrain blocking.  Translate Moon-centred
   // SPICE states [km] to the actual terrain point [m] before calculating
   // apparent angular radii, preserving the production parallax correction.
@@ -191,6 +204,16 @@ bool EvaluateElementIlluminationGeometry(std::size_t element,
     pointToEarth[dimension]=epoch.earthStateKm[dimension]-
         geometry->surfacePositionM[dimension]/1000.0;
   }
+  if (configuration.illuminationAberrationCorrection!="NONE") {
+    // Apparent reception corrections must use the actual rotating surface
+    // observer. Correcting a Moon-centred state and then subtracting a site
+    // is not a topocentric light-time/stellar-aberration calculation.
+    std::array<double,3> sunM,earthM;
+    if (!SurfaceEnvironment::ApparentSolarSystemGeometryAtPoint(epoch.ephemerisTimeS,
+        geometry->surfacePositionM,configuration.illuminationAberrationCorrection,
+        &sunM,&earthM,error)) return false;
+    for (int k=0;k<3;++k) {pointToSun[k]=sunM[k]/1000;pointToEarth[k]=earthM[k]/1000;}
+  }
   const double sunDistanceKm=Norm(pointToSun);
   const double earthDistanceKm=Norm(pointToEarth);
   if (!(sunDistanceKm>configuration.thermalSolarDiscRadiusM/1000.0) ||
@@ -198,6 +221,17 @@ bool EvaluateElementIlluminationGeometry(std::size_t element,
     *error="surface point lies inside a configured eclipse body radius";
     return false;
   }
+  geometry->pointSunDistanceM=1000*sunDistanceKm;
+  geometry->heliocentricDistanceAu=sunDistanceKm/1.495978707e8;
+  std::array<double,3> unitSun=pointToSun;
+  for (double& value:unitSun) value/=sunDistanceKm;
+  geometry->solarIncidenceCosine=std::max(-1.0,std::min(1.0,Dot(geometry->terrainNormal,unitSun)));
+  geometry->sunAboveLocalHorizon=geometry->solarIncidenceCosine>0;
+  geometry->terrainSunVisible=geometry->sunAboveLocalHorizon;
+  if (terrain && geometry->terrainSunVisible && !terrain->IsSunVisible(
+      geometry->surfacePositionM,geometry->terrainNormal,unitSun,
+      configuration.illuminationRayOriginOffsetM,terrainFace,&geometry->terrainSunVisible,error)) return false;
+  geometry->terrainOccluded=geometry->sunAboveLocalHorizon && !geometry->terrainSunVisible;
   geometry->solarDiscVisibleFraction=1.0;
   if (earthDistanceKm<sunDistanceKm) {
     const double directionCosine=std::max(-1.0,std::min(1.0,
@@ -216,6 +250,144 @@ bool EvaluateElementIlluminationGeometry(std::size_t element,
   }
   geometry->directBeamFraction=geometry->terrainSunVisible ?
       geometry->solarDiscVisibleFraction:0.0;
+  geometry->projectedSolarIncidence=std::max(0.0,geometry->solarIncidenceCosine)*geometry->directBeamFraction;
+  if (configuration.illuminationTerrainSolarModel=="uniform-disc") {
+    SurfaceEnvironment::SolarDiscRequest request;
+    request.surfacePositionM=geometry->surfacePositionM;
+    request.outwardNormal=geometry->terrainNormal;
+    for (int k=0;k<3;++k) {
+      request.pointToSunM[k]=1000*pointToSun[k];
+      request.pointToEarthM[k]=1000*pointToEarth[k];
+    }
+    request.solarRadiusM=configuration.thermalSolarDiscRadiusM;
+    request.opaqueEarthRadiusM=configuration.thermalOpaqueEarthRadiusM;
+    request.rayOriginOffsetM=configuration.illuminationRayOriginOffsetM;
+    request.sourceFace=terrainFace;
+    request.radialPoints=configuration.illuminationDiscRadialPoints;
+    request.azimuthPoints=configuration.illuminationDiscAzimuthPoints;
+    SurfaceEnvironment::SolarDiscSample disc;
+    std::function<double(double)> absorptivity;
+    if (includeAbsorbedFlux) {
+      if (element>=gProduction.columns.size()) {
+        *error="absorbed forcing requires the initialized production thermal column";return false;
+      }
+      const auto* column=&gProduction.columns[element];
+      absorptivity=[column](double cosine) {return 1-column->DirectionalBondAlbedo(std::acos(cosine));};
+    }
+    if (!SurfaceEnvironment::EvaluateSolarDisc(terrain,request,&disc,error,absorptivity)) return false;
+    // Joint masks are integrated ray by ray, including directional albedo;
+    // incidence/area/occurrence remain distinct diagnostics. Use the actual
+    // point-to-Sun distance for the inverse-square irradiance in this mode.
+    geometry->terrainSunVisible=disc.sampledAnyTerrainVisible;
+    geometry->terrainOccluded=geometry->sunAboveLocalHorizon &&
+        !disc.sampledAnyTerrainVisible;
+    geometry->solarDiscVisibleFraction=disc.earthVisibleAreaFraction;
+    geometry->directBeamFraction=disc.jointlyVisibleAreaFraction;
+    geometry->projectedSolarIncidence=disc.projectedIncidence;
+    const double distanceAu=sunDistanceKm/1.495978707e8;
+    geometry->heliocentricDistanceAu=distanceAu;
+    geometry->solarIncidenceCosine=std::max(-1.0,std::min(1.0,
+        Dot(geometry->terrainNormal,pointToSun)/sunDistanceKm));
+    geometry->sunAboveLocalHorizon=geometry->solarIncidenceCosine>0;
+    geometry->terrainOccluded=geometry->sunAboveLocalHorizon &&
+        disc.terrainVisibleAreaFraction<1;
+    geometry->absorbedSolarFluxWm2=includeAbsorbedFlux ? configuration.thermal.solarConstantWm2/
+        (distanceAu*distanceAu)*disc.absorbedProjectedIncidence:0;
+  } else if (includeAbsorbedFlux) {
+    geometry->absorbedSolarFluxWm2=gProduction.columns[element].AbsorbedSolarFluxWm2(
+        geometry->solarIncidenceCosine,geometry->directBeamFraction,
+        geometry->heliocentricDistanceAu);
+  }
+  if (!std::isfinite(geometry->absorbedSolarFluxWm2)) {
+    *error="non-finite production absorbed solar flux";
+    return false;
+  }
+  return true;
+}
+
+// One prescribed boundary function serves actual impacts and representative
+// logical-cell source temperatures. Coordinates are body-fixed metres and
+// the supplied Sun/Earth states are at one explicit TDB epoch; no global
+// end/midpoint orbit state is borrowed during a split-step update.
+bool PrescribedTemperatureAtBodyPoint(const std::array<double,3>& body,
+    const EpochIlluminationGeometry& epoch,double* kineticK,std::string* error,
+    bool* mapCoverageUnavailable=nullptr) {
+  if (kineticK==nullptr || error==nullptr) return false;
+  if (mapCoverageUnavailable) *mapCoverageUnavailable=false;
+  const double radius=Norm(body);
+  if (!(radius>0) || !std::isfinite(radius)) {
+    *error="prescribed temperature requires a finite body-fixed surface point";return false;
+  }
+  const auto& configuration=*gProduction.configuration;
+  double temperature=0;
+  if (gProduction.mode==Mode::SimpleCosine) {
+    // This explicitly retained debug boundary keeps its original radial
+    // cosine and cylindrical Earth shadow. It is not a predictive eclipse
+    // or terrain heat equation. Source cells and impacts now use it alike.
+    const double cosine=Dot(body,epoch.unitSunBodyFixed)/radius;
+    std::array<double,3> sunM,earthM;
+    for (int k=0;k<3;++k) {
+      sunM[k]=1000*epoch.sunStateKm[k];earthM[k]=1000*epoch.earthStateKm[k];
+    }
+    const bool night=cosine<0 || Moon::EarthShadowCheck(body.data(),sunM.data(),earthM.data());
+    temperature=night ? configuration.simpleCosineNightTemperatureK:
+        configuration.simpleCosineNightTemperatureK+
+        configuration.simpleCosineDayAmplitudeK*std::pow(std::min(1.0,cosine),configuration.simpleCosineExponent);
+  } else if (gProduction.mode==Mode::DivinerMap) {
+    if (configuration.divinerMapKineticInterpretation!="isothermal-grey") {
+      *error="Diviner brightness cannot supply kinetic temperature without explicit isothermal-grey interpretation";
+      return false;
+    }
+    const double latitude=std::asin(std::max(-1.0,std::min(1.0,body[2]/radius)))*180/kPi;
+    const double longitude=NormalizeDegrees(std::atan2(body[1],body[0])*180/kPi);
+    double brightnessK=0,uncertaintyK=0;
+    if (!gProduction.diviner.Interpolate(latitude,longitude,
+            LocalSolarTimeHour(body,epoch.unitSunBodyFixed),&brightnessK,&uncertaintyK,error)) {
+      // The table was structurally validated on load. A missing interpolation
+      // support is real observational coverage, not an invented climate value.
+      if (mapCoverageUnavailable) *mapCoverageUnavailable=true;
+      return false;
+    }
+    // Approved isothermal grey-facet MODEL interpretation. The archived
+    // brightness and its uncertainty are never changed or relabelled as
+    // measured kinetic temperature; anisothermality remains a scope gate.
+    temperature=DivinerObservation::GreyKineticTemperatureK(
+        brightnessK,configuration.thermal.infraredEmissivity);
+  } else {
+    *error="prescribed temperature helper cannot replace a thermal-model state";return false;
+  }
+  if (!std::isfinite(temperature) || temperature<=0) {
+    *error="prescribed boundary produced nonpositive/nonfinite kinetic temperature";return false;
+  }
+  *kineticK=temperature;
+  return true;
+}
+
+bool RefreshPrescribedTemperatureCache(double epochS,std::string* error) {
+  if (gProduction.mode==Mode::ThermalModel) return true;
+  if (gProduction.prescribedTemperatureEpochS==epochS) return true;
+  EpochIlluminationGeometry epoch;
+  if (!EvaluateEpochIlluminationGeometry(epochS,&epoch,error)) return false;
+  std::vector<double> temperatures(gProduction.temperaturesK.size(),
+      std::numeric_limits<double>::quiet_NaN());
+  for (std::size_t element=0;element<temperatures.size();++element) {
+    ElementIlluminationGeometry geometry;
+    if (!EvaluateElementIlluminationGeometry(element,epoch,&geometry,error,false)) return false;
+    bool missingMapSupport=false;
+    if (!PrescribedTemperatureAtBodyPoint(geometry.surfacePositionM,epoch,
+            &temperatures[element],error,&missingMapSupport)) {
+      if (!missingMapSupport) return false;
+      // Empty inventory cells need not have a measured map temperature.
+      // Leave the NaN coverage marker: any later populated source or kinetic
+      // query fails explicitly. In particular, do not copy the initialization
+      // temperature into real archive gaps just to make I16 initialize.
+      error->clear();
+    }
+  }
+  // Publish a complete epoch atomically with respect to subsequent serial
+  // source dispatch. Particle callbacks only read this immutable vector.
+  gProduction.temperaturesK=std::move(temperatures);
+  gProduction.prescribedTemperatureEpochS=epochS;
   return true;
 }
 #endif
@@ -541,6 +713,12 @@ bool InitializeProductionState(const Runtime::Configuration& configuration,
   if (error==nullptr) return false;
   error->clear();
   if (!configuration.m2EnvironmentEnabled) {
+    // A caller may deliberately return to the baseline in the same process.
+    // Release only OUR provider before its immutable geometry cache is
+    // destroyed; a foreign application's optional core hook is not ours to
+    // reset. A fresh baseline process already has the historical NULL hook.
+    auto& photonProvider=Exosphere::SourceProcesses::PhotonStimulatedDesorption::RuntimePhotonFluxFactor;
+    if (photonProvider==ProductionPhotonFluxFactor) photonProvider=nullptr;
     gProduction=ProductionState{};
     return true;
   }
@@ -645,10 +823,169 @@ bool InitializeProductionState(const Runtime::Configuration& configuration,
 
   candidate.initialized=true;
   gProduction=std::move(candidate);
+#ifndef _NO_SPICE_CALLS_
+  const auto failPublishedInitialization=[]() {
+    // Spin-up needs the candidate published while it exercises the ordinary
+    // production driver. A failed trial must nevertheless leave no usable
+    // "uniform" proof/export behind for a caller that mishandles false.
+    auto& provider=Exosphere::SourceProcesses::PhotonStimulatedDesorption::RuntimePhotonFluxFactor;
+    if (provider==ProductionPhotonFluxFactor) provider=nullptr;
+    gProduction=ProductionState{};
+    return false;
+  };
+#endif
+  // Explicit initialization precedes the first weight/source-rate query;
+  // J2000 zero is not an implicit source epoch. Later particle steps update
+  // this through the same BeginProductionParticleStep entry point.
+#ifndef _NO_SPICE_CALLS_
+  SpiceDouble startEt=0;
+  str2et_c(configuration.simulationStartUtc.c_str(),&startEt);
+  if (!std::isfinite(startEt)) { *error="invalid M2 source start epoch";return failPublishedInitialization(); }
+  if (gProduction.mode==Mode::ThermalModel) {
+    gProduction.currentThermalEpochS=startEt;
+    gProduction.thermalInitialization.mode="declared-uniform";
+    gProduction.thermalInitialization.ephemerisTimeS=startEt;
+    gProduction.thermalInitializationAvailable=true;
+    gProduction.initialThermalStateStillApplied=true;
+    if (configuration.thermalInitializationMode=="periodic-spinup") {
+      SpiceDouble cycleEndEt=0;
+      str2et_c(configuration.thermalSpinupCycleEndUtc.c_str(),&cycleEndEt);
+      // UTC spelling can differ while representing the same instant. Enforce
+      // identity after SPICE conversion, before a potentially long spin-up.
+      if (!std::isfinite(cycleEndEt) || cycleEndEt!=startEt) {
+        *error="periodic-spinup requires thermal_spinup_cycle_end_utc and simulation_start_utc to represent exactly the same SPICE TDB epoch; declare the intended physical interval explicitly";
+        return failPublishedInitialization();
+      }
+      SpinUpMetrics spinup;
+      if (!SpinUpProductionState(&spinup,error)) return failPublishedInitialization();
+    } else if (configuration.thermalInitializationMode!="declared-uniform") {
+      *error="unsupported predictive thermal initialization mode";return failPublishedInitialization();
+    }
+  } else if (configuration.thermalInitializationMode!="declared-uniform") {
+    *error="periodic-spinup initialization requires the predictive thermal-model";
+    return failPublishedInitialization();
+  }
+  if (!RefreshPrescribedTemperatureCache(startEt,error)) return failPublishedInitialization();
+  SurfaceEnvironment::BeginProductionParticleStep(startEt);
+#endif
   return true;
 }
 
 bool ProductionStateInitialized() { return gProduction.initialized; }
+
+bool GetProductionThermalInitialization(ProductionThermalInitializationInfo* info,
+                                       std::string* error) {
+  if (info==nullptr || error==nullptr) return false;
+  error->clear();
+  if (!gProduction.initialized || gProduction.mode!=Mode::ThermalModel ||
+      !gProduction.thermalInitializationAvailable) {
+    *error="applied thermal initialization is unavailable outside an initialized predictive thermal model";
+    return false;
+  }
+  *info=gProduction.thermalInitialization;
+  return true;
+}
+
+bool WriteProductionInitialThermalStateCsv(const std::string& path,
+                                          std::string* error) {
+  if (error==nullptr) return false;
+  error->clear();
+  if (!gProduction.initialized || gProduction.mode!=Mode::ThermalModel ||
+      !gProduction.thermalInitializationAvailable ||
+      !gProduction.initialThermalStateStillApplied ||
+      gProduction.currentThermalEpochS!=gProduction.thermalInitialization.ephemerisTimeS ||
+      gProduction.columns.empty()) {
+    *error="initial thermal-state export requires the actual applied t0 predictive columns before evolution; reinitialize in a new run rather than exporting a later state";
+    return false;
+  }
+  // Validate the full state before creating an evidence file. Layer centres
+  // are positive depth [m]; the distinct zero-depth surface has no heat mass.
+  for (const auto& column:gProduction.columns) {
+    const auto& depths=column.LayerDepthM();
+    const auto& temperatures=column.LayerTemperatureK();
+    if (!PositiveFinite(column.SurfaceTemperatureK()) || depths.empty() ||
+        depths.size()!=temperatures.size()) {
+      *error="initial thermal-state export encountered incomplete production column arrays";return false;
+    }
+    double previousDepth=0;
+    for (std::size_t layer=0;layer<depths.size();++layer) {
+      if (!PositiveFinite(depths[layer]) || depths[layer]<=previousDepth ||
+          !PositiveFinite(temperatures[layer])) {
+        *error="initial thermal-state export encountered invalid depth/kinetic temperature";return false;
+      }
+      previousDepth=depths[layer];
+    }
+  }
+  if (path.empty()) { *error="initial thermal-state export path is empty";return false; }
+  // O_EXCL enforces the no-overwrite contract atomically, even if two faulty
+  // launchers accidentally name the same path. Only the native rank-zero
+  // adapter calls this writer; no MPI-rank or later-run replacement is allowed.
+  const int descriptor=::open(path.c_str(),O_WRONLY|O_CREAT|O_EXCL,0666);
+  if (descriptor<0) {
+    *error="cannot exclusively create initial thermal-state CSV '"+path+"' (it may already exist); use a new campaign path and inspect permissions/free disk";
+    return false;
+  }
+  FILE* output=::fdopen(descriptor,"w");
+  if (output==nullptr) {
+    ::close(descriptor);
+    *error="cannot open the exclusively created initial thermal-state CSV stream; preserve the partial artifact and use a new path";
+    return false;
+  }
+  bool good=std::fprintf(output,"logical_surface_element,depth_index,depth_m,kinetic_temperature_K\n")>0;
+  for (std::size_t element=0;good && element<gProduction.columns.size();++element) {
+    const auto& column=gProduction.columns[element];
+    good=std::fprintf(output,"%zu,-1,0,%.17g\n",element,column.SurfaceTemperatureK())>0;
+    const auto& depths=column.LayerDepthM();
+    const auto& temperatures=column.LayerTemperatureK();
+    for (std::size_t layer=0;good && layer<depths.size();++layer)
+      good=std::fprintf(output,"%zu,%zu,%.17g,%.17g\n",element,layer,depths[layer],temperatures[layer])>0;
+  }
+  if (std::fclose(output)!=0) good=false;
+  if (!good) {
+    *error="writing initial thermal-state CSV failed; preserve the partial file, inspect free disk/quota and use a new campaign path";
+    return false;
+  }
+  return true;
+}
+
+bool RefreshProductionPhotonFluxCache(double sourceBeginEtS,std::string* error) {
+  if (error==nullptr) return false;
+  error->clear();
+  if (!gProduction.initialized || !std::isfinite(sourceBeginEtS)) {
+    *error="M2 photon-flux cache requires initialized state and an explicit finite source epoch";return false;
+  }
+  if (gProduction.photonFluxEpochS==sourceBeginEtS &&
+      gProduction.photonFluxFactors.size()==gProduction.temperaturesK.size()) return true;
+#ifdef _NO_SPICE_CALLS_
+  *error="terrain-aware PSD forcing requires SPICE";return false;
+#else
+  EpochIlluminationGeometry epoch;
+  if (!EvaluateEpochIlluminationGeometry(sourceBeginEtS,&epoch,error)) return false;
+  std::vector<double> factors(gProduction.temperaturesK.size());
+  for (std::size_t element=0;element<factors.size();++element) {
+    ElementIlluminationGeometry geometry;
+    if (!EvaluateElementIlluminationGeometry(element,epoch,&geometry,error,false)) return false;
+    // The core's published photon normalization uses the AMPS AU constant.
+    // Preserve that normalization; the actual point distance is SI metres.
+    const double distanceM=geometry.pointSunDistanceM;
+    factors[element]=geometry.projectedSolarIncidence*std::pow(_AU_/distanceM,2);
+    if (!std::isfinite(factors[element]) || factors[element]<0) {
+      *error="M2 direct-photon factor is negative/nonfinite";return false;
+    }
+  }
+  gProduction.photonFluxFactors=std::move(factors);
+  gProduction.photonFluxEpochS=sourceBeginEtS;
+  return true;
+#endif
+}
+
+double ProductionPhotonFluxFactor(int surfaceElement,void* logicalSurface) {
+  if (!gProduction.initialized || logicalSurface!=gProduction.logicalSurface ||
+      surfaceElement<0 || static_cast<std::size_t>(surfaceElement)>=gProduction.photonFluxFactors.size() ||
+      gProduction.photonFluxEpochS!=SurfaceEnvironment::ProductionSourceEpochS())
+    exit(__LINE__,__FILE__,"PSD source geometry cache is unavailable or stale; initialize at the declared source-BEGIN epoch before source rate/CDF evaluation");
+  return gProduction.photonFluxFactors[surfaceElement];
+}
 
 double LastAdvanceMaximumSurfaceTemperatureChangeK() {
   return gProduction.initialized ?
@@ -678,34 +1015,12 @@ double ProductionTemperatureK(const double* positionLsoM) {
 
   if (gProduction.mode==Mode::ThermalModel)
     return gProduction.temperaturesK[element];
-  const double radius=std::sqrt(body[0]*body[0]+body[1]*body[1]+body[2]*body[2]);
-  if (!(radius>0.0)) return std::numeric_limits<double>::quiet_NaN();
-  const std::array<double,3> sun{{OrbitalMotion::SunDirection_IAU_OBJECT[0],
-      OrbitalMotion::SunDirection_IAU_OBJECT[1],
-      OrbitalMotion::SunDirection_IAU_OBJECT[2]}};
-  if (gProduction.mode==Mode::SimpleCosine) {
-    double cosine=0.0;
-    for (int dimension=0;dimension<3;++dimension)
-      cosine+=body[dimension]/radius*sun[dimension];
-    if (cosine<0.0 || EarthShadowCheck(const_cast<double*>(positionLsoM)))
-      return gProduction.configuration->sodiumExosphereEnabled ?
-          gProduction.configuration->simpleCosineNightTemperatureK : 100.0;
-    if (gProduction.configuration->sodiumExosphereEnabled)
-      return gProduction.configuration->simpleCosineDayAmplitudeK*
-          std::pow(cosine,
-                   gProduction.configuration->simpleCosineExponent)+
-          gProduction.configuration->simpleCosineNightTemperatureK;
-    return 280.0*std::pow(cosine,0.25)+100.0;
-  }
-  const double latitude=std::asin(body[2]/radius)*180.0/kPi;
-  const double longitude=NormalizeDegrees(
-      std::atan2(body[1],body[0])*180.0/kPi);
-  double temperature=0.0,uncertainty=0.0;
+  EpochIlluminationGeometry epoch;
+  double temperature=0;
   std::string error;
-  if (!gProduction.diviner.Interpolate(latitude,longitude,
-          LocalSolarTimeHour(body,sun),&temperature,&uncertainty,&error))
-    exit(__LINE__,__FILE__,
-        ("M2 Diviner temperature lookup failed: "+error).c_str());
+  if (!EvaluateEpochIlluminationGeometry(OrbitalMotion::et,&epoch,&error) ||
+      !PrescribedTemperatureAtBodyPoint(body,epoch,&temperature,&error))
+    exit(__LINE__,__FILE__,("M2 prescribed kinetic-temperature lookup failed: "+error).c_str());
   return temperature;
 #endif
 }
@@ -715,8 +1030,7 @@ bool AdvanceProductionState(double ephemerisTimeBeginS,
                             std::string* error) {
   if (error==nullptr) return false;
   error->clear();
-  if (!gProduction.initialized || gProduction.mode!=Mode::ThermalModel)
-    return true;
+  if (!gProduction.initialized) return true;
 #ifdef _NO_SPICE_CALLS_
   *error="M2 thermal-state advancement requires a SPICE-enabled build";
   return false;
@@ -727,7 +1041,16 @@ bool AdvanceProductionState(double ephemerisTimeBeginS,
     return false;
   }
   gProduction.lastAdvanceMaximumSurfaceTemperatureChangeK=0.0;
+  // Prescribed boundaries have no evolving subsurface state, but their
+  // kinetic source temperatures still follow the explicit end epoch. Keep
+  // desorption/cohort diagnostics synchronized even when duration is zero.
+  if (gProduction.mode!=Mode::ThermalModel)
+    return RefreshPrescribedTemperatureCache(ephemerisTimeEndS,error);
   if (duration==0.0) return true;
+  // Any real evolution invalidates reuse/export of the previous exact state,
+  // including an interval whose end numerically equals an older cached epoch.
+  gProduction.completedSpinupAtCurrentState=false;
+  gProduction.initialThermalStateStillApplied=false;
   const Runtime::Configuration& configuration=*gProduction.configuration;
   const int substeps=static_cast<int>(std::ceil(duration/
       configuration.thermalTimeStepS));
@@ -743,10 +1066,8 @@ bool AdvanceProductionState(double ephemerisTimeBeginS,
               &elementGeometry,error)) return false;
       const double previousSurfaceTemperatureK=
           gProduction.columns[element].SurfaceTemperatureK();
-      if (!gProduction.columns[element].Advance(timeStep,
-              elementGeometry.solarIncidenceCosine,
-              elementGeometry.directBeamFraction,
-              epochGeometry.heliocentricDistanceAu,error)) return false;
+      if (!gProduction.columns[element].AdvanceWithAbsorbedFlux(timeStep,
+              elementGeometry.absorbedSolarFluxWm2,error)) return false;
       gProduction.temperaturesK[element]=
           gProduction.columns[element].SurfaceTemperatureK();
       gProduction.lastAdvanceMaximumSurfaceTemperatureChangeK=std::max(
@@ -757,6 +1078,7 @@ bool AdvanceProductionState(double ephemerisTimeBeginS,
           elementGeometry.terrainSunVisible ? 0 : 1;
     }
   }
+  gProduction.currentThermalEpochS=ephemerisTimeEndS;
   return true;
 #endif
 }
@@ -807,11 +1129,8 @@ bool SampleProductionSurfaceEnvironment(double ephemerisTimeS,
     sample.terrainOccluded=forcing.terrainOccluded;
     sample.solarDiscVisibleFraction=forcing.solarDiscVisibleFraction;
     sample.directBeamFraction=forcing.directBeamFraction;
-    sample.heliocentricDistanceAu=epochGeometry.heliocentricDistanceAu;
-    sample.absorbedSolarFluxWm2=
-        gProduction.columns[element].AbsorbedSolarFluxWm2(
-            forcing.solarIncidenceCosine,forcing.directBeamFraction,
-            epochGeometry.heliocentricDistanceAu);
+    sample.heliocentricDistanceAu=forcing.heliocentricDistanceAu;
+    sample.absorbedSolarFluxWm2=forcing.absorbedSolarFluxWm2;
     sample.surfaceTemperatureK=
         gProduction.columns[element].SurfaceTemperatureK();
     sample.lastEnergyResidualJm2=
@@ -876,6 +1195,16 @@ bool SpinUpProductionState(SpinUpMetrics* metrics,std::string* error) {
   }
   metrics->cycleStartEphemerisTimeS=cycleStart;
   metrics->cycleEndEphemerisTimeS=cycleEnd;
+  if (gProduction.completedSpinupAtCurrentState &&
+      gProduction.currentThermalEpochS==cycleEnd &&
+      gProduction.completedSpinup.cycleStartEphemerisTimeS==cycleStart &&
+      gProduction.completedSpinup.cycleEndEphemerisTimeS==cycleEnd) {
+    // Auto-initialization already solved this exact state. I17/I20 may ask
+    // explicitly for its diagnostics without paying for another spin-up or
+    // changing the initial columns used by sources and the proof exporter.
+    *metrics=gProduction.completedSpinup;
+    return true;
+  }
 
   // Compare every finite-volume node at consecutive cycle boundaries.  A
   // surface-only check can converge while the deeper heat reservoir still
@@ -911,9 +1240,64 @@ bool SpinUpProductionState(SpinUpMetrics* metrics,std::string* error) {
     if (maximumTemperatureChange<=
             configuration.thermalSpinupTemperatureToleranceK &&
         maximumEnthalpyChange<=
-            configuration.thermalSpinupEnergyToleranceJm2) return true;
+            configuration.thermalSpinupEnergyToleranceJm2) {
+      gProduction.completedSpinup=*metrics;
+      gProduction.completedSpinupAtCurrentState=true;
+      gProduction.thermalInitialization.mode="periodic-spinup";
+      gProduction.thermalInitialization.ephemerisTimeS=cycleEnd;
+      gProduction.thermalInitialization.spinup=*metrics;
+      gProduction.thermalInitializationAvailable=true;
+      gProduction.initialThermalStateStillApplied=true;
+      return true;
+    }
   }
 #endif
+}
+
+double ProductionElementTemperatureK(int element) {
+  if (!gProduction.initialized || element<0 ||
+      static_cast<std::size_t>(element)>=gProduction.temperaturesK.size())
+    exit(__LINE__,__FILE__,"invalid logical element in passive temperature diagnostic");
+  if (!std::isfinite(gProduction.temperaturesK[element]) || gProduction.temperaturesK[element]<=0)
+    exit(__LINE__,__FILE__,"logical element has no supported kinetic surface temperature; preserve the Diviner coverage gap and use a qualified predictive thermal boundary or restrict the model support explicitly");
+  return gProduction.temperaturesK[element];
+}
+
+double ProductionRetentionTimescaleS() {
+  if (!gProduction.initialized)
+    exit(__LINE__,__FILE__,"retention timescale requires initialized production surface state");
+  return gProduction.configuration->coldTrapRetentionTimescaleS;
+}
+
+bool SampleProductionElementKinetics(int element,int species,
+    double* residenceTimeS,bool* thermallyRetained,std::string* error) {
+  if (error==nullptr || residenceTimeS==nullptr || thermallyRetained==nullptr)
+    return false;
+  error->clear();
+  if (!gProduction.initialized || element<0 ||
+      static_cast<std::size_t>(element)>=gProduction.temperaturesK.size()) {
+    *error="surface kinetics diagnostic needs an initialized, available logical element";
+    return false;
+  }
+  const auto* parameters=ParametersForSpecies(species);
+  if (parameters==nullptr) {
+    *error="surface kinetics diagnostic requested an unconfigured species";
+    return false;
+  }
+  if (!std::isfinite(gProduction.temperaturesK[element]) || gProduction.temperaturesK[element]<=0) {
+    *error="surface kinetics unavailable at a real Diviner-map coverage gap; no initialization temperature is substituted";
+    return false;
+  }
+  const double residence=SurfacePhysics::ResidenceTimeS(
+      *parameters,gProduction.temperaturesK[element]);
+  const double timescale=gProduction.configuration->coldTrapRetentionTimescaleS;
+  if (std::isnan(residence) || residence<0 || !std::isfinite(timescale) || timescale<=0) {
+    *error="invalid production residence time or configured retention-reporting timescale";
+    return false;
+  }
+  *residenceTimeS=residence;
+  *thermallyRetained=residence>=timescale;
+  return true;
 }
 
 double ProductionThermalDesorptionRate(int species,int surfaceElement,
@@ -928,6 +1312,15 @@ double ProductionThermalDesorptionRate(int species,int surfaceElement,
   auto* sphere=static_cast<cInternalSphericalData*>(sphereDataPointer);
   const double population=
       sphere->SurfaceElementPopulation[species][surfaceElement];
+  if (!std::isfinite(population) || population<0)
+    exit(__LINE__,__FILE__,"M2 thermal desorption requires finite nonnegative physical surface stock [atoms]");
+  // An unoccupied cell has exactly zero release even where the measured map
+  // has no coverage. Positive stock must never silently use an invented or
+  // stale initialization temperature to evaluate its residence law.
+  if (population==0) return 0;
+  if (!std::isfinite(gProduction.temperaturesK[surfaceElement]) ||
+      gProduction.temperaturesK[surfaceElement]<=0)
+    exit(__LINE__,__FILE__,"M2 thermal desorption has positive stock in a Diviner temperature coverage gap; use a qualified predictive thermal mode or explicitly restrict sources/model support; no gap filling is performed");
   const double residence=SurfacePhysics::ResidenceTimeS(
       *parameters,gProduction.temperaturesK[surfaceElement]);
   if (population<0.0 || std::isnan(residence) || residence<=0.0)
@@ -1044,15 +1437,16 @@ bool WriteProductionInventoryCheckpoint(double ephemerisTimeS,
     if (entry.first<0 || entry.first>=PIC::nTotalSpecies) continue;
     SurfacePhysics::Inventory inventory;
     if (!inventory.Initialize(count,0.0,error)) return false;
-    const auto* parameters=ParametersForSpecies(entry.first);
     for (std::size_t element=0;element<count;++element) {
-      const double residence=SurfacePhysics::ResidenceTimeS(
-          *parameters,gProduction.temperaturesK[element]);
+      double residence=0;
+      bool retained=false;
+      if (!SampleProductionElementKinetics(static_cast<int>(element),entry.first,
+              &residence,&retained,error)) return false;
       if (!inventory.SetCellState(element,
               gProduction.logicalSurface->SurfaceElementPopulation
                   [entry.first][element],
               gProduction.geometricShadow[element]!=0,
-              residence>=configuration.coldTrapRetentionTimescaleS,
+              retained,
               error)) return false;
     }
     if (!inventory.WriteCheckpoint(CheckpointPath(

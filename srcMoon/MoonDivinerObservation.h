@@ -47,6 +47,16 @@ double GreySurfaceExitanceWm2(double kineticTemperatureK,
 double GreyBolometricBrightnessTemperatureK(double kineticTemperatureK,
                                              double bolometricEmissivity);
 
+// Explicit inverse for the user-selected isothermal-grey facet boundary.
+// A Diviner map stores equivalent bolometric brightness temperature [K];
+// under this approximation its kinetic temperature [K] is T_bol/epsilon^1/4.
+// This does not invert an anisothermal footprint or an unknown spectrum.
+// Nonfinite/nonpositive brightness, epsilon outside (0,1], or a result beyond
+// representable positive finite kelvin returns NaN. In particular epsilon=0
+// has no inverse even though it is valid for the forward zero-exitance case.
+double GreyKineticTemperatureK(double bolometricBrightnessTemperatureK,
+                                double bolometricEmissivity);
+
 // Diagnostic forward operator for C6--C9.  The calibration report explicitly
 // permits rectangular half-maximum passbands for uncertainty calculations.
 // We use that documented approximation only for channel-residual diagnostics,

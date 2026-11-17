@@ -9,6 +9,10 @@
 #endif
 
 int Exosphere::SourceProcesses::FiniteReservoirElement=-1;
+Exosphere::SourceProcesses::fFiniteReleaseBegin Exosphere::SourceProcesses::FiniteReleaseBegin=nullptr;
+Exosphere::SourceProcesses::fFiniteReleasePacket Exosphere::SourceProcesses::FiniteReleasePacket=nullptr;
+Exosphere::SourceProcesses::fFiniteReleaseDeposit Exosphere::SourceProcesses::FiniteReleaseDeposit=nullptr;
+
 
 long int Exosphere::SourceProcesses::InjectFiniteSurfaceInventory(
     int spec,int boundaryType,void* boundary) {
@@ -61,6 +65,16 @@ long int Exosphere::SourceProcesses::InjectFiniteSurfaceInventory(
     FiniteRelease release;
     try {release=IntegrateFiniteRelease(population,hazards,dt);}
     catch (const std::exception& error) {exit(__LINE__,__FILE__,error.what());}
+    if (FiniteReleaseBegin!=nullptr) {
+      double thermal=0.0,photon=0.0;
+#if _EXOSPHERE_SOURCE__THERMAL_DESORPTION_ == _EXOSPHERE_SOURCE__ON_
+      thermal=hazards[_EXOSPHERE_SOURCE__ID__THERMAL_DESORPTION_];
+#endif
+#if _EXOSPHERE_SOURCE__PHOTON_STIMULATED_DESPRPTION_ == _EXOSPHERE_SOURCE__ON_
+      photon=hazards[_EXOSPHERE_SOURCE__ID__PHOTON_STIMULATED_DESPRPTION_];
+#endif
+      FiniteReleaseBegin(spec,element,population,release.remainingAtoms,release.hazardS,dt,thermal,photon);
+    }
     for (int source=0;source<=_EXOSPHERE__SOURCE_MAX_ID_VALUE_;++source) {
       const double atoms=release.atoms[source];
       if (!(atoms>0.0)) continue;
@@ -118,6 +132,8 @@ long int Exosphere::SourceProcesses::InjectFiniteSurfaceInventory(
         Sampling::SetParicleOriginSurfaceElementNumber(element,PIC::ParticleBuffer::GetParticleDataPointer(particle));
         const double representedAtoms=weight*
             PIC::ParticleBuffer::GetIndividualStatWeightCorrection(particle);
+        if (FiniteReleasePacket!=nullptr)
+          FiniteReleasePacket(spec,element,particle,representedAtoms);
         PIC::ParticleEvents::Record(PIC::ParticleEvents::Emission,spec,representedAtoms,source);
         PIC::ParticleEvents::Record(PIC::ParticleEvents::SurfaceRelease,spec,representedAtoms,element);
         Sampling::CalculatedSourceRate[spec][source]+=representedAtoms/dt;

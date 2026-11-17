@@ -25,6 +25,40 @@ the SPICE epoch's physical local time. The scorer independently performs only
 the adjacent native quarter-hour interpolation when both required hold-out
 bins exist. It never fills a missing bin or substitutes a zero uncertainty.
 
+Selection uses the actual body-fixed Sun state at the callback's SPICE epoch
+with the same input `illumination_aberration_correction` as the map operator.
+Eligibility is tested at the physical query local time, rather than only the
+nearest archive-bin centre: a supported node does not authorize interpolation
+through a missing adjacent corner. The frozen nearest-bin window and all
+observational membership/quality criteria are preserved.
+
+The staged input now explicitly records
+`diviner_map_kinetic_interpretation = isothermal-grey`. Under the user-approved
+isothermal grey resolved-facet approximation, native D03 bolometric brightness
+`T_bol` becomes the production kinetic callback value
+`T_kin=T_bol/thermal_infrared_emissivity^(1/4)`. This has no implicit fallback
+for old map inputs and does not resolve anisothermality or spectral emissivity.
+The staging receipt `diviner_boundary_interpretation.json` records this policy
+and input/data hashes. Real table gaps remain gaps; unavailable temperatures
+are not filled with an initial temperature.
+
+`receipt.txt.I16_model.csv` retains kinetic temperature [K], forward-model
+bolometric brightness [K] and dimensionless emissivity separately. The scorer
+independently checks the forward identity and compares only the brightness
+column with D03 brightness. A stale kinetic-only receipt or inconsistent
+conversion is ERROR. This changes neither frozen hold-out membership nor the
+15 K RMSE criterion. The local protocol fixtures run with
+`/usr/bin/python3 -B -m unittest discover -s srcMoon/test -p test_i16_grey_boundary.py`;
+they read no observations and cannot make I16 PASS. Native operator/cache
+checks require the newly rebuilt U10 production probe.
+
+The individual `I16/test.py` runner always executes those local receipt checks
+before delegating to the shared scientific runner. Thus `run_all_test.py`
+includes them even when I13 or D03 makes scientific I16 `SKIPPED`. Their logs
+and infrastructure-only summary are under `I16/protocol_checks/`; success
+does not override scientific status. A subordinate check failure writes the
+per-ID `result.json` as `ERROR` and prevents a linked model launch.
+
 The generated `d03_gcp_qa.json` qualifies only that reproducible processing
 step. At present the canonical external `diviner/` package has no package-level
 `README.md`, `provenance.json`, or `qa_report.json`; therefore I16 stops as

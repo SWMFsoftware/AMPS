@@ -240,10 +240,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--phase", choices=("audit", "local", "m0", "frontier",
-                             "implemented", "release", "m2-development"), default="audit",
+                             "implemented", "release", "m2-development", "m2-cluster",
+                             "m3-development"), default="audit",
         help=("audit structure; run U tests; run M0; run I11-I20; run all "
               "implemented layers; include planned release gaps; or run "
-              "bounded supporting M2 development without waiving I13"))
+              "bounded supporting M2/M3 development without waiving predecessors"))
     parser.add_argument("--list", action="store_true",
                         help="list all frozen U01-U26/I01-I46 IDs and exit")
     parser.add_argument("--output-dir", type=Path,
@@ -251,6 +252,18 @@ def main() -> int:
     parser.add_argument("--campaign-mode", choices=("regression", "qualification"),
                         default="regression")
     parser.add_argument("--mpi-ranks", type=int, default=8)
+    parser.add_argument("--campaign-wall-seconds",type=float,default=3600,
+                        help="aggregate M2/M3 development wall seconds, including clean builds/plots")
+    parser.add_argument("--cleanup-reserve-seconds",type=float,default=600)
+    parser.add_argument("--m2-input",type=Path,default=REPO_ROOT/"srcMoon/examples/lola_surface.in")
+    parser.add_argument("--cluster-execute",action="store_true")
+    parser.add_argument("--cluster-core-hours",type=float,default=300)
+    parser.add_argument("--cluster-allocated-cores",type=int)
+    for key in ("memory-limit","artifact-limit","host-free-floor","disk-free-floor"):
+        parser.add_argument("--cluster-"+key+"-bytes",type=int)
+    parser.add_argument("--qualification-root",type=Path)
+    for key in ("sites","forecast","normalizations","statistical-support"):
+        parser.add_argument("--"+key+"-file",type=Path)
     parser.add_argument("--m2-amps",type=Path,
                         help="explicit M2 executable with matching generated build for m2-development")
     parser.add_argument("--spice-path", type=Path,
@@ -264,8 +277,12 @@ def main() -> int:
     arguments = parser.parse_args()
     if arguments.mpi_ranks < 1:
         parser.error("--mpi-ranks must be positive")
+    if arguments.phase in ("m2-development","m2-cluster") and arguments.mpi_ranks>1009:
+        parser.error("approved seed stride supports at most 1009 distinct rank labels per replicate")
     if arguments.phase == "m2-development" and arguments.skip_build:
         parser.error("m2-development reuse requires explicit --m2-amps and its matching generated tree")
+    if arguments.phase=="m3-development" and arguments.skip_build:
+        parser.error("initial M3 development includes required clean M0 and native rate-fixture builds")
 
     layout = implemented_layout()
     if arguments.list:
@@ -290,11 +307,31 @@ def main() -> int:
     development_checks: list[dict[str, Any]] = []
 
     if not architecture_errors and arguments.phase != "audit":
+        if arguments.phase=="m3-development":
+            phase_output=output/"m3-development"
+            command=[sys.executable,"-B",str(TEST_ROOT/"run_m3_development.py"),
+                "--output-dir",str(phase_output),"--mpi-ranks",str(arguments.mpi_ranks),
+                "--wall-seconds",str(arguments.campaign_wall_seconds),
+                "--cleanup-reserve-seconds",str(arguments.cleanup_reserve_seconds),
+                "--spice-path",str(arguments.spice_path),"--spice-kernels",str(arguments.spice_kernels)]
+            log=output/"m3-development.log";code=run_logged(command,log,arguments.stream)
+            phase_runs.append({"phase":"m3-development","command":command,"returncode":code,"log":str(log)})
+            try:
+                child=read_json(phase_output/"development_summary.json")
+                results.extend(child["results"]);development_checks.extend(child["supporting_checks"])
+                if child.get("error"):campaign_errors.append(str(child["error"]))
+            except (OSError,ValueError,KeyError,RuntimeError) as error:campaign_errors.append(str(error))
+            if code not in (0,1,2):campaign_errors.append(f"initial M3 development runner exited {code}")
+            if code==2 and not campaign_errors:
+                campaign_errors.append("initial M3 development infrastructure failed; see retained child summary/log")
         if arguments.phase == "m2-development":
             phase_output=output/"m2-development"
             command=[sys.executable,"-B",str(TEST_ROOT/"run_m2_development.py"),
                      "--output-dir",str(phase_output),"--mpi-ranks",str(arguments.mpi_ranks),
                      "--spice-path",str(arguments.spice_path),"--spice-kernels",str(arguments.spice_kernels)]
+            command.extend(["--input",str(arguments.m2_input.resolve())])
+            command.extend(["--campaign-wall-seconds",str(arguments.campaign_wall_seconds),
+                            "--cleanup-reserve-seconds",str(arguments.cleanup_reserve_seconds)])
             if arguments.m2_amps:command.extend(["--amps",str(arguments.m2_amps.resolve())])
             log=output/"m2-development.log"
             code=run_logged(command,log,arguments.stream)
@@ -305,6 +342,26 @@ def main() -> int:
                 development_checks.extend(child["supporting_checks"])
             except (OSError,ValueError,KeyError) as error:campaign_errors.append(str(error))
             if code not in (0,1,2):campaign_errors.append(f"M2 development runner exited {code}")
+        if arguments.phase == "m2-cluster":
+            phase_output=output/"m2-cluster"
+            command=[sys.executable,"-B",str(TEST_ROOT/"run_m2_cluster.py"),
+                "--output-dir",str(phase_output),"--input",str(arguments.m2_input.resolve()),
+                "--mpi-ranks",str(arguments.mpi_ranks),"--core-hours",str(arguments.cluster_core_hours)]
+            if arguments.cluster_execute:command.append("--execute")
+            if arguments.m2_amps:command.extend(["--amps",str(arguments.m2_amps.resolve())])
+            for key in ("memory_limit_bytes","artifact_limit_bytes","host_free_floor_bytes","disk_free_floor_bytes"):
+                value=getattr(arguments,"cluster_"+key)
+                if value is not None:command.extend(["--"+key.replace("_","-"),str(value)])
+            if arguments.cluster_allocated_cores:command.extend(["--allocated-cores",str(arguments.cluster_allocated_cores)])
+            for key in ("qualification_root","sites_file","forecast_file","normalizations_file","statistical_support_file"):
+                value=getattr(arguments,key)
+                if value:command.extend(["--"+key.replace("_","-"),str(value.resolve())])
+            log=output/"m2-cluster.log";code=run_logged(command,log,arguments.stream)
+            phase_runs.append({"phase":"m2-cluster","command":command,"returncode":code,"log":str(log)})
+            try:
+                child=read_json(phase_output/"cluster_summary.json")
+                results.extend(child["results"]);development_checks.extend(child["supporting_checks"])
+            except (OSError,ValueError,KeyError,RuntimeError) as error:campaign_errors.append(str(error))
         if arguments.phase == "local":
             phase_output = output / "local"
             command = [sys.executable, str(TEST_ROOT / "run_all_test.py"),
@@ -358,6 +415,11 @@ def main() -> int:
                     "--spice-path", str(arguments.spice_path.resolve()),
                     "--spice-kernels", str(arguments.spice_kernels.resolve()),
                 ]
+                command.extend(["--m2-input",str(arguments.m2_input.resolve())])
+                if arguments.m2_amps:command.extend(["--m2-amps",str(arguments.m2_amps.resolve())])
+                if arguments.cluster_execute:
+                    command.extend(["--m2-cluster-execute","--test-runtime-seconds",
+                                    str(arguments.campaign_wall_seconds)])
                 for number in range(11, 21):
                     command.extend(["--only", f"I{number:02d}"])
                 # A completed M0 run restores a canonical Moon/SPICE build.

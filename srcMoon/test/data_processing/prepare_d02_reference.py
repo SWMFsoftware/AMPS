@@ -101,6 +101,37 @@ def inverse_polar_stereographic(
     return latitude, longitude
 
 
+def illumination_operator_metadata() -> dict[str, object]:
+    """Separate a native observable from an unverified averaging contract.
+
+    PGDA's general product description and the 2011 publication describe
+    different temporal sampling. Neither establishes all controls for these
+    exact 201608 files. Native START_TIME/STOP_TIME are not silently promoted
+    to simulation bounds. Nulls are real missing information, not defaults.
+    This affects provenance only; CSV rows/scaling/selection stay unchanged.
+    """
+    return {
+        "status": "UNRESOLVED",
+        "quantity": "fraction_of_sampled_times_any_solar_disc_visible",
+        "reference_cycle_years": None,
+        "reference_time_step_hours": None,
+        "simulation_start_epoch": None,
+        "simulation_stop_epoch": None,
+        "time_system": None,
+        "sample_count_and_endpoint_convention": None,
+        "horizon_azimuth_spacing_deg": None,
+        "solar_disc": "native label: any visible fraction defines occurrence visibility",
+        "documentation_context": {
+            "pgda_general_description": "approximately 18.6 years with hourly samples",
+            "pgda_url": "https://pgda.gsfc.nasa.gov/products/69",
+            "publication_description": "2011 publication reports six-hour long-duration sampling",
+            "publication_doi": "10.1016/j.icarus.2010.10.030",
+            "exact_201608_temporal_contract_established": False,
+        },
+        "limitation": "spatial decoding is not temporal/operator qualification; see D02_ILLUMINATION_RESEARCH.md",
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", type=Path, default=CANONICAL_ROOT)
@@ -225,8 +256,13 @@ def main() -> int:
         writer.writerows(rows)
 
     qa = {
-        "schema": "moon-validation-d02-processed-qa-v1",
-        "status": "READY" if rows else "ERROR",
+        "schema": "moon-validation-d02-processed-qa-v2",
+        # A populated spatial CSV is not a qualified temporal reference.
+        # Keep the successful transformation visible without inventing an
+        # exact-product sampling cadence/window from general documentation.
+        "status": "PARTIAL" if rows else "ERROR",
+        "spatial_processing_status": "READY" if rows else "ERROR",
+        "temporal_operator_status": "UNRESOLVED",
         "selection": {
             "target_spacing_m": args.target_spacing_m,
             "minimum_absolute_latitude_deg": 65.0,
@@ -240,13 +276,7 @@ def main() -> int:
             "rows": len(rows),
             "sha256": sha256(table),
         },
-        "illumination_operator": {
-            "reference_cycle_years": 18.6,
-            "reference_time_step_hours": 1.0,
-            "horizon_azimuth_spacing_deg": 0.5,
-            "solar_disc": "extended source; any visible fraction defines visibility",
-            "source": "Mazarico et al. 2011; NASA PGDA product 69",
-        },
+        "illumination_operator": illumination_operator_metadata(),
     }
     (output / "d02_processed_qa.json").write_text(
         json.dumps(qa, indent=2, sort_keys=True) + "\n", encoding="utf-8")

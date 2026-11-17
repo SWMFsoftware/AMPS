@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -394,6 +395,40 @@ def linked_artifact_index(result_path: Path) -> dict[str, str]:
     return artifacts
 
 
+def validate_i19_aggregate_receipts(directory: Path, manifest: dict[str, Any]) -> bool:
+    """Recognize authentic multi-run evidence without inventing receipt.txt.
+
+    I19 owns the approved complete numerical design. Each native case keeps
+    its own actual receipt; an orchestration JSON must not masquerade as one
+    native kernel execution. Recheck every referenced byte here so the global
+    index cannot accidentally accept a path-only, empty or stale aggregate.
+    The individual I19 adapter still owns physical/numerical qualification.
+    """
+    if manifest.get("schema")!="srcMoon-I19-formal-manifest-v1":return False
+    if manifest.get("execution") not in ("executed","imported-linked-results"):return False
+    path=directory/"aggregate_native_receipt.json"
+    if not path.is_file():return False
+    value=json.loads(path.read_text())
+    records=manifest.get("native_evidence",[])
+    protocol=json.loads((TEST_ROOT/"M2_I19_I20_PROTOCOL.json").read_text())
+    expected=(protocol["physical_case_count"]*protocol["independent_seed_count"]*
+              len(protocol["particle_step_factors"])*len(protocol["particle_weight_factors"]))
+    if (value.get("schema")!="srcMoon-I19-aggregate-native-evidence-v1" or
+        value.get("test_id")!="I19" or value.get("kind")!="orchestration-receipt-not-native-kernel-output" or
+        value.get("native_case_count")!=expected or len(records)!=expected or
+        value.get("native_evidence")!=records):
+        raise ValueError("I19 aggregate does not bind the complete native receipt family")
+    seen=set()
+    for record in records:
+        native=Path(record["path"])
+        if not native.is_absolute() or native in seen or not native.is_file():
+            raise ValueError("missing/duplicate/nonabsolute I19 native receipt")
+        seen.add(native)
+        if hashlib.sha256(native.read_bytes()).hexdigest()!=record.get("sha256"):
+            raise ValueError("I19 native receipt hash changed")
+    return True
+
+
 def load_runner_result(
     test_id: str, runner: Path, result_path: Path, log_path: Path, returncode: int
 ) -> dict[str, Any]:
@@ -478,6 +513,14 @@ def load_runner_result(
             if status == "SKIPPED" and not_run
             else REQUIRED_LINKED_ARTIFACTS
         )
+        if test_id=="I19" and status in {"PASS","FAIL"} and manifest_path:
+            try:
+                identity=json.loads(Path(manifest_path).read_text())
+                if validate_i19_aggregate_receipts(result_path.parent,identity):
+                    required=(required-{"receipt"})|{"aggregate_native_receipt.json"}
+            except (OSError,ValueError,KeyError,TypeError) as error:
+                return {**base,"status":"ERROR","reason":"invalid I19 aggregate native evidence: "+str(error),
+                        "reported_status":status,"artifacts":indexed_artifacts}
         missing_artifacts = sorted(required - indexed_artifacts.keys())
         if missing_artifacts:
             return {
@@ -523,6 +566,7 @@ def run_test(
     m2_amps: Path | None,
     i11_parallel_levels: int = 1,
     test_runtime_seconds: float = 3600.0,
+    m2_cluster_execute: bool = False,
 ) -> dict[str, Any]:
     """Execute one registered CLI runner and consume its structured result."""
     runner = (TEST_ROOT / runner_name).resolve()
@@ -559,6 +603,9 @@ def run_test(
             # same requested MPI layout and its independent result/artifacts.
             command.extend(["--parallel-levels", str(i11_parallel_levels),
                             "--test-runtime-seconds", str(test_runtime_seconds)])
+        if test_id=="I19":
+            command.extend(["--test-runtime-seconds",str(test_runtime_seconds)])
+            if m2_cluster_execute:command.append("--m2-cluster-execute")
     else:
         command = [
             sys.executable,
@@ -646,6 +693,8 @@ def main() -> int:
                         help="concurrent I11 meshes, with --mpi-ranks per mesh")
     parser.add_argument("--test-runtime-seconds", type=float, default=3600,
                         help="parallel I11 launch budget; interrupted children are ERROR")
+    parser.add_argument("--m2-cluster-execute",action="store_true",
+                        help="opt in to reviewed I19 long execution; defaults to deferred/import-only")
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -824,6 +873,7 @@ def main() -> int:
             test_id, registry[test_id], build_dir, output_root, args.stream,
             amps, m1_input, m2_input, args.campaign_mode, args.mpi_ranks,
             m2_amps, args.i11_parallel_levels, args.test_runtime_seconds,
+            args.m2_cluster_execute,
         )
         results.append(result)
         print(f"{result['status']:7s} {test_id}  log={result['log']}", flush=True)

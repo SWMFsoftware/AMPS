@@ -111,7 +111,7 @@ int main(int argc,char **argv) {
     else {
       std::cerr << "Usage: " << argv[0]
                 << " [-input application.in]"
-                << " [--moon-integration-test U01|U01_INSIDE|U06|I02|I03|I05|I06|I07|I08|I09|I10|I11|I12|I13|I14|I16|I17|I18"
+                << " [--moon-integration-test U01|U01_INSIDE|U06|I02|I03|I05|I06|I07|I08|I09|I10|I11|I12|I13|I14|I15|I16|I17|I18|I20"
                 << " --integration-output receipt.txt]"
                 << " [--i11-duration-pilot|--i11-sampling-check|--i11-budget-check]"
                 << " [--m2-budget-check (I19 supporting fixture)]\n";
@@ -148,6 +148,10 @@ int main(int argc,char **argv) {
     if (!Moon::Runtime::ParseApplicationInput(applicationInput,
                                                &configuration,&error)) {
       std::cerr << error << '\n';
+      return EXIT_FAILURE;
+    }
+    if (configuration.m2VerificationCase!="none" && !m2BudgetCheck) {
+      std::cerr << "M2 verification input requires --m2-budget-check and I19\n";
       return EXIT_FAILURE;
     }
     // Installation transfers the validated receipt to amps_init().  It is a

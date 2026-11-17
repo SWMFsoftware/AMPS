@@ -30,3 +30,18 @@ and interval seconds. This is the approved continuous-reservoir law; weighted
 packets sample velocity, position and conditional exponential departure time,
 not microscopic atom-count shot noise. Coupled varying-temperature/deposition
 convergence remains a linked requirement. Negative/nonfinite inputs are errors.
+
+The November 13 warming extension (`surface-release-warming`) imposes a linear
+60 s temperature ramp with endpoints chosen through the production residence
+law to span H/tau=0.01 to 1000. It calls the actual finite-release kernel at
+0.5/0.25/0.125 s midpoint steps. These are analytical computational conditions,
+not lunar observations or a claimed lunar temperature range. The independent
+`verify_warming.py` uses adaptive quadrature of the published input-selected
+Na/Ar laws to integrate survival and the censored first-residence integral.
+The final survival absolute error is <=0.01, restricted residence error is
+<=0.01 H, refinement differences decrease, and quadrature error is below its
+declared sub-budget. These are approved numerical margins. The test retains
+`warming_comparison.json` and `warming/comparison.csv/.png/.eps`. It is
+registered automatically in U12's probe list and the global M2 development
+phase. It does not replace linked thermal convergence, transport/cohort
+verification, I18/I19, or independent cold-trapping validation.

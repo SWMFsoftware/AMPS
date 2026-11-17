@@ -67,6 +67,17 @@ reader. Backgrounds are excluded; zeros are retained; no preferred strategy
 or forward-run total is silently selected. See
 [`SOURCE_DISTRIBUTION_FILE.md`](../SOURCE_DISTRIBUTION_FILE.md).
 
+The explicit source exporter `export_forward_sources.py` writes provenance
+comments for the manifest, geometry configuration and stripe geometry. Files
+inside this AMPS checkout use POSIX paths relative to the AMPS repository root;
+external files retain resolved absolute paths. Interpret a relative comment
+path from the repository root, not from the generated `.in` file's directory.
+The adjacent SHA-256 values identify the actual input bytes in either case.
+These comments do not enter the source-rate or geometry calculation. Consequently
+identical repository inputs produce an identical complete deck after checkout
+relocation. The exporter tests load the real generator from two relocated trees,
+retain the exact-byte E3/E5 deck comparisons, and check external-path provenance.
+
 E3/E5 CO2 absolute exports are **deferred** until the physical mass-44
 fragmentation correction is specified. Their apparent totals remain in the
 reports and their conditional normalized shapes can be exported. This does

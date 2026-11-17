@@ -35,10 +35,13 @@ The processor verifies the eight frozen raw hashes, decodes the PDS scale and
 offset, applies the label-native polar-stereographic inverse, and selects a
 deterministic 100 km comparison lattice.  It writes
 `illumination_reference.csv` and `d02_processed_qa.json`.  The QA record keeps
-PSR-edge rows identifiable and records the independent product's extended-Sun,
-18.6-year, one-hour temporal operator.  Generating this table qualifies the
-reference data; it does not establish I15/I20 PASS until the linked production
-operator is scored.
+PSR-edge rows identifiable. QA v2 records the native occurrence-visibility
+definition and reports spatial processing READY separately from overall
+PARTIAL: exact-product integration epochs/cadence remain unresolved. General
+PGDA hourly/18.6-year descriptions and older six-hour calculations are not
+silently frozen as 201608 product controls. Generating this spatial table does
+not qualify the temporal reference or I15/I20. See
+[D02_ILLUMINATION_RESEARCH.md](../D02_ILLUMINATION_RESEARCH.md).
 
 Prepare the D03 global cumulative product used by I16 with:
 
@@ -112,6 +115,23 @@ python3 -B srcMoon/test/data_processing/audit_m2_packages.py \
   --output-dir test_output/srcMoon/data-audit-NEW
 ```
 
+This existing global M2 entry automatically runs ten D02 metadata protocol
+checks and writes `d02_protocol_checks.log` plus
+`d02_native_temporal_audit.json`. The fixtures exercise parser/corruption/status
+handling only; they are never observations. D02's successful native integrity
+subcheck cannot turn its unresolved temporal contract into PASS. The standalone
+inspector is also available:
+
+```sh
+python3 -B srcMoon/test/data_processing/audit_d02_temporal_contract.py \
+  --output-dir test_output/srcMoon/D02-native-audit-NEW
+```
+
+Its exit is 77 for the current scientifically unavailable temporal contract,
+2 for corruption/infrastructure, and 0 only for an evaluated PASS. Audit
+artifacts must remain outside the canonical validation-data tree. Neither
+command changes raw files, package status, frozen selection or science values.
+
 For a fresh reproduction, first run the GCP and PRP processors above, using
 `M2-data/D03-GCP` and `M2-data/D03-PRP` respectively, then:
 
@@ -151,11 +171,13 @@ It does not qualify model capability, infer GCP uncertainty, turn brightness
 temperature into kinetic temperature, or permit December residual inspection.
 
 D02 remains PARTIAL. `prepare_d02_reference.py` produced 366 independent
-spatial rows, but the actual start/end epochs of the published 18.6-year hourly
-illumination integration remain unresolved; native terrain-product dates do
-not establish that interval. Production extended-disc/time integration and
-its comparison are also required. See the code excerpts and pending factual
-question in the repository's `question.md`.
+spatial rows, but the exact frozen products' averaging epochs, sampling and
+finite-disc geometry contract remain unresolved. General hourly/18.6-year
+descriptions and older six-hour calculations are distinct documentary claims;
+native date fields do not establish either integration interval. Production
+extended-disc/time integration and an independent time-resolved I15 benchmark
+are also required. See [the research report](../D02_ILLUMINATION_RESEARCH.md)
+and the code excerpts in the repository's `question.md`.
 
 The default root is `/data/vtenishe/moon_validation_data`; `--data-root` may
 select an equivalent package for an isolated reproducibility check. The exact
@@ -163,11 +185,13 @@ authoritative source URLs and the native body-fixed frame are written to
 `lola/provenance.json`.
 
 The source-tree roadmap (SHA-256
-`2761b447b46539edb21395550cd1b5d9ff6add4839b0db5a7e6d734cf2a4f02a`)
+`bde5f001bdcbe072d7a8452d3f2afec93856f50cd1146560da3cd3027a96d2dc`)
 contains the current implementation status and
 controls code/test decisions.  The external-data roadmap (SHA-256
 `d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4`)
 is the processing contract for immutable raw data.  They differ because the
 source copy contains newer implementation-status entries and the approved
-M2 development-order exception; no scientific
-requirement is silently reconciled or discarded.
+M2 development-order exception and the user-required one-hour development /
+deferred-cluster execution policy. Common scientific requirements remain
+unchanged; ROADMAP_RECONCILIATION.md records the current operational amendment
+and the prior source hash.

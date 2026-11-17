@@ -13,58 +13,256 @@ selection, owner logs and build/input/executable receipts. The audit writes
 preserved, with existing nonpasses still reported. It does not close M1/M2 or
 approve a new I04/I13 reference. Use fresh output directories for every run.
 
+To select every registered core suite, independently of its routine campaign
+label, run this from the active AMPS root:
+
+```sh
+/usr/bin/python3 -B src/test/run_tests.py \
+  --config test/qualification-machine/passion.json --match 'CORE-*' \
+  --jobs 8 --build-jobs 16 \
+  --output-dir "test_output/core-full-$(date -u +%Y%m%dT%H%M%SZ)"
+```
+
+`--jobs` controls safe concurrent suites, not every test's MPI rank count.
+The machine profile and registered case contracts determine MPI layouts;
+native configuration changes remain serialized. The campaign writes
+`amps-core-tests.json`, JUnit XML, per-suite `logs/` and retained `artifacts/`.
+Replacing `--match 'CORE-*'` with `--all` also selects registered applications;
+`--full-validation` additionally requests expensive qualification modes and
+cannot be combined with either selector. `make core_test_nightly` selects the
+routine nightly campaign rather than every registered core suite.
+
+The historical current-core integration baseline had 1,085 core cases:
+843 PASS, 240 SKIPPED, one strict-coverage FAIL and one CME-refinement timeout
+ERROR. These are retained baseline dispositions, not results of the current
+M2 changes. Later registries may contain additional cases; use `--list` and
+the actual aggregate report for current membership/outcomes. The November 13
+standalone runs also exposed Python dependency failures; those reports remain
+preserved and must not be silently replaced by the older baseline.
+
+### Python environment for this machine
+
+The maintained `passion.json` profile selects `/usr/bin/python3`. Use that
+same interpreter for development runners and check its dependencies explicitly:
+
+```sh
+/usr/bin/python3 -c 'import numpy, scipy, matplotlib, mpmath; print("Python numerical/plot dependencies available")'
+```
+
+The top-level control layer uses the standard library, while independent
+numerical references, confidence intervals and PNG/EPS output need these
+packages. A package installed in a shell-selected `python3` virtual environment
+does not establish availability to `/usr/bin/python3`. On another machine use
+a reviewed profile with actual interpreter/compiler/MPI/SPICE paths. These
+dependency checks establish execution readiness only, not lunar validation.
+
 ## M2 supporting verification before M1 closure
 
 ### Description
 
-This is the approved bounded development campaign. It clean-builds a dedicated
-Na/Ar executable with chemistry OFF and individual weights ON, runs local
-U08-U13, audits D01/D02/D03 provenance, and exercises the production LOLA
-geometry/mover (I14 scope), surface distributions (I18 scope) and gas/surface
-accounting (I19 scope). It then restores the canonical Na-only Moon/SPICE build.
-Supporting results have separate counts. Formal I14-I20 remain SKIPPED until
-same-campaign I13 is PASS; this command does not close M1 or M2.
+This is the approved bounded development campaign. It requalifies the
+configuration-separated M0 baseline, clean-builds dedicated neutral Na/Ar
+(chemistry OFF, individual weights ON, explicit Mersenne Twister), runs U08-U13
+and data QA, and exercises the original terrain/surface/budget fixtures. It
+then runs 36 short cases: source-fed startup and source-free surface cohorts,
+three timesteps, three independent particle weights and two declared seeds.
+Finally it prepares a deterministic source-rate integral and restores the
+canonical Na-only Moon/SPICE build. Numerical diagnostic PASS does not close
+formal I14-I20: same-campaign I13 and all individual data/operator gates remain
+required. No observation is generated, fitted, or scored by the short sweep.
+
+The complete selected command has one 3,600-second monotonic wall budget,
+including all required builds, tests, QA, plots and cleanup; 600 seconds are
+reserved for termination/cleanup. Descendant MPI/build processes are monitored
+across process sessions. Resource/deadline exhaustion is ERROR with preserved
+logs and completed results. The guard does not make an incomplete campaign a
+PASS. Long qualification is a separate, explicit cluster tier.
 
 ### Commands
 
-From the AMPS checkout, with no other build or model process using it:
+Use a dedicated checkout with no concurrent configuration/build process:
 
 ```sh
-python3 -B srcMoon/test/test_runner.py --phase m2-development \
-  --mpi-ranks 8 \
+/usr/bin/python3 -B srcMoon/test/test_runner.py --phase m2-development \
+  --mpi-ranks 8 --stream \
+  --m2-input srcMoon/examples/m2_development.in \
+  --campaign-wall-seconds 3600 --cleanup-reserve-seconds 600 \
   --output-dir test_output/srcMoon/M2-development-NEW
 ```
 
-The runner uses `/home/vtenishe/SPICE/cspice` and
+Default SPICE paths are `/home/vtenishe/SPICE/cspice` and
 `/home/vtenishe/SPICE/Kernels`; override with `--spice-path` and
-`--spice-kernels`. It removes `build/` before configuring and runs
-`make -j 'OPT3=-O3 -g'`. Use a fresh output directory. Only when the current
-generated tree already matches a retained dedicated M2 executable, reuse it:
+`--spice-kernels`. Every generated tree is removed before configuration;
+native builds use `make -j16 'OPT3=-O3 -g'`. Always select a new output path.
+The development sweep is diagnostic, with 24/48/96 production steps and a
+matched physical duration; it does not pretend to finish a 500-step science
+sample. Sampling length remains 500; restart writes are suppressed.
 
-```sh
-python3 -B srcMoon/test/test_runner.py --phase m2-development \
-  --mpi-ranks 8 --m2-amps /absolute/path/to/amps-moon-m2-na-ar \
-  --output-dir test_output/srcMoon/M2-development-reuse-NEW
-```
+For a focused rerun only, `--m2-amps /absolute/path/to/amps-moon-m2-na-ar`
+requires matching binary/native-source/generated chemistry/layout/RNG hashes.
+Reuse skips clean M0 requalification and the final normal-build restoration;
+therefore it is not evidence that the full clean command meets the hour.
 
 ### Expected results and artifacts
 
-`test_summary.json` records registered tests and separate `development_counts`.
-The `m2-development/` child contains `development_summary.json`, build and
-restore logs, `local/`, `data-audit/`, `supporting/I14/`, `supporting/I18/`,
-`supporting/I19/` and genuine predecessor-blocked `formal/I14` through `I20`.
-Each linked supporting run retains input, manifest, receipt, stdout/stderr and
-resource history. I14/I18 write `comparison.csv/.png/.eps`; I19 writes
-`m2_budget.csv`, `budget.png` and `budget.eps`. The I19 fixture is 20 ordinary
-steps with declared incoming/outgoing particles and initial surface atoms;
-these are verification initial conditions, never observations.
+`test_summary.json` records formal results and separate `development_counts`.
+The child `m2-development/` contains `budget_result.json`, process-tree RSS and
+allocation history in `budget_resources.csv`, complete `campaign.log`, and
+`development_summary.json`. Actual phases are under its `campaign/` directory:
 
-The November 12 retained example is
-`test_output/srcMoon/m2-development-20261112T084925Z/campaign-5/`:
-six local PASS, seven formal SKIPPED; supporting checks six PASS and one D02
-SKIPPED, with zero FAIL/ERROR. D03 selected inputs are READY; D02 remains
-PARTIAL pending authoritative illumination-integration epochs and operator
-qualification. See STATUS.md section 5.7 for metrics and limitations.
+- `m0/`: all configuration-separated I01-I10 evidence and strict nightly diff;
+- `build/`: dedicated executable, clean build log and source/config/RNG hashes;
+- `local/` and `data-audit/`: local oracle results and package readiness;
+- `supporting/I14`, `I18`, `I19`: the original positive-coverage fixtures;
+- additional native parser/operator checks retain their own supporting logs
+  and receipts; actual I15/I20 exporters are exercised without observations,
+  while formal statuses remain separately gated;
+- `numerical/<source-fed|cohort>-d<D>-w<W>-s<SEED_INDEX>/`: each case's
+  `application.in`, `run_manifest.json`, receipt, streams, `result.json`,
+  `m2_budget.csv`, completed `window_budget.csv`, and `comparison.csv/.png/.eps`;
+- cohort cases additionally retain `m2_cohorts.csv`, `m2_hazards.csv`, and
+  `cohorts.png/.eps`, with censored first residence, occupancy and tag closure;
+- `source-normalization/`: source-only integral, preserved input/receipt and
+  `result.json`, plus the requested actual full I19 initial-state CSV. The
+  candidate records `qualified:false`; READY describes only a model-input
+  normalization and supplies no initial-state approval or observations;
+- `formal/I14` through `I20`: genuine predecessor-blocked results when I13 is
+  absent; no synthetic comparison graphics are produced for these skips.
+
+At present formal M1/M2 closure remains open and D02 is PARTIAL. Use STATUS.md
+for the measured campaign outcome; code or preflight availability is not
+qualification. See [M2_NUMERICAL_PROTOCOL.md](test/M2_NUMERICAL_PROTOCOL.md)
+for numerical margins and detailed physics/implementation decisions.
+
+### New production parser and environment-operator checks
+
+The bounded development command now includes the new input-control/native
+adapter tests. They exercise explicit finite-disc settings and rejected
+incomplete controls, production fixed-site SPICE geometry, and actual
+illumination/thermal exporters. They do not fabricate an I13 predecessor,
+replace a D02/D03 reference, or assign an observational acceptance threshold.
+The current native campaign determines their outcome; registered code or a
+successful parser preflight is not an executed numerical PASS.
+
+For a focused operator rerun with a dedicated Na/Ar executable and its matching
+current generated build tree, build in an idle private checkout first if that
+matching tree is unavailable:
+
+```sh
+/usr/bin/python3 -B srcMoon/test/build_m2_qualification.py \
+  --output-dir test_output/srcMoon/M2-operator-build-NEW \
+  --spice-path /home/vtenishe/SPICE/cspice \
+  --spice-kernels /home/vtenishe/SPICE/Kernels
+
+/usr/bin/python3 -B srcMoon/test/run_m2_operator_checks.py \
+  --amps test_output/srcMoon/M2-operator-build-NEW/amps-moon-m2-na-ar \
+  --input srcMoon/examples/m2_development.in --mpi-ranks 8 \
+  --test-runtime-seconds 600 \
+  --output-dir test_output/srcMoon/M2-operator-wiring-NEW
+```
+
+The 600 seconds is an explicit focused command budget, not a thermal or
+observational tolerance or a claim that the separate build was timed inside
+that focused command. The complete global development invocation covers all
+required phases within its one-hour envelope. The exporter fixture uses declared geometry queries
+and a deliberately millisecond forcing replay to check state/coordinate/depth
+export wiring. It does not represent a synodic spin-up, qualified initial
+lunar thermal state or annual polar observation. Expect
+`operator_checks_summary.json`, separate native query/model CSVs, inputs,
+manifests, stdout/stderr, receipts and resource logs. Formal I15/I20 remain
+SKIPPED. The strict build-identity check refuses live-header/library mismatch;
+see [BUILD_M2.md](test/BUILD_M2.md) before reusing a retained executable after
+normal-profile restoration.
+
+The new optional production finite-disc model samples terrain and opaque-Earth
+visibility on the same rays. Thermal forcing integrates the local incidence
+and directional absorptivity before entering the unchanged conduction solver.
+PSD instead uses unabsorbed direct photon incidence: no thermal Bond albedo is
+multiplied into its source. The serial SOURCE-BEGIN cache supplies one epoch
+to ordinary per-element rates, total/CDF selection and finite-inventory hazards;
+particle departure timing does not silently change that coefficient epoch.
+The core callback defaults to NULL, preserving M0/M1 and other applications.
+Details, units, API names and limits are in
+[PSD_ILLUMINATION_CONTRACT.md](test/PSD_ILLUMINATION_CONTRACT.md).
+
+### Deferred cluster tier
+
+Formal preparation preserves the reviewed volume AMR, sources, thermal state
+and epoch. It requires Ar already enabled, an evolving environment and the
+declared zero inventory used by the numerical protocol. The short I18 helper
+cannot silently replace those physical settings. Initial-state evidence must
+identify the actual applied uniform/periodic method, native full-column bytes,
+epoch, executable, physical input and actual furnished SPICE/LOLA bytes.
+Missing evidence remains SKIPPED; no state becomes qualified by being exported.
+
+`thermal_initialization_mode = periodic-spinup` invokes the existing solver
+before source/weight queries; its explicit cycle end must be simulation t0.
+`declared-uniform` retains the development transient and is not automatically
+a lunar equilibrium. I19 can record actual initial columns through
+`m2_verification_record_initial_thermal_state = true` within the complete
+verification group. I20 records its own full starting columns and keeps annual
+thermal and cohort epochs distinct. These model diagnostics are separate from
+particle/inventory checkpoint writes.
+
+Generate a **formal** source normalization only with the explicit
+`prepare_m2_normalization.py --tier cluster` option and the reviewed full input;
+the default development normalization uses the bounded fixture and cannot
+qualify a different full mesh. Initialization compute/storage is part of the
+measured cluster cost for all cases. See
+[the initialization contract](test/M2_INITIAL_STATE_CONTRACT.md) and
+[formal staging](test/FORMAL_STAGING_CONTRACT.md) for required evidence and
+normalization commands. No actual qualifying state, interval or READY approval
+has been created by these instructions.
+
+Export the fixed 288-case plan without executing native cases:
+
+```sh
+python3 -B srcMoon/test/test_runner.py --phase m2-cluster --mpi-ranks 8 \
+  --stream --output-dir test_output/srcMoon/M2-cluster-plan-NEW
+```
+
+Expect `m2-cluster/job_plan.json`, `preflight.json` and `cluster_summary.json`;
+formal I19/I20 remain SKIPPED when execution is unselected or required evidence
+is unavailable. The runner submits no remote jobs. All necessary execution,
+proof and resource arguments are documented in
+[M2_NUMERICAL_PROTOCOL.md](test/M2_NUMERICAL_PROTOCOL.md#cluster-qualification).
+The 300 core-hour default is one aggregate planning allowance; a measured
+forecast is required before launch and may establish that this design is too
+expensive. No timestep/source/resolution physics is changed to force it to fit.
+
+### D02 research and native-metadata audit
+
+This read-only preflight is also registered automatically in the global M2
+development campaign. It verifies frozen native bytes, labels, frame and
+observable; it cannot supply missing averaging epochs or validate illumination.
+To run just this audit from the AMPS root:
+
+```sh
+python3 -B srcMoon/test/data_processing/audit_d02_temporal_contract.py \
+  --output-dir test_output/srcMoon/D02-native-audit-NEW
+```
+
+Expect `result.json` with SKIPPED and exit 77 while the exact-product temporal
+contract is unresolved; corruption is ERROR/exit 2. No model is launched and
+no comparison plot is produced. Use a new output directory outside the
+canonical validation-data tree. For the combined package audit and its ten
+automatically registered metadata protocol checks:
+
+```sh
+python3 -B srcMoon/test/data_processing/audit_m2_packages.py \
+  --output-dir test_output/srcMoon/M2-data-audit-NEW
+```
+
+That command preserves individual package statuses in `result.json`, the
+native audit in `d02_native_temporal_audit.json`, and infrastructure checks in
+`d02_protocol_checks.log`. Its zero exit means no audit ERROR occurred; it
+does not mean every dataset is READY. Read the counts and scopes. The current
+D02 reference stays PARTIAL. See
+[the research report](test/D02_ILLUMINATION_RESEARCH.md) and
+[the approved I19/I20 numerical protocol](test/M2_NUMERICAL_PROTOCOL.md).
+Package audit does not score observations or complete a formal gate. The
+active protocol controls numerical diagnostics; existing conservation,
+predecessor, observation-selection and hold-out gates remain binding.
 
 ## M1 event-budget and physical-duration diagnostic runner
 
@@ -442,3 +640,58 @@ U08 and its independent per-vertex comparison pass. It remains an
 `EXPERIMENTAL / MEETING_DEMONSTRATION` product: formal I14 is recorded as
 `SKIPPED / NOT_VALIDATED` until its linked-production and predecessor gates
 are satisfied.
+
+## Initial M3 atomic rate verification
+
+This runner verifies the approved Maxwellian/Voronov rate service. It runs the
+unchanged clean M0 prerequisite (including the reviewed four-rank nightly
+reference), registered U16 kernel/runtime controls, and an **eight-rank** native
+callback fixture with all four neutral/ion pairs compiled. The native callback
+uses real generated particle-record/species layouts; no particle reaction or
+product trajectory is simulated. Formal I21-I24 remain explicitly SKIPPED.
+
+From the selected checkout root:
+
+```sh
+OMP_NUM_THREADS=1 /usr/bin/python3 -B srcMoon/test/test_runner.py \
+  --phase m3-development --mpi-ranks 8 \
+  --campaign-wall-seconds 3600 --cleanup-reserve-seconds 600 \
+  --spice-path /home/vtenishe/SPICE/cspice \
+  --spice-kernels /home/vtenishe/SPICE/Kernels \
+  --output-dir test_output/srcMoon/M3-development-NEW
+```
+
+Replace `NEW` for each execution; prior evidence is not overwritten. This
+native campaign rebuilds the selected checkout several times and restores
+ordinary Moon/SPICE afterward. Use an isolated checkout when the active tree
+must retain another application/configuration. Configuration/build logs,
+executable/source/generated-header identities and resource monitoring are
+preserved within the one-hour campaign budget. As in M0, each configuration
+starts by removing its generated `build` directory.
+
+Expected files under `M3-development-NEW/m3-development/`:
+
+- `m0/`: ten real linked baseline outcomes, complete U-series and zero-byte
+  `I04/test_Moon.diff` when the reviewed nightly passes.
+- `native-rate-callback/`: derived eight-species compile input identity,
+  configure/build/probe logs, generated ABI headers, `application.in`,
+  `run_manifest.json`, per-rank callback CSVs and `result.json`.
+- `restore/`: normal Moon/SPICE clean build log and executable.
+- `development_summary.json`, `execution_budget.json`, `campaign.log`: distinct
+  local/supporting/formal outcomes, errors and process-tree resource evidence.
+
+Run only the registered fast U16 case without reconfiguring AMPS:
+
+```sh
+/usr/bin/python3 -B srcMoon/test/run_all_test.py --skip-build --only U16 \
+  --output-dir test_output/srcMoon/U16-Maxwellian-NEW
+```
+
+U16 independently compiles the maintained production rate and runtime-input
+services. It preserves native/reference hashes, comparison CSV/PNG/EPS and
+malformed-input/control outcomes. Its PASS does not qualify I23 survival,
+product conservation or measured forcing. The complete `.in` example is
+`examples/m3_atomic_rates.in`; its declared electron bath is an analytical
+fixture, not a lunar observation. Charge-exchange and molecular-kinetics
+proposals are in `test/M3_*_PROPOSAL.md`, and STATUS.md section 5.15 records
+current evidence and unresolved decisions.

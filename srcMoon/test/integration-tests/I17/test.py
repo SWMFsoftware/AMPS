@@ -12,10 +12,12 @@ from integration_common import main
 # missing. Their success is only infrastructure evidence; main() still owns
 # I17's scientific PASS/FAIL/SKIPPED result. Keep the checks in the individual
 # runner so the aggregate run_all_test.py registry includes them automatically.
-checked = subprocess.run([
-    sys.executable, "-B", str(Path(__file__).with_name("test_infrastructure.py"))],
-    check=False)
-if checked.returncode:
+failed = False
+for script in ("test_infrastructure.py", "test_holdout.py"):
+    checked = subprocess.run([sys.executable, "-B",
+        str(Path(__file__).with_name(script))], check=False)
+    failed = failed or checked.returncode != 0
+if failed:
     # Preserve the aggregate runner's expected ERROR result instead of leaving
     # an absent result.json to be misread as a scientific failure or skip.
     if "--output-dir" in sys.argv:

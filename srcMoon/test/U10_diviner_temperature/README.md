@@ -35,6 +35,36 @@ bolometric emissivity `epsilon` emits `epsilon sigma T^4`, so its comparable
 bolometric brightness temperature is `epsilon^(1/4) T`.  Directly comparing
 `T` with Diviner `T_bol` would silently assume unit emissivity and is forbidden.
 
+The explicit `isothermal-grey` map interpretation additionally uses the
+production inverse `T_kin=T_bol/epsilon^(1/4)`. U10 tests exact independent
+fourth-root anchors (100 K at epsilon=1/16 gives 200 K kinetic, and 240 K at
+epsilon=81/256 gives 320 K), a forward/inverse round trip, and rejection of
+nonpositive/nonfinite temperatures, zero/invalid emissivity and overflow.
+The inverse is an approved resolved-facet approximation, not a claim that
+Diviner directly measures kinetic temperature or resolves subfacet thermal
+heterogeneity. See [the boundary contract](../DIVINER_GREY_BOUNDARY_CONTRACT.md).
+
+The `prescribed-temperature` mode also initializes a real production 2x4
+logical inventory grid and closed octahedral terrain, furnishes the compiled
+SPICE kernels, and compares source-cache temperature with the normal transformed
+point callback and independent analytical values at initialization and six
+hours later. Both `simple-cosine` and `diviner-map` are exercised. A complete
+periodic analytical brightness grid avoids relying on observations. Positive
+Na stock exercises actual desorption and residence/retention diagnostics at
+the same kinetic temperature; the oracle uses explicit SI Arrhenius parameters.
+A second table deliberately lacks the logical grid's latitude coverage:
+initialization must preserve that gap, zero stock must release zero, and the
+kinetics diagnostic must report unavailable without changing caller outputs.
+The 350 K initialization value must never replace missing map support.
+These production-wiring checks require SPICE; they do not establish thermal
+convergence, D03 readiness, or observational agreement.
+
+A sparse analytical table also distinguishes eligibility at a supported native
+time node from an unsupported nearby physical query time whose adjacent corner
+is missing. I16 checks the latter before its production callback. Actual
+furnished SPICE-file hashes are retained even when a subsequent native metric
+fails; provenance success never changes that failed numerical result.
+
 `test_processor.py` additionally verifies the exact frozen I17 software
 decisions without opening observational data: locale-independent SCET UTC
 parsing; native qca/qge/qmi bit-mask semantics; the exclusive emission-angle

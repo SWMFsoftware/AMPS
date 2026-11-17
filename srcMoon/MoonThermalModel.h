@@ -86,6 +86,14 @@ class Column {
                               double visibleSolarDiscFraction,
                               double heliocentricDistanceAu) const;
 
+  // The SAME conduction/nonlinear energy solver with an already integrated
+  // direct absorbed flux [W m^-2]. Finite-disc forcing must integrate local
+  // incidence AND directional albedo over visible rays before entering this
+  // boundary; using an effective central cosine would change the albedo law.
+  // Legacy Advance computes its original scalar flux and delegates here.
+  bool AdvanceWithAbsorbedFlux(double timeStepS,double absorbedSolarFluxWm2,
+                               std::string* error);
+
  private:
   ColumnConfiguration configuration_;
   std::vector<double> layerDepthM_;

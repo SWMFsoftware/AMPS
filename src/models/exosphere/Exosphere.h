@@ -20,6 +20,8 @@
 #include "constants.h"
 #include "Exosphere_SurfaceSource.h"
 
+#include <cmath>
+
 #include "Exosphere.dfn"
 
 #ifdef _NO_SPICE_CALLS_
@@ -621,6 +623,25 @@ namespace Exosphere {
 
       extern double SourceRate[PIC::nTotalSpecies],maxLocalSourceRate[PIC::nTotalSpecies];
 
+      // Optional application geometry only: direct incident photon flux at
+      // one logical element divided by PhotonFlux_1AU [dimensionless]. The
+      // factor includes actual local incidence, joint terrain/occultation and
+      // actual point-to-Sun inverse-square dilution. It must NOT contain Bond
+      // albedo, particle population, cross section or a new PSD coefficient.
+      // NULL preserves the original radial-cosine source expression below.
+      // Applications freeze the callback's source-evaluation epoch over the
+      // same interval as their CDF/Poisson or integrated competing hazards;
+      // a fractional particle-departure scope is not a new rate epoch.
+      typedef double (*fRuntimePhotonFluxFactor)(int surfaceElement,
+                                                void *sphereDataPointer);
+      extern fRuntimePhotonFluxFactor RuntimePhotonFluxFactor;
+      // Recompute totals from this SAME production kernel, without inventory
+      // exchange, MPI reductions or RNG. Called only for the opt-in runtime
+      // hook so source/weight selection cannot read a stale preceding-step
+      // cache. Legacy totals retain their historical cached-array behavior.
+      double RefreshRuntimeProductionRates(int spec,int BoundaryElementType,
+                                           void *SphereDataPointer);
+
       //the object for distribution of injection positino on the planet's surface
       extern cSingleVariableDiscreteDistribution<int> SurfaceInjectionDistribution[PIC::nTotalSpecies];
       double GetSurfaceElementProductionRate(int nElement,int *spec);
@@ -629,6 +650,34 @@ namespace Exosphere {
 //      extern double CalculatedTotalSodiumSourceRate;
 
       inline double GetSurfaceElementProductionRate(int spec,int SurfaceElement,void *SphereDataPointer) {
+        if (RuntimePhotonFluxFactor!=NULL) {
+          if (spec<0 || spec>=PIC::nTotalSpecies || SphereDataPointer==NULL)
+            exit(__LINE__,__FILE__,"runtime PSD requires a valid species and allocated logical surface");
+          cInternalSphericalData *surface=static_cast<cInternalSphericalData*>(SphereDataPointer);
+          if (SurfaceElement<0 || SurfaceElement>=surface->GetTotalSurfaceElementsNumber())
+            exit(__LINE__,__FILE__,"runtime PSD logical surface element is out of range");
+          if (surface->SurfaceElementPopulation==NULL ||
+              surface->SurfaceElementPopulation[spec]==NULL)
+            exit(__LINE__,__FILE__,"runtime PSD requires allocated logical surface populations [atoms]");
+          const double population=surface->SurfaceElementPopulation[spec][SurfaceElement];
+          const double crossSection=PhotonStimulatedDesorption_CrossSection[spec];
+          const double photonFlux=PhotonStimulatedDesorption_PhotonFlux_1AU;
+          if (!std::isfinite(population) || population<0 ||
+              !std::isfinite(crossSection) || crossSection<0 ||
+              !std::isfinite(photonFlux) || photonFlux<0)
+            exit(__LINE__,__FILE__,"invalid runtime PSD population [atoms], effective cross section [m2], or 1-AU photon flux [m^-2 s^-1]");
+          // Zero stock/cross section/photon flux is exactly zero physical
+          // production. Do not trace thousands of empty/unsupported species
+          // elements merely to multiply their expensive geometry by zero.
+          if (population==0 || crossSection==0 || photonFlux==0) return 0;
+          const double illumination=RuntimePhotonFluxFactor(SurfaceElement,SphereDataPointer);
+          if (!std::isfinite(illumination) || illumination<0)
+            exit(__LINE__,__FILE__,"runtime PSD direct photon-flux factor must be finite and nonnegative; inspect terrain/occultation geometry and the explicit source-interval epoch");
+          const double rate=population*crossSection*photonFlux*illumination;
+          if (!std::isfinite(rate))
+            exit(__LINE__,__FILE__,"runtime PSD production overflows [atoms s^-1]; inspect stock, photon flux and point-to-Sun distance before reducing numerical resources");
+          return rate;
+        }
         double res=0.0,norm[3],sun[3],SurfaceElementPopulation;
 
         SurfaceElementPopulation=((cInternalSphericalData*)SphereDataPointer)->SurfaceElementPopulation[spec][SurfaceElement];
@@ -644,7 +693,11 @@ namespace Exosphere {
         return res;
       }
 
-      inline double GetTotalProductionRate(int spec,int BoundaryElementType,void *SphereDataPointer) {return SourceRate[spec];}
+      inline double GetTotalProductionRate(int spec,int BoundaryElementType,void *SphereDataPointer) {
+        if (RuntimePhotonFluxFactor!=NULL)
+          return RefreshRuntimeProductionRates(spec,BoundaryElementType,SphereDataPointer);
+        return SourceRate[spec];
+      }
 
       //energy distribution function of injected particles
       extern cSingleVariableDistribution<int> EnergyDistribution[PIC::nTotalSpecies];
@@ -1050,6 +1103,21 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*4.0E3;
         double *xSo,double *xBodyFixed,double *vSo,double *vBodyFixed,
         cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* &startNode);
     extern fPostProcessSurfaceInjection PostProcessSurfaceInjection;
+
+    // Optional passive finite-stock tracer callbacks. NULL is the exact normal
+    // path. They observe accepted physical atoms and must not consume RNG or
+    // change release rates, packet allocation, particle states or stock values.
+    // Begin is collective on identical logical reservoirs; Packet runs only on
+    // the final owner before transport; Deposit runs before particle deletion.
+    typedef void (*fFiniteReleaseBegin)(int species,int element,
+        double populationAtoms,double remainingAtoms,double totalHazardPerS,
+        double dtS,double thermalHazardPerS,double photonHazardPerS);
+    typedef void (*fFiniteReleasePacket)(int,int,long int,double);
+    typedef void (*fFiniteReleaseDeposit)(int,int,long int,double);
+    extern fFiniteReleaseBegin FiniteReleaseBegin;
+    extern fFiniteReleasePacket FiniteReleasePacket;
+    extern fFiniteReleaseDeposit FiniteReleaseDeposit;
+
 
     long int InjectionBoundaryModelLimited(void *SphereDataPointer);
     long int InjectionBoundaryModelLimited(int spec,void *SphereDataPointer);

@@ -1,5 +1,69 @@
 # `srcMoon` application-input examples
 
+## Optional M2 completion controls — 2026-11-16
+
+The maintained general examples preserve their declared point-Sun forcing
+unless an investigator explicitly opts into finite-disc terrain illumination.
+Copy a receipt before editing; use the native flat application grammar:
+
+```text
+illumination_terrain_solar_model = uniform-disc
+illumination_disc_radial_points = 4
+illumination_disc_azimuth_points = 16
+illumination_aberration_correction = NONE
+```
+
+The 4-by-16 grid is an explicit small wiring example, not a qualified science
+resolution. Radial points must be positive; azimuth points must be at least
+four and divisible by four. Refine both controls and establish the declared
+numerical criteria before scientific use. Point-Sun mode rejects supplied
+disc-grid controls rather than silently ignoring them. Disabled M2 preserves
+the reviewed baseline and cannot silently activate these new controls.
+
+The disc has uniform radiance under the existing declared opaque-Earth/no-
+atmosphere model. Terrain and Earth masks are applied jointly to individual
+rays, keeping any-disc occurrence, projected visible area and incident
+irradiance distinct. Irradiance uses the projected-disc/solid-angle Jacobian
+and each ray's positive incidence; thermal absorption additionally evaluates
+the existing directional Bond albedo for that ray. A finite ray grid cannot
+prove the absence of an arbitrarily small visible sliver. D02 comparison still
+requires authoritative timing/sampling/observer geometry and independent
+resolution/epoch evidence; current missing D02 metadata remain missing.
+
+`illumination_aberration_correction` accepts the explicit SPICE reception
+choices `NONE`, `LT`, `LT+S`, `CN`, or `CN+S`. Sun/Earth states are evaluated
+with `spkcpo_c` at the actual rotating body-fixed site and reception epoch.
+Applying a Moon-centre light-time/stellar correction and subsequently
+subtracting the site position is not equivalent for apparent geometry. The
+production helper uses SI metres externally, converts the observer position
+to SPICE kilometres, and returns vectors on MOON_ME_DE421 observer-epoch axes.
+Missing SPICE, invalid geometry, or kernel/frame errors return failure; no
+uncorrected fallback or partially updated vector is substituted.
+
+The optional `m2_formal_contract_file` supplies the separately reviewed formal
+I15/I19/I20 evidence contract. It remains `none` unless a real contract exists.
+Do not create one with assumed D02 epochs or a self-approved reference. The
+normal global runner preserves missing-predecessor/data/contract results as
+SKIPPED, even though their parser/native exporter code is implemented.
+
+I17 defaults to `diviner_eclipse_selection = training`. December requires
+`holdout`, a separately reviewed and committed `diviner_eclipse_freeze_file`,
+and explicitly declared independent December spin-up UTCs. The approved runner
+generates `diviner_eclipse_authorization_file` after validation; it is not a
+human-authored approval substitute. No actual interval, scientific threshold
+or phase/amplitude group is supplied by these example controls. See the
+[I17 README](../test/integration-tests/I17/README.md) for the immutable release
+contract and the unchanged June/December selection boundary.
+
+Enabled M2 also installs the optional PSD geometry callback. Its source-BEGIN
+cache uses joint direct-photon incidence and actual point-to-Sun inverse square
+without thermal albedo. It keeps the existing stock, cross section, photon
+normalization and finite-inventory split law. The NULL-default core branch
+retains baseline behavior. See
+[the PSD contract](../test/PSD_ILLUMINATION_CONTRACT.md) and
+[RUN.md](../RUN.md) for native checks and the full one-hour development command.
+These additions do not close formal M1/M2 or qualify observations.
+
 ## Tenishev et al. (2013) Case-1 sodium demonstration
 
 `tenishev2013_case1.in` is the exact paper-specific production receipt used by
@@ -146,6 +210,18 @@ coefficient silently as the historical linear-speed blend. Ar selects
 constant-unity sticking and a declared full-thermal limiting law. He/Ne remain
 outside M2 and are not assigned unsupported surface parameters here.
 
+Selecting `surface_temperature_mode = diviner-map` requires the explicit
+`diviner_map_kinetic_interpretation = isothermal-grey`, declared in the M2
+examples even while they select predictive `thermal-model`. Native D03 map
+temperatures are bolometric brightness [K]. The approved resolved isothermal
+grey facet converts them to kinetic [K] through `T_kin=T_bol/epsilon^(1/4)`;
+`epsilon` is the configured `thermal_infrared_emissivity` in (0,1]. A missing
+declaration is rejected; real archive gaps remain unavailable. This is a named
+physical approximation, not recovery of subfacet anisothermality or a spectral
+emissivity law. I16 retains kinetic and forward brightness separately and
+scores only the latter against native brightness. See the
+[boundary contract](../test/DIVINER_GREY_BOUNDARY_CONTRACT.md).
+
 The two `diviner_eclipse_*` settings are a paired I17 evidence receipt. They
 remain `none` in the general `lola_surface.in` example. The I17 runner derives
 a preserved copy that names the reproducibly processed PDS4 RDR history and
@@ -290,3 +366,25 @@ routing the orbit-enabled second-order mover through the production moving-
 surface callback. That is implementation evidence only: I14 remains
 `SKIPPED / NOT QUALIFIED` until the FULL I11--I13 predecessor chain passes and
 the linked D01 criteria are executed with preserved artifacts.
+
+`m2_development.in` is the complete commented template for the approved short
+Na/Ar numerical-verification campaign. Use it with the global test runner's
+`--phase m2-development --mpi-ranks 8 --m2-input` arguments, not as a normal
+science-run control deck. The optional `m2_verification_*` group declares
+common-clock/dt/weight references, initial cohorts and source integral accuracy.
+The launcher derives explicit per-case receipts, relocates output meshes,
+suppresses restart/checkpoint writes and preserves every stage's CSV/PNG/EPS.
+See [M2_NUMERICAL_PROTOCOL.md](../test/M2_NUMERICAL_PROTOCOL.md) and
+[RUN.md](../RUN.md#m2-supporting-verification-before-m1-closure). Short supporting
+checks do not constitute M1/M2 qualification or observational validation.
+# Initial M3 atomic rate-service example
+
+`m3_atomic_rates.in` is a complete `.in` receipt using the bounded spherical
+regression geometry and an explicitly prescribed Maxwellian bath. Its 10 eV
+and 2.5e6 m^-3 values are analytical fixture inputs, not lunar measurements or
+production defaults. `electron_impact_coefficients_file` selects the actual
+native Voronov cfit.dat; native limits apply without extrapolation. The four
+new fields configure the rate service only. They do not enable the PIC
+particle executor or qualify Na/He/Ne/Ar neutral-to-ion transfers. The dedicated
+M3 supporting runner uses this receipt for eight-species rate-callback checks;
+legacy examples omit the group and retain their prior behavior.

@@ -537,8 +537,46 @@ void Moon::AntiSolarDirectionColumnMap::Print(int DataOutputFileNumber) {
 //electron impact ionization probability 
 
 double Moon::ElectronImpactIonizationRate(PIC::ParticleBuffer::byte* ParticleData,int& ResultSpeciesIndex,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
-  int spec=PIC::ParticleBuffer::GetI(ParticleData);
+  (void)node; // Prescribed bath is spatially uniform, not a measured driver.
+  return ElectronImpactIonizationRateForSpecies(
+      PIC::ParticleBuffer::GetI(ParticleData),ResultSpeciesIndex);
+}
+
+double Moon::ElectronImpactIonizationRateForSpecies(int spec,int& ResultSpeciesIndex) {
   double rate,weight,sigma,res=0.0;
+
+  if (Runtime::HasConfiguration() &&
+      Runtime::GetConfiguration().electronImpactRateModel=="maxwellian-voronov") {
+    // This is the SAME scalar rate callback used by AMPS when explicitly
+    // wired. It changes no particle, draws no random number, and never
+    // substitutes solar-wind ion moments for the prescribed electron bath.
+    // Full product transfers remain a separate, currently guarded capability.
+    using Atom=Species::ElectronImpact::NeutralSpecies;
+    Atom atom=Atom::Na;
+    ResultSpeciesIndex=-1;
+    if (spec<0) return 0.0; // Negative generated indices denote absent species.
+    if (spec==_NA_SPEC_) {atom=Atom::Na;ResultSpeciesIndex=_NA_PLUS_SPEC_;}
+    else if (spec==_HE_SPEC_) {atom=Atom::He;ResultSpeciesIndex=_HE_PLUS_SPEC_;}
+    else if (spec==_NE_SPEC_) {atom=Atom::Ne;ResultSpeciesIndex=_NE_PLUS_SPEC_;}
+    else if (spec==_AR_SPEC_) {atom=Atom::Ar;ResultSpeciesIndex=_AR_PLUS_SPEC_;}
+    else return 0.0; // Registry covers these four neutral atoms only.
+    const auto* table=Runtime::GetElectronImpactTable();
+    std::string error;
+    double reactionRateS=0.0;
+    const auto& configuration=Runtime::GetConfiguration();
+    if (table==nullptr || !table->IonizationRateS(atom,
+          configuration.electronTemperatureEv,configuration.electronDensityM3,
+          &reactionRateS,&error)) {
+      const std::string message="configured Maxwellian electron rate failed: "+error;
+      exit(__LINE__,__FILE__,message.c_str());
+    }
+    if (reactionRateS>0.0 && ResultSpeciesIndex<0)
+      exit(__LINE__,__FILE__,
+          "Maxwellian ionization cannot silently discard a missing ion: "
+          "compile its product species and qualify product transfer/weights "
+          "before enabling particle reactions; scalar rate tests are separate");
+    return reactionRateS;
+  }
 
 //  K Fujii and S K Srivastava 1995
 //J. Phys. B: At. Mol. Opt. Phys. 28 L559

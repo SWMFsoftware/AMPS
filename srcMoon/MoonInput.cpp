@@ -34,6 +34,7 @@ namespace fs = std::filesystem;
 // thereafter by the production initialization path.
 bool gInstalled = false;
 Configuration gConfiguration;
+Species::ElectronImpact::MaxwellianVoronovTable gElectronImpactTable;
 
 struct Setting {
   // Preserve the unparsed value and its complete source location.  Generic
@@ -561,6 +562,22 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
       "simple_cosine_day_amplitude_k", "simple_cosine_exponent",
       "particle_iteration_limit", "particle_sample_length_steps",
       "particle_maximum_sample_length_steps"};
+  const char* verificationKeys[] = {
+      "m2_verification_case", "m2_verification_profile",
+      "m2_verification_coarse_steps", "m2_verification_dt_divisor",
+      "m2_verification_weight_divisor", "m2_verification_horizon_s",
+      "m2_verification_coarse_timestep_s", "m2_verification_na_weight_atoms",
+      "m2_verification_ar_weight_atoms", "m2_verification_cohort_packets",
+      "m2_verification_surface_elements", "m2_verification_source_integral_tolerance"};
+  const char* completionKeys[]={"illumination_terrain_solar_model",
+      "illumination_disc_radial_points","illumination_disc_azimuth_points",
+      "m2_formal_contract_file","diviner_eclipse_selection",
+      "diviner_eclipse_freeze_file","m2_illumination_queries_file",
+      "illumination_aberration_correction","m2_polar_queries_file",
+      "diviner_eclipse_authorization_file","diviner_map_kinetic_interpretation",
+      "thermal_initialization_mode","m2_verification_record_initial_thermal_state",
+      "electron_impact_rate_model","electron_impact_coefficients_file",
+      "electron_density_m3","electron_temperature_ev"};
   for (const char* key : required) {
     if (settings.find(key) == settings.end()) {
       *error = At(inputFile, 0,
@@ -575,7 +592,11 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
             std::end(m2Required) &&
         std::find(std::begin(sodiumExosphereRequired),
                   std::end(sodiumExosphereRequired), item.first) ==
-            std::end(sodiumExosphereRequired)) {
+            std::end(sodiumExosphereRequired) &&
+        std::find(std::begin(verificationKeys),std::end(verificationKeys),
+                  item.first)==std::end(verificationKeys) &&
+        std::find(std::begin(completionKeys),std::end(completionKeys),
+                  item.first)==std::end(completionKeys)) {
       *error = At(item.second,
                   "unrecognized application: moon setting '" +
                   item.first + "'");
@@ -587,6 +608,212 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
   // safely retain their previous object if any validation below fails.
   Configuration candidate;
   candidate.inputFile = inputFile.string();
+  if (settings.count("electron_impact_rate_model")) {
+    candidate.electronImpactRateModel=Lower(Unquote(Trim(
+        settings["electron_impact_rate_model"].value)));
+  }
+  if (candidate.electronImpactRateModel!="legacy" &&
+      candidate.electronImpactRateModel!="maxwellian-voronov") {
+    *error=At(settings["electron_impact_rate_model"],
+        "electron_impact_rate_model must be legacy or maxwellian-voronov");
+    return false;
+  }
+  const char* electronKeys[]={"electron_impact_coefficients_file",
+      "electron_density_m3","electron_temperature_ev"};
+  for (const char* key : electronKeys) {
+    if (candidate.electronImpactRateModel=="legacy" && settings.count(key)) {
+      *error=At(settings[key],std::string(key)+
+          " requires electron_impact_rate_model=maxwellian-voronov");
+      return false;
+    }
+    if (candidate.electronImpactRateModel=="maxwellian-voronov" &&
+        !settings.count(key)) {
+      *error=At(inputFile,0,std::string("Maxwellian rate service requires ")+key);
+      return false;
+    }
+  }
+  if (candidate.electronImpactRateModel=="maxwellian-voronov") {
+    fs::path coefficients;
+    if (!AbsolutePath(settings["electron_impact_coefficients_file"],
+          "electron_impact_coefficients_file",&coefficients,error)) return false;
+    if (!fs::is_regular_file(coefficients)) {
+      *error=At(settings["electron_impact_coefficients_file"],
+          "native Voronov coefficient file is unavailable");
+      return false;
+    }
+    candidate.electronImpactCoefficientsFile=coefficients.string();
+    if (!ParseNonnegativeFinite(settings["electron_density_m3"].value,
+          &candidate.electronDensityM3) ||
+        !ParsePositiveFinite(settings["electron_temperature_ev"].value,
+          &candidate.electronTemperatureEv)) {
+      *error=At(inputFile,0,
+          "electron_density_m3 must be finite/nonnegative and "
+          "electron_temperature_ev finite/positive (k_B*T_e in eV)");
+      return false;
+    }
+    // The native table/domain is checked again during immutable installation.
+    // Parsing performs only value/path checks and never mutates global tables.
+  }
+  if (settings.count("thermal_initialization_mode")) {
+    candidate.thermalInitializationMode=Lower(Unquote(Trim(
+        settings["thermal_initialization_mode"].value)));
+    if (candidate.thermalInitializationMode!="declared-uniform" &&
+        candidate.thermalInitializationMode!="periodic-spinup") {
+      *error=At(settings["thermal_initialization_mode"],
+          "thermal_initialization_mode must be declared-uniform or periodic-spinup");
+      return false;
+    }
+  }
+  // This is a named physical approximation, not a default conversion. Reject
+  // unknown supplied values even if another thermal mode is selected, so a
+  // misspelled science control can never be silently ignored.
+  if (settings.count("diviner_map_kinetic_interpretation")) {
+    candidate.divinerMapKineticInterpretation=Lower(Unquote(Trim(
+        settings["diviner_map_kinetic_interpretation"].value)));
+    if (candidate.divinerMapKineticInterpretation!="isothermal-grey") {
+      *error=At(settings["diviner_map_kinetic_interpretation"],
+          "diviner_map_kinetic_interpretation must be isothermal-grey");
+      return false;
+    }
+  }
+  // Optional completion controls are transactional with the full receipt.
+  // Paths are resolved relative to this .in, exactly like the mandatory data
+  // paths. The Python formal runner additionally validates JSON provenance;
+  // this parser does not turn a file's existence into scientific approval.
+  for (const auto& entry:std::vector<std::pair<const char*,std::string*>>{
+      {"m2_formal_contract_file",&candidate.m2FormalContractFile},
+      {"m2_illumination_queries_file",&candidate.m2IlluminationQueriesFile},
+      {"m2_polar_queries_file",&candidate.m2PolarQueriesFile},
+      {"diviner_eclipse_freeze_file",&candidate.divinerEclipseFreezeFile},
+      {"diviner_eclipse_authorization_file",&candidate.divinerEclipseAuthorizationFile}}) {
+    if (!settings.count(entry.first)) continue;
+    const std::string value=Unquote(Trim(settings[entry.first].value));
+    if (Lower(value)=="none") continue;
+    if (value.empty()) { *error=std::string(entry.first)+" cannot be empty";return false; }
+    fs::path path(value);
+    if (path.is_relative()) path=inputFile.parent_path()/path;
+    *entry.second=fs::absolute(path).lexically_normal().string();
+  }
+  if (settings.count("illumination_aberration_correction")) {
+    candidate.illuminationAberrationCorrection=Unquote(Trim(settings["illumination_aberration_correction"].value));
+    if (candidate.illuminationAberrationCorrection!="NONE" &&
+        candidate.illuminationAberrationCorrection!="LT" &&
+        candidate.illuminationAberrationCorrection!="LT+S" &&
+        candidate.illuminationAberrationCorrection!="CN" &&
+        candidate.illuminationAberrationCorrection!="CN+S") {
+      *error="unsupported illumination_aberration_correction (NONE/LT/LT+S/CN/CN+S)";return false;
+    }
+  }
+  if (settings.count("diviner_eclipse_selection"))
+    candidate.divinerEclipseSelection=Lower(Unquote(Trim(settings["diviner_eclipse_selection"].value)));
+  if (candidate.divinerEclipseSelection!="training" && candidate.divinerEclipseSelection!="holdout") {
+    *error="diviner_eclipse_selection must be training or holdout";return false;
+  }
+  if (candidate.divinerEclipseSelection=="holdout" && candidate.divinerEclipseFreezeFile.empty()) {
+    *error="holdout selection requires an explicit reviewed diviner_eclipse_freeze_file";return false;
+  }
+  if (settings.count("illumination_terrain_solar_model"))
+    candidate.illuminationTerrainSolarModel=Lower(Unquote(Trim(settings["illumination_terrain_solar_model"].value)));
+  if (candidate.illuminationTerrainSolarModel!="point-sun" && candidate.illuminationTerrainSolarModel!="uniform-disc") {
+    *error="illumination_terrain_solar_model must be point-sun or uniform-disc";return false;
+  }
+  const bool discKeys=settings.count("illumination_disc_radial_points") ||
+      settings.count("illumination_disc_azimuth_points");
+  if (candidate.illuminationTerrainSolarModel=="uniform-disc") {
+    if (!settings.count("illumination_disc_radial_points") ||
+        !settings.count("illumination_disc_azimuth_points") ||
+        !ParsePositiveInteger(settings["illumination_disc_radial_points"].value,&candidate.illuminationDiscRadialPoints) ||
+        !ParsePositiveInteger(settings["illumination_disc_azimuth_points"].value,&candidate.illuminationDiscAzimuthPoints) ||
+        candidate.illuminationDiscAzimuthPoints<4 || candidate.illuminationDiscAzimuthPoints%4) {
+      *error="uniform-disc requires positive radial points and azimuth points >=4 divisible by four";return false;
+    }
+  } else if (discKeys) {
+    *error="point-sun mode cannot silently ignore finite-disc grid controls";return false;
+  }
+  // Optional verification is fail-closed and does not add defaults to legacy
+  // receipts. Only the explicit case key activates the complete control group.
+  if (settings.count("m2_verification_case")) {
+    candidate.m2VerificationCase=Lower(Unquote(Trim(settings["m2_verification_case"].value)));
+    if (candidate.m2VerificationCase!="none" &&
+        candidate.m2VerificationCase!="source-fed" && candidate.m2VerificationCase!="cohort" &&
+        candidate.m2VerificationCase!="normalization") {
+      *error="m2_verification_case must be none, source-fed, cohort, or normalization"; return false;
+    }
+  }
+  if (candidate.m2VerificationCase=="none") {
+    if (settings.count("m2_verification_record_initial_thermal_state")) {
+      *error="initial thermal-state recording requires the complete active M2 verification group";
+      return false;
+    }
+    for (const char* key:verificationKeys) if (std::string(key)!="m2_verification_case" && settings.count(key)) {
+      *error="inactive M2 verification cannot silently ignore supplied numerical controls";return false;
+    }
+  }
+  if (candidate.m2VerificationCase!="none") {
+    if (settings.count("m2_verification_record_initial_thermal_state") &&
+        !ParseBoolean(settings["m2_verification_record_initial_thermal_state"].value,
+                      &candidate.m2VerificationRecordInitialThermalState)) {
+      *error=At(settings["m2_verification_record_initial_thermal_state"],
+          "m2_verification_record_initial_thermal_state must be true or false");
+      return false;
+    }
+    for (const char* key:verificationKeys) if (!settings.count(key)) {
+      *error=std::string("enabled M2 verification is missing ")+key; return false;
+    }
+    candidate.m2VerificationProfile=Lower(Unquote(Trim(settings["m2_verification_profile"].value)));
+    if (candidate.m2VerificationProfile!="development" && candidate.m2VerificationProfile!="cluster") {
+      *error="M2 verification profile must be development or cluster"; return false;
+    }
+    if (!ParsePositiveInteger(settings["m2_verification_coarse_steps"].value,&candidate.m2VerificationCoarseSteps) ||
+        candidate.m2VerificationCoarseSteps%8!=0 ||
+        !ParsePositiveInteger(settings["m2_verification_dt_divisor"].value,&candidate.m2VerificationDtDivisor) ||
+        !ParsePositiveInteger(settings["m2_verification_weight_divisor"].value,&candidate.m2VerificationWeightDivisor)) {
+      *error="M2 coarse steps must be a positive multiple of eight; divisors positive integers";return false;
+    }
+    for (int divisor:{candidate.m2VerificationDtDivisor,candidate.m2VerificationWeightDivisor})
+      if (divisor!=1 && divisor!=2 && divisor!=4) {
+        *error="M2 dt/weight divisors must be 1, 2, or 4";return false;
+      }
+    double* values[]={&candidate.m2VerificationCoarseDtS,&candidate.m2VerificationNaWeightAtoms,
+                      &candidate.m2VerificationArWeightAtoms};
+    const char* names[]={"m2_verification_coarse_timestep_s","m2_verification_na_weight_atoms",
+                         "m2_verification_ar_weight_atoms"};
+    for (int k=0;k<3;++k) if (Lower(Unquote(Trim(settings[names[k]].value)))!="auto" &&
+        !ParsePositiveFinite(settings[names[k]].value,values[k])) {
+      *error=std::string(names[k])+" must be auto or positive finite SI value";return false;
+    }
+    const std::string horizon=Lower(Unquote(Trim(settings["m2_verification_horizon_s"].value)));
+    if (horizon!="short" && !ParsePositiveFinite(horizon,&candidate.m2VerificationDurationS)) {
+      *error="M2 horizon must be short or positive seconds";return false;
+    }
+    if ((candidate.m2VerificationProfile=="development")!=(horizon=="short")) {
+      *error="development requires the short horizon; cluster requires explicit positive seconds";return false;
+    }
+    if (!ParsePositiveFinite(settings["m2_verification_cohort_packets"].value,
+                             &candidate.m2VerificationCohortPackets)) {
+      *error="M2 cohort packets must be positive";return false;
+    }
+    if (!ParsePositiveFinite(settings["m2_verification_source_integral_tolerance"].value,
+                             &candidate.m2VerificationSourceIntegralTolerance) ||
+        candidate.m2VerificationSourceIntegralTolerance>1e-4) {
+      *error="source-integral tolerance must be positive and <=1e-4 (one percent of numerical budget)";return false;
+    }
+    std::vector<double> elements;
+    if (!ParseFiniteList(settings["m2_verification_surface_elements"].value,&elements) ||
+        elements.empty() || elements.size()>48) {
+      *error="M2 verification requires 1..48 explicit logical surface elements";return false;
+    }
+    for (double e:elements) {
+      if (e<0 || e>std::numeric_limits<int>::max() || std::floor(e)!=e) {
+        *error="M2 surface elements must be nonnegative integers";return false;
+      }
+      // Different native sites may share coarse logical model support. Keep
+      // their cohort labels and record that correlation rather than inventing
+      // independent facets or silently replacing observational locations.
+      candidate.m2VerificationElements.push_back(static_cast<int>(e));
+    }
+  }
+
   const std::string m2Mode=Lower(Unquote(Trim(
       settings["m2_environment"].value)));
   if (m2Mode!="disabled" && m2Mode!="enabled") {
@@ -595,6 +822,17 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
     return false;
   }
   candidate.m2EnvironmentEnabled=m2Mode=="enabled";
+  if (!candidate.m2EnvironmentEnabled &&
+      (candidate.illuminationTerrainSolarModel!="point-sun" ||
+       candidate.divinerEclipseSelection!="training" ||
+       !candidate.m2FormalContractFile.empty() || !candidate.divinerEclipseFreezeFile.empty() ||
+       !candidate.divinerEclipseAuthorizationFile.empty() ||
+       !candidate.divinerMapKineticInterpretation.empty() ||
+       settings.count("thermal_initialization_mode") ||
+       !candidate.m2IlluminationQueriesFile.empty() || !candidate.m2PolarQueriesFile.empty() ||
+       candidate.illuminationAberrationCorrection!="NONE")) {
+    *error="enabled M2 completion controls require m2_environment=enabled";return false;
+  }
   if (candidate.m2EnvironmentEnabled) {
     for (const char* key:m2Required) if (settings.find(key)==settings.end()) {
       *error=At(inputFile,0,
@@ -1039,6 +1277,20 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
       *error=At(settings["surface_temperature_mode"],
           "surface_temperature_mode must be simple-cosine, diviner-map, or "
           "thermal-model");
+      return false;
+    }
+    if (candidate.surfaceTemperatureMode=="diviner-map" &&
+        candidate.divinerMapKineticInterpretation.empty()) {
+      *error=At(settings["surface_temperature_mode"],
+          "diviner-map requires explicit diviner_map_kinetic_interpretation "
+          "= isothermal-grey: native Diviner brightness temperature is not "
+          "the kinetic surface temperature");
+      return false;
+    }
+    if (candidate.thermalInitializationMode=="periodic-spinup" &&
+        candidate.surfaceTemperatureMode!="thermal-model") {
+      *error=At(settings["surface_temperature_mode"],
+          "periodic-spinup initialization requires surface_temperature_mode = thermal-model");
       return false;
     }
     const char* positiveM2Keys[]={
@@ -1633,13 +1885,42 @@ bool InstallConfiguration(const Configuration& configuration,
     *error = "srcMoon runtime configuration was already installed";
     return false;
   }
+  // Validate a complete local table BEFORE publishing either configuration or
+  // coefficients. A failed install can be corrected/retried; callbacks never
+  // observe half-loaded data. This also protects programmatic callers which
+  // bypass the CLI parser, not just syntactically valid .in receipts.
+  Species::ElectronImpact::MaxwellianVoronovTable candidateTable;
+  if (configuration.electronImpactRateModel=="maxwellian-voronov") {
+    if (!candidateTable.LoadNativeTable(
+          configuration.electronImpactCoefficientsFile,error)) return false;
+    using Atom=Species::ElectronImpact::NeutralSpecies;
+    for (Atom atom : {Atom::He,Atom::Na,Atom::Ne,Atom::Ar}) {
+      double rate=0.0;
+      if (!candidateTable.IonizationRateS(atom,
+            configuration.electronTemperatureEv,configuration.electronDensityM3,
+            &rate,error)) return false;
+    }
+  }
+  else if (configuration.electronImpactRateModel!="legacy" ||
+           !configuration.electronImpactCoefficientsFile.empty() ||
+           configuration.electronDensityM3!=0.0 ||
+           configuration.electronTemperatureEv!=0.0) {
+    *error="legacy electron rate mode cannot carry active Maxwellian settings";
+    return false;
+  }
   gConfiguration = configuration;
+  gElectronImpactTable = std::move(candidateTable);
   gInstalled = true;
   error->clear();
   return true;
 }
 
 bool HasConfiguration() { return gInstalled; }
+
+const Species::ElectronImpact::MaxwellianVoronovTable* GetElectronImpactTable() {
+  return gInstalled && gConfiguration.electronImpactRateModel=="maxwellian-voronov"
+      ? &gElectronImpactTable : nullptr;
+}
 
 const Configuration& GetConfiguration() {
   // The no-argument regression predates application input.  Preserve it by

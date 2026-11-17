@@ -18,6 +18,7 @@
 #include "SingleVariableDiscreteDistribution.h"
 #include "Exosphere_SurfaceSource.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <string>
@@ -85,6 +86,8 @@ Exosphere::SourceProcesses::fPostProcessSurfaceInjection
     Exosphere::SourceProcesses::PostProcessSurfaceInjection=NULL;
 
 //the total source rate values for specific source processes
+Exosphere::SourceProcesses::PhotonStimulatedDesorption::fRuntimePhotonFluxFactor
+    Exosphere::SourceProcesses::PhotonStimulatedDesorption::RuntimePhotonFluxFactor=NULL;
 double Exosphere::SourceProcesses::PhotonStimulatedDesorption::SourceRate[PIC::nTotalSpecies],Exosphere::SourceProcesses::PhotonStimulatedDesorption::maxLocalSourceRate[PIC::nTotalSpecies];
 double Exosphere::SourceProcesses::ThermalDesorption::SourceRate[PIC::nTotalSpecies],Exosphere::SourceProcesses::ThermalDesorption::maxLocalSourceRate[PIC::nTotalSpecies];
 double Exosphere::SourceProcesses::SolarWindSputtering::SourceRate[PIC::nTotalSpecies],Exosphere::SourceProcesses::SolarWindSputtering::maxLocalSourceRate[PIC::nTotalSpecies];
@@ -2062,6 +2065,41 @@ void Exosphere::Sampling::OutputDataFile::PrintData(FILE* fout,int DataSetNumber
 
 
 /*--------------------------------- Source Processes: BEGIN  --------------------------------------*/
+double Exosphere::SourceProcesses::PhotonStimulatedDesorption::RefreshRuntimeProductionRates(
+    int spec,int boundaryType,void *sphereDataPointer) {
+  if (RuntimePhotonFluxFactor==NULL) return SourceRate[spec];
+  if (spec<0 || spec>=PIC::nTotalSpecies || sphereDataPointer==NULL ||
+      boundaryType!=_INTERNAL_BOUNDARY_TYPE_SPHERE_)
+    exit(__LINE__,__FILE__,"runtime PSD total requires a valid species and logical spherical inventory surface");
+  auto *sphere=static_cast<cInternalSphericalData*>(sphereDataPointer);
+  const long int count=sphere->GetTotalSurfaceElementsNumber();
+  if (count<=0 || count>std::numeric_limits<int>::max())
+    exit(__LINE__,__FILE__,"runtime PSD element count is unsupported; reduce logical-surface resolution before rerunning");
+  if (sphere->SurfaceElementArea==NULL)
+    exit(__LINE__,__FILE__,"runtime PSD total requires allocated logical surface areas [m2]");
+  double total=0,maximumPerArea=0;
+  for (int element=0;element<count;++element) {
+    // This updates rate diagnostics only. Calling ExchangeSurfaceAreaDensity
+    // here would also mutate populations and clear pending fluxes, duplicating
+    // stock transfers. No collective is needed: the logical reservoir is
+    // already replicated, and each rank must obtain the same source total.
+    const double rate=GetSurfaceElementProductionRate(spec,element,sphere);
+    const double area=sphere->SurfaceElementArea[element];
+    if (!std::isfinite(area) || area<=0 || !std::isfinite(rate) || rate<0)
+      exit(__LINE__,__FILE__,"runtime PSD total encountered nonphysical area [m2] or production [atoms s^-1]");
+    const double perArea=rate/area;
+    if (!std::isfinite(perArea))
+      exit(__LINE__,__FILE__,"runtime PSD per-area rate overflows [atoms m^-2 s^-1]");
+    total+=rate;maximumPerArea=std::max(maximumPerArea,perArea);
+    if (sphere->ElementSourceRate!=NULL)
+      sphere->ElementSourceRate[spec][element].PhotoStimulatedDesorptionFlux=perArea;
+  }
+  if (!std::isfinite(total))
+    exit(__LINE__,__FILE__,"runtime PSD total overflows [atoms s^-1]; inspect physical stock and photon normalization");
+  SourceRate[spec]=total;maxLocalSourceRate[spec]=maximumPerArea;
+  return total;
+}
+
 double Exosphere::SourceProcesses::totalProductionRate(int spec,int BoundaryElementType,void *BoundaryElement) {
   double res=0.0;
 
@@ -2628,6 +2666,8 @@ int Exosphere::SurfaceInteraction::ParticleSurfaceInteraction_SurfaceAccomodatio
     el=Sphere->GetLocalSurfaceElementNumber(nZenithElement,nAzimuthalElement);
 
     Sphere->SurfaceElementAdsorptionFluxDOWN[spec][el]+=ReemissionParticleFraction*ParticleWeight;
+    if (SourceProcesses::FiniteReleaseDeposit!=nullptr && ReemissionParticleFraction>0.0)
+      SourceProcesses::FiniteReleaseDeposit(spec,el,ptr,ReemissionParticleFraction*ParticleWeight);
     if (ReemissionParticleFraction>0.0)
       PIC::ParticleEvents::Record(PIC::ParticleEvents::SurfaceDeposit,spec,
           ReemissionParticleFraction*ParticleWeight,el);

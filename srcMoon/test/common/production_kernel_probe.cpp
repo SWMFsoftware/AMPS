@@ -15,6 +15,7 @@
 #include <iomanip>
 #include <limits>
 #include <numeric>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,7 @@
 #include "MoonSurfaceTemperature.h"
 #include "MoonDivinerObservation.h"
 #include "MoonThermalModel.h"
+#include "MoonPolarDiagnostics.h"
 #include "FiniteSurfaceRelease.h"
 #include "species/Argon.h"
 #include "species/SodiumCase1.h"
@@ -64,6 +66,28 @@ int report_string(const char *name, const std::string& actual,
   std::printf("%s %s actual=%s expected=%s\n",
       passed ? "PASS" : "FAIL",name,actual.c_str(),expected);
   return passed ? 0 : 1;
+}
+
+bool print_furnished_spice_dependencies() {
+#ifdef _NO_SPICE_CALLS_
+  return false;
+#else
+  // Shared U10/U11 evidence adapter: expose only files CSPICE actually loaded.
+  // The common Python runner hashes these exact bytes without assuming the
+  // configured kernel root or borrowing a different test's dependency list.
+  SpiceInt count=0;ktotal_c("ALL",&count);
+  if (count<=0) return false;
+  std::printf("DEPENDENCY_SPICE_COUNT %d\n",static_cast<int>(count));
+  for (SpiceInt index=0;index<count;++index) {
+    SpiceChar path[4096],kind[128],source[4096];
+    SpiceInt handle;SpiceBoolean found;
+    kdata_c(index,"ALL",sizeof(path),sizeof(kind),sizeof(source),
+        path,kind,source,&handle,&found);
+    if (!found) return false;
+    std::printf("DEPENDENCY_SPICE_FILE %s\n",path);
+  }
+  return true;
+#endif
 }
 
 int sticking() {
@@ -326,6 +350,151 @@ int temperature() {
   return failures == 0 ? 0 : 1;
 }
 
+// Geometry-only test adapter for the OPTIONAL shared-core PSD callback. It
+// uses the very same production finite-disc/BVH service as lunar irradiance;
+// it does not reproduce the population/cross-section/photon source formula.
+Moon::SurfaceEnvironment::SolarDiscRequest psdDiscRequest;
+const Moon::SurfaceEnvironment::TerrainRayTracer* psdTerrain=nullptr;
+long psdGeometryCalls=0;
+bool psdInvalidFactor=false;
+double psd_photon_factor(int,void*) {
+  ++psdGeometryCalls;
+  if (psdInvalidFactor) return std::numeric_limits<double>::quiet_NaN();
+  Moon::SurfaceEnvironment::SolarDiscSample sample;
+  std::string error;
+  if (!Moon::SurfaceEnvironment::EvaluateSolarDisc(psdTerrain,psdDiscRequest,
+          &sample,&error)) {
+    std::fprintf(stderr,"ERROR psd_fixture_geometry %s\n",error.c_str());
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  const auto& s=psdDiscRequest.pointToSunM;
+  const double distanceAU=std::hypot(s[0],s[1],s[2])/_AU_;
+  return sample.projectedIncidence/(distanceAU*distanceAU);
+}
+
+int psd_illumination(bool invalidFactor=false) {
+  // The fixture changes geometry and physical stock only; it NEVER patches
+  // compiled species cross sections or photon flux. A build without Na PSD
+  // cannot verify nonzero PSD, so reports unavailable rather than a PASS.
+  namespace PSD=Exosphere::SourceProcesses::PhotonStimulatedDesorption;
+  const int species=_NA_SPEC_;
+  if (species<0 || species>=PIC::nTotalSpecies ||
+      !(PSD::PhotonStimulatedDesorption_CrossSection[species]>0) ||
+      !(PSD::PhotonStimulatedDesorption_PhotonFlux_1AU>0)) {
+    std::fprintf(stderr,"SKIPPED psd_illumination requires compiled positive Na PSD coefficients\n");
+    return 77;
+  }
+  cInternalSphericalData::SetGeneralSurfaceMeshParameters(2,4);
+  auto* surface=new cInternalSphericalData;
+  double origin[3]={0,0,0};
+  surface->SetSphereGeometricalParameters(origin,1.0);
+  surface->Allocate<cInternalSphericalData>(PIC::nTotalSpecies,
+      surface->GetTotalSurfaceElementsNumber(),_EXOSPHERE__SOURCE_MAX_ID_VALUE_,surface);
+  const auto savedHook=PSD::RuntimePhotonFluxFactor;
+  const double savedTotal=PSD::SourceRate[species],savedMax=PSD::maxLocalSourceRate[species];
+  const double savedDistance=Exosphere::xObjectRadial;
+  double savedSun[3];std::memcpy(savedSun,Exosphere::OrbitalMotion::SunDirection_IAU_OBJECT,sizeof(savedSun));
+  const double stock=64.0;
+  surface->SurfaceElementPopulation[species][0]=stock;
+  PSD::RuntimePhotonFluxFactor=nullptr;
+  Exosphere::xObjectRadial=_AU_;
+  double cosine=0;
+  for (int i=0;i<3;++i) {
+    const double n=surface->SurfaceElementExternalNormal[0].norm[i];
+    Exosphere::OrbitalMotion::SunDirection_IAU_OBJECT[i]=n;cosine+=n*n;
+  }
+  int failures=0;
+  const double full=stock*PSD::PhotonStimulatedDesorption_CrossSection[species]*
+      PSD::PhotonStimulatedDesorption_PhotonFlux_1AU;
+  // NULL dispatch retains both historical arithmetic and cached-total policy.
+  double legacy=cosine;
+  legacy*=cosine>0 ? stock*PSD::PhotonStimulatedDesorption_CrossSection[species]*
+      PSD::PhotonStimulatedDesorption_PhotonFlux_1AU*std::pow(_AU_/Exosphere::xObjectRadial,2):0;
+  failures+=report("psd_null_legacy_expression",PSD::GetSurfaceElementProductionRate(species,0,surface),legacy,0);
+  PSD::SourceRate[species]=123;
+  failures+=report("psd_null_legacy_cached_total",PSD::GetTotalProductionRate(species,
+      _INTERNAL_BOUNDARY_TYPE_SPHERE_,surface),123,0);
+
+  psdDiscRequest=Moon::SurfaceEnvironment::SolarDiscRequest{};
+  psdDiscRequest.pointToSunM={{0,0,_AU_}};
+  psdDiscRequest.solarRadiusM=.01*_AU_;
+  psdDiscRequest.rayOriginOffsetM=1e-6;
+  psdDiscRequest.radialPoints=32;psdDiscRequest.azimuthPoints=128;
+  psdTerrain=nullptr;psdGeometryCalls=0;psdInvalidFactor=invalidFactor;
+  PSD::RuntimePhotonFluxFactor=psd_photon_factor;
+  // The negative-mode executable must terminate through AMPS's diagnostic;
+  // it is deliberately NOT included as a passing probe mode in the runner.
+  if (invalidFactor) {
+    PSD::GetSurfaceElementProductionRate(species,0,surface);
+    std::fprintf(stderr,"FAIL psd_nonfinite_factor_was_accepted\n");return 1;
+  }
+  failures+=report("psd_full_projected_disc",PSD::GetSurfaceElementProductionRate(species,0,surface),full,2e-13);
+  // A complete disc above a planar facet integrates to the central cosine.
+  // This is HALF PROJECTED FLUX, not an assumed half visible-disc area.
+  psdDiscRequest.outwardNormal={{std::sqrt(3.0)/2,0,.5}};
+  failures+=report("psd_half_projected_incidence",PSD::GetSurfaceElementProductionRate(species,0,surface),.5*full,2e-13);
+  psdDiscRequest.outwardNormal={{0,0,-1}};
+  failures+=report("psd_backface_zero",PSD::GetSurfaceElementProductionRate(species,0,surface),0,0);
+  psdDiscRequest.outwardNormal={{0,0,1}};
+  psdDiscRequest.pointToSunM={{0,0,2*_AU_}};
+  psdDiscRequest.solarRadiusM=.02*_AU_;
+  failures+=report("psd_actual_distance_inverse_square",PSD::GetSurfaceElementProductionRate(species,0,surface),.25*full,2e-13);
+  psdDiscRequest.pointToSunM={{0,0,_AU_}};psdDiscRequest.solarRadiusM=.01*_AU_;
+  psdDiscRequest.pointToEarthM={{0,0,10}};psdDiscRequest.opaqueEarthRadiusM=1;
+  failures+=report("psd_earth_totality_zero",PSD::GetSurfaceElementProductionRate(species,0,surface),0,0);
+  psdDiscRequest.opaqueEarthRadiusM=0;
+
+  Moon::Surface::Triangulation mesh;
+  mesh.verticesM={{{-1,-1,0}},{{1,-1,0}},{{0,1,0}},
+      {{1,-1,0}},{{1,1,0}},{{1,1,2}},{{1,-1,2}}};
+  mesh.faces={{{0,1,2}},{{3,4,5}},{{3,5,6}}};
+  Moon::SurfaceEnvironment::TerrainRayTracer terrain;
+  std::string error;
+  if (!terrain.Initialize(mesh,&error)) {
+    std::fprintf(stderr,"ERROR psd_fixture_bvh %s\n",error.c_str());return 2;
+  }
+  psdTerrain=&terrain;psdDiscRequest.sourceFace=0;
+  const double norm=std::sqrt(1.25);
+  psdDiscRequest.pointToSunM={{_AU_/norm,0,.5*_AU_/norm}};
+  failures+=report("psd_production_bvh_umbra",PSD::GetSurfaceElementProductionRate(species,0,surface),0,0);
+  psdTerrain=nullptr;psdDiscRequest.pointToSunM={{0,0,_AU_}};
+  surface->SurfaceElementPopulation[species][0]=0;
+  const long beforeEmpty=psdGeometryCalls;
+  failures+=report("psd_zero_stock_rate",PSD::GetSurfaceElementProductionRate(species,0,surface),0,0);
+  failures+=report("psd_zero_stock_skips_geometry",psdGeometryCalls-beforeEmpty,0,0);
+  // Stale totals are replaced from CURRENT stocks through the SAME element
+  // kernel. No pending exchange/deposit/desorption counter may be consumed.
+  surface->SurfaceElementPopulation[species][0]=2*stock;
+  surface->SurfaceElementAdsorptionFluxDOWN[species][0]=7;
+  surface->SurfaceElementDesorptionFluxUP[species][0]=11;
+  PSD::SourceRate[species]=-123;
+  failures+=report("psd_live_total_current_stock",PSD::GetTotalProductionRate(species,
+      _INTERNAL_BOUNDARY_TYPE_SPHERE_,surface),2*full,2e-13);
+  failures+=report("psd_live_cached_total",PSD::SourceRate[species],2*full,2e-13);
+  failures+=report("psd_live_source_ceiling",PSD::maxLocalSourceRate[species],2*full/surface->SurfaceElementArea[0],2e-13);
+  failures+=report("psd_live_element_diagnostic",surface->ElementSourceRate[species][0].PhotoStimulatedDesorptionFlux,
+      2*full/surface->SurfaceElementArea[0],2e-13);
+  failures+=report("psd_total_preserves_stock",surface->SurfaceElementPopulation[species][0],2*stock,0);
+  failures+=report("psd_total_preserves_pending_deposit",surface->SurfaceElementAdsorptionFluxDOWN[species][0],7,0);
+  failures+=report("psd_total_preserves_pending_release",surface->SurfaceElementDesorptionFluxUP[species][0],11,0);
+  // Public reinitialization must release the Moon provider before destroying
+  // its cache, while leaving another application's provider untouched. The
+  // disabled path needs neither SPICE nor an allocated production terrain.
+  Moon::Runtime::Configuration disabled;
+  disabled.m2EnvironmentEnabled=false;
+  PSD::RuntimePhotonFluxFactor=Moon::SurfaceTemperature::ProductionPhotonFluxFactor;
+  const bool reset=Moon::SurfaceTemperature::InitializeProductionState(disabled,nullptr,&error);
+  failures+=report("psd_disabled_reinit_releases_moon_provider",reset && PSD::RuntimePhotonFluxFactor==nullptr,1,0);
+  PSD::RuntimePhotonFluxFactor=psd_photon_factor;
+  const bool foreign=Moon::SurfaceTemperature::InitializeProductionState(disabled,nullptr,&error);
+  failures+=report("psd_disabled_reinit_preserves_foreign_provider",foreign && PSD::RuntimePhotonFluxFactor==psd_photon_factor,1,0);
+  PSD::RuntimePhotonFluxFactor=savedHook;PSD::SourceRate[species]=savedTotal;
+  PSD::maxLocalSourceRate[species]=savedMax;Exosphere::xObjectRadial=savedDistance;
+  std::memcpy(Exosphere::OrbitalMotion::SunDirection_IAU_OBJECT,savedSun,sizeof(savedSun));
+  psdTerrain=nullptr;
+  return failures==0?0:1;
+}
+
 int terrain_shadow() {
   // Construct a deterministic body-fixed fixture with one horizontal source
   // facet and a vertical ridge east of it.  Expected visibility follows from
@@ -419,6 +588,79 @@ int terrain_shadow() {
       Moon::SurfaceTemperature::UniformSolarDiscVisibleFraction(
           angularRadius,angularRadius,angularRadius),
       expectedEqualDiscVisible,1.0e-14);
+
+  // Finite-disc fixtures use the actual production quadrature. The oracle is
+  // analytic radiometry: full illumination has unit perpendicular incidence;
+  // a planar horizon through the disc centre exposes exactly half its area.
+  // No observation file or duplicated terrain/shadow implementation is used.
+  using Moon::SurfaceEnvironment::SolarDiscRequest;
+  using Moon::SurfaceEnvironment::SolarDiscSample;
+  SolarDiscRequest disc;
+  disc.pointToSunM={{0,0,1000}};
+  disc.solarRadiusM=100;
+  disc.rayOriginOffsetM=1e-6;
+  disc.radialPoints=32;
+  disc.azimuthPoints=128;
+  SolarDiscSample full,half,dark,occulted;
+  if (!Moon::SurfaceEnvironment::EvaluateSolarDisc(nullptr,disc,&full,&error)) return 1;
+  failures+=report("finite_disc_full_area",full.jointlyVisibleAreaFraction,1,2e-13);
+  failures+=report("finite_disc_full_incidence",full.projectedIncidence,1,2e-13);
+  if (!Moon::SurfaceEnvironment::EvaluateSolarDisc(nullptr,disc,&occulted,&error,
+      [](double){return .25;})) return 1;
+  failures+=report("finite_disc_absorptivity",occulted.absorbedProjectedIncidence,.25,2e-13);
+  disc.pointToSunM={{1000,0,0}};
+  if (!Moon::SurfaceEnvironment::EvaluateSolarDisc(nullptr,disc,&half,&error)) return 1;
+  failures+=report("finite_disc_horizon_half_area",half.jointlyVisibleAreaFraction,.5,2e-13);
+  const double a=disc.solarRadiusM/1000;
+  const double horizonIncidence=(std::asin(a)-a*std::sqrt(1-a*a))/(pi*a*a);
+  const double coarseError=std::abs(half.projectedIncidence-horizonIncidence);
+  disc.radialPoints=256;disc.azimuthPoints=512;
+  if (!Moon::SurfaceEnvironment::EvaluateSolarDisc(nullptr,disc,&half,&error)) return 1;
+  failures+=report("finite_disc_horizon_flux_absolute_error",
+      std::abs(half.projectedIncidence-horizonIncidence),0,0,2e-6);
+  failures+=report("finite_disc_horizon_flux_refines",
+      std::abs(half.projectedIncidence-horizonIncidence)<coarseError?1:0,1,0);
+  // An opaque disc tangent to the BELOW-horizon half blocks no above-horizon
+  // rays. The joint visible half stays exactly 1/2; multiplying independent
+  // mask fractions would incorrectly decrease it.
+  disc.pointToEarthM={{std::sqrt(100-.25),0,-.5}};
+  disc.opaqueEarthRadiusM=.5;
+  if (!Moon::SurfaceEnvironment::EvaluateSolarDisc(nullptr,disc,&occulted,&error)) return 1;
+  failures+=report("finite_disc_correlated_masks",occulted.jointlyVisibleAreaFraction,.5,2e-13);
+  failures+=report("finite_disc_earth_mask_exercised",occulted.earthVisibleAreaFraction<.99?1:0,1,0);
+  disc.pointToSunM={{0,0,1000}};disc.pointToEarthM={{0,0,10}};
+  disc.radialPoints=32;disc.azimuthPoints=128;
+  if (!Moon::SurfaceEnvironment::EvaluateSolarDisc(nullptr,disc,&occulted,&error)) return 1;
+  failures+=report("finite_disc_nested_occultation",occulted.jointlyVisibleAreaFraction,.75,2e-13);
+  disc.opaqueEarthRadiusM=0;disc.outwardNormal={{0,0,-1}};
+  if (!Moon::SurfaceEnvironment::EvaluateSolarDisc(nullptr,disc,&dark,&error)) return 1;
+  Moon::SurfaceEnvironment::TemporalVisibility average;
+  if (!average.Add(full,&error) || !average.Add(half,&error) || !average.Add(dark,&error)) return 1;
+  failures+=report("temporal_any_disc_occurrence",average.SampledAnyDiscOccurrenceFraction(),2.0/3,2e-13);
+  failures+=report("temporal_mean_disc_area",average.meanVisibleAreaFraction,.5,2e-13);
+  const double saved=occulted.jointlyVisibleAreaFraction;
+  disc.azimuthPoints=3;
+  const bool accepted=Moon::SurfaceEnvironment::EvaluateSolarDisc(nullptr,disc,&occulted,&error);
+  failures+=report("finite_disc_invalid_grid_rejected",accepted?1:0,0,0);
+  failures+=report("finite_disc_failure_transactional",occulted.jointlyVisibleAreaFraction,saved,0);
+  // Exercise finite-disc masks through the real production BVH, including
+  // a half-disc ridge penumbra. The actual ray origin is displaced upward
+  // by offset, so its independent ridge boundary is z=(2-offset)*x.
+  Moon::SurfaceEnvironment::TerrainRayTracer ridge;
+  // Undo the earlier EXACT integer translation before reusing this analytic
+  // origin-local ridge. Its old translated-distance regression stays intact.
+  for (auto& vertex:mesh.verticesM) {
+    vertex[0]-=1737400;vertex[1]+=1000000;vertex[2]-=500000;
+  }
+  if (!ridge.Initialize(mesh,&error)) return 1;
+  disc=SolarDiscRequest{};disc.solarRadiusM=100;disc.rayOriginOffsetM=1e-6;
+  disc.radialPoints=32;disc.azimuthPoints=128;disc.sourceFace=0;
+  disc.pointToSunM={{1000,0,1000*(2-disc.rayOriginOffsetM)}};
+  if (!Moon::SurfaceEnvironment::EvaluateSolarDisc(&ridge,disc,&occulted,&error)) return 1;
+  failures+=report("finite_disc_bvh_ridge_penumbra",occulted.terrainVisibleAreaFraction,.5,2e-13);
+  disc.solarRadiusM=1;disc.pointToSunM={{1000,0,500}};
+  if (!Moon::SurfaceEnvironment::EvaluateSolarDisc(&ridge,disc,&occulted,&error)) return 1;
+  failures+=report("finite_disc_bvh_ridge_umbra",occulted.terrainVisibleAreaFraction,0,0);
   return failures==0?0:1;
 }
 
@@ -467,6 +709,32 @@ int diviner_temperature() {
   }
   failures+=report("diviner_native_node_k",temperature,190.0,0.0);
 
+  // The nearest archive node is not sufficient eligibility for a physical
+  // local-time query between nodes. Preserve the missing/flagged next corner:
+  // a native node remains available, while a nearby interpolated query must
+  // be refused by the SAME production table service before a model callback.
+  const auto sparsePath=directory/"diviner_sparse_query_fixture.csv";
+  {
+    std::ofstream output(sparsePath);
+    output << "latitude_deg,longitude_east_deg,local_time_hour,temperature_k,"
+              "uncertainty_k,quality_flag,product_id,source_record\n";
+    for (double latitude:{-10.0,10.0}) for (double longitude:{0.0,20.0})
+      for (double localTime:{0.0,4.0}) {
+        const bool missing=latitude==-10.0 && longitude==0.0 && localTime==4.0;
+        output << latitude << ',' << longitude << ',' << localTime << ','
+               << 200.0 << ",1," << (missing ? "MISSING" : "GOOD")
+               << ",ANALYTICAL_FIXTURE,not-observations\n";
+      }
+  }
+  Moon::SurfaceTemperature::DivinerTable sparseTable;
+  if (!sparseTable.LoadCsv(sparsePath.string(),&error)) return 2;
+  failures+=report("diviner_sparse_archive_node_supported",
+      sparseTable.Interpolate(-10.0,0.0,0.0,&temperature,&uncertainty,&error) ? 1:0,
+      1.0,0.0);
+  failures+=report("diviner_sparse_actual_time_gap_refused",
+      sparseTable.Interpolate(-10.0,0.0,0.01,&temperature,&uncertainty,&error) ? 1:0,
+      0.0,0.0);
+
   // Verify the production observation operator separately from table
   // interpolation.  This fixture uses no observations: its oracle is the
   // Stefan--Boltzmann identity for a grey surface and the monotonic inverse of
@@ -483,6 +751,37 @@ int diviner_temperature() {
       Moon::DivinerObservation::GreySurfaceExitanceWm2(
           kineticTemperatureK,emissivity),
       emissivity*5.670374419e-8*std::pow(kineticTemperatureK,4),1.0e-14);
+
+  // Independent inverse anchors use exact fourth roots: epsilon=1/16 has
+  // epsilon^(1/4)=1/2, while 81/256 has root 3/4. Round trips alone would not
+  // expose a mutually consistent error shared by forward and inverse code.
+  failures+=report("diviner_grey_inverse_half_root_k",
+      Moon::DivinerObservation::GreyKineticTemperatureK(100.0,1.0/16.0),
+      200.0,0.0);
+  failures+=report("diviner_grey_inverse_three_quarter_root_k",
+      Moon::DivinerObservation::GreyKineticTemperatureK(240.0,81.0/256.0),
+      320.0,0.0);
+  failures+=report("diviner_grey_inverse_unit_emissivity_k",
+      Moon::DivinerObservation::GreyKineticTemperatureK(173.0,1.0),173.0,0.0);
+  failures+=report("diviner_grey_inverse_roundtrip_k",
+      Moon::DivinerObservation::GreyKineticTemperatureK(
+          Moon::DivinerObservation::GreyBolometricBrightnessTemperatureK(
+              kineticTemperatureK,emissivity),emissivity),
+      kineticTemperatureK,1.0e-14);
+  const double notFinite=std::numeric_limits<double>::quiet_NaN();
+  const double infinity=std::numeric_limits<double>::infinity();
+  int inverseRejected=0;
+  for (double invalidTemperature:{0.0,-1.0,notFinite,infinity})
+    if (std::isnan(Moon::DivinerObservation::GreyKineticTemperatureK(
+            invalidTemperature,emissivity))) ++inverseRejected;
+  for (double invalidEmissivity:{0.0,-0.1,1.01,notFinite,infinity})
+    if (std::isnan(Moon::DivinerObservation::GreyKineticTemperatureK(
+            kineticTemperatureK,invalidEmissivity))) ++inverseRejected;
+  if (std::isnan(Moon::DivinerObservation::GreyKineticTemperatureK(
+          std::numeric_limits<double>::max(),
+          std::numeric_limits<double>::min()))) ++inverseRejected;
+  failures+=report("diviner_grey_inverse_invalid_cases_rejected",
+      inverseRejected,10.0,0.0);
 
   for (int channel=6;channel<=9;++channel) {
     const double radiance=
@@ -552,6 +851,334 @@ Moon::Thermal::ColumnConfiguration thermal_fixture_configuration() {
   return configuration;
 }
 
+int prescribed_temperature() {
+#ifdef _NO_SPICE_CALLS_
+  std::fprintf(stderr,"SKIPPED prescribed_temperature requires SPICE\n");
+  return 77;
+#else
+  // This is a production-wiring fixture, never a measured Diviner product.
+  // A closed octahedron provides actual non-spherical BVH query points on a
+  // deliberately small 2x4 logical inventory grid, with no MPI/AMR run.
+  if (_NA_SPEC_<0 || _NA_SPEC_>=PIC::nTotalSpecies) return 77;
+  const char* outputRoot=std::getenv("MOON_U10_OUTPUT");
+  if (outputRoot==nullptr) return 2;
+  const auto tablePath=std::filesystem::path(outputRoot)/"prescribed_analytical_brightness.csv";
+  Moon::Runtime::Configuration configuration;
+  configuration.m2EnvironmentEnabled=true;
+  configuration.simulationStartUtc="2009-01-24T00:00:00";
+  configuration.illuminationAberrationCorrection="NONE";
+  configuration.illuminationRayOriginOffsetM=1.0;
+  configuration.thermalSolarDiscRadiusM=6.957e8;
+  configuration.thermalOpaqueEarthRadiusM=6.371e6;
+  configuration.thermal.infraredEmissivity=0.81;
+  configuration.thermalInitialTemperatureK=350.0; // must never replace a map gap
+  configuration.simpleCosineNightTemperatureK=180.0;
+  configuration.simpleCosineDayAmplitudeK=200.0;
+  configuration.simpleCosineExponent=0.25;
+  configuration.divinerMapKineticInterpretation="isothermal-grey";
+  configuration.divinerTemperatureTableFile=tablePath.string();
+  configuration.sodiumAttemptFrequencyHz=1.0e13;
+  configuration.sodiumActivationEnergyEv=1.85;
+  configuration.surfaceInventoryInitialState="zero";
+  // A diagnostic-only fixture threshold exercises both outcomes of tau>=limit;
+  // it is neither a trapping law nor an observational parameter estimate.
+  configuration.coldTrapRetentionTimescaleS=1.0e20;
+  const double radius=_RADIUS_(_MOON_);
+  Moon::Surface::Triangulation mesh;
+  mesh.verticesM={{{radius,0,0}},{{-radius,0,0}},{{0,radius,0}},
+                  {{0,-radius,0}},{{0,0,radius}},{{0,0,-radius}}};
+  mesh.faces={{{0,2,4}},{{2,1,4}},{{1,3,4}},{{3,0,4}},
+              {{2,0,5}},{{1,2,5}},{{3,1,5}},{{0,3,5}}};
+  std::string error;
+  if (!Moon::SurfaceEnvironment::InitializeProductionTerrain(mesh,configuration,&error)) {
+    std::fprintf(stderr,"ERROR prescribed_terrain %s\n",error.c_str());return 2;
+  }
+  cInternalSphericalData::SetGeneralSurfaceMeshParameters(2,4);
+  auto* surface=new cInternalSphericalData;
+  double origin[3]={0,0,0};
+  surface->SetSphereGeometricalParameters(origin,radius);
+  const int count=surface->GetTotalSurfaceElementsNumber();
+  surface->Allocate<cInternalSphericalData>(PIC::nTotalSpecies,count,
+      _EXOSPHERE__SOURCE_MAX_ID_VALUE_,surface);
+  Exosphere::SetSimulationStartTimeString(configuration.simulationStartUtc.c_str());
+  Exosphere::Init_SPICE();
+  // Inventory the files actually furnished to this process; the Python
+  // runner hashes these exact immutable bytes rather than guessing a kernel
+  // set from a directory's presence or another test's configuration.
+  if (!print_furnished_spice_dependencies()) return 2;
+  SpiceDouble initialEt;
+  str2et_c(configuration.simulationStartUtc.c_str(),&initialEt);
+  const double intervalS=6.0*3600.0;
+  const double stockAtoms=1.0e12;
+  auto writeTable=[&](bool coverageGap) {
+    std::ofstream output(tablePath);
+    output << "latitude_deg,longitude_east_deg,local_time_hour,temperature_k,"
+              "uncertainty_k,quality_flag,product_id,source_record\n";
+    for (double latitude:coverageGap ? std::vector<double>{80.0,90.0} :
+                                      std::vector<double>{-90.0,90.0})
+      for (double longitude:{0.0,180.0}) for (int time=0;time<24;time+=6) {
+        const double brightnessK=time<=6 ? 200.0+5.0*time :
+            time<=18 ? 260.0-5.0*time : 5.0*time+80.0;
+        output << latitude << ',' << longitude << ',' << time << ','
+               << brightnessK << ",1,GOOD,ANALYTICAL_FIXTURE,not-observations\n";
+      }
+    return static_cast<bool>(output);
+  };
+  if (!writeTable(false)) return 2;
+  int failures=0;
+  for (const std::string mode:{"simple-cosine","diviner-map"}) {
+    configuration.surfaceTemperatureMode=mode;
+    Moon::OrbitalMotion::et=initialEt;
+    if (!Moon::SurfaceTemperature::InitializeProductionState(configuration,surface,&error)) {
+      std::fprintf(stderr,"ERROR prescribed_init %s\n",error.c_str());return 2;
+    }
+    std::vector<double> previous(count);
+    double maximumChangeK=0.0;
+    for (int epochIndex=0;epochIndex<2;++epochIndex) {
+      const double epoch=initialEt+epochIndex*intervalS;
+      if (epochIndex && !Moon::SurfaceTemperature::AdvanceProductionState(initialEt,epoch,&error)) {
+        std::fprintf(stderr,"ERROR prescribed_advance %s\n",error.c_str());return 2;
+      }
+      Moon::OrbitalMotion::et=epoch;
+      SpiceDouble sun[6],earth[6],lightTime,bodyToLso[3][3];
+      spkezr_c("SUN",epoch,Moon::Frames::BodyFixed,"NONE","MOON",sun,&lightTime);
+      spkezr_c("EARTH",epoch,Moon::Frames::BodyFixed,"NONE","MOON",earth,&lightTime);
+      pxform_c(Moon::Frames::BodyFixed,Moon::Frames::SolarOrbital,epoch,bodyToLso);
+      const double sunLength=std::hypot(sun[0],sun[1],sun[2]);
+      for (int element=0;element<count;++element) {
+        double radial[3];surface->GetSurfaceElementNormal(radial,element);
+        Moon::SurfaceEnvironment::RayHit hit;
+        if (!Moon::SurfaceEnvironment::ProductionTerrain()->IntersectRay(
+            {{0,0,0}},{{radial[0],radial[1],radial[2]}},0.0,
+            std::numeric_limits<double>::infinity(),
+            std::numeric_limits<std::size_t>::max(),&hit,&error) || !hit.hit) return 2;
+        const double pointLength=std::hypot(hit.positionM[0],hit.positionM[1],hit.positionM[2]);
+        const double cosine=(hit.positionM[0]*sun[0]+hit.positionM[1]*sun[1]+
+            hit.positionM[2]*sun[2])/(pointLength*sunLength);
+        double expectedK=0.0;
+        if (mode=="simple-cosine") {
+          // Independent cylinder distance uses a cross product, rather than
+          // invoking the production Earth-shadow predicate as its own oracle.
+          double axis[3],fromEarth[3],axis2=0,parallel=0,cross[3];
+          for (int k=0;k<3;++k) {
+            axis[k]=1000*(sun[k]-earth[k]);
+            fromEarth[k]=hit.positionM[k]-1000*earth[k];
+            axis2+=axis[k]*axis[k];parallel+=axis[k]*fromEarth[k];
+          }
+          cross[0]=fromEarth[1]*axis[2]-fromEarth[2]*axis[1];
+          cross[1]=fromEarth[2]*axis[0]-fromEarth[0]*axis[2];
+          cross[2]=fromEarth[0]*axis[1]-fromEarth[1]*axis[0];
+          const double distance2=(cross[0]*cross[0]+cross[1]*cross[1]+cross[2]*cross[2])/axis2;
+          const bool earthShadow=parallel<=0 && distance2<std::pow(_RADIUS_(_EARTH_),2);
+          expectedK=180.0+((cosine<0 || earthShadow) ? 0.0 :
+              200.0*std::pow(std::min(1.0,cosine),0.25));
+        } else {
+          double localTime=12.0+12.0/std::acos(-1.0)*(std::atan2(hit.positionM[1],hit.positionM[0])-
+              std::atan2(sun[1],sun[0]));
+          localTime=std::fmod(localTime,24.0);if (localTime<0) localTime+=24.0;
+          const double brightnessK=localTime<=6 ? 200+5*localTime :
+              localTime<=18 ? 260-5*localTime : 80+5*localTime;
+          expectedK=brightnessK/std::pow(0.81,0.25);
+        }
+        const std::string label=mode+"_epoch"+std::to_string(epochIndex)+"_cell"+std::to_string(element);
+        double positionLso[3];mxv_c(bodyToLso,hit.positionM.data(),positionLso);
+        const double cachedK=Moon::SurfaceTemperature::ProductionElementTemperatureK(element);
+        failures+=report((label+"_cache_k").c_str(),cachedK,expectedK,1e-12);
+        failures+=report((label+"_point_k").c_str(),
+            Moon::SurfaceTemperature::ProductionTemperatureK(positionLso),expectedK,1e-12);
+        surface->SurfaceElementPopulation[_NA_SPEC_][element]=stockAtoms;
+        // The independent reference uses the exact SI electronvolt and k_B.
+        const double expectedResidenceS=std::exp(1.85*1.602176634e-19/
+            (1.380649e-23*expectedK))/1e13;
+        failures+=report((label+"_desorption_atoms_s").c_str(),
+            Moon::SurfaceTemperature::ProductionThermalDesorptionRate(_NA_SPEC_,element,surface),
+            stockAtoms/expectedResidenceS,1e-11);
+        double residenceS=-1;bool retained=false;
+        if (!Moon::SurfaceTemperature::SampleProductionElementKinetics(element,_NA_SPEC_,
+                &residenceS,&retained,&error)) return 2;
+        failures+=report((label+"_residence_s").c_str(),residenceS,expectedResidenceS,1e-11);
+        failures+=report((label+"_retained").c_str(),retained ? 1:0,
+            expectedResidenceS>=configuration.coldTrapRetentionTimescaleS ? 1:0,0);
+        if (epochIndex) maximumChangeK=std::max(maximumChangeK,std::abs(cachedK-previous[element]));
+        previous[element]=cachedK;
+      }
+    }
+    failures+=report((mode+"_epoch_cache_changed").c_str(),maximumChangeK>0 ? 1:0,1,0);
+    failures+=report((mode+"_retention_timescale_s").c_str(),
+        Moon::SurfaceTemperature::ProductionRetentionTimescaleS(),1.0e20,0);
+  }
+  // Genuine missing map support must not become the 350 K initialization
+  // value. Empty stock emits zero; diagnostic failure leaves outputs intact.
+  if (!writeTable(true) || !Moon::SurfaceTemperature::InitializeProductionState(
+          configuration,surface,&error)) return 2;
+  double unavailableResidence=-321.0;bool unavailableRetained=true;
+  const bool available=Moon::SurfaceTemperature::SampleProductionElementKinetics(
+      0,_NA_SPEC_,&unavailableResidence,&unavailableRetained,&error);
+  failures+=report("diviner_gap_kinetics_unavailable",available ? 1:0,0,0);
+  failures+=report("diviner_gap_residence_unchanged",unavailableResidence,-321.0,0);
+  failures+=report("diviner_gap_retention_unchanged",unavailableRetained ? 1:0,1,0);
+  failures+=report("diviner_gap_zero_stock_no_release",
+      Moon::SurfaceTemperature::ProductionThermalDesorptionRate(_NA_SPEC_,0,surface),0,0);
+  return failures==0 ? 0:1;
+#endif
+}
+
+int thermal_initialization() {
+#ifdef _NO_SPICE_CALLS_
+  std::fprintf(stderr,"SKIPPED thermal_initialization requires SPICE\n");return 77;
+#else
+  // Dispatch/state-identity fixture only: a 1 ms forcing replay, even with
+  // the unchanged approved cycle criteria, is not a qualified lunar period.
+  const char* outputRoot=std::getenv("MOON_U11_OUTPUT");
+  if (outputRoot==nullptr) return 2;
+  const std::filesystem::path directory(outputRoot);
+  std::filesystem::create_directories(directory);
+  Moon::Runtime::Configuration configuration;
+  configuration.m2EnvironmentEnabled=true;
+  configuration.surfaceTemperatureMode="thermal-model";
+  configuration.simulationStartUtc="2009-01-24T00:00:00.000";
+  configuration.thermal=thermal_fixture_configuration();
+  configuration.thermalInitialTemperatureK=250.0;
+  configuration.thermalTimeStepS=0.001;
+  configuration.thermalInitializationMode="declared-uniform";
+  configuration.thermalSpinupCycleStartUtc="2009-01-24T00:00:00.000";
+  configuration.thermalSpinupCycleEndUtc="2009-01-24T00:00:00.001";
+  configuration.thermalSpinupTemperatureToleranceK=0.01;
+  configuration.thermalSpinupEnergyToleranceJm2=10000.0;
+  configuration.illuminationAberrationCorrection="NONE";
+  configuration.illuminationRayOriginOffsetM=1.0;
+  configuration.thermalSolarDiscRadiusM=6.957e8;
+  configuration.thermalOpaqueEarthRadiusM=6.371e6;
+  configuration.surfaceInventoryInitialState="zero";
+  const double radius=_RADIUS_(_MOON_);
+  Moon::Surface::Triangulation mesh;
+  mesh.verticesM={{{radius,0,0}},{{-radius,0,0}},{{0,radius,0}},
+                  {{0,-radius,0}},{{0,0,radius}},{{0,0,-radius}}};
+  mesh.faces={{{0,2,4}},{{2,1,4}},{{1,3,4}},{{3,0,4}},
+              {{2,0,5}},{{1,2,5}},{{3,1,5}},{{0,3,5}}};
+  std::string error;
+  if (!Moon::SurfaceEnvironment::InitializeProductionTerrain(mesh,configuration,&error)) return 2;
+  cInternalSphericalData::SetGeneralSurfaceMeshParameters(2,4);
+  auto* surface=new cInternalSphericalData;
+  double origin[3]={0,0,0};surface->SetSphereGeometricalParameters(origin,radius);
+  const int count=surface->GetTotalSurfaceElementsNumber();
+  surface->Allocate<cInternalSphericalData>(PIC::nTotalSpecies,count,
+      _EXOSPHERE__SOURCE_MAX_ID_VALUE_,surface);
+  Exosphere::SetSimulationStartTimeString(configuration.simulationStartUtc.c_str());
+  Exosphere::Init_SPICE();
+  if (!print_furnished_spice_dependencies()) return 2;
+  SpiceDouble startEt,endEt;
+  str2et_c(configuration.thermalSpinupCycleStartUtc.c_str(),&startEt);
+  str2et_c(configuration.thermalSpinupCycleEndUtc.c_str(),&endEt);
+  if (!Moon::SurfaceTemperature::InitializeProductionState(configuration,surface,&error)) {
+    std::fprintf(stderr,"ERROR uniform_thermal_initialization %s\n",error.c_str());return 2;
+  }
+  Moon::SurfaceTemperature::ProductionThermalInitializationInfo info;
+  if (!Moon::SurfaceTemperature::GetProductionThermalInitialization(&info,&error)) return 2;
+  int failures=0;
+  failures+=report_string("initial_uniform_mode",info.mode,"declared-uniform");
+  failures+=report("initial_uniform_et_s",info.ephemerisTimeS,startEt,0);
+  failures+=report("initial_uniform_spinup_cycles",info.spinup.completedCycles,0,0);
+  const auto uniformPath=directory/"uniform_initial_state.csv";
+  if (!Moon::SurfaceTemperature::WriteProductionInitialThermalStateCsv(uniformPath.string(),&error)) return 2;
+  const auto bytes=[](const std::filesystem::path& path) {
+    std::ifstream input(path,std::ios::binary);std::ostringstream output;
+    output << input.rdbuf();return output.str();
+  };
+  const std::string uniformBytes=bytes(uniformPath);
+  std::ifstream input(uniformPath);
+  std::string line;
+  if (!std::getline(input,line) || line!=
+      "logical_surface_element,depth_index,depth_m,kinetic_temperature_K") return 2;
+  std::size_t rowCount=0;bool ordered=true,uniform=true;double maximumDepthErrorM=0;
+  while (std::getline(input,line)) {
+    std::replace(line.begin(),line.end(),',',' ');std::istringstream row(line);
+    int element=-1,index=-99;double depth=-1,temperature=-1;std::string extra;
+    if (!(row>>element>>index>>depth>>temperature) || (row>>extra)) return 2;
+    const int expectedElement=static_cast<int>(rowCount/(configuration.thermal.layerCount+1));
+    const int expectedIndex=static_cast<int>(rowCount%(configuration.thermal.layerCount+1))-1;
+    ordered=ordered && element==expectedElement && index==expectedIndex;
+    const double expectedDepth=expectedIndex<0 ? 0.0 :
+        (expectedIndex+0.5)*configuration.thermal.bottomDepthM/configuration.thermal.layerCount;
+    maximumDepthErrorM=std::max(maximumDepthErrorM,std::abs(depth-expectedDepth));
+    uniform=uniform && temperature==250.0;++rowCount;
+  }
+  failures+=report("initial_uniform_export_rows",rowCount,
+      count*(configuration.thermal.layerCount+1),0);
+  failures+=report("initial_uniform_export_order",ordered?1:0,1,0);
+  failures+=report("initial_uniform_exact_temperature_k",uniform?1:0,1,0);
+  failures+=report("initial_uniform_depth_error_m",maximumDepthErrorM,0,0,1e-14);
+  failures+=report("initial_export_existing_path_refused",
+      Moon::SurfaceTemperature::WriteProductionInitialThermalStateCsv(uniformPath.string(),&error)?1:0,0,0);
+  failures+=report("initial_export_existing_bytes_preserved",bytes(uniformPath)==uniformBytes?1:0,1,0);
+
+  configuration.thermalInitializationMode="periodic-spinup";
+  configuration.simulationStartUtc=configuration.thermalSpinupCycleEndUtc;
+  if (!Moon::SurfaceTemperature::InitializeProductionState(configuration,surface,&error) ||
+      !Moon::SurfaceTemperature::GetProductionThermalInitialization(&info,&error)) {
+    std::fprintf(stderr,"ERROR automatic_periodic_thermal_initialization %s\n",error.c_str());return 2;
+  }
+  failures+=report_string("initial_periodic_actual_mode",info.mode,"periodic-spinup");
+  failures+=report("initial_periodic_actual_et_s",info.ephemerisTimeS,endEt,0);
+  failures+=report("initial_periodic_has_completed_cycles",info.spinup.completedCycles>0?1:0,1,0);
+  const bool temperatureConverged=std::isfinite(info.spinup.maximumNodeTemperatureChangeK) &&
+      info.spinup.maximumNodeTemperatureChangeK>=0 &&
+      info.spinup.maximumNodeTemperatureChangeK<=configuration.thermalSpinupTemperatureToleranceK;
+  const bool enthalpyConverged=std::isfinite(info.spinup.maximumColumnEnthalpyChangeJm2) &&
+      info.spinup.maximumColumnEnthalpyChangeJm2>=0 &&
+      info.spinup.maximumColumnEnthalpyChangeJm2<=configuration.thermalSpinupEnergyToleranceJm2;
+  std::printf("%s initial_periodic_node_cycle_change_k actual=%.17e maximum=%.17e\n",
+      temperatureConverged?"PASS":"FAIL",info.spinup.maximumNodeTemperatureChangeK,
+      configuration.thermalSpinupTemperatureToleranceK);
+  std::printf("%s initial_periodic_column_enthalpy_cycle_change_j_m2 actual=%.17e maximum=%.17e\n",
+      enthalpyConverged?"PASS":"FAIL",info.spinup.maximumColumnEnthalpyChangeJm2,
+      configuration.thermalSpinupEnergyToleranceJm2);
+  failures+=temperatureConverged?0:1;
+  failures+=enthalpyConverged?0:1;
+  failures+=report("initial_periodic_source_begin_et_s",Moon::SurfaceEnvironment::ProductionSourceEpochS(),endEt,0);
+  const auto periodicPath=directory/"periodic_initial_state.csv";
+  if (!Moon::SurfaceTemperature::WriteProductionInitialThermalStateCsv(periodicPath.string(),&error)) return 2;
+  const std::string periodicBytes=bytes(periodicPath);
+  failures+=report("initial_periodic_actually_changed_columns",periodicBytes!=uniformBytes?1:0,1,0);
+  Moon::SurfaceTemperature::SpinUpMetrics repeated;
+  if (!Moon::SurfaceTemperature::SpinUpProductionState(&repeated,&error)) return 2;
+  const auto reusePath=directory/"periodic_reused_initial_state.csv";
+  if (!Moon::SurfaceTemperature::WriteProductionInitialThermalStateCsv(reusePath.string(),&error)) return 2;
+  failures+=report("initial_periodic_reuse_exact_bytes",bytes(reusePath)==periodicBytes?1:0,1,0);
+  failures+=report("initial_periodic_reuse_cycles",repeated.completedCycles,info.spinup.completedCycles,0);
+  // Replay a positive interval ending at the SAME numeric end epoch. This
+  // specifically catches a cache keyed only by timestamp instead of by the
+  // actual unevolved state generation; the forcing replay is a control fixture.
+  if (!Moon::SurfaceTemperature::AdvanceProductionState(startEt,endEt,&error)) return 2;
+  const auto evolvedPath=directory/"refused_evolved_initial_state.csv";
+  failures+=report("initial_export_after_evolution_refused",
+      Moon::SurfaceTemperature::WriteProductionInitialThermalStateCsv(evolvedPath.string(),&error)?1:0,0,0);
+  failures+=report("initial_export_after_evolution_no_file",std::filesystem::exists(evolvedPath)?1:0,0,0);
+  if (!Moon::SurfaceTemperature::SpinUpProductionState(&repeated,&error)) return 2;
+  const auto respinPath=directory/"periodic_recomputed_after_evolution.csv";
+  if (!Moon::SurfaceTemperature::WriteProductionInitialThermalStateCsv(respinPath.string(),&error)) return 2;
+  failures+=report("initial_periodic_after_evolution_not_reused",
+      bytes(respinPath)!=periodicBytes?1:0,1,0);
+
+  // A failed auto-periodic trial must expose no uniform fallback as proof,
+  // even if an application mistakenly continues after a false return.
+  configuration.simulationStartUtc=configuration.thermalSpinupCycleStartUtc;
+  failures+=report("initial_periodic_mismatched_epoch_refused",
+      Moon::SurfaceTemperature::InitializeProductionState(configuration,surface,&error)?1:0,0,0);
+  failures+=report("initial_failed_trial_uninitialized",Moon::SurfaceTemperature::ProductionStateInitialized()?1:0,0,0);
+  info.mode="unchanged-after-refusal";info.ephemerisTimeS=-123;
+  failures+=report("initial_failed_trial_proof_unavailable",
+      Moon::SurfaceTemperature::GetProductionThermalInitialization(&info,&error)?1:0,0,0);
+  failures+=report_string("initial_failed_trial_proof_output_unchanged",info.mode,"unchanged-after-refusal");
+  failures+=report("initial_failed_trial_epoch_output_unchanged",info.ephemerisTimeS,-123,0);
+  const auto failedPath=directory/"refused_failed_trial_state.csv";
+  failures+=report("initial_failed_trial_export_unavailable",
+      Moon::SurfaceTemperature::WriteProductionInitialThermalStateCsv(failedPath.string(),&error)?1:0,0,0);
+  failures+=report("initial_failed_trial_export_no_file",std::filesystem::exists(failedPath)?1:0,0,0);
+  return failures==0?0:1;
+#endif
+}
+
 int thermal_inertia() {
   Moon::Thermal::Column column;
   auto configuration=thermal_fixture_configuration();
@@ -601,6 +1228,36 @@ int thermal_inertia() {
       maximum=std::max(maximum,std::abs(temperature-250.0));
     failures+=report(("isothermal_equilibrium_maximum_change_K_"+
         std::to_string(dt)).c_str(),maximum,0.0,0.0,1.0e-8);
+  }
+  // Directly integrated finite-disc forcing enters the SAME energy solver.
+  // Its analytical equilibrium flux is epsilon*sigma*T^4, independent of a
+  // geometry implementation. This guards the new W/m2 boundary entry point.
+  Moon::Thermal::Column integrated;
+  if (!integrated.Initialize(configuration,250,&error) ||
+      !integrated.AdvanceWithAbsorbedFlux(60,configuration.infraredEmissivity*
+          5.670374419e-8*std::pow(250.0,4),&error)) return 1;
+  failures+=report("integrated_flux_equilibrium_K",integrated.SurfaceTemperatureK(),250,0,1e-8);
+  const double unchanged=integrated.SurfaceTemperatureK();
+  failures+=report("negative_integrated_flux_rejected",
+      integrated.AdvanceWithAbsorbedFlux(60,-1,&error)?1:0,0,0);
+  failures+=report("invalid_integrated_flux_state_preserved",integrated.SurfaceTemperatureK(),unchanged,0);
+  // Only MODEL depths are interpolated. An affine manufactured profile has
+  // a closed-form value at every interior depth; actual observations never
+  // enter this kernel. Out-of-domain requests must fail transactionally.
+  const std::vector<double> depths{.01,.03,.05},temperatures{100.2,100.6,101};
+  for (double depth:{0.0,.01,.02,.03,.05}) {
+    double temperature=-1;
+    if (!Moon::PolarDiagnostics::InterpolateThermalProfileK(depth,100,depths,
+          temperatures,&temperature,&error)) return 1;
+    failures+=report(("polar_depth_affine_K_"+std::to_string(depth)).c_str(),
+        temperature,100+20*depth,1e-14);
+  }
+  for (double depth:{-.01,.06,std::numeric_limits<double>::quiet_NaN()}) {
+    double temperature=123;
+    const bool valid=Moon::PolarDiagnostics::InterpolateThermalProfileK(depth,100,
+        depths,temperatures,&temperature,&error);
+    failures+=report(("polar_depth_outside_rejected_"+std::to_string(depth)).c_str(),valid?1:0,0,0);
+    failures+=report(("polar_depth_failure_transactional_"+std::to_string(depth)).c_str(),temperature,123,0);
   }
   return failures==0?0:1;
 }
@@ -809,6 +1466,61 @@ int rotating_frame() {
       1.0,0.0);
   failures+=report("solar_orbital_frame_is_LSO",
       std::strcmp(Exosphere::SO_FRAME,"LSO")==0 ? 1.0 : 0.0,1.0,0.0);
+
+  // Actual-site SPICE geometry must reduce to the independent ordinary
+  // ephemeris API at the lunar origin. With NONE, translating the geometric
+  // observer is the exact algebraic displacement target-centre minus point.
+  // These are limiting identities, not a second call to the same helper or
+  // a frozen current output. The position bound encloses double arithmetic
+  // on the large solar-system vectors and does not change any force gate.
+  const std::array<double,3> centre{{0,0,0}},site{{1.4e6,-7.0e5,6.0e5}};
+  std::array<double,3> siteSun,siteEarth;
+  std::string geometryError;
+  SpiceChar oldAction[SPICE_ERROR_SMSGLN],newAction[SPICE_ERROR_SMSGLN];
+  erract_c("GET",sizeof(oldAction),oldAction);
+  for (const char* correction:{"NONE","LT","LT+S","CN","CN+S"}) {
+    if (!Moon::SurfaceEnvironment::ApparentSolarSystemGeometryAtPoint(
+            epoch,centre,correction,&siteSun,&siteEarth,&geometryError)) {
+      std::fprintf(stderr,"FAIL site_geometry_origin %s\n",geometryError.c_str());return 1;
+    }
+    for (int target=0;target<2;++target) {
+      SpiceDouble expected[6],light=0;
+      spkezr_c(target==0?"SUN":"EARTH",epoch,Moon::Frames::BodyFixed,
+          correction,Moon::ObjectName,expected,&light);
+      const auto& actual=target==0?siteSun:siteEarth;
+      const double scale=1000*std::hypot(expected[0],expected[1],expected[2]);
+      const double bound=256*std::numeric_limits<double>::epsilon()*scale;
+      for (int component=0;component<3;++component) {
+        const std::string name=std::string("site_origin_")+(target==0?"sun_":"earth_")+
+            correction+"_"+std::to_string(component);
+        failures+=report(name.c_str(),actual[component],1000*expected[component],0,bound);
+      }
+    }
+  }
+  if (!Moon::SurfaceEnvironment::ApparentSolarSystemGeometryAtPoint(
+          epoch,site,"NONE",&siteSun,&siteEarth,&geometryError)) return 1;
+  for (int target=0;target<2;++target) {
+    SpiceDouble expected[6],light=0;
+    spkezr_c(target==0?"SUN":"EARTH",epoch,Moon::Frames::BodyFixed,
+        "NONE",Moon::ObjectName,expected,&light);
+    const auto& actual=target==0?siteSun:siteEarth;
+    const double bound=256*std::numeric_limits<double>::epsilon()*
+        (1000*std::hypot(expected[0],expected[1],expected[2])+std::hypot(site[0],site[1],site[2]));
+    for (int component=0;component<3;++component) {
+      const std::string name=std::string("site_geometric_displacement_")+
+          (target==0?"sun_":"earth_")+std::to_string(component);
+      failures+=report(name.c_str(),actual[component],1000*expected[component]-site[component],0,bound);
+    }
+  }
+  erract_c("GET",sizeof(newAction),newAction);
+  failures+=report("site_geometry_preserves_spice_error_policy",
+      std::strcmp(oldAction,newAction)==0?1:0,1,0);
+  const std::array<double,3> beforeSun=siteSun,beforeEarth=siteEarth;
+  const bool invalidAccepted=Moon::SurfaceEnvironment::ApparentSolarSystemGeometryAtPoint(
+      epoch,site,"XLT",&siteSun,&siteEarth,&geometryError);
+  failures+=report("site_geometry_rejects_transmission_mode",invalidAccepted?1:0,0,0);
+  failures+=report("site_geometry_invalid_call_transactional",
+      (siteSun==beforeSun && siteEarth==beforeEarth)?1:0,1,0);
 
   // Differential gravity uses a non-axial fixture so every component and the
   // subtraction of the lunar-origin acceleration are observable.
@@ -1811,6 +2523,44 @@ int surface_environment_demo(int argument_count,char** arguments) {
 #endif
 }
 
+// Controlled linear-temperature forcing exercises the actual finite-release
+// kernel under changing coefficients. These are analytical fixtures, never
+// lunar observations or a substitute for the linked thermal/I20 gates.
+int surface_release_warming() {
+  for (int species=0;species<2;++species) {
+    Moon::SurfacePhysics::SpeciesParameters p;
+    p.species=species==0?Moon::SurfacePhysics::Species::Sodium:Moon::SurfacePhysics::Species::Argon;
+    p.residenceLaw=species==0?Moon::SurfacePhysics::ResidenceLaw::FirstOrderArrhenius:
+        Moon::SurfacePhysics::ResidenceLaw::ModifiedArrhenius;
+    p.attemptFrequencyHz=1.0e13;p.activationEnergyJ=1.85*1.602176634e-19;
+    p.activationEnergyJmol=28000.0;
+    const double H=60.0,initial=1.0e12;
+    double endpoints[2];const double ratios[2]={0.01,1000.0};
+    for (int end=0;end<2;++end) {
+      double low=1.0,high=10000.0;
+      for (int iteration=0;iteration<100;++iteration) {
+        const double middle=(low+high)/2;
+        if (H/Moon::SurfacePhysics::ResidenceTimeS(p,middle)<ratios[end]) low=middle;
+        else high=middle;
+      }
+      endpoints[end]=(low+high)/2;
+    }
+    for (int divisor:std::vector<int>{1,2,4}) {
+      const double dt=0.5/divisor;double stock=initial,mean=0.0;
+      for (int n=0;n<120*divisor;++n) {
+        const double temperature=endpoints[0]+(endpoints[1]-endpoints[0])*(n+0.5)*dt/H;
+        const double rate=1/Moon::SurfacePhysics::ResidenceTimeS(p,temperature);
+        const auto release=Exosphere::SourceProcesses::IntegrateFiniteRelease(stock,{rate},dt);
+        mean+=(stock/initial)*(rate==0?dt:-std::expm1(-rate*dt)/rate);
+        stock=release.remainingAtoms;
+      }
+      std::printf("WARMING,%s,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g\n",
+          species==0?"Na":"Ar",H,endpoints[0],endpoints[1],dt,stock/initial,mean);
+    }
+  }
+  return 0;
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -1836,6 +2586,20 @@ int main(int argc, char **argv) {
   if (test == "surface-environment-demo") {
     return surface_environment_demo(argc - 2,argv + 2);
   }
+  if (test=="parse-m2-input" && argc==3) {
+    // Thin production-parser adapter for completion-control tests. No data,
+    // model state or MPI runtime is initialized by this path.
+    Moon::Runtime::Configuration configuration;
+    std::string error;
+    if (!Moon::Runtime::ParseApplicationInput(argv[2],&configuration,&error)) {
+      std::fprintf(stderr,"input rejected: %s\n",error.c_str());return 4;
+    }
+    std::printf("solar_model=%s\nradial_points=%d\nazimuth_points=%d\nselection=%s\nformal_contract=%s\n",
+        configuration.illuminationTerrainSolarModel.c_str(),configuration.illuminationDiscRadialPoints,
+        configuration.illuminationDiscAzimuthPoints,configuration.divinerEclipseSelection.c_str(),
+        configuration.m2FormalContractFile.c_str());
+    return 0;
+  }
   if (argc != 2) {
     std::fprintf(stderr, "mode %s does not accept additional arguments\n",
         argv[1]);
@@ -1853,9 +2617,36 @@ int main(int argc, char **argv) {
   if (test == "sticking") return sticking();
   if (test == "temperature") return temperature();
   if (test == "terrain-shadow") return terrain_shadow();
+  if (test == "psd-illumination") return psd_illumination();
+  if (test == "psd-illumination-invalid") {
+    // This ONE negative mode deliberately reaches the ordinary AMPS fatal
+    // handler, whose configured action is MPI_Abort. Pure numerical probe
+    // modes need no MPI runtime, but testing an MPI fatal handler before
+    // MPI_Init only tests an invalid harness. Initialize the normal AMPS MPI
+    // adapter here without initializing a mesh, source, thermal state or RNG.
+    // The Python owner also prepares the configured error-log directory in
+    // this child's private working directory before invoking the process.
+    PIC::InitMPI();
+    // AMPS encodes a caller-selected diagnostic error number separately from
+    // the physical refusal. Give this expected-error adapter a NONZERO abort
+    // status; its default zero would make a valid MPI_Abort look successful
+    // to the external runner. This changes neither the PSD guard nor core
+    // fatal handling and is scoped to this standalone negative dispatch.
+    SetExitErrorCode(__LINE__,1);
+    std::printf("native_negative_probe_mpi_initialized=1\n");
+    std::fflush(stdout);
+    const int result=psd_illumination(true);
+    // Only an unavailable compiled PSD model or a wrongly accepted factor
+    // can return. Both still require normal standalone MPI cleanup.
+    MPI_Finalize();
+    return result;
+  }
   if (test == "diviner-temperature") return diviner_temperature();
+  if (test == "prescribed-temperature") return prescribed_temperature();
   if (test == "thermal-inertia") return thermal_inertia();
+  if (test == "thermal-initialization") return thermal_initialization();
   if (test == "surface-physics") return surface_physics();
+  if (test == "surface-release-warming") return surface_release_warming();
   if (test == "cold-trapping") return cold_trapping();
   if (test == "argon-source") return argon_source();
 

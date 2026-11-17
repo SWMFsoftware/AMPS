@@ -1,9 +1,9 @@
-# Roadmap reconciliation through the 2026-11-12 M2 development work package
+# Roadmap reconciliation through the 2026-11-17 initial M3 work package
 
 The required roadmaps are not byte-identical after this work package:
 
 - current source-tree roadmap SHA-256:
-  `2761b447b46539edb21395550cd1b5d9ff6add4839b0db5a7e6d734cf2a4f02a`
+  `712e1152bf50af6d9ee1dad8f8a585809ca8b92cf42ac6fc7a009f6c0253ee17`
 - canonical validation-data roadmap SHA-256:
   `d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4`
 
@@ -109,3 +109,69 @@ or qualify D04/I21. Both roadmap hashes above are unchanged. The pilot gains
 an explicit cooperative wall-budget stop and supporting diagnostic artifacts,
 while the formal 500/5000 contract, all thresholds, IDs, and I13 review remain
 binding. External roadmaps/data remain untouched.
+
+## User-directed development/cluster execution budget — 2026-11-12
+
+The user requires the complete selected development campaign to finish within
+one hour, including required configuration/clean builds, tests, data QA, plots,
+reports and cleanup. Long qualification may be deferred to a larger cluster
+with a few hundred CPU-core hours. The source Phase-2 execution amendment
+records that requirement and truthful PASS/FAIL/ERROR/SKIPPED behavior. A
+300 core-hour aggregate cluster target is a proposed concrete planning value,
+not a measured cost or a per-seed grant. Whole-command deadline enforcement
+remains implementation work; the current runner has only per-child timeouts.
+
+The preceding source-roadmap hash was
+`2761b447b46539edb21395550cd1b5d9ff6add4839b0db5a7e6d734cf2a4f02a`;
+the new source hash is `bde5f001bdcbe072d7a8452d3f2afec93856f50cd1146560da3cd3027a96d2dc`.
+The canonical external roadmap remains
+`d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4`.
+Source additions control the newly authorized execution policy only. Common
+scientific thresholds, IDs, data/hold-out protections and formal predecessors
+remain binding. Neither roadmap grants qualification for a partial short run.
+Previously retained results/manifests preserve their actual historical hashes.
+
+## Approved numerical implementation — 2026-11-13
+
+The user approved v3 and requested implementation. Source Phase 2 now records
+the numerical protocol, short supporting scope, unchanged strict conservation
+gates, numerical error allocations and the explicit dedicated-M2 Mersenne
+Twister selection. This generator option already exists in AMPS; canonical
+M0/M1/sampling inputs retain their original RNG. No observation is altered.
+
+The previous operational-only source hash was
+`bde5f001bdcbe072d7a8452d3f2afec93856f50cd1146560da3cd3027a96d2dc`;
+the current source hash is `f1a2f9265f97f36da9ef9f6a17b3c83783d9f4b51882e6d81081ef7d567757cd`.
+External roadmap remains
+`d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4`.
+The approved source numerical/execution amendment controls the new diagnostics
+and error budgets; common science/data/hold-out gates and native metadata
+remain binding. Historical manifests are not rewritten. Actual implementation
+and unresolved formal qualification are recorded in STATUS.md.
+
+## November 16 remaining-M2 code follow-up
+
+The source roadmap records the newly implemented optional finite-disc, selected
+hold-out, formal inventory and polar export/scoring paths. It also records the
+user-confirmed D02 metadata gap and independent December initialization choice.
+The preceding source hash was `f1a2f9265f97f36da9ef9f6a17b3c83783d9f4b51882e6d81081ef7d567757cd`; the current source hash is `eba1571968afff4f948505b77578ee782c4fb54d02ac786ab9ecaa7ea00438d2`.
+External roadmap remains `d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4`. Common scientific thresholds, native
+data rules, IDs, predecessor order, M1 limits and frozen observations remain
+unchanged. Source text controls implementation/configuration only, and no
+supporting test can qualify a blocked formal comparison. Historical hashes
+in prior receipts and the approved numerical protocol are not rewritten.
+
+## Approved early M3 development — 2026-11-17
+
+The user authorized M3 implementation/local supporting verification before
+M1/M2 closure and an explicitly configured Maxwellian/Voronov atomic rate
+mode. Charge-exchange and molecular daughter-kinetics proposals must precede
+implementation of their unresolved choices. The source amendment controls
+development order and configuration only; common thresholds, test IDs,
+formal predecessors, data/hold-out protections and native metadata remain
+binding. A rate-service PASS cannot qualify product transfer or a milestone.
+
+Previous source SHA-256: `eba1571968afff4f948505b77578ee782c4fb54d02ac786ab9ecaa7ea00438d2`.
+Current source SHA-256: `712e1152bf50af6d9ee1dad8f8a585809ca8b92cf42ac6fc7a009f6c0253ee17`.
+External roadmap remains `d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4` and is read-only.
+The historical source hashes above retain their original dated meanings.

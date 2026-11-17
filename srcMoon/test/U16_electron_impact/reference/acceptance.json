@@ -2,25 +2,62 @@
   "id": "U16",
   "name": "Electron-impact ionization coefficient verification",
   "purpose": "Verify temperature-dependent electron-impact coefficients and neutral-to-ion mappings against D05.",
-  "production_capability": "Moon::ElectronImpactIonizationRate or its replacement using authoritative coefficients.",
-  "production_entry_points": ["Moon::ElectronImpactIonizationRate", "PIC electron-impact model dispatch"],
-  "configuration": "Explicit electron temperature/density and He/Na/Ne/Ar species mapping.",
-  "inputs": ["D05 Voronov coefficient table", "reference temperatures"],
-  "independent_reference": "Independent implementation of the published Voronov formula using D05 coefficients.",
+  "production_capability": "Shared atomic Maxwellian Voronov coefficient/rate service; optional application rate adapter, without generic executor enablement.",
+  "production_entry_points": [
+    "Moon::Species::ElectronImpact::MaxwellianVoronovTable::LoadNativeTable",
+    "Moon::Species::ElectronImpact::MaxwellianVoronovTable::RateCoefficientM3S",
+    "Moon::Species::ElectronImpact::MaxwellianVoronovTable::IonizationRateS",
+    "Moon::Species::ElectronImpact::ElectronTemperatureEvFromK",
+    "Moon::ElectronImpactIonizationRate optional rate-only adapter"
+  ],
+  "configuration": "Explicit Maxwellian closure, neutral He/Na/Ne/Ar, authoritative full406-row native table; Te in eV/ne in m^-3; no measured-electron forcing claim.",
+  "inputs": [
+    "hash-verified D05 cfit.dat/cfit.txt/cfit.f and processed full/selected tables",
+    "33 predeclared logarithmic temperatures per neutral including native endpoints",
+    "density0,1e6,1e7 m^-3",
+    "clearly labeled local parser/arithmetic controls, never authoritative data"
+  ],
+  "independent_reference": "70-digit independently implemented direct Decimal expression; exact full406-row native-vs-Fortran DATA and selected-CSV identities; optional unmodified archived single-precision Fortran execution.",
   "units": "K or eV as declared, m^3 s^-1, m^-3, s^-1",
   "frame_time_convention": "No frame/time dependence.",
   "deterministic_stochastic_controls": "Deterministic coefficients.",
-  "procedure": "Compare coefficients across valid temperature domains, mapping, limiting behavior, and rate=n_e*k(T_e).",
-  "metrics": ["coefficient relative error", "rate relative error", "domain/mapping checks"],
+  "procedure": "Verify immutable data/provenance/QA hashes; compile the exact production service and thin adapter; compare132 grid points to independent Decimal; check zero/scaled density, exact neutral/stage/domain mapping, invalid input/parser/transaction refusal, K/eV conversion and numerical tails; preserve actual original-Fortran comparison separately.",
+  "metrics": [
+    "coefficient relative error",
+    "rate relative error",
+    "domain/mapping checks",
+    "native406-row/Fortran/processed identities",
+    "transactional reload",
+    "exact-SI temperature conversion",
+    "representable U>80 tail",
+    "natural underflow",
+    "original-Fortran supporting precision diagnostic"
+  ],
   "acceptance_criteria": "Numerical formula agrees with independent evaluation within 1e-12 relative; invalid domains fail explicitly.",
-  "expected_pass_result": "Production rates reproduce D05 for every enabled neutral.",
-  "expected_failure_modes": ["hard-coded cross section", "missing ion species", "wrong atomic stage", "unit/domain error"],
-  "required_data": ["D05"],
-  "data_hashes": "D05 values are present in the photochemistry package, but not wired into production",
-  "predecessor_gates": ["U25"],
-  "artifacts": ["result.json", "rate_vs_temperature.csv", "data_hashes.json"],
-  "status_semantics": "SKIPPED because the current function uses a fixed 2e-20 m^2 cross section and a fixed speed rather than D05 coefficients.",
-  "implementation": "not-implemented",
-  "skip_reason": "Authoritative D05 exists locally but the production Moon kernel does not consume it and the active ion species are absent.",
-  "missing_capability": "Shared production implementation of the published temperature-dependent coefficient."
+  "expected_pass_result": "Shared production coefficient/rate service matches the frozen atomic fit and explicit input/units contract; linked ensemble physics remains independently gated.",
+  "expected_failure_modes": [
+    "hard-coded cross section",
+    "missing ion species",
+    "wrong atomic stage",
+    "unit/domain error"
+  ],
+  "required_data": [
+    "D05"
+  ],
+  "data_hashes": "reference/source_manifest.json freezes native3 and processed2 hashes; every run records actual package/provenance/QA/native metadata/script/compiler/source/roadmap identity.",
+  "predecessor_gates": [
+    "U25"
+  ],
+  "artifacts": [
+    "result.json",
+    "rate_vs_temperature.csv",
+    "data_hashes.json",
+    "unique maxwellian-kernel evidence directory",
+    "compiler/source identity",
+    "per-query stdout/stderr",
+    "fortran_comparison.json",
+    "control-fixtures-not-data"
+  ],
+  "status_semantics": "PASS is local shared-kernel and separately attached runtime-rate control evidence only; not generic chemistry executor, I23 lifetime, M3 qualification or measured plasma validation. FAIL is an evaluated numerical/control discrepancy; ERROR is build/runtime/parser/hash corruption; SKIPPED means required data/compiler/capability unavailable.",
+  "implementation": "maxwellian-voronov-probe"
 }

@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 
 
-def evaluate(path):
+def evaluate(path, require_coverage=True, allow_numerical_loss=False):
     """Reconstruct every gas, surface and combined identity and count receipt."""
     with path.open(newline="") as stream:rows=list(csv.DictReader(stream))
     if not rows: raise ValueError("empty production M2 ledger")
@@ -60,15 +60,20 @@ def evaluate(path):
             passed=(count==0 and abs(gas)<=bound+printed and abs(surface)<=bound+printed and
                     abs(gas+surface)<=2*bound+printed and relative<Decimal("0.005") and
                     d("photolytic_loss_atoms")==0 and d("photolytic_product_atoms")==0 and
-                    d("numerical_removal_count")==0)
+                    (allow_numerical_loss or d("numerical_removal_count")==0))
             if not passed:failures.append({"species":r["species"],"step":r["completed_steps"],"count_residual":str(count),"gas_residual_atoms":str(gas),"surface_residual_atoms":str(surface)})
     finals={s:[r for r in rows if r["species"]==s][-1] for s in species}
     # Require actual coverage, not a vacuous zero-event conservation PASS.
-    for s,r in finals.items():
-        for e in ("emission","adsorption","surface_deposit","escape"):
-            if int(r[e+"_count"])==0:failures.append({"species":s,"missing_event":e})
-    if int(finals["Ar"]["surface_release_count"])==0:
-        failures.append({"species":"Ar","missing_event":"surface_release"})
+    # Only the original controlled coverage fixture guarantees all event
+    # paths in twenty steps. A separately labelled zero-startup/cohort case
+    # evaluates bookkeeping without inventing rare events; the legacy default
+    # and its independent positive coverage checks remain unchanged.
+    if require_coverage:
+        for s,r in finals.items():
+            for e in ("emission","adsorption","surface_deposit","escape"):
+                if int(r[e+"_count"])==0:failures.append({"species":s,"missing_event":e})
+        if int(finals["Ar"]["surface_release_count"])==0:
+            failures.append({"species":"Ar","missing_event":"surface_release"})
     return {"status":"FAIL" if failures else "PASS","scope":"supporting-I19-Na-Ar-accounting",
             "formal_i19_status":"SKIPPED","formal_reason":"I13 qualification is not supplied by this supporting check",
             "rows":len(rows),"maximum_relative_imbalance":str(maximum),"failures":failures,"final_rows":finals}

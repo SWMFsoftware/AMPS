@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "source_case": "tenishev2014_hybrid_8",
+  "distribution_name": "unit_equal_shape_not_science",
+  "mode": "shape",
+  "species": {
+    "H2O": {
+      "jet:I_baghdad": 0.06666666666666667,
+      "jet:II_damascus": 0.06666666666666667,
+      "jet:III_damascus": 0.06666666666666667,
+      "jet:IV_alexandria": 0.06666666666666667,
+      "jet:V_cairo": 0.06666666666666667,
+      "jet:VI_baghdad": 0.06666666666666667,
+      "jet:VII_baghdad": 0.06666666666666667,
+      "jet:VIII_cairo": 0.06666666666666667,
+      "stripe:alexandria": 0.06666666666666667,
+      "stripe:baghdad": 0.06666666666666667,
+      "stripe:cairo": 0.06666666666666667,
+      "stripe:damascus": 0.06666666666666667,
+      "stripe:baghdad_extra": 0.06666666666666667,
+      "stripe:cairo_extra": 0.06666666666666667,
+      "stripe:damascus_extra": 0.06666666666666667
+    },
+    "CO2": {
+      "jet:I_baghdad": 0.06666666666666667,
+      "jet:II_damascus": 0.06666666666666667,
+      "jet:III_damascus": 0.06666666666666667,
+      "jet:IV_alexandria": 0.06666666666666667,
+      "jet:V_cairo": 0.06666666666666667,
+      "jet:VI_baghdad": 0.06666666666666667,
+      "jet:VII_baghdad": 0.06666666666666667,
+      "jet:VIII_cairo": 0.06666666666666667,
+      "stripe:alexandria": 0.06666666666666667,
+      "stripe:baghdad": 0.06666666666666667,
+      "stripe:cairo": 0.06666666666666667,
+      "stripe:damascus": 0.06666666666666667,
+      "stripe:baghdad_extra": 0.06666666666666667,
+      "stripe:cairo_extra": 0.06666666666666667,
+      "stripe:damascus_extra": 0.06666666666666667
+    }
+  },
+  "fit_provenance": {
+    "purpose": "parser-and-numerics-test-only",
+    "warning": "equal strengths are not an observational fit"
+  }
+}

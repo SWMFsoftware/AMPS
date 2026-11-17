@@ -530,12 +530,67 @@ def prepare_i16_input(template: Path, destination: Path,
         text, "surface_temperature_mode", "diviner-map", template)
     text = replace_moon_setting(
         text, "diviner_temperature_table_file", str(table.resolve()), template)
+    # This is the explicitly approved I16 facet approximation, not an implicit
+    # native-parser fallback for arbitrary legacy inputs. Preserve the choice
+    # in the staged input and a separate receipt before launching production.
+    interpretation = "diviner_map_kinetic_interpretation"
+    if re.search(r"(?m)^\s*" + interpretation + r"\s*=", text):
+        text = replace_moon_setting(
+            text, interpretation, "isothermal-grey", template)
+    else:
+        endings = list(re.finditer(r"(?m)^\s*#end application[^\n]*", text))
+        if len(endings) != 1:
+            raise ValueError("I16 requires one explicit Moon application block")
+        point = endings[0].start()
+        text = (text[:point] +
+                "! Approved grey-facet boundary: native T_bol -> kinetic "
+                "T_bol/epsilon^(1/4); scoring converts back to brightness.\n" +
+                interpretation + " = isothermal-grey\n" + text[point:])
     destination.write_text(text, encoding="utf-8")
+    policy = {
+        "schema": "srcMoon-I16-diviner-boundary-interpretation-v1",
+        "scope": "explicit-user-approved-isothermal-grey-facet-approximation",
+        "interpretation": "isothermal-grey",
+        "input_quantity": "bolometric_brightness_temperature_K",
+        "production_quantity": "kinetic_surface_temperature_K",
+        "inverse": "T_kin_K = T_bol_K / thermal_infrared_emissivity^(1/4)",
+        "comparison_quantity": "bolometric_brightness_temperature_K",
+        "forward": "T_bol_K = thermal_infrared_emissivity^(1/4) * T_kin_K",
+        "limits": "isothermal grey resolved facet; no anisothermal or spectral inversion",
+        "temperature_table_sha256": sha256(table),
+        "benchmark_points_sha256": sha256(benchmark),
+        "staged_input_sha256": sha256(destination),
+    }
+    (destination.parent / "diviner_boundary_interpretation.json").write_text(
+        json.dumps(policy, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return qa_path
 
 
+def i16_model_brightness_k(model: dict[str, str], emissivity: float) -> float:
+    """Validate an I16 native row and return only its comparable brightness.
+
+    This independent arithmetic guard detects stale kinetic-only receipts or
+    a mislabeled column. It does not infer emissivity from observations or
+    change their uncertainties, membership, quality flags or physical values.
+    The relative roundoff bound covers 17-digit serialization and two distinct
+    fourth-root evaluations; it is not a scientific agreement tolerance.
+    """
+    kinetic = float(model["production_kinetic_temperature_K"])
+    brightness = float(model["production_bolometric_brightness_temperature_K"])
+    row_emissivity = float(model["bolometric_emissivity"])
+    if not (math.isfinite(emissivity) and 0.0 < emissivity <= 1.0 and
+            math.isfinite(row_emissivity) and row_emissivity == emissivity and
+            math.isfinite(kinetic) and kinetic > 0.0 and
+            math.isfinite(brightness) and brightness > 0.0):
+        raise ValueError("I16 contains invalid grey-facet temperature/emissivity")
+    expected = emissivity ** 0.25 * kinetic
+    if not math.isclose(brightness, expected, rel_tol=1.0e-12, abs_tol=0.0):
+        raise ValueError("I16 brightness column disagrees with the grey forward operator")
+    return brightness
+
+
 def prepare_i17_input(template: Path, destination: Path,
-                      output_root: Path) -> Path:
+                      output_root: Path, *, executable: Path | None = None) -> Path:
     """Stage a qualified frozen RDR product and derive an auditable receipt.
 
     Processed validation products belong below the canonical dataset's
@@ -572,13 +627,29 @@ def prepare_i17_input(template: Path, destination: Path,
         raise ValueError(
             "D03 RDR history/contract/processor hash mismatch")
 
+    from i17_holdout import (HoldoutUnavailable, claim_release, selection,
+                             validate_release, write_native_authorization)
+    selected = selection(template)
+    release = None
+    if selected == "holdout":
+        # Byte integrity and the named investigator's frozen review are
+        # checked before CSV parsing/staging can expose a December value.
+        # There is intentionally no automatic threshold-freeze fallback.
+        if executable is None:
+            raise MissingPrerequisite("I17 December requires explicit executable identity")
+        try:
+            release = validate_release(template, executable, history=canonical_history,
+                contract=canonical_contract, processor=processor, campaign=output_root)
+        except HoldoutUnavailable as error:
+            raise MissingPrerequisite(str(error)) from error
+
     # Preserve the exact observational product and QA receipt inside the
     # linked campaign.  AMPS reads this immutable staged copy, so later edits
     # to a shared processed directory cannot change an already recorded run.
     data_directory = output_root / "_m2_validation_data" / "D03-RDR-I17"
     data_directory.mkdir(parents=True, exist_ok=True)
     history = data_directory / canonical_history.name
-    training_history = data_directory / "training_eclipse_thermal_history.csv"
+    selected_history = data_directory / f"{selected}_eclipse_thermal_history.csv"
     qa_path = data_directory / canonical_qa.name
     contract_snapshot = data_directory / contract.name
 
@@ -592,6 +663,15 @@ def prepare_i17_input(template: Path, destination: Path,
             return
         shutil.copy2(source, target)
 
+    if release is not None:
+        try:
+            claim_release(data_directory, release)
+        except HoldoutUnavailable as error:
+            raise MissingPrerequisite(str(error)) from error
+        stage(Path(release["path"]), data_directory / "reviewed_holdout.json")
+        (data_directory / "holdout_release_validation.json").write_text(
+            json.dumps(release, indent=2, sort_keys=True)+"\n", encoding="utf-8")
+
     stage(canonical_history, history)
     stage(canonical_qa, qa_path)
     stage(canonical_contract, contract_snapshot)
@@ -600,13 +680,13 @@ def prepare_i17_input(template: Path, destination: Path,
         if source.is_file():
             stage(source, data_directory / name)
 
-    # The first-comparison campaign is allowed to inspect June training rows
-    # only.  Materialize a byte-stable training view before launching AMPS so
-    # neither C++ nor the comparison scorer can accidentally read a December
-    # temperature while numerical thresholds are still unfrozen.  Filtering
+    # The default first-comparison campaign may inspect June only. A reviewed
+    # hold-out release explicitly chooses December. Materialize exactly that
+    # selected view before launching AMPS; the other stream is inaccessible to
+    # the native adapter/scorer. Filtering
     # uses only the already-frozen ``selection`` label; it never examines a
     # model residual and never edits the canonical processed product.
-    temporary = training_history.with_suffix(".csv.tmp")
+    temporary = selected_history.with_suffix(".csv.tmp")
     with history.open(newline="", encoding="utf-8") as source, \
             temporary.open("w", newline="", encoding="utf-8") as target:
         reader = csv.DictReader(source)
@@ -617,23 +697,23 @@ def prepare_i17_input(template: Path, destination: Path,
         writer.writeheader()
         count = 0
         for row in reader:
-            if row["selection"] == "training":
+            if row["selection"] == selected:
                 writer.writerow(row)
                 count += 1
-            elif row["selection"] != "holdout":
+            elif row["selection"] not in ("training", "holdout"):
                 raise ValueError(
                     f"I17 history has unknown selection {row['selection']!r}")
     if count == 0:
         temporary.unlink(missing_ok=True)
-        raise ValueError("I17 processed history has no June training rows")
-    if training_history.is_file():
-        if sha256(training_history) != sha256(temporary):
+        raise ValueError(f"I17 processed history has no {selected} rows")
+    if selected_history.is_file():
+        if sha256(selected_history) != sha256(temporary):
             temporary.unlink(missing_ok=True)
             raise ValueError(
-                f"refusing to overwrite changed I17 artifact {training_history}")
+                f"refusing to overwrite changed I17 artifact {selected_history}")
         temporary.unlink()
     else:
-        temporary.replace(training_history)
+        temporary.replace(selected_history)
     text = template.read_text(encoding="utf-8")
     # This receipt moves to a campaign directory. Resolve source input paths
     # against the original template and give generated outputs unique owners;
@@ -649,10 +729,28 @@ def prepare_i17_input(template: Path, destination: Path,
             str((destination.parent / name).resolve()), template)
     text = replace_moon_setting(
         text, "diviner_eclipse_history_file",
-        str(training_history.resolve()), template)
+        str(selected_history.resolve()), template)
     text = replace_moon_setting(
         text, "diviner_eclipse_selection_contract_file",
         str(contract_snapshot.resolve()), template)
+    if release is not None:
+        text = replace_moon_setting(text, "diviner_eclipse_freeze_file",
+            str((data_directory / "reviewed_holdout.json").resolve()), template)
+        authorization = data_directory / "holdout_native_authorization.txt"
+        write_native_authorization(authorization, history=selected_history,
+            freeze=data_directory / "reviewed_holdout.json",
+            validation=data_directory / "holdout_release_validation.json", release=release)
+        # This is generated file transport, not a new physical default. Legacy
+        # receipts need not contain the optional native authorization key.
+        key = "diviner_eclipse_authorization_file"
+        if re.search(rf"(?mi)^\s*{key}\s*=", text):
+            text = replace_moon_setting(text, key, str(authorization.resolve()), template)
+        else:
+            endings = list(re.finditer(r"(?mi)^\s*#end\s+application\s*$", text))
+            if len(endings) != 1:
+                raise ValueError("I17 authorization requires one native application end boundary")
+            at = endings[0].start()
+            text = text[:at]+key+" = "+str(authorization.resolve())+"\n"+text[at:]
     text = (
         "! Generated I17 receipt: RDR evidence and its frozen contract are "
         "observation inputs only and never initialize or tune the thermal state.\n" +
@@ -841,6 +939,15 @@ def run_monitored(command: list[str], cwd: Path, environment: dict[str, str],
 
 
 def check(test_id: str, receipt: dict[str, object], work: Path) -> tuple[str, dict[str, object], str]:
+    if test_id == "I15":
+        # Native geometry and the independent reference remain separate. The
+        # scorer rechecks frozen contracts, runtime identity and exact joins.
+        from m2_illumination import score
+        identity=json.loads((work/"run_manifest.json").read_text())
+        return score(work,receipt,executable=Path(identity["executable"]["path"]))
+    if test_id == "I20":
+        from m2_polar import finish_run
+        return finish_run(work,receipt)
     """Apply only predeclared physical/numerical criteria for one frozen ID."""
     metrics: dict[str, object] = {}
     if test_id == "I01":
@@ -1360,6 +1467,9 @@ def check(test_id: str, receipt: dict[str, object], work: Path) -> tuple[str, di
             "production LOLA control points, topology, radial rays, and "
             "normal mover collision path")
     if test_id == "I16":
+        if receipt.get("diviner_map_kinetic_interpretation") != "isothermal-grey":
+            raise ValueError("I16 requires the explicit isothermal-grey boundary receipt")
+        emissivity = float(receipt["bolometric_emissivity"])
         table_path = Path(str(receipt["diviner_temperature_table_file"]))
         benchmark_path = table_path.parent / "benchmark_points.csv"
         qa_path = table_path.parent / "d03_gcp_qa.json"
@@ -1417,7 +1527,7 @@ def check(test_id: str, receipt: dict[str, object], work: Path) -> tuple[str, di
             else:
                 observed = ((1.0 - fraction) * float(lower["temperature_k"]) +
                             fraction * float(upper["temperature_k"]))  # type: ignore[index]
-            predicted = float(model["production_temperature_k"])
+            predicted = i16_model_brightness_k(model, emissivity)
             if not (math.isfinite(observed) and observed > 0.0 and
                     math.isfinite(predicted) and predicted > 0.0):
                 raise ValueError("I16 comparison contains invalid temperature")
@@ -1444,7 +1554,7 @@ def check(test_id: str, receipt: dict[str, object], work: Path) -> tuple[str, di
                 stream, fieldnames=list(comparisons[0]), lineterminator="\n")
             writer.writeheader(); writer.writerows(comparisons)
         artifacts = render_comparison(
-            work, "I16 Diviner GCP hold-out temperature")
+            work, "I16 Diviner GCP hold-out bolometric brightness temperature")
         rmse = math.sqrt(sum(value * value for value in residuals) /
                          len(residuals))
         mean_bias = sum(residuals) / len(residuals)
@@ -1456,30 +1566,61 @@ def check(test_id: str, receipt: dict[str, object], work: Path) -> tuple[str, di
             "temperature_table_sha256": sha256(table_path),
             "benchmark_points_sha256": sha256(benchmark_path),
             "uncertainty_metadata": "unavailable in native GCP",
+            "comparison_quantity": "bolometric_brightness_temperature_K",
+            "production_quantity": "kinetic_surface_temperature_K",
+            "diviner_map_kinetic_interpretation": "isothermal-grey",
+            "bolometric_emissivity": emissivity,
             "artifacts": artifacts,
         })
         return (PASS if rmse <= 15.0 else FAIL), metrics, (
-            "production surface callback versus frozen GOOD D03 GCP hold-out; "
+            "grey-facet brightness from production kinetic callback versus "
+            "frozen GOOD D03 GCP hold-out brightness; "
             "RMSE gate is 15 K")
     if test_id == "I17":
-        # The approved first comparison is June training only.  C++ refuses a
-        # non-training row, and this scorer consumes only the model table
-        # emitted after observation-free periodic spin-up.  It deliberately
-        # creates a threshold *candidate*, never a PASS and never a frozen
-        # hold-out criterion.
-        model_path = work / "receipt.txt.I17_training_model.csv"
+        # June still produces a review-only candidate. December is a separate,
+        # explicitly released selection after pre-launch approval/identity
+        # checks, with independent observation-free periodic initialization.
+        selected = str(receipt.get("comparison_selection", "training"))
+        if selected not in ("training", "holdout"):
+            raise ValueError("I17 receipt has an unknown comparison selection")
+        release = None
+        if selected == "holdout":
+            from i17_holdout import HoldoutUnavailable, staged_release
+            try:
+                release = staged_release(work / "application.in")
+            except HoldoutUnavailable as error:
+                raise MissingPrerequisite(str(error)) from error
+        model_path = work / f"receipt.txt.I17_{selected}_model.csv"
         if not model_path.is_file():
             raise ValueError(f"I17 linked model table is missing: {model_path}")
         with model_path.open(newline="", encoding="utf-8") as stream:
             rows = list(csv.DictReader(stream))
-        expected = int(receipt["training_comparison_row_count"])
+        expected = int(receipt[f"{selected}_comparison_row_count"])
         if not rows or len(rows) != expected:
             raise ValueError(
                 "I17 model row count disagrees with the linked receipt")
-        if int(receipt.get("holdout_rows_accessed", -1)) != 0:
+        if selected == "training" and int(receipt.get("holdout_rows_accessed", -1)) != 0:
             raise ValueError("I17 first comparison accessed hold-out rows")
+        if selected == "holdout" and (
+                int(receipt.get("holdout_rows_accessed", -1)) != expected or
+                receipt.get("initialization_mode") != "independent-observation-free-periodic-spinup"):
+            raise ValueError("I17 hold-out receipt lacks selected independent initialization")
+        if any(row.get("selection", "training") != selected for row in rows):
+            raise ValueError("I17 model table contains an unselected row")
         if receipt.get("capability_status") != "EXPERIMENTAL / NOT VALIDATED":
             raise ValueError("I17 receipt lacks its experimental status label")
+        holdout_score = None
+        if selected == "holdout":
+            from i17_holdout import HoldoutUnavailable, score_holdout
+            try:
+                holdout_score = score_holdout(rows, release)
+            except HoldoutUnavailable as error:
+                raise MissingPrerequisite(str(error)) from error
+            if holdout_score[0] == SKIPPED:
+                # A valid release cannot invent an identifiable observed
+                # phase. Preserve the reason/metrics, without manufacturing
+                # a comparison figure for an unavailable scientific gate.
+                return holdout_score
 
         comparisons: list[dict[str, object]] = []
         diagnostics: list[dict[str, object]] = []
@@ -1500,15 +1641,16 @@ def check(test_id: str, receipt: dict[str, object], work: Path) -> tuple[str, di
             residuals.append(residual)
             normalized.append(residual / uncertainty)
             comparisons.append({
-                "comparison_id": "I17_Diviner_June_training_Tbol",
+                "comparison_id": ("I17_Diviner_June_training_Tbol" if selected == "training"
+                                  else "I17_Diviner_December_holdout_Tbol"),
                 "x_value": (float(row["ephemeris_time_tdb_s"]) -
                             first_epoch) / 60.0,
-                "x_unit": "minutes-from-first-training-sample",
+                "x_unit": f"minutes-from-first-{selected}-sample",
                 "reference_value": f"{observed:.17g}",
                 "model_value": f"{predicted:.17g}",
                 "y_unit": "K",
                 "uncertainty_value": f"{uncertainty:.17g}",
-                "selection": "training-experimental",
+                "selection": "training-experimental" if selected == "training" else "hold-out",
             })
             for channel in range(6, 10):
                 observed_radiance = float(
@@ -1551,7 +1693,8 @@ def check(test_id: str, receipt: dict[str, object], work: Path) -> tuple[str, di
             writer.writerows(diagnostics)
         artifacts = render_comparison(
             work,
-            "I17 EXPERIMENTAL June training: model vs Diviner T_bol")
+            "I17 EXPERIMENTAL June training: model vs Diviner T_bol" if selected == "training"
+            else "I17 reviewed December hold-out: model vs Diviner T_bol")
         rmse = math.sqrt(sum(value * value for value in residuals) /
                          len(residuals))
         bias = sum(residuals) / len(residuals)
@@ -1564,6 +1707,16 @@ def check(test_id: str, receipt: dict[str, object], work: Path) -> tuple[str, di
             residual * residual /
             float(row["observed_uncertainty_K"]) ** 2
             for residual, row in zip(residuals, rows)) / weight_sum)
+        if selected == "holdout":
+            status, holdout_metrics, reason = holdout_score
+            metrics.update(holdout_metrics)
+            metrics.update({"artifacts": artifacts,
+                "channel_diagnostics": str(diagnostic_path),
+                "spinup_completed_cycles": int(receipt["spinup_completed_cycles"]),
+                "spinup_maximum_node_temperature_change_k": float(receipt["spinup_maximum_node_temperature_change_k"]),
+                "spinup_maximum_column_enthalpy_change_j_m2": float(receipt["spinup_maximum_column_enthalpy_change_j_m2"]),
+                "maximum_production_update_temperature_change_k": float(receipt["maximum_production_update_temperature_change_k"])})
+            return status, metrics, reason
         candidate = {
             "schema": "srcMoon-I17-June-threshold-candidate-v1",
             "status": "REVIEW_REQUIRED_NOT_FROZEN",
@@ -1582,6 +1735,9 @@ def check(test_id: str, receipt: dict[str, object], work: Path) -> tuple[str, di
                 "artifact are required before December rows may be scored."),
             "assumptions": {
                 "solar_disc": receipt["solar_disc_radiance_model"],
+                "terrain_solar_model": receipt.get("terrain_solar_model", "point-sun"),
+                "disc_radial_points": receipt.get("disc_radial_points", 0),
+                "disc_azimuth_points": receipt.get("disc_azimuth_points", 0),
                 "earth_atmosphere": receipt[
                     "earth_atmosphere_transmission_model"],
                 "capability": receipt["capability_status"],
@@ -1852,7 +2008,7 @@ def git_value(*arguments: str) -> str:
 
 def manifest(test_id: str, executable: Path, command: list[str], seed: object | None,
              application_input: Path | None = None,
-             mpi_ranks: int = 1) -> dict[str, object]:
+             mpi_ranks: int = 1, *, require_scientific_data: bool = True) -> dict[str, object]:
     """Capture deterministic controls; manifests contain no timestamps by design.
 
     ``mpi_ranks`` is passed explicitly by every configurable linked runner so
@@ -1901,6 +2057,14 @@ def manifest(test_id: str, executable: Path, command: list[str], seed: object | 
             path = d01 / name
             if path.is_file():
                 external_data[str(path)] = sha256(path)
+    if application_input is not None and moon_setting(application_input,"surface_geometry")=="lola":
+        # I18/I19/cohort/source-integral initialization consumes the terrain
+        # too. Record the actual configured files, including noncanonical
+        # locations, rather than limiting D01 identities to the I14 test ID.
+        for key in ("lola_image_file","lola_label_file"):
+            path=Path(moon_setting(application_input,key,preserve_case=True))
+            if not path.is_absolute():path=application_input.parent/path
+            external_data[str(path.resolve())]=sha256(path)
     if test_id == "I16" and application_input is not None:
         table_matches = re.findall(
             r"(?mi)^\s*diviner_temperature_table_file\s*=\s*([^!\s]+)\s*$",
@@ -1929,7 +2093,11 @@ def manifest(test_id: str, executable: Path, command: list[str], seed: object | 
             application_input, "diviner_eclipse_history_file", preserve_case=True))
         for path in (history.parent / "d03_rdr_qa.json",
                      history.parent / "processor.stdout.log",
-                     history.parent / "processor.stderr.log"):
+                     history.parent / "processor.stderr.log",
+                     history.parent / "reviewed_holdout.json",
+                     history.parent / "holdout_release_validation.json",
+                     history.parent / "holdout_release_claim.json",
+                     history.parent / "holdout_native_authorization.txt"):
             if path.is_file():
                 external_data[str(path)] = sha256(path)
     # Bind the package-level qualification records as well as the numerical
@@ -1939,7 +2107,13 @@ def manifest(test_id: str, executable: Path, command: list[str], seed: object | 
         "I14": ("D01",), "I15": ("D02",), "I16": ("D03",),
         "I17": ("D03",), "I20": ("D02", "D03"),
     }
-    for dataset_id in dataset_dependencies.get(test_id, ()):
+    # Geometry-only I15/I20 development fixtures consume no observations.
+    # Their manifests retain every actual SPICE/LOLA/source/input hash but
+    # cannot demand a missing observational package or become formal PASS.
+    # Formal callers retain the strict default; no alternate ID is invented.
+    if not require_scientific_data and test_id not in {"I15","I20"}:
+        raise ValueError("observation-free manifest scope is limited to I15/I20 operator fixtures")
+    for dataset_id in (dataset_dependencies.get(test_id, ()) if require_scientific_data else ()):
         ready, reason, evidence = dataset_package_preflight(dataset_id)
         if not ready:
             raise MissingPrerequisite(reason)
@@ -1955,6 +2129,9 @@ def manifest(test_id: str, executable: Path, command: list[str], seed: object | 
                               check=False).stdout.splitlines()
     return {
         "schema": "srcMoon-linked-run-manifest-v2", "test_id": test_id,
+        "scientific_data_preflight_required": require_scientific_data,
+        **({"execution_scope":"supporting-observation-free-operator-check",
+            "formal_test_status":"SKIPPED"} if not require_scientific_data else {}),
         "source_revision": git_value("rev-parse", "HEAD"),
         "source_dirty_paths": git_value("status", "--short").splitlines(),
         "executable": {"path": str(executable.resolve()), "sha256": sha256(executable)},
@@ -2481,11 +2658,22 @@ def run(test_id: str, executable: Path, output_root: Path,
         application_input: Path | None = None,
         mpi_ranks: int = 1,
         campaign_mode: str = "qualification",
-        parallel_levels: int = 1, wall_seconds: float = 3600.0) -> int:
+        parallel_levels: int = 1, wall_seconds: float = 3600.0,
+        m2_cluster_execute: bool = False) -> int:
     # Reject invalid layouts before constructing a command or manifest.  This
     # guard also protects direct Python callers, which bypass argparse below.
     if mpi_ranks < 1:
         raise ValueError("mpi_ranks must be a positive integer")
+    if test_id=="I19" and campaign_mode=="qualification" and application_input is not None:
+        # I19 is an aggregate of the approved native design, not a single
+        # cheap fixture. Dispatch before deriving another path-bearing input
+        # so its frozen source/executable/input contract retains exact identity.
+        # Development/regression never opts into long execution implicitly.
+        from m2_formal_campaign import run_formal_i19
+        record=run_formal_i19(executable,application_input,output_root,
+            mpi_ranks=mpi_ranks,allow_execute=m2_cluster_execute,wall_seconds=wall_seconds)
+        print(f"{record['status']} I19: {record['reason']}")
+        return {PASS:0,FAIL:1,ERROR:2,SKIPPED:77}[record["status"]]
     if test_id == "I11":
         return run_i11_campaign(executable, output_root, application_input,
                                 mpi_ranks, campaign_mode, parallel_levels,
@@ -2630,8 +2818,21 @@ def run(test_id: str, executable: Path, output_root: Path,
                 raise ValueError("I17 requires its reviewed M2 input template")
             effective_input = output / "application.in"
             prepare_i17_input(
-                application_input.resolve(), effective_input, output_root)
-        if test_id in ("I16", "I17"):
+                application_input.resolve(), effective_input, output_root,
+                executable=executable)
+        if test_id == "I15":
+            from m2_illumination import stage_input,Unavailable
+            if application_input is None:raise ValueError("I15 requires an explicit M2 input")
+            effective_input=output/"application.in"
+            try:
+                stage_input(application_input.resolve(),effective_input,executable=executable)
+            except Unavailable as gap:raise MissingPrerequisite(str(gap)) from gap
+        if test_id == "I20":
+            from m2_polar import prepare_input
+            if application_input is None:raise ValueError("I20 requires an explicit M2 input")
+            effective_input=output/"application.in"
+            prepare_input(application_input.resolve(),effective_input,output_root)
+        if test_id in ("I15", "I16", "I17", "I20"):
             # These tests derive an observation-bearing receipt after the
             # initial command was assembled. Bind the executable to that same
             # receipt before writing its manifest: launching the original
@@ -2640,19 +2841,10 @@ def run(test_id: str, executable: Path, output_root: Path,
             # The final argument is the path following the existing -input.
             command[-1] = str(effective_input.resolve())
         unavailable_m2_capability = {
-            "I15": (
-                "the production terrain service currently evaluates a "
-                "point-Sun ray; D02 requires the published extended-solar-disc "
-                "18.6-year/one-hour operator before observational scoring"),
             "I19": (
-                "the supporting Na/Ar finite-inventory ledger does not "
-                "establish the complete formal I19 campaign, all required "
-                "production paths and time/weight convergence; retain its "
-                "separate development results until those gates pass"),
-            "I20": (
-                "I20 requires passing linked I15, I17, I18, and I19 evidence; "
-                "the prepared D02/PRP tables do not substitute for those "
-                "production capability gates"),
+                "I19 full numerical qualification is not selected in bounded "
+                "regression mode; use qualification with a reviewed explicit "
+                "execution/import contract and every original predecessor"),
         }
         if test_id in unavailable_m2_capability:
             if application_input is None:
@@ -2744,6 +2936,14 @@ def run(test_id: str, executable: Path, output_root: Path,
             derive_i11_input(application_input.resolve(), effective_input, finest)  # type: ignore[arg-type]
         run_manifest = manifest(test_id, executable, command, seed,
                                 effective_input, mpi_ranks)
+        if test_id in {"I15","I17","I20"}:
+            import datetime as _datetime
+            run_manifest["started_utc"]=_datetime.datetime.now(_datetime.timezone.utc).isoformat()
+            # Bind the separately validated scientific contract snapshots.
+            # Their own nested hashes identify every native reference input;
+            # this outer hash prevents later replacement of that proof.
+            run_manifest["reference_contracts"]=[
+                {"path":str(path),"sha256":sha256(path)} for path in output.glob("*reference_manifest.json")]
         (output / "run_manifest.json").write_text(json.dumps(run_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         if (application_input is not None and test_id != "I13" and
                 effective_input == application_input):
@@ -2846,6 +3046,10 @@ def run(test_id: str, executable: Path, output_root: Path,
                 # Changing only dt includes initialization sensitivity in the
                 # error estimate rather than reusing a coarse initial state.
                 from i17_convergence import compare_time_steps
+                from i17_holdout import selection as i17_selection
+                selected = i17_selection(effective_input)
+                if receipt.get("comparison_selection", "training") != selected:
+                    raise ValueError("I17 receipt selected a different observation stream")
                 base_step = float(moon_setting(effective_input, "thermal_time_step_s"))
                 if not math.isfinite(base_step) or base_step <= 0.0:
                     raise ValueError("I17 thermal time step must be finite and positive")
@@ -2883,13 +3087,15 @@ def run(test_id: str, executable: Path, output_root: Path,
                         raise RuntimeError(f"I17 dt/{divisor} exited {code}; see {refined}")
                     finer = parse_receipt(refined_receipt)
                     if (finer.get("test_id") != "I17" or
-                            finer.get("holdout_rows_accessed") != 0 or
+                            finer.get("comparison_selection", "training") != selected or
+                            (selected == "training" and finer.get("holdout_rows_accessed") != 0) or
+                            (selected == "holdout" and int(finer.get("holdout_rows_accessed", 0)) < 1) or
                             float(finer["thermal_time_step_s"]) != base_step / divisor):
                         raise ValueError("I17 refined receipt disagrees with its configuration")
                     directories.append(refined)
                     receipts.append(finer)
                 passed, convergence = compare_time_steps(
-                    directories, output / "thermal_time_step_convergence.csv")
+                    directories, output / "thermal_time_step_convergence.csv", selected)
                 # The existing <50 K/update rule applies to every execution,
                 # including the coarse run, and is never inferred from dt alone.
                 jumps = [float(item["maximum_production_update_temperature_change_k"])
@@ -2943,6 +3149,8 @@ def main() -> int:
                         help="concurrent isolated I11 meshes; ranks apply per mesh")
     parser.add_argument("--test-runtime-seconds", type=float, default=3600,
                         help="parallel I11 launch budget; unfinished children are ERROR")
+    parser.add_argument("--m2-cluster-execute",action="store_true",
+                        help="explicit opt-in to reviewed long I19 execution; never a development default")
     arguments = parser.parse_args()
     if arguments.mpi_ranks < 1:
         parser.error("--mpi-ranks must be a positive integer")
@@ -2950,7 +3158,8 @@ def main() -> int:
         parser.error("--test-runtime-seconds must be finite and positive")
     return run(arguments.test_id, arguments.amps, arguments.output_dir.resolve(),
                arguments.input, arguments.mpi_ranks, arguments.campaign_mode,
-               arguments.parallel_levels, arguments.test_runtime_seconds)
+               arguments.parallel_levels, arguments.test_runtime_seconds,
+               arguments.m2_cluster_execute)
 
 
 if __name__ == "__main__":

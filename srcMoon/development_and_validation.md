@@ -2066,6 +2066,58 @@ install its own I13 reference. Fast regression and full qualification remain
 separate execution modes. The external roadmap/raw data are unchanged;
 `test/ROADMAP_RECONCILIATION.md` records the hashes and controlling contracts.
 
+**Approved execution-budget amendment, 2026-11-12:** The user requires the
+selected development campaign to complete within one hour on the development
+machine. This is a single end-to-end wall-clock budget, including required
+configuration/clean builds, tests, data QA, plots, aggregation and cleanup;
+separate one-hour timeouts per child do not satisfy it. Design for 3000 seconds
+of planned work within a 3600-second deadline and retain explicit cleanup
+reserve. Use isolated builds and eight MPI ranks per linked job. Any selected
+work stopped by the deadline is ERROR with preserved logs/partial evidence,
+not a scientific PASS. A deferred unselected long qualification remains
+SKIPPED / NOT QUALIFIED. Do not shorten a required physical horizon or relax
+physics/statistical criteria to claim qualification within the hour.
+
+Long convergence, residence, thermal and independent-seed qualification may
+be deferred to an explicitly selected cluster campaign with a measured budget
+of order a few hundred CPU-core hours. A 300 CPU-core-hour aggregate planning
+target is proposed, adjustable before launch; it is not a separate allowance
+per seed/job. Record allocated cores times wall time and scheduler usage,
+including retries. More parallel jobs reduce wall time, not total core-hour
+cost. The proposed dense numerical sweep is not assumed to fit this allowance
+without a pilot estimate. Formal M1/M2 predecessors and all scientific/data
+requirements remain unchanged. The existing M2 runner currently has per-child
+timeouts; aggregate deadline enforcement and the new execution profiles remain
+implementation work. This amendment establishes requirements, not evidence
+that those capabilities already exist.
+
+**Approved numerical-protocol amendment, 2026-11-13:** The user approved the
+v3 I19/I20 proposal and requested implementation. The active machine-readable
+contract is `test/M2_I19_I20_PROTOCOL.json`. It specifies neutral Na/Ar,
+chemistry OFF, individual weights ON, common physical time, independently
+pinned per-species weights, source-fed zero-stock and controlled surface-cohort
+cases, actual seed controls and passive MPI-resident cohort fractions. The
+short development design is two cases x nine dt/weight cells x two seeds,
+24/48/96 steps at matched physical horizons, under the whole one-hour envelope.
+It verifies declared kernel/wiring/accounting scope only; full long-time
+convergence and sixteen-seed qualification remain explicit cluster work.
+
+Existing exact count, forward-roundoff weighted closure and strictly below
+0.5% source imbalance gates are unchanged. The approved additional numerical
+budgets are 1% of a frozen per-species available-atom scale for inventory/
+transfers, one percentage point for survival/occupancy, 1% of H for restricted
+first residence, and 0.1% available atoms for numerical-domain loss in long
+cases. Numerical intervals must lie within these margins with half-width at
+most half the margin; the predeclared paired-seed/Bonferroni method remains
+conditional on justified marginal/stream assumptions. Scarce gas-phase
+relative accuracy is not implied by the available-atom normalization. M1's
+500/5000 rules and all formal data/operator/predecessor gates remain intact.
+The existing Mersenne Twister option is selected explicitly only in the
+dedicated M2 derived compile input; M0/M1/sampling configurations keep their
+original generator. Record generated RNG/source/build identities and retain
+independent source-rate and warming references before residual scoring. No
+new permanent U/I ID or observational acceptance criterion is introduced.
+
 **Implementation status, 2026-10-13.** Production kernels and adapters now
 exist for the time-dependent body-fixed LOLA boundary, BVH terrain horizon,
 strict Diviner-table interpolation, depth-resolved 1-D thermal columns,
@@ -2108,6 +2160,25 @@ rejected in the finite path until its coupling is specified. Supporting
 Na/Ar event ledgers and local geometric/thermal identities do not waive I13,
 I19 or observational gates. No species parameter or acceptance criterion is
 changed by the representation correction.
+
+**Remaining implementation follow-up, 2026-11-16:** The user requested completion
+and testing of remaining M2 code. Opt-in finite-disc terrain forcing now uses
+the same production BVH for correlated terrain/Earth masks and integrates
+incidence and directional Bond albedo before the existing thermal solver.
+Explicit quadrature controls preserve the default reviewed point-Sun mode.
+I15 has reviewed-contract staging, native geometry export and independent
+scoring; I17 has reviewed, selected-only December execution with the user's
+approved independent spin-up and separately explicit interval; I19 dispatches
+the existing full numerical design/import verifier; I20 exports actual
+production thermal depth/time state and independently collocates its evidence.
+These are implementations, not changes to any scientific acceptance gate.
+Finite-grid any-disc visibility requires independent angular/temporal
+qualification. The user confirms D02 producer metadata are still unavailable.
+No D02 epoch, PRP annual support, observation uncertainty, site collocation,
+June acceptance value or approval is invented. Missing scientific inputs and
+M1/I13 keep formal results SKIPPED. All required new tests are registered in
+the bounded global development campaign; explicit long qualification retains
+its original predecessor, statistical, resource and review requirements.
 
 ### [ ] R2.1 — Promote LOLA topography into the production particle-surface boundary
 
@@ -2473,6 +2544,18 @@ Completes Milestone M2 with R2.1–R2.6.
   - `I20` — Permanent-shadow and polar cold-trapping physics
 
 ## Phase 3 — Chemistry Promotion and Budget Closure
+
+**Approved early implementation — 2026-11-17:** the user authorized M3
+implementation and local/supporting verification before M1/M2 closure. Formal
+qualification order remains unchanged. The initial atomic electron rate
+model is explicitly configured Maxwellian/Voronov with declared density and
+temperature; measured forcing is not inferred from an incomplete D06 package.
+Charge-exchange and molecular daughter-kinetics literature proposals precede
+implementation of their unresolved physics choices. A rate-kernel or parser
+PASS cannot qualify neutral-to-ion transfers, product kinematics, event
+forcing, species budgets or I21-I24. Preserve existing Na regression modes.
+The initial inventory/contract is `test/M3_INITIAL_IMPLEMENTATION_CONTRACT.md`;
+current evidence and unresolved choices are recorded in `STATUS.md`.
 
 ### [ ] R3.1 — Qualify Na photoionization and Na-to-Na+ conversion
 

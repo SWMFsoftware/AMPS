@@ -43,6 +43,9 @@ m2_environment = enabled
 ! controls remain adjustable and require U11/I17 convergence evidence.
 surface_temperature_mode = thermal-model
 diviner_temperature_table_file = none
+! If diviner-map is selected, convert native brightness to kinetic K using
+! the explicitly approved isothermal grey facet and configured emissivity.
+diviner_map_kinetic_interpretation = isothermal-grey
 ! I17's linked runner replaces these two values with a reproducibly processed
 ! PDS4 RDR history and its pre-holdout frozen selection contract.  They remain
 ! none in a general production run so observations cannot silently become a

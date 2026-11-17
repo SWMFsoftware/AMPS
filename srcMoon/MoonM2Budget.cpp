@@ -20,6 +20,7 @@ std::vector<std::array<long double,E>> atoms;
 std::vector<std::array<long double,3>> initial;
 std::ofstream output;
 bool valid=true;
+double initialEpochS=0.0, commonDtS=0.0;
 
 void Observe(Event event,int species,double weight,int) {
   if (species<0 || species>=PIC::nTotalSpecies || !std::isfinite(weight) ||
@@ -82,13 +83,15 @@ void Begin(const std::filesystem::path& csv) {
       _NA_SPEC_<0 || _AR_SPEC_<0 || PIC::nTotalSpecies!=2 ||
       !Moon::SurfaceTemperature::UseProductionFluxBalancedInventory())
     exit(__LINE__,__FILE__,"M2 budget needs the dedicated finite-inventory Na/Ar configuration and unclaimed diagnostic observers");
+  initialEpochS=Moon::OrbitalMotion::et;
+  commonDtS=PIC::ParticleWeightTimeStep::GlobalTimeStep[_NA_SPEC_];
   counts.assign(PIC::nTotalSpecies,{});atoms.assign(PIC::nTotalSpecies,{});
   initial.resize(PIC::nTotalSpecies);valid=true;
   for (int s=0;s<PIC::nTotalSpecies;++s) initial[s]=Inventory(s);
   if (PIC::ThisThread==0) {
     output.open(csv);
     output << std::setprecision(std::numeric_limits<long double>::max_digits10)
-      << "completed_steps,species,mass_kg,initial_count,gas_count,initial_gas_atoms,gas_atoms,initial_surface_atoms,surface_atoms,count_residual,gas_residual_atoms,surface_residual_atoms,combined_residual_atoms,roundoff_bound_atoms,combined_residual_kg,arithmetic_epsilon";
+      << "elapsed_s,epoch_tdb_s,actual_epoch_tdb_s,species_elapsed_s,completed_steps,species,mass_kg,initial_count,gas_count,initial_gas_atoms,gas_atoms,initial_surface_atoms,surface_atoms,count_residual,gas_residual_atoms,surface_residual_atoms,combined_residual_atoms,roundoff_bound_atoms,combined_residual_kg,arithmetic_epsilon";
     for (const char* name:names) output << ',' << name << "_count," << name << "_atoms";
     output << '\n';
     if (!output) exit(__LINE__,__FILE__,"cannot open M2 budget CSV");
@@ -127,7 +130,11 @@ void Snapshot(long long steps) {
       std::fabs(surfaceResidual)<=bound && a[PhotolyticLoss]==0 && a[PhotolyticProduct]==0;
     if (PIC::ThisThread==0) {
       const double mass=PIC::MolecularData::GetMass(s);
-      output << steps << ',' << (s==_NA_SPEC_?"Na":"Ar") << ',' << mass << ','
+      const long double elapsedS=static_cast<long double>(steps)*commonDtS;
+      output << elapsedS << ',' << static_cast<long double>(initialEpochS)+elapsedS << ','
+        << Moon::OrbitalMotion::et << ','
+        << static_cast<long double>(steps)*PIC::ParticleWeightTimeStep::GlobalTimeStep[s] << ','
+        << steps << ',' << (s==_NA_SPEC_?"Na":"Ar") << ',' << mass << ','
         << initial[s][0] << ',' << state[0] << ',' << initial[s][1] << ',' << state[1]
         << ',' << initial[s][2] << ',' << state[2] << ',' << countResidual << ','
         << gasResidual << ',' << surfaceResidual << ',' << gasResidual+surfaceResidual

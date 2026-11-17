@@ -3,23 +3,67 @@
   "name": "Thermal-inertia and eclipse-response solver verification",
   "purpose": "Verify time-dependent surface temperature response and energy balance.",
   "production_capability": "Dynamic thermal state with fractional direct-beam illumination/eclipses and conservative whole-column enthalpy.",
-  "production_entry_points": ["Moon::Thermal::Column::Initialize", "Moon::Thermal::Column::Advance"],
-  "configuration": "Hayne et al. depth/temperature-dependent material law, 40 uniform finite-volume layers to 1 m, 60 s eclipse step, 1e-10 K nonlinear tolerance.",
-  "inputs": ["published SI material parameters", "250 K isothermal initial state", "zero direct solar flux"],
-  "independent_reference": "Published material-law control points, monotonic eclipse-cooling invariant, and whole-column energy identity.",
+  "production_entry_points": [
+    "Moon::Thermal::Column::Initialize",
+    "Moon::Thermal::Column::Advance",
+    "Moon::SurfaceTemperature::InitializeProductionState",
+    "Moon::SurfaceTemperature::GetProductionThermalInitialization",
+    "Moon::SurfaceTemperature::WriteProductionInitialThermalStateCsv",
+    "Moon::SurfaceTemperature::SpinUpProductionState",
+    "Moon::SurfaceTemperature::AdvanceProductionState"
+  ],
+  "configuration": "Hayne et al. depth/temperature-dependent material law, 40 uniform finite-volume layers to 1 m, 60 s eclipse step, 1e-10 K nonlinear tolerance. Additional initialization-dispatch control: 2x4 logical grid and closed octahedral terrain; actual compiled SPICE; uniform250 K or explicitly selected 1 ms periodic replay with the unchanged approved 0.01 K/10000 J m^-2 successive-cycle criteria, never a qualified lunar state.",
+  "inputs": [
+    "published SI material parameters",
+    "250 K isothermal initial state",
+    "zero direct solar flux",
+    "explicit 2009-01-24T00:00:00.000--00:00:00.001 UTC forcing replay",
+    "thermal_initialization_mode declared-uniform or periodic-spinup",
+    "simulation start equal to explicit cycle end for automatic periodic dispatch"
+  ],
+  "independent_reference": "Published material-law control points, monotonic eclipse-cooling invariant, and whole-column energy identity. Uniform state/export has exact250 K at each boundary/layer; independently computed uniform centre depths and counts. Control invariants bind actual mode/ET, exact same-state reuse bytes, no-overwrite, positive-advance invalidation and failed-initialization refusal.",
   "units": "K, W m^-2, J m^-2 K^-1 or explicitly documented depth-resolved SI parameters, s",
   "frame_time_convention": "UTC/ET mapping explicit for D03; local solver time in seconds.",
   "deterministic_stochastic_controls": "Deterministic solver and fixed tolerances.",
-  "procedure": "Evaluate density/conductivity control points, advance one fully implicit step with visible-solar-disc fraction exactly zero, require cooling, and independently integrate polynomial heat capacity for the energy residual.",
-  "metrics": ["temperature error", "phase lag", "energy residual", "convergence order"],
-  "acceptance_criteria": "Material controls within 1e-14 relative; eclipse surface cools; absolute energy residual divided by max(1 J m^-2, boundary-energy magnitude) <=2e-5. Additional exact isothermal radiative-equilibrium cases at 1/60/3600 s keep every surface/layer temperature within 1e-8 K of 250 K.",
+  "procedure": "Evaluate density/conductivity control points, advance one fully implicit step with visible-solar-disc fraction exactly zero, require cooling, and independently integrate polynomial heat capacity for the energy residual. Run thermal-initialization production adapter without AMR/MPI particle execution: export uniform state, apply automatic periodic dispatch before source-BEGIN, verify unchanged bytes on explicit repeated spinup, forbid overwrite and export after a positive same-end-epoch evolution, require recomputation rather than cached reuse, and reject inconsistent initialization epoch without publishing proof.",
+  "metrics": [
+    "temperature error",
+    "phase lag",
+    "energy residual",
+    "convergence order",
+    "complete initial-state export row/index/depth/temperature identity",
+    "actual initialization method/TDB epoch/source-BEGIN",
+    "completed spinup cycles and exact same-state reuse",
+    "exclusive-create refusal",
+    "post-evolution recomputation",
+    "failed-initialization proof/output refusal"
+  ],
+  "acceptance_criteria": "Material controls within 1e-14 relative; eclipse surface cools; absolute energy residual divided by max(1 J m^-2, boundary-energy magnitude) <=2e-5. Additional exact isothermal radiative-equilibrium cases at 1/60/3600 s keep every surface/layer temperature within 1e-8 K of 250 K. Additional dispatch fixtures require exact250 K export, exact row count/order, centre-depth error <=1e-14 m, exact declared mode/ET/source epoch, positive completed cycles with actual maximum node change <=0.01 K and actual maximum column enthalpy change <=10000 J m^-2, identical completed-state reuse bytes/cycles, changed bytes after genuine recomputation, and explicit overwrite/evolved/failed-trial export refusal. These short 1 ms replay controls establish local dispatch only and do not relax any physical convergence or qualification threshold.",
   "expected_pass_result": "Dynamic temperature converges and conserves energy within declared tolerances.",
-  "expected_failure_modes": ["solver absent", "unstable step", "wrong boundary flux", "unclosed energy", "time mismatch"],
-  "required_data": [],
-  "data_hashes": "none; I17 owns the frozen D03 training/hold-out histories",
-  "predecessor_gates": ["U09", "U10"],
-  "artifacts": ["result.json", "thermal_history.csv", "convergence.json"],
-  "status_semantics": "PASS verifies the local solver and energy invariant only; it does not establish I17 Diviner agreement or linked temperature dispatch.",
+  "expected_failure_modes": [
+    "solver absent",
+    "unstable step",
+    "wrong boundary flux",
+    "unclosed energy",
+    "time mismatch"
+  ],
+  "required_data": [
+    "configured actual compiled SPICE kernel files for initialization-dispatch fixture; no observations"
+  ],
+  "data_hashes": "Actual CSPICE furnished paths and SHA-256 are preserved under U11/kernel_hashes.json. Analytical/control fixtures are not observations; I17 owns D03 scoring.",
+  "predecessor_gates": [
+    "U09",
+    "U10"
+  ],
+  "artifacts": [
+    "result.json",
+    "thermal_history.csv",
+    "convergence.json"
+  ],
+  "status_semantics": "PASS verifies the local solver and energy invariant only; it does not establish I17 Diviner agreement or linked temperature dispatch. Initialization-dispatch PASS adds local production wiring/state-identity evidence only; the 1 ms replay does not qualify a synodic periodic initial state.",
   "implementation": "linked-production-probe",
-  "probe_modes": ["thermal-inertia"]
+  "probe_modes": [
+    "thermal-inertia",
+    "thermal-initialization"
+  ]
 }

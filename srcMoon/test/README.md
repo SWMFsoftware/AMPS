@@ -1,5 +1,105 @@
 # `srcMoon` subsystem verification tests
 
+## Initial M3 rate service and research — November 17
+
+The user approved early M3 implementation/local verification while formal
+M1/M2 remain open. U16 now compiles the maintained production
+`species/ElectronImpact` service, checks all four native neutral atom fits
+against independent high-precision values, and runs the actual runtime input
+parser/install controls. It remains registered through the existing literal
+U16 entry in `run_all_test.py`; no permanent ID was added. A PASS verifies
+rates/configuration only, not product trajectories, conservative reactions
+or measured plasma forcing. The optional explicit global
+`test_runner.py --phase m3-development --mpi-ranks 8` runs the unchanged M0
+prerequisite and an actual eight-species callback fixture, then restores normal
+Moon configuration in the selected checkout. All builds/children share a
+3600-second supervisor budget. Use a new output directory and an isolated
+checkout to preserve a separately configured active application.
+
+The complete contract is [M3_INITIAL_IMPLEMENTATION_CONTRACT.md](M3_INITIAL_IMPLEMENTATION_CONTRACT.md).
+Charge-exchange and molecular-kinetics research proposals do not authorize
+new channels or supply missing daughter distributions. Formal I21-I24 remain
+SKIPPED / NOT QUALIFIED. See STATUS.md section 5.15 and RUN.md for evidence,
+commands and the distinction between scalar rates and particle reactions.
+
+The final native M3 development campaign completes in 16.3 minutes: U16 PASS,
+four formal chemistry SKIPPED, three supporting PASS, no FAIL/ERROR. The
+complete M0 baseline passes with zero-byte nightly diff. U16 includes 170 pure
+kernel controls, 17 native runtime controls and 31 orchestration controls;
+the eight-rank callback separately verifies 32 rows and actual masses/charges.
+The all-species fixture exposed a shared He+ `mas`/`mass` input typo; its
+intended 4.0-AMU value is now actually installed, and the full 40.8-minute
+CORE audit preserves all 843 prior PASS cases (known nonpasses unchanged).
+Detailed evidence and the final diagnostic-log-only extension are recorded
+in STATUS.md section 5.15 and the work-package completion report. A passing
+rate service still does not establish any I21-I24 product/ensemble gate.
+
+## November 16 remaining-M2 implementation
+
+The existing global `--phase m2-development` campaign now includes completion
+protocol checks, compiled input-control checks and bounded real I15/I20
+exporter fixtures. They retain separate supporting outcomes; formal I14-I20
+still require same-campaign I13 and each individual science/data gate. These
+fixtures introduce no new permanent U/I IDs and contain no observations.
+
+The final November 16 isolated eight-rank campaign completed in 37.4 minutes:
+58 supporting PASS, two SKIPPED, no FAIL/ERROR; the formal registry retains
+six local PASS and seven M2 SKIPPED. M0's ten linked gates and zero-byte
+nightly diff pass. All 36 short numerical cases pass. A separate 22.64-second
+native source-only check validates the requested complete I19 initial-state
+export after canonical-build restoration; the global normalizer now requests
+that export as well. Its `candidate_initial_state` is explicitly unqualified:
+the normalizer's READY is not initial-state approval or formal I19/I20 PASS.
+Commands, source/build/data identities, earlier attempts and qualification
+limits are in `../STATUS.md` section 5.14 and
+`../../test_output/srcMoon/m2-completion-20261116T195511Z/completion_report.json`.
+Historical data-package status notes below retain their dates; the current
+read-only audit records D01/D03 selected-input readiness and the unresolved
+D02 temporal operator, without granting observational validation.
+
+U09 extends its original exact point-ray criteria with independent full/half
+disc radiometry, correlated masks and production-BVH penumbra controls. U11
+checks the same energy solver's integrated W/m2 boundary and the production
+model-depth interpolation kernel. Original acceptance criteria are unchanged.
+U10 also checks the approved explicit Diviner grey-facet inverse, production
+prescribed-temperature caches, impact callbacks and Na desorption across two
+SPICE epochs, including real missing-map behavior. Native I20 support checks
+surface Na/Ar residence laws and retention independently of checkpoint writes;
+subsurface rows cannot claim surface kinetics. Its scorer binds actual cohort
+indices/elements/seeds to frozen sites and reports terrain-only geometric PSR
+separately from Earth-policy visibility and thermal retention.
+
+Individual new infrastructure commands are documented in the I15/I16/I17/I19/I20
+READMEs and `M2_FORMAL_CONTRACTS.md`; every new check must also remain registered
+in the development driver so the global entry cannot silently omit it.
+The corresponding individual I-series runners also execute their metadata/
+orchestration controls when selected by `run_all_test.py`; a control PASS does
+not change a predecessor-blocked scientific SKIPPED. Their failure writes an
+ERROR result and remains visible in that runner's aggregate log.
+
+Formal dispatch uses a reviewed `m2_formal_contract_file` in the CLI `.in`.
+I19 revalidates all retained native cases and independently re-scores them;
+its aggregate binds the real receipt family instead of inventing one native
+`receipt.txt`. New long execution requires `--m2-cluster-execute`, an approved
+execution contract, measured feasibility, all predecessors and an explicit
+wall/allocation budget. The development phase never opts in. Merely selecting
+qualification does not authorize a missing contract or unavailable data.
+
+Retained Na/Ar binaries now preserve their actual generated chemistry/layout
+and RNG headers alongside their build receipt. Formal execution checks those
+immutable snapshots, executable bytes and current native source identity;
+an unrelated later Na-only restoration cannot invalidate that evidence.
+Development/probe reuse additionally checks the live generated tree, because
+new probe objects must use the matching ABI. Missing or changed snapshots
+fail closed; this is not permission to reuse a stale executable.
+
+The native source identity also binds root `ampsConfigLib.pm`, the delegated
+preprocessor used by `ampsConfig.pl`. Changing its macro-guard processing can
+change generated compilation while leaving the launcher and input identical.
+The retained-build protocol includes a mutation check for that library in both
+strict live-tree and self-contained retained modes. This is provenance
+verification, not a physical or numerical qualification gate.
+
 Current-core integration has a separate regression-preservation audit, described
 in [CORE_INTEGRATION.md](../CORE_INTEGRATION.md). The existing global core
 registry remains the authority for suite/case membership. The helper
@@ -40,6 +140,36 @@ oracles, resource guards and output paths. Supporting checks have separate
 counts and cannot open formal gates. FAIL/ERROR in either namespace makes the
 global command fail; an actual SKIPPED remains visible (and fails the command
 when `--strict-skips` is requested).
+
+The data-QA child automatically runs ten D02 native-metadata/error protocol
+checks through `data_processing/audit_m2_packages.py`. They have no new U/I
+identifier and supply infrastructure evidence only. The child preserves
+`d02_protocol_checks.log` and `d02_native_temporal_audit.json`; missing exact
+averaging metadata remains SKIPPED, and altered frozen bytes are ERROR.
+See [D02_ILLUMINATION_RESEARCH.md](D02_ILLUMINATION_RESEARCH.md) for the native
+observable and remaining authoritative-data gaps. Spatial QA v2 distinguishes
+a completed transformation from the unresolved temporal operator.
+
+The user approved the v3 numerical design on November 13. The runners now
+consume [M2_I19_I20_PROTOCOL.json](M2_I19_I20_PROTOCOL.json); the reviewed
+proposal remains as design history. See [M2_NUMERICAL_PROTOCOL.md](M2_NUMERICAL_PROTOCOL.md)
+for executable commands, physics, analytical oracles, input controls and exact
+status semantics. The M2 development phase automatically runs the protocol
+infrastructure checks, U12 imposed-warming kernel comparison, original
+positive-coverage I19 fixture, 36 short production cases, and deterministic
+source-normalization reference. Each grid stage retains CSV/PNG/EPS diagnostics.
+All phases, required clean builds and plotting share one monotonic deadline;
+new sessions and orphan MPI children remain supervised. The dedicated M2 build
+explicitly selects the existing AMPS Mersenne Twister option; M0/M1 RNG defaults
+and the reviewed nightly reference remain unchanged.
+
+`--phase m2-cluster` exports a 288-case plan by default. Execution requires an
+explicit `--cluster-execute`, same-campaign linked predecessors, READY data,
+frozen native sites and physical normalization, justified statistical/RNG
+assumptions, and a measured allocation forecast. The default 300 CPU-core-hour
+allowance covers the whole selected bundle, never each seed. Missing evidence
+is SKIPPED; corrupt evidence or exhausted resource/deadline is ERROR. Short
+supporting PASS cannot close formal I19/I20, M1, M2 or observational validation.
 
 New tests must remain registered in the global runner and the frozen test
 registry. The new I19 parser/builder unit checks are invoked automatically by
@@ -812,3 +942,29 @@ contract, and processor SHA-256 values are respectively
 `5a5d29d0f6dba88cd49c899e541a980eb84ce24717481b0cad471f8012459a65`.
 This receipt does not override the missing D03 package qualification or linked
 I17 capability gates and therefore is not observational validation evidence.
+# M2 effective compile-configuration integration contract (2026-11-17)
+
+The bounded I19 build has two authoritative compile-input controls for
+photochemistry: `PhotolyticReactions=off` and the application block's explicit
+`define _PIC_PHOTOLYTIC_REACTIONS_MODE_ ..._OFF_`. Both must select OFF only in
+the derived M2 application; canonical M0/M1 remains ON. The upstream guarded
+insertion order makes an unmatched late application definition effective, so
+finding an earlier textual OFF definition cannot establish the compiled mode.
+
+Before compiling and again after compiling, the builder must preprocess the
+normal `pic.h` then `Moon.h` production include chain and require effective
+photochemistry OFF, individual weights ON, and Mersenne Twister. This is a
+compiler configuration check, not a physics or observational PASS. Preserve
+the probe, complete macro output, command, hashes and executable binding. A
+contradictory late definition must be rejected before the native build. Bind
+the builder recipe itself in source identity and require this effective-mode
+proof in both live-tree and retained-binary verification; legacy receipts
+containing only a textual OFF match are insufficient. Retain the generated
+`Exosphere.dfn` alongside the existing configuration/layout/RNG snapshots,
+because that application header can override the global chemistry macro.
+
+Protocol fixtures use temporary minimal headers and the real C++ preprocessor
+to test late contradictory definitions and missing proof. They are explicitly
+infrastructure fixtures, never physical observations. Existing I19 physics,
+numerical horizons, seeds, inputs, and thresholds are unchanged. The first
+upstream integration campaign remains ERROR; a corrected run is new evidence.

@@ -22,6 +22,17 @@
   "procedure": "Verify I13/D03/hash prerequisites; process radiance before temperature with frozen flags/bins; stage June-only rows; perform observation-independent periodic full-column spin-up until both input tolerances pass; run the normal finite-disc/terrain thermal state; compare epsilon*sigma*T^4 as bolometric_brightness_temperature_K; emit an EXPERIMENTAL June plot and review-only threshold candidate; freeze thresholds only after review; later expose and score December once; preserve row-level and plotted artifacts.",
   "metrics": ["maximum per-update temperature change K", "successive-time-step differences", "June and December bolometric weighted bias/RMSE/coverage", "normalized residuals", "C6-C9 radiance and brightness-temperature diagnostic residuals", "native-flag exclusions", "site/time/detector counts", "resource use"],
   "acceptance_criteria": "No unphysical discontinuity; <50 K per production update; demonstrated dt convergence; phase/amplitude satisfy thresholds derived and frozen from June plus documented calibration/within-bin uncertainty before December is scored. C6-C9 grey-passband residuals are diagnostics, not primary gates. Thresholds are never relaxed after execution.",
+  "holdout_review_contract": {
+    "schema": "srcMoon-I17-reviewed-holdout-v1",
+    "approval": "Named investigator, explicit UTC, pre-holdout freeze, unchanged committed HEAD blob; the runner cannot approve its own candidate.",
+    "identity": "Exact processed data/selection/processor, native source/executable, June numerical/training evidence, physical configuration, explicit December receipt and planned campaign ID.",
+    "initialization": "Independent observation-free periodic December spin-up, explicitly declared UTC interval and unchanged material/convergence controls; user approved 2026-11-16.",
+    "phase_amplitude": "Backend supports only explicitly reviewed sampled-extrema-on-frozen-bin-groups with exact native site/bin membership, unique sampled minima, no interpolation and no default limits. Implementing it is not scientific approval of actual groups or tolerances.",
+    "model_scope": "Separate reviewed approximation/operator evidence required; freezing scalar thresholds does not qualify missing physics.",
+    "repeat_policy": "One approved campaign claim covers the three predeclared dt refinements; interrupted/repeated release requires investigator review, never automatic reinspection or tuning.",
+    "native_accident_guard": "MoonI17Authorization::Validate checks strict staged-sidecar schema/status/paths/token before CSV access; actual SHA-256, JSON review, Git identity and scientific scope remain Python authorities.",
+    "protocol_tests": "test_holdout.py temporary parser/arithmetic fixtures; no actual observational residuals or linked December run."
+  },
   "expected_pass_result": "The declared linked M2 capability is evaluated and every frozen criterion is met.",
   "expected_failure_modes": ["predecessor unavailable", "D03 package/hash incomplete", "missing C3-C9 co-registered bin", "unqualified spin-up", "unfrozen June threshold", "production wiring failure", "numerical criterion failure", "untouched hold-out physics criterion failure"],
   "required_data": ["D03 Diviner RDR; 2011-06-15 training and 2011-12-10 hold-out"],

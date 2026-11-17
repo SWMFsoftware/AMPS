@@ -8,10 +8,10 @@ and status semantics—is in [reference/acceptance.json](reference/acceptance.js
 Run from the AMPS repository root:
 
 ```bash
+rm -rf build
 ./Config.pl -application=moon \
   -spice-path=/home/vtenishe/SPICE/cspice \
   -spice-kernels=/home/vtenishe/SPICE/Kernels
-rm -rf build
 make -j
 python3 srcMoon/test/U04_rotating_frame/test.py \
   --output-dir test_output/srcMoon/U04
@@ -19,7 +19,7 @@ python3 srcMoon/test/U04_rotating_frame/test.py \
 
 The fixed epoch is `2009-01-24T00:00:00 UTC`. The declared coordinate
 contract is J2000 inertial, Moon-centred LSO rotating, and MOON_ME_DE421
-body-fixed, with geometric aberration correction `NONE`. The exact seven-file
+body-fixed, with geometric aberration correction `NONE`. The exact
 DE421 kernel list and SHA-256 values are in `reference/acceptance.json`.
 
 The production side of the comparison calls the helpers used by
@@ -44,3 +44,21 @@ kernel is `SKIPPED`; a hash mismatch or infrastructure/parser failure is
 
 Exit codes are `0=PASS`, `1=FAIL`, `2=ERROR`, and `77=SKIPPED`. A skipped
 capability is intentionally not converted into a passing source-preflight result.
+## Fixed-site illumination geometry extension (2026-11-16)
+
+U04 also calls the production
+`Moon::SurfaceEnvironment::ApparentSolarSystemGeometryAtPoint` helper. It uses
+NAIF [`spkcpo_c`](https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/spkcpo_c.html)
+for a point fixed in `MOON_ME_DE421`, with the output frame evaluated at the
+observer's reception epoch. SI input/output lengths are explicitly converted
+to/from CSPICE kilometres. `NONE`, `LT`, `LT+S`, `CN` and `CN+S` are explicit
+choices; no apparent body-centre vector is shifted afterward to approximate a
+rotating surface observer. The existing force problem retains geometric NONE.
+
+The independent limits are ordinary `spkezr_c` at the lunar origin and exact
+geometric target-minus-observer displacement for an off-centre NONE query.
+The added position bounds are `256*epsilon*distance` enclosures of double
+arithmetic; original force and angular-rate thresholds are unchanged. Invalid
+correction input leaves both outputs unchanged, and caller SPICE error policy
+is preserved. These local geometry checks do not establish D02 metadata,
+finite-disc resolution, illumination agreement or observational validation.

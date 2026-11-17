@@ -174,6 +174,7 @@ def run_probe_case(
         return compile_result
 
     outputs: list[dict[str, Any]] = []
+    provenance_guards: list[dict[str, Any]] = []
     for mode in acceptance["probe_modes"]:
         environment = os.environ.copy()
         if mode == "lola-geometry":
@@ -182,13 +183,19 @@ def run_probe_case(
             u08_output = output_root / "U08" / "surface_probe"
             u08_output.mkdir(parents=True, exist_ok=True)
             environment["MOON_U08_OUTPUT"] = str(u08_output)
-        if mode == "diviner-temperature":
+        if mode in ("diviner-temperature", "prescribed-temperature"):
             # U10's synthetic affine grid is an analytical interpolation
             # fixture, never observational evidence.  It is written beneath
             # the selected test-output root and preserved with the result.
             u10_output = output_root / "U10" / "interpolation_fixture"
             u10_output.mkdir(parents=True, exist_ok=True)
             environment["MOON_U10_OUTPUT"] = str(u10_output)
+        if mode == "thermal-initialization":
+            # Small production dispatch/identity fixture; no observations or
+            # qualified synodic initial state are manufactured by this replay.
+            u11_output = output_root / "U11" / "initialization_fixture"
+            u11_output.mkdir(parents=True, exist_ok=True)
+            environment["MOON_U11_OUTPUT"] = str(u11_output)
         completed = subprocess.run(
             [str(executable), mode],
             cwd=REPO_ROOT,
@@ -205,6 +212,37 @@ def run_probe_case(
                 "stderr": completed.stderr,
             }
         )
+        if mode in ("prescribed-temperature", "thermal-initialization") and (
+                completed.returncode == 0 or "DEPENDENCY_SPICE_" in completed.stdout):
+            # CSPICE's actual furnished-file inventory comes from the running
+            # production probe. Reuse the external-byte SHA helper used by
+            # U04; never infer that a configured directory is the loaded set.
+            # A later failed metric must retain its actual dependency hashes
+            # too. This provenance guard never changes that metric's failure.
+            try:
+                prefix = "DEPENDENCY_SPICE_FILE "
+                paths = [Path(line[len(prefix):]).resolve()
+                         for line in completed.stdout.splitlines()
+                         if line.startswith(prefix)]
+                counts = re.findall(r"(?m)^DEPENDENCY_SPICE_COUNT (\d+)$",
+                                    completed.stdout)
+                if len(counts) != 1 or not paths or len(paths) != int(counts[0]):
+                    raise ValueError("incomplete actual furnished SPICE inventory")
+                test_id = "U10" if mode == "prescribed-temperature" else "U11"
+                record = {
+                    "schema": f"srcMoon-{test_id}-actual-furnished-SPICE-v1",
+                    "files": [{"path": str(path), "sha256": _sha256(path)}
+                              for path in paths],
+                }
+                artifact = output_root / test_id / "kernel_hashes.json"
+                artifact.parent.mkdir(parents=True, exist_ok=True)
+                artifact.write_text(json.dumps(record,indent=2,sort_keys=True)+"\n")
+                provenance_guards.append({"status": "PASS",
+                    "kind": "actual-furnished-SPICE-hashes", "artifact": str(artifact),
+                    "kernel_file_count": len(paths)})
+            except (ValueError, OSError) as error:
+                provenance_guards.append({"status": "ERROR",
+                    "kind": "actual-furnished-SPICE-hashes", "reason": str(error)})
         if mode == "diviner-temperature":
             # U10 also owns the local correctness of the Python RDR
             # observation processor.  The small analytical fixture never
@@ -231,7 +269,20 @@ def run_probe_case(
                 }
             )
 
-    guards: list[dict[str, Any]] = []
+    warming_guards=[]
+    for item in outputs:
+        if item["mode"]=="surface-release-warming" and item["returncode"]==0:
+            sys.path.insert(0,str(TEST_ROOT/"U12_surface_interaction"))
+            from verify_warming import evaluate as evaluate_warming,save_artifacts as save_warming_artifacts
+            try:
+                warming=evaluate_warming(item["stdout"],acceptance["warming_contract"])
+                warming_guards.append(warming)
+                save_warming_artifacts(warming,output_root/"U12"/"warming")
+                path=output_root/"U12"/"warming_comparison.json";path.parent.mkdir(parents=True,exist_ok=True)
+                path.write_text(json.dumps(warming,indent=2,sort_keys=True)+"\n")
+            except (OSError,ValueError,KeyError,RuntimeError,ImportError) as error:
+                warming_guards.append({"status":"ERROR","reason":str(error)})
+    guards: list[dict[str, Any]] = list(warming_guards) + provenance_guards
     matching = acceptance.get("token_matching", "exact")
     if "configuration_required_tokens" in acceptance:
         guards.append(
@@ -260,8 +311,12 @@ def run_probe_case(
     statuses = [guard["status"] for guard in guards]
     if "ERROR" in statuses:
         status = "ERROR"
-    elif "FAIL" in statuses or any(item["returncode"] != 0 for item in outputs):
+    elif "FAIL" in statuses or any(item["returncode"] not in (0,77) for item in outputs):
         status = "FAIL"
+    elif any(item["returncode"] == 77 for item in outputs):
+        # An unavailable required production mode cannot make its enclosing
+        # U test PASS, nor is it an evaluated physics discrepancy.
+        status = "SKIPPED"
     else:
         status = "PASS"
     return {
@@ -978,6 +1033,41 @@ def run_one(
         result = run_lola_geometry(acceptance, build_dir, output_root)
     elif kind == "argon-source-partial":
         result = run_argon_source(acceptance, build_dir, output_root)
+    elif kind == "maxwellian-voronov-probe":
+        # U16 compiles the maintained pure production coefficient service,
+        # so it does not require a particular AMPS generated species tree.
+        # The companion controls compile the ACTUAL runtime parser/install
+        # owner as well. Neither local PASS claims an enabled particle
+        # executor, conservative ion production or measured electron forcing.
+        try:
+            if str(TEST_ROOT) not in sys.path:
+                sys.path.insert(0,str(TEST_ROOT))
+            from U16_electron_impact.voronov_verification import run_u16
+            from test_m3_runtime_rates import run_checks
+            result=run_u16(build_dir,output_root)
+            if result["status"]=="PASS":
+                controls=run_checks(output_root/"U16"/"runtime-controls")
+                result["runtime_controls"]=controls
+                if controls["status"]!="PASS":
+                    result.update(status=controls["status"],
+                        reason="native Maxwellian configuration controls did not PASS")
+                else:
+                    # Every new orchestration check remains reachable from
+                    # the single registered U16/global entry. These explicit
+                    # infrastructure fixtures exercise FAIL/ERROR/SKIP handling
+                    # and never supply model observations or gate approvals.
+                    runner=TEST_ROOT/"test_m3_orchestration.py"
+                    command=[sys.executable,"-B",str(runner)]
+                    process=subprocess.run(command,cwd=REPO_ROOT,text=True,
+                        capture_output=True,check=False)
+                    log=output_root/"U16"/"orchestration-controls.log"
+                    log.write_text(process.stdout+process.stderr)
+                    result["orchestration_controls"]={"status":"PASS" if process.returncode==0 else "ERROR",
+                        "command":command,"log":str(log),"returncode":process.returncode}
+                    if process.returncode!=0:
+                        result.update(status="ERROR",reason="M3 orchestration infrastructure controls failed")
+        except (OSError,ValueError,RuntimeError,ImportError) as error:
+            result={"status":"ERROR","reason":"U16 production rate verification failed: "+str(error)}
     elif kind == "source-guard":
         result = run_source_guard(acceptance)
     elif kind == "linked-executable-los":

@@ -16,20 +16,21 @@
 #include "PhotolyticReactions.h"
 
 PIC::ParticleEvents::ObserverFunction PIC::ParticleEvents::Observer=NULL;
+PIC::ParticleEvents::ParticleObserverFunction PIC::ParticleEvents::ParticleObserver=NULL;
 
 PIC::ParticleEvents::DomainExitClassifierFunction
     PIC::ParticleEvents::DomainExitClassifier=NULL;
 void PIC::ParticleEvents::RecordDomainExit(long int particle,
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
     const double* position,const double* velocity) {
-  if (Observer==NULL) return;
+  if (Observer==NULL && ParticleObserver==NULL) return;
   RecordParticle(DomainExitClassifier==NULL ? Escape :
       DomainExitClassifier(position,velocity),particle,node);
 }
 
 void PIC::ParticleEvents::RecordParticle(Event event,long int particle,
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int detail) {
-  if (Observer==NULL) return;
+  if (Observer==NULL && ParticleObserver==NULL) return;
   if (node==NULL || node->block==NULL)
     exit(__LINE__,__FILE__,"particle event diagnostic needs an allocated weight owner");
   const int species=PIC::ParticleBuffer::GetI(particle);
@@ -37,6 +38,7 @@ void PIC::ParticleEvents::RecordParticle(Event event,long int particle,
 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
   weight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(particle);
 #endif
+  if (ParticleObserver!=NULL) ParticleObserver(event,species,particle,weight,detail);
   Record(event,species,weight,detail);
 }
 

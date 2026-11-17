@@ -34,6 +34,15 @@ struct SpinUpMetrics {
   double cycleEndEphemerisTimeS = 0.0;
 };
 
+// Actual applied predictive initial state, not an observational boundary or
+// a declaration that some separate pilot state was loaded. The epoch is TDB
+// seconds past J2000; periodic diagnostics retain their K/J m^-2 units above.
+struct ProductionThermalInitializationInfo {
+  std::string mode;
+  double ephemerisTimeS = 0.0;
+  SpinUpMetrics spinup;
+};
+
 // Complete read-only state of one production logical surface element at one
 // SPICE epoch.  Cartesian vectors are in MOON_ME_DE421; distances are metres.
 // Terrain visibility and finite-disc Earth occultation remain separate so a
@@ -109,6 +118,32 @@ bool InitializeProductionState(const Runtime::Configuration& configuration,
                                cInternalSphericalData* logicalSurface,
                                std::string* error);
 bool ProductionStateInitialized();
+// Read-only provenance remains available after evolution. Unsupported modes
+// return false with a diagnostic and leave the caller's object unchanged.
+bool GetProductionThermalInitialization(ProductionThermalInitializationInfo* info,
+                                       std::string* error);
+// Export actual still-applied t0 columns (boundary then all cell centres)
+// with 17-digit SI values. Refuses evolved/nonthermal state and existing paths;
+// it is model-state evidence, never an observation/reference solution.
+bool WriteProductionInitialThermalStateCsv(const std::string& path,
+                                          std::string* error);
+// Immutable direct-incident photon flux / the 1-AU normal flux. The cache is
+// refreshed serially at SOURCE-BEGIN, then read by the normal core PSD rate,
+// total/CDF and finite-inventory hazard. It includes joint terrain/Earth
+// masks and point-to-Sun inverse square, with NO thermal albedo factor.
+bool RefreshProductionPhotonFluxCache(double sourceBeginEtS,std::string* error);
+double ProductionPhotonFluxFactor(int surfaceElement,void* logicalSurface);
+// Read-only logical-element temperature [K] for conditional kinetic diagnostics.
+double ProductionElementTemperatureK(int element);
+// Read-only surface kinetics at the SAME current logical-element kinetic
+// temperature used by the desorption source. Residence time is seconds;
+// +infinity (overflow/cold limit) and zero (instantaneous limit) are explicit
+// valid kernel limits. Retention means tau >= the configured reporting
+// timescale, not permanent/geometric trapping. No checkpoint is required.
+// Failure leaves caller outputs unchanged and provides a diagnostic.
+bool SampleProductionElementKinetics(int element,int species,
+    double* residenceTimeS,bool* thermallyRetained,std::string* error);
+double ProductionRetentionTimescaleS();
 double ProductionTemperatureK(const double* positionLsoM);
 bool AdvanceProductionState(double ephemerisTimeBeginS,
                             double ephemerisTimeEndS,

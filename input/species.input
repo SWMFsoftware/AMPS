@@ -252,7 +252,7 @@
   charge=0.0
 
 #component=He_PLUS
-  mas =4.0*_AMU_
+  mass=4.0*_AMU_
   charge=1.0
 
 #component=He_2PLUS

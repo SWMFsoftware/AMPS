@@ -1,0 +1,17 @@
+{
+  "schema": "srcMoon-U16-authoritative-Voronov-source-v1",
+  "citation": "G. S. Voronov (1997), Atomic Data and Nuclear Data Tables 65, 1; cfit.f Version 2, March 24, 1997",
+  "package": "photochemistry",
+  "files": {
+    "raw/electron_impact/voronov/cfit.dat": "470ea3078c64159eece6a469314dde2356e2d6ccaf618f4eaecb46649d61a5cd",
+    "raw/electron_impact/voronov/cfit.txt": "5b12dc3b4b546ef863216d57df7d64c81a553cc5eb32a8cf2d3d275d4158f9ef",
+    "raw/electron_impact/voronov/cfit.f": "7fe7d78c25166084041bea58bb55c2fcc6ad724fba8432c167cf044e6eb1bcc1",
+    "processed/electron_impact/voronov_coefficients.csv": "8c1e33a9ed64d95de884b01548b7e2757339859b7c8090e996f842c4f6ca9225",
+    "processed/electron_impact/lunar_neutral_coefficients.csv": "da7391979a2136c072bd8dc02932af7989a8030ac208fa5982ac975aa1394126"
+  },
+  "numerical_relative_tolerance": 1e-12,
+  "reference_precision_decimal_digits": 70,
+  "temperature_grid": "33 predeclared logarithmic points including native Tmin and Tmax, independently per neutral species",
+  "electron_density_grid_m3": [0.0, 1000000.0, 10000000.0],
+  "fortran_diagnostic": "Unmodified archived single-precision cfit.f; separate bound64*2^-23*(1+U) at its actual rounded Te; never a replacement for the1e-12 Decimal gate"
+}

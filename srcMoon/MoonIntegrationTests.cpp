@@ -13,10 +13,14 @@
 #include "Moon.h"
 #include "MoonInput.h"
 #include "MoonDivinerObservation.h"
+#include "MoonI17Authorization.h"
 #include "MoonSurfaceEnvironment.h"
 #include "MoonSurfaceTemperature.h"
 #include "MoonParticleBudget.h"
 #include "MoonM2Budget.h"
+#include "MoonM2Cohorts.h"
+#include "MoonPolarDiagnostics.h"
+#include "species/Argon.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -69,6 +73,58 @@ class Receipt {
   bool enabled_;
   std::ofstream output_;
 };
+
+bool RecordAppliedThermalInitialization(Receipt* receipt,std::string* error) {
+#ifdef _NO_SPICE_CALLS_
+  if (error!=nullptr)
+    *error="applied thermal initialization provenance requires the actual SPICE kernel pool";
+  return false;
+#else
+  Moon::SurfaceTemperature::ProductionThermalInitializationInfo initial;
+  if (!Moon::SurfaceTemperature::GetProductionThermalInitialization(&initial,error))
+    return false;
+  // These values describe the actual production columns. They do not assert
+  // that a Python pilot state was loaded, or that its physical proof applies.
+  // The independent formal binder compares method, epoch and exported bytes.
+  receipt->Scalar("thermal_initialization_mode",initial.mode);
+  receipt->Scalar("thermal_initialization_et_s",initial.ephemerisTimeS);
+  receipt->Scalar("thermal_initialization_spinup_completed_cycles",initial.spinup.completedCycles);
+  receipt->Scalar("thermal_initialization_spinup_maximum_node_temperature_change_k",
+      initial.spinup.maximumNodeTemperatureChangeK);
+  receipt->Scalar("thermal_initialization_spinup_maximum_column_enthalpy_change_j_m2",
+      initial.spinup.maximumColumnEnthalpyChangeJm2);
+  receipt->Scalar("thermal_initialization_spinup_cycle_start_et_s",
+      initial.spinup.cycleStartEphemerisTimeS);
+  receipt->Scalar("thermal_initialization_spinup_cycle_end_et_s",
+      initial.spinup.cycleEndEphemerisTimeS);
+  // A uniform-temperature hash alone cannot reveal retargeted ephemerides.
+  // Bind the actual furnished CSPICE pool, rather than predicting a kernel
+  // set from Config.pl paths or reusing another run's canonical filenames.
+  // Resolve relative furnished paths in this process's active run directory;
+  // the independent Python binder hashes those concrete runtime bytes.
+  SpiceInt kernelCount=0;
+  ktotal_c("ALL",&kernelCount);
+  if (kernelCount<=0) {
+    *error="applied thermal initialization has no actual furnished SPICE kernels";
+    return false;
+  }
+  receipt->Scalar("thermal_initialization_spice_kernel_count",kernelCount);
+  for (SpiceInt index=0;index<kernelCount;++index) {
+    SpiceChar path[4096],kind[128],source[4096];
+    SpiceInt handle;SpiceBoolean found;
+    kdata_c(index,"ALL",sizeof(path),sizeof(kind),sizeof(source),
+        path,kind,source,&handle,&found);
+    if (!found || path[0]=='\0') {
+      *error="actual furnished SPICE kernel inventory is incomplete";
+      return false;
+    }
+    receipt->Scalar("thermal_initialization_spice_kernel_"+
+        std::to_string(static_cast<int>(index))+"_file",
+        std::filesystem::absolute(path).lexically_normal().string());
+  }
+  return true;
+#endif
+}
 
 struct State {
   double x[3];  // Moon-centred LSO position [m].
@@ -341,6 +397,116 @@ std::vector<std::string> SplitRestrictedCsv(const std::string& line) {
   return fields;
 }
 
+int RunI15(Receipt* receipt,const std::string& receiptPath) {
+#ifdef _NO_SPICE_CALLS_
+  receipt->Scalar("configuration_error_spice_required",1);
+  return 4;
+#else
+  // This adapter supplies geometry to the ordinary production illumination
+  // service. Observation values NEVER enter the BVH or the disc quadrature.
+  // Python stages only a reviewed, hash-bound geometry/time query table and
+  // independently joins/scorers the native results after numerical gates.
+  const auto& configuration=Moon::Runtime::GetConfiguration();
+  const auto* terrain=Moon::SurfaceEnvironment::ProductionTerrain();
+  if (!configuration.m2EnvironmentEnabled || terrain==nullptr ||
+      configuration.illuminationTerrainSolarModel!="uniform-disc" ||
+      configuration.m2IlluminationQueriesFile.empty()) return 4;
+  std::ifstream input(configuration.m2IlluminationQueriesFile);
+  std::ostringstream path;
+  path << receiptPath << ".I15.rank" << std::setw(4) << std::setfill('0')
+       << PIC::ThisThread << ".csv";
+  std::ofstream output(path.str());
+  std::string line,error;
+  int localOk=(input && output && std::getline(input,line))?1:0,allOk=0;
+  MPI_Allreduce(&localOk,&allOk,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  if (!allOk) return 6;
+  const auto names=SplitRestrictedCsv(line);
+  std::map<std::string,std::size_t> fields;
+  for (std::size_t k=0;k<names.size();++k) fields[names[k]]=k;
+  for (const char* key:{"query_id","site_id","latitude_deg","longitude_east_deg",
+      "epoch","time_system","observer_height_m","height_direction","include_earth"})
+    if (!fields.count(key)) localOk=0;
+  MPI_Allreduce(&localOk,&allOk,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  if (!allOk) return 6;
+  output << std::setprecision(17)
+      << "query_id,site_id,input_epoch,input_time_system,ephemeris_time_tdb_s,latitude_deg,longitude_east_deg,"
+         "terrain_visible_area_fraction,earth_visible_area_fraction,jointly_visible_area_fraction,"
+         "projected_incidence,sampled_any_terrain_visible,sampled_any_jointly_visible,ray_count\n";
+  long long row=0,owned=0;
+  while (std::getline(input,line)) {
+    if (line.empty()) continue;
+    const auto values=SplitRestrictedCsv(line);
+    if (values.size()!=names.size()) { localOk=0;break; }
+    const auto text=[&](const char* key)->const std::string& { return values[fields[key]]; };
+    const auto number=[&](const char* key,double* x) {
+      char* end=nullptr;errno=0;
+      const auto& value=text(key);*x=std::strtod(value.c_str(),&end);
+      return errno!=ERANGE && end!=value.c_str() && *end=='\0' && std::isfinite(*x);
+    };
+    double latitude=0,longitude=0,height=0,epoch=0;
+    if (!number("latitude_deg",&latitude) || !number("longitude_east_deg",&longitude) ||
+        !number("observer_height_m",&height) || latitude < -90 || latitude>90 ||
+        longitude<0 || longitude>=360 || height<0 ||
+        (text("height_direction")!="radial" && text("height_direction")!="facet-normal") ||
+        (text("include_earth")!="true" && text("include_earth")!="false")) { localOk=0;break; }
+    if (text("time_system")=="UTC") str2et_c(text("epoch").c_str(),&epoch);
+    else if (text("time_system")!="TDB" || !number("epoch",&epoch)) { localOk=0;break; }
+    const long long index=row++;
+    if (index%PIC::nTotalThreads!=PIC::ThisThread) continue;
+    const double lat=latitude*Pi/180,lon=longitude*Pi/180;
+    const std::array<double,3> radial{{std::cos(lat)*std::cos(lon),std::cos(lat)*std::sin(lon),std::sin(lat)}};
+    Moon::SurfaceEnvironment::RayHit hit;
+    if (!terrain->IntersectRay({{0,0,0}},radial,0,std::numeric_limits<double>::infinity(),
+        std::numeric_limits<std::size_t>::max(),&hit,&error) || !hit.hit) { localOk=0;break; }
+    Moon::SurfaceEnvironment::SolarDiscRequest request;
+    request.surfacePositionM=hit.positionM;
+    request.outwardNormal=hit.outwardNormal;
+    for (int k=0;k<3;++k)
+      request.surfacePositionM[k]+=height*(text("height_direction")=="radial"?radial[k]:hit.outwardNormal[k]);
+    if (!Moon::SurfaceEnvironment::ApparentSolarSystemGeometryAtPoint(epoch,
+        request.surfacePositionM,configuration.illuminationAberrationCorrection,
+        &request.pointToSunM,&request.pointToEarthM,&error)) {localOk=0;break;}
+    request.solarRadiusM=configuration.thermalSolarDiscRadiusM;
+    request.opaqueEarthRadiusM=text("include_earth")=="true"?configuration.thermalOpaqueEarthRadiusM:0;
+    request.rayOriginOffsetM=configuration.illuminationRayOriginOffsetM;
+    request.radialPoints=configuration.illuminationDiscRadialPoints;
+    request.azimuthPoints=configuration.illuminationDiscAzimuthPoints;
+    // D02 observer sky visibility is a line-of-sight quantity. Its local
+    // horizontal plane is NOT an opaque screen for an elevated observer.
+    request.applyLocalSelfHorizon=false;
+    Moon::SurfaceEnvironment::SolarDiscSample sample;
+    if (!Moon::SurfaceEnvironment::EvaluateSolarDisc(terrain,request,&sample,&error)) { localOk=0;break; }
+    output << text("query_id") << ',' << text("site_id") << ',' << text("epoch") << ','
+        << text("time_system") << ',' << epoch << ','
+        << latitude << ',' << longitude << ',' << sample.terrainVisibleAreaFraction << ','
+        << sample.earthVisibleAreaFraction << ',' << sample.jointlyVisibleAreaFraction << ','
+        << sample.projectedIncidence << ',' << sample.sampledAnyTerrainVisible << ','
+        << sample.sampledAnyJointlyVisible << ',' << sample.rayCount << '\n';
+    ++owned;
+  }
+  if (!output || input.bad()) localOk=0;
+  MPI_Allreduce(&localOk,&allOk,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  long long total=0;
+  MPI_Allreduce(&owned,&total,1,MPI_LONG_LONG_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  if (!allOk || total==0) {
+    std::cerr << "I15 production geometry/query failure: " << error << '\n';
+    return 6;
+  }
+  receipt->Scalar("query_count",total);
+  receipt->Scalar("runtime_psd_geometry_hook",
+      Exosphere::SourceProcesses::PhotonStimulatedDesorption::RuntimePhotonFluxFactor==
+          Moon::SurfaceTemperature::ProductionPhotonFluxFactor ? 1:0);
+  receipt->Scalar("source_begin_epoch_tdb_s",Moon::SurfaceEnvironment::ProductionSourceEpochS());
+  receipt->Scalar("disc_radial_points",configuration.illuminationDiscRadialPoints);
+  receipt->Scalar("disc_azimuth_points",configuration.illuminationDiscAzimuthPoints);
+  receipt->Scalar("aberration_correction",configuration.illuminationAberrationCorrection);
+  receipt->Scalar("aberration_observer_convention","constant-body-fixed-site-at-reception");
+  receipt->Scalar("body_fixed_frame",Moon::Frames::BodyFixed);
+  receipt->Scalar("visibility_definition","sampled-any-disc-occurrence-not-mean-disc-area");
+  return 0;
+#endif
+}
+
 int RunI16(Receipt* receipt,const std::string& receiptPath) {
 #ifdef _NO_SPICE_CALLS_
   receipt->Scalar("configuration_error_spice_required",1);
@@ -351,6 +517,7 @@ int RunI16(Receipt* receipt,const std::string& receiptPath) {
       Moon::Runtime::GetConfiguration();
   if (!configuration.m2EnvironmentEnabled ||
       configuration.surfaceTemperatureMode!="diviner-map" ||
+      configuration.divinerMapKineticInterpretation!="isothermal-grey" ||
       !Moon::SurfaceTemperature::ProductionStateInitialized()) {
     receipt->Scalar("configuration_error_diviner_production_mode_required",1);
     return 4;
@@ -378,7 +545,8 @@ int RunI16(Receipt* receipt,const std::string& receiptPath) {
   }
   output << std::setprecision(17)
          << "source_record,latitude_deg,longitude_east_deg,local_time_hour,"
-            "query_local_time_hour,production_temperature_k\n";
+            "query_local_time_hour,production_kinetic_temperature_K,"
+            "production_bolometric_brightness_temperature_K,bolometric_emissivity\n";
   std::string line;
   if (!std::getline(input,line) || line!=
       "latitude_deg,longitude_east_deg,local_time_hour,temperature_k,"
@@ -386,9 +554,14 @@ int RunI16(Receipt* receipt,const std::string& receiptPath) {
     receipt->Scalar("configuration_error_benchmark_schema",1);
     return 6;
   }
-  const double sunLongitudeDeg=std::atan2(
-      Moon::OrbitalMotion::SunDirection_IAU_OBJECT[1],
-      Moon::OrbitalMotion::SunDirection_IAU_OBJECT[0])*180.0/Pi;
+  // Select geometry with the SAME explicit epoch, body frame and named
+  // aberration correction used by the production map boundary. The legacy
+  // orbit cache is geometric and may differ for an input selecting LT/CN.
+  SpiceDouble sunState[6],lightTime;
+  spkezr_c("SUN",Moon::OrbitalMotion::et,Moon::Frames::BodyFixed,
+      configuration.illuminationAberrationCorrection.c_str(),Moon::ObjectName,
+      sunState,&lightTime);
+  const double sunLongitudeDeg=std::atan2(sunState[1],sunState[0])*180.0/Pi;
   SpiceDouble bodyToLso[6][6];
   sxform_c(Moon::Frames::BodyFixed,Moon::Frames::SolarOrbital,
            Moon::OrbitalMotion::et,bodyToLso);
@@ -424,10 +597,12 @@ int RunI16(Receipt* receipt,const std::string& receiptPath) {
     // Missing archive cells remain real gaps.  Test eligibility through the
     // same strict loader before invoking the fail-closed normal callback, and
     // omit only rows whose eight-corner reference cell is unavailable.  This
-    // decision sees no AMPS temperature value.
+    // decision sees no AMPS temperature value. Check the physical query LST,
+    // not merely its nearby archive-bin centre: the latter can be a supported
+    // native node whose neighboring interval crosses a genuine map gap.
     double eligibilityTemperature=0.0,eligibilityUncertainty=0.0;
     if (!eligibilityTable.Interpolate(latitudeDeg,archiveLongitudeDeg,
-            localTimeHour,&eligibilityTemperature,&eligibilityUncertainty,
+            currentLocalTimeHour,&eligibilityTemperature,&eligibilityUncertainty,
             &eligibilityError)) continue;
     const double latitudeRad=latitudeDeg*Pi/180.0;
     const double longitudeRad=archiveLongitudeDeg*Pi/180.0;
@@ -437,13 +612,23 @@ int RunI16(Receipt* receipt,const std::string& receiptPath) {
         _RADIUS_(_MOON_)*std::sin(latitudeRad),0.0,0.0,0.0};
     SpiceDouble lsoState[6];
     mxvg_c(bodyToLso,bodyState,6,6,lsoState);
-    const double temperature=
+    const double kineticTemperatureK=
         Moon::SurfaceTemperature::ProductionTemperatureK(lsoState);
-    if (!(temperature>0.0) || !std::isfinite(temperature)) return 6;
+    // The callback feeds kinetic K to particle physics. D03 stores native
+    // blackbody-equivalent bolometric brightness K. Compare through the same
+    // explicit grey-facet observation operator used for thermal predictions;
+    // retaining both columns prevents an implicit unit-emissivity comparison.
+    const double bolometricTemperatureK=
+        Moon::DivinerObservation::GreyBolometricBrightnessTemperatureK(
+            kineticTemperatureK,configuration.thermal.infraredEmissivity);
+    if (!(kineticTemperatureK>0.0) || !std::isfinite(kineticTemperatureK) ||
+        !(bolometricTemperatureK>0.0) || !std::isfinite(bolometricTemperatureK))
+      return 6;
     output << fields[7] << ',' << latitudeDeg << ','
            << archiveLongitudeDeg << ',' << localTimeHour << ','
            << currentLocalTimeHour << ','
-           << temperature << '\n';
+           << kineticTemperatureK << ',' << bolometricTemperatureK << ','
+           << configuration.thermal.infraredEmissivity << '\n';
     evaluatedLocations.insert(locationKey);
     queryCount++;
   }
@@ -453,6 +638,9 @@ int RunI16(Receipt* receipt,const std::string& receiptPath) {
                   configuration.surfaceTemperatureMode);
   receipt->Scalar("diviner_temperature_table_file",
                   configuration.divinerTemperatureTableFile);
+  receipt->Scalar("diviner_map_kinetic_interpretation",
+                  configuration.divinerMapKineticInterpretation);
+  receipt->Scalar("bolometric_emissivity",configuration.thermal.infraredEmissivity);
   return 0;
 #endif
 }
@@ -473,7 +661,34 @@ int RunI17(Receipt* receipt,const std::string& receiptPath) {
     return 4;
   }
 
-  // The approved first plot is a June training diagnostic.  Other ranks have
+  // Selection is explicit. The default remains the isolated June diagnostic;
+  // the formal Python runner verifies the reviewer/byte/source/build contract
+  // before staging a hold-out-only CSV. This native adapter does not score or
+  // approve that artifact: it checks the selected stream and exports the raw
+  // production model. A manual hold-out launch still needs an explicit review
+  // path and cannot report a formal PASS without the independent runner.
+  const std::string selection=configuration.divinerEclipseSelection;
+  if ((selection!="training" && selection!="holdout") ||
+      (selection=="holdout" && (configuration.divinerEclipseFreezeFile.empty() ||
+       !std::filesystem::is_regular_file(configuration.divinerEclipseFreezeFile)))) {
+    receipt->Scalar("configuration_error_i17_reviewed_selection_required",1);
+    return 4;
+  }
+  if (selection=="holdout") {
+    std::string authorizationError;
+    if (!Moon::I17Authorization::Validate(configuration.divinerEclipseAuthorizationFile,
+        configuration.divinerEclipseHistoryFile,configuration.divinerEclipseFreezeFile,
+        &authorizationError)) {
+      if (PIC::ThisThread==0) std::cerr << authorizationError << '\n';
+      receipt->Scalar("configuration_error_i17_native_authorization_required",1);
+      return 4;
+    }
+    receipt->Scalar("native_authorization_file",configuration.divinerEclipseAuthorizationFile);
+    receipt->Scalar("native_authorization_scope","schema-status-path-token; Python verifies actual SHA-256/review");
+  }
+  // Every selection independently spins up its complete production columns.
+  // December has its own explicitly declared UTC cycle; the caller never
+  // substitutes the final June state. Other ranks have
   // initialized the same production model but do not need to duplicate this
   // deterministic global thermal history.  The manifest still records the
   // requested eight-rank launch honestly; no MPI speedup is claimed here.
@@ -486,6 +701,13 @@ int RunI17(Receipt* receipt,const std::string& receiptPath) {
     return 6;
   }
   receipt->Scalar("capability_status","EXPERIMENTAL / NOT VALIDATED");
+  receipt->Scalar("comparison_selection",selection);
+  receipt->Scalar("initialization_mode","independent-observation-free-periodic-spinup");
+  receipt->Scalar("terrain_solar_model",configuration.illuminationTerrainSolarModel);
+  receipt->Scalar("disc_radial_points",configuration.illuminationDiscRadialPoints);
+  receipt->Scalar("disc_azimuth_points",configuration.illuminationDiscAzimuthPoints);
+  if (selection=="holdout")
+    receipt->Scalar("reviewed_freeze_file",configuration.divinerEclipseFreezeFile);
   receipt->Scalar("eclipse_direct_irradiance_model",
                   configuration.thermalEclipseDirectIrradianceModel);
   receipt->Scalar("solar_disc_radiance_model",
@@ -535,7 +757,7 @@ int RunI17(Receipt* receipt,const std::string& receiptPath) {
       "c8_radiance_W_m-2_sr-1","c8_brightness_temperature_K",
       "c9_radiance_W_m-2_sr-1","c9_brightness_temperature_K"};
   for (const char* name:required) if (field.find(name)==field.end()) {
-    std::cerr << "I17 training history is missing field " << name << '\n';
+    std::cerr << "I17 selected history is missing field " << name << '\n';
     return 6;
   }
   std::vector<Observation> observations;
@@ -543,11 +765,11 @@ int RunI17(Receipt* receipt,const std::string& receiptPath) {
     if (line.empty()) continue;
     const std::vector<std::string> values=SplitRestrictedCsv(line);
     if (values.size()!=names.size()) return 6;
-    if (values[field["selection"]]!="training") {
+    if (values[field["selection"]]!=selection) {
       // The Python staging step must make hold-out values inaccessible to the
-      // first-comparison executable.  Fail rather than silently skipping a
-      // December row that should never have entered this receipt.
-      std::cerr << "I17 first-comparison input contains a non-training row\n";
+      // executable. Fail before parsing science values rather than silently
+      // skipping an unselected row that should not enter this receipt.
+      std::cerr << "I17 input contains a row outside selected " << selection << '\n';
       return 6;
     }
     Observation value;
@@ -586,11 +808,11 @@ int RunI17(Receipt* receipt,const std::string& receiptPath) {
       });
   if (observations.empty() ||
       observations.front().epoch<spinup.cycleEndEphemerisTimeS) {
-    std::cerr << "I17 training rows precede the configured spin-up boundary\n";
+    std::cerr << "I17 selected rows precede the configured spin-up boundary\n";
     return 6;
   }
 
-  std::ofstream output(receiptPath+".I17_training_model.csv");
+  std::ofstream output(receiptPath+".I17_"+selection+"_model.csv");
   if (!output) return 6;
   output << std::setprecision(17)
       << "site_time_bin_id,utc,ephemeris_time_tdb_s,latitude_deg,"
@@ -602,7 +824,7 @@ int RunI17(Receipt* receipt,const std::string& receiptPath) {
            << ",model_c" << channel << "_radiance_W_m-2_sr-1"
            << ",observed_c" << channel << "_brightness_temperature_K"
            << ",model_c" << channel << "_brightness_temperature_K";
-  output << '\n';
+  output << ",selection\n";
 
   double currentEpoch=spinup.cycleEndEphemerisTimeS;
   double maximumThermalUpdate=0.0;
@@ -610,7 +832,7 @@ int RunI17(Receipt* receipt,const std::string& receiptPath) {
     if (observation.epoch>currentEpoch &&
         !Moon::SurfaceTemperature::AdvanceProductionState(
             currentEpoch,observation.epoch,&error)) {
-      std::cerr << "I17 training thermal advance failed: " << error << '\n';
+      std::cerr << "I17 selected thermal advance failed: " << error << '\n';
       return 6;
     }
     maximumThermalUpdate=std::max(maximumThermalUpdate,
@@ -652,16 +874,18 @@ int RunI17(Receipt* receipt,const std::string& receiptPath) {
              << observation.observedBrightnessK[channel-6] << ','
              << modelBrightness;
     }
-    output << '\n';
+    output << ',' << selection << '\n';
   }
   if (!output) return 6;
-  receipt->Scalar("training_comparison_row_count",observations.size());
+  receipt->Scalar("comparison_row_count",observations.size());
+  receipt->Scalar("training_comparison_row_count",selection=="training"?observations.size():0);
+  receipt->Scalar("holdout_comparison_row_count",selection=="holdout"?observations.size():0);
   receipt->Scalar("maximum_production_update_temperature_change_k",
                   maximumThermalUpdate);
   receipt->Scalar("thermal_time_step_s",configuration.thermalTimeStepS);
   receipt->Scalar("infrared_emissivity",
                   configuration.thermal.infraredEmissivity);
-  receipt->Scalar("holdout_rows_accessed",0);
+  receipt->Scalar("holdout_rows_accessed",selection=="holdout"?observations.size():0);
   return 0;
 #endif
 }
@@ -2476,7 +2700,220 @@ int RunI13(Receipt* receipt) {
 }  // namespace
 
 namespace {
+// This adapter selects declared initial conditions and numerical controls;
+// every physical step remains amps_time_step with production sources/movers.
+double NoExternalImpactSource(int) {return 0.0;}
+// A model-input normalization is prepared before any residuals are examined.
+// Integrate the actual external source kernels with a separate converged
+// composite-Simpson quadrature; no particles, thermal state or RNG advance.
+int RunM2SourceNormalization(Receipt* receipt) {
+#if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ != _PIC_MODE_ON_
+  return 6;
+#else
+  if (_NA_SPEC_<0 || _AR_SPEC_<0 || PIC::nTotalSpecies!=2) return 6;
+  const auto& c=Moon::Runtime::GetConfiguration();
+  const double H=c.m2VerificationDurationS,start=Moon::OrbitalMotion::et;
+  if (!(H>0)) exit(__LINE__,__FILE__,"source normalization requires an explicit positive SI horizon");
+  const double savedRadius=Exosphere::xObjectRadial;
+  long double previous[2]={},coarseDifference[2]={1e300L,1e300L},integrals[2]={};
+  int intervals=8;
+  for (;;) {
+    integrals[0]=integrals[1]=0;
+    for (int n=0;n<=intervals;++n) {
+      SpiceDouble state[6],lightTime;
+      spkezr_c("MOON",start+H*n/intervals,"J2000","NONE","SUN",state,&lightTime);
+      Exosphere::xObjectRadial=1000.0*std::sqrt(state[0]*state[0]+state[1]*state[1]+state[2]*state[2]);
+      const int coefficient=(n==0 || n==intervals)?1:(n%2?4:2);
+      for (int j=0;j<2;++j) {
+        const int species=j==0?_NA_SPEC_:_AR_SPEC_;
+        const double rate=Exosphere::SourceProcesses::ImpactVaporization::GetTotalProductionRate(
+            species,_INTERNAL_BOUNDARY_TYPE_SPHERE_,Moon::Planet)+
+            Moon::Species::Argon::GetTotalProductionRate(species,_INTERNAL_BOUNDARY_TYPE_SPHERE_,Moon::Planet);
+        if (!std::isfinite(rate) || rate<0) exit(__LINE__,__FILE__,"invalid external source rate in normalization quadrature");
+        integrals[j]+=coefficient*static_cast<long double>(rate);
+      }
+    }
+    bool converged=intervals>=32;
+    for (int j=0;j<2;++j) {
+      integrals[j]*=H/(3.0L*intervals);
+      const long double difference=std::fabs(integrals[j]-previous[j]);
+      const long double floor=128*std::numeric_limits<double>::epsilon()*std::fabs(integrals[j]);
+      converged=converged && difference<=c.m2VerificationSourceIntegralTolerance*std::fabs(integrals[j]) &&
+          (difference<=coarseDifference[j] || difference<=floor);
+      coarseDifference[j]=difference;previous[j]=integrals[j];
+    }
+    if (converged) break;
+    if (intervals>std::numeric_limits<int>::max()/2)
+      exit(__LINE__,__FILE__,"source integral quadrature exhausted interval counter; inspect forcing/horizon");
+    intervals*=2;
+  }
+  Exosphere::xObjectRadial=savedRadius;
+  receipt->Scalar("execution_scope","model-input-source-integral-only-not-qualification");
+  receipt->Scalar("duration_s",H);receipt->Scalar("source_integral_intervals",intervals);
+  receipt->Scalar("expected_external_na_atoms",static_cast<double>(integrals[0]));
+  receipt->Scalar("expected_external_ar_atoms",static_cast<double>(integrals[1]));
+  receipt->Scalar("initial_na_cohort_atoms_per_site",c.m2VerificationCohortPackets*PIC::ParticleWeightTimeStep::GlobalParticleWeight[_NA_SPEC_]);
+  receipt->Scalar("initial_ar_cohort_atoms_per_site",c.m2VerificationCohortPackets*PIC::ParticleWeightTimeStep::GlobalParticleWeight[_AR_SPEC_]);
+  return 0;
+#endif
+}
+
+int RunM2NumericalCase(Receipt* receipt,const std::string& path) {
+  const auto& c=Moon::Runtime::GetConfiguration();
+  std::string initializationError;
+  if (!RecordAppliedThermalInitialization(receipt,&initializationError))
+    exit(__LINE__,__FILE__,initializationError.c_str());
+  Moon::SurfaceTemperature::ProductionThermalInitializationInfo appliedInitial;
+  if (!Moon::SurfaceTemperature::GetProductionThermalInitialization(
+          &appliedInitial,&initializationError) ||
+      appliedInitial.ephemerisTimeS!=Moon::OrbitalMotion::et)
+    exit(__LINE__,__FILE__,"M2 numerical case start epoch does not equal its actual applied thermal initial-state epoch; declare/reinitialize one consistent t0 before seeding cohorts");
+  if (c.m2VerificationRecordInitialThermalState && PIC::ThisThread==0) {
+    // Capture the actual applied t0 columns before source/cohort state or
+    // numerical dt/weight controls are changed. Every case gets an exclusive
+    // path; these model bytes are evidence to bind, never a reference truth.
+    const std::string statePath=std::filesystem::absolute(
+        path+".I19_initial_thermal_state.csv").lexically_normal().string();
+    std::vector<double> depths,temperatures;
+    const int elements=Moon::Planet->GetTotalSurfaceElementsNumber();
+    if (elements<=0 || !Moon::SurfaceTemperature::ProductionThermalProfile(
+            0,&depths,&temperatures,&initializationError))
+      exit(__LINE__,__FILE__,("initial thermal-state metadata unavailable: "+initializationError).c_str());
+    const std::size_t layers=depths.size();
+    for (int element=1;element<elements;++element) {
+      if (!Moon::SurfaceTemperature::ProductionThermalProfile(element,&depths,
+              &temperatures,&initializationError) || depths.size()!=layers)
+        exit(__LINE__,__FILE__,"initial thermal-state columns have inconsistent layer counts");
+    }
+    if (!Moon::SurfaceTemperature::WriteProductionInitialThermalStateCsv(
+            statePath,&initializationError))
+      exit(__LINE__,__FILE__,initializationError.c_str());
+    receipt->Scalar("initial_thermal_state_csv",statePath);
+    receipt->Scalar("initial_thermal_state_element_count",elements);
+    receipt->Scalar("initial_thermal_state_layer_count",layers);
+    receipt->Scalar("initial_thermal_state_rows",
+        static_cast<std::size_t>(elements)*(layers+1));
+  }
+  if (c.m2VerificationCase=="normalization") return RunM2SourceNormalization(receipt);
+  if (_NA_SPEC_<0 || _AR_SPEC_<0 || PIC::nTotalSpecies!=2 ||
+      !c.m2EnvironmentEnabled || c.simulationEnvironmentMode!="evolving")
+    exit(__LINE__,__FILE__,"M2 numerical cases require evolving neutral Na/Ar production environment");
+#if _PIC_PHOTOLYTIC_REACTIONS_MODE_ != _PIC_PHOTOLYTIC_REACTIONS_MODE_OFF_
+  exit(__LINE__,__FILE__,"M2 numerical cases require chemistry OFF");
+#endif
+  if (c.surfaceInventoryInitialState!="zero")
+    exit(__LINE__,__FILE__,"M2 numerical profiles require explicitly zero initial surface state before controlled cohorts");
+  const int species[2]={_NA_SPEC_,_AR_SPEC_};
+  double savedDt[2],savedWeight[2];
+  for (int j=0;j<2;++j) {
+    savedDt[j]=PIC::ParticleWeightTimeStep::GlobalTimeStep[species[j]];
+    savedWeight[j]=PIC::ParticleWeightTimeStep::GlobalParticleWeight[species[j]];
+  }
+  const double bound=std::min(savedDt[0],savedDt[1]);
+  double coarse=c.m2VerificationCoarseDtS>0 ? c.m2VerificationCoarseDtS:bound;
+  long long coarseSteps=c.m2VerificationCoarseSteps;
+  if (c.m2VerificationDurationS>0) {
+    if (c.m2VerificationCoarseDtS==0) {
+      const double intervals=std::ceil(c.m2VerificationDurationS/(8*coarse));
+      if (!std::isfinite(intervals) || intervals<1 ||
+          intervals>std::numeric_limits<int>::max()/(8.0*c.m2VerificationDtDivisor))
+        exit(__LINE__,__FILE__,"M2 physical horizon exceeds supported step counter; review dt/horizon before rerun");
+      coarseSteps=8*static_cast<long long>(intervals);
+    }
+    // An explicit baseline pins BOTH count and dt. Re-ceiling H/dt could
+    // add an interval solely through floating-point division rounding.
+    const double aligned=c.m2VerificationDurationS/coarseSteps;
+    if (c.m2VerificationCoarseDtS>0 && std::abs(aligned-coarse)>
+        16*std::numeric_limits<double>::epsilon()*coarse)
+      exit(__LINE__,__FILE__,"explicit cluster coarse dt/count/horizon are inconsistent");
+    coarse=aligned;
+  }
+  if (!(coarse>0) || !std::isfinite(coarse) || !(bound>0) || !std::isfinite(bound) || coarse>bound*(1+16*std::numeric_limits<double>::epsilon()) ||
+      coarseSteps>std::numeric_limits<int>::max()/c.m2VerificationDtDivisor)
+    exit(__LINE__,__FILE__,"M2 common dt/step count violates initialized production bound or counter range");
+  const double dt=coarse/c.m2VerificationDtDivisor;
+  const long long steps=coarseSteps*c.m2VerificationDtDivisor;
+  const double reference[2]={c.m2VerificationNaWeightAtoms>0?c.m2VerificationNaWeightAtoms:savedWeight[0],
+    c.m2VerificationArWeightAtoms>0?c.m2VerificationArWeightAtoms:savedWeight[1]};
+  for (int j=0;j<2;++j) {
+    PIC::ParticleWeightTimeStep::GlobalTimeStep[species[j]]=dt;
+    PIC::ParticleWeightTimeStep::GlobalParticleWeight[species[j]]=reference[j]/c.m2VerificationWeightDivisor;
+  }
+  // Seed after initialization so every compared case begins the declared
+  // stochastic stream, independent of mesh setup's earlier random draws.
+  rnd_seed(c.randomSeed+PIC::ThisThread);
+  const bool cohort=c.m2VerificationCase=="cohort";
+  auto oldImpact=Exosphere::SourceProcesses::ImpactVaporization::RuntimeSourceRate;
+  std::string error;
+  if (cohort) {
+    Exosphere::SourceProcesses::ImpactVaporization::RuntimeSourceRate=NoExternalImpactSource;
+    auto disabled=c;disabled.argonSourceEnabled=false;
+    if (!Moon::Species::Argon::ConfigureProduction(disabled,Moon::Planet,&error))
+      exit(__LINE__,__FILE__,error.c_str());
+  }
+  // Explicit zero startup; no hidden warm-up step may inject gas or deposit
+  // atoms before this initial-value problem. PIC initializes its own block
+  // traversal on the first ordinary step.
+  std::vector<double> initial;
+  if (cohort) {
+    for (int j=0;j<2;++j) for (int element:c.m2VerificationElements) {
+      if (element>=PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber)
+        exit(__LINE__,__FILE__,"configured cohort element exceeds logical surface");
+      const double atoms=c.m2VerificationCohortPackets*savedWeight[j];
+      if (!std::isfinite(atoms) || !(atoms>0))
+        exit(__LINE__,__FILE__,"cohort initial atoms overflow; reduce explicit cohort packet scale and rerun");
+      Moon::Planet->SurfaceElementPopulation[species[j]][element]+=atoms;initial.push_back(atoms);
+    }
+    Moon::M2Cohorts::Begin(c.m2VerificationElements,initial,std::filesystem::path(path).parent_path());
+  }
+  // The numerical fixtures need production sampling but no full-volume file
+  // writers or restart files. A short case has no complete 500-step sample.
+  PIC::RequiredSampleLength=500;PIC::SamplingMode=_RESTART_SAMPLING_MODE_;
+  PIC::Sampling::SupressOutputFlag=true;PIC::Sampling::SupressRestartFilesFlag=true;
+  for (int routine=0;routine<PIC::Sampling::ExternalSamplingLocalVariables::SamplingRoutinesRegistrationCounter;++routine)
+    PIC::Sampling::ExternalSamplingLocalVariables::PrintOutputFile[routine]=I11Sampling::SuppressExternalOutput;
+  const double start=Moon::OrbitalMotion::et;
+  Moon::M2Budget::Begin(std::filesystem::path(path).parent_path()/"m2_budget.csv");
+  for (long long step=1;step<=steps;++step) {
+    Moon::OrbitalMotion::et=start+(step-1)*dt;
+    Moon::nIterationCounter=static_cast<int>(step);amps_time_step();
+    // Integer-based physical clock prevents millions of repeated additions
+    // to a large TDB epoch from accumulating avoidable timestamp drift.
+    Moon::OrbitalMotion::et=start+step*dt;
+    if (cohort) Moon::M2Cohorts::EndStep(step*dt);
+    if (step%(steps/8)==0 || step%500==0 || step==steps) {
+      Moon::M2Budget::Snapshot(step);
+      if (cohort) Moon::M2Cohorts::Snapshot(step*dt);
+    }
+  }
+  receipt->Scalar("execution_scope",c.m2VerificationProfile=="development"?
+      "supporting-short-M2-not-formal-qualification":"cluster-M2-numerical-case");
+  receipt->Scalar("verification_case",c.m2VerificationCase);
+  receipt->Scalar("seed",c.randomSeed);receipt->Scalar("steps",static_cast<double>(steps));
+  receipt->Scalar("coarse_steps",static_cast<double>(coarseSteps));
+  receipt->Scalar("coarse_timestep_s",coarse);receipt->Scalar("synchronized_timestep_s",dt);
+  receipt->Scalar("initial_epoch_tdb_s",start);receipt->Scalar("duration_s",steps*dt);
+  receipt->Scalar("initialized_na_dt_s",savedDt[0]);receipt->Scalar("initialized_ar_dt_s",savedDt[1]);
+  receipt->Scalar("initialized_na_weight_atoms",savedWeight[0]);receipt->Scalar("initialized_ar_weight_atoms",savedWeight[1]);
+  receipt->Scalar("reference_na_weight_atoms",reference[0]);receipt->Scalar("reference_ar_weight_atoms",reference[1]);
+  receipt->Scalar("na_weight_atoms",PIC::ParticleWeightTimeStep::GlobalParticleWeight[_NA_SPEC_]);
+  receipt->Scalar("ar_weight_atoms",PIC::ParticleWeightTimeStep::GlobalParticleWeight[_AR_SPEC_]);
+  receipt->Scalar("rng_mode",_RND_MODE_);receipt->Scalar("photochemistry_enabled",0);
+  receipt->Scalar("budget_valid",Moon::M2Budget::Valid()?1:0);
+  Moon::M2Budget::End();if (cohort) Moon::M2Cohorts::End();
+  Exosphere::SourceProcesses::ImpactVaporization::RuntimeSourceRate=oldImpact;
+  for (int j=0;j<2;++j) {
+    PIC::ParticleWeightTimeStep::GlobalTimeStep[species[j]]=savedDt[j];
+    PIC::ParticleWeightTimeStep::GlobalParticleWeight[species[j]]=savedWeight[j];
+  }
+  return 0;
+}
+
 int RunM2BudgetCheck(Receipt* receipt,const std::string& path) {
+  if (Moon::Runtime::HasConfiguration() &&
+      Moon::Runtime::GetConfiguration().m2VerificationCase!="none")
+    return RunM2NumericalCase(receipt,path);
+
 #if _PIC_PHOTOLYTIC_REACTIONS_MODE_ != _PIC_PHOTOLYTIC_REACTIONS_MODE_OFF_
   std::cerr << "I19 supporting budget requires photolytic chemistry OFF\n";
   return 6;
@@ -2566,8 +3003,8 @@ int Moon::IntegrationTests::Run(const std::string& testId,
   // retain their frozen one-rank contract because several create/move local
   // particles and have not been reviewed for distributed execution.
   const bool distributedLinked=(testId=="I11" || testId=="I12" ||
-      testId=="I13" || testId=="I14" || testId=="I16" ||
-      testId=="I17" || testId=="I18" || (testId=="I19" && m2BudgetCheck));
+      testId=="I13" || testId=="I14" || testId=="I15" || testId=="I16" ||
+      testId=="I17" || testId=="I18" || testId=="I20" || (testId=="I19" && m2BudgetCheck));
   if (PIC::nTotalThreads!=1 && !distributedLinked) {
     if (PIC::ThisThread==0)
       std::cerr << "M0 linked diagnostics require exactly one MPI rank\n";
@@ -2602,9 +3039,28 @@ int Moon::IntegrationTests::Run(const std::string& testId,
   if (testId=="I12") return RunI12(&receipt);
   if (testId=="I13") return RunI13(&receipt);
   if (testId=="I14") return RunI14(&receipt,outputFile);
+  if (testId=="I15") return RunI15(&receipt,outputFile);
   if (testId=="I16") return RunI16(&receipt,outputFile);
   if (testId=="I17") return RunI17(&receipt,outputFile);
   if (testId=="I18") return RunI18(&receipt,outputFile);
+  if (testId=="I20") {
+    // The deterministic global thermal state is replicated, so only rank
+    // zero exports it. Other ranks remain in the normal linked lifecycle;
+    // the receipt/layout is honest about this absence of MPI speedup.
+    if (PIC::ThisThread!=0) return 0;
+    std::map<std::string,std::string> metrics;
+    std::string error;
+    if (!Moon::PolarDiagnostics::RunPolarDiagnostics(outputFile,&metrics,&error)) {
+      std::cerr << "I20 production polar export failed: " << error << '\n';
+      return 6;
+    }
+    for (const auto& value:metrics) receipt.Scalar(value.first,value.second);
+    if (!RecordAppliedThermalInitialization(&receipt,&error)) {
+      std::cerr << "I20 applied thermal-initialization metadata unavailable: " << error << '\n';
+      return 6;
+    }
+    return 0;
+  }
   if (PIC::ThisThread!=0) return 2;
 
   if (testId=="U01") return RunU01(&receipt,false);

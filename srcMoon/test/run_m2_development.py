@@ -15,10 +15,31 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import time
+
+from campaign_budget import CampaignBudget
+import m2_protocol
+from build_m2_qualification import verify_retained_executable
 
 from integration_common import (REPO,check,manifest,parse_receipt,
-    prepare_na_ar_input,replace_moon_setting,run,sha256)
+    prepare_na_ar_input,replace_moon_setting,run,sha256,moon_setting)
 from m1_execution import execute_levels
+
+# The existing I18 acceptance contract freezes this base seed. Numerical
+# replicate seeds belong only to the separately declared 36/288-case design.
+# Never let a generated numerical template silently change the baseline or
+# select a different seed after a stochastic comparison has been examined.
+BASELINE_SEED=731993
+
+
+class SupportingGateStopped(Exception):
+    """An already recorded FAIL/SKIPPED halts dependent work, not an ERROR."""
+
+
+def remaining_seconds():
+    """Every phase consumes the same enclosing monotonic work deadline."""
+    deadline=os.environ.get("AMPS_MOON_WORK_DEADLINE")
+    return max(0.01,float(deadline)-time.monotonic()) if deadline else 3000.0
 
 
 def command_log(command,path):
@@ -26,7 +47,7 @@ def command_log(command,path):
     with path.open("a") as stream:
         stream.write("COMMAND: "+" ".join(command)+"\n");stream.flush()
         return subprocess.run(command,cwd=REPO,stdout=stream,
-                              stderr=subprocess.STDOUT,check=False).returncode
+                              stderr=subprocess.STDOUT,check=False,timeout=remaining_seconds()).returncode
 
 
 def run_campaign(a):
@@ -34,18 +55,69 @@ def run_campaign(a):
     if output.exists() and any(output.iterdir()):raise ValueError("output must be new or empty")
     output.mkdir(parents=True,exist_ok=True)
     records=[];supporting=[];built=False
+    def persist():
+        """Publish completed evidence after every phase for a forced shutdown."""
+        counts=lambda rows:{v:sum(r.get("status")==v for r in rows) for v in ("PASS","FAIL","SKIPPED","ERROR")}
+        value={"schema":"srcMoon-M2-development-campaign-v2","formal_m2_status":"NOT QUALIFIED",
+               "counts":counts(records),"results":records,"supporting_counts":counts(supporting),
+               "supporting_checks":supporting,"roadmap_sha256":sha256(REPO/"srcMoon/development_and_validation.md")}
+        temporary=output/"development_summary.tmp"
+        temporary.write_text(json.dumps(value,indent=2,sort_keys=True)+"\n")
+        temporary.replace(output/"development_summary.json")
+    persist()
     executable=a.amps.resolve() if a.amps else output/"build/amps-moon-m2-na-ar"
     log=output/"build.log"
     try:
         code=command_log([sys.executable,"-B",str(REPO/"srcMoon/test/integration-tests/I19/test_budget.py")],output/"budget-infrastructure.log")
         if code:raise RuntimeError("budget infrastructure tests failed; see budget-infrastructure.log")
+        code=command_log([sys.executable,"-B",str(REPO/"srcMoon/test/test_m2_protocol.py")],output/"protocol-infrastructure.log")
+        if code:raise RuntimeError("M2 protocol/deadline checks failed; inspect protocol-infrastructure.log")
+        # Completion-control fixtures exercise real orchestration/metadata
+        # refusal paths, never supply observations or bypass formal gates.
+        # Keep them in the SINGLE global development entry so new backend
+        # code cannot silently escape routine regression coverage.
+        for label,relative in (
+            ("formal-contract-set","test_m2_contracts.py"),
+            ("retained-build-identity","test_m2_build_identity.py"),
+            ("illumination-contract","test_m2_illumination.py"),
+            ("illumination-spatial-processor","data_processing/test_i15_spatial_support.py"),
+            ("i16-grey-boundary-control","test_i16_grey_boundary.py"),
+            ("i17-holdout-control","integration-tests/I17/test_holdout.py"),
+            ("i17-launcher-control","integration-tests/I17/test_infrastructure.py"),
+            ("i19-formal-control","test_m2_formal_campaign.py"),
+            ("i20-polar-control","test_m2_polar.py"),
+            ("native-operator-control","test_m2_operator_checks.py")):
+            runner=REPO/"srcMoon/test"/relative;test_log=output/(label+".log")
+            code=command_log([sys.executable,"-B",str(runner)],test_log)
+            supporting.append({"check":label,"status":"PASS" if code==0 else "ERROR",
+                "scope":"supporting-infrastructure-not-observational-validation",
+                "runner":str(runner),"log":str(test_log)})
+            persist()
+            if code:raise RuntimeError(label+" infrastructure checks failed; inspect "+str(test_log))
         if a.amps is None:
+            # Baseline requalification uses its own retained configurations and
+            # binaries. It is inside the SAME command budget as M2, including
+            # all clean native variants, rather than a hidden pre-test build.
+            # This coordinator owns configuration restoration from the first
+            # native mutation, including a failed M0 child. Avoid building an
+            # intermediate normal Moon binary that the following clean M2
+            # configuration would immediately discard. All M0 variants/gates
+            # still run; the final ordinary build is restored in our finally.
             built=True
+            code=command_log([sys.executable,"-B",str(REPO/"srcMoon/test/run_integration_tests.py"),
+                "--no-restore-build","--output-dir",str(output/"m0")],output/"m0.log")
+            if code:raise RuntimeError("required M0 requalification failed; inspect m0.log")
+            baseline=json.loads((output/"m0/baseline_summary.json").read_text())
+            supporting.append({"check":"M0-prerequisite","status":baseline["m0_gate_status"],
+                "scope":"required-linked-baseline","runner":str(REPO/"srcMoon/test/run_integration_tests.py"),
+                "log":str(output/"m0.log"),"counts":baseline["counts"]})
+            persist()
             code=command_log([sys.executable,"-B",str(REPO/"srcMoon/test/build_m2_qualification.py"),
                 "--output-dir",str(output/"build"),"--spice-path",str(a.spice_path),
                 "--spice-kernels",str(a.spice_kernels)],log)
             if code:raise RuntimeError(f"M2 build failed; see {log}")
         if not executable.is_file():raise FileNotFoundError(str(executable))
+        verify_retained_executable(executable)
         # Every ordinary U runner remains registered and owns its own oracle.
         local=output/"local"
         command=[sys.executable,"-B",str(REPO/"srcMoon/test/run_all_test.py"),
@@ -63,18 +135,29 @@ def run_campaign(a):
             record.update(runner=str(REPO/"srcMoon/test/data_processing/audit_m2_packages.py"),
                           log=str(output/"data-audit.log"))
             supporting.append(record)
+        # Retain a separate physical receipt for the original supporting and
+        # formal adapters. The numerical template's complete I19-only group
+        # must not dispatch I14/I18 or replace the old positive-coverage I19
+        # fixture. The actual sweep below still receives the unmodified group.
+        production_template=output/"production-template.in"
+        prepare_na_ar_input(a.input.resolve(),production_template)
+        production_template.write_text(m2_protocol.without_verification_controls(
+            production_template.read_text()))
+        production_template.write_text(replace_moon_setting(
+            production_template.read_text(),"random_seed",str(BASELINE_SEED),production_template))
         for test_id in ("I14","I18","I19"):
             directory=output/"supporting"/test_id
             directory.mkdir(parents=True);(directory/"runtime").mkdir()
             receipt=directory/"receipt.txt";application=directory/"application.in"
-            prepare_na_ar_input(a.input.resolve(),application)
+            prepare_na_ar_input(production_template,application)
             application.write_text(replace_moon_setting(application.read_text(),
                 "surface_inventory_checkpoint_file","none",application))
             cmd=["mpiexec","-n",str(a.mpi_ranks),str(executable),
                  "--moon-integration-test",test_id,"--integration-output",str(receipt)]
             if test_id=="I19":cmd.append("--m2-budget-check")
             cmd.extend(["-input",str(application)])
-            identity=manifest(test_id,executable,cmd,731993,application,a.mpi_ranks)
+            identity=manifest(test_id,executable,cmd,
+                int(moon_setting(application,"random_seed")),application,a.mpi_ranks)
             identity.update(execution_scope="supporting-M2-development",
                             species_fixture="Na,Ar",
                             formal_test_status="SKIPPED",formal_reason="I13 not qualified by this campaign")
@@ -82,7 +165,8 @@ def run_campaign(a):
             print(f"RUNNING supporting {test_id}; log={directory/'stdout.log'}",flush=True)
             monitor=directory/"monitor";monitor.mkdir()
             codes=execute_levels({test_id:{"directory":directory,"command":cmd}},
-                monitor,1,a.test_runtime_seconds,render_previews=False)
+                monitor,1,min(a.test_runtime_seconds,remaining_seconds()),
+                memory_gib=200000000000/1024**3,render_previews=False)
             result={"check":test_id+"-production-support","id":test_id,
                     "scope":"supporting-not-formal-qualification","status":"ERROR",
                     "runner":str(Path(__file__).resolve()),"log":str(directory/"stdout.log")}
@@ -106,19 +190,77 @@ def run_campaign(a):
                 result.update(status="ERROR",reason=str(error))
             (directory/"result.json").write_text(json.dumps(result,indent=2,sort_keys=True)+"\n")
             supporting.append(result)
+            persist()
             print(f"{result['status']} supporting {test_id}",flush=True)
+        def numerical_result(result):
+            supporting.append(result);persist()
+        # Exercise the new native parser/export paths through their compiled
+        # production entry points. Their explicit tiny forcing-replay fixture
+        # verifies wiring/schema only; it does not qualify lunar spin-up.
+        native_controls=output/"native-input-controls"
+        native_code=command_log([sys.executable,"-B",str(REPO/"srcMoon/test/test_m2_native_controls.py"),
+            "--build-dir",str(REPO/"build"),"--input",str(a.input.resolve()),
+            "--output-dir",str(native_controls)],output/"native-input-controls.log")
+        native_report=json.loads((native_controls/"result.json").read_text())
+        native_status=native_report.get("status")
+        if native_status not in ("PASS","FAIL","SKIPPED","ERROR") or native_code!={
+                "PASS":0,"FAIL":1,"SKIPPED":77,"ERROR":2}[native_status]:
+            raise RuntimeError("native input-control exit/result status disagree")
+        supporting.append({"check":"native-m2-input-controls","status":native_status,
+            "scope":"supporting-production-parser-not-validation",
+            "runner":str(REPO/"srcMoon/test/test_m2_native_controls.py"),"log":str(output/"native-input-controls.log")})
+        persist()
+        if native_status in ("FAIL","SKIPPED"):raise SupportingGateStopped()
+        if native_status=="ERROR":raise RuntimeError("native M2 input-control checks errored")
+        from run_m2_operator_checks import run_checks as operator_checks
+        operator_results=operator_checks(executable,a.input.resolve(),output/"native-operators",
+            mpi_ranks=a.mpi_ranks,wall_seconds=remaining_seconds())
+        supporting.extend(operator_results["results"]);persist()
+        if operator_results["status"] in ("FAIL","SKIPPED"):raise SupportingGateStopped()
+        if operator_results["status"]=="ERROR":
+            raise RuntimeError("native M2 operator checks errored; preserve native-operators outputs")
+        m2_protocol.execute_design(executable,a.input.resolve(),output/"numerical",
+            tier="development",mpi_ranks=a.mpi_ranks,workers=2,
+            remaining_seconds=remaining_seconds,on_result=numerical_result)
+        # A deterministic source-only reference is cheap enough to include
+        # in the same development deadline. It advances no model particles.
+        # Request the actual I19 full initial-column CSV before the source
+        # integral's early return, so the global runner also exercises this
+        # production export branch. Its explicitly unqualified candidate is
+        # diagnostic evidence; it cannot create initial-state approval or
+        # promote the normalization reference to formal I19/I20 PASS.
+        from prepare_m2_normalization import prepare as prepare_normalization
+        normalization=prepare_normalization(executable,a.input.resolve(),output/"source-normalization",
+            horizon_s=2550240.0,mpi_ranks=a.mpi_ranks,wall_s=remaining_seconds(),
+            record_initial_state=True)
+        supporting.append({"check":"source-normalization-reference","status":"PASS" if normalization["status"]=="READY" else "ERROR",
+            "scope":"deterministic-model-input-reference-not-qualification",
+            "runner":str(REPO/"srcMoon/test/prepare_m2_normalization.py"),
+            "log":str(output/"source-normalization/stdout.log")})
+        persist()
+        supporting.append({"check":"cluster-qualification","status":"SKIPPED",
+            "scope":"deferred-long-qualification","reason":"cluster tier not selected; short diagnostics cannot close I19/I20",
+            "runner":str(REPO/"srcMoon/test/run_m2_cluster.py"),"log":str(output)})
+        persist()
         # Run the existing per-ID policy to preserve REAL predecessor-blocked
         # artifacts. No synthetic I13 PASS is created and no flag bypasses it.
         for number in range(14,21):
             test_id=f"I{number:02d}"
-            run(test_id,executable,output/"formal",application_input=a.input.resolve(),mpi_ranks=a.mpi_ranks)
+            run(test_id,executable,output/"formal",application_input=production_template,mpi_ranks=a.mpi_ranks)
             records.append(json.loads((output/"formal"/test_id/"result.json").read_text()))
-    except (OSError,ValueError,KeyError,RuntimeError) as error:
+    except SupportingGateStopped:
+        # The failed/unavailable child and its exact log were already saved.
+        # Preserve that scientific disposition while still restoring the
+        # ordinary build in finally. Do not manufacture an infrastructure
+        # ERROR merely because an evaluated gate correctly stopped execution.
+        persist()
+    except (OSError,ValueError,KeyError,RuntimeError,subprocess.TimeoutExpired) as error:
         supporting.append({"check":"development-infrastructure","status":"ERROR",
             "scope":"supporting-infrastructure","reason":str(error),
             "runner":str(Path(__file__).resolve()),"log":str(output)})
+        persist() # Preserve the fault before a potentially interrupted restore.
     finally:
-        if built:
+        if built and remaining_seconds()>1:
             # Restore only when this runner changed configuration. Preserve
             # the dedicated M2 executable/log before replacing root build/.
             build=REPO/"build"
@@ -134,6 +276,28 @@ def run_campaign(a):
             if code:supporting.append({"check":"restore-build","status":"ERROR",
                 "scope":"supporting-infrastructure","reason":"canonical restore failed; see restore.log",
                 "runner":str(Path(__file__).resolve()),"log":str(output/"restore.log")})
+            else:
+                # Actual compiled evidence, not only a metadata fixture:
+                # ordinary Na-only restoration must leave the retained Na/Ar
+                # executable verifiable from its OWN immutable ABI/RNG bytes.
+                try:
+                    retained=verify_retained_executable(executable,require_current_generated_tree=False)
+                    try:
+                        verify_retained_executable(executable)
+                    except ValueError:
+                        live_rejected=True
+                    else:live_rejected=False
+                    if not live_rejected:raise ValueError("ordinary restored tree unexpectedly passed the dedicated M2 probe-ABI check")
+                    (output/"retained-build-after-restoration.json").write_text(json.dumps({
+                        "status":"PASS","retained_executable_sha256":retained["executable"]["sha256"],
+                        "strict_live_tree_rejected":live_rejected,"scope":"build-identity-only"},indent=2)+"\n")
+                    supporting.append({"check":"retained-build-after-restoration","status":"PASS",
+                        "scope":"supporting-build-identity-not-science","runner":str(REPO/"srcMoon/test/build_m2_qualification.py"),
+                        "log":str(output/"retained-build-after-restoration.json")})
+                except (OSError,ValueError,KeyError) as error:
+                    supporting.append({"check":"retained-build-after-restoration","status":"ERROR",
+                        "scope":"supporting-build-identity-not-science","reason":str(error),
+                        "runner":str(REPO/"srcMoon/test/build_m2_qualification.py"),"log":str(output/"restore.log")})
     counts=lambda rows:{s:sum(r.get("status")==s for r in rows) for s in ("PASS","FAIL","SKIPPED","ERROR")}
     result={"schema":"srcMoon-M2-development-campaign-v1","formal_m2_status":"NOT QUALIFIED",
             "counts":counts(records),"results":records,"supporting_counts":counts(supporting),
@@ -151,8 +315,44 @@ if __name__=="__main__":
     p.add_argument("--input",type=Path,default=REPO/"srcMoon/examples/lola_surface.in")
     p.add_argument("--mpi-ranks",type=int,default=8)
     p.add_argument("--test-runtime-seconds",type=float,default=3600)
+    p.add_argument("--campaign-wall-seconds",type=float,default=3600)
+    p.add_argument("--cleanup-reserve-seconds",type=float,default=600)
+    p.add_argument("--budget-worker",action="store_true",help=argparse.SUPPRESS)
     p.add_argument("--spice-path",type=Path,default=Path("/home/vtenishe/SPICE/cspice"))
     p.add_argument("--spice-kernels",type=Path,default=Path("/home/vtenishe/SPICE/Kernels"))
     a=p.parse_args()
-    if a.mpi_ranks<=0 or not math.isfinite(a.test_runtime_seconds) or a.test_runtime_seconds<=0:p.error("ranks and runtime must be positive and finite")
-    raise SystemExit(run_campaign(a))
+    if not 1<=a.mpi_ranks<=1009 or not math.isfinite(a.test_runtime_seconds) or a.test_runtime_seconds<=0:
+        p.error("1..1009 ranks and positive finite runtime required by frozen seed stride")
+    if a.budget_worker:
+        raise SystemExit(run_campaign(a))
+    if not 0<a.campaign_wall_seconds<=3600 or not 0<=a.cleanup_reserve_seconds<a.campaign_wall_seconds:
+        p.error("cleanup reserve must be nonnegative and smaller than whole-command budget")
+    output=a.output_dir.resolve()
+    if output.exists() and any(output.iterdir()):p.error("output must be new or empty")
+    output.mkdir(parents=True,exist_ok=True)
+    budget=CampaignBudget(a.campaign_wall_seconds,a.cleanup_reserve_seconds)
+    command=[sys.executable,"-B",str(Path(__file__).resolve()),"--budget-worker",
+        "--output-dir",str(output/"campaign"),"--input",str(a.input.resolve()),
+        "--mpi-ranks",str(a.mpi_ranks),"--test-runtime-seconds",str(a.test_runtime_seconds),
+        "--spice-path",str(a.spice_path),"--spice-kernels",str(a.spice_kernels)]
+    if a.amps:command.extend(["--amps",str(a.amps.resolve())])
+    environment=dict(os.environ,AMPS_MOON_WORK_DEADLINE=str(budget.started+budget.wall_s-budget.reserve_s))
+    print(f"M2 whole-command budget {a.campaign_wall_seconds:g} s, cleanup reserve {a.cleanup_reserve_seconds:g} s; log={output/'campaign.log'}",flush=True)
+    supervision=budget.run(command,REPO,output/"campaign.log",output=output,environment=environment)
+    child=output/"campaign/development_summary.json"
+    result=json.loads(child.read_text()) if child.is_file() else {
+        "schema":"srcMoon-M2-development-campaign-v2","results":[],"supporting_checks":[]}
+    inconsistent_exit=(supervision["returncode"] not in (0,) and
+        not any(r.get("status") in ("FAIL","ERROR") for r in result["results"]+result["supporting_checks"]))
+    if supervision["reason"] or not child.is_file() or inconsistent_exit:
+        result["supporting_checks"].append({"check":"whole-campaign-execution","status":"ERROR",
+            "scope":"infrastructure","reason":supervision["reason"] or f"worker exit {supervision['returncode']} without a matching final disposition",
+            "runner":str(Path(__file__).resolve()),"log":str(output/"campaign.log")})
+    counts=lambda rows:{v:sum(r.get("status")==v for r in rows) for v in ("PASS","FAIL","SKIPPED","ERROR")}
+    result.update(counts=counts(result["results"]),supporting_counts=counts(result["supporting_checks"]),
+        execution_budget=supervision,formal_m2_status="NOT QUALIFIED")
+    (output/"development_summary.json").write_text(json.dumps(result,indent=2,sort_keys=True)+"\n")
+    totals=counts(result["results"]+result["supporting_checks"])
+    print(json.dumps({"counts":result["counts"],"supporting_counts":result["supporting_counts"],
+                      "wall_seconds":supervision["wall_seconds"],"summary":str(output/"development_summary.json")},indent=2))
+    raise SystemExit(2 if totals["ERROR"] else 1 if totals["FAIL"] else 0)

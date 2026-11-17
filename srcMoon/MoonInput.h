@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "MoonThermalModel.h"
+#include "species/ElectronImpact.h"
 
 namespace Moon {
 namespace Runtime {
@@ -122,6 +123,40 @@ struct Configuration {
   // RNG stream after amps_init() installs this seed.
   int randomSeed = 0;
 
+  // Optional atomic electron RATE service, not a switch enabling particle
+  // reactions. Absent/legacy preserves the old callback and all M0/M1 inputs.
+  // The explicit Maxwellian closure uses native Voronov coefficients, density
+  // [m^-3], and k_B*T_e expressed in eV; these prescribed bath values are not
+  // inferred from solar-wind ion speed/density or labelled measured forcing.
+  // Full neutral-to-ion transfer/weights/kinematics need separate linked
+  // qualification before the generic PIC electron executor can be enabled.
+  std::string electronImpactRateModel = "legacy";
+  std::string electronImpactCoefficientsFile;
+  double electronDensityM3 = 0.0;
+  double electronTemperatureEv = 0.0;
+
+  // Optional I19/I20 verification controls; absent means the original
+  // production/regression path. All enabled controls are explicit .in values.
+  // dt is SI seconds and weights/cohort stocks are physical atoms. A short
+  // development horizon is coarseSteps*coarseDt; cluster duration is separate.
+  std::string m2VerificationCase = "none";
+  std::string m2VerificationProfile;
+  int m2VerificationCoarseSteps = 0;
+  int m2VerificationDtDivisor = 1;
+  int m2VerificationWeightDivisor = 1;
+  double m2VerificationDurationS = 0.0; // 0 only for the named "short" input.
+  double m2VerificationCoarseDtS = 0.0; // 0 only for explicit "auto" input.
+  double m2VerificationNaWeightAtoms = 0.0;
+  double m2VerificationArWeightAtoms = 0.0;
+  double m2VerificationCohortPackets = 0.0;
+  double m2VerificationSourceIntegralTolerance = 1.0e-8; // Relative quadrature budget, not physics fit.
+  std::vector<int> m2VerificationElements;
+  // Optional complete-case diagnostic: export the actual applied t0 thermal
+  // columns before cohort seeding or dt/weight overrides. It never loads or
+  // substitutes a qualified state and is inactive by default.
+  bool m2VerificationRecordInitialThermalState = false;
+
+
   // Near-Moon limb geometry.  The currently approved M1 contract uses an
   // Earth observer and the Sun-Moon-Earth plane, with the receipt requesting
   // both apparent-limb intersections or either named branch.  String selectors
@@ -198,6 +233,12 @@ struct Configuration {
   bool m2EnvironmentEnabled = false;
   std::string surfaceTemperatureMode;
   std::string divinerTemperatureTableFile;
+  // Native Diviner maps contain bolometric brightness temperature [K], while
+  // the production surface callback feeds kinetic temperature [K] to particle
+  // physics. There is deliberately no implicit interpretation. A diviner-map
+  // receipt must explicitly select the approved isothermal-grey facet model,
+  // T_kin=T_bol/epsilon^(1/4), using thermal.infraredEmissivity in (0,1].
+  std::string divinerMapKineticInterpretation;
   // I17 time-resolved Diviner evidence is separate from the climatological
   // I16 interpolation table.  The history contains binned PDS4 RDR radiances,
   // native brightness temperatures, actual footprint centroids/times, flags,
@@ -208,6 +249,24 @@ struct Configuration {
   std::string divinerEclipseHistoryFile;
   std::string divinerEclipseSelectionContractFile;
   double illuminationRayOriginOffsetM = 0.0;
+  // Opt-in finite-disc terrain forcing. Legacy receipts retain their reviewed
+  // point-Sun behavior. Uniform-disc mode requires BOTH explicit quadrature
+  // dimensions and uses the production directional albedo for every ray.
+  std::string illuminationTerrainSolarModel="point-sun";
+  int illuminationDiscRadialPoints=0;
+  int illuminationDiscAzimuthPoints=0;
+  // External, reviewed formal-test contract. Empty means unavailable, never
+  // permission to infer D02 epochs/collocation or cluster prerequisites.
+  std::string m2FormalContractFile;
+  std::string m2IlluminationQueriesFile;
+  std::string m2PolarQueriesFile;
+  std::string illuminationAberrationCorrection="NONE";
+  // The default remains the isolated June-only path. The runner validates a
+  // frozen review artifact BEFORE it stages any December science values.
+  // A hold-out run uses its separately explicit observation-free spin-up UTCs.
+  std::string divinerEclipseSelection="training";
+  std::string divinerEclipseFreezeFile;
+  std::string divinerEclipseAuthorizationFile;
   // Moving LOLA collision controls.  The segment length controls conservative
   // bracketing (metres in LSO), while time/distance tolerances and the
   // iteration limit control root refinement.  I14 varies these explicit
@@ -219,6 +278,11 @@ struct Configuration {
   Thermal::ColumnConfiguration thermal;
   double thermalTimeStepS = 0.0;
   double thermalInitialTemperatureK = 0.0;
+  // The historical uniform diagnostic state remains the default. Explicit
+  // periodic-spinup applies the existing observation-free solver during
+  // production initialization, before initial source/weight queries. It is
+  // allowed only for thermal-model and requires cycle-end ET==start ET.
+  std::string thermalInitializationMode="declared-uniform";
 
   // I17 illumination and initialization controls.  These fields are part of
   // the science receipt because a binary point-Sun shadow and an arbitrarily
@@ -310,6 +374,11 @@ bool HasConfiguration();
 // When no application input was provided, return a read-only default object.
 // Callers must test HasConfiguration() before interpreting its empty paths.
 const Configuration& GetConfiguration();
+
+// Read-only table installed transactionally before MPI/particle callbacks.
+// Null means the Maxwellian service was not explicitly configured. Keeping
+// file I/O out of rate callbacks avoids hidden per-particle work and races.
+const Species::ElectronImpact::MaxwellianVoronovTable* GetElectronImpactTable();
 
 const char* SurfaceGeometryName(SurfaceGeometry geometry);
 

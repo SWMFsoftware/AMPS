@@ -1,12 +1,110 @@
 # `srcMoon` development and validation status
 
-**Status date:** 2026-11-12  
-**Source revision inspected:** `09fabea55e367f07a530460b488fa7a981ff6176` plus preserved uncommitted Moon development  
+**Status date:** 2026-11-17
+
+**Current work — upstream core integration COMPLETED, 2026-11-17:**
+the working Moon code is integrated with upstream
+`5ce92cb2feecadd11a1d60ace69153a7c7da4122`, preserving local work based on
+`17d49e00d1d2ccf33b06d11a3e6e5ffef34ac810`. Native tests ran against
+`4bff09213b1bfa3f59e113ba8cbb2d56f22d30ef`; the final two upstream commits
+change unrelated comet Python/tooling and the Earth nightly launch command.
+All **656 native/config source identities are unchanged** at the final head;
+the latest nightly tooling separately passes 64/64 tests and its official check.
+
+All **919 historical PASS cases are preserved**: 843 CORE, 62 Enceladus and
+14 Moon local aliases. Pristine upstream and the candidate each have 843 PASS,
+240 SKIP, one existing strict-coverage FAIL and one existing CME timeout ERROR;
+there are no missing IDs, new core failures or status changes. M0 I01-I10 PASS
+with unchanged reviewed I04 reference and zero-byte `test_Moon.diff`. Actual
+one-/eight-rank Na event budgets and nine-window sampling checks PASS.
+
+The integration retains upstream core implementations and the existing optional
+Moon hooks. The M2 builder now derives both chemistry controls consistently,
+checks effective compiler macros with actual build flags, and rejects stale
+receipts. Its original ERROR is retained. The corrected eight-rank run has
+**6 local PASS / 7 formal SKIPPED**, **56 supporting PASS / 2 expected SKIPPED**,
+**0 FAIL/ERROR**, including all 36 short numerical cases. Diagnosis, original
+attempt, correction, normal-build restoration and retained-ABI checks completed
+in **3074.63 s**, within the original 3600-second envelope. Enceladus exporter
+paths are reproducible across checkouts; only three provenance-comment lines
+changed per example, with every other byte unchanged. Its E3 run completed
+10,000 iterations with zero H2O/CO2 ledger residuals. Five additional upstream
+mesh/surface targets PASS (34 reports, 643 PASS report lines including summaries).
+
+The active branch remains `master`; no new commit or push was made. The local
+SHARE linker setting and other site settings are retained. Generated
+`Makefile.test` includes upstream registrations and eleven existing local
+include overrides. Active application/build artifacts were not rebuilt during
+source delivery; start the next application build by removing `build/` before
+normal Config.pl and make -j. No model/test run remains active. Formal M1/M2/M3
+qualification and unavailable D02 metadata remain open; this integration is
+regression preservation and supporting verification, not observational validation.
+
+Evidence and exact commands/hashes:
+`test_output/srcMoon/upstream-core-integration-20261117T185033Z/completion_report.md`
+and `.json`; source/adapters/build choices in [CORE_INTEGRATION.md](CORE_INTEGRATION.md).
+See section 5.16. Earlier checkpoints retain their original revision/basis.
+
+**Source revision inspected:** `5ce92cb2feecadd11a1d60ace69153a7c7da4122` plus preserved uncommitted development and integration changes through section 5.16
+
+**Previous completed work — initial M3 implementation/research, 2026-11-17:** the user
+approved early M3 implementation/support before M1/M2 closure, explicitly
+configured Maxwellian/Voronov atomic electron rates, and literature proposals
+before charge-exchange/molecular daughter-kinetics choices are implemented.
+Three agents completed the atomic kernel, literature investigations and full
+core audit. The parent completed runtime configuration and native verification.
+Analysis/contract: `test/M3_INITIAL_IMPLEMENTATION_CONTRACT.md`. The final
+eight-rank development campaign completed in **980.26 s (16.3 min)**, with
+**three supporting PASS / zero FAIL/ERROR**, one U16 PASS and four formal M3
+SKIPPED results. All ten M0 gates PASS and the nightly diff is zero bytes.
+Full CORE preserves **843/843** previous PASS cases in **40.8 min**. No M3
+qualification PASS or linked product-budget result exists. M1/M2 formal
+status and all original criteria remain unchanged. See section 5.15.
+No model/build run remains active. Root Makefile/configuration are preserved;
+no commit/push was made. Exact commands, hashes, plots and scope are in
+`test_output/srcMoon/m3-initial-20261117T071134Z/completion_report.md` and `.json`.
+
 **Purpose:** living implementation/evidence ledger, not a validation certificate.
 
-**Current-core integration complete:** master and origin/master both point to
-`09fabea55e367f07a530460b488fa7a981ff6176`; the preserved Moon development and
-integration changes remain unstaged. No commit or push was made. All 1,193
+**Current follow-up — remaining M2 code and combined verification:** the user
+requested completion/testing of unfinished M2 code and explicitly authorized
+parallel agents. Finite-disc production terrain forcing, I15 staging/scoring,
+review-gated independent December execution, formal I19 dispatch and I20
+production export/collocated comparison are implemented. Local protocol checks
+pass. The final frozen eight-rank campaign completed in **2242.36 s (37.4 min)**
+with **58 supporting PASS / 2 SKIPPED / 0 FAIL / 0 ERROR**, including native
+verification of the actual-initial-state and formal-input-preservation fixes.
+A subsequent 22.64-second native source-only check verified the requested I19
+full initial-state export (486,000 rows), without creating a qualification.
+All builds ran in an isolated checkout outside this source tree. The full
+CORE audit preserves 843/843 previous PASS cases.
+These supporting results do not close M1/M2 or constitute validation.
+The user confirms no additional exact-product D02 metadata are available and
+approves independent December spin-up with separately explicit UTC bounds.
+M1/I13 remain open; D02 and unresolved review/physical-operator evidence keep
+formal comparisons SKIPPED. See section 5.14 (appended below),
+`test/M2_COMPLETION_CONTRACT.md` and
+`test_output/srcMoon/m2-completion-20261116T195511Z/`.
+No model/build run remains active; the active configuration is unchanged and
+no commit or push was made. Detailed commands, identities, results and limits
+are retained in that evidence directory's `completion_report.json` and `.md`.
+
+**Previous November 13 follow-up — approved M2 numerical/execution package implemented and
+verified:** the final clean eight-rank development command completed in
+1849.678 s (30 min 50 s), including required clean builds, data QA, local and
+linked checks, plots and final normal-build restoration. Results: six local
+PASS, seven formal M2 SKIPPED; supporting 44 PASS, two SKIPPED; zero FAIL or
+ERROR. All 36 short numerical cases PASS. M0 has ten linked PASS and zero-byte
+nightly diff. All 123 selected shared-hook core regressions are preserved, and
+the additional explicit dt/weight/two-tags-on-one-element check PASSes.
+Formal M1/I13 and M2 remain open; no observational validation is claimed.
+No model/build run remains active. The active checkout configuration is
+unchanged; no commit/push was made. See section 5.13 and
+`test_output/srcMoon/m2-implementation-20261113T060631Z/completion_report.json`.
+
+**Previous current-core integration:** its audited upstream basis was
+`09fabea55e367f07a530460b488fa7a981ff6176`. The integration work made no
+commit or push; the user's later commit records its changes. All 1,193
 registered core/application cases are accounted for: every one of 919 baseline
 PASS results is preserved, with no missing cases or status changes. Both sides
 have 919 PASS, 272 SKIPPED, one pre-existing strict-coverage FAIL and one
@@ -72,7 +170,7 @@ regression preservation or supporting evidence.
 | M0 linked baseline | **CURRENT CORE REQUALIFIED** | Nine unchanged clean configuration-separated linked gates plus the user-approved, strictly checked I04 yield 10 PASS, zero FAIL/ERROR/SKIPPED. All required local prerequisites PASS. Three four-rank nightly outputs agree exactly; the installed reference is ed875cef… and test_Moon.diff is zero bytes. Original rejected comparisons remain retained. |
 | M1 numerical qualification | **INCOMPLETE — active frontier** | I11-I13 runners exist. The approved bounded I11 campaign is 480/240/120/60 km, 500 steps/sample, 5000 steps maximum per level, restart writes off, with unchanged independence/equilibrium/CI/grid gates. No retained evidence establishes I11 PASS; I13 lacks a reviewed frozen passing baseline. |
 | M2 lunar environment | **ACTIVE IMPLEMENTATION; EXPERIMENTAL / NOT QUALIFIED** | Supporting eight-rank geometry, surface distributions and Na/Ar gas+surface accounting PASS; U08-U13 PASS. D03 selected inputs READY, D02 PARTIAL. Formal I14-I20 are SKIPPED without same-campaign I13; development results do not complete M2. |
-| M3 chemistry | **NOT REACHED** | I21-I24 production-linked runners do not yet exist. Local Na photoionization exists; multispecies/electron-impact/charge-exchange qualification is incomplete. |
+| M3 chemistry | **DEVELOPMENT / NOT QUALIFIED** | Approved early atomic Maxwellian rate service and U16 verification are implemented; particle conversions, molecular kinetics, charge exchange and formal I21-I24 remain incomplete. |
 | M4 drivers/sources | **NOT REACHED** | I25-I31 runners do not exist. Some Na and uniform-Ar implementation is experimental; measured drivers, complete species sources, meteoroid forcing and H2O/OH remain incomplete. |
 | M5 observations | **NOT REACHED / NOT VALIDATED** | I32-I40 runners do not exist; qualified operator/data/predecessor gates are incomplete. |
 | M6 parameter freeze | **NOT REACHED** | I41 absent. |
@@ -88,15 +186,17 @@ still requires I11, I12 and I13 before I14-I20.
 The two required roadmaps are not byte-identical:
 
 - source roadmap SHA-256:
-  `2761b447b46539edb21395550cd1b5d9ff6add4839b0db5a7e6d734cf2a4f02a`
+  `eba1571968afff4f948505b77578ee782c4fb54d02ac786ab9ecaa7ea00438d2`
 - validation-data roadmap SHA-256:
   `d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4`
 
 The source copy adds dated implementation status, the user-approved
 480/240/120/60 km 200-GB campaign, the 500-by-5000 bounded execution contract,
 the non-qualifying 480 km physical-duration diagnostic, diagnostic stage
-plots, M2 implementation notes, and partial Ar status. The
-external copy retains the common scientific roadmap. Therefore:
+plots, M2 implementation notes, partial Ar status, and the user-directed
+one-hour development / deferred-cluster execution policy and approved
+I19/I20 numerical-protocol amendment. The external copy
+retains the common scientific roadmap. Therefore:
 
 - the source roadmap controls current code, campaign selection and bounded
   execution;
@@ -934,6 +1034,216 @@ hashes are retained in manifests/data audit. Source roadmap hash remains
 M1/I13 remains the formal frontier. No observation was scored, I13 baseline
 frozen, or skipped/preflight result promoted to validation.
 
+### 5.10 D02 research, I19/I20 proposal and verification follow-up — 2026-11-12
+
+The user authorized the missing-metadata literature/archive research, a concrete
+I19/I20 proposal and remaining approved verification. Source revision is
+`06eafde4802f0344694612c8f3c21f2b28e1a09f`; production C++ physics is unchanged
+in this work package. The analysis-before-change contract is
+`test/M2_NEXT_VERIFICATION_CONTRACT.md`. No commit, push, staging, observation
+edit or acceptance change was made. Existing user changes and the active
+checkout's build configuration are preserved.
+
+Durable evidence: `test_output/srcMoon/m2-next-20261113T042634Z/`.
+Native builds/runs used the isolated checkout
+`/tmp/amps-m2-next-20261113T042634Z-ihhn0q48/verification/`, never the active
+checkout's generated tree. `completion_report.json` records exact commands,
+configuration/executable/source/data hashes, counts, metrics and limitations;
+the original configuration/patch and source snapshots remain retained.
+
+**Research result.** `test/D02_ILLUMINATION_RESEARCH.md` records native labels,
+NASA PGDA, the LOLA archive README, the 2011 publication's NASA record and the
+author's LEAG abstract. Four primary-document snapshots retain URLs/access
+times/hashes. General hourly sampling and older six-hour calculations do not
+establish the exact 201608 simulation epochs/cadence/geometry. Native label
+dates are retained without assigning an unproven role as averaging bounds.
+AVGVISIB is occurrence of any visible solar-disc portion, distinct from mean
+visible area or incident flux. Exact-product metadata and an independent
+timestamped I15 reference remain missing. D02 stays PARTIAL / NOT VALIDATED.
+
+The spatial processor previously placed unsupported timing/azimuth defaults
+in QA. Its corrected QA v2 reports spatial processing READY separately from
+overall PARTIAL and explicit unresolved operator fields. All **366** CSV rows
+remain byte-identical before/after, SHA-256
+`7c26d67be6a6b98e27c13f05a560607bea76ad03210d2820fb97caa39ed6af14`.
+No canonical raw or processed data was rewritten. The new read-only D02 audit
+and ten parser/corruption/status checks are registered automatically through
+the existing global M2 data-audit entry, with no new permanent U/I ID.
+
+**Concrete proposal.** `test/M2_I19_I20_PROTOCOL_PROPOSAL.md` and adjacent JSON
+are **PROPOSED_NOT_APPROVED** and are not consumed by runners. They specify
+synchronized physical-time accounting, common-global Na/Ar particle steps,
+independent 3x3 dt/weight refinement, 16 fixed seeds, simultaneous paired-seed
+equivalence intervals, reversible/censored residence accounting and frozen
+polar-site selection. Proposed numerical margins are 1% of a declared
+available-atom scale, one percentage point of retention/release fraction,
+1% of the reporting duration for restricted mean residence, and 0.1% for
+numerical-domain losses. Existing exact count/roundoff and 0.5% conservation
+gates remain unchanged. These numerical budgets and the long common-duration
+protocol require review before contract changes or formal execution. M1's
+500-step samples/5000-step cap and all formal predecessors are unchanged.
+
+| Executed scope | PASS | FAIL | SKIPPED | ERROR |
+|---|---:|---:|---:|---:|
+| Clean configuration-separated M0, I01-I10 | 10 | 0 | 0 | 0 |
+| Neutral-SPICE U01-U26 invocation | 14 | 0 | 12 | 0 |
+| Dedicated-ion U06 prerequisite | 1 | 0 | 0 | 0 |
+| One-/eight-rank normal Na budget and sampling fixtures | 4 | 0 | 0 | 0 |
+| M2 dedicated Na/Ar local U08-U13 invocation | 6 | 0 | 0 | 0 |
+| M2 formal I14-I20 | 0 | 0 | 7 | 0 |
+| M2 supporting scope: three linked checks plus four data/integrity checks | 6 | 0 | 1 | 0 |
+| D02 metadata protocol checks, supporting infrastructure only | 10 | 0 | 0 | 0 |
+| Global/I11/I17 protocol checks, supporting infrastructure only | 21 | 0 | 0 | 0 |
+
+These rows are separate invocations/scopes, not unique test-ID counts: U06
+passes in the proper ion build; U08-U13 are repeated in M2. The architecture
+audit also PASSes with zero physical test records. Expected injected failures
+inside protocol unit tests are not real campaign FAIL/ERROR outcomes.
+
+Selected metrics:
+
+- I04 strict approved-reference comparison produces a zero-byte diff against
+  `ed875cefc604e4ae3580fb89b8c528146929b6b9be099b41b61697faee7f0080`.
+  I10 finest scaled error is 3.46325e-9 and observed orders are approximately
+  1.999917/1.999959/1.999980. No nightly/I13 reference was changed.
+- One-/eight-rank Na gas ledgers have exact zero count residual and zero
+  numerical removals. Sunlit/shadow survival is 2050/4096 and 4096/4096 on
+  one rank, 2062/4096 and 4096/4096 on eight ranks, passing the unchanged
+  analytical statistical criterion. Nine sampling windows have zero buffer/
+  callback errors at both layouts.
+- Supporting I14 has 513/513 radial hits, zero inverted/degenerate faces,
+  maximum DEM control error 4.66e-10 m and normal mover collisions on all
+  seven eligible facet-owner ranks. I18 passes the frozen residence-rate,
+  sticking and velocity-distribution criteria, including 32768 Ar samples.
+- Supporting I19 has 42 ledger rows, exact model-particle count closure and
+  maximum Na/Ar relative imbalance 1.0664104644330185e-15. It remains a
+  20-step scoped fixture, not full temporal/weight convergence or I19 PASS.
+  Its sampled peak process-tree RSS is 22,297,004 KiB (about 21.26 GiB),
+  elapsed resource trace 23.73 s. This does not estimate a month-long campaign.
+- D01 and scoped D03 input/integrity checks PASS. D02 native integrity PASSes
+  while its overall operator readiness is SKIPPED. No June/December residuals
+  are scored and no observation is synthesized.
+
+Reproduction commands, **inside an isolated checkout with installed SHARE and
+the same frozen data/dependencies**, using new absolute output directories:
+
+```sh
+./Config.pl -compiler-option=-g
+make -j4 share_lib
+python3 -B srcMoon/test/run_integration_tests.py --output-dir /NEW/m0
+python3 -B srcMoon/test/integration-tests/I11/run_budget_check.py \
+  --amps ./amps --input srcMoon/examples/m1_memory200.in --mpi-ranks 8 \
+  --output-dir /NEW/budget-8
+python3 -B srcMoon/test/integration-tests/I11/run_sampling_check.py \
+  --amps ./amps --input srcMoon/examples/m1_memory200.in --mpi-ranks 8 \
+  --output-dir /NEW/sampling-8
+python3 -B srcMoon/test/test_runner.py --phase m2-development --mpi-ranks 8 \
+  --output-dir /NEW/m2-development
+```
+
+The two fixture commands also executed with `--mpi-ranks 1`. Exact actual
+argv/log/exit receipts are `verification-commands.json`,
+`supporting-prerequisite-commands.json`, `m2-command.json` and
+`protocol-regression/result.json`. Native helpers remove `build/` before each
+configuration, use explicit TESTMODE=off for normal builds and TESTMODE=on /
+NO-SPICE for the four-rank nightly, and build with `make -j16 'OPT3=-O3 -g'`.
+Compiler is g++ 9.4.0, MPI Open MPI 4.0.3; M2 uses eight ranks, OpenMP=1 and
+seed 731993. The dedicated Na/Ar binary has chemistry OFF/individual weights
+ON and SHA-256 `dda735ddacc4c28794b953e22dc136da0e239b21dd5dab3b25f8d40a4cf27fc1`.
+Normal Na-only Moon/SPICE configuration is restored in the private checkout.
+No model/build remains active.
+
+D01 native IMG/LBL hashes remain `972d66d7...656b5` / `b5a197b4...940cc6`
+(full values in section 5.9 and manifests). The D02 audit verifies all eight
+frozen IMG/LBL hashes; D03 and eight SPICE hashes are in the linked manifests.
+Both roadmap hashes are unchanged from section 2. Source amendments govern
+the approved supporting-development exception; common scientific gates and
+native archive metadata remain controlling. Required roadmap changes are
+limited to reviewing/adopting a future numerical protocol consistently; none
+was silently made by this work package.
+
+Files changed are the D02 processor/new native audit/protocol tests, M2 package
+audit, I15 missing-capability explanation, research/proposal/contract documents,
+gap registry, question record, STATUS and relevant README/RUN files. Production
+surface/mover/source/thermal/chemistry files were inspected through existing
+contracts and executed without modification. Formal M1/M2 remain incomplete.
+
+### 5.11 Detailed numerical-protocol recommendations — 2026-11-12
+
+The user requested detailed suggestions for item 1, the I19/I20 numerical
+protocol decision. The existing proposal Markdown/JSON is expanded to version
+2, explicitly PROPOSED_NOT_APPROVED and unconsumed by runners. This is a
+documentation-only work package: no production code, active acceptance JSON,
+roadmap, frozen observation selection or build configuration changed. No
+native build/model run was launched, and no commit/push/staging occurred.
+
+The review inspects MoonIntegrationTests, MoonM2Budget, main_lib, finite-stock
+injection, surface kinetics, the production RNG, I19/I20 contracts, existing
+receipts and primary NIST statistical/survival documentation. It makes these
+previously underspecified choices explicit:
+
+- Common Na/Ar particle time after the final 0.1 Ar timestep copy; integer
+  alignment of all physical checkpoints and independently pinned atom weights.
+- Real seed dispatch rather than changing a manifest while the fixture still
+  hard-codes 731993+rank; a documented production RNG/stream qualification.
+- Separate source-fed zero-stock and controlled surface-cohort cases; first
+  release, re-adsorption/current occupancy and censored restricted residence.
+- Frozen 18-pair refinement comparisons, a conservative maximum confidence
+  family of 8640 and the limitations of sixteen-seed Student-t intervals.
+- Unchanged exact/roundoff/0.5% conservation requirements, explicit review of
+  external-supply versus gross recycling normalization, and proposed new
+  convergence/loss budgets that remain unapproved.
+- Bounded capacity/precision planning before deciding on the full 288-run
+  physical design. At the retained 0.6855865301040126 s bound, checkpoint
+  alignment yields 3,719,800 coarse and 14,879,200 fine steps per case; the full
+  design totals about 2.50 billion timesteps. This is planning arithmetic,
+  not a measured runtime estimate or an assertion that the campaign fits
+  routine regression resources.
+
+Existing source revision remains `06eafde4802f0344694612c8f3c21f2b28e1a09f`.
+Both roadmap hashes remain those in section 2; reconciliation still controls.
+The active I19/I20 physics/numerical gates and D02/M1/I13 prerequisites remain
+unresolved as before. Previous execution counts in section 5.10 are unchanged;
+no fresh physical PASS is claimed. The proposal/JSON consistency and contract-
+preservation checks, before/after proposal snapshots, source bibliography and
+completion receipt are under
+`test_output/srcMoon/m2-protocol-review-20261113T052112Z/`.
+
+### 5.12 User-directed one-hour development / cluster qualification tiers — 2026-11-12
+
+The user requires development tests to execute within an hour and permits long
+qualification on a larger cluster for a few hundred CPU hours. The source
+Phase-2 roadmap now records a single 3600-s end-to-end development requirement,
+including required builds, QA, selected tests, figures and cleanup. The v3
+proposal targets 3000 s work plus 600 s reserve and explicitly separates
+short development evidence from deferred cluster qualification. This replaces
+the v2 planning schedule that excluded builds/grace from its 50-minute slots.
+
+The proposed short design uses two physical cases, a 3x3 dt/weight grid, two
+development seeds and 24/48/96 steps at matched physical horizons (36 short
+runs). These are proposed workload settings pending implementation/timing
+qualification; they do not establish month-long convergence or sixteen-seed
+confidence. Long cases are excluded from development defaults. The candidate
+288-run design remains deferred, with a proposed 300 CPU-core-hour aggregate
+planning target and mandatory measured feasibility estimate. Neither an
+incomplete matrix nor a short PASS closes formal I19/I20.
+
+The current run_m2_development.py gives I14/I18/I19 separate child timeouts;
+it does not enforce the required whole-command hour. Aggregate deadline,
+build/child budget propagation, safe shutdown and opt-in cluster accounting
+remain implementation work. No runner or production physics changed in this
+documentation amendment, no new model/build was launched, and no acceptance
+threshold, source coefficient, frozen observation or I13 baseline changed.
+M1's 500/5000 rule remains intact.
+
+Current source-roadmap SHA-256: `bde5f001bdcbe072d7a8452d3f2afec93856f50cd1146560da3cd3027a96d2dc`.
+Pre-amendment source hash: `2761b447b46539edb21395550cd1b5d9ff6add4839b0db5a7e6d734cf2a4f02a`.
+External roadmap remains `d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4`.
+The source execution amendment controls runtime policy; common scientific
+gates and native data rules still control qualification. Historical results
+and hashes are retained. Scope/consistency/preservation checks and snapshots
+are under `test_output/srcMoon/m2-execution-budget-20261113T054530Z/`.
+
 ## 6. Known blockers and risks
 
 The current-core I04 review is resolved: the user approved the exact ed875cef…
@@ -961,6 +1271,9 @@ timeout ERROR remain visible and are not repaired by this integration.
 5. I15 lacks the qualified D02 temporal/extended-disc comparison. I19 now has
    supporting finite Na/Ar gas+surface accounting, but its complete formal
    campaign and predecessor gates remain open; these still block I20.
+   Research additionally identifies the missing independent time-resolved
+   I15 benchmark; average maps cannot supply individual epoch labels. The
+   concrete I19/I20 numerical protocol remains a proposal awaiting review.
 6. I21-I46 require real production capabilities, independent references and
    data packages; generic placeholder PASS runners are prohibited.
 7. The checkout is dirty and contains user work. `Makefile` is generated and
@@ -1050,7 +1363,7 @@ all I14-I20 linked gates to execute in order and PASS:
   freeze the June training threshold before any December inspection, then run
   the untouched December hold-out.  The current experimental June plotting
   path and threshold candidate are not a PASS.  D03 package qualification is
-  readiness must remain valid for the exact selected inputs.
+   established only for selected inputs and must remain valid for each run.
 - **I18:** build the dedicated Na+Ar executable and pass the linked stochastic
   sticking, residence, re-emission, desorption-rate and Ar-source gates using
   the already frozen literature parameter contracts.
@@ -1127,3 +1440,443 @@ metadata remains SKIPPED; an evaluated threshold miss remains FAIL.
 
 Future entries must state files changed, commands/tests, exact status counts,
 data/hashes, scientific decisions, unresolved blockers and roadmap impact.
+
+### 5.13 Approved M2 execution/numerical implementation — 2026-11-13
+
+Implementation and execution evidence are being assembled under
+`test_output/srcMoon/m2-implementation-20261113T060631Z/`. This checkpoint records completed implementation and supporting verification.
+It is not a formal M1/M2 qualification report.
+The native verification checkout is
+`/tmp/amps-m2-implementation-20261113T060631Z-t0joj5cp/verification`.
+The campaign ran from the global entry with eight MPI ranks and a complete
+clean-build deadline. Root configuration hashes are preserved in
+`initial_state.json`; initial smoke source and receipts are versioned.
+
+Initial protocol checks: six PASS (expanded final suite: thirteen PASS); global-runner infrastructure checks: five
+PASS; original I19 budget infrastructure: five PASS. These checks exercise
+protocol/control/process handling and do not independently verify lunar
+physics. Final native results, clock/weight/tag metrics and full wall timing
+are recorded below and in completion_report.json. Formal I14-I20 remain gated by I13
+and all original environment/data/operator conditions.
+
+#### 5.13.1 Preserved attempts and corrections
+
+- `development-clean/`: clean M0 has ten PASS. Dedicated M2 configuration
+  ERROR because its explicit RNG option was placed in `#main`; inspection of
+  ampsConfig.pl identified `#General` as the native owner. Corrected the
+  authoritative derived input generator; canonical input is unchanged. The
+  normal restore completed; whole attempt 753.387 s.
+- `development-clean-2/`: six local PASS, seven formal SKIPPED; supporting
+  43 PASS, one FAIL, two SKIPPED, zero ERROR; 1905.334 s. All 36 numerical
+  cases PASS, source-normalization READY and canonical restore completed.
+  The failed original I18 adapter inherited the numerical template's base
+  2000003, contradicting its frozen base 731993 and recorded manifest. The
+  original FAIL/manifest are preserved with a separate provenance correction.
+- `frozen-I18/`: one targeted eight-rank rerun at the already-frozen 731993
+  PASSes all unchanged gates. Na angular KS 0.00376990 <0.01039501; Na energy
+  KS 0.00667384 <0.01039501; Ar energy/cosine KS 0.00387311/0.00539714
+  <0.00751301. No seed was selected from a pool, no threshold was widened,
+  and the numerical sweep's 2000003/2001012 seeds remain unchanged.
+- `core-check/`: five selected suites, 123 actual cases, all PASS in 280.316 s,
+  peak aggregate process-tree RSS 4,748,115,968 bytes. The exact selected
+  case audit confirms all 123 were previous baseline PASS and are preserved.
+  This is not a fresh execution of the entire historical 1,193-case registry.
+- `development-clean-3/`: final corrected clean command completed with zero
+  FAIL/ERROR. It owns
+  restoration from the first native configuration change, avoids a discarded
+  intermediate M0 restore build, pins the original fixture seed, and includes
+  the configured LOLA image/label hashes in linked manifests.
+
+All attempts, original reports, source snapshots, inputs, executables, streams,
+resources and comparison CSV/PNG/EPS are retained. Root configuration remains
+unchanged. Formal M1/I13, D02 temporal/operator evidence, full stochastic/long
+qualification and independent PSR/thermal comparisons remain unresolved.
+
+#### 5.13.2 Final measured result and limits
+
+The final command (from the isolated verification checkout) was:
+
+```sh
+python3 -B srcMoon/test/test_runner.py --phase m2-development \
+  --mpi-ranks 8 --stream --m2-input srcMoon/examples/m2_development.in \
+  --output-dir /data/vtenishe/Moon-test/AMPS/test_output/srcMoon/m2-implementation-20261113T060631Z/development-clean-3
+```
+
+Whole global wall time was **1849.678 s**, including clean SPICE/no-SPICE/ion/
+nightly M0 variants, the dedicated M2 build, QA, all selected tests, comparisons
+and final ordinary Na-only Moon/SPICE restoration. This meets the one-hour
+requirement. The monotonic supervisor measured 1849.558 s, peak descendant RSS
+**45,977,960,448 bytes** (45.98 GB), and approximately 11.59 GB of campaign
+artifacts, below the 200/50 GB limits. Sampled local CPU is a 5.0378 core-hour
+lower bound, not scheduler charging. The global result is SKIPPED/exit 0
+because formal gates remain unavailable; it must not be described as M2 PASS.
+
+- Local U08-U13: **6 PASS**. Formal I14-I20: **7 SKIPPED** without I13.
+- Supporting namespace: **44 PASS, 2 SKIPPED, 0 FAIL, 0 ERROR**. The skips
+  are D02 package readiness and unselected long cluster qualification.
+- M0: **10 PASS, 0 FAIL/ERROR/SKIPPED**, approved reference unchanged;
+  `m0/I04/test_Moon.diff` is **0 bytes**.
+- Fixed short numerical design: **36 PASS**, two cases, nine dt/weight cells
+  and two predetermined seeds on eight ranks. All use H=16.454076722496303 s
+  at 24/48/96 steps with independent W, W/2 and W/4 controls. Exact gas count and
+  independently evaluated signed atom/kg identities pass. Maximum relative
+  ledger imbalance is **5.16450e-10**, within the frozen arithmetic bound;
+  maximum relative passive-tag residual is **5.41589e-16**. These are short
+  accounting/conditional kinetic results, not full statistical convergence.
+- Independent warming release: finest restricted-residence error about
+  **1.24e-4 s** for Na and Ar, versus the approved **0.6 s** allocation.
+- Source-only normalization: READY; at H=2550240 s the native integral gives
+  **4.3099056e28 Na atoms** and **9.690912e26 Ar atoms**. The independent
+  constant-Ar Q*H gate passes. This does not simulate one month of transport.
+- `explicit-controls-cohort/`: additional eight-rank production-path PASS
+  for explicit coarse dt=0.5 s, dt divisor 2, weight divisor 4, actual dt=0.25 s,
+  weights 2.5e20/2.5e19 Na/Ar atoms, H=12 s, 48 steps, and distinct tags
+  sharing element 3000. Full CSV and unchanged arithmetic/hazard gates pass.
+- Infrastructure/oracle checks: **13 protocol**, **5 global**, **5 original
+  I19 budget**, and **10 D02 metadata** checks PASS. The final campaign itself
+  ran the then-current ten protocol checks; three subsequent targeted checks
+  cover explicit input preservation and cluster false-green/corruption cases.
+- Cluster default planning and missing-proof execution both correctly retain
+  **I19/I20 SKIPPED**, no native long run; the fixed plan has 288 cases.
+
+Every completed numerical stage retains input/manifest/receipt/streams,
+cumulative and window CSV, `comparison.csv/.png/.eps`, hazard/cohort data
+where enabled, and resource logs. Manifests now include the actual configured
+LOLA raw image/label hashes for every terrain-consuming ID. Earlier diagnostic
+receipts have supplemental `external_data_manifest.json`; originals are
+unchanged. All failed attempts and the Python-3.8 infrastructure-fixture error
+are retained; no failed evidence or stochastic seed was discarded.
+
+The native/science build was GCC/OpenMPI, C++17, `-O3 -g`, OpenMP=1. Dedicated
+M2 explicitly selects Mersenne Twister, neutral Na/Ar, chemistry OFF and
+individual weights ON. Normal M0/M1 RNG/input/reference settings are preserved.
+Current source revision is 06eafde4802f0344694612c8f3c21f2b28e1a09f plus the
+uncommitted changes captured by source/build hashes. The final source-roadmap
+hash is f1a2f9265f97f36da9ef9f6a17b3c83783d9f4b51882e6d81081ef7d567757cd;
+external roadmap remains d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4.
+
+**Remaining:** M1/I13 closure; D02 actual temporal/operator evidence; qualified
+actual-epoch thermal state and independent PSR/thermal comparisons; frozen
+native-site/collocation/statistical support; measured feasibility and explicit
+long cluster qualification. No monthly precision, observational validation,
+M2 completion, or M3 readiness follows from this short supporting package.
+
+### 5.14 Remaining M2 code completion — 2026-11-16
+
+The analysis-before-change inventory/test contract is `test/M2_COMPLETION_CONTRACT.md`.
+Source HEAD is `17d49e00d1d2ccf33b06d11a3e6e5ffef34ac810` plus retained dirty changes.
+The new evidence root is `test_output/srcMoon/m2-completion-20261116T195511Z/`;
+native builds use `/tmp/amps-m2-completion-20261116T195511Z/verification`.
+Root generated Makefile/configuration and pre-existing changes are preserved.
+
+Implemented: production finite-disc correlated masks/incidence/albedo; shared
+thermal solver flux entry; complete geometry-only I15 runtime/export with
+reviewed independent scoring and exact-product/epoch/resolution gates; I17
+selected-only release with compiled native authorization guard, independent
+explicit December spin-up and reviewed metric groups; normal I19 dispatch
+using real native-case receipts; I20 production temperature/depth exporter and
+strict native-site/time/quantity comparison. Retained Na/Ar binaries now carry
+actual generated ABI/RNG header snapshots so later Na-only builds cannot
+invalidate authentic retained evidence, while probe reuse remains live-ABI strict.
+
+The user confirms no additional D02 metadata exist. A geometry-only June
+audit counted 1,580 sites: 1,126 have one bin, 449 have two, five have three.
+These are sampling counts, not residuals; no local eclipse phase curve is
+invented from them. Formal I17 also needs actual reviewed phase/amplitude
+support and approximation-scope evidence, explicit December UTC bounds and
+untouched hold-out execution. I20 additionally needs reviewed native annual
+time/temperature/depth/collocation evidence. No real observational residual
+was inspected during implementation, and no frozen threshold was auto-created.
+
+Combined clean-build/global test results are pending; local protocol reports
+are retained separately and are not linked model qualification. Existing
+M1/I13 and all formal I14-I20 gates remain intact. Current source roadmap
+SHA-256: `eba1571968afff4f948505b77578ee782c4fb54d02ac786ab9ecaa7ea00438d2`; external: `d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4`.
+
+Production review also identified the PSD source's stale radial-cosine
+illumination/cache path. An optional NULL-default core geometry hook now
+uses the same production terrain/Earth projected direct-photon integral,
+actual point-to-Sun distance and explicit source-BEGIN TDB epoch. Its cache
+is prepared serially before callbacks; the source CDF, total selector and
+finite-inventory hazard use the same element kernel. Thermal albedo is not
+part of PSD photon incidence. Disabling M2 removes only its own provider
+before destroying the cache. U09 extends its analytical/default/lifecycle
+checks; the native I15 support fixture now has nine queries (the original
+eight plus one independently converted UTC startup query proving the actual
+Moon provider's clock). This does not establish observational source strength.
+
+Execution checkpoint: the isolated `development-clean-5` campaign is running
+with eight MPI ranks and the unchanged 3600-second whole-command budget.
+Its nine new infrastructure groups have completed **149 tests, all PASS**;
+native M0/M2 build and production results are pending. Earlier attempts are
+preserved as ERROR evidence: the shell's default Python lacks scientific
+dependencies; the initial isolated clone omitted ignored installed machine
+configuration; a process-supervisor orphan race was reproduced and corrected.
+The unmodified orphan test passed ten host repetitions and the complete
+protocol suite passed 14 tests. Machine configuration was copied from the
+real checkout, not invented. `/usr/bin/python3` supplies the installed
+NumPy/SciPy/Matplotlib/mpmath/psutil dependencies. The clean native build has
+started successfully after copying `.general.conf` as well as `Makefile*`.
+A separate, isolated full CORE regression retry is running with host MPI
+permissions; the restricted-sandbox attempt is retained separately. No code
+was committed/pushed and the active checkout was not configured or rebuilt.
+
+The frozen `development-clean-5` attempt has now ended after **1467.38 s**.
+Its M0 baseline is **10 PASS, zero FAIL/ERROR/SKIPPED**, including the reviewed
+nightly reference and zero-byte `test_Moon.diff`; its U-series is **14 PASS,
+12 SKIPPED, zero FAIL/ERROR** and its dedicated M2 U08-U13 are **6 PASS**.
+Supporting linked I14/I18/I19 all PASS. Fourteen native input controls PASS,
+but the negative PSD fatal-path adapter crashes after printing the intended
+rejection. Actual host GDB identified `fprintf(NULL)` in the diagnostic writer:
+the fixture lacked its configured `PT/amps_error.log` parent directory.
+The fix is isolated diagnostic-directory/MPI setup in the thin test adapter,
+not changing the shared production fatal handler or accepting a SIGSEGV.
+Earlier results and GDB streams remain intact; the stopped attempt is ERROR,
+not a successful combined campaign. The private ordinary build restored
+successfully; active-root Makefile and `.amps.conf` hashes remain unchanged.
+
+Independent review found three further implementation gaps: stale prescribed
+source temperatures, checkpoint-dependent site retention reporting, and a
+joint-Earth visibility quantity labelled geometric PSR. The user approved the
+explicit `isothermal-grey` Diviner interpretation on November 16. Production
+now has one prescribed boundary function and refreshed source-temperature
+cache, a matching brightness-to-kinetic operator, a native per-species surface
+residence/retention exporter independent of checkpoints, exact cohort/site
+binding, and terrain-only PSR separate from the benchmark Earth policy.
+Real map gaps remain unavailable and never inherit initialization temperatures.
+Post-review infrastructure checks PASS (I15 19 tests, I20 57 tests, native
+operator reporting 19 tests); **new native verification is pending** for this
+later source state. These counts do not promote the frozen earlier run to
+verification of changes made after its source snapshot.
+
+The next frozen `development-clean-6` completed in **2772.32 s (46.2 min)**:
+local results **6 PASS / 7 SKIPPED / 0 FAIL / 0 ERROR** and supporting checks
+**58 PASS / 2 SKIPPED / 0 FAIL / 0 ERROR**. Supporting checks include the clean
+M0 prerequisite (all ten linked gates PASS), eight-rank I14/I18/I19, the actual
+I15/I20 exporters, corrected initialized fatal adapter, all 36 short numerical
+cases, source quadrature and retained-build verification after restoration.
+Its ten infrastructure groups contain 190 passing unit/control cases.
+The two supporting skips are unavailable D02 metadata and unselected long
+cluster qualification. Formal I14-I20 remain SKIPPED for their unchanged
+predecessor/data/qualification gates. See `development-clean-6/` and `launch-6.json`.
+
+The independent full CORE audit is complete: **843/843 prior PASS identities
+preserved**, no missing/newly failing/status-changed case. Reconciled full
+counts are **843 PASS / 1 FAIL / 240 SKIP / 1 ERROR**, not an all-green core
+claim. The nonpasses remain strict coverage and the existing 180-second CME
+routine ceiling. Three nested-Python dependency failures were explicitly
+rerun with the installed system interpreter; all attempts remain retained.
+Whole verification including setup/retries was **3286.84 s (54.8 min)**;
+peak process-tree RSS **5,192,458,240 bytes**. Shared core source/configuration
+identities match the tested snapshot and active checkout. Durable evidence:
+`core-regressions/core_completion_report.json`,
+`core-regressions/core-regression-comparison/`, and its preservation mapping.
+
+The final formal-path audit found an unapplied-initial-state loophole and
+bounded-I18 staging in long I19 cases. Current root source now has named
+uniform/actual periodic initialization, actual full initial-column exports
+before cohort seeding, exact applied-state/epoch/source/executable/physics
+binding, preserved formal AMR/source/thermal inputs, and a separate cluster
+normalization path. No qualifying state or interval has been invented or
+auto-approved. I20 requires its own explicit initial-state qualification and
+keeps annual thermal and cohort intervals distinct. Those later changes were
+then frozen for the separate `development-clean-7` verification below; the
+earlier 46.2-minute run remains preserved with its own source state. Contracts:
+`test/M2_INITIAL_STATE_CONTRACT.md` and `test/FORMAL_STAGING_CONTRACT.md`.
+
+Final frozen native verification, `development-clean-7`: **2242.36 s (37.4 min)**,
+eight MPI ranks, OpenMP=1. The registry reports **6 PASS / 7 SKIPPED / 0 FAIL /
+0 ERROR**; supporting results separately report **58 PASS / 2 SKIPPED / 0 FAIL /
+0 ERROR**. All ten M0 gates PASS and `m0/I04/test_Moon.diff` is zero bytes.
+U-series: 14 PASS / 12 SKIPPED, no FAIL/ERROR; dedicated U08-U13: six PASS.
+Ten infrastructure groups contain 211 passing unit/control cases; five budget
+and 26 protocol cases also pass. Eighteen native input/fatal controls pass.
+All 36 short numerical cases and source normalization pass. The peak sampled
+process-tree RSS is **45,979,766,784 bytes** (about 46 GB); sampled CPU is a
+6.12 core-hour lower bound, not scheduler accounting. Supporting I19's maximum
+relative atom imbalance is 9.5924e-16. Native I20 exports all 486,000 initial
+boundary/layer rows; its millisecond periodic replay is wiring coverage,
+explicitly not lunar spin-up or annual convergence qualification. The retained
+Na/Ar executable remains authentic after ordinary Na-only restoration.
+
+A final Python-only extension makes the global source normalizer explicitly
+request the real I19 initial-state export. The focused eight-rank native
+`initial-state-source-normalization/` check then completed in **22.64 s** after
+build restoration, with the same retained executable and unchanged reviewed
+bounded physical input. It validated all **486,000 rows / 6000 logical elements /
+80 layers plus boundary**, 250 K declared-uniform state, actual TDB epoch,
+ordered furnished SPICE pool and configured LOLA hashes. Its candidate carries
+`qualified:false`; READY applies only to the deterministic model-input
+normalization. All 27 updated protocol tests pass. This focused run exercises
+the final Python extension; the frozen global campaign is not relabelled as
+having executed that later extension.
+
+The implementation/supporting work package is complete. **M2 is not qualified**:
+formal I14-I20 remain SKIPPED, M1/I13 remains open, D02 lacks authoritative
+timing/geometry conventions, I17 needs the explicit December interval and
+reviewed frozen observational/operator evidence, and long I19/I20 need real
+initial-state/statistical/cost evidence and execution. No hold-out residuals
+were exposed, observations changed, thresholds weakened or approvals created.
+No source/configuration build is active and no commit/push was made.
+
+### 5.15 Initial M3 implementation and physics proposals — 2026-11-17
+
+The user approved the recommendations to extend early development to M3,
+use explicitly configured Maxwellian/Voronov electron rates, and research
+concrete charge-exchange and molecular-product proposals before implementing
+those unresolved choices. The approved exception is recorded in AGENTS.md
+and the source roadmap; formal milestone order and thresholds are intact.
+
+Current inventory: Na neutral-loss production dispatch is active but rejects
+unqualified Na+ products. No D04 production reaction loader or lunar
+charge-exchange channel exists. U16/U17 remain unimplemented at this initial
+checkpoint. The dormant electron rate uses fixed cross sections/solar-wind
+speed. Native D05 cfit.dat/cfit.txt/cfit.f and all 11 processed D04/D05 outputs
+are present and match provenance hashes. D06 does not provide qualified
+electron-density/temperature forcing. The shared electron executor also needs
+separate product-transfer/cell-index review; a new rate kernel will not enable
+that executor or claim particle-budget closure.
+
+Evidence root: `test_output/srcMoon/m3-initial-20261117T071134Z/`.
+The initial source/configuration snapshot and git status are preserved there.
+Kernel and input integration are implemented. The registered U16 runner has
+170 passing kernel/parser controls over 132 independent 70-digit rate points,
+plus 17 passing compiled production runtime-parser/install/query controls.
+Maximum coefficient/rate relative errors are 1.5637e-15/1.5135e-15, below the
+unchanged 1e-12 criterion. Original native Fortran comparisons report their
+single-precision/rounded-temperature discrepancy separately. These are local
+rate results, not I23 ensemble/product/forcing qualification. Research
+proposals and the new clean native/global campaign are being finalized.
+Root Makefile/configuration are not being rebuilt or rewritten;
+canonical validation data remain read-only. No commit/push is authorized.
+
+Research proposals are now complete: `test/M3_CHARGE_EXCHANGE_PROPOSAL.md`
+documents original He/Na total-capture references, supported energy ranges,
+rate integration, physical uncertainties and missing joint product kinetics;
+`test/M3_MOLECULAR_KINETICS_PROPOSAL.md` inventories all seven H2O/four
+experimental-OH photon channels and the absent daughter/state/threshold data.
+The molecular archive audit matches 16/16 hashes and makes no observations.
+U17 remains SKIPPED. No proposed new reaction/kinematic closure is activated.
+
+The first isolated native attempt ended after 44.45 seconds with a build
+infrastructure ERROR: copied machine definitions retained the active tree's
+absolute include paths. Its original coarse FAIL aggregate is preserved,
+with a separate explicit ERROR audit. Only private machine paths were rebased;
+root Makefile/.amps.conf hashes remain unchanged. The M3 supervisor now
+inspects nested M0 ERROR records instead of treating every coarse gate FAIL
+as scientific disagreement. All 25 orchestration protocol tests pass.
+`global-clean-2` is running against frozen native/Python sources with the
+unchanged one-hour whole-campaign limit. Native linked results remain pending.
+
+Execution checkpoint: the corrected SPICE build succeeds. The complete
+registered U-series is **15 PASS / 11 SKIPPED / 0 FAIL / 0 ERROR**; U16 now
+also runs all 25 orchestration controls and writes mathematical-reference
+CSV/PNG/EPS. Linked I01/I02/I03/I06/I07/I09/I10 PASS. The configuration-
+separated no-SPICE, ion/nightly and eight-species callback stages still need
+to finish before any combined package result is reported.
+
+Subsequent native fixtures identified repository ion-name mismatches and a
+pre-existing shared `He_PLUS` input typo: `mas =4.0*_AMU_` silently left its
+mass zero in native preprocessing. The fixture now uses `NA_PLUS/HE_PLUS/
+NE_PLUS/AR_PLUS`, and only the misspelled key in `input/species.input` was
+corrected to `mass`, preserving the intended 4.0-AMU value. The new native
+CSV checks actual generated masses/charges. Build identity now binds the
+shared species include; its new retained-input regression passes (17 total
+identity controls). Full CORE preservation is being executed independently
+against all 843 previously passing cases; those original profiles do not
+compile He+, so that audit alone cannot establish its corrected parameter.
+
+The corrected actual eight-rank callback preflight PASSes **32 rows** across
+all four neutral/ion mappings. Actual He+ mass is
+`6.6421562663999999e-27 kg` and charge `1.602176565e-19 C`, as generated by the
+existing AMPS constants/input model. It is rate/parameter wiring, not particle
+kinematics or reaction-budget qualification. The preflight uses no SPICE
+kernels at runtime; unused installed kernel inventory is explicitly labelled
+build/configuration context. The final provenance helper hashes the actual
+configured coefficient file and assignment-owning included input documents.
+All 31 expanded orchestration controls pass; canonical validation data remain
+read-only. Earlier global attempts and metadata errors are retained intact.
+
+`global-clean-4` is the current final one-hour-budget campaign. Its ten M0
+baseline gates PASS again after the shared-input correction, with zero-byte
+nightly diff; callback and normal-build restoration are in progress. The
+separate 51-suite/1085-case CORE campaign is in its final CME/portability
+owners. Full aggregate completion and prior-PASS preservation remain pending.
+
+Final `global-clean-4` campaign: **980.26 seconds (16.3 minutes)** whole-command
+wall time. Registry: **1 PASS / 4 SKIPPED / 0 FAIL / 0 ERROR**; separate support:
+**3 PASS / 0 SKIPPED / 0 FAIL / 0 ERROR** (complete M0 prerequisite, actual
+eight-rank rate callback, ordinary Moon/SPICE restoration). The complete
+U-series remains **15 PASS / 11 SKIPPED**, no FAIL/ERROR. Within U16, **170
+kernel controls**, **17 native runtime controls** and **31 orchestration
+controls** pass. Numerical maxima remain 1.5637e-15/1.5135e-15; mathematical
+CSV/PNG/EPS figures are preserved. The native callback checks all **32
+species/rank rows**, including actual generated ion masses and charges.
+Peak sampled process-tree RSS is **5,354,135,552 bytes** (about 5.35 GB).
+
+The separate full core audit completes in **2446.84 seconds (40.8 minutes)**
+including setup/reporting, with peak **5,338,165,248 bytes**. All **843/843
+previous PASS identities are preserved**, with no new failures, missing cases
+or status changes. Full counts remain **843 PASS / 240 SKIP / 1 FAIL / 1 ERROR**;
+the pre-existing strict-coverage FAIL and 180-second CME ceiling ERROR remain
+explicit. Evidence: `core-species-regressions/core_completion_report.json`.
+This is regression preservation, not an all-green core claim or independent
+qualification of the newly enabled He+ table entry. The native M3 callback
+supplies its separate parameter/rate evidence.
+
+A final diagnostics-only Python extension creates stdout/stderr placeholders
+when a runner fails before MPI and preserves the infrastructure reason. The
+same 31 orchestration controls verify those paths, and all 17 retained-build
+identity controls pass. Native source/physical-input bytes and computation
+commands match the final campaign; the small post-campaign logging diff and
+its controls are recorded separately rather than rewriting frozen results.
+
+The approved initial M3 work package is complete; **M3 itself is not complete**.
+The D04 photon-table production dispatch, conservative ion/product transfers,
+competing reactions/ensemble budgets, measured electron forcing, molecular
+state/joint daughter kinetics and charge-exchange activation remain to be
+implemented or qualified. The completed literature proposals and `question.md`
+give concrete next scopes for investigator review; no unsupported channel,
+recoil distribution, bath assumption or source-range extrapolation was
+silently selected. Formal I21-I24 and all M1/M2 predecessor requirements remain
+intact. No observations/references were altered, and no commit/push occurred.
+
+## 5.16 November 17 upstream integration and adapter repairs
+
+The completed package preserves all 919 earlier PASS identities on the tested
+core basis 4bff092. The final delivery target is 5ce92cb; Git-object and native
+source-hash audits prove unchanged core/Moon/Enceladus/input/test/build sources.
+Late changes were checked through the actual 64-case nightly tooling suite and
+official registry check. Existing strict-coverage FAIL and CME 180-second ERROR
+remain visible; no thresholds or physical references were replaced.
+
+The linked I19 guard exposed a previously false-positive generated-mode check:
+an early OFF definition was followed by an explicit application ON definition.
+Moon's derived build input now changes both controls. Real compiler preprocessing
+after the complete production include chain, four authenticated snapshots and
+recipe/executable identity reject stale or contradictory retained builds. The
+original failed attempt is retained; the corrective run meets the same original
+budget and all 36 numerical criteria. Maximum relative atom imbalance in the
+42-row I19 supporting ledger is 9.5924e-16; final Na/Ar count residuals, chemistry
+event counts and numerical removals are zero. Formal I19 remains SKIPPED without
+I13. The corrected retained ABI is accepted after ordinary Na restoration, while
+strict reuse against that different live tree is correctly refused.
+
+Enceladus's clone-dependent exact-byte exporter failure reproduced on pristine
+upstream. Its owner now emits repository-relative provenance for owned inputs
+and explicit absolute paths for external inputs. Existing byte comparisons stay
+unchanged; two additional path controls run through the existing global owner.
+All 62 historical Enceladus passes are preserved. No native Enceladus physics,
+reference or science setting was changed.
+
+M3's prior 32-row scalar-rate result retains its original build-adapter basis.
+No common native source or canonical physics input changed afterward; only the
+builder recipe was added to source identity. Old receipts were not backfilled,
+and future retained reuse must satisfy the tightened identity. There is no new
+M3 particle-chemistry qualification or December hold-out scoring.
+
+Detailed manifests, exact commands, source/config snapshots, input/data hashes,
+all original/retry outputs, restoration and delivery checks are retained under
+`test_output/srcMoon/upstream-core-integration-20261117T185033Z/`. Active checkout
+source was delivered only after completed tests and independent preservation
+review. No commit, push or stash was made, and no unrelated local work was discarded.

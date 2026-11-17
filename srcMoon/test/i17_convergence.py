@@ -16,8 +16,9 @@ from pathlib import Path
 OBSERVATIONAL_SIGMA_FRACTION = 0.1
 
 
-def compare_time_steps(directories: list[Path], output: Path) -> tuple[bool, dict]:
-    """Compare dt, dt/2, dt/4 at exactly identical June site/time bins.
+def compare_time_steps(directories: list[Path], output: Path,
+                       selection: str = "training") -> tuple[bool, dict]:
+    """Compare dt, dt/2, dt/4 at identical explicitly selected site/time bins.
 
     Every bin must have |T(dt/4)-T(dt/2)| < 0.1*sigma_obs, and this difference
     must be smaller than |T(dt/2)-T(dt)|. Exact equality of all three computed
@@ -27,13 +28,17 @@ def compare_time_steps(directories: list[Path], output: Path) -> tuple[bool, dic
     """
     if len(directories) != 3:
         raise ValueError("I17 convergence requires three time steps")
+    if selection not in ("training", "holdout"):
+        raise ValueError("unknown I17 numerical-convergence selection")
     tables = []
     for directory in directories:
-        with (directory / "receipt.txt.I17_training_model.csv").open(newline="") as stream:
+        with (directory / f"receipt.txt.I17_{selection}_model.csv").open(newline="") as stream:
             rows = list(csv.DictReader(stream))
         table = {row["site_time_bin_id"]: row for row in rows}
         if not table or len(table) != len(rows):
             raise ValueError("I17 convergence has empty or duplicate bin identities")
+        if any(row.get("selection", "training") != selection for row in rows):
+            raise ValueError("I17 convergence model contains an unselected row")
         tables.append(table)
     if any(set(table) != set(tables[0]) for table in tables[1:]):
         raise ValueError("I17 time-step runs sampled different site/time bins")
@@ -72,4 +77,5 @@ def compare_time_steps(directories: list[Path], output: Path) -> tuple[bool, dic
         "maximum_fine_difference_K": max(row["fine_difference_K"] for row in metrics),
         "convergence_csv": str(output),
         "observational_sigma_fraction": OBSERVATIONAL_SIGMA_FRACTION,
+        "selection": selection,
     }

@@ -1,3 +1,4 @@
+#include "MoonM2Cohorts.h"
 //  Copyright (C) 2002 Regents of the University of Michigan, portions used with permission 
 //  For more information, see http://csem.engin.umich.edu/tools/swmf
 
@@ -1262,6 +1263,20 @@ void amps_init() {
   //  MPI_Init(&argc,&argv);
     PIC::InitMPI();
 
+#if _PIC_ELECTRON_IMPACT_IONIZATION_REACTION_MODE_ == _PIC_MODE_ON_
+    // The new Maxwellian service supplies rates only. The existing generic
+    // executor has not yet qualified conservative product packets, unequal
+    // species dt/weights or daughter kinetics; do not let a compile-time flag
+    // silently promote this local capability into a production reaction.
+    if (Moon::Runtime::HasConfiguration() &&
+        Moon::Runtime::GetConfiguration().electronImpactRateModel=="maxwellian-voronov")
+      exit(__LINE__,__FILE__,
+          "Maxwellian rate service is available, but the PIC electron-impact "
+          "particle executor is not qualified for Moon product transfers. "
+          "Disable the electron-impact reaction compile switch; qualify "
+          "product species, packet weights, kinetics and I23 budgets first.");
+#endif
+
 
     //SetUp the alarm
   //  PIC::Alarm::SetAlarm(2000);
@@ -1316,6 +1331,12 @@ void amps_init() {
           Moon::Runtime::GetConfiguration().simulationStartUtc.c_str());
     }
 
+    // Passive fields must be registered before any production particle buffer
+    // exists; ordinary science/M0/M1 retain their exact original layout.
+    if (Moon::Runtime::HasConfiguration() &&
+        Moon::Runtime::GetConfiguration().m2VerificationCase=="cohort")
+      Moon::M2Cohorts::RegisterStorage(
+          Moon::Runtime::GetConfiguration().m2VerificationElements.size());
     //init the Mercury model
     Moon::Init_BeforeParser();
 
@@ -1622,6 +1643,13 @@ void amps_init() {
         Moon::SourceProcesses::ThermalDesorption::
             RuntimeSurfaceElementProductionRate=
                 Moon::SurfaceTemperature::ProductionThermalDesorptionRate;
+        // Source CDFs, totals and finite-stock PSD hazards share the SAME
+        // core photon law. Only its geometric incident-flux factor changes
+        // in M2; albedo belongs to thermal absorption, not photon arrival.
+        // InitializeProductionState has already prepared immutable factors
+        // at the explicit start epoch, before initial weights are queried.
+        Moon::SourceProcesses::PhotonStimulatedDesorption::RuntimePhotonFluxFactor=
+            Moon::SurfaceTemperature::ProductionPhotonFluxFactor;
         Moon::UseFluxBalancedSurfaceInventory=
             Moon::SurfaceTemperature::UseProductionFluxBalancedInventory;
         Exosphere::SurfaceInteraction::RuntimeAccommodationCoefficient=
