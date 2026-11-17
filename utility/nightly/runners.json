@@ -116,8 +116,6 @@
      "reason": "needs SWMF test19 and a 710 s SC+IH+OH time-accurate restart (hours) plus the coupled srcSEP path; its cnt=299 reference predates 2023"},
     {"test": "SEP3D-ARMS-coupling", "source": "legacy",
      "reason": "srcSEP3D needs a runtime amps.in since 2c06362b (2026-09-16) and has no ARMS DATAFILE background: to be re-specified by the srcSEP3D owner"},
-    {"test": "cdap_test", "source": "legacy",
-     "reason": "writes no output file and has no reference; its GMRES solves never converge (being investigated)"},
     {"test": "Europa-test*", "source": "legacy", "machines": ["passion"],
      "reason": "needs Tecplot (tec360) for the background-plasma import and the data file 3d__mhd_3_n00045039-extracted.plt, neither on passion"}
   ]

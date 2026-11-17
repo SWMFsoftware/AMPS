@@ -1,0 +1,139 @@
+! Runtime input of the drag-coefficient test of the gas-surface interaction models (MakefileTest/Table, test
+! "Sphere-drag-coefficient"). The executable is the build of input/test/sphere-drag-coefficient.conf:
+!   cd <case> && mpirun -np 8 ../amps -i ../sphere-drag-coefficient.in -case <case>
+! Grammar: src/INPUT_FILE.md; the application keys: srcOrbiter/OrbiterRuntimeInput.h; the block
+! 'physics: gas_surface_interaction' and the models: src/models/surface/Surface.h.
+!
+! A free-molecular H2O stream (no collisions) flows about a triangulated sphere (radius 0.8685 m, 8748 faces).
+! The speed ratio is s = U/sqrt(2kT/m) = 5.77, so the thermal motion of the incident and of the re-emitted
+! molecules matters: diffuse re-emission adds 2 sqrt(pi)/(3s) sqrt(Tw/T) = 0.21 to the drag coefficient of the
+! specular sphere (2.06, which is also that of the adsorbing sphere). The time step makes the stream move 0.18 of a
+! cell per step, as in the test before 2026-11 (30 km/s with the time-step speed 50 km/s).
+!
+! Each case is one gas-surface interaction model. Its drag coefficient (the sample of iterations 76-175) is compared
+! with the value of an independent integration of the model's mean re-emitted momentum over the faces of the sphere
+! (srcOrbiter/test/sphere_drag_check.py), within 4 statistical standard deviations of the run (about 0.013). The
+! parameters are chosen so that the drag depends on them: plausible errors (a wall at 0 K, the density- instead of the
+! flux-weighted diffuse re-emission, alpha and 1-alpha exchanged, the CLL coefficients exchanged, a backward Nocilla
+! drift, nu = 1 instead of 2) change it by 5 to 100 standard deviations. The values in the comments below are those
+! of the exact sphere; the faces of the triangulated sphere, with the projected area that AMPS computes (a pixel map,
+! 0.12 % larger than the exact projected area of the faces), give 0.12-0.17 % less.
+
+#begin application: orbiter
+  schema = 1
+
+  #begin upstream
+    velocity_m_s = -3000, 0, 0
+    temperature_k = 293
+    #begin species: H2O
+      number_density_m-3 = 1.5e21
+    #end species
+  #end upstream
+
+  #begin time_step
+    characteristic_speed_m_s = 5000
+  #end time_step
+
+  #begin run
+    iterations = 100
+  #end run
+
+  #begin physics: gas_surface_interaction
+    wall_temperature_k = 300
+  #end physics
+
+  ! every molecule is adsorbed: Cd = 2.0597 (the free-molecular sphere, Schaaf & Chambre)
+  #begin case: adsorption
+    #begin physics: gas_surface_interaction
+      model = adsorption
+    #end physics
+  #end case
+
+  ! the drag of a specular sphere equals that of an adsorbing one: Cd = 2.0597
+  #begin case: specular
+    #begin physics: gas_surface_interaction
+      model = specular
+    #end physics
+  #end case
+
+  ! the flux-weighted half-range Maxwellian at 300 K: Cd = 2.0597 + 2 sqrt(pi)/(3s) sqrt(Tw/T) = 2.2671
+  #begin case: diffuse
+    #begin physics: gas_surface_interaction
+      model = diffuse
+    #end physics
+  #end case
+
+  ! 3/4 diffuse, 1/4 specular (not 1/2, so that alpha and 1-alpha give different results): Cd = 2.2152
+  #begin case: maxwell
+    #begin physics: gas_surface_interaction
+      model = maxwell
+      #begin species: H2O
+        accommodation = 0.75
+      #end species
+    #end physics
+  #end case
+
+  ! normal energy accommodation 0.3, tangential momentum accommodation 0.8 (tangential energy accommodation 0.96):
+  ! Cd = 2.7208
+  #begin case: cll
+    #begin physics: gas_surface_interaction
+      model = cll
+      #begin species: H2O
+        normal_energy_accommodation = 0.3
+        tangential_momentum_accommodation = 0.8
+      #end species
+    #end physics
+  #end case
+
+  ! quasi-specular CLL: small coefficients: Cd = 2.1889
+  #begin case: quasi-specular-cll
+    #begin physics: gas_surface_interaction
+      model = quasi_specular_cll
+      #begin species: H2O
+        normal_energy_accommodation = 0.05
+        tangential_momentum_accommodation = 0.15
+      #end species
+    #end physics
+  #end case
+
+  ! Nocilla: a half-range Maxwellian at 600 K drifting with 1000 m/s at 45 deg from the normal, forward (the drift
+  ! and the thermal speed are comparable, so that the drag depends on U_r, theta_r and T_r): Cd = 2.2135
+  #begin case: quasi-specular-nocilla
+    #begin physics: gas_surface_interaction
+      model = nocilla
+      #begin species: H2O
+        drift_speed_m_s = 1000
+        drift_angle_deg = 45
+        temperature_k = 600
+      #end species
+    #end physics
+  #end case
+
+  ! Schamberg: half of the incident energy is accommodated, the beam axis is sin(theta_r) = sin(theta_i)^2, the
+  ! beam half-angle is 60 deg (for theta_i > 45 deg the beam reaches below the surface and is truncated): Cd = 2.3029
+  #begin case: quasi-specular-schamberg
+    #begin physics: gas_surface_interaction
+      model = schamberg
+      #begin species: H2O
+        energy_accommodation = 0.5
+        nu = 2
+        beam_half_angle_deg = 60
+      #end species
+    #end physics
+  #end case
+
+  ! Nocilla with accommodation coefficients (Hurlbut & Sherman; the equations of Cook & Hoffbauer 1997, NASA TP-3701):
+  ! for each incident molecule the drifting Maxwellian has the mean velocity of the momentum coefficients and the mean
+  ! square speed of the energy coefficient. The drag depends only on the momentum coefficients (the energy coefficient
+  ! changes the spread of the re-emission, checked by unit_test_gas_surface_interaction): Cd = 2.2871 (exact sphere)
+  #begin case: quasi-specular-nocilla-hs
+    #begin physics: gas_surface_interaction
+      model = nocilla
+      #begin species: H2O
+        normal_momentum_accommodation = 0.6
+        tangential_momentum_accommodation = 0.7
+        energy_accommodation = 0.5
+      #end species
+    #end physics
+  #end case
+#end application

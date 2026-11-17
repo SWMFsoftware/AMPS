@@ -474,15 +474,11 @@ for (int i=0;i<3;i++) indexer[i].reset();
 auto boundary_short_circuit = [&]() -> bool {
   if (_PIC_BC__PERIODIC_MODE_ != _PIC_BC__PERIODIC_MODE_OFF_) return false;
 
-  // (0) FLUID coupler (GM-PC/AMPS): E on the boundary of the PIC region is set by the fluid model
-  //     (setE_*_BC()). The corners of that boundary are the ones isBoundaryCorner() finds, and
-  //     GetStencil_Legacy() gives them the Dirichlet row below. The bc_type branch that follows
-  //     does not cover them, so they got an interior row, from which the compaction further down
-  //     drops every coupling to a boundary corner, including the row's own diagonal: the system
-  //     was inconsistent, and GMRES stopped at EFieldIter iterations with a residual of 0.1-0.4
-  //     in the GM-PC tests (with this branch: ~30 iterations to 1e-8, as GetStencil_Legacy()).
-  //     Dirichlet row in increment form: dE = 0 -> A[I,I] = 1, rhs = 0.
-  if ((_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_) && isBoundaryCorner(x,node)) {
+  // Dirichlet row in increment form, dE = 0 -> A[I,I] = 1, rhs = 0, for a corner on the physical
+  // boundary whose E is prescribed outside of the linear system (as GetStencil_Legacy() does for
+  // every boundary corner). The corner on the "right" boundary belongs to the neighbor block (as in
+  // GetStencil_Legacy()): its row is not created.
+  auto prescribed_boundary_row = [&]() -> bool {
     MatrixRowNonZeroElementTable[0].i = i;
     MatrixRowNonZeroElementTable[0].j = j;
     MatrixRowNonZeroElementTable[0].k = k;
@@ -501,10 +497,20 @@ auto boundary_short_circuit = [&]() -> bool {
     support_corner_vector.clear();
     support_center_vector.clear();
 
-    //the corner on the "right" boundary belongs to the neighbor block (as in GetStencil_Legacy())
     if (isRightBoundaryCorner(x, node)) NonZeroElementsFound = 0;
 
     return true;
+  };
+
+  // (0) FLUID coupler (GM-PC/AMPS): E on the boundary of the PIC region is set by the fluid model
+  //     (setE_*_BC()). The corners of that boundary are the ones isBoundaryCorner() finds, and
+  //     GetStencil_Legacy() gives them the Dirichlet row below. The bc_type branch that follows
+  //     does not cover them, so they got an interior row, from which the compaction further down
+  //     drops every coupling to a boundary corner, including the row's own diagonal: the system
+  //     was inconsistent, and GMRES stopped at EFieldIter iterations with a residual of 0.1-0.4
+  //     in the GM-PC tests (with this branch: ~30 iterations to 1e-8, as GetStencil_Legacy()).
+  if ((_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_) && isBoundaryCorner(x,node)) {
+    return prescribed_boundary_row();
   }
 
   // Corner-node index extents (corners are Nx+1, Ny+1, Nz+1)
@@ -524,7 +530,16 @@ auto boundary_short_circuit = [&]() -> bool {
   const bool isDirichlet = (bcType == 1);
   const bool isNeumann   = (bcType == 0);
 
-  if (!isDirichlet && !isNeumann) return false;
+  // (1a) No domain BC policy for this corner (bc_type.type==-1: DomainBC faces left unspecified).
+  //      A boundary corner is then set by the application itself (setE_*_BC() callbacks, e.g.
+  //      test/srcCDAP), exactly as for the FLUID coupler above, and it gets the same Dirichlet row.
+  //      Without it the corner got an interior row whose compaction dropped every coupling to a
+  //      boundary corner, the own diagonal included: rows without their own unknown, and GMRES
+  //      (cdap_test) stopped at 200 iterations with ||r||/||r0|| = 0.2-0.3 in every solve.
+  if (!isDirichlet && !isNeumann) {
+    if (isBoundaryCorner(x,node)) return prescribed_boundary_row();
+    return false;
+  }
 
   // Boundary/constraint row: prescribe rhs and forbid any sampled RHS contributions
   rhs = 0.0;

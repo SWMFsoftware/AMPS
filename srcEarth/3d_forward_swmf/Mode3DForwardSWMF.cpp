@@ -124,7 +124,13 @@ bool TargetRequestsCutoff_(const EarthUtil::AmpsParam& prm) {
 }
 
 bool TargetRequestsDensityFlux_(const EarthUtil::AmpsParam& prm) {
-  const std::string t = EarthUtil::ToUpper(prm.calc.target);
+  const std::string t = EarthUtil::ToUpper(EarthUtil::Trim(prm.calc.target));
+  // DENSITY_3D is the FORWARD product (#DENSITY_3D sampling of injected particles,
+  // the 3d_forward deck convention), not the backward DENSITY_SPECTRUM/FLUX product.
+  // Matching it by the substring "DENSITY" sent explicit DENSITY_3D decks (e.g. the
+  // Geospace-SWMF-AMPS nightly test) into the backward-product runtime: no particle
+  // was ever injected and no trajectory/volume output was written.
+  if (t=="DENSITY_3D") return false;
   return t.find("DENSITY") != std::string::npos || t.find("FLUX") != std::string::npos ||
          t=="ALL" || t=="BOTH";
 }

@@ -1805,6 +1805,9 @@ int main(int argc,char **argv) {
   //PIC::FieldSolver::Init();
   PIC::FieldSolver::Electromagnetic::ECSIM::Init_IC();
   PIC::CPLR::FLUID::EFieldTol = 1.0e-8;
+  //with the particle mass matrices of this plasma the E-field GMRES (no preconditioner) needs ~220
+  //iterations to reach EFieldTol; the default limit of 200 stopped ~40% of the solves at 3-7e-8
+  PIC::CPLR::FLUID::EFieldIter = 400;
 
   totalIter=500;
      
@@ -1852,6 +1855,9 @@ int main(int argc,char **argv) {
     //PIC::Sampling::Sampling();
     PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix();
     
+    extern double TotalParticleEnergy,TotalWaveEnergy; //pic_field_solver_ecsim.cpp, reduced on thread 0
+    double EnergyAfterFirstStep=0.0;
+
     for (int niter=0;niter<totalIter;niter++) {
 
       //PIC::Mesh::mesh->outputMeshDataTECPLOT("1.dat",0);
@@ -1860,6 +1866,9 @@ int main(int argc,char **argv) {
   
       PIC::TimeStep();
       //PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep();
+
+      //the field energy is first evaluated during the first time step (thread 0 holds the reduced values)
+      if (niter==0) EnergyAfterFirstStep=TotalParticleEnergy+TotalWaveEnergy;
 
       //PIC::Mesh::mesh->outputMeshDataTECPLOT("2.dat",0);
 
@@ -1878,6 +1887,24 @@ int main(int argc,char **argv) {
 
     }
   
+  //the result of the test (MakefileTest/Table: test_cdap_test_check appends the convergence counts of the E-field
+  //solver and compares the file with output/test_cdap_test/test_cdap_test.ref_np*). The run is not reproducible to
+  //the last bit (contributions of the processes to shared center nodes are summed in the order the messages arrive),
+  //and the particle noise amplifies such differences, so only verdicts are written, not field or particle values
+  if (PIC::ThisThread==0) {
+    char fname[_MAX_STRING_LENGTH_PIC_];
+    const double EnergyEnd=TotalParticleEnergy+TotalWaveEnergy;
+    const double RelativeChange=(EnergyAfterFirstStep>0.0) ? fabs(EnergyEnd/EnergyAfterFirstStep-1.0) : 1.0;
+
+    printf("$PREFIX: total energy after the first time step %e, at the end %e (relative change %e)\n",EnergyAfterFirstStep,EnergyEnd,RelativeChange);
+
+    sprintf(fname,"%s/test_cdap_test.dat",PIC::OutputDataFileDirectory);
+    FILE *fout=fopen(fname,"w");
+
+    fprintf(fout,"total energy conserved within 3 percent between the first and the last time step: %i\n",(RelativeChange<0.03) ? 1 : 0);
+    fclose(fout);
+  }
+
   PIC::RunTimeSystemState::CumulativeTiming::Print();
   MPI_Finalize();
   

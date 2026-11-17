@@ -1,0 +1,54 @@
+#main
+! Test of the gas-surface interaction models of src/models/surface (Surface.h): test/srcGasSurfaceInteractionTest/main.cpp
+! ("amps", "amps unset-wall-temperature", "amps unset-parameter"). Three species with different masses check that the
+! models use the mass and the parameters of each species. No mesh is built: the models are called with a particle of
+! the particle buffer and a single face.
+SpeciesList=H2O CO2 N2
+makefile SOURCES=src
+makefile RUNDIR=run
+makefile MPIRUN=mpiexec -n 1
+ExcludeModule=ELECTRON_IMPACT
+ExcludeModule=SPUTTERING
+ExcludeModule=DUST
+ExcludeModule=CHARGE_EXCHANGE
+ExcludeModule=EXOSPHERE
+ProjectSourceDirectory=test/srcGasSurfaceInteractionTest
+WorkingSourceDirectory=srcTemp
+SourceDirectory=src
+ErrorLog=PT/amps_error.log
+Prefix=AMPS
+DiagnosticStream=PT
+OutputDirectory=PT/plots
+DebuggerMode=off
+ForceRepeatableSimulationPath=on
+StdoutErrorLog=on
+TimeStepMode=SpeciesGlobalTimeStep
+ParticleWeightMode=SpeciesGlobalParticleWeight
+ParticleWeightCorrectionMode=off
+CouplerMode=off
+#endmain
+
+#include species.input
+
+#General
+  defineLocation(pic/picGlobal.dfn) DIM 3
+  BlockCells=4,4,4
+  GhostCells=1,1,1
+  MaxMeshRefinmentLevel=2
+  EnforceRequestedMeshResolution=off
+  ! the Mersenne twister: the test draws about 2e8 random numbers (the period of the default generator is 2^29)
+  Rnd=MersenneTwister
+  NastranSurfaceUserData=on
+  ControlParticleInsideNastranSurface=off
+  InternalBoundary=on
+  RequestedParticleBufferLength=1000
+#endGeneral
+
+! Supplies the internal-surface data types without enabling an exosphere
+! source, SPICE, or any application target.
+#block ../exosphere.pl
+  SPICE=off
+  define _TARGET_ _TARGET_NONE_
+#endblock
+
+#end

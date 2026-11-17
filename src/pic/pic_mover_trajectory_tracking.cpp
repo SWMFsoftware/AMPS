@@ -1,5 +1,6 @@
 
 #include "pic.h"
+#include <cfloat>
 
 #ifndef _TARGET_
 #define _TARGET_ _TARGET_NONE_ 
@@ -783,13 +784,18 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 #elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__PERIODIC_CONDITION_
     exit(__LINE__,__FILE__,"Error: not implemented");
 #elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__SPECULAR_REFLECTION_
-    //reflect the particle back into the domain
+    //The block face iIntersectedFace is a face of the domain: reflect the velocity at it and put the particle back
+    //inside the block, at the same distance from the face as after the crossing of a block face above.
     {
+      const int axis=iIntersectedFace/2;
+      const double offset=1e-4*(startNode->xmax[axis]-startNode->xmin[axis]);
       double c=0.0;
-      for (int idim=0;idim<3;idim++) c+=ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*vInit[idim];
-      for (int idim=0;idim<3;idim++) vInit[idim]-=2.0*c*ExternalBoundaryFaceTable[nIntersectionFace].norm[idim];
+
+      for (int idim=0;idim<3;idim++) c+=ExternalBoundaryFaceTable[iIntersectedFace].norm[idim]*vInit[idim];
+      for (int idim=0;idim<3;idim++) vInit[idim]-=2.0*c*ExternalBoundaryFaceTable[iIntersectedFace].norm[idim];
+
+      xInit[axis]=(iIntersectedFace%2==0) ? startNode->xmin[axis]+offset : startNode->xmax[axis]-offset;
       //startNode stays the same
-      //xInit stays the same
     }
 
     code=_PARTICLE_REJECTED_ON_THE_FACE_;
@@ -902,13 +908,11 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 #elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__PERIODIC_CONDITION_
     exit(__LINE__,__FILE__,"Error: not implemented");
 #elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__SPECULAR_REFLECTION_
-    //reflect the particle back into the domain
-    {
-      double c=0.0;
-      for (int idim=0;idim<3;idim++) c+=ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*vInit[idim];
-      for (int idim=0;idim<3;idim++) vInit[idim]-=2.0*c*ExternalBoundaryFaceTable[nIntersectionFace].norm[idim];
-      //startNode stays the same
-      //xInit stays the same
+    //The particle has left the domain during the rest of the step: mirror its position at the faces of the domain it has
+    //crossed and reverse the velocity components normal to them (the block of the mirrored position is found below).
+    for (int idim=0;idim<3;idim++) {
+      if (xInit[idim]<PIC::Mesh::mesh->xGlobalMin[idim]) xInit[idim]=2.0*PIC::Mesh::mesh->xGlobalMin[idim]-xInit[idim],vInit[idim]=-vInit[idim];
+      else if (xInit[idim]>=PIC::Mesh::mesh->xGlobalMax[idim]) xInit[idim]=2.0*PIC::Mesh::mesh->xGlobalMax[idim]-xInit[idim],vInit[idim]=-vInit[idim];
     }
 
     code=_PARTICLE_REJECTED_ON_THE_FACE_;
@@ -1131,7 +1135,7 @@ int PIC::Mover::TrajectoryTrackingMover(long int ptr,double dtTotal,cTreeNodeAMR
   //determine the flight time to the mearest boundary of the block
   auto GetBlockBoundaryFlightTime = [] (int& iIntersectedFace,int iFaceExclude,double *x,double *v,double *xmin,double *xmax) {
     int iface;
-    double dt;
+    double dt,dtExit=-1.0;
 
     iIntersectedFace=-1;
 
@@ -1174,30 +1178,38 @@ int PIC::Mover::TrajectoryTrackingMover(long int ptr,double dtTotal,cTreeNodeAMR
       }
 
 
-      if (dt>0.0) {
+      //The exit face is the plane crossed first.  Its crossing point is compared with the bounds of the face with the
+      //tolerance EPS: a particle that leaves the block through an edge or a corner has crossing points that round off to
+      //just outside the other face, and then no face was found (cut-surface mover test: a particle moving diagonally
+      //to x=0, y=0 stopped the run with "the boundary type is not defined").
+      if ((dt>0.0)&&((iIntersectedFace==-1)||(dt<dtExit))) {
+        const double EPS=PIC::Mesh::mesh->EPS;
         double t;
 
         t=x[iOrthogonal1]+v[iOrthogonal1]*dt;
 
-        if ((xmin[iOrthogonal1]<=t)&&(t<=xmax[iOrthogonal1])) {
+        if ((xmin[iOrthogonal1]-EPS<=t)&&(t<=xmax[iOrthogonal1]+EPS)) {
           t=x[iOrthogonal2]+dt*v[iOrthogonal2];
 
-          if ((xmin[iOrthogonal2]<=t)&&(t<=xmax[iOrthogonal2])) {
-              iIntersectedFace=iface;
-              return dt;
+          if ((xmin[iOrthogonal2]-EPS<=t)&&(t<=xmax[iOrthogonal2]+EPS)) {
+              iIntersectedFace=iface,dtExit=dt;
           }
         }
       }
     }
 
-    //check the distance of the point ot the boundary of the block: is the distance is less that EPS -> return dt=0
+    if (iIntersectedFace!=-1) return dtExit;
+
+    //check the distance of the point ot the boundary of the block: is the distance is less that EPS -> return dt=0.
+    //Only a face the particle moves out of counts: a particle on an edge of the block (e.g. on y=0 and z=0, moving to +y
+    //and -z) was sent across the face it moves away from (y=0), then back, without end (cut-surface mover test).
     for (int i=0;i<3;i++) {
-      if (fabs(x[i]-xmin[i])<PIC::Mesh::mesh->EPS) {
+      if ((fabs(x[i]-xmin[i])<PIC::Mesh::mesh->EPS)&&(v[i]<0.0)) {
         iIntersectedFace=2*i;
         return 0.0;
       }
 
-      if (fabs(x[i]-xmax[i])<PIC::Mesh::mesh->EPS) {
+      if ((fabs(x[i]-xmax[i])<PIC::Mesh::mesh->EPS)&&(v[i]>0.0)) {
         iIntersectedFace=1+2*i;
         return 0.0;
       }
@@ -1221,8 +1233,37 @@ int PIC::Mover::TrajectoryTrackingMover(long int ptr,double dtTotal,cTreeNodeAMR
         double xLocalIntersection[3],xIntersection[3];
 
         if (TriangleFace->RayIntersection(x,v,dt,xLocalIntersection,xIntersection,PIC::Mesh::mesh->EPS)==true) {
-          if ((dt>0.0)&&(Vector3D::DotProduct(v,TriangleFace->ExternalNormal)<0.0)&&(dt*Vector3D::Length(v)>PIC::Mesh::mesh->EPS)) if ((CutTriangleFace==NULL)||(dt<FlightTime)) {
+          //Every face the particle moves into counts, also at dt=0: a particle that ended the previous time step on
+          //the surface and got a velocity toward the body (in a collision) has to be reflected at once. Intersections
+          //closer than EPS used to be ignored, and such a particle crossed the surface undetected (test-1853-shape).
+          //The face the particle has just left in this call is excluded (ExcludeCutTriangleFace), and it moves away
+          //from that face anyway (dot(v,n)>0), so it is not found again.
+          if ((dt>=0.0)&&(Vector3D::DotProduct(v,TriangleFace->ExternalNormal)<0.0)) if ((CutTriangleFace==NULL)||(dt<FlightTime)) {
             CutTriangleFace=TriangleFace,FlightTime=dt;
+          }
+        }
+        else if (Vector3D::DotProduct(v,TriangleFace->ExternalNormal)<-64.0*DBL_EPSILON*Vector3D::Length(v)) {
+          //A particle behind the plane of the face by less than EPS, measured across the plane, that moves into the
+          //face is on the surface: it is reflected at once (dt=0).  RayIntersection() measures its tolerance along
+          //the ray, and for a particle that moves nearly along the face the crossing point is far behind it: such a
+          //particle sank into the body without a hit (cut-surface mover test, stress mode: a particle grazing a face
+          //at 1e-12 rad slid along it 2e-12 m inside the body).  The projection of the particle onto the plane has to
+          //be inside the face itself (a ray along the normal, no tolerance): near an edge, a particle behind the plane
+          //of a face can be in the gas in front of the neighbor face, and it was reflected by the face (cut-surface
+          //mover test: particles aimed at convex edges).  The particle has to move into the face by more than the
+          //rounding (the bound of RayIntersection() for a ray parallel to the face): for a particle that moves in the
+          //plane of the face the sign of v.n is a rounding error, and the reflection, which did not change v, was
+          //repeated until the particle was removed.
+          double h=0.0;
+
+          for (int idim=0;idim<3;idim++) h+=(x[idim]-TriangleFace->x0Face[idim])*TriangleFace->ExternalNormal[idim];
+
+          if ((h<=0.0)&&(h>-PIC::Mesh::mesh->EPS)) {
+            double tNormal,n[3]={TriangleFace->ExternalNormal[0],TriangleFace->ExternalNormal[1],TriangleFace->ExternalNormal[2]};
+
+            if (TriangleFace->RayIntersection(x,n,tNormal,xLocalIntersection,xIntersection,0.0)==true) {
+              if ((CutTriangleFace==NULL)||(0.0<FlightTime)) CutTriangleFace=TriangleFace,FlightTime=0.0;
+            }
           }
         }
       }
@@ -1242,6 +1283,11 @@ int PIC::Mover::TrajectoryTrackingMover(long int ptr,double dtTotal,cTreeNodeAMR
   const int _cut_triangle=1;
   const int _undefined_boundary=2;
 
+
+  //consecutive surface interactions at (nearly) the same point: they happen in concave corners; the number is limited
+  //so that a particle trapped by round-off between faces cannot loop forever
+  int nZeroLengthCutFaceInteractions=0,nZeroLengthBlockCrossings=0;
+  const int nZeroLengthCutFaceInteractionsMax=64;
 
   while (dtTotal>0.0) {
     nLoop++;
@@ -1303,7 +1349,13 @@ double vInit_debug[3]={vInit[0],vInit[1],vInit[2]};
     }
 
 
+
     if (IntersectionMode==_undefined_boundary) {
+      //a particle at rest does not reach a boundary: the step is finished
+      if ((vInit[0]==0.0)&&(vInit[1]==0.0)&&(vInit[2]==0.0)) break;
+
+      printf("$PREFIX: TrajectoryTrackingMover: no boundary found: x=(%.17e,%.17e,%.17e) v=(%.17e,%.17e,%.17e) dtTotal=%e block [%.17e,%.17e]x[%.17e,%.17e]x[%.17e,%.17e]\n",
+          xInit[0],xInit[1],xInit[2],vInit[0],vInit[1],vInit[2],dtTotal,startNode->xmin[0],startNode->xmax[0],startNode->xmin[1],startNode->xmax[1],startNode->xmin[2],startNode->xmax[2]);
       exit(__LINE__,__FILE__,"Error: the boundary type is not defined");
     }
 
@@ -1362,7 +1414,45 @@ double vInit_debug[3]={vInit[0],vInit[1],vInit[2]};
           break;
         }
 
-        startNode=PIC::Mesh::mesh->findTreeNode(x_test,startNode);
+        //A particle on an edge or a corner of the block leaves it through several faces at once: the test point is moved
+        //across all of them.  Moved across the face found above only, it was in the block on the other side of that
+        //face, which the particle leaves at once through the other face back into this block, and so on without end
+        //(cut-surface mover test: a particle at x=0, z=0 moving to -x, -z).  A crossing of one face is not changed.
+        for (int i=0;i<DIM;i++) if (i!=iIntersectedFace/2) {
+          const double d=0.01*(startNode->xmax[i]-startNode->xmin[i]);
+
+          if ((fabs(xInit[i]-startNode->xmin[i])<PIC::Mesh::mesh->EPS)&&(vInit[i]<0.0)) x_test[i]-=d;
+          else if ((fabs(xInit[i]-startNode->xmax[i])<PIC::Mesh::mesh->EPS)&&(vInit[i]>0.0)) x_test[i]+=d;
+        }
+
+        //zero-length crossings of block faces are limited as the zero-length surface interactions below
+        if (dt*Vector3D::Length(vInit)<=PIC::Mesh::mesh->EPS) {
+          if (++nZeroLengthBlockCrossings>nZeroLengthCutFaceInteractionsMax) {
+            PIC::ParticleBuffer::DeleteParticle(ptr);
+            return _PARTICLE_LEFT_THE_DOMAIN_;
+          }
+        }
+        else nZeroLengthBlockCrossings=0;
+
+        {
+          cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *nextNode=PIC::Mesh::mesh->findTreeNode(x_test,startNode);
+
+#if _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__SPECULAR_REFLECTION_
+          if (nextNode==NULL) {
+            //the face of the block is a face of the domain: reflect the particle there and continue in the same block
+            //(the particle is on the face and moves away from it, so the face is not found again)
+            const int axis=iIntersectedFace/2;
+
+            vInit[axis]=-vInit[axis];
+            xInit[axis]=(iIntersectedFace%2==0) ? startNode->xmin[axis] : startNode->xmax[axis];
+            iFaceExclude=iIntersectedFace;
+            break;
+          }
+#endif
+
+          startNode=nextNode;
+        }
+
         if (startNode==NULL) {
           //the particle has left the domain: continue with the test point outside of it.
           //(The index used to be idim, which is 3 after the loop above: xInit[3] was written,
@@ -1372,17 +1462,31 @@ double vInit_debug[3]={vInit[0],vInit[1],vInit[2]};
 
         break;
       case _cut_triangle:
-        c_init=Vector3D::DotProduct(vInit,CutTriangleFace->ExternalNormal);
-
-        do {
-          code=(ProcessTriangleCutFaceIntersection!=NULL) ? ProcessTriangleCutFaceIntersection(ptr,xInit,vInit,CutTriangleFace,startNode) : _PARTICLE_DELETED_ON_THE_FACE_;
-
-          if (code==_PARTICLE_DELETED_ON_THE_FACE_) {
+        if (dt*Vector3D::Length(vInit)<=PIC::Mesh::mesh->EPS) {
+          if (++nZeroLengthCutFaceInteractions>nZeroLengthCutFaceInteractionsMax) {
+            //the particle cannot leave a corner of the surface: remove it
             PIC::ParticleBuffer::DeleteParticle(ptr);
             return _PARTICLE_LEFT_THE_DOMAIN_;
           }
         }
-        while (c_init*Vector3D::DotProduct(vInit,CutTriangleFace->ExternalNormal)>=0.0); // (Vector3D::DotProduct(v,v_init)>=0.0);
+        else nZeroLengthCutFaceInteractions=0;
+
+        c_init=Vector3D::DotProduct(vInit,CutTriangleFace->ExternalNormal);
+
+        {
+          int nBoundaryConditionCalls=0;
+
+          do {
+            code=(ProcessTriangleCutFaceIntersection!=NULL) ? ProcessTriangleCutFaceIntersection(ptr,xInit,vInit,CutTriangleFace,startNode) : _PARTICLE_DELETED_ON_THE_FACE_;
+
+            //a boundary condition that does not send the particle out of the face is not repeated without end
+            if ((code==_PARTICLE_DELETED_ON_THE_FACE_)||(++nBoundaryConditionCalls>=100)) {
+              PIC::ParticleBuffer::DeleteParticle(ptr);
+              return _PARTICLE_LEFT_THE_DOMAIN_;
+            }
+          }
+          while (c_init*Vector3D::DotProduct(vInit,CutTriangleFace->ExternalNormal)>=0.0); // (Vector3D::DotProduct(v,v_init)>=0.0);
+        }
 
         startNode=PIC::Mesh::mesh->findTreeNode(xInit,startNode);
         break;
@@ -1399,10 +1503,12 @@ double vInit_debug[3]={vInit[0],vInit[1],vInit[2]};
 
   newNode=PIC::Mesh::mesh->findTreeNode(xInit,startNode);
 
-  //move the particle inside the block
-  if (newNode!=NULL) for (int i=0;i<3;i++) {
-    if (newNode->xmin[i]+PIC::Mesh::mesh->EPS>xInit[i]) xInit[i]=newNode->xmin[i]+PIC::Mesh::mesh->EPS;
-    if (newNode->xmax[i]-PIC::Mesh::mesh->EPS<xInit[i]) xInit[i]=newNode->xmax[i]-PIC::Mesh::mesh->EPS; 
+  //A point outside of the block (by round-off) is moved onto its boundary.  Points within EPS of a face of the block used
+  //to be moved EPS inside the block: next to a body whose surface is within EPS of the face, that put the particle into
+  //the body (cut-surface mover test: 4e-7 m deep).  A point on the boundary of the block is a valid position.
+  if (newNode!=NULL) for (int i=0;i<DIM;i++) {
+    if (newNode->xmin[i]>xInit[i]) xInit[i]=newNode->xmin[i];
+    if (newNode->xmax[i]<xInit[i]) xInit[i]=newNode->xmax[i];
   }
 
   if (newNode==NULL) {
@@ -1500,6 +1606,9 @@ double vInit_debug[3]={vInit[0],vInit[1],vInit[2]};
     case _PARTICLE_DELETED_ON_THE_FACE_:
       PIC::ParticleBuffer::DeleteParticle(ptr);
       return _PARTICLE_LEFT_THE_DOMAIN_;
+    case _PARTICLE_REJECTED_ON_THE_FACE_:
+      //the particle is back inside the domain (at the boundary, with the velocity of the boundary condition)
+      break;
     default:
       exit(__LINE__,__FILE__,"Error: not implemented");
     }

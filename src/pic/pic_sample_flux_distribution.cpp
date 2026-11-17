@@ -116,7 +116,7 @@ void PIC::ParticleFluxDistributionSample::SampleDistributionFnction() {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
   long int ptr,nProbe,spec,offset;
 
-  for (node=SampleNodes[0],nProbe=0;nProbe<nSamleLocations;node=SampleNodes[++nProbe]) if (node->Thread==PIC::ThisThread) {
+  for (nProbe=0;nProbe<nSamleLocations;nProbe++) if ((node=SampleNodes[nProbe])->Thread==PIC::ThisThread) { //"node=SampleNodes[++nProbe]" read past the end of SampleNodes
       double *v,speed,v2,cosPitchAngle,LocalParticleWeight;
       PIC::ParticleBuffer::byte *ParticleData;
       int i,j,k;

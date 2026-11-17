@@ -3143,6 +3143,8 @@ AmpsParam ParseAmpsParamFile(const std::string& fileName) {
         p.numerics.boundaryEventMaxIterations=std::stoi(val);
       else if (uKey=="TRAP_DETECTION" || uKey=="TRACE_TRAP_DETECTION")
         p.numerics.trapDetection=ToBool(val);
+      else if (uKey=="TRAP_STORMER" || uKey=="TRACE_TRAP_STORMER")
+        p.numerics.trapStormer=ToBool(val);
       else if (uKey=="TRAP_MIN_MIRROR_POINTS")
         p.numerics.trapMinMirrorPoints=std::stoi(val);
       else if (uKey=="TRAP_MIN_BOUNCES" || uKey=="TRAP_MIN_BOUNCE_CYCLES")

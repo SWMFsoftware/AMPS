@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, Tuple
 from .machines import REPO_ROOT, Config, Machine
 from .registry import Registry, UNASSIGNED
 from .runners import Routine, Source
-from .table import read_table
+from .table import display_name, read_table, required_capabilities
 
 RUN, SKIP = "run", "skip"
 CORE_MANIFEST = REPO_ROOT / "src" / "test" / "manifest.json"
@@ -31,6 +31,19 @@ class Item:
     action: str           # RUN or SKIP
     reason: str = ""      # why it is skipped
     listed: bool = True   # False: a placeholder for a runner whose tests are known only after it ran
+    target: str = ""      # Makefile.test name when it differs from the shown name (test_<target>_compile, ...)
+
+    @property
+    def make_name(self) -> str:
+        return self.target or self.test
+
+
+def makefile_item(name: str, family: str, code: str) -> Item:
+    """The plan item of a Makefile.test test; a variant <test>--valgrind is shown as <test>(valgrind)."""
+    shown = display_name(name)
+    return Item(family or UNASSIGNED, shown, SKIP if code == "SKIP" else RUN,
+                "ExeptionCode=SKIP in MakefileTest/Table for this compiler" if code == "SKIP" else "",
+                target=name if shown != name else "")
 
 
 @dataclass
@@ -89,14 +102,12 @@ def legacy_items(machine: Machine, amps_dir: Optional[Path], table: Optional[Pat
         if configured_host(tree) != machine.table_host:
             raise RuntimeError("{} was configured for host {!r}, not {!r}".format(
                 tree, configured_host(tree) or "?", machine.table_host))
-        items = [Item(family or UNASSIGNED, name, SKIP if code == "SKIP" else RUN,
-                      "ExeptionCode=SKIP in MakefileTest/Table for this compiler" if code == "SKIP" else "")
-                 for name, family, code in makefile_manifest(tree)]
+        items = [makefile_item(name, family, code) for name, family, code in makefile_manifest(tree)]
         return items, "exact list from 'make test_manifest' in {}".format(tree)
     seen: Dict[str, Item] = {}
     for test in read_table(table):
         if host_selected(test.selector, machine.table_host) and test.name not in seen:
-            seen[test.name] = Item(test.family or UNASSIGNED, test.name, RUN)
+            seen[test.name] = makefile_item(test.name, test.family, "")
     return (list(seen.values()),
             "from MakefileTest/Table for host {!r}; compiler-specific SKIP rules are applied at run time".format(
                 machine.table_host))
@@ -125,13 +136,16 @@ def core_suites(source: Source, manifest: Optional[Path] = None) -> List[str]:
 # ----------------------------------------------------------------------------- plan
 def apply_rules(items: List[Item], source: Source, machine: Machine, config: Config, routine: Routine,
                 today: dt.date) -> None:
-    """Mark as SKIP, with the reason, the tests this machine cannot run or runners.json switches off."""
-    missing = [c for c in source.requires if c not in machine.capabilities]
+    """Mark as SKIP, with the reason, the tests this machine cannot run or runners.json switches off.
+
+    A capability is required by the runner (runners.json "requires") or by the test itself: a Makefile.test
+    variant such as <test>--valgrind needs the capability of its variant (table.VARIANTS)."""
     values = machine_vars(machine)
     missing_vars = [v for v in source.requires_vars if not values.get(v)]
     for item in items:
         if item.action != RUN:
             continue
+        missing = [c for c in list(source.requires) + required_capabilities(item.make_name) if c not in machine.capabilities]
         entry = routine.disabled_entry(source.id, item.test, machine.machine, config.config, today)
         if missing:
             item.action, item.reason = SKIP, "{} does not declare capability {}".format(machine.machine, ", ".join(missing))

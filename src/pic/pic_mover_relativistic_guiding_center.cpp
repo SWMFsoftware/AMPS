@@ -246,6 +246,21 @@ int PIC::Mover::Relativistic::GuidingCenter::Mover_FirstOrder(long int ptr,doubl
   
   newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
 
+#if _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__SPECULAR_REFLECTION_
+  if (newNode==NULL) {
+    //The guiding center has left the domain: mirror its position at the boundary of the domain and reverse its motion
+    //along the magnetic field.  The velocity of the particle is rebuilt below from the field at the new position and
+    //from uPar, so the reversed uPar is the specular reflection of the parallel motion.
+    for (int idim=0;idim<3;idim++) {
+      if (xFinal[idim]<PIC::Mesh::mesh->xGlobalMin[idim]) xFinal[idim]=2.0*PIC::Mesh::mesh->xGlobalMin[idim]-xFinal[idim];
+      if (xFinal[idim]>=PIC::Mesh::mesh->xGlobalMax[idim]) xFinal[idim]=2.0*PIC::Mesh::mesh->xGlobalMax[idim]-xFinal[idim];
+    }
+
+    uPar=-uPar;
+    newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
+  }
+#endif
+
   if (newNode==NULL){
     	//intersects with outer bounary
 #if _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__DELETE_
@@ -264,16 +279,9 @@ int PIC::Mover::Relativistic::GuidingCenter::Mover_FirstOrder(long int ptr,doubl
 #elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__PERIODIC_CONDITION_
     exit(__LINE__,__FILE__,"Error: not implemented");
 #elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__SPECULAR_REFLECTION_
-    //reflect the particle back into the domain
-    {
-      double c=0.0;
-      for (int idim=0;idim<3;idim++) c+=ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*vInit[idim];
-      for (int idim=0;idim<3;idim++) vInit[idim]-=2.0*c*ExternalBoundaryFaceTable[nIntersectionFace].norm[idim];
-      //startNode stays the same
-      //xInit stays the same
-    }
-
-    code=_PARTICLE_REJECTED_ON_THE_FACE_;
+    //the mirrored position (above) is still outside of the domain: the step is longer than the domain
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return _PARTICLE_LEFT_THE_DOMAIN_;
 #else
     exit(__LINE__,__FILE__,"Error: the option is unknown");
 #endif

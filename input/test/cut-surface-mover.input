@@ -1,0 +1,60 @@
+#main
+! Test of the force-free cut-surface mover PIC::Mover::ForceFreeCutSurface (src/pic/pic_mover_force_free_cut_surface.cpp):
+! test/srcCutSurfaceMoverTest/main.cpp ("amps [new|trajectory|simplified|direct] [nightly|stress]").
+! One species per particle class: H2O uniform gas, CO2 adversarial starts, O fast, N2 diffuse reflection, H absorption.
+SpeciesList=H2O CO2 O N2 H
+makefile SOURCES=src
+makefile RUNDIR=run
+makefile MPIRUN=mpiexec -n 1
+ExcludeModule=ELECTRON_IMPACT
+ExcludeModule=SPUTTERING
+ExcludeModule=DUST
+ExcludeModule=CHARGE_EXCHANGE
+ExcludeModule=EXOSPHERE
+ProjectSourceDirectory=test/srcCutSurfaceMoverTest
+WorkingSourceDirectory=srcTemp
+SourceDirectory=src
+ErrorLog=PT/amps_error.log
+Prefix=AMPS
+DiagnosticStream=PT
+OutputDirectory=PT/plots
+DebuggerMode=off
+ForceRepeatableSimulationPath=on
+StdoutErrorLog=on
+TimeStepMode=SpeciesGlobalTimeStep
+ParticleWeightMode=SpeciesGlobalParticleWeight
+ParticleWeightCorrectionMode=off
+CouplerMode=off
+! how an application selects the new mover (here it also sets the default of the run-time selection)
+MoverIntegratorMode=ForceFreeCutSurface
+#endmain
+
+#include species.input
+
+#General
+  defineLocation(pic/picGlobal.dfn) DIM 3
+  BlockCells=6,6,6
+  GhostCells=1,1,1
+  MaxMeshRefinmentLevel=5
+  EnforceRequestedMeshResolution=off
+  Rnd=MersenneTwister
+  NastranSurfaceUserData=on
+  ControlParticleInsideNastranSurface=off
+  InternalBoundary=on
+  RequestedParticleBufferLength=2000000
+
+  ! the test selects the mover at run time (PIC::Mover::SetUserDefinedParticleMover): the new mover or a baseline
+  define _PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ _PIC_MODE_OFF_
+
+  ! the gas is enclosed by a closed shell (a body of the scene); the boundary of the domain deletes particles
+  define _PIC_MOVER__UNKNOWN_ERROR_IN_PARTICLE_MOTION__STOP_EXECUTION_ _PIC_MODE_OFF_
+#endGeneral
+
+! Supplies the internal-surface data types without enabling an exosphere
+! source, SPICE, or any application target.
+#block ../exosphere.pl
+  SPICE=off
+  define _TARGET_ _TARGET_NONE_
+#endblock
+
+#end

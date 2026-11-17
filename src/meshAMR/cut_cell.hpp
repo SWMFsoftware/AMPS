@@ -1,8 +1,95 @@
 
+#include <map>
+#include <functional>
+#include <tuple>
+
 //procedures for meshing the cut cells
 //
 
 //create thetrahedron mesh of a cut cell
+#if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
+//the resolution N of the triangulated approximation of an internal sphere (CutCell::cSphereApproximation): from the finest
+//cell size of the leaf blocks that the sphere crosses, so that every cell sees the same surface. The tree is the same on
+//all processes, so is N; it is recomputed when the mesh changes
+template <class cCornerNode,class cCenterNode,class cBlockAMR>
+int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetSphereApproximationResolution(cInternalSphericalData* Sphere) {
+  static std::map<cInternalSphericalData*,std::pair<unsigned long int,int> > cache;
+  auto it=cache.find(Sphere);
+
+  if ((it!=cache.end())&&(it->second.first==nMeshModificationCounter)) return it->second.second;
+
+  double hmin=-1.0,R=Sphere->Radius,*x0=Sphere->OriginPosition;
+  std::function<void(cTreeNodeAMR<cBlockAMR>*)> scan;
+
+  scan=[&] (cTreeNodeAMR<cBlockAMR>* nd) -> void {
+    double dmin2=0.0,dmax2=0.0;
+
+    for (int idim=0;idim<3;idim++) {
+      double lo=nd->xmin[idim]-x0[idim],hi=nd->xmax[idim]-x0[idim];
+      if (lo>0.0) dmin2+=lo*lo;
+      else if (hi<0.0) dmin2+=hi*hi;
+      dmax2+=std::max(lo*lo,hi*hi);
+    }
+
+    if ((dmin2>R*R)||(dmax2<R*R)) return;  //the sphere does not cross the node
+
+    if (nd->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+      double h=std::min((nd->xmax[0]-nd->xmin[0])/_BLOCK_CELLS_X_,std::min((nd->xmax[1]-nd->xmin[1])/_BLOCK_CELLS_Y_,(nd->xmax[2]-nd->xmin[2])/_BLOCK_CELLS_Z_));
+      if ((hmin<0.0)||(h<hmin)) hmin=h;
+      return;
+    }
+
+    for (int i=0;i<(1<<DIM);i++) if (nd->downNode[i]!=NULL) scan(nd->downNode[i]);
+  };
+
+  if (rootTree!=NULL) scan(rootTree);
+
+  int N=(hmin>0.0) ? CutCell::cSphereApproximation::Resolution(R,hmin) : 4;
+  cache[Sphere]=std::make_pair(nMeshModificationCounter,N);
+  return N;
+}
+
+//the exact decomposition of the cell (icell,jcell,kcell) of 'node' by the internal boundaries: the triangulated surface
+//(the cut faces of the block) and the analytic spheres (CutCell::GetCutCellTetrahedra())
+template <class cCornerNode,class cCenterNode,class cBlockAMR>
+int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutCellDecomposition(int icell,int jcell,int kcell,cTreeNodeAMR<cBlockAMR>* node,
+    std::vector<CutCell::cCutCellTetrahedron>* Outside,std::vector<CutCell::cCutCellTetrahedron>* Inside,double* OutsideVolume,double* InsideVolume) {
+  double xCellMin[3],xCellMax[3];
+  std::vector<CutCell::cSphereApproximation> spheres;
+
+  xCellMin[0]=node->xmin[0]+icell*(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_;
+  xCellMin[1]=node->xmin[1]+jcell*(node->xmax[1]-node->xmin[1])/_BLOCK_CELLS_Y_;
+  xCellMin[2]=node->xmin[2]+kcell*(node->xmax[2]-node->xmin[2])/_BLOCK_CELLS_Z_;
+  xCellMax[0]=node->xmin[0]+(icell+1)*(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_;
+  xCellMax[1]=node->xmin[1]+(jcell+1)*(node->xmax[1]-node->xmin[1])/_BLOCK_CELLS_Y_;
+  xCellMax[2]=node->xmin[2]+(kcell+1)*(node->xmax[2]-node->xmin[2])/_BLOCK_CELLS_Z_;
+
+  for (auto bc=InternalBoundaryList.begin();bc!=InternalBoundaryList.end();bc++) {
+    switch (bc->BondaryType) {
+    case _INTERNAL_BOUNDARY_TYPE_SPHERE_: {
+      cInternalSphericalData* Sphere=(cInternalSphericalData*)(bc->BoundaryElement);
+
+      spheres.push_back(CutCell::cSphereApproximation(Sphere->OriginPosition,Sphere->Radius,GetSphereApproximationResolution(Sphere)));
+      break;
+    }
+    case _INTERNAL_BOUNDARY_TYPE_NASTRAN_SURFACE_:
+      break;   //the triangulated surface: the cut faces of the block
+    default: {
+      //(a body of rotation is not represented in the cut-cell tetrahedra; the old procedure did not represent it either)
+      static bool warned=false;
+
+      if ((warned==false)&&(ThisThread==0)) {
+        printf("$PREFIX: GetCutCellDecomposition(): internal boundary type %i is not represented in the cut-cell tetrahedra (%s@%i)\n",bc->BondaryType,__FILE__,__LINE__);
+        warned=true;
+      }
+    }
+    }
+  }
+
+  return CutCell::GetCutCellTetrahedra(xCellMin,xCellMax,node->FirstTriangleCutFace,spheres,EPS,Outside,Inside,OutsideVolume,InsideVolume);
+}
+#endif
+
 #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
 template <class cCornerNode,class cCenterNode,class cBlockAMR>
 int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMesh(list<cTetrahedron> &TetrahedronList,int icell,int jcell,int kcell,cTreeNodeAMR<cBlockAMR>* node) {
@@ -22,6 +109,71 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
   const int _cut=1;
 
   cBlockAMR* block=node->block;
+
+  /* The exact decomposition of the cell by all internal boundaries (GetCutCellDecomposition(): the triangulated surface
+   * and the analytic spheres).  The old procedure below builds the tetrahedra from the corners of the cell and one cut
+   * point per edge; it misplaced tetrahedra when an edge is cut twice (it treated an edge that crosses a sphere twice as
+   * not cut, and removed a cell whose edge two spheres cut), when a face of the surface passes through a corner or an
+   * edge of the cell, when several faces cut the cell, or when the surface crosses fewer than two faces of the cell
+   * (such a cell was written as a full brick); the classification of a corner depended on the face that was tested
+   * last, and it assumed a sphere centered at the origin. */
+  //AMPS_CUTCELL_TETRA_LEGACY=1 selects the old procedure (used by test/srcCutCellTetraTest to document its defects)
+  static const bool UseLegacyProcedure=(getenv("AMPS_CUTCELL_TETRA_LEGACY")!=NULL)&&(atoi(getenv("AMPS_CUTCELL_TETRA_LEGACY"))!=0);
+
+  if (UseLegacyProcedure==false) {
+    //the decomposition of a cell depends only on the geometry: it is kept for the later calls (every output file of every
+    //species, and the loops of the applications) until the mesh or the internal boundaries change
+    struct cNodeCache {std::vector<signed char> status; std::vector<std::vector<CutCell::cCutCellTetrahedron> > tets;};
+    struct cCacheKey {
+      unsigned long int MeshModificationCounter;
+      CutCell::cTriangleFace *Faces;
+      int nFaces;
+      std::vector<double> Spheres;
+      bool operator==(const cCacheKey& k) const {return (MeshModificationCounter==k.MeshModificationCounter)&&(Faces==k.Faces)&&(nFaces==k.nFaces)&&(Spheres==k.Spheres);}
+    };
+    static std::map<cTreeNodeAMR<cBlockAMR>*,cNodeCache> cache;
+    static cCacheKey cacheKey={0,NULL,-1,std::vector<double>()};
+    cCacheKey key={nMeshModificationCounter,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,std::vector<double>()};
+
+    for (auto bc=InternalBoundaryList.begin();bc!=InternalBoundaryList.end();bc++) if (bc->BondaryType==_INTERNAL_BOUNDARY_TYPE_SPHERE_) {
+      cInternalSphericalData* Sphere=(cInternalSphericalData*)(bc->BoundaryElement);
+      for (int idim=0;idim<3;idim++) key.Spheres.push_back(Sphere->OriginPosition[idim]);
+      key.Spheres.push_back(Sphere->Radius);
+    }
+
+    if (!(key==cacheKey)) cache.clear(),cacheKey=key;
+
+    const int nCells=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_,nCell=icell+_BLOCK_CELLS_X_*(jcell+_BLOCK_CELLS_Y_*kcell);
+    cNodeCache& c=cache[node];
+
+    if (c.status.empty()) c.status.assign(nCells,-1),c.tets.resize(nCells);
+
+    if (c.status[nCell]<0) {
+      std::vector<CutCell::cCutCellTetrahedron> outside;
+
+      switch (GetCutCellDecomposition(icell,jcell,kcell,node,&outside,NULL)) {
+      case CutCell::_cut_cell__outside_:
+        c.status[nCell]=_complete_cell;
+        break;
+      case CutCell::_cut_cell__inside_:
+        c.status[nCell]=_removed_cell;
+        break;
+      default:
+        c.status[nCell]=_sucess;
+        c.tets[nCell].swap(outside);
+      }
+    }
+
+    if (c.status[nCell]==_sucess) for (size_t n=0;n<c.tets[nCell].size();n++) {
+      cTetrahedron tetra;
+
+      for (int iv=0;iv<4;iv++) for (int idim=0;idim<3;idim++) tetra.x[iv][idim]=c.tets[nCell][n].x[iv][idim];
+      tetra.Node=node;
+      TetrahedronList.push_back(tetra);
+    }
+
+    return c.status[nCell];
+  }
 
   const int nConnectionsMax=20;
   const int blNodeListLengthMax=20;
@@ -958,9 +1110,32 @@ void cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::PrintTetrahedronMeshDat
     rootTree->block->PrintVariableList(fout);
   }
 
-  fprintf(fout,"\nZONE N=%ld, E=%ld, F=FEPOINT, ET=TETRAHEDRON\n",4*TetrahedronList.size(),TetrahedronList.size());
+  //the points: the vertices that the tetrahedra of a block share (the same coordinates, bit for bit) are printed once, with
+  //the data interpolated in that block
+  vector<pair<double*,cTreeNodeAMR<cBlockAMR>*> > points;
+  {
+    std::map<std::tuple<double,double,double>,int> index;
+    cTreeNodeAMR<cBlockAMR>* indexNode=NULL;
 
-  //print the data and count the nodeds
+    for (it=TetrahedronList.begin();it!=TetrahedronList.end();it++) {
+      if (it->Node!=indexNode) index.clear(),indexNode=it->Node;
+
+      for (i=0;i<4;i++) {
+        std::tuple<double,double,double> key(it->x[i][0],it->x[i][1],it->x[i][2]);
+        auto p=index.find(key);
+
+        if (p!=index.end()) it->id[i]=p->second;
+        else {
+          points.push_back(make_pair(it->x[i],it->Node));
+          it->id[i]=index[key]=(int)points.size();
+        }
+      }
+    }
+  }
+
+  fprintf(fout,"\nZONE N=%ld, E=%ld, F=FEPOINT, ET=TETRAHEDRON\n",(long)points.size(),(long)TetrahedronList.size());
+
+  //print the data of the points
   cCenterNode *tempCenterNode=CenterNodes.newElement(); 
 
   const int nMaxCenterInterpolationCoefficients=64;
@@ -968,47 +1143,45 @@ void cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::PrintTetrahedronMeshDat
   double CenterNodeInterpolationCoefficients[nMaxCenterInterpolationCoefficients];
   int centerNodeInterpolationStencilLength;
 
-  
-  for (cnt=1,it=TetrahedronList.begin();it!=TetrahedronList.end();it++) {
+  for (size_t np=0;np<points.size();np++) {
+    const double *x=points[np].first;
+    cTreeNodeAMR<cBlockAMR>* Node=points[np].second;
+
     //location of the point
-    for (i=0;i<4;i++) {
-      fprintf(fout," %e  %e  %e  ",it->x[i][0],it->x[i][1],it->x[i][2]);
+    fprintf(fout," %e  %e  %e  ",x[0],x[1],x[2]);
 
-      it->id[i]=cnt++;
+    int MaxRefinmentLevel=0; //CornerNode->nodeDescriptor.maxRefinmentLevel;
+    int NodeTempID=0; //CornerNode->Temp_ID;
 
-      int MaxRefinmentLevel=0; //CornerNode->nodeDescriptor.maxRefinmentLevel;
-      int NodeTempID=0; //CornerNode->Temp_ID;
+    fprintf(fout,"%d  %d %i  ",MaxRefinmentLevel,NodeTempID,Node->Thread);
 
-      fprintf(fout,"%d  %d %i  ",MaxRefinmentLevel,NodeTempID,it->Node->Thread);
+    //interpolated values 
+    double xNode[3]={x[0],x[1],x[2]}; 
 
-      //interpolated values 
-      double xNode[3]={it->x[i][0],it->x[i][1],it->x[i][2]}; 
+    tempCenterNode->SetX(xNode);
 
-      tempCenterNode->SetX(xNode);
-
-      if (GetCenterNodesInterpolationCoefficients==NULL) {
-        switch(_MESH_DIMENSION_) {
-        case 1:
-          centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_1D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,it->Node,nMaxCenterInterpolationCoefficients);
-          break;
-        case 2:
-          centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_2D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,it->Node,nMaxCenterInterpolationCoefficients);
-          break;
-        case 3:
-          centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_3D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,it->Node,nMaxCenterInterpolationCoefficients);
-        }
+    if (GetCenterNodesInterpolationCoefficients==NULL) {
+      switch(_MESH_DIMENSION_) {
+      case 1:
+        centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_1D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,Node,nMaxCenterInterpolationCoefficients);
+        break;
+      case 2:
+        centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_2D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,Node,nMaxCenterInterpolationCoefficients);
+        break;
+      case 3:
+        centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_3D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,Node,nMaxCenterInterpolationCoefficients);
       }
-      else {
-        centerNodeInterpolationStencilLength=GetCenterNodesInterpolationCoefficients(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,it->Node,nMaxCenterInterpolationCoefficients);
-      }
-
-      tempCenterNode->Interpolate(CenterNodeInterpolationStencil,CenterNodeInterpolationCoefficients,centerNodeInterpolationStencilLength);
-      tempCenterNode->PrintData(fout,DataSetNumber,NULL,it->Node->Thread);
-
-      it->Node->block->PrintData(fout,DataSetNumber,NULL,it->Node->Thread);
-
-      fprintf(fout,"\n");
     }
+    else {
+      centerNodeInterpolationStencilLength=GetCenterNodesInterpolationCoefficients(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,Node,nMaxCenterInterpolationCoefficients);
+    }
+
+    tempCenterNode->Interpolate(CenterNodeInterpolationStencil,CenterNodeInterpolationCoefficients,centerNodeInterpolationStencilLength);
+    tempCenterNode->PrintData(fout,DataSetNumber,NULL,Node->Thread);
+
+    Node->block->PrintData(fout,DataSetNumber,NULL,Node->Thread);
+
+    fprintf(fout,"\n");
   }
   
   CenterNodes.deleteElement(tempCenterNode);

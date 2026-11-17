@@ -25,8 +25,12 @@ CUTOFF_EMIN            1.0          ! MeV/n
 CUTOFF_EMAX            20000.0       ! MeV/n
 CUTOFF_MAX_PARTICLES   500              ! per injection point
 CUTOFF_NENERGY         50               ! log-spaced energy bins
-CUTOFF_MAX_TRAJ_TIME   600               ! sec — max trajectory integration time
-CUTOFF_SAMPLING        ISOTROPIC           ! VERTICAL or ISOTROPIC
+CUTOFF_MAX_TRAJ_TIME   20                ! sec — max trajectory integration time
+! Nightly size (2026-11): vertical cutoffs on a 15-deg shell (24 x 13 = 312 locations, ~20 s on 8 ranks).
+! The former ISOTROPIC 500-direction 5-deg map (2664 x 500 tasks) did not fit the nightly, and its
+! reference (Rc = 1 MeV at GEO latitudes of +-20 deg) was unphysical.  The 20 s cap bounds the trapped
+! orbits; 1 MeV protons on open polar field lines reach the Z=+-20 Re faces in about 10 s.
+CUTOFF_SAMPLING        VERTICAL            ! VERTICAL or ISOTROPIC
 
 
 #PARTICLE_SPECIES
@@ -72,7 +76,7 @@ OUTPUT_MODE            SHELLS
 FLUX_DT                1.0           ! min (trajectory cadence; ignored for POINTS/SHELLS)
 SHELL_COUNT            1                 ! number of shells
 SHELL_ALTS_KM          400            ! km; one altitude per shell
-SHELL_RES_DEG          5                 ! deg; angular resolution (lat/lon)
+SHELL_RES_DEG          15                ! deg; angular resolution (lat/lon)
 
 #OUTPUT_OPTIONS
 FLUX_TYPE              DIFFERENTIAL

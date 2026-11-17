@@ -20,7 +20,8 @@
 //reduce the mesh resolution for the nightly tests
 #define _ORBITER__NIGHTLY_TEST_REDUCE_RESOLUTION_MODE_ _PIC_MODE_ON_
 
-//TEMPORARY: execute new tests
+//the drag-coefficient test (DragCoefficientTest in main.cpp): one case of the runtime input ("amps -i FILE -case NAME",
+//OrbiterRuntimeInput.h), whose 'run.iterations' sets the length of the run
 #ifndef _ORBITER_EXECUTE_NEW_TEST_
 #define _ORBITER_EXECUTE_NEW_TEST_ _PIC_MODE_OFF_
 #endif

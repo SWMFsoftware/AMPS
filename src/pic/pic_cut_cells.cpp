@@ -2,10 +2,89 @@
 //the set of function for processing of the cut-cells and cut-faces of the internal irregular surfaces
 
 #include "pic.h"
+#include <map>
+#include <vector>
 
 int PIC::Mesh::IrregularSurface::nCutFaceInformationCopyAttempts=0; 
 
-void PIC::Mesh::IrregularSurface::InitExternalNormalVector() {
+/* Make the external normals of a closed, consistently wound surface consistent with each other.
+ * InitExternalNormalVector() orients every face by the parity of the crossings of one ray from its center; a ray that
+ * passes within the tolerance of an edge or a vertex of the surface can be counted wrong, and the face then gets an
+ * inward normal (test/srcCutCellTetraTest found 11 of the 2264 faces of the test-1853-shape surface inverted on its mesh).
+ * Particles cross such a face undetected (the movers test only the faces they move toward, dot(v,n)<0), and the cut cells
+ * next to it are classified on the wrong side.  When every edge of the surface is shared by exactly two faces that traverse
+ * it in opposite directions, the orientation of the vertex order is consistent over each connected part of the surface:
+ * the normals of a part are then set from the vertex order with the sign that the majority of its ray tests gave.
+ * Otherwise (an open or inconsistently wound surface) the ray tests are kept.  Returns the number of corrected faces. */
+namespace {
+int OrientExternalNormalsByConnectivity() {
+  using namespace PIC::Mesh::IrregularSurface;
+  const int nFaces=nBoundaryTriangleFaces;
+  if (nFaces==0) return 0;
+
+  //the directed edges of the vertex order
+  std::map<std::pair<void*,void*>,int> directed;
+  for (int nface=0;nface<nFaces;nface++) for (int k=0;k<3;k++) {
+    std::pair<void*,void*> e((void*)BoundaryTriangleFaces[nface].node[k],(void*)BoundaryTriangleFaces[nface].node[(k+1)%3]);
+    if (directed.find(e)!=directed.end()) return 0;   //an edge traversed twice in the same direction
+    directed[e]=nface;
+  }
+
+  //every edge must have its opposite; the faces are connected through the edges
+  std::vector<int> part(nFaces,-1);
+  int nParts=0;
+
+  for (int seed=0;seed<nFaces;seed++) if (part[seed]<0) {
+    std::vector<int> stack(1,seed);
+    part[seed]=nParts;
+
+    while (!stack.empty()) {
+      int nface=stack.back();
+      stack.pop_back();
+
+      for (int k=0;k<3;k++) {
+        std::pair<void*,void*> opposite((void*)BoundaryTriangleFaces[nface].node[(k+1)%3],(void*)BoundaryTriangleFaces[nface].node[k]);
+        std::map<std::pair<void*,void*>,int>::iterator it=directed.find(opposite);
+        if (it==directed.end()) return 0;   //an open edge
+        if (part[it->second]<0) part[it->second]=nParts,stack.push_back(it->second);
+      }
+    }
+
+    nParts++;
+  }
+
+  //the majority sign of each part: dot(normal of the vertex order, ray-tested normal)
+  std::vector<long> votes(nParts,0);
+  std::vector<double> w(3*nFaces);
+
+  for (int nface=0;nface<nFaces;nface++) {
+    cTriangleFace *f=BoundaryTriangleFaces+nface;
+    double e1[3],e2[3],l;
+    for (int d=0;d<3;d++) e1[d]=f->x1Face[d]-f->x0Face[d],e2[d]=f->x2Face[d]-f->x0Face[d];
+    w[3*nface]=e1[1]*e2[2]-e1[2]*e2[1],w[3*nface+1]=e1[2]*e2[0]-e1[0]*e2[2],w[3*nface+2]=e1[0]*e2[1]-e1[1]*e2[0];
+    l=sqrt(w[3*nface]*w[3*nface]+w[3*nface+1]*w[3*nface+1]+w[3*nface+2]*w[3*nface+2]);
+    if (l>0.0) for (int d=0;d<3;d++) w[3*nface+d]/=l;
+    votes[part[nface]]+=(w[3*nface]*f->ExternalNormal[0]+w[3*nface+1]*f->ExternalNormal[1]+w[3*nface+2]*f->ExternalNormal[2]>0.0) ? 1 : -1;
+  }
+
+  int nCorrected=0;
+
+  for (int nface=0;nface<nFaces;nface++) {
+    cTriangleFace *f=BoundaryTriangleFaces+nface;
+    double sign=(votes[part[nface]]>=0) ? 1.0 : -1.0;
+    double dot=w[3*nface]*f->ExternalNormal[0]+w[3*nface+1]*f->ExternalNormal[1]+w[3*nface+2]*f->ExternalNormal[2];
+
+    if (dot*sign<0.0) {
+      for (int d=0;d<3;d++) f->ExternalNormal[d]=-f->ExternalNormal[d];
+      nCorrected++;
+    }
+  }
+
+  return nCorrected;
+}
+}
+
+void PIC::Mesh::IrregularSurface::InitExternalNormalVector(bool UseSavedFile) {
   //calculate external normals to the faces
   double xStart[3],xFinish[3],l,l0,*norm;
   long int nface;
@@ -27,7 +106,7 @@ void PIC::Mesh::IrregularSurface::InitExternalNormalVector() {
   TriangulationSignature=CutCell::GetTriangulationSignature();
   sprintf(fname,"amr.sig=0x%lx.TriangulationExternalNormalVector.bin",TriangulationSignature);
 
-  fExternalVectorFile=fopen(fname,"r");
+  fExternalVectorFile=(UseSavedFile==true) ? fopen(fname,"r") : NULL;
 
   if (fExternalVectorFile!=NULL) {
     //the binary file containing the external normal information exists -> load it
@@ -41,8 +120,12 @@ void PIC::Mesh::IrregularSurface::InitExternalNormalVector() {
     }
 
     fclose(fExternalVectorFile);
+
+    //a file saved before the consistency correction can hold inverted normals
+    int nCorrected=OrientExternalNormalsByConnectivity();
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
     if (PIC::ThisThread==0) {
+      if (nCorrected!=0) printf("(%i normals made consistent with their neighbors) ",nCorrected);
       printf("done\n");
       fflush(stdout);
     }
@@ -68,6 +151,11 @@ void PIC::Mesh::IrregularSurface::InitExternalNormalVector() {
   double lDomain=2.0*sqrt(pow(PIC::Mesh::mesh->xGlobalMax[0]-PIC::Mesh::mesh->xGlobalMin[0],2)+
       pow(PIC::Mesh::mesh->xGlobalMax[1]-PIC::Mesh::mesh->xGlobalMin[1],2)+
       pow(PIC::Mesh::mesh->xGlobalMax[2]-PIC::Mesh::mesh->xGlobalMin[2],2));
+
+  //allocate the cut-face access counters before the parallel loop: CountFaceIntersectionNumber() calls
+  //CutFaceAccessCounter::IncrementCounter(), whose lazy Init() run by several OpenMP threads at once allocated and
+  //deleted the shared tables concurrently (SIGSEGV in IncrementCounter in hybrid builds)
+  PIC::Mesh::IrregularSurface::CutFaceAccessCounter::Init();
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #pragma omp parallel for schedule(dynamic,1) default (none) shared(nStartFace,nFinishFace,BoundaryTriangleFaces,lDomain) \
@@ -131,6 +219,10 @@ void PIC::Mesh::IrregularSurface::InitExternalNormalVector() {
   }
 
   delete [] sendBuffer;
+
+  //the orientation of the faces whose ray test was ambiguous is corrected (the same on all processes)
+  int nCorrected=OrientExternalNormalsByConnectivity();
+  if ((PIC::ThisThread==0)&&(nCorrected!=0)) printf("(%i normals made consistent with their neighbors) ",nCorrected);
 
   //save a file with the external normals for the future use
   if (PIC::ThisThread==0) {

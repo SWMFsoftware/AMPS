@@ -53,26 +53,28 @@ void OH::Coupling::Send(char *NameVar, int *nVarIn, int *nDimIn, int *nPoint, do
       Data_VI[fluid_data_offset+2+momentum_offset+pt*(*nVarIn)]=0.0;
       Data_VI[fluid_data_offset+energy_offset   +pt*(*nVarIn)]=0.0;
 
+      //interpolate the sampled source terms to the point: sum over the stencil cells (the values are
+      //initialized with zero above; the loop assigned them, so only the last stencil cell's weighted value was sent)
       if (PIC::LastSampleLength!=0) for (int icell=0; icell<CenterBasedStencil.Length; icell++) {
         AssociatedDataPointer=CenterBasedStencil.cell[icell]->GetAssociatedDataBufferPointer();
         weight=CenterBasedStencil.Weight[icell];  
 
         // copy density source
-        Data_VI[fluid_data_offset+density_offset+pt*(*nVarIn)]=
+        Data_VI[fluid_data_offset+density_offset+pt*(*nVarIn)]+=
           weight*(*(ifluid+(double*)(AssociatedDataPointer+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Output::ohSourceDensityOffset)))/PIC::LastSampleLength;
 
         // copy momentum source
-        Data_VI[fluid_data_offset+0+momentum_offset+pt*(*nVarIn)]=
+        Data_VI[fluid_data_offset+0+momentum_offset+pt*(*nVarIn)]+=
           weight*(*(0+3*ifluid+(double*)(AssociatedDataPointer+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Output::ohSourceMomentumOffset)))/PIC::LastSampleLength;
 
-        Data_VI[fluid_data_offset+1+momentum_offset+pt*(*nVarIn)]=
+        Data_VI[fluid_data_offset+1+momentum_offset+pt*(*nVarIn)]+=
           weight*(*(1+3*ifluid+(double*)(AssociatedDataPointer+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Output::ohSourceMomentumOffset)))/PIC::LastSampleLength;
 
-        Data_VI[fluid_data_offset+2+momentum_offset+pt*(*nVarIn)]=
+        Data_VI[fluid_data_offset+2+momentum_offset+pt*(*nVarIn)]+=
           weight*(*(2+3*ifluid+(double*)(AssociatedDataPointer+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Output::ohSourceMomentumOffset)))/PIC::LastSampleLength;
 
         // copy energy source
-        Data_VI[fluid_data_offset+energy_offset+pt*(*nVarIn)]=
+        Data_VI[fluid_data_offset+energy_offset+pt*(*nVarIn)]+=
           weight*(*(ifluid+(double*)(AssociatedDataPointer+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Output::ohSourceEnergyOffset)))/PIC::LastSampleLength;
 
 

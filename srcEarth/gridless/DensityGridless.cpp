@@ -297,6 +297,38 @@ static double DensityGridless_MaximumAllowedWeight(
                                   prm.anisotropy.nightsideFactor,spatialNorm);
 }
 
+// Schedule-independent sum of the allowed weights of the direction blocks.
+//
+// With the DYNAMIC MPI scheduler, which direction blocks a rank computes and the
+// order in which it adds them depend on timing.  A floating-point sum of anisotropy
+// weights (|cos alpha|^n, sin^n alpha) then depends on that grouping in its last bits,
+// and so do T(E), the density and the flux, so two runs of the same deck could differ.
+// Each block sum (itself a fixed-order sum over its directions) is therefore added in a
+// 64-bit fixed-point representation: integer addition is associative, so the rank-local
+// sums and the MPI_SUM reduction are exact and independent of the schedule.  The scale
+// 2^exponent is the largest that keeps N_dirs*maxWeight*2^exponent below 2^62; weights
+// that are multiples of 2^-exponent (0/1 for ISOTROPIC, the dayside/nightside factors)
+// are represented exactly, others are rounded at 2^-exponent (about 1e-16 of a unit
+// weight for the default 1152 directions).
+struct DensityGridless_FixedPointWeight {
+  int exponent=0;
+  long long ToFixed(double w) const { return std::llround(std::ldexp(w,exponent)); }
+  double ToDouble(long long v) const { return std::ldexp(static_cast<double>(v),-exponent); }
+};
+
+static DensityGridless_FixedPointWeight DensityGridless_MakeFixedPointWeight(
+    double maximumAllowedWeight,int nDirs) {
+  DensityGridless_FixedPointWeight f;
+  double bound=std::max(1.0,maximumAllowedWeight)*static_cast<double>(std::max(1,nDirs));
+  // A non-finite weight bound cannot occur for the implemented PAD/spatial models; keep a
+  // conservative scale (2^-30 resolution, sums up to 2^32) instead of overflowing.
+  if (!std::isfinite(bound)) bound=std::ldexp(1.0,32);
+  int e=0;
+  std::frexp(bound,&e);  // bound < 2^e
+  f.exponent=std::max(0,62-e);
+  return f;
+}
+
 // --- Field model dependencies (match CutoffRigidityGridless.cpp) ----------------------
 // We intentionally use the *same* access pattern as the gridless cutoff solver to avoid
 // link-time mismatches across platforms/compilers:
@@ -1471,7 +1503,11 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
       std::cout.flush();
     }
 
-    std::vector<double> partialWeightLocal((size_t)nPoints*(size_t)nE,0.0);
+    // Allowed weights in schedule-independent fixed point (see
+    // DensityGridless_FixedPointWeight); counts are integers already.
+    const DensityGridless_FixedPointWeight fixedWeight=
+        DensityGridless_MakeFixedPointWeight(maximumAllowedWeight,nDirs);
+    std::vector<long long> partialWeightLocal((size_t)nPoints*(size_t)nE,0);
     std::vector<int>    dirsDoneLocal     ((size_t)nPoints*(size_t)nE,0);
     std::vector<int>    resolvedLocal     ((size_t)nPoints*(size_t)nE,0);
     std::vector<int>    retriedLocal      ((size_t)nPoints*(size_t)nE,0);
@@ -1530,7 +1566,7 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
 
     auto AccumulateTaskResult = [&](const DensityTaskResult_& result) {
       const size_t flat=result.flat;
-      partialWeightLocal[flat] += result.block.weightSum;
+      partialWeightLocal[flat] += fixedWeight.ToFixed(result.block.weightSum);
       dirsDoneLocal[flat] += result.block.sampled;
       resolvedLocal[flat] += result.block.resolved;
       retriedLocal[flat] += result.block.retried;
@@ -1673,13 +1709,13 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
     MPI_Barrier(MPI_COMM_WORLD);
     if (mpiRank == 0) prog.finish(totalTasks);
 
-    std::vector<double> partialWeightRoot;
+    std::vector<long long> partialWeightRoot;
     std::vector<int>    dirsDoneRoot;
     std::vector<int>    resolvedRoot;
     std::vector<int>    retriedRoot;
     std::vector<int>    terminationRoot;
     if (mpiRank==0) {
-      partialWeightRoot.assign(partialWeightLocal.size(),0.0);
+      partialWeightRoot.assign(partialWeightLocal.size(),0);
       dirsDoneRoot.assign(dirsDoneLocal.size(),0);
       resolvedRoot.assign(resolvedLocal.size(),0);
       retriedRoot.assign(retriedLocal.size(),0);
@@ -1689,7 +1725,7 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
     MPI_Reduce(partialWeightLocal.data(),
                (mpiRank==0 ? partialWeightRoot.data() : nullptr),
                (int)partialWeightLocal.size(),
-               MPI_DOUBLE,
+               MPI_LONG_LONG,
                MPI_SUM,
                0,
                MPI_COMM_WORLD);
@@ -1735,7 +1771,7 @@ static int RunDensityAndSpectrum_POINTS(const EarthUtil::AmpsParam& prm) {
           }
           const int nResolved=resolvedRoot[flat];
           Earth::FluxNumerics::AccessAccumulator aggregate;
-          aggregate.weightSum=partialWeightRoot[flat];
+          aggregate.weightSum=fixedWeight.ToDouble(partialWeightRoot[flat]);
           aggregate.sampled=dirsDoneRoot[flat];
           aggregate.resolved=nResolved;
           aggregate.allowed=terminationRoot[flat*(size_t)kTerminationCount+
@@ -2438,7 +2474,11 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
         std::cout.flush();
       }
 
-      std::vector<double> partialWeightLocal((size_t)nPts*(size_t)nE,0.0);
+      // Allowed weights in schedule-independent fixed point (see
+      // DensityGridless_FixedPointWeight); counts are integers already.
+      const DensityGridless_FixedPointWeight fixedWeight=
+          DensityGridless_MakeFixedPointWeight(maximumAllowedWeight,nDirs);
+      std::vector<long long> partialWeightLocal((size_t)nPts*(size_t)nE,0);
       std::vector<int>    dirsDoneLocal     ((size_t)nPts*(size_t)nE,0);
       std::vector<int>    resolvedLocal     ((size_t)nPts*(size_t)nE,0);
       long long localTasks=0, localTraj=0;
@@ -2467,7 +2507,7 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
             doAnisotropic, prm.anisotropy);
 
         const size_t flat = (size_t)idx*(size_t)nE + (size_t)ie;
-        partialWeightLocal[flat] += block.weightSum;
+        partialWeightLocal[flat] += fixedWeight.ToFixed(block.weightSum);
         dirsDoneLocal[flat] += block.sampled;
         resolvedLocal[flat] += block.resolved;
         localTasks++;
@@ -2548,11 +2588,11 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
       MPI_Barrier(MPI_COMM_WORLD);
       if (mpiRank == 0) prog.finish(totalTasks);
 
-      std::vector<double> partialWeightRoot;
+      std::vector<long long> partialWeightRoot;
       std::vector<int>    dirsDoneRoot;
       std::vector<int>    resolvedRoot;
       if (mpiRank==0) {
-        partialWeightRoot.assign(partialWeightLocal.size(),0.0);
+        partialWeightRoot.assign(partialWeightLocal.size(),0);
         dirsDoneRoot.assign(dirsDoneLocal.size(),0);
         resolvedRoot.assign(resolvedLocal.size(),0);
       }
@@ -2560,7 +2600,7 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
       MPI_Reduce(partialWeightLocal.data(),
                  (mpiRank==0 ? partialWeightRoot.data() : nullptr),
                  (int)partialWeightLocal.size(),
-                 MPI_DOUBLE,
+                 MPI_LONG_LONG,
                  MPI_SUM,
                  0,
                  MPI_COMM_WORLD);
@@ -2591,7 +2631,7 @@ static int RunDensityAndSpectrum_SHELLS(const EarthUtil::AmpsParam& prm) {
               exit(__LINE__,__FILE__,msg.str().c_str());
             }
             Earth::FluxNumerics::AccessAccumulator aggregate;
-            aggregate.weightSum=partialWeightRoot[flat];
+            aggregate.weightSum=fixedWeight.ToDouble(partialWeightRoot[flat]);
             aggregate.sampled=dirsDoneRoot[flat];
             aggregate.resolved=resolvedRoot[flat];
             const Earth::FluxNumerics::AccessEstimate estimate=

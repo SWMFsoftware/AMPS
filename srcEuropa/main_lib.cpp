@@ -614,6 +614,9 @@ long int DustInjection(int spec) {
     
     //generate a particle                                                                                             
     char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
+    //the template is copied whole into the new particle: zero it, so that the fields not set below (and the
+    //flag bits of the species byte, which SetI() keeps) do not carry stack garbage
+    memset(tempParticleData,0,PIC::ParticleBuffer::ParticleDataLength);
     PIC::ParticleBuffer::SetI(spec,(PIC::ParticleBuffer::byte*)tempParticleData);
 
     if (SourceProcessID==_EXOSPHERE_SOURCE__ID__USER_DEFINED__Uniform_) {

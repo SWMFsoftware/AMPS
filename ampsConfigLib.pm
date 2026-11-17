@@ -127,11 +127,7 @@ sub AddMacro {
   my $Value=$_[1];
   my $File=$_[2];
   
-  open (FILEIN,">>$ampsConfigLib::WorkingSourceDirectory/$File") || die "Cannot open file $ampsConfigLib::WorkingSourceDirectory/$File\n";   
-
-  print FILEIN  "//The following changes are added while reading input file. [".POSIX::strftime("%m/%d/%Y", localtime)."]\n";
-  print FILEIN "#undef $Macro\n#define $Macro $Value\n\n";
-  close (FILEIN);
+  InsertText2File("//The following changes are added while reading input file. [".POSIX::strftime("%m/%d/%Y", localtime)."]\n#undef $Macro\n#define $Macro $Value\n\n",$File);
 }
   
 #=============================== Change a value of a array in the code  =============================
@@ -295,11 +291,95 @@ sub AddLine2File {
   my $fname=$_[1];
   my $newline=$_[0];
   
-  open (EDITFILE,">>$ampsConfigLib::WorkingSourceDirectory/$fname") || die "Cannot open file $ampsConfigLib::WorkingSourceDirectory/$fname\n";
+  InsertText2File("//The following changes are added while reading input file. [".POSIX::strftime("%m/%d/%Y", localtime)."]\n$newline\n",$fname);
+}
 
-  print EDITFILE  "//The following changes are added while reading input file. [".POSIX::strftime("%m/%d/%Y", localtime)."]\n";
-  print EDITFILE "$newline\n";
-  close(EDITFILE);
+#=============================== Add text to a header of the build tree  =============================
+# The settings of the application input are written into the build copies of the headers (picGlobal.dfn,
+# Exosphere.dfn, meshAMRdef.h, ...).  Text appended after the #endif that closes a header's include guard is
+# applied again by every repeated #include of the header (meshAMRcutcell.h and Exosphere.h include
+# picGlobal.dfn after pic.h, for example).  In the middle of a translation unit it then undoes whatever was set
+# in between, e.g. the nightly-test settings, and the code before and after that point, or different
+# translation units, are compiled with different values of the same macro.  InsertText2File therefore puts
+# the text, in the order of the calls,
+#   - before the line that contains $MARKER:APPLICATION-SETTINGS$ (picGlobal.dfn: the nightly-test settings
+#     that follow the marker take precedence over the application input), otherwise
+#   - before the #endif that closes the file's include guard (#ifndef X / #define X ... #endif), otherwise
+#   - at the end of the file (no include guard: as before; a missing file is created, as by the former '>>').
+sub InsertText2File {
+  my $Text=$_[0];
+  my $File=$_[1];
+  my $Path="$ampsConfigLib::WorkingSourceDirectory/$File";
+  my @FileContent;
+
+  if (! -e $Path) {
+    open (FILEOUT,">>$Path") || die "Cannot open file $Path\n";
+    print FILEOUT $Text;
+    close (FILEOUT);
+    return;
+  }
+
+  open (FILEIN,"<$Path") || die "Cannot open file $Path\n";
+  @FileContent=<FILEIN>;
+  close (FILEIN);
+
+  $Text.="\n" unless ($Text=~/\n$/); #the text is followed by the guard's '#endif' line
+  splice(@FileContent,InsertionLine(\@FileContent),0,$Text);
+
+  open (FILEOUT,">$Path") || die "Cannot open file $Path\n";
+  print FILEOUT @FileContent;
+  close (FILEOUT);
+}
+
+#the index of the line before which InsertText2File places new text
+sub InsertionLine {
+  my @Lines=@{$_[0]};
+  my @Directives; #[line index, directive, argument] of the preprocessor directives and code lines, without comments
+  my $InComment=0;
+
+  for (my $i=0;$i<=$#Lines;$i++) {
+    return $i if ($Lines[$i]=~/\$MARKER:APPLICATION-SETTINGS\$/);
+  }
+
+  for (my $i=0;$i<=$#Lines;$i++) {
+    my $l=$Lines[$i];
+
+    if ($InComment) {
+      next unless ($l=~s/^.*?\*\///);
+      $InComment=0;
+    }
+
+    $l=~s/\/\*.*?\*\///g;
+    $InComment=1 if ($l=~s/\/\*.*$//);
+    $l=~s/\/\/.*$//;
+
+    if ($l=~/^\s*#\s*(\w+)\s*(.*?)\s*$/) {push(@Directives,[$i,$1,$2]);}
+    elsif ($l=~/\S/) {push(@Directives,[$i,"",""]);}
+  }
+
+  #the include guard: the last directive is #endif, its #ifndef X is followed by '#define X'
+  return scalar(@Lines) if ((scalar(@Directives)==0)||($Directives[-1][1] ne "endif"));
+
+  my $depth=0;
+
+  for (my $n=$#Directives;$n>=0;$n--) {
+    my $d=$Directives[$n][1];
+
+    if ($d eq "endif") {$depth++;}
+    elsif (($d eq "if")||($d eq "ifdef")||($d eq "ifndef")) {$depth--;}
+
+    if ($depth==0) {
+      my ($Guard)=split(' ',$Directives[$n][2]);
+
+      if (($d eq "ifndef")&&(defined $Guard)&&($n<$#Directives)&&($Directives[$n+1][1] eq "define")&&($Directives[$n+1][2] eq $Guard)) {
+        return $Directives[-1][0];
+      }
+
+      last;
+    }
+  }
+
+  return scalar(@Lines);
 }
 
 1;

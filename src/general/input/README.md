@@ -35,6 +35,8 @@ stay free of PIC/MPI/application headers can use it by adding
 |---|---|
 | `srcMoon/MoonInput.cpp` | flat `application: moon` runtime block and Moon-owned value validation |
 | `srcHartley2/CometRuntimeInput.cpp` | generic comet runtime block, named-case selection, MPI-consistency check and model installation |
+| `srcOrbiter/OrbiterRuntimeInput.cpp` | `application: orbiter` of the sphere drag-coefficient test: named cases (`-i FILE -case NAME`), MPI-consistency check |
+| `src/models/surface/Surface_runtime_input.cpp` | `physics: gas_surface_interaction`: run-time selection of the gas-surface interaction model and its per-species parameters |
 | `srcSEP3D/runtime/configuration_io.cpp` | complete srcSEP3D input (`kSrcSep3dLayout`) |
 | `srcSEP/util/sep_initialization.cpp` | complete srcSEP input (`kSrcSepLayout`) |
 | `src/models/sep_corona_swcme/shock_front/configuration.cpp` | reduced shock-front event (`physics: shock_front`) |

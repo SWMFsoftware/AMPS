@@ -36,7 +36,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from . import makefile_runner, procs, transfer, workspace
 from .machines import Config, Machine
-from .plan import RUN, SKIP, Item, SourcePlan, apply_rules, machine_vars, plan
+from .plan import RUN, SKIP, Item, SourcePlan, apply_rules, machine_vars, makefile_item, plan
 from .readers import READERS, ReadContext, ResultsUnavailable, one_line
 from .records import make_run_id, unique_rows, utc_text, write_run_dir
 from .registry import UNASSIGNED, Registry
@@ -362,9 +362,7 @@ class Night:
         elif source.kind == "makefile":
             try:
                 found = makefile_runner.manifest(ws, self.machine, env, self.log)
-                items = [Item(family or UNASSIGNED, name, SKIP if code == "SKIP" else RUN,
-                              "ExeptionCode=SKIP in MakefileTest/Table for this compiler" if code == "SKIP" else "")
-                         for name, family, code in found]
+                items = [makefile_item(name, family, code) for name, family, code in found]
                 apply_rules(items, source, self.machine, config, self.routine, self.local_start.date())
                 if self.tests:
                     items = [i for i in items if any(fnmatch.fnmatchcase(i.test, g) for g in self.tests)]

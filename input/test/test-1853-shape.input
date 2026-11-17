@@ -58,7 +58,7 @@ ParticleWeightCorrectionMode=on
 #include species.input
 
 #General
-  ReferenceInjectionParticleNumber=20000
+  ReferenceInjectionParticleNumber=5000 !20000 until 2026-11; fewer particles for a nightly-length run
   MaxMeshRefinmentLevel=6 !2 !4
   EnforceRequestedMeshResolution=off !on,off
 
@@ -91,6 +91,9 @@ ParticleWeightCorrectionMode=on
 
   OutputMode=DistributedFiles !!SingleFile !SingleFile,DistributedFiles
   define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) PIC::Mover::TrajectoryTrackingMover(ptr,LocalTimeStep,node)
+
+  !the nightly test: the volume output out=5 (checked) is written after 310 iterations
+  define _PIC_NIGHTLY_TEST__TOTAL_ITERATION_NUMBER_ 320
 #endGeneral
 
 
@@ -117,9 +120,11 @@ ParticleWeightCorrectionMode=on
   
  !MeshSignature=0xb3422242b9bcb538
 
+  !the upstream boundary (x max) is 0.25 of the body size in front of it, so the injected particles reach the body after
+  !about 75 iterations and interact with it during the sample of the checked output (offsets 0.5,1.5,1.5/1.5,1.5,1.5 until 2026-11)
   DomainLimits= \\
-    xMinOffset=0.5,1.5,1.5 \\
-    xMaxOffset=1.5,1.5,1.5
+    xMinOffset=0.5,0.6,0.6 \\
+    xMaxOffset=0.25,0.6,0.6
 
   CalculateDragCoefficient=on !on, off  
 

@@ -89,6 +89,10 @@ void PIC::Parallel::ExchangeParticleData_unbuffered() {
   // wrappers, so use the public type directly in all profiles.
   cAMRnodeID nodeid;
 
+  //all particles are in the lists of the hint blocks of PIC::Mover::SparseParticleLists (verified by counting):
+  //look for the particles to send only in them
+  const bool SparseExchange=PIC::Mover::SparseParticleLists::VerifyHintForExchange();
+
 
   //The signals
   int Signal;
@@ -126,7 +130,16 @@ void PIC::Parallel::ExchangeParticleData_unbuffered() {
     nTotalSendParticles=0;
 
     if ((PIC::ThisThread!=To)&&(PIC::Mesh::mesh->ParallelSendRecvMap[PIC::ThisThread][To]==true)) {
-      for (sendNode=PIC::Mesh::mesh->DomainBoundaryLayerNodesList[To];sendNode!=NULL;sendNode=sendNode->nextNodeThisThread) if (sendNode->block!=NULL) {
+      //the sparse exchange (PIC::Mover::SparseParticleLists): all particles are verified to be in the lists of the hint
+      //blocks, so only the hint blocks of the boundary layer (in the order of the list) can hold particles to send
+      static std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> SparseSendNodes;
+      size_t iSparseSendNode=0;
+
+      if (SparseExchange==true) PIC::Mover::SparseParticleLists::GetHintBoundaryLayerNodes(To,SparseSendNodes);
+
+      for (sendNode=(SparseExchange==true) ? ((SparseSendNodes.size()!=0) ? SparseSendNodes[0] : NULL) : PIC::Mesh::mesh->DomainBoundaryLayerNodesList[To];
+          sendNode!=NULL;
+          sendNode=(SparseExchange==true) ? ((++iSparseSendNode<SparseSendNodes.size()) ? SparseSendNodes[iSparseSendNode] : NULL) : sendNode->nextNodeThisThread) if (sendNode->block!=NULL) {
         FirstCellParticleTable=sendNode->block->FirstCellParticleTable;
 
         for (int kCell=0;kCell<kCellMax;kCell++) for (int jCell=0;jCell<jCellMax;jCell++) for (int iCell=0;iCell<iCellMax;iCell++) {
@@ -232,6 +245,7 @@ void PIC::Parallel::ExchangeParticleData_unbuffered() {
       if ((node==NULL)||(node_id!=MessageDescriptorTable[icell].node_id)) { 
         node_id=MessageDescriptorTable[icell].node_id;
         node=PIC::Mesh::mesh->findAMRnodeWithID(node_id);
+        PIC::Mover::SparseParticleLists::AddHintNode(node);
       }
 
       p=MessageDescriptorTable+icell;      
@@ -472,6 +486,21 @@ void PIC::Parallel::ExchangeParticleData_unbuffered() {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *Node;
     int i,j,k;
 
+    //all particles are in the lists of the hint blocks of PIC::Mover::SparseParticleLists (verified by counting):
+    //only their cells can be non-empty, and each cell list is sorted independently of the others
+    static std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> SparseSortNodes;
+
+    if (PIC::Mover::SparseParticleLists::GetVerifiedLocalHintNodes(SparseSortNodes)==true) {
+      for (auto SortNode : SparseSortNodes) if (SortNode->block!=NULL) {
+        for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
+          if (SortNode->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]!=-1) {
+            SortParticleCellList(i,j,k,SortNode);
+          }
+        }
+      }
+
+      return;
+    }
 
     for (nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
       Node=DomainBlockDecomposition::BlockTable[nLocalNode];
@@ -609,6 +638,7 @@ void PIC::Parallel::ExchangeParticleData_buffered() {
       if ((node==NULL)||(node_id!=MessageDescriptorTable[icell].node_id)) { 
         node_id=MessageDescriptorTable[icell].node_id;
         node=PIC::Mesh::mesh->findAMRnodeWithID(node_id);
+        PIC::Mover::SparseParticleLists::AddHintNode(node);
       }
 
       p=MessageDescriptorTable+icell;      
@@ -927,6 +957,21 @@ void PIC::Parallel::ExchangeParticleData_buffered() {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *Node;
     int i,j,k;
 
+    //all particles are in the lists of the hint blocks of PIC::Mover::SparseParticleLists (verified by counting):
+    //only their cells can be non-empty, and each cell list is sorted independently of the others
+    static std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> SparseSortNodes;
+
+    if (PIC::Mover::SparseParticleLists::GetVerifiedLocalHintNodes(SparseSortNodes)==true) {
+      for (auto SortNode : SparseSortNodes) if (SortNode->block!=NULL) {
+        for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
+          if (SortNode->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]!=-1) {
+            SortParticleCellList(i,j,k,SortNode);
+          }
+        }
+      }
+
+      return;
+    }
 
     for (nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
       Node=DomainBlockDecomposition::BlockTable[nLocalNode];
@@ -2538,7 +2583,9 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     if (Stencil->RecvDataBuffer==NULL) {
       Stencil->Accumulator=new char [PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength];
 
-      Stencil->RecvDataBuffer=new char* [Stencil->ContributingThreadTableLength];
+      //at least one pointer: RecvDataBuffer[0] holds the data buffer (and is deleted) also when no other thread contributes
+      //(ContributingThreadTableLength==0); a table of length 0 was written past its end here
+      Stencil->RecvDataBuffer=new char* [(Stencil->ContributingThreadTableLength>0) ? Stencil->ContributingThreadTableLength : 1];
       Stencil->RecvDataBuffer[0]=new char [Stencil->ContributingThreadTableLength*PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength];
       
       for (int iThread=1;iThread<Stencil->ContributingThreadTableLength;iThread++) Stencil->RecvDataBuffer[iThread]=Stencil->RecvDataBuffer[iThread-1]+PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;

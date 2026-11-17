@@ -1,0 +1,14 @@
+! Compile-time input of the Earth-3d_forward nightly tests: geospace.input with a reproducible domain
+! decomposition.  The included input/earth-geospace_boundary_injection_sw_t96.input appends
+!   define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+! to picGlobal.dfn after its include guard, so every translation unit that includes picGlobal.dfn again
+! after pic.h (Exosphere.h, meshAMRcutcell.h) undoes the particle-number balancing that pic.h selects for
+! nightly builds.  The blocks are then redistributed by measured execution time, which differs between
+! two identical runs, and so do the per-rank random streams and the sampled volume data.  The define
+! below comes after that one in picGlobal.dfn and so holds in every translation unit.
+
+#include input/test/geospace/geospace.input
+
+#General
+  define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_
+#endGeneral

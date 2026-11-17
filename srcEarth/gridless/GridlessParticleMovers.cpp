@@ -284,7 +284,7 @@ static FieldGeometry EvaluateFieldGeometry(const V3& x_m,
 //   epsilon = rho / L_eff
 //
 // where
-//   rho   = p_perp / (|q| B)            relativistic gyroradius
+//   rho   = |p| / (|q| B)               relativistic gyroradius of the total momentum
 //   L_B   = B / |grad(B)|               field-strength variation scale length
 //   R_c   = 1 / |kappa|                 field-line curvature radius
 //   L_eff = min(L_B, R_c)               most restrictive magnetic scale
@@ -301,11 +301,13 @@ static inline double ComputeGuidingCenterAdiabaticity(const V3& x_m,
   const FieldGeometry g = EvaluateFieldGeometry(x_m, field);
   if (g.Bmag <= std::numeric_limits<double>::min()) return std::numeric_limits<double>::infinity();
 
+  // Gyroradius of the TOTAL momentum, not of p_perp.  Curvature scattering breaks the
+  // magnetic moment of every pitch angle once p/(|q|B) is no longer small against the
+  // field-line curvature radius (Buchner & Zelenyi 1989).  With p_perp a nearly
+  // field-aligned particle looked adiabatic at the equator and entered GC4 exactly where
+  // the full orbit is scattered into the loss cone.
   const double pMag = norm(p_SI);
-  const double pPar = dot(p_SI, g.bHat);
-  const double pPerp2 = std::max(0.0, pMag*pMag - pPar*pPar);
-  const double pPerp = std::sqrt(pPerp2);
-  const double rho_m = pPerp / (qAbs * g.Bmag);
+  const double rho_m = pMag / (qAbs * g.Bmag);
 
   const double gradBmagNorm = norm(g.gradBmag);
   double LB_m = std::numeric_limits<double>::infinity();
@@ -945,6 +947,19 @@ bool HybridPrepareStepUseGuidingCenter(const V3& x_m,
                                        double q_C,
                                        const IGridlessFieldEvaluator& field) {
   return HybridPrepareStepUseGuidingCenter_Local(x_m, p_SI, q_C, field);
+}
+
+double GuidingCenterFieldScaleLength(const V3& x_m,
+                                     const IGridlessFieldEvaluator& field) {
+  const FieldGeometry g = EvaluateFieldGeometry(x_m, field);
+  if (g.Bmag <= std::numeric_limits<double>::min()) return std::numeric_limits<double>::infinity();
+
+  double L = std::numeric_limits<double>::infinity();
+  const double gradBmagNorm = norm(g.gradBmag);
+  if (gradBmagNorm > std::numeric_limits<double>::min()) L = std::min(L, g.Bmag / gradBmagNorm);
+  const double curvatureNorm = norm(g.curvature);
+  if (curvatureNorm > std::numeric_limits<double>::min()) L = std::min(L, 1.0 / curvatureNorm);
+  return L;
 }
 
 MoverType gDefaultMover = MoverType::RK4;

@@ -81,3 +81,25 @@ class BuildError(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WorkspaceTable(unittest.TestCase):
+    """Results are attributed with the tested workspace's Table, not this tool's."""
+
+    def test_test_only_in_workspace_table_gets_its_result(self):
+        from amps_nightly import legacy
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = Path(tmp)
+            (ws / "MakefileTest").mkdir()
+            (ws / "MakefileTest" / "Table").write_text(
+                "#>\nName=unit_test\nFamily=unit-tests\n<#\n#>\nName=unit_test_new_only_here\nFamily=unit-tests\n<#\n")
+            (ws / "test_unit_test.diff").write_text("")
+            (ws / "test_unit_test_new_only_here.diff").write_text("")
+            results = {r["test"]: r for r in legacy.collect_results(legacy.read_diff_files(ws),
+                                                                    makefile_runner.workspace_table(ws))}
+            self.assertEqual(results["unit_test_new_only_here"]["status"], "PASS")
+            self.assertEqual(results["unit_test"]["status"], "PASS")
+
+    def test_falls_back_to_the_tool_table(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertTrue(len(makefile_runner.workspace_table(Path(tmp))) > 0)

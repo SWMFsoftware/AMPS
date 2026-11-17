@@ -724,11 +724,30 @@ void PIC::CPLR::DATAFILE::SaveBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC:
 void PIC::CPLR::DATAFILE::LoadBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
   static FILE *fData=NULL;
 
+  //every process reads the whole file and skips the data of the cells it does not need. The skipped data are read into
+  //a scratch buffer instead of fseek(SEEK_CUR): glibc's fseek() makes an lseek() system call even when the target is in
+  //the stream buffer, i.e. one system call per cell (1.9e8 per process for the 18 GB background of the Mover-* tests).
+  //A 4 MB stream buffer reduces the number of the read() calls. The loaded data are the same.
+  static std::vector<char> SkipBuffer;
+  static std::vector<char> StreamBuffer;
+
+  auto SkipCellData = [&] () {
+    const size_t length=nTotalBackgroundVariables*sizeof(double);
+
+    if (SkipBuffer.size()<length) SkipBuffer.resize(length);
+    if ((length!=0)&&(fread(SkipBuffer.data(),length,1,fData)!=1)) exit(__LINE__,__FILE__,"Error: fread failed");
+  };
+
   if (startNode==PIC::Mesh::mesh->rootTree) {
     const std::string fname=CenterNodeBackgroundFileName(path,
       PIC::Mesh::mesh->getMeshSignature(),fNameBase);
 
     fData=fopen(fname.c_str(),"r");
+
+    if (fData!=NULL) {
+      StreamBuffer.resize(1<<22);
+      setvbuf(fData,StreamBuffer.data(),_IOFBF,StreamBuffer.size());
+    }
   }
 
   //loop through all points
@@ -752,7 +771,7 @@ void PIC::CPLR::DATAFILE::LoadBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC:
 
         if (savedLoadCellFlag==true) {
           //the cell data is saved -> skip it
-          fseek(fData,nTotalBackgroundVariables*sizeof(double),SEEK_CUR);
+          SkipCellData();
         }
       }
 
@@ -777,7 +796,7 @@ void PIC::CPLR::DATAFILE::LoadBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC:
         }
         else {
           //the cell data is saved -> skip it
-          fseek(fData,nTotalBackgroundVariables*sizeof(double),SEEK_CUR);
+          SkipCellData();
         }
       }
 

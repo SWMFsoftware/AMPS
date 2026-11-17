@@ -93,7 +93,7 @@ void PIC::PitchAngleDistributionSample::SampleDistributionFnction() {
   long int ptr,nProbe,spec,idim,offset;
   double LocalParticleWeight, speed, CosPA;
 
-  for (node=SampleNodes[0],nProbe=0;nProbe<nSampleLocations;node=SampleNodes[++nProbe]) if (node->Thread==PIC::ThisThread) {
+  for (nProbe=0;nProbe<nSampleLocations;nProbe++) if ((node=SampleNodes[nProbe])->Thread==PIC::ThisThread) { //"node=SampleNodes[++nProbe]" read past the end of SampleNodes
     double *v;
     double B[3], Bdir[3], Babs;
     PIC::ParticleBuffer::byte *ParticleData;

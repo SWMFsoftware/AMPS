@@ -739,6 +739,12 @@ sub ReadMainBlock {
         $MoverIntegratorMode='_PIC_MOVER_INTEGRATOR_MODE__DIRECT_';
         $MoverIntegrator='PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_SecondOrder';
       }
+      elsif ($s0 eq "FORCEFREECUTSURFACE") {
+        #force-free straight-line motion with the exact interaction with the triangulated surface
+        #(src/pic/pic_mover_force_free_cut_surface.cpp)
+        $MoverIntegratorMode='_PIC_MOVER_INTEGRATOR_MODE__DIRECT_';
+        $MoverIntegrator='PIC::Mover::ForceFreeCutSurface';
+      }
       elsif ($s0 eq "BORIS") {
         $MoverIntegratorMode='_PIC_MOVER_INTEGRATOR_MODE__BORIS_';
         $MoverIntegrator='PIC::Mover::Boris';

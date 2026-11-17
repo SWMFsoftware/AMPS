@@ -82,14 +82,9 @@ using namespace std;
 #ifndef _PIC_
 #define _PIC_
 
-//if the code is compiler for the nightly tests than a) turn the debug model ON, and b) turn on the dynamic domain decomposition based on the particle number
-#if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
-  #undef _PIC_DEBUGGER_MODE_
-  #define _PIC_DEBUGGER_MODE_ _PIC_DEBUGGER_MODE_ON_
-
-  #undef _PIC_DYNAMIC_LOAD_BALANCING_MODE_
-  #define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_
-#endif
+//the settings of the nightly tests (_PIC_NIGHTLY_TEST_MODE_: debugger mode, load balancing by the particle number)
+//are made at the end of picGlobal.dfn, after the settings of the application input, so that every translation
+//unit that includes picGlobal.dfn sees them
 
 
 //load the macros that defined symbolic references to the species
@@ -154,6 +149,7 @@ inline void timing_stop(std::string name) {}
 #include "pic_field_line_kernels.h"
 #include "pic_callback_output_kernels.h"
 #include "pic_persistent_format.h"
+#include "pic_openmp_partition.h"
 
 namespace PIC {
 
@@ -1555,7 +1551,7 @@ void DeleteAttachedParticles();
           }
 
           length = sqrt(length);
-          Dir[0]/= length; Dir[1]/= length; Dir[2]/= length;
+          for (int idim=0; idim<DIM; idim++) Dir[idim]/= length; //Dir has DIM elements
         }
       }
       
@@ -1588,7 +1584,7 @@ void DeleteAttachedParticles();
           }
 
           length = sqrt(length);
-          Dir[0]/= length; Dir[1]/= length; Dir[2]/= length;
+          for (int idim=0; idim<DIM; idim++) Dir[idim]/= length; //Dir has DIM elements
         }
         else IsSet = 0;
       }
@@ -2772,6 +2768,11 @@ void DeleteAttachedParticles();
     //The particle buffer's internal data
     extern _TARGET_DEVICE_ _CUDA_MANAGED_ byte *ParticleDataBuffer;
     extern _TARGET_DEVICE_ _CUDA_MANAGED_ long int MaxNPart,NAllPart,FirstPBufferParticle;
+
+    //the number of the particle allocations made so far (incremented by GetNewParticle() when
+    //_COMPILATION_MODE_ == _COMPILATION_MODE__MPI_). PIC::Mover::SparseParticleLists uses it to
+    //detect a particle created while the particle lists are swept
+    extern unsigned long int nParticleAllocationCounter;
 
     //namespace combibes all GPU-relates data
     struct cParticleTable {
@@ -4596,6 +4597,14 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
       extern _TARGET_DEVICE_ _CUDA_MANAGED_ int UserAssociatedDataOffset;
 
       extern _TARGET_DEVICE_ _CUDA_MANAGED_ bool InternalDataInitFlag;
+
+      //_PIC_TEMP_PARTICLE_LIST_MODE__SHARED_ in a hybrid build: while PIC::Mover::MoveParticles() moves the particles in
+      //parallel (SharedTempListEpoch!=0), the shared temporary list of a block is written only by the thread that owns
+      //the block in this call (cDataBlockAMR::TempListOwnerThread/TempListOwnerEpoch); a thread that moves a particle
+      //into a block it does not own puts it into a list of its own (cDataBlockAMR::GetSharedModeForeignList()), and
+      //MoveParticles() links the lists in the thread order. When the threads shared one list, the order of the
+      //particles in a cell, and so the floating-point sums over them, depended on the thread timing.
+      extern unsigned long int SharedTempListEpoch;
     }
 
     class cDataBlockAMR : public cBasicBlockAMR<cDataCornerNode,cDataCenterNode> {
@@ -4627,6 +4636,24 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
         long int first,last;
       };
 
+      #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+      //_PIC_TEMP_PARTICLE_LIST_MODE__SHARED_: the thread that owns the block in the current parallel particle mover
+      //call (valid when TempListOwnerEpoch==cDataBlockAMR_static_data::SharedTempListEpoch, see pic_mover.cpp)
+      int TempListOwnerThread=-1;
+      unsigned long int TempListOwnerEpoch=0;
+
+      //the list of the particles that 'thread' moved into the cell nCell of 'block' that it does not own (create==false:
+      //NULL when there is none); ClearSharedModeForeignLists(nThreads) empties all of them and makes room for nThreads
+      //threads (both in pic_mover.cpp)
+      static cTempParticleMovingListMultiThreadTable* GetSharedModeForeignList(int thread,cDataBlockAMR* block,int nCell,bool create);
+      static void ClearSharedModeForeignLists(int nThreads);
+
+      //the shared temporary list of the cell nCell (_PIC_TEMP_PARTICLE_LIST_MODE__SHARED_)
+      cTempParticleMovingListMultiThreadTable *GetSharedTempParticleMovingList(int nCell) {
+        return ((cTempParticleMovingListMultiThreadTable*) (associatedDataPointer+cDataBlockAMR_static_data::tempTempParticleMovingListMultiThreadTableOffset))+nCell;
+      }
+      #endif
+
       //get pointer to element of tempParticleMovingListTableThread when OpenMP is in use
       cTempParticleMovingListMultiThreadTable *GetTempParticleMovingListMultiThreadTable(int thread,int i,int j,int k) {
         using namespace cDataBlockAMR_static_data;
@@ -4635,6 +4662,13 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
 
         switch (_PIC_TEMP_PARTICLE_LIST_MODE_) {
         case _PIC_TEMP_PARTICLE_LIST_MODE__SHARED_:
+          #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+          //during the parallel particle mover only the owner of the block uses its shared list (see SharedTempListEpoch)
+          if ((SharedTempListEpoch!=0)&&((TempListOwnerEpoch!=SharedTempListEpoch)||(TempListOwnerThread!=thread))) {
+            return GetSharedModeForeignList(thread,this,i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),true);
+          }
+          #endif
+
           res=((cTempParticleMovingListMultiThreadTable*) (associatedDataPointer+tempTempParticleMovingListMultiThreadTableOffset))+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
           break;
         default:
@@ -5067,7 +5101,9 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
       unsigned int GetCutFaceDistributionSignature(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,int nline,const char* fname);
 
       //init the vectors of the external normals at the cut-faces
-      void InitExternalNormalVector();
+      //UseSavedFile=false: compute them even when a file saved earlier in the run directory exists (their calculation
+      //draws random numbers, so loading the file changes the random sequence of the rest of the run)
+      void InitExternalNormalVector(bool UseSavedFile=true);
       bool CheckPointInsideDomain_default(double *x,cTriangleFace* SurfaceTriangulation,int nSurfaceTriangulation,bool ParallelCheck,double EPS);
 
       //determine the closes distance to the triangulated surface
@@ -6415,6 +6451,41 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
     void Init();
     void MoveParticles();
 
+    //Sparse sweep of the particle lists (pic_mover.cpp; _COMPILATION_MODE__MPI_ only).
+    //MoveParticles() and PIC::Parallel::ExchangeParticleData_unbuffered() sweep the cell particle lists of all
+    //blocks every time step. When the particles are few compared with the blocks (e.g. 21 traced particles
+    //on a 262144-block CCMC mesh), these sweeps are the whole cost of the step. Here the blocks where the particles
+    //are is kept as a 'hint'; a sweep restricted to the hint blocks is used only when it is verified to be exact: the
+    //particles in the lists of the hint blocks are counted, and the count must equal PIC::ParticleBuffer::NAllPart,
+    //so that every other list is empty. The hint blocks are swept in the order of the full sweep, so the particles
+    //are processed in the same order and the results do not change. When the verification fails, the full sweep
+    //is used.
+    namespace SparseParticleLists {
+      //switch on/off (default: on; the environment variable AMPS_SPARSE_PARTICLE_LISTS=off switches it off too)
+      extern bool Enabled;
+
+      //the counters of the sparse and the full sweeps
+      extern unsigned long int nSparseMoverSweeps,nFullMoverSweeps,nSparseListUpdates,nFullListUpdates,nSparseExchanges,nFullExchanges;
+
+      //the sparse sweeps can be used in this configuration and when the particles are few: NAllPart*4<=nLocalBlocks
+      bool Applicable();
+
+      //add a block that can contain particles to the hint (called by the particle exchange for the receiving blocks)
+      void AddHintNode(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+
+      //the particle exchange: VerifyHintForExchange() returns true when all particles are verified to be in the
+      //lists of the hint blocks; then GetHintBoundaryLayerNodes() gives the hint blocks of the subdomain boundary
+      //layer of thread 'To' in the order of PIC::Mesh::mesh->DomainBoundaryLayerNodesList[To]
+      bool VerifyHintForExchange();
+      void GetHintBoundaryLayerNodes(int To,std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>& nodes);
+
+      //the hint blocks of PIC::DomainBlockDecomposition::BlockTable (in its order), when all particles are verified to be
+      //in the lists of the hint blocks (used by the sorting of the cell particle lists after the particle exchange in the
+      //nightly-test mode, PIC::Parallel::ExchangeParticleData_*())
+      bool GetVerifiedLocalHintNodes(std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>& nodes);
+      extern unsigned long int nSparseListSorts,nFullListSorts;
+    }
+
     // The flux-resampling mover stops a trajectory at every block face.  A
     // positive value stored in this optional particle field is the unused
     // fraction of the destination block's full timestep.  Keeping a
@@ -6491,6 +6562,66 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
     int TrajectoryTrackingMover(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,CutCell::cTriangleFace* ExcludeCutTriangleFace=NULL);
     
     int TrajectoryTrackingMover_new(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,bool firstBoundary=false);
+
+    //force-free straight-line mover with the exact (watertight) interaction with the triangulated surface: the
+    //earliest crossing into the body along the whole step, across all blocks, any number of interactions per
+    //step through ProcessTriangleCutFaceIntersection (pic_mover_force_free_cut_surface.cpp)
+    int ForceFreeCutSurface(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+
+    namespace CutSurface {
+      //the earliest crossing into the body of the straight segment x0 -> x0+D (0<=t<=1) over the cut faces of all
+      //blocks the segment crosses (watertight; a start on the surface counts; at the point of an interaction with
+      //lastFace only faces in front of it count); 'node' contains x0; returns NULL when the segment does not cross
+      //the surface before it ends or leaves the domain (pic_mover_force_free_cut_surface.cpp)
+      CutCell::cTriangleFace* FindFirstCrossing(const double *x0,const double *D,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
+          const CutCell::cTriangleFace *lastFace,double& t);
+    }
+
+    namespace ForceFreeCutSurfaceDiagnostics {
+      //event counters of this process (Reduce(): the sums over all processes)
+      struct cCounters {
+        static const int nFields=17;
+        unsigned long long Moves,Segments,BlocksVisited,Interactions,InteractionsAtSegmentStart,Absorbed,DomainBoundary;
+        unsigned long long OnSurfaceStarts,HitPointsMovedOntoFace;
+        unsigned long long InsideBeforeMove,InsideAfterMove;
+        unsigned long long ErrorNotLeaving,ErrorTooManyInteractions,ErrorUnallocatedBlock,ErrorOutsideDomain,ErrorWalk,ErrorNonFinite;
+
+        cCounters() {unsigned long long z[nFields]={0}; Unpack(z);}
+
+        void Pack(unsigned long long *a) const {
+          const unsigned long long t[nFields]={Moves,Segments,BlocksVisited,Interactions,InteractionsAtSegmentStart,Absorbed,DomainBoundary,
+              OnSurfaceStarts,HitPointsMovedOntoFace,InsideBeforeMove,InsideAfterMove,ErrorNotLeaving,ErrorTooManyInteractions,ErrorUnallocatedBlock,ErrorOutsideDomain,ErrorWalk,ErrorNonFinite};
+          for (int i=0;i<nFields;i++) a[i]=t[i];
+        }
+
+        void Unpack(const unsigned long long *a) {
+          unsigned long long *t[nFields]={&Moves,&Segments,&BlocksVisited,&Interactions,&InteractionsAtSegmentStart,&Absorbed,&DomainBoundary,
+              &OnSurfaceStarts,&HitPointsMovedOntoFace,&InsideBeforeMove,&InsideAfterMove,&ErrorNotLeaving,&ErrorTooManyInteractions,&ErrorUnallocatedBlock,&ErrorOutsideDomain,&ErrorWalk,&ErrorNonFinite};
+          for (int i=0;i<nFields;i++) *t[i]=a[i];
+        }
+
+        //the particles removed because the mover could not continue them
+        unsigned long long Errors() const {return ErrorNotLeaving+ErrorTooManyInteractions+ErrorUnallocatedBlock+ErrorOutsideDomain+ErrorWalk+ErrorNonFinite;}
+      };
+
+      extern cCounters Counters;
+
+      //optional: a test whether a point is inside the body; when set, the start and the end of every step are
+      //tested, and a particle inside the body is counted (InsideBeforeMove, InsideAfterMove) and reported
+      extern bool (*InsideBody)(const double *x);
+
+      //the largest displacement of a hit point onto its face (see ClampToFace() in the mover; this process)
+      extern double MaxHitPointCorrection;
+
+      //report the particles that leave the domain (among the first MaxReportedErrors reports)
+      extern bool ReportDomainBoundary;
+
+      extern int MaxReportedErrors,MaxCallbackRetries,MaxSamePointInteractions;
+      extern long int MaxInteractionsPerStep;
+
+      void Reset();
+      void Reduce(cCounters& global);
+    }
     short CellIntersectType(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  node,double * x);
     void SetBlockCellIntersectTypes();
     bool IsSetCellIntersectTypes();

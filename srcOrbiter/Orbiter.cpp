@@ -25,6 +25,7 @@ double Orbiter::SurfaceModel::ScalingFactor=1.0;
 
 bool Orbiter::Sampling::DragCoefficient::SamplingMode=false;
 double Orbiter::ProjectionOrbiterSurfaceArea=0.0;
+double Orbiter::CharacteristicSpeed=50.0E3;
 
 Orbiter::SurfaceModel::cSurfaceModelSet Orbiter::SurfaceModel::SurfaceModelSet[]={{0,"Orbiter"}};
 int Orbiter::SurfaceModel::MeshFileFormat=Orbiter::SurfaceModel::MeshFileFormat_NASTRAN;
@@ -39,6 +40,10 @@ double *Orbiter::Sampling::DragCoefficient::dpY=NULL;
 double *Orbiter::Sampling::DragCoefficient::dpZ=NULL;
 double *Orbiter::Sampling::DragCoefficient::Flux=NULL;
 int *Orbiter::Sampling::DragCoefficient::ModelParticleCounter=NULL;
+double *Orbiter::Sampling::DragCoefficient::dpProjection2=NULL;
+double Orbiter::Sampling::DragCoefficient::LastCd=0.0,Orbiter::Sampling::DragCoefficient::LastCdSigma=0.0;
+double Orbiter::Sampling::DragCoefficient::LastProjectionArea=0.0;
+long int Orbiter::Sampling::DragCoefficient::LastnHits=0,Orbiter::Sampling::DragCoefficient::LastSampleLength=0;
 
 Orbiter::Sampling::DragCoefficient::ResetUpstreamFlowDirection::cSampledData *Orbiter::Sampling::DragCoefficient::ResetUpstreamFlowDirection::SampledData=NULL;
 double Orbiter::Sampling::DragCoefficient::ResetUpstreamFlowDirection::EndFlowDirection[3]={0.0,0.0,0.0};
@@ -55,6 +60,7 @@ void Orbiter::Sampling::DragCoefficient::Init() {
   dpZ=new double [PIC::nTotalThreadsOpenMP];
   Flux=new double [PIC::nTotalThreadsOpenMP];
   ModelParticleCounter=new int [PIC::nTotalThreadsOpenMP];
+  dpProjection2=new double [PIC::nTotalThreadsOpenMP];
 
   for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
     dpX[thread]=0.0;
@@ -62,6 +68,7 @@ void Orbiter::Sampling::DragCoefficient::Init() {
     dpZ[thread]=0.0;
     Flux[thread]=0.0;
     ModelParticleCounter[thread]=0;
+    dpProjection2[thread]=0.0;
   }
 
   PIC::Sampling::ExternalSamplingLocalVariables::RegisterSamplingRoutine(SamplingProcessor,PrintOutputFile);
@@ -131,17 +138,19 @@ int Orbiter::ParticleSurfaceInteractionProcessor_default(long int ptr,double* xI
 void Orbiter::Sampling::DragCoefficient::SamplingProcessor() {}
 
 void Orbiter::Sampling::DragCoefficient::PrintOutputFile(int nfile) {
-  double Cd,dpTotal[3],FluxTotal;
+  double Cd,dpTotal[3],FluxTotal,dpProjection2Total=0.0;
   int thread,ModelParticleCounterTotal;
 
   static int iUpstreamFlowDirectionResetCycle=0;
 
+  //the sums of the OpenMP threads (each thread samples into its own element: SurfaceBoundaryCondition() in main.cpp)
   for (thread=1;thread<PIC::nTotalThreadsOpenMP;thread++) {
     dpX[0]+=dpX[thread];
     dpY[0]+=dpY[thread];
     dpZ[0]+=dpZ[thread];
     Flux[0]+=Flux[thread];
     ModelParticleCounter[0]+=ModelParticleCounter[thread];
+    dpProjection2[0]+=dpProjection2[thread];
   }
 
   //collect the momentum exchange rate from all processors
@@ -150,6 +159,7 @@ void Orbiter::Sampling::DragCoefficient::PrintOutputFile(int nfile) {
   MPI_Reduce(dpZ,dpTotal+2,1,MPI_DOUBLE,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR); 
   MPI_Reduce(Flux,&FluxTotal,1,MPI_DOUBLE,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
   MPI_Reduce(ModelParticleCounter,&ModelParticleCounterTotal,1,MPI_INT,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(dpProjection2,&dpProjection2Total,1,MPI_DOUBLE,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
 
   if (PIC::ThisThread==0) {
     //calculate the drag coefficient 
@@ -181,6 +191,15 @@ void Orbiter::Sampling::DragCoefficient::PrintOutputFile(int nfile) {
 
     printf("$PREFIX: Total flux of the particle interesected with the surface = %e\n",FluxTotal);
     printf("$PREFIX: Total flux of the particle interesected with the surface / ProjectionOrbiterSurfaceArea = %e\n",FluxTotal/ProjectionOrbiterSurfaceArea);
+
+    //the statistical standard deviation of Cd: the sampled drag is a sum over independent hits, its variance is the sum
+    //of the squared contributions (DragCoefficient::dpProjection2)
+    LastCd=Cd;
+    LastCdSigma=2.0*sqrt(dpProjection2Total)/PIC::LastSampleLength/(TotalMassDensity*ProjectionOrbiterSurfaceArea*speed*speed);
+    LastProjectionArea=ProjectionOrbiterSurfaceArea;
+    LastnHits=ModelParticleCounterTotal;
+    LastSampleLength=PIC::LastSampleLength;
+    printf("$PREFIX: Statistical standard deviation of the drag coefficient = %e\n",LastCdSigma);
 
     printf("$PREFIX: Total number of the model particle that have intersected the surface = %i\n",ModelParticleCounterTotal);
     printf("$PREFIX: Total number of the model particle that have intersected the surface / ProjectionOrbiterSurfaceArea= %e\n",ModelParticleCounterTotal/ProjectionOrbiterSurfaceArea);
@@ -223,6 +242,7 @@ void Orbiter::Sampling::DragCoefficient::PrintOutputFile(int nfile) {
     dpZ[thread]=0.0;
     Flux[thread]=0.0;
     ModelParticleCounter[thread]=0;
+    dpProjection2[thread]=0.0;
   }  
 
   //reset the direction of the unstrean flow if needed

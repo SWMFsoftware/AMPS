@@ -884,6 +884,58 @@ auto lineIntersectsPlane = [EPS](const double* p1, const double* p2, double plan
   double GetRemainedBlockVolume(double* xCellMin,double* xCellMax,double EPS,double RelativeError, list<cTriangleFace*>& BlockTriangulationSet,int maxIntegrationLevel,int IntegrationLevel);
   double GetRemainedBlockVolume(double* xCellMin,double* xCellMax,double EPS,double RelativeError, list<cTriangleFace*>& BlockTriangulationSet,int maxIntegrationLevel,int IntegrationLevel,cTriangleFace* SurfaceTriangulation,int nSurfaceTriangulation);
 
+  /* An analytic sphere (internal boundary _INTERNAL_BOUNDARY_TYPE_SPHERE_) as a closed triangulated surface for the
+   * decomposition of cut cells (GetCutCellTetrahedra()): the 'cube sphere'.  Each face of the cube [-1,1]^3 carries an
+   * N x N grid; its points are projected radially onto the sphere (center x0, radius R) and every grid quad is split
+   * into two triangles by its diagonal.  The vertices are computed from their integer cube coordinates, so the faces that
+   * share a vertex use the same numbers: the surface is closed, and neighbouring cells see the same surface, so the
+   * parts of a shared cell face outside the body are the same set from both cells.  The polyhedron is inscribed in the
+   * sphere: the largest distance between a facet and the sphere is ~R/N^2 (at the centers of the cube faces).  N is
+   * chosen from the finest cell size h at the sphere (cMeshAMRgeneric::GetSphereApproximationResolution()) so that this
+   * distance is at most SphereApproximationTolerance*h; the outside volume of a cut cell then differs from the analytic
+   * one (cInternalSphericalData::GetRemainedBlockVolume()) by less than ~SphereApproximationTolerance*V_cell (the
+   * remaining approximation error; test/srcCutCellTetraTest measures it). The facets are generated on the fly. */
+  extern double SphereApproximationTolerance;   //1e-2
+
+  class cSphereApproximation {
+  public:
+    struct cFacet {double x[3][3];};
+
+    double x0[3],R;
+    int N;
+
+    cSphereApproximation();
+    cSphereApproximation(const double *Center,double Radius,int Resolution);
+
+    static int Resolution(double Radius,double CellSize);           //N for the finest cell size at the sphere
+    void Vertex(int ix,int iy,int iz,double *x) const;              //the vertex of the integer point of the cube [0,N]^3
+    void Facet(int face,int i,int j,int t,double v[3][3]) const;    //cube face 0..5, grid quad (i,j), triangle t=0,1 (outward)
+    bool Inside(const double *x) const;                             //is x inside the polyhedron
+    double InnerRadius() const;                                     //no point of the surface is closer to the center
+    void GetFacets(const double *xmin,const double *xmax,double tol,std::vector<cFacet>& Facets) const;   //the facets that intersect the box (+tol)
+  };
+
+  /* Exact decomposition of a cut cell into tetrahedra (meshAMRcutcell.cpp).
+   * The box [xmin,xmax] is split by the planes of the faces of the bodies that intersect it (the faces of FaceList of the
+   * triangulated surface, and the facets of the triangulated approximations of the analytic spheres): every convex
+   * piece of the resulting partition lies entirely on one side of each surface, so it is classified (outside every
+   * body = in the computational domain, or inside one) and decomposed into tetrahedra.  The pieces are exact convex
+   * polyhedra, so the tetrahedra do not overlap, fill the cell, and the volume of the outside ones is the outside volume
+   * of the cell up to round-off; the part of a cell face outside the bodies is the same set seen from both cells that
+   * share the face, whatever their sizes.  An edge of the cell may be crossed any number of times, by any number of
+   * faces of any of the bodies, and the bodies may overlap.  The outside/inside tetrahedra are appended to
+   * Outside/Inside (either may be NULL), with positive orientation (det[x1-x0,x2-x0,x3-x0]>0).  Pieces thinner than the
+   * round-off tolerance are dropped.  Returns _cut_cell__outside_ (no piece inside a body: the cell is not cut),
+   * _cut_cell__cut_ or _cut_cell__inside_ (no piece outside). */
+  struct cCutCellTetrahedron {double x[4][3];};
+  const int _cut_cell__outside_=0;
+  const int _cut_cell__cut_=1;
+  const int _cut_cell__inside_=2;
+  int GetCutCellTetrahedra(const double *xmin,const double *xmax,cTriangleFaceDescriptor* FaceList,const std::vector<cSphereApproximation>& Spheres,double EPS,
+      std::vector<cCutCellTetrahedron>* Outside,std::vector<cCutCellTetrahedron>* Inside,double* OutsideVolume=NULL,double* InsideVolume=NULL);
+  int GetCutCellTetrahedra(const double *xmin,const double *xmax,cTriangleFaceDescriptor* FaceList,double EPS,
+      std::vector<cCutCellTetrahedron>* Outside,std::vector<cCutCellTetrahedron>* Inside,double* OutsideVolume=NULL,double* InsideVolume=NULL);
+
   int cutBlockTetrahedronConnectivity(CutCell::cCutBlock* bl,list<CutCell::cTetrahedron>& indomainConnectivityList,list<CutCell::cTetrahedron>& outdomainConnectivityList,list<CutCell::cTriangleCutFace> &TriangleCutFaceConnectivity);
 
   //===============================================================================================================

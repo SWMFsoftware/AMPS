@@ -10,7 +10,8 @@
 #include "Surface.h"
 
 
-//surface temeprature in the model of the isothremal temeprature
+//surface temeprature in the model of the isothremal temeprature; 0 means that the wall temperature is not set: the
+//models that use it stop the run (Surface::GetSurfaceTemperature)
 double Surface::Temperature::Isothremal::Temp=0.0;
 
 

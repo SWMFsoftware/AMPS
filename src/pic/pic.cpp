@@ -401,6 +401,9 @@ if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) {
   if (nInteractionsAfterRunStatisticExchange==nExchangeStatisticsIterationNumberSteps || testRebalancing) { //collect and exchenge the statistical data of the run
     cExchangeStatisticData localRunStatisticData;
     int thread;
+
+    //the structure is gathered as bytes: zero it, so that its padding is not sent uninitialized
+    memset((void*)&localRunStatisticData,0,sizeof(cExchangeStatisticData));
     cExchangeStatisticData *ExchangeBuffer=NULL;
     long int nInjectedParticleExchangeBuffer[PIC::nTotalThreads];
     double ParticleProductionRateExchangeBuffer[PIC::nTotalThreads];

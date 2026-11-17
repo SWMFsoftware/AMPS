@@ -24,7 +24,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .records import make_run_id, utc_text, write_run_dir
 from .registry import UNASSIGNED
-from .table import TableTest
+from .table import TableTest, display_name
 
 _MARK = re.compile(r"^test_(?P<name>.+)_(?P<stage>compile|rundir|run|check)\.\.\.(?P<done> done)?$")
 _NEXT = {"compile": "rundir", "rundir": "run", "run": "check", "check": ""}
@@ -159,7 +159,7 @@ def collect_results(files: "collections.OrderedDict[str, Tuple[int, str]]",
         # they are deliberately not stored.
         results.append({
             "family": family.get(owner, UNASSIGNED),
-            "test": owner,
+            "test": display_name(owner),          # a variant <test>--valgrind is shown as <test>(valgrind)
             "status": status,
             "stage": stage if status != "PASS" else "",
             "reason": reason,

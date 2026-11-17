@@ -97,6 +97,13 @@ POINTS_END
 !OUTPUT_COORDS          GEO
 !ENERGY_BINS            1 5 10 30 100 300 1000   ! MeV/n
 
+#MODE3D_MESH
+! nightly size: 1 Re cells at the Earth growing to the coarsest blocks beyond 8 Re (288 blocks,
+! 73k nodes, a 76 MB volume file); the default mesh (2472 blocks) wrote 614 MB per output
+MODE3D_MESH_RES_EARTH_RE      1.0
+MODE3D_MESH_RES_BOUNDARY_RE   16.0
+MODE3D_MESH_R_BOUNDARY_RE     8.0
+
 #NUMERICAL
 !N_PARTICLES            10000              ! test particles per injection
 !MAX_BOUNCE             500                ! max mirror reflections
@@ -104,9 +111,12 @@ POINTS_END
 MAX_TRACE_TIME         600               ! sec — max trajectory integration time
 MAX_TRACE_DISTANCE     40.0         ! Re — max cumulative trajectory path length
 !PITCH_ISOTROPIC        T                 ! isotropic injection
-FORWARD_N_PARTICLES    1000
-FORWARD_N_ITERATIONS   4000
+! Nightly size (2026-11): 1000 iterations = one sampling cycle (InitialSampleLength in
+! input/test/geospace/geospace.input), so the run writes the out=0 trajectory and volume files the
+! check compares; 100 particles per iteration and 10 tracked trajectories keep it to minutes and MB.
+FORWARD_N_PARTICLES    100
+FORWARD_N_ITERATIONS   1000
 
 #PARTICLE_TRAJECTORY
-N_TRAJECTORIES         1000
+N_TRAJECTORIES         10
 

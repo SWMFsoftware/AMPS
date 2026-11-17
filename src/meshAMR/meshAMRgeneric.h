@@ -284,6 +284,11 @@ public:
 
   _TARGET_HOST_ _TARGET_DEVICE_ 
   cAMRnodeID() {
+    //zero the whole object, the padding after id[] included: node IDs are written whole into the mesh and
+    //restart files and sent as bytes (e.g. ParallelBlockDataExchangeData.SendNodeIDTable); operator= and
+    //Unpack() set the fields only, so the padding of a constructed ID stays zero
+    memset((void*)this,0,sizeof(cAMRnodeID));
+
     ResolutionLevel=0;
     for (int i=0;i<1+(int)((3*_MAX_REFINMENT_LEVEL_)/8);i++) id[i]=0;
   }
@@ -1847,6 +1852,11 @@ public:
 
   _TARGET_HOST_
   int GetCutcellTetrahedronMesh(list<cTetrahedron> &TetrahedronList,int icell,int jcell,int kcell,cTreeNodeAMR<cBlockAMR>* node); 
+  //the exact decomposition of a cell by the internal boundaries (cut_cell.hpp, CutCell::GetCutCellTetrahedra())
+  int GetCutCellDecomposition(int icell,int jcell,int kcell,cTreeNodeAMR<cBlockAMR>* node,std::vector<CutCell::cCutCellTetrahedron>* Outside,
+      std::vector<CutCell::cCutCellTetrahedron>* Inside,double* OutsideVolume=NULL,double* InsideVolume=NULL);
+  //the resolution of the triangulated approximation of an internal sphere in GetCutCellDecomposition()
+  int GetSphereApproximationResolution(cInternalSphericalData* Sphere);
   void PrintTetrahedronMesh(list<cTetrahedron> &TetrahedronList,const char* fname);
   void PrintTetrahedronMeshData(list<cTetrahedron> &TetrahedronList,const char* fname,int DataSetNumber,bool PrintVariableString);
 
@@ -2035,9 +2045,12 @@ public:
       Signature->clear();
       pipe->init(1000000);
       
-      //add the size of the domain to the signature
-      Signature->add(rootTree->xmax,3);
-      Signature->add(rootTree->xmin,3);
+      //add the size of the domain to the signature: _MESH_DIMENSION_ coordinates (xmin/xmax of a node have
+      //_MESH_DIMENSION_ elements; with 3 a 1D or 2D mesh added the bytes that follow xmax in the node: the refinement
+      //levels, padding, nodeDescriptor and a pointer, so its signature and the amr.sig=... file names changed from run
+      //to run). The signature of a 3D mesh is unchanged.
+      Signature->add(rootTree->xmax,_MESH_DIMENSION_);
+      Signature->add(rootTree->xmin,_MESH_DIMENSION_);
       
       //add to the signature the number of the cells and ghost cells
       int t[2];
@@ -2117,8 +2130,8 @@ public:
         if (downNode!=NULL) {
           if (ThisThread==0) {
             Signature->add(downNode->Temp_ID);
-            Signature->add(downNode->xmax,3);
-            Signature->add(downNode->xmin,3);
+            Signature->add(downNode->xmax,_MESH_DIMENSION_);   //_MESH_DIMENSION_ coordinates, as for the root above
+            Signature->add(downNode->xmin,_MESH_DIMENSION_);
           }
           
           generateMeshSignature(downNode);
@@ -7053,6 +7066,9 @@ if (CallsCounter==83) {
       SendRequestVector=new int [nTotalThreads];
       BlockNodeGlabalNumber=new long int [nBlockCornerNodes];
 
+      //the whole vector is sent, but only the entries of the block's own corner nodes are set (and used by the receiver)
+      for (int n=0;n<nBlockCornerNodes;n++) BlockNodeGlabalNumber[n]=-1;
+
 
       //the procedure is developed only for the case where the domain is covered by the layer of boundary blocks
 #if _AMR_PARALLEL_DATA_EXCHANGE_MODE_ == _AMR_PARALLEL_DATA_EXCHANGE_MODE__DOMAIN_BOUNDARY_LAYER_
@@ -8242,8 +8258,15 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
    sprintf(fname_data,"%s.thread=%d.data",fname,ThisThread); 
    fData=fopen(fname_data,"w");
 
-   //print the data and create the tetrahedtal mesh of cut cells
-   OutputDataFile(rootTree,TetrahedronList,ConnectivityList);
+   //print the data and create the tetrahedtal mesh of cut cells. The decomposition of the cells classifies points against
+   //the whole triangulated surface (GetCutcellTetrahedronMesh() is called for every cell of the blocks when there is an
+   //internal boundary): search its faces through a tree for the duration of the output (the same decisions as the linear
+   //scan of all faces; the surface does not change meanwhile)
+   {
+     CutCell::cVolumeIntegrationAcceleration CutCellClassificationAcceleration(CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,EPS);
+
+     OutputDataFile(rootTree,TetrahedronList,ConnectivityList);
+   }
 
    //print the header and combine it with the datafile 
    sprintf(fname_header,"%s.thread=%d.header",fname,ThisThread);
@@ -9322,10 +9345,17 @@ nMPIops++;
       fwrite(&countingNumber,sizeof(long int),1,fout);
     }
 
-    //save the node ID
-    fwrite(&startNode->AMRnodeID,sizeof(cAMRnodeID),1,fout);
+    //save the node ID: the reader takes sizeof(cAMRnodeID) bytes; write the fields into a zeroed record of that size,
+    //so that the padding at the end of cAMRnodeID (never set) is written as zeros
+    {
+      unsigned char record[sizeof(cAMRnodeID)];
+      cAMRnodeID *id=&startNode->AMRnodeID;
 
-    //save 
+      memset(record,0,sizeof(cAMRnodeID));
+      memcpy(record+((unsigned char*)&id->ResolutionLevel-(unsigned char*)id),&id->ResolutionLevel,sizeof(id->ResolutionLevel));
+      memcpy(record+((unsigned char*)id->id-(unsigned char*)id),id->id,sizeof(id->id));
+      fwrite(record,sizeof(cAMRnodeID),1,fout);
+    }
 
 
     //save the node neighbors
@@ -9385,8 +9415,28 @@ nMPIops++;
     //save other tree nodes' parameters: xmin,xmax,RefinmentLevel,nodeDescriptor,Thread;
     fwrite(startNode->xmin,_MESH_DIMENSION_*sizeof(double),1,fout);
     fwrite(startNode->xmax,_MESH_DIMENSION_*sizeof(double),1,fout);
-    fwrite(&startNode->RefinmentLevel,sizeof(int),1,fout);
-    fwrite(&startNode->nodeDescriptor,sizeof(startNode->nodeDescriptor),1,fout);
+
+    //RefinmentLevel is a char, but the file has sizeof(int) bytes for it, which readTreeStructure() reads into
+    //RefinmentLevel and the two chars that follow it (minNeibRefinmentLevel,maxNeibRefinmentLevel) and the padding byte.
+    //Write the same three values and a zero for the padding byte (that was uninitialized)
+    {
+      char record[sizeof(int)];
+
+      memset(record,0,sizeof(int));
+      record[0]=startNode->RefinmentLevel;
+      record[1]=startNode->minNeibRefinmentLevel;
+      record[2]=startNode->maxNeibRefinmentLevel;
+      fwrite(record,sizeof(int),1,fout);
+    }
+
+    //nodeDescriptor is a bit field: write a zeroed copy with the flag set, the unused bits of the bit field were uninitialized
+    {
+      decltype(startNode->nodeDescriptor) record;
+
+      memset(&record,0,sizeof(record));
+      record.NodeProcessingFlag=startNode->nodeDescriptor.NodeProcessingFlag;
+      fwrite(&record,sizeof(record),1,fout);
+    }
 
     fwrite(startNode->xMinGlobalIndex,_MESH_DIMENSION_*sizeof(int),1,fout);
     fwrite(&startNode->NodeGeometricSizeIndex,sizeof(int),1,fout);
@@ -9424,8 +9474,19 @@ nMPIops++;
         //find the counting number for the intersected surface
         for (countingNumber=0,ptrDescriptorList=InternalBoundaryList.begin();ptrDescriptorList!=ptrDescriptorListEnd;countingNumber++,ptrDescriptorList++) {
           if (ptrDescriptorList->BoundaryElement==SurfaceDescriptor->BoundaryElement) {
+            //the reader takes the whole descriptor and then sets BoundaryElement and nextInternalBCelement itself.
+            //Write a zeroed copy with the data fields: no memory addresses and no uninitialized padding in the file
+            cInternalBoundaryConditionsDescriptor record;
+
+            memset((void*)&record,0,sizeof(cInternalBoundaryConditionsDescriptor));
+            record.stack_element_id=SurfaceDescriptor->stack_element_id;
+            record.BondaryType=SurfaceDescriptor->BondaryType;
+            #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
+            record.Temp_ID=SurfaceDescriptor->Temp_ID;
+            #endif
+
             found=true;
-            fwrite(SurfaceDescriptor,sizeof(cInternalBoundaryConditionsDescriptor),1,fout);
+            fwrite(&record,sizeof(cInternalBoundaryConditionsDescriptor),1,fout);
             fwrite(&countingNumber,sizeof(long int),1,fout);
             break;
           }
@@ -9590,8 +9651,12 @@ nMPIops++;
       while (InternalSurfaceBoundaryPresentFlag==true) {
         SurfaceDescriptor=InternalBoundaryDescriptors.newElement();
 
+        //the record overwrites the whole descriptor: keep the counting number of the element in this process' stack
+        int stack_element_id=SurfaceDescriptor->stack_element_id;
+
         if (fread(SurfaceDescriptor,sizeof(cInternalBoundaryConditionsDescriptor),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
         if (fread(&countingNumber,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+        SurfaceDescriptor->stack_element_id=stack_element_id;
 
         for (i=0,SurfaceDescriptor->BoundaryElement=NULL,ptrDescriptorList=InternalBoundaryList.begin();ptrDescriptorList!=ptrDescriptorListEnd;i++,ptrDescriptorList++) {
           if (i==countingNumber) {
@@ -9642,6 +9707,17 @@ nMPIops++;
 
 
 
+  //write a string into a field of STRING_LENGTH bytes of the mesh file, padded with zeros. fwrite() of STRING_LENGTH
+  //bytes from a shorter string copied whatever followed it in memory: the uninitialized tail of MeshName, or the
+  //constants that follow a section marker literal in the executable. The readers compare the string only
+  static void saveMeshFileString(const char *str,FILE *fout) {
+    char field[STRING_LENGTH];
+
+    memset(field,0,STRING_LENGTH);
+    strncpy(field,str,STRING_LENGTH-1);
+    fwrite(field,sizeof(char),STRING_LENGTH,fout);
+  }
+
   void saveMeshFile(const char *MeshFileName=NULL) {
     FILE *fout=NULL;
     long int countingNumber,ThisThread=0;
@@ -9661,7 +9737,7 @@ nMPIops++;
       fout=fopen(fname,"w");
 
       //save the mesh parameters: in the beginig of the mesh file keep the name of the mesh!
-      fwrite(MeshName,sizeof(char),STRING_LENGTH,fout) ;
+      saveMeshFileString(MeshName,fout);
 //      fwrite(&MeshSignature,sizeof(unsigned long),1,fout);
 
 
@@ -9683,7 +9759,7 @@ nMPIops++;
       fwrite(&AllowBlockAllocation,sizeof(bool),1,fout);
 
       //save allocation for the stacks
-      fwrite("AMR-MESH-FILE-MARKER:MEMORY_ALLOCATION",sizeof(char),STRING_LENGTH,fout);
+      saveMeshFileString("AMR-MESH-FILE-MARKER:MEMORY_ALLOCATION",fout);
 
 //      CornerNodes.saveAllocationParameters(fout);
 //      blocks.saveAllocationParameters(fout);
@@ -9695,13 +9771,13 @@ nMPIops++;
 
 
       //save the tree structure
-      fwrite("AMR-MESH-FILE-MARKER:MESH-TREE",sizeof(char),STRING_LENGTH,fout);
+      saveMeshFileString("AMR-MESH-FILE-MARKER:MESH-TREE",fout);
       saveTreeStructure(rootTree,fout);
 
 
       //save the list of nodes that intersect surfaces of the computational domain
 #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
-      fwrite("AMR-MESH-FILE-MARKER:BOUNDARY_NODES",sizeof(char),STRING_LENGTH,fout);
+      saveMeshFileString("AMR-MESH-FILE-MARKER:BOUNDARY_NODES",fout);
       countingNumber=treeNodes.GetEntryCountingNumber(DomainSurfaceBoundaryList);
       fwrite(&countingNumber,sizeof(long int),1,fout);
 
@@ -9749,7 +9825,7 @@ nMPIops++;
     */
 
       //save the 'end' marker
-      fwrite("AMR-MESH-FILE-MARKER:END",sizeof(char),STRING_LENGTH,fout);
+      saveMeshFileString("AMR-MESH-FILE-MARKER:END",fout);
       fclose(fout);
     }
   }
@@ -9930,13 +10006,11 @@ nMPIops++;
       xmax[1]=startNode->xmax[1]+(startNode->xmax[1]-startNode->xmin[1])/double(_BLOCK_CELLS_Y_)*double(_GHOST_CELLS_Y_);
       xmax[2]=startNode->xmax[2]+(startNode->xmax[2]-startNode->xmin[2])/double(_BLOCK_CELLS_Z_)*double(_GHOST_CELLS_Z_);
       */
-      xmin[0]=startNode->xmin[0];
-      xmin[1]=startNode->xmin[1];
-      xmin[2]=startNode->xmin[2];
-
-      xmax[0]=startNode->xmax[0];
-      xmax[1]=startNode->xmax[1];
-      xmax[2]=startNode->xmax[2];
+      //startNode->xmin/xmax have _MESH_DIMENSION_ elements: the inactive Cartesian coordinates are zero
+      for (int idim=0;idim<3;idim++) {
+        xmin[idim]=(idim<_MESH_DIMENSION_) ? startNode->xmin[idim] : 0.0;
+        xmax[idim]=(idim<_MESH_DIMENSION_) ? startNode->xmax[idim] : 0.0;
+      }
 
 
 
@@ -9996,13 +10070,11 @@ nMPIops++;
     xmax[1]=startNode->xmax[1]+(startNode->xmax[1]-startNode->xmin[1])/double(_BLOCK_CELLS_Y_)*double(_GHOST_CELLS_Y_);
     xmax[2]=startNode->xmax[2]+(startNode->xmax[2]-startNode->xmin[2])/double(_BLOCK_CELLS_Z_)*double(_GHOST_CELLS_Z_);
     */
-    xmin[0]=startNode->xmin[0];
-    xmin[1]=startNode->xmin[1];
-    xmin[2]=startNode->xmin[2];
-
-    xmax[0]=startNode->xmax[0];
-    xmax[1]=startNode->xmax[1];
-    xmax[2]=startNode->xmax[2];
+    //startNode->xmin/xmax have _MESH_DIMENSION_ elements: the inactive Cartesian coordinates are zero
+    for (int idim=0;idim<3;idim++) {
+      xmin[idim]=(idim<_MESH_DIMENSION_) ? startNode->xmin[idim] : 0.0;
+      xmax[idim]=(idim<_MESH_DIMENSION_) ? startNode->xmax[idim] : 0.0;
+    }
 
 
     //create a table to storing the result of checking of the intersection checks
@@ -10077,15 +10149,21 @@ nMPIops++;
     }
 
     //check all boundary faces for intersection with the block
-    double xmin[3],xmax[3];
+    //startNode->xmin/xmax have _MESH_DIMENSION_ elements: the inactive Cartesian coordinates are zero
+    double xmin[3]={0.0,0.0,0.0},xmax[3]={0.0,0.0,0.0};
 
     xmin[0]=startNode->xmin[0]-(startNode->xmax[0]-startNode->xmin[0])/double(_BLOCK_CELLS_X_)*double(_GHOST_CELLS_X_);
-    xmin[1]=startNode->xmin[1]-(startNode->xmax[1]-startNode->xmin[1])/double(_BLOCK_CELLS_Y_)*double(_GHOST_CELLS_Y_);
-    xmin[2]=startNode->xmin[2]-(startNode->xmax[2]-startNode->xmin[2])/double(_BLOCK_CELLS_Z_)*double(_GHOST_CELLS_Z_);
-
     xmax[0]=startNode->xmax[0]+(startNode->xmax[0]-startNode->xmin[0])/double(_BLOCK_CELLS_X_)*double(_GHOST_CELLS_X_);
+
+#if _MESH_DIMENSION_ >= 2
+    xmin[1]=startNode->xmin[1]-(startNode->xmax[1]-startNode->xmin[1])/double(_BLOCK_CELLS_Y_)*double(_GHOST_CELLS_Y_);
     xmax[1]=startNode->xmax[1]+(startNode->xmax[1]-startNode->xmin[1])/double(_BLOCK_CELLS_Y_)*double(_GHOST_CELLS_Y_);
+#endif
+
+#if _MESH_DIMENSION_ == 3
+    xmin[2]=startNode->xmin[2]-(startNode->xmax[2]-startNode->xmin[2])/double(_BLOCK_CELLS_Z_)*double(_GHOST_CELLS_Z_);
     xmax[2]=startNode->xmax[2]+(startNode->xmax[2]-startNode->xmin[2])/double(_BLOCK_CELLS_Z_)*double(_GHOST_CELLS_Z_);
+#endif
 
     for (int nface=0;nface<nBoundaryFaces;nface++)  {
       if (BoundaryFaces[nface].BlockIntersection(xmin,xmax,EPS)==true) {
@@ -10689,8 +10767,11 @@ nMPIops++;
    *              internal-boundary descriptor got the full volume also inside a body, and the first block that reached a
    *              shared ghost cell set its measure;
    *   version 2: every cell is calculated by its owner; a cell inside a body has measure 0 (see InitCellMeasure()).
+   *   version 3: the classification of a point against a triangulated surface rejects a ray that passes within the
+   *              tolerance of an edge or a vertex of the surface (PointInTriangulatedComputationalDomain() in
+   *              meshAMRcutcell.cpp): such a ray misclassified sub-cells, a part of 1/8^k of a cell was lost or added.
    * The header holds a marker, the version, the number of the records per leaf of the tree and the number of the leaves. */
-  static int GetCenterNodeMeasureFileVersion() {return 2;}
+  static int GetCenterNodeMeasureFileVersion() {return 3;}
 
   static void GetCenterNodeMeasureFileName(char *fname,const char *path,unsigned long Signature) {
     if (path==NULL) sprintf(fname,"amr.sig=0x%lx.CenterNodeMeasure.v%i.bin",Signature,GetCenterNodeMeasureFileVersion());
@@ -10979,6 +11060,11 @@ nMPIops++;
     #endif
 
     char SendCellFlag;
+
+    //the length of a cell's associated data (thread 0 also needs it for the cells of the other threads,
+    //for which it has no center node)
+    cCenterNode CellTemplate;
+    const int CellDataLength=CellTemplate.AssociatedDataLength();
     
     std::function<void(cTreeNodeAMR<cBlockAMR>*,CMPI_channel*)> SaveDownTree;
 
@@ -11018,17 +11104,17 @@ nMPIops++;
     						}
     					}
     					else {
-    						pipe->send(offset,CenterNode->AssociatedDataLength());
+    						pipe->send(offset,CellDataLength);
     					}
     				}
     				else {
-    					char data[CenterNode->AssociatedDataLength()];
+    					char data[CellDataLength];
 
     					//recieve the data
-						pipe->recv(data,CenterNode->AssociatedDataLength(),node->Thread);
+						pipe->recv(data,CellDataLength,node->Thread);
 
 						//save the data
-						if (nSaveVariables==-1) fwrite(data,sizeof(char),CenterNode->AssociatedDataLength(),fout);
+						if (nSaveVariables==-1) fwrite(data,sizeof(char),CellDataLength,fout);
 						else for (int nvar=0;nvar<nSaveVariables;nvar++) {
 							fwrite(data+SaveVariableOffset[nvar],sizeof(double),1,fout);
 						}
@@ -11043,6 +11129,11 @@ nMPIops++;
     		}
     	}
     };
+
+    //write the data of the whole tree: since SaveDownTree() replaced the recursion (2020, commit 6e6ff731)
+    //it was never called, and the file had only the number of the variables (loading it failed with
+    //"fread has failed")
+    SaveDownTree(rootTree,&pipe);
 
     if (node==rootTree) {
       if (ThisThread==0) {
@@ -12641,12 +12732,15 @@ if (TmpAllocationCounter==2437) {
       if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
         int thread=node->Thread;
 
-        ChecksumTable[thread].add(node->xmin,3);
-        ChecksumTable[thread].add(node->xmax,3);
+        //_MESH_DIMENSION_ coordinates: with 3 a 1D or 2D mesh added the bytes that follow xmax in the node (the
+        //refinement levels, padding, nodeDescriptor, a pointer), which differ between the process that built the mesh
+        //and the processes that read it from the mesh file
+        ChecksumTable[thread].add(node->xmin,_MESH_DIMENSION_);
+        ChecksumTable[thread].add(node->xmax,_MESH_DIMENSION_);
 
         Signature->add(thread);
-        Signature->add(node->xmin,3);
-        Signature->add(node->xmax,3);
+        Signature->add(node->xmin,_MESH_DIMENSION_);
+        Signature->add(node->xmax,_MESH_DIMENSION_);
 
         BlockCounterTable[thread]++;
       }
@@ -13243,6 +13337,10 @@ if (TmpAllocationCounter==2437) {
     cTreeNodeAMR<cBlockAMR>** ThreadStartNode=new cTreeNodeAMR<cBlockAMR>* [nTotalThreads];
     int thread;
     cTreeNodeAMR<cBlockAMR> *node;
+
+    //only the root process sets the table; BroadcastNewDomainDecomposition() compares its entries on all processes
+    //(the other processes then take the thread numbers from the root), so they must not be uninitialized there
+    for (thread=0;thread<nTotalThreads;thread++) ThreadStartNode[thread]=NULL;
 
     if (ThisThread==0) {
       RedistributeParallelLoad(ThreadStartNode);

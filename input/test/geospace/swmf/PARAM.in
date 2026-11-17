@@ -359,13 +359,16 @@ T                       DoTest
 #END_COMP PT
 
 
+! Nightly size: 1 s after the 00:02:00 restart.  With the ~1.6 ms PT step this is 639 AMPS iterations
+! (93 s on 8 ranks), enough for the out=0, out=1 and out=2 samples (InitialSampleLength=200 in
+! geospace.input); the check compares out=1
 #ENDTIME
 2014			iYear
 04			iMonth
 10			iDay
 00			iHour
-03			iMinute
-00			iSecond
+02			iMinute
+01			iSecond
 0.0			FracSecond
 
 #END ############################################################

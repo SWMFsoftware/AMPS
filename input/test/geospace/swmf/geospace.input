@@ -17,7 +17,12 @@
   
   ReferenceInjectionParticleNumber=100000
 
-  InitialSampleLength=1000
+  InitialSampleLength=200  ! samples out=0, out=1, out=2 within the 1 s coupled run of the nightly test
+
+  ! reproducible domain decomposition (see input/test/geospace/geospace_forward.input): the define of the
+  ! included input, appended after the include guard of picGlobal.dfn, otherwise turns the nightly
+  ! particle-number balancing back into balancing by measured execution time
+  define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_
 
 ! define _PIC_PARTICLE_TRACKER_MODE_ _PIC_MODE_OFF_
 ! define _PIC_PARTICLE_TRACKER__RUNTIME_OUTPUT_ _PIC_MODE_ON_

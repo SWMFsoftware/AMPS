@@ -80,6 +80,14 @@
   DS_NINTERVALS      60        ! 61 log-spaced energy points over 3 decades
   DS_ENERGY_SPACING  LOG
   DS_BOUNDARY_MODE   ISOTROPIC
+  ! Trajectories that are still unresolved after MAX_TRACE_TIME (and are not proven
+  ! FORBIDDEN by TRAP_STORMER below) are re-traced from their seed with 10x and 100x
+  ! the time budget (600 s, 6000 s).  Without this and TRAP_STORMER, 37 % (8 Re) and
+  ! 98 % (6 Re) of the 10-100 MeV backtraces ended at the 60-s limit, and the nominal
+  ! density (allowed/resolved) was 37 % and 170 % above the converged value.
+  DS_RETRY_UNRESOLVED              T
+  DS_UNRESOLVED_EXTENSION_PASSES   2
+  DS_UNRESOLVED_EXTENSION_FACTOR   10
 
 #ENERGY_CHANNELS
   ! User-defined integral-flux channels for comparing F_ch = 4pi*int[E1,E2] T*Jb dE
@@ -130,6 +138,10 @@
   DT_TRACE           0.5       ! s — initial time step for particle integration
   MAX_STEPS          200000    ! hard cap on integration steps per trajectory
   MAX_TRACE_TIME     60.0     ! s — hard cap on integration time per trajectory
+  ! Pure dipole: a backtrace that runs out of budget is FORBIDDEN when the conserved
+  ! canonical azimuthal momentum (Stormer integral) confines it to a part of the
+  ! meridional plane that never reaches the box (a proof, not a timeout remap).
+  TRAP_STORMER       T
 
 #OUTPUT_DOMAIN
   OUTPUT_MODE   POINTS

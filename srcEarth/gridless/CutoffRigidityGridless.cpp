@@ -506,7 +506,7 @@ public:
     // creating another worker cannot change this evaluator's field and concurrent
     // construction cannot introduce a data race.  The field formula is unchanged.
 
-    PS = 0.170481; // legacy-model default; T05/IGRF replace this from the epoch context
+    PS = 0.170481; // placeholder: DIPOLE/NONE do not use it, the GEOPACK-based models set it from the epoch below
 
 #if _PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_
     // For Tsyganenko models we need Geopack initialization.
@@ -531,6 +531,11 @@ public:
       currentEpoch_ = prm.field.epoch;
     }
     else if (Model()!="DIPOLE" && Model()!="NONE") {
+      // T96/T01/TA15/TA16 take the geodipole tilt PS as an input; it used to keep the
+      // 0.170481 rad default above for every epoch, while the IGRF part of the same
+      // field used the epoch's tilt.  Take PS from the epoch's GEOPACK context, as for
+      // T05; Geopack::Init afterwards leaves the legacy RECALC state at this epoch.
+      PS=GetGeopackContextCached_(prm.field.epoch,"GSM")->dipoleTiltRad;
       Geopack::Init(prm.field.epoch.c_str(),"GSM");
       currentEpoch_ = prm.field.epoch;
     }
@@ -765,6 +770,8 @@ public:
         PS=geopackContext_->dipoleTiltRad;
       }
       else {
+        // Same epoch-consistent dipole tilt for the legacy wrappers as in the constructor.
+        PS=GetGeopackContextCached_(epoch,"GSM")->dipoleTiltRad;
         Geopack::Init(epoch.c_str(), "GSM");
       }
       currentEpoch_ = epoch;  // remember for the guard check on the next call
@@ -1551,6 +1558,45 @@ static inline double SelectStructuredTraceDt(const EarthUtil::AmpsParam& prm,
       const double omega = std::fabs(q_C)*Bmag/(gamma*m0_kg);
       if (omega>0.0) dt = std::min(dt, dphiMax/omega);
     }
+
+    // (1b) Spatial resolution of the field along the orbit.
+    //
+    // The gyro-angle limit resolves the gyration, not the variation of B along the
+    // path: for a GeV proton in the outer magnetosphere 0.15 rad of gyration is a
+    // displacement of several Re (5 GeV at 8 Re: about 7.7 Re per step), across which
+    // the dipole field changes by a large factor.  The pre-F3 policy bounded such steps
+    // implicitly by 20 % of the distance to the nearest stopping surface; the F3 change
+    // (commit c889703c) removed that limiter together with its 100 km floor and left
+    // the gyro angle as the only accuracy control.  The result were misclassified
+    // grazing directions and exit pitch angles (Geospace-Flux-Gridless anisotropy
+    // decks, 5-50 GeV: T(E) in error by up to 5 % against a converged RK4 reference,
+    // 3e-4 before F3).  Bound the displacement per step by a fraction of the distance
+    // from the planet centre, the scale of the planet-centred fields traced here
+    // (dipole: B/|grad B| = r/3).  This is an upper bound only: it never increases a
+    // step and does not approach a stopping surface geometrically.  It binds only when
+    // 0.15 gyroradii exceed 0.05 r, i.e. for high-rigidity particles, whose
+    // trajectories are short, so the added cost is small.
+    const double radialStepFraction = 0.05;
+    const double pMag = std::sqrt(std::max(0.0,p2));
+    const double vMag = (gamma>0.0 && m0_kg>0.0) ? pMag/(gamma*m0_kg) : 0.0;
+    const double rMag = norm(x);
+    if (vMag>0.0 && rMag>0.0 && std::isfinite(rMag))
+      dt = std::min(dt, radialStepFraction*rMag/vMag);
+  }
+  else {
+    // A guiding-center step has no gyro-angle limit, and this policy has no boundary
+    // limiter, so without this bound a GC step was limited only by DT_TRACE.  For a
+    // 10 MeV proton at 1.2 Re (Geospace-Flux-Gridless-hybrid, DT_TRACE=0.5 s) that is a
+    // 22000 km step, longer than the whole L=1.2 field line: the GC integration then
+    // produced spurious escapes from the deep-shielding region (n 5 orders of magnitude
+    // above RK4 and the analytic value).  Bound the GC displacement per step by a
+    // fraction of the magnetic scale length, as the gyro-angle limit does for RK4.
+    const double gcStepFraction = 0.05;
+    const double pMag = std::sqrt(std::max(0.0,p2));
+    const double vMag = (gamma>0.0 && m0_kg>0.0) ? pMag/(gamma*m0_kg) : 0.0;
+    const double L_m = GuidingCenterFieldScaleLength(x,field);
+    if (vMag>0.0 && std::isfinite(L_m) && L_m>0.0)
+      dt = std::min(dt, gcStepFraction*L_m/vMag);
   }
 
   // Boundary crossings are detected explicitly after every accepted mover step by
@@ -1599,6 +1645,124 @@ static inline double SelectTraceDt(const EarthUtil::AmpsParam& prm,
                                 timeRemaining_s,useGuidingCenterForThisStep);
 }
 
+//--------------------------------------------------------------------------------------
+// Stormer confinement in a pure dipole (TRAP_STORMER)
+//--------------------------------------------------------------------------------------
+// In a static field that is axisymmetric about the dipole axis the canonical azimuthal
+// momentum
+//
+//   P = rho * (p_phi + q A_phi),   A_phi = k rho / r^3,   k = (mu0/4pi) M
+//
+// (rho, z, phi: cylindrical coordinates about the dipole axis) is conserved, and |p| is
+// conserved, so the orbit can only visit the meridional region
+//
+//   |P/rho - q k rho / r^3| <= |p|                                  (Stormer 1955).
+//
+// If the connected part of that region that contains the starting point, with the loss
+// sphere removed (the particle is absorbed there), never reaches the outer box, the
+// trajectory can never be ALLOWED: it is FORBIDDEN whether it is lost to the sphere or
+// trapped for ever.  Without this test such orbits run to the time/step budget and stay
+// UNRESOLVED: in Geospace-Flux-Gridless 37-98 % of the 10-100 MeV backtraces at 8 and 6 Re
+// did, although a 6000-s trace shows that none of them ever escapes.
+//
+// The region is flood-filled on a (rho,z) grid and over-approximated: a cell counts as
+// open if any of 3x3 sample points is allowed or if the function crosses [-|p|,|p|]
+// between them, so "confined" is concluded only when even the enlarged region stays off
+// the box.  With zero tilt the box is reached iff rho >= min(|xMin|,xMax,|yMin|,yMax) or z
+// leaves (zMin,zMax) somewhere in the region; with a tilt the test uses the largest sphere
+// inside the box, a stricter, still sufficient condition.  The test uses the initial state,
+// an exact particle state for every mover (a HYBRID guiding-centre state is not).
+static bool StormerConfinedInDipole(const EarthUtil::AmpsParam& prm,
+                                    const V3& x0_m,const V3& p0_SI,double q_C,
+                                    const DomainBoxRe& boxRe) {
+  const Earth::GridlessMode::Dipole::Params dp=
+      Earth::GridlessMode::Dipole::MakeParams(prm.field.dipoleMoment_Me,prm.field.dipoleTilt_deg);
+  const double M=dp.momentScale_Me*Earth::GridlessMode::Dipole::M_E_Am2;
+  const double k=1.0e-7*M;
+  const double pAbs=norm(p0_SI);
+  if (!(M>0.0) || !(pAbs>0.0) || !std::isfinite(pAbs)) return false;
+
+  // Dipole frame: ez along the moment, ex in the x-z plane (MakeParams tilts about y).
+  const V3 ez{dp.m_hat[0],dp.m_hat[1],dp.m_hat[2]};
+  const V3 ex{ez.z,0.0,-ez.x};
+  const V3 ey{ez.y*ex.z-ez.z*ex.y, ez.z*ex.x-ez.x*ex.z, ez.x*ex.y-ez.y*ex.x};
+  const bool untilted=std::fabs(ez.x)<1.0e-12 && std::fabs(ez.y)<1.0e-12 && ez.z>0.0;
+
+  const double xx=dot(x0_m,ex), yy=dot(x0_m,ey), zz=dot(x0_m,ez);
+  const double rho0=std::sqrt(xx*xx+yy*yy);
+  if (!(rho0>0.0)) return false;
+  const double r0=std::sqrt(rho0*rho0+zz*zz);
+  const double pphi=(-yy*dot(p0_SI,ex)+xx*dot(p0_SI,ey))/rho0;
+  const double P=rho0*pphi+q_C*k*rho0*rho0/(r0*r0*r0);
+
+  const double Re=_EARTH__RADIUS_;
+  double rhoLim,zLo,zHi,rLim=0.0;
+  if (untilted) {
+    rhoLim=std::min(std::min(-boxRe.xMin,boxRe.xMax),std::min(-boxRe.yMin,boxRe.yMax))*Re;
+    zLo=boxRe.zMin*Re; zHi=boxRe.zMax*Re;
+  }
+  else {
+    rLim=std::min(std::min(std::min(-boxRe.xMin,boxRe.xMax),std::min(-boxRe.yMin,boxRe.yMax)),
+                  std::min(-boxRe.zMin,boxRe.zMax))*Re;
+    rhoLim=rLim; zLo=-rLim; zHi=rLim;
+  }
+  if (!(rhoLim>0.0) || !(zHi>zLo) || !(zLo<zz) || !(zz<zHi) || !(rho0<rhoLim)) return false;
+  const double rIn=boxRe.rInner*Re;
+
+  const double h=std::max(0.02*Re,std::max(rhoLim,zHi-zLo)/600.0);
+  const int nr=(int)std::ceil(rhoLim/h), nz=(int)std::ceil((zHi-zLo)/h);
+  if (nr<4 || nz<4) return false;
+  auto f=[&](double R,double Z) {
+    const double rr=std::sqrt(R*R+Z*Z);
+    return P/R-q_C*k*R/(rr*rr*rr);
+  };
+  auto cellOpen=[&](int i,int j) -> bool {
+    const double R0=i*h, Z0=zLo+j*h;
+    const double Rc=R0+0.5*h, Zc=Z0+0.5*h;
+    if (std::sqrt(Rc*Rc+Zc*Zc)+0.75*h<rIn) return false;     // whole cell inside the loss sphere
+    bool above=false,below=false;
+    for (int a=0;a<3;++a) for (int b=0;b<3;++b) {
+      const double R=std::max(R0+0.5*a*h,1.0e-3*h), Z=Z0+0.5*b*h;
+      const double v=f(R,Z);
+      if (!std::isfinite(v)) return true;
+      if (std::fabs(v)<=pAbs) return true;
+      if (v>pAbs) above=true; else below=true;
+    }
+    return above && below;
+  };
+  auto reachesBox=[&](int i,int j) -> bool {
+    if (i>=nr-2 || j<=1 || j>=nz-2) return true;
+    if (!untilted) {
+      const double Ro=(i+1)*h, Zo=std::max(std::fabs(zLo+j*h),std::fabs(zLo+(j+1)*h));
+      if (std::sqrt(Ro*Ro+Zo*Zo)>=rLim-2.0*h) return true;
+    }
+    return false;
+  };
+
+  const int i0=std::min(nr-1,(int)(rho0/h)), j0=std::min(nz-1,std::max(0,(int)((zz-zLo)/h)));
+  thread_local std::vector<unsigned char> seen;
+  thread_local std::vector<int> stack;
+  seen.assign((size_t)nr*(size_t)nz,0);
+  stack.clear();
+  stack.push_back(i0*nz+j0);
+  seen[(size_t)i0*(size_t)nz+(size_t)j0]=1;
+  while (!stack.empty()) {
+    const int c=stack.back(); stack.pop_back();
+    const int i=c/nz, j=c%nz;
+    if (reachesBox(i,j)) return false;
+    const int di[4]={1,-1,0,0}, dj[4]={0,0,1,-1};
+    for (int d=0;d<4;++d) {
+      const int ii=i+di[d], jj=j+dj[d];
+      if (ii<0 || jj<0 || ii>=nr || jj>=nz) continue;
+      const size_t id=(size_t)ii*(size_t)nz+(size_t)jj;
+      if (seen[id]) continue;
+      seen[id]=1;
+      if (cellOpen(ii,jj)) stack.push_back(ii*nz+jj);
+    }
+  }
+  return true;
+}
+
 static Earth::GridlessMode::TrajectoryResult TraceTrajectoryImpl(
                              const EarthUtil::AmpsParam& prm,
                              const cFieldEvaluator& field,
@@ -1642,6 +1806,7 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryImpl(
   const double pMag = MomentumFromRigidity_GV(R_GV,qabs);
   V3 p = mul(pMag, v0_unit);
   V3 x = x0_m;
+  const V3 p0_SI = p;   // initial state, used by the TRAP_STORMER confinement proof
 
   const DomainBoxRe boxRe = ToDomainBoxRe(prm.domain);
   Earth::TrajectoryBoundary::Box boundaryBox;
@@ -1891,6 +2056,16 @@ static Earth::GridlessMode::TrajectoryResult TraceTrajectoryImpl(
       }
     }
   }
+
+  const bool budgetLimited=
+      nSteps >= prm.numerics.maxSteps ||
+      (maxTraceDistance_m > 0.0 && sTrace_m >= maxTraceDistance_m) ||
+      tTrace_s >= maxTraceTime_s_effective;
+  // A trajectory that only ran out of budget is FORBIDDEN, not unresolved, when the
+  // Stormer integral proves it can never reach the box (see StormerConfinedInDipole).
+  if (budgetLimited && prm.numerics.trapStormer && field.Model()=="DIPOLE" &&
+      StormerConfinedInDipole(prm,x0_m,p0_SI,q,boxRe))
+    return Finalize(TrajectoryTermination::MagneticallyTrappedForbidden);
 
   if (nSteps >= prm.numerics.maxSteps)
     return Finalize(TrajectoryTermination::StepLimit);

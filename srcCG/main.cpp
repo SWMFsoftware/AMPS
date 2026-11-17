@@ -670,6 +670,21 @@ int main(int argc,char **argv) {
   else {
     NewMeshGeneratedFlag=true;
 
+    //the mesh file of the nightly tests (amr.sig=0xd7058cc2a680a3a2.mesh.bin) is no longer distributed: the mesh
+    //is generated. Its signature differs from that of the file, so the cell volumes and the gravity field
+    //precomputed in the data directory for the file's mesh do not apply: they are computed for the generated mesh
+    //in every run and saved in the run directory; nothing is written into the data directory.
+    //The files saved by an earlier run in the same run directory (volumes, gravity, external normals of the surface)
+    //are not used: the calculations of the volumes and of the normals draw random numbers
+    //(CutCell::CheckPointInsideDomain, IrregularSurface::InitExternalNormalVector), so loading them would change the
+    //random sequence of the particle simulation, and the loaded gravity would also be set in the blocks that a
+    //process holds as copies of its neighbors' blocks, which the calculation leaves at zero; a rerun in the same
+    //run directory would not reproduce a fresh run
+    if (PIC::Mesh::mesh->ThisThread==0) {
+      printf("$PREFIX: mesh file %s is not found: generating the mesh; cell volumes, gravity and surface normals are computed for it (files of an earlier run in this directory are not used) and saved in the run directory\n",fullname);
+      fflush(stdout);
+    }
+
     if (PIC::Mesh::mesh->ThisThread==0) {
        PIC::Mesh::mesh->buildMesh();
        PIC::Mesh::mesh->saveMeshFile("mesh.msh");
@@ -714,7 +729,9 @@ int main(int argc,char **argv) {
 
   //init the volume of the cells'
   PIC::Mesh::IrregularSurface::CheckPointInsideDomain=PIC::Mesh::IrregularSurface::CheckPointInsideDomain_default;
-  PIC::Mesh::mesh->InitCellMeasure(PIC::UserModelInputDataPath);
+  //the volumes of a generated mesh are computed without looking for a saved file (startNode=rootTree; see above)
+  if (NewMeshGeneratedFlag==true) PIC::Mesh::mesh->InitCellMeasure(NULL,PIC::Mesh::mesh->rootTree);
+  else PIC::Mesh::mesh->InitCellMeasure(PIC::UserModelInputDataPath);
 
 
 std::function<void(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)> test_cut_cell;
@@ -744,7 +761,12 @@ test_cut_cell = [&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) -> void 
  }
 };
 
-test_cut_cell(PIC::Mesh::mesh->rootTree);
+{
+  //the decomposition classifies points against the whole surface: search its faces through a tree meanwhile
+  CutCell::cVolumeIntegrationAcceleration acceleration(CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,PIC::Mesh::mesh->EPS);
+
+  test_cut_cell(PIC::Mesh::mesh->rootTree);
+}
 
 
 char tetra_fname[200];
@@ -861,7 +883,8 @@ PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,tetra_fname);
 
 
   double xLightSource[3]={HeliocentricDistance*cos(subSolarPointAzimuth)*sin(subSolarPointZenith),HeliocentricDistance*sin(subSolarPointAzimuth)*sin(subSolarPointZenith),HeliocentricDistance*cos(subSolarPointZenith)}; //{6000.0e3,1.5e6,0.0};                                                                                                                           
-  PIC::Mesh::IrregularSurface::InitExternalNormalVector();
+  //a generated mesh: the normals are computed in every run, like the volumes and the gravity (see above)
+  PIC::Mesh::IrregularSurface::InitExternalNormalVector(NewMeshGeneratedFlag==false);
   PIC::RayTracing::SetCutCellShadowAttribute(xLightSource,false);
   PIC::Mesh::IrregularSurface::PrintSurfaceTriangulationMesh("SurfaceTriangulation-shadow.dat",PIC::OutputDataFileDirectory);
 
@@ -1017,7 +1040,8 @@ PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,tetra_fname);
 
   PIC::Init_AfterParser();
   PIC::Mover::Init();
-  Comet::Init_AfterParser(PIC::UserModelInputDataPath);
+  //the gravity of a generated mesh is computed without looking for a saved file (NULL; see above)
+  Comet::Init_AfterParser((NewMeshGeneratedFlag==true) ? NULL : PIC::UserModelInputDataPath);
 
   //init sampling of the last Rosina data
   if (_COMET_SAMPLE_ROSINA_DATA_ == _PIC_MODE_ON_) {

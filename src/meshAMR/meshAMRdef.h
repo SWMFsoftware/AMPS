@@ -375,6 +375,11 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
     MemoryAllocation+=sizeof(T*)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
 
     for (i=0;i<_STACK_DEFAULT_BUFFER_BUNK_SIZE_;i++) elementStackList[dataBufferListPointer][i]=dataBufferList[dataBufferListPointer]+i; 
+
+    //give every element of the new bank its counting number: its position in the data buffer, which GetEntryPointer()
+    //inverts. saveAllocationParameters() writes the counting numbers of the free elements as well, and these were
+    //uninitialized for the elements that newElement() has not yet handed out
+    for (i=0;i<_STACK_DEFAULT_BUFFER_BUNK_SIZE_;i++) dataBufferList[dataBufferListPointer][i].stack_element_id=i+dataBufferListPointer*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
  
     nMaxElements+=_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
     dataBufferListPointer++;
@@ -524,6 +529,10 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
       //elementStackList[i]=new T*[_STACK_DEFAULT_BUFFER_BUNK_SIZE_]; 
       amps_new_managed<T*>(elementStackList[i],_STACK_DEFAULT_BUFFER_BUNK_SIZE_);
       MemoryAllocation+=sizeof(T*)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
+
+      //the elements are filled from the file at the positions of their counting numbers, which therefore are the positions
+      //(without this the counting numbers of all elements of a mesh read from a file were uninitialized)
+      for (j=0;j<_STACK_DEFAULT_BUFFER_BUNK_SIZE_;j++) dataBufferList[i][j].stack_element_id=j+i*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
     }
 
     //read the elementStack
@@ -593,7 +602,10 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
     res=elementStackList[elementStackBank][offset];
     elementStackPointer++;
 
-    res->stack_element_id=offset+elementStackBank*_STACK_DEFAULT_BUFFER_BUNK_SIZE_; 
+    //res->stack_element_id is the element's position in the data buffer, set when its bank was allocated (initMemoryBlock(),
+    //readAllocationParameters()). It was set here to the position in the stack list, which is a different element after
+    //an out-of-order deleteElement(): two live elements then had the same counting number (a mesh saved after a
+    //coarsening mapped two tree nodes to one record)
 
     if ((ForceElementNumberLimit==true)&&(usedElements()>_MAX_MESH_ELEMENT_NUMBER_)) exit(__LINE__,__FILE__,"The number of the requster mesh elements exeeds the limit -> increase _MESH_ELEMENTS_NUMBERING_BITS_ ");
 
@@ -789,7 +801,7 @@ public:
     offset=BaseElementStack.elementStackPointer-elementStackBank*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
 
     res=BaseElementStack.elementStackList[elementStackBank][offset];
-    res->stack_element_id=offset+elementStackBank*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
+    //res->stack_element_id: set when the bank was allocated (BaseElementStack.initMemoryBlock()), see cAMRstack::newElement()
 
     if (associatedDataStackList!=NULL) res->SetAssociatedDataBufferPointer(associatedDataStackList[elementStackBank][offset]);
     BaseElementStack.elementStackPointer++;

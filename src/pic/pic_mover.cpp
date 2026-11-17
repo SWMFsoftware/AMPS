@@ -6,6 +6,15 @@
 //the functions that controls the particle motion
 
 #include "pic.h"
+#include <cfloat>
+
+#include <algorithm>
+#include <cstdlib>
+#include <cstring>
+#include <functional>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 // OPENMP=on adds -fopenmp without necessarily selecting AMPS's separate
 // _COMPILATION_MODE__HYBRID_ configuration.  pic.h includes omp.h for HYBRID,
@@ -506,14 +515,21 @@ void PIC::Mover::Init() {
   if (PIC::Mesh::mesh==NULL) exit(__LINE__,__FILE__,"Error: PIC::Mesh::mesh needs to be generated for the following initializations");
   if (PIC::Mesh::MeshTableLength!=1) exit(__LINE__,__FILE__,"Error: initialization is not implemented for MeshTableLength!=1");
 
+  //rootTree->xmin/xmax have _MESH_DIMENSION_ elements. The inactive Cartesian coordinates of a DIM1/DIM2
+  //domain are zero (in DIM1 spherical symmetry the movers keep x=(r,0,0)), so the domain has no extent there.
+  auto DomainLimit=[](int idim,bool MaxSide) {
+    if (idim>=_MESH_DIMENSION_) return 0.0;
+    return (MaxSide==true) ? PIC::Mesh::mesh->rootTree->xmax[idim] : PIC::Mesh::mesh->rootTree->xmin[idim];
+  };
+
   for (int nface=0;nface<6;nface++) {
     double cE0=0.0,cE1=0.0;
 
     for (int idim=0;idim<3;idim++) {
-      ExternalBoundaryFaceTable[nface].x0[idim]=(ExternalBoundaryFaceTable[nface].nX0[idim]==0) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim];
+      ExternalBoundaryFaceTable[nface].x0[idim]=DomainLimit(idim,ExternalBoundaryFaceTable[nface].nX0[idim]!=0);
 
-      cE0+=pow(((ExternalBoundaryFaceTable[nface].e0[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
-      cE1+=pow(((ExternalBoundaryFaceTable[nface].e1[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
+      cE0+=pow(DomainLimit(idim,!(ExternalBoundaryFaceTable[nface].e0[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5))-ExternalBoundaryFaceTable[nface].x0[idim],2);
+      cE1+=pow(DomainLimit(idim,!(ExternalBoundaryFaceTable[nface].e1[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5))-ExternalBoundaryFaceTable[nface].x0[idim],2);
     }
 
     ExternalBoundaryFaceTable[nface].lE0=sqrt(cE0);
@@ -1024,6 +1040,351 @@ void LapentaMultiThreadedMoverGPU() {
 
 //====================================================
 //move all existing particles
+//====================================================
+//Sparse sweep of the particle lists (see pic.h: PIC::Mover::SparseParticleLists)
+//
+//In _COMPILATION_MODE__MPI_ a time step sweeps the particle lists of every block three times: MoveParticles() pops
+//the particles from FirstCellParticleTable of all local blocks (PIC::DomainBlockDecomposition::BlockTable), the
+//list update swaps FirstCellParticleTable and tempParticleMovingListTable of all local and subdomain boundary layer
+//blocks, and ExchangeParticleData() looks for the particles in all boundary layer blocks. That is O(blocks) memory
+//traffic per step whatever the number of particles.
+//
+//The 'hint' is a set of blocks that can hold particles. A restricted sweep is exact when all particles are known
+//to be in the hint blocks, which is verified by counting: every list element is an allocated particle, so if the
+//lists of the hint blocks hold PIC::ParticleBuffer::NAllPart particles, no other list holds a particle, and the
+//full sweep would do nothing for the other blocks. The hint blocks are processed in the order of the full sweep
+//(BlockTable and DomainBoundaryLayerNodesList orders), so the particles are moved, updated and sent in the same order.
+//
+//  MoveParticles():  the hint (the blocks where the particles were after the previous step and the blocks that received
+//                    particles in the particle exchange) is verified with the FirstCellParticleTable lists; if a particle
+//                    is created during the restricted sweep (PIC::ParticleBuffer::nParticleAllocationCounter changes) the
+//                    sweep continues as the full sweep from the next block on. During the sweep, the block that holds each
+//                    moved particle (the block containing its new location) is collected.
+//  the list update:  the collected blocks are verified with the tempParticleMovingListTable lists (no particle may have
+//                    been created during the sweep), and only they are updated; they become the new hint.
+//  the exchange:     the hint is verified with the FirstCellParticleTable lists, and only the hint blocks of the boundary
+//                    layer are searched for the particles to send; the receiving blocks are added to the hint.
+//
+//The restricted sweeps are used only in configurations where skipping an empty block has no side effect: MPI-only,
+//no ECSIM field solver (SetBlock_E/B() are called for every block), and no execution-time load balancing (the time
+//spent on every block is added to its load measure). They are tried only when the particles are few
+//(NAllPart*4<=nLocalBlocks), so that in a dense run the cost is one comparison per step.
+
+bool PIC::Mover::SparseParticleLists::Enabled=true;
+unsigned long int PIC::Mover::SparseParticleLists::nSparseMoverSweeps=0,PIC::Mover::SparseParticleLists::nFullMoverSweeps=0;
+unsigned long int PIC::Mover::SparseParticleLists::nSparseListUpdates=0,PIC::Mover::SparseParticleLists::nFullListUpdates=0;
+unsigned long int PIC::Mover::SparseParticleLists::nSparseExchanges=0,PIC::Mover::SparseParticleLists::nFullExchanges=0;
+unsigned long int PIC::Mover::SparseParticleLists::nSparseListSorts=0,PIC::Mover::SparseParticleLists::nFullListSorts=0;
+
+namespace {
+  typedef cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> cSparseNode;
+
+  const int SparseCellNumber=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
+
+  //the hint: the blocks that can hold particles; valid only for the mesh/domain decomposition it was made for
+  struct cSparseHint {
+    std::vector<cSparseNode*> nodes;
+    bool valid=false;
+    unsigned long int MeshModificationCounter=0;
+  } SparseHint;
+
+  //the position of the nodes in the lists that the full sweeps use. The maps are rebuilt when the mesh or the
+  //domain decomposition changes (the mesh modification counter, BlockTable, or the heads of the node lists)
+  struct cSparseNodeMaps {
+    bool valid=false;     //the key below is set
+    bool usable=false;    //the maps can be used (every node is in one list only)
+    unsigned long int MeshModificationCounter=0;
+    int LastMeshModificationID=-1;
+    cSparseNode **BlockTable=NULL;
+    unsigned int nLocalBlocks=0;
+    std::vector<cSparseNode*> ListHeads;   //ParallelNodesDistributionList[ThisThread], DomainBoundaryLayerNodesList[0..nTotalThreads-1]
+
+    std::unordered_map<cSparseNode*,int> BlockTableIndex;    //the index in BlockTable (the order of the mover sweep)
+    //the list (thread: ParallelNodesDistributionList[ThisThread] for thread==ThisThread, DomainBoundaryLayerNodesList[thread] otherwise;
+    //the lists of the update and of the exchange) and the position in it
+    std::unordered_map<cSparseNode*,std::pair<int,long int> > ListPosition;
+  } SparseNodeMaps;
+
+  void SparseGetListHeads(std::vector<cSparseNode*>& heads) {
+    heads.clear();
+    heads.push_back(PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread]);
+
+    for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
+      heads.push_back((PIC::Mesh::mesh->DomainBoundaryLayerNodesList!=NULL) ? PIC::Mesh::mesh->DomainBoundaryLayerNodesList[thread] : NULL);
+    }
+  }
+
+  //true when the maps describe the current mesh and domain decomposition (rebuild them when needed)
+  bool SparseUpdateNodeMaps() {
+    static std::vector<cSparseNode*> heads;
+
+    SparseGetListHeads(heads);
+
+    if ((SparseNodeMaps.valid==true)&&(SparseNodeMaps.MeshModificationCounter==PIC::Mesh::mesh->nMeshModificationCounter)&&
+        (SparseNodeMaps.LastMeshModificationID==PIC::DomainBlockDecomposition::LastMeshModificationID)&&
+        (SparseNodeMaps.BlockTable==PIC::DomainBlockDecomposition::BlockTable)&&(SparseNodeMaps.nLocalBlocks==PIC::DomainBlockDecomposition::nLocalBlocks)&&
+        (SparseNodeMaps.ListHeads==heads)) return SparseNodeMaps.usable;
+
+    SparseNodeMaps.BlockTableIndex.clear();
+    SparseNodeMaps.ListPosition.clear();
+
+    SparseNodeMaps.MeshModificationCounter=PIC::Mesh::mesh->nMeshModificationCounter;
+    SparseNodeMaps.LastMeshModificationID=PIC::DomainBlockDecomposition::LastMeshModificationID;
+    SparseNodeMaps.BlockTable=PIC::DomainBlockDecomposition::BlockTable;
+    SparseNodeMaps.nLocalBlocks=PIC::DomainBlockDecomposition::nLocalBlocks;
+    SparseNodeMaps.ListHeads=heads;
+    SparseNodeMaps.valid=true;
+    SparseNodeMaps.usable=false;
+
+    for (unsigned int i=0;i<PIC::DomainBlockDecomposition::nLocalBlocks;i++) SparseNodeMaps.BlockTableIndex[PIC::DomainBlockDecomposition::BlockTable[i]]=i;
+
+    for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
+      long int position=0;
+      cSparseNode *node=(thread==PIC::Mesh::mesh->ThisThread) ? PIC::Mesh::mesh->ParallelNodesDistributionList[thread] :
+        ((PIC::Mesh::mesh->DomainBoundaryLayerNodesList!=NULL) ? PIC::Mesh::mesh->DomainBoundaryLayerNodesList[thread] : NULL);
+
+      for (;node!=NULL;node=node->nextNodeThisThread) {
+        //a node in two lists (not expected) cannot be ordered: do not use the sparse sweeps
+        if (SparseNodeMaps.ListPosition.insert(std::make_pair(node,std::make_pair(thread,position++))).second==false) {
+          SparseNodeMaps.BlockTableIndex.clear();
+          SparseNodeMaps.ListPosition.clear();
+          return false;
+        }
+      }
+    }
+
+    SparseNodeMaps.usable=true;
+    return true;
+  }
+
+  //the hint nodes, each once
+  void SparseUniqueNodes(std::vector<cSparseNode*>& nodes) {
+    std::sort(nodes.begin(),nodes.end());
+    nodes.erase(std::unique(nodes.begin(),nodes.end()),nodes.end());
+  }
+
+  //the number of particles in the lists 'table' of the block; -1 if more than nMax (a corrupted list)
+  template <class T> long int SparseCountListParticles(T *table,long int nMax) {
+    long int count=0;
+
+    for (int icell=0;icell<SparseCellNumber;icell++) {
+      for (long int ptr=table[icell];ptr!=-1;ptr=PIC::ParticleBuffer::GetNext(ptr)) {
+        if (++count>nMax) return -1;
+      }
+    }
+
+    return count;
+  }
+
+  //true when the hint is usable: made for the current mesh and decomposition, and the maps are current
+  bool SparseHintIsCurrent() {
+    if ((PIC::Mover::SparseParticleLists::Applicable()==false)||(SparseHint.valid==false)) return false;
+    if (SparseHint.MeshModificationCounter!=PIC::Mesh::mesh->nMeshModificationCounter) return false;
+
+    return SparseUpdateNodeMaps();
+  }
+
+  //verify that the FirstCellParticleTable lists of the hint blocks hold all NAllPart particles
+  bool SparseVerifyHintFirstLists() {
+    if (SparseHintIsCurrent()==false) return false;
+
+    SparseUniqueNodes(SparseHint.nodes);
+
+    long int count=0;
+
+    for (auto node : SparseHint.nodes) {
+      //a hint node must be in one of the lists of the full sweeps and have a block
+      if ((SparseNodeMaps.ListPosition.find(node)==SparseNodeMaps.ListPosition.end())||(node->block==NULL)) return false;
+
+      long int n=SparseCountListParticles(node->block->FirstCellParticleTable,PIC::ParticleBuffer::NAllPart-count);
+      if (n<0) return false;
+      count+=n;
+    }
+
+    return (count==PIC::ParticleBuffer::NAllPart);
+  }
+}
+
+namespace {
+  //the mover sweep: the hint blocks of BlockTable in the BlockTable order, when all particles are verified to be in
+  //the FirstCellParticleTable lists of the hint blocks
+  bool SparseGetVerifiedSweepNodes(std::vector<cSparseNode*>& sweep) {
+    sweep.clear();
+    if (SparseVerifyHintFirstLists()==false) return false;
+
+    for (auto node : SparseHint.nodes) {
+      auto it=SparseNodeMaps.BlockTableIndex.find(node);
+      if (it!=SparseNodeMaps.BlockTableIndex.end()) sweep.push_back(node);
+    }
+
+    std::sort(sweep.begin(),sweep.end(),[] (cSparseNode* a,cSparseNode* b) {
+      return SparseNodeMaps.BlockTableIndex.find(a)->second<SparseNodeMaps.BlockTableIndex.find(b)->second;
+    });
+
+    return true;
+  }
+
+  int SparseGetBlockTableIndex(cSparseNode* node) {
+    return SparseNodeMaps.BlockTableIndex.find(node)->second;   //node is in BlockTable (SparseGetVerifiedSweepNodes())
+  }
+
+  //the list update: no particle was created during the sweep, and the tempParticleMovingListTable lists of the
+  //collected blocks hold all NAllPart particles
+  bool SparseVerifyMovedToNodes(std::vector<cSparseNode*>& nodes,unsigned long int AllocationCounter) {
+#if _COMPILATION_MODE_ != _COMPILATION_MODE__MPI_
+    return false;   //tempParticleMovingListTable exists only in the MPI mode
+#else
+    if (PIC::ParticleBuffer::nParticleAllocationCounter!=AllocationCounter) return false;
+    if (SparseUpdateNodeMaps()==false) return false;
+
+    SparseUniqueNodes(nodes);
+
+    long int count=0;
+
+    for (auto node : nodes) {
+      if ((SparseNodeMaps.ListPosition.find(node)==SparseNodeMaps.ListPosition.end())||(node->block==NULL)) return false;
+
+      long int n=SparseCountListParticles(node->block->tempParticleMovingListTable,PIC::ParticleBuffer::NAllPart-count);
+      if (n<0) return false;
+      count+=n;
+    }
+
+    return (count==PIC::ParticleBuffer::NAllPart);
+#endif
+  }
+
+  void SparseSetHint(const std::vector<cSparseNode*>& nodes) {
+    SparseHint.nodes=nodes;
+    SparseHint.MeshModificationCounter=PIC::Mesh::mesh->nMeshModificationCounter;
+    SparseHint.valid=true;
+  }
+
+  void SparseInvalidateHint() {
+    SparseHint.nodes.clear();
+    SparseHint.valid=false;
+  }
+}
+
+bool PIC::Mover::SparseParticleLists::Applicable() {
+  if ((_COMPILATION_MODE_!=_COMPILATION_MODE__MPI_)||(_CUDA_MODE_==_ON_)) return false;
+  if (_PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_) return false;
+  if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_==_PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) return false;
+  if (Enabled==false) return false;
+
+  //the environment variable AMPS_SPARSE_PARTICLE_LISTS=off switches the sparse sweeps off (e.g. to compare the run time)
+  static const bool DisabledByEnvironment=[] () {
+    const char *v=getenv("AMPS_SPARSE_PARTICLE_LISTS");
+    return (v!=NULL)&&((strcmp(v,"off")==0)||(strcmp(v,"OFF")==0)||(strcmp(v,"0")==0));
+  }();
+
+  if (DisabledByEnvironment==true) return false;
+
+  return (PIC::ParticleBuffer::NAllPart*4<=(long int)PIC::DomainBlockDecomposition::nLocalBlocks);
+}
+
+void PIC::Mover::SparseParticleLists::AddHintNode(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+  if (SparseHint.valid==true) SparseHint.nodes.push_back(node);
+}
+
+bool PIC::Mover::SparseParticleLists::VerifyHintForExchange() {
+  bool res=SparseVerifyHintFirstLists();
+
+  if (res==true) nSparseExchanges++;
+  else nFullExchanges++;
+
+  return res;
+}
+
+bool PIC::Mover::SparseParticleLists::GetVerifiedLocalHintNodes(std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>& nodes) {
+  bool res=SparseGetVerifiedSweepNodes(nodes);
+
+  if (res==true) nSparseListSorts++;
+  else nFullListSorts++;
+
+  return res;
+}
+
+void PIC::Mover::SparseParticleLists::GetHintBoundaryLayerNodes(int To,std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>& nodes) {
+  nodes.clear();
+
+  //the hint nodes are in the lists (verified by VerifyHintForExchange()): sort them by the position in the list of 'To'
+  std::vector<std::pair<long int,cSparseNode*> > list;
+
+  for (auto node : SparseHint.nodes) {
+    auto it=SparseNodeMaps.ListPosition.find(node);
+
+    if ((it!=SparseNodeMaps.ListPosition.end())&&(it->second.first==To)) list.push_back(std::make_pair(it->second.second,node));
+  }
+
+  std::sort(list.begin(),list.end());
+  for (auto& el : list) nodes.push_back(el.second);
+}
+
+//_PIC_TEMP_PARTICLE_LIST_MODE__SHARED_ (hybrid build): the lists of the particles that a thread moves into a block it
+//does not own during the parallel particle mover (see SharedTempListEpoch in pic.h). One table per thread: a thread
+//changes only its own table in the parallel region; MoveParticles() reads them after the region.
+unsigned long int PIC::Mesh::cDataBlockAMR_static_data::SharedTempListEpoch=0;
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+namespace {
+  struct cSharedModeForeignListKey {
+    PIC::Mesh::cDataBlockAMR* block;
+    int nCell;
+
+    bool operator == (const cSharedModeForeignListKey& t) const {return (block==t.block)&&(nCell==t.nCell);}
+  };
+
+  struct cSharedModeForeignListKeyHash {
+    size_t operator () (const cSharedModeForeignListKey& t) const {
+      return std::hash<const void*>()(t.block)^((size_t)t.nCell*0x9e3779b97f4a7c15ULL);
+    }
+  };
+
+  typedef std::unordered_map<cSharedModeForeignListKey,PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable,cSharedModeForeignListKeyHash> cSharedModeForeignListTable;
+
+  std::vector<cSharedModeForeignListTable> SharedModeForeignListTable;
+}
+
+PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* PIC::Mesh::cDataBlockAMR::GetSharedModeForeignList(int thread,cDataBlockAMR* block,int nCell,bool create) {
+  if ((thread<0)||(thread>=(int)SharedModeForeignListTable.size())) {
+    if (create==false) return NULL;
+    ::exit(__LINE__,__FILE__,"Error: the thread's list table is not allocated (more OpenMP threads than in ClearSharedModeForeignLists())");
+  }
+
+  cSharedModeForeignListTable& table=SharedModeForeignListTable[thread];
+  cSharedModeForeignListKey key={block,nCell};
+
+  if (create==false) {
+    if (table.empty()==true) return NULL;
+
+    auto it=table.find(key);
+    return (it==table.end()) ? NULL : &(it->second);
+  }
+
+  cTempParticleMovingListMultiThreadTable empty;
+
+  empty.first=-1,empty.last=-1;
+  return &(table.emplace(key,empty).first->second);
+}
+
+void PIC::Mesh::cDataBlockAMR::ClearSharedModeForeignLists(int nThreads) {
+  //a list that MoveParticles() did not link (its block was not among the blocks whose lists it updates) goes into the
+  //block's shared list, where the particle would have been before (in the thread order)
+  for (auto& table : SharedModeForeignListTable) for (auto& t : table) if (t.second.last!=-1) {
+    cTempParticleMovingListMultiThreadTable* shared=t.first.block->GetSharedTempParticleMovingList(t.first.nCell);
+
+    PIC::ParticleBuffer::SetNext(shared->first,t.second.last);
+    if (shared->first!=-1) PIC::ParticleBuffer::SetPrev(t.second.last,shared->first);
+    else shared->last=t.second.last;
+
+    shared->first=t.second.first;
+  }
+
+  for (auto& table : SharedModeForeignListTable) table.clear();
+  if ((int)SharedModeForeignListTable.size()<nThreads) SharedModeForeignListTable.resize(nThreads);
+}
+#endif
+
 void PIC::Mover::MoveParticles() {
   int s,i,j,k;
   long int ParticleList,ptr;
@@ -1159,60 +1520,135 @@ void PIC::Mover::MoveParticles() {
 
 
   //move existing particles
+  //The OpenMP variants below give each thread one contiguous range of the work items (blocks or cells of BlockTable),
+  //in the thread order, balanced by the number of particles (PIC::OpenMP::ContiguousPartition()); each thread moves
+  //its range in increasing order. update_openmp() links the per-thread lists of a cell in the thread order, so every
+  //cell list gets the order of the MPI-only mover (the reverse of the order in which the particles were moved), for
+  //any number of threads. With schedule(dynamic,1) the order of a cell's particles depended on which thread had
+  //moved which block, i.e. on the thread timing, and so did the sums over them (J and the mass matrix of ECSIM, the
+  //sampled moments): two runs of the same executable differed in the last digits.
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  //the number of particles in a cell of BlockTable
+  auto CountCellParticles = [] (PIC::Mesh::cDataBlockAMR *block,int nCell) {
+    long int n=0;
+
+    for (long int p=block->FirstCellParticleTable[nCell];p!=-1;p=PIC::ParticleBuffer::GetNext(p)) n++;
+    return n;
+  };
+
+  //_PIC_TEMP_PARTICLE_LIST_MODE__SHARED_: the owner of each block of BlockTable in this call (see SharedTempListEpoch
+  //in pic.h); the blocks that are not in BlockTable (the boundary layer of the other processes) have no owner
+  static unsigned long int SharedTempListCallCounter=0;
+
+  auto SetSharedTempListOwners = [&] (int nThreads,const std::function<int(int)>& BlockOwner) {
+    if (_PIC_TEMP_PARTICLE_LIST_MODE_!=_PIC_TEMP_PARTICLE_LIST_MODE__SHARED_) return;
+
+    PIC::Mesh::cDataBlockAMR::ClearSharedModeForeignLists(nThreads);
+    if (++SharedTempListCallCounter==0) SharedTempListCallCounter=1;
+
+    for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+      PIC::Mesh::cDataBlockAMR *block=DomainBlockDecomposition::BlockTable[nLocalNode]->block;
+
+      if (block==NULL) continue;
+      block->TempListOwnerThread=BlockOwner(nLocalNode);
+      block->TempListOwnerEpoch=SharedTempListCallCounter;
+    }
+
+    PIC::Mesh::cDataBlockAMR_static_data::SharedTempListEpoch=SharedTempListCallCounter;
+  };
+#endif
+
   //**************************  OpenMP + MPI + block's splitting *********************************
   auto mpi_openmp__split_blocks =[&] () {
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+    const int nLocalBlocks=DomainBlockDecomposition::nLocalBlocks;
+    std::vector<long int> BlockWeight(nLocalBlocks,0);
+    std::vector<int> ThreadBegin;
 
-#pragma omp parallel for schedule(dynamic,1) default (none) \
-    shared (DomainBlockDecomposition::BlockTable,DomainBlockDecomposition::nLocalBlocks,PIC::Mesh::mesh)
-    for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
-      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=DomainBlockDecomposition::BlockTable[nLocalNode];
+#pragma omp parallel default(shared)
+    {
+      //the weight of a block: its particles (+1)
+#pragma omp for schedule(static)
+      for (int nLocalNode=0;nLocalNode<nLocalBlocks;nLocalNode++) {
+        PIC::Mesh::cDataBlockAMR *block=DomainBlockDecomposition::BlockTable[nLocalNode]->block;
+        long int n=1;
 
-      PIC::Mesh::cDataBlockAMR *block;
-      int i,j,k,s;
-      long int *FirstCellParticleTable;
-      long int ParticleList,ptr;
-      double LocalTimeStep;
-      double StartTime;
-
-if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
-      StartTime=MPI_Wtime();
-    }
-
-      block=node->block;
-      if ((block=node->block)==NULL) continue;
-
-      FirstCellParticleTable=block->FirstCellParticleTable;
-
-      if  (_PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_) {
-        PIC::Mover::SetBlock_E(node);
-        PIC::Mover::SetBlock_B(node);
+        if (block!=NULL) for (int nCell=0;nCell<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;nCell++) n+=CountCellParticles(block,nCell);
+        BlockWeight[nLocalNode]=n;
       }
 
-      for (k=0;k<_BLOCK_CELLS_Z_;k++) {
-        for (j=0;j<_BLOCK_CELLS_Y_;j++) {
-          for (i=0;i<_BLOCK_CELLS_X_;i++) {
-            ParticleList=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+#pragma omp single
+      {
+        PIC::OpenMP::ContiguousPartition(BlockWeight,omp_get_num_threads(),ThreadBegin);
 
-            while (ParticleList!=-1) {
-              ptr=ParticleList;
-              ParticleList=PIC::ParticleBuffer::GetNext(ParticleList);
-              s=PIC::ParticleBuffer::GetI(ptr);
-              LocalTimeStep=block->GetLocalTimeStep(s);
-              PIC::Mover::DispatchParticleMover(ptr,LocalTimeStep,node);
+        SetSharedTempListOwners(omp_get_num_threads(),[&] (int nLocalNode) {
+          return (int)(std::upper_bound(ThreadBegin.begin(),ThreadBegin.end(),nLocalNode)-ThreadBegin.begin())-1;
+        });
+      } //the implicit barrier: the partition is known to all threads
+
+      const int this_thread=omp_get_thread_num();
+
+      for (int nLocalNode=ThreadBegin[this_thread];nLocalNode<ThreadBegin[this_thread+1];nLocalNode++) {
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=DomainBlockDecomposition::BlockTable[nLocalNode];
+
+        PIC::Mesh::cDataBlockAMR *block;
+        int i,j,k,s;
+        long int *FirstCellParticleTable;
+        long int ParticleList,ptr;
+        double LocalTimeStep;
+        double StartTime;
+
+        if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
+          StartTime=MPI_Wtime();
+        }
+
+        if ((block=node->block)==NULL) continue;
+
+        FirstCellParticleTable=block->FirstCellParticleTable;
+
+        if  (_PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_) {
+          PIC::Mover::SetBlock_E(node);
+          PIC::Mover::SetBlock_B(node);
+        }
+
+        long int nMovedParticles=0;
+
+        for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+          for (j=0;j<_BLOCK_CELLS_Y_;j++) {
+            for (i=0;i<_BLOCK_CELLS_X_;i++) {
+              ParticleList=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+
+              while (ParticleList!=-1) {
+                ptr=ParticleList;
+                ParticleList=PIC::ParticleBuffer::GetNext(ParticleList);
+                s=PIC::ParticleBuffer::GetI(ptr);
+                LocalTimeStep=block->GetLocalTimeStep(s);
+                PIC::Mover::DispatchParticleMover(ptr,LocalTimeStep,node);
+                nMovedParticles++;
+              }
+
             }
-
           }
         }
-      }
 
-if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
-      node->ParallelLoadMeasure+=MPI_Wtime()-StartTime;
-}
+        if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
+          node->ParallelLoadMeasure+=MPI_Wtime()-StartTime;
+        }
+
+        //load balancing by the particle number: count the moved particles as the MPI-only mover (mpi_move_block()) does;
+        //without it the hybrid build balanced the load with a measure that the mover never set, and its domain
+        //decomposition after the first rebalancing differed from that of the MPI-only build
+        if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_==_PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_) {
+          node->ParallelLoadMeasure+=nMovedParticles;
+        }
+      }
     }
+#endif
   };
 
   //**************************  OpenMP + MPI + cell's splitting *********************************
   auto mpi_openmp__split_cells = [&] () {
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
     //reset the balancing counters
     for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
       node=DomainBlockDecomposition::BlockTable[nLocalNode];
@@ -1221,71 +1657,92 @@ if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_T
     }
 
     int LoadBalancingMeasureOffset=PIC::Mesh::cDataBlockAMR_static_data::LoadBalancingMeasureOffset;
-
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
-    PIC::Mesh::cDataBlockAMR *block;
-    int i,j,k,s;
-    long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
-    long int ParticleList,ptr;
-    double LocalTimeStep;
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *last_node=NULL;
+    const int nBlockCells=_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+    const int nTotalCells=DomainBlockDecomposition::nLocalBlocks*nBlockCells;
+    std::vector<long int> CellWeight(nTotalCells,0);
+    std::vector<int> ThreadBegin;
 
     //loop through all particles
-#pragma omp parallel for schedule(dynamic,1) default (none) firstprivate(last_node) private (i,j,k,s,ptr,LocalTimeStep,ParticleList) \
-    shared (DomainBlockDecomposition::BlockTable,DomainBlockDecomposition::nLocalBlocks,PIC::Mesh::mesh,LoadBalancingMeasureOffset)
-    for (int cnt=0;cnt<DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;cnt++) {
-      int nLocalNode,ii=cnt;
-      double StartTime;
+#pragma omp parallel default(shared)
+    {
+      //the weight of a cell: its particles (+1)
+#pragma omp for schedule(static)
+      for (int cnt=0;cnt<nTotalCells;cnt++) {
+        PIC::Mesh::cDataBlockAMR *block=DomainBlockDecomposition::BlockTable[cnt/nBlockCells]->block;
 
-      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
-      PIC::Mesh::cDataBlockAMR *block;
-
-      nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
-      node=DomainBlockDecomposition::BlockTable[nLocalNode];
-
-      if ((block=node->block)==NULL) continue;
-
-      if (last_node!=node && _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_) {
-        PIC::Mover::SetBlock_E(node);
-        PIC::Mover::SetBlock_B(node);
-
-        last_node=node;
+        CellWeight[cnt]=1+((block!=NULL) ? CountCellParticles(block,cnt%nBlockCells) : 0);
       }
 
+#pragma omp single
+      {
+        PIC::OpenMP::ContiguousPartition(CellWeight,omp_get_num_threads(),ThreadBegin);
 
-      ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+        //the owner of a block: the thread that moves the particles of its first cell
+        SetSharedTempListOwners(omp_get_num_threads(),[&] (int nLocalNode) {
+          return (int)(std::upper_bound(ThreadBegin.begin(),ThreadBegin.end(),nLocalNode*nBlockCells)-ThreadBegin.begin())-1;
+        });
+      } //the implicit barrier: the partition is known to all threads
 
-      k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
-      ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+      const int this_thread=omp_get_thread_num();
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *last_node=NULL;
+      int i,j,k,s;
+      long int ParticleList,ptr;
+      double LocalTimeStep;
 
-      j=ii/_BLOCK_CELLS_X_;
-      ii-=j*_BLOCK_CELLS_X_;
+      for (int cnt=ThreadBegin[this_thread];cnt<ThreadBegin[this_thread+1];cnt++) {
+        int nLocalNode,ii=cnt;
+        double StartTime;
 
-      i=ii;
-      //node=DomainBlockDecomposition::BlockTable[nLocalNode];
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+        PIC::Mesh::cDataBlockAMR *block;
 
-      if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) StartTime=MPI_Wtime();
+        nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+        node=DomainBlockDecomposition::BlockTable[nLocalNode];
 
-      block=node->block;
-      ParticleList=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+        if ((block=node->block)==NULL) continue;
 
-      while (ParticleList!=-1) {
-        ptr=ParticleList;
-        ParticleList=PIC::ParticleBuffer::GetNext(ParticleList);
-        s=PIC::ParticleBuffer::GetI(ptr);
-        LocalTimeStep=block->GetLocalTimeStep(s);
+        if (last_node!=node && _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_) {
+          PIC::Mover::SetBlock_E(node);
+          PIC::Mover::SetBlock_B(node);
 
-        PIC::Mover::DispatchParticleMover(ptr,LocalTimeStep,node);
-      }
+          last_node=node;
+        }
 
-      if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
-        int thread=0;
 
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-        thread=omp_get_thread_num();
-#endif
+        ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
 
-        *(thread+(double*)(block->GetAssociatedDataBufferPointer()+LoadBalancingMeasureOffset))+=MPI_Wtime()-StartTime;
+        k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+        ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+        j=ii/_BLOCK_CELLS_X_;
+        ii-=j*_BLOCK_CELLS_X_;
+
+        i=ii;
+
+        if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) StartTime=MPI_Wtime();
+
+        ParticleList=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+        long int nMovedParticles=0;
+
+        while (ParticleList!=-1) {
+          ptr=ParticleList;
+          ParticleList=PIC::ParticleBuffer::GetNext(ParticleList);
+          s=PIC::ParticleBuffer::GetI(ptr);
+          LocalTimeStep=block->GetLocalTimeStep(s);
+
+          PIC::Mover::DispatchParticleMover(ptr,LocalTimeStep,node);
+          nMovedParticles++;
+        }
+
+        if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
+          *(this_thread+(double*)(block->GetAssociatedDataBufferPointer()+LoadBalancingMeasureOffset))+=MPI_Wtime()-StartTime;
+        }
+
+        //load balancing by the particle number: as in the MPI-only mover (the per-thread slots are summed below;
+        //the counts are integers, so the sum does not depend on the order)
+        if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_==_PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_) {
+          *(this_thread+(double*)(block->GetAssociatedDataBufferPointer()+LoadBalancingMeasureOffset))+=nMovedParticles;
+        }
       }
     }
 
@@ -1294,6 +1751,7 @@ if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_T
       node=DomainBlockDecomposition::BlockTable[nLocalNode];
       node->ParallelLoadMeasure+=*(thread+(double*)(node->block->GetAssociatedDataBufferPointer()+PIC::Mesh::cDataBlockAMR_static_data::LoadBalancingMeasureOffset));
     }
+#endif
   };
 
   //**************************  OpenMP + MPI + particle's splitting *********************************
@@ -1304,6 +1762,12 @@ if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_T
     long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
     long int ParticleList,ptr;
     double LocalTimeStep;
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+    //every thread moves a part of every cell list (thread t: the t-th part in the list order, deterministic): thread 0
+    //uses the shared lists, the others their own (_PIC_TEMP_PARTICLE_LIST_MODE__SHARED_ only)
+    SetSharedTempListOwners(PIC::nTotalThreadsOpenMP,[] (int nLocalNode) {return 0;});
+#endif
 
     for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
       node=DomainBlockDecomposition::BlockTable[nLocalNode];
@@ -1369,6 +1833,11 @@ if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_T
                 PIC::Mover::DispatchParticleMover(ptr,LocalTimeStep,node);
               }
             }
+
+            //load balancing by the particle number: as in the MPI-only mover
+            if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_==_PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_) {
+              node->ParallelLoadMeasure+=nTotalParticles;
+            }
           }
         }
       }
@@ -1378,13 +1847,18 @@ if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_T
 
 
   //************************** MPI ONLY  *********************************
-  auto mpi_only = [&] () {
-    for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
-      node=DomainBlockDecomposition::BlockTable[nLocalNode];
-      block=node->block;
+  //sparse sweep of the particle lists (SparseParticleLists): the blocks that hold the moved particles are collected
+  //while SparseCollect==true; the collection stops when a particle is created during the sweep
+  std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> SparseMovedToNodes;
+  bool SparseCollect=false,SparseAttempted=false;
+  const unsigned long int SparseAllocationCounter=PIC::ParticleBuffer::nParticleAllocationCounter;
+
+  //move the particles of one block
+  auto mpi_move_block = [&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+      PIC::Mesh::cDataBlockAMR *block=node->block;
       double StartTime;
 
-      if (!block) continue;
+      if (!block) return;
 
       if  (_PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_) {
         PIC::Mover::SetBlock_E(node);
@@ -1408,6 +1882,17 @@ if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_T
 
           PIC::Mover::DispatchParticleMover(ptr,LocalTimeStep,node);
 
+          //the block that holds the moved particle: the block of its new location
+          if (SparseCollect==true) {
+            if (PIC::ParticleBuffer::nParticleAllocationCounter!=SparseAllocationCounter) SparseCollect=false;
+            else if (PIC::ParticleBuffer::IsParticleAllocated(ptr)==true) {
+              cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *MovedToNode=PIC::Mesh::mesh->findTreeNode(PIC::ParticleBuffer::GetX(ptr),node);
+
+              if (MovedToNode!=NULL) SparseMovedToNodes.push_back(MovedToNode);
+              else SparseCollect=false;
+            }
+          }
+
           if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
             nTotalCalls++;
           }
@@ -1421,6 +1906,42 @@ if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_T
 
       if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
         node->ParallelLoadMeasure+=MPI_Wtime()-StartTime;
+      }
+  };
+
+  //the full sweep: all blocks of BlockTable
+  auto mpi_only = [&] () {
+    for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+      mpi_move_block(DomainBlockDecomposition::BlockTable[nLocalNode]);
+    }
+  };
+
+  //the sparse sweep: only the hint blocks (in the BlockTable order) when all particles are verified to be in them,
+  //the full sweep otherwise. The blocks that hold the moved particles are collected in both cases.
+  auto mpi_sparse = [&] () {
+    std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> SweepNodes;
+
+    SparseCollect=true,SparseAttempted=true;
+
+    if (SparseGetVerifiedSweepNodes(SweepNodes)==false) {
+      SparseParticleLists::nFullMoverSweeps++;
+      mpi_only();
+      return;
+    }
+
+    SparseParticleLists::nSparseMoverSweeps++;
+
+    for (auto node : SweepNodes) {
+      mpi_move_block(node);
+
+      if (PIC::ParticleBuffer::nParticleAllocationCounter!=SparseAllocationCounter) {
+        //a particle was created (it can be in a list of any block): continue as the full sweep from the next block of BlockTable
+        for (int nLocalNode=SparseGetBlockTableIndex(node)+1;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+          mpi_move_block(DomainBlockDecomposition::BlockTable[nLocalNode]);
+        }
+
+        SparseCollect=false;
+        return;
       }
     }
   };
@@ -1453,6 +1974,41 @@ if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_T
     long int FirstParticle,LastParticle=-1;
     PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData;
 
+    if ((_PIC_TEMP_PARTICLE_LIST_MODE_==_PIC_TEMP_PARTICLE_LIST_MODE__SHARED_)&&(PIC::Mesh::cDataBlockAMR_static_data::SharedTempListEpoch!=0)) {
+      //the shared list of a block holds the particles that its owner moved into it, the other threads' particles are
+      //in their own lists (see SetSharedTempListOwners()): link them in the thread order as in the unique-list mode
+      //below. A block that has no owner (e.g. of another process) gets only the threads' own lists in this call; its
+      //shared list, which is empty then, is linked first.
+      const int owner=(block->TempListOwnerEpoch==PIC::Mesh::cDataBlockAMR_static_data::SharedTempListEpoch) ? block->TempListOwnerThread : -1;
+
+      for (int nCell=0;nCell<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;nCell++) {
+        long int *FirstCellParticlePtr=block->FirstCellParticleTable+nCell;
+
+        auto link = [&] (PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* list) {
+          if (list==NULL) return;
+
+          if (list->last!=-1) {
+            PIC::ParticleBuffer::SetNext(*FirstCellParticlePtr,list->last);
+            if (*FirstCellParticlePtr!=-1) PIC::ParticleBuffer::SetPrev(list->last,*FirstCellParticlePtr);
+
+            *FirstCellParticlePtr=list->first;
+          }
+
+          list->first=-1;
+          list->last=-1;
+        };
+
+        if (owner==-1) link(block->GetSharedTempParticleMovingList(nCell));
+
+        for (thread_OpenMP=0;thread_OpenMP<PIC::nTotalThreadsOpenMP;thread_OpenMP++) {
+          link((thread_OpenMP==owner) ? block->GetSharedTempParticleMovingList(nCell) :
+            PIC::Mesh::cDataBlockAMR::GetSharedModeForeignList(thread_OpenMP,block,nCell,false));
+        }
+      }
+
+      return;
+    }
+
     for (thread_OpenMP=0;thread_OpenMP<PIC::nTotalThreadsOpenMP;thread_OpenMP++) {
       for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
         ThreadTempParticleMovingData=block->GetTempParticleMovingListMultiThreadTable(thread_OpenMP,i,j,k);
@@ -1483,7 +2039,8 @@ if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_T
   //move particles
   switch (_COMPILATION_MODE_) {
   case  _COMPILATION_MODE__MPI_:
-    mpi_only();
+    if (SparseParticleLists::Applicable()==true) mpi_sparse();
+    else mpi_only();
     break;
   case _COMPILATION_MODE__HYBRID_:
     switch (_PIC__OPENMP_THREAD_SPLIT_MODE_) {
@@ -1512,6 +2069,19 @@ if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_T
     }
   }
 
+  //sparse update: only the blocks that hold the moved particles, when they are verified to hold all particles
+  //(the update of any other block would copy an empty list over an empty list)
+  if ((_COMPILATION_MODE_==_COMPILATION_MODE__MPI_)&&(SparseCollect==true)&&(SparseVerifyMovedToNodes(SparseMovedToNodes,SparseAllocationCounter)==true)) {
+    for (auto node : SparseMovedToNodes) update_mpi(node);
+
+    SparseSetHint(SparseMovedToNodes);
+    SparseParticleLists::nSparseListUpdates++;
+    return;
+  }
+
+  SparseInvalidateHint();
+  if (SparseAttempted==true) SparseParticleLists::nFullListUpdates++;
+
   for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
     node=(thread==PIC::Mesh::mesh->ThisThread) ? PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread] : PIC::Mesh::mesh->DomainBoundaryLayerNodesList[thread];
 
@@ -1532,6 +2102,14 @@ if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_T
       }
     }  //      node=node->nextNodeThisThread;
   }//for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++)
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  //_PIC_TEMP_PARTICLE_LIST_MODE__SHARED_: all lists are linked, the threads share the lists again
+  if (PIC::Mesh::cDataBlockAMR_static_data::SharedTempListEpoch!=0) {
+    PIC::Mesh::cDataBlockAMR_static_data::SharedTempListEpoch=0;
+    PIC::Mesh::cDataBlockAMR::ClearSharedModeForeignLists(0);
+  }
+#endif
 }
 
 #if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
@@ -2172,9 +2750,13 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
       xmaxBlock=newNode->xmax;
 
       if (_PIC_DEBUGGER_MODE_ ==  _PIC_DEBUGGER_MODE_ON_) {
-        //check if the new particle coordiname is within the new block
+        //check if the new particle coordiname is within the new block. In spherical symmetry the AMR coordinate
+        //is the radius, while x is the Cartesian point on the radial face (it is rotated to (r,0,0) only at the
+        //end of the move): a particle that crosses the face with a transverse displacement has x[0]<r
+        const double xBlockCoordinate0=(_AMR_SYMMETRY_MODE_==_AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_) ?
+            sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]) : x[0];
 
-        if ((x[0]<xminBlock[0]-PIC::Mesh::mesh->EPS)||(x[0]>xmaxBlock[0]+PIC::Mesh::mesh->EPS)
+        if ((xBlockCoordinate0<xminBlock[0]-PIC::Mesh::mesh->EPS)||(xBlockCoordinate0>xmaxBlock[0]+PIC::Mesh::mesh->EPS)
 #if DIM > 1
             || (x[1]<xminBlock[1]-PIC::Mesh::mesh->EPS)||(x[1]>xmaxBlock[1]+PIC::Mesh::mesh->EPS)
 #endif
@@ -2894,6 +3476,15 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
   return _PARTICLE_MOTION_FINISHED_;
 }
 
+//the number of calls of the cut-face boundary condition for one hit after which a particle that is still not sent
+//out of the face is removed (a stochastic model may need several attempts; a deterministic one cannot do better)
+static const int MaxCutFaceBoundaryConditionCalls=100;
+
+//a particle whose velocity makes an angle below about 1e-15 with a face moves along it: it is not counted as moving into
+//the face (it would enter it by less than 1e-15 of its path), and a boundary condition that leaves it so is accepted (a
+//specular reflection of a velocity closer than about 1e-16 to the face is the same velocity to the last bit)
+static const double GrazingCosine=1.0E-15;
+
 int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection_SecondOrder(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,bool FirstBoundaryFlag,CutCell::cTriangleFace *lastIntersectedTriangleFace) {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode=NULL,*middleNode=NULL;
   double dtMin=-1.0,dtTemp,dtMinInit2,dtMinInit;
@@ -2942,14 +3533,20 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
   if (initExternalBoundaryFaceTable==false) {
     initExternalBoundaryFaceTable=true;
 
+    //as in PIC::Mover::Init(): rootTree->xmin/xmax have _MESH_DIMENSION_ elements, the inactive coordinates are zero
+    auto DomainLimit=[](int idim,bool MaxSide) {
+      if (idim>=_MESH_DIMENSION_) return 0.0;
+      return (MaxSide==true) ? PIC::Mesh::mesh->rootTree->xmax[idim] : PIC::Mesh::mesh->rootTree->xmin[idim];
+    };
+
     for (int nface=0;nface<6;nface++) {
       double cE0=0.0,cE1=0.0;
 
       for (int idim=0;idim<3;idim++) {
-        ExternalBoundaryFaceTable[nface].x0[idim]=(ExternalBoundaryFaceTable[nface].nX0[idim]==0) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim];
+        ExternalBoundaryFaceTable[nface].x0[idim]=DomainLimit(idim,ExternalBoundaryFaceTable[nface].nX0[idim]!=0);
 
-        cE0+=pow(((ExternalBoundaryFaceTable[nface].e0[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
-        cE1+=pow(((ExternalBoundaryFaceTable[nface].e1[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
+        cE0+=pow(DomainLimit(idim,!(ExternalBoundaryFaceTable[nface].e0[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5))-ExternalBoundaryFaceTable[nface].x0[idim],2);
+        cE1+=pow(DomainLimit(idim,!(ExternalBoundaryFaceTable[nface].e1[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5))-ExternalBoundaryFaceTable[nface].x0[idim],2);
       }
 
       ExternalBoundaryFaceTable[nface].lE0=sqrt(cE0);
@@ -3514,7 +4111,10 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
         for (;D!=NULL;D=D->next) for (t=D->FirstTriangleCutFace;t!=NULL;t=t->next) if ((TriangleFace=t->TriangleFace)!=lastIntersectedTriangleFace) {
           if (PIC::Mesh::IrregularSurface::CutFaceAccessCounter::IsFirstAccecssWithAccessCounterUpdate(TriangleFace)==true) {
             if (TriangleFace->RayIntersection(xInit,vInit,TimeOfFlight,xLocalIntersection,xIntersection,PIC::Mesh::mesh->EPS)==true) {
-              if ((TimeOfFlight<dtMin)&&(TimeOfFlight>0.0)) {
+              //A face counts only when the particle moves into it (v.n<0), and also at TimeOfFlight=0: a particle that
+              //starts on the surface and moves into the body is reflected at once.  With TimeOfFlight>0 it crossed the
+              //surface undetected; a face the particle leaves was reported as a hit (cut-surface mover test).
+              if ((TimeOfFlight<dtMin)&&(TimeOfFlight>=0.0)&&(Vector3D::DotProduct(vInit,TriangleFace->ExternalNormal)<-GrazingCosine*Vector3D::Length(vInit))) {
 
                 //the intersection location has to be on the positive side of the previously intersected face
                 bool FaceIntersectionAccetanceFlag=true;
@@ -3533,6 +4133,36 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
             }
 
           }
+        }
+      }
+    }
+
+    //The search above tests the faces listed for the start block (and the copies of its neighbors' lists), but the
+    //step can cross other blocks: without the block-face limit (_PIC__PARTICLE_MOVER__CHECK_BLOCK_FACE_INTERSECTION__MODE_)
+    //it crosses several of them.  A face crossed in another block was not seen, and the particle moved into the body
+    //(cut-surface mover test: fast particles).  The earliest crossing of the step over the faces of every block it
+    //crosses (PIC::Mover::CutSurface::FindFirstCrossing) replaces the result above only when it is earlier, so that the
+    //result above, and its numbers, are kept wherever it was right.
+    if ((CutCell::nBoundaryTriangleFaces>0)&&(dtMin>0.0)) {
+      const double D[3]={vInit[0]*dtMin,vInit[1]*dtMin,vInit[2]*dtMin};
+      double t;
+      CutCell::cTriangleFace *face=PIC::Mover::CutSurface::FindFirstCrossing(xInit,D,startNode,lastIntersectedTriangleFace,t);
+
+      if ((face!=NULL)&&(face!=lastIntersectedTriangleFace)&&(Vector3D::DotProduct(vInit,face->ExternalNormal)<-GrazingCosine*Vector3D::Length(vInit))) {
+        bool replace;
+
+        if (ParticleIntersectionCode==_BOUNDARY_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_) {
+          //the search above found a face: keep it unless another face is crossed clearly before it
+          replace=(face!=IntersectionFace)&&(t<1.0-1.0E-9);
+        }
+        else replace=true;
+
+        if (replace) {
+          dtMin*=t;
+          IntersectionFace=face;
+          for (int idim=0;idim<3;idim++) xIntersectionFace[idim]=xInit[idim]+dtMin*vInit[idim];
+          face->GetProjectedLocalCoordinates(xLocalIntersectionFace,xIntersectionFace);
+          ParticleIntersectionCode=_BOUNDARY_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
         }
       }
     }
@@ -3660,6 +4290,8 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
 
       newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
 
+      int nBoundaryConditionCalls=0;
+
       do {
         code=(ProcessTriangleCutFaceIntersection!=NULL) ? ProcessTriangleCutFaceIntersection(ptr,xFinal,vFinal,IntersectionFace,newNode) : _PARTICLE_DELETED_ON_THE_FACE_;
 
@@ -3667,8 +4299,15 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
           PIC::ParticleBuffer::DeleteParticle(ptr);
           return _PARTICLE_LEFT_THE_DOMAIN_;
         }
+
+        //a boundary condition that does not send the particle out of the face is not repeated without end
+        if (++nBoundaryConditionCalls>=MaxCutFaceBoundaryConditionCalls) {
+          PIC::ParticleEvents::RecordParticle(PIC::ParticleEvents::NumericalRemoval,ptr,startNode,__LINE__);
+          PIC::ParticleBuffer::DeleteParticle(ptr);
+          return _PARTICLE_LEFT_THE_DOMAIN_;
+        }
       }
-      while (vFinal[0]*IntersectionFace->ExternalNormal[0]+vFinal[1]*IntersectionFace->ExternalNormal[1]+vFinal[2]*IntersectionFace->ExternalNormal[2]<=0.0);
+      while (vFinal[0]*IntersectionFace->ExternalNormal[0]+vFinal[1]*IntersectionFace->ExternalNormal[1]+vFinal[2]*IntersectionFace->ExternalNormal[2]<-GrazingCosine*Vector3D::Length(vFinal));
 
       //save the face of the intersection
       lastIntersectedTriangleFace=IntersectionFace;
@@ -4168,8 +4807,15 @@ if (_PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIA
       bool flag=false;
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* NodeList[2]={newNode,startNode};
 
-      //search for a triangle that is located between points 'xInit' and 'xFinal'
-      for (int iFace=0;(iFace<2)&&(flag==false);iFace++) if (NodeList[iFace]!=NULL) for (t=NodeList[iFace]->FirstTriangleCutFace;t!=NULL;t=t->next) {
+      //Search for the face crossed between points 'xInit' and 'xFinal'.  Only a crossing INTO the body counts, and the
+      //earliest one.  A crossing out of the body (r0<0<r1) needs nothing: it used to move the particle back onto that
+      //face, and a particle that starts on the surface and moves away from it (r0 is then a rounding error, of either
+      //sign) lost the whole step and stayed on the surface (cut-surface mover test).  The first crossing found was
+      //taken, not the earliest one.
+      CutCell::cTriangleFace *CrossedFace=NULL;
+      double tCrossed=2.0;
+
+      for (int iFace=0;iFace<2;iFace++) if (NodeList[iFace]!=NULL) for (t=NodeList[iFace]->FirstTriangleCutFace;t!=NULL;t=t->next) {
         double x0Face[3],FaceNorm[3];
 
         //skip the face the particle has been placed on by the boundary condition of the previous cycle (it leaves the
@@ -4185,46 +4831,61 @@ if (_PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIA
         double r0=(xInit[0]-x0Face[0])*FaceNorm[0] + (xInit[1]-x0Face[1])*FaceNorm[1] + (xInit[2]-x0Face[2])*FaceNorm[2];
         double r1=(xFinal[0]-x0Face[0])*FaceNorm[0] + (xFinal[1]-x0Face[1])*FaceNorm[1] + (xFinal[2]-x0Face[2])*FaceNorm[2];
 
-        if (r0*r1<0.0) {
-          //points 'xInit' and 'xFinal' are located on different sides of the plane that containes the priangle face 't'
-          //check the triangle for the intersection
-          double xIntersection[3];
+        //(a segment along the face does not cross it: r0-r1 has to exceed GrazingCosine of its length and the rounding of
+        //r0 and r1; a particle that moves in the plane of a face, r0 and r1 being rounding errors, was stopped at the
+        //"crossing" and lost the rest of the step)
+        const double rScale=std::max(std::max(fabs(xInit[0]),fabs(xInit[1])),std::max(fabs(xInit[2]),std::max(fabs(x0Face[0]),std::max(fabs(x0Face[1]),fabs(x0Face[2])))));
+        const double rMin=std::max(GrazingCosine*sqrt(pow(xFinal[0]-xInit[0],2)+pow(xFinal[1]-xInit[1],2)+pow(xFinal[2]-xInit[2],2)),256.0*DBL_EPSILON*rScale);
 
-          if (t->TriangleFace->IntervalIntersection(xInit,xFinal,xIntersection,0.0)==true) {
-            //the particle trajectory has intersected the surface
-            //1. move the particle to the surface
-            //2. if the particle velocity is derected inside the body than apple the boundary conditions
+        if ((r0>0.0)&&(r1<0.0)&&(r0-r1>rMin)) {
+          //points 'xInit' and 'xFinal' are located on the outer and on the inner side of the plane of the face 't'
+          double tFace;
 
-            //move the particle outside on the surface
-            memcpy(xFinal,xIntersection,3*sizeof(double));
-            newNode=PIC::Mesh::mesh->findTreeNode(xFinal,newNode);
+          if ((t->TriangleFace->IntervalIntersection(xInit,xFinal,tFace,0.0)==true)&&(tFace<tCrossed)) {
+            CrossedFace=t->TriangleFace,tCrossed=tFace;
+          }
+        }
+      }
 
-            //check the direction of the particle velocity;
-            //the normal of the trangle is directed inside the domain
-            double c=vFinal[0]*FaceNorm[0]+vFinal[1]*FaceNorm[1]+vFinal[2]*FaceNorm[2];
+      if (CrossedFace!=NULL) {
+        //the particle trajectory has intersected the surface
+        //1. move the particle to the surface
+        //2. if the particle velocity is derected inside the body than apple the boundary conditions
+        double *FaceNorm=CrossedFace->ExternalNormal;
 
-            if (c<=0.0) {
-              //apply boundary condition procedure
-              int code;
+        for (int idim=0;idim<3;idim++) xFinal[idim]=xInit[idim]+tCrossed*(xFinal[idim]-xInit[idim]);
+        newNode=PIC::Mesh::mesh->findTreeNode(xFinal,newNode);
 
-              do {
-                code=(ProcessTriangleCutFaceIntersection!=NULL) ? ProcessTriangleCutFaceIntersection(ptr,xFinal,vFinal,t->TriangleFace,newNode) : _PARTICLE_DELETED_ON_THE_FACE_;
+        //check the direction of the particle velocity;
+        //the normal of the trangle is directed inside the domain
+        double c=vFinal[0]*FaceNorm[0]+vFinal[1]*FaceNorm[1]+vFinal[2]*FaceNorm[2];
 
-                if (code==_PARTICLE_DELETED_ON_THE_FACE_) {
-                  PIC::ParticleBuffer::DeleteParticle(ptr);
-                  return _PARTICLE_LEFT_THE_DOMAIN_;
-                }
+        //Only a particle that moves into the body (c<0) gets the boundary condition.  With c=0 the particle moves
+        //along the face; a specular reflection does not change that, and the loop below did not end (cut-surface
+        //mover test: a particle sliding on a face).
+        if (c<-GrazingCosine*Vector3D::Length(vFinal)) {
+          //apply boundary condition procedure
+          int code,nBoundaryConditionCalls=0;
 
-              } while (vFinal[0]*FaceNorm[0]+vFinal[1]*FaceNorm[1]+vFinal[2]*FaceNorm[2]<=0.0);
+          do {
+            code=(ProcessTriangleCutFaceIntersection!=NULL) ? ProcessTriangleCutFaceIntersection(ptr,xFinal,vFinal,CrossedFace,newNode) : _PARTICLE_DELETED_ON_THE_FACE_;
+
+            if (code==_PARTICLE_DELETED_ON_THE_FACE_) {
+              PIC::ParticleBuffer::DeleteParticle(ptr);
+              return _PARTICLE_LEFT_THE_DOMAIN_;
             }
 
-            //continue the trajectory calculation setting that the particle is ejected from the surface
-            lastIntersectedTriangleFace=t->TriangleFace;
-            flag=true;
-            break;
-          }
-
+            if (++nBoundaryConditionCalls>=MaxCutFaceBoundaryConditionCalls) {
+              PIC::ParticleEvents::RecordParticle(PIC::ParticleEvents::NumericalRemoval,ptr,startNode,__LINE__);
+              PIC::ParticleBuffer::DeleteParticle(ptr);
+              return _PARTICLE_LEFT_THE_DOMAIN_;
+            }
+          } while (vFinal[0]*FaceNorm[0]+vFinal[1]*FaceNorm[1]+vFinal[2]*FaceNorm[2]<-GrazingCosine*Vector3D::Length(vFinal));
         }
+
+        //continue the trajectory calculation setting that the particle is ejected from the surface
+        lastIntersectedTriangleFace=CrossedFace;
+        flag=true;
       }
     }
 
@@ -4755,7 +5416,11 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
   #endif
 
   double maxAllowedDistance = 0.0;
-  
+
+  // consecutive surface interactions at (nearly) the same point (concave corners); limited below
+  int nZeroLengthCutFaceInteractions = 0;
+  const int nZeroLengthCutFaceInteractionsMax = 64;
+
   // Main integration loop
   while (MovingTimeFinished == false) {
       MovingLoop:
@@ -5001,7 +5666,13 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
                                   // boundary-condition callback by displacing the particle
                                   // along the outward face normal.
 
-                                  if ((TimeOfFlight < dtMin) && (TimeOfFlight > 0.0)) {
+                                  // A face counts only when the particle moves into it (v.n<0), and also at
+                                  // TimeOfFlight=0: a particle that starts on the surface and moves into the
+                                  // body is reflected at once.  With TimeOfFlight>0 such a particle crossed the
+                                  // surface undetected and moved through the body; a face the particle leaves
+                                  // was reported as a hit (cut-surface mover test).
+                                  if ((TimeOfFlight < dtMin) && (TimeOfFlight >= 0.0) &&
+                                      (Vector3D::DotProduct(v, TriangleFace->ExternalNormal) < 0.0)) {
                                       // Check intersection acceptance flag (same logic as original)
                                       bool FaceIntersectionAccetanceFlag = true;
 
@@ -5050,7 +5721,11 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
       // Check if particle moved to a different block
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* potentialNewNode = PIC::Mesh::mesh->findTreeNode(x, startNode);
       
-      if (potentialNewNode != NULL && potentialNewNode != startNode) {
+      // The faces of the blocks crossed by the sub-step are tested also when it ends outside of the domain
+      // (potentialNewNode==NULL): the sub-step ends up to one cell beyond the block, and a face crossed in a neighbor
+      // block before the sub-step left the domain was not seen (cut-surface mover test, stress mode: a fast particle
+      // passed through the enclosing shell and was removed outside of the domain).
+      if (potentialNewNode != startNode) {
           // Particle moved to a different block - need to check cut faces in new block
           double dtMinCutFace = dtMin; // Initialize with current dtMin
           bool foundCutFaceIntersection = false;
@@ -5114,7 +5789,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
             }
           }
 
-          CrossedBlockTable[nCrossedBlocks++]=potentialNewNode;
+          if (potentialNewNode != NULL) CrossedBlockTable[nCrossedBlocks++]=potentialNewNode;
 
           for (int iCrossedBlock=0;iCrossedBlock<nCrossedBlocks;iCrossedBlock++) {
             cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* CrossedNode=CrossedBlockTable[iCrossedBlock];
@@ -5159,7 +5834,9 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
                                         // responsible for moving the particle safely away from the
                                         // triangulated surface.
 
-                                        if ((TimeOfFlight < dtMinCutFace) && (TimeOfFlight > 0.0)) {
+                                        //only faces the particle moves into, also at TimeOfFlight=0 (see above)
+                                        if ((TimeOfFlight < dtMinCutFace) && (TimeOfFlight >= 0.0) &&
+                                            (Vector3D::DotProduct(v, TriangleFace->ExternalNormal) < 0.0)) {
                                             dtMinCutFace = TimeOfFlight;
                                             foundCutFaceIntersection = true;
 
@@ -5226,7 +5903,17 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
       // Handle triangulated surface intersections
       if (ParticleIntersectionCode == _BOUNDARY_FACE_MIN_DT_INTERSECTION_CODE_) {
           const double xLocalEPS = 1.0E-5;
-          
+
+          // Hits at TimeOfFlight=0 are processed (see above): several of them follow each other in a concave corner.
+          // Their number is limited, so that a particle that round-off keeps between faces cannot loop forever.
+          if (dtMin*Vector3D::Length(v) <= PIC::Mesh::mesh->EPS) {
+              if (++nZeroLengthCutFaceInteractions > nZeroLengthCutFaceInteractionsMax) {
+                  PIC::ParticleBuffer::DeleteParticle(ptr);
+                  return _PARTICLE_LEFT_THE_DOMAIN_;
+              }
+          }
+          else nZeroLengthCutFaceInteractions = 0;
+
           // Recalculate intersection point using local coordinates
           for (idim = 0; idim < 2; idim++) {
               if (xLocalIntersectionFace[idim] < xLocalEPS) {

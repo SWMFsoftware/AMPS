@@ -612,6 +612,9 @@ FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__2_Jet_]=Comet::GetTotalPr
 #endif
 
      char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
+     //the template is copied whole into the new particle: zero it, so that the fields not set below (and the
+     //flag bits of the species byte, which SetI() keeps) do not carry stack garbage
+     memset(tempParticleData,0,PIC::ParticleBuffer::ParticleDataLength);
 
      //generate a particle                                                                                             
      PIC::ParticleBuffer::SetI(spec,(PIC::ParticleBuffer::byte*)tempParticleData);
@@ -851,6 +854,9 @@ while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
 
   //generate a particle                                                                                             
   char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
+  //the template is copied whole into the new particle: zero it, so that the fields not set below (and the
+  //flag bits of the species byte, which SetI() keeps) do not carry stack garbage
+  memset(tempParticleData,0,PIC::ParticleBuffer::ParticleDataLength);
   PIC::ParticleBuffer::SetI(spec,(PIC::ParticleBuffer::byte*)tempParticleData);
 
   //to satisfy the compiler and fit the while structure                                                             

@@ -390,7 +390,32 @@ They are not equilibrium, independence, uncertainty, or convergence criteria.
 The 30 September 1991 paper figures do not publish an exact UTC; the runner
 therefore requires one explicitly and does not claim observational validation.
 
-### 2.2 General selection rules
+### 2.2 `srcOrbiter` drag-coefficient test and the gas-surface interaction block
+
+The drag-coefficient test of the gas-surface interaction models (build of
+`input/test/sphere-drag-coefficient.conf`) requires its runtime input:
+
+```bash
+./amps -i sphere-drag-coefficient.in -case diffuse
+```
+
+The file holds one `#begin application: orbiter` block (owner `srcOrbiter`,
+vocabulary in `srcOrbiter/OrbiterRuntimeInput.h`): the free stream
+(`upstream`), the time-step speed (`time_step`), the run length (`run`), one
+`#begin physics: gas_surface_interaction` block and one `case: NAME` per model.
+`-case` is mandatory because the file has cases; an unknown case is an error;
+both are reported before the mesh is built.  Other Orbiter builds reject `-i`.
+
+The block `physics: gas_surface_interaction` is owned by the library
+`src/models/surface` (`Surface::RuntimeInput::Apply`, vocabulary and model
+equations in `src/models/surface/Surface.h`): `model` (diffuse, specular,
+maxwell, cll, quasi_specular_cll, nocilla, schamberg, adsorption),
+`wall_temperature_k`, and the parameters of the selected model per species in
+`#begin species: NAME` (or `species.NAME.KEY`).  Every parameter of the
+selected model is required for every species, a parameter of another model is
+an error, and nothing is installed unless the whole block is valid.
+
+### 2.3 General selection rules
 
 ```bash
 ./amps -input path/to/run.in    # the AMPS-wide spelling

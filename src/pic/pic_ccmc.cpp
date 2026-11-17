@@ -592,6 +592,13 @@ void PIC::CCMC::LoadParticles() {
 
   PIC::ParticleBuffer::byte *newParticleData;
   char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
+
+  //the template of the new particles is copied whole into each of them: the fields that are not set below
+  //(and the padding bytes of the data records) must not carry stack garbage. The nightly-test mode sorts
+  //the particles of a cell by a checksum of all their bytes (PIC::Parallel::ExchangeParticleData_*()), so
+  //garbage that differs from run to run (e.g. heap addresses) made the particle order, and the
+  //order-dependent trajectory endpoints of test_Mover-guiding-center, change from run to run
+  memset(tempParticleData,0,PIC::ParticleBuffer::ParticleDataLength);
   PIC::ParticleBuffer::SetParticleAllocated((PIC::ParticleBuffer::byte*)tempParticleData);
 
   for (spec=0;spec<PIC::nTotalSpecies;spec++) for (iInjectionEntry=0;iInjectionEntry<ParticleInjection::InjectionDescriptorList.size();iInjectionEntry++) {
@@ -877,6 +884,14 @@ int PIC::CCMC::TraceParticles() {
       }
       else TimeCounter[spec]+=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
     }
+  }
+
+  //how often the sparse sweeps of the particle lists were used (process 0)
+  if (PIC::ThisThread==0) {
+    using namespace PIC::Mover::SparseParticleLists;
+
+    printf("$PREFIX: Particle Tracking: %i iterations; sparse/full sweeps of the particle lists (thread 0): mover %lu/%lu, list update %lu/%lu, exchange %lu/%lu, list sorting %lu/%lu\n",
+      niter,nSparseMoverSweeps,nFullMoverSweeps,nSparseListUpdates,nFullListUpdates,nSparseExchanges,nFullExchanges,nSparseListSorts,nFullListSorts);
   }
 
   //output sampled trajectories

@@ -347,6 +347,14 @@ bool HybridPrepareStepUseGuidingCenter(const V3& x_m,
                                        double q_C,
                                        const IGridlessFieldEvaluator& field);
 
+// Magnetic scale length L_eff = min(B/|grad B|, R_curvature) [m] at x_m, the scale that
+// limits the accuracy of a guiding-center step (infinity in a uniform straight field).
+// The full-orbit branches are limited by the gyro-angle criterion; a guiding-center
+// step has no such fast scale, so callers bound its displacement by a fraction of
+// L_eff instead (see SelectStructuredTraceDt in CutoffRigidityGridless.cpp).
+double GuidingCenterFieldScaleLength(const V3& x_m,
+                                     const IGridlessFieldEvaluator& field);
+
 void SetDefaultMoverType(MoverType m);
 MoverType GetDefaultMoverType();
 bool ParseMoverType(const std::string& s, MoverType& out);

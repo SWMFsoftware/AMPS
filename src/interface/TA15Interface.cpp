@@ -17,6 +17,7 @@
  *   - converts external nT -> Tesla
  */
 
+#include <cmath>
 #include "pic.h"
 #include "constants.h"
 #include "constants.PlanetaryData.h"
@@ -72,6 +73,34 @@ static inline void CallTA15_Fortran(int *IOPT,double *PARMOD,double *PS,
   }
 }
 
+// TA15 describes the field of the magnetospheric current systems INSIDE the
+// magnetopause only: its shielding expansions are fitted on the model magnetopause
+// and are not bounded outside it.  Upstream of the dayside magnetopause the returned
+// "external field" grows without limit (for PDYN=3.7 nPa, BZIMF=-4 nT, XIND=0.18:
+// |B| = 134 nT at X=16 Re, 1.5e3 nT at 18 Re, 4.6e9 nT at 20 Re on the Sun-Earth
+// line), so backtraced cutoff trajectories that leave sunward through a +X domain
+// face got trapped in this unphysical field and were classified forbidden even at
+// 20 GV (vertical Rc=-1 at the equator).  T96 and T01 confine their fields to a model
+// magnetopause and stay bounded there (3-30 nT at X=8..29 Re for the same event); for
+// TA15 the external part is therefore dropped outside the
+// Shue et al. (1998) magnetopause for the same PDYN and BZIMF (the internal IGRF field
+// is kept everywhere).  The surface depends only on PARMOD, so the test is reentrant.
+static inline bool TA15_InsideShue1998Magnetopause(const double xGSM_Re[3],
+                                                   const double *PARMOD) {
+  const double pdyn=PARMOD[0],bz=PARMOD[2];
+  if (!(pdyn>0.0) || !std::isfinite(pdyn) || !std::isfinite(bz)) return true;
+
+  const double r=std::sqrt(xGSM_Re[0]*xGSM_Re[0]+xGSM_Re[1]*xGSM_Re[1]+xGSM_Re[2]*xGSM_Re[2]);
+  if (r<=0.0) return true;
+
+  const double r0=(10.22+1.29*std::tanh(0.184*(bz+8.14)))*std::pow(pdyn,-1.0/6.6);
+  const double alpha=(0.58-0.007*bz)*(1.0+0.024*std::log(pdyn));
+  const double denominator=1.0+xGSM_Re[0]/r;
+  if (denominator<=1.0E-12) return true;   // anti-sunward axis: the surface is open there
+
+  return r<r0*std::pow(2.0/denominator,alpha);
+}
+
 void TA15::GetMagneticField(double *B,double *x) {
   int idim;
   int IOPT=0;
@@ -83,12 +112,22 @@ void TA15::GetMagneticField(double *B,double *x) {
   for (idim=0;idim<3;idim++) xLocal[idim]=x[idim]/_EARTH__RADIUS_;
 
   if (Rotate2GSM==false) {
-    CallTA15_Fortran(&IOPT,PARMOD,&PS,xLocal+0,xLocal+1,xLocal+2,bTA15+0,bTA15+1,bTA15+2,Version);
+    if (TA15_InsideShue1998Magnetopause(xLocal,PARMOD)) {
+      CallTA15_Fortran(&IOPT,PARMOD,&PS,xLocal+0,xLocal+1,xLocal+2,bTA15+0,bTA15+1,bTA15+2,Version);
+    }
+    else {
+      for (idim=0;idim<3;idim++) bTA15[idim]=0.0;
+    }
   }
   else {
     double xLocal_GSM[3],bTA15_GSM[3];
     Geopack::MatrixVectorMultiply(UserFrame2GSM,xLocal,xLocal_GSM);
-    CallTA15_Fortran(&IOPT,PARMOD,&PS,xLocal_GSM+0,xLocal_GSM+1,xLocal_GSM+2,bTA15_GSM+0,bTA15_GSM+1,bTA15_GSM+2,Version);
+    if (TA15_InsideShue1998Magnetopause(xLocal_GSM,PARMOD)) {
+      CallTA15_Fortran(&IOPT,PARMOD,&PS,xLocal_GSM+0,xLocal_GSM+1,xLocal_GSM+2,bTA15_GSM+0,bTA15_GSM+1,bTA15_GSM+2,Version);
+    }
+    else {
+      for (idim=0;idim<3;idim++) bTA15_GSM[idim]=0.0;
+    }
     Geopack::MatrixVectorMultiply(GSM2UserFrame,bTA15_GSM,bTA15);
   }
 

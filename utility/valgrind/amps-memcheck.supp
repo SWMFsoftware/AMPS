@@ -1,0 +1,28 @@
+# valgrind memcheck suppressions for AMPS runs on Linux with Open MPI 4 (see README.md).
+# Only MPI/system noise belongs here: errors inside the MPI, PMIx, hwloc and libevent
+# libraries that do not involve AMPS data.  Do not suppress AMPS frames.
+
+# PMIx (the Open MPI runtime) sends packed buffers with padding from its progress thread.
+{
+   pmix-ptl-writev
+   Memcheck:Param
+   writev(vector[...])
+   fun:__writev
+   fun:writev
+   fun:pmix_ptl_base_send_handler
+}
+
+# GoogleTest prints a test parameter it cannot format as the bytes of the object, padding included (the name of a
+# parameterized test, e.g. ParticleMergeTestCase of unit_test_field-lines). Only the test name is affected.
+{
+   gtest-print-parameter-bytes-cond
+   Memcheck:Cond
+   ...
+   fun:*PrintBytesInObjectTo*
+}
+{
+   gtest-print-parameter-bytes-value8
+   Memcheck:Value8
+   ...
+   fun:*PrintBytesInObjectTo*
+}

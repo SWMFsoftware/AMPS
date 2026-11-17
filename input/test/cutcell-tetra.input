@@ -1,0 +1,53 @@
+#main
+! Test of the decomposition of cut cells into tetrahedra (exact geometry, output):
+! test/srcCutCellTetraTest/main.cpp ("amps sphere1|sphere3|cone|cylinder|box|lshape").
+SpeciesList=H2O
+makefile SOURCES=src
+makefile RUNDIR=run
+makefile MPIRUN=mpiexec -n 1
+ExcludeModule=ELECTRON_IMPACT
+ExcludeModule=SPUTTERING
+ExcludeModule=DUST
+ExcludeModule=CHARGE_EXCHANGE
+ExcludeModule=EXOSPHERE
+ExcludeModule=SURFACE
+ProjectSourceDirectory=test/srcCutCellTetraTest
+WorkingSourceDirectory=srcTemp
+SourceDirectory=src
+ErrorLog=PT/amps_error.log
+Prefix=AMPS
+DiagnosticStream=PT
+OutputDirectory=PT/plots
+DebuggerMode=off
+ForceRepeatableSimulationPath=on
+StdoutErrorLog=on
+TimeStepMode=SpeciesGlobalTimeStep
+ParticleWeightMode=SpeciesGlobalParticleWeight
+ParticleWeightCorrectionMode=off
+CouplerMode=off
+#endmain
+
+#include species.input
+
+#General
+  defineLocation(pic/picGlobal.dfn) DIM 3
+  ! odd number of cells and two ghost layers: the ghost cells of a block reach into
+  ! the neighbors and a coarse ghost cell straddles two finer blocks
+  BlockCells=5,5,5
+  GhostCells=2,2,2
+  MaxMeshRefinmentLevel=6
+  EnforceRequestedMeshResolution=off
+  Rnd=MersenneTwister
+  NastranSurfaceUserData=on
+  ControlParticleInsideNastranSurface=off
+  InternalBoundary=on
+#endGeneral
+
+! Supplies the internal-surface data types without enabling an exosphere
+! source, SPICE, or any application target.
+#block ../exosphere.pl
+  SPICE=off
+  define _TARGET_ _TARGET_NONE_
+#endblock
+
+#end

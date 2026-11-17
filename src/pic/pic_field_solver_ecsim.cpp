@@ -3857,6 +3857,190 @@ barrier.Sync();
     }
   }
 
+#if (_COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_)&&(_PIC_FIELD_SOLVER_CELL_DATA_COPY_MANAGER_MODE_ == _PIC_MODE_OFF_)
+  // Hybrid build: every corner node gets the contributions of the cells in the order of the MPI-only loop below
+  // (BlockTable order, then the cell order of a block), so the floating-point sums J and the mass matrix do not depend
+  // on the thread timing, and equal those of the MPI-only build. Before, the cells were distributed with
+  // schedule(guided) and each cell added its contributions under a per-corner lock in the order the threads came;
+  // a corner node gets the contributions of up to 8 cells (of up to 8 blocks: neighbor blocks share the nodes on
+  // their common faces), so two runs of the same executable gave slightly different J/mass matrices.
+  //  1. each thread processes a contiguous range of blocks, in the thread order (PIC::OpenMP::ContiguousPartition(),
+  //     balanced by the number of particles), cell by cell in the order of the MPI-only loop;
+  //  2. a corner node gets its contributions directly from the lowest thread whose blocks use it, with no lock (no
+  //     other thread writes it); a higher thread keeps its contributions to the node in a list;
+  //  3. after the parallel region the lists are added in the thread order: the contributions of the higher threads
+  //     come after those of the lower ones, as in the MPI-only loop.
+  // The particle energy (a diagnostic) is summed in the order of the MPI-only loop as well.
+  {
+    const int nThreads=thread_id_table_size;
+    const int nBlockCells=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
+    const int nBlockCorners=(_BLOCK_CELLS_X_+1)*(_BLOCK_CELLS_Y_+1)*(_BLOCK_CELLS_Z_+1);
+    const int particle_data_length=PIC::ParticleBuffer::ParticleDataLength;
+    PIC::ParticleBuffer::byte *particle_data_buffer=PIC::ParticleBuffer::ParticleDataBuffer;
+
+    auto corner_number=[] (int i,int j,int k) {return i+(_BLOCK_CELLS_X_+1)*(j+(_BLOCK_CELLS_Y_+1)*k);};
+    auto surface_corner=[] (int i,int j,int k) {
+      return (i==0)||(i==_BLOCK_CELLS_X_)||(j==0)||(j==_BLOCK_CELLS_Y_)||(k==0)||(k==_BLOCK_CELLS_Z_);
+    };
+
+    //add the contribution of a cell to its corner node: the same operations as in the MPI-only loop below
+    auto add_corner=[] (cCellData::cCornerData *c) {
+      double *target,*source;
+
+      target=c->CornerJ_ptr;
+      source=c->CornerJ;
+      for (int idim=0;idim<3;idim++) target[idim]+=source[idim];
+
+      target=c->CornerMassMatrix_ptr;
+      source=c->CornerMassMatrix;
+      for (int ii=0;ii<243;ii++) target[ii]+=source[ii];
+
+      if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
+        target=c->SpecData_ptr;
+        source=c->SpecData;
+        for (int ii=0; ii<10*PIC::nTotalSpecies; ii++) target[ii]+=source[ii];
+      }
+    };
+
+    //1. the partition: the weight of a block is the number of its particles and cells
+    std::vector<long int> block_weight(block_count,0);
+    std::vector<int> thread_begin;
+
+#pragma omp parallel for schedule(static) default(shared)
+    for (int ib=0;ib<block_count;ib++) if (block_active[ib]!=0) {
+      PIC::Mesh::cDataBlockAMR *block=BlockTable[ib]->block;
+      long int n=nBlockCells;
+
+      for (int nCell=0;nCell<nBlockCells;nCell++) {
+        for (long int p=block->FirstCellParticleTable[nCell];p!=-1;p=PIC::ParticleBuffer::GetNext(p)) n++;
+      }
+
+      block_weight[ib]=n;
+    }
+
+    PIC::OpenMP::ContiguousPartition(block_weight,nThreads,thread_begin);
+
+    std::vector<int> block_thread(block_count,0);
+    for (int t=0;t<nThreads;t++) for (int ib=thread_begin[t];ib<thread_begin[t+1];ib++) block_thread[ib]=t;
+
+    //2. the corner nodes on the surface of a block can be shared with the neighbor blocks: the first active block of
+    //BlockTable that uses each of them, and the nodes to which a block's thread defers its contributions
+    std::unordered_map<PIC::Mesh::cDataCornerNode*,int> first_block;
+    std::vector<std::vector<unsigned char> > deferred_corner(block_count);
+
+    first_block.reserve(2*block_count*((_BLOCK_CELLS_X_+1)*(_BLOCK_CELLS_Y_+1)+(_BLOCK_CELLS_Y_+1)*(_BLOCK_CELLS_Z_+1)+(_BLOCK_CELLS_X_+1)*(_BLOCK_CELLS_Z_+1)));
+
+    for (int ib=0;ib<block_count;ib++) if (block_active[ib]!=0) {
+      PIC::Mesh::cDataBlockAMR *block=BlockTable[ib]->block;
+
+      for (int k=0;k<=_BLOCK_CELLS_Z_;k++) for (int j=0;j<=_BLOCK_CELLS_Y_;j++) for (int i=0;i<=_BLOCK_CELLS_X_;i++) if (surface_corner(i,j,k)) {
+        PIC::Mesh::cDataCornerNode *corner=block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
+
+        if (corner!=NULL) first_block.emplace(corner,ib);
+      }
+    }
+
+    for (int ib=0;ib<block_count;ib++) if ((block_active[ib]!=0)&&(block_thread[ib]!=0)) {
+      PIC::Mesh::cDataBlockAMR *block=BlockTable[ib]->block;
+
+      deferred_corner[ib].assign(nBlockCorners,0);
+
+      for (int k=0;k<=_BLOCK_CELLS_Z_;k++) for (int j=0;j<=_BLOCK_CELLS_Y_;j++) for (int i=0;i<=_BLOCK_CELLS_X_;i++) if (surface_corner(i,j,k)) {
+        PIC::Mesh::cDataCornerNode *corner=block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
+
+        if ((corner!=NULL)&&(block_thread[first_block.at(corner)]<block_thread[ib])) deferred_corner[ib][corner_number(i,j,k)]=1;
+      }
+    }
+
+    //3. the cells
+    static std::vector<std::vector<cCellData::cCornerData> > deferred;
+    std::vector<double> cell_energy((size_t)block_count*nBlockCells,0.0);
+    std::vector<unsigned char> cell_processed((size_t)block_count*nBlockCells,0);
+
+    if ((int)deferred.size()<nThreads) deferred.resize(nThreads);
+    for (auto& d : deferred) d.clear();
+
+#pragma omp parallel default(shared)
+    {
+      const int this_thread_id=omp_get_thread_num();
+      cCellData *CellData_TH=CellDataTable_Bank0+this_thread_id;
+
+      //the order of the corners in ProcessCell(): (i,j,k),(i+1,j,k),(i+1,j+1,k),(i,j+1,k), the same at k+1
+      static const int di[8]={0,1,1,0,0,1,1,0},dj[8]={0,0,1,1,0,0,1,1},dk[8]={0,0,0,0,1,1,1,1};
+
+      //the block ranges ('partitions') of the threads (a thread processes more than one partition only when the team
+      //has fewer than nThreads threads: the partitions do not overlap and are processed in increasing order)
+      for (int part=this_thread_id;part<nThreads;part+=omp_get_num_threads()) {
+      std::vector<cCellData::cCornerData>& thread_deferred=deferred[part];
+
+      for (int ib=thread_begin[part];ib<thread_begin[part+1];ib++) if (block_active[ib]!=0) {
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=BlockTable[ib];
+        const unsigned char *defer=(deferred_corner[ib].empty()==true) ? NULL : deferred_corner[ib].data();
+
+        for (int nCell=0;nCell<nBlockCells;nCell++) {
+          int i,j,k,ii=nCell;
+
+          k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+          ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+          j=ii/_BLOCK_CELLS_X_;
+          ii-=j*_BLOCK_CELLS_X_;
+
+          i=ii;
+
+          double StartTime=MPI_Wtime();
+
+          CellData_TH->clean();
+
+          if (ProcessCell(i,j,k,node,CellData_TH,0,1,MassTable,ChargeTable,particle_data_length,particle_data_buffer,block_data[ib])==true) {
+            cell_energy[(size_t)ib*nBlockCells+nCell]=CellData_TH->ParticleEnergy;
+            cell_processed[(size_t)ib*nBlockCells+nCell]=1;
+
+            for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) {
+              if (CellData_TH->cflCell[iSp]>cflTable[part][iSp]) cflTable[part][iSp]=CellData_TH->cflCell[iSp];
+            }
+
+            for (int icor=0;icor<8;icor++) {
+              cCellData::cCornerData *c=CellData_TH->CornerData+icor;
+
+              if (defer!=NULL) {
+                if (c->CornerNode!=node->block->GetCornerNode(_getCornerNodeLocalNumber(i+di[icor],j+dj[icor],k+dk[icor]))) {
+                  exit(__LINE__,__FILE__,"Error: the corner order of ProcessCell() is not the expected one");
+                }
+
+                if (defer[corner_number(i+di[icor],j+dj[icor],k+dk[icor])]!=0) {
+                  thread_deferred.push_back(*c);
+                  continue;
+                }
+              }
+
+              add_corner(c);
+            }
+          }
+
+          //increment the time counter
+          if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
+            node->ParallelLoadMeasure+=MPI_Wtime()-StartTime;
+          }
+        }
+      }
+      }
+    }
+
+    //the contributions of the higher threads to the shared corner nodes, in the thread order
+    for (int t=1;t<nThreads;t++) for (auto& c : deferred[t]) add_corner(&c);
+
+    //the particle energy: the MPI-only loop adds the energy of a cell once for each of its 8 corners
+    double e=0.0;
+
+    for (size_t n=0;n<cell_energy.size();n++) if (cell_processed[n]!=0) {
+      for (int icor=0;icor<8;icor++) e+=cell_energy[n];
+    }
+
+    ParticleEnergyTable[0]=e;
+    for (int t=1;t<nThreads;t++) ParticleEnergyTable[t]=0.0;
+  }
+#else
   // Loop through all blocks.
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 
@@ -3977,6 +4161,7 @@ barrier.Sync();
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
   }
 #endif
+#endif //hybrid build without the copy manager
 
 
 #if _PIC_FIELD_SOLVER_CELL_DATA_COPY_MANAGER_MODE_ == _PIC_MODE_ON_
@@ -5978,9 +6163,16 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateE() {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node_last=NULL;
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  //the wave energy of each cell, summed after the loop in the order of the MPI-only loop: with reduction(+:...) the
+  //sum depended on the partial sums of the threads and on the order in which the threads combined them
+  std::vector<double> CellWaveEnergy(CellCounterMax,0.0);
+  std::vector<unsigned char> CellWaveEnergyFlag(CellCounterMax,0);
+  double *CellWaveEnergyTable=CellWaveEnergy.data();
+  unsigned char *CellWaveEnergyFlagTable=CellWaveEnergyFlag.data();
+
 #pragma omp parallel for default(none) shared (PIC::Mesh::mesh,CellCounterMax,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,PIC::DomainBlockDecomposition::BlockTable,PIC::ThisThread) \
   shared(length_conv,ExOffsetIndex,EyOffsetIndex,EzOffsetIndex,B_conv,E_conv,theta,CurrentEOffset,OffsetE_HalfTimeStep,CurrentBOffset,PIC::CPLR::DATAFILE::Offset::MagneticField,PIC::CPLR::DATAFILE::Offset::ElectricField) \
-  firstprivate(node_last) private (CellVolume) reduction(+:WaveEnergySum)
+  shared(CellWaveEnergyTable,CellWaveEnergyFlagTable) firstprivate(node_last) private (CellVolume)
 #endif
   for (CellCounter=0;CellCounter<CellCounterMax;CellCounter++) {
     int nLocalNode,i,j,k,ii,jj,kk;
@@ -6042,8 +6234,17 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateE() {
     Bx0=CurrentB_Ptr[BxOffsetIndex];
     By0=CurrentB_Ptr[ByOffsetIndex];
     Bz0=CurrentB_Ptr[BzOffsetIndex];
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+    CellWaveEnergyTable[CellCounter]=((Ex*Ex+Ey*Ey+Ez*Ez)*E_conv*E_conv+(Bx0*Bx0+By0*By0+Bz0*Bz0)*B_conv*B_conv)*0.125/Pi*CellVolume;
+    CellWaveEnergyFlagTable[CellCounter]=1;
+#else
     WaveEnergySum += ((Ex*Ex+Ey*Ey+Ez*Ez)*E_conv*E_conv+(Bx0*Bx0+By0*By0+Bz0*Bz0)*B_conv*B_conv)*0.125/Pi*CellVolume;
+#endif
   }
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  for (CellCounter=0;CellCounter<CellCounterMax;CellCounter++) if (CellWaveEnergyFlagTable[CellCounter]!=0) WaveEnergySum+=CellWaveEnergyTable[CellCounter];
+#endif
     
   switch (_PIC_BC__PERIODIC_MODE_) {
   case _PIC_BC__PERIODIC_MODE_OFF_:

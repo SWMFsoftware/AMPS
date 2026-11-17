@@ -249,7 +249,9 @@ void Comet::Init_AfterParser(const char *DataFilePath) {
   const int nGravityVariables=3;
   int GravityVariableOffsets[nGravityVariables]={GravityFieldOffset,GravityFieldOffset+sizeof(double),GravityFieldOffset+2*sizeof(double)};
 
-  if (PIC::Mesh::mesh->AssociatedDataFileExists("gravity",DataFilePath)==true) {
+  //DataFilePath==NULL: the mesh was generated in this run (main.cpp); the gravity is computed, and a file saved by an
+  //earlier run in the run directory is not used (see main.cpp)
+  if ((DataFilePath!=NULL)&&(PIC::Mesh::mesh->AssociatedDataFileExists("gravity",DataFilePath)==true)) {
     PIC::Mesh::mesh->LoadCenterNodeAssociatedData("gravity",DataFilePath,GravityVariableOffsets,nGravityVariables);
   }
   else {

@@ -248,8 +248,10 @@ class Night_(unittest.TestCase):
             rundir3, = Night(machine, routine, Registry.load(), machine.configs, echo=lines.append,
                              now=later + dt.timedelta(hours=1)).run()
             _, rows3 = read_run_dir(rundir3)
+            # (a test that needs a capability box does not declare keeps that reason: the gpu runner, and the Table's
+            # <test>--valgrind variants)
             self.assertTrue(rows3 and all(r["status"] == "SKIPPED" and "GB free" in r["reason"] for r in rows3
-                                          if r["test"] != "gpu"))
+                                          if "does not declare capability" not in r["reason"]))
             night = list((tmp / "www" / "archive").glob("*/*/*/box-gnu"))[0]
             index = (night / "index.html").read_text()
             self.assertIn("Runners", index)

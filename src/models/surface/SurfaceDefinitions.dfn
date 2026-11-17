@@ -7,11 +7,19 @@
 //the types of the surface temperature models
 #define _SURFACE__TEMPERATURE_MODEL__ISOTHERMAL_     0
 
-//the types of the gas-surface interaction models
+//the types of the gas-surface interaction models. The compile-time choice _SURFACE__GAS_SURFACE_INTERACTION_MODEL_
+//(Surface.dfn) is the initial model of every species; the model of a species can be changed at run time with
+//Surface::Model::Set() or with the runtime input block 'physics: gas_surface_interaction' (Surface.h). The run-time
+//model codes are these values.
 #define _SURFACE__GAS_SURFACE_INTERACTION_MODEL__DIFFUSE_REFLECTION_          0
 #define _SURFACE__GAS_SURFACE_INTERACTION_MODEL__SPECULAR_REFLECTION_         1
-#define _SURFACE__GAS_SURFACE_INTERACTION_MODEL__CCL_                         2
+#define _SURFACE__GAS_SURFACE_INTERACTION_MODEL__CCL_                         2   //Cercignani-Lampis-Lord (historical spelling)
+#define _SURFACE__GAS_SURFACE_INTERACTION_MODEL__CLL_                         2   //Cercignani-Lampis-Lord
 #define _SURFACE__GAS_SURFACE_INTERACTION_MODEL__MAXWELL_                     3
-#define _SURFACE__GAS_SURFACE_INTERACTION_MODEL__QUASI_SPECULAR_REFLECTION_   4   
+#define _SURFACE__GAS_SURFACE_INTERACTION_MODEL__QUASI_SPECULAR_REFLECTION_   4   //quasi-specular CLL: CLL with small accommodation coefficients
+#define _SURFACE__GAS_SURFACE_INTERACTION_MODEL__QUASI_SPECULAR_CLL_          4   //(the same)
+#define _SURFACE__GAS_SURFACE_INTERACTION_MODEL__ADSORPTION_                  5   //every incident particle is adsorbed (removed)
+#define _SURFACE__GAS_SURFACE_INTERACTION_MODEL__QUASI_SPECULAR_NOCILLA_      6   //Nocilla drifting half-range Maxwellian
+#define _SURFACE__GAS_SURFACE_INTERACTION_MODEL__QUASI_SPECULAR_SCHAMBERG_    7   //Schamberg conical beam
 
 #endif

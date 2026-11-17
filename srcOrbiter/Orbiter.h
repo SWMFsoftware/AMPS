@@ -17,6 +17,10 @@
 namespace Orbiter {
 using namespace Exosphere;
 
+  //the speed that sets the time step of a block, 0.3 (cell size)/CharacteristicSpeed (localTimeStep() in main.cpp);
+  //50 km/s unless the runtime input sets it (OrbiterRuntimeInput.h)
+  extern double CharacteristicSpeed;
+
   //analytical expressions for the drag coefficnet of simple geometrical objects
   namespace DragCoefficent{
     namespace ClosedFormExpressions {
@@ -187,6 +191,16 @@ using namespace Exosphere;
        extern bool SamplingMode;
        extern double *dpX,*dpY,*dpZ,*Flux;
        extern int *ModelParticleCounter;
+
+       //the sum over the surface hits of the squared projection of the momentum transfer rate onto the direction of
+       //the upstream flow: with independent hits (a compound Poisson process, true for a free-molecular flow about a
+       //convex body) it is the variance of the sampled drag
+       extern double *dpProjection2;
+
+       //the result of the last output (PrintOutputFile): the drag coefficient, its statistical standard deviation, the
+       //number of hits and the sample length
+       extern double LastCd,LastCdSigma,LastProjectionArea;
+       extern long int LastnHits,LastSampleLength;
 
        void Init();
 

@@ -26,6 +26,7 @@
 
 #include "meshAMRcutcell.h"
 #include "cCutBlockSet.h"
+#include "OrbiterRuntimeInput.h"
 
 double BulletLocalResolution(double *x) {
   int idim;
@@ -47,129 +48,49 @@ return  ((fabs(x[0])<100.0)||(x[1]*x[1]+x[2]*x[2]<40.0*40.0)) ? 5.0 : 100.0;
 
 
 namespace ParticleSurfaceInterationModel {
+  //diffuse re-emission from the walls at 293 K: the flux-weighted half-range Maxwellian (Surface::DiffuseReflection;
+  //until 2026-11 a full Maxwellian was sampled and the particles with v.n<=0 were rejected, which gives the density, not
+  //the flux, distribution: <v.n> was 1/sqrt(pi) instead of sqrt(pi)/2 times sqrt(2kT/m))
   int COPS(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
-    double BulkFlowVelocity[3]={0.0,0.0,0.0},Twall=293.0;
-    int spec;
+    const double Twall=293.0;
 
-    spec=PIC::ParticleBuffer::GetI(ptr); 
-
-    //reflect particles from the walls with themerature of 293 K;
-    do {
-      PIC::Distribution::MaxwellianVelocityDistribution(vInit,BulkFlowVelocity,Twall,spec);
-    }
-    while (Vector3D::DotProduct(vInit,TriangleCutFace->ExternalNormal)<=0.0);
-
+    Surface::DiffuseReflection::Reemit(vInit,Twall,PIC::ParticleBuffer::GetI(ptr),TriangleCutFace);
     return _PARTICLE_REJECTED_ON_THE_FACE_; 
   }
 
+  //the same for the CYCNSS spacecraft: the faces with the attribute 8 are at 373 K, the others at 323 K
   int ParticleSurfaceInteraction_CYCNSS(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
-    double BulkFlowVelocity[3]={0.0,0.0,0.0},Twall=50.0+273.0;
-    int spec;
-
-    spec=PIC::ParticleBuffer::GetI(ptr);
+    double Twall=50.0+273.0;
 
     if (TriangleCutFace->attribute==8) Twall=100.0+273.0;
 
-    //reflect particles from the walls with themerature of 293 K;
-    do {
-      PIC::Distribution::MaxwellianVelocityDistribution(vInit,BulkFlowVelocity,Twall,spec);
-    }
-    while (Vector3D::DotProduct(vInit,TriangleCutFace->ExternalNormal)<=0.0);
-
+    Surface::DiffuseReflection::Reemit(vInit,Twall,PIC::ParticleBuffer::GetI(ptr),TriangleCutFace);
     return _PARTICLE_REJECTED_ON_THE_FACE_;
   }
 }
 
 
-//namespace containing function used in the nightly test 
+//the drag-coefficient test (MakefileTest/Table, test/Sphere-drag-coefficient): one case of the runtime input
+//(input/test/sphere-drag-coefficient.in, "amps -i FILE -case NAME") is simulated: the free stream about the sphere with
+//the gas-surface interaction model of the case (Surface::ParticleInteractionProcessor). The run ends at the first output
+//after run.iterations iterations; the drag coefficient of that last sample, its statistical standard deviation and the
+//input are written to PT/plots/drag-coefficient-test.dat (compared with the independent free-molecular value by
+//srcOrbiter/test/sphere_drag_check.py).
 namespace DragCoefficientTest {
-  int iTestCode=0;
-
-  const int TestCode__Adsorption=0;
-  const int TestCode__DiffuseReflection=1;
-  const int TestCode__MaxwellReflection=2; 
-  const int TestCode__QuasiSpecularReflection=3;
-  const int TestCode__SpecularReflection=4;
-  const int TestCode__CLL=5; 
-
-  const int nTotalTestCodes=6;
-
   int ParticleSurfaceInteractionProcessor_TEST(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
-    int res=_PARTICLE_REJECTED_ON_THE_FACE_;
-
-    switch (iTestCode) {
-    case TestCode__Adsorption:
-      res=_PARTICLE_DELETED_ON_THE_FACE_;
-      break;
-
-    case TestCode__DiffuseReflection:
-      res=Surface::DiffuseReflection::Processor(ptr,xInit,vInit,TriangleCutFace,startNode); 
-      break; 
-
-    case TestCode__MaxwellReflection:
-      res=Surface::MaxwellReflection::Processor(ptr,xInit,vInit,TriangleCutFace,startNode);
-      break;
-
-    case TestCode__QuasiSpecularReflection: 
-   //   res=Surface::QuasiSpecularReflection::Processor(ptr,xInit,vInit,TriangleCutFace,startNode);
-
-      res=_PARTICLE_DELETED_ON_THE_FACE_;
-      break;
-
-    case TestCode__SpecularReflection:
-      res=Surface::SpecularReflection::Processor(ptr,xInit,vInit,TriangleCutFace,startNode);
-      break;
-
-    case TestCode__CLL:
-      //res=Surface::CLL::Processor(ptr,xInit,vInit,TriangleCutFace,startNode);
-
-      res=_PARTICLE_DELETED_ON_THE_FACE_;
-      break;
-
-    default:
-      exit(__LINE__,__FILE__,"Error: the option is unknown"); 
-    } 
-
-    return res;
+    return Surface::ParticleInteractionProcessor(ptr,xInit,vInit,TriangleCutFace,startNode);
   }
 
-  void RemoveAllParticles() {
-    int Ptr,nextPrt;
+  void Execute() {
+    int LastDataOutputFileNumber=-1,nTotalIterations=Orbiter::RuntimeInput::nTotalIterations;
 
-    //reset particle lists in all cells
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
-    PIC::Mesh::cDataBlockAMR *block;
-    int i,j,k;
+    if (Orbiter::RuntimeInput::Loaded==false) exit(__LINE__,__FILE__,"Error: the drag-coefficient test requires the runtime input (amps -i FILE -case NAME)");
+    if (PIC::nTotalSpecies!=1) exit(__LINE__,__FILE__,"Error: the test is set to be exdcuted only with a single model speceis");
 
-    for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
-      node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
-
-      if ((block=node->block)!=NULL) for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) if ((Ptr=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)])!=-1) {
-        block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=-1; 
-
-        do {
-          nextPrt=PIC::ParticleBuffer::GetNext(Ptr);
-          PIC::ParticleBuffer::DeleteParticle(Ptr);
-  
-          Ptr=nextPrt;
-        }
-        while (Ptr!=-1); 
-
-      }
-    }
-  }
-
-  void ExecuteTest() {
-    int LastDataOutputFileNumber=-1,nTotalIterations=600;   
-    int initRequiredSampleLength=PIC::RequiredSampleLength; 
-
-    RemoveAllParticles(); 
     PIC::DataOutputFileNumber=0;
 
-    //time step
+    //time step: the run ends at the first output after nTotalIterations iterations
     for (long int niter=0;;niter++) {
-      static int LastDataOutputFileNumber=-1;
-
       PIC::TimeStep();
 
       if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
@@ -187,97 +108,46 @@ namespace DragCoefficientTest {
         time_t TimeValue=time(NULL);
         tm *ct=localtime(&TimeValue);
 
-        printf(": (%i/%i %i:%i:%i), Iteration: %ld  (current iTest=%i, current sample length:%ld, %ld interations to the next output)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,niter,iTestCode,PIC::RequiredSampleLength,PIC::RequiredSampleLength-PIC::CollectingSampleCounter);
+        printf(": (%i/%i %i:%i:%i), Iteration: %ld  (case %s, current sample length:%ld, %ld interations to the next output)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,niter,Orbiter::RuntimeInput::SelectedCase.c_str(),PIC::RequiredSampleLength,PIC::RequiredSampleLength-PIC::CollectingSampleCounter);
+      }
     }
-  }
 
     //output the particle statistics for the nightly tests
     char fname[400];
 
-    switch (iTestCode) {
-    case TestCode__Adsorption:
-      sprintf(fname,"%s/test_Orbiter--Adsorption.dat",PIC::OutputDataFileDirectory);
-      
-      if (PIC::ThisThread==0) {
-        system("mv PT/plots/amps.cut-cell.surface-data.out=2.dat PT/plots/amps.cut-cell.surface-data.out=2--Adsorption.dat"); 
-        system("mv PT/plots/pic.H2O.s=0.out=2.dat PT/plots/pic.H2O.s=0.out=2--Adsorption.dat");
-        system("mv PT/plots/test_Orbiter_Drag_Coefficient.dat PT/plots/test_Orbiter_Drag_Coefficient--Adsorption.dat"); 
-      }
-
-      break;
-    case TestCode__DiffuseReflection:
-      sprintf(fname,"%s/test_Orbiter--DiffuseReflection.dat",PIC::OutputDataFileDirectory);
-
-      if (PIC::ThisThread==0) {
-        system("mv PT/plots/amps.cut-cell.surface-data.out=2.dat PT/plots/amps.cut-cell.surface-data.out=2--DiffuseReflection.dat");
-        system("mv PT/plots/pic.H2O.s=0.out=2.dat PT/plots/pic.H2O.s=0.out=2--DiffuseReflection.dat");
-        system("mv PT/plots/test_Orbiter_Drag_Coefficient.dat PT/plots/test_Orbiter_Drag_Coefficient--DiffuseReflection.dat");
-      }
-
-      break;
-    case TestCode__MaxwellReflection:
-      sprintf(fname,"%s/test_Orbiter--MaxwellReflection.dat",PIC::OutputDataFileDirectory);
-   
-      if (PIC::ThisThread==0) {
-        system("mv PT/plots/amps.cut-cell.surface-data.out=2.dat PT/plots/amps.cut-cell.surface-data.out=2--MaxwellReflection.dat");
-        system("mv PT/plots/pic.H2O.s=0.out=2.dat PT/plots/pic.H2O.s=0.out=2--MaxwellReflection.dat");
-        system("mv PT/plots/test_Orbiter_Drag_Coefficient.dat PT/plots/test_Orbiter_Drag_Coefficient--MaxwellReflection.dat");
-      }
-
-      break;
-    case TestCode__QuasiSpecularReflection:
-      sprintf(fname,"%s/test_Orbiter--QuasiSpecularReflection.dat",PIC::OutputDataFileDirectory);
-
-      if (PIC::ThisThread==0) { 
-        system("mv PT/plots/amps.cut-cell.surface-data.out=2.dat PT/plots/amps.cut-cell.surface-data.out=2--QuasiSpecularReflection.dat");
-        system("mv PT/plots/pic.H2O.s=0.out=2.dat PT/plots/pic.H2O.s=0.out=2--QuasiSpecularReflection.dat");
-        system("mv PT/plots/test_Orbiter_Drag_Coefficient.dat PT/plots/test_Orbiter_Drag_Coefficient--QuasiSpecularReflection.dat");
-      }
-
-      break;
-    case TestCode__SpecularReflection:
-      sprintf(fname,"%s/test_Orbiter--SpecularReflection.dat",PIC::OutputDataFileDirectory);
-
-      if (PIC::ThisThread==0) {
-        system("mv PT/plots/amps.cut-cell.surface-data.out=2.dat PT/plots/amps.cut-cell.surface-data.out=2--SpecularReflection.dat");
-        system("mv PT/plots/pic.H2O.s=0.out=2.dat PT/plots/pic.H2O.s=0.out=2--SpecularReflection.dat");
-        system("mv PT/plots/test_Orbiter_Drag_Coefficient.dat PT/plots/test_Orbiter_Drag_Coefficient--SpecularReflection.dat");
-      }
-
-      break;
-    case TestCode__CLL:
-      sprintf(fname,"%s/test_Orbiter--CLL.dat",PIC::OutputDataFileDirectory);
- 
-      if (PIC::ThisThread==0) {
-        system("mv PT/plots/amps.cut-cell.surface-data.out=2.dat PT/plots/amps.cut-cell.surface-data.out=2--CLL.dat");
-        system("mv PT/plots/pic.H2O.s=0.out=2.dat PT/plots/pic.H2O.s=0.out=2--CLL.dat");
-        system("mv PT/plots/test_Orbiter_Drag_Coefficient.dat PT/plots/test_Orbiter_Drag_Coefficient--CLL.dat");
-      }
-
-      break;
-    default:
-      exit(__LINE__,__FILE__,"Error: the option is unknown");
-    }
-
-    //output the run statistics
+    sprintf(fname,"%s/test_Orbiter.dat",PIC::OutputDataFileDirectory);
     PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
 
-    //reset the required sample length
-    PIC::RequiredSampleLength=initRequiredSampleLength;
-  }
+    //the result of the case: the input and the drag coefficient of the last sample
+    if (PIC::ThisThread==0) {
+      sprintf(fname,"%s/drag-coefficient-test.dat",PIC::OutputDataFileDirectory);
 
+      FILE *fout=fopen(fname,"w");
+      if (fout==NULL) exit(__LINE__,__FILE__,"Error: cannot open the test result file");
 
-  void ExecuteAllTests() {
+      std::string gsi=Surface::RuntimeInput::Describe();
 
-    //set the test conditions 
-    Surface::Temperature::Isothremal::Temp=300.0;
-    Surface::MaxwellReflection::AccommodationCoefficient[0]=0.5;
+      fprintf(fout,"# The drag-coefficient test (srcOrbiter/main.cpp, DragCoefficientTest): input and result of one case\n");
+      fprintf(fout,"%s",Orbiter::RuntimeInput::Describe().c_str());
+      for (int s=0;s<PIC::nTotalSpecies;s++) fprintf(fout,"model[%s]=%s\n",PIC::MolecularData::GetChemSymbol(s),Surface::Model::Name(Surface::Model::Selected[s]));
+      fprintf(fout,"wall_temperature_k=%.9e\n",Surface::Temperature::Isothremal::Temp);
+      fprintf(fout,"%s",Surface::RuntimeInput::ParameterLines().c_str());
+      for (size_t i=0,j;i<gsi.size();i=j+1) {
+        j=gsi.find('\n',i);
+        if (j==std::string::npos) j=gsi.size();
+        fprintf(fout,"# %s\n",gsi.substr(i,j-i).c_str());
+      }
+      fprintf(fout,"mpi_processes=%i\n",PIC::nTotalThreads);
+      fprintf(fout,"projection_area_m2=%.9e\n",Orbiter::Sampling::DragCoefficient::LastProjectionArea);
+      fprintf(fout,"sample_length=%ld\n",Orbiter::Sampling::DragCoefficient::LastSampleLength);
+      fprintf(fout,"hits=%ld\n",Orbiter::Sampling::DragCoefficient::LastnHits);
+      fprintf(fout,"Cd=%.9e\n",Orbiter::Sampling::DragCoefficient::LastCd);
+      fprintf(fout,"sigma_Cd=%.9e\n",Orbiter::Sampling::DragCoefficient::LastCdSigma);
+      fclose(fout);
 
-    if (PIC::nTotalSpecies!=1) exit(__LINE__,__FILE__,"Error: the test is set to be exdcuted only with a single model speceis");
-
-
-    //execute the tests
-    for (iTestCode=0;iTestCode<nTotalTestCodes;iTestCode++) ExecuteTest();  
+      printf("$PREFIX: drag-coefficient test, case %s: Cd=%e, statistical standard deviation %e\n",Orbiter::RuntimeInput::SelectedCase.c_str(),
+          Orbiter::Sampling::DragCoefficient::LastCd,Orbiter::Sampling::DragCoefficient::LastCdSigma);
+    }
 
     MPI_Finalize();
     cout << "End of the run:" << PIC::nTotalSpecies << endl;
@@ -287,6 +157,13 @@ namespace DragCoefficientTest {
 }  
 
 
+//add to a face data value: atomically when the OpenMP threads of the hybrid mode can update the same face
+inline void AddToFaceData(double *p,double x) {
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  #pragma omp atomic
+#endif
+  *p+=x;
+}
 
 int SurfaceBoundaryCondition(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   double dt,c,vInitUnchanged[3],ParticleWeight,RateFactor,mass;
@@ -323,84 +200,50 @@ int SurfaceBoundaryCondition(long int ptr,double* xInit,double* vInit,CutCell::c
   }
 
 
-  //sample the energy and momentum transfer rates
+  //sample the energy and momentum transfer rates: one code for the MPI and the hybrid (MPI+OpenMP) modes. Each OpenMP
+  //thread adds to its own element of the drag sums (they are summed in Orbiter::Sampling::DragCoefficient::
+  //PrintOutputFile()), and the face data are updated atomically. Until 2026-11 the hybrid mode had its own copy with
+  //the opposite sign of the momentum and twice the energy.
   dt=startNode->block->GetLocalTimeStep(spec);
   RateFactor=mass*ParticleWeight/dt; 
 
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
-  double *xx,dp,de; 
+  int thread=0;
+  double dp[3],de,dpProjection=0.0,speed;
 
-  Orbiter::Sampling::DragCoefficient::Flux[0]+=ParticleWeight/dt;
-  Orbiter::Sampling::DragCoefficient::ModelParticleCounter[0]++;
-
-  dp=-(vInit[0]-vInitUnchanged[0])*RateFactor;  //the rate of the momentu gain by the orbiter's surface
-  Orbiter::Sampling::DragCoefficient::dpX[0]+=dp;
-  xx=TriangleCutFace->UserData.MomentumTransferRateX;
-  xx[spec]+=dp/TriangleCutFace->SurfaceArea;
-
-  dp=-(vInit[1]-vInitUnchanged[1])*RateFactor;   //the rate of the momentu gain by the orbiter's surface
-  Orbiter::Sampling::DragCoefficient::dpY[0]+=dp;
-  xx=TriangleCutFace->UserData.MomentumTransferRateY;
-  xx[spec]+=dp/TriangleCutFace->SurfaceArea;
-
-  dp=-(vInit[2]-vInitUnchanged[2])*RateFactor;   //the rate of the momentu gain by the orbiter's surface
-  Orbiter::Sampling::DragCoefficient::dpZ[0]+=dp;
-  xx=TriangleCutFace->UserData.MomentumTransferRateZ;
-  xx[spec]+=dp/TriangleCutFace->SurfaceArea;
-
-  de=(vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2] -
-      vInitUnchanged[0]*vInitUnchanged[0]-vInitUnchanged[1]*vInitUnchanged[1]-vInitUnchanged[2]*vInitUnchanged[2])*RateFactor/2.0;
-  xx=TriangleCutFace->UserData.EnergyTransferRate;
-  xx[spec]+=de/TriangleCutFace->SurfaceArea;
-
-#elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  double *xx,dp,de; 
-  int thread=omp_get_thread_num();
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  thread=omp_get_thread_num();
+#elif _COMPILATION_MODE_ != _COMPILATION_MODE__MPI_
+  exit(__LINE__,__FILE__,"Error: the option is unknown");
+#endif
 
   Orbiter::Sampling::DragCoefficient::Flux[thread]+=ParticleWeight/dt;
   Orbiter::Sampling::DragCoefficient::ModelParticleCounter[thread]++;
 
-  //dpX
-  dp=(vInit[0]-vInitUnchanged[0])*RateFactor;
-  Orbiter::Sampling::DragCoefficient::dpX[thread]+=dp;
-  xx=TriangleCutFace->UserData.MomentumTransferRateX;
-  dp/=TriangleCutFace->SurfaceArea;
+  //the rate of the momentum gain by the orbiter's surface: -(v_out-v_in) m w/dt
+  for (int idim=0;idim<3;idim++) dp[idim]=-(vInit[idim]-vInitUnchanged[idim])*RateFactor;
 
-  #pragma omp atomic
-  xx[spec]+=dp;
+  Orbiter::Sampling::DragCoefficient::dpX[thread]+=dp[0];
+  AddToFaceData(TriangleCutFace->UserData.MomentumTransferRateX+spec,dp[0]/TriangleCutFace->SurfaceArea);
 
-  //dpY
-  dp=(vInit[1]-vInitUnchanged[1])*RateFactor;
-  Orbiter::Sampling::DragCoefficient::dpY[thread]+=dp;
-  xx=TriangleCutFace->UserData.MomentumTransferRateY;
-  dp/=TriangleCutFace->SurfaceArea; 
+  Orbiter::Sampling::DragCoefficient::dpY[thread]+=dp[1];
+  AddToFaceData(TriangleCutFace->UserData.MomentumTransferRateY+spec,dp[1]/TriangleCutFace->SurfaceArea);
 
-  #pragma omp atomic
-  xx[spec]+=dp;
+  Orbiter::Sampling::DragCoefficient::dpZ[thread]+=dp[2];
+  AddToFaceData(TriangleCutFace->UserData.MomentumTransferRateZ+spec,dp[2]/TriangleCutFace->SurfaceArea);
 
-  //dpX
-  dp=(vInit[2]-vInitUnchanged[2])*RateFactor;
-  Orbiter::Sampling::DragCoefficient::dpZ[thread]+=dp;
-  xx=TriangleCutFace->UserData.MomentumTransferRateZ;
-  dp/=TriangleCutFace->SurfaceArea;
+  //the squared contribution to the drag (along the upstream flow) for its statistical uncertainty
+  speed=sqrt(Orbiter::UpstreamBC::Velocity[0]*Orbiter::UpstreamBC::Velocity[0]+Orbiter::UpstreamBC::Velocity[1]*Orbiter::UpstreamBC::Velocity[1]+
+      Orbiter::UpstreamBC::Velocity[2]*Orbiter::UpstreamBC::Velocity[2]);
 
-  #pragma omp atomic
-  xx[spec]+=dp;
+  if (speed>0.0) {
+    for (int idim=0;idim<3;idim++) dpProjection+=dp[idim]*Orbiter::UpstreamBC::Velocity[idim]/speed;
+    Orbiter::Sampling::DragCoefficient::dpProjection2[thread]+=dpProjection*dpProjection;
+  }
 
-  //dE
+  //the rate of the kinetic energy gain by the gas
   de=(vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2] -
-      vInitUnchanged[0]*vInitUnchanged[0]-vInitUnchanged[1]*vInitUnchanged[1]-vInitUnchanged[2]*vInitUnchanged[2])*RateFactor/1.0;
-  xx=TriangleCutFace->UserData.EnergyTransferRate; 
-  de/=TriangleCutFace->SurfaceArea; 
-
-  #pragma omp atomic
-  xx[spec]+=de;
-
-#else
-  exit(__LINE__,__FLIE__,"Error: the option is unknown");
-#endif
-
-
+      vInitUnchanged[0]*vInitUnchanged[0]-vInitUnchanged[1]*vInitUnchanged[1]-vInitUnchanged[2]*vInitUnchanged[2])*RateFactor/2.0;
+  AddToFaceData(TriangleCutFace->UserData.EnergyTransferRate+spec,de/TriangleCutFace->SurfaceArea);
 
   return code;
 }
@@ -430,10 +273,10 @@ double SurfaceResolution(CutCell::cTriangleFace* t) {
 
 double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
   double CellSize;
-  double CharacteristicSpeed=50.0E3;
 
+  //Orbiter::CharacteristicSpeed is 50 km/s unless the runtime input sets it
   CellSize=startNode->GetCharacteristicCellSize();
-  return 0.3*CellSize/CharacteristicSpeed;
+  return 0.3*CellSize/Orbiter::CharacteristicSpeed;
 }
 
 
@@ -459,11 +302,69 @@ double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
 
 
 
+//the command line: "amps" or, for the drag-coefficient test, "amps -i FILE -case NAME" (OrbiterRuntimeInput.h)
+static void PrintUsage(const char *program) {
+  printf("usage: %s [-i|--input FILE [-case|--case NAME]]\n"
+      "  -i FILE    the runtime input (src/INPUT_FILE.md; the drag-coefficient test: input/test/sphere-drag-coefficient.in)\n"
+      "  -case NAME the case of FILE; required when FILE has cases\n",program);
+}
+
 int main(int argc,char **argv) {
   char fname[_MAX_STRING_LENGTH_PIC_];
+  std::string RuntimeInputPath,RuntimeCaseName;
+  bool CommandLineError=false,HelpRequested=false;
 
   //init the particle solver
   PIC::InitMPI();
+
+  //the command line
+  for (int i=1;i<argc;i++) {
+    std::string option=argv[i];
+
+    if ((option=="-i")||(option=="--input")||(option=="-input")) {
+      if ((++i>=argc)||(RuntimeInputPath.empty()==false)) {
+        if (PIC::ThisThread==0) fprintf(stderr,"%s requires exactly one file\n",option.c_str());
+        CommandLineError=true;
+      }
+      else RuntimeInputPath=argv[i];
+    }
+    else if ((option=="-case")||(option=="--case")) {
+      if ((++i>=argc)||(RuntimeCaseName.empty()==false)) {
+        if (PIC::ThisThread==0) fprintf(stderr,"%s requires exactly one case name\n",option.c_str());
+        CommandLineError=true;
+      }
+      else RuntimeCaseName=argv[i];
+    }
+    else if ((option=="-h")||(option=="--help")) HelpRequested=true;
+    else {
+      if (PIC::ThisThread==0) fprintf(stderr,"unknown argument '%s'\n",option.c_str());
+      CommandLineError=true;
+    }
+  }
+
+  if ((CommandLineError==false)&&(RuntimeInputPath.empty())&&(RuntimeCaseName.empty()==false)) {
+    if (PIC::ThisThread==0) fprintf(stderr,"-case requires -i FILE\n");
+    CommandLineError=true;
+  }
+
+  if ((CommandLineError==false)&&(HelpRequested==false)) {
+    if ((_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_)&&(_ORBITER_EXECUTE_NEW_TEST_==_PIC_MODE_ON_)) {
+      if (RuntimeInputPath.empty()) {
+        if (PIC::ThisThread==0) fprintf(stderr,"the drag-coefficient test requires its runtime input: -i FILE -case NAME\n");
+        CommandLineError=true;
+      }
+    }
+    else if (RuntimeInputPath.empty()==false) {
+      if (PIC::ThisThread==0) fprintf(stderr,"-i: this executable takes no runtime input (only the drag-coefficient test does)\n");
+      CommandLineError=true;
+    }
+  }
+
+  if (CommandLineError||HelpRequested) {
+    if (PIC::ThisThread==0) PrintUsage(argv[0]);
+    MPI_Finalize();
+    return HelpRequested&&(CommandLineError==false) ? EXIT_SUCCESS : EXIT_FAILURE;
+  }
 
   //seed the random number generatore
   if (_COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_) {
@@ -475,6 +376,24 @@ int main(int argc,char **argv) {
   PIC::Alarm::SetAlarm(48*3600-30*60);
 
   Orbiter::Init_BeforeParser();
+
+  //the runtime input: it is read and checked before the surface and the mesh are read or built
+  if (RuntimeInputPath.empty()==false) {
+    std::string error;
+
+    if (Orbiter::RuntimeInput::LoadAndApply(RuntimeInputPath,RuntimeCaseName,&error)==false) {
+      if (PIC::ThisThread==0) fprintf(stderr,"invalid runtime input: %s\n",error.c_str());
+      MPI_Finalize();
+      return EXIT_FAILURE;
+    }
+
+    if (PIC::ThisThread==0) {
+      printf("$PREFIX: runtime input=%s case=%s\n",RuntimeInputPath.c_str(),RuntimeCaseName.c_str());
+      printf("%s",Orbiter::RuntimeInput::Describe().c_str());
+      printf("%s",Surface::RuntimeInput::Describe().c_str());
+      fflush(stdout);
+    }
+  }
 
 
   double xmin[3]={0.0,-1.0,1.0};
@@ -717,7 +636,7 @@ int main(int argc,char **argv) {
   if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) {
 
     if (_ORBITER_EXECUTE_NEW_TEST_==_PIC_MODE_ON_) {
-      DragCoefficientTest::ExecuteAllTests();
+      DragCoefficientTest::Execute();
     }
 
     nTotalIterations=_PIC_NIGHTLY_TEST__TOTAL_ITERATION_NUMBER_;   

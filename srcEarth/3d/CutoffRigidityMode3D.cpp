@@ -1063,6 +1063,22 @@ static inline double SelectStructuredTraceDt3D(const EarthUtil::AmpsParam& prm,
             const double omega = std::fabs(q_C) * Bmag / (gamma * m0_kg);
             if (omega > 0.0) dt = std::min(dt, kGyroAngleLimit / omega);
         }
+
+        // (1b) Spatial resolution of the field along the orbit, as in the gridless
+        // SelectStructuredTraceDt (CutoffRigidityGridless.cpp).  The gyro-angle limit does
+        // not resolve the variation of B along the path: for a GeV proton in the outer
+        // magnetosphere 0.15 rad of gyration is a step of several Re, across which the
+        // dipole changes by a large factor.  The pre-F3 policy bounded such steps by 20 % of
+        // the distance to the nearest stopping surface; F3 (commit c889703c) removed that
+        // limiter and its 100-km floor.  Bound the displacement per step by 5 % of the
+        // distance from the planet centre (dipole: B/|grad B| = r/3).  Upper bound only; it
+        // binds only when 0.15 gyroradii exceed 0.05 r.
+        const double kRadialStepFraction = 0.05;
+        const double pMag = std::sqrt(std::max(0.0, p2));
+        const double vMag = (gamma > 0.0 && m0_kg > 0.0) ? pMag / (gamma * m0_kg) : 0.0;
+        const double rMag = v3norm(x);
+        if (vMag > 0.0 && rMag > 0.0 && std::isfinite(rMag))
+            dt = std::min(dt, kRadialStepFraction * rMag / vMag);
     }
 
     // Boundary crossings are detected explicitly after each accepted mover step.
@@ -6624,7 +6640,14 @@ Earth::GridlessMode::TrajectoryResult TraceTrajectoryMesh(
     box.yMax=Earth::Mode3D::ParsedDomainMax[1];
     box.zMin=Earth::Mode3D::ParsedDomainMin[2];
     box.zMax=Earth::Mode3D::ParsedDomainMax[2];
-    box.rInner=_EARTH__RADIUS_;
+    // Loss sphere = R_INNER of #DOMAIN_BOUNDARY, as in the cutoff path (section 14.4) and in
+    // gridless mode; it used to be hard-coded to _EARTH__RADIUS_ (1 Re) here, so Mode3D density
+    // ignored R_INNER (e.g. 1.01 Re in the Geospace-Flux-Gridless decks).
+    box.rInner=prm.domain.rInner*1000.0;
+    if (!(box.rInner>0.0)) {
+        throw std::runtime_error(
+            "Mode3D trajectory: invalid R_INNER in #DOMAIN_BOUNDARY; value must be positive.");
+    }
     box.outerBoundary=BuildOuterBoundaryPolicy3D_(prm,box);
 
     // Apply request-owned integration budgets through a private parameter copy.  The
@@ -6662,7 +6685,14 @@ bool TraceAllowedMeshEx(const EarthUtil::AmpsParam& prm,
     box.xMin=Earth::Mode3D::ParsedDomainMin[0]; box.xMax=Earth::Mode3D::ParsedDomainMax[0];
     box.yMin=Earth::Mode3D::ParsedDomainMin[1]; box.yMax=Earth::Mode3D::ParsedDomainMax[1];
     box.zMin=Earth::Mode3D::ParsedDomainMin[2]; box.zMax=Earth::Mode3D::ParsedDomainMax[2];
-    box.rInner=_EARTH__RADIUS_;
+    // Loss sphere = R_INNER of #DOMAIN_BOUNDARY, as in the cutoff path (section 14.4) and in
+    // gridless mode; it used to be hard-coded to _EARTH__RADIUS_ (1 Re) here, so Mode3D density
+    // ignored R_INNER (e.g. 1.01 Re in the Geospace-Flux-Gridless decks).
+    box.rInner=prm.domain.rInner*1000.0;
+    if (!(box.rInner>0.0)) {
+        throw std::runtime_error(
+            "Mode3D trajectory: invalid R_INNER in #DOMAIN_BOUNDARY; value must be positive.");
+    }
     box.outerBoundary=BuildOuterBoundaryPolicy3D_(prm,box);
     cMode3DMeshFieldEval field(prm);
     const V3 x0_m{x0_m_arr[0],x0_m_arr[1],x0_m_arr[2]};

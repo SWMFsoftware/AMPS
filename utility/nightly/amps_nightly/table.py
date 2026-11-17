@@ -63,6 +63,36 @@ def read_table(path: Optional[Path] = None) -> List[TableTest]:
     return tests
 
 
+# Variants of a test: a Table block named <test>--<variant> runs <test> in another way (its own build, run and check).
+# Make targets cannot hold parentheses (make reads x(y) as an archive member), so the Table name carries the variant
+# as a suffix; results, logs and pages show it as <test>(<variant>). A variant can need a machine capability: it is
+# SKIPPED on machines whose file does not declare it.
+VARIANTS = {"valgrind": "valgrind"}        # variant -> machine capability it requires ("" for none)
+
+
+def _variant(name: str) -> str:
+    base, sep, variant = name.rpartition("--")
+    return variant if sep and base and variant in VARIANTS else ""
+
+
+def display_name(name: str) -> str:
+    """'Mars-ions--valgrind' -> 'Mars-ions(valgrind)'; other names are returned unchanged."""
+    variant = _variant(name)
+    return "{}({})".format(name[:-len(variant) - 2], variant) if variant else name
+
+
+def table_name(display: str) -> str:
+    """The inverse of display_name: 'Mars-ions(valgrind)' -> 'Mars-ions--valgrind'."""
+    match = re.match(r"^(.+)\(([^()]+)\)$", display)
+    return "{}--{}".format(match.group(1), match.group(2)) if match and match.group(2) in VARIANTS else display
+
+
+def required_capabilities(name: str) -> List[str]:
+    """The machine capabilities a Table test needs (Table name or display name)."""
+    capability = VARIANTS.get(_variant(table_name(name)), "")
+    return [capability] if capability else []
+
+
 def family_by_name(tests: List[TableTest]) -> Dict[str, str]:
     return {t.name: t.family for t in tests if t.family}
 

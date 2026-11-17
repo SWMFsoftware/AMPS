@@ -82,13 +82,65 @@ Check=
 -------------------------------------------------------------------------------
 
 #>
-Name=test/Mars-ions@@(0+) 
+Name=test/Mars-ions@@(0+amps-gpu+passion) 
 Family=planets
 Time=2
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+valeriy)
 Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+amps-gpu+passion)
 Keys=-cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+pleiades)
 Keys=-cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+stampede)
+<#
+
+#>
+Name=test/Mars-ions--valgrind@@(0+amps-gpu+passion)
+Family=planets
+Time=20
+Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+valeriy)
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+amps-gpu+passion)
+Keys=-cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+pleiades)
+Keys=-cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+stampede)
+
+Compile=
+>>>@echo "test_Mars-ions--valgrind_compile..." > test_Mars-ions--valgrind.diff
+>>>@# The memcheck variant (utility/valgrind/README.md). The nightly runs it only on machines that declare the
+>>>@# capability valgrind (utility/nightly: a Table name <test>--valgrind is shown as <test>(valgrind)); without
+>>>@# valgrind the result file says so. Debug information through FLAGC_EXTRA=-g (gcc -g does not change the generated
+>>>@# code; EXTRACOMPILEROPTIONS would replace the Config.pl -compiler-option values); -check_macro=off keeps the build/
+>>>@# copies line-for-line equal to the sources (memcheck's file:line), and build/ is removed so that no object of an
+>>>@# earlier build is reused.
+>>>@if ! command -v valgrind > /dev/null 2>&1; then echo "valgrind is not installed on `hostname -s`: test_Mars-ions--valgrind needs it" >> test_Mars-ions--valgrind.diff; fi
+>>>@command -v valgrind > /dev/null 2>&1 || exit 0; rm -rf $(WSD)
+>>>@command -v valgrind > /dev/null 2>&1 || exit 0; ./Config.pl -check_macro=off
+>>>@command -v valgrind > /dev/null 2>&1 || exit 0; ./Config.pl -application=test/Mars-ions -spice-path=nospice -spice-kernels=nospice -model-data-path=$(PTDIR)/data/input/Mars-ions -amps-test=on $(TESTMars-ions--valgrindKEYS)
+>>>@command -v valgrind > /dev/null 2>&1 || exit 0; $(MAKE) -j8 amps FLAGC_EXTRA=-g
+>>>@command -v valgrind > /dev/null 2>&1 || exit 0; ./Config.pl -check_macro=on
+>>>@command -v valgrind > /dev/null 2>&1 || exit 0; echo "test_Mars-ions--valgrind_compile... done" >> test_Mars-ions--valgrind.diff
+
+Rundir=
+>>>@echo "test_Mars-ions--valgrind_rundir..." >> test_Mars-ions--valgrind.diff
+>>>rm -rf   $(TESTMars-ions--valgrindDIR)
+>>>mkdir -p $(TESTMars-ions--valgrindDIR)
+>>>@if [ -f amps ]; then mv amps $(TESTMars-ions--valgrindDIR) && echo "test_Mars-ions--valgrind_rundir... done" >> test_Mars-ions--valgrind.diff; fi
+
+Run=
+>>>@echo "test_Mars-ions--valgrind_run..." >> test_Mars-ions--valgrind.diff
+>>>@echo Test test_Mars-ions--valgrind has started: `date`
+>>>@# a native run first writes the cell-measure cache amr.sig=*.CenterNodeMeasure.v*.bin, which the memcheck run
+>>>@# then reads instead of computing the cut-cell volumes under valgrind
+>>>command -v valgrind > /dev/null 2>&1 || exit 0; cd $(TESTMars-ions--valgrindDIR) && (mpirun -np 2 --bind-to none ./amps > native.log 2>&1; rm -rf PT)
+>>>command -v valgrind > /dev/null 2>&1 || exit 0; cd $(TESTMars-ions--valgrindDIR) && $(PTDIR)/utility/valgrind/run_memcheck.sh -n 2 -t 2400 -o memcheck ./amps > memcheck.out 2>&1; echo $$? > memcheck.status
+>>>@echo "test_Mars-ions--valgrind_run... done" >> test_Mars-ions--valgrind.diff
+
+Check=
+>>>@echo "test_Mars-ions--valgrind_check..." >> test_Mars-ions--valgrind.diff
+>>>@# PASS (an empty result file) when memcheck reported no error and amps ended normally; otherwise the errors
+>>>@# grouped by utility/valgrind/summarize_memcheck.py (full stacks: $(TESTMars-ions--valgrindDIR)/memcheck/memcheck.<rank>.log)
+>>>@if ! command -v valgrind > /dev/null 2>&1; then echo "valgrind is not installed on `hostname -s`: test_Mars-ions--valgrind needs it" > test_Mars-ions--valgrind.diff; \
+>>>elif [ "`cat $(TESTMars-ions--valgrindDIR)/memcheck.status 2>/dev/null`" = 0 ] && [ "`cat $(TESTMars-ions--valgrindDIR)/memcheck/exit_status 2>/dev/null`" = 0 ]; then : > test_Mars-ions--valgrind.diff; \
+>>>else (echo "memcheck: `tail -1 $(TESTMars-ions--valgrindDIR)/memcheck/summary.txt 2>/dev/null`; amps exit status `cat $(TESTMars-ions--valgrindDIR)/memcheck/exit_status 2>/dev/null`"; \
+>>>head -12 $(TESTMars-ions--valgrindDIR)/memcheck/summary.txt 2>/dev/null) > test_Mars-ions--valgrind.diff; fi
+>>>@ls -l test_Mars-ions--valgrind.diff
+>>>@echo Test test_Mars-ions--valgrind has finished: `date`
 <#
 
 
@@ -367,9 +419,9 @@ Check=
 <#
 -------------------------------------------------------------------------------
 #>
-Name=test-1853-shape@@(0+) 
+Name=test-1853-shape@@(0+passion) 
 Family=mesh-geometry
-Time=5
+Time=8
 
 Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/SURFACE -model-data-path=/home/vtenishe/AMPS_DATA_TEST/SURFACE @@(0+amps-gpu+passion) 
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/SURFACE -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/SURFACE @@(0+valeriy)
@@ -384,12 +436,13 @@ Compile=
 Check=
 >>>@echo "test_test-1853-shape_check..." >> test_test-1853-shape$(TESTtest-1853-shape-REF).diff
 
->>>@$(TESTtest-1853-shapeDIR)/../utility/ReduceFile.pl $(TESTtest-1853-shapeDIR)/PT/plots/pic.H2O.s=0.out=5.dat 20
+>>>@$(TESTtest-1853-shapeDIR)/../utility/ReduceFile.pl $(TESTtest-1853-shapeDIR)/PT/plots/pic.H2O.s=0.out=4.dat 20
 >>>@# The reference is unpacked into the run directory: SWMF_data is not modified (gunzip -kf used to write
->>>@# the unpacked reference next to the .gz in SWMF_data).
->>>-@(REF=output/test_test-1853-shape/pic.H2O.s=0.out=5.dat.Reduced.Step=20.ref_np`ls $(TESTtest-1853-shapeDIR)/PT/thread* |wc -l |tr -d ' '`.dat.gz; \
+>>>@# the unpacked reference next to the .gz in SWMF_data). The volume output out=4 is written after 310 iterations
+>>>@# (_PIC_NIGHTLY_TEST__TOTAL_ITERATION_NUMBER_=320 in input/test/test-1853-shape.input).
+>>>-@(REF=output/test_test-1853-shape/pic.H2O.s=0.out=4.dat.Reduced.Step=20.ref_np`ls $(TESTtest-1853-shapeDIR)/PT/thread* |wc -l |tr -d ' '`.dat.gz; \
 >>>if [ -f $$REF ]; then gunzip -c $$REF > $(TESTtest-1853-shapeDIR)/reference.dat; \
->>>${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 $(TESTtest-1853-shapeDIR)/PT/plots/pic.H2O.s=0.out=5.dat.Reduced.Step=20 $(TESTtest-1853-shapeDIR)/reference.dat > test_test-1853-shape$(TESTtest-1853-shape-REF).diff; \
+>>>${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 $(TESTtest-1853-shapeDIR)/PT/plots/pic.H2O.s=0.out=4.dat.Reduced.Step=20 $(TESTtest-1853-shapeDIR)/reference.dat > test_test-1853-shape$(TESTtest-1853-shape-REF).diff; \
 >>>else echo "reference $$REF is missing" > test_test-1853-shape$(TESTtest-1853-shape-REF).diff; fi)
 
 >>>@ls -l test_test-1853-shape$(TESTtest-1853-shape-REF).diff
@@ -1610,6 +1663,55 @@ Check=
 <#
 
 #>
+Name=unit_test_field-lines--valgrind
+Family=unit-tests
+Time=10
+
+Compile=
+>>>@echo "test_unit_test_field-lines--valgrind_compile..." > test_unit_test_field-lines--valgrind.diff
+>>>@# The memcheck variant (utility/valgrind/README.md). The nightly runs it only on machines that declare the
+>>>@# capability valgrind (utility/nightly: a Table name <test>--valgrind is shown as <test>(valgrind)); without
+>>>@# valgrind the result file says so. Debug information through FLAGC_EXTRA=-g (gcc -g does not change the generated
+>>>@# code; EXTRACOMPILEROPTIONS would replace the Config.pl -compiler-option values); -check_macro=off keeps the build/
+>>>@# copies line-for-line equal to the sources (memcheck's file:line), and build/ is removed so that no object of an
+>>>@# earlier build is reused.
+>>>@if ! command -v valgrind > /dev/null 2>&1; then echo "valgrind is not installed on `hostname -s`: test_unit_test_field-lines--valgrind needs it" >> test_unit_test_field-lines--valgrind.diff; fi
+>>>@command -v valgrind > /dev/null 2>&1 || exit 0; rm -rf $(WSD)
+>>>@command -v valgrind > /dev/null 2>&1 || exit 0; ./Config.pl -check_macro=off
+>>>@command -v valgrind > /dev/null 2>&1 || exit 0; ./Config.pl -application=test/unit-tests/unit-test-field-lines
+>>>@command -v valgrind > /dev/null 2>&1 || exit 0; ./Config.pl -spice-path=nospice
+>>>@command -v valgrind > /dev/null 2>&1 || exit 0; ./Config.pl -compiler-option=-I/home/vtenishe/gtest/include
+>>>@command -v valgrind > /dev/null 2>&1 || exit 0; ./Config.pl -cpp-link-option=-L/home/vtenishe/gtest/lib:-lgtest:-pthread
+>>>@command -v valgrind > /dev/null 2>&1 || exit 0; ./Config.pl -f-link-option=-L/home/vtenishe/gtest/lib:-lgtest:-pthread
+>>>@command -v valgrind > /dev/null 2>&1 || exit 0; $(MAKE) -j8 FLAGC_EXTRA=-g
+>>>@command -v valgrind > /dev/null 2>&1 || exit 0; ./Config.pl -check_macro=on
+>>>@command -v valgrind > /dev/null 2>&1 || exit 0; echo "test_unit_test_field-lines--valgrind_compile... done" >> test_unit_test_field-lines--valgrind.diff
+
+Rundir=
+>>>@echo "test_unit_test_field-lines--valgrind_rundir..." >> test_unit_test_field-lines--valgrind.diff
+>>>rm -rf   $(TESTunit_test_field-lines--valgrindDIR)
+>>>mkdir -p $(TESTunit_test_field-lines--valgrindDIR)
+>>>@if [ -f amps ]; then mv amps $(TESTunit_test_field-lines--valgrindDIR) && echo "test_unit_test_field-lines--valgrind_rundir... done" >> test_unit_test_field-lines--valgrind.diff; fi
+
+Run=
+>>>@echo "test_unit_test_field-lines--valgrind_run..." >> test_unit_test_field-lines--valgrind.diff
+>>>@echo Test test_unit_test_field-lines--valgrind has started: `date`
+>>>command -v valgrind > /dev/null 2>&1 || exit 0; cd $(TESTunit_test_field-lines--valgrindDIR) && $(PTDIR)/utility/valgrind/run_memcheck.sh -n 1 -t 1800 -o memcheck ./amps > memcheck.out 2>&1; echo $$? > memcheck.status
+>>>@echo "test_unit_test_field-lines--valgrind_run... done" >> test_unit_test_field-lines--valgrind.diff
+
+Check=
+>>>@echo "test_unit_test_field-lines--valgrind_check..." >> test_unit_test_field-lines--valgrind.diff
+>>>@# PASS (an empty result file) when memcheck reported no error and amps ended normally; otherwise the errors
+>>>@# grouped by utility/valgrind/summarize_memcheck.py (full stacks: $(TESTunit_test_field-lines--valgrindDIR)/memcheck/memcheck.<rank>.log)
+>>>@if ! command -v valgrind > /dev/null 2>&1; then echo "valgrind is not installed on `hostname -s`: test_unit_test_field-lines--valgrind needs it" > test_unit_test_field-lines--valgrind.diff; \
+>>>elif [ "`cat $(TESTunit_test_field-lines--valgrindDIR)/memcheck.status 2>/dev/null`" = 0 ] && [ "`cat $(TESTunit_test_field-lines--valgrindDIR)/memcheck/exit_status 2>/dev/null`" = 0 ]; then : > test_unit_test_field-lines--valgrind.diff; \
+>>>else (echo "memcheck: `tail -1 $(TESTunit_test_field-lines--valgrindDIR)/memcheck/summary.txt 2>/dev/null`; amps exit status `cat $(TESTunit_test_field-lines--valgrindDIR)/memcheck/exit_status 2>/dev/null`"; \
+>>>head -12 $(TESTunit_test_field-lines--valgrindDIR)/memcheck/summary.txt 2>/dev/null) > test_unit_test_field-lines--valgrind.diff; fi
+>>>@ls -l test_unit_test_field-lines--valgrind.diff
+>>>@echo Test test_unit_test_field-lines--valgrind has finished: `date`
+<#
+
+#>
 Name=unit_test_particle_distribution 
 Family=unit-tests
 Time=2
@@ -1666,6 +1768,34 @@ Check=
 <#
 
 #>
+Name=unit_test_cutcell_tetra
+Family=unit-tests
+Time=5
+
+Compile=
+>>>@echo "test_unit_test_cutcell_tetra_compile..." > test_unit_test_cutcell_tetra.diff
+>>>./Config.pl -application=test/cutcell-tetra -spice-path=nospice -spice-kernels=nospice
+>>>make -j8
+>>>@echo "test_unit_test_cutcell_tetra_compile... done" >> test_unit_test_cutcell_tetra.diff
+
+Run=
+>>>@echo "test_unit_test_cutcell_tetra_run..." >> test_unit_test_cutcell_tetra.diff
+>>>@# the decomposition of cut cells into tetrahedra (test/srcCutCellTetraTest/main.cpp), on 1 and 4 processes:
+>>>@# triangulated bodies of exactly known geometry, bodies that cross cell edges more than once (thin plate, small
+>>>@# spheres through one edge or face, concave corner inside a cell, surface through cell corners and along edges),
+>>>@# and analytic internal spheres (one, and two with a gap smaller than a cell)
+>>>-cd ${TESTunit_test_cutcell_tetraDIR}; for s in sphere1 cone cylinder box lshape plate bumps lcorner wedge asphere aspheres; do $(or ${TESTMPIRUN1},mpirun -np 1) ./amps $$s; $(or ${TESTMPIRUN4},mpirun -np 4) ./amps $$s; done
+>>>@echo "test_unit_test_cutcell_tetra_run... done" >> test_unit_test_cutcell_tetra.diff
+
+Check=
+>>>@echo "test_unit_test_cutcell_tetra_check..." >> test_unit_test_cutcell_tetra.diff
+>>>@# every check of a report must PASS, and the decomposition must not depend on the number of processes
+>>>-@(cd ${TESTunit_test_cutcell_tetraDIR}; for s in sphere1 cone cylinder box lshape plate bumps lcorner wedge asphere aspheres; do for np in 1 4; do r=cutcell-tetra.$$s.np$$np.report; if [ -f $$r ]; then grep -v -e "^PASS" -e "^INFO" $$r; else echo "$$r is missing"; fi; done; cmp cutcell-tetra.$$s.np1.cells cutcell-tetra.$$s.np4.cells 2>&1; done) > test_unit_test_cutcell_tetra.diff
+>>>@ls -l test_unit_test_cutcell_tetra.diff
+>>>@echo Test test_unit_test_cutcell_tetra has finished: `date`
+<#
+
+#>
 Name=unit_test_cell_measure
 Family=unit-tests
 Time=4
@@ -1690,6 +1820,98 @@ Check=
 >>>-@(cd ${TESTunit_test_cell_measureDIR}; for c in sphere nastran; do for np in 1 4; do r=cell-measure.$$c.np$$np.report; if [ -f $$r ]; then grep -v "^PASS" $$r; else echo "$$r is missing"; fi; done; cmp cell-measure.$$c.np1.cells cell-measure.$$c.np4.cells 2>&1; done) > test_unit_test_cell_measure.diff
 >>>@ls -l test_unit_test_cell_measure.diff
 >>>@echo Test test_unit_test_cell_measure has finished: `date`
+<#
+
+#>
+Name=unit_test_cut_surface_mover
+Family=unit-tests
+Time=10
+
+Compile=
+>>>@echo "test_unit_test_cut_surface_mover_compile..." > test_unit_test_cut_surface_mover.diff
+>>>./Config.pl -application=test/cut-surface-mover -spice-path=nospice -spice-kernels=nospice
+>>>make -j8
+>>>@echo "test_unit_test_cut_surface_mover_compile... done" >> test_unit_test_cut_surface_mover.diff
+
+Run=
+>>>@echo "test_unit_test_cut_surface_mover_run..." >> test_unit_test_cut_surface_mover.diff
+>>>@# the force-free cut-surface mover PIC::Mover::ForceFreeCutSurface (test/srcCutSurfaceMoverTest/main.cpp) with the same
+>>>@# particles on one and on four processes; then the movers TrajectoryTrackingMover, the simplified boundary-injection
+>>>@# mover and the default second-order mover (DIRECT) with a smaller set of particles ("movers"); the longer stress mode
+>>>@# is "amps new|trajectory|simplified|direct stress" (with one process the new mover also moves particles that cross
+>>>@# the domain in one step)
+>>>-cd ${TESTunit_test_cut_surface_moverDIR}; $(or ${TESTMPIRUN1},mpirun -np 1) ./amps new nightly; $(or ${TESTMPIRUN4},mpirun -np 4) ./amps new nightly
+>>>-cd ${TESTunit_test_cut_surface_moverDIR}; for m in trajectory simplified direct; do $(or ${TESTMPIRUN4},mpirun -np 4) ./amps $$m movers; done
+>>>@echo "test_unit_test_cut_surface_mover_run... done" >> test_unit_test_cut_surface_mover.diff
+
+Check=
+>>>@echo "test_unit_test_cut_surface_mover_check..." >> test_unit_test_cut_surface_mover.diff
+>>>@# every check of all reports must PASS, and the digests of the final states and of the hits per face of the new mover
+>>>@# must be identical with one and with four processes
+>>>-@(cd ${TESTunit_test_cut_surface_moverDIR}; for r in cut-surface-mover.new.nightly.np1.report cut-surface-mover.new.nightly.np4.report cut-surface-mover.trajectory.movers.np4.report cut-surface-mover.simplified.movers.np4.report cut-surface-mover.direct.movers.np4.report; do if [ -f $$r ]; then grep -v "^PASS\|^INFO" $$r; else echo "$$r is missing"; fi; done; cmp cut-surface-mover.new.nightly.np1.digest cut-surface-mover.new.nightly.np4.digest 2>&1) > test_unit_test_cut_surface_mover.diff
+>>>@ls -l test_unit_test_cut_surface_mover.diff
+>>>@echo Test test_unit_test_cut_surface_mover has finished: `date`
+<#
+
+#>
+Name=unit_test_cut_surface_mover_specular
+Family=unit-tests
+Time=6
+
+Compile=
+>>>@echo "test_unit_test_cut_surface_mover_specular_compile..." > test_unit_test_cut_surface_mover_specular.diff
+>>>./Config.pl -application=test/cut-surface-mover-specular-domain -spice-path=nospice -spice-kernels=nospice
+>>>make -j8
+>>>@echo "test_unit_test_cut_surface_mover_specular_compile... done" >> test_unit_test_cut_surface_mover_specular.diff
+
+Run=
+>>>@echo "test_unit_test_cut_surface_mover_specular_run..." >> test_unit_test_cut_surface_mover_specular.diff
+>>>@# the cut-surface mover test built with the specular reflection at the boundary of the domain
+>>>@# (input/test/cut-surface-mover-specular-domain.input): no shell, the gas fills the domain and is reflected by its
+>>>@# boundary, adversarial particles are aimed at its corners and edges; one and four processes
+>>>-cd ${TESTunit_test_cut_surface_mover_specularDIR}; $(or ${TESTMPIRUN1},mpirun -np 1) ./amps new nightly; $(or ${TESTMPIRUN4},mpirun -np 4) ./amps new nightly
+>>>@echo "test_unit_test_cut_surface_mover_specular_run... done" >> test_unit_test_cut_surface_mover_specular.diff
+
+Check=
+>>>@echo "test_unit_test_cut_surface_mover_specular_check..." >> test_unit_test_cut_surface_mover_specular.diff
+>>>-@(cd ${TESTunit_test_cut_surface_mover_specularDIR}; for np in 1 4; do r=cut-surface-mover.new.nightly.np$$np.report; if [ -f $$r ]; then grep -v "^PASS\|^INFO" $$r; else echo "$$r is missing"; fi; done; cmp cut-surface-mover.new.nightly.np1.digest cut-surface-mover.new.nightly.np4.digest 2>&1) > test_unit_test_cut_surface_mover_specular.diff
+>>>@ls -l test_unit_test_cut_surface_mover_specular.diff
+>>>@echo Test test_unit_test_cut_surface_mover_specular has finished: `date`
+<#
+
+#>
+Name=unit_test_gas_surface_interaction
+Family=unit-tests
+Time=3
+
+Compile=
+>>>@echo "test_unit_test_gas_surface_interaction_compile..." > test_unit_test_gas_surface_interaction.diff
+>>>./Config.pl -application=test/gas-surface-interaction -spice-path=nospice -spice-kernels=nospice
+>>>make -j8
+>>>@echo "test_unit_test_gas_surface_interaction_compile... done" >> test_unit_test_gas_surface_interaction.diff
+
+Run=
+>>>@echo "test_unit_test_gas_surface_interaction_run..." >> test_unit_test_gas_surface_interaction.diff
+>>>@# the gas-surface interaction models of src/models/surface (test/srcGasSurfaceInteractionTest/main.cpp): the moments
+>>>@# of the re-emitted velocities against theory (specular, diffuse, Maxwell, CLL with its limits and reciprocity,
+>>>@# quasi-specular CLL, Nocilla, Schamberg), adsorption, and the runtime input block 'physics: gas_surface_interaction'
+>>>-cd ${TESTunit_test_gas_surface_interactionDIR}; $(or ${TESTMPIRUN1},mpirun -np 1) ./amps
+>>>@# a model must stop the run when the wall temperature or a parameter is not set (the output goes into the run directory)
+>>>-cd ${TESTunit_test_gas_surface_interactionDIR}; $(or ${TESTMPIRUN1},mpirun -np 1) ./amps unset-wall-temperature > unset-wall-temperature.log 2>&1; echo $$? > unset-wall-temperature.status
+>>>-cd ${TESTunit_test_gas_surface_interactionDIR}; $(or ${TESTMPIRUN1},mpirun -np 1) ./amps unset-parameter > unset-parameter.log 2>&1; echo $$? > unset-parameter.status
+>>>@echo "test_unit_test_gas_surface_interaction_run... done" >> test_unit_test_gas_surface_interaction.diff
+
+Check=
+>>>@echo "test_unit_test_gas_surface_interaction_check..." >> test_unit_test_gas_surface_interaction.diff
+>>>@# every check of the report must PASS, and both "unset" runs must have stopped with their messages
+>>>-@(cd ${TESTunit_test_gas_surface_interactionDIR}; r=gas-surface-interaction.report;                          \
+>>>if [ -f $$r ] && grep -q "^INFO .* checks passed" $$r; then grep -v -e "^PASS" -e "^INFO" $$r; else echo "$$r is missing or incomplete"; fi; \
+>>>if [ "`cat unset-wall-temperature.status`" = 0 ] || ! grep -q "the wall temperature is not set" unset-wall-temperature.log; then \
+>>>echo "amps unset-wall-temperature did not stop with the message of the unset wall temperature"; fi;          \
+>>>if [ "`cat unset-parameter.status`" = 0 ] || ! grep -q "alpha_n of species H2O is not set" unset-parameter.log; then \
+>>>echo "amps unset-parameter did not stop with the message of the unset CLL coefficient"; fi) > test_unit_test_gas_surface_interaction.diff
+>>>@ls -l test_unit_test_gas_surface_interaction.diff
+>>>@echo Test test_unit_test_gas_surface_interaction has finished: `date`
 <#
 
 -------------------------------------------------------------------------------
@@ -1888,26 +2110,30 @@ Keys=-model-data-path=${PTDIR} -spice-path=/scratch/02452/vtenishe/SPICE/cspice 
 
 -------------------------------------------------------------------------------
 I3 (3I/ATLAS): regression test of the DIM1 radial comet model with brightness
-(srcHartley2, built from input/i3.conf). Cases 1 and 5 of input/i3-test.in (cases 1
-and 5 of input/i3.in with fewer model particles), 10000 iterations each with one
+(srcHartley2, built from input/i3.conf in test mode). Cases 1 and 5 of input/i3-test.in
+(cases 1 and 5 of input/i3.in with fewer model particles), 10000 iterations each with one
 sampling window of 10000 iterations. The seven radial profiles and the H Lyman-alpha
 and OH brightness profiles of each case (output out=0) are compared with their
-references output/test_i3/<case>.<species>[.brightness].ref_np<N>.gz, the unchanged
-AMPS output files for N MPI processes (references exist for N=4 and N=8).
+references output/test_i3/<case>.<species>[.brightness]$(TESTi3-REF).ref_np<N>.gz, the
+unchanged AMPS output files for N MPI processes (N=4 and N=8). The references are made
+per machine and compiler: those of passion (GCC) carry the tag [5] (Ref= below), and
+untagged references serve every other machine.
 
 #>
 Name=i3
 Family=comet-dust
 Time=12
 
+Ref=5{gcc}@@(0+passion)
+
 Outs=case1.H case1.H2 case1.O case1.OH case1.H2O case1.CO case1.CO2 case1.H.brightness case1.OH.brightness case5.H case5.H2 case5.O case5.OH case5.H2O case5.CO case5.CO2 case5.H.brightness case5.OH.brightness
 
 Compile=
 >>>@echo "test_i3_compile..." > test_i3$(TESTi3-REF).diff
->>>@# The production build of input/i3.conf. -amps-test=on is not used: its debugger mode aborts every DIM1 run at the
->>>@# first particle check (src/pic/pic_pbuffer.cpp compares all three coordinates with node->xmin/xmax, which have
->>>@# _MESH_DIMENSION_ elements). -amps-test=off is explicit, so that the TESTMODE of an earlier test is not reused.
->>>./Config.pl -application=i3 -spice-path=nospice -spice-kernels=nospice -amps-test=off $(TESTi3KEYS)
+>>>@# The build of input/i3.conf in test mode, like the other tests: the debugger checks (particle lists, particle
+>>>@# positions, block crossings) are on, and the particle lists are sorted after every particle exchange, so the
+>>>@# results differ from those of a production build (-amps-test=off).
+>>>./Config.pl -application=i3 -spice-path=nospice -spice-kernels=nospice -amps-test=on $(TESTi3KEYS)
 >>>@# input/i3.conf sets WorkingSourceDirectory=build: remove it, so that no object of an earlier build is reused
 >>>rm -rf srcTemp build
 >>>@($(MAKE) -j16 amps)
@@ -1937,23 +2163,20 @@ Run=
 
 Check=
 >>>@echo "test_i3_check..." >> test_i3$(TESTi3-REF).diff
->>>@# Each result res/<OUT>.dat is compared with its reference for the number of MPI processes of its case,
->>>@# output/test_i3/<OUT>.ref_np<N>.gz. The reference is unpacked into the run directory, so SWMF_data is
->>>@# never modified, and a missing reference is reported as a difference of that result.
->>>@# Three columns of the radial profiles are removed from both files before the comparison: 3 (Temp_ID, an
->>>@# internal node counter), and 12 and 13 (parallel and tangential translational temperature: in DIM1 the
->>>@# sampling direction of that split is built from undefined coordinates, see srcHartley2/i3/README.md,
->>>@# "Nightly regression test"). Neither is reproducible between builds. The brightness files are compared whole.
->>>@# (The foreach body must not contain unbalanced parentheses or commas, hence findstring and no shell "case".)
+>>>@# Each result res/<OUT>.dat is compared whole with its reference for the number of MPI processes of its case,
+>>>@# output/test_i3/<OUT>$(TESTi3-REF).ref_np<N>.gz. The reference is unpacked into the run directory, so SWMF_data
+>>>@# is never modified, and a missing reference is reported as a difference of that result.
+>>>@# No column is removed: in test mode every column is reproducible (two runs per N gave identical files, for N=4
+>>>@# with two builds), also 3 (Temp_ID, the allocation counter of the mesh nodes) and 12 and 13 (parallel = radial
+>>>@# and tangential translational temperature).
+>>>@# (The foreach body must not contain unbalanced parentheses or commas.)
 >>>@rm -f test_i3--*.diff
 >>>-@$(foreach OUT,$(TESTi3OUTFILES),                                                                \
 >>>(R=$(TESTi3DIR)/res/$(OUT); C=`echo $(OUT) | cut -d. -f1`;                                         \
 >>>NP=`grep -m1 'The total number of the MPI processes=' $(TESTi3DIR)/$$C/amps.log | sed 's/.*=//'`; \
->>>REF=output/test_i3/$(OUT).ref_np$$NP.gz;                                                            \
->>>if [ -f $$REF ]; then gunzip -c $$REF > $$R.ref; cp $$R.dat $$R.cmp;                              \
->>>if [ -z "$(findstring brightness,$(OUT))" ]; then for F in $$R.cmp $$R.ref; do                     \
->>>utility/RemoveColumn.pl -c=13 $$F; utility/RemoveColumn.pl -c=12 $$F; utility/RemoveColumn.pl -c=3 $$F; \
->>>done; fi; ${SCRIPTDIR}/DiffNum.pl $$R.cmp $$R.ref > test_i3--$(OUT).diff;                          \
+>>>REF="output/test_i3/$(OUT)$(TESTi3-REF).ref_np$$NP.gz";                                            \
+>>>if [ -f "$$REF" ]; then gunzip -c "$$REF" > $$R.ref;                                               \
+>>>${SCRIPTDIR}/DiffNum.pl $$R.dat $$R.ref > test_i3--$(OUT).diff;                                    \
 >>>else echo "reference $$REF is missing" > test_i3--$(OUT).diff; fi);)
 >>>@# The test's own result file gets the differences of all results (empty: all agree with their references).
 >>>@# If not every result has its .diff file, the comparison itself failed, and that is reported instead.
@@ -2606,13 +2829,14 @@ Check=
 <#
 
 #>
-Name=test/lightwave-current-on-openmp@@(0+) 
+Name=test/lightwave-current-on-openmp@@(0+passion) 
 Family=pic-field-solver
 Time=3
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
+Ref=5{gcc}@@(0+passion)
 
 Outs=
 
@@ -2622,7 +2846,9 @@ Compile=
 >>>@echo "test_lightwave-current-on-openmp_compile..." > test_lightwave-current-on-openmp$(TESTlightwave-current-on-openmp-REF).diff
 >>>cd ./share/; mkdir -p lib
 >>>cd ./share/Library/src; make LIB
->>>./Config.pl -application=test/lightwave-current-on ${TESTlightwave-current-on-openmpKEYS}
+>>>@# -amps-test=on as for test/lightwave-current-on, whose references this test uses (the nightly-test settings of
+>>>@# picGlobal.dfn: the domain decomposition by the particle number, the particle lists sorted after the exchange)
+>>>./Config.pl -application=test/lightwave-current-on -amps-test=on ${TESTlightwave-current-on-openmpKEYS}
 >>>./Config.pl -openmp=on
 >>>@rm -rf srcTemp
 >>>-@($(MAKE) -j8  amps)
@@ -2631,22 +2857,22 @@ Compile=
 
 Check=
 >>>@echo "test_lightwave-current-on-openmp_check..." >> test_lightwave-current-on-openmp$(TESTlightwave-current-on-openmp-REF).diff
+>>>@# the reference files are compared as a copy in the run directory: SWMF_data is never modified, and
+>>>@# tests that share a reference folder can be checked at the same time
+>>>@rm -rf $(TESTlightwave-current-on-openmpDIR)/ref; mkdir -p $(TESTlightwave-current-on-openmpDIR)/ref; cp -r output/test_lightwave-current-on/. $(TESTlightwave-current-on-openmpDIR)/ref
 
-<<<ifeq ($(wildcard output/test_lightwave-current-on/*.tmp),)
->>>-@${TESTlightwave-current-on-openmpDIR}/../utility/RemoveColumn.pl -c=5 output/test_lightwave-current-on/PIC_particle_case0.out=6$(TESTlightwave-current-on-openmp-REF).ref_np`ls $(TESTlightwave-current-on-openmpDIR)/PT/thread* |wc -l |tr -d ' '`
->>>-@${TESTlightwave-current-on-openmpDIR}/../utility/RemoveColumn.pl -c=5 output/test_lightwave-current-on/PIC_particle_case1.out=6$(TESTlightwave-current-on-openmp-REF).ref_np`ls $(TESTlightwave-current-on-openmpDIR)/PT/thread* |wc -l |tr -d ' '`
-<<<endif
+>>>-@${TESTlightwave-current-on-openmpDIR}/../utility/RemoveColumn.pl -c=5 $(TESTlightwave-current-on-openmpDIR)/ref/PIC_particle_case0.out=6$(TESTlightwave-current-on-openmp-REF).ref_np`ls $(TESTlightwave-current-on-openmpDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTlightwave-current-on-openmpDIR}/../utility/RemoveColumn.pl -c=5 $(TESTlightwave-current-on-openmpDIR)/ref/PIC_particle_case1.out=6$(TESTlightwave-current-on-openmp-REF).ref_np`ls $(TESTlightwave-current-on-openmpDIR)/PT/thread* |wc -l |tr -d ' '`
 
 >>>-@${TESTlightwave-current-on-openmpDIR}/../utility/RemoveColumn.pl -c=5 $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case0.out=6.dat
 >>>-@(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case0.out=6.dat \
->>>output/test_lightwave-current-on/PIC_particle_case0.out=6$(TESTlightwave-current-on-openmp-REF).ref_np`ls $(TESTlightwave-current-on-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_lightwave-current-on-openmp--particle_energy$(TESTlightwave-current-on-openmp-REF).diff;)
+>>>$(TESTlightwave-current-on-openmpDIR)/ref/PIC_particle_case0.out=6$(TESTlightwave-current-on-openmp-REF).ref_np`ls $(TESTlightwave-current-on-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_lightwave-current-on-openmp--particle_energy$(TESTlightwave-current-on-openmp-REF).diff;)
 >>>@mv $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case0.out=6.dat.tmp $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case0.out=6.dat
 
 >>>-@${TESTlightwave-current-on-openmpDIR}/../utility/RemoveColumn.pl -c=5 $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case1.out=6.dat
 >>>-@(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case1.out=6.dat \
->>>output/test_lightwave-current-on/PIC_particle_case1.out=6$(TESTlightwave-current-on-openmp-REF).ref_np`ls $(TESTlightwave-current-on-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_lightwave-current-on-openmp--langmuir_wave$(TESTlightwave-current-on-openmp-REF).diff;)
+>>>$(TESTlightwave-current-on-openmpDIR)/ref/PIC_particle_case1.out=6$(TESTlightwave-current-on-openmp-REF).ref_np`ls $(TESTlightwave-current-on-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_lightwave-current-on-openmp--langmuir_wave$(TESTlightwave-current-on-openmp-REF).diff;)
 >>>@mv $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case1.out=6.dat.tmp $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case1.out=6.dat
-
 
 >>>@cat test_lightwave-current-on-openmp--particle_energy$(TESTlightwave-current-on-openmp-REF).diff test_lightwave-current-on-openmp--langmuir_wave$(TESTlightwave-current-on-openmp-REF).diff > test_lightwave-current-on-openmp$(TESTlightwave-current-on-openmp-REF).diff
 
@@ -2707,13 +2933,14 @@ Check=
 <#
 
 #>
-Name=test/magnetic-reconnection-openmp@@(0+) 
+Name=test/magnetic-reconnection-openmp@@(0+passion) 
 Family=pic-field-solver
 Time=10
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
+Ref=5{gcc}@@(0+passion)
 
 Outs=
 
@@ -2732,16 +2959,16 @@ Compile=
 
 Check=
 >>>@echo "test_magnetic-reconnection-openmp_check..." >> test_magnetic-reconnection-openmp$(TESTmagnetic-reconnection-openmp-REF).diff
->>>-@${TESTmagnetic-reconnection-openmpDIR}/../utility/ReduceFile.pl ${TESTmagnetic-reconnection-openmpDIR}/PIC_reconnect_out=200.dat 10
+>>>-@${TESTmagnetic-reconnection-openmpDIR}/../utility/ReduceFile.pl $(TESTmagnetic-reconnection-openmpDIR)/PIC_reconnect_out=200.dat 10
 >>>-@${TESTmagnetic-reconnection-openmpDIR}/../utility/RemoveColumn.pl -c=5 $(TESTmagnetic-reconnection-openmpDIR)/PIC_reconnect_out=200.dat.Reduced.Step=10
-
-<<<ifeq ($(wildcard output/test_magnetic-reconnection/*.tmp),)
->>>-@${TESTmagnetic-reconnection-openmpDIR}/../utility/RemoveColumn.pl -c=5 output/test_magnetic-reconnection/PIC_reconnect_out=200.dat.Reduced.Step=10$(TESTmagnetic-reconnection-openmp-REF).ref_np`ls $(TESTmagnetic-reconnection-openmpDIR)/PT/thread* |wc -l |tr -d ' '`
-<<<endif
-
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTmagnetic-reconnection-openmpDIR)/PIC_reconnect_out=200.dat.Reduced.Step=10 \
->>>output/test_magnetic-reconnection/PIC_reconnect_out=200.dat.Reduced.Step=10$(TESTmagnetic-reconnection-openmp-REF).ref_np`ls $(TESTmagnetic-reconnection-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_magnetic-reconnection-openmp$(TESTmagnetic-reconnection-openmp-REF).diff;)
-
+>>>@# The reference is the reduced output with column 5 removed, for this number of MPI processes. It is
+>>>@# unpacked into the run directory: SWMF_data is not modified, and the two reconnection tests, which
+>>>@# share output/test_magnetic-reconnection, can be checked at the same time.
+>>>-@(REF=output/test_magnetic-reconnection/PIC_reconnect_out=200.dat.Reduced.Step=10$(TESTmagnetic-reconnection-openmp-REF).ref_np`ls $(TESTmagnetic-reconnection-openmpDIR)/PT/thread* |wc -l |tr -d ' '`.gz; \
+>>>if [ -f $$REF ]; then gunzip -c $$REF > $(TESTmagnetic-reconnection-openmpDIR)/reference.dat;                                                \
+>>>${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTmagnetic-reconnection-openmpDIR)/PIC_reconnect_out=200.dat.Reduced.Step=10 $(TESTmagnetic-reconnection-openmpDIR)/reference.dat          \
+>>>> test_magnetic-reconnection-openmp$(TESTmagnetic-reconnection-openmp-REF).diff;                                                                                       \
+>>>else echo "reference $$REF is missing" > test_magnetic-reconnection-openmp$(TESTmagnetic-reconnection-openmp-REF).diff; fi)
 >>>@ls -l test_magnetic-reconnection-openmp$(TESTmagnetic-reconnection-openmp-REF).diff
 >>>@echo Test test_magnetic-reconnection-openmp has finished: `date`
 
@@ -4063,13 +4290,22 @@ Keys=-model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd
 Keys=-model-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2@@(0+amps-gpu+passion)
 
 
+!The surface model SHAP5_stefano.bdf is decompressed into the run directory, which is the model data path unless
+!the host's Keys name another one ('gunzip -kf' into SWMF_data overwrote the data directory of the tests)
 Compile=
 >>>@echo "test_CG_compile..." > test_CG$(TESTCG-REF).diff
->>>./Config.pl -application=CG -spice-path=nospice -spice-kernels=nospice -model-data-path=$(PTDIR)/data/input/Rosetta  -amps-test=on $(TESTCGKEYS)
+>>>./Config.pl -application=CG -spice-path=nospice -spice-kernels=nospice -model-data-path=$(PTDIR)/$(TESTCGDIR)  -amps-test=on $(TESTCGKEYS)
 >>>rm -rf srcTemp
 >>>@($(MAKE) -j8 amps)
->>>gunzip -kf $(PTDIR)/data/input/Rosetta/SHAP5_stefano.bdf.gz
 >>>@echo "test_CG_compile... done" >> test_CG$(TESTCG-REF).diff
+
+Rundir=
+>>>@echo "test_CG_rundir..." >> test_CG$(TESTCG-REF).diff
+>>>rm -rf   $(TESTCGDIR)
+>>>mkdir -p $(TESTCGDIR)
+>>>mv amps  $(TESTCGDIR)
+>>>gunzip -c $(PTDIR)/data/input/Rosetta/SHAP5_stefano.bdf.gz > $(TESTCGDIR)/SHAP5_stefano.bdf
+>>>@echo "test_CG_rundir... done" >> test_CG$(TESTCG-REF).diff
 
 <#
 -------------------------------------------------------------------------------
@@ -5199,93 +5435,74 @@ Check=
 
 /------------------------------------------------------------------------------
 #>
-Name=test/Sphere-drag-coefficient@@(0+) 
+Name=test/Sphere-drag-coefficient@@(0+passion) 
 Family=mesh-geometry
-Time=32
+Time=12
 
 Keys=-model-data-path=${PTDIR}/data/input/DragCoefficient
 
-Ref=2{icc}@@(0+valeriy)
-Ref=1{gcc}@@(0+valeriy)
-Ref=1{pgcc}@@(0+valeriy)
+Outs=adsorption specular diffuse maxwell cll quasi-specular-cll quasi-specular-nocilla quasi-specular-schamberg quasi-specular-nocilla-hs
 
-Ref=5{gcc}@@(0+pleiades)
-Ref=6{icc}@@(0+pleiades)
-Ref=7{pgcc}@@(0+pleiades)
+Rundir=
+>>>@echo "test_Sphere-drag-coefficient_rundir..." >> test_Sphere-drag-coefficient$(TESTSphere-drag-coefficient-REF).diff
+>>>rm -rf   $(TESTSphere-drag-coefficientDIR)
+>>>mkdir -p $(TESTSphere-drag-coefficientDIR)
+>>>mv amps  $(TESTSphere-drag-coefficientDIR)
+>>>cp input/test/sphere-drag-coefficient.in $(TESTSphere-drag-coefficientDIR)
+>>>cd $(TESTSphere-drag-coefficientDIR) && mkdir $(TESTSphere-drag-coefficientOUTFILES)
+>>>@echo "test_Sphere-drag-coefficient_rundir... done" >> test_Sphere-drag-coefficient$(TESTSphere-drag-coefficient-REF).diff
 
-Ref=5{gcc}@@(0+stampede)
-Ref=6{icc}@@(0+stampede)
-
-Ref=5{gcc}@@(0+amps-gpu)
+Run=
+>>>@echo "test_Sphere-drag-coefficient_run..." >> test_Sphere-drag-coefficient$(TESTSphere-drag-coefficient-REF).diff
+>>>@echo Test test_Sphere-drag-coefficient has started: `date`
+>>>@# The executable of input/test/sphere-drag-coefficient.conf runs one case of the runtime input
+>>>@# input/test/sphere-drag-coefficient.in ("amps -i FILE -case NAME"): the free-molecular flow about a sphere with
+>>>@# one gas-surface interaction model (the cases are the names in Outs). Without -case, and with an unknown case,
+>>>@# it must stop before the mesh is built (the output of these two runs goes into the run directory).
+>>>-cd $(TESTSphere-drag-coefficientDIR) && ${MPIRUN} ./amps -i sphere-drag-coefficient.in > cli-no-case.log 2>&1; echo $$? > cli-no-case.status
+>>>-cd $(TESTSphere-drag-coefficientDIR) && ${MPIRUN} ./amps -i sphere-drag-coefficient.in -case no-such-case > cli-unknown-case.log 2>&1; echo $$? > cli-unknown-case.status
+>>>@# Each case runs in its own directory (AMPS writes PT/ and the mesh files into the current directory).
+>>>for C in $(TESTSphere-drag-coefficientOUTFILES); do (cd $(TESTSphere-drag-coefficientDIR)/$$C && ${MPIRUN} ../amps -i ../sphere-drag-coefficient.in -case $$C 2>&1 | tee amps.log); done
+>>>@echo "test_Sphere-drag-coefficient_run... done" >> test_Sphere-drag-coefficient$(TESTSphere-drag-coefficient-REF).diff
 
 Check=
 >>>@echo "test_Sphere-drag-coefficient_check..." >> test_Sphere-drag-coefficient$(TESTSphere-drag-coefficient-REF).diff
-
->>>@${TESTSphere-drag-coefficientDIR}/../utility/ReduceFile.pl ${TESTSphere-drag-coefficientDIR}/PT/plots/pic.H2O.s=0.out=2--DiffuseReflection.dat 10
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSphere-drag-coefficientDIR}/PT/plots/pic.H2O.s=0.out=2--DiffuseReflection.dat.Reduced.Step=10 ${PTDIR}/../../../AMPS_DATA_TEST/DRAG-COEFFICIENT/SPHERE/pic.H2O.s=0.out=2--DiffuseReflection.dat.Reduced.Step=10$(TESTSphere-drag-coefficient-REF).ref_np`ls $(TESTSphere-drag-coefficientDIR)/PT/thread* |wc -l |tr -d ' '` > test_Sphere-drag-coefficient-VolumeData$(TESTSphere-drag-coefficient-REF).diff
-
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSphere-drag-coefficientDIR}/PT/plots/amps.cut-cell.surface-data.out=2--DiffuseReflection.dat ${PTDIR}/../../../AMPS_DATA_TEST/DRAG-COEFFICIENT/SPHERE/amps.cut-cell.surface-data.out=2--DiffuseReflection.dat$(TESTSphere-drag-coefficient-REF).ref_np`ls $(TESTSphere-drag-coefficientDIR)/PT/thread* |wc -l |tr -d ' '` > test_Sphere-drag-coefficient-SurfaceData$(TESTSphere-drag-coefficient-REF).diff
-
-
-
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSphere-drag-coefficientDIR}/PT/plots/test_Orbiter--Adsorption.dat ${PTDIR}/../../../AMPS_DATA_TEST/DRAG-COEFFICIENT/SPHERE/test_Orbiter--Adsorption$(TESTSphere-drag-coefficient-REF).ref_np`ls $(TESTSphere-drag-coefficientDIR)/PT/thread* |wc -l |tr -d ' '` > test_Sphere-drag-coefficient-Adsorption-ParticleData$(TESTSphere-drag-coefficient-REF).diff
-
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSphere-drag-coefficientDIR}/PT/plots/test_Orbiter_Drag_Coefficient--Adsorption.dat ${PTDIR}/../../../AMPS_DATA_TEST/DRAG-COEFFICIENT/SPHERE/test_Orbiter_Drag_Coefficient--Adsorption$(TESTSphere-drag-coefficient-REF).ref_np`ls $(TESTSphere-drag-coefficientDIR)/PT/thread* |wc -l |tr -d ' '` > test_Sphere-drag-coefficient-Adsorption-DragCoefficient$(TESTSphere-drag-coefficient-REF).diff
-
-
-
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSphere-drag-coefficientDIR}/PT/plots/test_Orbiter--CLL.dat ${PTDIR}/../../../AMPS_DATA_TEST/DRAG-COEFFICIENT/SPHERE/test_Orbiter--CLL$(TESTSphere-drag-coefficient-REF).ref_np`ls $(TESTSphere-drag-coefficientDIR)/PT/thread* |wc -l |tr -d ' '` > test_Sphere-drag-coefficient-CLL-ParticleData$(TESTSphere-drag-coefficient-REF).diff
-
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSphere-drag-coefficientDIR}/PT/plots/test_Orbiter_Drag_Coefficient--CLL.dat ${PTDIR}/../../../AMPS_DATA_TEST/DRAG-COEFFICIENT/SPHERE/test_Orbiter_Drag_Coefficient--CLL$(TESTSphere-drag-coefficient-REF).ref_np`ls $(TESTSphere-drag-coefficientDIR)/PT/thread* |wc -l |tr -d ' '` > test_Sphere-drag-coefficient-CLL-DragCoefficient$(TESTSphere-drag-coefficient-REF).diff
-
-
-
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSphere-drag-coefficientDIR}/PT/plots/test_Orbiter--DiffuseReflection.dat ${PTDIR}/../../../AMPS_DATA_TEST/DRAG-COEFFICIENT/SPHERE/test_Orbiter--DiffuseReflection$(TESTSphere-drag-coefficient-REF).ref_np`ls $(TESTSphere-drag-coefficientDIR)/PT/thread* |wc -l |tr -d ' '` > test_Sphere-drag-coefficient-DiffuseReflection-ParticleData$(TESTSphere-drag-coefficient-REF).diff
-
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSphere-drag-coefficientDIR}/PT/plots/test_Orbiter_Drag_Coefficient--DiffuseReflection.dat ${PTDIR}/../../../AMPS_DATA_TEST/DRAG-COEFFICIENT/SPHERE/test_Orbiter_Drag_Coefficient--DiffuseReflection$(TESTSphere-drag-coefficient-REF).ref_np`ls $(TESTSphere-drag-coefficientDIR)/PT/thread* |wc -l |tr -d ' '` > test_Sphere-drag-coefficient-DiffuseReflection-DragCoefficient$(TESTSphere-drag-coefficient-REF).diff
-
-
-
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSphere-drag-coefficientDIR}/PT/plots/test_Orbiter--MaxwellReflection.dat ${PTDIR}/../../../AMPS_DATA_TEST/DRAG-COEFFICIENT/SPHERE/test_Orbiter--MaxwellReflection$(TESTSphere-drag-coefficient-REF).ref_np`ls $(TESTSphere-drag-coefficientDIR)/PT/thread* |wc -l |tr -d ' '` > test_Sphere-drag-coefficient-MaxwellReflection-ParticleData$(TESTSphere-drag-coefficient-REF).diff
-
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSphere-drag-coefficientDIR}/PT/plots/test_Orbiter_Drag_Coefficient--MaxwellReflection.dat ${PTDIR}/../../../AMPS_DATA_TEST/DRAG-COEFFICIENT/SPHERE/test_Orbiter_Drag_Coefficient--MaxwellReflection$(TESTSphere-drag-coefficient-REF).ref_np`ls $(TESTSphere-drag-coefficientDIR)/PT/thread* |wc -l |tr -d ' '` > test_Sphere-drag-coefficient-MaxwellReflection-DragCoefficient$(TESTSphere-drag-coefficient-REF).diff
-
-
-
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSphere-drag-coefficientDIR}/PT/plots/test_Orbiter--QuasiSpecularReflection.dat ${PTDIR}/../../../AMPS_DATA_TEST/DRAG-COEFFICIENT/SPHERE/test_Orbiter--QuasiSpecularReflection$(TESTSphere-drag-coefficient-REF).ref_np`ls $(TESTSphere-drag-coefficientDIR)/PT/thread* |wc -l |tr -d ' '` > test_Sphere-drag-coefficient-QuasiSpecularReflection-ParticleData$(TESTSphere-drag-coefficient-REF).diff
-
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSphere-drag-coefficientDIR}/PT/plots/test_Orbiter_Drag_Coefficient--QuasiSpecularReflection.dat ${PTDIR}/../../../AMPS_DATA_TEST/DRAG-COEFFICIENT/SPHERE/test_Orbiter_Drag_Coefficient--QuasiSpecularReflection$(TESTSphere-drag-coefficient-REF).ref_np`ls $(TESTSphere-drag-coefficientDIR)/PT/thread* |wc -l |tr -d ' '` > test_Sphere-drag-coefficient-QuasiSpecularReflection-DragCoefficient$(TESTSphere-drag-coefficient-REF).diff
-
-
-
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSphere-drag-coefficientDIR}/PT/plots/test_Orbiter--SpecularReflection.dat ${PTDIR}/../../../AMPS_DATA_TEST/DRAG-COEFFICIENT/SPHERE/test_Orbiter--SpecularReflection$(TESTSphere-drag-coefficient-REF).ref_np`ls $(TESTSphere-drag-coefficientDIR)/PT/thread* |wc -l |tr -d ' '` > test_Sphere-drag-coefficient-SpecularReflection-ParticleData$(TESTSphere-drag-coefficient-REF).diff
-
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSphere-drag-coefficientDIR}/PT/plots/test_Orbiter_Drag_Coefficient--SpecularReflection.dat ${PTDIR}/../../../AMPS_DATA_TEST/DRAG-COEFFICIENT/SPHERE/test_Orbiter_Drag_Coefficient--SpecularReflection$(TESTSphere-drag-coefficient-REF).ref_np`ls $(TESTSphere-drag-coefficientDIR)/PT/thread* |wc -l |tr -d ' '` > test_Sphere-drag-coefficient-SpecularReflection-DragCoefficient$(TESTSphere-drag-coefficient-REF).diff
-
-
->>>@cat test_Sphere-drag-coefficient-VolumeData$(TESTSphere-drag-coefficient-REF).diff test_Sphere-drag-coefficient-SurfaceData$(TESTSphere-drag-coefficient-REF).diff > test_Sphere-drag-coefficient$(TESTSphere-drag-coefficient-REF).diff
->>>@cat test_Sphere-drag-coefficient-Adsorption-ParticleData$(TESTSphere-drag-coefficient-REF).diff test_Sphere-drag-coefficient-Adsorption-DragCoefficient$(TESTSphere-drag-coefficient-REF).diff >> test_Sphere-drag-coefficient$(TESTSphere-drag-coefficient-REF).diff
->>>@cat test_Sphere-drag-coefficient-CLL-ParticleData$(TESTSphere-drag-coefficient-REF).diff test_Sphere-drag-coefficient-CLL-DragCoefficient$(TESTSphere-drag-coefficient-REF).diff >> test_Sphere-drag-coefficient$(TESTSphere-drag-coefficient-REF).diff
->>>@cat test_Sphere-drag-coefficient-DiffuseReflection-ParticleData$(TESTSphere-drag-coefficient-REF).diff test_Sphere-drag-coefficient-DiffuseReflection-DragCoefficient$(TESTSphere-drag-coefficient-REF).diff >> test_Sphere-drag-coefficient$(TESTSphere-drag-coefficient-REF).diff
->>>@cat test_Sphere-drag-coefficient-MaxwellReflection-ParticleData$(TESTSphere-drag-coefficient-REF).diff test_Sphere-drag-coefficient-MaxwellReflection-DragCoefficient$(TESTSphere-drag-coefficient-REF).diff >> test_Sphere-drag-coefficient$(TESTSphere-drag-coefficient-REF).diff
->>>@cat test_Sphere-drag-coefficient-QuasiSpecularReflection-ParticleData$(TESTSphere-drag-coefficient-REF).diff test_Sphere-drag-coefficient-QuasiSpecularReflection-DragCoefficient$(TESTSphere-drag-coefficient-REF).diff >> test_Sphere-drag-coefficient$(TESTSphere-drag-coefficient-REF).diff
->>>@cat test_Sphere-drag-coefficient-SpecularReflection-ParticleData$(TESTSphere-drag-coefficient-REF).diff test_Sphere-drag-coefficient-SpecularReflection-DragCoefficient$(TESTSphere-drag-coefficient-REF).diff >> test_Sphere-drag-coefficient$(TESTSphere-drag-coefficient-REF).diff
-
->>>@ls -l test_Sphere-drag-coefficient-VolumeData$(TESTSphere-drag-coefficient-REF).diff 
->>>@ls -l test_Sphere-drag-coefficient-SurfaceData$(TESTSphere-drag-coefficient-REF).diff 
->>>@ls -l test_Sphere-drag-coefficient-Adsorption-ParticleData$(TESTSphere-drag-coefficient-REF).diff 
->>>@ls -l test_Sphere-drag-coefficient-Adsorption-DragCoefficient$(TESTSphere-drag-coefficient-REF).diff 
->>>@ls -l test_Sphere-drag-coefficient-CLL-ParticleData$(TESTSphere-drag-coefficient-REF).diff 
->>>@ls -l test_Sphere-drag-coefficient-CLL-DragCoefficient$(TESTSphere-drag-coefficient-REF).diff 
->>>@ls -l test_Sphere-drag-coefficient-DiffuseReflection-ParticleData$(TESTSphere-drag-coefficient-REF).diff 
->>>@ls -l test_Sphere-drag-coefficient-DiffuseReflection-DragCoefficient$(TESTSphere-drag-coefficient-REF).diff 
->>>@ls -l test_Sphere-drag-coefficient-MaxwellReflection-ParticleData$(TESTSphere-drag-coefficient-REF).diff 
->>>@ls -l test_Sphere-drag-coefficient-MaxwellReflection-DragCoefficient$(TESTSphere-drag-coefficient-REF).diff 
->>>@ls -l test_Sphere-drag-coefficient-QuasiSpecularReflection-ParticleData$(TESTSphere-drag-coefficient-REF).diff 
->>>@ls -l test_Sphere-drag-coefficient-QuasiSpecularReflection-DragCoefficient$(TESTSphere-drag-coefficient-REF).diff 
->>>@ls -l test_Sphere-drag-coefficient-SpecularReflection-ParticleData$(TESTSphere-drag-coefficient-REF).diff 
->>>@ls -l test_Sphere-drag-coefficient-SpecularReflection-DragCoefficient$(TESTSphere-drag-coefficient-REF).diff  
->>>@ls -l test_Sphere-drag-coefficient$(TESTSphere-drag-coefficient-REF).diff
+>>>@rm -f test_Sphere-drag-coefficient--*.diff
+>>>@# 1. The command line: both runs stopped with the case-selection message, before the mesh was built.
+>>>-@(D=$(TESTSphere-drag-coefficientDIR);                                                                        \
+>>>if [ "`cat $$D/cli-no-case.status`" = 0 ] || ! grep -q "an explicit case selector is required" $$D/cli-no-case.log || grep -q "generating" $$D/cli-no-case.log; then \
+>>>echo "amps -i FILE without -case did not stop before the mesh with the case-selection message (see $$D/cli-no-case.log)"; fi; \
+>>>if [ "`cat $$D/cli-unknown-case.status`" = 0 ] || ! grep -q "unknown case 'no-such-case'" $$D/cli-unknown-case.log || grep -q "generating" $$D/cli-unknown-case.log; then \
+>>>echo "amps -i FILE -case no-such-case did not stop before the mesh with the unknown-case message (see $$D/cli-unknown-case.log)"; fi) \
+>>>> test_Sphere-drag-coefficient--command-line.diff
+>>>@# 2. The physics: the drag coefficient of each case (PT/plots/drag-coefficient-test.dat: the sample of iterations
+>>>@# 76-175 and its statistical standard deviation sigma) must agree within 4 sigma with the value of an independent
+>>>@# integration of the model's mean re-emitted momentum over the faces of the sphere (srcOrbiter/test/sphere_drag_check.py;
+>>>@# its report, with the values, is sphere-drag-check.report in the run directory). Any line but PASS/INFO is a failure.
+>>>-@python3 -B srcOrbiter/test/sphere_drag_check.py --in input/test/sphere-drag-coefficient.in --conf input/test/sphere-drag-coefficient.conf \
+>>>--mesh data/input/DragCoefficient/sphere.bdf --sigmas 4 --report $(TESTSphere-drag-coefficientDIR)/sphere-drag-check.report \
+>>>$(foreach C,$(TESTSphere-drag-coefficientOUTFILES),--result $(C)=$(TESTSphere-drag-coefficientDIR)/$(C)/PT/plots/drag-coefficient-test.dat) \
+>>>> $(TESTSphere-drag-coefficientDIR)/sphere-drag-check.log 2>&1;                                               \
+>>>if [ -f $(TESTSphere-drag-coefficientDIR)/sphere-drag-check.report ]; then grep -v -e "^PASS" -e "^INFO" $(TESTSphere-drag-coefficientDIR)/sphere-drag-check.report; \
+>>>else echo "the drag coefficients were not checked: see $(TESTSphere-drag-coefficientDIR)/sphere-drag-check.log"; fi > test_Sphere-drag-coefficient--physics.diff
+>>>@# 3. Regression: the results of each case are compared with their references <REFDIR>/<case>/<file>.ref_np<N>, where N is
+>>>@# the number of MPI processes of the case (its amps.log) and REFDIR is output/test_DragCoefficient/Sphere (or the make
+>>>@# variable SPHEREDRAGREFDIR). A reference larger than ~100 KB is gzipped (<file>.ref_np<N>.gz) and unpacked into the run
+>>>@# directory, so SWMF_data is never modified; a missing reference is reported as a difference. The volume data
+>>>@# (pic.H2O.s=0.out=2.dat, every 10th line) are compared for the diffuse case only.
+>>>-@R=$(or $(SPHEREDRAGREFDIR),output/test_DragCoefficient/Sphere);                                                \
+>>>$(foreach C,$(TESTSphere-drag-coefficientOUTFILES),                                                             \
+>>>(D=$(TESTSphere-drag-coefficientDIR)/$(C); NP=`grep -m1 'The total number of the MPI processes=' $$D/amps.log | sed 's/.*=//'`; \
+>>>FILES="test_Orbiter_Drag_Coefficient.dat test_Orbiter.dat drag-coefficient-test.dat amps.cut-cell.surface-data.out=2.dat"; \
+>>>if [ "$(C)" = diffuse ]; then utility/ReduceFile.pl $$D/PT/plots/pic.H2O.s=0.out=2.dat 10 > /dev/null; FILES="$$FILES pic.H2O.s=0.out=2.dat.Reduced.Step=10"; fi; \
+>>>for F in $$FILES; do REF=$$R/$(C)/$$F.ref_np$$NP;                                                             \
+>>>if [ -f $$REF.gz ]; then gunzip -c $$REF.gz > $$D/$$F.ref; elif [ -f $$REF ]; then cp $$REF $$D/$$F.ref;        \
+>>>else echo "reference $$REF is missing"; continue; fi;                                                          \
+>>>${SCRIPTDIR}/DiffNum.pl $$D/PT/plots/$$F $$D/$$F.ref; done) > test_Sphere-drag-coefficient--$(C).diff;)
+>>>@# The test's own result file gets all differences (empty: every check passed).
+>>>@cat test_Sphere-drag-coefficient--command-line.diff test_Sphere-drag-coefficient--physics.diff \
+>>>$(foreach C,$(TESTSphere-drag-coefficientOUTFILES),test_Sphere-drag-coefficient--$(C).diff) > test_Sphere-drag-coefficient$(TESTSphere-drag-coefficient-REF).diff
+>>>@ls -l test_Sphere-drag-coefficient--*.diff test_Sphere-drag-coefficient$(TESTSphere-drag-coefficient-REF).diff
 >>>@echo Test test_Sphere-drag-coefficient has finished: `date`
 <#
 
@@ -5391,8 +5608,9 @@ ExeptionCode=SKIP{pgcc}
 Compile=
 ! GM/BATSRUS (anisotropic MHD) + PC/AMPS (the ECSIM field solver coupled to GM through the FLUID coupler):
 ! the steps of SWMF's former test12_aniso_AMPS, test12_aniso_AMPS_divE_corr and test12_aniso_AMPS_dynamic,
-! which SWMF removed on 2024-04-23 (commit 343ec4394: PC/AMPS was replaced by PC/FLEKS); their PARAM files
-! are still in SWMF/Param. GM is built once; PC/AMPS once per AMPS application, and each SWMF.exe is kept
+! which SWMF removed on 2024-04-23 (commit 343ec4394: PC/AMPS was replaced by PC/FLEKS); their PARAM files are
+! kept in data/input/AMPS-BATSRUS-PIC-coupling (copied from SWMF 9258817, unchanged). GM is built once; PC/AMPS
+! once per AMPS application, and each SWMF.exe is kept
 ! as SWMF/bin/SWMF.exe.PIC-coupling.<case> for the case's run directory. Same SWMF installation and rules as
 ! AMPS-BATSRUS-Europa: PC/AMPS is a copy of THIS tree, and nothing is built in the run stage.
 >>>@echo "test_AMPS-BATSRUS-PIC-coupling_compile..." > test_AMPS-BATSRUS-PIC-coupling.diff
@@ -5444,11 +5662,11 @@ Rundir=
 ! make rundir links SWMF.exe to SWMF/bin/SWMF.exe: remove the link first, a cp through it would overwrite SWMF/bin/SWMF.exe
 >>>rm -rf $(TESTAMPS-BATSRUS-PIC-couplingDIR); mkdir -p $(TESTAMPS-BATSRUS-PIC-couplingDIR)
 >>>for c in base divE_corr dynamic; do (cd SWMF; ${MAKE} rundir RUNDIR=${PTDIR}/$(TESTAMPS-BATSRUS-PIC-couplingDIR)/$$c) || exit 1; rm -f $(TESTAMPS-BATSRUS-PIC-couplingDIR)/$$c/SWMF.exe; cp SWMF/bin/SWMF.exe.PIC-coupling.$$c $(TESTAMPS-BATSRUS-PIC-couplingDIR)/$$c/SWMF.exe || exit 1; done
->>>cp SWMF/Param/PARAM.in.test.GMPC.aniso.AMPS $(TESTAMPS-BATSRUS-PIC-couplingDIR)/base/PARAM.in
->>>cp SWMF/Param/PARAM.in.test.GMPC.aniso.AMPS.2step $(TESTAMPS-BATSRUS-PIC-couplingDIR)/base/PARAM.in.2step
->>>cp SWMF/Param/PARAM.in.test.GMPC.aniso.AMPS.2step.restart $(TESTAMPS-BATSRUS-PIC-couplingDIR)/base/PARAM.in.2step.restart
->>>cp SWMF/Param/PARAM.in.test.GMPC.aniso.AMPS.corr $(TESTAMPS-BATSRUS-PIC-couplingDIR)/divE_corr/PARAM.in
->>>cp SWMF/Param/PARAM.in.test.GMPC.aniso.AMPS.dynamic $(TESTAMPS-BATSRUS-PIC-couplingDIR)/dynamic/PARAM.in
+>>>cp data/input/AMPS-BATSRUS-PIC-coupling/PARAM.in.test.GMPC.aniso.AMPS $(TESTAMPS-BATSRUS-PIC-couplingDIR)/base/PARAM.in
+>>>cp data/input/AMPS-BATSRUS-PIC-coupling/PARAM.in.test.GMPC.aniso.AMPS.2step $(TESTAMPS-BATSRUS-PIC-couplingDIR)/base/PARAM.in.2step
+>>>cp data/input/AMPS-BATSRUS-PIC-coupling/PARAM.in.test.GMPC.aniso.AMPS.2step.restart $(TESTAMPS-BATSRUS-PIC-couplingDIR)/base/PARAM.in.2step.restart
+>>>cp data/input/AMPS-BATSRUS-PIC-coupling/PARAM.in.test.GMPC.aniso.AMPS.corr $(TESTAMPS-BATSRUS-PIC-couplingDIR)/divE_corr/PARAM.in
+>>>cp data/input/AMPS-BATSRUS-PIC-coupling/PARAM.in.test.GMPC.aniso.AMPS.dynamic $(TESTAMPS-BATSRUS-PIC-couplingDIR)/dynamic/PARAM.in
 >>>@echo "test_AMPS-BATSRUS-PIC-coupling_rundir... done" >> test_AMPS-BATSRUS-PIC-coupling.diff
 
 Run=
@@ -5471,6 +5689,9 @@ Run=
 Check=
 ! SWMF's former test12 checks: the PC fluid output (3d_fluid) against output/test_AMPS-BATSRUS-PIC-coupling/ (same file
 ! names as SWMF's output/test12, which SWMF deleted in 4f30e4a12); the 2-step + restart run must equal the 5-step run
+! -a=2e-3 (SWMF's): GM on 5 instead of 7 processes gives the same file, a 1e-12 relative change of GM's pressure
+! changes it by <=1e-12; the broken field solve of 2025-12..2026-11 changed it by up to 1.5e-2 (2-rank runs: 3260 values > 2e-3)
+! and switching the divE correction off by up to 4.7e-3 (87 values > 2e-3)
 >>>@echo "test_AMPS-BATSRUS-PIC-coupling_check..." >> test_AMPS-BATSRUS-PIC-coupling.diff
 >>>-@(${SCRIPTDIR}/DiffNum.pl -b -a=2.0e-3 $(TESTAMPS-BATSRUS-PIC-couplingDIR)/base/RESULTS/5step/PC/3d_fluid_region0_0_t00000005_n00000005.out output/test_AMPS-BATSRUS-PIC-coupling/3d_aniso.out.gz > test_AMPS-BATSRUS-PIC-coupling--gmpc.diff)
 >>>-@(${SCRIPTDIR}/DiffNum.pl -b -a=2.0e-3 $(TESTAMPS-BATSRUS-PIC-couplingDIR)/base/RESULTS/2restart/PC/3d_fluid_region0_0_t00000005_n00000005.out output/test_AMPS-BATSRUS-PIC-coupling/3d_aniso.out.gz >> test_AMPS-BATSRUS-PIC-coupling--gmpc.diff)
@@ -6371,7 +6592,10 @@ Rundir=
 >>>rm -rf $(TESTAMPS-BATSRUS-EuropaDIR)
 >>>cd SWMF; ${MAKE} rundir RUNDIR=${PTDIR}/$(TESTAMPS-BATSRUS-EuropaDIR)
 >>>rm -f $(TESTAMPS-BATSRUS-EuropaDIR)/SWMF.exe; cp SWMF/bin/SWMF.exe $(TESTAMPS-BATSRUS-EuropaDIR)/SWMF.exe
->>>cp SWMF/Param/PARAM.in.test.GMPT.Europa $(TESTAMPS-BATSRUS-EuropaDIR)/PARAM.in
+! PARAM.in and reference: SWMF's own (SWMF still runs test13 against BATSRUS master and re-blesses it); copies from
+! SWMF 9258817 in data/input/AMPS-BATSRUS-Europa and output/test_AMPS-BATSRUS-Europa are used only if SWMF drops them
+>>>@if [ -f SWMF/Param/PARAM.in.test.GMPT.Europa ]; then cp SWMF/Param/PARAM.in.test.GMPT.Europa $(TESTAMPS-BATSRUS-EuropaDIR)/PARAM.in; \
+>>>else echo "NOTE: SWMF has no Param/PARAM.in.test.GMPT.Europa: using AMPS' copy"; cp data/input/AMPS-BATSRUS-Europa/PARAM.in.test.GMPT.Europa $(TESTAMPS-BATSRUS-EuropaDIR)/PARAM.in; fi
 >>>cp -r SWMF/PT/AMPS/data/input/Europa/TestCase/RESTART_n003000 $(TESTAMPS-BATSRUS-EuropaDIR)/
 >>>cd $(TESTAMPS-BATSRUS-EuropaDIR); ./Restart.pl -i RESTART_n003000
 >>>cd SWMF; Scripts/TestParam.pl -F ${PTDIR}/$(TESTAMPS-BATSRUS-EuropaDIR)/PARAM.in
@@ -6385,10 +6609,13 @@ Run=
 >>>@echo "test_AMPS-BATSRUS-Europa_run... done" >> test_AMPS-BATSRUS-Europa.diff
 
 Check=
-! SWMF's test13_check: PT/plots/amps.dat against SWMF's reference for the number of AMPS processes
+! SWMF's test13_check: PT/plots/amps.dat against SWMF's reference for the number of AMPS processes. -r=1e-5 (SWMF's):
+! GM on 4 instead of 2 processes or a 1e-12 relative change of the upstream body density leave the file unchanged;
+! SWMF's 2023 BATSRUS change (electron entropy off) changed it by up to 2.9e-5
 >>>@echo "test_AMPS-BATSRUS-Europa_check..." >> test_AMPS-BATSRUS-Europa.diff
->>>-@(NP=`ls -d $(TESTAMPS-BATSRUS-EuropaDIR)/PT/thread* | wc -l | tr -d ' '`; \
->>>${SCRIPTDIR}/DiffNum.pl -b -r=1e-5 $(TESTAMPS-BATSRUS-EuropaDIR)/PT/plots/amps.dat SWMF/output/test13/amps.ref_np$$NP > test_AMPS-BATSRUS-Europa.diff)
+>>>-@(NP=`ls -d $(TESTAMPS-BATSRUS-EuropaDIR)/PT/thread* | wc -l | tr -d ' '`; REF=SWMF/output/test13/amps.ref_np$$NP; \
+>>>if [ ! -f $$REF ]; then echo "NOTE: SWMF has no $$REF: using AMPS' copy"; REF=output/test_AMPS-BATSRUS-Europa/amps.ref_np$$NP; fi; \
+>>>${SCRIPTDIR}/DiffNum.pl -b -r=1e-5 $(TESTAMPS-BATSRUS-EuropaDIR)/PT/plots/amps.dat $$REF > test_AMPS-BATSRUS-Europa.diff)
 >>>@ls -l test_AMPS-BATSRUS-Europa.diff
 >>>@echo Test test_AMPS-BATSRUS-Europa has finished: `date`
 <#
@@ -6404,7 +6631,9 @@ ExeptionCode=SKIP{pgcc}
 
 Compile=
 ! OH/BATSRUS (single-ion outer heliosphere) + PT/AMPS (application oh): the steps of SWMF's former test14, which
-! SWMF removed on 2024-04-23 (commits db85bbe07, 24f9598a9: "obsolete"); its PARAM files are still in SWMF/Param.
+! SWMF removed on 2024-04-23 (commits db85bbe07, 24f9598a9: "obsolete"). Its PARAM files are kept in AMPS' data,
+! data/input/AMPS-BATSRUS-OH (copied from SWMF 9258817, unchanged), so the test does not depend on SWMF keeping them;
+! the charge-exchange table they load (OH/Param/ChargeExchangeRate_LS.dat) is BATSRUS' own (Param/OUTERHELIO).
 ! Same SWMF installation and rules as AMPS-BATSRUS-Europa: PT/AMPS is a copy of THIS tree, everything is built
 ! here, and the test runs in its own run directory with its own copy of SWMF.exe.
 >>>@echo "test_AMPS-BATSRUS-OH_compile..." > test_AMPS-BATSRUS-OH.diff
@@ -6449,8 +6678,8 @@ Rundir=
 >>>rm -rf $(TESTAMPS-BATSRUS-OHDIR)
 >>>cd SWMF; ${MAKE} rundir RUNDIR=${PTDIR}/$(TESTAMPS-BATSRUS-OHDIR)
 >>>rm -f $(TESTAMPS-BATSRUS-OHDIR)/SWMF.exe; cp SWMF/bin/SWMF.exe $(TESTAMPS-BATSRUS-OHDIR)/SWMF.exe
->>>cp SWMF/Param/PARAM.in.test.OHPT $(TESTAMPS-BATSRUS-OHDIR)/PARAM.in
->>>cp SWMF/Param/PARAM.in.test.restart.OHPT $(TESTAMPS-BATSRUS-OHDIR)/PARAM.in.restart
+>>>cp data/input/AMPS-BATSRUS-OH/PARAM.in.test.OHPT $(TESTAMPS-BATSRUS-OHDIR)/PARAM.in
+>>>cp data/input/AMPS-BATSRUS-OH/PARAM.in.test.restart.OHPT $(TESTAMPS-BATSRUS-OHDIR)/PARAM.in.restart
 >>>cd SWMF; Scripts/TestParam.pl -F ${PTDIR}/$(TESTAMPS-BATSRUS-OHDIR)/PARAM.in
 >>>@echo "test_AMPS-BATSRUS-OH_rundir... done" >> test_AMPS-BATSRUS-OH.diff
 
@@ -6468,12 +6697,18 @@ Run=
 >>>@echo "test_AMPS-BATSRUS-OH_run... done" >> test_AMPS-BATSRUS-OH.diff
 
 Check=
-! SWMF's former test14_check: the OH log file (volume averages of the OH solution coupled with PT) against the
-! reference for the number of AMPS processes, output/test_AMPS-BATSRUS-OH/OH_log_n000000.log_np<N> (SWMF's
-! output/test14 was deleted in 24f9598a9)
+! (1) SWMF's former test14_check: the OH log file (volume averages of the OH solution) against the reference for the
+! number of AMPS processes, output/test_AMPS-BATSRUS-OH/OH_log_n000000.log_np<N> (SWMF's output/test14 was deleted
+! in 24f9598a9). -r=1e-5 (the log has 6 digits): changing the OH decomposition (4 -> 6 processes) or a 1e-12 relative
+! perturbation of the LISM density leaves the log unchanged. The log does not see the PT->OH source terms: it is the
+! same with the coupling switched off, so (2) also checks AMPS' own result, the averaged neutral velocities in
+! RESULTS/PT/amps.dat (np<N>), with -r=1e-6 (7 digits): unchanged by the two round-off probes, changed by 3e-5..9e-3
+! (relative) when PT gets no OH plasma (coupling off).
 >>>@echo "test_AMPS-BATSRUS-OH_check..." >> test_AMPS-BATSRUS-OH.diff
 >>>-@(NP=`ls -d $(TESTAMPS-BATSRUS-OHDIR)/PT/thread* | wc -l | tr -d ' '`; \
+>>>${SCRIPTDIR}/DiffNum.pl -b -r=1e-6 $(TESTAMPS-BATSRUS-OHDIR)/RESULTS/PT/amps.dat output/test_AMPS-BATSRUS-OH/amps.dat_np$$NP > test_AMPS-BATSRUS-OH--pt.diff; \
 >>>${SCRIPTDIR}/DiffNum.pl -b -r=1e-5 -a=1e-29 $(TESTAMPS-BATSRUS-OHDIR)/RESULTS/OH/log_n000000.log output/test_AMPS-BATSRUS-OH/OH_log_n000000.log_np$$NP > test_AMPS-BATSRUS-OH.diff)
+>>>@ls -l test_AMPS-BATSRUS-OH--pt.diff
 >>>@ls -l test_AMPS-BATSRUS-OH.diff
 >>>@echo Test test_AMPS-BATSRUS-OH has finished: `date`
 <#
@@ -6493,7 +6728,8 @@ ExeptionCode=SKIP{pgcc}
 Compile=
 ! GM/BATSRUS (flux rope, MhdHypPe) + PC/AMPS (application fluxrope-dynamic: ECSIM with dynamically allocated
 ! blocks and the divE correction, #DIVE T in PARAM.in): the steps of SWMF's former test12_aniso_AMPS_dynamic_fluxrope
-! (removed from SWMF on 2024-04-23, commit 343ec4394; PARAM.in.test.GMPC.aniso.AMPS.fluxrope is still in SWMF/Param).
+! (removed from SWMF on 2024-04-23, commit 343ec4394; its PARAM.in.test.GMPC.aniso.AMPS.fluxrope is kept in
+! data/input/AMPS-BATSRUS_dynamic_fluxrope, copied from SWMF 9258817, unchanged).
 ! Same SWMF installation and rules as AMPS-BATSRUS-PIC-coupling: PC/AMPS is a copy of THIS tree, everything is
 ! built here (the former run stage did 'make clean' and rebuilt all of SWMF in phase B), own run directory.
 >>>@echo "test_AMPS-BATSRUS_dynamic_fluxrope_compile..." > test_AMPS-BATSRUS_dynamic_fluxrope.diff
@@ -6540,7 +6776,7 @@ Rundir=
 >>>rm -rf $(TESTAMPS-BATSRUS_dynamic_fluxropeDIR)
 >>>cd SWMF; ${MAKE} rundir RUNDIR=${PTDIR}/$(TESTAMPS-BATSRUS_dynamic_fluxropeDIR)
 >>>rm -f $(TESTAMPS-BATSRUS_dynamic_fluxropeDIR)/SWMF.exe; cp SWMF/bin/SWMF.exe $(TESTAMPS-BATSRUS_dynamic_fluxropeDIR)/SWMF.exe
->>>cp SWMF/Param/PARAM.in.test.GMPC.aniso.AMPS.fluxrope $(TESTAMPS-BATSRUS_dynamic_fluxropeDIR)/PARAM.in
+>>>cp data/input/AMPS-BATSRUS_dynamic_fluxrope/PARAM.in.test.GMPC.aniso.AMPS.fluxrope $(TESTAMPS-BATSRUS_dynamic_fluxropeDIR)/PARAM.in
 >>>@echo "test_AMPS-BATSRUS_dynamic_fluxrope_rundir... done" >> test_AMPS-BATSRUS_dynamic_fluxrope.diff
 
 Run=
@@ -6552,9 +6788,13 @@ Run=
 >>>@echo "test_AMPS-BATSRUS_dynamic_fluxrope_run... done" >> test_AMPS-BATSRUS_dynamic_fluxrope.diff
 
 Check=
-! AMPS' averaged particle velocities at the end of the run (PT/plots/amps.dat: the PC component writes into PT/)
+! AMPS' averaged particle velocities at the end of the run (PT/plots/amps.dat: the PC component writes into PT/).
+! -r=1e-5 (the former -a=2e-14 required all 7 printed digits to agree, i.e. bit-for-bit results): the
+! file is unchanged when GM runs on 5 instead of 7 processes or with a 1e-12 relative change of the initial pressure,
+! while switching the divE correction off changes it by 7e-5..4e-2 and a year of AMPS/BATSRUS changes (the reference
+! of 2025-10) by 4e-5..7e-3 (relative; the same tolerance as for amps.dat in AMPS-BATSRUS-Europa).
 >>>@echo "test_AMPS-BATSRUS_dynamic_fluxrope_check..." >> test_AMPS-BATSRUS_dynamic_fluxrope.diff
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTAMPS-BATSRUS_dynamic_fluxropeDIR)/RESULTS/fluxrope/PT/amps.dat output/test_aniso_AMPS_dynamic_fluxrope/amps.ref > test_AMPS-BATSRUS_dynamic_fluxrope.diff)
+>>>-(${SCRIPTDIR}/DiffNum.pl -r=1e-5 $(TESTAMPS-BATSRUS_dynamic_fluxropeDIR)/RESULTS/fluxrope/PT/amps.dat output/test_aniso_AMPS_dynamic_fluxrope/amps.ref > test_AMPS-BATSRUS_dynamic_fluxrope.diff)
 >>>-@ls -l test_AMPS-BATSRUS_dynamic_fluxrope.diff
 >>>@echo Test test_AMPS-BATSRUS_dynamic_fluxrope has finished: `date`
 <#
@@ -6576,6 +6816,23 @@ Compile=
 >>>@rm -rf srcTemp
 >>>-@($(MAKE) -j8  amps)
 >>>@echo "test_cdap_test_compile... done" >> test_cdap_test$(TESTcdap_test-REF).diff
+
+!The output of the run is kept in the run directory (amps.out; the exit status of mpirun is preserved): the check
+!counts the E-field GMRES solves, the solves that did not converge (iError!=0) and NaN residuals in it, and adds the
+!counts to the verdict written by the application (energy conservation). The run is not reproducible to the last
+!bit, so the test compares verdicts and counts, not field values.
+Run=
+>>>@echo "test_cdap_test_run..." >> test_cdap_test$(TESTcdap_test-REF).diff
+>>>@echo Test test_cdap_test has started: `date`
+>>>cd $(TESTcdap_testDIR); ( ${MPIRUN} ./amps; echo $$? > amps.status ) 2>&1 | tee amps.out; exit `cat amps.status`
+>>>@echo "test_cdap_test_run... done" >> test_cdap_test$(TESTcdap_test-REF).diff
+
+Check=
+>>>@echo "test_cdap_test_check..." >> test_cdap_test$(TESTcdap_test-REF).diff
+>>>-@awk '/After nMatVec, Error, iError=/ {n++; if ($$NF!=0) bad++} /NaN/ {nan++} END {printf("E-field GMRES solves: %d\nE-field GMRES solves that did not converge: %d\nNaN in the output of the run: %d\n",n,bad,nan)}' $(TESTcdap_testDIR)/amps.out >> $(TESTcdap_testDIR)/PT/plots/test_cdap_test.dat
+>>>-@${SCRIPTDIR}/DiffNum.pl $(TESTcdap_testDIR)/PT/plots/test_cdap_test.dat output/test_cdap_test/test_cdap_test$(TESTcdap_test-REF).ref_np`ls $(TESTcdap_testDIR)/PT/thread* |wc -l |tr -d ' '` > test_cdap_test$(TESTcdap_test-REF).diff
+>>>@ls -l test_cdap_test$(TESTcdap_test-REF).diff
+>>>@echo Test test_cdap_test has finished: `date`
 
 <#
 
@@ -6945,7 +7202,7 @@ Anisotropy, Regression, Spatial, and Density subtests
 #>
 Name=Geospace-Flux-Gridless
 Family=earth
-Time=5
+Time=20
 
 Type=amps
 
@@ -7070,24 +7327,34 @@ Check=
 >>>@# Unzip compressed reference solutions
 >>>gunzip -c output/test_Geospace-Flux-Gridless/density_gridless_points_dipole_compare--test_aniso_cosalpha.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--density_gridless_points_dipole_compare--test_aniso_cosalpha.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless/flux_gridless_points_dipole_compare--test_aniso_cosalpha.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_points_dipole_compare--test_aniso_cosalpha.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless/spectrum_gridless_points_dipole_compare--test_aniso_cosalpha.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_points_dipole_compare--test_aniso_cosalpha.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless/density_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--density_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless/flux_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless/spectrum_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless/density_gridless_points_dipole_compare--test_aniso_regression.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--density_gridless_points_dipole_compare--test_aniso_regression.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless/flux_gridless_points_dipole_compare--test_aniso_regression.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_points_dipole_compare--test_aniso_regression.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless/spectrum_gridless_points_dipole_compare--test_aniso_regression.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_points_dipole_compare--test_aniso_regression.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless/density_gridless_shells_dipole_compare--test_aniso_regression_shell.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--density_gridless_shells_dipole_compare--test_aniso_regression_shell.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless/flux_gridless_shells_dipole_compare--test_aniso_regression_shell.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_shells_dipole_compare--test_aniso_regression_shell.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless/spectrum_gridless_shells_dipole_compare--test_aniso_regression_shell.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_shells_dipole_compare--test_aniso_regression_shell.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless/density_gridless_points_dipole_compare--test_aniso_sinalpha.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--density_gridless_points_dipole_compare--test_aniso_sinalpha.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless/flux_gridless_points_dipole_compare--test_aniso_sinalpha.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_points_dipole_compare--test_aniso_sinalpha.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless/spectrum_gridless_points_dipole_compare--test_aniso_sinalpha.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_points_dipole_compare--test_aniso_sinalpha.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless/density_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--density_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless/flux_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless/spectrum_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless/density_gridless_points_dipole_compare--test_aniso_spatial.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--density_gridless_points_dipole_compare--test_aniso_spatial.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless/flux_gridless_points_dipole_compare--test_aniso_spatial.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_points_dipole_compare--test_aniso_spatial.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless/spectrum_gridless_points_dipole_compare--test_aniso_spatial.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_points_dipole_compare--test_aniso_spatial.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless/density_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--density_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless/flux_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless/spectrum_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless/density_gridless_points_dipole_compare--test_density_dipole_4pts.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--density_gridless_points_dipole_compare--test_density_dipole_4pts.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless/flux_gridless_points_dipole_compare--test_density_dipole_4pts.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_points_dipole_compare--test_density_dipole_4pts.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless/spectrum_gridless_points_dipole_compare--test_density_dipole_4pts.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_points_dipole_compare--test_density_dipole_4pts.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless/density_gridless_shells_dipole_compare--test_density_dipole_shell.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--density_gridless_shells_dipole_compare--test_density_dipole_shell.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless/flux_gridless_shells_dipole_compare--test_density_dipole_shell.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_shells_dipole_compare--test_density_dipole_shell.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless/spectrum_gridless_shells_dipole_compare--test_density_dipole_shell.dat.gz > $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_shells_dipole_compare--test_density_dipole_shell.dat
 
 >>>@echo "--- Subtest: test_aniso_cosalpha ---" >> test_Geospace-Flux-Gridless$(TESTGeospace-Flux-Gridless-REF).diff
 
@@ -7101,6 +7368,11 @@ Check=
 >>>  $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_points_dipole_compare--test_aniso_cosalpha.dat \
 >>>  > test_Geospace-Flux-Gridless--test_aniso_cosalpha--flux.diff
 
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/spectrum_gridless_points_dipole_compare--test_aniso_cosalpha.dat \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_points_dipole_compare--test_aniso_cosalpha.dat \
+>>>  > test_Geospace-Flux-Gridless--test_aniso_cosalpha--spectrum.diff
+
 >>>@echo "--- Subtest: test_aniso_cosalpha_shell ---" >> test_Geospace-Flux-Gridless$(TESTGeospace-Flux-Gridless-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
@@ -7112,6 +7384,11 @@ Check=
 >>>  $(TESTGeospace-Flux-GridlessDIR)/flux_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat \
 >>>  $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat \
 >>>  > test_Geospace-Flux-Gridless--test_aniso_cosalpha_shell--flux.diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/spectrum_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat \
+>>>  > test_Geospace-Flux-Gridless--test_aniso_cosalpha_shell--spectrum.diff
 
 >>>@echo "--- Subtest: test_aniso_regression ---" >> test_Geospace-Flux-Gridless$(TESTGeospace-Flux-Gridless-REF).diff
 
@@ -7125,6 +7402,11 @@ Check=
 >>>  $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_points_dipole_compare--test_aniso_regression.dat \
 >>>  > test_Geospace-Flux-Gridless--test_aniso_regression--flux.diff
 
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/spectrum_gridless_points_dipole_compare--test_aniso_regression.dat \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_points_dipole_compare--test_aniso_regression.dat \
+>>>  > test_Geospace-Flux-Gridless--test_aniso_regression--spectrum.diff
+
 >>>@echo "--- Subtest: test_aniso_regression_shell ---" >> test_Geospace-Flux-Gridless$(TESTGeospace-Flux-Gridless-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
@@ -7136,6 +7418,11 @@ Check=
 >>>  $(TESTGeospace-Flux-GridlessDIR)/flux_gridless_shells_dipole_compare--test_aniso_regression_shell.dat \
 >>>  $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_shells_dipole_compare--test_aniso_regression_shell.dat \
 >>>  > test_Geospace-Flux-Gridless--test_aniso_regression_shell--flux.diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/spectrum_gridless_shells_dipole_compare--test_aniso_regression_shell.dat \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_shells_dipole_compare--test_aniso_regression_shell.dat \
+>>>  > test_Geospace-Flux-Gridless--test_aniso_regression_shell--spectrum.diff
 
 >>>@echo "--- Subtest: test_aniso_sinalpha ---" >> test_Geospace-Flux-Gridless$(TESTGeospace-Flux-Gridless-REF).diff
 
@@ -7149,6 +7436,11 @@ Check=
 >>>  $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_points_dipole_compare--test_aniso_sinalpha.dat \
 >>>  > test_Geospace-Flux-Gridless--test_aniso_sinalpha--flux.diff
 
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/spectrum_gridless_points_dipole_compare--test_aniso_sinalpha.dat \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_points_dipole_compare--test_aniso_sinalpha.dat \
+>>>  > test_Geospace-Flux-Gridless--test_aniso_sinalpha--spectrum.diff
+
 >>>@echo "--- Subtest: test_aniso_sinalpha_shell ---" >> test_Geospace-Flux-Gridless$(TESTGeospace-Flux-Gridless-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
@@ -7160,6 +7452,11 @@ Check=
 >>>  $(TESTGeospace-Flux-GridlessDIR)/flux_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat \
 >>>  $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat \
 >>>  > test_Geospace-Flux-Gridless--test_aniso_sinalpha_shell--flux.diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/spectrum_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat \
+>>>  > test_Geospace-Flux-Gridless--test_aniso_sinalpha_shell--spectrum.diff
 
 >>>@echo "--- Subtest: test_aniso_spatial ---" >> test_Geospace-Flux-Gridless$(TESTGeospace-Flux-Gridless-REF).diff
 
@@ -7173,6 +7470,11 @@ Check=
 >>>  $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_points_dipole_compare--test_aniso_spatial.dat \
 >>>  > test_Geospace-Flux-Gridless--test_aniso_spatial--flux.diff
 
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/spectrum_gridless_points_dipole_compare--test_aniso_spatial.dat \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_points_dipole_compare--test_aniso_spatial.dat \
+>>>  > test_Geospace-Flux-Gridless--test_aniso_spatial--spectrum.diff
+
 >>>@echo "--- Subtest: test_aniso_spatial_shell ---" >> test_Geospace-Flux-Gridless$(TESTGeospace-Flux-Gridless-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
@@ -7184,6 +7486,11 @@ Check=
 >>>  $(TESTGeospace-Flux-GridlessDIR)/flux_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat \
 >>>  $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat \
 >>>  > test_Geospace-Flux-Gridless--test_aniso_spatial_shell--flux.diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/spectrum_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat \
+>>>  > test_Geospace-Flux-Gridless--test_aniso_spatial_shell--spectrum.diff
 
 >>>@echo "--- Subtest: test_density_dipole_4pts ---" >> test_Geospace-Flux-Gridless$(TESTGeospace-Flux-Gridless-REF).diff
 
@@ -7197,6 +7504,11 @@ Check=
 >>>  $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_points_dipole_compare--test_density_dipole_4pts.dat \
 >>>  > test_Geospace-Flux-Gridless--test_density_dipole_4pts--flux.diff
 
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/spectrum_gridless_points_dipole_compare--test_density_dipole_4pts.dat \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_points_dipole_compare--test_density_dipole_4pts.dat \
+>>>  > test_Geospace-Flux-Gridless--test_density_dipole_4pts--spectrum.diff
+
 >>>@echo "--- Subtest: test_density_dipole_shell ---" >> test_Geospace-Flux-Gridless$(TESTGeospace-Flux-Gridless-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
@@ -7209,49 +7521,74 @@ Check=
 >>>  $(TESTGeospace-Flux-GridlessDIR)/ref--flux_gridless_shells_dipole_compare--test_density_dipole_shell.dat \
 >>>  > test_Geospace-Flux-Gridless--test_density_dipole_shell--flux.diff
 
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/spectrum_gridless_shells_dipole_compare--test_density_dipole_shell.dat \
+>>>  $(TESTGeospace-Flux-GridlessDIR)/ref--spectrum_gridless_shells_dipole_compare--test_density_dipole_shell.dat \
+>>>  > test_Geospace-Flux-Gridless--test_density_dipole_shell--spectrum.diff
+
 >>>@# Combine all sub-diffs into master diff file
 >>>@cat test_Geospace-Flux-Gridless--test_aniso_cosalpha--density.diff \
 >>>    test_Geospace-Flux-Gridless--test_aniso_cosalpha--flux.diff \
+>>>    test_Geospace-Flux-Gridless--test_aniso_cosalpha--spectrum.diff \
 >>>    test_Geospace-Flux-Gridless--test_aniso_cosalpha_shell--density.diff \
 >>>    test_Geospace-Flux-Gridless--test_aniso_cosalpha_shell--flux.diff \
+>>>    test_Geospace-Flux-Gridless--test_aniso_cosalpha_shell--spectrum.diff \
 >>>    test_Geospace-Flux-Gridless--test_aniso_regression--density.diff \
 >>>    test_Geospace-Flux-Gridless--test_aniso_regression--flux.diff \
+>>>    test_Geospace-Flux-Gridless--test_aniso_regression--spectrum.diff \
 >>>    test_Geospace-Flux-Gridless--test_aniso_regression_shell--density.diff \
 >>>    test_Geospace-Flux-Gridless--test_aniso_regression_shell--flux.diff \
+>>>    test_Geospace-Flux-Gridless--test_aniso_regression_shell--spectrum.diff \
 >>>    test_Geospace-Flux-Gridless--test_aniso_sinalpha--density.diff \
 >>>    test_Geospace-Flux-Gridless--test_aniso_sinalpha--flux.diff \
+>>>    test_Geospace-Flux-Gridless--test_aniso_sinalpha--spectrum.diff \
 >>>    test_Geospace-Flux-Gridless--test_aniso_sinalpha_shell--density.diff \
 >>>    test_Geospace-Flux-Gridless--test_aniso_sinalpha_shell--flux.diff \
+>>>    test_Geospace-Flux-Gridless--test_aniso_sinalpha_shell--spectrum.diff \
 >>>    test_Geospace-Flux-Gridless--test_aniso_spatial--density.diff \
 >>>    test_Geospace-Flux-Gridless--test_aniso_spatial--flux.diff \
+>>>    test_Geospace-Flux-Gridless--test_aniso_spatial--spectrum.diff \
 >>>    test_Geospace-Flux-Gridless--test_aniso_spatial_shell--density.diff \
 >>>    test_Geospace-Flux-Gridless--test_aniso_spatial_shell--flux.diff \
+>>>    test_Geospace-Flux-Gridless--test_aniso_spatial_shell--spectrum.diff \
 >>>    test_Geospace-Flux-Gridless--test_density_dipole_4pts--density.diff \
 >>>    test_Geospace-Flux-Gridless--test_density_dipole_4pts--flux.diff \
+>>>    test_Geospace-Flux-Gridless--test_density_dipole_4pts--spectrum.diff \
 >>>    test_Geospace-Flux-Gridless--test_density_dipole_shell--density.diff \
 >>>    test_Geospace-Flux-Gridless--test_density_dipole_shell--flux.diff \
+>>>    test_Geospace-Flux-Gridless--test_density_dipole_shell--spectrum.diff \
 >>>    > test_Geospace-Flux-Gridless$(TESTGeospace-Flux-Gridless-REF).diff
 
 >>>@ls -l test_Geospace-Flux-Gridless--test_aniso_cosalpha--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless--test_aniso_cosalpha--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless--test_aniso_cosalpha--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless--test_aniso_cosalpha_shell--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless--test_aniso_cosalpha_shell--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless--test_aniso_cosalpha_shell--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless--test_aniso_regression--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless--test_aniso_regression--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless--test_aniso_regression--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless--test_aniso_regression_shell--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless--test_aniso_regression_shell--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless--test_aniso_regression_shell--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless--test_aniso_sinalpha--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless--test_aniso_sinalpha--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless--test_aniso_sinalpha--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless--test_aniso_sinalpha_shell--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless--test_aniso_sinalpha_shell--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless--test_aniso_sinalpha_shell--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless--test_aniso_spatial--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless--test_aniso_spatial--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless--test_aniso_spatial--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless--test_aniso_spatial_shell--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless--test_aniso_spatial_shell--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless--test_aniso_spatial_shell--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless--test_density_dipole_4pts--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless--test_density_dipole_4pts--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless--test_density_dipole_4pts--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless--test_density_dipole_shell--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless--test_density_dipole_shell--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless--test_density_dipole_shell--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless$(TESTGeospace-Flux-Gridless-REF).diff
 >>>@echo Test test_Geospace-Flux-Gridless verification completed: `date`
 
@@ -7265,7 +7602,7 @@ using HYBRID Mover: Anisotropy, Regression, Spatial, and Density subtests
 #>
 Name=Geospace-Flux-Gridless-hybrid
 Family=earth
-Time=5
+Time=30
 
 Type=amps
 
@@ -7390,24 +7727,34 @@ Check=
 >>>@# Unzip compressed reference solutions (hybrid)
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_cosalpha.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--density_gridless_points_dipole_compare--test_aniso_cosalpha.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_cosalpha.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_points_dipole_compare--test_aniso_cosalpha.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/spectrum_gridless_points_dipole_compare--test_aniso_cosalpha.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_points_dipole_compare--test_aniso_cosalpha.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--density_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/spectrum_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_regression.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--density_gridless_points_dipole_compare--test_aniso_regression.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_regression.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_points_dipole_compare--test_aniso_regression.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/spectrum_gridless_points_dipole_compare--test_aniso_regression.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_points_dipole_compare--test_aniso_regression.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_regression_shell.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--density_gridless_shells_dipole_compare--test_aniso_regression_shell.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_regression_shell.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_shells_dipole_compare--test_aniso_regression_shell.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/spectrum_gridless_shells_dipole_compare--test_aniso_regression_shell.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_shells_dipole_compare--test_aniso_regression_shell.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_sinalpha.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--density_gridless_points_dipole_compare--test_aniso_sinalpha.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_sinalpha.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_points_dipole_compare--test_aniso_sinalpha.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/spectrum_gridless_points_dipole_compare--test_aniso_sinalpha.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_points_dipole_compare--test_aniso_sinalpha.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--density_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/spectrum_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_aniso_spatial.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--density_gridless_points_dipole_compare--test_aniso_spatial.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_aniso_spatial.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_points_dipole_compare--test_aniso_spatial.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/spectrum_gridless_points_dipole_compare--test_aniso_spatial.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_points_dipole_compare--test_aniso_spatial.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--density_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/spectrum_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/density_gridless_points_dipole_compare--test_density_dipole_4pts.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--density_gridless_points_dipole_compare--test_density_dipole_4pts.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_points_dipole_compare--test_density_dipole_4pts.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_points_dipole_compare--test_density_dipole_4pts.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/spectrum_gridless_points_dipole_compare--test_density_dipole_4pts.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_points_dipole_compare--test_density_dipole_4pts.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/density_gridless_shells_dipole_compare--test_density_dipole_shell.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--density_gridless_shells_dipole_compare--test_density_dipole_shell.dat
 >>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/flux_gridless_shells_dipole_compare--test_density_dipole_shell.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_shells_dipole_compare--test_density_dipole_shell.dat
+>>>gunzip -c output/test_Geospace-Flux-Gridless-hybrid/spectrum_gridless_shells_dipole_compare--test_density_dipole_shell.dat.gz > $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_shells_dipole_compare--test_density_dipole_shell.dat
 
 >>>@echo "--- Subtest: test_aniso_cosalpha (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
@@ -7421,6 +7768,11 @@ Check=
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_points_dipole_compare--test_aniso_cosalpha.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha--flux.diff
 
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/spectrum_gridless_points_dipole_compare--test_aniso_cosalpha.dat \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_points_dipole_compare--test_aniso_cosalpha.dat \
+>>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha--spectrum.diff
+
 >>>@echo "--- Subtest: test_aniso_cosalpha_shell (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
@@ -7432,6 +7784,11 @@ Check=
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/flux_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha_shell--flux.diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/spectrum_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_shells_dipole_compare--test_aniso_cosalpha_shell.dat \
+>>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha_shell--spectrum.diff
 
 >>>@echo "--- Subtest: test_aniso_regression (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
@@ -7445,6 +7802,11 @@ Check=
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_points_dipole_compare--test_aniso_regression.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_regression--flux.diff
 
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/spectrum_gridless_points_dipole_compare--test_aniso_regression.dat \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_points_dipole_compare--test_aniso_regression.dat \
+>>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_regression--spectrum.diff
+
 >>>@echo "--- Subtest: test_aniso_regression_shell (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
@@ -7456,6 +7818,11 @@ Check=
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/flux_gridless_shells_dipole_compare--test_aniso_regression_shell.dat \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_shells_dipole_compare--test_aniso_regression_shell.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_regression_shell--flux.diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/spectrum_gridless_shells_dipole_compare--test_aniso_regression_shell.dat \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_shells_dipole_compare--test_aniso_regression_shell.dat \
+>>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_regression_shell--spectrum.diff
 
 >>>@echo "--- Subtest: test_aniso_sinalpha (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
@@ -7469,6 +7836,11 @@ Check=
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_points_dipole_compare--test_aniso_sinalpha.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha--flux.diff
 
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/spectrum_gridless_points_dipole_compare--test_aniso_sinalpha.dat \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_points_dipole_compare--test_aniso_sinalpha.dat \
+>>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha--spectrum.diff
+
 >>>@echo "--- Subtest: test_aniso_sinalpha_shell (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
@@ -7480,6 +7852,11 @@ Check=
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/flux_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha_shell--flux.diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/spectrum_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_shells_dipole_compare--test_aniso_sinalpha_shell.dat \
+>>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha_shell--spectrum.diff
 
 >>>@echo "--- Subtest: test_aniso_spatial (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
@@ -7493,6 +7870,11 @@ Check=
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_points_dipole_compare--test_aniso_spatial.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial--flux.diff
 
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/spectrum_gridless_points_dipole_compare--test_aniso_spatial.dat \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_points_dipole_compare--test_aniso_spatial.dat \
+>>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial--spectrum.diff
+
 >>>@echo "--- Subtest: test_aniso_spatial_shell (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
@@ -7504,6 +7886,11 @@ Check=
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/flux_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat \
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial_shell--flux.diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/spectrum_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_shells_dipole_compare--test_aniso_spatial_shell.dat \
+>>>  > test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial_shell--spectrum.diff
 
 >>>@echo "--- Subtest: test_density_dipole_4pts (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
@@ -7517,6 +7904,11 @@ Check=
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_points_dipole_compare--test_density_dipole_4pts.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_density_dipole_4pts--flux.diff
 
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/spectrum_gridless_points_dipole_compare--test_density_dipole_4pts.dat \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_points_dipole_compare--test_density_dipole_4pts.dat \
+>>>  > test_Geospace-Flux-Gridless-hybrid--test_density_dipole_4pts--spectrum.diff
+
 >>>@echo "--- Subtest: test_density_dipole_shell (HYBRID mover) ---" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
@@ -7529,49 +7921,74 @@ Check=
 >>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--flux_gridless_shells_dipole_compare--test_density_dipole_shell.dat \
 >>>  > test_Geospace-Flux-Gridless-hybrid--test_density_dipole_shell--flux.diff
 
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/spectrum_gridless_shells_dipole_compare--test_density_dipole_shell.dat \
+>>>  $(TESTGeospace-Flux-Gridless-hybridDIR)/ref--spectrum_gridless_shells_dipole_compare--test_density_dipole_shell.dat \
+>>>  > test_Geospace-Flux-Gridless-hybrid--test_density_dipole_shell--spectrum.diff
+
 >>>@# Combine all sub-diffs into master diff file
 >>>@cat test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha--density.diff \
 >>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha--flux.diff \
+>>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha--spectrum.diff \
 >>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha_shell--density.diff \
 >>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha_shell--flux.diff \
+>>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha_shell--spectrum.diff \
 >>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_regression--density.diff \
 >>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_regression--flux.diff \
+>>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_regression--spectrum.diff \
 >>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_regression_shell--density.diff \
 >>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_regression_shell--flux.diff \
+>>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_regression_shell--spectrum.diff \
 >>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha--density.diff \
 >>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha--flux.diff \
+>>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha--spectrum.diff \
 >>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha_shell--density.diff \
 >>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha_shell--flux.diff \
+>>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha_shell--spectrum.diff \
 >>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial--density.diff \
 >>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial--flux.diff \
+>>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial--spectrum.diff \
 >>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial_shell--density.diff \
 >>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial_shell--flux.diff \
+>>>    test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial_shell--spectrum.diff \
 >>>    test_Geospace-Flux-Gridless-hybrid--test_density_dipole_4pts--density.diff \
 >>>    test_Geospace-Flux-Gridless-hybrid--test_density_dipole_4pts--flux.diff \
+>>>    test_Geospace-Flux-Gridless-hybrid--test_density_dipole_4pts--spectrum.diff \
 >>>    test_Geospace-Flux-Gridless-hybrid--test_density_dipole_shell--density.diff \
 >>>    test_Geospace-Flux-Gridless-hybrid--test_density_dipole_shell--flux.diff \
+>>>    test_Geospace-Flux-Gridless-hybrid--test_density_dipole_shell--spectrum.diff \
 >>>    > test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha_shell--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha_shell--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_cosalpha_shell--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_regression--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_regression--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_regression--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_regression_shell--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_regression_shell--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_regression_shell--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha_shell--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha_shell--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_sinalpha_shell--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial_shell--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial_shell--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_aniso_spatial_shell--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_density_dipole_4pts--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_density_dipole_4pts--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_density_dipole_4pts--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_density_dipole_shell--density.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_density_dipole_shell--flux.diff
+>>>@ls -l test_Geospace-Flux-Gridless-hybrid--test_density_dipole_shell--spectrum.diff
 >>>@ls -l test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 >>>@echo Test test_Geospace-Flux-Gridless-hybrid verification completed: `date`
 
@@ -7595,7 +8012,7 @@ Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/
 Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
 Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
 
-Outs=test_Earth-cutoff-rigidity-gridless-trajectory--t01--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--t01--compare test_Earth-cutoff-rigidity-gridless-trajectory--t05--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--t05--compare test_Earth-cutoff-rigidity-gridless-trajectory--t96--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--t96--compare test_Earth-cutoff-rigidity-gridless-trajectory--ta15n--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--ta15n--compare test_Earth-cutoff-rigidity-gridless-trajectory--ta15b--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--ta15b--compare test_Earth-cutoff-rigidity-gridless-trajectory--ta16--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--ta16--compare test_Earth-cutoff-rigidity-gridless-trajectory--dipole--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--dipole--compare
+Outs=test_Earth-cutoff-rigidity-gridless-trajectory--t01--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--t01--compare test_Earth-cutoff-rigidity-gridless-trajectory--t05--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--t05--compare test_Earth-cutoff-rigidity-gridless-trajectory--t96--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--t96--compare test_Earth-cutoff-rigidity-gridless-trajectory--ta15n--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--ta15n--compare test_Earth-cutoff-rigidity-gridless-trajectory--ta15b--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--ta15b--compare test_Earth-cutoff-rigidity-gridless-trajectory--dipole--cutoff test_Earth-cutoff-rigidity-gridless-trajectory--dipole--compare
 
 Compile=
 >>>@echo "test_Earth-cutoff-rigidity-gridless-trajectory_compile..." > test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
@@ -7663,17 +8080,6 @@ Run=
 
 >>>mv $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta15b.dat
 
->>>@# ======================================================================
->>>@# Subtest: TA16 geomagnetic field model
->>>@# ======================================================================
->>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
->>>@echo "Running cutoff rigidity trajectory: TA16 model" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
->>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
->>>cp data/input/test_Geospace-Flux-Gridless-trajectory/TA16/* $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)
->>>cp data/input/TA16/TA16_RBF.par $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)
->>>cd $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM_cutoff.in 
-
->>>mv $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta16.dat
 
 >>>@# ======================================================================
 >>>@# Subtest: Dipole geomagnetic field model
@@ -7750,15 +8156,6 @@ Check=
 >>>  $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/ref--cutoff_gridless_points--ta15b.dat \
 >>>  > test_Earth-cutoff-rigidity-gridless-trajectory--ta15b--cutoff.diff
 
->>>@# Unzip compressed reference solutions — TA16
->>>gunzip -c output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--ta16.dat.gz > $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/ref--cutoff_gridless_points--ta16.dat
-
->>>@echo "--- Subtest: TA16 model ---" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
-
->>>-@${SCRIPTDIR}/DiffNum.pl -r=1e-2 \
->>>  $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta16.dat \
->>>  $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/ref--cutoff_gridless_points--ta16.dat \
->>>  > test_Earth-cutoff-rigidity-gridless-trajectory--ta16--cutoff.diff
 
 >>>@# Unzip compressed reference solutions — Dipole
 >>>gunzip -c output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--dipole.dat.gz > $(TESTEarth-cutoff-rigidity-gridless-trajectoryDIR)/ref--cutoff_gridless_points--dipole.dat
@@ -7788,7 +8185,6 @@ Check=
 >>>    test_Earth-cutoff-rigidity-gridless-trajectory--t96--cutoff.diff \
 >>>    test_Earth-cutoff-rigidity-gridless-trajectory--ta15n--cutoff.diff \
 >>>    test_Earth-cutoff-rigidity-gridless-trajectory--ta15b--cutoff.diff \
->>>    test_Earth-cutoff-rigidity-gridless-trajectory--ta16--cutoff.diff \
 >>>    test_Earth-cutoff-rigidity-gridless-trajectory--dipole--cutoff.diff \
 >>>    test_Earth-cutoff-rigidity-gridless-trajectory--dipole--compare.diff \
 >>>    > test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
@@ -7798,13 +8194,74 @@ Check=
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--t96--cutoff.diff
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--ta15n--cutoff.diff
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--ta15b--cutoff.diff
->>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--ta16--cutoff.diff
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--dipole--cutoff.diff
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory--dipole--compare.diff
 >>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 >>>@echo Test test_Earth-cutoff-rigidity-gridless-trajectory verification completed: `date`
 
 <#
+
+#>
+Name=Earth-cutoff-rigidity-gridless-trajectory-ta16
+Family=earth
+Time=360
+
+Type=amps
+
+! The TA16 subtest of Earth-cutoff-rigidity-gridless-trajectory, taken out of the nightly: TA16 (radial basis functions,
+! 23331 coefficients per field evaluation) is too slow for the nightly: the 2026-11-15 validation run was stopped in it.
+! ExeptionCode=SKIP keeps it out of test_all and the nightly; run it by hand with
+!   make test_Earth-cutoff-rigidity-gridless-trajectory-ta16 MPIRUN="mpirun -np 8"
+ExeptionCode=SKIP{gcc}
+ExeptionCode=SKIP{icc}
+ExeptionCode=SKIP{pgcc}
+
+Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels 
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
+Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
+
+Outs=test_Earth-cutoff-rigidity-gridless-trajectory-ta16--ta16--cutoff
+
+Compile=
+>>>@echo "test_Earth-cutoff-rigidity-gridless-trajectory-ta16_compile..." > test_Earth-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+>>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16KEYS)
+>>>rm -rf srcTemp
+>>>-@($(MAKE) -j8 amps)
+>>>@echo "test_Earth-cutoff-rigidity-gridless-trajectory-ta16_compile... done" >> test_Earth-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+
+Run=
+>>>@echo "test_Earth-cutoff-rigidity-gridless-trajectory-ta16_run..." >> test_Earth-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+>>>@echo Test test_Earth-cutoff-rigidity-gridless-trajectory-ta16 has started: `date`
+>>>@# ======================================================================
+>>>@# Subtest: TA16 geomagnetic field model
+>>>@# ======================================================================
+>>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+>>>@echo "Running cutoff rigidity trajectory: TA16 model" >> test_Earth-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+>>>@echo "========================================" >> test_Earth-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+>>>cp data/input/test_Geospace-Flux-Gridless-trajectory/TA16/* $(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16DIR)
+>>>cp data/input/TA16/TA16_RBF.par $(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16DIR)
+>>>cd $(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16DIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM_cutoff.in 
+
+>>>mv $(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16DIR)/cutoff_gridless_points.dat $(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16DIR)/cutoff_gridless_points--ta16.dat
+>>>@echo "test_Earth-cutoff-rigidity-gridless-trajectory-ta16_run... done" >> test_Earth-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+>>>@echo Test test_Earth-cutoff-rigidity-gridless-trajectory-ta16 has finished: `date`
+
+Check=
+>>>@echo "test_Earth-cutoff-rigidity-gridless-trajectory-ta16_check..." >> test_Earth-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+>>>@# Unzip compressed reference solutions — TA16
+>>>gunzip -c output/test_Earth-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--ta16.dat.gz > $(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16DIR)/ref--cutoff_gridless_points--ta16.dat
+
+>>>@echo "--- Subtest: TA16 model ---" >> test_Earth-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl -r=1e-2 \
+>>>  $(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16DIR)/cutoff_gridless_points--ta16.dat \
+>>>  $(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16DIR)/ref--cutoff_gridless_points--ta16.dat \
+>>>  > test_Earth-cutoff-rigidity-gridless-trajectory-ta16--ta16--cutoff.diff
+>>>@cat test_Earth-cutoff-rigidity-gridless-trajectory-ta16--ta16--cutoff.diff > test_Earth-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+>>>@ls -l test_Earth-cutoff-rigidity-gridless-trajectory-ta16--ta16--cutoff.diff
+>>>@echo Test test_Earth-cutoff-rigidity-gridless-trajectory-ta16 verification completed: `date`
+<#
+
 
 ==============================================================================
 Test for Vertical Cutoff Rigidity (Gridless) Trajectory mode
@@ -7823,7 +8280,7 @@ Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/
 Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
 Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
 
-Outs=test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t01--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t01--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t05--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t05--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t96--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t96--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15n--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15n--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15b--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15b--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta16--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta16--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--dipole--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--dipole--compare
+Outs=test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t01--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t01--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t05--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t05--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t96--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--t96--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15n--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15n--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15b--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15b--compare test_Earth-vertical-cutoff-rigidity-gridless-trajectory--dipole--cutoff test_Earth-vertical-cutoff-rigidity-gridless-trajectory--dipole--compare
 
 Compile=
 >>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_compile..." > test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
@@ -7891,17 +8348,6 @@ Run=
 
 >>>mv $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta15b.dat
 
->>>@# ======================================================================
->>>@# Subtest: TA16 geomagnetic field model
->>>@# ======================================================================
->>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
->>>@echo "Running cutoff rigidity trajectory: TA16 model" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
->>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
->>>cp data/input/test_Geospace-Flux-Gridless-trajectory/TA16/* $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)
->>>cp data/input/TA16/TA16_RBF.par $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)
->>>cd $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM_vertical_cutoff.in 
-
->>>mv $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points.dat $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta16.dat
 
 >>>@# ======================================================================
 >>>@# Subtest: Dipole geomagnetic field model
@@ -7979,15 +8425,6 @@ Check=
 >>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/ref--cutoff_gridless_points--ta15b.dat \
 >>>  > test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15b--cutoff.diff
 
->>>@# Unzip compressed reference solutions — TA16
->>>gunzip -c output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--ta16.dat.gz > $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/ref--cutoff_gridless_points--ta16.dat
-
->>>@echo "--- Subtest: TA16 model ---" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
-
->>>-@${SCRIPTDIR}/DiffNum.pl \
->>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/cutoff_gridless_points--ta16.dat \
->>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/ref--cutoff_gridless_points--ta16.dat \
->>>  > test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta16--cutoff.diff
 
 >>>@# Unzip compressed reference solutions — Dipole
 >>>gunzip -c output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--dipole.dat.gz > $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryDIR)/ref--cutoff_gridless_points--dipole.dat
@@ -8022,8 +8459,6 @@ Check=
 >>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15n--compare.diff \
 >>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15b--cutoff.diff \
 >>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15b--compare.diff \
->>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta16--cutoff.diff \
->>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta16--compare.diff \
 >>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--dipole--cutoff.diff \
 >>>    test_Earth-vertical-cutoff-rigidity-gridless-trajectory--dipole--compare.diff \
 >>>    > test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
@@ -8038,14 +8473,74 @@ Check=
 >>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15n--compare.diff
 >>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15b--cutoff.diff
 >>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta15b--compare.diff
->>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta16--cutoff.diff
->>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--ta16--compare.diff
 >>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--dipole--cutoff.diff
 >>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory--dipole--compare.diff
 >>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
 >>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless-trajectory verification completed: `date`
 
 <#
+
+#>
+Name=Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16
+Family=earth
+Time=360
+
+Type=amps
+
+! The TA16 subtest of Earth-vertical-cutoff-rigidity-gridless-trajectory, taken out of the nightly: TA16 (radial basis functions,
+! 23331 coefficients per field evaluation) is too slow for the nightly: the 2026-11-15 validation run was stopped in it.
+! ExeptionCode=SKIP keeps it out of test_all and the nightly; run it by hand with
+!   make test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16 MPIRUN="mpirun -np 8"
+ExeptionCode=SKIP{gcc}
+ExeptionCode=SKIP{icc}
+ExeptionCode=SKIP{pgcc}
+
+Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels 
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
+Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels @@(0+stampede)
+
+Outs=test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16--ta16--cutoff
+
+Compile=
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16_compile..." > test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+>>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16KEYS)
+>>>rm -rf srcTemp
+>>>-@($(MAKE) -j8 amps)
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16_compile... done" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+
+Run=
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16_run..." >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+>>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16 has started: `date`
+>>>@# ======================================================================
+>>>@# Subtest: TA16 geomagnetic field model
+>>>@# ======================================================================
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+>>>@echo "Running cutoff rigidity trajectory: TA16 model" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+>>>@echo "========================================" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+>>>cp data/input/test_Geospace-Flux-Gridless-trajectory/TA16/* $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16DIR)
+>>>cp data/input/TA16/TA16_RBF.par $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16DIR)
+>>>cd $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16DIR); ${MPIRUN} ./amps -mode gridless -i AMPS_PARAM_vertical_cutoff.in 
+
+>>>mv $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16DIR)/cutoff_gridless_points.dat $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16DIR)/cutoff_gridless_points--ta16.dat
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16_run... done" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+>>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16 has finished: `date`
+
+Check=
+>>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16_check..." >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+>>>@# Unzip compressed reference solutions — TA16
+>>>gunzip -c output/test_Earth-vertical-cutoff-rigidity-gridless-trajectory/cutoff_gridless_points--ta16.dat.gz > $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16DIR)/ref--cutoff_gridless_points--ta16.dat
+
+>>>@echo "--- Subtest: TA16 model ---" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl \
+>>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16DIR)/cutoff_gridless_points--ta16.dat \
+>>>  $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16DIR)/ref--cutoff_gridless_points--ta16.dat \
+>>>  > test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16--ta16--cutoff.diff
+>>>@cat test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16--ta16--cutoff.diff > test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
+>>>@ls -l test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16--ta16--cutoff.diff
+>>>@echo Test test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16 verification completed: `date`
+<#
+
 
 ==============================================================================
 Test for Vertical Cutoff Rigidity (Gridless) with Dipole Magnetic Field:
@@ -8324,7 +8819,7 @@ Outs=test_Earth-3d_forward-dipole_analytic-trajectory test_Earth-3d_forward-dipo
 
 Compile=
 >>>@echo "test_Earth-3d_forward-dipole_analytic_compile..." > test_Earth-3d_forward-dipole_analytic$(TESTEarth-3d_forward-dipole_analytic-REF).diff
->>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-3d_forward-dipole_analyticKEYS)
+>>>./Config.pl -application=test/geospace/geospace_forward -amps-test=on $(TESTEarth-3d_forward-dipole_analyticKEYS)
 >>>rm -rf srcTemp
 >>>-@($(MAKE) -j8 amps)
 >>>@echo "test_Earth-3d_forward-dipole_analytic_compile... done" >> test_Earth-3d_forward-dipole_analytic$(TESTEarth-3d_forward-dipole_analytic-REF).diff
@@ -8343,23 +8838,28 @@ Run=
 >>>@echo Test test_Earth-3d_forward-dipole_analytic has finished: `date`
 
 Check=
+! 1000 forward iterations = one sampling cycle: the run writes out=0 (it used to expect out=6, never written)
+! every 1000th trajectory line is compared (every 100000th line kept only the header);
+! geospace_forward.input = geospace.input with a reproducible domain decomposition
+! the volume check keeps every 1000th line and zeroes column 5 (Temp_ID, a node number that is
+! assigned in a different order from run to run; all physical columns repeat exactly)
 >>>@echo "test_Earth-3d_forward-dipole_analytic_check..." >> test_Earth-3d_forward-dipole_analytic$(TESTEarth-3d_forward-dipole_analytic-REF).diff
 
->>>-@${TESTEarth-3d_forward-dipole_analyticDIR}/../utility/ReduceFile.pl ${TESTEarth-3d_forward-dipole_analyticDIR}/PT/plots/amps.TrajectoryTracking.out=6.s=0.H_PLUS1.dat 100000
->>>-@${TESTEarth-3d_forward-dipole_analyticDIR}/../utility/ReduceFile.pl ${TESTEarth-3d_forward-dipole_analyticDIR}/PT/plots/pic.H_PLUS1.s=0.out=6.dat 10000
+>>>-@${TESTEarth-3d_forward-dipole_analyticDIR}/../utility/ReduceFile.pl ${TESTEarth-3d_forward-dipole_analyticDIR}/PT/plots/amps.TrajectoryTracking.out=0.s=0.H_PLUS1.dat 1000
+>>>-@awk 'NR%1000==1 {if (NF>8 && $$1 ~ /^[-0-9]/) $$5=0; print}' ${TESTEarth-3d_forward-dipole_analyticDIR}/PT/plots/pic.H_PLUS1.s=0.out=0.dat > ${TESTEarth-3d_forward-dipole_analyticDIR}/PT/plots/pic.H_PLUS1.s=0.out=0.dat.Reduced.Step=1000
 
 >>>@echo "--- Trajectory subtest ---" >> test_Earth-3d_forward-dipole_analytic$(TESTEarth-3d_forward-dipole_analytic-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
->>>  ${TESTEarth-3d_forward-dipole_analyticDIR}/PT/plots/amps.TrajectoryTracking.out=6.s=0.H_PLUS1.dat.Reduced.Step=100000 \
->>>  output/test_Earth-3d_forward-dipole_analytic/amps.TrajectoryTracking.out=6.s=0.H_PLUS1.dat.Reduced.Step=100000 \
+>>>  ${TESTEarth-3d_forward-dipole_analyticDIR}/PT/plots/amps.TrajectoryTracking.out=0.s=0.H_PLUS1.dat.Reduced.Step=1000 \
+>>>  output/test_Earth-3d_forward-dipole_analytic/amps.TrajectoryTracking.out=0.s=0.H_PLUS1.dat.Reduced.Step=1000 \
 >>>  > test_Earth-3d_forward-dipole_analytic-trajectory$(TESTEarth-3d_forward-dipole_analytic-REF).diff
 
 >>>@echo "--- Volume subtest ---" >> test_Earth-3d_forward-dipole_analytic$(TESTEarth-3d_forward-dipole_analytic-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
->>>  ${TESTEarth-3d_forward-dipole_analyticDIR}/PT/plots/pic.H_PLUS1.s=0.out=6.dat.Reduced.Step=10000 \
->>>  output/test_Earth-3d_forward-dipole_analytic/pic.H_PLUS1.s=0.out=6.dat.Reduced.Step=10000 \
+>>>  ${TESTEarth-3d_forward-dipole_analyticDIR}/PT/plots/pic.H_PLUS1.s=0.out=0.dat.Reduced.Step=1000 \
+>>>  output/test_Earth-3d_forward-dipole_analytic/pic.H_PLUS1.s=0.out=0.dat.Reduced.Step=1000 \
 >>>  > test_Earth-3d_forward-dipole_analytic-volume$(TESTEarth-3d_forward-dipole_analytic-REF).diff
 
 >>>@cat test_Earth-3d_forward-dipole_analytic-trajectory$(TESTEarth-3d_forward-dipole_analytic-REF).diff \
@@ -8393,7 +8893,7 @@ Outs=test_Earth-3d_forward-t96_analytic-trajectory test_Earth-3d_forward-t96_ana
 
 Compile=
 >>>@echo "test_Earth-3d_forward-t96_analytic_compile..." > test_Earth-3d_forward-t96_analytic$(TESTEarth-3d_forward-t96_analytic-REF).diff
->>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-3d_forward-t96_analyticKEYS)
+>>>./Config.pl -application=test/geospace/geospace_forward -amps-test=on $(TESTEarth-3d_forward-t96_analyticKEYS)
 >>>rm -rf srcTemp
 >>>-@($(MAKE) -j8 amps)
 >>>@echo "test_Earth-3d_forward-t96_analytic_compile... done" >> test_Earth-3d_forward-t96_analytic$(TESTEarth-3d_forward-t96_analytic-REF).diff
@@ -8412,23 +8912,28 @@ Run=
 >>>@echo Test test_Earth-3d_forward-t96_analytic has finished: `date`
 
 Check=
+! 1000 forward iterations = one sampling cycle: the run writes out=0 (it used to expect out=6, never written)
+! every 1000th trajectory line is compared (every 100000th line kept only the header);
+! geospace_forward.input = geospace.input with a reproducible domain decomposition
+! the volume check keeps every 1000th line and zeroes column 5 (Temp_ID, a node number that is
+! assigned in a different order from run to run; all physical columns repeat exactly)
 >>>@echo "test_Earth-3d_forward-t96_analytic_check..." >> test_Earth-3d_forward-t96_analytic$(TESTEarth-3d_forward-t96_analytic-REF).diff
 
->>>-@${TESTEarth-3d_forward-t96_analyticDIR}/../utility/ReduceFile.pl ${TESTEarth-3d_forward-t96_analyticDIR}/PT/plots/amps.TrajectoryTracking.out=6.s=0.H_PLUS1.dat 100000
->>>-@${TESTEarth-3d_forward-t96_analyticDIR}/../utility/ReduceFile.pl ${TESTEarth-3d_forward-t96_analyticDIR}/PT/plots/pic.H_PLUS1.s=0.out=6.dat 10000
+>>>-@${TESTEarth-3d_forward-t96_analyticDIR}/../utility/ReduceFile.pl ${TESTEarth-3d_forward-t96_analyticDIR}/PT/plots/amps.TrajectoryTracking.out=0.s=0.H_PLUS1.dat 1000
+>>>-@awk 'NR%1000==1 {if (NF>8 && $$1 ~ /^[-0-9]/) $$5=0; print}' ${TESTEarth-3d_forward-t96_analyticDIR}/PT/plots/pic.H_PLUS1.s=0.out=0.dat > ${TESTEarth-3d_forward-t96_analyticDIR}/PT/plots/pic.H_PLUS1.s=0.out=0.dat.Reduced.Step=1000
 
 >>>@echo "--- Trajectory subtest ---" >> test_Earth-3d_forward-t96_analytic$(TESTEarth-3d_forward-t96_analytic-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
->>>  ${TESTEarth-3d_forward-t96_analyticDIR}/PT/plots/amps.TrajectoryTracking.out=6.s=0.H_PLUS1.dat.Reduced.Step=100000 \
->>>  output/test_Earth-3d_forward-t96_analytic/amps.TrajectoryTracking.out=6.s=0.H_PLUS1.dat.Reduced.Step=100000 \
+>>>  ${TESTEarth-3d_forward-t96_analyticDIR}/PT/plots/amps.TrajectoryTracking.out=0.s=0.H_PLUS1.dat.Reduced.Step=1000 \
+>>>  output/test_Earth-3d_forward-t96_analytic/amps.TrajectoryTracking.out=0.s=0.H_PLUS1.dat.Reduced.Step=1000 \
 >>>  > test_Earth-3d_forward-t96_analytic-trajectory$(TESTEarth-3d_forward-t96_analytic-REF).diff
 
 >>>@echo "--- Volume subtest ---" >> test_Earth-3d_forward-t96_analytic$(TESTEarth-3d_forward-t96_analytic-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
->>>  ${TESTEarth-3d_forward-t96_analyticDIR}/PT/plots/pic.H_PLUS1.s=0.out=6.dat.Reduced.Step=10000 \
->>>  output/test_Earth-3d_forward-t96_analytic/pic.H_PLUS1.s=0.out=6.dat.Reduced.Step=10000 \
+>>>  ${TESTEarth-3d_forward-t96_analyticDIR}/PT/plots/pic.H_PLUS1.s=0.out=0.dat.Reduced.Step=1000 \
+>>>  output/test_Earth-3d_forward-t96_analytic/pic.H_PLUS1.s=0.out=0.dat.Reduced.Step=1000 \
 >>>  > test_Earth-3d_forward-t96_analytic-volume$(TESTEarth-3d_forward-t96_analytic-REF).diff
 
 >>>@cat test_Earth-3d_forward-t96_analytic-trajectory$(TESTEarth-3d_forward-t96_analytic-REF).diff \
@@ -8462,7 +8967,7 @@ Outs=test_Earth-3d_forward-t96-trajectory test_Earth-3d_forward-t96-volume
 
 Compile=
 >>>@echo "test_Earth-3d_forward-t96_compile..." > test_Earth-3d_forward-t96$(TESTEarth-3d_forward-t96-REF).diff
->>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-3d_forward-t96KEYS)
+>>>./Config.pl -application=test/geospace/geospace_forward -amps-test=on $(TESTEarth-3d_forward-t96KEYS)
 >>>rm -rf srcTemp
 >>>-@($(MAKE) -j8 amps)
 >>>@echo "test_Earth-3d_forward-t96_compile... done" >> test_Earth-3d_forward-t96$(TESTEarth-3d_forward-t96-REF).diff
@@ -8481,23 +8986,28 @@ Run=
 >>>@echo Test test_Earth-3d_forward-t96 has finished: `date`
 
 Check=
+! 1000 forward iterations = one sampling cycle: the run writes out=0 (it used to expect out=6, never written)
+! every 1000th trajectory line is compared (every 100000th line kept only the header);
+! geospace_forward.input = geospace.input with a reproducible domain decomposition
+! the volume check keeps every 1000th line and zeroes column 5 (Temp_ID, a node number that is
+! assigned in a different order from run to run; all physical columns repeat exactly)
 >>>@echo "test_Earth-3d_forward-t96_check..." >> test_Earth-3d_forward-t96$(TESTEarth-3d_forward-t96-REF).diff
 
->>>-@${TESTEarth-3d_forward-t96DIR}/../utility/ReduceFile.pl ${TESTEarth-3d_forward-t96DIR}/PT/plots/amps.TrajectoryTracking.out=6.s=0.H_PLUS1.dat 100000
->>>-@${TESTEarth-3d_forward-t96DIR}/../utility/ReduceFile.pl ${TESTEarth-3d_forward-t96DIR}/PT/plots/pic.H_PLUS1.s=0.out=6.dat 10000
+>>>-@${TESTEarth-3d_forward-t96DIR}/../utility/ReduceFile.pl ${TESTEarth-3d_forward-t96DIR}/PT/plots/amps.TrajectoryTracking.out=0.s=0.H_PLUS1.dat 1000
+>>>-@awk 'NR%1000==1 {if (NF>8 && $$1 ~ /^[-0-9]/) $$5=0; print}' ${TESTEarth-3d_forward-t96DIR}/PT/plots/pic.H_PLUS1.s=0.out=0.dat > ${TESTEarth-3d_forward-t96DIR}/PT/plots/pic.H_PLUS1.s=0.out=0.dat.Reduced.Step=1000
 
 >>>@echo "--- Trajectory subtest ---" >> test_Earth-3d_forward-t96$(TESTEarth-3d_forward-t96-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
->>>  ${TESTEarth-3d_forward-t96DIR}/PT/plots/amps.TrajectoryTracking.out=6.s=0.H_PLUS1.dat.Reduced.Step=100000 \
->>>  output/test_Earth-3d_forward-t96/amps.TrajectoryTracking.out=6.s=0.H_PLUS1.dat.Reduced.Step=100000 \
+>>>  ${TESTEarth-3d_forward-t96DIR}/PT/plots/amps.TrajectoryTracking.out=0.s=0.H_PLUS1.dat.Reduced.Step=1000 \
+>>>  output/test_Earth-3d_forward-t96/amps.TrajectoryTracking.out=0.s=0.H_PLUS1.dat.Reduced.Step=1000 \
 >>>  > test_Earth-3d_forward-t96-trajectory$(TESTEarth-3d_forward-t96-REF).diff
 
 >>>@echo "--- Volume subtest ---" >> test_Earth-3d_forward-t96$(TESTEarth-3d_forward-t96-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
->>>  ${TESTEarth-3d_forward-t96DIR}/PT/plots/pic.H_PLUS1.s=0.out=6.dat.Reduced.Step=10000 \
->>>  output/test_Earth-3d_forward-t96/pic.H_PLUS1.s=0.out=6.dat.Reduced.Step=10000 \
+>>>  ${TESTEarth-3d_forward-t96DIR}/PT/plots/pic.H_PLUS1.s=0.out=0.dat.Reduced.Step=1000 \
+>>>  output/test_Earth-3d_forward-t96/pic.H_PLUS1.s=0.out=0.dat.Reduced.Step=1000 \
 >>>  > test_Earth-3d_forward-t96-volume$(TESTEarth-3d_forward-t96-REF).diff
 
 >>>@cat test_Earth-3d_forward-t96-trajectory$(TESTEarth-3d_forward-t96-REF).diff \
@@ -8596,14 +9106,14 @@ Run=
 Check=
 >>>@echo "test_Geospace-SWMF-AMPS_check..." >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
 
->>>-@utility/ReduceFile.pl $(TESTGeospace-SWMF-AMPSDIR)/PT/plots/amps.TrajectoryTracking.out=1.s=0.H_PLUS1.dat 10000
+>>>-@utility/ReduceFile.pl $(TESTGeospace-SWMF-AMPSDIR)/PT/plots/amps.TrajectoryTracking.out=1.s=0.H_PLUS1.dat 1000
 >>>-@utility/ReduceFile.pl $(TESTGeospace-SWMF-AMPSDIR)/PT/plots/pic.H_PLUS1.s=0.out=1.dat 1000
 
 >>>@echo "--- Trajectory subtest ---" >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl \
->>>  $(TESTGeospace-SWMF-AMPSDIR)/PT/plots/amps.TrajectoryTracking.out=1.s=0.H_PLUS1.dat.Reduced.Step=10000 \
->>>  output/test_Geospace-SWMF-AMPS/amps.TrajectoryTracking.out=1.s=0.H_PLUS1.dat.Reduced.Step=10000 \
+>>>  $(TESTGeospace-SWMF-AMPSDIR)/PT/plots/amps.TrajectoryTracking.out=1.s=0.H_PLUS1.dat.Reduced.Step=1000 \
+>>>  output/test_Geospace-SWMF-AMPS/amps.TrajectoryTracking.out=1.s=0.H_PLUS1.dat.Reduced.Step=1000 \
 >>>  > test_Geospace-SWMF-AMPS--trajectory$(TESTGeospace-SWMF-AMPS-REF).diff
 
 >>>@echo "--- Volume subtest ---" >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff

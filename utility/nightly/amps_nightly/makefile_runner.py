@@ -17,6 +17,7 @@ import concurrent.futures
 import re
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
@@ -25,9 +26,20 @@ from . import legacy, procs
 from .machines import Machine
 from .plan import RUN, Item, makefile_manifest
 from .registry import UNASSIGNED
-from .table import DEFAULT_TABLE, TableTest, family_by_name, read_table
+from .table import DEFAULT_TABLE, TableTest, display_name, family_by_name, read_table
 
 TOOL_PARSER = DEFAULT_TABLE.parents[1] / "utility" / "TestScripts" / "table_parser.cpp"
+
+
+def workspace_table(ws: Path) -> List[TableTest]:
+    """The tests of the tested workspace's own MakefileTest/Table (this tool's Table if it has none).
+
+    Result files are attributed to tests by name, so the names must come from the commit under test: a test
+    that exists only there would otherwise be folded into the test whose name is its prefix
+    (test_unit_test_cutcell_tetra.diff into unit_test) and reported as having written no result file.
+    """
+    path = ws / "MakefileTest" / "Table"
+    return read_table(path if path.is_file() else None)
 
 
 def manifest(ws: Path, machine: Machine, env: Dict[str, str], log) -> List[Tuple[str, str, str]]:
@@ -47,18 +59,25 @@ def manifest(ws: Path, machine: Machine, env: Dict[str, str], log) -> List[Tuple
     shutil.copy(str(ws / "MakefileTest" / "Table"), str(work / "Table"))
     subprocess.run(["./table_parser", "2"], cwd=str(work), check=True, stdout=subprocess.DEVNULL,
                    env=dict(env, AMPS_TABLE_HOST=machine.table_host))
-    done = subprocess.run(["make", "-s", "-f", "Makefile.test", "-f", str(ws / "Makefile.conf"), "test_manifest"],
+    # Makefile.conf first: the compiler-specific rules of Makefile.test (ifeq ($(COMPILE.c),gcc) ... SKIP or Ref=)
+    # are evaluated while it is read, so COMPILE.c must already be defined
+    done = subprocess.run(["make", "-s", "-f", str(ws / "Makefile.conf"), "-f", "Makefile.test", "test_manifest"],
                           cwd=str(work), stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
                           timeout=300)
     if done.returncode != 0:
         raise RuntimeError("test_manifest from this tool's table_parser failed: " + done.stderr.strip()[-300:])
-    families = family_by_name(read_table())
+    families = family_by_name(workspace_table(ws))
     tests = []
     for line in done.stdout.splitlines():
         parts = line.split("|")
         if len(parts) == 5 and parts[0]:
             tests.append((parts[0], parts[1] or families.get(parts[0], UNASSIGNED), parts[3]))
     return tests
+
+
+def test_log(tests_dir: Path, name: str) -> Path:
+    """The log of one test, named as the test is shown: tests/Mars-ions(valgrind).log for Mars-ions--valgrind."""
+    return tests_dir / (display_name(name) + ".log")
 
 
 def _rundir_done(ws: Path, name: str) -> bool:
@@ -183,7 +202,7 @@ def run(ws: Path, machine: Machine, items: Sequence[Item], env: Dict[str, str], 
     def stage(name: str, which: str) -> bool:
         target = "test_{}_{}".format(name, which)
         limit = min(limits[which], max(1.0, deadline - time.time()))
-        outcome = procs.run(["make", target] + make_vars, ws, env, tests_dir / (name + ".log"), limit,
+        outcome = procs.run(["make", target] + make_vars, ws, env, test_log(tests_dir, name), limit,
                             "{}/{}".format(tag, name), header=target)
         timing[name] = timing.get(name, 0.0) + outcome.elapsed_s
         if outcome.timed_out:
@@ -194,14 +213,14 @@ def run(ws: Path, machine: Machine, items: Sequence[Item], env: Dict[str, str], 
     # the shared library only: the legacy target test_compile also compiles every test
     procs.run(procs.shell("mkdir -p share/lib && cd share/Library/src && make LIB"), ws, env, logs / "setup.log",
               limits["compile"], tag + "/setup", header="shared library (share/Library/src: make LIB)")
-    planned = [i.test for i in items if i.action == RUN]
+    planned = [i.make_name for i in items if i.action == RUN]       # make names (test_<name>_compile, ...)
     log("Makefile.test: {} tests to run, {} lanes".format(len(planned), machine.lanes))
     installed = config_snapshot(ws)
 
     def reset_config(name: str) -> None:
         changed = config_restore(ws, installed)
         if changed:
-            with open(str(tests_dir / (name + ".log")), "a") as stream:
+            with open(str(test_log(tests_dir, name)), "a") as stream:
                 stream.write("\n### configuration reset to the post-install state: {} (changed by the tests "
                              "configured before this one)\n".format(", ".join(changed)))
 
@@ -220,7 +239,7 @@ def run(ws: Path, machine: Machine, items: Sequence[Item], env: Dict[str, str], 
         reset_config(name)                 # nor the Config.pl options an earlier test set
         stage(name, "compile")
         if name not in over and not amps.exists():
-            error = build_error(tests_dir / (name + ".log"), "test_{}_compile".format(name))
+            error = build_error(test_log(tests_dir, name), "test_{}_compile".format(name))
             if error:
                 not_built[name] = "the build failed: " + error
                 continue
@@ -231,25 +250,32 @@ def run(ws: Path, machine: Machine, items: Sequence[Item], env: Dict[str, str], 
     # the run stages that build in the workspace (the SWMF tests copy its tracked Makefile) see the installed state,
     # not the last compiled test's
     config_restore(ws, installed)
+    # The check stages run one at a time (the runs of the other lanes go on meanwhile). Every check runs in the
+    # workspace, and share/Scripts/DiffNum.pl keeps the text of the two files it compares in the fixed names
+    # _diffnum_file1_ and _diffnum_file2_ of the current directory: two checks at once overwrite each other's files
+    # and report differences that are not there (2026-11-15: CG-dust-test-tetra-cut-mesh, "34017c34017,34472",
+    # while Periodic-BC-NonUniform's check ran).
+    check_lock = threading.Lock()
     with concurrent.futures.ThreadPoolExecutor(max_workers=machine.lanes) as pool:   # phase B: lanes
         def run_and_check(name: str) -> None:
             if time.time() >= deadline:
                 not_started.append(name)
                 return
             stage(name, "run")
-            error = run_error(tests_dir / (name + ".log"), "test_{}_run".format(name))
+            error = run_error(test_log(tests_dir, name), "test_{}_run".format(name))
             if error:
                 aborted[name] = "the run aborted: " + error
-            stage(name, "check")
+            with check_lock:
+                stage(name, "check")
         list(pool.map(run_and_check, ready))
 
-    results = {r["test"]: r for r in legacy.collect_results(legacy.read_diff_files(ws), read_table())}
+    results = {r["test"]: r for r in legacy.collect_results(legacy.read_diff_files(ws), workspace_table(ws))}
     rows = []
     for item in items:
         if item.action != RUN:
             continue
-        name = item.test
-        result = results.pop(name, None)
+        name = item.make_name
+        result = results.pop(item.test, None)          # collect_results names the tests as they are shown
         if name in not_started:
             row = {"status": "SKIPPED", "stage": "", "reason": "not started: the night's time limit was reached"}
         elif name in no_space:
@@ -264,8 +290,8 @@ def run(ws: Path, machine: Machine, items: Sequence[Item], env: Dict[str, str], 
             row = {"status": result["status"], "stage": result.get("stage", ""), "reason": result.get("reason", "")}
             if name in over:
                 row.update(status="FAILED", stage=over[name].split()[0], reason=over[name])
-        row.update(test=name, family=item.family, duration_s=round(timing.get(name, 0.0), 1),
-                   log_src=str(tests_dir / (name + ".log")))
+        row.update(test=item.test, family=item.family, duration_s=round(timing.get(name, 0.0), 1),
+                   log_src=str(test_log(tests_dir, name)))
         rows.append(row)
     if results:
         log("Makefile.test: ignored result files of tests that were not run: " + ", ".join(sorted(results)))

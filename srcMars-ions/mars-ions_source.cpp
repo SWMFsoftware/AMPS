@@ -223,6 +223,11 @@ long int MarsIon::SourceProcesses::InjectParticles() {
     //generate new particle
     //the particle buffer used to set-up the new particle data
     PIC::ParticleBuffer::byte *newParticleData,tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
+
+    //the template is copied whole into the new particle (memcpy below), so the fields that are not set here
+    //must not carry stack garbage: the nightly-test mode orders the particles of a cell by a checksum of all
+    //their bytes (PIC::Parallel::ExchangeParticleData_*()), so garbage changed the particle order
+    memset(tempParticleData,0,PIC::ParticleBuffer::ParticleDataLength);
     PIC::ParticleBuffer::SetParticleAllocated((PIC::ParticleBuffer::byte*)tempParticleData);
 
     //set the default value for the correction factor

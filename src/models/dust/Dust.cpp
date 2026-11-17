@@ -1008,7 +1008,7 @@ void ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::SampleDi
 
   if(SampleNodes==NULL) return;
 
-  for (node=SampleNodes[0],nProbe=0;nProbe<nSamplingLocations;node=SampleNodes[++nProbe]) if ((block=node->block)!=NULL) {
+  for (nProbe=0;nProbe<nSamplingLocations;nProbe++) if ((block=(node=SampleNodes[nProbe])->block)!=NULL) { //"node=SampleNodes[++nProbe]" read past the end of SampleNodes
     //    ptr=block->GetCenterNode(SampleLocalCellNumber[nProbe])->FirstCellParticle;
     int i,j,k;
 

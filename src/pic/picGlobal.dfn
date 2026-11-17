@@ -511,4 +511,23 @@ when each MPI process that runs AMPS is discunected from each other (_PIC_DISCON
 #define _PIC_ECSIM_MODE_NEW_      1
 #define _PIC_ECSIM_MODE_ _PIC_ECSIM_MODE_NEW_
 
+//The settings of the application input ('define MACRO VALUE' lines and what ampsConfig.pl and the application's
+//configuration scripts derive from the input) are inserted above the marker line below
+//(ampsConfigLib::InsertText2File), i.e. inside the include guard: a repeated #include of this file must not
+//apply them again in the middle of a translation unit.
+//$MARKER:APPLICATION-SETTINGS$
+
+//Nightly tests (compiled with -D _PIC_NIGHTLY_TEST_MODE_=_PIC_MODE_ON_, Config.pl -amps-test=on): a) turn the
+//debugger mode on, and b) balance the load by the particle number, which makes the domain decomposition
+//reproducible. These settings follow the application settings and so take precedence over them.
+//'# define' is spelled with a blank so that ampsConfigLib::RedefineMacro, which rewrites every line
+//'#define MACRO ...' of this file, leaves these lines unchanged.
+#if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
+# undef _PIC_DEBUGGER_MODE_
+# define _PIC_DEBUGGER_MODE_ _PIC_DEBUGGER_MODE_ON_
+
+# undef _PIC_DYNAMIC_LOAD_BALANCING_MODE_
+# define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_
+#endif
+
 #endif //_PIC_GLOBAL_DEFINITIONS_H_  

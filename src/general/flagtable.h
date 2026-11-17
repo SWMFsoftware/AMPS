@@ -147,26 +147,29 @@ public:
     }
   }
 
+  //make every thread's table hold NewFlagTableElementSize flags. SetFlag() writes the table of the calling OpenMP thread,
+  //while GatherFlagsOpenMP()/Gather() combine the tables into table 0 and Test() reads table 0 only: all of them must
+  //cover the whole range. (Resizing only the table of the calling thread, as before, left table 0 short when another
+  //thread executed the 'omp single' region of DistributeBoundaryCutBlocks(): Test() then stopped the run.)
   void SetSize(int NewFlagTableElementSize) {
-    int iByte,iThreadOpenMP=0;
+    int iByte=NewFlagTableElementSize/8;
 
-    #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-    iThreadOpenMP=omp_get_thread_num();
-    #endif
-
-    iByte=NewFlagTableElementSize/8;
-
-    if (iByte>=FlagTableLength[iThreadOpenMP]) {
+    for (int thread=0;thread<nThreadsOpenMP;thread++) if (iByte>=FlagTableLength[thread]) {
       //re-allocate the table
       int NewFlagTableLength=(int)(FlagTableLengthIncrement*iByte);
 
-      AllocateTable(NewFlagTableLength,iThreadOpenMP);
+      if (NewFlagTableLength<=iByte) NewFlagTableLength=iByte+1;
+      AllocateTable(NewFlagTableLength,thread);
     }
   }
 
-  //combine flags from all OpenMP threads
+  //combine flags from all OpenMP threads (a table shorter than table 0 holds no flag beyond its length)
   void GatherFlagsOpenMP() {
-    for (int thread=1;thread<nThreadsOpenMP;thread++) for (int i=0;i<FlagTableLength[0];i++) FlagTable[0][i]|=FlagTable[thread][i];
+    for (int thread=1;thread<nThreadsOpenMP;thread++) {
+      int n=(FlagTableLength[thread]<FlagTableLength[0]) ? FlagTableLength[thread] : FlagTableLength[0];
+
+      for (int i=0;i<n;i++) FlagTable[0][i]|=FlagTable[thread][i];
+    }
   }
 
   //collect flags from all processors (strided)

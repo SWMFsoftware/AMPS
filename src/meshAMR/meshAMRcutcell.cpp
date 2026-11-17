@@ -500,70 +500,84 @@ bool PointInTriangulatedComputationalDomain(
     double *x,CutCell::cTriangleFace *surface,int nSurface,double EPS) {
   if (surface==NULL || nSurface<=0) return true;
 
-  double direction[3]={ClassificationRayDirection[0],ClassificationRayDirection[1],ClassificationRayDirection[2]};
-  const double directionLength=sqrt(direction[0]*direction[0]+
-      direction[1]*direction[1]+direction[2]*direction[2]);
-  vector<double> parameters;
+  /* The parity of the crossings of a ray is ambiguous when the ray passes within the tolerance of an edge or a vertex
+   * of the surface: RayIntersection() then reports the faces that share the edge, and whether their hits are one
+   * crossing (the surface crosses the ray) or none (the ray touches a ridge or a valley of the surface) cannot be
+   * decided from the ray parameters.  Merging equal parameters into one crossing (the procedure until 2026-11)
+   * misclassified such points: e.g. a sub-cell of a cylinder (test/srcCutCellTetraTest) counted as inside the body,
+   * 1/64 of the cell volume lost.  A ray with such a hit is rejected and the next direction is used; only when all
+   * directions are ambiguous the majority of the parities of the merged crossings decides. */
+  static const double directions[7][3]={
+    {ClassificationRayDirection[0],ClassificationRayDirection[1],ClassificationRayDirection[2]},
+    {-0.5617349158,0.8126394771,0.1552897640},{0.2364829515,-0.4150392311,0.8784531427},{-0.7071067812,-0.3162277660,-0.6324555320},
+    {0.6146933536,0.2785329124,-0.7380917716},{-0.1883578281,-0.9417891405,0.2785329124},{0.9325048676,-0.3060718243,0.1915208563}};
 
   const cClassificationRayTree *tree=ActiveClassificationRayTree;
+  const bool useTree=(tree!=NULL)&&(tree->Matches(surface,nSurface,EPS));
+  int votesInside=0,votesOutside=0;
 
-  if ((tree!=NULL)&&(tree->Matches(surface,nSurface,EPS))) {
-    vector<int> candidates;
+  for (int idir=0;idir<7;idir++) {
+    double direction[3]={directions[idir][0],directions[idir][1],directions[idir][2]};
+    const double directionLength=sqrt(direction[0]*direction[0]+direction[1]*direction[1]+direction[2]*direction[2]);
+    vector<double> parameters;
+    bool ambiguous=false;
 
-    tree->GetCandidates(x,direction,candidates);
+    auto Test=[&](int nface) {
+      double t,xLocal[2],xIntersection[3];
 
-    for (vector<int>::const_iterator it=candidates.begin();it!=candidates.end();++it) {
-      double t;
-      if (surface[*it].RayIntersection(x,direction,t,EPS)) {
+      if (surface[nface].RayIntersection(x,direction,t,xLocal,xIntersection,EPS)) {
+        //the hit is within the tolerance of an edge (or of the origin): the barycentric margin of RayIntersection()
+        const double faceLength=fmax(surface[nface].e0Length,surface[nface].e1Length);
+        const double margin=(faceLength>0.0) ? 2.0*EPS/faceLength+1.0E-9 : 1.0E-9;
+
+        if ((xLocal[0]<margin)||(xLocal[1]<margin)||(xLocal[0]+xLocal[1]>1.0-margin)||(t*directionLength<=EPS)) ambiguous=true;
         parameters.push_back(t);
       }
+    };
+
+    if (useTree) {
+      vector<int> candidates;
+
+      tree->GetCandidates(x,direction,candidates);
+      for (vector<int>::const_iterator it=candidates.begin();it!=candidates.end();++it) Test(*it);
+
+      if (VerifyClassificationAcceleration()) {
+        vector<double> accelerated=parameters;
+        bool a=ambiguous;
+
+        parameters.clear();
+        for (int nface=0;nface<nSurface;nface++) Test(nface);
+        sort(accelerated.begin(),accelerated.end()),sort(parameters.begin(),parameters.end());
+        if (accelerated!=parameters) exit(__LINE__,__FILE__,"Error: the accelerated surface classification differs from the linear scan");
+        ambiguous=a||ambiguous;
+      }
     }
+    else for (int nface=0;nface<nSurface;nface++) Test(nface);
 
     sort(parameters.begin(),parameters.end());
 
-    if (VerifyClassificationAcceleration()) {
-      vector<double> reference;
+    //two hits at the same distance are an edge crossing (or two sheets of the surface within the tolerance): ambiguous
+    int crossings=0;
+    double previous=0.0;
+    const double absoluteTolerance=((EPS>0.0) ? EPS : 0.0)/directionLength;
 
-      for (int nface=0;nface<nSurface;nface++) {
-        double t;
-        if (surface[nface].RayIntersection(x,direction,t,EPS)) {
-          reference.push_back(t);
-        }
+    for (vector<double>::const_iterator it=parameters.begin();it!=parameters.end();++it) {
+      const double scale=fmax(1.0,fabs(*it));
+      const double tolerance=fmax(absoluteTolerance,128.0*numeric_limits<double>::epsilon()*scale);
+
+      if (crossings==0 || fabs(*it-previous)>tolerance) {
+        previous=*it;
+        crossings++;
       }
-
-      sort(reference.begin(),reference.end());
-      if (reference!=parameters) exit(__LINE__,__FILE__,"Error: the accelerated surface classification differs from the linear scan");
-    }
-  }
-  else {
-    parameters.reserve(nSurface);
-
-    for (int nface=0;nface<nSurface;nface++) {
-      double t;
-      if (surface[nface].RayIntersection(x,direction,t,EPS)) {
-        parameters.push_back(t);
-      }
+      else ambiguous=true;
     }
 
-    sort(parameters.begin(),parameters.end());
+    if (ambiguous==false) return crossings%2==0;
+    if (crossings%2==0) votesOutside++;
+    else votesInside++;
   }
 
-  int crossings=0;
-  double previous=0.0;
-  const double absoluteTolerance=((EPS>0.0) ? EPS : 0.0)/directionLength;
-
-  for (vector<double>::const_iterator it=parameters.begin();
-       it!=parameters.end();++it) {
-    const double scale=fmax(1.0,fabs(*it));
-    const double tolerance=fmax(absoluteTolerance,
-        128.0*numeric_limits<double>::epsilon()*scale);
-    if (crossings==0 || fabs(*it-previous)>tolerance) {
-      previous=*it;
-      crossings++;
-    }
-  }
-
-  return crossings%2==0;
+  return votesOutside>=votesInside;
 }
 
 } // namespace
@@ -4032,3 +4046,685 @@ cout << "printed bloks: "<< NBLOCKS << endl;
 
     return connectivityLength;
   }
+
+//=============================================================================================================
+//Exact decomposition of a cut cell into tetrahedra (see the description in meshAMRcutcell.h)
+namespace {
+  struct cCCPoint {double x[3];};
+
+  struct cCCFace {
+    std::vector<cCCPoint> v;   //a convex polygon
+    int plane;                 //-1: a face of the cell, otherwise the index of the cutting plane
+    int side;                  //the piece is on the side 'side' (+1/-1) of the plane
+  };
+
+  struct cCCPiece {std::vector<cCCFace> f;};
+
+  //a face of one of the bodies that cross the cell: the vertices, the external normal and the index of the body
+  struct cCCTriangle {double v[3][3],n[3]; int body;};
+
+  struct cCCPlane {
+    double n[3],d;
+    std::vector<int> faces;    //the triangles in this plane (indices in the triangle list of the cell)
+    bool surface;              //one of them is a face of the triangulated surface (body 0)
+  };
+
+  inline double CCDot(const double *a,const double *b) {return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
+
+  double CCSignedVolume(const double *a,const double *b,const double *c,const double *d) {
+    double e1[3],e2[3],e3[3];
+    for (int i=0;i<3;i++) e1[i]=b[i]-a[i],e2[i]=c[i]-a[i],e3[i]=d[i]-a[i];
+    return (e1[0]*(e2[1]*e3[2]-e2[2]*e3[1])-e1[1]*(e2[0]*e3[2]-e2[2]*e3[0])+e1[2]*(e2[0]*e3[1]-e2[1]*e3[0]))/6.0;
+  }
+
+  void CCCentroid(const cCCPiece& p,double *c) {
+    int n=0;
+    c[0]=c[1]=c[2]=0.0;
+    for (size_t i=0;i<p.f.size();i++) for (size_t j=0;j<p.f[i].v.size();j++,n++) for (int d=0;d<3;d++) c[d]+=p.f[i].v[j].x[d];
+    if (n>0) for (int d=0;d<3;d++) c[d]/=n;
+  }
+
+  //volume of a convex piece: sum of the tetrahedra (centroid, face fan)
+  double CCVolume(const cCCPiece& p) {
+    double c[3],v=0.0;
+    CCCentroid(p,c);
+    for (size_t i=0;i<p.f.size();i++) {
+      const std::vector<cCCPoint>& f=p.f[i].v;
+      for (size_t j=1;j+1<f.size();j++) v+=fabs(CCSignedVolume(c,f[0].x,f[j].x,f[j+1].x));
+    }
+    return v;
+  }
+
+  //split the convex piece 'p' by the plane (n,d): the parts with n.x-d>0 and <0 (empty if there is none)
+  void CCSplit(const cCCPiece& p,const cCCPlane& pl,int iplane,double tol,cCCPiece& pos,cCCPiece& neg,bool& hasPos,bool& hasNeg) {
+    double smin=1.0E300,smax=-1.0E300;
+    pos.f.clear(),neg.f.clear();
+
+    for (size_t i=0;i<p.f.size();i++) for (size_t j=0;j<p.f[i].v.size();j++) {
+      double s=CCDot(pl.n,p.f[i].v[j].x)-pl.d;
+      smin=std::min(smin,s),smax=std::max(smax,s);
+    }
+
+    if (smax<=tol) {neg=p,hasNeg=true,hasPos=false; return;}
+    if (smin>=-tol) {pos=p,hasPos=true,hasNeg=false; return;}
+
+    std::vector<cCCPoint> cap;
+
+    for (size_t i=0;i<p.f.size();i++) {
+      const std::vector<cCCPoint>& v=p.f[i].v;
+      cCCFace fp,fn;
+      size_t nv=v.size();
+      std::vector<double> s(nv);
+
+      fp.plane=fn.plane=p.f[i].plane,fp.side=fn.side=p.f[i].side;
+      for (size_t j=0;j<nv;j++) {
+        s[j]=CCDot(pl.n,v[j].x)-pl.d;
+        if (fabs(s[j])<=tol) s[j]=0.0;
+      }
+
+      for (size_t j=0;j<nv;j++) {
+        size_t k=(j+1)%nv;
+
+        if (s[j]>=0.0) fp.v.push_back(v[j]);
+        if (s[j]<=0.0) fn.v.push_back(v[j]);
+        if (s[j]==0.0) cap.push_back(v[j]);
+
+        if (((s[j]>0.0)&&(s[k]<0.0))||((s[j]<0.0)&&(s[k]>0.0))) {
+          cCCPoint q;
+          double t=s[j]/(s[j]-s[k]);
+          for (int d=0;d<3;d++) q.x[d]=v[j].x[d]+t*(v[k].x[d]-v[j].x[d]);
+          fp.v.push_back(q),fn.v.push_back(q),cap.push_back(q);
+        }
+      }
+
+      if (fp.v.size()>=3) pos.f.push_back(fp);
+      if (fn.v.size()>=3) neg.f.push_back(fn);
+    }
+
+    //the cap: unique points ordered around their centroid in the plane
+    std::vector<cCCPoint> u;
+    for (size_t i=0;i<cap.size();i++) {
+      bool found=false;
+      for (size_t j=0;(j<u.size())&&(found==false);j++) {
+        double d2=0.0;
+        for (int d=0;d<3;d++) d2+=pow(cap[i].x[d]-u[j].x[d],2);
+        if (d2<=tol*tol) found=true;
+      }
+      if (found==false) u.push_back(cap[i]);
+    }
+
+    if (u.size()>=3) {
+      double c[3]={0.0,0.0,0.0},e0[3],e1[3],l;
+      for (size_t i=0;i<u.size();i++) for (int d=0;d<3;d++) c[d]+=u[i].x[d]/u.size();
+
+      //a basis of the plane
+      if (fabs(pl.n[0])<0.9) e0[0]=0.0,e0[1]=pl.n[2],e0[2]=-pl.n[1];
+      else e0[0]=-pl.n[2],e0[1]=0.0,e0[2]=pl.n[0];
+      l=sqrt(CCDot(e0,e0));
+      for (int d=0;d<3;d++) e0[d]/=l;
+      e1[0]=pl.n[1]*e0[2]-pl.n[2]*e0[1],e1[1]=pl.n[2]*e0[0]-pl.n[0]*e0[2],e1[2]=pl.n[0]*e0[1]-pl.n[1]*e0[0];
+
+      std::vector<std::pair<double,int> > a(u.size());
+      for (size_t i=0;i<u.size();i++) {
+        double r[3]={u[i].x[0]-c[0],u[i].x[1]-c[1],u[i].x[2]-c[2]};
+        a[i]=std::make_pair(atan2(CCDot(r,e1),CCDot(r,e0)),(int)i);
+      }
+      std::sort(a.begin(),a.end());
+
+      cCCFace fp,fn;
+      fp.plane=fn.plane=iplane,fp.side=1,fn.side=-1;
+      for (size_t i=0;i<a.size();i++) fp.v.push_back(u[a[i].second]),fn.v.push_back(u[a[i].second]);
+      pos.f.push_back(fp),neg.f.push_back(fn);
+    }
+
+    hasPos=(pos.f.size()>=4),hasNeg=(neg.f.size()>=4);
+  }
+
+  //do the convex polygon 'cap' (in the plane pl) and one of the faces of the surface in that plane overlap (by more than
+  //the tolerance: a face that only touches the boundary of the cap does not cross the piece)
+  bool CCCapOverlapsFace(const std::vector<cCCPoint>& cap,const cCCPlane& pl,const std::vector<cCCTriangle>& tri,double tol) {
+    double e0[3],e1[3],l;
+
+    if (fabs(pl.n[0])<0.9) e0[0]=0.0,e0[1]=pl.n[2],e0[2]=-pl.n[1];
+    else e0[0]=-pl.n[2],e0[1]=0.0,e0[2]=pl.n[0];
+    l=sqrt(CCDot(e0,e0));
+    for (int d=0;d<3;d++) e0[d]/=l;
+    e1[0]=pl.n[1]*e0[2]-pl.n[2]*e0[1],e1[1]=pl.n[2]*e0[0]-pl.n[0]*e0[2],e1[2]=pl.n[0]*e0[1]-pl.n[1]*e0[0];
+
+    std::vector<double> a;
+    for (size_t i=0;i<cap.size();i++) a.push_back(CCDot(cap[i].x,e0)),a.push_back(CCDot(cap[i].x,e1));
+
+    for (size_t n=0;n<pl.faces.size();n++) {
+      const cCCTriangle& f=tri[pl.faces[n]];
+      double b[6];
+      for (int k=0;k<3;k++) b[2*k]=CCDot(f.v[k],e0),b[2*k+1]=CCDot(f.v[k],e1);
+
+      //separating axis: the normals of the edges of both polygons
+      bool separated=false;
+      for (int poly=0;(poly<2)&&!separated;poly++) {
+        const double *p=(poly==0) ? a.data() : b;
+        int np=(poly==0) ? (int)cap.size() : 3;
+
+        for (int i=0;(i<np)&&!separated;i++) {
+          int j=(i+1)%np;
+          double ax=-(p[2*j+1]-p[2*i+1]),ay=p[2*j]-p[2*i],al=sqrt(ax*ax+ay*ay);
+          if (!(al>0.0)) continue;
+          ax/=al,ay/=al;
+
+          double amin=1.0E300,amax=-1.0E300,bmin=1.0E300,bmax=-1.0E300;
+          for (size_t k=0;k<cap.size();k++) {double t=a[2*k]*ax+a[2*k+1]*ay; amin=std::min(amin,t),amax=std::max(amax,t);}
+          for (int k=0;k<3;k++) {double t=b[2*k]*ax+b[2*k+1]*ay; bmin=std::min(bmin,t),bmax=std::max(bmax,t);}
+          if ((amax<=bmin+tol)||(bmax<=amin+tol)) separated=true;
+        }
+      }
+
+      if (!separated) return true;
+    }
+
+    return false;
+  }
+
+  //is the point x of the plane pl inside one of the faces of the body 'body' that lie in the plane
+  bool CCOnSurfaceFace(const double *x,const cCCPlane& pl,const std::vector<cCCTriangle>& tri,int body,double tol) {
+    for (size_t n=0;n<pl.faces.size();n++) {
+      const cCCTriangle& f=tri[pl.faces[n]];
+      if (f.body!=body) continue;
+
+      const double *a=f.v[0],*b=f.v[1],*c=f.v[2];
+      double e[3][3],nn[3],area2;
+      const double *v[3]={a,b,c};
+      bool inside=true;
+
+      for (int d=0;d<3;d++) e[0][d]=b[d]-a[d],e[1][d]=c[d]-a[d];
+      nn[0]=e[0][1]*e[1][2]-e[0][2]*e[1][1],nn[1]=e[0][2]*e[1][0]-e[0][0]*e[1][2],nn[2]=e[0][0]*e[1][1]-e[0][1]*e[1][0];
+      area2=sqrt(CCDot(nn,nn));
+      if (area2<=0.0) continue;
+
+      //x is inside the triangle when it is on the inner side of the three edges (to the tolerance)
+      for (int k=0;(k<3)&&inside;k++) {
+        const double *p0=v[k],*p1=v[(k+1)%3];
+        double ed[3],r[3],cr[3],len;
+        for (int d=0;d<3;d++) ed[d]=p1[d]-p0[d],r[d]=x[d]-p0[d];
+        cr[0]=ed[1]*r[2]-ed[2]*r[1],cr[1]=ed[2]*r[0]-ed[0]*r[2],cr[2]=ed[0]*r[1]-ed[1]*r[0];
+        len=sqrt(CCDot(ed,ed));
+        if (CCDot(cr,nn)/area2<-tol*len) inside=false;
+      }
+
+      if (inside) return true;
+    }
+
+    return false;
+  }
+
+  //does the triangle v intersect the box [bmin,bmax] enlarged by tol (separating axes: the box axes, the normal of the
+  //triangle and the cross products of the edges)
+  bool CCTriangleBoxOverlap(const double v[3][3],const double *bmin,const double *bmax,double tol) {
+    double c[3],e[3],t[3][3],f[3][3],n[3];
+
+    for (int d=0;d<3;d++) c[d]=0.5*(bmin[d]+bmax[d]),e[d]=0.5*(bmax[d]-bmin[d])+tol;
+    for (int k=0;k<3;k++) for (int d=0;d<3;d++) t[k][d]=v[k][d]-c[d];
+
+    for (int d=0;d<3;d++) {
+      double mn=std::min(t[0][d],std::min(t[1][d],t[2][d])),mx=std::max(t[0][d],std::max(t[1][d],t[2][d]));
+      if ((mn>e[d])||(mx<-e[d])) return false;
+    }
+
+    for (int k=0;k<3;k++) for (int d=0;d<3;d++) f[k][d]=t[(k+1)%3][d]-t[k][d];
+    n[0]=f[0][1]*f[1][2]-f[0][2]*f[1][1],n[1]=f[0][2]*f[1][0]-f[0][0]*f[1][2],n[2]=f[0][0]*f[1][1]-f[0][1]*f[1][0];
+    if (fabs(CCDot(n,t[0]))>e[0]*fabs(n[0])+e[1]*fabs(n[1])+e[2]*fabs(n[2])) return false;
+
+    for (int k=0;k<3;k++) for (int d=0;d<3;d++) {
+      double a[3]={0.0,0.0,0.0},u[3]={0.0,0.0,0.0},p[3],r;
+      u[d]=1.0;
+      a[0]=u[1]*f[k][2]-u[2]*f[k][1],a[1]=u[2]*f[k][0]-u[0]*f[k][2],a[2]=u[0]*f[k][1]-u[1]*f[k][0];
+      for (int m=0;m<3;m++) p[m]=CCDot(a,t[m]);
+      r=e[0]*fabs(a[0])+e[1]*fabs(a[1])+e[2]*fabs(a[2]);
+      if ((std::min(p[0],std::min(p[1],p[2]))>r)||(std::max(p[0],std::max(p[1],p[2]))<-r)) return false;
+    }
+
+    return true;
+  }
+}
+
+//=============================================================================================================
+//An analytic sphere as a closed triangulated surface (the 'cube sphere', see meshAMRcutcell.h)
+double CutCell::SphereApproximationTolerance=1.0E-2;
+
+CutCell::cSphereApproximation::cSphereApproximation() : R(0.0),N(0) {
+  x0[0]=x0[1]=x0[2]=0.0;
+}
+
+CutCell::cSphereApproximation::cSphereApproximation(const double *Center,double Radius,int Resolution) : R(Radius),N(Resolution) {
+  for (int d=0;d<3;d++) x0[d]=Center[d];
+}
+
+int CutCell::cSphereApproximation::Resolution(double Radius,double CellSize) {
+  //the largest facets (at the centers of the cube faces) have the circumradius angle sqrt(2)/N, so the distance between a
+  //facet and the sphere is at most R(1-cos(sqrt(2)/N)) ~ R/N^2
+  double n=sqrt(Radius/(SphereApproximationTolerance*CellSize));
+
+  if (!(n<16384.0)) n=16384.0;
+  return std::max(4,(int)ceil(n));
+}
+
+//the vertex of the integer point (ix,iy,iz) of the cube [0,N]^3 (one coordinate is 0 or N): all faces that share it
+//compute it from the same numbers, so the surface is closed
+void CutCell::cSphereApproximation::Vertex(int ix,int iy,int iz,double *x) const {
+  double p[3]={(double)(2*ix-N)/N,(double)(2*iy-N)/N,(double)(2*iz-N)/N};
+  double l=sqrt(p[0]*p[0]+p[1]*p[1]+p[2]*p[2]);
+
+  for (int d=0;d<3;d++) x[d]=x0[d]+R*p[d]/l;
+}
+
+//triangle t (0,1) of the grid quad (i,j) of the cube face 'face' (axis face/2, at -1 for an even 'face' and +1 for an odd
+//one; the grid runs along the axes (axis+1)%3 and (axis+2)%3), oriented counterclockwise seen from outside
+void CutCell::cSphereApproximation::Facet(int face,int i,int j,int t,double v[3][3]) const {
+  int k=face/2,a=(k+1)%3,b=(k+2)%3,I[4][3];
+  const int di[4]={0,1,1,0},dj[4]={0,0,1,1};
+  const int corner[2][3]={{0,1,2},{0,2,3}};
+
+  for (int m=0;m<4;m++) I[m][k]=(face%2==1) ? N : 0,I[m][a]=i+di[m],I[m][b]=j+dj[m];
+
+  for (int m=0;m<3;m++) {
+    int c=corner[t][(face%2==1) ? m : ((m==0) ? 0 : 3-m)];
+    Vertex(I[c][0],I[c][1],I[c][2],v[m]);
+  }
+}
+
+//is the point x inside the polyhedron: the ray from the center through x crosses the facet that the gnomonic
+//projection of x onto the cube selects
+bool CutCell::cSphereApproximation::Inside(const double *x) const {
+  double r[3],m;
+  int k=0;
+
+  for (int d=0;d<3;d++) r[d]=x[d]-x0[d];
+  if (fabs(r[1])>fabs(r[k])) k=1;
+  if (fabs(r[2])>fabs(r[k])) k=2;
+  m=fabs(r[k]);
+  if (m==0.0) return true;
+
+  int a=(k+1)%3,b=(k+2)%3,face=2*k+((r[k]>0.0) ? 1 : 0);
+  double u=r[a]/m,w=r[b]/m;
+  int i=(int)floor(0.5*(u+1.0)*N),j=(int)floor(0.5*(w+1.0)*N);
+
+  i=std::max(0,std::min(N-1,i)),j=std::max(0,std::min(N-1,j));
+
+  double v[3][3],e1[3],e2[3],n[3],s[3];
+  int t=((u-(double)(2*i-N)/N)>=(w-(double)(2*j-N)/N)) ? 0 : 1;
+
+  Facet(face,i,j,t,v);
+  for (int d=0;d<3;d++) e1[d]=v[1][d]-v[0][d],e2[d]=v[2][d]-v[0][d],s[d]=x[d]-v[0][d];
+  n[0]=e1[1]*e2[2]-e1[2]*e2[1],n[1]=e1[2]*e2[0]-e1[0]*e2[2],n[2]=e1[0]*e2[1]-e1[1]*e2[0];
+
+  return CCDot(n,s)<0.0;
+}
+
+double CutCell::cSphereApproximation::InnerRadius() const {
+  //no point of a facet is closer to the center than R*cos(theta), theta=2*sqrt(2)/N bounds the angular size of a facet
+  double theta=2.0*sqrt(2.0)/N;
+  return (theta<0.5*acos(-1.0)) ? R*cos(theta) : 0.0;
+}
+
+void CutCell::cSphereApproximation::GetFacets(const double *xmin,const double *xmax,double tol,std::vector<cFacet>& Facets) const {
+  double dmin2=0.0,dmax2=0.0;
+
+  //the box misses the shell between the inner radius and the sphere
+  for (int d=0;d<3;d++) {
+    double lo=xmin[d]-x0[d],hi=xmax[d]-x0[d];
+    if (lo>0.0) dmin2+=lo*lo;
+    else if (hi<0.0) dmin2+=hi*hi;
+    dmax2+=std::max(lo*lo,hi*hi);
+  }
+
+  if ((sqrt(dmin2)>R+tol)||(sqrt(dmax2)<InnerRadius()-tol)) return;
+
+  //a facet of the cube face (k,s) has s*(x_k-x0_k)>=R/sqrt(3) (every vertex has), and its gnomonic projection onto the cube
+  //face is inside its grid quad: the quads that the projection of the box overlaps (with one quad of margin) are tested
+  const double rk=R/sqrt(3.0)*(1.0-1.0E-12)-tol;
+
+  for (int face=0;face<6;face++) {
+    int k=face/2,a=(k+1)%3,b=(k+2)%3;
+    double s=(face%2==1) ? 1.0 : -1.0,lo[3],hi[3];
+
+    for (int d=0;d<3;d++) lo[d]=xmin[d]-x0[d]-tol,hi[d]=xmax[d]-x0[d]+tol;
+    if (s>0.0) lo[k]=std::max(lo[k],rk);
+    else hi[k]=std::min(hi[k],-rk);
+    if (lo[k]>hi[k]) continue;
+
+    double umin=1.0E300,umax=-1.0E300,vmin=1.0E300,vmax=-1.0E300;
+
+    for (int c=0;c<8;c++) {
+      double p[3]={(c&1) ? hi[0] : lo[0],(c&2) ? hi[1] : lo[1],(c&4) ? hi[2] : lo[2]};
+      double m=s*p[k],u=p[a]/m,v=p[b]/m;
+      umin=std::min(umin,u),umax=std::max(umax,u),vmin=std::min(vmin,v),vmax=std::max(vmax,v);
+    }
+
+    if ((umin>1.0)||(umax<-1.0)||(vmin>1.0)||(vmax<-1.0)) continue;
+
+    int i0=std::max(0,(int)floor(0.5*(std::max(umin,-1.0)+1.0)*N)-1),i1=std::min(N-1,(int)floor(0.5*(std::min(umax,1.0)+1.0)*N)+1);
+    int j0=std::max(0,(int)floor(0.5*(std::max(vmin,-1.0)+1.0)*N)-1),j1=std::min(N-1,(int)floor(0.5*(std::min(vmax,1.0)+1.0)*N)+1);
+
+    for (int i=i0;i<=i1;i++) for (int j=j0;j<=j1;j++) for (int t=0;t<2;t++) {
+      cFacet f;
+
+      Facet(face,i,j,t,f.x);
+      if (CCTriangleBoxOverlap(f.x,xmin,xmax,tol)) Facets.push_back(f);
+    }
+  }
+}
+
+//=============================================================================================================
+//The decomposition of a cell by the bodies: the triangulated surface (the faces of FaceList that intersect the cell)
+//and the analytic spheres (their facets that intersect the cell)
+int CutCell::GetCutCellTetrahedra(const double *xmin,const double *xmax,CutCell::cTriangleFaceDescriptor* FaceList,const std::vector<cSphereApproximation>& Spheres,double EPS,
+    std::vector<CutCell::cCutCellTetrahedron>* Outside,std::vector<CutCell::cCutCellTetrahedron>* Inside,double* OutsideVolume,double* InsideVolume) {
+  double h=0.0,vCell=1.0,bmin[3],bmax[3];
+
+  for (int d=0;d<3;d++) {
+    h=std::max(h,xmax[d]-xmin[d]),vCell*=xmax[d]-xmin[d];
+    bmin[d]=xmin[d],bmax[d]=xmax[d];
+  }
+
+  //tolerance of the geometric decisions: round-off of the coordinates
+  double scale=h;
+  for (int d=0;d<3;d++) scale=std::max(scale,std::max(fabs(xmin[d]),fabs(xmax[d])));
+  const double tol=1.0E-11*scale;
+
+  if (OutsideVolume!=NULL) *OutsideVolume=0.0;
+  if (InsideVolume!=NULL) *InsideVolume=0.0;
+
+  //the bodies: 0 is the triangulated surface (when there is one), 1+n the sphere n; the faces of each body that may
+  //cross the cell. The faces of the surface are taken in the order of the surface array: the cut-face list of a block
+  //has a different order on the process that generated the mesh and on those that read it, and the result must not
+  //depend on it
+  std::vector<cCCTriangle> tri;
+  const int nBodies=1+(int)Spheres.size();
+  std::vector<int> nBodyFaces(nBodies,0);
+
+  {
+    std::vector<CutCell::cTriangleFace*> candidates;
+
+    for (CutCell::cTriangleFaceDescriptor *t=FaceList;t!=NULL;t=t->next) {
+      if (t->TriangleFace->BlockIntersection(bmin,bmax,EPS)==true) candidates.push_back(t->TriangleFace);
+    }
+
+    std::sort(candidates.begin(),candidates.end());
+    candidates.erase(std::unique(candidates.begin(),candidates.end()),candidates.end());
+
+    for (size_t ic=0;ic<candidates.size();ic++) {
+      cCCTriangle t;
+      const double *v[3]={candidates[ic]->x0Face,candidates[ic]->x1Face,candidates[ic]->x2Face};
+
+      for (int k=0;k<3;k++) for (int d=0;d<3;d++) t.v[k][d]=v[k][d];
+      for (int d=0;d<3;d++) t.n[d]=candidates[ic]->ExternalNormal[d];
+      t.body=0;
+      tri.push_back(t);
+    }
+
+    for (size_t ns=0;ns<Spheres.size();ns++) {
+      std::vector<cSphereApproximation::cFacet> facets;
+
+      Spheres[ns].GetFacets(xmin,xmax,tol,facets);
+
+      for (size_t n=0;n<facets.size();n++) {
+        cCCTriangle t;
+        double e1[3],e2[3];
+
+        for (int k=0;k<3;k++) for (int d=0;d<3;d++) t.v[k][d]=facets[n].x[k][d];
+        for (int d=0;d<3;d++) e1[d]=t.v[1][d]-t.v[0][d],e2[d]=t.v[2][d]-t.v[0][d];
+        t.n[0]=e1[1]*e2[2]-e1[2]*e2[1],t.n[1]=e1[2]*e2[0]-e1[0]*e2[2],t.n[2]=e1[0]*e2[1]-e1[1]*e2[0];
+        t.body=1+(int)ns;
+        tri.push_back(t);
+      }
+    }
+
+    for (size_t n=0;n<tri.size();n++) nBodyFaces[tri[n].body]++;
+  }
+
+  //the planes of the faces (coplanar faces share a plane)
+  std::vector<cCCPlane> planes;
+
+  for (size_t it=0;it<tri.size();it++) {
+    double n[3],l;
+
+    for (int d=0;d<3;d++) n[d]=tri[it].n[d];
+    l=sqrt(CCDot(n,n));
+    if (!(l>0.0)) continue;
+    for (int d=0;d<3;d++) n[d]/=l;
+
+    double dd=CCDot(n,tri[it].v[0]);
+    bool found=false;
+
+    //faces of the triangulated surface whose planes nearly coincide inside the cell (they differ by less than 1e-4 of
+    //the cell size at its corners: coplanar faces, or a step of the surface below that size, as in the test-1853-shape
+    //surface) share one plane: two splits by nearly coincident planes create slivers whose splitting is not reliable.
+    //The facets of a sphere approximation are well shaped, but the two triangles of a grid quad are nearly coplanar:
+    //they share a plane only when they coincide to the round-off, so the approximation is decomposed exactly
+    for (size_t i=0;(i<planes.size())&&(found==false);i++) if (CCDot(planes[i].n,n)>0.0) {
+      double diff=0.0,merge=((tri[it].body==0)||planes[i].surface) ? std::max(1.0E-4*h,tol) : tol;
+
+      for (int ic=0;ic<8;ic++) {
+        double x[3]={(ic&1) ? xmax[0] : xmin[0],(ic&2) ? xmax[1] : xmin[1],(ic&4) ? xmax[2] : xmin[2]};
+        diff=std::max(diff,fabs((CCDot(planes[i].n,x)-planes[i].d)-(CCDot(n,x)-dd)));
+      }
+
+      if (diff<merge) {
+        planes[i].faces.push_back((int)it),found=true;
+        if (tri[it].body==0) planes[i].surface=true;
+      }
+    }
+
+    if (found==false) {
+      cCCPlane p;
+      for (int d=0;d<3;d++) p.n[d]=n[d];
+      p.d=dd;
+      p.faces.push_back((int)it);
+      p.surface=(tri[it].body==0);
+      planes.push_back(p);
+    }
+  }
+
+  //the cell as a convex piece
+  cCCPiece box;
+  {
+    static const int faceCorner[6][4]={{0,2,6,4},{1,5,7,3},{0,4,5,1},{2,3,7,6},{0,1,3,2},{4,6,7,5}};
+    cCCPoint corner[8];
+
+    for (int i=0;i<8;i++) {
+      corner[i].x[0]=(i&1) ? xmax[0] : xmin[0];
+      corner[i].x[1]=(i&2) ? xmax[1] : xmin[1];
+      corner[i].x[2]=(i&4) ? xmax[2] : xmin[2];
+    }
+
+    for (int i=0;i<6;i++) {
+      cCCFace f;
+      f.plane=-1,f.side=0;
+      for (int j=0;j<4;j++) f.v.push_back(corner[faceCorner[i][j]]);
+      box.f.push_back(f);
+    }
+  }
+
+  std::vector<cCCPiece> pieces(1,box);
+
+  for (size_t ip=0;ip<planes.size();ip++) {
+    std::vector<cCCPiece> next;
+
+    for (size_t i=0;i<pieces.size();i++) {
+      cCCPiece pos,neg;
+      bool hasPos,hasNeg;
+
+      CCSplit(pieces[i],planes[ip],ip,tol,pos,neg,hasPos,hasNeg);
+
+      //the piece is split only where a face of the surface in this plane crosses it: a piece that the plane crosses
+      //outside of those faces is not crossed by the surface there (fewer and less degenerate pieces)
+      if (hasPos&&hasNeg) {
+        const cCCFace *cap=NULL;
+        for (size_t j=0;j<pos.f.size();j++) if (pos.f[j].plane==(int)ip) cap=&pos.f[j];
+
+        if ((cap!=NULL)&&(CCCapOverlapsFace(cap->v,planes[ip],tri,tol)==false)) {
+          pos=pieces[i],hasNeg=false;
+        }
+      }
+
+      //a split that does not conserve the volume (a plane that nearly coincides with a face of the piece, at an angle
+      //below the round-off) is not done: the piece stays on the side of the plane where most of it is. Not doing it
+      //misplaces the smaller part, so it is skipped only when its volume error is not small compared to that part: the
+      //vertices within 'tol' of the plane are taken on the plane, which changes the volumes by up to ~tol*area (1e-10
+      //V_cell); a fixed threshold of that order made the result depend on the round-off of the cell bounds
+      if (hasPos&&hasNeg) {
+        double v0=CCVolume(pieces[i]),vp=CCVolume(pos),vn=CCVolume(neg);
+
+        if (fabs(vp+vn-v0)>std::max(1.0E-12*vCell,1.0E-3*std::min(vp,vn))) {
+          if (vp>=vn) pos=pieces[i],hasNeg=false;
+          else neg=pieces[i],hasPos=false;
+        }
+      }
+
+      if (hasPos) next.push_back(pos);
+      if (hasNeg) next.push_back(neg);
+    }
+
+    pieces.swap(next);
+  }
+
+  //the side of a body that has no face in the cell is the same for the whole cell (evaluated once, at the center)
+  std::vector<int> cellSide(nBodies,-1);   //-1: not evaluated, 0: outside the body, 1: inside
+
+  auto BodyInside=[&] (int b,double *x) -> bool {
+    if (b==0) {
+      //(the parity of the crossings of rays with the whole surface; CutCell::CheckPointInsideDomain() is not used: it
+      //takes one random ray traced through the blocks, which can pass along an edge of the surface and misclassify the point)
+      return PointInTriangulatedComputationalDomain(x,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,EPS)==false;
+    }
+
+    return Spheres[b-1].Inside(x);
+  };
+
+  //classify and decompose the pieces
+  int nOutside=0,nInside=0;
+
+  for (size_t i=0;i<pieces.size();i++) {
+    const cCCPiece& p=pieces[i];
+    double v=CCVolume(p),c[3];
+
+    if (v<=1.0E-14*vCell) continue;   //a sliver of the size of the round-off
+
+    CCCentroid(p,c);
+
+    //the piece is in the computational domain when it is outside every body. It is outside a body when one of its faces
+    //lies on a face of that body and the piece is on the side of the external normal; a piece that does not touch the
+    //body is classified with its centroid
+    int status=0;
+
+    for (int b=0;(b<nBodies)&&(status==0);b++) {
+      bool inside;
+
+      if ((b==0)&&(CutCell::nBoundaryTriangleFaces<=0)) continue;
+
+      if (nBodyFaces[b]==0) {
+        if (cellSide[b]<0) {
+          double xc[3];
+          for (int d=0;d<3;d++) xc[d]=0.5*(xmin[d]+xmax[d]);
+          cellSide[b]=BodyInside(b,xc) ? 1 : 0;
+        }
+
+        inside=(cellSide[b]==1);
+      }
+      else {
+        int side=-1;
+        double bestArea=0.0;
+
+        for (size_t j=0;j<p.f.size();j++) if (p.f[j].plane>=0) {
+          const std::vector<cCCPoint>& fv=p.f[j].v;
+          double fc[3]={0.0,0.0,0.0},area=0.0,cr[3];
+
+          for (size_t k=0;k<fv.size();k++) for (int d=0;d<3;d++) fc[d]+=fv[k].x[d]/fv.size();
+          for (size_t k=1;k+1<fv.size();k++) {
+            double e1[3],e2[3];
+            for (int d=0;d<3;d++) e1[d]=fv[k].x[d]-fv[0].x[d],e2[d]=fv[k+1].x[d]-fv[0].x[d];
+            cr[0]=e1[1]*e2[2]-e1[2]*e2[1],cr[1]=e1[2]*e2[0]-e1[0]*e2[2],cr[2]=e1[0]*e2[1]-e1[1]*e2[0];
+            area+=0.5*sqrt(CCDot(cr,cr));
+          }
+
+          if ((area>bestArea)&&(CCOnSurfaceFace(fc,planes[p.f[j].plane],tri,b,tol))) {
+            bestArea=area;
+            side=(p.f[j].side>0) ? 0 : 1;
+          }
+        }
+
+        inside=(side>=0) ? (side==1) : BodyInside(b,c);
+      }
+
+      if (inside) status=1;
+    }
+
+    if (status==0) {
+      nOutside++;
+      if (OutsideVolume!=NULL) *OutsideVolume+=v;
+    }
+    else {
+      nInside++;
+      if (InsideVolume!=NULL) *InsideVolume+=v;
+    }
+
+    std::vector<CutCell::cCutCellTetrahedron>* list=(status==0) ? Outside : Inside;
+    if (list==NULL) continue;
+
+    //the tetrahedra: a fan from a vertex of the piece (the apex) over the faces that do not contain it (the faces that
+    //contain it would give tetrahedra of zero volume). The apex is the vertex on the most faces: fewer tetrahedra than a
+    //fan from the centroid over all faces
+    const double *apex=NULL;
+    std::vector<bool> onApex(p.f.size(),false);
+    {
+      int best=-1;
+
+      for (size_t j=0;j<p.f.size();j++) for (size_t k=0;k<p.f[j].v.size();k++) {
+        const double *x=p.f[j].v[k].x;
+        int cnt=0;
+
+        for (size_t m=0;m<p.f.size();m++) for (size_t q=0;q<p.f[m].v.size();q++) {
+          const double *y=p.f[m].v[q].x;
+          if (pow(x[0]-y[0],2)+pow(x[1]-y[1],2)+pow(x[2]-y[2],2)<=tol*tol) {cnt++; break;}
+        }
+
+        if (cnt>best) best=cnt,apex=x;
+      }
+
+      for (size_t m=0;m<p.f.size();m++) for (size_t q=0;q<p.f[m].v.size();q++) {
+        const double *y=p.f[m].v[q].x;
+        if (pow(apex[0]-y[0],2)+pow(apex[1]-y[1],2)+pow(apex[2]-y[2],2)<=tol*tol) {onApex[m]=true; break;}
+      }
+    }
+
+    for (size_t j=0;j<p.f.size();j++) if (onApex[j]==false) {
+      const std::vector<cCCPoint>& fv=p.f[j].v;
+
+      for (size_t k=1;k+1<fv.size();k++) {
+        CutCell::cCutCellTetrahedron tet;
+        double tv=CCSignedVolume(apex,fv[0].x,fv[k].x,fv[k+1].x);
+
+        if (fabs(tv)<=1.0E-16*vCell) continue;
+
+        for (int d=0;d<3;d++) {
+          tet.x[0][d]=apex[d];
+          tet.x[1][d]=fv[0].x[d];
+          tet.x[2][d]=(tv>0.0) ? fv[k].x[d] : fv[k+1].x[d];
+          tet.x[3][d]=(tv>0.0) ? fv[k+1].x[d] : fv[k].x[d];
+        }
+
+        list->push_back(tet);
+      }
+    }
+  }
+
+  if (nInside==0) return _cut_cell__outside_;
+  if (nOutside==0) return _cut_cell__inside_;
+  return _cut_cell__cut_;
+}
+
+int CutCell::GetCutCellTetrahedra(const double *xmin,const double *xmax,CutCell::cTriangleFaceDescriptor* FaceList,double EPS,
+    std::vector<CutCell::cCutCellTetrahedron>* Outside,std::vector<CutCell::cCutCellTetrahedron>* Inside,double* OutsideVolume,double* InsideVolume) {
+  static const std::vector<cSphereApproximation> NoSpheres;
+
+  return GetCutCellTetrahedra(xmin,xmax,FaceList,NoSpheres,EPS,Outside,Inside,OutsideVolume,InsideVolume);
+}

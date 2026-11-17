@@ -557,6 +557,10 @@ double Europa::SourceProcesses::totalProductionRate(int spec,void *SphereDataPoi
 
    //generate a particle
    char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
+   //the template is copied whole into the new particle: zero it, so that the fields not set below (and the
+   //flag bits of the species byte, which SetI() keeps) do not carry stack garbage
+   memset(tempParticleData,0,PIC::ParticleBuffer::ParticleDataLength);
+   PIC::ParticleBuffer::SetParticleAllocated((PIC::ParticleBuffer::byte*)tempParticleData); //as GetNewParticle() leaves a particle
 
    PIC::ParticleBuffer::SetX(x_GALL_EPHIOD_EUROPA,(PIC::ParticleBuffer::byte*)tempParticleData);
    PIC::ParticleBuffer::SetV(v_GALL_EPHIOD_EUROPA,(PIC::ParticleBuffer::byte*)tempParticleData);

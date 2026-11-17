@@ -25,6 +25,7 @@ _TARGET_DEVICE_ _CUDA_MANAGED_ long int PIC::ParticleBuffer::ParticleDataLength=
 _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::ParticleBuffer::byte *PIC::ParticleBuffer::ParticleDataBuffer=NULL;
 _TARGET_DEVICE_ _CUDA_MANAGED_ long int PIC::ParticleBuffer::MaxNPart=0;
 _TARGET_DEVICE_ _CUDA_MANAGED_ long int PIC::ParticleBuffer::NAllPart=0;
+unsigned long int PIC::ParticleBuffer::nParticleAllocationCounter=0;
 _TARGET_DEVICE_ _CUDA_MANAGED_ long int PIC::ParticleBuffer::FirstPBufferParticle=-1;
 
 _TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::ParticleBuffer::Thread::NTotalThreads=0;
@@ -478,6 +479,7 @@ long int PIC::ParticleBuffer::GetNewParticle(bool RandomThreadOpenMP) {
   if (MaxNPart==NAllPart) exit(__LINE__,__FILE__,"The particle buffer is full");
 
   NAllPart++;
+  nParticleAllocationCounter++;
   newptr=FirstPBufferParticle;
   pdataptr=GetParticleDataPointer(newptr);
   FirstPBufferParticle=GetNext(pdataptr);
@@ -486,11 +488,20 @@ long int PIC::ParticleBuffer::GetNewParticle(bool RandomThreadOpenMP) {
   ResetParticleRecordForAllocation(pdataptr);
 
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  static int thread=-1; //=omp_get_thread_num();
+  //'thread' is local: it was a static variable shared by all OpenMP threads, so two threads that allocated at the same
+  //time (e.g. the injection tasks of srcOrbiter/BoundaryInjection.cpp) could pop the same free list at once and hand
+  //out one particle twice ("the particle is re-allocated"). SerialThread keeps the former round-robin state of the
+  //calls outside parallel regions (RandomThreadOpenMP==true is allowed only there), so serial code allocates as before.
+  static int SerialThread=-1;
+  int thread;
 
-  if (RandomThreadOpenMP==false) thread=omp_get_thread_num();
+  if (RandomThreadOpenMP==false) {
+    thread=omp_get_thread_num();
+    if (omp_in_parallel()==0) SerialThread=thread;
+  }
   else {
-    if (++thread>=Thread::NTotalThreads) thread=0;
+    if (++SerialThread>=Thread::NTotalThreads) SerialThread=0;
+    thread=SerialThread;
   }
     
   if (Thread::AvailableParticleListLength[thread]==0) {
@@ -501,6 +512,8 @@ long int PIC::ParticleBuffer::GetNewParticle(bool RandomThreadOpenMP) {
         found=true;
         break;
       }
+
+      SerialThread=thread;
     }
 
     if (found==false) {
@@ -587,6 +600,7 @@ long int PIC::ParticleBuffer::GetNewParticle(long int &ListFirstParticle,bool Ra
   if (MaxNPart==NAllPart) exit(__LINE__,__FILE__,"The particle buffer is full");
 
   NAllPart++;
+  nParticleAllocationCounter++;
   newptr=FirstPBufferParticle;
   pdataptr=GetParticleDataPointer(newptr);
   FirstPBufferParticle=GetNext(pdataptr);
@@ -595,15 +609,19 @@ long int PIC::ParticleBuffer::GetNewParticle(long int &ListFirstParticle,bool Ra
   ResetParticleRecordForAllocation(pdataptr);
 
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  static int thread=-1; //=omp_get_thread_num();
+  //see GetNewParticle(bool) above: 'thread' is local, SerialThread keeps the round-robin state of the serial calls
+  static int SerialThread=-1;
+  int thread;
 
   if (RandomThreadOpenMP==false) {
     thread=omp_get_thread_num();
+    if (omp_in_parallel()==0) SerialThread=thread;
   }
   else {
     bool found=false;
 
-   if (++thread>=Thread::NTotalThreads) thread=0;
+   if (++SerialThread>=Thread::NTotalThreads) SerialThread=0;
+   thread=SerialThread;
    found=(Thread::AvailableParticleListLength[thread]!=0) ? true : false;
     
     //go through each thread
@@ -611,6 +629,8 @@ long int PIC::ParticleBuffer::GetNewParticle(long int &ListFirstParticle,bool Ra
       found=true;
       break;  
     }
+
+    SerialThread=thread;
  
     if (found==false) {
       thread=omp_get_thread_num();
@@ -1009,7 +1029,9 @@ void PIC::ParticleBuffer::CheckParticleList() {
                   double *x=PIC::ParticleBuffer::GetX(ParticleList);
                   int idim;
 
-                  for (idim=0;idim<3;idim++) if ((x[idim]<node->xmin[idim])||(node->xmax[idim]<x[idim])) {
+                  // A particle stores DIM coordinates and node->xmin/xmax have
+                  // _MESH_DIMENSION_ elements (in DIM1 spherical symmetry: the radius)
+                  for (idim=0;idim<DIM;idim++) if ((x[idim]<node->xmin[idim])||(node->xmax[idim]<x[idim])) {
                     exit(__LINE__,__FILE__,"Error: a particle is outside of the block limit");
                   }
 

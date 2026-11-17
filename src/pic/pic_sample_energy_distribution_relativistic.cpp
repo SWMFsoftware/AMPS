@@ -69,6 +69,10 @@ void PIC::EnergyDistributionSampleRelativistic::Init() {
   }
 
 
+  //no sampling locations (e.g. Earth's 3D mode without sample points): there is nothing to allocate. With
+  //nSamleLocations==0 the code below wrote SamplingBuffer[0] and SamplingBuffer[0][0] into arrays of length 0
+  if (nSamleLocations<=0) return;
+
   //allocate the sampling buffers
   SampleLocalCellNumber=new long int [nSamleLocations];
   SampleNodes=new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nSamleLocations];
@@ -107,6 +111,8 @@ void PIC::EnergyDistributionSampleRelativistic::Init() {
 //flush the sampling buffer
 void PIC::EnergyDistributionSampleRelativistic::flushSamplingBuffers() {
   long int i,TotalDataLength=nSamleLocations*PIC::nTotalSpecies*nSampledFunctionPoints;
+
+  if (SamplingBuffer==NULL) return; //no sampling locations
   double *ptr=SamplingBuffer[0][0];
 
   for (i=0;i<TotalDataLength;i++,ptr++) *ptr=0.0;
@@ -119,7 +125,8 @@ void PIC::EnergyDistributionSampleRelativistic::SampleDistributionFnction() {
   long int ptr,iProbe,spec;
   double LocalParticleWeight,e,mass,speed,CellMeasure;
 
-  for (node=SampleNodes[0],iProbe=0;iProbe<nSamleLocations;node=SampleNodes[++iProbe]) if (node->Thread==PIC::ThisThread) {
+  //take the node inside the loop: "node=SampleNodes[++iProbe]" read one element past the end of SampleNodes
+  for (iProbe=0;iProbe<nSamleLocations;iProbe++) if ((node=SampleNodes[iProbe])->Thread==PIC::ThisThread) {
     double *v;
     PIC::ParticleBuffer::byte *ParticleData;
     int i,j,k;

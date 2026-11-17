@@ -84,7 +84,10 @@ foreach (@SpeciesList) {
 
 
 open (InputFile,"<","$InputFileName") || die "Cannot find file \"$InputFileName\"\n";
-open (EXOSPHERE_USER_DEFINITIONS,">>$WorkingSourceDirectory/models/exosphere/Exosphere.dfn") || die "Cannot opne file $WorkingSourceDirectory/models/exosphere/Exosphere.dfn\n";
+#the user definitions are collected in a buffer and, after the input is read, inserted into Exosphere.dfn inside its include
+#guard (ampsConfigLib::InsertText2File): appended after the guard they would be applied again by every repeated #include of Exosphere.dfn
+my $ExosphereUserDefinitions="";
+open (EXOSPHERE_USER_DEFINITIONS,">",\$ExosphereUserDefinitions) || die "Cannot open the buffer for the user definitions of Exosphere.dfn\n";
 
 print EXOSPHERE_USER_DEFINITIONS "//The following changes are added while reading input file. [".strftime("%m/%d/%Y", localtime)."]\n";
 
@@ -1037,6 +1040,7 @@ ampsConfigLib::ChangeValueOfArray("static const bool Source_DeplitSurfaceSpecies
 
 #close the file with the user definitions 
 close(EXOSPHERE_USER_DEFINITIONS);
+ampsConfigLib::InsertText2File($ExosphereUserDefinitions,"models/exosphere/Exosphere.dfn");
 
 #substitue markers in 'Exosphere.cpp'
 my @FileContent;

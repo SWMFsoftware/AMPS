@@ -1211,6 +1211,13 @@ namespace EarthUtil {
     // When enabled, repeated mirror points and stable bounce envelopes may terminate a
     // trajectory as physically forbidden instead of letting it expire at a time limit.
     bool trapDetection{false};
+    // TRAP_STORMER: for FIELD_MODEL DIPOLE only.  A trajectory that reaches a time, step
+    // or distance limit is classified FORBIDDEN (MAGNETICALLY_TRAPPED_FORBIDDEN) when the
+    // conserved canonical azimuthal momentum confines it to a part of the meridional
+    // plane that cannot reach the outer box (Stormer forbidden region).  A proof from
+    // a conservation law, not a heuristic; trajectories it cannot prove confined stay
+    // unresolved.  Independent of TRAP_DETECTION.
+    bool trapStormer{false};
     int trapMinMirrorPoints{8};
     int trapMinBounceCycles{4};
     double trapOuterMargin_Re{1.0};
