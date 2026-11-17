@@ -10,6 +10,48 @@ relative to `COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output` unless absolut
 
 ## A. Findings
 
+### A14. Stage 2 (5 fit / fine-tuning cycles): option C stays best by ~47 %; the regularized fine tuning costs 5–13 % data cost, mostly in the last ~100 m; κ is at 0 in every fit (2026-11-17)
+
+* **Setup** (user / lead 2026-11-15/16): each chain = 5 cycles of a fit (max_nfev 4000; slope multipliers 40-50 ... 90-180
+  deg ≥ 1; D2's ft_c1..ft_c6 held at 1 unless stated) and a late-facet fine tuning (271 facets seen only in the last 5 min).
+  Regularized chains (`stage2r_*`): P_delta = f_delta C_ref mean_w (h + delta)^2, f_delta 10, cap |h + delta| ≤ ln 100,
+  templates on. Unregularized chains (`stage2_*`; softplus: chain_5cycles_smm1) as context. Final state = c5 fine tuning.
+* **Final data cost, regularized (unregularized):** C f 1 / P_m 1e-4 2.4358e-3 (2.2973e-3); C f 10 / P_m 1e-4 2.4586e-3
+  (2.2543e-3); C f 10 / P_m 0.01 3.1996e-3 (3.0375e-3); C f 1 / P_m 0.01 3.3779e-3 (2.9946e-3); C f 10 / P_m 0.01 templates
+  off 3.6519e-3; softplus 4.5925e-3 (4.2861e-3 after 5 cycles, 4.2688e-3 after 9); B bg 1e-2 5.1201e-3 (4.7834e-3); D f 0.1
+  8.1192e-3 (7.2138e-3); A rank 3 1.0694e-2 (9.4386e-3); D2 4.8864e-3. The best regularized C chain is 47 % below the
+  regularized softplus and 50 % below D2; the regularization raises the data cost by +5.3 % (C f 10 / 0.01), +6.0 %
+  (C f 1 / 1e-4), +7.0 % (B), +7.1 % (softplus), +9.1 % (C f 10 / 1e-4), +12.6 % (D), +12.8 % (C f 1 / 0.01), +13.3 % (A).
+  rms ln NG / RG (late window): best C reg. 0.0516 / 0.0470 (0.116 / 0.032), softplus reg. 0.0739 / 0.0610 (0.141 /
+  0.042), B 0.0779 / 0.0646, D 0.0999 / 0.0791, A 0.1096 / 0.0968.
+* **Where the regularization costs:** in the last ~100 m. Lowest NG residual ln(model/obs) between 100 and 10 m,
+  regularized / unregularized: softplus -0.31 / -0.15, C f 10 / 1e-4 -0.24 / -0.18, C f 10 / 0.01 -0.30, B -0.36, D -0.40,
+  A -0.48 (unreg. B -0.22, D -0.22, A -0.33); RG below 20 m regularized up to +0.11 (softplus, C P_m 1e-4), +0.19 (C P_m
+  0.01, B), +0.34 (D), +0.57 (A); unregularized within about +0.1 (A +0.18). The capped, penalized late facets can no
+  longer supply the steep NG rise and the RG level near touchdown at the same time.
+* **Multipliers:** P_m 1e-4 lets 70-80 / 80-90 deg run to 7.9e4-8.7e4 / 3.3e5-3.4e5 (regularized; unregularized up to
+  5.3e5) - not determined (A12 degeneracy); P_m 0.01 keeps one large bin (70-80 deg 290-759, templates off 80-90 deg 1305).
+  softplus reg. 60-70 deg 16.2, 90-180 deg 4.39 (the others at 1); B reg. 11.9 / 4.37; D reg. 40-50 14.6, 60-70 14.9,
+  90-180 10.1; A all six at 1.
+* **Convergence:** every last fine tuning stopped on ftol (regularized 2-16, unregularized 4-46 evaluations). Last fits: ftol except B reg. (max_nfev),
+  A reg. (max_nfev, second segment after a time limit), C f 1 / 1e-4 reg. (max_nfev); unregularized softplus c5 / c9 and
+  A at max_nfev, C f 10 / 1e-4 by xtol. Reaching max_nfev is not convergence.
+* **κ (CO2 scale on the srcCG CO2 map; 1 = the map, lower bound 0) is at its lower bound in all 59 fits checked**
+  (`kappa_check/kappa_table.txt`): the last fits of the stage-2 chains: softplus reg. 1.9e-40, B reg. 4.2e-36, D reg.
+  1.2e-45, A reg. 4.6e-12, C reg. 4.7e-22 (f 10 / 0.01), 4.2e-24 (f 1 / 0.01), 1.5e-20 (templates off), 1.7e-37 (f 10 /
+  1e-4), 1.8e-51 (f 1 / 1e-4); unregularized: softplus c5 2.7e-37, c9 1.7e-35, B 1.7e-45, D 7.1e-37, A 4.0e-13, C 5.6e-23,
+  5.6e-35, 5.9e-25, 6.5e-34. **It was already so before stage 2:** D2 2.4e-36 (fit_result.txt kappa row = fit_restart
+  value), the unbounded softplus chain c5 3.7e-37, the bounded softplus c1 / c5 / c9 4.1e-37 / 2.7e-37 / 1.7e-35, every
+  stage-1 fit and continuation of B, A, D (3.6e-47 ... 1.3e-12) and of C (1.2e-23 ... 7.2e-9; the C report's criterion
+  κ ≤ 1e-8); each first fit of a chain starts at κ ≈ 0 already (A5). Caveat (as A5 / A12): the gauges measure total
+  pressure, CO2 and H2O differ only through the production law, so κ = 0 says the fits prefer the H2O law for the whole
+  signal, not that CO2 is measured absent; several fits ended at max_nfev.
+* **Evidence:** `figures_cluster/12M/model_vs_observations_nonneg_options_stage2_final/` (summary.txt / .csv,
+  12M_stage2_*_residuals, kappa_check/; stage2_figures.py, CPU job 136130); the chain roots and their README.md /
+  HOW-TO-RERUN.md (`runs/shap8_012m_lategrid_dz1.5/nonneg/<model>/stage2r_*`, `stage2_*`).
+* **Caveats:** one chain per setting; C on CPU (the P_m 1e-4 chains: cycles 1-3 and part of 4 on CPU, the rest on the
+  GPU); the C multipliers are not determined; the fine tuning acts on 271 facets only.
+
 ### A13. Forcing more of the seen surface to be active costs fit quality; the best fit (local basis) concentrates production on steep facets (2026-11-15, stage 1)
 
 * Four non-negative activity parameterizations, all with the 7 slope-bin multipliers (0-40 held 1, six >= 1), D2's
@@ -124,7 +166,21 @@ relative to `COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output` unless absolut
   objective 5.0205e-3 -> 4.9098e-3 monotone, late rms ln NG / RG 0.140 / 0.044, multipliers 1, 1, 1.018, 290, 1.008,
   1.66; Q_H2O 1.52e25; active 22.4 %; 50 % of the seen production on 3.8e4 m^2 (facet 12232930 4.6 %); unregularized
   f1 / 0.01: data 2.9946e-3, objective 4.4228e-3, 50 % on 3.0 m^2 (two facets, 27 % / 30 %).
-* **kappa = 0 in every option C stage-2 state** (c5 fits, 2026-11-17): kappa (the CO2 scale, bound >= 0) is
+* **Regularized f_m = 1e-4 chains** (templates on, f_delta 10 + cap; 2026-11-17; c1 = the original stage-2 c1 fits,
+  c4 partly and c5 on the GPU; `tests/localnn_20261114/stage2r/chain_summary_136129.txt`): f = 10: data 2.6315e-3 (c1
+  fit) -> 2.4586e-3 (c5 ft), objective 2.7299e-3 -> 2.5930e-3; f = 1: 2.5521e-3 -> 2.4358e-3, 2.6525e-3 -> 2.5703e-3
+  (c1-c3 fits and f1 c4 / c5 at max_nfev 4000: not converged); late rms ln NG / RG 0.115 / 0.032 (both); multipliers
+  40-70 deg ~1, 70-80 deg 8.7e4 / 7.9e4, 80-90 deg 3.4e5 / 3.3e5, 90-180 deg 3.5; Q_H2O(10:33:10) 1.3e27 / 3.3e27 s^-1;
+  active seen area 4.4 % / 4.8 %; 50 % / 90 % of the seen production on 9.0e3 / 5.3e4 m^2 (f 10) and 7.7e3 / 5.2e4 m^2
+  (f 1); facet 12232930 holds 4.2 % / 4.1 %. Unregularized f_m = 1e-4 (same c1 fits): data 2.2543e-3 / 2.2973e-3,
+  50 % on 443 / 895 m^2, facet 12232930 27 % / 23 %. So with the weak multiplier penalty the data cost is the lowest of
+  all option C runs (regularized 2.44-2.46e-3 vs 3.20-3.38e-3 at f_m = 0.01), bought with steep-bin multipliers of
+  1e5 and Q_H2O 1e27+: Q is then set by unseen steep terrain multiplied by those factors, not by the data (caveat), and
+  the multipliers are only weakly determined (the global-level degeneracy).
+* **kappa = 0 in every option C stage-2 state - and in every other fit** (c5 fits, 2026-11-17; widened 2026-11-17 15:00
+  CST: kappa is at its lower bound in all 59 fits checked, all options, the softplus chains, D2 and the stage-1 fits, and
+  was so before stage 2; values in A14 and `figures_cluster/12M/model_vs_observations_nonneg_options_stage2_final/
+  kappa_check/kappa_table.txt`; the ninth C state, stage2r f1 / 1e-4: 1.8e-51). In C, kappa (the CO2 scale, bound >= 0) is
   5.6e-23 (stage2 f10 / 0.01), 5.6e-35 (f10 / 1e-4), 5.9e-25 (f1 / 0.01), 6.5e-34 (f1 / 1e-4), 1.5e-20 (stage2r f10 /
   0.01 templates off), 4.7e-22 (templates on), 1.7e-37 (stage2r f10 / 1e-4), 4.2e-24 (stage2r f1 / 0.01): at the bound
   in all eight (Q_CO2 ~ 0), as in the earlier fits (A5). With f_m = 1e-4 the steep multipliers run to 1e4 - 5e5
@@ -450,6 +506,9 @@ Data cost (lower is better; all on the lategrid base with the gauge +1.5 m and t
 
 ## D. Change log of this file
 
+* 2026-11-17 (14:50 CST): A12: the regularized f_m = 1e-4 chains (f = 10, f = 1).
+* 2026-11-17 (15:00 CST): A14 (final stage-2 comparison: costs reg. vs unreg., late residuals, multipliers,
+  convergence, kappa of all 59 fits); A12 kappa bullet widened to every fit (with the ninth C state).
 * 2026-11-17 (14:05 CST): A12: kappa = 0 in all eight C stage-2 states.
 * 2026-11-16 (00:05 CST): A12 update: stage-2 reruns, regularized fine tuning, templates on vs off.
 * 2026-11-15 (21:40 CST): A12 update: fine-tuning regularization test (C, B, D c5).

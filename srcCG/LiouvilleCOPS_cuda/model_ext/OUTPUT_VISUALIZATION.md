@@ -532,9 +532,13 @@ late window shaded and labelled): `12M_stage2_reg_best_*` (softplus reference, D
 and nfev (segments), fit penalty, rms all / late, multipliers, parameters at bounds, data cost after each cycle; pending
 chains). A chain enters when its c5 fine tuning is complete (C: also c5/analysis/report.json). No maps; the script stops
 below 25 GB free. To add chains: rerun into a new folder (or move the folder aside).
+State 2026-11-17 14:45 CST: all nine regularized chains (incl. C f 10 / f 1 with P_m 1e-4, cycles 1-3 and part of 4 on
+CPU, the rest on the GPU) and the unregularized context; `kappa_check/kappa_table.txt` (`kappa_table.py`): kappa of
+every fit (first and last fit of each chain, stage 1, softplus chains, D2) with the at-bound test.
 ```bash
 srun -p normal128cores -A general -N1 -n1 -c 8 --mem=64G -t 00:50:00 bash -c ".venv/bin/python -W ignore figures_cluster/scripts/stage2_figures.py --spec figures_cluster/scripts/data/stage2_final_spec_20261117.json --out <new folder>"
 .venv/bin/python figures_cluster/scripts/stage2_howto.py --folder <folder> --spec <spec> --log <build log> [--note ...]
+.venv/bin/python figures_cluster/scripts/kappa_table.py --spec figures_cluster/scripts/data/stage2_final_spec_20261117.json --out-dir <folder>/kappa_check
 ```
 
 ### 3.6 Other analysis figures and tables
@@ -767,3 +771,4 @@ srun -p normal128cores -A general -N1 -n1 -c 8 --mem=64G -t 00:50:00 bash -c ".v
 * 2026-11-14 (UTC 2026-11-15): 3.9 v2 (`DIAG`, `RESID`, `ACT_FROM`; `options_residual_figure.py`, `data/stage1_convergence_20261114.json`; caption wording "completed so far", "stopped on ftol"; table column width); §5 decision.
 * 2026-11-15 (UTC): 3.9 final (`RUNS`, `TEXTS`, `CONV_TERM`; `options_table.py` prev_* / penalty_mult / --conv-from-termination / setting width, `options_captions.py --texts`, `options_howto.py` ftol line; data files `stage1_final_runs_20261115.json`, `stage1_final_texts_20261115.json`; maps job 131968); §5 decision.
 * 2026-11-17 (UTC): 3.10 final stage-2 comparison (`stage2_figures.py`, `stage2_howto.py`, spec `stage2_final_spec_20261117.json`; `options_residual_figure.py` one legend column for long labels); §5 decision.
+* 2026-11-17 (UTC): 3.10 rebuilt with all nine regularized chains; `kappa_table.py` (kappa_check/).
