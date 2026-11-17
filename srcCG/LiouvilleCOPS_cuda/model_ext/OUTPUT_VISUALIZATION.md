@@ -520,6 +520,23 @@ sbatch --export=ALL,OPT_DIR=<folder> jobs/options_activity_maps.sbatch          
 .venv/bin/python figures_cluster/scripts/collect_captions.py <folder> --title "..." --order ""   # CAPTIONS.md incl. the maps
 ```
 
+### 3.10 Final stage-2 comparison (2026-11-17)
+
+`figures_cluster/12M/model_vs_observations_nonneg_options_stage2_final/` (`stage2_figures.py`, CPU, about 1 min; spec
+`figures_cluster/scripts/data/stage2_final_spec_20261117.json`): the final states (last cycle's fine tuning, c5/ft/final) of the
+regularized stage-2 chains (stage2r_*: fine tuning with P_delta, f_delta 10, cap ln 100, templates on) and, as context, the
+unregularized ones (stage2_*; softplus chain_5cycles_smm1 after 5 and 9 cycles) and D2. Figures (model_obs_figures.py style,
+late window shaded and labelled): `12M_stage2_reg_best_*` (softplus reference, D2, A, B, best C, D), `12M_stage2_C_reg_*`,
+`12M_stage2_C_unreg_*`, `12M_stage2_<A|B|D>_*` (regularized vs unregularized), `12M_stage2_softplus_*`; residuals
+`12M_stage2_{reg,unreg}_best_residuals`; `summary.txt/.csv` (final data cost, P_delta, fine-tuning and last-fit terminations
+and nfev (segments), fit penalty, rms all / late, multipliers, parameters at bounds, data cost after each cycle; pending
+chains). A chain enters when its c5 fine tuning is complete (C: also c5/analysis/report.json). No maps; the script stops
+below 25 GB free. To add chains: rerun into a new folder (or move the folder aside).
+```bash
+srun -p normal128cores -A general -N1 -n1 -c 8 --mem=64G -t 00:50:00 bash -c ".venv/bin/python -W ignore figures_cluster/scripts/stage2_figures.py --spec figures_cluster/scripts/data/stage2_final_spec_20261117.json --out <new folder>"
+.venv/bin/python figures_cluster/scripts/stage2_howto.py --folder <folder> --spec <spec> --log <build log> [--note ...]
+```
+
 ### 3.6 Other analysis figures and tables
 
 * `figures_cluster/scripts/positive_table.py`, `positive_cycles_table.py`, `finetune_table.py`, `scan_summary.py`:
@@ -698,6 +715,10 @@ sbatch --export=ALL,OPT_DIR=<folder> jobs/options_activity_maps.sbatch          
   pre-continuation stage-1 costs in the table, convergence from the terminations (ftol = converged in the optimizer's
   sense, max_nfev = not converged), the residual figure, and new activity maps (best settings changed).
 
+* 2026-11-17 (12:30 CST, lead): the final stage-2 comparison: regularized chains (and the unregularized ones as context),
+  same figure style as the final stage-1 set (NG/RG vs data, late window, residuals, cost table with final cost /
+  termination / active bounds), no maps (shared disk, small products); the two running C chains (P_m 1e-4) added when posted.
+
 ## 6. Change log of this file
 
 * 2026-11-12: created (sections 1–6; 3.5 pending).
@@ -745,3 +766,4 @@ sbatch --export=ALL,OPT_DIR=<folder> jobs/options_activity_maps.sbatch          
   `options_captions.py`, `options_howto.py`, `pub_options_activity_maps.py`, job `options_activity_maps.sbatch`); §5 decision.
 * 2026-11-14 (UTC 2026-11-15): 3.9 v2 (`DIAG`, `RESID`, `ACT_FROM`; `options_residual_figure.py`, `data/stage1_convergence_20261114.json`; caption wording "completed so far", "stopped on ftol"; table column width); §5 decision.
 * 2026-11-15 (UTC): 3.9 final (`RUNS`, `TEXTS`, `CONV_TERM`; `options_table.py` prev_* / penalty_mult / --conv-from-termination / setting width, `options_captions.py --texts`, `options_howto.py` ftol line; data files `stage1_final_runs_20261115.json`, `stage1_final_texts_20261115.json`; maps job 131968); §5 decision.
+* 2026-11-17 (UTC): 3.10 final stage-2 comparison (`stage2_figures.py`, `stage2_howto.py`, spec `stage2_final_spec_20261117.json`; `options_residual_figure.py` one legend column for long labels); §5 decision.

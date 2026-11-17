@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-14, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/localnn_report.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/localnn_report.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: d4bfd4f535c561299aecec8b6740f81fdbd76d35138b0b5b208a486db1206ffb
+# SHA256 of the run copy = SHA256 of this file without these header lines: dfb9ba03ed59c13d7beb0eef54e184d523b8562837b9ccf63c243e367a2b6e45
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: tool (option C): the per-fit numbers of the lead's item 5 (costs incl. P_m, rms ln overall / before the gap /
 #   late, bounds, Q_H2O at 10:33:10, active seen area, seen area holding 50 / 90 % of the seen production, NG / RG shares
 #   of the active area; D2 and c9 for comparison), nonneg_bins.txt in fit/final, run-root README.md and HOW-TO-RERUN.md
 #   (--docs-only after the GPU check); lambda and P_m described from the recorded settings.
 # RUN: jobs/localnn_report.sbatch (localnn_anch / localnn_post2 / model_ext_frozen/localnn_mp_20261115T020233Z).
+# 2026-11-15: stage 2: the Problem rebuilt with problem_from_meta (f_m, the held term).
+# RUN 2026-11-15: stage-2 chain post jobs 132018, 132027, 132036, 132045.
 # ==== end of header ====
 """Option C (local non-negative basis): the summary numbers of one stage-1 fit (lead 2026-11-14, item 5), the bins
 table and the run root's README.md / HOW-TO-RERUN.md. CPU (one pass over the base's kernel records for the active-area
@@ -144,8 +146,7 @@ def main(argv=None):
     design = lp.load_design(args.design)
     grid = lp.load_grid(args.grid)
     D = lp.Data(args.base, args.d2, args.point_table, design)
-    P = lp.Problem(D, design, grid, meta["templates"] == "on", meta["slope_mult_min"], design["meta"]["A_scale"],
-                   meta["lambda_C"], mult_penalty_f=float((meta.get("mult_penalty") or {}).get("f_m", 0.0)))
+    P = lp.problem_from_meta(meta, D, design, grid)
     c, m, kappa, gA, gB = P.unpack(x)
     cst, rows = P.evaluate(x)
     r = cst["r"]

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/figures_cluster/scripts/options_residual_figure.py (on Voyager: /data001/highresolu_vt/cops_output/figures_cluster/scripts/options_residual_figure.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: ec577fecb59ed3e4fcf42e20e8d3a826c06ed3c429e46bc3f400164fdb6479cb
+# SHA256 of the run copy = SHA256 of this file without these header lines: 0877407eee37ec947ad8c57509e24b24d5508277a435cab3e2f3111e6d76e97c
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: ln(model / observation) vs altitude of several fits, NG and RG in two panels, rms recomputed and checked
-#   against summary.csv (2026-11-14)
-# RUN: called by figures_12m_nonneg_options_stage1.sh with RESID=1 (CPU)
+#   against summary.csv (2026-11-14; legend in one column for long labels, 2026-11-17)
+# RUN: called by figures_12m_nonneg_options_stage1.sh (RESID=1) and stage2_figures.py (CPU)
 # ==== end of header ====
 """Log residuals ln(model / observation) of several fits against altitude, NG and RG in two panels (2026-11-14, lead: "one
 residual figure: ln(model/obs) vs altitude for NG and RG (two panels, best of each option + c9 + D2), so the fit differences
@@ -92,7 +92,8 @@ def main():
     fig, ax = plt.subplots(2, 1, figsize=(figures.DOUBLE_COLUMN_IN, 5.6), sharex=True,
                            gridspec_kw={"hspace": 0.08})
     nleg = len(fits)
-    ncol = 2
+    longest = max(len("%s; rms NG 0.000, RG 0.000" % lab) for lab, *_ in fits)
+    ncol = 2 if longest <= 66 else 1      # 2026-11-17: one column for long labels (the stage-1 sets: 2 columns, unchanged)
     fig.subplots_adjust(top=0.95 - 0.028 * (-(-nleg // ncol)), bottom=0.09, left=0.1, right=0.98)
     for i, g in enumerate(("NG", "RG")):
         x = ax[i]

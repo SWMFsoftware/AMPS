@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-14, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/localnn_degeneracy.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/localnn_degeneracy.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: fdb6cf306e9208678f68a8f673af5296ffd9517f6c7e64ee8dd708532427161d
+# SHA256 of the run copy = SHA256 of this file without these header lines: 49404879306a8b59743795272f341e683206288f6830ce0f98c9a5ebea3b49a9
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: analysis (option C, lead 2026-11-14 16:20 CST): m_b vs c_j degeneracy of a final state: effective activity per
 #   slope bin, signal share per bin, node dominance, compensation rho of each multiplier by the c_j (full Jacobian and
 #   data rows), the global level direction (all c down, multipliers up), conditioning; P_m rows included when the fit had them.
 # RUN: tests/localnn_20261114/degeneracy_run.sh (f10, f0.1); jobs/localnn_degeneracy.sbatch (P_m check, model_ext_frozen/localnn_mp_20261115T020233Z).
+# 2026-11-15: stage 2: the Problem rebuilt with problem_from_meta (f_m, the held term).
+# RUN 2026-11-15: stage-2 chain post jobs.
 # ==== end of header ====
 """Option C (local non-negative basis): is a fit degenerate between the slope-bin multipliers m_b and the local
 coefficients c_j? (lead 2026-11-14 16:20 CST, after the f = 10 anchored fit ended with m_80-90 = 3617, m_70-80 = 1608)
@@ -72,8 +74,7 @@ def main(argv=None):
     design = lp.load_design(args.design)
     grid = lp.load_grid(args.grid)
     D = lp.Data(args.base, args.d2, args.point_table, design)
-    P = lp.Problem(D, design, grid, meta["templates"] == "on", meta["slope_mult_min"], design["meta"]["A_scale"],
-                   meta["lambda_C"], mult_penalty_f=float((meta.get("mult_penalty") or {}).get("f_m", 0.0)))
+    P = lp.problem_from_meta(meta, D, design, grid)
     c, m, kappa, gA, gB = P.unpack(x)
     # 1. effective activity per bin
     with np.load(Path(args.d2) / "fit_restart.npz", allow_pickle=False) as z:

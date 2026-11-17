@@ -1,6 +1,6 @@
-# ==== version-controlled copy: header added 2026-11-14, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/localnn_problem.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/localnn_problem.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: f98d2a06d909ca0274b25c369911c8ac941fb70889516d585e58a82697213289
+# SHA256 of the run copy = SHA256 of this file without these header lines: 9d59f19ff7973205a6cfc8ea20768418a7fde629d60fcf3d530bbb246c6427fb
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: module (option C). The fit problem on CPU: D2's selection, W10x5 (positive_problem.LateLayout), grain, crossing
 #   rows (grain_crossing), smoothness rows, residuals, Jacobian, start projection (NNLS), lambda rule, table compare.
@@ -8,6 +8,11 @@
 #   sqrt(2 f_m C_ref) ln m_b; absent / 0 = the previous code bitwise).
 # USED BY: localnn_fit.py, localnn_direct.py, localnn_report.py, localnn_degeneracy.py, tests (frozen localnn_anch_20261114T090437Z for
 #   stage 1 without P_m; model_ext_frozen/localnn_mp_20261115T020233Z with P_m).
+# 2026-11-15: stage 2: Problem(..., held) = the held fine-tuning term exp(h_e) (A_e = m_b (u_e + TS_e) exp(h_e)) as
+#   the exact linear correction (exp(h_e) - 1) m_b (u_e + TS_e) G[:, e] through the late kernels (localnn_late.py),
+#   exact Jacobian; held absent / all zero = the previous code bitwise; checkpoint hook in fun; held_from_meta,
+#   problem_from_meta, state_surface.
+# RUN 2026-11-15: stage-2 chains 132010-132044 (frozen model_ext_frozen/localnn_s2_20261115T185842Z).
 # ==== end of header ====
 """Option C (local non-negative basis, user 2026-11-14): the fit problem on CPU from the precomputed design matrices
 (localnn_design.py) and the coarse grid (localnn_mesh.py). The driver is localnn_fit.py.
@@ -265,7 +270,8 @@ class Data:
 
 # ------------------------------------------------------------------------------------------------ the fit problem
 class Problem:
-    def __init__(self, data, design, grid, templates, slope_mult_min, A_s, smooth_lambda=0.0, mult_penalty_f=0.0):
+    def __init__(self, data, design, grid, templates, slope_mult_min, A_s, smooth_lambda=0.0, mult_penalty_f=0.0,
+                 held=None):
         self.D, self.grid = data, grid
         self.templates = bool(templates)
         self.smm = float(slope_mult_min)
@@ -309,6 +315,40 @@ class Problem:
         self.wm = math.sqrt(2.0 * self.fm * self.cref_m) if self.fm > 0 else 0.0
         self.nfev = 0
         self.best = None
+        self.checkpoint = None
+        # held fine-tuning term exp(h_e) (stage 2, user 2026-11-15; off by default: the default path unchanged)
+        self.held = None
+        if held is not None:
+            self._setup_held(held, design, grid)
+
+    def _setup_held(self, held, design, grid):
+        """held = {"h": per-facet h (nonzero only on late facets), "LK": localnn_late.load(...), "bins", "TS"}: the
+        facets e with h_e != 0 contribute m_b (u_e + TS_e) exp(h_e) instead of m_b (u_e + TS_e); the difference is
+        the exact linear correction (exp(h_e) - 1) m_b (u_e + TS_e) G[:, e] with G = dp/dA of the late kernels."""
+        h = np.asarray(held["h"], float)
+        LK = held["LK"]
+        idx = np.flatnonzero(h != 0.0)
+        pos = np.full(len(h), -1, dtype=np.int64)
+        pos[LK["late_idx"]] = np.arange(len(LK["late_idx"]))
+        if np.any(pos[idx] < 0):
+            raise SystemExit("held facets outside the late kernels")
+        D = self.D
+        GN_all, GR_all = LK["G_NG"][:, pos[idx]], LK["G_RG"][:, pos[idx]]
+        fn, fw = grid["facet_node"][idx].astype(np.int64), grid["facet_w"][idx]
+        bins = np.asarray(held["bins"]).astype(np.intp)[idx]
+        TS = np.asarray(held["TS"], float)[idx] if self.templates else np.zeros(len(idx))
+        nH = len(idx)
+        Phi = sp.csr_matrix((fw.ravel(), (np.repeat(np.arange(nH), 3), fn.ravel())), shape=(nH, self.n))
+        self.held = {"idx": idx, "gm1": np.expm1(h[idx]), "g": np.exp(h[idx]), "GN_all": GN_all, "GR_all": GR_all,
+                     "GN": D.E[D.rows_ng] @ GN_all, "GR": D.E[D.rows_rg] @ GR_all, "fn": fn, "fw": fw, "bins": bins,
+                     "TS": TS, "Phi": Phi, "nonzero": int(nH)}
+
+    def _held_terms(self, c, m):
+        H = self.held
+        fn, fw = H["fn"], H["fw"]
+        u = c[fn[:, 0]] * fw[:, 0] + c[fn[:, 1]] * fw[:, 1] + c[fn[:, 2]] * fw[:, 2]
+        q = np.maximum(u + H["TS"], 0.0)
+        return q, q * m[H["bins"]] * H["gm1"]
 
     # ---- unpack
     def unpack(self, x):
@@ -331,6 +371,10 @@ class Problem:
     def pressures_used(self, x):
         c, m, kappa, A, B = self.unpack(x)
         sN, sR, uN, uR = self.surface_used(c, m, kappa)
+        if self.held is not None:
+            _, aH = self._held_terms(c, m)
+            sN = sN + self.held["GN"] @ aH
+            sR = sR + self.held["GR"] @ aH
         g, dA, dB = self.D.grain(A, B, self.et_ng)
         return sN + g, sR, (uN, uR, g, dA, dB)
 
@@ -360,6 +404,19 @@ class Problem:
         JN[:, self.iB] = dB * fN
         JR[:, self.iA] = 0.0
         JR[:, self.iB] = 0.0
+        if self.held is not None:
+            H = self.held
+            qH, _ = self._held_terms(c, m)
+            act = (qH > 0.0).astype(float)
+            K = sp.diags(m[H["bins"]] * H["gm1"] * act * self.A_s) @ H["Phi"]          # d aH / d x_c
+            JN[:, self.ic] += (K.T @ H["GN"].T).T * fN[:, None]
+            JR[:, self.ic] += (K.T @ H["GR"].T).T * fR[:, None]
+            w = qH * H["gm1"]
+            for b in range(1, NBINS):
+                sel = H["bins"] == b
+                if sel.any():
+                    JN[:, self.im.start + b - 1] += (H["GN"][:, sel] @ w[sel]) * fN
+                    JR[:, self.im.start + b - 1] += (H["GR"][:, sel] @ w[sel]) * fR
         return np.vstack([JN, JR])
 
     def smooth_residuals(self, x):
@@ -388,6 +445,8 @@ class Problem:
             self.best = (obj, np.array(x, copy=True))
         if self.nfev == 1 or self.nfev % 50 == 0:
             say("  eval %d: objective %.10e data %.10e" % (self.nfev, obj, 0.5 * float(r @ r)))
+        if self.checkpoint is not None and self.nfev % self.checkpoint["every"] == 0:
+            self.checkpoint["write"](self.best[1], self.best[0], self.nfev)
         if self.deadline is not None and time.time() > self.deadline:
             raise WallTime()
         return out
@@ -416,6 +475,10 @@ class Problem:
         """Every cost term and the per-row model of all base rows (design route)."""
         c, m, kappa, A, B = self.unpack(x)
         sNG, sRG = all_rows_surface(self.design, c, m, kappa, self.templates)
+        if self.held is not None:
+            _, aH = self._held_terms(c, m)
+            sNG = sNG + self.held["GN_all"] @ aH
+            sRG = sRG + self.held["GR_all"] @ aH
         rows = self.D.model_rows(sNG, sRG, A, B)
         cst = self.D.costs(rows["pNG"], rows["pRG"])
         cst["penalty"] = self.penalty(x)
@@ -439,6 +502,54 @@ def all_rows_surface(design, c, m, kappa, templates):
         sN = sN + design["T_NG"] @ m
         sR = sR + design["T_RG"] @ m
     return sN + kappa * design["C_NG"], sR + kappa * design["C_RG"]
+
+
+def held_from_meta(meta, design):
+    """The held dict of localnn_problem.Problem from a fit's recorded held term (meta["held"]), or None."""
+    rec = meta.get("held")
+    if not rec:
+        return None
+    import localnn_late as llate
+    with np.load(rec["path"], allow_pickle=False) as z:
+        h = np.asarray(z[rec.get("key", "held_next")], float)
+    import hashlib
+    if hashlib.sha256(np.ascontiguousarray(h).tobytes()).hexdigest() != rec["sha256"]:
+        raise SystemExit("the held term %s changed since the fit" % rec["path"])
+    with np.load(design["meta"]["paths"]["facets_from"], allow_pickle=False) as z:
+        TS, bins = np.asarray(z["TS"], np.float64), np.asarray(z["bin"])
+    return {"h": h, "LK": llate.load(rec["late_kernels"]["path"], len(h)), "bins": bins, "TS": TS}
+
+
+def problem_from_meta(meta, D, design, grid):
+    """The fit's Problem with every recorded setting (lambda_C, templates, multiplier penalty, held term)."""
+    kw = {}
+    fm = float((meta.get("mult_penalty") or {}).get("f_m", 0.0))
+    if fm > 0:
+        kw["mult_penalty_f"] = fm
+    held = held_from_meta(meta, design)
+    if held is not None:
+        kw["held"] = held
+    return Problem(D, design, grid, meta["templates"] == "on", meta["slope_mult_min"], design["meta"]["A_scale"],
+                   meta["lambda_C"], **kw)
+
+
+def state_surface(design, seg, late=None):
+    """Instantaneous surface pressures of every base row of a localnn fit segment's state (design route; the held term
+    exact through the late kernels when the fit had one: localnn_late.load(late or the recorded path))."""
+    seg = Path(seg)
+    with np.load(seg / "localnn_state.npz", allow_pickle=False) as z:
+        meta = json.loads(str(z["meta_json"]))
+        c, m, kappa = np.asarray(z["c"]), np.asarray(z["m"]), float(z["kappa"])
+    sN, sR = all_rows_surface(design, c, m, kappa, meta["templates"] == "on")
+    if meta.get("held"):
+        import localnn_late as llate
+        with np.load(seg / "nonneg_facets.npz", allow_pickle=False) as z:
+            A, u, TS, bins = (np.asarray(z[k]) for k in ("A", "u", "TS", "bin"))
+        LK = llate.load(late or meta["held"]["late_kernels"]["path"], len(A))
+        li = LK["late_idx"]
+        dA = A[li] - m[bins[li].astype(np.intp)] * np.maximum(u[li] + TS[li], 0.0)
+        sN, sR = sN + LK["G_NG"] @ dA, sR + LK["G_RG"] @ dA
+    return sN, sR, meta
 
 
 # ------------------------------------------------------------------------------------------------ start

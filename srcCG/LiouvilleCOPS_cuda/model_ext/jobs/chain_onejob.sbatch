@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/chain_onejob.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/chain_onejob.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 18a91f5989556f0ee5c659eeae203d57dc3f4fe9d0841f46bd0a667cfb5f9f0a
+# SHA256 of the run copy = SHA256 of this file without these header lines: bb9a7e7e1a2e5851160fdfaf1b5bba713a8215d18264b77fd6a1f1e2bc386eb1
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job. ONE job for a whole fit / fine-tuning chain (user decision 2026-11-10 "yes, implement (b)"): environment,
 #   job-level provenance and code copy, then model_ext/chain_onejob.py; KIND=positive | slope | nonneg (v6, 2026-11-11),
@@ -11,6 +11,10 @@
 #   (softplus) and 124165 (squared); the positive-kind tests 123990, 124091-124095 ran the version before KIND
 #   (.before_kinds_*).
 # 2026-11-13: SLOPE_MULT_MIN (kind nonneg only).
+# 2026-11-15: SOS_RANK, BG_MIN, SPREAD_F, SPREAD_CREF, SPREAD_U0, C1_FROM (SLOPE_MODEL sos | background | logspread);
+#   stage-2 chains 131989-131997.
+# 2026-11-16: FT_DELTA_F, FT_DELTA_CREF, FT_DELTA_CAP (kind nonneg); reruns 135367-135378.
+# 2026-11-17: MIN_FREE_GB (default 20 GiB; exit 5 before writing anything below it; --min-free-gb to the driver).
 # ==== end of header ====
 # ONE job for a whole positive-activity fit / fine-tuning chain of ONE lambda (user decision 2026-11-10, "yes,
 # implement (b)"): one driver process (model_ext/chain_onejob.py) binds the 12M lategrid base's records on the node's
@@ -39,6 +43,9 @@
 #   CHAIN_ROOT      the chain's directory (default <run>/positive_r<RATIO>/lam<LAMBDA>, as positive_cycles.sh);
 #                   tests: a directory under $COPS_OUTPUT_ROOT/tests
 #   MIN_FIT_MINUTES, MIN_FT_MINUTES (25), BIND_MINUTES (4): a stage starts only with that much time left
+#   MIN_FREE_GB     (2026-11-17, after the disk-full event of 2026-11-16 21:10 CST; default 20): the job exits 5 before
+#                   writing anything when $COPS_OUTPUT_ROOT's file system has less than this many GiB free, and the
+#                   driver stops (exit 5) before any later stage that would start below it (--min-free-gb); 0 = off
 # KIND (2026-11-11, v6): positive (default; everything above) | slope | nonneg. slope / nonneg: the slope-multiplier
 #   families (their own GPU patch, slope_mult / nonneg_mult; COPS_POS_* / COPS_SLOPEMUL_* / COPS_NONNEG_* are unset):
 #   SLOPE_MODEL     required: bumps (KIND slope: slope_mult_fit.py / slope_finetune.py, the split chain jobs/slope_cycles.sh)
@@ -52,6 +59,14 @@
 #   L_THREADS, L_MODE (chunked): the fits' and fine tunings' chunked L threads (user 2026-11-10/11: 32); CHECKPARAMS
 #   SLOPE_MULT_MIN  nonneg: lower bound of the free slope multipliers (nonneg_fit.py --slope-mult-min, every cycle;
 #                   user 2026-11-12: 1 for the softplus refit); unset: the fits' default
+#   SOS_RANK | BG_MIN | SPREAD_F, SPREAD_CREF [, SPREAD_U0]  (2026-11-15) the tokens of SLOPE_MODEL sos | background |
+#                   logspread (agent 1's options A, B, D; jobs/nonneg_fit.sbatch's variables, passed verbatim)
+#   C1_FROM         sos / background / logspread (lead 2026-11-15, stage 2): a complete fit of the same setting (fit dir
+#                   with final) ADOPTED as cycle 1's fit (c1/fit/final -> its final segment, c1/fit/ADOPTED_C1_FIT.txt);
+#                   the chain starts with the c1 fine tuning; SOURCE defaults to (and must be) its fit_restart.npz
+#   FT_DELTA_F, FT_DELTA_CREF, FT_DELTA_CAP  nonneg (2026-11-16): every fine tuning's delta regularization
+#                   (jobs/nonneg_finetune.sbatch DELTA_F / DELTA_CREF / DELTA_CAP = --delta-penalty-f / --delta-cref /
+#                   --delta-cap, verbatim); unset: off
 #   FT_FACETS must be late_only; LAMBDA / RATIO / C1_START_SET / FT_FLOOR_RATIO are positive-only
 # Products: CHAIN_ROOT/c<k>/fit/seg<NN>, c<k>/fit/final, c<k>/ft/seg<NN>, c<k>/ft/final + product links; per stage
 # CHAIN_ROOT/c<k>/{fit,ft}/provenance-<job>-c<k>{fit,ft}/; per job CHAIN_ROOT/provenance-<job>/ (this script, the code
@@ -91,7 +106,8 @@ SOURCE=${SOURCE:-}; CYCLES=${CYCLES:-3}; NFEV=${NFEV:-4000}; CHECK=${CHECK:-1}
 FT_MAXNFEV=${FT_MAXNFEV:-}; FT_FACETS=${FT_FACETS:-}; FT_WINDOW_MIN=${FT_WINDOW_MIN:-}
 FT_LSMR_MAXITER=${FT_LSMR_MAXITER:-50}; FT_CHECKPOINT_MIN=${FT_CHECKPOINT_MIN:-30}; FT_VALIDATE=${FT_VALIDATE:-1}
 FT_FLOOR_RATIO=${FT_FLOOR_RATIO:-}; MIN_FIT_MINUTES=${MIN_FIT_MINUTES:-25}; MIN_FT_MINUTES=${MIN_FT_MINUTES:-25}
-BIND_MINUTES=${BIND_MINUTES:-4}
+BIND_MINUTES=${BIND_MINUTES:-4}; MIN_FREE_GB=${MIN_FREE_GB:-20}
+case $MIN_FREE_GB in ""|*[!0-9.]*) die "MIN_FREE_GB=$MIN_FREE_GB: a number of GiB";; esac
 export MODEL_EXT=$(readlink -f "${MODEL_EXT:-$COPS_OUTPUT_ROOT/model_ext}")
 CHAIN_CODE=$(readlink -f "${CHAIN_CODE:-$COPS_OUTPUT_ROOT/model_ext}")
 R=$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5; X=$MODEL_EXT; PY="$APP/.venv/bin/python -W ignore"
@@ -123,7 +139,15 @@ UNSET=$(env | grep -o -E '^(COPS_POS_[A-Z_]*|COPS_SLOPEMUL_[A-Z_]*|COPS_NONNEG_[
 [ -n "$UNSET" ] && unset $UNSET
 SLOPE_MODEL=${SLOPE_MODEL:-}; SLOPE_START=${SLOPE_START:-}; START_FILE=${START_FILE:-}; L_THREADS=${L_THREADS:-}
 L_MODE=${L_MODE:-chunked}; CHECKPARAMS=${CHECKPARAMS:-}; SLOPE_MULT_MIN=${SLOPE_MULT_MIN:-}
+SOS_RANK=${SOS_RANK:-}; BG_MIN=${BG_MIN:-}; SPREAD_F=${SPREAD_F:-}; SPREAD_CREF=${SPREAD_CREF:-}; SPREAD_U0=${SPREAD_U0:-}
+C1_FROM=${C1_FROM:-}; FT_DELTA_F=${FT_DELTA_F:-}; FT_DELTA_CREF=${FT_DELTA_CREF:-}; FT_DELTA_CAP=${FT_DELTA_CAP:-}
+[ -z "$FT_DELTA_F$FT_DELTA_CREF$FT_DELTA_CAP" ] || [ "$KIND" = nonneg ] || die "FT_DELTA_*: nonneg kind only"
+{ [ -z "$FT_DELTA_F" ] && [ -z "$FT_DELTA_CREF" ]; } || { [ -n "$FT_DELTA_F" ] && [ -n "$FT_DELTA_CREF" ]; } || die "FT_DELTA_F and FT_DELTA_CREF go together"
 [ -z "$SLOPE_MULT_MIN" ] || [ "$KIND" = nonneg ] || die "SLOPE_MULT_MIN: nonneg kind only"
+if [ -n "$C1_FROM" ]; then
+    C1_FROM=$(readlink -f "$C1_FROM"); [ -e "$C1_FROM/final/fit_restart.npz" ] || die "C1_FROM=$C1_FROM: no final/fit_restart.npz"
+    SOURCE=${SOURCE:-$(readlink -f "$C1_FROM/final/fit_restart.npz")}
+fi
 SOURCE=${SOURCE:-$R/clip_refit/D2/final/fit_restart.npz}
 SLOPE_BUNDLE=$(readlink -f "${SLOPE_BUNDLE:-$R/slope_mult/bundle/slope_bins.npz}")
 FT_TEMPLATES_FROM=$(readlink -f "${FT_TEMPLATES_FROM:-$R/clip_refit/D2/final/fit_manifest.json}")
@@ -137,7 +161,26 @@ case $KIND/$SLOPE_MODEL in
     nonneg/squared) KFILES=("$X/nonneg_fit.py" "$X/nonneg_finetune.py" "$X/nonneg_mult.py" "$FT_TEMPLATES_FROM")
                     [ -n "$START_FILE" ] || [ -n "$SLOPE_START" ] || die "SLOPE_MODEL=squared: set START_FILE (nonneg_start.py)"
                     [ -n "$START_FILE" ] && START_FILE=$(readlink -f "$START_FILE") && KFILES+=("$START_FILE");;
-    *) die "KIND=$KIND SLOPE_MODEL=$SLOPE_MODEL: slope/bumps, nonneg/softplus or nonneg/squared";;
+    nonneg/sos|nonneg/background|nonneg/logspread)
+        KFILES=("$X/nonneg_fit.py" "$X/nonneg_finetune.py" "$X/nonneg_mult.py" "$X/nonneg_alt.py" "$FT_TEMPLATES_FROM")
+        case $SLOPE_MODEL in
+            sos) [ -n "$SOS_RANK" ] || die "SLOPE_MODEL=sos: set SOS_RANK"
+                 [ -z "$BG_MIN$SPREAD_F$SPREAD_CREF$SPREAD_U0" ] || die "SLOPE_MODEL=sos: BG_MIN / SPREAD_* belong to other models";;
+            background) [ -n "$BG_MIN" ] || die "SLOPE_MODEL=background: set BG_MIN"
+                 [ -z "$SOS_RANK$SPREAD_F$SPREAD_CREF$SPREAD_U0" ] || die "SLOPE_MODEL=background: SOS_RANK / SPREAD_* belong to other models";;
+            logspread) [ -n "$SPREAD_F" ] && [ -n "$SPREAD_CREF" ] || die "SLOPE_MODEL=logspread: set SPREAD_F and SPREAD_CREF"
+                 [ -z "$SOS_RANK$BG_MIN" ] || die "SLOPE_MODEL=logspread: SOS_RANK / BG_MIN belong to other models";;
+        esac
+        if [ -n "$C1_FROM" ]; then
+            [ -z "$SLOPE_START" ] || die "C1_FROM: no SLOPE_START (cycle 1 is adopted, not run)"
+            KFILES+=("$C1_FROM/final/fit_restart.npz")
+        elif [ "$SLOPE_MODEL" = sos ] && [ "${SLOPE_START:-gram}" = gram ]; then
+            START_FILE=$(readlink -f "${START_FILE:-$R/nonneg/bundle/sos_start_r${SOS_RANK}.npz}"); KFILES+=("$START_FILE")
+        fi;;
+    *) die "KIND=$KIND SLOPE_MODEL=$SLOPE_MODEL: slope/bumps, nonneg/softplus|squared|sos|background|logspread";;
+esac
+case $KIND/$SLOPE_MODEL in nonneg/sos|nonneg/background|nonneg/logspread) ;; *)
+    [ -z "$SOS_RANK$BG_MIN$SPREAD_F$SPREAD_CREF$SPREAD_U0$C1_FROM" ] || die "SOS_RANK / BG_MIN / SPREAD_* / C1_FROM: nonneg sos / background / logspread only";;
 esac
 KFILES+=("$SLOPE_BUNDLE")
 fi
@@ -145,6 +188,10 @@ case $SOURCE in /*) ;; *) die "SOURCE must be an absolute path";; esac
 case $CHAIN_ROOT in "$R"/*|"$COPS_OUTPUT_ROOT"/tests/*) ;; *) die "CHAIN_ROOT=$CHAIN_ROOT: under $R or $COPS_OUTPUT_ROOT/tests";; esac
 for f in "$R/base/COPS_model.dat" "$R/base/elements.bin" "$PTS" "$SOURCE" "$CHAIN_CODE/chain_onejob.py" "${KFILES[@]}"; do
     [ -e "$f" ] || die "missing: $f"; done
+FREE_GB=$(df -P -B1G "$COPS_OUTPUT_ROOT" | awk 'NR == 2 {print $4}')
+if awk -v f="$FREE_GB" -v m="$MIN_FREE_GB" 'BEGIN {exit !(m > 0 && f < m)}'; then
+    echo "chain_onejob.sbatch: $FREE_GB GiB free on the file system of $COPS_OUTPUT_ROOT, below MIN_FREE_GB=$MIN_FREE_GB: nothing written, exit 5 (free space, then resubmit)" >&2; exit 5
+fi
 mkdir -p "$CHAIN_ROOT"; P=$CHAIN_ROOT/provenance-$SLURM_JOB_ID; mkdir -p "$P/code"; cd "$APP" || exit 1
 # ---- job-level provenance and the code copy the driver runs (later edits of MODEL_EXT / CHAIN_CODE cannot reach it)
 cp -p "$0" "$P/chain_onejob.sbatch"
@@ -165,7 +212,7 @@ module list > "$P/module_list.txt" 2>&1 || true
 nvidia-smi -q > "$P/nvidia_smi_q.txt" 2>&1
 { nvcc --version; gcc --version | head -1; grep -m1 CSPICE /home/vtenishev/SPICE/cspice/doc/version.txt; } > "$P/toolchain.txt" 2>&1
 ~/.local/bin/uv pip list --python "$APP/.venv/bin/python" > "$P/pip_list.txt" 2>&1
-env | grep -E '^(CUDA_[A-Z_]*|CUPY_[A-Z_]*|COPS_[A-Z0-9_]*|KIND|LAMBDA|RATIO|SOURCE|CYCLES|NFEV|CHECK|CHECKPARAMS|C1_START_SET|FT_[A-Z_]*|SLOPE_[A-Z_]*|START_FILE|L_THREADS|L_MODE|BUMPS|MODEL_EXT|CHAIN_[A-Z_]*|MIN_[A-Z_]*|BIND_MINUTES|OMP_[A-Z_]*|OPENBLAS_[A-Z_]*|MKL_[A-Z_]*|PYTHONUNBUFFERED|LD_LIBRARY_PATH|PATH|SLURM_JOB_GPUS|CUDA_VISIBLE_DEVICES)=' | sort > "$P/environment.txt"
+env | grep -E '^(CUDA_[A-Z_]*|CUPY_[A-Z_]*|COPS_[A-Z0-9_]*|KIND|LAMBDA|RATIO|SOURCE|CYCLES|NFEV|CHECK|CHECKPARAMS|C1_START_SET|C1_FROM|SOS_RANK|BG_MIN|SPREAD_[A-Z0-9]*|FT_[A-Z_]*|SLOPE_[A-Z_]*|START_FILE|L_THREADS|L_MODE|BUMPS|MODEL_EXT|CHAIN_[A-Z_]*|MIN_[A-Z_]*|BIND_MINUTES|FREE_GB|OMP_[A-Z_]*|OPENBLAS_[A-Z_]*|MKL_[A-Z_]*|PYTHONUNBUFFERED|LD_LIBRARY_PATH|PATH|SLURM_JOB_GPUS|CUDA_VISIBLE_DEVICES)=' | sort > "$P/environment.txt"
 free -g > "$P/free_at_start.txt"; df -h "$CHAIN_ROOT" > "$P/df_at_start.txt" 2>&1
 if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then NG=$(echo "$CUDA_VISIBLE_DEVICES" | tr , "\n" | wc -l); else NG=$(nvidia-smi -L | wc -l); fi
 DEV=$(seq -s, 0 $((NG - 1)))
@@ -175,6 +222,7 @@ CMD=($PY "$P/code/chain_onejob.py" --kind "$KIND" --chain-root "$CHAIN_ROOT" --c
      --model-ext "$X" --job-provenance "$P" --job-script "$P/chain_onejob.sbatch" --devices "$DEV"
      --point-table "$PTS" --run "$R"
      --min-fit-minutes "$MIN_FIT_MINUTES" --min-ft-minutes "$MIN_FT_MINUTES" --bind-minutes "$BIND_MINUTES")
+awk -v m="$MIN_FREE_GB" 'BEGIN {exit !(m > 0)}' && CMD+=(--min-free-gb "$MIN_FREE_GB")
 [ -n "$FT_WINDOW_MIN" ] && CMD+=(--ft-window-min "$FT_WINDOW_MIN")
 if [ "$KIND" = positive ]; then
     CMD+=(--lambda "$LAMBDA" --ratio "$RATIO" --bundle "$BUNDLE")
@@ -189,6 +237,11 @@ else
     [ -n "$L_THREADS" ] && CMD+=(--l-threads "$L_THREADS" --l-mode "$L_MODE")
     [ -n "$CHECKPARAMS" ] && CMD+=(--checkparams "$CHECKPARAMS")
     [ -n "$SLOPE_MULT_MIN" ] && CMD+=(--slope-mult-min "$SLOPE_MULT_MIN")
+    [ -n "$SOS_RANK" ] && CMD+=(--sos-rank "$SOS_RANK"); [ -n "$BG_MIN" ] && CMD+=(--bg-min "$BG_MIN")
+    [ -n "$SPREAD_F" ] && CMD+=(--spread-f "$SPREAD_F"); [ -n "$SPREAD_CREF" ] && CMD+=(--spread-cref "$SPREAD_CREF")
+    [ -n "$SPREAD_U0" ] && CMD+=(--spread-u0 "$SPREAD_U0"); [ -n "$C1_FROM" ] && CMD+=(--c1-from "$C1_FROM")
+    [ -n "$FT_DELTA_F" ] && CMD+=(--ft-delta-penalty-f "$FT_DELTA_F"); [ -n "$FT_DELTA_CREF" ] && CMD+=(--ft-delta-cref "$FT_DELTA_CREF")
+    [ -n "$FT_DELTA_CAP" ] && CMD+=(--ft-delta-cap "$FT_DELTA_CAP")
 fi
 { echo '#!/bin/bash'; echo "# job $SLURM_JOB_ID on $(hostname), $(date -u +%FT%TZ); AMPS $(git -C "$AMPS" rev-parse HEAD)"
   grep '^export ' "$0" | grep -v COPS_POS_

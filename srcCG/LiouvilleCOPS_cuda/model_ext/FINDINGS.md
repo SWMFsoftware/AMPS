@@ -69,6 +69,70 @@ relative to `COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output` unless absolut
   the bound 1, and only 70-80 deg keeps a large one (827; 90-180 deg 2.4): one steep bin then carries 86 % of the seen
   production and 88 % / 80 % of the late NG / RG signal. So the data accept either several steep bins (no P_m) or
   essentially one (with P_m) at a 15 % higher data cost; which steep bin carries the signal is not fixed by the data.
+* **Stage 2, chain f = 10, f_m = 0.01 complete** (2026-11-15, `runs/.../nonneg/localnn/stage2_f10_pm0.01_20261115T190019Z`,
+  5 fit / fine-tuning cycles, every fit by ftol: 219, 78, 33, 18, 12 evaluations; fine tunings 243 (ftol), 500
+  (max_nfev), 5, 5, 5 (ftol)). The full objective (data + smoothness + P_m; crossing 0) falls monotonically:
+  9.3738e-3 (fit start) -> 5.3947e-3 (c1 fit) -> 5.0178e-3 (c1 ft) -> 4.9440e-3 -> 4.9255e-3 -> 4.9191e-3 -> 4.9161e-3
+  -> 4.9141e-3 -> 4.9125e-3 -> 4.9112e-3 (c5 fit) -> 4.9099e-3 (c5 ft); each fit starts exactly at the previous fine
+  tuning's objective. The data cost alone rises after c1: 2.8886e-3 (c1 ft) -> 3.0122 / 2.9937 -> 3.0333 / 3.0303 ->
+  3.0388 / 3.0372 -> 3.0387 / 3.0375e-3 (fit / ft): the fits give back data cost for smoothness and P_m (P_m 1.96e-3 ->
+  1.65e-3, smoothness 1.69e-4 -> 2.22e-4). Final multipliers 40-50, 50-60 at the bound 1, 60-70 1.013, 70-80 473,
+  80-90 1.008, 90-180 2.35; kappa 0. The c1 fine tuning set delta in [-10.7, +11.3] on the 271 late facets (5 with
+  h > 5, 17 with h < -5; later cycles change h by <= 0.9); final max h 11.8 (x 1.4e5). c5 fit state: Q_H2O(10:33:10)
+  3.37e25 s^-1, active seen area 30.6 %, 50 % / 90 % of the seen production from 3.0 m^2 / 1.16e5 m^2 (a few
+  fine-tuned late facets); final state (c5 ft): seen production at 10:33:10 by bin 63 % 90-180 deg, 35 % 70-80 deg,
+  1.2 % 0-40 deg; late-window signal NG 81 % / RG 72 % from 70-80 deg (0-40 deg 11 % / 22 %, 90-180 deg 7 % / 4 %);
+  NG P50 source area 6.9e3 m^2 at 10:33:10, 2.0 m^2 (2 facets) at 10:39:26. Caveat: the fine tuning has no lower
+  bound and lambda 0 (user decision), so the extreme per-facet factors are allowed by construction; one chain of
+  four; GPU cross-check of the final state pending.
+* **Regularizing the fine tuning** (test 2026-11-15, the c5 fine tuning re-run with P_delta = f_delta C_ref
+  area-mean (h+delta)^2 and the cap |h+delta| <= ln 100; `tests/localnn_20261114/ftreg/summary_134507.txt`): without
+  it the accumulated per-facet log factors reach |h| 11.8-12.3 (C, B, D) and 50 % of the seen production at 10:33:10
+  sits on 1-3 m^2. The cap alone clips 20-37 of the 271 tuned facets at the start (start data cost +35-50 %). Data
+  cost after the regularized fine tuning vs unregularized: C f1 / 0.01 2.995e-3 -> 3.355 / 3.423 / 3.825e-3 (f_delta
+  0.1 / 1 / 10), C f10 / 0.01 3.037e-3 -> 3.239 / 3.283 / 3.568e-3, B 4.783e-3 -> 4.928 / 4.954 / 5.239e-3, D 7.214e-3 ->
+  7.737 / 7.833 / 8.305e-3; late rms ln NG 0.113 -> 0.131-0.149 (C f10), RG up to 0.05-0.11; max |h+delta| 4.6 (cap)
+  / 2.6-3.2 / 0.6-1.1. Only f_delta = 10 spreads the production: seen area holding 50 % 1.03 m^2 (one facet) for
+  f_delta 0.1 and 1, 3.3e4-1.8e5 m^2 for 10 (C Q_H2O(10:33:10) 3.4e25 -> 1.4e25; B, D change < 10 %). The tuned facets
+  carry 3-13 % of the mean late-window surface signal but 80-90 % (NG) / 30-70 % (RG) at the last observation
+  (10:39:26), regularized or not. All runs ftol; no chain was rerun.
+  The 1.03 m^2 holder is ONE tuned facet, 12232930 (90-180 deg bin), in C as in B and D (agent 1): in C its A is
+  m_90-180 (2.3-2.7) x TS (D2's fine-tuning template value 7.894e23, u ~ 0) x exp(h), with h only 2.2 (C f1) / 2.9
+  (C f10) after the chains; the concentration comes from D2's templates held at 1, not from large h. With the
+  area-weighted penalty this small facet is cheap: at f_delta 0.1 / 1 its h + delta RISES to 3.3 / 3.1-3.2 (A x 2-3);
+  only f_delta 10 brings it to 0.1-0.16 and the largest A moves to facet 11213754.
+* **Stage-2 reruns with the regularized fine tuning (f_delta 10, cap ln 100), D2's templates on vs off** (user
+  decisions 2026-11-15/16; f = 10, f_m = 0.01, 5 cycles, all ftol; `tests/localnn_20261114/stage2r/chain_summary_135107.txt`,
+  `chain_summary_135114.txt`, `share_c5_*.txt`). Templates ON (`stage2r_f10_pm0.01_tplon_20261116T044825Z`): data cost
+  3.2655e-3 (c1 fit) -> 3.1700e-3 (c1 ft) -> ... -> 3.1996e-3 (c5 ft), objective (data + smoothness + P_m) monotone
+  5.3947e-3 -> 5.2623e-3, P_delta 2.6-3.7e-5, max |h+delta| 0.93; late rms ln NG / RG 0.130 / 0.046; multipliers 1, 1,
+  1.01, 759 (70-80 deg), 1.004, 1.50 (90-180 deg, 2.42 at c1); Q_H2O(10:33:10) 1.51e25 s^-1; active seen area 25.4 %;
+  50 % / 90 % of the seen production on 4.0e4 / 1.8e5 m^2; facet 12232930 holds 4.1 % (43.6 % unregularized). The
+  tuned late facets carry 2.4 % of the mean late NG signal and 75 % at the last observation. Templates OFF
+  (`stage2r_f10_pm0.01_tploff_20261116T044825Z`, c1 fit from the f = 10 end point minus the template part: start data
+  5.458e-3): c1 fit 238 evaluations -> data 3.6519e-3, objective 6.0628e-3 (P_m 2.20e-3, smoothness 2.14e-4), late rms
+  ln NG / RG 0.161 / 0.049; then nothing moves (fine tunings 2-3 evaluations, |delta| <= 5e-4, fits 3 evaluations):
+  without the templates the 271 late facets carry 0.01 % of the mean late signal and 0.13 % (NG) / 0.27 % (RG) at the
+  last observation, so the fine tuning has no leverage. Multipliers 1, 1, 1.013, 1.014, 1305 (80-90 deg), 1.003: the
+  steep activity moves from 70-80 to 80-90 deg; Q_H2O 1.98e25; active seen area 28.5 %; 50 % / 90 % of the seen
+  production on 2.1e4 / 1.1e5 m^2 (largest facet 0.6 %). Data cost: templates OFF 3.65e-3 > ON (regularized) 3.20e-3 >
+  ON unregularized 3.04e-3; all below the softplus c9 4.27e-3. So the templates (D2's late fine-tuning facets) are what
+  the late signal uses; without them the late window fits worse (rms ln NG 0.161 vs 0.130) and the fine tuning cannot
+  help.
+  Same templates-ON regularized setup for f = 1, f_m = 0.01 (`stage2r_f1_pm0.01_tplon_20261116T055923Z`, 22 min, all
+  ftol; `tests/localnn_20261114/stage2r/chain_summary_135382.txt`): data 3.4438e-3 (c1 fit) -> 3.3779e-3 (c5 ft),
+  objective 5.0205e-3 -> 4.9098e-3 monotone, late rms ln NG / RG 0.140 / 0.044, multipliers 1, 1, 1.018, 290, 1.008,
+  1.66; Q_H2O 1.52e25; active 22.4 %; 50 % of the seen production on 3.8e4 m^2 (facet 12232930 4.6 %); unregularized
+  f1 / 0.01: data 2.9946e-3, objective 4.4228e-3, 50 % on 3.0 m^2 (two facets, 27 % / 30 %).
+* **kappa = 0 in every option C stage-2 state** (c5 fits, 2026-11-17): kappa (the CO2 scale, bound >= 0) is
+  5.6e-23 (stage2 f10 / 0.01), 5.6e-35 (f10 / 1e-4), 5.9e-25 (f1 / 0.01), 6.5e-34 (f1 / 1e-4), 1.5e-20 (stage2r f10 /
+  0.01 templates off), 4.7e-22 (templates on), 1.7e-37 (stage2r f10 / 1e-4), 4.2e-24 (stage2r f1 / 0.01): at the bound
+  in all eight (Q_CO2 ~ 0), as in the earlier fits (A5). With f_m = 1e-4 the steep multipliers run to 1e4 - 5e5
+  (stage2r f10 / 1e-4: 70-80 deg 8.67e4, 80-90 deg 3.40e5; stage2 f10 / 1e-4: 1 / 5.3e5); with f_m = 0.01 one bin
+  carries 2e2 - 8e2 (templates off: 80-90 deg 1305). Caveats: the gauges measure total pressure, so CO2 and H2O differ
+  only through the production law (q_max ~ r_h^-2 vs r_h^-4.21, the night floor 0.1 vs 0.2 q_max) and kappa = 0 says
+  that the data prefer the H2O law for the whole signal, not that CO2 is measured to be absent; several fits ended at
+  max_nfev (not converged); the f_m = 1e-4 multipliers are weakly determined (the global-level degeneracy, above).
 * **Evidence:** `runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage1_anch_f{0.1,10}_*/analysis/report.txt`,
   `analysis_degeneracy/degeneracy.txt`, `gpu_eval/gpu_check.json` (f 10: GPU standard evaluation = CPU to 1.2e-15 in
   the cost); jobs 125107/125108, 125119/125120, pilot 125071; README.md "Option C".
@@ -363,6 +427,10 @@ Data cost (lower is better; all on the lategrid base with the gauge +1.5 m and t
 * Effective gravitational slope: polyhedral self-gravity at 533 kg/m³ plus the centrifugal term (SPICE rotation).
 * Fits: TRF least squares, max_nfev 4000; per-facet fine tuning on the facets seen only in the last 5 min;
   3–5 fit / fine-tuning cycles.
+* Option C fine tuning on the CPU (2026-11-15): the GPU fine-tuning code run unchanged with a CPU engine on precomputed
+  late kernels; on the softplus chain it selects the same 271 facets and reproduces the start costs to 8e-16 and a
+  4-evaluation case bitwise; longer runs differ by up to ~1e-8 in the final cost, the same spread as the CPU code
+  itself under 1e-15 start perturbations (truncated-LSMR trust-region steps amplify rounding on the flat end).
 
 ## C. Open questions (physics)
 
@@ -382,6 +450,11 @@ Data cost (lower is better; all on the lategrid base with the gauge +1.5 m and t
 
 ## D. Change log of this file
 
+* 2026-11-17 (14:05 CST): A12: kappa = 0 in all eight C stage-2 states.
+* 2026-11-16 (00:05 CST): A12 update: stage-2 reruns, regularized fine tuning, templates on vs off.
+* 2026-11-15 (21:40 CST): A12 update: fine-tuning regularization test (C, B, D c5).
+* 2026-11-15 (14:15 CST): A12 update: the complete stage-2 chain f = 10, f_m = 0.01.
+* 2026-11-15 (13:20 CST): A12 update (stage 2: the first option C fine tuning); B: CPU fine tuning of option C.
 * 2026-11-15: A13 (stage-1 comparison of the four non-negative options: active area vs fit quality).
 * 2026-11-14 (20:50 CST): A12 update: the multiplier-penalty continuation (125360).
 * 2026-11-14 (16:40 CST): A12 (option C local basis: better fits, steep-facet activity, undetermined multipliers;

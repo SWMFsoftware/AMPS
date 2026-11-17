@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-11, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/nonneg_finetune.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/nonneg_finetune.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: d1bdaff0778e669658e22bd6dbd5dde97d89c782c35b2f25e5deb54897c435ba
+# SHA256 of the run copy = SHA256 of this file without these header lines: fd9f337256a8f8b20f34c20ba4f81f6c3b7d69fce4689775239564788059f3c6
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: tool. Late-facet fine tuning of a softplus / squared fit (user decisions 2026-11-11): A_e = A_fit,e exp(delta_e)
 #   on the late_only facets (5 min) with A_fit > 0, NO lower bound, no cap, grain refitted, the fit's full objective; G
 #   = dp/dA once on the GPU; validation checks 1-8 (slope_finetune v8 steps); BACKEND_PROVIDER for the one-job chain.
 # USED BY: jobs/nonneg_finetune.sbatch (tests 124132, 124133, 124140, 124142, 124145, 124147) and chain_onejob.py --kind
 #   nonneg (production 124162, 124165).
+# 2026-11-14: fine tuning of the options A, B, D (extra parameters from the restart, A = m q exp(h + delta)).
 # 2026-11-14: fine tuning of the options A, B, D (extra parameters from the restart, A = m q exp(h + delta)).
 # ==== end of header ====
 """Late-facet fine tuning of a non-negative activity fit (softplus / squared harmonics with slope multipliers; user
@@ -322,6 +323,102 @@ class HostLinearEngine:
         return g
 
 
+DELTA_REGULARIZATION = (
+    "user 2026-11-15 ~21:10 CST (optional; off by default): penalty on the TOTAL per-facet log factor t_e = h_e + "
+    "delta_e (h = the fit's held term) over the tuned (parameter) facets, P_delta = f C_ref sum_e w_e t_e^2 / sum_e w_e, "
+    "w_e = facet area: exact residual rows sqrt(2 f C_ref w_e / sum w) t_e on the 0.5 r.r scale (an rms total log "
+    "factor of 1 neper costs f x C_ref); optional cap |t_e| <= X as bounds delta_e in [-X - h_e, X - h_e] (a start "
+    "outside: delta_e starts at the nearest bound)")
+
+
+class DeltaRegObjective(pf.Objective):
+    """positive_finetune.Objective + the delta regularization rows (DELTA_REGULARIZATION) and / or the cap bounds."""
+
+    def __init__(self, *args, h_idx=None, delta_f=None, delta_cref=None, delta_cap=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.h_idx = np.asarray(h_idx, float)
+        self.delta_f, self.delta_cref, self.delta_cap = delta_f, delta_cref, delta_cap
+        self.m0 = self.m
+        self.w_idx = self.area[self.idx]
+        self.w_sum = float(np.sum(self.w_idx))
+        self.dpen_on = delta_f is not None
+        if self.dpen_on:
+            self.dpen_c = np.sqrt(2.0 * float(delta_f) * float(delta_cref) * self.w_idx / self.w_sum)
+            self.m = self.m0 + self.npar
+        if delta_cap is not None:
+            X = float(delta_cap)
+            self.lb_delta = -X - self.h_idx
+            self.lb = np.concatenate([self.lb_delta, [0.0, 0.0]])
+            self.ub = np.concatenate([X - self.h_idx, [np.inf, np.inf]])
+
+    def evaluate(self, z):
+        st = super().evaluate(z)
+        if self.dpen_on:
+            rp = self.dpen_c * (self.h_idx + st.z[:self.npar])
+            st.rp = rp
+            st.r = np.concatenate([st.r, rp])
+            st.costs["delta_penalty"] = 0.5 * float(rp @ rp)
+            st.costs["total"] += st.costs["delta_penalty"]
+            st.cost = 0.5 * float(st.r @ st.r)
+        return st
+
+    def jac(self, z, f=None):
+        self.tracker.check()
+        st = self.find(z)
+        if st is None:
+            st = self.evaluate(z)
+        return DeltaRegJacobian(self, st)
+
+    def summary(self, st):
+        out = super().summary(st)
+        t = self.h_idx + st.z[:self.npar]
+        X = self.delta_cap
+        out.update({
+            "cost_delta_penalty": float(st.costs.get("delta_penalty", 0.0)),
+            "delta_total_rms_area_weighted": float(np.sqrt(np.sum(self.w_idx * t * t) / self.w_sum)) if self.npar else 0.0,
+            "delta_total_max_abs": float(np.max(np.abs(t))) if self.npar else 0.0,
+            # at the cap: within 1e-8 max(1, X) (scipy TRF keeps its iterates ~1e-10 max(1, |bound|) inside a bound)
+            "facets_at_cap": (int(np.sum(np.abs(t) >= float(X) - 1e-8 * max(1.0, float(X)))) if X is not None else None),
+            "facets_at_cap_upper": (int(np.sum(t >= float(X) - 1e-8 * max(1.0, float(X)))) if X is not None else None),
+            "facets_at_cap_lower": (int(np.sum(t <= -float(X) + 1e-8 * max(1.0, float(X)))) if X is not None else None),
+            "delta_penalty_f": self.delta_f, "delta_cref": self.delta_cref, "delta_cap": X})
+        return out
+
+
+class DeltaRegJacobian(pf.Jacobian):
+    """positive_finetune.Jacobian over the first m0 rows + the delta regularization rows (diagonal in delta)."""
+
+    def _assemble(self, jng_s, jrg_s, v, out):
+        obj = self.obj
+        super()._assemble(jng_s, jrg_s, v, out[:obj.m0])
+        if obj.dpen_on:
+            out[obj.m0:] = obj.dpen_c * v[:obj.npar]
+        return out
+
+    def _rmatvec(self, u):
+        obj = self.obj
+        u = np.asarray(u, dtype=float).ravel()
+        out = super()._rmatvec(u[:obj.m0])
+        if obj.dpen_on:
+            out[:obj.npar] += obj.dpen_c * u[obj.m0:]
+        return out
+
+
+def zero_sensitivity_dreg(obj, st, seed=20261108):
+    """pf.zero_sensitivity for DeltaRegObjective: the data + crossing columns (the regularization rows get u = 0)."""
+    rng = np.random.default_rng(seed)
+    u = rng.standard_normal(obj.m)
+    u[obj.m0:] = 0.0
+    if obj.nreg:
+        u[obj.rows.nd:obj.rows.nd + obj.nreg] = 0.0
+    g = DeltaRegJacobian(obj, st).rmatvec(u)[:obj.npar]
+    z = g == 0.0
+    a = obj.area[obj.idx]
+    return {"parameters": int(obj.npar), "zero_sensitivity": int(z.sum()),
+            "zero_sensitivity_area_fraction_of_parameters": float(a[z].sum() / a.sum()) if obj.npar else 0.0,
+            "definition": "data + crossing Jacobian column exactly 0 (the delta regularization rows excluded)"}
+
+
 class GpuModelEngine:
     """The fit's model on the GPU (nonneg_mult patch): p at the fit's state, structural seen masks, dp/dA, forwards
     with a per-facet factor override (host side). `backend` (optional) or BACKEND_PROVIDER(ctx, devices): an already
@@ -469,11 +566,17 @@ def validate(obj, ctx, eng, z0, idx, held_g_idx, support, seed=20261110):
     st0 = obj.evaluate(z0)
     # 1
     fit_total = ctx.fit_costs["data_cost"] + ctx.fit_costs["regularization_cost"] + ctx.fit_costs["crossing_penalty_cost"]
-    r1 = {"total_start": st0.costs["total"], "data_start": st0.costs["data"], "crossing_start": st0.costs["crossing"],
+    dreg = isinstance(obj, DeltaRegObjective)
+    pen0 = st0.costs.get("delta_penalty", 0.0) if dreg else 0.0
+    r1 = {"total_start": st0.costs["total"] - pen0, "data_start": st0.costs["data"], "crossing_start": st0.costs["crossing"],
           "fit_data_cost": ctx.fit_costs["data_cost"], "fit_crossing": ctx.fit_costs["crossing_penalty_cost"],
           "rel_total": pf.rel(st0.costs["total"], fit_total), "rel_data": pf.rel(st0.costs["data"],
                                                                                  ctx.fit_costs["data_cost"]),
           "data_bitwise": st0.costs["data"] == ctx.fit_costs["data_cost"]}
+    if dreg:
+        r1["rel_total"] = pf.rel(st0.costs["total"] - pen0, fit_total)
+        r1["delta_penalty_start"] = pen0
+        r1["note"] = "total_start = data + crossing (the delta regularization P_delta at the start is reported apart)"
     r1["passed"] = r1["rel_total"] <= 1e-8 and r1["rel_data"] <= 1e-8
     rec["1_start_cost"] = r1
     ok &= r1["passed"]
@@ -481,7 +584,11 @@ def validate(obj, ctx, eng, z0, idx, held_g_idx, support, seed=20261110):
         st0.costs["total"], fit_total, r1["rel_total"], st0.costs["data"], ctx.fit_costs["data_cost"],
         r1["data_bitwise"]))
     # 2 adjoint
-    J = pf.Jacobian(obj, st0)
+    J = DeltaRegJacobian(obj, st0) if dreg else pf.Jacobian(obj, st0)
+    # the FD steps of checks 3 and 6 are clipped at the lower bound (the positive model's floor); with the delta cap the
+    # check point delta = 0 can lie outside the cap's bounds (|h| > cap), so the steps are not clipped there (the
+    # model is evaluated outside the bounds, which is fine for a derivative check)
+    lbv = np.full(obj.n, -np.inf) if (dreg and obj.delta_cap is not None) else obj.lb
     v = rng.standard_normal(obj.n)
     u = rng.standard_normal(obj.m)
     lhs, rhs = float(u @ J.matvec(v)), float(v @ J.rmatvec(u))
@@ -492,20 +599,33 @@ def validate(obj, ctx, eng, z0, idx, held_g_idx, support, seed=20261110):
     d[-2:] *= 0.0
     h = 1e-3          # one facet's share of a point's pressure is ~1e-8: a 1e-6 step would be below the rounding
     zp, zm = z0 + h * d, z0 - h * d
-    zp = np.maximum(zp, obj.lb)
-    zm = np.maximum(zm, obj.lb)
+    zp = np.maximum(zp, lbv)
+    zm = np.maximum(zm, lbv)
     fd = (obj.evaluate(zp).r - obj.evaluate(zm).r) / (2 * h)
     jv = J.matvec(d)
     nd = obj.rows.nd
     r3 = float(np.max(np.abs(fd[:nd] - jv[:nd])) / max(float(np.max(np.abs(fd[:nd]))), 1e-300))
     rec["3_jv_fd_random_direction"] = {"rel_data": r3, "step": h, "passed": r3 <= 1e-4}
     ok &= rec["3_jv_fd_random_direction"]["passed"]
+    if dreg and obj.dpen_on:      # the regularization rows are linear in delta: FD exact up to rounding
+        m0 = obj.m0
+        fdp = (obj.evaluate(z0 + h * d).r[m0:] - obj.evaluate(z0 - h * d).r[m0:]) / (2 * h)   # unclipped (linear rows)
+        sc = max(float(np.max(np.abs(fdp))), 1e-300)
+        r3p = float(np.max(np.abs(fdp - jv[m0:])) / sc)
+        P_ind = obj.delta_f * obj.delta_cref * float(np.sum(obj.w_idx * (obj.h_idx + st0.z[:obj.npar]) ** 2)) / obj.w_sum
+        rp_ = st0.costs["delta_penalty"]
+        rec["3_delta_regularization_rows"] = {"rel_rows_vs_fd": r3p, "P_delta_start": rp_, "P_delta_independent": P_ind,
+                                              "rel_P": pf.rel(rp_, P_ind),
+                                              "passed": r3p <= 1e-8 and pf.rel(rp_, P_ind) <= 1e-12}
+        ok &= rec["3_delta_regularization_rows"]["passed"]
+        log("check 3b delta regularization rows: J vs FD %.1e; P_delta at the start %.15e vs independent %.15e" % (
+            r3p, rp_, P_ind))
     # grain columns
     for kk, nm in ((-2, "grain_A"), (-1, "grain_B")):
         e = np.zeros(obj.n)
         e[kk] = 1.0
         hh = 1e-6 * max(abs(z0[kk]), 1.0)
-        zp, zm = z0 + hh * e, np.maximum(z0 - hh * e, obj.lb)
+        zp, zm = z0 + hh * e, np.maximum(z0 - hh * e, lbv)
         fd = (obj.evaluate(zp).r - obj.evaluate(zm).r) / (zp[kk] - zm[kk])
         col = J.matvec(e)
         sc = max(float(np.max(np.abs(fd))), 1e-300)
@@ -572,8 +692,8 @@ def validate(obj, ctx, eng, z0, idx, held_g_idx, support, seed=20261110):
             continue
         dA = CHECK6_TAU * sb[0]
         hh = math.log1p(dA / A_now[k])
-        hm = min(hh, z0[k] - obj.lb[k])
-        fd = (obj.evaluate(z0 + hh * e).r - obj.evaluate(np.maximum(z0 - hh * e, obj.lb)).r) / (hh + hm)
+        hm = min(hh, z0[k] - lbv[k])
+        fd = (obj.evaluate(z0 + hh * e).r - obj.evaluate(np.maximum(z0 - hh * e, lbv)).r) / (hh + hm)
         col = J.matvec(e) * ((math.exp(hh) - math.exp(-hm)) / (hh + hm))
         sc = float(np.max(np.abs(fd[:nd])))
         err = float(np.max(np.abs(fd[:nd] - col[:nd])) / sc) if sc > 0 else 0.0
@@ -612,7 +732,7 @@ def validate(obj, ctx, eng, z0, idx, held_g_idx, support, seed=20261110):
                             "per_facet": rec7, "passed": worst7 <= 1e-6}
     ok &= rec["7_G_vs_gpu_fd"]["passed"]
     # 8 zero sensitivity
-    rec["8_zero_sensitivity"] = pf.zero_sensitivity(obj, st0)
+    rec["8_zero_sensitivity"] = zero_sensitivity_dreg(obj, st0) if dreg else pf.zero_sensitivity(obj, st0)
     log("checks 2 adjoint %.1e, 3 J v vs FD %.1e (grain A %.1e B %.1e), 6 single facets %.1e, 7 G vs GPU FD %.1e, 8 "
         "zero-sensitivity parameters %d" % (rec["2_adjoint"]["rel"], r3, rec["3_grain_A"]["rel"], rec["3_grain_B"]["rel"],
                                            worst6, worst7, rec["8_zero_sensitivity"]["zero_sensitivity"]))
@@ -681,6 +801,11 @@ def write_state(out, ctx, obj, st, idx, late, meta, pool):
     delta[idx] = st.z[:len(idx)]
     lb = np.full(n, np.nan)
     lb[idx] = obj.lb_delta
+    extra = {}
+    if getattr(obj, "delta_cap", None) is not None:          # the cap's upper bound (option present only)
+        ub = np.full(n, np.nan)
+        ub[idx] = obj.ub[:len(idx)]
+        extra["upper_bound"] = ub
     held_next = np.empty(n)
     hp = ctx.held_prev
     elementwise(lambda i0, i1: hp[i0:i1] + delta[i0:i1], n, held_next, pool)
@@ -691,7 +816,7 @@ def write_state(out, ctx, obj, st, idx, late, meta, pool):
         np.savez_compressed(f, delta=delta, held_prev=hp, held_next=held_next, A_final=A_final, lower_bound=lb,
                             seen=obj.seen, late=late, grain_A_uPa=np.array(st.z[-2]),
                             grain_B_uPa_per_100s=np.array(st.z[-1]),
-                            meta_json=np.array(json.dumps(jsonable(meta), sort_keys=True)))
+                            meta_json=np.array(json.dumps(jsonable(meta), sort_keys=True)), **extra)
     return path, held_next
 
 
@@ -713,6 +838,14 @@ def write_result_txt(out, ctx, obj, s_init, s_final, opt, rec, utc, seg):
         f.write("fit_final_cost(fit_result.txt) %s  fit_manifest cost %.15e data %.15e crossing %.15e\n" % (
             ctx.fit_result_txt.get("final_cost"), ctx.fit_costs["cost"], ctx.fit_costs["data_cost"],
             ctx.fit_costs["crossing_penalty_cost"]))
+        if isinstance(obj, DeltaRegObjective):
+            f.write("# delta regularization (%s)\n" % DELTA_REGULARIZATION)
+            for key in ("cost_delta_penalty", "delta_total_rms_area_weighted", "delta_total_max_abs", "facets_at_cap",
+                        "facets_at_cap_upper", "facets_at_cap_lower", "delta_penalty_f", "delta_cref", "delta_cap"):
+                a, b = s_init.get(key), s_final.get(key)
+                fmt = (lambda v: "%.10e" % v if isinstance(v, float) else str(v))  # noqa: E731
+                f.write("%-46s initial %s  final %s\n" % (key, fmt(a), fmt(b)))
+            f.write("start_clipped_to_cap %s\n" % rec.get("delta_regularization", {}).get("start_clipped"))
         reason = pf.stop_reason(opt["termination"])
         f.write("stop %s\ncomplete %s\n" % (reason, "no (resubmit: the next segment continues)" if reason == "wall_time"
                                             else "yes"))
@@ -749,7 +882,17 @@ def parse_args(argv):
     ap.add_argument("--save-seconds", type=float, default=900.0)
     ap.add_argument("--segment", type=int, default=1)
     ap.add_argument("--nfev-before", type=int, default=0)
+    ap.add_argument("--delta-penalty-f", type=float, default=None,
+                    help="f of the delta regularization P = f C_ref sum w (h + delta)^2 / sum w (off by default)")
+    ap.add_argument("--delta-cref", type=float, default=None, help="C_ref of the delta regularization (with F)")
+    ap.add_argument("--delta-cap", type=float, default=None, help="cap |h + delta| <= X (bounds; off by default)")
     args = ap.parse_args(argv)
+    if (args.delta_penalty_f is None) != (args.delta_cref is None):
+        ap.error("--delta-penalty-f and --delta-cref go together")
+    if args.delta_penalty_f is not None and not (args.delta_penalty_f >= 0 and args.delta_cref > 0):
+        ap.error("--delta-penalty-f must be >= 0 and --delta-cref > 0")
+    if args.delta_cap is not None and not args.delta_cap > 0:
+        ap.error("--delta-cap must be > 0")
     if not args.validate_only and args.max_nfev is None:
         ap.error("--max-nfev is required unless --validate-only")
     if args.window_min <= 0:
@@ -782,7 +925,9 @@ def run(args, engine_factory=None, backend=None, command=None):
                       "parameterization": ctx.fit_parameterization, "costs": ctx.fit_costs,
                       "fit_result_txt": ctx.fit_result_txt, "model": ctx.model_cfg, "x": ctx.x.tolist(),
                       "names": ctx.names, "run": str(ctx.run), "point_table": file_identity(ctx.point_table)},
-              "settings": jsonable(vars(args)), "threads": {"l_threads": args.l_threads, "pool": bool(pool)},
+              "settings": jsonable({k: v for k, v in vars(args).items()
+                                    if not (k in ("delta_penalty_f", "delta_cref", "delta_cap") and v is None)}),
+              "threads": {"l_threads": args.l_threads, "pool": bool(pool)},
               "modules": {p: file_identity(HERE / p) for p in ("nonneg_finetune.py", "nonneg_mult.py", "slope_mult.py",
                                                                "positive_finetune.py", "positive_problem.py",
                                                                "grain_crossing.py")}}
@@ -820,12 +965,21 @@ def run(args, engine_factory=None, backend=None, command=None):
         log("p at the fit's state and G = dp/dA for %d facets (%.1f s, %.1f s)" % (len(idx), t["forward_fit_state_s"],
                                                                                     t["sensitivities_s"]))
         host = HostLinearEngine(p0_ng, p0_rg, G_ng, G_rg, ctx.A_fit[idx], ctx.s_start, idx)
+        dreg = args.delta_penalty_f is not None or args.delta_cap is not None
         with np.errstate(divide="ignore"):         # floor ratio 0: no lower bound (user), lb = -inf
-            obj = pf.Objective(rows, host, ctx.s_start, ctx.s_start, ctx.area, ctx.A_orig, params, 0.0, 0.0,
-                               tracker=tracker, fit_identity={"fit_directory": str(ctx.fit_dir),
-                                                              "fit_restart_sha256": ctx.identity["fit_restart.npz"][
-                                                                  "sha256"]})
-        if not np.all(np.isneginf(obj.lb_delta)):
+            if not dreg:
+                obj = pf.Objective(rows, host, ctx.s_start, ctx.s_start, ctx.area, ctx.A_orig, params, 0.0, 0.0,
+                                   tracker=tracker, fit_identity={"fit_directory": str(ctx.fit_dir),
+                                                                  "fit_restart_sha256": ctx.identity["fit_restart.npz"][
+                                                                      "sha256"]})
+            else:
+                obj = DeltaRegObjective(rows, host, ctx.s_start, ctx.s_start, ctx.area, ctx.A_orig, params, 0.0, 0.0,
+                                        tracker=tracker, fit_identity={"fit_directory": str(ctx.fit_dir),
+                                                                       "fit_restart_sha256": ctx.identity[
+                                                                           "fit_restart.npz"]["sha256"]},
+                                        h_idx=ctx.held_prev[idx], delta_f=args.delta_penalty_f,
+                                        delta_cref=args.delta_cref, delta_cap=args.delta_cap)
+        if args.delta_cap is None and not np.all(np.isneginf(obj.lb_delta)):
             raise SystemExit("the fine tuning must have no lower bound (user 2026-11-11)")
         z_fit = obj.start_vector(ctx.xA, ctx.xB)
         z0 = z_fit.copy()
@@ -837,6 +991,26 @@ def run(args, engine_factory=None, backend=None, command=None):
                 z0[:len(idx)] = np.asarray(z["delta"], float)[idx]
                 z0[-2], z0[-1] = float(z["grain_A_uPa"]), float(z["grain_B_uPa_per_100s"])
             record["resumed_from"] = file_identity(args.resume_from)
+        if dreg:
+            hi_ = ctx.held_prev[idx]
+            clipped = {"lower": 0, "upper": 0}
+            if args.delta_cap is not None:
+                lo_d, up_d = obj.lb[:len(idx)], obj.ub[:len(idx)]
+                below, above = z0[:len(idx)] < lo_d, z0[:len(idx)] > up_d
+                clipped = {"lower": int(below.sum()), "upper": int(above.sum())}
+                z0[:len(idx)] = np.minimum(np.maximum(z0[:len(idx)], lo_d), up_d)
+                if below.any() or above.any():
+                    log("delta cap %g: |h + delta| above the cap at the start on %d facets (h + delta < -cap: %d, "
+                        "> cap: %d): delta starts at the nearest bound there" % (args.delta_cap, int(below.sum() +
+                                                                                                    above.sum()),
+                                                                                  int(below.sum()), int(above.sum())))
+            record["delta_regularization"] = {
+                "definition": DELTA_REGULARIZATION, "f": args.delta_penalty_f, "C_ref": args.delta_cref,
+                "cap": args.delta_cap, "tuned_facets": int(len(idx)), "weights": "facet area",
+                "held_at_tuned_facets": {"max_abs": float(np.max(np.abs(hi_))), "nonzero": int(np.sum(hi_ != 0.0))},
+                "start_clipped": clipped}
+            log("delta regularization: f %s, C_ref %s, cap %s on %d tuned facets (held max |h| %.4g)" % (
+                args.delta_penalty_f, args.delta_cref, args.delta_cap, len(idx), float(np.max(np.abs(hi_)))))
         st_fit = obj.evaluate(z_fit)
         s_init = obj.summary(obj.evaluate(z0))
         if args.validate or args.validate_only:
@@ -872,6 +1046,8 @@ def run(args, engine_factory=None, backend=None, command=None):
                 "costs_initial": s_init, "costs_final": s_final, "stop": reason, "complete": reason != "wall_time",
                 "nfev_total": nfev_total, "segment": int(args.segment),
                 "held_next_definition": "held_prev + delta: the next fit's A = m_b q exp(held_next)"}
+        if dreg:
+            meta["delta_regularization"] = record["delta_regularization"]
         spath, held_next = write_state(out, ctx, obj, st, idx, late, meta, pool)
         pNG_t, pRG_t = write_tables(out, ctx, obj, st_fit, st, pNG_gpu, pRG_gpu, utc)
         write_result_txt(out, ctx, obj, s_init, s_final, opt, record, utc, seg)

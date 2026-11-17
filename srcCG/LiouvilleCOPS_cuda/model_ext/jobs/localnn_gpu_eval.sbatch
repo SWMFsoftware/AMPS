@@ -1,11 +1,14 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-14, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/localnn_gpu_eval.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/localnn_gpu_eval.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 33f1248efcee7d38a9423762be4c308d366b3851504eb1c261f2b80d3b4409ae
+# SHA256 of the run copy = SHA256 of this file without these header lines: b32a4972bd435c423c781a5135c74c15f2a620b4540d563a01d68dcc094de9f7
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job script (gpu002, 8 GPUs, 1 h, option C): GPU standard evaluation of one final state (SEG) -> <run root>/gpu_eval;
 #   grain free (2026-11-14 22:2x UTC fix).
 # RUN: failed with held grain: 125052, 125123; fixed: 125183 (f10, passed), 125185 (f0.1), 125181 (f1, chained).
+# 2026-11-15: stage 2: FT_DIR (the chain's final fine-tuned state; OUT default gpu_eval_ft); #SBATCH
+#   --exclude=gpu003 instead of --nodelist=gpu002 (2026-11-15 14:00 CST: any GPU node but gpu003).
+# RUN 2026-11-15: 132813 (f10 / 0.01 final state).
 # ==== end of header ====
 # Option C (local non-negative basis, lead 2026-11-14): GPU cross-check of ONE localnn fit segment's final per-facet
 # activity through the standard fitter path, writing the standard products (model_ext/localnn_gpu_eval.py docstring):
@@ -16,6 +19,9 @@
 #   3. localnn_gpu_eval.py compare: the CPU state evaluated with the GPU's grain vs the GPU (data cost, tables)
 #      -> $OUT/gpu_check.json
 # Settings: SEG (required: <run root>/fit/final or segNN), OUT (default <run root>/gpu_eval), GRID_DIR (default grid_150m),
+#   FT_DIR (stage 2, 2026-11-15: a localnn fine tuning of SEG, e.g. <chain>/c5/ft/final: its final state A_final and its
+#   grain are evaluated; OUT default <run root>/gpu_eval_ft); the node: override on the sbatch command line
+#   (--nodelist=<free node>; never gpu003: #SBATCH --exclude=gpu003 since 2026-11-15 14:00 CST, before: --nodelist=gpu002),
 #   MODEL_EXT (the localnn
 #   frozen snapshot), CLIP_EXT (default model_ext_frozen/clip_20261108T234013Z, the code of D2).
 #SBATCH --job-name=cops_localnn_gpu
@@ -28,7 +34,7 @@
 #SBATCH --time=01:00:00
 #SBATCH --partition=gpu
 #SBATCH --account=general
-#SBATCH --nodelist=gpu002
+#SBATCH --exclude=gpu003
 #SBATCH --output=/data001/highresolu_vt/cops_output/jobs/logs/cops_localnn_gpu-%j.out
 set -uo pipefail
 export AMPS=/data001/highresolu_vt/AMPS APP=/data001/highresolu_vt/AMPS/srcCG/LiouvilleCOPS_cuda
@@ -45,6 +51,8 @@ export MODEL_EXT=$(readlink -f "${MODEL_EXT:-$COPS_OUTPUT_ROOT/model_ext}")
 CX=$(readlink -f "${CLIP_EXT:-$COPS_OUTPUT_ROOT/model_ext_frozen/clip_20261108T234013Z}")
 SEG=$(readlink -f "${SEG:?SEG is required}")
 RUNROOT=$(dirname "$(dirname "$SEG")")
+FT_DIR=${FT_DIR:-}; FTO=()
+if [ -n "$FT_DIR" ]; then FT_DIR=$(readlink -f "$FT_DIR"); FTO=(--ft-dir "$FT_DIR"); OUT=${OUT:-$RUNROOT/gpu_eval_ft}; fi
 OUT=${OUT:-$RUNROOT/gpu_eval}
 PY="$APP/.venv/bin/python -W ignore"
 stamp() { echo "$(date -u +%FT%TZ) $*"; }
@@ -52,9 +60,9 @@ stamp() { echo "$(date -u +%FT%TZ) $*"; }
 mkdir -p "$OUT" || exit 1
 P=$OUT/provenance-$SLURM_JOB_ID; mkdir "$P" || exit 1
 cd "$APP" || exit 1
-stamp "job $SLURM_JOB_ID on $(hostname): SEG=$SEG OUT=$OUT MODEL_EXT=$MODEL_EXT CLIP_EXT=$CX"
+stamp "job $SLURM_JOB_ID on $(hostname): SEG=$SEG FT_DIR=$FT_DIR OUT=$OUT MODEL_EXT=$MODEL_EXT CLIP_EXT=$CX"
 cp -p "$0" "$P/localnn_gpu_eval.sbatch.used"
-cp -p "$MODEL_EXT/localnn_gpu_eval.py" "$MODEL_EXT/localnn_problem.py" "$MODEL_EXT/localnn_mesh.py" "$P/"
+cp -p "$MODEL_EXT/localnn_gpu_eval.py" "$MODEL_EXT/localnn_problem.py" "$MODEL_EXT/localnn_mesh.py" "$MODEL_EXT/localnn_late.py" "$P/" 2>/dev/null
 mkdir "$P/clip_ext" && cp -p "$CX"/*.py "$CX/SHA256SUMS" "$P/clip_ext/"
 ( cd "$P" && sha256sum *.py clip_ext/*.py localnn_gpu_eval.sbatch.used > code_sha256.txt )
 { git -C "$AMPS" rev-parse HEAD; git -C "$AMPS" status --short; } > "$P/git.txt" 2>&1
@@ -67,8 +75,8 @@ env | grep -E '^(CUDA_[A-Z_]*|CUPY_[A-Z_]*|COPS_[A-Z_]*|SEG|OUT|MODEL_EXT|OMP_[A
   grep '^export ' "$0"; echo "export MODEL_EXT=$MODEL_EXT"; echo "cd $APP"; } > "$P/commands.sh"
 rec() { printf '%q ' "$@" >> "$P/commands.sh"; echo >> "$P/commands.sh"; }
 stamp "1. prep"
-rec $PY "$MODEL_EXT/localnn_gpu_eval.py" prep --seg "$SEG" --base "$BASE" --out "$OUT/inputs"
-$PY "$MODEL_EXT/localnn_gpu_eval.py" prep --seg "$SEG" --base "$BASE" --out "$OUT/inputs" > "$P/prep.log" 2>&1 || { tail -5 "$P/prep.log"; exit 1; }
+rec $PY "$MODEL_EXT/localnn_gpu_eval.py" prep --seg "$SEG" --base "$BASE" "${FTO[@]}" --out "$OUT/inputs"
+$PY "$MODEL_EXT/localnn_gpu_eval.py" prep --seg "$SEG" --base "$BASE" "${FTO[@]}" --out "$OUT/inputs" > "$P/prep.log" 2>&1 || { tail -5 "$P/prep.log"; exit 1; }
 tail -1 "$P/prep.log" | cut -c1-400
 FIX=(); while read -r f; do FIX+=(--fix "$f"); done < "$OUT/inputs/fix_args.txt"
 B=$OUT/inputs/localnn_activity.templates.npz
@@ -88,7 +96,7 @@ tail -4 "$P/fit.log" | cut -c1-300
 if [ $rc -eq 0 ]; then
   stamp "3. compare"
   GD=${GRID_DIR:-$R/nonneg/localnn/grid_150m}
-  CC=(compare --seg "$SEG" --gpu "$OUT/fit" --design "$GD/design" --base "$BASE" --d2 "$R/clip_refit/D2/final" --point-table "$PTS" --out "$OUT/gpu_check.json")
+  CC=(compare --seg "$SEG" --gpu "$OUT/fit" --design "$GD/design" --base "$BASE" --d2 "$R/clip_refit/D2/final" --point-table "$PTS" "${FTO[@]}" --out "$OUT/gpu_check.json")
   rec $PY "$MODEL_EXT/localnn_gpu_eval.py" "${CC[@]}"
   $PY "$MODEL_EXT/localnn_gpu_eval.py" "${CC[@]}" > "$P/compare.log" 2>&1; rc=$?
   tail -1 "$P/compare.log" | cut -c1-1500

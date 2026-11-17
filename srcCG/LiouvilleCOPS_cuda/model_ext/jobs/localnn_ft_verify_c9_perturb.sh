@@ -1,0 +1,16 @@
+#!/bin/bash
+# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# Run copy: $COPS_OUTPUT_ROOT/tests/localnn_20261114/stage2/late_dev2.sh (on Voyager: /data001/highresolu_vt/cops_output/tests/localnn_20261114/stage2/late_dev2.sh)
+# SHA256 of the run copy = SHA256 of this file without these header lines: 0a7b2fa7a9f6449604421c51dd3f23f5bb670471024cd6a0f26e0eb7d96aacbe
+# Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
+# WHAT: the dev late kernels with the softplus c9 state, the c9 verification and c5 with 1e-15 relative start
+#   perturbations (seeds 1, 2): the rounding amplification of the truncated-LSMR fine tuning.
+# RUN 2026-11-15: 131979.
+# ==== end of header ====
+export NPY_DISABLE_CPU_FEATURES="AVX512F AVX512CD AVX512_KNL AVX512_KNM AVX512_SKX AVX512_CLX AVX512_CNL AVX512_ICL"
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 PYTHONUNBUFFERED=1 APP=/data001/highresolu_vt/AMPS/srcCG/LiouvilleCOPS_cuda
+cd $APP
+bash -c 'echo 1000 > /proc/self/oom_score_adj; exec .venv/bin/python -W ignore /data001/highresolu_vt/cops_output/model_ext/localnn_late.py --base /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base --d2 /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/final --point-table /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/late_grid_points.txt --contrib-code /data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261112T210012Z --nonneg-code /data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_20261113T035423Z --out /data001/highresolu_vt/cops_output/tests/localnn_20261114/stage2/late_kernels_dev2.npz --state softplus_c9=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/chain_5cycles_smm1_20261113T041215Z/c9/fit/final/nonneg_facets.npz:1.7180660077418602e-35 --procs 64'
+export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8
+.venv/bin/python -W ignore /data001/highresolu_vt/cops_output/model_ext/localnn_ft.py verify-softplus --fit /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/chain_5cycles_smm1_20261113T041215Z/c9/fit/seg01 --gpu-ft /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/chain_5cycles_smm1_20261113T041215Z/c9/ft/final --late /data001/highresolu_vt/cops_output/tests/localnn_20261114/stage2/late_kernels_dev2.npz --state-name softplus_c9 --out /data001/highresolu_vt/cops_output/tests/localnn_20261114/stage2/verify_softplus_c9; echo "c9 rc $?"
+for s in 1 2; do .venv/bin/python -W ignore /data001/highresolu_vt/cops_output/model_ext/localnn_ft.py verify-softplus --fit /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/chain_5cycles_smm1_20261113T041215Z/c5/fit/seg01 --gpu-ft /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/chain_5cycles_smm1_20261113T041215Z/c5/ft/final --late /data001/highresolu_vt/cops_output/tests/localnn_20261114/stage2/late_kernels_dev.npz --state-name softplus_c5 --perturb 1e-15 --perturb-seed $s --out /data001/highresolu_vt/cops_output/tests/localnn_20261114/stage2/verify_softplus_c5_perturb$s; echo "c5 perturbed seed $s rc $?"; done

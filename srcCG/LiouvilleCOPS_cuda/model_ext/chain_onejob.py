@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/chain_onejob.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/chain_onejob.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 560780acebbeea6d75d59e4bee1d02ca7388d20749f1303005163c6f2b4bf9a2
+# SHA256 of the run copy = SHA256 of this file without these header lines: eca15cf58f0cc6c7c695fe9ce66e7ea43180a614978f720054bd4e56fad80de1
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: driver. One Slurm job, one process: a whole fit / fine-tuning chain (c1 fit -> c1 ft -> ... -> c<N> ft) on ONE
 #   bound multi-GPU backend (user decision 2026-11-10 "yes, implement (b)"): the records are bound once, the template
@@ -15,6 +15,18 @@
 # 2026-11-13: v6.4: --slope-mult-min V (kind nonneg, softplus, value 1) passed to every fit argv of every cycle and
 #   resumed segment, at the end of MOPT as jobs/nonneg_fit.sbatch; frozen chain_onejob_20261113T041215Z (jobs 124664,
 #   124772).
+# 2026-11-15: v7: kind nonneg also for agent 1's options A / B / D (--slope-model sos | background | logspread with
+#   --sos-rank | --bg-min | --spread-f --spread-cref [--spread-u0], verbatim in jobs/nonneg_fit.sbatch's MOPT order) and
+#   --c1-from <complete fit dir> (cycle 1's fit ADOPTED: c1/fit/final -> its final segment, ADOPTED_C1_FIT.txt);
+#   frozen chain_onejob_20261115T184608Z; stage-2 chains 131989 (background), 131992 (logspread), 131995 (sos);
+#   GPU test 131984-131988 (background split vs one-job).
+# 2026-11-16: v7.1: --ft-delta-penalty-f / --ft-delta-cref / --ft-delta-cap (kind nonneg) -> every fine tuning's
+#   --delta-penalty-f / --delta-cref / --delta-cap as jobs/nonneg_finetune.sbatch DELTA_*; frozen
+#   chain_onejob_20261116T060510Z; regularized stage-2 reruns 135367-135378 (GPU test 135365/135366).
+# 2026-11-16: v7.2: --c1-from with --cycles 1: the process configuration from the adopted stage (v7.1 raised
+#   StopIteration, gate 135365); frozen chain_onejob_20261116T160712Z; gate 135861/135862; reruns 135863-135874.
+# 2026-11-17: v7.3: --min-free-gb (stop with exit 5 before the process setup / a stage below G GiB free; after the
+#   disk-full event of 2026-11-16 21:10 CST); frozen chain_onejob_20261117T063334Z; D 136016-136018, A 136019-136021.
 # ==== end of header ====
 """One Slurm job, one driver process: a whole fit / fine-tuning chain on ONE bound multi-GPU backend
 (user decision 2026-11-10, "yes, implement (b)").
@@ -124,6 +136,23 @@ Stage interface (for later stage types, e.g. the slope-multiplier fit and its fi
   (done / rc / argv / env / provenance notes), call(plan) -> exit code (the stage driver's main, in process, fresh
   modules), finish(plan, rc) -> exit code (final link, product checks). See README_ONEJOB_STAGE_INTERFACE below and
   model_ext/logs/agent_onejob_READY.txt.
+
+Nonneg stage 2 (v7, 2026-11-15, lead / user): --kind nonneg --slope-model sos | background | logspread with their tokens
+(--sos-rank R | --bg-min B | --spread-f F --spread-cref C [--spread-u0 U], verbatim, placed as jobs/nonneg_fit.sbatch's
+MOPT: [--start-file] [--slope-mult-min] [--sos-rank] [--bg-min] [--spread-f] [--spread-cref] [--spread-u0]) and
+--c1-from <a complete fit dir of the same setting>: cycle 1's fit is ADOPTED (AdoptedNonnegFitStage: model tokens,
+status complete and no held term checked; c1/fit/final -> its final segment, absolute; c1/fit/ADOPTED_C1_FIT.txt), the
+chain runs c1 ft, c2 fit (--start chain from the adopted restart), ... The process configuration then comes from c2's
+tokens with --start restart --start-restart <adopted restart> (constants only, no held term). softplus / squared
+commands are unchanged.
+v7.1 (2026-11-16, lead / user): --ft-delta-penalty-f F --ft-delta-cref C [--ft-delta-cap X] (kind nonneg) -> every
+fine tuning gets --delta-penalty-f / --delta-cref / --delta-cap (verbatim, after --l-threads, as jobs/nonneg_finetune.sbatch
+DELTA_F / DELTA_CREF / DELTA_CAP); an existing fine-tuning segment of another delta setting (incl. off) is refused.
+v7.3 (2026-11-17, lead, after the 2026-11-16 21:10 CST disk-full event): --min-free-gb G: before the process setup and
+before every stage that is not yet complete, the chain stops with exit 5 (nothing of the stage written) when the chain
+root's file system has less than G GiB free. Default off; commands unchanged.
+v7.2 (2026-11-16): --c1-from with --cycles 1 (c1 adopted + c1 ft, no fit runs): the process configuration comes from the
+adopted stage (nonneg_config_stage); v7.1 raised StopIteration in the parent setup (GPU test 135365).
 """
 
 import argparse
@@ -161,6 +190,7 @@ BUNDLE = ROOT_OUT / "runs" / "shap8_012m_flat_earlier" / "bundle" / "restart_tem
 PY = [str(APP / ".venv" / "bin" / "python"), "-W", "ignore"]
 KIND_ENV = "COPS_CHAIN_ONEJOB_KIND"
 EXIT_WALL_TIME = 75
+EXIT_DISK = 5            # v7.3: free space of the chain root's file system below --min-free-gb: stopped before a stage
 RATIO_DECISIONS = ("0.02", "0.002", "1e-5")                    # positive_fit.sbatch / positive_cycles.sh
 EVENTS_NAME = "chain_onejob_events.jsonl"
 DETACH_REQUEST = "chain_ft_detach"
@@ -654,7 +684,13 @@ def _npz_meta(path):
         return json.loads(str(z["meta_json"]))
 
 
-class PositiveFitStage:
+class _StageHint:
+    def state_complete_hint(self):
+        """True when the stage already has its final link (a completed stage writes nothing when it is skipped)."""
+        return (self.directory / "final").is_symlink()
+
+
+class PositiveFitStage(_StageHint):
     """jobs/positive_fit.sbatch with CHAIN=1 (cycle k of jobs/positive_cycles.sh)."""
 
     kind = "positive_fit"
@@ -859,7 +895,7 @@ class PositiveFitStage:
         pass
 
 
-class PositiveFineTuneStage:
+class PositiveFineTuneStage(_StageHint):
     """jobs/positive_finetune.sbatch (cycle k of jobs/positive_cycles.sh: FIT=c<k>/fit/final, OUT=c<k>/ft)."""
 
     kind = "positive_finetune"
@@ -1405,7 +1441,31 @@ class SlopeFineTuneStage(PositiveFineTuneStage):
 # worker: nonneg_mult.install_worker_handlers(); the held term is the stages' own (host only, set_stage_held at each
 # stage's start); fit nonneg_fit.main() (sys.argv); fine tuning nonneg_finetune.main(argv) (binds through
 # gpu_model.REGISTRY, close() sends nonneg_detach).
-NONNEG_MODELS = {"softplus": {"c1_start": "d2"}, "squared": {"c1_start": "lsq"}}
+NONNEG_MODELS = {"softplus": {"c1_start": "d2"}, "squared": {"c1_start": "lsq"},
+                 # options A, B, D of agent 1 (2026-11-14; nonneg_alt.py): their model tokens follow --slope-mult-min in
+                 # nonneg_fit.sbatch's MOPT; START restart continues a complete fit of the same model
+                 "sos": {"c1_start": "gram"}, "background": {"c1_start": "d2"}, "logspread": {"c1_start": "uniform"}}
+NONNEG_NEW_MODELS = ("sos", "background", "logspread")
+NONNEG_TOKENS = (("sos_rank", "--sos-rank"), ("bg_min", "--bg-min"), ("spread_f", "--spread-f"),
+                 ("spread_cref", "--spread-cref"), ("spread_u0", "--spread-u0"))       # nonneg_fit.sbatch lines 101-103
+
+
+def nonneg_marker_problems(meta, a):
+    """A nonneg fit restart's model tokens (model_extension: model.model, model.sos_rank, slope_mult_min, bg_min,
+    spread_f, spread_cref, spread_u0) against this chain's options; [] if equal."""
+    ext = meta.get("model_extension") or {}
+    mdl = ext.get("model") or {}
+    def num(v):
+        return None if v is None else float(v)
+    want = {"model": a.slope_model, "slope_mult_min": num(a.slope_mult_min), "sos_rank": num(a.sos_rank),
+            "bg_min": num(a.bg_min), "spread_f": num(a.spread_f), "spread_cref": num(a.spread_cref),
+            "spread_u0": num(a.spread_u0)}
+    have = {"model": mdl.get("model") if isinstance(mdl, dict) else None,
+            "slope_mult_min": num(ext.get("slope_mult_min")),
+            "sos_rank": num(mdl.get("sos_rank") if isinstance(mdl, dict) else None),
+            "bg_min": num(ext.get("bg_min")), "spread_f": num(ext.get("spread_f")),
+            "spread_cref": num(ext.get("spread_cref")), "spread_u0": num(ext.get("spread_u0"))}
+    return ["%s %r in the restart, %r in this chain" % (k, have[k], want[k]) for k in want if have[k] != want[k]]
 D2_FINAL = RUN / "clip_refit" / "D2" / "final"
 
 
@@ -1421,12 +1481,13 @@ class NonnegFitStage(SlopeFitStage):
                   "positive_finetune.py", "clip_problem.py", "clip_refit.py", "grain_fit_fixed.py", "fixed_parameters.py",
                   "grain_fit.py", "grain_crossing.py", "positive_problem.py", "late_response_eval.py",
                   "test_clip_refit.py", "test_positive_fit.py")              # nonneg_fit.sbatch FILES
+    optional_code_files = ("nonneg_alt.py",)                               # options A, B, D (FILES+= when present)
     run_copy_files = code_files
     summary_regex = re.compile(r"^(nonneg|clip_refit|consistency|initial cost|lambda |gpu_model: bound|gpu_fit: |"
                                r"grain_fit: |fit data|selection profile)")
     env_regex = re.compile(r"^(CUDA_[A-Z_]*|CUPY_[A-Z_]*|COPS_[A-Z_]*|NFEV|CHECK|CHECKPARAMS|TESTNAME|TESTMODE|MODEL|START|"
                            r"START_RESTART|START_FILE|FT_FROM|L_THREADS|HELD|GRAIN_FROM|FITDIR|BUNDLE|CHAIN|MODEL_EXT|"
-                           r"SLOPE_MULT_MIN|"
+                           r"SLOPE_MULT_MIN|SOS_RANK|BG_MIN|SPREAD_F|SPREAD_CREF|SPREAD_U0|"
                            r"OMP_[A-Z_]*|OPENBLAS_[A-Z_]*|MKL_[A-Z_]*|PYTHONUNBUFFERED|LD_LIBRARY_PATH|PATH|"
                            r"SLURM_JOB_GPUS|SLURM_JOB_NODELIST|SLURM_JOB_NUM_NODES|CUDA_VISIBLE_DEVICES)=")
 
@@ -1462,14 +1523,47 @@ class NonnegFitStage(SlopeFitStage):
         refuses a resume or chain start with another value)], then SOPT."""
         argv = SlopeFitStage._argv(self, SEG, LEFT, SOPT, O)
         argv[0] = str(HERE / "nonneg_fit.py")
+        a = self.chain.args
         tail = []
-        if self.start == "lsq":
-            tail += ["--start-file", str(readlink_f(self.chain.args.start_file))]
-        if self.chain.args.slope_mult_min is not None:
-            tail += ["--slope-mult-min", self.chain.args.slope_mult_min]
+        if self.start in ("lsq", "gram"):                 # MOPT: [--start-file S] for START lsq | gram
+            tail += ["--start-file", str(readlink_f(self.start_file()))]
+        if a.slope_mult_min is not None:
+            tail += ["--slope-mult-min", a.slope_mult_min]
+        for attr, opt in NONNEG_TOKENS:                   # MOPT lines 101-103: sos-rank, bg-min, spread-f, -cref, -u0
+            if getattr(a, attr) is not None:
+                tail += [opt, getattr(a, attr)]
         k = argv.index(SOPT[0]) if SOPT else len(argv)
         argv[k:k] = tail
         return argv
+
+    def start_file(self):
+        """--start-file of START lsq (squared) / gram (sos: default nonneg/bundle/sos_start_r<R>.npz, as the job
+        script)."""
+        a = self.chain.args
+        if a.start_file:
+            return Path(a.start_file)
+        if self.start == "gram":
+            return RUN / "nonneg" / "bundle" / ("sos_start_r%s.npz" % a.sos_rank)
+        return None
+
+    def config_argv(self):
+        """The process-level GPU configuration's argv: cycle 1's; when cycle 1 is adopted (--c1-from) the first fit
+        stage is c2, whose held term does not exist yet: its model tokens with --start restart --start-restart <the
+        adopted cycle-1 restart> and no held term (the configuration holds constants only)."""
+        if self.k == 1:
+            return SlopeFitStage.config_argv(self)
+        return self._adopted_config_argv()
+
+    def _adopted_config_argv(self):
+        """This stage's model tokens with --start restart --start-restart <the adopted cycle-1 restart>, no held term."""
+        c1r = adopted_c1_restart(self.chain)
+        held, start = self.held, self.start
+        self.held, self.start = None, "restart"
+        try:
+            return self._argv(1, self.chain.args.nfev, ["--start", "restart", "--start-restart", str(c1r)],
+                              self.directory / "seg01")[1:]
+        finally:
+            self.held, self.start = held, start
 
     def check_held_identity(self, k):
         """A completed fit: its restart's model_extension.held (agent 1: path, key, sha256 = sha256 of the held_next
@@ -1491,10 +1585,17 @@ class NonnegFitStage(SlopeFitStage):
 
     def prepare(self):
         a = self.chain.args
-        missing = [f for f in ([a.ft_templates_from] + ([a.start_file] if self.start == "lsq" else []))
+        sf = self.start_file() if self.start in ("lsq", "gram") else None
+        missing = [f for f in ([a.ft_templates_from] + ([sf] if self.start in ("lsq", "gram") else []))
                    if not f or not Path(f).exists()]
         if missing:
             return Plan(rc=2, notes=["missing: %s" % missing])
+        LAST = self.state()[0]      # sos / background / logspread: an existing segment's model tokens = this chain's
+        rs = self.directory / ("seg%02d" % LAST) / "fit_restart.npz"      # (early; the fit checks its marker itself)
+        if a.slope_model in NONNEG_NEW_MODELS and LAST and rs.is_file():
+            bad = nonneg_marker_problems(_npz_meta(rs), a)
+            if bad:
+                return Plan(rc=3, notes=["%s: not this chain's model: %s" % (rs, "; ".join(bad))])
         plan = SlopeFitStage.prepare(self)
         if plan.argv is not None:
             plan.env.pop("BUMPS", None)
@@ -1502,14 +1603,93 @@ class NonnegFitStage(SlopeFitStage):
             plan.env.update(MODEL=a.slope_model, FT_FROM=str(readlink_f(a.ft_templates_from)))
             if a.slope_mult_min is not None:
                 plan.env["SLOPE_MULT_MIN"] = a.slope_mult_min
-            if self.start == "lsq":
-                plan.env["START_FILE"] = str(readlink_f(a.start_file))
+            if self.start in ("lsq", "gram"):
+                plan.env["START_FILE"] = str(readlink_f(sf))
+            for attr, _ in NONNEG_TOKENS:
+                if getattr(a, attr) is not None:
+                    plan.env[attr.upper()] = getattr(a, attr)
             plan.env.pop("L_MODE", None)
         return plan
 
     def call(self, plan):
         sys.argv = list(plan.argv)
         return call_main(lambda: importlib.import_module("nonneg_fit").main())
+
+
+def adopted_c1_segment(chain):
+    """The resolved final segment of --c1-from (a fit directory with final -> seg<NN>, or a segment itself)."""
+    src = Path(chain.args.c1_from)
+    if (src / "fit_restart.npz").is_file():
+        return readlink_f(src)
+    return readlink_f(src / "final")
+
+
+def adopted_c1_restart(chain):
+    return adopted_c1_segment(chain) / "fit_restart.npz"
+
+
+class AdoptedNonnegFitStage(NonnegFitStage):
+    """Cycle 1's fit taken over from an existing complete fit of the same model (--c1-from <fit dir>; lead 2026-11-15:
+    the stage-1 continuation fits nonneg/<model>/stage1c_*/fit): nothing is run. c1/fit/final becomes an absolute link
+    to that fit's final segment and c1/fit/ADOPTED_C1_FIT.txt records it (path, restart sha256, status, cost, the
+    source's command). Checked first: restart status complete, no held term, the model tokens (model, sos rank,
+    slope_mult_min, bg_min, spread_f / cref / u0) = this chain's. The c1 fine tuning then tunes it; c2 starts from it
+    (--start chain)."""
+
+    kind = "nonneg_fit_adopted"
+
+    def __init__(self, chain, k=1):
+        NonnegFitStage.__init__(self, chain, 1)
+
+    def label(self):
+        return "nonneg_fit_c1_adopted"
+
+    def config_argv(self):
+        """The process configuration when no fit stage runs in the chain (--cycles 1 with --c1-from: c1 ft only): the
+        adopted fit's tokens with --start restart --start-restart <its restart> (constants only)."""
+        return self._adopted_config_argv()
+
+    def prepare(self):
+        a = self.chain.args
+        seg = adopted_c1_segment(self.chain)
+        rs = seg / "fit_restart.npz"
+        if not rs.is_file():
+            return Plan(rc=2, notes=["--c1-from %s: no fit_restart.npz in %s" % (a.c1_from, seg)])
+        meta = _npz_meta(rs)
+        bad = nonneg_marker_problems(meta, a)
+        if meta.get("status") != "complete":
+            bad.append("status %r (a complete fit is required)" % meta.get("status"))
+        if (meta.get("model_extension") or {}).get("held"):
+            bad.append("it has a held term (cycle 1 has none)")
+        if bad:
+            return Plan(rc=3, notes=["--c1-from %s cannot be cycle 1 of this chain: %s" % (seg, "; ".join(bad))])
+        D, final = self.directory, self.directory / "final"
+        if final.is_symlink() or final.exists():
+            if not final.is_symlink() or readlink_f(final) != seg:
+                return Plan(rc=3, notes=["%s exists and is not the link to %s" % (final, seg)])
+            return Plan(done=True, segment=0, adopted=str(seg))
+        if D.is_dir() and any(D.glob("seg[0-9][0-9]*")):
+            return Plan(rc=3, notes=["%s already holds fit segments: not adopted" % D])
+        D.mkdir(parents=True, exist_ok=True)
+        os.symlink(str(seg), str(final))
+        provs = sorted(seg.parent.glob("provenance-*"))
+        cmd = ""
+        if provs and (provs[-1] / "commands.sh").is_file():
+            cmd = [l for l in (provs[-1] / "commands.sh").read_text().splitlines() if l.strip()][-1]
+        write_text(D / "ADOPTED_C1_FIT.txt", "\n".join([
+            "cycle 1's fit of this chain is ADOPTED, not run here (lead 2026-11-15: stage 2 starts from the complete "
+            "stage-1 continuation fit of the same setting; chain_onejob.py --c1-from)",
+            "adopted %s by job %s, %s" % (seg, os.environ.get("SLURM_JOB_ID", "-"), utc_now()),
+            "final -> %s" % seg,
+            "fit_restart.npz sha256 %s; status %s; segments %s; optimizer cost %s" % (
+                sha256_file(rs), meta.get("status"), [(x.get("nfev"), x.get("status")) for x in meta.get("segments", [])],
+                (meta.get("optimizer") or {}).get("cost")),
+            "model tokens checked: model %s; %s" % (a.slope_model, ", ".join("%s %s" % (k, getattr(a, k)) for k in (
+                "slope_mult_min", "sos_rank", "bg_min", "spread_f", "spread_cref", "spread_u0") if getattr(a, k) is not None)),
+            "source provenance %s" % (provs[-1] if provs else "-"),
+            "source command: %s" % cmd]) + "\n")
+        print("%s c1 fit adopted: %s -> %s" % (utc_now(), final, seg), flush=True)
+        return Plan(done=True, segment=0, adopted=str(seg))
 
 
 class NonnegFineTuneStage(SlopeFineTuneStage):
@@ -1519,20 +1699,63 @@ class NonnegFineTuneStage(SlopeFineTuneStage):
     split_script = "nonneg_finetune.sbatch"
     code_files = ("nonneg_finetune.py", "nonneg_mult.py", "nonneg_problem.py", "slope_mult.py", "positive_finetune.py",
                   "positive_problem.py", "grain_crossing.py", "clip_problem.py", "test_nonneg.py")   # MODFILES
+    optional_code_files = ("nonneg_alt.py",)                               # MODFILES+= when present
     run_copy_files = code_files
     fit_files = ("fit_restart.npz", "fit_manifest.json", "nonneg_facets.npz", "grain_term.json", "COPS_model.dat",
                  "late_window_model.dat", "fit_result.txt")              # agent 1, 2026-11-11 (check all)
     summary_regex = re.compile(r"^(nonneg|Traceback|.*Error)")
+    env_regex = re.compile(r"^(CUDA_[A-Z_]*|CUPY_[A-Z_]*|COPS_[A-Z_]*|FIT|OUT|FACETS|WINDOW_MIN|MAXNFEV|LSMR_MAXITER|"
+                           r"L_THREADS|DELTA_F|DELTA_CREF|DELTA_CAP|VALIDATE|VALIDATE_ONLY|MODEL_EXT|OMP_[A-Z_]*|"
+                           r"OPENBLAS_[A-Z_]*|MKL_[A-Z_]*|PATH|LD_LIBRARY_PATH|SLURM_JOB_NODELIST)=")
+    # jobs/nonneg_finetune.sbatch (2026-11-16, agent 1): TOPT = [--l-threads N] [--delta-penalty-f F] [--delta-cref C]
+    # [--delta-cap X], then RES, then --max-nfev
+    DELTA = (("ft_delta_penalty_f", "--delta-penalty-f", "DELTA_F", "f"), ("ft_delta_cref", "--delta-cref", "DELTA_CREF",
+                                                                         "C_ref"),
+             ("ft_delta_cap", "--delta-cap", "DELTA_CAP", "cap"))
+
+    def delta_problems(self):
+        """Every existing segment's finetune_state.npz must carry this chain's delta regularization (meta
+        delta_regularization f / C_ref / cap; absent = off) -- a resume or a completed stage of another setting is
+        refused (the fine tuning itself checks only what it resumes)."""
+        a = self.chain.args
+        want = {k: (None if getattr(a, attr) is None else float(getattr(a, attr))) for attr, _, _, k in self.DELTA}
+        bad = []
+        for st in sorted(self.directory.glob("seg[0-9][0-9]/finetune_state.npz")) if self.directory.is_dir() else []:
+            rec = _npz_meta(st).get("delta_regularization") or {}
+            have = {k: (None if rec.get(k) is None else float(rec[k])) for k in want}
+            if have != want:
+                bad.append("%s: delta regularization %s, this chain %s" % (st.parent.name, have, want))
+        return bad
 
     def prepare(self):
+        bad = self.delta_problems()
+        if bad:
+            return Plan(rc=3, notes=["%s: not this chain's fine tuning: %s" % (self.directory, "; ".join(bad))])
         plan = SlopeFineTuneStage.prepare(self)
         if plan.argv is not None:
             plan.argv[0] = str(HERE / "nonneg_finetune.py")
+            a = self.chain.args
+            tail = []
+            for attr, opt, var, _ in self.DELTA:
+                if getattr(a, attr) is not None:
+                    tail += [opt, getattr(a, attr)]
+                    plan.env[var] = getattr(a, attr)
+            if tail:
+                k = plan.argv.index("--resume-from") if "--resume-from" in plan.argv else plan.argv.index("--max-nfev")
+                plan.argv[k:k] = tail
+                plan.notes.append("delta regularization (DELTA_F / DELTA_CREF / DELTA_CAP): %s" % " ".join(tail))
         return plan
 
     def call(self, plan):
         sys.argv = list(plan.argv)
         return call_main(lambda: importlib.import_module("nonneg_finetune").main(list(plan.argv[1:])))
+
+
+def nonneg_config_stage(chain):
+    """The fit stage whose argv gives the process configuration: the first fit stage that runs; with --c1-from and
+    --cycles 1 (no fit runs) the adopted stage itself (v7.2: v7.1 raised StopIteration here, GPU test 135365)."""
+    fits = [st for st in chain.stages if isinstance(st, NonnegFitStage)]
+    return next((st for st in fits if not isinstance(st, AdoptedNonnegFitStage)), fits[0])
 
 
 def _parent_setup_nonneg(args, chain=None):
@@ -1543,8 +1766,8 @@ def _parent_setup_nonneg(args, chain=None):
         raise SystemExit("chain_onejob: %s set: the nonneg kind refuses the other patches' environment" % preset)
     import nonneg_fit
     import nonneg_mult as nm
-    first = next(st for st in chain.stages if isinstance(st, NonnegFitStage))
-    if first.k != 1:
+    first = nonneg_config_stage(chain)
+    if first.k != 1 and not args.c1_from:
         raise SystemExit("chain_onejob: the nonneg layout must start with the cycle-1 fit")
     cfg = nonneg_fit.process_config_from_argv(first.config_argv())
     nm.install_gpu(cfg)
@@ -1561,13 +1784,15 @@ def _worker_setup_nonneg():
 def _layout_nonneg(chain):
     stages = []
     for k in range(1, chain.args.cycles + 1):
-        stages += [NonnegFitStage(chain, k), NonnegFineTuneStage(chain, k)]
+        fit = AdoptedNonnegFitStage(chain) if (k == 1 and chain.args.c1_from) else NonnegFitStage(chain, k)
+        stages += [fit, NonnegFineTuneStage(chain, k)]
     return stages
 
 
 STAGE_TYPES = {"positive_fit": PositiveFitStage, "positive_finetune": PositiveFineTuneStage,
                "slope_fit": SlopeFitStage, "slope_finetune": SlopeFineTuneStage,
-               "nonneg_fit": NonnegFitStage, "nonneg_finetune": NonnegFineTuneStage}
+               "nonneg_fit": NonnegFitStage, "nonneg_finetune": NonnegFineTuneStage,
+               "nonneg_fit_adopted": AdoptedNonnegFitStage}
 
 
 def _parent_setup_positive(args, chain=None):
@@ -1941,7 +2166,8 @@ class Chain:
         if (HERE / "kernels").is_dir():
             shutil.copytree(str(HERE / "kernels"), str(P / "kernels"))
         with (P / "run_copy.sha256").open("w") as f:          # the files that ran (HERE) = these copies
-            for name in tuple(stage.run_copy_files) + ("chain_onejob.py",):
+            for name in tuple(stage.run_copy_files) + tuple(getattr(stage, "optional_code_files", ())) + \
+                    ("chain_onejob.py",):
                 if (HERE / name).is_file():
                     f.write("%s  %s\n" % (sha256_file(HERE / name), name))
             for p in sorted((HERE / "kernels").iterdir()) if (HERE / "kernels").is_dir() else []:
@@ -2123,7 +2349,10 @@ class Chain:
         """Print every stage's state and the command it would run now (no GPU, nothing written but links/mkdir are
         NOT made: prepare() is not called for stages that depend on unfinished ones)."""
         for st in self.stages:
-            if isinstance(st, PositiveFitStage):
+            if isinstance(st, AdoptedNonnegFitStage):
+                print("%s: %s adopted from %s (%s)" % (st.name, st.directory, adopted_c1_segment(self),
+                                                      "linked" if (st.directory / "final").is_symlink() else "not yet"))
+            elif isinstance(st, PositiveFitStage):
                 print("%s: %s state %s" % (st.name, st.directory, st.state()[:3]))
             else:
                 last = 0
@@ -2170,6 +2399,20 @@ class Chain:
         setup = dict(setup, stage_modules_dropped_after_setup=sorted(popped), kept_with_the_patch=sorted(extra))
         return setup
 
+    def disk_short(self, what):
+        """v7.3 (lead 2026-11-17, after the 2026-11-16 21:10 CST disk-full event): None, or the message when the chain
+        root's file system has less than --min-free-gb GiB free (checked before the process setup and before every
+        stage, so nothing of the stage is written)."""
+        if not getattr(self.args, "min_free_gb", None):
+            return None
+        d = self.root if self.root.exists() else self.root.parent
+        free = shutil.disk_usage(str(d)).free / 1024.0 ** 3
+        if free >= float(self.args.min_free_gb):
+            return None
+        return ("%s: %.1f GiB free on the file system of %s, below --min-free-gb %s: chain stopped before it (exit %d; "
+                "nothing of it written; free space, then resubmit the same command)"
+                % (what, free, d, self.args.min_free_gb, EXIT_DISK))
+
     def run(self):
         a = self.args
         self.tee = Tee()
@@ -2178,6 +2421,11 @@ class Chain:
             say("job %s on %s, pid %d; chain root %s; %d stages: %s; code %s; MODEL_EXT %s"
                 % (self.job, socket.gethostname(), os.getpid(), self.root, len(self.stages),
                    " ".join(s.name for s in self.stages), HERE, self.model_ext))
+            short = self.disk_short("process setup")
+            if short:
+                say(short)
+                self.summary.append({"stage": "-", "status": "not_started_disk", "message": short})
+                return EXIT_DISK
             os.environ[KIND_ENV] = a.kind
             setup = self.parent_setup()
             say("process setup (%s): %s" % (a.kind, json.dumps(setup, default=str)[:600]))
@@ -2187,10 +2435,20 @@ class Chain:
                                                                       info["classes"]))
             self.install_registry()
             for st in self.stages:
+                short = self.disk_short("stage %s" % st.name) if not st.state_complete_hint() else None
+                if short:
+                    say(short)
+                    self.summary.append({"stage": st.name, "status": "not_started_disk", "message": short})
+                    rc = EXIT_DISK
+                    break
                 self.current = st
                 plan = st.prepare()
                 self.current = None
                 if plan.done:
+                    if getattr(plan, "adopted", None):
+                        say("stage %s: adopted (--c1-from, checked): %s" % (st.name, plan.adopted))
+                        self.summary.append({"stage": st.name, "status": "adopted", "fit": plan.adopted})
+                        continue
                     say("stage %s: complete (verified); skipped" % st.name)
                     self.summary.append({"stage": st.name, "status": "complete_before", "segment": plan.segment})
                     continue
@@ -2277,6 +2535,16 @@ def parse_args(argv):
     ap.add_argument("--ft-templates-from", default=str(RUN / "clip_refit" / "D2" / "final" / "fit_manifest.json"),
                     help="nonneg: D2's fit_manifest.json (the ft_c1..ft_c6 templates, held at 1)")
     ap.add_argument("--start-file", default=None, help="nonneg squared: the LSQ start file of nonneg_start.py")
+    ap.add_argument("--ft-delta-penalty-f", default=None, help="nonneg fine tuning: --delta-penalty-f (DELTA_F)")
+    ap.add_argument("--ft-delta-cref", default=None, help="nonneg fine tuning: --delta-cref (DELTA_CREF)")
+    ap.add_argument("--ft-delta-cap", default=None, help="nonneg fine tuning: --delta-cap (DELTA_CAP)")
+    ap.add_argument("--sos-rank", default=None, help="nonneg sos: the rank r (--sos-rank)")
+    ap.add_argument("--bg-min", default=None, help="nonneg background: the lower bound and start of A_bg (--bg-min)")
+    ap.add_argument("--spread-f", default=None, help="nonneg logspread: --spread-f")
+    ap.add_argument("--spread-cref", default=None, help="nonneg logspread: --spread-cref")
+    ap.add_argument("--spread-u0", default=None, help="nonneg logspread (optional): --spread-u0")
+    ap.add_argument("--c1-from", default=None, help="nonneg sos/background/logspread: adopt this complete fit "
+                                                     "(fit dir with final, or a segment) as cycle 1's fit")
     ap.add_argument("--slope-mult-min", default=None,
                     help="nonneg: lower bound of the free slope multipliers (nonneg_fit.py --slope-mult-min, every cycle; "
                          "user 2026-11-12: 1 for the softplus refit); absent: the fits' default (commands unchanged)")
@@ -2298,6 +2566,9 @@ def parse_args(argv):
     ap.add_argument("--min-ft-minutes", type=float, default=25.0,
                     help="start a fine-tuning stage only with this much time left (default 25: its own 20-min reserve)")
     ap.add_argument("--bind-minutes", type=float, default=4.0, help="added to the minimum while nothing is bound")
+    ap.add_argument("--min-free-gb", type=float, default=None,
+                    help="stop (exit 5) before the process setup / a stage when the chain root's file system has less "
+                         "than this many GiB free (default: no check)")
     ap.add_argument("--plan-only", action="store_true", help="print the stages' states (no GPU, nothing run)")
     ap.add_argument("--spawn-selftest", action="store_true", help="CPU check: the spawned workers' module setup")
     args = ap.parse_args(argv)
@@ -2305,13 +2576,16 @@ def parse_args(argv):
         ap.error("--cycles must be 1..9")
     if args.kind == "positive" and (args.lambda_ is None or args.ratio is None):
         ap.error("--kind positive needs --lambda and --ratio")
+    if args.kind != "nonneg" and any(getattr(args, k) is not None for k in ("ft_delta_penalty_f", "ft_delta_cref",
+                                                                             "ft_delta_cap")):
+        ap.error("--ft-delta-*: kind nonneg only (nonneg_finetune.py)")
     if args.kind in ("slope", "nonneg"):
         models = SLOPE_MODELS if args.kind == "slope" else NONNEG_MODELS
         if args.slope_model not in models:
             ap.error("--kind %s needs --slope-model, one of %s" % (args.kind, sorted(models)))
         if args.slope_mult_min is not None:
-            if args.kind != "nonneg" or args.slope_model != "softplus":
-                ap.error("--slope-mult-min: nonneg softplus only (user 2026-11-12)")
+            if args.kind != "nonneg" or args.slope_model not in ("softplus",) + NONNEG_NEW_MODELS:
+                ap.error("--slope-mult-min: nonneg softplus / sos / background / logspread only")
             try:
                 ok = float(args.slope_mult_min) == 1.0
             except ValueError:
@@ -2319,6 +2593,43 @@ def parse_args(argv):
             if not ok:
                 ap.error("--slope-mult-min %s: the user's decision is 1 (nonneg_problem refuses any other value)"
                          % args.slope_mult_min)
+        need = {"sos": ("sos_rank",), "background": ("bg_min",), "logspread": ("spread_f", "spread_cref")}
+        allowed = {"sos": ("sos_rank",), "background": ("bg_min",), "logspread": ("spread_f", "spread_cref", "spread_u0")}
+        for attr, opt in NONNEG_TOKENS:
+            if getattr(args, attr) is None:
+                if attr in need.get(args.slope_model, ()):
+                    ap.error("--slope-model %s needs %s" % (args.slope_model, opt))
+                continue
+            if args.kind != "nonneg" or attr not in allowed.get(args.slope_model, ()):
+                ap.error("%s belongs to another model (not %s %s)" % (opt, args.kind, args.slope_model))
+            try:
+                float(getattr(args, attr))
+            except ValueError:
+                ap.error("%s %s: a number (passed verbatim, as the job script)" % (opt, getattr(args, attr)))
+        for attr in ("ft_delta_penalty_f", "ft_delta_cref", "ft_delta_cap"):
+            v = getattr(args, attr)
+            if v is None:
+                continue
+            if args.kind != "nonneg":
+                ap.error("--%s: kind nonneg only (nonneg_finetune.py)" % attr.replace("_", "-"))
+            try:
+                float(v)
+            except ValueError:
+                ap.error("--%s %s: a number (passed verbatim, as the job script)" % (attr.replace("_", "-"), v))
+        if (args.ft_delta_penalty_f is None) != (args.ft_delta_cref is None):
+            ap.error("--ft-delta-penalty-f and --ft-delta-cref go together (nonneg_finetune.py)")
+        if args.c1_from:
+            if args.kind != "nonneg" or args.slope_model not in NONNEG_NEW_MODELS:
+                ap.error("--c1-from: nonneg sos / background / logspread only (their fits continue with --start restart)")
+            if not Path(args.c1_from).exists():
+                ap.error("--c1-from %s does not exist" % args.c1_from)
+            src = Path(args.c1_from)
+            c1r = (readlink_f(src) if (src / "fit_restart.npz").is_file() else readlink_f(src / "final")) / \
+                "fit_restart.npz"
+            if readlink_f(args.source) != readlink_f(c1r):
+                ap.error("--c1-from: --source must be the adopted fit's restart %s (got %s)" % (c1r, args.source))
+            if args.slope_start:
+                ap.error("--c1-from: no --slope-start (cycle 1 is not run)")
         if args.kind == "nonneg" and args.l_threads and args.l_mode != "chunked":
             ap.error("--kind nonneg: --l-mode chunked only (agent 1)")
         if args.kind == "nonneg" and args.slope_model == "squared" and not args.start_file and not args.plan_only \
@@ -2410,7 +2721,7 @@ def main(argv=None):
     if args.plan_only:
         return chain.plan_only()
     c1 = chain.stages[0]
-    if isinstance(c1, PositiveFitStage) and c1.state()[1] == "none":
+    if isinstance(c1, PositiveFitStage) and not getattr(args, "c1_from", None) and c1.state()[1] == "none":
         msg = check_source(args) if args.kind == "positive" else check_source_slope(args)
         if msg:
             print("chain_onejob: %s" % msg, file=sys.stderr)

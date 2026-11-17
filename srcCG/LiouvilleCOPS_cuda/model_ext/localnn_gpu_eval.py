@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-14, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/localnn_gpu_eval.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/localnn_gpu_eval.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: b5953f4ad8be70b9f145bfe38efecf056d286b81f23a13939de2079d41f8c67c
+# SHA256 of the run copy = SHA256 of this file without these header lines: 9cdecba69b8c81e490fc6d68e73ab2f464881f6a35b1c540ff6e060dc914b677
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: tool (option C): GPU standard evaluation of a localnn final state through D2's path (clip_refit.py
 #   --variant D2, frozen clip_20261108T234013Z): the activity as a held template (A/A_s, amplitude 1), a = 0, kappa, T held;
 #   grain A, B free (D2's grain_crossing reads them from the last two optimizer entries: holding them failed, jobs 125052,
 #   125123), --max-nfev 1; compare = the CPU state at the GPU's grain vs the GPU (data cost full precision, tables).
 # RUN: jobs/localnn_gpu_eval.sbatch (frozen model_ext_frozen/localnn_post2_20261114T222122Z): 125183 (f10, passed), 125185, 125181.
+# 2026-11-15: stage 2: prep / compare --ft-dir (a localnn fine tuning's final state A_final and its grain).
+# RUN 2026-11-15: the GPU cross-check of the chains' final states (to be submitted when a GPU is free).
 # ==== end of header ====
 """Option C (local non-negative basis): GPU cross-check of a localnn fit segment's FINAL per-facet activity through the
 standard fitter path (lead 2026-11-14: "one short GPU cross-check per final state on gpu002, writing the standard
@@ -73,6 +75,8 @@ def cmd_prep(args):
     with np.load(seg / "localnn_state.npz", allow_pickle=False) as z:
         meta = json.loads(str(z["meta_json"]))
         kappa, gA, gB = float(z["kappa"]), float(z["grain_A_uPa"]), float(z["grain_B_uPa_per_100s"])
+    if args.ft_dir:                          # a chain's fine-tuned state: A_final of the fine tuning of this fit
+        A, gA, gB = ft_state(args.ft_dir, seg)
     A_s = float(meta["A_scale"])
     col = A / A_s
     back = A_s * col
@@ -104,6 +108,35 @@ def read_cost(path):
     raise SystemExit("no final_data_cost in %s" % path)
 
 
+def ft_state(ft_dir, seg):
+    """(A_final, grain A, grain B) of a localnn fine tuning of the fit segment seg."""
+    ft = Path(ft_dir).resolve()
+    j = json.load(open(ft / "fine_tuning.json"))
+    if Path(j["fit"]["directory"]).resolve() != Path(seg).resolve():
+        raise SystemExit("the fine tuning %s tuned %s, not %s" % (ft, j["fit"]["directory"], seg))
+    with np.load(ft / "finetune_state.npz", allow_pickle=False) as z:
+        return np.asarray(z["A_final"], np.float64), float(z["grain_A_uPa"]), float(z["grain_B_uPa_per_100s"])
+
+
+def state_rows_surface(design, seg, ft_dir=None):
+    """CPU instantaneous surface pressures of every row of a fit segment (held exact) or of its fine-tuned state:
+    p_fit + G (A_final - A_fit) over the late facets (localnn_ft's linear model)."""
+    sN, sR, meta = lp.state_surface(design, seg)
+    if ft_dir:
+        import localnn_late as llate
+        A_fin, _, _ = ft_state(ft_dir, seg)
+        with np.load(Path(seg) / "nonneg_facets.npz", allow_pickle=False) as z:
+            A_fit = np.asarray(z["A"], np.float64)
+        LK = llate.load(json.load(open(Path(ft_dir) / "localnn_ft.json"))["localnn_ft"]["late_kernels"]["path"],
+                        len(A_fit))
+        li = LK["late_idx"]
+        if np.any(A_fin[~LK["late"]] != A_fit[~LK["late"]]):
+            raise SystemExit("the fine tuning changed facets outside the late kernels")
+        dA = A_fin[li] - A_fit[li]
+        sN, sR = sN + LK["G_NG"] @ dA, sR + LK["G_RG"] @ dA
+    return sN, sR, meta
+
+
 def cmd_compare(args):
     seg, gpu = Path(args.seg).resolve(), Path(args.gpu).resolve()
     with np.load(seg / "localnn_state.npz", allow_pickle=False) as z:
@@ -119,12 +152,12 @@ def cmd_compare(args):
     opt = [o for o in gm["optimizer_results"]][0]
     design = lp.load_design(args.design)
     D = lp.Data(args.base, args.d2, args.point_table, design)
-    sN, sR = lp.all_rows_surface(design, c, m, kappa, meta["templates"] == "on")
+    sN, sR, _ = state_rows_surface(design, seg, args.ft_dir)
     rows = D.model_rows(sN, sR, gA, gB)
     cst = D.costs(rows["pNG"], rows["pRG"])
     cm_g = lp.read_table_cols(gpu / "COPS_model.dat", ("pNG", "pRG"))
     lw_g = lp.read_table_cols(gpu / "late_window_model.dat", ("surface_pNG_Pa", "surface_pRG_Pa", "grain_NG_Pa"))
-    res = {"segment": str(seg), "gpu_fit": str(gpu), "gpu_names": names, "gpu_x": [float(v) for v in xg],
+    res = {"segment": str(seg), "ft_dir": args.ft_dir, "gpu_fit": str(gpu), "gpu_names": names, "gpu_x": [float(v) for v in xg],
            "grain_gpu": {"A_uPa": gA, "B_uPa_per_100s": gB}, "grain_fit": {"A_uPa": gA_fit, "B_uPa_per_100s": gB_fit},
            "cost_gpu_manifest_data_cost": float(opt["data_cost"]), "cost_cpu_with_gpu_grain": cst["data_cost"],
            "cost_rel_diff": abs(cst["data_cost"] / float(opt["data_cost"]) - 1.0),
@@ -152,11 +185,13 @@ def main(argv=None):
     p.add_argument("--seg", required=True)
     p.add_argument("--base", required=True)
     p.add_argument("--out", required=True)
+    p.add_argument("--ft-dir", help="a localnn fine tuning of SEG: evaluate its final state (A_final, its grain)")
     c = sub.add_parser("compare")
     c.add_argument("--seg", required=True)
     c.add_argument("--gpu", required=True)
     for k in ("design", "base", "d2", "point-table"):
         c.add_argument("--" + k, required=True)
+    c.add_argument("--ft-dir")
     c.add_argument("--out", required=True)
     args = ap.parse_args(argv)
     return cmd_prep(args) if args.cmd == "prep" else cmd_compare(args)

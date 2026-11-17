@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-14, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/localnn_fit.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/localnn_fit.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: b6b835bee2a266d91b1bb0574a9cc296ce5089c6d6724fc374e1cdbdf6b809bc
+# SHA256 of the run copy = SHA256 of this file without these header lines: b517de09f5188526cd941720d7d3d7220e51e355e1bae873a37597934176dec4
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: driver (option C): verify (D2 and c9 reproduced), start (NNLS projection of D2 or --start state: another
 #   fit's end point; lambda rule), fit (scipy TRF, segments with wall-time stop / exit 75, products fit_result.txt,
@@ -9,6 +9,14 @@
 #   HOW-TO-RERUN.md); --smooth-rule-file (the rule that gave --smooth-lambda); --mult-penalty-f (P_m, user 2026-11-14
 #   ~17:30 CST; recorded separately); jacobian_check's node step scaled by the state's median x_c.
 # RUN: jobs/localnn_build.sbatch, jobs/localnn_fit.sbatch (anchored stage 1: localnn_anch_20261114T090437Z; P_m check: model_ext_frozen/localnn_mp_20261115T020233Z).
+# 2026-11-15: stage 2: start --start state --grain-from --held --late-kernels (--state-drop-templates); fit --held
+#   --late-kernels --checkpoint-every and --device gpu / --gpu-svd-mode; jacobian_check: node FD step =
+#   node_fd_scale (75th percentile of the positive x_c), a noise floor of the step h >= eps max|f| / (1e-8
+#   max|J_col|) capped at 1000 x the base step, and (2026-11-17) the second-order one-sided difference whenever the
+#   lower point is clipped by a bound (the asymmetric two-point difference at m = 1 + 5e-5 had failed the c4 checks
+#   of the stage2r 1e-4 chains, 2.2e-5 / 2.5e-5).
+# RUN 2026-11-15: localnn_s2jc2_20261117T080730Z: stage2r f10 / 1e-4 136032-136036, f1 / 1e-4 136037-136041; tests
+#   136043.
 # ==== end of header ====
 """Option C (local non-negative basis, user 2026-11-14): driver. CPU only; the model and the cost are in
 localnn_problem.py, the design matrices come from localnn_design.py, the grid from localnn_mesh.py.
@@ -178,13 +186,40 @@ def lp_d2_grain(D, name):
 
 
 # ------------------------------------------------------------------------------------------------ start
+def held_setup(args, design):
+    """(held dict for localnn_problem.Problem, record) from --held FINETUNE_STATE (held_next) and --late-kernels, or
+    (None, None)."""
+    if not getattr(args, "held", None):
+        return None, None
+    if not args.late_kernels:
+        raise SystemExit("--held needs --late-kernels")
+    import localnn_late as llate
+    with np.load(args.held, allow_pickle=False) as z:
+        h = np.asarray(z["held_next"], float)
+    with np.load(design["meta"]["paths"]["facets_from"], allow_pickle=False) as z:
+        TS, bins = np.asarray(z["TS"], np.float64), np.asarray(z["bin"])
+    LK = llate.load(args.late_kernels, len(h))
+    import hashlib
+    rec = {"path": str(Path(args.held).resolve()), "key": "held_next", "file_sha256": lp.sha256_file(args.held),
+           "sha256": hashlib.sha256(np.ascontiguousarray(h).tobytes()).hexdigest(),
+           "nonzero_facets": int(np.sum(h != 0.0)), "min": float(h.min()), "max": float(h.max()),
+           "late_kernels": {"path": str(Path(args.late_kernels).resolve()), "sha256": lp.sha256_file(args.late_kernels)},
+           "definition": "A_e = m_b (sum_j c_j phi_j + TS_e) exp(h_e); h = the previous fine tuning's held_next"}
+    return {"h": h, "LK": LK, "bins": bins, "TS": TS}, rec
+
+
 def make_problem(args, design, D, templates, lam=0.0):
     grid = lp.load_grid(args.grid)
     fm = float(getattr(args, "mult_penalty_f", 0.0) or 0.0)
+    held, hrec = held_setup(args, design)
+    kw = {}
     if fm > 0:
-        return lp.Problem(D, design, grid, templates, args.slope_mult_min, design["meta"]["A_scale"], lam,
-                          mult_penalty_f=fm), grid
-    return lp.Problem(D, design, grid, templates, args.slope_mult_min, design["meta"]["A_scale"], lam), grid
+        kw["mult_penalty_f"] = fm
+    if held is not None:
+        kw["held"] = held
+    P = lp.Problem(D, design, grid, templates, args.slope_mult_min, design["meta"]["A_scale"], lam, **kw)
+    P.held_record = hrec
+    return P, grid
 
 
 def cmd_start(args):
@@ -209,14 +244,25 @@ def cmd_start(args):
         with np.load(sf, allow_pickle=False) as z:
             x0 = np.asarray(z["x"], float)
             smeta = json.loads(str(z["meta_json"]))
-        if smeta["templates"] != args.templates or list(np.load(sf)["names"]) != list(P.names):
+        dropped = bool(getattr(args, "state_drop_templates", False))
+        if dropped and not (smeta["templates"] == "on" and args.templates == "off"):
+            raise SystemExit("--state-drop-templates needs a templates-on state and --templates off")
+        if (smeta["templates"] != args.templates and not dropped) or list(np.load(sf)["names"]) != list(P.names):
             raise SystemExit("--state-file %s: templates or parameter names differ" % sf)
         if smeta["grid"]["sha256"] != lp.sha256_file(Path(args.grid) / "grid.npz"):
             raise SystemExit("--state-file %s was fitted on another grid" % sf)
+        if args.grain_from:
+            with np.load(args.grain_from, allow_pickle=False) as z:
+                x0[P.iA], x0[P.iB] = float(z["grain_A_uPa"]), float(z["grain_B_uPa_per_100s"])
         c0 = x0[P.ic] * P.A_s
         prep = {"start": "state", "state_file": str(sf), "state_sha256": lp.sha256_file(sf),
+                "grain_from": str(Path(args.grain_from).resolve()) if args.grain_from else None,
+                "held": P.held_record,
                 "state_segment": smeta.get("segment"), "state_costs": smeta.get("costs"),
-                "state_lambda_C": smeta.get("lambda_C"), "state_run": str(sf.parent)}
+                "state_lambda_C": smeta.get("lambda_C"), "state_run": str(sf.parent),
+                "state_templates_dropped": dropped,
+                "note": ("the state's x (c, m, kappa, grain) unchanged, D2's templates removed from the model "
+                         "(user / lead 2026-11-16: templates OFF test)") if dropped else None}
         say("start from the state %s: %s" % (sf, json.dumps(prep["state_costs"])))
     else:
         target = A_D2 - TS if templates else A_D2
@@ -310,8 +356,32 @@ def cmd_fit(args):
                 raise SystemExit("resume: %s differs from %s" % (key, prev))
         if float((pm.get("mult_penalty") or {}).get("f_m", 0.0)) != float(args.mult_penalty_f):
             raise SystemExit("resume: --mult-penalty-f differs from %s" % prev)
+        if (pm.get("held") or {}).get("sha256") != (P.held_record or {}).get("sha256"):
+            raise SystemExit("resume: the held term differs from %s" % prev)
         nfev_used = int(pm["nfev_total"])
     seg = (segs[-1] + 1) if segs else 1
+    settings_key = {"lambda_C": lam, "templates": args.templates, "mult_penalty_f": float(args.mult_penalty_f),
+                    "start_file": str(Path(args.start_file).resolve()),
+                    "held_sha256": (P.held_record or {}).get("sha256"), "max_nfev": args.max_nfev}
+    ckpath = out / "checkpoint.npz"
+    resumed_ck = None
+    if ckpath.exists():
+        with np.load(ckpath, allow_pickle=False) as z:
+            ck = {"x": np.asarray(z["x"], float), "nfev_total": int(z["nfev_total"]),
+                  "settings": json.loads(str(z["settings_json"])), "objective": float(z["objective"]),
+                  "segment": int(z["segment"])}
+        if ck["settings"] != settings_key:
+            raise SystemExit("checkpoint %s was written with other settings: %s" % (ckpath, ck["settings"]))
+        if ck["nfev_total"] > nfev_used:
+            x0, nfev_used = ck["x"], ck["nfev_total"]
+            resumed_ck = {"path": str(ckpath), "sha256": lp.sha256_file(ckpath), "nfev_total": ck["nfev_total"],
+                          "objective": ck["objective"], "segment_of_checkpoint": ck["segment"]}
+            say("resume from the checkpoint %s (%d evaluations, objective %.10e)" % (ckpath, ck["nfev_total"],
+                                                                                    ck["objective"]))
+            moved = out / ("checkpoint_resumed_seg%02d_%s.npz" % (seg, dt.datetime.now(dt.timezone.utc).strftime(
+                "%Y%m%dT%H%M%SZ")))
+            ckpath.rename(moved)
+            resumed_ck["kept_as"] = str(moved)
     budget = args.max_nfev - nfev_used
     if budget <= 0:
         raise SystemExit("no evaluations left")
@@ -333,6 +403,19 @@ def cmd_fit(args):
     else:
         chk = None
     P.deadline = (t0 + args.wall_time) if args.wall_time else None
+    dev_rec = None
+    if getattr(args, "device", "cpu") == "gpu":
+        import localnn_gpu_solver as lgs
+        dev_rec = lgs.install(P, args.gpu_svd_mode)
+        say("device gpu: " + json.dumps(dev_rec))
+    if args.checkpoint_every and args.checkpoint_every > 0:
+        def write_ck(xb, ob, nfev_seg):
+            tmp = out / "checkpoint.npz.tmp.npz"
+            np.savez(tmp, x=xb, objective=np.array(ob), nfev_total=np.array(nfev_used + nfev_seg),
+                     segment=np.array(seg), utc=np.array(lp.utc_now()),
+                     settings_json=np.array(json.dumps(settings_key, sort_keys=True, default=float)))
+            os.replace(tmp, ckpath)
+        P.checkpoint = {"every": int(args.checkpoint_every), "write": write_ck}
     stop, res = None, None
     t1 = time.time()
     try:
@@ -343,6 +426,10 @@ def cmd_fit(args):
     except lp.WallTime:
         x = P.best[1]
         stop = "wall_time"
+    finally:
+        if dev_rec is not None:
+            dev_rec = lgs.stats()
+            lgs.uninstall()
     tfit = time.time() - t1
     cst, rows = P.evaluate(x)
     nfev_total = nfev_used + P.nfev
@@ -360,10 +447,16 @@ def cmd_fit(args):
             "templates": args.templates, "slope_mult_min": args.slope_mult_min,
             "start_file": str(Path(args.start_file).resolve()), "max_nfev": args.max_nfev,
             "previous_segment": str(prev) if prev else None, "jacobian_check": chk,
+            "resumed_from_checkpoint": resumed_ck, "checkpoint_every": int(args.checkpoint_every or 0),
             "cost_at_fit_start": {k: c_start[k] for k in ("data_cost", "crossing_cost", "penalty", "objective",
                                                            "mult_penalty") if k in c_start},
             "cost_at_segment_start": {k: c_seg0[k] for k in ("data_cost", "crossing_cost", "penalty", "objective",
                                                               "mult_penalty") if k in c_seg0}}
+    if P.held_record is not None:
+        info["held"] = P.held_record
+    if dev_rec is not None:
+        info["device"] = dev_rec
+        say("device gpu: %d SVDs in %.1f s" % (dev_rec["svd_calls"], dev_rec["svd_seconds"]))
     if P.fm > 0:
         info["mult_penalty"] = {"f_m": P.fm, "C_ref": P.cref_m, "definition": lp.MULT_PENALTY_DEFINITION,
                                 "value_final": cst["mult_penalty"]}
@@ -374,12 +467,20 @@ def cmd_fit(args):
         info.update(message="wall-time stop at the best evaluated state", status=None, njev=None, optimality=None)
     write_products(stage, args, P, D, design, grid, x, cst, rows, info, templates)
     stage.rename(segdir)
+    if ckpath.exists():
+        ckpath.rename(segdir / "checkpoint_last.npz")
     if stop == "optimizer":
         os.symlink(segdir.name, out / "final")
         say("final -> %s" % segdir.name)
         return 0
     say("wall-time stop: resubmit the same command to continue (exit %d)" % EXIT_WALLTIME)
     return EXIT_WALLTIME
+
+
+def node_fd_scale(xc):
+    """Typical node coefficient for the FD steps of the Jacobian checks: min(1, 75th percentile of the positive x_c)."""
+    xc = np.asarray(xc, float)
+    return min(1.0, float(np.percentile(xc[xc > 0], 75))) if np.any(xc > 0) else 1.0
 
 
 def jacobian_check(P, x, ncols=24, seed=1):
@@ -394,15 +495,40 @@ def jacobian_check(P, x, ncols=24, seed=1):
     typ = np.ones(len(x))
     typ[P.ik:] = 1e-3                     # kappa, grain A, B (start values ~0 for kappa and B)
     # node columns: the state's typical x_c (2026-11-14: at a converged state x_c ~ 1e-3, a step of 1e-4 x 1 is ~5 % of
-    # the field and the FD truncation error of ln p reaches 5e-4; at the D2-projection starts x_c is O(1 .. 100))
+    # the field and the FD truncation error of ln p reaches 5e-4; at the D2-projection starts x_c is O(1 .. 100)).
+    # 2026-11-15: the 75th percentile of the positive x_c, not the median: with P_m half of the nodes sit at the bound
+    # 0 as 1e-24 .. 1e-19 (TRF interior), the median 8e-20 gave steps far below the rounding of the residuals
+    # (FD column 0, rel. error 1.0); the 75th percentile is 1.1e-3 .. 1.5e-3 at the three stage-1 end points
     xc = x[P.ic]
-    typ[P.ic] = min(1.0, float(np.median(xc[xc > 0]))) if np.any(xc > 0) else 1.0
+    typ[P.ic] = node_fd_scale(xc)
+    # 2026-11-16: a noise floor of the step. At the f = 1, f_m = 1e-4 c4 start (chain stage2_f1_pm1e-4) the 75th
+    # percentile of the positive x_c is 3.8e-5, so h = 3.8e-9 at the bound nodes and the FD rounding noise
+    # eps max|f| / h reached 2.9e-5 of the column (it fell as 1/h: 3.9e-6, 9.5e-7, 2.9e-7, 3.0e-8 at 10, 30, 100,
+    # 1000 h; the analytic columns are right). The floor keeps eps max|f| / h <= 1e-8 of the column's max |J|
+    # (capped at 1000 x the base step; 2026-11-17: 100 x left 6.7e-6 at the stage2r f1 / 1e-4 c4 start; at 1000 h the
+    # truncation error of those columns was 3e-8).
+    fmax = float(np.max(np.abs(P.fun(x))))
+    eps = np.finfo(float).eps
     for k in cols:
-        h = 1e-4 * max(abs(x[k]), typ[k])  # FD noise ~ eps / h stays << 1e-5 for nodes at the bound 0
+        h = 1e-4 * max(abs(x[k]), typ[k])
+        colmax = float(np.max(np.abs(J[:, k])))
+        if colmax > 0:
+            h = max(h, min(eps * fmax / (1e-8 * colmax), 1000.0 * h))    # at most 1000 x the base step
         xp, xm = x.copy(), x.copy()
         xp[k] += h
         xm[k] = max(x[k] - h, P.lo[k]) if np.isfinite(P.lo[k]) else x[k] - h
-        num = (P.fun(xp) - P.fun(xm)) / (xp[k] - xm[k])
+        if xm[k] > x[k] - h:
+            # 2026-11-17: whenever the lower point is clipped by the bound (not only within h/2 of it): the asymmetric
+            # two-point difference (f(x+h) - f(lo)) / (x+h - lo) is first-order; at m = 1 + 5e-5 (chains
+            # stage2r_f*_pm1e-4_tplon, c4 starts) its error (h - (x - lo)) / 2 / m reached 2.2e-5 / 2.5e-5
+            # at (or within h of) the lower bound: second-order one-sided difference from x (2026-11-15: with P_m the
+            # multipliers sit at the bound m = 1, where the first-order (ln(1 + h) - 0) / h has the truncation error h/2
+            # = 5e-5 of the ln m rows)
+            xp2 = x.copy()
+            xp2[k] += 2.0 * h
+            num = (-3.0 * P.fun(x) + 4.0 * P.fun(xp) - P.fun(xp2)) / (2.0 * h)
+        else:
+            num = (P.fun(xp) - P.fun(xm)) / (xp[k] - xm[k])
         den = max(np.max(np.abs(J[:, k])), 1e-300)
         e = float(np.max(np.abs(num - J[:, k])) / den)
         rep[P.names[k]] = e
@@ -424,8 +550,16 @@ def write_products(stage, args, P, D, design, grid, x, cst, rows, info, template
         bins = np.asarray(z["bin"]).astype(np.int8)
     u = lp.facet_field(grid, c)
     Pf = np.maximum(u + TS, 0.0)
+    held_arr = np.zeros(len(area))
+    if P.held is not None:
+        held_arr[P.held["idx"]] = np.asarray(np.load(args.held)["held_next"], float)[P.held["idx"]]
     clipped = int(np.sum(u + TS < 0))
     Af = m[bins.astype(np.intp)] * Pf
+    if P.held is not None:                   # the same operations as localnn_ft.LocalnnFitContext's reproduction
+        hz = held_arr != 0.0
+        Af[hz] = Af[hz] * np.exp(held_arr[hz])
+        Pf = Pf.copy()
+        Pf[hz] = Pf[hz] * np.exp(held_arr[hz])
     sarea = float(np.sum(area[seen]))
     act = {"seen_area_fraction_A_gt_0": float(np.sum(area[seen & (Af > 0)]) / sarea),
            "area_fraction_A_gt_0": float(np.sum(area[Af > 0]) / np.sum(area)),
@@ -463,9 +597,10 @@ def write_products(stage, args, P, D, design, grid, x, cst, rows, info, template
                              "TS": "A_s sum_k ft_ck (D2's templates held at 1; 0 with --templates off)",
                              "A": "m[bin] max(0, u + TS)", "P": "A / m[bin] = max(0, u + TS)", "bin": "slope bin 0..6",
                              "seen": "facet contributes to a fit point (the c9 fit's nonneg_facets.npz seen)",
-                             "held": "0 (no fine-tuning term)", "area": "facet area [m^2]"}}
+                             "held": "the held fine-tuning term h (A = m max(0, u + TS) exp(h)); 0 without --held",
+                             "area": "facet area [m^2]"}, "held": P.held_record}
     with open(stage / "nonneg_facets.npz", "xb") as f:
-        np.savez_compressed(f, u=u, TS=TS, A=Af, P=Pf, bin=bins, seen=seen, held=np.zeros(len(area)), area=area,
+        np.savez_compressed(f, u=u, TS=TS, A=Af, P=Pf, bin=bins, seen=seen, held=held_arr, area=area,
                             meta_json=json.dumps(fmeta, sort_keys=True, default=float))
     write_tables(stage, args, D, rows, x, meta)
     write_result(stage, args, P, D, x, cst, meta)
@@ -635,9 +770,15 @@ def main(argv=None):
         p.add_argument("--grid", required=True)
         p.add_argument("--templates", choices=("on", "off"), required=True)
         p.add_argument("--slope-mult-min", type=float, default=1.0)
+        p.add_argument("--held", help="finetune_state.npz whose held_next is held (stage 2; needs --late-kernels)")
+        p.add_argument("--late-kernels", help="localnn_late.py output (G = dp/dA of the late facets)")
     ps = sub.choices["start"]
     ps.add_argument("--start", choices=("d2", "state"), default="d2")
     ps.add_argument("--state-file", help="--start state: a localnn_state.npz (its x is the start)")
+    ps.add_argument("--grain-from", help="--start state: grain A, B from this finetune_state.npz")
+    ps.add_argument("--state-drop-templates", action="store_true",
+                    help="--start state with --templates off from a templates-on state: the same x, the template part "
+                         "TS removed (2026-11-16, the templates OFF test)")
     pf = sub.choices["fit"]
     pf.add_argument("--start-file", required=True, help="a 'start' output folder")
     pf.add_argument("--smooth-lambda", type=float)
@@ -649,6 +790,14 @@ def main(argv=None):
     pf.add_argument("--max-nfev", type=int, required=True)
     pf.add_argument("--wall-time", type=float, default=0.0, help="seconds after which the segment stops (0: none)")
     pf.add_argument("--check-jacobian", action="store_true")
+    pf.add_argument("--checkpoint-every", type=int, default=0,
+                    help="write <out>/checkpoint.npz (the best x so far) every N evaluations; a later run of the same "
+                         "command resumes from it (0: off)")
+    pf.add_argument("--device", choices=("cpu", "gpu"), default="cpu",
+                    help="gpu (lead / user 2026-11-15 'option 3'): the design products and TRF's SVD on one GPU "
+                         "(localnn_gpu_solver.py, CuPy FP64); cpu (default) = the previous path, bitwise")
+    pf.add_argument("--gpu-svd-mode", choices=("qr", "gesvd"), default="qr",
+                    help="with --device gpu: SVD of J_augmented as QR + SVD(R) (qr) or cuSOLVER gesvd directly")
     args = ap.parse_args(argv)
     if getattr(args, "slope_mult_min", 1.0) != 1.0:
         raise SystemExit("--slope-mult-min: the decision is 1 (user 2026-11-12 / the lead 2026-11-14)")

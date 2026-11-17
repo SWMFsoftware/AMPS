@@ -1,0 +1,10 @@
+{
+ "_about": "Caption texts of the final stage-1 comparison (2026-11-15); options_captions.py --texts. Model forms from model_ext/README.md (options A-D) and the run READMEs of the continuations (jobs/nonneg_alt_stage1c.sh) and of the C multiplier-penalty run.",
+ "A": "option A, sum of squares of rank 3 (A = m_b sum_k (u_k)^2, three fields; continued from its stage-1 end point)",
+ "B": "option B, background plus softplus (A = m_b [A_bg A_orig + softplus], A_orig the srcCG activity map, A_bg >= the setting; each setting continued from its stage-1 end point)",
+ "C": "option C, local non-negative basis (A = m_b sum_j c_j phi_j on a 150-m node grid, c_j >= 0, smoothness penalty lambda_C = f C_ref / R_pilot; CPU fits whose COPS_model.dat comes from the design matrices, GPU cross-check pending; the variant f 10 P_m 0.01 adds the multiplier penalty P_m = f_m C_ref sum_b (ln m_b)^2 with f_m = 0.01, continued from the f 10 end point, max_nfev 1000)",
+ "D": "option D, log form with a spread penalty about a fixed level (A = m_b exp(u), penalty f C_ref [Var_w(u) + (u_bar - u0)^2], u0 = -1.8641 = ln of the stage-1 uniform start level, C_ref = the softplus c9 data cost; refitted from the stage-1 end points, which used the mean-centred penalty f C_ref Var_w(u))",
+ "COMMON": "Stage 1: one fit per setting from the clipped refit D2, the six slope-bin multipliers (40-50 ... 90-180 deg) bounded below by 1, the D2 fine-tuning templates on, max_nfev 4000, no fine-tuning cycle; shown is the latest completed fit of each setting: for B, A and D a new fit from the stage-1 end point with the optimizer scale rebuilt (up to 4000 more evaluations; D with the fixed-level penalty), for C the stage-1 fits. Reference: the bounded softplus model with slope multipliers >= 1 after 9 fit and fine-tuning cycles (c9; solid), the current best fit.",
+ "CONV": "Convergence column: from each fit's termination (ftol: converged in the optimizer's sense; max_nfev: not converged; reaching max_nfev is not convergence); the stage-1 costs before the continuations are in summary.txt. ",
+ "D_NOTE": "All three D settings stopped on ftol with the fixed-level penalty."
+}

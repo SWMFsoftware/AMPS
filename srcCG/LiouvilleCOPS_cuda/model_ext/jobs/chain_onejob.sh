@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/chain_onejob.sh (on Voyager: /data001/highresolu_vt/cops_output/jobs/chain_onejob.sh)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 76f39cad56f81647bc0996188cd17ca9aaa18e4c1cb7d931a3645acbb1ee1fc8
+# SHA256 of the run copy = SHA256 of this file without these header lines: 955d61466127e432e9237ddddbc6341047af7f1bf3398427da6706e308c8cb94
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: submit helper. Submits one-job chains (jobs/chain_onejob.sbatch; user decision 2026-11-10): dry run by default,
 #   --submit logs every job in model_ext/logs/submissions.txt; attempts with afterok:<after>,afternotok:A1:.. (an
@@ -11,6 +11,10 @@
 #   --cycles 3 --nfev 4000 --check 1 --ft-maxnfev 500 --ft-facets late_only --ft-window-min 5 --l-threads 32 --node
 #   gpu001 --time 08:00:00 --attempts 3 --submit   (124162-124164; squared with --start-file on gpu002: 124165-124167)
 # 2026-11-13: --slope-mult-min V (softplus, value 1); production 124664 (5 cycles), 124772 (extended to 9).
+# 2026-11-15: --model sos | background | logspread with --sos-rank / --bg-min / --spread-f / --spread-cref / --spread-u0,
+#   --c1-from; --slope-mult-min also for these; stage-2 chains 131989-131997 (via jobs/nonneg_stage2_chains.sh).
+# 2026-11-16: --ft-delta-penalty-f / --ft-delta-cref / --ft-delta-cap (kind nonneg); reruns via jobs/nonneg_stage2r_chains.sh.
+# 2026-11-17: --min-free-gb G -> MIN_FREE_GB; D 136016-136018 and A 136019-136021 on gpu002.
 # ==== end of header ====
 # Submit ONE-JOB fit / fine-tuning chains (jobs/chain_onejob.sbatch, model_ext/chain_onejob.py; user decision
 # 2026-11-10 "yes, implement (b)"): the whole chain c1 fit -> c1 ft -> ... -> c<N> ft of one lambda in one job that
@@ -43,7 +47,14 @@
 #   --kind slope --model bumps: the 3a model (slope_mult_fit / slope_finetune).
 #   --slope-mult-min 1 (nonneg softplus only; user 2026-11-12 refit: multipliers >= 1): lower bound of the free slope multipliers, every
 #   cycle's fit (SLOPE_MULT_MIN); absent: unchanged.
+#   --model sos --sos-rank R | background --bg-min B | logspread --spread-f F --spread-cref C [--spread-u0 U] (2026-11-15;
+#   agent 1's options A, B, D; tokens verbatim, as jobs/nonneg_fit.sbatch) [--slope-mult-min 1]
+#   [--c1-from <complete fit dir of the same setting>]: cycle 1's fit is ADOPTED (c1/fit/final -> its final segment);
+#   the chain starts with the c1 fine tuning; --source is then that fit's fit_restart.npz.
+#   --ft-delta-penalty-f F --ft-delta-cref C [--ft-delta-cap X] (2026-11-16, kind nonneg): every fine tuning's delta
+#   regularization (nonneg_finetune.py --delta-penalty-f / --delta-cref / --delta-cap, verbatim); absent: off.
 #   --lambda / --ratio / --c1-start-set are positive-only; --chain-root is required for these kinds.
+# --min-free-gb G (2026-11-17): MIN_FREE_GB of the job (default there 20 GiB; 0 = off): no write below G GiB free.
 set -uo pipefail
 ROOT_OUT=/data001/highresolu_vt/cops_output
 J=$ROOT_OUT/jobs; RUN=$ROOT_OUT/runs/shap8_012m_lategrid_dz1.5; LOG=$ROOT_OUT/model_ext/logs/submissions.txt
@@ -52,7 +63,7 @@ LAMBDA=""; RATIO=""; SOURCE=""; CYCLES=3; NFEV=4000; CHECK=1; C1_START_SET=""; M
 CHAIN_ROOT=""; NODE=""; GPUS=""; TIME="08:00:00"; ATTEMPTS=3; OPTS_EXTRA=""; FT_MAXNFEV=""; FT_FACETS=""
 FT_WINDOW_MIN=""; FT_EXPORT=""; MINMIN=""; AFTER=""; SUBMIT=0
 KIND=positive; SMODEL=""; SSTART=""; START_FILE=""; LT=""; LMODE=chunked; CHECKPARAMS=""; SBUNDLE=""; FTT=""; BUMPS=""
-SMM=""
+SMM=""; SOSR=""; BGMIN=""; SPF=""; SPC=""; SPU=""; C1FROM=""; DF=""; DC=""; DX=""; MINFREE=""
 die() { echo "chain_onejob.sh: $*" >&2; exit 2; }
 while [ $# -gt 0 ]; do
     case $1 in
@@ -74,7 +85,12 @@ while [ $# -gt 0 ]; do
         --checkparams) CHECKPARAMS=$2; shift 2;; --slope-bundle) SBUNDLE=$2; shift 2;;
         --ft-templates-from) FTT=$2; shift 2;;  --bumps) BUMPS=$2; shift 2;;
         --slope-mult-min) SMM=$2; shift 2;;
-        -h|--help) sed -n '2,39p' "$0"; exit 0;;
+        --sos-rank) SOSR=$2; shift 2;;          --bg-min) BGMIN=$2; shift 2;;
+        --spread-f) SPF=$2; shift 2;;           --spread-cref) SPC=$2; shift 2;;
+        --spread-u0) SPU=$2; shift 2;;          --c1-from) C1FROM=$2; shift 2;;
+        --ft-delta-penalty-f) DF=$2; shift 2;;  --ft-delta-cref) DC=$2; shift 2;;
+        --ft-delta-cap) DX=$2; shift 2;;      --min-free-gb) MINFREE=$2; shift 2;;
+        -h|--help) sed -n '2,40p' "$0"; exit 0;;
         *) die "unknown argument $1 (--help)";;
     esac
 done
@@ -84,8 +100,24 @@ if [ "$KIND" = positive ]; then
 case $RATIO in 0.02|0.002|1e-5) ;; *) die "--ratio 0.02|0.002|1e-5 is required (the user's decisions)";; esac
 else
 [ -z "$LAMBDA$RATIO$C1_START_SET" ] || die "--lambda / --ratio / --c1-start-set are positive-kind options"
-case $KIND/$SMODEL in slope/bumps|nonneg/softplus|nonneg/squared) ;;
-    *) die "--kind $KIND --model $SMODEL: slope/bumps, nonneg/softplus or nonneg/squared";; esac
+case $KIND/$SMODEL in slope/bumps|nonneg/softplus|nonneg/squared|nonneg/sos|nonneg/background|nonneg/logspread) ;;
+    *) die "--kind $KIND --model $SMODEL: slope/bumps, nonneg/softplus|squared|sos|background|logspread";; esac
+case $SMODEL in
+    sos) [ -n "$SOSR" ] || die "--model sos: --sos-rank"; [ -z "$BGMIN$SPF$SPC$SPU" ] || die "--model sos: --bg-min / --spread-* belong to other models";;
+    background) [ -n "$BGMIN" ] || die "--model background: --bg-min"; [ -z "$SOSR$SPF$SPC$SPU" ] || die "--model background: --sos-rank / --spread-* belong to other models";;
+    logspread) [ -n "$SPF" ] && [ -n "$SPC" ] || die "--model logspread: --spread-f and --spread-cref"; [ -z "$SOSR$BGMIN" ] || die "--model logspread: --sos-rank / --bg-min belong to other models";;
+    *) [ -z "$SOSR$BGMIN$SPF$SPC$SPU$C1FROM" ] || die "--sos-rank / --bg-min / --spread-* / --c1-from: nonneg sos / background / logspread only";;
+esac
+for v in "$SOSR" "$BGMIN" "$SPF" "$SPC" "$SPU" "$DF" "$DC" "$DX"; do case $v in *[!0-9eE.+-]*) die "token $v: a number";; esac; done
+[ -z "$DF$DC$DX" ] || [ "$KIND" = nonneg ] || die "--ft-delta-*: kind nonneg only"
+{ [ -z "$DF" ] && [ -z "$DC" ]; } || { [ -n "$DF" ] && [ -n "$DC" ]; } || die "--ft-delta-penalty-f and --ft-delta-cref go together"
+if [ -n "$C1FROM" ]; then
+    C1FROM=$(readlink -f "$C1FROM"); [ -f "$C1FROM/final/fit_restart.npz" ] || die "--c1-from $C1FROM: no final/fit_restart.npz"
+    [ -z "$SSTART" ] || die "--c1-from: no --slope-start (cycle 1 is adopted)"
+    C1R=$(readlink -f "$C1FROM/final/fit_restart.npz")
+    [ -z "$SOURCE" ] || [ "$(readlink -f "$SOURCE")" = "$C1R" ] || die "--c1-from: --source must be $C1R"
+    SOURCE=$C1R
+fi
 [ -n "$CHAIN_ROOT" ] || die "--kind $KIND: --chain-root is required"
 [ "$FT_FACETS" = late_only ] || die "--kind $KIND: --ft-facets late_only"
 case $LT in ""|*[!0-9]*) [ -z "$LT" ] || die "--l-threads N";; esac
@@ -166,12 +198,19 @@ VARS+=",FT_FACETS=$FT_FACETS,CHAIN_CODE=$CHAIN_CODE,CHAIN_ROOT=$CHAIN_ROOT"
 [ -n "$FTT" ] && VARS+=",FT_TEMPLATES_FROM=$(readlink -f "$FTT")"
 [ -n "$BUMPS" ] && VARS+=",BUMPS=$(readlink -f "$BUMPS")"
 if [ -n "$SMM" ]; then
-    [ "$KIND/$SMODEL" = nonneg/softplus ] || die "--slope-mult-min: nonneg softplus only (user 2026-11-12)"
+    case $KIND/$SMODEL in nonneg/softplus|nonneg/sos|nonneg/background|nonneg/logspread) ;;
+        *) die "--slope-mult-min: nonneg softplus / sos / background / logspread only";; esac
     case $SMM in 1|1.0) ;; *) die "--slope-mult-min $SMM: the user's decision is 1";; esac
     VARS+=",SLOPE_MULT_MIN=$SMM"
 fi
+[ -n "$SOSR" ] && VARS+=",SOS_RANK=$SOSR"; [ -n "$BGMIN" ] && VARS+=",BG_MIN=$BGMIN"
+[ -n "$SPF" ] && VARS+=",SPREAD_F=$SPF"; [ -n "$SPC" ] && VARS+=",SPREAD_CREF=$SPC"; [ -n "$SPU" ] && VARS+=",SPREAD_U0=$SPU"
+[ -n "$C1FROM" ] && VARS+=",C1_FROM=$C1FROM"
+[ -n "$DF" ] && VARS+=",FT_DELTA_F=$DF"; [ -n "$DC" ] && VARS+=",FT_DELTA_CREF=$DC"; [ -n "$DX" ] && VARS+=",FT_DELTA_CAP=$DX"
 fi
 [ -n "$FT_WINDOW_MIN" ] && VARS+=",FT_WINDOW_MIN=$FT_WINDOW_MIN"
+case $MINFREE in ""|*[!0-9.]*) [ -z "$MINFREE" ] || die "--min-free-gb G (GiB)";; esac
+[ -n "$MINFREE" ] && VARS+=",MIN_FREE_GB=$MINFREE"
 [ -n "$MODEL_EXT" ] && VARS+=",MODEL_EXT=$MODEL_EXT"
 [ -n "$C1_START_SET" ] && VARS+=",C1_START_SET=$C1_START_SET"
 [ -n "$FT_EXPORT" ] && VARS+=",$FT_EXPORT"
@@ -184,7 +223,12 @@ echo "# one-job $KIND chain ${SMODEL:+model $SMODEL }${LAMBDA:+for lambda $LAMBD
 [ -n "$C1_START_SET" ] && echo "# cycle-1 fit START_SET=$C1_START_SET (cycles 2+ unchanged)"
 echo "# current stage states (chain_onejob.py --plan-only):"
 if [ "$KIND" = positive ]; then KARGS=(--lambda "$LAMBDA" --ratio "$RATIO")
-else KARGS=(--kind "$KIND" --slope-model "$SMODEL"); fi
+else KARGS=(--kind "$KIND" --slope-model "$SMODEL")
+     [ -n "$SMM" ] && KARGS+=(--slope-mult-min "$SMM"); [ -n "$SOSR" ] && KARGS+=(--sos-rank "$SOSR")
+     [ -n "$BGMIN" ] && KARGS+=(--bg-min "$BGMIN"); [ -n "$SPF" ] && KARGS+=(--spread-f "$SPF")
+     [ -n "$SPC" ] && KARGS+=(--spread-cref "$SPC"); [ -n "$SPU" ] && KARGS+=(--spread-u0 "$SPU")
+     [ -n "$C1FROM" ] && KARGS+=(--c1-from "$C1FROM"); [ -n "$DF" ] && KARGS+=(--ft-delta-penalty-f "$DF")
+     [ -n "$DC" ] && KARGS+=(--ft-delta-cref "$DC"); [ -n "$DX" ] && KARGS+=(--ft-delta-cap "$DX"); fi
 $PY "$CHAIN_CODE/chain_onejob.py" --plan-only --chain-root "$CHAIN_ROOT" "${KARGS[@]}" \
     --cycles "$CYCLES" --source "$SOURCE" --ft-maxnfev "$FT_MAXNFEV" --ft-facets "$FT_FACETS" \
     ${FT_WINDOW_MIN:+--ft-window-min "$FT_WINDOW_MIN"} --model-ext "${MODEL_EXT:-$ROOT_OUT/model_ext}" | sed 's/^/#   /'

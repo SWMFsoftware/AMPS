@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==== version-controlled copy: header added 2026-11-11, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/nonneg_finetune.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/nonneg_finetune.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: a442d9f4748806783e9c26e16af26730fe9e0f031e7091500fe67c5081ea3e04
+# SHA256 of the run copy = SHA256 of this file without these header lines: 075d6554def93c369aa1ec1465dd35d75b3ff16c262640688d429b9ff7da89ea
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job. Late-facet fine tuning of a softplus / squared fit (model_ext/nonneg_finetune.py; user decisions
 #   2026-11-11): FACETS=late_only WINDOW_MIN=5, NO lower bound, grain refitted, MAXNFEV 500, L_THREADS, VALIDATE (checks
@@ -9,6 +9,7 @@
 # RUN: sbatch --export=ALL,FIT=<fit>/final,OUT=<dir>,FACETS=late_only,WINDOW_MIN=5,L_THREADS=32,MODEL_EXT=<snapshot>
 #   nonneg_finetune.sbatch   (tests 124132, 124133 inside nonneg_test.sbatch; split tests 124140, 124142, 124145,
 #   124147; the production stages run its logic inside chain_onejob.py)
+# 2026-11-14: copies nonneg_alt.py when the snapshot has it.
 # 2026-11-14: copies nonneg_alt.py when the snapshot has it.
 # ==== end of header ====
 # Late-facet fine tuning of a non-negative activity fit (softplus / squared harmonics with slope multipliers;
@@ -24,6 +25,8 @@
 #   OUT          output directory (required; new, or an earlier run of THIS command to be continued)
 #   FACETS       late_only (required); WINDOW_MIN (required, user: 5)
 #   MAXNFEV      optimizer evaluations over all segments (default 500, user 2026-11-08)
+#   DELTA_F, DELTA_CREF, DELTA_CAP  optional delta regularization (user 2026-11-15): P = f C_ref sum w (h + delta)^2 /
+#                sum w over the tuned facets (--delta-penalty-f, --delta-cref) and the cap |h + delta| <= X (--delta-cap); off by default
 #   LSMR_MAXITER default 50
 #   L_THREADS    chunked bitwise L thread pool of the fitter process (the GPU forward's L) and of the 12.4M-facet host
 #                fields (default unset: 1 thread; production 32)
@@ -69,6 +72,7 @@ PRODUCTS=(finetune_state.npz finetune_result.txt COPS_model.dat late_window_mode
 FIT=$(readlink -f "$FIT"); OUT=$(readlink -m "$OUT")
 VALIDATE=${VALIDATE:-1}; VALIDATE_ONLY=${VALIDATE_ONLY:-0}; LSMR_MAXITER=${LSMR_MAXITER:-50}; MAXNFEV=${MAXNFEV:-500}
 FACETS=${FACETS:-}; WINDOW_MIN=${WINDOW_MIN:-}; L_THREADS=${L_THREADS:-}
+DELTA_F=${DELTA_F:-}; DELTA_CREF=${DELTA_CREF:-}; DELTA_CAP=${DELTA_CAP:-}
 [ "$FACETS" = late_only ] || { echo "set FACETS=late_only (required)" >&2; exit 2; }
 [ -n "$WINDOW_MIN" ] || { echo "FACETS=late_only needs WINDOW_MIN (user: 5)" >&2; exit 2; }
 for f in "$FIT/fit_restart.npz" "$FIT/fit_manifest.json" "$FIT/nonneg_facets.npz" "$FIT/grain_term.json" \
@@ -161,7 +165,7 @@ module list > "$P/module_list.txt" 2>&1 || true
 nvidia-smi -q > "$P/nvidia_smi_q.txt" 2>&1; nvidia-smi -L > "$P/nvidia_smi_L.txt" 2>&1
 { nvcc --version; gcc --version | head -1; } > "$P/toolchain.txt" 2>&1
 ~/.local/bin/uv pip list --python "$APP/.venv/bin/python" > "$P/pip_list.txt" 2>&1
-env | grep -E '^(CUDA_[A-Z_]*|CUPY_[A-Z_]*|COPS_[A-Z_]*|FIT|OUT|FACETS|WINDOW_MIN|MAXNFEV|LSMR_MAXITER|L_THREADS|VALIDATE|VALIDATE_ONLY|MODEL_EXT|OMP_[A-Z_]*|OPENBLAS_[A-Z_]*|MKL_[A-Z_]*|PATH|LD_LIBRARY_PATH|SLURM_JOB_NODELIST)=' | sort > "$P/environment.txt"
+env | grep -E '^(CUDA_[A-Z_]*|CUPY_[A-Z_]*|COPS_[A-Z_]*|FIT|OUT|FACETS|WINDOW_MIN|MAXNFEV|LSMR_MAXITER|L_THREADS|DELTA_F|DELTA_CREF|DELTA_CAP|VALIDATE|VALIDATE_ONLY|MODEL_EXT|OMP_[A-Z_]*|OPENBLAS_[A-Z_]*|MKL_[A-Z_]*|PATH|LD_LIBRARY_PATH|SLURM_JOB_NODELIST)=' | sort > "$P/environment.txt"
 { echo '#!/bin/bash'; echo "# job $SLURM_JOB_ID on $(hostname), $(date -u +%FT%TZ); AMPS $(git -C "$AMPS" rev-parse HEAD)"
   grep '^export ' "$0"; echo "cd $APP"; } > "$P/commands.sh"
 { echo "fine tuning of $FIT -> $OUT segment $SEG (previous $LAST: $LSTOP, $LUSED evaluations); evaluations $LEFT of $MAXNFEV"
@@ -171,6 +175,8 @@ free -g > "$P/free_at_start.txt"
 NG=$(nvidia-smi -L | wc -l); DEV=$(seq -s, 0 $((NG - 1)))
 VOPT=(); if [ "$VALIDATE_ONLY" = 1 ]; then VOPT=(--validate-only); elif [ "$SEG" = 1 ] && [ "$VALIDATE" = 1 ]; then VOPT=(--validate); fi
 TOPT=(); [ -n "$L_THREADS" ] && TOPT=(--l-threads "$L_THREADS")
+[ -n "$DELTA_F" ] && TOPT+=(--delta-penalty-f "$DELTA_F"); [ -n "$DELTA_CREF" ] && TOPT+=(--delta-cref "$DELTA_CREF")
+[ -n "$DELTA_CAP" ] && TOPT+=(--delta-cap "$DELTA_CAP")
 CMD=($PY "$P/nonneg_finetune.py" --fit "$FIT" --out "$O" --facets late_only --window-min "$WINDOW_MIN" --devices "$DEV"
      --lsmr-maxiter "$LSMR_MAXITER" --wall-time slurm --segment "$((SEG > 0 ? SEG : 1))" --nfev-before "$LUSED"
      "${VOPT[@]}" "${TOPT[@]}" "${RES[@]}")

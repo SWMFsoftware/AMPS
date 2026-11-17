@@ -146,7 +146,9 @@ Notes:
 | `nonneg_maps.sbatch` | activity and source-rate maps of one final state (CPU, normal128cores): tests, geometry build and validation against the base's kernel records, maps (.vtu + Tecplot), verify, ParaView read-back; frozen code `model_ext_frozen/nonneg_maps_20261112T021623Z`; 2026-11-13 output name `MAPS_NAME` (default `maps`) and the `EXPECT_CYCLES` guard | 124318-124322 (development and 3-cycle test maps), 124324 (softplus), 124325 (squared), 124667 (multipliers >= 1, c5), 124775 (the same chain, c9: `maps_c9`) |
 | `nonneg_contrib.sbatch` | per-facet contributions of a final state to the modelled NG / RG signals (P% source areas, occurrence, slope-bin fractions; CPU, frozen nonneg_contrib code, NPY_DISABLE_CPU_FEATURES for the bitwise state check); `CYCLE`, output name `CONTRIB_NAME` (2026-11-13, default `contributions`) | 124549 (softplus 5 cycles), 124668 (multipliers >= 1, c5), 124776 (c9: `contributions_c9`) |
 | `nonneg_alt_test.sbatch`, `nonneg_alt_stage1.sh`, `nonneg_alt_summary.sbatch`, `nonneg_multmin_test.sbatch` | options A, B, D: GPU test per model (independent start cost, 5 evaluations with the full Jacobian check); stage-1 launcher (3 attempts, guard, summary; run roots `nonneg/<model>/stage1_<setting>_<UTC>/`); CPU summary of one fit; the softplus multiplier-bound GPU test | 124998, 124999, 125028; B 125032-125046, A 125101-125105, D 125072-125086; 125030 (test); 124659 |
-| `chain_onejob.sh`, `chain_onejob.sbatch` | ONE job per fit / fine-tuning chain (KIND positive \| slope \| nonneg) | positive tests 123990, 124091–124095 (earlier script); nonneg tests 124143, 124148; production 124162 (softplus), 124165 (squared) |
+| `chain_onejob.sh`, `chain_onejob.sbatch` | ONE job per fit / fine-tuning chain (KIND positive \| slope \| nonneg) | positive tests 123990, 124091–124095 (earlier script); nonneg tests 124143, 124148; production 124162 (softplus), 124165 (squared)  2026-11-15 (v7): nonneg sos \| background \| logspread tokens and `--c1-from` (cycle 1's fit adopted); GPU test 131984-131988; stage-2 chains 131989-131997  2026-11-16 (v7.1): fine-tuning `--ft-delta-*` (FT_DELTA_*); GPU test 135365/135366; reruns 135367-135378; (v7.2) --c1-from with 1 cycle, gate 135861/135862, reruns 135863-135874; 2026-11-17 (v7.3): free-space guard `--min-free-gb` / MIN_FREE_GB (default 20 GiB, exit 5), D 136016-136018, A 136019-136021 |
+| `nonneg_stage2_chains.sh` | stage 2 of options A / B / D (user 2026-11-15): one one-job chain per model (background bg-min 0.01, logspread f 0.1 with the fixed-level u0, sos rank 3), 5 cycles, `--slope-mult-min 1`, cycle 1 adopted from the stage-1c fit; chain roots `nonneg/<model>/stage2_<setting>_<UTC>/` with README.md / HOW-TO-RERUN.md; dry run by default | 131989-131991 (B), 131992-131994 (D), 131995-131997 (A), gated afterok:131988 |
+| `nonneg_stage2r_chains.sh` | stage-2 RERUNS with the regularized late-facet fine tuning (user 2026-11-16: `--delta-penalty-f 10 --delta-cref 4.2688066575e-03 --delta-cap 4.605170185988092`): softplus reference (start D2, first), background, logspread, sos (cycle 1 adopted from stage1c); 5 cycles, `--slope-mult-min 1`; roots `nonneg/<model>/stage2r_<setting>_<UTC>/`; dry run by default | first submission 135367-135378 cancelled with its failed gate 135365 (v7.1 defect, fixed in v7.2); resubmitted 135863-135865 (softplus), 135866-135868 (B), 135869-135871 (D), 135872-135874 (A), gated afterok:135862 |
 | `pub_maps_figures.sbatch`, `pub_maps_v2.sbatch`, `pub_source_areas.sbatch` | full / version-2 figure sets (GPU; inputs from the environment) | 124492-124516, 124565-124595, 124677-124683, 124722 |
 | `cops_movies_prep.sbatch`, `cops_movies_render.sbatch`, `cops_movies_encode.sbatch`, `cops_movies_qc.sbatch`, `cops_movies_diag.sbatch` | movies: preparation and validation, render on all GPUs, compose / encode, MP4 check, dark-surface diagnosis; 2026-11-13 also the fixed camera (`CAMERA=fixed`, `FROM_WORK` + step `copy`, step `validate_fixed`), the touchdown data (step `touchdown`), the flag (`TOUCHDOWN`) and `MOVIES_PY` | 124615-124635, 124707-124735, 124786-124788, 124863-124869 |
 | `ng_source_map.sbatch`, `pan_candidates.sbatch`, `cops_movies_pan_stills.sbatch` | 2026-11-14 panorama movie: per-facet NG source sums (late and all NG observations; CPU), candidate final camera poses (1 GPU), candidate stills (plan `--pan-to`, mid-path and last frame; 1 GPU per pose); `cops_movies_prep.sbatch` `PAN_TO`/`PAN_START`/`PAN_END` and `cops_movies_encode.sbatch` `NO_SUB_MARK` (defaults unchanged) | 124913, 124915, 124918, 124919, 124920; production 124930, 124931, 124936, 124937 |
@@ -161,6 +163,7 @@ Notes:
 | `refine_12m.sbatch`, `refine_20m.sbatch` | local mesh refinement tests | 122009, 122011 |
 | `localnn_build.sbatch`, `localnn_fit.sbatch` | option C (local non-negative basis): CPU build (coarse mesh, design matrices, D2 / c9 verification, starts, tests) and one CPU fit (wall-time stop / exit 75, RUNROOT resume, direct facet-sum check) | build 125004; timing test 124995 (dev grid); start-rule stage 1 125014-125016 (cancelled, superseded); pilot 125071; anchored stage 1 125107, 125113, 125119 (+ continuations 125108, 125114, 125120) |
 | `localnn_gpu_eval.sbatch`, `localnn_tools.sbatch`, `localnn_report.sbatch` | option C after a fit: GPU standard evaluation (gpu002, D2's path, 1 h), the frozen maps / contribution tools through the localnn adapter (CPU), the item-5 numbers and run-root README.md / HOW-TO-RERUN.md (CPU) | tests 125017, 125052, 125019-125031; start-rule stage 1 125053-125064 (cancelled); anchored stage 1 125109-125112, 125115-125118, 125121-125124 |
+| `localnn_chain.sbatch`, `localnn_chain_submit.sh`, `localnn_chain_post.sbatch`, `localnn_late.sbatch`; tests `localnn_stage2_tests.sh`, `localnn_ft_verify_softplus.sh`, `localnn_ft_verify_c9_perturb.sh`, `localnn_gpu_solver_{cpuref,bitwise}.sh`, `localnn_gpu_solver_verify.sbatch` | option C stage 2: 5-cycle fit / CPU fine-tuning chains (held term, checkpoints, HANDOVER), their submission and post-fit tools, the late kernels; tests and verifications; FT_DIR in `localnn_gpu_eval.sbatch` / `localnn_tools.sbatch` | late kernels 132008; tests 131980, 132009; verification 131977-131979; chains 132010-132045; GPU solver 132047-132049 |
 
 The job scripts in this folder itself (`grain*.sbatch`, `area_scaling.sbatch`) ran from `$COPS_OUTPUT_ROOT/model_ext/`.
 
@@ -191,6 +194,7 @@ They run on the login node (no GPU), from `$APP` with `.venv/bin/python`. `late_
 `cops_movies.py` + `cops_movies_geom.cpp` (2026-11-12; observable-part masks, spacecraft shadow and the dark-surface diagnosis 2026-11-13) make the one-minute movies of the descent seen from RG / NG (`12M/movies_softplus_5cycles/`, `12M/movies_softplus_smm1_5cycles/`); `fov_share.py` gives the share of the modelled signal from outside the IK fields of view. Since 2026-11-13 (second set) `cops_movies.py` also has the fixed camera (`plan --camera fixed`: frozen in the body frame at the COPS position and attitude of 100 m altitude), the gauges' line of sight from the true gauge position (depth map + exact edge refinement; `validate_fixed`), `touchdown` (the ground-track impact point, its visibility, SPICE check) and `compose --touchdown` (a waving chequered finish flag): `12M/movies_softplus_smm1_9cycles/` (gauge view) and `12M/movies_softplus_smm1_9cycles_fixedcam/`; and (2026-11-13/14) circular fields of view (`cone:<deg>` masks), `contact`, `prep --extend-to-utc`, `sc --hga-ck`, `plan --camera detach` and the detach render with a spacecraft model (bus, wings, HGA), its shadow and the FOV cones (`cops_movies_geom hgageom`): `12M/movies_softplus_smm1_9cycles_detach200/`; `fov_share.py --cone-rg/--cone-ng` gives the share outside circular fields of view. 2026-11-14: `plan --camera detach --pan-to <pose.json>` (the camera moves after the detach to a final pose: smootherstep in the frame index, arc around the pivot, quaternion slerp, focal length geometric) and `compose --no-sub-mark` (no sub-spacecraft +); `ng_source_map.py` (per-facet NG source sums), `ng_source_regions.py` (lobes, shares by lobe / distance / azimuth, relief, map), `ng_lobe_share_vs_altitude.py` (big-lobe share per late observation) and `pan_candidates.py` (candidate final poses): `12M/movies_softplus_smm1_9cycles_detach300_pan/` (the panorama movies with the user's pose B, held from frame 1800; analysis and candidate stills). 2026-11-14: `render/validate_fixed --sc-block-from rosina-deck` (fields of view minus the spacecraft model, exact segment test), the `hemisphere` mask in the detach render (line of sight by cube faces), `scrows`, `fov_share.py --hemi-sc`: `12M/movies_softplus_smm1_9cycles_detach300_pan_hemi/`. 2026-11-14: `render --color-contrib/--color-range` (colour = the fitted model's contribution per unit surface area, `frame_contrib.py` on the frames base `frames_base.sbatch`, range `contrib_range.py`), `compose --hold-seconds`: `12M/movies_softplus_smm1_9cycles_detach300_pan_contrib/`.
 `figures_12m_nonneg9_smm1.sh` (2026-11-13) draws the same bounded chain after 9 cycles (jobs 124664, 124772) vs its c5 state, the unbounded softplus and D2, and the cycles c1-c5 / c5-c9, into `12M/model_vs_observations_softplus_smm1_9cycles/`.
 `figures_12m_nonneg_options_stage1.sh` (2026-11-14) compares the stage-1 fits of the non-negative activity options (A sum of squares, B background, C local basis, D log spread) with the COPS data, the bounded softplus c9 and D2 in `12M/model_vs_observations_nonneg_options_stage1/` (per option all settings, the best of each, CPU); `options_table.py` (summary.txt / .csv / best.json from the runs' summaries), `options_captions.py` (captions), `options_howto.py` (HOW-TO-RERUN.md, README.txt), `pub_options_activity_maps.py` (activity maps of the best settings and c9; job `jobs/options_activity_maps.sbatch`, 1 GPU). v2 (2026-11-14 evening, `..._stage1_v2/`): wrapper variables `DIAG` (convergence verdicts of the CPU diagnosis, `figures/data/stage1_convergence_20261114.json` -> `options_table.py --diag`), `RESID=1` (`options_residual_figure.py`: ln(model/obs) vs altitude, NG and RG) and `ACT_FROM` (copy unchanged activity maps); defaults unchanged (tested). Final (2026-11-15, `..._stage1_final/`): `RUNS` (candidate list file, `figures/data/stage1_final_runs_20261115.json`: the latest completed fit per setting), `TEXTS` (`figures/data/stage1_final_texts_20261115.json`, `options_captions.py --texts`), `CONV_TERM=1` (convergence from the terminations); continuation rows carry the stage-1 costs they started from (prev_*); activity maps job 131968; defaults unchanged (tested).
+`stage2_figures.py` + `stage2_howto.py` (2026-11-17) draw the final stage-2 comparison (regularized and unregularized chains: model/data figures, residuals, cost table with terminations and bounds; spec `figures/data/stage2_final_spec_20261117.json`; CPU, no maps, stops below 25 GB free) into `12M/model_vs_observations_nonneg_options_stage2_final/`.
 
 ## MPI helpers (`mpi_multinode/`, run copies in `$COPS_OUTPUT_ROOT/mpi_multinode/`)
 
@@ -559,6 +563,160 @@ x_c0^T Lg x_c0, f = 0.1 / 1 / 10 (weak / medium / strong): templates off: start 
   `runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage1_anch_f10_pm0.01_cont_20261115T020243Z`. At the f = 10 end point
   P_m = 6.48e-3 = 2.3 x its data cost (2.8306e-3): f_m = 0.01 is not weak there. Result: ftol after 219 of 1000 evaluations (converged, first-order optimality 3.5e-9). Data cost 3.2655e-3 (+15.4 % vs the f = 10 end point 2.8306e-3; still -23.5 % vs c9), smoothness 1.69e-4, P_m 1.96e-3 (6.48e-3 at the start), objective 5.395e-3 (9.374e-3); rms ln NG / RG 0.0604 / 0.0537 (late 0.130 / 0.063). Multipliers 40-50 1 (bound), 50-60 1 (bound), 60-70 1.010, 70-80 827, 80-90 1.003, 90-180 2.42: the penalty removes the 60-70 and 80-90 deg enhancement and keeps one steep bin; mean activity on the seen facets relative to 0-40 deg 0.87, 0.81, 0.80, 654, 0.79, 190; the 70-80 deg bin carries 86 % of the seen production, 88 % of the late NG and 80 % of the late RG signal; the c-field level rose (<sum c phi> 1.3e16 on every bin, was 3.7-6.1e15) while 63 % of the nodes went to 0; active seen area 24.5 % (f = 10: 20.1 %); 50 % / 90 % of the seen production from 0.10 % / 0.47 % of the seen area; the global level direction now costs 6.2 % of the multiplier step (was 2.3 %), and the multiplier weight in the 12 weakest directions is on 70-80 deg only (0.94); direct facet-sum check passed (7.8e-16); `<run root>/analysis/report.txt`, `analysis_degeneracy/degeneracy.txt`.
 
+**Stage 2 (user decisions 2026-11-15 ~12:30 CST; lead 12:40 CST "option 3")**: four 5-cycle fit / fine-tuning
+chains, smoothness f = 1 and f = 10 (lambda_C 8.249495752351283e-06 / 8.249495752351283e-05 from
+`lambda_rule_anchored_20261114.json`) x multiplier penalty f_m = 1e-4 and 0.01; templates on; fit max_nfev 4000;
+fine tuning as in the softplus chains (late_only facets, WINDOW_MIN 5, no lower bound on delta, grain refitted,
+lambda 0, MAXNFEV 500, LSMR 50, ftol/xtol/gtol 1e-10); the accumulated h held in the next fit.
+
+- model: A_e = m_b (sum_j c_j phi_j(e) + A_s TS_e) exp(h_e) (`localnn_problem.Problem(..., held)`): the held facets
+  (h != 0, all among the 271 late facets) enter as the exact linear correction (exp(h_e) - 1) m_b (u_e + TS_e) G[:, e]
+  with G = dp/dA of the late kernels (`localnn_late.py` -> `runs/.../nonneg/localnn/late_kernels_150m.npz`, job 132008:
+  the 9 row masks the frozen `positive_finetune.late_only_facets` asks for, the 271 late facets, G_NG / G_RG of all 1551
+  rows); exact Jacobian; held absent / h = 0 = the previous code bitwise.
+- CPU fine tuning (`localnn_ft.py run`): the frozen `nonneg_finetune.run` (`model_ext_frozen/nonneg_20261113T035423Z`,
+  unchanged) with a CPU engine on the late kernels; held_next = held_prev + delta is held in the next cycle's fit
+  (`localnn_fit.py start --start state --grain-from <ft>/finetune_state.npz --held <ft>/finetune_state.npz`). Needs
+  `NPY_DISABLE_CPU_FEATURES` (AVX-512 off): np.exp differs in the last bit between the AVX2 and AVX-512 loops and the
+  frozen context refuses an activity it cannot reproduce bitwise (131977).
+- verification against the GPU fine tuning of the softplus chain `chain_5cycles_smm1_20261113T041215Z`
+  (`localnn_ft.py verify-softplus`, 131978, 131979): the same 271 late facets and parameters in every case, start
+  costs equal to 8e-16; c9: 4 evaluations each, final cost equal bitwise (4.268806657481027e-03), delta max diff
+  5.4e-11 (max |delta| 0.011); c5: 46 / 46 evaluations (ftol), final 4.286063145045e-03 (CPU) vs 4.286063164388e-03
+  (GPU, rel 4.5e-9), delta max diff 0.0063 (max |delta| 9.65), iterations 0-3 identical; the same CPU code from the
+  c5 start perturbed by 1e-15 relative gives 4.286063190777e-03 (41 evaluations) and 4.286063220094e-03 (42; rel 6.2e-9
+  and 1.3e-8 to the GPU, delta diffs 0.040 / 0.019): the CPU-GPU difference is within the rounding amplification of the
+  truncated LSMR on the flat ftol end; c1: CPU 4.441499757894e-03 (126 evaluations, ftol) vs GPU 4.4415011703e-03
+  (500, max_nfev). Chain consistency: the c2 fit of the f10 / 0.01 chain starts at data cost 2.8885631108e-03 = the c1
+  fine tuning's final 2.888563110791e-03.
+- checkpoints: `localnn_fit.py fit --checkpoint-every 250` writes `<fit>/checkpoint.npz` (best x, nfev_total, settings)
+  atomically; the same command resumes from it (settings checked; kept as `checkpoint_resumed_segNN_<UTC>.npz`).
+- tests (`test_localnn_stage2.py`, 132009 from the frozen snapshot, 5 of 5 passed): held h = 0 bitwise; held term vs
+  direct facet sums at 4 rows (8.9e-16); Jacobian vs FD with held + P_m (2.8e-7; held-facet nodes 6.1e-7); checkpoint
+  resume after SIGKILL at 8 of 14 evaluations (resumes at 8, ends at 14, one segment); `localnn_ft.py run
+  --validate-only`: validation checks 1-8 pass. The first run (131980) failed test 3: the FD step came from the median
+  of the positive x_c (8e-20: with P_m half of the nodes sit at the bound 0 as 1e-24 .. 1e-19), now the 75th
+  percentile (`node_fd_scale`, 1.1e-3 .. 1.5e-3 at the stage-1 end points) and a second-order one-sided difference at
+  the bounds (the multipliers at m = 1).
+- driver `jobs/localnn_chain.sbatch` (layout `<chain>/c<k>/{fit,ft}`, `chain_events.jsonl` with device / host / job per
+  stage, `provenance-<job>/` per attempt with `commands.sh`; a `<chain>/HANDOVER` file naming another device stops a
+  job before its next stage with exit 75), submitted by `jobs/localnn_chain_submit.sh` (attempts afternotok, the post
+  job `jobs/localnn_chain_post.sbatch`: degeneracy, report, maps / contributions of the final fine-tuned state
+  (FT_DIR), chain docs `localnn_chain_docs.py`). Frozen `model_ext_frozen/localnn_s2_20261115T185842Z`.
+- chains (2026-11-15 19:00 UTC = 13:00 CST, normal128cores, 16 threads, 12 h attempts, 8 attempts each, first
+  attempts on node004-node007, later ones `--exclude=node002,node[019-024]`):
+  `runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2_f1_pm1e-4_20261115T190017Z` (132010-132017, post 132018),
+  `stage2_f1_pm0.01_20261115T190017Z` (132019-132026, post 132027), `stage2_f10_pm1e-4_20261115T190018Z`
+  (132028-132035, post 132036), `stage2_f10_pm0.01_20261115T190019Z` (132037-132044, post 132045). Cycle 1: a
+  continuation (P_m on) from the stage-1 end point of its f; for f10 / 0.01 the check run
+  `stage1_anch_f10_pm0.01_cont_20261115T020243Z/fit` IS cycle 1's fit (linked as c1/fit). Each chain root has
+  README.md (status table) and HOW-TO-RERUN.md.
+- GPU solver path (`localnn_gpu_solver.py`, `localnn_fit.py fit --device gpu [--gpu-svd-mode qr|gesvd]`; default cpu
+  = the previous path): profile on 16 EPYC threads (f10 / 0.01 state): fun 0.008 s, jac 0.09 s, the TRF SVD of
+  J_augmented (8522 x 2754) 9.6 s of ~11 s per evaluation. The design products and the SVD go to one GPU (CuPy FP64;
+  qr = QR + SVD(R), U = Q U_R); the rest of TRF is scipy's code on the CPU. Verification (`localnn_gpu_solver.py
+  verify`, `jobs/localnn_gpu_solver_verify.sbatch`, tolerances: residuals 1e-13 of max |r|, Jacobian columns 1e-12,
+  TRF step 1e-8 (L2, relative), 50-evaluation objective trajectory 1e-10) on the c2 start of the f10 / 0.01 chain
+  (held h of its c1 fine tuning; case `tests/localnn_20261114/gpu_solver/case_c2_f10_pm0.01.json`; CPU reference 132047:
+  50 evaluations, 11.11 s per evaluation, objective 5.017757127426e-03 -> 4.945852513880e-03); the default cpu path
+  with the new option is bitwise the frozen stage-2 code (6-evaluation fit, x equal; 132049). Frozen
+  `model_ext_frozen/localnn_s2gpu_20261115T192024Z`; verification 132810 (1 GPU, gpu001 or gpu002, never gpu003 - lead
+  2026-11-15 13:30 CST, `scontrol update ExcNodeList=gpu003`; agent 3's 8-GPU A/B/D attempts run first on gpu002); `jobs/localnn_gpu_move.sbatch` 132811 (afterok) submits, if it passes and the GPU needs <= 0.5 x the CPU time
+  per evaluation, GPU attempts for the four chains (`jobs/localnn_chain_to_gpu.sh`: 1 GPU, 6 x 8 h, gpu001 or
+  gpu002, never gpu003) that take their chain over when they start (they cancel the chain's CPU attempts then; a fit resumes from its
+  last checkpoint, <= 250 evaluations of CPU work lost). More CPU threads do not help: the SVD takes 9.6 s on 16, 12.1 s
+  on 32, 10.8 s on 64 threads.
+- post-fit tools of a fine-tuned state (fix 2026-11-15, frozen `model_ext_frozen/localnn_s2post_20261115T195616Z`):
+  `localnn_tools.py export --ft-dir` now writes `fit_state/` (the fit's own late_window_model.dat, nonneg_facets.npz,
+  ...) and the tools use it as --fit-dir; before, one folder served both and nonneg_contrib compared the fit state with
+  the fine tuning's late_window_model.dat (max rel 2.6e-2; post job 132045 failed in contrib). The post script's
+  step list is POST_STEPS (STEPS leaked into localnn_tools.sbatch: 132812 failed). f10 / 0.01 rerun 132818: contrib
+  verification NG / RG final and fit state 4.4e-10 (tables print 10 digits), maps verified; the other chains' post
+  jobs resubmitted with the fixed snapshot (132814-132816; 132018, 132027, 132036 cancelled), the GPU move 132817
+  (132811 cancelled) and the GPU cross-check 132813 (8 GPUs, `#SBATCH --exclude=gpu003`) use it.
+- result of the complete chain f10 / 0.01 (all fits ftol; full objective 9.374e-3 -> 4.910e-3, monotone over fits and
+  fine tunings; data cost 2.889e-3 after c1, 3.0375e-3 at the end): FINDINGS.md A12.
+- after-success attempts of the afternotok chain: when attempt k succeeds, k+1 is cancelled (invalid dependency) and
+  k+2 (afternotok of a cancelled job) runs as a no-op (stages complete; an extra provenance folder and
+  chain_complete line); harmless.
+- fine-tuning regularization tests (lead / user 2026-11-15 ~21:10 CST; agent 1's options in
+  `model_ext_frozen/nonneg_20261116T031115Z`: P_delta = f_delta C_ref sum w (h+delta)^2 / sum w over the tuned facets,
+  w = area, C_ref 4.2688066575e-03, cap |h+delta| <= ln 100): the c5 fine tuning re-run on CPU (no chain changed) for
+  C f1 / 0.01, C f10 / 0.01 (`localnn_ft.py run`), B bg1e-2 and D logspread f0.1 (`localnn_ft.py run-nonneg`: the real
+  NonnegFitContext, the fit-state pressures of `localnn_late.py --state`, job 134495), f_delta 0.1, 1, 10, MAXNFEV 500;
+  frozen `model_ext_frozen/localnn_s2ftreg_20261116T031038Z`; jobs 134504 (C), 134505 (B, D), summary 134507
+  (`localnn_ftreg_summary.py`); folder `tests/localnn_20261114/ftreg/` (`summary_134507.txt` / `.json`). CPU controls
+  without the options vs the GPU c5 fine tunings of B / D: final cost rel 6.3e-14 / 4.4e-16, same evaluations (10 / 4),
+  start rel 3.3e-16 / 2.2e-16 (134501, 134505). Results: FINDINGS.md A12.
+- stage-2 reruns (user decisions 2026-11-15/16 via the lead): the regularized fine tuning (f_delta = 10, C_ref
+  4.2688066575e-03, cap ln 100; agent 1's `model_ext_frozen/nonneg_20261116T031115Z`) and D2's templates tested both
+  ways on option C, smoothness f = 10 (lambda_C 8.249495752351283e-05), f_m = 0.01, 5 cycles; frozen
+  `model_ext_frozen/localnn_s2r_20261116T044801Z` (driver TEMPLATES / C1_START_EXTRA / FT_EXTRA / NONNEG_CODE;
+  `localnn_fit.py start --state-drop-templates`; `localnn_chain_summary.py`). Submitted 2026-11-16 04:48 UTC:
+  `runs/.../nonneg/localnn/stage2r_f10_pm0.01_tplon_20261116T044825Z` (templates ON; cycle-1 fit = the check run
+  `stage1_anch_f10_pm0.01_cont_20261115T020243Z/fit` as in `stage2_f10_pm0.01_*`; jobs 135070-135072, post 135073,
+  node007) and `stage2r_f10_pm0.01_tploff_20261116T044825Z` (templates OFF; cycle-1 fit from the stage-1 f = 10 end
+  point with the template part removed: the same c, m, kappa, grain, start data cost 5.4582e-03 (2.8306e-03 with the
+  templates), late rms ln NG / RG 0.159 / 0.230; jobs 135074-135076, post 135077, node008). Per-cycle numbers:
+  `tests/localnn_20261114/stage2r/chain_summary_<job>.txt` (the unregularized f10 / 0.01 chain: 135078).
+  Results: ON (23 min, all ftol) data 3.1996e-3 after c5, objective 5.2623e-3; OFF (58 min; c1 fit 238 evaluations,
+  then the fine tunings and fits do not move: the late facets carry 0.01 % of the late signal without the templates)
+  data 3.6519e-3, objective 6.0628e-3; summaries 135107 (ON), 135114 (OFF), shares `share_c5_*.txt`; FINDINGS.md A12.
+- the remaining combinations with templates ON and the regularized fine tuning (user decisions 2026-11-16 ~00:10
+  CST; the same settings as `stage2r_f10_pm0.01_tplon`), submitted 2026-11-16 05:59 UTC, 8 x 12 h attempts each:
+  `stage2r_f1_pm1e-4_tplon_20261116T055923Z` (135332-135339, post 135340; cycle-1 fit = the c1 fit of the original
+  `stage2_f1_pm1e-4_20261115T190017Z`, linked once complete: gate job 135331 waits for its final + direct check),
+  `stage2r_f1_pm0.01_tplon_20261116T055923Z` (135341-135348, post 135349, node017; c1 fit of
+  `stage2_f1_pm0.01_20261115T190017Z`), `stage2r_f10_pm1e-4_tplon_20261116T055923Z` (135350-135357, post 135358, node018;
+  c1 fit of `stage2_f10_pm1e-4_20261115T190018Z`): the c1 fits are the original stage-2 continuations (stage-1 end point,
+  P_m on), so only the fine tunings and cycles 2-5 differ. The unregularized chains 132010 / 132028 stay on CPU as
+  references (GPU move 132817 cancelled).
+- 2026-11-16 (lead 10:05 CST): GPU solver verification 132810 (gpu002, A100 80GB PCIe) PASSED: residuals 1.9e-15 of
+  max |r| (tolerance 1e-13), Jacobian columns 1.0e-15 (1e-12), singular values 1.5e-15, one TRF step 1.5e-13 (qr) /
+  2.1e-13 (gesvd) (1e-8), 50-evaluation objective trajectory 1.1e-11 (qr) / 2.5e-11 (gesvd) (1e-10), the same 50
+  evaluations; 1.33 s per evaluation on the GPU vs 11.1 s on 16 CPU threads (SVD 1.28 s vs 7.9 s). GPU cross-check
+  132813 of the f10 / 0.01 final state (c5 fine tuning; D2's path, 8 GPUs): data cost GPU 3.052435634290019e-3 vs CPU
+  with the GPU's grain rel 5.6e-16, tables 0 printed differences. The chains stay on CPU (agent 3's GPU reruns have
+  gpu002; GPU move 132817 cancelled).
+- 2026-11-16: the unregularized f1 / 1e-4 chain failed its c4 Jacobian check (2.89e-5, jobs 132011-132017): FD rounding
+  noise at bound nodes (h = 3.8e-9; the error fell as 1/h), not the Jacobian. Fix of the check only (noise floor of
+  the step), frozen `model_ext_frozen/localnn_s2jc_20261116T160722Z`; the chain resumed at c4 (135854-135860; check
+  7.4e-7); the pending attempts of the three running chains replaced by attempts with that snapshot
+  (`jobs/localnn_replace_pending.sh`: stage2r_f10_pm1e-4_tplon 135875-135882, stage2r_f1_pm1e-4_tplon 135883-135890,
+  stage2_f10_pm1e-4 135891-135897; the running attempts untouched).
+- 2026-11-17: the /data001/highresolu_vt file system filled (0 B free at ~03:10Z); `stage2r_f10_pm1e-4_tplon` (135875) and
+  `stage2r_f1_pm1e-4_tplon` (135883) died in their c3 fits, their later attempts and posts failed (exit 0:53). The c3
+  checkpoints were written before (03:06:12Z, 3750 evaluations; 02:51:41Z, 3500), zip test and arrays OK; no partial
+  products (c3/fit held only checkpoint.npz and start). Resubmitted 06:27Z with the same settings (MODEL_EXT
+  localnn_s2jc_20261116T160722Z), the c3 fits resumed from the checkpoints: 136006-136009 + post 136010 (node018),
+  136011-136014 + post 136015 (node008). Job scripts: disk guard (localnn_chain.sbatch: >= 20 GB free before every
+  stage, exit 4; localnn_chain_post.sbatch: per step, TOOLS_STEPS); the two posts run without the maps
+  (TOOLS_STEPS "export contrib": the maps are 15-20 GB per chain; disk budget ~30 GB).
+  Both resubmissions then failed the c4 Jacobian check (07:20Z, 08:03Z; 2.15e-5 / 2.49e-5 in c_slope_50_60 /
+  c_slope_60_70 at m = 1.0000570 / 1.0000503): for 1 + h/2 <= m < 1 + h the check used the asymmetric two-point
+  difference (first-order). Fixed (check only): the second-order one-sided difference whenever the bound clips the lower
+  point, the noise-floor cap 1000 x; frozen `model_ext_frozen/localnn_s2jc2_20261117T080730Z` (5 states <= 8.2e-7);
+  resubmitted 08:08Z: f10 / 1e-4 136032-136035 + post 136036 (node018), f1 / 1e-4 136037-136040 + post 136041 (node008);
+  c4 checks passed (5.9e-7, 8.2e-7); stage-2 tests of the snapshot 136043.
+  Device switch (lead 2026-11-17 11:45 CST, gpu002 free): the remaining stages of both chains moved to gpu002 (1 GPU
+  each; `jobs/localnn_chain_to_gpu.sh --after-checkpoint`: the GPU attempt cancels the CPU attempt seconds after the c4
+  fit's next checkpoint write, the fit resumes from it on the GPU; same settings, check and disk guard): f10 / 1e-4 GPU
+  attempts 136092-136093 + post 136094, f1 / 1e-4 136095-136096 + post 136097 (posts without maps). Stages: c1 (linked
+  original fits) - c3 and the c4 fit up to the takeover checkpoint on CPU, the rest of c4 and c5 on the GPU
+  (chain_events.jsonl device per stage, the fits' meta "device").
+  f10 / 1e-4 finished on the GPU (136092; c5 fit data 2.458706e-3, ft 2.45855e-3). Its post 136094 failed in contrib:
+  "A_reproduced_bitwise: false" - not the GPU: the post ran on node028 (EPYC 9554, AVX-512) and the tools job script
+  did not set NPY_DISABLE_CPU_FEATURES, so np.exp(h) differed in the last bit at 38 of the 271 held facets (rel <=
+  3.3e-16); with the setting, and on node018 (EPYC 7763), bitwise (`jobs/localnn_postA_repro.py`, sruns 136119-136122;
+  the GPU fit writes its activity on gpu002's CPU, EPYC 7513, no AVX-512). The export's 4.78e-7 is the 7-digit print
+  precision of COPS_model.dat (0 printed differences). Fix in the job scripts only (NPY_DISABLE_CPU_FEATURES in
+  localnn_tools / chain_post / report / degeneracy .sbatch, as the driver); the check stays bitwise. Rerun 136123 on
+  node028: contrib verification 4.7e-10 (final and fit state). kappa ~0 in every C stage-2 state: FINDINGS.md A12.
+- NFS note (Voyager): `/data001` is mounted with `acregmin=acregmax=600`: for up to 10 min after an edit a compute
+  node can see the old size / mtime of a .py file and import its stale `__pycache__` .pyc (seen 2026-11-15: a test ran
+  the previous `jacobian_check`). Frozen snapshots are new files and not affected; tests of freshly edited run copies
+  set `PYTHONPYCACHEPREFIX` to a per-job folder.
+
 **Post-fit tools**:
 
 - `localnn_gpu_eval.py` + `jobs/localnn_gpu_eval.sbatch`: the final per-facet activity through D2's own GPU path
@@ -866,6 +1024,62 @@ GPU node but gpu003):**
 | `logspread/stage1c_f10_20261115T023450Z` | `logspread/stage1_f10_20261114T090251Z` | 125970-125972, 125973, 125974 |
 | `sos/stage1c_r3_20261115T023450Z` | `sos/stage1_r3_20261114T091354Z` | 125975-125977, 125978, 125979 |
 | `background/stage1c_bg1e-1_20261115T023450Z` | `background/stage1_bg1e-1_20261114T084711Z` | 125980-125982, 125983, 125984 |
+
+**Fine-tuning regularization (`nonneg_finetune.py`, user 2026-11-15 ~21:10 CST; every model, also option C through
+`localnn_ft.py`).** Options, off by default (bitwise unchanged when absent):
+- `--delta-penalty-f F --delta-cref C` (job variables `DELTA_F`, `DELTA_CREF`): a penalty on the total per-facet log
+  factor t_e = h_e + δ_e (h = the fit's held term) over the tuned facets.
+  - Definition: P_δ = f · C_ref · Σ_e w_e t_e² / Σ_e w_e, with w_e = facet area and C_ref = 4.2688066575e-03. An rms
+    total log factor of 1 neper costs f × the current misfit.
+  - Implementation: exact residual rows √(2 f C_ref w_e / Σw) t_e on the 0.5 r·r scale, with their own matrix-free
+    Jacobian rows.
+- `--delta-cap X` (`DELTA_CAP`): |h_e + δ_e| ≤ X as bounds δ_e ∈ [−X − h_e, X − h_e]. Where |h_e| > X at the start,
+  δ_e starts at the nearest bound; the count is in fine_tuning.json `delta_regularization.start_clipped`.
+
+Records (costs_initial / costs_final of the state and fine_tuning.json, and finetune_result.txt):
+- cost_delta_penalty, delta_total_rms_area_weighted, delta_total_max_abs;
+- facets_at_cap (upper / lower; within 1e-8 max(1, X));
+- the settings;
+- cost_total = data + crossing + P_δ;
+- finetune_state.npz gains `upper_bound` under the cap.
+
+Validation:
+- check 1 compares data + crossing with the fit;
+- check 3b compares the rows with FD and P_δ with an independent sum;
+- under the cap the FD steps of checks 3 and 6 are not clipped.
+
+Tests: CPU 56 of 56 (jobs 134500, 134502). Snapshots: `model_ext_frozen/nonneg_20261116T031115Z`, and
+`nonneg_summary_20261116T031115Z` with the new `nonneg_ft_summary.py` (`jobs/nonneg_ft_summary.sbatch`). The summary
+tool reports the late rms, P_δ, |h + δ|, the seen area holding 50 / 90 % of the seen production, and the tuned
+facets' share of the late signal.
+
+**B / D c5 tests (2026-11-16):**
+- Setup: the c5 fine tuning only, rerun from the c5 fit state of the stage-2 chains `background/stage2_bg1e-2_20261115T184949Z`
+  and `logspread/stage2_f0.1_20261115T184949Z`; f_δ = 0.1, 1, 10 with the cap ln 100; MAXNFEV 500; late_only, 5-min
+  window.
+- Runs: on CPU by the option-C agent's engine (jobs 134505 and 134501; `tests/localnn_20261114/ftreg/`).
+- Engine check: its unregularized controls reproduce the chains' GPU c5 fine tunings (final data rel 6e-14 B, 4e-16 D).
+- Summaries: `checks/ft_delta_reg_20261116/` (jobs 134508-134515).
+- At c5 the held term reaches |h| = 12.2 / 12.3 neper; 36 / 37 of the 271 tuned facets start clipped to the cap.
+
+Columns: the data cost; P_δ; late-window rms ln NG / RG; the area-weighted rms and the maximum of |h+δ|; the facets at
+the cap; the seen area holding 50 % / 90 % of the seen production at 10:33:10; the tuned facets' share of the seen
+production; their mean share of the NG / RG late signal.
+
+| run | data | P_δ | late NG | late RG | rms / max \|h+δ\| | at cap | 50 % / 90 % | tuned share of production | late share NG / RG |
+|---|---|---|---|---|---|---|---|---|---|
+| B unregularized (chain) | 4.783e-3 | – | 0.139 | 0.040 | 2.49 / 12.2 | – | 1 facet / 0.0110 | 0.57 | 0.071 / 0.046 |
+| B f_δ 0.1 | 4.928e-3 | 1.8e-5 | 0.150 | 0.033 | 0.21 / 4.61 | 2 | 1 facet / 0.0085 | 0.65 | 0.055 / 0.042 |
+| B f_δ 1 | 4.954e-3 | 9.4e-5 | 0.151 | 0.035 | 0.15 / 2.63 | 0 | 1 facet / 0.0095 | 0.63 | 0.053 / 0.041 |
+| B f_δ 10 | 5.239e-3 | 2.3e-5 | 0.167 | 0.045 | 0.023 / 0.95 | 0 | 0.0017 / 0.0200 | 0.14 | 0.034 / 0.044 |
+| D unregularized (chain) | 7.214e-3 | – | 0.136 | 0.061 | 2.97 / 12.3 | – | 3 facets / 0.0234 | 0.74 | 0.134 / 0.068 |
+| D f_δ 0.1 | 7.737e-3 | 4.4e-5 | 0.158 | 0.093 | 0.32 / 4.61 | 2 | 1 facet / 0.0201 | 0.75 | 0.069 / 0.033 |
+| D f_δ 1 | 7.833e-3 | 1.3e-4 | 0.159 | 0.102 | 0.17 / 2.72 | 0 | 1 facet / 0.0238 | 0.74 | 0.066 / 0.032 |
+| D f_δ 10 | 8.305e-3 | 5.7e-5 | 0.180 | 0.115 | 0.037 / 1.07 | 0 | 0.0033 / 0.1064 | 0.22 | 0.045 / 0.038 |
+
+The single facet that holds 50 % of the seen production (except at f_δ = 10) is the tuned facet 12232930 (1.03 m²,
+on the night side at 10:33:10). Its A is 2e8 A_orig, nearly all from D2's ft templates held at amplitude 1. The δ
+regularization only scales it by exp(h + δ).
 
 ## Running on another machine
 

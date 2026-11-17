@@ -1,10 +1,12 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-14, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/localnn_report.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/localnn_report.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 248d4a53de88e3984f5ded164781dff6ef1271b2a8f955c71fed46e2851d71b2
+# SHA256 of the run copy = SHA256 of this file without these header lines: d19388b2b24e030557adae0e5d7e362548d4f53ef0f170c7ae38fb2bb704cafc
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job script (CPU, option C): localnn_report.py for one run root (DOCS_ONLY=1: only README.md / HOW-TO-RERUN.md).
 # RUN: test 125019; stage-1 125054/125056, 125058/125060, 125062/125064 (chained).
+# 2026-11-15: 2026-11-17: NPY_DISABLE_CPU_FEATURES (as the chain driver; reproducible on AVX-512 nodes).
+# RUN 2026-11-15: the chain posts.
 # ==== end of header ====
 # Option C (local non-negative basis, lead 2026-11-14 item 5): summary numbers of ONE finished fit, the bins table in
 # fit/final and the run root's README.md / HOW-TO-RERUN.md (model_ext/localnn_report.py). CPU (normal128cores): one pass
@@ -22,6 +24,9 @@
 #SBATCH --time=01:00:00
 #SBATCH --output=/data001/highresolu_vt/cops_output/jobs/logs/cops_localnn_report-%j.out
 set -uo pipefail
+# numpy without AVX-512 kernels, as the chain driver (2026-11-17: on an AVX-512 node (node028, EPYC 9554) np.exp differs
+# in the last bit at 38 of the 271 held facets and the tools' bitwise reproduction of A failed, post 136094)
+export NPY_DISABLE_CPU_FEATURES="AVX512F AVX512CD AVX512_KNL AVX512_KNM AVX512_SKX AVX512_CLX AVX512_CNL AVX512_ICL"
 export AMPS=/data001/highresolu_vt/AMPS APP=/data001/highresolu_vt/AMPS/srcCG/LiouvilleCOPS_cuda
 export COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output
 export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 MKL_NUM_THREADS=8 PYTHONUNBUFFERED=1

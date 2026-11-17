@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-14, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/localnn_direct.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/localnn_direct.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 2f1e179ec875f9c7d5b5d19ccf5967173518e51903cacc2e1ad07247c1183793
+# SHA256 of the run copy = SHA256 of this file without these header lines: cb48ce04b73a046c6070842ae1bde3b179edab0bd845e31086c3e7b4054dac55
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: check (option C): a fit segment's final per-facet activity re-evaluated at every base row by direct facet sums
 #   (frozen nonneg_contrib arithmetic), compared with the segment's cost and tables (design route).
 # RUN: jobs/localnn_fit.sbatch after a complete fit (frozen model_ext_frozen/localnn_20261114T081912Z).
+# 2026-11-15: stage 2: the CPU route of the state through localnn_problem.state_surface (the held term exact).
+# RUN 2026-11-15: every cycle's fit of the stage-2 chains.
 # ==== end of header ====
 """Option C (local non-negative basis): independent re-evaluation of a fit segment's FINAL per-facet activity at every
 base row by direct facet sums with the frozen contribution arithmetic (model_ext_frozen/nonneg_contrib_20261112T210012Z
@@ -89,8 +91,7 @@ def main(argv=None):
                                                  D.ipoint, "%.9e"),
            "late_window_surface_pRG": lp.compare(rows["surface_RG"], {k: v["surface_pRG_Pa"] for k, v in lw.items()},
                                                  D.ipoint, "%.9e")}
-    cN, cR = lp.all_rows_surface(design, np.asarray(np.load(seg / "localnn_state.npz")["c"]),
-                                 np.asarray(np.load(seg / "localnn_state.npz")["m"]), kappa, meta["templates"] == "on")
+    cN, cR, _ = lp.state_surface(design, seg)
     res["design_vs_direct_instantaneous_max_rel"] = [float(np.max(np.abs(cN / sN - 1))), float(np.max(np.abs(cR / sR - 1)))]
     res["passed"] = bool(res["data_cost_rel_diff"] < 1e-10 and max(res["design_vs_direct_instantaneous_max_rel"]) < 1e-11
                          and res["COPS_model_pNG"]["max_rel"] <= 5e-7 * (1 + 1e-6)

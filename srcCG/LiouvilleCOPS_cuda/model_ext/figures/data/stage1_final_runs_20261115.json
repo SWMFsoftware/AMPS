@@ -1,0 +1,16 @@
+{
+ "_about": "Final stage-1 comparison (lead 2026-11-15 11:30 CST): per setting the latest completed fit - B and A the continuations stage1c_* from the stage-1 end points (optimizer scale rebuilt, up to 4000 more evaluations), D the refits stage1c_* with the fixed-level spread penalty (u0 = -1.8641) from the stage-1 end points, C the anchored fits (f 1 = the rerun after the node002 failure) and the multiplier-penalty check run (f 10, P_m f_m 0.01, continued from the f 10 end point) as an extra C variant. Entries: option, name, setting, run root relative to runs/shap8_012m_lategrid_dz1.5/nonneg, kind.",
+ "runs": [
+  ["B", "background", "bg 1e-3", "background/stage1c_bg1e-3_20261115T023450Z", "summary"],
+  ["B", "background", "bg 1e-2", "background/stage1c_bg1e-2_20261115T023450Z", "summary"],
+  ["B", "background", "bg 1e-1", "background/stage1c_bg1e-1_20261115T023450Z", "summary"],
+  ["A", "sum of squares", "rank 3", "sos/stage1c_r3_20261115T023450Z", "summary"],
+  ["D", "log spread", "f 0.1", "logspread/stage1c_f0.1_20261115T023450Z", "summary"],
+  ["D", "log spread", "f 1", "logspread/stage1c_f1_20261115T023450Z", "summary"],
+  ["D", "log spread", "f 10", "logspread/stage1c_f10_20261115T023450Z", "summary"],
+  ["C", "local basis", "f 0.1", "localnn/stage1_anch_f0.1_20261114T094256Z", "localnn"],
+  ["C", "local basis", "f 1", "localnn/stage1_anch_f1_20261114T222136Z", "localnn"],
+  ["C", "local basis", "f 10", "localnn/stage1_anch_f10_20261114T094259Z", "localnn"],
+  ["C", "local basis", "f 10 P_m 0.01", "localnn/stage1_anch_f10_pm0.01_cont_20261115T020243Z", "localnn"]
+ ]
+}

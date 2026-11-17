@@ -1,0 +1,19 @@
+{
+ "_about": "Convergence verdicts of the stage-1 option fits (2026-11-14): the verdicts are agent 1's CPU diagnosis (checks/stage1_diag_20261114/, stage1_diag.py; jobs 125188-125229) as relayed by the lead on 2026-11-14 ~20:00 CST; the numbers are read by options_table.py --diag from the diag_*.json files listed here (scaled gradient = max |(J^T r)_k| / ||J_k|| over the free parameters at the fit's end point, x_scale='jac'; GN = relative decrease predicted by the bounded Gauss-Newton step; best trial = largest relative cost decrease of the evaluated trial steps). Option C was not part of the diagnosis.",
+ "diag_dir": "/data001/highresolu_vt/cops_output/checks/stage1_diag_20261114",
+ "fits": {
+  "B|bg 1e-3": {"code": "not converged", "files": ["diag_bg1e-3.json", "diag_bg1e-3_small2.json"],
+                "note": "descent remains; not at its best feasible point: the bg 1e-2 end point is feasible for bg >= 1e-3 and has a 38 % lower data cost (5.378e-3 vs 8.704e-3)"},
+  "B|bg 1e-2": {"code": "not converged", "files": ["diag_bg1e-2.json", "diag_bg1e-2_small2.json"], "note": "descent remains"},
+  "B|bg 1e-1": {"code": "not converged", "files": ["diag_bg1e-1.json", "diag_bg1e-1_small2.json"], "note": "descent remains"},
+  "A|rank 3": {"code": "not converged", "files": ["diag_r3.json", "diag_r3_small2.json"],
+               "note": "descent remains; the best data cost was still falling at the end (0.02015 -> 0.01619 over the last 500 function evaluations, a factor 1.25)"},
+  "D|f 0.1": {"code": "not a minimum", "files": ["diag_f0.1.json", "diag_f0.1_small2.json"],
+              "note": "the ftol stop is not a minimum: the trust region was frozen by scipy's jac scaling (the multiplier columns shrank about 1000x) on a degenerate valley (the spread penalty Var_w(u) ignores the level of u)"},
+  "D|f 1": {"code": "minimum", "files": ["diag_f1.json"], "note": "genuine minimum (scaled gradient ~2e-7, Gauss-Newton remaining decrease ~1e-10)"},
+  "D|f 10": {"code": "minimum", "files": ["diag_f10.json"], "note": "genuine minimum (scaled gradient ~2e-7, Gauss-Newton remaining decrease ~1e-11)"},
+  "C|f 0.1": {"code": "not diagnosed", "files": [], "note": "stopped at max_nfev; not part of the CPU diagnosis"},
+  "C|f 1": {"code": "not diagnosed", "files": [], "note": "not part of the CPU diagnosis"},
+  "C|f 10": {"code": "not diagnosed", "files": [], "note": "stopped at max_nfev; not part of the CPU diagnosis"}
+ }
+}

@@ -1,10 +1,12 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-14, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/localnn_degeneracy.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/localnn_degeneracy.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 0ece7555a6ce5e9e7428d4e678157f9ced1692b859eddbaa75597eed46531214
+# SHA256 of the run copy = SHA256 of this file without these header lines: dc919938375af0176f3bdc7bafacfc6d9465b52aa2ecb040b999f957b9eaa5b2
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job script (CPU, option C): localnn_degeneracy.py for one run root.
 # RUN: 125362 (P_m check, chained).
+# 2026-11-15: 2026-11-17: NPY_DISABLE_CPU_FEATURES (as the chain driver; reproducible on AVX-512 nodes).
+# RUN 2026-11-15: the chain posts.
 # ==== end of header ====
 # Option C (local non-negative basis): m_b vs c_j degeneracy diagnostics of ONE finished fit (model_ext/localnn_degeneracy.py:
 # effective activity per bin, signal share per bin, node dominance, compensation rho, the global level direction,
@@ -19,6 +21,9 @@
 #SBATCH --time=01:00:00
 #SBATCH --output=/data001/highresolu_vt/cops_output/jobs/logs/cops_localnn_degen-%j.out
 set -uo pipefail
+# numpy without AVX-512 kernels, as the chain driver (2026-11-17: on an AVX-512 node (node028, EPYC 9554) np.exp differs
+# in the last bit at 38 of the 271 held facets and the tools' bitwise reproduction of A failed, post 136094)
+export NPY_DISABLE_CPU_FEATURES="AVX512F AVX512CD AVX512_KNL AVX512_KNM AVX512_SKX AVX512_CLX AVX512_CNL AVX512_ICL"
 export AMPS=/data001/highresolu_vt/AMPS APP=/data001/highresolu_vt/AMPS/srcCG/LiouvilleCOPS_cuda
 export COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output
 export OMP_NUM_THREADS=16 OPENBLAS_NUM_THREADS=16 MKL_NUM_THREADS=16 PYTHONUNBUFFERED=1

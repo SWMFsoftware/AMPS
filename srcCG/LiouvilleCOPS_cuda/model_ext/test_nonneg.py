@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/test_nonneg.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/test_nonneg.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: d27bfcc4e8e41e4def13b7e2f32a25bf033e78564dc47520b304c6b8ee68a196
+# SHA256 of the run copy = SHA256 of this file without these header lines: b1498415e0006b39822256215672d4789fc9db20a354219a05eb1c07da33b9ae
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: test. Tests of the softplus / squared models (unit: softplus value and derivative, host fields, threads bitwise,
 #   one-job requirements A and B; workers; e2e on the synthetic grid base: D2 -> fits with full Jacobian checks,
@@ -10,6 +10,7 @@
 # USED BY: jobs/nonneg_cpu.sbatch (CPU job 124128: 20 tests, 0 failed), jobs/nonneg_test.sbatch (124130-124133).
 # 2026-11-13: six multmin tests (option absent = previous snapshot bitwise; bounds [1, inf); TRF start on the bound;
 #   records; marker refusals); CPU job 124658: 26 tests, 0 failed.
+# 2026-11-13/14: multiplier lower bound tests; options A, B, D (unit, e2e, absent = bitwise, D penalty and uniform start, sos LM refinement); CPU job 125065 41 of 41.
 # 2026-11-13/14: multiplier lower bound tests; options A, B, D (unit, e2e, absent = bitwise, D penalty and uniform start, sos LM refinement); CPU job 125065 41 of 41.
 # 2026-11-13/14: multiplier lower bound tests; options A, B, D (unit, e2e, absent = bitwise, D penalty and uniform start, sos LM refinement); CPU job 125065 41 of 41.
 # ==== end of header ====
@@ -1142,6 +1143,7 @@ def test_alt_e2e(root, run_g, points, bins_npz, D2, ft, el):
     test_alt_restart(root, run_g, fits, el, ascale)
     test_alt_absent_new(root, run_g, fits)
     # fine tuning of each, then cycle 2
+    c2_fits = {}
     for model, (F, head) in fits.items():
         FT = root / ("alt_%s_ft" % model)
         args = nft.parse_args(["--fit", str(F), "--out", str(FT), "--facets", "late_only", "--window-min", "5",
@@ -1178,9 +1180,120 @@ def test_alt_e2e(root, run_g, points, bins_npz, D2, ft, el):
         ftf = fm["costs_final"]["cost_data"]
         report("alt e2e: %s cycle-2 start cost = the fine tuning's final data cost (1e-8)" % model,
                abs(c2s / ftf - 1) <= 1e-8, "c2 %.15e ft %.15e (rel %.1e)" % (c2s, ftf, abs(c2s / ftf - 1)))
+        c2_fits[model] = C2
+    test_ft_delta_reg(root, c2_fits)
 
 
 V_ALT_D = OUT_ROOT / "model_ext_frozen/nonneg_20261114T085147Z"     # the stage-1 D snapshot (before restart / u0)
+V_FT_PREV = OUT_ROOT / "model_ext_frozen/nonneg_20261115T020314Z"   # the snapshot before the delta regularization
+FT_RUNNER = """import sys
+snap = sys.argv[1]
+sys.path.insert(0, snap)
+import test_nonneg as T
+import nonneg_finetune as nft
+assert str(nft.__file__).startswith(snap), nft.__file__
+args = nft.parse_args(sys.argv[2:])
+try:
+    rc = nft.run(args, engine_factory=lambda ctx: T.CpuEngine(ctx), command=["test"])
+except SystemExit as exc:
+    print("CHILD_SYSTEMEXIT %s" % exc, flush=True)
+    rc = 1
+sys.exit(rc)
+"""
+
+
+def _ft_child(root, name, snap, argv):
+    runner = Path(root) / "ft_runner.py"
+    if not runner.is_file():
+        runner.write_text(FT_RUNNER)
+    log = Path(root) / (name + ".log")
+    rc = subprocess.call([sys.executable, "-W", "ignore", str(runner), str(snap)] + [str(a) for a in argv],
+                         stdout=log.open("w"), stderr=subprocess.STDOUT)
+    return rc, log.read_text()
+
+
+def _ft_products(d):
+    z = np.load(str(Path(d) / "finetune_state.npz"))
+    arrays = {k: z[k] for k in z.files if k != "meta_json"}
+    res = [l for l in open(Path(d) / "finetune_result.txt") if not l.startswith("#") and not l.startswith("wall_seconds")]
+    cm = [l for l in open(Path(d) / "COPS_model.dat") if not l.startswith("#")]
+    return arrays, res, cm
+
+
+def test_ft_delta_reg(root, c2_fits):
+    """The delta regularization of the fine tuning (user 2026-11-15): options absent == the previous snapshot (bitwise
+    state arrays, result lines, COPS_model.dat rows); with --delta-penalty-f / --delta-cref / --delta-cap: validation
+    (incl. the penalty rows vs FD and P_delta vs an independent sum), P_delta from the state, |h + delta| <= cap,
+    the facets at the cap, the start clipped to the cap where |h| > cap, cost_total = data + crossing + P_delta."""
+    for model in ("background", "logspread"):
+        if model not in c2_fits:
+            report("ft delta reg: %s cycle-2 fit missing" % model, False, "")
+            continue
+        C2 = c2_fits[model]
+        base = ["--fit", str(C2), "--facets", "late_only", "--window-min", "5", "--max-nfev", "12", "--l-threads", "2"]
+        OLD, NEW = root / ("ftreg_%s_previous" % model), root / ("ftreg_%s_absent" % model)
+        rc1, t1 = _ft_child(root, "ftreg_%s_previous" % model, V_FT_PREV, base + ["--out", OLD, "--validate"])
+        rc2, t2 = _ft_child(root, "ftreg_%s_absent" % model, HERE, base + ["--out", NEW, "--validate"])
+        if rc1 or rc2:
+            report("ft delta reg: %s options absent == previous snapshot" % model, False, (t1 + t2)[-3000:])
+            continue
+        a1, r1, c1 = _ft_products(OLD)
+        a2, r2, c2 = _ft_products(NEW)
+        eq = lambda x, y: bool(np.array_equal(x, y, equal_nan=np.issubdtype(np.asarray(x).dtype, np.floating)))  # noqa: E731
+        same = {"arrays": set(a1) == set(a2) and all(eq(a1[k], a2[k]) for k in a1),
+                "result_lines": r1 == r2, "COPS_model.dat": c1 == c2}
+        report("ft delta reg: %s options absent == snapshot nonneg_20261115T020314Z (bitwise)" % model,
+               all(same.values()), "%s" % same)
+        z = np.load(str(C2 / "nonneg_facets.npz"))
+        held, area = np.asarray(z["held"]), None
+        zs = np.load(str(NEW / "finetune_state.npz"))
+        tuned = np.asarray(zs["seen"], bool)
+        h_t = held[tuned]
+        hmax = float(np.max(np.abs(h_t))) if tuned.any() else 0.0
+        cap = 0.5 * hmax if hmax > 0 else 1.0
+        from cops_cuda import reference
+        reference.bind()
+        fc = reference.load("fit_cops")
+        run_ = json.loads((C2 / "fit_manifest.json").read_text())["model_extension"]["nonneg"]["config"]["run"]
+        area = np.asarray(fc.read_elements(str(Path(run_) / "elements.bin"))["area"])
+        for label, extra in (("f1_cap", ["--delta-penalty-f", "1", "--delta-cref", str(CREF_TEST), "--delta-cap", repr(cap)]),
+                             ("f10", ["--delta-penalty-f", "10", "--delta-cref", str(CREF_TEST)]),
+                             ("cap_only", ["--delta-cap", repr(cap)])):
+            D = root / ("ftreg_%s_%s" % (model, label))
+            rc, t = _ft_child(root, "ftreg_%s_%s" % (model, label), HERE, base + ["--out", D, "--validate"] + extra)
+            if rc:
+                report("ft delta reg: %s %s" % (model, label), False, t[-3000:])
+                continue
+            v = json.loads((D / "validation.json").read_text())
+            zz = np.load(str(D / "finetune_state.npz"))
+            meta = json.loads(str(zz["meta_json"]))
+            fin = meta["costs_final"]
+            tt = np.asarray(zz["held_next"])[tuned]
+            w = area[tuned]
+            f_ = 1.0 if label == "f1_cap" else (10.0 if label == "f10" else None)
+            P_ind = f_ * CREF_TEST * float(np.sum(w * tt * tt)) / float(np.sum(w)) if f_ else 0.0
+            ok = bool(v.get("passed")) and np.array_equal(np.asarray(zz["seen"], bool), tuned)
+            det = {"validation": {k: (vv.get("passed") if isinstance(vv, dict) else vv) for k, vv in v.items()}}
+            if f_:
+                ok &= abs(fin["cost_delta_penalty"] / P_ind - 1) <= 1e-12
+                ok &= bool(v["3_delta_regularization_rows"]["passed"])
+                det["P_delta"] = (fin["cost_delta_penalty"], P_ind)
+                det["penalty_rows_vs_fd"] = v["3_delta_regularization_rows"]["rel_rows_vs_fd"]
+            ok &= abs(fin["cost_total"] - (fin["cost_data"] + fin["cost_crossing"] + fin["cost_delta_penalty"])) <= \
+                1e-12 * fin["cost_total"]
+            if "cap" in label:
+                ncap = int(np.sum(np.abs(tt) >= cap - 1e-8 * max(1.0, cap)))
+                clipped = json.loads((D / "fine_tuning.json").read_text())["delta_regularization"]["start_clipped"]
+                want_clip = int(np.sum(np.abs(h_t) > cap))
+                ok &= bool(np.all(np.abs(tt) <= cap * (1 + 1e-12))) and fin["facets_at_cap"] == ncap and \
+                    clipped["lower"] + clipped["upper"] == want_clip and "upper_bound" in zz.files
+                det.update(cap=cap, max_abs_total=float(np.max(np.abs(tt))), facets_at_cap=(fin["facets_at_cap"], ncap),
+                           start_clipped=(clipped, want_clip))
+            det["rms_total"] = fin["delta_total_rms_area_weighted"]
+            report("ft delta reg: %s %s (validation, P_delta, cap)" % (model, label), ok, "%s" % det)
+        r_abs = float(np.sqrt(np.sum(area[tuned] * np.asarray(np.load(str(NEW / "finetune_state.npz"))["held_next"])[tuned] ** 2) /
+                              np.sum(area[tuned])))
+        print("ft delta reg: %s rms |h + delta| unregularized %.4g" % (model, r_abs), flush=True)
 CREF_TEST = 4.2688066575e-03
 U0_TEST = -0.25
 
