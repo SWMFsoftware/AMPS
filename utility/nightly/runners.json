@@ -76,7 +76,7 @@
     {
       "id": "earth",
       "title": "srcEarth test list (srcEarth/test/list)",
-      "prepare": ["make test_Earth-cutoff-rigidity-3d-analytic_compile",
+      "prepare": ["make test_Earth-cutoff-rigidity-3d-analytic_compile -j",
                   "./amps -h 2>&1 | grep -q 'AMPS Earth' || { echo 'ERROR: ./amps is not an Earth build (make amps failed)'; exit 1; }"],
       "command": ["{python}", "srcEarth/test/test_runner.py", "srcEarth/test/list", "-j", "{jobs}",
                   "--log-dir", "{out}/logs", "--report-prefix", "{out}/report",
