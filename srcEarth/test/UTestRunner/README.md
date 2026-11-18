@@ -104,6 +104,17 @@ when the runner has no `--timeout`, and leave other entries on `--timeout`; each
 log records which limit applied. The active SA QUICK entries of `test/list` must
 be exclusive and have a limit above the nightly's `--timeout 5400`.
 
+### UTR-F08 — an interrupted runner still reports every entry
+
+The AMPS nightly stops a runner at its time limit with SIGINT. The production
+runner is started as a subprocess on a three-entry list with `-j 1` and is
+signalled (SIGINT, and separately SIGTERM) while the second entry runs. It must
+exit with status 130 and still write its reports: the first entry as it
+finished, the second as actual F with `interrupted` (its log says so, and its
+command, which runs in its own session, must be gone), and the third as actual
+F with `not_started`. Before this, the runner printed "Interrupted by user"
+and wrote no report, and the nightly lost every Earth result of the night.
+
 The suite does not weaken or replace any scientific validation. Exclusivity is
 runner-only scheduling metadata; AMPS commands, numerical inputs, observations,
 reference solutions, expected P/F states, and acceptance gates remain unchanged.

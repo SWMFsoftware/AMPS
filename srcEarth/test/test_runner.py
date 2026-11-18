@@ -552,6 +552,13 @@ Actual result classification is:
 * timeout -> actual ``F``; and
 * process-launch error -> actual ``F``.
 
+When the runner itself is interrupted (SIGINT, e.g. Ctrl-C or the AMPS nightly
+at the runner's time limit, or SIGTERM), the commands still running are stopped
+like timed-out ones, and the reports are written anyway: finished entries as
+they finished, the stopped ones as actual ``F`` with ``interrupted``, and the
+entries that never started as actual ``F`` with ``not_started``.  The exit
+status is then 130.
+
 The expected marker and actual result are compared independently.  Reports
 retain both values, the command, loop bindings, source and variant indices,
 parsed ``-np``/``-nt``, runtime, timeout state, exit code, launch-time memory,
@@ -654,6 +661,11 @@ class TestResult:
     variant_index: int = 1
     variant_count: int = 1
     exclusive: bool = False
+    # Set only when the runner was interrupted (SIGINT or SIGTERM; the AMPS nightly sends SIGINT at the
+    # runner's time limit): the command was running and was stopped, or it never started.  Both are
+    # reported as actual F.
+    interrupted: bool = False
+    not_started: bool = False
 
 
 @dataclass
@@ -669,6 +681,20 @@ class TestPlan:
     np_value: int
     nt_value: int
     np_nt_details: str
+
+
+@dataclass
+class RunState:
+    """What ``run_all_tests`` has done so far.
+
+    It lives outside the coroutine so that a run interrupted by SIGINT or
+    SIGTERM can still be reported: ``main`` builds the report of the finished
+    entries, the entries that were running, and those that never started.
+    """
+
+    plans: List[TestPlan] = field(default_factory=list)
+    started: dict[int, float] = field(default_factory=dict)   # test index -> time.monotonic() at launch
+    results: List[TestResult] = field(default_factory=list)
 
 
 # Environment provenance used by validation wrappers that must not run unless
@@ -1525,19 +1551,19 @@ async def run_one_test(
                 )
             except asyncio.TimeoutError:
                 timed_out = True
-                try:
-                    os.killpg(proc.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-                try:
-                    await wait_for_process_completion(proc, timeout_s=10.0)
-                except asyncio.TimeoutError:
-                    try:
-                        os.killpg(proc.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                    await wait_for_process_completion(proc, timeout_s=None)
+                await stop_process_group(proc)
                 exit_code = proc.returncode
+            except asyncio.CancelledError:
+                # The runner was interrupted (SIGINT or SIGTERM).  The command
+                # runs in its own session and would outlive the runner, so it
+                # is stopped as at a timeout; main() reports it as interrupted.
+                await stop_process_group(proc)
+                log.write(
+                    f"\n{'=' * 80}\n# Interrupted: the runner was stopped; this "
+                    f"command was stopped after {time.monotonic() - start:.1f} s "
+                    f"(exit code {proc.returncode})\n".encode("utf-8", errors="replace")
+                )
+                raise
 
         except Exception as exc:  # launch failure is also a failed test
             log.write(f"\nERROR launching command: {exc}\n".encode("utf-8", errors="replace"))
@@ -1584,6 +1610,66 @@ async def run_one_test(
     )
 
 
+async def stop_process_group(proc: asyncio.subprocess.Process) -> None:
+    """Stop a command's process group: SIGTERM, then SIGKILL after 10 s."""
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        await wait_for_process_completion(proc, timeout_s=10.0)
+    except asyncio.TimeoutError:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        await wait_for_process_completion(proc, timeout_s=None)
+
+
+def interrupted_results(state: RunState, log_dir: Path) -> List[TestResult]:
+    """The results of an interrupted run, one per planned entry in list order.
+
+    Finished entries keep their results.  An entry that was running when the
+    runner was interrupted has been stopped: actual F with ``interrupted``.  An
+    entry that never started: actual F with ``not_started`` and no log.
+    """
+    finished = {result.index: result for result in state.results}
+    now = time.monotonic()
+    results: List[TestResult] = []
+    for plan in state.plans:
+        test = plan.test
+        if test.index in finished:
+            results.append(finished[test.index])
+            continue
+        started = state.started.get(test.index)
+        results.append(TestResult(
+            index=test.index,
+            line_no=test.line_no,
+            expected=test.expected,
+            actual="F",
+            matched_reference=False,
+            exit_code=None,
+            timed_out=False,
+            elapsed_s=(now - started) if started is not None else 0.0,
+            command=test.command,
+            log_file=str(log_dir / safe_log_name(test)) if started is not None else "",
+            np_value=plan.np_value,
+            nt_value=plan.nt_value,
+            np_nt_details=plan.np_nt_details,
+            last_pass=test.last_pass,
+            last_pass_line_no=test.last_pass_line_no,
+            template_command=test.template_command,
+            loop_line_no=test.loop_line_no,
+            loop_bindings=dict(test.loop_bindings),
+            variant_index=test.variant_index,
+            variant_count=test.variant_count,
+            exclusive=test.exclusive,
+            interrupted=started is not None,
+            not_started=started is None,
+        ))
+    return results
+
+
 async def run_all_tests(
     tests: Iterable[TestCase],
     *,
@@ -1600,8 +1686,12 @@ async def run_all_tests(
     memory_gate_enabled: bool,
     min_free_memory_fraction: float,
     memory_check_interval: float,
+    state: Optional[RunState] = None,
 ) -> List[TestResult]:
     """Schedule tests behind exclusivity, job-count, and memory constraints.
+
+    ``state``, when given, records the plans, the launches, and the finished
+    results as the run goes, for the report of an interrupted run.
 
     A launch into an empty pool -- the first test of the run, or any later
     test that starts once nothing else is running -- always launches
@@ -1627,7 +1717,10 @@ async def run_all_tests(
         build_test_plan(test, default_np=default_np, default_nt=default_nt) for test in tests
     ]
     running: dict[asyncio.Task[TestResult], TestPlan] = {}
-    results: List[TestResult] = []
+    if state is None:
+        state = RunState()
+    state.plans = list(pending)
+    results = state.results
 
     last_check_time: Optional[float] = None
     last_known_total: Optional[int] = None
@@ -1734,6 +1827,7 @@ async def run_all_tests(
             if not try_gate():
                 break
             plan = pending.pop(0)
+            state.started[plan.test.index] = time.monotonic()
             task = asyncio.create_task(
                 run_one_test(
                     plan,
@@ -1842,6 +1936,8 @@ def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path,
         "variant_index",
         "variant_count",
         "exclusive",
+        "interrupted",
+        "not_started",
     ]
 
     def write_csv(path: Path, rows: List[TestResult]) -> None:
@@ -2365,6 +2461,10 @@ def print_final_summary(
     print(f"Matched reference:  {n_match}")
     print(f"Mismatches:         {n_mismatch}")
     print(f"Timeouts:           {n_timeout}")
+    n_interrupted = sum(r.interrupted for r in results)
+    n_not_started = sum(r.not_started for r in results)
+    if n_interrupted or n_not_started:
+        print(f"Interrupted runner: {n_interrupted} stopped while running, {n_not_started} not started")
     print(f"JSON report:        {json_path}")
     print(f"CSV report:         {csv_path}")
     print(f"To-address text:    {to_address_txt_path}")
@@ -2806,6 +2906,17 @@ def main(argv: Optional[List[str]] = None) -> int:
                 file=sys.stderr,
             )
 
+    # SIGINT (Ctrl-C, or the AMPS nightly at the runner's time limit) and
+    # SIGTERM stop the run, and the reports are still written: the finished
+    # entries as they finished, the running ones as stopped, and the rest as
+    # not started.  Exit status 130.
+    state = RunState()
+    interrupted = False
+
+    def interrupt_on_sigterm(signum, frame):
+        raise KeyboardInterrupt
+
+    previous_sigterm = signal.signal(signal.SIGTERM, interrupt_on_sigterm)
     try:
         results = asyncio.run(
             run_all_tests(
@@ -2823,11 +2934,24 @@ def main(argv: Optional[List[str]] = None) -> int:
                 memory_gate_enabled=memory_gate_enabled,
                 min_free_memory_fraction=args.min_free_memory_fraction,
                 memory_check_interval=args.memory_check_interval,
+                state=state,
             )
         )
     except KeyboardInterrupt:
-        print("Interrupted by user", file=sys.stderr)
-        return 130
+        interrupted = True
+        results = interrupted_results(state, log_dir)
+        for r in results:
+            if r.interrupted:
+                print(f"[INTERRUPTED] #{r.index:03d} line {r.line_no}: stopped after "
+                      f"{r.elapsed_s:.1f}s", flush=True)
+        print(
+            f"Interrupted: {len(state.results)} entries finished, "
+            f"{sum(r.interrupted for r in results)} stopped while running, "
+            f"{sum(r.not_started for r in results)} not started; writing the reports",
+            file=sys.stderr,
+        )
+    finally:
+        signal.signal(signal.SIGTERM, previous_sigterm)
 
     (
         json_path,
@@ -2924,6 +3048,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             commit_command += " --commit-id <tested-commit>"
         print(f"Apply these results without re-running tests with: {commit_command}")
 
+    if interrupted:
+        return 130
     return 0 if all(r.matched_reference for r in results) else 1
 
 

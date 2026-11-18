@@ -128,6 +128,9 @@ def sep_orchestrator_json(ctx: ReadContext) -> List[Row]:
     return rows
 
 
+_INTERPRETERS = {"python", "sh", "bash", "env", "perl", "time"}      # also python3, python3.8
+
+
 def earth_report(ctx: ReadContext) -> List[Row]:
     """srcEarth/test/test_runner.py <prefix>.json: one row per list entry."""
     data = _json(Path(ctx.file))
@@ -135,7 +138,14 @@ def earth_report(ctx: ReadContext) -> List[Row]:
         raise ResultsUnavailable("{} is not a list of entries".format(ctx.file))
 
     def name(entry: Dict[str, Any]) -> str:
-        first = str(entry.get("command") or "").split()[0] if entry.get("command") else "entry"
+        # the script, after an interpreter, its options and VAR=value settings ("python3 srcEarth/test/SA01/..."
+        # was named "python3 (line 233)")
+        words = str(entry.get("command") or "").split()
+        i = 0
+        while i < len(words) - 1 and (Path(words[i]).name.rstrip("0123456789.") in _INTERPRETERS or "=" in words[i]
+                                      or (i and words[i].startswith("-"))):
+            i += 1
+        first = words[i] if words else "entry"
         parts = Path(first).parts
         return parts[2] if len(parts) > 3 and parts[:2] == ("srcEarth", "test") else Path(first).stem
 
@@ -144,10 +154,15 @@ def earth_report(ctx: ReadContext) -> List[Row]:
     for entry, test in zip(data, names):
         if names.count(test) > 1:
             test = "{} (line {})".format(test, entry.get("line_no"))
+        if entry.get("not_started"):          # the runner was stopped (its time limit) before this entry started
+            rows.append(row(test, "SKIPPED", "not started: the runner was stopped before this entry"))
+            continue
         passed = entry.get("actual") == "P"
         reason = ""
         if not passed:
-            if entry.get("timed_out"):
+            if entry.get("interrupted"):
+                reason = "stopped after {:.0f} s: the runner was stopped".format(entry.get("elapsed_s") or 0)
+            elif entry.get("timed_out"):
                 reason = "timed out after {:.0f} s".format(entry.get("elapsed_s") or 0)
             else:
                 reason = _last_line(entry.get("log_file")) or "exit code {}".format(entry.get("exit_code"))
@@ -156,7 +171,8 @@ def earth_report(ctx: ReadContext) -> List[Row]:
         elif entry.get("expected") == "F":
             reason = "passes although srcEarth/test/list expects it to fail"
         rows.append(row(test, "PASS" if passed else "FAILED", reason,
-                        stage="run" if entry.get("timed_out") else "", duration=entry.get("elapsed_s"),
+                        stage="run" if entry.get("timed_out") or entry.get("interrupted") else "",
+                        duration=entry.get("elapsed_s"),
                         log_src=entry.get("log_file", "")))
     return rows
 

@@ -136,6 +136,29 @@ class Readers(unittest.TestCase):
         self.assertTrue(rows[0]["reason"].startswith("expected to fail"))
         self.assertEqual((rows[1]["stage"], rows[1]["reason"]), ("run", "timed out after 60 s"))
 
+    def test_earth_report_names_the_script(self):
+        commands = ["python3 srcEarth/test/SA01/run_SA01.py --data-root /d", "./srcEarth/test/C10/run_C10.py --x",
+                    "env OMP_NUM_THREADS=2 python3.8 -B srcEarth/test/C3/run_C3.py", "srcEarth/test/UFluxNumerics/run_test.sh",
+                    "python3 tools/check.py"]
+        rows = self.read("earth-report", [{"command": c, "line_no": n, "expected": "P", "actual": "P"}
+                                          for n, c in enumerate(commands)])
+        self.assertEqual([r["test"] for r in rows], ["SA01", "C10", "C3", "UFluxNumerics", "check"])
+
+    def test_earth_report_of_an_interrupted_runner(self):
+        """test_runner.py stopped at the runner's time limit: every entry still gets a row."""
+        rows = self.read("earth-report", [
+            {"command": "srcEarth/test/C8/run_C8.py", "line_no": 223, "expected": "P", "actual": "P",
+             "elapsed_s": 110},
+            {"command": "python3 srcEarth/test/SA03/run_SA03.py", "line_no": 251, "expected": "P", "actual": "F",
+             "exit_code": None, "timed_out": False, "elapsed_s": 2950.4, "interrupted": True, "not_started": False,
+             "log_file": "/w/logs/test_064.log"},
+            {"command": "python3 srcEarth/test/SA04/run_SA04.py", "line_no": 260, "expected": "P", "actual": "F",
+             "elapsed_s": 0.0, "interrupted": False, "not_started": True, "log_file": ""}])
+        self.assertEqual([(r["test"], r["status"]) for r in rows],
+                         [("C8", "PASS"), ("SA03", "FAILED"), ("SA04", "SKIPPED")])
+        self.assertEqual((rows[1]["stage"], rows[1]["reason"]), ("run", "stopped after 2950 s: the runner was stopped"))
+        self.assertEqual(rows[2]["reason"], "not started: the runner was stopped before this entry")
+
     def test_sep_moon_junit_and_missing_report(self):
         rows = self.read("sep-orchestrator-json", {"records": [
             {"test_id": "build", "status": "PASS", "step": "build", "kind": "check"},
