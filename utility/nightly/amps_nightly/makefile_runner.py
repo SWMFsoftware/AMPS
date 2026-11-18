@@ -7,6 +7,7 @@ that stage, and their output goes to one log per test (logs/<runner>/tests/<test
       make test_<X>_compile, make test_<X>_rundir
   phase B, up to `lanes` tests at once, each in its own run_test_<X> directory:
       make test_<X>_run, make test_<X>_check
+  (a test whose Table block uses the run directory of another test, ${TEST<Y>DIR}, runs after the run of Y)
 This is the split of the legacy scheduler, with time limits and per-test logs added. Status, stage and
 reason come from the .diff result files exactly as for imported legacy nights; .diff contents are not kept.
 """
@@ -176,6 +177,40 @@ def config_restore(ws: Path, saved: Dict[str, Optional[bytes]]) -> List[str]:
     return changed
 
 
+def run_order(ready: Sequence[str], table: Sequence[TableTest]) -> Tuple[List[str], Dict[str, List[str]]]:
+    """The order of phase B and, per test, the tests whose run stage it waits for.
+
+    A Table block that uses the run directory of another test (${TEST<other>DIR}) needs that test's run:
+    Moon-restart copies the restart files the run of Moon writes into run_test_Moon (2026-11-18 its run started
+    12 s after Moon's in another lane and found none). Such a test waits for the other test's run stage. In the
+    order every test comes after the tests it waits for, and the lanes take the tests in this order, so the
+    tests a lane waits for have started in other lanes: waiting cannot block them. A dependency cycle is not
+    waited for.
+    """
+    uses = {t.name: t.uses for t in table}
+    planned = set(ready)
+    order: List[str] = []
+    waits: Dict[str, List[str]] = {}
+    state: Dict[str, str] = {}
+
+    def visit(name: str) -> None:
+        state[name] = "visiting"
+        waits[name] = []
+        for other in sorted(uses.get(name, ())):
+            if other not in planned or state.get(other) == "visiting":
+                continue
+            if other not in state:
+                visit(other)
+            waits[name].append(other)
+        state[name] = "done"
+        order.append(name)
+
+    for name in ready:
+        if name not in state:
+            visit(name)
+    return order, waits
+
+
 # OpenMP threads per MPI rank of the Makefile.test runs (unless the environment sets OMP_NUM_THREADS). Without it an
 # OpenMP build starts one thread per core in every rank: on 2026-11-15 fast-wave-openmp ran 8 ranks x 38 threads on
 # 36 cores next to the other lanes, the load reached 135, and magnetic-reconnection (31 min on a quiet machine) hit the
@@ -256,18 +291,32 @@ def run(ws: Path, machine: Machine, items: Sequence[Item], env: Dict[str, str], 
     # and report differences that are not there (2026-11-15: CG-dust-test-tetra-cut-mesh, "34017c34017,34472",
     # while Periodic-BC-NonUniform's check ran).
     check_lock = threading.Lock()
+    order, waits = run_order(ready, workspace_table(ws))
+    for name in order:
+        if waits[name]:
+            log("Makefile.test: {} runs after {} (it uses their run directories)".format(name, ", ".join(waits[name])))
+    run_done = {name: threading.Event() for name in order}
     with concurrent.futures.ThreadPoolExecutor(max_workers=machine.lanes) as pool:   # phase B: lanes
         def run_and_check(name: str) -> None:
-            if time.time() >= deadline:
-                not_started.append(name)
-                return
-            stage(name, "run")
+            try:
+                for other in waits[name]:
+                    if not run_done[other].is_set():
+                        with open(str(test_log(tests_dir, name)), "a") as stream:
+                            stream.write("\n### {} waiting for test_{}_run: this test uses run_test_{}\n".format(
+                                time.strftime("%Y-%m-%d %H:%M:%S"), other, other))
+                        run_done[other].wait(max(0.0, deadline - time.time()))
+                if time.time() >= deadline:
+                    not_started.append(name)
+                    return
+                stage(name, "run")
+            finally:
+                run_done[name].set()          # also when it did not start: nothing waits forever
             error = run_error(test_log(tests_dir, name), "test_{}_run".format(name))
             if error:
                 aborted[name] = "the run aborted: " + error
             with check_lock:
                 stage(name, "check")
-        list(pool.map(run_and_check, ready))
+        list(pool.map(run_and_check, order))
 
     results = {r["test"]: r for r in legacy.collect_results(legacy.read_diff_files(ws), workspace_table(ws))}
     rows = []

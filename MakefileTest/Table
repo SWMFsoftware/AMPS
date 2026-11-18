@@ -3915,10 +3915,10 @@ Check=
 >>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 $(TESTPeriodic-BC-NonUniformDIR)/ref/test2-wave-init-updated.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BC-NonUniformDIR}/PT/thread* |wc -l |tr -d ' '`
 >>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 $(TESTPeriodic-BC-NonUniformDIR)/ref/test3-wave-init-updated.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BC-NonUniformDIR}/PT/thread* |wc -l |tr -d ' '`
 
->>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 $(TESTPeriodic-BC-NonUniformDIR)/ref/test0-wave50.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BCDIR}/PT/thread* |wc -l |tr -d ' '`
->>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 $(TESTPeriodic-BC-NonUniformDIR)/ref/test1-wave50.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BCDIR}/PT/thread* |wc -l |tr -d ' '`
->>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 $(TESTPeriodic-BC-NonUniformDIR)/ref/test2-wave50.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BCDIR}/PT/thread* |wc -l |tr -d ' '`
->>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 $(TESTPeriodic-BC-NonUniformDIR)/ref/test3-wave50.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BCDIR}/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 $(TESTPeriodic-BC-NonUniformDIR)/ref/test0-wave50.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BC-NonUniformDIR}/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 $(TESTPeriodic-BC-NonUniformDIR)/ref/test1-wave50.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BC-NonUniformDIR}/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 $(TESTPeriodic-BC-NonUniformDIR)/ref/test2-wave50.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BC-NonUniformDIR}/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 $(TESTPeriodic-BC-NonUniformDIR)/ref/test3-wave50.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BC-NonUniformDIR}/PT/thread* |wc -l |tr -d ' '`
 
 
 >>>@${TESTPeriodic-BC-NonUniformDIR}/../utility/ReduceFile.pl ${TESTPeriodic-BC-NonUniformDIR}/test0-wave-init-updated.dat 10

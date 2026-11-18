@@ -17,6 +17,7 @@ from .registry import Registry
 DEFAULT_TABLE = Path(__file__).resolve().parents[3] / "MakefileTest" / "Table"
 _SECTIONS = ("Compile=", "Rundir=", "Run=", "Check=")
 _DIFF_FILE = re.compile(r"\btest_([A-Za-z0-9][A-Za-z0-9_.+=-]*?)(?:\$\([^)]*\))?\.diff\b")
+_RUN_DIR = re.compile(r"\$[({]TEST([A-Za-z0-9][A-Za-z0-9_.+=-]*?)DIR[)}]")    # ${TEST<name>DIR}: run_test_<name>
 
 
 @dataclass
@@ -27,6 +28,7 @@ class TableTest:
     line: int                 # line of "#>" (1-based)
     family_lines: int = 0     # number of Family= lines in the block
     result_files: Set[str] = field(default_factory=set)  # other test_<x>.diff names written by the block
+    uses: Set[str] = field(default_factory=set)          # other tests whose run directory (${TEST<x>DIR}) it uses
 
 
 def read_table(path: Optional[Path] = None) -> List[TableTest]:
@@ -44,6 +46,7 @@ def read_table(path: Optional[Path] = None) -> List[TableTest]:
         if line == "<#":
             if current.name:
                 current.result_files.discard(current.name)
+                current.uses.discard(current.name)
                 tests.append(current)
             current = None
             continue
@@ -51,6 +54,7 @@ def read_table(path: Optional[Path] = None) -> List[TableTest]:
             section = True
         if section:
             current.result_files.update(_DIFF_FILE.findall(line))
+            current.uses.update(_RUN_DIR.findall(line))
             continue
         if line.startswith("Name="):
             value = line[len("Name="):]

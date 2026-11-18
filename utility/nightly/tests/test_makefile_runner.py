@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -103,3 +104,90 @@ class WorkspaceTable(unittest.TestCase):
     def test_falls_back_to_the_tool_table(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertTrue(len(makefile_runner.workspace_table(Path(tmp))) > 0)
+
+
+DEPENDENT_TABLE = """#>
+Name=Moon
+Family=planets
+<#
+#>
+Name=Moon-restart
+Family=planets
+Run=
+>>>cp ${TESTMoonDIR}/ParticleData.restart* ${TESTMoon-restartDIR}
+<#
+"""
+
+# Moon's run writes its restart file after a while; Moon-restart's run copies it, and its check reports whether it got it
+DEPENDENT_MAKEFILE = """\
+test_%_compile:
+\t@echo "test_$*_compile..." > test_$*.diff; touch amps
+test_%_rundir:
+\t@mkdir -p "run_test_$*"; mv amps "run_test_$*"; echo "test_$*_rundir... done" >> test_$*.diff
+test_Moon_run:
+\t@sleep 1.5; touch run_test_Moon/ParticleData.restart
+test_Moon-restart_run:
+\tcp run_test_Moon/ParticleData.restart* run_test_Moon-restart
+test_Moon_check:
+\t@: > test_Moon.diff
+test_Moon-restart_check:
+\t@if [ -f run_test_Moon-restart/ParticleData.restart ]; then : > test_Moon-restart.diff; \\
+\telse echo "no restart file" > test_Moon-restart.diff; fi
+"""
+
+
+class RunDependencies(unittest.TestCase):
+    """A test that uses another test's run directory (${TEST<x>DIR}) runs after that test's run (Moon-restart)."""
+
+    def test_table_records_the_run_directories_a_block_uses(self):
+        from amps_nightly.table import read_table
+        uses = {t.name: t.uses for t in read_table()}
+        self.assertEqual(uses["Moon-restart"], {"Moon"})
+        self.assertEqual(uses["Moon"], set())
+        self.assertEqual(uses["Periodic-BC-NonUniform"], set())     # its check counts its own ranks
+
+    def test_order_puts_the_tests_waited_for_first(self):
+        from amps_nightly.table import TableTest
+
+        def block(name, *uses):
+            return TableTest(name=name, family="", selector="", line=0, uses=set(uses))
+
+        table = [block("B", "A"), block("A"), block("C", "D"), block("D", "C"), block("E", "missing")]
+        order, waits = makefile_runner.run_order(["B", "A", "C", "D", "E"], table)
+        self.assertEqual(order, ["A", "B", "D", "C", "E"])       # A moves before B; otherwise the Table order
+        self.assertEqual(waits["B"], ["A"])
+        self.assertEqual(waits["A"], [])
+        self.assertEqual(waits["E"], [])                         # a test that is not run is not waited for
+        self.assertEqual(sorted(len(waits[n]) for n in ("C", "D")), [0, 1])   # a cycle: one of them does not wait
+
+    def run_night(self):
+        from amps_nightly import plan as plan_mod
+        from amps_nightly.machines import parse_machine
+        with tempfile.TemporaryDirectory() as tmp:
+            ws, logs = Path(tmp, "ws"), Path(tmp, "logs")
+            (ws / "MakefileTest").mkdir(parents=True)
+            (ws / "MakefileTest" / "Table").write_text(DEPENDENT_TABLE)
+            (ws / "Makefile").write_text(DEPENDENT_MAKEFILE)
+            m = parse_machine({"schema_version": 1, "machine": "box", "upload": "/srv/incoming", "lanes": 2,
+                               "configs": [{"config": "gnu", "config_pl": ["-install"]}]}, Path("box.json"))
+            items = [plan_mod.makefile_item(n, "planets", "") for n in ("Moon", "Moon-restart")]
+            env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": os.environ.get("HOME", "/tmp")}
+            messages = []
+            rows = makefile_runner.run(ws, m, items, env, logs, "t", time.time() + 300, messages.append)
+            got = {r["test"]: r for r in rows}
+            return got, Path(got["Moon-restart"]["log_src"]).read_text(), messages
+
+    def test_dependent_run_waits(self):
+        got, log, messages = self.run_night()
+        self.assertEqual(got["Moon"]["status"], "PASS")
+        self.assertEqual(got["Moon-restart"]["status"], "PASS")
+        self.assertIn("waiting for test_Moon_run: this test uses run_test_Moon", log)
+        self.assertIn("Makefile.test: Moon-restart runs after Moon (it uses their run directories)", messages)
+
+    def test_without_the_wait_the_copy_finds_nothing(self):
+        """The control: with two lanes and no waiting, Moon-restart starts beside Moon and fails (2026-11-18)."""
+        from unittest import mock
+        with mock.patch.object(makefile_runner, "run_order", lambda ready, table: (list(ready), {n: [] for n in ready})):
+            got, log, _ = self.run_night()
+        self.assertEqual(got["Moon-restart"]["status"], "FAILED")
+        self.assertIn("cannot stat", log)
