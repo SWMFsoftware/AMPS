@@ -7,7 +7,9 @@ import argparse
 import html
 import json
 import math
+import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -18,10 +20,33 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 TEST = ROOT / "test"
 REFERENCE = TEST / "reference" / "forward_model_reference.json"
+STANDALONE_TESTS = ROOT / "standalone" / "tests"
+# U00_exporter runs these three modules together; every other standalone/tests/test_<name>.py is the case S_<name>
+EXPORTER_MODULES = ("test_export_forward_sources", "test_fit_source_export", "test_export_forward_observations")
+# Inputs of the standalone tests that are machine dependent, passed on in these environment variables
+DATA_ROOT_ENV = "ENCELADUS_VALIDATION_DATA_ROOT"          # Cassini validation data (standalone/validation_paths.py)
+SPICE_TOOLKIT_ENV = "ENCELADUS_SPICE_TOOLKIT_ROOT"        # CSPICE (standalone/tests/test_spice_ground_tracks.py)
+SPICE_KERNELS_ENV = "ENCELADUS_SPICE_KERNEL_ROOT"         # its NAIF/ and CASSINI/ kernels
+SKIP = None                                               # outcome of a case whose tests were all skipped
 
 
-def run(command: list[str], *, cwd: Path = ROOT) -> subprocess.CompletedProcess:
-    return subprocess.run(command, cwd=cwd, text=True, capture_output=True)
+def run(command: list[str], *, cwd: Path = ROOT, env: dict | None = None) -> subprocess.CompletedProcess:
+    return subprocess.run(command, cwd=cwd, text=True, capture_output=True, env=env)
+
+
+def standalone_case(module: str, env: dict) -> tuple:
+    """(name, passed, detail) of one standalone/tests module; passed is SKIP when every test was skipped."""
+    result = run([sys.executable, "-m", "unittest", "-v", "standalone.tests." + module], env=env)
+    detail = result.stdout + result.stderr
+    name = "S_" + module[len("test_"):]
+    if result.returncode != 0:
+        return name, False, detail
+    ran = re.search(r"^Ran (\d+) tests?", detail, re.M)
+    skipped = re.search(r"^OK \(skipped=(\d+)\)", detail, re.M)
+    if ran and (int(ran.group(1)) == 0 or (skipped and int(skipped.group(1)) == int(ran.group(1)))):
+        reason = re.search(r"\.\.\. skipped '(.*)'$", detail, re.M) or re.search(r"skipped '(.*)'$", detail, re.M)
+        return name, SKIP, detail + "SKIP: " + (reason.group(1) if reason else "all tests skipped") + "\n"
+    return name, True, detail
 
 
 def parse_receipt(text: str) -> dict[str, object]:
@@ -189,6 +214,17 @@ def main() -> int:
     parser.add_argument("--output", type=Path,
                         default=ROOT / "test_output" / "srcEnceladus")
     parser.add_argument(
+        "--validation-data-root", type=Path, default=os.environ.get(DATA_ROOT_ENV) or None,
+        help=("Cassini validation-data root for the standalone tests (default: ${}); without it the tests "
+              "that need it are skipped".format(DATA_ROOT_ENV)))
+    parser.add_argument(
+        "--spice-path", type=Path, default=os.environ.get(SPICE_TOOLKIT_ENV) or None,
+        help="CSPICE toolkit for the SPICE ground-track test (default: ${})".format(SPICE_TOOLKIT_ENV))
+    parser.add_argument(
+        "--spice-kernels", type=Path, default=os.environ.get(SPICE_KERNELS_ENV) or None,
+        help=("SPICE kernel tree (NAIF/, CASSINI/) for the SPICE ground-track test (default: ${})"
+              .format(SPICE_KERNELS_ENV)))
+    parser.add_argument(
         "--cxx", nargs="+", default=["g++"], metavar="ARG",
         help=("C++ compiler argv used for the dependency-light forward-model "
               "binary (default: g++). The global test adapter passes the "
@@ -201,12 +237,20 @@ def main() -> int:
     outcomes = []
     values: dict[str, object] = {}
 
-    standalone = run([sys.executable, "-m", "unittest",
-                      "standalone.tests.test_export_forward_sources",
-                      "standalone.tests.test_fit_source_export",
-                      "standalone.tests.test_export_forward_observations"])
+    standalone = run([sys.executable, "-m", "unittest"] +
+                     ["standalone.tests." + module for module in EXPORTER_MODULES])
     outcomes.append(("U00_exporter", standalone.returncode == 0,
                      standalone.stdout + standalone.stderr))
+
+    # The other tests of the standalone plume model (standalone/README.md), one case per module
+    standalone_env = dict(os.environ)
+    for variable, value in ((DATA_ROOT_ENV, args.validation_data_root), (SPICE_TOOLKIT_ENV, args.spice_path),
+                            (SPICE_KERNELS_ENV, args.spice_kernels)):
+        if value is not None:
+            standalone_env[variable] = str(Path(value).expanduser().resolve())
+    for path in sorted(STANDALONE_TESTS.glob("test_*.py")):
+        if path.stem not in EXPORTER_MODULES:
+            outcomes.append(standalone_case(path.stem, standalone_env))
 
     with tempfile.TemporaryDirectory(prefix="enceladus_forward_") as temporary:
         temp = Path(temporary)
@@ -289,7 +333,7 @@ def main() -> int:
         "elapsed_s": time.time() - started,
         "reference": str(REFERENCE.resolve()),
         "results": [
-            {"test": name, "status": "PASS" if passed else "FAIL",
+            {"test": name, "status": "SKIP" if passed is SKIP else "PASS" if passed else "FAIL",
              "detail": detail}
             for name, passed, detail in outcomes
         ],
@@ -299,11 +343,14 @@ def main() -> int:
     (output / "test_receipt.json").write_text(
         json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     for name, passed, detail in outcomes:
-        print(f"{'PASS' if passed else 'FAIL'} {name}")
-        if not passed and detail:
+        print(f"{'SKIP' if passed is SKIP else 'PASS' if passed else 'FAIL'} {name}")
+        if passed is SKIP:
+            print(detail.rstrip().splitlines()[-1])
+        elif not passed and detail:
             print(detail.rstrip())
-    failed = sum(not item[1] for item in outcomes)
-    print(f"SUMMARY pass={len(outcomes)-failed} fail={failed} "
+    failed = sum(item[1] is False for item in outcomes)
+    skipped = sum(item[1] is SKIP for item in outcomes)
+    print(f"SUMMARY pass={len(outcomes)-failed-skipped} fail={failed} skip={skipped} "
           f"receipt={output/'test_receipt.json'}")
     return 1 if failed else 0
 

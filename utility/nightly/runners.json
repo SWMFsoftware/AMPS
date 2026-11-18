@@ -31,11 +31,14 @@
       "title": "srcEnceladus forward-model tests",
       "workspace": "plain",
       "prepare": ["mkdir -p srcEnceladus/test/data && cp {enceladus_shape_manifest} srcEnceladus/test/data/shape_manifest.json"],
-      "command": ["{python}", "srcEnceladus/test/run_tests.py", "--output", "{out}/run"],
+      "command": ["{python}", "srcEnceladus/test/run_tests.py", "--output", "{out}/run",
+                  "--validation-data-root", "{enceladus_validation_data}",
+                  "--spice-path", "{spice_path}", "--spice-kernels", "{spice_kernels}"],
       "time_limit_min": 15,
+      "note": "also the standalone plume model's tests (srcEnceladus/standalone/tests), one case S_<module> per module besides U00_exporter; --validation-data-root is the Cassini validation data they read, --spice-path/--spice-kernels the CSPICE toolkit and kernels of S_spice_ground_tracks",
       "results": {"reader": "enceladus-receipt", "file": "{out}/run/test_receipt.json"},
       "families": "app-enceladus",
-      "requires_vars": ["enceladus_shape_manifest"]
+      "requires_vars": ["enceladus_shape_manifest", "enceladus_validation_data", "spice_path", "spice_kernels"]
     },
     {
       "id": "sep",

@@ -1197,6 +1197,8 @@ Run:
 
 ```bash
 export ENCELADUS_VALIDATION_DATA_ROOT=/absolute/path/to/cassini_validation_data
+export ENCELADUS_SPICE_TOOLKIT_ROOT=/absolute/path/to/cspice      # include/, lib/cspice.a, lib/csupport.a
+export ENCELADUS_SPICE_KERNEL_ROOT=/absolute/path/to/Kernels      # NAIF/naif0012.tls, CASSINI/...
 python3 -m unittest discover -s tests -v
 python3 -m py_compile plume_model.py fitting.py plume_fit.py \
   validation_paths.py joint_fitting_study.py co2_fitting_study.py \
@@ -1230,6 +1232,10 @@ The tests require all of the following:
   values exactly; and
 - the E3/E5 SPICE subpoint geometry, output convention, and closest-approach
   samples agree with regression fixtures derived from the pinned kernels.
+
+Without the SPICE variables the ground-track tests are skipped (and so are the
+tests that need the validation data without `ENCELADUS_VALIDATION_DATA_ROOT`).
+`srcEnceladus/test/run_tests.py` runs these modules as its `S_<module>` cases.
 
 These tests verify the mathematical implementation and internal conservation.
 They do not validate the collisionless assumptions, published source geometry,

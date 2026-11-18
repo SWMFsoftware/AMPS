@@ -93,8 +93,24 @@ production projection, and final generated pointer-mover and loss-callback
 macros. These tests do not initialize MPI, allocate a mesh, or claim an
 evolving physics run.
 
-The global runner executes the standalone source exporter tests, exports a
-complete 8-jet/7-stripe fixture, builds the dependency-free C++ core, and runs
+The global runner executes the standalone source exporter tests (`U00_exporter`)
+and every other test module of the standalone plume model, one case
+`S_<module>` per `standalone/tests/test_<module>.py`. Those read the Cassini
+validation data and, for `S_spice_ground_tracks`, CSPICE and its kernels:
+
+```bash
+python3 srcEnceladus/test/run_tests.py --output /tmp/enceladus-tests \
+  --validation-data-root /absolute/path/to/cassini_validation_data \
+  --spice-path /absolute/path/to/cspice --spice-kernels /absolute/path/to/Kernels
+```
+
+Each option defaults to its environment variable (`ENCELADUS_VALIDATION_DATA_ROOT`,
+`ENCELADUS_SPICE_TOOLKIT_ROOT`, `ENCELADUS_SPICE_KERNEL_ROOT`). Without them the
+tests that need these inputs are skipped, and a case whose tests are all skipped
+is reported as `SKIP` with the reason. The AMPS nightly passes the machine
+file's `enceladus_validation_data`, `spice_path` and `spice_kernels`.
+
+It then exports a complete 8-jet/7-stripe fixture, builds the dependency-free C++ core, and runs
 focused source-parser, runtime-parser, Burger-chemistry, Tenishev flux-law,
 canonical ID/geometry, radial stripe projection, parent-loss-only planning,
 Courant/weight, conditional flyby-mesh-refinement, strict inactive-control, and dimensionless
@@ -105,7 +121,7 @@ resonant channel contains both H2O and H2O+. It then compares named outputs with
 `reference/forward_model_reference.json` using independent equations in the
 Python runner. Production code never writes the expected values.
 
-Results are `PASS`, `FAIL`, or an explicit compilation/runner failure in
+Results are `PASS`, `FAIL`, `SKIP`, or an explicit compilation/runner failure in
 `test_output/srcEnceladus/test_receipt.json`. The adjacent
 `reference_comparison.svg` plots relative errors and is generated with the
 Python standard library, so visualization does not depend on matplotlib.

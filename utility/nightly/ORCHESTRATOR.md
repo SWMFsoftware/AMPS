@@ -268,7 +268,7 @@ On 2026-11-17 the 89 compiles ran one at a time with `make -j8` for 185 of the r
 | order | runner | workspace / prepare | command (abridged) | reader | estimated time |
 |---|---|---|---|---|---|
 | 1 | `core` | configured | `src/test/run_tests.py --campaign nightly` | src-test-json | ~27 min |
-| 2 | `enceladus` | plain (prepare copies the git-ignored data file) | `srcEnceladus/test/run_tests.py --output {out}` | enceladus-receipt | < 1 min |
+| 2 | `enceladus` | plain (prepare copies the git-ignored data file) | `srcEnceladus/test/run_tests.py --output {out} --validation-data-root {enceladus_validation_data} --spice-path {spice_path} --spice-kernels {spice_kernels}`: the forward-model tests and the standalone plume model's tests (`S_<module>`) | enceladus-receipt | < 1 min |
 | 3 | `sep` | configured (the SEP orchestrator builds) | `tools/sep_test_orchestrator.py --app srcsep --output-dir {out}` | sep-orchestrator-json | ~15 min |
 | 4 | `sep3d` | configured | `tools/sep_test_orchestrator.py --app srcsep3d --output-dir {out}` | sep-orchestrator-json | ~15 min |
 | 5 | `moon` | configured; prepare: `Config.pl -application=moon …`, `make` | `srcMoon/test/run_tests.py --all --output-dir {out}` | moon-summary | ~10 min |

@@ -1,4 +1,5 @@
 import csv
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -8,12 +9,28 @@ import numpy as np
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CSPICE = Path("/home/vtenishe/SPICE/cspice")
-KERNELS = Path("/home/vtenishe/SPICE/Kernels")
+# The CSPICE toolkit and the kernel tree are machine dependent: the test reads them from the environment (the
+# nightly passes the machine file's spice_path and spice_kernels through srcEnceladus/test/run_tests.py) and is
+# skipped when either is not set or lacks a file it needs.
+TOOLKIT_ENV = "ENCELADUS_SPICE_TOOLKIT_ROOT"     # CSPICE: include/, lib/cspice.a, lib/csupport.a
+KERNELS_ENV = "ENCELADUS_SPICE_KERNEL_ROOT"      # NAIF/naif0012.tls, CASSINI/<pck, spk>
+CSPICE = Path(os.environ.get(TOOLKIT_ENV, "")).expanduser() if os.environ.get(TOOLKIT_ENV) else None
+KERNELS = Path(os.environ.get(KERNELS_ENV, "")).expanduser() if os.environ.get(KERNELS_ENV) else None
+REQUIRED_KERNELS = ("NAIF/naif0012.tls", "CASSINI/cpck10Mar2008.tpc", "CASSINI/080228AP_SCPSE_08050_08076.bsp",
+                    "CASSINI/cpck16Sep2008.tpc", "CASSINI/081010AP_SCPSE_08282_08315.bsp")
 
 
-@unittest.skipUnless((CSPICE / "lib/cspice.a").is_file(),
-                     "local CSPICE installation is unavailable")
+def unavailable() -> str:
+    """Why the test cannot run here, or "" when it can."""
+    if CSPICE is None or KERNELS is None:
+        return "set {} (CSPICE) and {} (kernels)".format(TOOLKIT_ENV, KERNELS_ENV)
+    missing = [str(CSPICE / name) for name in ("include/SpiceUsr.h", "lib/cspice.a", "lib/csupport.a")
+               if not (CSPICE / name).is_file()]
+    missing += [str(KERNELS / name) for name in REQUIRED_KERNELS if not (KERNELS / name).is_file()]
+    return "missing " + ", ".join(missing) if missing else ""
+
+
+@unittest.skipIf(unavailable(), unavailable())
 class SpiceGroundTrackTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

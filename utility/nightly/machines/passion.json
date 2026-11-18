@@ -24,7 +24,8 @@
     "spice_path": "/home/vtenishe/SPICE/cspice",
     "spice_kernels": "/home/vtenishe/SPICE/Kernels",
     "swmf_data": "/data/vtenishe/AMPSTEST/SWMF_data",
-    "enceladus_shape_manifest": "/home/vtenishe/Mars2/AMPS/srcEnceladus/test/data/shape_manifest.json"
+    "enceladus_shape_manifest": "/home/vtenishe/Mars2/AMPS/srcEnceladus/test/data/shape_manifest.json",
+    "enceladus_validation_data": "/data/vtenishe/cassini_validation_data"
   },
   "_vars_note": "swmf_data is the nightly's own copy: amps_nightly_test.sh resets it to the newest SWMF_data commit each night (tests edit reference files in it). enceladus_shape_manifest is temporary: the file is excluded from git by the .gitignore pattern 'data' (to decide 2026-11-15)",
   "make_vars": {"MPIRUN": "mpirun -np 8", "TESTMPIRUN4": "mpirun -np 4", "TESTMPIRUN1": "mpirun -np 1"},
