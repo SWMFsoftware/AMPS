@@ -1434,6 +1434,19 @@ start:
       if(!trajectory.ok())exit(__LINE__,__FILE__,trajectory.message.c_str());
     }
 
+    // The vertex shock distances (DatumAtVertexShockLocationDistance) limit the
+    // fte-mfp substeps at the shock (focused_transport_mfp.cpp).  Recompute them
+    // for this step's departure shock position, before the particle read phase.
+    // Until 2026-11-18 only the field-line output computed them, so the limit
+    // was off until the first output and up to an output interval stale after
+    // it.  A shock radius that is not yet defined (SWCME before its shock
+    // forms) leaves them as they are.
+    if (timedAnalyticShock||SEP::ShockModelType==SEP::cShockModelType::SwCme1d) {
+      const double shockRadiusM=CurrentShockRadiusM();
+      if(std::isfinite(shockRadiusM)&&shockRadiusM>0.0)
+        SEP::FieldLine::UpdateVertexShockDistances(false);
+    }
+
     // The application-level timestep is the sole owner of turbulence
     // evolution.  Capture the previously published shock position before the
     // particle phase and the new position after it, then pass that interval to

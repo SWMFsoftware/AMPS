@@ -579,7 +579,11 @@ Run=
 >>>@# This test: Parker (spatial diffusion) mover, kappa from the mean free path as in the former Parker_MeanFreePath
 >>>@# mover; 30 particles injected per iteration (the default 300 accumulate to ~1e5 particles in the run). The self-consistent particle-wave
 >>>@# coupling is off (--no-particle-coupling): with it the wave energy diverges in the first steps.
->>>cd $(TESTSEP--Parker_spiral--ParkerEqDIR); ${MPIRUN} ./amps --particle-mover parker --spatial-diffusion-provider from-mfp --injection-particles-per-iteration 30 --no-particle-coupling
+>>>@# --turbulence-source prescribed: since 1e7fb57 (2026-11-17) a run whose turbulence evolves locally (the default,
+>>>@# self-consistent-integrated) stops at startup ("approved polarized weak-Alfven production closure is unavailable").
+>>>@# Without particle coupling the turbulence does not act on these particles: FTE and ParkerEq outputs are the same
+>>>@# byte for byte with either source on 4-12 ranks (2026-11-18).
+>>>cd $(TESTSEP--Parker_spiral--ParkerEqDIR); ${MPIRUN} ./amps --particle-mover parker --spatial-diffusion-provider from-mfp --injection-particles-per-iteration 30 --no-particle-coupling --turbulence-source prescribed
 >>>@echo "test_SEP--Parker_spiral--ParkerEq_run... done" >> test_SEP--Parker_spiral--ParkerEq$(TESTSEP--Parker_spiral--ParkerEq-REF).diff
 
 Check=
@@ -619,7 +623,11 @@ Run=
 >>>@# srcSEP selects its mover at run time (--particle-mover; Mover= in the input is retired).
 >>>@# This test: focused-transport mover with explicit pitch-angle diffusion Dmumu. The self-consistent particle-wave
 >>>@# coupling is off (--no-particle-coupling): with it the wave energy diverges in the first steps.
->>>cd $(TESTSEP--Parker_spiral--FTEDIR); ${MPIRUN} ./amps --particle-mover fte-dmumu --no-particle-coupling
+>>>@# --turbulence-source prescribed: since 1e7fb57 (2026-11-17) a run whose turbulence evolves locally (the default,
+>>>@# self-consistent-integrated) stops at startup ("approved polarized weak-Alfven production closure is unavailable").
+>>>@# Without particle coupling the turbulence does not act on these particles: FTE and ParkerEq outputs are the same
+>>>@# byte for byte with either source on 4-12 ranks (2026-11-18).
+>>>cd $(TESTSEP--Parker_spiral--FTEDIR); ${MPIRUN} ./amps --particle-mover fte-dmumu --no-particle-coupling --turbulence-source prescribed
 >>>@echo "test_SEP--Parker_spiral--FTE_run... done" >> test_SEP--Parker_spiral--FTE$(TESTSEP--Parker_spiral--FTE-REF).diff
 
 Check=
@@ -692,7 +700,11 @@ Run=
 >>>@# srcSEP selects its mover at run time (--particle-mover; Mover= in the input is retired).
 >>>@# This test: focused-transport mover with mean-free-path (event-driven) scattering. The self-consistent particle-wave
 >>>@# coupling is off (--no-particle-coupling): with it the wave energy diverges in the first steps.
->>>cd $(TESTSEP--Parker_spiral--field_lineDIR); ${MPIRUN} ./amps --particle-mover fte-mfp --no-particle-coupling
+>>>@# --turbulence-source prescribed: since 1e7fb57 (2026-11-17) a run whose turbulence evolves locally (the default,
+>>>@# self-consistent-integrated) stops at startup ("approved polarized weak-Alfven production closure is unavailable").
+>>>@# Without particle coupling the turbulence does not act on these particles: FTE and ParkerEq outputs are the same
+>>>@# byte for byte with either source on 4-12 ranks (2026-11-18).
+>>>cd $(TESTSEP--Parker_spiral--field_lineDIR); ${MPIRUN} ./amps --particle-mover fte-mfp --no-particle-coupling --turbulence-source prescribed
 >>>@echo "test_SEP--Parker_spiral--field_line_run... done" >> test_SEP--Parker_spiral--field_line$(TESTSEP--Parker_spiral--field_line-REF).diff
 
 Check=

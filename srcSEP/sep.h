@@ -314,6 +314,8 @@ namespace SEP {
 
     // Calculate distance from each field line vertex to the shock location
     void CalculateVertexShockDistances();
+    //the same without the printed summary: at the start of every particle step (amps_time_step)
+    void UpdateVertexShockDistances(bool report);
 
 
     namespace InjectionParameters {
@@ -2124,6 +2126,10 @@ double e_mev=e*J2MeV;
         double GetInjectionRate();
 	double GetSolarWindDensity();
 	int GetInjectionLocation(int iFieldLine,double &S,double *xInjection);
+	// The same location on the committed trajectory: the shock radius at the start of the current particle step.
+	// It never advances the trajectory, so code that runs inside PIC::TimeStep (the particle read phase), such as
+	// the field-line output, may call it.
+	int GetCommittedInjectionLocation(int iFieldLine,double &S,double *xInjection);
 	double GetCompressionRatio();
      }
 

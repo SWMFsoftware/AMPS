@@ -74,8 +74,11 @@ namespace SEP {
 namespace FieldLine {
 	
 // Calculate distance from each field line vertex to the shock location
-// Optimized single-pass algorithm that processes all field lines and vertices
-void CalculateVertexShockDistances() {
+// Optimized single-pass algorithm that processes all field lines and vertices.
+// Called at the start of every particle step (amps_time_step, before the particle read phase: the distances limit
+// the fte-mfp substeps at the shock) and by the field-line output (CalculateVertexShockDistances, which also prints
+// the summary); both use the committed shock location of the step.
+void UpdateVertexShockDistances(bool report) {
     if (PIC::FieldLine::DatumAtVertexShockLocationDistance.is_active()==false) return;
     
     // Statistics counters
@@ -91,7 +94,9 @@ void CalculateVertexShockDistances() {
         // S = segment_index.relative_location_in_segment
         double shockS;  // Internal coordinate of shock intersection
         double shockPosition[3];  // 3D coordinates of shock intersection
-        int shockSegment = SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(
+        // The committed shock location: the field-line output runs inside PIC::TimeStep, where the shock
+        // trajectory must not be advanced (a background write during particle motion).
+        int shockSegment = SEP::ParticleSource::ShockWave::Tenishev2005::GetCommittedInjectionLocation(
             iFieldLine, shockS, shockPosition);
         
         double shockDistanceFromStart = 0.0;
@@ -172,12 +177,19 @@ void CalculateVertexShockDistances() {
         }
     } // End loop over field lines
     
+    if (!report) return;
+
     // Print summary statistics
     std::cout << "CalculateVertexShockDistances completed:" << std::endl;
     std::cout << "  Total vertices processed: " << totalVerticesProcessed << std::endl;
     std::cout << "  Field lines with shock intersection: " << totalVerticesWithShock << std::endl;
     std::cout << "  Field lines without shock intersection: " << fieldLinesWithoutShock << std::endl;
     std::cout << "  Total field lines: " << PIC::FieldLine::nFieldLine << std::endl;
+}
+
+// The field-line output hook (PIC::FieldLine::UserDefinedfDataProcessingManager)
+void CalculateVertexShockDistances() {
+    UpdateVertexShockDistances(true);
 }
 
 } // namespace FieldLine

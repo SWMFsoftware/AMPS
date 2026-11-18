@@ -379,6 +379,18 @@ int SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(int iFiel
   return segment;
 }
 
+int SEP::ParticleSource::ShockWave::Tenishev2005::GetCommittedInjectionLocation(int iFieldLine,double &S,double *xInjection) {
+  // Read-only: the analytic trajectory is advanced (and rShock committed) only after the particle step
+  // (AdvanceAnalyticTrajectoryToEpoch); advancing it here, inside the particle read phase, is a background write.
+  // Before the trajectory is initialized there is nothing to read, and the updating query initializes it.
+  if(SEP::ShockModelType!=SEP::cShockModelType::SwCme1d&&!InitFlag)return GetInjectionLocation(iFieldLine,S,xInjection);
+  const double radius=SEP::ShockModelType==SEP::cShockModelType::SwCme1d
+      ? SEP::SW1DAdapter::ShockRadiusM() : rShock;
+  int segment=-1;const auto status=FindLocationAtRadius(radius,iFieldLine,&segment,&S,xInjection);
+  if(!status.ok())exit(__LINE__,__FILE__,status.message.c_str());
+  return segment;
+}
+
 
 namespace SEP {
 namespace ParticleSource {

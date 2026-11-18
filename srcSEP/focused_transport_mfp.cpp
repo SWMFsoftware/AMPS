@@ -15,6 +15,12 @@ void AbortMfpStatus(const SEP::Transport::Status& status) {
   exit(__LINE__, __FILE__, status.message.c_str());
 }
 
+// Distance to the shock, as a fraction of the particle's segment, below which a
+// particle is on the shock (ShockCrossingTimeS).  The coordinate resolves about
+// 2e-16 x (segment index) of a segment; 1e-9 is far above that for any line and
+// far below any physical scale (0.1 m for a 1e8 m segment).
+constexpr double kOnShockSegmentFraction = 1.0e-9;
+
 double ShockCrossingTimeS(
     const SEP::Transport::PICAdapter::ParticleContext& context,
     double signedStreamingSpeedMPerS) {
@@ -41,6 +47,18 @@ double ShockCrossingTimeS(
   const double signedDistanceM =
       ((1.0 - fraction) * distance0[0] + fraction * distance1[0]) * _AU_;
   if (signedDistanceM * signedStreamingSpeedMPerS >= 0.0)
+    return std::numeric_limits<double>::infinity();
+  // A particle closer to the shock than kOnShockSegmentFraction of its segment
+  // is on the shock: the crossing is not resolved further (no shock limit).
+  // The field-line coordinate (segment index + fraction) cannot resolve such a
+  // distance: a substep limited to the crossing time moves the particle less
+  // than the coordinate's resolution, so the distance never shrinks.  On
+  // 2026-11-18 a particle born on the shock (1.6e-8 m from it) took 2e6
+  // substeps of 2.2e-12 s (just above minimumStepS, so the guard on the
+  // crossing time below did not apply) and covered 4 us of its 0.88 s step:
+  // SEP--Parker_spiral--field_line never finished iteration 400.
+  if (std::fabs(signedDistanceM) <=
+      kOnShockSegmentFraction * context.segment->GetLength())
     return std::numeric_limits<double>::infinity();
   return std::fabs(signedDistanceM / signedStreamingSpeedMPerS);
 }
