@@ -1,15 +1,10 @@
 #!/bin/bash
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/nonneg_maps.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/nonneg_maps.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: a6cbbf085a8defb212ed7e42a0a178cf22045d18a4acebee0c2cc150a0f24fa5
+# SHA256 of the run copy = SHA256 of this file without these header lines: 67a98e7e0466579d6296c5f37b86edc49ec56cd5f950abcb34c71300b406d2a8
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: job script (CPU, normal128cores). Activity and source-rate maps of one final state (FT and FIT dirs): tests,
-#   geometry build + validation against the kernel records, maps (.vtu + Tecplot), verify and ParaView read-back;
-#   products <chain>/<MAPS_NAME> (default maps; 2026-11-13 option MAPS_NAME, e.g. maps_c9, so a later state of the same
-#   chain does not touch the earlier maps), per-job geometry and build in runs/<run>/maps_geometry/job_<id>/;
-#   EXPECT_CYCLES guard; MODEL_EXT = model_ext_frozen/nonneg_maps_20261112T021623Z.
-# RUN: test 124322 (3-cycle states); production 124324 (softplus), 124325 (squared), 124667 (softplus, multipliers >=
-#   1, c5); 124775 (the same chain, c9: MAPS_NAME=maps_c9 EXPECT_CYCLES=9)
+# WHAT: maps job; 2026-11-17: cycle detection skips moved-aside c<N>.incomplete_* folders
+# RUN: see model_ext/README.md (full sets of the stage-2 states, 2026-11-17)
 # ==== end of header ====
 # Activity and instantaneous source-rate maps of the non-negative H2O activity models (softplus, squared harmonics x
 # slope multipliers) for visualization: model_ext/nonneg_maps.py. CPU node (normal128cores), no GPU.
@@ -132,7 +127,7 @@ nfail=0
 for C in $CHAINS; do
   C=${C%/}
   MODEL=$(basename "$(dirname "$C")")
-  N=$(ls -d "$C"/c[0-9]* 2>/dev/null | sed 's#.*/c##' | sort -n | tail -1)
+  N=$(ls -d "$C"/c[0-9]* 2>/dev/null | grep -E '/c[0-9]+$' | sed 's#.*/c##' | sort -n | tail -1)   # 2026-11-17: skip moved-aside c<N>.incomplete_*
   FT=$C/c$N/ft/final; FIT=$C/c$N/fit/final; OUT=$C/$MAPS_NAME
   stamp "4. maps $MODEL: $C (last cycle c$N)"
   if [ -z "$N" ] || [ ! -e "$FT/finetune_state.npz" ] || [ ! -e "$FIT/nonneg_facets.npz" ]; then stamp "  no final state in $C"; nfail=$((nfail+1)); continue; fi

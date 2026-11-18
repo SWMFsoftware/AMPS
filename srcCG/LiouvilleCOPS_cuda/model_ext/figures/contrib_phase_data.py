@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/figures_cluster/scripts/contrib_phase_data.py (on Voyager: /data001/highresolu_vt/cops_output/figures_cluster/scripts/contrib_phase_data.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 70d91a5a797f6ad061fbfc9a04aba1ba21f7ecd25a43c2a20e3ec5188d695e7b
+# SHA256 of the run copy = SHA256 of this file without these header lines: 345cdfa45efdd3ff24b3d6c4375421044b793a5dd89c10de9bb5d293ee85a289
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: Per-facet contribution per unit area (NG density, RG flux; the fit's kernels and arithmetic) at snapshot base
-#   rows, phase time means (before the NG gap, gap, late W10x5) and per-row region sums (lobe, distance shells), with
-#   checks.
-# RUN: jobs/contrib_phase_data.sbatch (normal128cores, CPU)
+# WHAT: contribution-density data; 2026-11-17: --state-adapter (localnn_tools.py / d2_tools.py)
+# RUN: the full sets of the stage-2 states (jobs/full_set_submit.sh, jobs/finish_full_set.sh)
 # ==== end of header ====
 """Data of the contribution-density maps and the region-share figures of one fitted state (2026-11-14, user: "make all
 plots for the current output"; lead: contribution per unit surface area exactly as the fit computes it; shares by lobe and
@@ -83,6 +81,10 @@ def main():
         ap.add_argument(k, required=True)
     ap.add_argument("--snap-rows", default="1079,1406,1528,1549")
     ap.add_argument("--procs", type=int, default=32)
+    ap.add_argument("--state-adapter", default=None,
+                    help="2026-11-17: an adapter module with make_state_activity(NM) (localnn_tools.py of option C, "
+                         "d2_tools.py of the D2 export): NM.state_activity is replaced by it, as the adapter's own "
+                         "maps / contrib commands do; default: none (the nonneg chains, unchanged)")
     a = ap.parse_args()
     t0 = time.time()
     out = Path(a.out)
@@ -94,6 +96,15 @@ def main():
     FCM = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(FCM)
     NM = NC.NM
+    if a.state_adapter:
+        ad = Path(a.state_adapter).resolve()
+        if str(ad.parent) not in sys.path:
+            sys.path.insert(0, str(ad.parent))               # the adapter's helpers (localnn_problem, ...)
+        spec = importlib.util.spec_from_file_location("state_adapter_mod", str(ad))
+        AD = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(AD)
+        NM.state_activity = AD.make_state_activity(NM)
+        print("contrib_phase_data: state_activity replaced by %s.make_state_activity" % ad, flush=True)
     base, ft_dir, fit_dir = Path(a.base), Path(a.ft_dir), Path(a.fit_dir)
     fc, header, cols, rows = NM.base_table(base)
     helio = fc.header_value(header, "HeliocentricModel")

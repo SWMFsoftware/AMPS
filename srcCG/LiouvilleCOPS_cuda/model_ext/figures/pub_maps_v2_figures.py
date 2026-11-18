@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/figures_cluster/scripts/pub_maps_v2_figures.py (on Voyager: /data001/highresolu_vt/cops_output/figures_cluster/scripts/pub_maps_v2_figures.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 1125ad0628aa5e19b69dfe54fc009591ad578a251321a3684aaf674252d2e524
+# SHA256 of the run copy = SHA256 of this file without these header lines: 2a458856830f06fd8f8f62e8ddee9d022ff2c6a8cdf6e31cf6af29647007600e
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: figure script (version 2): activity or H2O / total production-rate template and ground-track figures coloured
-#   only on the seen facets, discrete log classes per panel (--low-cut-area, --template-relief); 2026-11-13: --model-
-#   name, multiplier-bound note from fit_restart.npz.
-# RUN: jobs/pub_maps_v2.sbatch (GPU; QUANTITY, TIME, LOWCUT, TEMPLATE_RELIEF, MODEL_NAME)
+# WHAT: version-2 activity / production-rate figures; 2026-11-17: multiplier bounds via
+#   pub_maps_figures.multiplier_bounds
+# RUN: the full sets of the stage-2 states (jobs/full_set_submit.sh, jobs/finish_full_set.sh)
 # ==== end of header ====
 """Version 2 of the activity and production-rate template / ground-track figures of ONE fitted state (softplus model
 after 5 cycles), with the surface coloured only where the gauges saw it during the fit.
@@ -468,10 +467,7 @@ def main():
     if not fields["checks"]["passed"]:
         raise SystemExit("field checks failed")
     # bounds of the slope multipliers from the fit (data-driven caption note, 2026-11-13: refit with multipliers >= 1)
-    with np.load(Path(args.fit_dir) / "fit_restart.npz", allow_pickle=False) as z:
-        rnames = [str(n) for n in json.loads(str(z["meta_json"]))["names"]]
-        rx, rlo = np.asarray(z["x"], np.float64), np.asarray(z["lo"], np.float64)
-    mb = [(n[2:], rx[i], rlo[i]) for i, n in enumerate(rnames) if n.startswith("c_slope_")]
+    mb = [(n[2:], x_, lo_) for n, x_, lo_ in M.multiplier_bounds(args.fit_dir)]    # 2026-11-17: exports too
     lows = sorted({lo for _, _, lo in mb})
     at = [n for n, x, lo in mb if x - lo <= 1e-9 * max(1.0, abs(lo))]
     if mb and lows != [0.0]:

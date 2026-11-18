@@ -10,6 +10,37 @@ relative to `COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output` unless absolut
 
 ## A. Findings
 
+### A15. Full figure sets of the six final states: what is common to all models and what is not (2026-11-17; corrected 19:00 CST)
+
+* **States:** the regularized stage-2 chains softplus, A (sum of squares r3), B (background 1e-2), D (log spread f 0.1),
+  the best regularized C (f 1, P_m 1e-4) and D2 (`figures_cluster/12M/full_set_<key>/`, checks/facts.json, computed by
+  full_set_facts.py from the maps, contributions and contrib_phase products of each state).
+* **The SEEN production is similar across models; the total is set by the unseen extrapolation.** H2O production at
+  10:33:10 UTC of the facets that contribute to a fitted observation (seen) and of all facets (total), s^-1 (full sets:
+  checks/facts.json from the maps; option C: c5/analysis/report.json production_1033, incl. its c9 / D2 rows):
+  softplus reg. 1.49e25 of 2.56e26 (5.8 %), B 1.49e25 / 2.53e26 (5.9 %), A 1.17e25 / 1.84e26 (6.3 %), D 1.54e25 / 2.70e26
+  (5.7 %), D2 1.21e25 / 2.11e26 (5.8 %), c9 2.28e25 / 5.38e26 (4.2 %), C reg. f 1 / P_m 1e-4 3.07e25 / 3.32e27 (0.9 %),
+  C reg. f 10 / 1e-4 2.98e25 / 1.30e27 (2.3 %); but the option C chains with f_m 0.01: C reg. f 10 / 0.01 1.30e25 / 1.51e25
+  (86 %), f 1 / 0.01 1.30e25 / 1.52e25 (86 %), f 10 / 0.01 templates off 1.47e25 / 1.98e25 (74 %), unregularized f 10 / 0.01
+  3.21e25 / 3.37e25 (95 %), f 1 / 0.01 2.98e25 / 3.13e25 (95 %). So the seen production is about 1.2-3.2e25 s^-1 in every
+  model, while Q_H2O varies by more than 100x (1.5e25 ... 3.3e27) with the activity each model extrapolates onto terrain no
+  fitted observation sees: ~94 % unseen in the six full-set states except C f 1 / 1e-4 (99 %), most of it from unseen facets
+  >= 60 deg there (the large undetermined 70-80 / 80-90 deg multipliers, 7.9e4 / 3.3e5, times the smoothness extension of
+  the c-field), whereas the multiplier penalty f_m 0.01 keeps the unseen part small. Q_H2O is therefore not constrained by
+  COPS; the seen production is. (The seen share does not depend on whether the seen surface is mostly switched off - A = 0
+  on 96.4 % / 94.7 % of the seen area in softplus / D2 - or active everywhere - A, B, D: A = 0 on <= 0.9 %.)
+* **Robust across the six:** before the late window the big lobe (body) gives a median 87-91 % of the modelled NG; at the
+  last observation (5.5 m) the 90-180 deg (overhang) bin gives 38 % (D2) to 80 % (D) of NG but only 1-2 % of RG (NG sees
+  through the shield onto facets behind the gauge; A1, A11).
+* **Model-dependent:** the late-window small-lobe (head) share (median NG 25 % D2 ... 61 % C, RG 56 % ... 82 %) and the size
+  of the P50 source areas of the post-gap observations (NG union 1.5e3 m^2 C, 1.9e4 softplus, 2.8e4 B, 1.4e5 D2, 1.7e5 D,
+  7.6e5 m^2 A): the data constrain the integrated signal, not where on the near surface it comes from.
+* **kappa** is at its lower bound in all six (A14).
+* **Caveats:** C's multipliers are not determined (A12), so its Q_H2O is not a measurement; B, A and C's last fits and D2
+  stopped at max_nfev; Q_H2O and the unseen share depend on the model's extension of the activity to unseen terrain (and on
+  the H2O law); the D2 state is the export of the clipped fit (A re-derived bitwise from its restart; forward model = D2's
+  per-row model to 3.1e-11 / 2.4e-15, data cost to 1e-15; clip_refit/D2/tools_state_verify.json).
+
 ### A14. Stage 2 (5 fit / fine-tuning cycles): option C stays best by ~47 %; the regularized fine tuning costs 5–13 % data cost, mostly in the last ~100 m; κ is at 0 in every fit (2026-11-17)
 
 * **Setup** (user / lead 2026-11-15/16): each chain = 5 cycles of a fit (max_nfev 4000; slope multipliers 40-50 ... 90-180
@@ -507,6 +538,11 @@ Data cost (lower is better; all on the lategrid base with the gauge +1.5 m and t
 ## D. Change log of this file
 
 * 2026-11-17 (14:50 CST): A12: the regularized f_m = 1e-4 chains (f = 10, f = 1).
+* 2026-11-17 (18:30 CST): A15 (full figure sets of the six final states: the seen surface gives ~6 % of Q_H2O in every
+  model; robust and model-dependent quantities).
+* 2026-11-17 (19:00 CST): A15 corrected / extended (lead): the ~6 % seen share holds for the six full-set states, not for
+  the option C chains with f_m 0.01 (74-95 % seen); the seen production at 10:33:10 is about 1.2-3.2e25 s^-1 in every model
+  while Q_H2O varies by > 100x.
 * 2026-11-17 (15:00 CST): A14 (final stage-2 comparison: costs reg. vs unreg., late residuals, multipliers,
   convergence, kappa of all 59 fits); A12 kappa bullet widened to every fit (with the ninth C state).
 * 2026-11-17 (14:05 CST): A12: kappa = 0 in all eight C stage-2 states.

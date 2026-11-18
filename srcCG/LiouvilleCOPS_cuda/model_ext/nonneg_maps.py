@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-12, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/nonneg_maps.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/nonneg_maps.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: e4643ddfaa57d6c30e9f8fd1e4d0a1fd1cda0a3af35d0391ea5ce4829c4de065
+# SHA256 of the run copy = SHA256 of this file without these header lines: b4e9a0da8a86360cf5869c20eaaa22b3aec98f4652f18304128a695113080aec
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: tool. Activity and instantaneous source-rate maps of ONE final state of the softplus / squared models (user request
-#   2026-11-11 "save the activity and source rate maps for visualization"; answers: instantaneous H2O and CO2 flux as
-#   the fitter computes it (fit_cops.py: q = qmin at night or cast shadow, else qmin + (qmax - qmin) cos SZA, r_h),
-#   00:00 ... 10:00, 10:33:10, 10:39:26 UTC, final state only, VTK .vtu and Tecplot ASCII). Subcommands: times, geometry
-#   (builds and runs nonneg_maps_geom.cpp), validate-geometry (vs the base's kernel records), maps, verify.
-# USED BY: jobs/nonneg_maps.sbatch (test 124322 on the 3-cycle states; production 124324 softplus, 124325 squared).
+# WHAT: activity and source-rate maps of the non-negative models; 2026-11-17: state_activity also reproduces the
+#   alternative models sos / background / logspread (alt_inputs), --expect-model choices extended; softplus / squared
+#   unchanged (tested)
+# RUN: jobs/nonneg_maps.sbatch (frozen model_ext_frozen/nonneg_maps_20261117T224340Z for the stage-2 B/A/D full sets)
 # ==== end of header ====
 """Activity and instantaneous source-rate maps of the non-negative H2O activity models (softplus and squared harmonics
 x slope multipliers, model_ext/nonneg_*.py) of ONE final state, for visualization: VTK XML (.vtu, ParaView) and
@@ -37,6 +35,12 @@ THE LAW (read from the code; law_guard() checks that these expressions are still
   Non-negative models (nonneg_mult.fields): A = m_b(e) q(L_e) exp(h_e); the fine tuning's final A is
   finetune_state.npz A_final (= A_fit at untuned facets, A_fit exp(delta) at the tuned ones); checked here against
   nonneg_mult.fields(..., exp(held_next)) with the fit's u, TS, bins, multipliers and s.
+  2026-11-17 (lead / user: full figure sets of the stage-2 states): the alternative models of nonneg_mult.NEW_MODELS
+  (sos, background, logspread) are reproduced the same way, with the inputs their products used
+  (nonneg_problem.facet_state -> nonneg_mult.host_fields): sos V = Y L_extra (nonneg_mult.matmat; Y = the 25 harmonic
+  columns of the fit's base elements.bin; L_extra from the restart via the fit snapshot's nonneg_alt.extra_from_restart),
+  background A_bg (restart) and A_orig = elements AH2O, s = s_ratio A_orig as for softplus, logspread A_orig. Same
+  bitwise checks as for softplus. softplus / squared: unchanged (no extra argument is passed).
 
 GEOMETRY (nonneg_maps_geom.cpp, the base builder's own method; validated by validate-geometry against the kernel
   records and the Q_H2O / Q_CO2 columns of the base at 17 observation / grid points).
@@ -706,6 +710,65 @@ def load_module(path, name, expect_sha256=None):
     return mod
 
 
+def _fit_base(fit_dir):
+    """The base the fit ran on (fit_result.txt '# run: <base>')."""
+    m = re.search(r"^# run: (\S+)", (Path(fit_dir) / "fit_result.txt").read_text(), re.M)
+    if not m:
+        raise SystemExit("%s/fit_result.txt names no base" % fit_dir)
+    return Path(m.group(1))
+
+
+def _read_Y(path):
+    """The 25 harmonic columns of elements.bin (version 1), as tools/fit_cops.py read_elements: contiguous float64."""
+    size = os.path.getsize(path)
+    with open(path, "rb") as f:
+        version, n, nb = struct.unpack("<iii", f.read(12))
+        if version != 1 or nb != 25 or size != 12 + n * 34 * 8:
+            raise SystemExit("unsupported element file %s" % path)
+        d = np.fromfile(f, dtype="<f8", count=n * 34).reshape(n, 34)
+    Y = np.ascontiguousarray(d[:, 7:32])
+    del d
+    return Y
+
+
+def alt_inputs(model, cfg, fit_dir, el, nm, nmrec):
+    """2026-11-17: extra inputs of nonneg_mult.fields for the alternative models (sos, background, logspread), as the
+    fit's products computed them (nonneg_problem.facet_state / alt_kwargs -> nonneg_mult.host_fields). Returns
+    (kwargs, record)."""
+    alt_path = Path(nmrec["path"]).parent / "nonneg_alt.py"
+    prev = sys.modules.get("nonneg_mult")
+    sys.modules["nonneg_mult"] = nm                       # its "import nonneg_mult" = the state's own module
+    try:
+        na = load_module(alt_path, "nonneg_alt_of_state")
+    finally:
+        if prev is None:
+            del sys.modules["nonneg_mult"]
+        else:
+            sys.modules["nonneg_mult"] = prev
+    with np.load(Path(fit_dir) / "fit_restart.npz", allow_pickle=False) as z:
+        rmeta = json.loads(str(z["meta_json"]))
+        x = np.asarray(z["x"], np.float64)
+    names = [str(v) for v in rmeta["names"]]
+    extra = na.extra_from_restart(cfg, names, x, float(rmeta["ascale"]))
+    kw = {"V": None, "abg": None, "aorig": None, "mode": 0}
+    rec = {"nonneg_alt": {"path": str(alt_path), "sha256": sha256_file(alt_path)}, "extra_names": na.extra_names(cfg)}
+    if model == "sos" and extra.get("L_extra") is not None and np.asarray(extra["L_extra"]).size:
+        base = _fit_base(fit_dir)
+        Y = _read_Y(base / "elements.bin")
+        if Y.shape[0] != el["nfaces"]:
+            raise SystemExit("Y of %s has %d facets, the base %d" % (base, Y.shape[0], el["nfaces"]))
+        kw["V"] = nm.matmat(Y, extra["L_extra"])
+        del Y
+        rec.update({"Y_from": str(base / "elements.bin"), "L_extra_shape": list(np.asarray(extra["L_extra"]).shape)})
+    if model == "background":
+        kw["abg"] = float(extra["A_bg"])
+        rec["A_bg"] = kw["abg"]
+    if model in ("background", "logspread"):
+        kw["aorig"] = el["AH2O"]
+        rec["aorig"] = "elements.bin AH2O"
+    return kw, rec
+
+
 def parse_result_kappa(path):
     with open(path) as f:
         for line in f:
@@ -754,18 +817,23 @@ def state_activity(ft_dir, fit_dir, el, pool_threads):
     for name, a in (("u", u), ("A_final", A_final), ("bins", bins)):
         if len(a) != n:
             raise SystemExit("%s has %d facets, the base %d" % (name, len(a), n))
-    s = s_ratio * el["AH2O"] if model == "softplus" else None
+    s = s_ratio * el["AH2O"] if model in ("softplus", "background") else None
     mrow = m[bins.astype(np.intp)]
+    alt, alt_rec = {}, None
+    if model in getattr(nm, "NEW_MODELS", ()):           # 2026-11-17: sos, background, logspread
+        alt, alt_rec = alt_inputs(model, nn["config"], fit_dir, el, nm, nmrec)
     chk = {"model": model, "s_ratio": s_ratio, "enhancement_scale": scale, "kappa": kappa,
            "multipliers": [float(v) for v in m], "bin_names": list(nm.BIN_NAMES),
            "bin_labels_deg": list(nm.BIN_LABELS), "nonneg_mult": nmrec,
            "slope_mult": {"path": sm_file, "sha256": sha256_file(sm_file), "record": smrec}}
+    if alt_rec is not None:
+        chk["alternative_model_inputs"] = alt_rec
     chk["held_fit_equals_held_prev"] = bool(np.array_equal(held_fit, held_prev))
     chk["held_next_equals_held_prev_plus_delta"] = bool(np.array_equal(held_next, held_prev + delta))
     gh_fit = np.exp(held_fit) if np.any(held_fit != 0.0) else None
-    A_fit_re = nm.fields(model, u, TS, s, mrow, gh_fit, scale, False)[0]
+    A_fit_re = nm.fields(model, u, TS, s, mrow, gh_fit, scale, False, **alt)[0]
     chk["A_fit_reproduced_bitwise"] = bool(np.array_equal(A_fit_re, A_fit))
-    A_next = nm.fields(model, u, TS, s, mrow, np.exp(held_next), scale, False)[0]
+    A_next = nm.fields(model, u, TS, s, mrow, np.exp(held_next), scale, False, **alt)[0]
     tuned = delta != 0.0
     chk["tuned_facets"] = int(np.sum(tuned))
     chk["A_final_equals_A_fit_at_untuned"] = bool(np.array_equal(A_final[~tuned], A_fit[~tuned]))
@@ -1086,7 +1154,7 @@ def main(argv=None):
     a.add_argument("--base", required=True)
     a.add_argument("--geometry", required=True)
     a.add_argument("--out", required=True, help="new directory (e.g. <chain>/maps)")
-    a.add_argument("--expect-model", choices=("softplus", "squared"))
+    a.add_argument("--expect-model", choices=("softplus", "squared", "sos", "background", "logspread"))
     a.add_argument("--procs", type=int, default=int(os.environ.get("SLURM_CPUS_PER_TASK", "8")))
     a.add_argument("--no-verify", action="store_true")
     args = ap.parse_args(argv)

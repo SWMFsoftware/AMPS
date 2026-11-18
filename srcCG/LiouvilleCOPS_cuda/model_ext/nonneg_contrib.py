@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/nonneg_contrib.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/nonneg_contrib.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 7c75c5abf1779d2470d71981b696fafc7f166073f66f0028a2e62bf0ef898895
+# SHA256 of the run copy = SHA256 of this file without these header lines: 17661ccba61330961a665e54afb2f8d7e6da50a1a95ec6eded6e6c703f4521eb
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: analysis module. Per kernel record, the contribution of every facet to the modelled NG and RG surface
-#   signal of a chain's final state, as the fit computes it (FP32 record fields, FP64 arithmetic, F = q A with the
-#   night/shadow rule, the fit's T and kappa, W10x5 for the 95 late observations); P% source areas S_P (after Schmid
-#   1994), source-area occurrence N_P, slope-bin fractions. Frozen nonneg_contrib_20261112T210012Z.
-# RUN: jobs/nonneg_contrib.sbatch (CPU, normal128cores; CHAIN, CYCLE, GEOM, MODEL_EXT[, CONTRIB_NAME]); jobs 124549,
-#   124668 (bounded c5), 124776 (c9).
+# WHAT: per-facet contributions, P% source areas, slope-bin fractions; 2026-11-17: --expect-model also sos /
+#   background / logspread
+# RUN: jobs/nonneg_contrib.sbatch (frozen model_ext_frozen/nonneg_contrib_20261117T224340Z)
 # ==== end of header ====
 """Per-facet contributions of the fitted model to the COPS NG and RG surface pressures, the P% source areas of the
 post-gap (late) observations, and the slope-bin fractions of every fit point, for ONE final state of the non-negative
@@ -233,7 +230,7 @@ def main(argv=None):
     ap.add_argument("--base", required=True)
     ap.add_argument("--geometry", required=True, help="a validated nonneg_maps geometry (labels t11, t12)")
     ap.add_argument("--out", required=True)
-    ap.add_argument("--expect-model", choices=("softplus", "squared"))
+    ap.add_argument("--expect-model", choices=("softplus", "squared", "sos", "background", "logspread"))   # 2026-11-17
     ap.add_argument("--procs", type=int, default=int(os.environ.get("SLURM_CPUS_PER_TASK", "8")))
     args = ap.parse_args(argv)
     t0 = time.time()

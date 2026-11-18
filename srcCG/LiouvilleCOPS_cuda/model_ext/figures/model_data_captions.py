@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/figures_cluster/scripts/model_data_captions.py (on Voyager: /data001/highresolu_vt/cops_output/figures_cluster/scripts/model_data_captions.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 751f2adb8a26db07220955f4033919d88fc947537c55091c837dd6b23efa767e
+# SHA256 of the run copy = SHA256 of this file without these header lines: d4463e923995a2f1f440448cac3a395ff180c49f16dd4cd01b72c3ceb1fdb2ab
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: figure captions. The _caption.txt files of a full set's model_data/ figures (model_obs_figures.py and
-#   tools/pub_figures.py pressures) computed from the set's tables and the fits' result files (2026-11-13).
-# RUN: login node: model_data_captions.py --model-data <set>/model_data --tag <tag> --ft-dir <c5/ft/final> --ref-dir
-#   <D2> --model-text '...' --job-set4 <job> --job-pressures <job>
+# WHAT: model/data captions; 2026-11-17: a state without fine tuning (D2 export); existing captions identical
+# RUN: the full sets of the stage-2 states (jobs/full_set_submit.sh, jobs/finish_full_set.sh)
 # ==== end of header ====
 """Captions (<figure>_caption.txt) of the model / data figures of a full figure set (model_data/: model_obs_figures.py
 *_vs_COPS_{time,altitude,altitude_NG,altitude_RG,altitude_NG_RG} and tools/pub_figures.py *_pressures_{time,altitude}),
@@ -52,7 +50,14 @@ def main():
     g = lambda k: float(re.search(r"^%s\s+initial\s+\S+\s+final\s+(\S+)" % k, ft, re.M).group(1))   # noqa: E731
     fr = (Path(a.ref_dir) / "fit_result.txt").read_text()
     h = lambda k: float(re.search(r"^%s\s+(\S+)" % k, fr, re.M).group(1))                            # noqa: E731
-    cf, nf_, rf = g("cost_data"), g("rms_ln_NG"), g("rms_ln_RG")
+    if re.search(r"^cost_data\s+initial", ft, re.M):
+        cf, nf_, rf = g("cost_data"), g("rms_ln_NG"), g("rms_ln_RG")
+        state_txt = "final state, its last fine tuning applied"
+    else:            # 2026-11-17: a state without fine tuning (the D2 export of d2_tools.py): the fit's fit_result.txt
+        fr_ = (Path(a.ft_dir) / "fit_result.txt").read_text()
+        cf, nf_, rf = (float(re.search(r"^%s\s+(\S+)" % k, fr_, re.M).group(1))
+                       for k in ("final_data_cost", "rms_ln_residual_NG", "rms_ln_residual_RG"))
+        state_txt = "final state, no fine tuning"
     cr, nr, rr = h("final_data_cost"), h("rms_ln_residual_NG"), h("rms_ln_residual_RG")
     win = FIG.late_window(fit, a.bundle)
     gaps = [(hi, lo, t0, t1) for hi, lo, t0, t1 in __import__("cliff_importance_figures").ng_gaps(fit, fit["altitude"])]
@@ -72,12 +77,12 @@ def main():
             "average, from a 1-s model grid) and the NG model includes the fitted grain term at the observation time. "
             "Only observation rows are drawn (the model-only 1-s grid rows are removed by "
             "figures_cluster/scripts/positive_table.py; tables/). ")
-    data = ("Data: %d NG and %d RG COPS observations, all used in both fits (filled dots). Blue solid: %s (final state, "
-            "its last fine tuning applied), final data cost %.4e, rms ln(model/data) NG %.4f, RG %.4f. Orange dashed: the "
+    data = ("Data: %d NG and %d RG COPS observations, all used in both fits (filled dots). Blue solid: %s (%s), "
+            "final data cost %.4e, rms ln(model/data) NG %.4f, RG %.4f. Orange dashed: the "
             "clipped activity model refitted on the same base, for reference, final data cost %.4e, rms ln NG %.4f, RG "
             "%.4f (data costs from finetune_result.txt / fit_result.txt). Shaded: the late-visibility window %s, the "
             "interval of the late-visibility templates. Altitude: of the gauge position above the shape model. " % (
-                nng, nrg, a.model_text, cf, nf_, rf, cr, nr, rr, span))
+                nng, nrg, a.model_text, state_txt, cf, nf_, rf, cr, nr, rr, span))
     made = "Made with figures_cluster/scripts/model_obs_figures.py (job %s)." % a.job_set4
     alt_intro = ("COPS nude-gauge (NG) and ram-gauge (RG) pressures of Rosetta's final descent on 2016-09-30 against the "
                  "altitude above the shape model (logarithmic; the descent runs from left to right), with two model fits. ")

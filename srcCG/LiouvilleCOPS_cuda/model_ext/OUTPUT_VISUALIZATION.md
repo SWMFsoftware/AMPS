@@ -541,6 +541,33 @@ srun -p normal128cores -A general -N1 -n1 -c 8 --mem=64G -t 00:50:00 bash -c ".v
 .venv/bin/python figures_cluster/scripts/kappa_table.py --spec figures_cluster/scripts/data/stage2_final_spec_20261117.json --out-dir <folder>/kappa_check
 ```
 
+### 3.11 Full figure sets of the stage-2 states and D2 (2026-11-17)
+
+`figures_cluster/12M/full_set_stage2_{softplus_reg,A_reg,B_reg,D_reg,C_f1_pm1em4_reg}/` and `full_set_D2/`: the six cases of
+12M_stage2_reg_best, each at its final state, with every folder of `full_set_softplus_smm1_9cycles/` except the c9-specific
+comparison_vs_* (possible comparisons listed in each README) and no movies: visibility/ (set 1, fit-independent, PNGs
+pixel-identical to the c9 set's; ground track with the Rosetta impact only), model_data/ (incl. the publication NG/RG figure
+of `publication_stage2_<key>/` / `publication_D2/`), activity/ (LOWCUT 0.02, flat), production_rate/ (H2O, 10:33:10 and
+10:39:26 UTC, LOWCUT 0.02, relief 0.7), source_areas/ (P50-90 of the 95 post-gap observations), cliffs/ (one colour per slope
+bin), contribution_density/, regions/, checks/ (incl. facts.json / facts.txt), CAPTIONS.md, README.txt (Facts computed by
+`full_set_facts.py`), HOW-TO-RERUN.md, code/, provenance. Same tools, styles and user decisions as the c9 set.
+State products next to each state: maps_c5 / contributions_c5 / contrib_phase_c5 / v2_total_crosscheck_c5 (chains), C
+`c5/{maps_ft,contributions_ft,contrib_phase_ft,v2_total_crosscheck_ft,tools_state_ft}` (agent C's localnn_tools), D2
+`clip_refit/D2/{tools_state,maps,contributions,contrib_phase,v2_total_crosscheck,tools_state_verify.json}` (d2_tools.py).
+Code (2026-11-17, lead approval; defaults unchanged, tested): A / B / D maps and contributions with the new frozen
+`nonneg_maps_20261117T224340Z` / `nonneg_contrib_20261117T224340Z` (state_activity re-derives the alternative models bitwise);
+C and D2 through adapters (localnn_tools.py, d2_tools.py) and the figure-script fallbacks (bin edges from the bin names,
+multiplier bounds from the export's manifest, contrib_phase_data --state-adapter, model_data captions without fine tuning).
+```bash
+cd /data001/highresolu_vt/cops_output/jobs
+# maps + contributions of the state (nonneg chains; C: localnn_tools.sbatch STEPS=maps; D2: d2_tools.sbatch), then
+KEY=<key> CHAIN=<chain> MAPS=.. GEOM=.. CONTRIB=.. PUB=<publication folder> PUBSTEM=.. PUBTABLE=.. MODEL_NAME=.. MODEL_LABEL=.. \
+  MODEL_SHORT=.. TITLE_PRESSURES=.. [FT= FIT= XC= PHASE= MX= CX= ADAPTER= MAPS_JOB= CONTRIB_JOB=] bash full_set_submit.sh
+# CPU afterwards: visibility captions, regions/, model_data captions, facts, CAPTIONS.md
+KEY=<key> FT=.. FIT=.. MAPS=.. CONTRIB=.. PHASE=.. [CHAIN= NCYC=] JOB_SET4=<set1/4 job> MODEL_NAME=.. [CAVEATS=..] bash finish_full_set.sh
+.venv/bin/python figures_cluster/scripts/full_set_docs.py --spec figures_cluster/scripts/data/full_sets_stage2_20261117.json --key <key>
+```
+
 ### 3.6 Other analysis figures and tables
 
 * `figures_cluster/scripts/positive_table.py`, `positive_cycles_table.py`, `finetune_table.py`, `scan_summary.py`:
@@ -723,6 +750,11 @@ srun -p normal128cores -A general -N1 -n1 -c 8 --mem=64G -t 00:50:00 bash -c ".v
   same figure style as the final stage-1 set (NG/RG vs data, late window, residuals, cost table with final cost /
   termination / active bounds), no maps (shared disk, small products); the two running C chains (P_m 1e-4) added when posted.
 
+* 2026-11-17 (15:35 CST, lead; user: "yes, free the 44M store and generate the full sets", "I need the full set" - surface
+  activity, production rate, contribution, ground track): full figure sets, exactly like the c9 set, for the six cases of
+  12M_stage2_reg_best (softplus, A, B, D regularized, best C = f 1 / P_m 1e-4, D2), no movies, no comparison_vs_* folders;
+  the needed adapters approved (15:50 CST) with the bitwise conditions.
+
 ## 6. Change log of this file
 
 * 2026-11-12: created (sections 1–6; 3.5 pending).
@@ -772,3 +804,4 @@ srun -p normal128cores -A general -N1 -n1 -c 8 --mem=64G -t 00:50:00 bash -c ".v
 * 2026-11-15 (UTC): 3.9 final (`RUNS`, `TEXTS`, `CONV_TERM`; `options_table.py` prev_* / penalty_mult / --conv-from-termination / setting width, `options_captions.py --texts`, `options_howto.py` ftol line; data files `stage1_final_runs_20261115.json`, `stage1_final_texts_20261115.json`; maps job 131968); §5 decision.
 * 2026-11-17 (UTC): 3.10 final stage-2 comparison (`stage2_figures.py`, `stage2_howto.py`, spec `stage2_final_spec_20261117.json`; `options_residual_figure.py` one legend column for long labels); §5 decision.
 * 2026-11-17 (UTC): 3.10 rebuilt with all nine regularized chains; `kappa_table.py` (kappa_check/).
+* 2026-11-17 (UTC): 3.11 full figure sets of the stage-2 states and D2 (`full_set_submit.sh`, `finish_full_set.sh`, `full_set_facts.py`, `full_set_docs.py`, `d2_tools.py`, the alternative-model state_activity, figure-script fallbacks); §5 decision.

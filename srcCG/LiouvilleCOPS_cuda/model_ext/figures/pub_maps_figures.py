@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/figures_cluster/scripts/pub_maps_figures.py (on Voyager: /data001/highresolu_vt/cops_output/figures_cluster/scripts/pub_maps_figures.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 74d100307a9e508af0aab99ec6809c699c51ffc4415d99df3df22002419adaea
+# SHA256 of the run copy = SHA256 of this file without these header lines: e51a8a45c01725c179fb89574ce130390c179cb85b41e55c98995af685e1a1db
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: figure script (full set 3.4: activity / production-rate template and ground-track figures with fixed ranges)
-#   and the helper module of the version-2 scripts (fields, tracks, captions); 2026-11-13: MODEL_NAME, MULT_NOTE and
-#   the CO2 sentence of the captions data-driven.
-# RUN: jobs/pub_maps_figures.sbatch (GPU); imported by pub_maps_v2_figures.py and pub_source_area_figures.py
+# WHAT: full / version-2 maps helper; 2026-11-17: bin_edges_from_meta and multiplier_bounds (exports of option C and
+#   D2; nonneg fits unchanged)
+# RUN: the full sets of the stage-2 states (jobs/full_set_submit.sh, jobs/finish_full_set.sh)
 # ==== end of header ====
 """Publication template and ground-track figures of ONE fitted state with the surface coloured by its H2O activity
 or by its production rate (H2O, CO2, total) instead of the late-visibility (NG-only / RG-only) facets.
@@ -136,6 +135,41 @@ def load_module(path, name):
     return mod
 
 
+def bin_edges_from_meta(meta):
+    """Slope-bin edges [deg] of a fit's nonneg_facets.npz meta: meta["model"]["bin_edges_deg"] (nonneg fits, unchanged);
+    2026-11-17: exports without them (option C localnn fits: meta["model"] = "localnn"; the D2 export) -> from the bin
+    names "slope_LO_HI" (slope_00_40 ... slope_90_180), checked to be contiguous."""
+    if isinstance(meta.get("model"), dict) and "bin_edges_deg" in meta["model"]:
+        return meta["model"]["bin_edges_deg"]
+    names = meta["bin_names"]
+    pairs = []
+    for nm_ in names:
+        t = nm_.split("_")
+        if len(t) != 3 or t[0] != "slope":
+            raise SystemExit("bin name %r: no slope edges" % nm_)
+        pairs.append((float(t[1]), float(t[2])))
+    if any(pairs[k][1] != pairs[k + 1][0] for k in range(len(pairs) - 1)):
+        raise SystemExit("bin names %s are not contiguous" % names)
+    return [pairs[0][0]] + [b for _, b in pairs]
+
+
+def multiplier_bounds(fit_dir):
+    """[(name, value, lower bound)] of the free slope multipliers c_slope_* of a fit: fit_restart.npz names / x / lo (nonneg
+    fits, unchanged). 2026-11-17: a restart without them (the localnn_tools / d2_tools exports) -> option C from its
+    fit_manifest.json (multipliers, slope_mult_min; the 0-40 deg bin held at 1), or [] (no slope multipliers, D2)."""
+    with np.load(Path(fit_dir) / "fit_restart.npz", allow_pickle=False) as z:
+        if "x" in z.files and "lo" in z.files:
+            names = [str(n) for n in json.loads(str(z["meta_json"]))["names"]]
+            x, lo = np.asarray(z["x"], np.float64), np.asarray(z["lo"], np.float64)
+            return [(n, x[i], lo[i]) for i, n in enumerate(names) if n.startswith("c_slope_")]
+    man = json.load(open(Path(fit_dir) / "fit_manifest.json"))
+    if "multipliers" in man and "slope_mult_min" in man:
+        with np.load(Path(fit_dir) / "nonneg_facets.npz", allow_pickle=False) as z:
+            bn = json.loads(str(z["meta_json"]))["bin_names"]
+        return [("c_" + bn[k], float(man["multipliers"][k]), float(man["slope_mult_min"])) for k in range(1, len(bn))]
+    return []
+
+
 def fmt_e(x, d=2):
     return ("%%.%de" % d) % x
 
@@ -183,7 +217,7 @@ def load_fields(args):
         seen = np.asarray(z["seen"]).astype(bool)
         bins = np.asarray(z["bin"]).astype(np.intp)
         meta = json.loads(str(z["meta_json"]))
-    edges = meta["model"]["bin_edges_deg"]
+    edges = bin_edges_from_meta(meta)
     mult = tv[:len(edges) - 1]
     if len(A) != nf or len(seen) != nf:
         raise SystemExit("facet counts differ: A %d, seen %d, base %d" % (len(A), len(seen), nf))

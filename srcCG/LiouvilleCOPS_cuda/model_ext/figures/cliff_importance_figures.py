@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/figures_cluster/scripts/cliff_importance_figures.py (on Voyager: /data001/highresolu_vt/cops_output/figures_cluster/scripts/cliff_importance_figures.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 10d31930ceb89464c12ef2e283386e8267f4ca48078c7f71687c0461ce54b94b
+# SHA256 of the run copy = SHA256 of this file without these header lines: 32d6c9b5709fe284a93b7bb504bed666dd37044ef9923ee5875d1a187a0e9d7f
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: figure script: how the fit uses the effective-gravitational-slope bins (areas, multipliers, production
-#   shares; stacked pressure shares along the descent); 2026-11-13: --model-name, --fit-dir (bounds), --maps-dir (CO2
-#   share), --groups default|all, data-driven caption statements.
-# RUN: jobs/pub_source_areas.sbatch STEPS=cliffs (V2 = folder with checks/slope_bins_total_*.json)
+# WHAT: cliff figures; 2026-11-17: multiplier bounds via pub_maps_figures.multiplier_bounds (none for D2)
+# RUN: the full sets of the stage-2 states (jobs/full_set_submit.sh, jobs/finish_full_set.sh)
 # ==== end of header ====
 """Cliff-importance figures of one fitted state (softplus model after 5 cycles): how the fit uses the effective-
 gravitational-slope bins (user request 2026-11-12: "as the fitting shows importance of the cliffs, also add a plot that
@@ -97,14 +95,12 @@ def main():
     # data-driven statements (2026-11-13): bounds and switched-off bins of the multipliers, CO2 share of the production
     bound_txt = ""
     if args.fit_dir:
-        with np.load(Path(args.fit_dir) / "fit_restart.npz", allow_pickle=False) as zr:
-            rn = [str(n) for n in json.loads(str(zr["meta_json"]))["names"]]
-            rx, rlo = np.asarray(zr["x"], np.float64), np.asarray(zr["lo"], np.float64)
-        mb = [(n, rx[i], rlo[i]) for i, n in enumerate(rn) if n.startswith("c_slope_")]
+        import pub_maps_figures as M                           # 2026-11-17: exports too (multiplier_bounds)
+        mb = M.multiplier_bounds(args.fit_dir)
         lows = sorted({lo for _, _, lo in mb})
         at = [labs[1 + k] for k, (n, x, lo) in enumerate(mb) if x - lo <= 1e-9 * max(1.0, abs(lo))]
         bound_txt = (" The %d free multipliers have the lower bound %s; at that bound: %s." % (
-            len(mb), " / ".join("%g" % v for v in lows), ", ".join(at) if at else "none"))
+            len(mb), " / ".join("%g" % v for v in lows), ", ".join(at) if at else "none")) if mb else ""
     offb = [k for k in range(nb) if mult[k] < 1e-10]
     off_txt = (" The bins %s are switched off by their multipliers (<= %.2g)." % (
         ", ".join(labs[k] for k in offb), mult[offb].max()) if offb else "")
