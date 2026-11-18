@@ -35,8 +35,8 @@ An ordinary comment begins when the first non-whitespace character is ``#``::
 Any other line whose first non-whitespace character is ``!`` is invalid; use
 ``#`` to comment out prose, commands, metadata, or runner directives.
 
-Blank lines and comment lines are never executed.  The exclusive directive is
-also never executed; it is parsed solely as dispatcher metadata.
+Blank lines and comment lines are never executed.  Runner directives are
+also never executed; they are parsed solely as dispatcher metadata.
 
 Blank lines may appear:
 
@@ -317,6 +317,20 @@ nonexclusive launch look protected.  C19 uses this handshake to fail before
 allocating its large AMR mesh when an obsolete runner silently treats the
 directive as a comment.
 
+An entry that needs more (or less) time than ``--timeout`` gives has its own
+limit, in seconds, in a second runner-only directive in the same place::
+
+    ! runner: exclusive
+    ! runner: timeout 9000
+    P python3 srcEarth/test/SA01/run_SA01.py ...
+
+``timeout=9000`` is accepted too.  The limit replaces ``--timeout`` for that
+entry only, for every expansion of a loop, and applies even when the runner is
+started without ``--timeout``; every other entry keeps ``--timeout``.  An entry
+that runs out of time is killed and reported as actual F, as with ``--timeout``.
+The directives may come in either order; each may appear once per entry, and
+the same placement rules as for ``! runner: exclusive`` apply.
+
 -------------------------------------------------------------------------------
 10. Immediate and deferred ``last pass:`` updates
 -------------------------------------------------------------------------------
@@ -399,11 +413,11 @@ The effective list grammar is::
 
     file          := { blank | comment | entry }
     comment       := optional-space "#" text
-    entry         := [ exclusive-directive blank* ]
+    entry         := [ runner-directive+ blank* ]
                      [ loop-declaration blank-or-comment* ]
-                     [ exclusive-directive blank* ] test-line
+                     [ runner-directive+ blank* ] test-line
                      [ blank* last-pass-line ]
-    exclusive-directive := "! runner: exclusive"
+    runner-directive := "! runner: exclusive" | "! runner: timeout" seconds
     loop-decl     := "for" assignment { separator assignment }
     assignment    := "$" name "={" csv-values "}"
     test-line     := expected whitespace command
@@ -428,7 +442,8 @@ special cases to the scheduler or process runner.
    ``pending_loop`` for a declaration waiting for its command, and
    ``pending_metadata_tests`` for the just-created scalar test or variant group
    that may receive a ``last pass:`` line, plus ``pending_exclusive_line_no``
-   for runner-only exclusivity awaiting that source entry.
+   and ``pending_timeout_s`` for runner-only exclusivity and time limit
+   awaiting that source entry.
 
 2. ``_parse_loop_declaration()`` validates assignments and their CSV value
    lists.  Duplicate names, empty lists, malformed separators, unexpected
@@ -608,6 +623,10 @@ class TestCase:
     # launch this already-expanded test.
     exclusive: bool = False
 
+    # Runner-only time limit of this entry in seconds (``! runner: timeout``);
+    # None means the --timeout of the invocation applies.
+    timeout_s: Optional[float] = None
+
 
 @dataclass
 class TestResult:
@@ -676,6 +695,8 @@ VARIABLE_REF_RE = re.compile(
 RUNNER_DIRECTIVE_RE = re.compile(
     r"^\s*!\s*runner\s*:\s*(?P<directive>.*?)\s*$", re.IGNORECASE
 )
+# "timeout 9000" or "timeout=9000" (seconds), matched against the lower-cased directive
+TIMEOUT_DIRECTIVE_RE = re.compile(r"^timeout\s*(?:=\s*|\s+)(?P<seconds>\d+(?:\.\d*)?)$")
 
 # The deferred-last-pass file is deliberately versioned.  It is temporary in
 # the sense that it is removed after a successful --commit-last-pass, but it is
@@ -1029,6 +1050,8 @@ def parse_test_file(path: Path) -> List[TestCase]:
     pending_loop: Optional[List[tuple[str, List[str]]]] = None
     pending_loop_line_no: Optional[int] = None
     pending_exclusive_line_no: Optional[int] = None
+    pending_timeout_s: Optional[float] = None
+    pending_timeout_line_no: Optional[int] = None
 
     with path.open("r", encoding="utf-8", errors="replace") as f:
         for line_no, raw in enumerate(f, start=1):
@@ -1049,10 +1072,28 @@ def parse_test_file(path: Path) -> List[TestCase]:
                 # exactly the authored command line.
                 pending_metadata_tests = None
                 directive = runner_directive_match.group("directive").strip().lower()
+                timeout_match = TIMEOUT_DIRECTIVE_RE.match(directive)
+                if timeout_match:
+                    if pending_timeout_line_no is not None:
+                        raise ValueError(
+                            f"Invalid test-list line {line_no}: duplicate timeout "
+                            f"directive; directive from line {pending_timeout_line_no} "
+                            "has no following test command"
+                        )
+                    seconds = float(timeout_match.group("seconds"))
+                    if not seconds > 0:
+                        raise ValueError(
+                            f"Invalid test-list line {line_no}: the timeout of an "
+                            "entry must be a positive number of seconds"
+                        )
+                    pending_timeout_s = seconds
+                    pending_timeout_line_no = line_no
+                    continue
                 if directive != "exclusive":
                     raise ValueError(
                         f"Invalid test-list line {line_no}: unsupported runner "
-                        f"directive {directive!r}; expected '! runner: exclusive'"
+                        f"directive {directive!r}; expected '! runner: exclusive' "
+                        "or '! runner: timeout SECONDS'"
                     )
                 if pending_exclusive_line_no is not None:
                     raise ValueError(
@@ -1078,6 +1119,12 @@ def parse_test_file(path: Path) -> List[TestCase]:
                     raise ValueError(
                         f"Invalid test-list line {line_no}: comment separates "
                         f"exclusive directive on line {pending_exclusive_line_no} "
+                        "from its test or loop declaration"
+                    )
+                if pending_timeout_line_no is not None and pending_loop is None:
+                    raise ValueError(
+                        f"Invalid test-list line {line_no}: comment separates "
+                        f"timeout directive on line {pending_timeout_line_no} "
                         "from its test or loop declaration"
                     )
                 continue
@@ -1182,6 +1229,7 @@ def parse_test_file(path: Path) -> List[TestCase]:
                     variant_index=variant_index,
                     variant_count=len(bindings_list),
                     exclusive=(pending_exclusive_line_no is not None),
+                    timeout_s=pending_timeout_s,
                 )
                 tests.append(test)
                 expanded_tests.append(test)
@@ -1190,6 +1238,8 @@ def parse_test_file(path: Path) -> List[TestCase]:
             pending_loop = None
             pending_loop_line_no = None
             pending_exclusive_line_no = None
+            pending_timeout_s = None
+            pending_timeout_line_no = None
 
     if pending_loop is not None:
         raise ValueError(
@@ -1200,6 +1250,11 @@ def parse_test_file(path: Path) -> List[TestCase]:
         raise ValueError(
             f"Invalid test list: exclusive directive on line "
             f"{pending_exclusive_line_no} has no following test command"
+        )
+    if pending_timeout_line_no is not None:
+        raise ValueError(
+            f"Invalid test list: timeout directive on line "
+            f"{pending_timeout_line_no} has no following test command"
         )
 
     return tests
@@ -1349,6 +1404,11 @@ async def run_one_test(
     ``-np``/``-nt``/other options it was authored with.
     """
     test = plan.test
+    timeout_text = f"{timeout_s:g} s (--timeout)" if timeout_s is not None else "none"
+    if test.timeout_s is not None:
+        # the entry's own '! runner: timeout' directive replaces --timeout for it
+        timeout_s = test.timeout_s
+        timeout_text = f"{timeout_s:g} s ('! runner: timeout' of the entry)"
     log_path = log_dir / safe_log_name(test)
     start = time.monotonic()
     exit_code: Optional[int] = None
@@ -1386,9 +1446,10 @@ async def run_one_test(
             else ""
         )
         exclusive_note = "exclusive, " if test.exclusive else ""
+        timeout_note = f"timeout={test.timeout_s:g}s, " if test.timeout_s is not None else ""
         print(
             f"[START] #{test.index:03d} line {test.line_no}{loop_note}: "
-            f"{exclusive_note}{mem_note}command={test.command}",
+            f"{exclusive_note}{timeout_note}{mem_note}command={test.command}",
             flush=True,
         )
 
@@ -1424,6 +1485,7 @@ async def run_one_test(
             f"# Exclusive environment marker: "
             f"{RUNNER_EXCLUSIVE_ENV}="
             f"{env.get(RUNNER_EXCLUSIVE_ENV, '<unset>')}\n"
+            f"# Timeout: {timeout_text}\n"
             f"{mem_line}"
             f"# Started: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
             f"{'=' * 80}\n"
@@ -2394,6 +2456,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             "A '#' in the first non-whitespace position starts a comment. '!' is\n"
             "reserved for runner directives such as '! runner: exclusive'; it is\n"
             "not an ordinary comment marker.\n\n"
+            "Time limit of one entry, in seconds (replaces --timeout for it):\n"
+            "  ! runner: timeout 9000\n"
+            "  P command\n\n"
             "Loop syntax in the list file:\n"
             "  for $m={RK4,HC4}\n"
             "  {P,P} command --mover $m\n"
@@ -2510,7 +2575,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--timeout",
         type=float,
         default=None,
-        help="Optional timeout per test in seconds; timeout is treated as actual F",
+        help=("Optional timeout per test in seconds; timeout is treated as actual F. "
+              "An entry's '! runner: timeout SECONDS' directive replaces it for that entry"),
     )
     parser.add_argument(
         "--no-shell",

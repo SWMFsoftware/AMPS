@@ -375,5 +375,104 @@ class ActiveC19EntryTests(unittest.TestCase):
         self.assertEqual(np_value * (nt_value + 1), 36)
 
 
+class TimeoutDirectiveTests(unittest.TestCase):
+    """UTR-F07: '! runner: timeout SECONDS' gives one entry its own time limit."""
+
+    def test_parser_attaches_the_timeout_to_its_entry_only(self):
+        tests = parse_text(
+            "! runner: exclusive\n"
+            "! runner: timeout 9000\n"
+            "P slow-command\n"
+            "last pass: old-commit\n"
+            "! runner: timeout=12.5\n"
+            "! runner: exclusive\n"
+            "P other-command\n"
+            "P ordinary-command\n"
+        )
+        self.assertEqual([t.timeout_s for t in tests], [9000.0, 12.5, None])
+        self.assertEqual([t.exclusive for t in tests], [True, True, False])
+        self.assertEqual(tests[0].command, "slow-command")
+        self.assertEqual(tests[0].last_pass, "old-commit")
+
+    def test_timeout_before_loop_applies_to_every_expansion(self):
+        tests = parse_text(
+            "! runner: timeout 60\n"
+            "for $m={RK4,HC4}\n"
+            "{P,P} command --mover $m\n"
+        )
+        self.assertEqual([t.timeout_s for t in tests], [60.0, 60.0])
+        self.assertFalse(any(t.exclusive for t in tests))
+
+    def test_invalid_timeout_directives_fail_loudly(self):
+        for text, message in (
+            ("! runner: timeout\nP command\n", "unsupported runner directive"),
+            ("! runner: timeout abc\nP command\n", "unsupported runner directive"),
+            ("! runner: timeout -5\nP command\n", "unsupported runner directive"),
+            ("! runner: timeout 0\nP command\n", "positive number of seconds"),
+            ("! runner: timeout 10\n! runner: timeout 20\nP command\n", "duplicate timeout"),
+            ("! runner: timeout 10\n", "no following test command"),
+            ("! runner: timeout 10\n# detached\nP command\n", "comment separates"),
+        ):
+            with self.subTest(text=text):
+                with self.assertRaisesRegex(ValueError, message):
+                    parse_text(text)
+
+    @staticmethod
+    def _run(test, timeout_s):
+        with tempfile.TemporaryDirectory(prefix="earth-runner-entry-timeout-") as tmp:
+            root = Path(tmp)
+            (root / "logs").mkdir()
+            plan = runner.build_test_plan(test, default_np=1, default_nt=1)
+            started = time.monotonic()
+            result = asyncio.run(runner.run_one_test(
+                plan,
+                workdir=root,
+                log_dir=root / "logs",
+                timeout_s=timeout_s,
+                use_shell=False,
+                base_env=os.environ.copy(),
+                set_thread_env_vars=False,
+                preserve_thread_env=True,
+                print_start=False,
+                mem_total_bytes=None,
+                mem_available_bytes=None,
+            ))
+            log = Path(result.log_file).read_text(encoding="utf-8")
+        return result, time.monotonic() - started, log
+
+    def test_entry_timeout_replaces_a_shorter_global_timeout(self):
+        command = "%s -c %s" % (shlex.quote(sys.executable),
+                                shlex.quote("import time; time.sleep(1.0)"))
+        result, _, log = self._run(runner.TestCase(1, 1, "P", command, timeout_s=30.0), timeout_s=0.2)
+        self.assertFalse(result.timed_out)
+        self.assertEqual(result.actual, "P")
+        self.assertIn("# Timeout: 30 s ('! runner: timeout' of the entry)", log)
+
+    def test_entry_timeout_applies_without_a_global_timeout(self):
+        command = "%s -c %s" % (shlex.quote(sys.executable),
+                                shlex.quote("import time; time.sleep(30)"))
+        result, elapsed, _ = self._run(runner.TestCase(1, 1, "P", command, timeout_s=0.2), timeout_s=None)
+        self.assertTrue(result.timed_out)
+        self.assertEqual(result.actual, "F")
+        self.assertLess(elapsed, 5.0)
+
+    def test_ordinary_entry_keeps_the_global_timeout(self):
+        command = "%s -c %s" % (shlex.quote(sys.executable), shlex.quote("pass"))
+        result, _, log = self._run(runner.TestCase(1, 1, "P", command), timeout_s=7.0)
+        self.assertEqual(result.actual, "P")
+        self.assertIn("# Timeout: 7 s (--timeout)", log)
+
+    def test_active_sa_entries_have_their_own_timeout(self):
+        # The SA QUICK workflows run longer than the nightly's --timeout 5400.
+        tests = runner.parse_test_file(TEST_LIST_PATH)
+        sa = [t for t in tests if "/SA0" in t.command and "run_SA0" in t.command]
+        self.assertGreaterEqual(len(sa), 3)
+        for test in sa:
+            with self.subTest(command=test.command.split()[1]):
+                self.assertTrue(test.exclusive)
+                self.assertIsNotNone(test.timeout_s)
+                self.assertGreater(test.timeout_s, 5400)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

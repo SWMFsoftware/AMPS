@@ -257,7 +257,7 @@ compiles. That is the old scheduler's split, now with time limits and stage logs
 | 3 | `sep` | configured (the SEP orchestrator builds) | `tools/sep_test_orchestrator.py --app srcsep --output-dir {out}` | sep-orchestrator-json | ~15 min |
 | 4 | `sep3d` | configured | `tools/sep_test_orchestrator.py --app srcsep3d --output-dir {out}` | sep-orchestrator-json | ~15 min |
 | 5 | `moon` | configured; prepare: `Config.pl -application=moon …`, `make` | `srcMoon/test/run_tests.py --all --output-dir {out}` | moon-summary | ~10 min |
-| 6 | `earth` | configured; prepare: `make test_Earth-cutoff-rigidity-3d-analytic_compile -j` (as the header of srcEarth/test/list prescribes), then check `./amps -h` prints the Earth banner | `srcEarth/test/test_runner.py srcEarth/test/list -j {jobs} --log-dir {out}/logs --report-prefix {out}/report --last-pass-results-file {out}/last_pass.json --timeout …` | earth-report | ~1.5–3 h |
+| 6 | `earth` | configured; prepare: `make test_Earth-cutoff-rigidity-3d-analytic_compile -j` (as the header of srcEarth/test/list prescribes), then check `./amps -h` prints the Earth banner | `srcEarth/test/test_runner.py srcEarth/test/list -j {jobs} --log-dir {out}/logs --report-prefix {out}/report --last-pass-results-file {out}/last_pass.json --timeout 5400` (the SA QUICK entries: `! runner: timeout 9000` in the list); limit 540 min | earth-report | ~5 h |
 | 7 | `legacy` | configured | built-in makefile runner | makefile | 6–7.5 h, the legacy figure with 10 lanes |
 
 Runner order is shortest first, so most results exist even if the night runs long.

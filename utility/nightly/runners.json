@@ -82,7 +82,8 @@
                   "--log-dir", "{out}/logs", "--report-prefix", "{out}/report",
                   "--last-pass-results-file", "{out}/last_pass.json", "--timeout", "5400"],
       "jobs": 6,
-      "time_limit_min": 300,
+      "time_limit_min": 540,
+      "note": "--timeout 5400 is each entry's limit, except the SA QUICK entries (! runner: timeout 9000 in srcEarth/test/list); 540 min also fits three SA entries at their limit, so the runner always writes its report",
       "results": {"reader": "earth-report", "file": "{out}/report.json"},
       "families": "app-earth",
       "logs": ["{out}/report*.txt", "{out}/report*.csv"]

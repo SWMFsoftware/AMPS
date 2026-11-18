@@ -229,7 +229,10 @@ last pass: 431f4fe4645093d47cd48867a60b6df41e80a296
 # process exit code: comparison_summary.json and qualification_summary.json retain
 # the actual scientific PASS/FAIL/INCOMPLETE result. The external package path is
 # the authoritative extracted SA01 dataset documented by srcEarth/test/SA01.
+# The SA QUICK workflows have their own time limit of 2.5 h: in the nightly's 5400 s
+# SA01 got to snapshot 57 of 66 of its second branch (2026-11-17).
 ! runner: exclusive
+! runner: timeout 9000
 P python3 srcEarth/test/SA01/run_SA01.py --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926 --amps-root /data/vtenishe/GEO/AMPS --amps ./amps --output-parent test_output/SA01/quick_test_runs --profile QUICK --solver GRIDDED --mpi-ranks 4 --threads 6 --mover HC4 --trace-dt 0.1 --formats png eps --exit-code-policy WORKFLOW
 last pass: 431f4fe4645093d47cd48867a60b6df41e80a296
 
@@ -239,6 +242,7 @@ last pass: 431f4fe4645093d47cd48867a60b6df41e80a296
 # process success only; the comparison and qualification summaries retain the actual
 # scientific PASS/FAIL/INCOMPLETE result documented by srcEarth/test/SA02.
 ! runner: exclusive
+! runner: timeout 9000
 P python3 srcEarth/test/SA02/run_SA02.py --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926 --amps-root /data/vtenishe/GEO/AMPS --amps ./amps --output-parent test_output/SA02/quick_test_runs --profile QUICK --solver GRIDDED --mpi-ranks 4 --threads 6 --mover HC4 --trace-dt 0.1 --formats png eps --exit-code-policy WORKFLOW
 last pass: 431f4fe4645093d47cd48867a60b6df41e80a296
 
@@ -248,6 +252,7 @@ last pass: 431f4fe4645093d47cd48867a60b6df41e80a296
 # GRIDDED/HC4, preserves every scientific gate, and writes PNG/EPS evidence below a
 # unique campaign root. WORKFLOW never changes the recorded qualification result.
 ! runner: exclusive
+! runner: timeout 9000
 P python3 srcEarth/test/SA03/run_SA03.py --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926/model_inputs --amps-root /data/vtenishe/GEO/AMPS --amps ./amps --output-parent test_output/SA03/quick_test_runs --profile QUICK --solver GRIDDED --mpi-ranks 4 --threads 6 --mover HC4 --trace-dt 0.1 --formats png eps --exit-code-policy WORKFLOW
 last pass: 431f4fe4645093d47cd48867a60b6df41e80a296
 
@@ -257,6 +262,7 @@ last pass: 431f4fe4645093d47cd48867a60b6df41e80a296
 # GRIDLESS deck is never executed. The workflow regenerates GRIDDED/HC4 inputs,
 # preserves every scientific gate, and writes PNG/EPS evidence to a unique root.
 #! runner: exclusive
+#! runner: timeout 9000
 #P python3 srcEarth/test/SA04/run_SA04.py --data-root /data/vtenishe/GEO/sep-in-geospace-sa01-sa04-standalone-20260926/model_inputs/SA04 --amps-root /data/vtenishe/GEO/AMPS --amps ./amps --output-parent test_output/SA04/quick_test_runs --profile QUICK --solver GRIDDED --mpi-ranks 4 --threads 6 --mover HC4 --trace-dt 0.1 --formats png eps --exit-code-policy WORKFLOW
 #last pass:
 

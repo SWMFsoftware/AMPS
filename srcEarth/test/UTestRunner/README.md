@@ -93,6 +93,17 @@ that status JSON is replaced atomically and that a preceding top-level result is
 archived recoverably before a new physical invocation.  This is a provenance
 gate only: it never substitutes for, edits, or relaxes a scientific comparison.
 
+### UTR-F07 — per-entry time limit
+
+`! runner: timeout SECONDS` gives one entry its own time limit. The parser must
+attach it to the following entry only (in either order with `! runner:
+exclusive`, and to every expansion of a loop) and reject a missing, non-numeric,
+negative, zero, duplicate, detached, or dangling limit. Through the real
+subprocess path, the entry's limit must replace a shorter `--timeout`, apply
+when the runner has no `--timeout`, and leave other entries on `--timeout`; each
+log records which limit applied. The active SA QUICK entries of `test/list` must
+be exclusive and have a limit above the nightly's `--timeout 5400`.
+
 The suite does not weaken or replace any scientific validation. Exclusivity is
 runner-only scheduling metadata; AMPS commands, numerical inputs, observations,
 reference solutions, expected P/F states, and acceptance gates remain unchanged.
