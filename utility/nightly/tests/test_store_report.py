@@ -94,8 +94,12 @@ class StoreAndReport(unittest.TestCase):
         index = (self.www / "index.html").read_text()
         self.assertIn("NEW FAILURE", index)
         self.assertIn("No upload for 12 days", index)            # pleiades column is stale
-        self.assertIn("94 pass · 1 fail", index)                 # suite cases are counted individually
-        self.assertIn("1 pass · 1 skip · 1 fail", index)
+        self.assertIn(report.tally_html(94, 0, 1), index)        # suite cases are counted individually
+        self.assertIn(report.tally_html(1, 1, 1), index)
+        self.assertIn('<span class="n n-fail">1</span><span class="sl" aria-hidden="true">/</span>'
+                      '<span class="n n-skip zero">0</span><span class="sl" aria-hidden="true">/</span>'
+                      '<span class="n n-pass">94</span>', index)   # #fail/#skip/#pass, a 0 faded
+        self.assertIn("1 failed, 0 skipped, 94 passed", index)   # in words for the tooltip and screen readers
         self.assertIn('href="family/pic-field-solver/passion-gnu.html"', index)
 
         page = (self.www / "family" / "pic-field-solver" / "passion-gnu.html").read_text()

@@ -129,12 +129,15 @@ def tally(rows: List[Dict[str, Any]]) -> Tuple[int, int, int, str]:
 
 
 def counts_text(p: int, s: int, x: int) -> str:
-    parts = ["{} pass".format(p)]
-    if s:
-        parts.append("{} skip".format(s))
-    if x:
-        parts.append("{} fail".format(x))
-    return " · ".join(parts)
+    return "{} failed, {} skipped, {} passed".format(x, s, p)
+
+
+def tally_html(p: int, s: int, x: int) -> str:
+    """#fail/#skip/#pass of a family in red, yellow and green; a count of 0 is shown faded."""
+    numbers = ['<span class="n n-{}{}">{:,}</span>'.format(kind, " zero" if n == 0 else "", n)
+               for kind, n in (("fail", x), ("skip", s), ("pass", p))]
+    return '<span class="tly" title="{}">{}</span>'.format(
+        esc(counts_text(p, s, x)), '<span class="sl" aria-hidden="true">/</span>'.join(numbers))
 
 
 def commit_html(sha: str, inferred: bool) -> str:
@@ -235,10 +238,11 @@ def _index(registry: Registry, columns: List[Column], shown: List[str], unseen: 
         out.append('<section class="card changes"><h2>Changes since the previous run</h2><div class="chgs">{}{}</div></section>'
                    .format("".join(items), more))
 
-    out.append('<div class="legend"><span>{}no failures (some tests may be skipped)</span>'
-               '<span>{}at least one test failed</span><span>{}every test skipped</span>'
-               '<span class="sub">Click a family or a cell to see its tests.</span></div>'.format(
-                   pill("PASS"), pill("FAILED"), pill("SKIPPED")))
+    out.append('<div class="legend"><span><span class="tly"><span class="n n-fail">failed</span>'
+               '<span class="sl" aria-hidden="true">/</span><span class="n n-skip">skipped</span>'
+               '<span class="sl" aria-hidden="true">/</span><span class="n n-pass">passed</span></span>'
+               'number of tests (the cases of a suite count one by one); a faded number is 0</span>'
+               '<span class="sub">Click a family or a cell to see its tests.</span></div>')
 
     width = 320 + 240 * len(all_columns)
     out.append('<section class="card scroll"><div role="table" aria-label="Test families by machine and compiler" '
@@ -266,12 +270,12 @@ def _index(registry: Registry, columns: List[Column], shown: List[str], unseen: 
                 if not rows:
                     cells.append('<div class="cell" role="cell"><span class="na">— not run here</span></div>')
                     continue
-                p, s, x, status = tally(rows)
+                p, s, x, _ = tally(rows)
                 cells.append('<div class="cell" role="cell"><a class="cellbtn" href="family/{f}/{c}.html" '
-                             'aria-label="{aria}">{pill}<span class="counts">{counts}</span></a></div>'.format(
-                                 f=esc(fid), c=esc(col.id), pill=pill(status), counts=esc(counts_text(p, s, x)),
-                                 aria=esc("{} on {} {}: {}, {}".format(fam["title"], col.machine, col.label, status,
-                                                                      counts_text(p, s, x)))))
+                             'aria-label="{aria}">{tally}</a></div>'.format(
+                                 f=esc(fid), c=esc(col.id), tally=tally_html(p, s, x),
+                                 aria=esc("{} on {} {}: {}".format(fam["title"], col.machine, col.label,
+                                                                  counts_text(p, s, x)))))
             out.append('<div class="row" role="row"><div class="cell first" role="rowheader"><a class="fambtn" '
                        'href="family/{f}/{c}.html"><span class="famname">{t}</span><span class="fammeta">{m}</span></a></div>{cells}</div>'
                        .format(f=esc(fid), c=esc(first), t=esc(fam["title"]), m=esc(meta), cells="".join(cells)))
@@ -299,8 +303,8 @@ def _family_page(registry: Registry, fid: str, col: Column, columns: List[Column
         other_rows = other.family_rows(fid)
         current = ' aria-current="true"' if other.id == col.id else ""
         if other_rows:
-            p, s, x, status = tally(other_rows)
-            summary = '<span class="tab-sum">{}<span class="counts">{}</span></span>'.format(pill(status), esc(counts_text(p, s, x)))
+            p, s, x, _ = tally(other_rows)
+            summary = '<span class="tab-sum">{}</span>'.format(tally_html(p, s, x))
         else:
             summary = '<span class="counts na-text">not run here</span>'
         tabs.append('<a class="tab" href="{c}.html"{cur}><span class="tab-name">{m}</span><span class="tab-cfg">{l}</span>{s}</a>'
