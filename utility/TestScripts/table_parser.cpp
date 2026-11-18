@@ -159,7 +159,7 @@ string test_app="\t@($(MAKE) test_<APP>_compile)\n"
 string test_compile_app="\t@echo \"test_<APP>_compile...\" > test_<APP>$(TEST<APP>-REF).diff\n" 
     "\t./Config.pl -application=<APPPATH> -spice-path=nospice -spice-kernels=nospice -model-data-path=$(PTDIR)/data/input/<APP>  -amps-test=on $(TEST<APP>KEYS)\n" 
     "\trm -rf srcTemp\n" 
-    "\t@($(MAKE) -j8 amps)\n" 
+    "\t@($(MAKE) -j$(TESTCOMPILEJOBS) amps)\n" 
     "\t@echo \"test_<APP>_compile... done\" >> test_<APP>$(TEST<APP>-REF).diff\n"; 
 
 string test_rundir_app="\t@echo \"test_<APP>_rundir...\" >> test_<APP>$(TEST<APP>-REF).diff\n" 
@@ -561,6 +561,11 @@ int main(int argc, char** argv) {
   fMakefile << "SHELL=/bin/bash\n";
   fMakefile << "# Makefile for AMPS stand-alone nightly tests\n# for each test a separate folder run_test_<NAME> is created\n# and executables are copied there\n\n\n"; 
   fMakefile << "TESTMPIRUN1=\nTESTMPIRUN4=\nHOSTNAME="+Host+"\n\n";  
+
+  //the parallel jobs (make -j) of a test's compile stage: the Table writes $(MAKE) -j$(TESTCOMPILEJOBS);
+  //the nightly (utility/nightly) sets it from "compile_jobs" of the machine file, e.g. make test_X_compile TESTCOMPILEJOBS=9
+  fMakefile << "# parallel jobs (make -j) of the compile stage of a test: make test_<NAME>_compile TESTCOMPILEJOBS=16\n";
+  fMakefile << "TESTCOMPILEJOBS?=8\n\n";
 
   auto PrintMakefileHeader = [&] (list<cTest>& Tests) {
     for (it=Tests.begin();it!=Tests.end();it++) {

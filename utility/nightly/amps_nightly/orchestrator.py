@@ -366,7 +366,7 @@ class Night:
                 apply_rules(items, source, self.machine, config, self.routine, self.local_start.date())
                 if self.tests:
                     items = [i for i in items if any(fnmatch.fnmatchcase(i.test, g) for g in self.tests)]
-                rows = makefile_runner.run(ws, self.machine, items, env, logs, tag, end, self.log)
+                rows = makefile_runner.run(ws, self.machine, items, env, logs, tag, end, self.log, config)
                 rows += [{"family": i.family, "test": i.test, "status": "SKIPPED", "reason": i.reason, "log_src": ""}
                          for i in items if i.action == SKIP]
             except (RuntimeError, OSError, subprocess.SubprocessError) as error:
@@ -544,8 +544,11 @@ def describe(machine: Machine, routine: Routine, registry: Registry, configs: Se
                 for line in config.after_install:
                     lines.append("      install: " + line)
             if sp.source.kind == "makefile":
-                lines.append("      make test_<X>_compile/_rundir (one at a time), _run/_check ({} lanes) "
-                             "for {} tests".format(machine.lanes, sum(1 for i in sp.items if i.action == RUN)))
+                lines.append("      make test_<X>_compile/_rundir ({} compile lane{}, make -j{} each), _run/_check "
+                             "({} lanes) for {} tests".format(
+                                 machine.compile_lanes, "" if machine.compile_lanes == 1 else "s",
+                                 machine.compile_jobs_for(config), machine.lanes,
+                                 sum(1 for i in sp.items if i.action == RUN)))
                 continue
             for command in sp.source.prepare:
                 lines.append("      prepare: " + " ".join(shlex.quote(a) for a in command_argv(command, values)))

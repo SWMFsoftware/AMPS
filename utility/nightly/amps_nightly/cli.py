@@ -122,6 +122,9 @@ def cmd_machines(args: argparse.Namespace) -> int:
             print("    " + m.description)
         print("    hosts {} · Table host {} · starts {} · {} lane{} · uploads to {}".format(
             ", ".join(m.hostnames), m.table_host, m.start, m.lanes, "" if m.lanes == 1 else "s", m.upload))
+        print("    Makefile.test compiles: {} at once, make -j{}{}".format(
+            m.compile_lanes, m.compile_jobs_for(), "".join(
+                " ({} -j{})".format(c.config, c.compile_jobs) for c in m.configs if c.compile_jobs)))
         print("    capabilities: {} · src/test profile: {}".format(", ".join(m.capabilities) or "none",
                                                                   m.core_profile or "none"))
         for c in m.configs:

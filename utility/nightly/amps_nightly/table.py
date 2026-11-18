@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from .registry import Registry
 
@@ -18,6 +18,11 @@ DEFAULT_TABLE = Path(__file__).resolve().parents[3] / "MakefileTest" / "Table"
 _SECTIONS = ("Compile=", "Rundir=", "Run=", "Check=")
 _DIFF_FILE = re.compile(r"\btest_([A-Za-z0-9][A-Za-z0-9_.+=-]*?)(?:\$\([^)]*\))?\.diff\b")
 _RUN_DIR = re.compile(r"\$[({]TEST([A-Za-z0-9][A-Za-z0-9_.+=-]*?)DIR[)}]")    # ${TEST<name>DIR}: run_test_<name>
+# the SWMF trees a block builds or runs in, in the workspace: SWMF/..., cd SWMF-IH/SWMF; (not SWMF_data, not SWMF.exe)
+_SWMF_TREE = re.compile(r"(?<![\w./-])SWMF(?:-IH)?(?=/|;|\s|$)")
+# a make call with a fixed number of jobs (make -j8, $(MAKE) -j16 amps); -j1 (serial on purpose) is allowed
+_FIXED_JOBS = re.compile(r"(?:\bmake\b|\$[({]MAKE[)}]).*?\s-j\s*([0-9]+)\b")
+COMPILE_JOBS = "-j$(TESTCOMPILEJOBS)"
 
 
 @dataclass
@@ -29,6 +34,15 @@ class TableTest:
     family_lines: int = 0     # number of Family= lines in the block
     result_files: Set[str] = field(default_factory=set)  # other test_<x>.diff names written by the block
     uses: Set[str] = field(default_factory=set)          # other tests whose run directory (${TEST<x>DIR}) it uses
+    type: str = "amps"        # Type= of the block: amps, or swmf (an SWMF-coupled test)
+    swmf_tree: bool = False   # a section uses the workspace's SWMF or SWMF-IH tree
+    fixed_jobs: List[Tuple[int, str]] = field(default_factory=list)   # (line, text): make -j<N>, N > 1
+
+    @property
+    def workspace_only(self) -> bool:
+        """It builds in the workspace's SWMF trees (or is an SWMF test): it cannot compile in a copy of the workspace
+        (makefile_runner compile lanes)."""
+        return self.type == "swmf" or self.swmf_tree
 
 
 def read_table(path: Optional[Path] = None) -> List[TableTest]:
@@ -55,6 +69,10 @@ def read_table(path: Optional[Path] = None) -> List[TableTest]:
         if section:
             current.result_files.update(_DIFF_FILE.findall(line))
             current.uses.update(_RUN_DIR.findall(line))
+            current.swmf_tree = current.swmf_tree or bool(_SWMF_TREE.search(line))
+            jobs = _FIXED_JOBS.search(line)
+            if jobs and int(jobs.group(1)) > 1:
+                current.fixed_jobs.append((number, line.lstrip(">").strip()))
             continue
         if line.startswith("Name="):
             value = line[len("Name="):]
@@ -64,6 +82,8 @@ def read_table(path: Optional[Path] = None) -> List[TableTest]:
         elif line.startswith("Family="):
             current.family = line[len("Family="):].strip()
             current.family_lines += 1
+        elif line.startswith("Type="):
+            current.type = line[len("Type="):].strip()
     return tests
 
 
@@ -120,4 +140,8 @@ def check_table(tests: List[TableTest], registry: Registry) -> List[str]:
         previous = families.setdefault(test.name, test.family)
         if previous != test.family:
             problems.append(where + ": Family={} differs from another block of the same test ({})".format(test.family, previous))
+    for test in tests:
+        for number, text in test.fixed_jobs:
+            problems.append("Table line {} ({}): '{}' fixes the number of make jobs: use {} (the nightly sets it from "
+                            "compile_jobs of the machine file; 8 otherwise)".format(number, test.name, text, COMPILE_JOBS))
     return problems

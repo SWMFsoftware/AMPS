@@ -34,8 +34,10 @@ What runs where is decided by four files:
 
 1. `cp machines/passion.json machines/<name>.json` and edit it: `machine` (= file name), `hostnames`
    (`hostname` output there), `workdir`, `upload` (`passion.ndc.nasa.gov:/data/vtenishe/AMPSTEST/incoming`
-   from any other machine), `start`, `lanes`, `timeouts_s`, `capabilities`, and one entry in `configs` per
-   compiler (`config_pl` = the `Config.pl` calls, `setup` = module loads).
+   from any other machine), `start`, `lanes`, `compile_lanes`, `timeouts_s`, `capabilities`, and one entry in
+   `configs` per compiler (`config_pl` = the `Config.pl` calls, `setup` = module loads). `compile_jobs` (machine,
+   or one `configs` entry) sets `make -j` of the Makefile.test compiles; by default the compile lanes share the
+   `cores`.
 2. src/test suites need that machine's profile: `cp test/qualification-machine/template.json
    test/qualification-machine/<host>.json`, edit it, and set `core_profile` to it (or `null`: core suites
    are then reported as skipped there).

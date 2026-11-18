@@ -244,9 +244,24 @@ that stage. The output goes to one log per test: `logs/legacy/tests/<X>.log`. Th
 single `test_amps.log`, which is mostly about 12,000 compiler command lines.
 
 Status and reason are decided from the `.diff` exactly as the legacy importer does now; `.diff` contents
-are still not stored. Compiling changes the tree, so compiles run one after another. The run and check
-stages work in their own `run_test_<X>` directories, so up to `lanes` of them run while the next test
-compiles. That is the old scheduler's split, now with time limits and stage logs.
+are still not stored. Compiling changes the tree (Config.pl, `srcTemp`, `./amps`), so one tree compiles
+one test at a time:
+- **Compile lanes.** `compile_lanes` tests compile at once (machine file; passion: 4). Lane 1 is the
+  workspace. Lanes 2.. are copies of the configured workspace, at `<runner>/lane<k>/AMPS`, which the
+  orchestrator removes with the workspace. A copy has the workspace's path replaced by its own in
+  `Makefile.def` (PTDIR, MYDIR). After its rundir stage, a test compiled in a copy has its `run_test_<X>`
+  and `test_<X>*.diff` moved into the workspace. The SWMF tests (`Type=swmf`, or a block that uses the
+  `SWMF`/`SWMF-IH` trees) compile only in the workspace, where those trees are. A test whose block uses
+  another test's run directory (`${TEST<Y>DIR}`) compiles in the same tree, right after it: Moon-restart's
+  input includes `moon.input.spicekernels`, which only the configure step of Moon copies into the tree.
+- **Compile jobs.** Each compile runs `make -j$(TESTCOMPILEJOBS)`. The nightly sets it from
+  `compile_jobs`, of the configuration, else of the machine, else `cores / (compile_lanes x max_parallel)`
+  (passion: 36 / 4 = 9), so the lanes together use the machine. A Table rule must not fix `-j<N>`
+  (`amps-nightly check` reports it; `-j1` is allowed). Makefile.test defaults it to 8 for runs by hand.
+- **Runs.** The run and check stages work in the workspace, each test in its own `run_test_<X>`. They start
+  when every compile is done, up to `lanes` at once; the checks run one at a time.
+
+On 2026-11-17 the 89 compiles ran one at a time with `make -j8` for 185 of the runner's 255 minutes.
 
 ### 5.3 Proposed runner list for passion
 
@@ -258,7 +273,7 @@ compiles. That is the old scheduler's split, now with time limits and stage logs
 | 4 | `sep3d` | configured | `tools/sep_test_orchestrator.py --app srcsep3d --output-dir {out}` | sep-orchestrator-json | ~15 min |
 | 5 | `moon` | configured; prepare: `Config.pl -application=moon …`, `make` | `srcMoon/test/run_tests.py --all --output-dir {out}` | moon-summary | ~10 min |
 | 6 | `earth` | configured; prepare: `make test_Earth-cutoff-rigidity-3d-analytic_compile -j` (as the header of srcEarth/test/list prescribes), then check `./amps -h` prints the Earth banner | `srcEarth/test/test_runner.py srcEarth/test/list -j {jobs} --log-dir {out}/logs --report-prefix {out}/report --last-pass-results-file {out}/last_pass.json --timeout 5400` (the SA QUICK entries: `! runner: timeout 9000` in the list); limit 540 min | earth-report | ~5 h |
-| 7 | `legacy` | configured | built-in makefile runner | makefile | 6–7.5 h, the legacy figure with 10 lanes |
+| 7 | `legacy` | configured | built-in makefile runner (4 compile lanes, 4 run lanes) | makefile | 6–7.5 h, the legacy figure with 10 lanes; 4.25 h with one compile lane (2026-11-17) |
 
 Runner order is shortest first, so most results exist even if the night runs long.
 

@@ -26,9 +26,13 @@ _TIME = re.compile(r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
 _MACHINE_KEYS = {"schema_version", "machine", "enabled", "description", "hostnames", "table_host", "workdir",
                  "upload", "start", "core_profile", "capabilities", "lanes", "timeouts_s", "configs",
                  "python", "search_path", "mpiexec", "vars", "make_vars", "cores", "memory_gb", "max_parallel",
-                 "night_limit_h", "keep_workspaces", "server_root", "min_free_gb"}
+                 "night_limit_h", "keep_workspaces", "server_root", "min_free_gb", "compile_lanes", "compile_jobs"}
 KEEP_WORKSPACES = ("failures", "always", "never")
-_CONFIG_KEYS = {"config", "enabled", "compiler", "toolchain", "setup", "config_pl", "after_install", "sources"}
+_CONFIG_KEYS = {"config", "enabled", "compiler", "toolchain", "setup", "config_pl", "after_install", "sources",
+                "compile_jobs"}
+# The make variable of MakefileTest/Table that sets the parallel jobs (make -j) of a test's compile stage. The nightly
+# sets it from compile_jobs (see Machine.compile_jobs_for); make_vars may not set it.
+COMPILE_JOBS_VAR = "TESTCOMPILEJOBS"
 
 
 class MachineError(ValueError):
@@ -47,6 +51,7 @@ class Config:
     config_pl: List[str]        # Config.pl invocations, in order; the first one installs
     after_install: List[str]    # shell lines run after the Config.pl invocations
     sources: Optional[List[str]]  # runners.json source ids to run; None = every enabled source
+    compile_jobs: int = 0       # make -j of a Makefile.test compile with this compiler; 0 = the machine's
 
     @property
     def column(self) -> str:
@@ -87,12 +92,24 @@ class Machine:
     keep_workspaces: str = "failures"
     server_root: str = ""             # results server only: results.db, incoming/, www/ (amps-nightly update)
     min_free_gb: float = 5            # no runner or Makefile.test test starts with less free space in workdir
+    compile_lanes: int = 1            # Makefile.test tests compiled at once, each in its own copy of the workspace
+    compile_jobs: int = 0             # make -j of each Makefile.test compile; 0 = cores / (compile_lanes x max_parallel)
 
     def active_configs(self) -> List[Config]:
         return [c for c in self.configs if c.enabled] if self.enabled else []
 
     def config(self, name: str) -> Optional[Config]:
         return next((c for c in self.configs if c.config == name), None)
+
+    def compile_jobs_for(self, config: Optional[Config] = None) -> int:
+        """make -j of one Makefile.test compile (TESTCOMPILEJOBS): the configuration's compile_jobs, else the
+        machine's, else the cores shared by the compile lanes (and by the runners that may run at once), so the
+        lanes together use the whole machine."""
+        if config is not None and config.compile_jobs:
+            return config.compile_jobs
+        if self.compile_jobs:
+            return self.compile_jobs
+        return max(1, self.cores // (self.compile_lanes * self.max_parallel))
 
 
 # ----------------------------------------------------------------------------- field readers
@@ -188,7 +205,8 @@ def parse_machine(raw: Any, path: Path) -> Machine:
             toolchain=_str(item, "toolchain", at, ""), enabled=_bool(item, "enabled", at, True),
             setup=_strings(item, "setup", at, []), config_pl=_strings(item, "config_pl", at),
             after_install=_strings(item, "after_install", at, []),
-            sources=None if sources is None else _strings(item, "sources", at)))
+            sources=None if sources is None else _strings(item, "sources", at),
+            compile_jobs=_positive(item["compile_jobs"], "compile_jobs", at) if "compile_jobs" in item else 0))
 
     folders = [c.folder for c in configs]
     for folder in set(folders):
@@ -197,6 +215,10 @@ def parse_machine(raw: Any, path: Path) -> Machine:
                                "{}/{}; give them different \"compiler\" names".format(
                                    where, ", ".join(c.config for c in configs if c.folder == folder), folder,
                                    "<workdir>", folder))
+    make_vars = _mapping(raw, "make_vars", where)
+    if COMPILE_JOBS_VAR in make_vars:
+        raise MachineError("{}: make_vars may not set {}: compile_jobs (of the machine or of a configuration) "
+                           "sets it".format(where, COMPILE_JOBS_VAR))
     return Machine(
         machine=name, path=path, enabled=_bool(raw, "enabled", where, True),
         description=_str(raw, "description", where, ""),
@@ -209,13 +231,15 @@ def parse_machine(raw: Any, path: Path) -> Machine:
         python=_str(raw, "python", where, "/usr/bin/python3") or "/usr/bin/python3",
         search_path=_strings(raw, "search_path", where, ["/usr/local/bin", "/usr/bin", "/bin"]),
         mpiexec=_str(raw, "mpiexec", where, "mpiexec") or "mpiexec",
-        vars=_mapping(raw, "vars", where), make_vars=_mapping(raw, "make_vars", where),
+        vars=_mapping(raw, "vars", where), make_vars=make_vars,
         cores=_positive(raw.get("cores", 1), "cores", where),
         memory_gb=0 if raw.get("memory_gb", 0) == 0 else _positive(raw.get("memory_gb"), "memory_gb", where),
         max_parallel=_positive(raw.get("max_parallel", 1), "max_parallel", where),
         night_limit_h=_hours(raw.get("night_limit_h", 14), where),
         keep_workspaces=_choice(raw, "keep_workspaces", KEEP_WORKSPACES, where),
-        server_root=_str(raw, "server_root", where, ""), min_free_gb=_free(raw, where))
+        server_root=_str(raw, "server_root", where, ""), min_free_gb=_free(raw, where),
+        compile_lanes=_positive(raw.get("compile_lanes", 1), "compile_lanes", where),
+        compile_jobs=_positive(raw["compile_jobs"], "compile_jobs", where) if "compile_jobs" in raw else 0)
 
 
 def _free(raw: Dict[str, Any], where: str) -> float:

@@ -191,3 +191,149 @@ class RunDependencies(unittest.TestCase):
             got, log, _ = self.run_night()
         self.assertEqual(got["Moon-restart"]["status"], "FAILED")
         self.assertIn("cannot stat", log)
+
+
+LANES_TABLE = """#>
+Name=Coupled
+Family=planets
+Type=swmf
+<#
+#>
+Name=A
+Family=planets
+<#
+#>
+Name=B
+Family=planets
+<#
+#>
+Name=C
+Family=planets
+<#
+"""
+
+# each compile records the tree it ran in (PTDIR of Makefile.def, as $(PTDIR)/data/input/... in the Table) and its -j
+LANES_MAKEFILE = """\
+include Makefile.def
+test_%_compile:
+\t@echo "test_$*_compile..." > test_$*.diff; sleep 1; echo "PTDIR=$(PTDIR) cwd=$$(pwd) jobs=$(TESTCOMPILEJOBS)" > amps
+test_%_rundir:
+\t@mkdir -p run_test_$*; mv amps run_test_$*; echo "test_$*_rundir... done" >> test_$*.diff
+test_%_run:
+\t@cp run_test_$*/amps run_test_$*/out
+test_%_check:
+\t@if [ -f run_test_$*/out ]; then : > test_$*.diff; else echo "no output" > test_$*.diff; fi
+"""
+
+
+class CompileLanes(unittest.TestCase):
+    """compile_lanes > 1: tests compile at once in copies of the workspace; runs and checks stay in the workspace."""
+
+    def night(self, lanes, cores=6, table=LANES_TABLE, makefile=LANES_MAKEFILE, names=("Coupled", "A", "B", "C")):
+        from amps_nightly import plan as plan_mod
+        from amps_nightly.machines import parse_machine
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        ws, logs = Path(tmp.name, "AMPS"), Path(tmp.name, "logs")
+        (ws / "MakefileTest").mkdir(parents=True)
+        (ws / "MakefileTest" / "Table").write_text(table)
+        (ws / "Makefile").write_text(makefile)
+        (ws / "Makefile.def").write_text("PTDIR = {0}\nMYDIR = {0}\n".format(ws))
+        m = parse_machine({"schema_version": 1, "machine": "box", "upload": "/srv/incoming", "lanes": 2,
+                           "cores": cores, "compile_lanes": lanes, "min_free_gb": 0,
+                           "configs": [{"config": "gnu", "config_pl": ["-install"]}]}, Path("box.json"))
+        items = [plan_mod.makefile_item(n, "planets", "") for n in names]
+        env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": os.environ.get("HOME", "/tmp")}
+        messages = []
+        rows = makefile_runner.run(ws, m, items, env, logs, "t", time.time() + 300, messages.append, m.configs[0])
+        built = {name: (ws / "run_test_{}".format(name) / "amps").read_text().split()
+                 for name in names if (ws / "run_test_{}".format(name) / "amps").exists()}
+        return ws, {r["test"]: r for r in rows}, built, messages
+
+    def test_tests_compile_in_copies_and_run_in_the_workspace(self):
+        ws, got, built, messages = self.night(3)
+        self.assertEqual({n: r["status"] for n, r in got.items()}, dict.fromkeys(("Coupled", "A", "B", "C"), "PASS"))
+        lanes = {str(ws.parent / "lane2" / "AMPS"), str(ws.parent / "lane3" / "AMPS")}
+        # the SWMF test compiles in the workspace; A and B, the first tests the copies take, in the two copies
+        self.assertEqual(built["Coupled"], ["PTDIR={}".format(ws), "cwd={}".format(ws), "jobs=2"])
+        for name in ("A", "B"):
+            ptdir, cwd, jobs = built[name]
+            self.assertIn(cwd[len("cwd="):], lanes)
+            self.assertEqual(ptdir, "PTDIR=" + cwd[len("cwd="):])      # Makefile.def of the copy names the copy
+            self.assertEqual(jobs, "jobs=2")                          # 6 cores / 3 compile lanes
+        self.assertNotEqual(built["A"][1], built["B"][1])
+        for lane in lanes:                                            # what the copies built was handed over
+            self.assertEqual(sorted(p.name for p in Path(lane).glob("run_test_*")), [])
+            self.assertEqual(sorted(p.name for p in Path(lane).glob("*.diff")), [])
+        self.assertIn("Makefile.test: 4 tests to run; compile: 3 lanes, make -j2 each; run: 2 lanes", messages)
+        self.assertTrue(any(m.startswith("Makefile.test: compile lane 2: ") and "Makefile.def" in m for m in messages))
+
+    def test_one_lane_compiles_in_the_workspace(self):
+        ws, got, built, messages = self.night(1)
+        self.assertEqual({r["status"] for r in got.values()}, {"PASS"})
+        self.assertEqual({b[1] for b in built.values()}, {"cwd={}".format(ws)})
+        self.assertEqual({b[2] for b in built.values()}, {"jobs=6"})
+        self.assertFalse((ws.parent / "lane2").exists())
+
+    def test_a_copy_that_cannot_be_made_leaves_fewer_lanes(self):
+        from unittest import mock
+
+        def fail(ws, lane):
+            raise OSError("No space left on device")
+        with mock.patch.object(makefile_runner, "compile_lane", fail):
+            ws, got, built, messages = self.night(3)
+        self.assertEqual({r["status"] for r in got.values()}, {"PASS"})
+        self.assertEqual({b[1] for b in built.values()}, {"cwd={}".format(ws)})
+        self.assertIn("Makefile.test: compile lane 2 not made (No space left on device): the tests compile in 1 lane",
+                      messages)
+
+    def test_copy(self):
+        """The copy keeps links, leaves out what the tests make, and names its own path where the workspace's was."""
+        with tempfile.TemporaryDirectory() as tmp:
+            ws, lane = Path(tmp, "AMPS"), Path(tmp, "lane2", "AMPS")
+            for d in ("data/output", "share/lib", "run_test_X", "SWMF/PT", "srcTemp", ".git", "src"):
+                (ws / d).mkdir(parents=True)
+            (ws / "Makefile.def").write_text("PTDIR = {0}\nMYDIR = {0}\n".format(ws))
+            (ws / "Makefile.local").write_text("SPICE=/opt/spice\n")
+            (ws / "share" / "lib" / "libSHARE.a").write_bytes(b"\0" + str(ws).encode())     # binary: left alone
+            (ws / ".git" / "config").write_text(str(ws))
+            (ws / "src" / "pic.cpp").write_text("int main(){}\n")
+            (ws / "output").symlink_to("data/output")
+            (ws / "SWMF_data").symlink_to(tmp)
+            for name in ("amps", "test_X.diff", "run_test_X/amps", "SWMF/PT/x"):
+                (ws / name).write_text("made by a test")
+            rewritten = makefile_runner.compile_lane(ws, lane)
+            self.assertEqual(rewritten, ["Makefile.def"])
+            self.assertEqual((lane / "Makefile.def").read_text(), "PTDIR = {0}\nMYDIR = {0}\n".format(lane))
+            self.assertEqual((lane / "Makefile.local").read_text(), "SPICE=/opt/spice\n")
+            self.assertEqual((lane / "share" / "lib" / "libSHARE.a").read_bytes(), b"\0" + str(ws).encode())
+            self.assertEqual((lane / ".git" / "config").read_text(), str(ws))
+            self.assertEqual(os.readlink(str(lane / "output")), "data/output")
+            self.assertEqual(os.readlink(str(lane / "SWMF_data")), tmp)
+            self.assertEqual(sorted(p.name for p in lane.iterdir()),
+                             [".git", "Makefile.def", "Makefile.local", "SWMF_data", "data", "output", "share", "src"])
+
+    def test_a_test_using_another_compiles_after_it_in_its_tree(self):
+        """Moon-restart builds only where the compile of Moon left moon.input.spicekernels (2026-11-18)."""
+        table = LANES_TABLE + ("#>\nName=D\nFamily=planets\nRun=\n>>>cp ${TESTCDIR}/amps ${TESTDDIR}/from-C\n<#\n"
+                               "#>\nName=E\nFamily=planets\n<#\n")
+        makefile = LANES_MAKEFILE + (
+            "test_C_compile:\n"
+            "\t@echo \"test_C_compile...\" > test_C.diff; sleep 1; touch c.staged; echo \"cwd=$$(pwd)\" > amps\n"
+            "test_D_compile:\n"
+            "\t@echo \"test_D_compile...\" > test_D.diff; test -f c.staged; echo \"cwd=$$(pwd)\" > amps\n")
+        names = ("Coupled", "A", "B", "C", "D", "E")
+        ws, got, built, messages = self.night(4, table=table, makefile=makefile, names=names)
+        self.assertEqual({n: r["status"] for n, r in got.items()}, dict.fromkeys(names, "PASS"))
+        self.assertEqual(built["D"], built["C"])                     # the same tree, after C
+
+
+class CompileGroups(unittest.TestCase):
+    def test_units(self):
+        from amps_nightly.table import TableTest
+
+        def block(name, *uses):
+            return TableTest(name=name, family="", selector="", line=0, uses=set(uses))
+        table = [block("Moon"), block("Moon-restart", "Moon"), block("A"), block("B", "Z"), block("Y", "X"), block("X")]
+        self.assertEqual(makefile_runner.compile_groups(["Moon-restart", "A", "Moon", "B", "Y", "X"], table),
+                         [["Moon", "Moon-restart"], ["A"], ["B"], ["X", "Y"]])

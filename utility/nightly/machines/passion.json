@@ -30,6 +30,8 @@
   "make_vars": {"MPIRUN": "mpirun -np 8", "TESTMPIRUN4": "mpirun -np 4", "TESTMPIRUN1": "mpirun -np 1"},
   "lanes": 4,
   "_lanes_note": "4 Makefile.test runs at once (most use 8 MPI ranks): 32 ranks on 36 cores. With 10 lanes (80 ranks) the long tests ran 2-3 times slower and magnetic-reconnection, fast-wave_rebalancing and CG-dust hit the 2-hour limit (2026-11-14/15); OpenMP threads per rank: makefile_runner.OMP_THREADS",
+  "compile_lanes": 4,
+  "_compile_note": "4 Makefile.test tests compile at once, each in its own copy of the workspace (the SWMF tests in the workspace itself); each compile runs make -j<compile_jobs> (TESTCOMPILEJOBS), by default cores / (compile_lanes x max_parallel) = 36 / 4 = 9, so the lanes use the 36 cores. On 2026-11-17 the 89 compiles ran one at a time with make -j8 for 185 of the runner's 255 min. Set \"compile_jobs\" here (machine) or in a configs entry (one compiler) to change it",
   "timeouts_s": {"compile": 3600, "rundir": 600, "run": 7200, "check": 900},
   "configs": [
     {

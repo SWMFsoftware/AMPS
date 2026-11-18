@@ -112,7 +112,7 @@ Compile=
 >>>@command -v valgrind > /dev/null 2>&1 || exit 0; rm -rf $(WSD)
 >>>@command -v valgrind > /dev/null 2>&1 || exit 0; ./Config.pl -check_macro=off
 >>>@command -v valgrind > /dev/null 2>&1 || exit 0; ./Config.pl -application=test/Mars-ions -spice-path=nospice -spice-kernels=nospice -model-data-path=$(PTDIR)/data/input/Mars-ions -amps-test=on $(TESTMars-ions--valgrindKEYS)
->>>@command -v valgrind > /dev/null 2>&1 || exit 0; $(MAKE) -j8 amps FLAGC_EXTRA=-g
+>>>@command -v valgrind > /dev/null 2>&1 || exit 0; $(MAKE) -j$(TESTCOMPILEJOBS) amps FLAGC_EXTRA=-g
 >>>@command -v valgrind > /dev/null 2>&1 || exit 0; ./Config.pl -check_macro=on
 >>>@command -v valgrind > /dev/null 2>&1 || exit 0; echo "test_Mars-ions--valgrind_compile... done" >> test_Mars-ions--valgrind.diff
 
@@ -264,7 +264,7 @@ Compile=
 
 >>>./Config.pl -application=test/cg-end-of-mission-rosina-trajectory -amps-test=on $(TESTCG-Rosina-Liouville--TrajectoryKEYS)
 >>>./Config.pl -amps-test=off
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>./Config.pl -amps-test=on
 
 >>>@rm -rf srcCG
@@ -325,7 +325,7 @@ Compile=
 >>>@rm -rf ../TempSourceDir
 
 >>>./Config.pl -application=test/cg-end-of-mission-rosina -amps-test=on $(TESTCG-Rosina-LiouvilleKEYS)
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 
 >>>@rm -rf srcCG
 >>>@mv srcCG--original srcCG
@@ -376,7 +376,7 @@ Compile=
 >>>@echo "test_SC-Cont_compile..." > test_SC-Cont$(TESTSC-Cont-REF).diff
 >>>./Config.pl -application=test/sc-contamination -spice-path=nospice -spice-kernels=nospice -model-data-path=$(PTDIR)/data/input/SC-Cont  -amps-test=on $(TESTSC-ContKEYS)
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_SC-Cont_compile... done" >> test_SC-Cont$(TESTSC-Cont-REF).diff
 
 Run=
@@ -430,7 +430,7 @@ Compile=
 >>>@echo "test_test-1853-shape_compile..." > test_test-1853-shape$(TESTtest-1853-shape-REF).diff
 >>>./Config.pl -application=test/test-1853-shape -spice-path=nospice -spice-kernels=nospice  -amps-test=on $(TESTtest-1853-shapeKEYS)
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_test-1853-shape_compile... done" >> test_test-1853-shape$(TESTtest-1853-shape-REF).diff
 
 Check=
@@ -527,7 +527,7 @@ Compile=
 >>>@echo "test_CCMC_compile..." > test_CCMC.diff
 >>>./Config.pl -application=test/ccmc-test -spice-path=nospice -spice-kernels=nospice -model-data-path=$(PTDIR)/input  -amps-test=on $(TESTCCMCKEYS) 
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_CCMC_compile... done" >> test_CCMC.diff
 <#
 
@@ -545,7 +545,7 @@ Compile=
 >>>@echo "test_SEP--Multiple_Parker_spiral--boris_relativistic_compile..." > test_SEP--Multiple_Parker_spiral--boris_relativistic${TESTSEP--Multiple_Parker_spiral--boris_relativistic-REF}.diff
 >>>./Config.pl -application=test/sep_multiple_parker_spiral__boris_relativistic -spice-path=nospice   -amps-test=on 
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_SEP--Multiple_Parker_spiral--boris_relativistic_compile... done" >> test_SEP--Multiple_Parker_spiral--boris_relativistic${TESTSEP--Multiple_Parker_spiral--boris_relativistic-REF}.diff
 
 Check=
@@ -569,7 +569,7 @@ Compile=
 >>>@echo "test_SEP--Parker_spiral--ParkerEq_compile..." > test_SEP--Parker_spiral--ParkerEq$(TESTSEP--Parker_spiral--ParkerEq-REF).diff
 >>>./Config.pl -application=test/sep_parker_spiral__field_line -spice-path=nospice -amps-test=on
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_SEP--Parker_spiral--ParkerEq_compile... done" >> test_SEP--Parker_spiral--ParkerEq$(TESTSEP--Parker_spiral--ParkerEq-REF).diff
 
 Run=
@@ -610,7 +610,7 @@ Compile=
 >>>@echo "test_SEP--Parker_spiral--FTE_compile..." > test_SEP--Parker_spiral--FTE$(TESTSEP--Parker_spiral--FTE-REF).diff
 >>>./Config.pl -application=test/sep_parker_spiral__field_line-fte -spice-path=nospice -amps-test=on
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_SEP--Parker_spiral--FTE_compile... done" >> test_SEP--Parker_spiral--FTE$(TESTSEP--Parker_spiral--FTE-REF).diff
 
 Run=
@@ -659,7 +659,7 @@ Compile=
 >>>@echo "test_SEP--Parker_spiral--boris_relativistic_compile..." > test_SEP--Parker_spiral--boris_relativistic${TESTSEP--Parker_spiral--boris_relativistic-REF}.diff
 >>>./Config.pl -application=test/sep_parker_spiral__boris_relativistic -spice-path=nospice   -amps-test=on                  
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_SEP--Parker_spiral--boris_relativistic_compile... done" >> test_SEP--Parker_spiral--boris_relativistic${TESTSEP--Parker_spiral--boris_relativistic-REF}.diff
 
 Check=
@@ -683,7 +683,7 @@ Compile=
 >>>@echo "test_SEP--Parker_spiral--field_line_compile..." > test_SEP--Parker_spiral--field_line$(TESTSEP--Parker_spiral--field_line-REF).diff
 >>>./Config.pl -application=test/sep_parker_spiral__field_line -spice-path=nospice -amps-test=on
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_SEP--Parker_spiral--field_line_compile... done" >> test_SEP--Parker_spiral--field_line$(TESTSEP--Parker_spiral--field_line-REF).diff
 
 Run=
@@ -731,7 +731,7 @@ Compile=
 >>>@echo "test_SEP--Parker3D--ParkerIMF_compile..." > test_SEP--Parker3D--ParkerIMF${TESTSEP--Parker3D--ParkerIMF-REF}.diff
 >>>./Config.pl -application=test/sep_3d_cut-domain_parkerimf_parker3d -spice-path=nospice   -amps-test=on
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_SEP--Parker3D--ParkerIMF_compile... done" >> test_SEP--Parker3D--ParkerIMF${TESTSEP--Parker3D--ParkerIMF-REF}.diff
 
 Check=
@@ -1103,9 +1103,9 @@ Compile=
 ! the shared SWMF libraries first: the parallel component LIB builds below need their modules (ModUtilities, ...);
 ! in a fresh SWMF-IH (the first SWMF test of the night, i.e. this one) they do not exist yet
 >>>cd SWMF-IH/SWMF; for d in share/Library/src util/TIMING/src util/DATAREAD/srcIndices util/DATAREAD/srcMagnetogram util/DATAREAD/srcDemt util/EMPIRICAL/srcCosmicRay util/EMPIRICAL/srcEE util/EMPIRICAL/srcIE util/EMPIRICAL/srcGM util/EMPIRICAL/srcSC util/EMPIRICAL/srcUA CON/Library/src CON/Coupler/src; do ${MAKE} -C $$d LIB || exit 1; done
->>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j8 LIB
+>>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
 >>>cd SWMF-IH/SWMF; ${MAKE} SWMF
 >>>@echo "test_SEP--focused_transport-IH-mflampa-fl_compile... done" >> test_SEP--focused_transport-IH-mflampa-fl$(TESTSEP--focused_transport-IH-mflampa-fl-REF).diff
 
@@ -1612,7 +1612,7 @@ Compile=
 >>>./Config.pl -compiler-option=-I/home/vtenishe/gtest/include
 >>>./Config.pl -cpp-link-option=-L/home/vtenishe/gtest/lib:-lgtest:-pthread
 >>>./Config.pl -f-link-option=-L/home/vtenishe/gtest/lib:-lgtest:-pthread
->>>make -j8
+>>>make -j$(TESTCOMPILEJOBS)
 >>>@echo "test_unit_test_compile... done" >> test_unit_test.diff
 
 Run=
@@ -1645,7 +1645,7 @@ Compile=
 >>>./Config.pl -spice-path=nospice
 >>>./Config.pl -compiler-option=-I/home/vtenishe/gtest/include
 >>>./Config.pl -cpp-link-option=-L/home/vtenishe/gtest/lib:-lgtest:-pthread
->>>make -j8
+>>>make -j$(TESTCOMPILEJOBS)
 >>>@echo "test_unit_test_field-lines_compile... done" >> test_unit_test_field-lines.diff
 
 Run=
@@ -1683,7 +1683,7 @@ Compile=
 >>>@command -v valgrind > /dev/null 2>&1 || exit 0; ./Config.pl -compiler-option=-I/home/vtenishe/gtest/include
 >>>@command -v valgrind > /dev/null 2>&1 || exit 0; ./Config.pl -cpp-link-option=-L/home/vtenishe/gtest/lib:-lgtest:-pthread
 >>>@command -v valgrind > /dev/null 2>&1 || exit 0; ./Config.pl -f-link-option=-L/home/vtenishe/gtest/lib:-lgtest:-pthread
->>>@command -v valgrind > /dev/null 2>&1 || exit 0; $(MAKE) -j8 FLAGC_EXTRA=-g
+>>>@command -v valgrind > /dev/null 2>&1 || exit 0; $(MAKE) -j$(TESTCOMPILEJOBS) FLAGC_EXTRA=-g
 >>>@command -v valgrind > /dev/null 2>&1 || exit 0; ./Config.pl -check_macro=on
 >>>@command -v valgrind > /dev/null 2>&1 || exit 0; echo "test_unit_test_field-lines--valgrind_compile... done" >> test_unit_test_field-lines--valgrind.diff
 
@@ -1722,7 +1722,7 @@ Compile=
 >>>./Config.pl -spice-path=nospice
 >>>./Config.pl -compiler-option=-I/home/vtenishe/gtest/include
 >>>./Config.pl -cpp-link-option=-L/home/vtenishe/gtest/lib:-lgtest:-pthread
->>>make -j8
+>>>make -j$(TESTCOMPILEJOBS)
 >>>@echo "test_unit_test_particle_distribution_compile... done" >> test_unit_test_particle_distribution.diff
 
 Run=
@@ -1751,7 +1751,7 @@ Compile=
 >>>./Config.pl -spice-path=nospice
 >>>./Config.pl -compiler-option=-I/home/vtenishe/gtest/include
 >>>./Config.pl -cpp-link-option=-L/home/vtenishe/gtest/lib:-lgtest:-pthread
->>>make -j8
+>>>make -j$(TESTCOMPILEJOBS)
 >>>@echo "test_unit_test_collisions_compile... done" >> test_unit_test_collisions.diff
 
 Run=
@@ -1775,7 +1775,7 @@ Time=5
 Compile=
 >>>@echo "test_unit_test_cutcell_tetra_compile..." > test_unit_test_cutcell_tetra.diff
 >>>./Config.pl -application=test/cutcell-tetra -spice-path=nospice -spice-kernels=nospice
->>>make -j8
+>>>make -j$(TESTCOMPILEJOBS)
 >>>@echo "test_unit_test_cutcell_tetra_compile... done" >> test_unit_test_cutcell_tetra.diff
 
 Run=
@@ -1803,7 +1803,7 @@ Time=4
 Compile=
 >>>@echo "test_unit_test_cell_measure_compile..." > test_unit_test_cell_measure.diff
 >>>./Config.pl -application=test/cell-measure -spice-path=nospice -spice-kernels=nospice
->>>make -j8
+>>>make -j$(TESTCOMPILEJOBS)
 >>>@echo "test_unit_test_cell_measure_compile... done" >> test_unit_test_cell_measure.diff
 
 Run=
@@ -1830,7 +1830,7 @@ Time=10
 Compile=
 >>>@echo "test_unit_test_cut_surface_mover_compile..." > test_unit_test_cut_surface_mover.diff
 >>>./Config.pl -application=test/cut-surface-mover -spice-path=nospice -spice-kernels=nospice
->>>make -j8
+>>>make -j$(TESTCOMPILEJOBS)
 >>>@echo "test_unit_test_cut_surface_mover_compile... done" >> test_unit_test_cut_surface_mover.diff
 
 Run=
@@ -1861,7 +1861,7 @@ Time=6
 Compile=
 >>>@echo "test_unit_test_cut_surface_mover_specular_compile..." > test_unit_test_cut_surface_mover_specular.diff
 >>>./Config.pl -application=test/cut-surface-mover-specular-domain -spice-path=nospice -spice-kernels=nospice
->>>make -j8
+>>>make -j$(TESTCOMPILEJOBS)
 >>>@echo "test_unit_test_cut_surface_mover_specular_compile... done" >> test_unit_test_cut_surface_mover_specular.diff
 
 Run=
@@ -1887,7 +1887,7 @@ Time=3
 Compile=
 >>>@echo "test_unit_test_gas_surface_interaction_compile..." > test_unit_test_gas_surface_interaction.diff
 >>>./Config.pl -application=test/gas-surface-interaction -spice-path=nospice -spice-kernels=nospice
->>>make -j8
+>>>make -j$(TESTCOMPILEJOBS)
 >>>@echo "test_unit_test_gas_surface_interaction_compile... done" >> test_unit_test_gas_surface_interaction.diff
 
 Run=
@@ -1927,7 +1927,7 @@ Compile=
 >>>@echo "test_Moon_compile..." > test_Moon$(TESTMoon-REF).diff
 >>>python3 src/test/native/prepare_legacy_native.py
 >>>./Config.pl -application=Moon -spice-path=nospice -spice-kernels=nospice -model-data-path=$(PTDIR)/data/input/Moon -amps-test=on $(TESTMoonKEYS)
->>>@($(MAKE) -j16 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Moon_compile... done" >> test_Moon$(TESTMoon-REF).diff
 
 Run=
@@ -2136,7 +2136,7 @@ Compile=
 >>>./Config.pl -application=i3 -spice-path=nospice -spice-kernels=nospice -amps-test=on $(TESTi3KEYS)
 >>>@# input/i3.conf sets WorkingSourceDirectory=build: remove it, so that no object of an earlier build is reused
 >>>rm -rf srcTemp build
->>>@($(MAKE) -j16 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_i3_compile... done" >> test_i3$(TESTi3-REF).diff
 
 Rundir=
@@ -2393,7 +2393,7 @@ Compile=
 >>>./Config.pl -application=test/earth-cutoff-rigidity_t05 
 >>>./Config.pl -amps-test=on ${TESTEarth-cutoff-rigidity_t05KEYS} 
 >>>./Config.pl -input=geospace-rigidity.in 
->>>make -j8
+>>>make -j$(TESTCOMPILEJOBS)
 
 >>>@echo "test_Earth-cutoff-rigidity_t05_compile... done" >> test_Earth-cutoff-rigidity_t05$(TESTEarth-cutoff-rigidity_t05-REF).diff
 
@@ -2438,7 +2438,7 @@ Compile=
 >>>./Config.pl -application=test/earth-cutoff-rigidity_t05
 >>>./Config.pl -amps-test=on ${TESTEarth-cutoff-rigidity-points_t05KEYS}
 >>>./Config.pl -input=geospace-rigidity.in
->>>make -j8
+>>>make -j$(TESTCOMPILEJOBS)
 
 >>>@echo "test_Earth-cutoff-rigidity-points_t05_compile... done" >> test_Earth-cutoff-rigidity-points_t05$(TESTEarth-cutoff-rigidity-points_t05-REF).diff
 
@@ -2499,7 +2499,7 @@ Compile=
 
 >>>./Config.pl -amps-test=on ${TESTEarth-geo_t05KEYS}
 >>>./Config.pl -input=geospace-rigidity.in
->>> make -j8
+>>> make -j$(TESTCOMPILEJOBS)
 
 >>>@echo "test_Earth-geo_t05_compile... done" >> test_Earth-geo_t05$(TESTEarth-geo_t05-REF).diff
 
@@ -2543,7 +2543,7 @@ Compile=
 >>>@echo "test_Earth-cutoff-rigidity_t96_compile..." > test_Earth-cutoff-rigidity_t96$(TESTEarth-cutoff-rigidity_t96-REF).diff
 
 >>>./Config.pl -application=test/earth-cutoff-rigidity_t96  -amps-test=on ${TESTEarth-cutoff-rigidity_t96KEYS}
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Earth-cutoff-rigidity_t96_compile... done" >> test_Earth-cutoff-rigidity_t96$(TESTEarth-cutoff-rigidity_t96-REF).diff
 
 
@@ -2585,7 +2585,7 @@ Compile=
 >>>cp Makefile.local Makefile.local.bak
 >>>./Config.pl -compiler-option=-D_NIGHTLY_TEST_=_NIGHTLY_TEST__LEGACY_
 
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 
 >>>mv Makefile.local.bak Makefile.local
 >>>@echo "test_Earth-T96_compile... done" >> test_Earth-T96$(TESTEarth-T96-REF).diff
@@ -2622,7 +2622,7 @@ Compile=
 >>>cp Makefile.local Makefile.local.bak
 >>>./Config.pl -compiler-option=-D_NIGHTLY_TEST_=_NIGHTLY_TEST__LEGACY_
 
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 
 >>>mv Makefile.local.bak Makefile.local
 >>>@echo "test_Earth-Impulse-Source_compile... done" >> test_Earth-Impulse-Source$(TESTEarth-Impulse-Source-REF).diff
@@ -2640,7 +2640,7 @@ Compile=
 >>>@echo "test_Earth-Impulse-Neutron-Source_compile..." > test_Earth-Impulse-Neutron-Source$(TESTEarth-Impulse-Neutron-Source-REF).diff
 >>>./Config.pl -application=earth-impulse-source-neutron -amps-test=on $(TESTEarth-Impulse-Neutron-SourceKEYS)
 >>>rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Earth-Impulse-Neutron-Source_compile... done" >> test_Earth-Impulse-Neutron-Source$(TESTEarth-Impulse-Neutron-Source-REF).diff
 
 
@@ -2661,7 +2661,7 @@ Compile=
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/linear-system-solver ${TESTlinear-system-solverKEYS}
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_linear-system-solver_compile... done" >> test_linear-system-solver.diff
 
 Check=
@@ -2690,7 +2690,7 @@ Compile=
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/linear-system-solver ${TESTlinear-system-solverKEYS}
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>./Config.pl -openmp=off
 >>>@echo "test_linear-system-solver-openmp_compile... done" >> test_linear-system-solver-openmp.diff
 
@@ -2719,7 +2719,7 @@ Compile=
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/periodic-bc-gmres ${TESTperiodic-bc-gmresKEYS}
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_periodic-bc-gmres_compile... done" >> test_periodic-bc-gmres.diff
 
 Check=
@@ -2767,7 +2767,7 @@ Compile=
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/lightwave-current-on -amps-test=on ${TESTlightwave-current-onKEYS}
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8  amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS)  amps)
 >>>@echo "test_lightwave-current-on_compile... done" >> test_lightwave-current-on$(TESTlightwave-current-on-REF).diff
 
 Check=
@@ -2851,7 +2851,7 @@ Compile=
 >>>./Config.pl -application=test/lightwave-current-on -amps-test=on ${TESTlightwave-current-on-openmpKEYS}
 >>>./Config.pl -openmp=on
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8  amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS)  amps)
 >>>./Config.pl -openmp=off
 >>>@echo "test_lightwave-current-on-openmp_compile... done" >> test_lightwave-current-on-openmp$(TESTlightwave-current-on-openmp-REF).diff
 
@@ -2912,7 +2912,7 @@ Compile=
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/magnetic-reconnection -amps-test=on ${TESTmagnetic-reconnectionKEYS}
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8  amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS)  amps)
 >>>@echo "test_magnetic-reconnection_compile... done" >> test_magnetic-reconnection$(TESTmagnetic-reconnection-REF).diff
 
 Check=
@@ -2953,7 +2953,7 @@ Compile=
 >>>./Config.pl -application=test/magnetic-reconnection -amps-test=on ${TESTmagnetic-reconnection-openmpKEYS}
 >>>./Config.pl -openmp=on
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8  amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS)  amps)
 >>>./Config.pl -openmp=off
 >>>@echo "test_magnetic-reconnection-openmp_compile... done" >> test_magnetic-reconnection-openmp$(TESTmagnetic-reconnection-openmp-REF).diff
 
@@ -3001,7 +3001,7 @@ Compile=
 >>>./Config.pl -application=test/magnetic-reconnection -amps-test=on ${TESTmagnetic-reconnection_avx256KEYS}
 >>>./Config.pl -avx=256
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8  amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS)  amps)
 >>>./Config.pl -avx=off
 >>>@echo "test_magnetic-reconnection_avx256_compile... done" >> test_magnetic-reconnection_avx256$(TESTmagnetic-reconnection_avx256-REF).diff
 
@@ -3039,7 +3039,7 @@ Compile=
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/fast-wave ${TESTfast-waveKEYS} 
 >>>@echo "[fast-wave] additional C/C++ flags: $(strip $(FLAGC_EXTRA) $(FAST_WAVE_CXXFLAGS))"
->>>@($(MAKE) -j16 amps FLAGC_EXTRA="$(strip $(FLAGC_EXTRA) $(FAST_WAVE_CXXFLAGS))")
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps FLAGC_EXTRA="$(strip $(FLAGC_EXTRA) $(FAST_WAVE_CXXFLAGS))")
 >>>@echo "test_fast-wave_compile... done" >> test_fast-wave$(TESTfast-wave-REF).diff
 
 
@@ -3093,7 +3093,7 @@ Compile=
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/fast-wave--legacy-ecsim ${TESTfast-wave--legacy-ecsimKEYS}
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8  amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS)  amps)
 >>>@echo "test_fast-wave--legacy-ecsim_compile... done" >> test_fast-wave--legacy-ecsim$(TESTfast-wave--legacy-ecsim-REF).diff
 
 
@@ -3147,7 +3147,7 @@ Compile=
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/fast-wave__correction ${TESTfast-wave__correctionKEYS} 
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8  amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS)  amps)
 >>>@echo "test_fast-wave__correction_compile... done" >> test_fast-wave__correction$(TESTfast-wave__correction-REF).diff
 
 
@@ -3204,7 +3204,7 @@ Compile=
 >>>cp Makefile.local Makefile.local.bak
 >>>./Config.pl -compiler-option=-DTEST_REBALANCING 
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8  amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS)  amps)
 >>>mv Makefile.local.bak Makefile.local
 
 >>>@echo "test_fast-wave_rebalancing_compile... done" >> test_fast-wave_rebalancing$(TESTfast-wave_rebalancing-REF).diff
@@ -3272,7 +3272,7 @@ Compile=
 >>>./Config.pl -application=test/fast-wave ${TESTfast-wave_AVX256KEYS} 
 >>>./Config.pl -avx=256
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8  amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS)  amps)
 >>>./Config.pl -avx=off
 >>>@echo "test_fast-wave_AVX256_compile... done" >> test_fast-wave_AVX256$(TESTfast-wave_AVX256-REF).diff
 
@@ -3330,7 +3330,7 @@ Compile=
 >>>./Config.pl -application=test/fast-wave ${TESTfast-wave_AVX512KEYS} 
 >>>./Config.pl -avx=512 
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8  amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS)  amps)
 >>>./Config.pl -avx=off
 >>>@echo "test_fast-wave_AVX512_compile... done" >> test_fast-wave_AVX512$(TESTfast-wave_AVX512-REF).diff
 
@@ -3387,7 +3387,7 @@ Compile=
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/fast-wave_multithread ${TESTfast-wave_multithread_UpdateJMassMatrixKEYS}
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8  amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS)  amps)
 >>>@echo "test_fast-wave_multithread_UpdateJMassMatrix_compile... done" >> test_fast-wave_multithread_UpdateJMassMatrix$(TESTfast-wave_multithread_UpdateJMassMatrix-REF).diff
 
 
@@ -3443,7 +3443,7 @@ Compile=
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/fast-wave_multithread_mover ${TESTfast-wave_multithread_mover_UpdateJMassMatrixKEYS}
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8  amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS)  amps)
 >>>@echo "test_fast-wave_multithread_mover_UpdateJMassMatrix_compile... done" >> test_fast-wave_multithread_mover_UpdateJMassMatrix$(TESTfast-wave_multithread_mover_UpdateJMassMatrix-REF).diff
 
 
@@ -3499,7 +3499,7 @@ Compile=
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/fast-wave_multithread_matmul ${TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrixKEYS}
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8  amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS)  amps)
 >>>@echo "test_fast-wave_multithread_mover_matmul_UpdateJMassMatrix_compile... done" >> test_fast-wave_multithread_mover_matmul_UpdateJMassMatrix$(TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrix-REF).diff
 
 
@@ -3555,7 +3555,7 @@ Compile=
 >>>./Config.pl -application=test/fast-wave ${TESTfast-wave-openmpKEYS} 
 >>>./Config.pl -openmp=on
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8  amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS)  amps)
 >>>./Config.pl -openmp=off
 >>>@echo "test_fast-wave-openmp_compile... done" >> test_fast-wave-openmp$(TESTfast-wave-openmp-REF).diff
 
@@ -3612,7 +3612,7 @@ Compile=
 >>>./Config.pl -application=test/fast-wave__shared_temp_list ${TESTfast-wave-openmp__shared_temp_listKEYS} 
 >>>./Config.pl -openmp=on
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8  amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS)  amps)
 >>>./Config.pl -openmp=off
 >>>@echo "test_fast-wave-openmp__shared_temp_list_compile... done" >> test_fast-wave-openmp__shared_temp_list$(TESTfast-wave-openmp__shared_temp_list-REF).diff
 
@@ -3682,7 +3682,7 @@ Compile=
 >>>./Config.pl -application=photon-test -spice-path=nospice -spice-kernels=nospice -model-data-path=$(PTDIR)/data/input/photon-test  -amps-test=on $(TESTphoton-testKEYS)
 >>>./Config.pl -openmp=on
 >>>rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>./Config.pl -openmp=off
 >>>@echo "test_photon-test-openmp_compile... done" >> test_photon-test-openmp$(TESTphoton-test-openmp-REF).diff
 
@@ -3715,7 +3715,7 @@ Compile=
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/lightwave-current-off ${TESTlightwave-current-offKEYS}
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_lightwave-current-off_compile... done" >> test_lightwave-current-off.diff
 
 Check=
@@ -3762,7 +3762,7 @@ Compile=
 >>>./Config.pl -application=test/lightwave-current-off ${TESTlightwave-current-off-openmpKEYS}
 >>>@rm -rf srcTemp
 >>>./Config.pl -openmp=on
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>./Config.pl -openmp=off
 >>>@echo "test_lightwave-current-off-openmp_compile... done" >> test_lightwave-current-off-openmp.diff
 
@@ -4055,7 +4055,7 @@ Compile=
 >>>@echo "test_SEP3D-ARMS-coupling_compile..." > test_SEP3D-ARMS-coupling$(TESTSEP3D-ARMS-coupling-REF).diff
 >>>./Config.pl -application=SEP3D -spice-path=nospice -spice-kernels=nospice -amps-test=on $(TESTSEP3D-ARMS-couplingKEYS)
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_SEP3D-ARMS-coupling_compile... done" >> test_SEP3D-ARMS-coupling$(TESTSEP3D-ARMS-coupling-REF).diff
 
 Check=
@@ -4087,7 +4087,7 @@ Compile=
 >>>./Config.pl -application=test/cg-pproc-test-on -amps-test=on -openmp=on ${TESTCG-PostProcess--Read-Trajectories--onKEYS} 
 >>>-@cd utility/PostProcess; make
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>./Config.pl -openmp=off
 >>>@mv Makefile.bak Makefile 
 >>>@echo "test_CG-PostProcess--Read-Trajectories--on_compile... done" >> test_CG-PostProcess--Read-Trajectories--on.diff
@@ -4154,7 +4154,7 @@ Compile=
 >>> ./Config.pl -application=test/cg-pproc-test -amps-test=on -openmp=on ${TESTCG-PostProcess--Read-Trajectories--offKEYS}
 >>>-@cd utility/PostProcess; make
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>./Config.pl -openmp=off
 >>>@mv Makefile.bak Makefile
 >>>@echo "test_CG-PostProcess--Read-Trajectories--off_compile... done" >> test_CG-PostProcess--Read-Trajectories--off.diff
@@ -4296,7 +4296,7 @@ Compile=
 >>>@echo "test_CG_compile..." > test_CG$(TESTCG-REF).diff
 >>>./Config.pl -application=CG -spice-path=nospice -spice-kernels=nospice -model-data-path=$(PTDIR)/$(TESTCGDIR)  -amps-test=on $(TESTCGKEYS)
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_CG_compile... done" >> test_CG$(TESTCG-REF).diff
 
 Rundir=
@@ -4623,7 +4623,7 @@ Compile=
 >>>@echo "test_Individual_Trajectories--guiding-center--KAMELEON_compile..." > test_Individual_Trajectories--guiding-center--KAMELEON.diff
 >>>./Config.pl -application=test/Individual_Trajectories--guiding-center -cplr-data-path=. -model-data-path=.  -boost-path=/Users/ccmc/boost -kameleon-path=/Users/ccmc/Kameleon-plus -link-option=-lc++  -amps-test=on -cplr-data-path=./ -model-data-path=./
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Individual_Trajectories--guiding-center--KAMELEON_compile... done" >> test_Individual_Trajectories--guiding-center--KAMELEON.diff
 
 Run=
@@ -4682,7 +4682,7 @@ Compile=
 >>>@echo "test_CCMC-Individual_Trajectories--KAMELEON_compile..." > test_CCMC-Individual_Trajectories--KAMELEON.diff
 >>>./Config.pl -application=CCMC-Individual_Trajectories--kameleon -cplr-data-path=. -model-data-path=.  -boost-path=/Users/ccmc/boost -kameleon-path=/Users/ccmc/Kameleon-plus -link-option=-lc++  -amps-test=on -cplr-data-path=./ -model-data-path=./
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_CCMC-Individual_Trajectories--KAMELEON_compile... done" >> test_CCMC-Individual_Trajectories--KAMELEON.diff
 
 Run=
@@ -4717,7 +4717,7 @@ Compile=
 >>>@echo "test_CCMC-Individual_Trajectories--KAMELEON-multifile_compile..." > test_CCMC-Individual_Trajectories--KAMELEON-multifile.diff
 >>>./Config.pl -application=test/CCMC-Individual_Trajectories--kameleon-multifile -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/CCMC/MULTI-FILE -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/CCMC/MULTI-FILE  -boost-path=/Users/ccmc/boost -kameleon-path=/Users/ccmc/Kameleon-plus -link-option=-lc++  -amps-test=on 
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_CCMC-Individual_Trajectories--KAMELEON-multifile_compile... done" >> test_CCMC-Individual_Trajectories--KAMELEON-multifile.diff
 
 Check=
@@ -4743,7 +4743,7 @@ Compile=
 >>>@echo "test_Mover-guiding-center_compile..." > test_Mover-guiding-center${TESTMover-guiding-center-REF}.diff
 >>>./Config.pl -application=test/Mover-guiding-center -cplr-data-path=${TESTMover-guiding-centerKEYS} -model-data-path=${TESTMover-guiding-centerKEYS}   -link-option=-lc++  -spice-path=nospice -spice-kernels=nospice -kameleon-path=nokameleon -boost-path=noboost -amps-test=on 
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Mover-guiding-center_compile... done" >> test_Mover-guiding-center${TESTMover-guiding-center-REF}.diff
 
 Check=
@@ -4772,7 +4772,7 @@ Compile=
 >>>@echo "test_Mover-guiding-center_compile..." > test_Mover-guiding-center${TESTMover-guiding-center-REF}.diff
 >>>./Config.pl -application=test/Mover-guiding-center -cplr-data-path=${TESTMover-guiding-centerKEYS} -model-data-path=${TESTMover-guiding-centerKEYS}   -spice-path=nospice -spice-kernels=nospice -kameleon-path=nokameleon -boost-path=noboost -amps-test=on
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Mover-guiding-center_compile... done" >> test_Mover-guiding-center${TESTMover-guiding-center-REF}.diff
 
 Check=
@@ -4803,7 +4803,7 @@ Compile=
 >>>@echo "test_Mover-Lapenta2017_compile..." > test_Mover-Lapenta2017${TESTMover-Lapenta2017-REF}.diff
 >>>./Config.pl -application=test/Mover-Lapenta2017 -cplr-data-path=${TESTMover-Lapenta2017KEYS} -model-data-path=${TESTMover-Lapenta2017KEYS} -spice-path=nospice -spice-kernels=nospice -kameleon-path=nokameleon -boost-path=noboost -amps-test=on
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Mover-Lapenta2017_compile... done" >> test_Mover-Lapenta2017${TESTMover-Lapenta2017-REF}.diff
 
 Check=
@@ -4833,7 +4833,7 @@ Compile=
 >>>@echo "test_Mover-Markidis2010_compile..." > test_Mover-Markidis2010${TESTMover-Markidis2010-REF}.diff
 >>>./Config.pl -application=test/Mover-Markidis2010 -cplr-data-path=${TESTMover-Markidis2010KEYS} -model-data-path=${TESTMover-Markidis2010KEYS} -spice-path=nospice -spice-kernels=nospice -kameleon-path=nokameleon -boost-path=noboost -amps-test=on
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Mover-Markidis2010_compile... done" >> test_Mover-Markidis2010${TESTMover-Markidis2010-REF}.diff
 
 Check=
@@ -4858,7 +4858,7 @@ Compile=
 >>>@echo "test_Mover-Boris_compile..." > test_Mover-Boris${TESTMover-Boris-REF}.diff
 >>>./Config.pl -application=test/Mover-Boris -cplr-data-path=${TESTMover-BorisKEYS} -model-data-path=${TESTMover-BorisKEYS} -link-option=-lc++ -kameleon-path=nokameleon -boost-path=noboost -amps-test=on
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Mover-Boris_compile... done" >> test_Mover-Boris${TESTMover-Boris-REF}.diff
 
 Check=
@@ -4886,7 +4886,7 @@ Compile=
 >>>@echo "test_Mover-Boris_compile..." > test_Mover-Boris${TESTMover-Boris-REF}.diff
 >>>./Config.pl -application=test/Mover-Boris -cplr-data-path=${TESTMover-BorisKEYS} -model-data-path=${TESTMover-BorisKEYS} -spice-path=nospice  -kameleon-path=nokameleon -boost-path=noboost -amps-test=on
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Mover-Boris_compile... done" >> test_Mover-Boris${TESTMover-Boris-REF}.diff
 
 Check=
@@ -4910,7 +4910,7 @@ Compile=
 >>>@echo "test_Mover-Boris-relativistic_compile..." > test_Mover-Boris-relativistic${TESTMover-Boris-relativistic-REF}.diff
 >>>./Config.pl -application=test/Mover-Boris-relativistic -cplr-data-path=${TESTMover-Boris-relativisticKEYS} -model-data-path=${TESTMover-Boris-relativisticKEYS}  -link-option=-lc++  -spice-path=nospice -spice-kernels=nospice -kameleon-path=nokameleon -boost-path=noboost -amps-test=on
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Mover-Boris-relativistic_compile... done" >> test_Mover-Boris-relativistic${TESTMover-Boris-relativistic-REF}.diff
 
 Check=
@@ -4937,7 +4937,7 @@ Compile=
 >>>@echo "test_Mover-Boris-relativistic_compile..." > test_Mover-Boris-relativistic${TESTMover-Boris-relativistic-REF}.diff
 >>>./Config.pl -application=test/Mover-Boris-relativistic -cplr-data-path=${TESTMover-Boris-relativisticKEYS} -model-data-path=${TESTMover-Boris-relativisticKEYS}   -spice-path=nospice -spice-kernels=nospice -kameleon-path=nokameleon -boost-path=noboost -amps-test=on
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Mover-Boris-relativistic_compile... done" >> test_Mover-Boris-relativistic${TESTMover-Boris-relativistic-REF}.diff
 
 Check=
@@ -4961,7 +4961,7 @@ Compile=
 >>>@echo "test_Mover-gca-relativistic_compile..." > test_Mover-gca-relativistic${TESTMover-gca-relativistic-REF}.diff
 >>>./Config.pl -application=gca_mover -spice-path=nospice -spice-kernels=nospice
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Mover-gca-relativistic_compile... done" >> test_Mover-gca-relativistic${TESTMover-gca-relativistic-REF}.diff
 
 
@@ -5238,7 +5238,7 @@ Compile=
 >>>@mv ../TempSourceDir/AMPS/srcMars .
 >>>@rm -rf ../TempSourceDir
 
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@rm -rf srcMars
 >>>@mv srcMars--original srcMars
 
@@ -5270,7 +5270,7 @@ Keys=-model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/VENUS@@(0+stampede)
 Compile=
 >>>@echo "test_Venus-Hot-Oxygen_compile..." > test_Venus-Hot-Oxygen$(TESTVenus-Hot-Oxygen-REF).diff
 >>>./Config.pl -application=test/Venus-Hot-Oxygen -spice-path=nospice -spice-kernels=nospice  -amps-test=on ${TESTVenus-Hot-OxygenKEYS}
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Venus-Hot-Oxygen_compile... done" >> test_Venus-Hot-Oxygen$(TESTVenus-Hot-Oxygen-REF).diff
 
 Check=
@@ -5298,7 +5298,7 @@ Compile=
 >>>@mv ../TempSourceDir/AMPS/srcMars .
 >>>@rm -rf ../TempSourceDir
 
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@rm -rf srcMars
 >>>@mv srcMars--original srcMars
 
@@ -5338,7 +5338,7 @@ Compile=
 >>>./Config.pl -compiler-option=-D_TEST_INTERPOLATION_SWMF_
 
 >>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps); status=$$?; mv Makefile.local.bak Makefile.local; exit $$status
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps); status=$$?; mv Makefile.local.bak Makefile.local; exit $$status
 >>>@echo "test_InterpolateAMR-test_compile... done" >> test_InterpolateAMR-test$(TESTInterpolateAMR-test-REF).diff 
 
 Run=
@@ -5645,14 +5645,14 @@ Compile=
 >>>cd SWMF; ./Config.pl -o=PC:spice-path=nospice,spice-kernels=nospice,application=fluid-pic-coupler,amps-test=on
 ! the shared SWMF libraries first (serially): the parallel component LIB builds below need their modules
 >>>cd SWMF; for d in share/Library/src util/TIMING/src util/DATAREAD/srcIndices util/DATAREAD/srcMagnetogram util/DATAREAD/srcDemt util/EMPIRICAL/srcCosmicRay util/EMPIRICAL/srcEE util/EMPIRICAL/srcIE util/EMPIRICAL/srcGM util/EMPIRICAL/srcSC util/EMPIRICAL/srcUA CON/Library/src CON/Coupler/src; do ${MAKE} -C $$d LIB || exit 1; done
->>>cd SWMF/GM/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF/PC/AMPS; ${MAKE} -j8 LIB
+>>>cd SWMF/GM/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF/PC/AMPS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
 >>>cd SWMF; rm -f bin/SWMF.exe bin/SWMF.exe.PIC-coupling.base; ${MAKE} SWMF && cp bin/SWMF.exe bin/SWMF.exe.PIC-coupling.base
 >>>cd SWMF; ./Config.pl -o=PC:spice-path=nospice,spice-kernels=nospice,application=fluid-pic-coupler-with-correction,amps-test=on
->>>cd SWMF/PC/AMPS; ${MAKE} -j8 LIB
+>>>cd SWMF/PC/AMPS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
 >>>cd SWMF; rm -f bin/SWMF.exe.PIC-coupling.divE_corr; ${MAKE} SWMF && cp bin/SWMF.exe bin/SWMF.exe.PIC-coupling.divE_corr
 >>>cd SWMF; ./Config.pl -o=PC:spice-path=nospice,spice-kernels=nospice,application=fluid-pic-coupler-dynamic,amps-test=on
->>>cd SWMF/PC/AMPS; ${MAKE} -j8 LIB
+>>>cd SWMF/PC/AMPS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
 >>>cd SWMF; rm -f bin/SWMF.exe.PIC-coupling.dynamic; ${MAKE} SWMF && cp bin/SWMF.exe bin/SWMF.exe.PIC-coupling.dynamic
 >>>cd SWMF; ${MAKE} PIDL
 >>>@echo "test_AMPS-BATSRUS-PIC-coupling_compile... done" >> test_AMPS-BATSRUS-PIC-coupling.diff
@@ -5750,10 +5750,10 @@ Compile=
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=SP:g=2000
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih--fl-droge--jokipii,amps-test=on
 ! the component libraries first, in parallel ('make SWMF' builds them with 'make TMP_DIRS', i.e. serially)
->>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/OH/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j8 LIB
+>>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/OH/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
 >>>cd SWMF-IH/SWMF; ${MAKE} SWMF
 >>>@echo "test_SEP_SWMF_test19_fl_compile... done" >> test_SEP_SWMF_test19_fl.diff
 
@@ -5831,9 +5831,9 @@ Compile=
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=IH:u=Awsom,e=Awsom,ng=2,g=4,4,4
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih-mflampa-fl,amps-test=on
 ! the component libraries first, in parallel ('make SWMF' builds them with 'make TMP_DIRS', i.e. serially)
->>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j8 LIB
+>>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
 >>>cd SWMF-IH/SWMF; ${MAKE} SWMF
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--GC_compile... done" >> test_SEP-SC-IH--FL--FL-attachment--GC.diff
 
@@ -5908,9 +5908,9 @@ Compile=
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=IH:u=Awsom,e=Awsom,ng=2,g=4,4,4
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih--fl-droge__diffusion,amps-test=on
 ! the component libraries first, in parallel ('make SWMF' builds them with 'make TMP_DIRS', i.e. serially)
->>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j8 LIB
+>>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
 >>>cd SWMF-IH/SWMF; ${MAKE} SWMF
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_compile... done" >> test_SEP-SC-IH--FL--FL-attachment--Droge.diff
 
@@ -5992,9 +5992,9 @@ Compile=
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=IH:u=Awsom,e=Awsom,ng=2,g=4,4,4
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih--fl-droge__diffusion,amps-test=on
 ! the component libraries first, in parallel ('make SWMF' builds them with 'make TMP_DIRS', i.e. serially)
->>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j8 LIB
+>>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
 >>>cd SWMF-IH/SWMF; ${MAKE} SWMF
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_compile... done" >> test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion.diff
 
@@ -6077,9 +6077,9 @@ Compile=
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=IH:u=Awsom,e=Awsom,ng=2,g=4,4,4
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih--fl-he__diffusion,amps-test=on
 ! the component libraries first, in parallel ('make SWMF' builds them with 'make TMP_DIRS', i.e. serially)
->>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j8 LIB
+>>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
 >>>cd SWMF-IH/SWMF; ${MAKE} SWMF
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--He_diffusion_compile... done" >> test_SEP-SC-IH--FL--FL-attachment--He_diffusion.diff
 
@@ -6164,9 +6164,9 @@ Compile=
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=IH:u=Awsom,e=Awsom,ng=2,g=4,4,4
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih--fl-droge__diffusion,amps-test=on
 ! the component libraries first, in parallel ('make SWMF' builds them with 'make TMP_DIRS', i.e. serially)
->>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j8 LIB
+>>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
 >>>cd SWMF-IH/SWMF; ${MAKE} SWMF
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov_compile... done" >> test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov.diff
 
@@ -6248,9 +6248,9 @@ Compile=
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=IH:u=Awsom,e=Awsom,ng=2,g=4,4,4
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih--fl-droge__diffusion,amps-test=on
 ! the component libraries first, in parallel ('make SWMF' builds them with 'make TMP_DIRS', i.e. serially)
->>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j8 LIB
+>>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
 >>>cd SWMF-IH/SWMF; ${MAKE} SWMF
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE_compile... done" >> test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE.diff
 
@@ -6333,9 +6333,9 @@ Compile=
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=IH:u=Awsom,e=Awsom,ng=2,g=4,4,4
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih--fl-droge__diffusion,amps-test=on
 ! the component libraries first, in parallel ('make SWMF' builds them with 'make TMP_DIRS', i.e. serially)
->>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j8 LIB
+>>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
 >>>cd SWMF-IH/SWMF; ${MAKE} SWMF
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker_compile... done" >> test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker.diff
 
@@ -6418,9 +6418,9 @@ Compile=
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=IH:u=Awsom,e=Awsom,ng=2,g=4,4,4
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih--fl-droge__diffusion,amps-test=on
 ! the component libraries first, in parallel ('make SWMF' builds them with 'make TMP_DIRS', i.e. serially)
->>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j8 LIB
+>>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
 >>>cd SWMF-IH/SWMF; ${MAKE} SWMF
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin_compile... done" >> test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin.diff
 
@@ -6505,9 +6505,9 @@ Compile=
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=IH:u=Awsom,e=Awsom,ng=2,g=4,4,4
 >>>cd SWMF-IH/SWMF; ./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih-mflampa,amps-test=on
 ! the component libraries first, in parallel ('make SWMF' builds them with 'make TMP_DIRS', i.e. serially)
->>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j8 LIB
+>>>cd SWMF-IH/SWMF/SC/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/IH/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF-IH/SWMF/PT/AMPS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
 >>>cd SWMF-IH/SWMF; ${MAKE} SWMF
 >>>@echo "test_SEP-SC-IH--FL--Node-attachment--GC_compile... done" >> test_SEP-SC-IH--FL--Node-attachment--GC.diff
 
@@ -6580,8 +6580,8 @@ Compile=
 >>>cd SWMF; ./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=europa-test,amps-test=on
 ! the shared SWMF libraries first (serially): the parallel component LIB builds below need their modules
 >>>cd SWMF; for d in share/Library/src util/TIMING/src util/DATAREAD/srcIndices util/DATAREAD/srcMagnetogram util/DATAREAD/srcDemt util/EMPIRICAL/srcCosmicRay util/EMPIRICAL/srcEE util/EMPIRICAL/srcIE util/EMPIRICAL/srcGM util/EMPIRICAL/srcSC util/EMPIRICAL/srcUA CON/Library/src CON/Coupler/src; do ${MAKE} -C $$d LIB || exit 1; done
->>>cd SWMF/GM/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF/PT/AMPS; ${MAKE} -j8 LIB
+>>>cd SWMF/GM/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF/PT/AMPS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
 ! no SWMF.exe of an earlier test may be left for the rundir stage to copy when this build fails
 >>>cd SWMF; rm -f bin/SWMF.exe; ${MAKE} SWMF
 >>>@echo "test_AMPS-BATSRUS-Europa_compile... done" >> test_AMPS-BATSRUS-Europa.diff
@@ -6666,8 +6666,8 @@ Compile=
 >>>cd SWMF; ./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=oh,amps-test=on,no-signals
 ! the shared SWMF libraries first (serially): the parallel component LIB builds below need their modules
 >>>cd SWMF; for d in share/Library/src util/TIMING/src util/DATAREAD/srcIndices util/DATAREAD/srcMagnetogram util/DATAREAD/srcDemt util/EMPIRICAL/srcCosmicRay util/EMPIRICAL/srcEE util/EMPIRICAL/srcIE util/EMPIRICAL/srcGM util/EMPIRICAL/srcSC util/EMPIRICAL/srcUA CON/Library/src CON/Coupler/src; do ${MAKE} -C $$d LIB || exit 1; done
->>>cd SWMF/OH/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF/PT/AMPS; ${MAKE} -j8 LIB
+>>>cd SWMF/OH/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF/PT/AMPS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
 ! no SWMF.exe of an earlier test may be left for the rundir stage to copy when this build fails
 >>>cd SWMF; rm -f bin/SWMF.exe; ${MAKE} SWMF
 >>>cd SWMF; ${MAKE} PIDL
@@ -6764,8 +6764,8 @@ Compile=
 >>>cd SWMF; ./Config.pl -o=PC:spice-path=nospice,spice-kernels=nospice,application=fluxrope-dynamic,amps-test=on,avx=256
 ! the shared SWMF libraries first (serially): the parallel component LIB builds below need their modules
 >>>cd SWMF; for d in share/Library/src util/TIMING/src util/DATAREAD/srcIndices util/DATAREAD/srcMagnetogram util/DATAREAD/srcDemt util/EMPIRICAL/srcCosmicRay util/EMPIRICAL/srcEE util/EMPIRICAL/srcIE util/EMPIRICAL/srcGM util/EMPIRICAL/srcSC util/EMPIRICAL/srcUA CON/Library/src CON/Coupler/src; do ${MAKE} -C $$d LIB || exit 1; done
->>>cd SWMF/GM/BATSRUS; ${MAKE} -j8 LIB
->>>cd SWMF/PC/AMPS; ${MAKE} -j8 LIB
+>>>cd SWMF/GM/BATSRUS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
+>>>cd SWMF/PC/AMPS; ${MAKE} -j$(TESTCOMPILEJOBS) LIB
 ! no SWMF.exe of an earlier test may be left for the rundir stage to copy when this build fails
 >>>cd SWMF; rm -f bin/SWMF.exe; ${MAKE} SWMF
 >>>cd SWMF; ${MAKE} PIDL
@@ -6814,7 +6814,7 @@ Compile=
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/cdap_test ${TESTcdap_testKEYS} 
 >>>@rm -rf srcTemp
->>>-@($(MAKE) -j8  amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS)  amps)
 >>>@echo "test_cdap_test_compile... done" >> test_cdap_test$(TESTcdap_test-REF).diff
 
 !The output of the run is kept in the run directory (amps.out; the exit status of mpirun is preserved): the check
@@ -6947,7 +6947,7 @@ Compile=
 >>>@echo "test_Earth-cutoff-rigidity-gridless-steadystate_t96_compile..." > test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
 >>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-cutoff-rigidity-gridless-steadystate_t96KEYS)
 >>>rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Earth-cutoff-rigidity-gridless-steadystate_t96_compile... done" >> test_Earth-cutoff-rigidity-gridless-steadystate_t96$(TESTEarth-cutoff-rigidity-gridless-steadystate_t96-REF).diff
 
 Run=
@@ -7015,7 +7015,7 @@ Compile=
 >>>@echo "test_Earth-vertical-cutoff-rigidity-gridless_compile..." > test_Earth-vertical-cutoff-rigidity-gridless$(TESTEarth-vertical-cutoff-rigidity-gridless-REF).diff
 >>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-vertical-cutoff-rigidity-gridlessKEYS)
 >>>rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Earth-vertical-cutoff-rigidity-gridless_compile... done" >> test_Earth-vertical-cutoff-rigidity-gridless$(TESTEarth-vertical-cutoff-rigidity-gridless-REF).diff
 
 Run=
@@ -7115,7 +7115,7 @@ Compile=
 >>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-hybrid_compile..." > test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
 >>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-vertical-cutoff-rigidity-gridless-hybridKEYS)
 >>>rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-hybrid_compile... done" >> test_Earth-vertical-cutoff-rigidity-gridless-hybrid$(TESTEarth-vertical-cutoff-rigidity-gridless-hybrid-REF).diff
 
 Run=
@@ -7219,7 +7219,7 @@ Compile=
 >>>@echo "test_Geospace-Flux-Gridless_compile..." > test_Geospace-Flux-Gridless$(TESTGeospace-Flux-Gridless-REF).diff
 >>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTGeospace-Flux-GridlessKEYS)
 >>>rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Geospace-Flux-Gridless_compile... done" >> test_Geospace-Flux-Gridless$(TESTGeospace-Flux-Gridless-REF).diff
 
 Run=
@@ -7619,7 +7619,7 @@ Compile=
 >>>@echo "test_Geospace-Flux-Gridless-hybrid_compile..." > test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 >>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTGeospace-Flux-Gridless-hybridKEYS)
 >>>rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Geospace-Flux-Gridless-hybrid_compile... done" >> test_Geospace-Flux-Gridless-hybrid$(TESTGeospace-Flux-Gridless-hybrid-REF).diff
 
 Run=
@@ -8018,7 +8018,7 @@ Compile=
 >>>@echo "test_Earth-cutoff-rigidity-gridless-trajectory_compile..." > test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 >>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-cutoff-rigidity-gridless-trajectoryKEYS)
 >>>rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Earth-cutoff-rigidity-gridless-trajectory_compile... done" >> test_Earth-cutoff-rigidity-gridless-trajectory$(TESTEarth-cutoff-rigidity-gridless-trajectory-REF).diff
 
 Run=
@@ -8226,7 +8226,7 @@ Compile=
 >>>@echo "test_Earth-cutoff-rigidity-gridless-trajectory-ta16_compile..." > test_Earth-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
 >>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16KEYS)
 >>>rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Earth-cutoff-rigidity-gridless-trajectory-ta16_compile... done" >> test_Earth-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
 
 Run=
@@ -8286,7 +8286,7 @@ Compile=
 >>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_compile..." > test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
 >>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectoryKEYS)
 >>>rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_compile... done" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-REF).diff
 
 Run=
@@ -8505,7 +8505,7 @@ Compile=
 >>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16_compile..." > test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
 >>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16KEYS)
 >>>rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16_compile... done" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory-ta16$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory-ta16-REF).diff
 
 Run=
@@ -8564,7 +8564,7 @@ Compile=
 >>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only_compile..." > test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-REF).diff
 >>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory_dipole_onlyKEYS)
 >>>rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only_compile... done" >> test_Earth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only$(TESTEarth-vertical-cutoff-rigidity-gridless-trajectory_dipole_only-REF).diff
 
 Run=
@@ -8635,7 +8635,7 @@ Compile=
 >>>@echo "test_Earth-cutoff-rigidity-3d_compile..." > test_Earth-cutoff-rigidity-3d$(TESTEarth-cutoff-rigidity-3d-REF).diff
 >>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-cutoff-rigidity-3dKEYS)
 >>>rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Earth-cutoff-rigidity-3d_compile... done" >> test_Earth-cutoff-rigidity-3d$(TESTEarth-cutoff-rigidity-3d-REF).diff
 
 Run=
@@ -8728,7 +8728,7 @@ Compile=
 >>>@echo "test_Earth-cutoff-rigidity-3d-analytic_compile..." > test_Earth-cutoff-rigidity-3d-analytic$(TESTEarth-cutoff-rigidity-3d-analytic-REF).diff
 >>>./Config.pl -application=test/geospace/geospace -amps-test=on $(TESTEarth-cutoff-rigidity-3d-analyticKEYS)
 >>>rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Earth-cutoff-rigidity-3d-analytic_compile... done" >> test_Earth-cutoff-rigidity-3d-analytic$(TESTEarth-cutoff-rigidity-3d-analytic-REF).diff
 
 Run=
@@ -8821,7 +8821,7 @@ Compile=
 >>>@echo "test_Earth-3d_forward-dipole_analytic_compile..." > test_Earth-3d_forward-dipole_analytic$(TESTEarth-3d_forward-dipole_analytic-REF).diff
 >>>./Config.pl -application=test/geospace/geospace_forward -amps-test=on $(TESTEarth-3d_forward-dipole_analyticKEYS)
 >>>rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Earth-3d_forward-dipole_analytic_compile... done" >> test_Earth-3d_forward-dipole_analytic$(TESTEarth-3d_forward-dipole_analytic-REF).diff
 
 Run=
@@ -8895,7 +8895,7 @@ Compile=
 >>>@echo "test_Earth-3d_forward-t96_analytic_compile..." > test_Earth-3d_forward-t96_analytic$(TESTEarth-3d_forward-t96_analytic-REF).diff
 >>>./Config.pl -application=test/geospace/geospace_forward -amps-test=on $(TESTEarth-3d_forward-t96_analyticKEYS)
 >>>rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Earth-3d_forward-t96_analytic_compile... done" >> test_Earth-3d_forward-t96_analytic$(TESTEarth-3d_forward-t96_analytic-REF).diff
 
 Run=
@@ -8969,7 +8969,7 @@ Compile=
 >>>@echo "test_Earth-3d_forward-t96_compile..." > test_Earth-3d_forward-t96$(TESTEarth-3d_forward-t96-REF).diff
 >>>./Config.pl -application=test/geospace/geospace_forward -amps-test=on $(TESTEarth-3d_forward-t96KEYS)
 >>>rm -rf srcTemp
->>>-@($(MAKE) -j8 amps)
+>>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Earth-3d_forward-t96_compile... done" >> test_Earth-3d_forward-t96$(TESTEarth-3d_forward-t96-REF).diff
 
 Run=
@@ -9068,7 +9068,7 @@ Compile=
 ! GM/IE/IM/RB restart (SWMF_RESTART.20140410_000200) in SWMF/run_test; keep a private copy of that directory,
 ! because the other SWMF tests share SWMF/ and nothing may touch it in the run stage
 >>>@echo "Running SWMF test_swpc..." >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
->>>cd SWMF; $(MAKE) -j8 test_swpc
+>>>cd SWMF; $(MAKE) -j$(TESTCOMPILEJOBS) test_swpc
 >>>rm -rf SWMF/run_test.Geospace-SWMF-AMPS; cp -a SWMF/run_test SWMF/run_test.Geospace-SWMF-AMPS
 
 >>>@echo "Installing AMPS as PT component..." >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
@@ -9076,7 +9076,7 @@ Compile=
 >>>cd SWMF; ./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/geospace/swmf/geospace,amps-test=on
 
 >>>@echo "Compiling SWMF with AMPS..." >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
->>>cd SWMF; rm -f bin/SWMF.exe.Geospace-SWMF-AMPS; $(MAKE) -j8 && cp bin/SWMF.exe bin/SWMF.exe.Geospace-SWMF-AMPS
+>>>cd SWMF; rm -f bin/SWMF.exe.Geospace-SWMF-AMPS; $(MAKE) -j$(TESTCOMPILEJOBS) && cp bin/SWMF.exe bin/SWMF.exe.Geospace-SWMF-AMPS
 
 >>>@echo "test_Geospace-SWMF-AMPS_compile... done" >> test_Geospace-SWMF-AMPS$(TESTGeospace-SWMF-AMPS-REF).diff
 

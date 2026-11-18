@@ -66,10 +66,32 @@ class Machines(unittest.TestCase):
                                 (machine(start="10pm"), "box.json", "HH:MM"),
                                 (machine(timeouts_s={"link": 5}), "box.json", "timeouts_s"),
                                 (machine(configs=[]), "box.json", "non-empty"),
-                                (machine(name="Box"), "Box.json", "lower case")):
+                                (machine(name="Box"), "Box.json", "lower case"),
+                                (machine(compile_lanes=0), "box.json", "compile_lanes must be a positive integer"),
+                                (machine(compile_jobs="all"), "box.json", "compile_jobs must be a positive integer"),
+                                (machine(configs=[{"config": "gnu", "config_pl": ["-install"], "compile_jobs": 0}]),
+                                 "box.json", "configs[1]: compile_jobs must be a positive integer"),
+                                (machine(make_vars={"TESTCOMPILEJOBS": "8"}), "box.json", "compile_jobs")):
             with self.assertRaises(MachineError) as caught:
                 parse_machine(raw, Path(path))
             self.assertIn(text, str(caught.exception))
+
+    def test_compile_jobs(self):
+        """make -j of a Makefile.test compile (TESTCOMPILEJOBS): the cores shared by the compile lanes and by the
+        runners that may run at once, unless the machine or the configuration sets compile_jobs."""
+        def jobs(config=None, **extra):
+            m = parse_machine(machine(**extra), Path("box.json"))
+            return m.compile_jobs_for(m.configs[0] if config is None else config)
+        self.assertEqual(jobs(cores=36, compile_lanes=4), 9)
+        self.assertEqual(jobs(cores=36), 36)
+        self.assertEqual(jobs(cores=36, compile_lanes=4, max_parallel=2), 4)
+        self.assertEqual(jobs(cores=2, compile_lanes=4), 1)
+        self.assertEqual(jobs(cores=36, compile_lanes=4, compile_jobs=12), 12)
+        m = parse_machine(machine(cores=36, compile_lanes=4, compile_jobs=12, configs=[
+            {"config": "gnu", "config_pl": ["-install"]},
+            {"config": "intel", "config_pl": ["-install"], "compile_jobs": 6}]), Path("box.json"))
+        self.assertEqual([m.compile_jobs_for(c) for c in m.configs] + [m.compile_jobs_for()], [12, 6, 12])
+        self.assertEqual(parse_machine(machine(), Path("box.json")).compile_lanes, 1)
 
     def test_switching_off_hides_columns(self):
         with tempfile.TemporaryDirectory() as tmp:

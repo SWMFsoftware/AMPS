@@ -105,6 +105,7 @@ The aim is that adding or removing a machine or a test touches one file, and `am
 | `core_profile` | the machine's `test/qualification-machine/*.json` for `src/test/run_tests.py` (that tool rejects unknown keys, so its settings stay in its own file); `null` reports core suites as skipped |
 | `capabilities` | what the machine offers (`spice`, `swmf-data`, `gpu`, …); sources that `require` a missing one are reported as skipped |
 | `lanes`, `timeouts_s` | parallel test lanes; per-stage time limits (`compile`, `rundir`, `run`, `check`) |
+| `compile_lanes`, `compile_jobs` | Makefile.test tests compiled at once (each in its own copy of the workspace), and `make -j` of each compile (`TESTCOMPILEJOBS`; default `cores / (compile_lanes x max_parallel)`; a `configs[]` entry may set its own `compile_jobs`) |
 | `configs[]` | one entry per compiler configuration = one report column `<machine>-<config>`: `compiler`, `toolchain` (display), `setup` (module loads), `config_pl` (Config.pl calls), `after_install`, optional `sources` (only these sources), `enabled` |
 
 **Routine file** `routine.json` (`amps_nightly/routine.py`):
