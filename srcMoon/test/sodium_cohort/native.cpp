@@ -39,6 +39,11 @@ struct Input {
  std::array<double,3> position{},velocity{};
  Moon::Species::ReactionExecution::ClosureBound numberBound;
  Moon::Species::ReducedKinematics::Bound rateBound;
+ // Explicit numerical weights for the approved 1:1/1:8/8:1 reference matrix.
+ // Production mode preserves normal initialized weights; represented numbers
+ // are always independently checked against the actual W*correction product.
+ std::string referenceWeightMode="production";
+ double parentReferenceWeight=0,ionReferenceWeight=0;
 };
 std::string Json(const std::string&s){std::ostringstream o;o<<'"';for(unsigned char c:s){
  if(c=='"'||c=='\\')o<<'\\'<<c;else if(c=='\n')o<<"\\n";else if(c=='\r')o<<"\\r";else if(c=='\t')o<<"\\t";
@@ -61,7 +66,7 @@ Input Parse(const std::string& path,bool sourceOnly){
  if(!doc.root.assignments.empty()||doc.root.blocks.size()!=1||doc.root.blocks[0].kind!="sodium_qualification"||doc.root.blocks[0].name.empty())throw std::runtime_error("one named sodium_qualification block required");
  const auto& b=doc.root.blocks[0];
  const std::set<std::string> known={"application_input","campaign_seed","case_kind","channel_id","constants_file","constants_sha256","crosswalk_file","crosswalk_sha256","earth_occultation","electron_maximum_relative_acceleration_error","electron_maximum_relative_inertial_mass_error","electron_maximum_relative_relativistic_kinetic_error","electron_state_id","energy_absolute_bound","energy_reference_identity","energy_relative_bound","exposure_absolute_depth_tolerance","exposure_maximum_geometry_intervals","exposure_maximum_segments","exposure_relative_depth_tolerance","exposure_root_time_tolerance_s","genealogy_capacity","hazard_maximum_root_refinements","inertial_frame","inertial_origin","ion_compiled_species","ion_maximum_relative_acceleration_error","ion_maximum_relative_inertial_mass_error","ion_maximum_relative_relativistic_kinetic_error","ion_state_id","isotopes_file","isotopes_sha256","mass_absolute_bound","mass_relative_bound","maximum_classical_speed_ms","model_identity","number_absolute_bound","number_relative_bound","momentum_absolute_bound","momentum_relative_bound","original_parents","parent_compiled_species","parent_maximum_relative_acceleration_error","parent_maximum_relative_inertial_mass_error","parent_maximum_relative_relativistic_kinetic_error","parent_state_id","physical_horizon_s","physical_step_s","physical_steps","planner_energy_absolute_bound","planner_energy_relative_bound","planner_mass_absolute_bound","planner_mass_relative_bound","planner_momentum_absolute_bound","planner_momentum_relative_bound","profile_metadata_file","profile_metadata_sha256","profile_native_manifest_file","profile_native_manifest_sha256","represented_number_per_parent","rotation_absolute_bound","rotation_relative_bound","rate_absolute_bound","rate_relative_bound","schema","solar_endpoint","source_position_lso_m_0","source_position_lso_m_1","source_position_lso_m_2","source_reference_distance_identity","source_reference_distance_m","source_velocity_lso_ms_0","source_velocity_lso_ms_1","source_velocity_lso_ms_2","states_file","states_sha256","threshold_absolute_bound","threshold_relative_bound","transport_policy_evidence_file","transport_policy_evidence_sha256","transport_policy_identity","unit_vector_tolerance"};
- for(const auto&a:b.assignments)if(!known.count(a.key))throw std::runtime_error(a.where.Prefix()+"unknown sodium_qualification key "+a.key);
+ for(const auto&a:b.assignments)if(!known.count(a.key)&&a.key!="photon_energy_policy"&&a.key!="reference_weight_mode"&&a.key!="parent_reference_weight"&&a.key!="ion_reference_weight")throw std::runtime_error(a.where.Prefix()+"unknown sodium_qualification key "+a.key);
  Owner o{b,{}};Input c;c.cohort=b.name;c.documents=doc.files;
  if(o.Text("schema")!="srcMoon-native-sodium-cohort-v1")throw std::runtime_error("unsupported native sodium cohort schema");
  c.applicationPath=o.Path("application_input");std::string error;
@@ -92,6 +97,18 @@ Input Parse(const std::string& path,bool sourceOnly){
  r.exposure.rootTimeToleranceS=o.Double("exposure_root_time_tolerance_s");r.exposure.absoluteDepthTolerance=o.Number("exposure_absolute_depth_tolerance");r.exposure.relativeDepthTolerance=o.Number("exposure_relative_depth_tolerance");
  r.exposure.maximumSegments=o.Uint("exposure_maximum_segments");r.exposure.maximumGeometryIntervals=o.Uint("exposure_maximum_geometry_intervals");r.maximumRootRefinements=o.Uint("hazard_maximum_root_refinements");
  auto&d=r.controls;d.identity=o.Text("model_identity");d.channelId=o.Text("channel_id");d.energyReferenceIdentity=o.Text("energy_reference_identity");
+ if(b.Find("photon_energy_policy")){
+  const auto energyPolicy=o.Text("photon_energy_policy");
+  if(energyPolicy=="source-effective-photon")d.photonEnergyPolicy=Moon::Species::ReducedKinematics::PhotonEnergyPolicy::SourceEffectivePhoton;
+  else if(energyPolicy!="source-equals-state")throw std::runtime_error("photon_energy_policy must be source-equals-state or source-effective-photon");
+ }
+ if(b.Find("reference_weight_mode"))c.referenceWeightMode=o.Text("reference_weight_mode");
+ if(c.referenceWeightMode=="explicit"){
+  c.parentReferenceWeight=o.Double("parent_reference_weight");c.ionReferenceWeight=o.Double("ion_reference_weight");
+  if(!(c.parentReferenceWeight>0)||!(c.ionReferenceWeight>0))throw std::runtime_error("explicit reference weights must be finite positive represented-number weights");
+ }else if(c.referenceWeightMode!="production"||b.Find("parent_reference_weight")||b.Find("ion_reference_weight")){
+  throw std::runtime_error("reference_weight_mode must be production or explicit; only explicit mode admits caller-supplied reference weights");
+ }
  const auto endpoint=o.Text("solar_endpoint");if(endpoint!="quiet"&&endpoint!="active")throw std::runtime_error("separate quiet/active endpoint required");d.solar=endpoint=="quiet"?Moon::Species::Photochemistry::SolarCase::Quiet:Moon::Species::Photochemistry::SolarCase::Active;
  for(auto pair:{std::make_pair("parent",&d.parent),std::make_pair("ion",&d.ion),std::make_pair("electron",&d.electron)}){
   const std::string prefix=pair.first;auto& limits=pair.second->modelErrorLimits;
@@ -115,12 +132,16 @@ void InputReceipt(const Input& c,const fs::path& out,bool sourceOnly,const Moon:
  if(PIC::ThisThread!=0)return;
  std::ofstream f(out/"input_receipt.json");f<<std::setprecision(21);
  f<<"{\n  \"schema\": \"srcMoon-native-sodium-input-receipt-v1\",\n  \"profile\": {\"path\": "<<Json(c.source.profileMetadataPath)<<", \"sha256\": "<<Json(c.source.profileMetadataSha256)<<"},\n  \"mapping\": {\"parent\": "<<Json(c.source.parentStateId)<<", \"ion\": "<<Json(c.source.ionStateId)<<", \"electron\": "<<Json(c.source.electronStateId);
- if(!sourceOnly)f<<", \"event_frame\": \"LSO\", \"profile_sha256\": "<<Json(c.source.profileMetadataSha256)<<", \"ion_compiled_species\": "<<c.source.ionCompiledSpecies<<", \"ion_catalog_species\": 1";
+ if(!sourceOnly)f<<", \"event_frame\": \"LSO\", \"profile_sha256\": "<<Json(c.source.profileMetadataSha256)<<", \"ion_compiled_species\": "<<c.source.ionCompiledSpecies<<", \"ion_catalog_species\": 1, \"energy_reference_identity\":"<<Json(c.source.controls.energyReferenceIdentity)<<", \"photon_energy_policy\": "<<Json(c.source.controls.photonEnergyPolicy==Moon::Species::ReducedKinematics::PhotonEnergyPolicy::SourceEqualsState?"source-equals-state":"source-effective-photon")<<", \"source_crosswalk\":{\"path\":"<<Json(c.source.crosswalkPath)<<",\"sha256\":"<<Json(c.source.crosswalkSha256)<<"}";
  f<<"},\n  \"phase\": "<<Json(sourceOnly?"source-availability-only":"explicit-experimental-physical-input");
  if(!sourceOnly){f<<",\n  \"bounds\": {";bool first=true;for(const auto& item:{std::make_pair("mass",c.source.controls.plannerAuthorization.bounds.modelMassKg),std::make_pair("momentum",c.source.controls.plannerAuthorization.bounds.momentumKgMS),std::make_pair("energy",c.source.controls.plannerAuthorization.bounds.energyJ)}){
   if(!first)f<<',';first=false;f<<Json(item.first)<<": {\"absolute\": \""<<item.second.absolute<<"\", \"relative\": \""<<item.second.relative<<"\"}";}
  f<<",\"rate_s\":{\"absolute\":\""<<c.rateBound.absolute<<"\",\"relative\":\""<<c.rateBound.relative<<"\"},\"number\":{\"absolute\":\""<<c.numberBound.absolute<<"\",\"relative\":\""<<c.numberBound.relative<<"\"},\"rotation\":{\"absolute\":\""<<c.source.controls.rotation.absolute<<"\",\"relative\":\""<<c.source.controls.rotation.relative<<"\"}";
  f<<"},\n  \"original_parents\": "<<c.parents<<",\n  \"physical_steps\": "<<c.steps<<",\n  \"physical_step_s\": \""<<c.duration<<"\",\n  \"physical_horizon_s\": \""<<c.horizon<<"\",\n  \"initial_represented_number\": \""<<c.representedNumber<<"\",\n  \"case_kind\": "<<Json(c.caseKind)<<",\n  \"cohort_id\": "<<Json(c.cohort)<<",\n  \"seed\": "<<c.source.random.seed<<",\n  \"source_reference_distance_m\": \""<<c.source.sourceReferenceDistanceM<<"\",\n  \"source_reference_distance_identity\": "<<Json(c.source.sourceReferenceDistanceIdentity);}
+ if(!sourceOnly){
+  f<<",\n  \"reference_weight_mode\": "<<Json(c.referenceWeightMode);
+  if(c.referenceWeightMode=="explicit")f<<",\n  \"configured_parent_reference_weight\": \""<<c.parentReferenceWeight<<"\",\n  \"configured_ion_reference_weight\": \""<<c.ionReferenceWeight<<"\"";
+ }
  if(geometry){
   const auto* transport=Moon::GetCommonTransportClock();if(!transport)throw std::runtime_error("actual native common transport clock unavailable after normal startup");
   f<<",\n  \"transport_origin_et_s\": \""<<transport->originEtS()<<"\"";
@@ -165,7 +186,41 @@ int Execute(const Input& c,std::shared_ptr<S::Prepared> prepared,const fs::path&
  }
  // The explicit physical cohort dt replaces only this isolated reference
  // experiment's actual native dt table; it is never inferred from species.
+ // In global modes the normal public SetLocalTimeStep API is a MINIMUM
+ // reduction. It cannot increase the ordinary species flight/gyro step to
+ // this declared zero-force reference interval. Reset the global reduction
+ // accumulators to their normal uninitialized sentinel BEFORE calling that
+ // same API, after amps_init and before the first common step or particle.
+ // Without this reset Na and Na+ retain different normal startup minima and
+ // BeginCommonTransportStep correctly refuses the mixed clocks. Local tables
+ // are direct assignments and require no reset. No normal application mode,
+ // common-time admission rule, core setter, or accepted clock is changed.
+#if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
+ for(int species=0;species<PIC::nTotalSpecies;++species)
+   PIC::ParticleWeightTimeStep::GlobalTimeStep[species]=-1.0;
+#elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
+ PIC::ParticleWeightTimeStep::GlobalTimeStep[0]=-1.0;
+#elif _SIMULATION_TIME_STEP_MODE_ != _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
+ throw std::runtime_error("explicit cohort timestep requires a supported actual PIC timestep table mode");
+#endif
  for(unsigned i=0;i<PIC::DomainBlockDecomposition::nLocalBlocks;++i){auto* n=PIC::DomainBlockDecomposition::BlockTable[i];if(!n||!n->block)continue;for(int species=0;species<PIC::nTotalSpecies;++species)n->block->SetLocalTimeStep(c.duration,species);}
+ // Read the actual public values back; a requested input or marker is not
+ // proof that the common physical interval is installed. The normal common
+ // clock independently performs its collective equality check at Begin.
+ for(unsigned i=0;i<PIC::DomainBlockDecomposition::nLocalBlocks;++i){auto* n=PIC::DomainBlockDecomposition::BlockTable[i];if(!n||!n->block)continue;
+   for(int species=0;species<PIC::nTotalSpecies;++species)
+     if(n->block->GetLocalTimeStep(species)!=c.duration)
+       throw std::runtime_error("actual native timestep differs from the explicitly declared cohort interval before particle creation");
+ }
+ // Exercise the normal PIC weight tables through their public setters. This
+ // is the declared numerical weight-ratio experiment, not a daughter dt factor
+ // or a change to the normal application's weight policy. Source number and
+ // all live product readbacks remain subject to the existing exact checks.
+ if(c.referenceWeightMode=="explicit")for(unsigned index=0;index<PIC::DomainBlockDecomposition::nLocalBlocks;++index){
+  auto* block=PIC::DomainBlockDecomposition::BlockTable[index];if(!block||!block->block)continue;
+  block->block->SetLocalParticleWeight(c.parentReferenceWeight,c.source.parentCompiledSpecies);
+  block->block->SetLocalParticleWeight(c.ionReferenceWeight,c.source.ionCompiledSpecies);
+ }
  if(c.parents>static_cast<std::uint64_t>(std::numeric_limits<int>::max()))throw std::runtime_error("parent reporting exceeds MPI int-count resource domain; use a separately declared cluster cohort/report partition, never drop parents");
  // A declared exospheric source cannot begin inside/on the solid. Sphere
  // uses its actual compiled radius. LOLA is the production radially generated
@@ -249,6 +304,7 @@ int Execute(const Input& c,std::shared_ptr<S::Prepared> prepared,const fs::path&
   vector("photon_inertial_p",receipt.incomingPhoton.inertialMomentumKgMS);scalar("photon_inertial_j",receipt.incomingPhoton.inertialEnergyJ);
   vector("bath_event_p",receipt.bathEventMomentumChangeKgMS);scalar("bath_event_j",receipt.bathEventEnergyChangeJ);scalar("bath_mass_kg",receipt.bathModelMassChangeKg);
   scalar("electron_state_j",receipt.outgoingElectron.stateEnergyJ);scalar("source_threshold_j",receipt.nativeThresholdJ);scalar("source_mean_excess_j",receipt.matchedSourceMeanExcessJ);scalar("source_q_j",receipt.stateQJ);
+  scalar("physical_threshold_j",receipt.physicalThresholdJ);scalar("physical_minus_source_threshold_j",receipt.physicalMinusSourceThresholdJ);
   scalar("source_rate_1au_s",receipt.sourceRate1AuS);scalar("source_rate_event_s",receipt.eventRateS);scalar("accepted_rate_s",e.acceptedInstantaneousRateS);
   scalar("relative_event_time_s",e.relativeEventTimeS);scalar("event_epoch_et_s",receipt.frame.physicalEventEpochEtS);scalar("geometry_basis_et_s",receipt.frame.geometryBasisEpochEtS);
   vector("velocity_offset_event",receipt.frame.velocityOffsetEventMS);for(unsigned k=0;k<9;++k)scalar("inertial_to_event_r"+std::to_string(k),receipt.frame.inertialToEventRotation[k]);

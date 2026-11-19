@@ -43,8 +43,35 @@ Vector3 Extended(const R::Vector3& value){return {{value[0],value[1],value[2]}};
 Vector3 Rotate(const std::array<Real,9>& r,const Vector3& v){
   Vector3 result{};for(unsigned i=0;i<3;++i)for(unsigned k=0;k<3;++k)result[i]+=r[3*i+k]*v[k];return result;
 }
-Vector3 InverseRotate(const std::array<Real,9>& r,const Vector3& v){
-  Vector3 result{};for(unsigned i=0;i<3;++i)for(unsigned k=0;k<3;++k)result[i]+=r[3*k+i]*v[k];return result;
+bool InverseRotate(const std::array<Real,9>& r,const Vector3& v,Vector3* output){
+  // SPICE supplies rounded coefficients. Proper rotation within an explicit
+  // numerical bound does NOT make transpose the exact inverse of those actual
+  // coefficients: at a 30 km/s affine offset its error is observable beside
+  // a zero LSO parent momentum. Solve the supplied relation, without changing
+  // or orthogonalizing its matrix. Partial pivoting is deterministic and the
+  // caller verifies the mass-weighted forward roundtrip under EXISTING bounds.
+  std::array<std::array<Real,4>,3> a{};
+  for(unsigned i=0;i<3;++i){for(unsigned j=0;j<3;++j)a[i][j]=r[3*i+j];a[i][3]=v[i];}
+  for(unsigned k=0;k<3;++k){
+    unsigned pivot=k;
+    for(unsigned i=k+1;i<3;++i)if(std::fabs(a[i][k])>std::fabs(a[pivot][k]))pivot=i;
+    if(!Finite(a[pivot][k])||a[pivot][k]==0)return false;
+    if(pivot!=k)std::swap(a[pivot],a[k]);
+    for(unsigned i=k+1;i<3;++i){
+      const Real factor=a[i][k]/a[k][k];
+      if(!Finite(factor))return false;
+      a[i][k]=0;
+      for(unsigned j=k+1;j<4;++j){a[i][j]-=factor*a[k][j];if(!Finite(a[i][j]))return false;}
+    }
+  }
+  Vector3 result{};
+  for(int i=2;i>=0;--i){
+    Real rhs=a[static_cast<unsigned>(i)][3];
+    for(unsigned j=static_cast<unsigned>(i)+1;j<3;++j)rhs-=a[static_cast<unsigned>(i)][j]*result[j];
+    result[static_cast<unsigned>(i)]=rhs/a[static_cast<unsigned>(i)][static_cast<unsigned>(i)];
+    if(!Finite(result[static_cast<unsigned>(i)]))return false;
+  }
+  *output=result;return true;
 }
 bool Kinetic(const Vector3& velocity,Real mass,Real* output){
   const Real scaled=Norm(velocity)*std::sqrt(mass);*output=(scaled/2)*scaled;
@@ -155,6 +182,15 @@ Status SodiumPhotoionization::Create(const P::Registry& source,const Definition&
     return Error(Code::InvalidInput,"explicit pinned profile/crosswalk, common energy reference and exact source-identified SI eV conversion are required");
   const int endpoint=static_cast<int>(d.solar);
   if(endpoint!=0&&endpoint!=1)return Error(Code::InvalidInput,"quiet and active are distinct source endpoints; no interpolation is selected");
+  if(d.photonEnergyPolicy!=K::PhotonEnergyPolicy::SourceEqualsState&&
+      d.photonEnergyPolicy!=K::PhotonEnergyPolicy::SourceEffectivePhoton)
+    return Error(Code::InvalidInput,"unknown photon source/physical-state energy convention");
+  if(d.photonEnergyPolicy==K::PhotonEnergyPolicy::SourceEffectivePhoton){
+    if(d.physicalThresholdSourceIdentity.empty())
+      return Error(Code::Unavailable,"source-effective photon needs the authenticated physical threshold source identity");
+    if(d.physicalThresholdSourceIdentity!=d.ion.state.definition().formation.sourceIdentity)
+      return Error(Code::SourceMismatch,"source-effective threshold evidence differs from the resolved ion formation-energy source");
+  }
   if(!d.plannerAuthorization.qualified||d.plannerAuthorization.identity.empty()||d.plannerAuthorization.evidenceIdentity.empty())
     return Error(Code::Unavailable,"caller transport-policy admission is missing; the composer does not qualify physical kinetics");
   const auto& a=d.plannerAuthorization;
@@ -203,6 +239,13 @@ Status SodiumPhotoionization::Create(const P::Registry& source,const Definition&
     if(!Positive(data->thresholdJ)||!Finite(data->meanExcessJ)||data->meanExcessJ<0)
       return Error(Code::SourceMismatch,"source threshold/selected endpoint mean excess is invalid");
     if(!K::FormationQ({d.parent.state},{d.ion.state,d.electron.state},&data->formation,&error))return Error(Code::SourceMismatch,error);
+    // The strict historical policy retains EXACT source/state consistency.
+    // The alternative is an explicit source model authenticated by the owner:
+    // the archived photon remains I_source+mean, while the FULL physical Q
+    // below supplies -I_physical. No caller numerical bound admits a mismatch
+    // under the strict policy, and no arbitrary correction is accepted under
+    // the source-effective policy. Both energy conventions use the SAME rate.
+    if(d.photonEnergyPolicy==K::PhotonEnergyPolicy::SourceEqualsState){
     // Physical source consistency is NOT a user numerical-closure tolerance.
     // Compare every unrounded native formation/excitation component with the
     // exact SI conversion of the stored source eV value. Two adjacent native
@@ -227,6 +270,9 @@ Status SodiumPhotoionization::Create(const P::Registry& source,const Definition&
       return Error(Code::SourceMismatch,"exact source threshold/state gap disagree beyond native representation; caller numerical tolerances cannot admit a different physical threshold");
     if(!Close(data->formation.qJ+data->thresholdJ,std::max(std::fabs(data->formation.qJ),data->thresholdJ),d.numerical.thresholdJ))
       return Error(Code::SourceMismatch,"native D04 threshold and supplied physical state gap disagree; an unresolved physical crosswalk cannot be hidden by a numerical tolerance");
+    }else if(!Positive(-data->formation.qJ)){
+      return Error(Code::SourceMismatch,"physical Na ionization crosswalk requires a finite positive formation-state gap");
+    }
     if(!Internal(d.parent.state,&data->parentInternalJ)||!Internal(d.ion.state,&data->ionInternalJ)||!Internal(d.electron.state,&data->electronInternalJ))
       return Error(Code::NumericalFailure,"source state energies cannot be stored in the planner's binary64 internal-energy field");
     Sum storedQ;storedQ.Add(data->parentInternalJ);storedQ.Add(-static_cast<Real>(data->ionInternalJ));storedQ.Add(-static_cast<Real>(data->electronInternalJ));
@@ -236,6 +282,8 @@ Status SodiumPhotoionization::Create(const P::Registry& source,const Definition&
     // contract at rest before any event/RNG/particle operation is possible.
     K::PhotonTwoBodyInput probe;probe.parent=d.parent.state;probe.products={{d.ion.state,d.electron.state}};
     probe.photonDirection={{1,0,0}};probe.channelThreshold={data->thresholdJ,d.stateCrosswalkIdentity};
+    probe.energyPolicy=d.photonEnergyPolicy;
+    probe.sourceThresholdCrosswalkIdentity=d.stateCrosswalkIdentity+"@sha256:"+d.stateCrosswalkSha256;
     probe.meanExcess={data->meanExcessJ,channel.rateSourceFile[endpoint]+":"+channel.rateSourceRecord[endpoint]};
     probe.polarOpenUniform=.5L;probe.azimuthOpenUniform=.5L;
     probe.context={"parent-rest-inertial-admission",d.identity};probe.controls=d.numerical;K::FinalState temporary;
@@ -243,6 +291,8 @@ Status SodiumPhotoionization::Create(const P::Registry& source,const Definition&
     for(unsigned i=0;i<3;++i)if(!K::EvaluateModelErrors(states[i]->state,states[i]->physicalRestMass,d.numerical.maximumClassicalSpeedMS,
         states[i]->modelErrorLimits,&data->errors[i],&error))return Error(Code::OutsideDomain,error);
     data->reaction.identity=channel.id+";"+Model+";"+d.stateCrosswalkIdentity;
+    if(d.photonEnergyPolicy==K::PhotonEnergyPolicy::SourceEffectivePhoton)
+      data->reaction.identity+=";source-effective-photon";
     data->reaction.reactants={{d.parent.catalogIndex,1,R::Population::Tracked}};
     data->reaction.products={{d.ion.catalogIndex,1,R::Population::Tracked},{d.electron.catalogIndex,1,R::Population::Bath}};
     if(!R::ValidateReaction(d.catalog,data->reaction,&error))return Error(Code::SourceMismatch,error);
@@ -291,13 +341,32 @@ Status SodiumPhotoionization::Compose(const EventInput& input,Composition* outpu
     receipt.photonGeometryIdentity=input.photonGeometryIdentity;receipt.solar=d.solar;
     receipt.sourceFiles=data_->source.sources();receipt.sourceChannel=data_->channel;receipt.frame=input.frame;receipt.interval=input.interval;
     receipt.domainErrorReports=data_->errors;receipt.nativeThresholdJ=data_->thresholdJ;receipt.matchedSourceMeanExcessJ=data_->meanExcessJ;
+    receipt.photonEnergyPolicy=d.photonEnergyPolicy==K::PhotonEnergyPolicy::SourceEqualsState?
+      "source-equals-state":"source-effective-photon";
+    receipt.physicalThresholdJ=-data_->formation.qJ;
+    Sum thresholdShift;
+    if(!thresholdShift.Add(receipt.physicalThresholdJ)||!thresholdShift.Add(-data_->thresholdJ))
+      return Error(Code::NumericalFailure,"physical/source threshold difference is not representable");
+    receipt.physicalMinusSourceThresholdJ=thresholdShift.Value();
     receipt.intervalProjectedEventEpochEtS=projectedEpoch;
     receipt.stateQJ=data_->formation.qJ;
     auto status=RateS(input.distanceAu,input.pointSunVisible,&receipt.eventRateS);if(!status.ok())return status;
     std::string error;if(!data_->source.ChannelRate1AuS(d.channelId,d.solar,&receipt.sourceRate1AuS,&error))return Error(Code::SourceMismatch,error);
     Vector3 eventParent=Extended(input.parentAtEvent.velocityMS),shifted;
     for(unsigned k=0;k<3;++k)shifted[k]=eventParent[k]-input.frame.velocityOffsetEventMS[k];
-    const Vector3 parent=InverseRotate(input.frame.inertialToEventRotation,shifted);receipt.parentInertialVelocityMS=parent;
+    Vector3 parent;
+    if(!InverseRotate(input.frame.inertialToEventRotation,shifted,&parent))
+      return Error(Code::NumericalFailure,"actual rounded affine parent transform cannot be inverted");
+    Vector3 roundtrip=Rotate(input.frame.inertialToEventRotation,parent);
+    for(unsigned k=0;k<3;++k){
+      roundtrip[k]+=input.frame.velocityOffsetEventMS[k];
+      const Real mass=d.parent.state.referenceMassKg();
+      const Real residual=mass*(roundtrip[k]-eventParent[k]);
+      const Real scale=mass*std::max(std::fabs(roundtrip[k]),std::fabs(eventParent[k]));
+      if(!Finite(roundtrip[k])||!Close(residual,scale,d.numerical.momentumKgMS))
+        return Error(Code::NumericalFailure,"actual rounded affine parent roundtrip fails its existing mass-weighted momentum bound");
+    }
+    receipt.parentInertialVelocityMS=parent;
     if(!FiniteVector(parent)||Norm(parent)>d.numerical.maximumClassicalSpeedMS||Norm(eventParent)>d.numerical.maximumClassicalSpeedMS)
       return Error(Code::OutsideDomain,"parent velocity exceeds the explicitly reviewed classical domain in an actual event/inertial frame");
     auto direction=input.incomingPhotonDirectionInertial;const Real n=Norm(direction);

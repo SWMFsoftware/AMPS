@@ -6,6 +6,47 @@ from pathlib import Path
 import prepare
 ROOT=Path(__file__).resolve().parents[4]
 
+def parser_species_symbol_check(recipe,output,manifest):
+    """Run the exact maintained ReadSpeciesBlock body, then compile CEX names.
+
+    Only the normal parser's startup is replaced by explicit disposable file
+    handles. The production subroutine and ampsConfigLib perform every species
+    interpretation/macro write; there is no reimplementation of that logic.
+    """
+    work=output/'actual-species-parser';pic=work/'generated/pic';pic.mkdir(parents=True)
+    source=(ROOT/'ampsConfig.pl').read_text()
+    body=source[source.index('sub ReadSpeciesBlock {'):source.index('#=============================== Process AMPS\' settings')]
+    for name in ('pic.h','pic_mol.cpp','picSpeciesMacro.dfn'):
+        shutil.copyfile(ROOT/'src/pic'/name,pic/name)
+    assembled=work/'species.Assembled'
+    lines=(recipe/'source_species.input').read_text().splitlines()
+    assembled.write_text(''.join(str(i+1)+' source_species.input\n'+line+'\n' for i,line in enumerate(lines)))
+    harness=work/'species_parser.pl'
+    harness.write_text('use strict;use warnings;use lib "'+str(ROOT)+'";use ampsConfigLib;\n'
+        'my ($line,$InputFileLineNumber,$FileName,$InputLine,$InputComment,$s0,$s1);\n'
+        'my $InputFileName="'+str(work/'normal')+'";my @SpeciesList=("NA","ELECTRON");my $TotalSpeciesNumber=2;\n'
+        '$ampsConfigLib::WorkingSourceDirectory="'+str(work/'generated')+'";\n'
+        'open(InputFile,"<'+str(assembled)+'") or die $!;ReadSpeciesBlock();close(InputFile);\n'+body)
+    command=['perl',str(harness)];child=subprocess.run(command,cwd=work,capture_output=True,text=True,timeout=15)
+    (work/'parser.stdout.log').write_text(child.stdout);(work/'parser.stderr.log').write_text(child.stderr)
+    manifest['commands'].append({'argv':command,'returncode':child.returncode})
+    if child.returncode:raise RuntimeError('normal ReadSpeciesBlock failed; see actual-species-parser logs')
+    cex_sources=[ROOT/'src/models/charge_exchange'/name for name in
+                 ('ChargeExchange_MaherTinsley.cpp','ChargeExchange_LindsayStebbings.cpp')]
+    cex='\n'.join(p.read_text() for p in cex_sources)
+    symbols=sorted(set(re.findall(r'_H_ENA_V[123]_SPEC_',cex)))
+    if len(symbols)!=3:raise ValueError('expected explicit three canonical CEX ENA symbol dependencies')
+    probe=work/'symbols.cpp';probe.write_text('#include "'+str(pic/'picSpeciesMacro.dfn')+'"\n'+
+        '\n'.join('static_assert('+s+'<0,"unselected CEX dependency remains inactive");' for s in symbols)+'\nint main(){return 0;}\n')
+    command=['g++','-std=c++17','-Wall','-Wextra','-Werror','-pedantic',str(probe),'-o',str(work/'symbols')]
+    child=subprocess.run(command,capture_output=True,text=True,timeout=15)
+    (work/'compiler.stdout.log').write_text(child.stdout);(work/'compiler.stderr.log').write_text(child.stderr)
+    manifest['commands'].append({'argv':command,'returncode':child.returncode})
+    manifest['species_parser_source_sha256']={str(p):prepare.sha(p) for p in
+        (ROOT/'ampsConfig.pl',ROOT/'ampsConfigLib.pm',ROOT/'input/species.input',*cex_sources)}
+    if child.returncode:raise RuntimeError('generated unselected CEX symbols do not compile')
+    return True
+
 def parser_compiler_reference_check(recipe,output,manifest):
     """Exercise the maintained normal Exosphere DEFINE parser in isolation.
 
@@ -57,6 +98,16 @@ def run(args):
         normal=(output/'available/moon_source_profile.input').read_text();original=(ROOT/'input/moon.input').read_text()
         force=lambda text:[line for line in text.splitlines() if re.match(r'\s*define\s+_PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_',line)]
         check('default normal-template preserves exact existing force definition',force(normal)==force(original) and '_MOON_COHORT_ZERO_FORCE_REFERENCE_' not in normal and receipt['reference_problem']=='normal-template')
+        check('default packet layout preserves exact template bytes',prepare.packet_template(original)==original and receipt['packet_layout']=='template')
+        conservative=prepare.packet_template(original,'conservative-products')
+        weight=lambda text:re.findall(r'(?mi)^\s*ParticleWeightCorrectionMode\s*=\s*(on|off)',text)
+        check('explicit conservative product packet enables normal individual weights',weight(conservative)==['on'] and prepare.packet_template(conservative,'conservative-products')==conservative)
+        timestep=lambda text:[line for line in text.splitlines() if re.match(r'\s*TimeStep',line,re.I)]
+        check('conservative packet leaves timestep policy unchanged',timestep(conservative)==timestep(original))
+        for name,text in [('missing',re.sub(r'(?mi)^.*ParticleWeightCorrectionMode.*\n','',original)),('duplicate',original+'\nParticleWeightCorrectionMode=on\n')]:
+            try:prepare.packet_template(text,'conservative-products');ok=False
+            except ValueError:ok=True
+            check('ambiguous '+name+' packet layout refuses',ok)
         zero=prepare.prepare(ROOT,profile_path,mapping,ROOT/'input/moon.input',output/'homogeneous',reference_problem='homogeneous-zero-acceleration')
         zero_text=(output/'homogeneous/moon_source_profile.input').read_text()
         check('named homogeneous experiment explicitly selects existing core zero function and marker',zero['reference_problem']=='homogeneous-zero-acceleration' and 'PIC::Mover::TotalParticleAcceleration_default(a,s,p,x,v,n)' in zero_text and 'define _MOON_COHORT_ZERO_FORCE_REFERENCE_ 1' in zero_text)
@@ -66,6 +117,12 @@ def run(args):
             except ValueError:ok=True
             check('ambiguous '+name+' reference template refuses',ok)
         check('actual available source states stage explicit compile entries',len(receipt['native_receipts'])==3 and '#component=Na' in species and '#component=ELECTRON' in species)
+        original_species=(ROOT/'input/species.input').read_text()
+        markers=lambda text:re.findall(r'(?mi)^\s*#component\s*=\s*(\S+)',text)
+        check('complete canonical component inventory and inactive ENA names preserved',markers(species)==markers(original_species) and all('#component='+name in species for name in ('H_ENA_V1','H_ENA_V2','H_ENA_V3')))
+        unchanged=lambda text:re.sub(r'(?mi)^\s*(mass|charge)\s*=.*$','',text)
+        check('canonical non-mass-charge fields and component order unchanged',unchanged(species)==unchanged(original_species))
+        check('actual ReadSpeciesBlock emits compilable inactive CEX dependency symbols',parser_species_symbol_check(output/'available',output,manifest))
         check('source SI unit exactly matches authenticated CODATA value',receipt['compiled_charge_unit_C']=='1.6021766339999999e-19')
         check('native emitted nonzero charge expression independently compiled',all(r['returncode']==0 for r in receipt['commands']) and any(row[0]=='STATE' and row[1]=='electron:free' and row[4]=='-1' and row[5]!='-1' for row in receipt['native_receipts']))
         check('unrelated background species selection preserved','SpeciesList=CO2,O' in (output/'available/moon_source_profile.input').read_text())

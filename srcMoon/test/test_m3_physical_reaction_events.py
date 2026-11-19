@@ -27,10 +27,12 @@ ROOT=Path(__file__).resolve().parents[2]
 HERE=Path(__file__).resolve().parent/'physical_reaction_events'
 DATA=Path('/data/vtenishe/moon_validation_data/photochemistry')
 ARITHMETIC_BOUND=64*sys.float_info.epsilon
-GROUPS=[a+'-'+b for a in ('quiet','active') for b in ('rest','moving','affine')]
+GROUPS=[a+convention+'-'+b for convention in ('','-crosswalk') for a in ('quiet','active') for b in ('rest','moving','affine','rounded')]
 SUFFIXES=('compose','conservative-plan','one-ion-plus-bath-electron','number-no-timestep-factor',
     'original-unused-interval','fresh-daughter-clock','frozen-basis-distinct-physical-epoch','source-and-policy-identities')
-EXPECTED={a+'-source-admission' for a in ('quiet','active')}|{g+'-'+s for g in GROUPS for s in SUFFIXES}|set('''
+EXPECTED={a+c+'-source-admission' for c in ('','-crosswalk') for a in ('quiet','active')}|{g+'-'+s for g in GROUPS for s in SUFFIXES}|set('''
+unknown-photon-energy-policy-refused effective-photon-missing-physical-source-refused
+effective-photon-wrong-physical-source-refused effective-photon-negative-translation-refused
 missing-crosswalk-preserves-provider missing-physical-ion-mass-refused missing-independent-error-budget-refused
 wrong-state-threshold-refused actual-catalog-mass-mismatch-refused PIC-electron-substitution-refused
 loose-numerical-bound-cannot-admit-physical-gap
@@ -42,6 +44,7 @@ closed-polar-draw-refused-no-output closed-azimuth-draw-refused-no-output missin
 improper-frame-refused-no-output wrong-parent-state-energy-refused-no-output outside-classical-parent-domain-refused
 invalid-source-distance-refused missing-daughter-clock-refused finite-disc-or-cosine-not-substituted
 point-shadow-hazard-exact-zero same-source-ion-collector-state
+recorded-rounded-old-transpose-violates-existing-momentum-bound
 '''.split())
 
 
@@ -89,18 +92,28 @@ def oracle(group,raw,source,threshold):
         m=D('4e-26');electron=D('1e-30');ion=m-electron;mass=ion+electron
         vector=lambda prefix:[raw[prefix+str(i)] for i in range(3)]
         rotation=[raw['input-R'+str(i)] for i in range(9)];offset=vector('input-offset-v');parent_event=vector('input-parent-event-v')
-        transpose=lambda v:[sum(rotation[3*j+i]*v[j] for j in range(3)) for i in range(3)]
+        # Independent adjugate inverse in70-digit Decimal. Production uses
+        # pivoted elimination, so this oracle does not repeat its algorithm.
+        a,b_,cc,dd,e,f,g,h,ii=rotation
+        determinant=a*(e*ii-f*h)-b_*(dd*ii-f*g)+cc*(dd*h-e*g)
+        adjugate=[e*ii-f*h,cc*h-b_*ii,b_*f-cc*e,f*g-dd*ii,a*ii-cc*g,cc*dd-a*f,dd*h-e*g,b_*g-a*h,a*e-b_*dd]
+        inverse=lambda v:[sum(adjugate[3*i+j]*v[j]for j in range(3))/determinant for i in range(3)]
         rotate=lambda v:[sum(rotation[3*i+j]*v[j] for j in range(3)) for i in range(3)]
         dot=lambda a,b:sum(x*y for x,y in zip(a,b));norm=lambda v:dot(v,v).sqrt()
-        parent=transpose([v-w for v,w in zip(parent_event,offset)])
+        parent=inverse([v-w for v,w in zip(parent_event,offset)])
         direction=vector('input-photon-n');direction=[x/norm(direction) for x in direction]
         gamma=1/(1-dot(parent,parent)/(c*c)).sqrt();doppler=gamma*(1-dot(parent,direction)/c)
         endpoint=source[group.split('-')[0]];rest=threshold+endpoint['mean-J'];energy=rest/doppler
+        # The alternate fixture's actual INPUT state encoding is independently
+        # supplied before composition, not read from its receipt/result. Using
+        # that encoding avoids silently equating nominal decimal construction
+        # with the compiler's rounded long-double input operations.
+        physical=raw['input-physical-threshold-J'] if '-crosswalk-' in group else threshold
         photon_p=[energy*x/c for x in direction];total=[m*v+p for v,p in zip(parent,photon_p)]
         boost=(gamma*gamma/(gamma+1)*dot(parent,photon_p)-gamma*energy)/(c*c)
         photon_rest_p=[p+boost*v for p,v in zip(photon_p,parent)]
         before=dot(parent,parent)*m/2;com=dot(total,total)/(2*mass)
-        available=before+energy-threshold-com
+        available=before+energy-physical-com
         if available<0:raise ArithmeticError('analytical fixture unexpectedly has negative COM energy')
         reduced=ion*electron/mass;relative=(2*reduced*available).sqrt()
         pi=[ion/mass*p+(relative if i==1 else zero) for i,p in enumerate(total)]
@@ -112,14 +125,18 @@ def oracle(group,raw,source,threshold):
         rotated=rotate(bath_p);bath_event_p=[p+electron*w for p,w in zip(rotated,offset)]
         bath_event_energy=bath_energy+dot(offset,rotated)+electron*dot(offset,offset)/2
         expected={'mass-parent':m,'mass-ion':ion,'mass-electron':electron,'threshold-J':threshold,
-            'mean-J':endpoint['mean-J'],'source-Q-J':-threshold,'photon-rest-J':rest,
+            'mean-J':endpoint['mean-J'],'source-Q-J':-physical,'photon-rest-J':rest,
+            'physical-threshold-J':physical,'physical-minus-source-J':physical-threshold,
             'photon-inertial-J':energy,'doppler':doppler,'bath-inertial-J':bath_energy,
             'bath-event-J':bath_event_energy,'bath-mass-kg':electron,
             'source-rate-1au':endpoint['source-rate-1au'],'event-rate':endpoint['source-rate-1au']/4,
             'ion-reference-weight':D.from_float(.4),'ion-individual-correction':D('6.5625'),
-            'ion-number':D('2.625'),'ion-internal-J':threshold,'remaining-s':D('.625'),
+            'ion-number':D('2.625'),'ion-internal-J':physical,'remaining-s':D('.625'),
             'physical-epoch':D('100.375'),'basis-epoch':D(90)}
         scales={key:abs(value) for key,value in expected.items()}
+        # Threshold subtraction is conditioned on the encoded energy inputs;
+        # its floating error scales with those inputs, not their tiny difference.
+        scales['physical-minus-source-J']=max(abs(physical),abs(threshold))
         for prefix,value,scale in (
             ('parent-inertial-v',parent,max(norm(parent),D(1))),
             ('photon-inertial-p',photon_p,energy/c),
@@ -143,7 +160,7 @@ def run(output):
         if not compiler:raise q.MissingPrerequisite('native C++17 compiler unavailable')
         fixture={'schema':'srcMoon-M3-analytical-composition-fixture-v1','scope':'ANALYTICAL ONLY, NOT PHYSICAL Na STATE DATA OR OBSERVATIONS',
             'neutral_reference_mass_kg':'4e-26','electron_reference_mass_kg':'1e-30','ion_formation':'exact native D04 threshold timesSIeV, fixture only',
-            'rotation':'identity or exactz90deg','velocity_offset_m_s':[100,-50,25],
+            'rotation':'identity, exactz90deg or actual rounded SPICE commissioning matrix','velocity_offset_m_s':[100,-50,25],
             'polar_uniform':'.5','azimuth_uniform':'.25','relative_arithmetic_bound':ARITHMETIC_BOUND,
             'source_is_real_frozen_D04':True,'real_Na_state_crosswalk_available':False}
         fixture_path=output/'ANALYTICAL_FIXTURE_NOT_PHYSICAL_PROFILE.json';fixture_path.write_text(json.dumps(fixture,indent=2)+'\n')
@@ -153,7 +170,7 @@ def run(output):
             'srcMoon/species/ReactionExecution.h','srcMoon/species/IonCollector.cpp','srcMoon/species/IonCollector.h',
             'srcMoon/species/Photochemistry.cpp','srcMoon/species/Photochemistry.h',
             'srcMoon/MoonTransportClock.cpp','srcMoon/MoonTransportClock.h',
-            'srcMoon/test/physical_reaction_events/probe.cpp','srcMoon/test/physical_reaction_events/CONTRACT.md',
+            'srcMoon/test/physical_reaction_events/probe.cpp','srcMoon/test/physical_reaction_events/CONTRACT.md','srcMoon/test/physical_reaction_events/AFFINE_INVERSE_CONTRACT.md',
             'srcMoon/test/test_m3_physical_reaction_events.py','srcMoon/test/m3_qualification.py')]+shared_dependencies(ROOT,'photochemistry')
         manifest['source_sha256']={str(path):q.sha(path) for path in paths}
         cpp=[p for p in paths if p.suffix=='.cpp']
@@ -194,6 +211,31 @@ def run(output):
                 checks.append({'name':group+':independent:'+key,'status':'PASS' if passed else 'FAIL'})
                 comparisons.append({'case':group,'quantity':key,'production':str(actual),'independent_Decimal':str(reference),
                     'normalization_scale':str(scale),'normalized_error':str(normalized),'predeclared_arithmetic_bound':ARITHMETIC_BOUND})
+        # The broad velocity-relative oracle above cannot alone expose an
+        # epsilon*30km/s roundtrip beside a zero event momentum. Evaluate that
+        # cancellation-sensitive invariant directly in SI under the EXISTING
+        # source fixture momentum bounds, without a new epsilon or scaled gate.
+        with localcontext() as context:
+            context.prec=70
+            for group in GROUPS:
+                if not group.endswith('-rounded'):continue
+                raw=groups[group];r=[raw['input-R'+str(k)]for k in range(9)]
+                v=[raw['parent-inertial-v'+str(k)]for k in range(3)]
+                old=[-sum(r[3*j+i]*raw['input-offset-v'+str(j)]for j in range(3))for i in range(3)]
+                for i in range(3):
+                    target=raw['input-parent-event-v'+str(i)]
+                    actual=sum(r[3*i+j]*v[j]for j in range(3))+raw['input-offset-v'+str(i)]
+                    residual=Decimal('4e-26')*(actual-target)
+                    limit=Decimal('1e-38')+Decimal('1e-12')*Decimal('4e-26')*max(abs(actual),abs(target))
+                    checks.append({'name':group+':independent:mass-weighted-parent-roundtrip-'+str(i),'status':'PASS'if abs(residual)<=limit else'FAIL'})
+                    comparisons.append({'case':group,'quantity':'parent-roundtrip-kg-m-s-'+str(i),'production':str(residual),'independent_Decimal':'0','normalization_scale':str(limit),'normalized_error':str(abs(residual)/limit),'predeclared_arithmetic_bound':1})
+                # The original actual commissioning bound and compiled neutral
+                # reference mass are retained as SOURCE-DERIVED frame diagnostics,
+                # not fitted observations or the analytical composer's masses.
+                predicted=(sum(r[3+j]*old[j]for j in range(3))+raw['input-offset-v1'])*Decimal('3.817541007821789691544e-26')
+                original_bound=Decimal('3.137089206576362590062217056758283654293231705096370449513544384979530e-37')
+                checks.append({'name':group+':independent:original-transpose-exceeds-original-commissioning-bound','status':'PASS'if abs(predicted)>original_bound else'FAIL'})
+                comparisons.append({'case':group,'quantity':'old-transpose-predicted-commissioning-Y-residual','production':str(predicted),'independent_Decimal':'-3.660784086763614476465631895023225644630060994371293147328877240610782e-37','normalization_scale':str(original_bound),'normalized_error':str(abs(predicted)/original_bound),'predeclared_arithmetic_bound':'must exceed1: reproduces original failure'})
         with (output/'comparison.csv').open('w',newline='') as stream:
             writer=csv.DictWriter(stream,fieldnames=list(comparisons[0]));writer.writeheader();writer.writerows(comparisons)
         try:

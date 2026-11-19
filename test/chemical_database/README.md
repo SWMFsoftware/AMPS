@@ -49,9 +49,63 @@ commands and responses. Prior outputs are never overwritten. Exit codes are
 0=PASS,1=FAIL,2=ERROR,77=SKIPPED. A prerequisite fixture outcome is counted as
 such; it does not pretend its dependent methods were executed.
 
-When adding a new software test, add its method to `test_protocol.py` or
-explicitly register its TestCase in this runner's loaded module. Keep native
+When adding a new software test, add its method to `test_protocol.py` or a
+maintained `test_*.py` module in this directory; the runner discovers its
+`unittest.TestCase` methods automatically and binds their source hashes. Keep native
 adapters thin and update the contract before implementation. Existing Moon
 U15/U16/U17 numerical/statistical runners retain their original independent
 oracles and acceptance criteria; the shared-service move changes their source
 link lists and hashes, not their physical scope. No permanent U/I ID is added.
+
+The November 19 source-acquisition checks cover strict packet admission,
+NASA CEA fixed-width records and domains, IAEA native printed fit coefficients,
+ExoMol source projections and TU Wien native CSV members. Administrative parser
+fixtures are labelled as such. Real-source tests read the explicit selectors
+below; absent inputs are SKIPPED and never substituted with generated science:
+
+```bash
+AMPS_CEA_SOURCE=/path/to/acquisition/raw/nasa-cea-data-thermo.inp \
+AMPS_EXOMOL_PACKET=/path/to/exomol-native \
+AMPS_SURFACE_SOURCE_ZIP=/path/to/As_published_in_Comm_Earth_Env.zip \
+/usr/bin/python3 -B test/chemical_database/run_all_tests.py \
+  --database-lock /data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261119-r2/database-lock.json \
+  --output-dir test_output/chemical_database/NEW_REAL_RELEASE_RUN
+```
+
+[`verify_acquired_release.py`](ACQUIRED_RELEASE_QA.md) separately checks the actually published new tables
+against their acquired originals, preserving a result/manifest and per-check
+logs. Invoke its `--help` for the required packet and lock arguments. This is
+source reproduction and deployed API verification, not linked I21–I24 or
+observational validation. Both old and new locks can be tested independently;
+no test changes a selected source, threshold or default installation.
+
+The r3 follow-up adds `test_native_chianti.py`, `test_native_apollo_tpd.py`,
+`test_native_workbooks.py`, `test_model_definitions.py` and
+`test_reduced_models.py` to the same automatic discovery. The first three keep
+their actual-source classes marked `requires_authoritative_source=True`:
+missing originals are SKIPPED in the full suite and explicitly outside the
+CORE protocol selection. Generic parser controls are labelled administrative,
+and analytic/conservation tests exercise the actual shared C++ helpers. Model
+metadata controls prove old-lock compatibility and that definitions grant no
+physical capability. No lunar U/I ID or acceptance threshold is changed.
+
+Select CHIANTI originals with `AMPS_CHIANTI_LEVELS=/path/to/o_1.elvlc` and
+`AMPS_CHIANTI_RADIATIVE=/path/to/o_1.wgfa`, and Apollo originals with
+`AMPS_APOLLO_TPD_SOURCE_DIR=/path/to/jones2020-native`; the existing CEA/ExoMol
+selectors above remain applicable. Workbook real-source controls require the
+exact archived ZIPs documented in `NATIVE_WORKBOOK_SOURCES.md`. The global
+runner records all actual selections and distinguishes source access from
+physical agreement. Choose r3's own lock to exercise its contents.
+
+[`verify_physical_model_release.py`](PHYSICAL_MODEL_RELEASE_QA.md) checks an
+explicit r3-style release and selected packet family through Python and C++,
+including exact rows, recipe members, held-source refusal and model-registry
+agreement. Use `--help`; supply the compiled shared `catalogue-probe` with
+`--native-probe`, the actual lock and repeated `--source-packet` arguments.
+Its output directory must be new. This is shared source/API verification, not
+formal linked I21–I24 qualification or observational validation.
+
+[REDUCED_MODEL_NUMERICS.md](REDUCED_MODEL_NUMERICS.md) records the independent
+Decimal/Fraction oracles, retained development failures and the proof behind
+the binary floating-point zero-COM certificate. Mathematical roundoff criteria
+are distinct from physical approximation or observational agreement limits.

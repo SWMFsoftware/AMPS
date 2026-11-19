@@ -4,11 +4,14 @@
 #include "Moon.h"
 #include "MoonTransportClock.h"
 #include "src/general/input/amps_input.h"
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <limits>
+#include <locale>
 #include <map>
 #include <set>
+#include <sstream>
 namespace Moon { namespace Chemistry { namespace SodiumCohort {
 namespace D=Species::ReactionData;
 namespace T=Species::TrajectoryExposure;
@@ -45,13 +48,37 @@ bool NativeProfileManifest(const Request& r,std::string* error){
   }
   error->clear();return true;
 }
-bool Crosswalk(const Request& r,const E::Definition& d,std::string*e){
+bool Crosswalk(const Request& r,const Species::Photochemistry::Registry& source,
+    const E::Definition& d,std::string*e){
   std::string bytes;if(!D::VerifyFileSha256(r.crosswalkPath,r.crosswalkSha256,e)||
       !D::ReadFileBytes(r.crosswalkPath,0,&bytes,e))return false;
   D::Csv rows;const D::Row header={"channel_id","parent_state_id","ion_state_id","electron_state_id","energy_reference_identity"};
+  const D::Row expected={d.channelId,r.parentStateId,r.ionStateId,r.electronStateId,d.energyReferenceIdentity};
+  if(d.photonEnergyPolicy==Species::ReducedKinematics::PhotonEnergyPolicy::SourceEqualsState){
   if(!D::ParseCsv(bytes,header,&rows,e))return false;
-  if(rows.size()!=1||rows[0]!=D::Row{d.channelId,r.parentStateId,r.ionStateId,r.electronStateId,d.energyReferenceIdentity}){
+  if(rows.size()!=1||rows[0]!=expected){
     *e="reviewed crosswalk must bind exactly this complete source channel, three declared state IDs and common energy reference; no inferred branch/state mapping";return false;}
+  }else if(d.photonEnergyPolicy==Species::ReducedKinematics::PhotonEnergyPolicy::SourceEffectivePhoton){
+    D::Row extended=header;
+    extended.insert(extended.end(),{"photon_energy_policy","source_threshold_eV","physical_threshold_source_identity"});
+    if(!D::ParseCsv(bytes,extended,&rows,e))return false;
+    if(rows.size()!=1||!std::equal(expected.begin(),expected.end(),rows[0].begin())||
+        rows[0][5]!="source-effective-photon"||rows[0][7]!=d.physicalThresholdSourceIdentity){
+      *e="source-effective crosswalk must bind exact channel/states/reference, named energy convention and physical formation-energy source";return false;
+    }
+    // Parse the NATIVE source number only to compare with the same archived
+    // registry representation. It is never a fitted or user-tunable delta.
+    std::istringstream number(rows[0][6]);number.imbue(std::locale::classic());
+    double threshold=0;number>>std::noskipws>>threshold;
+    if(!number||number.peek()!=std::char_traits<char>::eof()||!std::isfinite(threshold)||threshold<=0){
+      *e="explicit crosswalk source threshold must be one finite complete eV token";return false;
+    }
+    Species::Photochemistry::Channel channel;
+    if(!source.GetChannel(d.channelId,&channel,e))return false;
+    if(!channel.hasThreshold||threshold!=channel.thresholdEnergyEv){
+      *e="source-effective crosswalk must retain the exact frozen source threshold; no replacement or arbitrary correction";return false;
+    }
+  }else{*e="unsupported source crosswalk energy policy";return false;}
   return true;
 }
 bool EventFrame(const Request& request,const T::Field& field,const Controller::EventContext& event,
@@ -131,7 +158,9 @@ E::Status Prepared::Create(const Species::Photochemistry::Registry& source,const
       if(i==0)p->parentInternalEnergyJ_=internal;
     }
     if(!std::filesystem::is_regular_file(r.crosswalkPath))return Error(E::Code::Unavailable,"reviewed Na channel/state/threshold crosswalk is unavailable");
-    if(!Crosswalk(r,d,&error))return Error(E::Code::SourceMismatch,error);
+    if(d.photonEnergyPolicy==Species::ReducedKinematics::PhotonEnergyPolicy::SourceEffectivePhoton)
+      d.physicalThresholdSourceIdentity=d.ion.state.definition().formation.sourceIdentity;
+    if(!Crosswalk(r,source,d,&error))return Error(E::Code::SourceMismatch,error);
     P::Constant charge;
     if(!p->profile_.GetConstant("elementary charge","C",&charge,&error))return Error(E::Code::Unavailable,error);
     p->elementaryChargeC_=static_cast<double>(charge.value);p->elementaryChargeIdentity_=charge.sourceIdentity+":"+charge.sourceRecord;

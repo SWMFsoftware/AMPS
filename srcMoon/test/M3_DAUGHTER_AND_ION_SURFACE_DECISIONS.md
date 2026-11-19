@@ -144,6 +144,13 @@ and freeze a runtime speed guard. No numerical error allowance or universal
 speed cutoff is selected in this proposal. A broad database energy range
 does not by itself qualify the classical tracer.
 
+**Subsequent Na-specific approval, 2026-11-19:** the user approved the four
+mechanical limits in [M3_P02_NUMERICAL_BUDGET.md](M3_P02_NUMERICAL_BUDGET.md).
+They supply this proposal's previously unspecified values for the controlled
+Na/Na+/electron reference family. This is an additive decision, not a universal
+cutoff for every species or a change to conservation/observational criteria.
+The original source-profile-pinned decision JSON remains unchanged.
+
 Frames are explicit: perform event kinematics in a local inertial frame,
 then transform to the actual LSO tracing frame at SPICE ET/TDB. At a material
 boundary use the facet rest frame. Velocity transforms include the derivative

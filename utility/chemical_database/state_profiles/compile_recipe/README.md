@@ -159,3 +159,23 @@ The controls additionally invoke the maintained `exosphere.pl` DEFINE parser on
 isolated source copies, then compile/stringify its generated macro and check
 the actual native owner's exact-call guard plus marker. That is parser/compiler
 binding evidence, not another implementation or execution of a zero-force law.
+
+# Complete canonical species declarations
+
+`source_species.input` preserves `input/species.input` component order and
+unselected definitions, replacing only mass and charge for explicitly mapped
+states. The normal parser needs unselected components to emit inactive negative
+species macros used by shared modules, including the three CEX ENA names. This
+does not activate background species. The recipe manifest pins the canonical
+table. The local runner executes the maintained `ReadSpeciesBlock` and compiles
+its generated inactive CEX identifiers to verify that interface directly.
+
+Conservative reaction products additionally need the ordinary per-particle
+weight-correction field. Use `--packet-layout conservative-products` (Python:
+`prepare(..., packet_layout='conservative-products')`) and clean-build the
+result. This explicitly changes the unique normal
+`ParticleWeightCorrectionMode=off` to `on`; the default `template` preserves
+all original bytes. It does not change `TimeStepMode` or species timestep
+policy. The maintained M3 source-qualification build helper always requests
+this storage layout and retains a preprocessor proof of the actual generated
+macro alongside the normal library/build receipt.

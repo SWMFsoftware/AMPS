@@ -395,6 +395,18 @@ class Database:
         _mapping(catalogue.get("table_metadata", {}), "table metadata")
         if len({item["id"] for item in datasets}) != len(datasets):
             _fail("CorruptSource", "duplicate canonical dataset identifier")
+        # Optional authored models supplement the historical v1 catalogue.
+        # Old releases deliberately have no such selection. These are frozen
+        # descriptions, never executable configuration or a capability grant.
+        models = catalogue.get("models", [])
+        if not isinstance(models, list) or any(not isinstance(item, dict) or
+                not isinstance(item.get("id"), str) or not _IDENTIFIER.fullmatch(item["id"]) or
+                item.get("physical_activation") is not False for item in models):
+            _fail("CorruptSource", "model definitions require explicit identifiers and disabled physical activation")
+        model_ids = {item["id"] for item in models}
+        if len(model_ids) != len(models) or model_ids.intersection(
+                {item["id"] for item in datasets} | set(sources) | set(tables)):
+            _fail("CorruptSource", "duplicate or ambiguous model definition identifier")
         # Construct only after every check; a partially loaded object is never
         # published. Stored metadata is frozen recursively and queries return
         # defensive immutable views.
@@ -408,6 +420,7 @@ class Database:
         self._sources = _freeze(sources)
         self._tables = _freeze(tables)
         self._datasets = _freeze({item["id"]: item for item in datasets})
+        self._models = _freeze({item["id"]: item for item in models})
         return self
 
     @staticmethod
@@ -468,6 +481,18 @@ class Database:
     def tables(self):
         return tuple(self._table_description(key) for key in self._tables)
 
+    def models(self):
+        """Explicit-input definitions selected in this release; no model ranking."""
+        return tuple(self._models.values())
+
+    def model(self, identifier):
+        """Read one immutable definition, without selecting parameters or data."""
+        if not isinstance(identifier, str) or not _IDENTIFIER.fullmatch(identifier):
+            _fail("InvalidInput", "model identifier must be an explicit catalogue ID")
+        if identifier not in self._models:
+            _fail("Unavailable", "model definition is not in this selection: " + str(identifier))
+        return self._models[identifier]
+
     def _table_description(self, key):
         details = plain(self._catalogue.get("table_metadata", {}).get(key, {}))
         if not isinstance(details, dict):
@@ -493,7 +518,7 @@ class Database:
     def describe(self, identifier):
         if identifier in self._tables:
             return self._table_description(identifier)
-        for mapping in (self._datasets, self._tables, self._sources):
+        for mapping in (self._datasets, self._tables, self._sources, self._models):
             if identifier in mapping:
                 return mapping[identifier]
         return self._table_description(self._resolve_table_id(identifier))

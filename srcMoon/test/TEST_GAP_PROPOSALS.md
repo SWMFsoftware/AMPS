@@ -354,3 +354,76 @@ proof are tracked explicitly in STATUS.md. The full qualification matrix,
 same-campaign predecessors,0.2/0.3percent numerical allocations, exact branch
 confidence and independent cohort membership remain unchanged. No supporting
 fixture, regression output or downloaded table is promoted to validation.
+
+### Measurement and community-model follow-up — 2026-11-19
+
+The [new evidence review](M3_PHYSICS_LITERATURE_20261119.md) provides concrete
+sources for several earlier gaps: source-derived Na+ mass, the actual CHIANTI
+lowest-five-level oxygen matrix, published molecular fragment spectra and
+Apollo14163/10084 TPD originals. These change acquisition readiness, not the
+existing formal U/I results. No numerical source profile or runtime selection
+has yet been admitted from this research.
+
+The measured H2O -> O(1S)+H2 channel in Chang2021 is absent from the frozen
+seven-channel D04 H2O family. Its addition would legitimately extend I22's
+photochemistry meaning, but requires a reviewed versioned source/network,
+state/mass/energy, hazard-membership and test-contract update first. Do not add
+an unversioned hazard, change the original D04 values or renormalize retained
+branches. State-resolved O(3P)/O(1D)+2H measurements similarly require explicit
+mapping of the original unresolved-O family. No permanent new test ID is assigned.
+
+Actual O I radiative sums/branches can extend U15 supporting coverage. A
+specimen/heating/coverage-specific TPD comparison can extend the existing U24
+surface contract, preserving measurement/inverted/model roles and the source
+prefactor/sticking assumptions. A new inherit-parent-velocity reservoir variant
+can be proposed within I21/I23 supporting model checks, but does not silently
+replace the current full-product physical-provider contract. Independent recoil
+error/observable scope and source/bath conservation remain required. Unrelated
+ion-surface or spacecraft-composition claims retain their own prerequisite gates.
+
+### Approved shared-database implementation — 2026-11-19
+
+The subsequent r3 publication adds reviewed native CHIANTI, Apollo TPD,
+water-product, JWST and ARTEMIS views and the original NASA proton–He benchmark
+to the application-independent database. Its optional authored model catalogue
+and explicit-input C++ mathematical helpers are covered by the existing shared
+`CORE-CHEMICAL-DATABASE-001` software case and registered shared test discovery.
+No permanent lunar ID is added. All new helpers retain caller-owned source,
+state, frame, parameter and approximation-error admission.
+
+This resolves source access and reusable local software for those declared
+forms. It does not close the production application gaps above: coherent
+source/state/network selection, differential-product or bounded-reservoir
+admission, material/species-specific surface outcomes, observable error bounds
+and linked/statistical/budget/predecessor gates remain required. The NASA scan
+is not a typed numerical table; no OCR value is used as a benchmark point.
+Unresolved molecular units, source normalization and state mappings remain
+explicit in the native table metadata instead of becoming an assumed PDF.
+
+### Source-bound M3 implementation follow-up — 2026-11-19
+
+This supersedes the earlier **current** Na-unavailable statement for the opt-in
+atomic profile only. The original default profile and its fourteen unavailable
+records are preserved. A new source-derived `23Na+:ground` state, eight-column
+source-effective photon crosswalk, strict-default/explicit-policy composer and
+independent ledgers now exist. A real clean conservative-packet build and an
+eight-rank source inspection PASS do not establish particle-run qualification.
+P02's explicitly reviewed approximation-error/speed budget is still required.
+
+The production O I cascade/recoil module and shared reservoir-product services
+now have independent local controls registered under existing U15/U17 owners.
+They resolve reusable numerical software, not missing source/state/observable
+admission or normal application event wiring. The complete source-selected
+molecular family, state populations/omitted channels, quenching domain, suitable
+collision-energy moments and source-bound model-error evidence remain gaps.
+
+Further primary-source research establishes isotope-specific 4He/20Ne/40Ar
+threshold anchors; maintained profile extraction and source-effective family
+mapping remain implementation work. It does not establish unit ground-state
+yield for unresolved broadband channels. The exact D119990 Na partial still
+lacks initial-state/isotope/citation/uncertainty metadata. Knoop's explicit Na3s
+alternative is not proven to be D119990's source. The NASA H(2s) benchmark does
+not measure the residual He+ state or complete angular support. Preserve these
+distinctions and signed Q conventions. Detailed source ledgers and reports are
+under `test_output/srcMoon/m3-completion-20261119T091742Z/` and summarized in
+STATUS.md section 5.36. No new test identifier or weaker gate is proposed.

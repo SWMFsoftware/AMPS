@@ -225,6 +225,11 @@ def _sdk(root, amps_root):
     shutil.copy2(str(importer), str(package_target / "source_inventory.py"))
     _, acquisition_source = _load_acquisition()
     shutil.copy2(str(acquisition_source), str(package_target / "acquisition.py"))
+    # Source packet parsing is a maintained offline publication dependency,
+    # never a downloader or a means to grant physical readiness at runtime.
+    shutil.copy2(str(importer.with_name("source_packets.py")), str(package_target / "source_packets.py"))
+    for recipe in sorted(importer.parent.glob("native_*.py")):
+        shutil.copy2(str(recipe), str(package_target / recipe.name))
     _, native_iaea_source = _load_iaea()
     shutil.copy2(str(native_iaea_source), str(package_target / "native_iaea.py"))
     rights = importer.with_name("RIGHTS.md")
@@ -234,6 +239,12 @@ def _sdk(root, amps_root):
     if not readme.is_file():
         raise DatabaseError("Unavailable", "detailed installation README template is absent")
     shutil.copy2(str(readme), str(root / "README.md"))
+    # Ship the acquisition contract and source-specific caveats with the
+    # portable installation. These are documentation, not a physical-profile
+    # grant; users must not need the original checkout to discover data gaps.
+    for note in [importer.with_name("SOURCE_PACKET_CONTRACT.md"), importer.with_name("PHYSICAL_MODELS_INTEGRATION_CONTRACT.md")] + sorted(importer.parent.glob("NATIVE_*_SOURCES.md")) + sorted(importer.parent.glob("PHYSICAL_INPUT_STATUS_*.md")):
+        if note.is_file():
+            shutil.copy2(str(note), str(root / note.name))
     bin_dir = root / "bin"
     bin_dir.mkdir()
     launcher = bin_dir / "chemdb"
@@ -246,7 +257,8 @@ def _sdk(root, amps_root):
     launcher.chmod(0o755)
 
 
-def build_database(amps_root, validation_root, output_root, release_id):
+def build_database(amps_root, validation_root, output_root, release_id, source_packets=(),
+                   include_model_definitions=False):
     """Publish a new immutable snapshot; refuse overwriting any existing root.
 
     Partial work survives under output_root on an ERROR for diagnosis. Only a
@@ -274,7 +286,20 @@ def build_database(amps_root, validation_root, output_root, release_id):
         if acquisition_index.get("issues"):
             raise DatabaseError("CorruptSource", "retained acquisition metadata has unresolved parser/binding issues: " +
                                 "; ".join(acquisition_index["issues"]))
-        native_datasets = importer(amps_root, validation_root)
+        native_datasets = importer(amps_root, validation_root, source_packets=source_packets)
+        # Authored software definitions are opt-in and have their own AMPS
+        # software licence. They cannot clear or copy a held external source.
+        # No download receipt is invented for locally authored JSON/CSV.
+        models, authored_members = (), {}
+        if include_model_definitions:
+            from .model_definitions import materialize
+            dataset, models = materialize(root, release_id, amps_root)
+            native_datasets.append(dataset)
+            authored_members = {str(path.relative_to(root)): sha256(path)
+                for path in Path(dataset["expected_root"]).iterdir() if path.is_file()}
+        manifest["include_model_definitions"] = bool(include_model_definitions)
+        manifest["explicit_source_packets"] = [
+            {"path": str(Path(path).resolve()), "sha256": sha256(path)} for path in source_packets]
         datasets, source_rows, table_rows, table_metadata = [], [], [], {}
         all_source_ids, all_table_ids = set(), set()
         for native_dataset in native_datasets:
@@ -307,7 +332,8 @@ def build_database(amps_root, validation_root, output_root, release_id):
                              observed_sha256=observed, imported_path=relative or None,
                              imported_sha256=digest or None, availability=availability,
                              byte_count=source_path.stat().st_size if present else None)
-                receipts = acquisition.lookup_acquisition(acquisition_index, source_path, observed) if observed else []
+                receipts = list(original.get("packet_acquisition_records", []))
+                receipts += acquisition.lookup_acquisition(acquisition_index, source_path, observed) if observed else []
                 entry["acquisition_records"] = receipts
                 entry["acquisition_metadata_status"] = "native_receipts_retained" if receipts else "not_supplied_or_not_a_downloaded_object"
                 # All native receipts survive, including mismatches/failures.
@@ -377,6 +403,8 @@ def build_database(amps_root, validation_root, output_root, release_id):
                      "species": species, "reactions": reactions, "table_metadata": table_metadata,
                      "scientific_validation": "NOT EVALUATED", "physical_activation": False,
                      "identity_policy": "native source assertions retained; no inferred state/isotope/reaction equivalence"}
+        if include_model_definitions:
+            catalogue["models"] = models
         _json(root / catalogue_path, catalogue)
         # The first publication is a comprehensive inventory/data-access
         # selection, not a chosen physical reaction network. No implicit
@@ -393,6 +421,47 @@ def build_database(amps_root, validation_root, output_root, release_id):
         members = {catalogue_path: sha256(root / catalogue_path),
                    profile_path: sha256(root / profile_path)}
         members.update(processing_members)
+        members.update(authored_members)
+        # Preserve the exact admitted packet declarations, not just their
+        # historical filesystem paths. Source objects and recipes are stored
+        # separately; this manifest records the original relative bindings,
+        # source URLs, permissions and limitations for independent replay.
+        # Check against the pre-import digest to detect a changed declaration
+        # during publication instead of silently blessing its new contents.
+        packet_recipes = []
+        for index, packet in enumerate(manifest["explicit_source_packets"]):
+            relative = prefix + "/provenance/source_packets/{:03d}.json".format(index)
+            destination = root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(packet["path"], str(destination))
+            if sha256(destination) != packet["sha256"]:
+                raise DatabaseError("CorruptSource", "source packet changed during publication: " + packet["path"])
+            packet["archived_path"] = relative
+            members[relative] = packet["sha256"]
+            # The declaration pins a recipe, but a historical absolute source
+            # path is not a portable copy of that recipe. Retain its exact
+            # reviewed bytes without executing it. Common maintained parser
+            # dependencies are separately copied into provenance/recipes.
+            # Source-packet admission has already checked path confinement and
+            # the same SHA; member() and a second hash check close a race with
+            # local edits between admission and publication.
+            selected = strict_json(packet["path"])
+            seen_recipe_paths = set()
+            for source in selected["sources"]:
+                recipe = source.get("recipe")
+                if not recipe or recipe["path"] in seen_recipe_paths:
+                    continue
+                seen_recipe_paths.add(recipe["path"])
+                original = member(Path(packet["path"]).parent, recipe["path"])
+                archived = prefix + "/provenance/packet_recipes/{:03d}/".format(index) + recipe["path"]
+                destination = root / archived
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(original), str(destination))
+                if sha256(destination) != recipe["sha256"]:
+                    raise DatabaseError("CorruptSource", "source-packet recipe changed during publication")
+                members[archived] = recipe["sha256"]
+                packet_recipes.append(dict(packet_sha256=packet["sha256"],
+                    original_path=recipe["path"], archived_path=archived, sha256=recipe["sha256"]))
         for source in source_rows:
             if source["path"]:
                 members[source["path"]] = source["sha256"]
@@ -403,7 +472,12 @@ def build_database(amps_root, validation_root, output_root, release_id):
         recipe_prefix = prefix + "/provenance/recipes"
         recipe_sources = list(Path(__file__).resolve().parent.glob("*.py")) + [
             importer_path, acquisition_path, native_iaea_source, importer_path.with_name("RIGHTS.md"),
-            importer_path.with_name("DATABASE_README.md")]
+            importer_path.with_name("DATABASE_README.md"), importer_path.with_name("source_packets.py"),
+            importer_path.with_name("SOURCE_PACKET_CONTRACT.md")]
+        recipe_sources += [importer_path.with_name("PHYSICAL_MODELS_INTEGRATION_CONTRACT.md")]
+        recipe_sources += list(importer_path.parent.glob("native_*.py")) + [importer_path.with_name("acquire_sources.py")]
+        recipe_sources += list(importer_path.parent.glob("NATIVE_*_SOURCES.md")) + list(importer_path.parent.glob("PHYSICAL_INPUT_STATUS_*.md"))
+        recipe_sources = list(dict.fromkeys(recipe_sources))
         for recipe in recipe_sources:
             destination = root / recipe_prefix / recipe.name
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -415,8 +489,11 @@ def build_database(amps_root, validation_root, output_root, release_id):
                                      "native_iaea_recipe_sha256": sha256(native_iaea_source),
                                      "builder_sha256": sha256(__file__),
                                      "source_revision": manifest["source_revision"],
+                                     "explicit_source_packets": manifest["explicit_source_packets"],
+                                     "packet_recipes": packet_recipes,
+                                     "include_model_definitions": bool(include_model_definitions),
                                      "raw_originals_modified": False,
-                                     "transformations": "byte-preserving payload import; source channel identity/occurrence metadata; independent IAEA native typed-array CSV reproduction with exact output hashes",
+                                     "transformations": "byte-preserving payload import; source channel identity/occurrence metadata; independent IAEA native typed-array CSV reproduction; explicitly admitted native-token CSV projections with packet-pinned parent/recipe/output hashes; no scientific value conversion or repair",
                                      "missing_fields_inferred": False,
                                      "dataset_ids": profile["datasets"]})
         members[provenance_path] = sha256(root / provenance_path)
@@ -498,10 +575,16 @@ def main(argv=None):
     parser.add_argument("--validation-root", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--release-id", required=True)
+    parser.add_argument("--source-packet", type=Path, action="append", default=[],
+                        help="explicit authenticated offline source packet; repeat to supplement the historical catalogue")
+    parser.add_argument("--include-model-definitions", action="store_true",
+                        help="include authored application-independent model definitions; does not activate physical chemistry")
     args = parser.parse_args(argv)
     try:
         print(json.dumps(build_database(args.amps_root, args.validation_root,
-                                        args.output_root, args.release_id), indent=2))
+                                        args.output_root, args.release_id,
+                                        source_packets=args.source_packet,
+                                        include_model_definitions=args.include_model_definitions), indent=2))
         return 0
     except (DatabaseError, OSError, ValueError, KeyError) as error:
         print(json.dumps({"status": "ERROR", "code": getattr(error, "code", "InfrastructureError"),

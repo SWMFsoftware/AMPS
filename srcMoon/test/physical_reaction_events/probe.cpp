@@ -84,6 +84,16 @@ E::EventInput Input(unsigned mode){
   if(mode==1)i.parentAtEvent.velocityMS={{10000,-20000,30000}};
   if(mode==2){i.frame.inertialToEventRotation={{0,-1,0,1,0,0,0,0,1}};
     i.frame.velocityOffsetEventMS={{100,-50,25}};i.parentAtEvent.velocityMS={{20100,9950,30025}};}
+  if(mode==3){
+    // Actual rounded SPICE coefficients and large affine velocity offset from
+    // the refused commissioning event. These are frame-arithmetic fixtures,
+    // not observations or an invented physical sodium state profile.
+    i.frame.inertialToEventRotation={{0.560211314016633821211L,-0.760052659393080420891L,-0.329367938022605444282L,
+      0.828347105332689293L,0.515022425867632138718L,0.220438140847663277544L,
+      0.00208727926048927385841L,-0.396322918594075035426L,0.918108810252010965058L}};
+    i.frame.velocityOffsetEventMS={{-192.106854304402989486L,29386.0300909183624842L,-4.30322444344710675068e-13L}};
+    i.parentAtEvent.velocityMS={{0,0,0}};
+  }
   i.incomingPhotonDirectionInertial={{0,0,-1}};i.pointSunVisible=1;i.distanceAu=2;
   i.photonGeometryIdentity="ANALYTICAL-propagation-minus-z-not-observation";return i;
 }
@@ -91,6 +101,8 @@ void Record(const std::string& group,const E::Definition& d,const E::EventInput&
   const auto& r=value.receipt;
   Metric(group,"mass-parent",d.parent.state.referenceMassKg());Metric(group,"mass-ion",d.ion.state.referenceMassKg());Metric(group,"mass-electron",d.electron.state.referenceMassKg());
   Metric(group,"threshold-J",r.nativeThresholdJ);Metric(group,"mean-J",r.matchedSourceMeanExcessJ);
+  Metric(group,"physical-threshold-J",r.physicalThresholdJ);Metric(group,"physical-minus-source-J",r.physicalMinusSourceThresholdJ);
+  Metric(group,"input-physical-threshold-J",d.ion.state.definition().formation.joules);
   Metric(group,"source-Q-J",r.stateQJ);Metric(group,"physical-epoch",input.frame.physicalEventEpochEtS);
   Metric(group,"basis-epoch",input.frame.geometryBasisEpochEtS);Metric(group,"native-epsilon",std::numeric_limits<Real>::epsilon());
   Vector(group,"input-parent-event-v",{{input.parentAtEvent.velocityMS[0],input.parentAtEvent.velocityMS[1],input.parentAtEvent.velocityMS[2]}});
@@ -118,13 +130,22 @@ int main(int argc,char** argv){
     P::Registry source;std::string error;
     if(!source.LoadFrozenD04(P::FrozenV1Sources(argv[1]),&error))throw std::runtime_error("frozen source load: "+error);
     E::SodiumPhotoionization provider;
-    for(int endpoint=0;endpoint<2;++endpoint){
+    for(int convention=0;convention<2;++convention)for(int endpoint=0;endpoint<2;++endpoint){
       auto d=Definition(source,static_cast<P::SolarCase>(endpoint),argv[2]);
+      if(convention){
+        // Explicit mathematical perturbation, NOT an evaluated sodium energy.
+        // The real source photon/rate is unchanged. The independently checked
+        // input formation gap now differs; a default strict provider refuses it.
+        const Real gap=d.ion.state.definition().formation.joules+1e-6L*d.electronVoltJ;
+        d.ion.state=State("Na+",1,gap);Catalog(&d);
+        d.photonEnergyPolicy=K::PhotonEnergyPolicy::SourceEffectivePhoton;
+        d.physicalThresholdSourceIdentity=d.ion.state.definition().formation.sourceIdentity;
+      }
       const auto prepared=E::SodiumPhotoionization::Create(source,d,&provider);
-      const std::string prefix=endpoint==0?"quiet":"active";
+      const std::string prefix=std::string(endpoint==0?"quiet":"active")+(convention?"-crosswalk":"");
       Check(prefix+"-source-admission",prepared.ok());if(!prepared.ok())throw std::runtime_error(prepared.message);
-      for(unsigned mode=0;mode<3;++mode){
-        const std::string group=prefix+(mode==0?"-rest":mode==1?"-moving":"-affine");auto input=Input(mode);E::Composition value;
+      for(unsigned mode=0;mode<4;++mode){
+        const std::string group=prefix+(mode==0?"-rest":mode==1?"-moving":mode==2?"-affine":"-rounded");auto input=Input(mode);E::Composition value;
         const auto status=provider.Compose(input,&value);Check(group+"-compose",status.ok());if(!status.ok())throw std::runtime_error(status.message);
         const auto& plan=value.plan;const auto& p=plan.products().front();
         Check(group+"-conservative-plan",plan.valid()&&plan.ledger().integerConservationVerified&&plan.ledger().kinematicConservationVerified);
@@ -137,6 +158,13 @@ int main(int argc,char** argv){
         Record(group,d,input,value);
       }
     }
+    {
+      const auto rounded=Input(3);const auto& r=rounded.frame.inertialToEventRotation;
+      K::Vector3 inverse{},roundtrip{};
+      for(unsigned i=0;i<3;++i)for(unsigned j=0;j<3;++j)inverse[i]-=r[3*j+i]*rounded.frame.velocityOffsetEventMS[j];
+      for(unsigned i=0;i<3;++i){for(unsigned j=0;j<3;++j)roundtrip[i]+=r[3*i+j]*inverse[j];roundtrip[i]+=rounded.frame.velocityOffsetEventMS[i];}
+      Check("recorded-rounded-old-transpose-violates-existing-momentum-bound",std::fabs(4e-26L*roundtrip[1])>1e-38L);
+    }
     auto d=Definition(source,P::SolarCase::Quiet,argv[2]);E::SodiumPhotoionization stable;
     if(!E::SodiumPhotoionization::Create(source,d,&stable).ok())throw std::runtime_error("cannot prepare guard fixture");
     auto refuse=[&](const std::string& name,const E::Definition& bad,E::Code code){
@@ -144,6 +172,15 @@ int main(int argc,char** argv){
       Check(name,status.code==code&&retained.prepared()&&retained.reaction()->identity==stable.reaction()->identity);
     };
     auto bad=d;bad.sourceStateCrosswalkAvailable=false;refuse("missing-crosswalk-preserves-provider",bad,E::Code::Unavailable);
+    bad=d;bad.photonEnergyPolicy=static_cast<K::PhotonEnergyPolicy>(9);refuse("unknown-photon-energy-policy-refused",bad,E::Code::InvalidInput);
+    bad=d;bad.photonEnergyPolicy=K::PhotonEnergyPolicy::SourceEffectivePhoton;
+    refuse("effective-photon-missing-physical-source-refused",bad,E::Code::Unavailable);
+    bad.physicalThresholdSourceIdentity="WRONG-SOURCE";
+    refuse("effective-photon-wrong-physical-source-refused",bad,E::Code::SourceMismatch);
+    bad=d;bad.photonEnergyPolicy=K::PhotonEnergyPolicy::SourceEffectivePhoton;
+    bad.ion.state=State("Na+",1,d.ion.state.definition().formation.joules+10*d.electronVoltJ);
+    bad.physicalThresholdSourceIdentity=bad.ion.state.definition().formation.sourceIdentity;Catalog(&bad);
+    refuse("effective-photon-negative-translation-refused",bad,E::Code::OutsideDomain);
     bad=d;bad.ion.physicalRestMass={};refuse("missing-physical-ion-mass-refused",bad,E::Code::Unavailable);
     bad=d;bad.electron.modelErrorLimits={};refuse("missing-independent-error-budget-refused",bad,E::Code::Unavailable);
     bad=d;bad.ion.state=State("Na+",1,d.ion.state.definition().formation.joules+1e-22L);Catalog(&bad);refuse("wrong-state-threshold-refused",bad,E::Code::SourceMismatch);

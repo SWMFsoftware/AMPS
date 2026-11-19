@@ -19,6 +19,47 @@ def strict(path):
     return json.loads(Path(path).read_text(),object_pairs_hook=unique,parse_constant=bad)
 
 def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+def packet_template(text,packet_layout='template'):
+    """Opt in to normal individual-weight storage for conservative products.
+
+    This is a particle-record ABI choice, not an altered physical particle
+    population or timestep policy. The caller must clean-build this input.
+    The default returns the caller's exact original bytes.
+    """
+    if packet_layout=='template':return text
+    if packet_layout!='conservative-products':raise ValueError('unknown explicit packet layout')
+    pattern=re.compile(r'(?mi)^([ \t]*ParticleWeightCorrectionMode[ \t]*=[ \t]*)(on|off)([ \t]*(?:![^\r\n]*)?)$')
+    matches=list(pattern.finditer(text))
+    if len(matches)!=1:raise ValueError('conservative product layout requires one normal ParticleWeightCorrectionMode assignment')
+    return pattern.sub(lambda m:m.group(1)+'on'+m.group(3),text)
+
+def source_species_include(canonical,mapping,native):
+    """Replace ONLY selected mass/charge fields in the complete species owner.
+
+    ReadSpeciesBlock emits negative-index macros for every unselected component.
+    Those declarations are required even when a legacy shared source module is
+    not active in this particular simulation. Dropping unselected components
+    therefore changes the normal compile API; it must not be used to stage an
+    application-owned physical mass table. All other canonical bytes survive.
+    """
+    selected={symbol.upper():(symbol,state) for symbol,state in mapping.items()}
+    markers=list(re.finditer(r'(?mi)^[ \t]*#component[ \t]*=[ \t]*([A-Za-z0-9_]+)[^\r\n]*$',canonical))
+    found=set();pieces=[];end=0
+    for i,match in enumerate(markers):
+        name=match.group(1).upper();stop=markers[i+1].start() if i+1<len(markers) else len(canonical)
+        block=canonical[match.start():stop]
+        if name in selected:
+            if name in found:raise ValueError('duplicate canonical selected component '+name)
+            found.add(name);symbol,state=selected[name];row=native[state]
+            for key,value in (('mass',row[2]),('charge',row[5])):
+                pattern=re.compile(r'(?mi)^([ \t]*'+key+r'[ \t]*=[ \t]*)[^!\r\n]*')
+                block,count=pattern.subn(lambda m:m.group(1)+value,block)
+                if count!=1:raise ValueError('canonical selected component requires exactly one '+key+': '+symbol)
+        pieces.extend((canonical[end:match.start()],block));end=stop
+    pieces.append(canonical[end:])
+    if found!=set(selected):raise ValueError('mapped component absent from canonical species table: '+','.join(sorted(set(selected)-found)))
+    return ''.join(pieces)
+
 def reference_template(text,reference_problem='normal-template'):
     """Select an explicit reference experiment in NORMAL AMPS input syntax.
 
@@ -48,7 +89,7 @@ def reference_template(text,reference_problem='normal-template'):
     return text[:match.start()]+replacement+text[match.end():]
 
 
-def prepare(amps_root,profile_path,mapping_path,template_path,output,*,reference_problem='normal-template'):
+def prepare(amps_root,profile_path,mapping_path,template_path,output,*,reference_problem='normal-template',packet_layout='template'):
     amps_root,profile_path,mapping_path,template_path,output=map(lambda p:Path(p).resolve(),(amps_root,profile_path,mapping_path,template_path,output))
     if output.exists():raise FileExistsError('output already exists')
     if any(c.isspace() or c in '!#' for c in str(output)):raise ValueError('compile-time include path cannot contain whitespace or comment/directive characters')
@@ -57,7 +98,7 @@ def prepare(amps_root,profile_path,mapping_path,template_path,output,*,reference
     if any(not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*',k) or not isinstance(v,str) or not v for k,v in mapping.items()):raise ValueError('unsafe compiled symbol or empty explicit state')
     if len({k.upper() for k in mapping})!=len(mapping) or len(set(mapping.values()))!=len(mapping):raise ValueError('duplicate compiled symbol or mapped state')
     symbols=list(mapping)
-    original=reference_template(template_path.read_text(),reference_problem)
+    original=packet_template(reference_template(template_path.read_text(),reference_problem),packet_layout)
     marker=re.search(r'(?mi)^\s*#endmain\s*$',original)
     if not marker:raise ValueError('template main section terminator missing')
     main_section=original[:marker.end()]
@@ -97,10 +138,8 @@ def prepare(amps_root,profile_path,mapping_path,template_path,output,*,reference
         if r.returncode:raise RuntimeError('charge expression compilation failed: '+r.stderr)
         r=subprocess.run([str(work/'verify')],capture_output=True,text=True,timeout=10)
         if r.returncode:raise ValueError('emitted native charge expression differs from source SI charge')
-        species=['! Source-bound additive reference inertia; source-SI charge scaling.','#species']
-        for symbol,state in mapping.items():
-            row=native[state];species.extend(['! Explicit state: '+state,'#component='+symbol,'  mass='+row[2],'  charge='+row[5]])
-        species.append('#endspecies')
+        canonical_species=amps_root/'input/species.input'
+        species=source_species_include(canonical_species.read_text(),mapping,native)
         # An absolute include is intentional: the native assembler resolves
         # includes from process cwd, not from the including file's directory.
         staged=main.sub(lambda m:m.group(1)+','.join(symbols),main_section)+original[marker.end():]
@@ -112,6 +151,8 @@ def prepare(amps_root,profile_path,mapping_path,template_path,output,*,reference
         staged,n=re.subn(r'(?mi)^\s*#include\s+moon\.input\.spicekernels\s*$', '#include moon_source_profile.input.spicekernels',staged)
         if n!=1:raise ValueError('normal Moon kernel include missing or duplicate')
         manifest={'schema':'srcMoon-M3-source-species-recipe-v1','reference_problem':reference_problem,'physical_activation':False,'formal_M3_status':'SKIPPED / NOT QUALIFIED','profile':{'path':str(profile_path),'sha256':sha(profile_path)},'mapping':{'path':str(mapping_path),'sha256':sha(mapping_path),'states':mapping},'template':{'path':str(template_path),'sha256':sha(template_path)},'sources':{str(s):sha(s) for s in sources+headers},'constants_header':{'path':str(amps_root/'src/general/constants.h'),'sha256':sha(amps_root/'src/general/constants.h')},'native_receipts':rows,'commands':commands,'compiled_charge_unit_C':constant[1],'legacy_charge_unit_C':constant[2],'charge_source_identity':constant[3],'charge_source_record':constant[4],'availability':'software recipe only; no complete physical family admitted'}
+        manifest['canonical_species']={'path':str(canonical_species),'sha256':sha(canonical_species),'operation':'preserve all components and fields; replace only explicitly mapped mass/charge values'}
+        manifest['packet_layout']=packet_layout
         companion=Path(str(template_path)+'.pl')
         if not companion.is_file():raise ValueError('normal application compiler companion is missing')
         manifest['application_compiler']={'path':str(companion),'sha256':sha(companion)}
@@ -119,7 +160,7 @@ def prepare(amps_root,profile_path,mapping_path,template_path,output,*,reference
         if not kernels.is_file():raise ValueError('normal application kernel companion is missing')
         manifest['application_kernels']={'path':str(kernels),'sha256':sha(kernels)}
         output.mkdir(parents=True,exist_ok=False)
-        (output/'source_species.input').write_text('\n'.join(species)+'\n')
+        (output/'source_species.input').write_text(species)
         (output/'moon_source_profile.input').write_text(staged)
         shutil.copyfile(companion,output/'moon_source_profile.input.pl')
         (output/'moon_source_profile.input.pl').chmod(companion.stat().st_mode)
@@ -130,8 +171,9 @@ if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     for key in ('amps-root','profile','mapping','template','output-dir'):p.add_argument('--'+key,required=True,type=Path)
     p.add_argument('--reference-problem',choices=('normal-template','homogeneous-zero-acceleration'),default='normal-template',help='explicit reference experiment; normal-template preserves the supplied force binding')
+    p.add_argument('--packet-layout',choices=('template','conservative-products'),default='template',help='explicit particle-record ABI; conservative-products enables normal individual weight correction storage')
     a=p.parse_args()
-    try:prepare(a.amps_root,a.profile,a.mapping,a.template,a.output_dir,reference_problem=a.reference_problem)
+    try:prepare(a.amps_root,a.profile,a.mapping,a.template,a.output_dir,reference_problem=a.reference_problem,packet_layout=a.packet_layout)
     except LookupError as error:
         print(json.dumps({'status':'SKIPPED','reason':str(error),'formal_M3_status':'SKIPPED / NOT QUALIFIED'}));raise SystemExit(77)
     except (OSError,ValueError,KeyError,RuntimeError,subprocess.TimeoutExpired) as error:

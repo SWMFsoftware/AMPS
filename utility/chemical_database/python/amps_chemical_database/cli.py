@@ -20,7 +20,7 @@ def main(argv=None):
                         help="database-lock.json for an exact installed release/profile/export")
     commands = parser.add_subparsers(dest="command", required=True)
     listing = commands.add_parser("list", help="list source datasets, tables or source objects")
-    listing.add_argument("--kind", choices=("datasets", "tables", "sources", "species", "reactions"), default="datasets")
+    listing.add_argument("--kind", choices=("datasets", "tables", "sources", "species", "reactions", "models"), default="datasets")
     query = commands.add_parser("query", help="search dataset metadata without source ranking")
     query.add_argument("text")
     describe = commands.add_parser("describe", help="show dataset/table/source provenance and limitations")

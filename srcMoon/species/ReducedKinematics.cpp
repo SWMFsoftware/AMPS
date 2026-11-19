@@ -276,7 +276,13 @@ bool PhotonTwoBody(const PhotonTwoBodyInput& input,FinalState* output,std::strin
       return Fail("photon reference material mass is inconsistent; no artificial bath mass is supplied",error);
     FormationBalance formation;
     if(!FormationQ({input.parent},{input.products[0],input.products[1]},&formation,error))return false;
-    if(!Close(-formation.qJ-input.channelThreshold.joules,std::max(std::fabs(formation.qJ),input.channelThreshold.joules),input.controls.thresholdJ))
+    if(input.energyPolicy!=PhotonEnergyPolicy::SourceEqualsState&&
+       input.energyPolicy!=PhotonEnergyPolicy::SourceEffectivePhoton)
+      return Fail("unsupported explicit photon energy policy",error);
+    if(input.energyPolicy==PhotonEnergyPolicy::SourceEffectivePhoton&&input.sourceThresholdCrosswalkIdentity.empty())
+      return Fail("source-effective photon requires an explicit source/physical-state crosswalk identity",error);
+    if(input.energyPolicy==PhotonEnergyPolicy::SourceEqualsState&&
+       !Close(-formation.qJ-input.channelThreshold.joules,std::max(std::fabs(formation.qJ),input.channelThreshold.joules),input.controls.thresholdJ))
       return Fail("source threshold and explicit formation/excitation state crosswalk disagree",error);
     const Real photon=input.channelThreshold.joules+input.meanExcess.joules;
     if(!Positive(photon))return Fail("representative incoming photon energy must be finite positive",error);
@@ -301,13 +307,18 @@ bool PhotonTwoBody(const PhotonTwoBodyInput& input,FinalState* output,std::strin
         &final.relativeDirection,error))return false;
     final.availableCOMKineticJ=available;final.context=input.context;final.controls=input.controls;
     FinalState value;if(!GeneralTwoBodyFinalState(final,&value,error))return false;
-    value.modelIdentity="source-mean-isotropic-parent-rest-photon-two-body";value.photonIncluded=true;
+    value.modelIdentity=input.energyPolicy==PhotonEnergyPolicy::SourceEqualsState?
+      "source-mean-isotropic-parent-rest-photon-two-body":
+      "source-effective-mean-isotropic-parent-rest-photon-two-body";
+    value.photonIncluded=true;
     value.photonEnergyJ=photon;value.photonMomentumKgMS=p;value.stateQJ=formation.qJ;
     value.channelThresholdJ=input.channelThreshold.joules;value.sourceMeanExcessJ=input.meanExcess.joules;
     value.stateAvailableKineticJ=stateAvailable;
     value.formationBalance=formation;
     value.sourceIdentities.insert(value.sourceIdentities.end(),formation.sourceIdentities.begin(),formation.sourceIdentities.end());
     value.sourceIdentities.push_back(input.channelThreshold.sourceIdentity);value.sourceIdentities.push_back(input.meanExcess.sourceIdentity);
+    if(input.energyPolicy==PhotonEnergyPolicy::SourceEffectivePhoton)
+      value.sourceIdentities.push_back(input.sourceThresholdCrosswalkIdentity);
     if(!Close(value.totalKineticJ-stateAvailable,std::max(value.totalKineticJ,std::fabs(stateAvailable)),input.controls.energyJ))
       return Fail("complete photon and explicit state-energy ledger failed the numerical closure bound",error);
     *output=std::move(value);if(error)error->clear();return true;

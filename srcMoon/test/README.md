@@ -1179,8 +1179,10 @@ between levels. A larger experiment is deferred to a separately declared cluster
 package with the same criteria. Actual partial launches survive in
 `execution_journal.json` even if a later native process fails.
 
-Current Na+ state/threshold evidence is unavailable, so the current physical
-owner correctly returns77/SKIPPED before expensive normal startup. I22–I24
+The default partial profile still leaves Na+ unavailable. The opt-in atomic
+profile now supplies source-bound ground-ion evidence and an explicit
+source-effective photon crosswalk; physical execution still requires reviewed
+model-error controls and the full native admission checks. I22–I24
 still lack complete source-consistent product providers and remain disabled.
 Readiness or one successful cohort is not full I21, I21–I24 or M3 closure.
 The approved numerical0.2/0.3percent budgets, frozen original protocol, exact
@@ -1205,3 +1207,51 @@ U15's expanded supporting collection has the named600s execution allowance
 statistics checks; every enclosing native campaign still retains its original
 one-hour deadline. This changes no scientific acceptance threshold. A previous
 300s timeout is preserved as ERROR; a corrective rerun is separate evidence.
+
+
+### November 19 source, reservoir and cascade additions
+
+U15 now includes `atomic-state-profile`, `source-build-protocol`,
+`physical-case-preparation`, `oxygen-cascade` and `reservoir-products`. U17 also
+includes `reservoir-products`. These names live in `m3_supporting_services.RUNNERS`
+and the corresponding owner tuples in `common/moon_testlib.py`, which the global
+runner calls. Each child uses the normal `--output-dir NEW` protocol, preserves
+method/metric results plus logs/source hashes, and returns 0/1/2/77 for
+PASS/FAIL/ERROR/SKIPPED. The global supporting summary lists every runner/log and
+retains child counts. Whole U/I status remains separate from supporting results.
+
+For example, run the new case-preparation controls without Config or MPI:
+
+```sh
+/usr/bin/python3 -B srcMoon/test/test_m3_physical_case_preparation.py \
+  --output-dir test_output/srcMoon/NEW-case-preparation-controls
+```
+
+See [sodium_cohort/PREPARATION.md](sodium_cohort/PREPARATION.md) for explicit
+scientific inputs and [source_qualification_build/README.md](source_qualification_build/README.md)
+for a disjoint clean build. Source-preflight is a real MPI inspection of source
+states and compiled mass/charge, but launches no particle cohort. Do not use its
+PASS as I21, or reservoir/cascade numerical checks as I22–I24 qualification.
+The shared CORE test discovers reservoir-product checks independently; overlapping
+local/CORE counts must not be added as unique science tests. Existing predecessors,
+original-parent confidence rules and frozen numerical allocations still apply.
+
+### Approved P02 and physical commissioning audits
+
+`p02-independent-controls` and `commissioning-audit-controls` are additional U15
+supporting groups in the existing registry. They run 30 and 20 maintained
+software/source controls respectively, report all four normal statuses, and
+retain per-method logs and source hashes. These controls do not fabricate a
+successful physical owner. Actual event audits are explicit postprocessing of
+the completed native owner, documented in
+[sodium_cohort/P02_README.md](sodium_cohort/P02_README.md) and
+[sodium_cohort/COMMISSIONING_AUDIT_README.md](sodium_cohort/COMMISSIONING_AUDIT_README.md).
+
+The approved mechanical budget and controlled source inputs are documented in
+[M3_P02_NUMERICAL_BUDGET.md](M3_P02_NUMERICAL_BUDGET.md). A small commissioning
+cohort may verify event wiring and ledgers, but cannot replace the frozen
+statistical design, both MPI layouts, three refinements or formal predecessors.
+The original native timestep and rounded-affine failures are retained in the
+November 19 approved-P02 package. Bounds and source rates are unchanged by their
+fixes. The actual rounded-matrix regression uses an independent high-precision
+inverse; it is frame arithmetic, not observational geometry validation.

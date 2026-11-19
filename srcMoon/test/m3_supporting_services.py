@@ -32,6 +32,16 @@ RUNNERS={
     'trajectory-exposure':TEST/'test_m3_trajectory_exposure.py',
     'physical-reaction-events':TEST/'test_m3_physical_reaction_events.py',
     'profile-state':ROOT/'utility/chemical_database/state_profiles/run.py',
+    # Opt-in real atomic-state/crosswalk preparation and new shared product/
+    # cascade services extend local verification only. No source availability
+    # or numerical PASS changes the formal I21--I24 predecessor contract.
+    'atomic-state-profile':ROOT/'utility/chemical_database/state_profiles/run_atomic.py',
+    'source-build-protocol':TEST/'test_m3_source_build_protocol.py',
+    'physical-case-preparation':TEST/'test_m3_physical_case_preparation.py',
+    'p02-independent-controls':TEST/'test_m3_p02.py',
+    'commissioning-audit-controls':TEST/'test_m3_commissioning_audit.py',
+    'reservoir-products':ROOT/'test/chemical_database/test_reservoir_products.py',
+    'oxygen-cascade':TEST/'test_m3_oxygen_cascade.py',
     'qualification-infrastructure':TEST/'test_m3_qualification.py',
     # Pure administrative/independent source-admission controls. Heavy native
     # configuration/runs remain explicit isolated packages, never automatic

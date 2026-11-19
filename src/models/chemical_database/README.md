@@ -24,6 +24,11 @@ portable `src/models/chemical_database` + `src/general/input` source tree.
 - `RateServices`: explicit-role, catalogue/permission-guarded preparation of
   those same services; no filename guessing or automatic source selection.
 - `example.cpp`: a standalone catalogue-inspection executable, not AMPS.
+- `ReducedModels.h`: explicit-input mass balance, radiative branching, Opal
+  energy-marginal quantiles, two-body kinematics, unresolved-reservoir bookkeeping
+  and finite-inventory thermal release. These new helpers do not alter the
+  historical rate services. See `REDUCED_MODELS.md` for scope/units/guards;
+  source selection, species constants and physical activation belong to callers.
 
 The old `srcMoon-D04-phidrates-v1` and `srcMoon-total-capture-v1` schema strings
 are preserved historical **data identities**, not application dependencies.
@@ -120,3 +125,17 @@ source/data identities and run the same previous core/Moon/comet gates.
 A source-only smoke cannot establish linked or observational PASS. There is
 no new permanent test ID, threshold relaxation, reference update or canonical
 source mutation in this component.
+
+## Explicit reservoir products
+
+[ReservoirProducts.h](ReservoirProducts.h) adds reusable, header-only C++17
+services for the approved limited heavy-ion/reservoir models; its full API,
+units, evidence and refusal contract is in [ReservoirProducts.md](ReservoirProducts.md).
+It supports the collision-biased Maxwellian mean from an explicitly supplied
+rate derivative, inherited-velocity ionization with signed electron-reservoir
+moments, and Q-corrected forward partial charge exchange with separately tracked
+neutral/plasma isotope carriers. It selects no source, bath, energy frame,
+differential law or physical error budget. Transactional refusals preserve all
+outputs. The registered core chemical-database suite runs its independent
+analytic/conservation/refusal checks. These source-tree additions do not modify
+the immutable installed r3 snapshot or activate application transport.

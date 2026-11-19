@@ -43,6 +43,14 @@ srcTemp
 !srcMoon/test/build_m2_qualification.py
 # Retained-binary identity checks are maintained test source, too.
 !srcMoon/test/test_m2_build_identity.py
+# M3's isolated builder and bounded protocol controls are maintained source.
+# Admit only this documented suite; generated build products remain ignored.
+!srcMoon/test/build_m3_source_qualification.py
+!srcMoon/test/test_m3_source_build_protocol.py
+!srcMoon/test/source_qualification_build/
+!srcMoon/test/source_qualification_build/CONTRACT.md
+!srcMoon/test/source_qualification_build/README.md
+!srcMoon/test/source_qualification_build/test_protocol.py
 # The manual invokes this maintained source file. Without this exception the
 # broad *build* rule silently omits it from fresh checkouts and breaks make PDF.
 !doc/build_manual.py

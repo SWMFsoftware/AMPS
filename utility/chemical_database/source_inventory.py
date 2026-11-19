@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import csv
 import hashlib
+import importlib.util
 import json
 import mimetypes
 import os
@@ -41,6 +42,25 @@ IAEA = _policy('allowed', 'allowed', 'allowed-with-attribution',
 EXOMOL = _policy('allowed', 'allowed', 'allowed-with-attribution-sharealike',
     dict(url='https://www.exomol.com/data/licence/', note='All ExoMol data: CC BY-SA4.0.'),
     conditions='Preserve credit, licence link and changes; respect ShareAlike when sharing adaptations. No physical readiness follows.')
+NASA_CEA = _policy('allowed', 'allowed', 'allowed-with-licence-and-notice',
+    dict(url='https://github.com/nasa/cea/blob/2f79a647e85737742fb08a127da00d1ea1d069da/LICENSE.txt', note='Official NASA CEA Apache-2.0 licence; acquired release is independently commit-pinned.'),
+    dict(url='https://github.com/nasa/cea/blob/2f79a647e85737742fb08a127da00d1ea1d069da/NOTICE.txt', note='NOTICE explicitly identifies data/thermo.inp and data/trans.inp as included data.'),
+    conditions='Preserve pinned LICENSE/NOTICE, source commit and data header version. Thermochemical fits and natural-average masses are not isotope/state-resolved reaction crosswalks.')
+ZENODO_CC_BY = _policy('allowed', 'allowed', 'allowed-with-attribution',
+    dict(url='https://about.zenodo.org/rights/', note='Only an individually inspected deposit whose native record grants CC-BY-4.0 for the selected files; conflicting in-archive notices require metadata-only treatment.'),
+    conditions='Preserve exact version record, published checksum, citation and file-specific licence evidence. Simulation arrays are not measured validation observations.')
+TUWIEN_REGOLITH = _policy('allowed', 'allowed', 'allowed-with-attribution',
+    dict(url='https://researchdata.tuwien.ac.at/records/hjn8d-hyh84', note='Apollo16 regolith sputter deposit explicitly applies CC-BY to all data files.'),
+    conditions='Retain native all-data-files grant and attribution; keep measured sputtering and simulation/model results distinct. This grant does not establish incident-ion retention.')
+CHIANTI = _policy('allowed', 'allowed', 'allowed-with-attribution',
+    dict(url='https://www.chiantidatabase.org/', note='The pinned official CHIANTI use/acknowledgement notice permits use and requires the database and original atomic-source citations.'),
+    conditions='Retain the exact ion files, original references and pinned notice. Do not equate a current ion-page/download-page version with an unverified tar release, splice radiative datasets or invent uncertainties.')
+SPRINGER_CC_BY = _policy('allowed', 'allowed', 'allowed-with-attribution',
+    dict(url='https://creativecommons.org/licenses/by/4.0/', note='Only supplementary files covered by their matching article\'s explicit CC-BY4.0 statement, retained as a pinned publisher/EuropePMC record.'),
+    conditions='A grant for another article does not apply. Retain article DOI, native supplementary-file identity and matching rights evidence. Separate measurements, fits and model curves; no inferred units or normalization.')
+NTRS_19700032941 = _policy('allowed', 'allowed', 'source-specific-public-use',
+    dict(url='https://ntrs.nasa.gov/citations/19700032941', note='The exact official citation record states GOV_PUBLIC_USE_PERMITTED, public distribution, no third-party material/ownership marker; native cover authorizes public release and sale.'),
+    conditions='Only original PDF/record metadata for NASA-CR114270, NTRS19700032941. Retain actual notice/metadata; no blanket NASA public-domain or CEA licence assertion. No OCR-derived numerical table is admitted.')
 NIST_UNMARKED = _policy('allowed', 'allowed', 'allowed-with-source-credit',
     dict(url='https://www.nist.gov/copyrights-disclaimers',
          note='Use of NIST information permits copying of information not marked copyrighted.'),
@@ -294,7 +314,7 @@ def _table(path: Path, file_id: str) -> dict | None:
                 header_in_source=True)
 
 
-def inventory(amps_root: Path, validation_root: Path) -> list[dict]:
+def inventory(amps_root: Path, validation_root: Path, source_packets=()) -> list[dict]:
     """Return all known datasets; missing packets remain explicit records.
 
     Paths are caller-owned and explicit. Dataset/file IDs depend only on
@@ -540,4 +560,24 @@ def inventory(amps_root: Path, validation_root: Path) -> list[dict]:
             ds['availability'] = 'missing'
             ds['issues'].append('MISSING_SOURCE_FILES: ' + ds['expected_root'])
         ds['issues'] = list(dict.fromkeys(ds['issues']))
+    if source_packets:
+        # Explicit new packets supplement the frozen historical inventory.
+        # Loading is offline, hash-bound and provider-policy specific. Default
+        # calls retain their original dataset membership and numerical sources.
+        module_path = Path(__file__).with_name('source_packets.py')
+        spec = importlib.util.spec_from_file_location('amps_chemical_source_packets', str(module_path))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        policies = {'metadata-only': UNKNOWN, 'iaea-cc-by-4.0': IAEA,
+                    'exomol-cc-by-sa-4.0': EXOMOL, 'nasa-cea-apache-2.0': NASA_CEA,
+                    'zenodo-cc-by-4.0': ZENODO_CC_BY,
+                    'tuwien-regolith-cc-by-4.0': TUWIEN_REGOLITH,
+                    'chianti-use-attribution': CHIANTI,
+                    'springer-cc-by-4.0': SPRINGER_CC_BY,
+                    'ntrs-19700032941-public-use': NTRS_19700032941}
+        for item in module.load_packets(source_packets, policies):
+            if item['id'] in datasets or any(row['id'] in file_ids for row in item['files']):
+                raise ValueError('new source packet collides with historical dataset/source IDs')
+            datasets[item['id']] = item
+            file_ids.update(row['id'] for row in item['files'])
     return [datasets[key] for key in sorted(datasets)]

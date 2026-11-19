@@ -17,6 +17,18 @@ The requested installation location is:
 /data/vtenishe/CHEMICAL_DATABASE
 ```
 
+The first November 19 extension is a separate immutable installation at
+`/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261119-r2`.
+For all examples below, set `CHEM_DB_ROOT` to that snapshot to select r2, or
+to the original root to retain r1. Each has its own explicit lock; publishing
+r2 does not retarget the original installation or an application's input.
+
+The subsequent physics/source extension is
+`/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261119-r3`.
+Select **that snapshot's own lock** for the new sources and model definitions.
+Neither r1 nor r2 is edited, and no application input is retargeted. This README
+is shipped inside r3; earlier snapshots retain their original documentation.
+
 All internal runtime references are relative and hash-pinned. The directory
 can be copied to another machine without the original AMPS checkout or
 `moon_validation_data`. Use a Python 3 interpreter (tested with 3.8 and the
@@ -42,12 +54,19 @@ export by ID/path/SHA-256. It never means "latest". `identity` prints these
 pins. `verify` checks stored source/member bytes and supported CSV schemas;
 its output explicitly says that physical validation is NOT EVALUATED.
 
-The first retained inventory contains 27 source groups, 622 source files and
+The first (r1) retained inventory contains 27 source groups, 622 source files and
 35 table descriptors. Under the reviewed source policy, 31 source payloads
 are importable; 591 source records are metadata-only. Seven table objects
 are available, including four CSV representations and three native ASCII
 tables. Exact installed counts are in `publication.json`; scientific source
 issues and permission state are recorded per dataset, not hidden in totals.
+
+The r2 extension contains 33 source groups, 721 source records and 80 table
+descriptors: 119 permitted source payloads, 602 metadata-only records and 52
+available tables. The 99 added source records include 88 admitted payloads
+and 11 metadata-only records. All 45 new CSV tables are available. These counts
+include native sources, rights/metadata files and reproducible projections;
+they are not counts of independent experiments or physically qualified laws.
 
 To inspect chemical channel identities and source-labelled species:
 
@@ -94,6 +113,67 @@ they were additional independent pure-capture measurements.
 Python accepts a stable complete table ID or an **exact unique native table
 name**. Ambiguous names fail; there is no silent first/latest-source choice.
 C++ uses complete stable IDs. `describe` reports the actual `table_id`.
+
+### 2.1 New r2 tables and their physical scope
+
+Use these complete, stable table IDs with either the Python API or CLI:
+
+```bash
+CHEM_DB_ROOT=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261119-r2
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$CHEM_DB_ROOT/database-lock.json" \
+  table nasa-selected-species --csv
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$CHEM_DB_ROOT/database-lock.json" \
+  table nasa-selected-coefficients --csv
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$CHEM_DB_ROOT/database-lock.json" \
+  describe collision-D107513-fit-parameters
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$CHEM_DB_ROOT/database-lock.json" \
+  table surface.tuwien.hjn8d-hyh84.Fig1a_Experiment.table --csv
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$CHEM_DB_ROOT/database-lock.json" \
+  describe exomol-20261119:h2o-dtu-423-15K-photo:table
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$CHEM_DB_ROOT/database-lock.json" \
+  describe exomol-20261119:oh-mythos-states-bz2:table
+```
+
+Native originals remain available by `source-path SOURCE_ID`. For example,
+`exoatom-sodium:exoatom-Na__NIST.states` and
+`exoatom-sodium:exoatom-Na_p__NIST.states` provide the 423 Na I and 186 Na II
+source-relative state rows. Both source definitions have `Ionisation=null` and
+the same listed mass; neither supplies a physical ion rest mass or the energy
+offset between charge spectra. Their underlying NIST lineage is retained under
+the separately published ExoAtom/ExoMol product, without clearing direct ASD
+sources held in the original catalogue.
+
+Important interpretation requirements are recorded in the dataset `files`
+metadata and accompanying `NATIVE_*_SOURCES.md` notes:
+
+* NASA's native September 2021 thermo.inp is pinned to the acquired CEA Git
+  commit. The 19 selected gas-species rows and 56 interval rows retain source
+  FORTRAN `D` exponents. Elemental molecular weights and thermochemical
+  Hf(298.15 K)/H(298.15 K)-H(0) reference quantities are not state-resolved
+  isotope masses or directly usable zero-temperature ionization energies.
+  Nonincreasing condensed-phase native domains remain documented in the
+  original full file; no interval is silently repaired.
+* IAEA's 21 acquired Na/He source fit pages yield 172 printed coefficients.
+  The source formulas, thresholds, fit domains and reported uncertainties
+  remain native metadata. No source Python/Fortran expression is executed or
+  repaired by the database. A coarse fit threshold is not a formation energy;
+  integral ionization fits do not determine collision-conditioned daughters.
+* ExoMol H2O absorption measurements have 7933 rows each at 423.15 and
+  573.15 K. Their 679 and 1448 negative samples are preserved. Do not use
+  these signed measurements as nonnegative probabilities or invent branching.
+  OH MYTHOS has 10606 source states and a 10000-row partition table. Its actual
+  maximum listed state energy differs from the definition's declared maximum;
+  both remain recorded. Excitation coordinates are not formation energies,
+  and no initial-state population or photodissociation law is selected.
+* TU Wien supplies four measured sputter-yield files (17 rows) and fourteen
+  simulation files (2033 rows). The sample-identifier discrepancy between
+  article and methods remains unresolved. Missing experimental temperature,
+  confidence convention, retention and outgoing charge distributions remain
+  missing. Sputtering cannot substitute for an incident-ion sticking model.
+
+Full acquisition/gap details are in `PHYSICAL_INPUT_STATUS_20261119.md`.
+SpuBase, CCC, ADAS and other uncleared sources remain metadata-only. No r2
+source-access PASS closes I21–I24 or activates a production reaction family.
 
 ## 3. Python API
 
@@ -384,7 +464,8 @@ python3 -B utility/chemical_database/build_database.py \
   --amps-root /path/to/AMPS \
   --validation-root /path/to/moon_validation_data \
   --output-root /path/to/NEW_EMPTY_PUBLICATION \
-  --release-id NEW_RELEASE_ID
+  --release-id NEW_RELEASE_ID \
+  --source-packet /path/to/explicit/source_packet.json
 ```
 
 `output-root` must not already exist. The source inventory explicitly accounts
@@ -392,6 +473,11 @@ for unavailable packets. Original bytes remain read-only; partial publication
 artifacts survive errors for diagnosis and are never mistaken for a complete
 release. Rebuilding from another source checkout requires its corresponding
 retained source packets; runtime access to an existing installation does not.
+The optional `--source-packet` can be repeated; omitting it retains the original
+inventory. Exact admitted manifests are preserved under the release's
+`provenance/source_packets/`; native/derived objects and processing recipes
+are separately hash-bound. Acquisition is a separate explicit online command,
+never an automatic runtime fallback. See `SOURCE_PACKET_CONTRACT.md`.
 
 The shared verification suite is maintained at
 `test/chemical_database/run_all_tests.py` in AMPS. It covers the actual Python/
@@ -405,3 +491,115 @@ The original source archives have been preserved. Backup scheduling and the
 long-term maintenance/distribution owner are not silently invented by this
 installation; retain the immutable snapshot and original archives until those
 operational arrangements are established.
+
+## 9. Shared physical inputs and explicit model definitions (r3)
+
+These interfaces are application-independent. The same immutable catalogue,
+native data views and C++ helpers can be used by the Moon, comet, Earth or any
+other application. There is no PIC, lunar-frame or lunar-species dependency.
+
+The r3 additions preserve source roles rather than turning every downloaded
+column into a reaction law:
+
+| Input | Exposed representation | Scope and limits |
+|---|---|---|
+| CHIANTI O I | Native `.elvlc`/`.wgfa`, five low levels and nine links as CSV | Observed/theoretical energies separate; vacuum angstrom wavelengths; no supplied A-value uncertainty. Radiative data are one coherent source set. |
+| Jones2020 Apollo 14163/10084 TPD | Native 14-file deposit and 13 reversible line/field-token tables | Keep measurements, background subtraction, fitted components, inverted site distributions and lunar-cycle predictions distinct. Malformed original headers, blanks, negative values and distinct temperature axes survive. |
+| Chang2021 water photofragments | Original supplementary ZIP/XLSX and sparse long-cell tables | Preserve cell coordinates, types, cached values and unevaluated formulae. Narrowband spectra, fitted curves and state populations do not specify a full solar-spectrum joint daughter generator. Unknown units remain unknown. |
+| JWST prompt OH | Author spectrum and separately labelled observed/model CSV views | The observed spectrum has no supplied uncertainty column. These astrophysical data are not lunar validation observations. |
+| Poppe2022 ARTEMIS pickup products | Author aggregate observation grid, separate modeled rate table | Preserve source units and bins; do not infer Na-only composition, unreported error bars or the meaning of zero/coverage gaps. This is not a time-dependent plasma driver. |
+| NASA-CR114270 proton–helium scattering/capture | Original NTRS19700032941 PDF and exact official citation/rights record | Tables8–12 have distinct angular/state scopes, units and errors. No OCR/hand-transcribed cross-section CSV is admitted; genuine blanks and ambiguous print remain source evidence. |
+
+Each table's `describe` metadata records its exact native parents, projection
+recipe, units/roles and known limitations. Native objects and original rights
+notices remain accessible via `source_path`. Read the shipped
+`NATIVE_CHIANTI_SOURCES.md`, `NATIVE_APOLLO_SOURCES.md`,
+`NATIVE_WORKBOOK_SOURCES.md` and `RIGHTS.md` before interpreting a table.
+`NATIVE_COLLISION_BENCHMARK_SOURCES.md` records the NASA table-specific scope
+and narrow record-specific public-use determination; it is not a blanket
+NASA public-domain or CEA licence assertion.
+
+The r3 catalogue contains 41 source groups, 782 source records and 105 table
+descriptors: 180 admitted source payloads, 602 metadata-only records and 77
+available tables. Relative to r2, all 61 added source objects and 25 added CSV
+tables are available, including the 12-row authored model-definition table.
+These are access counts, not counts of independently measured physical laws.
+
+The model registry includes mathematical mass balance, coherent radiative
+branching, the Opal lower-energy electron marginal, conservative two-body final
+states, an explicitly unresolved reservoir closure and first-order thermal
+release. It also describes published water-site and H-reflection scenarios.
+Scenario descriptions are not implemented providers, measured universal
+parameters or automatic source selections. In particular, a descriptor with
+`implementation=descriptor-only` has no numerical kernel.
+
+```bash
+CHEM_DB_ROOT=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261119-r3
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$CHEM_DB_ROOT/database-lock.json" list --kind models
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$CHEM_DB_ROOT/database-lock.json" describe opal-energy-marginal-v1
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$CHEM_DB_ROOT/database-lock.json" table chianti-oi-levels-five --csv
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$CHEM_DB_ROOT/database-lock.json" table amps-reduced-model-definitions-v1 --csv
+PYTHONPATH="$CHEM_DB_ROOT/python" python3 -B - "$CHEM_DB_ROOT/database-lock.json" <<'PY'
+import sys
+from amps_chemical_database import Database
+db = Database.from_lock(sys.argv[1])
+print(db.model("polanyi-wigner-fixed-sites-v1"))
+print(db.table("chianti-oi-radiative-lowest-five").rows)
+PY
+```
+
+`models()` returns recursively immutable definitions selected by the lock;
+`model(id)`/`describe(id)` return one. Old catalogues return an empty tuple for
+`models()` and `Unavailable` for a new model ID. CLI `list --kind models` gives
+the same definitions. C++ applications read the identical registry as the
+ordinary `amps-reduced-model-definitions-v1` table through `Catalogue::TableRows`;
+no new export codec or runtime ABI is required.
+
+For calculations include `sdk/src/models/chemical_database/ReducedModels.h`
+and use `AMPS::ChemicalDatabase::ReducedModels`. Its six header-only helpers
+take **all** physical parameters explicitly, return the existing typed `Status`,
+and preserve output objects when rejecting input. Read the installed
+`sdk/src/models/chemical_database/REDUCED_MODELS.md` for signatures, units,
+frame conventions, domain/resource behavior and caller responsibilities.
+The helpers have no built-in species constants, surface parameters, source
+ranking or reaction network. Kernel access does not bypass source permissions.
+
+A standalone C++ caller example is shipped as `sdk/examples/reduced_models.cpp`:
+
+```bash
+c++ -std=c++17 -O2 -Wall -Wextra -pedantic \
+  -I "$CHEM_DB_ROOT/sdk/src/models/chemical_database" \
+  "$CHEM_DB_ROOT/sdk/examples/reduced_models.cpp" -o /tmp/amps-reduced-models
+/tmp/amps-reduced-models "$NU_S" "$BINDING_J" "$KB_J_PER_K" \
+  "$SURFACE_T_K" "$POPULATION" "$DURATION_S"
+```
+
+Set those six variables from the caller's explicit admitted parameter set;
+none is assigned a species/material default by this example. Output reports
+the rate, remaining/released inventory and representability flags. A refusal
+returns exit2 with its reason. No chemistry-source download, parameter fit,
+temperature-to-brightness conversion or application activation occurs.
+
+The Opal marginal omits recoil and joint angles; no Na width is invented.
+Two-body conservation requires the caller to supply a supported direction,
+state-dependent Q, and total momentum including incident photons/plasma.
+The parent-velocity approximation transfers exact signed momentum, energy and
+charge differences to an unresolved bath; it predicts no electron spectrum or
+heating partition. Fixed-site release assumes constant temperature and
+parameters over the integration interval and integrates only that finite
+inventory, without readsorption or competing channels. Source-state mappings,
+observable-specific model-error bounds, numerical gates and application
+admission remain required before physical activation.
+
+To reproduce an r3-style publication, supply the original r2 packet selection
+**and** each reviewed new packet, then add `--include-model-definitions` to the
+builder command in section8. This flag is opt-in: omitting it preserves the
+historical default selection. The release archives the builder/model registry,
+exact admitted packet JSON, native parents, derived outputs and recipe hashes.
+Locally authored definitions are labelled software under AMPS's Apache2.0
+licence; they have no invented HTTP acquisition record. They do not copy or
+clear held ASD, ADAS, PHIDRATES or other third-party data.
+
+All source/integrity/API and analytical-helper PASS outcomes are software or
+local kernel verification. They establish neither full daughter distributions
+nor linked application verification or observational validation.

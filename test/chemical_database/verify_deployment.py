@@ -41,6 +41,37 @@ def run_checks(context,database):
         pin['release_id'],pin['release_manifest_sha256'],pin['profile_id'],pin['profile_sha256'],'catalogue'],
         'installed-sdk-query')
     if native.returncode:raise RuntimeError('actual relocated native SDK rejected published release: '+native.stdout+native.stderr)
+    model_deployment = {"selected": False}
+    if (module/'ReducedModels.h').is_file():
+        # Compile ONLY the relocated header/example, with no checkout include.
+        # The explicit unit-coefficient fixture is an analytical software
+        # control, never a species/material parameter set or observation.
+        example=moved/'sdk/examples/reduced_models.cpp'
+        helper=output/'reduced-models-example'
+        command=context.cxx+['-std=c++17','-O2','-g','-Wall','-Wextra','-Werror','-pedantic',
+            '-I',str(module),str(example),'-o',str(helper)]
+        compiled=context.command(command,'installed-reduced-models-compile',timeout=180)
+        if compiled.returncode:raise RuntimeError('relocated reduced-model SDK failed to compile: '+compiled.stderr)
+        evaluated=context.command([str(helper),'1','0','1','1','1','1'],'installed-reduced-models-query')
+        if evaluated.returncode:raise RuntimeError('relocated reduced-model example rejected analytical inputs')
+        from decimal import Decimal, localcontext
+        values=json.loads(evaluated.stdout,parse_float=Decimal,parse_int=Decimal)
+        with localcontext() as arithmetic:
+            arithmetic.prec=60
+            # A platform-independent roundoff bound for this order-one kernel
+            # composition; not a physical-model or observational tolerance.
+            roundoff=Decimal('1e-15')
+            if values['rate_s_inverse']!=1 or abs(values['remaining_population']-Decimal(-1).exp())>roundoff or abs(values['released_population']-(1-Decimal(-1).exp()))>roundoff:
+                raise AssertionError('relocated thermal helper violates independent analytic inventory solution')
+        refused=context.command([str(helper),'1','0','1','0','1','1'],'installed-reduced-models-refusal')
+        if refused.returncode!=2:raise AssertionError('relocated helper did not refuse zero kinetic temperature')
+        listing=context.command([context.python_executable,'-B',str(moved/'bin/chemdb'),'--lock',str(lock),
+            'list','--kind','models'],'installed-model-metadata')
+        if listing.returncode:raise RuntimeError('relocated installed model CLI failed: '+listing.stderr)
+        if len(json.loads(listing.stdout))!=len(relocated.models()):
+            raise AssertionError('relocated installed CLI model selection differs from pinned metadata')
+        model_deployment={"selected":True,"models":len(relocated.models()),
+            "header_and_example_used_only_relocated_SDK":True,"analytical_inventory_and_refusal":"PASS"}
     import hashlib
     def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()
     receipt={'scope':'real lexical source/integrity and deployed software relocation; NOT physical validation',
@@ -51,6 +82,7 @@ def run_checks(context,database):
         'installed_python_sources':{str(path.relative_to(moved)):digest(path) for path in
              sorted((moved/'python/amps_chemical_database').glob('*.py'))},
         'cli_integrity':verified,'source_tree_compiler_includes_or_libraries':[],
+        'reduced_model_deployment':model_deployment,
         'status':'PASS','physical_activation':False}
     (output/'result.json').write_text(json.dumps(receipt,indent=2,sort_keys=True)+'\n')
     return receipt

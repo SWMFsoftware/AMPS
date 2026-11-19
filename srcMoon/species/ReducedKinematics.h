@@ -113,11 +113,18 @@ struct TwoBodyInput {
 // CEX wrappers. It chooses no incoming law, Q, scattering angle or reservoir.
 bool GeneralTwoBodyFinalState(const TwoBodyInput& input,FinalState* output,std::string* error);
 
+// Distinct SOURCE models, never a tolerance that admits an inconsistent state.
+// The strict default preserves all historical source/state equality checks.
+// SourceEffectivePhoton explicitly keeps the archived representative photon
+// energy while using a separately authenticated physical formation-state gap.
+enum class PhotonEnergyPolicy { SourceEqualsState, SourceEffectivePhoton };
 struct PhotonTwoBodyInput {
   ResolvedState parent;
   std::array<ResolvedState,2> products;
   Vector3 parentMomentumKgMS{{0,0,0}},photonDirection{{0,0,0}};
   EnergyValue channelThreshold,meanExcess;
+  PhotonEnergyPolicy energyPolicy=PhotonEnergyPolicy::SourceEqualsState;
+  std::string sourceThresholdCrosswalkIdentity;
   Real polarOpenUniform=0,azimuthOpenUniform=0;
   Context context;NumericControls controls;
 };

@@ -7,7 +7,7 @@ physics, observations, or a qualification/reference release.
 import copy,csv,json,sys,tempfile,unittest,subprocess
 from pathlib import Path
 from fractions import Fraction as F
-from verify_ledger import verify,digest,binary,STATE_HEADER,load_photon_source
+from verify_ledger import verify,digest,binary,STATE_HEADER,load_photon_source,load_profile,verify_energy_crosswalk
 
 
 def fixture(root):
@@ -55,6 +55,36 @@ class LedgerTests(unittest.TestCase):
         self.root=Path(self.temp.name);self.profile,self.mapping,self.bounds,self.values=fixture(self.root)
     def score(self,values=None,mapping=None,bounds=None):
         return verify([write_events(self.root,self.values if values is None else values)],self.profile,self.mapping if mapping is None else mapping,self.bounds if bounds is None else bounds)
+    def effective_crosswalk(self):
+        """Administrative schema fixture, not a sodium threshold or dataset."""
+        states,_=load_profile(self.profile,self.mapping,{})
+        path=self.root/'ADMINISTRATIVE-CROSSWALK.csv'
+        header=['channel_id','parent_state_id','ion_state_id','electron_state_id','energy_reference_identity',
+                'photon_energy_policy','source_threshold_eV','physical_threshold_source_identity']
+        row=['ADMINISTRATIVE-CHANNEL',states['parent']['id'],states['ion']['id'],states['electron']['id'],
+             'ADMINISTRATIVE-ENERGY-ZERO','source-effective-photon','5',states['ion']['formation_source_identity']]
+        with path.open('w',newline='')as stream:
+            writer=csv.writer(stream);writer.writerow(header);writer.writerow(row)
+        mapping={**self.mapping,'energy_reference_identity':row[4],'photon_energy_policy':row[5],
+                 'photon_source':{'reaction_id':row[0]},'source_crosswalk':{'path':str(path),'sha256':digest(path)}}
+        return states,path,mapping,{'threshold':F(5),'electron_volt_J':F(1)}
+    def test_explicit_source_effective_crosswalk_has_independent_source_identity(self):
+        states,path,mapping,source=self.effective_crosswalk();identities={}
+        self.assertEqual(verify_energy_crosswalk(mapping,states,source,self.root,identities),'source-effective-photon')
+        self.assertEqual(identities[str(path)],digest(path))
+    def test_source_effective_crosswalk_cannot_change_native_threshold(self):
+        states,path,mapping,source=self.effective_crosswalk()
+        source['threshold']=F(6)
+        with self.assertRaisesRegex(ValueError,'native source threshold'):
+            verify_energy_crosswalk(mapping,states,source,self.root,{})
+    def test_source_effective_crosswalk_wrong_source_or_corruption_is_error(self):
+        states,path,mapping,source=self.effective_crosswalk()
+        states['ion']['formation_source_identity']='WRONG-STATE-SOURCE'
+        with self.assertRaisesRegex(ValueError,'formation-energy source'):
+            verify_energy_crosswalk(mapping,states,source,self.root,{})
+        path.write_text('CORRUPTED ADMINISTRATIVE CROSSWALK')
+        with self.assertRaisesRegex(ValueError,'SHA-256 changed'):
+            verify_energy_crosswalk(mapping,states,source,self.root,{})
     def test_independent_toy_frame_signed_bath_all_criteria_close(self):
         result=self.score();self.assertEqual(result['status'],'PASS',result);self.assertGreater(result['counts']['PASS'],60);self.assertEqual(result['events_evaluated'],1)
     def test_each_actual_child_property_has_an_exact_readback_gate(self):
@@ -95,6 +125,24 @@ class LedgerTests(unittest.TestCase):
             v=dict(self.values);v[key]+=1;self.assertEqual(self.score(v)['status'],'FAIL')
     def test_frame_reflection_is_refused_by_proper_rotation_gate(self):
         v=dict(self.values);v['inertial_to_event_r8']=-1;self.assertEqual(self.score(v)['status'],'FAIL')
+    def test_unit_scale_rotation_admits_small_cross_dot(self):
+        # Perturb the labelled arithmetic fixture's 90-degree matrix only.
+        # Other exact-zero toy budgets may fail; this control isolates the
+        # declared dimensionless Gram gate rather than inventing an event.
+        self.bounds['rotation']={'absolute':'0','relative':'1e-15'}
+        v=dict(self.values);v['inertial_to_event_r0']=F(1,2**54)
+        rows=[r for r in self.score(v)['checks'] if r['criterion'].startswith('proper-frame-')]
+        self.assertEqual(len(rows),10)
+        self.assertTrue(all(r['status']=='PASS' for r in rows),rows)
+    def test_unit_scale_rotation_rejects_cross_dot_above_bound(self):
+        self.bounds['rotation']={'absolute':'0','relative':'1e-15'}
+        v=dict(self.values);v['inertial_to_event_r0']=F(1,2**48)
+        rows=[r for r in self.score(v)['checks'] if r['criterion'].startswith('proper-frame-orthogonality-')]
+        self.assertTrue(any(r['status']=='FAIL' for r in rows),rows)
+    def test_zero_rotation_bound_keeps_exact_cross_dot_requirement(self):
+        v=dict(self.values);v['inertial_to_event_r0']=F(1,2**54)
+        rows=[r for r in self.score(v)['checks'] if r['criterion'].startswith('proper-frame-orthogonality-')]
+        self.assertTrue(any(r['status']=='FAIL' for r in rows),rows)
     def test_complete_binary_exponent_span_is_not_narrowed(self):
         self.assertEqual(binary('0x1.000000000000001p-16000'),F((1<<60)+1,1<<(16060)))
     def test_current_real_profile_missing_Na_ion_is_honestly_skipped(self):

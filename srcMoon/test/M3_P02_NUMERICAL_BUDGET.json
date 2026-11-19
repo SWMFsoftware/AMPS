@@ -1,0 +1,17 @@
+{
+  "schema": "srcMoon-M3-P02-approved-mechanical-budget-v1",
+  "approval_status": "APPROVED",
+  "approval_date": "2026-11-19",
+  "authority": "User approved the four numerical limits listed in response to 'where is the pending P02 error-budget?'.",
+  "scope": "First controlled source-bound sodium photoionization cohorts: 23Na ground parent, 23Na+ ground ion, free electron; common-time and explicitly declared inertial event frame.",
+  "physical_model": "Approved experimental source-mean/isotropic photon closure with an authenticated source-effective photon versus physical-state crosswalk.",
+  "relative_reference_inertia_error_max": "1e-8",
+  "relative_acceleration_error_max": "1e-8",
+  "relative_nonrelativistic_kinetic_error_max": "1e-4",
+  "particle_speed_max_m_s": "3e6",
+  "application": "Apply the three relative limits explicitly to parent, ion and electron state bindings. Supply the speed guard explicitly in each native input. Evaluate the actual source masses and event speeds; approval of the limits is not evidence that a case meets them.",
+  "status_limits": "No observational agreement threshold, source-mean/isotropic model-error certificate, full I21 qualification, M3 closure, or permission to weaken numerical conservation tolerances is granted.",
+  "basis_document": "M3_DAUGHTER_AND_ION_SURFACE_DECISIONS.md#4-p02--masses-states-and-event-energy",
+  "original_decision_inventory": "M3_DAUGHTER_AND_ION_SURFACE_DECISIONS.json",
+  "preservation": "This additive approval leaves the original source-profile-pinned decision inventory unchanged; prior run manifests and pending-review records remain historical evidence."
+}

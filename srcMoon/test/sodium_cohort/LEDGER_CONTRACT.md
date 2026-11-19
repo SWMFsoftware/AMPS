@@ -50,3 +50,16 @@ and zero reacted histories. It yields one explicit empty-set PASS criterion,
 `events_evaluated=0` and no physical-event-validation claim. Absent files or no
 rank file descriptors remain unavailable; unresolved source states still SKIP
 BEFORE this identity. A nonzero event population is never manufactured.
+
+## Unit scale for rotation invariants — November 19 correction
+
+The production frame contract tests `R^T R - I` and `det(R)-1` with dimensionless
+scale **one**: columns are declared unit vectors, including when their expected
+mutual dot product is zero. The independent verifier must use that same declared
+quantity/scale while reconstructing the Gram matrix exactly. Scaling an
+off-diagonal residual by its near-zero actual dot product instead would demand
+exact orthogonality of rounded SPICE coefficients and does not implement the
+contract. No configured absolute/relative value is changed by correcting this
+scale. The initial real-event FAIL report is retained. Analytical controls must
+admit a small off-diagonal perturbation within the explicit unit-scale bound,
+reject one above it, and preserve exact refusal when both bounds are zero.

@@ -60,3 +60,31 @@ source copies, then compile its generated macro expansion and marker. These
 prove normal parser/compiler binding only, not physical dynamics or source
 readiness. The normal default force line and absence of a newly added marker
 are separately asserted. Existing12-control results remain their old basis.
+
+# Canonical inactive-component preservation extension — 2026-11-19
+
+The actual normal source-qualified build exposed missing `_H_ENA_V1_SPEC_`,
+`_H_ENA_V2_SPEC_`, and `_H_ENA_V3_SPEC_` declarations. `ReadSpeciesBlock`
+normally emits negative indices for canonical unselected components; shared CEX
+translation units reference those names even when those species are inactive.
+The application-owned include must preserve the entire canonical component
+inventory and all nonselected fields. Only explicitly mapped mass/charge values
+are replaced. No additional particle species is activated. Verification runs
+the exact maintained Perl `ReadSpeciesBlock` with disposable files and compiles
+the emitted inactive CEX dependencies, in addition to existing source-mass/SI
+charge and no-output-on-missing-state controls. Canonical source bytes and
+active-root configuration remain unchanged.
+
+## Explicit conservative-product record layout — 2026-11-19
+
+The source-qualified template can compile with individual particle-weight
+storage disabled while the conservative transaction backend correctly refuses
+that ABI. The additive recipe option `packet_layout=conservative-products`
+must change the unique normal `ParticleWeightCorrectionMode` assignment to
+`on`; omitted/default `template` preserves the input exactly. Missing or
+duplicate assignments refuse, and every timestep setting remains unchanged.
+The source-qualification builder explicitly requests this layout, clean-builds
+it, and checks the effective generated ON macro with the real preprocessor
+after the successful build. Input intent, generated-header SHA, command and
+logs are bound to the actual producer receipt. This enables necessary storage,
+not a new reaction channel or physical qualification.

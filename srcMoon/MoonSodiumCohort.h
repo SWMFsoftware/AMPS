@@ -20,6 +20,8 @@ struct Request {
   int parentCompiledSpecies=-1,ionCompiledSpecies=-1;
   // CSV exact header: channel_id,parent_state_id,ion_state_id,electron_state_id,
   // energy_reference_identity. One reviewed complete atomic source row only.
+  // Explicit source-effective-photon input uses the documented eight-column
+  // extension, retaining the native threshold and physical source identity.
   std::string crosswalkPath,crosswalkSha256;
   E::Definition controls; // all numeric/error/policy/source fields explicit
   SemanticRandom::Configuration random;

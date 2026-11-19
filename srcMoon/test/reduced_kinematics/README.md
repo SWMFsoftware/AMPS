@@ -59,3 +59,11 @@ simultaneous bound is frozen in the contract. Refusal cases check unchanged
 outputs and source/state guards. Local PASS neither sets
 `KinematicPolicy::qualified` nor establishes physical M3 qualification; these
 approved reduced models remain **EXPERIMENTAL** pending data and linked gates.
+
+The additive `PhotonEnergyPolicy::SourceEffectivePhoton` requires an explicit
+crosswalk identity and preserves a distinct source photon threshold and physical
+state-formation gap. `SourceEqualsState` remains the strict default. See the
+[source-effective contract](../M3_SOURCE_EFFECTIVE_PHOTON_CONTRACT.md) for energy
+accounting, refusal and independent-oracle requirements. Moving-parent photon
+transforms remain owned by the production physical-event composer, which calls
+this parent-rest kernel; the kernel itself does not infer a frame transformation.

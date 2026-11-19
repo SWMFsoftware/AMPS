@@ -904,9 +904,10 @@ The new [cohort runner instructions](test/sodium_cohort/README.md) give the full
 source-profile generation, deterministic native input projection and eight-rank
 source-preflight commands. It uses an authentic current native producer from an
 isolated normal build; it does not rebuild the active checkout or guess an
-application CLI. Expected current source-preflight result is SKIPPED/exit77:
-the authoritative Na+ state/rest-mass/threshold mapping is genuinely missing.
-No numerical or physics values must be invented merely to inspect that gap.
+application CLI. The original partial profile correctly gives SKIPPED/exit77
+for unavailable Na+. The separate source-derived atomic profile now supplies
+an opt-in ground-ion/energy crosswalk. Its source inspection, physical execution,
+numerical/statistical qualification and formal predecessor gates remain distinct.
 
 Independent supporting checks, from this repository root and with NEW output
 directories, are:
@@ -947,8 +948,78 @@ I21. The plan's `native_adapter` schema is
 `mpi_ranks`, `physical_steps`, `input {path,sha256}` and the COMPLETE unique
 `input_documents [{path,sha256},...]` including the root and application include
 graph. Predeclare at least three identical step-count levels for1/8MPI. The
-plan also contains all existing approved cohort/statistical fields. No positive
-physical example is manufactured while the real source mapping is unavailable.
+plan also contains all existing approved cohort/statistical fields. The controlled workflow below uses an authenticated real atomic profile;
+an analytical state fixture cannot replace that physical source input.
 Native77 remains SKIPPED, malformed/changed inputs are ERROR, evaluated numerical
 or statistical disagreement is FAIL. A successful cohort is evidence toward the
 whole frozen matrix, not a milestone PASS. All prior attempts remain immutable.
+
+
+### P02-approved controlled sodium commissioning
+
+This runner exercises a finite source-bound Na→Na+ cohort through normal AMPS
+startup, both production species, the force-aware tracing dispatcher, chemistry
+controller and atomic particle transaction. The supplied example selects the
+second-order tracer and the explicitly compiled zero-force analytical reference.
+It uses 128 independent original parents, equal represented weights, actual
+frozen SPICE geometry, the quiet D04 endpoint and the approved P02 mechanical
+limits. It is a commissioning experiment, not a complete lunar-exosphere run,
+statistically adequate I21 campaign, observation comparison or M3 closure.
+Read [the controlled protocol](test/M3_P02_CONTROLLED_NA_PROTOCOL.json) and
+[the preparation contract](test/sodium_cohort/PREPARATION.md).
+
+First prepare the real atomic profile and source-matched conservative producer
+as documented in [the isolated build instructions](test/source_qualification_build/README.md).
+The producer checkout must remain in that configuration. The active checkout
+and its build do not need to be reconfigured. Supply actual absolute paths:
+
+```sh
+MOON_ACTIVE_ROOT=/absolute/path/to/AMPS
+MOON_SOURCE_CHECKOUT=/absolute/path/to/disposable-source-matched-AMPS
+MOON_ATOMIC_PROFILE=/absolute/path/to/atomic-profile/profile.json
+MOON_ENERGY_CROSSWALK=/absolute/path/to/atomic-profile/na_source_energy_crosswalk.csv
+MOON_PRODUCER=/absolute/path/to/source-build/normal_build_evidence.json
+MOON_CASE_ROOT=/absolute/path/to/previously-absent-commissioning-package
+mkdir "$MOON_CASE_ROOT"
+/usr/bin/python3 -B "$MOON_ACTIVE_ROOT/srcMoon/test/sodium_cohort/prepare_physical_case.py" \
+  --profile "$MOON_ATOMIC_PROFILE" --crosswalk "$MOON_ENERGY_CROSSWALK" \
+  --application-input "$MOON_ACTIVE_ROOT/srcMoon/examples/m3_sodium_p02_commissioning.in" \
+  --case-json "$MOON_ACTIVE_ROOT/srcMoon/examples/m3_sodium_p02_commissioning.json" \
+  --output-dir "$MOON_CASE_ROOT/prepared"
+cd "$MOON_SOURCE_CHECKOUT"
+/usr/bin/python3 -B srcMoon/test/run_m3_sodium_cohort.py \
+  --producer-manifest "$MOON_PRODUCER" \
+  --input "$MOON_CASE_ROOT/prepared/native.in" \
+  --mode run --mpi-ranks 8 --wall-seconds 600 \
+  --output-dir "$MOON_CASE_ROOT/native-owner"
+```
+
+The JSON contains explicit native scientific controls; it is input to the case
+producer, not an AMPS application input. The `.in` application is a complete
+normal receipt. Site/data paths must exist. No source threshold, physical mass,
+rate or missing model parameter is manufactured by the preparer. Changing the
+application or controls creates a new experiment and requires new retained
+input identities. All output directories must be new.
+
+Expect logs/resources, executable/build/source/input identities, native input
+receipt, every original parent, per-rank event and exact hexadecimal ledger CSVs
+under `native-owner/`. Native PASS means the finite execution completed; the
+independent checks are separate. Pin its original `run_manifest.json` and
+`result.json` in the binding described in
+[P02_README.md](test/sodium_cohort/P02_README.md), then audit from the active tree:
+
+```sh
+/usr/bin/python3 -B "$MOON_ACTIVE_ROOT/srcMoon/test/sodium_cohort/audit_commissioning.py" \
+  --binding /absolute/path/to/pinned-owner-binding.json \
+  --output-dir "$MOON_CASE_ROOT/independent-commissioning"
+/usr/bin/python3 -B "$MOON_ACTIVE_ROOT/srcMoon/test/sodium_cohort/verify_p02.py" \
+  --binding /absolute/path/to/pinned-owner-binding.json \
+  --output-dir "$MOON_CASE_ROOT/independent-p02"
+```
+
+The commissioning audit retains conservation/rate/clock criteria and comparison
+CSV/PNG/EPS, including per-event ledger plots. P02 retains per-state mechanical
+criteria in CSV/JSON and an audit log. The survival curve is an analytical
+source-law comparison, with no observational data. Refinement and statistical
+qualification remain NOT_EVALUATED; formal M3 remains NOT QUALIFIED. Unsupported
+physical source/state/bath/surface selections keep their ordinary data gates.

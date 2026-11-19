@@ -1350,6 +1350,19 @@ preservation evidence and remaining M3 work are tracked in STATUS.md section
 5.30. The original broader [design proposal](../doc/CHEMISTRY_DATABASE_PROPOSAL.md)
 also describes application-profile migration that has not yet been delivered.
 
+The November 19 [physical-input acquisition](../utility/chemical_database/PHYSICAL_INPUT_STATUS_20261119.md)
+is installed in the independent snapshot
+`/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261119-r2`.
+Select that directory's `database-lock.json` explicitly; the original root
+installation/lock still select r1. Its README provides exact NASA, IAEA, ExoMol
+and lunar-soil table queries and native-source examples. The extension adds
+45 byte-preserving CSV tables plus original atomic/molecular sources. It keeps
+negative source samples, distinct measured/simulated roles and all missing
+energy/state/material metadata. These inputs do not activate a reaction law or
+close M3. The maintained [real-release audit](../test/chemical_database/ACQUIRED_RELEASE_QA.md)
+checks original bytes and actual Python/C++ access; STATUS.md section5.33 records
+the completed installation and remaining physical requirements.
+
 ## Source-bound M3 completion services
 
 The approved items1–6 work adds the components below. They remain
@@ -1359,8 +1372,8 @@ See [STATUS.md](STATUS.md) for exact current native results and preserved attemp
 
 | Component | Normal production entry and controls | Inputs, outputs and coverage limits |
 |---|---|---|
-| Physical source-state profile | `species/PhysicalStateProfile::Registry`, called by `MoonSodiumCohort::Prepared::InspectProfile/Create` | Authenticated isotope/constants/state CSV and ordered original-source descriptors; SI masses/energies, integer charge/nuclei and explicit energy reference. Seven currently available reference states, fourteen unavailable states; no inferred ion/molecular energies or uncertainties. Local source/parser tests and source-only native inspection are separate from physical admission. |
-| Source-bound photon event | `species/PhysicalReactionEvents::SodiumPhotoionization`, called by `Prepared::Kinematics` on accepted controller events | Complete frozen D04 Na family and separate endpoint, explicit state crosswalk, physical/reference masses and model-error bounds. Moving-parent photon transform, electron/photon reservoirs and actual affine LSO moments; source-mean/isotropic experimental closure. Exact source/state consistency cannot be loosened by a user numerical tolerance. Current Na+ crosswalk remains unavailable. |
+| Physical source-state profile | `species/PhysicalStateProfile::Registry`, called by `MoonSodiumCohort::Prepared::InspectProfile/Create` | Authenticated isotope/constants/state CSV and ordered original-source descriptors; SI masses/energies, integer charge/nuclei and explicit energy reference. The default partial profile has seven available reference states and fourteen unavailable records; the opt-in atomic profile adds a source-derived 23Na ground ion without replacing the unavailable records. No molecular energies or uncertainties are inferred. Local source/parser tests and source-only native inspection are separate from physical admission. |
+| Source-bound photon event | `species/PhysicalReactionEvents::SodiumPhotoionization`, called by `Prepared::Kinematics` on accepted controller events | Complete frozen D04 Na family and separate endpoint, explicit state crosswalk, physical/reference masses and model-error bounds. Moving-parent photon transform, electron/photon reservoirs and actual affine LSO moments; source-mean/isotropic experimental closure. Exact source/state consistency cannot be loosened by a user numerical tolerance. An opt-in source-effective Na crosswalk is implemented; explicit physical model-error admission and linked qualification remain required. |
 | Trajectory exposure | Normal `ForceCutSurface` accepted arcs → controller history → `MoonTrajectoryExposure` → `species/TrajectoryExposure` | LSO positions/metres, time/seconds, SI source reference distance, furnished SPICE ET and actual sphere/LOLA/BVH. Inverse-square hazard, point-Sun silhouettes and explicit absolute interpolation/root/storage bounds; no preview RNG or physical-state mutation. Accepted left-limit rate survives light/shadow boundaries. Field/frame accuracy and finite-disc geometry remain separate qualification gates. |
 | Normal pre-buffer registration | `amps_init` → `MoonNativeReactionRegistration::RunBeforeParticleBuffer` | Optional named one-shot callback after SPICE/mesh/species/weights and before allocation. No callback preserves legacy behavior. Failure aborts startup with diagnostic; a callback cannot allocate the buffer or retry partial registration. Explicit-ET field construction avoids uninitialized first-step source caches. |
 | Normal environment preparation | `amps_time_step` and explicit finite cohorts → `Moon::PrepareProductionParticleEnvironment` | The complete original SPICE/orbit/thermal block is reused verbatim after common Begin and before the production particle walker. It initializes real force caches, preserves frozen/evolving ET and thermal/inventory side effects, and adds no source injection, sampling or force formula. Fresh M0 and native frozen/evolving state/force-wiring checks are separate from full physical cohort qualification. |
@@ -1378,3 +1391,54 @@ qualification. Molecular state mappings, collision-biased electron products,
 complete CEX states/differential products, cascades and physical regolith fate
 remain explicit unsupported capabilities; scalar rates remain available in
 the shared chemical database.
+
+The later November19 [physical-evidence and community-model review](test/M3_PHYSICS_LITERATURE_20261119.md)
+provides a source-derived Na+ mass, an explicit proposed D04/physical-energy
+crosswalk, acquired CHIANTI O I cascade arrays, original laboratory water
+fragment/desorption data and independent observational references. It also
+identifies a heavy-ion/reservoir approximation for limited density/pickup
+observables, distinct from resolving every outgoing electron. These are
+source findings and model proposals. Their approved shared-database integration
+is the new immutable `amps-chemistry-20261119-r3` snapshot; r1/r2 and Moon's
+production source selections remain unchanged. It adds exact native views and
+application-independent explicit-input helpers and model descriptions, rather
+than activating a reaction network. Read the installed README section9 and
+[integration contract](../utility/chemical_database/PHYSICAL_MODELS_INTEGRATION_CONTRACT.md).
+Actual source ledgers, hashes, tests and remaining scope/uncertainty limits are
+linked from the review and STATUS.md sections5.34–5.35.
+
+
+## M3 source-bound completion work — 2026-11-19
+
+The [source-effective photon contract](test/M3_SOURCE_EFFECTIVE_PHOTON_CONTRACT.md)
+and [case-preparation instructions](test/sodium_cohort/PREPARATION.md) document
+separate source/physical thresholds, the complete energy ledger and all explicit
+run controls. [The isolated builder](test/source_qualification_build/README.md)
+retains the current core's canonical species symbols, enables conservative
+particle storage through normal input, and proves actual compiled mass/charge
+and packet ABI. The normal checkout and its build are not reconfigured.
+
+[OxygenCascade](test/oxygen_cascade/README.md) implements the selected immutable
+CHIANTI O I network, lifetime/branch selection and finite-emitter photon recoil.
+[Shared reservoir products](../src/models/chemical_database/ReservoirProducts.md)
+implement explicit-input electron and forward-partial CEX moment ledgers. These
+are reusable production services with independent numerical/conservation tests;
+source/state/quenching/observable-domain admission and application providers are
+still required before activating the corresponding physical channels.
+
+All new checks are registered under existing supporting owners; no permanent
+U/I identifier or acceptance threshold changes. Local tests, source-only MPI,
+physical cohort qualification and observational validation remain separate.
+STATUS.md section 5.36 records actual outputs and remaining M3 gates. Installed
+chemical-database r1/r2/r3 snapshots remain unchanged by this source-tree work.
+
+The user subsequently approved the explicit P02 mechanical limits for the
+controlled Na family; see [the approval](test/M3_P02_NUMERICAL_BUDGET.md).
+The new [commissioning workflow](test/sodium_cohort/README.md) exercises real
+source-bound physical events, followed by independent complete ledger and P02
+audits. The production composer now solves the actual rounded affine frame
+relation rather than treating a rounded rotation's transpose as its exact
+inverse. It checks the mass-weighted roundtrip with the existing momentum
+bound, preserving supplied SPICE coefficients and every acceptance criterion.
+This fixes a captured cancellation-sensitive physical-event refusal without
+adjusting bath moments to fit a residual. Full M3 qualification remains separate.

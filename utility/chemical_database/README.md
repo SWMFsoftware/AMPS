@@ -52,3 +52,54 @@ No runtime command downloads data, mutates canonical originals, selects a
 latest source, interpolates a gap or grants missing physical/permission scope.
 External installation and its verification are recorded with the dated
 development evidence and `srcMoon/STATUS.md`.
+
+The November 19 acquisition extends the catalogue through explicit, offline
+imports. Read [SOURCE_PACKET_CONTRACT.md](SOURCE_PACKET_CONTRACT.md) before
+adding a provider. A reproducible acquisition plan names each HTTPS URL,
+relative output path and maximum byte count; acquisition writes a fresh
+directory with original responses and per-request outcomes:
+
+```bash
+/usr/bin/python3 -B utility/chemical_database/acquire_sources.py \
+  --plan /path/to/explicit-acquisition-plan.json \
+  --output-dir /path/to/NEW_ACQUISITION --timeout-seconds 25
+/usr/bin/python3 -B utility/chemical_database/build_database.py \
+  --amps-root "$PWD" --validation-root /data/vtenishe/moon_validation_data \
+  --output-root /path/to/NEW_PUBLICATION --release-id NEW_RELEASE_ID \
+  --source-packet /path/to/acquisition/source_packet.json
+```
+
+Repeat `--source-packet` for separate packets. The default source inventory is
+unchanged when this argument is absent. Failed HTTP requests are acquisition
+evidence, not scientific source objects. Each admitted packet pins original
+bytes, primary rights evidence and any native-to-CSV recipe/parents; the release
+also archives the exact packet JSON. CSV projections preserve numeric tokens,
+signs, order and gaps. Parser tests use the real originals when explicitly
+available; unavailable optional originals produce SKIPPED.
+
+The new installation is an independent immutable snapshot at
+`/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261119-r2`.
+Select its own `database-lock.json` explicitly. The original root lock and r1
+remain available. The installed README contains real NASA CEA, IAEA, ExoMol and
+TU Wien table examples and the physical-input gap matrix. This source-access
+release enables no reaction model and changes no Moon production configuration.
+
+The later November19
+[M3 literature follow-up](../../srcMoon/test/M3_PHYSICS_LITERATURE_20261119.md)
+identifies further measured inputs and documented community models. The
+approved follow-up publishes CHIANTI O I, Apollo TPD, water-fragment workbooks,
+JWST and ARTEMIS author products in the separate immutable r3 snapshot. Source
+roles, native values, units, gaps and provider-specific rights remain explicit.
+r1/r2 and application selections remain unchanged. The source atomic note also
+corrects an earlier truncated-threshold interpretation using authenticated D04.
+
+Read [PHYSICAL_MODELS_INTEGRATION_CONTRACT.md](PHYSICAL_MODELS_INTEGRATION_CONTRACT.md)
+for the preimplementation contract. The optional publication flag
+`--include-model-definitions` adds application-independent model descriptions
+and their ordinary CSV table, without adding physical capabilities to the
+profile. Python `models()`/`model(id)` and CLI `list --kind models` inspect this
+metadata; C++ reads the same table through the existing Catalogue. New
+`src/models/chemical_database/ReducedModels.h` helpers require explicit caller
+parameters and preserve the old runtime and rate services. They implement
+general mathematical/reduced kernels rather than selecting a Moon network.
+Installed README section9 gives executable CLI/Python and shared C++ guidance.

@@ -1,0 +1,46 @@
+{
+  "schema": "srcMoon-M3-P02-controlled-Na-protocol-v1",
+  "scope": "128-parent physical commissioning; not formal I21 or ensemble-precision qualification",
+  "approval": {
+    "path": "/data/vtenishe/Moon-test/AMPS/srcMoon/test/M3_P02_NUMERICAL_BUDGET.json",
+    "sha256": "26afdb36ae327c71de3b170c7c04daf28f644ab54925b106b3e18357eb484b09"
+  },
+  "prior_model_decisions": {
+    "path": "/data/vtenishe/Moon-test/AMPS/srcMoon/test/M3_DAUGHTER_AND_ION_SURFACE_DECISIONS.json",
+    "sha256": "1b21c0c7ae87e4d5eb0b8d52bf715f90513a0ff66dc87273cd4f49311fe226b9"
+  },
+  "model": "source-mean-isotropic/source-effective-photon",
+  "geometry": "actual frozen SPICE 2009-01-24T00:00:00, LSO point (10000000,0,0) m, point Sun with Earth occultation ON",
+  "reference_problem": "Compiled normal zero-acceleration kernel; zero initial LSO velocity. Neutral position and source hazard stay fixed; ion follows actual production zero-force tracing.",
+  "source_distance_normalization": {
+    "m": "149597870700",
+    "identity": "IAU-2012-Resolution-B2-au",
+    "authority": "https://www.iau.org/static/resolutions/IAU2012_English.pdf",
+    "core_legacy_AU_replaced": false
+  },
+  "commissioning": {
+    "original_parents": 128,
+    "seed": 731993,
+    "steps": 8,
+    "step_s": "8192",
+    "horizon_s": "65536",
+    "mpi_ranks": 8,
+    "openmp_threads": 1,
+    "represented_number_per_parent": "2.625",
+    "parent_reference_weight": "7",
+    "ion_reference_weight": "7"
+  },
+  "arithmetic_controls": "Predeclared SI roundoff/representation bounds from the maintained production-composer software contract; these are numerical tolerances, not source uncertainty, approximation error or observational thresholds.",
+  "exposure_controls": "Absolute depth 1e-13, relative depth 1e-12, root time 1e-9 s; storage limits are explicit and exhaustion is ERROR.",
+  "large_substep": "8192 s is admitted only for this zero-acceleration analytical reference. Production event, cell and surface clipping remain active; no force law is duplicated.",
+  "oracles": [
+    "Exact source-bound event-ledger reconstruction",
+    "Independent P02 physical/reference mass and actual inertial-speed assessment",
+    "Independent parent-keyed exponential timing; complete numerical refinement/statistical gates separate"
+  ],
+  "missing_data": "SKIPPED; never fabricated",
+  "evaluated_mismatch": "FAIL; never threshold relaxation",
+  "infrastructure_or_resource_failure": "ERROR; retain original attempt",
+  "formal_M3_status": "SKIPPED / NOT QUALIFIED",
+  "observational_scoring": false
+}

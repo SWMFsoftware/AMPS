@@ -96,3 +96,15 @@ The source/canonical roadmap hashes remain respectively
 `d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4`.
 Approved development amendments control implementation order; unchanged formal
 gates and native source metadata govern qualification and interpretation.
+
+## Additive explicit source-effective policy — 2026-11-19
+
+The earlier exact source/state admission rule above remains the **default**.
+The separately named experimental policy and authenticated eight-column mapping
+are specified in [M3_SOURCE_EFFECTIVE_PHOTON_CONTRACT.md](../M3_SOURCE_EFFECTIVE_PHOTON_CONTRACT.md).
+They account for the resolved physical formation gap while preserving the source
+photon threshold/mean and hazard. This explicit model convention does not widen
+the default representation allowance or any numerical acceptance criterion.
+Missing/wrong state-source identities, unsupported mappings and negative energy
+remain refusals. The retained real-source Na profile resolves the opt-in atomic
+mapping; physical model-error admission and linked/predecessor gates remain.

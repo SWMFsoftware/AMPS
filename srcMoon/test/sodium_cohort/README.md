@@ -163,3 +163,72 @@ reasons are retained and rank0 reports a collective refusal if its own local
 copy was available. No rank may finalize while another enters `amps_init`.
 The actual common transport origin is recorded separately from the frozen
 geometry epoch; source-only preflight invents neither value.
+
+## Opt-in physical Na profile and explicit case producer — November 19
+
+The default partial profile retains its unavailable Na ion record. The additive
+`utility/chemical_database/state_profiles/prepare_atomic.py` producer now derives
+a separate sodium-23 ground-ion state from the retained isotope, CODATA, NIST
+ground-state and ionization evidence. It preserves the original unavailable
+entries and the source-reported uncertainty semantics. This is an authenticated
+research profile, not an automatic release or production activation.
+
+For the approved experimental source-mean/isotropic model, the opt-in
+`photon_energy_policy = source-effective-photon` binds the eight-column CSV in
+[the energy contract](../M3_SOURCE_EFFECTIVE_PHOTON_CONTRACT.md). The frozen D04
+threshold and mean still define the representative incoming photon; the resolved
+physical formation gap enters the complete electron/photon energy ledger.
+The physical-minus-source threshold is derived from pinned sources, never a
+user-tuned correction. Default `source-equals-state` behavior and its independent
+strict representation guard remain unchanged. The independent ledger verifier
+authenticates the selected crosswalk before reconstructing either convention.
+
+[PREPARATION.md](PREPARATION.md) describes the new input producer and exact
+commands. It requires all 64 scientific/numerical controls explicitly, preserves
+the actual native parser grammar and refuses missing controls without publishing
+a runnable case. It chooses no P02 error budget. `reference_weight_mode` can be
+`production` or explicitly `explicit`; the latter requires both positive species
+reference weights. Native startup assigns those real block weights before
+creating parents, and the existing represented-number and committed-particle
+readback checks still apply. Weight correction must be enabled through a fresh
+normal input/build; the isolated source-build helper proves the generated ABI.
+
+The new preparation and source-build protocol controls are registered with U15
+and preserve result.json, unittest logs and source hashes. A real eight-rank
+source-preflight PASS checks available states/masses and compiled bindings only.
+It is not a physical cohort, numerical-convergence gate or I21/M3 qualification.
+
+## Approved P02 commissioning workflow
+
+The user approved the four mechanical limits in
+[M3_P02_NUMERICAL_BUDGET.json](../M3_P02_NUMERICAL_BUDGET.json) on November 19.
+They are explicit per-state inputs, not changes to conservation, numerical-bias
+or observational thresholds. [The controlled protocol](../M3_P02_CONTROLLED_NA_PROTOCOL.json)
+and `srcMoon/examples/m3_sodium_p02_commissioning.{in,json}` freeze the first
+128-parent quiet-source case. It is a zero-force analytical chemistry experiment
+with actual source states, normal startup/dispatch/mover/transaction and frozen
+SPICE geometry. It does not model a complete force-driven lunar exosphere.
+
+The case uses an exterior sunward LSO point at `(10000000,0,0)` m, zero initial
+LSO velocity, eight equal 8192 s steps and 2.625 represented atoms per independent
+parent. Both reference weights are 7, giving exactly representable correction
+0.375. Its 65536 s horizon is an explicit commissioning choice, not an assertion
+that lambda*T equals log(2). Actual source range/visibility and endpoint rate
+come from the retained startup receipt and authenticated D04 data. The explicit
+149597870700 m normalization is IAU 2012 Resolution B2, not a relabelled legacy
+AMPS `_AU_`. Arithmetic tolerances remain separate from approved P02 model limits.
+
+In global timestep modes the public core setter keeps a minimum. The isolated
+native owner now resets that reduction accumulator before applying this declared
+reference interval and checks actual getter values before creating its source.
+It does not change the core setter, normal application tables or common-clock
+admission. A fresh source-matched producer is mandatory after native code edits.
+
+[COMMISSIONING_AUDIT_README.md](COMMISSIONING_AUDIT_README.md) describes the
+independent original-owner, complete parent/event, ledger, source-rate and
+single-level first-hit checks, with CSV/PNG/EPS artifacts.
+[P02_README.md](P02_README.md) describes the separate physical/reference mass,
+acceleration, actual inertial-speed and relativistic-kinetic audit. Neither
+claims statistical qualification or three-level convergence. Run commands are
+also in [srcMoon/RUN.md](../../RUN.md). Both verifiers consume pinned original
+owner manifests/results rather than accepting an arbitrary plausible event CSV.

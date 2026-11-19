@@ -135,7 +135,8 @@ def load_profile(profile_path,mapping,identities):
         if not row['physical_rest_mass_kg']:raise Unavailable('independent physical rest mass missing: '+sid)
         source(row,'physical_mass_',{'isotope-mass','constants','energy'})
         if decimal(row['physical_rest_mass_kg'])<=0:raise ValueError('nonpositive physical rest mass')
-        selected[key]={'id':sid,'nuclei':nuclei,'charge':charge,'mass':mass,'internal':formation+excitation}
+        selected[key]={'id':sid,'nuclei':nuclei,'charge':charge,'mass':mass,'internal':formation+excitation,
+            'formation_source_identity':row['formation_source_id']+'@sha256:'+sources[row['formation_source_id']]['sha256']+'#'+row['formation_source_record']}
     return selected,constants
 
 
@@ -162,7 +163,39 @@ def load_photon_source(mapping,base,identities,constants,scope):
     row,limit=matches[0],limits[0]
     if row['reaction_type']!='photoionization' or row['products']!='Na+ + e' or row['species']!='Na' or limit['products']!=row['products']:raise ValueError('source is not the complete single reactive Na endpoint')
     unit=constants['elementary charge'][0]
-    return {'rate':decimal(row['rate_1au_s-1']),'mean':decimal(row['excess_energy_eV'])*unit,'threshold':decimal(limit['threshold_eV'])*unit}
+    return {'rate':decimal(row['rate_1au_s-1']),'mean':decimal(row['excess_energy_eV'])*unit,
+            'threshold':decimal(limit['threshold_eV'])*unit,'electron_volt_J':unit}
+
+
+def verify_energy_crosswalk(mapping,states,source,base,identities):
+    """Authenticate an explicit alternative source model without fitting a gap.
+
+    Default strict receipts retain their original source=state criterion. For
+    source-effective photons the independent verifier reads the pinned native
+    crosswalk and separately binds state IDs, source threshold and the actual
+    resolved ion formation-energy evidence. No native precomputed residual is
+    an independent reference and no energy correction is user-supplied.
+    """
+    policy=mapping.get('photon_energy_policy','source-equals-state')
+    if policy=='source-equals-state':return policy
+    if policy!='source-effective-photon':raise ValueError('unsupported photon energy policy')
+    if source is None:raise Unavailable('source-effective photon requires independent native photon-source evidence')
+    descriptor=mapping.get('source_crosswalk')
+    if descriptor is None:raise Unavailable('source-effective photon crosswalk unavailable')
+    path=authenticate(descriptor,base,identities)
+    header=['channel_id','parent_state_id','ion_state_id','electron_state_id','energy_reference_identity',
+            'photon_energy_policy','source_threshold_eV','physical_threshold_source_identity']
+    rows=csv_rows(path,header)
+    if len(rows)!=1:raise ValueError('one complete Na source crosswalk required')
+    row=rows[0]
+    if [row[k]for k in header[:5]]!=[mapping['photon_source']['reaction_id'],states['parent']['id'],
+            states['ion']['id'],states['electron']['id'],mapping.get('energy_reference_identity')]:
+        raise ValueError('crosswalk channel/state/common-energy identity differs from the independently loaded profile')
+    if row['photon_energy_policy']!=policy or row['physical_threshold_source_identity']!=states['ion']['formation_source_identity']:
+        raise ValueError('crosswalk policy or physical formation-energy source identity differs')
+    if decimal(row['source_threshold_eV'])*source['electron_volt_J']!=source['threshold']:
+        raise ValueError('crosswalk changed the native source threshold')
+    return policy
 
 
 def _bound(bounds,key):
@@ -210,6 +243,7 @@ def verify(paths,profile_json,mapping,bounds):
         for name in ('mass_kg','momentum_kg_m_s','energy_j','number','rotation'):_bound(bounds,name)
         for path in paths:result['input_sha256'][str(Path(path).resolve())]=digest(path)
         source=load_photon_source(mapping,Path(profile_json).resolve().parent,result['input_sha256'],constants,bounds['scope'])
+        energy_policy=verify_energy_crosswalk(mapping,states,source,Path(profile_json).resolve().parent,result['input_sha256'])
         if source is not None:_bound(bounds,'rate_s')
         events=read_events(paths);c=constants['speed of light in vacuum'][0]
         def check(parent,name,passed,residual=F(),limit=F()):
@@ -226,6 +260,8 @@ def verify(paths,profile_json,mapping,bounds):
         def mat(r,v):return [dot(r[3*k:3*k+3],v) for k in range(3)]
         required={'parent_number','ion_number','parent_reference_weight','parent_individual_correction','ion_reference_weight','ion_individual_correction','parent_internal_j','ion_internal_j','photon_inertial_j','bath_event_j','bath_mass_kg','electron_state_j','source_threshold_j','source_mean_excess_j','source_q_j','ledger_parent_mass_kg','ledger_ion_mass_kg','ledger_bath_mass_kg','ledger_tracked_de_j','ledger_bath_de_j','tracked_charge_change_e','bath_charge_change_e','exposure_error_bound','clock_storage_error_bound','actual_ion_reference_weight','actual_ion_individual_correction','actual_ion_internal_j','actual_ion_compiled_index','actual_ion_child_count','event_epoch_et_s','actual_ion_epoch_et_s','planned_interval_start_s','planned_interval_duration_s','planned_interval_elapsed_s','actual_ion_interval_start_s','actual_ion_interval_duration_s','actual_ion_interval_elapsed_s','actual_parent_compiled_mass_kg','actual_ion_compiled_mass_kg','actual_parent_charge_c','actual_ion_charge_c'}
         p,i,e=(states[k] for k in ('parent','ion','electron'))
+        if energy_policy=='source-effective-photon':
+            required.update(('physical_threshold_j','physical_minus_source_threshold_j'))
         composition=Counter(i['nuclei']);composition.update(e['nuclei'])
         source_q=p['internal']-i['internal']-e['internal']
         for parent,row in sorted(events.items(),key=lambda item:int(item[0])):
@@ -245,7 +281,12 @@ def verify(paths,profile_json,mapping,bounds):
                 expected_charge=F.from_float(float(state['charge']*constants['elementary charge'][0]))
                 check(parent,'actual-PIC-source-SI-charge-'+name,row['actual_'+name+'_charge_c']==expected_charge,row['actual_'+name+'_charge_c']-expected_charge)
             close(parent,'source-formation-Q',row['source_q_j'],source_q,'energy_j')
-            close(parent,'source-threshold-Q',row['source_threshold_j'],-source_q,'energy_j')
+            if energy_policy=='source-equals-state':
+                close(parent,'source-threshold-Q',row['source_threshold_j'],-source_q,'energy_j')
+            else:
+                close(parent,'physical-threshold-Q',row['physical_threshold_j'],-source_q,'energy_j')
+                close(parent,'separate-physical-minus-source-threshold',row['physical_minus_source_threshold_j'],
+                      -source_q-row['source_threshold_j'],'energy_j')
             close(parent,'parent-source-internal-energy',row['parent_internal_j'],p['internal'],'energy_j')
             close(parent,'ion-source-internal-energy',row['ion_internal_j'],i['internal'],'energy_j')
             close(parent,'electron-source-internal-energy',row['electron_state_j'],e['internal'],'energy_j')
@@ -279,10 +320,17 @@ def verify(paths,profile_json,mapping,bounds):
             offset=vector(row,'velocity_offset_event')
             try:rotation=[row['inertial_to_event_r'+str(k)] for k in range(9)]
             except KeyError as error:raise Unavailable('actual frame matrix missing') from error
+            # Orthogonality concerns UNIT columns, including zero expected
+            # cross-dot products. Its dimensionless reference scale is one,
+            # as in the declared R^T R identity. A generic relative comparison
+            # with the tiny off-diagonal value would incorrectly require that
+            # rounded SPICE coefficients have exactly zero cross-dot products.
+            # Keep the caller's original rotation tolerances unchanged.
             for a in range(3):
-                for b in range(3):close(parent,'proper-frame-orthogonality-'+str(a)+str(b),dot(rotation[3*a:3*a+3],rotation[3*b:3*b+3]),F(a==b),'rotation')
+                for b in range(3):close(parent,'proper-frame-orthogonality-'+str(a)+str(b),
+                    dot(rotation[a::3],rotation[b::3]),F(a==b),'rotation',scale=F(1))
             determinant=rotation[0]*(rotation[4]*rotation[8]-rotation[5]*rotation[7])-rotation[1]*(rotation[3]*rotation[8]-rotation[5]*rotation[6])+rotation[2]*(rotation[3]*rotation[7]-rotation[4]*rotation[6])
-            close(parent,'proper-frame-determinant',determinant,F(1),'rotation')
+            close(parent,'proper-frame-determinant',determinant,F(1),'rotation',scale=F(1))
             for label,actual,sourcev,mass in [('parent',pv,pin,p['mass']),('electron',ev,ein,e['mass'])]:
                 rotated=mat(rotation,sourcev)
                 for axis in range(3):close(parent,label+'-event-frame-velocity-'+str(axis),mass*actual[axis],mass*(rotated[axis]+offset[axis]),'momentum_kg_m_s')

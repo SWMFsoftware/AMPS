@@ -10,6 +10,7 @@ from collections import Counter
 from datetime import datetime,timezone
 import hashlib
 import importlib
+import inspect
 import json
 import os
 import shlex
@@ -42,11 +43,24 @@ class Context:
         self.sources += [ROOT/'srcMoon/species'/(name+'.h') for name in
                          ('Photochemistry','ElectronImpact','ChargeExchange')]
         self.sources += [base/(name+'.h') for name in ('Photochemistry','ElectronImpact','ChargeExchange')]
+        # New mathematical helpers and their thin executable adapters are
+        # shared production code too, even though no AMPS particle build is
+        # needed. Bind their actual bytes in the same campaign identity.
+        self.sources += [base/'ReducedModels.h']
+        self.sources += sorted((base/'examples').glob('*.cpp'))
+        self.sources += sorted(HERE.glob('reduced_models_probe.cpp'))
         # Python queries are production paths too. Bind their actual code,
         # including the CLI imported by a subprocess, rather than identifying
         # only the native half of a cross-language result.
         self.sources += sorted((ROOT/'utility/chemical_database/python/amps_chemical_database').glob('*.py'))
         self.sources += [ROOT/'utility/chemical_database/chemdb.py']
+        # Acquisition/import and native projection code is part of the source
+        # identity even though it is Python rather than the compiled reader.
+        # New source-parser tests are discovered below, with honest SKIPs for
+        # explicitly unavailable authoritative packets in another checkout.
+        self.sources += sorted((ROOT/'utility/chemical_database').glob('*.py'))
+        self.sources += sorted(HERE.glob('test_*.py'))
+        self.sources = list(dict.fromkeys(self.sources))
         missing=[str(p) for p in self.sources if not p.is_file()]
         if missing:raise unittest.SkipTest('shared runtime implementation unavailable: '+', '.join(missing))
         compiler_command=[compiler]+self.cxx[1:]
@@ -114,11 +128,34 @@ class RecordedResult(unittest.TextTestResult):
         if error is not None:
             self.record(subtest,'FAIL' if issubclass(error[0],test.failureException) else 'ERROR')
     def record(self,test,status,reason=None):
-        self.records.append({'test':test.id(),'status':status,'reason':reason,'runner':str(HERE/'test_protocol.py'),
+        owner = getattr(test, 'test_case', test)
+        runner = inspect.getsourcefile(owner.__class__) or str(HERE/'test_protocol.py')
+        self.records.append({'test':test.id(),'status':status,'reason':reason,'runner':str(runner),
             'log':str(OUTPUT/'unittest.log')})
 
 
 OUTPUT=None
+
+
+def select_additional_tests(loaded, protocol_only, excluded):
+    """Select the declared software scope before execution, never by outcome.
+
+    CORE's protocol case promises no external-data prerequisite. Real-source
+    classes remain registered for the full runner, where missing originals
+    report SKIPPED. Omitting them from protocol scope is explicit in its receipt
+    and does not convert an attempted/skipped physical test into PASS.
+    """
+    selected = unittest.TestSuite()
+    for item in loaded:
+        if isinstance(item, unittest.TestSuite):
+            selected.addTests(select_additional_tests(item, protocol_only, excluded))
+        elif protocol_only and getattr(type(item), 'requires_authoritative_source', False):
+            excluded.append(item.id())
+        else:
+            selected.addTest(item)
+    return selected
+
+
 def main():
     global OUTPUT
     parser=argparse.ArgumentParser(description=__doc__)
@@ -132,7 +169,7 @@ def main():
         parser.error('--cxx-json must be a nonempty JSON array of nonempty strings')
     if OUTPUT.exists():parser.error('output directory must be new to preserve prior evidence')
     OUTPUT.mkdir(parents=True)
-    started=time.monotonic();records=[];context=None
+    started=time.monotonic();records=[];context=None;excluded=[]
     try:
         context=Context(OUTPUT,args.database_lock,cxx)
         tests.CONTEXT=context
@@ -140,6 +177,15 @@ def main():
             suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(owner)
                 for owner in ((tests.NativeProtocol,tests.PythonProtocol) if args.protocol_only else
                               (tests.NativeProtocol,tests.PythonProtocol,tests.PythonProduction)))
+            # These registered parser/source-reproduction controls extend the
+            # existing shared database case; they do not allocate a lunar U/I ID
+            # or make missing source files/physical providers pass.
+            for path in sorted(HERE.glob('test_*.py')):
+                if path.name == 'test_protocol.py':
+                    continue
+                module = importlib.import_module(path.stem)
+                suite.addTests(select_additional_tests(
+                    unittest.defaultTestLoader.loadTestsFromModule(module), args.protocol_only, excluded))
             result=unittest.TextTestRunner(stream=log,verbosity=2,resultclass=RecordedResult).run(suite)
         records=result.records
         changed=[str(p) for p in context.sources if tests.digest(p)!=context.build['source_sha256'][str(p.relative_to(ROOT))]]
@@ -156,6 +202,7 @@ def main():
     summary={'schema':'amps-chemical-database-software-tests-v1','status':status,
         'scope':'production data-access/integrity software verification; NOT physical validation',
         'protocol_only':args.protocol_only,
+        'outside_selected_scope':excluded,
         'created_utc':datetime.now(timezone.utc).isoformat(),'executed':len(records),'counts':counts,'tests':records,
         'failed_or_error_tests':[row for row in records if row['status'] in ('FAIL','ERROR')],
         'wall_seconds':time.monotonic()-started,'commands':context.commands if context else []}

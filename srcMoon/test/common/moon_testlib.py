@@ -1092,12 +1092,15 @@ def run_one(
             groups=(('photon-selection','reaction-primitives','runtime-input',
                 'piecewise-exposure','exposure-clock-bridge','compensated-depth','common-time-clock',
                 'qualification-protocol-controls','qualification-infrastructure',
-                'trajectory-exposure','physical-reaction-events','profile-state',
+                'trajectory-exposure','physical-reaction-events','profile-state','atomic-state-profile','source-build-protocol',
+                'physical-case-preparation',
+                'p02-independent-controls',
+                'commissioning-audit-controls',
                 'normal-source-registration-controls','coefficient-stage-controls','sodium-ledger','sodium-numerical','source-compile-recipe',
                 'reduced-daughter-kinematics',
-                'ideal-ion-collector','oxygen-state-source-controls')
+                'ideal-ion-collector','oxygen-state-source-controls','oxygen-cascade','reservoir-products')
                 if kind=='documented-photon-rates-partial' else
-                ('rate-registry','sodium-partial-capture','helium-silica-conditional'))
+                ('rate-registry','sodium-partial-capture','helium-silica-conditional','reservoir-products'))
             support=run_services(output_root/test_id/'supporting-services',groups,
                 wall_seconds=M3_PHOTON_SUPPORT_WALL_SECONDS if kind=='documented-photon-rates-partial' else 300)
             result={'status':support['status'] if support['status'] in ('FAIL','ERROR') else 'SKIPPED',

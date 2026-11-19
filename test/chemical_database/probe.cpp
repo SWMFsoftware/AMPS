@@ -79,6 +79,43 @@ int main(int argc,char** argv) {
                <<",\"query_ok\":"<<(status.ok()?"true":"false")
                <<",\"output_preserved\":"<<(path=="UNCHANGED"?"true":"false")
                <<",\"path\":"<<Json(path);
+    } else if(operation=="denial-sweep") {
+      // Inspect EVERY held metadata entry through the production permission
+      // gate in one authenticated Catalogue. No science values are sampled,
+      // no payload permission is changed, and output sentinels prove refused
+      // queries are transactional rather than returning a fake empty table.
+      bool all=true,first=true;
+      std::cout<<",\"denials\":[";
+      for(const auto& source:catalogue.sources()) {
+        if(source.storagePermission==DB::Permission::Allowed &&
+           source.evaluationPermission==DB::Permission::Allowed)continue;
+        std::string path="UNCHANGED";
+        const auto status=catalogue.SourcePath(source.id,"source-access",&path);
+        const bool preserved=path=="UNCHANGED";
+        all=all && status.code==DB::Code::PermissionRequired && preserved;
+        if(!first)std::cout<<',';
+        first=false;
+        std::cout<<"{\"kind\":\"source-path\",\"id\":"<<Json(source.id)
+                 <<",\"query_code\":"<<Json(DB::CodeName(status.code))
+                 <<",\"query_ok\":"<<(status.ok()?"true":"false")
+                 <<",\"output_preserved\":"<<(preserved?"true":"false")<<'}';
+      }
+      for(const auto& table:catalogue.tables()) {
+        if(table.evaluationPermission==DB::Permission::Allowed)continue;
+        const auto sentinel=std::make_shared<const DB::ReactionData::Csv>(
+          DB::ReactionData::Csv{{"UNCHANGED"}});
+        auto rows=sentinel;
+        const auto status=catalogue.TableRows(table.id,"table-access",&rows);
+        const bool preserved=rows==sentinel;
+        all=all && status.code==DB::Code::PermissionRequired && preserved;
+        if(!first)std::cout<<',';
+        first=false;
+        std::cout<<"{\"kind\":\"table\",\"id\":"<<Json(table.id)
+                 <<",\"query_code\":"<<Json(DB::CodeName(status.code))
+                 <<",\"query_ok\":"<<(status.ok()?"true":"false")
+                 <<",\"output_preserved\":"<<(preserved?"true":"false")<<'}';
+      }
+      std::cout<<"],\"denial_sweep_ok\":"<<(all?"true":"false");
     } else if(operation=="concurrent") {
       std::shared_ptr<const DB::ReactionData::Csv> expected;
       const auto first=catalogue.TableRows(id,capability,&expected);

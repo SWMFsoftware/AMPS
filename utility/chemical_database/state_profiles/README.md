@@ -100,3 +100,74 @@ The maintained [compile_recipe](compile_recipe/README.md) helper stages an
 application-owned source-bound species table through the same native resolver,
 without changing canonical species/global constants. Its own real-source tests
 are registered as `source-compile-recipe`; missing Na+ states refuse before output.
+
+## Explicit Na I/Na II research extension
+
+`prepare.py` remains the original partial/default preparation described above.
+The opt-in `prepare_atomic.py` additionally prepares `23Na+:ground` while keeping
+every old `*:unresolved` declaration unavailable, including the old Na ion ID.
+Its [preimplementation contract](ATOMIC_EXTENSION_CONTRACT.md) records the
+source and numerical scope. This is original research use of authenticated
+retained ASD/handbook sources; it is **not** a managed ASD import, new database
+release, changed installed lock or automatic Moon source activation.
+
+The same retained handbook explicitly identifies23Na100% abundance and the
+NaI3s2S1/2/NaII1S0 ground labels. Modern NIST isotope and CODATA originals supply
+the masses/constants; the old handbook mass/rounded energy are not used.
+The actual ASD5.12 neutral row supplies its first IE and reported uncertainty;
+the next row's NaII ionization energy is not substituted. A thin native adapter
+calls shared `ReducedModels::IonPhysicalMass`, and independent Decimal checks
+the reference/binding/physical masses within the existing two-native-epsilon
+criterion. The physical ion mass is separately stored from the additive
+reference mass. Original uncertainty strings and first-order contributions
+are retained; no unspecified ASD confidence level, covariance or physical
+acceptance tolerance is invented.
+
+From the checkout, prepare a NEW profile and separate NEW work directory:
+
+```sh
+python3 -B utility/chemical_database/state_profiles/prepare_atomic.py \
+  --raw-dir test_output/srcMoon/m3-approved-products-20261118T163142Z/source-acquisition-v2/raw \
+  --decision-register srcMoon/test/M3_DAUGHTER_AND_ION_SURFACE_DECISIONS.json \
+  --energy-file test_output/srcMoon/m3-physical-completion-20261118T223145Z/state-profiles/research/raw/nist_na_ionization_uncertainty.html \
+  --label-file test_output/srcMoon/m3-physical-completion-20261118T223145Z/state-profiles/research/raw/nist_na_handbook.html \
+  --help-file test_output/srcMoon/m3-physical-completion-20261118T223145Z/state-profiles/research/raw/nist_ie_help.html \
+  --canonical-root /data/vtenishe/moon_validation_data/photochemistry \
+  --output-dir test_output/srcMoon/NEW-atomic-profile \
+  --work-dir test_output/srcMoon/NEW-atomic-profile-work
+```
+
+The work directory preserves original default preparation, compiler commands,
+source snapshots, executable and native logs. The profile contains the same
+three CSVs plus `atomic_mass_derivation.json`, `na_source_energy_crosswalk.json`
+and its exact eight-column CSV. All source paths/hashes and native state/record
+anchors are retained. No original source bytes are copied into a managed archive.
+`profile.json` is written last after source/state/independent arithmetic checks.
+Missing/corrupt inputs never produce a usable profile.
+
+The crosswalk's `source-effective-photon` policy defines
+`Egamma=I_D04+mean_excess_D04`, retains actual native threshold/rate strings and
+records `I_physical-I_D04` and its opposite signed translational correction.
+The exact `physical_threshold_source_identity` equals the formation-source
+identity returned by the production native loader. No legacy threshold is
+overwritten, no source rounding interval guessed and no source-consistency
+tolerance broadened. A small threshold shift is not an absolute-rate error
+bound; that remains unavailable without the actual spectral convolution.
+The application must explicitly implement/admit this crosswalk and its other
+physical controls before a linked reaction can run. This preparation alone
+does not qualify a physical event, source model, convergence or I21.
+
+Run all new supporting controls without an AMPS application build:
+
+```sh
+python3 -B utility/chemical_database/state_profiles/run_atomic.py \
+  --output-dir test_output/srcMoon/NEW-atomic-profile-controls
+```
+
+Optional source arguments match the preparation CLI and relocate actual retained
+inputs; unavailable originals give SKIPPED77, never substituted science data.
+The runner exercises the actual profile loader, `ResolveState`, `FormationQ`,
+shared mass kernel, exact CSV/source identities, signed crosswalk, independent
+Decimal arithmetic, old unavailable states, corruption/no-output refusal and
+read-only source invariants. Result/status/count/log/source/resource manifests
+are retained. A supporting PASS leaves formal M3 SKIPPED/NOT QUALIFIED.
