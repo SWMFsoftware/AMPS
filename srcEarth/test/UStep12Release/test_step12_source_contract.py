@@ -29,7 +29,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SRC_EARTH = HERE.parents[1]
-APPROVED_NORMALIZED_LIST_SHA256 = "83d3ee94491f0ac191c7950788d98a2e587f4679c2b0d0165275afccae81fa37"
+APPROVED_NORMALIZED_LIST_SHA256 = "7b53ace0e4485a16f60c511eb924f33dc8e49c0f8c6532faf51db3ad159727f6"
 STEP12_COMMAND = "P srcEarth/test/UStep12Release/run_test.sh"
 COMMIT_RE = r"[0-9a-f]{40}"
 # Looped list entries are rewritten by test_runner.py as a brace-delimited
@@ -206,8 +206,11 @@ class Step12SourceContract(unittest.TestCase):
         # workflow gate. WORKFLOW exit handling cannot replace or retune scientific
         # qualification: each case runner records that result independently. Freeze
         # the profile, physical solver, case-specific evidence parent, and plot
-        # formats. Exclusivity remains a scheduler directive immediately before each
-        # command, leaving the exact registered payload independently executable.
+        # formats. Exclusivity remains a scheduler directive in the block of
+        # '! runner:' lines immediately before each command, leaving the exact
+        # registered payload independently executable. test_runner.py accepts
+        # those directives in either order. The SA time limit is owned by UTR-F07;
+        # its value is frozen by the structural digest below.
         self.assertEqual(len(sa01_commands), 1)
         self.assertEqual(len(sa02_commands), 1)
         self.assertEqual(len(sa03_commands), 1)
@@ -220,11 +223,13 @@ class Step12SourceContract(unittest.TestCase):
                 "--formats png eps", "--exit-code-policy WORKFLOW",
             ):
                 self.assertIn(token, command)
-            command_index = current.splitlines().index(command)
-            self.assertEqual(
-                current.splitlines()[command_index - 1],
-                "! runner: exclusive",
-            )
+            command_index = lines.index(command)
+            directive_block = []
+            cursor = command_index - 1
+            while cursor >= 0 and lines[cursor].startswith("! runner:"):
+                directive_block.append(lines[cursor])
+                cursor -= 1
+            self.assertIn("! runner: exclusive", directive_block, case)
 
         digest = hashlib.sha256(
             normalized_test_list(current).encode("utf-8")
