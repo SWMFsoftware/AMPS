@@ -19,6 +19,10 @@
 #include "Exosphere_SurfaceSource.h"
 
 #include <algorithm>
+#include <cerrno>
+#include <cstring>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <cmath>
 #include <limits>
 #include <string>
@@ -406,19 +410,61 @@ void Exosphere::Init_SPICE() {
 #if  _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
   int idim;
 
-  for (int nKernel=0;nKernel<nFurnishedSPICEkernels;nKernel++) {
+  // Verify the kernel directory and every kernel file BEFORE furnishing any of them.
+  //
+  // SPICE_Kernels_PATH is a compile-time string (Config.pl -spice-kernels=<dir>, stored as
+  // SPICEKERNELS in .amps.conf / Makefile.local).  A build configured on one machine and
+  // run on another (e.g. a Pleiades /nobackupp17 path on an AWS node) points at a directory
+  // that does not exist.  Every problem is collected first and reported in one message, so
+  // a single run names the directory problem and all missing/unreadable kernels at once.
+  // Failure behavior: exit(__LINE__,__FILE__,msg) with a nonzero code; nothing is furnished.
+  {
+    const std::string kernelDir(SPICE_Kernels_PATH);
+    std::string problems;
     struct stat buf;
 
-    // Both configuration strings can independently approach the historical
-    // fixed-buffer limit. Construct the complete path dynamically so kernel
-    // validation cannot overflow before stat/furnsh report the real failure.
-    const std::string kernelPath=std::string(SPICE_Kernels_PATH)+"/"+
-        SPICE_Kernels[nKernel];
+    if (kernelDir.empty()) {
+      problems+="\n  SPICE kernel directory is not set (empty SPICE_Kernels_PATH)";
+    }
+    else if (stat(kernelDir.c_str(),&buf)!=0) {
+      problems+="\n  SPICE kernel directory "+kernelDir+" does not exist ("+strerror(errno)+")";
+    }
+    else if (!S_ISDIR(buf.st_mode)) {
+      problems+="\n  SPICE kernel directory "+kernelDir+" exists but is not a directory";
+    }
+    else if (access(kernelDir.c_str(),R_OK|X_OK)!=0) {
+      problems+="\n  SPICE kernel directory "+kernelDir+" is not readable/searchable ("+strerror(errno)+")";
+    }
 
-    if (stat(kernelPath.c_str(), &buf) != 0) {
-      const std::string message="SPICE kernel "+kernelPath+" is not found";
+    // Check the individual files only when the directory itself is usable; otherwise every
+    // file would be reported missing for the same reason.
+    if (problems.empty()) {
+      for (int nKernel=0;nKernel<nFurnishedSPICEkernels;nKernel++) {
+        // Build the full path dynamically: both configuration strings can approach the
+        // historical fixed-buffer limit, so no fixed-size buffer is used here.
+        const std::string kernelPath=kernelDir+"/"+SPICE_Kernels[nKernel];
+
+        if (stat(kernelPath.c_str(),&buf)!=0) {
+          problems+="\n  SPICE kernel "+kernelPath+" is not found ("+strerror(errno)+")";
+        }
+        else if (!S_ISREG(buf.st_mode)) {
+          problems+="\n  SPICE kernel "+kernelPath+" is not a regular file";
+        }
+        else if (access(kernelPath.c_str(),R_OK)!=0) {
+          problems+="\n  SPICE kernel "+kernelPath+" is not readable ("+strerror(errno)+")";
+        }
+      }
+    }
+
+    if (!problems.empty()) {
+      const std::string message="SPICE kernels cannot be loaded:"+problems+
+          "\n  Set the kernel directory with ./Config.pl -spice-kernels=<dir> and rebuild.";
       exit(__LINE__,__FILE__,message.c_str());
     }
+  }
+
+  for (int nKernel=0;nKernel<nFurnishedSPICEkernels;nKernel++) {
+    const std::string kernelPath=std::string(SPICE_Kernels_PATH)+"/"+SPICE_Kernels[nKernel];
 
     furnsh_c(kernelPath.c_str());
   }

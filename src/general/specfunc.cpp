@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 
 #include <pthread.h>
 #include <unistd.h>
@@ -81,8 +82,30 @@ double gam(double x) {
 }
 */
 //===================================================
-void PrintErrorLog(const char* message) {
+// Open the AMPS error log for appending.  The log path is substituted at build-tree
+// generation and is relative to the working directory (e.g. "PT/amps_error.log").  A run
+// whose working directory lacks that directory used to pass NULL to fprintf() here and die
+// with SIGSEGV, which replaced the real error (the exit() message) with exit status 139.
+// When the log cannot be opened the record goes to stderr instead; the caller still exits
+// with its own error code.
+static FILE* OpenErrorLog() {
   FILE* errorlog=fopen("$ERRORLOG","a+");
+
+  if (errorlog==NULL) {
+    fprintf(stderr,"$PREFIX: cannot open error log \"%s\" (%s); writing the error record to stderr\n","$ERRORLOG",strerror(errno));
+    errorlog=stderr;
+  }
+
+  return errorlog;
+}
+
+static void CloseErrorLog(FILE* errorlog) {
+  if (errorlog!=stderr) fclose(errorlog);
+  else fflush(stderr);
+}
+
+void PrintErrorLog(const char* message) {
+  FILE* errorlog=OpenErrorLog();
 
   time_t TimeValue=time(0);
   tm *ct=localtime(&TimeValue);
@@ -90,12 +113,12 @@ void PrintErrorLog(const char* message) {
   fprintf(errorlog,"Thread=%i: (%i/%i %i:%i:%i)\n",ThisThread,ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec);
   fprintf(errorlog,"%s\n\n",message);
 
-  fclose(errorlog);
+  CloseErrorLog(errorlog);
 }
 
 //use: PrintErrorLog(__LINE__,__FILE__, "mesage")
 void PrintErrorLog(long int nline, const char* fname, const char* message) {
-  FILE* errorlog=fopen("$ERRORLOG","a+");
+  FILE* errorlog=OpenErrorLog();
 
   time_t TimeValue=time(0);
   tm *ct=localtime(&TimeValue);
@@ -110,7 +133,7 @@ void PrintErrorLog(long int nline, const char* fname, const char* message) {
   printf("$PREFIX:%s\n\n",message);
 #endif
 
-  fclose(errorlog);
+  CloseErrorLog(errorlog);
 }
 
 //===================================================
@@ -136,8 +159,9 @@ void exit(long int nline, const char* fname, const char* msg) {
   const int ErrorCode=(t2!=0) ? t2 : 1;
 
   #ifndef __CUDA_ARCH__
-  char str[1000];
-  PrintErrorLog(str);
+  //Record the exit location and message in the error log.  (This used to pass an
+  //uninitialized local buffer, which logged garbage or read past its end.)
+  PrintErrorLog(nline,fname,(msg!=NULL) ? msg : "(no message)");
 
   switch (_GENERIC_EXIT_FUNCTION_MODE_) {
   case  _GENERIC_EXIT_FUNCTION__MPI_ABORT_:
