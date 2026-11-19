@@ -33,6 +33,8 @@ double Comet::Brightness::ImpactParameterDirection[3]={1.0,0.0,0.0};
 bool Comet::Brightness::ObservationGeometryConfigured=false;
 double Comet::Brightness::BulkHeliocentricRadialVelocity=0.0;
 double Comet::Brightness::SolarLymanAlphaFlux1AU=0.0;
+double Comet::Brightness::SolarOxygen1304TripletFlux1AU=0.0;
+double Comet::Brightness::SolarLymanBetaFlux1AU=0.0;
 // Keep this generated setting on one physical line.  hartley2.pl replaces the
 // complete declaration, so splitting the initializer would leave an orphaned
 // continuation in the configured source tree.
@@ -115,29 +117,38 @@ bool NormalizeDirection(const double input[3],double output[3],
   return true;
 }
 
-const AMPS::ResonanceFluorescence::ModelMetadata *CoreMetadata(int mode) {
+// The application enum keeps the generated-input codes stable; this is the
+// single place that maps them onto core resonance-fluorescence models.
+bool CoreModel(int mode,AMPS::ResonanceFluorescence::Model &model) {
   using AMPS::ResonanceFluorescence::Model;
-  using AMPS::ResonanceFluorescence::GetMetadata;
   switch (mode) {
-  case Comet::Brightness::GFactor::HydrogenLymanAlphaIKL2020:
-    return GetMetadata(Model::HydrogenLymanAlphaIKL2020);
-  case Comet::Brightness::GFactor::HydroxylAX00SchleicherAhearn1988Unquenched:
-    return GetMetadata(Model::HydroxylAX00SchleicherAhearn1988Unquenched);
-  default: return NULL;
-  }
-}
-
-bool ModelForLine(int line,AMPS::ResonanceFluorescence::Model &model) {
-  using AMPS::ResonanceFluorescence::Model;
-  switch (Comet::Brightness::GFactorModel[line]) {
   case Comet::Brightness::GFactor::HydrogenLymanAlphaIKL2020:
     model=Model::HydrogenLymanAlphaIKL2020;
     return true;
   case Comet::Brightness::GFactor::HydroxylAX00SchleicherAhearn1988Unquenched:
     model=Model::HydroxylAX00SchleicherAhearn1988Unquenched;
     return true;
+  case Comet::Brightness::GFactor::OxygenI1304DirectKVB2022GroundJ2:
+    model=Model::OxygenI1304DirectKVB2022GroundJ2;
+    return true;
+  case Comet::Brightness::GFactor::OxygenI1304DirectSUMER2001GroundJ2:
+    model=Model::OxygenI1304DirectSUMER2001GroundJ2;
+    return true;
+  case Comet::Brightness::GFactor::OxygenI1304LymanBetaBowenSUMER2001GroundJ2:
+    model=Model::OxygenI1304LymanBetaBowenSUMER2001GroundJ2;
+    return true;
   default: return false;
   }
+}
+
+const AMPS::ResonanceFluorescence::ModelMetadata *CoreMetadata(int mode) {
+  AMPS::ResonanceFluorescence::Model model;
+  return CoreModel(mode,model) ?
+      AMPS::ResonanceFluorescence::GetMetadata(model) : NULL;
+}
+
+bool ModelForLine(int line,AMPS::ResonanceFluorescence::Model &model) {
+  return CoreModel(Comet::Brightness::GFactorModel[line],model);
 }
 
 AMPS::ResonanceFluorescence::Status EvaluatePhotonGFactor(int line,
@@ -153,10 +164,15 @@ AMPS::ResonanceFluorescence::Status EvaluatePhotonGFactor(int line,
   if (!ModelForLine(line,model)) return Status::UnknownModel;
   const Conditions conditions={radialVelocity,
       Comet::Model::HeliocentricDistanceAU*AstronomicalUnitM,
-      Comet::Brightness::SolarLymanAlphaFlux1AU};
+      Comet::Brightness::SolarLymanAlphaFlux1AU,
+      Comet::Brightness::SolarOxygen1304TripletFlux1AU,
+      Comet::Brightness::SolarLymanBetaFlux1AU};
   const Result result=Evaluate(model,conditions);
   if (result.status!=Status::Ok) return result.status;
-  if (model==Model::HydrogenLymanAlphaIKL2020) {
+  // Models that define a photon rate (H, O) are used directly; an energy
+  // efficiency (Lowell OH) needs the line's explicit effective wavelength.
+  const ModelMetadata *metadata=GetMetadata(model);
+  if (metadata!=NULL && metadata->photonRateAvailable) {
     photonRate=result.photonRateS1;
   }
   else {
@@ -371,6 +387,8 @@ bool Comet::Brightness::ResetRuntimeConfiguration(std::string *error) {
   ImpactParameterGridMode=GridMode::Linear;
   EmissionLineCount=0;
   SolarLymanAlphaFlux1AU=0.0;
+  SolarOxygen1304TripletFlux1AU=0.0;
+  SolarLymanBetaFlux1AU=0.0;
   OutOfRangeVelocityPolicy=VelocityDomainPolicy::Abort;
   ObservationGeometryConfigured=false;
   BulkHeliocentricRadialVelocity=0.0;

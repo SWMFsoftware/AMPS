@@ -136,7 +136,22 @@ int FindSpecies(const std::string &symbol) {
 class cAssignments {
  public:
   explicit cAssignments(const In::Block &block) {
-    for (const In::Assignment &item:block.assignments) Items[item.key]=&item;
+    for (const In::Assignment &item:block.assignments) {
+      if (Items.count(item.key)==0) Order.push_back(item.key);
+      Items[item.key]=&item;
+    }
+  }
+
+  bool Has(const std::string &key) const {return Items.count(key)!=0;}
+
+  // Keys with the given prefix that no Take() has claimed yet, in input
+  // order.  Used for optional, open-ended record families.
+  std::vector<std::string> PendingWithPrefix(const std::string &prefix) const {
+    std::vector<std::string> keys;
+    for (const std::string &key:Order)
+      if (key.compare(0,prefix.size(),prefix)==0 && Consumed.count(key)==0)
+        keys.push_back(key);
+    return keys;
   }
 
   const In::Assignment* Take(const std::string &key,std::string *error) {
@@ -159,6 +174,7 @@ class cAssignments {
 
  private:
   std::map<std::string,const In::Assignment*> Items;
+  std::vector<std::string> Order;
   std::set<std::string> Consumed;
 };
 
@@ -213,6 +229,17 @@ bool ConfigureEmission(cAssignments &input,const std::string &key,int line,
       return FailAt(*item,
           "OH_AX00_SA1988_LOWELL_UNQUENCHED requires species OH",error);
     model=Comet::Brightness::GFactor::HydroxylAX00SchleicherAhearn1988Unquenched;
+  }
+  else if (modelName=="O_I_1304_KVB2022_DIRECT_J2" ||
+      modelName=="O_I_1304_SUMER2001_DIRECT_J2" ||
+      modelName=="O_I_1304_SUMER2001_LYB_BOWEN_J2") {
+    if (speciesName!="O")
+      return FailAt(*item,modelName+" requires species O",error);
+    model=modelName=="O_I_1304_KVB2022_DIRECT_J2" ?
+        Comet::Brightness::GFactor::OxygenI1304DirectKVB2022GroundJ2 :
+        modelName=="O_I_1304_SUMER2001_DIRECT_J2" ?
+        Comet::Brightness::GFactor::OxygenI1304DirectSUMER2001GroundJ2 :
+        Comet::Brightness::GFactor::OxygenI1304LymanBetaBowenSUMER2001GroundJ2;
   }
   else {
     In::Assignment scalar=*item;
@@ -526,7 +553,50 @@ bool ApplyCometBlock(const In::Block &block,const std::string &selectedCase,
 
   if (!ConfigureEmission(input,"brightness.emission.OH",0,error) ||
       !ConfigureEmission(input,"brightness.emission.H",1,error)) return false;
-  Comet::Brightness::EmissionLineCount=2;
+  // Further lines are optional and keep their input order, e.g. the O I
+  // 130.4-nm components brightness.emission.O_DIRECT_KVB2022, ...  Each
+  // record names its species and model explicitly; the key suffix is a label.
+  int lineCount=2;
+  for (const std::string &key:input.PendingWithPrefix("brightness.emission.")) {
+    if (lineCount>=Comet::Brightness::MaxEmissionLines)
+      return Fail("too many brightness.emission records",error);
+    if (!ConfigureEmission(input,key,lineCount,error)) return false;
+    lineCount++;
+  }
+  Comet::Brightness::EmissionLineCount=lineCount;
+
+  // The O I solar fluxes are required by, and only accepted with, a model
+  // that uses them; an unused irradiance record would otherwise read as if it
+  // affected the archived run.
+  bool needsOxygenTriplet=false,needsLymanBeta=false;
+  for (int line=0;line<lineCount;line++) {
+    const int model=Comet::Brightness::GFactorModel[line];
+    needsOxygenTriplet=needsOxygenTriplet ||
+        model==Comet::Brightness::GFactor::OxygenI1304DirectKVB2022GroundJ2 ||
+        model==Comet::Brightness::GFactor::OxygenI1304DirectSUMER2001GroundJ2;
+    needsLymanBeta=needsLymanBeta ||
+        model==Comet::Brightness::GFactor::OxygenI1304LymanBetaBowenSUMER2001GroundJ2;
+  }
+  const std::string oxygenKey=
+      "brightness.solar_oi1304_triplet_flux_1au_photon_cm-2_s-1";
+  const std::string lymanBetaKey="brightness.solar_lyb_flux_1au_photon_cm-2_s-1";
+  double solarFluxCm2Value=0.0;
+  if (needsOxygenTriplet) {
+    if (!ReadPositiveDouble(input,oxygenKey,&solarFluxCm2Value,error)) return false;
+    Comet::Brightness::SolarOxygen1304TripletFlux1AU=solarFluxCm2Value*1.0e4;
+  }
+  else if (input.Has(oxygenKey)) {
+    const In::Assignment *unused=input.Take(oxygenKey,error);
+    return FailAt(*unused,oxygenKey+" requires an O I 130.4-nm direct model",error);
+  }
+  if (needsLymanBeta) {
+    if (!ReadPositiveDouble(input,lymanBetaKey,&solarFluxCm2Value,error)) return false;
+    Comet::Brightness::SolarLymanBetaFlux1AU=solarFluxCm2Value*1.0e4;
+  }
+  else if (input.Has(lymanBetaKey)) {
+    const In::Assignment *unused=input.Take(lymanBetaKey,error);
+    return FailAt(*unused,lymanBetaKey+" requires O_I_1304_SUMER2001_LYB_BOWEN_J2",error);
+  }
 
   bool dust=false;
   item=input.Take("dust.enabled",error);

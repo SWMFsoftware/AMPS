@@ -72,6 +72,29 @@ def with_core_brightness_models() -> list[str]:
     return lines
 
 
+def with_oxygen_brightness_models() -> list[str]:
+    lines = with_core_brightness_models()
+    insertion = next(
+        index
+        for index, line in enumerate(lines)
+        if line.startswith("BrightnessSolarLymanAlphaFlux1AUPhotonCM2S")
+    ) + 1
+    lines[insertion:insertion] = [
+        "BrightnessSolarOxygen1304TripletFlux1AUPhotonCM2S=1.0214340959e10",
+        "BrightnessSolarLymanBetaFlux1AUPhotonCM2S=4.8422027941e9",
+    ]
+    lines.extend(
+        f"BrightnessEmission=O | OI_1304_{label} | {model} | CORE_O | thin | "
+        "isotropic_4pi | none | 0 | 0 | NONE | 0"
+        for label, model in (
+            ("KVB", "O_I_1304_KVB2022_DIRECT_J2"),
+            ("SUMER", "O_I_1304_SUMER2001_DIRECT_J2"),
+            ("BOWEN", "O_I_1304_SUMER2001_LYB_BOWEN_J2"),
+        )
+    )
+    return lines
+
+
 class BrightnessParserIntegrationTest(unittest.TestCase):
     def fixture(self, root: Path, lines: list[str]) -> ParserFixture:
         fixture = ParserFixture(root)
@@ -214,6 +237,30 @@ class BrightnessParserIntegrationTest(unittest.TestCase):
                 "double Comet::Brightness::SolarLymanAlphaFlux1AU=5104051874200000;",
                 source,
             )
+
+
+    def test_oxygen_models_generate_their_solar_fluxes(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="hartley2-brightness-oxygen.") as root:
+            fixture = self.fixture(Path(root), with_oxygen_brightness_models())
+            source = (fixture.work / "main" / "CometBrightness.cpp").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn(
+                "int Comet::Brightness::GFactorModel"
+                "[Comet::Brightness::MaxEmissionLines]={1,2,3,4,5};",
+                source,
+            )
+            self.assertIn("int Comet::Brightness::EmissionLineCount=5;", source)
+            self.assertIn(
+                "double Comet::Brightness::SolarOxygen1304TripletFlux1AU="
+                "102143409590000;",
+                source,
+            )
+            self.assertIn(
+                "double Comet::Brightness::SolarLymanBetaFlux1AU=48422027941000;",
+                source,
+            )
+            self.assertIn('SetGeneratedMetadata(4,"OI_1304_BOWEN","CORE_O","NONE");', source)
 
 
 if __name__ == "__main__":

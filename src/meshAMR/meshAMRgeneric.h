@@ -12976,50 +12976,56 @@ if (TmpAllocationCounter==2437) {
         CurveNode=CurveNode->FillingCurveNextNode;
       }
 
-      //check that all MPI processes has assigned blocks
-      for (thread=0;thread<nTotalThreads;thread++) if (ThreadStartNode[thread]==NULL) {
-        //determine the processes that has maximum number of assigned blocks
-        int i,nMaxAssignedBlocks=0;
-        int MaxAssignedBlockThread=-1;
-        cTreeNodeAMR<cBlockAMR>* t;
+      //check that all MPI processes have assigned blocks. When a few blocks carry more
+      //than one processor's share of the load, the first pass above reaches the end of
+      //the filling curve before the last processors get a block. Re-partition the curve
+      //so that every processor owns a contiguous, non-empty segment and the start nodes
+      //are strictly increasing along the curve, as BroadcastNewDomainDecomposition()
+      //and the fine tuning below assume. With fewer blocks than processors the trailing
+      //processors stay empty, as before. The first-pass result is kept unchanged when no
+      //processor is empty.
+      bool EmptyThreadFound=false;
 
-        for (i=0;i<nTotalThreads;i++) if ((i!=thread)&&(ThreadStartNode[i]!=NULL)) {
-          int cnt=0;
+      for (thread=0;thread<nTotalThreads;thread++) if (ThreadStartNode[thread]==NULL) EmptyThreadFound=true;
 
-          t=ThreadStartNode[i];
+      if (EmptyThreadFound==true) {
+        std::vector<cTreeNodeAMR<cBlockAMR>*> CurveNodeTable;
+        std::vector<double> PrefixLoad(1,0.0);
 
-          while (t!=NULL) {
-            cnt++;
-            t=t->FillingCurveNextNode;
-
-            if (i!=nTotalThreads-1) {
-              if (t==ThreadStartNode[i+1]) t=NULL;
-            }
-          }
-
-          if (cnt>nMaxAssignedBlocks) nMaxAssignedBlocks=cnt,MaxAssignedBlockThread=i;
+        for (cTreeNodeAMR<cBlockAMR>* t=startNodeFillingCurve;t!=NULL;t=t->FillingCurveNextNode) {
+          CurveNodeTable.push_back(t);
+          PrefixLoad.push_back(PrefixLoad.back()+t->ParallelLoadMeasure);
         }
 
-        //split the longest set of the assigned blocks
-        if (MaxAssignedBlockThread>=3) {
-          int SetLength=MaxAssignedBlockThread/2;
+        const long int nCurveBlocks=CurveNodeTable.size();
+        const int nActiveThreads=(nCurveBlocks<nTotalThreads) ? (int)nCurveBlocks : nTotalThreads;
+        std::vector<long int> StartIndex(nActiveThreads,0);
 
-          CumulativeThreadLoad[MaxAssignedBlockThread]=0.0;
+        //split the cumulative load evenly; every processor starts after its predecessor
+        for (int k=1;k<nActiveThreads;k++) {
+          const double TargetLoad=PrefixLoad.back()*k/nActiveThreads;
+          long int i=StartIndex[k-1]+1;
 
-          for (i=0,t=ThreadStartNode[MaxAssignedBlockThread];i<SetLength;i++) {
-            CumulativeThreadLoad[MaxAssignedBlockThread]+=t->ParallelLoadMeasure;
-            t=t->FillingCurveNextNode;
+          while ((i<nCurveBlocks)&&(PrefixLoad[i]<TargetLoad)) i++;
+          StartIndex[k]=i;
+        }
+
+        //leave at least one block for every following processor
+        for (int k=nActiveThreads-1;k>0;k--) {
+          if (StartIndex[k]>nCurveBlocks-(nActiveThreads-k)) StartIndex[k]=nCurveBlocks-(nActiveThreads-k);
+          if (StartIndex[k-1]>=StartIndex[k]) StartIndex[k-1]=StartIndex[k]-1;
+        }
+
+        for (thread=0;thread<nTotalThreads;thread++) {
+          if (thread<nActiveThreads) {
+            const long int EndIndex=(thread+1<nActiveThreads) ? StartIndex[thread+1] : nCurveBlocks;
+
+            ThreadStartNode[thread]=CurveNodeTable[StartIndex[thread]];
+            CumulativeThreadLoad[thread]=PrefixLoad[EndIndex]-PrefixLoad[StartIndex[thread]];
           }
-
-          ThreadStartNode[thread]=t;
-
-          while (t!=NULL) {
-            CumulativeThreadLoad[thread]=t->ParallelLoadMeasure;
-            t=t->FillingCurveNextNode;
-
-            if (thread!=nTotalThreads-1) {
-              if (t==ThreadStartNode[thread+1]) t=NULL;
-            }
+          else {
+            ThreadStartNode[thread]=NULL;
+            CumulativeThreadLoad[thread]=0.0;
           }
         }
       }
@@ -13061,7 +13067,7 @@ if (TmpAllocationCounter==2437) {
                }
              }
              else if ((smallLoadNeighbour==thread+1)&&(ThreadStartNode[thread+1]!=NULL)) {
-               while (CumulativeThreadLoad[thread+1]+ThreadStartNode[thread+1]->FillingCurvePrevNode->ParallelLoadMeasure<max(1.0,CumulativeThreadLoad[thread]-ThreadStartNode[thread+1]->FillingCurvePrevNode->ParallelLoadMeasure)) {
+               while ((ThreadStartNode[thread+1]->FillingCurvePrevNode!=NULL)&&(CumulativeThreadLoad[thread+1]+ThreadStartNode[thread+1]->FillingCurvePrevNode->ParallelLoadMeasure<max(1.0,CumulativeThreadLoad[thread]-ThreadStartNode[thread+1]->FillingCurvePrevNode->ParallelLoadMeasure))) {
 
                  //ckeck whether there are any blocks to exchange
                  if (thread<nTotalThreads-1) {

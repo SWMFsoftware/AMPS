@@ -154,12 +154,49 @@ class I3CaseGeneratorTest(unittest.TestCase):
             self.assertEqual(
                 text.count("brightness.solar_lya_flux_1au_photon_cm-2_s-1"), 6
             )
+            self.assertEqual(
+                text.count("brightness.solar_oi1304_triplet_flux_1au_photon_cm-2_s-1"), 6
+            )
+            self.assertEqual(text.count("brightness.solar_lyb_flux_1au_photon_cm-2_s-1"), 6)
+            self.assertEqual(text.count("= O | OI_1304_TRIPLET_"), 3)
+            for model in (
+                "O_I_1304_KVB2022_DIRECT_J2",
+                "O_I_1304_SUMER2001_DIRECT_J2",
+                "O_I_1304_SUMER2001_LYB_BOWEN_J2",
+            ):
+                self.assertEqual(text.count(f" | {model} | "), 1)
             self.assertIn("H_LYA_IKL2020", text)
             self.assertIn("OH_AX00_SA1988_LOWELL_UNQUENCHED", text)
             self.assertIn("mesh.outer_radius_m = 3000000000", text)
             self.assertIn("mesh.radial_cell_count = 2000", text)
             self.assertIn("simulation.sampling_length = 10000", text)
             self.assertIn("simulation.max_iterations = 150000", text)
+
+    def test_solar_fuv_lines_are_current_and_case_consistent(self) -> None:
+        derive = REPOSITORY / "srcHartley2" / "i3" / "derive_solar_fuv_lines.py"
+        import subprocess
+
+        subprocess.run(
+            [sys.executable, str(derive), "--check"],
+            check=True,
+            capture_output=True,
+            env={"PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        lines = MODULE._load_csv(
+            REPOSITORY / "srcHartley2" / "i3" / "reference" / "solar_fuv_lines.csv"
+        )
+        merged = MODULE.attach_solar_fuv_lines(self.cases, lines)
+        for case in merged:
+            # 2025 October versus the 2009-03-01 solar-minimum reference.
+            ratio = float(case["o_i_1304_triplet_photon_flux_1au"]) / 8.4115654293e9
+            self.assertTrue(1.1 < ratio < 1.4, case["case_id"])
+            self.assertTrue(4.0e9 < float(case["h_lyb_photon_flux_1au"]) < 6.0e9)
+        shifted = [dict(row) for row in lines]
+        shifted[0]["earth_equivalent_start_utc"] = "2025-10-08T00:00:00Z"
+        with self.assertRaisesRegex(ValueError, "differs from i3_cases.csv"):
+            MODULE.attach_solar_fuv_lines(self.cases, shifted)
+        with self.assertRaisesRegex(ValueError, "exactly the I3 cases"):
+            MODULE.attach_solar_fuv_lines(self.cases, lines[:-1])
 
     def test_compile_configuration_is_layout_only(self) -> None:
         text = (REPOSITORY / "input" / "i3.conf").read_text(encoding="utf-8")

@@ -12,7 +12,17 @@ namespace ResonanceFluorescence {
 
 enum class Model {
   HydrogenLymanAlphaIKL2020=1,
-  HydroxylAX00SchleicherAhearn1988Unquenched=2
+  HydroxylAX00SchleicherAhearn1988Unquenched=2,
+  // Atomic oxygen 130.4-nm triplet (130.2 + 130.5 + 130.6 nm).  All three
+  // models assume absorbers in the 2p4 3P2 ground level and return the rate
+  // of triplet photons per atom; see README.md for the physical scope.
+  //   direct pumping of 3s 3S1 at 130.217 nm, Killen et al. (2022) table;
+  OxygenI1304DirectKVB2022GroundJ2=3,
+  //   direct pumping at 130.217 nm, SOHO/SUMER disk-centre atlas profile;
+  OxygenI1304DirectSUMER2001GroundJ2=4,
+  //   solar Lyman-beta pumping of 3d 3D (102.576 nm) and the 1128.7-nm ->
+  //   844.6-nm cascade into the triplet (Bowen fluorescence).
+  OxygenI1304LymanBetaBowenSUMER2001GroundJ2=5
 };
 
 enum class Status {
@@ -22,6 +32,8 @@ enum class Status {
   InvalidRadialVelocity,
   RadialVelocityOutOfRange,
   MissingSolarLymanAlphaFlux,
+  MissingSolarOxygen1304Flux,
+  MissingSolarLymanBetaFlux,
   InvalidModelResult
 };
 
@@ -33,6 +45,15 @@ struct Conditions {
   // Required by the IKL H model and ignored by the Lowell OH model.
   // The public unit is photons m^-2 s^-1 at 1 AU.
   double solarLymanAlphaFlux1AUPhotonM2S;
+
+  // Required by the two direct O I models: the line-integrated solar photon
+  // flux of the complete O I 130.4-nm triplet at 1 AU, photons m^-2 s^-1, on
+  // the SORCE SOLSTICE absolute scale of Killen et al. (2022).
+  double solarOxygen1304TripletFlux1AUPhotonM2S;
+
+  // Required by the O I Bowen model: solar flux in 102.4-102.8 nm (H
+  // Lyman-beta and its wings) at 1 AU, photons m^-2 s^-1.
+  double solarLymanBetaFlux1AUPhotonM2S;
 };
 
 struct Result {
@@ -59,6 +80,8 @@ struct ModelMetadata {
   double minimumRadialVelocityMPS;
   double maximumRadialVelocityMPS;
   bool requiresSolarLymanAlphaFlux;
+  bool requiresSolarOxygen1304Flux;
+  bool requiresSolarLymanBetaFlux;
   bool photonRateAvailable;
   bool emittedPowerAvailable;
   bool radiationPressureRatioAvailable;

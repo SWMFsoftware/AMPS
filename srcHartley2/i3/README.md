@@ -87,7 +87,11 @@ cat 'test_i3[5].diff'                   # empty: the test passed (test_i3.diff w
   `simulation.sampling_length = 10000` as before. Each case thus runs one
   sampling window, and output `out=0` is written at iteration 10000.
   `prepare_i3_cases.py` does not write this file; it is derived from the
-  generated `input/i3.in`.
+  generated `input/i3.in`. It predates the O I 130.4-nm brightness records
+  added to `input/i3.in` on 2026-11-19 (three emission records and two solar
+  fluxes per case, see "O I 130.4-nm brightness" below) and does not contain
+  them; its references therefore hold the H and OH brightness only. The O
+  records are optional for the runtime parser, so the deck remains valid.
 - **Run.** Case 1 runs in `run_test_i3/case1` and case 5 in `run_test_i3/case5`.
   Each run's log is in `amps.log` there, and the results are copied unchanged
   to `run_test_i3/res/<case>.<species>.dat` and
@@ -328,9 +332,73 @@ continuation. The far-coma (edge) correction used in the comparison plots is
 applied only in post-processing; see "What does 'corrected for the 3e9-m edge
 (collisionless reference)' mean?" below.
 
+### O I 130.4-nm brightness
+
+Since 2026-11-19 `input/i3.in` also samples the atomic-oxygen 130.4-nm
+triplet (130.217 + 130.486 + 130.603 nm), as three additive components of
+the same particle-resolved sampler. They are written as three column groups of
+`PT/plots/pic.O.brightness.s=2.out=<k>.dat`, each with its own column
+density (identical), effective g factor, brightness, and optical-depth flag:
+
+| record | transition label | core model | process |
+|---|---|---|---|
+| `brightness.emission.O_DIRECT_KVB2022` | `OI_1304_TRIPLET_DIRECT_KVB2022` | `O_I_1304_KVB2022_DIRECT_J2` | direct solar pumping at 130.217 nm, Gladstone (1992) line shape |
+| `brightness.emission.O_DIRECT_SUMER2001` | `OI_1304_TRIPLET_DIRECT_SUMER2001` | `O_I_1304_SUMER2001_DIRECT_J2` | the same, SOHO/SUMER atlas line shape |
+| `brightness.emission.O_LYB_BOWEN` | `OI_1304_TRIPLET_LYB_BOWEN_SUMER2001` | `O_I_1304_SUMER2001_LYB_BOWEN_J2` | solar Lyman-beta pumping at 102.576 nm and cascade (Bowen fluorescence) |
+
+The total 130.4-nm brightness is one direct component plus the Bowen
+component. The two direct components bracket the solar line wings, which no
+available full-disk measurement resolves. At the comet's radial velocity, the
+1-AU g factors (photons per second per O atom in 2p4 3P2) are:
+
+| case | rdot (km/s) | direct, KVB2022 | direct, SUMER2001 | Lyman-beta (Bowen) |
+|---|---|---|---|---|
+| 1 | -39.7 | 3.3e-8 | 1.7e-6 | 3.9e-7 |
+| 2 | -36.2 | 1.4e-7 | 2.7e-6 | 4.1e-7 |
+| 3 | -29.6 | 1.3e-6 | 4.7e-6 | 4.4e-7 |
+| 4 | -5.8 | 1.3e-5 | 1.3e-5 | 4.2e-7 |
+| 5 | +0.4 | 1.0e-5 | 1.3e-5 | 4.2e-7 |
+| 6 | +7.1 | 1.4e-5 | 1.1e-5 | 4.2e-7 |
+
+Near rest (cases 4--6) the two line shapes agree within 30% and the Bowen term
+is 3--4% of the total. In cases 1--3 the comet samples the far wing of the
+solar lines: the case-1 total is 0.42--2.1e-6 and the Bowen term is a large or
+dominant part of it, so the O brightness of these cases carries a factor of
+2--5 line-shape uncertainty. See `src/models/resonance_fluorescence/README.md`
+for the sources, the 2p4 3P2 ground-level assumption, and the exclusions
+(electron impact, prompt emission, optical depth).
+
+Two solar inputs per case come from `reference/solar_fuv_lines.csv`, written by
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 srcHartley2/i3/derive_solar_fuv_lines.py          # from the frozen snapshot
+PYTHONDONTWRITEBYTECODE=1 python3 srcHartley2/i3/derive_solar_fuv_lines.py --check  # is the CSV current?
+```
+
+The source is the LASP/LISIRD FISM2 daily spectrum (`fism_daily_hr`, 0.1-nm
+bins), averaged over the same Earth-equivalent interval as F10.7P and Lyman
+alpha. `brightness.solar_oi1304_triplet_flux_1au_photon_cm-2_s-1` is the
+FISM2 130.1--130.7 nm flux relative to 2009-03-01 (the SORCE SOLSTICE day of
+the Killen et al. table), 1.21--1.27, times the triplet flux that table
+implies (8.41e9 photons cm^-2 s^-1); the ratio removes the FISM2/SOLSTICE
+calibration offset. `brightness.solar_lyb_flux_1au_photon_cm-2_s-1` is the
+absolute FISM2 flux in 102.4--102.8 nm, 4.82--4.96e9 photons cm^-2 s^-1.
+The frozen LISIRD responses (retrieved 2026-11-19) are in `reference/fism2/`:
+
+- `fism2_daily_hr_1300_1308A_20251001_20251031.csv`: `57d238957a16a6e589038e4ef0aee1b3df987934c477e998e657ef1de4f97634`;
+- `fism2_daily_hr_1300_1308A_20090301.csv`: `48d69005b640880277fd33b3b4d926f731e88c381515a4b5eb9c1dabea0eeafb`;
+- `fism2_daily_hr_1024_1028A_20251001_20251031.csv`: `291fbd8a1f2a7d3ba555347fc12e09001806665202d8da2c6fd6d069e73ada1c`;
+- `fism2_daily_hr_1024_1028A_20090301.csv`: `8eaabfa43b1b3d2dac738392dd0e78223e2b581dd4f75bd11768ca842edc3953`.
+
+The O line-centre optical-depth diagnostic uses the 130.217-nm line
+(f = 0.0520) with a 1 km/s Doppler parameter, 1.0e-17 m^2, and flags
+tau > 0.1. An O column of 1e17 m^-2 already reaches tau = 1, so the flag is
+expected near the nucleus of the high-production cases; as for H, the
+output stays optically thin and the flag marks where it is not valid.
+
 ### Shared velocity-dependent fluorescence data
 
-The authoritative H and OH reference data and evaluators now live in the
+The authoritative H, OH, and O reference data and evaluators now live in the
 application-independent core module
 `src/models/resonance_fluorescence/`. Its manifest records source URLs,
 citations, units, valid velocity intervals, retrieval snapshot, and SHA-256

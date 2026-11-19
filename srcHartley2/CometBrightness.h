@@ -18,7 +18,10 @@ namespace GFactor {
 // Fixed preserves the historical input path.  The other values are resolved
 // through the reusable core resonance-fluorescence module during startup.
 enum Type {Fixed=0,HydrogenLymanAlphaIKL2020=1,
-    HydroxylAX00SchleicherAhearn1988Unquenched=2};
+    HydroxylAX00SchleicherAhearn1988Unquenched=2,
+    OxygenI1304DirectKVB2022GroundJ2=3,
+    OxygenI1304DirectSUMER2001GroundJ2=4,
+    OxygenI1304LymanBetaBowenSUMER2001GroundJ2=5};
 }
 namespace VelocityDomainPolicy {
 enum Type {Abort=0,ExcludeAndReport=1};
@@ -47,6 +50,11 @@ extern double ImpactParameterDirection[3];
 extern bool ObservationGeometryConfigured;
 extern double BulkHeliocentricRadialVelocity;
 extern double SolarLymanAlphaFlux1AU;
+// 1-AU solar photon fluxes [photons m^-2 s^-1] required only by the O I
+// 130.4-nm models: the complete O I triplet (direct models) and the
+// 102.4-102.8 nm band containing H Lyman-beta (Bowen model).
+extern double SolarOxygen1304TripletFlux1AU;
+extern double SolarLymanBetaFlux1AU;
 extern int OutOfRangeVelocityPolicy;
 extern int TauDiagnosticMode[];
 extern double LineCenterCrossSection[];

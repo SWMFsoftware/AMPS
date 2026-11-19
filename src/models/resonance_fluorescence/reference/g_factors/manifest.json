@@ -9,7 +9,10 @@
       "source_file": "h_lya_ikl2020/table1v4.txt",
       "source_sha256": "3521490dba2d167b3535f07313af8eec81ed1758442b36ebaab4de2970e952b6",
       "quantity": "irradiance-dependent analytic H Ly-alpha radiation-pressure profile",
-      "radial_velocity_range_km_s": [-200.0, 200.0],
+      "radial_velocity_range_km_s": [
+        -200.0,
+        200.0
+      ],
       "extrapolation": false,
       "solar_lya_flux_units": "photons cm^-2 s^-1 at 1 AU"
     },
@@ -23,15 +26,102 @@
       "normalized_sha256": "d44a72615affd63d714aecff2fd01e743544c57e1a35fd768df948d1668054d7",
       "quantity": "unquenched OH A-X (0-0) band energy fluorescence efficiency",
       "units": "erg s^-1 molecule^-1 at 1 AU",
-      "radial_velocity_range_km_s": [-60.0, 60.0],
+      "radial_velocity_range_km_s": [
+        -60.0,
+        60.0
+      ],
       "radial_velocity_step_km_s": 0.1,
       "extrapolation": false,
       "quenching": "unquenched"
+    },
+    "O_I_1304_KVB2022_DIRECT_J2": {
+      "citation": "Killen, Vervack and Burger 2022, ApJS 263:37, data behind Figure 14",
+      "doi": "https://doi.org/10.3847/1538-4365/ac9eab",
+      "source_url": "https://content.cld.iop.org/journals/0067-0049/263/2/37/revision1/apjsac9eabf14.tar.gz",
+      "source_file": "o_i_1304_kvb2022/apjsac9eabf14.tar.gz",
+      "source_sha256": "111bc76dc8b052296ee7515005f539706a8b57c7ee7cfff9e44e161b32e5fa7e",
+      "extracted_files": {
+        "o_i_1304_kvb2022/oI_1302_gvalues.txt": "ca63f720629dbc2222b9f41de7082aa05dfc54e49851279d5a9207b0d27bda9e",
+        "o_i_1304_kvb2022/oI_1304_gvalues.txt": "7ab097b7dfe1467ef9b97ada1aba4d2df50356796674b138eb3ccfcb8b3beed1",
+        "o_i_1304_kvb2022/oI_1306_gvalues.txt": "d6c07ce2502771c3b71d25b562ab7a4be898ca381be04d2c6f03dca9d44ce0d3",
+        "o_i_1304_kvb2022/ReadMe_dbf14.txt": "a760e4617539c66c0146e42f94c431a29cbad091188ea7c7ebea5addaff9974f"
+      },
+      "solar_profile": "Gladstone 1992, JGR 97:19519 double-Gaussian line shapes scaled to SORCE SOLSTICE 2009-03-01",
+      "source_distance_au": 0.352,
+      "quantity": "rate of O I 130.4-nm triplet photons per 2p4 3P2 atom (absorption at 130.217 nm), 1 AU, scaled by the case triplet flux",
+      "reference_triplet_flux_1au_photon_cm-2_s-1": 8411565429.30787,
+      "reference_triplet_flux_check": "SORCE SOLSTICE high-resolution SSI 2009-03-01, 130.10-130.72 nm minus continuum: 8.12e9",
+      "radial_velocity_range_km_s": [
+        -48.0,
+        48.0
+      ],
+      "radial_velocity_step_km_s": 0.1,
+      "extrapolation": false,
+      "lower_level_population": "all absorbers in 2p4 3P2",
+      "atomic_data": "NIST_ASD_O_I"
+    },
+    "O_I_1304_SUMER2001_DIRECT_J2": {
+      "citation": "Curdt et al. 2001, A&A 375:591, SUMER spectral atlas of solar-disk features (quiet-Sun disk centre), served by BASS2000 (Observatoire de Paris)",
+      "documentation_url": "https://bass2000.obspm.fr/solar_spect.php",
+      "spectral_sampling_angstrom": 0.043,
+      "intensity_units": "relative radiance (BASS2000 'normalized intensity')",
+      "wavelength_scale": "vacuum, solar rest frame as published",
+      "source_url": "https://bass2000.obspm.fr/php/getSolarSpectrumDB.php?WL=1297&DW=14&resol=0.001&fmt=txt",
+      "source_file": "o_i_sumer2001_bass2000/sumer_disk_center_1297_1311A.txt",
+      "source_sha256": "ab5461f1ecc4b4e8f899134326f6ecbaa455e37ff448bf222efa034682fe85c1",
+      "normalization": "continuum-subtracted 130.217-nm line over +-0.45 A carries 0.324824 (Killen et al. 2022 share) of the supplied 1-AU triplet flux; continuum = median 1303.55-1304.05 A",
+      "quantity": "rate of O I 130.4-nm triplet photons per 2p4 3P2 atom per unit 1-AU triplet photon flux",
+      "radial_velocity_range_km_s": [
+        -100.0,
+        100.0
+      ],
+      "radial_velocity_step_km_s": 0.1,
+      "extrapolation": false,
+      "lower_level_population": "all absorbers in 2p4 3P2",
+      "atomic_data": "NIST_ASD_O_I"
+    },
+    "O_I_1304_SUMER2001_LYB_BOWEN_J2": {
+      "citation": "Curdt et al. 2001, A&A 375:591, SUMER spectral atlas of solar-disk features (quiet-Sun disk centre), served by BASS2000 (Observatoire de Paris)",
+      "documentation_url": "https://bass2000.obspm.fr/solar_spect.php",
+      "spectral_sampling_angstrom": 0.043,
+      "intensity_units": "relative radiance (BASS2000 'normalized intensity')",
+      "wavelength_scale": "vacuum, solar rest frame as published",
+      "source_url": "https://bass2000.obspm.fr/php/getSolarSpectrumDB.php?WL=1019&DW=13&resol=0.001&fmt=txt",
+      "source_file": "o_i_sumer2001_bass2000/sumer_disk_center_1019_1032A.txt",
+      "source_sha256": "e6aca2d2bf468880330ff71b06295e9041b02edf537aabfcdef6c544ffa73074",
+      "normalization": "atlas integral over 1024.0-1028.0 A equals the supplied 1-AU flux in the FISM2 bins 102.4-102.8 nm",
+      "quantity": "rate of O I 130.4-nm triplet photons per 2p4 3P2 atom produced by Lyman-beta pumping of 3d 3D (102.576 nm) and the 1128.7 -> 844.6 nm cascade, per unit 1-AU Lyman-beta photon flux",
+      "cascade_branching": [
+        0.287442,
+        0.288781,
+        0.289427
+      ],
+      "radial_velocity_range_km_s": [
+        -100.0,
+        100.0
+      ],
+      "radial_velocity_step_km_s": 0.1,
+      "extrapolation": false,
+      "lower_level_population": "all absorbers in 2p4 3P2",
+      "atomic_data": "NIST_ASD_O_I"
     }
   },
   "generated": {
     "file": "../../generated/reference_tables.inc",
-    "sha256": "1fb36028af013311e14d9a7140fbdb08fba854c77efb11ec873a804869d6089d",
+    "sha256": "c9a315cdfb55f77fea3ea726bbff850ff3fdd1797ac5b2ae11196a3a1e71813d",
     "generator": "../../tools/generate_reference_tables.py"
+  },
+  "retrieval_snapshot_utc_oxygen": "2026-11-19",
+  "atomic_data": {
+    "NIST_ASD_O_I": {
+      "citation": "Kramida, Ralchenko, Reader and NIST ASD Team, NIST Atomic Spectra Database (ver. 5.12)",
+      "ultraviolet_file": "o_i_nist_asd/o_i_lines_1020_1310A_vacuum.csv",
+      "ultraviolet_sha256": "f654ce045989cb7e6f8ca12d268273abb61379149dc9b38064274f93ca403bda",
+      "ultraviolet_query_url": "https://physics.nist.gov/cgi-bin/ASD/lines1.pl?spectra=O+I&limits_type=0&low_w=1020&upp_w=1310&unit=0&format=2&line_out=0&remove_js=on&en_unit=0&output=0&show_obs_wl=1&show_calc_wl=1&order_out=0&show_av=2&A_out=0&f_out=on&S_out=on&loggf_out=on&intens_out=on&allowed_out=1&forbid_out=1&conf_out=on&term_out=on&enrg_out=on&J_out=on&g_out=on",
+      "infrared_file": "o_i_nist_asd/o_i_lines_11270_11310A_air.csv",
+      "infrared_sha256": "e5bcf56339006db53d32ed3255ba7f44747036f536899b68d6ca7474191b98f6",
+      "infrared_query_url": "https://physics.nist.gov/cgi-bin/ASD/lines1.pl?spectra=O+I&limits_type=0&low_w=11270&upp_w=11310&unit=0&format=2&line_out=0&remove_js=on&en_unit=0&output=0&show_obs_wl=1&show_calc_wl=1&order_out=0&show_av=2&A_out=0&f_out=on&S_out=on&loggf_out=on&intens_out=on&allowed_out=1&forbid_out=1&conf_out=on&term_out=on&enrg_out=on&J_out=on&g_out=on",
+      "used": "Ritz vacuum wavelengths and f of 2p4 3P_J - 3s 3S1 (130.2/130.5/130.6 nm) and 2p4 3P2 - 3d 3D_J' (102.576 nm); A values of every 3d 3D_J' decay to 2p4 3P and 3p 3P"
+    }
   }
 }

@@ -12,7 +12,7 @@ sub expect_failure {
   die "FAIL $name emitted unexpected error: $@\n" unless $@=~/$pattern/;
 }
 
-my @species=qw(H OH H2O CO);
+my @species=qw(H OH H2O CO O);
 my $valid=CometBrightnessConfig->new(species=>\@species);
 $valid->set_mode_record('BrightnessMode=ON','valid');
 $valid->set_grid_record(
@@ -53,6 +53,31 @@ die "FAIL named model representation\n"
     unless $modeled->emissions()->[0]->{model}==1 &&
         $modeled->emissions()->[1]->{model}==2 &&
         abs($modeled->emissions()->[1]->{effective_wavelength_m}-308.5e-9)<1e-20;
+
+my $oxygen=CometBrightnessConfig->new(species=>\@species);
+$oxygen->set_mode_record('BrightnessMode=ON','oxygen');
+$oxygen->set_grid_record(
+    'BrightnessImpactParameterGrid=LOG | 2500 | 1.0e9 | 41','oxygen');
+$oxygen->set_observation_geometry_record(
+    'BrightnessObservationGeometry=1|0|0|0|0|1|1|0|0','oxygen');
+$oxygen->set_radial_velocity_record(
+    'BrightnessHeliocentricRadialVelocityKMS=0.4','oxygen');
+$oxygen->set_solar_oi1304_flux_record(
+    'BrightnessSolarOxygen1304TripletFlux1AUPhotonCM2S=1.0657e10','oxygen');
+$oxygen->set_solar_lyb_flux_record(
+    'BrightnessSolarLymanBetaFlux1AUPhotonCM2S=4.961e9','oxygen');
+my @oxygen_models=qw(O_I_1304_KVB2022_DIRECT_J2 O_I_1304_SUMER2001_DIRECT_J2
+    O_I_1304_SUMER2001_LYB_BOWEN_J2);
+for (my $i=0;$i<@oxygen_models;$i++) {
+  $oxygen->add_emission_record(
+      "BrightnessEmission=O | OI_1304_COMPONENT_$i | $oxygen_models[$i] | CORE_O | THIN | ISOTROPIC_4PI | NONE | 0 | 0 | NONE | 0",
+      'oxygen');
+}
+$oxygen->validate_configuration(dimension=>1,radial_enabled=>1);
+die "FAIL O I model representation\n"
+    unless join(',',map {$_->{model}} @{$oxygen->emissions()}) eq '3,4,5' &&
+        abs($oxygen->solar_oi1304_flux_1au_ph_cm2_s()-1.0657e10)<1 &&
+        abs($oxygen->solar_lyb_flux_1au_ph_cm2_s()-4.961e9)<1;
 
 my $omitted=CometBrightnessConfig->new(species=>\@species);
 $omitted->validate_configuration(dimension=>1,radial_enabled=>1);
@@ -133,6 +158,44 @@ expect_failure('OH model missing wavelength',qr/requires a positive explicit eff
       'BrightnessEmission=OH|308NM|OH_AX00_SA1988_LOWELL_UNQUENCHED|SRC|THIN|ISOTROPIC_4PI|NONE|0|0|NONE','bad');
 });
 
+expect_failure('O model on another species',qr/can only be assigned to species O/,sub {
+  my $c=CometBrightnessConfig->new(species=>\@species);
+  $c->add_emission_record(
+      'BrightnessEmission=OH|OI|O_I_1304_KVB2022_DIRECT_J2|SRC|THIN|ISOTROPIC_4PI|NONE|0|0|NONE','bad');
+});
+expect_failure('O model with wavelength',qr/does not accept an effective wavelength/,sub {
+  my $c=CometBrightnessConfig->new(species=>\@species);
+  $c->add_emission_record(
+      'BrightnessEmission=O|OI|O_I_1304_SUMER2001_DIRECT_J2|SRC|THIN|ISOTROPIC_4PI|NONE|0|0|NONE|130.4','bad');
+});
+for my $case (['direct',qr/require BrightnessSolarOxygen1304TripletFlux1AUPhotonCM2S/,
+    'O_I_1304_SUMER2001_DIRECT_J2'],
+    ['Bowen',qr/requires BrightnessSolarLymanBetaFlux1AUPhotonCM2S/,
+    'O_I_1304_SUMER2001_LYB_BOWEN_J2']) {
+  expect_failure("O $case->[0] model missing irradiance",$case->[1],sub {
+    my $c=CometBrightnessConfig->new(species=>\@species);
+    $c->set_mode_record('BrightnessMode=ON','bad');
+    $c->set_grid_record('BrightnessImpactParameterGrid=LINEAR|0|10|2','bad');
+    $c->set_observation_geometry_record(
+        'BrightnessObservationGeometry=1|0|0|0|0|1|1|0|0','bad');
+    $c->set_radial_velocity_record('BrightnessHeliocentricRadialVelocityKMS=1','bad');
+    $c->add_emission_record(
+        "BrightnessEmission=O|OI|$case->[2]|SRC|THIN|ISOTROPIC_4PI|NONE|0|0|NONE",'bad');
+    $c->validate_configuration(dimension=>1,radial_enabled=>1);
+  });
+}
+expect_failure('unused Lyman-beta irradiance',qr/requires O_I_1304_SUMER2001_LYB_BOWEN_J2/,sub {
+  my $c=CometBrightnessConfig->new(species=>\@species);
+  $c->set_mode_record('BrightnessMode=ON','bad');
+  $c->set_grid_record('BrightnessImpactParameterGrid=LINEAR|0|10|2','bad');
+  $c->set_observation_geometry_record(
+      'BrightnessObservationGeometry=1|0|0|0|0|1|1|0|0','bad');
+  $c->set_solar_lyb_flux_record('BrightnessSolarLymanBetaFlux1AUPhotonCM2S=4e9','bad');
+  $c->add_emission_record(
+      'BrightnessEmission=OH|OH|2e-4|SRC|THIN|ISOTROPIC_4PI|NONE|0|0|NONE','bad');
+  $c->validate_configuration(dimension=>1,radial_enabled=>1);
+});
+
 expect_failure('nonorthogonal observation geometry',qr/must be orthogonal/,sub {
   my $c=CometBrightnessConfig->new(species=>\@species);
   $c->set_observation_geometry_record(
@@ -144,4 +207,4 @@ expect_failure('invalid velocity policy',qr/must be ABORT or EXCLUDE_AND_REPORT/
       'BrightnessVelocityDomainPolicy=CLAMP','bad');
 });
 
-print "PASS comet-brightness input policy fixed=1 modeled=1 default-off=1 invalid=13\n";
+print "PASS comet-brightness input policy fixed=1 modeled=1 oxygen=1 default-off=1 invalid=18\n";

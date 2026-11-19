@@ -30,6 +30,7 @@ sub new {
     emissions=>[],keys=>{},radial_velocity_km_s=>undef,
     comet_velocity_km_s=>undef,observation_geometry=>undef,
     velocity_domain_policy=>undef,solar_lya_flux_1au_ph_cm2_s=>undef,
+    solar_oi1304_flux_1au_ph_cm2_s=>undef,solar_lyb_flux_1au_ph_cm2_s=>undef,
   },$class;
 }
 
@@ -118,6 +119,33 @@ sub set_solar_lya_flux_record {
   $self->{solar_lya_flux_1au_ph_cm2_s}=$value+0.0;
 }
 
+sub set_solar_oi1304_flux_record {
+  my ($self,$line,$location)=@_;
+  $self->{solar_oi1304_flux_1au_ph_cm2_s}=_positive_flux_record($line,
+      $location,'BrightnessSolarOxygen1304TripletFlux1AUPhotonCM2S',
+      $self->{solar_oi1304_flux_1au_ph_cm2_s});
+}
+
+sub set_solar_lyb_flux_record {
+  my ($self,$line,$location)=@_;
+  $self->{solar_lyb_flux_1au_ph_cm2_s}=_positive_flux_record($line,
+      $location,'BrightnessSolarLymanBetaFlux1AUPhotonCM2S',
+      $self->{solar_lyb_flux_1au_ph_cm2_s});
+}
+
+sub _positive_flux_record {
+  my ($line,$location,$key,$previous)=@_;
+  $location='' unless defined $location;
+  my $record=$line;
+  $record=~s/!.*$//;
+  die "invalid $key at $location\n"
+      unless $record=~/^\s*\Q$key\E\s*[=:]\s*(.*?)\s*$/i;
+  my $value=_trim($1);
+  die "$key must be positive at $location\n" unless _positive_number($value);
+  die "duplicate $key at $location\n" if defined $previous;
+  return $value+0.0;
+}
+
 sub set_mode_record {
   my ($self,$line,$location)=@_;
   $location='' unless defined $location;
@@ -187,6 +215,9 @@ sub add_emission_record {
   my %model=(
     "H_LYA_IKL2020"=>1,
     "OH_AX00_SA1988_LOWELL_UNQUENCHED"=>2,
+    "O_I_1304_KVB2022_DIRECT_J2"=>3,
+    "O_I_1304_SUMER2001_DIRECT_J2"=>4,
+    "O_I_1304_SUMER2001_LYB_BOWEN_J2"=>5,
   );
   my $model_name="FIXED";
   my $model_code=0;
@@ -209,11 +240,18 @@ sub add_emission_record {
           unless _nonnegative_number($effective_wavelength_nm) &&
               $effective_wavelength_nm==0.0;
     }
-    else {
+    elsif ($model_code==2) {
       die "OH_AX00_SA1988_LOWELL_UNQUENCHED can only be assigned to species OH at $location\n"
           unless $species eq 'OH';
       die "OH energy g-factor conversion requires a positive explicit effective wavelength in nm at $location\n"
           unless _positive_number($effective_wavelength_nm);
+    }
+    else {
+      die "$model_name can only be assigned to species O at $location\n"
+          unless $species eq 'O';
+      die "$model_name does not accept an effective wavelength at $location\n"
+          unless _nonnegative_number($effective_wavelength_nm) &&
+              $effective_wavelength_nm==0.0;
     }
   }
   $emission_mode=uc($emission_mode);
@@ -271,7 +309,9 @@ sub validate_configuration {
             defined($self->{comet_velocity_km_s}) ||
             defined($self->{observation_geometry}) ||
             defined($self->{velocity_domain_policy}) ||
-            defined($self->{solar_lya_flux_1au_ph_cm2_s});
+            defined($self->{solar_lya_flux_1au_ph_cm2_s}) ||
+            defined($self->{solar_oi1304_flux_1au_ph_cm2_s}) ||
+            defined($self->{solar_lyb_flux_1au_ph_cm2_s});
     return 1;
   }
   die "BrightnessMode=ON requires Dimension=1\n"
@@ -293,6 +333,16 @@ sub validate_configuration {
           !defined($self->{comet_velocity_km_s});
   die "H_LYA_IKL2020 requires BrightnessSolarLymanAlphaFlux1AUPhotonCM2S\n"
       if $uses_h && !defined($self->{solar_lya_flux_1au_ph_cm2_s});
+  my $uses_o_direct=grep {$_->{model}==3 || $_->{model}==4} @{$self->{emissions}};
+  my $uses_o_bowen=grep {$_->{model}==5} @{$self->{emissions}};
+  die "O I 130.4-nm direct models require BrightnessSolarOxygen1304TripletFlux1AUPhotonCM2S\n"
+      if $uses_o_direct && !defined($self->{solar_oi1304_flux_1au_ph_cm2_s});
+  die "BrightnessSolarOxygen1304TripletFlux1AUPhotonCM2S requires an O I 130.4-nm direct model\n"
+      if !$uses_o_direct && defined($self->{solar_oi1304_flux_1au_ph_cm2_s});
+  die "O_I_1304_SUMER2001_LYB_BOWEN_J2 requires BrightnessSolarLymanBetaFlux1AUPhotonCM2S\n"
+      if $uses_o_bowen && !defined($self->{solar_lyb_flux_1au_ph_cm2_s});
+  die "BrightnessSolarLymanBetaFlux1AUPhotonCM2S requires O_I_1304_SUMER2001_LYB_BOWEN_J2\n"
+      if !$uses_o_bowen && defined($self->{solar_lyb_flux_1au_ph_cm2_s});
   return 1;
 }
 
@@ -317,6 +367,12 @@ sub resolved_comet_velocity_km_s {
 }
 sub solar_lya_flux_1au_ph_cm2_s {
   return $_[0]->{solar_lya_flux_1au_ph_cm2_s};
+}
+sub solar_oi1304_flux_1au_ph_cm2_s {
+  return $_[0]->{solar_oi1304_flux_1au_ph_cm2_s};
+}
+sub solar_lyb_flux_1au_ph_cm2_s {
+  return $_[0]->{solar_lyb_flux_1au_ph_cm2_s};
 }
 
 sub generated_metadata_calls {

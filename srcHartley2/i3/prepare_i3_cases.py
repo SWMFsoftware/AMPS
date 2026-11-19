@@ -43,6 +43,23 @@ AMR_BLOCK_CELLS = 8
 MAX_ITERATIONS = 150_000
 
 MASS_AMU = {"H": 1, "H2": 2, "O": 16, "OH": 17, "H2O": 18, "CO": 28, "CO2": 44}
+
+# O I 130.4-nm brightness: three additive core-model components, each emitted
+# as its own column group of pic.O.brightness.  Direct triplet pumping has
+# two solar line shapes that bracket the unresolved line wings (Killen et
+# al. 2022 / Gladstone 1992 versus the SOHO/SUMER atlas); Lyman-beta (Bowen)
+# pumping is added to either.  The line-centre optical-depth diagnostic uses
+# the 130.217-nm line (f=0.0520) with a 1 km/s Doppler parameter; like the H
+# diagnostic it flags, and never attenuates, the optically thin result.
+O_I_1304_TAU = "LINE_CENTER | 1.0e-17 | 0.1 | DOPPLER_B1KMS_FOSC0.0520_130.217NM_CONSERVATIVE_DIAGNOSTIC"
+O_I_1304_EMISSIONS = (
+    ("O_DIRECT_KVB2022", "OI_1304_TRIPLET_DIRECT_KVB2022",
+     "O_I_1304_KVB2022_DIRECT_J2", "CORE_KVB2022_GLADSTONE1992_CASE_FISM2_SCALED"),
+    ("O_DIRECT_SUMER2001", "OI_1304_TRIPLET_DIRECT_SUMER2001",
+     "O_I_1304_SUMER2001_DIRECT_J2", "CORE_SUMER2001_ATLAS_CASE_FISM2_SCALED"),
+    ("O_LYB_BOWEN", "OI_1304_TRIPLET_LYB_BOWEN_SUMER2001",
+     "O_I_1304_SUMER2001_LYB_BOWEN_J2", "CORE_SUMER2001_LYB_CASE_FISM2"),
+)
 DIRECT_PARENTS = ("H2O", "CO", "CO2")
 
 
@@ -243,6 +260,34 @@ def _load_reactions(path: Path) -> list[Reaction]:
     return reactions
 
 
+def attach_solar_fuv_lines(
+    cases: list[dict[str, str]], lines: list[dict[str, str]]
+) -> list[dict[str, str]]:
+    """Add the per-case O I triplet and Lyman-beta fluxes (derive_solar_fuv_lines.py)."""
+
+    by_case = {row["case_id"]: row for row in lines}
+    if set(by_case) != {case["case_id"] for case in cases}:
+        raise ValueError("solar_fuv_lines.csv must list exactly the I3 cases")
+    merged = []
+    for case in cases:
+        row = by_case[case["case_id"]]
+        for key in ("earth_equivalent_start_utc", "earth_equivalent_end_utc"):
+            if row[key] != case[key]:
+                raise ValueError(f"case {case['case_id']}: {key} differs from i3_cases.csv")
+        merged.append(
+            dict(
+                case,
+                o_i_1304_triplet_photon_flux_1au=row[
+                    "o_i_1304_triplet_photon_flux_1au_ph_cm-2_s-1"
+                ],
+                h_lyb_photon_flux_1au=row[
+                    "h_lyb_102p4_102p8nm_photon_flux_1au_ph_cm-2_s-1"
+                ],
+            )
+        )
+    return merged
+
+
 def _validate_observation_geometry(case: dict[str, str]) -> None:
     """Reject incomplete or internally inconsistent case geometry.
 
@@ -391,9 +436,14 @@ def render_runtime_input(
             "CORE_IKL2020_CASE_SOLAR_FLUX | THIN | ISOTROPIC_4PI | "
             "LINE_CENTER | 9.5e-18 | 0.1 | "
             "DOPPLER_B8KMS_FOSC0.4164_CONSERVATIVE_DIAGNOSTIC | 0",
-            "  dust.enabled = false",
         ]
     )
+    lines.extend(
+        f"  brightness.emission.{key} = O | {transition} | {model} | "
+        f"{provenance} | THIN | ISOTROPIC_4PI | {O_I_1304_TAU} | 0"
+        for key, transition, model, provenance in O_I_1304_EMISSIONS
+    )
+    lines.append("  dust.enabled = false")
 
     for case in cases:
         _validate_observation_geometry(case)
@@ -441,6 +491,10 @@ def render_runtime_input(
                 f"{case['heliocentric_radial_velocity_km_s']}",
                 "    brightness.solar_lya_flux_1au_photon_cm-2_s-1 = "
                 f"{case['h_lya_photon_flux_1au_ph_cm-2_s-1']}",
+                "    brightness.solar_oi1304_triplet_flux_1au_photon_cm-2_s-1 = "
+                f"{case['o_i_1304_triplet_photon_flux_1au']}",
+                "    brightness.solar_lyb_flux_1au_photon_cm-2_s-1 = "
+                f"{case['h_lyb_photon_flux_1au']}",
                 "  #end case",
             ]
         )
@@ -451,9 +505,12 @@ def render_runtime_input(
 
 def generate(repository: Path, output_directory: Path) -> list[Path]:
     i3_directory = repository / "srcHartley2" / "i3"
-    cases = apply_rate_scaling(
-        _load_csv(i3_directory / "reference" / "i3_cases.csv"),
-        _load_csv(i3_directory / "reference" / "i3_rate_scaling.csv"),
+    cases = attach_solar_fuv_lines(
+        apply_rate_scaling(
+            _load_csv(i3_directory / "reference" / "i3_cases.csv"),
+            _load_csv(i3_directory / "reference" / "i3_rate_scaling.csv"),
+        ),
+        _load_csv(i3_directory / "reference" / "solar_fuv_lines.csv"),
     )
     reactions = _load_reactions(i3_directory / "reference" / "photochemistry_channels.csv")
     output_directory.mkdir(parents=True, exist_ok=True)

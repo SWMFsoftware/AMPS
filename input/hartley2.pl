@@ -397,6 +397,14 @@ while ($line=<InputFile>) {
     $BrightnessConfig->set_solar_lya_flux_record($LineOriginal,
         "line $InputFileLineNumber ($InputFileName)");
   }
+  elsif ($InputLine eq "BRIGHTNESSSOLAROXYGEN1304TRIPLETFLUX1AUPHOTONCM2S") {
+    $BrightnessConfig->set_solar_oi1304_flux_record($LineOriginal,
+        "line $InputFileLineNumber ($InputFileName)");
+  }
+  elsif ($InputLine eq "BRIGHTNESSSOLARLYMANBETAFLUX1AUPHOTONCM2S") {
+    $BrightnessConfig->set_solar_lyb_flux_record($LineOriginal,
+        "line $InputFileLineNumber ($InputFileName)");
+  }
   elsif ($InputLine eq "BRIGHTNESSEMISSION") {
     $BrightnessConfig->add_emission_record($LineOriginal,
         "line $InputFileLineNumber ($InputFileName)");
@@ -1449,6 +1457,18 @@ if ($BrightnessConfig->enabled()) {
     ampsConfigLib::ChangeValueOfVariable(
         "double Comet::Brightness::SolarLymanAlphaFlux1AU",
         $BrightnessConfig->solar_lya_flux_1au_ph_cm2_s()*1.0e4,
+        "main/CometBrightness.cpp");
+  }
+  if (defined $BrightnessConfig->solar_oi1304_flux_1au_ph_cm2_s()) {
+    ampsConfigLib::ChangeValueOfVariable(
+        "double Comet::Brightness::SolarOxygen1304TripletFlux1AU",
+        $BrightnessConfig->solar_oi1304_flux_1au_ph_cm2_s()*1.0e4,
+        "main/CometBrightness.cpp");
+  }
+  if (defined $BrightnessConfig->solar_lyb_flux_1au_ph_cm2_s()) {
+    ampsConfigLib::ChangeValueOfVariable(
+        "double Comet::Brightness::SolarLymanBetaFlux1AU",
+        $BrightnessConfig->solar_lyb_flux_1au_ph_cm2_s()*1.0e4,
         "main/CometBrightness.cpp");
   }
   ampsConfigLib::ChangeValueOfArray(
