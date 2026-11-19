@@ -39,6 +39,7 @@
     "src/test/tests/interface/test_geopack_contracts.cpp",
     "src/test/tests/interface/run_test.py",
     "src/test/tests/models/chemical_solver/run_test.py",
+    "src/test/tests/models/chemical_database/run_test.py",
     "src/test/tests/models/comet_libraries/run_test.py",
     "test/srcChemicalSolverTests/main.cpp",
     "src/test/tests/models/surface_exosphere/run_test.py",
@@ -246,6 +247,17 @@
       "local_registries": [],
       "reason": "A configured optional-module profile checks both published analytic H/H+ lifetimes against independent effective-speed/cross-section equations, inverse-density scaling, selector dispatch, unsupported species, and invalid domains.",
       "gaps": ["event selection", "product and velocity mapping", "branching", "momentum/energy/weight bookkeeping"]
+    },
+    {
+      "area_id": "chemical-database",
+      "component": "src/models/chemical_database",
+      "path": "src/models/chemical_database",
+      "status": "partial",
+      "suite_ids": ["CORE-CHEMICAL-DATABASE-001"],
+      "case_ids": ["CHEMICAL-DATABASE-PROTOCOL-001"],
+      "local_registries": [],
+      "reason": "A registered adapter delegates to maintained actual native/Python integrity and immutable ownership controls with administrative fixtures and strict result propagation; no site data or physical validation is inferred.",
+      "gaps": ["real-source/deployed SDK qualification", "numerical service and application production wiring", "GPU support", "unresolved source rights", "physical and observational validation"]
     },
     {
       "area_id": "chemical-solver",

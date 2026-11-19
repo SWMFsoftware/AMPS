@@ -4,11 +4,13 @@
 
 #include "Moon.h"
 #include "MoonSurfaceTemperature.h"
+#include "MoonTransportClock.h"
 
 #include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstring>
+#include <exception>
 #include <numeric>
 
 #include <memory>
@@ -27,6 +29,15 @@ std::unique_ptr<TerrainRayTracer> gProductionTerrain;
 const Runtime::Configuration* gProductionConfiguration=nullptr;
 double gParticleStepBeginEtS=0.0;
 thread_local bool gCollisionFrameValid=false;
+// P08 state is installed explicitly and remains immutable during transport.
+// The ledger/resolver user data are application-owned and must outlive every
+// impact callback. No collector is inferred from neutral surface parameters.
+std::vector<Species::IonCollector::StateDefinition> gIonCollectorStates;
+IonCollectorStateResolver gIonCollectorResolver=nullptr;
+void* gIonCollectorUser=nullptr;
+Species::IonCollector::Ledger* gIonCollectorLedger=nullptr;
+double gIonCollectorElementaryChargeC=ElectronCharge;
+std::string gIonCollectorChargeSourceIdentity;
 thread_local double gCollisionNormalBody[3]={0.0,0.0,0.0};
 thread_local double gCollisionLsoToBody[36]={0.0};
 thread_local double gCollisionBodyToLso[36]={0.0};
@@ -433,12 +444,21 @@ bool EvaluateSolarDisc(const TerrainRayTracer* terrain,
       !std::isfinite(request.opaqueEarthRadiusM) || request.opaqueEarthRadiusM<0 ||
       (request.opaqueEarthRadiusM>0 && (!PositiveFinite(earthDistance) ||
           !(earthDistance>request.opaqueEarthRadiusM))) ||
-      !PositiveFinite(request.rayOriginOffsetM) || request.radialPoints<1 ||
+      // A surface self-intersection displacement must never leak into a
+      // gas-particle observation operator. In volume mode the same production
+      // rays start at the exact requested position, without an artificial
+      // facet horizon or any ignored physical BVH triangle.
+      (request.volumePointOrigin ?
+          (request.applyLocalSelfHorizon || request.rayOriginOffsetM!=0.0 ||
+           request.sourceFace!=std::numeric_limits<std::size_t>::max()) :
+          !PositiveFinite(request.rayOriginOffsetM)) || request.radialPoints<1 ||
       request.azimuthPoints<4 || request.azimuthPoints%4!=0 ||
       static_cast<std::size_t>(request.radialPoints)>
           std::numeric_limits<std::size_t>::max()/request.azimuthPoints) {
-    *error="invalid finite-disc geometry/grid: explicit positive radii/offset, "
-        "external observer and radial>=1, azimuth>=4 divisible by four required";
+    *error="invalid finite-disc geometry/grid: explicit positive radii, "
+        "external observer and radial>=1, azimuth>=4 divisible by four required; "
+        "surface mode needs positive origin offset, volume mode needs zero "
+        "offset, applyLocalSelfHorizon=false and no ignored source facet";
     return false;
   }
   std::array<double,3> centre=request.pointToSunM,normal=request.outwardNormal;
@@ -456,14 +476,22 @@ bool EvaluateSolarDisc(const TerrainRayTracer* terrain,
   SolarDiscSample candidate;
   candidate.rayCount=static_cast<std::size_t>(request.radialPoints)*request.azimuthPoints;
   const double weight=1.0/static_cast<double>(candidate.rayCount);
+  double fullSolidAngleWeight=0.0;
+  // Use sin(alpha)^2/(1+cos(alpha)) for 1-cos(alpha), retaining precision for
+  // the real Sun's small angular radius. This is geometry, not a replacement
+  // for the selected D04 1-AU spectrum/rate-distance convention.
+  candidate.unobscuredSolidAngleSr=2*pi*sinRadius*sinRadius/
+      (1+std::sqrt(1-sinRadius*sinRadius));
   for (int ring=0;ring<request.radialPoints;++ring) {
     // Midpoint in r^2 gives equal PROJECTED disc areas. With uniform radiance,
     // dOmega=dA_projected/cos(rho); therefore irradiance needs the 1/cos(rho)
     // Jacobian below. Averaging cos(incidence) alone would be a different law.
     const double sine=sinRadius*std::sqrt((ring+0.5)/request.radialPoints);
     const double cosine=std::sqrt(1.0-sine*sine);
+    const double solidAngleWeight=weight/cosine;
     for (int azimuth=0;azimuth<request.azimuthPoints;++azimuth) {
       const double phi=2*pi*(azimuth+0.5)/request.azimuthPoints;
+      fullSolidAngleWeight+=solidAngleWeight;
       std::array<double,3> ray;
       for (int k=0;k<3;++k)
         ray[k]=cosine*centre[k]+sine*(std::cos(phi)*tangent[k]+std::sin(phi)*second[k]);
@@ -475,7 +503,8 @@ bool EvaluateSolarDisc(const TerrainRayTracer* terrain,
                   request.rayOriginOffsetM,request.sourceFace,&terrainVisible,error)) return false;
         } else {
           std::array<double,3> origin=request.surfacePositionM;
-          for (int k=0;k<3;++k) origin[k]+=request.rayOriginOffsetM*normal[k];
+          if (!request.volumePointOrigin)
+            for (int k=0;k<3;++k) origin[k]+=request.rayOriginOffsetM*normal[k];
           RayHit obstruction;
           if (!terrain->IntersectRay(origin,ray,0,std::numeric_limits<double>::infinity(),
                   request.sourceFace,&obstruction,error)) return false;
@@ -499,12 +528,17 @@ bool EvaluateSolarDisc(const TerrainRayTracer* terrain,
           earthVisible=!(nearEarth>=0 && nearEarth<nearSun);
         }
       }
-      if (earthVisible) candidate.earthVisibleAreaFraction+=weight;
+      if (earthVisible) {
+        candidate.earthVisibleAreaFraction+=weight;
+        candidate.earthVisibleSolidAngleFraction+=solidAngleWeight;
+      }
       if (!terrainVisible) continue;
       candidate.terrainVisibleAreaFraction+=weight;
+      candidate.terrainVisibleSolidAngleFraction+=solidAngleWeight;
       candidate.sampledAnyTerrainVisible=true;
       if (!earthVisible) continue;
       candidate.jointlyVisibleAreaFraction+=weight;
+      candidate.jointlyVisibleSolidAngleFraction+=solidAngleWeight;
       candidate.sampledAnyJointlyVisible=true;
       if (incidence<=0) continue; // Visible sky does not imply inward facet heating.
       const double projected=weight*incidence/cosine;
@@ -521,6 +555,15 @@ bool EvaluateSolarDisc(const TerrainRayTracer* terrain,
   candidate.terrainVisibleAreaFraction=std::min(1.0,candidate.terrainVisibleAreaFraction);
   candidate.earthVisibleAreaFraction=std::min(1.0,candidate.earthVisibleAreaFraction);
   candidate.jointlyVisibleAreaFraction=std::min(1.0,candidate.jointlyVisibleAreaFraction);
+  // Normalize the SAME jointly masked rays, not independent Earth and terrain
+  // fractions. Clamping encloses only accumulated floating-point roundoff;
+  // no missing angular data or source intensity is filled/renormalized here.
+  candidate.terrainVisibleSolidAngleFraction=std::min(1.0,
+      candidate.terrainVisibleSolidAngleFraction/fullSolidAngleWeight);
+  candidate.earthVisibleSolidAngleFraction=std::min(1.0,
+      candidate.earthVisibleSolidAngleFraction/fullSolidAngleWeight);
+  candidate.jointlyVisibleSolidAngleFraction=std::min(1.0,
+      candidate.jointlyVisibleSolidAngleFraction/fullSolidAngleWeight);
   *output=candidate;
   return true;
 }
@@ -573,6 +616,97 @@ const TerrainRayTracer* ProductionTerrain() {
   return gProductionTerrain.get();
 }
 
+bool ProductionIonCollectorInstalled() { return gIonCollectorResolver!=nullptr; }
+
+bool InstallProductionIonCollector(
+    const std::vector<Species::IonCollector::StateDefinition>& states,
+    IonCollectorStateResolver resolver,void* user,
+    Species::IonCollector::Ledger* ledger,std::string* error) {
+  return InstallProductionIonCollector(states,resolver,user,ledger,error,
+      ElectronCharge,"AMPS legacy ElectronCharge");
+}
+bool InstallProductionIonCollector(
+    const std::vector<Species::IonCollector::StateDefinition>& states,
+    IonCollectorStateResolver resolver,void* user,
+    Species::IonCollector::Ledger* ledger,std::string* error,
+    double elementaryChargeC,const std::string& elementaryChargeSourceIdentity) {
+  if(!error)return false;
+#if _COMPILATION_MODE_ != _COMPILATION_MODE__MPI_
+  *error="ideal ion collector currently requires MPI-only execution (OMP=1); shared-ledger thread publication is unqualified";return false;
+#else
+  if(!std::isfinite(elementaryChargeC) || elementaryChargeC<=0 || elementaryChargeSourceIdentity.empty() ||
+     ProductionIonCollectorInstalled() || !Runtime::HasConfiguration() ||
+     Runtime::GetConfiguration().ionSurfaceBoundary!="ideal-collector" ||
+     Runtime::GetConfiguration().particleTracingMover=="legacy" || !resolver || !ledger || !ledger->records.empty()) {
+    *error="install ideal ion collector exactly once with explicit selector, physical-time tracer, state resolver and an empty ledger; unsupported/default mode cannot install a collector";return false;
+  }
+  if(!Species::IonCollector::ValidateStates(states,error))return false;
+  for(const auto& state:states) {
+    const auto& m=state.material;
+    if(m.compiledSpecies>=PIC::nTotalSpecies ||
+       PIC::MolecularData::GetMass(m.compiledSpecies)!=m.modelMassKg ||
+       PIC::MolecularData::GetElectricCharge(m.compiledSpecies)!=m.elementaryCharge*elementaryChargeC) {
+      *error="collector state inventory disagrees with actual compiled species/mass/charge; configure matching isotope/reference masses or supply an explicitly matching inventory, never alter ledger masses alone";return false;
+    }
+  }
+  try {
+    auto candidate=states;
+    gIonCollectorStates.swap(candidate);
+  } catch(const std::exception&) {
+    *error="collector state-inventory allocation failed; provide more memory or reduce the explicit state catalog";return false;
+  }
+  // Publish only after every fallible validation/allocation. A rejected
+  // installation leaves the previously unsupported physical policy intact.
+  gIonCollectorElementaryChargeC=elementaryChargeC;
+  gIonCollectorChargeSourceIdentity=elementaryChargeSourceIdentity;
+  gIonCollectorUser=user;gIonCollectorLedger=ledger;gIonCollectorResolver=resolver;
+  error->clear();return true;
+#endif
+}
+
+bool HandleProductionIonImpact(long int particle,const double* position,
+    const double* velocity,void* nodePointer,
+    const Species::IonCollector::ImpactFrame& frame) {
+  if(particle<0 || particle>=PIC::ParticleBuffer::GetMaxNPart() ||
+     !PIC::ParticleBuffer::IsParticleAllocated(particle))
+    exit(__LINE__,__FILE__,"ion-boundary dispatch requires an actually allocated incident PIC particle");
+  const int species=PIC::ParticleBuffer::GetI(particle);
+  if(species<0 || species>=PIC::nTotalSpecies)
+    exit(__LINE__,__FILE__,"ion-boundary incident particle has an invalid compiled species");
+  const double charge=PIC::MolecularData::GetElectricCharge(species);
+  if(charge==0)return false; // Preserve neutral arithmetic/RNG/callback order.
+  if(!std::isfinite(charge) || !Runtime::HasConfiguration() ||
+     Runtime::GetConfiguration().ionSurfaceBoundary!="ideal-collector")
+    exit(__LINE__,__FILE__,"charged lunar surface impact is unsupported by default: no neutral Na/Ar sticking, neutralization, implantation or heat law is applied. For mathematical first-impact diagnostics explicitly select ion_surface_boundary=ideal-collector and install a matching state/energy inventory; otherwise disable ion production or supply qualified ion-surface physics.");
+  if(!ProductionIonCollectorInstalled() || !gIonCollectorLedger || !position || !velocity || !nodePointer)
+    exit(__LINE__,__FILE__,"ideal ion collector was selected without an installed state/formation-energy resolver, ledger or actual impact node. An input switch alone cannot supply missing physical states/energies; install explicit source-bound state data before enabling ion transport.");
+  auto* node=static_cast<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>(nodePointer);
+  if(!node->block)exit(__LINE__,__FILE__,"ideal collector impact has no allocated owning AMR block");
+  std::size_t stateIndex=0;std::string error;
+  if(!gIonCollectorResolver(particle,nodePointer,gIonCollectorUser,&stateIndex,&error) ||
+     stateIndex>=gIonCollectorStates.size()) {
+    const std::string message="ideal collector cannot identify actual incident source/product state; do not infer a ground state or formation energy from species alone: "+error;
+    exit(__LINE__,__FILE__,message.c_str());
+  }
+  Species::IonCollector::Incident incident;
+  incident.state=gIonCollectorStates[stateIndex];
+  const auto& identity=incident.state.material;
+  if(identity.compiledSpecies!=species || PIC::MolecularData::GetMass(species)!=identity.modelMassKg ||
+     charge!=identity.elementaryCharge*gIonCollectorElementaryChargeC)
+    exit(__LINE__,__FILE__,"incident collector state disagrees with actual particle species/mass/charge; source-state crosswalk is incompatible");
+  incident.representedNumber=node->block->GetLocalParticleWeight(species)*
+      PIC::ParticleBuffer::GetIndividualStatWeightCorrection(particle);
+  incident.elementaryChargeC=gIonCollectorElementaryChargeC;
+  for(int d=0;d<3;++d) { incident.positionLsoM[d]=position[d];incident.velocityLsoMS[d]=velocity[d]; }
+  incident.impactEpochEtS=PIC::Mover::ForceCutSurface::GetParticleEpochS(particle);
+  incident.frame=frame;
+  if(!Species::IonCollector::Collect(incident,gIonCollectorLedger,&error))
+    exit(__LINE__,__FILE__,error.c_str());
+  // The caller returns Delete. We deliberately leave bytes/allocator/cell-list
+  // ownership to the mover, after successful ledger publication exactly once.
+  return true;
+}
+
 void BeginProductionParticleStep(double ephemerisTimeBeginS) {
   if (!std::isfinite(ephemerisTimeBeginS))
     exit(__LINE__,__FILE__,"invalid moving-surface particle-step epoch");
@@ -588,9 +722,92 @@ void BeginProductionParticleStep(double ephemerisTimeBeginS) {
 }
 double ProductionSourceEpochS() { return gParticleStepBeginEtS; }
 double ProductionInjectionEpochS() {
+  if(Moon::CommonTransportTimeSelected()) {
+    const auto* clock=Moon::GetCommonTransportClock();TransportTime::BirthTime birth;
+    std::string error;const double offset=std::isfinite(PIC::Mover::MovingSurfaceInjectionTimeOffsetS)?
+      PIC::Mover::MovingSurfaceInjectionTimeOffsetS:0.0;
+    if(!clock || !clock->BirthFromOffset(offset,&birth,&error)) {
+      const std::string message="common-time source birth requires an active normal transport step and an actual offset within [0,dt]: "+error+
+        ". Call normal Begin/Commit hooks, retain explicit birth offsets and restart from the declared initial state; do not reuse the frozen external epoch as transport time.";
+      exit(__LINE__,__FILE__,message.c_str());
+    }
+    return birth.epochEtS;
+  }
   return gParticleStepBeginEtS+(
       std::isfinite(PIC::Mover::MovingSurfaceInjectionTimeOffsetS) ?
       PIC::Mover::MovingSurfaceInjectionTimeOffsetS:0.0);
+}
+
+bool ApplyFrozenTracingBodyTransform(const Runtime::Configuration& configuration,
+    double* transform,std::string* error) {
+  if(!error)return false;
+  error->clear();
+  if(!transform){*error="null body-state transform";return false;}
+  if(configuration.particleTracingMover=="legacy" ||
+      configuration.simulationEnvironmentMode!="frozen")return true;
+  for(int i=0;i<36;++i)if(!std::isfinite(transform[i])) {
+    *error="nonfinite frozen body-state transform";return false;
+  }
+  for(int row=3;row<6;++row)for(int column=0;column<3;++column)
+    transform[6*row+column]=0;
+  return true;
+}
+
+bool ProductionInjectionBodyToLsoTransform(double* transform,std::string* error) {
+  if(!error)return false;
+  error->clear();
+  if(!transform || !gProductionConfiguration) {
+    *error="source body transform requires initialized production terrain/configuration";return false;
+  }
+#ifdef _NO_SPICE_CALLS_
+  *error="source body transform requires SPICE";return false;
+#else
+  const auto& configuration=*gProductionConfiguration;
+  const bool frozen=configuration.particleTracingMover!="legacy" &&
+      configuration.simulationEnvironmentMode=="frozen";
+  const double epoch=frozen?ProductionSourceEpochS():ProductionInjectionEpochS();
+  SpiceDouble candidate[6][6];
+  sxform_c(Frames::BodyFixed,Frames::SolarOrbital,epoch,candidate);
+  if(!ApplyFrozenTracingBodyTransform(configuration,&candidate[0][0],error))return false;
+  std::memcpy(transform,candidate,sizeof(candidate));return true;
+#endif
+}
+
+bool CommitProductionMovingSurfaceCollision(long int particle,
+    const double* selectedNormalLso,double* normalBody,
+    double* lsoToBody36,double* bodyToLso36,std::string* error) {
+  if(!error)return false;
+  error->clear();
+  if(!gProductionConfiguration || gProductionConfiguration->particleTracingMover=="legacy" ||
+      !selectedNormalLso || !normalBody || !lsoToBody36 || !bodyToLso36) {
+    *error="accepted tracer collision requires explicit production configuration and outputs";return false;
+  }
+  const double physicalEpoch=PIC::Mover::ForceCutSurface::GetParticleEpochS(particle);
+  if(!std::isfinite(physicalEpoch)){*error="accepted collision has no physical particle epoch";return false;}
+#ifdef _NO_SPICE_CALLS_
+  *error="accepted collision frame requires SPICE";return false;
+#else
+  const auto& configuration=*gProductionConfiguration;
+  const double epoch=configuration.simulationEnvironmentMode=="frozen"?
+      ProductionSourceEpochS():physicalEpoch;
+  SpiceDouble inverse[6][6],forward[6][6];
+  sxform_c(Frames::SolarOrbital,Frames::BodyFixed,epoch,inverse);
+  sxform_c(Frames::BodyFixed,Frames::SolarOrbital,epoch,forward);
+  if(!ApplyFrozenTracingBodyTransform(configuration,&inverse[0][0],error) ||
+      !ApplyFrozenTracingBodyTransform(configuration,&forward[0][0],error))return false;
+  double normal[3]={};
+  for(int row=0;row<3;++row)for(int column=0;column<3;++column)
+    normal[row]+=inverse[row][column]*selectedNormalLso[column];
+  const double length=std::hypot(normal[0],normal[1],normal[2]);
+  if(!PositiveFinite(length)){*error="accepted collision normal is nonfinite or zero";return false;}
+  for(double& value:normal)value/=length;
+  // Publish only after the complete accepted frame is valid. Adaptive trial
+  // queries cannot overwrite this transaction or increment its physical count.
+  std::memcpy(normalBody,normal,sizeof(normal));
+  std::memcpy(lsoToBody36,inverse,sizeof(inverse));std::memcpy(bodyToLso36,forward,sizeof(forward));
+  gProductionCollisionCount.fetch_add(1,std::memory_order_relaxed);
+  return true;
+#endif
 }
 
 bool FindProductionMovingSurfaceIntersection(long int particle,
@@ -616,7 +833,6 @@ bool FindProductionMovingSurfaceIntersection(long int particle,
       "moving LOLA collision geometry requires a SPICE-enabled build");
   return false;
 #else
-  (void)particle;
   (void)segmentAccelerationLsoMPerS2;
   if (gProductionTerrain==nullptr || gProductionConfiguration==nullptr)
     return false;
@@ -629,6 +845,8 @@ bool FindProductionMovingSurfaceIntersection(long int particle,
     exit(__LINE__,__FILE__,"invalid moving LOLA collision segment");
 
   const Runtime::Configuration& configuration=*gProductionConfiguration;
+  const bool localTracing=configuration.particleTracingMover!="legacy";
+  const bool frozenTracing=localTracing && configuration.simulationEnvironmentMode=="frozen";
   // The production RK2 position extension is x(t)=x0+v0*t+a0*t^2/2.
   // Searching a straight ray while the mover advances an accelerated segment
   // gives the wrong collision epoch/position. Bound its particle arc speed
@@ -645,14 +863,28 @@ bool FindProductionMovingSurfaceIntersection(long int particle,
   const std::size_t intervals=std::max<std::size_t>(1,
       static_cast<std::size_t>(std::ceil(speed*maximumFlightTimeS/
           configuration.surfaceCollisionMaximumSegmentLengthM)));
-  const double absoluteSegmentStart=
-      ProductionInjectionEpochS()+elapsedFlightTimeS;
+  double absoluteSegmentStart=ProductionInjectionEpochS()+elapsedFlightTimeS;
+  if (localTracing) {
+    const auto clock=PIC::Mover::ForceCutSurface::GetTimeContext(particle);
+    if (!std::isfinite(clock.InitialEpochS))
+      exit(__LINE__,__FILE__,"local-time LOLA tracing needs a physical particle epoch");
+    absoluteSegmentStart=clock.InitialEpochS+elapsedFlightTimeS;
+  }
+  // The explicit frozen tracing profile holds ALL ephemeris-driven geometry
+  // at its declared source epoch as well as the force fields. Physical local
+  // seconds still advance in particle bytes. The legacy moving-surface path
+  // retains its old epoch semantics. Future evolving tracing must supply its
+  // corresponding epoch-aware force provider, not mix frozen forces with an
+  // unrelated global-step pose.
+  const auto geometryEpoch=[&](double localSeconds) {
+    return frozenTracing ? ProductionSourceEpochS() : absoluteSegmentStart+localSeconds;
+  };
   std::string error;
   double lowerTime=0.0,lowerDistance=0.0;
   RayHit lowerHit;
   std::array<double,3> lowerBody;
   if (!EvaluateSignedTerrainDistance(0.0,segmentPositionLsoM,
-          segmentVelocityLsoMPerS,segmentAccelerationLsoMPerS2,absoluteSegmentStart,&lowerDistance,
+          segmentVelocityLsoMPerS,segmentAccelerationLsoMPerS2,geometryEpoch(0),&lowerDistance,
           &lowerHit,&lowerBody,&error))
     exit(__LINE__,__FILE__,error.c_str());
   if (lowerDistance<-
@@ -668,7 +900,7 @@ bool FindProductionMovingSurfaceIntersection(long int particle,
   for (std::size_t interval=1;interval<=intervals;++interval) {
     upperTime=maximumFlightTimeS*static_cast<double>(interval)/intervals;
     if (!EvaluateSignedTerrainDistance(upperTime,segmentPositionLsoM,
-            segmentVelocityLsoMPerS,segmentAccelerationLsoMPerS2,absoluteSegmentStart+upperTime,
+            segmentVelocityLsoMPerS,segmentAccelerationLsoMPerS2,geometryEpoch(upperTime),
             &upperDistance,&upperHit,&upperBody,&error))
       exit(__LINE__,__FILE__,error.c_str());
     if (lowerDistance>
@@ -695,7 +927,7 @@ bool FindProductionMovingSurfaceIntersection(long int particle,
     RayHit middleHit;
     std::array<double,3> middleBody;
     if (!EvaluateSignedTerrainDistance(middleTime,segmentPositionLsoM,
-            segmentVelocityLsoMPerS,segmentAccelerationLsoMPerS2,absoluteSegmentStart+middleTime,
+            segmentVelocityLsoMPerS,segmentAccelerationLsoMPerS2,geometryEpoch(middleTime),
             &middleDistance,&middleHit,&middleBody,&error))
       exit(__LINE__,__FILE__,error.c_str());
     if (middleDistance>0.0) {
@@ -725,13 +957,22 @@ bool FindProductionMovingSurfaceIntersection(long int particle,
         hitPositionLsoM[dimension]=segmentPositionLsoM[dimension]+
             hitFlightTimeS*segmentVelocityLsoMPerS[dimension]+
             0.5*hitFlightTimeS*hitFlightTimeS*segmentAccelerationLsoMPerS2[dimension];
-      const double epoch=absoluteSegmentStart+hitFlightTimeS;
+      const double epoch=geometryEpoch(hitFlightTimeS);
       SpiceDouble bodyToLso[6][6],bodyState[6]={body[0],body[1],body[2],
                                                 0.0,0.0,0.0};
       SpiceDouble lsoToBody[6][6];
       SpiceDouble lsoState[6];
       sxform_c(Frames::BodyFixed,Frames::SolarOrbital,epoch,bodyToLso);
       sxform_c(Frames::SolarOrbital,Frames::BodyFixed,epoch,lsoToBody);
+      if (frozenTracing) {
+        // A deliberately frozen pose has zero surface velocity relative to
+        // LSO. Retain the measured rotation but remove only the derivative
+        // block in BOTH state maps, keeping impact/re-emission transforms
+        // consistent with the actual boundary trajectory used above.
+        if(!ApplyFrozenTracingBodyTransform(configuration,&bodyToLso[0][0],&error) ||
+            !ApplyFrozenTracingBodyTransform(configuration,&lsoToBody[0][0],&error))
+          exit(__LINE__,__FILE__,error.c_str());
+      }
       mxvg_c(bodyToLso,bodyState,6,6,lsoState);
       for (int row=0;row<3;++row) {
         outwardNormalLso[row]=0.0;
@@ -740,12 +981,14 @@ bool FindProductionMovingSurfaceIntersection(long int particle,
               hit.outwardNormal[column];
         surfaceVelocityLsoMPerS[row]=lsoState[row+3];
       }
+      if(!localTracing) {
       std::memcpy(gCollisionNormalBody,hit.outwardNormal.data(),
                   3*sizeof(double));
       std::memcpy(gCollisionLsoToBody,lsoToBody,36*sizeof(double));
       std::memcpy(gCollisionBodyToLso,bodyToLso,36*sizeof(double));
       gCollisionFrameValid=true;
       gProductionCollisionCount.fetch_add(1,std::memory_order_relaxed);
+      }
       return true;
     }
   }

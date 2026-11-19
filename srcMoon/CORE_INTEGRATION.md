@@ -1,5 +1,69 @@
 # Integration with the current AMPS core
 
+## November 19 integration and corrective verification
+
+Master integrates `60a156ddcc3deeaf48e2981b0beb14738245457e` with the preserved local source (eleven incoming commits). The completed corrective CORE registry has **844 PASS, 240 SKIP, 1 FAIL and 1 ERROR**. Exact historical/current-upstream PASS preservation audits pass; the known nonpasses remain visible. Moon M0 is **10/10 PASS**, with a zero-byte reviewed nightly diff, and **1533 targeted native checks PASS**. The U-series has 15 PASS/11 SKIPPED and zero FAIL/ERROR.
+
+The original concurrent CORE attempt is **ERROR**: two CampaignBudget calls in
+threads shared the same parent PID and adopted each other's children. Its
+conservative outer reserve interrupted the merged lane before aggregate JSON
+publication. Completed owner logs do not supply invented individual PASS rows.
+The original failed deadline, logs and supporting short-tail retry are retained.
+The completed pristine baseline is authentic: 843 PASS/240 SKIP/1 FAIL/1 ERROR.
+
+A separately recorded corrective campaign uses one OS supervisor and one full
+CORE candidate, with 24 build jobs on 36 logical cores. It retains its own ORIGINAL
+3600-second deadline including setup/build/run/report/delivery, without resetting
+that clock after failures. No owner timeout, fixture, reference or acceptance
+threshold changes. Exact case-identity audits protect both historical 844 PASS
+and current-upstream 843 PASS, and their union; incomplete/preflight evidence never
+substitutes for actual runtime rows. Known incomplete-coverage FAIL and full-CME
+180-second ERROR remain separate from preservation PASS.
+
+The pristine CORE baseline and complete Moon runs retain actual 822dec07 source
+revisions. Late upstream 60a156dd changes only an Earth source-contract Python
+test; five focused checks pass. All native/CORE/Moon inputs and registry bytes
+are unchanged by that addition. The corrective candidate executes on 60a156dd.
+The 742 native-input hashes and the late-delta proof preserve these distinct bases.
+
+Three-way merges retain upstream APIs and Moon's existing opt-in force-tracer
+declarations in `src/pic/pic.h`, plus the local registration in
+`MakefileTest/Table`. Its build uses `$(TESTCOMPILEJOBS)` as required by upstream.
+The nightly planner now honors an explicit Table over an implicit cached
+Makefile manifest, retaining explicit configured-tree priority and host checks.
+Four new precedence controls, all 83 nightly unit tests, the official registry
+check and six field-line helper cases pass. Three existing maintained chemistry
+build helpers are explicitly unignored so future commits include required source.
+
+Builds use fresh generated trees and normal Config.pl/GCC 9.4/MPI/SPICE. Native
+manifests retain exact commands, input/configuration/header/executable hashes,
+consumed data hashes, seeds, rank layout and stdout/stderr. Targeted Moon uses
+one/eight MPI ranks; the reviewed nightly uses four MPI ranks/OMP 1 and produces the exact
+reviewed data hash. I04's original generic scorer manifest is retained alongside
+a SHA-bound actual-runtime supplement, rather than relabelling an unexecuted
+command as the actual invocation. No observed random seed is invented.
+
+Fast-forward delivery preserves unrelated local source, new files and all eight
+site configuration files. No staging, user commit, push, reference replacement
+or raw/installed-data edit occurs. Active generated build/executable and site
+Makefile remain unchanged; remove build and configure/build normally before
+using an active application executable after source delivery. Original source,
+index and overlap backups remain available with hashes and recovery notes.
+
+Formal M1/M2/M3 qualification remains open. Passing software fixtures and ideal
+collectors supply no missing physical inputs or observational agreement. The
+source/data roadmaps retain their different recorded hashes; approved source
+resource/development amendments govern this work while original physical/data,
+calibration/hold-out and predecessor gates remain binding.
+
+Final evidence:
+`test_output/srcMoon/upstream-core-merge-corrective-20261119T025503Z/completion_report.json` and `.md`.
+The original error/native package is
+`test_output/srcMoon/upstream-core-merge-20261119T015550Z/`;
+its `latest-target/` holds late-delta and actual-application evidence. Actual
+commands and hashes are in the individual native run manifests and package
+contracts; preserve their source bases when reusing evidence.
+
 ## November 17 integration
 
 The user authorized integration of upstream

@@ -1,5 +1,15 @@
 # Reaction-network data model
 
+The application-independent [chemical database](../chemical_database/README.md)
+provides a separate source catalogue, typed loaders/evaluators and portable
+runtime export. Its [installed API and examples](/data/vtenishe/CHEMICAL_DATABASE/README.md)
+can be used by other applications without depending on Moon. The first
+catalogue profile does not replace this network's current generated tables,
+execution/integration contracts or physical selections. A future explicit
+adapter must preserve those contracts; the broader
+[design proposal](../../../doc/CHEMISTRY_DATABASE_PROPOSAL.md) remains the
+migration plan rather than evidence that such an adapter already exists.
+
 `ReactionNetwork.h` is the geometry-independent chemical-network container
 used by the generic comet application. It does not own particles, choose a
 time integrator, or resolve species names. The input preprocessor performs

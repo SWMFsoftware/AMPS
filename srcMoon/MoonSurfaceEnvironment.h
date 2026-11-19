@@ -2,6 +2,7 @@
 #define SRCMOON_MOON_SURFACE_ENVIRONMENT_H
 
 #include "LunarSurface.h"
+#include "species/IonCollector.h"
 
 #include <array>
 #include <cstdint>
@@ -78,6 +79,13 @@ struct SolarDiscRequest {
   // visibility instead lets the actual terrain intersections define the
   // horizon; it must not discard a Sun below the local horizontal plane.
   bool applyLocalSelfHorizon=true;
+  // Gas absorption starts at an actual volume point rather than an offset
+  // facet. This opt-in mode requires self-horizon OFF, offset exactly zero
+  // and the no-face sentinel: a real blocking facet must never be skipped;
+  // surface callers retain their positive-offset/self-intersection contract.
+  // The dummy normal is used only by surface-irradiance diagnostics, never by
+  // the gas solid-angle visibility returned below.
+  bool volumePointOrigin=false;
 };
 
 struct SolarDiscSample {
@@ -85,6 +93,15 @@ struct SolarDiscSample {
   double terrainVisibleAreaFraction=0.0;
   double earthVisibleAreaFraction=0.0;
   double jointlyVisibleAreaFraction=0.0;
+  // Scalar absorption of uniform radiance integrates dOmega, whereas the
+  // area fractions above integrate projected disc area. The equal-area ray
+  // grid therefore needs a 1/cos(rho) Jacobian and a full-disc normalization.
+  // These fractions have no facet incidence cosine or surface absorptivity.
+  // They are quadrature estimates; finite grids can miss a thin visible sliver.
+  double terrainVisibleSolidAngleFraction=0.0;
+  double earthVisibleSolidAngleFraction=0.0;
+  double jointlyVisibleSolidAngleFraction=0.0;
+  double unobscuredSolidAngleSr=0.0; // Exact full apparent-disc solid angle [sr].
   // Incident irradiance divided by irradiance on a perpendicular plane.
   // This includes the positive local incidence cosine for EACH visible ray.
   double projectedIncidence=0.0;
@@ -141,14 +158,52 @@ bool InitializeProductionTerrain(const Surface::Triangulation& triangulation,
                                  std::string* error);
 bool ProductionTerrainInitialized();
 const TerrainRayTracer* ProductionTerrain();
+// Optional P08 artificial material collector. node is the actual PIC AMR node
+// as an opaque pointer so geometry-only header users need no PIC/generated
+// headers. The explicit resolver identifies EACH incident catalog state; no
+// compiled-species-to-ground-state fallback exists. Installation validates
+// compiled species/mass/charge and is allowed only for the opt-in selector.
+using IonCollectorStateResolver=bool(*)(long int particle,void* node,
+    void* user,std::size_t* state,std::string* error);
+bool InstallProductionIonCollector(
+    const std::vector<Species::IonCollector::StateDefinition>& states,
+    IonCollectorStateResolver resolver,void* user,
+    Species::IonCollector::Ledger* ledger,std::string* error);
+// Physical source owners supply a source-bound unit explicitly. The overload
+// above forwards the unchanged compiled legacy constant; no SI replacement is
+// hidden in a geometry-only header or written into shared core constants.
+bool InstallProductionIonCollector(
+    const std::vector<Species::IonCollector::StateDefinition>& states,
+    IonCollectorStateResolver resolver,void* user,
+    Species::IonCollector::Ledger* ledger,std::string* error,
+    double elementaryChargeC,const std::string& elementaryChargeSourceIdentity);
+bool ProductionIonCollectorInstalled();
+// Call at the ACTUAL accepted sphere/facet collision BEFORE querying neutral
+// temperature/sticking. false means a neutral and preserves its old path.
+// Unsupported/incomplete ion physics terminates with a detailed diagnostic.
+// true means the transfer is recorded: caller returns the mover's Delete code,
+// leaving the mover as the SOLE owner of actual particle deletion/list repair.
+bool HandleProductionIonImpact(long int particle,const double* positionLsoM,
+    const double* velocityLsoMS,void* node,
+    const Species::IonCollector::ImpactFrame& frame);
 void BeginProductionParticleStep(double ephemerisTimeBeginS);
 // Fixed source-CDF/hazard epoch [TDB s] for the current operator-split
 // particle interval. Unlike ProductionInjectionEpochS, it never includes an
 // individual particle's departure offset.
 double ProductionSourceEpochS();
 // Actual source-departure epoch [TDB s] when the scoped PIC injection context
-// is active. Outside injection, callers should use their ordinary frame epoch.
+// is active. Explicit common-time uses the advancing TRANSPORT origin/step;
+// independent-history retains the legacy external-step epoch plus offset.
+// This must not be substituted for the frozen coefficient/geometry epoch:
+// those providers use ProductionSourceEpochS. A common birth outside an
+// active physical step is fatal rather than reusing a stale/frozen birth.
 double ProductionInjectionEpochS();
+// Shared explicit new-tracer/frozen-body policy. Preserve both rotation
+// blocks; remove only dR/dt*x material velocity. Legacy matrices are untouched.
+bool ApplyFrozenTracingBodyTransform(const Runtime::Configuration& configuration,
+    double* stateTransform36,std::string* error);
+bool ProductionInjectionBodyToLsoTransform(double* stateTransform36,
+    std::string* error);
 bool FindProductionMovingSurfaceIntersection(long int particle,
     const double* segmentPositionLsoM,const double* segmentVelocityLsoMPerS,
     const double* segmentAccelerationLsoMPerS2,double elapsedFlightTimeS,
@@ -158,10 +213,15 @@ bool FindProductionMovingSurfaceIntersection(long int particle,
 bool LastProductionCollisionFrame(double* outwardNormalBodyFixed,
                                   double* lsoToBodyStateTransform36,
                                   double* bodyToLsoStateTransform36);
+// NEW tracer accepted-event transaction. The finder is a pure preview; only
+// this callback commits the actual selected normal/frame and one collision.
+bool CommitProductionMovingSurfaceCollision(long int particle,
+    const double* selectedNormalLso,double* normalBody,
+    double* lsoToBody36,double* bodyToLso36,std::string* error);
 
 // Monotonic process-local diagnostic count of geometrically resolved moving
-// terrain intersections.  It is incremented inside the same production finder
-// invoked by PIC::Mover and is never used to alter motion or physics.  Linked
+// terrain intersections. Legacy mode retains finder-report counting; new
+// tracers count accepted interaction commits, never adaptive previews. Linked
 // I14 snapshots it before/after a mover fixture to prove that the normal mover
 // traversed the production LOLA callback rather than a test-only ray tracer.
 std::uint64_t ProductionCollisionCount();

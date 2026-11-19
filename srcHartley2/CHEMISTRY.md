@@ -1,5 +1,15 @@
 # Minor-daughter chemistry statistics roadmap
 
+The separate [shared chemical database](../src/models/chemical_database/README.md)
+now provides reusable source catalogues, typed data access and a portable SDK
+across AMPS applications. Its [installed API and examples](/data/vtenishe/CHEMICAL_DATABASE/README.md)
+are available to a future Hartley2 adapter. This application's source-selection
+and runtime profile have not been migrated. Its executor, number-rate accounting,
+startup cache contract, generated tables, statistical policy and branch/review
+requirements below remain controlling. The broader
+[design proposal](../doc/CHEMISTRY_DATABASE_PROPOSAL.md) describes the remaining
+second-consumer migration and its required verification.
+
 ## Purpose and scope
 
 This roadmap describes how to improve the statistical quality of chemically

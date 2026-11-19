@@ -39,6 +39,7 @@ DEFAULT_REGRESSION_INPUT = (
     REPO_ROOT / "srcMoon" / "examples" / "m1_regression.in"
 )
 DEFAULT_M2_INPUT = REPO_ROOT / "srcMoon" / "examples" / "lola_surface.in"
+DEFAULT_M3_INPUT = REPO_ROOT / "srcMoon" / "examples" / "m3_reaction_rates.in"
 
 # This is the campaign registry, not a directory-discovery convenience.  A new
 # test must be added here deliberately so code review can see that the aggregate
@@ -100,7 +101,14 @@ LINKED_M2_TESTS: tuple[tuple[str, str], ...] = tuple(
     for number in range(14, 21)
 )
 
-TESTS = U_TESTS + LINKED_M1_TESTS + LINKED_M2_TESTS
+# Chemistry owns literal I21-I24 even while missing physical daughter models
+# keep qualification SKIPPED. Their individual owners retain input/source and
+# predecessor evidence; scalar/supporting PASS never substitutes for the gate.
+LINKED_M3_TESTS: tuple[tuple[str, str], ...] = tuple(
+    (f"I{number:02d}",f"integration-tests/I{number:02d}/test.py")
+    for number in range(21,25)
+)
+TESTS = U_TESTS + LINKED_M1_TESTS + LINKED_M2_TESTS + LINKED_M3_TESTS
 
 VALID_STATUSES = ("PASS", "FAIL", "SKIPPED", "ERROR")
 EXPECTED_EXIT = {"PASS": 0, "FAIL": 1, "ERROR": 2, "SKIPPED": 77}
@@ -164,6 +172,8 @@ def validate_registry() -> list[str]:
     }
     if registered_m2_directories != expected_m2_directories:
         errors.append("linked M2 registry must contain exactly I14 through I20")
+    if {Path(runner).parts[-2] for _,runner in LINKED_M3_TESTS}!={f"I{n:02d}" for n in range(21,25)}:
+        errors.append("linked M3 registry must contain exactly I21 through I24")
     return errors
 
 
@@ -429,6 +439,64 @@ def validate_i19_aggregate_receipts(directory: Path, manifest: dict[str, Any]) -
     return True
 
 
+def validate_supporting_results(payload: dict[str, Any], parent_status: str) -> None:
+    """Reject a nested failure hidden by an otherwise coherent outer receipt.
+
+    Supporting services are actual executed local controls, while their parent
+    U15/U17 can legitimately remain formally SKIPPED. Validate that distinction
+    without promoting a supporting PASS into physics qualification. This is a
+    metadata/status identity check, never a duplicate scientific evaluator.
+    """
+    if not ({"supporting_checks", "supporting_counts"} & payload.keys()):
+        return
+    rows = payload.get("supporting_checks")
+    counts = payload.get("supporting_counts")
+    if not isinstance(rows, list) or not isinstance(counts, dict):
+        raise ValueError("supporting checks/counts must both be declared")
+    names = set()
+    actual = {name: 0 for name in VALID_STATUSES}
+    for index, row in enumerate(rows):
+        if (not isinstance(row, dict) or not isinstance(row.get("status"), str)
+                or row["status"] not in VALID_STATUSES):
+            raise ValueError(f"supporting row {index} has an invalid status/schema")
+        for key in ("check", "runner", "log"):
+            if not isinstance(row.get(key), str) or not row[key].strip():
+                raise ValueError(f"supporting row {index} is missing its {key}")
+        if row["check"] in names:
+            raise ValueError("duplicate supporting check: " + row["check"])
+        names.add(row["check"])
+        actual[row["status"]] += 1
+    if (set(counts) != set(VALID_STATUSES)
+            or any(type(value) is not int or value < 0 for value in counts.values())
+            or counts != actual):
+        raise ValueError("supporting counts contradict the retained child rows")
+    # An outer ERROR may be caused by another infrastructure problem. Likewise
+    # an outer FAIL can describe its own evaluated criterion even when all
+    # supporting children pass. Stronger retained child outcomes, however,
+    # must never disappear behind PASS, formal SKIPPED or a weaker FAIL.
+    if parent_status == "PASS" and any(actual[name] for name in VALID_STATUSES if name != "PASS"):
+        raise ValueError("parent PASS hides a non-PASS supporting child")
+    if parent_status == "SKIPPED" and (actual["FAIL"] or actual["ERROR"]):
+        raise ValueError("formal SKIPPED hides a failed/errored supporting child")
+    if parent_status == "FAIL" and actual["ERROR"]:
+        raise ValueError("parent FAIL hides a supporting infrastructure ERROR")
+
+
+def supporting_error_details(payload: dict[str, Any]) -> dict[str, Any]:
+    """Keep child diagnostics on every outer-protocol contradiction path."""
+    if not ({"supporting_checks", "supporting_counts"} & payload.keys()):
+        return {}
+    reported = payload.get("supporting_checks")
+    readable = [row for row in reported if isinstance(row, dict)
+                and isinstance(row.get("status"), str)
+                and row["status"] in VALID_STATUSES] if isinstance(reported, list) else []
+    return {"supporting_checks": readable,
+            "supporting_counts": {name: sum(row["status"] == name for row in readable)
+                                  for name in VALID_STATUSES},
+            "reported_supporting_checks": reported,
+            "reported_supporting_counts": payload.get("supporting_counts")}
+
+
 def load_runner_result(
     test_id: str, runner: Path, result_path: Path, log_path: Path, returncode: int
 ) -> dict[str, Any]:
@@ -467,8 +535,11 @@ def load_runner_result(
             "reason": f"individual runner produced unreadable result.json: {error}",
         }
 
+    if not isinstance(payload, dict):
+        return {**base, "status": "ERROR", "reason": "individual result.json must be an object",
+                "reported_result": payload, "artifacts": indexed_artifacts}
     status = payload.get("status")
-    if payload.get("id") != test_id or status not in VALID_STATUSES:
+    if payload.get("id") != test_id or not isinstance(status, str) or status not in VALID_STATUSES:
         return {
             **base,
             "status": "ERROR",
@@ -478,6 +549,7 @@ def load_runner_result(
             ),
             "reported_result": payload,
             "artifacts": indexed_artifacts,
+            **supporting_error_details(payload),
         }
 
     expected_exit = EXPECTED_EXIT[status]
@@ -492,7 +564,20 @@ def load_runner_result(
             "reported_status": status,
             "name": payload.get("name", test_id),
             "artifacts": indexed_artifacts,
+            **supporting_error_details(payload),
         }
+
+    try:
+        validate_supporting_results(payload, status)
+    except ValueError as error:
+        # Preserve every readable actual child failure for the mandatory
+        # runner/log diagnostics. Malformed rows/counts also remain available
+        # verbatim, rather than being replaced with an invented child result.
+        return {**base, "status": "ERROR", "reported_status": status,
+                "name": payload.get("name", test_id),
+                "reason": "invalid supporting result protocol: " + str(error),
+                **supporting_error_details(payload),
+                "artifacts": indexed_artifacts}
 
     if test_id.startswith("I") and status != "ERROR":
         # REGRESSION deliberately does not launch the costly bounded I11 or the
@@ -513,6 +598,16 @@ def load_runner_result(
             if status == "SKIPPED" and not_run
             else REQUIRED_LINKED_ARTIFACTS
         )
+        if status=="SKIPPED" and not_run and test_id in {x[0] for x in LINKED_M3_TESTS} and manifest_path:
+            # An unavailable configuration is SKIPPED, not a fabricated empty
+            # application.in. Accept explicit native absence only for this
+            # not-run M3 schema; an executed run still needs its exact input.
+            identity=json.loads(Path(manifest_path).read_text())
+            requested=identity.get('requested_input_file')
+            if (identity.get('schema')=='srcMoon-M3-formal-owner-v1' and
+                    identity.get('input_snapshot_available') is False and
+                    (requested is None or not Path(requested).is_file())):
+                required=required-{'input_snapshot'}
         if test_id=="I19" and status in {"PASS","FAIL"} and manifest_path:
             try:
                 identity=json.loads(Path(manifest_path).read_text())
@@ -541,6 +636,12 @@ def load_runner_result(
         "name": payload.get("name", test_id),
         "reason": payload.get("reason"),
     }
+    # Local U15/U17 retain supporting services even while their full frozen
+    # production/kinematic scope stays SKIPPED. Expose each real child runner
+    # and log rather than losing it behind the aggregate status.
+    if 'supporting_checks' in payload:
+        normalized['supporting_checks']=payload['supporting_checks']
+        normalized['supporting_counts']=payload.get('supporting_counts',{})
     # Preserve discoverability of every linked artifact in the aggregate JSON
     # without copying or flattening the scientifically meaningful files. The
     # complete individual result remains authoritative at result_json.
@@ -567,6 +668,7 @@ def run_test(
     i11_parallel_levels: int = 1,
     test_runtime_seconds: float = 3600.0,
     m2_cluster_execute: bool = False,
+    m3_input: Path | None = None,
 ) -> dict[str, Any]:
     """Execute one registered CLI runner and consume its structured result."""
     runner = (TEST_ROOT / runner_name).resolve()
@@ -580,7 +682,8 @@ def run_test(
         # manifest, and exact application-input snapshot. This outer log keeps
         # only the runner-level transcript and status JSON, so no artifact is
         # overwritten or mistaken for model output.
-        linked_input = m2_input if int(test_id[1:]) >= 14 else m1_input
+        linked_input = ((m3_input or DEFAULT_M3_INPUT) if int(test_id[1:])>=21
+            else m2_input if int(test_id[1:])>=14 else m1_input)
         linked_executable = (
             m2_amps if test_id in {"I18", "I19", "I20"} and
             m2_amps is not None else amps)
@@ -642,6 +745,11 @@ def print_summary(counts: dict[str, int], results: list[dict[str, Any]]) -> None
                 print(f"    linked artifacts: {result['artifact_directory']}")
             if result.get("reason"):
                 print(f"    reason: {result['reason']}")
+            for child in result.get("supporting_checks", []):
+                if isinstance(child, dict) and child.get("status") in {"FAIL", "ERROR"}:
+                    print(f"    {child['status']} supporting check: {child.get('check', 'unknown')}")
+                    print(f"      runner: {child.get('runner', 'unavailable')}")
+                    print(f"      log:    {child.get('log', 'unavailable')}")
 
 
 def main() -> int:
@@ -675,6 +783,8 @@ def main() -> int:
         "--m2-input", type=Path, default=DEFAULT_M2_INPUT,
         help="Moon LOLA/M2 .in receipt used by linked I14-I20",
     )
+    parser.add_argument("--m3-input",type=Path,default=DEFAULT_M3_INPUT,
+        help="explicit M3 input/provenance for I21-I24; rate services do not activate product kinetics")
     parser.add_argument(
         "--campaign-mode",
         choices=("regression", "qualification"),
@@ -770,6 +880,7 @@ def main() -> int:
         )
     m1_input = selected_m1_input.resolve()
     m2_input = args.m2_input.resolve()
+    m3_input = args.m3_input.resolve()
     m2_amps = args.m2_amps.resolve() if args.m2_amps is not None else None
     if output_root.exists() and any(output_root.iterdir()):
         parser.error(
@@ -874,6 +985,7 @@ def main() -> int:
             amps, m1_input, m2_input, args.campaign_mode, args.mpi_ranks,
             m2_amps, args.i11_parallel_levels, args.test_runtime_seconds,
             args.m2_cluster_execute,
+            m3_input,
         )
         results.append(result)
         print(f"{result['status']:7s} {test_id}  log={result['log']}", flush=True)
@@ -906,6 +1018,7 @@ def main() -> int:
         "linked_m2_na_ar_executable": str(m2_amps) if m2_amps else None,
         "linked_m1_input": str(m1_input),
         "linked_m2_input": str(m2_input),
+        "linked_m3_input": str(m3_input),
         "campaign_mode": args.campaign_mode,
         "mpi_ranks": args.mpi_ranks,
         "output_directory": str(output_root),

@@ -211,7 +211,37 @@ the precise subset addressed; it does not declare their complete scopes closed.
 
 ## Cross-cutting gaps
 
+### Asynchronous local-time sampling — 2026-11-18
+
+The new force/event tracers preserve physical intervals and represented number,
+but this alone does not qualify normal density/LOS/brightness/surface-flux
+sampling with different particle endpoints. The canonical Na-only input uses
+SpeciesGlobalTimeStep and SpeciesGlobalParticleWeight. Its snapshot regression
+is a different scope. `PIC::Sampling` samples before injection/move; `ProcessCell`
+adds number and number/volume once, and mesh output divides by sample count.
+Moon's direct LOS accumulator/output likewise uses number/volume and iteration
+counts, not stored particle epochs or residence exposure. This is a concrete
+missing observation/sampling capability for asynchronous science, not a failure
+of the completed mechanical number/continuation controls.
+
+Declare common-time transient snapshots versus stationary residence-time
+estimation before implementing either. Extend the existing I11-I13 numerical
+and appropriate observation-operator contracts with an independent steady-beam
+number-density/residence oracle and controlled common-time snapshots as
+appropriate; retain the existing I21-I24 event/exposure gates separately. Those
+extensions need a consistent reviewed registry/contract, not a new permanent
+ID assigned here. No unimplemented estimator or asynchronous density product
+is called verified/validated. Data/kinetic and formal predecessor gaps remain.
+
 ### M3 chemistry event/product audit — 2026-11-17
+
+The consolidated [M3 completion proposal](M3_COMPLETION_PROPOSAL.md) adds a
+source-backed implementation/test sequence, upstream API reuse limits, explicit
+physics/data decisions and development/cluster execution design. It proposes
+extensions under the existing U14–U17/U24 and I21–I24 meanings, with no new IDs
+or changed criteria. U24's M3/M4 overlap, I23's measured-forcing claim and the
+roadmap's nonexistent existing U17 channel require reviewed clarification;
+the proposal does not resolve them by silently changing this registry.
 
 The initial M3 audit identified uncovered production seams in the existing
 generic electron and photolytic executors: independently sampled product
@@ -242,3 +272,85 @@ and the two `M3_*_PROPOSAL.md` research documents.
   source revision, executable hash, and runtime layout for linked runs.
 - Audit diagnostic labels and output units; several source comments and legacy
   names refer to Mercury and cannot be treated as lunar scientific metadata.
+
+### Approved common-time follow-up — 2026-11-18
+
+The user approved common physical time as the initial qualification direction.
+`MoonTransportClock` now supplies guarded equal-step chronology and actual
+source/mover Begin/Commit wiring, with explicit frozen external epoch and
+advancing transport births. Local controls and real one/eight-rank hook checks
+are separate from full eight-rank normal application startup. These extend
+existing U15/U16 supporting coverage and do not assign a permanent ID. The
+asynchronous estimator gap above remains; common chronology does not establish
+numerical convergence, a source model or an observation operator.
+
+Declared affine exposure integration and the optical-clock bridge have local
+analytical controls. A physical trajectory-dependent provider/controller is
+still missing. A compensated pending depth not exactly representable by the
+current scalar exposure interface is explicitly refused. The full physical
+model and qualification specifications preserve unavailable distributions and
+source-interpretation gaps rather than filling them with chosen kinematics.
+See `M3_PHYSICAL_MODEL_SPECIFICATION.md` and `M3_QUALIFICATION_PROTOCOL.md`.
+
+### Approved P01–P09 component follow-up — 2026-11-18
+
+The user approved explicit reduced photon/neutral-three-body models, a bounded
+Na partial-capture reference experiment, an ideal verification collector and
+the He/silica conditional laboratory scope. Their supporting runners execute
+under the existing global component namespace. This adds no permanent ID or
+lunar material-validation gate and changes no frozen acceptance threshold.
+U15/U17 remain incomplete without full physical products/predecessors; literal
+U24 still includes actual water/OH surface migration and budgets.
+
+Ion-boundary component coverage now distinguishes strict refusal from an
+explicit mathematical collector. A complete lunar ion-material test still
+needs independently sourced joint reflection/neutralization/implantation,
+target secondary yields and later-release laws. Existing neutral Na/Ar U12
+does not establish those laws. Assigning any new permanent material-test ID
+requires a consistent roadmap/registry review; none is assigned here.
+
+The D119990 native label specifies outgoing H(1s), Na+(2p6), target frame and
+units, but not the initial Na electronic state or a full uncertainty/source
+crosswalk. Na3s is the approved reference input, not an inferred measurement.
+The He/silica fitted inverse-velocity projection also remains unresolved.
+Neither gap can be closed by the scalar law or a conservative sampler.
+Complete state/threshold/isotope/energy error bounds, physical photon/bath
+providers, cascades and actual trajectory-dependent chemistry remain required.
+
+The acquired O I ASD packet now retains the complete stored level/line exports,
+selected O(1D)/O(1S) exits and 3P fine-structure descendants. This resolves
+source acquisition/transcription coverage, not the physical-completeness gap:
+all stored records are not all possible exits. Applicable isotope/state
+mapping, alignment/quenching and quantitative omitted-process bounds remain
+missing. The processor therefore retains missing A values and leaves physical
+lifetimes/normalized branches null. Fifteen offline source controls are named
+U15 supporting children; no full cascade PASS or permanent new ID is assigned.
+
+### Source-bound completion follow-up — 2026-11-18/19
+
+The earlier implementation gaps above now have supporting production services:
+`PhysicalStateProfile`, `PhysicalReactionEvents`, `TrajectoryExposure`, normal
+explicit-ET geometry/controller wiring, exact compensated native clocks and
+full semantic daughter RNG records. The source-bound experimental Na composer
+retains moving-parent photon and electron reservoirs; the actual conservative
+backend validates initial PIC child readbacks. A named conditional I21 cohort
+owner and independent ledger/first-hit/statistical auditors are installed.
+These extend existing U14–U17 supporting coverage without a new permanent ID.
+
+Their implementation does not close the physical-data gaps. Current profiles
+retain fourteen unavailable state records, including Na+; D04 and evaluated
+Na ground thresholds differ beyond native representation. No source/Q interval
+is inferred from printed digits or widened through a numerical tolerance.
+Molecular initial/product populations and Q, collision-biased electron joint
+kinetics, complete CEX families/differential states, applicable cascades and
+physical lunar ion-surface outcomes remain unresolved. Unsupported channels
+stay disabled and full I21–I24 remain SKIPPED/NOT QUALIFIED. Seven available
+reference states and scalar rates are not a complete reaction family.
+
+The normal full-force cohort also requires the actual normal environment-stage
+refresh before its direct production walker; source-only/zero-force admission
+must not disguise that separate wiring requirement. Its extraction and native
+proof are tracked explicitly in STATUS.md. The full qualification matrix,
+same-campaign predecessors,0.2/0.3percent numerical allocations, exact branch
+confidence and independent cohort membership remain unchanged. No supporting
+fixture, regression output or downloaded table is promoted to validation.

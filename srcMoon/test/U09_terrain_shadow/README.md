@@ -1,5 +1,31 @@
 # U09 — Topographic illumination and horizon shadowing
 
+`moving-surface-transaction` extends local geometry coverage through the
+actual production Moon finder/accepted-frame services and real furnished
+SPICE transforms. Two different analytical octahedron-facet previews must
+publish no accepted frame or collision count; committing only the first
+selected normal must produce its exact body-frame normal, inverse state maps
+and one accepted collision. A nonzero physical birth offset must not move an
+explicitly frozen body's source pose or add material surface speed. The same
+production transform policy is applied to sphere/LOLA source and impact paths;
+legacy matrices are preserved exactly. See
+[the transaction contract](../M3_MOVING_SURFACE_TRANSACTION_CONTRACT.md).
+
+This added mode needs a SPICE-enabled producer; absence is explicitly
+SKIPPED, with the earlier non-SPICE local-mode results retained. The probe
+uses a tiny particle buffer and analytical geometry, no AMR population or
+observations. Its actual furnished kernels are hashed in U09/kernel_hashes.json.
+
+The M3 gas-photon extension uses the same production masks with an explicit
+zero-offset volume origin. It verifies absorption visibility as a normalized
+solid-angle integral (`1/cos(rho)` quadrature Jacobian), distinct from projected
+disc area, facet cosine and albedo. Full/half angular symmetry, an analytical
+concentric occultation, refinement, dummy-normal independence, exact BVH
+volume origin and transactional rejection of an offset gas request are
+specified in [M3_IMPLEMENTATION_CONTRACT.md](../M3_IMPLEMENTATION_CONTRACT.md).
+Original U09 thresholds are unchanged. This geometry PASS alone cannot qualify
+photon products, D04/I21 chemistry or an observational comparison.
+
 The complete executable contract—including purpose, production entry points,
 configuration, units, frames/time, oracle, controls, procedure, metrics,
 acceptance criteria, failure modes, data/hashes, predecessor gates, artifacts,

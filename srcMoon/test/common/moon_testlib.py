@@ -62,6 +62,12 @@ def git_revision() -> str:
     return completed.stdout.strip() if completed.returncode == 0 else "unknown"
 
 
+# Expanded M3 photon support now includes independent source/ledger/statistical
+# protocols in addition to the original kernels. This is a named EXECUTION
+# allowance, not a scientific acceptance tolerance; enclosing campaigns keep
+# their original one-hour deadline, and previous timeout artifacts remain.
+M3_PHOTON_SUPPORT_WALL_SECONDS = 600
+
 def _probe_compile_command(build_dir: Path, executable: Path) -> list[str]:
     """Construct the thin-probe link command against generated production code.
 
@@ -177,6 +183,12 @@ def run_probe_case(
     provenance_guards: list[dict[str, Any]] = []
     for mode in acceptance["probe_modes"]:
         environment = os.environ.copy()
+        working_directory = REPO_ROOT
+        if mode == "moving-surface-transaction":
+            # Actual MPI initialization/error logs belong to this new private
+            # fixture directory, never the configured source checkout.
+            working_directory = output_root / "U09" / "moving_surface_transaction"
+            (working_directory / "PT" / "plots").mkdir(parents=True,exist_ok=True)
         if mode == "lola-geometry":
             # U08 writes generated surfaces only beneath the selected test
             # output root; validation-data raw directories remain immutable.
@@ -198,7 +210,7 @@ def run_probe_case(
             environment["MOON_U11_OUTPUT"] = str(u11_output)
         completed = subprocess.run(
             [str(executable), mode],
-            cwd=REPO_ROOT,
+            cwd=working_directory,
             text=True,
             capture_output=True,
             check=False,
@@ -212,7 +224,7 @@ def run_probe_case(
                 "stderr": completed.stderr,
             }
         )
-        if mode in ("prescribed-temperature", "thermal-initialization") and (
+        if mode in ("prescribed-temperature", "thermal-initialization", "moving-surface-transaction") and (
                 completed.returncode == 0 or "DEPENDENCY_SPICE_" in completed.stdout):
             # CSPICE's actual furnished-file inventory comes from the running
             # production probe. Reuse the external-byte SHA helper used by
@@ -228,7 +240,8 @@ def run_probe_case(
                                     completed.stdout)
                 if len(counts) != 1 or not paths or len(paths) != int(counts[0]):
                     raise ValueError("incomplete actual furnished SPICE inventory")
-                test_id = "U10" if mode == "prescribed-temperature" else "U11"
+                test_id = {"prescribed-temperature":"U10", "thermal-initialization":"U11",
+                           "moving-surface-transaction":"U09"}[mode]
                 record = {
                     "schema": f"srcMoon-{test_id}-actual-furnished-SPICE-v1",
                     "files": [{"path": str(path), "sha256": _sha256(path)}
@@ -1068,6 +1081,32 @@ def run_one(
                         result.update(status="ERROR",reason="M3 orchestration infrastructure controls failed")
         except (OSError,ValueError,RuntimeError,ImportError) as error:
             result={"status":"ERROR","reason":"U16 production rate verification failed: "+str(error)}
+    elif kind in ("documented-photon-rates-partial","documented-charge-exchange-partial"):
+        # These local components now have executable production services and
+        # independent oracles, but the full frozen tests also require physical
+        # dispatch/kinematics/predecessors that remain missing. Preserve both
+        # truths: actual supporting outcomes and an unqualified aggregate ID.
+        try:
+            if str(TEST_ROOT) not in sys.path:sys.path.insert(0,str(TEST_ROOT))
+            from m3_supporting_services import run_services
+            groups=(('photon-selection','reaction-primitives','runtime-input',
+                'piecewise-exposure','exposure-clock-bridge','compensated-depth','common-time-clock',
+                'qualification-protocol-controls','qualification-infrastructure',
+                'trajectory-exposure','physical-reaction-events','profile-state',
+                'normal-source-registration-controls','coefficient-stage-controls','sodium-ledger','sodium-numerical','source-compile-recipe',
+                'reduced-daughter-kinematics',
+                'ideal-ion-collector','oxygen-state-source-controls')
+                if kind=='documented-photon-rates-partial' else
+                ('rate-registry','sodium-partial-capture','helium-silica-conditional'))
+            support=run_services(output_root/test_id/'supporting-services',groups,
+                wall_seconds=M3_PHOTON_SUPPORT_WALL_SECONDS if kind=='documented-photon-rates-partial' else 300)
+            result={'status':support['status'] if support['status'] in ('FAIL','ERROR') else 'SKIPPED',
+                'reason':acceptance['skip_reason'],'supporting_checks':support['supporting_checks'],
+                'supporting_counts':support['counts'],
+                'formal_scope':'not-qualified; supporting rates/storage do not satisfy full dispatch/kinematics',
+                'missing_capability':acceptance.get('missing_capability')}
+        except (OSError,ValueError,RuntimeError,ImportError) as error:
+            result={'status':'ERROR','reason':'M3 supporting-service execution failed: '+str(error)}
     elif kind == "source-guard":
         result = run_source_guard(acceptance)
     elif kind == "linked-executable-los":

@@ -1,11 +1,18 @@
 # U16 — atomic Maxwellian electron-impact coefficients
 
 U16 verifies the shared production service in
-[`srcMoon/species/ElectronImpact.cpp`](../../species/ElectronImpact.cpp), using
+[`src/models/chemical_database/ElectronImpact.cpp`](../../../src/models/chemical_database/ElectronImpact.cpp),
+through the compatible `Moon::Species::ElectronImpact` namespace, using
 immutable Voronov/Verner D05 coefficients. It does not enable the generic AMPS
 chemistry executor or qualify an ensemble lifetime. The complete test contract
 is [CONTRACT.md](CONTRACT.md), with machine-readable acceptance in
 [reference/acceptance.json](reference/acceptance.json).
+
+The standalone compiler links the maintained shared `DataIO.cpp` and
+`ElectronImpact.cpp` plus the Moon compatibility translation unit. The build
+receipt hashes those CPP/header bytes and the common dependency recipe;
+moving the implementation does not change the native coefficient identities,
+temperature domain or numerical/statistical acceptance criteria.
 
 Run through the existing per-ID/global registration:
 

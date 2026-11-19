@@ -3,9 +3,12 @@
 
 #include <string>
 #include <vector>
+#include <array>
 
 #include "MoonThermalModel.h"
 #include "species/ElectronImpact.h"
+#include "species/Photochemistry.h"
+#include "species/ChargeExchange.h"
 
 namespace Moon {
 namespace Runtime {
@@ -134,6 +137,51 @@ struct Configuration {
   std::string electronImpactCoefficientsFile;
   double electronDensityM3 = 0.0;
   double electronTemperatureEv = 0.0;
+
+  // Explicit M3 registry/rate installation. This mode publishes immutable
+  // documented rate providers, NOT particle conversion or a daughter kinetic
+  // policy. Existing receipts default to legacy; requesting a table never
+  // silently enables the unqualified generic PIC reaction executors.
+  // Paths resolve relative to the .in file; frozen source schema versions
+  // bind authoritative hashes as well as structurally valid numeric CSVs.
+  std::string chemistryMode = "legacy"; // legacy | rate-services
+  std::string photochemistryRateModel = "legacy"; // legacy | phidrates-v1
+  std::string photochemistryDataDirectory;
+  std::string photochemistrySolarCase; // required quiet/active, no hidden default
+  std::string chargeExchangeRateModel = "disabled"; // disabled | total-capture-v1
+  std::string chargeExchangeResearchDirectory;
+
+  // Runtime selection of the two physical-seconds tracing movers. Legacy
+  // leaves all old numerical defaults/layout untouched. A tracing receipt
+  // must state EVERY numerical control below; zero values mean unconfigured,
+  // never an inferred physical tolerance or hidden shortened interval.
+  std::string particleTracingMover="legacy";
+  // Independent histories preserve the original frozen-environment tracing
+  // behavior. Explicit common-time separates an advancing transport clock
+  // from frozen external ET and requires identical actual dt for EVERY block
+  // and species, plus normal outer-step completion. It installs no physics.
+  std::string tracingClockMode="independent-history";
+  // P08 is an artificial incident-material collector, never a lunar sticking,
+  // neutralization or heating law. Explicit opt-in still requires a separately
+  // installed source/state/formation-energy inventory and physical-time tracer.
+  // The default rejects ALL charged impacts before neutral accommodation.
+  std::string ionSurfaceBoundary="unsupported";
+  double tracingRelativeTolerance=0;
+  double tracingAbsolutePositionToleranceM=0;
+  double tracingAbsoluteVelocityToleranceMS=0;
+  double tracingGeometryToleranceM=0;
+  double tracingTimeToleranceS=0;
+  double tracingMinimumSubstepS=0;
+  double tracingMaximumSubstepS=0;
+  bool tracingAdaptive=false;
+  int tracingMaximumSubsteps=0,tracingMaximumRefinements=0;
+  int tracingMaximumInteractions=0,tracingMaximumSamePointInteractions=0;
+  // The initial application adapter supports a declared stationary LSO
+  // electromagnetic bath, independently of the chemistry electron density.
+  // These are SI vectors, not inferred ARTEMIS observations or typical wind.
+  std::array<double,3> tracingElectricFieldVM{{0,0,0}};
+  std::array<double,3> tracingMagneticFieldT{{0,0,0}};
+  std::string tracingFieldFrame;
 
   // Optional I19/I20 verification controls; absent means the original
   // production/regression path. All enabled controls are explicit .in values.
@@ -379,6 +427,11 @@ const Configuration& GetConfiguration();
 // Null means the Maxwellian service was not explicitly configured. Keeping
 // file I/O out of rate callbacks avoids hidden per-particle work and races.
 const Species::ElectronImpact::MaxwellianVoronovTable* GetElectronImpactTable();
+// Null means the named source family is not explicitly selected. A non-null
+// registry authenticates rates/topology only; its metadata records absent
+// daughter kinetics and cannot be used as permission to transport products.
+const Species::Photochemistry::Registry* GetPhotochemistryRegistry();
+const Species::ChargeExchange::Registry* GetChargeExchangeRegistry();
 
 const char* SurfaceGeometryName(SurfaceGeometry geometry);
 

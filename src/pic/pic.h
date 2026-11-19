@@ -6394,7 +6394,8 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
     // callbacks or none.  The default all-NULL state preserves every legacy
     // mover path and consumes no extra random number.  Currently only
     // UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection
-    // invokes this interface; other movers must reject an application mode
+    // and the opt-in ForceCutSurface first/second-order physical-time tracers
+    // invoke this interface; other movers must reject an application mode
     // that requires it until they implement the same continuation contract.
     enum eTrajectoryEventStatus {
       TrajectoryEventNone=0,
@@ -6594,6 +6595,66 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
     //step through ProcessTriangleCutFaceIntersection (pic_mover_force_free_cut_surface.cpp)
     int ForceFreeCutSurface(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
 
+    // Opt-in force-aware PARTICLE TRACERS. The caller supplies a physical
+    // interval in seconds; crossing a different local-dt block never resets
+    // that interval or converts physical particle number into W/dt flux.
+    // Both preserve the configured force callback and existing boundary APIs.
+    int ForceCutSurfaceFirstOrder(long int ptr,double dt,
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+    int ForceCutSurfaceSecondOrder(long int ptr,double dt,
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+
+    namespace ForceCutSurface {
+      struct cTimeContext {
+        double InitialEpochS,ElapsedTimeS,RequestedTimeS,RemainingTimeS;
+        int IntegrationOrder;
+        cTimeContext():InitialEpochS(NAN),ElapsedTimeS(0),RequestedTimeS(0),
+            RemainingTimeS(0),IntegrationOrder(0) {}
+      };
+      // Numerical controls, never physical force parameters. Applications
+      // must preserve these values in their run receipt. A finite max segment
+      // controls accuracy/cost; it NEVER truncates the requested interval.
+      struct cSettings {
+        double RelativeTolerance=1.0e-7;
+        double AbsolutePositionToleranceM=1.0e-8;
+        double AbsoluteVelocityToleranceMPerS=1.0e-8;
+        double GeometryToleranceM=1.0e-9;
+        double TimeToleranceS=1.0e-12;
+        double MinimumSubstepS=1.0e-12;
+        double MaximumSubstepS=HUGE_VAL;
+        bool Adaptive=true;
+        long int MaximumSubsteps=1000000;
+        int MaximumRefinements=64;
+        long int MaximumInteractions=100000;
+        int MaximumSamePointInteractions=64;
+      };
+      extern cSettings Settings;
+      typedef void (*fAcceleration)(double *acceleration,int species,long int ptr,
+          const double *position,const double *velocity,
+          cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
+          const cTimeContext& time);
+      // NULL invokes _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_.
+      // An installed adapter receives the physical substage clock, allowing
+      // evolving local trajectories without mutating a shared global epoch.
+      extern fAcceleration Acceleration;
+      void RegisterStorage();
+      bool IsStorageRegistered();
+      // NEW physical history only, after any source/product clone. Safe no-op
+      // when unregistered. MPI/continuation clones preserve the opaque bytes.
+      void ResetParticleState(PIC::ParticleBuffer::byte *data);
+      void SetParticleEpochS(long int ptr,double epochS);
+      double GetParticleEpochS(long int ptr);
+      cTimeContext GetTimeContext(long int ptr);
+      // Allocated UNLINKED sibling, reset and assigned its event/birth epoch.
+      // Validate before mutation, then stage pending seconds in TEMP. It is
+      // NOT moved immediately and will not receive another full outer step.
+      void QueueDetachedParticle(long int ptr,double physicalIntervalS,
+          cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int integrationOrder);
+      long int MoveContinuations();
+      long int CountPending();
+      void ValidateConfiguration();
+    }
+
     namespace CutSurface {
       //the earliest crossing into the body of the straight segment x0 -> x0+D (0<=t<=1) over the cut faces of all
       //blocks the segment crosses (watertight; a start on the surface counts; at the point of an interaction with
@@ -6601,6 +6662,11 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
       //the surface before it ends or leaves the domain (pic_mover_force_free_cut_surface.cpp)
       CutCell::cTriangleFace* FindFirstCrossing(const double *x0,const double *D,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
           const CutCell::cTriangleFace *lastFace,double& t);
+      // Opt-in physical-velocity filter for force tracers: rounded D=v*h
+      // can spuriously classify an exactly grazing/leaving stored velocity
+      // as entering. The original five-argument API retains legacy behavior.
+      CutCell::cTriangleFace* FindFirstCrossing(const double *x0,const double *D,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
+          const CutCell::cTriangleFace *lastFace,double& t,const double* physicalVelocity);
     }
 
     namespace ForceFreeCutSurfaceDiagnostics {

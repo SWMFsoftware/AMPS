@@ -9,6 +9,8 @@
 #include "MoonInput.h"
 #include "MoonSurfaceEnvironment.h"
 #include "MoonSurfaceTemperature.h"
+#include "MoonTransportClock.h"
+#include "MoonNativeReactionRegistration.h"
 #include "species/SodiumCase1.h"
 
 #include <stdio.h>
@@ -1163,7 +1165,16 @@ bool ResolvedSurfaceInjectionAdapter(int spec,int sourceProcessId,
       Moon::OrbitalMotion::IAU_to_SO_TransformationMartix;
 #if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
   SpiceDouble injectionTransform[6][6];
-  if (std::isfinite(PIC::Mover::MovingSurfaceInjectionTimeOffsetS)) {
+  const bool frozenTracing=Moon::Runtime::HasConfiguration() &&
+      Moon::Runtime::GetConfiguration().particleTracingMover!="legacy" &&
+      Moon::Runtime::GetConfiguration().simulationEnvironmentMode=="frozen";
+  if(frozenTracing) {
+    std::string error;
+    if(!Moon::SurfaceEnvironment::ProductionInjectionBodyToLsoTransform(
+        &injectionTransform[0][0],&error))exit(__LINE__,__FILE__,error.c_str());
+    sourceTransform=injectionTransform;
+  }
+  else if (std::isfinite(PIC::Mover::MovingSurfaceInjectionTimeOffsetS)) {
     // The normal orbital updater stores the END-step transform. A source
     // departing earlier must use its own epoch, including the derivative
     // block that adds the rotating facet velocity. Its subsequent moving-
@@ -1204,6 +1215,37 @@ long int ResolvedSurfaceInjection() {
       _INTERNAL_BOUNDARY_TYPE_SPHERE_,Moon::Planet);
 }
 
+Moon::Species::IonCollector::ImpactFrame SynchronizedCollectorFrame(
+    const double* positionLso,const double* normalLso,const char* geometry) {
+  // This path describes the same synchronized/frozen body pose used by the
+  // analytic sphere or static terrain. Moving terrain supplies its accepted
+  // collision transforms instead. The frozen geometry epoch is NOT relabelled
+  // as the advancing physical particle epoch stored by the collector helper.
+  Moon::Species::IonCollector::ImpactFrame frame;
+  frame.geometryIdentity=geometry;
+  frame.geometryEpochEtS=Moon::OrbitalMotion::et;
+  std::copy(&Moon::OrbitalMotion::SO_to_IAU_TransformationMartix[0][0],
+      &Moon::OrbitalMotion::SO_to_IAU_TransformationMartix[0][0]+36,frame.lsoToBody36.begin());
+  std::copy(&Moon::OrbitalMotion::IAU_to_SO_TransformationMartix[0][0],
+      &Moon::OrbitalMotion::IAU_to_SO_TransformationMartix[0][0]+36,frame.bodyToLso36.begin());
+  if(Moon::Runtime::HasConfiguration()) {
+    std::string error;const auto& input=Moon::Runtime::GetConfiguration();
+    if(!Moon::SurfaceEnvironment::ApplyFrozenTracingBodyTransform(input,frame.lsoToBody36.data(),&error)||
+        !Moon::SurfaceEnvironment::ApplyFrozenTracingBodyTransform(input,frame.bodyToLso36.data(),&error))
+      exit(__LINE__,__FILE__,error.c_str());
+  }
+  double bodyPosition[3]={};
+  for(int row=0;row<3;++row)for(int column=0;column<3;++column)
+    bodyPosition[row]+=frame.lsoToBody36[6*row+column]*positionLso[column];
+  for(int row=0;row<3;++row) {
+    frame.outwardNormalLso[row]=normalLso[row];
+    for(int column=0;column<3;++column)
+      frame.surfaceVelocityLsoMS[row]+=frame.bodyToLso36[6*(row+3)+column]*bodyPosition[column];
+  }
+  frame.stateTransformsSupplied=true;
+  return frame;
+}
+
 int ResolvedSurfaceInteraction(long int ptr,double *x,double *v,
     CutCell::cTriangleFace *face,
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
@@ -1213,6 +1255,11 @@ int ResolvedSurfaceInteraction(long int ptr,double *x,double *v,
   // logical 60x100 grid until a facet inventory model is implemented.
   double unusedFlightTime=0.0;
   const int spec=PIC::ParticleBuffer::GetI(ptr);
+  if(PIC::MolecularData::GetElectricCharge(spec)!=0) {
+    const auto frame=SynchronizedCollectorFrame(x,face->ExternalNormal,"static-LOLA-facet-ideal-collector");
+    if(Moon::SurfaceEnvironment::HandleProductionIonImpact(ptr,x,v,startNode,frame))
+      return _PARTICLE_DELETED_ON_THE_FACE_;
+  }
   const int result=Moon::SurfaceInteraction::
       ParticleSurfaceInteraction_SurfaceAccomodation(spec,ptr,x,v,
           unusedFlightTime,startNode,Moon::Planet,face->ExternalNormal);
@@ -1231,15 +1278,36 @@ int ResolvedSurfaceInteraction(long int ptr,double *x,double *v,
 int MovingResolvedSurfaceInteraction(long int ptr,double *x,double *v,
     const double *normalLso,const double *surfaceVelocityLso,
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
-  (void)normalLso;
-  (void)surfaceVelocityLso;
   double normalBody[3],lsoToBody[36],bodyToLso[36];
-  if (!Moon::SurfaceEnvironment::LastProductionCollisionFrame(
+  const bool localTracing=Moon::Runtime::HasConfiguration() &&
+      Moon::Runtime::GetConfiguration().particleTracingMover!="legacy";
+  if(localTracing) {
+    std::string error;
+    if(!Moon::SurfaceEnvironment::CommitProductionMovingSurfaceCollision(
+        ptr,normalLso,normalBody,lsoToBody,bodyToLso,&error))
+      exit(__LINE__,__FILE__,error.c_str());
+  }
+  else if (!Moon::SurfaceEnvironment::LastProductionCollisionFrame(
           normalBody,lsoToBody,bodyToLso))
     exit(__LINE__,__FILE__,
         "srcMoon moving surface interaction has no collision-frame receipt");
   double unusedFlightTime=0.0;
   const int spec=PIC::ParticleBuffer::GetI(ptr);
+  if(PIC::MolecularData::GetElectricCharge(spec)!=0) {
+    Moon::Species::IonCollector::ImpactFrame frame;
+    frame.geometryIdentity="accepted-moving-LOLA-facet-ideal-collector";
+    frame.geometryEpochEtS=Moon::Runtime::GetConfiguration().simulationEnvironmentMode=="frozen"?
+        Moon::SurfaceEnvironment::ProductionSourceEpochS():PIC::Mover::ForceCutSurface::GetParticleEpochS(ptr);
+    std::copy(lsoToBody,lsoToBody+36,frame.lsoToBody36.begin());
+    std::copy(bodyToLso,bodyToLso+36,frame.bodyToLso36.begin());
+    for(int axis=0;axis<3;++axis) {
+      frame.outwardNormalLso[axis]=normalLso[axis];
+      frame.surfaceVelocityLsoMS[axis]=surfaceVelocityLso[axis];
+    }
+    frame.stateTransformsSupplied=true;
+    if(Moon::SurfaceEnvironment::HandleProductionIonImpact(ptr,x,v,startNode,frame))
+      return _PARTICLE_DELETED_ON_THE_FACE_;
+  }
   return Moon::SurfaceInteraction::
       ParticleSurfaceInteraction_SurfaceAccomodation(spec,ptr,x,v,
           unusedFlightTime,startNode,Moon::Planet,normalBody,
@@ -1259,9 +1327,38 @@ int MovingSurfaceSafetySphereInteraction(int spec,long int ptr,double *x,
 
 }  // namespace
 
+int Moon::IonAwareSphereInteraction(int species,long int particle,double* position,
+    double* velocity,double& remaining,void* node,void* spherePointer) {
+  if(species<0||species>=PIC::nTotalSpecies||PIC::ParticleBuffer::GetI(particle)!=species)
+    exit(__LINE__,__FILE__,"ion-aware sphere callback species does not match its actual incident particle");
+  if(PIC::MolecularData::GetElectricCharge(species)!=0) {
+    // Actual radial normal comes from this sphere's declared center. No
+    // latitude/temperature approximation is used by the artificial collector.
+    auto* sphere=static_cast<cInternalSphericalData*>(spherePointer);
+    if(!sphere)exit(__LINE__,__FILE__,"ion-aware sphere impact lacks its actual surface");
+    double* center=nullptr,radius=0; sphere->GetSphereGeometricalParameters(center,radius);
+    double normal[3];double norm2=0;
+    for(int axis=0;axis<3;++axis){normal[axis]=position[axis]-center[axis];norm2+=normal[axis]*normal[axis];}
+    const double norm=std::sqrt(norm2);
+    if(!std::isfinite(norm)||norm<=0)exit(__LINE__,__FILE__,"ion-aware sphere impact has no finite radial normal");
+    for(double& value:normal)value/=norm;
+    const auto frame=SynchronizedCollectorFrame(position,normal,"analytic-sphere-ideal-collector");
+    if(Moon::SurfaceEnvironment::HandleProductionIonImpact(particle,position,velocity,node,frame))
+      return _PARTICLE_DELETED_ON_THE_FACE_;
+  }
+  // Preserve the exact original neutral routine, including arithmetic and
+  // random-stream order. The mover remains sole owner of deletion on Delete.
+  return Moon::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation(
+      species,particle,position,velocity,remaining,node,spherePointer);
+}
+
 void amps_init() {
   //  MPI_Init(&argc,&argv);
     PIC::InitMPI();
+    // Runtime tracing reserves persistent physical-time fields before any
+    // source, mover or MPI transfer can allocate a particle. Legacy receipts
+    // return immediately and retain their exact historical particle layout.
+    Moon::RegisterParticleTracing();
 
 #if _PIC_ELECTRON_IMPACT_IONIZATION_REACTION_MODE_ == _PIC_MODE_ON_
     // The new Maxwellian service supplies rates only. The existing generic
@@ -1375,6 +1472,23 @@ void amps_init() {
     Moon::OrbitalMotion::nOrbitalPositionOutputMultiplier=10;
 
     Moon::Init_AfterParser();
+    if(Moon::Runtime::HasConfiguration()) {
+      std::string error;const auto& configuration=Moon::Runtime::GetConfiguration();
+      if(!Moon::SurfaceEnvironment::ApplyFrozenTracingBodyTransform(configuration,
+            &Moon::OrbitalMotion::SO_to_IAU_TransformationMartix[0][0],&error) ||
+          !Moon::SurfaceEnvironment::ApplyFrozenTracingBodyTransform(configuration,
+            &Moon::OrbitalMotion::IAU_to_SO_TransformationMartix[0][0],&error))
+        exit(__LINE__,__FILE__,error.c_str());
+    }
+    Moon::ConfigureParticleTracingFields();
+    if(Moon::CommonTransportTimeSelected()) {
+      std::string error;
+      // Normal SPICE startup has interpreted simulation_start_utc. Store that
+      // explicit physical origin once; subsequent frozen ephemeris ET remains
+      // unchanged while the independent transport clock advances its seconds.
+      if(!Moon::InitializeCommonTransportTime(Moon::OrbitalMotion::et,&error))
+        exit(__LINE__,__FILE__,error.c_str());
+    }
 
 
     //output the PDS enerfy distribution function
@@ -1575,9 +1689,7 @@ void amps_init() {
       }
       else {
         Sphere->InjectionRate=Moon::SourceProcesses::totalProductionRate;
-        Sphere->ParticleSphereInteraction=
-            Moon::SurfaceInteraction::
-                ParticleSphereInteraction_SurfaceAccomodation;
+        Sphere->ParticleSphereInteraction=Moon::IonAwareSphereInteraction;
         Sphere->InjectionBoundaryCondition=static_cast<long int (*)(int,void*)>(
             Moon::SourceProcesses::InjectionBoundaryModel);
       }
@@ -2115,6 +2227,13 @@ if (writeMeshTecplot) {
     PIC::BC::InitBoundingBoxInjectionBlockList();
 
 
+    // Optional Moon-only scientific registration boundary. Normal SPICE,
+    // sphere/LOLA, AMR, material species, dt and weights now exist, but opaque
+    // particle records have not been allocated. No callback keeps baseline
+    // behavior unchanged; an installed callback cannot run after allocation.
+    { std::string error;
+      if (!Moon::Chemistry::NativeRegistration::RunBeforeParticleBuffer(&error))
+        exit(__LINE__,__FILE__,error.c_str()); }
     //init the particle buffer
     PIC::ParticleBuffer::Init(1000000);
   //  double TimeCounter=time(NULL);
@@ -2359,7 +2478,11 @@ if (writeMeshTecplot) {
 
   }
 
-void amps_time_step() {
+// The SAME stage serves the ordinary outer step and explicit finite cohorts.
+// It performs coefficient/environment preparation only: no injection, mover,
+// sampling, common-clock Begin/Commit or PIC time step occurs here. Preserve
+// the complete original orbit/thermal/update block verbatim below.
+void Moon::PrepareProductionParticleEnvironment() {
 #if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
     // Freeze all external states at the midpoint of this particle step.  The
     // input epoch is TDB seconds past J2000 and SPICE returns km and km/s;
@@ -2501,6 +2624,17 @@ void amps_time_step() {
         Moon::OrbitalMotion::SO_to_IAU_TransformationMartix);
     sxform_c(Moon::Frames::BodyFixed,Moon::Frames::SolarOrbital,etEnd,
         Moon::OrbitalMotion::IAU_to_SO_TransformationMartix);
+    if(Moon::Runtime::HasConfiguration()) {
+      std::string error;const auto& configuration=Moon::Runtime::GetConfiguration();
+      // The explicitly frozen NEW tracer keeps material geometry/source and
+      // impact velocities stationary in LSO for both sphere and LOLA modes.
+      // Rotation blocks and every legacy/evolving configuration are retained.
+      if(!Moon::SurfaceEnvironment::ApplyFrozenTracingBodyTransform(configuration,
+            &Moon::OrbitalMotion::SO_to_IAU_TransformationMartix[0][0],&error) ||
+          !Moon::SurfaceEnvironment::ApplyFrozenTracingBodyTransform(configuration,
+            &Moon::OrbitalMotion::IAU_to_SO_TransformationMartix[0][0],&error))
+        exit(__LINE__,__FILE__,error.c_str());
+    }
 
     if (Moon::SurfaceTemperature::ProductionStateInitialized()) {
       std::string thermalError;
@@ -2513,9 +2647,34 @@ void amps_time_step() {
     }
     Moon::OrbitalMotion::et=etEnd;
 #endif
+}
+
+void amps_time_step() {
+    if(Moon::CommonTransportTimeSelected()) {
+      std::string error;
+      // This is an OUTER-step collective, before sampling/injection or any
+      // particle callback. Validate actual common dt and the completed t_n
+      // population; unsupported asynchronous/local tables are refused here.
+      if(!Moon::BeginCommonTransportStep(Moon::OrbitalMotion::et,&error)) {
+        const std::string message=error+". Configure identical constant actual physical dt for every block/species and initialize all particles at the explicit common origin. No partial common step is accepted; restart from the declared initial state.";
+        exit(__LINE__,__FILE__,message.c_str());
+      }
+    }
+    Moon::PrepareProductionParticleEnvironment();
 
 
 
     //make the time advance
      PIC::TimeStep();
+    if(Moon::CommonTransportTimeSelected()) {
+      std::string error;
+      // The normal MPI/AMR/product continuation schedule has now returned.
+      // Publish t_(n+1) only after every owned packet proves its completed
+      // immutable common target. Failure cannot be retried as a clock-only
+      // rollback after physical particles/sources have already changed.
+      if(!Moon::CommitCommonTransportStep(&error)) {
+        const std::string message=error+". Retain all rank logs; fix the source/interval/continuation mismatch and restart from the declared initial state. Do not resume a partially published step or reinterpret unequal histories as a common-time sample.";
+        exit(__LINE__,__FILE__,message.c_str());
+      }
+    }
 }

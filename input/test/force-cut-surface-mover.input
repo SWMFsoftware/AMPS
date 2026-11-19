@@ -1,0 +1,48 @@
+#main
+! Controlled native verification of BOTH actual force-aware local-time tracers.
+! Constant/velocity-dependent fields are analytical fixtures, never observations.
+SpeciesList=Na NA_PLUS
+makefile SOURCES=src
+makefile RUNDIR=run
+makefile MPIRUN=mpiexec -n 1
+ExcludeModule=ELECTRON_IMPACT
+ExcludeModule=SPUTTERING
+ExcludeModule=DUST
+ExcludeModule=CHARGE_EXCHANGE
+ExcludeModule=EXOSPHERE
+ProjectSourceDirectory=test/srcForceCutSurfaceMoverTest
+WorkingSourceDirectory=srcTemp
+SourceDirectory=src
+ErrorLog=PT/amps_error.log
+Prefix=AMPS
+DiagnosticStream=PT
+OutputDirectory=PT/plots
+DebuggerMode=off
+ForceRepeatableSimulationPath=on
+StdoutErrorLog=on
+TimeStepMode=SpeciesLocalTimeStep
+ParticleWeightMode=SpeciesLocalParticleWeight
+ParticleWeightCorrectionMode=on
+CouplerMode=off
+MoverIntegratorMode=ForceCutSurfaceSecondOrder
+#endmain
+#include species.input
+#General
+  defineLocation(pic/picGlobal.dfn) DIM 3
+  BlockCells=4,4,4
+  GhostCells=1,1,1
+  MaxMeshRefinmentLevel=4
+  EnforceRequestedMeshResolution=off
+  Rnd=MersenneTwister
+  NastranSurfaceUserData=on
+  ControlParticleInsideNastranSurface=off
+  InternalBoundary=on
+  RequestedParticleBufferLength=100000
+  define _PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ _PIC_MODE_OFF_
+  define _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__SPECULAR_REFLECTION_
+#endGeneral
+#block ../exosphere.pl
+  SPICE=off
+  define _TARGET_ _TARGET_NONE_
+#endblock
+#end

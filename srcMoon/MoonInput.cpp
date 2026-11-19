@@ -35,6 +35,8 @@ namespace fs = std::filesystem;
 bool gInstalled = false;
 Configuration gConfiguration;
 Species::ElectronImpact::MaxwellianVoronovTable gElectronImpactTable;
+Species::Photochemistry::Registry gPhotochemistryRegistry;
+Species::ChargeExchange::Registry gChargeExchangeRegistry;
 
 struct Setting {
   // Preserve the unparsed value and its complete source location.  Generic
@@ -397,6 +399,77 @@ bool AbsolutePath(const Setting& setting, const std::string& key,
   return true;
 }
 
+// The core movers support arbitrary local intervals and epoch-aware force
+// callbacks. The first Moon adapter deliberately exposes only its documented
+// stationary/frozen LSO environment until an independently qualified per-
+// particle ephemeris provider exists; silently reading one global evolving
+// SPICE state for different particle clocks would be physically inconsistent.
+bool ValidateTracingThermalCoupling(const Configuration& c,std::string* error) {
+  if (c.particleTracingMover!="legacy" && c.m2EnvironmentEnabled) {
+    // Frozen external ephemeris makes the existing M2 thermal step have zero
+    // epoch duration. Independent local particle clocks cannot be identified
+    // with that global thermal/inventory clock. Do not silently freeze stocks
+    // or temperatures and call the result a coupled transient calculation.
+    *error="Moon local-time tracing currently requires m2_environment=disabled; "
+        "dynamic thermal/reservoir coupling needs a qualified shared physical "
+        "time contract, which the initial frozen tracer adapter does not supply";
+    return false;
+  }
+  return true;
+}
+
+bool ValidateTracingConfiguration(const Configuration& c,std::string* error) {
+  if(c.ionSurfaceBoundary!="unsupported" && c.ionSurfaceBoundary!="ideal-collector") {
+    *error="ion_surface_boundary must be unsupported or ideal-collector";return false;
+  }
+  if(c.ionSurfaceBoundary=="ideal-collector" && c.particleTracingMover=="legacy") {
+    *error="ion_surface_boundary=ideal-collector requires an explicit first/second physical-time tracer; a global source epoch is not an impact epoch";return false;
+  }
+  if(c.tracingClockMode!="independent-history" && c.tracingClockMode!="common-time") {
+    *error="tracing_clock_mode must be independent-history or common-time";return false;
+  }
+  const bool first=c.particleTracingMover=="force-cut-surface-first-order";
+  const bool second=c.particleTracingMover=="force-cut-surface-second-order";
+  const double positive[]={c.tracingRelativeTolerance,c.tracingAbsolutePositionToleranceM,
+      c.tracingAbsoluteVelocityToleranceMS,c.tracingGeometryToleranceM,c.tracingTimeToleranceS,
+      c.tracingMinimumSubstepS,c.tracingMaximumSubstepS};
+  const int counts[]={c.tracingMaximumSubsteps,c.tracingMaximumRefinements,
+      c.tracingMaximumInteractions,c.tracingMaximumSamePointInteractions};
+  if (c.particleTracingMover=="legacy") {
+    if(c.tracingClockMode!="independent-history") {
+      *error="tracing_clock_mode=common-time requires an explicitly selected first/second force-cut tracer";return false;
+    }
+    for (double value:positive) if (value!=0) {*error="legacy mover cannot carry active tracing controls";return false;}
+    for (int value:counts) if (value!=0) {*error="legacy mover cannot carry active tracing counters";return false;}
+    for (int k=0;k<3;++k) if (c.tracingElectricFieldVM[k]!=0 || c.tracingMagneticFieldT[k]!=0) {
+      *error="legacy mover cannot carry prescribed tracing fields";return false;
+    }
+    if (c.tracingAdaptive || !c.tracingFieldFrame.empty()) {
+      *error="legacy mover cannot carry active tracing mode/frame";return false;
+    }
+    return true;
+  }
+  if (!first && !second) {*error="unknown particle_tracing_mover";return false;}
+  if (!ValidateTracingThermalCoupling(c,error)) return false;
+  for (double value:positive) if (!(value>0) || !std::isfinite(value)) {
+    *error="all tracing tolerances/substeps must be explicitly finite and positive";return false;
+  }
+  for (int value:counts) if (value<1) {*error="all tracing iteration limits must be explicit positive integers";return false;}
+  if (c.tracingMaximumSubstepS<c.tracingMinimumSubstepS) {
+    *error="tracing_maximum_substep_s must be at least tracing_minimum_substep_s";return false;
+  }
+  for (int k=0;k<3;++k)
+    if (!std::isfinite(c.tracingElectricFieldVM[k]) || !std::isfinite(c.tracingMagneticFieldT[k])) {
+      *error="prescribed tracing E/B vectors must have finite SI components";return false;
+    }
+  if (c.tracingFieldFrame!="lso" || c.simulationEnvironmentMode!="frozen") {
+    *error="Moon local-time tracing currently requires explicit tracing_field_frame=lso "
+        "and simulation_environment_mode=frozen; evolving particle epochs require "
+        "a qualified per-particle ephemeris/force provider";return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 const char* SurfaceGeometryName(SurfaceGeometry geometry) {
@@ -577,7 +650,17 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
       "diviner_eclipse_authorization_file","diviner_map_kinetic_interpretation",
       "thermal_initialization_mode","m2_verification_record_initial_thermal_state",
       "electron_impact_rate_model","electron_impact_coefficients_file",
-      "electron_density_m3","electron_temperature_ev"};
+      "electron_density_m3","electron_temperature_ev",
+      "chemistry_mode","photochemistry_rate_model",
+      "photochemistry_data_directory","photochemistry_solar_case",
+      "charge_exchange_rate_model","charge_exchange_research_directory",
+      "particle_tracing_mover","tracing_clock_mode","ion_surface_boundary","tracing_relative_tolerance",
+      "tracing_absolute_position_tolerance_m","tracing_absolute_velocity_tolerance_m_s",
+      "tracing_geometry_tolerance_m","tracing_time_tolerance_s",
+      "tracing_minimum_substep_s","tracing_maximum_substep_s","tracing_adaptive",
+      "tracing_maximum_substeps","tracing_maximum_refinements",
+      "tracing_maximum_interactions","tracing_maximum_same_point_interactions",
+      "tracing_electric_field_v_m","tracing_magnetic_field_t","tracing_field_frame"};
   for (const char* key : required) {
     if (settings.find(key) == settings.end()) {
       *error = At(inputFile, 0,
@@ -608,6 +691,144 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
   // safely retain their previous object if any validation below fails.
   Configuration candidate;
   candidate.inputFile = inputFile.string();
+  if (settings.count("particle_tracing_mover"))
+    candidate.particleTracingMover=Lower(Unquote(Trim(settings["particle_tracing_mover"].value)));
+  if(settings.count("tracing_clock_mode"))
+    candidate.tracingClockMode=Lower(Unquote(Trim(settings["tracing_clock_mode"].value)));
+  if(settings.count("ion_surface_boundary"))
+    candidate.ionSurfaceBoundary=Lower(Unquote(Trim(settings["ion_surface_boundary"].value)));
+  if (candidate.particleTracingMover!="legacy" &&
+      candidate.particleTracingMover!="force-cut-surface-first-order" &&
+      candidate.particleTracingMover!="force-cut-surface-second-order") {
+    *error=At(settings["particle_tracing_mover"],
+        "particle_tracing_mover must be legacy, force-cut-surface-first-order "
+        "or force-cut-surface-second-order");return false;
+  }
+  const bool tracing=candidate.particleTracingMover!="legacy";
+  // Every new-mode numerical control is explicit in the receipt. Inactive
+  // keys are rejected so a misspelled/disabled mode cannot ignore a request.
+  const std::pair<const char*,double*> tracingNumbers[]={
+      {"tracing_relative_tolerance",&candidate.tracingRelativeTolerance},
+      {"tracing_absolute_position_tolerance_m",&candidate.tracingAbsolutePositionToleranceM},
+      {"tracing_absolute_velocity_tolerance_m_s",&candidate.tracingAbsoluteVelocityToleranceMS},
+      {"tracing_geometry_tolerance_m",&candidate.tracingGeometryToleranceM},
+      {"tracing_time_tolerance_s",&candidate.tracingTimeToleranceS},
+      {"tracing_minimum_substep_s",&candidate.tracingMinimumSubstepS},
+      {"tracing_maximum_substep_s",&candidate.tracingMaximumSubstepS}};
+  const std::pair<const char*,int*> tracingCounts[]={
+      {"tracing_maximum_substeps",&candidate.tracingMaximumSubsteps},
+      {"tracing_maximum_refinements",&candidate.tracingMaximumRefinements},
+      {"tracing_maximum_interactions",&candidate.tracingMaximumInteractions},
+      {"tracing_maximum_same_point_interactions",&candidate.tracingMaximumSamePointInteractions}};
+  for (const auto& item:tracingNumbers) {
+    if (settings.count(item.first)!=static_cast<std::size_t>(tracing) ||
+        (tracing && !ParsePositiveFinite(settings[item.first].value,item.second))) {
+      *error=At(inputFile,0,std::string(item.first)+
+          " must be explicitly positive for a tracing mover and absent in legacy mode");return false;
+    }
+  }
+  for (const auto& item:tracingCounts) {
+    if (settings.count(item.first)!=static_cast<std::size_t>(tracing) ||
+        (tracing && !ParsePositiveInteger(settings[item.first].value,item.second))) {
+      *error=At(inputFile,0,std::string(item.first)+
+          " must be explicitly a positive integer for tracing and absent in legacy mode");return false;
+    }
+  }
+  for (const char* key:{"tracing_adaptive","tracing_electric_field_v_m",
+          "tracing_magnetic_field_t","tracing_field_frame"})
+    if (settings.count(key)!=static_cast<std::size_t>(tracing)) {
+      *error=At(inputFile,0,std::string(key)+" must be explicit for tracing and absent in legacy mode");return false;
+    }
+  if (tracing) {
+    if (!ParseBoolean(settings["tracing_adaptive"].value,&candidate.tracingAdaptive)) {
+      *error=At(settings["tracing_adaptive"],"tracing_adaptive must be true or false");return false;
+    }
+    for (const auto& item:std::vector<std::pair<const char*,std::array<double,3>*>>{
+            {"tracing_electric_field_v_m",&candidate.tracingElectricFieldVM},
+            {"tracing_magnetic_field_t",&candidate.tracingMagneticFieldT}}) {
+      std::vector<double> values;
+      if (!ParseFiniteList(settings[item.first].value,&values) || values.size()!=3) {
+        *error=At(settings[item.first],"tracing field needs exactly three finite SI components");return false;
+      }
+      std::copy(values.begin(),values.end(),item.second->begin());
+    }
+    candidate.tracingFieldFrame=Lower(Unquote(Trim(settings["tracing_field_frame"].value)));
+  }
+  if (settings.count("chemistry_mode"))
+    candidate.chemistryMode=Lower(Unquote(Trim(settings["chemistry_mode"].value)));
+  if (candidate.chemistryMode!="legacy" && candidate.chemistryMode!="rate-services") {
+    *error=At(settings["chemistry_mode"],
+        "chemistry_mode must be legacy or rate-services; full particle "
+        "transport requires supported product kinetics and a qualified executor");
+    return false;
+  }
+  if (settings.count("photochemistry_rate_model"))
+    candidate.photochemistryRateModel=Lower(Unquote(Trim(
+        settings["photochemistry_rate_model"].value)));
+  if (candidate.photochemistryRateModel!="legacy" &&
+      candidate.photochemistryRateModel!="phidrates-v1") {
+    *error=At(settings["photochemistry_rate_model"],
+        "photochemistry_rate_model must be legacy or phidrates-v1");
+    return false;
+  }
+  if (settings.count("charge_exchange_rate_model"))
+    candidate.chargeExchangeRateModel=Lower(Unquote(Trim(
+        settings["charge_exchange_rate_model"].value)));
+  if (candidate.chargeExchangeRateModel!="disabled" &&
+      candidate.chargeExchangeRateModel!="total-capture-v1") {
+    *error=At(settings["charge_exchange_rate_model"],
+        "charge_exchange_rate_model must be disabled or total-capture-v1");
+    return false;
+  }
+  // A rate-service choice is never an implicit activation through a legacy
+  // receipt. Conversely, explicitly selecting a family requires its complete
+  // provenance/solar input; source tables do not supply a favorable default.
+  if (candidate.chemistryMode=="legacy" &&
+      (candidate.photochemistryRateModel!="legacy" ||
+       candidate.chargeExchangeRateModel!="disabled")) {
+    *error=At(inputFile,0,"M3 source registries require chemistry_mode=rate-services");
+    return false;
+  }
+  const bool photons=candidate.photochemistryRateModel=="phidrates-v1";
+  const bool capture=candidate.chargeExchangeRateModel=="total-capture-v1";
+  for (const auto& item : std::vector<std::pair<const char*,bool>>{
+          {"photochemistry_data_directory",photons},
+          {"photochemistry_solar_case",photons},
+          {"charge_exchange_research_directory",capture}}) {
+    if (settings.count(item.first)!=static_cast<std::size_t>(item.second)) {
+      *error=At(inputFile,0,std::string(item.first)+(item.second ?
+          " is required by its selected M3 source model" :
+          " is not allowed while its M3 source model is disabled/legacy"));
+      return false;
+    }
+  }
+  if (photons) {
+    fs::path directory;
+    if (!AbsolutePath(settings["photochemistry_data_directory"],
+          "photochemistry_data_directory",&directory,error)) return false;
+    if (!fs::is_directory(directory)) {
+      *error=At(settings["photochemistry_data_directory"],"D04 directory is unavailable");
+      return false;
+    }
+    candidate.photochemistryDataDirectory=directory.string();
+    candidate.photochemistrySolarCase=Lower(Unquote(Trim(
+        settings["photochemistry_solar_case"].value)));
+    if (candidate.photochemistrySolarCase!="quiet" && candidate.photochemistrySolarCase!="active") {
+      *error=At(settings["photochemistry_solar_case"],
+          "photochemistry_solar_case must be quiet or active; no intermediate spectrum is inferred");
+      return false;
+    }
+  }
+  if (capture) {
+    fs::path directory;
+    if (!AbsolutePath(settings["charge_exchange_research_directory"],
+          "charge_exchange_research_directory",&directory,error)) return false;
+    if (!fs::is_directory(directory)) {
+      *error=At(settings["charge_exchange_research_directory"],"CEX research directory is unavailable");
+      return false;
+    }
+    candidate.chargeExchangeResearchDirectory=directory.string();
+  }
   if (settings.count("electron_impact_rate_model")) {
     candidate.electronImpactRateModel=Lower(Unquote(Trim(
         settings["electron_impact_rate_model"].value)));
@@ -822,6 +1043,10 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
     return false;
   }
   candidate.m2EnvironmentEnabled=m2Mode=="enabled";
+  // Refuse the incompatible temporal coupling before unrelated missing M2
+  // fields can obscure the actual reason. Programmatic installation calls
+  // the same validator through ValidateTracingConfiguration below.
+  if (!ValidateTracingThermalCoupling(candidate,error)) return false;
   if (!candidate.m2EnvironmentEnabled &&
       (candidate.illuminationTerrainSolarModel!="point-sun" ||
        candidate.divinerEclipseSelection!="training" ||
@@ -1774,6 +1999,9 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
   candidate.lolaLabelFile = label.string();
   candidate.surfaceCeaFile = cea.string();
   candidate.surfaceTecplotFile = tecplot.string();
+  if (!ValidateTracingConfiguration(candidate,error)) {
+    *error=At(inputFile,0,*error);return false;
+  }
   *result = std::move(candidate);
   return true;
 }
@@ -1885,11 +2113,49 @@ bool InstallConfiguration(const Configuration& configuration,
     *error = "srcMoon runtime configuration was already installed";
     return false;
   }
+  if (!ValidateTracingConfiguration(configuration,error)) return false;
   // Validate a complete local table BEFORE publishing either configuration or
   // coefficients. A failed install can be corrected/retried; callbacks never
   // observe half-loaded data. This also protects programmatic callers which
   // bypass the CLI parser, not just syntactically valid .in receipts.
   Species::ElectronImpact::MaxwellianVoronovTable candidateTable;
+  Species::Photochemistry::Registry candidatePhotochemistry;
+  Species::ChargeExchange::Registry candidateChargeExchange;
+  if ((configuration.chemistryMode!="legacy" && configuration.chemistryMode!="rate-services") ||
+      (configuration.photochemistryRateModel!="legacy" && configuration.photochemistryRateModel!="phidrates-v1") ||
+      (configuration.chargeExchangeRateModel!="disabled" && configuration.chargeExchangeRateModel!="total-capture-v1") ||
+      (configuration.chemistryMode=="legacy" &&
+       (configuration.photochemistryRateModel!="legacy" || configuration.chargeExchangeRateModel!="disabled"))) {
+    *error="invalid M3 registry configuration; rate registries do not activate particle kinetics";
+    return false;
+  }
+  if (configuration.photochemistryRateModel=="phidrates-v1") {
+    if (configuration.photochemistryDataDirectory.empty() ||
+        (configuration.photochemistrySolarCase!="quiet" && configuration.photochemistrySolarCase!="active")) {
+      *error="D04 registry needs an explicit directory and quiet/active solar case";
+      return false;
+    }
+    if (!candidatePhotochemistry.LoadFrozenD04(
+          Species::Photochemistry::FrozenV1Sources(configuration.photochemistryDataDirectory),error))
+      return false;
+  }
+  else if (!configuration.photochemistryDataDirectory.empty() || !configuration.photochemistrySolarCase.empty()) {
+    *error="legacy photon model cannot carry active D04 inputs";
+    return false;
+  }
+  if (configuration.chargeExchangeRateModel=="total-capture-v1") {
+    if (configuration.chargeExchangeResearchDirectory.empty()) {
+      *error="charge-exchange registry needs an explicit publication directory";
+      return false;
+    }
+    if (!candidateChargeExchange.LoadPublishedReferences(
+            Species::ChargeExchange::FrozenV1References(configuration.chargeExchangeResearchDirectory),error))
+      return false;
+  }
+  else if (!configuration.chargeExchangeResearchDirectory.empty()) {
+    *error="disabled charge exchange cannot carry an active research directory";
+    return false;
+  }
   if (configuration.electronImpactRateModel=="maxwellian-voronov") {
     if (!candidateTable.LoadNativeTable(
           configuration.electronImpactCoefficientsFile,error)) return false;
@@ -1910,6 +2176,8 @@ bool InstallConfiguration(const Configuration& configuration,
   }
   gConfiguration = configuration;
   gElectronImpactTable = std::move(candidateTable);
+  gPhotochemistryRegistry = std::move(candidatePhotochemistry);
+  gChargeExchangeRegistry = std::move(candidateChargeExchange);
   gInstalled = true;
   error->clear();
   return true;
@@ -1931,6 +2199,16 @@ const Configuration& GetConfiguration() {
     return legacy;
   }
   return gConfiguration;
+}
+
+const Species::Photochemistry::Registry* GetPhotochemistryRegistry() {
+  return gInstalled && gConfiguration.photochemistryRateModel=="phidrates-v1"
+      ? &gPhotochemistryRegistry : nullptr;
+}
+
+const Species::ChargeExchange::Registry* GetChargeExchangeRegistry() {
+  return gInstalled && gConfiguration.chargeExchangeRateModel=="total-capture-v1"
+      ? &gChargeExchangeRegistry : nullptr;
 }
 
 }  // namespace Runtime

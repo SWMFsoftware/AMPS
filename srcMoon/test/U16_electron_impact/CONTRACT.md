@@ -56,6 +56,10 @@ apply; no extrapolation is permitted.
 
 The thin standalone C++ adapter calls this exact production kernel, compiled
 with g++ in the unique test output directory; it contains no ionization law.
+The implementation is maintained under `src/models/chemical_database`, with
+the historical Moon namespace preserved as an alias. Both shared `DataIO` and
+`ElectronImpact` CPP/headers and the common build recipe are source-bound in
+the receipt; the empty compatibility CPP is never treated as the kernel.
 A separately implemented Python Decimal high-precision evaluator reads native
 fixed columns and cross-checks all five coefficient fields against the
 archived Fortran DATA blocks and processed neutral CSV. Closed-form density

@@ -610,6 +610,7 @@ sub ReadMainBlock {
   my $TrajectoryIntegrationCheckBlockFaceIntersection;
   my $MoverIntegratorMode;
   my $MoverIntegrator;
+  my $ForceCutSurfaceOrder=0;
   my $UserDefinedParticleInitialization;
   
   #force the repeatable execution path
@@ -744,6 +745,14 @@ sub ReadMainBlock {
         #(src/pic/pic_mover_force_free_cut_surface.cpp)
         $MoverIntegratorMode='_PIC_MOVER_INTEGRATOR_MODE__DIRECT_';
         $MoverIntegrator='PIC::Mover::ForceFreeCutSurface';
+      }
+      elsif ($s0 eq "FORCECUTSURFACEFIRSTORDER" || $s0 eq "FORCECUTSURFACESECONDORDER") {
+        # Explicit opt-in physical-time force-aware particle tracers. Their
+        # record/continuation support is absent from all historical defaults.
+        $ForceCutSurfaceOrder=($s0 eq "FORCECUTSURFACEFIRSTORDER") ? 1 : 2;
+        $MoverIntegratorMode='_PIC_MOVER_INTEGRATOR_MODE__DIRECT_';
+        $MoverIntegrator=($ForceCutSurfaceOrder==1) ?
+            'PIC::Mover::ForceCutSurfaceFirstOrder' : 'PIC::Mover::ForceCutSurfaceSecondOrder';
       }
       elsif ($s0 eq "BORIS") {
         $MoverIntegratorMode='_PIC_MOVER_INTEGRATOR_MODE__BORIS_';
@@ -1238,12 +1247,25 @@ sub ReadMainBlock {
 
   if (defined $MoverIntegratorMode){
     ampsConfigLib::RedefineMacro('_PIC_MOVER_INTEGRATOR_MODE_',$MoverIntegratorMode,'pic/picGlobal.dfn');
+    ampsConfigLib::RedefineMacro('_PIC_FORCE_CUT_SURFACE_MODE_',
+        $ForceCutSurfaceOrder ? '_PIC_MODE_ON_' : '_PIC_MODE_OFF_','pic/picGlobal.dfn');
 
     if (defined $MoverIntegrator) {
       my $macroIntegrator='_PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_';
       my $IntegratorArgs='(ptr,LocalTimeStep,node)';
 
       ampsConfigLib::AddLine2File("\n#undef $macroIntegrator\n#define $macroIntegrator$IntegratorArgs $MoverIntegrator$IntegratorArgs\n","pic/picGlobal.dfn");
+      if ($ForceCutSurfaceOrder) {
+        # Both ordinary and source-born particles must use the selected
+        # tracer. It resolves on-surface starts directly, so no face is
+        # silently excluded by a boundary-injection convenience argument.
+        # RedefineMacroFunction matches prefixes: the base injection name is
+        # also a prefix of its FACE variant. Exact preprocessor directives
+        # avoid accidentally replacing both definitions with the base name.
+        my $base='_PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_';
+        my $face='_PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_FACE_';
+        ampsConfigLib::AddLine2File("\n#undef $base\n#define $base(ptr,LocalTimeStep,node,FirstBoundaryFlag) $MoverIntegrator(ptr,LocalTimeStep,node)\n#undef $face\n#define $face(ptr,LocalTimeStep,node,FirstBoundaryFlag,InjectionFace) $MoverIntegrator(ptr,LocalTimeStep,node)\n",'pic/picGlobal.dfn');
+      }
     }
   }
 

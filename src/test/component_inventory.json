@@ -32,6 +32,12 @@
       "remaining": "Lindsay-Stebbings and Maher-Tinsley H/H+ lifetime fits now have independent effective-speed, density-scaling, selector, unsupported-species, and invalid-domain evidence. The component still exposes no event/product mapping, branching, velocity exchange, or statistical-weight API; those capabilities remain explicitly unimplemented rather than test-only inventions."
     },
     {
+      "component": "src/models/chemical_database",
+      "status": "partial",
+      "test_ids": ["CORE-CHEMICAL-DATABASE-001"],
+      "remaining": "Registered source-only software controls exercise actual native/Python integrity, strict metadata, immutable lifetime, namespace compatibility, rights/capability refusal and relocation. Real-release/deployed SDK checks, numerical service source oracles, application wiring, GPU support, unresolved source permissions and physical/observational qualification remain distinct gates."
+    },
+    {
       "component": "src/models/chemical_solver",
       "status": "partial",
       "test_ids": ["CORE-CHEMICAL-SOLVER-001", "CORE-COMET-LIBRARIES-001"],

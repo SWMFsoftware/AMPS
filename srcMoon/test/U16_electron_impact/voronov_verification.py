@@ -21,9 +21,12 @@ import shutil
 import struct
 import subprocess
 import tempfile
+import sys
 
 HERE=Path(__file__).resolve().parent
 ROOT=HERE.parents[2]
+sys.path.insert(0,str(ROOT/'srcMoon/test'))
+from chemical_database_build import shared_sources, shared_dependencies
 DATA_ROOT=Path('/data/vtenishe/moon_validation_data')
 NAMES={'He':2,'Na':11,'Ne':10,'Ar':18}
 RELATIVE_TOLERANCE=1.0e-12
@@ -207,7 +210,8 @@ def run_u16(build_dir,output_root):
         executable=work/'electron-impact-probe'
         command=compiler+['-std=c++17','-O2','-Wall','-Wextra','-pedantic',
             '-I',str(ROOT/'srcMoon/species'),str(HERE/'probe.cpp'),
-            str(ROOT/'srcMoon/species/ElectronImpact.cpp'),'-o',str(executable)]
+            str(ROOT/'srcMoon/species/ElectronImpact.cpp'),
+            *(str(p) for p in shared_sources(ROOT,'electron-impact')),'-o',str(executable)]
         compiled,record=run_command(command,work,'compile')
         result['probes'].append(record)
         if compiled.returncode:raise RuntimeError('production standalone compile failed')
@@ -215,6 +219,7 @@ def run_u16(build_dir,output_root):
         result['compiler']=version.stdout.splitlines()[0]
         source_paths=[ROOT/'srcMoon/species/ElectronImpact.cpp',ROOT/'srcMoon/species/ElectronImpact.h',
                       HERE/'probe.cpp',Path(__file__),HERE/'CONTRACT.md',HERE/'reference/source_manifest.json']
+        source_paths += shared_dependencies(ROOT,'electron-impact')
         result['source_sha256']={str(path):sha(path) for path in source_paths}
         result['roadmap_sha256']={str(path):sha(path) for path in (
             ROOT/'srcMoon/development_and_validation.md',data_root/'development_and_validation.md')}

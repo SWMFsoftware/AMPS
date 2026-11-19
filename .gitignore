@@ -3,8 +3,14 @@
 *.a
 data
 output
-*.input
 !input/test/core-unit-tests.input
+# Registered native-test source decks must survive a fresh checkout. These
+# are existing analytical/verification fixtures, not generated application
+# decks or observational data; keep all other *.input/data exclusions.
+!input/test/core-*.input
+!input/test/model-dust-injection.input
+!srcEnceladus/test/data/
+!srcEnceladus/test/data/shape_manifest.json
 table_parser
 .general.conf
 .amps.conf
@@ -33,4 +39,25 @@ srcTemp
 *.bin
 *.diff
 *build*
+# This is a source-controlled build driver, not a generated build tree.
+!srcMoon/test/build_m2_qualification.py
+# Retained-binary identity checks are maintained test source, too.
+!srcMoon/test/test_m2_build_identity.py
+# The manual invokes this maintained source file. Without this exception the
+# broad *build* rule silently omits it from fresh checkouts and breaks make PDF.
+!doc/build_manual.py
+# Local TeX engines/caches and compilation products are reproducible artifacts,
+# not manual sources. Keep them out of commits when building the PDF locally.
+/doc/.build-tools/
+/doc/.tex-cache/
+/doc/.tex-config/
+/doc/.plot-cache/
+/doc/build-manual/
+/doc/AMPS.pdf.partial
 *Assembled*
+
+# Maintained chemical-database tools and Moon build adapter are source files.
+# Keep generated build trees ignored while making required helpers committable.
+!srcMoon/test/chemical_database_build.py
+!utility/chemical_database/build_database.py
+!utility/chemical_database/python/amps_chemical_database/build.py

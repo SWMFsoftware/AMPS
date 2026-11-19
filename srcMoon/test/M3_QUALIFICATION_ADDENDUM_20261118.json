@@ -1,0 +1,58 @@
+{
+  "schema": "srcMoon-M3-approved-qualification-addendum-v1",
+  "approval": {
+    "status": "APPROVED",
+    "authority": "User explicitly approved the protocol choices in the active 2026-11-18 development session before new science execution",
+    "date": "2026-11-18"
+  },
+  "base_protocol": {
+    "path": "M3_QUALIFICATION_PROTOCOL.json",
+    "sha256": "29e183978e4c336891ea957726ddeb32e62898e7cb9eab8181909910b520ffaa",
+    "policy": "Preserve original bytes and all previous attempted-result interpretation"
+  },
+  "primary_estimators": {
+    "I21": "endpoint-survival-lifetime",
+    "I22": "endpoint-survival-total-removal-rate",
+    "I23": "endpoint-survival-lifetime",
+    "I24": "endpoint-survival-lifetime",
+    "endpoint_rate": "-log(original_survivors/original_parents)/represented_physical_horizon_s",
+    "endpoint_lifetime": "1/endpoint_rate",
+    "branch_frequency": "first-removal-channel_count/total_original_parent_removals",
+    "partial_rate": "endpoint_rate*branch_frequency; diagnostic, not a substituted primary gate",
+    "event_time_exposure_MLE": "separately named D/sum(min(t_event,T)) diagnostic; never selected after inspecting outputs"
+  },
+  "numerical_relative_bias_budgets": {"I21": 0.002, "I22": 0.002, "I23": 0.003, "I24": 0.003},
+  "statistical_design": {
+    "independent_unit": "immutable original-parent trajectory; equal initial represented number within each binomial cohort",
+    "family_planning_risk": 0.01,
+    "linked_simultaneous_branch_confidence": 0.95,
+    "linked_interval_method": "two-sided exact Clopper-Pearson with Bonferroni allocation over all frozen branch claims",
+    "positive_branch_relative_halfwidth_max": 0.10,
+    "precision_denominator": "independent source branch probability, fixed before sampling",
+    "zero_source_branch": "zero observed events required; never assign an invented relative precision",
+    "local_U15_confidence": 0.99,
+    "U17_minimum_branch_events": 100000,
+    "seeds": [731993, 104729, 130363],
+    "cohort_rounding_multiple": 8,
+    "membership": "Freeze every species/channel/source/seed/dt/weight/order/MPI claim before execution; no dropped-channel renormalization"
+  },
+  "random_stream": {
+    "construction": "AMPS-MOON-M3-HMAC-SHA256-COUNTER-v1",
+    "production_service": "species/QualificationRandom",
+    "semantic_key": ["campaign_seed", "cohort", "original_parent", "genealogy", "purpose", "draw_index"],
+    "uniform_grid": "first52 HMAC bits; exact (k+1/2)*2^-52 midpoint; strict open interval",
+    "matched_comparisons": "same physical cohort/key across timestep and MPI layouts; original histories stay independent within each cohort",
+    "excluded_keys": ["MPI_rank", "process_id", "memory_address", "allocator_slot", "preview_or_retry_count"],
+    "finite_resolution": "Record maximum draw family and finite-grid/exponential-tail bound; no infinite-real-uniform claim"
+  },
+  "execution": {
+    "development_wall_seconds": 3600,
+    "aggregate_memory_bytes": 200000000000,
+    "mpi_ranks": [1, 8],
+    "openmp_threads": 1,
+    "large_cohorts": "Defer to an explicitly requested cluster package; never shorten criteria/cohorts silently",
+    "formal_requirements": "Actual source/state/provider/build/native/numerical/ledger evidence and same-campaign predecessors remain mandatory",
+    "observational_scoring": false
+  },
+  "formal_M3_status": "NOT QUALIFIED by this addendum"
+}

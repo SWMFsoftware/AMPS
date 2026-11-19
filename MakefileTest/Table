@@ -1866,6 +1866,28 @@ Check=
 <#
 
 #>
+Name=unit_test_force_cut_surface_mover
+Family=unit-tests
+Time=5
+
+Compile=
+>>>@echo "test_unit_test_force_cut_surface_mover_compile..." > test_unit_test_force_cut_surface_mover.diff
+>>>rm -rf build
+>>>./Config.pl -application=test/force-cut-surface-mover -spice-path=nospice -spice-kernels=nospice -amps-test=off
+>>>make -j$(TESTCOMPILEJOBS)
+
+Run=
+>>>@# Both numerical orders, fixed/adaptive quadrature and actual1/8 MPI ownership are evaluated by the committed thin runner.
+>>>-python3 -B test/srcForceCutSurfaceMoverTest/run.py --amps ${TESTunit_test_force_cut_surface_moverDIR}/amps --output-root ${TESTunit_test_force_cut_surface_moverDIR} --mpi-ranks 8
+
+Check=
+>>>@# An interrupted/fatal run leaves a nonempty sentinel; missing result artifacts can never create an empty diff.
+>>>-@(if [ -f ${TESTunit_test_force_cut_surface_moverDIR}/force-cut-latest.diff ]; then cat ${TESTunit_test_force_cut_surface_moverDIR}/force-cut-latest.diff; else echo "ERROR force-aware mover runner result is missing"; fi) > test_unit_test_force_cut_surface_mover.diff
+>>>@ls -l test_unit_test_force_cut_surface_mover.diff
+>>>@echo Test test_unit_test_force_cut_surface_mover has finished: `date`
+<#
+
+#>
 Name=unit_test_cut_surface_mover_specular
 Family=unit-tests
 Time=6

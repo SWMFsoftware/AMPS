@@ -905,6 +905,114 @@ energies do not define joint daughter velocities. Unsupported channels and
 unresolved transport remain disabled/unqualified; M3 cannot close from scalar
 rate checks alone.
 
+The consolidated [M3 completion proposal](test/M3_COMPLETION_PROPOSAL.md)
+sets out the remaining production changes, actual-mover integration, independent
+I21–I24 contracts, physics/data decisions and one-hour versus cluster execution.
+It preserves legacy Na behavior and formal predecessor gates. The implementation
+below is supporting development; publication of the proposal does not approve
+a missing kinetic law. See STATUS.md for source/build-specific evidence.
+
+### Explicit photon/CEX rate services
+
+`examples/m3_reaction_rates.in` selects `chemistry_mode = rate-services` and
+names the D04 `phidrates-v1` table, quiet/active endpoint, and optional
+`total-capture-v1` CEX source directory. `MoonInput` loads and installs these
+immutable tables transactionally: a missing, altered, wrong-schema or
+out-of-domain input is refused without partly replacing an installed registry.
+This setting supplies rates and channel identities; it does **not** enable
+particle reactions. Photon families preserve all 15 reactive channels and two
+nonreactive absorption rows. The He/Na CEX services supply total cross sections
+only, within their source-supported energy ranges, without extrapolation.
+
+The conservative packet implementation is in `species/ReactionExecution` and
+`MoonReactionAdapter`: exact integer material/charge checks, explicit internal
+and bath energy/momentum conventions, independent product occurrences, and
+all-or-nothing reservation/staging/publication using the actual PIC buffer.
+Represented particle number is local base weight times individual correction;
+it is not rescaled by a daughter species' local time step. Allocation refusal
+preserves the parent and ledger. These mechanisms do not determine an unknown
+physical recoil distribution. The optional controller requires an explicit
+provider and remains disabled by default; no rate registry installs it.
+
+### First- and second-order force/cut-cell particle tracing
+
+`examples/m3_tracing_first_order.in` and `m3_tracing_second_order.in` give complete
+runtime receipts. They select `particle_tracing_mover`, explicitly name every
+substep/error/interaction control, prescribe electric field [V/m] and magnetic
+field [T] in LSO, and require `simulation_environment_mode = frozen`. The
+initial Moon adapter holds ephemeris, terrain pose and fields fixed while
+individual particle epochs advance. An evolving per-particle Moon ephemeris
+provider is not supplied by this configuration and is refused rather than
+evaluated at an unrelated global epoch. These coarse sphere receipts are
+wiring examples, not qualified surface or observational cases.
+`m2_environment = disabled` is also required: no common evolving thermal or
+reservoir clock is defined for these asynchronous local histories. The existing
+M2 path remains available through its original mover/time contract.
+
+`Moon::MoveParticle` dispatches the selected production tracer, using the same
+Moon acceleration as normal runs: lunar and differential Earth/Sun gravity,
+Na radiation pressure and shadow gating, Lorentz and rotating-frame terms.
+Local physical elapsed/remaining seconds and epoch survive AMR/MPI migration,
+surface interactions and detached daughters. The tracer does not apply the
+stationary-flux W/dt weight transformation. Its opaque storage must be
+registered before particle allocation and rebuilt consistently with consumers.
+Legacy selection still calls the original second-order Moon mover.
+Both boundary-injection macros also reach the selected dispatcher. A new birth
+uses the moving source's scoped departure time or the stationary source's
+already sampled remaining interval; no second offset is drawn. New geometry
+checks actual entering roots instead of skipping all surfaces on the first
+segment. Legacy boundary injection forwards its exact original function.
+
+Local-time mechanics and physical sampling have separate scopes. The canonical
+Na-only legacy baseline uses a spatially global species step, so its existing
+equal-loop snapshot estimator retains that meaning. For differing local/species
+steps, normal cell/LOS accumulators divide by sample count and do not use the
+stored particle epochs or a residence-time normalization. No complete
+asynchronous density/brightness/surface-flux estimator is qualified. The
+native local-time checks therefore qualify motion, events and represented
+number, not unbiased asynchronous density/brightness/flux products. An explicit
+common-time snapshot or steady residence-time sampling contract and independent
+tests are still needed before that physical use; no estimator is inferred.
+The new frozen setup also holds the external step epoch fixed: repeated source
+births use that epoch plus their within-step offset while surviving histories
+advance locally. This intentional stationary wiring setup does not establish
+a common advancing transient source/ensemble clock. Explicit-epoch native
+controls must not be advertised as transient observational sampling evidence.
+
+The initial new tracers require three-dimensional MPI execution without
+OpenMP/hybrid, CUDA, periodic wrapping, backward time, self-consistent PIC field
+deposition or concurrent flux resampling. Prescribed Lorentz forces are
+supported. Unsupported configurations and exhausted resource/numerical limits
+terminate with an explanatory diagnostic. The independent native contract and
+commands are in [M3_FORCE_CUT_CELL_CONTRACT.md](test/M3_FORCE_CUT_CELL_CONTRACT.md)
+and [the core mover README](../test/srcForceCutSurfaceMoverTest/README.md).
+
+Primary-source proposals for the remaining daughter and surface physics are
+[M3_KINEMATIC_REFERENCES_PROPOSAL.md](test/M3_KINEMATIC_REFERENCES_PROPOSAL.md)
+and [M3_ION_SURFACE_AND_CEX_DATA_PROPOSAL.md](test/M3_ION_SURFACE_AND_CEX_DATA_PROPOSAL.md).
+Total rates, conditional backscatter, simulated implantation and joint daughter
+distributions are distinct evidence. Missing distributions, ion surface fate,
+and unresolved formal M1/M2 predecessors keep full M3 **EXPERIMENTAL**.
+
+The following additions extend the component inventory below; source and build
+identities for executed checks belong to the dated STATUS/evidence receipts.
+
+| Component / production caller | Code and controls | Inputs → outputs, units/frame/time | Data/random state and present coverage |
+|---|---|---|---|
+| Gas photon visibility | `MoonSurfaceEnvironment::EvaluateSolarDisc`, `volumePointOrigin`; same terrain/Earth masks as surface service | Exact gas coordinate, geometry, explicit uniform-disc quadrature → solid-angle visibility [dimensionless] and full disc [sr], one declared Cartesian frame/epoch; no facet incidence/albedo | Deterministic geometry; U09 analytical cap/full/half/normal-independence extension; does not install a position-dependent photochemical event provider |
+| Photon registry / runtime installer | `species/Photochemistry`, `MoonInput`; `chemistry_mode`, explicit table/model/solar endpoint | D04 source-labelled channels/rates → complete family rates [s^-1], branches, products/states; 1 AU/zero optical depth with explicit distance/visibility scaling | Pinned D04 native/processed schemas and hashes; U15 supporting 12-family/30-claim sampling; channel uniform is explicit; daughter kinetics unqualified |
+| He/Na total capture | `species/ChargeExchange`, `MoonInput`; explicit model and source directory | Energy [eV/u] and declared density/speed → sigma [m²], monoenergetic rate [s^-1]; He 99..11e6 and Na 1000..200000 eV/u | Original publications and source-domain controls; U17 supporting numerical oracle; no differential-product or thermal-bath sampler |
+| Conservative plans / actual PIC transaction | `species/ReactionExecution`, `MoonReactionAdapter::ParticleTransaction` | Explicit catalog/state/parent/kinetic policy → atomic daughter records and integer/weighted/bath ledgers; SI and caller-declared event frame | No observations; immutable plan and fresh product optical clocks; local controls plus one/eight-rank actual allocator/list/weight/rollback checks; physical policy remains caller responsibility |
+| Local-time tracing / normal Moon dispatch | `MoonTracing`, `PIC::Mover::ForceCutSurfaceFirstOrder/SecondOrder`; explicit runtime numerical/LSO field receipt | Actual production acceleration, geometry, local physical interval → phase space, elapsed/remaining/epoch seconds and AMR/MPI continuation | Numerical/moving-plane/sphere/six-body oracles and actual Moon-force refinement; 64-byte opaque history when selected; unsupported temporal/solver modes refused |
+| Optional combined constant-history controller | `MoonReactionController`, `Moon::MoveParticle`, chemistry reinsertion callback; explicit programmatic installation only | Immutable catalog/topology/rates, source-state resolver and qualified event provider → accepted event/channel, full PIC packet and remaining-time continuations | Default DISABLED; explicit RNG callbacks; optical depth/channel survive opaque MPI transfer; trajectory-dependent hazards and unknown kinetics refused; native completion tracked separately in STATUS |
+| Declared nonconstant exposure / optical-clock bridge | `species/PiecewiseHazard`, `species/ReactionExposure`; normal library, pure callable services | Explicit affine histories and relative seconds → dimensionless integrals, first representable event time, instantaneous channel rates and copied optical-clock decisions | No external data/RNG inside integrator; gaps retained, exact rational supplied-binary crossing comparisons; lossy compensated-depth projection refused; U15 supporting analytical controls; no physical trajectory provider/controller activation |
+| Common transport chronology / source births | `MoonTransportClock`, `MoonTracing`, normal `amps_time_step` Begin/Commit, `ProductionInjectionEpochS`; optional `tracing_clock_mode` | Explicit SPICE-interpreted origin, actual equal constant block/species dt, source offsets → compensated relative transport time and absolute ET projections; environmental ET remains frozen | Default independent-history retained; common packet targets survive actual MPI/cloning; no observations/RNG; U15 local clock/parser checks plus linked one/eight-rank fixture; unequal dt/restart/uninitialized or incomplete packets refused; asynchronous sampling unqualified |
+| Additive masses and reduced recoil | `species/ReducedKinematics::{ResolveState,FormationQ,GeneralTwoBodyFinalState,PhotonTwoBody,ThreeNeutralMicrocanonical}`; normal library, explicit programmatic calls | Source-identified isotope/electron masses [kg], formation/excitation [J], directions and supplied variates → immutable state/energy receipts and momenta [kg m/s]; photon entry is parent-rest inertial only | NIST preparation preserves uncertainties; no implicit state or mass table replacement. U15 supporting Decimal/Jacobi/40000-event controls; physical moving-parent provider, threshold crosswalk and error budget remain open |
+| Native-node Na partial capture | `species/SodiumPartialCapture::Registry`, `ForwardProducts`; explicit source loading, not automatic controller installation | Native target-rest beam energy [eV/u], cross section [cm²], supplied density [m^-3] → authenticated rate [s^-1] and experimental forward-COM heavy products; SI output and physical source-derived Q | IAEA D119990 partial H(1s) product nodes only, 4–25keV/u; no interpolation/RNG. U17 source/Decimal/closure/refusal controls; native initial Na state and complete physical family remain unqualified |
+| Strict/ideal ion boundary | `Moon::IonAwareSphereInteraction`, static/moving terrain callbacks → `SurfaceEnvironment::{InstallProductionIonCollector,HandleProductionIonImpact}` → `species/IonCollector` | `ion_surface_boundary`, source-state resolver, actual local W/correction, particle ET, geometry epoch, LSO/body transforms and facet velocity → owned rank-local incident material/charge/momentum/kinetic/formation/excitation ledger in SI | Default unsupported, MPI-only explicit first/second tracer; no RNG or implicit collective. U15 mathematical/parser controls and actual one/eight-rank sphere adapter; physical regolith fate and real moving-terrain ion qualification remain open |
+| Conditional He/silica laboratory operator | `species/HeliumSilicaChargeSurvival::Registry`; normal library, explicit fit selection | Published reciprocal-velocity coordinate and TableI regime → dimensionless scattered-ion charge survival; energy domain explicitly eV | Seven native coefficients/uncertainties, no RNG/interpolation outside source law; U17 source/independent evaluation controls. Physical-vector projection unavailable; not incident sticking/retention or a lunar material law |
+| O I state/transition source preparation | `test/state_cascades/prepare_sources.py`, offline `test_m3_oxygen_sources.py`; no runtime cascade caller | Native ASD requests [cm^-1, vacuum nm, s^-1] → exact levels, distinct M1/E2 components, retained gaps and unnormalized stored graph | Immutable captured responses and reproducible replay; U15 named source controls only. Complete physical exits/isotope applicability/quenching and molecular relaxation are unresolved; physical lifetimes/branches remain null |
+
 ## Sampling and observation operators
 
 The code registers:
@@ -960,7 +1068,7 @@ and the preserved campaign report. Formal M1/M2 remain unresolved.
 | cold trapping | `MoonSurfacePhysics.cpp`, production temperature/inventory service, native I20 state exporter and independent polar scorer | species residence vs explicit timescale → bounded retention/release diagnostics; geometry, surface brightness and subsurface kinetic temperature remain separate | D02 PARTIAL; D03 selected inputs READY; actual epoch/time/depth/site support and independent references remain mandatory | Earlier local U13 evidence retained; new polar scoring/export plumbing implemented and supporting checks registered; formal I20 remains SKIPPED without I15/I17/I18/I19 and physical/statistical qualification |
 | photoionization/dissociation | `Moon.h::ExospherePhotoionizationLifeTime`, `Moon.cpp::Chemistry::ProcessParticle`, configured PIC chemistry list walker | species/LSO position, dt [s] → actual neutral-Na survival/removal; existing lifetime/shadow law | Bernoulli seed 731993 in linked fixture; neutral Na production, charged-product configuration rejected; D04 rate qualification remains separate | U14 lifetime kernel; linked I11 prerequisite verifies p=1/2 sunlit and exact shadow survival; former generic Na bypass corrected; I21/I22 and Na+ products pending |
 | electron impact | `Moon::ElectronImpactIonizationRate` → shared scalar entry; `species/ElectronImpact` native Voronov table; immutable `MoonInput` installation | legacy callback preserved; explicit Maxwellian `n_e [m^-3]`, `k_B T_e [eV]` → coefficient [m3/s], rate [s^-1] within native bounds | D05 native coefficients/provenance; declared bath, no measured D06 inference; particle executor remains OFF/guarded | U16 local rate/runtime controls and actual eight-rank/eight-species callback PASS; actual generated masses/charges checked; I23 ensemble/product/forcing qualification SKIPPED |
-| charge exchange | generic library available; no lunar configuration found | undeclared | required authoritative cross sections absent | U17/I24 SKIPPED |
+| charge exchange | `species/ChargeExchange`, immutable runtime installation; explicit `total-capture-v1` selection | native He/Na energy [eV/u], sigma [m²], monoenergetic rate [s^-1]; strict source domains | Original ORNL/Morgan publications and independent fit/knot evaluators; no inferred differential law or collision-conditioned bath | Supporting U17 services PASS; full U17/I24 remain SKIPPED without joint state/angle kinetics and a physical event provider |
 | plasma/magnetic driver | typical fields or dormant coupler/datafile path | driver fields → E/B/plasma state | D06 QA ERROR | U18/I25/I26/I35/I40 SKIPPED |
 | He source/reservoir | `Exosphere_Helium.cpp`; no production registration | projected alpha flux → rate/Maxwellian particle | RNG; no reservoir contract | U19/I27/I34/I35 SKIPPED |
 | Ne source/accommodation | `Exosphere_Neon.cpp`; no production registration | projected flux → rate | incomplete generator path | U20/I27/I36 SKIPPED |
@@ -1177,3 +1285,96 @@ input file plus native label: `LDEM_4`, label-defined datum/frame and
 east-positive longitude, centre-registered bilinear interpolation with wrapped
 longitude and clamped polar rows, icosphere resolution expressed as maximum
 great-circle edge metres, CEA for AMPS, and `FETRIANGLE` for Tecplot.
+
+The independent M3 follow-up adds a guarded common transport clock and pure
+piecewise exposure/optical-clock services; it does not enable physical
+chemistry. `tracing_clock_mode=common-time` advances the declared transport
+cohort while retaining frozen external ephemeris/fields. Admission requires
+identical constant actual dt for all compiled species and owned blocks;
+checkpoint restart and unrelated asynchronous histories are refused. Default
+`independent-history` behavior is preserved. Actual common Begin/Commit hooks
+and source birth offsets are verified separately from local clock arithmetic.
+
+The full physical scope and unresolved data are specified in
+[`M3_PHYSICAL_MODEL_SPECIFICATION.md`](test/M3_PHYSICAL_MODEL_SPECIFICATION.md);
+[`M3_QUALIFICATION_PROTOCOL.md`](test/M3_QUALIFICATION_PROTOCOL.md) defines the
+reviewable I21–I24 procedure without weakening criteria or formal predecessors.
+Current formal M3 remains SKIPPED / NOT QUALIFIED. Rate tables and supporting
+mechanical verification do not determine recoil, state, cascade or ion-surface
+laws. No missing distribution has been selected implicitly.
+
+The 2026-11-18 [chemical database and Hartley2 audit](test/M3_CHEMISTRY_DATABASE_RESEARCH.md)
+identifies usable water/OH rates and existing comet recoil mathematics. It
+records the distinct solar models, available electron/capture sources and
+explicit transfer limits: stationary comet flux weighting, collapsed product
+states and neutral-only ionization sinks do not implement Moon physical-time
+chemistry. New downloads remain research evidence pending source/model QA.
+
+The concrete [daughter-physics and ion-surface decision proposal](test/M3_DAUGHTER_AND_ION_SURFACE_DECISIONS.md)
+specifies P01–P09 recommendations and their exact approval boundaries. It
+separates source-supported rates/state data from optional experimental
+mean-energy/isotropic and three-body phase-space closures, a bounded partial
+CEX experiment, and a verification-only ideal absorbing collector. The
+proposed He+/silica operator describes conditional scattering charge survival,
+not lunar retention. The user approved P01–P09 on2026-11-18; implementation and supporting
+verification follow the approved contract, with actual delivery tracked in
+STATUS.md. Source/data gates remain binding and approval itself activates
+no runtime physics, formal gate or observation.
+
+The implemented components are additive reference-mass/recoil mathematics,
+native-node Na partial capture, an explicit ideal collector and a conditional
+He/silica laboratory law. The collector is wired before neutral sticking in
+the normal sphere and terrain callbacks; it requires an installed state/energy
+resolver as well as the input selection. NIST isotope/constants/threshold and
+O I transition preparation preserve native source uncertainty and real gaps.
+The global test runner executes these components as named supporting children
+under U15/U17, retaining each result, log and comparison artifact. See
+[RUN.md](RUN.md) for source preparation and individual/global commands.
+Parent-rest recoil and source-coordinate laboratory checks do not supply a
+complete moving-parent chemistry provider, physical cascade model or lunar
+ion-material law. Full M3 qualification remains open.
+
+The application-independent [chemical database](../src/models/chemical_database/README.md)
+now supplies shared C++17 loaders/evaluators, a Python API/CLI and reproducible
+[publication tools](../utility/chemical_database/README.md). The installed
+archive and detailed examples are in
+[/data/vtenishe/CHEMICAL_DATABASE/README.md](/data/vtenishe/CHEMICAL_DATABASE/README.md).
+Moon's Photochemistry, ElectronImpact and ChargeExchange scalar interfaces
+alias the shared implementations; source selections, numerical formulas and
+particle execution semantics are preserved. The first `catalogue-v1` profile
+indexes all acquired sources while retaining permission-restricted material as
+metadata only. It does not supply missing product-state/energy policies or
+activate physical chemistry transport. Supporting API/data/SDK tests live in
+[`test/chemical_database`](../test/chemical_database/README.md); actual native
+preservation evidence and remaining M3 work are tracked in STATUS.md section
+5.30. The original broader [design proposal](../doc/CHEMISTRY_DATABASE_PROPOSAL.md)
+also describes application-profile migration that has not yet been delivered.
+
+## Source-bound M3 completion services
+
+The approved items1–6 work adds the components below. They remain
+**EXPERIMENTAL**, with current physical activation blocked by real source/state
+gaps. Numerical fixtures and supporting PASS results never close I21–I24.
+See [STATUS.md](STATUS.md) for exact current native results and preserved attempts.
+
+| Component | Normal production entry and controls | Inputs, outputs and coverage limits |
+|---|---|---|
+| Physical source-state profile | `species/PhysicalStateProfile::Registry`, called by `MoonSodiumCohort::Prepared::InspectProfile/Create` | Authenticated isotope/constants/state CSV and ordered original-source descriptors; SI masses/energies, integer charge/nuclei and explicit energy reference. Seven currently available reference states, fourteen unavailable states; no inferred ion/molecular energies or uncertainties. Local source/parser tests and source-only native inspection are separate from physical admission. |
+| Source-bound photon event | `species/PhysicalReactionEvents::SodiumPhotoionization`, called by `Prepared::Kinematics` on accepted controller events | Complete frozen D04 Na family and separate endpoint, explicit state crosswalk, physical/reference masses and model-error bounds. Moving-parent photon transform, electron/photon reservoirs and actual affine LSO moments; source-mean/isotropic experimental closure. Exact source/state consistency cannot be loosened by a user numerical tolerance. Current Na+ crosswalk remains unavailable. |
+| Trajectory exposure | Normal `ForceCutSurface` accepted arcs → controller history → `MoonTrajectoryExposure` → `species/TrajectoryExposure` | LSO positions/metres, time/seconds, SI source reference distance, furnished SPICE ET and actual sphere/LOLA/BVH. Inverse-square hazard, point-Sun silhouettes and explicit absolute interpolation/root/storage bounds; no preview RNG or physical-state mutation. Accepted left-limit rate survives light/shadow boundaries. Field/frame accuracy and finite-disc geometry remain separate qualification gates. |
+| Normal pre-buffer registration | `amps_init` → `MoonNativeReactionRegistration::RunBeforeParticleBuffer` | Optional named one-shot callback after SPICE/mesh/species/weights and before allocation. No callback preserves legacy behavior. Failure aborts startup with diagnostic; a callback cannot allocate the buffer or retry partial registration. Explicit-ET field construction avoids uninitialized first-step source caches. |
+| Normal environment preparation | `amps_time_step` and explicit finite cohorts → `Moon::PrepareProductionParticleEnvironment` | The complete original SPICE/orbit/thermal block is reused verbatim after common Begin and before the production particle walker. It initializes real force caches, preserves frozen/evolving ET and thermal/inventory side effects, and adds no source injection, sampling or force formula. Fresh M0 and native frozen/evolving state/force-wiring checks are separate from full physical cohort qualification. |
+| Semantic daughter random streams | `MoonSemanticRandom` source/draw/prospective-clock/staged-child callbacks | Seed, UTF-8 cohort, original parent, complete genealogy, purpose and draw index; HMAC-SHA256 midpoint uniforms. Full opaque bytes survive MPI ownership clones; daughter ProductClock draw0 is used once and committed with counter1. Explicit capacity exhaustion is ERROR before publication, never genealogy truncation or a dropped physical branch. |
+| Conservative native publication | `MoonReactionAdapter::ParticleTransaction` and normal surface collector | Explicit source-bound elementary charge, matching actual compiled mass/charge, local weights, state/clock and original unused interval. Optional staged initializer is checked against actual PIC child fields before commit. Signed photon/electron and ideal-collector ledgers preserve units and physical versus geometry epochs; collector is not lunar regolith physics. |
+| Conditional linked cohort | `test/run_m3_sodium_cohort.py` → actual `.in` owner → normal startup/mover/provider | Actual source-preflight, preparation and execution are distinct modes. Frozen constant-hazard cases require the existing zero-acceleration production binding; variable-exposure runs require a different independent integrated-H proof. Per-rank exact native event records and independent budget/timing/statistical audits are retained. Current unavailable physical inputs return77/SKIPPED before expensive startup. |
+
+[The cohort README](test/sodium_cohort/README.md) documents exact source
+inspection commands, all required full-run quantities and failure behavior.
+[The numerical contract](test/sodium_cohort/NUMERICAL_CONTRACT.md) and
+[independent ledger contract](test/sodium_cohort/LEDGER_CONTRACT.md) explain
+which evidence each verifier can establish. A source-profile metadata flag,
+explicit experimental selection or successful parser cannot grant physical
+qualification. Molecular state mappings, collision-biased electron products,
+complete CEX states/differential products, cascades and physical regolith fate
+remain explicit unsupported capabilities; scalar rates remain available in
+the shared chemical database.

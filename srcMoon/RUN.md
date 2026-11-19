@@ -641,33 +641,51 @@ U08 and its independent per-vertex comparison pass. It remains an
 `SKIPPED / NOT_VALIDATED` until its linked-production and predecessor gates
 are satisfied.
 
-## Initial M3 atomic rate verification
+## M3 supporting rates, packet transactions and force tracing
 
-This runner verifies the approved Maxwellian/Voronov rate service. It runs the
+The full remaining work is specified in the
+[M3 completion proposal](test/M3_COMPLETION_PROPOSAL.md) and its approved
+[implementation contract](test/M3_IMPLEMENTATION_CONTRACT.md). The command
+below runs local/supporting verification; it does not qualify I21–I24.
+
+This runner verifies the production rate and event services. It runs the
 unchanged clean M0 prerequisite (including the reviewed four-rank nightly
-reference), registered U16 kernel/runtime controls, and an **eight-rank** native
-callback fixture with all four neutral/ion pairs compiled. The native callback
-uses real generated particle-record/species layouts; no particle reaction or
-product trajectory is simulated. Formal I21-I24 remain explicitly SKIPPED.
+reference), registered U15/U16/U17 support, and an **eight-rank** native rate
+callback with all four neutral/ion pairs compiled. With the explicit isolated
+checkout acknowledgment it additionally runs actual PIC transaction controls,
+both tracers with the actual Moon forces, and the normal-path constant-history
+reaction controller on one/eight ranks. Those use
+declared analytical storage/force fixtures, without assuming physical CEX or
+photochemical recoil distributions. Formal I21-I24 remain explicitly SKIPPED.
 
-From the selected checkout root:
+From a disposable selected checkout root containing the current source changes
+and the normal AMPS build prerequisites:
 
 ```sh
 OMP_NUM_THREADS=1 /usr/bin/python3 -B srcMoon/test/test_runner.py \
-  --phase m3-development --mpi-ranks 8 \
+  --phase m3-development --mpi-ranks 8 --isolated-checkout \
   --campaign-wall-seconds 3600 --cleanup-reserve-seconds 600 \
   --spice-path /home/vtenishe/SPICE/cspice \
   --spice-kernels /home/vtenishe/SPICE/Kernels \
   --output-dir test_output/srcMoon/M3-development-NEW
 ```
 
-Replace `NEW` for each execution; prior evidence is not overwritten. This
+Replace `NEW` for each execution; prior evidence is not overwritten. The flag
+acknowledges a disposable checkout; it does not create one or copy uncommitted
+changes automatically. Omit it to skip the derived packet/force builds. This
 native campaign rebuilds the selected checkout several times and restores
 ordinary Moon/SPICE afterward. Use an isolated checkout when the active tree
 must retain another application/configuration. Configuration/build logs,
 executable/source/generated-header identities and resource monitoring are
 preserved within the one-hour campaign budget. As in M0, each configuration
 starts by removing its generated `build` directory.
+
+The tracer examples select frozen prescribed LSO fields and
+`m2_environment = disabled`. Their local particle clocks cannot be silently
+combined with the current globally timed dynamic thermal/reservoir update;
+that combination is refused by both parser and direct installation. The new
+controller fixtures use explicit constant analytical hazards and providers,
+without attaching the physical D04/D05/CEX registries automatically.
 
 Expected files under `M3-development-NEW/m3-development/`:
 
@@ -676,6 +694,19 @@ Expected files under `M3-development-NEW/m3-development/`:
 - `native-rate-callback/`: derived eight-species compile input identity,
   configure/build/probe logs, generated ABI headers, `application.in`,
   `run_manifest.json`, per-rank callback CSVs and `result.json`.
+- `native-particle-backend/`: fresh all-species producer and generated ABI,
+  compile/build logs, one/eight-rank real PIC allocation/weight/rollback controls
+  and per-rank metrics. No artificial allocator replaces the production buffer.
+- `native-moon-force-tracers/`: both actual Moon tracer orders, per-layout
+  position/velocity/reference CSV and diagnostic PNG/EPS, production-force
+  decomposition and independent integration-refinement evidence.
+- `native-reaction-controller/`: both orders and layouts through normal Moon/PIC
+  callbacks, competing constant analytical hazards, preserved clocks/event times,
+  complete-packet continuation, recycled-source and capacity-refusal controls,
+  event comparison CSV/PNG/EPS and the exact producer/ABI identities. These
+  mechanics do not install a physical photon/electron/CEX recoil model.
+- `formal/I21` through `I24`: the actual registered owners' predecessor and
+  missing-capability receipts; no synthetic observation or placeholder PASS.
 - `restore/`: normal Moon/SPICE clean build log and executable.
 - `development_summary.json`, `execution_budget.json`, `campaign.log`: distinct
   local/supporting/formal outcomes, errors and process-tree resource evidence.
@@ -695,3 +726,229 @@ product conservation or measured forcing. The complete `.in` example is
 fixture, not a lunar observation. Charge-exchange and molecular-kinetics
 proposals are in `test/M3_*_PROPOSAL.md`, and STATUS.md section 5.15 records
 current evidence and unresolved decisions.
+
+### M3 independent exposure, common-clock and protocol preparation
+
+These runners verify declared mathematics and protocol/mechanical behavior;
+they do not produce lunar observational validation or enable missing daughter
+physics. Run from the AMPS repository root, with a new output directory each
+invocation. A C++17 compiler is required. PNG/EPS diagnostics require a Python
+installation with matplotlib (the development machine supplies this through
+`/usr/bin/python3`).
+
+```bash
+/usr/bin/python3 -B srcMoon/test/reaction_execution/piecewise_hazard/run.py \
+  --output-dir test_output/srcMoon/m3-piecewise-NEW
+/usr/bin/python3 -B srcMoon/test/reaction_execution/exposure_bridge/run.py \
+  --output-dir test_output/srcMoon/m3-exposure-bridge-NEW
+/usr/bin/python3 -B srcMoon/test/run_m3_transport_clock.py --local-only \
+  --output-dir test_output/srcMoon/m3-clock-local-NEW
+/usr/bin/python3 -B srcMoon/test/test_m3_qualification_protocol.py \
+  --output-dir test_output/srcMoon/m3-protocol-controls-NEW
+/usr/bin/python3 -B srcMoon/test/m3_protocol.py \
+  --output-dir test_output/srcMoon/m3-protocol-preparation-NEW \
+  --plan-comparisons 48
+```
+
+Each runner writes its own `result.json` and logs beneath the selected output.
+The numerical runners retain source/compiler/executable identity, independent
+analytical CSV comparisons and PNG/EPS diagnostics where declared. Protocol
+preparation currently exits 77/SKIPPED: structural identities can pass while
+physical inputs and formal qualification are incomplete. No particle run is
+launched by the preparation command. The comparison family size 48 is only a
+planning example, not a frozen or approved physical campaign.
+
+The global U-series invokes these services under U15 supporting children and
+U16 orchestration controls. The existing extended `m3-development` phase in a
+disposable checkout additionally runs the linked common-clock fixture at one
+and eight MPI ranks against its freshly built packet backend, then restores
+ordinary Moon configuration. It shares one hour across setup/build/tests/plots/
+restoration/cleanup. See [the protocol](test/M3_QUALIFICATION_PROTOCOL.md),
+[physical model](test/M3_PHYSICAL_MODEL_SPECIFICATION.md) and
+[clock contract](test/M3_COMMON_TRANSPORT_CLOCK_CONTRACT.md) before interpreting
+results; local or mechanical PASS does not close I21–I24 or prior milestones.
+
+The extended campaign also runs full normal application startup after restoring
+its canonical Na-only SPICE build: both orders, eight ranks, two actual
+`amps_time_step` calls. This checks UTC-to-SPICE initialization, normal
+sampling/source ordering and completed common endpoints. It reuses the restored
+archive and does not perform another application build. Its result, generated
+header snapshots and `normal_build_evidence.json` remain under the campaign's
+restore/startup directories. With that authentic build still present, repeat
+only this check in the same disposable checkout using a fresh output:
+
+```bash
+/usr/bin/python3 -B srcMoon/test/run_m3_transport_clock.py \
+  --normal-startup-only \
+  --build-evidence /absolute/path/to/campaign/restore/normal_build_evidence.json \
+  --output-dir test_output/srcMoon/m3-normal-clock-startup-NEW \
+  --wall-seconds 600
+```
+
+The runner verifies the actual archive, source, generated headers and successful
+build log before linking the thin driver. Missing build provenance is SKIPPED;
+changed bytes or contradictory proof are ERROR. Use only the remaining original
+campaign budget when running this inside an existing development package.
+
+## Approved M3 reduced-model components and ion boundary
+
+### Source preparation
+
+Run from the repository root. These commands create research/source evidence,
+not observations or a complete physical state model. Use a Python interpreter
+with Matplotlib for the component comparison plots (`/usr/bin/python3` on the
+development machine). Use a new output directory each time:
+
+```bash
+MOON_COMPONENT_OUTPUT="test_output/srcMoon/m3-components-$(date -u +%Y%m%dT%H%M%SZ)"
+/usr/bin/python3 -B srcMoon/test/physical_state_sources/prepare.py \
+  --fetch --output-dir "$MOON_COMPONENT_OUTPUT/state-sources"
+/usr/bin/python3 -B srcMoon/test/sodium_partial_capture/prepare_source.py \
+  --source-html test_output/srcMoon/m3-atomic-online-databases-20261118T083400Z/collisiondb_Na_H1s_119990.html \
+  --output-dir "$MOON_COMPONENT_OUTPUT/na-partial-source"
+```
+
+The first command downloads public NIST isotope/constants and H/Na ground-
+threshold records. The second reproduces twelve measured partial capture
+nodes from the already retained native IAEA response. Supply the actual
+source response path when using another machine; a missing or changed source
+is explicitly unavailable/corrupt, never replaced. Raw packet bytes and
+provenance are retained. Neither command modifies canonical validation data.
+
+Acquire the separate oxygen state/transition research packet, then replay it
+offline into a fresh directory if needed:
+
+```bash
+/usr/bin/python3 -B srcMoon/test/state_cascades/prepare_sources.py \
+  --download --output-dir "$MOON_COMPONENT_OUTPUT/oxygen-sources" \
+  --wall-seconds 3600
+/usr/bin/python3 -B srcMoon/test/state_cascades/prepare_sources.py \
+  --source-packet "$MOON_COMPONENT_OUTPUT/oxygen-sources" \
+  --output-dir "$MOON_COMPONENT_OUTPUT/oxygen-replay" \
+  --wall-seconds 3600
+```
+
+This preserves every native level/line, missing A value and selected fine-
+structure/multipole component. It does not normalize stored transitions to a
+physical branching distribution or infer a total lifetime. The source QA
+can pass while cascade physics remains NOT QUALIFIED. Offline replay verifies
+the full acquisition manifest before processing; source packets are immutable.
+
+### Individual component runners
+
+```bash
+/usr/bin/python3 -B srcMoon/test/test_m3_reduced_kinematics.py \
+  --output-dir "$MOON_COMPONENT_OUTPUT/reduced-recoil"
+/usr/bin/python3 -B srcMoon/test/test_m3_ion_collector.py \
+  --output-dir "$MOON_COMPONENT_OUTPUT/ideal-collector"
+/usr/bin/python3 -B srcMoon/test/test_m3_sodium_partial_capture.py \
+  --reference-dir "$MOON_COMPONENT_OUTPUT/na-partial-source" \
+  --mass-inventory "$MOON_COMPONENT_OUTPUT/state-sources/reference_mass_inventory.json" \
+  --output-dir "$MOON_COMPONENT_OUTPUT/na-partial-capture"
+/usr/bin/python3 -B srcMoon/test/test_m3_helium_silica.py \
+  --source-pdf test_output/srcMoon/m3-ion-surface-cex-data-sources-20261117T225600Z/tellez2012_silica_neutralization.pdf \
+  --output-dir "$MOON_COMPONENT_OUTPUT/he-silica"
+/usr/bin/python3 -B srcMoon/test/test_m3_oxygen_sources.py \
+  --source-packet "$MOON_COMPONENT_OUTPUT/oxygen-sources" \
+  --output-dir "$MOON_COMPONENT_OUTPUT/oxygen-source-controls"
+```
+
+Expect structured result/manifest, source/compiler/executable identities,
+compile/stdout/stderr logs and CSV/PNG/EPS comparisons in each requested
+directory. Reduced photon and three-neutral models use explicit supplied
+states and are not a complete moving-parent LSO chemistry provider. The Na
+fixture uses native partial-channel beam nodes and an experimental forward
+angle; native initial Na state metadata remain unresolved. The He/silica
+fixture evaluates a conditional charge-survival law in its source coordinate;
+conversion from arbitrary physical vectors remains Unavailable. None is a
+lunar observational comparison or formal M3 PASS.
+The oxygen runner has fifteen offline source/parser/corruption controls; it
+builds no application and enables no physical cascade. The global U15 child
+uses the retained research packet by default, makes no network requests and
+reports SKIPPED when that packet is unavailable on another machine.
+
+### Global/native execution and runtime boundary selection
+
+The global runner includes these children through the existing U15/U17
+supporting namespace, retaining each runner/log and actual status. To include
+normal clean application builds, reviewed `make -j test_Moon`, actual PIC
+packets, sphere collector dispatch and both force-tracing orders, run in a
+**disposable, correctly installed checkout**:
+
+```bash
+/usr/bin/python3 -B srcMoon/test/test_runner.py \
+  --phase m3-development --isolated-checkout --mpi-ranks 8 \
+  --campaign-wall-seconds 3600 \
+  --output-dir test_output/srcMoon/m3-native-NEW
+```
+
+`--isolated-checkout` acknowledges that the selected checkout owns its derived
+build/configuration; it does not create a copy. Install/relocate that checkout's
+site `PTDIR/MYDIR` before execution so it cannot compile against another tree's
+generated headers. Include setup/cleanup in the one-hour package allowance.
+Full U/I outcomes and supporting counts remain separate. Model-data/predecessor
+gaps correctly leave formal chemistry SKIPPED even when components pass.
+
+In a complete existing tracing `.in` receipt, `ion_surface_boundary =
+unsupported` is the default. Explicit `ideal-collector` additionally requires
+an installed state/formation-energy resolver and ledger matching actual compiled
+species/masses/charges. Native analytical fixtures install that provider;
+an ordinary CLI switch alone does not. The collector has no neutralization,
+heat, implantation depth, sputtering, charging-feedback or release model.
+Detailed assumptions, source gaps and exact approval limits are in
+[the decision document](test/M3_DAUGHTER_AND_ION_SURFACE_DECISIONS.md).
+
+### Source-state admission and conditional physical Na cohort
+
+The new [cohort runner instructions](test/sodium_cohort/README.md) give the full
+source-profile generation, deterministic native input projection and eight-rank
+source-preflight commands. It uses an authentic current native producer from an
+isolated normal build; it does not rebuild the active checkout or guess an
+application CLI. Expected current source-preflight result is SKIPPED/exit77:
+the authoritative Na+ state/rest-mass/threshold mapping is genuinely missing.
+No numerical or physics values must be invented merely to inspect that gap.
+
+Independent supporting checks, from this repository root and with NEW output
+directories, are:
+
+```bash
+/usr/bin/python3 -B srcMoon/test/test_m3_physical_reaction_events.py \
+  --output-dir test_output/srcMoon/photon-composition-NEW
+/usr/bin/python3 -B srcMoon/test/test_m3_trajectory_exposure.py \
+  --output-dir test_output/srcMoon/trajectory-exposure-NEW
+/usr/bin/python3 -B srcMoon/test/test_m3_qualification.py \
+  --output-dir test_output/srcMoon/qualification-controls-NEW
+/usr/bin/python3 -B srcMoon/test/test_m3_sodium_ledger.py \
+  --output-dir test_output/srcMoon/sodium-ledger-controls-NEW
+```
+
+These produce structured results, logs, hashes and comparison CSV/PNG/EPS.
+Analytical state fixtures verify software and are labelled accordingly; they
+are not physical sodium profiles or observations. The normal native campaign
+also checks pre-buffer registration, full daughter genealogy/counters, actual
+PIC initial-state readback, explicit SI charge versus legacy constants and
+accepted light-to-shadow endpoint semantics on1/8MPI with both tracing orders.
+
+Once authoritative source/state inputs and all predecessors exist, the frozen
+per-cohort execution interface is:
+
+```bash
+MOON_NATIVE_CHECKOUT=/ABSOLUTE/PATH/TO/DISPOSABLE-AMPS
+/usr/bin/python3 -B "$MOON_NATIVE_CHECKOUT/srcMoon/test/m3_qualification_executor.py" \
+  --case-plan /ABSOLUTE/PATH/TO/FROZEN_COHORT_PLAN.json \
+  --campaign-root /ABSOLUTE/PATH/TO/SAME_CAMPAIGN \
+  --output-dir test_output/srcMoon/physical-cohort-NEW
+```
+
+The installed producer identity is `normal-source-bound-sodium-cohort-v1` for
+I21. The plan's `native_adapter` schema is
+`srcMoon-M3-normal-sodium-execution-v1`; it requires `producer_manifest`
+`{path,sha256}`, `state_mapping` with parent/ion/electron IDs, and `runs` with
+`mpi_ranks`, `physical_steps`, `input {path,sha256}` and the COMPLETE unique
+`input_documents [{path,sha256},...]` including the root and application include
+graph. Predeclare at least three identical step-count levels for1/8MPI. The
+plan also contains all existing approved cohort/statistical fields. No positive
+physical example is manufactured while the real source mapping is unavailable.
+Native77 remains SKIPPED, malformed/changed inputs are ERROR, evaluated numerical
+or statistical disagreement is FAIL. A successful cohort is evidence toward the
+whole frozen matrix, not a milestone PASS. All prior attempts remain immutable.

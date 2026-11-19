@@ -13,6 +13,7 @@
 #include "Moon.h"
 
 #include "MoonInput.h"
+#include "MoonReactionController.h"
 #include "MoonSurfaceTemperature.h"
 
 #include <string>
@@ -20,6 +21,18 @@
 
 void Moon::Chemistry::ProcessParticle(long int particle,long int& firstParticle,
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+  if (Controller::Enabled()) {
+    // In-flight tracing already advances the installed combined hazard and
+    // executes its complete conservative packet at the event epoch. Running
+    // the old per-step photolysis here would double-count that physical time.
+    // This callback still owns reinsertion into the rebuilt chemistry list.
+    // Default-disabled controller preserves the existing production path.
+    PIC::ParticleBuffer::SetNext(firstParticle,particle);
+    PIC::ParticleBuffer::SetPrev(-1,particle);
+    if (firstParticle!=-1) PIC::ParticleBuffer::SetPrev(particle,firstParticle);
+    firstParticle=particle;
+    return;
+  }
   const int species=PIC::ParticleBuffer::GetI(particle);
   if (species!=_NA_SPEC_) {
     Exosphere::ChemicalModel::PhotochemicalModelProcessor(
@@ -252,6 +265,12 @@ double SodiumStickingProbability(double& ReemissionParticleFraction,double Temp)
 
 
 double Exosphere::SurfaceInteraction::StickingProbability(int spec, double& ReemissionParticleFraction,double Temp) {
+  // Ion charge transfer/implantation is a distinct boundary process. Even a
+  // direct generic caller must not reach the legacy species switch or reuse
+  // neutral Na/Ar laws. Normal sphere/terrain paths dispatch the explicit
+  // ideal collector BEFORE this neutral-only function, without RNG changes.
+  if(spec<0 || spec>=PIC::nTotalSpecies || PIC::MolecularData::GetElectricCharge(spec)!=0)
+    exit(__LINE__,__FILE__,"neutral lunar sticking cannot handle charged/invalid species; select the explicit ion-boundary policy and provide its state/energy data before tracing ions");
   // An enabled M2 receipt replaces the legacy compiled species switch with
   // the reviewed, input-provenanced Na/Ar kernels.  Ion impacts fail closed in
   // that adapter because no authoritative neutralization/trapping branching

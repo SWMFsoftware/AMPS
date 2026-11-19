@@ -3,24 +3,49 @@
   "name": "Charge-exchange reaction-kernel verification",
   "purpose": "Verify each enabled charge-exchange channel, rate, products, momentum handling, and budgets.",
   "production_capability": "Moon charge-exchange reaction table and production chemistry dispatch.",
-  "production_entry_points": ["AMPS charge-exchange model", "future srcMoon channel configuration"],
+  "production_entry_points": [
+    "Moon::Species::ChargeExchange::Registry::CrossSectionM2",
+    "Moon::Species::ChargeExchange::Registry::ColdBeamRateS"
+  ],
   "configuration": "One deterministic fixture per documented reaction channel.",
-  "inputs": ["authoritative channel cross sections/rates", "reactant states"],
+  "inputs": [
+    "authoritative channel cross sections/rates",
+    "reactant states"
+  ],
   "independent_reference": "Published channel formula/table and particle/species conservation identities.",
   "units": "m^2 or m^3 s^-1, kg m s^-1, J",
   "frame_time_convention": "Declared model frame; event-local time only.",
   "deterministic_stochastic_controls": "Fixed seeds and >=100000 events for probabilistic branches.",
   "procedure": "Check rates, products, branch frequencies, charge/species budgets, and velocity/momentum convention.",
-  "metrics": ["rate error", "branch confidence", "number/charge/momentum residual"],
+  "metrics": [
+    "rate error",
+    "branch confidence",
+    "number/charge/momentum residual"
+  ],
   "acceptance_criteria": "Must be frozen per authoritative channel before activation; no undocumented channel is accepted.",
   "expected_pass_result": "Every enabled channel is traceable and budget-consistent.",
-  "expected_failure_modes": ["no channels", "missing rate data", "wrong product", "budget violation"],
-  "required_data": ["authoritative channel data not yet assigned a Dxx package"],
+  "expected_failure_modes": [
+    "no channels",
+    "missing rate data",
+    "wrong product",
+    "budget violation"
+  ],
+  "required_data": [
+    "authoritative channel data not yet assigned a Dxx package"
+  ],
   "data_hashes": "unavailable",
-  "predecessor_gates": ["U15", "U16"],
-  "artifacts": ["result.json", "reaction_metrics.json", "data_hashes.json"],
+  "predecessor_gates": [
+    "U15",
+    "U16"
+  ],
+  "artifacts": [
+    "result.json",
+    "reaction_metrics.json",
+    "data_hashes.json"
+  ],
   "status_semantics": "SKIPPED; missing authoritative channel specification is not PASS.",
-  "implementation": "not-implemented",
-  "skip_reason": "No Moon charge-exchange channels or authoritative channel table are configured.",
-  "missing_capability": "Documented production reaction table and mapping."
+  "implementation": "documented-charge-exchange-partial",
+  "skip_reason": "Documented He/Na total-rate kernels have independent tests; full charge-exchange product/state/kinematic contract remains unavailable.",
+  "missing_capability": "Qualified projectile/product joint state/angle/Q model and normal event dispatch; no total-cross-section substitution for daughter kinetics.",
+  "supporting_scope": "Actual production rate/input/event services only; original full test acceptance and predecessor fields are unchanged."
 }

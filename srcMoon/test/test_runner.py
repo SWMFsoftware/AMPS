@@ -7,10 +7,16 @@ delegates configuration-separated M0 work to ``run_integration_tests.py``,
 delegates U/M1/M2 work to ``run_all_test.py``, and combines their structured
 results without reinterpreting a metric or weakening a threshold.
 
-I21--I46 are frozen roadmap IDs but do not yet have executable runners.  They
+I25--I46 are frozen roadmap IDs but do not yet have executable runners.  They
 are listed explicitly and appear as SKIPPED in ``release`` scope.  A missing
 production capability, independent oracle, or authoritative dataset must not
 be disguised by a generic runner that returns PASS.
+
+I21--I24 now have explicit predecessor/capability owners. Their physical
+particle execution remains unavailable while qualified kinetic and
+trajectory-dependent exposure providers are missing. The generic constant-
+history combined controller has separate native verification; registering
+these owners grants no chemistry PASS.
 """
 
 from __future__ import annotations
@@ -48,10 +54,6 @@ REQUIRED_ACCEPTANCE_FIELDS = {
 }
 
 PLANNED_I_TESTS: dict[str, str] = {
-    "I21": "Sodium photoionization survival and Na-to-Na+ conversion",
-    "I22": "Photoionization for He, Ne, Ar, and future H2O/OH",
-    "I23": "Electron-impact ionization rate coefficients",
-    "I24": "Charge-exchange reactions with solar-wind ions",
     "I25": "Measured solar-wind and magnetospheric forcing",
     "I26": "Helium implantation, re-emission, and endogenous source",
     "I27": "Neon source and noncondensable accommodation",
@@ -106,7 +108,7 @@ def implemented_layout() -> dict[str, Path]:
     for path in sorted(TEST_ROOT.glob("U[0-9][0-9]_*")):
         if path.is_dir():
             layout[path.name[:3]] = path
-    for number in range(1, 21):
+    for number in range(1, 25):
         test_id = f"I{number:02d}"
         layout[test_id] = TEST_ROOT / "integration-tests" / test_id
     return layout
@@ -117,10 +119,10 @@ def audit_architecture() -> list[str]:
     errors: list[str] = []
     layout = implemented_layout()
     expected = ({f"U{number:02d}" for number in range(1, 27)} |
-                {f"I{number:02d}" for number in range(1, 21)})
+                {f"I{number:02d}" for number in range(1, 25)})
     if set(layout) != expected:
         errors.append(
-            "implemented layout differs from frozen U01-U26/I01-I20 set: "
+            "implemented owner layout differs from frozen U01-U26/I01-I24 set: "
             f"missing={sorted(expected-set(layout))}, "
             f"extra={sorted(set(layout)-expected)}")
 
@@ -157,7 +159,7 @@ def audit_architecture() -> list[str]:
         # If their criterion is evaluated, the same rows must be preserved as
         # CSV and rendered to both raster and vector formats.  A skipped test
         # produces none of these artifacts, as documented by each runner.
-        if test_id.startswith("I") and 14 <= int(test_id[1:]) <= 20:
+        if test_id.startswith("I") and 14 <= int(test_id[1:]) <= 24:
             artifacts = set(contract.get("artifacts", []))
             comparison = {"comparison.csv", "comparison.png", "comparison.eps"}
             if not comparison <= artifacts:
@@ -166,10 +168,10 @@ def audit_architecture() -> list[str]:
                     ", ".join(sorted(comparison-artifacts)))
 
     planned = set(PLANNED_I_TESTS)
-    expected_planned = {f"I{number:02d}" for number in range(21, 47)}
+    expected_planned = {f"I{number:02d}" for number in range(25, 47)}
     if planned != expected_planned:
         errors.append(
-            "planned registry must contain exactly I21-I46: "
+            "planned registry must contain exactly I25-I46: "
             f"missing={sorted(expected_planned-planned)}, "
             f"extra={sorted(planned-expected_planned)}")
     return errors
@@ -242,7 +244,7 @@ def main() -> int:
         "--phase", choices=("audit", "local", "m0", "frontier",
                              "implemented", "release", "m2-development", "m2-cluster",
                              "m3-development"), default="audit",
-        help=("audit structure; run U tests; run M0; run I11-I20; run all "
+        help=("audit structure; run U tests; run M0; run I11-I24 owners; run all "
               "implemented layers; include planned release gaps; or run "
               "bounded supporting M2/M3 development without waiving predecessors"))
     parser.add_argument("--list", action="store_true",
@@ -255,6 +257,8 @@ def main() -> int:
     parser.add_argument("--campaign-wall-seconds",type=float,default=3600,
                         help="aggregate M2/M3 development wall seconds, including clean builds/plots")
     parser.add_argument("--cleanup-reserve-seconds",type=float,default=600)
+    parser.add_argument('--isolated-checkout',action='store_true',
+        help='include M3 real PIC packet, Moon-force and reaction-controller fixtures; acknowledge selected disposable checkout owns derived build/configuration changes')
     parser.add_argument("--m2-input",type=Path,default=REPO_ROOT/"srcMoon/examples/lola_surface.in")
     parser.add_argument("--cluster-execute",action="store_true")
     parser.add_argument("--cluster-core-hours",type=float,default=300)
@@ -314,6 +318,7 @@ def main() -> int:
                 "--wall-seconds",str(arguments.campaign_wall_seconds),
                 "--cleanup-reserve-seconds",str(arguments.cleanup_reserve_seconds),
                 "--spice-path",str(arguments.spice_path),"--spice-kernels",str(arguments.spice_kernels)]
+            if arguments.isolated_checkout:command.append('--isolated-checkout')
             log=output/"m3-development.log";code=run_logged(command,log,arguments.stream)
             phase_runs.append({"phase":"m3-development","command":command,"returncode":code,"log":str(log)})
             try:
@@ -420,7 +425,7 @@ def main() -> int:
                 if arguments.cluster_execute:
                     command.extend(["--m2-cluster-execute","--test-runtime-seconds",
                                     str(arguments.campaign_wall_seconds)])
-                for number in range(11, 21):
+                for number in range(11, 25):
                     command.extend(["--only", f"I{number:02d}"])
                 # A completed M0 run restores a canonical Moon/SPICE build.
                 # Qualification may additionally need the dedicated Na+Ar M2
@@ -438,11 +443,11 @@ def main() -> int:
                 try:
                     results.extend(normalized_results(
                         read_json(frontier_output / "run_all_summary.json"),
-                        "frontier/I11-I20"))
+                        "frontier/I11-I24"))
                 except RuntimeError as exception:
                     campaign_errors.append(str(exception))
             else:
-                for number in range(11, 21):
+                for number in range(11, 25):
                     test_id = f"I{number:02d}"
                     contract = read_json(
                         layout[test_id] / "reference/acceptance.json")

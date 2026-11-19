@@ -1,0 +1,276 @@
+ACTIVE TASK CHANGE: REDUCED SHOCK-FRONT AND AMBIENT PROVIDER
+Date: 2026-10-04
+
+This is a user-authorized change of the implementation target. Execute it in
+the existing writable AMPS checkout and continue implementation, compilation,
+and tests. Do not stop after producing a plan or completing the first stage.
+
+1. SWITCH THE ACTIVE TARGET AND PRESERVE EXISTING WORK
+
+At the next safe execution boundary, stop work aimed at repairing or qualifying
+BG3D-4's full sheath/contact construction. BG3D-4 remains UNQUALIFIED and is
+DEFERRED from this active implementation campaign. Do not mark it PASS, weaken
+its physical tests, or erase its failure evidence.
+
+The active target is now the reduced shock-front plus ambient model specified
+in:
+
+  src/models/sep_corona_swcme/docs/shock-front/model.md
+
+Read the complete version 1.1 specification, particularly sections 1-4, 7-16,
+18-22, and the review disposition. Read applicable AGENTS.md files and inspect
+the actual current source, build instructions, test registries, and runtime
+schemas. The examples and API names in model.md are proposed contracts; they
+are not proof of current parser support or implementation.
+
+This instruction supersedes earlier task-specific requirements to complete
+BG3D-4 or the full sheath/ejecta stages before implementing the reduced mode.
+Preserve the full-CME roadmap, its stage status, source, tests, and evidence for
+future work. Do not reset the checkout, revert unrelated changes, discard
+uncommitted work, or reinstall a pre-L0-L7 baseline. Keep any designated Mars1
+reference checkout read-only. Do not commit or push.
+
+Record the current working-tree status and relevant source/test fingerprints
+before editing. Update the active task/plan references so they identify this
+target clearly. Create CODEX_REDUCED_SHOCK_PLAN.md as its progress/evidence
+record; retain the old CME plan with BG3D-4 explicitly unqualified/deferred.
+
+2. SCOPE AND PHYSICAL CONTRACT
+
+Implement initially for srcSEP3D, with zero SEP particles throughout the run.
+Keep shared algorithms usable by srcSEP; its new application adapter is a
+later task after SEP3D qualification.
+
+Provide:
+
+  - A finite prescribed front, complete geometry, normal, and normal speed.
+  - A continuous coronal history and matched handoff into compatible maintained
+    SWCME outer propagation, without resetting position, speed, shape, or time.
+  - One canonical ambient plasma/IMF authority across the complete run.
+  - Local inflow, wave speeds, Mach numbers, obliquity, accepted density and
+    magnetic compression, and immediate upstream/downstream jump limits.
+  - Explicit support, sub-fast, non-forward, null, and numerical-failure states.
+  - Surface outputs, ambient field queries, connectivity/observer diagnostics,
+    generation receipts, and background-only restart as specified.
+
+The ambient provider returns an undisturbed REFERENCE field/plasma throughout
+its declared domain. Behind the front, it must not be labeled as actual CME
+downstream plasma. The immediate downstream jump exists only as a front record.
+A physical sheath/ejecta-volume request must return typed unsupported capability.
+
+Do not implement or require contact geometry, sheath parcels/inventory, ejecta
+plasma or magnetic fields, draping, source spectra, SEP injection/transport,
+particle feedback, or wave/turbulence physics for this reduced mode. Preserve
+existing particle behavior in other modes. Do not instantiate an old particle-
+or sheath-oriented launch epoch merely to satisfy unrelated prerequisites.
+
+Keep optional driver/standoff dynamics, GSD/general shock dynamics, nonlinear
+formation, imported MHD, and shock-aware research propagation laws deferred.
+Use criticality_model=none in the first profile; do not invent a universal
+critical Mach value. Implement other selected optional diagnostics only after
+the deterministic core works, and report any remaining capabilities precisely.
+
+3. SOURCE OWNERSHIP AND REUSE
+
+Place new shared reduced-model source and headers under:
+
+  src/models/sep_corona_swcme/shock_front/
+
+Place shared tests/references under:
+
+  src/models/sep_corona_swcme/test/shock_front/
+
+Keep application adapters under srcSEP3D/adapters/, native tests under
+srcSEP3D/test/, and runnable application decks/assets under
+srcSEP3D/examples/shock-front/.
+
+Reuse inspected and independently tested corona ambient, PFSS, geometry/history,
+and SWCME RH/propagation kernels in their current owning packages. Do not copy
+them into a second physics implementation. If an interface or kernel is missing
+or incorrect, make a narrowly scoped shared/application fix and test it.
+
+Use the maintained runtime-provider/DATAFILE-storage mechanism already used by
+SEP3D-SWCME. Disable file scheduling/interpolation through its existing supported
+path. Do not introduce an application-specific core coupling mode or modify the
+generic PIC core for this target. Preserve unrelated applications and modes.
+
+One composite provider identity owns all phases. Front propagation handoff is
+distinct from corona/heliosphere magnetic matching; changing the front phase
+must not switch to an unrelated magnetic or wind authority.
+
+4. FREEZE A CONCRETE FIRST PROFILE
+
+Start with a deterministic fixed-width, fixed-direction finite SSE front,
+gamma=5/3, a fully specified maintained ambient plasma/field construction, the
+documented prescribed acceleration history, and a compatible outer propagation
+law. Supply every required synthetic asset and its actual profile equations,
+units, EOS, validity range, frame, and checksum. A referenced filename is not an
+ambient model. Translate the schema into the current strict runtime parser and
+test resolution, units, unknown/duplicate keys, and relative asset paths.
+
+Audit the actual SWCME geometry capabilities. Do not silently project a rotating
+triaxial/history-dependent front onto fixed SSE. Match every active geometric
+parameter and derivative, or reject the unsupported combination explicitly.
+Qualify additional mandatory/selected capabilities in subsequent S0-S7 work.
+
+Respect these physical distinctions:
+
+  - The shock normal speed is -partial_t(g)/|grad(g)|, not apex speed at flanks.
+  - Geometric SSE support is not accepted shock coverage. A fixed-width/
+    fixed-direction tangent edge has zero normal speed.
+  - Use canonical upstream U and orientation-dependent cf for Mf. A fitted
+    trajectory wind never replaces the wind in the shock calculation.
+  - Body-drag propagation can lose shock admissibility. No speed/Mach/
+    compression floors or altered ambient normalization may hide that outcome.
+  - Respect EOS pressure, magnetic normal-flux continuity, and divergence.
+    Do not independently rescale magnetic fields on either side of an interface.
+  - Sub-fast/non-forward are scientific classifications; failure to resolve an
+    admissible weak jump is a distinct numerical/model failure.
+  - Preserve the previous committed epoch, generations, buffers, and clock on
+    collective candidate rejection.
+
+5. IMPLEMENT AND VALIDATE SEQUENTIALLY THROUGH S0-S7
+
+S0: Freeze scope, active profile, capabilities, schema, units/frames, failure
+    semantics, and test-to-requirement mapping. Separate reduced tests from the
+    deferred BG3D-4 qualification without changing old evidence.
+S1: Audit/reuse the ambient provider and validate EOS, PFSS, exterior matching,
+    magnetic flux/divergence, orientation limits, and sensitivity.
+S2: Implement/reuse complete finite-front geometry/history and derivative tests,
+    including support edges and the mandatory/selected history capabilities.
+S3: Implement continuous matched handoff, complete pre/crossing/post receipts,
+    one-sided acceleration, and trajectory-validity/coverage diagnostics.
+S4: Expose the actual shared production RH solver and validate independent
+    conservative jumps, weak/singular branches, absent states, and diagnostics.
+S5: Add exports, field-line/front roots, observer events, applicable branch/
+    uncertainty diagnostics, and background-only restart.
+S6: Integrate actual SEP3D owner storage, received ghosts, collective epochs,
+    zero particles, rollback, and one-/four-rank invariance.
+S7: Run an actual low-corona-to-1-AU campaign with exact endpoint/observer
+    evaluation, native receipts, sensitivity, and the stated qualification level.
+
+Run the relevant tests after each stage, fix observed failures, and continue.
+The initial working fixed-SSE profile is a milestone, not proof that every
+model.md capability or all S0-S7 gates are complete.
+
+Implement and register model.md section 19's applicable reduced tests
+RSH01-RSH32 and RSH36-RSH40, preserving any existing IDs/meanings. Map proposed
+IDs to actual registry names if needed. RSH33-RSH35 are deferred extension gates.
+Enabled optional capabilities must pass their gates; unimplemented capabilities
+remain explicit, not implied by an aggregate PASS. Do not silently reduce
+mandatory coverage to declare the entire model qualified.
+
+Tests must exercise production kernels and compare against independent
+references. Include the specified negative controls and convergence checks.
+Use the polar sensitivity example from section 18.5, including its parallel
+fast-speed formula and correct non-forward outcome. Do not treat the review's
+perpendicular speed as a polar reference.
+
+Record commands, source/executable/input fingerprints, expected values,
+tolerances, measured errors, and PASS/FAIL/SKIP/ERROR per assertion. Keep existing
+shared corona/SWCME and applicable application regressions. Report any preexisting
+BG3D-4 failure separately; do not suppress it or present a reduced-profile pass
+as full-CME qualification. Run applicable architecture and ASan/UBSan checks.
+
+6. ACTUAL DECKS, MPI EVIDENCE, AND ENDPOINTS
+
+Create and maintain separate runnable decks with all required assets:
+
+  srcSEP3D/examples/shock-front/handoff_smoke.in
+  srcSEP3D/examples/shock-front/corona_to_1au.in
+
+Translate and independently verify them; do not paste the proposed INI spelling
+into the current parser without implementing/checking support. Check asset
+resolution from multiple working directories and update runner paths.
+
+The smoke case must retain initialization, a pre-handoff epoch, the exact
+crossing, and a post-handoff epoch. For the documented 19.9-to-20 Rs constant-
+speed fixture the crossing is 69.57 s. Compare actual owned values and actual
+received ghost values against independent expected ambient states.
+
+Run the native sep-corona test interface with both 1 and 4 ranks using the new
+smoke deck; then run the separate long deck for enough actual native steps to
+reach 1 AU. Extend the maintained runner or provide a documented reduced-profile
+runner that records unique output directories and exact commands.
+
+After implementing and checking the new deck/test dispatch, use this Bash
+command pattern from the AMPS root (within the site allocation):
+
+  REDUCED_RUN_TAG=$(date -u +%Y%m%dT%H%M%SZ)-$$
+  REDUCED_OUTPUT_ROOT=test_output/reduced-front/runs/$REDUCED_RUN_TAG
+  mkdir -p "$REDUCED_OUTPUT_ROOT/handoff-1" "$REDUCED_OUTPUT_ROOT/handoff-4"
+  mpiexec -n 1 ./amps --test-suite sep-corona --test-input srcSEP3D/examples/shock-front/handoff_smoke.in --test-steps 10 --expect-mpi-ranks 1 --test-json "$REDUCED_OUTPUT_ROOT/handoff-1/native.json" --artifact-directory "$REDUCED_OUTPUT_ROOT/handoff-1/artifacts"
+  mpiexec -n 4 ./amps --test-suite sep-corona --test-input srcSEP3D/examples/shock-front/handoff_smoke.in --test-steps 10 --expect-mpi-ranks 4 --test-json "$REDUCED_OUTPUT_ROOT/handoff-4/native.json" --artifact-directory "$REDUCED_OUTPUT_ROOT/handoff-4/artifacts"
+
+Verify the actual host timestep/cadence before claiming these ten steps cover
+the required epochs. For the long campaign, use the separate corona_to_1au.in
+deck, sufficient actual steps or implemented endpoint termination, and new
+output directories. Document and execute its exact resolved command too.
+
+Do not infer native step count from background_dt_s if the host clock uses a
+different timestep. Assert the actual committed endpoint and observer coverage.
+Run within a valid site allocation and use the site's maintained MPI launch.
+Portable mocks cannot replace native owner/received-ghost evidence.
+
+Maintain a controlled positive synthetic shock-passage reference as well as a
+negative proxy-validity reference. For the positive reference use declared
+compatible prescribed kinematics/ambient inputs with independently checked
+expected shocks; do not alter an event-calibrated case to force a desired result.
+The illustrative body-drag/polar case may reach 1 AU as geometry while becoming
+sub-fast/non-forward. Its valid diagnostic outcome is not shock arrival.
+
+If observed-event inputs are unavailable, label synthetic verification and
+event validation separately. Do not fabricate observations or claim forecast/
+eruption qualification from synthetic fixtures.
+
+7. CLEAN NATIVE REBUILDS
+
+Before EVERY native rebuild:
+
+  a. Confirm and print the intended AMPS root and selected application.
+  b. Ensure no active build/test is using that root's build directory.
+  c. Remove ONLY the root build directory, from the confirmed AMPS root:
+
+       rm -rf -- build
+
+  d. Regenerate the selected srcSEP3D configuration and hooks using the actual
+     maintained site build recipe, then compile with make -j16 (or its existing
+     documented build wrapper using -j16).
+
+Do not delete source, Makefile.conf/site configuration, external libraries,
+test evidence, or the read-only reference checkout. Do not add apply_fix.py.
+Make direct edits to maintained sources. Compile and run tests yourself when
+the environment supports them; use a debugger/sanitizers for genuine crashes.
+If native execution is blocked by a real prerequisite, preserve logs, continue
+independent work, and provide exact site commands and prerequisites. Do not
+report blocked or skipped native tests as passed.
+
+8. COMMENTS, READMES, AND COMPLETION REPORT
+
+Add detailed comments to every new or materially changed algorithm: governing
+equations, assumptions, SI units, HCI/normal/frame conventions, regularity,
+branch/conditioning behavior, tolerance scales, ownership/commit, and MPI duties.
+
+Update the composite README, reduced-model README, SEP3D integration README,
+and example comments with actual accepted inputs, all assets, the algorithm,
+physical meaning of outputs, domain/corridor controls, build instructions,
+exact test commands, and limitations. Clearly distinguish ambient reference
+from actual downstream plasma and proposed contracts from implemented APIs.
+
+Keep CODEX_REDUCED_SHOCK_PLAN.md current with per-stage implemented/verified/
+native-qualified status, individual test evidence, missing gates, and the next
+specific action. Preserve BG3D-4 as unqualified/deferred in the original plan.
+
+Continue autonomously through the applicable S0-S7 implementation and tests.
+Do not stop after S0/S1, a status update, or a portable executable passing.
+On completion or a genuine blocker, report:
+
+  - Actual changed files and why each change belongs to this reduced target.
+  - Implemented and unavailable capabilities, with truthful stage status.
+  - Build/test commands, results, failures/skips, and evidence locations.
+  - Actual one-/four-rank receipts and actual 1-AU/observer outcomes.
+  - Whether the result is numerical verification, reduced physical qualification,
+    or observed-event validation.
+  - Any remaining prerequisite and the exact next command/action.
+
+Do not claim that reduced-model success qualifies the full CME/sheath model.

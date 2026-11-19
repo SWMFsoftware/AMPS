@@ -467,6 +467,9 @@ void PIC::Mover::DispatchParticleMover(
 //====================================================
 //init the particle mover
 void PIC::Mover::Init_BeforeParser(){
+#if _PIC_FORCE_CUT_SURFACE_MODE_ == _PIC_MODE_ON_
+  ForceCutSurface::RegisterStorage();
+#endif
 #if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
   // This call precedes ParticleBuffer::Init().  Appending the field here keeps
   // the default AMPS particle record unchanged when the algorithm is off and
@@ -489,6 +492,7 @@ void PIC::Mover::Init_BeforeParser(){
 }
 
 void PIC::Mover::Init() {
+  if(ForceCutSurface::IsStorageRegistered())ForceCutSurface::ValidateConfiguration();
   // A preview without a commit callback, or a commit callback without the
   // preview that limits the segment, can either duplicate an event across an
   // MPI face or mutate a particle after it has passed the event point.  Reject

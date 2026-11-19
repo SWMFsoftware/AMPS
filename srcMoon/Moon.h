@@ -15,9 +15,31 @@
 #include "Exosphere.h"
 
 namespace Moon {
+  // Call once after the outer common Begin, before physical particle motion.
+  // Frozen mode retains external ET; evolving mode preserves ordinary midpoint
+  // ephemerides and thermal/inventory side effects. No injection/sampling.
+  void PrepareProductionParticleEnvironment();
   using namespace Exosphere;
 
   namespace Runtime { struct Configuration; }
+
+  // Runtime wrapper preserves the historical mover exactly for old receipts.
+  // Explicit tracing receipts select first/second order through the same
+  // ordinary PIC/source dispatch path, never a separate test-only mover.
+  int MoveParticle(long int particle,double physicalIntervalS,
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+  int MoveParticleBoundaryInjection(long int particle,double remainingPhysicalS,
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,bool firstBoundary,
+      CutCell::cTriangleFace* injectionFace=nullptr);
+  void RegisterParticleTracing(); // Before particle-buffer initialization.
+  void ConfigureParticleTracingFields(); // After Exosphere sets legacy fields.
+  bool GetParticleTracingFields(double* electricFieldVM,double* magneticFieldT);
+
+  // Normal sphere boundary dispatcher: neutral particles retain the historical
+  // accommodation callback. Charged impacts first pass the explicit strict/
+  // ideal-collector policy, before temperature/sticking or any neutral RNG.
+  int IonAwareSphereInteraction(int species,long int particle,double* positionLso,
+      double* velocityLso,double& remainingS,void* node,void* sphere);
 
   namespace Chemistry {
     // Actual PIC list-processing callback for the configured neutral-Na
@@ -536,7 +558,11 @@ namespace Moon {
   #endif
 
 
-      if (_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__OFF_) {
+      if (GetParticleTracingFields(E,B)) {
+        // Explicit new-mode SI vectors are immutable runtime inputs. The
+        // legacy typical magnetic table is const and is never overwritten.
+      }
+      else if (_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__OFF_) {
 	 for (int idim=0;idim<3;idim++) B[idim]=Exosphere::swB_Typical[idim],E[idim]=Exosphere::swE_Typical[idim]; 
       }
       else {

@@ -42,11 +42,11 @@ class GlobalRunnerContractTest(unittest.TestCase):
 
     def test_implemented_ids_are_exact(self):
         expected = ({f"U{number:02d}" for number in range(1, 27)} |
-                    {f"I{number:02d}" for number in range(1, 21)})
+                    {f"I{number:02d}" for number in range(1, 25)})
         self.assertEqual(set(RUNNER.implemented_layout()), expected)
 
     def test_planned_ids_are_exact_and_not_implemented(self):
-        expected = {f"I{number:02d}" for number in range(21, 47)}
+        expected = {f"I{number:02d}" for number in range(25, 47)}
         self.assertEqual(set(RUNNER.PLANNED_I_TESTS), expected)
         self.assertTrue(expected.isdisjoint(RUNNER.implemented_layout()))
 
@@ -54,7 +54,7 @@ class GlobalRunnerContractTest(unittest.TestCase):
         self.assertEqual(RUNNER.audit_architecture(), [])
 
     def test_missing_capability_record_is_skipped(self):
-        record = RUNNER.skipped_record("I21", "planned", "not implemented")
+        record = RUNNER.skipped_record("I25", "planned", "not implemented")
         self.assertEqual(record["status"], "SKIPPED")
         self.assertEqual(record["execution"], "not-run")
         self.assertIsNone(record["runner"])

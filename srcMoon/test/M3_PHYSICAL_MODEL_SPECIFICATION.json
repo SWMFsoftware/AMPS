@@ -1,0 +1,1518 @@
+{
+  "schema": "srcMoon-M3-physical-model-spec-v1",
+  "specification_status": "DOCUMENTED_BLOCKED_PHYSICAL_MODEL",
+  "physics_activation": "disabled-pending-qualified-evidence",
+  "inspection_date_utc": "2026-11-18",
+  "source_revision": "74974c2b2fc1b4cf09a73c320064a22370c0ca94",
+  "scope": "physical model/data specification, not executable policy approval or a numerical test protocol",
+  "canonical_data_root": "/data/vtenishe/moon_validation_data",
+  "source_roadmap_sha256": "712e1152bf50af6d9ee1dad8f8a585809ca8b92cf42ac6fc7a009f6c0253ee17",
+  "external_roadmap_sha256": "d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4",
+  "roadmap_control": "Source user-approved development-order/resource amendments permit early supporting development; unchanged formal gates and native canonical data metadata govern qualification. Neither roadmap is silently reconciled.",
+  "status_semantics": {
+    "READY": "requires reviewed actual policy/data files, source hashes, complete physical domains, production mapping and predecessor evidence; no boolean self-approval",
+    "BLOCKED_MISSING_DATA": "formal execution/scoring SKIPPED, not PASS; local scalar or mechanical results remain separately reportable",
+    "ERROR": "corrupt/mismatched files, schema, implementation or execution",
+    "FAIL": "declared supported criterion was actually evaluated and not met"
+  },
+  "approved_decisions_and_unresolved_policies": {
+    "COMMON-TIME-INITIAL-QUALIFICATION": {
+      "decision_status": "APPROVED_DESIGN",
+      "description": "First physical qualification uses a common advancing ensemble time and explicitly qualified common initial condition; local variable-time mechanics remain separate supporting scope.",
+      "instance": null,
+      "evidence": null
+    },
+    "SCALAR-PRESCRIBED-MAXWELLIAN": {
+      "decision_status": "APPROVED_RATE_CLOSURE",
+      "description": "Explicit scalar electron density and temperature with native Voronov Maxwellian coefficients; this does not select a joint collision-conditioned kinetic distribution or waive measured-forcing prerequisites.",
+      "instance": null,
+      "evidence": null
+    },
+    "CONSERVATIVE-PACKETS-AND-MOVERS": {
+      "decision_status": "APPROVED_DESIGN",
+      "description": "Complete stoichiometric packets, exact nucleus/charge identities, represented-number conservation, remaining physical time, qualified forces and fresh daughter clocks; no redraw/drop on capacity retry.",
+      "instance": null,
+      "evidence": null
+    },
+    "UNSUPPORTED-CHANNELS-OFF": {
+      "decision_status": "APPROVED_REQUIREMENT",
+      "description": "Do not activate a requested physical family while required channels/states are unsupported; do not remove hazards or renormalize the remaining branches.",
+      "instance": "disabled-pending-qualified-evidence",
+      "evidence": null
+    },
+    "PHYSICAL-MASS-INTERNAL-ENERGY": {
+      "decision_status": "PROPOSED_PENDING_DATA_AND_REVIEW",
+      "description": "A single physical isotope/state mass, threshold, energy-zero and signed bath convention; material rest-mass sums are not a conserved invariant. A reference-mass plus formation/excitation-energy implementation requires a proved approximation bound and explicit code mapping.",
+      "selected_convention": null,
+      "source_files": [],
+      "evidence": null
+    },
+    "INITIAL-AND-PRODUCT-STATES": {
+      "decision_status": "BLOCKED_MISSING_DATA",
+      "description": "Authoritative isotope/electronic/fine/rovibrational initial populations and state-resolved outgoing populations for every supported channel. OH_exp is compilation provenance, not a state.",
+      "instance": null,
+      "evidence": null
+    },
+    "PHOTON-SPECTRUM-GEOMETRY-POLARIZATION": {
+      "decision_status": "BLOCKED_MISSING_DATA",
+      "description": "Solar spectral photon flux, exact averaging convention, incoming direction/disc and polarization state, frame/time, partial cross sections, threshold interpretation and shadow exposure. Preserve quiet/active endpoints separately.",
+      "instance": null,
+      "evidence": null
+    },
+    "ATOMIC-PHOTO-KINEMATICS": {
+      "decision_status": "BLOCKED_MISSING_DATA",
+      "description": "Photon-conditioned electron/residual-ion state and joint energy/direction; include photon momentum and independently specified bath exchanges.",
+      "instance": null,
+      "evidence": null
+    },
+    "MOLECULAR-JOINT-KINEMATICS": {
+      "decision_status": "BLOCKED_MISSING_DATA",
+      "description": "All seven H2O and four OH_exp channel joint product states, correlated energies and directions over declared photon/initial-state domains, with no mean-energy delta/isotropic substitution.",
+      "instance": null,
+      "evidence": null
+    },
+    "EXCITED-STATE-DECAY-QUENCHING": {
+      "decision_status": "BLOCKED_MISSING_DATA",
+      "description": "Complete O(1S)/O(1D) radiative branches, state energies and any required OH relaxation/predissociation or independently bounded omissions; no forced all-ground or unit cascade.",
+      "instance": null,
+      "evidence": null
+    },
+    "ELECTRON-RESERVOIR-VS-PIC": {
+      "decision_status": "PROPOSED_PENDING_REVIEW",
+      "description": "Recommend an explicitly prescribed electron reservoir for the initial exosphere scope; full PIC electrons/self-consistent fields are not enabled by scalar Maxwellian approval. Reservoir particle/charge/momentum/energy exchange must be predicted from the sampled physical event.",
+      "selected_representation": null,
+      "evidence": null
+    },
+    "ELECTRON-COLLISION-JOINT-KINETICS": {
+      "decision_status": "BLOCKED_MISSING_DATA",
+      "description": "Collision-conditioned incoming electron and both outgoing electrons/ion states; differential-source normalization consistent with the approved total Maxwellian coefficient, including support/tails.",
+      "instance": null,
+      "evidence": null
+    },
+    "CEX-PROJECTILE-DISTRIBUTION-SUPPORT": {
+      "decision_status": "BLOCKED_MISSING_DATA",
+      "description": "Explicit projectile species/state, density and beam/distribution; target-rest eV/u convention, collision-biased sampling and supported integration/tail policy.",
+      "instance": null,
+      "evidence": null
+    },
+    "CEX-JOINT-STATE-RECOIL": {
+      "decision_status": "BLOCKED_MISSING_DATA",
+      "description": "All captured H states/residual-ion states, state-specific Q and correlated deflection/recoil distribution; total capture and independent marginal tables alone do not determine this.",
+      "instance": null,
+      "evidence": null
+    },
+    "ION-SURFACE-OUTCOME": {
+      "decision_status": "BLOCKED_MISSING_DATA",
+      "description": "Material/charge/energy/incidence/temperature-specific joint reflection, neutralization, implantation, charge transfer, sputtering and release with complete surface ledgers.",
+      "instance": null,
+      "evidence": null
+    },
+    "H2O-OH-SURFACE-MIGRATION": {
+      "decision_status": "BLOCKED_MISSING_DATA",
+      "description": "Species/state/material dependent sticking, site-energy/residence, release/re-emission, migration and photochemistry with H/O inventory; literal U24 is not replaced by a gas-only kernel.",
+      "instance": null,
+      "evidence": null
+    },
+    "MEASURED-EVENT-FORCING": {
+      "decision_status": "BLOCKED_MISSING_DATA",
+      "description": "Explicit independent event/spacecraft selection, electron moments/distributions and uncertainties, native time/frame/quality/gaps and source-to-Moon mapping; R4.1/D06 required for the measured-event branch.",
+      "instance": null,
+      "evidence": null
+    }
+  },
+  "processes": {
+    "I21": {
+      "name": "Na photon ionization and Na-to-Na+ conversion",
+      "status": "BLOCKED_MISSING_DATA",
+      "families": [
+        "Na + photon -> Na+ + e"
+      ],
+      "missing_inputs": [
+        "Authoritative Na initial and residual-ion state populations/isotope/mass convention",
+        "Solar-spectrum/photon-state-conditioned electron/ion kinetic data and spectral-to-D04 normalization",
+        "Qualified physical photon trajectory exposure and complete surface-coupled ion outcome when applicable",
+        "Qualified common initial-state/time and required formal predecessor evidence"
+      ],
+      "required_policy_ids": [
+        "COMMON-TIME-INITIAL-QUALIFICATION",
+        "PHYSICAL-MASS-INTERNAL-ENERGY",
+        "INITIAL-AND-PRODUCT-STATES",
+        "PHOTON-SPECTRUM-GEOMETRY-POLARIZATION",
+        "ATOMIC-PHOTO-KINEMATICS",
+        "ELECTRON-RESERVOIR-VS-PIC",
+        "ION-SURFACE-OUTCOME",
+        "CONSERVATIVE-PACKETS-AND-MOVERS",
+        "UNSUPPORTED-CHANNELS-OFF"
+      ],
+      "available_rate_sources": [
+        {
+          "data_root_relative_path": "photochemistry/processed/phidrates/reaction_channels.csv",
+          "sha256": "2d9fa1c8eb72d3bbba0b91ab4c9a912e6ebce2abc80b251096df2f41a4354061",
+          "bytes": 6012,
+          "availability": "AVAILABLE",
+          "supported_scope": "complete frozen D04 rate/channel/threshold/sample inventory; not a joint daughter PDF"
+        },
+        {
+          "data_root_relative_path": "photochemistry/processed/phidrates/photo_rates_1au.csv",
+          "sha256": "3aa54915a08258371dbe975949e6afb2ab74618164fadca8bceebe876c926847",
+          "bytes": 11460,
+          "availability": "AVAILABLE",
+          "supported_scope": "complete frozen D04 rate/channel/threshold/sample inventory; not a joint daughter PDF"
+        },
+        {
+          "data_root_relative_path": "photochemistry/processed/phidrates/thresholds.csv",
+          "sha256": "a3335b3b37c3d275a4f72e92ae8e5b1f6ecfcbc4e2d84735cb20694dc93b48f1",
+          "bytes": 2948,
+          "availability": "AVAILABLE",
+          "supported_scope": "complete frozen D04 rate/channel/threshold/sample inventory; not a joint daughter PDF"
+        },
+        {
+          "data_root_relative_path": "photochemistry/processed/phidrates/cross_sections.csv",
+          "sha256": "e900eb5514b616dcbbde7e3ca124b5c06d4d22a28a3cd429ed58a14c1933c860",
+          "bytes": 1034075,
+          "availability": "AVAILABLE",
+          "supported_scope": "complete frozen D04 rate/channel/threshold/sample inventory; not a joint daughter PDF"
+        }
+      ],
+      "physical_execution_policy": null
+    },
+    "I22": {
+      "name": "He/Ne/Ar and complete H2O/OH_exp photon chemistry",
+      "status": "BLOCKED_MISSING_DATA",
+      "families": [
+        "He + photon -> He+ + e",
+        "Ne + photon -> Ne+ + e",
+        "Ar + photon -> Ar+ + e",
+        "all seven H2O reactive channels",
+        "all four OH_exp reactive channels"
+      ],
+      "missing_inputs": [
+        "State/isotope/mass populations and atomic joint photon daughter distributions",
+        "Full wavelength/state/polarization correlated products for all eleven molecular reactive channels",
+        "Molecular channel thresholds, OH_exp tail interpretation and positive atomic below-listed-threshold sample interpretation",
+        "Complete excited-state decay/quenching policy and explicit OH product-to-rate-state mapping",
+        "Literal U24 surface/chemistry dependency and formal predecessor evidence"
+      ],
+      "required_policy_ids": [
+        "COMMON-TIME-INITIAL-QUALIFICATION",
+        "PHYSICAL-MASS-INTERNAL-ENERGY",
+        "INITIAL-AND-PRODUCT-STATES",
+        "PHOTON-SPECTRUM-GEOMETRY-POLARIZATION",
+        "ATOMIC-PHOTO-KINEMATICS",
+        "MOLECULAR-JOINT-KINEMATICS",
+        "EXCITED-STATE-DECAY-QUENCHING",
+        "H2O-OH-SURFACE-MIGRATION",
+        "ION-SURFACE-OUTCOME",
+        "CONSERVATIVE-PACKETS-AND-MOVERS",
+        "UNSUPPORTED-CHANNELS-OFF"
+      ],
+      "available_rate_sources": [
+        {
+          "data_root_relative_path": "photochemistry/processed/phidrates/reaction_channels.csv",
+          "sha256": "2d9fa1c8eb72d3bbba0b91ab4c9a912e6ebce2abc80b251096df2f41a4354061",
+          "bytes": 6012,
+          "availability": "AVAILABLE",
+          "supported_scope": "complete frozen D04 rate/channel/threshold/sample inventory; not a joint daughter PDF"
+        },
+        {
+          "data_root_relative_path": "photochemistry/processed/phidrates/photo_rates_1au.csv",
+          "sha256": "3aa54915a08258371dbe975949e6afb2ab74618164fadca8bceebe876c926847",
+          "bytes": 11460,
+          "availability": "AVAILABLE",
+          "supported_scope": "complete frozen D04 rate/channel/threshold/sample inventory; not a joint daughter PDF"
+        },
+        {
+          "data_root_relative_path": "photochemistry/processed/phidrates/thresholds.csv",
+          "sha256": "a3335b3b37c3d275a4f72e92ae8e5b1f6ecfcbc4e2d84735cb20694dc93b48f1",
+          "bytes": 2948,
+          "availability": "AVAILABLE",
+          "supported_scope": "complete frozen D04 rate/channel/threshold/sample inventory; not a joint daughter PDF"
+        },
+        {
+          "data_root_relative_path": "photochemistry/processed/phidrates/cross_sections.csv",
+          "sha256": "e900eb5514b616dcbbde7e3ca124b5c06d4d22a28a3cd429ed58a14c1933c860",
+          "bytes": 1034075,
+          "availability": "AVAILABLE",
+          "supported_scope": "complete frozen D04 rate/channel/threshold/sample inventory; not a joint daughter PDF"
+        }
+      ],
+      "physical_execution_policy": null
+    },
+    "I23": {
+      "name": "Atomic electron-impact ionization",
+      "status": "BLOCKED_MISSING_DATA",
+      "families": [
+        "e + He -> He+ + 2e",
+        "e + Na -> Na+ + 2e",
+        "e + Ne -> Ne+ + 2e",
+        "e + Ar -> Ar+ + 2e"
+      ],
+      "missing_inputs": [
+        "Collision-conditioned physical incoming and joint two-electron/ion outgoing data consistent with total-rate fit",
+        "Reviewed bath/rest/internal-energy representation and true physical ion/electron masses",
+        "Qualified common initial-state/time and field/mover/exposure coupling",
+        "Measured-event electron data and R4.1/D06 provenance for the formal measured-forcing branch; current D06 has zero rows and no electron moments"
+      ],
+      "required_policy_ids": [
+        "COMMON-TIME-INITIAL-QUALIFICATION",
+        "SCALAR-PRESCRIBED-MAXWELLIAN",
+        "PHYSICAL-MASS-INTERNAL-ENERGY",
+        "INITIAL-AND-PRODUCT-STATES",
+        "ELECTRON-RESERVOIR-VS-PIC",
+        "ELECTRON-COLLISION-JOINT-KINETICS",
+        "MEASURED-EVENT-FORCING",
+        "ION-SURFACE-OUTCOME",
+        "CONSERVATIVE-PACKETS-AND-MOVERS",
+        "UNSUPPORTED-CHANNELS-OFF"
+      ],
+      "available_rate_sources": [
+        {
+          "data_root_relative_path": "photochemistry/raw/electron_impact/voronov/cfit.dat",
+          "sha256": "470ea3078c64159eece6a469314dde2356e2d6ccaf618f4eaecb46649d61a5cd",
+          "bytes": 21924,
+          "availability": "AVAILABLE",
+          "supported_scope": "native atomic Maxwellian total-rate fit coefficients/method, not differential electron kinetics"
+        },
+        {
+          "data_root_relative_path": "photochemistry/raw/electron_impact/voronov/cfit.txt",
+          "sha256": "5b12dc3b4b546ef863216d57df7d64c81a553cc5eb32a8cf2d3d275d4158f9ef",
+          "bytes": 1176,
+          "availability": "AVAILABLE",
+          "supported_scope": "native atomic Maxwellian total-rate fit coefficients/method, not differential electron kinetics"
+        },
+        {
+          "data_root_relative_path": "photochemistry/raw/electron_impact/voronov/cfit.f",
+          "sha256": "7fe7d78c25166084041bea58bb55c2fcc6ad724fba8432c167cf044e6eb1bcc1",
+          "bytes": 26609,
+          "availability": "AVAILABLE",
+          "supported_scope": "native atomic Maxwellian total-rate fit coefficients/method, not differential electron kinetics"
+        },
+        {
+          "data_root_relative_path": "photochemistry/processed/electron_impact/lunar_neutral_coefficients.csv",
+          "sha256": "da7391979a2136c072bd8dc02932af7989a8030ac208fa5982ac975aa1394126",
+          "bytes": 1364,
+          "availability": "AVAILABLE",
+          "supported_scope": "four neutral atomic rows independently traceable to native 406-row table"
+        }
+      ],
+      "physical_execution_policy": null
+    },
+    "I24": {
+      "name": "Documented proton charge exchange",
+      "status": "BLOCKED_MISSING_DATA",
+      "families": [
+        "H+ + He -> H(state unresolved) + He+(state unresolved)",
+        "H+ + Na(3s) -> H(state unresolved) + Na+(state unresolved)"
+      ],
+      "missing_inputs": [
+        "Authoritative all-channel state/Q joint differential kinetic distributions in the selected beam/bath domain",
+        "Explicit incoming target populations and projectile distribution; full supported tails or reviewed bounded approximation",
+        "Complete physical energy/momentum/bath and product transport representation",
+        "Qualified source-specific beam or measured-event forcing and formal predecessor evidence"
+      ],
+      "required_policy_ids": [
+        "COMMON-TIME-INITIAL-QUALIFICATION",
+        "PHYSICAL-MASS-INTERNAL-ENERGY",
+        "INITIAL-AND-PRODUCT-STATES",
+        "CEX-PROJECTILE-DISTRIBUTION-SUPPORT",
+        "CEX-JOINT-STATE-RECOIL",
+        "ION-SURFACE-OUTCOME",
+        "CONSERVATIVE-PACKETS-AND-MOVERS",
+        "UNSUPPORTED-CHANNELS-OFF"
+      ],
+      "available_rate_sources": [
+        {
+          "amps_root_relative_path": "test_output/srcMoon/m3-charge-exchange-research-20261117/ornl_redbook_v1_osti.pdf",
+          "sha256": "3bb3fdb4be8f0f806d378083be8798cf3ce347714c3d06d58f90ee483b10c030",
+          "bytes": 26179422,
+          "availability": "ACQUIRED_RESEARCH_NOT_READY",
+          "supported_scope": "reviewed scalar total-capture source only; no joint outgoing state/recoil distribution"
+        },
+        {
+          "amps_root_relative_path": "test_output/srcMoon/m3-charge-exchange-research-20261117/nist_morgan_1985_retry2.pdf",
+          "sha256": "7c412cb93f827b3412b6da000e674c63237cacb0e201733a6f5a4f431359952e",
+          "bytes": 3135754,
+          "availability": "ACQUIRED_RESEARCH_NOT_READY",
+          "supported_scope": "reviewed scalar total-capture source only; no joint outgoing state/recoil distribution"
+        }
+      ],
+      "physical_execution_policy": null
+    }
+  },
+  "photo_channel_inventory": [
+    {
+      "reaction_id": "PHIDRATES:He:00:he_e",
+      "parent_registry_key": "He",
+      "physical_parent": "He",
+      "parent_initial_state_population": null,
+      "reaction_type": "photoionization",
+      "reactive": true,
+      "source_products_verbatim": "He+ + e",
+      "products": [
+        {
+          "species": "He+",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 1,
+          "nuclei": {
+            "He": 1
+          }
+        },
+        {
+          "species": "e",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": -1,
+          "nuclei": {}
+        }
+      ],
+      "source_reference_verbatim": "Cross section: | Lambda = 0.1-20. A | Verner, D. A., Yakovlev, D. G., Band, I. M., Trzhaskovskaya, M. B. (1993) | Atomic Data Nuclear Data Tables 55, 233. | Verner, D. A., Yakovlev, D. G. (1995) | Astron. Astrophys. Suppl. 109, 125. | Verner, D. A., Ferland, G. J., Korista, K. T., Yakovlev, D. G. (1996) | Astrophys. J. 465, 487. | Lambda = 22.78-504.26 A | TOPbase: Photoionisation Cross Sections, | http://cdsweb.u-strasbg.fr/topbase/xsections.html. | Threshold: | Lambda = 504.26 A | Martin, W. C. (2002). | See: http://physics.nist.gov/PhysRefData/Handbook/atomic_number.htm.",
+      "raw_source_relative_path": "photochemistry/raw/phidrates/He/cross_sections/data/brnout_001.raw",
+      "quiet_rate_s_source_text": "5.64000000000000E-8",
+      "active_rate_s_source_text": "1.68000000000000E-7",
+      "quiet_mean_excess_eV_source_text": "1.73000000000000E+1",
+      "active_mean_excess_eV_source_text": "2.00000000000000E+1",
+      "source_threshold_eV": "2.45873554184746E+1",
+      "source_threshold_is_product_state_resolved": null,
+      "archived_sample_domain": {
+        "kind": "archived_sample_extrema_not_licensed_interpolation_or_physical_support",
+        "sample_count": 178,
+        "minimum_wavelength_nm": 0.01,
+        "maximum_wavelength_nm": 51.75,
+        "minimum_photon_energy_eV": 23.958299214145,
+        "maximum_photon_energy_eV": 123984.1984332
+      },
+      "physical_product_policy": null,
+      "physical_transport_status": "BLOCKED_MISSING_DATA"
+    },
+    {
+      "reaction_id": "PHIDRATES:Na:00:na_e",
+      "parent_registry_key": "Na",
+      "physical_parent": "Na",
+      "parent_initial_state_population": null,
+      "reaction_type": "photoionization",
+      "reactive": true,
+      "source_products_verbatim": "Na+ + e",
+      "products": [
+        {
+          "species": "Na+",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 1,
+          "nuclei": {
+            "Na": 1
+          }
+        },
+        {
+          "species": "e",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": -1,
+          "nuclei": {}
+        }
+      ],
+      "source_reference_verbatim": "Cross section: | Lambda = 0.1 - 2412.63 A | Verner, D. A., Yakovlev, D. G., Band, I. M., Trzhaskovskaya, M. B. (1993) | Atomic Data Nuclear Data Tables 55, 233. | Verner, D. A., Yakovlev, D. G. (1995) | Astron. Astrophys. Suppl. 109, 125. | Verner, D. A., Ferland, G. J., Korista, K. T., Yakovlev, D. G. (1996) | Astrophys. J. 465, 487. | Threshold: | Lambda = 2412.58 A | Baugh, J. F., Burkhardt, C. E., Leventhal, J. J., Bergeman, T., (1998) | Phys. Rev. A 58, 1585.",
+      "raw_source_relative_path": "photochemistry/raw/phidrates/Na/cross_sections/data/brnout_001.raw",
+      "quiet_rate_s_source_text": "7.26000000000000E-6",
+      "active_rate_s_source_text": "7.91000000000000E-6",
+      "quiet_mean_excess_eV_source_text": "9.72000000000000E-1",
+      "active_mean_excess_eV_source_text": "2.98000000000000E+0",
+      "source_threshold_eV": "5.13907097104346E+0",
+      "source_threshold_is_product_state_resolved": null,
+      "archived_sample_domain": {
+        "kind": "archived_sample_extrema_not_licensed_interpolation_or_physical_support",
+        "sample_count": 249,
+        "minimum_wavelength_nm": 0.01,
+        "maximum_wavelength_nm": 241.258,
+        "minimum_photon_energy_eV": 5.13907097104346,
+        "maximum_photon_energy_eV": 123984.1984332
+      },
+      "physical_product_policy": null,
+      "physical_transport_status": "BLOCKED_MISSING_DATA"
+    },
+    {
+      "reaction_id": "PHIDRATES:Ne:00:ne_e",
+      "parent_registry_key": "Ne",
+      "physical_parent": "Ne",
+      "parent_initial_state_population": null,
+      "reaction_type": "photoionization",
+      "reactive": true,
+      "source_products_verbatim": "Ne+ + e",
+      "products": [
+        {
+          "species": "Ne+",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 1,
+          "nuclei": {
+            "Ne": 1
+          }
+        },
+        {
+          "species": "e",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": -1,
+          "nuclei": {}
+        }
+      ],
+      "source_reference_verbatim": "Cross section: | Lambda = 0.1 - 240.00 A | Verner, D. A., Yakovlev, D. G., Band, I. M., Trzhaskovskaya, M. B. (1993) | Atomic Data Nuclear Data Tables 55, 233. | Verner, D. A., Yakovlev, D. G. (1995) | Astron. Astrophys. Suppl. 109, 125. | Verner, D. A., Ferland, G. J., Korista, K. T., Yakovlev, D. G. (1996) | Astrophys. J. 465, 487. | Lambda = 242.30 - 551.90 A | TOPbase: Photoionisation Cross Sections, | http://cdsweb.u-strasbg.fr/topbase/xsections.html. | Threshold: | Lambda = 574.94 A | Kaufman, V. and Minnhagen, L. (1972) | J. Opt. Soc. Am. 62, 92-95.",
+      "raw_source_relative_path": "photochemistry/raw/phidrates/Ne/cross_sections/data/brnout_001.raw",
+      "quiet_rate_s_source_text": "1.84000000000000E-7",
+      "active_rate_s_source_text": "5.87000000000000E-7",
+      "quiet_mean_excess_eV_source_text": "2.43000000000000E+1",
+      "active_mean_excess_eV_source_text": "2.78000000000000E+1",
+      "source_threshold_eV": "2.15647195243330E+1",
+      "source_threshold_is_product_state_resolved": null,
+      "archived_sample_domain": {
+        "kind": "archived_sample_extrema_not_licensed_interpolation_or_physical_support",
+        "sample_count": 76,
+        "minimum_wavelength_nm": 0.01,
+        "maximum_wavelength_nm": 55.19,
+        "minimum_photon_energy_eV": 22.464975255155,
+        "maximum_photon_energy_eV": 123984.1984332
+      },
+      "physical_product_policy": null,
+      "physical_transport_status": "BLOCKED_MISSING_DATA"
+    },
+    {
+      "reaction_id": "PHIDRATES:Ar:00:ar_e",
+      "parent_registry_key": "Ar",
+      "physical_parent": "Ar",
+      "parent_initial_state_population": null,
+      "reaction_type": "photoionization",
+      "reactive": true,
+      "source_products_verbatim": "Ar+ + e",
+      "products": [
+        {
+          "species": "Ar+",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 1,
+          "nuclei": {
+            "Ar": 1
+          }
+        },
+        {
+          "species": "e",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": -1,
+          "nuclei": {}
+        }
+      ],
+      "source_reference_verbatim": "Cross section: | Lambda = 0.1 - 437.00 A | Verner, D. A., Yakovlev, D. G., Band, I. M., Trzhaskovskaya, M. B. (1993) | Atomic Data Nuclear Data Tables 55, 233. | Verner, D. A., Yakovlev, D. G. (1995) | Astron. Astrophys. Suppl. 109, 125. | Verner, D. A., Ferland, G. J., Korista, K. T., Yakovlev, D. G. (1996) | Astrophys. J. 465, 487. | Lambda = 437.90 - 824.90 A | TOPbase: Photoionisation Cross Sections, | http://cdsweb.u-strasbg.fr/topbase/xsections.html. | Threshold: | Lambda = 786.72 A | Velchev, I., Hogervorst, W., Ubachs, W. (1999) | J. Phys. B 32, L511-L516.",
+      "raw_source_relative_path": "photochemistry/raw/phidrates/Ar/cross_sections/data/brnout_001.raw",
+      "quiet_rate_s_source_text": "3.42000000000000E-7",
+      "active_rate_s_source_text": "7.74000000000000E-7",
+      "quiet_mean_excess_eV_source_text": "9.40000000000000E+0",
+      "active_mean_excess_eV_source_text": "1.18000000000000E+1",
+      "source_threshold_eV": "1.57596347408481E+1",
+      "source_threshold_is_product_state_resolved": null,
+      "archived_sample_domain": {
+        "kind": "archived_sample_extrema_not_licensed_interpolation_or_physical_support",
+        "sample_count": 106,
+        "minimum_wavelength_nm": 0.01,
+        "maximum_wavelength_nm": 82.49,
+        "minimum_photon_energy_eV": 15.0302095324524,
+        "maximum_photon_energy_eV": 123984.1984332
+      },
+      "physical_product_policy": null,
+      "physical_transport_status": "BLOCKED_MISSING_DATA"
+    },
+    {
+      "reaction_id": "PHIDRATES:H2O:00:total",
+      "parent_registry_key": "H2O",
+      "physical_parent": "H2O",
+      "parent_initial_state_population": null,
+      "reaction_type": "total_photoabsorption",
+      "reactive": false,
+      "source_products_verbatim": "TOTAL",
+      "products": [],
+      "source_reference_verbatim": "Cross section: | Lambda = 1.-100.00 A | Barfield, W. D., Koontz, G. D., Huebner W. F. (1972) | J. Quant. Spectr. Rad. Trans. 12, 1409 | (cross section of H2O = cross section of atomic O) | Lambda = 180.-720. A | Phillips, E., Lee, L. C., Judge, D. L. (1977) | J. Quant. Spectr. Rad. Trans. 18, 309 | Lambda = 600.-690. A | Dibler, V. H., Walker, J. A., Rosenstock, H. M. (1966) | J. Res. NBS-A. Phys. Chem. 70, 459 | Lambda = 700.-980.8 A | Katayama, D. H., Huffman, R. E., O'Bryan, C. L. (1973) | J. Chem. Phys. 59, 4309 | Lambda = 850.-1110. A | Watanabe, K., Jursa, A. S. (1964) | J. Chem. Phys. 41, 1650 | Lambda = 1060.-1860. A | Watanabe, K., Zelikoff, M. (1953) | J. Opt. Soc. Am. 43, 753",
+      "raw_source_relative_path": "photochemistry/raw/phidrates/H2O/cross_sections/data/brnout_001.raw",
+      "quiet_rate_s_source_text": null,
+      "active_rate_s_source_text": null,
+      "quiet_mean_excess_eV_source_text": null,
+      "active_mean_excess_eV_source_text": null,
+      "source_threshold_eV": null,
+      "source_threshold_is_product_state_resolved": null,
+      "archived_sample_domain": {
+        "kind": "archived_sample_extrema_not_licensed_interpolation_or_physical_support",
+        "sample_count": 172,
+        "minimum_wavelength_nm": 0.1,
+        "maximum_wavelength_nm": 242.46,
+        "minimum_photon_energy_eV": 5.1135939302648,
+        "maximum_photon_energy_eV": 12398.41984332
+      },
+      "physical_product_policy": null,
+      "physical_transport_status": "NON_REACTIVE_METADATA_ONLY"
+    },
+    {
+      "reaction_id": "PHIDRATES:H2O:01:h_oh",
+      "parent_registry_key": "H2O",
+      "physical_parent": "H2O",
+      "parent_initial_state_population": null,
+      "reaction_type": "photodissociation",
+      "reactive": true,
+      "source_products_verbatim": "H + OH",
+      "products": [
+        {
+          "species": "H",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 0,
+          "nuclei": {
+            "H": 1
+          }
+        },
+        {
+          "species": "OH",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 0,
+          "nuclei": {
+            "H": 1,
+            "O": 1
+          }
+        }
+      ],
+      "source_reference_verbatim": null,
+      "raw_source_relative_path": "photochemistry/raw/phidrates/H2O/cross_sections/data/brnout_001.raw",
+      "quiet_rate_s_source_text": "1.03000000000000E-5",
+      "active_rate_s_source_text": "1.76000000000000E-5",
+      "quiet_mean_excess_eV_source_text": "3.41000000000000E+0",
+      "active_mean_excess_eV_source_text": "4.04000000000000E+0",
+      "source_threshold_eV": null,
+      "source_threshold_is_product_state_resolved": null,
+      "archived_sample_domain": {
+        "kind": "archived_sample_extrema_not_licensed_interpolation_or_physical_support",
+        "sample_count": 172,
+        "minimum_wavelength_nm": 0.1,
+        "maximum_wavelength_nm": 242.46,
+        "minimum_photon_energy_eV": 5.1135939302648,
+        "maximum_photon_energy_eV": 12398.41984332
+      },
+      "physical_product_policy": null,
+      "physical_transport_status": "BLOCKED_MISSING_DATA"
+    },
+    {
+      "reaction_id": "PHIDRATES:H2O:02:h2_o_1d",
+      "parent_registry_key": "H2O",
+      "physical_parent": "H2O",
+      "parent_initial_state_population": null,
+      "reaction_type": "photodissociation",
+      "reactive": true,
+      "source_products_verbatim": "H2 + O(1D)",
+      "products": [
+        {
+          "species": "H2",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 0,
+          "nuclei": {
+            "H": 2
+          }
+        },
+        {
+          "species": "O",
+          "source_electronic_term": "1D",
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 0,
+          "nuclei": {
+            "O": 1
+          }
+        }
+      ],
+      "source_reference_verbatim": "Lambda = 1.-1450. A | McNesby, J. R., Tanaka, I., Okabe, H. (1962) | J. Chem. Phys. 36, 605 | Lambda = 1216. A | Slanger, T. G., Black, G. (1982) | J. Chem. Phys. 77, 2432. | (branching ratio)",
+      "raw_source_relative_path": "photochemistry/raw/phidrates/H2O/cross_sections/data/brnout_001.raw",
+      "quiet_rate_s_source_text": "5.97000000000000E-7",
+      "active_rate_s_source_text": "1.48000000000000E-6",
+      "quiet_mean_excess_eV_source_text": "3.84000000000000E+0",
+      "active_mean_excess_eV_source_text": "3.94000000000000E+0",
+      "source_threshold_eV": null,
+      "source_threshold_is_product_state_resolved": null,
+      "archived_sample_domain": {
+        "kind": "archived_sample_extrema_not_licensed_interpolation_or_physical_support",
+        "sample_count": 172,
+        "minimum_wavelength_nm": 0.1,
+        "maximum_wavelength_nm": 242.46,
+        "minimum_photon_energy_eV": 5.1135939302648,
+        "maximum_photon_energy_eV": 12398.41984332
+      },
+      "physical_product_policy": null,
+      "physical_transport_status": "BLOCKED_MISSING_DATA"
+    },
+    {
+      "reaction_id": "PHIDRATES:H2O:03:o_h_h",
+      "parent_registry_key": "H2O",
+      "physical_parent": "H2O",
+      "parent_initial_state_population": null,
+      "reaction_type": "photodissociation",
+      "reactive": true,
+      "source_products_verbatim": "O + H + H",
+      "products": [
+        {
+          "species": "O",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 0,
+          "nuclei": {
+            "O": 1
+          }
+        },
+        {
+          "species": "H",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 2,
+          "charge_in_e": 0,
+          "nuclei": {
+            "H": 1
+          }
+        }
+      ],
+      "source_reference_verbatim": "Lambda = 1216. A | Slanger, T. G., Black, G. (1982) | J. Chem. Phys. 77, 2432-2437. | (Branching ratio)",
+      "raw_source_relative_path": "photochemistry/raw/phidrates/H2O/cross_sections/data/brnout_001.raw",
+      "quiet_rate_s_source_text": "7.54000000000000E-7",
+      "active_rate_s_source_text": "1.91000000000000E-6",
+      "quiet_mean_excess_eV_source_text": "6.99000000000000E-1",
+      "active_mean_excess_eV_source_text": "6.97000000000000E-1",
+      "source_threshold_eV": null,
+      "source_threshold_is_product_state_resolved": null,
+      "archived_sample_domain": {
+        "kind": "archived_sample_extrema_not_licensed_interpolation_or_physical_support",
+        "sample_count": 172,
+        "minimum_wavelength_nm": 0.1,
+        "maximum_wavelength_nm": 242.46,
+        "minimum_photon_energy_eV": 5.1135939302648,
+        "maximum_photon_energy_eV": 12398.41984332
+      },
+      "physical_product_policy": null,
+      "physical_transport_status": "BLOCKED_MISSING_DATA"
+    },
+    {
+      "reaction_id": "PHIDRATES:H2O:04:oh_h_e",
+      "parent_registry_key": "H2O",
+      "physical_parent": "H2O",
+      "parent_initial_state_population": null,
+      "reaction_type": "photodissociative_ionization",
+      "reactive": true,
+      "source_products_verbatim": "OH+ + H + e",
+      "products": [
+        {
+          "species": "OH+",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 1,
+          "nuclei": {
+            "H": 1,
+            "O": 1
+          }
+        },
+        {
+          "species": "H",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 0,
+          "nuclei": {
+            "H": 1
+          }
+        },
+        {
+          "species": "e",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": -1,
+          "nuclei": {}
+        }
+      ],
+      "source_reference_verbatim": "Lambda = 304.-690. A | Kronebusch, P. L., Berkowitz, J. (1976) | Int. J. Mass Spectr. Ion phys. 22, 283",
+      "raw_source_relative_path": "photochemistry/raw/phidrates/H2O/cross_sections/data/brnout_001.raw",
+      "quiet_rate_s_source_text": "5.54000000000000E-8",
+      "active_rate_s_source_text": "1.51000000000000E-7",
+      "quiet_mean_excess_eV_source_text": "1.86000000000000E+1",
+      "active_mean_excess_eV_source_text": "2.32000000000000E+1",
+      "source_threshold_eV": null,
+      "source_threshold_is_product_state_resolved": null,
+      "archived_sample_domain": {
+        "kind": "archived_sample_extrema_not_licensed_interpolation_or_physical_support",
+        "sample_count": 172,
+        "minimum_wavelength_nm": 0.1,
+        "maximum_wavelength_nm": 242.46,
+        "minimum_photon_energy_eV": 5.1135939302648,
+        "maximum_photon_energy_eV": 12398.41984332
+      },
+      "physical_product_policy": null,
+      "physical_transport_status": "BLOCKED_MISSING_DATA"
+    },
+    {
+      "reaction_id": "PHIDRATES:H2O:05:o_h2_e",
+      "parent_registry_key": "H2O",
+      "physical_parent": "H2O",
+      "parent_initial_state_population": null,
+      "reaction_type": "photodissociative_ionization",
+      "reactive": true,
+      "source_products_verbatim": "O+ + H2 + e",
+      "products": [
+        {
+          "species": "O+",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 1,
+          "nuclei": {
+            "O": 1
+          }
+        },
+        {
+          "species": "H2",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 0,
+          "nuclei": {
+            "H": 2
+          }
+        },
+        {
+          "species": "e",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": -1,
+          "nuclei": {}
+        }
+      ],
+      "source_reference_verbatim": "Lambda = 304.-690. A | Kronebusch, P. L., Berkowitz, J. (1976) | Int. J. Mass Spectr. Ion Phys. 22, 283",
+      "raw_source_relative_path": "photochemistry/raw/phidrates/H2O/cross_sections/data/brnout_001.raw",
+      "quiet_rate_s_source_text": "5.85000000000000E-9",
+      "active_rate_s_source_text": "2.21000000000000E-8",
+      "quiet_mean_excess_eV_source_text": "3.65000000000000E+1",
+      "active_mean_excess_eV_source_text": "3.98000000000000E+1",
+      "source_threshold_eV": null,
+      "source_threshold_is_product_state_resolved": null,
+      "archived_sample_domain": {
+        "kind": "archived_sample_extrema_not_licensed_interpolation_or_physical_support",
+        "sample_count": 172,
+        "minimum_wavelength_nm": 0.1,
+        "maximum_wavelength_nm": 242.46,
+        "minimum_photon_energy_eV": 5.1135939302648,
+        "maximum_photon_energy_eV": 12398.41984332
+      },
+      "physical_product_policy": null,
+      "physical_transport_status": "BLOCKED_MISSING_DATA"
+    },
+    {
+      "reaction_id": "PHIDRATES:H2O:06:h_oh_e",
+      "parent_registry_key": "H2O",
+      "physical_parent": "H2O",
+      "parent_initial_state_population": null,
+      "reaction_type": "photodissociative_ionization",
+      "reactive": true,
+      "source_products_verbatim": "H+ + OH + e",
+      "products": [
+        {
+          "species": "H+",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 1,
+          "nuclei": {
+            "H": 1
+          }
+        },
+        {
+          "species": "OH",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 0,
+          "nuclei": {
+            "H": 1,
+            "O": 1
+          }
+        },
+        {
+          "species": "e",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": -1,
+          "nuclei": {}
+        }
+      ],
+      "source_reference_verbatim": "Lambda = 304.-690. A | Kronebusch, P. L., Berkowitz, J. (1976) | Int. J. Mass Spectr. Ion Phys. 22, 283",
+      "raw_source_relative_path": "photochemistry/raw/phidrates/H2O/cross_sections/data/brnout_001.raw",
+      "quiet_rate_s_source_text": "1.31000000000000E-8",
+      "active_rate_s_source_text": "4.07000000000000E-8",
+      "quiet_mean_excess_eV_source_text": "2.50000000000000E+1",
+      "active_mean_excess_eV_source_text": "3.05000000000000E+1",
+      "source_threshold_eV": null,
+      "source_threshold_is_product_state_resolved": null,
+      "archived_sample_domain": {
+        "kind": "archived_sample_extrema_not_licensed_interpolation_or_physical_support",
+        "sample_count": 172,
+        "minimum_wavelength_nm": 0.1,
+        "maximum_wavelength_nm": 242.46,
+        "minimum_photon_energy_eV": 5.1135939302648,
+        "maximum_photon_energy_eV": 12398.41984332
+      },
+      "physical_product_policy": null,
+      "physical_transport_status": "BLOCKED_MISSING_DATA"
+    },
+    {
+      "reaction_id": "PHIDRATES:H2O:07:h2o_e",
+      "parent_registry_key": "H2O",
+      "physical_parent": "H2O",
+      "parent_initial_state_population": null,
+      "reaction_type": "photoionization",
+      "reactive": true,
+      "source_products_verbatim": "H2O+ + e",
+      "products": [
+        {
+          "species": "H2O+",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 1,
+          "nuclei": {
+            "H": 2,
+            "O": 1
+          }
+        },
+        {
+          "species": "e",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": -1,
+          "nuclei": {}
+        }
+      ],
+      "source_reference_verbatim": null,
+      "raw_source_relative_path": "photochemistry/raw/phidrates/H2O/cross_sections/data/brnout_001.raw",
+      "quiet_rate_s_source_text": "3.31000000000000E-7",
+      "active_rate_s_source_text": "8.28000000000000E-7",
+      "quiet_mean_excess_eV_source_text": "1.24000000000000E+1",
+      "active_mean_excess_eV_source_text": "1.52000000000000E+1",
+      "source_threshold_eV": null,
+      "source_threshold_is_product_state_resolved": null,
+      "archived_sample_domain": {
+        "kind": "archived_sample_extrema_not_licensed_interpolation_or_physical_support",
+        "sample_count": 172,
+        "minimum_wavelength_nm": 0.1,
+        "maximum_wavelength_nm": 242.46,
+        "minimum_photon_energy_eV": 5.1135939302648,
+        "maximum_photon_energy_eV": 12398.41984332
+      },
+      "physical_product_policy": null,
+      "physical_transport_status": "BLOCKED_MISSING_DATA"
+    },
+    {
+      "reaction_id": "PHIDRATES:OH_exp:00:total",
+      "parent_registry_key": "OH_exp",
+      "physical_parent": "OH",
+      "parent_initial_state_population": null,
+      "reaction_type": "total_photoabsorption",
+      "reactive": false,
+      "source_products_verbatim": "TOTAL",
+      "products": [],
+      "source_reference_verbatim": "(Experimental) | Cross section: | Lambda = .61-625.8 A | Barfield, W. D., Koontz, G. D., Huebner, W. F. (1972) | J. Quant. Spectr. Rad. Trans. 12, 1409 | Lambda = 1150.-1830. A | Nee, J. B., Lee, L. C. | J. Chem. Phys. 81, 31 (1984) | Threshold: | Huber, K.-P., Herzberg, G. (1979) | Molecular Spectra and Molecular sStructure, Vol. 4, Van Nostrand Reinhold, Ne",
+      "raw_source_relative_path": "photochemistry/raw/phidrates/OH_exp/cross_sections/data/brnout_001.raw",
+      "quiet_rate_s_source_text": null,
+      "active_rate_s_source_text": null,
+      "quiet_mean_excess_eV_source_text": null,
+      "active_mean_excess_eV_source_text": null,
+      "source_threshold_eV": null,
+      "source_threshold_is_product_state_resolved": null,
+      "archived_sample_domain": {
+        "kind": "archived_sample_extrema_not_licensed_interpolation_or_physical_support",
+        "sample_count": 64,
+        "minimum_wavelength_nm": 0.06,
+        "maximum_wavelength_nm": 6132.0,
+        "minimum_photon_energy_eV": 0.202192104424658,
+        "maximum_photon_energy_eV": 20664.0330722
+      },
+      "physical_product_policy": null,
+      "physical_transport_status": "NON_REACTIVE_METADATA_ONLY"
+    },
+    {
+      "reaction_id": "PHIDRATES:OH_exp:01:o_3p_h",
+      "parent_registry_key": "OH_exp",
+      "physical_parent": "OH",
+      "parent_initial_state_population": null,
+      "reaction_type": "photodissociation",
+      "reactive": true,
+      "source_products_verbatim": "O(3P) + H",
+      "products": [
+        {
+          "species": "O",
+          "source_electronic_term": "3P",
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 0,
+          "nuclei": {
+            "O": 1
+          }
+        },
+        {
+          "species": "H",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 0,
+          "nuclei": {
+            "H": 1
+          }
+        }
+      ],
+      "source_reference_verbatim": null,
+      "raw_source_relative_path": "photochemistry/raw/phidrates/OH_exp/cross_sections/data/brnout_001.raw",
+      "quiet_rate_s_source_text": "1.20000000000000E-5",
+      "active_rate_s_source_text": "1.37000000000000E-5",
+      "quiet_mean_excess_eV_source_text": "2.00000000000000E+0",
+      "active_mean_excess_eV_source_text": "2.14000000000000E+0",
+      "source_threshold_eV": null,
+      "source_threshold_is_product_state_resolved": null,
+      "archived_sample_domain": {
+        "kind": "archived_sample_extrema_not_licensed_interpolation_or_physical_support",
+        "sample_count": 64,
+        "minimum_wavelength_nm": 0.06,
+        "maximum_wavelength_nm": 6132.0,
+        "minimum_photon_energy_eV": 0.202192104424658,
+        "maximum_photon_energy_eV": 20664.0330722
+      },
+      "physical_product_policy": null,
+      "physical_transport_status": "BLOCKED_MISSING_DATA"
+    },
+    {
+      "reaction_id": "PHIDRATES:OH_exp:02:o_1s_h",
+      "parent_registry_key": "OH_exp",
+      "physical_parent": "OH",
+      "parent_initial_state_population": null,
+      "reaction_type": "photodissociation",
+      "reactive": true,
+      "source_products_verbatim": "O(1S) + H",
+      "products": [
+        {
+          "species": "O",
+          "source_electronic_term": "1S",
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 0,
+          "nuclei": {
+            "O": 1
+          }
+        },
+        {
+          "species": "H",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 0,
+          "nuclei": {
+            "H": 1
+          }
+        }
+      ],
+      "source_reference_verbatim": null,
+      "raw_source_relative_path": "photochemistry/raw/phidrates/OH_exp/cross_sections/data/brnout_001.raw",
+      "quiet_rate_s_source_text": "8.33000000000000E-7",
+      "active_rate_s_source_text": "2.11000000000000E-6",
+      "quiet_mean_excess_eV_source_text": "1.00000000000000E+1",
+      "active_mean_excess_eV_source_text": "1.00000000000000E+1",
+      "source_threshold_eV": null,
+      "source_threshold_is_product_state_resolved": null,
+      "archived_sample_domain": {
+        "kind": "archived_sample_extrema_not_licensed_interpolation_or_physical_support",
+        "sample_count": 64,
+        "minimum_wavelength_nm": 0.06,
+        "maximum_wavelength_nm": 6132.0,
+        "minimum_photon_energy_eV": 0.202192104424658,
+        "maximum_photon_energy_eV": 20664.0330722
+      },
+      "physical_product_policy": null,
+      "physical_transport_status": "BLOCKED_MISSING_DATA"
+    },
+    {
+      "reaction_id": "PHIDRATES:OH_exp:03:oh_e",
+      "parent_registry_key": "OH_exp",
+      "physical_parent": "OH",
+      "parent_initial_state_population": null,
+      "reaction_type": "photoionization",
+      "reactive": true,
+      "source_products_verbatim": "OH+ + e",
+      "products": [
+        {
+          "species": "OH+",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 1,
+          "nuclei": {
+            "H": 1,
+            "O": 1
+          }
+        },
+        {
+          "species": "e",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": -1,
+          "nuclei": {}
+        }
+      ],
+      "source_reference_verbatim": null,
+      "raw_source_relative_path": "photochemistry/raw/phidrates/OH_exp/cross_sections/data/brnout_001.raw",
+      "quiet_rate_s_source_text": "2.43000000000000E-7",
+      "active_rate_s_source_text": "6.43000000000000E-7",
+      "quiet_mean_excess_eV_source_text": "1.94000000000000E+1",
+      "active_mean_excess_eV_source_text": "2.36000000000000E+1",
+      "source_threshold_eV": null,
+      "source_threshold_is_product_state_resolved": null,
+      "archived_sample_domain": {
+        "kind": "archived_sample_extrema_not_licensed_interpolation_or_physical_support",
+        "sample_count": 64,
+        "minimum_wavelength_nm": 0.06,
+        "maximum_wavelength_nm": 6132.0,
+        "minimum_photon_energy_eV": 0.202192104424658,
+        "maximum_photon_energy_eV": 20664.0330722
+      },
+      "physical_product_policy": null,
+      "physical_transport_status": "BLOCKED_MISSING_DATA"
+    },
+    {
+      "reaction_id": "PHIDRATES:OH_exp:04:o_1d_h",
+      "parent_registry_key": "OH_exp",
+      "physical_parent": "OH",
+      "parent_initial_state_population": null,
+      "reaction_type": "photodissociation",
+      "reactive": true,
+      "source_products_verbatim": "O(1D) + H",
+      "products": [
+        {
+          "species": "O",
+          "source_electronic_term": "1D",
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 0,
+          "nuclei": {
+            "O": 1
+          }
+        },
+        {
+          "species": "H",
+          "source_electronic_term": null,
+          "fine_structure_population": null,
+          "rovibrational_population": null,
+          "isotope_identity": null,
+          "multiplicity": 1,
+          "charge_in_e": 0,
+          "nuclei": {
+            "H": 1
+          }
+        }
+      ],
+      "source_reference_verbatim": null,
+      "raw_source_relative_path": "photochemistry/raw/phidrates/OH_exp/cross_sections/data/brnout_001.raw",
+      "quiet_rate_s_source_text": "7.01000000000000E-6",
+      "active_rate_s_source_text": "1.76000000000000E-5",
+      "quiet_mean_excess_eV_source_text": "7.73000000000000E+0",
+      "active_mean_excess_eV_source_text": "7.74000000000000E+0",
+      "source_threshold_eV": null,
+      "source_threshold_is_product_state_resolved": null,
+      "archived_sample_domain": {
+        "kind": "archived_sample_extrema_not_licensed_interpolation_or_physical_support",
+        "sample_count": 64,
+        "minimum_wavelength_nm": 0.06,
+        "maximum_wavelength_nm": 6132.0,
+        "minimum_photon_energy_eV": 0.202192104424658,
+        "maximum_photon_energy_eV": 20664.0330722
+      },
+      "physical_product_policy": null,
+      "physical_transport_status": "BLOCKED_MISSING_DATA"
+    }
+  ],
+  "electron_rate_inventory": [
+    {
+      "ion": "He",
+      "element": "He",
+      "initial_charge": "0",
+      "atomic_number": "2",
+      "electron_count": "2",
+      "reaction": "e + He -> He+ + 2e",
+      "ionization_energy_eV": "2.46000000000000E+1",
+      "fit_P": "0",
+      "fit_A_cm3_s": "1.75000000000000E-8",
+      "fit_A_m3_s": "1.75000000000000E-14",
+      "fit_X": "1.80000000000000E-1",
+      "fit_K": "3.50000000000000E-1",
+      "temperature_min_eV": "1.00000000000000E+0",
+      "temperature_max_keV": "2.00000000000000E+1",
+      "source_reference": "G. S. Voronov (1997), Atomic Data and Nuclear Data Tables 65, 1",
+      "source_file": "raw/electron_impact/voronov/cfit.dat",
+      "source_record_or_index": "line:2"
+    },
+    {
+      "ion": "Ne",
+      "element": "Ne",
+      "initial_charge": "0",
+      "atomic_number": "10",
+      "electron_count": "10",
+      "reaction": "e + Ne -> Ne+ + 2e",
+      "ionization_energy_eV": "2.16000000000000E+1",
+      "fit_P": "1",
+      "fit_A_cm3_s": "1.50000000000000E-8",
+      "fit_A_m3_s": "1.50000000000000E-14",
+      "fit_X": "3.29000000000000E-2",
+      "fit_K": "4.30000000000000E-1",
+      "temperature_min_eV": "1.00000000000000E+0",
+      "temperature_max_keV": "2.00000000000000E+1",
+      "source_reference": "G. S. Voronov (1997), Atomic Data and Nuclear Data Tables 65, 1",
+      "source_file": "raw/electron_impact/voronov/cfit.dat",
+      "source_record_or_index": "line:46"
+    },
+    {
+      "ion": "Na",
+      "element": "Na",
+      "initial_charge": "0",
+      "atomic_number": "11",
+      "electron_count": "11",
+      "reaction": "e + Na -> Na+ + 2e",
+      "ionization_energy_eV": "5.10000000000000E+0",
+      "fit_P": "1",
+      "fit_A_cm3_s": "1.01000000000000E-7",
+      "fit_A_m3_s": "1.01000000000000E-13",
+      "fit_X": "2.75000000000000E-1",
+      "fit_K": "2.30000000000000E-1",
+      "temperature_min_eV": "1.00000000000000E+0",
+      "temperature_max_keV": "2.00000000000000E+1",
+      "source_reference": "G. S. Voronov (1997), Atomic Data and Nuclear Data Tables 65, 1",
+      "source_file": "raw/electron_impact/voronov/cfit.dat",
+      "source_record_or_index": "line:56"
+    },
+    {
+      "ion": "Ar",
+      "element": "Ar",
+      "initial_charge": "0",
+      "atomic_number": "18",
+      "electron_count": "18",
+      "reaction": "e + Ar -> Ar+ + 2e",
+      "ionization_energy_eV": "1.58000000000000E+1",
+      "fit_P": "1",
+      "fit_A_cm3_s": "5.99000000000000E-8",
+      "fit_A_m3_s": "5.99000000000000E-14",
+      "fit_X": "1.36000000000000E-1",
+      "fit_K": "2.60000000000000E-1",
+      "temperature_min_eV": "1.00000000000000E+0",
+      "temperature_max_keV": "2.00000000000000E+1",
+      "source_reference": "G. S. Voronov (1997), Atomic Data and Nuclear Data Tables 65, 1",
+      "source_file": "raw/electron_impact/voronov/cfit.dat",
+      "source_record_or_index": "line:154"
+    }
+  ],
+  "electron_rate_domain": {
+    "temperature_quantity": "k_B*T_e/e, not incident electron energy",
+    "minimum_eV": 1,
+    "maximum_eV": 20000,
+    "molecular_coefficients_available": false,
+    "scalar_rate": "lambda=n_e*k_Voronov(T_e)",
+    "prescribed_Maxwellian_rate_closure_approved": true,
+    "joint_physical_event_distribution": null
+  },
+  "cex_rate_inventory": [
+    {
+      "id": "H+_He_total_capture_ORNL_A32",
+      "reactants": "H+ + He",
+      "products": "H(state unresolved) + He+(state unresolved)",
+      "target_initial_state_from_source": null,
+      "energy_convention": "target-rest projectile kinetic energy per u",
+      "minimum_eV_per_u": 99,
+      "maximum_eV_per_u": 11000000,
+      "interpolation": "source Chebyshev fit, AppendixI A0/2 convention",
+      "joint_kinetic_policy": null,
+      "rate_source": {
+        "amps_root_relative_path": "test_output/srcMoon/m3-charge-exchange-research-20261117/ornl_redbook_v1_osti.pdf",
+        "sha256": "3bb3fdb4be8f0f806d378083be8798cf3ce347714c3d06d58f90ee483b10c030",
+        "bytes": 26179422,
+        "availability": "ACQUIRED_RESEARCH_NOT_READY",
+        "supported_scope": "reviewed scalar total-capture source only; no joint outgoing state/recoil distribution"
+      }
+    },
+    {
+      "id": "H+_Na3s_total_capture_Morgan1985_Table2_log_log",
+      "reactants": "H+ + Na(3s)",
+      "products": "H(state unresolved) + Na+(state unresolved)",
+      "target_initial_state_from_source": "3s",
+      "energy_convention": "target-rest projectile kinetic energy per u",
+      "minimum_eV_per_u": 1000,
+      "maximum_eV_per_u": 200000,
+      "interpolation": "approved named source-knot log-log, no extrapolation",
+      "joint_kinetic_policy": null,
+      "rate_source": {
+        "amps_root_relative_path": "test_output/srcMoon/m3-charge-exchange-research-20261117/nist_morgan_1985_retry2.pdf",
+        "sha256": "7c412cb93f827b3412b6da000e674c63237cacb0e201733a6f5a4f431359952e",
+        "bytes": 3135754,
+        "availability": "ACQUIRED_RESEARCH_NOT_READY",
+        "supported_scope": "reviewed scalar total-capture source only; no joint outgoing state/recoil distribution"
+      }
+    }
+  ],
+  "source_interpretation_gaps": {
+    "atomic_positive_below_listed_threshold_samples": [
+      {
+        "reaction_id": "PHIDRATES:He:00:he_e",
+        "threshold_eV_source_text": "2.45873554184746E+1",
+        "sample": {
+          "species": "He",
+          "reaction_id": "PHIDRATES:He:00:he_e",
+          "reaction_type": "photoionization",
+          "parent": "He",
+          "products": "He+ + e",
+          "wavelength_nm": "5.17500000000000E+1",
+          "photon_energy_eV": "2.39582992141450E+1",
+          "cross_section_m2": "7.47000000000000E-22",
+          "threshold_eV": "2.45873554184746E+1",
+          "branch_fraction": "",
+          "source_reference": "Cross section: | Lambda = 0.1-20. A | Verner, D. A., Yakovlev, D. G., Band, I. M., Trzhaskovskaya, M. B. (1993) | Atomic Data Nuclear Data Tables 55, 233. | Verner, D. A., Yakovlev, D. G. (1995) | Astron. Astrophys. Suppl. 109, 125. | Verner, D. A., Ferland, G. J., Korista, K. T., Yakovlev, D. G. (1996) | Astrophys. J. 465, 487. | Lambda = 22.78-504.26 A | TOPbase: Photoionisation Cross Sections, | http://cdsweb.u-strasbg.fr/topbase/xsections.html. | Threshold: | Lambda = 504.26 A | Martin, W. C. (2002). | See: http://physics.nist.gov/PhysRefData/Handbook/atomic_number.htm.",
+          "source_file": "raw/phidrates/He/cross_sections/data/brnout_001.raw",
+          "source_record_or_index": "line:197;column:2"
+        },
+        "status": "BLOCKED_SOURCE_INTERPRETATION",
+        "permitted_repair": null
+      },
+      {
+        "reaction_id": "PHIDRATES:Ar:00:ar_e",
+        "threshold_eV_source_text": "1.57596347408481E+1",
+        "sample": {
+          "species": "Ar",
+          "reaction_id": "PHIDRATES:Ar:00:ar_e",
+          "reaction_type": "photoionization",
+          "parent": "Ar",
+          "products": "Ar+ + e",
+          "wavelength_nm": "8.24900000000000E+1",
+          "photon_energy_eV": "1.50302095324524E+1",
+          "cross_section_m2": "2.98000000000000E-21",
+          "threshold_eV": "1.57596347408481E+1",
+          "branch_fraction": "",
+          "source_reference": "Cross section: | Lambda = 0.1 - 437.00 A | Verner, D. A., Yakovlev, D. G., Band, I. M., Trzhaskovskaya, M. B. (1993) | Atomic Data Nuclear Data Tables 55, 233. | Verner, D. A., Yakovlev, D. G. (1995) | Astron. Astrophys. Suppl. 109, 125. | Verner, D. A., Ferland, G. J., Korista, K. T., Yakovlev, D. G. (1996) | Astrophys. J. 465, 487. | Lambda = 437.90 - 824.90 A | TOPbase: Photoionisation Cross Sections, | http://cdsweb.u-strasbg.fr/topbase/xsections.html. | Threshold: | Lambda = 786.72 A | Velchev, I., Hogervorst, W., Ubachs, W. (1999) | J. Phys. B 32, L511-L516.",
+          "source_file": "raw/phidrates/Ar/cross_sections/data/brnout_001.raw",
+          "source_record_or_index": "line:125;column:2"
+        },
+        "status": "BLOCKED_SOURCE_INTERPRETATION",
+        "permitted_repair": null
+      }
+    ],
+    "molecular_thresholds_missing": true,
+    "OH_exp_long_wavelength_O1S_H_interpretation": null,
+    "total_absorption_is_reactive_channel": false,
+    "mean_excess_energy_is_probability_distribution": false,
+    "unmeasured_angular_tail_policy": null,
+    "unsupported_hazard_renormalization_permitted": false
+  },
+  "physical_conventions": {
+    "selected_mass_internal_energy_policy": null,
+    "selected_electron_kinetic_representation": null,
+    "selected_ion_surface_policy": null,
+    "initial_species_state_populations": null,
+    "selected_photon_polarization_or_angular_approximation": null,
+    "selected_relativistic_or_classical_error_bound": null,
+    "bath_exchange_sign": "signed change of untracked environment per physical event; tracked change + bath change closes total physical energy/momentum/charge/nuclei",
+    "rest_mass_conservation": "sum of material rest masses is not conserved; energy defects belong in total energy, not an invented compensating bath species/mass"
+  },
+  "retained_dependencies": {
+    "U24": "literal full H2O/OH migration+surface+chemistry contract remains; gas-only molecular tests do not PASS it",
+    "I23": "prescribed scalar/local checks do not waive R4.1/D06 measured-event requirements; no electron moments inferred from bulk ion moments",
+    "formal_predecessors": "same-campaign M1/M2 and all existing per-test U/I predecessors remain; parent numerical protocol separately binds actual evidence"
+  },
+  "available_data_qualification": {
+    "D04_D05_archived_QA_status": "PASS",
+    "source_hash_audit_status": "PASS",
+    "actual_processed_outputs": 11,
+    "provenance_and_raw_identity_checks": 54,
+    "identity_mismatches": 0,
+    "rates_and_schema_only": "extraction QA and source hashes do not qualify physical product kinetics",
+    "D06_archived_QA_status": "ERROR",
+    "D06_actual_driver_rows": 0
+  },
+  "source_audit": {
+    "amps_root_relative_path": "test_output/srcMoon/m3-physical-model-spec-20261118T013000Z/source_audit.json",
+    "sha256": "00d423d4915f3de3b8420af5b99dbc8480d8dbe68c6ff8dce67ea9dd6e442e28"
+  },
+  "processed_source_files": [
+    {
+      "path": "/data/vtenishe/moon_validation_data/photochemistry/processed/combined/lunar_photochemistry_catalog.csv",
+      "bytes": 8152,
+      "sha256": "25166581488316b5299fe40384b52c848ea96162d8579f8125c6d917cbd99d2b",
+      "expected_sha256": "25166581488316b5299fe40384b52c848ea96162d8579f8125c6d917cbd99d2b",
+      "status": "PASS"
+    },
+    {
+      "path": "/data/vtenishe/moon_validation_data/photochemistry/processed/combined/processing_summary.json",
+      "bytes": 735,
+      "sha256": "13094e5823aa3212ef3cdbf50ea4f78e7d8e97a65b1192018e2efd0b4bd942ef",
+      "expected_sha256": "13094e5823aa3212ef3cdbf50ea4f78e7d8e97a65b1192018e2efd0b4bd942ef",
+      "status": "PASS"
+    },
+    {
+      "path": "/data/vtenishe/moon_validation_data/photochemistry/processed/electron_impact/lunar_neutral_coefficients.csv",
+      "bytes": 1364,
+      "sha256": "da7391979a2136c072bd8dc02932af7989a8030ac208fa5982ac975aa1394126",
+      "expected_sha256": "da7391979a2136c072bd8dc02932af7989a8030ac208fa5982ac975aa1394126",
+      "status": "PASS"
+    },
+    {
+      "path": "/data/vtenishe/moon_validation_data/photochemistry/processed/electron_impact/processing_summary.json",
+      "bytes": 1582,
+      "sha256": "4623d153d8eaff007201f89585209ea13a3639dd12ee562c3cac9874a9e85e63",
+      "expected_sha256": "4623d153d8eaff007201f89585209ea13a3639dd12ee562c3cac9874a9e85e63",
+      "status": "PASS"
+    },
+    {
+      "path": "/data/vtenishe/moon_validation_data/photochemistry/processed/electron_impact/voronov_coefficients.csv",
+      "bytes": 119390,
+      "sha256": "8c1e33a9ed64d95de884b01548b7e2757339859b7c8090e996f842c4f6ca9225",
+      "expected_sha256": "8c1e33a9ed64d95de884b01548b7e2757339859b7c8090e996f842c4f6ca9225",
+      "status": "PASS"
+    },
+    {
+      "path": "/data/vtenishe/moon_validation_data/photochemistry/processed/phidrates/branching_ratios.csv",
+      "bytes": 234752,
+      "sha256": "430bb68558a43973f0622094049c87004dd522a6288a48935027856f48229ba7",
+      "expected_sha256": "430bb68558a43973f0622094049c87004dd522a6288a48935027856f48229ba7",
+      "status": "PASS"
+    },
+    {
+      "path": "/data/vtenishe/moon_validation_data/photochemistry/processed/phidrates/cross_sections.csv",
+      "bytes": 1034075,
+      "sha256": "e900eb5514b616dcbbde7e3ca124b5c06d4d22a28a3cd429ed58a14c1933c860",
+      "expected_sha256": "e900eb5514b616dcbbde7e3ca124b5c06d4d22a28a3cd429ed58a14c1933c860",
+      "status": "PASS"
+    },
+    {
+      "path": "/data/vtenishe/moon_validation_data/photochemistry/processed/phidrates/photo_rates_1au.csv",
+      "bytes": 11460,
+      "sha256": "3aa54915a08258371dbe975949e6afb2ab74618164fadca8bceebe876c926847",
+      "expected_sha256": "3aa54915a08258371dbe975949e6afb2ab74618164fadca8bceebe876c926847",
+      "status": "PASS"
+    },
+    {
+      "path": "/data/vtenishe/moon_validation_data/photochemistry/processed/phidrates/processing_summary.json",
+      "bytes": 6921,
+      "sha256": "60ec39ea451f96757ba0c5cb13b305636ebf241799b36233e5e0894269eceafe",
+      "expected_sha256": "60ec39ea451f96757ba0c5cb13b305636ebf241799b36233e5e0894269eceafe",
+      "status": "PASS"
+    },
+    {
+      "path": "/data/vtenishe/moon_validation_data/photochemistry/processed/phidrates/reaction_channels.csv",
+      "bytes": 6012,
+      "sha256": "2d9fa1c8eb72d3bbba0b91ab4c9a912e6ebce2abc80b251096df2f41a4354061",
+      "expected_sha256": "2d9fa1c8eb72d3bbba0b91ab4c9a912e6ebce2abc80b251096df2f41a4354061",
+      "status": "PASS"
+    },
+    {
+      "path": "/data/vtenishe/moon_validation_data/photochemistry/processed/phidrates/thresholds.csv",
+      "bytes": 2948,
+      "sha256": "a3335b3b37c3d275a4f72e92ae8e5b1f6ecfcbc4e2d84735cb20694dc93b48f1",
+      "expected_sha256": "a3335b3b37c3d275a4f72e92ae8e5b1f6ecfcbc4e2d84735cb20694dc93b48f1",
+      "status": "PASS"
+    }
+  ],
+  "requirements_table": {
+    "amps_root_relative_path": "srcMoon/test/M3_PHYSICAL_DATA_REQUIREMENTS.csv",
+    "sha256": "487a655b8a8165c710fefd57256203db02fdcf088afea8ad848fac6b41789d78"
+  },
+  "current_implementation_limitations": [
+    "Current constant-history native mechanics use nominal neutral/ion equal masses and zero-Q controls, not physical photon/electron/CEX laws.",
+    "ReactionExecution explicitly verifies declared additive model-mass/classical-energy closure; a physical rest-mass/formation-energy convention and implementation mapping must be reviewed before enabling physical channels.",
+    "Current combined controller accepts constant-history hazards only; it cannot freeze a physical trajectory/illumination-dependent hazard.",
+    "A policy.qualified boolean or source/evidence identity string alone is not independent scientific qualification.",
+    "Current M2 Na/Ar neutral surface kernels do not establish any ion-surface or water/OH law."
+  ],
+  "new_physical_numerical_values_introduced": false,
+  "new_acceptance_thresholds_introduced": false,
+  "canonical_data_modified": false,
+  "observational_scoring_performed": false
+}

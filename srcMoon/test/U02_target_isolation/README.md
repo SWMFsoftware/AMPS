@@ -19,3 +19,11 @@ two callback assignments. This permits ordinary C++ line wrapping while still
 requiring the legacy sphere interaction callback and the overload-resolved
 production injection callback. It remains a source/configuration guard, not a
 linked-runtime result.
+
+The approved P08 dispatcher changes the sphere registration to
+`Moon::IonAwareSphereInteraction`. U02 now requires that actual registration,
+the unchanged neutral accommodation delegation, and the explicit charged
+policy call. Object/frame/force/injection requirements and the source-only
+scope are unchanged. A new dispatcher is not sufficient without its real
+legacy-neutral delegation. Linked M0/nightly separately verifies runtime
+preservation; this text guard alone never establishes it.

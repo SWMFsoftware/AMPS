@@ -57,6 +57,7 @@
 
 #include "pic.h"
 #include "meshAMRcutcell_watertight.h"
+#include "pic_mover_force_cut_surface_math.h"
 
 #include <cfloat>
 #include <cmath>
@@ -179,7 +180,7 @@ enum eEvent {EventNone,EventFace,EventDomainBoundary,EventError};
 //the earliest event of the segment x+t*D, 0<=t<=1: a crossing into the body (hit), or the exit from the
 //domain (tDomain); 'node' contains x on input; on output it is the last block visited; 'lastFace' is the face
 //of the interaction at x that ended the previous segment (NULL at the beginning of the step)
-eEvent FindEarliestEvent(const double *xStart,const double *D,double lengthD,const CutCell::cTriangleFace *lastFace,cNode* &node,cHit& hit,double& tDomain) {
+eEvent FindEarliestEvent(const double *xStart,const double *D,double lengthD,const CutCell::cTriangleFace *lastFace,cNode* &node,cHit& hit,double& tDomain,const double* physicalVelocity=nullptr) {
   const double tBehind=BehindTolerance/lengthD;
   cNode *cur=node;
   double tCur=0.0,x[3]={xStart[0],xStart[1],xStart[2]};
@@ -221,9 +222,11 @@ eEvent FindEarliestEvent(const double *xStart,const double *D,double lengthD,con
 
     for (CutCell::cTriangleFaceDescriptor *t=cur->FirstTriangleCutFace;t!=NULL;t=t->next) {
       CutCell::cTriangleFace *f=t->TriangleFace;
-      const double dn=D[0]*f->ExternalNormal[0]+D[1]*f->ExternalNormal[1]+D[2]*f->ExternalNormal[2];
+      const double* direction=physicalVelocity?physicalVelocity:D;
+      const double dn=direction[0]*f->ExternalNormal[0]+direction[1]*f->ExternalNormal[1]+direction[2]*f->ExternalNormal[2];
       double tHit;
 
+      if(physicalVelocity&&!PIC::Mover::ForceCutSurface::Math::IncomingVelocity(physicalVelocity,f->ExternalNormal))continue;
       if (!(dn<0.0)) continue;   //not moving into the body through this face
       if (!CutCell::Watertight::LineTriangleIntersection(x,D,f->x0Face,f->x1Face,f->x2Face,tHit)) continue;
       if ((tHit<-tBehind)||(tHit>1.0)) continue;
@@ -363,6 +366,11 @@ int RemoveParticle(long int ptr) {
 //movers to verify the segments of their steps.
 CutCell::cTriangleFace* PIC::Mover::CutSurface::FindFirstCrossing(const double *x0,const double *D,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
     const CutCell::cTriangleFace *lastFace,double& t) {
+  return FindFirstCrossing(x0,D,node,lastFace,t,nullptr);
+}
+
+CutCell::cTriangleFace* PIC::Mover::CutSurface::FindFirstCrossing(const double *x0,const double *D,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
+    const CutCell::cTriangleFace *lastFace,double& t,const double* physicalVelocity) {
   if ((CutCell::nBoundaryTriangleFaces==0)||(node==NULL)) return NULL;
 
   const double lengthD=std::sqrt(D[0]*D[0]+D[1]*D[1]+D[2]*D[2]);
@@ -380,7 +388,7 @@ CutCell::cTriangleFace* PIC::Mover::CutSurface::FindFirstCrossing(const double *
   cHit hit;
   double tDomain;
 
-  if (FindEarliestEvent(x0,D,lengthD,lastFace,node,hit,tDomain)!=EventFace) return NULL;
+  if (FindEarliestEvent(x0,D,lengthD,lastFace,node,hit,tDomain,physicalVelocity)!=EventFace) return NULL;
 
   t=hit.t;
   return hit.face;
@@ -625,6 +633,8 @@ int PIC::Mover::ForceFreeCutSurface(long int ptr,double dtTotal,cTreeNodeAMR<PIC
 }
 
 #else //DIM == 3
+
+CutCell::cTriangleFace* PIC::Mover::CutSurface::FindFirstCrossing(const double*,const double*,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,const CutCell::cTriangleFace*,double&,const double*) {return NULL;}
 
 CutCell::cTriangleFace* PIC::Mover::CutSurface::FindFirstCrossing(const double *x0,const double *D,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
     const CutCell::cTriangleFace *lastFace,double& t) {

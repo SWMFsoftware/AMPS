@@ -980,3 +980,116 @@ weights, kinetics and budgets are qualified. Positive rates cannot silently
 discard uncompiled product ions. No existing Na photolytic lifetime/reference
 is replaced. See `srcMoon/examples/m3_atomic_rates.in`, U16 and
 `srcMoon/test/M3_INITIAL_IMPLEMENTATION_CONTRACT.md` for exact scope.
+
+
+### Optional Moon photon and total-capture rate registries
+
+The same flat application block accepts this complete explicit rate selection:
+
+```text
+chemistry_mode = rate-services
+photochemistry_rate_model = phidrates-v1
+photochemistry_data_directory = /path/to/photochemistry/processed/phidrates
+photochemistry_solar_case = quiet
+charge_exchange_rate_model = total-capture-v1
+charge_exchange_research_directory = /path/to/reviewed/original-publications
+```
+
+`photochemistry_solar_case` is `quiet` or `active`, preserving the separate
+native D04 endpoints; no intermediate solar spectrum is inferred. The v1
+loader pins source schemas and hashes. CEX requires the reviewed original
+He/Na publications with their exact hashes, not a replacement digitization.
+The complete example `srcMoon/examples/m3_reaction_rates.in` includes the
+independent electron-rate group as well. These modes install immutable rates
+and topology only, not particle reactions or missing product distributions.
+Omission/`chemistry_mode = legacy` preserves the old model. Active registry
+fields are refused in a legacy receipt; missing/corrupt selected sources are
+errors rather than fallback physics. Paths resolve against the containing
+input file, including an included file's own directory.
+
+### Optional Moon physical-time cut-cell tracing
+
+Set `particle_tracing_mover` to `force-cut-surface-first-order` or
+`force-cut-surface-second-order`. The complete examples are
+`srcMoon/examples/m3_tracing_first_order.in` and
+`srcMoon/examples/m3_tracing_second_order.in`. Every numerical/field control
+must be explicit when selected; there are no hidden input defaults:
+
+| Key | Meaning/unit |
+|---|---|
+| `tracing_relative_tolerance` | Dimensionless adaptive phase-space tolerance |
+| `tracing_absolute_position_tolerance_m` | Absolute position tolerance [m] |
+| `tracing_absolute_velocity_tolerance_m_s` | Absolute velocity tolerance [m/s] |
+| `tracing_geometry_tolerance_m` | Geometry alignment tolerance [m] |
+| `tracing_time_tolerance_s` | Physical clock tolerance [s] |
+| `tracing_minimum_substep_s`, `tracing_maximum_substep_s` | Explicit allowed substep bounds [s] |
+| `tracing_adaptive` | `true`/`false`; selects error-controlled/fixed execution |
+| `tracing_maximum_substeps`, `tracing_maximum_refinements` | Finite iteration guards |
+| `tracing_maximum_interactions`, `tracing_maximum_same_point_interactions` | Surface/event loop guards |
+| `tracing_field_frame` | `LSO`, the actual prescribed field frame |
+| `tracing_electric_field_v_m` | Three comma-separated E components [V/m] |
+| `tracing_magnetic_field_t` | Three comma-separated B components [T] |
+
+The optional `tracing_clock_mode` selects `independent-history` (default when
+omitted) or `common-time`. Complete common-time receipts are
+`srcMoon/examples/m3_common_time_first_order.in` and
+`srcMoon/examples/m3_common_time_second_order.in`. In common-time mode normal
+UTC/SPICE initialization sets one explicit origin. Transport elapsed seconds
+advance through normal Begin/Commit boundaries, while external ephemeris,
+fields, source-CDF and surface coefficients remain frozen. Actual source
+offsets or supplied remaining flight determine the advancing birth epoch.
+
+Every actual owned block/species dt must be identical, positive and constant
+over the common run. A `SingleGlobal` compile mode or an actually equal
+per-species/local table can meet that requirement; a mode label alone cannot.
+The adapter rejects mixed steps, inconsistent initial/continued epochs,
+uncompleted packets and restart/autosave modes before accepting a common
+interval. The optical clock uses its own exact/refusal rules, not the mover's
+`tracing_time_tolerance_s`. Common-time requires a selected new tracer,
+frozen environment and M2 disabled. It supplies chronology; physical process,
+sampling/convergence and observational qualification retain their own gates.
+
+The initial Moon adapter requires `simulation_environment_mode = frozen`,
+`m2_environment = disabled` and coupling OFF. Asynchronous particle histories
+have no qualified common evolving thermal/reservoir clock; parser and direct
+installation both refuse that coupling. A frozen pose/field does not stop the stored local physical
+particle clock. Evolving per-particle ephemeris, periodic/backward tracing,
+self-consistent PIC field deposition and hybrid/OpenMP tracing are not
+qualified by this selection and are refused. Both orders call the same
+production Moon forces. Exhausted resource/iteration limits terminate with
+an explanatory diagnostic, without dropping remaining flight or particles.
+Omission/`particle_tracing_mover = legacy` calls the original Moon mover;
+tracer-only controls are refused while inactive. This selector does not enable
+the optional conservative reaction controller or approve any ion surface law.
+
+The optional `ion_surface_boundary` has two explicit values:
+
+| Value | Behavior |
+|---|---|
+| `unsupported` (default) | Refuse charged impacts before neutral sticking/accommodation; physical ion-regolith outcomes are unavailable. |
+| `ideal-collector` | Use an explicitly installed artificial collector and matching state/formation-energy resolver; requires a selected first/second physical-time tracer. |
+
+The selector belongs inside `#begin application: moon` / `#end application`.
+For example, a complete tracing receipt may add
+`ion_surface_boundary = ideal-collector`. This line alone cannot create the
+required state/energy catalog. An uninstalled collector is refused at an ion
+impact with instructions to supply the explicit provider. Native supporting
+fixtures install declared analytical inventories; ordinary physical runs must
+install their own source-bound states matching actual compiled mass/charge.
+
+The ideal collector records incident material, charge, momentum and total
+energy at the actual collision point/epoch. It supplies no neutralization,
+implantation depth, surface heat, sputtering, residence or delayed release;
+it has no surface-charging feedback. It is a mathematical verification/first-
+impact boundary, not a lunar retention model. Neutral paths retain the original
+callback and RNG order. The approved reduced photon/CEX component policy names
+are still library-level controls, not additional CLI chemistry selectors.
+
+Both source boundary-injection macros reach the selected Moon dispatcher.
+New births retain their scoped moving-source departure time, or infer it from
+the stationary source's already sampled remaining interval. Legacy boundary
+calls retain their original behavior. Motion/event/number checks do not
+qualify ordinary asynchronous density/LOS/brightness sampling: those normal
+accumulators currently use sample counts, and frozen repeated births do not
+define a common advancing transient epoch. The examples are wiring receipts;
+see the sampling limits and source/data proposals in `srcMoon/README.md`.

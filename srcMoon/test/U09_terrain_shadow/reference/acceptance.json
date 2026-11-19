@@ -38,7 +38,7 @@
     "grazing tolerance instability"
   ],
   "required_data": [],
-  "data_hashes": "none; I15, not U09, owns independent D02 scoring",
+  "data_hashes": "Analytical geometry uses no observations; actual furnished SPICE dependencies for moving-surface-transaction are hashed in U09/kernel_hashes.json. I15 owns independent D02 scoring.",
   "predecessor_gates": [
     "U08"
   ],
@@ -52,8 +52,21 @@
   "shared_vertex_regression": "Every twentieth vertex of a lunar-radius production icosphere must be hit by its centre-to-vertex radial ray. Zero misses required. The oracle is closed-surface vertex membership, not a frozen production output.",
   "probe_modes": [
     "terrain-shadow",
-    "psd-illumination"
+    "psd-illumination",
+    "moving-surface-transaction"
   ],
+  "moving_surface_transaction_extension": {
+    "scope": "Local production geometry/frame transaction only; no observational or I14 qualification",
+    "contract": "../../M3_MOVING_SURFACE_TRANSACTION_CONTRACT.md",
+    "fixture": "Closed1000m octahedron, actual furnished SPICE at2009-01-24T00:00:00,1000s physical birth offset, two distinct face previews and one accepted selected normal",
+    "oracles": "Exact plane crossing at5s; octahedron normal(1,1,1)/sqrt(3); inverse state-transform identity; SOURCE-BEGIN rotation with zero lower-left derivative; legacy matrix byte preservation",
+    "plane_crossing_absolute_tolerance_s": 2e-6,
+    "normal_and_inverse_absolute_tolerance": 2e-14,
+    "rotation_absolute_tolerance": 1e-14,
+    "count_criterion": "Zero increments or accepted frame from previews; exactly one increment from the actual selected-frame commit",
+    "dependency_semantics": "SPICE-enabled producer required for this added mode; unavailable SPICE is SKIPPED with earlier geometry-mode artifacts retained",
+    "original_acceptance_criteria_changed": false
+  },
   "psd_geometry_wiring_extension": {
     "scope": "Existing U09 direct illumination geometry applied through the actual shared-core PSD kernel; deterministic local fixtures, never source-strength validation or observations",
     "law": "physical atoms times compiled effective cross section [m2] times compiled 1-AU photon flux [m^-2 s^-1] times unabsorbed projected direct-photon 1-AU factor",
@@ -90,5 +103,25 @@
       "BVH ridge half-disc penumbra and umbra"
     ],
     "qualification_limit": "finite ray grids can miss arbitrarily thin visible slivers; D02 use requires independent angular/temporal resolution qualification and exact authoritative sampling metadata"
+  },
+  "gas_photon_visibility_extension": {
+    "scope": "U09 analytical geometry only; no I21 product kinetics or observation validation",
+    "contract": "../../M3_IMPLEMENTATION_CONTRACT.md",
+    "production_entry_points": [
+      "Moon::SurfaceEnvironment::EvaluateSolarDisc",
+      "SolarDiscRequest::volumePointOrigin"
+    ],
+    "law": "Integral of uniform radiance over jointly visible solid angle divided by full-disc solid angle; no facet cosine or surface albedo",
+    "fixture": "Analytical Sun radius500m at1000m; concentric opaque Earth radius2.5m at10m; 32x128 coarse and512x128 fine; true gas-point origin",
+    "independent_oracle": "2*pi*(1-cos(alpha)); concentric visible ratio (cos(beta)-cos(alpha))/(1-cos(alpha))",
+    "full_fraction_and_steradians_relative_tolerance": 2e-13,
+    "concentric_absolute_tolerance": 2e-06,
+    "refinement": "fine absolute error smaller than coarse",
+    "negative_controls": [
+      "nonzero surface offset rejected in volume mode",
+      "failed call preserves output",
+      "dummy normal reversal does not shadow a gas point"
+    ],
+    "original_acceptance_criteria_changed": false
   }
 }

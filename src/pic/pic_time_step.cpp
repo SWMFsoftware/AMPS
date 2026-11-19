@@ -384,7 +384,22 @@ void PIC::TimeStepInternal::ExecutionTrackDefault(double& ParticleMovingTime,dou
 
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
 
+  const bool physicalTraceContinuation=PIC::Mover::ForceCutSurface::IsStorageRegistered();
 #if _PIC_LOCAL_TIME_STEP_FLUX_RESAMPLING_MODE_ == _PIC_MODE_ON_
+  const bool useContinuation=true;
+#else
+  const bool useContinuation=physicalTraceContinuation;
+#endif
+  if(useContinuation) {
+  // Physical-seconds tracing and the older flux-fraction algorithm share
+  // ONLY the collective ownership/exchange schedule. Their state and weight
+  // semantics remain separate; registration refuses simultaneous activation.
+  auto CountPending=[&]() {return physicalTraceContinuation ?
+      PIC::Mover::ForceCutSurface::CountPending():
+      PIC::Mover::CountLocalTimeStepContinuationParticles();};
+  auto MovePending=[&]() {return physicalTraceContinuation ?
+      PIC::Mover::ForceCutSurface::MoveContinuations():
+      PIC::Mover::MoveParticlesWithLocalTimeStepContinuation();};
   // One MPI exchange is insufficient when a particle's remaining interval can
   // cross more than one ownership boundary.  First transfer the particles
   // stopped by the main mover to their owning ranks.  Every continuation sweep
@@ -397,12 +412,13 @@ void PIC::TimeStepInternal::ExecutionTrackDefault(double& ParticleMovingTime,dou
   // trajectory is completed exactly once per AMPS iteration.
   ParticleExchangeTime=0.0;
   long int globalPendingParticles=0;
-  int continuationSweep=0;
-  const int maximumContinuationSweeps=1000000;
+  long int continuationSweep=0;
+  const long int maximumContinuationSweeps=physicalTraceContinuation ?
+      PIC::Mover::ForceCutSurface::Settings.MaximumSubsteps:1000000;
 
   if (PIC::Mover::LocalTimeStepFluxDiagnostic.Enabled) {
     const long int localInitialPending=
-        PIC::Mover::CountLocalTimeStepContinuationParticles();
+        CountPending();
     MPI_Allreduce(&localInitialPending,&PIC::Mover::LocalTimeStepFluxDiagnostic.
         InitialPendingParticleCount,1,MPI_LONG,MPI_SUM,
         MPI_GLOBAL_COMMUNICATOR);
@@ -414,7 +430,7 @@ void PIC::TimeStepInternal::ExecutionTrackDefault(double& ParticleMovingTime,dou
 
   if (PIC::Mover::LocalTimeStepFluxDiagnostic.Enabled) {
     const long int localPostExchangePending=
-        PIC::Mover::CountLocalTimeStepContinuationParticles();
+        CountPending();
     MPI_Allreduce(&localPostExchangePending,
         &PIC::Mover::LocalTimeStepFluxDiagnostic.
             FirstPostExchangePendingParticleCount,
@@ -423,7 +439,7 @@ void PIC::TimeStepInternal::ExecutionTrackDefault(double& ParticleMovingTime,dou
 
   do {
     segmentStart=MPI_Wtime();
-    PIC::Mover::MoveParticlesWithLocalTimeStepContinuation();
+    MovePending();
     ParticleMovingTime+=MPI_Wtime()-segmentStart;
 
     // MoveParticlesWithLocalTimeStepContinuation() may place either unfinished
@@ -434,7 +450,7 @@ void PIC::TimeStepInternal::ExecutionTrackDefault(double& ParticleMovingTime,dou
     ParticleExchangeTime+=MPI_Wtime()-segmentStart;
 
     const long int localPendingParticles=
-        PIC::Mover::CountLocalTimeStepContinuationParticles();
+        CountPending();
     segmentStart=MPI_Wtime();
     MPI_Allreduce(&localPendingParticles,&globalPendingParticles,1,MPI_LONG,
         MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
@@ -468,7 +484,7 @@ void PIC::TimeStepInternal::ExecutionTrackDefault(double& ParticleMovingTime,dou
       (_CUDA_MODE_ == _OFF_)) {
     CheckParticleLists();
   }
-#else
+  } else {
   // Preserve the historical ordering for every build that did not explicitly
   // request local-timestep flux resampling.
   ApplyParticleSplitting();
@@ -489,7 +505,7 @@ void PIC::TimeStepInternal::ExecutionTrackDefault(double& ParticleMovingTime,dou
     PIC::Parallel::ExchangeParticleData();
   }
   ParticleExchangeTime=MPI_Wtime()-ParticleExchangeTime;
-#endif
+  }
 
   if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
     Debugger::logger.func_exit();

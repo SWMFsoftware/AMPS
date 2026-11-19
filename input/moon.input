@@ -147,7 +147,11 @@ ReferenceGroundBasedObservationTime= \\
   ! and (when a charged species is configured) Lorentz acceleration are
   ! actually applied to ordinary srcMoon particles.  I05-I10 exercise this
   ! same configured mover; no test-only force integrator is substituted.
-  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) PIC::Mover::UniformWeight_UniformTimeStep_SecondOrder(ptr,LocalTimeStep,node)
+  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) Moon::MoveParticle(ptr,LocalTimeStep,node)
+  ! Surface-source births must use the same selected tracing/clock dispatcher.
+  ! The Moon wrapper forwards the exact old boundary tracer in legacy mode.
+  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_(ptr,LocalTimeStep,node,FirstBoundaryFlag) Moon::MoveParticleBoundaryInjection(ptr,LocalTimeStep,node,FirstBoundaryFlag)
+  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_FACE_(ptr,LocalTimeStep,node,FirstBoundaryFlag,InjectionFace) Moon::MoveParticleBoundaryInjection(ptr,LocalTimeStep,node,FirstBoundaryFlag,InjectionFace)
   define _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(acclMiddle,spec,ptr,xMiddle,vMiddle,middleNode) Moon::TotalParticleAcceleration(acclMiddle,spec,ptr,xMiddle,vMiddle,middleNode)
   define _PIC_USER_DEFING_PARTICLE_SAMPLING_(tempParticleData,LocalParticleWeight,tempSamplingBuffer,s) Moon::Sampling::SampleParticleData(tempParticleData,LocalParticleWeight,tempSamplingBuffer,s)
   define _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE_ _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE__ON_

@@ -337,6 +337,13 @@ int SurfaceInteraction(long int ptr,double* x,double* v,CutCell::cTriangleFace *
 
 //------------------------------------------- the movers -------------------------------------------
 int MoverSelection=0;
+long int TracerIdOffset=-1;
+unsigned long long NextTracerId=0;
+void InitializeTracer(PIC::ParticleBuffer::byte* data) {
+  PIC::Mover::ForceCutSurface::ResetParticleState(data);
+  const unsigned long long id=(static_cast<unsigned long long>(PIC::ThisThread)<<48)|(++NextTracerId);
+  std::memcpy(data+TracerIdOffset,&id,sizeof(id));
+}
 
 //debugging: AMPS_CUTMOVER_WATCHDOG=<s> stops the run when one mover call takes longer than <s> seconds and prints
 //the particle (a mover that loops); the state is the one at the beginning of the call
@@ -369,6 +376,8 @@ int Mover(long int ptr,double dt,cNode* node) {
   case 0: res=PIC::Mover::ForceFreeCutSurface(ptr,dt,node); break;
   case 1: res=PIC::Mover::TrajectoryTrackingMover(ptr,dt,node); break;
   case 2: res=PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection_Simplified(ptr,dt,node,false); break;
+  case 4: res=PIC::Mover::ForceCutSurfaceFirstOrder(ptr,dt,node); break;
+  case 5: res=PIC::Mover::ForceCutSurfaceSecondOrder(ptr,dt,node); break;
   default: res=PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_SecondOrder(ptr,dt,node);
   }
 
@@ -569,7 +578,8 @@ void AddParticle(int spec,const double *xIn,const double *vIn) {
   nCreated[spec]++;
   if (node->Thread!=PIC::ThisThread) return;
 
-  PIC::ParticleBuffer::InitiateParticle(x,v,NULL,&spec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
+  PIC::ParticleBuffer::InitiateParticle(x,v,NULL,&spec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node,
+      MoverSelection>=4?InitializeTracer:nullptr);
 }
 
 double SpeedOfClass(int spec) {
@@ -858,7 +868,7 @@ void CheckParticles(int step,long long *count) {
 }
 
 //------------------------------------------- the reference comparison -------------------------------------------
-struct cRefParticle {long int ptr; double x[3],v[3]; int spec;};
+struct cRefParticle {long int ptr; double x[3],v[3]; int spec;unsigned long long tracerId;};
 std::vector<cRefParticle> RefParticles;
 long long RefCompared=0,RefAmbiguous=0,RefMismatch=0;
 //the position tolerance of the comparison: 1e-9 m for the new mover; the other movers move a hit point into its face
@@ -893,21 +903,45 @@ void CollectReferenceParticles() {
         unsigned long long h=HashState(r.x);
         if ((r.spec==sAdversarial) ? (h%4!=0) : (h%8!=0)) continue;
         r.ptr=ptr;
+        if(MoverSelection>=4)std::memcpy(&r.tracerId,data+TracerIdOffset,sizeof(r.tracerId));
         RefParticles.push_back(r);
       }
     }
+  }
+  if(MoverSelection>=4) {
+    // Rank-local particle indices change under real MPI transfer. Preserve
+    // an opaque fixture identity through production cloning/packing and
+    // gather independent starting states, never compare reused old indices.
+    const int bytes=static_cast<int>(RefParticles.size()*sizeof(cRefParticle));
+    std::vector<int> counts(PIC::nTotalThreads),offsets(PIC::nTotalThreads);
+    MPI_Allgather(&bytes,1,MPI_INT,counts.data(),1,MPI_INT,MPI_GLOBAL_COMMUNICATOR);
+    int total=0;for(int i=0;i<PIC::nTotalThreads;++i){offsets[i]=total;total+=counts[i];}
+    std::vector<cRefParticle> all(total/sizeof(cRefParticle));
+    MPI_Allgatherv(RefParticles.data(),bytes,MPI_BYTE,all.data(),counts.data(),offsets.data(),MPI_BYTE,MPI_GLOBAL_COMMUNICATOR);
+    RefParticles.swap(all);
   }
 }
 
 //after the move, before the particle exchange: the moved particles still have their buffer index
 void CompareWithReference() {
+  std::unordered_map<unsigned long long,long int> ownedTracers;
+  long long found=0;
+  if(MoverSelection>=4) {
+    for(cNode* node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread];node;node=node->nextNodeThisThread)
+      if(node->block)for(int cell=0;cell<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;++cell)
+        for(long int ptr=node->block->FirstCellParticleTable[cell];ptr!=-1;ptr=PIC::ParticleBuffer::GetNext(ptr)) {
+          unsigned long long id=0;std::memcpy(&id,PIC::ParticleBuffer::GetParticleDataPointer(ptr)+TracerIdOffset,sizeof(id));ownedTracers[id]=ptr;
+        }
+  }
   for (size_t n=0;n<RefParticles.size();n++) {
     cRefParticle& r=RefParticles[n];
-    if (!PIC::ParticleBuffer::IsParticleAllocated(r.ptr)) continue;
+    long int ptr=r.ptr;
+    if(MoverSelection>=4){auto current=ownedTracers.find(r.tracerId);if(current==ownedTracers.end())continue;ptr=current->second;++found;}
+    if (!PIC::ParticleBuffer::IsParticleAllocated(ptr)) continue;
 
     double x[3],v[3];
     bool ambiguous;
-    PIC::ParticleBuffer::byte *data=PIC::ParticleBuffer::GetParticleDataPointer(r.ptr);
+    PIC::ParticleBuffer::byte *data=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
     PIC::ParticleBuffer::GetX(x,data);
     PIC::ParticleBuffer::GetV(v,data);
 
@@ -929,6 +963,13 @@ void CompareWithReference() {
             PIC::ThisThread,ClassName[r.spec],r.x[0],r.x[1],r.x[2],r.v[0],r.v[1],r.v[2],x[0],x[1],x[2],v[0],v[1],v[2],xr[0],xr[1],xr[2],vr[0],vr[1],vr[2]);
       }
     }
+  }
+  if(MoverSelection>=4) {
+    const long long globalFound=SumLL(found);
+    // Every selected reference particle is specular, so disappearance is an
+    // actual mismatch rather than a silently skipped MPI reference check.
+    if(PIC::ThisThread==0&&globalFound!=static_cast<long long>(RefParticles.size()))
+      RefMismatch+=std::llabs(globalFound-static_cast<long long>(RefParticles.size()));
   }
 }
 
@@ -1001,12 +1042,14 @@ void WriteDigest(const char *fname) {
 
 int main(int argc,char **argv) {
   PIC::Init_BeforeParser();
+  std::string ReuseMesh;
 
   for (int i=1;i<argc;i++) {
     std::string a=argv[i];
-    if ((a=="new")||(a=="trajectory")||(a=="simplified")||(a=="direct")) MoverName=a;
+    if ((a=="new")||(a=="trajectory")||(a=="simplified")||(a=="direct")||(a=="force-first")||(a=="force-second")) MoverName=a;
     else if ((a=="nightly")||(a=="stress")||(a=="movers")) Mode=a;
     else if (a=="noadversarial") WithAdversarial=false;
+    else if(a=="reuse-mesh"&&i+1<argc)ReuseMesh=argv[++i];
     else if ((a=="replay")&&(i+7<argc)) {
       //replay <class> x y z vx vy vz [steps]
       ReplayMode=true,ReplaySpec=atoi(argv[i+1]);
@@ -1015,14 +1058,25 @@ int main(int argc,char **argv) {
       if ((i+1<argc)&&(isdigit(argv[i+1][0]))) ReplaySteps=atoi(argv[++i]);
     }
     else {
-      if (PIC::ThisThread==0) printf("usage: %s [new|trajectory|simplified|direct] [nightly|movers|stress] [noadversarial] [replay class x y z vx vy vz [steps]]\n",argv[0]);
+      if (PIC::ThisThread==0) printf("usage: %s [new|trajectory|simplified|direct|force-first|force-second] [nightly|movers|stress] [noadversarial] [replay class x y z vx vy vz [steps]]\n",argv[0]);
       MPI_Finalize();
       return 2;
     }
   }
 
   MoverSelection=(MoverName=="new") ? 0 : ((MoverName=="trajectory") ? 1 : ((MoverName=="simplified") ? 2 : 3));
-  if (MoverSelection!=0) RefPositionTolerance=1.0E-4;
+  if(MoverName=="force-first")MoverSelection=4;
+  if(MoverName=="force-second")MoverSelection=5;
+  if (MoverSelection!=0&&MoverSelection<4) RefPositionTolerance=1.0E-4;
+  if(MoverSelection>=4) {
+    // Registration is runtime opt-in; default/old mover fixtures allocate
+    // exactly their historical layout and keep their existing execution.
+    PIC::Mover::ForceCutSurface::RegisterStorage();
+    PIC::ParticleBuffer::RequestDataStorage(TracerIdOffset,sizeof(unsigned long long),alignof(unsigned long long));
+    PIC::Mover::ForceCutSurface::Acceleration=[](double* a,int,long int,const double*,const double*,cNode*,const PIC::Mover::ForceCutSurface::cTimeContext&){a[0]=a[1]=a[2]=0;};
+    PIC::Mover::ForceCutSurface::Settings.Adaptive=false;
+    PIC::Mover::ForceCutSurface::Settings.GeometryToleranceM=2e-11;
+  }
 
   if (Mode=="movers") {
     //the existing movers in the nightly test: fewer particles and steps
@@ -1084,7 +1138,14 @@ int main(int argc,char **argv) {
   PIC::Mesh::mesh->AllowBlockAllocation=false;
   PIC::Mesh::mesh->init(xmin,xmax,Resolution);
 
-  if (PIC::ThisThread==0) {
+  if(!ReuseMesh.empty()) {
+    // An explicit verification-runner optimization, never an implicit cache:
+    // the runner preserves/checks the NASTRAN/config/mesh hashes from the
+    // producing run. All geometry, per-face coverage and acceptance checks
+    // below still execute. No particle state or reference result is loaded.
+    PIC::Mesh::mesh->readMeshFile(ReuseMesh.c_str());
+  }
+  else if (PIC::ThisThread==0) {
     PIC::Mesh::mesh->buildMesh();
     PIC::Mesh::mesh->saveMeshFile("cut-surface-mover.mesh");
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
@@ -1179,7 +1240,7 @@ int main(int argc,char **argv) {
   }
 
   //5. the movers, the surface interaction, the time steps
-  if (MoverSelection!=0) AmbiguityLength=2.0*PIC::Mesh::mesh->EPS,HitTolerance=2.0*PIC::Mesh::mesh->EPS;
+  if (MoverSelection!=0&&MoverSelection<4) AmbiguityLength=2.0*PIC::Mesh::mesh->EPS,HitTolerance=2.0*PIC::Mesh::mesh->EPS;
   //the gas is enclosed by the shell: a particle that reaches the boundary of the domain has passed through it
   if (MoverSelection==0) PIC::Mover::ForceFreeCutSurfaceDiagnostics::InsideBody=InsideScene,PIC::Mover::ForceFreeCutSurfaceDiagnostics::ReportDomainBoundary=true;
   PIC::Mover::SetUserDefinedParticleMover(Mover);
@@ -1237,9 +1298,15 @@ int main(int argc,char **argv) {
     RecordPreState();
     CurrentStep=step;
 
-    PIC::Mover::MoveParticles();
+    if(MoverSelection>=4) {
+      // Complete pending physical-time/MPI trajectories before evaluating
+      // the existing independent brute-force reference. No extra full dt is
+      // applied to particles received during continuation exchanges.
+      double moving=0,exchange=0;PIC::TimeStepInternal::ExecutionTrackDefault(moving,exchange);
+    }
+    else PIC::Mover::MoveParticles();
     CompareWithReference();
-    PIC::Parallel::ExchangeParticleData();
+    if(MoverSelection<4)PIC::Parallel::ExchangeParticleData();
 
     CheckParticles(step,count);
 

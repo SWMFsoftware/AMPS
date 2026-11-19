@@ -1,0 +1,254 @@
+{
+  "schema": "srcMoon-M3-qualification-protocol-v1",
+  "purpose": "Reviewable protocol and planning only; no physical qualification executor installed",
+  "activation": "preparation-only",
+  "approvals": {
+    "common_physical_time_initial_qualification": "APPROVED",
+    "additional_statistical_design": "PROPOSED_REQUIRES_PREEXECUTION_REVIEW",
+    "physical_product_policies": "BLOCKED_MISSING_AUTHORITATIVE_DATA"
+  },
+  "physical_model_specification": {
+    "path": "M3_PHYSICAL_MODEL_SPECIFICATION.json",
+    "sha256": "6ff42a24fa69572de6202d518c161bee149f59e68aeee11ff65c7c458353b819"
+  },
+  "roadmaps": {
+    "source": "712e1152bf50af6d9ee1dad8f8a585809ca8b92cf42ac6fc7a009f6c0253ee17",
+    "external": "d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4"
+  },
+  "execution": {
+    "development_wall_seconds": 3600,
+    "includes": [
+      "setup",
+      "build",
+      "run",
+      "plots",
+      "restore",
+      "cleanup"
+    ],
+    "aggregate_memory_bytes": 200000000000,
+    "mpi_ranks": [
+      1,
+      8
+    ],
+    "openmp_threads": 1,
+    "long_campaign": "explicit cluster tier, never launched by preparation",
+    "restart": "not implemented for common-time; refuse"
+  },
+  "clock": {
+    "mode": "common-time",
+    "frozen_environment": "explicit LSO SPICE ET; transport relative seconds advance independently",
+    "local_step_admission": "all actual blocks and species have identical positive dt; fixed across common steps",
+    "initialization": "explicit UTC interpreted by normal SPICE path; no inferred epoch",
+    "asynchronous_ensemble": "not qualified; occupancy averaging is not residence-time normalization"
+  },
+  "statistical_design": {
+    "status": "PROPOSED_REQUIRES_PREEXECUTION_REVIEW",
+    "family_planning_risk": 0.01,
+    "independent_unit": "original parent trajectory; siblings/splits/repeated samples are not extra trials",
+    "lifetime_exposure_lambda_T": "log(2)",
+    "sample_size_method": "conservative two-sided Hoeffding planning bound at alpha/K; not an acceptance threshold",
+    "cohort_rounding_multiple": 8,
+    "seeds": [
+      731993,
+      104729,
+      130363
+    ],
+    "stream_contract": "must specify original-parent keyed independent streams and demonstrate no clone/MPI stream reuse before execution",
+    "confidence": "U15 99 percent; I22 95 percent remain distinct; family precision still requires review",
+    "rare_branches": "complete channel-specific precision/power/censoring design is mandatory; minimum event count alone does not establish precision",
+    "U17_minimum_branch_events": 100000
+  },
+  "numerical_design": {
+    "status": "PROPOSED_REQUIRES_PREEXECUTION_REVIEW",
+    "same_physical_final_time": true,
+    "mover_orders": [
+      1,
+      2
+    ],
+    "reference_weight_ratios": [
+      "1:1",
+      "1:8",
+      "8:1"
+    ],
+    "fractional_weight_corrections": true,
+    "numerical_error_budget": null,
+    "policy": "freeze budget before outputs; three decreasing errors do not establish a missing budget",
+    "common_step_fractions_of_final_time": [
+      0.125,
+      0.0625,
+      0.03125
+    ],
+    "common_steps_to_final_time": [
+      8,
+      16,
+      32
+    ],
+    "horizon_representation": "freeze one representable final T, divide by powers of two; use actual represented lambda*T in final statistical design, not assumed exact log(2)"
+  },
+  "cases": {
+    "I21": {
+      "acceptance_path": "integration-tests/I21/reference/acceptance.json",
+      "acceptance_sha256": "688a482706eeb1c9846526d99a26ccf47821cd7cfc946f96646c4481218d179d",
+      "frozen_criteria": {
+        "ensemble_lifetime_relative_error_max": 0.02,
+        "inverse_square_rate_relative_error_max": 0.001,
+        "conversion_budget": "closes"
+      },
+      "linked_predecessors": [
+        "I13",
+        "I14",
+        "I15",
+        "I16",
+        "I17",
+        "I18",
+        "I19",
+        "I20"
+      ],
+      "homogeneous_cases": "actual production rate, transaction, allocator and chemistry dispatch with prescribed analytical bath; local kernel PASS alone is insufficient",
+      "transport_cases": "same physical horizon, both actual force-aware mover orders, bounded species/state/field/surface configuration; no unsupported impacts",
+      "physical_policy_status": "BLOCKED_MISSING_DATA",
+      "qualification_execution": "not-run",
+      "source_selection": {
+        "solar_states": [
+          "quiet",
+          "active"
+        ],
+        "heliocentric_distance_AU": [
+          1,
+          2
+        ],
+        "all_source_choices": "declared inputs for formula verification, not observations"
+      }
+    },
+    "I22": {
+      "acceptance_path": "integration-tests/I22/reference/acceptance.json",
+      "acceptance_sha256": "38c85529eeec208e29c813cb9c7ceda864171b453dd0486bb5048ae3b7c8cdbe",
+      "frozen_criteria": {
+        "ensemble_rate_relative_error_max": 0.02,
+        "linked_branch_confidence": 0.95,
+        "local_branch_confidence": 0.99,
+        "complete_reactive_family": "no dropped-channel renormalization"
+      },
+      "linked_predecessors": [
+        "I13",
+        "I14",
+        "I15",
+        "I16",
+        "I17",
+        "I18",
+        "I19",
+        "I20"
+      ],
+      "homogeneous_cases": "actual production rate, transaction, allocator and chemistry dispatch with prescribed analytical bath; local kernel PASS alone is insufficient",
+      "transport_cases": "same physical horizon, both actual force-aware mover orders, bounded species/state/field/surface configuration; no unsupported impacts",
+      "physical_policy_status": "BLOCKED_MISSING_DATA",
+      "qualification_execution": "not-run",
+      "source_selection": {
+        "families": [
+          "He",
+          "Ne",
+          "Ar",
+          "H2O all seven reactive channels",
+          "OH_exp all four reactive channels"
+        ],
+        "solar_states": [
+          "quiet",
+          "active"
+        ],
+        "total_absorption": "excluded from reactive channels",
+        "rate_estimator": "unresolved total-removal versus partial estimator; freeze definition and design before execution"
+      }
+    },
+    "I23": {
+      "acceptance_path": "integration-tests/I23/reference/acceptance.json",
+      "acceptance_sha256": "c14c68cf8938a850f75441366b637005fdbad874a55af1b067baca8e85a0f71b",
+      "frozen_criteria": {
+        "direct_coefficient_relative_error_max": 0.02,
+        "ensemble_lifetime_relative_error_max": 0.03,
+        "invalid_plasma": "explicit refusal; zero density gives zero rate"
+      },
+      "linked_predecessors": [
+        "I13",
+        "I14",
+        "I15",
+        "I16",
+        "I17",
+        "I18",
+        "I19",
+        "I20"
+      ],
+      "homogeneous_cases": "actual production rate, transaction, allocator and chemistry dispatch with prescribed analytical bath; local kernel PASS alone is insufficient",
+      "transport_cases": "same physical horizon, both actual force-aware mover orders, bounded species/state/field/surface configuration; no unsupported impacts",
+      "physical_policy_status": "BLOCKED_MISSING_DATA",
+      "qualification_execution": "not-run",
+      "source_selection": {
+        "parents": [
+          "He",
+          "Na",
+          "Ne",
+          "Ar"
+        ],
+        "electron_distribution": "explicit prescribed Maxwellian within native fit domain, no invented measured moments",
+        "measured_event_branch": "requires R4.1/D06 electron data; currently unavailable"
+      }
+    },
+    "I24": {
+      "acceptance_path": "integration-tests/I24/reference/acceptance.json",
+      "acceptance_sha256": "f2ece60f77cc643e300c4a718b943d54c3c17c3322232a0536d11a9226336f5a",
+      "frozen_criteria": {
+        "direct_rate_relative_error_max": 0.01,
+        "ensemble_lifetime_relative_error_max": 0.03,
+        "identities_charge_nuclei": "exact; physical energy convention separately required"
+      },
+      "linked_predecessors": [
+        "I13",
+        "I14",
+        "I15",
+        "I16",
+        "I17",
+        "I18",
+        "I19",
+        "I20"
+      ],
+      "homogeneous_cases": "actual production rate, transaction, allocator and chemistry dispatch with prescribed analytical bath; local kernel PASS alone is insufficient",
+      "transport_cases": "same physical horizon, both actual force-aware mover orders, bounded species/state/field/surface configuration; no unsupported impacts",
+      "physical_policy_status": "BLOCKED_MISSING_DATA",
+      "qualification_execution": "not-run",
+      "source_selection": {
+        "channels": [
+          "H+_He_total_capture_ORNL_A32",
+          "H+_Na3s_total_capture_Morgan1985_Table2_log_log"
+        ],
+        "energy_grid": "source knots/fit range; full grid selected before outcomes, no extrapolation",
+        "product_joint_pdf": null
+      }
+    }
+  },
+  "artifacts": [
+    "stdout.log",
+    "stderr.log",
+    "result.json",
+    "run_manifest.json",
+    "application.in",
+    "build logs",
+    "source revision and dirty hashes",
+    "executable hash",
+    "data hashes",
+    "seed and stream identity",
+    "MPI/OpenMP layout",
+    "original-parent event records",
+    "physical tracked/bath/nuclei/charge/energy ledgers",
+    "comparison.csv",
+    "comparison.png",
+    "comparison.eps",
+    "resource history"
+  ],
+  "status_semantics": {
+    "PASS": "only actual declared criteria evaluated and met",
+    "FAIL": "actual evaluated criterion not met",
+    "ERROR": "build/runtime/parser/data identity/infrastructure failure",
+    "SKIPPED": "required capability/data/configuration/predecessors unavailable; preflight success does not open qualification"
+  },
+  "formal_executor_installed": false,
+  "observational_scoring": false
+}

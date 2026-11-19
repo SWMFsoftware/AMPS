@@ -98,7 +98,13 @@ def configured_host(amps_dir: Path) -> str:
 
 def legacy_items(machine: Machine, amps_dir: Optional[Path], table: Optional[Path]) -> Tuple[List[Item], str]:
     tree = amps_dir or REPO_ROOT
-    if amps_dir or configured_host(tree) == machine.table_host:
+    # An explicit configured tree requests its exact compiler-selected manifest
+    # and retains the host check below. Otherwise an explicit Table is the
+    # caller's source of selection, even when the default checkout happens to
+    # contain a Makefile.test from an earlier configuration. Only the implicit
+    # default may use that cached manifest. This keeps --table and private
+    # planning fixtures independent of unrelated local build state.
+    if amps_dir or (table is None and configured_host(tree) == machine.table_host):
         if configured_host(tree) != machine.table_host:
             raise RuntimeError("{} was configured for host {!r}, not {!r}".format(
                 tree, configured_host(tree) or "?", machine.table_host))

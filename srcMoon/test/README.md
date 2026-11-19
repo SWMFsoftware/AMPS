@@ -1,5 +1,83 @@
 # `srcMoon` subsystem verification tests
 
+## November 19 current-core preservation and supervision
+
+Master integrates `60a156ddcc3deeaf48e2981b0beb14738245457e` with the preserved local source (eleven incoming commits). The completed corrective CORE registry has **844 PASS, 240 SKIP, 1 FAIL and 1 ERROR**. Exact historical/current-upstream PASS preservation audits pass; the known nonpasses remain visible. Moon M0 is **10/10 PASS**, with a zero-byte reviewed nightly diff, and **1533 targeted native checks PASS**. The U-series has 15 PASS/11 SKIPPED and zero FAIL/ERROR.
+See [CORE_INTEGRATION.md](../CORE_INTEGRATION.md) for exact source bases, the
+retained original infrastructure ERROR, native manifests and complete report.
+A preservation PASS does not make the registry all green or qualify M3.
+
+`CampaignBudget` observes descendants of its calling process. Do not run two
+independent native budgets in threads sharing that PID: either budget can
+adopt/wait for/terminate the other's child. Use one native owner per OS process,
+or separate OS worker processes with independent work/configuration trees.
+Include setup/build/run/cleanup/reporting in each original deadline; preserve
+failed attempts and never infer individual PASS from incomplete suite logs.
+The corrected campaign changes only this orchestration and build parallelism,
+using the same registered tests, cases, scientific criteria and authentic data.
+
+## M3 completion proposal — November 17
+
+[M3_COMPLETION_PROPOSAL.md](M3_COMPLETION_PROPOSAL.md) specifies the recommended
+remaining R3.1–R3.4 work: conservative reaction packets, actual force-aware mover
+wiring, photon/electron/charge-exchange/molecular contracts, existing I21–I24
+runners, independent oracles, statistical design and separate one-hour/cluster
+tiers. It records the available D04/D05 data, missing kinetic/driver evidence
+and decisions requiring review. The user approved implementation and the
+additional first-/second-order local particle tracers.
+[M3_IMPLEMENTATION_CONTRACT.md](M3_IMPLEMENTATION_CONTRACT.md) records that scope.
+Production services now have local/native controls; unresolved physical
+providers and formal predecessor gates still keep M3 open. Dated initial
+rate-only results below retain their original scope.
+
+## M3 registered support and force tracing — November 17
+
+The existing U15/U17 owners now invoke the maintained photon statistics,
+reaction primitives, runtime configuration and total-capture rate controls.
+Their actual `supporting_checks` records, counts, runner and log paths survive
+the global aggregation. A component PASS is separate from the full-ID SKIPPED
+status: molecular kinetics, complete source/state mapping and unchanged
+predecessors are still required. Child FAIL/ERROR is never hidden by SKIPPED.
+
+The extended `--phase m3-development --isolated-checkout` also executes the
+actual PIC packet adapter on one/eight ranks, both tracing orders with the
+actual Moon force and the combined constant-history controller, using one
+fresh all-species producer. These fixtures test
+unequal local weights/time steps, all-or-nothing publication, allocation
+failure, local time and convergence. Their analytical elastic/constant-field
+cases are not lunar measurements or qualified CEX/daughter laws. Without
+`--isolated-checkout`, the derived local-weight/time build is explicitly
+SKIPPED. Commands and artifact descriptions are in [RUN.md](../RUN.md).
+
+The generic core tracer has its own normal nightly registration
+`unit_test_force_cut_surface_mover`; it does not borrow a lunar U/I ID. See
+[its README](../../test/srcForceCutSurfaceMoverTest/README.md) for clean build,
+one/eight-rank fixed/adaptive runs, negative mode controls and PNG/CSV/EPS.
+The six-body reflection regression additionally covers both new orders and
+the legacy default. A native core PASS does not qualify Moon environmental
+time dependence or missing reaction physics.
+
+I21–I24 now have individual registered owners and detailed contracts. They
+currently implement predecessor/capability gating and evidence preservation;
+their full physical execution and scoring remain unavailable. They produce
+honest SKIPPED / NOT QUALIFIED receipts instead of placeholder success.
+No formal M3 gate or acceptance criterion changes through this registration.
+
+Supporting results must declare `supporting_checks` together with
+`supporting_counts`. Every child has a unique nonempty `check`, a valid
+`status`, and explicit `runner` and `log` paths. Counts must be exactly the
+four integer fields `PASS`, `FAIL`, `ERROR`, `SKIPPED`, matching those rows.
+An outer PASS cannot hide a non-PASS child; a formally SKIPPED owner may retain
+successful/unavailable components but cannot hide a child FAIL/ERROR. An
+inconsistent receipt becomes ERROR and preserves the original child diagnostics.
+Child CLI exits remain0/1/2/77 for PASS/FAIL/ERROR/SKIPPED. The shared supporting
+deadline covers descendants and later groups; timeouts/resource failure are
+ERROR, and no later group receives another full allowance. The dedicated
+capacity-refusal control accepts only its intended exit1 plus its specific
+actionable diagnostic, never a signal/crash carrying matching text. The
+[protocol contract](M3_SUPPORTING_PROTOCOL_CONTRACT.md) and registered U16
+orchestration controls exercise these requirements without science fixtures.
+
 ## Initial M3 rate service and research — November 17
 
 The user approved early M3 implementation/local verification while formal
@@ -242,10 +320,12 @@ python3 -B srcMoon/test/test_runner.py --phase implemented \
   --output-dir test_output/srcMoon/qualification-YYYYMMDD
 ```
 
-The first command checks the U01-U26/I01-I20 runner, README, and reference
+The first command checks the U01-U26/I01-I24 runner, README, and reference
 contract structure without making a physics claim.  The second delegates the
-roadmap-ordered scientific work to the established phase runners.  I21-I46
-remain frozen roadmap IDs without executable runners and are reported as
+roadmap-ordered scientific work to the established phase runners. I21-I24
+currently execute prerequisite/capability gating and preserve evidence; their
+physical execution/scoring is not implemented. I25-I46
+remain frozen roadmap IDs without executable owners and are reported as
 explicit gaps by `test_runner.py --phase release`; they are never represented
 by placeholder PASS results.
 
@@ -809,9 +889,9 @@ convergence evidence.
 | U12 | surface interaction | implemented linked probe; PASS | Na/Ar sticking and residence kernels plus the selectable linear-speed/kinetic-energy accommodation identity are checked; linked stochastic I18 remains separate. |
 | U13 | cold trapping | implemented linked probe; PASS | Continuous finite residence, warming release, inventory conservation, classification, and checkpoint round trip pass; I20 owns D02/D03 linkage. |
 | U14 | Na photoionization | implemented linked probe | Legacy constant lifetime only. |
-| U15 | multispecies photoionization | SKIPPED | Na is the sole active species. |
-| U16 | electron impact | SKIPPED | Existing constants are not a qualified D05 implementation. |
-| U17 | charge exchange | SKIPPED | No configured production reaction path. |
+| U15 | multispecies photoionization | full gate SKIPPED; supporting services implemented | Complete D04 registry, frozen 12-family photon statistics, conservative primitives and runtime controls execute; physical product mapping/kinetics and unchanged predecessors remain unqualified. |
+| U16 | electron impact | implemented; rate/control PASS | Native D05 Maxwellian/Voronov coefficients, runtime installation, actual callback and registered orchestration controls pass; this does not qualify I23 particle kinetics. |
+| U17 | charge exchange | full gate SKIPPED; total-rate services implemented | He/Na source-identified rates and independent source/domain checks execute; differential/state-resolved kinetics and physical bath/event providers remain missing. |
 | U18 | plasma driver | SKIPPED | D06 reports ERROR and no qualified driver is wired. |
 | U19 | helium source | SKIPPED | Source file exists but He is disabled and reservoir physics is unresolved. |
 | U20 | neon source | SKIPPED | Source file exists but Ne is disabled. |
@@ -968,3 +1048,160 @@ to test late contradictory definitions and missing proof. They are explicitly
 infrastructure fixtures, never physical observations. Existing I19 physics,
 numerical horizons, seeds, inputs, and thresholds are unchanged. The first
 upstream integration campaign remains ERROR; a corrected run is new evidence.
+
+The independent M3 services are included in the existing U15 supporting
+children (declared piecewise exposure, the optical-clock bridge, common-time
+clock and qualification-protocol controls). U16 also discovers the protocol
+controls through its orchestration suite. These child PASS results do not
+complete the frozen U15 physics scope. The extended `m3-development` campaign
+also runs the actual common-time source/mover fixture against the same fresh
+native producer, before ordinary Moon restoration. All children consume the
+same remaining wall allowance, preserve runner/log/result paths and propagate
+FAIL/ERROR; no new permanent test ID was assigned.
+
+Read [`M3_PHYSICAL_MODEL_SPECIFICATION.md`](M3_PHYSICAL_MODEL_SPECIFICATION.md)
+and [`M3_QUALIFICATION_PROTOCOL.md`](M3_QUALIFICATION_PROTOCOL.md) for concrete
+model inputs, missing distributions, unchanged criteria, proposed cohort
+planning and exact preparation commands. `m3_protocol.py` emits a structural
+preparation receipt and honest SKIPPED formal status, never a physical run.
+The source/data roadmap hashes and controlling differences remain explicit.
+
+The extended common-time checks distinguish manual production-hook integration
+from full normal initialization. After a successful ordinary Moon restore the
+campaign binds source-before/after, actual successful Config/make log, archive,
+retained executable and generated headers in `normal_build_evidence.json`.
+`run_m3_transport_clock.py --normal-startup-only --build-evidence ...` then
+runs both actual `amps_init`/two-`amps_time_step` paths at eight ranks without
+another application build. It chains the existing event observer to preserve
+production budgets. Actual furnished SPICE dependencies, sampling/source order,
+common endpoints and frozen environmental epoch are retained. This consumes
+the same original campaign deadline; it adds no physical qualification claim.
+
+The source-backed [chemical database/Hartley2 research report](M3_CHEMISTRY_DATABASE_RESEARCH.md)
+records available water/OH photorates, activity-dependent comet tables, electron
+and capture candidates, exact reuse boundaries and source interpretation gaps.
+It is a research audit, not a new U/I test or a qualified physical provider.
+Acquisition manifests preserve failed/challenged downloads as well as usable
+native numbers. Canonical data, frozen rate selections and test gates remain
+unchanged. The existing comet steady-flux executor and neutral-only ionization
+sinks are not the Moon physical-time conservative packet implementation.
+
+[`M3_DAUGHTER_AND_ION_SURFACE_DECISIONS.md`](M3_DAUGHTER_AND_ION_SURFACE_DECISIONS.md)
+and its [JSON register](M3_DAUGHTER_AND_ION_SURFACE_DECISIONS.json) give nine
+concrete choices approved on2026-11-18, source limitations and independent
+oracles. P01–P09 are decision labels, not test IDs. The proposal itself added
+no runner; the approved implementation below adds supporting children to
+existing owners. Reduced photon/three-body/CEX models and the ideal ion
+collector require explicit selections and declared experimental scope;
+they cannot qualify unsupported lunar kinetics or material recycling.
+The existing frozen physical/protocol JSON and U/I criteria remain unchanged.
+
+## Approved P01–P09 component implementation
+
+The global U15 supporting list now includes `reduced-daughter-kinematics`,
+`ideal-ion-collector` and `oxygen-state-source-controls`; the U17 supporting list includes `sodium-partial-capture`
+and `helium-silica-conditional`. Each invokes its actual maintained runner,
+preserves structured PASS/FAIL/ERROR/SKIPPED and its log/result/artifact paths,
+and shares the existing bounded supervisor. Their experimental/laboratory
+scope does not change the full U15/U17 or formal I21–I24 status. Surface
+subchecks are named supporting components, not a newly assigned lunar
+material-validation ID. The gap registry keeps that physical coverage open.
+
+Individual runner/source commands and independent oracles are in
+[reduced_kinematics](reduced_kinematics/README.md),
+[sodium_partial_capture](sodium_partial_capture/README.md),
+[ion_collector](ion_collector/README.md),
+[helium_silica](helium_silica/README.md) and
+[physical_state_sources](physical_state_sources/README.md). The separate
+[O I source procedure](state_cascades/README.md) preserves native levels,
+transition multipoles, missing A values and five explicit cascade levels.
+Its offline controls check source processing and corruption handling; their
+PASS is not a physical lifetime, branching law or cascade-transport PASS.
+Source tables must exist and match their provenance; no fresh-machine PASS
+is inferred from the existence of a research directory. Missing dependencies
+or source data are SKIPPED; changed data are ERROR. The mass-source reader
+re-extracts the derived inventory from authentic raw bytes and rejects edited
+derived masses/thresholds/constants. It does not infer source uncertainties or
+isotope shifts. Use an interpreter with Matplotlib for requested PNG/EPS.
+
+The native packet-backend runner additionally invokes the actual normal Moon
+sphere dispatcher and PIC collector adapter at1/8MPI. Its explicit nominal
+state and identity geometry are analytical controls, not lunar thermochemistry
+or a material benchmark. It checks actual local weight/correction, charge/
+nuclear/energy transfer, distinct physical/geometry epochs, install refusal,
+neutral byte/ledger preservation and deletion ownership. Ordinary M0/nightly
+regression separately protects the original neutral path. Static orbit-OFF
+terrain geometry is not an actual SPICE/LSO epoch qualification.
+
+The [shared chemical database tests](../../test/chemical_database/README.md)
+exercise the actual shared C++17 implementation, Python API, malformed inputs,
+immutable source/profile/export bindings, permissions and installed/relocated
+SDK. Run `python3 -B test/chemical_database/run_all_tests.py --help` for the
+stand-alone protocol/data options. The registered shared-core owner is
+`CORE-CHEMICAL-DATABASE-001` with case `CHEMICAL-DATABASE-PROTOCOL-001`;
+this adds no U/I identifier. The nine existing Moon scalar/adapter suites use
+`chemical_database_build.py` to compile the actual common production sources.
+The global Moon runner continues to execute their existing owners. Actual
+native M0/nightly and full CORE preservation evidence is recorded in STATUS.md
+section 5.30. Catalogue/API integrity PASS does not install missing physical
+providers or qualify I21–I24. Existing criteria, reviewed references, scientific
+status meanings and permission/data gates remain binding. The broader
+[design proposal](../../doc/CHEMISTRY_DATABASE_PROPOSAL.md) retains unimplemented
+application-profile migration work, including Hartley2.
+
+## Source-bound M3 profiles, trajectories and conditional cohorts
+
+The U15 supporting namespace also runs source-state profiles, moving-parent
+photon composition, accepted-trajectory exposure, exact compensated clocks,
+approved qualification/RNG controls and independent sodium event-ledger checks.
+Each uses the same production implementation or an independent verifier of its
+actual output; none replaces missing physical data. Their detailed contracts
+are in [physical_reaction_events](physical_reaction_events/CONTRACT.md),
+[trajectory_exposure](trajectory_exposure/README.md),
+[qualification](qualification/CONTRACT.md),
+[semantic_cohort](semantic_cohort/CONTRACT.md) and
+[sodium_cohort](sodium_cohort/README.md). Global registration retains child
+status, runner, log, result, comparison CSV/PNG/EPS and source identity. Add
+future supporting runners to `m3_supporting_services.RUNNERS` and the relevant
+existing owner's tuple in `common/moon_testlib.py`; add protocol controls rather
+than assigning a permanent U/I identifier informally.
+
+`m3_qualification_executor.py` now has an actual conditional I21 execution path.
+The frozen plan must bind its complete source profile, a named installed
+producer, generated build identity, every root/included `.in` path+SHA, the
+explicit three-state mapping and at least three matched common-step refinements
+at BOTH1/8MPI. Only after actual source and same-campaign predecessor admission
+does it call the normal native owner. It independently audits every original
+parent, complete per-rank event set, actual committed child, signed reservoirs,
+source-clock timing, endpoint survival and exact branch confidence. The original
+one-hour resource clock covers launches and all auditing/plots; it never resets
+between levels. A larger experiment is deferred to a separately declared cluster
+package with the same criteria. Actual partial launches survive in
+`execution_journal.json` even if a later native process fails.
+
+Current Na+ state/threshold evidence is unavailable, so the current physical
+owner correctly returns77/SKIPPED before expensive normal startup. I22–I24
+still lack complete source-consistent product providers and remain disabled.
+Readiness or one successful cohort is not full I21, I21–I24 or M3 closure.
+The approved numerical0.2/0.3percent budgets, frozen original protocol, exact
+branch intervals, data gates and full qualification matrix are unchanged.
+Use [the numerical contract](sodium_cohort/NUMERICAL_CONTRACT.md) for the
+homogeneous reference assumptions and [ledger instructions](sodium_cohort/LEDGER_README.md)
+for exact native hexadecimal input and independent reconstruction.
+
+
+### Supporting M3 environment-stage and admission controls
+
+`coefficient-stage-controls` checks exact zero-acceleration macro admission and
+actual1/8MPI administrative consensus before physical startup. It is registered
+with the global supporting runner and U15. Heavy normal-SPICE stage checks use
+`run_m3_coefficient_stage.py` with an authentic successful normal producer;
+the developer orchestration supplies that same proof after restoration.
+See [coefficient_stage/README.md](coefficient_stage/README.md). None of these
+software/source checks closes formal M3 or supplies missing Na+ state data.
+
+U15's expanded supporting collection has the named600s execution allowance
+`M3_PHOTON_SUPPORT_WALL_SECONDS`. It covers additional source/profile/ledger/
+statistics checks; every enclosing native campaign still retains its original
+one-hour deadline. This changes no scientific acceptance threshold. A previous
+300s timeout is preserved as ERROR; a corrective rerun is separate evidence.

@@ -18,6 +18,7 @@ import re
 import shutil
 import subprocess
 import time
+from chemical_database_build import shared_sources, shared_dependencies
 
 ROOT=Path(__file__).resolve().parents[2]
 NATIVE=Path('/data/vtenishe/moon_validation_data/photochemistry/raw/electron_impact/voronov/cfit.dat')
@@ -49,6 +50,13 @@ def run_checks(output):
         command=[compiler,'-std=c++17','-O2','-Wall','-Wextra','-pedantic',
                  '-I',str(ROOT/'srcMoon'),str(ROOT/'srcMoon/test/m3_runtime_rates_probe.cpp'),
                  str(ROOT/'srcMoon/MoonInput.cpp'),str(ROOT/'srcMoon/species/ElectronImpact.cpp'),
+                 # The immutable runtime installer now owns the documented
+                 # photon/CEX registries too. Link their production services
+                 # even when this legacy U16 fixture leaves both disabled;
+                 # a test-only installer stub would bypass real initialization.
+                 str(ROOT/'srcMoon/species/Photochemistry.cpp'),
+                 str(ROOT/'srcMoon/species/ChargeExchange.cpp'),
+                 *(str(p) for p in shared_sources(ROOT,'runtime')),
                  '-o',str(executable)]
         process=subprocess.run(command,cwd=ROOT,text=True,capture_output=True)
         (output/'compile.stdout.log').write_text(process.stdout)
@@ -129,7 +137,10 @@ def run_checks(output):
     result['source_files']={str(p.relative_to(ROOT)):sha(p) for p in (
         ROOT/'srcMoon/MoonInput.cpp',ROOT/'srcMoon/MoonInput.h',
         ROOT/'srcMoon/species/ElectronImpact.cpp',ROOT/'srcMoon/species/ElectronImpact.h',
-        ROOT/'srcMoon/test/m3_runtime_rates_probe.cpp',Path(__file__).resolve())}
+        ROOT/'srcMoon/species/Photochemistry.cpp',ROOT/'srcMoon/species/Photochemistry.h',
+        ROOT/'srcMoon/species/ChargeExchange.cpp',ROOT/'srcMoon/species/ChargeExchange.h',
+        ROOT/'srcMoon/test/m3_runtime_rates_probe.cpp',Path(__file__).resolve(),
+        *shared_dependencies(ROOT,'runtime'))}
     result['data_files']={str(p):sha(p) for p in dependencies if p.is_file()}
     result['source_revision']=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
     (output/'result.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n')

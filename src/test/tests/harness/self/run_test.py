@@ -331,11 +331,12 @@ def test_selection_contract(context: Dict) -> None:
         "core", "application-srcEnceladus", "application-srcMoon"]
     # The order-preserving performance owner adds one core suite and thirteen
     # cases; CRC and native signatures add five more cases to existing owners.
+    # The shared chemical database adds exactly one source-only suite/case.
     # Pin the new independent totals explicitly rather than deriving expected
     # values from production grouping, which would conceal a lost owner.
-    assert [len(item["tests"]) for item in streams] == [51, 3, 2]
+    assert [len(item["tests"]) for item in streams] == [52, 3, 2]
     assert [sum(len(test["selected_cases"]) for _, test in item["tests"])
-            for item in streams] == [1085, 62, 46]
+            for item in streams] == [1086, 62, 46]
     listed = io.StringIO()
     with contextlib.redirect_stdout(listed):
         module.print_tests(
@@ -367,12 +368,14 @@ def test_selection_contract(context: Dict) -> None:
         return {item["id"] for item in module.select_tests(tests, campaign_args)}
 
     assert campaign_ids("smoke") == {
+        "CORE-CHEMICAL-DATABASE-001",
         "CORE-HARNESS-001", "CORE-GENERAL-INPUT-001",
         "CORE-GENERAL-CONTAINERS-001", "CORE-GENERAL-NUMERICS-001",
         "CORE-GENERAL-RNG-001", "CORE-GENERAL-LOGGER-001",
         "CORE-UNITS-001", "CORE-SPECIES-RADIATION-001",
         "CORE-COMET-LIBRARIES-001"}
     assert campaign_ids("nightly") == {
+        "CORE-CHEMICAL-DATABASE-001",
         "CORE-PIC-PERFORMANCE-001",
         "CORE-HARNESS-001", "CORE-GENERAL-INPUT-001",
         "CORE-GENERAL-CONTAINERS-001", "CORE-GENERAL-NUMERICS-001",
@@ -404,6 +407,7 @@ def test_selection_contract(context: Dict) -> None:
         "CORE-GENERAL-MPI-001", "CORE-MESH-MPI-OWNERSHIP-001",
         "CORE-PIC-PERFORMANCE-001"}
     assert campaign_ids("extended") == {
+        "CORE-CHEMICAL-DATABASE-001",
         "CORE-PIC-PERFORMANCE-001",
         "CORE-COMET-LIBRARIES-001",
         "CORE-INTERFACE-ABI-001", "CORE-PIC-NATIVE-001",

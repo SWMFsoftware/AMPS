@@ -28,9 +28,31 @@ int main(int argc,char** argv) {
         Moon::Runtime::GetElectronImpactTable()!=nullptr) return 5;
     std::cout<<"failed_install_preserved=1\n";
   }
+  if (argc==3 && std::string(argv[2])=="rollback-m3") {
+    auto invalid=configuration;
+    invalid.photochemistryDataDirectory+="/missing-authoritative-source";
+    if (Moon::Runtime::InstallConfiguration(invalid,&error) ||
+        Moon::Runtime::HasConfiguration() ||
+        Moon::Runtime::GetElectronImpactTable()!=nullptr ||
+        Moon::Runtime::GetPhotochemistryRegistry()!=nullptr ||
+        Moon::Runtime::GetChargeExchangeRegistry()!=nullptr) return 8;
+    std::cout<<"failed_m3_install_preserved=1\n";
+  }
+  if (argc==3 && std::string(argv[2])=="reject-dynamic-m2") {
+    // A programmatic caller must not bypass the same local/global-clock
+    // incompatibility refused by the .in parser. No thermal law is invented.
+    auto invalid=configuration;invalid.m2EnvironmentEnabled=true;
+    if (Moon::Runtime::InstallConfiguration(invalid,&error) ||
+        Moon::Runtime::HasConfiguration() ||
+        error.find("m2_environment=disabled")==std::string::npos) return 10;
+    std::cout<<"incompatible_m2_install_preserved=1\n";
+  }
   if (!Moon::Runtime::InstallConfiguration(configuration,&error)) {
     std::cerr<<error<<'\n';
-    std::cout<<"install_preserved="<<(!Moon::Runtime::HasConfiguration())<<'\n';
+    std::cout<<"install_preserved="<<(!Moon::Runtime::HasConfiguration() &&
+        !Moon::Runtime::GetElectronImpactTable() &&
+        !Moon::Runtime::GetPhotochemistryRegistry() &&
+        !Moon::Runtime::GetChargeExchangeRegistry())<<'\n';
     return 4;
   }
   const auto& actual=Moon::Runtime::GetConfiguration();
@@ -41,6 +63,39 @@ int main(int argc,char** argv) {
       <<"density_m3="<<actual.electronDensityM3<<'\n'
       <<"temperature_ev="<<actual.electronTemperatureEv<<'\n'
       <<"has_table="<<(table!=nullptr)<<'\n';
+  const auto* photons=Moon::Runtime::GetPhotochemistryRegistry();
+  const auto* capture=Moon::Runtime::GetChargeExchangeRegistry();
+  std::cout<<"chemistry_mode="<<actual.chemistryMode<<'\n'
+      <<"has_photon_registry="<<(photons!=nullptr)<<'\n'
+      <<"has_capture_registry="<<(capture!=nullptr)<<'\n';
+  std::cout<<"tracing_mover="<<actual.particleTracingMover<<'\n'
+      <<"tracing_clock_mode="<<actual.tracingClockMode<<'\n'
+      <<"tracing_maximum_substep_s="<<actual.tracingMaximumSubstepS<<'\n'
+      <<"tracing_field_frame="<<actual.tracingFieldFrame<<'\n';
+  if (photons) {
+    using Moon::Species::Photochemistry::SolarCase;
+    const auto solar=actual.photochemistrySolarCase=="quiet" ? SolarCase::Quiet : SolarCase::Active;
+    std::cout<<"photon_catalogue_rows="<<photons->catalogueSize()<<'\n'
+        <<"photon_reactive_rows="<<photons->reactiveSize()<<'\n';
+    for (const char* atom : {"He","Na","Ne","Ar"}) {
+      double oneAu=0,twoAu=0;
+      if (!photons->TotalDestructionRateS(atom,solar,1,1,&oneAu,&error) ||
+          !photons->TotalDestructionRateS(atom,solar,2,1,&twoAu,&error)) {
+        std::cerr<<error<<'\n';return 9;
+      }
+      std::cout<<atom<<"_photon_rate_1au_s="<<oneAu<<'\n'
+          <<atom<<"_photon_rate_2au_s="<<twoAu<<'\n';
+    }
+  }
+  if (capture) {
+    using namespace Moon::Species::ChargeExchange;
+    for (ChannelId id : {ChannelId::ProtonHeOrnlA32,ChannelId::ProtonNaMorgan1985LogLog}) {
+      ChannelMetadata metadata;
+      if (!capture->GetMetadata(id,&metadata,&error)) return 10;
+      std::cout<<metadata.id<<"_daughter_kinetics_available="<<metadata.daughterKineticsAvailable<<'\n'
+          <<metadata.id<<"_particle_execution_enabled="<<metadata.productionParticleExecutionEnabled<<'\n';
+    }
+  }
   if (table) {
     using namespace Moon::Species::ElectronImpact;
     for (NeutralSpecies atom : {NeutralSpecies::He,NeutralSpecies::Na,

@@ -495,6 +495,81 @@ int psd_illumination(bool invalidFactor=false) {
   return failures==0?0:1;
 }
 
+int moving_surface_transaction() {
+#ifdef _NO_SPICE_CALLS_
+  std::fprintf(stderr,"SKIPPED moving surface transaction requires SPICE\n");return 77;
+#else
+  // Actual production preview/commit API on a closed analytical octahedron.
+  // Real SPICE defines only the coordinate transform, never an observation.
+  PIC::Init_BeforeParser();
+  struct Finalize {~Finalize(){int done=0;MPI_Finalized(&done);if(!done)MPI_Finalize();}} finalize;
+  PIC::Mover::ForceCutSurface::RegisterStorage();PIC::ParticleBuffer::Init(8);
+  const long int particle=PIC::ParticleBuffer::GetNewParticle();
+  Moon::Runtime::Configuration configuration;
+  configuration.particleTracingMover="force-cut-surface-second-order";
+  configuration.simulationEnvironmentMode="frozen";
+  configuration.surfaceCollisionMaximumSegmentLengthM=1;
+  configuration.surfaceCollisionDistanceToleranceM=1e-6;
+  configuration.surfaceCollisionTimeToleranceS=1e-8;
+  configuration.surfaceCollisionMaximumIterations=100;
+  const double radius=1000;
+  Moon::Surface::Triangulation mesh;
+  mesh.verticesM={{{radius,0,0}},{{-radius,0,0}},{{0,radius,0}},{{0,-radius,0}},{{0,0,radius}},{{0,0,-radius}}};
+  mesh.faces={{{0,2,4}},{{2,1,4}},{{1,3,4}},{{3,0,4}},{{2,0,5}},{{1,2,5}},{{3,1,5}},{{0,3,5}}};
+  std::string error;
+  if(!Moon::SurfaceEnvironment::InitializeProductionTerrain(mesh,configuration,&error))return 2;
+  Exosphere::SetSimulationStartTimeString("2009-01-24T00:00:00");Exosphere::Init_SPICE();
+  if(!print_furnished_spice_dependencies())return 2;
+  SpiceDouble epoch;str2et_c("2009-01-24T00:00:00",&epoch);
+  Moon::SurfaceEnvironment::BeginProductionParticleStep(epoch);
+  PIC::Mover::ForceCutSurface::SetParticleEpochS(particle,epoch+1000);
+  SpiceDouble reference[6][6];sxform_c(Moon::Frames::BodyFixed,Moon::Frames::SolarOrbital,epoch,reference);
+  double source[36];
+  {PIC::Mover::cMovingInjectionEpochScope birth(1000);
+   if(!Moon::SurfaceEnvironment::ProductionInjectionBodyToLsoTransform(source,&error))return 2;}
+  int failures=0;double frameError=0,derivative=0;
+  for(int row=0;row<6;++row)for(int column=0;column<6;++column) {
+    if(row>=3&&column<3)derivative=std::max(derivative,std::abs(source[6*row+column]));
+    else frameError=std::max(frameError,std::abs(source[6*row+column]-reference[row][column]));
+  }
+  failures+=report("frozen_source_pose_ignores_birth_offset",frameError,0,0,1e-14);
+  failures+=report("frozen_source_has_zero_material_velocity",derivative,0,0);
+  failures+=report("frozen_source_preserves_physical_birth_epoch",PIC::Mover::ForceCutSurface::GetParticleEpochS(particle),epoch+1000,0);
+  auto legacy=configuration;legacy.particleTracingMover="legacy";double legacyMatrix[36];std::memcpy(legacyMatrix,reference,sizeof(reference));
+  if(!Moon::SurfaceEnvironment::ApplyFrozenTracingBodyTransform(legacy,legacyMatrix,&error))return 2;
+  failures+=report("legacy_body_transform_exactly_preserved",std::memcmp(legacyMatrix,reference,sizeof(reference))==0?1:0,1,0);
+  const auto before=Moon::SurfaceEnvironment::ProductionCollisionCount();
+  double firstNormal[3]={},firstPosition[3]={},zero[3]={};double firstTime=0;
+  for(int facet=0;facet<2;++facet) {
+    const double normal[3]={(facet?-1:1)/std::sqrt(3.),1/std::sqrt(3.),1/std::sqrt(3.)};
+    double body[6],lso[6];
+    for(int d=0;d<3;++d){body[d]=(facet&&d==0?-1:1)*radius/3+10*normal[d];body[d+3]=-2*normal[d];}
+    mxvg_c(source,body,6,6,lso);
+    double time=0,position[3],normalLso[3],velocity[3];
+    if(!Moon::SurfaceEnvironment::FindProductionMovingSurfaceIntersection(particle,lso,lso+3,zero,0,6,time,position,normalLso,velocity))return 2;
+    failures+=report(facet?"alternate_preview_hit_time":"selected_preview_hit_time",time,5,0,2e-6);
+    if(!facet){firstTime=time;std::memcpy(firstNormal,normalLso,sizeof(firstNormal));std::memcpy(firstPosition,position,sizeof(firstPosition));}
+  }
+  failures+=report("geometry_previews_do_not_count_collisions",Moon::SurfaceEnvironment::ProductionCollisionCount()-before,0,0);
+  double normalBody[3],inverse[36],forward[36];
+  failures+=report("geometry_previews_publish_no_accepted_frame",Moon::SurfaceEnvironment::LastProductionCollisionFrame(normalBody,inverse,forward)?1:0,0,0);
+  // Emulate only the accepted epoch publication, then call the SAME commit
+  // service used by the actual surface callback. No duplicate frame physics.
+  PIC::Mover::ForceCutSurface::SetParticleEpochS(particle,epoch+1000+firstTime);
+  if(!Moon::SurfaceEnvironment::CommitProductionMovingSurfaceCollision(particle,firstNormal,normalBody,inverse,forward,&error))return 2;
+  failures+=report("accepted_collision_count_once",Moon::SurfaceEnvironment::ProductionCollisionCount()-before,1,0);
+  double normalError=0,inverseError=0;
+  for(int d=0;d<3;++d)normalError=std::max(normalError,std::abs(normalBody[d]-1/std::sqrt(3.)));
+  for(int row=0;row<6;++row)for(int column=0;column<6;++column) {
+    double value=0;for(int k=0;k<6;++k)value+=inverse[6*row+k]*forward[6*k+column];
+    inverseError=std::max(inverseError,std::abs(value-(row==column?1:0)));
+  }
+  failures+=report("accepted_frame_matches_selected_not_last_preview",normalError,0,0,2e-14);
+  failures+=report("accepted_frame_inverse_identity",inverseError,0,0,2e-14);
+  PIC::ParticleBuffer::DeleteParticle(particle);return failures?1:0;
+#endif
+}
+
 int terrain_shadow() {
   // Construct a deterministic body-fixed fixture with one horizontal source
   // facet and a vertical ridge east of it.  Expected visibility follows from
@@ -638,6 +713,56 @@ int terrain_shadow() {
   if (!average.Add(full,&error) || !average.Add(half,&error) || !average.Add(dark,&error)) return 1;
   failures+=report("temporal_any_disc_occurrence",average.SampledAnyDiscOccurrenceFraction(),2.0/3,2e-13);
   failures+=report("temporal_mean_disc_area",average.meanVisibleAreaFraction,.5,2e-13);
+  // U09/M3 gas-photon extension. Absorption by an atom integrates radiance
+  // over solid angle, whereas facet illumination integrates a projected area
+  // and incidence cosine. A deliberately wide numerical Sun makes their
+  // difference resolvable; it is an analytical geometry fixture, not a lunar
+  // observation or an assumed solar spectrum.
+  SolarDiscRequest gas;
+  gas.volumePointOrigin=true;
+  gas.applyLocalSelfHorizon=false;
+  gas.rayOriginOffsetM=0.0;
+  gas.pointToSunM={{0,0,1000}};
+  gas.solarRadiusM=500;
+  gas.radialPoints=32;
+  gas.azimuthPoints=128;
+  SolarDiscSample gasFull,gasCoarse,gasFine;
+  if (!Moon::SurfaceEnvironment::EvaluateSolarDisc(nullptr,gas,&gasFull,&error)) return 1;
+  failures+=report("gas_disc_full_solid_angle_fraction",
+      gasFull.jointlyVisibleSolidAngleFraction,1,2e-13);
+  failures+=report("gas_disc_half_horizon_solid_angle_fraction",
+      half.jointlyVisibleSolidAngleFraction,.5,2e-13);
+  failures+=report("gas_disc_unobscured_steradians",gasFull.unobscuredSolidAngleSr,
+      2*pi*(1-std::sqrt(.75)),2e-13);
+  // A gas has no local facet horizon. Reversing this otherwise dummy normal
+  // must leave scalar photon exposure unchanged even though surface heating
+  // would vanish. Origin mode also removes the old positive surface offset.
+  gas.outwardNormal={{0,0,-1}};
+  if (!Moon::SurfaceEnvironment::EvaluateSolarDisc(nullptr,gas,&gasFine,&error)) return 1;
+  failures+=report("gas_disc_no_facet_cosine",
+      gasFine.jointlyVisibleSolidAngleFraction,1,2e-13);
+  gas.pointToEarthM={{0,0,10}};
+  gas.opaqueEarthRadiusM=2.5;
+  if (!Moon::SurfaceEnvironment::EvaluateSolarDisc(nullptr,gas,&gasCoarse,&error)) return 1;
+  // A concentric opaque cap of angular radius beta removes exactly
+  // 2*pi*(1-cos(beta)) steradians. All source/Earth vectors are SI metres.
+  const double gasExpected=(std::sqrt(1-.25*.25)-std::sqrt(.75))/
+      (1-std::sqrt(.75));
+  const double gasCoarseError=std::abs(gasCoarse.jointlyVisibleSolidAngleFraction-gasExpected);
+  gas.radialPoints=512;
+  if (!Moon::SurfaceEnvironment::EvaluateSolarDisc(nullptr,gas,&gasFine,&error)) return 1;
+  failures+=report("gas_disc_concentric_solid_angle_error",
+      std::abs(gasFine.jointlyVisibleSolidAngleFraction-gasExpected),0,0,2e-6);
+  failures+=report("gas_disc_solid_angle_refines",
+      std::abs(gasFine.jointlyVisibleSolidAngleFraction-gasExpected)<gasCoarseError?1:0,1,0);
+  failures+=report("gas_disc_area_is_distinct",
+      std::abs(gasFine.jointlyVisibleSolidAngleFraction-gasFine.jointlyVisibleAreaFraction)>.01?1:0,1,0);
+  const double gasSaved=gasFine.jointlyVisibleSolidAngleFraction;
+  gas.rayOriginOffsetM=1e-6;
+  const bool gasAccepted=Moon::SurfaceEnvironment::EvaluateSolarDisc(nullptr,gas,&gasFine,&error);
+  failures+=report("gas_disc_offset_refused",gasAccepted?1:0,0,0);
+  failures+=report("gas_disc_failure_transactional",
+      gasFine.jointlyVisibleSolidAngleFraction,gasSaved,0);
   const double saved=occulted.jointlyVisibleAreaFraction;
   disc.azimuthPoints=3;
   const bool accepted=Moon::SurfaceEnvironment::EvaluateSolarDisc(nullptr,disc,&occulted,&error);
@@ -653,6 +778,26 @@ int terrain_shadow() {
     vertex[0]-=1737400;vertex[1]+=1000000;vertex[2]-=500000;
   }
   if (!ridge.Initialize(mesh,&error)) return 1;
+  gas=SolarDiscRequest{};
+  gas.volumePointOrigin=true;gas.applyLocalSelfHorizon=false;
+  gas.rayOriginOffsetM=0;gas.surfacePositionM={{0,0,5e-7}};
+  gas.outwardNormal={{0,0,-1}};gas.pointToSunM={{0,0,1000}};
+  gas.solarRadiusM=100;gas.radialPoints=32;gas.azimuthPoints=128;
+  if (!Moon::SurfaceEnvironment::EvaluateSolarDisc(&ridge,gas,&gasFine,&error)) return 1;
+  failures+=report("gas_disc_bvh_exact_volume_origin",
+      gasFine.jointlyVisibleSolidAngleFraction,1,2e-13);
+  // A gas point has no self facet. Every ray of this downward numerical Sun
+  // crosses the interior of the actual horizontal triangle. Ignoring that
+  // triangle would change physical darkness into false full visibility.
+  gas.surfacePositionM={{0,0,1e-3}};gas.pointToSunM={{0,0,-1000}};
+  if (!Moon::SurfaceEnvironment::EvaluateSolarDisc(&ridge,gas,&gasFine,&error)) return 1;
+  failures+=report("gas_disc_bvh_blocking_facet_retained",
+      gasFine.jointlyVisibleSolidAngleFraction,0,0);
+  gas.sourceFace=0;
+  failures+=report("gas_disc_ignored_source_face_refused",
+      Moon::SurfaceEnvironment::EvaluateSolarDisc(&ridge,gas,&gasFine,&error)?1:0,0,0);
+  failures+=report("gas_disc_source_face_failure_transactional",
+      gasFine.jointlyVisibleSolidAngleFraction,0,0);
   disc=SolarDiscRequest{};disc.solarRadiusM=100;disc.rayOriginOffsetM=1e-6;
   disc.radialPoints=32;disc.azimuthPoints=128;disc.sourceFace=0;
   disc.pointToSunM={{1000,0,1000*(2-disc.rayOriginOffsetM)}};
@@ -2617,6 +2762,7 @@ int main(int argc, char **argv) {
   if (test == "sticking") return sticking();
   if (test == "temperature") return temperature();
   if (test == "terrain-shadow") return terrain_shadow();
+  if (test == "moving-surface-transaction") return moving_surface_transaction();
   if (test == "psd-illumination") return psd_illumination();
   if (test == "psd-illumination-invalid") {
     // This ONE negative mode deliberately reaches the ordinary AMPS fatal

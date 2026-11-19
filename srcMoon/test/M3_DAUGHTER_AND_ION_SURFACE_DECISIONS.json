@@ -1,0 +1,217 @@
+{
+  "schema": "srcMoon-M3-daughter-ion-surface-decision-proposal-v1",
+  "prepared_date_utc": "2026-11-18",
+  "source_revision": "74974c2b2fc1b4cf09a73c320064a22370c0ca94",
+  "working_tree": "includes previously recorded uncommitted development",
+  "status": "APPROVED_SCOPE_WITH_DATA_GATES",
+  "production_activation": false,
+  "formal_M3_status": "SKIPPED / NOT QUALIFIED",
+  "decision_labels_are_test_ids": false,
+  "document": "M3_DAUGHTER_AND_ION_SURFACE_DECISIONS.md",
+  "physical_specification": "M3_PHYSICAL_MODEL_SPECIFICATION.json",
+  "qualification_protocol": "M3_QUALIFICATION_PROTOCOL.json",
+  "roadmap_sha256": {
+    "source": "712e1152bf50af6d9ee1dad8f8a585809ca8b92cf42ac6fc7a009f6c0253ee17",
+    "canonical_data": "d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4"
+  },
+  "authority": "Approved source development-order/resource amendments govern work order; unchanged common formal gates and native data metadata govern qualification and interpretation.",
+  "decisions": [
+    {
+      "label": "P01",
+      "approval_status": "APPROVED",
+      "recommendation": "Retain complete quiet/active D04 endpoint families; explicit isotope/state reference cohorts; point-Sun photon visibility in the frozen environment for initial reduced tests.",
+      "scope": "Source and bounded reference-input selection; no inferred observation date, isotope abundance or solar spectrum.",
+      "isotopes_for_reference_cohort": [
+        "1H",
+        "4He",
+        "16O",
+        "20Ne",
+        "23Na",
+        "40Ar"
+      ],
+      "additional_activation_requirements": [
+        "Native parent-state interpretation including OH_exp",
+        "Matching isotope/state source mapping",
+        "Explicit input epoch and geometry"
+      ]
+    },
+    {
+      "label": "P02",
+      "approval_status": "APPROVED",
+      "recommendation": "Additive isotope/electron reference masses with consistent formation and excitation energies; independent nonrelativistic/reference-inertia error bounds.",
+      "scope": "Nuclei/charge/reference-mass conservation and source-derived Q, not artificial conservation of physical material rest mass.",
+      "additional_activation_requirements": [
+        "Versioned isotope/state mass and energy inventory",
+        "Consistent source threshold/Q crosswalk",
+        "Reviewed model-error budget and derived runtime speed guard"
+      ]
+    },
+    {
+      "label": "P03",
+      "approval_status": "APPROVED",
+      "recommendation": "Optional source-mean-isotropic two-body photon closure using matched endpoint energy, explicit source threshold, incoming photon momentum and complete ion/electron or neutral products.",
+      "scope": "EXPERIMENTAL declared-model execution and sensitivity; not measured energy/angle distributions or validated daughter escape/brightness.",
+      "additional_activation_requirements": [
+        "Complete source-state/threshold/internal-energy partition",
+        "Existing provider evidence guards preserved or explicitly reviewed scope distinction",
+        "Independent two-body closure and uncertainty/validity tests"
+      ]
+    },
+    {
+      "label": "P04",
+      "approval_status": "APPROVED",
+      "recommendation": "Optional mass-weighted microcanonical closure for the three-neutral O+H+H channel, retaining identical H multiplicity.",
+      "scope": "EXPERIMENTAL statistical phase-space model; not dissociative ionization or a measured water breakup law.",
+      "additional_activation_requirements": [
+        "Resolved O state and source threshold/energy mapping",
+        "Independent Jacobi-coordinate Beta(3/2,3/2) oracle",
+        "Complete-family admission preserved; unsupported dissociative-ionization transport stays disabled"
+      ]
+    },
+    {
+      "label": "P05",
+      "approval_status": "APPROVED",
+      "recommendation": "Explicit product state tags and source-supported competing radiative cascades; acquire complete atomic/molecular state and transition data.",
+      "scope": "State-resolved bookkeeping and supported decay transport; no automatic ground-state or instant-relaxation assignment.",
+      "additional_activation_requirements": [
+        "Complete reviewed OI level/transition export",
+        "OH rovibrational/electronic populations and relaxation laws",
+        "Applicable quenching/omission bounds and water-surface law for literal U24"
+      ]
+    },
+    {
+      "label": "P06",
+      "approval_status": "APPROVED",
+      "recommendation": "Prescribed electron reservoir with signed incoming/outgoing moment ledgers; retain selected scalar Maxwellian/Voronov rates and keep impact daughter kinetics disabled until source-consistent joint data/model exist.",
+      "scope": "Heavy-particle exosphere and bounded electron reference subproblems; no self-consistent PIC electrons or inferred measured plasma.",
+      "additional_activation_requirements": [
+        "Collision-conditioned incident distribution and joint outgoing law",
+        "Reviewed rate/product consistency without silent rescaling or tail clipping",
+        "D06/R4.1 electron forcing for measured-event claims"
+      ]
+    },
+    {
+      "label": "P07",
+      "approval_status": "APPROVED",
+      "recommendation": "First reduced CEX transport control uses the measured Na(3s)->Na+(2p6), H(1s) partial channel at native 4-25keV/u beam nodes, with explicitly forward COM scattering and source-derived Q.",
+      "scope": "EXPERIMENTAL bounded partial-channel experiment, distinct from existing He/Na all-state total-rate services and complete I24 qualification.",
+      "initial_reference_energy_eV_per_u": 4000,
+      "additional_activation_requirements": [
+        "Native metadata and partial-channel QA",
+        "Isotope/state Q and physical energy-speed mapping",
+        "Complete two-heavy-product and prescribed-proton reservoir accounting",
+        "No partial/total substitution, low-energy extrapolation or unsupported angular accuracy claim"
+      ],
+      "native_initial_target_state": "not_supplied; 3s is the approved reference cohort, not recovered experimental metadata"
+    },
+    {
+      "label": "P08",
+      "approval_status": "APPROVED",
+      "recommendation": "Strict unsupported-ion-regolith default plus a separately explicit ideal absorbing collector for verification and first-impact diagnostics.",
+      "scope": "Mathematical boundary with material/charge/momentum/energy transfer, not lunar neutralization, implantation, heat deposition, sputtering or release.",
+      "additional_activation_requirements": [
+        "Explicit boundary choice and claim label",
+        "Actual moving-facet rest-frame/epoch and collector ledgers",
+        "No implicit neutralization, source release or self-consistent surface charging"
+      ]
+    },
+    {
+      "label": "P09",
+      "approval_status": "APPROVED",
+      "recommendation": "Separate source-specific He+/isotope-exchanged-silica conditional charge-survival benchmark; follow with CaSiO3 only when required numerical spectra are obtained.",
+      "scope": "Laboratory conditional scattering-charge operator; not an unconditional lunar retention kernel or a universal species law.",
+      "additional_activation_requirements": [
+        "Exact TableI transcription, regimes and velocity conventions",
+        "Source geometry/material/response and uncertainty QA",
+        "Separate explicit authorization for any author contact"
+      ]
+    }
+  ],
+  "proposal_names_are_current_cli_syntax": false,
+  "already_approved_constraints_unchanged": {
+    "development_wall_time_s": 3600,
+    "aggregate_ram_bytes": 200000000000,
+    "default_mpi_ranks": 8,
+    "default_omp_threads": 1,
+    "explicit_one_rank_controls": true,
+    "formal_test_ids_and_thresholds": "unchanged",
+    "same_campaign_M1_M2_predecessors": "required",
+    "canonical_raw_data": "immutable",
+    "reference_replacement": false,
+    "observational_scoring_authorized_by_this_proposal": false
+  },
+  "remaining_data_cannot_be_supplied_by_approval": [
+    "Complete isotope/state/threshold/formation-energy crosswalk",
+    "Resolved molecular internal populations and dissociative-ionization energy-angle laws",
+    "Source-consistent electron collision-conditioned and joint outgoing distributions",
+    "Complete requested CEX state-angle family",
+    "Physical material-specific ion reflection/implantation/neutralization/release kernel",
+    "Measured D06 electron forcing and formal M1/M2 qualification"
+  ],
+  "science_tests_executed_for_proposal": 0,
+  "approved_date_utc": "2026-11-18",
+  "approval_record": {
+    "user_message": "approve",
+    "scope": "All P01\u2013P09 recommendations as proposed; missing-data and qualification requirements unchanged; no author contact or automatic physics activation."
+  },
+  "implementation_record": {
+    "status": "SCOPED_COMPONENTS_IMPLEMENTED_AND_SUPPORTING_VERIFICATION_PASSED",
+    "native_source_frozen": true,
+    "formal_M3_status": "SKIPPED / NOT QUALIFIED",
+    "notes": {
+      "P02_P03_P04": "Source-explicit production kernels with independent controls; parent-rest-only photon scope, no complete LSO physical provider",
+      "P05": "Native NIST ASD OI levels/transitions and stored descendants acquired and reproducibly processed, fifteen offline source controls PASS; complete physical exit/omission/isotope/quenching evidence unresolved, lifetimes/normalized branches null, physical cascade transport disabled",
+      "P06": "Prescribed-reservoir accounting retained; source-consistent electron-impact products remain disabled",
+      "P07": "Native partial-source registry and experimental forward products; native initial Na state unspecified, physical crosswalk unqualified",
+      "P08": "Runtime selector and guarded PIC adapter in normal sphere/static/moving terrain callbacks; sixty-two local/parser controls PASS and actual one/eight-rank normal sphere collector controls PASS within 945 native packet controls; real SPICE moving-terrain ion qualification remains open",
+      "P09": "Source-coordinate conditional laboratory law implemented; physical-vector projection remains Unavailable",
+      "P01": "Complete D04 endpoint families and explicit reference-cohort policy retained; public NIST isotope/constants/H/Na threshold sources prepared without modifying legacy compiled masses or frozen D04 thresholds"
+    },
+    "completion_date_utc": "2026-11-18",
+    "full_M3_implementation_complete": false,
+    "evidence_root": "test_output/srcMoon/m3-approved-products-20261118T163142Z",
+    "native_result": "test_output/srcMoon/m3-approved-products-20261118T163142Z/native-followup/result.json",
+    "supporting_counts": {
+      "local_components": {
+        "reduced_recoil": 264,
+        "ideal_collector": 62,
+        "Na_partial_capture": 162,
+        "He_silica": 15,
+        "OI_source_controls": 15
+      },
+      "U01_U26": {
+        "PASS": 15,
+        "FAIL": 0,
+        "ERROR": 0,
+        "SKIPPED": 11
+      },
+      "linked_I01_I10": {
+        "PASS": 10,
+        "FAIL": 0,
+        "ERROR": 0,
+        "SKIPPED": 0
+      },
+      "native_particle_backend": 945,
+      "native_force_tracers": 89,
+      "native_controller": 73,
+      "native_common_clock": 80,
+      "normal_startup": 32,
+      "formal_I21_I24": {
+        "PASS": 0,
+        "FAIL": 0,
+        "ERROR": 0,
+        "SKIPPED": 4
+      }
+    },
+    "counts_are_distinct_nested_scopes_not_additive": true,
+    "original_native_package_elapsed_s": 2837.9771518707275,
+    "native_peak_process_tree_rss_bytes": 15745789952,
+    "earlier_failures_preserved": "Two isolated-site bootstrap ERRORs and original stale-U02 source-guard FAIL retained; ten linked M0 PASS reconciled with corrected full U-series on identical native source bytes; no reference or physics gate waived"
+  },
+  "implemented_cli_subset": {
+    "ion_surface_boundary": [
+      "unsupported",
+      "ideal-collector"
+    ]
+  }
+}

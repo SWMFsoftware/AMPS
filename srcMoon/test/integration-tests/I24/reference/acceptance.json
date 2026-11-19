@@ -1,0 +1,80 @@
+{
+  "id": "I24",
+  "name": "Charge-exchange reactions with solar-wind ions",
+  "purpose": "Qualify the frozen M3 requirement through actual production particle chemistry; keep supporting rate/storage results separate.",
+  "production_capability": "Conservative coupled reaction execution, physical event timing, complete products and approved daughter kinetics.",
+  "production_entry_points": [
+    "Moon::Chemistry production event provider (not installed while kinetic evidence is missing)",
+    "Moon::Chemistry::ParticleTransaction",
+    "Moon::Species::ReactionExecution",
+    "PIC::TimeStep",
+    "PIC::Mover::ForceCutSurfaceFirstOrder / ForceCutSurfaceSecondOrder"
+  ],
+  "configuration": "Explicit versioned input/protocol, selected source/bath/state/kinematic policies, physical-time semantics, species/reference weights and current generated executable. Existing formal gate is not activated by rate-services mode.",
+  "inputs": [
+    "CLI application.in",
+    "same-campaign M1/M2 results",
+    "reviewed complete source/kinematic data",
+    "frozen seeds/cohort/exposure/statistical/numerical protocol"
+  ],
+  "independent_reference": "Independent published-fit/log-linear source-knot evaluation and sigma*g quadrature; collision-weighted projectile distribution; exact product/nucleus/charge identities and approved momentum/energy/state model.",
+  "units": "SI m,s,m/s,m^-3,m^3/s,m^2,kg,C,J; source eV,keV/u and1AU conversions explicit",
+  "frame_time_convention": "Explicit event/mover Cartesian frame, UTC-to-SPICE-TDB epoch and each particle physical start/elapsed/remaining seconds; bath vectors use named frame.",
+  "deterministic_stochastic_controls": "EightMPI/OMP1 default and explicit1-rank control; fixed original-parent trial unit, seed/stream/cohort/family/precision/power design before outputs; no fabricated observations.",
+  "procedure": "Evaluate same-campaign predecessor receipts and actual capability/data readiness; run declared native executor only when operational, independently score frozen science metrics and preserve artifacts. Missing capability meansSKIPPED; current runner owns this refusal and does not synthesize a run.",
+  "metrics": [
+    "source rate/lifetime error",
+    "branch frequencies",
+    "actual represented nuclei/charge/mass/bath budget",
+    "event time/position",
+    "product phase space",
+    "dt/weight/MPI independence"
+  ],
+  "acceptance_criteria": "Direct rate error <=1%; ensemble lifetime error <=3%; correct products and exact charge/mass conservation under the reviewed physical convention; unsupported channels OFF. U17 retains >=100000 probabilistic-branch events.",
+  "expected_pass_result": "Every original criterion actually evaluated/met with complete production path, approved physics and qualified predecessors; source/preflight/support PASS is insufficient.",
+  "expected_failure_modes": [
+    "incorrect rate/unit/frame/state",
+    "independent parent/product events",
+    "wrong product timestep/weight",
+    "double executor",
+    "missing product/cascade",
+    "unsupported kinetic law",
+    "nonclosing physical ledger",
+    "wrong event or MPI ownership"
+  ],
+  "required_data": [
+    "reviewed channel-specific primary atomic data",
+    "D06 only for measured-event claims"
+  ],
+  "data_hashes": "Exact consumed file identities in run manifest; current source anchors in ../../M3_COMPLETION_PROPOSAL.md section10. Missing daughter evidence is not assigned a fabricated hash.",
+  "predecessor_gates": [
+    "U17",
+    "formal M1 and M2 completion",
+    "R2.6 budget for I21; per-claim R4.1 for measured forcing"
+  ],
+  "linked_predecessor_gates": [
+    "I13",
+    "I14",
+    "I15",
+    "I16",
+    "I17",
+    "I18",
+    "I19",
+    "I20"
+  ],
+  "artifacts": [
+    "result.json",
+    "run_manifest.json",
+    "application.in whenavailable",
+    "stdout.log",
+    "stderr.log",
+    "receipt.txt only for actual native execution",
+    "comparison.csv",
+    "comparison.png",
+    "comparison.eps",
+    "native science/event records"
+  ],
+  "status_semantics": "PASS evaluated/met; FAIL evaluated/notmet; ERROR build/runtime/parser/corrupt/inconsistent infrastructure; SKIPPED missing capability/data/configuration/predecessor. No dummy native receipt for not-run.",
+  "implementation": "formal-capability-gate-only; particle execution/scoring remains unavailable until missing physical policies and combined dispatch are installed",
+  "capability_register": "../../M3_TRANSPORT_CAPABILITIES.json"
+}

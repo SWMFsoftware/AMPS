@@ -1337,20 +1337,15 @@ bool ProductionStickingProbability(int species,double temperatureK,
     *error="M2 production surface state is not initialized";
     return false;
   }
-#if _NA_PLUS_SPEC_ >= 0
-  if (species==_NA_PLUS_SPEC_) {
-    *error="Na+ surface interaction is unconfigured; no neutral sticking law "
-           "is applied to ions";
+  // P08's mathematical collector dispatches BEFORE this neutral temperature/
+  // accommodation API. Even an explicitly enabled collector does not turn
+  // this routine into an ion sticking law. Check actual compiled charge so
+  // He+, Ne+, negative ions and future species cannot silently fall through.
+  if (species<0 || species>=PIC::nTotalSpecies ||
+      PIC::MolecularData::GetElectricCharge(species)!=0) {
+    *error="charged/invalid species has no neutral sticking probability; dispatch an explicitly configured ideal ion collector before neutral surface physics, or supply qualified ion-surface physics";
     return false;
   }
-#endif
-#if _AR_PLUS_SPEC_ >= 0
-  if (species==_AR_PLUS_SPEC_) {
-    *error="Ar+ surface interaction is unconfigured; no neutral sticking law "
-           "is applied to ions";
-    return false;
-  }
-#endif
   const SurfacePhysics::SpeciesParameters* parameters=
       ParametersForSpecies(species);
   if (parameters==nullptr) {

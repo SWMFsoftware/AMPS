@@ -1,0 +1,190 @@
+{
+  "schema": "AMPS-shared-chemical-database-proposal-v1",
+  "status": "INITIAL_SHARED_DATABASE_IMPLEMENTED_INSTALLED_AND_REGRESSION_PRESERVED",
+  "prepared_date_utc": "2026-11-18",
+  "document": "CHEMISTRY_DATABASE_PROPOSAL.md",
+  "source_revision": "74974c2b2fc1b4cf09a73c320064a22370c0ca94",
+  "source_tree_includes_preexisting_uncommitted_work": true,
+  "implementation_started": true,
+  "data_migration_started": true,
+  "production_activation": false,
+  "proposal_labels_are_test_ids": false,
+  "roadmap_sha256": {
+    "source": "712e1152bf50af6d9ee1dad8f8a585809ca8b92cf42ac6fc7a009f6c0253ee17",
+    "canonical_validation_data": "d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4"
+  },
+  "decisions": [
+    {
+      "label": "SDB01",
+      "status": "APPROVED_INITIAL_IMPLEMENTATION_SCOPE",
+      "recommendation": "Immutable relocatable JSON/CSV catalogue with hashed permitted source objects; optional rebuildable SQLite tooling index; C++17 standard-library runtime"
+    },
+    {
+      "label": "SDB02",
+      "status": "APPROVED_INITIAL_IMPLEMENTATION_SCOPE",
+      "recommendation": "Persistent application-independent external data root, explicit configuration and backup/storage ownership; preserve existing originals through migration"
+    },
+    {
+      "label": "SDB03",
+      "status": "APPROVED_INITIAL_IMPLEMENTATION_SCOPE",
+      "recommendation": "Shared namespace/code, reuse current evaluators/network containers, retain compatibility facades and particle execution contracts, minimal tested normal-build wiring, root Makefile untouched"
+    },
+    {
+      "label": "SDB04",
+      "status": "APPROVED_INITIAL_IMPLEMENTATION_SCOPE",
+      "recommendation": "Inventory every source, retain alternatives and real gaps, use pinned named profiles with independent source/interpretation/permission/model/qualification status"
+    },
+    {
+      "label": "SDB05",
+      "status": "APPROVED_INITIAL_IMPLEMENTATION_SCOPE",
+      "recommendation": "Enforce source-specific managed-storage/evaluation/redistribution permissions; uncleared sources metadata-only; no provider contact without separate authorization"
+    },
+    {
+      "label": "SDB06",
+      "status": "APPROVED_INITIAL_IMPLEMENTATION_SCOPE",
+      "recommendation": "Preserve existing profiles while migrating Moon, then Hartley2/I3, then remaining inventoried consumers; no silent replacement of scientific inputs, weights, clocks, sinks or reference data",
+      "implementation_scope": "Moon namespace compatibility wrappers and common scalar services implemented; other application-specific physical source/profile adapters remain separate work"
+    },
+    {
+      "label": "SDB07",
+      "status": "APPROVED_INITIAL_IMPLEMENTATION_SCOPE",
+      "recommendation": "Offline immutable runtime releases and explicit import/review/publication workflow; no runtime network acquisition or automatic latest-source selection"
+    },
+    {
+      "label": "SDB08",
+      "status": "APPROVED_INITIAL_IMPLEMENTATION_SCOPE",
+      "recommendation": "One-hour monitored development packages, default eight MPI ranks/one OpenMP thread and explicit one-rank controls, 200GB process-tree RAM; required longer core/science gates run separately and remain open until complete"
+    }
+  ],
+  "operational_information_still_needed": [
+    "Long-term maintenance and backup ownership (location explicitly selected by user)",
+    "Future distribution and provider permission-review responsibility",
+    "Separate authorization if provider permission requests are desired"
+  ],
+  "scientific_gates_unchanged": [
+    "U01-U26 and I01-I46 meanings and acceptance criteria",
+    "Source-specific native units, domains, states and provenance",
+    "M1/M2/M3 formal qualification and same-campaign predecessors",
+    "Actual historical core PASS membership and zero-byte reviewed Moon nightly diff",
+    "No invented observations, uncertainty, threshold/state mapping, distribution or material law"
+  ],
+  "runtime_projection": {
+    "codec": "csv-block-v1",
+    "status": "IMPLEMENTED_HOST_ONLY",
+    "authoritative_data": "canonical JSON/CSV catalogue and profiles",
+    "runtime_representation": "deterministic detached typed CSV plus existing AMPS block grammar",
+    "hash_binding": "acyclic canonical source/catalogue/profile -> release -> export; release and export digests pinned in input",
+    "native_json_parser_required": false,
+    "immutable_storage_ownership_required": true,
+    "compile_runtime_topology_fingerprint_required": true,
+    "device_evaluation_qualified": false
+  },
+  "read_only_audit": {
+    "path": "test_output/srcMoon/shared-chemistry-database-proposal-20261118T190424Z/data-audit/audit.json",
+    "hash_checks": 449,
+    "count_checks": 9,
+    "unique_observed_inputs": 448,
+    "mismatches": 0,
+    "scope": "manifest identities/counts and native rights locators only; not scientific qualification or permission clearance",
+    "initial_root_discovery_ERROR_preserved": true
+  },
+  "original_proposed_paths": {
+    "persistent_data_root": "/data/vtenishe/amps_chemistry_data",
+    "production_code": "src/models/chemical_database",
+    "preparation_and_query_tools": "utility/chemical_database",
+    "shared_tests": "test/chemical_database"
+  },
+  "implementation_paths": {
+    "persistent_data_root": "/data/vtenishe/CHEMICAL_DATABASE",
+    "production_code": "src/models/chemical_database",
+    "preparation_and_query_tools": "utility/chemical_database",
+    "shared_tests": "test/chemical_database"
+  },
+  "authorization": {
+    "user_instruction": "develop the database and place it in /data/vtenishe/CHEMICAL_DATABASE with detailed README.md describing the API and how to use it with examples",
+    "date_utc": "2026-11-18",
+    "scope": "initial shared archive/API/SDK and source-preserving permitted publication; no provider contact or automatic physics qualification"
+  },
+  "proposal_package": {
+    "scope": "Documentation and read-only inventories only",
+    "science_tests_executed": 0,
+    "science_test_counts": null,
+    "builds_executed": 0,
+    "source_or_data_readiness_promoted": false,
+    "canonical_data_modified": false,
+    "shared_core_modified": false,
+    "active_build_configuration_modified": false,
+    "staged_committed_or_pushed": false,
+    "external_contact_performed": false
+  },
+  "implementation_record": {
+    "release_lock": {
+      "database_root": ".",
+      "export_manifest_sha256": "838ad22ee19037de52d9c92d87f5e5ed0acdfa7d4b7fbbb7cec3718a6e548ed5",
+      "export_path": "exports/5eac627528856de56a4e6b515c31f124a860060e9c02ecb5f3ec440e006876b7/9431815d24f6954eb2fbf8a464650e432a052668b781814ec09980af620bcea6/csv-block-v1/export.in",
+      "profile_id": "catalogue-v1",
+      "profile_sha256": "9431815d24f6954eb2fbf8a464650e432a052668b781814ec09980af620bcea6",
+      "release_id": "amps-chemistry-20261118-r1",
+      "release_manifest_sha256": "5eac627528856de56a4e6b515c31f124a860060e9c02ecb5f3ec440e006876b7",
+      "schema": "amps-chemical-database-lock-v1"
+    },
+    "datasets": 27,
+    "source_records": 622,
+    "table_descriptors": 35,
+    "permitted_source_payloads": 31,
+    "metadata_only_sources": 591,
+    "unique_payload_objects": 30,
+    "readme": "/data/vtenishe/CHEMICAL_DATABASE/README.md",
+    "shared_api_tests": {
+      "PASS": 56,
+      "FAIL": 0,
+      "ERROR": 0,
+      "SKIPPED": 0
+    },
+    "existing_numerical_controls": {
+      "PASS": 558,
+      "FAIL": 0,
+      "ERROR": 0,
+      "SKIPPED": 0
+    },
+    "M0_I01_I10": {
+      "PASS": 10,
+      "FAIL": 0,
+      "ERROR": 0,
+      "SKIPPED": 0
+    },
+    "test_Moon_diff_bytes": 0,
+    "core_preservation": "running; original discovery ERROR/stale harness FAIL and corrected retries retained",
+    "formal_M3_status": "SKIPPED / NOT QUALIFIED",
+    "physical_activation": false,
+    "all_application_profile_migration_complete": false,
+    "native_preservation": {
+      "status": "PASS",
+      "scope": "preserves historical passing cases; full CORE has existing nonpasses",
+      "source_revision": "74974c2b2fc1b4cf09a73c320064a22370c0ca94",
+      "protected_core_passes": 843,
+      "preserved_core_passes": 843,
+      "reconciled_core_counts": {
+        "PASS": 844,
+        "SKIPPED": 240,
+        "FAIL": 1,
+        "ERROR": 1
+      },
+      "M0_counts": {
+        "PASS": 10,
+        "FAIL": 0,
+        "ERROR": 0,
+        "SKIPPED": 0
+      },
+      "nightly_diff_bytes": 0,
+      "actual_eight_rank_rate_callback_rows_passed": 32,
+      "native_package_wall_seconds": 3358.1981406211853,
+      "aggregate_peak_sampled_RSS_bytes": 9787752448,
+      "evidence": "test_output/srcMoon/chemical-database-core-preservation-20261118T210311Z/completion_report.json",
+      "formal_M3_status": "SKIPPED / NOT QUALIFIED",
+      "native_execution_seconds": 3097.470752954483,
+      "wall_time_scope": "original start through latest final report-file write",
+      "conservative_sum_of_sampled_peak_RSS_bytes": 13523185664
+    }
+  }
+}

@@ -37,6 +37,7 @@ PICOBJ = pic.o \
 	pic_mover_error.o \
 	pic_mover_trajectory_tracking.o \
 	pic_mover_force_free_cut_surface.o \
+	pic_mover_force_cut_surface.o \
 	pic_mover_relativistic_guiding_center.o \
 	pic_parser.o \
 	pic_pbuffer.o \

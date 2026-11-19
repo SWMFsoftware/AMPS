@@ -405,6 +405,17 @@
       "timeout_seconds": 180
     },
     {
+      "id": "CORE-CHEMICAL-DATABASE-001",
+      "component": "src/models/chemical_database",
+      "level": "module",
+      "tiers": ["smoke", "nightly", "extended"],
+      "runner": "tests/models/chemical_database/run_test.py",
+      "description": "Production shared chemical data-access integrity, exact schemas, immutable ownership, honest rights/capabilities, namespace compatibility and portable source-only API checks; no physical validation",
+      "requires": {"tools": ["cxx", "python"], "paths": [], "capabilities": []},
+      "expected_cases": ["CHEMICAL-DATABASE-PROTOCOL-001"],
+      "timeout_seconds": 300
+    },
+    {
       "id": "CORE-CHEMICAL-SOLVER-001",
       "component": "src/models/chemical_solver",
       "level": "module",

@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from amps_nightly import plan as plan_mod
 from amps_nightly.checks import check_all
@@ -158,6 +159,50 @@ class Plan(unittest.TestCase):
     def run_plan(self, m, r):
         plans = plan_mod.plan(m, m.configs[0], r, self.registry, TODAY, table=self.table, manifest=self.manifest)
         return {sp.source.id: sp for sp in plans}
+
+    def configured_tree(self, host="passion"):
+        """A real tiny manifest isolates precedence from the developer checkout.
+
+        This is administrative selection data, not model output or observation
+        data. make reads the declared manifest normally, so both manifest use
+        and Table use are tested at the public planning boundary.
+        """
+        tree = Path(self.tmp.name, "configured")
+        tree.mkdir()
+        (tree / "Makefile").write_text("include Makefile.test\n")
+        (tree / "Makefile.test").write_text(
+            "HOSTNAME={}\ntest_manifest:\n\t@echo 'Configured|pic-field-solver|||amps'\n".format(host))
+        return tree
+
+    def test_explicit_table_wins_over_implicitly_configured_tree(self):
+        machine_value = parse_machine(machine("passion"), Path("passion.json"))
+        tree = self.configured_tree()
+        self.assertEqual(plan_mod.configured_host(tree), "passion")
+        with mock.patch.object(plan_mod, "REPO_ROOT", tree):
+            items, note = plan_mod.legacy_items(machine_value, None, self.table)
+        self.assertEqual([item.test for item in items], ["Alpha", "Beta"])
+        self.assertIn("from MakefileTest/Table", note)
+
+    def test_explicit_configured_tree_keeps_priority_over_table(self):
+        machine_value = parse_machine(machine("passion"), Path("passion.json"))
+        tree = self.configured_tree()
+        items, note = plan_mod.legacy_items(machine_value, tree, self.table)
+        self.assertEqual([item.test for item in items], ["Configured"])
+        self.assertIn("exact list from 'make test_manifest'", note)
+
+    def test_explicit_configured_tree_wrong_host_does_not_fall_back_to_table(self):
+        machine_value = parse_machine(machine("passion"), Path("passion.json"))
+        tree = self.configured_tree(host="another-host")
+        with self.assertRaisesRegex(RuntimeError, "configured for host 'another-host', not 'passion'"):
+            plan_mod.legacy_items(machine_value, tree, self.table)
+
+    def test_implicit_configured_tree_keeps_exact_manifest_without_table(self):
+        machine_value = parse_machine(machine("passion"), Path("passion.json"))
+        tree = self.configured_tree()
+        with mock.patch.object(plan_mod, "REPO_ROOT", tree):
+            items, note = plan_mod.legacy_items(machine_value, None, None)
+        self.assertEqual([item.test for item in items], ["Configured"])
+        self.assertIn("exact list from 'make test_manifest'", note)
 
     def test_host_selection_follows_table_parser(self):
         self.assertTrue(plan_mod.host_selected("", "box"))

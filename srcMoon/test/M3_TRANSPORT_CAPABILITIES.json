@@ -1,0 +1,172 @@
+{
+  "schema": "srcMoon-M3-transport-capability-register-v1",
+  "purpose": "Explicit missing-production-capability register, not linked runtime evidence or an automatic qualification approval",
+  "formal_activation": "disabled-pending-qualified-physical-event-providers",
+  "capabilities": {
+    "I21": {
+      "implemented_support": [
+        "frozen D04 Na scalar rate",
+        "conservative reaction planner",
+        "PIC packet transaction adapter",
+        "first/second-order force-cut-cell tracing",
+        "normal-path constant-history controller and source boundary dispatch",
+        "actual PIC daughter continuation including internal-AMR endpoint events",
+        "authenticated partial physical-state profile and compiled-species recipe with explicit unavailable states",
+        "source-bound experimental moving-parent Na photon composer with signed photon/electron moments; real state/threshold admission still unavailable",
+        "accepted-trajectory inverse-square and point-shadow exposure with exact compensated clocks",
+        "normal pre-buffer registration, explicit source charge and complete semantic daughter streams",
+        "conditional actual-cohort owner with independent original-parent statistics, exact event ledger and numerical/provenance audits"
+      ],
+      "missing_formal_capabilities": [
+        "qualified Na photoelectron/recoil and mass-energy policy",
+        "qualified photon geometry/spectrum-dependent exposure and physical event-provider installation",
+        "qualified ion surface fate for surface-coupled cases"
+      ]
+    },
+    "I22": {
+      "implemented_support": [
+        "complete 15-channel D04 registry",
+        "explicit quiet/active endpoints",
+        "integer product/state inventory",
+        "conservative packet/event services",
+        "normal-path constant-history conservative packet dispatch; analytical native scope only"
+      ],
+      "missing_formal_capabilities": [
+        "qualified atomic product kinetic policies",
+        "full molecular joint daughter/state distributions and cascade dispatch",
+        "authoritative molecular threshold/tail interpretation",
+        "reviewed U24 chemistry/surface dependency closure"
+      ]
+    },
+    "I23": {
+      "implemented_support": [
+        "Maxwellian Voronov atomic coefficient service",
+        "explicit prescribed electron bath",
+        "combined-hazard primitives",
+        "conservative packet transaction adapter",
+        "normal-path constant-history controller; analytical native scope only"
+      ],
+      "missing_formal_capabilities": [
+        "qualified ion/secondary-electron recoil and bath mass-energy policy",
+        "collision-conditioned physical electron event sampler and bath-dependent exposure coupling",
+        "measured event forcing when claimed requires R4.1/D06"
+      ]
+    },
+    "I24": {
+      "implemented_support": [
+        "source-identified He total-capture fit",
+        "explicit Na source-knot log-log model",
+        "strict energy-domain refusal",
+        "monoenergetic rate service",
+        "actual PIC constant-history controller and complete-packet continuation; no physical CEX law activated"
+      ],
+      "missing_formal_capabilities": [
+        "qualified state/Q/differential product kinematics over the selected energy support",
+        "normal-path collision-biased projectile and combined event-provider installation",
+        "complete ion distribution support for a thermal/measured bath"
+      ]
+    }
+  },
+  "qualification_rule": "Supporting service results never satisfy missing formal capabilities. Update only with reviewed production implementation and corresponding native evidence; never change a boolean to manufacture a PASS.",
+  "supporting_evidence": {
+    "scope": "Analytical/native production mechanics only; no lunar recoil law or observational qualification",
+    "matched_native_report": "test_output/srcMoon/m3-reaction-controller-20261118T001756Z/completion_report.json",
+    "controller_checks": 73,
+    "particle_backend_checks": 828,
+    "actual_moon_force_checks": 89,
+    "controller_contract": "srcMoon/test/M3_REACTION_CONTROLLER_CONTRACT.md",
+    "restrictions": [
+      "constant-history hazards only",
+      "frozen Moon tracer with M2 environment disabled",
+      "physical surface/external-boundary reaction ties remain unqualified",
+      "no automatic physical channel installation",
+      "normal asynchronous density/LOS/surface-flux estimator unqualified",
+      "frozen repeated source epochs do not define a common advancing transient ensemble"
+    ]
+  },
+  "common_time_and_exposure_support": {
+    "scope": "independent numerical exposure services and guarded equal-step common chronology; no physical product/provider activation",
+    "declared_piecewise_affine_exposure": "local analytical verification; not trajectory-dependent provider/controller wiring",
+    "optical_clock_bridge": "shared instantaneous channel selection; exact pending-depth projection or explicit refusal",
+    "common_time_mode": "opt-in, identical fixed actual block/species dt, frozen external state, M2 disabled, restart refused",
+    "local_clock_parser_checks": 51,
+    "native_hook_checks": 80,
+    "full_normal_startup_checks": 32,
+    "native_evidence": "test_output/srcMoon/m3-independent-native-20261118T072958Z/composition_completion.json",
+    "local_and_protocol_evidence": "test_output/srcMoon/m3-independent-20261118T070304Z/latest-registered-support/run_all_summary.json",
+    "default_independent_history_sampling": "unqualified asynchronous ensemble; frozen repeated birth epoch remains legacy/independent behavior",
+    "physical_specification": "srcMoon/test/M3_PHYSICAL_MODEL_SPECIFICATION.json",
+    "qualification_preparation": "srcMoon/test/M3_QUALIFICATION_PROTOCOL.json",
+    "formal_M3_status": "SKIPPED / NOT QUALIFIED",
+    "earlier_hook_only_checks": 76,
+    "full_normal_startup_evidence": "test_output/srcMoon/m3-independent-native-20261118T072958Z/corrected-continuation/normal-clock-startup/result.json",
+    "common_target_daughter_composition": "actual conservative-controller nominal-zero-Q analytical packet, real cloned common target and unused daughter intervals verified; physical kinetics not qualified"
+  },
+  "approved_reduced_component_support": {
+    "scope": "Source-explicit mathematical/laboratory services and actual ideal-collector sphere wiring; not installed physical chemistry or formal qualification",
+    "approval": "srcMoon/test/M3_DAUGHTER_AND_ION_SURFACE_DECISIONS.json",
+    "evidence": "test_output/srcMoon/m3-approved-products-20261118T163142Z/native-followup/result.json",
+    "native_packet_backend_checks": 945,
+    "actual_moon_force_checks": 89,
+    "controller_checks": 73,
+    "common_clock_checks": 80,
+    "normal_startup_checks": 32,
+    "reduced_kinematics": "Additive isotope/electron masses, separately compensated formation/excitation Q, explicit model-error checks, parent-rest photon two-body and mass-weighted neutral-three-body kernels; physical moving-parent provider not installed",
+    "Na_partial_capture": "Native twelve-node partial channel, immutable source/rate receipt, target-rest forward-COM reference products; native initial-state crosswalk unqualified; not total capture",
+    "ion_boundary": "Strict default; explicit ideal collector wired before neutral sticking with actual PIC weights/epochs; source/state installation required; one/eight-rank sphere control is analytical, not a physical material benchmark",
+    "He_silica": "Seven source-specific conditional scattered-charge fits; actual velocity-vector projection Unavailable",
+    "OI_source": "614 native levels and910 lines retained, twelve stored graph components over five levels; physical total lifetimes/normalized branches null pending exit/isotope/quenching qualification",
+    "formal_M3_status": "SKIPPED / NOT QUALIFIED",
+    "missing_formal_capabilities_changed": false,
+    "physical_activation": false
+  },
+  "source_bound_completion_support": {
+    "scope": "Source-bound state admission, moving-parent experimental Na events, accepted-trajectory exposure, semantic daughter streams and conditional actual-cohort auditing",
+    "state_registry": "species/PhysicalStateProfile; seven currently supported reference states and fourteen explicit unavailable states; reference and measured physical rest masses remain distinct",
+    "photon_provider": "species/PhysicalReactionEvents; complete Na endpoint family, source-mean/isotropic moving-parent closure, affine frame and signed electron/photon moments; source threshold cannot be altered by user numerical bounds",
+    "trajectory_provider": "species/TrajectoryExposure and MoonTrajectoryExposure; normal frozen SPICE/sphere/LOLA/BVH, inverse-square rate, certified silhouette intervals, explicit interpolation/root/storage bounds and accepted left-limit source convention",
+    "normal_registration": "MoonNativeReactionRegistration; optional one-shot pre-buffer hook; explicit-ET field factory avoids first-step cache assumptions",
+    "randomness": "MoonSemanticRandom; full semantic genealogy and per-purpose accepted counters in opaque native records; ownership clones preserve bytes and staged daughters use their prospective clock/key once",
+    "native_publication": "MoonReactionAdapter; explicit source charge constant, matching actual compiled species, and actual PIC initial-child validation before atomic commit",
+    "conditional_I21_owner": "run_m3_sodium_cohort.py and m3_qualification_executor.py; real source/preflight/run modes, frozen complete input graph, original-parent statistics and independent ledger/first-hit convergence audits",
+    "current_real_Na_admission": "SKIPPED: Na+ state/rest-mass/source-threshold crosswalk is unavailable; no ion state is generated from a rate table",
+    "unsupported_physical_channels": [
+      "molecular state/Q/population and correlated daughter mappings",
+      "source-consistent collision-biased electron-impact joint products",
+      "complete CEX family/states/differential products",
+      "physical regolith neutralization, implantation, recycling and cascades"
+    ],
+    "full_force_cohort_launcher": "CONDITIONAL EXPERIMENTAL: the same normal PrepareProductionParticleEnvironment stage now precedes the native production walker; byte-identical extraction, fresh M0 and154 native frozen/evolving state/force-wiring controls pass. Physical source admission and an independent per-parent integrated-hazard oracle remain mandatory; constant-lifetime scoring refuses variable exposure",
+    "physical_activation": false,
+    "formal_M3_status": "SKIPPED / NOT QUALIFIED",
+    "evidence": "test_output/srcMoon/m3-physical-completion-20261118T223145Z/",
+    "first_native_package": "test_output/srcMoon/m3-physical-native-20261118T225229Z/",
+    "second_native_package": "test_output/srcMoon/m3-phase2-native-20261119T002618Z/"
+  },
+  "shared_database_support": {
+    "scope": "shared catalogue/source access and source-preserving scalar compatibility; no physical event-provider activation",
+    "installed_root": "/data/vtenishe/CHEMICAL_DATABASE",
+    "installed_readme": "/data/vtenishe/CHEMICAL_DATABASE/README.md",
+    "release_lock": {
+      "database_root": ".",
+      "export_manifest_sha256": "838ad22ee19037de52d9c92d87f5e5ed0acdfa7d4b7fbbb7cec3718a6e548ed5",
+      "export_path": "exports/5eac627528856de56a4e6b515c31f124a860060e9c02ecb5f3ec440e006876b7/9431815d24f6954eb2fbf8a464650e432a052668b781814ec09980af620bcea6/csv-block-v1/export.in",
+      "profile_id": "catalogue-v1",
+      "profile_sha256": "9431815d24f6954eb2fbf8a464650e432a052668b781814ec09980af620bcea6",
+      "release_id": "amps-chemistry-20261118-r1",
+      "release_manifest_sha256": "5eac627528856de56a4e6b515c31f124a860060e9c02ecb5f3ec440e006876b7",
+      "schema": "amps-chemical-database-lock-v1"
+    },
+    "installed_software_counts": {
+      "PASS": 56,
+      "FAIL": 0,
+      "ERROR": 0,
+      "SKIPPED": 0
+    },
+    "evidence": "test_output/chemical_database/development-20261118T204811Z/installed-api-verification/result.json",
+    "profile_capability": "catalogue only; physical application profiles still require permission-compatible source/state/energy selection",
+    "physical_activation": false,
+    "missing_formal_capabilities_changed": false,
+    "formal_M3_status": "SKIPPED / NOT QUALIFIED"
+  }
+}

@@ -15,6 +15,14 @@ utility/nightly/amps-nightly update           # 3: (server) take the tarballs, u
 utility/nightly/amps-nightly --help
 ```
 
+For planning, an explicit `--table /path/to/Table` controls test selection even
+if the default checkout contains a previously generated `Makefile.test`.
+An explicit `--amps-dir /path/to/configured/AMPS` instead requests that tree's
+exact compiler-selected manifest and checks its configured host; it retains
+priority when both options are supplied. With neither override, an existing
+manifest for the matching host is used as before. This precedence prevents
+unrelated local configuration from changing a deliberately selected Table.
+
 The three nightly steps also exist as scripts, like `run_test_amps.sh`, `scp_test_amps.sh` and
 `process_amps_tests.sh` of the old routine: `nightly_run.sh`, `nightly_pack.sh` and `nightly_update.sh`
 (each passes its arguments on to the command above).

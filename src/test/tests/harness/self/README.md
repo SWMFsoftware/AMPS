@@ -6,6 +6,22 @@ where deliberate bad input/process behavior is needed. A harness PASS proves
 that control-plane contract; it does not qualify production physics or upgrade
 partial source coverage.
 
+## Chemical-database registry extension contract (2026-11-18)
+
+The new explicitly registered `CORE-CHEMICAL-DATABASE-001` contributes exactly
+one `CHEMICAL-DATABASE-PROTOCOL-001` CORE case. Before updating selection pins,
+the unchanged harness correctly reports HARNESS-SELECTION-001 FAIL: its exact
+old owner/case totals were51/1085. The new independent declared totals must be
+52/1086 for CORE; Enceladus3/62 and Moon2/46 remain unchanged. Add this one
+source-only owner to the explicit smoke/nightly/extended membership sets and
+preserve every previous owner/case. Do not derive expected counts from the
+production selector, weaken its exact-set checks, change thresholds or modify
+the known strict incomplete-coverage failure. Verification is the real
+13-case harness and structural registry/catalog checks. This extends registry
+governance only, not physical qualification.
+The current inventory has 30 explicit component areas: 2 covered and 28 partial;
+the truthful strict completeness failure remains required.
+
 ## Run the owner or the new coverage case
 
 From the AMPS root:
@@ -85,7 +101,7 @@ The distinction is essential:
 | Actually complete, consistent coverage | 0 | PASS only if the real inventory supports it | Coverage gate can PASS |
 
 A PASS of the TEST OF THE GATE does not turn the incomplete gate into PASS.
-The current real inventory has 2 complete and 26 incomplete components. T12
+At the 2026-11-10 checkpoint the inventory had 2 complete and 26 incomplete components. T12
 continues to report that FAIL. No coverage label was upgraded by these changes.
 
 ## Evidence, failures and current result
