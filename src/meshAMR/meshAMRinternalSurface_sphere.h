@@ -10,6 +10,8 @@
 #define _AMR_INTERNAL_SURFACE_SPHERE_
 
 #include "math.h"
+#include <errno.h>
+#include <string.h>
 #include <string>
 
 
@@ -382,6 +384,23 @@ public:
 
       fout=fopen(fname,"w");
       fout2d=fopen(fname2d.c_str(),"w");
+
+      // An output file that cannot be created (missing or deleted working
+      // directory, permissions, full disk) used to reach fprintf()/fwrite() as
+      // NULL and kill the run with SIGSEGV, hiding the cause.  Stop with an
+      // error that names the file and the reason instead.  Only rank 0 opens
+      // the files; exit() aborts the whole MPI job, so the other ranks, which
+      // are about to send to this rank, do not wait forever.
+      if ((fout==NULL)||(fout2d==NULL)) {
+        const std::string failedName=(fout==NULL) ? std::string(fname) : fname2d;
+        const std::string message="Error: cannot open the surface data file \""+failedName+
+            "\" for writing ("+strerror(errno)+")";
+
+        if (fout!=NULL) fclose(fout);
+        if (fout2d!=NULL) fclose(fout2d);
+        exit(__LINE__,__FILE__,message.c_str());
+      }
+
       pipe.openRecvAll();
 
       //print the output file title

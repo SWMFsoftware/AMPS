@@ -32,6 +32,12 @@ import textwrap
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
+TEST_ROOT = Path(__file__).resolve().parents[1]
+if str(TEST_ROOT) not in sys.path:
+    sys.path.insert(0, str(TEST_ROOT))
+
+from earth_test_runtime import configuration_workdir, record_workdir_configuration  # noqa: E402
+
 TEST_ID = "C14"
 TEST_NAME = "Mode3D versus gridless cross-solver consistency"
 
@@ -801,7 +807,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("-nt", type=int, default=16, help="number of threads per MPI rank; default: 16")
     parser.add_argument("--amps", default="./amps", help="AMPS executable path, relative to launch directory; default: ./amps")
     parser.add_argument("--mpirun", default="mpirun", help="MPI launcher executable; default: mpirun")
-    parser.add_argument("--workdir", default=None, help="directory where test runs and outputs are written; default: test_output/C14_cross_solver")
+    parser.add_argument("--workdir", default=None, help="directory where test runs and outputs are written; default: test_output/C14_cross_solver, or test_output/C14_cross_solver_<hash of the options> when options are given, so parallel list entries do not share it")
     parser.add_argument("--check-profile", choices=CHECK_PROFILES, default="CROSS_SOLVER", help="CROSS_SOLVER: hard cross-solver/finite-box symmetry checks with Størmer diagnostics; STRICT_STORMER: also enforce the analytical Størmer checks")
     parser.add_argument("--strict-stormer", action="store_true", help="alias for --check-profile STRICT_STORMER")
     parser.add_argument("--domain-half-size-re", type=float, default=None, metavar="RE", help="half-size of the symmetric Cartesian escape box; defaults: 35 Re for CROSS_SOLVER, 100 Re for STRICT_STORMER")
@@ -933,7 +939,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     launch_dir = Path.cwd().resolve()
     script_dir = Path(__file__).resolve().parent
-    root_workdir = Path(args.workdir) if args.workdir else Path("test_output") / "C14_cross_solver"
+    # One directory per option set: the two list entries run in parallel under
+    # test_runner.py -j N and each deletes its work directory first.
+    default_workdir = not args.workdir
+    root_workdir = Path(args.workdir) if args.workdir else Path(configuration_workdir("test_output/C14_cross_solver", argv))
     if not root_workdir.is_absolute():
         root_workdir = (launch_dir / root_workdir).resolve()
 
@@ -943,6 +952,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not args.skip_run and not args.keep and root_workdir.exists():
         shutil.rmtree(root_workdir)
     root_workdir.mkdir(parents=True, exist_ok=True)
+    if default_workdir and not args.skip_run:
+        record_workdir_configuration(root_workdir, argv)
 
     generated_reference = root_workdir / "reference_C14_cross_solver_generated.csv"
     write_reference_csv(generated_reference, lons, lats, alts, args)

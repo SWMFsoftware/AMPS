@@ -218,7 +218,16 @@ public:
     // the fatal error path valid for diagnostics whose size is determined by
     // the decomposition, while preserving the existing log/stdout contents.
 
+    // The error log is opened relative to the working directory.  When it
+    // cannot be opened (the directory is missing or was deleted, no write
+    // permission) the record goes to stderr: fprintf() on a NULL stream used to
+    // turn every mesh-level exit() into SIGSEGV and lose the message, e.g. the
+    // "cannot open the surface data file" error of PrintSurfaceData().
     FILE* errorlog=fopen("$ERROR","a+");
+    const bool errorlogToStderr=(errorlog==NULL);
+    if (errorlogToStderr) errorlog=stderr;
+
+    const char* diagnostic=(msg==NULL) ? "(no message)" : msg;
 
     time_t TimeValue=time(0);
     tm *ct=localtime(&TimeValue);
@@ -230,13 +239,15 @@ public:
 
     fprintf(errorlog,"Thread=%i: (%i/%i %i:%i:%i)\n",ThisThread,ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec);
     fprintf(errorlog,"file=%s, line=%ld\n",fname,nline);
-    fprintf(errorlog,"%s\n\n",msg);
+    fprintf(errorlog,"%s\n\n",diagnostic);
 
     printf("$PREFIX:Thread=%i: (%i/%i %i:%i:%i)\n",ThisThread,ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec);
     printf("$PREFIX:file=%s, line=%ld\n",fname,nline);
-    printf("$PREFIX:%s\n\n",msg);
+    printf("$PREFIX:%s\n\n",diagnostic);
+    fflush(stdout);
 
-    fclose(errorlog); 
+    if (errorlogToStderr) fflush(stderr);
+    else fclose(errorlog);
     ::exit(1);
 #else
     if (msg==NULL) printf(" exit: line=%ld, file=%s\n",nline,fname);

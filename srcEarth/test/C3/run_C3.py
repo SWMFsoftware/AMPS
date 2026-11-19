@@ -34,7 +34,11 @@ TEST_ROOT = Path(__file__).resolve().parents[1]
 if str(TEST_ROOT) not in sys.path:
     sys.path.insert(0, str(TEST_ROOT))
 
-from earth_test_runtime import report_amps_failure  # noqa: E402
+from earth_test_runtime import (  # noqa: E402
+    configuration_workdir,
+    record_workdir_configuration,
+    report_amps_failure,
+)
 
 TEST_ID = "C3"
 TEST_NAME = "Penumbra, Rc_upper, and UPPER_SCAN regression"
@@ -403,7 +407,7 @@ def parse_args():
     parser.add_argument("--require-binary-collapse", action="store_true", help="also require BINARY to show the legacy lower-boundary collapse signature")
     parser.add_argument("--amps", default="./amps", help="AMPS executable path, relative to the launch directory; default: ./amps")
     parser.add_argument("--mpirun", default="mpirun", help="MPI launcher executable; default: mpirun")
-    parser.add_argument("--workdir", default=None, help="directory where the test is run and outputs are written; default: test_output/C3_<mode>")
+    parser.add_argument("--workdir", default=None, help="directory where the test is run and outputs are written; default: test_output/C3_<mode>, or test_output/C3_<mode>_<hash of the options> when options are given, so parallel list entries do not share it")
     parser.add_argument("--output-file", default=None, help="explicit AMPS cutoff shell output file to parse; only useful with one algorithm or --skip-run")
     parser.add_argument("--skip-run", action="store_true", help="do not run AMPS; analyze existing algorithm subdirectories under --workdir")
     parser.add_argument("--keep", action="store_true", help="keep an existing work directory instead of replacing it")
@@ -434,16 +438,23 @@ def main():
         template_input = script_dir / "AMPS_PARAM_C3.in"
     reference_csv = script_dir / "reference_C3_penumbra.csv"
 
-    if args.workdir is None:
+    default_workdir = args.workdir is None
+    if default_workdir:
+        # The mode names the base directory; the option hash keeps entries with
+        # the same mode apart (the "--algorithms UPPER_SCAN" entry defaults to
+        # 3d ANALYTIC, like the 3d ANALYTIC entry), because each deletes its work
+        # directory first and test_runner.py -j N can run them in parallel.
         if args.mode == "3d":
-            args.workdir = "test_output/C3_3d_%s" % args.mode3d_field_eval.lower()
+            args.workdir = configuration_workdir("test_output/C3_3d_%s" % args.mode3d_field_eval.lower())
         else:
-            args.workdir = "test_output/C3_gridless"
+            args.workdir = configuration_workdir("test_output/C3_gridless")
     root_workdir = (launch_dir / args.workdir).resolve()
     if not args.skip_run:
         if root_workdir.exists() and not args.keep:
             shutil.rmtree(root_workdir)
         root_workdir.mkdir(parents=True, exist_ok=True)
+        if default_workdir:
+            record_workdir_configuration(root_workdir)
         shutil.copy2(reference_csv, root_workdir / "reference_C3_penumbra.csv")
     else:
         if not root_workdir.exists():

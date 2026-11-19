@@ -3,11 +3,14 @@
 
 from __future__ import annotations
 
+import json
 import os
+import shlex
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Dict, Tuple
 
 
 TEST_ROOT = Path(__file__).resolve().parents[1]
@@ -15,12 +18,15 @@ if str(TEST_ROOT) not in sys.path:
     sys.path.insert(0, str(TEST_ROOT))
 
 from earth_test_runtime import (  # noqa: E402
+    WORKDIR_KEY_IGNORED_OPTIONS,
     EarthExecutableError,
     archive_previous_result,
     atomic_write_json,
+    configuration_workdir,
     finish_run_status,
     initial_run_status,
     probe_earth_executable,
+    record_workdir_configuration,
 )
 
 
@@ -100,6 +106,73 @@ class EarthTestRuntimeTests(unittest.TestCase):
             self.assertIn("archive_previous_result(", source, test_id)
             self.assertIn("%s_run_status.json" % test_id, source, test_id)
             self.assertIn('result_current=True', source, test_id)
+
+    def test_configuration_workdir_separates_option_sets(self) -> None:
+        base = "test_output/C4_exit"
+        # A bare invocation keeps the documented default directory.
+        self.assertEqual(configuration_workdir(base, []), base)
+        hc4 = configuration_workdir(base, ["--adaptive-dt", "T", "--movers", "HC4"])
+        boris = configuration_workdir(base, ["--adaptive-dt", "T", "--movers", "BORIS"])
+        self.assertTrue(hc4.startswith(base + "_"), hc4)
+        self.assertNotEqual(hc4, boris)
+        # The same options give the same directory, and options that only say how
+        # to treat an existing directory do not change it, so --skip-run finds it.
+        self.assertEqual(
+            configuration_workdir(base, ["--adaptive-dt", "T", "--movers", "HC4"]), hc4
+        )
+        self.assertEqual(
+            configuration_workdir(
+                base, ["--adaptive-dt", "T", "--skip-run", "--movers", "HC4", "--keep"]
+            ),
+            hc4,
+        )
+        for option in WORKDIR_KEY_IGNORED_OPTIONS:
+            self.assertEqual(configuration_workdir(base, [option]), base)
+
+    def test_configuration_workdir_is_recorded(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="earth-runtime-") as directory:
+            workdir = Path(directory) / "C4_exit_x"
+            record_workdir_configuration(workdir, ["--movers", "HC4", "--keep"])
+            payload = json.loads((workdir / "workdir_configuration.json").read_text())
+            self.assertEqual(payload["argv"], ["--movers", "HC4", "--keep"])
+            self.assertEqual(payload["key_options"], ["--movers", "HC4"])
+
+    def test_list_entries_of_one_wrapper_get_separate_workdirs(self) -> None:
+        # The wrappers delete their default work directory when they start, and
+        # test_runner.py -j N runs list entries in parallel.  Every wrapper that
+        # the list runs more than once must take its default directory from
+        # configuration_workdir(), and its entries must differ in the options
+        # that form the key; otherwise two entries share one directory and
+        # delete each other's files (the C4, C5 and C14 failures at -j 6).
+        wrappers = ("C3", "C4", "C5", "C14")
+        for test_id in wrappers:
+            source = (TEST_ROOT / test_id / ("run_%s.py" % test_id)).read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("configuration_workdir(", source, test_id)
+
+        keys: Dict[str, Dict[Tuple[str, ...], int]] = {w: {} for w in wrappers}
+        list_path = TEST_ROOT / "list"
+        for number, line in enumerate(list_path.read_text(encoding="utf-8").splitlines(), 1):
+            if line[:2] not in ("P ", "F "):
+                continue
+            tokens = shlex.split(line[2:])
+            if tokens and tokens[0] == "python3":
+                tokens = tokens[1:]
+            for test_id in wrappers:
+                if tokens and tokens[0].endswith("/%s/run_%s.py" % (test_id, test_id)):
+                    if "--workdir" in tokens or any(t.startswith("--workdir=") for t in tokens):
+                        continue
+                    key = tuple(
+                        t for t in tokens[1:] if t not in WORKDIR_KEY_IGNORED_OPTIONS
+                    )
+                    self.assertNotIn(
+                        key,
+                        keys[test_id],
+                        "%s list lines %s and %d share a default work directory"
+                        % (test_id, keys[test_id].get(key), number),
+                    )
+                    keys[test_id][key] = number
 
 
 if __name__ == "__main__":

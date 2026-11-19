@@ -292,7 +292,14 @@ classification shift and cannot be tested against a fixed 3% threshold. Increasi
 ## Outputs
 
 Run artifacts are written below `test_output/C14_cross_solver` unless another
-`--workdir` is supplied:
+`--workdir` is supplied.
+When the script is run with options and without `--workdir`, the directory
+name gets a suffix `_<10 hex digits>`, the SHA-1 of the options (`--skip-run`
+and `--keep` left out), and the options are recorded in
+`workdir_configuration.json` inside it. Each entry of `srcEarth/test/list`
+therefore has its own directory, and entries run in parallel by
+`test_runner.py -j N` no longer delete each other's files.
+Layout:
 
 ```text
 mode3d/AMPS_PARAM_C14.in

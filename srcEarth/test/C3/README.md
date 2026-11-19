@@ -134,6 +134,15 @@ fail when the legacy BINARY path is later improved or removed.
 
 ## Outputs
 
+The root C3 run directory is `test_output/C3_3d_<field-eval>` (3d) or
+`test_output/C3_gridless` by default.
+When the script is run with options and without `--workdir`, the directory
+name gets a suffix `_<10 hex digits>`, the SHA-1 of the options (`--skip-run`
+and `--keep` left out), and the options are recorded in
+`workdir_configuration.json` inside it. Each entry of `srcEarth/test/list`
+therefore has its own directory, and entries run in parallel by
+`test_runner.py -j N` no longer delete each other's files.
+
 The root C3 run directory contains:
 
 ```text

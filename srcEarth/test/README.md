@@ -984,7 +984,7 @@ python srcEarth/test/C14/run_C14.py --lons 0,90,180,270 --lats -60,-30,0,30,60
 python srcEarth/test/C14/run_C14.py --dry-run
 ```
 
-C14 writes one Mode3D subdirectory and one gridless subdirectory under `test_output/C14_cross_solver`, plus `C14_summary.csv`, `C14_result.json`, and `reference_C14_cross_solver_generated.csv`.  The repository reference/check table is `srcEarth/test/C14/reference_C14_cross_solver.csv`.
+C14 writes one Mode3D subdirectory and one gridless subdirectory under `test_output/C14_cross_solver` (with an `_<hash of the options>` suffix when options are given; see `C14/README.md`), plus `C14_summary.csv`, `C14_result.json`, and `reference_C14_cross_solver_generated.csv`.  The repository reference/check table is `srcEarth/test/C14/reference_C14_cross_solver.csv`.
 
 ## C17 — Dipole charge-sign and velocity-reversal symmetry
 

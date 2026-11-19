@@ -54,6 +54,55 @@ class EarthExecutableError(RuntimeError):
     """Raised when an ``--amps`` target is absent or is not the Earth driver."""
 
 
+# Options that only say how to treat an existing work directory.  They are left out
+# of the configuration key, so "--skip-run" with the options of an earlier run
+# finds that run's directory.
+WORKDIR_KEY_IGNORED_OPTIONS = ("--skip-run", "--keep")
+
+
+def configuration_workdir(base: str, argv: Optional[Sequence[str]] = None) -> str:
+    """Return the default work directory of one test configuration.
+
+    Several entries of srcEarth/test/list run the same wrapper with different
+    options.  The wrappers delete their default work directory when they start,
+    so with a fixed default two entries that the runner starts in parallel
+    (``test_runner.py -j N``) delete and overwrite each other's files.  The C4,
+    C5 and C14 entries failed that way, and AMPS then crashed with SIGSEGV
+    writing into the deleted directory.
+
+    The returned directory is ``base`` when no options are given, so a bare
+    invocation and the documented ``--skip-run`` examples keep their paths.
+    Otherwise it is ``base`` + ``_`` + the first 10 hex digits of the SHA-1 of
+    the options (in the order given, NUL-separated), leaving out
+    WORKDIR_KEY_IGNORED_OPTIONS.  The same options give the same directory;
+    different options give different directories.  An explicit --workdir is
+    used as given and bypasses this function.
+    """
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    key = [t for t in tokens if t not in WORKDIR_KEY_IGNORED_OPTIONS]
+    if not key:
+        return base
+    digest = hashlib.sha1("\0".join(key).encode("utf-8")).hexdigest()[:10]
+    return "%s_%s" % (base.rstrip("/"), digest)
+
+
+def record_workdir_configuration(workdir: Path, argv: Optional[Sequence[str]] = None) -> None:
+    """Write the options that selected a configuration work directory into it.
+
+    The directory name carries only a hash, so the options are kept beside the
+    results as ``workdir_configuration.json`` for a reader of the directory.
+    """
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    payload = {
+        "argv": tokens,
+        "key_options": [t for t in tokens if t not in WORKDIR_KEY_IGNORED_OPTIONS],
+        "ignored_options": list(WORKDIR_KEY_IGNORED_OPTIONS),
+        "written_utc": utc_now(),
+    }
+    workdir.mkdir(parents=True, exist_ok=True)
+    (workdir / "workdir_configuration.json").write_text(json.dumps(payload, indent=2) + "\n")
+
+
 def utc_now() -> str:
     """Return a stable UTC timestamp for JSON provenance."""
 

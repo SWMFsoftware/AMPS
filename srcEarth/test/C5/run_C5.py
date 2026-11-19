@@ -31,6 +31,12 @@ import textwrap
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
+TEST_ROOT = Path(__file__).resolve().parents[1]
+if str(TEST_ROOT) not in sys.path:
+    sys.path.insert(0, str(TEST_ROOT))
+
+from earth_test_runtime import configuration_workdir, record_workdir_configuration  # noqa: E402
+
 TEST_ID = "C5"
 TEST_NAME = "Dipole mesh-interpolation convergence"
 
@@ -588,7 +594,7 @@ def parse_args(argv=None):
 
     parser.add_argument("--amps", default="./amps", help="AMPS executable path, relative to the launch directory; default: ./amps")
     parser.add_argument("--mpirun", default="mpirun", help="MPI launcher executable; default: mpirun")
-    parser.add_argument("--workdir", default="test_output/C5_mode3d_mesh", help="top-level test work directory; default: %(default)s")
+    parser.add_argument("--workdir", default=None, help="top-level test work directory; default: test_output/C5_mode3d_mesh, or test_output/C5_mode3d_mesh_<hash of the options> when options are given, so parallel list entries do not share it")
     parser.add_argument("--output-file", default=None, help="explicit AMPS cutoff shell output file name inside each case directory; default: auto-detect")
     parser.add_argument("--skip-run", action="store_true", help="do not run AMPS; analyze existing outputs in --workdir")
     parser.add_argument("--keep", action="store_true", help="keep existing work directory instead of replacing it")
@@ -630,11 +636,18 @@ def main(argv=None):
     if not template_input.exists():
         raise SystemExit("Missing input template: %s" % template_input)
 
+    default_workdir = args.workdir is None
+    if default_workdir:
+        # One directory per option set: the three list entries run in parallel
+        # under test_runner.py -j N and each deletes its work directory first.
+        args.workdir = configuration_workdir("test_output/C5_mode3d_mesh", argv)
     workdir = (launch_dir / args.workdir).resolve()
     if not args.skip_run:
         if workdir.exists() and not args.keep:
             shutil.rmtree(workdir)
         workdir.mkdir(parents=True, exist_ok=True)
+        if default_workdir:
+            record_workdir_configuration(workdir, argv)
         write_reference_csv(workdir / "reference_C5_stormer.csv", lats)
     else:
         if not workdir.exists():

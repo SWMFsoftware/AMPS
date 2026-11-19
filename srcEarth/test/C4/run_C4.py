@@ -32,7 +32,11 @@ TEST_ROOT = Path(__file__).resolve().parents[1]
 if str(TEST_ROOT) not in sys.path:
     sys.path.insert(0, str(TEST_ROOT))
 
-from earth_test_runtime import report_amps_failure  # noqa: E402
+from earth_test_runtime import (  # noqa: E402
+    configuration_workdir,
+    record_workdir_configuration,
+    report_amps_failure,
+)
 
 TEST_ID = "C4"
 TEST_NAME = "Mode3D trajectory-exit classifier and invariant diagnostic"
@@ -339,7 +343,7 @@ def parse_args(argv=None):
     parser.add_argument("--fail-on-paxis", action="store_true", help="make canonical P_axis drift a hard failure instead of a recorded diagnostic")
     parser.add_argument("--amps", default="./amps", help="AMPS executable path, relative to launch directory; default: ./amps")
     parser.add_argument("--mpirun", default="mpirun", help="MPI launcher executable; default: mpirun")
-    parser.add_argument("--workdir", default=None, help="directory where the test is run and outputs are written; default: test_output/C4_exit")
+    parser.add_argument("--workdir", default=None, help="directory where the test is run and outputs are written; default: test_output/C4_exit, or test_output/C4_exit_<hash of the options> when options are given, so parallel list entries do not share it")
     parser.add_argument("--skip-run", action="store_true", help="do not run AMPS; analyze existing case subdirectories under --workdir")
     parser.add_argument("--keep", action="store_true", help="keep existing work directory instead of replacing it")
     return parser.parse_args(normalize_negative_list_args(sys.argv[1:] if argv is None else argv))
@@ -380,13 +384,18 @@ def main():
     if not template_input.exists():
         template_input = script_dir / "AMPS_PARAM_C4.in"
 
-    if args.workdir is None:
-        args.workdir = "test_output/C4_exit"
+    default_workdir = args.workdir is None
+    if default_workdir:
+        # One directory per option set: the five list entries run in parallel
+        # under test_runner.py -j N and each deletes its work directory first.
+        args.workdir = configuration_workdir("test_output/C4_exit")
     root_workdir = (launch_dir / args.workdir).resolve()
     if not args.skip_run:
         if root_workdir.exists() and not args.keep:
             shutil.rmtree(root_workdir)
         root_workdir.mkdir(parents=True, exist_ok=True)
+        if default_workdir:
+            record_workdir_configuration(root_workdir)
     elif not root_workdir.exists():
         raise SystemExit("--skip-run requested but workdir does not exist: %s" % root_workdir)
 
