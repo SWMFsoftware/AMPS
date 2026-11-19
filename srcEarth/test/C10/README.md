@@ -686,10 +686,41 @@ Default numerical gates are intentionally initial validation-scale gates:
 | absolute bias | <=2° |
 | correlation | >=0.80 |
 | modeled low-rigidity expansion | 4°–12° |
-| expansion timing error | <=180 min |
+| expansion timing error | <=180 min to a tie-aware modeled maximum; NOT_EVALUATED when POES/MEPED does not resolve the maximum (see below) |
 
 These values should be tightened only after the archive-derived reference and
 controlled convergence studies establish a defensible baseline.
+
+### Time of maximum expansion
+
+The criterion uses `evaluate_extremum_time(extremum="max")` in
+`srcEarth/test/earth_test_runtime.py`, the same evaluator C9 uses for its
+minimum (C9 README, section 10). Until 2026-11-19 C10 compared the argmax of
+the observed and modeled expansion series. With a few sampled intervals, the
+argmax time error can only take the gaps between intervals. When two
+intervals are nearly equal, it is decided by noise.
+
+- Model side: every interval whose modeled expansion is within
+  `--expansion-time-tie-tolerance-deg` of the largest is a candidate. The
+  default is `--t50-grid-step-deg`, the latitude resolution of the modeled
+  boundary. The error is measured to the nearest candidate.
+- Observed side: the time is scored only when the observed maximum exceeds
+  the next interval by at least `--expansion-time-min-separation-sigma`
+  (default 2.0) combined sigma. Sigma is the standard error of each interval
+  mean, from the reference `sigma_deg`. Otherwise the criterion is
+  `NOT_EVALUATED`. That status is printed and recorded (`expansion_time_status`,
+  `expansion_time_reason`), is never counted as PASS, and does not fail the
+  comparison.
+
+In the ROUTINE event the observed maximum (2006-12-15T06:00, 5.64 +- 0.23 deg)
+is only 0.90 sigma above 00:00 (4.77 +- 0.94 deg), so the criterion is
+`NOT_EVALUATED`. The model maximum (00:00) is clear: 1.3 deg above the next
+interval in both the -O0 and -O3 builds. The former argmax error was 360 min.
+C10 still fails its bias, RMSE and correlation gates, and this change does
+not touch those. `C10_result.json` also stores both expansion series
+(`observed_expansion_series`, `modeled_expansion_series`), the candidates,
+the margin, and the former argmax error. Unit tests:
+`tests/test_expansion_time.py`.
 
 ## 12. Recommended convergence and sensitivity studies
 

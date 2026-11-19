@@ -588,7 +588,7 @@ spacecraft-acceptance reproduction.
 | Absolute mean bias | <= 2.0 deg |
 | PAMELA/AMPS correlation | >= 0.80 |
 | Lowest-bin storm suppression | 4-9 deg |
-| Time of lowest-bin minimum | within 100 min |
+| Time of lowest-bin minimum | within 100 min of a tie-aware modeled minimum; NOT_EVALUATED when PAMELA does not resolve the minimum (see below) |
 | Resolved FULL_SCAN/DIRECT_ACCESS state agreement | >= 0.999 when consistency root is supplied |
 | Unresolved in either compared access product | <= 0.01 when consistency root is supplied |
 
@@ -600,6 +600,57 @@ All thresholds are CLI-configurable. The runner also reports:
 - observed and modeled low-rigidity suppression;
 - observed and modeled time of minimum;
 - longitude/hemisphere and temporal scatter.
+
+### Time of the lowest-bin minimum
+
+The criterion compares the time of the storm minimum of the lowest rigidity
+bin (0.4236 GV), modeled against PAMELA, and is implemented in
+`evaluate_minimum_time()` in `run_C9.py`.
+
+Until 2026-11-19 it took the argmin of each seven-interval series and
+compared the two times. That measured rounding noise, not physics. In the
+2006-12-14/15 storm the modeled cutoffs at 23:55 and 03:03 are nearly equal:
+
+| build | 23:55 | 03:03 | argmin error |
+|---|---:|---:|---:|
+| reference (srcGeospace/doc/VALIDATION_CPU_2026-10-21.md) | 57.958 | 57.765 | 0 min |
+| -O0, 2026-11-19 | 57.739 | 57.865 | 188 min |
+| -O3, 2026-11-19 | 57.931 | 57.927 | 0 min |
+
+FMA and float builds move these values by 0.2-0.5 deg and swap the argmin as
+well (same report, section 4.2). On the observed side, PAMELA's minimum
+(54.39 +- 0.61 deg at 03:03) is only 1.1 sigma below 23:55 (55.44 +- 0.73).
+Neither side resolves which interval holds the minimum. The time error can
+only take the values of the gaps between sampled intervals, so changing the
+100 min tolerance would only move the flip, not remove it.
+
+The criterion is now:
+
+- Model side: every interval whose modeled cutoff is within
+  `--minimum-time-tie-tolerance-deg` of the lowest one is a candidate
+  minimum. The default is `--t50-grid-step-deg` (0.25 deg), the latitude
+  resolution of the modeled boundary, a configured input rather than a value
+  fitted to these results. The time error is measured to the nearest
+  candidate. A real timing error still fails: when the model minimum lies
+  below its value at the observed time by more than the tolerance, the
+  observed time is not a candidate.
+- Observed side: the time is scored only when PAMELA's minimum is at least
+  `--minimum-time-min-separation-sigma` (default 2.0) combined sigma below
+  the next-lowest interval. Otherwise the criterion is `NOT_EVALUATED`. That
+  status is printed on the summary line and in `C9_result.json`
+  (`minimum_time_status`, `minimum_time_reason`), and it is never counted as
+  PASS. It does not fail the comparison, because there is no resolved
+  observation to fail against.
+
+With the ROUTINE reference the observed separation is 1.09 sigma, so the
+criterion is `NOT_EVALUATED` for every build. A C9 PASS therefore rests on
+the other criteria. The result also records the argmin error of the old
+criterion (`argmin_minimum_time_error_minutes`), the candidates
+(`modeled_minimum_candidates_utc`), the margin between the two lowest
+modeled values, and the observed separation.
+
+Unit tests: `python3 srcEarth/test/C9/test_minimum_time.py`. They use the
+reference values and the -O0/-O3 model series above.
 
 The statistical uncertainties are diagnostics, not the sole pass criterion:
 they do not include global-shell geometry, rigidity-bin, magnetic-field-model,

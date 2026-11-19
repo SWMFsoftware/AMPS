@@ -157,6 +157,25 @@ SIGSEGV transcript and a stand-in `mpirun`, so they need neither MPI nor AMPS.
 They also check that the runner and the wrapper helper decode statuses and
 classify crash messages identically.
 
+### Also run by this suite: C9/C10 storm-extremum timing criteria
+
+`run_test.sh` also runs two offline test files of the shared evaluator
+`earth_test_runtime.evaluate_extremum_time()`. They are listed here without a
+UTR identifier:
+
+- `srcEarth/test/C9/test_minimum_time.py`: the C9 minimum-cutoff timing
+  criterion.
+- `srcEarth/test/C10/tests/test_expansion_time.py`: the C10
+  maximum-expansion timing criterion.
+
+The tests check that near-equal modeled extrema are treated as ties, so the
+-O0 and -O3 builds give the same status. A clear model extremum at the wrong
+time still fails. An observed extremum that is not significant (below 2
+combined sigma) is `NOT_EVALUATED`, never PASS. Missing inputs are handled
+fail-closed. The fixtures are the 2006 December storm values and need no AMPS,
+MPI, aacgmv2 or matplotlib. They are run from here so that the main list
+executes them without a separate list entry.
+
 The suite does not weaken or replace any scientific validation. Exclusivity is
 runner-only scheduling metadata; AMPS commands, numerical inputs, observations,
 reference solutions, expected P/F states, and acceptance gates remain unchanged.

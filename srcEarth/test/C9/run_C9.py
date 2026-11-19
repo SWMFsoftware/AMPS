@@ -84,8 +84,12 @@ if str(TEST_ROOT) not in sys.path:
     sys.path.insert(0, str(TEST_ROOT))
 
 from earth_test_runtime import (  # noqa: E402
+    EXTREMUM_TIME_FAIL,
+    EXTREMUM_TIME_NOT_EVALUATED,
+    EXTREMUM_TIME_PASS,
     EarthExecutableError,
     archive_previous_result,
+    evaluate_extremum_time,
     atomic_write_json,
     finish_run_status,
     initial_run_status,
@@ -247,10 +251,77 @@ class Metrics:
     observed_minimum_time_utc: Optional[str]
     modeled_minimum_time_utc: Optional[str]
     minimum_time_error_minutes: Optional[float]
+    # Minimum-time criterion (see evaluate_minimum_time()).  minimum_time_status is
+    # PASS, FAIL or NOT_EVALUATED; NOT_EVALUATED is never reported as PASS.
+    minimum_time_status: str
+    minimum_time_reason: str
+    modeled_minimum_candidates_utc: List[str]
+    modeled_minimum_margin_deg: Optional[float]
+    observed_minimum_separation_sigma: Optional[float]
+    argmin_minimum_time_error_minutes: Optional[float]
     driver_verified: bool
     scientific_validation_eligible: bool
     passed_numerical_comparison: bool
     passed: bool
+
+
+MINIMUM_TIME_PASS = EXTREMUM_TIME_PASS
+MINIMUM_TIME_FAIL = EXTREMUM_TIME_FAIL
+MINIMUM_TIME_NOT_EVALUATED = EXTREMUM_TIME_NOT_EVALUATED
+
+
+@dataclass
+class MinimumTimeEvaluation:
+    """Outcome of the storm-minimum timing criterion at the lowest rigidity."""
+
+    status: str
+    reason: str
+    observed_minimum_time: Optional[datetime]
+    observed_minimum_separation_sigma: Optional[float]
+    modeled_minimum_time: Optional[datetime]
+    modeled_minimum_candidates: List[datetime]
+    modeled_minimum_margin_deg: Optional[float]
+    time_error_minutes: Optional[float]
+    argmin_time_error_minutes: Optional[float]
+
+
+def evaluate_minimum_time(
+    observed: Sequence[Tuple[datetime, float, Optional[float], Optional[float]]],
+    modeled: Sequence[Tuple[datetime, float]],
+    *,
+    tie_tolerance_deg: float,
+    min_separation_sigma: float,
+    max_error_minutes: float,
+) -> MinimumTimeEvaluation:
+    """Compare the time of the lowest-rigidity cutoff minimum, model vs PAMELA.
+
+    ``observed`` holds (interval midpoint, PAMELA cutoff [deg AACGM], sigma_plus
+    [deg], sigma_minus [deg]); ``modeled`` holds (interval midpoint, AMPS cutoff
+    [deg AACGM]); times are UTC.  The criterion is evaluate_extremum_time() of
+    earth_test_runtime.py with extremum="min": tie-aware on the model side
+    (candidates within ``tie_tolerance_deg`` of the lowest value), scored only
+    when PAMELA's minimum is ``min_separation_sigma`` combined sigma below the
+    next interval, and NOT_EVALUATED otherwise (never PASS).  The earlier argmin
+    comparison flipped between 0 and 188 min on rounding alone in the
+    2006-12-14/15 storm (README section 10).
+    """
+    shared = evaluate_extremum_time(
+        observed, modeled, extremum="min",
+        tie_tolerance=tie_tolerance_deg,
+        min_separation_sigma=min_separation_sigma,
+        max_error_minutes=max_error_minutes,
+    )
+    return MinimumTimeEvaluation(
+        status=shared.status,
+        reason=shared.reason,
+        observed_minimum_time=shared.observed_extremum_time,
+        observed_minimum_separation_sigma=shared.observed_extremum_separation_sigma,
+        modeled_minimum_time=shared.modeled_extremum_time,
+        modeled_minimum_candidates=shared.modeled_extremum_candidates,
+        modeled_minimum_margin_deg=shared.modeled_extremum_margin,
+        time_error_minutes=shared.time_error_minutes,
+        argmin_time_error_minutes=shared.argextremum_time_error_minutes,
+    )
 
 
 def parse_utc(text: str) -> datetime:
@@ -533,6 +604,11 @@ def render_input(template: Path, destination: Path, epoch: datetime,
         "SHELL_LAT_RES_DEG": "%.8g" % args.shell_lat_res_deg,
         "MAX_TRACE_TIME": "%.8g" % args.max_trace_time,
     }
+    # The template's MAX_TRACE_DISTANCE (400 Re) is kept unless overridden; the
+    # override exists for labeled trace-limit sensitivity runs (a longer
+    # --max-trace-time is otherwise cut by the distance cap first).
+    if args.max_trace_distance_re is not None:
+        replacements["MAX_TRACE_DISTANCE"] = "%.8g" % args.max_trace_distance_re
     if solver == "GRIDDED":
         replacements.update({
             "MODE3D_MESH_RES_EARTH_RE": "%.8g" % args.mode3d_mesh_res_earth_re,
@@ -2009,9 +2085,30 @@ def compare(reference_rows: Sequence[ReferenceRow], interval_models: Mapping[dat
             modeled_min = min(low_model, key=lambda item: item[1])
             modeled_min_time = format_utc(modeled_min[0])
             modeled_suppression = float(baseline_value) - modeled_min[1]
-            time_error = abs(
-                (modeled_min[0] - observed_min.midpoint).total_seconds()
-            ) / 60.0
+
+    # Storm-minimum timing: tie-aware on the model side, significance-gated on
+    # the observed side (evaluate_minimum_time()).  The tie tolerance defaults
+    # to the configured T50 boundary grid step, the latitude resolution of the
+    # modeled cutoff; it is an input of the run, not a value fitted to results.
+    tie_tolerance_deg = (args.minimum_time_tie_tolerance_deg
+                         if args.minimum_time_tie_tolerance_deg is not None
+                         else args.t50_grid_step_deg)
+    if low_ref and low_model and modeled_suppression is not None:
+        time_eval = evaluate_minimum_time(
+            [(row.midpoint, float(row.pamela_cutoff_aacgm_deg),
+              row.sigma_plus_deg, row.sigma_minus_deg) for row in low_ref],
+            low_model,
+            tie_tolerance_deg=tie_tolerance_deg,
+            min_separation_sigma=args.minimum_time_min_separation_sigma,
+            max_error_minutes=args.max_minimum_time_error_minutes,
+        )
+    else:
+        time_eval = evaluate_minimum_time(
+            [], [], tie_tolerance_deg=tie_tolerance_deg,
+            min_separation_sigma=args.minimum_time_min_separation_sigma,
+            max_error_minutes=args.max_minimum_time_error_minutes,
+        )
+    time_error = time_eval.time_error_minutes
 
     numerical_pass = (
         valid_fraction >= args.min_valid_fraction
@@ -2020,7 +2117,9 @@ def compare(reference_rows: Sequence[ReferenceRow], interval_models: Mapping[dat
         and (correlation is not None and correlation >= args.min_correlation)
         and modeled_suppression is not None
         and args.min_suppression_deg <= modeled_suppression <= args.max_suppression_deg
-        and time_error is not None and time_error <= args.max_minimum_time_error_minutes
+        # FAIL fails the comparison; NOT_EVALUATED does not, and is reported as
+        # NOT_EVALUATED in the result and in the summary line, never as PASS.
+        and time_eval.status != MINIMUM_TIME_FAIL
     )
     scientific_eligible = driver_info.verified_driver
     passed = numerical_pass and (scientific_eligible or args.allow_unverified_driver)
@@ -2041,6 +2140,12 @@ def compare(reference_rows: Sequence[ReferenceRow], interval_models: Mapping[dat
         observed_minimum_time_utc=observed_min_time,
         modeled_minimum_time_utc=modeled_min_time,
         minimum_time_error_minutes=time_error,
+        minimum_time_status=time_eval.status,
+        minimum_time_reason=time_eval.reason,
+        modeled_minimum_candidates_utc=[format_utc(t) for t in time_eval.modeled_minimum_candidates],
+        modeled_minimum_margin_deg=time_eval.modeled_minimum_margin_deg,
+        observed_minimum_separation_sigma=time_eval.observed_minimum_separation_sigma,
+        argmin_minimum_time_error_minutes=time_eval.argmin_time_error_minutes,
         driver_verified=driver_info.verified_driver,
         scientific_validation_eligible=scientific_eligible,
         passed_numerical_comparison=numerical_pass,
@@ -2227,6 +2332,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Maximum fraction unresolved in either compared access product",
     )
     parser.add_argument("--max-trace-time", type=float, default=20.0)
+    parser.add_argument(
+        "--max-trace-distance-re", type=float, default=None,
+        help="override the input template's MAX_TRACE_DISTANCE [Re] (default: keep the "
+             "template value, 400 Re); for labeled trace-limit sensitivity runs")
     parser.add_argument("--min-valid-fraction", type=float, default=0.85)
     parser.add_argument("--max-rmse-deg", type=float, default=3.0)
     parser.add_argument("--max-abs-bias-deg", type=float, default=2.0)
@@ -2234,6 +2343,16 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--min-suppression-deg", type=float, default=4.0)
     parser.add_argument("--max-suppression-deg", type=float, default=9.0)
     parser.add_argument("--max-minimum-time-error-minutes", type=float, default=100.0)
+    parser.add_argument(
+        "--minimum-time-tie-tolerance-deg", type=float, default=None,
+        help="modeled lowest-rigidity cutoffs within this many degrees of the lowest one "
+             "are all candidate minimum times; default: --t50-grid-step-deg, the "
+             "latitude resolution of the modeled cutoff")
+    parser.add_argument(
+        "--minimum-time-min-separation-sigma", type=float, default=2.0,
+        help="score the minimum time only when the observed minimum is at least this "
+             "many combined sigma below the next-lowest observed interval; otherwise "
+             "the criterion is NOT_EVALUATED (default: %(default)s)")
     args = parser.parse_args(argv)
     if args.interval_samples < 1:
         parser.error("--interval-samples must be >= 1")
@@ -2911,6 +3030,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "min_correlation": args.min_correlation,
                 "suppression_range_deg": [args.min_suppression_deg, args.max_suppression_deg],
                 "max_minimum_time_error_minutes": args.max_minimum_time_error_minutes,
+                "minimum_time_tie_tolerance_deg": (
+                    args.minimum_time_tie_tolerance_deg
+                    if args.minimum_time_tie_tolerance_deg is not None
+                    else args.t50_grid_step_deg),
+                "minimum_time_min_separation_sigma": args.minimum_time_min_separation_sigma,
                 "minimum_resolved_access_state_agreement": (
                     args.min_access_state_agreement
                     if args.access_consistency_root and solver == "GRIDDED" else None),
@@ -2948,20 +3072,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         # threshold is changed.
         print(
             "C9 %s: valid=%d/%d RMSE=%.3f deg bias=%+.3f deg corr=%s "
-            "suppression=%s deg min_time_error=%s min model/ref=%s/%s -> %s%s" %
+            "suppression=%s deg min_time=%s (error=%s, model/ref=%s/%s) -> %s%s" %
             (solver.lower(), metrics.n_valid_model, metrics.n_reference,
              metrics.rmse_deg, metrics.mean_bias_deg,
              "n/a" if metrics.correlation is None else "%.3f" % metrics.correlation,
              "n/a" if metrics.modeled_low_rigidity_suppression_deg is None else
              "%.3f" % metrics.modeled_low_rigidity_suppression_deg,
+             metrics.minimum_time_status,
              "n/a" if metrics.minimum_time_error_minutes is None else
              "%.1f min" % metrics.minimum_time_error_minutes,
-             metrics.modeled_minimum_time_utc or "n/a",
+             ",".join(metrics.modeled_minimum_candidates_utc) or "n/a",
              metrics.observed_minimum_time_utc or "n/a",
              "PASS" if metrics.passed else "FAIL",
              " (unverified alternate driver; not scientifically eligible)"
              if not metrics.scientific_validation_eligible else "")
         )
+        # Say why the minimum-time criterion came out as it did; NOT_EVALUATED in
+        # particular must be visible, since it does not fail the comparison.
+        print("C9 %s minimum time: %s: %s" %
+              (solver.lower(), metrics.minimum_time_status, metrics.minimum_time_reason))
         if branch_access_consistency is not None:
             print(
                 "C9 %s access consistency: common=%d resolved=%d mismatches=%d "

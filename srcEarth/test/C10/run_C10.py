@@ -104,7 +104,9 @@ if str(TEST_ROOT) not in sys.path:
     sys.path.insert(0, str(TEST_ROOT))
 
 from earth_test_runtime import (  # noqa: E402
+    EXTREMUM_TIME_FAIL,
     EarthExecutableError,
+    evaluate_extremum_time,
     archive_previous_result,
     atomic_write_json,
     finish_run_status,
@@ -288,6 +290,19 @@ class Metrics:
     reference_processing_eligible: bool = False
     acceptance_channels: Tuple[str, ...] = ("P6", "P7")
     per_channel_metrics: Dict[str, Dict[str, object]] = field(default_factory=dict)
+    # Maximum-expansion timing criterion (evaluate_extremum_time(), extremum="max").
+    # expansion_time_status is PASS, FAIL or NOT_EVALUATED; NOT_EVALUATED is never
+    # reported as PASS.  max_expansion_time_error_minutes is measured to the
+    # nearest modeled candidate; argmax_expansion_time_error_minutes is the
+    # former argmax-to-argmax comparison, kept for reference.
+    expansion_time_status: str = ""
+    expansion_time_reason: str = ""
+    modeled_max_expansion_candidates_utc: List[str] = field(default_factory=list)
+    modeled_max_expansion_margin_deg: Optional[float] = None
+    observed_max_expansion_separation_sigma: Optional[float] = None
+    argmax_expansion_time_error_minutes: Optional[float] = None
+    observed_expansion_series: List[Dict[str, object]] = field(default_factory=list)
+    modeled_expansion_series: List[Dict[str, object]] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -1436,18 +1451,32 @@ def compare(reference_rows: Sequence[ReferenceRow],
     ]
     primary_rigidities = sorted({r.rigidity_gv for r in acceptance_rows})
     low_rigidity = min(primary_rigidities) if primary_rigidities else min(rigidities)
-    obs_expansion, obs_time = _expansion_series(acceptance_rows, low_rigidity)
+    obs_expansion, obs_time, obs_series = _expansion_series_detail(acceptance_rows, low_rigidity)
     acceptance_midpoints = {row.midpoint for row in acceptance_rows}
     acceptance_models = {
         midpoint: model for midpoint, model in interval_models.items()
         if midpoint in acceptance_midpoints
     }
-    mod_expansion, mod_time = _model_expansion_series(
+    mod_expansion, mod_time, mod_series = _model_expansion_series_detail(
         acceptance_models, low_rigidity, hemispheres
     )
-    time_error = None
-    if obs_time is not None and mod_time is not None:
-        time_error = abs((mod_time - obs_time).total_seconds()) / 60.0
+    # Maximum-expansion timing: tie-aware on the model side, significance-gated
+    # on the observed side, as in C9 (earth_test_runtime.evaluate_extremum_time()).
+    # The tie tolerance defaults to the configured T50 boundary grid step, the
+    # latitude resolution of the modeled boundary; it is an input, not a value
+    # fitted to results.  Observed sigma: standard error of each interval mean.
+    tie_tolerance_deg = (args.expansion_time_tie_tolerance_deg
+                         if args.expansion_time_tie_tolerance_deg is not None
+                         else args.t50_grid_step_deg)
+    time_eval = evaluate_extremum_time(
+        [(t, value, sigma, sigma) for t, value, sigma in obs_series] if obs_time is not None else [],
+        mod_series if mod_time is not None else [],
+        extremum="max",
+        tie_tolerance=tie_tolerance_deg,
+        min_separation_sigma=args.expansion_time_min_separation_sigma,
+        max_error_minutes=args.max_expansion_time_error_minutes,
+    )
+    time_error = time_eval.time_error_minutes
 
     obs_asym = _mean_reference_asymmetry(acceptance_rows, mlt_bins)
     mod_asym = _mean_model_asymmetry(acceptance_models)
@@ -1463,7 +1492,9 @@ def compare(reference_rows: Sequence[ReferenceRow],
         and (correlation is not None and float(correlation) >= args.min_correlation)
         and mod_expansion is not None
         and args.min_expansion_deg <= mod_expansion <= args.max_expansion_deg
-        and time_error is not None and time_error <= args.max_expansion_time_error_minutes
+        # FAIL fails the comparison; NOT_EVALUATED does not, and is reported as
+        # NOT_EVALUATED in the result and the summary line, never as PASS.
+        and time_eval.status != EXTREMUM_TIME_FAIL
     )
     scientific_eligible = (
         driver_info.verified_driver and not reference_is_model and reference_processing_eligible
@@ -1496,6 +1527,19 @@ def compare(reference_rows: Sequence[ReferenceRow],
             else float(unfiltered_summary["rmse_deg"])),
         reference_processing_eligible=reference_processing_eligible,
         per_channel_metrics=per_channel,
+        expansion_time_status=time_eval.status,
+        expansion_time_reason=time_eval.reason,
+        modeled_max_expansion_candidates_utc=[
+            format_utc(t) for t in time_eval.modeled_extremum_candidates],
+        modeled_max_expansion_margin_deg=time_eval.modeled_extremum_margin,
+        observed_max_expansion_separation_sigma=time_eval.observed_extremum_separation_sigma,
+        argmax_expansion_time_error_minutes=time_eval.argextremum_time_error_minutes,
+        observed_expansion_series=[
+            {"interval_midpoint_utc": format_utc(t), "expansion_deg": v, "sigma_deg": sg}
+            for t, v, sg in obs_series],
+        modeled_expansion_series=[
+            {"interval_midpoint_utc": format_utc(t), "expansion_deg": v}
+            for t, v in mod_series],
     )
     return detailed, metrics
 
@@ -1504,6 +1548,14 @@ def _expansion_series(
     rows: Sequence[ReferenceRow],
     rigidity: float,
 ) -> Tuple[Optional[float], Optional[datetime]]:
+    best, best_time, _ = _expansion_series_detail(rows, rigidity)
+    return best, best_time
+
+
+def _expansion_series_detail(
+    rows: Sequence[ReferenceRow],
+    rigidity: float,
+) -> Tuple[Optional[float], Optional[datetime], List[Tuple[datetime, float, Optional[float]]]]:
     """Return maximum observed expansion relative to the designated first epoch.
 
     The baseline is never silently moved forward to the first *available* low-
@@ -1515,30 +1567,41 @@ def _expansion_series(
 
     selected_midpoints = sorted({row.midpoint for row in rows})
     if not selected_midpoints:
-        return None, None
+        return None, None, []
     baseline_midpoint = selected_midpoints[0]
 
     by_midpoint: Dict[datetime, List[float]] = {}
+    sigmas: Dict[datetime, List[Optional[float]]] = {}
     for row in rows:
         if (math.isclose(row.rigidity_gv, rigidity)
                 and not row.missing
                 and row.boundary_lat_deg is not None):
             by_midpoint.setdefault(row.midpoint, []).append(90.0 - row.boundary_lat_deg)
+            sigmas.setdefault(row.midpoint, []).append(row.sigma_deg)
     if baseline_midpoint not in by_midpoint:
-        return None, None
+        return None, None, []
 
     quiet_center = statistics.fmean(by_midpoint[baseline_midpoint])
     best_time: Optional[datetime] = None
     best_expansion: Optional[float] = None
+    # Per-interval expansion [deg colatitude] with the standard error of the
+    # interval mean, sqrt(sum sigma_i^2)/n (None when any row lacks a sigma).
+    # The quiet baseline is common to every interval, so it cancels when two
+    # intervals are compared with each other and is not included.
+    series: List[Tuple[datetime, float, Optional[float]]] = []
     for midpoint in selected_midpoints:
         colatitudes = by_midpoint.get(midpoint)
         if not colatitudes:
             continue
         expansion = statistics.fmean(colatitudes) - quiet_center
+        row_sigmas = sigmas[midpoint]
+        sigma = (math.sqrt(sum(float(v) ** 2 for v in row_sigmas)) / len(row_sigmas)
+                 if all(v is not None for v in row_sigmas) else None)
+        series.append((midpoint, expansion, sigma))
         if best_expansion is None or expansion > best_expansion:
             best_expansion = expansion
             best_time = midpoint
-    return best_expansion, best_time
+    return best_expansion, best_time, series
 
 
 def _model_expansion_series(
@@ -1546,11 +1609,20 @@ def _model_expansion_series(
     rigidity: float,
     hemispheres: Sequence[str],
 ) -> Tuple[Optional[float], Optional[datetime]]:
+    best, best_time, _ = _model_expansion_series_detail(interval_models, rigidity, hemispheres)
+    return best, best_time
+
+
+def _model_expansion_series_detail(
+    interval_models: Mapping[datetime, Mapping[Tuple[float, str], BoundaryEstimate]],
+    rigidity: float,
+    hemispheres: Sequence[str],
+) -> Tuple[Optional[float], Optional[datetime], List[Tuple[datetime, float]]]:
     """Return maximum modeled expansion using the same fixed first epoch."""
 
     selected_midpoints = sorted(interval_models)
     if not selected_midpoints:
-        return None, None
+        return None, None, []
     baseline_midpoint = selected_midpoints[0]
 
     centers: Dict[datetime, List[float]] = {}
@@ -1563,20 +1635,22 @@ def _model_expansion_series(
         if values:
             centers[midpoint] = values
     if baseline_midpoint not in centers:
-        return None, None
+        return None, None, []
 
     quiet_center = statistics.fmean(centers[baseline_midpoint])
     best_time: Optional[datetime] = None
     best_expansion: Optional[float] = None
+    series: List[Tuple[datetime, float]] = []
     for midpoint in selected_midpoints:
         values = centers.get(midpoint)
         if not values:
             continue
         expansion = statistics.fmean(values) - quiet_center
+        series.append((midpoint, expansion))
         if best_expansion is None or expansion > best_expansion:
             best_expansion = expansion
             best_time = midpoint
-    return best_expansion, best_time
+    return best_expansion, best_time, series
 
 
 def _mean_reference_asymmetry(rows: Sequence[ReferenceRow],
@@ -2094,6 +2168,15 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--min-expansion-deg", type=float, default=4.0)
     parser.add_argument("--max-expansion-deg", type=float, default=12.0)
     parser.add_argument("--max-expansion-time-error-minutes", type=float, default=180.0)
+    parser.add_argument(
+        "--expansion-time-tie-tolerance-deg", type=float, default=None,
+        help="modeled expansions within this many degrees of the largest one are all "
+             "candidate times of maximum expansion; default: --t50-grid-step-deg")
+    parser.add_argument(
+        "--expansion-time-min-separation-sigma", type=float, default=2.0,
+        help="score the time of maximum expansion only when the observed maximum "
+             "exceeds the next interval by at least this many combined sigma; "
+             "otherwise the criterion is NOT_EVALUATED (default: %(default)s)")
     args = parser.parse_args(argv)
     if args.interval_samples < 1:
         parser.error("--interval-samples must be >= 1")
@@ -2606,6 +2689,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "common_abs_geodetic_latitude_band_deg": [
                     args.access_abs_lat_min_deg, args.access_abs_lat_max_deg],
             },
+            "expansion_time_criterion": {
+                "max_error_minutes": args.max_expansion_time_error_minutes,
+                "tie_tolerance_deg": (args.expansion_time_tie_tolerance_deg
+                                      if args.expansion_time_tie_tolerance_deg is not None
+                                      else args.t50_grid_step_deg),
+                "min_separation_sigma": args.expansion_time_min_separation_sigma,
+            },
             "validation_gate": {
                 "primary_channels": ["P6", "P7"],
                 "diagnostic_channels": ["P8", "P9"],
@@ -2625,11 +2715,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         }, indent=2) + "\n")
         branch_metrics[solver] = metrics
         print("C10 %s -> %s (PRIMARY P6/P7 rmse=%.3f bias=%.3f corr=%s; "
-              "all-channel diagnostic rmse=%s; expansion=%s)" % (
+              "all-channel diagnostic rmse=%s; expansion=%s; expansion_time=%s)" % (
             solver, "PASS" if metrics.passed else "FAIL", metrics.rmse_deg, metrics.mean_bias_deg,
             None if metrics.correlation is None else "%.3f" % metrics.correlation,
             None if metrics.all_rmse_deg is None else "%.3f" % metrics.all_rmse_deg,
-            None if metrics.modeled_expansion_deg is None else "%.2f" % metrics.modeled_expansion_deg))
+            None if metrics.modeled_expansion_deg is None else "%.2f" % metrics.modeled_expansion_deg,
+            metrics.expansion_time_status))
+        print("C10 %s expansion time: %s: %s" % (
+            solver, metrics.expansion_time_status, metrics.expansion_time_reason))
 
     (output_root / "C10_commands.json").write_text(json.dumps(commands_inventory, indent=2) + "\n")
     if args.dry_run:

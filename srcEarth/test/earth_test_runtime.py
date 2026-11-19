@@ -26,12 +26,14 @@ from __future__ import annotations
 import collections
 import hashlib
 import json
+import math
 import os
 import re
 import signal
 import socket
 import subprocess
 import sys
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, TextIO, Tuple
@@ -52,6 +54,132 @@ EARTH_HELP_REQUIRED_TOKENS = (
 
 class EarthExecutableError(RuntimeError):
     """Raised when an ``--amps`` target is absent or is not the Earth driver."""
+
+
+EXTREMUM_TIME_PASS = "PASS"
+EXTREMUM_TIME_FAIL = "FAIL"
+EXTREMUM_TIME_NOT_EVALUATED = "NOT_EVALUATED"
+
+
+@dataclass
+class ExtremumTimeEvaluation:
+    """Outcome of a storm-extremum timing criterion (evaluate_extremum_time())."""
+
+    status: str
+    reason: str
+    observed_extremum_time: Optional[datetime] = None
+    observed_extremum_separation_sigma: Optional[float] = None
+    modeled_extremum_time: Optional[datetime] = None
+    modeled_extremum_candidates: List[datetime] = field(default_factory=list)
+    modeled_extremum_margin: Optional[float] = None
+    time_error_minutes: Optional[float] = None
+    argextremum_time_error_minutes: Optional[float] = None
+
+
+def evaluate_extremum_time(
+    observed: Sequence[Tuple[datetime, float, Optional[float], Optional[float]]],
+    modeled: Sequence[Tuple[datetime, float]],
+    *,
+    extremum: str,
+    tie_tolerance: float,
+    min_separation_sigma: float,
+    max_error_minutes: float,
+) -> ExtremumTimeEvaluation:
+    """Compare the time of a storm extremum, model against observation.
+
+    Used by C9 (minimum cutoff latitude) and C10 (maximum boundary expansion).
+    ``extremum`` is "min" or "max".  ``observed`` holds (interval time UTC,
+    value, sigma_up, sigma_down), where sigma_up/sigma_down are the one-sided
+    uncertainties toward larger/smaller values; ``modeled`` holds (interval
+    time UTC, value).  Values and sigmas share one unit (deg).
+
+    Taking the argmin/argmax of a few sampled intervals and comparing the two
+    times decides the result by noise when two intervals are nearly equal: the
+    time error can only take the gaps between sampled intervals, so a rounding
+    change swaps it between 0 and several hours (C9, 2026-11-19: 0.004 deg
+    between two minima, 0 vs 188 min).  The criterion is therefore stated in
+    terms of what each side resolves:
+
+    * Model: every interval within ``tie_tolerance`` of the extreme modeled
+      value is a candidate; the time error is measured to the nearest
+      candidate.  A real timing error still fails, because the observed time is
+      not a candidate when the model's extremum exceeds its value there by more
+      than the tolerance.
+    * Observation: the time is scored only when the observed extremum is beyond
+      the next interval by at least ``min_separation_sigma`` combined sigma (the
+      extremum's sigma toward the next value and the next value's sigma toward
+      the extremum, in quadrature).  Otherwise the status is NOT_EVALUATED,
+      which callers report as such and never as PASS.
+
+    Failure behavior: no modeled values gives FAIL; no or one observed value,
+    or a missing/zero uncertainty, gives NOT_EVALUATED with the reason.
+    """
+    if extremum not in ("min", "max"):
+        raise ValueError("extremum must be 'min' or 'max', got %r" % (extremum,))
+    sign = 1.0 if extremum == "min" else -1.0
+    word = "minimum" if extremum == "min" else "maximum"
+
+    if not modeled:
+        return ExtremumTimeEvaluation(EXTREMUM_TIME_FAIL, "no modeled values for the %s" % word)
+
+    # Work with sign*value so that the extremum is always the smallest value.
+    ordered_model = sorted(modeled, key=lambda item: sign * item[1])
+    extreme = sign * ordered_model[0][1]
+    margin = (sign * ordered_model[1][1] - extreme) if len(ordered_model) > 1 else None
+    candidates = sorted(t for t, v in modeled if sign * v - extreme <= tie_tolerance)
+    out = ExtremumTimeEvaluation(
+        EXTREMUM_TIME_NOT_EVALUATED, "",
+        modeled_extremum_time=ordered_model[0][0],
+        modeled_extremum_candidates=candidates,
+        modeled_extremum_margin=margin,
+    )
+
+    if not observed:
+        out.reason = "no observed values for the %s" % word
+        return out
+    ordered_obs = sorted(observed, key=lambda item: sign * item[1])
+    obs_time, obs_value, obs_up, obs_down = ordered_obs[0]
+    out.observed_extremum_time = obs_time
+
+    def minutes(a: datetime, b: datetime) -> float:
+        return abs((a - b).total_seconds()) / 60.0
+
+    out.time_error_minutes = min(minutes(t, obs_time) for t in candidates)
+    out.argextremum_time_error_minutes = minutes(ordered_model[0][0], obs_time)
+
+    if len(ordered_obs) < 2:
+        out.reason = "fewer than two observed intervals; the %s is not resolved" % word
+        return out
+    _, next_value, next_up, next_down = ordered_obs[1]
+    # Toward the next value: a minimum's upward and the next value's downward
+    # sigma; for a maximum the opposite.
+    sigma_a = obs_up if extremum == "min" else obs_down
+    sigma_b = next_down if extremum == "min" else next_up
+    if sigma_a is None or sigma_b is None:
+        out.reason = "observed uncertainty missing; the separation of the %s is unknown" % word
+        return out
+    combined = math.hypot(float(sigma_a), float(sigma_b))
+    if combined <= 0.0:
+        out.reason = "observed uncertainty is zero; the separation of the %s is unknown" % word
+        return out
+    separation = sign * (next_value - obs_value) / combined
+    out.observed_extremum_separation_sigma = separation
+    if separation < min_separation_sigma:
+        out.reason = ("observed %s is %.2f sigma beyond the next interval (< %.2f sigma); "
+                      "the observation does not resolve which interval holds it"
+                      % (word, separation, min_separation_sigma))
+        return out
+
+    error = out.time_error_minutes
+    if error <= max_error_minutes:
+        out.status = EXTREMUM_TIME_PASS
+        out.reason = ("nearest modeled %s candidate is %.1f min from the observed %s "
+                      "(<= %.1f min)" % (word, error, word, max_error_minutes))
+    else:
+        out.status = EXTREMUM_TIME_FAIL
+        out.reason = ("nearest modeled %s candidate is %.1f min from the observed %s "
+                      "(> %.1f min)" % (word, error, word, max_error_minutes))
+    return out
 
 
 # Options that only say how to treat an existing work directory.  They are left out

@@ -29,7 +29,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SRC_EARTH = HERE.parents[1]
-APPROVED_NORMALIZED_LIST_SHA256 = "7b53ace0e4485a16f60c511eb924f33dc8e49c0f8c6532faf51db3ad159727f6"
+# 2026-11-19: C10 DIRECT_ACCESS changed from P to F (never passed; open +2.7 deg
+# POES/MEPED boundary bias), with an explanatory comment block in the list.
+APPROVED_NORMALIZED_LIST_SHA256 = "a9e91131596f520d984d0e0a38bd847900552e3d2eb22ec12ab43dcc4e2460c8"
 STEP12_COMMAND = "P srcEarth/test/UStep12Release/run_test.sh"
 COMMIT_RE = r"[0-9a-f]{40}"
 # Looped list entries are rewritten by test_runner.py as a brace-delimited
