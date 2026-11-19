@@ -28,6 +28,12 @@ import sys
 import textwrap
 from pathlib import Path
 
+TEST_ROOT = Path(__file__).resolve().parents[1]
+if str(TEST_ROOT) not in sys.path:
+    sys.path.insert(0, str(TEST_ROOT))
+
+from earth_test_runtime import report_amps_failure  # noqa: E402
+
 TEST_ID = "C4"
 TEST_NAME = "Mode3D trajectory-exit classifier and invariant diagnostic"
 
@@ -435,7 +441,8 @@ def main():
                 print(" ".join(cmd))
                 rc = run_command(cmd, cwd=case_dir, log_path=case_dir / "C4_amps.log")
                 if rc != 0:
-                    print("AMPS command failed with exit code %d for %s" % (rc, label), file=sys.stderr)
+                    report_amps_failure(rc, cmd, case_dir, case_dir / "C4_amps.log",
+                                        label="C4 case %s" % label)
                     return rc
             else:
                 if not case_dir.exists():

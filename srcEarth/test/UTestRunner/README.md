@@ -115,6 +115,48 @@ command, which runs in its own session, must be gone), and the third as actual
 F with `not_started`. Before this, the runner printed "Interrupted by user"
 and wrote no report, and the nightly lost every Earth result of the night.
 
+### UTR-F09 — a failed entry says why it failed
+
+A report line such as `exit=139` alone does not identify a failure. For every
+actual F the runner now records two more fields (JSON, CSV columns
+`exit_status` and `failure_cause`, the text reports, and the terminal):
+
+* `exit_status`, the exact decoded status. `-N` means the command was killed
+  by signal N. `128 + N` means, by the shell/MPI-launcher convention, that a
+  process it ran was killed by signal N. For example, Open MPI `mpirun` returns
+  139 when a rank receives SIGSEGV. The status is reported as a convention,
+  not a certainty, because a program can exit with such a value deliberately.
+* `failure_cause`, one line from the test log, chosen in this order:
+  1. the wrapper's own `FAILURE CAUSE:` line;
+  2. a launch error;
+  3. the first crash message of the most specific kind: an MPI launcher line
+     naming the rank and signal, then a UCX/Open MPI/C++-runtime/abort message,
+     then a generic one;
+  4. the exception line of a Python traceback;
+  5. the last FAIL/ERROR line;
+  6. the last output line.
+
+  Interrupted, not-started and timed-out entries say so.
+
+The C1-C4 wrappers call `earth_test_runtime.report_amps_failure` when AMPS
+fails. It prints and appends to the AMPS log:
+
+* the decoded status;
+* the command, working directory and log path;
+* host, `ulimit -s`, `ulimit -c` and the `OMP_*` variables;
+* every crash message, with its line number, and the log tail.
+
+It ends with the `FAILURE CAUSE:` line. The wrapper still returns the AMPS
+status unchanged.
+
+The to-address list no longer calls an interrupted or not-started expected-F
+entry an "unexpected pass". Expected-F entries that ended by a signal are listed
+separately, because a crash is not necessarily their documented failure. Their
+P/F comparison is unchanged. The tests use a recorded Open MPI 4.1.7/UCX
+SIGSEGV transcript and a stand-in `mpirun`, so they need neither MPI nor AMPS.
+They also check that the runner and the wrapper helper decode statuses and
+classify crash messages identically.
+
 The suite does not weaken or replace any scientific validation. Exclusivity is
 runner-only scheduling metadata; AMPS commands, numerical inputs, observations,
 reference solutions, expected P/F states, and acceptance gates remain unchanged.

@@ -96,7 +96,13 @@ class InterruptedRunTests(unittest.TestCase):
         self.assertFalse(alive, "the stopped command outlived the runner")
         self.assertIn("[INTERRUPTED] #002 line 2", output)
         self.assertIn("1 stopped while running, 1 not started", output)
-        self.assertTrue(csv_header.endswith("exclusive,interrupted,not_started"))
+        # UTR-F09 appends the decoded status and failure cause after these columns.
+        self.assertTrue(csv_header.endswith(
+            "exclusive,interrupted,not_started,exit_status,failure_cause"))
+        self.assertIn("the runner was interrupted", second["failure_cause"])
+        self.assertIn("not started", third["failure_cause"])
+        self.assertIn("stopped while running (the runner was interrupted; no result)", output)
+        self.assertIn("not started (the runner was interrupted; no result)", output)
 
     def test_sigint_reports_every_entry(self):
         self.check(signal.SIGINT)

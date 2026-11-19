@@ -666,6 +666,10 @@ class TestResult:
     # reported as actual F.
     interrupted: bool = False
     not_started: bool = False
+    # UTR-F09: the decoded exit status (e.g. "exit 139 = 128 + 11 (SIGSEGV:
+    # Segmentation fault)") and, for actual F, one line saying why it failed.
+    exit_status: str = ""
+    failure_cause: str = ""
 
 
 @dataclass
@@ -723,6 +727,179 @@ RUNNER_DIRECTIVE_RE = re.compile(
 )
 # "timeout 9000" or "timeout=9000" (seconds), matched against the lower-cased directive
 TIMEOUT_DIRECTIVE_RE = re.compile(r"^timeout\s*(?:=\s*|\s+)(?P<seconds>\d+(?:\.\d*)?)$")
+
+# ---------------------------------------------------------------------------
+# Failure diagnosis (UTR-F09).  A failed entry is reported with its decoded exit
+# status and one line from its log saying why it failed, so a report never says
+# only "exit=139".  This is reporting only: actual P/F still comes from the exit
+# status and the timeout, exactly as before.
+# ---------------------------------------------------------------------------
+
+# A command's own one-line diagnosis (srcEarth/test/earth_test_runtime.py
+# report_amps_failure prints it as the last line of its failure report).
+FAILURE_CAUSE_PREFIX = "FAILURE CAUSE:"
+# Messages written when a process dies abnormally, most specific first; kept
+# identical to earth_test_runtime.CRASH_MESSAGE_PATTERNS (UTR-F09 checks it).
+CRASH_MESSAGE_PATTERNS = (
+    (0, re.compile(r"exited on signal \d+|KILLED BY SIGNAL|BAD TERMINATION OF ONE OF YOUR APPLICATION")),
+    (1, re.compile(
+        r"Caught signal \d+|Process received signal|Signal: .*\(\d+\)|Failing at address|"
+        r"terminate called|what\(\):|std::bad_alloc|Assertion .* failed|"
+        r"MPI_ABORT was invoked|MPI_Abort\(|[Oo]ut of memory|oom-kill"
+    )),
+    (2, re.compile(
+        r"Segmentation fault|Bus error|Floating point exception|Illegal instruction|"
+        r"\bAborted\b|\bKilled\b|core dumped"
+    )),
+)
+FAIL_WORD_RE = re.compile(r"\b(?:FAIL\w*|ERROR)\b")
+LAUNCH_ERROR_PREFIX = "ERROR launching command:"
+LOG_SEPARATOR = "=" * 80
+FAILURE_CAUSE_MAX_CHARS = 400
+FAILURE_CAUSE_LOG_TAIL_BYTES = 4 * 1024 * 1024
+_MAX_SIGNAL = 64
+
+
+def _describe_signal(number: int) -> str:
+    try:
+        name = signal.Signals(number).name
+    except ValueError:
+        name = f"SIG{number}"
+    strsignal = getattr(signal, "strsignal", None)
+    description = (strsignal(number) if strsignal else None) or "unknown signal"
+    return f"signal {number} ({name}: {description})"
+
+
+def describe_exit_code(code: Optional[int], *, compact: bool = False) -> str:
+    """Describe an exit status exactly; identical to earth_test_runtime.describe_exit_status.
+
+    ``-N``: the command itself was killed by signal N.  ``128 + N``: by the
+    shell/MPI-launcher convention a process it ran was killed by signal N (Open
+    MPI mpirun returns 139 when a rank gets SIGSEGV).  A program can exit with
+    such a value deliberately, so it is reported as a convention.
+    """
+
+    if code is None:
+        return "no exit status" if compact else (
+            "no exit status (the process did not start or was not waited for)")
+    if code == 0:
+        return "exit 0" if compact else "exit status 0"
+    if code < 0:
+        return f"killed by {_describe_signal(-code)}"
+    if 128 < code <= 128 + _MAX_SIGNAL:
+        number = code - 128
+        if compact:
+            return f"exit {code} = 128 + {number} ({_describe_signal(number).split(' (', 1)[1].rstrip(')')})"
+        return (f"exit status {code} = 128 + {number}: by the shell/MPI-launcher "
+                f"convention, a process was killed by {_describe_signal(number)}")
+    return f"exit {code}" if compact else f"exit status {code}"
+
+
+def exit_code_is_signal(code: Optional[int]) -> bool:
+    """True when the status says a signal ended the command or a process it ran."""
+
+    return code is not None and (code < 0 or 128 < code <= 128 + _MAX_SIGNAL)
+
+
+def _clip(text: str) -> str:
+    text = " ".join(text.split())
+    if len(text) > FAILURE_CAUSE_MAX_CHARS:
+        return text[: FAILURE_CAUSE_MAX_CHARS - 3] + "..."
+    return text
+
+
+def _command_output_lines(log_file: str) -> Optional[List[str]]:
+    """The lines a command wrote, without the runner's header and footer; None if unreadable."""
+
+    try:
+        with open(log_file, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - FAILURE_CAUSE_LOG_TAIL_BYTES))
+            data = handle.read()
+    except OSError:
+        return None
+    lines = data.decode("utf-8", errors="replace").splitlines()
+    start = 0
+    for index, line in enumerate(lines[:200]):
+        if line == LOG_SEPARATOR and index > 0 and lines[index - 1].startswith("# Started:"):
+            start = index + 1
+            break
+    end = len(lines)
+    for index in range(len(lines) - 1, start - 1, -1):
+        if (lines[index] == LOG_SEPARATOR and index + 1 < len(lines)
+                and lines[index + 1].startswith(("# Finished:", "# Interrupted:"))):
+            end = index
+            break
+    return lines[start:end]
+
+
+def extract_failure_cause(log_file: str) -> str:
+    """One line from a failed command's test log that says why it failed.
+
+    In order: the command's own ``FAILURE CAUSE:`` line; the runner's launch
+    error; the most specific crash message (an MPI launcher naming the rank and
+    signal, then a UCX/Open MPI/C++-runtime message, then a generic one), the
+    first of its kind because in an MPI job the first process to fail usually
+    takes the others down; the exception line ending a Python traceback; the
+    last line with FAIL or ERROR; the last line the command wrote.  Empty when
+    there is no readable log.
+    """
+
+    if not log_file:
+        return ""
+    lines = _command_output_lines(log_file)
+    if lines is None:
+        return ""
+    for line in reversed(lines):
+        if line.startswith(FAILURE_CAUSE_PREFIX):
+            return _clip(line[len(FAILURE_CAUSE_PREFIX):])
+    for line in reversed(lines):
+        if line.startswith(LAUNCH_ERROR_PREFIX):
+            return _clip(line)
+
+    crash: Optional[tuple[int, str]] = None
+    exception = ""
+    fail_line = ""
+    in_traceback = False
+    for line in lines:
+        for priority, pattern in CRASH_MESSAGE_PATTERNS:
+            if pattern.search(line):
+                if crash is None or priority < crash[0]:
+                    crash = (priority, line)
+                break
+        if line.startswith("Traceback (most recent call last):"):
+            in_traceback = True
+            continue
+        if in_traceback and line and not line[0].isspace():
+            exception = line
+            in_traceback = False
+        if FAIL_WORD_RE.search(line):
+            fail_line = line
+    if crash is not None:
+        return _clip(crash[1])
+    if exception:
+        return _clip("Python exception: " + exception)
+    if fail_line:
+        return _clip(fail_line)
+    for line in reversed(lines):
+        if line.strip():
+            return _clip("last output: " + line)
+    return "the command wrote no output"
+
+
+def mismatch_reason(result: "TestResult") -> str:
+    """Why a result does not match its P/F marker, in words."""
+
+    if result.not_started:
+        return "not started (the runner was interrupted; no result)"
+    if result.interrupted:
+        return "stopped while running (the runner was interrupted; no result)"
+    if result.expected == "P" and result.actual == "F":
+        return "unexpected failure"
+    if result.expected == "F" and result.actual == "P":
+        return "unexpected pass"
+    return "mismatch"
 
 # The deferred-last-pass file is deliberately versioned.  It is temporary in
 # the sense that it is removed after a successful --commit-last-pass, but it is
@@ -1581,6 +1758,15 @@ async def run_one_test(
 
     actual = "P" if (exit_code == 0 and not timed_out) else "F"
     matched = actual == test.expected
+    failure_cause = ""
+    if actual == "F":
+        detail = extract_failure_cause(str(log_path))
+        if timed_out:
+            failure_cause = f"timed out after {elapsed:.0f} s ({timeout_text})"
+            if detail:
+                failure_cause += f"; {detail}"
+        else:
+            failure_cause = detail or describe_exit_code(exit_code, compact=True)
 
     return TestResult(
         index=test.index,
@@ -1607,6 +1793,8 @@ async def run_one_test(
         variant_index=test.variant_index,
         variant_count=test.variant_count,
         exclusive=test.exclusive,
+        exit_status=describe_exit_code(exit_code, compact=True),
+        failure_cause=failure_cause,
     )
 
 
@@ -1666,6 +1854,12 @@ def interrupted_results(state: RunState, log_dir: Path) -> List[TestResult]:
             exclusive=test.exclusive,
             interrupted=started is not None,
             not_started=started is None,
+            exit_status=describe_exit_code(None, compact=True),
+            failure_cause=(
+                f"stopped after {now - started:.0f} s: the runner was interrupted"
+                if started is not None
+                else "not started: the runner was interrupted before this entry"
+            ),
         ))
     return results
 
@@ -1890,6 +2084,8 @@ async def run_all_tests(
                 f"exit={result.exit_code}, {result.elapsed_s:.1f}s",
                 flush=True,
             )
+            if result.actual == "F":
+                print(f"      status: {result.exit_status}; cause: {result.failure_cause}", flush=True)
 
     results.sort(key=lambda r: r.index)
     return results
@@ -1938,6 +2134,8 @@ def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path,
         "exclusive",
         "interrupted",
         "not_started",
+        "exit_status",
+        "failure_cause",
     ]
 
     def write_csv(path: Path, rows: List[TestResult]) -> None:
@@ -1984,6 +2182,8 @@ def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path,
                     f"  expected: {r.expected}\n"
                     f"  actual:   {r.actual}\n"
                     f"  exit:     {r.exit_code}\n"
+                    f"  status:   {r.exit_status or describe_exit_code(r.exit_code, compact=True)}\n"
+                    f"  cause:    {r.failure_cause or '-'}\n"
                     f"  timeout:  {r.timed_out}\n"
                     f"  elapsed:  {r.elapsed_s:.3f} s\n"
                     f"  last pass: {(r.last_pass or '<empty>')}\n"
@@ -2479,13 +2679,15 @@ def print_final_summary(
     if to_address:
         print("\nTests to address: actual result differs from reference P/F")
         for r in to_address:
-            reason = "unexpected failure" if r.expected == "P" and r.actual == "F" else "unexpected pass"
+            reason = mismatch_reason(r)
             variant = format_variant_suffix(r.loop_bindings, r.variant_index, r.variant_count)
             print(
                 f"  #{r.index:03d} line {r.line_no}{variant}: {reason}; "
                 f"expected {r.expected}, actual {r.actual}, exit={r.exit_code}, log={r.log_file}\n"
                 f"      {r.command}"
             )
+            if r.actual == "F":
+                print(f"      status: {r.exit_status}; cause: {r.failure_cause}")
     else:
         print("\nTests to address: none; all actual results match the reference P/F markers.")
 
@@ -2502,7 +2704,8 @@ def print_final_summary(
             print(
                 f"  #{r.index:03d} line {r.line_no}{variant}: last pass {r.last_pass}; "
                 f"expected {r.expected}, actual F, exit={r.exit_code}, log={r.log_file}\n"
-                f"      {r.command}"
+                f"      {r.command}\n"
+                f"      status: {r.exit_status}; cause: {r.failure_cause}"
             )
 
     print(
@@ -2536,6 +2739,25 @@ def print_final_summary(
             print(
                 f"  #{r.index:03d} line {r.line_no}{variant}: {marker} actual F; "
                 f"exit={r.exit_code}, log={r.log_file}\n"
+                f"      {r.command}\n"
+                f"      status: {r.exit_status}; cause: {r.failure_cause}"
+            )
+
+    # An expected-F entry matches its marker whenever it fails, including when
+    # it crashes.  A crash is not the documented failure of such an entry, so
+    # list them; the P/F comparison itself is unchanged.
+    crashed_expected_f = [
+        r for r in results
+        if r.expected == "F" and r.actual == "F" and exit_code_is_signal(r.exit_code)
+    ]
+    if crashed_expected_f:
+        print("\nExpected-F entries that ended by a signal (a crash, not necessarily "
+              "their documented failure; review them):")
+        for r in crashed_expected_f:
+            variant = format_variant_suffix(r.loop_bindings, r.variant_index, r.variant_count)
+            print(
+                f"  #{r.index:03d} line {r.line_no}{variant}: {r.exit_status}; "
+                f"cause: {r.failure_cause}; log={r.log_file}\n"
                 f"      {r.command}"
             )
 

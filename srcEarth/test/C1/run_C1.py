@@ -35,6 +35,12 @@ import textwrap
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
+TEST_ROOT = Path(__file__).resolve().parents[1]
+if str(TEST_ROOT) not in sys.path:
+    sys.path.insert(0, str(TEST_ROOT))
+
+from earth_test_runtime import report_amps_failure  # noqa: E402
+
 TEST_ID = "C1"
 TEST_NAME = "Pure dipole vertical Stormer cutoff"
 
@@ -703,7 +709,8 @@ def main() -> int:
                 print(" ".join(cmd))
                 rc = run_command(cmd, cwd=case_workdir, log_path=log_file)
                 if rc != 0:
-                    print("AMPS command failed with exit code %d. See %s" % (rc, log_file), file=sys.stderr)
+                    report_amps_failure(rc, cmd, case_workdir, log_file,
+                                        label="%s %s" % (TEST_ID, case.label))
                     return rc
             else:
                 cmd = build_amps_command(args, amps_path, mesh_case=case)
@@ -842,7 +849,7 @@ def main() -> int:
         print(" ".join(cmd))
         rc = run_command(cmd, cwd=workdir, log_path=log_file)
         if rc != 0:
-            print("AMPS command failed with exit code %d. See %s" % (rc, log_file), file=sys.stderr)
+            report_amps_failure(rc, cmd, workdir, log_file, label=TEST_ID)
             return rc
     else:
         cmd = build_amps_command(args, amps_path, mesh_case=None)

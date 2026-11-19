@@ -30,6 +30,12 @@ import sys
 import textwrap
 from pathlib import Path
 
+TEST_ROOT = Path(__file__).resolve().parents[1]
+if str(TEST_ROOT) not in sys.path:
+    sys.path.insert(0, str(TEST_ROOT))
+
+from earth_test_runtime import report_amps_failure  # noqa: E402
+
 TEST_ID = "C3"
 TEST_NAME = "Penumbra, Rc_upper, and UPPER_SCAN regression"
 
@@ -489,9 +495,11 @@ def main():
                 ]
             print("Running %s/%s in %s" % (TEST_ID, algorithm, alg_dir))
             print(" ".join(cmd))
-            rc = run_command(cmd, cwd=alg_dir, log_path=alg_dir / ("C3_%s_amps.log" % algorithm.lower()))
+            alg_log = alg_dir / ("C3_%s_amps.log" % algorithm.lower())
+            rc = run_command(cmd, cwd=alg_dir, log_path=alg_log)
             if rc != 0:
-                print("AMPS command failed with exit code %d for %s" % (rc, algorithm), file=sys.stderr)
+                report_amps_failure(rc, cmd, alg_dir, alg_log,
+                                    label="%s/%s" % (TEST_ID, algorithm))
                 return rc
         else:
             # --skip-run expects algorithm subdirectories, but also accepts the root
